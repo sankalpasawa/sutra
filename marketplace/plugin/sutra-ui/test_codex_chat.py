@@ -102,7 +102,13 @@ class _Server(unittest.TestCase):
         # test_the_shipped_default_hands_codex_the_bypass_flag covers what the
         # default itself produces.
         with open(env["SUTRA_UI_SETTINGS"], "w") as fh:
-            json.dump({"permission_mode": "plan"}, fh)
+            # ...and the stamp is what makes the pin hold: since 2026-09-18 a
+            # stored floor mode with no stamp beside it reads as INHERITED
+            # rather than chosen and resolves to the default anyway. Literal
+            # rather than providers.ACCESS_CHOSEN_KEY because this file drives
+            # a real server in a SUBPROCESS and imports none of the app.
+            json.dump({"permission_mode": "plan",
+                       "permission_mode_chosen": True}, fh)
         env["SUTRA_UI_CHATS"] = os.path.join(cls.tmpdir, "chats")
         # Claude refuses to start with this set, and ws_chat refuses the socket.
         env.pop("ANTHROPIC_API_KEY", None)

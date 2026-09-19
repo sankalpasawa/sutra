@@ -74,7 +74,13 @@ class Base(unittest.TestCase):
         # a resolvable claude, and a settings.json Shadow can read a mode from
         self._orig_settings = providers.SETTINGS_PATH
         sp = root / "sutra-settings.json"
-        sp.write_text(json.dumps({"permission_mode": "plan"}))
+        # STAMPED, because every test below means "the founder chose this
+        # mode". Since 2026-09-18 an unstamped floor mode is read as inherited
+        # rather than chosen (providers.ACCESS_CHOSEN_KEY), and would resolve
+        # to the default -- which would make these argv assertions depend on
+        # a rule they are not about.
+        sp.write_text(json.dumps({"permission_mode": "plan",
+                                  providers.ACCESS_CHOSEN_KEY: True}))
         providers.SETTINGS_PATH = sp
         self.sp = sp
         self.addCleanup(setattr, providers, "SETTINGS_PATH",
@@ -113,7 +119,8 @@ class Base(unittest.TestCase):
 
     def settings_file_write(self, mode):
         """The app-global permission mode Shadow inherits from."""
-        self.sp.write_text(json.dumps({"permission_mode": mode}))
+        self.sp.write_text(json.dumps({"permission_mode": mode,
+                                       providers.ACCESS_CHOSEN_KEY: True}))
 
     def unsafe(self, allowed):
         """The gate that decides whether the write-capable modes resolve at
@@ -209,16 +216,28 @@ class TestShadowItselfStaysIsolated(Base):
                          "Shadow's own session must not gain repo authority")
 
     def test_08_decider_does_NOT_receive_repo_permissions(self):
-        """The decider is spawned from the same _shadow_args callable."""
-        cfg = settings_of(app._shadow_args())
-        self.assertNotIn("permissions", cfg)
+        """The decider is spawned from its OWN builder, which carries no
+        authority of any kind.
+
+        STRONGER THAN IT WAS, not weaker. Until 2026-09-19 this asserted
+        that the decider came from `_shadow_args` (no repo permissions
+        injected) rather than `_worker_args` (repo permissions injected).
+        The reasoning lane now has its own builder that passes no --settings
+        at all, no tools, and `plan` -- so "no repo authority" is no longer
+        a property of what we decline to inject, it is a property of what
+        the process is able to do.
+        """
+        args = app._decide_args()
+        self.assertNotIn("--settings", args,
+                         "the reasoning lane injects no settings to inherit")
+        self.assertIn("--tools", args)
+        self.assertEqual("", args[args.index("--tools") + 1],
+                         "no tool is reachable from the reasoning lane")
+        self.assertEqual("plan",
+                         args[args.index("--permission-mode") + 1],
+                         "a process that cannot act takes the narrowest mode")
         src = Path(app.__file__).read_text()
-        # WHICH BUILDER, not which signature. This used to pin the whole
-        # call including its closing paren, so 42f2d0f2 adding the runtime
-        # factory (`new_runtime=`) broke it while the property it guards --
-        # the decider is built from _shadow_args, never _worker_args -- was
-        # never in question. Pin the property.
-        self.assertIn("make_decider(_shadow_args, _shadow_workdir(),", src)
+        self.assertIn("make_decider(_decide_args, _shadow_workdir(),", src)
         self.assertNotIn("make_decider(_worker_args", src,
                          "the decider must never get repo authority")
 
@@ -443,8 +462,19 @@ class TestNoWideningSnuckIn(Base):
 
     def test_20_worker_and_shadow_argv_differ_ONLY_by_permissions(self):
         """The strongest statement of the split: identical argv except the
-        one key the worker is meant to gain."""
+        one key the worker is meant to gain.
+
+        ...and, since 2026-09-19, the worker's compaction window, which is
+        NOT an authority: `--autocompact` bounds how much context the CLI
+        carries, it grants nothing and reaches nothing. It is stripped here
+        so the claim this test makes -- no widening sneaked in -- keeps
+        being about authority and only authority. test_14 in
+        test_shadow_lean_lanes.py pins that the supervisor never gets one.
+        """
         w, s = app._worker_args(), app._shadow_args()
+        ai = w.index("--autocompact")
+        self.assertEqual(app.worker_autocompact(), w[ai + 1])
+        w = w[:ai] + w[ai + 2:]
         self.assertEqual(len(w), len(s))
         wi, si = w.index("--settings"), s.index("--settings")
         self.assertEqual(wi, si, "same position")

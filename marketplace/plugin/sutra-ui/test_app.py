@@ -2487,6 +2487,12 @@ class TestEffectiveModeAndOnboarding(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _write(self, obj):
+        # STAMPED: a fixture that names a mode means "the founder chose it".
+        # Since 2026-09-18 an unstamped floor mode reads as INHERITED rather
+        # than chosen (providers.ACCESS_CHOSEN_KEY) and resolves to the
+        # default -- a rule these tests are not about.
+        if isinstance(obj, dict) and "permission_mode" in obj:
+            obj = dict(obj, **{self.providers.ACCESS_CHOSEN_KEY: True})
         with io.open(self.path, "w", encoding="utf-8") as fh:
             json.dump(obj, fh)
 

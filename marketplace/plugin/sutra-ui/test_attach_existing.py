@@ -378,12 +378,17 @@ class TestNothingElseMoved(Base):
         self.assertRegex(
             src,
             r"def _shadow_args\(session_id=None, extra_settings=None"
-            r"(, permission_mode=None)?\):")
+            r"(, permission_mode=None)?(,\s*autocompact=None)?\):")
+        # ...and the tail gained `autocompact`, DEFAULTED OFF for the same
+        # reason `extra_settings` is: only `_worker_args` passes one, so the
+        # supervisor's argv is still byte for byte what this test named.
         self.assertIn('build_agent_args(prov["bin_path"], "", perm_mode,\n'
                       "                            session_id=session_id, "
                       "stream_input=True,\n"
                       "                            "
-                      "extra_settings=extra_settings)", src)
+                      "extra_settings=extra_settings,\n"
+                      "                            "
+                      "autocompact=autocompact)", src)
         self.assertIn("providers.effective_permission_mode(", src,
                       "the mode comes from the one shared accessor")
         # THE DELEGATE SPAWNER NOW USES THE WORKER BUILDER. Same workdir, same
@@ -395,7 +400,13 @@ class TestNothingElseMoved(Base):
         # v4 (2.281.0) hands make_decider more arguments after the workdir
         # (the task-chat router); what this pins is the first two: Shadow's
         # own args and Shadow's own workdir, never the worker builder.
-        self.assertIn("make_decider(_shadow_args, _shadow_workdir()", src,
+        #
+        # `_decide_args` since 2026-09-19, and the claim got STRONGER rather
+        # than looser: the reasoning lane now has its own builder that passes
+        # no --settings at all and `--tools ""`, so "does not inherit repo
+        # permissions" stopped being something we decline to inject and
+        # became something the process cannot reach.
+        self.assertIn("make_decider(_decide_args, _shadow_workdir()", src,
                       "the decider must NOT inherit repo permissions")
         self.assertNotIn("make_decider(_worker_args", src)
 

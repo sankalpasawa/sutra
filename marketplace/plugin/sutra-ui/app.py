@@ -415,12 +415,12 @@ _CODEX_TURN_CONFIG = provider_adapters._CODEX_TURN_CONFIG
 
 def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
                      opts=None, stream_input=False, extra_settings=None,
-                     switches=None):
+                     switches=None, autocompact=None):
     """Claude's full argv for one turn. See provider_adapters.build_agent_args."""
     return provider_adapters.build_agent_args(
         agent_bin, msg, perm_mode, session_id=session_id, model=model,
         opts=opts, stream_input=stream_input, extra_settings=extra_settings,
-        switches=switches)
+        switches=switches, autocompact=autocompact)
 
 
 def build_acp_args(agent_bin, model=None):
@@ -1556,7 +1556,8 @@ def _gemini_home_uninitialised():
 SHADOW_PROVIDERS = frozenset({"claude"})
 
 
-def _shadow_args(session_id=None, extra_settings=None, permission_mode=None):
+def _shadow_args(session_id=None, extra_settings=None, permission_mode=None,
+                 autocompact=None):
     """Claude's argv for Shadow and its runtimes.
 
     `session_id` is the ONE addition (2026-09-11): passed through to
@@ -1564,6 +1565,12 @@ def _shadow_args(session_id=None, extra_settings=None, permission_mode=None):
     -- the default, and every pre-existing caller -- the argv is byte for
     byte what it has always been, which is what keeps new-delegate spawning
     unchanged.
+
+    `autocompact` follows the same rule and only `_worker_args` sets it: the
+    SUPERVISOR's own session must not compact, because its context IS the
+    founder's conversation with Shadow. None keeps this builder's argv byte
+    for byte for the supervisor and (via `_decide_args` no longer calling
+    here at all) for the reasoning lane.
     """
     detail = providers.active_provider_detail()
     prov = providers.provider_by_id(detail["id"]) if detail["id"] else None
@@ -1616,7 +1623,65 @@ def _shadow_args(session_id=None, extra_settings=None, permission_mode=None):
         permission_mode or providers.load_settings()["permission_mode"])
     return build_agent_args(prov["bin_path"], "", perm_mode,
                             session_id=session_id, stream_input=True,
-                            extra_settings=extra_settings)
+                            extra_settings=extra_settings,
+                            autocompact=autocompact)
+
+
+#: The system prompt Shadow's REASONING lane runs under, in place of Claude
+#: Code's own. It says what the process is and what it may do, and nothing
+#: about HOW to decide -- every rule the decider follows is in
+#: shadow_runner._DECIDE_PROMPT, which is sent as the user turn and is
+#: untouched by this. Keeping the two apart is what makes the lane swap a
+#: transport change rather than a change to Shadow's judgement.
+SHADOW_DECIDER_SYSTEM_PROMPT = (
+    "You are Shadow's reasoning step inside Sutra. You are given one decision "
+    "prompt and you answer it with the JSON object that prompt specifies, in "
+    "a ```json fence, and nothing else. You have no tools, you run no "
+    "commands, you read no files and you send nothing anywhere. Your reply is "
+    "read by a validator, never by a person."
+)
+
+
+def _decide_args():
+    """argv for Shadow's one-shot DECIDER -- the reasoning lane.
+
+    WAS `_shadow_args`, and the split is the whole optimisation. That builder
+    makes a full Claude Code agent: every built-in tool schema, the skills
+    catalog, the agent roster, the MCP servers, the founder's settings and
+    hooks. The decider is allowed to use NONE of it -- make_decider spawns it
+    deliberately without SUTRA_MCP_SHADOW so it "can only return text, which
+    the engine then validates" -- and it was paying for all of it on every
+    call. Measured across September: 758 decider processes, ~28,260 tokens
+    each, of which ~1,622 was the actual steering prompt. 94% scaffolding.
+
+    WHAT IS UNCHANGED, and this is the part that matters: the prompt text
+    (shadow_runner.render_decide_prompt), the model, the validator
+    (mission_engine.validate_decision), the JSON contract, the one-process-
+    per-decision lifecycle, and the provider gate below. Shadow reads the
+    same thing and answers the same way. Only the envelope shrinks.
+
+    WHAT TIGHTENS: the lane can no longer call a tool even in principle
+    (`--tools ""`), and it stops inheriting the founder's permission mode --
+    it ran at `bypassPermissions` whenever they did, which was authority it
+    had no path to use and no reason to hold.
+
+    Same provider resolution and same SHADOW_PROVIDERS refusal as
+    `_shadow_args`: Shadow and its lanes run on Claude only in this build,
+    and a founder on another provider must get that sentence, not a parse
+    error from a CLI being handed Claude's flags.
+    """
+    detail = providers.active_provider_detail()
+    prov = providers.provider_by_id(detail["id"]) if detail["id"] else None
+    if not prov or not prov.get("bin_path"):
+        raise HTTPException(503, "no usable provider for Shadow")
+    if prov["id"] not in SHADOW_PROVIDERS:
+        raise HTTPException(503,
+            "Shadow and its delegates run on Claude only in this build; the "
+            "active provider is %r (%s). Switch to Claude to use Shadow -- "
+            "chat panes still run %s." % (prov["id"], prov["name"],
+                                          prov["name"]))
+    return provider_adapters.build_reasoning_args(
+        prov["bin_path"], SHADOW_DECIDER_SYSTEM_PROMPT)
 
 
 def _shadow_new_runtime():
@@ -1714,8 +1779,46 @@ def _worker_args(session_id=None, permission_mode=None):
     return _shadow_args(
         session_id=session_id,
         permission_mode=mode,
+        autocompact=worker_autocompact(),
         extra_settings=project_permissions_for(
             _shadow_workdir_for_delegates()))
+
+
+#: The worker's compaction window, in tokens. The CLI takes 100k-1M.
+#:
+#: WHY THE WORKER AND NOTHING ELSE. A chat pane is the founder's own
+#: conversation, in front of them. A worker is driven headlessly for as many
+#: agentic turns as the objective takes, and nobody is watching its window.
+#: Measured over September's 48 worker sessions: ZERO compaction boundaries,
+#: context running 27.8k -> 327k inside a single mission, and 9.4% of worker
+#: calls served above 200k -- the long-context tier -- for 23% of the lane's
+#: tokens. The 1M window did not bound it; it only postponed the wall.
+#:
+#: 150000 IS A WINDOW, NOT A LIMIT, and the difference is the whole reason
+#: this is safe. `--autocompact` is Claude Code's own mechanism: the worker
+#: keeps its thread, keeps working and keeps answering Shadow across the
+#: boundary. Nothing about the mission loop, the budget, the checks or the
+#: say path can observe it. What it removes is the long-context tier and the
+#: unbounded tail.
+#:
+#: Overridable, and OFF is reachable: SUTRA_SHADOW_AUTOCOMPACT=0 (or any
+#: junk) restores exactly today's argv, so a founder who wants the old
+#: behaviour back needs one env var and no build.
+WORKER_AUTOCOMPACT = "150000"
+
+
+def worker_autocompact():
+    """The `--autocompact` value a worker spawned RIGHT NOW would carry, or
+    None to pass the flag at all. Resolved at CALL time, like every other
+    Shadow setting, so a change binds the next spawn without a restart."""
+    raw = os.environ.get("SUTRA_SHADOW_AUTOCOMPACT", WORKER_AUTOCOMPACT)
+    try:
+        tokens = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    # the CLI's own documented band; anything outside it would be rejected at
+    # the argv parser, which is a dead worker rather than a wide window
+    return str(tokens) if 100_000 <= tokens <= 1_000_000 else None
 
 
 def _autonomy_ceiling(mode):
@@ -2627,7 +2730,10 @@ async def _shadow_recover():
             # Shadow v4 (ADR-043): the task's OWN Shadow chat decides when it
             # is alive; the one-shot below is the fallback, byte-identical to
             # what ran before v4. Routed per decision by mission_id.
-            _one_shot = shadow_runner.make_decider(_shadow_args, _shadow_workdir(),
+            # `_decide_args`, NOT `_shadow_args` (2026-09-19): the reasoning
+            # lane buys no tools, no settings and no plugins, because it is
+            # allowed to use none of them. See _decide_args for the numbers.
+            _one_shot = shadow_runner.make_decider(_decide_args, _shadow_workdir(),
                                                    new_runtime=_shadow_new_runtime)
 
             async def _routed(context, _fallback=_one_shot):

@@ -372,6 +372,29 @@ DEFAULT_PERMISSION_MODE = "bypassPermissions"
 # i.e. every one of those guards would have become a no-op in a single line.
 # `plan` is the floor of PERMISSION_MODES, so landing here can never widen.
 PERMISSION_MODE_FLOOR = "plan"
+
+# WHAT SEPARATES A CHOICE FROM AN INHERITANCE, and the reason a machine
+# onboarded before 2026-09-18 does not stay on Read only forever.
+#
+# Widening DEFAULT_PERMISSION_MODE only changes what an ABSENT key resolves to.
+# Every machine already onboarded HAS the key -- written as `plan` by the old
+# default, not picked off the screen -- so on those machines the founder
+# direction landed on nothing: the app still opens on Read only, which is the
+# state this key exists to end.
+#
+# So save_settings stamps this whenever a mode is chosen EXPLICITLY, and
+# load_settings treats a stored floor mode WITHOUT the stamp as "never chose"
+# and resolves it to the default. Consequences, stated rather than discovered:
+#
+#   * an operator who deliberately picked Read only before the stamp existed
+#     gets Full access once. Re-picking Read only stamps it and it sticks.
+#   * it can only ever move the FLOOR mode. A stored `acceptEdits`, `dontAsk`
+#     or anything else is untouched, stamped or not.
+#   * it is a RESOLUTION rule, not a rewrite: nothing is written to
+#     settings.json on read, so reverting this line reverts the behaviour with
+#     no migrated file left behind.
+ACCESS_CHOSEN_KEY = "permission_mode_chosen"
+
 DEFAULT_WORKDIR = "~/sutra-ui-workspace"
 
 # Modes that let the spawned agent act without asking. The panel's settings
@@ -2783,6 +2806,14 @@ def load_settings():
     mode_invalid = stored_mode is not None and mode is None
     if mode_invalid:
         invalid["permission_mode"] = stored_mode
+    # AN INHERITED FLOOR IS NOT A CHOICE EITHER -- see ACCESS_CHOSEN_KEY. A
+    # `plan` with no stamp beside it was written by the pre-2026-09-18 default
+    # rather than picked, so it resolves the way an absent key does. Everything
+    # else on file stands, and SUTRA_UI_PERMISSION_MODE still wins below.
+    mode_inherited = (mode == PERMISSION_MODE_FLOOR
+                      and not raw.get(ACCESS_CHOSEN_KEY))
+    if mode_inherited:
+        mode = None
     if mode is None:
         # The env var stays ahead of both: setting it is a deliberate operator
         # act, and it is the documented escape hatch.
@@ -3017,6 +3048,10 @@ def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=N
                 "Settings first (or start the server with %s=1)."
                 % (permission_mode, UNSAFE_MODES_ENV))
         raw["permission_mode"] = permission_mode
+        # STAMPED HERE AND ONLY HERE: reaching this line means a caller named a
+        # mode, which is what a choice is. Read only picked from the screen now
+        # survives load_settings' inherited-floor rule.
+        raw[ACCESS_CHOSEN_KEY] = True
 
     if workdir is not None:
         if not isinstance(workdir, str) or not workdir.strip():

@@ -56,7 +56,11 @@ class Base(unittest.TestCase):
         self.addCleanup(setattr, providers, "provider_by_id", self._orig_by_id)
 
     def write_mode(self, mode):
-        self.settings.write_text(json.dumps({"permission_mode": mode}))
+        # STAMPED CHOSEN -- see providers.ACCESS_CHOSEN_KEY. This helper's
+        # whole job is "the founder set the global mode to X", and an
+        # unstamped floor mode is read as inherited instead.
+        self.settings.write_text(json.dumps(
+            {"permission_mode": mode, providers.ACCESS_CHOSEN_KEY: True}))
 
     def unsafe(self, allowed):
         """The REAL gate: SUTRA_UI_ALLOW_UNSAFE_PERM_MODES=1, or a recorded

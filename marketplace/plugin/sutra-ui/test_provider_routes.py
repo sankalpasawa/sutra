@@ -184,8 +184,10 @@ class SettingsPost(Routes):
         r = self.post("/api/settings", {"access": "read"})
         self.assertEqual(r.status_code, 200, r.text[:300])
         self.assertEqual(r.json()["settings"]["permission_mode"], "plan")
-        self.assertEqual(self.raw(), {"permission_mode": "plan"},
-                         "no new key may be written")
+        self.assertEqual(self.raw(),
+                         {"permission_mode": "plan",
+                          providers.ACCESS_CHOSEN_KEY: True},
+                         "no new key may be written beyond the chosen-stamp")
 
     def test_a_gated_access_id_is_a_400_with_the_reason(self):
         self.clamped()
@@ -222,8 +224,12 @@ class SettingsPost(Routes):
         r = self.post("/api/settings",
                       {"provider_settings": {"claude": {"chrome": True}}})
         self.assertEqual(r.status_code, 200, r.text[:300])
+        # the stamp rides along with the mode POST, because naming a mode IS
+        # the choice (providers.ACCESS_CHOSEN_KEY). What this test guards is
+        # that the SECOND post touched nothing but its own key.
         self.assertEqual(self.raw(),
                          {"permission_mode": "plan",
+                          providers.ACCESS_CHOSEN_KEY: True,
                           "provider_settings": {"claude": {"chrome": True}}})
 
     def test_a_bad_provider_settings_patch_is_a_400(self):

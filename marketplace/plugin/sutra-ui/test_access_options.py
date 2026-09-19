@@ -183,9 +183,18 @@ class TheGate(ClampedPosture):
 class WhatIsStored(TempSettings):
     """THE contract: an access id goes in, a NATIVE mode comes out on disk."""
 
-    def test_read_stores_plan_and_nothing_else(self):
+    def test_read_stores_plan_and_the_stamp_that_makes_it_a_choice(self):
+        """The mode, plus providers.ACCESS_CHOSEN_KEY -- and nothing else.
+
+        The stamp is the ONE key this file's original "nothing else" assertion
+        gave up, and it is load-bearing: without it load_settings cannot tell
+        this deliberate `plan` from the one the pre-2026-09-18 default wrote,
+        and would widen it back to Full access on the next read.
+        """
         providers.save_settings(access="read", access_provider="claude")
-        self.assertEqual(self.raw(), {"permission_mode": "plan"})
+        self.assertEqual(self.raw(),
+                         {"permission_mode": "plan",
+                          providers.ACCESS_CHOSEN_KEY: True})
 
     def test_full_stores_bypasspermissions(self):
         self.consent()
@@ -333,7 +342,9 @@ class TheDefaultPosture(TempSettings):
         screen has four buttons and one outcome."""
         providers.save_settings(access="read", access_provider="claude")
         out = providers.load_settings()
-        self.assertEqual(self.raw(), {"permission_mode": "plan"})
+        self.assertEqual(self.raw(),
+                         {"permission_mode": "plan",
+                          providers.ACCESS_CHOSEN_KEY: True})
         self.assertEqual(out["permission_mode_effective"], "plan")
         self.assertEqual(out["access_effective"], "read")
         self.assertFalse(out["permission_mode_clamped"])
@@ -369,6 +380,78 @@ class TheDefaultPosture(TempSettings):
         self.assertEqual(out["permission_mode"], "plan")
         self.assertEqual(out["permission_mode_effective"], "plan")
         self.assertIn("permission_mode", out["invalid_stored_values"])
+
+
+class AnInheritedReadOnlyIsNotAChoice(TempSettings):
+    """THE HALF THE 2026-09-18 DIRECTION MISSED, and why it is being fixed now.
+
+    Widening DEFAULT_PERMISSION_MODE only changes what an ABSENT key resolves
+    to. Every machine already onboarded has the key -- `plan`, written by the
+    OLD default, never picked off a screen -- so on every existing install the
+    direction changed nothing: the app kept opening on Read only. That is the
+    founder's own machine, and it is the whole population of installs that
+    predate the change.
+
+    So a stored floor mode with no providers.ACCESS_CHOSEN_KEY beside it is
+    read as "never chose". The risk this class exists to hold down is the
+    obvious one: that the rule reaches further than the floor, or that it
+    overrides someone who actually picked Read only.
+    """
+
+    def _write(self, raw):
+        providers.SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        providers.SETTINGS_PATH.write_text(json.dumps(raw))
+
+    def test_a_pre_change_plan_now_resolves_to_full_access(self):
+        """The founder's settings.json, verbatim in shape."""
+        self._write({"onboarded": True, "permission_mode": "plan",
+                     "provider": "claude", "unsafe_modes_acknowledged": True})
+        out = providers.load_settings()
+        self.assertEqual(out["permission_mode"], "bypassPermissions")
+        self.assertEqual(out["permission_mode_effective"], "bypassPermissions")
+        self.assertEqual(out["access_effective"], "full")
+
+    def test_a_stamped_plan_stays_read_only(self):
+        """The stamp is what makes Read only a decision rather than a leftover.
+        If this fails, the four buttons have one outcome again."""
+        self._write({"permission_mode": "plan",
+                     providers.ACCESS_CHOSEN_KEY: True})
+        self.assertEqual(providers.load_settings()["access_effective"], "read")
+
+    def test_choosing_read_only_now_survives_the_next_read(self):
+        """End to end through the real writer, which is the path the screen
+        uses -- not a hand-built file."""
+        providers.save_settings(access="read", access_provider="claude")
+        self.assertIs(self.raw()[providers.ACCESS_CHOSEN_KEY], True)
+        self.assertEqual(providers.load_settings()["access_effective"], "read")
+
+    def test_it_only_ever_touches_the_floor_mode(self):
+        """An unstamped `acceptEdits` or `dontAsk` is someone's setting too.
+        The rule must not treat every unstamped value as up for grabs."""
+        for stored in ("acceptEdits", "dontAsk", "manual", "auto"):
+            self._write({"permission_mode": stored})
+            self.assertEqual(providers.load_settings()["permission_mode"],
+                             stored, "unstamped %r was rewritten" % stored)
+
+    def test_nothing_is_written_to_disk_by_reading(self):
+        """A RESOLUTION rule, not a migration: reverting it must revert the
+        behaviour with no rewritten settings.json left behind."""
+        before = {"permission_mode": "plan"}
+        self._write(before)
+        providers.load_settings()
+        self.assertEqual(self.raw(), before)
+
+    def test_the_env_var_still_wins(self):
+        """SUTRA_UI_PERMISSION_MODE is the documented headless escape hatch and
+        is a deliberate operator act, so it outranks the default this rule
+        falls through to."""
+        self._write({"permission_mode": "plan"})
+        os.environ["SUTRA_UI_PERMISSION_MODE"] = "plan"
+        try:
+            self.assertEqual(
+                providers.load_settings()["permission_mode_effective"], "plan")
+        finally:
+            os.environ.pop("SUTRA_UI_PERMISSION_MODE", None)
 
 
 if __name__ == "__main__":

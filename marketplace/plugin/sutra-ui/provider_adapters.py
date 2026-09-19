@@ -304,7 +304,7 @@ def classify_tool(provider_id, name, tool_input=None, extra=None):
 
 def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
                      opts=None, stream_input=False, extra_settings=None,
-                     switches=None):
+                     switches=None, autocompact=None):
     """The full argv for one turn.
 
     Separated from the socket loop so it is testable without a subprocess, and
@@ -319,6 +319,16 @@ def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
     `switches` is the per-provider settings tail (ClaudeAdapter.switch_args).
     APPENDED LAST so every argv that already existed is byte-identical when it
     is empty -- the position of every flag that works today is untouched.
+
+    `autocompact` is the CLI's own `--autocompact <tokens>` window, and only
+    the WORKER passes one (app._worker_args). Why it is not a default here:
+    a chat pane is the founder's own conversation and they can see it grow,
+    while a Shadow worker is driven headlessly for as many agentic turns as
+    the objective takes, with nobody watching the window. Measured over
+    September's 48 worker sessions: context ran 27.8k -> 327k with ZERO
+    compaction boundaries, and 9.4% of worker calls were served above 200k --
+    the long-context tier -- for 23% of the worker lane's tokens. None
+    (every other caller) keeps today's argv byte for byte.
     """
     opts = opts if isinstance(opts, dict) else {}
     args = [agent_bin, "-p"]
@@ -430,7 +440,63 @@ def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
     if switches:
         args += list(switches)
 
+    # LAST, so every argv that already existed is byte-identical when it is
+    # None -- the same rule `switches` above follows, and for the same reason.
+    if autocompact:
+        args += ["--autocompact", str(autocompact)]
+
     return args
+
+
+def build_reasoning_args(agent_bin, system_prompt, perm_mode="plan"):
+    """argv for a model call that THINKS AND ANSWERS, and can do nothing else.
+
+    Shadow's one-shot decider is the only caller today, and the saving is the
+    whole point. MEASURED on this machine, same binary, same trivial prompt:
+
+        as build_agent_args builds it now       22,726 tokens
+        + --tools ""                             9,635
+        + --setting-sources "" --strict-mcp       6,494
+        + --system-prompt                          420
+
+    Every token of that 22k is Claude Code's AGENT scaffolding -- built-in
+    tool schemas, the skills catalog, the agent roster, MCP servers, the
+    user's settings and hooks. The decider was ALREADY forbidden all of it:
+    make_decider's docstring says "IT GETS NO SHADOW TOOLS", the engine
+    validates its reply as text, and a tool call from it has never been a
+    reachable path. It simply paid for the schemas on every one of 758 calls
+    last month and read none of them.
+
+    So this takes nothing away from the decider. It stops buying what the
+    decider was never allowed to use, and makes that guarantee STRUCTURAL
+    rather than a convention: with `--tools ""` there is no tool to call.
+
+    `--permission-mode plan` for the same reason. It is the narrowest mode,
+    and a process that cannot act has no business inheriting the founder's
+    `bypassPermissions` -- which, through _shadow_args, it was.
+
+    DELIBERATELY NOT build_agent_args WITH FLAGS. That builder is shared by
+    every chat pane, the supervisor and every worker, and its own docstring
+    asks that existing argv stay byte-identical. A reasoning call shares none
+    of its shape: no session, no resume, no tools, no add-dir, no fallback
+    model, no per-turn opts. Two builders is the honest split.
+    """
+    return [
+        agent_bin, "-p",
+        # only what --mcp-config passes, and nothing is passed: the machine's
+        # global ~/.claude.json must not reach this process either
+        "--strict-mcp-config",
+        # no built-in tools, and no user/project/local settings -- so no
+        # plugins, no hooks, no CLAUDE.md, no skills catalog, no agents
+        "--tools", "",
+        "--setting-sources", "",
+        # IN PLACE OF Claude Code's own system prompt, not appended to it
+        "--system-prompt", system_prompt,
+        "--input-format", "stream-json",
+        "--output-format", "stream-json",
+        "--verbose", "--include-partial-messages",
+        "--permission-mode", perm_mode,
+    ]
 
 
 def build_acp_args(agent_bin, model=None, flags=("--acp", "--skip-trust"),
