@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "comment": "Adherence row 6 (brief ADHERENCE-ROW6-BRIEF.md s3.1-3.2, D-A10..D-A17): the gate rules pre.adherence_gate evaluates on every tool call. A rule applies when every field of `when` holds for the call; it is met when every `needs` entry holds and, if `needs_any` is present, at least one of its entries holds. Every unmet rule is named in one deny (D-A13). needs entries: step:NAME (ledger step done or open), artifact:KIND (a valid TURN.KIND.json), review:sealed (a sealed lane verdict, this or the previous turn, fresh), override:KEY (the key was applied from an override file that predates the session). Path categories are the D38 table as data.",
+  "path_categories": {
+    "runtime-owned": ["~/.sutra-overrides", "~/.sutra-runtime-adherence", "~/.sutra-runtime-markers", "~/.sutra-runtime-disabled", "~/.sutra-runtime/", ".sutra/turn/*/opened"],
+    "plugin-runtime": ["sutra/marketplace/plugin/hooks/", "sutra/marketplace/plugin/scripts/", "sutra/marketplace/plugin/skills/", "sutra/marketplace/plugin/commands/", "sutra/marketplace/plugin/bin/", "sutra/marketplace/plugin/runtime/"],
+    "shared-runtime": ["sutra/hooks/"],
+    "holding-impl": ["holding/hooks/", "holding/scripts/", "holding/skills/", "holding/commands/", "holding/bin/"],
+    "legacy-hard": ["holding/departments/", "holding/evolution/", "holding/FOUNDER-DIRECTIONS.md", "sutra/os/charters/"],
+    "whitelist": [".claude/", ".enforcement/", ".analytics/", "holding/checkpoints/", "holding/TODO.md", "holding/hooks/hook-log.jsonl", "holding/research/", "holding/state/", "sutra/archive/", ".sutra/turn/"]
+  },
+  "governance_categories": ["plugin-runtime", "shared-runtime", "holding-impl", "legacy-hard"],
+  "artifacts": {
+    "lens": {"hint": "{turn_id,session_id,producer:\"model\",step:\"lens\",unit(10+ chars),axes:[1+ strings],pick:[subset of axes],direction:DOWN|UP|ACROSS,ts}"},
+    "cynefin": {"hint": "{turn_id,session_id,producer:\"model\",step:\"cynefin\",unit,domain:clear|complicated|complex|chaotic,shape(20+ chars),human_gate:bool,ts}"},
+    "blueprint": {"hint": "{turn_id,session_id,producer:\"model\",step:\"blueprint\",unit,doing(10+ chars),steps:[{do(5+ chars),verify:{kind:cmd|manual,cmd(3+ chars when kind=cmd)}}](1+),output(10+ chars),verified_by:{kind,cmd},stops_if(5+ chars),ts}; at depth 3+ every step verify must be kind cmd; a verify the runtime cannot run counts as open, never done"},
+    "build_layer": {"hint": "{turn_id,session_id,producer:\"model\",step:\"build_layer\",unit,layer:L1|L2,target_path,L1: promote_to,promote_by(YYYY-MM-DD),owner,acceptance; L2: why_not_l0_kind:\"instance-only\",why_not_l0_reason(10+ chars),ts}"},
+    "placement": {"hint": "{turn_id,session_id,producer:\"model\",step:\"placement\",unit,domain_ref:dref-HEX,charter_id:C-HEX,reason(10+ chars),confidence:0..1,ts}"},
+    "depth": {"hint": "{turn_id,session_id,producer:\"model\",step:\"depth\",unit,depth:1..5 (only a raise over the rubric counts),reason(10+ chars),ts}"}
+  },
+  "rules": [
+    {"id": "R1", "name": "classify", "when": {"kind": ["mutation", "structural", "subagent"]}, "needs": ["step:classify"], "decision": "allow", "note": "runtime fact; bootstrap row when the ledger is missing"},
+    {"id": "R2", "name": "resolve", "when": {"kind": ["mutation", "structural", "subagent"]}, "needs": ["step:resolve"], "decision": "allow"},
+    {"id": "R3", "name": "depth", "when": {"kind": ["mutation", "structural", "subagent"]}, "needs": ["step:depth"], "decision": "deny", "reason": "the rubric's depth is missing from the facts file; depth.json may only raise it"},
+    {"id": "R4", "name": "placement", "when": {"kind": ["mutation"], "new_path": true, "placement_unresolved": true}, "needs": ["artifact:placement"], "decision": "deny", "reason": "a new path needs a placement: the engine found no domain, so write the placement artifact"},
+    {"id": "R5", "name": "lens-cynefin", "when": {"kind": ["mutation", "structural", "subagent"]}, "needs": ["artifact:lens", "artifact:cynefin"], "decision": "deny", "reason": "the turn's judgment artifacts"},
+    {"id": "R6", "name": "blueprint", "when": {"kind": ["mutation", "structural", "subagent"]}, "needs": ["artifact:blueprint"], "decision": "deny", "reason": "the BLUEPRINT is an artifact the runtime validates and whose verify commands it runs at Stop"},
+    {"id": "R7", "name": "build-layer-l0", "when": {"kind": ["mutation", "structural"], "path_category": ["plugin-runtime", "shared-runtime"]}, "needs": [], "decision": "allow", "note": "L0 by rule: plugin and shared runtime paths ship to the fleet"},
+    {"id": "R7b", "name": "build-layer-holding", "when": {"kind": ["mutation", "structural"], "path_category": ["holding-impl"]}, "needs": ["artifact:build_layer"], "decision": "deny", "reason": "holding-side implementation must declare L1 (with promotion fields) or L2 (instance-only, with a reason)"},
+    {"id": "R8", "name": "second-lane", "when": {"kind": ["mutation", "structural"], "depth_min": 3, "path_category": ["plugin-runtime", "shared-runtime", "holding-impl", "legacy-hard"], "lane_configured": true}, "needs": [], "needs_any": ["review:sealed", "override:CODEX_CONSULT_ACK"], "decision": "deny", "reason": "a governance path at depth 3+ needs a sealed second-lane verdict (this or the previous turn) or the audited override key"},
+    {"id": "R8w", "name": "second-lane-unconfigured", "when": {"kind": ["mutation", "structural"], "depth_min": 3, "path_category": ["plugin-runtime", "shared-runtime", "holding-impl", "legacy-hard"], "lane_configured": false}, "needs": ["review:sealed"], "decision": "warn", "reason": "no review lane is configured on this box (no DeepSeek key, no codex); the runtime cannot corroborate this edit"},
+    {"id": "R9", "name": "runtime-owned", "when": {"kind": ["any"], "runtime_owned": true}, "needs": ["never"], "decision": "deny", "reason": "the runtime's own switch, override file, key or session stamp (D-A15)"}
+  ],
+  "collapsed_steps": {
+    "comment": "Legacy PreToolUse gate registrations whose decision the runtime records to TURN.truthdiff.jsonl and drops when SUTRA_ADHERENCE_GATE_ARMED=1 for the event (brief s3.4, D-A12/D-A17). Unarmed (flag not exactly on, kill-switch, jq or pipeline missing) they decide as before.",
+    "ids": ["pre.depth-marker-pretool", "pre.blueprint-check", "pre.flow-gate.edit-write", "pre.flow-gate.task", "pre.codex-consult-gate", "pre.placement-gate.edit-write", "pre.placement-gate.bash", "pre.creation-guard", "pre.structural-move-check", "pre.build-layer-check", "pre.input-classification-gate"]
+  }
+}

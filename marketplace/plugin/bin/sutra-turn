@@ -715,6 +715,8 @@ do_run() {
   if [ -f "$PLUGIN_ROOT/runtime/lib/overrides.sh" ]; then
     . "$PLUGIN_ROOT/runtime/lib/overrides.sh" 2>/dev/null
     command -v sutra_overrides_apply >/dev/null 2>&1 && sutra_overrides_apply "$PROJECT_DIR" "$SESSION_ID"
+    # row 6: the rules gate reads which keys came from the (pre-session) file
+    export SUTRA_OVERRIDES_APPLIED="${SUTRA_OVERRIDES_APPLIED:-}"
   fi
 
   # -- step 0: kill-switch, then the jq probe ------------------------------
@@ -783,6 +785,28 @@ do_run() {
         ((.wrapper // "") | if . == "" then "-" else . end),
         ((.phase // "")   | if . == "" then "-" else . end) ]
     | @tsv' "$PIPELINE" 2>/dev/null > "$TMPROOT/steps.tsv"
+
+  # -- adherence row 6 (D-A17): arm the rules gate for THIS event only ------
+  # The legacy PreToolUse gate scripts step aside only when the runtime says
+  # it is armed: step 0 passed (we are here), jq is present, the adherence
+  # mode is exactly "on", and pre.adherence_gate is among the selected steps.
+  # Unset, "warn", "shadow", the kill-switch or a missing pipeline entry never
+  # arm - the legacy scripts then decide as before (brief s3.4, workflow P1-6).
+  SUTRA_ADHERENCE_GATE_ARMED=""
+  if [ "$EVENT" = "PreToolUse" ] && grep -q '^pre\.adherence_gate	' "$TMPROOT/steps.tsv" 2>/dev/null \
+     && [ -f "$PLUGIN_ROOT/runtime/flags.sh" ]; then
+    _armed_mode="$(. "$PLUGIN_ROOT/runtime/flags.sh" 2>/dev/null; sutra_flag_adherence 2>/dev/null; printf '%s' "${SUTRA_ADHERENCE_MODE:-off}")"
+    [ "$_armed_mode" = "on" ] && SUTRA_ADHERENCE_GATE_ARMED=1
+  fi
+  export SUTRA_ADHERENCE_GATE_ARMED
+  COLLAPSED_IDS=""
+  # a present-but-unparseable rules file never arms the collapse (the gate
+  # itself then refuses everything until it parses)
+  if [ -n "$SUTRA_ADHERENCE_GATE_ARMED" ] && [ -f "$PLUGIN_ROOT/runtime/rules/gates.json" ] \
+     && jq -e '(.rules | type) == "array" and (.rules | length) > 0' "$PLUGIN_ROOT/runtime/rules/gates.json" >/dev/null 2>&1; then
+    COLLAPSED_IDS=" $(jq -r '(.collapsed_steps.ids // []) | join(" ")' "$PLUGIN_ROOT/runtime/rules/gates.json" 2>/dev/null) "
+    sutra_ledger_note adherence_armed "rules gate armed for $EVENT; collapsed:$COLLAPSED_IDS"
+  fi
   # "-" STANDS FOR AN EMPTY wrapper / phase. `read` with IFS=<tab> treats a run
   # of tabs as ONE delimiter (tab is IFS whitespace), so an empty column in the
   # middle of the line is swallowed and every later column shifts left: an
@@ -870,6 +894,19 @@ do_run() {
     done < "$TMPROOT/post.tsv"
   fi
 
+  # -- collapse only when the rules gate actually decided (workflow row-6
+  # regress P1-4): its phase=post run is finished by now, so its rc is on
+  # disk. Timed out (124), died (127) or never ran -> nothing is dropped and
+  # the legacy gates decide this event.
+  if [ -n "${COLLAPSED_IDS:-}" ]; then
+    _ag_seq="$(awk -F'	' '$2 == "pre.adherence_gate" {print $1; exit}' "$TMPROOT/order.tsv" 2>/dev/null)"
+    _ag_rc=""; [ -n "$_ag_seq" ] && [ -f "$TMPROOT/$_ag_seq.rc" ] && read -r _ag_rc _ag_dur < "$TMPROOT/$_ag_seq.rc" 2>/dev/null
+    if [ "${_ag_rc:-}" != "0" ]; then
+      sutra_ledger_note adherence_unarmed_fallback "rules gate rc=${_ag_rc:-none} for $EVENT; legacy gates decide, nothing collapsed"
+      COLLAPSED_IDS=""
+    fi
+  fi
+
   # -- pass 2: WALK the results in REGISTRATION order ----------------------
   AC=""; PASS=""; PLAIN=""; BLOCKED=0; BERR=""
   # Under the legacy host EVERY hook's stderr reached the terminal, not only a
@@ -905,6 +942,30 @@ do_run() {
 
     sutra_ledger_step "$S_SEQ" "$S_ID" "$S_FAMILY" "$S_IMPL" "$S_SCRIPT" \
       "$S_RC" "$S_DUR" "$S_OUT" "$S_ERR"
+
+    # -- adherence row 6 collapse (D-A12): a legacy gate the rules replace
+    # still RAN (its ledger row is above); when the rules gate is armed its
+    # decision goes to the turn's truth-diff and is dropped from the emission,
+    # so the founder can compare both paths for the deletion window.
+    if [ -n "${COLLAPSED_IDS:-}" ]; then
+      case "$COLLAPSED_IDS" in
+        *" $S_ID "*)
+          _td_dec="none"; _td_reason=""
+          # ASCII only, so a cut never leaves invalid UTF-8 for jq (the legacy
+          # gates print emoji on their deny lines)
+          if [ "$S_RC" = "2" ]; then _td_dec="deny"; _td_reason="$(LC_ALL=C tr -cd ' -~\n' < "$S_ERR" 2>/dev/null | head -c 300)"
+          elif [ "$S_RC" = "124" ]; then _td_dec="timeout"
+          elif [ -s "$S_OUT" ]; then
+            _td_dec="$(jq -r '.hookSpecificOutput.permissionDecision // (if .systemMessage then "message" else "none" end)' "$S_OUT" 2>/dev/null)"
+            [ -n "$_td_dec" ] || _td_dec="text"
+            _td_reason="$(jq -r '.hookSpecificOutput.permissionDecisionReason // .systemMessage // ""' "$S_OUT" 2>/dev/null | LC_ALL=C tr -cd ' -~\n' | head -c 300)"
+          fi
+          _td_file="$PROJECT_DIR/.sutra/turn/$SESSION_ID/$TURN_ID.truthdiff.jsonl"
+          [ -d "$(dirname "$_td_file")" ] && jq -nc --arg s "$S_ID" --arg d "$_td_dec" --arg r "$_td_reason" --arg rc "$S_RC" --arg ev "$EVENT" --arg t "$TOOL_NAME" \
+            '{ts:(now|floor), source:"legacy", step:$s, event:$ev, tool:$t, rc:$rc, decision:$d, reason:$r}' >> "$_td_file" 2>/dev/null
+          continue ;;
+      esac
+    fi
 
     # stderr routing, BEFORE the timed-out continue so a step killed at 124
     # still surrenders whatever it managed to say.

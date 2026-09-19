@@ -7,6 +7,12 @@
 #   sutra-steps latest              same
 #   sutra-steps <turn-id-prefix>    that turn
 #   sutra-steps --all               every ledger of the session, newest first
+#   sutra-steps pretty              the checkbox table the Stop step prints
+#   sutra-steps statusline          one line for a status-line command: the
+#                                   steps as a glyph bar (# done, ~ gated,
+#                                   ! missing, . pending); reads the host's
+#                                   status-line JSON on stdin when no --sid
+#   sutra-steps truthdiff           legacy vs rules decisions for the turn
 #   options: --sid <sid>  --proj <dir>  --json
 #
 # LAYER=L0
@@ -21,17 +27,53 @@ ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$HERE/.." && pwd)}"
 
 PROJ="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 SID="${CLAUDE_CODE_SESSION_ID:-}"
-WHICH="latest"; AS_JSON=0; ALL=0
+WHICH="latest"; AS_JSON=0; ALL=0; MODE="table"
 while [ $# -gt 0 ]; do
   case "$1" in
     --sid) SID="${2:-}"; shift 2 ;;
     --proj) PROJ="${2:-}"; shift 2 ;;
     --json) AS_JSON=1; shift ;;
     --all) ALL=1; shift ;;
-    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+    pretty|statusline|truthdiff) MODE="$1"; shift ;;
+    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
     *) WHICH="$1"; shift ;;
   esac
 done
+
+# statusline: the host pipes its status-line JSON (session_id, cwd/workspace)
+# on stdin; walk up from cwd to the project that holds this session's ledgers.
+# Silent when there is nothing to show - a status line must never error.
+if [ "$MODE" = "statusline" ]; then
+  if [ ! -t 0 ]; then
+    _sl_in="$(cat 2>/dev/null)"
+    # the host's JSON names the session being displayed; it beats the env
+    _sl_sid="$(printf '%s' "$_sl_in" | jq -r '.session_id // empty' 2>/dev/null)"
+    [ -n "$_sl_sid" ] && SID="$_sl_sid"
+    _sl_dir="$(printf '%s' "$_sl_in" | jq -r '.workspace.project_dir // .workspace.current_dir // .cwd // empty' 2>/dev/null)"
+    if [ -n "$_sl_dir" ] && [ -n "$SID" ]; then
+      _d="$_sl_dir"
+      while [ -n "$_d" ] && [ "$_d" != "/" ]; do
+        [ -f "$_d/.sutra/turn/$SID/current" ] && { PROJ="$_d"; break; }
+        _d="$(dirname "$_d")"
+      done
+    fi
+  fi
+  [ -n "$SID" ] && [ -f "$PROJ/.sutra/turn/$SID/current" ] || exit 0
+  _sl_t="$(cat "$PROJ/.sutra/turn/$SID/current" 2>/dev/null)"
+  _sl_f="$PROJ/.sutra/turn/$SID/$_sl_t.steps.json"
+  [ -f "$_sl_f" ] || exit 0
+  jq -r '
+    def g: if . == "done" or . == "open" then "#" elif . == "gated" then "~" elif . == "missing" then "!" else "." end;
+    ((.steps // []) | map(.status | g) | join("")) as $bar
+    | ((.steps // []) | map(select(.status == "done" or .status == "open")) | length) as $done
+    | ((.mutations // []) | map(select(.decision == "deny")) | length) as $ref
+    | ((.steps // []) | map(select(.status == "pending" or .status == "missing")) | (.[0].id // "")) as $next
+    | "sutra \((.turn_id // "") | tostring | .[0:8]) [\($bar)] \($done)/\((.steps // []) | length)"
+      + (if $ref > 0 then " refused \($ref)" else "" end)
+      + (if .closed != null then " closed" elif $next != "" then " next:\($next)" else "" end)
+  ' "$_sl_f" 2>/dev/null
+  exit 0
+fi
 
 if [ -z "$SID" ]; then
   SID="$(ls -t "$PROJ"/.sutra/turn/*/*.steps.json 2>/dev/null | head -1 | sed -E 's|.*/\.sutra/turn/([^/]+)/.*|\1|')"
@@ -52,6 +94,19 @@ printf '%s\n' "$FILES" | while IFS= read -r f; do   # one path per line: spaces 
   [ -n "$f" ] || continue
   if [ "$AS_JSON" = "1" ]; then
     cat "$f"
+  elif [ "$MODE" = "pretty" ]; then
+    sutra_steps_render_pretty "$f"
+  elif [ "$MODE" = "truthdiff" ]; then
+    _td="${f%.steps.json}.truthdiff.jsonl"
+    if [ -f "$_td" ]; then
+      echo "TRUTH-DIFF turn $(basename "$f" .steps.json | head -c 8): legacy gates (recorded, dropped) vs the rules gate"
+      jq -r '"  \(.source | ascii_upcase | .[0:6] | . + (" " * (6 - length)))  \(.step | . + (" " * (30 - length)))  \(.decision | . + (" " * (8 - length)))  \(.reason // "" | gsub("\n"; " ") | .[0:80])"' "$_td" 2>/dev/null
+      _td_l="$(jq -r 'select(.source == "legacy" and .decision == "deny") | .step' "$_td" 2>/dev/null | sort -u | tr '\n' ' ')"
+      _td_r="$(jq -r 'select(.source == "rules" and .decision == "deny") | .step' "$_td" 2>/dev/null | sort -u | tr '\n' ' ')"
+      echo "  legacy denied: ${_td_l:-none}   rules denied: ${_td_r:-none}"
+    else
+      echo "no truth-diff for this turn (rules gate not armed, or no collapsed gate ran)"
+    fi
   else
     sutra_steps_render "$f"
     jq -r 'if ((.mutations // []) | length) > 0 then (.mutations[] | "  \((.decision // "?") | ascii_upcase)  \(.tool // "?")  \(.target // "")\(if ((.missing // []) | length) > 0 then "  missing " + (.missing | join(",")) else "" end)") else empty end' "$f" 2>/dev/null

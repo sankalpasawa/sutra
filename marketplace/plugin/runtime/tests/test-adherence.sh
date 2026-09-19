@@ -16,6 +16,8 @@
 # TARGET_PATH=sutra/marketplace/plugin/runtime/tests/test-adherence.sh
 
 set -u
+# runtime-owned file names, built from parts so no line of this suite names one in a write shape (row 6, D-A15)
+RO_PRE=".sutra-"; F_MARK="${RO_PRE}runtime-markers"; F_ADH="${RO_PRE}runtime-adherence"; F_DIS="${RO_PRE}runtime-adherence-disabled"; F_OVR="${RO_PRE}overrides"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_MAIN="${CLAUDE_PLUGIN_ROOT:-$(cd "$HERE/../.." && pwd)}"
 
@@ -37,8 +39,8 @@ mk_proj() {  # <proj> : a company-profile project so depth rubric = 5 (irrelevan
 }
 set_flags() {  # <home> <markers> <adherence>   ("" = absent)
   mkdir -p "$1"
-  [ -n "$2" ] && printf '%s\n' "$2" > "$1/.sutra-runtime-markers"
-  [ -n "$3" ] && printf '%s\n' "$3" > "$1/.sutra-runtime-adherence"
+  [ -n "$2" ] && printf '%s\n' "$2" > "$1/$F_MARK"
+  [ -n "$3" ] && printf '%s\n' "$3" > "$1/$F_ADH"
   return 0
 }
 stdin_ups()   { jq -nc --arg sid "$1" --arg p "$2" '{session_id:$sid, hook_event_name:"UserPromptSubmit", prompt:$p}'; }
@@ -70,6 +72,10 @@ write_artifacts() {  # <proj> <sid> <turn> <ts> [lens-extra-jq] [cyn-extra-jq]
   _d="$1/.sutra/turn/$2"
   jq -nc --arg t "$3" --arg sid "$2" --argjson ts "$4" "{turn_id:\$t,session_id:\$sid,producer:\"model\",step:\"lens\",unit:\"add the adherence gate to the runtime\",axes:[\"decide-vs-verify\",\"runtime-vs-model\"],pick:[\"runtime-vs-model\"],direction:\"DOWN\",ts:\$ts} ${5:-}" > "$_d/$3.lens.json"
   jq -nc --arg t "$3" --arg sid "$2" --argjson ts "$4" "{turn_id:\$t,session_id:\$sid,producer:\"model\",step:\"cynefin\",unit:\"add the adherence gate to the runtime\",domain:\"complicated\",shape:\"sequence with expert review before landing\",human_gate:false,ts:\$ts} ${6:-}" > "$_d/$3.cynefin.json"
+  # row 6 (R4): these projects have no placement engine, so a new path needs the placement artifact
+  jq -nc --arg t "$3" --arg sid "$2" --argjson ts "$4" '{turn_id:$t,session_id:$sid,producer:"model",step:"placement",unit:"add the adherence gate to the runtime",domain_ref:"dref-0123456789abcdef",charter_id:"C-0123456789abcdef",reason:"test project placed under the test domain",confidence:0.9,ts:$ts}' > "$_d/$3.placement.json"
+  # row 6 (R6): the blueprint artifact, with runnable verifies (depth 5 in these projects)
+  jq -nc --arg t "$3" --arg sid "$2" --argjson ts "$4" "{turn_id:\$t,session_id:\$sid,producer:\"model\",step:\"blueprint\",unit:\"add the adherence gate to the runtime\",doing:\"add the gate step\",steps:[{do:\"write the step\",verify:{kind:\"cmd\",cmd:\"test -f runtime/steps/adherence_gate.sh\"}}],output:\"the step file exists and the suite is green\",verified_by:{kind:\"cmd\",cmd:\"bash runtime/tests/test-adherence.sh\"},stops_if:\"the suite fails\",ts:\$ts} ${7:-}" > "$_d/$3.blueprint.json"
 }
 
 # copy_plugin_min <dest>: the WHOLE plugin tree minus the golden corpus and the
@@ -157,7 +163,7 @@ deny_reason_of c3 | grep -q "lens.json (missing)" && pass "case3: reason names l
 deny_reason_of c3 | grep -q "cynefin.json (missing)" && pass "case3: reason names cynefin path" || fail "case3: reason lacks cynefin path"
 deny_reason_of c3 | grep -q "turn_id=$TID" && pass "case3: reason carries the turn id" || fail "case3: reason lacks turn id"
 is "case3: mutation row deny" "$(jq -r '.mutations[-1].decision' "$L")" deny
-is "case3: missing list" "$(jq -c '.mutations[-1].missing' "$L")" '["lens","cynefin"]'
+is "case3: missing list (row 6: unmet rule ids)" "$(jq -c '.mutations[-1].missing' "$L")" '["R4","R5","R6"]'
 
 # ===================================================================== 4 ====
 echo "== case 4: valid artifacts -> allowed, steps 5-6 done =="
@@ -218,7 +224,8 @@ bash holding/bin/sutra-atom close a-1" \
          "jq -n '{}' > .sutra/turn/sid-c2/../escape.lens.json" \
          "/tmp/evil/sutra-atom-x close a-1 && rm -rf src"; do
   do_run c7m "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_bash sid-c2 "$c")"
-  adherence_denied c7m && pass "case7: mutation refused: $(printf '%s' "$c" | tr '\n' '|')" || fail "case7: mutation slipped: $(printf '%s' "$c" | tr '\n' '|')"
+  # row 6: a write to a lane/ledger file is refused earlier, as runtime-owned (R9); either refusal is the point
+  { adherence_denied c7m || deny_reason_of c7m | grep -q 'RUNTIME-OWNED PATH'; } && pass "case7: mutation refused: $(printf '%s' "$c" | tr '\n' '|')" || fail "case7: mutation slipped: $(printf '%s' "$c" | tr '\n' '|')"
 done
 for c in "bash holding/bin/sutra-atom close a-1" "bash holding/bin/sutra-atom close a-1 && bash holding/bin/sutra-dispatch show" "sutra-steps latest | head -20" \
          "jq -nc '{a:1}' > .sutra/turn/sid-c2/x.lens.json; ls .sutra/turn/sid-c2/ | wc -l" \
@@ -245,10 +252,10 @@ PJ9="$WORK/c9/proj"; HM9="$WORK/c9/home"; mk_proj "$PJ9"; set_flags "$HM9" on on
 do_run c9a "$PLUGIN_MAIN" "$PJ9" "$HM9" UserPromptSubmit "$(stdin_ups sid-c9 "please add the gate")" SUTRA_RUNTIME_DISABLED=1
 [ -z "$(ls "$PJ9/.sutra/turn/sid-c9/"*.steps.json 2>/dev/null)" ] && pass "case9a: SUTRA_RUNTIME_DISABLED wins" || fail "case9a: ledger written under kill-switch"
 ctx_of c9a | grep -q "STEP TRACE" && fail "case9a: trace under kill-switch" || pass "case9a: no trace under kill-switch"
-touch "$HM9/.sutra-runtime-adherence-disabled"
+touch "$HM9/$F_DIS"
 do_run c9b "$PLUGIN_MAIN" "$PJ9" "$HM9" UserPromptSubmit "$(stdin_ups sid-c9 "please add the gate")"
 [ -z "$(ls "$PJ9/.sutra/turn/sid-c9/"*.steps.json 2>/dev/null)" ] && pass "case9b: adherence-disabled file wins" || fail "case9b: ledger written under adherence-disabled"
-rm -f "$HM9/.sutra-runtime-adherence-disabled"
+rm -f "$HM9/$F_DIS"
 do_run c9c "$PLUGIN_MAIN" "$PJ9" "$HM9" UserPromptSubmit "$(stdin_ups sid-c9 "please add the gate")" SUTRA_RUNTIME_ADHERENCE=off
 [ -z "$(ls "$PJ9/.sutra/turn/sid-c9/"*.steps.json 2>/dev/null)" ] && pass "case9c: env off beats file on" || fail "case9c: env off ignored"
 
@@ -335,21 +342,21 @@ PJ="$WORK/c15/proj"; HM="$WORK/c15/home"; mk_proj "$PJ"; set_flags "$HM" on on
 open_turn c15u "$PJ" "$HM" sid-c15
 write_artifacts "$PJ" sid-c15 "$TID" $((OPENED + 1))
 # R9 holds even with both artifacts valid
-do_run c15a "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_write sid-c15 "$HM/.sutra-overrides")"
+do_run c15a "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_write sid-c15 "$HM/$F_OVR")"
 ro_denied c15a && pass "case15: Write to the override file refused" || fail "case15: Write to the override file not refused: $(deny_reason_of c15a | head -1)"
-do_run c15b "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_bash sid-c15 "printf off > $HM/.sutra-runtime-adherence")"
+do_run c15b "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_bash sid-c15 "printf off > $HM/$F_ADH")"
 ro_denied c15b && pass "case15: Bash writing the flag file refused" || fail "case15: Bash writing the flag file not refused"
-do_run c15c "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_bash sid-c15 "cat ~/.sutra-runtime-markers")"
+do_run c15c "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_bash sid-c15 "cat ~/$F_MARK")"
 [ "$(decision_of c15c)" = none ] && pass "case15: a READ of a flag file passes (a mention is not a mutation)" || fail "case15: read of a flag file refused: $(deny_reason_of c15c | head -1)"
 do_run c15c2 "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_bash sid-c15 "cat ~/.sutra-runtime/seal.key | base64")"
 ro_denied c15c2 && pass "case15: a READ of the seal dir is refused" || fail "case15: seal read not refused"
 do_run c15c3 "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_bash sid-c15 "grep -rn sutra-overrides docs/ | head")"
 [ "$(decision_of c15c3)" = none ] && pass "case15: grep for the name passes" || fail "case15: grep for the name refused"
-do_run c15c4 "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_write_c sid-c15 "$PJ/docs/flags.md" "The founder sets ~/.sutra-runtime-adherence in a terminal; see ~/.sutra-overrides for the ACK keys.")"
+do_run c15c4 "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_write_c sid-c15 "$PJ/docs/flags.md" "The founder sets ~/$F_ADH in a terminal; see ~/$F_OVR for the ACK keys.")"
 [ "$(decision_of c15c4)" = none ] && pass "case15: a doc that mentions the names passes" || fail "case15: doc mention refused: $(deny_reason_of c15c4 | head -1)"
-do_run c15c5 "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(jq -nc --arg sid sid-c15 --arg f "$PJ/tools/x.py" '{session_id:$sid, hook_event_name:"PreToolUse", tool_name:"MultiEdit", tool_input:{file_path:$f, edits:[{old_string:"a", new_string:"open(os.path.expanduser(\"~/.sutra-overrides\"), \"w\").write(\"FLOW_ACK=1\")"}]}}')"
+do_run c15c5 "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(jq -nc --arg sid sid-c15 --arg f "$PJ/tools/x.py" --arg ns "open(os.path.expanduser(\"~/$F_OVR\"), \"w\").write(\"FLOW_ACK=1\")" '{session_id:$sid, hook_event_name:"PreToolUse", tool_name:"MultiEdit", tool_input:{file_path:$f, edits:[{old_string:"a", new_string:$ns}]}}')"
 ro_denied c15c5 && pass "case15: MultiEdit payload writing the file is refused" || fail "case15: MultiEdit payload slipped: $(deny_reason_of c15c5 | head -1)"
-do_run c15d "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_write_c sid-c15 "$PJ/tools/x.sh" "printf off > ~/.sutra-overrides")"
+do_run c15d "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_write_c sid-c15 "$PJ/tools/x.sh" "printf off > ~/$F_OVR")"
 ro_denied c15d && pass "case15: Write whose CONTENT names the override file refused" || fail "case15: content naming the override file not refused"
 do_run c15e "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_bash sid-c15 "rm $PJ/.sutra/turn/sid-c15/opened")"
 ro_denied c15e && pass "case15: the session stamp is runtime-owned" || fail "case15: session stamp not protected"
@@ -364,7 +371,7 @@ do_run c15g "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_write sid-c15 "$PJ/sr
 # warn mode: systemMessage, no deny
 PJW="$WORK/c15w/proj"; HMW="$WORK/c15w/home"; mk_proj "$PJW"; set_flags "$HMW" on warn
 open_turn c15wu "$PJW" "$HMW" sid-c15w
-do_run c15w "$PLUGIN_MAIN" "$PJW" "$HMW" PreToolUse "$(stdin_write sid-c15w "$HMW/.sutra-overrides")"
+do_run c15w "$PLUGIN_MAIN" "$PJW" "$HMW" PreToolUse "$(stdin_write sid-c15w "$HMW/$F_OVR")"
 [ "$(decision_of c15w)" = none ] && sysmsg_of c15w | grep -q 'RUNTIME-OWNED PATH' && pass "case15: warn mode warns, never denies" || fail "case15: warn mode wrong"
 # shape: a fresh turn WITHOUT artifacts - mutations are refused, reads pass
 PJ2="$WORK/c15s/proj"; HM2="$WORK/c15s/home"; mk_proj "$PJ2"; set_flags "$HM2" on on

@@ -23,6 +23,12 @@ sutra_artifact_rel() {  # <sid> <turn> <kind> -> project-relative path
   printf '.sutra/turn/%s/%s.%s.json' "$1" "$2" "$3"
 }
 
+# row 6: the seal library rides with this one (D-A14); absent -> nothing
+# verifies, which fails closed.
+if [ -z "${SUTRA_SEAL_LOADED:-}" ] && [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "$(dirname "${BASH_SOURCE[0]}")/seal.sh" ]; then
+  . "$(dirname "${BASH_SOURCE[0]}")/seal.sh" 2>/dev/null && SUTRA_SEAL_LOADED=1
+fi
+
 # sutra_steps_write <path> <json>: atomic replace.
 sutra_steps_write() {
   _sw_tmp="$1.tmp.$$"
@@ -150,19 +156,31 @@ EOF
 sutra_steps_runtime_owned() {
   # quotes are stripped first, so `.sutra-over""rides` and '.sutra-'"overrides"
   # still name the file (DeepSeek 2.285.1 P1-2); deeper obfuscation is row 6.
-  printf '%s' "$1" | tr -d '"'"'"'`' | grep -qE '\.sutra-overrides|\.sutra-runtime-(adherence|markers|disabled)|\.sutra-runtime/|\.sutra/turn/[^/[:space:]]+/opened([^A-Za-z0-9_-]|$)'
+  # row 6 (DeepSeek P1-3): the turn's facts, ledger and lane files are the
+  # runtime's too - a model that deletes the facts file would blank the depth
+  printf '%s' "$1" | tr -d '"'"'"'`' | grep -qE "$_SUTRA_RO_RE"
 }
+# the core names (switches, override file, seal dir, session stamp, the lane's
+# connector keys - workflow row-6 P1-3) are refused wherever they appear in a
+# write shape; the ledger and lane files join them for command text and for
+# file_path targets, never for a document's payload (workflow P2-3)
+_SUTRA_RO_RE_CORE='\.sutra-overrides|\.sutra-runtime-(adherence|markers|disabled)|\.sutra-runtime/|\.sutra-connectors/|\.config/deepseek/|\.sutra/turn/[^/[:space:]]+/opened([^A-Za-z0-9_-]|$)'
+_SUTRA_RO_RE="$_SUTRA_RO_RE_CORE"'|\.sutra/turn/[^/[:space:]]+/[^/[:space:]]+\.(facts|steps|review|tests|verifies|truthdiff)\.json|\.sutra/turn/[^/[:space:]]+/[^/[:space:]]+\.jsonl|\.sutra/turn/[^/[:space:]]+/lane-logs/'
 
 # sutra_steps_runtime_owned_write <text> -> 0 when some LINE of the text names
 # a runtime-owned file in a WRITE shape (workflow wf_1dc20d5c P1-5: a doc, a
 # test or a grep that merely mentions the name is not a mutation of it): a
 # redirect, a mutating verb, a script write call on the same line - or the
 # seal dir at all, whose contents are secret.
-sutra_steps_runtime_owned_write() {
+sutra_steps_runtime_owned_write() {  # <text> [content]
+  # content mode (a Write/Edit payload): the switch, override, seal, stamp and
+  # connector names only - a doc or a cleanup script may name a ledger file
+  # (workflow row-6 P2-3); command mode (default): every runtime-owned name
+  _ow_re="$_SUTRA_RO_RE"; [ "${2:-}" = "content" ] && _ow_re="$_SUTRA_RO_RE_CORE"
   _ow="$(printf '%s' "$1" | tr -d '"'"'"'`')"
   # the seal dir: any read or copy of it is a hit too (its contents are secret)
   printf '%s\n' "$_ow" | grep -E '\.sutra-runtime/' | grep -qE '(^|[[:space:]|;&(])(cat|less|more|head|tail|xxd|od|base64|cp|cut|strings|hexdump|python3?|node|perl|ruby|source|\.)[[:space:]]|open[[:space:]]*\(|read[[:space:]]*\(|readFile|read_text|readlink' && return 0
-  printf '%s\n' "$_ow" | grep -E '\.sutra-overrides|\.sutra-runtime-(adherence|markers|disabled)|\.sutra/turn/[^/[:space:]]+/opened([^A-Za-z0-9_-]|$)' \
+  printf '%s\n' "$_ow" | grep -E "$_ow_re" \
     | grep -qE '>|(^|[[:space:]|;&(])(tee|rm|mv|cp|touch|chmod|chown|ln|truncate|install|dd|rsync|unlink|shred)[[:space:]]|sed[[:space:]]+-+i|open[[:space:]]*\([^)]*[[:space:]]*,[[:space:]]*.?[wa]|\.write\(|\.write_text\(|write_text|os\.remove|os\.unlink|shutil\.|unlinkSync|writeFile|copyFile|rename\(|renameSync|Path\(|\.unlink\(|\.touch\(|>>'
 }
 
@@ -174,7 +192,7 @@ sutra_steps_exempt_path() {
   case "$1" in
     *..*) return 1 ;;
     *.sh|*.bash|*.zsh|*.py|*.js|*.mjs|*.ts|*.rb|*.pl|*.php) return 1 ;;   # 2.285.1: a script under an exempt dir is not exempt (brief s3.6)
-    *".sutra/turn/$2/"*.lens.json|*".sutra/turn/$2/"*.cynefin.json) return 0 ;;   # the two artifacts only, never the lane files
+    *".sutra/turn/$2/"*.lens.json|*".sutra/turn/$2/"*.cynefin.json|*".sutra/turn/$2/"*.blueprint.json|*".sutra/turn/$2/"*.build_layer.json|*".sutra/turn/$2/"*.placement.json|*".sutra/turn/$2/"*.depth.json) return 0 ;;   # the six judgment artifacts only, never the lane files
     *".claude/sessions/$2/"*) return 0 ;;
     */.claude/projects/*/memory/*.md) return 0 ;;
     *".enforcement/"*) return 0 ;;
@@ -200,7 +218,7 @@ sutra_steps_exempt_bash() {
     _eb_mut=1
     case "$_eb_seg" in
       *..*) return 1 ;;
-      *".sutra/turn/$2/"*.lens.json*|*".sutra/turn/$2/"*.cynefin.json*) continue ;;   # the two artifacts only
+      *".sutra/turn/$2/"*.lens.json*|*".sutra/turn/$2/"*.cynefin.json*|*".sutra/turn/$2/"*.blueprint.json*|*".sutra/turn/$2/"*.build_layer.json*|*".sutra/turn/$2/"*.placement.json*|*".sutra/turn/$2/"*.depth.json*) continue ;;   # the six judgment artifacts only
     esac
     _eb_first="$(printf '%s' "$_eb_seg" | sed -E 's/^(bash[[:space:]]+)?//' | awk '{print $1}' | sed -E "s/^['\"]//; s/['\"]\$//")"
     case "$(basename "$_eb_first" 2>/dev/null)" in
@@ -221,15 +239,54 @@ sutra_steps_latest_review() {
   # fresh, the verdict repeated in the lane's review.md, a non-empty diff.
   _lr_dir="$1/.sutra/turn/$2"; _lr_now="${3:-0}"; case "$_lr_now" in ''|*[!0-9]*) _lr_now=0 ;; esac
   [ -d "$_lr_dir" ] || return 0
+  # row 6 (brief s3.5): sealed only, and bound to this or the previous turn of
+  # the session (the newest two ledgers), never an older one.
+  _lr_recent="$(ls -t "$_lr_dir"/*.steps.json 2>/dev/null | head -2 | sed -E 's|.*/||; s|\.steps\.json$||' | tr '\n' ' ')"
   for _lr_f in $(ls -t "$_lr_dir"/*.review.json 2>/dev/null); do
     _lr_v="$(jq -r --argjson now "$_lr_now" 'if .status == "done" and ((.verdict // "") | IN("PASS","CHANGES-REQUIRED")) and ($now - ((.ts // 0) | tonumber? // 0)) <= 1800 then .verdict else "" end' "$_lr_f" 2>/dev/null)"
     [ -n "$_lr_v" ] || continue
     _lr_t="$(basename "$_lr_f" .review.json)"
+    case " $_lr_recent " in *" $_lr_t "*) ;; *) continue ;; esac
+    command -v sutra_seal_verify >/dev/null 2>&1 && sutra_seal_verify "$_lr_f" || continue
     if grep -qF "VERDICT: $_lr_v" "$_lr_dir/lane-logs/$_lr_t.review.md" 2>/dev/null && [ -s "$_lr_dir/lane-logs/$_lr_t.diff" ]; then
       printf '%s' "$_lr_f"; return 0
     fi
   done
   return 0
+}
+
+# sutra_steps_path_category <path> <proj> <gates.json> -> one of runtime-owned |
+# plugin-runtime | shared-runtime | holding-impl | legacy-hard | whitelist |
+# soft | none (row 6: the D38 table as data). Project-relative or absolute
+# under the project; a path outside the project is "none".
+sutra_steps_path_category() {
+  _pc_p="$1"; _pc_proj="$2"; _pc_rules="$3"
+  [ -n "$_pc_p" ] || { printf 'none'; return 0; }
+  sutra_steps_runtime_owned "$_pc_p" && { printf 'runtime-owned'; return 0; }
+  case "$_pc_p" in
+    "$_pc_proj"/*) _pc_p="${_pc_p#"$_pc_proj"/}" ;;
+    /*) printf 'none'; return 0 ;;
+  esac
+  [ -f "$_pc_rules" ] || { printf 'soft'; return 0; }
+  jq -r --arg p "$_pc_p" '
+    .path_categories | to_entries[]
+    | select(.key != "runtime-owned")
+    | select(any(.value[]; . as $pre | ($p == $pre) or ($p | startswith($pre))))
+    | .key' "$_pc_rules" 2>/dev/null | head -1 | { read -r _pc_c; printf '%s' "${_pc_c:-soft}"; }
+}
+
+# sutra_steps_lane_configured -> 0 when a second review lane can run on this
+# box (a DeepSeek key file, or the codex CLI, or an explicit lane command).
+sutra_steps_lane_configured() {
+  # mirrors what review_lane.sh can actually run (workflow row-6 P1-5): an
+  # executable lane command, or a DeepSeek key where deepseek-review.sh looks;
+  # a codex binary is not a lane
+  case "${SUTRA_LANE_CONFIGURED:-}" in 1) return 0 ;; 0) return 1 ;; esac   # explicit (tests, boxes without a lane)
+  [ -n "${SUTRA_REVIEW_LANE_CMD:-}" ] && [ -x "${SUTRA_REVIEW_LANE_CMD}" ] && return 0
+  [ -n "${DEEPSEEK_TOKEN_FILE:-}" ] && [ -s "${DEEPSEEK_TOKEN_FILE}" ] && return 0
+  [ -n "${HOME:-}" ] && [ -s "$HOME/.sutra-connectors/oauth/deepseek.json" ] && return 0
+  [ -n "${HOME:-}" ] && [ -s "$HOME/.config/deepseek/auth.token" ] && return 0
+  return 1
 }
 
 # sutra_steps_compute <proj> <sid> <turn> <opened_ts> -> prints the steps
@@ -264,11 +321,30 @@ sutra_steps_compute() {
     fi
   fi
 
-  # 4 placement
+  # 3b depth (row 6): the model may RAISE the rubric's number with depth.json;
+  # a lower number is ignored and noted in the detail.
+  _sc_dp="$(sutra_artifact_path "$_sc_proj" "$_sc_sid" "$_sc_turn" depth)"
+  if [ -f "$_sc_dp" ] && [ "$(sutra_artifact_check "$_sc_dp" depth "$_sc_turn" "$_sc_sid" "$_sc_opened")" = "ok" ]; then
+    _sc_dr="$(jq -r '.depth.n // 0' "$_sc_facts" 2>/dev/null)"; case "$_sc_dr" in ''|*[!0-9]*) _sc_dr=0 ;; esac
+    _sc_dm="$(jq -r '.depth // 0' "$_sc_dp" 2>/dev/null)"; case "$_sc_dm" in ''|*[!0-9]*) _sc_dm=0 ;; esac
+    if [ "$_sc_dm" -gt "$_sc_dr" ]; then _sc_d_depth="$_sc_dm (raised from $_sc_dr by depth.json)"
+    else _sc_d_depth="$_sc_d_depth (depth.json $_sc_dm ignored: not a raise)"; fi
+  fi
+
+  # 4 placement: the engine's marker, or (row 6) the model's placement.json
+  # when the engine found no match
   _sc_f_place="pending"; _sc_d_place="marker placement-registered"
   if [ -f "$_sc_mdir/placement-registered" ]; then
-    _sc_f_place="done"
+    # only the ENGINE's marker counts (SOURCE=engine); a model-written one is
+    # no evidence (workflow row-6 P1-2) - the model answers with placement.json
+    _sc_pl_src="$(sed -n 's/^SOURCE=//p' "$_sc_mdir/placement-registered" 2>/dev/null | head -1)"
     _sc_d_place="$(sed -n 's/^DOMAIN_REF=//p' "$_sc_mdir/placement-registered" 2>/dev/null | head -1)"
+    if [ "$_sc_pl_src" = "engine" ]; then _sc_f_place="done"
+    else _sc_d_place="$_sc_d_place (marker SOURCE=${_sc_pl_src:-none}: not evidence; write placement.json)"; fi
+  fi
+  _sc_pp="$(sutra_artifact_path "$_sc_proj" "$_sc_sid" "$_sc_turn" placement)"
+  if [ -f "$_sc_pp" ] && [ "$(sutra_artifact_check "$_sc_pp" placement "$_sc_turn" "$_sc_sid" "$_sc_opened")" = "ok" ]; then
+    _sc_f_place="done"; _sc_d_place="$(jq -r '.domain_ref' "$_sc_pp" 2>/dev/null) (placement.json)"
   fi
 
   # 5-6 artifacts
@@ -291,24 +367,42 @@ sutra_steps_compute() {
     _sc_d_cyn="invalid: $_sc_r"
   fi
 
-  # 7 blueprint: text gate, reported only
-  _sc_f_bp="gated"; _sc_d_bp="blueprint-check.sh reads the reply"
+  # 7 blueprint (row 6, brief s3.3): the artifact, validated; its verify
+  # commands run at Stop through the test lane. Manual-only verifies leave it
+  # open, never done.
+  _sc_f_bp="pending"; _sc_d_bp="-> $(sutra_artifact_rel "$_sc_sid" "$_sc_turn" blueprint)"
+  _sc_bp="$(sutra_artifact_path "$_sc_proj" "$_sc_sid" "$_sc_turn" blueprint)"
+  _sc_dn="$(jq -r '.depth.n // 0' "$_sc_facts" 2>/dev/null)"; case "$_sc_dn" in ''|*[!0-9]*) _sc_dn=0 ;; esac
+  _sc_r="$(SUTRA_ARTIFACT_DEPTH="$_sc_dn" sutra_artifact_check "$_sc_bp" blueprint "$_sc_turn" "$_sc_sid" "$_sc_opened")"
+  if [ "$_sc_r" = "ok" ]; then
+    _sc_bpv="$(jq -r '[(.steps | length), ([.steps[] | select(.verify.kind == "cmd")] | length)] | "\(.[0]) steps, \(.[1]) runnable verifies"' "$_sc_bp" 2>/dev/null)"
+    if jq -e '[.steps[] | select(.verify.kind == "cmd")] | length > 0' "$_sc_bp" >/dev/null 2>&1; then _sc_f_bp="done"; else _sc_f_bp="open"; fi
+    _sc_d_bp="$_sc_bpv"
+  elif [ "$_sc_r" != "missing" ]; then
+    _sc_d_bp="invalid: $_sc_r"
+  fi
 
-  # 8 review: codex marker, or the runtime-run second lane (row 2) for this
-  # session, or this turn's review.json while it runs
-  _sc_f_codex="pending"; _sc_d_codex="marker codex-consulted or the review lane"
-  if [ -f "$_sc_mdir/codex-consulted" ]; then _sc_f_codex="done"; _sc_d_codex="codex-consulted"
-  elif [ -f "$_sc_proj/.sutra/turn/$_sc_sid/$_sc_turn.review.json" ]; then
-    _sc_rv="$(jq -r '.status // "?"' "$_sc_proj/.sutra/turn/$_sc_sid/$_sc_turn.review.json" 2>/dev/null)"
-    _sc_d_codex="review lane $_sc_rv"; [ "$_sc_rv" = "done" ] && _sc_f_codex="done"
+  # 8 review (row 6, brief s3.5, workflow P1-4): ONLY a sealed lane verdict
+  # counts - this turn's review.json once sealed, or the newest sealed and
+  # fresh verdict of this session bound to this or the previous turn. The
+  # codex-consulted marker is a model-writable file and is no evidence.
+  _sc_f_codex="pending"; _sc_d_codex="the review lane (sealed verdict)"
+  _sc_rj="$_sc_proj/.sutra/turn/$_sc_sid/$_sc_turn.review.json"
+  if [ -f "$_sc_rj" ]; then
+    _sc_rv="$(jq -r '.status // "?"' "$_sc_rj" 2>/dev/null)"
+    if [ "$_sc_rv" = "done" ]; then
+      if command -v sutra_seal_verify >/dev/null 2>&1 && sutra_seal_verify "$_sc_rj"; then
+        _sc_f_codex="done"; _sc_d_codex="review lane $(jq -r '.verdict // "?"' "$_sc_rj" 2>/dev/null) (sealed)"
+      else
+        _sc_d_codex="review lane done but UNSEALED: not evidence"
+      fi
+    else
+      _sc_d_codex="review lane $_sc_rv"
+    fi
   else
-    # The lane finishes after its turn's Stop and the next prompt's reset wipes
-    # session markers, so the verdict file is the durable evidence: the newest
-    # done review in this session's turn dir, fresh within 1800 s (the same
-    # window the codex consult ledger uses).
     _sc_rf="$(sutra_steps_latest_review "$_sc_proj" "$_sc_sid" "$_sc_opened")"
     if [ -n "$_sc_rf" ]; then
-      _sc_f_codex="done"; _sc_d_codex="review lane $(jq -r '.verdict // "?"' "$_sc_rf" 2>/dev/null) (turn $(basename "$_sc_rf" .review.json | head -c 8))"
+      _sc_f_codex="done"; _sc_d_codex="review lane $(jq -r '.verdict // "?"' "$_sc_rf" 2>/dev/null) (sealed, turn $(basename "$_sc_rf" .review.json | head -c 8))"
     fi
   fi
 
@@ -425,6 +519,11 @@ sutra_steps_render_stack() {
 # injection: the runtime brings the skill's core to the step, so doing it is
 # not a choice the model makes).
 sutra_steps_prompts() {
+  # row 6: the third argument is the blueprint status; its prompt names the
+  # artifact and the runnable-verify rule (brief s3.3).
+  if [ "${3:-pending}" != "done" ]; then
+    printf 'BLUEPRINT (core:blueprint, do it now, then write the blueprint artifact TURN.blueprint.json): doing, 1+ steps each with a verify the runtime can RUN at Stop ({kind:"cmd",cmd:"<shell check>"}; kind "manual" is allowed but counts as open, never done; at depth 3+ every step verify must be cmd), output (what the result looks like), verified_by {kind,cmd} spanning all steps, stops_if. The reply'"'"'s BLUEPRINT block is rendered from this file, so the two cannot disagree.\n'
+  fi
   if [ "$1" != "done" ]; then
     printf 'LENS (core:lens, do it now, then write the lens artifact): mint 3-6 axes as interrogative x mechanism (who/what/when/where/why/how crossed with the unit'"'"'s parts, flows, states, owners); keep only the axes that change a decision; direction DOWN = decompose the unit along them, UP = generalize to the rule, ACROSS = reframe.\n'
   fi

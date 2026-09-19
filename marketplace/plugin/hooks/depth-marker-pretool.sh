@@ -102,7 +102,7 @@ if [ -n "$_STDIN_PAYLOAD" ] && command -v jq >/dev/null 2>&1; then
     # adherence artifacts (row 1.1), with the traversal guard the codex gate has
     case "$_REL" in
       *..*) : ;;
-      .sutra/turn/*/*.lens.json|.sutra/turn/*/*.cynefin.json) exit 0 ;;
+      .sutra/turn/*/*.lens.json|.sutra/turn/*/*.cynefin.json|.sutra/turn/*/*.blueprint.json|.sutra/turn/*/*.build_layer.json|.sutra/turn/*/*.placement.json|.sutra/turn/*/*.depth.json) exit 0 ;;
     esac
   fi
 fi

@@ -1519,11 +1519,16 @@
     "ledger": ".sutra/turn/<sid>/<turn>.steps.json",
     "artifacts": {
       "lens": ".sutra/turn/<sid>/<turn>.lens.json",
-      "cynefin": ".sutra/turn/<sid>/<turn>.cynefin.json"
+      "cynefin": ".sutra/turn/<sid>/<turn>.cynefin.json",
+      "blueprint": ".sutra/turn/<sid>/<turn>.blueprint.json",
+      "build_layer": ".sutra/turn/<sid>/<turn>.build_layer.json",
+      "placement": ".sutra/turn/<sid>/<turn>.placement.json",
+      "depth": ".sutra/turn/<sid>/<turn>.depth.json"
     },
     "refuse_on": [
       "lens",
-      "cynefin"
+      "cynefin",
+      "blueprint"
     ],
     "exempt_paths": [
       ".sutra/turn/<sid>/",
@@ -1549,6 +1554,9 @@
       "review"
     ],
     "overrides_file": "~/.sutra-overrides",
-    "render": "steps_ledger emits the RENDERED STACK from facts plus the lens/cynefin prompts while pending"
+    "render": "steps_ledger emits the RENDERED STACK from facts plus the lens/cynefin prompts while pending",
+    "rules": "runtime/rules/gates.json (row 6: R1-R9 evaluated by pre.adherence_gate on every call; every unmet rule named in one deny)",
+    "collapse": "when SUTRA_ADHERENCE_GATE_ARMED=1 (mode exactly on, jq present, pre.adherence_gate selected) the legacy gate registrations in gates.json collapsed_steps.ids run but their decision goes to <turn>.truthdiff.jsonl and is dropped (D-A12/D-A17)",
+    "seal": "lane verdicts carry seal = HMAC-SHA256(canonical JSON) with the per-box seal key (runtime/lib/seal.sh); unsealed = not evidence (D-A14)"
   }
 }

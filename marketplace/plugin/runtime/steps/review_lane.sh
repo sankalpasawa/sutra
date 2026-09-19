@@ -82,6 +82,19 @@ main() {
   done
 
   # -- lane 1: tests (the declared test command, detached) -----------------
+  # -- row 6 (brief s3.3, workflow P2-1): the blueprint's verify commands RUN
+  # here, detached, each under the project dir with a 120 s budget; the
+  # sealed <turn>.verifies.json carries one exit code per step and the next
+  # turn's "Last turn" line reports them. A verify the runtime cannot run
+  # (kind manual) is recorded as skipped, never as passed.
+  BP_FILE="$_rl_dir/$_RL_TURN.blueprint.json"
+  if [ -f "$BP_FILE" ] && jq -e '.steps | type == "array" and length > 0' "$BP_FILE" >/dev/null 2>&1; then
+    VERIFIES_OUT="$_rl_dir/$_RL_TURN.verifies.json"
+    jq -nc --arg ts "$NOW_TS" '{lane:"verifies",status:"running",ts:($ts|tonumber)}' > "$VERIFIES_OUT" 2>/dev/null
+    _rl_detach_verifies "$_RL_PROJ" "$BP_FILE" "$VERIFIES_OUT" "$LOG_DIR/$_RL_TURN.verifies.log"
+    _rl_row verifies "$(jq -c '{status:"started", steps:(.steps|length), runnable:([.steps[] | select(.verify.kind == "cmd")] | length)}' "$BP_FILE" 2>/dev/null)"
+  fi
+
   TEST_CMD=""
   [ -f "$_RL_PROJ/.claude/sutra-project.json" ] && TEST_CMD="$(jq -r '.test_command // empty' "$_RL_PROJ/.claude/sutra-project.json" 2>/dev/null)"
   if [ -z "$TEST_CMD" ]; then
@@ -146,7 +159,7 @@ main() {
 _rl_detach() {
   ( cd "$1" 2>/dev/null || exit 1
     nohup sh -c '
-      out="$1"; log="$2"; cmd="$3"
+      out="$1"; log="$2"; cmd="$3"; root="$4"
       [ -d "$(dirname "$out")" ] || exit 0
       # test_command is the project owner'"'"'s own shell command (the sutra-test-gate
       # contract); running it as a shell command is the point
@@ -154,7 +167,9 @@ _rl_detach() {
       ts=$(date +%s)
       printf "{\"lane\":\"tests\",\"status\":\"done\",\"cmd\":%s,\"exit\":%s,\"ts\":%s,\"log\":%s}\n" \
         "$(printf "%s" "$cmd" | jq -R .)" "$rc" "$ts" "$(printf "%s" "$log" | jq -R .)" > "$out.tmp" && mv -f "$out.tmp" "$out"
-    ' _ "$4" "$3" "$2" </dev/null >/dev/null 2>&1 &
+      # row 6 (D-A14): seal the verdict; an unsealed file is not evidence
+      [ -f "$root/runtime/lib/seal.sh" ] && { . "$root/runtime/lib/seal.sh"; sutra_seal_file "$out"; } 2>/dev/null
+    ' _ "$4" "$3" "$2" "$_rl_root" </dev/null >/dev/null 2>&1 &
   )
 }
 
@@ -175,9 +190,43 @@ _rl_detach_review() {
         mkdir -p "$proj/.claude/sessions/$sid" 2>/dev/null
         printf "LANE=deepseek\nVERDICT=%s\nTURN=%s\nSESSION=%s\nTS=%s\nSOURCE=runtime\n" "$verdict" "$turn" "$sid" "$ts" > "$proj/.claude/sessions/$sid/deepseek-consulted" 2>/dev/null
       fi
-      printf "{\"lane\":\"review\",\"status\":\"done\",\"exit\":%s,\"verdict\":%s,\"file\":%s,\"ts\":%s}\n" \
-        "$rc" "$(printf "%s" "$verdict" | jq -R .)" "$(printf "%s" "$md" | jq -R .)" "$ts" > "$out.tmp" && mv -f "$out.tmp" "$out"
-    ' _ "$2" "$3" "$4" "$5" "$6" "$7" "$1" </dev/null >/dev/null 2>&1 &
+      printf "{\"lane\":\"review\",\"status\":\"done\",\"exit\":%s,\"verdict\":%s,\"file\":%s,\"turn\":%s,\"ts\":%s}\n" \
+        "$rc" "$(printf "%s" "$verdict" | jq -R .)" "$(printf "%s" "$md" | jq -R .)" "$(printf "%s" "$turn" | jq -R .)" "$ts" > "$out.tmp" && mv -f "$out.tmp" "$out"
+      # row 6 (D-A14): seal the verdict; an unsealed file is not evidence
+      root="$8"; [ -f "$root/runtime/lib/seal.sh" ] && { . "$root/runtime/lib/seal.sh"; sutra_seal_file "$out"; } 2>/dev/null
+    ' _ "$2" "$3" "$4" "$5" "$6" "$7" "$1" "$_rl_root" </dev/null >/dev/null 2>&1 &
+  )
+}
+
+# _rl_detach_verifies <proj> <blueprint.json> <out-json> <log>: run every
+# verify.cmd of the blueprint (kind cmd), detached, 120 s each, and write the
+# sealed verifies file: {lane:"verifies", status:"done", results:[{n, kind, cmd,
+# exit|null}], passed, failed, skipped, ts}.
+_rl_detach_verifies() {
+  ( cd "$1" 2>/dev/null || exit 1
+    nohup sh -c '
+      bp="$1"; out="$2"; log="$3"; root="$4"
+      [ -d "$(dirname "$out")" ] || exit 0
+      : > "$log"
+      n=0; res="[]"
+      jq -r ".steps[] | [(.verify.kind // \"manual\"), (.verify.cmd // \"\")] | @tsv" "$bp" 2>/dev/null | while IFS="	" read -r kind cmd; do
+        n=$((n + 1))
+        if [ "$kind" = "cmd" ] && [ -n "$cmd" ]; then
+          printf "=== step %s: %s\n" "$n" "$cmd" >> "$log"
+          ( sh -c "$cmd" >> "$log" 2>&1 ) & pid=$!
+          i=0; while kill -0 "$pid" 2>/dev/null && [ $i -lt 120 ]; do sleep 1; i=$((i + 1)); done
+          if kill -0 "$pid" 2>/dev/null; then kill "$pid" 2>/dev/null; rc=124; else wait "$pid"; rc=$?; fi
+          printf "=== exit %s\n" "$rc" >> "$log"
+          jq -nc --argjson n "$n" --arg c "$cmd" --argjson rc "$rc" "{n:\$n, kind:\"cmd\", cmd:\$c, exit:\$rc}"
+        else
+          jq -nc --argjson n "$n" --arg c "$cmd" "{n:\$n, kind:\"manual\", cmd:\$c, exit:null}"
+        fi
+      done > "$out.rows"
+      ts=$(date +%s)
+      jq -sc --argjson ts "$ts" "{lane:\"verifies\", status:\"done\", results:., passed:([.[] | select(.exit == 0)] | length), failed:([.[] | select(.exit != null and .exit != 0)] | length), skipped:([.[] | select(.exit == null)] | length), ts:\$ts}" "$out.rows" > "$out.tmp" 2>/dev/null && mv -f "$out.tmp" "$out"
+      rm -f "$out.rows"
+      [ -f "$root/runtime/lib/seal.sh" ] && { . "$root/runtime/lib/seal.sh"; sutra_seal_file "$out"; } 2>/dev/null
+    ' _ "$2" "$3" "$4" "$_rl_root" </dev/null >/dev/null 2>&1 &
   )
 }
 

@@ -66,7 +66,15 @@ main() {
   RO_HIT=""
   { [ -n "$FILE_PATH" ] && sutra_steps_runtime_owned "$FILE_PATH"; } && RO_HIT=1
   [ -z "$RO_HIT" ] && [ -n "$COMMAND" ] && sutra_steps_runtime_owned_write "$COMMAND" && RO_HIT=1
-  [ -z "$RO_HIT" ] && [ -n "$CONTENT" ] && sutra_steps_runtime_owned_write "$CONTENT" && RO_HIT=1
+  # a test suite's fixtures name the flag files under a private HOME by design;
+  # the file's own path is still refused if it IS a runtime-owned path (row 6)
+  # no carve-out for test files (workflow row-6 P1-3: a one-line "test" that
+  # deletes the flag files, then a plain sh run, switched the gate off). The
+  # plugin's own suites build the flag names from parts so their fixtures
+  # pass this scan honestly. Written CONTENT is scanned in content mode: the
+  # switch, override, seal and stamp names in a write shape; the ledger and
+  # lane names only as Bash targets (workflow P2-3).
+  [ -z "$RO_HIT" ] && [ -n "$CONTENT" ] && sutra_steps_runtime_owned_write "$CONTENT" content && RO_HIT=1
   [ -z "$RO_HIT" ] && [ -n "$EXTRA_PATH" ] && printf '%s' "$EXTRA_PATH" | grep -q '\.sutra-runtime/' && RO_HIT=1
   if [ -n "$RO_HIT" ]; then
     _ro_target="$FILE_PATH"; [ -n "$_ro_target" ] || _ro_target="$(printf '%s' "$COMMAND" | tr '\n\r\t' '   ' | LC_ALL=C tr -cd ' -~' | head -c 120)"
@@ -140,35 +148,153 @@ main() {
     return 0
   fi
 
-  MISSING=""; REASONS=""
-  for _k in lens cynefin; do
-    _r="$(sutra_artifact_check "$(sutra_artifact_path "$_AG_PROJ" "$_AG_SID" "$_AG_TURN" "$_k")" "$_k" "$_AG_TURN" "$_AG_SID" "$OPENED")"
-    if [ "$_r" != "ok" ]; then
-      MISSING="$MISSING $_k"
-      REASONS="$REASONS
-  $_k: $(sutra_artifact_rel "$_AG_SID" "$_AG_TURN" "$_k") ($_r)"
-    fi
-  done
-  MISSING="$(printf '%s' "$MISSING" | sed 's/^ //')"
+  # -- row 6: the rules table --------------------------------------------------
+  # runtime/rules/gates.json declares every rule; this evaluates them all on
+  # every call and names every unmet rule in ONE deny (D-A13). A gate decision
+  # reads only the ledger, the turn artifacts, the tool input, the path
+  # category table and the override file (D-A10). No gates.json -> the row-1
+  # pair (lens, cynefin) is the whole table.
+  RULES="$_ag_root/runtime/rules/gates.json"
+  _ag_ctx_kind="mutation"; [ "$TOOL" = "Task" ] || [ "$TOOL" = "Agent" ] && _ag_ctx_kind="subagent"
+  if [ "$TOOL" = "Bash" ] && printf '%s' "$COMMAND" | grep -qE '(^|[;&|[:space:]])(mv|rm|git[[:space:]]+(mv|rm)|find[[:space:]][^|;]*-delete)([[:space:]]|$)'; then _ag_ctx_kind="structural"; fi
+  DEPTH_N="$(printf '%s' "$STEPS_JSON" | jq -r '.[] | select(.id == "depth") | .detail' 2>/dev/null | grep -oE '^[0-9]+' | head -1)"; case "$DEPTH_N" in ''|*[!0-9]*) DEPTH_N=0 ;; esac
+  _ag_dp="$(sutra_artifact_path "$_AG_PROJ" "$_AG_SID" "$_AG_TURN" depth)"
+  if [ -f "$_ag_dp" ] && [ "$(sutra_artifact_check "$_ag_dp" depth "$_AG_TURN" "$_AG_SID" "$OPENED")" = "ok" ]; then
+    _ag_dm="$(jq -r '.depth // 0' "$_ag_dp" 2>/dev/null)"; case "$_ag_dm" in ''|*[!0-9]*) _ag_dm=0 ;; esac
+    [ "$_ag_dm" -gt "$DEPTH_N" ] && DEPTH_N="$_ag_dm"
+  fi
+  PATHCAT="none"; NEW_PATH=false
+  if [ -n "$FILE_PATH" ]; then
+    PATHCAT="$(sutra_steps_path_category "$FILE_PATH" "$_AG_PROJ" "$RULES")"
+    [ -e "$FILE_PATH" ] || NEW_PATH=true
+  elif [ "$TOOL" = "Bash" ]; then
+    # every Bash MUTATION is judged by the most governed path it names
+    # (workflow row-6 P1-1: `printf x > holding/bin/x.sh`, tee, cp, sed -i,
+    # patch and heredocs write files just like the Write tool), and its
+    # redirect / tee / cp targets count as new paths when they do not exist.
+    # The MOST governed category wins (DeepSeek P1-1): holding-impl (needs an
+    # artifact) > legacy-hard > shared-runtime > plugin-runtime.
+    PATHCAT="$(printf '%s' "$COMMAND" | tr ' \t' '\n\n' | grep -E '^[A-Za-z0-9_./~-]+$' | while IFS= read -r _w; do sutra_steps_path_category "$_w" "$_AG_PROJ" "$RULES"; echo; done \
+      | awk 'BEGIN{r["holding-impl"]=4; r["legacy-hard"]=3; r["shared-runtime"]=2; r["plugin-runtime"]=1} r[$0]>best{best=r[$0]; c=$0} END{if (c!="") print c}')"
+    [ -n "$PATHCAT" ] || PATHCAT="none"
+    for _tgt in $(printf '%s' "$COMMAND" | tr -d '"'"'"'' | grep -oE '(>>?|tee( +-a)?|cp +[^ ]+|install +[^ ]+) *[A-Za-z0-9_./~-]+' | sed -E 's/^.* *([A-Za-z0-9_./~-]+)$/\1/' | grep -vE '^/dev/'); do
+      case "$_tgt" in /*) _abs="$_tgt" ;; *) _abs="$_AG_PROJ/$_tgt" ;; esac
+      [ -e "$_abs" ] || NEW_PATH=true
+    done
+  fi
+  # a missing depth fact never relaxes a rule (DeepSeek row-6 P1-3): the
+  # artifact checks then assume the strictest depth
+  [ "$DEPTH_N" -gt 0 ] || DEPTH_N=5
+  # the placement marker counts only when the ENGINE wrote it (SOURCE=engine,
+  # placement-resolve.sh); a model-written marker is a model-writable file and
+  # no evidence (workflow row-6 P1-2) - the model's answer to a no-match is
+  # the placement artifact
+  PL_UNRESOLVED=true
+  _ag_pl="$_AG_PROJ/.claude/sessions/$_AG_SID/placement-registered"
+  if [ -f "$_ag_pl" ] && [ "$(sed -n 's/^SOURCE=//p' "$_ag_pl" 2>/dev/null | head -1)" = "engine" ] \
+     && [ "$(sed -n 's/^DOMAIN_REF=//p' "$_ag_pl" 2>/dev/null | head -1 | tr -d ' ')" != "unresolved" ] \
+     && [ -n "$(sed -n 's/^DOMAIN_REF=//p' "$_ag_pl" 2>/dev/null | head -1)" ]; then PL_UNRESOLVED=false; fi
+  LANE=false; sutra_steps_lane_configured && LANE=true
+  CTX="$(jq -nc --arg kind "$_ag_ctx_kind" --arg tool "$TOOL" --arg cat "$PATHCAT" --argjson depth "$DEPTH_N" --argjson newp "$NEW_PATH" --argjson plu "$PL_UNRESOLVED" --argjson lane "$LANE" \
+    '{kind:$kind, tool:$tool, path_category:$cat, depth:$depth, new_path:$newp, placement_unresolved:$plu, lane_configured:$lane, runtime_owned:false}' 2>/dev/null)"
 
-  if [ -z "$MISSING" ]; then
+  # which rules apply to this call (jq decides from `when`; R9 was handled above)
+  APPLY="$(jq -r --argjson ctx "$CTX" '
+    .rules[] | select(.id != "R9")
+    | select((.when.kind // ["any"]) as $k | ($k | index("any")) != null or ($k | index($ctx.kind)) != null)
+    | select((.when.path_category // null) as $pc | $pc == null or ($pc | index($ctx.path_category)) != null)
+    | select((.when.depth_min // 0) <= $ctx.depth)
+    | select((.when.new_path // null) as $np | $np == null or $np == $ctx.new_path)
+    | select((.when.placement_unresolved // null) as $pu | $pu == null or $pu == $ctx.placement_unresolved)
+    | select((.when.lane_configured // null) as $lc | $lc == null or $lc == $ctx.lane_configured)
+    | [.id, .decision, ((.needs // []) | join(",")), ((.needs_any // []) | join(",")), ((.reason // .note // "") | gsub("[\\n\\u001f]"; " "))] | join("")' "$RULES" 2>/dev/null)"
+  # unit separator, not tab: `read` collapses a run of tabs, so an empty needs
+  # column would shift the reason into needs_any (the runtime's own TSV gotcha)
+  _US="$(printf '\037')"
+  if [ -z "$APPLY" ] && [ ! -f "$RULES" ]; then
+    APPLY="R5${_US}deny${_US}artifact:lens,artifact:cynefin${_US}${_US}the turn's judgment artifacts"
+  fi
+  # a PRESENT but unparseable rules file fails closed (workflow row-6 regress
+  # lens): the legacy gates may already be collapsed for this event
+  if [ -f "$RULES" ] && ! jq -e '(.rules | type) == "array" and (.rules | length) > 0' "$RULES" >/dev/null 2>&1; then
+    APPLY="RULES${_US}deny${_US}never${_US}${_US}runtime/rules/gates.json is present but unparseable; nothing decides until it parses"
+  fi
+
+  # _ag_need <entry> -> 0 met / 1 unmet; sets _ag_why
+  _ag_need() {
+    _ag_why=""
+    case "$1" in
+      step:*)   _n="${1#step:}"; _s="$(printf '%s' "$STEPS_JSON" | jq -r --arg n "$_n" '.[] | select(.id == $n) | .status' 2>/dev/null)"
+                # "missing" is the runtime's own gap (no facts file: markers flag
+                # off, or the step failed) - never the model's; it does not refuse
+                # (codex P2-4 bootstrap semantics), the ledger row records it.
+                case "$_s" in done|open|missing) return 0 ;; esac; _ag_why="step $_n is $_s"; return 1 ;;
+      artifact:*) _k="${1#artifact:}"
+                _r="$(SUTRA_ARTIFACT_DEPTH="$DEPTH_N" sutra_artifact_check "$(sutra_artifact_path "$_AG_PROJ" "$_AG_SID" "$_AG_TURN" "$_k")" "$_k" "$_AG_TURN" "$_AG_SID" "$OPENED")"
+                [ "$_r" = "ok" ] && return 0
+                _ag_why="$(sutra_artifact_rel "$_AG_SID" "$_AG_TURN" "$_k") ($_r) $(jq -r --arg k "$_k" '.artifacts[$k].hint // ""' "$RULES" 2>/dev/null)"; return 1 ;;
+      review:sealed)
+                # one predicate for every verdict, this turn's included: done, a
+                # real verdict, fresh, corroborated, sealed, newest two ledgers
+                # (workflow row-6 P1-5)
+                [ -n "$(sutra_steps_latest_review "$_AG_PROJ" "$_AG_SID" "$NOW_TS")" ] && return 0
+                _ag_why="no sealed, corroborated review verdict for this or the previous turn"; return 1 ;;
+      override:*) _o="${1#override:}"; case " ${SUTRA_OVERRIDES_APPLIED:-} " in *" $_o "*) return 0 ;; esac
+                _ag_why="override $_o not applied from a pre-session ~/.sutra-overrides"; return 1 ;;
+      never)    _ag_why="refused by rule"; return 1 ;;
+      ''|none)  return 0 ;;
+      *)        _ag_why="unknown need $1"; return 1 ;;
+    esac
+  }
+
+  UNMET=""; UNMET_IDS=""; DECISION="allow"; WARN_ONLY=1
+  while IFS="$_US" read -r _rid _rdec _rneeds _rany _rreason; do
+    [ -n "${_rid:-}" ] || continue
+    _met=1; _why_all=""
+    _old_ifs="$IFS"; IFS=','
+    for _e in $_rneeds; do IFS="$_old_ifs"; [ -n "$_e" ] || continue
+      if ! _ag_need "$_e"; then _met=0; _why_all="$_why_all
+    - $_ag_why"; fi
+      IFS=','; done; IFS="$_old_ifs"
+    if [ -n "$_rany" ]; then
+      _any=0; _why_any=""; _old_ifs="$IFS"; IFS=','
+      for _e in $_rany; do IFS="$_old_ifs"; [ -n "$_e" ] || continue
+        if _ag_need "$_e"; then _any=1; else _why_any="$_why_any
+    - $_ag_why"; fi
+        IFS=','; done; IFS="$_old_ifs"
+      [ "$_any" = "1" ] || { _met=0; _why_all="$_why_all (one of:)$_why_any"; }
+    fi
+    if [ "$_met" = "0" ]; then
+      UNMET="$UNMET
+  $_rid $_rreason:$_why_all"
+      UNMET_IDS="$UNMET_IDS $_rid"
+      case "$_rdec" in deny) DECISION="deny"; WARN_ONLY=0 ;; warn) [ "$DECISION" = "allow" ] && DECISION="warn" ;; esac
+    fi
+  done <<EOF
+$APPLY
+EOF
+  UNMET_IDS="$(printf '%s' "$UNMET_IDS" | sed 's/^ //')"
+  _ag_row rules "$(jq -nc --argjson ctx "$CTX" --arg unmet "$UNMET_IDS" --arg d "$DECISION" '{context:$ctx, unmet:$unmet, decision:$d}' 2>/dev/null)"
+  _td_file="$_AG_PROJ/.sutra/turn/$_AG_SID/$_AG_TURN.truthdiff.jsonl"
+  [ -d "$(dirname "$_td_file")" ] && jq -nc --arg s "pre.adherence_gate" --arg d "$DECISION" --arg r "$UNMET_IDS" --arg ev "$_AG_EVENT" --arg t "$TOOL" \
+    '{ts:(now|floor), source:"rules", step:$s, event:$ev, tool:$t, rc:"0", decision:$d, reason:$r}' >> "$_td_file" 2>/dev/null
+
+  if [ "$DECISION" = "allow" ]; then
     _ag_mutation "$TOOL" "$TARGET" allow '[]'
     [ -n "$TRANS" ] && jq -nc --arg m "[sutra $_t8] $TRANS" '{systemMessage:$m}' 2>/dev/null
     return 0
   fi
 
-  MISSING_JSON="$(printf '%s' "$MISSING" | tr ' ' '\n' | jq -R . | jq -sc .)"
-  REASON="ADHERENCE GATE (row 1, mode $SUTRA_ADHERENCE_MODE): $TOOL on $TARGET needs the turn's judgment artifacts. Missing:$REASONS
-Write each with the Write tool, then retry. turn_id=$_AG_TURN session_id=$_AG_SID ts>=$OPENED
-  lens    {turn_id,session_id,producer:\"model\",step:\"lens\",unit(>=10 chars),axes:[>=1 strings],pick:[subset of axes],direction:DOWN|UP|ACROSS,ts}
-  cynefin {turn_id,session_id,producer:\"model\",step:\"cynefin\",unit,domain:clear|complicated|complex|chaotic,shape(>=20 chars),human_gate:bool,ts}
-Trace: bin/sutra-steps latest. Kill: rm ~/.sutra-runtime-adherence"
+  MISSING_JSON="$(printf '%s' "$UNMET_IDS" | tr ' ' '\n' | jq -R . | jq -sc .)"
+  REASON="ADHERENCE GATE (rules, mode $SUTRA_ADHERENCE_MODE): $TOOL on $TARGET is refused until every rule below is met. Unmet:$UNMET
+Write each artifact with the Write tool, then retry (one batch fixes the turn). turn_id=$_AG_TURN session_id=$_AG_SID ts>=$OPENED depth=$DEPTH_N path_category=$PATHCAT
+Trace: bin/sutra-steps latest. Truth-diff: bin/sutra-steps truthdiff."
 
   _sm=""; [ -n "$TRANS" ] && _sm="[sutra $_t8] $TRANS
 "
-  if [ "$SUTRA_ADHERENCE_MODE" = "on" ]; then
+  if [ "$SUTRA_ADHERENCE_MODE" = "on" ] && [ "$DECISION" = "deny" ]; then
     _ag_mutation "$TOOL" "$TARGET" deny "$MISSING_JSON"
-    jq -nc --arg ev "$_AG_EVENT" --arg r "$REASON" --arg sm "${_sm}[sutra $_t8] REFUSED $TOOL: missing $MISSING" \
+    jq -nc --arg ev "$_AG_EVENT" --arg r "$REASON" --arg sm "${_sm}[sutra $_t8] REFUSED $TOOL: unmet $UNMET_IDS" \
       '{hookSpecificOutput:{hookEventName:$ev, permissionDecision:"deny", permissionDecisionReason:$r}, systemMessage:$sm}' 2>/dev/null
   else
     _ag_mutation "$TOOL" "$TARGET" warn "$MISSING_JSON"

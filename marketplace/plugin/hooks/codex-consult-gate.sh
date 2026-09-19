@@ -101,7 +101,7 @@ esac
 # repo content; the runtime validates their shape.
 case "$REL_PATH" in
   *..*) : ;;
-  .sutra/turn/*/*.lens.json|.sutra/turn/*/*.cynefin.json)
+  .sutra/turn/*/*.lens.json|.sutra/turn/*/*.cynefin.json|.sutra/turn/*/*.blueprint.json|.sutra/turn/*/*.build_layer.json|.sutra/turn/*/*.placement.json|.sutra/turn/*/*.depth.json)
     log_row "pass" "adherence-artifact path=${FILE_PATH}"; exit 0 ;;
 esac
 

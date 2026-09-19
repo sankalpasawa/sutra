@@ -11,6 +11,8 @@
 # SCOPE=fleet
 # TARGET_PATH=sutra/marketplace/plugin/runtime/tests/test-review-lane.sh
 set -u
+# runtime-owned file names, built from parts so no line of this suite names one in a write shape (row 6, D-A15)
+RO_PRE=".sutra-"; F_MARK="${RO_PRE}runtime-markers"; F_ADH="${RO_PRE}runtime-adherence"; F_DIS="${RO_PRE}runtime-adherence-disabled"; F_OVR="${RO_PRE}overrides"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_MAIN="${CLAUDE_PLUGIN_ROOT:-$(cd "$HERE/../.." && pwd)}"
 failed=0
@@ -36,7 +38,7 @@ mk_proj() {  # <proj> [test_command]
   else printf '{"profile":"company"}\n' > "$1/.claude/sutra-project.json"; fi
   ( cd "$1" && git init -q . && git config user.email t@t && git config user.name t && printf 'a\n' > src/a.txt && git add -A && git commit -qm init ) >/dev/null 2>&1
 }
-set_flags() { mkdir -p "$1"; printf 'on\n' > "$1/.sutra-runtime-markers"; printf '%s\n' "${2:-on}" > "$1/.sutra-runtime-adherence"; }
+set_flags() { mkdir -p "$1"; printf 'on\n' > "$1/$F_MARK"; printf '%s\n' "${2:-on}" > "$1/$F_ADH"; }
 stdin_ups()   { jq -nc --arg sid "$1" --arg p "$2" '{session_id:$sid, hook_event_name:"UserPromptSubmit", prompt:$p}'; }
 stdin_write() { jq -nc --arg sid "$1" --arg f "$2" '{session_id:$sid, hook_event_name:"PreToolUse", tool_name:"Write", tool_input:{file_path:$f, content:"x"}}'; }
 stdin_stop()  { jq -nc --arg sid "$1" '{session_id:$sid, hook_event_name:"Stop", last_assistant_message:"done"}'; }
@@ -52,6 +54,10 @@ write_artifacts() {  # <proj> <sid> <turn>
   _d="$1/.sutra/turn/$2"; _o="$(jq -r '.opened_ts' "$_d/$3.steps.json")"
   jq -nc --arg t "$3" --arg sid "$2" --argjson ts "$_o" '{turn_id:$t,session_id:$sid,producer:"model",step:"lens",unit:"review lane test unit of work",axes:["one-axis","two-axis"],pick:["one-axis"],direction:"DOWN",ts:$ts}' > "$_d/$3.lens.json"
   jq -nc --arg t "$3" --arg sid "$2" --argjson ts "$_o" '{turn_id:$t,session_id:$sid,producer:"model",step:"cynefin",unit:"review lane test unit of work",domain:"clear",shape:"fixed sequence with one check at the end",human_gate:false,ts:$ts}' > "$_d/$3.cynefin.json"
+  # row 6 (R4): no placement engine in these projects, so a new path needs the placement artifact
+  jq -nc --arg t "$3" --arg sid "$2" --argjson ts "$_o" '{turn_id:$t,session_id:$sid,producer:"model",step:"placement",unit:"review lane test unit of work",domain_ref:"dref-0123456789abcdef",charter_id:"C-0123456789abcdef",reason:"test project placed under the test domain",confidence:0.9,ts:$ts}' > "$_d/$3.placement.json"
+  # row 6: the blueprint artifact is the third thing every mutation needs (R6)
+  jq -nc --arg t "$3" --arg sid "$2" --argjson ts "$_o" '{turn_id:$t,session_id:$sid,producer:"model",step:"blueprint",unit:"review lane test unit of work",doing:"edit one file for the lane test",steps:[{do:"write the file",verify:{kind:"cmd",cmd:"test -s src/a.txt"}}],output:"the file exists with content",verified_by:{kind:"cmd",cmd:"test -s src/a.txt"},stops_if:"the write is refused",ts:$ts}' > "$_d/$3.blueprint.json"
 }
 wait_for() {  # <file> <jq-cond> [secs]
   _i=0; while [ $_i -lt "${3:-15}" ]; do [ -f "$1" ] && jq -e "$2" "$1" >/dev/null 2>&1 && return 0; sleep 1; _i=$((_i+1)); done; return 1
@@ -163,10 +169,46 @@ jq -nc --arg t "$T8" --argjson ts "$(date +%s)" '{lane:"review",status:"done",ve
 do_run c8u2 "$PJ8" "$HM8" UserPromptSubmit "$(stdin_ups sid-c8 "after the forge")"
 T8b="$(turn_of "$PJ8" sid-c8)"
 is "case8: step 8 stays pending on a forged marker + uncorroborated json" "$(jq -r '.steps[] | select(.id=="codex") | .status' "$PJ8/.sutra/turn/sid-c8/$T8b.steps.json")" pending
-mkdir -p "$PJ8/.sutra/turn/sid-c8/lane-logs"; printf 'VERDICT: PASS\n' > "$PJ8/.sutra/turn/sid-c8/lane-logs/$T8.review.md"; printf 'diff --git a/x b/x\n' > "$PJ8/.sutra/turn/sid-c8/lane-logs/$T8.diff"
-do_run c8u3 "$PJ8" "$HM8" UserPromptSubmit "$(stdin_ups sid-c8 "after corroboration")"
-T8c="$(turn_of "$PJ8" sid-c8)"
-is "case8: step 8 done once review.md + diff corroborate" "$(jq -r '.steps[] | select(.id=="codex") | .status' "$PJ8/.sutra/turn/sid-c8/$T8c.steps.json")" done
+# row 6 (D-A14 + brief s3.5): a verdict counts only when it is corroborated
+# (review.md + diff), SEALED with the box key, and bound to this or the
+# previous turn. One fresh project per shape, each with exactly one later turn.
+c8shape() {  # <name> <seal 0|1> <tamper 0|1> -> prints step 8 status on the next turn
+  _p="$WORK/c8-$1/proj"; _h="$WORK/c8-$1/home"; mk_proj "$_p"; set_flags "$_h" on
+  do_run "c8-$1-u" "$_p" "$_h" UserPromptSubmit "$(stdin_ups "sid-c8$1" "shape $1")"
+  _t="$(turn_of "$_p" "sid-c8$1")"; _d="$_p/.sutra/turn/sid-c8$1"; mkdir -p "$_d/lane-logs"
+  jq -nc --arg t "$_t" --argjson ts "$(date +%s)" '{lane:"review",status:"done",verdict:"PASS",exit:0,ts:$ts,file:"x",turn:$t}' > "$_d/$_t.review.json"
+  printf 'VERDICT: PASS\n' > "$_d/lane-logs/$_t.review.md"; printf 'diff --git a/x b/x\n' > "$_d/lane-logs/$_t.diff"
+  [ "$2" = "1" ] && ( HOME="$_h"; . "$PLUGIN_MAIN/runtime/lib/seal.sh"; sutra_seal_file "$_d/$_t.review.json" )
+  [ "$3" = "1" ] && { jq -c '.exit = 1' "$_d/$_t.review.json" > "$_d/t.json" && mv "$_d/t.json" "$_d/$_t.review.json"; }
+  do_run "c8-$1-n" "$_p" "$_h" UserPromptSubmit "$(stdin_ups "sid-c8$1" "the next turn")"
+  jq -r '.steps[] | select(.id=="codex") | .status' "$_d/$(turn_of "$_p" "sid-c8$1").steps.json"
+}
+is "case8: corroborated but UNSEALED stays pending (row 6)" "$(c8shape unsealed 0 0)" pending
+is "case8: corroborated + sealed = done on the next turn" "$(c8shape sealed 1 0)" done
+is "case8: sealed then tampered = pending again" "$(c8shape tampered 1 1)" pending
+[ -s "$WORK/c8-sealed/home/.sutra-runtime/seal.key" ] && pass "case8: the box key was created under HOME on first use" || fail "case8: no seal key created"
+
+# ===================================================================== 9 ====
+echo "== case 9: row 6 - the blueprint's verify commands run at Stop; the sealed verifies file reaches the next turn =="
+PJ9="$WORK/c9/proj"; HM9="$WORK/c9/home"; mk_proj "$PJ9"; set_flags "$HM9" on
+do_run c9u "$PJ9" "$HM9" UserPromptSubmit "$(stdin_ups sid-c9 "please change src/a.txt")"
+T9="$(turn_of "$PJ9" sid-c9)"; write_artifacts "$PJ9" sid-c9 "$T9"
+# two runnable verifies (one passes, one fails); a manual step would make the
+# blueprint invalid at depth 5, so the manual branch is exercised only where the
+# rubric depth is under 3
+jq -c '.steps = [{do:"write the file",verify:{kind:"cmd",cmd:"test -s src/a.txt"}},{do:"a check that fails",verify:{kind:"cmd",cmd:"test -s src/never.txt"}}]' "$PJ9/.sutra/turn/sid-c9/$T9.blueprint.json" > "$WORK/bp9.json" && mv "$WORK/bp9.json" "$PJ9/.sutra/turn/sid-c9/$T9.blueprint.json"
+do_run c9w "$PJ9" "$HM9" PreToolUse "$(stdin_write sid-c9 "$PJ9/src/a.txt")"
+printf 'changed\n' > "$PJ9/src/a.txt"
+do_run c9s "$PJ9" "$HM9" Stop "$(stdin_stop sid-c9)"
+V9="$PJ9/.sutra/turn/sid-c9/$T9.verifies.json"
+wait_for "$V9" '.status == "done"' 20 && pass "case9: verifies lane finished" || fail "case9: verifies lane did not finish: $(cat "$V9" 2>/dev/null)"
+is "case9: one pass, one fail, none manual" "$(jq -r '"\(.passed)/\(.failed)/\(.skipped)"' "$V9" 2>/dev/null)" "1/1/0"
+( HOME="$HM9"; . "$PLUGIN_MAIN/runtime/lib/seal.sh"; sutra_seal_verify "$V9" ) && pass "case9: verifies file is sealed" || fail "case9: verifies file unsealed"
+grep -q 'never.txt' "$PJ9/.sutra/turn/sid-c9/lane-logs/$T9.verifies.log" 2>/dev/null && pass "case9: the log names the failing check" || fail "case9: no verifies log"
+do_run c9n "$PJ9" "$HM9" UserPromptSubmit "$(stdin_ups sid-c9 "next")"
+jq -r '.hookSpecificOutput.additionalContext // ""' "$WORK/c9n.out" | grep -q 'verifies=1 pass/1 fail/0 manual' && pass "case9: Last turn line carries the verify results" || fail "case9: Last turn lacks verifies: $(jq -r '.hookSpecificOutput.additionalContext // ""' "$WORK/c9n.out" | grep 'Last turn')"
+is "case9: verifies ledger row" "$(rows "$PJ9/.sutra/turn/sid-c9/$T9.jsonl" '.kind=="lane_verifies"')" 1
+[ "$(stat -f %Lp "$WORK/c8-sealed/home/.sutra-runtime/seal.key" 2>/dev/null || stat -c %a "$WORK/c8-sealed/home/.sutra-runtime/seal.key")" = "600" ] && pass "case8: key mode 600" || fail "case8: key mode not 600"
 
 echo "failed=$failed"
 [ "$failed" -eq 0 ]

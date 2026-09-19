@@ -91,6 +91,14 @@ main() {
     LAST="$(jq -r 'if .closed != null then "Last turn: \(.closed.done)/11 done, refused \(.closed.refused), trace_pasted=\(.closed.trace_pasted), fills_left=\(.closed.fills_left // 0)" else "Last turn: not closed" end' "$_last_file" 2>/dev/null)"
     # Row 2: the runtime lanes finish after that turn's Stop; read their files now.
     _prev_turn="$(basename "$_last_file" .steps.json)"
+    # Row 6: the blueprint's verify commands ran at that Stop (sealed file only)
+    if [ -f "$_sl_dir/$_prev_turn.verifies.json" ]; then
+      if command -v sutra_seal_verify >/dev/null 2>&1 && sutra_seal_verify "$_sl_dir/$_prev_turn.verifies.json"; then
+        LAST="$LAST, verifies=$(jq -r '"\(.passed // 0) pass/\(.failed // 0) fail/\(.skipped // 0) manual"' "$_sl_dir/$_prev_turn.verifies.json" 2>/dev/null)"
+      else
+        LAST="$LAST, verifies=$(jq -r '.status // "?"' "$_sl_dir/$_prev_turn.verifies.json" 2>/dev/null) (unsealed)"
+      fi
+    fi
     if [ -f "$_sl_dir/$_prev_turn.review.json" ]; then
       LAST="$LAST, review=$(jq -r '"\(.status)\(if .verdict != null then ":" + .verdict else "" end)"' "$_sl_dir/$_prev_turn.review.json" 2>/dev/null)"
     fi
@@ -130,10 +138,14 @@ main() {
   STACK="$(sutra_steps_render_stack "$_SL_PROJ/.sutra/turn/$_SL_SID/$_SL_TURN.facts.json" "$_SL_PROJ/.claude/sessions/$_SL_SID/placement-registered")"
   LENS_ST="$(printf '%s' "$STEPS_JSON" | jq -r '.[] | select(.id == "lens") | .status' 2>/dev/null)"
   CYN_ST="$(printf '%s' "$STEPS_JSON" | jq -r '.[] | select(.id == "cynefin") | .status' 2>/dev/null)"
-  PROMPTS="$(sutra_steps_prompts "${LENS_ST:-pending}" "${CYN_ST:-pending}")"
-  TAIL="$VERB_MODE until 5 and 6 exist for this turn (mode=$SUTRA_ADHERENCE_MODE). Write them with the Write tool, turn_id=$_SL_TURN session_id=$_SL_SID ts>=$OPENED:
+  BP_ST="$(printf '%s' "$STEPS_JSON" | jq -r '.[] | select(.id == "blueprint") | .status' 2>/dev/null)"
+  BP_REL="$(sutra_artifact_rel "$_SL_SID" "$_SL_TURN" blueprint)"
+  PROMPTS="$(sutra_steps_prompts "${LENS_ST:-pending}" "${CYN_ST:-pending}" "${BP_ST:-pending}")"
+  TAIL="$VERB_MODE until 5, 6 and 7 exist for this turn (mode=$SUTRA_ADHERENCE_MODE; rules R1-R9 in runtime/rules/gates.json). Write them with the Write tool, turn_id=$_SL_TURN session_id=$_SL_SID ts>=$OPENED:
   $LENS_REL  {turn_id,session_id,producer:\"model\",step:\"lens\",unit(>=10 chars),axes:[>=1 strings],pick:[subset of axes],direction:DOWN|UP|ACROSS,ts}
   $CYN_REL  {turn_id,session_id,producer:\"model\",step:\"cynefin\",unit,domain:clear|complicated|complex|chaotic,shape(>=20 chars),human_gate:bool,ts}
+  $BP_REL  {turn_id,session_id,producer:\"model\",step:\"blueprint\",unit,doing,steps:[{do,verify:{kind:cmd|manual,cmd}}],output,verified_by:{kind,cmd},stops_if,ts} (verify cmd = a shell check the runtime runs at Stop; at depth 3+ every step needs one)
+A new path with no placement match also needs TURN.placement.json; a holding-side implementation path needs TURN.build_layer.json; a governance path at depth 3+ needs a sealed review verdict.
 Paste the STEP TRACE block above verbatim into your reply, after the Depth block. Table on demand: bin/sutra-steps latest."
   [ -n "$LAST" ] && TAIL="$TAIL
 $LAST"
