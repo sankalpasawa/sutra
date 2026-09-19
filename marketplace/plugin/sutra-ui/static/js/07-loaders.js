@@ -1469,7 +1469,9 @@ function wire(){
       return;
     }
     S.setBusy = "mode:" + m; S.setError = null; S.setOk = null; render();
-    apiPost("/api/settings", { permission_mode: m })
+    /* `chosen: true` -- this is the Settings screen's own picker, i.e. a human
+       pressing it. See providers.ACCESS_CHOSEN_KEY. */
+    apiPost("/api/settings", { permission_mode: m, chosen: true })
       .then(r=>{ SETTINGS = r.settings || SETTINGS;
                  /* Report what will RUN, not what was written — they differ when clamped. */
                  S.setOk = "permission mode is now "

@@ -172,7 +172,12 @@ class SettingsGet(Routes):
         self.assertFalse(d["settings"]["permission_mode_clamped"])
 
     def test_the_settings_block_carries_the_derived_access_id(self):
-        self.post("/api/settings", {"permission_mode": "plan"})
+        # `chosen` because this stands in for the screen's own picker. Without
+        # it the POST is an unowned write, `plan` resolves back to the Full
+        # access default (providers.ACCESS_CHOSEN_KEY) and the derived id under
+        # test would be "full" -- correctly, but this test is about the
+        # derivation, not about who claimed the pick.
+        self.post("/api/settings", {"permission_mode": "plan", "chosen": True})
         d = self.payload()
         self.assertEqual(d["settings"]["access"], "read")
         self.assertFalse(d["settings"]["access_advanced"])
@@ -181,7 +186,7 @@ class SettingsGet(Routes):
 class SettingsPost(Routes):
 
     def test_an_access_id_stores_the_native_mode(self):
-        r = self.post("/api/settings", {"access": "read"})
+        r = self.post("/api/settings", {"access": "read", "chosen": True})
         self.assertEqual(r.status_code, 200, r.text[:300])
         self.assertEqual(r.json()["settings"]["permission_mode"], "plan")
         self.assertEqual(self.raw(),
@@ -220,13 +225,13 @@ class SettingsPost(Routes):
         self.assertEqual(r.json()["settings"]["permission_mode"], "dontAsk")
 
     def test_a_provider_settings_patch_writes_only_its_own_key(self):
-        self.post("/api/settings", {"permission_mode": "plan"})
+        self.post("/api/settings", {"permission_mode": "plan", "chosen": True})
         r = self.post("/api/settings",
                       {"provider_settings": {"claude": {"chrome": True}}})
         self.assertEqual(r.status_code, 200, r.text[:300])
-        # the stamp rides along with the mode POST, because naming a mode IS
-        # the choice (providers.ACCESS_CHOSEN_KEY). What this test guards is
-        # that the SECOND post touched nothing but its own key.
+        # the stamp rides along with the FIRST post, which claimed the pick
+        # (providers.ACCESS_CHOSEN_KEY). What this test guards is that the
+        # SECOND post touched nothing but its own key.
         self.assertEqual(self.raw(),
                          {"permission_mode": "plan",
                           providers.ACCESS_CHOSEN_KEY: True,
@@ -240,12 +245,34 @@ class SettingsPost(Routes):
 
     def test_a_switch_and_a_mode_can_arrive_together(self):
         r = self.post("/api/settings",
-                      {"access": "read",
+                      {"access": "read", "chosen": True,
                        "provider_settings": {"codex": {"memory": False}}})
         self.assertEqual(r.status_code, 200)
         body = r.json()["settings"]
         self.assertEqual(body["permission_mode"], "plan")
         self.assertEqual(body["provider_settings"], {"codex": {"memory": False}})
+
+    def test_a_mode_posted_without_a_claim_cannot_pin_read_only(self):
+        """THE BOUNDARY RULE (2026-09-19). The port is unauthenticated, so a
+        POST that names a mode without claiming anyone picked it still SETS the
+        mode -- but it may not stamp it, and the next read resolves an
+        unclaimed Read only back to the Full access default. This is the shape
+        of the write that pinned the owner's machine with no identifiable
+        sender."""
+        r = self.post("/api/settings", {"permission_mode": "plan"})
+        self.assertEqual(r.status_code, 200, r.text[:300])
+        self.assertEqual(self.raw(), {"permission_mode": "plan"},
+                         "an unclaimed write must not stamp")
+        self.assertEqual(r.json()["settings"]["access_effective"], "full")
+
+    def test_the_same_post_with_the_claim_does_pin_it(self):
+        """The other side: the screen's picker sends `chosen`, and Read only
+        picked by a human survives every later read."""
+        r = self.post("/api/settings",
+                      {"permission_mode": "plan", "chosen": True})
+        self.assertEqual(r.status_code, 200, r.text[:300])
+        self.assertIs(self.raw()[providers.ACCESS_CHOSEN_KEY], True)
+        self.assertEqual(r.json()["settings"]["access_effective"], "read")
 
     def test_an_empty_body_is_still_a_400(self):
         r = self.post("/api/settings", {})

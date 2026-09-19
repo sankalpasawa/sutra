@@ -393,6 +393,17 @@ PERMISSION_MODE_FLOOR = "plan"
 #   * it is a RESOLUTION rule, not a rewrite: nothing is written to
 #     settings.json on read, so reverting this line reverts the behaviour with
 #     no migrated file left behind.
+#
+# AND THE STAMP ITSELF NEEDS A CLAIMANT (2026-09-19, founder: "always Full
+# access -- I shouldn't have to select it"). Until today save_settings stamped
+# whenever a mode was NAMED, on the theory that naming one is choosing one. It
+# is not: an echo of the value already on the screen names one too, and a write
+# of exactly that shape pinned this key beside `plan` on the owner's own machine
+# at 10:58:53 with no caller identifiable from any log or transcript. So the
+# caller must now CLAIM the pick -- `save_settings(chosen=...)`, which the HTTP
+# route defaults to False and the two controls a human clicks send as True. An
+# unclaimed write still stores the mode; it just cannot pin Read only past a
+# restart, which is what the founder asked to stop happening.
 ACCESS_CHOSEN_KEY = "permission_mode_chosen"
 
 DEFAULT_WORKDIR = "~/sutra-ui-workspace"
@@ -2971,12 +2982,21 @@ UNSAFE_ACK_PHRASE = "I understand the agent will write files without asking"
 
 def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=None,
                   model=None, unsafe_ack=None, model_provider=None,
-                  chat_scope=None, access=None, access_provider=None):
+                  chat_scope=None, access=None, access_provider=None, chosen=True):
     """Merge a partial update into the settings file and return load_settings().
 
     Validates BEFORE writing: an unknown or unrunnable provider, or an unknown
     permission_mode, raises ValueError carrying the specific reason. Written
     tmp+replace so a crash mid-write cannot leave a truncated file.
+
+    `chosen` says whether naming a mode was an OPERATOR'S PICK. It is the
+    difference between "the founder chose Read only" and "something re-sent the
+    value that was already on screen", which the file alone cannot tell apart --
+    and telling them apart is the whole job of ACCESS_CHOSEN_KEY. It defaults to
+    True for direct library callers (naming a mode in Python IS the deliberate
+    act) and the HTTP route defaults it to False, because an unattributed POST
+    is exactly the write that pinned Read only on the owner's machine on
+    2026-09-19 with nobody able to say who sent it.
 
     `access` is the NEW vocabulary and the OLD storage: it is translated to a
     native mode here and written to `permission_mode`, so nothing downstream --
@@ -3047,11 +3067,23 @@ def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=N
                 "permission_mode %r auto-approves agent actions. Confirm it in "
                 "Settings first (or start the server with %s=1)."
                 % (permission_mode, UNSAFE_MODES_ENV))
+        previous = raw.get("permission_mode")
         raw["permission_mode"] = permission_mode
-        # STAMPED HERE AND ONLY HERE: reaching this line means a caller named a
-        # mode, which is what a choice is. Read only picked from the screen now
-        # survives load_settings' inherited-floor rule.
-        raw[ACCESS_CHOSEN_KEY] = True
+        # STAMPED HERE AND ONLY HERE, AND ONLY WHEN THE CALLER CLAIMS THE PICK.
+        # Naming a mode is not by itself a choice -- an echo of the value already
+        # on screen names one too, and a write of that shape pinned Read only on
+        # the owner's machine (2026-09-19 10:58:53) with no caller identifiable
+        # afterwards. Only `chosen` separates the two, and only the controls that
+        # a human actually clicks send it.
+        if chosen:
+            raw[ACCESS_CHOSEN_KEY] = True
+        elif permission_mode != previous:
+            # AN UNCLAIMED WRITE THAT MOVES THE MODE INVALIDATES THE OLD CLAIM.
+            # The stamp describes the value beneath it, not the key: leaving it
+            # behind would let an unattributed write inherit a pick made for a
+            # mode that is no longer stored. An unclaimed write that names the
+            # SAME mode changes nothing and leaves the stamp alone.
+            raw.pop(ACCESS_CHOSEN_KEY, None)
 
     if workdir is not None:
         if not isinstance(workdir, str) or not workdir.strip():

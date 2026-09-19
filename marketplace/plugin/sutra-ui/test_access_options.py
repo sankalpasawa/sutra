@@ -454,5 +454,68 @@ class AnInheritedReadOnlyIsNotAChoice(TempSettings):
             os.environ.pop("SUTRA_UI_PERMISSION_MODE", None)
 
 
+class OnlyAClaimedPickPinsReadOnly(TempSettings):
+    """THE SECOND HALF, added 2026-09-19 after the first half did not hold.
+
+    The inherited-floor rule above cannot help a machine whose `plan` carries
+    the stamp -- and the owner's machine acquired one at 10:58:53 that morning
+    from a POST no log, transcript or UI path could be traced back to. Naming a
+    mode was enough to stamp it, and naming one is not the same as choosing one:
+    an echo of the value already on the screen names one too.
+
+    So the claim is now explicit (`chosen`), the HTTP boundary defaults it to
+    False, and the two controls a human presses send it True. What this class
+    holds down: that an unclaimed write can still SET the mode (it is not a
+    refusal), that it cannot PIN Read only past a restart, and that a real pick
+    still sticks exactly as it did.
+    """
+
+    def _write(self, raw):
+        providers.SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        providers.SETTINGS_PATH.write_text(json.dumps(raw))
+
+    def test_an_unclaimed_write_stores_the_mode_but_does_not_stamp_it(self):
+        providers.save_settings(permission_mode="plan", chosen=False)
+        self.assertEqual(self.raw()["permission_mode"], "plan")
+        self.assertNotIn(providers.ACCESS_CHOSEN_KEY, self.raw())
+
+    def test_an_unclaimed_read_only_resolves_back_to_full_access(self):
+        """THE FOUNDER'S ASK, in one assertion: an unattributed write cannot
+        leave the app opening on Read only."""
+        providers.save_settings(permission_mode="plan", chosen=False)
+        self.assertEqual(providers.load_settings()["access_effective"], "full")
+
+    def test_a_claimed_read_only_still_sticks(self):
+        """The other side: the four buttons must keep meaning something."""
+        providers.save_settings(permission_mode="plan", chosen=True)
+        self.assertIs(self.raw()[providers.ACCESS_CHOSEN_KEY], True)
+        self.assertEqual(providers.load_settings()["access_effective"], "read")
+
+    def test_direct_library_calls_still_default_to_claiming(self):
+        """`chosen` defaults True in Python: naming a mode in code IS the
+        deliberate act. Only the unauthenticated HTTP boundary defaults it
+        off, which is where the unowned write came from."""
+        providers.save_settings(access="read", access_provider="claude")
+        self.assertIs(self.raw()[providers.ACCESS_CHOSEN_KEY], True)
+
+    def test_an_unclaimed_write_that_moves_the_mode_drops_the_old_claim(self):
+        """A stamp describes the value beneath it, not the key. Left behind, it
+        would let an unowned write inherit a pick made for a mode that is no
+        longer stored."""
+        self._write({"permission_mode": "plan",
+                     providers.ACCESS_CHOSEN_KEY: True})
+        providers.save_settings(permission_mode="acceptEdits", chosen=False)
+        self.assertNotIn(providers.ACCESS_CHOSEN_KEY, self.raw())
+
+    def test_an_unclaimed_write_of_the_SAME_mode_leaves_the_claim_alone(self):
+        """An echo changes nothing, so it un-decides nothing either: a founder
+        who genuinely picked Read only keeps it."""
+        self._write({"permission_mode": "plan",
+                     providers.ACCESS_CHOSEN_KEY: True})
+        providers.save_settings(permission_mode="plan", chosen=False)
+        self.assertIs(self.raw()[providers.ACCESS_CHOSEN_KEY], True)
+        self.assertEqual(providers.load_settings()["access_effective"], "read")
+
+
 if __name__ == "__main__":
     unittest.main()

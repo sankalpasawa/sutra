@@ -1964,7 +1964,14 @@ class TestDeepSeekPermissionMode(unittest.TestCase):
     def _set_mode(self, mode):
         url = "http://127.0.0.1:%d/api/settings" % self.port
         req = urllib.request.Request(
-            url, data=json.dumps({"permission_mode": mode}).encode("utf-8"),
+            # `chosen`, because this helper's whole meaning is "the operator
+            # put the session in this mode" -- and since 2026-09-19 a POST that
+            # does not claim the pick cannot pin the floor mode, so `plan`
+            # would resolve straight back to the Full access default
+            # (providers.ACCESS_CHOSEN_KEY) and these tests would assert about
+            # a mode the CLI was never asked to run.
+            url, data=json.dumps({"permission_mode": mode,
+                                  "chosen": True}).encode("utf-8"),
             method="POST", headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=5) as resp:
             body = json.loads(resp.read().decode("utf-8"))
