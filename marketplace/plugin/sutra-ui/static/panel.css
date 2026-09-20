@@ -1139,15 +1139,17 @@
   .ubar i.p-warn{background:var(--warn)}
   .ubar i.p-block{background:var(--block)}
 
-  /* Live mark: this transcript is being written in Claude right now. Pulsed,
-     because the one thing it has to say is that it is CHANGING -- a static
-     badge reads as a label. Respects reduced-motion: the colour still carries
-     the meaning without the animation. */
+  /* Live mark: this transcript is being written right now. It was pulsed until
+     2026-09-21; see the note on the dot itself for why it no longer is. */
   .livedot{color:var(--ok);font-weight:600;display:inline-flex;align-items:center;gap:4px}
-  .livedot::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--ok);
-    animation:livepulse 1.6s ease-in-out infinite}
+  /* STEADY, NOT BLINKING (founder 2026-09-21). The opacity pulse restarted from
+     full on every rail repaint -- the rail is rebuilt wholesale -- so it read
+     as a dot appearing and vanishing at random rather than as a heartbeat. A
+     solid dot with the same soft halo .dot.run wears says "live" and holds. */
+  .livedot::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--ok);
+    box-shadow:0 0 0 3px var(--ok-bg)}
+  /* the keyframes stay: Shadow's thinking dot and turn-live dot still breathe */
   @keyframes livepulse{0%,100%{opacity:1}50%{opacity:.25}}
-  @media (prefers-reduced-motion:reduce){ .livedot::before{animation:none} }
 
   /* ── routine run threads ─────────────────────────────────────────────────
      A run row is a control, so it says so: pointer, hover, and a focus ring for
@@ -1373,6 +1375,11 @@
   .mrow .mv{color:var(--muted);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;
     white-space:nowrap;min-width:0}
   .mrow .ma{color:var(--faint);font-size:10px}
+  /* The quiet aside on a row's value ("this chat only"), and the Access row's
+     warning colour for a mode that writes files -- both arrived with the
+     composer chrome that moved into this menu on 2026-09-21. */
+  .mrow .mvnote{color:var(--faint)}
+  .mrow.accrowm.warn .accn{color:var(--warn)}
   /* a <label> row hosts a real <select>: it must not look like a pill inside a pill */
   label.mrow{cursor:default}
   label.mrow .mv select{width:100%;max-width:100%;background:var(--inset);color:var(--ink);

@@ -1152,7 +1152,11 @@ function sessMenuHtml(s){
   const real=!!s.real, grp=groupMap()[sid]||"";
   const groups=[...new Set(Object.values(groupMap()))].filter(Boolean);
   const mi=(act,label,extra="")=>`<button type="button" role="menuitem" data-act="${act}" data-sid="${sid}" ${extra}>${label}</button>`;
+  /* Which assistant wrote this transcript. It used to be a tag on every row of
+     the list; it is a fact about the file, wanted rarely, so it lives here. */
+  const wrote = s.source ? `<div class="smsec" data-smsource>Written by ${esc(s.source)}</div>` : "";
   return `<div class="smenu" role="menu">
+    ${wrote}
     <div class="smsec">Open in</div>
     ${mi("open-terminal","Terminal")}
     ${mi("open-editor","Editor")}
@@ -1536,6 +1540,28 @@ function providerUsage(pid, sid){
    are file-system provenance, not something a user thinks in. The row says
    "not opened yet" and stops. Lifted to module scope so the pins in
    test_panel.js exercise the SHIPPED function, not a copy. */
+/* THE LIVE MARK HOLDS THROUGH A QUIET STRETCH (founder 2026-09-21: "those green
+   dots keep coming and going ... if the chats are running, they should just be
+   live"). The server calls a transcript "active" when its file was written in
+   the last 45 s (session_reader.ACTIVE_S) -- and a turn that is running a test
+   suite or a long tool call writes nothing for longer than that, so a chat
+   that never stopped working dropped its dot and got it back with the next
+   line. One sighting of "active" now keeps the mark for LIVE_HOLD_MS; a chat
+   that really ended loses it three minutes later instead of blinking the whole
+   time it runs. Client-side on purpose: ACTIVE_S is the file's honest age and
+   other readers of it want exactly that. */
+const LIVE_HOLD_MS = 180000;
+const _liveSeen = new Map();
+function liveHeld(s, now){
+  now = now == null ? Date.now() : now;
+  if (s.vanished) { _liveSeen.delete(s.id); return false; }
+  if (s.live === "active"){ _liveSeen.set(s.id, now); return true; }
+  const seen = _liveSeen.get(s.id);
+  if (seen == null) return false;
+  if (now - seen < LIVE_HOLD_MS) return true;
+  _liveSeen.delete(s.id); return false;
+}
+
 function rowMeta(s){
   /* The badge is computed BEFORE the guard chain, not inside its last branch.
      `running` is the panel's own in-flight turn; `live` is the transcript
@@ -1553,13 +1579,12 @@ function rowMeta(s){
      Both providers are labelled rather than only the non-default. There is no
      default to be the exception to -- the two are near evenly split -- and
      labelling one silently implies the other. */
-  const prov = s.source
-    ? `<span class="provtag ${esc(s.source)}"
-         title="This transcript was written by ${esc(s.source)}">${esc(s.source)}</span>`
-    : "";
-  const badge = prov
+  /* OFF THE ROW (founder 2026-09-21: the provider name leaves the chat list).
+     The fact is not lost: the row's own three-dot menu says which assistant
+     wrote the transcript (sessMenuHtml). */
+  const badge = ""
     + (running ? `<span class="livedot" title="A turn is running in this panel">running</span>` : "")
-    + (!running && s.live === "active"
+    + (!running && liveHeld(s)
          ? `<span class="livedot" title="Being written right now in Claude">live</span>` : "")
     + (s.agents_live ? `<span class="livedot" title="Subagent transcripts being written right now"
          >${s.agents_live} agent${s.agents_live===1?"":"s"}</span>` : "");

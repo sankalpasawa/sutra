@@ -388,9 +388,12 @@ test("existing showNudge callers keep the lifetime they were written against", (
 
 /* ── 4. the surfaces that survived ───────────────────────────────────────── */
 
-test("the rail still badges which provider wrote each transcript", () => {
-  assert(helpers.includes('class="provtag'), "rowMeta has no provider tag");
-  assert(helpers.includes("s.source"), "rowMeta never reads the source field");
+test("which provider wrote each transcript moved off the row and into its menu", () => {
+  // founder 2026-09-21: the provider name leaves the chat list. The fact
+  // survives one click away, in the row's own menu.
+  assert(!helpers.includes('class="provtag'), "rowMeta still tags every row with its provider");
+  assert(helpers.includes("data-smsource") && helpers.includes("s.source"),
+         "the row menu never says who wrote the transcript");
 });
 
 test("Settings still calls it the DEFAULT provider", () => {
@@ -806,7 +809,8 @@ const UI = (() => {
     grab(render, "providerIsChatLocal"),
     grab(chat, "providerLabel"),
     grab(chat, "providerSwitcherHtml"),
-  ].join("\n") + "\n;globalThis.__U={paneProvider,providerIsChatLocal,providerSwitcherHtml};",
+    grab(chat, "providerFactsFor"),
+  ].join("\n") + "\n;globalThis.__U={paneProvider,providerIsChatLocal,providerSwitcherHtml,providerFactsFor};",
     { filename: "ui#extract" }).runInContext(box);
   return { box, fns: box.__U };
 })();
@@ -920,11 +924,14 @@ test("providerIsChatLocal separates governed chats from pinned ones", () => {
          "nothing has told us C is pinned, and guessing would strand it");
 });
 
-test("the composer row names the chat's provider and says it is chat-local", () => {
+test("the composer no longer names the provider; the ⋯ menu's facts say it is chat-local", () => {
+  // founder 2026-09-21: "Claude Code, this chat only" leaves the composer.
   const html = UI.fns.providerSwitcherHtml("A");
-  assert(/OpenAI Codex/.test(html), "the row does not name codex: " + html);
-  assert(/this chat only/.test(html), "nothing marks it as chat-local: " + html);
-  assert(/provlocal/.test(html), "the chip is not styled as divergent");
+  assert(html === "", "the composer still prints provider chrome on a quiet pane: " + html);
+  const facts = UI.fns.providerFactsFor("A");
+  assert(/this chat only/.test(facts), "nothing marks it as chat-local: " + facts);
+  assert(/Claude Code/.test(facts), "it does not say what Settings still says: " + facts);
+  assert(UI.fns.providerFactsFor("B") === "chosen in Settings", UI.fns.providerFactsFor("B"));
 });
 
 test("a chat-local pane is NOT told the global default will take over", () => {

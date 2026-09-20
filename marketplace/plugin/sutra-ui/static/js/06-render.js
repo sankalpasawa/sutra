@@ -499,13 +499,24 @@ function paneMenuHtml(s){
          provider's models, More models, the thinking levels THAT model
          declares, and Fast mode where the provider has it.
 
-         ACCESS IS NOT HERE. It stays on the composer, under the box, because it
-         is the one setting you change while typing rather than while
-         configuring (same owner, same message). */
+         Access was kept under the box by that same message; the founder moved
+         it into this menu on 2026-09-21 -- see the Access row below. */
        !mpid ? "" : `<button class="mrow" type="button" data-mdlmenu="${esc(s.id)}"
           aria-haspopup="true" aria-expanded="${S.mdlMenu===s.id?"true":"false"}"
           title="Provider, model, thinking level and fast mode — applies to the next message"
-        ><span class="mk">Model</span><span class="mv">${esc(composerModelLabel(s, mpid))}</span><span class="ma">›</span></button>`}
+        ><span class="mk">Model</span><span class="mv">${esc(composerModelLabel(s, mpid))}${
+          /* what the composer's provider row used to say, one click away */
+          (f => f ? ` <span class="mvnote" data-provfacts>· ${esc(f)}</span>` : "")(
+            typeof providerFactsFor === "function" ? providerFactsFor(s.id) : "")
+        }</span><span class="ma">›</span></button>`}
+    ${/* ── Access ───────────────────────────────────────────────────────────
+         MOVED HERE FROM UNDER THE BOX (founder 2026-09-21: "remove the full
+         access thing as well ... put that into the three dots"), which
+         reverses the 2026-09-14 placement. Same control, same state, same
+         popover: the row carries data-accmenu, so composerControlClick opens
+         the access list exactly as the chip did. A mode that writes files
+         keeps its warning colour, and a chat-local choice still says so. */
+       typeof paneAccessRowHtml === "function" ? paneAccessRowHtml(s) : ""}
     ${sec("This chat")}
     ${row("folder", "Folder", esc(cwdLabel(sessCwd(s.id))) + (()=>{
         /* the repo bar's facts, one click away instead of always on screen */
@@ -579,9 +590,11 @@ function paneMenuHtml(s){
                   models" for the older pinned ids and aliases), the thinking
                   levels THAT model declares, and a Fast switch only where the
                   catalogue says the provider has one.
-     ACCESS CHIP  under the box: Read only / Accept edits / Approve for me /
-                  Full access, minus whatever this provider cannot do, with any
-                  legacy stored mode kept under Advanced.
+     ACCESS       Read only / Accept edits / Approve for me / Full access,
+                  minus whatever this provider cannot do, with any legacy
+                  stored mode kept under Advanced. A chip under the box until
+                  2026-09-21; now the ⋯ menu's Access row (paneAccessRowHtml),
+                  opening the same list.
 
    THE PANE MENU'S OWN Model and Permissions rows STAY. They are not a second
    source of truth -- both surfaces read and write the same state (S.model /
@@ -717,7 +730,7 @@ function composerModelMenuHtml(s){
   </div>`;
 }
 
-/* ── access, under the message box ───────────────────────────────────────── */
+/* ── access (a row in the ⋯ menu; its list opens over the transcript) ────── */
 /* The label for whatever mode is in force here. A legacy mode (`manual`,
    `dontAsk`) has no plain name, so it shows its own id rather than being
    silently relabelled as one of the four. */
@@ -726,28 +739,29 @@ function composerAccessLabel(s, pid){
   const hit = accessForMode(pid, mode);
   return hit ? hit.label : mode;
 }
-function composerAccessHtml(s){
+/* The ⋯ menu's Access row. This was a chip under the message box
+   (composerAccessHtml) until 2026-09-21; the control is the same one -- it
+   carries data-accmenu, so composerControlClick opens the same access list. */
+function paneAccessRowHtml(s){
   const pid = paneDeclProvider(s);
   if (!pid) return "";
   const mode = sessPermEffective(s.id);
   const hit = accessForMode(pid, mode);
   const writes = ((PERM_MODES || []).find(m => m.id === mode) || {}).writes_files;
   const open = S.accMenu === s.id;
-  /* CHAT-LOCAL IS STATED. The chip is the chat's own choice when it made one,
+  /* CHAT-LOCAL IS STATED. The row is the chat's own choice when it made one,
      and the stored global otherwise — and an operator has to be able to tell
      which, because only one of them moves when Settings changes. */
   const local = !!(S.perm || {})[s.id];
-  return `<button class="accchip${writes?" warn":""}${local?" local":""}" type="button"
+  return `<button class="mrow accrowm${writes?" warn":""}${local?" local":""}" type="button"
         data-accmenu="${esc(s.id)}" aria-haspopup="true"
         aria-expanded="${open?"true":"false"}"${
         open ? ` aria-controls="accpop-${esc(s.id)}"` : ""}
         title="${escAttr((hit ? hit.desc : "A permission mode saved earlier.")
           + (local ? "\nThis chat only — Settings keeps the default."
                    : "\nFrom Settings — shared by every chat that has not chosen."))}"
-      ><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="1.9" aria-hidden="true"><path d="M5 11V8a7 7 0 0114 0v3"/><rect
-           x="4" y="11" width="16" height="9" rx="2"/></svg
-      ><span class="accn">${esc(composerAccessLabel(s, pid))}</span></button>`;
+      ><span class="mk">Access</span><span class="mv"><span class="accn">${esc(composerAccessLabel(s, pid))}</span>${
+        local ? ` <span class="mvnote">· this chat only</span>` : ""}</span><span class="ma">›</span></button>`;
 }
 function composerAccessMenuHtml(s){
   if (S.accMenu !== s.id) return "";
@@ -1183,11 +1197,9 @@ function sessionPane(s){
              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
            </button>`}
     </div>
-    <!-- UNDER the box, not in it: what the assistant may do is a standing
-         property of the chat, read before you type rather than reached for
-         while typing. Its popover renders inside .pc above, so it opens
-         upwards over the transcript like every other composer popover. -->
-    <div class="accrow">${composerAccessHtml(s)}</div></section>`;
+    <!-- Nothing under the box (founder 2026-09-21). Access is a row in the ⋯
+         menu now; its popover still renders inside .pc above, so it opens
+         upwards over the transcript like every other composer popover. --></section>`;
 }
 
 /* render() does a full innerHTML rebuild, and now some rebuilds are triggered by an
@@ -2355,6 +2367,21 @@ function _sessionIsStreaming(sid){
   return ((S.sideTurns || {})[sid] || []).some(t => t.streaming);
 }
 
+/* The reader's GESTURE parks the pane, before any scroll event exists to be
+   misread. A wheel-up, an upward key or a finger on the transcript says "I am
+   reading" -- and saying it at the input event means the very next streamed
+   token already finds S.userScrolled set and leaves the view alone. Coming back
+   to the bottom is still the scroll listener's call, so following the tail
+   resumes by itself. Keys only count when focus is inside the transcript: the
+   composer's own ArrowUp must not park the pane. */
+const SESS_UP_KEYS = { PageUp:1, ArrowUp:1, Home:1 };
+function _sessUserIntent(pb, sid){
+  const park = () => { S.userScrolled.set(sid, true); };
+  pb.addEventListener("wheel", e => { if (e.deltaY < 0) park(); }, { passive:true });
+  pb.addEventListener("touchmove", park, { passive:true });
+  pb.addEventListener("keydown", e => { if (SESS_UP_KEYS[e.key]) park(); });
+}
+
 function scrollNewSessionsToNewest(){
   const open = new Set(S.openPanes);
   [...S.userScrolled.keys()].forEach(id => { if (!open.has(id)) S.userScrolled.delete(id); });
@@ -2365,12 +2392,27 @@ function scrollNewSessionsToNewest(){
       if (!pb || pb.__sutraBound) return;
       pb.__sutraBound = true;
       /* Distinguish OUR scroll from the operator's: only a scroll we did not
-         cause counts as intent. Landing back at the bottom clears it again. */
+         cause counts as intent. Landing back at the bottom clears it again.
+
+         THE PIN FLAG ALONE COULD NOT TELL THEM APART WHILE A REPLY STREAMED
+         (founder 2026-09-21: "when I go up, suddenly they go down").
+         patchStreaming pins on every frame and releases __pinning on the NEXT
+         rAF -- but the browser dispatches scroll events BEFORE that frame's rAF
+         callbacks, so every scroll event during a stream arrived with the flag
+         still up and was dropped, the reader's own wheel-up included. Nothing
+         ever set S.userScrolled, and the next token pinned them back down.
+         Two fixes, both here: the gesture itself parks the pane
+         (_sessUserIntent, below), and a scroll that moved UP is the reader's
+         whatever the flag says -- none of our pins ever decrease scrollTop. */
+      pb.__lastTop = pb.scrollTop;
       pb.addEventListener("scroll", ()=>{
-        if (pb.__pinning) return;
-        const atBottom = pb.scrollHeight - pb.clientHeight - pb.scrollTop < 24;
+        const top = pb.scrollTop, movedUp = top < (pb.__lastTop || 0) - 1;
+        pb.__lastTop = top;
+        if (pb.__pinning && !movedUp) return;
+        const atBottom = pb.scrollHeight - pb.clientHeight - top < 24;
         if (atBottom) S.userScrolled.delete(sid); else S.userScrolled.set(sid, true);
       }, { passive:true });
+      _sessUserIntent(pb, sid);
     });
     /* Fixed timeouts do not work here. Transcripts range from 2 turns to ~1MB,
        and layout finishes whenever it finishes -- a 120/400/900ms ladder pinned

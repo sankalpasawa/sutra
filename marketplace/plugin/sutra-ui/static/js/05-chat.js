@@ -1854,14 +1854,31 @@ function providerSwitcherHtml(sid){
   /* Named for WHERE the choice came from, because that is the question a
      divergent row raises: this chat says Codex and Settings says Claude, and
      an operator has to be able to tell which one is wrong. */
-  const why = local ? "Set in this chat — Settings still says "
-                      + (providerLabel(dflt) || "something else")
-                    : "Chosen in Settings";
+  /* OFF THE COMPOSER (founder 2026-09-21: the provider name and the chat-local
+     note leave the UI and go into the three dots). The
+     name of what is running and where that choice came from now read in the
+     pane menu's Model row (providerFactsFor, below; paneMenuHtml). What stays
+     here is only what has to INTERRUPT: a refused request (noteRow) and a
+     socket about to change provider under the reader (pending). */
+  if (!pending) return noteRow;
   return `<div class="provrow" role="status" aria-label="AI provider">
-      <span class="provnow${local ? " provlocal" : ""}" title="${esc(why)}">${esc(providerLabel(running))}</span>
-      ${local ? `<span class="provpend">this chat only</span>` : ""}
       ${pending}${noteHtml}
     </div>`;
+}
+/* The two provider facts the composer row used to print, for the pane menu:
+   what is RUNNING in this pane (from the server's frame, never a preference)
+   and whether this chat chose it for itself. "" when nothing has spawned or
+   the machine can run only one thing -- the same silence the row kept. */
+function providerFactsFor(sid){
+  const usable = (PROVIDERS || []).filter(p => p.runnable);
+  if (usable.length < 2) return "";
+  const sess = (S.sessions || []).find(x => x.id === sid) || {};
+  const running = ((sess.channel || {}).id) || "";
+  if (!running) return "";
+  const dflt = ((SETTINGS || {}).provider) || "";
+  return providerIsChatLocal(sid)
+    ? "this chat only — Settings still says " + (providerLabel(dflt) || "something else")
+    : "chosen in Settings";
 }
 /* providerOverridesHtml lived here. It listed the chats whose provider
    differed from the Settings default -- necessary while a chat could be

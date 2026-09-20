@@ -206,7 +206,7 @@ function box(over) {
     grab(render, "paneModelValid"), grab(render, "composerModelFor"),
     grab(render, "composerModelLabel"), grab(render, "paneMenuHtml"),
     grab(render, "_pickBtn"), grab(render, "composerModelMenuHtml"),
-    grab(render, "composerAccessLabel"), grab(render, "composerAccessHtml"),
+    grab(render, "composerAccessLabel"), grab(render, "paneAccessRowHtml"),
     grab(render, "composerAccessMenuHtml"),
     grab(render, "_tcBase"), grab(render, "_tcDiff"), grab(render, "toolCardParts"),
     grab(render, "toolCardHtml"), grabConst(render, "TOOLCARD_WINDOW"),
@@ -422,15 +422,19 @@ test("3f. the thinking level is the turn option, not a second store", () => {
   deq(b.S.turnOpts.A, {}, "choosing Default must remove the override, not store ''");
 });
 
-/* ══════════════════ 4. access, under the message box ═══════════════════════ */
+/* ══════════════════ 4. access, a row in the ⋯ menu ═════════════════════════
+   Under the message box as a chip until 2026-09-21 (founder: "remove the full
+   access thing ... put that into the three dots"). */
 
 function accMenu(b, sid) { b.S.accMenu = sid; return b.composerAccessMenuHtml(sess(b, sid)); }
 
-test("4a. the chip says the access in plain words", () => {
+test("4a. the Access row says the access in plain words, and opens the same list", () => {
   const b = box();
-  const h = b.composerAccessHtml(sess(b, "A"));
-  assert(/class="accchip/.test(h), h);
+  const h = b.paneAccessRowHtml(sess(b, "A"));
+  assert(/class="mrow accrowm/.test(h), h);
+  assert(/data-accmenu="A"/.test(h), "the row does not open the access list: " + h);
   assert(h.includes("Read only"), "it printed a native mode id at the operator: " + textOf(h));
+  assert(!/accchip/.test(h), "the chip is back");
 });
 
 test("4b. all four options on Claude, in the shared order", () => {
@@ -482,7 +486,7 @@ test("4f. a legacy stored mode survives, under Advanced", () => {
 test("4g. a chat already ON a legacy mode shows it, and opens Advanced for it", () => {
   const b = box();
   b.SETTINGS.permission_mode = b.SETTINGS.permission_mode_effective = "dontAsk";
-  const chip = b.composerAccessHtml(sess(b, "A"));
+  const chip = b.paneAccessRowHtml(sess(b, "A"));
   assert(chip.includes("dontAsk"),
          "the stored mode was silently relabelled as one of the four: " + textOf(chip));
   const h = accMenu(b, "A");
