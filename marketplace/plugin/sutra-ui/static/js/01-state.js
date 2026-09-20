@@ -185,7 +185,7 @@ function lsSet(key, value){
    "Routines" is still what the row and the screen are called, only the address
    moved back: Settings -> Automation, next to Skills and Automation. */
 /* org2 (2.275.0, holding BUILD-PLAN.md) was its own destination above the
-   earlier Org accordion, labelled "Old Org", for five days. 2.287.0 (founder,
+   earlier Org accordion, labelled "Old Org", for five days. 2.287.2 (founder,
    2026-09-20: "shift the org tab into the old org tab, saying 'org structure'"):
    the one-screen Org is the FIRST ROW of the Org accordion, labelled
    "Org structure", and the accordion reads "Org" again. Seven destinations. */
@@ -206,7 +206,7 @@ const DEST_PLANES = {
      repeat it. 17-agents.js owns everything inside the pane. */
   agents:   [],
   org:      [/* Org structure = the one-screen Org (19-org2.js), first row since
-                2.287.0. Opt-OUT flag like modules: flags.org2 false hides the row
+                2.287.2. Opt-OUT flag like modules: flags.org2 false hides the row
                 and o2EnsureRegistered never registers the screen. */
              {screen:"org2", label:"Org structure", flag:"org2"},
              /* workspace row is flag-gated at render: with the flag off,
@@ -260,7 +260,7 @@ const DEST_INLINE = new Set(["focus","org"]);
 const DEST_DEFAULT_SCREEN = { now:"now", focus:"shadow", chats:null,
                               agents:"agents",
                               /* org lands on Org structure when it is registered
-                                 (goDest resolves that at click time; 2.287.0). */
+                                 (goDest resolves that at click time; 2.287.2). */
                               org:"departments", team:"teamsutra", settings:"settings" };
 function loadLayout(){
   const raw = lsGet(LS_LAYOUT, null);

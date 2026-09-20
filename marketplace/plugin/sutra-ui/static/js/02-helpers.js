@@ -1178,7 +1178,7 @@ function sessMenuHtml(s){
    the single source for live counts — the planes consume it, so the badge
    logic (and its tests) did not move. */
 /* 2.275.0 to 2.286.x the accordion read "Old Org" beside a second "Org" button
-   for the one-screen Org. 2.287.0 (founder, 2026-09-20): one Org button again;
+   for the one-screen Org. 2.287.2 (founder, 2026-09-20): one Org button again;
    the one-screen Org is its first row, "Org structure" (01-state DEST_PLANES). */
 /* "Market" in the rail (founder, 2026-09-16: "replace agent marketplace with just
    market"); the screen keeps its full title (TITLES.agents in 17-agents.js). */
@@ -1223,7 +1223,7 @@ function goDest(d){
     let fallback = DEST_DEFAULT_SCREEN[d];
     if (d === "org" && typeof wsFlagOn === "function" && wsFlagOn() && SCREENS.workspace)
       fallback = "workspace";
-    /* 2.287.0: entering Org lands on Org structure (the one-screen Org) when it
+    /* 2.287.2: entering Org lands on Org structure (the one-screen Org) when it
        is registered; it registers only while flags.org2 is not false
        (19-org2.js), so the opt-out still lands on the Workspace or Departments. */
     if (d === "org"){

@@ -1,9 +1,25 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-20
-## 2.287.0 (2026-09-20)
+## 2.287.2 (2026-09-20)
 
 - **Sutra Desktop: one Org button again.** The one-screen Org (2.275.0) is now the first row of the Org accordion, labelled "Org structure"; the accordion reads "Org" instead of "Old Org", and the rail shows seven destinations. Entering Org lands on Org structure; `flags.org2: false` drops that row and lands on the Workspace or Departments as before. Founder 2026-09-20.
+
+## 2.287.1 (2026-09-20)
+
+- **v2.287.0 never built a DMG, and neither did v2.286.1.** Both died on the dmg leg's "Engine + importer tests" step before a single build command ran. Nothing in either release caused it: the suite is pinned to the departments export checked into `website/domains/`, and the unattended publisher had regenerated that export from one machine's own registry — the fourth time (bb66966, 7973d6c, c991193b, 33b7be5f). That commit is reverted here, so this tag carries everything 2.287.0 carried and actually ships it.
+- **The 2.263.1 never-shrink guard did not catch this one, because nothing shrank.** The regenerating machine's registry was a *superset* — 77 rows against 55 — and it added three machine-local roots (Asawa Holding, Claude, Desktop) above the published tree. Both halves of the guard, the row-count precheck and the page-loss dry-run, pass a superset. It needs a root-set check; that is not in this release.
+- **The release gates now run the suite that keeps breaking.** `scripts/release-desktop.sh` simulated the Panel step and not this one, so `check` printed READY for both failed releases. `gate_engine_importer` runs the workflow's exact command, names each red test and says what usually causes it. Verified red against the export as 33b7be5f left it and green against the reverted one; release-script unit tests 88 passed.
+
+## 2.287.0 (2026-09-20)
+
+- **Shadow settles its own checks now (D-SH-1).** Across every mission on the founder's install, 9 done-when checks out of 9 were `founder_confirm` and every one carried `proposed_tier: None` — Shadow had never once closed a check by itself. Not distrust: vocabulary. Its only machine lane could read a file, so "the tests pass", "nothing else broke" and "that is the root cause, not a workaround" all fell off the end of `tier_for` and went to a signature.
+- **Two new lanes.** A **command probe** (`command_succeeds`) settles "it builds / the suite is green / nothing unrelated broke": an argv list, `shell=False`, floor-screened, confined cwd, bounded clock and output — never a shell string. An **evidence judge** (`judge` tier) settles "root cause, not a workaround": a one-shot process reads `git diff` plus probe output and returns met / unmet / **cannot_tell**. It never sees the worker's prose — `evidence_for` builds its blob from git and from probes and has no transcript parameter to pass one through.
+- **`FALLBACK_TIER` moves from `founder_confirm` to `judge`,** which is safe only because `cannot_tell` exists: a wrong routing now costs one model call and hands the row back to the founder with its wording untouched, instead of leaving a check nobody ever answers. A bare `founder_confirm` proposal no longer suffices on its own — all nine live checks reached the founder exactly that way — and mid-mission `ask_founder` is admitted only for floor / founder-fact / taste, with the question screened against its own label. Two refusals in a row and the third is admitted regardless, so the gate cannot ping-pong a mission to death. Unchanged and still the founder's: the three floors, facts only they hold, and taste.
+- **The task pane is one scrolling conversation, not five boxes that each scroll** (founder: "no unnecessary scrolls"). A blocked task could put four scrollbars on screen while the conversation sat pinned at its 220px floor and the ask above it took 38% of the height. The briefing card, intervention, thread, log and DONE summary stop being capped self-scrolling blocks; the card is the first message in the thread, sized by its content, and the whole pane scrolls once. A live turn count sits on the one line that never scrolls.
+- **Shadow can fill in what the founder already told it.** `shadow_remember` writes one line into either of the two "What Shadow knows" boxes — write-inert by shape: two named boxes, one collapsed line, deduped, capped from the oldest end, and plain editable text the founder reads back and can delete. `shadow_forget` takes it out again.
+- **One `x` files a task, a second erases it.** Archived is a place in the list, not an absence from it; the rows sit back and come forward on hover and in focus. The status pills came off the row and the card, so the dot carries the state — QUEUED, PAUSED and DRAFT stopped sharing one identical grey.
+- Tests: `test_shadow_verification_lanes.py` (57) and `test_shadow_delete_archive.py` (12) are new; 65 Python lanes and 47 JS suites green, `test_panel.js` 5/5 consecutive. Also carries 2.286.2 (adherence row 6.2), which had no desktop tag of its own.
 
 ## 2.286.2 (2026-09-20)
 

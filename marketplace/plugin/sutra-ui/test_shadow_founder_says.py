@@ -227,6 +227,10 @@ class DeleteIsUntouched(SayBase):
         r = self.client.post("%s/%s/act" % (MIS, mid), json={"action": "delete"})
         self.assertIn(r.status_code, (200, 204),
                       "Delete must be unaffected by founder_says")
+        # ARCHIVE THEN ERASE (2026-09-19). One press files the task; the
+        # second is the eraser this test has always been about.
+        self.assertIsNotNone(self.store.load(mid), "the first press archives")
+        self.client.post("%s/%s/act" % (MIS, mid), json={"action": "delete"})
         self.assertIsNone(self.store.load(mid), "the record is gone")
 
 

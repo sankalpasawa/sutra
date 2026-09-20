@@ -73,37 +73,59 @@ class TestTierFor(unittest.TestCase):
                          "contains_artifact",
                          "the machine-checkable case must keep working")
 
-    def test_07_semantic_contains_artifact_becomes_founder_confirm(self):
+    def test_07_semantic_contains_artifact_is_re_tiered(self):
+        """UNCHANGED RULE, NEW DESTINATION (D-SH-1, 2026-09-20). A criterion
+        DESCRIPTION can never appear verbatim in a transcript, so it is still
+        refused `contains_artifact`. Where it lands afterwards is now the
+        judge rather than the founder -- neither of these strings is taste."""
         for s in (SEMANTIC_1, SEMANTIC_2):
-            self.assertEqual(sp.tier_for(s, "contains_artifact"),
-                             "founder_confirm")
+            self.assertEqual(sp.tier_for(s, "contains_artifact"), "judge")
 
-    def test_08_a_missing_tier_defaults_to_founder_confirm(self):
-        """It used to default to contains_artifact -- the strictest tier."""
+    def test_08_a_missing_tier_defaults_to_the_JUDGE(self):
+        """It defaulted to contains_artifact, then to founder_confirm, and
+        now to `judge`. The second default was measured on the founder's live
+        install as the reason 9 of 9 checks reached their desk: every one of
+        them arrived with no tier at all."""
         for missing in (None, "", "   "):
-            self.assertEqual(sp.tier_for("anything at all", missing),
-                             "founder_confirm")
+            self.assertEqual(sp.tier_for("anything at all", missing), "judge")
 
-    def test_09_verify_is_not_available_to_a_proposal(self):
-        """No production caller passes a verifier, so `verify` can never be
-        met by anyone -- the same bug wearing a different label."""
-        self.assertNotIn("verify", sp.PROPOSAL_TIERS)
+    def test_09_verify_IS_available_to_a_proposal_when_it_carries_a_probe(self):
+        """REVERSED 2026-09-20 (D-SH-1). The note that removed `verify` said
+        "no production caller passes a verifier". That stopped being true on
+        2026-09-17 when probes shipped -- app.py passes _shadow_verifier at
+        four call sites -- and the exclusion stayed behind, demoting the most
+        trustworthy tier there is to a signature."""
+        self.assertIn("verify", sp.PROPOSAL_TIERS)
+        self.assertEqual(
+            sp.tier_for("the referral test passes", "verify",
+                        {"kind": "command_succeeds", "argv": ["pytest"]}),
+            "verify")
+        # ...and WITHOUT a probe it is still demoted: a `verify` with nothing
+        # behind it would claim Shadow checked something it never looked at.
         self.assertEqual(sp.tier_for("run the referral test", "verify"),
-                         "founder_confirm")
+                         "judge")
 
     def test_10_an_unknown_tier_is_never_silently_accepted(self):
         for junk in ("telepathy", "CONTAINS_ARTIFACT", "contains-artifact",
                      "founderConfirm", 7, {"t": 1}):
-            self.assertEqual(sp.tier_for("x", junk), "founder_confirm", junk)
+            self.assertEqual(sp.tier_for("x", junk), "judge", junk)
 
-    def test_11_founder_confirm_is_kept_as_asked(self):
-        self.assertEqual(sp.tier_for(SEMANTIC_1, "founder_confirm"),
+    def test_11_founder_confirm_is_kept_only_when_it_IS_the_founders(self):
+        """A BARE `founder_confirm` IS NO LONGER ENOUGH (D-SH-1). Honouring
+        the label alone would leave the 9-of-9 door open under a new name, so
+        a check routed to a signature has to look like a founder's question.
+        One that genuinely is and does not look like it still gets there: the
+        judge answers `cannot_tell` and it arrives one call later."""
+        self.assertEqual(sp.tier_for(SEMANTIC_1, "founder_confirm"), "judge")
+        self.assertEqual(sp.tier_for("the copy reads well", "founder_confirm"),
+                         "founder_confirm")
+        self.assertEqual(sp.tier_for("the spacing looks right"),
                          "founder_confirm")
 
     def test_12_every_answer_is_a_tier_the_evaluator_implements(self):
         for check in ("short", SEMANTIC_1, "a" * 300):
             for want in (None, "verify", "contains_artifact",
-                         "founder_confirm", "nonsense"):
+                         "founder_confirm", "judge", "nonsense"):
                 self.assertIn(sp.tier_for(check, want), sp.PROPOSAL_TIERS)
 
 
@@ -116,11 +138,11 @@ class TestThroughTheProtocol(unittest.TestCase):
             + "\n```")
         return blocks["goal"]
 
-    def test_13_the_live_flights_proposal_is_now_founder_confirmed(self):
+    def test_13_the_live_flights_proposal_is_re_tiered(self):
         g = self._goal([{"tier": "contains_artifact", "check": SEMANTIC_1},
                         {"tier": "contains_artifact", "check": SEMANTIC_2}])
         self.assertEqual([c["tier"] for c in g["done_when"]],
-                         ["founder_confirm", "founder_confirm"])
+                         ["judge", "judge"])
         self.assertEqual([c["check"] for c in g["done_when"]],
                          [SEMANTIC_1, SEMANTIC_2],
                          "the founder's requirement is PRESERVED, not dropped")
@@ -142,8 +164,7 @@ class TestThroughTheProtocol(unittest.TestCase):
                         {"check": "staging smoke passed"},
                         {"tier": "verify", "check": "run the migration"}])
         self.assertEqual([c["tier"] for c in g["done_when"]],
-                         ["contains_artifact", "founder_confirm",
-                          "founder_confirm", "founder_confirm"])
+                         ["contains_artifact", "judge", "judge", "judge"])
 
     def test_17_unusable_rows_are_still_dropped_never_coerced(self):
         g = self._goal(["just make it work", {}, {"check": "  "},

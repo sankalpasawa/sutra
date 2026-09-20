@@ -187,7 +187,7 @@ class TestTemplateEchoCannotPingPong(unittest.TestCase):
         run(self._engine([
             {"action": "continue", "instruction": "Carry on and paste it.",
              "reason": "r"},
-            {"action": "ask_founder", "reason": "done here"},
+            {"action": "ask_founder", "reason": "does the copy read well to you", "ask_kind": "taste"},
         ]).run_mission(mid))
         self.assertEqual(self.said, ["Carry on and paste it."],
                          "a resumed mission must still say real things")
@@ -202,19 +202,25 @@ class TestOutcomeShapedCriteriaAreNotArtifacts(unittest.TestCase):
             "Existing Shadow behavior still works.",
             "Relevant tests pass."]
 
-    def test_10_the_live_criteria_demote_to_founder_confirm(self):
+    def test_10_the_live_criteria_are_not_artifacts(self):
+        """THE RULE IS UNCHANGED AND THE DESTINATION MOVED (D-SH-1,
+        2026-09-20). None of these may be `contains_artifact` -- a statement
+        ABOUT the work can be satisfied by the worker uttering it, which is
+        the m-245777cf1467 failure this class exists for. Since the inversion
+        they land on `judge` rather than on the founder: none of them is
+        taste, and an unjudged judge row is exactly as unmet as an unsigned
+        founder row, so the worker still gains nothing by saying the words
+        (pinned in test_13)."""
         for s in self.LIVE:
             self.assertFalse(sp.is_literal_artifact(s),
                              "still literal: " + s)
-            self.assertEqual(sp.tier_for(s, "contains_artifact"),
-                             "founder_confirm", s)
+            self.assertEqual(sp.tier_for(s, "contains_artifact"), "judge", s)
 
-    def test_11_more_outcome_phrasings_demote_too(self):
+    def test_11_more_outcome_phrasings_are_not_artifacts_either(self):
         for s in ("The feature is complete.", "The mission is done",
                   "It is finished.", "The build is green.",
                   "The suite is passing.", "Everything still works."):
-            self.assertEqual(sp.tier_for(s, "contains_artifact"),
-                             "founder_confirm", s)
+            self.assertEqual(sp.tier_for(s, "contains_artifact"), "judge", s)
 
     def test_12_GENUINE_artifacts_are_preserved(self):
         """A filename, a marker, an exact output line -- strings the work
@@ -236,8 +242,10 @@ class TestOutcomeShapedCriteriaAreNotArtifacts(unittest.TestCase):
         done, results = mission_engine.evaluate_done_when(
             m, "Committed as f96c3ade. The task reaches DONE.")
         self.assertFalse(done, "the worker talked its way to done")
-        self.assertEqual(results[0]["tier"], "founder_confirm")
-        self.assertFalse(results[0]["met"])
+        self.assertEqual(results[0]["tier"], "judge")
+        self.assertFalse(results[0]["met"],
+                         "an unjudged judge row is unmet, so the transcript "
+                         "buys the worker nothing here either")
 
     def test_14_a_real_artifact_still_matches_its_transcript(self):
         m = {"done_when": [{"tier": sp.tier_for("FINAL:", "contains_artifact"),
@@ -247,17 +255,20 @@ class TestOutcomeShapedCriteriaAreNotArtifacts(unittest.TestCase):
         self.assertTrue(done)
         self.assertEqual(results[0]["tier"], "contains_artifact")
 
-    def test_15_the_existing_tier_for_contract_is_unchanged(self):
-        """Everything tier_for did before it learned about outcomes."""
-        self.assertEqual(sp.tier_for("FINAL:", None), "founder_confirm")
-        self.assertEqual(sp.tier_for("FINAL:", "verify"), "founder_confirm")
-        self.assertEqual(sp.tier_for("FINAL:", "nonsense"), "founder_confirm")
-        self.assertEqual(sp.tier_for("FINAL:", "founder_confirm"),
-                         "founder_confirm")
+    def test_15_the_rest_of_the_tier_for_contract(self):
+        """Everything tier_for did before it learned about outcomes, with the
+        D-SH-1 destination. THE SHAPE RULES ARE UNTOUCHED -- a literal only
+        survives when `contains_artifact` was actually asked for, and the
+        60-char and 8-word ceilings still bind. What changed is that falling
+        off any of them lands on the judge instead of the founder."""
+        self.assertEqual(sp.tier_for("FINAL:", None), "judge")
+        self.assertEqual(sp.tier_for("FINAL:", "verify"), "judge")
+        self.assertEqual(sp.tier_for("FINAL:", "nonsense"), "judge")
+        self.assertEqual(sp.tier_for("FINAL:", "founder_confirm"), "judge")
         self.assertEqual(sp.tier_for("a" * 61, "contains_artifact"),
-                         "founder_confirm", "the 60-char ceiling still binds")
+                         "judge", "the 60-char ceiling still binds")
         self.assertEqual(sp.tier_for("w " * 8 + "w", "contains_artifact"),
-                         "founder_confirm", "the 8-word ceiling still binds")
+                         "judge", "the 8-word ceiling still binds")
 
 
 if __name__ == "__main__":

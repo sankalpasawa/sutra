@@ -615,8 +615,18 @@ console.log("ok 6 controls wired");
     { id: "m-e", objective: "failed one",  state: "failed" },
   ];
   const h = ctx.shadowHomeHtml();
+  /* the LIST keeps its pill (founder, 2026-09-20): the duplication that was
+     worth removing is the RIGHT pane's -- card and header saying the same
+     word about the same task -- not the list, which is where the founder
+     reads the state of every OTHER task. So every state is still named in words on its row, and the dot
+     carries the same face class beside it. */
   ["READY", "RUNNING", "QUEUED", "NEEDS YOU", "FAILED"].forEach(p =>
     assert(new RegExp(">" + p + "<").test(h), "status pill missing: " + p));
+  /* the dot carries the states that HAVE a face colour; queued, paused and
+     draft take the default grey and are named by the pill beside them. */
+  ["ready", "running", "blocked", "failed"].forEach(c =>
+    assert(new RegExp('shtaskdot d-' + c).test(h),
+      "status dot missing: " + c));
   assert(/data-shtask="m-a"/.test(h), "task rows are not selectable");
   /* the empty state says what to do, rather than nothing */
   const ctx2 = fresh();
@@ -1258,8 +1268,14 @@ const AWAITING = {
   const h = ctx.shadowHomeHtml();
   assert(!/>PAUSED</.test(h),
     "waiting on the founder must not read as a stalled task");
-  assert((h.match(/>NEEDS YOU</g) || []).length >= 2,
-    "NEEDS YOU in both the list row and the task header");
+  /* TWICE, NOT THREE TIMES (founder, 2026-09-20). The list row and the
+     header both say it -- they speak for different things, the row for this
+     task among all the others and the header for the one in focus. The
+     BRIEF CARD's third copy is the one that went. */
+  assert.strictEqual((h.match(/>NEEDS YOU</g) || []).length, 2,
+    "NEEDS YOU on the list row and the task header");
+  assert(/shtaskdot d-blocked/.test(h),
+    "…and the row carries the blocked dot beside it");
   assert(/shtpill-blocked/.test(h), "it wears the needs-you pill family");
   /* a mission paused for any OTHER reason is untouched */
   ctx.S.shadowMissions = [{ id: "m-r", objective: "x", state: "paused",
@@ -3178,6 +3194,7 @@ const SET = { engage: ["outcome first"],
     "a started task must read as the existing QUEUED state");
   /* the LIST agrees with the card -- one predicate, both surfaces */
   const list = ctx.shadowTaskListHtml();
+  /* the LIST agrees with the card -- one predicate, both surfaces */
   assert(/shtpill-ready[^>]*>READY/.test(list), "the READY row lost its pill");
   assert(/QUEUED/.test(list), "the started row still reads READY in the list");
   /* and the compact in-thread card, which draws Start too */
@@ -3326,9 +3343,16 @@ const SET = { engage: ["outcome first"],
      are untouched */
   /* the row is `TURN | 1 of 20` now: the key carries the word, the value
      carries the count, and the meter beside it is unchanged. */
-  assert(/shcard2k">turn<\/span>\s*<span class="shcard2v">1 of 20/.test(live),
-    "the budget row must survive");
-  assert(/shtpill-/.test(live), "the state pill must survive");
+  /* the turn count left the card for the pinned header on 2026-09-20 (shadowHeadTurnHtml) -- the card scrolls with the conversation now, and a LIVE number may not scroll away */
+  assert(!/shcard2k">turn</.test(live), "the card's turn row moved out");
+  assert(/>1\/20</.test(ctx.shadowHeadTurnHtml(
+    Object.assign({ turns_used: 0, turn_open: 1, max_turns: 20 }))),
+    "…and the header prints the same two numbers");
+  /* THE CARD'S PILL IS GONE ON PURPOSE (2026-09-19) -- it said the same word
+     the workspace header says, about the same task, forty pixels apart. What
+     this block is about, the facts BESIDE it, is what must survive. */
+  assert(!/shtpill/.test(live), "the card's duplicate state pill came off");
+  assert(/shcard2obj/.test(live), "the card still names the task");
   console.log("ok 33 the task card stamps how fresh the record it drew is");
 }
 
@@ -3415,11 +3439,16 @@ const SET = { engage: ["outcome first"],
   assert.strictEqual(s(pct({ turns_used: 30, max_turns: 20 })), "p-block",
     "turns_used past max_turns is critical, not wrapped or negative");
 
-  /* THE CARD PRINTS THE COUNT AND NOTHING ELSE. The bar came off the brief;
-     the numbers it was drawn from are exactly the ones still printed. */
-  const live = card({ turns_used: 5, max_turns: 20 });
-  assert(/shcard2k">turn<\/span>\s*<span class="shcard2v">5 of 20/.test(live),
-    "the TURN row must still print the count, straight from the record");
+  /* THE HEADER PRINTS THE COUNT AND NOTHING ELSE. The bar came off the brief
+     in 2026-09-15 and the numbers followed it to the pinned header on
+     2026-09-20, when the brief became the conversation's first message --
+     they are still the same two numbers, read from the same record. */
+  const five = { turns_used: 5, max_turns: 20 };
+  const live = card(five);          /* the blocks below read this card too */
+  assert(!/shcard2k">turn</.test(live),
+    "the brief no longer counts turns");
+  assert(/>5\/20</.test(ctx.shadowHeadTurnHtml(five)),
+    "the header must print the count, straight from the record");
   assert.strictEqual(bar(live), "", "the card must draw no track");
   assert(!/ubar|shcard2bar/.test(live), "and no meter markup of any kind");
   assert(!/turns left/.test(live), "nor the meter's words");
@@ -3455,13 +3484,20 @@ const SET = { engage: ["outcome first"],
   /* NO CEILING, NO BAR: the row keeps the text it has always had */
   assert.strictEqual(meter({ turns_used: 4, max_turns: 0 }), "",
     "with no stated ceiling the meter draws no track, not a full one");
-  const unbounded = card({ turns_used: 4, max_turns: 0 });
-  assert(/shcard2k">turn<\/span>\s*<span class="shcard2v">4 of 0/.test(unbounded),
-    "and the budget row itself is untouched");
+  /* AND THE HEADER SAYS NOTHING RATHER THAN `4/0` (2026-09-20). With the
+     count on the pinned line there is no key column to carry the word, so a
+     mission with no stated ceiling prints no count at all -- `4/0` reads as
+     a task that has run out, which is the opposite of what it means. */
+  assert.strictEqual(ctx.shadowHeadTurnHtml({ turns_used: 4, max_turns: 0 }),
+    "", "no ceiling, no count");
 
   /* it is an addition to a row, not a replacement for the card: the facts
      around it survive */
-  assert(/shtpill-/.test(live), "the state pill must survive");
+  /* THE CARD'S PILL IS GONE ON PURPOSE (2026-09-19) -- it said the same word
+     the workspace header says, about the same task, forty pixels apart. What
+     this block is about, the facts BESIDE it, is what must survive. */
+  assert(!/shtpill/.test(live), "the card's duplicate state pill came off");
+  assert(/shcard2obj/.test(live), "the card still names the task");
   assert(/done when/.test(live), "the done-when row must survive");
   assert(/where it runs/.test(live), "the acts-in row must survive");
   /* ── 34b. THE ROW SHOWS THE TURN THE WORKER IS ON ──────────────────────
@@ -3480,9 +3516,9 @@ const SET = { engage: ["outcome first"],
   assert.strictEqual(now({ turns_used: 5, turn_open: 3 }), 5,
     "a stale open turn can never DROP the count backwards");
   assert.strictEqual(now({}), 0, "an empty record is zero, not NaN");
-  const inflight = card({ turns_used: 5, turn_open: 6, max_turns: 20 });
-  assert(/shcard2k">turn<\/span>\s*<span class="shcard2v">6 of 20/.test(inflight),
-    "the card must print the in-flight turn");
+  const inflight = { turns_used: 5, turn_open: 6, max_turns: 20 };
+  assert(/>6\/20</.test(ctx.shadowHeadTurnHtml(inflight)),
+    "the header must print the in-flight turn");
   /* THE BUDGET IS DELIBERATELY NOT MOVED: max_turns is compared against
      turns_used in the engine, and a meter disagreeing with the thing that
      ends the mission would be the worse of the two bugs. */
@@ -4082,8 +4118,13 @@ const TURN_M = (over) => Object.assign({ id: "m-turn", objective: "ship it",
   over);
 const OVERLAY_TURNS = (h) => (h.match(/shturns">([^<]*)</) || [])[1];
 /* the card's row reads `turn | N of MAX`; take the N */
-const CARD_TURN = (h) =>
-  (h.match(/shcard2k">turn<\/span>\s*<span class="shcard2v">(\d+) of /) || [])[1];
+/* THE WORKSPACE'S COUNT, wherever it is printed. It was a row on the brief
+   card; since 2026-09-20 the brief is the conversation's first message and
+   the count is on the pane's pinned header, so this reads shadowHeadTurnHtml
+   -- the same two numbers from the same record. Takes the MISSION now, not
+   the card's html, because the printer is a different one. */
+const CARD_TURN = (ctx, m) =>
+  (ctx.shadowHeadTurnHtml(m).match(/>(\d+)\/\d+</) || [])[1];
 
 /* 39a. an open turn is the turn being worked, on both surfaces */
 {
@@ -4093,7 +4134,7 @@ const CARD_TURN = (h) =>
   assert.strictEqual(ctx.shadowTurnNow(m), 2, "the reader names the open turn");
   assert.strictEqual(OVERLAY_TURNS(ctx.missionCardHtml(m)), "2/12",
     "the overlay card must show the turn in flight");
-  assert.strictEqual(CARD_TURN(ctx.shadowTaskCardHtml(m)), "2",
+  assert.strictEqual(CARD_TURN(ctx, m), "2",
     "the workspace card must agree");
   console.log("ok 39a overlay and card both name the open turn");
 }
@@ -4106,7 +4147,7 @@ const CARD_TURN = (h) =>
     const m = TURN_M(over);
     assert.strictEqual(OVERLAY_TURNS(ctx.missionCardHtml(m)), "1/12",
       "overlay fallback: " + JSON.stringify(over));
-    assert.strictEqual(CARD_TURN(ctx.shadowTaskCardHtml(m)), "1",
+    assert.strictEqual(CARD_TURN(ctx, m), "1",
       "card fallback: " + JSON.stringify(over));
   }
   console.log("ok 39b both fall back to the finished count");
@@ -4121,7 +4162,7 @@ const CARD_TURN = (h) =>
   const m = TURN_M({ turns_used: 5, turn_open: 3 });
   assert.strictEqual(ctx.shadowTurnNow(m), 5);
   assert.strictEqual(OVERLAY_TURNS(ctx.missionCardHtml(m)), "5/12");
-  assert.strictEqual(CARD_TURN(ctx.shadowTaskCardHtml(m)), "5");
+  assert.strictEqual(CARD_TURN(ctx, m), "5");
   console.log("ok 39c a stale lower value never moves the count back");
 }
 
@@ -4159,7 +4200,7 @@ const CARD_TURN = (h) =>
     assert.strictEqual(String(ctx.shadowTurnNow(m)), want, what);
     assert.strictEqual(OVERLAY_TURNS(ctx.missionCardHtml(m)), want + "/25",
       "overlay at: " + what);
-    assert.strictEqual(CARD_TURN(ctx.shadowTaskCardHtml(m)), want,
+    assert.strictEqual(CARD_TURN(ctx, m), want,
       "card at: " + what);
   }
   console.log("ok 39e the whole turn sequence reads correctly on both");
@@ -4178,7 +4219,7 @@ const CARD_TURN = (h) =>
   assert.strictEqual(ctx.shadowTurnNow(last), 25, "the final turn is 25");
   assert.strictEqual(OVERLAY_TURNS(ctx.missionCardHtml(last)), "25/25",
     "the overlay must read 25/25 on the last turn");
-  assert.strictEqual(CARD_TURN(ctx.shadowTaskCardHtml(last)), "25",
+  assert.strictEqual(CARD_TURN(ctx, last), "25",
     "…and the workspace card must agree");
   /* the same turn once it has landed: the count does not move again */
   const spent = TURN_M({ turns_used: 25, turn_open: null, max_turns: 25 });
@@ -4202,10 +4243,86 @@ const CARD_TURN = (h) =>
     const m = TURN_M({ turns_used: 0, turn_open: 1, max_turns: max });
     assert.strictEqual(OVERLAY_TURNS(ctx.missionCardHtml(m)), "1/" + max,
       "overlay must use the mission's max_turns (" + max + ")");
-    assert(new RegExp("1 of " + max).test(ctx.shadowTaskCardHtml(m)),
-      "card must use the mission's max_turns (" + max + ")");
+    assert.strictEqual(
+      (ctx.shadowHeadTurnHtml(m).match(/>([0-9]+\/[0-9]+)</) || [])[1],
+      "1/" + max,
+      "the header must use the mission's max_turns (" + max + ")");
   }
   console.log("ok 39f the displayed budget is the mission's own max_turns");
+}
+
+/* 40. ONE STATUS PILL, AND THE ARCHIVED SECTION (founder, 2026-09-19)
+
+   "Remove Running status in 2 places, keep only 1" -- the word was printed
+   on the list row, on the brief card and in the workspace header, all three
+   for the same task. The header's is the survivor: it sits beside the
+   objective of the task actually in focus.
+
+   "if we delete a shadow task ... should be as a separate section as
+   Archived" -- an archived record stays in the list, under its own heading,
+   whatever state it ended in. */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  const run = { id: "m-run", objective: "Ship the fix.", state: "running",
+                max_turns: 25, turns_used: 3, target_mode: "new",
+                target_session: "s-1" };
+  ctx.S.shadowMissions = [run];
+  ctx.S.shadowTaskSel = "m-run";
+
+  const row = ctx.shadowTaskListHtml();
+  assert(/shtaskrow/.test(row), "the row still renders");
+  assert(/shtpill/.test(row), "the list row keeps its status pill");
+  assert(/shtaskdot d-running/.test(row), "…and its dot");
+
+  assert(!/shtpill/.test(ctx.shadowTaskCardHtml(run)),
+    "the brief card may not print a status pill");
+
+  const home = ctx.shadowHomeHtml();
+  assert.strictEqual((home.match(/shtpill /g) || []).length, 2,
+    "one pill per list row, plus the header's -- and none on the brief");
+  assert(/shwhead[\s\S]*shtpill/.test(home),
+    "…and one of them is the header's");
+  console.log("ok 40 the brief lost its pill; the list and the header keep theirs");
+}
+
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  const done = { id: "m-a", objective: "Old one.", state: "done",
+                 max_turns: 25, turns_used: 9 };
+  const filed = { id: "m-b", objective: "Filed one.", state: "done",
+                  max_turns: 25, turns_used: 9,
+                  archived_at: "2026-09-19T10:00:00Z" };
+  ctx.S.shadowMissions = [done, filed];
+
+  assert.strictEqual(ctx.shadowTaskSection(done), "done");
+  assert.strictEqual(ctx.shadowTaskSection(filed), "arch",
+    "an archived task leaves DONE TODAY for its own section");
+  assert(ctx.shadowTaskIsActive(filed, []),
+    "an archived task stays in the list -- that is the point of filing it");
+
+  const list = ctx.shadowTaskListHtml();
+  assert(/ARCHIVED/.test(list), "the ARCHIVED heading renders");
+  assert(list.indexOf("DONE TODAY") < list.indexOf("ARCHIVED"),
+    "ARCHIVED is last -- it is the only section the founder fills");
+  assert(/Delete this task permanently/.test(list),
+    "the x on an archived row is the eraser, and says so");
+  assert(/Stop &amp; archive this task|Archive this task/.test(list),
+    "…and on a live row it is the filer");
+  console.log("ok 40b archived tasks get their own section and a second x");
+}
+
+/* 40c. an archived task is kept even when its goal has concluded -- the
+   founder's decision about the ROW outranks the goal's state, or filing a
+   task would make it vanish instead of moving it. */
+{
+  const ctx = fresh();
+  const filed = { id: "m-c", objective: "Filed.", state: "stopped",
+                  goal_id: "g-1", archived_at: "2026-09-19T10:00:00Z" };
+  assert(ctx.shadowTaskIsActive(filed, [{ id: "g-1", state: "done" }]),
+    "a concluded goal may not take an archived row out of the list");
+  console.log("ok 40c a concluded goal does not un-file an archived task");
 }
 
 console.log("test_shadow_home.js: all green");

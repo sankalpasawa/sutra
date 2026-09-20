@@ -239,38 +239,62 @@ class TestValidation(unittest.TestCase):
                      "text": "x" * 5000}):
             self.assertIsNone(shadow_probe.validate_probe(raw), repr(raw))
 
-    def test_21_command_execution_is_not_in_the_module_at_all(self):
-        """THE VOCABULARY GREW, THE SAFETY PROPERTY DID NOT (2026-09-17).
-        Three kinds were added -- line_count, lines_distinct, file_contains
-        -- because a founder's check ("10 lines", "each distinct", "mentions
-        the date") fell off the end of a two-kind vocabulary and was demoted
-        to founder_confirm, which is what made Shadow park instead of drive.
+    def test_21_command_execution_is_argv_only_and_never_a_shell(self):
+        """THE VOCABULARY GREW AGAIN, AND THIS TIME THE SAFETY STORY MOVED
+        (founder D-SH-1, 2026-09-20). THIS TEST USED TO ASSERT THE OPPOSITE
+        and the reversal is deliberate, so it is recorded rather than quietly
+        rewritten.
 
-        EVERY ADDED KIND IS A PLAIN READ OF ONE FILE. No globbing, no shell,
-        no regex engine -- file_contains is a SUBSTRING test precisely so
-        nothing here compiles a model-authored pattern. The banned-import
-        list below is the real assertion and is unchanged; the tuple is
-        pinned beside it so a future kind cannot be added without a human
-        reading this note."""
+        WHAT IT USED TO SAY: "command execution is not in the module at all",
+        with `subprocess` on a banned-import list. That was right while the
+        only thing it protected was a file read.
+
+        WHY IT CHANGED: it was measured as the reason 9 of 9 live checks were
+        founder_confirm. Every question a founder actually writes about
+        working software -- "the tests pass", "nothing else broke" -- is a
+        question about what happens when you RUN something, and none of them
+        could be expressed. The founder was the test runner.
+
+        WHY THE CHANGE ADDS NO CAPABILITY: the DELEGATE already runs in this
+        same workdir at the founder's own permission mode and already runs
+        anything it likes, every turn. A probe that runs pytest there adds no
+        power to the system; it adds a reading of the result that the worker
+        cannot author.
+
+        WHAT STILL HOLDS, and this is what the assertions below pin:
+          * ARGV, NEVER A SHELL STRING -- `shell=False`, a list, and a shell
+            invoked with -c refused outright.
+          * THE FLOORS APPLY -- screened through shadow_egress, the same
+            table that screens a say.
+          * NO NETWORK, NO os.system, NO os.popen, NO shlex. The module still
+            never hands a string to anything that parses one.
+        """
         self.assertEqual(shadow_probe.PROBE_KINDS,
                          ("file_exists", "file_equals", "line_count",
-                          "lines_distinct", "file_contains"))
-        # the one that would change the safety story, and is still absent
-        self.assertNotIn("command_succeeds", shadow_probe.PROBE_KINDS)
-        # NO KIND COMPILES A MODEL-AUTHORED PATTERN. The module does use one
-        # regex -- _SEGMENTS, which splits a PATH on separators -- and that
-        # is the only one; `file_contains` is a substring test precisely so
-        # a check's `text` never reaches a regex engine.
+                          "lines_distinct", "file_contains",
+                          "command_succeeds"))
         src = Path("shadow_probe.py").read_text()
-        self.assertEqual(src.count("re.compile"), 1, "one regex: _SEGMENTS")
+        # THE ARGV PROPERTY, asserted against the source rather than argued.
+        self.assertIn("shell=False", src)
+        self.assertNotIn("shell=True", src)
+        for banned in ("os.system", "os.popen", "shlex",
+                       "urllib", "socket", "requests"):
+            self.assertNotIn(banned, src, banned)
+        # A SHELL HANDED -c IS REFUSED, so no model-authored string is ever
+        # parsed by anything.
+        for argv in (["bash", "-lc", "x"], ["sh", "-c", "x"],
+                     ["python3", "-c", "x"]):
+            self.assertIsNone(shadow_probe.validate_probe(
+                {"kind": "command_succeeds", "argv": argv}), repr(argv))
+        # THE FLOORS OUTRANK THE LANE.
+        self.assertIn("floor_check", src)
+        # NO KIND COMPILES A MODEL-AUTHORED PATTERN. `file_contains` is a
+        # substring test precisely so a check's `text` never reaches a regex
+        # engine; the module's own regexes are over paths and argv, never
+        # over anything a check supplies as a pattern.
         self.assertIn("_SEGMENTS = re.compile", src)
         for never in ("file_matches", "regex", "pattern", "glob"):
             self.assertNotIn(never, [k for k in shadow_probe.PROBE_KINDS])
-        src = Path("shadow_probe.py").read_text()
-        for banned in ("subprocess", "os.system", "os.popen", "shlex",
-                       "urllib", "socket", "requests"):
-            self.assertNotIn(banned, src.replace(
-                "`command_succeeds` would hand a", ""), banned)
 
     def test_22_an_unusable_probe_is_unmet_never_a_pass(self):
         self.assertFalse(shadow_probe.met({"kind": "nope", "path": "a"}, "/"))
@@ -410,18 +434,25 @@ class TestTheDemotionRule(unittest.TestCase):
         self.assertEqual(tier, "verify")
         self.assertEqual(probe["kind"], "file_equals")
 
-    def test_42_verify_without_a_probe_becomes_founder_confirm(self):
+    def test_42_verify_without_a_probe_is_demoted(self):
+        """DESTINATION CHANGED 2026-09-20 (D-SH-1), RULE UNCHANGED. A
+        probe-less `verify` is still not a verify check and still never gets
+        to claim "Shadow ran this check and it passed". It now lands on the
+        JUDGE rather than on the founder's desk, because the judge can still
+        settle it by reading the diff and says `cannot_tell` when it cannot --
+        which is the founder's row arriving by the honest route instead of by
+        default."""
         self.assertEqual(mission_engine.resolve_verify_tier("verify", None),
-                         ("founder_confirm", None))
+                         ("judge", None))
 
-    def test_43_verify_with_an_invalid_probe_becomes_founder_confirm(self):
+    def test_43_verify_with_an_invalid_probe_is_demoted(self):
         for bad in ({"kind": "command_succeeds", "path": "a"},
                     {"kind": "file_exists", "path": "../escape"},
                     {"kind": "file_equals", "path": "a.txt"},
                     {"kind": "file_exists"}, {}, "file_exists", 7):
             self.assertEqual(
                 mission_engine.resolve_verify_tier("verify", bad),
-                ("founder_confirm", None), repr(bad))
+                ("judge", None), repr(bad))
 
     def test_44_other_tiers_are_never_touched_by_the_rule(self):
         for tier in ("founder_confirm", "contains_artifact", "", None):
@@ -436,7 +467,7 @@ class TestTheDemotionRule(unittest.TestCase):
             {"tier": "verify", "check": "The suite is green."},
             {"tier": "verify", "check": "a.txt says hi", "probe": self.GOOD}])
         self.assertEqual([r["tier"] for r in rows],
-                         ["founder_confirm", "verify"])
+                         ["judge", "verify"])
         self.assertEqual([r["check"] for r in rows],
                          ["The suite is green.", "a.txt says hi"],
                          "demotion never re-words a check")
@@ -448,7 +479,7 @@ class TestTheDemotionRule(unittest.TestCase):
             "action": "continue", "instruction": "go", "reason": "r",
             "done_when": [{"tier": "verify", "check": "tests pass"}]})
         self.assertEqual(d["done_when"][0],
-                         {"tier": "founder_confirm", "check": "tests pass"})
+                         {"tier": "judge", "check": "tests pass"})
 
     def test_47_nothing_is_ever_dropped_by_the_rule(self):
         raw = [{"tier": "verify", "check": "one"},
@@ -463,7 +494,7 @@ class TestTheDemotionRule(unittest.TestCase):
             {"tier": "verify", "check": "The suite is green."},
             {"tier": "verify", "check": "a.txt says hi", "probe": self.GOOD}])
         self.assertEqual([c["tier"] for c in m["done_when"]],
-                         ["founder_confirm", "verify"])
+                         ["judge", "verify"])
         self.assertEqual(m["done_when"][0]["check"], "The suite is green.")
 
     def test_49_the_amend_door_demotes(self):
@@ -471,14 +502,14 @@ class TestTheDemotionRule(unittest.TestCase):
         m = self.missions.amend(m["id"], done_when=[
             {"tier": "verify", "check": "tests pass"}])
         self.assertEqual(m["done_when"][0],
-                         {"tier": "founder_confirm", "check": "tests pass"})
+                         {"tier": "judge", "check": "tests pass"})
 
     def test_50_a_bad_probe_demotes_rather_than_falling_back(self):
         m = self.missions.create("x", "fix", done_when=[
             {"tier": "verify", "check": "escape",
              "probe": {"kind": "file_exists", "path": "../../etc/passwd"}}])
         self.assertEqual(m["done_when"][0],
-                         {"tier": "founder_confirm", "check": "escape"},
+                         {"tier": "judge", "check": "escape"},
                          "an unsafe probe must not leave an attestation "
                          "check wearing the verify label")
 
@@ -519,7 +550,7 @@ class TestTheDemotionRule(unittest.TestCase):
         self.missions.transition(m["id"], "running")
         self.missions.transition(m["id"], "stopped", "founder stop")
         clone = mission_engine.clone_for_retry(self.missions, m["id"])
-        self.assertEqual(clone["done_when"][0]["tier"], "founder_confirm")
+        self.assertEqual(clone["done_when"][0]["tier"], "judge")
         self.assertEqual(clone["done_when"][0]["check"], "legacy")
         self.assertEqual(
             self.missions.load(m["id"])["done_when"][0]["tier"], "verify",
@@ -636,12 +667,20 @@ class TestUnprobedTiersAreUntouched(Engine):
         """WAS: "no probe -> the claim still settles it". That expectation
         encoded the loophole -- Shadow telling the founder "I ran this check
         and it passed" over a transcript it string-matched. The door now
-        demotes, so the claim settles nothing."""
+        demotes, so the claim settles nothing.
+
+        DESTINATION UPDATED 2026-09-20 (D-SH-1): the demotion now lands on
+        `judge` rather than on the founder. The property this test exists for
+        is UNCHANGED and is the assertion below -- a perfect DONE-CHECK line
+        settles nothing, whichever tier the row ended up in. An unjudged
+        `judge` row is unmet exactly as an unsigned `founder_confirm` row is,
+        so the claim buys the worker nothing either way."""
         m = self.mission([{"tier": "verify", "check": CHECK}])
-        self.assertEqual(m["done_when"][0]["tier"], "founder_confirm")
+        self.assertEqual(m["done_when"][0]["tier"], "judge")
         done, results = self.evaluate(m, PERFECT_CLAIM)
         self.assertFalse(done, "a perfect DONE-CHECK line is not a signature")
-        self.assertEqual(results[0]["tier"], "founder_confirm")
+        self.assertEqual(results[0]["tier"], "judge")
+        self.assertFalse(results[0]["met"], "and it is not a judgement either")
 
     def test_32b_evaluation_time_attestation_is_UNCHANGED(self):
         """THE RULE IS VALIDATION-TIME ONLY. A probe-less `verify` already on

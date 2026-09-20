@@ -22,7 +22,9 @@ import providers
 import shadow_egress
 import shadow_intervention
 import shadow_ledger
+import shadow_judge
 import shadow_probe
+import shadow_protocol
 
 STATES = ("draft", "brief_confirm", "running", "queued", "paused",
           "blocked", "done", "failed", "stopped")
@@ -211,7 +213,12 @@ def _is_template_echo(instruction):
 #: thing, only by uttering the sentence. The founder-typed path already
 #: refused it for exactly that reason (2026-09-15); a Shadow-written check
 #: must not reach it either.
-DECIDER_TIERS = ("founder_confirm", "verify")
+#: `judge` ADDED 2026-09-20 (founder D-SH-1). A check that no probe can
+#: settle and that is not the founder's taste is read by shadow_judge against
+#: the DIFF, not against the worker's account of the diff. See
+#: shadow_judge's header for why that is review rather than self-grading, and
+#: shadow_protocol.tier_for for the ladder that routes a check here.
+DECIDER_TIERS = ("founder_confirm", "verify", "judge")
 
 #: A mission the founder left open should not be handed twenty checks.
 MAX_DECIDER_CHECKS = 6
@@ -277,9 +284,30 @@ def validate_done_when(raw):
         check = str(row.get("check") or "").strip()
         if not check:
             continue
-        tier = str(row.get("tier") or "").strip() or "founder_confirm"
+        # ONE LADDER, IN ONE PLACE (D-SH-1). This used to read
+        # `str(row.get("tier")) or "founder_confirm"` -- a default that is how
+        # all 9 checks on the founder's live install reached their desk, every
+        # one carrying `proposed_tier: None`.
+        #
+        # THE LADDER LIVES IN shadow_protocol.tier_for AND IS NOT RE-DERIVED
+        # HERE. An earlier version of this change screened the tier inline and
+        # got it wrong in a way a test caught: a TASTE check arriving with no
+        # tier at all skipped the founder-only screen entirely, because the
+        # screen was written to run only on a row that already said
+        # `founder_confirm`. Delegating removes the second opinion that could
+        # drift from the proposal path -- which is what the old comment here
+        # claimed to be doing and was not.
+        tier = str(row.get("tier") or "").strip()
+        if tier and tier not in DECIDER_TIERS:
+            continue                  # a tier a decider may not write at all
+        tier = shadow_protocol.tier_for(check, tier or None, row.get("probe"))
         if tier not in DECIDER_TIERS:
-            continue
+            # `contains_artifact` is reachable from the ladder and is NOT a
+            # decider tier: it is `check in transcript_text`, so a check
+            # describing a state could be satisfied by the worker uttering the
+            # sentence. The founder-typed path refused it for that reason in
+            # 2026-09-15 and a Shadow-written check must not reach it either.
+            tier = shadow_protocol.FALLBACK_TIER
         # A PROBE IS `verify` ONLY, AND `verify` IS A PROBE ONLY
         # (resolve_verify_tier). founder_confirm is the founder's signature
         # on a judgement ("is this what I wanted?") and a filesystem fact
@@ -328,7 +356,15 @@ def resolve_verify_tier(tier, raw_probe):
     if tier != "verify":
         return tier, None
     probe = shadow_probe.validate_probe(raw_probe)
-    return ("verify", probe) if probe else ("founder_confirm", None)
+    if probe:
+        return "verify", probe
+    # DEMOTE TO THE JUDGE, NOT TO A SIGNATURE (D-SH-1). The rule above is
+    # unchanged -- a probe-less `verify` is not a verify check and never
+    # gets to claim "Shadow ran this check and it passed". What changed is
+    # where it lands: the judge reads the diff and can still settle it, and
+    # says `cannot_tell` when it cannot, which is the founder's row arriving
+    # by the honest route instead of by default.
+    return shadow_protocol.FALLBACK_TIER, None
 
 
 #: How many verification rows one decision may carry. A mission has at most
@@ -392,6 +428,120 @@ def _carry_standing(out, raw):
         out["standing"] = standing
 
 
+#: The only reasons an `ask_founder` is admitted MID-MISSION (founder
+#: D-SH-1, 2026-09-20: "only the absolute absolute essential essential stuff
+#: should shadow ask the user ... even in intermediate phases in the chat").
+#:
+#: The done-when tiering fixed the END of a mission -- what the founder signs
+#: off when the work is finished. It did nothing about the MIDDLE, where
+#: `ask_founder` could raise anything at all and park the mission on it. The
+#: same sentence has to govern both, so it is the same three categories:
+#:
+#:   floor          the say or the plan trips a confirm-first floor. These
+#:                  are unrecoverable and no setting reaches above them.
+#:   founder_fact   a fact only the founder holds and no artifact contains:
+#:                  a credential, a budget ceiling, which region, which of
+#:                  two things they actually want.
+#:   taste          a question with no correct answer, only theirs.
+#:
+#: ANYTHING ELSE IS SHADOW'S OWN WORK. "Do the tests pass", "does this
+#: build", "is this the right file", "did the fix land" are all questions
+#: with an answer on the machine Shadow is already running on.
+ASK_KINDS = ("floor", "founder_fact", "taste")
+
+#: HOW MANY TIMES ONE MISSION MAY HAVE AN ASK REFUSED BEFORE THE NEXT ONE IS
+#: ADMITTED WHATEVER IT SAYS.
+#:
+#: WITHOUT THIS THE GATE EATS THE MISSION. A refused ask becomes a `continue`
+#: carrying ASK_REFUSED_INSTRUCTION, which is a FIXED string -- so a decider
+#: that asks a refused question twice running produces two identical says and
+#: trips the ping-pong guard, which ends the mission `stopped`. The founder
+#: would then get a task that quietly died instead of a question, which is
+#: strictly worse than the question they did not want.
+#:
+#: TWO, NOT ONE, AND NOT SIX. One would make the gate advisory -- ask, get
+#: told to go and look, ask again, get through. Two means Shadow must
+#: actually go and look, come back still stuck, and only then is it believed.
+#: Beyond that the founder is better served by a question than by a mission
+#: grinding its remaining budget against something it cannot resolve.
+ASK_REFUSAL_LIMIT = 2
+
+#: What Shadow is told to do instead, when an ask is refused. Deliberately an
+#: INSTRUCTION TO THE WORKER and not a scolding of the decider: the mission
+#: keeps driving, which is the entire point of refusing.
+ASK_REFUSED_INSTRUCTION = (
+    "Establish this yourself rather than asking the founder: %s. "
+    "You have full access to the workdir -- read the files, run the "
+    "command, check the output. If a command settles it, write the check "
+    "as a `verify` row with a `command_succeeds` probe so it settles "
+    "itself from now on. Only taste, a credential or a budget the founder "
+    "alone holds, or a confirm-first floor may be escalated.")
+
+
+def screen_ask(decision):
+    """May this `ask_founder` reach the founder? -> (admitted, why).
+
+    THE SCREEN IS ON THE QUESTION, NOT ON THE LABEL. A decider that writes
+    `ask_kind: "taste"` over "do the tests pass" is not asking about taste,
+    and honouring the label would make the whole gate a formality a model can
+    walk through by typing a word. So the label says which test to apply and
+    the TEXT has to pass it.
+
+    NEVER RAISES, and A SCREENING FAULT FAILS OPEN -- the one place in this
+    change that does, and deliberately: a bug in the screen must not silently
+    swallow a question about something irreversible. The cost of failing open
+    is a question the founder did not need; the cost of failing closed is a
+    mission that quietly does something they would have stopped.
+
+    FAILING OPEN IS FOR A FAULT, NOT FOR AN EMPTY ASK. A decision with no
+    question in it at all is REFUSED rather than admitted, because there is
+    nothing in it to put to anybody -- admitting it would park the mission on
+    a blank card. That case does not arise in the loop (it checks `decision is
+    not None` first) and is pinned here so the two are not confused.
+
+    A `confirms_check` ask is admitted without further screening. It is
+    asking for a signature on a row that shadow_protocol has ALREADY ruled is
+    the founder's -- re-screening it here would be a second opinion on a
+    question that was settled by the tier ladder, and the two could drift.
+    """
+    try:
+        iv = (decision or {}).get("intervention") or {}
+        if iv.get("confirms_check"):
+            return True, "confirms a founder_confirm check"
+        kind = str((decision or {}).get("ask_kind") or "").strip().lower()
+        text = " ".join(str(x) for x in (
+            (decision or {}).get("reason") or "",
+            iv.get("question") or "", iv.get("context") or "",
+            " ".join(str(f.get("label") or "")
+                     for f in (iv.get("fields") or [])
+                     if isinstance(f, dict)),
+        ) if x)
+        if kind == "floor":
+            floors = shadow_egress.floor_check(text)
+            if floors:
+                return True, "floor: %s" % ", ".join(floors)
+            return False, "declared a floor, but nothing in it trips one"
+        if kind in ("founder_fact", "taste"):
+            if shadow_protocol.is_founder_only(text):
+                return True, kind
+            return False, ("declared %s, but this is a question with an "
+                           "answer on the machine" % kind)
+        # NO LABEL AT ALL is the historical shape, and it is the shape every
+        # ask on the founder's live install had. It is screened on the text
+        # alone rather than refused outright, so a decider that genuinely
+        # needs a credential still gets through without knowing the key
+        # exists -- and one that wants to know whether the tests passed
+        # does not.
+        floors = shadow_egress.floor_check(text)
+        if floors:
+            return True, "floor: %s" % ", ".join(floors)
+        if shadow_protocol.is_founder_only(text):
+            return True, "founder-only question"
+        return False, "nothing here is taste, a founder-held fact, or a floor"
+    except Exception as exc:              # noqa: BLE001 -- see docstring
+        return True, "screen unavailable: %s" % str(exc)[:80]
+
+
 def validate_decision(raw):
     """A Shadow decision, or None if it is not one.
 
@@ -451,6 +601,14 @@ def validate_decision(raw):
     iv = shadow_intervention.validate_request(raw.get("intervention"))
     if iv is not None:
         out["intervention"] = iv
+    # ADDITIVE, AND SHAPE ONLY (D-SH-1). Whether the ask is ADMITTED is
+    # `screen_ask`'s question, asked by the loop with the mission in hand;
+    # this only carries the label through so the screen has it. An unknown
+    # or absent label is simply not carried, which is the historical shape
+    # and which screen_ask handles on the text alone.
+    kind = str(raw.get("ask_kind") or "").strip().lower()
+    if kind in ASK_KINDS:
+        out["ask_kind"] = kind
     return out
 
 
@@ -583,6 +741,55 @@ def memory():
     return raw[:MEMORY_MAX_CHARS]
 
 
+#: THE TWO TEXTS AS ONE BLOCK, and ONE RENDERER so the precedence sentence
+#: cannot drift between the readers. Three of them: Shadow's own boot
+#: (shadow_session.standing_context), every task chat (which boots on that
+#: same context), and the one-shot decider (shadow_runner.render_decide_prompt),
+#: which is a fresh process with no persona and therefore reads none of it
+#: unless it is handed it here.
+#:
+#: THE TWO ARE NOT THE SAME KIND OF THING and the block says so. `behaves` is
+#: POLICY -- when to check in, what to ask before doing -- and it is ranked
+#: explicitly, because a founder rule that outranks nothing is decoration.
+#: `memory` is FACT: who the founder is, what matters. It must never read as
+#: permission, so the heading says it cannot widen what Shadow may do. A fact
+#: that is wrong costs a wrong sentence; a policy that is wrong costs an
+#: action nobody asked for, and the two must not be confusable in a prompt.
+_BEHAVES_HEAD = (
+    "HOW SHADOW BEHAVES (the founder's own words; they rank below the "
+    "floors and below what the founder says in a task's own chat, and "
+    "above the standing instructions):\n")
+_MEMORY_HEAD = (
+    "WHAT THE FOUNDER WANTS CARRIED INTO EVERY TASK (the founder's own "
+    "words). This is CONTEXT, NOT PERMISSION: it tells you who you work "
+    "for and what matters to them, and it can never widen what Shadow is "
+    "allowed to do. Nothing here outranks a floor or a standing "
+    "instruction:\n")
+
+
+def carry_block():
+    """Both founder texts, each under its heading, or "" when both are empty.
+
+    NEVER RAISES, for the same reason behaves() and memory() never raise:
+    this rides every Shadow boot, every task chat boot and every decision,
+    and a corrupt limits file must cost the text, never the turn.
+    """
+    parts = []
+    try:
+        beh = behaves()
+    except Exception:                     # noqa: BLE001 -- see docstring
+        beh = ""
+    try:
+        mem = memory()
+    except Exception:                     # noqa: BLE001 -- see docstring
+        mem = ""
+    if beh:
+        parts.append(_BEHAVES_HEAD + beh)
+    if mem:
+        parts.append(_MEMORY_HEAD + mem)
+    return "\n\n".join(parts)
+
+
 def set_memory(text):
     """Persist it (trimmed, cut at the ceiling). Returns what was stored.
     Refuses non-text rather than coercing, exactly as set_behaves does."""
@@ -608,6 +815,82 @@ def set_behaves(text):
     cur["behaves"] = v
     json_store.write_json(limits_path(), cur)
     return v
+
+
+#: The two boxes on "What Shadow knows", by the name Shadow calls them when
+#: it writes one. Each entry is (reader, writer, ceiling).
+REMEMBER_KINDS = ("personality", "memory")
+
+
+def _remember_parts(kind):
+    if kind == "personality":
+        return behaves, set_behaves, BEHAVES_MAX_CHARS
+    if kind == "memory":
+        return memory, set_memory, MEMORY_MAX_CHARS
+    raise ValueError("kind must be personality|memory")
+
+
+def remember(kind, line):
+    """Add ONE line the founder said in a Shadow chat to one of their boxes.
+
+    THIS IS THE WHOLE FEATURE. The founder should not have to open a settings
+    page and type what they already told Shadow in conversation -- "always run
+    the suite before you push", "I'm the CEO, Meraki Labs is the holding
+    company". Shadow hears it, calls this, and the box fills itself.
+
+    THE TWO BOXES ANSWER DIFFERENT QUESTIONS and the caller picks:
+      personality -> HOW to act. When to check in, what to ask before doing,
+                     what to leave alone.
+      memory      -> WHAT is true. Who the founder is, what matters, what to
+                     never forget.
+
+    WRITTEN AS THE FOUNDER'S OWN WORDS, one line each. Newlines are collapsed
+    because these boxes read as a list of lines, and a pasted paragraph turns
+    that list into prose nobody can revoke a single item of.
+
+    IDEMPOTENT. Shadow hearing the same instruction twice must not write it
+    twice -- the founder would be reading their own words back in duplicate
+    and wondering which one binds. Matched case-insensitively on the trimmed
+    line, which is enough for "the same sentence again" and deliberately not
+    enough for "a rephrasing" (that is the founder's call, in the box).
+
+    FULL MEANS THE OLDEST GOES. The box is a running note, and what the
+    founder just said is the part they most likely meant; silently refusing
+    the new line would be the same failure as silently cutting it in half.
+    Returns the full text as stored, so the caller can show it back.
+    """
+    reader, writer, cap = _remember_parts(kind)
+    text = " ".join(str(line or "").split())
+    if not text:
+        raise ValueError("nothing to remember")
+    cur = reader()
+    lines = [ln for ln in cur.split("\n") if ln.strip()]
+    if any(ln.strip().lower() == text.lower() for ln in lines):
+        return cur                      # already there; say nothing new
+    lines.append(text)
+    while lines and len("\n".join(lines)) > cap:
+        lines.pop(0)
+    return writer("\n".join(lines))
+
+
+def forget(kind, line):
+    """Drop one line from a box, matched the way remember() dedupes it.
+
+    The other half of a box Shadow can write: an instruction the founder
+    takes back has to be removable by saying so, not only by opening the
+    settings page and editing text. Returns the full text as stored, and is
+    a no-op when the line is not there.
+    """
+    reader, writer, _cap = _remember_parts(kind)
+    text = " ".join(str(line or "").split()).lower()
+    if not text:
+        raise ValueError("nothing to forget")
+    cur = reader()
+    kept = [ln for ln in cur.split("\n")
+            if ln.strip() and ln.strip().lower() != text]
+    if len(kept) == len([ln for ln in cur.split("\n") if ln.strip()]):
+        return cur
+    return writer("\n".join(kept))
 
 
 def set_max_running(n):
@@ -1390,6 +1673,45 @@ class MissionStore:
             "note": "record deleted by the founder (was %s)" % state})
         return True
 
+    def archive(self, mid, note="archived by the founder"):
+        """PUT A CONCLUDED MISSION OUT OF THE WAY WITHOUT ERASING IT.
+
+        THE FOUNDER'S X USED TO BE AN ERASER (founder, 2026-09-19: "if we
+        delete a shadow task ... should be as a separate section as
+        Archived"). Pressing it ended the mission and then removed the
+        record, so the one thing a founder might want afterwards -- what the
+        task actually did -- existed only in the ledger, which the workspace
+        does not read. Archiving keeps the record, the transcript and the
+        chat exactly where they are and marks it as something the founder is
+        done looking at.
+
+        NOT A STATE, for the same reason delete() is not one: nothing
+        transitions here, the state machine and every reader of it are
+        untouched. `archived_at` is an ADDITIVE stamp, so an older build
+        reading this file sees the mission it always saw.
+
+        It does NOT end anything either -- the caller stops the mission
+        through the existing founder path first (shadow_runner
+        .founder_force_stop, which carries the stop all the way to the
+        worker). Archiving a mission that is still running would leave a live
+        worker attached to a row the founder has filed away.
+
+        Idempotent: archiving twice restamps nothing and returns the record.
+        delete() remains the eraser, and the workspace's second press is what
+        reaches it.
+        """
+        m = self.load(mid)
+        if m is None:
+            raise ValueError("no mission %s" % mid)
+        if m.get("archived_at"):
+            return m
+        m["archived_at"] = _now()
+        self.save(m)
+        shadow_ledger.append("missions", {
+            "mission_id": mid, "state": m.get("state"),
+            "note": "%s (was %s)" % (note, m.get("state"))})
+        return m
+
     def amend(self, mid, **fields):
         """Amend-not-spawn (S54): a changed brief is a NEW VERSION of the
         same mission -- version bumps, the budget already spent stays spent,
@@ -1552,6 +1874,15 @@ def evaluate_done_when(mission, transcript_text, verifier=None,
         elif tier == "verify":
             met = (_call_verifier(verifier, check["check"], transcript_text)
                    if verifier else False)
+        elif tier == "judge":
+            # STAMPED, NOT CALLED. The judge is a model call and this
+            # function is synchronous and is called from four places; the
+            # loop runs the judges in its own async step (`_run_judges`)
+            # immediately before evaluating, and leaves the verdict on the
+            # row. A row with no stamp is simply unmet -- the mission has
+            # not been judged yet, which is true on the turn a check is
+            # written and stops being true on the next one.
+            met = (check.get("judged") or {}).get("state") == "met"
         elif tier == "contains_artifact":
             met = check["check"] in (transcript_text or "")
         elif tier == "founder_confirm":
@@ -1578,6 +1909,12 @@ HOW_MET = {
     "verify": "Shadow ran this check and it passed",
     "contains_artifact": "found in the chat",
     "founder_confirm": "you confirmed it",
+    # THE WORDING IS A PROMISE AND IT IS EXACTLY THE ONE THE TIER KEEPS.
+    # Not "Shadow verified this" -- the judge read a diff and formed a view,
+    # which is weaker than a probe and stronger than an attestation, and the
+    # founder is entitled to know which of the three they are looking at.
+    # The judge's own one-line reason is shown beside it (judged.reason).
+    "judge": "Shadow read the change and confirmed it",
 }
 HOW_UNMET = "still outstanding"
 
@@ -1852,7 +2189,7 @@ class MissionEngine:
     def __init__(self, store, sayer, boundary_waiter, transcript_reader,
                  verifier=None, on_evaluated=None, decider=None,
                  outcome_reader=None, response_reader=None,
-                 probe_root=None):
+                 probe_root=None, judge=None):
         """`on_evaluated(mission, results, done)` is an OBSERVER of the one
         evaluation this loop already performs -- it is how the goal layer
         keeps per-check progress without a second evaluator. Optional, and
@@ -1879,6 +2216,14 @@ class MissionEngine:
         # providers.load_settings()["workdir"] the worker is spawned in, so
         # no production caller has to thread it and none can drift from it.
         self.probe_root = probe_root
+        # `judge(check, evidence, outcome) -> shadow_judge.Verdict | None`,
+        # async. Injected for exactly the reasons `verifier` and `decider`
+        # are: this module must not reach into app's provider stack, and a
+        # test must be able to hand it a function. None -- every existing
+        # caller and every existing test -- means no judging happens at all,
+        # so a `judge` row simply stays unmet and the mission behaves as it
+        # did before the tier existed.
+        self.judge = judge
         self.on_evaluated = on_evaluated
         # async (context) -> decision dict. None keeps the historical
         # template, which is what leaves every standalone mission and every
@@ -2165,6 +2510,50 @@ class MissionEngine:
                         (" | why: " + decision["reason"][:80])
                         if decision.get("reason") else "")})
             if decision is not None and decision["action"] == "ask_founder":
+                # THE SCREEN, BEFORE THE ESCALATION (D-SH-1, 2026-09-20).
+                #
+                # The tier ladder fixed what the founder signs off at the END
+                # of a mission. This is the MIDDLE, and it was wide open: any
+                # question at all could park a mission on the founder's desk,
+                # which is the half of "stop asking me things" that the
+                # criteria work did not touch.
+                #
+                # A REFUSED ASK IS NOT AN ERROR AND NOT AN ENDING. The
+                # mission KEEPS DRIVING with an instruction to go and find
+                # out, which is what Shadow should have done in the first
+                # place and what it has full access to do. Falling through to
+                # `continue` rather than blocking is the whole behaviour
+                # change; nothing below this branch is touched.
+                admitted, why = screen_ask(decision)
+                refusals = int(m.get("ask_refusals") or 0)
+                if not admitted and refusals >= ASK_REFUSAL_LIMIT:
+                    # TRIED TWICE, STILL STUCK, SO IT IS BELIEVED. See
+                    # ASK_REFUSAL_LIMIT: the alternative is a mission that
+                    # ping-pongs itself to death against a fixed refusal
+                    # string, and a task that quietly died is worse for the
+                    # founder than a question they did not want.
+                    admitted, why = True, (
+                        "refused %d times already -- admitting rather than "
+                        "grinding" % refusals)
+                shadow_ledger.append("actions", {
+                    "mission_id": mid, "kind": "ask_screen",
+                    "summary": "%s: %s" % ("admitted" if admitted
+                                           else "refused", why)})
+                if not admitted:
+                    m["ask_refusals"] = refusals + 1
+                    try:
+                        self.store.save(m)
+                    except Exception:  # noqa: BLE001 -- a count, never a turn
+                        pass
+                    say_text = ASK_REFUSED_INSTRUCTION % (
+                        (decision.get("reason")
+                         or "the thing you were about to ask about")[:200])
+                    decision = {"action": "continue", "reason":
+                                "refused escalation: %s" % why,
+                                "instruction": say_text}
+                # ADMITTED falls through to the escalation below, which is
+                # untouched and still the one writer of that exit.
+            if decision is not None and decision["action"] == "ask_founder":
                 # ASKING THE FOUNDER IS AN ESCALATION, NOT AN ENDING
                 # (founder, 2026-09-14, dogfood m-98f1b3adf69f).
                 #
@@ -2435,6 +2824,18 @@ class MissionEngine:
                     shaped = ""
                 if shaped:
                     last_response = shaped
+            # THE JUDGES RUN HERE, AND ONLY HERE (D-SH-1). This is the one
+            # async point that both owns the record and sits immediately
+            # before an evaluation, so a verdict can never be a turn stale by
+            # the time it is read. `_run_judges` stamps the row;
+            # `evaluate_done_when` -- which is synchronous and has three
+            # other callers -- only ever reads the stamp. Never raises.
+            try:
+                await self._run_judges(m)
+            except Exception as exc:      # noqa: BLE001 -- unjudged, not failed
+                shadow_ledger.append("actions", {
+                    "mission_id": mid, "kind": "judge",
+                    "summary": "judging skipped: %s" % str(exc)[:120]})
             try:
                 done, results = evaluate_done_when(m, transcript,
                                                    self.verifier,
@@ -2870,11 +3271,18 @@ class MissionEngine:
         No raw transcript dump -- evidence assembly (which already excludes
         Shadow's own turns) stays the verifier's input, not the driver's.
         """
+        carry = carry_block()          # one limits read, not two
         return {
             # Shadow v4 (ADR-043): the decider router needs to know WHICH
             # task is asking, so it can hand the turn to that task's own
             # Shadow chat. One key, read only by shadow_task_chat.
             "mission_id": m.get("id"),
+            # THE FOUNDER'S OWN TWO TEXTS. Every other Shadow-shaped process
+            # inherits these from the boot context; the decider is a fresh
+            # spawn with no persona turn, so it reads them here or not at
+            # all. Omitted entirely when both are empty, so a decider prompt
+            # on an unconfigured install is byte-identical to before.
+            **({"carry": carry} if carry else {}),
             "outcome": m.get("objective") or "",
             # `probe` is a BOOLEAN, never the probe itself: Shadow is told
             # WHICH checks it has already worked out how to establish, so it
@@ -3036,15 +3444,22 @@ class MissionEngine:
     def _needs_verification(self, m):
         """Indices of checks Shadow has not yet worked out how to establish.
 
-        A check qualifies when it is `founder_confirm` and carries no probe --
-        which is the shape of "nobody has asked yet", whoever wrote it. A
-        `verify` row already has its probe (resolve_verify_tier guarantees
-        it), and a `contains_artifact` row is a literal the work itself must
-        produce.
+        A check qualifies when it is `founder_confirm` OR `judge` and carries
+        no probe -- which is the shape of "nobody has worked out how yet",
+        whoever wrote it. A `verify` row already has its probe
+        (resolve_verify_tier guarantees it), and a `contains_artifact` row is
+        a literal the work itself must produce.
+
+        `judge` JOINED THE LIST 2026-09-20 (D-SH-1), and the promotion is
+        always an UPGRADE. A judge row settled by reading a diff is weaker
+        than the same row settled by running a command: the probe is
+        deterministic, repeatable and costs no model call. So a judge row
+        Shadow later works out how to probe should stop being judged, exactly
+        as a founder row that gets a probe stops being signed.
         """
         return [i for i, c in enumerate(m.get("done_when") or [])
                 if isinstance(c, dict)
-                and c.get("tier") == "founder_confirm"
+                and c.get("tier") in ("founder_confirm", "judge")
                 and not c.get("probe")
                 and not c.get("met")]
 
@@ -3262,6 +3677,116 @@ class MissionEngine:
         if decision["action"] == "ask_founder":
             return None, decision
         return decision["instruction"], decision
+
+    async def _run_judges(self, m):
+        """Settle every unmet `judge` row against the EVIDENCE, and stamp it.
+
+        RUNS BEFORE EVERY EVALUATION, NOT ONCE. A judgement is a reading of
+        the work as it stands this turn; the work changes every turn, so a
+        verdict cached from turn 2 would be a statement about code that no
+        longer exists. Re-judging is the correct cost and it is bounded by
+        the number of unmet judge rows, which MAX_DECIDER_CHECKS caps at 6.
+
+        NEVER RAISES, and a judge that fails leaves the row EXACTLY as it
+        found it. That matters more here than anywhere else in this file: a
+        failed judgement must not read as `unmet` (which would drive a worker
+        at a check that may already hold) and must certainly not read as
+        `met`. An unstamped row is unmet-by-absence, the mission keeps
+        driving, and the founder is asked at the end of the road exactly as
+        they were before this tier existed.
+
+        `cannot_tell` IS THE ROUTE BACK TO THE FOUNDER, and it is the reason
+        shadow_protocol could safely stop demoting everything. The row is
+        re-tiered to `founder_confirm` on the spot, keeping its wording and
+        carrying the judge's reason so the card can say why it came back.
+        """
+        if self.judge is None:
+            return False
+        checks = [dict(c) if isinstance(c, dict) else c
+                  for c in (m.get("done_when") or [])]
+        pending = [i for i, c in enumerate(checks)
+                   if isinstance(c, dict) and c.get("tier") == "judge"
+                   and not c.get("met")]
+        if not pending:
+            return False
+        evidence = self._judge_evidence(m)
+        outcome = m.get("objective") or ""
+        changed = False
+        for i in pending:
+            try:
+                verdict = await self.judge(checks[i].get("check") or "",
+                                           evidence, outcome)
+            except Exception as exc:   # noqa: BLE001 -- row untouched, see doc
+                shadow_ledger.append("actions", {
+                    "mission_id": m["id"], "kind": "judge",
+                    "summary": "#%d judge failed: %s" % (i, str(exc)[:120])})
+                continue
+            if verdict is None:
+                continue               # said nothing; says nothing
+            state = getattr(verdict, "state", None)
+            reason = getattr(verdict, "reason", "") or ""
+            if state not in shadow_judge.VERDICTS:
+                continue
+            checks[i]["judged"] = {"state": state, "reason": reason[:400],
+                                   "at": _now()}
+            if state == "met":
+                checks[i]["met"] = True
+            elif state == "cannot_tell":
+                # BACK TO THE FOUNDER, WORDING UNTOUCHED. This is the one
+                # place in the new design that re-tiers toward a signature,
+                # and it is the honest one: Shadow looked and could not tell.
+                checks[i]["tier"] = "founder_confirm"
+                checks[i]["met"] = False
+            else:
+                checks[i]["met"] = False
+            changed = True
+            shadow_ledger.append("actions", {
+                "mission_id": m["id"], "kind": "judge",
+                "summary": "#%d %s: %s" % (i, state, reason[:160])})
+        if not changed:
+            return False
+        m["done_when"] = checks
+        # Same stale-write discipline as _apply_verification: the judge was
+        # awaited, the record may have moved underneath, so re-read and write
+        # one field rather than stamping a snapshot over it.
+        want = [(i, checks[i].get("check")) for i in pending]
+        self._save_field(
+            m, "done_when", checks,
+            skip_if=lambda fresh: any(
+                i >= len(fresh.get("done_when") or [])
+                or (fresh["done_when"][i] or {}).get("check") != text
+                for i, text in want))
+        return True
+
+    def _judge_evidence(self, m):
+        """What the judge is shown. THE TRANSCRIPT IS NOT IN IT.
+
+        The diff plus the reason lines of the probes that have already run --
+        so a judge asked "did anything else break" can see that the suite was
+        run and what it printed. Never the worker's prose; see shadow_judge's
+        header for why that exclusion is the design and not an oversight.
+        """
+        root = self.probe_root
+        if root is None:
+            root = shadow_probe.default_root()
+        lines = []
+        for c in (m.get("done_when") or []):
+            if not isinstance(c, dict) or c.get("tier") != "verify":
+                continue
+            probe = c.get("probe")
+            if not probe:
+                continue
+            try:
+                res = shadow_probe.run(probe, root)
+            except Exception:          # noqa: BLE001 -- no line, not fatal
+                continue
+            lines.append("%s -> %s (%s)" % (c.get("check"),
+                                            "MET" if res.met else "NOT MET",
+                                            res.reason))
+        try:
+            return shadow_judge.evidence_for(root, lines)
+        except Exception:              # noqa: BLE001 -- no evidence, not fatal
+            return ""
 
     def _next_say(self, m):
         if m["turns_used"] == 0:

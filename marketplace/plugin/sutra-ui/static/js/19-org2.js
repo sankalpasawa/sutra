@@ -3,7 +3,7 @@
    canvas 6e5e3f8b, pages "Bare screen" and "States").
 
    ON by default since 2.278.0 (plan step 98, founder 2026-09-15); `flags.org2:
-   false` in ~/.sutra-ui/settings.json is the opt-out. Since 2.287.0 (founder
+   false` in ~/.sutra-ui/settings.json is the opt-out. Since 2.287.2 (founder
    2026-09-20) this screen is the first row of the Org accordion, "Org structure",
    not a rail button of its own; the earlier Org screens keep every id and sit
    below it in the same accordion. Nothing here changes them.

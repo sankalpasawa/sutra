@@ -344,7 +344,7 @@ test("approvals panel: nothing waiting, decided rows with a pill", () => {
 });
 
 /* ── rail model and wiring pins (source reads, like test_nav's pins) ── */
-test("rail: one Org destination, labelled Org; no org2 label or icon of its own (2.287.0)", () => {
+test("rail: one Org destination, labelled Org; no org2 label or icon of its own (2.287.2)", () => {
   const labels = helpersSrc.match(/const DEST_LABEL[\s\S]*?\};/)[0];
   assert.ok(/org:\s*"Org"/.test(labels), "DEST_LABEL.org");
   assert.ok(!/Old Org/.test(labels), "no Old Org label");

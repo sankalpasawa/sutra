@@ -186,7 +186,7 @@ class TheNormalPathIsUnchanged(Base):
         async def decider(ctx):
             sent["n"] += 1
             if sent["n"] > 1:
-                return {"action": "ask_founder", "reason": "enough"}
+                return {"action": "ask_founder", "reason": "does the copy read well to you", "ask_kind": "taste"}
             return {"action": "continue", "instruction": "do the next bit"}
 
         asyncio.get_event_loop().run_until_complete(
@@ -201,7 +201,7 @@ class TheNormalPathIsUnchanged(Base):
         async def decider(ctx):
             sent["n"] += 1
             if sent["n"] > 1:
-                return {"action": "ask_founder", "reason": "enough"}
+                return {"action": "ask_founder", "reason": "does the copy read well to you", "ask_kind": "taste"}
             return {"action": "continue", "instruction": "carry on"}
 
         asyncio.get_event_loop().run_until_complete(

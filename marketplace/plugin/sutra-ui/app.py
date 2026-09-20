@@ -2110,6 +2110,14 @@ def _rules_in_scope(target_session=None):
     return lines
 
 
+def _founder_memory():
+    """The founder's memory text for a worker brief, or "". Never raises."""
+    try:
+        return _mission_engine.memory()
+    except Exception:                   # noqa: BLE001 -- see _brief_facts
+        return ""
+
+
 def _brief_facts(mission):
     """What the task's Shadow chat needs to write a brief and cannot know
     on its own: where the worker runs, the rules in scope, the floors."""
@@ -2117,6 +2125,11 @@ def _brief_facts(mission):
         "repo": _shadow_workdir_for_delegates(),
         "why_now": mission.get("why_now") or "",
         "rules": _rules_in_scope(mission.get("target_session")),
+        # THE MEMORY BOX, for the worker. Best-effort like everything else
+        # here: a brief must not fail because the limits file is unreadable,
+        # so a bad read costs this line and nothing more. Only `memory`
+        # travels -- see _facts_text on why `behaves` does not.
+        "about": _founder_memory(),
         "floors": list(SHADOW_FLOORS),
     }
 
@@ -2740,6 +2753,22 @@ async def _shadow_recover():
                 return await shadow_task_chat.route_decision(context, _fallback)
 
             shadow_runner.set_default_decider(_routed)
+            # THE JUDGE IS BOUND BESIDE THE DECIDER (D-SH-1, 2026-09-20), on
+            # the SAME argv builder and the same runtime factory -- so it
+            # buys no tools, no settings and no plugins, for the same reason
+            # the reasoning lane does not: it is allowed to use none of them.
+            # It reads a diff handed to it as text and answers met / unmet /
+            # cannot_tell.
+            #
+            # NOT ROUTED THROUGH THE TASK CHAT, deliberately. The decider is
+            # routed there so a task's own Shadow conversation can steer it;
+            # a judgement must NOT land in a conversation that has been
+            # reading the worker's prose all mission, because the whole
+            # property shadow_judge exists to hold is that the verdict was
+            # formed from the artifact and not from anybody's account of it.
+            shadow_runner.set_default_judge(
+                shadow_runner.make_judge(_decide_args, _shadow_workdir(),
+                                         new_runtime=_shadow_new_runtime))
         except Exception:
             pass
         try:
@@ -4924,14 +4953,56 @@ async def api_shadow_mission_act(mid: str, request: Request):
             m = store.load(mid)
             if m is None:
                 raise HTTPException(404, "no mission %s" % mid)
+            already_archived = bool(m.get("archived_at"))
+            sid, pid = m.get("target_session"), m.get("delegate_pid")
+            # THE STOP IS THE RUNNER'S, NOT A STATE WRITE (founder,
+            # 2026-09-19: "if we delete a shadow task, the task should stop
+            # -- the underlying task too should do a hard stop").
+            #
+            # This branch used to call MissionEngine.founder_stop and then
+            # release_delegate, which is steps 2 and 4 of the six
+            # founder_force_stop performs. The three it skipped are the ones
+            # that matter when the worker is not where this process can see
+            # it: the LOOP TASK was never cancelled, the LEASE was never
+            # released, and -- the founder's actual complaint -- there was no
+            # _kill_orphan_delegate fallback, so DELEGATES being empty (which
+            # it is for every mission that outlived an app restart) meant the
+            # record vanished from the list while the `claude` process it
+            # named kept running with nothing left pointing at it.
+            #
+            # founder_force_stop IS the founder's Stop, carried all the way to
+            # the worker, and it is idempotent on a terminal mission.
             if m["state"] == "queued":
                 m = sched.cancel_queued(mid)
+                shadow_runner.release_delegate(sid)
             elif m["state"] not in _mission_engine.TERMINAL:
-                m = _mission_engine.MissionEngine(
-                    store, None, None, None).founder_stop(
-                        mid, "founder delete (home)")
-            shadow_runner.release_delegate(m.get("target_session"))
+                m = shadow_runner.founder_force_stop(
+                    mid, "founder delete (home)")
+            else:
+                # TERMINAL, AND STILL WORTH REAPING. founder_force_stop hands
+                # a concluded mission straight back -- correctly, a stop must
+                # never overwrite a completion -- so the two reapers are
+                # called here directly. Both are idempotent and both no-op on
+                # a session Shadow never owned.
+                if shadow_runner.release_delegate(sid) is None:
+                    shadow_runner._kill_orphan_delegate(pid, sid)
             _sync_goal_after_founder_end(m)
+            import shadow_feed
+            if not already_archived:
+                # FIRST PRESS ARCHIVES (founder, 2026-09-19). The task is
+                # stopped, filed under Archived in the workspace, and still
+                # readable: its record, its transcript and the chat Shadow
+                # made for it all stand. Erasing was the old behaviour of
+                # this same press and is now what the SECOND one does.
+                m = store.archive(mid, "founder archived (home)")
+                # the cards still go, for the 2026-09-16 reason: an archived
+                # task must not keep asking for the founder on Now.
+                shadow_feed.retire(mission_id=mid)
+                _drain_queue_after("task %s archived" % mid)
+                return {"deleted": False, "archived": True,
+                        "mission_id": mid, "target_session": sid,
+                        "archived_at": m.get("archived_at")}
+            # SECOND PRESS ERASES -- the path this branch has always taken.
             # the chat Shadow MADE for this task goes with it; a founder-owned
             # chat Shadow only visited never does (see _delete_delegate_chat)
             chat = _delete_delegate_chat(m)
@@ -4939,16 +5010,14 @@ async def api_shadow_mission_act(mid: str, request: Request):
             # session and the chat, so removing it first would strand both
             # with nothing left to find them by.
             removed = store.delete(mid)
-            # The task's cards go with it (2026-09-16): a deleted task must
-            # not keep asking for the founder on Now.
-            import shadow_feed
             shadow_feed.retire(mission_id=mid)
             # ...and the slot goes with it. The runner's wrapper cannot do
             # this one: it reloads the mission to decide, and the record it
             # would read is exactly what was just removed.
             _drain_queue_after("task %s deleted" % mid)
-            return {"deleted": bool(removed), "mission_id": mid,
-                    "target_session": m.get("target_session"), **chat}
+            return {"deleted": bool(removed), "archived": False,
+                    "mission_id": mid,
+                    "target_session": sid, **chat}
     except ValueError as exc:
         raise HTTPException(409, str(exc))
     raise HTTPException(400, "unknown action %r" % action)

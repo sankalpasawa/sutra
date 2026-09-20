@@ -107,7 +107,7 @@ test("model: seven destinations, in the founder's order; the one-screen Org is t
   /* Seven again since 2026-09-04: Routines went back under Settings ->
      Automation, the home it held before the 2026-09-02 promotion. */
   /* Eight from 2.275.0 to 2.286.x (org2 as its own button above "Old Org").
-     Seven again since 2.287.0 (founder 2026-09-20): org2 is the first row of
+     Seven again since 2.287.2 (founder 2026-09-20): org2 is the first row of
      the Org accordion, labelled "Org structure"; flags.org2 false hides the row. */
   assert.strictEqual(JSON.stringify(T.DESTS),
     JSON.stringify(["now","focus","chats","agents","org","team","settings"]));
@@ -169,7 +169,7 @@ test("planes: org post-S92 — Workspace leads; Knowledge/Files folded in", () =
   const rows = T.planeRows("org").flatMap(g => g.rows).map(r => r.screen);
   /* 2.247.0: Modules sits after Placements (design D-M7) -- the products the
      operator builds, before the one row that changes the org itself.
-     2.287.0: Org structure (the one-screen Org, org2) leads the accordion. */
+     2.287.2: Org structure (the one-screen Org, org2) leads the accordion. */
   assert.strictEqual(JSON.stringify(rows), JSON.stringify(
     ["org2","workspace","departments","charters","placements","modules","reorg"]));
 });
@@ -1197,12 +1197,12 @@ test("inline: entering Org renders its rows inside the rail with the plane's mar
   T.goDest("org");
   T.renderRail();
   const out = els["railnav"].innerHTML;
-  assert.strictEqual((out.match(/data-dest="/g) || []).length, 7, "still seven destinations (2.287.0)");
+  assert.strictEqual((out.match(/data-dest="/g) || []).length, 7, "still seven destinations (2.287.2)");
   assert(/data-dest="org"[^>]*data-open="true"/.test(out), "Org parent reads open");
   assert(/data-dest="org"[^>]*aria-expanded="true"/.test(out), "aria-expanded on the parent");
   assert(/aria-controls="acc-org"/.test(out) && /id="acc-org"/.test(out), "aria-controls wires the list");
   assert(/data-dest="org"[^>]*aria-current="false"/.test(out), "open parent yields the highlight");
-  /* 2.287.0: Org lands on Org structure when the one-screen Org registered
+  /* 2.287.2: Org lands on Org structure when the one-screen Org registered
      (it does here: every panel script is loaded); otherwise on Departments. */
   const landed = T.SCREENS.org2 ? "org2" : "departments";
   assert(new RegExp('data-screen="' + landed + '"[^>]*aria-current="true"').test(out), "the landed child carries it");

@@ -63,3 +63,4 @@
 {"hook":"md-standard-gate","std":"2.0","path":"marketplace/plugin/sutra-ui/apps-frameworks/angles/backend.md","new":1,"severity":"hard","rules":"MD-2 PROV missing provenance footer (R10)","ts":"2026-09-11T18:51:43Z"}
 {"hook":"md-standard-gate","std":"2.0","path":"marketplace/plugin/sutra-ui/apps-frameworks/angles/frontend.md","new":1,"severity":"hard","rules":"MD-2 PROV missing provenance footer (R10)","ts":"2026-09-11T18:51:48Z"}
 {"hook":"md-standard-gate","std":"2.0","path":"marketplace/plugin/sutra-ui/apps-frameworks/angles/frontend.md","new":1,"severity":"hard","rules":"MD-2 PROV missing provenance footer (R10)","ts":"2026-09-11T18:51:48Z"}
+{"hook":"md-standard-gate","std":"2.0","path":"marketplace/plugin/sutra-ui/D-SH-1-VERIFICATION-LANES.md","new":1,"severity":"hard","rules":"MD-2 PROV missing provenance footer (R10)","ts":"2026-09-20T10:46:52Z"}

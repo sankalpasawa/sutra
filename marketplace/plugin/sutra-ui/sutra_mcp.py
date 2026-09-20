@@ -440,6 +440,7 @@ if _SHADOW_ON:
             })
         return _text(json.dumps(out))
 
+    import mission_engine as _mission_engine
     import shadow_egress as _shadow_egress
     import shadow_ledger as _shadow_ledger
     import urllib.request as _urlreq
@@ -518,6 +519,33 @@ if _SHADOW_ON:
         except ValueError as exc:
             return _text(str(exc))
         return _text(json.dumps(row))
+
+    def t_shadow_remember(args):
+        """Write one line the founder said into one of their two boxes.
+
+        THE ONE TOOL THAT CHANGES WHAT SHADOW IS, and the only Shadow tool
+        whose whole point is that the founder can see and undo it: both boxes
+        are plain editable text on "What Shadow knows", so anything written
+        here is a sentence they can read back, change or delete. That is what
+        makes a WRITE admissible from a propose-only server -- it installs
+        nothing and schedules nothing, it fills in a settings field the
+        founder was otherwise going to type by hand.
+        """
+        refused = _shadow_gate()
+        if refused:
+            return refused
+        try:
+            if args.get("forget"):
+                text = _mission_engine.forget(args.get("kind") or "",
+                                              args.get("line") or "")
+            else:
+                text = _mission_engine.remember(args.get("kind") or "",
+                                                args.get("line") or "")
+        except ValueError as exc:
+            return _text(str(exc))
+        except Exception as exc:          # noqa: BLE001 -- a broken limits
+            return _text("could not write it: %s" % exc)   # file, most likely
+        return _text(json.dumps({"kind": args.get("kind"), "text": text}))
 
     def t_shadow_session_say(args):
         refused = _shadow_gate()
@@ -611,6 +639,17 @@ if _SHADOW_ON:
          {"type": "object", "properties": {
              "kind": {"type": "string"}, "row": {"type": "object"}},
           "required": ["kind", "row"]}),
+        ("shadow_remember", t_shadow_remember,
+         "Write one line the founder said into their own settings: "
+         "kind=personality (how Shadow should act) or kind=memory (what is "
+         "true about them). Set forget=true to remove that line instead. "
+         "Use it when the founder tells you something that should outlive "
+         "this conversation; never for a one-off instruction.",
+         {"type": "object", "properties": {
+             "kind": {"type": "string", "enum": ["personality", "memory"]},
+             "line": {"type": "string"},
+             "forget": {"type": "boolean"}},
+          "required": ["kind", "line"]}),
         ("shadow_verify", t_shadow_verify,
          "Assert an outcome: contains (session transcript), ledger_has, "
          "or state (P3).",

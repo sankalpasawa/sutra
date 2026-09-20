@@ -69,9 +69,23 @@ const LIVE = M({ id: "m-live", state: "running", turns_used: 3,
 const unspin = (h) =>
   String(h).replace(/<span class="shtpillspin"[^>]*><\/span>/g, "");
 const pill = (h) => (unspin(h).match(/shtpill-[a-z]*"?\s*>([^<]*)</) || [])[1];
+/* THE FACE, FROM THE ONE THING THAT PRINTS IT (2026-09-19). The detail card
+   stopped drawing a pill when the founder cut the word down to one surface,
+   so the vocabulary under test is read from shadowTaskPillHtml itself --
+   which is what the card, and now only the workspace header, ever called. */
+const facePill = (ctx, m) =>
+  pill(ctx.shadowTaskPillHtml(ctx.shadowTaskFaceFor(m)));
 /* the row is `TURN | 10 of 12` now -- the key says "turn", so the value no
    longer repeats it. Read the value span. */
-const turn = (h) => (h.match(/shcard2k">turn<\/span>\s*<span class="shcard2v">([^<]*)</) || [])[1];
+/* THE COUNT MOVED TO THE HEADER (founder, 2026-09-20). The brief became the
+   first message of the conversation and scrolls with it, so the one fact on
+   it that changes while you read -- the turn count -- went to the pane's
+   pinned line. Read it from its printer; the numbers are the same two. */
+const turn = (ctx, m) => {
+  const h = ctx.shadowHeadTurnHtml(m);
+  const got = (h.match(/>([0-9]+)\/([0-9]+)</) || []);
+  return got[1] === undefined ? undefined : got[1] + " of " + got[2];
+};
 
 function ctxWith(rows, selId){
   const ctx = fresh();
@@ -90,8 +104,14 @@ function ctxWith(rows, selId){
     "with a running task present, a start-already-taken brief_confirm row " +
     "must not be what the detail card shows");
   const card = ctx.shadowTaskCardHtml(sel);
-  assert.strictEqual(pill(card), "RUNNING", "detail pill must say RUNNING");
-  assert.strictEqual(turn(card), "3 of 20", "turn count comes from the record");
+  assert(/data-shtaskcard="m-live"/.test(card),
+    "the detail card must be the running task's");
+  assert.strictEqual(facePill(ctx, sel), "RUNNING",
+    "the selected task's face must say RUNNING");
+  assert(!/shcard2k">turn</.test(card),
+    "the brief may not print a turn row any more");
+  assert.strictEqual(turn(ctx, sel), "3 of 20",
+    "turn count comes from the record, on the pinned header");
   assert(!/data-shstart=/.test(card), "a running task offers no Start");
   console.log("ok 1 stale QUEUED row no longer captures the detail card");
 }
@@ -144,7 +164,7 @@ function ctxWith(rows, selId){
 /* 7. THE CANONICAL VOCABULARY, on the card, from mission state alone */
 {
   const ctx = fresh();
-  const face = (m) => pill(ctx.shadowTaskCardHtml(M(m)));
+  const face = (m) => facePill(ctx, M(m));
   assert.strictEqual(face({ state: "running" }), "RUNNING", "running");
   assert.strictEqual(face({ state: "paused" }), "PAUSED", "paused");
   assert.strictEqual(face({ state: "done" }), "DONE", "done");
@@ -164,8 +184,8 @@ function ctxWith(rows, selId){
 /* 8. the turn counter tracks the record, it is not pinned to 0 */
 {
   const ctx = fresh();
-  const at = (n) => turn(ctx.shadowTaskCardHtml(
-    M({ state: "running", turns_used: n, max_turns: 20 })));
+  const at = (n) => turn(ctx,
+    M({ state: "running", turns_used: n, max_turns: 20 }));
   assert.strictEqual(at(0), "0 of 20");
   assert.strictEqual(at(1), "1 of 20");
   assert.strictEqual(at(7), "7 of 20");

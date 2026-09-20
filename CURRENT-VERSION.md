@@ -2,9 +2,17 @@
 
 **status**: active · **updated**: 2026-09-20
 
-## v2.287.0 (2026-09-20, HEAD)
+## v2.287.2 (2026-09-20, HEAD)
 
 **One Org button again; the one-screen Org is its first row, "Org structure"** (founder 2026-09-20: "shift the org tab into the old org tab, saying 'org structure'"). The rail shows seven destinations; the opt-out flag drops the row only.
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.287.1 (2026-09-20)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.287.0 (2026-09-20)
 
 See marketplace/plugin/CHANGELOG.md for this release's entry.
 

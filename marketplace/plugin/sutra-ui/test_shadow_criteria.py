@@ -148,6 +148,7 @@ class ShadowWritesTheMissingCriteria(CriteriaBase):
             "max_turns": 20, "last_instruction": "(none)",
             "last_response": "(nothing yet)", "founder_response": "(none)",
             "founder_says": "(none)", "standing": "(none)",
+            "carry": "(none)",
             "criteria_ask": shadow_runner._CRITERIA_ASK,
             "verify_ask": ""}
         self.assertIn("THIS MISSION HAS NO COMPLETION CHECKS", rendered)
@@ -159,6 +160,7 @@ class ShadowWritesTheMissingCriteria(CriteriaBase):
             "turns_used": 1, "max_turns": 20, "last_instruction": "(none)",
             "last_response": "(nothing yet)", "founder_response": "(none)",
             "founder_says": "(none)", "standing": "(none)",
+            "carry": "(none)",
             "criteria_ask": "", "verify_ask": ""}
         self.assertNotIn("THIS MISSION HAS NO COMPLETION CHECKS", rendered)
 
@@ -174,11 +176,18 @@ class ShadowWritesTheMissingCriteria(CriteriaBase):
         # DEMOTED, NOT DROPPED (founder, 2026-09-17). "The suite is green."
         # carries no probe, and a `verify` with nothing behind it would tell
         # the founder "Shadow ran this check and it passed" over a string
-        # match on the worker's own words. resolve_verify_tier sends it to
-        # the one party who can actually answer it. The WORDING is untouched,
-        # which is what the assertion above pins.
+        # match on the worker's own words. The WORDING is untouched, which is
+        # what the assertion above pins.
+        #
+        # WHERE THEY LAND CHANGED 2026-09-20 (D-SH-1) AND THE RULE DID NOT.
+        # Neither of these is taste and neither is a fact only the founder
+        # holds, so neither is theirs to sign: both go to the judge, which
+        # reads the diff and hands back anything it cannot settle. "The EMI
+        # check passes." was the first row's ORIGINAL tier and it is screened
+        # too -- a bare `founder_confirm` is not enough on its own, because
+        # every one of the 9 live checks reached the founder exactly that way.
         self.assertEqual([c["tier"] for c in d["done_when"]],
-                         ["founder_confirm", "founder_confirm"])
+                         ["judge", "judge"])
 
     def test_a_decision_keeps_verify_when_it_carries_a_probe(self):
         d = mission_engine.validate_decision({
@@ -221,10 +230,18 @@ class ShadowWritesTheMissingCriteria(CriteriaBase):
         self.assertEqual(len(mission_engine.validate_done_when(many)),
                          mission_engine.MAX_DECIDER_CHECKS)
 
-    def test_a_missing_tier_defaults_to_founder_confirm(self):
+    def test_a_missing_tier_defaults_to_the_JUDGE(self):
+        """INVERTED 2026-09-20 (D-SH-1). This used to default to
+        `founder_confirm`, and that default is precisely how all 9 checks on
+        the founder's live install reached their desk: every one carried
+        `proposed_tier: None`. The default is now the judge, and only taste
+        or a founder-held fact routes to a signature."""
         got = mission_engine.validate_done_when([{"check": "It works."}])
-        self.assertEqual(got, [{"tier": "founder_confirm",
-                                "check": "It works."}])
+        self.assertEqual(got, [{"tier": "judge", "check": "It works."}])
+        taste = mission_engine.validate_done_when(
+            [{"check": "the copy reads well"}])
+        self.assertEqual(taste, [{"tier": "founder_confirm",
+                                  "check": "the copy reads well"}])
 
     def test_written_criteria_make_the_mission_completable(self):
         """THE WHOLE POINT: an empty set can never be met."""
@@ -233,8 +250,12 @@ class ShadowWritesTheMissingCriteria(CriteriaBase):
             self.store.load(m["id"]), "")
         self.assertFalse(done)
         self.assertEqual(results, [], "no checks -> nothing to meet")
+        # A TASTE-SHAPED CHECK, so it really is the founder's to sign. Since
+        # D-SH-1 a generic "It works." routes to the judge instead, and this
+        # test is about the SIGNATURE path completing a mission -- so it now
+        # names a check that honestly belongs to that path.
         written = mission_engine.validate_done_when(
-            [{"tier": "founder_confirm", "check": "It works."}])
+            [{"tier": "founder_confirm", "check": "the copy reads well"}])
         rec = self.store.load(m["id"])
         rec["done_when"] = written
         self.store.save(rec)
@@ -367,8 +388,11 @@ class TheLivePathWritesCriteriaAndFinishes(CriteriaBase):
         mid = self._mission()
         eng = self._engine({
             "action": "continue", "instruction": "go", "reason": "r",
+            # taste-shaped since D-SH-1: this test is about the founder's
+            # SIGNATURE completing a mission, so the check has to be one that
+            # is honestly theirs rather than one Shadow could settle
             "done_when": [{"tier": "founder_confirm",
-                           "check": "The install steps are complete."}]})
+                           "check": "the install flow reads well to you"}]})
         asyncio.get_event_loop().run_until_complete(eng.run_mission(mid))
 
         m = self.store.load(mid)
@@ -532,8 +556,16 @@ class TheBarExistsBeforeTheWorkerIsSupervised(CriteriaBase):
         done, results = mission_engine.evaluate_done_when(m, "")
         self.assertFalse(done)
         self.assertEqual(len(results), 2, "both checks are evaluated")
-        m["done_when"][0]["met"] = True
-        m["done_when"][1]["met"] = True
+        # SETTLED THE WAY THEIR TIER IS SETTLED (D-SH-1). Neither of these is
+        # taste, so since the inversion both land on `judge` -- and a judge
+        # row is met by a stamped VERDICT, not by flipping `met`. Writing
+        # `met = True` here would have been this test asserting that a tier
+        # can be satisfied by a route that tier does not have.
+        self.assertEqual([c["tier"] for c in m["done_when"]],
+                         ["judge", "judge"])
+        for c in m["done_when"]:
+            c["judged"] = {"state": "met", "reason": "the README says so"}
+            c["met"] = True
         self.store.save(m)
         done, _ = mission_engine.evaluate_done_when(
             self.store.load(mid), "")
@@ -729,7 +761,15 @@ class TheBarExistsBeforeTheWorkerIsSpokenTo(CriteriaBase):
 # --------------------------------------------------------------- untouched --
 class NothingElseMoved(CriteriaBase):
     def test_delete_still_works(self):
+        """TWO PRESSES SINCE 2026-09-19: the first archives, the second
+        erases. What this test is about -- delete is unaffected by criteria
+        -- is unchanged; it just spells the second press now."""
         mid = self.create(objective="Ship it.").json()["id"]
+        r = self.client.post("%s/%s/act" % (MIS, mid),
+                             json={"action": "delete"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertTrue(r.json().get("archived"))
+        self.assertIsNotNone(self.store.load(mid), "archiving keeps the record")
         r = self.client.post("%s/%s/act" % (MIS, mid),
                              json={"action": "delete"})
         self.assertEqual(r.status_code, 200, r.text)
