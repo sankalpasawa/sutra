@@ -290,11 +290,13 @@ do_run c11b "$PLUGIN_MAIN" "$PJ11" "$HM11" UserPromptSubmit "$(stdin_ups sid-c11
 [ -z "$(ls "$PJ11/.sutra/turn/sid-c11/"*.steps.json 2>/dev/null)" ] && pass "case11b: no ledger on system notification" || fail "case11b: ledger on system notification"
 
 # ==================================================================== 12 ====
-echo "== case 12: missing ledger (UPS step lost) -> allow + bootstrap row, never refuse =="
+echo "== case 12: missing ledger (UPS step lost) on a real prompt -> the gate opens it late and says so (2.286.3); bootstrap allow only without a facts file (case 16) =="
 rm -f "$L"
 do_run c12 "$PLUGIN_MAIN" "$PJ" "$HM" PreToolUse "$(stdin_write sid-c2 "$PJ/src/a.txt")"
-adherence_denied c12 && fail "case12: refused without a ledger" || pass "case12: allowed without a ledger"
-is "case12: bootstrap row" "$(rows "$PJ/.sutra/turn/sid-c2/$TID.jsonl" '.kind=="adherence_decision" and .reason=="bootstrap-no-ledger"')" 1
+[ -f "$L" ] && pass "case12: ledger re-opened by the gate" || fail "case12: ledger still missing after the tool call"
+is "case12: late-open row" "$(rows "$PJ/.sutra/turn/sid-c2/$TID.jsonl" '.kind=="adherence_decision" and .decision=="late-open"')" 1
+is "case12: no bootstrap allow on a real prompt" "$(rows "$PJ/.sutra/turn/sid-c2/$TID.jsonl" '.kind=="adherence_decision" and .reason=="bootstrap-no-ledger"')" 0
+jq -r '.systemMessage // ""' "$WORK/c12.out" | grep -q 'ledger opened late' && pass "case12: the late open is printed" || fail "case12: no late-open line"
 
 # ==================================================================== 13 ====
 echo "== case 13: re-running UPS for the same turn keeps opened_ts, mutations and closed (merge, not replace) =="
@@ -405,6 +407,46 @@ sutra_steps_bash_mutation "ls -la | grep x" && fail "case15: lib: read pipeline 
 sutra_steps_bash_shape "python3 -V" && fail "case15: lib: python3 -V classed as mutation" || pass "case15: lib: interpreter version flag is a read"
 sutra_steps_exempt_bash "bash holding/bin/sutra-atom close a-1" sid-x && pass "case15: lib: governance CLI still exempt under the shape pass" || fail "case15: lib: governance CLI lost its exemption"
 sutra_steps_runtime_owned "echo .sutra/turn/sid-1/opened-notes" && fail "case15: lib: runtime-owned regex over-matches" || pass "case15: lib: opened-notes is not the stamp"
+
+# ==================================================================== 16 ====
+echo "== case 16: 2.286.3 - the ledger step was killed at the prompt: the gate opens the ledger late and says so; a synthetic-prompt turn keeps the bootstrap allow =="
+PJ16="$WORK/c16/proj"; HM16="$WORK/c16/home"; mk_proj "$PJ16"; set_flags "$HM16" on on
+do_run c16u "$PLUGIN_MAIN" "$PJ16" "$HM16" UserPromptSubmit "$(stdin_ups sid-c16 "please edit src/a.txt for case 16")"
+T16="$(turn_of "$PJ16" sid-c16)"; D16="$PJ16/.sutra/turn/sid-c16"
+[ -f "$D16/$T16.steps.json" ] && pass "case16: ledger opened at the prompt" || fail "case16: no ledger at the prompt"
+rm -f "$D16/$T16.steps.json"          # simulate the killed prompt-time step: facts stay, ledger gone
+do_run c16w "$PLUGIN_MAIN" "$PJ16" "$HM16" PreToolUse "$(stdin_write sid-c16 "$PJ16/src/a.txt")"
+[ -f "$D16/$T16.steps.json" ] && pass "case16: the gate opened the ledger late" || fail "case16: ledger still missing after the first tool call"
+is "case16: late-open recorded" "$(rows "$D16/$T16.jsonl" '.kind=="adherence_decision" and .decision=="late-open"')" 1
+jq -r '.systemMessage // ""' "$WORK/c16w.out" | grep -q 'ledger opened late' && pass "case16: the late open is printed" || fail "case16: no late-open line: $(jq -r '.systemMessage // ""' "$WORK/c16w.out" | head -c 200)"
+is "case16: the write is still refused (no artifacts yet)" "$(jq -r '.hookSpecificOutput.permissionDecision // "none"' "$WORK/c16w.out")" deny
+is "case16: bootstrap allow is gone for a real prompt" "$(rows "$D16/$T16.jsonl" '.kind=="adherence_decision" and .reason=="bootstrap-no-ledger"')" 0
+write_artifacts "$PJ16" sid-c16 "$T16" "$(jq -r '.opened_ts' "$D16/$T16.steps.json")"
+do_run c16w2 "$PLUGIN_MAIN" "$PJ16" "$HM16" PreToolUse "$(stdin_write sid-c16 "$PJ16/src/a.txt")"
+is "case16: with the artifacts the late-opened turn allows the write" "$(jq -r '.hookSpecificOutput.permissionDecision // "allow"' "$WORK/c16w2.out")" allow
+# a turn with no facts file (synthetic prompt) keeps the bootstrap allow
+rm -f "$D16/$T16.steps.json" "$D16/$T16.facts.json"
+do_run c16s "$PLUGIN_MAIN" "$PJ16" "$HM16" PreToolUse "$(stdin_write sid-c16 "$PJ16/src/a.txt")"
+is "case16: no facts -> bootstrap allow as before" "$(rows "$D16/$T16.jsonl" '.kind=="adherence_decision" and .reason=="bootstrap-no-ledger"')" 1
+[ -f "$D16/$T16.steps.json" ] && fail "case16: a synthetic turn got a ledger" || pass "case16: a synthetic turn gets no late ledger"
+# warn mode: the late open happens and is printed as a warning, nothing is refused
+PJ16w="$WORK/c16w/proj"; HM16w="$WORK/c16w/home"; mk_proj "$PJ16w"; set_flags "$HM16w" on warn
+do_run c16wu "$PLUGIN_MAIN" "$PJ16w" "$HM16w" UserPromptSubmit "$(stdin_ups sid-c16w "warn mode late open")"
+T16w="$(turn_of "$PJ16w" sid-c16w)"; D16w="$PJ16w/.sutra/turn/sid-c16w"
+rm -f "$D16w/$T16w.steps.json"
+do_run c16ww "$PLUGIN_MAIN" "$PJ16w" "$HM16w" PreToolUse "$(stdin_write sid-c16w "$PJ16w/src/a.txt")"
+[ -f "$D16w/$T16w.steps.json" ] && pass "case16: warn mode: ledger opened late" || fail "case16: warn mode: no late ledger"
+is "case16: warn mode: nothing refused" "$(jq -r '.hookSpecificOutput.permissionDecision // "none"' "$WORK/c16ww.out")" none
+jq -r '.systemMessage // ""' "$WORK/c16ww.out" | grep -q 'ledger opened late' && pass "case16: warn mode: late open printed" || fail "case16: warn mode: late open not printed"
+# a turn with no tool call at all: Stop opens the ledger so the turn is recorded (P1-3)
+PJ16s="$WORK/c16s/proj"; HM16s="$WORK/c16s/home"; mk_proj "$PJ16s"; set_flags "$HM16s" on on
+do_run c16su "$PLUGIN_MAIN" "$PJ16s" "$HM16s" UserPromptSubmit "$(stdin_ups sid-c16s "a question with no tool call")"
+T16s="$(turn_of "$PJ16s" sid-c16s)"; D16s="$PJ16s/.sutra/turn/sid-c16s"
+rm -f "$D16s/$T16s.steps.json"
+do_run c16ss "$PLUGIN_MAIN" "$PJ16s" "$HM16s" Stop "$(jq -nc '{session_id:"sid-c16s", hook_event_name:"Stop", last_assistant_message:"answered"}')"
+[ -f "$D16s/$T16s.steps.json" ] && pass "case16: Stop opened the missing ledger" || fail "case16: Stop left the turn unrecorded"
+is "case16: Stop closed the late ledger" "$(jq -r 'if .closed != null then "closed" else "open" end' "$D16s/$T16s.steps.json" 2>/dev/null)" closed
+is "case16: late-open-at-stop row" "$(rows "$D16s/$T16s.jsonl" '.kind=="steps_close" and .result=="late-open-at-stop"')" 1
 
 echo "failed=$failed"
 [ "$failed" -eq 0 ]

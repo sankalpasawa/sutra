@@ -359,14 +359,14 @@
         "class": "A",
         "impl": "native:steps_ledger",
         "phase": "post",
-        "timeout_ms": 2500,
+        "timeout_ms": 6000,
         "killswitch_aliases": [
           ".sutra-runtime-adherence-disabled"
         ],
         "replaces": [],
         "on_error": "warn",
         "flag": "~/.sutra-runtime-adherence",
-        "notes": "adherence row 1: opens .sutra/turn/<sid>/<turn>.steps.json and emits the STEP TRACE when the per-box flag is on|warn; emits nothing when off"
+        "notes": "adherence row 1: opens .sutra/turn/<sid>/<turn>.steps.json and emits the STEP TRACE when the per-box flag is on|warn; emits nothing when off 2.286.3: budget 8000 ms (2500 was exceeded on a loaded box after a reload: 2565 ms, no ledger, silent turn); a killed run is printed by sutra-turn and the gate opens the ledger late 2.286.3: budget 6000 ms (2500 was exceeded on a loaded box after a reload: 2565 ms, no ledger, silent turn; the event sum rule caps it at 6000); a killed run is printed by sutra-turn and the gate opens the ledger late"
       }
     ],
     "PreToolUse": [

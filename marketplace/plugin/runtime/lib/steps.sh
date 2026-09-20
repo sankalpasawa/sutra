@@ -37,6 +37,30 @@ sutra_steps_write() {
   fi
 }
 
+# sutra_steps_open_ledger <proj> <sid> <turn> <mode> <opened_ts> <unit>
+# Writes a NEW ledger for the turn (steps computed now, git_base = a stash
+# commit of the worktree as it is, or HEAD) and returns 0; returns 1 when the
+# file could not be written. Shared by ups.steps_ledger (the normal open at
+# the prompt) and pre.adherence_gate (2.286.3: the late open at the first tool
+# call when the prompt-time step was killed, so a turn is never silently
+# ungoverned). Never overwrites an existing ledger.
+sutra_steps_open_ledger() {
+  local _ol_path _ol_steps _ol_base _ol_ledger
+  _ol_path="$(sutra_steps_path "$1" "$2" "$3")"
+  [ -f "$_ol_path" ] && return 0
+  mkdir -p "$(dirname "$_ol_path")" 2>/dev/null
+  _ol_steps="$(sutra_steps_compute "$1" "$2" "$3" "$5")"
+  [ -n "$_ol_steps" ] || return 1
+  _ol_base="$(git -C "$1" stash create 2>/dev/null)"
+  [ -n "$_ol_base" ] || _ol_base="$(git -C "$1" rev-parse HEAD 2>/dev/null)"
+  _ol_ledger="$(jq -nc --arg turn "$3" --arg sid "$2" --arg mode "$4" \
+    --argjson opened "$5" --arg unit "$6" --argjson steps "$_ol_steps" --arg base "${_ol_base:-}" \
+    '{turn_id:$turn, session_id:$sid, mode:$mode, opened_ts:$opened, unit:$unit, git_base:$base, steps:$steps, mutations:[], closed:null}' 2>/dev/null)"
+  [ -n "$_ol_ledger" ] || return 1
+  sutra_steps_write "$_ol_path" "$_ol_ledger"
+  [ -f "$_ol_path" ]
+}
+
 # _sutra_steps_bash_regex <text> -> 0 when a verb regex says it mutates. The
 # three regexes are hooks/atom-floor.sh's, verbatim (2026-09-16). Since
 # 2.285.1 this is the first of two passes: sutra_steps_bash_shape is the

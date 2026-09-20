@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-09-20
 
-## v2.287.2 (2026-09-20, HEAD)
+## v2.287.3 (2026-09-20, HEAD)
+
+**No silent ungoverned turn** (founder 2026-09-20 "Raise the budget."): the ledger step's budget is 6000 ms, a killed runtime step is printed, and the gate opens a missing ledger at the first tool call instead of allowing by bootstrap. DeepSeek review folded; codex SKIPPED until 2026-10-16.
+
+## v2.287.2 (2026-09-20)
 
 **One Org button again; the one-screen Org is its first row, "Org structure"** (founder 2026-09-20: "shift the org tab into the old org tab, saying 'org structure'"). The rail shows seven destinations; the opt-out flag drops the row only.
 

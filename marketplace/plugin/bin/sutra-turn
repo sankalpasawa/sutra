@@ -985,7 +985,11 @@ do_run() {
     if [ "$S_RC" = "124" ]; then
       printf 'sutra runtime degraded: step %s exceeded %sms\n' "$S_ID" "$S_TMO" \
         >> "$ERRACC" 2>/dev/null
-      if [ "$S_CLASS" = "B" ]; then
+      # 2.286.3: a killed NATIVE step is a runtime step that did not run (the
+      # ledger, the gate, the lanes); fd 2 does not reach the founder at
+      # UserPromptSubmit, so it also gets the systemMessage a class B step gets.
+      case "$S_IMPL" in native:*) S_KILLED_NATIVE=1 ;; *) S_KILLED_NATIVE="" ;; esac
+      if [ "$S_CLASS" = "B" ] || [ -n "$S_KILLED_NATIVE" ]; then
         jq -nc --arg s "$S_ID" --arg c "$S_CLASS" \
           --arg m "sutra runtime degraded: step $S_ID exceeded ${S_TMO}ms" \
           '{step:$s,class:$c,obj:{systemMessage:$m}}' >> "$JSONACC" 2>/dev/null

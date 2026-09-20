@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-20
+## 2.287.3 (2026-09-20)
+
+- **No silent ungoverned turn.** `ups.steps_ledger` gets 6000 ms (2500 was exceeded on a loaded box after a reload; the turn then ran with no ledger and no refusal). A killed native runtime step now prints a systemMessage, not only a stderr line. When a real prompt's ledger is missing at the first tool call, `pre.adherence_gate` opens it itself (shared `sutra_steps_open_ledger`), prints `ledger opened late`, and evaluates the rules as usual; only a synthetic prompt keeps the bootstrap allow. Tests: test-adherence case 12 rewritten, case 16 added. DeepSeek review folded.
+
 ## 2.287.2 (2026-09-20)
 
 - **Sutra Desktop: one Org button again.** The one-screen Org (2.275.0) is now the first row of the Org accordion, labelled "Org structure"; the accordion reads "Org" instead of "Old Org", and the rail shows seven destinations. Entering Org lands on Org structure; `flags.org2: false` drops that row and lands on the Workspace or Departments as before. Founder 2026-09-20.

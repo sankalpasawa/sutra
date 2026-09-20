@@ -114,17 +114,14 @@ main() {
     LEDGER="$(jq -c --arg mode "$SUTRA_ADHERENCE_MODE" --argjson steps "$STEPS_JSON" \
       '.mode = $mode | .steps = $steps | .mutations = (.mutations // []) ' "$_SL_PATH" 2>/dev/null)"
   fi
-  if [ -z "$LEDGER" ]; then
-    # Row 2 baseline for the turn's diff: a stash commit of the worktree as it
-    # is NOW (nothing is modified), or HEAD when the tree is clean.
-    GIT_BASE="$(git -C "$_SL_PROJ" stash create 2>/dev/null)"
-    [ -n "$GIT_BASE" ] || GIT_BASE="$(git -C "$_SL_PROJ" rev-parse HEAD 2>/dev/null)"
-    LEDGER="$(jq -nc --arg turn "$_SL_TURN" --arg sid "$_SL_SID" --arg mode "$SUTRA_ADHERENCE_MODE" \
-      --argjson opened "$OPENED" --arg unit "$UNIT" --argjson steps "$STEPS_JSON" --arg base "${GIT_BASE:-}" \
-      '{turn_id:$turn, session_id:$sid, mode:$mode, opened_ts:$opened, unit:$unit, git_base:$base, steps:$steps, mutations:[], closed:null}' 2>/dev/null)"
+  if [ -n "$LEDGER" ]; then
+    sutra_steps_write "$_SL_PATH" "$LEDGER"
+  else
+    # Row 2 baseline for the turn's diff (a stash commit of the worktree as it
+    # is NOW, or HEAD) and the fresh file: the shared open (2.286.3), the same
+    # one the gate uses when this step was killed at the prompt.
+    sutra_steps_open_ledger "$_SL_PROJ" "$_SL_SID" "$_SL_TURN" "$SUTRA_ADHERENCE_MODE" "$OPENED" "$UNIT" || return 0
   fi
-  [ -n "$LEDGER" ] || return 0
-  sutra_steps_write "$_SL_PATH" "$LEDGER"
 
   DONE_N="$(printf '%s' "$STEPS_JSON" | jq -r '[.[] | select(.status == "done" or .status == "open")] | length' 2>/dev/null)"
   _sl_row open "$(jq -nc --arg d "${DONE_N:-0}" --arg p "$_SL_PATH" '{done:($d|tonumber), path:$p}')"

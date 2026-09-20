@@ -96,9 +96,35 @@ main() {
     return 0
   fi
   _AG_PATH="$(sutra_steps_path "$_AG_PROJ" "$_AG_SID" "$_AG_TURN")"
+  LATE_OPEN=""
   if [ ! -f "$_AG_PATH" ]; then
-    _ag_row decision '{"decision":"allow","reason":"bootstrap-no-ledger"}'
-    return 0
+    # 2.286.3 (founder 2026-09-20, "raise the budget"): a missing ledger for a
+    # REAL prompt means ups.steps_ledger was killed or died at the prompt (the
+    # 2026-09-20 case: 2565 ms against a 2500 ms budget after a reload). The
+    # turn was silently ungoverned. Now the gate opens the ledger itself here,
+    # says so, and evaluates as usual. A synthetic prompt writes no facts file
+    # and keeps the old bootstrap allow (routines, hook-generated prompts).
+    _ag_facts="$(sutra_artifact_path "$_AG_PROJ" "$_AG_SID" "$_AG_TURN" facts)"
+    if [ ! -f "$_ag_facts" ]; then
+      _ag_row decision '{"decision":"allow","reason":"bootstrap-no-ledger"}'
+      return 0
+    fi
+    _ag_unit="$(jq -r '.unit // .prompt // ""' "$_ag_facts" 2>/dev/null | tr '\n\r\t' '   ' | LC_ALL=C tr -cd ' -~' | head -c 80)"
+    if command -v sutra_steps_open_ledger >/dev/null 2>&1 && sutra_steps_open_ledger "$_AG_PROJ" "$_AG_SID" "$_AG_TURN" "$SUTRA_ADHERENCE_MODE" "$NOW_TS" "$_ag_unit"; then
+      LATE_OPEN=1
+      _ag_row decision '{"decision":"late-open","reason":"ledger-missing-at-first-tool-call; opened by the gate"}'
+    else
+      _lo_reason="ADHERENCE GATE (mode $SUTRA_ADHERENCE_MODE): the step ledger for this turn was not opened at the prompt (the runtime step was killed or failed) and the gate could not open it now. Send the prompt again."
+      if [ "$SUTRA_ADHERENCE_MODE" = "on" ]; then
+        _ag_row decision '{"decision":"deny","reason":"ledger-missing-and-late-open-failed"}'
+        jq -nc --arg ev "$_AG_EVENT" --arg r "$_lo_reason" --arg sm "[sutra $_t8] REFUSED $TOOL: no step ledger for this turn" \
+          '{hookSpecificOutput:{hookEventName:$ev, permissionDecision:"deny", permissionDecisionReason:$r}, systemMessage:$sm}' 2>/dev/null
+      else
+        _ag_row decision '{"decision":"warn","reason":"ledger-missing-and-late-open-failed"}'
+        jq -nc --arg r "$_lo_reason" '{systemMessage:("[warn] " + $r)}' 2>/dev/null
+      fi
+      return 0
+    fi
   fi
   OPENED="$(jq -r '.opened_ts // 0' "$_AG_PATH" 2>/dev/null)"; case "$OPENED" in ''|*[!0-9]*) OPENED=0 ;; esac
 
@@ -141,6 +167,8 @@ main() {
   fi
   _t8="$(printf '%s' "$_AG_TURN" | head -c 8)"
   [ -n "$TRANS" ] && _ag_row transition "$(jq -nc --arg t "$TRANS" '{transitions:$t}')"
+  # the late open is printed with the first transitions, never silently
+  [ -n "$LATE_OPEN" ] && TRANS="ledger opened late (the prompt-time ledger step was killed; the turn is governed from here)${TRANS:+  |  $TRANS}"
 
   if [ "$KIND" != "mutation" ]; then
     [ "$KIND" = "exempt" ] && _ag_mutation "$TOOL" "$TARGET" exempt '[]'

@@ -42,7 +42,19 @@ main() {
   [ -n "$_CL_SID" ] || return 0
   [ "$_CL_TURN" != "unknown" ] || return 0
   _CL_PATH="$(sutra_steps_path "$_CL_PROJ" "$_CL_SID" "$_CL_TURN")"
-  [ -f "$_CL_PATH" ] || { _cl_row close '{"result":"no-ledger"}'; return 0; }
+  if [ ! -f "$_CL_PATH" ]; then
+    # 2.286.3 (DeepSeek P1-3): a real prompt whose ledger step was killed and
+    # whose turn made no tool call reaches Stop with no ledger. Open it here so
+    # the turn is recorded and the table prints; a synthetic prompt (no facts
+    # file) stays unrecorded as before.
+    _cl_facts="$(sutra_artifact_path "$_CL_PROJ" "$_CL_SID" "$_CL_TURN" facts)"
+    _cl_unit=""; [ -f "$_cl_facts" ] && _cl_unit="$(jq -r '.unit // .prompt // ""' "$_cl_facts" 2>/dev/null | tr '\n\r\t' '   ' | LC_ALL=C tr -cd ' -~' | head -c 80)"
+    if [ -f "$_cl_facts" ] && command -v sutra_steps_open_ledger >/dev/null 2>&1 && sutra_steps_open_ledger "$_CL_PROJ" "$_CL_SID" "$_CL_TURN" "$SUTRA_ADHERENCE_MODE" "$NOW_TS" "$_cl_unit"; then
+      _cl_row close '{"result":"late-open-at-stop","reason":"no ledger at Stop for a real prompt; opened so the turn is recorded"}'
+    else
+      _cl_row close '{"result":"no-ledger"}'; return 0
+    fi
+  fi
   OPENED="$(jq -r '.opened_ts // 0' "$_CL_PATH" 2>/dev/null)"; case "$OPENED" in ''|*[!0-9]*) OPENED=0 ;; esac
 
   # The reply text: stdin first, transcript tail as the fallback (same as
