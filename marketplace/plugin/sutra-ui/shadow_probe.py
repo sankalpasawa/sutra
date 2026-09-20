@@ -94,15 +94,39 @@ from collections import namedtuple
 #: "the build is green", "focus survives 200 keystrokes" -- is a question
 #: about what happens when you RUN something, and not one of them could be
 #: expressed here. That gap is why 9 of 9 live checks were founder_confirm.
+#: EXTENDED 2026-09-20 (founder, second D-SH-1 pass) with `lines_shape`.
+#: The six above answer "is it there", "is it this", "how many lines", "are
+#: they distinct", "does it contain", "does it run". None of them can answer
+#: the other half of what a founder writes about a produced list -- "no
+#: headers, numbering or bullets", "every line is a real item and not a
+#: heading" -- which is a question about the SHAPE of each line. That is
+#: objectively decidable and had no vocabulary, so it fell through to the
+#: judge and, when the judge could not see the file, to the founder.
+#:
+#: A FIXED SHAPE VOCABULARY, NEVER A MODEL-AUTHORED PATTERN. The obvious
+#: implementation is a `regex` kind, and it is refused for two reasons that
+#: are both about who is holding the pen. A regex from a model is a string
+#: this process would COMPILE and RUN, which is the one property every other
+#: kind here exists to avoid; and Python's engine backtracks, so a pattern
+#: that looks harmless can hang the turn on a file it does not like. Instead
+#: the names come from `shadow_evidence.SHAPES` -- blank / bullet / numbered
+#: / heading, each a small Python function in this repo -- and a name not in
+#: that table is refused rather than interpreted. New shapes are added by
+#: writing a function and a test, not by a model writing a pattern.
 PROBE_KINDS = ("file_exists", "file_equals",
                "line_count", "lines_distinct", "file_contains",
-               "command_succeeds")
+               "lines_shape", "command_succeeds")
 
 #: Kinds that name a file. `command_succeeds` does not, so `path` is
 #: required for these and refused for that one -- one tuple rather than a
 #: branch repeated in the validator and in `run`.
 PATH_KINDS = ("file_exists", "file_equals",
-              "line_count", "lines_distinct", "file_contains")
+              "line_count", "lines_distinct", "file_contains",
+              "lines_shape")
+
+#: How many shape names one probe may carry. There are only four, so this is
+#: a guard against a malformed list rather than a policy.
+PROBE_SHAPES_MAX = 8
 
 #: How long a command probe may run before it is killed and read as unmet.
 #: A test suite is the thing this exists for, so the ceiling is generous;
@@ -136,9 +160,68 @@ PROBE_TEXT_MAX = 4096
 #: bigger than this cannot equal a <=4 KiB string).
 PROBE_READ_MAX = 1 << 20
 
+#: THE FOUR STATES A CRITERION CAN BE IN (founder, 2026-09-21).
+#:
+#: THE FAILURE THIS CLOSES. `ProbeResult` was `(met, reason)` -- two states,
+#: and everything that was not `met` read as "the worker did not do it". So a
+#: probe refused because SHADOW had no workdir configured, a probe pointing
+#: at a path outside the root, a malformed probe and a command whose program
+#: does not exist all produced `met=False`, and the loop drove the WORKER at
+#: every one of them. Measured: five worker turns spent on a dashboard that
+#: had been correct since turn one.
+#:
+#:   MET                   the criterion holds
+#:   UNMET                 the criterion does not hold, and that is the
+#:                         WORK's fault -- the only state that may cost a
+#:                         corrective worker turn
+#:   VERIFIER_ERROR        Shadow's own probe, path or configuration is
+#:                         wrong. NEVER the worker's problem and never
+#:                         convertible into corrective work.
+#:   INSUFFICIENT_EVIDENCE the criterion may well hold; this probe cannot
+#:                         say. Not a failure of either party.
+MET = "met"
+UNMET = "unmet"
+VERIFIER_ERROR = "verifier_error"
+INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+PROBE_STATES = (MET, UNMET, VERIFIER_ERROR, INSUFFICIENT_EVIDENCE)
+
 #: `met` is the answer. `reason` is for the ledger and the founder-facing
-#: record -- never for the decision.
-ProbeResult = namedtuple("ProbeResult", "met reason")
+#: record -- never for the decision. `state` is WHOSE fault it is when the
+#: answer is no, and it defaults so every existing two-argument construction
+#: in this repo and its tests keeps working unchanged.
+class ProbeResult(namedtuple("ProbeResult", "met reason state")):
+    """met/reason as before, plus the state that says who must act.
+
+    ADDITIVE BY CONSTRUCTION. `state` defaults from `met`, so
+    `ProbeResult(False, "...")` still means "unmet, the worker's problem" --
+    which is the right default, because a caller that has not been taught
+    about verifier faults should keep the conservative old behaviour.
+    """
+    __slots__ = ()
+
+    def __new__(cls, met, reason, state=None):
+        if state is None:
+            state = MET if met else UNMET
+        return super().__new__(cls, bool(met), reason, state)
+
+    @property
+    def blames_worker(self):
+        """Is this a result that may cost the worker a corrective turn?"""
+        return self.state == UNMET
+
+    @property
+    def verifier_fault(self):
+        return self.state == VERIFIER_ERROR
+
+
+def verifier_error(reason):
+    """Shadow's own fault. Never the worker's."""
+    return ProbeResult(False, reason, VERIFIER_ERROR)
+
+
+def no_evidence(reason):
+    """Nobody's fault; this probe cannot settle it."""
+    return ProbeResult(False, reason, INSUFFICIENT_EVIDENCE)
 
 #: Split on either separator: a probe written with backslashes must not
 #: smuggle a `..` segment past the screen below on a posix host.
@@ -287,7 +370,57 @@ def validate_probe(raw):
         out["text"] = text
         # a substring test, never a pattern: nothing here compiles a regex.
         out["ignore_case"] = bool(raw.get("ignore_case"))
+    elif kind == "lines_shape":
+        clean = _validate_shapes(raw)
+        if clean is None:
+            return None
+        out.update(clean)
     # lines_distinct needs nothing beyond the path
+    return out
+
+
+def _validate_shapes(raw):
+    """The `forbid` / `require` halves of a `lines_shape` probe, or None.
+
+    A probe must name at least one of them -- one that forbids nothing and
+    requires nothing is a probe that asks no question, and returning a
+    vacuous `met=True` for it would be the "pretend a vague property is
+    verified" failure in miniature.
+
+    NAMES ONLY, checked against shadow_evidence.SHAPES. An unknown name is
+    refused for the whole probe rather than skipped: a probe that silently
+    ignored half of what it was asked would report a narrower check as the
+    founder's wider one.
+    """
+    try:
+        import shadow_evidence
+        known = set(shadow_evidence.SHAPES)
+    except Exception:                    # noqa: BLE001 -- no table, no probe
+        return None
+    out = {}
+    for key in ("forbid", "require"):
+        names = raw.get(key)
+        if names is None:
+            continue
+        if isinstance(names, str):
+            names = [names]
+        if not isinstance(names, (list, tuple)) or not names \
+                or len(names) > PROBE_SHAPES_MAX:
+            return None
+        clean = []
+        for n in names:
+            if not isinstance(n, str) or n.strip() not in known:
+                return None
+            if n.strip() not in clean:
+                clean.append(n.strip())
+        out[key] = clean
+    if not out:
+        return None
+    # `require` means EVERY non-blank line, so forbidding and requiring the
+    # same shape is a contradiction no file can satisfy. Refusing beats
+    # storing a check that is unsatisfiable by construction.
+    if set(out.get("forbid") or []) & set(out.get("require") or []):
+        return None
     return out
 
 
@@ -310,49 +443,44 @@ def default_root():
     from the directory the delegate is actually spawned in. Imported lazily
     because this module is imported by the engine, which imports nothing
     heavy at module scope.
+
+    THE FALLBACK IS THE FIX (founder, 2026-09-21). This read
+    `settings["workdir"]` and returned "" when it was unset, while the WORKER
+    spawned in `settings["workdir"] or WORKDIR`. The comment above claimed
+    the two could not drift; the missing `or WORKDIR` is exactly how they
+    did. An empty root makes resolve() refuse every path, and a refused
+    probe used to read as a failed check -- so Shadow drove the worker at its
+    own misconfiguration. shadow_paths.mission_artifact_root now owns the
+    order for both sides.
     """
     try:
-        import providers
-        wd = (providers.load_settings() or {}).get("workdir")
+        import shadow_paths
+        return shadow_paths.mission_artifact_root()
     except Exception:                    # noqa: BLE001 -- unsafe, not fatal
-        wd = None
-    return os.path.expanduser(str(wd)) if wd else ""
+        return ""
 
 
 def resolve(root, path):
     """The real path this probe names, or ProbeUnsafe.
 
-    CONFINEMENT IS ONE COMPARISON, AFTER realpath. realpath resolves every
-    symlink in the chain -- the final component and every parent -- so a
-    symlink pointing out of the workdir, a symlinked parent directory, and a
-    `..` walk all collapse into the same question: does the resolved path
-    still sit under the resolved root. Answering it after resolution rather
-    than before is what makes it one question instead of a list of tricks to
-    enumerate.
+    ONE RESOLVER (founder, 2026-09-21). The confinement logic that used to
+    live here now lives in shadow_paths.resolve_artifact, and this delegates
+    to it -- because the probe layer, the evidence layer and the decision
+    packet were each resolving paths and any drift between them is an
+    artifact Shadow cannot find. The rule is unchanged: realpath the
+    candidate and the root, compare once, refuse anything outside.
 
-    The ROOT is realpath'd too, because on macOS the obvious workdirs are
-    reached through symlinks (/tmp -> /private/tmp) and comparing a resolved
-    path against an unresolved root would refuse every legitimate probe.
-
-    An absolute path is allowed only if it lands inside anyway; a relative
-    one is joined to the root. Neither is expanduser'd: a probe path is a
-    location in the workdir, not a shell word.
+    ProbeUnsafe is kept as this module's exception so every existing caller
+    and test is untouched.
     """
-    if not root or not str(root).strip():
-        raise ProbeUnsafe("no workdir configured")
-    real_root = os.path.realpath(os.path.expanduser(str(root)))
-    if not os.path.isdir(real_root):
-        raise ProbeUnsafe("workdir does not exist: %s" % real_root)
-    if "\x00" in path:
-        raise ProbeUnsafe("path contains NUL")
-    candidate = path if os.path.isabs(path) else os.path.join(real_root, path)
     try:
-        real = os.path.realpath(candidate)
-    except OSError as exc:               # pragma: no cover -- ELOOP etc
-        raise ProbeUnsafe("unresolvable path: %s" % exc)
-    if real != real_root and not real.startswith(real_root + os.sep):
-        raise ProbeUnsafe("path escapes the workdir")
-    return real
+        import shadow_paths
+    except Exception as exc:             # noqa: BLE001 -- unconfined is unsafe
+        raise ProbeUnsafe("path authority unavailable: %s" % str(exc)[:60])
+    try:
+        return shadow_paths.resolve_artifact(path, root=root)
+    except shadow_paths.ArtifactUnsafe as exc:
+        raise ProbeUnsafe(str(exc))
 
 
 def _run_file_exists(real):
@@ -398,7 +526,7 @@ def _read_text(real):
         with open(real, "rb") as fh:
             blob = fh.read(PROBE_READ_MAX + 1)
     except OSError as exc:
-        return None, ProbeResult(False, "unreadable: %s" % str(exc)[:80])
+        return None, verifier_error("unreadable: %s" % str(exc)[:80])
     try:
         return blob.decode("utf-8"), None
     except UnicodeDecodeError:
@@ -459,6 +587,55 @@ def _run_file_contains(probe, real):
     return ProbeResult(False, "does not contain %s" % want[:60])
 
 
+def _run_lines_shape(probe, real):
+    """Every line of the file against a fixed shape vocabulary.
+
+    `forbid` is satisfied when NO line has that shape. `require` is satisfied
+    when every NON-BLANK line has at least one of the required shapes --
+    blank lines are exempt because a required shape is a statement about
+    content, and a file's trailing structure is not content. A file that
+    should have no blank lines says so by forbidding `blank`.
+
+    THE REASON LINE NAMES THE OFFENDING LINE, because "this failed" without
+    saying where is a verdict the founder cannot check.
+    """
+    text, bad = _read_text(real)
+    if bad is not None:
+        return bad
+    try:
+        import shadow_evidence
+    except Exception as exc:             # noqa: BLE001 -- no table, not done
+        return ProbeResult(False, "shape table unavailable: %s" % str(exc)[:60])
+    rows = shadow_evidence.lines_of(text)
+    if not rows:
+        # AN EMPTY FILE HAS NO SHAPE TO CHECK. Same refusal of vacuous truth
+        # as lines_distinct: passing a check on a file nobody wrote is the
+        # wrong answer to a founder asking about its lines.
+        return ProbeResult(False, "no lines to check")
+    for name in (probe.get("forbid") or []):
+        test = shadow_evidence.SHAPES[name]
+        for i, line in enumerate(rows, 1):
+            if test(line):
+                return ProbeResult(False, "line %d is a %s: %s"
+                                   % (i, name, line.strip()[:60]))
+    required = probe.get("require") or []
+    if required:
+        tests = [shadow_evidence.SHAPES[n] for n in required]
+        for i, line in enumerate(rows, 1):
+            if not line.strip():
+                continue
+            if not any(t(line) for t in tests):
+                return ProbeResult(False, "line %d is not %s: %s"
+                                   % (i, "/".join(required),
+                                      line.strip()[:60]))
+    said = []
+    if probe.get("forbid"):
+        said.append("no " + "/".join(probe["forbid"]))
+    if required:
+        said.append("every line " + "/".join(required))
+    return ProbeResult(True, "%d lines, %s" % (len(rows), "; ".join(said)))
+
+
 def _floor_screen(argv):
     """The floor names this command trips, or []. Never raises.
 
@@ -493,11 +670,12 @@ def _run_command_succeeds(probe, root):
     argv = probe["argv"]
     floors = _floor_screen(argv)
     if floors:
-        return ProbeResult(False, "probe refused: floor %s" % ", ".join(floors))
+        # SHADOW'S OWN POLICY refused to run this. The work is not implicated.
+        return verifier_error("probe refused: floor %s" % ", ".join(floors))
     try:
         real_root = resolve(root, ".")
     except ProbeUnsafe as exc:
-        return ProbeResult(False, "probe refused: %s" % exc)
+        return verifier_error("probe refused: %s" % exc)
     import subprocess
     try:
         proc = subprocess.run(                      # noqa: S603 -- see module
@@ -506,13 +684,19 @@ def _run_command_succeeds(probe, root):
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             timeout=probe.get("timeout_s", PROBE_COMMAND_TIMEOUT))
     except subprocess.TimeoutExpired:
-        return ProbeResult(False, "%s timed out after %ss"
+        # NOBODY'S FAULT YET. A suite that ran out of clock has not reported
+        # on the work, so this is missing evidence rather than a failure --
+        # and certainly not grounds to tell the worker to fix something.
+        return no_evidence("%s timed out after %ss"
                            % (_argv_label(argv), probe.get("timeout_s")))
     except FileNotFoundError:
-        return ProbeResult(False, "%s: no such program" % _argv_label(argv))
+        # THE COMMAND SHADOW CHOSE DOES NOT EXIST. This is the
+        # `verify_dashboard.py` vs `verify_project_dashboard.py` case: a
+        # verifier/contract defect wearing the costume of a failing check.
+        return verifier_error("%s: no such program" % _argv_label(argv))
     except OSError as exc:
-        return ProbeResult(False, "%s failed to start: %s"
-                           % (_argv_label(argv), str(exc)[:80]))
+        return verifier_error("%s failed to start: %s"
+                              % (_argv_label(argv), str(exc)[:80]))
     out = (proc.stdout or b"")[:PROBE_OUTPUT_MAX]
     text = out.decode("utf-8", "replace")
     want_exit = probe.get("expect_exit", 0)
@@ -585,7 +769,9 @@ def run(probe, root=None):
     """
     clean = validate_probe(probe)
     if clean is None:
-        return ProbeResult(False, "unusable probe")
+        # A PROBE SHADOW WROTE WRONG. Not a statement about the work, and it
+        # must never cost the worker a corrective turn.
+        return verifier_error("unusable probe")
     root = default_root() if root is None else root
     # A COMMAND PROBE NAMES NO FILE. It is confined to the same workdir by
     # the same resolver -- `_run_command_succeeds` resolves "." through
@@ -595,13 +781,17 @@ def run(probe, root=None):
         try:
             return _run_command_succeeds(clean, root)
         except Exception as exc:         # noqa: BLE001 -- unknown, not done
-            return ProbeResult(False, "probe failed: %s" % str(exc)[:80])
+            return verifier_error("probe failed: %s" % str(exc)[:80])
     try:
         real = resolve(root, clean["path"])
     except ProbeUnsafe as exc:
-        return ProbeResult(False, "probe refused: %s" % exc)
+        # NO WORKDIR, A WORKDIR THAT DOES NOT EXIST, A PATH THAT ESCAPES IT.
+        # Every one of these is a fact about Shadow's configuration and none
+        # is a fact about the artifact -- this is the exact conversion that
+        # cost five worker turns on the dashboard task.
+        return verifier_error("probe refused: %s" % exc)
     except Exception as exc:             # noqa: BLE001 -- unknown, not done
-        return ProbeResult(False, "probe failed: %s" % str(exc)[:80])
+        return verifier_error("probe failed: %s" % str(exc)[:80])
     try:
         kind = clean["kind"]
         if kind == "file_exists":
@@ -614,9 +804,11 @@ def run(probe, root=None):
             return _run_lines_distinct(real)
         if kind == "file_contains":
             return _run_file_contains(clean, real)
-        return ProbeResult(False, "unusable probe")
+        if kind == "lines_shape":
+            return _run_lines_shape(clean, real)
+        return verifier_error("unusable probe")
     except Exception as exc:             # noqa: BLE001 -- unknown, not done
-        return ProbeResult(False, "probe failed: %s" % str(exc)[:80])
+        return verifier_error("probe failed: %s" % str(exc)[:80])
 
 
 def met(probe, root=None):

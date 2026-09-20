@@ -10,6 +10,7 @@ server (the distinction the server's docstring draws).
 import fcntl
 import json
 import os
+import sys
 import time
 import uuid
 
@@ -57,12 +58,44 @@ def build_id():
     return _BUILD["id"]
 
 
+def running_under_test():
+    """Is this process a test run, whatever runner started it?
+
+    THREE SIGNALS, because there are three ways this repo runs tests and the
+    guard below must not depend on which one somebody chose:
+
+      * PYTEST_CURRENT_TEST   pytest, per-test
+      * the entry module      `python -m unittest ...` and `python -m pytest`
+                              both leave their own __main__ in sys.argv[0]
+      * a test file as argv   `python3 test_shadow_x.py`
+
+    NEVER RAISES. A detector that threw would take down the very writes it
+    exists to protect.
+    """
+    try:
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            return True
+        argv = [str(a) for a in (sys.argv or [])]
+        if argv:
+            entry = os.path.basename(argv[0])
+            if entry in ("unittest", "__main__.py", "pytest", "py.test"):
+                mod = str(getattr(sys.modules.get("__main__"), "__file__", ""))
+                if entry != "__main__.py" or "unittest" in mod \
+                        or "pytest" in mod:
+                    return True
+            if entry.startswith("test_"):
+                return True
+        return any(os.path.basename(a).startswith("test_") for a in argv[1:])
+    except Exception:                    # noqa: BLE001 -- see docstring
+        return False
+
+
 def shadow_home():
     """The shadow home, resolved at CALL time: SUTRA_SHADOW_HOME or the
     default. The one resolver for every Shadow store (ledgers here, the
     mission files, the watch lists) so they can never disagree.
 
-    REFUSES THE DEFAULT HOME UNDER PYTEST. On 2026-09-08..12 whole-directory
+    REFUSES THE DEFAULT HOME UNDER ANY TEST RUNNER. On 2026-09-08..12 whole-directory
     test runs wrote 34 "floor choke fixture" missions and 57 "unwatch fake-*"
     ledger rows into the operator's live home: nineteen test modules pop
     SUTRA_SHADOW_HOME at teardown, so every module that only set it at import
@@ -72,9 +105,22 @@ def shadow_home():
     while pytest is running a test and the home still resolves to the
     default, raise instead of writing. A deliberate integration test says so
     with SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS=1 (the smoke cycle does).
+
+    ...AND UNDER `unittest`, WHICH IT DID NOT (founder, 2026-09-21). The
+    guard keyed on PYTEST_CURRENT_TEST alone, so it fired for `pytest` and
+    was INERT for `python3 -m unittest`. Measured: fourteen fixture missions
+    -- "ten greatest riders", "ten riders", "x" -- written into the live home
+    across four unittest runs, every one of them left `paused` with
+    `pause_reason: founder_confirm`, so they piled up in the founder's
+    WAITING ON YOU list as tasks they had never started.
+
+    That is the SAME failure this guard was written for, arriving through the
+    one runner it did not watch. `running_under_test()` now asks the question
+    the guard always meant to ask -- "is this a test process?" -- rather than
+    "is this pytest?".
     """
     home = os.path.expanduser(os.environ.get("SUTRA_SHADOW_HOME") or DEFAULT_HOME)
-    if os.environ.get("PYTEST_CURRENT_TEST") \
+    if running_under_test() \
             and os.environ.get("SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS") != "1" \
             and os.path.realpath(home) == os.path.realpath(
                 os.path.expanduser(DEFAULT_HOME)):
@@ -84,7 +130,7 @@ def shadow_home():
             "a teardown that pops it is re-asserted before the next test), or "
             "declare a deliberate integration test with "
             "SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS=1."
-            % (home, os.environ.get("PYTEST_CURRENT_TEST")))
+            % (home, os.environ.get("PYTEST_CURRENT_TEST") or "unittest"))
     return home
 
 
@@ -184,9 +230,55 @@ def read_latest(kind):
     return [latest[r] for r in order]
 
 
+def read_for_mission(kind, mission_id, limit=50):
+    """Last `limit` rows OF ONE MISSION, oldest first.
+
+    THE LEAK THIS CLOSES (founder, 2026-09-21). `read("actions", 10)` returns
+    the last ten rows written by ANY mission, and `shadow_session.
+    standing_context` put them in the boot context of EVERY task chat. So a
+    Europe trip mission booted holding the MotoGP mission's judge verdicts,
+    its criteria and the artifacts they named -- and the task chat, which
+    writes the worker's brief, duly wrote about them. Observed verbatim on
+    the founder's install: "The one real signal about this founder in the
+    workspace is MotoGP - two artifacts from this week".
+
+    THE LEDGER IS GLOBAL BY DESIGN and that is correct: it is one audit log
+    for the whole of Shadow. What was wrong was READING it unscoped and
+    calling the result context. A row carries `mission_id`, so the scope was
+    always available -- nothing asked for it.
+
+    ROWS WITH NO mission_id ARE NOT THIS MISSION'S. A boot row, a spawn with
+    no mission attached, a global housekeeping row: none of them is about the
+    work, and admitting them "because they are not another mission's" is how
+    a scope boundary erodes. Only an exact id match counts.
+
+    SCANS A BOUNDED TAIL. A mission's own rows are recent by construction, so
+    reading the last SCAN_TAIL rows and filtering is enough without turning
+    every boot into a full-file scan.
+    """
+    mission_id = str(mission_id or "").strip()
+    if not mission_id:
+        return []
+    rows = read(kind, SCAN_TAIL)
+    mine = [r for r in rows
+            if str((r or {}).get("mission_id") or "") == mission_id]
+    return mine[-int(limit):] if limit else mine
+
+
+#: How far back read_for_mission looks before filtering. Generous enough that
+#: a mission's own rows survive interleaving with other missions', bounded so
+#: a boot never reads an unbounded file.
+SCAN_TAIL = 500
+
+
 def read(kind, limit=50):
     """Last `limit` rows, oldest first. Malformed lines are skipped, never
-    fatal -- a torn write must not blind every later read."""
+    fatal -- a torn write must not blind every later read.
+
+    UNSCOPED, AND CALLERS MUST KNOW THAT. This returns rows from every
+    mission. For anything that becomes CONTEXT for one mission, use
+    `read_for_mission` -- see the leak note there.
+    """
     try:
         with open(_path(kind), encoding="utf-8") as handle:
             lines = handle.readlines()

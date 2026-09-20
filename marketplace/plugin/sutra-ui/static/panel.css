@@ -3634,6 +3634,44 @@
 .shchecktxt{flex:1;min-width:0;line-height:1.4}
 .shcheckby{flex:none;color:var(--faint);font-size:11px}
 .shcheck .shcheckdo{flex:none;padding:3px 9px;font-size:11.5px}
+/* ── THE FOLD (founder, 2026-09-20) ──────────────────────────────────────
+   "if checks are done by shadow without aid from the user, don't show them
+   at all". Shadow's own verdicts sit in here instead of filling the list,
+   so what is on screen unasked is only what the founder can act on. It is
+   a <details>, so nothing is deleted and one click is the whole list --
+   which is why the summary carries its own count rather than a bare
+   "show more": a founder must be able to see THAT there are five settled
+   checks without having to open them. */
+.shcheckfold{margin-top:6px}
+.shcheckfold>summary{cursor:pointer;color:var(--faint);font-size:11px;
+  padding:3px 0;list-style:none;user-select:none}
+.shcheckfold>summary::-webkit-details-marker{display:none}
+.shcheckfold>summary::before{content:"\25b8";display:inline-block;
+  margin-right:6px;transition:transform .12s ease}
+.shcheckfold[open]>summary::before{transform:rotate(90deg)}
+.shcheckfold>summary:hover{color:var(--muted)}
+.shcheckfold .shcheck{padding-left:14px}
+/* ── THE DECISION PACKET (founder, 2026-09-21) ───────────────────────────
+   The evidence a founder needs to answer the question, on the same surface
+   as the question. Sits ABOVE the check rows: what was produced, what
+   Shadow established, then the part only they can settle. */
+.shdec{margin-top:8px;display:flex;flex-direction:column;gap:8px}
+.shdecart{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.shdecpath{padding:5px 8px;background:var(--sepia);font:600 11px/1.3
+  var(--mono);color:var(--muted);border-bottom:1px solid var(--line)}
+.shdecmeta{font-weight:400;color:var(--faint)}
+/* the artifact AS IT IS -- wrapped, never reflowed, and bounded so a long
+   file cannot push the Confirm button off the screen it is being asked on */
+.shdectext{margin:0;padding:8px;max-height:340px;overflow:auto;
+  font:12px/1.55 var(--mono);white-space:pre-wrap;word-break:break-word}
+.shdecimg{display:block;max-width:100%;max-height:340px;margin:0 auto}
+.shdecnote{padding:5px 8px;color:var(--faint);font-size:11px;
+  border-top:1px solid var(--line)}
+.shdecmissing{border:1px solid var(--line);border-radius:8px;border-top-width:1px}
+.shdecest{display:flex;flex-wrap:wrap;gap:4px 6px;font-size:11px;
+  color:var(--faint);align-items:baseline}
+.shdecfact{padding:1px 6px;border:1px solid var(--line);border-radius:999px;
+  background:var(--sepia)}
 /* the completion summary reuses every rule above -- a satisfied check must
    not look like a different species from one waiting on you. Two additions:
    a finished row aligns to the top because its evidence wraps under the
@@ -4706,3 +4744,16 @@
 @media (max-width:980px){.dpid{grid-template-columns:1fr 1fr}
   .dpengines{grid-template-columns:1fr 1fr}
   .dpmets{grid-template-columns:1fr 1fr}}
+/* ── DONE IS A RESULT, NOT A REPORT CARD (founder, 2026-09-21) ───────────
+   Internal verification still runs and is still stamped on the record; it
+   simply stops being the first thing a founder reads. What is outside the
+   fold is what was produced, the summary, and any caveat. */
+.shdonefiles{display:flex;flex-wrap:wrap;gap:4px 6px;margin-top:6px}
+.shdonefile{padding:2px 8px;border:1px solid var(--line);border-radius:6px;
+  background:var(--sepia);font:600 11.5px/1.5 var(--mono);color:var(--muted)}
+.shdonecaveat{margin-top:8px;display:flex;flex-direction:column;gap:3px;
+  font-size:11.5px;color:var(--muted)}
+.shdonecavrow{padding-left:10px;border-left:2px solid var(--line);
+  color:var(--faint)}
+.shdoneverif{margin-top:10px}
+.shdoneverif>summary{color:var(--faint)}

@@ -113,31 +113,124 @@ def _clip(text, limit=SECTION_MAX):
         "cannot_tell.]" % limit)
 
 
-def evidence_for(root, probe_lines=None):
+def untracked_paths(status_text):
+    """The `??` paths out of `git status --short`, in the order git gave them.
+
+    THE BLIND SPOT, NAMED. A modified tracked file is already in the diff, so
+    reading it again would spend the artifact budget on a duplicate. An
+    UNTRACKED file appears in no diff at all -- git has nothing to compare it
+    to -- so the entire content of a file the work just created is invisible.
+    That is the MotoGP failure exactly, and this function is what finds those
+    files so `shadow_evidence` can read them.
+
+    A directory entry (`?? build/`) is skipped rather than walked: this lane
+    reads files somebody named, never a tree it discovered.
+    """
+    out = []
+    for raw in str(status_text or "").splitlines():
+        if not raw.startswith("?? "):
+            continue
+        path = raw[3:].strip()
+        # git quotes paths with unusual characters; an unquoted path is the
+        # ordinary case and the quoted one is left alone rather than parsed
+        # with a half-implementation of git's own escaping.
+        if path.startswith('"') or not path or path.endswith("/"):
+            continue
+        out.append(path)
+    return out
+
+
+def _path_candidates(raw):
+    """The entries of `artifact_paths` that are actually paths.
+
+    THE SCREEN IS shadow_probe's OWN, and that is the point of it rather than
+    a convenience. `artifact_paths` is the one new way into this module, so
+    the strings it carries are held to exactly the rule a probe path is held
+    to -- no `..` segment, no leading `~`, no NUL, within PROBE_PATH_MAX --
+    by asking the validator the engine already trusts. A caller cannot widen
+    what reaches the filesystem by passing a path through this door instead
+    of through a probe.
+
+    A REFUSED ENTRY IS DROPPED SILENTLY, which is the one place this lane does
+    not report its refusals, and deliberately: everywhere else the thing
+    refused is a FILE the judge might have needed, so silence would be
+    evidence loss. Here the thing refused is a STRING THAT IS NOT A PATH, and
+    echoing it into the blob to explain itself is the only way the worker's
+    words could reach a judge through this parameter. Dropping it closes that
+    and costs nothing -- there was no file behind it to lose.
+    """
+    out = []
+    try:
+        import shadow_probe
+    except Exception:                    # noqa: BLE001 -- unscreened is unsafe
+        return out
+    for item in (raw or []):
+        path = str(item or "").strip()
+        if not path or path in out:
+            continue
+        if shadow_probe.validate_probe({"kind": "file_exists",
+                                        "path": path}) is None:
+            continue
+        out.append(path)
+    return out
+
+
+def evidence_for(root, probe_lines=None, artifact_paths=None):
     """The blob a judge is shown: what the work DID, never what it SAID.
 
     Sources, and this list is exhaustive on purpose:
       * `git status --short`   -- which files moved at all
       * `git diff` (unstaged)  -- the change itself
       * `git diff --cached`    -- the staged half, when there is one
+      * THE ARTIFACT          -- the content of files the work produced
       * probe_lines            -- reason lines from command probes already run
+
+    THE ARTIFACT SOURCE (founder, 2026-09-20, second D-SH-1 pass) AND WHY IT
+    IS NOT THE THING THIS MODULE FORBIDS. The three git reads can only show
+    CHANGES TO TRACKED FILES. A task that creates a file -- a report, a list,
+    a generated document, the whole authoring and research class of work --
+    produced an artifact that appeared in no diff, so the judge was shown its
+    filename and nothing else and correctly answered `cannot_tell` forever.
+    Reading that file is the same act as reading `git diff`: both are the
+    work itself. What stays forbidden is the worker's ACCOUNT of the work,
+    and that distinction is the whole design, not a technicality.
+
+    `artifact_paths` is what the CALLER names -- in practice the paths this
+    mission's own probes point at. Untracked paths are added from git status
+    here. Both go through shadow_evidence, which owns every boundary: 8 files,
+    32 KiB each, 48 KiB total, no binaries, confinement via
+    shadow_probe.resolve, and every refusal reported rather than silent.
 
     THE TRANSCRIPT IS NOT A SOURCE AND MUST NEVER BECOME ONE. Adding it would
     take one line and would silently convert this module from review into
     attestation; the header explains why that is the failure this exists to
     prevent. A future edit that threads the transcript in here should fail
-    test_shadow_judge's `test_evidence_never_carries_worker_prose`.
+    test_shadow_verification_lanes's `test_evidence_never_carries_worker_prose`
+    -- which screens the PARAMETER NAMES, so a new source has to be a thing
+    read from disk rather than a string somebody hands in.
 
     Returns "" when there is nothing to show, which the caller reads as
     `cannot_tell` rather than as `unmet`: no evidence is not counter-evidence.
     """
     root = os.path.expanduser(str(root or ""))
     parts = []
+    paths = _path_candidates(artifact_paths)
     if root and os.path.isdir(root) and _git(root, ["rev-parse", "--git-dir"]):
         status = _git(root, ["status", "--short"])
         if status.strip():
             parts.append("FILES TOUCHED (git status --short):\n"
                          + _clip(status))
+            # THE UNTRACKED PATHS ARE NOT ADDED (founder, 2026-09-21).
+            # They used to be, and that was a cross-mission leak: git status
+            # reports every uncommitted file in a SHARED workdir, so a judge
+            # settling one mission's criterion could read another mission's
+            # artifacts. `artifact_paths` is now the only way a file's
+            # CONTENT reaches this blob, and the caller derives it from
+            # shadow_paths.owned_artifacts.
+            #
+            # The status LISTING stays, because "these files changed" is a
+            # genuine fact about the tree and the judge is told it is a
+            # listing rather than this mission's output.
         unstaged = _git(root, ["diff"])
         if unstaged.strip():
             parts.append("THE CHANGE (git diff):\n" + _clip(unstaged))
@@ -145,6 +238,14 @@ def evidence_for(root, probe_lines=None):
         if staged.strip():
             parts.append("THE CHANGE, STAGED (git diff --cached):\n"
                          + _clip(staged))
+    if paths:
+        try:
+            import shadow_evidence
+            artifact = shadow_evidence.render(root, paths)
+        except Exception:                # noqa: BLE001 -- no artifact, not fatal
+            artifact = ""
+        if artifact:
+            parts.append(artifact)
     for line in (probe_lines or []):
         text = str(line or "").strip()
         if text:
@@ -161,9 +262,10 @@ THE CHECK:
 THE OUTCOME THE WORK WAS AIMED AT:
 %(outcome)s
 
-THE EVIDENCE. This is the work itself -- a diff, and the output of commands
-that were actually run. It is deliberately NOT anybody's description of the
-work, so there is nothing here to take anyone's word for:
+THE EVIDENCE. This is the work itself -- a diff, the content of the files the
+work produced, and the output of commands that were actually run. It is
+deliberately NOT anybody's description of the work, so there is nothing here
+to take anyone's word for:
 
 %(evidence)s
 
@@ -180,10 +282,34 @@ HOW TO DECIDE:
   * "unmet" -- the evidence shows it does NOT hold. Also cite what.
   * "cannot_tell" -- the evidence does not settle it either way. This is a
     correct and expected answer and you must use it whenever it is true:
-    the check needs a human's taste, or the evidence is truncated at the
-    part that mattered, or it is about something no diff can show. Saying
-    "cannot_tell" sends the check to the founder, which is right when you
-    genuinely cannot tell. GUESSING IS THE ONLY WRONG ANSWER HERE.
+    the check needs a human's TASTE, or asks for a fact that exists only in
+    the founder's head, or the evidence is truncated or missing at the part
+    that mattered. Saying "cannot_tell" sends the check to the founder,
+    which is right when you genuinely cannot tell.
+    GUESSING IS THE ONLY WRONG ANSWER HERE.
+
+DIFFICULTY IS NOT THE SAME AS NEEDING A HUMAN, and this is the distinction
+the whole design rests on. A check that is long, compound, tedious to work
+through, or about a subject you are unsure of is still YOURS to answer as
+long as the evidence in front of you answers it. "cannot_tell" is for
+questions with no answer in the evidence -- not for questions that are hard
+work. Every "cannot_tell" you return becomes a button a human has to press,
+so return it because the evidence is absent, never because the reading is
+effortful.
+
+A COMPOUND CHECK IS ANSWERED PART BY PART. When a check states several
+properties joined by "and", work through them one at a time against the
+evidence. If every part is settled by the evidence, answer met or unmet on
+the whole. Answer "cannot_tell" ONLY for the parts the evidence genuinely
+cannot reach, and say in your reason which part that was -- do not send the
+whole check to a human because one clause of it was the hard one.
+
+COUNT WITH THE `measured:` LINE, NOT BY EYE. Where the evidence carries a
+`[measured: ...]` line for a file, those numbers were counted by machine.
+Use them for anything about how many lines, how many distinct lines, or how
+many are bullets, headings or numbered items. Your own count of a quoted
+file is the less reliable number; prefer the measured one whenever they
+disagree.
 
 DO NOT re-word the check, do not negotiate its scope, do not judge whether it
 was a good check, and do not judge anything other than the one check above.

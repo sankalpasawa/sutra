@@ -19,6 +19,7 @@ import time
 import uuid
 
 import providers
+import shadow_decision
 import shadow_egress
 import shadow_intervention
 import shadow_ledger
@@ -319,9 +320,108 @@ def validate_done_when(raw):
         row_out = {"tier": tier, "check": check[:DECISION_INSTRUCTION_MAX]}
         if probe:
             row_out["probe"] = probe
+        # THE DECOMPOSITION RIDES ANY TIER, and that is the point of it. A
+        # `judge` row keeps its probes as a precondition (see
+        # evaluate_done_when), so the machine-decidable clauses of a compound
+        # criterion are settled by machine even when the residual needs a
+        # reader. A `founder_confirm` row keeps none: a probe must never sit
+        # underneath a signature, for the same reason resolve_verify_tier
+        # drops one there -- a machine does not sign the founder's name.
+        if tier != shadow_protocol.FOUNDER_TIER:
+            extra = [p for p in validate_probe_list(row.get("probes"))
+                     if p != probe]
+            if extra:
+                row_out["probes"] = extra
         out.append(row_out)
         if len(out) >= MAX_DECIDER_CHECKS:
             break
+    return out
+
+
+#: How many probes one check row may carry. A composite criterion states a
+#: handful of properties, not a suite; a row wanting more than this is a row
+#: that should have been several checks.
+MAX_ROW_PROBES = 6
+
+
+def probes_of(check):
+    """Every probe on one check row, singular and plural, in order.
+
+    ONE READER FOR BOTH SHAPES. `probe` (one) is the shape every existing
+    mission on disk uses and it is untouched; `probes` (several) is how a
+    COMPOUND criterion is decomposed. Everything that needs to know what a
+    row checks reads it here, so the two shapes cannot drift into meaning
+    different things in the evaluator and in the evidence builder.
+
+    Never raises and never validates -- callers get what is stored, and what
+    is stored was validated on the way in by `sanitise_probes`.
+    """
+    if not isinstance(check, dict):
+        return []
+    out = []
+    one = check.get("probe")
+    if isinstance(one, dict):
+        out.append(one)
+    for p in (check.get("probes") or [])[:MAX_ROW_PROBES]:
+        if isinstance(p, dict) and p not in out:
+            out.append(p)
+    return out
+
+
+def _probes_already_refute(check, root):
+    """Does a probe on this row already make the criterion false?
+
+    A COMPOUND ROW WHOSE COUNT IS WRONG NEEDS NO JUDGE. The row is unmet by
+    evaluate_done_when either way, so calling a model to read a diff about it
+    would buy nothing and cost a turn's worth of latency and tokens. Skipping
+    it here and letting the evaluator score it keeps the two in agreement:
+    both read `probes_of`, both require every probe to pass.
+
+    NEVER RAISES -- a probe that cannot be answered is `met=False` inside
+    shadow_probe, and an exception escaping here would cross `_run_judges`,
+    which is the one place a fault must not become a verdict.
+    """
+    try:
+        probe = check.get("probe") if check.get("tier") == "verify" else None
+        extra = [p for p in probes_of(check) if p != probe]
+        return bool(extra) and not all(shadow_probe.met(p, root)
+                                       for p in extra)
+    except Exception:                  # noqa: BLE001 -- judge it, don't skip
+        return False
+
+
+def validate_probe_list(raw):
+    """The `probes` list on one check row: [probe, ...], each validated.
+
+    WHY A CHECK MAY CARRY SEVERAL (founder, 2026-09-20). A founder writes one
+    sentence that states four things:
+
+        "the file contains 10 lines, each distinct, with no headers,
+         numbering or bullets, and each is a real recent news item"
+
+    Three of those four are mechanically decidable and the fourth is not. The
+    old shape gave the ROW one tier, so the hardest clause decided all four
+    and the founder was asked to confirm the line count by hand. Several
+    probes on one row is the decomposition, and it is deliberately the
+    decomposition that DOES NOT RE-WORD THE CHECK: the founder's sentence
+    stays exactly as they wrote it and the machine-decidable parts of it are
+    settled by machine underneath.
+
+    THE RESIDUAL IS NOT PRETENDED AWAY. Probes are a PRECONDITION, never a
+    substitute for the row's tier -- see evaluate_done_when. A `judge` row
+    with probes is met only when every probe passes AND the judge settles
+    what is left, so "each is a real recent news item" is still read by a
+    judge and still reaches the founder if nothing can settle it. This is the
+    "do not pretend that a vague property is verified when it isn't" rule
+    expressed in the evaluation order rather than in a comment.
+    """
+    if not isinstance(raw, (list, tuple)):
+        return []
+    out = []
+    for item in raw[:MAX_ROW_PROBES]:
+        probe = shadow_probe.validate_probe(item)
+        if probe and probe not in out:
+            out.append(probe)
     return out
 
 
@@ -1765,6 +1865,13 @@ def sanitise_probes(rows):
     A row that is neither `verify` nor carrying a probe is appended AS IT
     CAME IN -- the same object, not a copy -- so nothing this function does
     not own can be perturbed by it.
+
+    `probes` (the compound-criterion decomposition) IS OWNED HERE TOO, by
+    the same argument that put `probe` here: these three doors are the ones a
+    model-authored probe can arrive through, and a list of them is as much a
+    model-authored string as one is. The rule is the same as
+    validate_done_when's -- every entry validated, and none kept underneath a
+    `founder_confirm`, where a machine must never sign the founder's name.
     """
     if not isinstance(rows, list):
         return rows
@@ -1773,7 +1880,8 @@ def sanitise_probes(rows):
         if not isinstance(row, dict):
             out.append(row)
             continue
-        if row.get("tier") != "verify" and "probe" not in row:
+        if row.get("tier") != "verify" and "probe" not in row \
+                and "probes" not in row:
             out.append(row)               # nothing here is ours
             continue
         clean = dict(row)
@@ -1784,6 +1892,13 @@ def sanitise_probes(rows):
             clean["probe"] = probe
         else:
             clean.pop("probe", None)
+        if "probes" in clean:
+            extra = [p for p in validate_probe_list(clean.get("probes"))
+                     if p != probe]
+            if extra and clean.get("tier") != shadow_protocol.FOUNDER_TIER:
+                clean["probes"] = extra
+            else:
+                clean.pop("probes", None)
         out.append(clean)
     return out
 
@@ -2284,12 +2399,29 @@ def evaluate_done_when(mission, transcript_text, verifier=None,
     Rows without a probe keep the behaviour they have always had, so every
     existing mission, tier and test is unaffected. That is deliberate: this
     change adds a way to be sure, it does not remove the ways to be told.
+
+    A COMPOUND ROW'S PROBES ARE A PRECONDITION, NEVER A SUBSTITUTE (founder,
+    2026-09-20). When a row carries `probes`, every one of them must pass
+    before the row's own tier is consulted at all -- so a `judge` row whose
+    line count is wrong is unmet WITHOUT a judge call, and a `judge` row
+    whose probes all pass still has to be settled by the judge on whatever
+    the probes could not reach. The order is the honest one: machine facts
+    first because they are certain, the reader second because it is not, and
+    a vague clause is never reported as verified because a countable one
+    beside it was.
     """
     results = []
     for check in mission.get("done_when", []):
         tier = check.get("tier")
         probe = check.get("probe") if tier == "verify" else None
-        if probe:
+        extra = ([] if tier == shadow_protocol.FOUNDER_TIER
+                 else [p for p in probes_of(check) if p != probe])
+        if extra and not all(shadow_probe.met(p, probe_root) for p in extra):
+            # One clause of the criterion is mechanically false, so the
+            # criterion is false. Nothing further is consulted -- no judge
+            # call to pay for, no verifier to be told a story by.
+            met = False
+        elif probe:
             # NEVER RAISES (shadow_probe.run): an unanswerable probe is
             # `met=False`, which leaves the check outstanding and takes the
             # existing escalation path -- another turn, then the ordinary
@@ -2509,11 +2641,69 @@ def completion_summary(mission, results, transcript="", outcome=""):
         "checks_met": met_n,
         "checks_total": len(rows),
         "checks": rows,
+        # WHAT THE WORK PRODUCED, as paths (founder, 2026-09-21). A finished
+        # task should tell the founder WHERE the result landed, and that fact
+        # had no home on the record -- the founder was told how many checks
+        # passed and never what file to open.
+        #
+        # PATHS ONLY, never content: the summary is the account of the work
+        # and the chat holds the rest, so a completion record must not grow a
+        # copy of every artifact. The paths come from the same two mission-
+        # scoped sources everything else uses (this mission's own probes, and
+        # files git reports as new) -- no walk, no glob, no task-type branch.
+        "artifacts": completion_artifacts(mission),
         "turns_used": mission.get("turns_used") or 0,
         "max_turns": mission.get("max_turns") or 0,
         "chat": mission.get("target_session"),
         "at": _now(),
     }
+
+
+#: How many produced files a completion record names. A finished task points
+#: at its result; it does not inventory the workspace.
+MAX_COMPLETION_ARTIFACTS = 6
+
+
+def completion_artifacts(mission, root=None):
+    """The paths this mission produced, for the founder-facing DONE surface.
+
+    A NAMED PATH BEATS A DISCOVERED ONE, and on this surface that matters
+    more than it does for the judge. `candidate_paths` returns probe paths
+    FOLLOWED BY every untracked file git reports -- which for the judge is
+    right (an artifact no check named is exactly the blind spot the artifact
+    lane exists to close) but for a founder reading "what did this produce"
+    is noise: measured on this repo it returned the mission's own file plus
+    `.claude/depth`, `.claude/build-layer` and two unrelated documents.
+
+    So: if ANY check named a path, those ARE the artifacts and discovery is
+    not consulted. Discovery is the fallback for a task whose checks named
+    nothing, which is the shape that needed it in the first place.
+
+    NEVER RAISES and returns [] when it cannot tell -- a completion record
+    must not fail because the workdir moved, and an empty list simply means
+    the card shows no file line.
+    """
+    try:
+        if root is None:
+            root = shadow_probe.default_root()
+        named = []
+        for c in (mission.get("done_when") or []):
+            if not isinstance(c, dict):
+                continue
+            for p in probes_of(c):
+                path = p.get("path")
+                if path and path not in named:
+                    named.append(path)
+        if named:
+            return named[:MAX_COMPLETION_ARTIFACTS]
+        # NO DISCOVERY FALLBACK (founder, 2026-09-21). This used to fall
+        # through to git-status discovery, which listed every uncommitted
+        # file in a shared workdir -- another mission's output included.
+        # A mission that named no artifact simply reports none.
+        return shadow_decision.candidate_paths(mission, root)[
+            :MAX_COMPLETION_ARTIFACTS]
+    except Exception:                  # noqa: BLE001 -- no files, not fatal
+        return []
 
 
 def completion_text(completion):
@@ -3020,6 +3210,31 @@ class MissionEngine:
                 iv = decision.get("intervention")
                 if iv:
                     blocked["intervention"] = iv
+                # THE SECOND ROUTE TO A HUMAN, AND IT GETS THE SAME PACKET
+                # (founder, 2026-09-21). `_await_confirmation` is where a
+                # mission goes when the machine work is finished; this is
+                # where it goes when Shadow stops mid-flight to ask. Both put
+                # a decision to a person, so both owe that person the
+                # evidence to make it -- a rule that held on one exit and not
+                # the other would be a rule about which code path ran rather
+                # than about what was being asked.
+                #
+                # Built from the SAME producer and stamped on the SAME field,
+                # so every surface reads one shape. A block carrying no
+                # outstanding founder_confirm row gets None and the record is
+                # byte-identical to before.
+                packet = None
+                try:
+                    packet = shadow_decision.packet_for(blocked,
+                                                        self.probe_root)
+                except Exception as exc:   # noqa: BLE001 -- ask anyway
+                    shadow_ledger.append("actions", {
+                        "mission_id": mid, "kind": "decision",
+                        "summary": "decision packet not built: %s"
+                                   % str(exc)[:140]})
+                if packet:
+                    blocked["decision"] = packet
+                if iv or packet:
                     self.store.save(blocked)
                 return blocked
             if decision is not None and decision["action"] == "undecided":
@@ -3365,10 +3580,41 @@ class MissionEngine:
         the infra exit can reach the SAME waiting room rather than inventing
         a second one. The founder reads this as NEEDS YOU, `settle` turns
         their Yes into `done`, and nothing here can satisfy a check.
+
+        AND IT IS WHERE THE DECISION PACKET IS STAMPED (founder, 2026-09-21).
+        THE FAILURE: Shadow asked "does this ten-line ranking work as the
+        greatest riders ever?" and the ten riders existed only in the
+        worker's chat -- so the founder was asked to approve a list they
+        could not see, and had to open another chat to answer a question
+        Shadow had put to them here.
+
+        THIS FUNCTION IS THE NARROWEST SHARED ABSTRACTION for the fix, which
+        is why the packet is built here and not at the three call sites. Its
+        own docstring above says why: it was lifted out of the loop precisely
+        so that every route to a founder signature -- the loop's confirmation
+        branch and the infra exit alike -- arrives in ONE waiting room. One
+        producer here, and every surface that draws a pause reads the same
+        `decision` field.
+
+        READ-ONLY, AND IT CANNOT FAIL THE MISSION. `packet_for` never raises
+        and returns None when there is nothing outstanding to ask; a packet
+        that could not be built leaves the field absent and the pause behaves
+        exactly as it did before this existed. Nothing in the packet can
+        satisfy a check, move a tier, or widen what the worker may do --
+        confirm_check remains the only writer of a founder_confirm `met`.
         """
         m = self.store.transition(mid, "paused",
                                   "awaiting founder confirmation")
         m["pause_reason"] = "founder_confirm"
+        packet = None
+        try:
+            packet = shadow_decision.packet_for(m, self.probe_root)
+        except Exception as exc:      # noqa: BLE001 -- audible, never fatal
+            shadow_ledger.append("actions", {
+                "mission_id": mid, "kind": "decision",
+                "summary": "decision packet not built: %s" % str(exc)[:140]})
+        if packet:
+            m["decision"] = packet
         self.store.save(m)
         return m
 
@@ -4134,7 +4380,8 @@ class MissionEngine:
                   for c in (m.get("done_when") or [])]
         pending = [i for i, c in enumerate(checks)
                    if isinstance(c, dict) and c.get("tier") == "judge"
-                   and not c.get("met")]
+                   and not c.get("met")
+                   and not _probes_already_refute(c, self.probe_root)]
         if not pending:
             return False
         evidence = self._judge_evidence(m)
@@ -4189,30 +4436,48 @@ class MissionEngine:
     def _judge_evidence(self, m):
         """What the judge is shown. THE TRANSCRIPT IS NOT IN IT.
 
-        The diff plus the reason lines of the probes that have already run --
-        so a judge asked "did anything else break" can see that the suite was
-        run and what it printed. Never the worker's prose; see shadow_judge's
-        header for why that exclusion is the design and not an oversight.
+        The diff, the ARTIFACT this mission's checks point at, and the reason
+        lines of the probes that have already run -- so a judge asked "did
+        anything else break" can see that the suite was run and what it
+        printed, and a judge asked about a file the work wrote can read it.
+        Never the worker's prose; see shadow_judge's header for why that
+        exclusion is the design and not an oversight.
+
+        THE PATHS COME FROM THE MISSION'S OWN PROBES, which is what keeps
+        this mission-scoped rather than a read of the workspace. A probe
+        naming `out/report.md` is Shadow saying "this file is what this task
+        is about", so it is exactly the right thing to show a judge settling
+        another check about the same work. Untracked files are added by
+        shadow_judge from git status; the boundaries on both live in
+        shadow_evidence.
         """
         root = self.probe_root
         if root is None:
             root = shadow_probe.default_root()
-        lines = []
+        lines, paths = [], []
         for c in (m.get("done_when") or []):
-            if not isinstance(c, dict) or c.get("tier") != "verify":
+            if not isinstance(c, dict):
                 continue
-            probe = c.get("probe")
-            if not probe:
-                continue
-            try:
-                res = shadow_probe.run(probe, root)
-            except Exception:          # noqa: BLE001 -- no line, not fatal
-                continue
-            lines.append("%s -> %s (%s)" % (c.get("check"),
-                                            "MET" if res.met else "NOT MET",
-                                            res.reason))
+            for probe in probes_of(c):
+                path = probe.get("path")
+                if path and path not in paths:
+                    paths.append(path)
+                # A PROBE RESULT IS EVIDENCE WHATEVER TIER IT SITS ON. It
+                # used to be gathered from `verify` rows only, which was the
+                # only place a probe could be; a compound `judge` row now
+                # carries them too, and its probe results are exactly what
+                # the judge needs to see to settle the rest of that row.
+                if c.get("tier") == shadow_protocol.FOUNDER_TIER:
+                    continue
+                try:
+                    res = shadow_probe.run(probe, root)
+                except Exception:      # noqa: BLE001 -- no line, not fatal
+                    continue
+                lines.append("%s -> %s (%s)"
+                             % (c.get("check"),
+                                "MET" if res.met else "NOT MET", res.reason))
         try:
-            return shadow_judge.evidence_for(root, lines)
+            return shadow_judge.evidence_for(root, lines, paths)
         except Exception:              # noqa: BLE001 -- no evidence, not fatal
             return ""
 

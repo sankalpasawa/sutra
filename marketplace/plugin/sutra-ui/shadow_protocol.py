@@ -29,10 +29,19 @@ Shadow's replies may carry fenced blocks the app parses DETERMINISTICALLY:
     {"kind": "approve|confirm|withdraw|change", "index": 0, "text": "..."}
     ```                                      (v4.2; the founder's line answers
                                               a pending ask; the app binds it)
+    ```forward
+    {"worker": true}
+    ```
 
 Blocks are stripped from the displayed reply. remember rows land UNCONFIRMED
 (inert until the founder taps Confirm). SHADOW.md documents the same protocol
 to the model; the fake claude in tests emits these blocks.
+
+`forward` IS A TASK-CHAT FENCE AND IS DELIBERATELY NOT IN SHADOW.md. It is
+Shadow's verdict on whether the founder's line must reach the WORKER of one
+task (shadow_forward), so it is instructed per task in
+shadow_task_chat.task_context, where a worker exists to forward to. The Now
+chat has no worker and is never asked for it.
 
 A `goal` block is a PROPOSAL, never a creation (slice 8): unlike `mission`,
 nothing is written when it arrives. It is echoed back to the surface, the
@@ -53,7 +62,7 @@ kept handling `blocks["goal"]`). Both fences are load-bearing; keep both.
 import json
 import re
 
-_BLOCK = re.compile(r"```(mission|goal|chips|remember|module|brief|limits|answer)\s*\n(.*?)```", re.S)
+_BLOCK = re.compile(r"```(mission|goal|chips|remember|module|brief|limits|answer|forward)\s*\n(.*?)```", re.S)
 
 #: Shadow v4.2: what a typed answer may say it is. The SAME closed list
 #: mission_engine.apply_answer accepts; the app binds it to the one pending ask.
@@ -480,6 +489,22 @@ def parse_reply(text, kinds=None):
             out["goal"] = {"outcome": str(val["outcome"]).strip()[:500],
                            "done_when": checks,
                            "target_session": val.get("target_session") or None}
+        elif kind == "forward" and isinstance(val, dict) \
+                and isinstance(val.get("worker"), bool):
+            # THE FORWARDING VERDICT (founder, 2026-09-21). Shadow's own
+            # judgement, on the turn it was already taking, about whether the
+            # founder's line can change / constrain / authorize / clarify /
+            # correct the worker's task. It rides HERE rather than on a
+            # second model call so that the supervisory authority and the
+            # forwarding authority cannot be two different opinions.
+            #
+            # STRICTLY A BOOLEAN, and the text is never read from the block.
+            # What gets forwarded is the founder's own sentence, verbatim,
+            # straight off the mission record -- so a Shadow that rewrites,
+            # summarizes or invents an instruction here cannot put words in
+            # the founder's mouth. Shadow decides WHETHER; the record decides
+            # WHAT. See shadow_forward.classify.
+            out["forward"] = {"worker": val["worker"]}
         elif kind == "chips" and isinstance(val, list) and val:
             out["chips"] = [str(c) for c in val][:3]
         elif kind == "remember" and isinstance(val, dict) \

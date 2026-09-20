@@ -28,6 +28,17 @@ import subprocess
 import tempfile
 import unittest
 
+# ── THE LIVE HOME IS NOT A TEST FIXTURE (2026-09-21) ────────────────────
+# RunJudges drives MissionEngine._run_judges, which appends to
+# shadow_ledger -- so without this line this suite wrote ledger rows into
+# the operator's own ~/.sutra-ui/shadow on every run. conftest.py sets this
+# for pytest, but run-tests.sh drives `unittest`, where conftest is never
+# loaded, so the isolation it provides never reached this lane.
+#
+# Found when shadow_ledger's live-home guard stopped keying on
+# PYTEST_CURRENT_TEST and started asking "is this a test process at all".
+os.environ["SUTRA_SHADOW_HOME"] = tempfile.mkdtemp(prefix="shadow-lanes-test-")
+
 import mission_engine
 import shadow_judge
 import shadow_probe
@@ -177,10 +188,25 @@ class EvidenceJudge(unittest.TestCase):
         self.assertNotIn(claim, blob)
         self.assertNotIn("DONE-CHECK", blob)
         # ...and the signature has no transcript parameter to pass one
-        # through, which is the structural half of the same promise
-        self.assertEqual(
-            list(inspect.signature(shadow_judge.evidence_for).parameters),
-            ["root", "probe_lines"])
+        # through, which is the structural half of the same promise.
+        #
+        # `artifact_paths` ADDED 2026-09-20 and the list widened DELIBERATELY
+        # rather than the assertion dropped. It takes PATHS, and the content
+        # is read from disk by shadow_evidence -- so it is a way to name the
+        # work, never a way to hand in somebody's account of it. The name
+        # screen below is what actually holds the line as this list grows:
+        # any future parameter carrying prose would have to be called
+        # something, and every word a transcript could arrive under is
+        # refused here.
+        params = list(inspect.signature(
+            shadow_judge.evidence_for).parameters)
+        self.assertEqual(params, ["root", "probe_lines", "artifact_paths"])
+        for name in params:
+            for banned in ("transcript", "prose", "claim", "reply", "say",
+                           "message", "said", "output_text", "summary"):
+                self.assertNotIn(banned, name,
+                                 "a parameter named %r could carry the "
+                                 "worker's words into the judge" % name)
 
     def test_probe_results_ARE_carried(self):
         """A judge asked "did anything else break" must be able to see that

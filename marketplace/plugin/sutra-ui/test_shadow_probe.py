@@ -207,11 +207,32 @@ class TestConfinement(Root):
             {"kind": "file_equals", "path": "alias.txt", "text": "here"},
             self.root))
 
-    def test_18_no_workdir_is_unmet_with_a_reason_never_a_raise(self):
-        for root in ("", "   ", os.path.join(self.tmp.name, "gone")):
+    def test_18_no_workdir_never_raises_and_blames_the_verifier(self):
+        """AMENDED 2026-09-21 in two ways, both of them the fix.
+
+        (1) AN EMPTY ROOT IS NO LONGER "no workdir". It falls through to
+        shadow_paths.mission_artifact_root, which is the same order the
+        WORKER's spawn uses and always names a directory. The old behaviour
+        -- refuse, and report `met=False` -- is exactly how Shadow read its
+        own misconfiguration as a worker failure and spent five turns on a
+        dashboard that was already correct.
+
+        (2) A ROOT THAT GENUINELY DOES NOT EXIST is still refused, and is now
+        classified VERIFIER_ERROR rather than a bare False, so it can never
+        be converted into corrective work for the worker.
+        """
+        for root in ("", "   "):
             r = shadow_probe.run({"kind": "file_exists", "path": "a"}, root)
             self.assertFalse(r.met, repr(root))
-            self.assertIn("probe refused", r.reason)
+            self.assertNotIn("no workdir configured", r.reason,
+                             "an empty root must fall back, not refuse")
+        gone = shadow_probe.run({"kind": "file_exists", "path": "a"},
+                                os.path.join(self.tmp.name, "gone"))
+        self.assertFalse(gone.met)
+        self.assertIn("probe refused", gone.reason)
+        self.assertEqual(gone.state, shadow_probe.VERIFIER_ERROR,
+                         "a missing workdir is Shadow's fault, never the "
+                         "worker's")
 
 
 # ------------------------------------------------------------ what persists
@@ -269,9 +290,15 @@ class TestValidation(unittest.TestCase):
           * NO NETWORK, NO os.system, NO os.popen, NO shlex. The module still
             never hands a string to anything that parses one.
         """
+        # THE VOCABULARY IS PINNED EXACTLY, so adding a kind is a deliberate
+        # edit here and never a side effect somewhere else. `lines_shape`
+        # ADDED 2026-09-20 (founder, second D-SH-1 pass): it answers "no
+        # headers, numbering or bullets" from a FIXED shape table in
+        # shadow_evidence, and the assertion below is what stops a future
+        # kind from arriving as a regex the caller supplies.
         self.assertEqual(shadow_probe.PROBE_KINDS,
                          ("file_exists", "file_equals", "line_count",
-                          "lines_distinct", "file_contains",
+                          "lines_distinct", "file_contains", "lines_shape",
                           "command_succeeds"))
         src = Path("shadow_probe.py").read_text()
         # THE ARGV PROPERTY, asserted against the source rather than argued.
@@ -280,6 +307,12 @@ class TestValidation(unittest.TestCase):
         for banned in ("os.system", "os.popen", "shlex",
                        "urllib", "socket", "requests"):
             self.assertNotIn(banned, src, banned)
+        # NO PATTERN IS EVER COMPILED FROM A PROBE. shadow_probe uses `re`
+        # for its own path splitter, so the screen is on the compile call
+        # taking anything that came out of a probe dict -- `lines_shape`
+        # names shapes, it does not carry one.
+        self.assertNotIn("re.compile(raw", src)
+        self.assertNotIn("re.compile(probe", src)
         # A SHELL HANDED -c IS REFUSED, so no model-authored string is ever
         # parsed by anything.
         for argv in (["bash", "-lc", "x"], ["sh", "-c", "x"],

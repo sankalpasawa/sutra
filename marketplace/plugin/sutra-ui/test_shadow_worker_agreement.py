@@ -428,29 +428,58 @@ class TheWorkerIsShownTheChecksItIsJudgedBy(Base):
         # ...and WHY, which is the lesson of the four-turn task
         self.assertIn("reads as NOT DONE", out)
 
-    def test_only_verify_tier_checks_are_quoted(self):
-        """founder_confirm is the founder's signature and no DONE-CHECK line
-        can satisfy it; contains_artifact wants its literal in the work's own
-        output. Listing either would invite a claim that does nothing."""
+    def test_only_verify_tier_checks_get_the_CLAIM_convention(self):
+        """THE CLAIM CONVENTION IS STILL VERIFY-ONLY, and the reasoning is
+        unchanged: founder_confirm is the founder's signature and no
+        DONE-CHECK line can satisfy it; contains_artifact is
+        `check in transcript`, so inviting a verbatim copy would make it
+        self-satisfying (m-245777cf1467).
+
+        WHAT CHANGED 2026-09-21 is a DIFFERENT question this test used to
+        answer by accident -- which criteria the worker is TOLD ABOUT. That
+        is now every row, because the founder ruled the worker "must never be
+        expected to satisfy acceptance criteria that were hidden from it".
+        The two are separated below: every check is in the contract, only
+        `verify` rows are claimable by line."""
         out = self.manifest(done_when=[
             {"tier": "verify", "check": "the suite is green"},
             {"tier": "founder_confirm", "check": "the founder signs it off"},
             {"tier": "contains_artifact", "check": "shadow-pass"},
         ])
+        # the CONTRACT is complete
+        for text in ("the suite is green", "the founder signs it off",
+                     "shadow-pass"):
+            self.assertIn(text, out, "%r was hidden from the worker" % text)
+        # ...the CLAIM convention is not
         self.assertIn("DONE-CHECK: the suite is green", out)
-        self.assertNotIn("the founder signs it off", out)
+        self.assertNotIn("DONE-CHECK: the founder signs it off", out)
         self.assertNotIn("DONE-CHECK: shadow-pass", out)
+        # ...and the MECHANISM is never named
+        for leak in ("founder_confirm", "contains_artifact", "probe"):
+            self.assertNotIn(leak, out, "%r leaked the mechanism" % leak)
 
-    def test_a_mission_with_no_verify_checks_is_byte_identical(self):
-        """ADDITIVE: every manifest that existed before this is unchanged."""
+    def test_a_mission_with_NO_checks_at_all_is_byte_identical(self):
+        """ADDITIVE, and the boundary moved 2026-09-21. A mission with no
+        criteria still gets exactly the manifest it always got -- there is
+        no contract to state.
+
+        A founder_confirm-ONLY mission no longer does, and that is the fix
+        rather than a regression: its criterion is the bar the work has to
+        clear, and the worker was previously sent to clear a bar nobody had
+        told it about. Who SIGNS the row is Shadow's business; WHAT the row
+        requires is the worker's."""
         plain = self.manifest()
-        self.assertNotIn("THE CHECKS THIS TASK IS JUDGED BY", plain)
+        self.assertNotIn("WHAT THIS TASK MUST SATISFY", plain)
+        self.assertNotIn("DONE-CHECK:", plain.split("WORKING AGREEMENT")[-1]
+                         .split("Reporting a turn")[0]
+                         .replace("DONE-CHECK: <the check", ""))
         confirm_only = self.manifest(done_when=[
             {"tier": "founder_confirm", "check": "the founder signs it off"}])
-        self.assertNotIn("THE CHECKS THIS TASK IS JUDGED BY", confirm_only)
-        self.assertEqual(plain, confirm_only,
-                         "a founder_confirm-only mission gets the manifest it "
-                         "always got")
+        self.assertIn("the founder signs it off", confirm_only,
+                      "the worker is told the bar even when a human judges "
+                      "whether it was cleared")
+        self.assertNotIn("DONE-CHECK: the founder signs it off", confirm_only,
+                         "...but it cannot claim that row")
 
     def test_the_block_cannot_satisfy_its_own_checks(self):
         """THE TAG IS NOW LOAD-BEARING, not belt and braces. The manifest

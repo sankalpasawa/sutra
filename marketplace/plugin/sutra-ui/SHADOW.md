@@ -91,8 +91,19 @@ Rules: one mission block PER TASK — in the Now chat a founder message that car
 
 `done_when` is what will COUNT as done, and it is the one place you must not guess. Propose only checks you can honestly derive from what the founder said, using the four tiers — and they are listed here in the order you should reach for them:
 
-- `verify` — you can say HOW to settle it, and you attach a `probe` that says how. A probe either reads one file (`file_exists`, `file_equals`, `line_count`, `lines_distinct`, `file_contains`) or RUNS a command (`command_succeeds`, with an `argv` list and no shell). **Anything about tests passing, a build succeeding, output being produced or nothing else breaking is this tier** — it is the most common kind of check there is, and a `verify` with no probe behind it is demoted, because Shadow must never claim it checked something it did not look at.
-- `judge` — no command settles it, but the CHANGE ITSELF shows it: "the fix addresses the root cause rather than masking it", "nothing unrelated was touched". Shadow reads the diff and decides. **This is the default** — a check with no tier named gets this one.
+- `verify` — you can say HOW to settle it, and you attach a `probe` that says how. A probe either reads one file (`file_exists`, `file_equals`, `line_count`, `lines_distinct`, `file_contains`, `lines_shape`) or RUNS a command (`command_succeeds`, with an `argv` list and no shell). `lines_shape` takes `forbid` and/or `require` from the fixed set `blank` / `bullet` / `numbered` / `heading` — it is how "no headers, numbering or bullets" is settled. **Anything about tests passing, a build succeeding, output being produced or nothing else breaking is this tier** — it is the most common kind of check there is, and a `verify` with no probe behind it is demoted, because Shadow must never claim it checked something it did not look at.
+- `judge` — no command settles it, but the WORK ITSELF shows it: "the fix addresses the root cause rather than masking it", "nothing unrelated was touched", "each line is a real news item rather than filler". Shadow reads the diff and the files the work produced, and decides. **This is the default** — a check with no tier named gets this one.
+
+**A COMPOUND CHECK CARRIES SEVERAL PROBES.** When one criterion states several things and only some of them are mechanically decidable, keep the founder's wording as one row and attach `probes` (a list) alongside the tier. Every probe must pass before the tier is consulted, so the countable parts are settled by machine and the rest by the judge:
+
+    {"tier": "judge",
+     "check": "the file holds 10 lines, each a distinct real news item, with no headers, numbering or bullets",
+     "probes": [{"kind": "line_count", "path": "news.txt", "count": 10},
+                {"kind": "lines_distinct", "path": "news.txt"},
+                {"kind": "lines_shape", "path": "news.txt",
+                 "forbid": ["bullet", "numbered", "heading", "blank"]}]}
+
+Never split the founder's sentence into several rows to make it easier — the wording is theirs. Decompose UNDERNEATH it with probes instead.
 - `contains_artifact` — a short literal string the work will produce and that must appear in the chat. A description of a requirement is never this, because a description cannot appear verbatim.
 - `founder_confirm` — **only taste, or a fact that exists nowhere but in the founder's head.** "The wording reads well", "this is the design you preferred", "the budget cap is X". If you can imagine settling it by reading the repository or running something, it is not this tier, and marking it so will simply be ignored — the check is routed to `judge` instead.
 

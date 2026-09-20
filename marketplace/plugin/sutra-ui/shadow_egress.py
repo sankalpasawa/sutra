@@ -27,6 +27,30 @@ def say_tag(mission_id):
     return "%s mission %s]" % (SAY_TAG_MARK, mission_id)
 
 
+def founder_tag(mission_id):
+    """The prefix stamped on a FORWARDED FOUNDER LINE. ONE writer of it.
+
+    WHY IT IS A TAG AT ALL, and why it starts with SAY_TAG_MARK. The founder
+    lines this lane forwards land in the worker's transcript as user records,
+    exactly where a say lands -- and `shadow_runner.evidence_text` decides
+    what `done_when` is evaluated against by asking `is_shadow_authored`,
+    which is prefix-anchored on that mark. An UNTAGGED forward would be
+    admissible evidence: a founder who typed "include the VR46 team status"
+    would satisfy a contains_artifact check on those words that the worker
+    never did. The tag is the whole defence, and it is the same defence the
+    manifest and every say already use. NOTHING about verification changes
+    to accommodate this lane; the lane conforms to it.
+
+    WHY IT IS NOT say_tag. Both are excluded from evidence, so either would
+    close the leak above -- but the worker READS these, and the two mean
+    opposite things. A say is Shadow's composed instruction and carries
+    Shadow's authority. This is the founder's own sentence, verbatim,
+    forwarded because it can change the work. The worker must be able to
+    tell them apart, so the format says which it is holding.
+    """
+    return "%s the founder said, mission %s]" % (SAY_TAG_MARK, mission_id)
+
+
 def is_shadow_authored(text):
     """True when this turn's text was injected BY Shadow.
 

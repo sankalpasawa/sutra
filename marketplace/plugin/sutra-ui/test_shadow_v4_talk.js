@@ -513,6 +513,117 @@ const AT = (ms) => new Date(ms).toISOString();
   pass("C: live and persisted differ in raw text and still dedupe");
 }
 
+/* ── C2. THE DUPLICATE THE FOUNDER ACTUALLY SAW (2026-09-21) ──────────────
+   THE BUG. "hi" produced two identical Shadow answers on screen. Not a
+   race, not a double subscription, not a double POST: Shadow's reply
+   reaches this pane twice BY DESIGN -- once live from the route's return
+   value, once persisted from the task chat's transcript -- and the two
+   copies were matched by comparing their TEXT.
+
+   WHY THAT COULD NEVER WORK. The live copy has already been through the
+   SERVER's stripper (shadow_protocol._strip_governance_noise); the
+   persisted copy is raw. The client then runs its OWN stripper over both,
+   and the two strippers do not agree about every line. Measured against
+   the real server:
+
+     line              server                client (shadowProseText)
+     "OS: macOS 26.7"  STRIPPED (_NOISE)     KEPT -- SH_GOV_TRACE only
+                                             strips an "OS: a > b" chain,
+                                             deliberately, so "OS: macOS 14"
+                                             reads as ordinary prose
+
+   So one message produced two different keys:
+
+     key(transcript) "...MotoGP list task. OS: macOS 26.7 The worker is..."
+     key(live)       "...MotoGP list task. The worker is..."
+
+   ...the dedupe missed, and the founder read the same answer twice. Any
+   two independent normalisers will drift like this; every divergence is a
+   duplicate. Text was structurally the wrong key.
+
+   THE FIX IS ANCHOR IDENTITY. The live reply names the FOUNDER LINE it
+   answers -- the one string both sides hold untransformed, because the
+   client sent it and the transcript recorded it -- and is retired once the
+   transcript shows that line has been answered. Nothing compares Shadow's
+   words to Shadow's words.
+
+   THIS TEST FAILS ON THE PRE-FIX CODE. That is the point of it. */
+{
+  const ctx = fresh();
+  const ASK = "hi";
+  /* the persisted copy: raw, as the model wrote it */
+  const RAW = "Hi. Shadow here, on the MotoGP list task.\n\n"
+            + "OS: macOS 26.7\n\n"
+            + "The worker is drafting the list now.";
+  /* the live copy: the same message after the SERVER's stripper ran */
+  const LIVE = "Hi. Shadow here, on the MotoGP list task.\n\n"
+             + "The worker is drafting the list now.";
+  assert.notStrictEqual(ctx.shadowTalkKey(RAW), ctx.shadowTalkKey(LIVE),
+    "the premise: text keys genuinely diverge for one message");
+  const ev = stream(ctx, { transcripts: {
+    "shadow-1": [{ role: "user", text: ASK, ts: AT(100) },
+                 { role: "assistant", text: RAW, ts: AT(200) }] } },
+    [{ who: "founder", text: ASK, ts: 100 },
+     { who: "shadow", text: LIVE, ts: 200, replyTo: ctx.shadowTalkKey(ASK) }]);
+  assert.strictEqual(countIn(shape(ev), "SHADOW"), 1,
+    "one Shadow answer must render exactly once even when the two "
+    + "strippers disagree about a line");
+  assert.strictEqual(countIn(shape(ev), "FOUNDER"), 1,
+    "and the question once");
+  pass("C2: diverging strippers cannot split one answer into two rows");
+}
+
+/* ── C3. RELOAD DOES NOT DUPLICATE. After a reload the live array is empty
+   and only the transcript remains -- one row, from one source. */
+{
+  const ctx = fresh();
+  const ev = stream(ctx, { transcripts: {
+    "shadow-1": [{ role: "user", text: "hi", ts: AT(100) },
+                 { role: "assistant", text: "Hi. Shadow here.",
+                   ts: AT(200) }] } }, []);
+  assert.strictEqual(countIn(shape(ev), "SHADOW"), 1,
+    "a reloaded conversation draws each answer once");
+  assert.strictEqual(countIn(shape(ev), "FOUNDER"), 1);
+  pass("C3: reload draws one row per message");
+}
+
+/* ── C4. THE ANCHOR SURVIVES A SECOND EXCHANGE. Two questions, two
+   answers, and the live copy of each is retired independently -- an
+   anchor that matched the wrong exchange would drop a real answer. */
+{
+  const ctx = fresh();
+  const ev = stream(ctx, { transcripts: {
+    "shadow-1": [{ role: "user", text: "hi", ts: AT(100) },
+                 { role: "assistant", text: "Hi there.", ts: AT(110) },
+                 { role: "user", text: "status?", ts: AT(200) },
+                 { role: "assistant", text: "Still drafting.", ts: AT(210) }] } },
+    [{ who: "founder", text: "hi", ts: 100 },
+     { who: "shadow", text: "Hi there.", ts: 110,
+       replyTo: ctx.shadowTalkKey("hi") },
+     { who: "founder", text: "status?", ts: 200 },
+     { who: "shadow", text: "Still drafting.", ts: 210,
+       replyTo: ctx.shadowTalkKey("status?") }]);
+  assert.strictEqual(countIn(shape(ev), "SHADOW"), 2,
+    "two exchanges, two answers -- neither dropped, neither doubled");
+  assert.strictEqual(countIn(shape(ev), "FOUNDER"), 2);
+  pass("C4: each exchange is retired on its own anchor");
+}
+
+/* ── C5. AN UNANSWERED LIVE REPLY IS STILL SHOWN. The transcript is read
+   on a throttle, so between the POST returning and the next read the live
+   copy is the ONLY copy -- dropping it would make the chat look broken. */
+{
+  const ctx = fresh();
+  const ev = stream(ctx, { transcripts: {
+    "shadow-1": [{ role: "user", text: "hi", ts: AT(100) }] } },
+    [{ who: "founder", text: "hi", ts: 100 },
+     { who: "shadow", text: "Hi. Shadow here.", ts: 200,
+       replyTo: ctx.shadowTalkKey("hi") }]);
+  assert.strictEqual(countIn(shape(ev), "SHADOW"), 1,
+    "the live answer holds the surface until the transcript catches up");
+  pass("C5: the live answer is shown while the transcript lags");
+}
+
 /* ── D. same answer, identical text ──────────────────────────────────── */
 {
   const ctx = fresh();

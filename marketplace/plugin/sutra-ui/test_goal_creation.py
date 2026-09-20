@@ -408,6 +408,8 @@ class TestEveryDocumentedFenceParses(unittest.TestCase):
         "limits": {"turns": "none"},
         # v4.2: the founder's typed line answers a pending ask
         "answer": {"kind": "approve"},
+        # 2026-09-21: the task chat's forwarding verdict (shadow_forward).
+        "forward": {"worker": True},
     }
 
     def _documented(self):

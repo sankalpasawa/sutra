@@ -2224,26 +2224,69 @@ def _worker_checks_block(mission):
     reporting convention and nothing more -- copying the line perfectly over a
     wrong file leaves the check UNMET, which is the whole point of the probe.
     """
-    rows = [c for c in (mission.get("done_when") or [])
-            if isinstance(c, dict)
-            and c.get("tier") == "verify"
-            and str(c.get("check") or "").strip()]
-    if not rows:
+    all_rows = [c for c in (mission.get("done_when") or [])
+                if isinstance(c, dict) and str(c.get("check") or "").strip()]
+    if not all_rows:
         return ""
-    lines = "\n".join("    DONE-CHECK: %s" % str(c["check"]).strip()
-                      for c in rows)
-    return (
-        "\n\nTHE CHECKS THIS TASK IS JUDGED BY. These are the exact strings "
-        "Shadow's\nverifier matches, character for character. When one is "
-        "genuinely satisfied,\nclaim it by copying its line below EXACTLY -- "
-        "do not paraphrase it, do not\nshorten it, and do not substitute the "
-        "objective's wording:\n\n"
-        + lines +
-        "\n\nA claim in your own words reads as NOT DONE, and a finished task "
-        "then keeps\nbeing driven. A claim for work you have not done is a "
-        "false report, which is\nworse. Claim only what is true, in the words "
-        "above.\n"
+    # THE CONTRACT IS EVERY ROW (founder, 2026-09-21): "the worker must never
+    # be expected to satisfy acceptance criteria that were hidden from it".
+    #
+    # THE BUG THIS FIXES, AND D-SH-1 INTRODUCED IT. This block used to list
+    # `verify` rows ONLY, and the reasoning above was sound for the question
+    # it was actually answering -- which lines the DONE-CHECK convention
+    # applies to. Then D-SH-1 moved FALLBACK_TIER from `founder_confirm` to
+    # `judge`, so the ORDINARY row stopped being `verify` and became `judge`.
+    # The consequence nobody re-derived: most of a task's acceptance criteria
+    # stopped reaching the worker at all. It was being graded on a contract
+    # it had never been shown, by a judge reading the artifact for properties
+    # nobody had asked it to produce.
+    #
+    # TWO SECTIONS, BECAUSE THERE ARE TWO DIFFERENT THINGS TO SAY. The
+    # CONTRACT is what the work must satisfy, and it is complete. The CLAIM
+    # CONVENTION is a reporting mechanism that only `verify` rows use, and it
+    # stays exactly as narrow as it was.
+    #
+    # THE MECHANISM IS STILL NEVER EXPOSED. No tier is named, no probe is
+    # quoted, and nothing says which rows a human signs -- the founder's own
+    # boundary: Shadow "may derive internal probes, verification methods, or
+    # founder-confirmation decisions from the contract, but those internal
+    # mechanisms do not need to be exposed to the worker". The worker is told
+    # WHAT must be true and never HOW it will be established.
+    contract = "\n".join("    - %s" % str(c["check"]).strip()
+                         for c in all_rows)
+    claim_rows = [c for c in all_rows if c.get("tier") == "verify"]
+    out = (
+        "\n\nWHAT THIS TASK MUST SATISFY. Every line below is part of the "
+        "contract and\nyour work is judged against all of them, whether or "
+        "not you mention them:\n\n"
+        + contract + "\n"
     )
+    if claim_rows:
+        # ...and the claim convention, for the rows whose verifier reads a
+        # DONE-CHECK line. `contains_artifact` is deliberately absent: it is
+        # `check in transcript`, so inviting a verbatim copy of one would
+        # make it self-satisfying (m-245777cf1467). `founder_confirm` is
+        # absent because confirm_check is its only writer and a claim does
+        # nothing. `judge` is absent because a judge reads the artifact, not
+        # a sentence about it -- listing it would invite a claim that cannot
+        # help and reads as an attempt to be graded on prose.
+        lines = "\n".join("    DONE-CHECK: %s" % str(c["check"]).strip()
+                          for c in claim_rows)
+        out += (
+            "\nOF THOSE, THESE ARE CLAIMED BY LINE. They are the exact "
+            "strings Shadow's\nverifier matches, character for character. "
+            "When one is genuinely satisfied,\nclaim it by copying its line "
+            "below EXACTLY -- do not paraphrase it, do not\nshorten it, and "
+            "do not substitute the objective's wording:\n\n"
+            + lines +
+            "\n\nA claim in your own words reads as NOT DONE, and a finished "
+            "task then keeps\nbeing driven. A claim for work you have not "
+            "done is a false report, which is\nworse. Claim only what is "
+            "true, in the words above. The rest of the contract is\n"
+            "established by Shadow from the work itself -- you do not claim "
+            "those, you\nsimply have to have done them.\n"
+        )
+    return out
 
 
 def _delegate_manifest(mission):
@@ -3061,6 +3104,17 @@ import shadow_presence
 import shadow_runner
 import shadow_protocol
 import shadow_task_chat
+import shadow_forward
+
+#: The restart half of the forwarding lane (2026-09-21). shadow_runner calls
+#: this from _launch to re-offer founder lines that were accepted by a
+#: TurnQueue which then died with its process. Injected rather than imported
+#: because shadow_runner must not import app.
+#: `revive=True`: the flush runs at launch, when any row left `dispatched`
+#: was accepted by a TurnQueue that died with its process. Ordinary calls
+#: leave it off -- see shadow_forward.pending for why that matters.
+shadow_runner.FORWARD_FLUSH["fn"] = lambda mid: forward_to_worker(
+    mid, revive=True)
 
 
 @app.get("/api/shadow/instructions")
@@ -4205,7 +4259,124 @@ async def api_shadow_task_open(request: Request):
     return out
 
 
-def _record_founder_talk(mid, text):
+def _forward_enqueue(sid, text, key, mid=None, indices=None):
+    """Put ONE composed forward on the worker's own queue. Returns accepted.
+
+    THE SHADOW LANE, NEVER THE OPERATOR LANE, and it is not a style choice.
+    TurnQueue.get() drains `_operator` before `_shadow`, so a founder line
+    placed there would overtake a say already queued for this turn -- and
+    shadow_runner.waiter, which consumes the next boundary on the session
+    without being able to tell whose turn produced it, would read the founder
+    turn's boundary as its say's, take the wrong `last_response` and spend a
+    turn of budget on it. The founder's own constraint ("do not create an
+    operator lane where the user's message bypasses Shadow's authority") and
+    the ordering requirement have the same answer, which is this one.
+    """
+    rt = lookup_runtime(sid)
+    if rt is None:
+        return False
+    # THE ROWS RIDE WITH THE PAYLOAD so the pump can close their lifecycle
+    # without knowing anything about missions: shadow_runner._forward_consumed
+    # reads these two keys off the frame it just sent and marks them
+    # `consumed`. Underscore-prefixed like `_source`, which the queue already
+    # carries the same way and which the wire never sees.
+    ok = rt.turn_queue.put({"message": text, "_source": "shadow",
+                            "_forward": True,
+                            "_mission": mid,
+                            "_fwd_indices": list(indices or ())},
+                           source="shadow", dedupe_key=key)
+    if ok:
+        rt.queue_event.set()
+    return ok
+
+
+def forward_to_worker(mid, store=None, enqueue=None, revive=False):
+    """Hand the worker everything the founder has said that it needs to hear.
+
+    SYNCHRONOUS ON PURPOSE, AND THAT IS THE WHOLE CONCURRENCY STORY. load ->
+    compose -> put -> mark -> save runs with no await in it, so on a
+    single-threaded event loop no second caller can observe a half-applied
+    dispatch: it is a critical section by construction rather than by a lock
+    that someone has to remember to take. MissionStore.save's own seq guard
+    covers the only case this cannot -- a SECOND PROCESS on the same shadow
+    home -- by refusing the stale write outright.
+
+    IDEMPOTENT THREE TIMES OVER, because losing a correction and delivering
+    it twice are both failures this lane is required not to have: `pending`
+    only returns rows still awaiting the worker, TurnQueue refuses a repeated
+    dedupe_key for the life of the runtime, and the rows are marked
+    `dispatched` before the function returns. A retry of the identical
+    forward computes the identical key and is refused.
+
+    COALESCED, ONE TURN. Every pending row goes in one frame, newline-joined
+    in list order (shadow_forward.coalesce). Three rapid corrections cost the
+    worker one model call, not three, and their order is preserved inside the
+    frame rather than across three racing ones.
+
+    BEST-EFFORT, LOUD, NEVER FATAL. This is called from the founder's own
+    chat request. A forwarding fault must cost the forward and nothing else:
+    the founder already has Shadow's answer, the line is already on
+    `founder_says` for the decider, and rows left `queued` are picked up by
+    the next call or by boot recovery. So every failure ledgers and returns.
+    """
+    store = store or _mission_engine.MissionStore()
+    enqueue = enqueue or _forward_enqueue
+    try:
+        m = store.load(mid)
+        # A MISSION THAT IS NOT RUNNING HAS NO WORKER LISTENING. A draft has
+        # not spawned one, a paused/terminal one is not being driven, and a
+        # watch mission never speaks at all (`never_say`). The rows stay
+        # `queued` and durable either way -- a paused task that resumes
+        # delivers them, which is the behaviour the founder asked for.
+        if m is None or m.get("state") != "running":
+            return None
+        if "never_say" in (m.get("invariants") or ()):
+            return None
+        sid = m.get("target_session")
+        if not sid:
+            return None
+        indices, payload = shadow_forward.deliverable(m, revive=revive)
+        if not indices:
+            return None
+        # THE SAME EGRESS FLOOR EVERY OTHER WORKER-BOUND BYTE CROSSES. This
+        # lane does not get its own weaker one: the floor is about what may
+        # leave for a worker session, not about who composed it.
+        #
+        # A FLOORED FORWARD IS MARKED skip, NOT LEFT QUEUED. Left queued it
+        # would be recomposed and re-floored on every later message, forever.
+        # Nothing is lost by skipping it: `seen` is untouched, so the line
+        # still reaches the decider on the next steering turn and Shadow can
+        # raise it with the founder in words.
+        tripped = shadow_egress.floor_check(payload)
+        if tripped:
+            shadow_forward.mark(m, indices, shadow_forward.FWD_SKIP)
+            store.save(m)
+            _shadow_ledger_safe({
+                "kind": "say", "mission_id": mid,
+                "summary": "forward NOT sent, floor: %s" % ", ".join(tripped)})
+            return None
+        clean, _redactions = shadow_egress.scrub(payload)
+        if not enqueue(sid, clean, shadow_forward.dedupe_key(mid, indices),
+                       mid, indices):
+            # Refused: no live runtime, or this exact payload is already on
+            # the queue. Either way the rows stay as they are and the next
+            # attempt re-offers them.
+            return None
+        shadow_forward.mark(m, indices, shadow_forward.FWD_DISPATCHED)
+        store.save(m)
+        _shadow_ledger_safe({
+            "kind": "say", "mission_id": mid,
+            "summary": "forwarded %d founder line(s) to the worker"
+                       % len(indices)})
+        return indices
+    except Exception as exc:            # noqa: BLE001 -- audible, never fatal
+        _shadow_ledger_safe({
+            "kind": "say", "mission_id": mid,
+            "summary": "forward FAILED: %s" % str(exc)[:140]})
+        return None
+
+
+def _record_founder_talk(mid, text, blocks=None):
     """ONE MEMORY OF THE FOUNDER (founder, 2026-09-16, step 2).
 
     THE SPLIT THIS CLOSES. The founder had two doors and Shadow had two
@@ -4245,6 +4416,17 @@ def _record_founder_talk(mid, text):
     BEST-EFFORT BY CONSTRUCTION. A store failure here must cost the record of
     one line and nothing else: the founder already has Shadow's answer, and a
     Shadow-side fault must never become a worker fault.
+
+    AND IT NOW CARRIES THE FORWARDING VERDICT (founder, 2026-09-21). `blocks`
+    is Shadow's own parsed reply to this very line, so the `forward` fence in
+    it is the supervisor's judgement about whether the worker needs to hear
+    it -- taken on a turn that was happening anyway, which is what keeps this
+    from becoming a second authority that can disagree with Shadow. The
+    verdict is stamped on the row as `fwd` and the actual delivery is
+    forward_to_worker's job, not this function's. What did NOT change is the
+    sentence above it: `founder_says` is still input to a decision, `seen` is
+    still the only cursor the decider reads, and nothing here composes an
+    instruction.
     """
     try:
         store = _mission_engine.MissionStore()
@@ -4256,7 +4438,13 @@ def _record_founder_talk(mid, text):
                      "at": _mission_engine._now(),
                      "at_turn": m.get("turns_used") or 0,
                      "via": "talk",
-                     "seen": False})
+                     "seen": False,
+                     # THE FORWARDING VERDICT, STAMPED AT ARRIVAL (2026-09-21)
+                     # and never revisited. `seen` is the decider's cursor
+                     # over this same list and is deliberately untouched:
+                     # every line still reaches the decider exactly as it
+                     # did, whatever `fwd` says. See shadow_forward.
+                     "fwd": shadow_forward.verdict(text, blocks)})
         m["founder_says"] = says
         store.save(m)
     except Exception as exc:            # noqa: BLE001 -- audible, never fatal
@@ -4330,7 +4518,20 @@ async def api_shadow_task_chat(mid: str, request: Request):
         # work -- the same rule api_shadow_task_open applies to a draft.
         reply, blocks = "", {}
     if not drafting and not reopened:
-        _record_founder_talk(mid, message)
+        # RECORD, THEN FORWARD, AND BOTH BEFORE THE REPLY GOES OUT. Shadow
+        # has already answered the founder above -- that never waited on
+        # anything and still does not. `blocks` carries Shadow's own
+        # `forward` verdict on this line; the record stamps it and the
+        # dispatch acts on it immediately, so a worker-relevant line is on
+        # the worker's queue before this request returns rather than at the
+        # top of some later steering turn. That gap WAS the bug.
+        #
+        # STILL SKIPPED ON A REOPEN, which is the other half of this block:
+        # those words are already on founder_says via "reopen" and the loop
+        # is already running on them, so recording and forwarding again
+        # would double a line the worker is about to act on.
+        _record_founder_talk(mid, message, blocks)
+        forward_to_worker(mid)
     out = {"mission": (_apply_task_fence(mid, blocks) if drafting
                        else store.load(mid)),
            "reply": reply}
@@ -5025,13 +5226,23 @@ async def api_shadow_mission_act(mid: str, request: Request):
             # the founder volunteering something; it answers nothing, resolves
             # nothing, and confirms no check. Separate verb, separate field.
             #
-            # IT REACHES SHADOW, NEVER THE WORKER. Nothing here sends into the
-            # delegate session. The record is where Shadow reads, and
-            # run_mission re-loads it at the top of every turn, so the decider
-            # sees this on its next turn and decides for itself whether it
-            # changes the next instruction. That is the whole delivery
-            # mechanism: no new endpoint on the loop, no new state, no
-            # runtime change.
+            # IT REACHES SHADOW ALWAYS, AND THE WORKER WHEN IT MATTERS TO
+            # THE WORK (founder, 2026-09-21; this said "NEVER THE WORKER"
+            # until then, and that stopped being true here).
+            #
+            # SHADOW'S PATH IS UNCHANGED. The record is where Shadow reads,
+            # run_mission re-loads it at the top of every turn, and the
+            # decider still sees this line and still decides for itself what
+            # the next INSTRUCTION is. `seen` is untouched. Nothing about the
+            # loop, the budget or the decision moved.
+            #
+            # WHAT IS NEW is forward_to_worker below: a line judged capable
+            # of changing the work is also put on the worker's own queue,
+            # verbatim and tagged as the founder's, right now -- because
+            # waiting for the decider to re-author "actually make it 20
+            # lines" on a later turn is how a correction arrived after the
+            # work it was correcting. It is not an instruction and cannot
+            # become one; only the decider composes those.
             text = str(body.get("text") or "").strip()
             if not text:
                 raise HTTPException(400, "text required")
@@ -5049,10 +5260,20 @@ async def api_shadow_mission_act(mid: str, request: Request):
             says.append({"text": text[:_SAY_MAX],
                          "at": _mission_engine._now(),
                          "at_turn": m.get("turns_used") or 0,
-                         "seen": False})
+                         "seen": False,
+                         # NO `blocks` ON THIS DOOR, AND THAT IS CORRECT.
+                         # This is the founder typing an instruction at
+                         # Shadow, not a chat turn, so there is no Shadow
+                         # reply to carry a verdict. shadow_forward.verdict
+                         # falls through to its conservative default, which
+                         # forwards anything that is not plainly a question
+                         # about Shadow -- the right answer for a door whose
+                         # entire purpose is to steer the work.
+                         "fwd": shadow_forward.verdict(text)})
             m["founder_says"] = says
             store.save(m)
-            return m
+            forward_to_worker(mid, store=store)
+            return store.load(mid) or m
         if action == "intervene":
             # THE FOUNDER ANSWERS THE TYPED QUESTION SHADOW ASKED.
             #

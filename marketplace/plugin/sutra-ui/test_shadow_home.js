@@ -1300,7 +1300,11 @@ const AWAITING = {
   ctx.S.shadowMissions = [JSON.parse(JSON.stringify(AWAITING))];
   ctx.S.shadowTaskSel = "m-fib";
   const h = ctx.shadowHomeHtml();
-  assert(/waiting on you/.test(h), "it must say what it is waiting for");
+  /* THE FRAMING IS PLAIN NOW (founder, 2026-09-21): the surface leads with
+     the decision, not with Shadow's internal state. The semantic question --
+     the criterion itself -- is unchanged and still rendered verbatim below. */
+  assert(/Shadow needs your decision/.test(h),
+    "it must say what it is waiting for");
   /* ...and it must NOT claim Shadow declared the work finished. Shadow has
      no `done`/`stop` action (mission_engine.DECISION_ACTIONS is exactly
      ("continue", "ask_founder")) and _complete is the only writer of a done
@@ -1313,7 +1317,25 @@ const AWAITING = {
   assert(/the README explains it clearly/.test(h)
     && /a working Python example is included/.test(h)
     && /the example is syntactically correct/.test(h),
-    "every criterion is shown, not a count");
+    "every criterion is still in the markup, not replaced by a count");
+  /* ── AND ONLY YOURS IS OPEN (founder, 2026-09-20) ─────────────────────
+     "if checks are done by shadow without aid from the user, don't show
+     them at all". The fixture has one row the founder must sign (index 1),
+     one they already signed (0) and one Shadow is still running (2). Only
+     the first is drawn unasked; the other two are inside the fold, which
+     states its own count. Nothing is deleted -- the assertion above proves
+     all three criteria are still reachable. */
+  assert(/shcheckfold/.test(h),
+    "Shadow's own rows fold instead of filling the list");
+  /* THE LABEL IS PLAIN NOW (founder, 2026-09-21): "free of implementation
+     vocabulary". A per-lane tally -- "1 still running · 1 you confirmed" --
+     is Shadow's internal bookkeeping, and the founder is not being asked
+     about any of those rows. The rows themselves are unchanged inside. */
+  assert(/Everything else Shadow is handling/.test(h),
+    "the fold says what is inside it rather than hiding a count");
+  const fold = h.indexOf("shcheckfold");
+  assert(h.indexOf('data-shcheckix="1"') < fold,
+    "the row that needs the founder is ABOVE the fold, never inside it");
   /* the text precedes the control that acts on it */
   const txt = h.indexOf("a working Python example is included");
   const btn = h.indexOf('data-shcheckix="1"');
@@ -1324,7 +1346,11 @@ const AWAITING = {
   assert(!/data-shcheckix="0"/.test(h), "a met check is not re-offered");
   assert(!/data-shcheckix="2"/.test(h),
     "a non-founder tier is not offered -- the server refuses that index");
-  assert(/Shadow checks this/.test(h), "and it says who does check it");
+  /* COPY CHANGED 2026-09-20 with the fold: a row Shadow has not settled yet
+     is in FLIGHT, and "Shadow checks this" read as a standing fact about
+     who owns it rather than as a report that it is still running. The
+     distinction is the whole reason the fold counts them separately. */
+  assert(/Shadow is checking this/.test(h), "and it says who does check it");
   assert(!/done when<\/span>/.test(h),
     "the flat summary row is replaced, not duplicated, in this state");
   console.log("ok 21b the pending checks are readable before they are signed");

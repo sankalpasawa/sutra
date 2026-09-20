@@ -24,6 +24,7 @@ import shadow_feed
 import shadow_home_lock
 import shadow_judge
 import shadow_ledger
+import shadow_forward
 
 #: mission_id -> asyncio.Task (running loops)
 RUNNING = {}
@@ -938,6 +939,11 @@ def _launch(mid, validated_say, verifier):
     # launch costs nothing.
     if loop_held_elsewhere(store, mid):
         return
+    # EVERY START, RESUME AND RE-ADOPTION PASSES HERE, which is why the
+    # restart flush hangs off it rather than off boot recovery alone: a
+    # mission resumed by hand hours later gets its pending founder lines
+    # too. A no-op when nothing is pending.
+    flush_forwards(mid)
     sayer, waiter, reader = make_bindings(validated_say)
     engine = mission_engine.MissionEngine(
         store, sayer, waiter, reader, verifier,
@@ -2480,6 +2486,68 @@ def release_delegate(session_id):
     return rt
 
 
+#: app.forward_to_worker, injected at import (app imports this module, so the
+#: assignment cannot be an import cycle). None on any install that never
+#: loaded the app -- the flag path, a unit test -- and every call site below
+#: is guarded, so the lane is simply absent there rather than broken.
+FORWARD_FLUSH = {"fn": None}
+
+
+def _forward_consumed(payload):
+    """Mark forwarded rows `consumed` the instant the frame is on the wire.
+
+    BEFORE demux, NOT AFTER, and the ordering is the point. `send_user_frame`
+    returning means the founder's words are IN the worker's session; a demux
+    that raises afterwards loses the answer, never the delivery. Marking
+    after demux would leave the rows `dispatched`, boot recovery would re-
+    queue them, and the founder's correction would arrive a second time --
+    the duplicate this lane is required not to produce.
+
+    NEVER RAISES. It is called from inside the pump's try, where an exception
+    kills the process group: a bookkeeping fault must not take down a worker.
+    """
+    mid = (payload or {}).get("_mission")
+    idx = (payload or {}).get("_fwd_indices")
+    if not mid or not idx:
+        return
+    try:
+        store = mission_engine.MissionStore()
+        m = store.load(mid)
+        if m is not None and shadow_forward.mark(
+                m, idx, shadow_forward.FWD_CONSUMED):
+            store.save(m)
+    except Exception:                   # noqa: BLE001 -- never fail a turn
+        pass
+
+
+def flush_forwards(mid):
+    """Re-offer this mission's pending founder lines to a fresh TurnQueue.
+
+    THE RESTART CASE, AND IT IS THE ONLY REASON THIS EXISTS. TurnQueue lives
+    in memory. A founder line marked `dispatched` in a process that then died
+    was accepted by a queue that no longer exists, so it was never sent and
+    nothing else would ever send it. Called from _launch -- which every
+    start, resume and post-restart re-adoption goes through -- it re-queues
+    exactly those rows against the new runtime. Rows already `consumed` are
+    not pending and are never re-offered.
+
+    A NO-OP WITH NOTHING PENDING, so calling it on every launch is free.
+    """
+    fn = FORWARD_FLUSH.get("fn")
+    if fn is None:
+        return None
+    try:
+        return fn(mid)
+    except Exception as exc:            # noqa: BLE001 -- audible, never fatal
+        try:
+            shadow_ledger.append("actions", {
+                "mission_id": mid, "kind": "say",
+                "summary": "forward flush failed: %s" % str(exc)[:140]})
+        except Exception:
+            pass
+        return None
+
+
 def start_pump(rt, sid):
     """THE PUMP (found by the first real flight): panes have a websocket loop
     consuming their TurnQueue; a headless runtime has nobody -- says sat
@@ -2506,6 +2574,9 @@ def start_pump(rt, sid):
                     break
                 try:
                     await rt.send_user_frame(payload.get("message") or "")
+                    # queued -> dispatched -> CONSUMED. See _forward_consumed
+                    # for why this lands between the send and the demux.
+                    _forward_consumed(payload)
                     await rt.demux_turn(sink, sid)
                 except Exception:
                     rt.kill_group()

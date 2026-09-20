@@ -141,10 +141,15 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
     "and it is labelled Summary");
   assert(/class="shdonesumbody md"/.test(h),
     "the body carries .md so mdHtml's own rules style it");
-  /* UNDER the checks, which is where it was asked for */
-  assert(h.indexOf('class="shchecks"') < h.indexOf('class="shdonesummary"'),
-    "Summary sits BELOW the verdicts, not above them");
-  pass("1: a DONE research task renders a Summary block under the checks");
+  /* ABOVE the verdicts as of 2026-09-21, because the verdicts moved INTO a
+     closed "Verification" fold: internal verification is no longer what a
+     founder reads first. The Summary is the result and now leads. The rows
+     themselves are unchanged and still rendered -- inside the fold. */
+  assert(h.indexOf('class="shdonesummary"') < h.indexOf('shdoneverif'),
+    "Summary sits ABOVE the verification fold, which is where the founder "
+    + "reads the result");
+  assert(/shdoneverif/.test(h), "and the verdicts are still rendered");
+  pass("1: a DONE research task leads with the Summary, verdicts folded");
 }
 
 /* ══ 2. IT IS THE OUTCOME, NOT THE ONE-LINE GIST ════════════════════════ */
@@ -244,8 +249,9 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
 {
   const ctx = fresh();
   const h = ctx.shadowCompletionHtml(DONE());
-  const rows = h.slice(h.indexOf('class="shchecks"'),
-                       h.indexOf('class="shdonesummary"'));
+  /* the rows live inside the Verification fold as of 2026-09-21; the row
+     TEMPLATE is unchanged, which is what this test is about */
+  const rows = h.slice(h.indexOf('class="shchecks"'));
   assert.strictEqual((rows.match(/class="shcheck shcheckmet"/g) || []).length,
     3, "three rows, each drawn by the unchanged row template");
   assert.strictEqual((rows.match(/shcheckmet/g) || []).length, 3,
@@ -256,7 +262,9 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
     "its quoted evidence still rides under it");
   assert(/you confirmed it · founder/.test(rows),
     "and the founder confirmation still names who");
-  assert(/Done — 3 of 3 checks passed/.test(h), "the headline is unchanged");
+  /* the headline is "Done" now; the count moved into the fold with the
+     rows it counts (founder, 2026-09-21) */
+  assert(/class="shconfirmq">Done</.test(h), "the headline is unchanged");
   assert(/4 of 12 turns used\./.test(h), "and the budget line");
   pass("6: the check rows, headline and budget line are unchanged");
 }

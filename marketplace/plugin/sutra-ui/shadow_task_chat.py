@@ -74,9 +74,32 @@ def task_context(mission):
         "\nThe founder talks to you HERE, in one box, and does not sort their "
         "sentences for you: the same message may be a question, a constraint, "
         "an instruction, or nothing to do with the work. Answer it as what it "
-        "is. You do not act from this conversation -- when a founder line "
-        "changes what the worker should do, say so plainly and let it change "
-        "the instruction you compose on your NEXT steering turn.\n"
+        "is.\n"
+        "\nAND YOU JUDGE, ON EVERY MESSAGE, WHETHER THE WORKER NEEDS TO HEAR "
+        "IT. End every reply to the founder with one fenced block:\n"
+        "\n```forward\n{\"worker\": true}\n```\n"
+        "\nThe founder never sees this block; it is stripped from your reply. "
+        "Answer them normally above it, always. `true` means the line can "
+        "CHANGE, CONSTRAIN, AUTHORIZE, CLARIFY or CORRECT what the worker is "
+        "doing -- \"use official sources only\", \"make it 20 lines, not "
+        "10\", \"drop the salary estimates\", \"call the file foo.txt\", "
+        "\"only 2026\", \"yes, go ahead\". `false` means the founder was "
+        "asking YOU something: status, progress, turns used, what you just "
+        "did, why you asked something, an explanation, anything about this "
+        "conversation or the interface. A `false` line never reaches the "
+        "worker and never costs it a turn.\n"
+        "\nWHEN IT IS BOTH, IT IS `true`. A message that asks you something "
+        "AND carries a constraint is worker-relevant; answer the question "
+        "here and let the constraint through. When you genuinely cannot tell, "
+        "say `true`: an extra sentence costs the worker nothing, and a "
+        "constraint you swallowed costs the founder the task.\n"
+        "\nYOU DECIDE WHETHER, NEVER WHAT. The founder\'s own sentence is "
+        "forwarded verbatim -- you are not writing it, summarizing it or "
+        "improving it, and nothing you say in your reply is ever sent. You "
+        "still compose the worker\'s actual INSTRUCTION yourself, on your "
+        "next steering turn, exactly as before; forwarding is how the worker "
+        "hears the founder in the meantime, not a way for it to take orders "
+        "from anyone but you.\n"
         "\nNEVER SPEAK FOR THE WORKER. You are asked to decide its next "
         "instruction at a turn boundary and told what it said back; between "
         "those you do not know what it is doing. Say what you have asked for "
@@ -210,8 +233,15 @@ class TaskChat:
         # the same boot the Now chat gets (persona, DELEGATE OFFERS, standing
         # context) plus this task's own block
         offers = getattr(shadow_session, "offers_context", None)
+        # THIS TASK'S OWN ACTIONS, NEVER THE WORKSPACE'S (founder,
+        # 2026-09-21). standing_context used to read the last ten ledger
+        # rows written by ANY mission, so this chat -- which writes the
+        # worker's brief -- booted holding other missions' judge verdicts
+        # and artifact names. The founder's standing instructions and memory
+        # boxes still cross missions; one mission's work does not.
         context = (context + (offers() if callable(offers) else "")
-                   + shadow_session.standing_context() + task_context(mission))
+                   + shadow_session.standing_context(mission.get("id"))
+                   + task_context(mission))
         self._register, self._publish = register, publish
         rt = self._runtime()
         args = build_args()

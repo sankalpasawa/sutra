@@ -217,10 +217,15 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
     "it is decoration, and says so");
   /* it LEADS the card, and the content still follows in its own order */
   assert(h.indexOf("shdoneburst") < h.indexOf("shdonehead"));
-  assert(h.indexOf("shdonehead") < h.indexOf("shchecks"));
-  assert(h.indexOf("shchecks") < h.indexOf("shdonesummary"));
+  assert(h.indexOf("shdonehead") < h.indexOf("shdonesummary"));
+  /* THE ORDER INVERTED 2026-09-21 and that is the change: the verdicts moved
+     into a closed "Verification" fold, so the Summary -- the result -- now
+     comes first and the machinery last. Both are still drawn. */
+  assert(h.indexOf("shdonesummary") < h.indexOf("shchecks"));
+  assert(h.indexOf("shdoneverif") < h.indexOf("shchecks"),
+    "the rows are inside the fold");
   /* the content is unchanged */
-  assert(/Done — 2 of 2 checks passed/.test(h));
+  assert(/class="shconfirmq">Done</.test(h));
   assert(/The file is written and verified\./.test(h));
   pass("6: the done flourish leads, and changes nothing under it");
 }

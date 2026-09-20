@@ -994,9 +994,14 @@ const doneMission = (outcome) => M({ state: "done", target_session: "sess-1",
 
   /* 2. DONE + the check count remain */
   assert(/shtpill-done[^>]*>DONE</.test(h), "the DONE pill must remain");
-  assert(/Done — 1 of 1 checks passed/.test(h),
-    "the headline and check count must remain");
-  assert(/6 of 20 turns used/.test(h), "the turn cost stays");
+  /* THE COUNT AND THE TURN COST MOVED INTO THE VERIFICATION FOLD
+     (founder, 2026-09-21). Both are still rendered and still on the record;
+     they are simply no longer the first thing a founder reads about a
+     finished task. */
+  assert(/class="shconfirmq">Done</.test(h), "the headline must remain");
+  assert(/6 of 20 turns used/.test(h), "the turn cost stays, in the fold");
+  assert(h.indexOf("shdoneverif") < h.indexOf("6 of 20 turns used"),
+    "...and it is inside the fold, not above it");
 
   /* 3. the actual done-when criterion remains, with who satisfied it */
   assert(h.indexOf(CRITERION) !== -1, "the criterion must remain, verbatim");

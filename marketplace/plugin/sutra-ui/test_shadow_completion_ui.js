@@ -116,7 +116,14 @@ const DONE = { id: "m-done", objective: "get the EMI check green",
 {
   const ctx = fresh();
   const h = ctx.shadowCompletionHtml(DONE);
-  assert(/3 of 3 checks passed/.test(h), "the headline leads");
+  /* THE COUNT LEFT THE HEADLINE (founder, 2026-09-21): "do not show the
+     user internal verification machinery such as '3 of 3 checks passed'".
+     The headline is now just Done; the count is still stamped on the record
+     (completion.headline), still copied by shadowCompletionText, and still
+     inside the Verification fold. */
+  assert(/class="shconfirmq">Done</.test(h), "the headline leads");
+  assert(!/3 of 3 checks passed/.test(h.split("shdoneverif")[0]),
+    "no check count outside the verification fold");
   /* THE OBJECTIVE LEFT THIS LINE (founder, 2026-09-15). It is already the
      pane title and the head of the card above, and restating it in full
      made the conclusion the third thing on the completion card. It is
@@ -165,21 +172,53 @@ const DONE = { id: "m-done", objective: "get the EMI check green",
                how: "found in the chat" },
              { check: "not yet", tier: "verify", met: false,
                how: "still outstanding" }] } });
-  assert(/1 of 2 checks passed/.test(h), "the server's count is the count");
+  /* THE SERVER'S COUNT IS STILL THE COUNT -- it is simply inside the
+     Verification fold now rather than in the headline (2026-09-21). */
+  assert(/1 of 2 checks passed/.test(ctx.shadowCompletionText({
+    id: "m-x", completion: { headline: "1 of 2 checks passed",
+      objective: "o", turns_used: 1, max_turns: 4, checks: [] } })),
+    "the server's count is the count");
   assert.strictEqual((h.match(/shcheckmet/g) || []).length, 1,
     "only the met row draws as met");
   assert(/still outstanding/.test(h), "the unmet row says so");
   console.log("ok 3 the verdict is the server's");
 }
 
-/* 4. the card shows it, and the flat "done when" row steps aside */
+/* 4. the RESULT IS AT THE END OF THE THREAD, and the flat "done when" row
+   steps aside.
+
+   MOVED 2026-09-20 (founder: "we shouldn't have to scroll up or down to
+   look at the necessary stuff"). The task card is the FIRST row of the
+   scroller and the conversation grows downward from it, so a summary drawn
+   inside the card sat above every turn the task had taken -- the founder
+   landed at the newest row and scrolled back through the whole task to
+   read what it came to. The summary now renders after the timeline, which
+   is the bottom of the scroller and directly above the composer.
+
+   The card's own behaviour is otherwise unchanged and still asserted here:
+   it drops the flat criteria row on a finished task exactly as before. */
 {
   const ctx = fresh();
   const card = ctx.shadowTaskCardHtml(DONE);
-  assert(/3 of 3 checks passed/.test(card), "the card carries the summary");
-  assert(/data-shdone="m-done"/.test(card), "the block has its own hook");
+  assert(!/3 of 3 checks passed/.test(card),
+    "the summary is no longer buried at the top of the scroller");
   assert(!/done when/.test(card),
     "the criteria without verdicts do not print twice");
+  ctx.S.shadowHomeDark = false;
+  ctx.S.shadowMissions = [DONE];
+  ctx.S.shadowTaskSel = "m-done";
+  const home = ctx.shadowHomeHtml();
+  /* the RESULT is still drawn once on the pane; the count that used to
+     stand in for it now lives in the Verification fold (2026-09-21) */
+  assert(/class="shconfirmq">Done</.test(home), "it is still drawn, once");
+  assert.strictEqual((home.match(/class="shconfirmq">Done</g) || []).length, 1,
+    "and exactly once");
+  assert(/data-shdone="m-done"/.test(home), "the block has its own hook");
+  /* ...and it is AFTER the conversation, which is the whole point */
+  const tl = home.indexOf("shtimeline");
+  const done = home.indexOf('data-shdone="m-done"');
+  assert(tl > -1 && done > tl,
+    "the result must render below the turns, not above them");
   /* "Open the chat" moved to the RHS header ("Shadow Design - Final",
      founder 2026-09-15) -- same hook, same session, same handler. Asserted
      where it now lives, so the way into the WORKER chat stays pinned. */
@@ -227,7 +266,11 @@ const DONE = { id: "m-done", objective: "get the EMI check green",
   const sel = ctx.shadowSelectedTask();
   assert(sel && sel.id === "m-done",
     "the task the founder picked stayed in the pane");
-  assert(/3 of 3 checks passed/.test(ctx.shadowTaskCardHtml(sel)),
+  /* THE SURFACE MOVED, THE GUARANTEE DID NOT (2026-09-20). The summary
+     renders after the timeline rather than inside the card, so this asks
+     the pane rather than the card -- what is being pinned is that the
+     finished task still HAS a surface, which was always the point. */
+  assert(/class="shconfirmq">Done</.test(ctx.shadowHomeHtml()),
     "and it is showing the summary");
 
   /* 5b. THE LIST KEEPS IT NOW (founder, 2026-09-15, rule 4a). This used to
@@ -313,7 +356,7 @@ const DONE = { id: "m-done", objective: "get the EMI check green",
       done_when: [] },
     DONE,
   ];
-  assert(/3 of 3 checks passed/.test(ctx.shadowHomeHtml()),
+  assert(/class="shconfirmq">Done</.test(ctx.shadowHomeHtml()),
     "the summary is on screen after following the link");
   console.log("ok 9 the Now row opens the task it is about");
 }
@@ -417,8 +460,12 @@ function copyBtn(ctx, m){
   const h = ctx.shadowCompletionHtml(DONE);
   assert(/data-shcopydone="m-done"/.test(h), "the button names its mission");
   assert(/Copy result/.test(h), "and says what it does");
-  assert(/3 of 3 checks passed/.test(h), "the headline is still there");
-  const card = ctx.shadowTaskCardHtml(DONE);
+  assert(/class="shconfirmq">Done</.test(h), "the headline is still there");
+  /* ON THE PANE, where the block now lives (2026-09-20) -- same hook, same
+     handler, one surface further down the scroller. */
+  ctx.S.shadowMissions = [DONE];
+  ctx.S.shadowTaskSel = "m-done";
+  const card = ctx.shadowHomeHtml();
   assert(/data-shcopydone="m-done"/.test(card), "the card carries it");
   /* a task that has not finished has no result to copy */
   const live = Object.assign({}, DONE, { state: "running" });
@@ -725,10 +772,14 @@ const DONE_WORK = Object.assign({}, DONE, {
      above the verdicts, so it is the first thing read. */
   assert(h.indexOf("shdonework") < h.indexOf("shchecks"),
     "the account comes before the verdicts");
-  assert(h.indexOf("shconfirmsub") < h.indexOf("shdonework"),
-    "…and after the line that says what was checked");
+  /* THE TURN LINE MOVED INTO THE FOLD (founder, 2026-09-21), so the account
+     now sits directly under the headline -- which is stronger ordering for
+     the same reason the original assertion existed: what was DONE is the
+     first thing read. */
+  assert(h.indexOf("shdonework") < h.indexOf("shconfirmsub"),
+    "…and before the verification bookkeeping, not after it");
   /* it is still the SERVER's account and nothing else changed about it */
-  assert(/3 of 3 checks passed/.test(h), "the headline is untouched");
+  assert(/class="shconfirmq">Done</.test(h), "the headline is untouched");
   assert.strictEqual((h.match(/shcheckmet/g) || []).length, 3,
     "and so are the verdicts");
 

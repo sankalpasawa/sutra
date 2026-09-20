@@ -748,26 +748,79 @@ function shadowFloorsLine(){
    A non-founder_confirm check that is still unmet is shown and NOT offered:
    the server refuses that index, and a button that always errors is worse
    than an honest line saying who does check it. */
+/* \u2500\u2500 ONLY WHAT IS YOURS IS ON SCREEN (founder, 2026-09-20) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+   THE ASK: "if checks are done by shadow without aid from the user, don't
+   show them at all".
+
+   WHY IT IS RIGHT, AND WHY IT IS RIGHT *NOW* RATHER THAN BEFORE. This list
+   used to be almost entirely rows reading "Shadow checks this" -- nine of
+   nine on the founder's install, because everything reached them. After
+   D-SH-1 and the artifact lane the opposite is true: most rows are settled
+   by machine, and a wall of them is a wall of things the founder can do
+   nothing about, with the one or two rows that need a decision buried in
+   it. A row the founder cannot act on is not information on a surface whose
+   whole job is to ask them something.
+
+   NOTHING IS DELETED, and that distinction is the difference between this
+   and hiding a problem. Shadow's own rows move into a `<details>` that
+   states its own count, so the full list with every verdict is always one
+   click away. What changes is what is on screen UNASKED.
+
+   OUTSTANDING IS NOT THE SAME AS SETTLED, and the split below is on that
+   rather than on tier alone. A Shadow check that has NOT passed yet is not
+   "done by Shadow without aid" -- it is work still in flight, and it is
+   counted separately so a founder reading "2 still running" knows the task
+   is not merely waiting on them. */
 function shadowCheckRowsHtml(m){
-  const rows = (m.done_when || []).map((c, i) => {
-    const text = (c && c.check) || "";
-    if (!text) return "";
-    const met = !!(c && c.met);
-    const mine = c && c.tier === "founder_confirm";
-    const by = (c && c.confirmed_by) || "";
-    return `<div class="shcheck${met ? " shcheckmet" : ""}">
-      <span class="shcheckbox" aria-hidden="true">${met ? "\u2713" : ""}</span>
-      <span class="shchecktxt">${esc(text)}</span>
-      ${met
-        ? `<span class="shcheckby">confirmed${by ? " \u00b7 " + esc(by) : ""}</span>`
-        : (mine
-            ? `<button class="btn shcheckdo" type="button"
-                data-shcheckmid="${escAttr(m.id)}" data-shcheckix="${escAttr(i)}"
-                >Confirm</button>`
-            : `<span class="shcheckby">Shadow checks this</span>`)}
+  const all = (m.done_when || []).filter(c => c && c.check);
+  if (!all.length) return "";
+  /* the founder's own, still outstanding -- the only rows that get a button
+     and the only rows drawn without being asked for. The INDEX is the
+     record's, not this filtered list's: confirm_check is by index and a
+     re-numbered one would sign the wrong row. */
+  const mineIx = [];
+  (m.done_when || []).forEach((c, i) => {
+    if (c && c.check && c.tier === "founder_confirm" && !c.met) mineIx.push(i);
+  });
+  const settled = all.filter(c => c.tier !== "founder_confirm" && c.met);
+  const running = all.filter(c => c.tier !== "founder_confirm" && !c.met);
+  const signed = all.filter(c => c.tier === "founder_confirm" && c.met);
+  const rows = mineIx.map(i => {
+    const c = m.done_when[i];
+    return `<div class="shcheck">
+      <span class="shcheckbox" aria-hidden="true"></span>
+      <span class="shchecktxt">${esc(c.check)}</span>
+      <button class="btn shcheckdo" type="button"
+        data-shcheckmid="${escAttr(m.id)}" data-shcheckix="${escAttr(i)}"
+        >Confirm</button>
     </div>`;
   }).join("");
-  if (!rows) return "";
+  /* EVERYTHING ELSE, FOLDED. The summary sentence is built only from the
+     counts that are non-zero, so a task with nothing outstanding never
+     prints "0 still running". */
+  /* the fold's own label. PLAIN, and it names no tier, no probe and no
+     lane -- "Everything else Shadow is handling" is true of a settled check,
+     a running one and a signed one alike, and is what a founder needs to
+     know about rows they are not being asked about. */
+  const said = ["Everything else Shadow is handling"];
+  const others = settled.concat(running, signed);
+  const fold = others.length ? `<details class="shcheckfold">
+    <summary>${esc(said.join(" \u00b7 "))}</summary>
+    ${others.map(c => `<div class="shcheck${c.met ? " shcheckmet" : ""}">
+      <span class="shcheckbox" aria-hidden="true">${c.met ? "\u2713" : ""}</span>
+      <span class="shchecktxt">${esc(c.check)}</span>
+      <span class="shcheckby">${c.met
+        ? (c.tier === "founder_confirm"
+            ? "you confirmed it" + (c.confirmed_by
+                ? " \u00b7 " + esc(c.confirmed_by) : "")
+            : "Shadow checked this")
+        : "Shadow is checking this"}</span>
+    </div>`).join("")}
+  </details>` : "";
+  /* NOTHING TO ASK MEANS NOTHING TO ASK WITH. A pause carrying no founder
+     row -- a floor confirm, an autonomy hold -- is explained by the card
+     above it, not by a list of criteria the founder cannot act on. */
+  if (!rows) return fold ? `<div class="shconfirm">${fold}</div>` : "";
   /* SHADOW NEVER SAYS IT IS DONE, and the old headline here claimed it did
      ("Shadow says it is done and is waiting on you"). It cannot say that:
      DECISION_ACTIONS is ("continue", "ask_founder") with no stop and no
@@ -780,14 +833,98 @@ function shadowCheckRowsHtml(m){
      sentence changed. It matters more after the engine fix: an
      all-founder_confirm mission now keeps RUNNING instead of parking here,
      so the headline is reached only at a boundary that was really earned. */
-  const left = (m.done_when || []).filter(c =>
-    c && c.tier === "founder_confirm" && !c.met).length;
+  /* ── PLAIN ENGLISH, NOT THE MACHINERY (founder, 2026-09-21) ───────────
+     THE ASK: the founder-facing surface should be "concise, plain English,
+     visually scannable, focused on the decision, free of implementation
+     vocabulary". What stood here announced Shadow's internal state --
+     "Shadow's own checks have passed", a count of what is left, and a
+     sign-off instruction -- before it got to the question.
+
+     THE SEMANTIC QUESTION IS UNTOUCHED. The criterion is still rendered
+     verbatim, character for character, in the row below: it is the thing
+     being agreed to and rewording it would change what the founder signed.
+     Only the framing around it changed.
+
+     THE FOLD STAYS CLOSED and now says nothing about tiers or who settled
+     what on the outside of it. */
   return `<div class="shconfirm">
-    <div class="shconfirmq">Shadow's own checks have passed — these are waiting on you.</div>
-    <div class="shconfirmsub">Only you can sign these off \u2014 read each one
-      and confirm the ones you agree with.${left
-        ? " " + left + " left." : ""}</div>
+    <div class="shconfirmq">Shadow needs your decision</div>
+    ${shadowDecisionHtml(m)}
     <div class="shchecks">${rows}</div>
+    ${fold}
+  </div>`;
+}
+
+/* ── THE EVIDENCE THE DECISION NEEDS, BESIDE THE DECISION ────────────────
+   THE FAILURE (founder, 2026-09-21). Shadow asked "does this ten-line
+   ranking work as the greatest riders ever?" and the ten riders were only
+   in the worker's chat. The founder was asked to approve a list they could
+   not see, and had to open a second chat to answer a question asked here.
+
+   WHAT THIS DRAWS is `m.decision`, the packet mission_engine stamps at the
+   two places a mission goes to a human. NOTHING IS COMPOSED CLIENT-SIDE and
+   nothing is inferred: the artifact text is the file's own bytes and the
+   facts were counted by machine in shadow_evidence, so this function cannot
+   add a claim the server did not make. A record with no packet renders ""
+   and the surface is exactly what it was.
+
+   IT SITS ABOVE THE CHECK ROWS on purpose. The order of the block is the
+   order of the decision: here is what was produced, here is what Shadow
+   already established about it, and now here is the part only you can
+   settle. Putting the evidence under the buttons would ask the question
+   before showing its subject.
+
+   THE ARTIFACT IS NOT RENDERED AS MARKDOWN. It is escaped into a <pre>,
+   because this is the file AS IT IS -- a founder approving a ranking must
+   see the literal lines, not a renderer's idea of them. A file that happens
+   to contain markdown would otherwise be silently reformatted on the one
+   surface where its exact shape is the thing being judged. */
+function shadowDecisionHtml(m){
+  const d = m && m.decision;
+  if (!d) return "";
+  const arts = (d.artifacts || []).map(a => {
+    if (!a) return "";
+    if (a.kind === "image"){
+      /* a visual decision needs the visual. Too big to inline is stated as
+         a fact rather than drawn as a broken image. */
+      return `<div class="shdecart">
+        <div class="shdecpath">${esc(a.path || "")}</div>
+        ${a.too_big || !a.data_uri
+          ? `<div class="shdecnote">too large to preview here (${esc(
+              String(a.bytes || 0))} bytes) — open the task's chat</div>`
+          : `<img class="shdecimg" alt="${escAttr(a.path || "artifact")}"
+               src="${escAttr(a.data_uri)}">`}
+      </div>`;
+    }
+    const f = a.facts || {};
+    /* the measured line is the server's count, never this client's */
+    const measured = [
+      f.lines !== undefined ? f.lines + " lines" : "",
+      f.distinct_non_empty_lines !== undefined
+        ? f.distinct_non_empty_lines + " distinct" : "",
+    ].filter(Boolean).join(" · ");
+    return `<div class="shdecart">
+      <div class="shdecpath">${esc(a.path || "")}${measured
+        ? ` <span class="shdecmeta">${esc(measured)}</span>` : ""}</div>
+      <pre class="shdectext">${esc(a.text || "")}</pre>
+      ${a.truncated
+        ? `<div class="shdecnote">shown in part — open the task's chat for the
+           whole file</div>` : ""}
+    </div>`;
+  }).join("");
+  /* WHAT IS ALREADY SETTLED, so the founder does not re-check by hand what
+     the machine already knows. Facts only -- never a verdict on the question
+     being asked, which is the one thing Shadow must not answer for them. */
+  const est = (d.established || []).filter(e => e && e.met);
+  const estHtml = est.length ? `<div class="shdecest">Shadow established:
+    ${est.map(e => `<span class="shdecfact">${esc(e.how || e.check)}</span>`)
+       .join("")}</div>` : "";
+  if (!arts && !d.missing && !estHtml) return "";
+  return `<div class="shdec">
+    ${arts}
+    ${estHtml}
+    ${d.missing ? `<div class="shdecnote shdecmissing">${esc(d.missing)}</div>`
+                : ""}
   </div>`;
 }
 
@@ -1018,7 +1155,23 @@ function shadowSummaryHtml(m){
 function shadowCompletionHtml(m){
   const c = m && m.completion;
   if (!c) return "";
-  const rows = (c.checks || []).map(k => {
+  /* ── THE VERDICTS FOLD (founder, 2026-09-20) ──────────────────────────
+     "if checks are done by shadow without aid from the user, don't show
+     them at all". On a finished task the headline ALREADY carries the fact
+     that matters -- `completion.headline` is the server's own "3 of 3
+     checks passed" -- so printing three rows underneath it that all say
+     "Shadow verified this" is the same sentence four times.
+
+     WHAT STAYS OPEN is anything the founder had a hand in or that did not
+     pass: a row they signed is their own decision reflected back, and a row
+     that failed is the reason the count is not N of N. Those are the rows
+     a founder scans a finished task for.
+
+     NOTHING IS DELETED. Every other verdict is inside the `<details>`,
+     which states its own count -- one click, full list, every `how` line
+     and every piece of evidence exactly as before. */
+  const checks = c.checks || [];
+  const rowHtml = k => {
     const met = !!k.met;
     /* who confirmed rides the HOW line, because "you confirmed it · founder"
        is one fact, and the tier copy is the server's word not ours */
@@ -1029,8 +1182,24 @@ function shadowCompletionHtml(m){
         ? `<span class="shcheckev">${esc(k.evidence)}</span>` : ""}</span>
       <span class="shcheckby">${esc(how)}</span>
     </div>`;
-  }).join("");
-  const turns = shadowTurnNow(c) + " of " + (c.max_turns || 0) + " turns";
+  };
+  /* ── INTERNAL VERIFICATION IS NOT THE RESULT (founder, 2026-09-21) ────
+     THE ASK: "do not show the user internal verification machinery ...
+     '3 of 3 checks passed', 'N checks', 'Shadow settled itself',
+     probe/tier/evidence internals". A finished task should say what was
+     DONE, not how Shadow convinced itself.
+
+     NOTHING IS WEAKENED AND NOTHING IS DISCARDED. Every check still ran,
+     `completion.checks` is still stamped by the server with every verdict
+     and every piece of evidence, shadowCompletionText still copies the full
+     record, and the rows below still render -- inside a closed disclosure
+     that says only "Verification". The founder stops CONSUMING the
+     machinery; the machinery is untouched and one click away.
+
+     WHAT IS LEFT OUTSIDE is what the founder asked for: Done, what was
+     produced, the summary, and any caveat. */
+  const failed = checks.filter(k => !k.met);
+  const rows = checks.map(rowHtml).join("");
   /* one sentence, and only if it is a conclusion rather than the working.
      FLATTENED FIRST, AND ONLY FOR THIS LINE (founder, 2026-09-17).
      `completion.outcome` used to arrive with every newline already collapsed
@@ -1071,7 +1240,10 @@ function shadowCompletionHtml(m){
         class="shdonecheck"/></svg>
     </div>
     <div class="shdonehead">
-      <div class="shconfirmq">Done — ${esc(c.headline || "")}</div>
+      ${/* "Done", and nothing about counts. `completion.headline` is still
+           stamped by the server and still copied by shadowCompletionText --
+           it is simply not what a founder is shown first. */""}
+      <div class="shconfirmq">Done</div>
       <button class="btn shdonecopy${copied
         ? (copied.ok ? " ok" : " bad") : ""}" type="button"
         data-shcopydone="${escAttr(m.id)}" data-shcopystate="${copied
@@ -1087,11 +1259,29 @@ function shadowCompletionHtml(m){
          card above it; restating all 443 characters of it here made the
          conclusion the third thing on the card. What is left is the one
          fact this line adds. The criteria speak for themselves below. */""}
-    <div class="shconfirmsub">${esc(turns)} used.</div>
+    ${/* WHAT WAS PRODUCED, when the server recorded any. Paths only -- the
+         founder is told WHERE the work landed; the content is the summary's
+         job and the chat's. */""}
+    ${(c.artifacts || []).length ? `<div class="shdonefiles">${
+      (c.artifacts || []).map(pth =>
+        `<span class="shdonefile">${esc(String(pth))}</span>`).join("")
+    }</div>` : ""}
     ${work ? `<div class="shdonework" title="${escAttr(c.outcome || "")}"
       >${esc(work)}</div>` : ""}
-    <div class="shchecks">${rows}</div>
     ${summary}
+    ${/* A CAVEAT IS PART OF THE ANSWER. A check that did NOT pass is the one
+         piece of verification the founder genuinely needs on the surface --
+         it qualifies the result rather than explaining the machinery. */""}
+    ${failed.length ? `<div class="shdonecaveat">${failed.length === 1
+        ? "One thing did not pass:" : failed.length + " things did not pass:"}
+      ${failed.map(k => `<span class="shdonecavrow">${esc(k.check || "")}</span>`)
+        .join("")}</div>` : ""}
+    <details class="shcheckfold shdoneverif">
+      <summary>Verification</summary>
+      <div class="shconfirmsub">${esc(shadowTurnNow(c) + " of "
+        + (c.max_turns || 0) + " turns")} used.</div>
+      <div class="shchecks">${rows}</div>
+    </details>
   </div>`;
 }
 
@@ -2556,8 +2746,15 @@ async function shadowTalkSend(mid, el){
       live.push({ who: "shadow", ts: Date.now(),
                   text: "Back on it \u2014 this task is running again." });
     if (body.reply)
-      /* the instant the answer reached us, for the same reason as above */
-      live.push({ who: "shadow", text: String(body.reply), ts: Date.now() });
+      /* the instant the answer reached us, for the same reason as above.
+         `replyTo` IS THE IDENTITY (founder, 2026-09-21) -- see the anchor
+         note in shadowTimelineEvents. It names the founder line this reply
+         answers, which is the one string both sides hold UNTRANSFORMED, so
+         the live row can be retired when the transcript catches up without
+         either side having to agree about how Shadow's own prose
+         normalises. */
+      live.push({ who: "shadow", text: String(body.reply), ts: Date.now(),
+                  replyTo: shadowTalkKey(text) });
     /* v4.1 (V4-7): what the founder's words SET, as the app applied it --
        fixed copy from the server (mission_engine.limits_label), never
        Shadow's prose, with Undo on the row. A refusal is the store's own
@@ -2792,8 +2989,46 @@ function shadowTimelineEvents(m){
      ...PLUS WHAT WAS SAID THIS SITTING and has not reached the transcript
      yet, deduped on the text so a line is never drawn twice. */
   const talk = (typeof shadowTalkTurns === "function") ? shadowTalkTurns(m) : [];
+  /* ── ONE REPLY, ONE ROW: ANCHOR IDENTITY (founder, 2026-09-21) ─────────
+     THE BUG, and it is not a race. Shadow's reply reaches this pane twice by
+     design -- once live, from the route's own return value, and once
+     persisted, from the task chat's transcript -- and the two copies were
+     matched by comparing their TEXT. They are normalised by two different
+     functions that do not agree:
+
+       server  shadow_protocol._strip_governance_noise  keeps ASCII box art
+       client  shadowProseText                          strips ASCII box art
+
+     So a reply carrying a FLOW box -- which the persona forbids and the
+     model emits anyway, which is the entire reason both strippers exist --
+     produced two different keys for one message, the dedupe missed, and the
+     founder read the same answer twice. Measured: the box survives
+     parse_reply server-side and does not survive shadowProseText here.
+
+     TEXT COULD NEVER HAVE WORKED. Two independent normalisers will always
+     drift; every divergence is a duplicate. So the key is no longer Shadow's
+     prose at all.
+
+     THE ANCHOR IS THE FOUNDER'S OWN LINE. It is the one string both sides
+     hold untransformed -- the client sent it, the route forwarded it, the
+     transcript recorded it -- so it is stable identity in the sense the rest
+     of this file means it. A live reply names the founder line it answers;
+     once the transcript shows that line HAS been answered, the live copy has
+     been superseded and is dropped. Nothing compares Shadow's words to
+     Shadow's words. */
+  const answered = {};
+  let lastAsk = null;
   const spoken = {};
   for (const t of talk){
+    if (t.who === "founder") lastAsk = shadowTalkKey(t.text);
+    else if (t.who === "shadow" && lastAsk) answered[lastAsk] = 1;
+    /* The founder's OWN lines are byte-identical in both sources -- the
+       client sent the string and the transcript recorded it -- so keying
+       those on text is exact rather than a guess.
+       Shadow's are keyed too, but ONLY as the fallback for a live row
+       written before `replyTo` existed: it catches the cases where the two
+       normalisers happen to agree, and the anchor above catches the ones
+       where they do not. */
     spoken[shadowTalkKey(t.text)] = 1;
     out.push({ kind: "talk", who: t.who, text: t.text, ts: t.ts });
   }
@@ -2802,18 +3037,27 @@ function shadowTimelineEvents(m){
     ? shadowTalkLive(m.id) : [];
   for (const t of mine){
     const text = String((t && t.text) || "").trim();
-    const key = shadowTalkKey(text);
-    if (text && !spoken[key]){
-      spoken[key] = 1;
-      /* its OWN stamp, written by shadowTalkSend when the line was sent or
-         the reply arrived. NaN only for a row from before that existed. */
-      /* v4.1: a limits row carries its Undo (shadowTalkSend). The stamp
-         stays the last field, byte for byte: test_shadow_v4_talk.js pins
-         that text to mutate it. */
-      out.push({ kind: "talk", who: t.who, text: text,
-                 limits: (t && t.limits) || null,
-                 ts: Number(t && t.ts) });
+    if (!text) continue;
+    if (t.who === "shadow"){
+      /* superseded by the persisted copy of the same exchange */
+      const anchor = (t && t.replyTo) || null;
+      if (anchor && answered[anchor]) continue;
+      /* a live reply from before `replyTo` existed keeps the old text test
+         as its only available net -- strictly better than dropping it */
+      if (!anchor && spoken[shadowTalkKey(text)]) continue;
+    } else if (spoken[shadowTalkKey(text)]) {
+      continue;
+    } else {
+      spoken[shadowTalkKey(text)] = 1;
     }
+    /* its OWN stamp, written by shadowTalkSend when the line was sent or
+       the reply arrived. NaN only for a row from before that existed.
+       A limits row carries its Undo (shadowTalkSend); the stamp stays the
+       LAST field, byte for byte, because test_shadow_v4_talk.js pins that
+       text to mutate it. */
+    out.push({ kind: "talk", who: t.who, text: text,
+               limits: (t && t.limits) || null,
+               ts: Number(t && t.ts) });
   }
   /* v4.2: WHAT WAS ASKED AND ANSWERED stays in the scrollback, in its place.
      A used approval and a confirmed check are facts on the record with
@@ -3260,8 +3504,26 @@ function shadowTaskCardHtml(m){
          words; the raw blocker restated it in the engine's. block_reason is
          untouched on the record, still returned, and still what
          goalBlockerCopy reads for the Goal workspace. */""}
-    ${awaiting ? shadowCheckRowsHtml(m) : ""}
-    ${finished ? shadowCompletionHtml(m) : ""}
+    ${/* ── THE ASK AND THE RESULT MOVED TO THE END OF THE THREAD
+         (founder, 2026-09-20: "we shouldn't have to scroll up or down to
+         look at the necessary stuff") ────────────────────────────────────
+         THE BUG, and it is a placement bug rather than a rendering one.
+         This card is the FIRST row of the scroller and the conversation
+         grows downward from it (shadowStageHtml: card, then timeline). So
+         the sign-off list and the done summary -- the two things a founder
+         opens a task to act on -- sat ABOVE every turn the task had taken.
+         On a task with twenty turns the founder lands at the newest row and
+         has to scroll back past all of them to reach the Confirm button
+         that the scroll position itself was telling them about.
+
+         THE ORDER IS NOW THE ORDER THINGS HAPPENED: brief, then the turns,
+         then what it came to. Both blocks render after the timeline in
+         shadowStageHtml, which is the bottom of the scroller and directly
+         above the composer -- where the founder already is.
+
+         The PREDICATES are unchanged and still computed here, because the
+         card still reads them to decide whether to draw its flat "done
+         when" row. Only the two calls moved. */""}
     ${/* v4 (C9, ADR-043): A HELD SAY IS SHADOW ASKING, so it belongs on this
          card like the intervention form does. The founder reads the exact
          string, and Approve releases that string once through the say path
@@ -4106,6 +4368,17 @@ function shadowHomeHtml(){
            reading back through twenty turns still has its anchor. */""}
       ${newOpen || !sel ? "" : shadowTaskCardHtml(sel)}
       ${newOpen || !sel ? "" : shadowTimelineHtml(sel)}
+      ${/* WHAT IT CAME TO, AT THE END OF WHAT HAPPENED (founder,
+           2026-09-20). These two used to render inside the task card above,
+           which is the FIRST row of this scroller -- so the sign-off and
+           the done summary sat above every turn of the conversation and the
+           founder scrolled back through the whole task to reach them. Here
+           they are the last rows before the composer, which is where the
+           pane already opens. See the note at their old site in
+           shadowTaskCardHtml; the predicates are unchanged. */""}
+      ${newOpen || !sel || !shadowMissionNeedsFounder(sel) ? ""
+        : shadowCheckRowsHtml(sel)}
+      ${newOpen || !sel || !sel.completion ? "" : shadowCompletionHtml(sel)}
       ${/* the founder's answer is INSIDE the timeline now, at the point it
            happened -- drawing it here as well would be the same card twice */""}
       ${thread ? `<div class="shthread">${thread}</div>` : ""}

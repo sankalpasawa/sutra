@@ -60,10 +60,37 @@ def offers_context():
             "the founder sets these in Shadow Settings):\n" + "\n".join(rows))
 
 
-def standing_context():
+def standing_context(mission_id=None):
     """U3 "applied thereafter" + grounded undo: founder-confirmed standing
     instructions and recent actions, rebuilt fresh at every boot. Failure
-    yields "" -- a broken ledger must never stop Shadow from booting."""
+    yields "" -- a broken ledger must never stop Shadow from booting.
+
+    `mission_id` SCOPES THE ACTIONS HALF (founder, 2026-09-21), and the two
+    halves of this function are scoped differently ON PURPOSE:
+
+      STANDING INSTRUCTIONS + the founder's two boxes are PERSISTENT FOUNDER
+      KNOWLEDGE. They are deliberately stored, they are about the founder
+      rather than about any one task, and they are supposed to cross
+      missions. Unchanged.
+
+      RECENT SHADOW ACTIONS are MISSION CONTEXT wearing a global costume.
+      `read("actions", 10)` returns the last ten rows written by ANY
+      mission, and this put them in the boot context of every task chat --
+      so a Europe trip mission booted holding the MotoGP mission's judge
+      verdicts and the artifacts they named, and the task chat that writes
+      the worker's brief wrote about them. Observed verbatim: "The one real
+      signal about this founder in the workspace is MotoGP".
+
+    THE DISTINCTION THE FOUNDER DREW: "MotoGP is something the founder
+    follows" may be founder knowledge if it was deliberately stored;
+    "motogp-top-10-news.md exists" is one mission's artifact context and
+    never becomes global merely by being recent.
+
+    A TASK CHAT PASSES ITS OWN ID and sees only its own actions. The Now
+    chat passes none: it is the founder's own overview, it does no work and
+    its context reaches no worker, so the unscoped history is the founder's
+    own and stays. That asymmetry is deliberate rather than an oversight.
+    """
     try:
         import shadow_ledger
         import shadow_precedence
@@ -72,7 +99,11 @@ def standing_context():
         # v10: GLOBAL rows only. Per-chat rules ride the turn that
         # touches their chat, never Shadow's boot context.
         block = shadow_precedence.replay_context(rows, scope="global")
-        acts = shadow_ledger.read("actions", 10)
+        # SCOPED WHEN A MISSION ASKS. See the docstring: this half is
+        # mission context, not founder knowledge, and an unscoped read is
+        # how one mission's work reached another's brief.
+        acts = (shadow_ledger.read_for_mission("actions", mission_id, 10)
+                if mission_id else shadow_ledger.read("actions", 10))
         lines = ["- %s: %s" % (a.get("kind"), (a.get("summary") or "")[:120])
                  for a in acts]
         out = ("\n\nSTANDING INSTRUCTIONS (global; founder-confirmed; "
