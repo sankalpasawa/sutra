@@ -282,7 +282,7 @@ class TestShadowCannotFinishAnything(Base):
         script = [{"action": "continue", "reason": "it says it is done",
                    "instruction": "Confirm you are finished."},
                   {"action": "ask_founder",
-                   "reason": "it insists it is done but I cannot verify"}]
+                   "reason": "it insists it is done but only you can say if the copy reads well", "ask_kind": "taste"}]
         _gid, mid = self.goal_mission()
         m = run(self.engine(self.recorder(script)).run_mission(mid))
         self.assertNotEqual(m["state"], "done",
@@ -312,7 +312,7 @@ class TestAskFounder(Base):
         self.store.transition(m["id"], "running", "admitted")
         self.replies = ["I need to know which region you deploy in.", "x"]
         out = run(self.engine(self.recorder([
-            {"action": "ask_founder", "reason": "it needs the deploy region"}
+            {"action": "ask_founder", "reason": "which region do you want this deployed to", "ask_kind": "founder_fact"}
         ])).run_mission(m["id"]))
         goal_lifecycle.on_attempt_end(out)
         self.assertEqual(out["state"], "blocked", "the EXISTING blocked state")
@@ -337,13 +337,13 @@ class TestAskFounder(Base):
         self.replies = ["stuck", "x"]
         mid = self.mission()
         out = run(self.engine(self.recorder([
-            {"action": "ask_founder", "reason": "cannot proceed"}
+            {"action": "ask_founder", "reason": "which region do you want", "ask_kind": "founder_fact"}
         ])).run_mission(mid))
         self.assertEqual(out["state"], "blocked",
                          "a standalone ask_founder must reach the founder")
         self.assertEqual(out["block_reason"], "needs_founder",
                          "the blocker must be stamped on the record")
-        self.assertTrue(any("cannot proceed" in n for n in self.notes(mid)),
+        self.assertTrue(any("which region" in n for n in self.notes(mid)),
                         "the reason still lives in the ledger note")
 
     def test_11b_the_reason_survives_onto_the_record(self):
@@ -354,11 +354,11 @@ class TestAskFounder(Base):
         mid = self.mission()
         out = run(self.engine(self.recorder([
             {"action": "ask_founder",
-             "reason": "it needs the deploy region and I do not have it"}
+             "reason": "which region do you want, I do not have it", "ask_kind": "founder_fact"}
         ])).run_mission(mid))
         self.assertEqual(out["block_reason"], "needs_founder")
         self.assertTrue(
-            any("deploy region" in n for n in self.notes(mid)),
+            any("which region" in n for n in self.notes(mid)),
             "what Shadow actually needed must be recoverable")
 
     def test_11c_the_session_is_kept_alive_for_the_founder_to_answer(self):
@@ -368,7 +368,7 @@ class TestAskFounder(Base):
         self.replies = ["stuck", "x"]
         mid = self.mission()
         out = run(self.engine(self.recorder([
-            {"action": "ask_founder", "reason": "need a human"}
+            {"action": "ask_founder", "reason": "which region do you want", "ask_kind": "founder_fact"}
         ])).run_mission(mid))
         self.assertNotIn("blocked", mission_engine.TERMINAL,
                          "if blocked became terminal the delegate would be "
@@ -382,7 +382,7 @@ class TestAskFounder(Base):
         self.replies = ["stuck", "x"]
         mid = self.mission()
         out = run(self.engine(self.recorder([
-            {"action": "ask_founder", "reason": "need a human"}
+            {"action": "ask_founder", "reason": "which region do you want", "ask_kind": "founder_fact"}
         ])).run_mission(mid))
         self.assertEqual(out["state"], "blocked")
         self.assertIn("running", mission_engine.TRANSITIONS["blocked"],
@@ -441,7 +441,7 @@ class TestAskFounder(Base):
         self.replies = ["stuck", "x"]
         mid = self.mission()
         out = run(self.engine(self.recorder([
-            {"action": "ask_founder", "reason": "need a human"}
+            {"action": "ask_founder", "reason": "which region do you want", "ask_kind": "founder_fact"}
         ])).run_mission(mid))
         accepted, problems = mission_engine.emit_mission_feed(
             out, "needs_decision", out.get("block_reason") or "Shadow needs you")
@@ -467,7 +467,7 @@ class TestAskFounder(Base):
     def test_12_ask_founder_sends_nothing_into_the_chat(self):
         self.replies = ["hmm", "x"]
         run(self.engine(self.recorder([
-            {"action": "ask_founder", "reason": "need help"}
+            {"action": "ask_founder", "reason": "which region do you want", "ask_kind": "founder_fact"}
         ])).run_mission(self.mission()))
         self.assertEqual(len(self.said), 1,
                          "only turn 0 was sent; the ask went to the founder")

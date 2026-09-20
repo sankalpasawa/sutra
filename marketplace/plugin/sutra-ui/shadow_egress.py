@@ -131,6 +131,13 @@ TOOL_GATES = {
     "shadow_session_say": {"kind": "write-acting", "gate": "flag+env + mission_id + dedupe + FLOOR + scrub + app-side 403/404/400/409"},
     "shadow_verify": {"kind": "read", "gate": "flag+env, call-time re-check"},
     "shadow_mission_update": {"kind": "write-inert", "gate": "flag+env, missions ledger only, state enum"},
+    # WRITE-INERT BECAUSE THE FOUNDER READS IT BACK. remember/forget fills
+    # in the two settings boxes on "What Shadow knows" -- plain editable
+    # text the founder can change or delete -- so it installs nothing and
+    # schedules nothing. The gate is the shape of the write, not trust in
+    # the caller: two named boxes only, one collapsed line, deduped, and
+    # the box capped so a runaway trims from the oldest end.
+    "shadow_remember": {"kind": "write-inert", "gate": "flag+env, two named boxes only, one line, deduped, capped, founder-editable"},
 }
 
 

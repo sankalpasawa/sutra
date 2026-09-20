@@ -116,7 +116,7 @@ class Base(unittest.TestCase):
         return {"text": text, "at": "2026-09-16T10:00:00Z", "at_turn": 2,
                 "seen": False}
 
-    STOP = {"action": "ask_founder", "reason": "stop"}
+    STOP = {"action": "ask_founder", "reason": "does the copy read well to you", "ask_kind": "taste"}
 
     @staticmethod
     def go(instruction, standing=None):
@@ -264,7 +264,7 @@ class ASilentDecisionCannotDropTheSet(Base):
         """The founder can change what governs the task on a turn Shadow ends
         by asking them something."""
         out = mission_engine.validate_decision(
-            {"action": "ask_founder", "reason": "r", "standing": ["keep x"]})
+            {"action": "ask_founder", "reason": "does the copy read well to you", "ask_kind": "taste", "standing": ["keep x"]})
         self.assertEqual(out["standing"], ["keep x"])
 
 
@@ -315,7 +315,7 @@ class ItCannotDriveTheWorker(Base):
 
     def test_writing_the_set_spends_no_turn_and_sends_nothing(self):
         mid = self.running()
-        eng = self.engine([{"action": "ask_founder", "reason": "asking",
+        eng = self.engine([{"action": "ask_founder", "reason": "does the copy read well to you", "ask_kind": "taste",
                             "standing": ["Keep the existing API unchanged."]}])
         before = self.store.load(mid)["turns_used"]
         run(eng.run_mission(mid))

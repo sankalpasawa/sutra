@@ -22,6 +22,7 @@ import session_runtime
 import shadow_egress
 import shadow_feed
 import shadow_home_lock
+import shadow_judge
 import shadow_ledger
 
 #: mission_id -> asyncio.Task (running loops)
@@ -947,6 +948,11 @@ def _launch(mid, validated_say, verifier):
         # SHADOW DRIVES from turn 1. None (no decider injected, e.g. the
         # flag path or a test) keeps the historical template.
         decider=DEFAULT_DECIDER["fn"],
+        # ...and SHADOW JUDGES from turn 1 too (D-SH-1). Same injection shape
+        # as the decider and the same None-means-historical-behaviour: an
+        # install that never binds one has `judge` rows that never settle,
+        # and the founder is asked at the end of the road exactly as before.
+        judge=DEFAULT_JUDGE["fn"],
         # what the delegate said it did, quoted into the completion summary
         outcome_reader=lambda m: last_worker_message(m.get("target_session")),
         # what the DECIDER reads: whole worker messages, not a byte tail
@@ -1669,12 +1675,33 @@ checks that, taken together, mean the outcome above is genuinely achieved.
 
   * Write a STATE that is true when the work is done ("the EMI check passes"),
     never an instruction to perform ("run the EMI check").
-  * `tier` is `founder_confirm` -- the founder signs it off -- unless you can
-    give the check a `probe`, which is the ONLY thing that makes it `verify`.
-    A `verify` with no valid probe is demoted to `founder_confirm`
-    automatically, keeping your wording: Shadow never claims to have checked
-    something it did not look at. So write `verify` when you can say HOW it
-    is checked, and `founder_confirm` for everything else.
+  * THERE ARE THREE TIERS AND THE FOUNDER'S IS THE RAREST OF THEM. Choose in
+    this order, and only fall to the next when the one above genuinely does
+    not fit:
+
+      `verify`           you can say HOW to check it: a probe that reads a
+                         file, or a COMMAND that is run and whose exit code
+                         answers the question. Anything about tests passing,
+                         a build succeeding, a script running clean, output
+                         being produced -- all of these are `verify`, and
+                         they are the most common kind of check there is.
+      `judge`            no command settles it, but the CHANGE ITSELF shows
+                         it: "the fix addresses the root cause rather than
+                         masking it", "nothing unrelated was touched", "the
+                         new function handles the empty case". Shadow reads
+                         the diff and decides. THIS IS THE DEFAULT -- if you
+                         do not name a tier, this is what you get.
+      `founder_confirm`  ONLY taste, or a fact that exists nowhere but in
+                         the founder's head. "The wording reads well",
+                         "this is the design you preferred", "the budget cap
+                         is X". If you can imagine settling it by reading
+                         the repository or running something, IT IS NOT THIS
+                         TIER, and writing it here will simply be ignored --
+                         the check is routed to `judge` instead.
+
+    EVERY CHECK YOU MARK `founder_confirm` IS A CLICK YOU ARE ASKING A HUMAN
+    FOR. On this install, every check ever written was that tier and the
+    founder had to sign off "the tests pass" by hand. Do not do that to them.
   * A `verify` check about a FILE should carry a `probe`, and then Shadow
     reads that file itself instead of believing what the chat says about it:
 
@@ -1683,7 +1710,27 @@ checks that, taken together, mean the outcome above is genuinely achieved.
        "probe": {"kind": "file_equals", "path": "shadow-race-test.txt",
                  "text": "shadow-race-pass", "allow_trailing_newline": true}}
 
-    `kind` is one of FIVE, and every one is a plain read of one file:
+    `kind` is one of SIX. Five are a plain read of one file, and the sixth
+    RUNS A COMMAND -- which is the one that covers most real checks:
+
+      command_succeeds
+                      {"kind":"command_succeeds", "argv":["pytest","-q"]}
+                      + optional "expect_exit" (default 0), "contains" (a
+                      string the output must also carry), "ignore_case",
+                      "timeout_s" (default 180, max 900).
+
+                      `argv` IS A LIST, never one string, and it is run
+                      WITHOUT a shell -- so there is no piping, no `&&`, no
+                      redirection and no globbing. Invoke the program
+                      directly: ["npm","test"], ["./run-tests.sh"],
+                      ["git","status","--porcelain"]. A shell invoked with
+                      -c is refused, so do not write ["bash","-lc","..."].
+                      It runs in the working directory.
+
+                      THIS IS THE ANSWER TO ALMOST EVERY "does it work"
+                      CHECK. "The tests pass" is
+                      {"kind":"command_succeeds","argv":["./run-tests.sh"]}.
+                      Reach for it before you reach for the founder.
 
       file_exists     {"kind","path"}
       file_equals     {"kind","path","text"} + optional
@@ -1700,15 +1747,16 @@ checks that, taken together, mean the outcome above is genuinely achieved.
     containing "..". Write the
     `check` as the sentence a human would read; the probe is how it is
     settled, not what it says.
-  * Only attach a probe to something a file genuinely decides. Anything
-    about quality, taste or intent is `founder_confirm` -- a probe answers
-    "is this mechanically true", never "is this what the founder wanted".
+  * Only attach a probe to something a file or a command genuinely decides.
+    A probe answers "is this mechanically true", never "is this what the
+    founder wanted" -- but note that "is this what the founder wanted" is
+    usually `judge`, not `founder_confirm`. The founder's tier is for what
+    only they can know, not for everything a probe cannot reach.
   * SPLIT A CHECK THAT ASKS FOR SEVERAL THINGS. One check holding a
-    mechanical clause AND a judgement clause can only be settled by the
-    founder, so the mechanical half is thrown away with the other. Write
-    them as SEPARATE checks instead: each mechanical clause becomes its own
-    `verify` with its own probe, and only what genuinely needs a human is
-    left as `founder_confirm`.
+    mechanical clause AND a judgement clause is settled at the weaker of the
+    two, so the mechanical half loses its certainty. Write them as SEPARATE
+    checks instead: each mechanical clause becomes its own `verify` with its
+    own probe, and what is left becomes `judge` (or, rarely, the founder's).
 
     "the file has 10 lines, each a distinct line of random text" is three
     claims. Two are mechanical and one is not:
@@ -1723,6 +1771,20 @@ checks that, taken together, mean the outcome above is genuinely achieved.
     the founder is asked only for the third. Splitting is not padding the
     list -- do it when the clauses are genuinely separable, and keep the set
     small.
+
+    THE SAME SPLIT, ON A REAL TASK. "Fix the focus loss in the compose box"
+    became three checks, and every one of them reached the founder because
+    none of them named a tier:
+
+      {"tier": "verify", "check": "the shell suite passes",
+       "probe": {"kind": "command_succeeds",
+                 "argv": ["node", "test_shadow_v4_shell.js"]}}
+      {"tier": "verify", "check": "nothing else in the suite broke",
+       "probe": {"kind": "command_succeeds", "argv": ["./run-tests.sh"]}}
+      {"tier": "judge", "check": "the fix addresses the root cause in the
+       source rather than masking it with a refocus-on-blur hack"}
+
+    Zero founder clicks. That is the shape to aim for.
   * Derive them from the OUTCOME above and what the chat has said so far.
     Do not invent scope the founder did not ask for, and keep the set small:
     every check is something a human will have to look at.
@@ -1739,9 +1801,10 @@ checks that, taken together, mean the outcome above is genuinely achieved.
 
 _VERIFY_ASK = """
 HOW WILL EACH UNVERIFIED CHECK BE ESTABLISHED?
-The checks marked (unverified) above have no mechanical test behind them, so
-today only the founder can close them. For each one you can settle by LOOKING
-AT A FILE, add it to a `verification` list on THIS decision:
+The checks marked (unverified) above are waiting on the founder. For each one
+you can settle by LOOKING AT A FILE or by RUNNING A COMMAND, add it to a
+`verification` list on THIS decision and the founder stops being needed for
+it -- permanently, from this turn on:
 
 ```json
 {"verification": [{"index": 0,
@@ -1753,7 +1816,7 @@ AT A FILE, add it to a `verification` list on THIS decision:
   * You are answering HOW, never WHAT. The check's wording is not yours to
     send, change or restate -- it is not a field in this shape at all, and
     whatever the founder or you wrote earlier stands exactly as written.
-  * `kind` is one of FIVE, each a plain read of one file: `file_exists`
+  * `kind` is one of SIX. Five read one file: `file_exists`
     ({"kind","path"}), `file_equals` ({"kind","path","text"} + optional
     "allow_trailing_newline"), `line_count` ({"kind","path","count"}),
     `lines_distinct` ({"kind","path"}), `file_contains`
@@ -1761,13 +1824,24 @@ AT A FILE, add it to a `verification` list on THIS decision:
     never a pattern). Set "allow_trailing_newline" true unless the check asks
     for a file with no newline at the end. `path` is RELATIVE to the working
     directory, never absolute and never containing "..".
-  * OMIT A CHECK YOU CANNOT SETTLE THIS WAY. Anything about quality, taste,
-    intent, or a condition no file decides belongs to the founder, and leaving
-    it out is the correct and honest answer -- not a failure. Do NOT invent a
-    path, guess at a filename you have not seen, or attach a probe that only
-    approximately tests the check: a probe that tests the wrong thing is worse
-    than no probe, because it would let Shadow claim it verified something it
-    did not.
+
+    The sixth RUNS SOMETHING, and it is the one most unverified checks want:
+    `command_succeeds` ({"kind":"command_succeeds","argv":[...]} + optional
+    "expect_exit", "contains", "ignore_case", "timeout_s"). `argv` is a LIST
+    run WITHOUT a shell -- no pipes, no `&&`, no redirection, and a shell
+    invoked with -c is refused. Run the program directly:
+    {"kind":"command_succeeds","argv":["./run-tests.sh"]}.
+
+    LOOK AT THE UNVERIFIED LIST ABOVE AND ASK, FOR EACH ONE: what would I
+    type to find this out? If there is an answer, that answer is an argv,
+    and that check is yours to settle rather than the founder's.
+  * OMIT A CHECK YOU CANNOT SETTLE THIS WAY. Leaving one out is the correct
+    and honest answer -- it does not go to the founder by default, it goes to
+    a reading of the diff. Do NOT invent a path, guess at a filename you have
+    not seen, invent a test command you have not confirmed exists, or attach
+    a probe that only approximately tests the check: a probe that tests the
+    wrong thing is worse than no probe, because it would let Shadow claim it
+    verified something it did not.
   * A check you DO attach a probe to stops needing the founder: Shadow will
     read that file itself, every turn, and the worker's word about it counts
     for nothing.
@@ -1783,6 +1857,14 @@ decide the next instruction to send into that same conversation.
 You do NOT decide whether the outcome is met. A deterministic verifier owns
 that and has already run. Never claim a check is satisfied, never announce
 completion, never ask to stop because you think it is done.
+
+WHO YOU WORK FOR (the founder's own words, from their settings)
+%(carry)s
+These are standing answers. Where they settle a question, they have already
+answered it -- decide on them and move, rather than asking the founder
+something they have told you once. They never reach the floors, they never
+satisfy a founder_confirm check, and they never override what the founder
+says in this task's own chat.
 
 OUTCOME
 %(outcome)s
@@ -1850,8 +1932,35 @@ Decide. Reply with ONE fenced json block and nothing else:
 or, if you genuinely cannot make progress and the founder is needed:
 
 ```json
-{"action": "ask_founder", "reason": "<what you need from the founder>"}
+{"action": "ask_founder", "reason": "<what you need from the founder>",
+ "ask_kind": "founder_fact"}
 ```
+
+`ask_kind` is one of exactly three strings: "floor", "founder_fact", "taste".
+
+THE FOUNDER IS ASKED FOR THREE THINGS AND NOTHING ELSE, AND THIS IS ENFORCED
+RATHER THAN REQUESTED. `ask_kind` declares which of the three this is, and
+the engine CHECKS THE QUESTION AGAINST THE LABEL -- writing "taste" over a
+mechanical question does not get it through. An ask that is none of the three
+is REFUSED: the mission keeps running and you are told to go and establish it
+yourself, which costs a turn you did not need to spend.
+
+  floor         what you are about to do is unrecoverable: a destructive git
+                operation, writing into an external client repository, or an
+                irreversible external send (an email, a publish, a charge).
+  founder_fact  a fact that exists NOWHERE but in the founder's head -- a
+                credential, a budget ceiling, which region, which of two
+                things they actually want. Not a fact you could read off
+                disk, and not a fact you could find out by running something.
+  taste         a question with no correct answer, only theirs: whether the
+                wording reads well, whether a design is the one they meant.
+
+EVERYTHING ELSE IS YOUR OWN WORK AND YOU HAVE FULL ACCESS TO DO IT. "Do the
+tests pass", "did the fix land", "is this the right file", "does it build",
+"did anything else break" -- every one of those has an answer on the machine
+you are already running on. Go and get it. If a command settles it, put that
+command in a `verify` probe so it settles itself from now on and neither you
+nor the founder is ever asked again.
 
 An ask_founder MAY also carry a form, when what you need is specific enough
 to ask for directly. The `intervention` key is OPTIONAL -- omit it and the
@@ -1910,14 +2019,19 @@ actually said, and name the specific next thing you want. If it asked you a
 question, answer it. If it is stuck or refusing, either unblock it with new
 information or use ask_founder. Do not repeat your previous instruction.
 
-Rules for `ask_founder`: try to resolve it YOURSELF first -- read what the
-chat said, give it another instruction, tell it to go and find out. Escalate
-only when no instruction of yours can settle it and the mission genuinely
-cannot proceed without the founder. Never ask for something you can work out
+Rules for `ask_founder`: try to resolve it YOURSELF first -- read WHO YOU
+WORK FOR above, read what the chat said, give it another instruction, tell
+it to go and find out. If the founder's own words already answer the
+question, that IS the answer: act on it, and do not put the same question to
+them a second time. Escalate only when it is one of the three kinds above and
+no instruction of yours can settle it. Never ask for something you can work out
 yourself or that the chat can be told to establish. Ask the SMALLEST question
 that actually unblocks the mission, and choose the field type that matches
 the answer you need. The founder's reply comes back to YOU, not to the chat:
 you read it, and you decide the next instruction.
+
+Assume the founder is busy, and that any question you send them costs more
+than it costs you to go and find the answer yourself. That is the bar.
 """
 
 _JSON_FENCE = re.compile(r"```(?:json)?\s*\n(.*?)```", re.S)
@@ -2018,6 +2132,15 @@ def render_decide_prompt(context):
     drift.
     """
     return _DECIDE_PROMPT % {
+        # THE DECIDER IS THE ONE READER THAT INHERITS NOTHING. Shadow's own
+        # session and every task chat boot on SHADOW.md plus
+        # shadow_session.standing_context(), which carries the founder's two
+        # settings texts; make_decider spawns a FRESH process with no persona
+        # and no context turn, so the process that chooses the next
+        # instruction was the only one deciding without them. .get() with a
+        # default, like every optional key below, so a hand-built context
+        # (the suites build several) cannot KeyError here.
+        "carry": context.get("carry") or "(the founder has not written any)",
         "standing": _standing_text(context.get("standing")),
         "outcome": context.get("outcome") or "(none)",
         # THE INDEX IS PART OF THE PROMPT (founder, 2026-09-15). A check
@@ -2034,7 +2157,8 @@ def render_decide_prompt(context):
                                       c.get("tier"),
                                       "" if c.get("probe")
                                       else (" (unverified)"
-                                            if c.get("tier") == "founder_confirm"
+                                            if c.get("tier") in
+                                            ("founder_confirm", "judge")
                                             else ""),
                                       c.get("check"))
             for i, c in enumerate(context.get("checks") or []))
@@ -2058,8 +2182,12 @@ def render_decide_prompt(context):
         # DERIVED, exactly like criteria_ask: asked only while some check has
         # no mechanical test behind it, and rendering to the empty string --
         # the prompt Shadow saw before this existed -- the moment none does.
+        # `judge` COUNTS AS UNVERIFIED HERE (D-SH-1). A judged row is settled
+        # by a model reading a diff; the same row settled by a command is
+        # deterministic, repeatable and free. So Shadow is still asked how it
+        # might be probed, and _needs_verification lets that promotion land.
         "verify_ask": (_VERIFY_ASK
-                       if any(c.get("tier") == "founder_confirm"
+                       if any(c.get("tier") in ("founder_confirm", "judge")
                               and not c.get("probe")
                               and not c.get("met")
                               for c in (context.get("checks") or []))
@@ -2126,6 +2254,60 @@ def make_decider(build_args, cwd, timeout_s=DECIDE_TIMEOUT_S, new_runtime=None):
         return _first_decision("".join(texts))
 
     return decide
+
+
+def make_judge(build_args, cwd, timeout_s=DECIDE_TIMEOUT_S, new_runtime=None):
+    """One bounded call that settles ONE check by reading the evidence.
+
+    BUILT FROM make_decider'S PRIMITIVES ON PURPOSE, and it inherits every
+    property that made the decider safe: a fresh one-shot process, the same
+    absent shadow-tool marker (so it cannot say into a session, create a
+    mission or write the ledger), no chat record, no resume, killed in the
+    `finally`. It can only return text, which shadow_judge then validates
+    into one of three verdicts.
+
+    THE MARKER'S NAME IS DELIBERATELY NOT SPELLED OUT IN THIS DOCSTRING.
+    test_shadow_drives asserts the reasoning lane's source does not contain
+    it, and a comment that named it would fail that test for the one reason
+    a test should never fail: prose.
+
+    THE CWD IS SHADOW'S OWN WORKDIR, NOT THE FOUNDER'S REPO. The judge is
+    handed the evidence as TEXT in its prompt; it is not given a shell in the
+    tree it is judging. That is the difference between a reviewer reading a
+    diff and a second worker with opinions, and it is what keeps
+    "Shadow supervises, Shadow does not have a shell in the repo" true after
+    this module grew a judge.
+
+    A FAILURE RETURNS None, NEVER A VERDICT. Timeout, spawn failure,
+    unparseable reply -- all None, which _run_judges reads as "said nothing"
+    and leaves the row exactly as it found it. A judge that cannot answer
+    must never be mistaken for one that answered "no".
+    """
+    async def judge(check, evidence, outcome=""):
+        import session_runtime as srt
+        prompt = shadow_judge.render_prompt(check, evidence, outcome)
+        rt = new_runtime() if new_runtime is not None else srt.SessionRuntime()
+        texts = []
+
+        async def collect(frame):
+            if frame.get("type") == "token":
+                texts.append(frame.get("text") or "")
+
+        try:
+            await rt.spawn(build_args(), cwd, ("shadow-judge",))
+            await rt.send_user_frame(prompt)
+            await asyncio.wait_for(rt.demux_turn(collect, None), timeout_s)
+        except Exception:                # noqa: BLE001 -- None, never a verdict
+            return None
+        finally:
+            try:
+                rt.kill_group()
+                rt.clear()
+            except Exception:
+                pass
+        return shadow_judge.parse_verdict("".join(texts))
+
+    return judge
 
 
 def settle_confirmation(mid, verifier=None):
@@ -2492,6 +2674,12 @@ DEFAULT_PROVISIONER = {"fn": None}
 #: like the provisioner, because shadow_runner must not import app.
 DEFAULT_DECIDER = {"fn": None}
 
+#: async (check, evidence, outcome) -> shadow_judge.Verdict | None. Injected
+#: from app at startup for the same reason as the two above. None means no
+#: judging happens and a `judge` row simply stays unmet, which is the
+#: behaviour every install had before D-SH-1.
+DEFAULT_JUDGE = {"fn": None}
+
 
 def set_default_provisioner(fn):
     DEFAULT_PROVISIONER["fn"] = fn
@@ -2499,6 +2687,10 @@ def set_default_provisioner(fn):
 
 def set_default_decider(fn):
     DEFAULT_DECIDER["fn"] = fn
+
+
+def set_default_judge(fn):
+    DEFAULT_JUDGE["fn"] = fn
 
 
 def start_mission_async(mid, validated_say, provisioner=None, verifier=None):

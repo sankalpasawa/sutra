@@ -25,11 +25,38 @@ The claim may stay in the transcript as a report. It is not evidence.
 Those are different questions and neither substitutes for the other, so a
 probe is accepted on `verify` rows only. Signing-off stays human.
 
-WHAT IS DELIBERATELY NOT HERE
-  * command execution of any kind. `command_succeeds` would hand a
-    model-authored string to a shell; it is not in this module and its
-    absence is the point.
-  * network access.
+COMMAND EXECUTION, AND WHY IT IS NOW HERE (founder D-SH-1, 2026-09-20).
+This module used to end with "command execution of any kind is deliberately
+not here, and its absence is the point". That was right while the only thing
+it protected was a file read. It stopped being right the moment it became the
+reason the founder was signing off "the tests pass" by hand, nine checks out
+of nine.
+
+THE ARGUMENT THAT CHANGED IT. The DELEGATE already runs in this same workdir
+at the founder's own permission mode -- `bypassPermissions` on this install.
+It can already run anything a command probe could run, and it does, every
+turn. A probe that runs `pytest` in that directory therefore adds NO
+capability to the system that was not already present; what it adds is a
+reading of the result that the worker cannot author. Refusing it did not make
+the machine safer. It made the FOUNDER the test runner.
+
+WHAT KEEPS IT HONEST, and these are load-bearing rather than decorative:
+  * ARGV, NEVER A SHELL STRING. `shell=False`, always, with the argv as a
+    list. No model-authored string is ever parsed by a shell, so there is no
+    quoting to get wrong and no metacharacter to smuggle.
+  * THE FLOORS APPLY. shadow_egress.floor_check screens the rendered argv
+    before anything is spawned, so a probe can no more `push --force` than a
+    say can. The floors were always the real boundary; this routes through
+    them rather than around them.
+  * CONFINED CWD, bounded wall clock, bounded captured output, no reuse.
+  * THE WORKER NEVER AUTHORS ONE. Same rule as every other probe: only the
+    DECIDER writes probes, through validate_decision, and the worker is shown
+    the check text alone and never the probe.
+
+WHAT IS STILL DELIBERATELY NOT HERE
+  * network access as a FEATURE. A probe is not given one; a command it runs
+    may of course reach the network exactly as the worker's own commands do,
+    and pretending otherwise would be the dishonest kind of comment.
   * writes, creates, deletes, or anything else that touches the tree. Every
     operation below is a read, so a probe can never change the thing it is
     asked about.
@@ -61,8 +88,37 @@ from collections import namedtuple
 #: no globbing, no shell, no regex engine, nothing that can be steered into
 #: executing a model-authored string. `command_succeeds` is still not here
 #: and still not wanted; see WHAT IS DELIBERATELY NOT HERE above.
+#: EXTENDED 2026-09-20 (founder D-SH-1) with `command_succeeds`. The five
+#: above answer questions about a FILE. Every question a founder actually
+#: writes about working software -- "the tests pass", "nothing else broke",
+#: "the build is green", "focus survives 200 keystrokes" -- is a question
+#: about what happens when you RUN something, and not one of them could be
+#: expressed here. That gap is why 9 of 9 live checks were founder_confirm.
 PROBE_KINDS = ("file_exists", "file_equals",
-               "line_count", "lines_distinct", "file_contains")
+               "line_count", "lines_distinct", "file_contains",
+               "command_succeeds")
+
+#: Kinds that name a file. `command_succeeds` does not, so `path` is
+#: required for these and refused for that one -- one tuple rather than a
+#: branch repeated in the validator and in `run`.
+PATH_KINDS = ("file_exists", "file_equals",
+              "line_count", "lines_distinct", "file_contains")
+
+#: How long a command probe may run before it is killed and read as unmet.
+#: A test suite is the thing this exists for, so the ceiling is generous;
+#: the DEFAULT is short enough that a hung command does not eat a turn.
+PROBE_COMMAND_TIMEOUT = 180
+PROBE_COMMAND_TIMEOUT_MAX = 900
+
+#: argv shape. Small and concrete: a probe runs ONE command, not a pipeline.
+PROBE_ARGV_MAX = 24
+PROBE_ARG_MAX = 512
+
+#: How much of a command's output is captured and how much of it reaches the
+#: reason line. The first bounds memory; the second bounds what a founder
+#: reads on a card.
+PROBE_OUTPUT_MAX = 1 << 20
+PROBE_REASON_TAIL = 300
 
 #: a file with more lines than this is not something a done-when check is
 #: honestly counting; refusing beats reading an arbitrarily large file.
@@ -89,6 +145,80 @@ ProbeResult = namedtuple("ProbeResult", "met reason")
 _SEGMENTS = re.compile(r"[\\/]+")
 
 
+def _validate_command(raw):
+    """A `command_succeeds` probe, or None.
+
+    ARGV IS A LIST OF STRINGS AND NOTHING ELSE. Not a string to be split, not
+    a string with a shell in front of it -- a list, validated element by
+    element, handed to subprocess with `shell=False`. A model that wants a
+    pipeline has to express it as a program it invokes, which is the honest
+    shape anyway: `["bash", "-lc", "..."]` is refused below precisely because
+    it is the shell wearing an argv costume.
+
+    THE FLOOR SCREEN IS NOT APPLIED HERE. It needs the rendered command and
+    belongs at RUN time for the same reason path confinement does: a probe
+    validated now may be run after the floors have been edited, and the
+    answer that matters is the one at the moment something would happen.
+    """
+    argv = raw.get("argv")
+    if not isinstance(argv, (list, tuple)) or not argv:
+        return None
+    if len(argv) > PROBE_ARGV_MAX:
+        return None
+    clean_argv = []
+    for item in argv:
+        if not isinstance(item, str):
+            return None
+        if not item or len(item) > PROBE_ARG_MAX or "\x00" in item:
+            return None
+        clean_argv.append(item)
+    # A SHELL INVOKED BY NAME IS STILL A SHELL. Allowing `sh -c "<string>"`
+    # would hand a model-authored string to a parser and give back every
+    # property the argv list exists to provide, so the interpreters whose
+    # whole job is to evaluate a string are refused at the door. This is a
+    # NAME check and it is deliberately not clever: it is a guard against the
+    # obvious accident, not a sandbox, and the floors below are the boundary.
+    program = os.path.basename(clean_argv[0]).lower()
+    if program in _SHELL_PROGRAMS and any(
+            a in ("-c", "-lc", "-ec", "--command") for a in clean_argv[1:]):
+        return None
+    out = {"kind": "command_succeeds", "argv": clean_argv}
+    exit_code = raw.get("expect_exit")
+    if exit_code is None:
+        out["expect_exit"] = 0
+    elif isinstance(exit_code, bool) or not isinstance(exit_code, int):
+        return None
+    elif exit_code < 0 or exit_code > 255:
+        return None
+    else:
+        out["expect_exit"] = exit_code
+    # OPTIONAL, AND AN *ADDITIONAL* CONDITION -- never a replacement for the
+    # exit code. A suite that exits 0 while printing "0 tests ran" is the
+    # case this exists for; a suite that exits 1 is unmet whatever it printed.
+    contains = raw.get("contains")
+    if contains is not None:
+        if not isinstance(contains, str) or not contains \
+                or len(contains) > PROBE_TEXT_MAX:
+            return None
+        out["contains"] = contains
+        out["ignore_case"] = bool(raw.get("ignore_case"))
+    timeout = raw.get("timeout_s")
+    if timeout is None:
+        out["timeout_s"] = PROBE_COMMAND_TIMEOUT
+    elif isinstance(timeout, bool) or not isinstance(timeout, int):
+        return None
+    elif timeout < 1 or timeout > PROBE_COMMAND_TIMEOUT_MAX:
+        return None
+    else:
+        out["timeout_s"] = timeout
+    return out
+
+
+#: Programs whose argument IS a program. See _validate_command.
+_SHELL_PROGRAMS = ("sh", "bash", "zsh", "dash", "ksh", "csh", "tcsh", "fish",
+                   "python", "python3", "perl", "ruby", "node", "osascript")
+
+
 def validate_probe(raw):
     """A persistable probe, or None.
 
@@ -108,6 +238,8 @@ def validate_probe(raw):
     kind = str(raw.get("kind") or "").strip()
     if kind not in PROBE_KINDS:
         return None
+    if kind == "command_succeeds":
+        return _validate_command(raw)
     path = raw.get("path")
     if not isinstance(path, str):
         return None
@@ -327,6 +459,119 @@ def _run_file_contains(probe, real):
     return ProbeResult(False, "does not contain %s" % want[:60])
 
 
+def _floor_screen(argv):
+    """The floor names this command trips, or []. Never raises.
+
+    ONE FLOOR TABLE FOR THE WHOLE OF SHADOW. shadow_egress owns the patterns
+    and a say has been screened by them since S52; a command probe is screened
+    by the SAME function rather than a second list that would drift from it.
+    A probe that trips one is refused, not paused: there is no founder in the
+    loop at evaluation time, and "ask before running this" has no meaning for
+    a check Shadow is answering on its own. The check simply stays the
+    founder's, which is the safe direction and the one every other refusal in
+    this module takes.
+    """
+    try:
+        import shadow_egress
+        return shadow_egress.floor_check(" ".join(argv))
+    except Exception:                    # noqa: BLE001 -- unscreened, so unsafe
+        return ["floor screen unavailable"]
+
+
+def _run_command_succeeds(probe, root):
+    """Run one command in the workdir and read its exit code.
+
+    NEVER RAISES -- every failure is met=False with a reason, exactly like
+    every other probe in this module, because an exception here would cross
+    evaluate_done_when and turn a probe bug into a FAILED mission.
+
+    THE REASON LINE IS THE AUDIT TRAIL. It carries the command, the exit code
+    and the tail of what came out, because a founder reading "Shadow ran this
+    check and it passed" is entitled to see what was run. That string is
+    scrubbed of credential shapes on its way out for the same reason a say is.
+    """
+    argv = probe["argv"]
+    floors = _floor_screen(argv)
+    if floors:
+        return ProbeResult(False, "probe refused: floor %s" % ", ".join(floors))
+    try:
+        real_root = resolve(root, ".")
+    except ProbeUnsafe as exc:
+        return ProbeResult(False, "probe refused: %s" % exc)
+    import subprocess
+    try:
+        proc = subprocess.run(                      # noqa: S603 -- see module
+            argv, cwd=real_root, shell=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            timeout=probe.get("timeout_s", PROBE_COMMAND_TIMEOUT))
+    except subprocess.TimeoutExpired:
+        return ProbeResult(False, "%s timed out after %ss"
+                           % (_argv_label(argv), probe.get("timeout_s")))
+    except FileNotFoundError:
+        return ProbeResult(False, "%s: no such program" % _argv_label(argv))
+    except OSError as exc:
+        return ProbeResult(False, "%s failed to start: %s"
+                           % (_argv_label(argv), str(exc)[:80]))
+    out = (proc.stdout or b"")[:PROBE_OUTPUT_MAX]
+    text = out.decode("utf-8", "replace")
+    want_exit = probe.get("expect_exit", 0)
+    label = _argv_label(argv)
+    if proc.returncode != want_exit:
+        return ProbeResult(False, "%s exited %d (wanted %d)%s"
+                           % (label, proc.returncode, want_exit,
+                              _output_tail(text)))
+    needle = probe.get("contains")
+    if needle:
+        hay = text.lower() if probe.get("ignore_case") else text
+        want = needle.lower() if probe.get("ignore_case") else needle
+        if want not in hay:
+            return ProbeResult(
+                False, "%s exited %d but did not print %s%s"
+                % (label, proc.returncode, needle[:60], _output_tail(text)))
+    return ProbeResult(True, "%s exited %d%s"
+                       % (label, proc.returncode, _output_tail(text)))
+
+
+def _argv_label(argv):
+    """The command as one readable string. FOR DISPLAY ONLY -- nothing ever
+    parses this back into an argv, which is the whole reason it is safe to
+    make it readable.
+
+    SCRUBBED, because a command can carry a credential in its own arguments
+    (`curl -H "Authorization: Bearer ..."`) and this string reaches the
+    ledger and the founder's card. Scrubbing only the OUTPUT would have left
+    the token in the half of the line Shadow wrote itself.
+    """
+    line = " ".join(argv)[:200]
+    try:
+        import shadow_egress
+        line, _ = shadow_egress.scrub(line)
+    except Exception:                    # noqa: BLE001 -- unscrubbed is unsafe
+        return "(command withheld)"
+    return line
+
+
+def _output_tail(text):
+    """The end of what the command printed, scrubbed, for the reason line.
+
+    THE TAIL, NOT THE HEAD: a test runner puts the summary last, and the
+    summary is what answers the check. Scrubbed through the same egress
+    scrubber a say uses, because this string reaches the ledger and the
+    founder-facing card and a command may print a token.
+    """
+    body = " ".join((text or "").split())
+    if not body:
+        return ""
+    try:
+        import shadow_egress
+        body, _ = shadow_egress.scrub(body)
+    except Exception:                    # noqa: BLE001 -- unscrubbed is unsafe
+        return " -- output withheld (scrubber unavailable)"
+    tail = body[-PROBE_REASON_TAIL:]
+    return " -- %s%s" % ("…" if len(body) > len(tail) else "", tail)
+
+
 def run(probe, root=None):
     """Execute one probe against the real filesystem.
 
@@ -341,8 +586,18 @@ def run(probe, root=None):
     clean = validate_probe(probe)
     if clean is None:
         return ProbeResult(False, "unusable probe")
+    root = default_root() if root is None else root
+    # A COMMAND PROBE NAMES NO FILE. It is confined to the same workdir by
+    # the same resolver -- `_run_command_succeeds` resolves "." through
+    # `resolve` -- so the confinement question is asked once, in one place,
+    # for both shapes.
+    if clean["kind"] == "command_succeeds":
+        try:
+            return _run_command_succeeds(clean, root)
+        except Exception as exc:         # noqa: BLE001 -- unknown, not done
+            return ProbeResult(False, "probe failed: %s" % str(exc)[:80])
     try:
-        real = resolve(default_root() if root is None else root, clean["path"])
+        real = resolve(root, clean["path"])
     except ProbeUnsafe as exc:
         return ProbeResult(False, "probe refused: %s" % exc)
     except Exception as exc:             # noqa: BLE001 -- unknown, not done
@@ -357,7 +612,9 @@ def run(probe, root=None):
             return _run_line_count(clean, real)
         if kind == "lines_distinct":
             return _run_lines_distinct(real)
-        return _run_file_contains(clean, real)
+        if kind == "file_contains":
+            return _run_file_contains(clean, real)
+        return ProbeResult(False, "unusable probe")
     except Exception as exc:             # noqa: BLE001 -- unknown, not done
         return ProbeResult(False, "probe failed: %s" % str(exc)[:80])
 

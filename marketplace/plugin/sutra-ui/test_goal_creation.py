@@ -55,8 +55,11 @@ class TestGoalBlock(unittest.TestCase):
         # it stays machine-checkable; `verify` is not offered to proposals
         # (no production caller injects a verifier, so such a check could
         # never be met by anyone) and becomes the founder's to confirm.
+        # D-SH-1 (2026-09-20): the non-literal row is re-tiered to `judge`
+        # rather than to the founder. The property this line pins -- that a
+        # semantic string does NOT keep contains_artifact -- is unchanged.
         self.assertEqual([c["tier"] for c in g["done_when"]],
-                         ["contains_artifact", "founder_confirm"])
+                         ["contains_artifact", "judge"])
         self.assertEqual(g["done_when"][1]["proposed_tier"], "verify",
                          "and the re-tier is visible, not silent")
         self.assertNotIn("```goal", display, "the block is stripped")

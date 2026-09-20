@@ -62,9 +62,9 @@ class ExistingDecisionBehaviourIsUnchanged(unittest.TestCase):
 
     def test_ask_founder_without_an_intervention_is_byte_identical(self):
         got = mission_engine.validate_decision(
-            {"action": "ask_founder", "reason": "I need the founder"})
+            {"action": "ask_founder", "reason": "does the copy read well to you"})
         self.assertEqual(got, {"action": "ask_founder",
-                               "reason": "I need the founder",
+                               "reason": "does the copy read well to you",
                                "instruction": ""},
                          "a prose-only ask_founder must not gain a key")
         self.assertNotIn("intervention", got)
@@ -78,14 +78,14 @@ class ExistingDecisionBehaviourIsUnchanged(unittest.TestCase):
     def test_a_malformed_intervention_degrades_to_prose(self):
         """The founder still gets asked; they just do not get a form."""
         got = mission_engine.validate_decision(
-            {"action": "ask_founder", "reason": "help",
+            {"action": "ask_founder", "reason": "does the copy read well to you",
              "intervention": {"question": "", "fields": []}})
         self.assertNotIn("intervention", got)
         self.assertEqual(got["action"], "ask_founder")
 
     def test_an_intervention_survives_validation(self):
         got = mission_engine.validate_decision(
-            {"action": "ask_founder", "reason": "help",
+            {"action": "ask_founder", "reason": "does the copy read well to you",
              "intervention": request()})
         self.assertIn("intervention", got)
         self.assertEqual(got["intervention"]["fields"][0]["key"], "region")

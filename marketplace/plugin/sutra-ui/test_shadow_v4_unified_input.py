@@ -119,7 +119,7 @@ class ConversationIsNotWork(Base):
 
     def test_the_line_reaches_the_decider_tagged_as_conversation(self):
         mid = self.running([self.talked("What are you doing?")])
-        eng = self.engine([{"action": "ask_founder", "reason": "done"}])
+        eng = self.engine([{"action": "ask_founder", "reason": "does the copy read well to you", "ask_kind": "taste"}])
         run(eng.run_mission(mid))
         ctx = self.seen_ctx[0]
         self.assertEqual([s["text"] for s in ctx["founder_says"]],
@@ -131,8 +131,12 @@ class ConversationIsNotWork(Base):
         """The decider is free to decide that nothing changed. Nothing in the
         plumbing forces a worker turn merely because the founder spoke."""
         mid = self.running([self.talked("What are you doing?")])
-        eng = self.engine([{"action": "ask_founder",
-                            "reason": "nothing changed; just answering"}])
+        # D-SH-1: an escalation must BE one of the three admissible kinds,
+        # so the fixture asks a real taste question. What this test pins is
+        # unchanged and is the assertion below -- an ask_founder turn sends
+        # the WORKER nothing, whatever the founder is being asked.
+        eng = self.engine([{"action": "ask_founder", "ask_kind": "taste",
+                            "reason": "does the copy read well to you"}])
         run(eng.run_mission(mid))
         self.assertEqual(self.said, [],
                          "a conversation must not send a worker turn on its "
@@ -152,7 +156,7 @@ class OnlyWhatShadowComposesReachesTheWorker(Base):
              "instruction": "Founder prefers JSON over CSV. Reassess the "
                             "export format before proceeding.",
              "reason": "founder supplied a format preference"},
-            {"action": "ask_founder", "reason": "stop"}])
+            {"action": "ask_founder", "reason": "does the copy read well to you", "ask_kind": "taste"}])
         run(eng.run_mission(mid))
         self.assertEqual(self.said,
                          ["Founder prefers JSON over CSV. Reassess the export "
@@ -172,7 +176,7 @@ class OnlyWhatShadowComposesReachesTheWorker(Base):
              "instruction": "Constraint from the founder: do not modify the "
                             "API while finishing this.",
              "reason": "operational constraint inside a question"},
-            {"action": "ask_founder", "reason": "stop"}])
+            {"action": "ask_founder", "reason": "does the copy read well to you", "ask_kind": "taste"}])
         run(eng.run_mission(mid))
         prompt = shadow_runner.render_decide_prompt(self.seen_ctx[0])
         self.assertIn("How close are we? Also don't change the API.", prompt)
@@ -188,7 +192,7 @@ class BothDoorsOneDecision(Base):
 
     def test_the_explicit_path_is_unchanged_and_still_reaches_the_decider(self):
         mid = self.running([self.typed("Do not modify the API.")])
-        eng = self.engine([{"action": "ask_founder", "reason": "done"}])
+        eng = self.engine([{"action": "ask_founder", "reason": "does the copy read well to you", "ask_kind": "taste"}])
         run(eng.run_mission(mid))
         ctx = self.seen_ctx[0]
         self.assertEqual([s["text"] for s in ctx["founder_says"]],
@@ -201,7 +205,7 @@ class BothDoorsOneDecision(Base):
     def test_both_channels_arrive_in_order_and_neither_is_duplicated(self):
         mid = self.running([self.talked("JSON would be better"),
                             self.typed("Do not modify the API.")])
-        eng = self.engine([{"action": "ask_founder", "reason": "done"}])
+        eng = self.engine([{"action": "ask_founder", "reason": "does the copy read well to you", "ask_kind": "taste"}])
         run(eng.run_mission(mid))
         prompt = shadow_runner.render_decide_prompt(self.seen_ctx[0])
         self.assertIn("- [conversation] JSON would be better\n"
@@ -221,7 +225,7 @@ class ConsumedOnce(Base):
              "reason": "founder preference"},
             {"action": "continue", "instruction": "Carry on.",
              "reason": "nothing new"},
-            {"action": "ask_founder", "reason": "stop"}])
+            {"action": "ask_founder", "reason": "does the copy read well to you", "ask_kind": "taste"}])
         run(eng.run_mission(mid))
         self.assertIn("founder_says", self.seen_ctx[0],
                       "the first decision sees it")
@@ -234,7 +238,7 @@ class ConsumedOnce(Base):
         mid = self.running([self.talked("JSON would be better")])
         eng = self.engine([{"action": "continue", "instruction": "Switch.",
                             "reason": "r"},
-                           {"action": "ask_founder", "reason": "stop"}])
+                           {"action": "ask_founder", "reason": "does the copy read well to you", "ask_kind": "taste"}])
         run(eng.run_mission(mid))
         self.assertTrue(self.store.load(mid)["founder_says"][0]["seen"],
                         "consumption is persisted, not held in memory")
@@ -274,7 +278,7 @@ class OnlyTheFounderIsInThisList(Base):
         mid = self.running()
         eng = self.engine([{"action": "continue",
                             "instruction": "Switch to JSON.", "reason": "r"},
-                           {"action": "ask_founder", "reason": "stop"}])
+                           {"action": "ask_founder", "reason": "does the copy read well to you", "ask_kind": "taste"}])
         run(eng.run_mission(mid))
         m = self.store.load(mid)
         self.assertIsNone(m.get("founder_says"),
@@ -285,7 +289,7 @@ class OnlyTheFounderIsInThisList(Base):
     def test_the_worker_output_is_not_founder_input(self):
         """last_response is its own labelled block, and stays one."""
         mid = self.running([self.talked("JSON would be better")])
-        eng = self.engine([{"action": "ask_founder", "reason": "done"}])
+        eng = self.engine([{"action": "ask_founder", "reason": "does the copy read well to you", "ask_kind": "taste"}])
 
         def reader(m):
             return "the worker said: use CSV"

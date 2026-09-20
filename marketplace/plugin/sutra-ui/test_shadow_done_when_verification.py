@@ -584,13 +584,20 @@ class TheSpecialBug(Base):
 
 class TheProbeRuleStillHolds(Base):
     def test_24_verify_without_a_probe_is_still_demoted(self):
+        """DESTINATION CHANGED 2026-09-20 (D-SH-1), RULE UNCHANGED: a
+        probe-less `verify` is still not a verify check and still never
+        claims Shadow ran anything. It now lands on the judge, which can
+        settle it by reading the diff and returns it to the founder via
+        `cannot_tell` when it cannot."""
         self.assertEqual(
             mission_engine.resolve_verify_tier("verify", None),
-            ("founder_confirm", None))
+            ("judge", None))
         m = self.store.create("x", "fix", done_when=[
             {"tier": "verify", "check": FOUNDER_CHECK}])
-        self.assertEqual(m["done_when"][0]["tier"], "founder_confirm")
-        self.assertEqual(m["done_when"][0]["check"], FOUNDER_CHECK)
+        self.assertEqual(m["done_when"][0]["tier"], "judge")
+        self.assertEqual(m["done_when"][0]["check"], FOUNDER_CHECK,
+                         "demotion never re-words a check, whatever tier it "
+                         "lands on")
 
     def test_25_verification_metadata_carries_no_wording_at_all(self):
         """The shape is why a rewrite is impossible, not the discipline."""

@@ -76,15 +76,49 @@ _MODULE_KINDS = ("chat", "page", "link")
 # check, and a check that is not literal-shaped becomes founder_confirm --
 # kept, never dropped, and answerable by the one party who can judge it.
 
-#: what a Shadow PROPOSAL may end up carrying. `verify` is deliberately
-#: absent: evaluate_done_when scores it with an injected verifier, and NO
-#: production caller passes one (_start_goal_attempt omits it), so a
-#: `verify` check is unsatisfiable by anyone. Proposing it would be the same
-#: bug wearing a different label. Restore it here when a verifier is wired.
-PROPOSAL_TIERS = ("contains_artifact", "founder_confirm")
+#: THE INVERSION (founder D-SH-1, 2026-09-20). Everything below this line
+#: used to end at the founder. It does not any more, and this is the note
+#: that explains the reversal so it is not quietly undone.
+#:
+#: WHAT THE OLD RULE COST. `FALLBACK_TIER` was `founder_confirm` and the
+#: comment above it read "when machine-checking is not available, the founder
+#: is". That was true, and it was measured on the founder's own install:
+#: across every mission that had ever run, 9 done-when checks out of 9 were
+#: founder_confirm. Zero were ever settled by Shadow. The founder was the
+#: test runner and the code reviewer, three clicks per task, forever.
+#:
+#: WHY THE OLD RULE WAS RIGHT WHEN IT WAS WRITTEN. Demoting was a ONE-WAY
+#: DOOR: a check sent to the founder had no way back, so sending it anywhere
+#: else risked a check nobody would ever settle -- or worse, one the worker
+#: could close by uttering a sentence (m-245777cf1467). Against those two
+#: outcomes, "when in doubt, ask the founder" was the only safe answer.
+#:
+#: WHY IT IS NOT A ONE-WAY DOOR ANY MORE, which is the whole reason this can
+#: change. `judge` (shadow_judge) has THREE verdicts, and the third is
+#: `cannot_tell`. A check routed to the judge that the judge cannot settle
+#: comes BACK to the founder automatically. So a wrong routing now costs one
+#: extra model call instead of a check that never gets answered, and the
+#: conservative direction is no longer "ask the founder" -- it is "try, and
+#: fall back to the founder when trying does not work".
+#:
+#: `verify` IS ALSO BACK. The comment that removed it said "NO production
+#: caller passes a verifier". That stopped being true on 2026-09-17 when
+#: probes shipped, and stayed in the code afterwards: app.py passes
+#: `_shadow_verifier` at four call sites and `resolve_verify_tier` settles a
+#: probe-backed row against the real filesystem. A `verify` row carrying a
+#: valid probe is the single most trustworthy tier there is, and it was being
+#: demoted to a signature.
+PROPOSAL_TIERS = ("contains_artifact", "verify", "judge", "founder_confirm")
 
-#: when machine-checking is not available, the founder is
-FALLBACK_TIER = "founder_confirm"
+#: WHERE A CHECK GOES WHEN NOTHING ELSE CLAIMS IT. This is the inversion in
+#: one constant: it was `founder_confirm` and it is now `judge`.
+FALLBACK_TIER = "judge"
+
+#: ...and where a check goes when it is genuinely the founder's. Named
+#: separately from FALLBACK_TIER because they were the same string for a
+#: reason that no longer holds, and a future edit must be able to move one
+#: without moving the other.
+FOUNDER_TIER = "founder_confirm"
 
 #: a literal artifact is a MARKER, not a sentence: short, few words, and
 #: free of the punctuation and vocabulary that only appear when someone is
@@ -151,23 +185,116 @@ def is_literal_artifact(check):
     return _CRITERION_MARKER.search(s) is None
 
 
-def tier_for(check, proposed=None):
+#: THE ONLY THINGS THAT STILL REACH THE FOUNDER (founder D-SH-1, 2026-09-20):
+#: taste, and facts only they hold. The direction was "only matter of taste
+#: and absolute essential stuff", and this regex is that sentence made
+#: deterministic so it can be audited instead of trusted.
+#:
+#: TASTE is a question with no correct answer, only the founder's: whether
+#: something reads well, looks right, is worth doing, is acceptable to them.
+#: No diff settles it and no command settles it, because there is nothing in
+#: the artifact to settle it against -- the answer lives in the founder.
+#:
+#: A FACT ONLY THEY HOLD is a question with a correct answer that is not
+#: written anywhere Shadow can read: a credential, a budget ceiling, which
+#: region, which of two things they want.
+#:
+#: DELIBERATELY NARROW, and this is the opposite of the old bias. Every word
+#: here sends a check away from Shadow and onto the founder's desk, so the
+#: cost of a false positive is exactly the cost this whole change exists to
+#: remove. A check that should have been the founder's and is not still ends
+#: up with them: the judge answers `cannot_tell` and it comes back. There is
+#: no such recovery in the other direction, which is why this list is short.
+_FOUNDER_ONLY_MARKER = re.compile(
+    r"\b(?:"
+    r"taste|aesthetic|aesthetics"
+    r"|(?:looks?|reads?|feels?|sounds?|scans?)\s+"
+    r"(?:good|well|right|fine|ok|okay|off|wrong|natural|clean|polished)"
+    r"|(?:you|founder)\s+(?:are\s+)?(?:happy|satisfied|content)\s+with"
+    r"|(?:your|founder\'?s?)\s+(?:call|choice|preference|judgement|judgment|taste)"
+    r"|(?:you|founder)\s+(?:prefers?|preferred|decides?|decided|chooses?|chose"
+    r"|picks?|picked|approves?|approved|wants?|wanted|asked\s+for"
+    r"|signs?|meant)"
+    r"|sign(?:s|ed)?[\s-]?off|signoff"
+    r"|acceptable\s+to\s+(?:you|the\s+founder)"
+    r"|(?:founder|you)\s+(?:confirms?|confirmed|accepts?|accepted)"
+    r"|worth\s+(?:doing|shipping|the)"
+    r"|api[\s_-]?key|credential|password|secret\s+key|access\s+token"
+    r"|budget|which\s+region|spend(?:ing)?\s+(?:cap|limit)"
+    r")\b", re.I)
+
+
+def is_founder_only(check):
+    """Is this a question ONLY the founder can answer?
+
+    Deterministic, and deliberately conservative in the NEW direction: a
+    false negative here costs one judge call that returns `cannot_tell` and
+    routes to the founder anyway, while a false positive costs exactly the
+    thing this whole change removes -- a click the founder should never have
+    been asked for.
+    """
+    return _FOUNDER_ONLY_MARKER.search(str(check or "")) is not None
+
+
+def tier_for(check, proposed=None, probe=None):
     """The tier a proposed check ACTUALLY gets.
 
-    `proposed` is what Shadow asked for and is never trusted on its own: an
-    unknown tier, `verify`, or a missing tier all resolve deterministically
-    rather than being passed through. Only `contains_artifact` on a
-    literal-shaped string survives as machine-checkable; everything else
-    keeps its wording and becomes the founder's to confirm.
+    `proposed` is what Shadow asked for and is still never trusted on its
+    own -- but what an untrusted proposal now falls back TO is the judge, not
+    the founder. See PROPOSAL_TIERS above for why that reversal is safe.
+
+    THE LADDER, in order, and the order is the design:
+
+      1. contains_artifact + a literal-shaped string  -> kept. The one tier
+         with no judgement in it, and a marker really can appear verbatim.
+      2. verify + a valid probe                       -> kept. A probe reads
+         the real filesystem or runs a real command; nothing is more certain
+         than this and it used to be thrown away.
+      3. the check is taste, or a fact only the founder holds -> the founder.
+         This is now the ONLY road to a signature.
+      4. everything else                              -> judge.
+
+    NOTE WHAT IS NOT IN THE LADDER: a branch on who wrote the check. There is
+    no such field and there must not be one -- a condition the founder typed
+    and a condition Shadow wrote are the same object, something Shadow is
+    responsible for establishing. That rule was written for
+    `_apply_verification` on 2026-09-17 and it applies here unchanged.
+
+    A PROPOSED `founder_confirm` IS NOT ENOUGH ON ITS OWN, and that is the
+    sharp edge of this change. On the founder's live install every one of the
+    9 checks reached them with `proposed_tier` of NONE -- Shadow named no
+    tier at all and the fallback did the rest. Honouring a bare
+    `founder_confirm` would leave exactly that door open under a new name, so
+    a check routed to the founder has to LOOK like the founder's question.
+    When one genuinely is and does not look like it, the judge says
+    `cannot_tell` and it arrives on their desk one call later.
     """
     want = str(proposed or "").strip()
     if want == "contains_artifact" and is_literal_artifact(check):
         return "contains_artifact"
-    if want == FALLBACK_TIER:
-        return FALLBACK_TIER
-    # missing, `verify`, unknown, or a semantic string under
-    # contains_artifact -- all one answer, and it is never "drop the check"
+    if want == "verify" and shadow_probe_ok(probe):
+        return "verify"
+    if is_founder_only(check):
+        return FOUNDER_TIER
+    # missing, unknown, a semantic string under contains_artifact, a probeless
+    # `verify`, or a `founder_confirm` on something Shadow could establish --
+    # all one answer, and it is still never "drop the check"
     return FALLBACK_TIER
+
+
+def shadow_probe_ok(raw):
+    """Is this a probe the engine would actually run? Imported lazily and
+    NEVER RAISES, for the same reason offered_kinds() does not: this module
+    sits on the path of every Shadow reply and is deliberately import-light.
+    A probe that cannot be validated is simply not a probe, which drops the
+    row to the judge rather than to an exception."""
+    if not raw:
+        return False
+    try:
+        import shadow_probe
+        return shadow_probe.validate_probe(raw) is not None
+    except Exception:                      # noqa: BLE001 -- see docstring
+        return False
 
 
 def offered_kinds():
@@ -250,8 +377,14 @@ def parse_reply(text, kinds=None):
             for c in (val.get("done_when") or []):
                 if isinstance(c, dict) and str(c.get("check") or "").strip():
                     text = str(c["check"]).strip()[:300]
-                    tier = tier_for(text, c.get("tier"))
+                    # THE PROBE TRAVELS WITH THE PROPOSAL (D-SH-1). Without
+                    # it a `verify` row could never survive step 2 of the
+                    # ladder, and the tier would be decided against evidence
+                    # the caller was holding but never passed.
+                    tier = tier_for(text, c.get("tier"), c.get("probe"))
                     row = {"tier": tier, "check": text}
+                    if tier == "verify":
+                        row["probe"] = c.get("probe")
                     if tier != c.get("tier"):
                         # what the card tells the founder, so a re-tier is
                         # visible rather than a silent correction

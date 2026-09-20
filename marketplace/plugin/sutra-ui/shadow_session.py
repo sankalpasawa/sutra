@@ -78,20 +78,24 @@ def standing_context():
         out = ("\n\nSTANDING INSTRUCTIONS (global; founder-confirmed; "
                "per-chat rules arrive with the chat they belong to):\n"
                + block)
-        # Shadow v4 (C7): the founder's own words on how Shadow behaves,
-        # from the same task-limits store as the numbers. behaves() never
-        # raises, so a broken limits file costs this block only, never the
-        # standing instructions above it.
+        # Shadow v4 (C7) + the Memory box (founder, 2026-09-20): the
+        # founder's own two texts, from the same task-limits store as the
+        # numbers, rendered by mission_engine.carry_block so the boot, every
+        # task chat and the decider state their precedence identically.
+        #
+        # THE MEMORY HALF WAS STORED AND READ BY NOTHING. set_memory has
+        # persisted since 2026-09-17 and the settings page has shown it back,
+        # but memory() had no reader outside its own tests -- a box the
+        # founder filled in that changed nothing Shadow ever saw. It joins
+        # here, which is also how it reaches every task chat: those boot on
+        # this same context (shadow_task_chat.py, "+ standing_context()").
         try:
             import mission_engine
-            beh = mission_engine.behaves()
+            carry = mission_engine.carry_block()
         except Exception:                      # noqa: BLE001
-            beh = ""
-        if beh:
-            out += ("\n\nHOW SHADOW BEHAVES (the founder's own words; they "
-                    "rank below the floors and below what the founder says "
-                    "in a task's own chat, and above the standing "
-                    "instructions):\n" + beh)
+            carry = ""
+        if carry:
+            out += "\n\n" + carry
         if lines:
             out += ("\n\nRECENT SHADOW ACTIONS (ground undo requests in "
                     "these; if something cannot be undone, say so "
