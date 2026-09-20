@@ -1,9 +1,15 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-20
-## 2.286.1 (2026-09-20)
+## 2.286.2 (2026-09-20)
 
 - **Adherence row 6.2: the blueprint's own steps print as they pass.** New PostToolUse step `post.blueprint_progress` runs the blueprint's verify commands not yet passed after every tool call (1.5 s each, 3 s per call), writes `<turn>.progress.json` (runtime-owned) and prints `[sutra <t8>] blueprint step n/N done: <do>` the moment a step flips; slow and manual steps are marked once and left to the sealed Stop lane, which stays the record. The Stop table and `sutra-steps statusline` show the blueprint's steps as a second bar. Tests: test-blueprint-progress 30. DeepSeek review folded (3 P1 fixed, 2 rejected with reason).
+
+## 2.286.1 (2026-09-20)
+
+- **Fixed: the whole-article read-through threw away its own corrections.** The last check before publishing reads the article end to end and looks for contradictions: a rule stated in one section and broken in another, one thing scored on two different scales, two figures for the same thing. To fix them it used to rewrite the entire article, and while rewriting it dropped the source tags: 52% of them in one article and 77% in another on 2026-09-18. A guard correctly refused a rewrite that loses its sources, the single retry made the same mistake, and both articles published with their real errors still in them. One of them states a 45% loss where its own figures give 23%.
+- **It now returns each fix on its own**, as the exact sentence to replace and what it becomes, and each one is checked and applied by itself. A fix that would drop a source tag, invent a number, touch a heading or smuggle in a rewrite is refused on its own, and the others still land. A corrected figure the article's own arithmetic produces is allowed, as long as the fix shows which figures it came from.
+- **Nothing is dropped silently any more.** Whatever could not be applied is named in the run and kept in the report, so a person can see what the check wanted to change and decide.
 
 ## 2.286.0 (2026-09-19)
 

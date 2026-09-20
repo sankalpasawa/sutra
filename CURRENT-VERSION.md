@@ -2,9 +2,15 @@
 
 **status**: active · **updated**: 2026-09-20
 
-## v2.286.1 (2026-09-20, HEAD)
+## v2.286.2 (2026-09-20, HEAD)
 
 **The blueprint's own steps print as they pass** (adherence row 6.2; founder 2026-09-20 "Can you print whether it ran those internal steps as well?"). `post.blueprint_progress` runs the not-yet-passed verify commands after every tool call under a 3 s budget and prints each flip; `<turn>.progress.json` is the live hint, the sealed Stop verifies stay the record; the Stop table and the status line carry a second bar. DeepSeek review on the diff folded; codex SKIPPED until 2026-10-16.
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.286.1 (2026-09-20)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry (desktop release by a peer session).
 
 ## v2.286.0 (2026-09-19)
 

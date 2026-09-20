@@ -435,7 +435,7 @@ ok("a failed retry leaves a shorter FAQ rather than crashing the wrapper",
    final_faq2["faq"] == [] and final_faq2["ok"], final_faq2["faq"])
 OVERRIDES.clear()
 
-print("\nwriter: coherence blocks an invented number")
+print("\nwriter: coherence guards() — the final whole-article sanity check")
 before = {"h1": "H", "intro": "Costs run to $4,700 [c1].", "quick_answer": "", "sections": [{"heading": "A", "prose": "Scored 1 to 5 [c2]."}],
           "faq": [{"question": "Q?", "answer": "Yes."}], "close": "Do it.", "close_heading": "Next"}
 after = copy.deepcopy(before); after["sections"][0]["prose"] = "Scored 1 to 5, and 32,000 people agreed [c2]."
@@ -446,20 +446,92 @@ blk2, warn2 = coherence.guards(before, after2)
 ok("a changed figure warns but does not block", not blk2 and any(w["kind"] == "numbers changed" for w in warn2))
 after3 = copy.deepcopy(before); after3["sections"][0]["heading"] = "Renamed"
 ok("a changed heading blocks", coherence.guards(before, after3)[0])
-# the retry: first edit invents, the retry is clean -> the retry is used
-rendered_reply = lambda p: dict(_fixture._parse_rendered_article(_fixture._between(p, "THE ARTICLE IN FULL:", "\n════")), changes=[], numbers_changed=[], could_not_fix=[], verdict="ok")
-def first_edit(p):
-    r = rendered_reply(p); r["sections"][0]["prose"] += " Also 32,000 more."; return r
-OVERRIDES.append((lambda p: '"could_not_fix"' in p and "THE ARTICLE IN FULL:" in p, first_edit))
-def clean_retry(p):
-    r = dict(_fixture._parse_rendered_article(_fixture._between(p, "THE ARTICLE YOU RETURNED, which is the one to correct:", "\n════")),
-             changes=[], numbers_changed=[], could_not_fix=[], verdict="fixed")
-    r["sections"][0]["prose"] = r["sections"][0]["prose"].replace(" Also 32,000 more.", "")
-    return r
-OVERRIDES.append((lambda p: "THE ARTICLE YOU RETURNED" in p, clean_retry))
-co = coherence.run(copy.deepcopy(before), CTX, plan, say)
-ok("the first edit was blocked and retried; the clean retry is applied",
-   co["report"].get("retry_attempted") and co["report"].get("applied") and "32,000" not in co["article"]["sections"][0]["prose"], co["report"].get("guard_failures"))
+blk4, _w4 = coherence.guards(before, after, allowed_numbers={"32,000"})
+ok("a number a fix already vouched for is not INVENTED a second time", not blk4, blk4)
+
+print("\nwriter: coherence applies fixes one at a time, in code (2026-09-18, specs/parked-2026-09-18.md #1)")
+# The Recruiting Metrics shape: a stated ROI that disagrees with the article's own inputs, sitting
+# beside a rule the FAQ breaks and a scale restated with its tag dropped. One coherence-edit reply
+# can carry a good fix, a bad one, and an honest correction side by side; the point of patching one
+# fix at a time is that only the bad one is lost.
+article = {
+    "h1": "H",
+    "intro": "The programme returns $70,000 in value against $90,400 in cost, a 45% ROI [c1].",
+    "quick_answer": "",
+    "sections": [{"heading": "A", "prose": "Scored 1 to 5 [c2]. Never report cost per hire alone [c3]."}],
+    "faq": [{"question": "Q?", "answer": "Yes, report cost per hire alone for speed [c4]."}],
+    "close": "Do it.", "close_heading": "Next",
+}
+article_numbers = set(coherence._NUMS.findall(coherence._all_prose(article)))
+
+good_fix = {"kind": "breaks-own-rule", "section": "A",
+            "find": "Never report cost per hire alone [c3].",
+            "replace": "Never report cost per hire on its own [c3]."}
+tag_drop_fix = {"kind": "numbers-disagree", "section": "A",
+                "find": "Scored 1 to 5 [c2].", "replace": "Scored 1 to 5."}
+no_match_fix = {"kind": "own-warning", "section": "A",
+                "find": "This sentence is nowhere in the article.", "replace": "x"}
+invented_fix = {"kind": "breaks-own-rule", "section": "FAQ: Q?",
+                "find": "Yes, report cost per hire alone for speed [c4].",
+                "replace": "Yes, report cost per hire alone for speed, which saves 99 hours [c4]."}
+derived_fix = {"kind": "numbers-disagree", "section": "intro",
+               "find": "a 45% ROI [c1].", "replace": "a 23% ROI [c1].",
+               "numbers_changed": [{"was": "45%", "now": "23%",
+                                    "derived_from": "$70,000 value against $90,400 cost"}]}
+
+b1 = dict(coherence.prose_blocks(article))
+ok("a good fix lands", coherence._apply_fix(b1, good_fix, article_numbers) is None
+   and "on its own" in b1["A"], b1["A"])
+
+b2 = dict(coherence.prose_blocks(article))
+r2 = coherence._apply_fix(b2, tag_drop_fix, article_numbers)
+ok("a fix that drops a source tag is skipped and named for it", r2 and "tag" in r2, r2)
+ok("the section is untouched by the skipped fix", b2["A"] == article["sections"][0]["prose"])
+ok("a good fix beside a skipped one still lands",
+   coherence._apply_fix(b2, good_fix, article_numbers) is None and "on its own" in b2["A"])
+
+b3 = dict(coherence.prose_blocks(article))
+r3 = coherence._apply_fix(b3, no_match_fix, article_numbers)
+ok("a 'find' that matches nothing is skipped", r3 and "not copied exactly" in r3, r3)
+
+b4 = dict(coherence.prose_blocks(article))
+r4 = coherence._apply_fix(b4, invented_fix, article_numbers)
+ok("a fix that invents a number is skipped", r4 and "invents" in r4, r4)
+
+b5 = dict(coherence.prose_blocks(article))
+ok("a number derived from figures already in the article is allowed",
+   coherence._apply_fix(b5, derived_fix, article_numbers) is None and "23%" in b5["intro"])
+
+print("\nwriter: coherence.run — the whole pipeline: apply what passes, skip and report the rest")
+OVERRIDES.append((lambda p: "THE ARTICLE IN FULL:" in p,
+                  {"fixes": [good_fix, tag_drop_fix, no_match_fix, invented_fix, derived_fix],
+                   "could_not_fix": [], "verdict": "mostly clean, four faults found"}))
+co = coherence.run(copy.deepcopy(article), CTX, plan, say)
+rep = co["report"]
+ok("exactly the two good fixes were applied", len(rep["fixes_applied"]) == 2, rep["fixes_applied"])
+ok("exactly the three bad fixes were skipped", len(rep["fixes_skipped"]) == 3, rep["fixes_skipped"])
+ok("the tag-dropping skip is in the report", any("tag" in s["why"] for s in rep["fixes_skipped"]), rep["fixes_skipped"])
+ok("the no-match skip is in the report", any("not copied exactly" in s["why"] for s in rep["fixes_skipped"]), rep["fixes_skipped"])
+ok("the invented-number skip is in the report", any("invents" in s["why"] for s in rep["fixes_skipped"]), rep["fixes_skipped"])
+ok("the article carries both fixes that landed",
+   "on its own" in co["article"]["sections"][0]["prose"] and "23%" in co["article"]["intro"])
+ok("the article is untouched where a fix was skipped",
+   "Scored 1 to 5 [c2]" in co["article"]["sections"][0]["prose"] and "99 hours" not in co["article"]["faq"][0]["answer"])
+ok("applied is true because at least one fix landed", rep["applied"])
+OVERRIDES.clear()
+
+print("\nwriter: coherence.run — the one retry recovers a fix that code rejected")
+OVERRIDES.append((lambda p: "THE ARTICLE IN FULL:" in p,
+                  {"fixes": [tag_drop_fix], "could_not_fix": [], "verdict": "one fault found"}))
+retried_fix = {"kind": "numbers-disagree", "section": "A",
+               "find": "Scored 1 to 5 [c2].", "replace": "Scored 1 to 5, on a five-point scale [c2]."}
+OVERRIDES.append((lambda p: "REJECTED BECAUSE" in p,
+                  {"fixes": [retried_fix], "could_not_fix": [], "verdict": "fixed on retry"}))
+co2 = coherence.run(copy.deepcopy(article), CTX, plan, say)
+ok("the retry is attempted", co2["report"].get("retry_attempted"))
+ok("the retried fix lands and nothing is left skipped",
+   co2["report"]["applied"] and not co2["report"]["fixes_skipped"], co2["report"]["fixes_skipped"])
+ok("the article carries the retried fix", "five-point scale" in co2["article"]["sections"][0]["prose"])
 OVERRIDES.clear()
 
 print("\nwriter: readable checks flag, never block")

@@ -1,51 +1,51 @@
-Your edit of this article was REJECTED by code and has not been used.
+Some of your fixes from the last pass were REJECTED by code before they ever touched the
+article. Everything else you fixed already landed — those fixes stand, exactly as you wrote
+them, and are not repeated here. Only the rejected fixes below are yours to redo.
 
-Everything you were asked to do, and everything you fixed, still stands. Only this stopped it:
+WHY A FIX GETS REJECTED. Code applies each fix by finding your `find` text once, exactly, in
+the section you named, and swapping it for `replace`. A fix is rejected when: `find` does not
+appear in that section, or appears more than once (too ambiguous to know which one you mean);
+`replace` drops a [c…] tag that `find` had, or adds one that was not there; `replace` invents
+a number that is not already in the article and is not declared and derived in
+`numbers_changed`; `replace` contains a markdown heading line; or `replace` runs far longer
+than the `find` it replaces.
 
-{{FAILURES}}
+THE REJECTED FIXES, WITH THE REASON EACH ONE FAILED:
 
-════════════════════════════════════════════════════════════════════════
-FIX ONLY THAT. Change nothing else. Every other edit you made was accepted, so leave it
-exactly as you wrote it.
-
-If the fault is an INVENTED NUMBER: that figure appears nowhere in the original article.
-You have no sources and cannot look anything up, so a number you did not read is one you
-made up. Remove it, or rewrite that sentence using only figures the article already
-contains. Do not swap it for a different invented number.
-
-If the fault is a CHANGED HEADING or the H1: put it back, character for character.
-
-If the fault is an EMPTY OR MISSING SECTION: every section stays, keeps its heading, and
-must still say something.
-
-If the fault is STRIPPED SOURCE TAGS: a claim you kept must keep the [c…] tag that proves
-it. Only a claim you cut loses its tag.
+{{REJECTED}}
 
 ════════════════════════════════════════════════════════════════════════
-THE ARTICLE YOU RETURNED, which is the one to correct:
+FIX EACH ONE AGAIN, OR SAY WHY YOU CANNOT.
 
-{{EDITED}}
+For every rejected fix above: read the exact reason it failed, then either
+
+  - return it again with that fault corrected — `find` copied exactly, character for
+    character, tags included, from the article below, and `replace` respecting every rule
+    it broke last time; or
+  - move it to "could_not_fix" with why not, if the fault genuinely cannot be fixed this way.
+
+Do not touch anything that already landed; it is not shown to you again and is not yours to
+revisit. Do not introduce a new fix for a fault nobody flagged here. This is your only
+retry: a fix that fails again is reported, unfixed, and the rest of the article publishes
+as it stands.
 
 ════════════════════════════════════════════════════════════════════════
+THE ARTICLE AS IT STANDS NOW, with every fix that already landed already applied:
+
+{{ARTICLE}}
+
 ════════════════════════════════════════════════════════════════════════
 THE USER'S STANDING RULES. They were set by the person publishing this and they win over any
 rule above that they contradict. "(none)" means there are none.
 {{MEMORY}}
 
-Return the whole article again, every section in order, in exactly the same JSON shape as
-before. This is your only retry: if it fails again the original article publishes and none
-of your work is used.
-
-{"h1": "<unchanged>",
- "intro": "<the intro>",
- "sections": [{"heading": "<unchanged>", "prose": "<the section>"}],
- "faq": [{"question": "<unchanged>", "answer": "<the answer>"}],
- "close": "<the close>",
- "changes": [{"kind": "breaks-own-rule | own-warning | several-scales | numbers-disagree",
-              "section": "<where>",
-              "what_you_did": "<one line>",
-              "why": "<one line: what it collided with, and where>"}],
- "numbers_changed": [{"was": "<the figure as written>", "now": "<what it became>",
-                      "why": "<one line — say if this is a rating band, not a real-world figure>"}],
+Return ONLY this JSON, covering just the fixes you were handed above:
+{"fixes": [{"kind": "breaks-own-rule | own-warning | several-scales | numbers-disagree | caveat-repeated",
+            "section": "<the heading it is in, or intro / quick answer / close / FAQ: the question>",
+            "find": "<the sentence(s) exactly as they stand in the article, copied character for character>",
+            "replace": "<what they become>",
+            "why": "<one line: what it collided with, and where>",
+            "numbers_changed": [{"was": "<the figure as written>", "now": "<what it became>",
+                                 "derived_from": "<the figures already in the article this was computed from, or empty>"}]}],
  "could_not_fix": [{"what": "<the fault>", "where": "<section>", "why_not": "<one line>"}],
  "verdict": "<one line: is this article honest and safe to publish now?>"}

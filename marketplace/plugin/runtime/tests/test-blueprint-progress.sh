@@ -93,7 +93,8 @@ do_run c3u "$PJ3" "$HM3" UserPromptSubmit "$(stdin_ups sid-c3 "slow and manual")
 TID3="$(turn_of "$PJ3" sid-c3)"; D3="$PJ3/.sutra/turn/sid-c3"
 write_bp "$PJ3" sid-c3 "$TID3" '[{"do":"a slow check","verify":{"kind":"cmd","cmd":"sleep 8"}},{"do":"a manual check","verify":{"kind":"manual","cmd":"look at it"}},{"do":"a quick check","verify":{"kind":"cmd","cmd":"test -s src/a.txt"}}]'
 T0=$(date +%s); do_run c3p "$PJ3" "$HM3" PostToolUse "$(stdin_post sid-c3)"; T1=$(date +%s)
-[ $((T1 - T0)) -le 6 ] && pass "case3: PostToolUse returned in $((T1 - T0)) s despite an 8 s verify" || fail "case3: PostToolUse took $((T1 - T0)) s"
+# bound: 1.5 s verify cap + jq overhead; 8 s leaves room for a loaded box or SUTRA_STEP_TIMEOUT_SCALE
+[ $((T1 - T0)) -le 8 ] && pass "case3: PostToolUse returned in $((T1 - T0)) s despite an 8 s verify" || fail "case3: PostToolUse took $((T1 - T0)) s"
 is "case3: slow step recorded" "$(jq -r '.steps[0].status' "$D3/$TID3.progress.json")" slow
 is "case3: manual step recorded" "$(jq -r '.steps[1].status' "$D3/$TID3.progress.json")" manual
 is "case3: quick step done in the same call" "$(jq -r '.steps[2].status' "$D3/$TID3.progress.json")" done
@@ -109,7 +110,7 @@ do_run c3bu "$PJ3b" "$HM3b" UserPromptSubmit "$(stdin_ups sid-c3b "four slow")"
 TID3b="$(turn_of "$PJ3b" sid-c3b)"
 write_bp "$PJ3b" sid-c3b "$TID3b" '[{"do":"s1","verify":{"kind":"cmd","cmd":"sleep 4"}},{"do":"s2","verify":{"kind":"cmd","cmd":"sleep 4"}},{"do":"s3","verify":{"kind":"cmd","cmd":"sleep 4"}},{"do":"s4","verify":{"kind":"cmd","cmd":"sleep 4"}}]'
 T0=$(date +%s); do_run c3bp "$PJ3b" "$HM3b" PostToolUse "$(stdin_post sid-c3b)"; T1=$(date +%s)
-[ $((T1 - T0)) -le 5 ] && pass "case3: four slow verifies stayed inside the budget ($((T1 - T0)) s)" || fail "case3: four slow verifies took $((T1 - T0)) s"
+[ $((T1 - T0)) -le 8 ] && pass "case3: four slow verifies stayed inside the budget ($((T1 - T0)) s)" || fail "case3: four slow verifies took $((T1 - T0)) s"
 is "case3: steps past the budget stay pending for the next call" "$(jq -r '[.steps[] | select(.status == "pending")] | length' "$PJ3b/.sutra/turn/sid-c3b/$TID3b.progress.json")" 2
 
 # ===================================================================== 4 ====

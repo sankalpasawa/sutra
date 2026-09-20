@@ -195,7 +195,17 @@ EXCLUDED_REGIONS = {
     ],
     "coherence-edit.md": [
         ("5. A CAVEAT SAID MORE THAN ONCE", "THE RULE FOR THE HARD CASE"),
+        # 2026-09-18 (Devansh approved, specs/parked-2026-09-18.md section 1): coherence stopped
+        # asking for the WHOLE article back and started asking for FIXES, one find/replace per
+        # fault. His copy still ends on "RETURN THE WHOLE ARTICLE" and the old whole-article JSON
+        # shape; Sutra's ends on the fixes contract instead. `end=None` drops everything from "HOW
+        # TO WORK" to end of file on BOTH sides, since there is no shared line left to resync on.
+        ("HOW TO WORK", None),
     ],
+    # Same 2026-09-18 change. His retry prompt asks for the whole article back a second time; Sutra's
+    # is handed the specific fixes that were rejected, with the reason each one failed, and returns
+    # only those, corrected. The two no longer share a single line, so the whole file is the region.
+    "coherence-retry.md": [("", None)],
 }
 
 PORT_EDITS = {
@@ -283,11 +293,14 @@ def strip_memory(lines):
 
 
 def drop_regions(lines, regions):
-    """Remove each declared region. The end marker is the first line NOT removed."""
+    """Remove each declared region. The end marker is the first line NOT removed. `end=None` means
+    the region runs to the end of the file: used when Sutra's copy diverges for the rest of the file
+    on purpose (a rewritten output contract, say) and there is no line left afterward shared with his
+    copy to resync on. `start=""` matches line 0, so `("", None)` excludes a whole file."""
     for start, end in regions:
         try:
             a = next(n for n, l in enumerate(lines) if l.startswith(start))
-            b = next(n for n, l in enumerate(lines) if n > a and l.startswith(end))
+            b = len(lines) if end is None else next(n for n, l in enumerate(lines) if n > a and l.startswith(end))
         except StopIteration:
             continue
         lines = lines[:a] + lines[b:]
