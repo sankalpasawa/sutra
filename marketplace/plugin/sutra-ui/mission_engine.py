@@ -1947,6 +1947,221 @@ def undo_task_turns(store, mid):
     return m
 
 
+# ---------------------------------------------------------------------------
+# Shadow v4.2 (founder 2026-09-21): the asks live in the chat
+# ---------------------------------------------------------------------------
+#
+# "I typed Yes. and Shadow said my yes does not count; the form does. There
+# are no buttons in the chat." Three primitives close that:
+#
+#   pending_asks   THE ONE LIST of what a task is waiting on. The task chat is
+#                  told it before it answers (pending_asks_text) and the stream
+#                  draws it with its buttons. Four kinds: a held instruction
+#                  (approve), an unmet founder-confirm check while the loop is
+#                  in its waiting room (confirm), a typed question (question),
+#                  a parked instruction after a take-over (parked).
+#   apply_answer   a typed or clicked answer BOUND to the one ask it can mean.
+#                  approve -> the one pending hold, through approve_held_say
+#                  (same one-use object, same hash rule); confirm -> the one
+#                  unmet check or an explicit index, through confirm_check;
+#                  withdraw / change -> the hold is dropped and Shadow is told
+#                  why in founder_says. Anything ambiguous is a ValueError
+#                  that names the choices; nothing is guessed. The routes own
+#                  the cap, the transition and the launch, exactly as they do
+#                  for the Approve button.
+#   park_hold      a take-over during a hold parks the instruction. Until this
+#                  the hold stayed armed behind the founder's back: they did
+#                  the thing by hand, handed back, and Approve was still
+#                  offered -- pressing it did it a second time. unpark turns
+#                  the parked text into a question for Shadow, never an order.
+
+#: What a typed answer may say it is. Closed: the fence is model-written.
+_ANSWER_KINDS = ("approve", "confirm", "withdraw", "change")
+
+
+def _unmet_founder_checks(m):
+    return [(i, c) for i, c in enumerate(m.get("done_when") or [])
+            if c.get("tier") == "founder_confirm" and not c.get("met")]
+
+
+def pending_asks(m):
+    """What this task is waiting on, oldest-binding first. Pure: reads the
+    record, writes nothing, never raises on a partial record."""
+    out = []
+    if not isinstance(m, dict):
+        return out
+    state = m.get("state")
+    ap = m.get("approval") or {}
+    if state == "paused" and ap and not ap.get("used") and m.get("pending_say"):
+        out.append({"kind": "approve", "id": ap.get("id"),
+                    "text": m["pending_say"], "reason": m.get("pause_reason")})
+    iv = m.get("intervention")
+    if isinstance(iv, dict) and iv.get("id"):
+        out.append({"kind": "question", "id": iv.get("id"),
+                    "text": str(iv.get("question") or "")})
+    if state == "paused" and m.get("pause_reason") == "founder_confirm":
+        for i, c in _unmet_founder_checks(m):
+            out.append({"kind": "confirm", "index": i,
+                        "text": str(c.get("check") or "")})
+    if state == "paused" and m.get("parked_say"):
+        out.append({"kind": "parked", "text": m["parked_say"]})
+    return out
+
+
+def pending_asks_text(m):
+    """The block the task chat is told before the founder's line, so it can
+    answer honestly and emit one `answer` fence. "" when nothing is pending,
+    so a task with no asks costs the prompt nothing."""
+    asks = pending_asks(m)
+    if not asks:
+        return ""
+    lines = ["[Pending asks on this task -- the founder may answer any of "
+             "them in this chat; if their line answers one, emit ONE "
+             "```answer fence]"]
+    for a in asks:
+        if a["kind"] == "approve":
+            lines.append("- approve: I am holding this instruction (%s): %s"
+                         % (a.get("reason") or "hold", a["text"]))
+        elif a["kind"] == "confirm":
+            lines.append("- confirm #%d: %s" % (a["index"] + 1, a["text"]))
+        elif a["kind"] == "question":
+            lines.append("- question (answered on the form, not by text): %s"
+                         % a["text"])
+        elif a["kind"] == "parked":
+            lines.append("- parked (you were taken over; ask before "
+                         "resending, never resend on your own): %s" % a["text"])
+    return "\n".join(lines) + "\n"
+
+
+def _drop_hold(m):
+    """Remove a held say and its approval from the record. Returns the say
+    text that was held, or None."""
+    say = m.get("pending_say")
+    for k in ("pending_say", "approval"):
+        m[k] = None
+    for k in ("pending_floor_say", "pending_autonomy_say"):
+        m.pop(k, None)
+    return say
+
+
+def _say_note(m, text, via):
+    says = list(m.get("founder_says") or [])
+    says.append({"text": str(text)[:2000], "at": _now(),
+                 "at_turn": m.get("turns_used") or 0, "via": via,
+                 "seen": False})
+    m["founder_says"] = says
+
+
+def apply_answer(store, mid, answer):
+    """Apply one answer, bound to the one ask it can mean. Returns
+    {kind, label, resume, settle, index} for the route to act on; raises
+    ValueError with the reason (and the choices) otherwise.
+
+    `resume` = the route should put the task back to running and launch
+    the loop (approve, withdraw, change). `settle` = the route should run
+    settle_confirmation (confirm)."""
+    if not isinstance(answer, dict) or answer.get("kind") not in _ANSWER_KINDS:
+        raise ValueError("an answer is one of: %s" % ", ".join(_ANSWER_KINDS))
+    if answer.get("by") not in (None, "founder"):
+        raise ValueError("only the founder answers an ask")
+    m = store.load(mid)
+    if m is None:
+        raise ValueError("no mission %s" % mid)
+    kind = answer["kind"]
+    asks = pending_asks(m)
+    if kind == "approve":
+        holds = [a for a in asks if a["kind"] == "approve"]
+        if not holds:
+            raise ValueError("nothing is held for approval on this task")
+        approve_held_say(store, mid, holds[0]["id"])
+        return {"kind": "approve", "resume": True, "settle": False,
+                "index": None,
+                "label": "Approved by you in the chat -- sent once"}
+    if kind == "confirm":
+        unmet = _unmet_founder_checks(m)
+        if not unmet:
+            raise ValueError("no check is waiting for your confirm")
+        index = answer.get("index")
+        if index is None:
+            if len(unmet) > 1:
+                raise ValueError(
+                    "which check? " + " / ".join(
+                        "#%d %s" % (i + 1, (c.get("check") or "")[:60])
+                        for i, c in unmet))
+            index = unmet[0][0]
+        if index not in [i for i, _ in unmet]:
+            raise ValueError("check #%d is not waiting for your confirm"
+                             % (int(index) + 1))
+        store.confirm_check(mid, int(index))
+        return {"kind": "confirm", "resume": False, "settle": True,
+                "index": int(index),
+                "label": "Check #%d confirmed by you in the chat"
+                         % (int(index) + 1)}
+    # withdraw / change: the hold goes, Shadow is told why, the loop resumes
+    holds = [a for a in asks if a["kind"] == "approve"]
+    if not holds:
+        raise ValueError("nothing is held to %s" % kind)
+    text = str(answer.get("text") or "").strip()
+    if kind == "change" and not text:
+        raise ValueError("say what to change it to")
+    say = _drop_hold(m)
+    m["withdrawn"] = list(m.get("withdrawn") or []) + [
+        {"text": say, "at": _now(), "why": kind,
+         "note": text[:500]}]
+    if kind == "withdraw":
+        _say_note(m, "I withdrew the held instruction (%s). %s"
+                  % ((say or "")[:200], text or "Do not resend it."),
+                  "withdraw")
+        label = "Withdrawn by you in the chat"
+    else:
+        _say_note(m, "Change the held instruction (%s) to: %s"
+                  % ((say or "")[:200], text), "change")
+        label = "Changed by you in the chat"
+    store.save(m)
+    shadow_ledger.append("actions", {
+        "mission_id": mid, "kind": kind,
+        "summary": ("%s: %s" % (kind, (say or "")[:120]))})
+    return {"kind": kind, "resume": True, "settle": False, "index": None,
+            "label": label}
+
+
+def park_hold(store, mid):
+    """A take-over during a hold: the held instruction is PARKED, its
+    approval discarded, so nothing the founder does by hand can be repeated
+    by a stale Approve. Returns the record; a no-op when nothing is held."""
+    m = store.load(mid)
+    if m is None:
+        raise ValueError("no mission %s" % mid)
+    if not m.get("pending_say"):
+        return m
+    say = _drop_hold(m)
+    m["parked_say"] = say
+    m["parked_at"] = _now()
+    store.save(m)
+    shadow_ledger.append("actions", {
+        "mission_id": mid, "kind": "park",
+        "summary": "parked on take-over: %s" % (say or "")[:120]})
+    return m
+
+
+def unpark(store, mid):
+    """On hand back: the parked instruction becomes a QUESTION for Shadow
+    (through founder_says, which the decider reads), never an order that
+    goes out again on its own. No-op when nothing is parked."""
+    m = store.load(mid)
+    if m is None:
+        raise ValueError("no mission %s" % mid)
+    say = m.pop("parked_say", None)
+    m.pop("parked_at", None)
+    if say:
+        _say_note(m, "I took over the chat for a while. Your instruction "
+                  "was parked: %s -- ask me whether it is still wanted "
+                  "before you send anything like it." % say[:500],
+                  "hand_back")
+    store.save(m)
+    return m
+
+
 #: What a hand-back with no words asks at the end of the leg. founder_confirm
 #: by construction: Shadow cannot know what "finished" means for work the
 #: founder did by hand, so the founder says so.

@@ -1493,10 +1493,14 @@ function stream(msgs, says, turns){
     "Stop must still render on the plane that owns mission actions");
   const paused = fresh().shadowPlaneHtml([], [M({ state: "paused" })], "working");
   assert(/data-shact="resume"/.test(paused), "Resume must still render there");
+  /* v4.2 (founder 2026-09-21): no Retry button; a finished task with a chat
+     carries Hand back to Shadow instead */
   const failed = pane(fresh(), M({ state: "failed" }));
-  assert(/data-shact="retry" data-shmid="m-1"/.test(failed), "Retry was lost");
+  assert(!/data-shact="retry"/.test(failed), "no Retry button on failed");
+  assert(/data-shact="reopen" data-shmid="m-1"/.test(failed.replace(/\s+/g, " ")),
+    "Hand back to Shadow is the way back");
   const stopped = pane(fresh(), M({ state: "stopped" }));
-  assert(/data-shact="retry"/.test(stopped), "Retry was lost for stopped");
+  assert(!/data-shact="retry"/.test(stopped), "no Retry button on stopped");
   const ready = pane(fresh(), M({ state: "brief_confirm",
     target_session: null, start_requested_at: null }));
   assert(/data-shstart="m-1"/.test(ready), "Start was lost");

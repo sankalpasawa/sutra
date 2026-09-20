@@ -4083,6 +4083,66 @@ def _apply_limits_fence(blocks, mid=None):
     return {"applied": done, "refused": refused}
 
 
+def _continue_after_answer(store, mid, outcome):
+    """Shadow v4.2: what the routes do after mission_engine.apply_answer.
+
+    THE SAME THREE MOVES THE BUTTONS MAKE, so a typed yes and a clicked one
+    end in the same place: approve -> cap check, running, launch (the Approve
+    button's path); confirm -> the goal hook and settle_confirmation (the
+    Confirm button's path); withdraw / change -> running, launch (Resume's
+    path: Shadow recomposes at the next boundary with the founder's words in
+    front of it). Returns the record as it now reads."""
+    m = store.load(mid)
+    if outcome.get("settle"):
+        _goal_hook_safe("record_founder_confirmation", m)
+        settled = shadow_runner.settle_confirmation(mid, _shadow_verifier)
+        return settled or store.load(mid)
+    if outcome.get("resume") and m is not None and m["state"] == "paused":
+        running_n = len(store.list(states=("running",)))
+        cap = _mission_engine.max_running()
+        if running_n >= cap:
+            raise ValueError("answered, but Shadow is already running %d of "
+                             "%d tasks -- stop one, or raise Running at once"
+                             % (running_n, cap))
+        if m.get("pause_reason") == "autonomy_top_tier" \
+                and outcome.get("kind") == "approve":
+            m["top_tier_confirmed"] = True
+            store.save(m)
+        m = store.transition(mid, "running", "%s from the chat"
+                             % outcome.get("kind"))
+        shadow_runner._launch(mid, _validated_say, _shadow_verifier)
+    return store.load(mid)
+
+
+def _apply_answer_fence(blocks, mid):
+    """Shadow v4.2 (founder 2026-09-21): THE FOUNDER'S TYPED LINE ANSWERS THE
+    ASK. The task chat was told the pending asks (pending_asks_text) and,
+    reading the founder's line, emitted one `answer` fence; the app binds it
+    to the one ask it can mean and does exactly what the button would do.
+
+    ONLY EVER ON A REPLY TO THE FOUNDER'S OWN LINE (the task chat route).
+    A refusal is an answer, not an error: the founder said something and
+    Shadow heard it; if it cannot be bound (nothing held, two checks
+    waiting, at capacity) the sentence comes back in `refused` and nothing
+    is written. Never raises."""
+    spec = (blocks or {}).get("answer")
+    if not isinstance(spec, dict) or not mid:
+        return None
+    store = _mission_engine.MissionStore()
+    try:
+        outcome = _mission_engine.apply_answer(store, mid, spec)
+        _continue_after_answer(store, mid, outcome)
+        return {"applied": [{"kind": outcome["kind"],
+                             "label": outcome["label"],
+                             "index": outcome.get("index")}],
+                "refused": []}
+    except ValueError as exc:
+        return {"applied": [], "refused": [str(exc)]}
+    except Exception as exc:            # noqa: BLE001 -- see docstring
+        return {"applied": [], "refused": ["could not apply that: %s"
+                                           % str(exc)[:140]]}
+
+
 def _reopen_and_launch(store, mid, words, via):
     """Shadow v4.1 (V4-9): DONE IS NOT A DEAD END. The one place the app
     reopens a finished task, so the three doors (the task chat, "give
@@ -4095,6 +4155,7 @@ def _reopen_and_launch(store, mid, words, via):
     a second one). A refusal is the store's own sentence, as a 409.
     """
     try:
+        _mission_engine.unpark(store, mid)      # v4.2: a parked say asks first
         m = _mission_engine.reopen(store, mid, words, via=via)
     except ValueError as exc:
         raise HTTPException(409, {"detail": str(exc),
@@ -4249,9 +4310,15 @@ async def api_shadow_task_chat(mid: str, request: Request):
     if reopened:
         mission = _reopen_and_launch(store, mid, message, "talk")
     drafting = mission["state"] in ("draft", "brief_confirm")
+    # v4.2: THE CHAT IS TOLD WHAT THE TASK IS WAITING ON before it answers,
+    # the same way the Now box prefixes [Intake]. Without this Shadow said
+    # "on it" to a line that could move nothing (founder 2026-09-21).
+    pending = _mission_engine.pending_asks_text(mission)
     try:
         chat = await _ensure_task_chat(mission)
-        reply, blocks = await chat.talk(message)
+        reply, blocks = await chat.talk(
+            (pending + "[The founder says:] " + message) if pending
+            else message)
     except Exception as exc:            # noqa: BLE001
         if not reopened:
             raise HTTPException(
@@ -4272,6 +4339,12 @@ async def api_shadow_task_chat(mid: str, request: Request):
     limits = _apply_limits_fence(blocks, mid)
     if limits is not None:
         out["limits"] = limits
+        out["mission"] = store.load(mid)
+    # v4.2: the founder's line answered an ask -- the app applies it,
+    # bound to that ask, and the reply carries what happened
+    answered = _apply_answer_fence(blocks, mid)
+    if answered is not None:
+        out["answer"] = answered
         out["mission"] = store.load(mid)
     if reopened:
         out["reopened"] = True
@@ -4727,6 +4800,12 @@ async def api_shadow_mission_act(mid: str, request: Request):
             m = store.load(mid)
             if m is None:
                 raise HTTPException(404, "no mission %s" % mid)
+            # v4.2: a take-over during a hold PARKS the held instruction.
+            # Leaving it armed meant the founder did the thing by hand,
+            # handed back, and Approve was still offered -- pressing it did
+            # it twice. unpark (on Resume / Hand back) turns the parked text
+            # into a question for Shadow, never an order.
+            m = _mission_engine.park_hold(store, mid)
             if m["state"] == "running":
                 m = _mission_engine.MissionEngine(
                     store, None, None, None).founder_intervened(mid)
@@ -4893,6 +4972,8 @@ async def api_shadow_mission_act(mid: str, request: Request):
                     and prior.get("pause_reason") == "autonomy_top_tier":
                 prior["top_tier_confirmed"] = True
                 store.save(prior)
+            # v4.2: hand back -- a parked instruction becomes a question
+            _mission_engine.unpark(store, mid)
             m = store.transition(mid, "running", "explicit resume (home)")
             shadow_runner._launch(mid, _validated_say, _shadow_verifier)
             return m
@@ -4909,6 +4990,19 @@ async def api_shadow_mission_act(mid: str, request: Request):
                 raise HTTPException(404, "no mission %s" % mid)
             return _reopen_and_launch(
                 store, mid, text[:_SAY_MAX], "talk" if text else "hand_back")
+        if action == "answer":
+            # v4.2: THE BUTTON ON THE ASK ROW, and the click path for a
+            # typed answer. body: kind (approve|confirm|withdraw|change),
+            # index?, text?. The same binding and the same three moves the
+            # chat's fence takes (_apply_answer_fence); a refusal is a 409
+            # in the store's own words.
+            spec = {k: body.get(k) for k in ("kind", "index", "text")
+                    if k in body}
+            outcome = _mission_engine.apply_answer(store, mid, spec)
+            m = _continue_after_answer(store, mid, outcome)
+            return {**m, "answered": {"kind": outcome["kind"],
+                                      "label": outcome["label"],
+                                      "index": outcome.get("index")}}
         if action == "set_limits":
             # v4.1 (V4-7), THE SAME WRITER THE FENCE USES, for the sheet row
             # and for a founder who would rather click than say it. `turns`

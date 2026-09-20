@@ -130,8 +130,9 @@ function shadowPlaneHtml(watching, missions, tab){
     <div class="shmissionrow shfinished${m.id === foc ? " shfocused" : ""}" data-shmissionrow="${escAttr(m.id)}">
       ${missionCardHtml(m)}
       <span class="shrowacts">
-        <button class="btn" type="button" data-shact="retry"
-          data-shmid="${escAttr(m.id)}">Retry</button>
+        ${/* v4.2 (founder 2026-09-21): no Retry button. The retry action
+             stays on the server; the way back is the task's chat or Hand
+             back to Shadow. */""}
         ${m.target_session ? `<button class="btn" type="button"
           data-shtakeover="${escAttr(m.target_session)}">Take over</button>` : ""}
       </span>
@@ -2814,6 +2815,18 @@ function shadowTimelineEvents(m){
                  ts: Number(t && t.ts) });
     }
   }
+  /* v4.2: WHAT WAS ASKED AND ANSWERED stays in the scrollback, in its place.
+     A used approval and a confirmed check are facts on the record with
+     their own stamps, so they sort like every other event. */
+  const ap = m && m.approval;
+  if (ap && ap.used && ap.used_at)
+    out.push({ kind: "ask_done", what: "approve",
+               text: String(m.approved_say || m.pending_say || ""),
+               ts: Date.parse(ap.used_at) });
+  for (const c of ((m && m.done_when) || []))
+    if (c && c.tier === "founder_confirm" && c.met && c.confirmed_at)
+      out.push({ kind: "ask_done", what: "confirm",
+                 text: String(c.check || ""), ts: Date.parse(c.confirmed_at) });
   /* WHAT THE FOUNDER VOLUNTEERED THROUGH THE SAY PATH. Every aside is kept --
      these are a list on the record, not a single field, so unlike an answer
      the older ones are still there and each takes its own place in the order
@@ -2886,9 +2899,26 @@ function shadowTimelineHtml(m){
      no stamp, nothing records it, and it must never sort against real ones. */
   const T = (typeof shadowTalk === "function") ? shadowTalk() : null;
   const waiting = !!(T && T.busy && m && m.id && T.busy === m.id);
-  if (!events.length && !waiting) return "";
+  /* v4.2: THE ASKS LIVE IN THE CONVERSATION (founder 2026-09-21: "I don't
+     see any buttons there"). What the task is waiting on is drawn as rows
+     at the end of the stream, each with the button that answers it, and
+     the composer's typed line answers the same row (the server binds it).
+     Nothing here is a second store: shadowAskRowsHtml reads the record. */
+  const asks = shadowAskRowsHtml(m);
+  if (!events.length && !waiting && !asks) return "";
   return `<div class="shtimeline">${events.map(e => {
     if (e.kind === "answered") return shadowStoryHtml(m);
+    if (e.kind === "ask_done"){
+      const head = e.what === "approve" ? "Shadow · held, then sent"
+                                        : "Shadow · done when";
+      const line = e.what === "approve"
+        ? "Approved by you · sent once"
+        : "Confirmed by you: " + esc(e.text);
+      return `<div class="shsaid shask shask-done">
+      <div class="shsaidhead">${head}</div>
+      <div class="shsaidtext">${line}</div>
+    </div>`;
+    }
     if (e.kind === "said" || e.kind === "talk"){
       /* THE SAME BLOCK BOTH SIDES SPEAK IN, and the same one the worker's
          turns use: a head that names the speaker over the line itself. No new
@@ -2925,7 +2955,79 @@ function shadowTimelineHtml(m){
     /* a turn with no report yet is the one IN FLIGHT -- it gets the clock */
     if (e.kind === "worker" && !e.say) return shadowOpenTurnHtml(e.n, e.ts);
     return shadowAgentRowHtml(e.n, e.say);
-  }).join("")}${waiting ? shadowThinkingHtml() : ""}</div>`;
+  }).join("")}${asks}${waiting ? shadowThinkingHtml() : ""}</div>`;
+}
+
+/* ── THE ASK ROWS (v4.2) ─────────────────────────────────────────────────
+   One row per thing the task is waiting on, read off the record the same
+   way mission_engine.pending_asks reads it (kept in step by
+   test_shadow_v42_ui.js): a held instruction (Approve / Withdraw), an
+   unmet founder-confirm check while the loop waits (Confirm), a typed
+   question (answered on its form, drawn below), a parked instruction after
+   a take-over (Hand back). Every button is the SAME mission-action door the
+   card uses; the hint line says the composer answers the same row. */
+function shadowAskRowsHtml(m){
+  if (!m || !m.id) return "";
+  const id = escAttr(m.id);
+  const rows = [];
+  const ap = m.approval;
+  if (m.state === "paused" && ap && !ap.used && m.pending_say){
+    rows.push(`<div class="shsaid shask shask-hold">
+      <div class="shsaidhead">Shadow · holding</div>
+      <div class="shsaidtext">I am holding one instruction; it waits for you.</div>
+      <div class="shcard2 shaskcard">
+        <div class="shcard2row"><span class="shcard2k">instruction</span>
+          <span class="shcard2v shapprovesay">${esc(m.pending_say)}</span></div>
+        <div class="shcard2acts">
+          <button class="btn pri" type="button" data-shact="approve"
+            data-shmid="${id}" data-shapproval="${escAttr(ap.id)}">Approve</button>
+          <button class="btn" type="button" data-shact="answer"
+            data-shkind="withdraw" data-shmid="${id}">Withdraw</button>
+        </div>
+      </div>
+      <div class="shsaidtext shaskhint">Or say it here: “yes”, “change it to …”, or “I did it myself”.</div>
+    </div>`);
+  }
+  if (m.intervention && m.intervention.id){
+    rows.push(`<div class="shsaid shask shask-question">
+      <div class="shsaidhead">Shadow · question</div>
+      <div class="shsaidtext">${esc(m.intervention.question || "")}</div>
+      <div class="shsaidtext shaskhint">Answer on the form below.</div>
+    </div>`);
+  }
+  if (m.state === "paused" && m.pause_reason === "founder_confirm"){
+    (m.done_when || []).forEach((c, i) => {
+      if (!c || c.tier !== "founder_confirm" || c.met) return;
+      rows.push(`<div class="shsaid shask shask-check">
+        <div class="shsaidhead">Shadow · done when</div>
+        <div class="shcard2 shaskcard">
+          <div class="shcard2row"><span class="shcard2k">needs you</span>
+            <span class="shcard2v">#${i + 1} ${esc(c.check || "")}</span></div>
+          <div class="shcard2acts">
+            <button class="btn pri" type="button" data-shact="answer"
+              data-shkind="confirm" data-shindex="${i}" data-shmid="${id}">Confirm</button>
+          </div>
+        </div>
+        <div class="shsaidtext shaskhint">Or say “yes” here.</div>
+      </div>`);
+    });
+  }
+  if (m.state === "paused" && m.parked_say){
+    rows.push(`<div class="shsaid shask shask-parked">
+      <div class="shsaidhead">Shadow · parked</div>
+      <div class="shsaidtext">You took over, so I parked my next instruction instead of holding it:</div>
+      <div class="shcard2 shaskcard">
+        <div class="shcard2row"><span class="shcard2k">parked</span>
+          <span class="shcard2v shapprovesay">${esc(m.parked_say)}</span></div>
+        <div class="shcard2acts">
+          <button class="btn pri" type="button" data-shact="resume"
+            data-shmid="${id}">Hand back to Shadow</button>
+        </div>
+      </div>
+      <div class="shsaidtext shaskhint">On hand back I ask whether it is still wanted; I never resend it on my own.</div>
+    </div>`);
+  }
+  return rows.join("");
 }
 
 /* ── THE STORY: what happened either side of the founder's answer ─────────
@@ -3230,8 +3332,8 @@ function shadowTaskCardHtml(m){
         data-shmid="${escAttr(m.id)}">Stop</button>` : ""}
       ${m.state === "queued" ? `<button class="btn" type="button"
         data-shact="drop" data-shmid="${escAttr(m.id)}">Drop</button>` : ""}
-      ${["failed", "stopped"].includes(m.state) ? `<button class="btn"
-        type="button" data-shact="retry" data-shmid="${escAttr(m.id)}">Retry</button>` : ""}
+      ${/* v4.2 (founder 2026-09-21): the Retry button is gone from here too.
+           The action survives on the server for the API; nothing draws it. */""}
       ${/* v4.1 (V4-9): DONE IS NOT A DEAD END. Hand back puts Shadow back to
            work in the SAME chat -- what the founder did there by hand is read
            as chat, and they confirm at the end. Retry (above) stays for "run
@@ -5532,7 +5634,11 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (d.shivsend) return shadowSendIntervention(d.shivsend);
     if (d.shact && d.shmid)
       return shadowMissionAct(d.shmid, d.shact,
-        d.shact === "approve" && d.shapproval ? { approval_id: d.shapproval } : undefined);
+        d.shact === "approve" && d.shapproval ? { approval_id: d.shapproval }
+        /* v4.2: the ask row's button carries which ask it answers */
+        : d.shact === "answer" ? Object.assign({ kind: d.shkind },
+            d.shindex != null && d.shindex !== "" ? { index: Number(d.shindex) } : {})
+        : undefined);
     /* v5: Start is only ever the existing mission action now. The
        special case that used to sit here closed the task chat when the
        founder started the draft that chat had written -- and the box no

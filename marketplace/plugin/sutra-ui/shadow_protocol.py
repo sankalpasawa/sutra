@@ -25,6 +25,10 @@ Shadow's replies may carry fenced blocks the app parses DETERMINISTICALLY:
                                               "scope": "default" = the sheet;
                                               "running_at_once": n)
     ```
+    ```answer
+    {"kind": "approve|confirm|withdraw|change", "index": 0, "text": "..."}
+    ```                                      (v4.2; the founder's line answers
+                                              a pending ask; the app binds it)
 
 Blocks are stripped from the displayed reply. remember rows land UNCONFIRMED
 (inert until the founder taps Confirm). SHADOW.md documents the same protocol
@@ -49,7 +53,37 @@ kept handling `blocks["goal"]`). Both fences are load-bearing; keep both.
 import json
 import re
 
-_BLOCK = re.compile(r"```(mission|goal|chips|remember|module|brief|limits)\s*\n(.*?)```", re.S)
+_BLOCK = re.compile(r"```(mission|goal|chips|remember|module|brief|limits|answer)\s*\n(.*?)```", re.S)
+
+#: Shadow v4.2: what a typed answer may say it is. The SAME closed list
+#: mission_engine.apply_answer accepts; the app binds it to the one pending ask.
+_ANSWER_KINDS = ("approve", "confirm", "withdraw", "change")
+
+
+def parse_answer(val):
+    """An `answer` fence -> {kind, index?, text?}, or None.
+
+    THE FOUNDER'S TYPED LINE ANSWERS THE ASK (founder 2026-09-21). Shadow is
+    told the pending asks, reads the founder's line, and says which ask it
+    answers; the app -- never the model -- applies it, bound to that ask
+    (approve_held_say's one-use object, confirm_check's index). Strict like
+    every fence: a shape this does not recognise stays visible and does
+    nothing. No key here can name another task or reach a floor."""
+    if not isinstance(val, dict) or val.get("kind") not in _ANSWER_KINDS:
+        return None
+    if set(val) - {"kind", "index", "text"}:
+        return None
+    out = {"kind": val["kind"]}
+    if "index" in val:
+        ix = val["index"]
+        if isinstance(ix, bool) or not isinstance(ix, int) or ix < 0:
+            return None
+        out["index"] = ix
+    if "text" in val:
+        if not isinstance(val["text"], str):
+            return None
+        out["text"] = val["text"].strip()[:2000]
+    return out
 
 #: Shadow v4.1 (V4-7): what the founder may say for "no limit". A closed list,
 #: matched whole, and deliberately the SAME list mission_engine coerces with.
@@ -460,6 +494,9 @@ def parse_reply(text, kinds=None):
             # (unconfirmed). Deliberate: a draft module runs nothing until the
             # operator opens it, and archive is one click.
             out["module"] = val
+        elif kind == "answer" and parse_answer(val) is not None:
+            # v4.2: first fence wins, one line answers one ask
+            out.setdefault("answer", parse_answer(val))
         elif kind == "limits" and parse_limits(val) is not None:
             # v4.1 (V4-7). FIRST FENCE WINS, like `mission`: one founder line
             # states one change, and a second fence must not quietly override

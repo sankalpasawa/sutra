@@ -187,7 +187,10 @@ console.log("ok 6 controls wired");
       target_session: "sess-9", result_excerpt: "tail of transcript" },
   ], "working");
   assert(/Recent finished/.test(h), "finished section header");
-  assert(/data-shact="retry"/.test(h), "retry one-tap present");
+  /* v4.2 (founder 2026-09-21: "I don't think there should be a retry
+     button"): the row carries Hand back to Shadow; the retry ACTION stays
+     on the server, no button draws it. */
+  assert(!/data-shact="retry"/.test(h), "no Retry button on a finished row");
   assert(/data-shtakeover="sess-9"/.test(h), "take-over affordance present");
   assert(/tail of transcript/.test(h), "result excerpt rendered");
   const none = ctx.shadowPlaneHtml([], [
@@ -718,8 +721,11 @@ console.log("ok 6 controls wired");
   assert(/data-shstart="m-ready"/.test(ctx.shadowHomeHtml()),
     "Start was lost from a shown task");
   ctx.S.shadowTaskSel = "m-fail";
-  assert(/data-shact="retry"[\s\S]{0,60}data-shmid="m-fail"/
-    .test(ctx.shadowHomeHtml()), "Retry was lost from a shown failure");
+  /* v4.2: Retry is no longer drawn; a shown failure must still be there */
+  assert(/data-shtask="m-fail"/.test(ctx.shadowHomeHtml()),
+    "the shown failure was lost");
+  assert(!/data-shact="retry"/.test(ctx.shadowHomeHtml()),
+    "no Retry button (founder 2026-09-21)");
 
   /* goals not loaded yet: err toward SHOWING work, never toward hiding it */
   const ctx2 = fresh();
@@ -803,8 +809,8 @@ console.log("ok 6 controls wired");
   ctx.S.shadowTaskSel = "m-fs";
   const h = ctx.shadowHomeHtml();
   assert(/data-shtask="m-fs"/.test(h), "the row must render");
-  assert(/data-shact="retry"[\s\S]{0,60}data-shmid="m-fs"/.test(h),
-    "a founder-stopped task must offer Retry");
+  assert(!/data-shact="retry"/.test(h),
+    "a founder-stopped task offers no Retry button (v4.2)");
   assert(/STOPPED/.test(h), "it must still read as stopped, not as live work");
 
   /* 7. nothing was mutated -- this is a filter, not a write */
@@ -1141,13 +1147,14 @@ console.log("ok 6 controls wired");
   assert(!/destructive git operations/.test(h),
     "floors are configuration, not a row under every task");
   assert(!/floors it can/.test(h), "the floors line must not be drawn here");
-  /* a failed task offers the EXISTING retry, not a new mechanism */
+  /* v4.2: a failed task draws no Retry button; the way back is typing in
+     its chat or Hand back to Shadow (which needs a chat to go back into) */
   ctx.S.shadowMissions = [{ id: "m-f", objective: "nope", state: "failed",
     template: "fix", target_mode: "new", turns_used: 20, max_turns: 20 }];
   ctx.S.shadowTaskSel = "m-f";
   const f = ctx.shadowHomeHtml();
-  assert(/data-shact="retry"[\s\S]{0,60}data-shmid="m-f"/.test(f),
-    "a failed task must offer the existing retry");
+  assert(!/data-shact="retry"/.test(f),
+    "a failed task offers no Retry button");
   assert(/>FAILED</.test(f), "failure is not stated in the task UI");
   console.log("ok 19 task card: brief, Start, floors, retry on failure");
 }
@@ -3281,11 +3288,11 @@ const SET = { engage: ["outcome first"],
 
   const failed = card({ id: "g", state: "failed" });
   assert(!has(failed, "start"), "failed: Start must be gone");
-  assert(has(failed, "retry"), "failed: retry is the product's own re-run");
+  assert(!has(failed, "retry"), "failed: no Retry button (founder 2026-09-21)");
 
   const stopped = card({ id: "h", state: "stopped" });
   assert(!has(stopped, "start"), "stopped: Start must be gone");
-  assert(has(stopped, "retry"), "stopped: retry is offered");
+  assert(!has(stopped, "retry"), "stopped: no Retry button (founder 2026-09-21)");
   console.log("ok 32 each state exposes only the actions the engine accepts");
 }
 
@@ -3870,7 +3877,8 @@ const stopBtn = /data-shact="stop"\s+data-shmid="m-stop"|data-shact="stop"[^>]*m
   for (const st of ["failed", "stopped"]){
     const h = screenFor({ state: st });
     assert(!/data-shact="stop"/.test(h), st + " is already ended");
-    assert(/data-shact="retry"/.test(h), st + " keeps Retry");
+    /* v4.2 (founder 2026-09-21): no Retry button on an ended task */
+    assert(!/data-shact="retry"/.test(h), st + " draws no Retry button");
   }
   console.log("ok 37e terminal states are not offered Stop");
 }

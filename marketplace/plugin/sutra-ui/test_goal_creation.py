@@ -406,6 +406,8 @@ class TestEveryDocumentedFenceParses(unittest.TestCase):
         "brief": "Objective: \"fix it\". Where: the repo. Done when: tests pass.",
         # v4.1 (V4-7): the founder's words set the task's limits
         "limits": {"turns": "none"},
+        # v4.2: the founder's typed line answers a pending ask
+        "answer": {"kind": "approve"},
     }
 
     def _documented(self):

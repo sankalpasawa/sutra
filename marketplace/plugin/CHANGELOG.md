@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.289.0 (2026-09-21)
+
+- **Shadow v4.2: the asks live in the chat** (founder 2026-09-21: "I typed Yes. and Shadow said my yes does not count; there are no buttons in the chat; remove Retry"). New `mission_engine.pending_asks` / `pending_asks_text` / `apply_answer` / `park_hold` / `unpark`; new `answer` fence (approve | confirm | withdraw | change); the task chat is told `[Pending asks]` before every founder line and the app applies its answer fence bound to the one ask (same one-use approval, same check index); `answer` action for the ask-row buttons; take_over parks a held instruction, resume and hand back unpark it into a question; ask rows and resolved rows in the task stream (`shadowAskRowsHtml`); the Retry button is removed everywhere (the `retry` action stays). Lanes: test_shadow_v42_engine.py (21), test_shadow_v42_routes.py (18), test_shadow_v42_ui.js (7); six Retry pins moved.
+
 ## 2.288.1 (2026-09-21)
 
 - **Sutra Desktop: department screen slice A** (holding/plans/department-screen, BUILD-PLAN S1-S22). Selecting a department or an organisation in Org structure now opens the department itself: a list column of Now, Functions, Engines, Filed work, People, Documents, Apps, and a Now card built from real records. New `dept_api.py` (`/api/dept/{ref}/now|running|waits` + `/ping`) reads open proposals cross-referenced by the department's working folder, open atom-ledger rows, and queued or blocked tasks; it writes nothing. New `static/js/20-dept.js` paints them, with Stamp and Refuse going through the existing `decideProposal`, an expired ask showing its default as taken, and an ask that leaves this machine stamped twice. `19-org2.js` gains one delegating branch; `org_api.py` is untouched. Lanes: test_dept.js (38), test_dept_api.py (19), `dept_api.py` joined test_forbidden_calls.py.

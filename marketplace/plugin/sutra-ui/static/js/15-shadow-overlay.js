@@ -1016,6 +1016,8 @@ async function shadowMissionAct(mid, action, extra){
         /* v4.1 (SHADOW-V3 section 13): a finished task back at work, and
            the limits chip's Undo */
         reopen: "Shadow is back on it.",
+        /* v4.2: the ask row's buttons */
+        answer: "Answered.",
         undo_limits: "Put back.",
         set_limits: "Set.",
         /* the task AND the chat Shadow made for it are gone; the
