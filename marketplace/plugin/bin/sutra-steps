@@ -62,13 +62,17 @@ if [ "$MODE" = "statusline" ]; then
   _sl_t="$(cat "$PROJ/.sutra/turn/$SID/current" 2>/dev/null)"
   _sl_f="$PROJ/.sutra/turn/$SID/$_sl_t.steps.json"
   [ -f "$_sl_f" ] || exit 0
-  jq -r '
+  # row 6.2: a second bar for the blueprint's own steps (# done, ~ slow, m manual, ! failed, . pending)
+  _sl_bp="$(sutra_steps_bp_state "$_sl_f" 2>/dev/null)"; [ -n "$_sl_bp" ] || _sl_bp='null'
+  jq -r --argjson bp "$_sl_bp" '
     def g: if . == "done" or . == "open" then "#" elif . == "gated" then "~" elif . == "missing" then "!" else "." end;
+    def gb: if . == "done" then "#" elif . == "slow" then "~" elif . == "manual" then "m" elif . == "failed" then "!" else "." end;
     ((.steps // []) | map(.status | g) | join("")) as $bar
     | ((.steps // []) | map(select(.status == "done" or .status == "open")) | length) as $done
     | ((.mutations // []) | map(select(.decision == "deny")) | length) as $ref
     | ((.steps // []) | map(select(.status == "pending" or .status == "missing")) | (.[0].id // "")) as $next
     | "sutra \((.turn_id // "") | tostring | .[0:8]) [\($bar)] \($done)/\((.steps // []) | length)"
+      + (if $bp != null and ($bp.total // 0) > 0 then " bp[\($bp.steps | map(.status | gb) | join(""))] \($bp.done)/\($bp.total)" else "" end)
       + (if $ref > 0 then " refused \($ref)" else "" end)
       + (if .closed != null then " closed" elif $next != "" then " next:\($next)" else "" end)
   ' "$_sl_f" 2>/dev/null

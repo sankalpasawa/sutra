@@ -1,8 +1,12 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-09-19
+**status**: active · **updated**: 2026-09-20
 
-## v2.286.0 (2026-09-19, HEAD)
+## v2.286.1 (2026-09-20, HEAD)
+
+**The blueprint's own steps print as they pass** (adherence row 6.2; founder 2026-09-20 "Can you print whether it ran those internal steps as well?"). `post.blueprint_progress` runs the not-yet-passed verify commands after every tool call under a 3 s budget and prints each flip; `<turn>.progress.json` is the live hint, the sealed Stop verifies stay the record; the Stop table and the status line carry a second bar. DeepSeek review on the diff folded; codex SKIPPED until 2026-10-16.
+
+## v2.286.0 (2026-09-19)
 
 **Gate rules read the ledger; the model-written markers stop deciding** (adherence row 6 slice 1, brief ADHERENCE-ROW6-BRIEF.md; founder 2026-09-19 "continue" with the four s7 recommendations taken). Rules R1-R9 in `runtime/rules/gates.json`, blueprint and build-layer as validated artifacts with verify commands the runtime runs, sealed lane verdicts, the legacy gates collapsed behind a per-event armed flag with a truth-diff, `sutra-steps statusline`. Reviews: DeepSeek on the diff (3 P1 folded) and an adversarial workflow; codex SKIPPED until 2026-10-16. Deletion of the legacy gates (2.287.0) waits on the truth-diff gate of brief s3.4.
 

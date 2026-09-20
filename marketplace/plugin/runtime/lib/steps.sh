@@ -165,7 +165,7 @@ sutra_steps_runtime_owned() {
 # write shape; the ledger and lane files join them for command text and for
 # file_path targets, never for a document's payload (workflow P2-3)
 _SUTRA_RO_RE_CORE='\.sutra-overrides|\.sutra-runtime-(adherence|markers|disabled)|\.sutra-runtime/|\.sutra-connectors/|\.config/deepseek/|\.sutra/turn/[^/[:space:]]+/opened([^A-Za-z0-9_-]|$)'
-_SUTRA_RO_RE="$_SUTRA_RO_RE_CORE"'|\.sutra/turn/[^/[:space:]]+/[^/[:space:]]+\.(facts|steps|review|tests|verifies|truthdiff)\.json|\.sutra/turn/[^/[:space:]]+/[^/[:space:]]+\.jsonl|\.sutra/turn/[^/[:space:]]+/lane-logs/'
+_SUTRA_RO_RE="$_SUTRA_RO_RE_CORE"'|\.sutra/turn/[^/[:space:]]+/[^/[:space:]]+\.(facts|steps|review|tests|verifies|truthdiff|progress)\.json|\.sutra/turn/[^/[:space:]]+/[^/[:space:]]+\.jsonl|\.sutra/turn/[^/[:space:]]+/lane-logs/'
 
 # sutra_steps_runtime_owned_write <text> -> 0 when some LINE of the text names
 # a runtime-owned file in a WRITE shape (workflow wf_1dc20d5c P1-5: a doc, a
@@ -481,6 +481,43 @@ sutra_steps_render_pretty() {
     "sutra turn \(((.turn_id // "unknown") | tostring)[0:8])   done \($done)/\((.steps // []) | length)   edits \($allowed)   refused \($refused)\(if $warned > 0 then "   warned \($warned)" else "" end)\(if .closed != null and .closed.trace_pasted == false then "   trace not pasted" else "" end)",
     ((.steps // [])[] | "  \((.status // "") | glyph) \((.id // "?") | pad(10)) \((.detail // "") | trim(64))")
   ' "$1" 2>/dev/null
+  sutra_steps_render_bp "$1"
+}
+
+# sutra_steps_bp_state <steps.json> -> one JSON object {source, total, done,
+# steps:[{n, status, do}]} for the blueprint's own steps, or nothing. Source
+# "verifies" = the sealed Stop lane result (truth); "progress" = the live
+# PostToolUse hint (row 6.2); the blueprint's `do` texts ride along.
+sutra_steps_bp_state() {
+  _bs_base="${1%.steps.json}"
+  _bs_bp="$_bs_base.blueprint.json"; _bs_v="$_bs_base.verifies.json"; _bs_p="$_bs_base.progress.json"
+  [ -f "$_bs_bp" ] || return 0
+  if [ -f "$_bs_v" ] && jq -e '.status == "done"' "$_bs_v" >/dev/null 2>&1; then
+    jq -c --slurpfile bp "$_bs_bp" '
+      ($bp[0].steps // []) as $s
+      | {source:"verifies", total:($s|length), done:.passed,
+         steps:[ .results[] | {n, status:(if .exit == 0 then "done" elif .exit == null then "manual" else "failed" end), do:($s[.n-1].do // "")} ]}' "$_bs_v" 2>/dev/null
+  elif [ -f "$_bs_p" ]; then
+    jq -c --slurpfile bp "$_bs_bp" '
+      ($bp[0].steps // []) as $s
+      | {source:"progress", total:.total, done:.done,
+         steps:[ .steps[] | {n, status, do:($s[.n-1].do // "")} ]}' "$_bs_p" 2>/dev/null
+  else
+    jq -c '{source:"none", total:(.steps|length), done:0, steps:[ .steps | to_entries[] | {n:(.key+1), status:"pending", do:.value.do} ]}' "$_bs_bp" 2>/dev/null
+  fi
+}
+
+# sutra_steps_render_bp <steps.json> -> the blueprint's own steps under the
+# 11 rows: "  blueprint steps 2/3 (live)" then one "[x] n) do" row each.
+sutra_steps_render_bp() {
+  _rb="$(sutra_steps_bp_state "$1")"
+  [ -n "$_rb" ] || return 0
+  printf '%s' "$_rb" | jq -r '
+    def glyph: if . == "done" then "[x]" elif . == "failed" then "[!]" elif . == "slow" then "[~]" elif . == "manual" then "[m]" else "[ ]" end;
+    def trim(n): tostring | gsub("\n"; " ") | if length > n then .[0:n-3] + "..." else . end;
+    "  blueprint steps \(.done)/\(.total)\(if .source == "verifies" then " (sealed at Stop)" elif .source == "progress" then " (live)" else "" end)",
+    (.steps[] | "      \(.status | glyph) \(.n)) \(.do | trim(58))")
+  ' 2>/dev/null
 }
 
 # sutra_steps_render_stack <facts.json> <placement-marker-file> -> the block

@@ -1003,6 +1003,21 @@
           "hooks/context-scope-audit.sh"
         ],
         "on_error": "warn"
+      },
+      {
+        "id": "post.blueprint_progress",
+        "matcher": "*",
+        "class": "A",
+        "impl": "native:blueprint_progress",
+        "phase": "post",
+        "timeout_ms": 4500,
+        "killswitch_aliases": [
+          ".sutra-runtime-adherence-disabled"
+        ],
+        "replaces": [],
+        "on_error": "warn",
+        "flag": "~/.sutra-runtime-adherence",
+        "notes": "adherence row 6.2: after every tool call runs the blueprint verify commands not yet passed (1.5 s each, 3 s of elapsed time per call, every run counted), writes <turn>.progress.json and prints one line per step that flips; the sealed Stop verifies stay the record"
       }
     ],
     "PermissionRequest": [

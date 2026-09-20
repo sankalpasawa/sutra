@@ -1,6 +1,10 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-19
+**status**: active · **updated**: 2026-09-20
+## 2.286.1 (2026-09-20)
+
+- **Adherence row 6.2: the blueprint's own steps print as they pass.** New PostToolUse step `post.blueprint_progress` runs the blueprint's verify commands not yet passed after every tool call (1.5 s each, 3 s per call), writes `<turn>.progress.json` (runtime-owned) and prints `[sutra <t8>] blueprint step n/N done: <do>` the moment a step flips; slow and manual steps are marked once and left to the sealed Stop lane, which stays the record. The Stop table and `sutra-steps statusline` show the blueprint's steps as a second bar. Tests: test-blueprint-progress 30. DeepSeek review folded (3 P1 fixed, 2 rejected with reason).
+
 ## 2.286.0 (2026-09-19)
 
 - **Adherence row 6, slice 1: the gate reads a rules table, not the model's markers.** `runtime/rules/gates.json` declares rules R1-R9; `pre.adherence_gate` evaluates them all on every tool call and names every unmet rule in one refusal. Two judgments become validated artifacts: `<turn>.blueprint.json` (steps with verify commands the runtime runs at Stop; a manual verify counts as open, never done) and `<turn>.build_layer.json` (L1 with promotion fields, or L2 with a reason); `placement.json` answers a no-match, `depth.json` may only raise the rubric's number. Lane verdicts are sealed (HMAC with a per-box key) and only a sealed, corroborated verdict of this or the previous turn counts for step 8; the codex marker is no longer evidence. When the mode is exactly `on`, the runtime arms the rules gate per event and the eleven legacy PreToolUse gate scripts still run but their decisions go to `<turn>.truthdiff.jsonl` and are dropped (`sutra-steps truthdiff`); unarmed they decide as before. The turn's facts, ledger and lane files are runtime-owned. `sutra-steps statusline|pretty|truthdiff`. Tests: test-gate-rules 82, test-adherence 187, test-review-lane 38; parity unchanged with the flags absent.
