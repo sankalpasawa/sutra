@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.289.3 (2026-09-21)
+
+- **Sutra Desktop: the runtime's own blocks reach the governance chip** (founder 2026-09-21: "the work, audit, close, the step trace and the bound query are all there -- add those into the governance block, in detail"). `parseGov` lifts three more families out of a reply, verbatim, into the chip's panel: the STEP TRACE ledger (Step trace), the `+-- DISPATCH --+` box (Dispatch) and the `+== ATOM OPEN / CLOSED / ABANDONED ==+` cards (Work atom). Found while pinning: the runtime-rendered one-line DEPTH and the FLOW one-liner (2.286+) had been leaking into the body as prose; both are captured now, and a prose "DEPTH: 3/5 is what I'd pick" or "FLOW: 3.2 L/min" still stays. Lanes: test_gov_capture.js (16); governance projections 104 and panel 406 unchanged.
+
 ## 2.289.2 (2026-09-21)
 
 - **Sutra Desktop: department screen slice B, Identity's card and its two chats** (holding/plans/department-screen, BUILD-PLAN S23-S34). Identity in a department's Functions group now opens its own card: the goal, the done line from the milestones' `done_when` lines, the rules as tagged go / ask / refuse / always lines, the budget as a bar off the task-limits store, and the owner. Three tabs sit above it — Identity, With `<owner>`, With Adaptation — and the two chats render through `dpChatHtml`, the shared Summary / Exact component slices C and D reuse. New route `GET /api/dept/{ref}/identity`; a department with nothing written says "No goal yet" and offers the Org screen's existing write-it ask in one click. Reads only: `org_api.py` untouched, no new write path.

@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-09-21
 
-## v2.289.2 (2026-09-21, HEAD)
+## v2.289.3 (2026-09-21, HEAD)
+
+**Sutra Desktop: STEP TRACE, DISPATCH and the atom cards reach the governance chip** (founder 2026-09-21): `parseGov` captures the three runtime families verbatim into the chip's panel; the rendered one-line DEPTH and FLOW stop leaking into the body. Lane test_gov_capture.js 16.
+
+## v2.289.2 (2026-09-21)
 
 **Department screen, slice B** (holding/plans/department-screen, Gate 4): Identity opens on its own card — goal, done line, tagged rules, budget bar, owner — with three tabs and the Summary / Exact chat component every later card reuses. New `/api/dept/{ref}/identity` read; nothing new writes.
 

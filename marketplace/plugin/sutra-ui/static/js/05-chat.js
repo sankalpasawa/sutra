@@ -2086,7 +2086,10 @@ function parseGov(text){
     triage:    /^(TRIAGE|ESTIMATE|ACTUAL):/,
     blueprint: /^BLUEPRINT\b/,
     buildLayer:/^(BUILD-LAYER|ACTIVATION-SCOPE|TARGET-PATH):/,
-    flow:      /^FLOW:(?:[^\n]*\[|\s*$)/,
+    /* the bracketed spine, an empty opener, or the runtime-rendered one-liner
+       ("FLOW: direction / INBOUND.DIRECT | FOLLOW:lens scope=platform | ...",
+       2.286+) whose shape is its FOLLOW:/CONSTRUCT resolve; "FLOW: 3.2 L/min" stays */
+    flow:      /^FLOW:(?:[^\n]*\[|\s*$|[^\n]*\|\s*(?:FOLLOW:|CONSTRUCT\b))/,
     placement: /^PLACEMENT:(?=[^\n]*(\bD\d|[Uu]nresolved|[Hh]eld\b|[>|]))/,
     /* "OS: a > b" or "route: a > b > c > d > e" (the spec's five fields);
        "route: the bug is here" and a breadcrumb "Home > Settings > Billing" stay */
@@ -2098,11 +2101,22 @@ function parseGov(text){
     trace:     /^(`?OS:\s[^\n]*\s>\s|>\s*`?route:\s+(?:[^\n]*\s>\s){3}|route:\s+(?:[^\n]*\s>\s){4})/,
     /* the plugin's self-report line, exact prefix only (codex) */
     state:     /^Governance state:\s+plugin\b/i,
+    /* ── the runtime's own blocks (founder 2026-09-21: "the work, audit,
+       close, the step trace and the bound query are all there -- can we add
+       those into the governance block too, in detail?") ──
+       STEP TRACE is one marker line ("STEP TRACE turn 994d9ddd (adherence=on)")
+       whose rows are indented, so the continuation rule already carries them.
+       DISPATCH and the ATOM cards are boxes; their rows are field runs, so a
+       lone "Unit: kg" or "Goal: ship Friday" in prose stays prose. */
+    stepTrace: /^STEP TRACE\b/,
+    dispatch:  /^(Unit|GRAIN|CLASS|FLOOR|TOUCHES|ATOM):/,
+    atom:      /^(Goal|Done when|Done by|Limits|Proof|Recorded|Supersedes|Reason|Lane|Ref|Verify):/,
   };
   const TITLE = { header:"Header", routing:"Input routing", depth:"Depth", flow:"Flow",
                   blueprint:"Blueprint", buildLayer:"Build layer", placement:"Placement",
-                  triage:"Triage", trace:"Trace", state:"Governance state", fence:"Governance" };
-  const RUN_GROUPS = ["routing", "depth", "triage"];             /* need >= 2 lines */
+                  triage:"Triage", trace:"Trace", state:"Governance state", fence:"Governance",
+                  stepTrace:"Step trace", dispatch:"Dispatch", atom:"Work atom" };
+  const RUN_GROUPS = ["routing", "depth", "triage", "dispatch", "atom"];   /* need >= 2 lines */
   const bare = (l) => l.replace(/^#{1,6}\s+(?=[A-Z])/, "").replace(/^(\s*(?:[-*]\s+)?)\*\*([^*\n]+?)\*\*/, "$1$2");
   const keyOf = (l) => { l = bare(l); for (const k in GROUP) if (GROUP[k].test(l)) return k; return null; };
   const BP_SUB = /^\s*(?:[-*]\s+)?(Doing|Steps|Output looks like|Verified by|Scale|Stops if|Switch|Verify)\s*:/;
@@ -2114,13 +2128,17 @@ function parseGov(text){
 
   /* boxes: "+-- FLOW ----+ | [1] TYPE: ... |" (the founder's 2026-08-23
      screenshot; 133 real unfenced) and the unicode "╭─ FLOW ─╮ │ ... │" */
-  const BOX = /^(?:\+-+|[╭┌]─+)\s*(FLOW|BLUEPRINT|INPUT ROUTING|DEPTH|PLACEMENT|BUILD-LAYER|TRIAGE|GOVERNANCE)\b/i;
+  /* "+-- DISPATCH ---+" and the atom cards' "+== ATOM OPEN ====+" frames read
+     the same way: the head names the family, the rows carry its fields */
+  const BOX = /^(?:\+[-=]+|[╭┌]─+)\s*(FLOW|BLUEPRINT|INPUT ROUTING|DEPTH|PLACEMENT|BUILD-LAYER|TRIAGE|GOVERNANCE|DISPATCH|ATOM(?: (?:OPEN|CLOSED|ABANDONED|DEFERRED|CAPTURED?))?)\b/i;
   const BOX_KEY = { flow:"flow", blueprint:"blueprint", "input routing":"routing", depth:"depth",
-                    placement:"placement", "build-layer":"buildLayer", triage:"triage", governance:"fence" };
+                    placement:"placement", "build-layer":"buildLayer", triage:"triage", governance:"fence",
+                    dispatch:"dispatch", atom:"atom", "atom open":"atom", "atom closed":"atom",
+                    "atom abandoned":"atom", "atom deferred":"atom", "atom capture":"atom", "atom captured":"atom" };
   const BOXROW = /^[|+│╭╰┌└]/;
   /* only a box ROW is read through its frame; an indented line elsewhere in a
      fence is indented, exactly as it is unfenced */
-  const unbox = (l) => BOXROW.test(l) ? l.replace(/^[\s|+\-│╭╰┌└─]+/, "") : l;
+  const unbox = (l) => BOXROW.test(l) ? l.replace(/^[\s|+\-=│╭╰┌└─]+/, "") : l;
   /* what a block of lines says about itself, box framing ignored */
   const evidence = (lines) => {
     const e = { marker:false, run:0, subs:0, depth:false, steps:false, dpath:false };
@@ -2193,7 +2211,13 @@ function parseGov(text){
         break;
       }
       const keyLines = lines.filter(l => keyOf(l) === key || (key === "blueprint" && isSub(l))).length;
-      const prose = RUN_GROUPS.includes(key) && (
+      /* the runtime-rendered depth block is ONE line -- "DEPTH: 5/5 | TASK: ...
+         | EFFORT: ..." -- so its run is one key line carrying two keys. A prose
+         "DEPTH: 3/5 is what I'd pick" has no second key beside a pipe and stays. */
+      const inlineDepth = key === "depth" && lines.length === 1
+        && /\bDEPTH:\s*\d\s*\/\s*5\b/.test(bare(lines[0]))
+        && /\|\s*(?:TASK|EFFORT|COST|IMPACT):/.test(lines[0]);
+      const prose = RUN_GROUPS.includes(key) && !inlineDepth && (
            keyLines < 2                                                          /* a lone sentence, not a block */
         || (i > 0 && /\S:\s*$/.test(src[i - 1]) && !keyOf(src[i - 1]))           /* an introduced list */
         || (key === "depth" && !lines.some(l => /^DEPTH:/.test(bare(l)))));      /* no DEPTH: -- the reply's own figures */
