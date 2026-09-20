@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-20
+## 2.287.0 (2026-09-20)
+
+- **Sutra Desktop: one Org button again.** The one-screen Org (2.275.0) is now the first row of the Org accordion, labelled "Org structure"; the accordion reads "Org" instead of "Old Org", and the rail shows seven destinations. Entering Org lands on Org structure; `flags.org2: false` drops that row and lands on the Workspace or Departments as before. Founder 2026-09-20.
+
 ## 2.286.2 (2026-09-20)
 
 - **Adherence row 6.2: the blueprint's own steps print as they pass.** New PostToolUse step `post.blueprint_progress` runs the blueprint's verify commands not yet passed after every tool call (1.5 s each, 3 s per call), writes `<turn>.progress.json` (runtime-owned) and prints `[sutra <t8>] blueprint step n/N done: <do>` the moment a step flips; slow and manual steps are marked once and left to the sealed Stop lane, which stays the record. The Stop table and `sutra-steps statusline` show the blueprint's steps as a second bar. Tests: test-blueprint-progress 30. DeepSeek review folded (3 P1 fixed, 2 rejected with reason).

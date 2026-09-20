@@ -1177,14 +1177,15 @@ function sessMenuHtml(s){
    destination's rows, every one of them an EXISTING screen. railSpec() stays
    the single source for live counts — the planes consume it, so the badge
    logic (and its tests) did not move. */
-/* 2.275.0 (founder, 2026-09-14): the earlier Org accordion reads "Old Org";
-   the new one-screen Org (19-org2.js) takes the name, behind flags.org2. */
+/* 2.275.0 to 2.286.x the accordion read "Old Org" beside a second "Org" button
+   for the one-screen Org. 2.287.0 (founder, 2026-09-20): one Org button again;
+   the one-screen Org is its first row, "Org structure" (01-state DEST_PLANES). */
 /* "Market" in the rail (founder, 2026-09-16: "replace agent marketplace with just
    market"); the screen keeps its full title (TITLES.agents in 17-agents.js). */
 const DEST_LABEL = { now:"Now", focus:"Focus", chats:"Chats", agents:"Market",
-                     org2:"Org", org:"Old Org", team:"Help", settings:"Settings" };
+                     org:"Org", team:"Help", settings:"Settings" };
 const DEST_ICON  = { now:"hist", focus:"focus", chats:"chats", agents:"agents",
-                     org2:"dept", org:"dept", team:"team", settings:"gear" };
+                     org:"dept", team:"team", settings:"gear" };
 
 /* A destination whose plane spec is empty is FULL-BLEED: no second plane, and
    its screen opens directly — a persisted destSel must not reroute it (codex
@@ -1222,11 +1223,12 @@ function goDest(d){
     let fallback = DEST_DEFAULT_SCREEN[d];
     if (d === "org" && typeof wsFlagOn === "function" && wsFlagOn() && SCREENS.workspace)
       fallback = "workspace";
-    /* The new Org registers only while its flag is on (19-org2.js); with the
-       flag off the destination lands on Old Org rather than on an absent screen. */
-    if (d === "org2"){
+    /* 2.287.0: entering Org lands on Org structure (the one-screen Org) when it
+       is registered; it registers only while flags.org2 is not false
+       (19-org2.js), so the opt-out still lands on the Workspace or Departments. */
+    if (d === "org"){
       if (typeof o2EnsureRegistered === "function") o2EnsureRegistered();
-      if (!SCREENS.org2) fallback = "departments";
+      if (SCREENS.org2) fallback = "org2";
     }
     const target = (sel && SCREENS[sel]) ? sel : fallback;
     if (typeof openScreen === "function" && SCREENS[target]) openScreen(target);
@@ -1627,11 +1629,11 @@ function invalidateHtmlCache(el){ if (el) el.__lastHtml = null; }
 
 function renderRail(){
   const nav = document.getElementById("railnav");
-  /* The new Org (19-org2.js) registers its screen here, on the first paint after
-     SETTINGS answered, and its row shows only while flags.org2 is on. */
+  /* The one-screen Org (19-org2.js) registers its screen here, on the first paint
+     after SETTINGS answered; its accordion row (Org structure) is dropped by
+     planeRows() while flags.org2 is false. */
   if (typeof o2EnsureRegistered === "function") o2EnsureRegistered();
-  const org2On = typeof org2FlagOn === "function" && org2FlagOn();
-  const railHtml = !nav ? "" : DESTS.filter(d => d !== "org2" || org2On).map(d=>{
+  const railHtml = !nav ? "" : DESTS.map(d=>{
     const inline = destInline(d);
     const open = inline && S.ui.railOpen === d;
     /* While the accordion is open the CHILD row carries the highlight and the

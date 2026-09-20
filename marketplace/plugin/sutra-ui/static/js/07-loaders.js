@@ -2526,8 +2526,9 @@ function openScreen(id){
   if ((id === "knowledge" || id === "files")
       && typeof wsFlagOn === "function" && wsFlagOn() && SCREENS.workspace)
     id = "workspace";
-  /* The new Org (19-org2.js) exists only while flags.org2 is on; a deep link or
-     a restored selection lands on Old Org otherwise, never on a dead end. */
+  /* The one-screen Org (19-org2.js) exists only while flags.org2 is not false; a
+     deep link or a restored selection lands on Departments otherwise, never on a
+     dead end. Since 2.287.0 it is the Org accordion's first row, "Org structure". */
   if (id === "org2"){
     if (typeof o2EnsureRegistered === "function") o2EnsureRegistered();
     if (!(typeof org2FlagOn === "function" && org2FlagOn()) || !SCREENS.org2) id = "departments";

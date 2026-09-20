@@ -344,22 +344,25 @@ test("approvals panel: nothing waiting, decided rows with a pill", () => {
 });
 
 /* ── rail model and wiring pins (source reads, like test_nav's pins) ── */
-test("rail: the old destination reads Old Org and the new one reads Org", () => {
-  assert.ok(/org:\s*"Old Org"/.test(helpersSrc), "DEST_LABEL.org");
-  assert.ok(/org2:\s*"Org"/.test(helpersSrc), "DEST_LABEL.org2");
-  assert.ok(/org2:\s*"dept"/.test(helpersSrc), "DEST_ICON.org2");
+test("rail: one Org destination, labelled Org; no org2 label or icon of its own (2.287.0)", () => {
+  const labels = helpersSrc.match(/const DEST_LABEL[\s\S]*?\};/)[0];
+  assert.ok(/org:\s*"Org"/.test(labels), "DEST_LABEL.org");
+  assert.ok(!/Old Org/.test(labels), "no Old Org label");
+  assert.ok(!/org2:/.test(labels), "no DEST_LABEL.org2");
 });
-test("rail model: org2 sits before org in DESTS, is full-bleed, lands on its own screen", () => {
+test("rail model: org2 is not a destination; it is the Org accordion's first row, Org structure, opt-out by flag", () => {
   const m = stateSrc.match(/const DESTS = \[([^\]]*)\]/);
   assert.ok(m, "DESTS found");
   const dests = m[1].split(",").map(s => s.trim().replace(/"/g, ""));
-  assert.ok(dests.indexOf("org2") !== -1 && dests.indexOf("org2") < dests.indexOf("org"));
-  assert.ok(/org2:\s*\[\]/.test(stateSrc), "DEST_PLANES.org2 is empty (full-bleed)");
-  assert.ok(/org2:\s*"org2"/.test(stateSrc), "DEST_DEFAULT_SCREEN.org2");
+  assert.strictEqual(dests.indexOf("org2"), -1, "org2 left DESTS");
+  assert.ok(/org:\s*\[[\s\S]*?\{screen:"org2",\s*label:"Org structure",\s*flag:"org2"\}/.test(stateSrc), "first row of DEST_PLANES.org");
+  assert.ok(!/org2:\s*"org2"/.test(stateSrc), "no DEST_DEFAULT_SCREEN.org2");
 });
-test("rail: renderRail hides org2 while the flag is off and registers the screen first", () => {
+test("rail: renderRail registers the screen before painting; goDest lands Org on org2 when registered", () => {
   const body = helpersSrc.slice(helpersSrc.indexOf("function renderRail"), helpersSrc.indexOf("function renderRail") + 1600);
-  assert.ok(/o2EnsureRegistered/.test(body) && /org2FlagOn/.test(body));
+  assert.ok(/o2EnsureRegistered/.test(body));
+  const go = helpersSrc.slice(helpersSrc.indexOf("function goDest"), helpersSrc.indexOf("function goDest") + 2200);
+  assert.ok(/d === "org"\)\{[\s\S]{0,200}o2EnsureRegistered[\s\S]{0,120}fallback = "org2"/.test(go), "Org lands on Org structure");
 });
 test("open path: openScreen redirects org2 to Old Org while the flag is off and hooks the loader", () => {
   const body = loadersSrc.slice(loadersSrc.indexOf("function openScreen"), loadersSrc.indexOf("function openScreen") + 4000);

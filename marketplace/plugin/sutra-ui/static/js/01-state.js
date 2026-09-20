@@ -184,11 +184,12 @@ function lsSet(key, value){
    on it next to the surfaces you work in all day. The name does not change --
    "Routines" is still what the row and the screen are called, only the address
    moved back: Settings -> Automation, next to Skills and Automation. */
-/* org2 (2.275.0, holding BUILD-PLAN.md): the new Org screen sits above the
-   earlier Org accordion, which the rail now labels "Old Org". The row renders
-   only while flags.org2 is on (renderRail filters it), so the count the rail
-   shows stays seven until the flag flips. */
-const DESTS = ["now","focus","chats","agents","org2","org","team","settings"];
+/* org2 (2.275.0, holding BUILD-PLAN.md) was its own destination above the
+   earlier Org accordion, labelled "Old Org", for five days. 2.287.0 (founder,
+   2026-09-20: "shift the org tab into the old org tab, saying 'org structure'"):
+   the one-screen Org is the FIRST ROW of the Org accordion, labelled
+   "Org structure", and the accordion reads "Org" again. Seven destinations. */
+const DESTS = ["now","focus","chats","agents","org","team","settings"];
 const DEST_PLANES = {
   /* focus: Balance today; the rest of the companion arrives later — the rows
      exist now so the shape is honest about what is and is not built. */
@@ -204,7 +205,11 @@ const DEST_PLANES = {
      (the agent, its chats, its settings rows), so a second plane would only
      repeat it. 17-agents.js owns everything inside the pane. */
   agents:   [],
-  org:      [/* workspace row is flag-gated at render: with the flag off,
+  org:      [/* Org structure = the one-screen Org (19-org2.js), first row since
+                2.287.0. Opt-OUT flag like modules: flags.org2 false hides the row
+                and o2EnsureRegistered never registers the screen. */
+             {screen:"org2", label:"Org structure", flag:"org2"},
+             /* workspace row is flag-gated at render: with the flag off,
                 SCREENS.workspace never registers and the row is dropped by the
                 same SCREENS[sel] validation every stale selection goes through. */
              {screen:"workspace", flag:"workspace"},
@@ -219,8 +224,6 @@ const DEST_PLANES = {
                 screen id, flag and API keep the internal name `modules`. */
              {screen:"modules", label:"Apps", flag:"modules"},
              {screen:"reorg"}],
-  /* The new Org is ONE screen: full-bleed, no plane, no accordion (2.275.0). */
-  org2:     [],
   team:     [],   /* Help opens directly — a one-row plane earns no plane (2026-08-24) */
   settings: [{group:"Tools",       rows:[{screen:"terminal"},{screen:"git"},{screen:"editor"}]},
              /* routines came BACK to this group on 2026-09-04, in the position it
@@ -256,7 +259,8 @@ const DEST_INLINE = new Set(["focus","org"]);
 /* Where a destination lands before the operator has picked anything. */
 const DEST_DEFAULT_SCREEN = { now:"now", focus:"shadow", chats:null,
                               agents:"agents",
-                              org2:"org2",
+                              /* org lands on Org structure when it is registered
+                                 (goDest resolves that at click time; 2.287.0). */
                               org:"departments", team:"teamsutra", settings:"settings" };
 function loadLayout(){
   const raw = lsGet(LS_LAYOUT, null);

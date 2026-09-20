@@ -101,16 +101,21 @@ function test(name, fn){
 }
 
 /* §model ─ S3 */
-test("model: eight destinations, in the founder's order; the new Org sits above Old Org", () => {
+test("model: seven destinations, in the founder's order; the one-screen Org is the Org accordion's first row", () => {
   /* 2.239.0: Agents joined the rail after Chats -- the SEO Writer is the first
      agent that works in front of you (design/GAME-PLAN-agents.md). */
   /* Seven again since 2026-09-04: Routines went back under Settings ->
      Automation, the home it held before the 2026-09-02 promotion. */
-  /* Eight since 2.275.0 (holding BUILD-PLAN.md): org2 is the new one-screen Org.
-     Since 2.278.0 it is ON by default (flags.org2: false is the opt-out), so
-     the rail SHOWS eight buttons: Org above Old Org. */
+  /* Eight from 2.275.0 to 2.286.x (org2 as its own button above "Old Org").
+     Seven again since 2.287.0 (founder 2026-09-20): org2 is the first row of
+     the Org accordion, labelled "Org structure"; flags.org2 false hides the row. */
   assert.strictEqual(JSON.stringify(T.DESTS),
-    JSON.stringify(["now","focus","chats","agents","org2","org","team","settings"]));
+    JSON.stringify(["now","focus","chats","agents","org","team","settings"]));
+  assert.strictEqual(T.DEST_DEFAULT_SCREEN.org2, undefined, "org2 is not a destination");
+  const first = T.DEST_PLANES.org[0];
+  assert.strictEqual(first.screen, "org2");
+  assert.strictEqual(first.label, "Org structure");
+  assert.strictEqual(first.flag, "org2", "opt-out flag rides the row");
 });
 test("model: routines is a Settings -> Automation row, not a destination", () => {
   /* One home, not two: it must be a row on the Settings plane AND absent from
@@ -163,9 +168,10 @@ test("planes: org post-S92 — Workspace leads; Knowledge/Files folded in", () =
      Files fold into the Workspace (openScreen redirects their ids). */
   const rows = T.planeRows("org").flatMap(g => g.rows).map(r => r.screen);
   /* 2.247.0: Modules sits after Placements (design D-M7) -- the products the
-     operator builds, before the one row that changes the org itself. */
+     operator builds, before the one row that changes the org itself.
+     2.287.0: Org structure (the one-screen Org, org2) leads the accordion. */
   assert.strictEqual(JSON.stringify(rows), JSON.stringify(
-    ["workspace","departments","charters","placements","modules","reorg"]));
+    ["org2","workspace","departments","charters","placements","modules","reorg"]));
 });
 test("planes: settings carries three labelled groups", () => {
   /* Was four. "Preferences" held exactly one row -- the AI Provider screen --
@@ -195,17 +201,23 @@ test("planes: focus leads with Shadow, Balance + Optimus live, one honest coming
 });
 
 /* §rail ─ S7 */
-test("rail: renderRail paints eight data-dest buttons (Org above Old Org); flags.org2 false hides one", () => {
+test("rail: renderRail paints seven data-dest buttons; Org's accordion starts with Org structure; flags.org2 false drops that row only", () => {
   T.S.ui = T.loadLayout();
   T.renderRail();
   let out = els["railnav"].innerHTML;
-  assert.strictEqual((out.match(/data-dest="/g) || []).length, 8);
-  assert(out.indexOf('data-dest="org2"') < out.indexOf('data-dest="org"'), "Org sits above Old Org");
+  assert.strictEqual((out.match(/data-dest="/g) || []).length, 7);
+  assert.strictEqual(out.indexOf('data-dest="org2"'), -1, "org2 is no longer a rail button");
+  assert.strictEqual(out.indexOf("Old Org"), -1, "the accordion reads Org, not Old Org");
+  const rows = T.planeRows("org").flatMap(g => g.rows);
+  assert.strictEqual(rows[0].screen, "org2", "Org structure is the first row");
+  assert.strictEqual(rows[0].label, "Org structure");
   const prev = T.SETTINGS;
   T.SETTINGS = { flags: { org2: false } };
   T.renderRail();
   out = els["railnav"].innerHTML;
-  assert.strictEqual((out.match(/data-dest="/g) || []).length, 7, "opt-out hides the new Org");
+  assert.strictEqual((out.match(/data-dest="/g) || []).length, 7, "opt-out never changes the rail count");
+  const rowsOff = T.planeRows("org").flatMap(g => g.rows).map(r => r.screen);
+  assert.strictEqual(rowsOff.indexOf("org2"), -1, "opt-out drops the Org structure row");
   T.SETTINGS = prev;
 });
 
@@ -1185,12 +1197,15 @@ test("inline: entering Org renders its rows inside the rail with the plane's mar
   T.goDest("org");
   T.renderRail();
   const out = els["railnav"].innerHTML;
-  assert.strictEqual((out.match(/data-dest="/g) || []).length, 8, "still eight destinations");
+  assert.strictEqual((out.match(/data-dest="/g) || []).length, 7, "still seven destinations (2.287.0)");
   assert(/data-dest="org"[^>]*data-open="true"/.test(out), "Org parent reads open");
   assert(/data-dest="org"[^>]*aria-expanded="true"/.test(out), "aria-expanded on the parent");
   assert(/aria-controls="acc-org"/.test(out) && /id="acc-org"/.test(out), "aria-controls wires the list");
   assert(/data-dest="org"[^>]*aria-current="false"/.test(out), "open parent yields the highlight");
-  assert(/data-screen="departments"[^>]*aria-current="true"/.test(out), "the landed child carries it");
+  /* 2.287.0: Org lands on Org structure when the one-screen Org registered
+     (it does here: every panel script is loaded); otherwise on Departments. */
+  const landed = T.SCREENS.org2 ? "org2" : "departments";
+  assert(new RegExp('data-screen="' + landed + '"[^>]*aria-current="true"').test(out), "the landed child carries it");
   assert(/data-screen="charters"/.test(out) && /data-screen="reorg"/.test(out), "rows come from DEST_PLANES");
   assert(/data-dest="focus"[^>]*data-open="false"/.test(out), "only one accordion open");
   assert(!/id="acc-focus"/.test(out), "closed accordion renders no list");
