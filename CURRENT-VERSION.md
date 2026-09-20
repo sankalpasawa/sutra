@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-09-19
 
-## v2.286.0 (2026-09-19, HEAD)
+## v2.286.1 (2026-09-20, HEAD)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.286.0 (2026-09-19)
 
 **Gate rules read the ledger; the model-written markers stop deciding** (adherence row 6 slice 1, brief ADHERENCE-ROW6-BRIEF.md; founder 2026-09-19 "continue" with the four s7 recommendations taken). Rules R1-R9 in `runtime/rules/gates.json`, blueprint and build-layer as validated artifacts with verify commands the runtime runs, sealed lane verdicts, the legacy gates collapsed behind a per-event armed flag with a truth-diff, `sutra-steps statusline`. Reviews: DeepSeek on the diff (3 P1 folded) and an adversarial workflow; codex SKIPPED until 2026-10-16. Deletion of the legacy gates (2.287.0) waits on the truth-diff gate of brief s3.4.
 
