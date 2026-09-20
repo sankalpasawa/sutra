@@ -23,9 +23,10 @@
    mock-only chrome: the page shell around the app's own css.
    Nothing in this block ships anywhere.
    ============================================================ */
-html,body{height:auto}
+/* the app css locks the shell (body overflow:hidden, .wrap 100vh); a page must scroll */
+html,body{height:auto;overflow:auto}
 body{background:#f2f0ec;margin:0;padding:20px 18px 60px;font:13px/1.5 var(--sans);color:var(--ink)}
-.wrap{max-width:1180px;margin:0 auto}
+.wrap{height:auto;overflow:visible;max-width:1180px;margin:0 auto}
 
 .topstrip{display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap;
   background:var(--card);border:1px solid var(--line);border-radius:12px;
