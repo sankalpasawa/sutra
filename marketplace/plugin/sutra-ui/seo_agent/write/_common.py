@@ -68,8 +68,16 @@ BLEND_PARA_SENTENCES = 4            # flag a paragraph longer
 BLEND_FLAG_SAMPLE = 6               # flagged lines shown per section
 BLEND_WRAPPER_WORDS = 600           # the intro, FAQ and close are written after blend; aim below the band
 BLEND_TAG_LOSS_BLOCK = 0.25         # losing a quarter of the tags is not editing
-COHERENCE_WORD_TOLERANCE = 5        # % the length may move; a WARNING, never a block
+COHERENCE_WORD_TOLERANCE = 5        # % the WHOLE ARTICLE may move; a WARNING, on the final sanity check only
 COHERENCE_TAG_LOSS_BLOCK = 0.25
+# 2026-09-18: coherence stopped asking the model for a whole rewritten article and started asking for
+# one find/replace fix per fault (specs/parked-2026-09-18.md section 1, Devansh approved). Each fix is
+# now judged on its own, so the old article-wide word-tolerance budget has nothing left to bound; this
+# is its replacement, applied per fix: a `replace` may run at most this many times the words of its
+# `find`. Shrinking is never capped, only growth. Picked loose enough that a real correction (a rating
+# band swapped, a sentence rebuilt around a fixed number) always fits, and tight enough that a fix
+# cannot smuggle back in the old failure mode of quietly re-writing a whole paragraph.
+COHERENCE_FIX_MAX_RATIO = 2.5
 WRAP_FAQ_WORDS = 40                 # an FAQ answer is what a search engine lifts
 WRAP_FAQ_COUNT = 5                  # a ceiling, not a target
 WRAP_VOICE_FILES = ("brand-voice.md", "style-guide.md", "writing-examples.md")

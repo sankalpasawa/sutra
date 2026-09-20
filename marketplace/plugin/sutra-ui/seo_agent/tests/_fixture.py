@@ -860,8 +860,10 @@ def stub_write_json(p):
     if '"quantities": [{"amount"' in p:
         return {"rules": [], "scales": [], "quantities": []}
     if '"could_not_fix"' in p:
-        art = _parse_rendered_article(_between(p, "THE ARTICLE IN FULL:", "\n════") or _between(p, "THE ARTICLE YOU RETURNED, which is the one to correct:", "\n════"))
-        return dict(art, changes=[], numbers_changed=[], could_not_fix=[], verdict="honest and safe to publish")
+        # coherence-edit.md / coherence-retry.md (2026-09-18: fixes, never a whole article — see
+        # specs/parked-2026-09-18.md section 1). The default stub for both: a clean pass, no faults
+        # found, nothing to fix. Tests that need an actual fix or a rejected one override this.
+        return {"fixes": [], "could_not_fix": [], "verdict": "honest and safe to publish"}
     if '"quick_answer": "<the Quick answer block, rewritten' in p:
         return _parse_rendered_article(_between(p, "\nTHE ARTICLE\n\n", "\n════"))
     if '"ai_overview_on_topic"' in p:

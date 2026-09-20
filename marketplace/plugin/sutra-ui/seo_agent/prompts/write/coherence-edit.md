@@ -111,35 +111,46 @@ right rather than getting away with them.
 ════════════════════════════════════════════════════════════════════════
 HOW TO WORK
 
-YOUR WORD BUDGET. Do not hand back an article more than {{WORD_TOLERANCE}}% longer than the
-one you were given. That is a ceiling, not an allowance to spend. A good pass lands within
-2 or 3%. Coming back at 0% is a fine result.
+KEEP EACH REPLACEMENT CLOSE TO THE LENGTH OF WHAT IT REPLACES. There is no article-wide
+budget any more: every fix you make is judged on its own, one `find` swapped for one
+`replace`. A `replace` may run up to about 2.5x the words of its `find` when a correction
+genuinely needs the room — a rating band swapped for another, a sentence rebuilt around a
+corrected figure. A `replace` shorter than its `find` is always fine, and is often the right
+shape when a passage is cut rather than rewritten. Spend words only where the fault is;
+never to explain yourself, soften the edit, or restate the thing you just corrected.
 
-EVERY REAL FIX IS ALREADY CHEAP. Changing a scale in ten places costs nothing, because you
-are swapping numbers, not adding sentences. Cutting a passage that contradicts the article
-gives words back. What costs words is explaining yourself: a clause added to smooth a fix,
-a sentence of context nobody asked for, a re-statement of the thing you just corrected.
+EVERY REAL FIX IS ALREADY CHEAP. Changing a scale in ten places is ten small fixes, one per
+place, because each one swaps numbers rather than adding sentences. Cutting a passage that
+contradicts the article is a `find` of that passage and a shorter (or empty) `replace`.
+What is expensive, and wrong here, is a `replace` that adds a clause to smooth the fix, a
+sentence of context nobody asked for, or a re-statement of the correction you just made.
 
-IF A FIX GENUINELY NEEDS ROOM, TAKE IT. A correction that matters is worth its words. Look
-first at whether that section already holds a weak sentence you can cut, because those
-words are free. If it does not, write what the fix needs. Never cut something that matters
-in order to make space.
-
-- DO THE WHOLE JOB, INSIDE THAT BUDGET. You are an editor, not a proofreader. Where a scale
-  is wrong in ten places, change all ten; that is exactly what you are here for and it costs
-  you almost nothing. Where a passage contradicts the article and cannot be rescued, cut it.
-  A half-fix that leaves the reader with the same confusion is worse than no fix, because it
-  looks handled.
+- DO THE WHOLE JOB, ONE FIX AT A TIME. You are an editor, not a proofreader. Where a scale
+  is wrong in ten places, that is ten fixes, one per place; that is exactly what you are
+  here for and each one costs almost nothing. Where a passage contradicts the article and
+  cannot be rescued, its fix cuts it.
 - REACH ACROSS SECTIONS FREELY. That is the one thing you can do that nobody before you
-  could. If fixing section 5 means adding a line to section 7 so the two agree, do it.
-- DO NOT RESTYLE PROSE THAT HAS NO FAULT IN IT. Not because you would make it worse, but
-  because that work is already done and a step after you handles it. Every word you spend
-  there is a word you no longer have for a real fix.
-- A clean article is a normal outcome. Returning it unchanged is a real answer.
+  could. If fixing section 5 means adding a line to section 7 so the two agree, return two
+  fixes, each with its own `section`.
+- DO NOT TOUCH PROSE THAT HAS NO FAULT IN IT. Not because you would make it worse, but
+  because that work is already done and a step after you handles it. A fix you did not
+  need to make is a fix you should not return.
+- A clean article is a normal outcome. An empty "fixes" list is a real answer.
 
 ════════════════════════════════════════════════════════════════════════
-RETURN THE WHOLE ARTICLE, EDITED — every section, in order, whether you changed it or not.
-Then list what you changed and why.
+RETURN FIXES, NEVER THE ARTICLE — one entry per fault, never a rewritten copy of anything.
+
+Each fix names one exact stretch of the article (`find`) and what it becomes (`replace`).
+Code applies every fix by searching for that exact text and swapping it in; nobody re-reads
+your prose afterwards to work out what changed. So `find` MUST be copied character for
+character from the article above, including every [c…] tag inside it, exactly as it
+stands, punctuation and all. A `find` that is paraphrased, trimmed, retyped, or missing a
+tag matches nothing, so the fix cannot be applied at all and the fault you found goes
+unfixed for no reason.
+
+If a fix touches more than one sentence, `find` carries the whole stretch you are changing,
+in order, exactly as written, from wherever it starts to wherever it ends. If two separate
+places need separate changes, that is two fixes, each with its own `find`.
 
 ════════════════════════════════════════════════════════════════════════
 THE USER'S STANDING RULES. They were set by the person publishing this and they win over any
@@ -147,16 +158,12 @@ rule above that they contradict. "(none)" means there are none.
 {{MEMORY}}
 
 Return ONLY this JSON:
-{"h1": "<unchanged>",
- "intro": "<the intro>",
- "sections": [{"heading": "<unchanged>", "prose": "<the section>"}],
- "faq": [{"question": "<unchanged>", "answer": "<the answer>"}],
- "close": "<the close>",
- "changes": [{"kind": "breaks-own-rule | own-warning | several-scales | numbers-disagree | caveat-repeated",
-              "section": "<where>",
-              "what_you_did": "<one line>",
-              "why": "<one line: what it collided with, and where>"}],
- "numbers_changed": [{"was": "<the figure as written>", "now": "<what it became>",
-                      "why": "<one line — say if this is a rating band, not a real-world figure>"}],
+{"fixes": [{"kind": "breaks-own-rule | own-warning | several-scales | numbers-disagree | caveat-repeated",
+            "section": "<the heading it is in, or intro / quick answer / close / FAQ: the question>",
+            "find": "<the sentence(s) exactly as they stand in the article, copied character for character>",
+            "replace": "<what they become>",
+            "why": "<one line: what it collided with, and where>",
+            "numbers_changed": [{"was": "<the figure as written>", "now": "<what it became>",
+                                 "derived_from": "<the figures already in the article this was computed from, or empty>"}]}],
  "could_not_fix": [{"what": "<the fault>", "where": "<section>", "why_not": "<one line>"}],
  "verdict": "<one line: is this article honest and safe to publish now?>"}
