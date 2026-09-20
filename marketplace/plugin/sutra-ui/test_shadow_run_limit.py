@@ -758,8 +758,12 @@ class TestEveryWayASlotFrees(Base):
         a, b = self.one_running_one_queued()
         r = self.act(a["id"], "delete")
         self.assertEqual(r.status_code, 200, r.text)
-        self.assertIsNone(self.store.load(a["id"]), "the record is gone")
-        self.assertEqual(self.drained, ["task %s deleted" % a["id"]])
+        # THE SLOT IS FREED BY THE STOP, NOT BY THE ERASURE (2026-09-19).
+        # The first press stops the task and archives it, and that is the
+        # moment the running slot comes free -- so the drain must already
+        # have been scheduled here, on a record that is still on disk.
+        self.assertIsNotNone(self.store.load(a["id"]), "archived, not erased")
+        self.assertEqual(self.drained, ["task %s archived" % a["id"]])
 
     def test_63_a_freed_slot_with_nothing_waiting_schedules_nothing(self):
         """Promotion is a free slot MEETING a queue. An empty queue must not

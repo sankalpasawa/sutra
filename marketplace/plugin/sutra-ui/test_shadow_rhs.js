@@ -1510,7 +1510,14 @@ function stream(msgs, says, turns){
   ctx.S.shadowTaskSel = "m-1";
   const list = ctx.shadowTaskListHtml();
   assert(/data-shtaskdel="m-1"/.test(list), "the DELETE hook left the row");
-  assert(/aria-label="Delete task"/.test(list), "the DELETE label changed");
+  /* THE LABEL SAYS WHICH PRESS THIS IS (founder, 2026-09-19): the first x
+     stops the task and files it under ARCHIVED, the second erases it. The
+     hook is untouched -- which is what this block is actually about. */
+  assert(/aria-label="Archive task"/.test(list),
+    "the x on a live row must say it archives");
+  const filed = ctx.shadowTaskListHtml.call(null);
+  assert(/aria-label="Archive task"|aria-label="Delete task permanently"/
+    .test(filed), "the DELETE label changed to something unexpected");
   assert.strictEqual(typeof ctx.shadowDeleteTask, "function",
     "shadowDeleteTask must still exist");
   /* and the right pane must not have grown a second one */

@@ -73,14 +73,25 @@ function surfaces(state, extra){
            header: ctx.shadowHomeHtml() };
 }
 
-const SURFACES = ["list", "card", "header"];
+/* ONE SURFACE SINCE 2026-09-19, not three. The founder took the pill off the
+   list row and the detail card -- "remove Running status in 2 places, keep
+   only 1" -- so the ring has exactly one place left to be, and the other two
+   are asserted to carry no pill at all rather than a still one. The rule the
+   original three-surface sweep protected is intact and cheaper to hold: one
+   printer, one caller. */
+const SURFACES = ["header"];
+const NO_PILL = ["list", "card"];
 
 /* 1. the ask itself, on every surface that shows a status */
 {
   const r = surfaces("running");
   for (const k of SURFACES)
     assert(SPIN.test(r[k]), "a running task must spin on the " + k);
-  console.log("ok 1 running spins on the list row, the card and the header");
+  for (const k of NO_PILL)
+    assert(!/shtpill/.test(r[k]), k + " must no longer print a pill at all");
+  assert(/shtaskdot d-running/.test(r.list),
+    "…and the list row says running through its dot");
+  console.log("ok 1 running spins on the one surface that still has a pill");
 }
 
 /* 2. inside the pill and BEFORE the word -- the ring is part of the status,
@@ -88,7 +99,7 @@ const SURFACES = ["list", "card", "header"];
 {
   const r = surfaces("running");
   assert(/shtpill shtpill-running"><span class="shtpillspin" aria-hidden="true"><\/span>RUNNING</
-    .test(r.card),
+    .test(r.header),
     "the ring must be the pill's first child, with RUNNING still its word");
   console.log("ok 2 the ring leads the pill and RUNNING still reads RUNNING");
 }
@@ -108,25 +119,32 @@ const SURFACES = ["list", "card", "header"];
 /* 4. THE TWO STATES THAT ARE NOT THEIR OWN FACE. Both read as something else,
       and neither is work in flight. */
 {
+  /* READ OFF THE HEADER since 2026-09-19 -- it is the surface that still
+     prints the word. The face logic under test is untouched. */
   const fc = surfaces("paused", { pause_reason: "founder_confirm" });
-  assert(/NEEDS YOU/.test(fc.card) && !SPIN.test(fc.card),
+  assert(/NEEDS YOU/.test(fc.header) && !SPIN.test(fc.header),
     "a founder-pause reads NEEDS YOU and waits on a person, it is not running");
   const st = surfaces("brief_confirm",
     { start_requested_at: "2026-09-14T12:09:35Z" });
-  assert(/QUEUED/.test(st.card) && !SPIN.test(st.card),
+  assert(/QUEUED/.test(st.header) && !SPIN.test(st.header),
     "an accepted-but-unstarted start reads QUEUED and has not begun");
   console.log("ok 4 a founder-pause and an accepted start keep still");
 }
 
-/* 5. the pill is otherwise untouched -- one per card, every state */
+/* 5. the pill is otherwise untouched -- ONE PER WORKSPACE, every state. It
+      was "one per card"; the card stopped drawing one (founder, 2026-09-19)
+      and the count that matters is now the whole screen's, which is the
+      founder's rule stated as an assertion. */
 {
   for (const state of ["running", "blocked", "done", "stopped", "failed",
                        "queued"]){
     const h = surfaces(state);
-    assert.strictEqual((h.card.match(/class="shtpill /g) || []).length, 1,
-      state + ": the card must still draw exactly one pill");
+    assert.strictEqual((h.header.match(/class="shtpill /g) || []).length, 1,
+      state + ": the workspace must draw exactly one pill");
+    assert(!/shtpill/.test(h.card),
+      state + ": the card must not draw a second one");
   }
-  console.log("ok 5 exactly one pill per card, for every state");
+  console.log("ok 5 exactly one pill per workspace, for every state");
 }
 
 /* 6. MOTION IS NEVER THE MESSAGE -- the rule the rest of this pane already

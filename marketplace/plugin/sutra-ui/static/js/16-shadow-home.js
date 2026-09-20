@@ -265,13 +265,19 @@ function shadowChatKeys(){
 const SH_TASK = {
   brief_confirm: { label: "READY",    cls: "ready"   },
   running:       { label: "RUNNING",  cls: "running" },
-  queued:        { label: "QUEUED",   cls: ""        },
-  paused:        { label: "PAUSED",   cls: ""        },
+  /* THESE THREE CARRIED NO CLASS while the list printed the word beside the
+     dot. The word came off the row on 2026-09-19 and the dot became the only
+     thing saying which state a row is in -- so an empty class meant QUEUED,
+     PAUSED and DRAFT drew one identical grey dot between them. The pill
+     modifier `shtpill-<cls>` has no rule for any of these three, then or
+     now, so the one surviving pill is byte-identical. */
+  queued:        { label: "QUEUED",   cls: "queued"  },
+  paused:        { label: "PAUSED",   cls: "paused"  },
   blocked:       { label: "NEEDS YOU", cls: "blocked" },
   done:          { label: "DONE",     cls: "done"    },
   failed:        { label: "FAILED",   cls: "failed"  },
   stopped:       { label: "STOPPED",  cls: "stopped" },
-  draft:         { label: "DRAFT",    cls: ""        },
+  draft:         { label: "DRAFT",    cls: "draft"   },
 };
 function shadowTaskFace(state){
   return SH_TASK[String(state || "")] || { label: String(state || ""), cls: "" };
@@ -387,6 +393,15 @@ const SH_GOAL_OVER = ["done", "stopped"];
 
 function shadowTaskIsActive(m, goals){
   if (!m) return false;
+  /* ARCHIVED IS A PLACE IN THE LIST, NOT AN ABSENCE FROM IT (founder,
+     2026-09-19). The x used to erase the record, so the task left the
+     workspace and the founder's only route back to what it did was the
+     ledger, which this screen does not read. It now stops the task and files
+     it under ARCHIVED, and this is the rule that keeps the row reachable --
+     ahead of the goal test below, because filing a task away is the
+     founder's decision about the ROW and must not be overridden by whatever
+     its goal happens to say. */
+  if (m.archived_at) return true;                            // (0)
   if (m.goal_id){
     const g = (goals || []).find(x => x && x.id === m.goal_id);
     if (g && SH_GOAL_OVER.includes(g.state)) return false;   // (1)
@@ -553,6 +568,10 @@ const SH_SECTIONS = [
   ["wait", "WAITING ON YOU"],
   ["run",  "RUNNING"],
   ["done", "DONE TODAY"],
+  /* LAST, AND THE ONLY SECTION THE FOUNDER PUTS THINGS IN THEMSELVES. The
+     three above are states the work arrives in; this one is a decision --
+     the x said "I am done looking at this" (founder, 2026-09-19). */
+  ["arch", "ARCHIVED"],
 ];
 const SH_TASK_SECTION = {
   "NEEDS YOU": "wait",   // blocked, and the two founder pauses
@@ -569,6 +588,11 @@ const SH_TASK_SECTION = {
    admits every terminal one by name -- so it belongs with the work in
    flight, never in a conclusion it has not reached. */
 function shadowTaskSection(m){
+  /* BEFORE THE FACE, because archiving is a decision about the row and the
+     state underneath it is untouched: an archived task keeps whatever face
+     it ended with, and would otherwise draw under DONE TODAY as though the
+     founder had never filed it. */
+  if (m && m.archived_at) return "arch";
   return SH_TASK_SECTION[shadowTaskFaceFor(m).label] || "run";
 }
 
@@ -640,13 +664,23 @@ function shadowTaskListHtml(){
       type="button" data-shtask="${escAttr(m.id)}">
       <span class="shtaskdot d-${esc(f.cls)}" aria-hidden="true"></span>
       <span class="shtaskname">${esc(m.objective || "(no objective)")}</span>
-      ${shadowTaskPillHtml(f)}
+      ${/* NO PILL HERE ANY MORE (founder, 2026-09-19: "remove Running status
+           in 2 places, keep only 1"). The same word was printed three times
+           for one task -- this row, the brief card and the workspace header
+           -- and the header is the copy that survived, because it sits
+           beside the objective of the task actually in focus.
+
+           THE DOT STILL CARRIES IT. `shtaskdot d-<cls>` is the same face
+           class the pill was built from, so the row keeps its state at a
+           glance and the list stops shouting it in words. */""}
     </button>
       <button class="shtaskdel" type="button"
         data-shtaskdel="${escAttr(m.id)}"
-        title="${shadowTaskIsLive(m) ? "Stop &amp; delete this task"
-                                     : "Delete this task"}"
-        aria-label="Delete task">\u00d7</button>
+        title="${m.archived_at ? "Delete this task permanently"
+                : shadowTaskIsLive(m) ? "Stop &amp; archive this task"
+                                      : "Archive this task"}"
+        aria-label="${m.archived_at ? "Delete task permanently"
+                                    : "Archive task"}">\u00d7</button>
     </div>`;
   };
   /* a section with nothing in it draws nothing -- not an empty heading */
@@ -2989,7 +3023,10 @@ function shadowTaskCardHtml(m){
   return `<div class="shcard2" data-shtaskcard="${escAttr(m.id)}">
     <div class="shcard2head">
       <span class="shcard2obj">${esc(m.objective || "")}</span>
-      ${shadowTaskPillHtml(f)}
+      ${/* THE SECOND OF THE THREE, ALSO GONE (founder, 2026-09-19). This
+           pill sat roughly 40px below the header's, saying the same word
+           about the same task. The header's is pinned and adjacent to the
+           title, so it is the one that stays. */""}
     </div>
     <div class="shcard2row"><span class="shcard2k">where it runs</span>
       <span class="shcard2v">${acts}</span></div>
@@ -5839,8 +5876,14 @@ async function shadowDeleteTask(mid){
   const doc = await shadowMissionAct(mid, "delete");
   /* the focus must not keep pointing at a record that no longer exists.
      shadowSelectedTask() already falls back when its pick is missing, so
-     this only stops a stale id from outliving the row it named. */
-  if (doc && typeof S !== "undefined" && S.shadowTaskSel === mid)
+     this only stops a stale id from outliving the row it named.
+
+     AN ARCHIVE IS NOT A DISAPPEARANCE (founder, 2026-09-19): the row is
+     still there, under ARCHIVED, so the pane stays on the task the founder
+     was just looking at instead of jumping to whatever ranks next. Only the
+     second press -- the one that erases -- clears the pick. */
+  if (doc && !doc.archived && typeof S !== "undefined"
+      && S.shadowTaskSel === mid)
     S.shadowTaskSel = null;
   if (typeof scheduleRender === "function") scheduleRender();
   return doc;

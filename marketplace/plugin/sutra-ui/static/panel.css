@@ -3286,6 +3286,15 @@
    quiet, because they are not asking. */
 .shwsec-wait{color:var(--acc)}
 .shwsec-run,.shwsec-done{color:var(--faint)}
+/* ARCHIVED IS THE QUIETEST HEADING AND ITS ROWS ARE THE QUIETEST ROWS
+   (founder, 2026-09-19). The section exists so a filed task can be found
+   again, not so it competes with work in flight -- so the rows sit back and
+   come forward on hover and when one is the task in focus. Opacity, not a
+   colour: the dot keeps its state hue at every strength. */
+.shwsec-arch{color:var(--faint)}
+.shwsec-arch ~ .shtaskrow{opacity:.55}
+.shwsec-arch ~ .shtaskrow:hover,
+.shwsec-arch ~ .shtaskrow.on{opacity:1}
 /* A ROW, not a card: the list is an inventory and has to stay dense. */
 .shtask{display:flex;align-items:center;gap:9px;width:100%;text-align:left;
   background:none;border:0;border-radius:8px;padding:8px 9px;cursor:pointer;
@@ -3376,6 +3385,15 @@
 .shtaskdot.d-blocked{background:var(--warn)}
 .shtaskdot.d-failed{background:var(--block)}
 .shtaskdot.d-stopped{background:var(--block)}
+/* THE THREE WAITING STATES, each visibly its own (2026-09-19). They shared
+   the default grey for as long as the row also printed the word; now the dot
+   is the only thing that says which of them a row is in. All three are
+   quieter than RUNNING and READY on purpose -- none of them is work in
+   flight, and none of them is asking for the founder. */
+.shtaskdot.d-queued{background:var(--muted)}
+.shtaskdot.d-paused{background:var(--muted);
+  box-shadow:inset 0 0 0 1.5px var(--card)}
+.shtaskdot.d-draft{background:none;box-shadow:inset 0 0 0 1.5px var(--faint)}
 
 /* ── right: the task in focus ───────────────────────────────────────────── */
 .shwright{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;

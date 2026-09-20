@@ -109,6 +109,22 @@ class Base(unittest.TestCase):
         return self.client.post("%s/%s/act" % (MIS, mid),
                                 json=dict(body, action=action), headers=HDR)
 
+    def erase(self, mid, **body):
+        """DELETE, ALL THE WAY (founder, 2026-09-19). The x is two presses
+        now: the first stops the task and files it under ARCHIVED, the second
+        erases the record and the chat Shadow made for it. Every test below
+        is about the ERASURE, which is what this helper performs and what
+        `delete` performed on its own until today. The first press has its own
+        suite, test_shadow_delete_archive.py.
+
+        The first response is checked here rather than ignored: if archiving
+        ever stops being a 200, these tests must fail on that and not on the
+        confusing second call that follows it."""
+        first = self.act(mid, "delete", **body)
+        if first.status_code != 200:
+            return first
+        return self.act(mid, "delete", **body)
+
     def listed(self):
         """What the left task list reads on every load -- and on a refresh."""
         r = self.client.get(MIS, headers=HDR)
@@ -124,7 +140,7 @@ class TestDelete(Base):
         go = self.create("delete me")
         self.assertEqual(sorted(self.listed()), sorted([keep["id"], go["id"]]))
 
-        r = self.act(go["id"], "delete")
+        r = self.erase(go["id"])
         self.assertEqual(r.status_code, 200, r.text)
         self.assertTrue(r.json()["deleted"])
 
@@ -143,14 +159,16 @@ class TestDelete(Base):
         home = mission_engine._home()
         path = os.path.join(home, go["id"] + ".json")
         self.assertTrue(os.path.exists(path))
-        self.act(go["id"], "delete")
+        self.erase(go["id"])
         for suffix in ("", ".tmp", ".lock"):
             self.assertFalse(os.path.exists(path + suffix),
                              "left %s behind" % (path + suffix))
 
     def test_03_deleting_twice_is_a_404_not_a_500(self):
+        """Three presses now: archive, erase, and then a record that is not
+        there. The last one is the case this test has always been about."""
         go = self.create()
-        self.assertEqual(self.act(go["id"], "delete").status_code, 200)
+        self.assertEqual(self.erase(go["id"]).status_code, 200)
         self.assertEqual(self.act(go["id"], "delete").status_code, 404)
 
     def test_04_a_running_task_is_stopped_and_its_delegate_released(self):
@@ -167,7 +185,7 @@ class TestDelete(Base):
         shadow_runner.DELEGATES[sid] = rt
         session_runtime.register_runtime(sid, rt)
         try:
-            r = self.act(m["id"], "delete")
+            r = self.erase(m["id"])
             self.assertEqual(r.status_code, 200, r.text)
         finally:
             shadow_runner.DELEGATES.pop(sid, None)
@@ -182,7 +200,7 @@ class TestDelete(Base):
         through the ledger, because the record itself is then deleted."""
         m = self.create()
         self.store.transition(m["id"], "running", "test")
-        self.act(m["id"], "delete")
+        self.erase(m["id"])
         import shadow_ledger
         rows = [r for r in shadow_ledger.read("missions", 200)
                 if r.get("mission_id") == m["id"]]
@@ -198,7 +216,7 @@ class TestDelete(Base):
         of something that is not running -- is its existing end."""
         m = self.create()
         self.store.transition(m["id"], "queued", "cap reached")
-        r = self.act(m["id"], "delete")
+        r = self.erase(m["id"])
         self.assertEqual(r.status_code, 200, r.text)
         self.assertIsNone(MissionStore().load(m["id"]))
 
@@ -217,7 +235,7 @@ class TestDelete(Base):
         self.assertEqual(GoalStore().load(g["id"])["current_mission_id"],
                          m["id"])
 
-        r = self.act(m["id"], "delete")
+        r = self.erase(m["id"])
         self.assertEqual(r.status_code, 200, r.text)
         after = GoalStore().load(g["id"])
         self.assertIsNone(after["current_mission_id"],
@@ -230,7 +248,7 @@ class TestDelete(Base):
             m = self.create("a %s task" % state)
             self.store.transition(m["id"], "running", "test")
             self.store.transition(m["id"], state, "test")
-            r = self.act(m["id"], "delete")
+            r = self.erase(m["id"])
             self.assertEqual(r.status_code, 200,
                              "%s: %s" % (state, r.text))
             self.assertIsNone(MissionStore().load(m["id"]))
@@ -408,7 +426,7 @@ class TestDeleteTakesTheChat(Base):
         sutra_id = self._bind_chat(m, "sess-delegate-1")
         self.assertTrue(chat_store.index(), "the chat must exist first")
 
-        r = self.act(m["id"], "delete")
+        r = self.erase(m["id"])
         self.assertEqual(r.status_code, 200, r.text)
         self.assertTrue(r.json()["deleted"])
         self.assertTrue(r.json()["chat_deleted"],
@@ -428,7 +446,7 @@ class TestDeleteTakesTheChat(Base):
         m = self.create(target_mode="existing")
         sutra_id = self._bind_chat(m, "sess-founder-1", mode="existing")
 
-        r = self.act(m["id"], "delete")
+        r = self.erase(m["id"])
         self.assertEqual(r.status_code, 200, r.text)
         self.assertFalse(r.json()["chat_deleted"],
                          "it must not claim to have deleted the chat")
@@ -446,7 +464,7 @@ class TestDeleteTakesTheChat(Base):
         drop_chat = self._bind_chat(drop, "sess-drop")
         self.assertEqual(len(chat_store.index()), 2)
 
-        self.act(drop["id"], "delete")
+        self.erase(drop["id"])
 
         self.assertIsNone(chat_store.load(drop_chat), "the target chat stayed")
         self.assertIsNotNone(chat_store.load(keep_chat),
@@ -464,7 +482,7 @@ class TestDeleteTakesTheChat(Base):
         rt = _FakeDelegate()
         shadow_runner.DELEGATES["sess-live"] = rt
         try:
-            r = self.act(m["id"], "delete")
+            r = self.erase(m["id"])
         finally:
             shadow_runner.DELEGATES.pop("sess-live", None)
         self.assertEqual(r.status_code, 200, r.text)
@@ -475,7 +493,7 @@ class TestDeleteTakesTheChat(Base):
     def test_24_a_task_that_never_got_a_chat_deletes_cleanly(self):
         """Most deletes are this: a task removed before it ever ran."""
         m = self.create()
-        r = self.act(m["id"], "delete")
+        r = self.erase(m["id"])
         self.assertEqual(r.status_code, 200, r.text)
         self.assertFalse(r.json()["chat_deleted"])
         self.assertNotIn(m["id"], self.listed())
@@ -486,7 +504,7 @@ class TestDeleteTakesTheChat(Base):
         outcome: both are gone, which is only reachable in that order."""
         m = self.create()
         sutra_id = self._bind_chat(m, "sess-order")
-        self.act(m["id"], "delete")
+        self.erase(m["id"])
         self.assertIsNone(MissionStore().load(m["id"]))
         self.assertIsNone(chat_store.load(sutra_id))
 

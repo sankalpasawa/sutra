@@ -69,6 +69,12 @@ const LIVE = M({ id: "m-live", state: "running", turns_used: 3,
 const unspin = (h) =>
   String(h).replace(/<span class="shtpillspin"[^>]*><\/span>/g, "");
 const pill = (h) => (unspin(h).match(/shtpill-[a-z]*"?\s*>([^<]*)</) || [])[1];
+/* THE FACE, FROM THE ONE THING THAT PRINTS IT (2026-09-19). The detail card
+   stopped drawing a pill when the founder cut the word down to one surface,
+   so the vocabulary under test is read from shadowTaskPillHtml itself --
+   which is what the card, and now only the workspace header, ever called. */
+const facePill = (ctx, m) =>
+  pill(ctx.shadowTaskPillHtml(ctx.shadowTaskFaceFor(m)));
 /* the row is `TURN | 10 of 12` now -- the key says "turn", so the value no
    longer repeats it. Read the value span. */
 const turn = (h) => (h.match(/shcard2k">turn<\/span>\s*<span class="shcard2v">([^<]*)</) || [])[1];
@@ -90,7 +96,10 @@ function ctxWith(rows, selId){
     "with a running task present, a start-already-taken brief_confirm row " +
     "must not be what the detail card shows");
   const card = ctx.shadowTaskCardHtml(sel);
-  assert.strictEqual(pill(card), "RUNNING", "detail pill must say RUNNING");
+  assert(/data-shtaskcard="m-live"/.test(card),
+    "the detail card must be the running task's");
+  assert.strictEqual(facePill(ctx, sel), "RUNNING",
+    "the selected task's face must say RUNNING");
   assert.strictEqual(turn(card), "3 of 20", "turn count comes from the record");
   assert(!/data-shstart=/.test(card), "a running task offers no Start");
   console.log("ok 1 stale QUEUED row no longer captures the detail card");
@@ -144,7 +153,7 @@ function ctxWith(rows, selId){
 /* 7. THE CANONICAL VOCABULARY, on the card, from mission state alone */
 {
   const ctx = fresh();
-  const face = (m) => pill(ctx.shadowTaskCardHtml(M(m)));
+  const face = (m) => facePill(ctx, M(m));
   assert.strictEqual(face({ state: "running" }), "RUNNING", "running");
   assert.strictEqual(face({ state: "paused" }), "PAUSED", "paused");
   assert.strictEqual(face({ state: "done" }), "DONE", "done");
@@ -184,7 +193,12 @@ const heads = (h) => (h.match(/class="shwsec[^"]*"\s*>([^<]*)</g) || [])
 function grouped(list){
   const out = [];
   let head = null;
-  const re = /class="shwsec[^"]*"\s*>([^<]*)<|shtpill-[a-z]*"?\s*>([^<]*)</g;
+  /* THE ROW'S STATE IS ITS DOT (founder, 2026-09-19). The pill came off the
+     list when the word was cut down to one surface, and `shtaskdot d-<face>`
+     carries the same face class the pill was built from -- so the pairing
+     this function exists to make is unchanged, read off the element that
+     still states it. */
+  const re = /class="shwsec[^"]*"\s*>([^<]*)<|shtaskdot d-([a-z]*)"/g;
   let m;
   list = unspin(list);
   while ((m = re.exec(list))){
@@ -214,11 +228,11 @@ function grouped(list){
   const g = grouped(list);
   const under = (h) => g.filter(x => x[0] === h).map(x => x[1]);
   assert.deepStrictEqual(under("WAITING ON YOU"),
-    ["NEEDS YOU", "NEEDS YOU", "NEEDS YOU"],
+    ["blocked", "blocked", "blocked"],
     "blocked and BOTH founder pauses read NEEDS YOU under WAITING ON YOU");
-  assert.deepStrictEqual(under("RUNNING"), ["RUNNING"],
-    "a running task is a RUNNING pill under the RUNNING heading");
-  assert.deepStrictEqual(under("DONE TODAY"), ["DONE", "STOPPED"],
+  assert.deepStrictEqual(under("RUNNING"), ["running"],
+    "a running task is a running dot under the RUNNING heading");
+  assert.deepStrictEqual(under("DONE TODAY"), ["done", "stopped"],
     "DONE and STOPPED are the two conclusions under DONE TODAY");
 
   /* the raw engine vocabulary is never a heading */
@@ -233,10 +247,10 @@ function grouped(list){
   const list = ctx.shadowTaskListHtml();
   const g = grouped(list);
   assert.strictEqual(g.length, 1, "the failed row is still in the list");
-  assert.strictEqual(g[0][1], "FAILED", "and still wears its FAILED pill");
+  assert.strictEqual(g[0][1], "failed", "and still wears its FAILED face");
   assert.notStrictEqual(g[0][0], "DONE TODAY",
     "a failure must not be filed under DONE TODAY");
-  assert(!/>DONE</.test(list) && !/>STOPPED</.test(list),
+  assert(!/d-done"/.test(list) && !/d-stopped"/.test(list),
     "a failure must never read as DONE or STOPPED");
   /* Retry is the founder's move, so the row waits on them */
   assert.strictEqual(g[0][0], "WAITING ON YOU",
@@ -253,8 +267,9 @@ function grouped(list){
     "headings with no rows under them must not be drawn");
   assert(/data-shtask="m-run"/.test(list), "the row selector hook was lost");
   assert(/data-shtaskdel="m-run"/.test(list), "the DELETE hook was lost");
-  assert(/shtaskdot/.test(list) && /shtaskname/.test(list)
-      && /shtpill/.test(list), "the row lost one of its three spans");
+  assert(/shtaskdot/.test(list) && /shtaskname/.test(list),
+    "the row lost one of its two spans");
+  assert(!/shtpill/.test(list), "the row's status pill did not come off");
   assert(/class="shtaskrow on"/.test(list), "the selected row lost its tint");
   console.log("ok 11 empty sections vanish; the row and its hooks are intact");
 }

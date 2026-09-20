@@ -1014,9 +1014,17 @@ async function shadowMissionAct(mid, action, extra){
            rather than that a state changed */
         take_over: "You have the chat \u2014 Shadow stepped back.",
         /* the task AND the chat Shadow made for it are gone; the
-           transcript is recoverable from ~/.sutra-ui/trash */
+           transcript is recoverable from ~/.sutra-ui/trash. This is the
+           SECOND press -- see the archive line below. */
         "delete": "Task deleted \u2014 its chat went with it." };
-      showNudge(said[action] || "Done.");
+      /* ONE ACTION, TWO OUTCOMES (founder, 2026-09-19). The first x stops
+         the task and files it under ARCHIVED; the second erases it. The
+         server says which happened, and a founder who expected the row to
+         be gone must not be told it was deleted when it is sitting in
+         Archived one section down. */
+      showNudge((action === "delete" && doc && doc.archived)
+        ? "Task stopped and archived."
+        : (said[action] || "Done."));
     }
     if (typeof loadShadowHome === "function") loadShadowHome(true);
     /* the id the SERVER names, not mid: retry clones the brief into a new

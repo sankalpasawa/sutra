@@ -615,8 +615,17 @@ console.log("ok 6 controls wired");
     { id: "m-e", objective: "failed one",  state: "failed" },
   ];
   const h = ctx.shadowHomeHtml();
-  ["READY", "RUNNING", "QUEUED", "NEEDS YOU", "FAILED"].forEach(p =>
-    assert(new RegExp(">" + p + "<").test(h), "status pill missing: " + p));
+  /* THE STATE IS ON THE ROW, IT IS NO LONGER THE WORD (founder,
+     2026-09-19). Every row used to carry a pill; the one pill left on this
+     screen is the header's, for the task in focus. So the five states are
+     asserted where they still live -- the dot's face class, which is what
+     the pill was always built from -- plus the header's word for the
+     selected one. Same five states, same source, one surface. */
+  ["ready", "running", "queued", "blocked", "failed"].forEach(c =>
+    assert(new RegExp('shtaskdot d-' + c).test(h),
+      "status dot missing: " + c));
+  assert.strictEqual((h.match(/shtpill /g) || []).length, 1,
+    "the pill survives exactly once, in the workspace header");
   assert(/data-shtask="m-a"/.test(h), "task rows are not selectable");
   /* the empty state says what to do, rather than nothing */
   const ctx2 = fresh();
@@ -1258,8 +1267,14 @@ const AWAITING = {
   const h = ctx.shadowHomeHtml();
   assert(!/>PAUSED</.test(h),
     "waiting on the founder must not read as a stalled task");
-  assert((h.match(/>NEEDS YOU</g) || []).length >= 2,
-    "NEEDS YOU in both the list row and the task header");
+  /* ONCE, NOT TWICE (founder, 2026-09-19). This asserted the word in the
+     list row AND the header, back when a task's state was printed on three
+     surfaces. The state the founder must not miss is the same one; it is
+     said once, in the header, and the row carries it as the blocked dot. */
+  assert.strictEqual((h.match(/>NEEDS YOU</g) || []).length, 1,
+    "NEEDS YOU is said once, in the task header");
+  assert(/shtaskdot d-blocked/.test(h),
+    "…and the list row still shows it as the blocked dot");
   assert(/shtpill-blocked/.test(h), "it wears the needs-you pill family");
   /* a mission paused for any OTHER reason is untouched */
   ctx.S.shadowMissions = [{ id: "m-r", objective: "x", state: "paused",
@@ -3028,10 +3043,14 @@ const SET = { engage: ["outcome first"],
     assert(h.indexOf('data-shtaskdel="' + m.id + '"') !== -1,
       "no remove control on row " + m.id);
   });
-  /* the selector button is untouched: same hook, same three spans */
+  /* the selector button is untouched: same hook, same spans -- TWO of them
+     since 2026-09-19, when the founder took the status pill off the row.
+     The dot and the name are what is left, and losing either is still the
+     regression this line exists to catch. */
   assert(/data-shtask="m-1"/.test(h), "the row selector hook was lost");
-  assert(/shtaskdot/.test(h) && /shtaskname/.test(h) && /shtpill/.test(h),
-    "the row lost one of its three spans");
+  assert(/shtaskdot/.test(h) && /shtaskname/.test(h),
+    "the row lost one of its two spans");
+  assert(!/shtpill/.test(h), "the row's status pill did not come off");
   /* a button may not contain a button: the delete control must be a SIBLING
      of the selector, not inside it */
   const rowStart = h.indexOf('data-shtask="m-1"');
@@ -3178,8 +3197,12 @@ const SET = { engage: ["outcome first"],
     "a started task must read as the existing QUEUED state");
   /* the LIST agrees with the card -- one predicate, both surfaces */
   const list = ctx.shadowTaskListHtml();
-  assert(/shtpill-ready[^>]*>READY/.test(list), "the READY row lost its pill");
-  assert(/QUEUED/.test(list), "the started row still reads READY in the list");
+  /* THE LIST AGREES THROUGH THE DOT NOW (2026-09-19): the pill came off the
+     row, and the face class the pill was built from is what the dot wears.
+     Same predicate, same two rows, one surface each. */
+  assert(/shtaskdot d-ready/.test(list), "the READY row lost its face");
+  assert(/shtaskdot d-queued/.test(list),
+    "the started row must read as QUEUED in the list, not as READY");
   /* and the compact in-thread card, which draws Start too */
   assert(!/data-shstart="m-s"/.test(ctx.missionCardHtml(started)),
     "the in-thread mission card still offers Start");
@@ -3328,7 +3351,11 @@ const SET = { engage: ["outcome first"],
      carries the count, and the meter beside it is unchanged. */
   assert(/shcard2k">turn<\/span>\s*<span class="shcard2v">1 of 20/.test(live),
     "the budget row must survive");
-  assert(/shtpill-/.test(live), "the state pill must survive");
+  /* THE CARD'S PILL IS GONE ON PURPOSE (2026-09-19) -- it said the same word
+     the workspace header says, about the same task, forty pixels apart. What
+     this block is about, the facts BESIDE it, is what must survive. */
+  assert(!/shtpill/.test(live), "the card's duplicate state pill came off");
+  assert(/shcard2obj/.test(live), "the card still names the task");
   console.log("ok 33 the task card stamps how fresh the record it drew is");
 }
 
@@ -3461,7 +3488,11 @@ const SET = { engage: ["outcome first"],
 
   /* it is an addition to a row, not a replacement for the card: the facts
      around it survive */
-  assert(/shtpill-/.test(live), "the state pill must survive");
+  /* THE CARD'S PILL IS GONE ON PURPOSE (2026-09-19) -- it said the same word
+     the workspace header says, about the same task, forty pixels apart. What
+     this block is about, the facts BESIDE it, is what must survive. */
+  assert(!/shtpill/.test(live), "the card's duplicate state pill came off");
+  assert(/shcard2obj/.test(live), "the card still names the task");
   assert(/done when/.test(live), "the done-when row must survive");
   assert(/where it runs/.test(live), "the acts-in row must survive");
   /* ── 34b. THE ROW SHOWS THE TURN THE WORKER IS ON ──────────────────────
@@ -4206,6 +4237,81 @@ const CARD_TURN = (h) =>
       "card must use the mission's max_turns (" + max + ")");
   }
   console.log("ok 39f the displayed budget is the mission's own max_turns");
+}
+
+/* 40. ONE STATUS PILL, AND THE ARCHIVED SECTION (founder, 2026-09-19)
+
+   "Remove Running status in 2 places, keep only 1" -- the word was printed
+   on the list row, on the brief card and in the workspace header, all three
+   for the same task. The header's is the survivor: it sits beside the
+   objective of the task actually in focus.
+
+   "if we delete a shadow task ... should be as a separate section as
+   Archived" -- an archived record stays in the list, under its own heading,
+   whatever state it ended in. */
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  const run = { id: "m-run", objective: "Ship the fix.", state: "running",
+                max_turns: 25, turns_used: 3, target_mode: "new",
+                target_session: "s-1" };
+  ctx.S.shadowMissions = [run];
+  ctx.S.shadowTaskSel = "m-run";
+
+  const row = ctx.shadowTaskListHtml();
+  assert(/shtaskrow/.test(row), "the row still renders");
+  assert(!/shtpill/.test(row), "the list row may not print a status pill");
+  assert(/shtaskdot d-running/.test(row),
+    "the dot still carries the state the pill used to say");
+
+  assert(!/shtpill/.test(ctx.shadowTaskCardHtml(run)),
+    "the brief card may not print a status pill either");
+
+  const home = ctx.shadowHomeHtml();
+  assert.strictEqual((home.match(/shtpill /g) || []).length, 1,
+    "exactly one status pill on the whole workspace");
+  assert(/shwhead[\s\S]*shtpill/.test(home),
+    "…and it is the header's");
+  console.log("ok 40 one status pill, in the workspace header");
+}
+
+{
+  const ctx = fresh();
+  ctx.S.shadowHomeDark = false;
+  const done = { id: "m-a", objective: "Old one.", state: "done",
+                 max_turns: 25, turns_used: 9 };
+  const filed = { id: "m-b", objective: "Filed one.", state: "done",
+                  max_turns: 25, turns_used: 9,
+                  archived_at: "2026-09-19T10:00:00Z" };
+  ctx.S.shadowMissions = [done, filed];
+
+  assert.strictEqual(ctx.shadowTaskSection(done), "done");
+  assert.strictEqual(ctx.shadowTaskSection(filed), "arch",
+    "an archived task leaves DONE TODAY for its own section");
+  assert(ctx.shadowTaskIsActive(filed, []),
+    "an archived task stays in the list -- that is the point of filing it");
+
+  const list = ctx.shadowTaskListHtml();
+  assert(/ARCHIVED/.test(list), "the ARCHIVED heading renders");
+  assert(list.indexOf("DONE TODAY") < list.indexOf("ARCHIVED"),
+    "ARCHIVED is last -- it is the only section the founder fills");
+  assert(/Delete this task permanently/.test(list),
+    "the x on an archived row is the eraser, and says so");
+  assert(/Stop &amp; archive this task|Archive this task/.test(list),
+    "…and on a live row it is the filer");
+  console.log("ok 40b archived tasks get their own section and a second x");
+}
+
+/* 40c. an archived task is kept even when its goal has concluded -- the
+   founder's decision about the ROW outranks the goal's state, or filing a
+   task would make it vanish instead of moving it. */
+{
+  const ctx = fresh();
+  const filed = { id: "m-c", objective: "Filed.", state: "stopped",
+                  goal_id: "g-1", archived_at: "2026-09-19T10:00:00Z" };
+  assert(ctx.shadowTaskIsActive(filed, [{ id: "g-1", state: "done" }]),
+    "a concluded goal may not take an archived row out of the list");
+  console.log("ok 40c a concluded goal does not un-file an archived task");
 }
 
 console.log("test_shadow_home.js: all green");
