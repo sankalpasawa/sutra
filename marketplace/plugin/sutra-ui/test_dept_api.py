@@ -1334,6 +1334,226 @@ def test_engine_birth_is_written_with_no_ask_at_all():
         assert M.engines(a)["engines"][0]["made_by"]["from_ask"] is False
 
 
+# --------------------------------------------------------------------- S63 --
+# R13 / A24: the filed work of a department, and the version chain behind each
+# row. The three state words are DERIVED from two fields, so every one of them
+# is pinned here against a placement written to carry it.
+
+
+def _filed(E, ref, cid, work_id, phase="pre-flight", origin="matched", day="2026-09-20"):
+    return E.write_placement({"id": work_id, "kind": "task"}, ref, cid,
+                             origin, 1.0, day, "T-local", phase=phase)
+
+
+def test_filed_lists_one_row_per_work_item_with_its_version_count():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        cid = _charter(E, a, "Own the plan")
+        _filed(E, a, cid, "holding/plans/department-screen/LLD.md")
+        _filed(E, a, cid, "holding/plans/department-screen/LLD.md", phase="post-close")
+        _filed(E, a, cid, "holding/plans/department-screen/PRD.md")
+        rows = M.filed(a)["filed"]
+        assert sorted(r["label"] for r in rows) == ["LLD", "PRD"], \
+            "one row per work item, not one per version, and a name not a path"
+        lld = [r for r in rows if r["label"] == "LLD"][0]
+        assert lld["versions"] == 2, "the supersedes chain is the version count"
+        assert lld["id"] == "holding/plans/department-screen/LLD.md", \
+            "the row is keyed by the work item, the way org2_api._filed keys it"
+        assert lld["kind"] == "task" and lld["placement_id"].startswith("PL-")
+        assert [r for r in rows if r["label"] == "PRD"][0]["versions"] == 1
+
+
+def test_filed_versions_are_newest_first_with_their_state_word():
+    """A24: in use / waits / retired, off `supersedes` and `phase`."""
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        cid = _charter(E, a, "Own the plan")
+        first = _filed(E, a, cid, "holding/a.md", day="2026-09-19")
+        last = _filed(E, a, cid, "holding/a.md", phase="post-close", day="2026-09-20")
+        hist = M.filed(a)["filed"][0]["history"]
+        assert [h["id"] for h in hist] == [last["id"], first["id"]], "newest first"
+        assert [h["state"] for h in hist] == ["in use", "retired"]
+        assert hist[1]["row"]["supersedes"] is None and hist[0]["row"]["supersedes"] == first["id"]
+
+
+def test_filed_reads_waits_while_the_work_has_not_closed():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        cid = _charter(E, a, "Own the plan")
+        _filed(E, a, cid, "holding/b.md")                 # pre-flight, unsuperseded
+        row = M.filed(a)["filed"][0]
+        assert row["versions"] == 1
+        assert [h["state"] for h in row["history"]] == ["waits"]
+
+
+def test_filed_reads_waits_for_a_phase_the_engine_does_not_define():
+    """87 rows on this machine carry `open`, written outside placement_engine.
+    An undefined phase does not say the work closed, so it is not called in
+    use -- the word is not guessed at."""
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        cid = _charter(E, a, "Own the plan")
+        _filed(E, a, cid, "holding/c.md", phase="open")
+        assert [h["state"] for h in M.filed(a)["filed"][0]["history"]] == ["waits"]
+
+
+def test_filed_names_the_filer_and_never_invents_a_reader():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        cid = _charter(E, a, "Own the plan")
+        _filed(E, a, cid, "holding/d.md", origin="backfilled")
+        one = M.filed(a)["filed"][0]["history"][0]
+        assert one["made_by"] == "backfilled", "the filer's own word for itself"
+        assert one["read_by"] is None, "no record names who reads a filed item"
+        assert one["where"] == "A" and one["ts_ms"] > 0
+        assert one["charter_id"] == cid
+
+
+def test_filed_follows_a_re_homed_item_to_its_new_department():
+    """A placement re-homed under another department leaves the first one's
+    list: the current row is the only head, and it sits where it was re-filed."""
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        c_a, c_a1 = _charter(E, a, "Own A"), _charter(E, a1, "Own A1")
+        _filed(E, a1, c_a1, "holding/e.md", day="2026-09-19")
+        _filed(E, a, c_a, "holding/e.md", phase="post-close", day="2026-09-20")
+        assert M.filed(a1)["filed"] == [], "it moved away"
+        moved = M.filed(a)["filed"]
+        assert len(moved) == 1 and moved[0]["versions"] == 2
+        assert [h["where"] for h in moved[0]["history"]] == ["A", "A1"], \
+            "each version says which department held it"
+
+
+def test_filed_is_empty_for_a_department_with_nothing_filed():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        assert M.filed(a) == {"filed": []}
+
+
+def test_filed_404s_on_an_unknown_department():
+    import fastapi
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        with __import__("pytest").raises(fastapi.HTTPException) as exc:
+            M.filed("dref-nope")
+        assert exc.value.status_code == 404
+
+
+def test_filed_stops_on_a_chain_that_names_a_row_this_store_does_not_hold():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        cid = _charter(E, a, "Own the plan")
+        body = _filed(E, a, cid, "holding/f.md")
+        path = Path(E.PLACEMENTS) / (body["id"] + ".json")
+        body["supersedes"] = "PL-does-not-exist"
+        path.write_text(json.dumps(body, sort_keys=True, indent=2), encoding="utf-8")
+        E._JSON_CACHE.clear()          # the body was edited under the engine's cache
+        row = M.filed(a)["filed"][0]
+        assert row["versions"] == 1, "a dangling predecessor is not a version"
+
+
+# --------------------------------------------------------------------- S64 --
+# R14 / A25: the owner first, then role charters. F-14 is real -- no charter on
+# disk carries kind "role" -- so the owner-only answer is the one every
+# department gives today, and the role branch is pinned against a fixture.
+
+
+def test_people_lists_the_owner_only_when_no_role_charter_exists():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _charter(E, a, "A goal.", authority={"name": "Meera"})
+        out = M.people(a)
+        assert out["owner"]["name"] == "Meera" and out["owner"]["source"] == "charter"
+        assert out["roles"] == [], "F-14: no charter carries kind role today"
+
+
+def test_people_owner_is_the_same_one_identity_resolves(monkeypatch):
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: type(
+        "R", (), {"returncode": 0, "stdout": "SankalpAsawa\n"})())
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        assert M.people(a)["owner"] == dict(M.identity(a)["owner"],
+                                            stamps="", seen=[]), \
+            "one owner rule, read twice"
+
+
+def test_people_lists_a_role_charter_after_the_owner():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _charter(E, a, "A goal.", authority={"name": "Meera"})
+        _charter(E, a, "Stamp the release notes.", title="Reviewer", kind="role")
+        out = M.people(a)
+        assert out["owner"]["name"] == "Meera", "the owner is still first"
+        assert [r["title"] for r in out["roles"]] == ["Reviewer"]
+        assert out["roles"][0]["name"] == "Reviewer"
+        assert out["roles"][0]["stamps"] == "Stamp the release notes."
+        assert out["roles"][0]["charter_id"].startswith("C-")
+
+
+def test_people_owner_stamps_nothing_when_the_record_names_no_scope():
+    """F-12's twin: `authority` is {} on every charter on disk, so what the
+    owner stamps is honestly unwritten and the card shows its quiet line."""
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _charter(E, a, "A goal.", authority={"name": "Meera"})
+        assert M.people(a)["owner"]["stamps"] == ""
+
+
+def test_people_owner_stamps_the_scope_the_record_does_name():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _charter(E, a, "A goal.",
+                 authority={"name": "Meera", "scope": "Every release of Desktop"})
+        assert M.people(a)["owner"]["stamps"] == "Every release of Desktop"
+
+
+def test_people_seen_carries_the_answered_asks_and_not_the_open_one():
+    with _fresh() as (M, E, tmp):
+        import proposals
+        root, desk, a, a1 = _tree(E, tmp)
+        _charter(E, a, "A goal.", authority={"name": "Meera"})
+        p1 = proposals.create("org.charter", {"ref": a1, "purpose": "x"},
+                              "Write the goal of A1")
+        proposals.create("org.rename", {"ref": a1, "name": "A2"}, "Rename A1")
+        proposals.decide(p1["id"], False)
+        seen = M.people(a)["owner"]["seen"]
+        assert [(s["summary"], s["answer"]) for s in seen] == [
+            ("Write the goal of A1", "Refused.")], "an open ask was not seen"
+        assert seen[0]["at"] and seen[0]["at_ms"] > 0
+        assert seen[0]["row"]["id"] == p1["id"]
+
+
+def test_people_seen_leaves_out_an_ask_whose_window_closed_on_its_own():
+    with _fresh() as (M, E, tmp):
+        import proposals
+        root, desk, a, a1 = _tree(E, tmp)
+        rec = proposals.create("org.charter", {"ref": a, "purpose": "x"}, "Write it")
+        rec["created_ms"] = int(time.time() * 1000) - (proposals.TTL_SECONDS + 60) * 1000
+        proposals._write(rec)
+        assert [r["status"] for r in proposals.listing()] == ["expired"]
+        assert M.people(a)["owner"]["seen"] == [], \
+            "a window that closed on its own was never looked at"
+
+
+def test_people_is_quiet_with_no_charter_and_no_git_user(monkeypatch):
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: type(
+        "R", (), {"returncode": 1, "stdout": ""})())
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        out = M.people(a)
+        assert out == {"owner": {"source": "none", "name": None, "stamps": "", "seen": []},
+                       "roles": []}
+
+
+def test_people_404s_on_an_unknown_department():
+    import fastapi
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        with __import__("pytest").raises(fastapi.HTTPException) as exc:
+            M.people("dref-nope")
+        assert exc.value.status_code == 404
+
+
 def test_writes_only_through_proposals():
     """R2: the read side files nothing. dept_api never calls a routines mutator
     and never writes a placement; the only create() it may ever name is

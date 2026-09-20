@@ -2,7 +2,13 @@
 
 **status**: active · **updated**: 2026-09-21
 
-## v2.289.5 (2026-09-21, HEAD)
+## v2.289.6 (2026-09-21, HEAD)
+
+**Department screen, slice E** (holding/plans/department-screen, Gate 4): Filed work with a version chain per work item and the three state words off `supersedes` and `phase`, People with the owner and the asks they saw, and Documents and Apps read and opened through the Org screen's own loaders.
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.289.5 (2026-09-21)
 
 **Department screen, slice D** (holding/plans/department-screen, Gate 4): the Engines group with a state word per engine, and an engine card with Engine, Workflow, Runs, Data and Chat. Reads `routines.py`'s own store functions rather than `state()` (which writes a heartbeat and shells launchctl); the one write is a Pause ask through the proposal gate.
 

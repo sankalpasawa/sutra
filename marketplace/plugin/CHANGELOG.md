@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.289.6 (2026-09-21)
+
+- **Sutra Desktop: department screen slice E, filed work with versions, people, documents and apps** (holding/plans/department-screen, BUILD-PLAN S63-S72). Filed work lists one row per work item with its versions as dots, never a count; opening one shows every version newest first with the word the record carries — in use, waits or retired, derived from the supersedes chain and the placement phase — plus who filed it, where it sits, and a quiet line where no record names a reader. People lists the owner (Identity's own rule) and then any role charters, and a person opens on their name, what they stamp and the asks they answered. Documents and Apps are the Org screen's own rows, opened by its own o2OpenDoc and o2OpenApp. Two new reads under `/api/dept/{ref}`; `org_api.py` untouched.
+
 ## 2.289.5 (2026-09-21)
 
 - **Sutra Desktop: department screen slice D, engines with their workflow, runs, data and chat** (holding/plans/department-screen, BUILD-PLAN S49-S62). The Engines group lists every routine whose folder falls under the department with its state word — Running, Paused or Idle — derived from `enabled` and the run lock. Opening one gives five tabs: Engine (made by, runs as, cadence, needs, makes, read by, with a quiet line wherever no record names it and the birth line "From an ask, <date>" when an approved routine.create was decided in the same minute), Workflow (the registered workflow's steps, else what the engine is told to do), Runs (one line per execution row — outcome dot, when it started, duration bar; a live run reads Running with how long it has been going), Data (what its runs filed) and Chat (those same run rows as turns and as the rows themselves). Pause files a `routine.update` ask through the proposal gate and applies nothing: the state word moves only after the ask is stamped. Three new reads plus one narrow POST under `/api/dept/{ref}/engines`; `org_api.py` untouched.

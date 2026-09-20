@@ -1496,3 +1496,230 @@ def engine_pause(ref: str, eid: str):
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return {"proposal": row, "summary": summary}
+
+
+# ---------------------------------------------------------------- FILED WORK --
+# R13. What this department has filed, and every version of each one.
+#
+# A placement is never edited. Re-filing the same work item -- a charter
+# amendment, a re-home, a second pass over the same file -- writes a NEW
+# placement whose `supersedes` names its predecessor (placement_engine.py:941).
+# That chain IS the version history, and walking it is the only way to count
+# versions: no row carries a number, and org2_api._filed (which this adapts --
+# that helper is module-private there) drops the chain entirely.
+#
+# The row `id` is the WORK item's id, exactly as org2_api._filed writes it, so
+# the department screen's Filed work rows and the Org screen's are the same
+# rows under the same key; the placement's own id rides beside it.
+
+FILED_MAX = 200                              # filed rows per department, newest first
+VERSIONS_MAX = 24                            # versions walked back per work item
+#: A24: the three words a version can carry, derived from TWO fields because no
+#: record carries a state of its own. A row that some other row names in
+#: `supersedes` is RETIRED. An unsuperseded row is the version in force, and
+#: `phase` says whether the work it was filed for has closed: `post-close`
+#: means it has (in use), anything else means it has not (waits).
+#:
+#: DRIFT, stated rather than hidden: placement_engine writes exactly two phases
+#: (`pre-flight` at line 920, `post-close` at 1615/1773/1895/1969/2979), but a
+#: third, `open`, sits on 87 rows of this machine's store, written by a filer
+#: outside the engine. Those read `waits` too -- not because `open` was mapped,
+#: but because the record does not say the work closed, and inventing the word
+#: "in use" for a phase the engine does not define would be a guess.
+PHASE_IN_USE = "post-close"
+#: An ask a person SAW is one they answered. `expired` is not here: a window
+#: that closed on its own was never looked at (proposals.py:144-146).
+SEEN_STATUSES = ("approved", "rejected", "failed")
+SEEN_MAX = 24
+ROLE_KIND = "role"                           # A25 / F-14: no charter carries it today
+
+
+def _placement_index(places: List[Any]):
+    """({placement id: its row}, {placement ids some other row supersedes}).
+
+    One pass over the whole log, because both answers need the whole log: the
+    chain walks backwards by id, and "retired" is DERIVED from another row
+    naming this one -- the same rule `superseded_ids()` applies to charters
+    (placement_engine.py:2530), applied to placements."""
+    by_id: Dict[str, Dict[str, Any]] = {}
+    superseded = set()
+    for p in places:
+        if not isinstance(p, dict):
+            continue
+        pid = _text(p.get("id"))
+        if pid:
+            by_id[pid] = p
+        sup = _text(p.get("supersedes"))
+        if sup:
+            superseded.add(sup)
+    return by_id, superseded
+
+
+def _current_rows(places: List[Any], superseded: set) -> List[Dict[str, Any]]:
+    """The CURRENT row per work item, through the engine's own index.
+
+    `_current_placements()` is org2_api._placements_now's reader too; when it
+    cannot be read, an unsuperseded row IS the current one, which is the same
+    answer (3,329 rows on this machine, 553 superseded, 2,776 current)."""
+    fn = getattr(E, "_current_placements", None)
+    if callable(fn):
+        try:
+            return [p for p in fn() if isinstance(p, dict)]
+        except Exception:
+            pass
+    return [p for p in places if isinstance(p, dict)
+            and _text(p.get("id")) not in superseded]
+
+
+def _version_chain(pid: str, by_id: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """A placement and every row it supersedes, newest first. A chain that
+    loops back on itself, or that names a row this store does not hold, stops
+    there rather than spinning or guessing at a missing version."""
+    out: List[Dict[str, Any]] = []
+    seen = set()
+    cur = by_id.get(pid)
+    while isinstance(cur, dict):
+        cid = _text(cur.get("id"))
+        if not cid or cid in seen or len(out) >= VERSIONS_MAX:
+            break
+        seen.add(cid)
+        out.append(cur)
+        nxt = _text(cur.get("supersedes"))
+        cur = by_id.get(nxt) if nxt else None
+    return out
+
+
+def _version_state(p: Dict[str, Any], superseded: set) -> str:
+    if _text(p.get("id")) in superseded:
+        return "retired"
+    return "in use" if _text(p.get("phase")) == PHASE_IN_USE else "waits"
+
+
+def _version_row(p: Dict[str, Any], superseded: set,
+                 domains: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """One version. `made_by` is the filer's own word for itself (`origin`:
+    matched, backfilled, hook), read as a NAME like every other name on this
+    screen. `read_by` is None always -- no record anywhere names who reads a
+    filed item, the same gap the engine card states (PRD F-8) -- so the card
+    says so in one quiet line instead of inventing a reader."""
+    return {
+        "id": _text(p.get("id")),
+        "state": _version_state(p, superseded),
+        "made_by": _label(p.get("origin")),
+        "read_by": None,
+        "charter_id": _text(p.get("charter_id")),
+        "where": _dept_name(p.get("domain_ref"), domains),
+        "ts_ms": _int(p.get("ts_ms")),
+        "row": p,
+    }
+
+
+@router.get("/{ref}/filed")
+def filed(ref: str):
+    """R13: the work filed under this department, each with its versions."""
+    domains = _domain(ref)
+    try:
+        places = E.all_placements()
+    except Exception:
+        return {"filed": []}
+    by_id, superseded = _placement_index(places)
+    rows = []
+    for p in _current_rows(places, superseded):
+        if p.get("domain_ref") != ref:
+            continue
+        wr = p.get("work_ref") or {}
+        chain = _version_chain(_text(p.get("id")), by_id)
+        rows.append({
+            "id": _text(wr.get("id")),
+            "label": _label(wr.get("id")),
+            "kind": _text(wr.get("kind")),
+            "versions": len(chain) or 1,
+            "placement_id": _text(p.get("id")),
+            "charter_id": _text(p.get("charter_id")),
+            "ts_ms": _int(p.get("ts_ms")),
+            "history": [_version_row(q, superseded, domains) for q in chain],
+        })
+    rows.sort(key=lambda r: -(r["ts_ms"] or 0))
+    return {"filed": rows[:FILED_MAX]}
+
+
+# -------------------------------------------------------------------- PEOPLE --
+# R14. Who answers for this department: the owner, and then the people the
+# department names in its own right.
+#
+# F-12: `authority` is `{}` on every charter on disk, so the owner is the same
+# one Identity resolves (component 3's rule, reused here rather than re-derived)
+# and what that person's record says they STAMP is honestly nothing.
+# F-14: a person of their own is a charter of kind `role`, and no charter
+# carries that kind today (the store holds `standing` and `project` only), so
+# the list is the owner alone until one is written -- read, never assumed.
+# F-13's twin: NO proposal row names who decided it (proposals.py:189 writes
+# `decided_at` and nothing else). The asks a person SAW are therefore the
+# department's answered asks, attributed by exactly the rule Identity's owner
+# chat already ships (`_owner_chat`): this department has one owner, and its
+# asks were put to them.
+
+
+def _stamps(charter: Optional[Dict[str, Any]]) -> str:
+    """What this person's own record says is theirs to answer.
+
+    For the owner that is the `authority` field, which is `{}` everywhere
+    (F-12), so the answer is "" and the card shows its quiet line. For a role
+    charter it is that charter's purpose -- the scope it was written to hold."""
+    if not charter:
+        return ""
+    a = charter.get("authority")
+    if isinstance(a, dict):
+        for k in ("scope", "stamps", "decides", "covers"):
+            if isinstance(a.get(k), str) and a[k].strip():
+                return " ".join(a[k].split())
+    return ""
+
+
+def _seen_rows(props: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The asks that were answered here, newest answer first."""
+    out = []
+    for rec in props:
+        status = str(rec.get("status") or "")
+        if status not in SEEN_STATUSES:
+            continue
+        out.append({"id": rec.get("id"), "summary": _text(rec.get("summary")),
+                    "answer": ANSWERS.get(status, ""), "at": _at(rec, "decided_at"),
+                    "at_ms": _ms_iso(rec.get("decided_at")), "row": rec})
+    out.sort(key=lambda r: -(r["at_ms"] or 0))
+    return out[:SEEN_MAX]
+
+
+def _roles(ref: str) -> List[Dict[str, Any]]:
+    """The people this department names of its own: charters of kind `role`,
+    active and not superseded. Empty today, and empty by READING rather than by
+    assumption -- the moment such a charter is written it appears here."""
+    try:
+        views = [v for v in (E.charter_view(c) for c in E.charters_for(ref)) if v]
+    except Exception:
+        return []
+    sup = E.superseded_ids() if hasattr(E, "superseded_ids") else {}
+    out = []
+    for v in views:
+        if str(v.get("kind") or "") != ROLE_KIND:
+            continue
+        if v.get("status", "active") == "retired" or v.get("id") in sup:
+            continue
+        title = _text(v.get("title"))
+        out.append({"charter_id": _text(v.get("id")), "title": title,
+                    "name": _authority_name(v) or title,
+                    "stamps": _stamps(v) or _text(v.get("purpose")), "seen": []})
+    out.sort(key=lambda r: (r["title"].lower(), r["charter_id"]))
+    return out
+
+
+@router.get("/{ref}/people")
+def people(ref: str):
+    """R14: the owner first, then the role charters (A25)."""
+    domains = _domain(ref)
+    cwd = _dept_cwd(ref, domains)
+    charter = _standing_charter(ref)
+    owner = dict(_owner(charter, cwd))
+    owner["stamps"] = _stamps(charter)
+    owner["seen"] = _seen_rows(_dept_proposals(ref, domains, cwd))
+    return {"owner": owner, "roles": _roles(ref)}

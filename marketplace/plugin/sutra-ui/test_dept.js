@@ -326,11 +326,18 @@ test("S16: the first paint opens the department without a click", async () => {
   c.dpListHtml(n, d, DEPT_EXP, null);
   await sleep();
   assert.strictEqual(c.dpS().sel, "r4");
-  /* three for Now, and one for Engines: the LIST COLUMN carries a state word
-     per engine (A18), so the column itself needs that read. The pin moved from
-     3 to 4 in slice D, and dpSelect still costs exactly three (S14, S39). */
+  /* three for Now, and three the LIST COLUMN itself needs: a state word per
+     engine (A18), a version count per filed row (A24) and the people's names
+     (A25) are all painted in the column, so the column reads them. The pin
+     moved 3 -> 4 in slice D and 4 -> 7 in slice E; dpSelect still costs
+     exactly three (S14, S39), which is what opening a department costs.
+     The seventh is not this module's: Apps is the ORG screen's own loader,
+     called rather than re-asked (A26), and that call is the one the Org
+     screen's own column makes for the same department (19-org2.js:639-641). */
   assert.deepStrictEqual(c.calls.apiGet.slice().sort(),
-    ["/api/dept/r4/engines", "/api/dept/r4/now", "/api/dept/r4/running", "/api/dept/r4/waits"]);
+    ["/api/dept/r4/engines", "/api/dept/r4/filed", "/api/dept/r4/now",
+     "/api/dept/r4/people", "/api/dept/r4/running", "/api/dept/r4/waits",
+     "/api/modules?subtree=0&department=r4"]);
 });
 
 /* ── S17 / A2: Now is the card on open ── */
@@ -1463,6 +1470,279 @@ test("S32/A29: the word charter reaches no function card, and every screen word 
   for (const w of ["cut", "seam", "overlay", "cascade", "score"]) {
     assert.ok(new RegExp("\\b" + w + "\\b", "i").test(all) === false, "off-list word: " + w);
   }
+});
+
+/* ── slice E fixtures: the filed work, its versions, and the people ──────── */
+const FILED = { filed: [
+  { id: "holding/plans/department-screen/LLD.md", label: "LLD", kind: "task",
+    versions: 3, placement_id: "PL-3", charter_id: "C-1", ts_ms: Date.now() - HOUR,
+    history: [
+      { id: "PL-3", state: "in use", made_by: "matched", read_by: null,
+        charter_id: "C-1", where: "Experience", ts_ms: Date.now() - HOUR, row: { id: "PL-3", charter_id: "C-1" } },
+      { id: "PL-2", state: "retired", made_by: "matched", read_by: null,
+        charter_id: "C-1", where: "Org", ts_ms: Date.now() - 3 * HOUR, row: { id: "PL-2" } },
+      { id: "PL-1", state: "retired", made_by: "backfilled", read_by: null,
+        charter_id: "C-1", where: "Org", ts_ms: Date.now() - 9 * HOUR, row: { id: "PL-1" } },
+    ] },
+  { id: "holding/plans/department-screen/PRD.md", label: "PRD", kind: "task",
+    versions: 1, placement_id: "PL-9", charter_id: "C-1", ts_ms: Date.now() - 2 * HOUR,
+    history: [{ id: "PL-9", state: "waits", made_by: "hook", read_by: null,
+                charter_id: "C-1", where: "Experience", ts_ms: Date.now() - 2 * HOUR, row: { id: "PL-9" } }] },
+] };
+const PEOPLE = { owner: { source: "charter", name: "Meera", stamps: "Every release of Desktop",
+                          seen: [{ id: "p-aa11", summary: "Write the goal of Org",
+                                   answer: "Refused.", at: "2026-09-21T09:01:04+05:30",
+                                   at_ms: Date.now() - HOUR, row: { id: "p-aa11" } }] },
+                 roles: [{ charter_id: "C-7", title: "Reviewer", name: "Reviewer",
+                           stamps: "Stamp the release notes.", seen: [] }] };
+const PEOPLE_BARE = { owner: { source: "git", name: "SankalpAsawa", stamps: "", seen: [] }, roles: [] };
+const PEOPLE_NONE = { owner: { source: "none", name: null, stamps: "", seen: [] }, roles: [] };
+const APPS = [{ id: "m-1", name: "Balance", kind: "page", has_page: true },
+              { id: "m-2", name: "Wedding", kind: "page", has_page: true }];
+
+/* The list column with the slice-E reads already landed. */
+function listE(c, seed){
+  const d = c.o2Data(), n = d.byRef.get("r4");
+  c.dpListHtml(n, d, DEPT_EXP, null);                 /* opens it, fires the reads */
+  Object.assign(c.dpS(), seed || {});
+  return c.dpListHtml(n, d, DEPT_EXP, null);
+}
+/* One of the two new cards, with its read landed and its row selected. */
+function cardE(c, tab, seed){
+  const d = c.o2Data(), n = d.byRef.get("r4");
+  const st = c.dpS();
+  st.sel = "r4"; st.tab.r4 = tab;
+  Object.assign(st, seed || {});
+  return c.dpViewerHtml(n, d, DEPT_EXP, null);
+}
+
+/* ── S65: the two loaders ── */
+test("S65: dpLoadFiled and dpLoadPeople read their own routes, once each", async () => {
+  const c = fresh();
+  c.dpS().sel = "r4";
+  c.dpLoadFiled("r4"); c.dpLoadFiled("r4"); c.dpLoadPeople("r4"); c.dpLoadPeople("r4");
+  await sleep();
+  assert.deepStrictEqual(c.calls.apiGet.slice().sort(),
+    ["/api/dept/r4/filed", "/api/dept/r4/people"], "the busy guard holds for both");
+});
+
+test("S65: a filed answer for a department that is no longer open is dropped", async () => {
+  let release;
+  const c = fresh({ apiGet: () => new Promise(r => { release = r; }) });
+  c.dpS().sel = "r4";
+  const p = c.dpLoadFiled("r4");
+  c.dpS().sel = "r5";
+  release(FILED);
+  await p;
+  assert.strictEqual(c.dpS().filed, null, "the answer belongs to a department nobody is on");
+});
+
+test("S65: opening another department drops the filed work and the people it read", async () => {
+  const c = fresh();
+  c.dpSelect("r4");
+  Object.assign(c.dpS(), { filed: Object.assign({ ref: "r4" }, FILED),
+                           people: Object.assign({ ref: "r4" }, PEOPLE),
+                           filedSel: "x", personSel: "owner" });
+  c.dpSelect("r5");
+  await sleep();
+  assert.strictEqual(c.dpS().filed, null);
+  assert.strictEqual(c.dpS().people, null);
+  assert.strictEqual(c.dpS().filedSel, null);
+  assert.strictEqual(c.dpS().personSel, null);
+});
+
+/* ── S66 / A24: the filed rows and the versions behind one ── */
+test("S66/A24: a filed row is a name and its versions are dots, never a count", () => {
+  const c = fresh();
+  const html = listE(c, { filed: Object.assign({ ref: "r4" }, FILED) });
+  assert.ok(html.indexOf(">LLD<") !== -1 && html.indexOf(">PRD<") !== -1, "names, not paths");
+  const rows = (html.match(/data-dpfiled="[^"]*"[^]*?<\/button>/g) || []);
+  assert.strictEqual(rows.length, 2);
+  const dots = r => (r.match(/<i><\/i>/g) || []).length;
+  assert.strictEqual(dots(rows[0]), 3, "three versions, three dots");
+  assert.strictEqual(dots(rows[1]), 0, "one version carries no mark at all");
+  assert.ok(!/>\s*3\s*</.test(html) && !/versions/i.test(html), "A28: no count at rest");
+});
+
+test("S66: until the version read lands the rows the Org screen loaded are shown", () => {
+  const c = fresh();
+  const d = c.o2Data(), n = d.byRef.get("r4");
+  const html = c.dpListHtml(n, d, DEPT_EXP, null);
+  assert.ok(html.indexOf(">HLD<") !== -1, "the Org payload's own filed row");
+  assert.ok(html.indexOf("Nothing filed yet") === -1, "never blank while it reads");
+});
+
+test("S66/A24: opening a filed row shows its versions newest first, each with its word", () => {
+  const c = fresh();
+  const html = cardE(c, "filed", { filed: Object.assign({ ref: "r4" }, FILED), filedSel: FILED.filed[0].id });
+  const words = (html.match(/class="dpvw [a-z]+">([^<]*)</g) || []).map(m => /">([^<]*)<$/.exec(m)[1]);
+  assert.deepStrictEqual(words, ["in use", "retired", "retired"], "newest first");
+  assert.ok(html.indexOf("Filed by matched") !== -1, "the filer's own word");
+  assert.ok(html.indexOf("Filed by backfilled") !== -1, "and the older one's");
+  assert.ok(html.indexOf("Versions") !== -1 && html.indexOf("The work item") !== -1);
+});
+
+test("S66/A24: a work item filed once reads waits and shows its one version", () => {
+  const c = fresh();
+  const html = cardE(c, "filed", { filed: Object.assign({ ref: "r4" }, FILED), filedSel: FILED.filed[1].id });
+  const words = (html.match(/class="dpvw [a-z]+">([^<]*)</g) || []).map(m => /">([^<]*)<$/.exec(m)[1]);
+  assert.deepStrictEqual(words, ["waits"]);
+});
+
+test("S66: the card names the filer and says nothing where no record names a reader", () => {
+  const c = fresh();
+  const html = cardE(c, "filed", { filed: Object.assign({ ref: "r4" }, FILED) });
+  assert.ok(/Read by<\/div><div class="o2quiet dpq">Not named</.test(html), "no reader is invented");
+  assert.ok(html.indexOf("Experience") !== -1, "where it sits now");
+});
+
+test("S66: clicking a filed row opens the filed card on that row", () => {
+  const c = fresh();
+  open(c, "r4", { filed: Object.assign({ ref: "r4" }, FILED) });
+  c.dpS().sel = "r4";
+  assert.ok(click(c, elem({ dpfiled: FILED.filed[1].id })), "handled");
+  assert.strictEqual(c.dpS().filedSel, FILED.filed[1].id);
+  assert.strictEqual(c.dpS().tab.r4, "filed");
+});
+
+test("S66: a department with nothing filed says so once, and a failed read says so", () => {
+  const c = fresh();
+  assert.ok(cardE(c, "filed", { filed: { ref: "r4", filed: [] } }).indexOf("Nothing filed yet") !== -1);
+  const b = fresh();
+  assert.ok(cardE(b, "filed", { error: { filed: "Sutra did not answer" } }).indexOf("Could not read") !== -1);
+});
+
+test("S66/A28/A29: the filed card carries no path, no count and not the word charter", () => {
+  const c = fresh();
+  const html = cardE(c, "filed", { filed: Object.assign({ ref: "r4" }, FILED) });
+  assert.strictEqual(html.toLowerCase().indexOf("charter"), -1, "A29");
+  assert.strictEqual(html.indexOf("/Users/"), -1, "A28");
+  assert.strictEqual(html.indexOf("holding/plans"), -1, "A28: a name, never the path");
+});
+
+/* ── S67 / A25: the people ── */
+test("S67/A25: People lists the owner first, then the role charters", () => {
+  const c = fresh();
+  const html = listE(c, { people: Object.assign({ ref: "r4" }, PEOPLE) });
+  const rows = (html.match(/data-dpperson="([^"]*)"/g) || []).map(m => /"([^"]*)"/.exec(m)[1]);
+  assert.deepStrictEqual(rows, ["owner", "C-7"], "the owner, then the role");
+  assert.ok(html.indexOf(">Meera<") !== -1 && html.indexOf(">Reviewer<") !== -1);
+});
+
+test("S67/A25: with no role charter the group is the owner alone", () => {
+  const c = fresh();
+  const html = listE(c, { people: Object.assign({ ref: "r4" }, PEOPLE_BARE) });
+  const rows = (html.match(/data-dpperson="([^"]*)"/g) || []).map(m => /"([^"]*)"/.exec(m)[1]);
+  assert.deepStrictEqual(rows, ["owner"]);
+  assert.ok(html.indexOf(">SankalpAsawa<") !== -1);
+});
+
+test("S67: a department with no owner and no roles shows one quiet line", () => {
+  const c = fresh();
+  const html = listE(c, { people: Object.assign({ ref: "r4" }, PEOPLE_NONE) });
+  assert.ok(html.indexOf("No people yet") !== -1);
+  assert.strictEqual((html.match(/data-dpperson=/g) || []).length, 0);
+});
+
+test("S67: a person opens on their name, what they stamp and the asks they saw", () => {
+  const c = fresh();
+  const html = cardE(c, "people", { people: Object.assign({ ref: "r4" }, PEOPLE), personSel: "owner" });
+  assert.ok(html.indexOf(">Meera<") !== -1, "the name");
+  assert.ok(html.indexOf("Every release of Desktop") !== -1, "what they stamp");
+  assert.ok(html.indexOf("Write the goal of Org") !== -1 && html.indexOf("Refused.") !== -1,
+    "the ask they saw and the answer they gave");
+  assert.ok(html.indexOf("The person") !== -1 && html.indexOf("Asks they saw") !== -1);
+});
+
+test("S67: a person whose record names no scope and no ask says so, twice quietly", () => {
+  const c = fresh();
+  const html = cardE(c, "people", { people: Object.assign({ ref: "r4" }, PEOPLE_BARE) });
+  assert.ok(html.indexOf("Not named") !== -1, "what they stamp is unwritten");
+  assert.ok(html.indexOf("No asks yet") !== -1);
+});
+
+test("S67: clicking a person opens their card, and a failed read says so", () => {
+  const c = fresh();
+  open(c, "r4", { people: Object.assign({ ref: "r4" }, PEOPLE) });
+  c.dpS().sel = "r4";
+  assert.ok(click(c, elem({ dpperson: "C-7" })), "handled");
+  assert.strictEqual(c.dpS().personSel, "C-7");
+  assert.strictEqual(c.dpS().tab.r4, "people");
+  const b = fresh();
+  assert.ok(cardE(b, "people", { error: { people: "Sutra did not answer" } }).indexOf("Could not read") !== -1);
+});
+
+test("S67/A29: the person card does not say charter, and shows no path", () => {
+  const c = fresh();
+  for (const seed of [PEOPLE, PEOPLE_BARE, PEOPLE_NONE]){
+    const html = cardE(fresh(), "people", { people: Object.assign({ ref: "r4" }, seed) });
+    assert.strictEqual(html.toLowerCase().indexOf("charter"), -1, "A29");
+    assert.strictEqual(html.indexOf("/Users/"), -1, "A28");
+  }
+  assert.ok(c);
+});
+
+/* ── S68 / A26: Documents is what the Org screen lists ── */
+test("S68/A26: Documents carries the same rows the Org screen's own column carries", () => {
+  const c = fresh();
+  const d = c.o2Data(), n = d.byRef.get("r4");
+  const org = c.o2ListHtml(n, d, DEPT_EXP, null);
+  const dp = c.dpListHtml(n, d, DEPT_EXP, null);
+  const pick = (html, a, t) => (html.match(new RegExp("data-" + a + '="([^"]*)" data-' + t + '="([^"]*)"', "g")) || []);
+  const orgDocs = pick(org, "o2doc", "o2title").map(s => s.replace(/o2/g, ""));
+  const dpDocs = pick(dp, "dpdoc", "dptitle").map(s => s.replace(/dp/g, ""));
+  assert.ok(orgDocs.length === 1, "the fixture has one document");
+  assert.deepStrictEqual(dpDocs, orgDocs, "same path, same title, same order");
+});
+
+test("S68/A26: a document opens through the Org screen's own reader", () => {
+  const c = fresh();
+  open(c, "r4");
+  const opened = [];
+  c.o2OpenDoc = (p, t) => opened.push([p, t]);
+  assert.ok(click(c, elem({ dpdoc: "holding/x.md", dptitle: "X" })), "handled");
+  assert.deepStrictEqual(opened, [["holding/x.md", "X"]], "o2OpenDoc, not a second reader");
+});
+
+/* ── S69 / A26: Apps is the Org screen's own read ── */
+test("S69/A26: Apps calls o2LoadApps and renders exactly what it put in the cache", async () => {
+  const c = fresh();
+  const d = c.o2Data(), n = d.byRef.get("r4");
+  c.dpListHtml(n, d, DEPT_EXP, null);
+  await sleep();
+  assert.ok(c.calls.apiGet.indexOf("/api/modules?subtree=0&department=r4") !== -1,
+    "the Org screen's own URL, unchanged");
+  c.o2S().apps.r4 = APPS;
+  const html = c.dpListHtml(n, d, DEPT_EXP, null);
+  const ids = (html.match(/data-dpapp="([^"]*)"/g) || []).map(m => /"([^"]*)"/.exec(m)[1]);
+  assert.deepStrictEqual(ids, ["m-1", "m-2"]);
+  assert.ok(html.indexOf(">Balance<") !== -1 && html.indexOf(">Wedding<") !== -1);
+  const org = c.o2ListHtml(n, d, DEPT_EXP, null);
+  const orgIds = (org.match(/data-o2app="([^"]*)"/g) || []).map(m => /"([^"]*)"/.exec(m)[1]);
+  assert.deepStrictEqual(ids, orgIds, "the same apps the Org screen lists, in the same order");
+});
+
+test("S69: an unread Apps group says so rather than claiming there are none", () => {
+  const c = fresh();
+  const d = c.o2Data(), n = d.byRef.get("r4");
+  c.o2S().apps.r4 = null;                       /* in flight, the way o2LoadApps marks it */
+  assert.ok(c.dpListHtml(n, d, DEPT_EXP, null).indexOf("Not read yet") !== -1);
+  c.o2S().apps.r4 = [];
+  assert.ok(c.dpListHtml(n, d, DEPT_EXP, null).indexOf("No apps yet") !== -1);
+});
+
+test("S69/A26: an app opens through o2OpenApp, over the module that loader cached", () => {
+  const c = fresh();
+  open(c, "r4");
+  c.dpS().sel = "r4";
+  c.o2S().apps.r4 = APPS;
+  const opened = [];
+  c.o2OpenApp = (m) => opened.push(m.id);
+  assert.ok(click(c, elem({ dpapp: "m-2" })), "handled");
+  assert.deepStrictEqual(opened, ["m-2"]);
+  c.o2S().apps.r4 = [];
+  click(c, elem({ dpapp: "m-2" }));
+  assert.deepStrictEqual(opened, ["m-2"], "an id the cache does not hold opens nothing");
 });
 
 /* ── S15 / TEST-PLAN component 39: the one branch inside 19-org2.js ── */

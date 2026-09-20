@@ -4673,5 +4673,20 @@
 .dpst.paused{color:var(--warn)}
 /* the engine's own table: the six things it is, in Identity's cell shape */
 .dpengines{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+/* A filed row's versions, as dots at the end of the row (A28: never a count).
+   A work item filed once carries none, so a column of filed work reads as the
+   few that have been re-filed against the many that have not. */
+.dpdots{display:flex;align-items:center;gap:3px;flex:none}
+.dpdots i{display:block;width:4px;height:4px;border-radius:50%;background:var(--faint)}
+/* One version of a filed item: the word it carries, and what the record says
+   under it. The word is the record's, derived from two of its fields. */
+.dpver{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;
+  align-items:baseline;padding:6px 0;border-top:1px solid var(--line-soft);
+  font:400 12.5px/1.45 var(--sans);color:var(--muted)}
+.dpver:first-child{border-top:0;padding-top:0}
+.dpvw{font:400 10px/1.5 var(--sans);letter-spacing:.05em;text-transform:uppercase;
+  color:var(--faint);white-space:nowrap}
+.dpvw.use{color:var(--ok)}
+.dpvw.waits{color:var(--warn)}
 @media (max-width:980px){.dpid{grid-template-columns:1fr 1fr}
   .dpengines{grid-template-columns:1fr 1fr}}

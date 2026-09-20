@@ -28,7 +28,7 @@ const DP_FUNCS = [["identity", "Identity"], ["adaptation", "Adaptation"],
    opened while the first is still in flight can never paint the first one's
    rows. `busy` is keyed by card AND ref for the same reason. */
 function dpS(){
-  if (!S.dp) S.dp = { sel:null, tab:{}, pane:{}, engineSel:null, filedSel:null, chatMode:{},
+  if (!S.dp) S.dp = { sel:null, tab:{}, pane:{}, engineSel:null, filedSel:null, personSel:null, chatMode:{},
                       loading:{}, error:{}, busy:{}, more:{}, confirm:null,
                       identity:null, now:null, running:null, waits:null,
                       adaptation:null, priority:null, coordination:null, audit:null,
@@ -105,6 +105,12 @@ async function dpLoadEngine(key, ref, id, force){
 }
 function dpLoadEngineRuns(ref, id, force){ return dpLoadEngine("engineRuns", ref, id, force); }
 function dpLoadEngineData(ref, id, force){ return dpLoadEngine("engineData", ref, id, force); }
+/* Filed work and People are read when the LIST COLUMN paints, the way Engines
+   is: the Filed work row carries a version count (A24) and the People group
+   carries names (A25), so the column itself needs both answers -- a card that
+   opened first would have nothing to open. */
+function dpLoadFiled(ref, force){ return dpLoad("filed", ref, dpUrl(ref, "filed"), force); }
+function dpLoadPeople(ref, force){ return dpLoad("people", ref, dpUrl(ref, "people"), force); }
 
 /* ── selection ────────────────────────────────────────────────────────────── */
 /* Opening a department, mirroring o2Select (19-org2.js:250-261): everything the
@@ -120,7 +126,7 @@ function dpSelect(ref){
     st.adaptation = null; st.priority = null; st.coordination = null; st.audit = null;
     st.engines = null; st.filed = null; st.people = null; st.meters = null;
     st.engineRuns = {}; st.engineData = {};
-    st.engineSel = null; st.filedSel = null; st.confirm = null;
+    st.engineSel = null; st.filedSel = null; st.personSel = null; st.confirm = null;
     st.more = {}; st.error = {}; st.loading = {}; st.pane = {}; st.chatMode = {};
   }
   if (!st.tab[ref]) st.tab[ref] = "now";                /* A2: Now without a click */
@@ -152,6 +158,60 @@ function dpGroup(label, rows, key, quiet){
     ? `<button type="button" class="o2more dpmore" data-dpmore="${dpEsc(key)}">more…</button>` : "";
   return `<div class="o2g dpg">${head}${shown.join("")}${more}</div>`;
 }
+/* One filed row: the name, and one dot per version of it. A count at rest is
+   the one thing this screen never prints (A28), so the versions are dots; a
+   work item filed once carries no mark at all, because the dots are there to
+   say "this one has been re-filed", not to number what has not. The row wears
+   `.dpeng` for its layout -- name left, mark right -- which is the rule the
+   engine row already carries, not a second one written for this. */
+const DP_VER_DOTS = 6;                   /* the longest chain in the store is 6 */
+function dpVerDots(n){
+  const k = Math.min(Number(n) || 0, DP_VER_DOTS);
+  if (k < 2) return "";
+  return `<span class="dpdots">${new Array(k).fill("<i></i>").join("")}</span>`;
+}
+function dpFiledRow(f){
+  const st = dpS();
+  const on = st.filedSel === f.id && st.tab[st.sel] === "filed";
+  return `<button type="button" class="o2li dpli dpeng${on ? " on" : ""}" data-dpfiled="${dpEsc(f.id || "")}">` +
+    `<span>${dpEsc(f.label)}</span>${dpVerDots(f.versions)}</button>`;
+}
+/* The people of a department, in the PRD's order: the owner first, then the
+   role charters (A25). With no role charter written -- which is every
+   department today -- that is the owner alone, and with no owner either it is
+   the group's one quiet line. */
+function dpPeople(read){
+  if (!read) return [];
+  const out = [];
+  const o = read.owner || {};
+  if (o.name) out.push({ key: "owner", name: o.name, stamps: o.stamps || "", seen: o.seen || [] });
+  (read.roles || []).forEach(r => out.push({ key: r.charter_id || r.title, name: r.name || r.title,
+                                             stamps: r.stamps || "", seen: r.seen || [] }));
+  return out;
+}
+function dpPersonRow(p){
+  const st = dpS();
+  const on = st.personSel === p.key && st.tab[st.sel] === "people";
+  return dpRow(p.name, `data-dpperson="${dpEsc(p.key)}"`, on);
+}
+/* Apps are the Org screen's own answer, read by the Org screen's own loader
+   (A26): o2LoadApps holds `/api/modules?subtree=0&department=<ref>` and the
+   cache behind it, so this column reads what that loader put there rather than
+   asking the same question a second way. `undefined` is unread and `null` is
+   in flight -- both are the quiet line, and neither is "no apps". */
+function dpApps(ref){
+  const apps = (typeof o2S === "function") ? o2S().apps[ref] : undefined;
+  if (apps === undefined && typeof o2LoadApps === "function") o2LoadApps(ref);
+  return apps || [];
+}
+function dpAppsQuiet(ref){
+  const apps = (typeof o2S === "function") ? o2S().apps[ref] : undefined;
+  return apps ? "No apps yet" : "Not read yet";
+}
+function dpAppOn(m){
+  const st = (typeof o2S === "function") ? o2S() : null;
+  return !!(st && st.view === "app" && st.app && st.app.id === m.id);
+}
 const DP_GROUPS = ["Now", "Functions", "Engines", "Filed work", "People", "Documents", "Apps"];
 function dpListHtml(n, d, dept, err){
   const st = dpS();
@@ -169,12 +229,22 @@ function dpListHtml(n, d, dept, err){
   const eng = (st.engines && st.engines.ref === n.ref) ? st.engines : null;
   groups += dpGroup("Engines", ((eng && eng.engines) || []).map(dpEngRow), "engines",
     eng ? "No engines here" : (st.error.engines ? "Could not read" : "Not read yet"));
-  groups += dpGroup("Filed work", filed.map(x =>
-    dpRow(x.label, `data-dpfiled="${dpEsc(x.id || "")}"`, st.filedSel === x.id)), "filed", "Nothing filed yet");
-  groups += dpGroup("People", [], "people", "Not read yet");
+  /* Filed work reads its own route for the version count (A24); until that
+     answer lands the rows the Org screen already loaded are shown, so the
+     group is never blank for a department that has filed something. */
+  dpLoadFiled(n.ref);
+  const fread = (st.filed && st.filed.ref === n.ref) ? st.filed : null;
+  const rows = (fread && fread.filed) || filed;
+  groups += dpGroup("Filed work", rows.map(dpFiledRow), "filed",
+    st.error.filed ? "Could not read" : "Nothing filed yet");
+  dpLoadPeople(n.ref);
+  const ppl = (st.people && st.people.ref === n.ref) ? st.people : null;
+  groups += dpGroup("People", dpPeople(ppl).map(dpPersonRow), "people",
+    ppl ? "No people yet" : (st.error.people ? "Could not read" : "Not read yet"));
   groups += dpGroup("Documents", docs.map(x =>
     dpRow(x.title, `data-dpdoc="${dpEsc(x.path)}" data-dptitle="${dpEsc(x.title)}"`, false)), "docs", "No documents yet");
-  groups += dpGroup("Apps", [], "apps", "Not read yet");
+  groups += dpGroup("Apps", dpApps(n.ref).map(m =>
+    dpRow(m.name, `data-dpapp="${dpEsc(m.id)}"`, dpAppOn(m))), "apps", dpAppsQuiet(n.ref));
   if (err) groups = `<div class="o2quiet dpq">Sutra did not answer for ${dpEsc(n.name)}</div>` + groups;
   /* `.dp` on the column itself: the delegated handlers below gate on
      closest(".dp"), the way 19-org2.js gates on closest(".o2"), and the two
@@ -618,6 +688,77 @@ function dpEnginesHtml(){
   return dpFnHtml("engines", "Engine", dpEngineCard, DP_ENG_PANES, dpEngineChat);
 }
 
+/* ── Filed work ────────────────────────────────────────────────────────────
+   A filed item and every version of it. The same work item is placed again and
+   again -- a re-file, a charter amendment, a move to another department -- and
+   each placement names the one before it; that chain IS the version history,
+   newest first (A24). The three words a version carries are derived from two
+   of the record's own fields and nothing else: a version another one replaced
+   reads retired, and the one still standing reads in use when the work it was
+   filed for has closed, waits when it has not. The maker is the filer's own
+   word for itself; no record anywhere names a reader, so that line is quiet. */
+const DP_VER_CLS = { "in use": "use", waits: "waits", retired: "gone" };
+function dpVersionHtml(v){
+  const state = String(v.state || "waits");
+  const note = [v.made_by ? "Filed by " + v.made_by : "", v.where, dpStamp(v.ts_ms)]
+    .filter(Boolean).join(" · ");
+  return `<div class="dpver"><span class="dpvw ${DP_VER_CLS[state] || "waits"}">${dpEsc(state)}</span>` +
+    `<span>${dpEsc(note)}</span></div>`;
+}
+function dpFiledRead(){
+  const st = dpS();
+  return (st.filed && st.filed.ref === st.sel) ? st.filed : null;
+}
+/* The filed item the card is on: the selected one, or the first, so opening
+   the group from a row lands somewhere rather than nowhere (dpEngine's rule). */
+function dpFiledOne(){
+  const st = dpS(), read = dpFiledRead();
+  const rows = (read && read.filed) || [];
+  return rows.filter(f => f.id === st.filedSel)[0] || rows[0] || null;
+}
+function dpFiledCard(){
+  const st = dpS();
+  if (!dpFiledRead()) return st.error.filed ? dpQuiet("Could not read") : dpSkel();
+  const f = dpFiledOne();
+  if (!f) return dpQuiet("Nothing filed yet");
+  const hist = f.history || [];
+  const now = hist[0] || {};
+  const grid = `<div class="dpengines">` +
+    dpKV("Filed by", now.made_by, "Not named") +
+    dpKV("Read by", dpNames(now.read_by), "Not named") +
+    dpKV("Where", now.where, "Not named") +
+    `</div>`;
+  const versions = hist.length ? hist.map(dpVersionHtml).join("") : dpQuiet("No versions yet");
+  return dpCard("The work item", grid) + dpCard("Versions", versions);
+}
+
+/* ── People ────────────────────────────────────────────────────────────────
+   Who answers for this department: the owner by the same rule Identity uses,
+   then the role charters when any are written (A25). A person opens on a card
+   with their name, what their record says is theirs to stamp, and the asks
+   they saw -- the answered ones, because an ask nobody answered was not seen. */
+function dpPerson(){
+  const st = dpS();
+  const read = (st.people && st.people.ref === st.sel) ? st.people : null;
+  const list = dpPeople(read);
+  return list.filter(p => p.key === st.personSel)[0] || list[0] || null;
+}
+function dpPeopleCard(){
+  const st = dpS();
+  const read = (st.people && st.people.ref === st.sel) ? st.people : null;
+  if (!read) return st.error.people ? dpQuiet("Could not read") : dpSkel();
+  const p = dpPerson();
+  if (!p) return dpQuiet("No people yet");
+  const grid = `<div class="dpengines">` +
+    dpCell("Name", dpOwnerHtml({ name: p.name })) +
+    dpCell("Stamps", p.stamps ? dpBig(p.stamps) : dpQuiet("Not named")) +
+    `</div>`;
+  const seen = (p.seen || []).length
+    ? p.seen.map(s => dpRunRow(s.summary, [s.answer, dpWhen(s.at)].filter(Boolean).join(" · "), "ok")).join("")
+    : dpQuiet("No asks yet");
+  return dpCard("The person", grid) + dpCard("Asks they saw", seen);
+}
+
 /* ── answering an ask about an engine ─────────────────────────────────────── */
 /* Pause posts to the one route this screen has that writes, and what that route
    writes is an ASK (A22). Nothing is applied here: Now grows a row, the state
@@ -659,6 +800,16 @@ function dpViewerHtml(n, d, dept, err){
     const e = dpEngine();
     return dpViewerShell(e ? e.name : "Engines", dpEnginesHtml());
   }
+  if (tab === "filed"){
+    dpLoadFiled(n.ref);                                  /* read on open, the same way */
+    const f = dpFiledOne();
+    return dpViewerShell(f ? f.label : "Filed work", dpFiledCard());
+  }
+  if (tab === "people"){
+    dpLoadPeople(n.ref);
+    const p = dpPerson();
+    return dpViewerShell(p ? p.name : "People", dpPeopleCard());
+  }
   const label = (DP_FUNCS.find(f => f[0] === tab) || [tab, tab])[1];
   const card = DP_CARDS[tab];
   if (card){
@@ -699,7 +850,7 @@ async function dpDecide(pid, ok){
    landed inside a `.dp` element. That is 19-org2.js:875-880's own guard with
    this screen's class, so nothing here can fire on another screen. */
 if (typeof document !== "undefined" && document.addEventListener){
-  const DP_SEL = "[data-dptab],[data-dpdecide],[data-dpmore],[data-dpfiled],[data-dpdoc],[data-dpengine],[data-dppause],[data-dpchatmode],[data-dppane],[data-dpgoal],[data-dprule]";
+  const DP_SEL = "[data-dptab],[data-dpdecide],[data-dpmore],[data-dpfiled],[data-dpperson],[data-dpdoc],[data-dpapp],[data-dpengine],[data-dppause],[data-dpchatmode],[data-dppane],[data-dpgoal],[data-dprule]";
   document.addEventListener("click", (ev) => {
     if (!S.dp || S.screen !== "org2") return;
     const t = ev.target && ev.target.closest ? ev.target.closest(DP_SEL) : null;
@@ -742,10 +893,30 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (ds.dppause !== undefined){ ev.preventDefault(); dpPause(ds.dppause); return; }
     if (ds.dpmore !== undefined){ st.more[ds.dpmore] = true; dpRender(); return; }
     if (ds.dpdecide !== undefined){ ev.preventDefault(); dpDecide(ds.dpdecide, ds.dpok === "1"); return; }
-    if (ds.dpfiled !== undefined){ ev.preventDefault(); st.filedSel = ds.dpfiled; dpRender(); return; }
+    if (ds.dpfiled !== undefined){
+      ev.preventDefault();
+      if (st.sel){ st.filedSel = ds.dpfiled; st.tab[st.sel] = "filed"; }
+      dpRender(); return;
+    }
+    if (ds.dpperson !== undefined){
+      ev.preventDefault();
+      if (st.sel){ st.personSel = ds.dpperson; st.tab[st.sel] = "people"; }
+      dpRender(); return;
+    }
     if (ds.dpdoc !== undefined){
       ev.preventDefault();
       if (typeof o2OpenDoc === "function") o2OpenDoc(ds.dpdoc, ds.dptitle);   /* the Org screen's own reader */
+      return;
+    }
+    /* An app opens the way the Org screen opens it (A26): its own o2OpenApp,
+       over the module o2LoadApps already put in that screen's cache. The
+       department card yields to the app frame, exactly as it yields to a
+       document -- there is no second app viewer written here. */
+    if (ds.dpapp !== undefined){
+      ev.preventDefault();
+      if (typeof o2S !== "function" || typeof o2OpenApp !== "function") return;
+      const m = (o2S().apps[st.sel] || []).filter(x => x.id === ds.dpapp)[0];
+      if (m) o2OpenApp(m);
       return;
     }
   });
