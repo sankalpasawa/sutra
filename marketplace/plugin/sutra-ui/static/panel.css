@@ -4231,6 +4231,13 @@
 .o2sheet input:focus,.o2sheet select:focus,.o2sheet textarea:focus{border-color:var(--acc)}
 .o2sheet textarea{width:100%;box-sizing:border-box;background:var(--inset);border:1px solid var(--line);border-radius:6px;
   padding:6px 9px;color:var(--ink);font:400 13px/1.5 var(--sans);outline:none;resize:vertical;min-height:120px}
+/* the charter sheet's rules: a tag chosen from four words, a line typed (DS-1) */
+.o2sheet .o2rules{display:flex;flex-direction:column;gap:6px}
+.o2sheet .o2rule{display:flex;gap:6px;align-items:center}
+.o2sheet .o2rule select{width:96px;flex:none}
+.o2sheet .o2rule input{flex:1}
+.o2sheet .o2rules .o2more{align-self:flex-start;padding-left:0}
+.o2sheet #o2sdone{min-height:64px}
 .o2sheet .o2acts2{display:flex;gap:8px;margin-top:18px;align-items:center}
 .o2sheet .o2err{color:var(--warn);font:400 12px/1.4 var(--sans)}
 .o2sheet .o2prev{margin-top:14px;border-top:1px solid var(--line-soft);padding-top:8px}

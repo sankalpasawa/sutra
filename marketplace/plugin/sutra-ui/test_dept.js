@@ -623,6 +623,21 @@ test("S25: each rule tag paints its own token class, and an unknown tag falls ba
   assert.strictEqual((html.match(/class="dptag always"/g) || []).length, 2, "an unknown tag reads always");
 });
 
+/* DS-1 / A35: the four words are the charter's own, so a refuse reads as a
+   refuse. The route decides which record they came from; the card only paints
+   the tag it was handed. */
+test("S-G/A35: rules that arrive with their own tags are painted with them, never flattened to always", () => {
+  const c = fresh();
+  const html = idCard(c, Object.assign({}, IDENTITY, { rules: [
+    { tag: "refuse", text: "Never a third AI in one task" },
+    { tag: "ask", text: "Ask before a push" },
+    { tag: "go", text: "Ship a patch without asking" }] }));
+  assert.ok(/class="dptag refuse"[^<]*>refuse</.test(html), "refuse wears its own word");
+  assert.ok(/class="dptag ask"[^<]*>ask</.test(html) && /class="dptag go"[^<]*>go</.test(html));
+  assert.strictEqual((html.match(/class="dptag always"/g) || []).length, 0, "nothing is flattened");
+  assert.strictEqual(html.toLowerCase().indexOf("charter"), -1, "A29");
+});
+
 test("S25: a department with nothing written says one quiet line per cell, never a zero", () => {
   const c = fresh();
   const html = idCard(c, BARE_ID);
@@ -1630,6 +1645,28 @@ test("S67/A25: People lists the owner first, then the role charters", () => {
   assert.ok(html.indexOf(">Meera<") !== -1 && html.indexOf(">Reviewer<") !== -1);
 });
 
+/* DS-2 / A36: a role charter names a PERSON. The card shows that person, and
+   "unfilled" is a name for nobody -- the role exists and is open. */
+const PEOPLE_ROLE = { owner: PEOPLE.owner,
+                      roles: [{ charter_id: "C-7", title: "Reviewer", name: "Devansh",
+                                person: "Devansh", unfilled: false,
+                                stamps: "Stamp the release notes.", seen: [] },
+                              { charter_id: "C-8", title: "Release manager", name: "unfilled",
+                                person: "unfilled", unfilled: true,
+                                stamps: "Run the release.", seen: [] }] };
+test("S-G/A36: People lists a role charter with its person after the owner", () => {
+  const c = fresh();
+  const html = listE(c, { people: Object.assign({ ref: "r4" }, PEOPLE_ROLE) });
+  const rows = (html.match(/data-dpperson="([^"]*)"/g) || []).map(m => /"([^"]*)"/.exec(m)[1]);
+  assert.deepStrictEqual(rows, ["owner", "C-7", "C-8"], "the owner, then the roles");
+  assert.ok(html.indexOf(">Devansh<") !== -1, "the person, not the role's title");
+  assert.ok(html.indexOf(">unfilled<") !== -1, "a role nobody holds says so");
+  const card = cardE(fresh(), "people", { people: Object.assign({ ref: "r4" }, PEOPLE_ROLE), personSel: "C-7" });
+  assert.ok(card.indexOf(">Devansh<") !== -1 && card.indexOf("Stamp the release notes.") !== -1,
+    "the role opens on its own card: who, and what they run");
+  assert.strictEqual(card.toLowerCase().indexOf("charter"), -1, "A29");
+});
+
 test("S67/A25: with no role charter the group is the owner alone", () => {
   const c = fresh();
   const html = listE(c, { people: Object.assign({ ref: "r4" }, PEOPLE_BARE) });
@@ -2155,6 +2192,31 @@ test("S15: an organisation paints it too; the root and the machine keep the char
   assert.ok(!/dplist/.test(c.o2ScreenHtml()), "the root keeps the charter view");
   st.sel = "r1";
   assert.ok(!/dplist/.test(c.o2ScreenHtml()), "so does the machine");
+});
+
+/* DS-7: Asawa Holding is a root child that carries a working folder. Before the
+   domains payload forwarded node_kind the client read it as the machine and the
+   department screen never painted for it. */
+test("S-G/DS-7: a root child with a working folder and node_kind organisation opens the department screen", () => {
+  const rows = TREE.map(x => Object.assign({}, x));
+  rows[2].cwd = "/Users/asawa/Claude/asawa-holding";      /* Asawa Inc., a root child WITH a folder */
+  const c = fresh({ DOMAINS: rows });
+  c.o2EnsureRegistered();
+  const st = c.o2S();
+  st.loaded = true; st.sel = "r2"; st.dept.r2 = DEPT_EXP;
+  const d = c.o2Data();
+  assert.strictEqual(c.o2Kind(d.byRef.get("r2"), d), "org", "the stored kind wins over the cwd rule");
+  assert.ok(/dplist/.test(c.o2ScreenHtml()), "the .dp column paints");
+});
+
+test("S-G/DS-7: a row with no node_kind still follows the old cwd rule", () => {
+  const rows = TREE.map(x => Object.assign({}, x));
+  delete rows[1].node_kind;                                /* Desktop, carrying a cwd */
+  delete rows[2].node_kind;                                /* Asawa Inc., carrying none */
+  const c = fresh({ DOMAINS: rows });
+  const d = c.o2Data();
+  assert.strictEqual(c.o2Kind(d.byRef.get("r1"), d), "machine", "a cwd under the root is still the machine");
+  assert.strictEqual(c.o2Kind(d.byRef.get("r2"), d), "org", "and the other root children are organisations");
 });
 
 test("S15: the department screen yields to a sheet and to the chart, doc, app and page views", () => {

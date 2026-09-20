@@ -219,6 +219,12 @@ class TestApp(unittest.TestCase):
         for r in rows:
             for field in ("ref", "path", "name", "status", "parent_ref",
                            "tenant_id", "mint_evidence", "ts_minted_ms",
+                           # DS-7 (2026-09-21): the engine's stored node_kind
+                           # rides the payload, so the Org screen stops
+                           # guessing an organisation with a working folder is
+                           # a machine. Optional in VALUE (None on a row minted
+                           # before the field), never absent as a key.
+                           "node_kind",
                            "successor_refs"):
                 self.assertIn(field, r, "tree row missing %r: %r" % (field, r))
         # live by default. The tenant half of this assertion is GONE: tenancy

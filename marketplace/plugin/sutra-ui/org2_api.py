@@ -118,19 +118,33 @@ def _chain(ref: str, domains: Dict[str, Dict[str, Any]]) -> List[str]:
 
 
 def _charter_row(v: Dict[str, Any]) -> Dict[str, Any]:
+    """What the screen shows of one charter. `done_when`, `rules` and `person`
+    are the sidecar fields DS-1/DS-2 added: the charter sheet prefills from
+    them, so they ride the read the sheet already makes rather than a second
+    round trip. Absent on every charter written before them, hence the [] / ""
+    defaults rather than a key that comes back missing."""
     return {"id": v.get("id"), "title": v.get("title"), "purpose": v.get("purpose"),
             "status": v.get("status", "active"), "kind": v.get("kind", "standing"),
-            "scope_in": v.get("scope_in") or []}
+            "scope_in": v.get("scope_in") or [],
+            "done_when": list(v.get("done_when") or []),
+            "rules": [{"tag": str(r.get("tag") or "always"), "line": str(r.get("line") or r.get("text") or "")}
+                      for r in (v.get("rules") or []) if isinstance(r, dict)],
+            "person": str(v.get("person") or "")}
 
 
 def _charters(ref: str):
     """(standing charter or None, the other charters) for a department. The
     standing one is the first active, non-superseded charter of kind standing,
     else the first active one; retired and superseded charters list after the
-    active ones, so nothing is hidden."""
+    active ones, so nothing is hidden.
+
+    DS-2 (2026-09-21): a `role` charter is never the standing one -- it speaks
+    for a person, not for the department -- but it still LISTS, so nothing is
+    hidden from the Org screen either."""
     views = [v for v in (E.charter_view(c) for c in E.charters_for(ref)) if v]
     sup = E.superseded_ids() if hasattr(E, "superseded_ids") else {}
-    active = [v for v in views if v.get("status", "active") != "retired" and v.get("id") not in sup]
+    active = [v for v in views if v.get("status", "active") != "retired" and v.get("id") not in sup
+              and str(v.get("kind") or "") != "role"]
     standing = next((v for v in active if v.get("kind", "standing") == "standing"), None)
     if standing is None and active:
         standing = active[0]
@@ -409,6 +423,19 @@ def _request_check(kind: str, args: Dict[str, Any]):
             raise HTTPException(status_code=400, detail="a department cannot move under itself")
         if live[args["ref"]].get("parent_ref") == args["target"]:
             raise HTTPException(status_code=400, detail="it is already there")
+    if kind == "org.charter":
+        # DS-1/DS-2: the kind and the rule tags are closed sets, so a bad one is
+        # refused HERE, to the person filing it, instead of surfacing as a
+        # failed apply in Approvals hours later.
+        if args.get("kind") and str(args["kind"]).strip().lower() not in E.CHARTER_KINDS:
+            raise HTTPException(status_code=400, detail="a charter kind is one of: %s"
+                                % ", ".join(E.CHARTER_KINDS))
+        for key, fn in (("done_when", E.normalize_done_when), ("rules", E.normalize_rules)):
+            if key in args:
+                try:
+                    args[key] = fn(args[key])
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc))
     if kind == "org.charter" and args.get("charter_id"):
         v = E.charter_view(str(args["charter_id"]))
         if not v:
@@ -443,7 +470,14 @@ def request(body: RequestBody):
     elif body.kind == "org.move":
         summary = "Move %s under %s" % (name_of(args["ref"]), name_of(args["target"]))
     elif body.kind == "org.charter":
-        summary = ("Edit the charter of %s" if args.get("charter_id") else "Write the charter of %s") % name_of(args["ref"])
+        # DS-2: a role reads differently to the approver than a department's
+        # own charter does -- it names a person -- so the summary says which.
+        if str(args.get("kind") or "").strip().lower() == "role":
+            who = " ".join(str(args.get("person") or "").split()) or "nobody yet"
+            summary = "%s a role under %s for %s" % (
+                "Edit" if args.get("charter_id") else "Write", name_of(args["ref"]), who)
+        else:
+            summary = ("Edit the charter of %s" if args.get("charter_id") else "Write the charter of %s") % name_of(args["ref"])
     else:
         summary = "New department %s under %s" % (" ".join(str(args["name"]).split()), name_of(args["parent"]))
     try:

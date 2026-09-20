@@ -97,6 +97,44 @@ def apply_request(kind, args):
     raise ValueError("no way to apply %r" % kind)
 
 
+def _kind(raw):
+    """The charter kind a request asked for, checked against the engine's own
+    closed set (DS-2). Absent means `standing`, the kind every charter this
+    path wrote before role existed."""
+    kind = str(raw or "standing").strip().lower()
+    if kind not in E.CHARTER_KINDS:
+        raise ValueError("a charter kind is one of: %s" % ", ".join(E.CHARTER_KINDS))
+    return kind
+
+
+def _person(args):
+    """Whose role this is (DS-2). A role charter always names someone, and
+    `unfilled` is a name for nobody -- it says the role exists and is open,
+    which is a different fact from a charter that names no person at all."""
+    name = " ".join(str(args.get("person") or "").split())[:NAME_MAX]
+    return name or E.ROLE_UNFILLED
+
+
+def _extras(prior, done_when, rules, person, kind):
+    """The sidecar keys this request carries onto the charter it mints. `None`
+    means the request said nothing about that field, so the prior value rides
+    through; a list or a string means the request DID, including when it is
+    empty. `person` is written for a role charter only."""
+    out = {k: prior[k] for k in ("goals", "metrics", "milestones", "todos") if prior.get(k)}
+    dw = list(prior.get("done_when") or []) if done_when is None else done_when
+    rl = E.normalize_rules(prior.get("rules")) if rules is None else rules
+    if dw:
+        out["done_when"] = dw
+    if rl:
+        out["rules"] = rl
+    who = (prior.get("person") or "") if person is None else person
+    if kind == "role":
+        out["person"] = who or E.ROLE_UNFILLED
+    elif who:
+        out["person"] = who
+    return out
+
+
 def _apply_charter(args):
     """Write or amend a department's charter (BUILD-PLAN S82-S83; founder
     ruling D-O3, 2026-09-15: charters change by SUCCESSION, never in place).
@@ -108,7 +146,15 @@ def _apply_charter(args):
     `lifecycle: superseded` (never the status enum), and re-points every
     current placement that cited the old id (phase post-close), so filed work
     follows the amended charter. A department with no charter gets a fresh
-    standing one. Nothing outside the registry is touched."""
+    standing one. Nothing outside the registry is touched.
+
+    DS-1 (2026-09-21): `done_when` and `rules` ride the same request and land
+    on the successor's SIDECAR, which is what the department screen's Identity
+    card reads. DS-2: `kind` may be `role`, and a role charter's sidecar names
+    the `person` who holds it (or `unfilled`). Passing a field ABSENT keeps the
+    prior value; passing it empty clears it -- so an edit that only touches the
+    title never silently drops the rules, and an operator who deletes every
+    rule actually deletes them. This is still the ONLY writer."""
     domains = E.load_domains()
     d = _live(args.get("ref"), domains)
     purpose = " ".join(str(args.get("purpose") or "").split())
@@ -119,10 +165,15 @@ def _apply_charter(args):
     title = (" ".join(str(args.get("title") or "").split()) or ("%s Charter" % d.get("name")))[:TITLE_MAX]
     tenant = d.get("tenant_id") or "T-local"
     old_id = str(args.get("charter_id") or "").strip() or None
+    done_when = E.normalize_done_when(args["done_when"]) if "done_when" in args else None
+    rules = E.normalize_rules(args["rules"]) if "rules" in args else None
+    person = _person(args) if "person" in args else None
     if not old_id:
-        cid = E.mint_charter_stub(args["ref"], title, purpose, [], [], tenant, kind="standing")
+        kind = _kind(args.get("kind"))
+        extras = _extras({}, done_when, rules, person, kind)
+        cid = E.mint_charter_stub(args["ref"], title, purpose, [], [], tenant, kind=kind, extras=extras)
         E._append_jsonl(E.CHARTER_INDEX, {"event": "charter_written", "id": cid, "domain_ref": args["ref"],
-                                           "source": "org2-request", "ts_ms": E._now_ms()})
+                                           "kind": kind, "source": "org2-request", "ts_ms": E._now_ms()})
         return {"applied": True, "charter_id": cid, "supersedes": None, "ref": args["ref"], "repointed": 0}
     old = E.load_charter(old_id)
     if old is None:
@@ -131,14 +182,20 @@ def _apply_charter(args):
         raise ValueError("charter %s belongs to another department" % old_id)
     if E.superseded_by(old_id):
         raise ValueError("charter %s was already amended; edit the current one" % old_id)
-    if old.get("title") == title and " ".join(str(old.get("purpose") or "").split()) == purpose:
-        raise ValueError("nothing changed")
     prior = E.load_sidecar(old_id)
+    kind = _kind(args.get("kind")) if args.get("kind") else (old.get("kind") or prior.get("kind") or "standing")
+    if (old.get("title") == title
+            and " ".join(str(old.get("purpose") or "").split()) == purpose
+            and kind == (old.get("kind") or prior.get("kind") or "standing")
+            and (done_when is None or done_when == list(prior.get("done_when") or []))
+            and (rules is None or rules == E.normalize_rules(prior.get("rules")))
+            and (person is None or person == (prior.get("person") or ""))):
+        raise ValueError("nothing changed")
     cid = E.mint_charter_stub(args["ref"], title, purpose, list(old.get("scope_in") or []), list(old.get("scope_out") or []),
-                              old.get("tenant_id") or tenant, kind=old.get("kind") or prior.get("kind") or "standing",
+                              old.get("tenant_id") or tenant, kind=kind,
                               supersedes=old_id, status=prior.get("status", "active"),
                               artifacts=prior.get("artifacts") or [], linked_domain_refs=prior.get("linked_domain_refs") or [],
-                              extras={k: prior[k] for k in ("goals", "metrics", "milestones", "todos") if prior.get(k)})
+                              extras=_extras(prior, done_when, rules, person, kind))
     citing = [p for p in E._current_placements() if p.get("charter_id") == old_id]
     for p in citing:
         E.write_placement(p["work_ref"], args["ref"], cid, "matched", p.get("confidence", 0.5),
@@ -149,5 +206,5 @@ def _apply_charter(args):
     E.save_sidecar(old_id, sc)
     E._append_jsonl(E.CHARTER_INDEX, {"event": "charter_amended", "id": old_id, "successor_id": cid,
                                        "domain_ref": args["ref"], "placements_repointed": len(citing),
-                                       "source": "org2-request", "ts_ms": E._now_ms()})
+                                       "kind": kind, "source": "org2-request", "ts_ms": E._now_ms()})
     return {"applied": True, "charter_id": cid, "supersedes": old_id, "ref": args["ref"], "repointed": len(citing)}

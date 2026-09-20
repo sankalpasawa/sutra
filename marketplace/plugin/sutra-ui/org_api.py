@@ -240,6 +240,15 @@ def org_tree(include_retired: bool = False, all_tenants: bool = False,
             # reader must treat them as optional.
             "cwd": d.get("cwd"),
             "sessions": d.get("sessions"),
+            # What the engine says this node IS (root / machine / organisation
+            # / department), stored on the row since 2.277.0. FORWARDED, never
+            # computed: without it the client has to guess from parentage and a
+            # cwd, and an organisation that happens to carry a working folder
+            # reads as a machine -- which is what kept the department screen
+            # from opening on Asawa Holding (DECISIONS.md DS-7, 2026-09-21).
+            # None on a row minted before the field existed; every reader must
+            # treat it as optional and keep its own fallback.
+            "node_kind": d.get("node_kind"),
             "description": d.get("description"),
             "mint_evidence": d.get("mint_evidence") or [],
             "ts_minted_ms": d.get("ts_minted_ms"),

@@ -27,6 +27,11 @@ const O2_MORE = 4;                       /* names per list group before "more…
 const O2_SEARCH_MS = 220;                /* server search debounce */
 const O2_KINDS = [["organisation", "Organisations"], ["department", "Departments"], ["machine", "Machine"]];
 const O2_STATES = [["active", "Active"], ["no-charter", "No charter"], ["one-line", "One-line charter"]];
+/* DS-1: the four words a rule may wear, and the ceiling the writer enforces
+   (placement_engine.CHARTER_RULE_TAGS / RULES_MAX). Pinned here so the sheet
+   offers exactly what the server will accept. */
+const O2_RULE_TAGS = ["go", "ask", "refuse", "always"];
+const O2_RULES_MAX = 24;
 
 function org2FlagOn(){
   if (typeof SETTINGS === "undefined" || !SETTINGS || !SETTINGS.flags) return true;
@@ -455,7 +460,24 @@ function o2OpenSheet(kind){
   const c = st.dept[n.ref] && st.dept[n.ref].charter;
   st.sheet = { kind, name: kind === "rename" ? n.name : (kind === "charter" ? (c ? c.title : n.name + " Charter") : ""),
                purpose: kind === "charter" && c ? String(c.purpose || "") : "", charterId: kind === "charter" && c ? c.id : null,
+               /* DS-1: the two records Identity reads besides the purpose --
+                  when this is done, and the rules it holds. Prefilled from the
+                  charter the department read already carries, so an edit that
+                  touches the title never silently drops them. */
+               done: kind === "charter" && c ? (c.done_when || []).join("\n") : "",
+               rules: kind === "charter" && c ? (c.rules || []).map(r => ({ tag: String(r.tag || "always"), line: String(r.line || "") })) : [],
                target: "", error: null, busy: false };
+  o2Render();
+}
+/* One more empty rule row, so a tag is always CHOSEN from the four words and
+   never typed. The tag defaults to the one that holds at all times. */
+function o2AddRule(){
+  const sh = o2S().sheet;
+  if (!sh) return;
+  if (!sh.rules) sh.rules = [];
+  if (sh.rules.length >= O2_RULES_MAX) return;
+  sh.rules.push({ tag: "always", line: "" });
+  sh.error = null;
   o2Render();
 }
 function o2MoveTargets(n, d){
@@ -464,6 +486,17 @@ function o2MoveTargets(n, d){
     .map(x => ({ ref: x.ref, label: o2Chain(x.ref, d).join(" › ") }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
+/* What the sheet's two new fields send: one line per row, blanks dropped, and
+   a rule with no line is not a rule (the writer applies the same rule). */
+function o2SheetDone(sh){
+  return String(sh.done || "").split("\n").map(s => s.trim()).filter(Boolean).slice(0, O2_RULES_MAX);
+}
+function o2SheetRules(sh){
+  return (sh.rules || []).map(r => ({ tag: O2_RULE_TAGS.indexOf(String(r.tag)) === -1 ? "always" : String(r.tag),
+                                      line: String(r.line || "").trim() }))
+                         .filter(r => r.line).slice(0, O2_RULES_MAX);
+}
+function o2Same(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
 async function o2SendRequest(){
   const st = o2S(), d = o2Data(), sh = st.sheet;
   const n = st.sel ? d.byRef.get(st.sel) : null;
@@ -475,9 +508,14 @@ async function o2SendRequest(){
   else if (sh.kind === "charter"){
     const purpose = String(sh.purpose || "").trim();
     const c = st.dept[n.ref] && st.dept[n.ref].charter;
-    kind = "org.charter"; args = { ref: n.ref, charter_id: sh.charterId || null, title: name, purpose };
+    const done = o2SheetDone(sh), rules = o2SheetRules(sh);
+    kind = "org.charter"; args = { ref: n.ref, charter_id: sh.charterId || null, title: name, purpose,
+                                   done_when: done, rules: rules };
     if (!purpose){ sh.error = "A purpose is needed"; o2Render(); return; }
-    if (c && c.id === sh.charterId && String(c.purpose || "").trim() === purpose && (name === c.title || !name)){ sh.error = "Nothing changed"; o2Render(); return; }
+    if (c && c.id === sh.charterId && String(c.purpose || "").trim() === purpose && (name === c.title || !name)
+        && o2Same(done, c.done_when || []) && o2Same(rules, (c.rules || []).map(r => ({ tag: String(r.tag || "always"), line: String(r.line || "") })))){
+      sh.error = "Nothing changed"; o2Render(); return;
+    }
   }
   else { kind = "org.create"; args = { parent: n.ref, name }; if (!name){ sh.error = "A name is needed"; o2Render(); return; } }
   sh.busy = true; sh.error = null; o2Render();
@@ -492,13 +530,28 @@ async function o2SendRequest(){
   }
   o2Render();
 }
+/* One row per rule: the tag is a choice of the four words, the line is typed.
+   The trailing button adds a row, so the sheet never guesses how many are
+   coming and a rule left blank is simply dropped on send. */
+function o2RulesHtml(sh){
+  const rows = (sh.rules || []).map((r, i) => {
+    const opts = O2_RULE_TAGS.map(t => `<option value="${t}"${String(r.tag) === t ? " selected" : ""}>${t}</option>`).join("");
+    return `<div class="o2rule"><select data-o2srtag="${i}" aria-label="Rule ${i + 1} tag">${opts}</select>` +
+           `<input type="text" data-o2srline="${i}" value="${o2Esc(r.line || "")}" maxlength="240" autocomplete="off" aria-label="Rule ${i + 1}"></div>`;
+  }).join("");
+  const add = (sh.rules || []).length >= O2_RULES_MAX ? ""
+    : `<button type="button" class="o2more" data-o2act="addrule">Add a rule</button>`;
+  return `<div class="o2rules">${rows}${add}</div>`;
+}
 function o2SheetHtml(n, d){
   const st = o2S(), sh = st.sheet;
   const title = sh.kind === "rename" ? "Rename" : sh.kind === "move" ? "Move" : sh.kind === "charter" ? (sh.charterId ? "Edit charter" : "Write the charter") : "New sub-department";
   let fields;
   if (sh.kind === "charter"){
     fields = `<label for="o2sname">Title</label><input id="o2sname" type="text" data-o2sname value="${o2Esc(sh.name)}" maxlength="60" autocomplete="off">
-      <label for="o2spurpose">Purpose</label><textarea id="o2spurpose" data-o2spurpose rows="6" maxlength="4000">${o2Esc(sh.purpose || "")}</textarea>`;
+      <label for="o2spurpose">Purpose</label><textarea id="o2spurpose" data-o2spurpose rows="6" maxlength="4000">${o2Esc(sh.purpose || "")}</textarea>
+      <label for="o2sdone">Done when</label><textarea id="o2sdone" data-o2sdone rows="3" maxlength="2000" placeholder="One line each">${o2Esc(sh.done || "")}</textarea>
+      <label>Rules</label>${o2RulesHtml(sh)}`;
   } else if (sh.kind === "move"){
     const opts = o2MoveTargets(n, d).map(t => `<option value="${o2Esc(t.ref)}"${sh.target === t.ref ? " selected" : ""}>${o2Esc(t.label)}</option>`).join("");
     fields = `<label for="o2starget">Under</label><select id="o2starget" data-o2starget><option value="">Choose…</option>${opts}</select>${o2MovePreviewHtml(n, d)}`;
@@ -921,6 +974,7 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (act === "rename" || act === "move" || act === "create"){ o2OpenSheet(act); return; }
     if (act === "editcharter"){ o2OpenSheet("charter"); return; }
     if (act === "sheetclose"){ st.sheet = null; o2Render(); return; }
+    if (act === "addrule"){ o2AddRule(); return; }
     if (act === "request"){ o2SendRequest(); return; }
     if (act === "healthretry"){ if (st.sel){ delete st.health[st.sel]; o2LoadHealth(st.sel, true); o2Render(); } return; }
     if (act === "appretry"){ if (st.app){ delete st.appOk[st.app.id]; o2ProbeApp(st.app); o2Render(); } return; }
@@ -935,12 +989,22 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (el.dataset.o2lq !== undefined){ o2S().lq = String(el.value || ""); o2Render(); return; }
     if (el.dataset.o2sname !== undefined){ const sh = o2S().sheet; if (sh){ sh.name = String(el.value || ""); sh.error = null; } return; }
     if (el.dataset.o2spurpose !== undefined){ const sh = o2S().sheet; if (sh){ sh.purpose = String(el.value || ""); sh.error = null; } return; }
+    if (el.dataset.o2sdone !== undefined){ const sh = o2S().sheet; if (sh){ sh.done = String(el.value || ""); sh.error = null; } return; }
+    if (el.dataset.o2srline !== undefined){
+      const sh = o2S().sheet, i = Number(el.dataset.o2srline);
+      if (sh && sh.rules && sh.rules[i]){ sh.rules[i].line = String(el.value || ""); sh.error = null; }
+      return;
+    }
   });
   document.addEventListener("change", (ev) => {
     if (!S.o2 || S.screen !== "org2") return;
     const el = ev.target;
     if (!el || !el.dataset || !el.closest || !el.closest(".o2")) return;
-    if (el.dataset.o2starget !== undefined){ const sh = o2S().sheet; if (sh){ sh.target = String(el.value || ""); sh.error = null; o2Render(); } }
+    if (el.dataset.o2starget !== undefined){ const sh = o2S().sheet; if (sh){ sh.target = String(el.value || ""); sh.error = null; o2Render(); } return; }
+    if (el.dataset.o2srtag !== undefined){
+      const sh = o2S().sheet, i = Number(el.dataset.o2srtag);
+      if (sh && sh.rules && sh.rules[i]){ sh.rules[i].tag = String(el.value || "always"); sh.error = null; }
+    }
   });
   document.addEventListener("keydown", (ev) => {
     if (!S.o2 || S.screen !== "org2") return;

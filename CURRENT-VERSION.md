@@ -2,7 +2,13 @@
 
 **status**: active · **updated**: 2026-09-21
 
-## v2.289.7 (2026-09-21, HEAD)
+## v2.289.8 (2026-09-21, HEAD)
+
+**Department screen, slice G — the records Identity and People were waiting for** (holding/plans/department-screen, Gate 4): done-when lines and tagged rules on the charter, role charters with the person who holds them, and the one additive `node_kind` line that lets Asawa Holding open its own department screen.
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.289.7 (2026-09-21)
 
 **Department screen, slice F — the screen is complete** (holding/plans/department-screen, Gate 4): the month's meters on Now and per engine, the birth lines on Adaptation and Priority, the Paused word on the engine card, and one quiet line per empty group and card.
 

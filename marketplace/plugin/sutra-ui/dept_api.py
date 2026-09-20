@@ -40,6 +40,9 @@ ASKS_MAX = 40            # asks returned per department, newest first
 RUNNING_MAX = 24         # open atom rows returned per department
 WAITS_MAX = 40           # queued or blocked tasks returned per department
 RULES_MAX = 24           # rule lines on the Identity card
+#: The four words a rule may wear (A10). The charter's own `rules` carry one of
+#: these; invariants and constraints can only ever be `always` (DS-1).
+RULE_TAGS = ("go", "ask", "refuse", "always")
 CHAT_MAX = 60            # turns returned per chat, oldest first (a chat reads down)
 GATE_MAX = 20            # of those, at most this many are gate rows
 DONE_MAX = 400           # characters of the done line
@@ -409,33 +412,42 @@ def _standing_charter(ref: str) -> Optional[Dict[str, Any]]:
     own rule (org2_api.py:126-140): the first active, non-superseded charter of
     kind standing, else the first active one. That helper is module-private
     there, so the rule is applied here rather than imported -- and it is the
-    ONLY charter reading this screen does."""
+    ONLY charter reading this screen does.
+
+    DS-2 (2026-09-21) adds one clause: a `role` charter is never the fallback.
+    It speaks for a PERSON, not for the department, so a department whose only
+    charter is a role has no goal -- which is true, and is what Identity says.
+    A role belongs under People and nowhere else."""
     try:
         views = [v for v in (E.charter_view(c) for c in E.charters_for(ref)) if v]
     except Exception:
         return None
     sup = E.superseded_ids() if hasattr(E, "superseded_ids") else {}
     active = [v for v in views
-              if v.get("status", "active") != "retired" and v.get("id") not in sup]
+              if v.get("status", "active") != "retired" and v.get("id") not in sup
+              and str(v.get("kind") or "") != ROLE_KIND]
     if not active:
         return None
     return next((v for v in active if v.get("kind", "standing") == "standing"), active[0])
 
 
 def _done_line(charter: Optional[Dict[str, Any]]) -> Optional[str]:
-    """When the department is done, from the milestones' own done_when lines.
+    """When the department is done.
 
-    F-1: no charter has a "Done when" section -- `done_when` exists per
-    milestone and per todo and nowhere else (lib/charters_seed.py:65-71). The
-    card shows what is written there, joined, and nothing when none is."""
+    Two records, in order. The charter's OWN `done_when` lines first (DS-1,
+    2026-09-21: the sidecar field the charter sheet writes and the org.charter
+    proposal applies) -- that is the department saying it in its own words.
+    When none is written, the milestones' per-milestone `done_when` lines, the
+    only place the answer lived before (F-1). Nothing when both are empty."""
     if not charter:
         return None
-    parts = []
-    for m in (charter.get("milestones") or []):
-        if isinstance(m, dict):
-            one = _sentence(m.get("done_when") or "")
-            if one:
-                parts.append(one)
+    parts = [s for s in (_sentence(x) for x in (charter.get("done_when") or [])) if s]
+    if not parts:
+        for m in (charter.get("milestones") or []):
+            if isinstance(m, dict):
+                one = _sentence(m.get("done_when") or "")
+                if one:
+                    parts.append(one)
     line = " ".join(parts).strip()
     if not line:
         return None
@@ -443,17 +455,30 @@ def _done_line(charter: Optional[Dict[str, Any]]) -> Optional[str]:
 
 
 def _rules(charter: Optional[Dict[str, Any]]) -> List[Dict[str, str]]:
-    """The department's rules, each tagged.
+    """The department's rules, each tagged go / ask / refuse / always (A10).
 
-    The tag vocabulary is go / ask / refuse / always (PRD A10). Today every
-    line comes back `always`, and that is the honest answer, not a shortcut:
-    a charter body carries `invariants` and `constraints` -- things that hold
-    at all times -- and carries no go/ask/refuse ledger at all (F-1, F-13).
-    The other three tags exist for the record that will carry them; this route
-    never guesses one."""
+    Two records, in order, and the first one that carries anything wins:
+
+      1. the charter's own `rules` (DS-1, 2026-09-21) -- `[{tag, line}]` on the
+         sidecar, written through the org.charter proposal. These carry a REAL
+         tag, so a refuse reads as a refuse;
+      2. otherwise `invariants` and `constraints` from the body, tagged
+         `always` -- things that hold at all times, which is the only honest
+         tag for them (F-1, F-13). This route never guesses one of the other
+         three for a line that was not written with it.
+    """
     if not charter:
         return []
     out = []
+    for item in (charter.get("rules") or []):
+        if not isinstance(item, dict):
+            continue
+        text = _text(item.get("line") or item.get("text"))
+        tag = str(item.get("tag") or "always").strip().lower()
+        if text and tag in RULE_TAGS:
+            out.append({"tag": tag, "text": text})
+    if out:
+        return out[:RULES_MAX]
     for key in ("invariants", "constraints"):
         for item in (charter.get(key) or []):
             text = _text(item)
@@ -1533,7 +1558,11 @@ PHASE_IN_USE = "post-close"
 #: that closed on its own was never looked at (proposals.py:144-146).
 SEEN_STATUSES = ("approved", "rejected", "failed")
 SEEN_MAX = 24
-ROLE_KIND = "role"                           # A25 / F-14: no charter carries it today
+#: A25 / F-14, closed 2026-09-21 (DS-2): `role` is a charter kind the engine
+#: accepts and the org.charter proposal writes. `unfilled` is what a role
+#: charter's `person` says when nobody holds it -- a fact, not a blank.
+ROLE_KIND = "role"
+ROLE_UNFILLED = "unfilled"
 
 
 def _placement_index(places: List[Any]):
@@ -1694,8 +1723,14 @@ def _seen_rows(props: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def _roles(ref: str) -> List[Dict[str, Any]]:
     """The people this department names of its own: charters of kind `role`,
-    active and not superseded. Empty today, and empty by READING rather than by
-    assumption -- the moment such a charter is written it appears here."""
+    active and not superseded (DS-2, 2026-09-21).
+
+    The NAME is the role charter's own `person` -- the sidecar field the
+    org.charter proposal writes -- and `unfilled` is a real answer, not a
+    missing one: the role exists and nobody holds it. Only when no person is
+    named at all does the card fall back to the charter's authority field and
+    then to the role's title, so a row always has something to call itself.
+    What the person runs is the role's purpose line."""
     try:
         views = [v for v in (E.charter_view(c) for c in E.charters_for(ref)) if v]
     except Exception:
@@ -1708,8 +1743,11 @@ def _roles(ref: str) -> List[Dict[str, Any]]:
         if v.get("status", "active") == "retired" or v.get("id") in sup:
             continue
         title = _text(v.get("title"))
+        person = _text(v.get("person"))
         out.append({"charter_id": _text(v.get("id")), "title": title,
-                    "name": _authority_name(v) or title,
+                    "name": person or _authority_name(v) or title,
+                    "person": person,
+                    "unfilled": person == ROLE_UNFILLED,
                     "stamps": _stamps(v) or _text(v.get("purpose")), "seen": []})
     out.sort(key=lambda r: (r["title"].lower(), r["charter_id"]))
     return out

@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.289.8 (2026-09-21)
+
+- **Sutra Desktop: department screen slice G, done-when and rules on the charter, role charters under People** (holding/plans/department-screen, DECISIONS.md DS-1, DS-2, DS-7). A charter's sidecar now carries `done_when` and `rules` (each rule one of go / ask / refuse / always), written through the existing org.charter proposal and read first by Identity, which falls back to the milestones and to invariants and constraints when none is written. `role` becomes a legal charter kind: a role names the person who holds it — or reads `unfilled` — and is listed under People and nowhere else. The Org screen's charter sheet gains a Done when field and one row per rule with its tag. The domains payload forwards the engine's stored `node_kind`, so an organisation that carries a working folder opens the department screen instead of reading as the machine.
+
 ## 2.289.7 (2026-09-21)
 
 - **Sutra Desktop: department screen slice F, meters, births, empty and paused states; the department screen is complete** (holding/plans/department-screen, BUILD-PLAN S73-S82). Now carries the calendar month as four bars — runs, asks, refuses, spend — each drawn against the department's own busiest month and never as a number; a meter with nothing on record reads "No reading yet". An engine card carries the meters its records answer as dots (Fit has no record anywhere and is given none), its state word, and a Runs tab that shows no live row once the engine is paused. Adaptation and Priority name the engines an ask brought into being. An empty department still shows all seven groups, each with its one quiet line. One new read under `/api/dept/{ref}`; `org_api.py` untouched.

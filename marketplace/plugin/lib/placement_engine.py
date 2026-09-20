@@ -86,6 +86,15 @@ CHARTER_SCHEMA = 2
 #: closed enum, shipped, UNCHANGED by the body/sidecar split. Lives in the
 #: sidecar; `superseded` is DERIVED from `supersedes`, never a status value.
 CHARTER_STATUSES = ("active", "shipped", "retired", "paused")
+#: What a charter IS. `standing` and `project` are the two the store has always
+#: carried; `role` is the third (DS-1/DS-2, 2026-09-21) -- a charter that names
+#: a PERSON and what they run, which is what the department screen lists under
+#: People. A closed set: `kind` rides the HASHED body, so a typo would mint a
+#: charter nothing can ever find again, and mint_charter_stub refuses one.
+CHARTER_KINDS = ("standing", "project", "role")
+#: The four words a rule may carry (DS-1). A rule is one of these and one line;
+#: nothing else is a rule, and the reader never guesses a tag it was not given.
+CHARTER_RULE_TAGS = ("go", "ask", "refuse", "always")
 #: `reconstructed` is NOT an operator choice — `reconcile` is its only writer.
 #: It marks a tombstone minted to stand in for a domain file the pre-I-D5
 #: os.remove() destroyed: the ref is cited by placement history, the row it
@@ -644,8 +653,15 @@ def mint_charter_stub(domain_ref, title, purpose, scope_in, scope_out, tenant_id
 
     Trailing arguments all default, so the six-positional call sites
     (resolve, place_placement_at, domains_pipeline) keep working unchanged.
+
+    `kind` is checked against CHARTER_KINDS here and nowhere else: this is the
+    one mint, and a kind that is not in the set would ride into the hash and
+    mint a charter no reader could classify (DS-2, 2026-09-21).
     """
     _ensure_dirs()
+    if kind not in CHARTER_KINDS:
+        raise ValueError("a charter kind is one of: %s (not %r)"
+                         % (", ".join(CHARTER_KINDS), kind))
     body = {
         "title": title[:60],
         "domain_ref": domain_ref,
@@ -698,7 +714,13 @@ def load_charter(charter_id):
 #: are NEVER part of the hashed body — a todo tick must not change the charter
 #: id and break C-<id>.html, which domains_page calls stable forever (§0.13).
 _SIDECAR_KEYS = ("status", "artifacts", "linked_domain_refs", "goals",
-                 "metrics", "milestones", "todos")
+                 "metrics", "milestones", "todos",
+                 # DS-1/DS-2 (2026-09-21): when the charter is done, the rules
+                 # it holds, and -- for a `role` charter -- whose it is. All
+                 # three are things the operator edits, so all three are
+                 # sidecar; putting them in the body would change the charter's
+                 # id every time a rule was worded differently.
+                 "done_when", "rules", "person")
 
 #: Exactly what the two pre-fix post-mint rewrite loops wrote back into the
 #: hashed body (charters_seed.py:269-279, domains_pipeline.py:200-207).
@@ -729,7 +751,58 @@ def _sidecar_default(ts_ms=None):
     """
     return {"status": "active", "artifacts": [], "linked_domain_refs": [],
             "goals": [], "metrics": [], "milestones": [], "todos": [],
+            # DS-1/DS-2. Empty defaults, so every sidecar written before these
+            # existed stays valid and simply reads as "nothing said yet".
+            "done_when": [], "rules": [], "person": "",
             "ts_ms": ts_ms}
+
+
+#: Room enough for a sentence, not for an essay: these are lines on a card.
+DONE_WHEN_LINE_MAX = 240
+DONE_WHEN_MAX = 12
+RULE_LINE_MAX = 240
+RULES_MAX = 24
+#: What a role charter's sidecar says when nobody holds the role yet (DS-2).
+ROLE_UNFILLED = "unfilled"
+
+
+def normalize_done_when(raw):
+    """The `done_when` sidecar field from whatever a caller passed: a list of
+    one-line statements, blanks dropped, order kept (DS-1). A single string is
+    read as its own lines, so a textarea can be handed straight in."""
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        raw = raw.splitlines()
+    out = []
+    for item in raw if isinstance(raw, (list, tuple)) else []:
+        line = " ".join(str(item or "").split())
+        if line:
+            out.append(line[:DONE_WHEN_LINE_MAX])
+    return out[:DONE_WHEN_MAX]
+
+
+def normalize_rules(raw):
+    """The `rules` sidecar field: `[{tag, line}]`, tag one of CHARTER_RULE_TAGS
+    (DS-1). A row with no line is dropped; a row with a tag outside the four
+    raises, because a rule whose tag was invented is not a rule the operator
+    wrote. `text` is accepted as an alias for `line` -- that is the key the
+    department screen's read already returns."""
+    if raw is None:
+        return []
+    out = []
+    for item in raw if isinstance(raw, (list, tuple)) else []:
+        if not isinstance(item, dict):
+            raise ValueError("a rule is a tag and a line")
+        line = " ".join(str(item.get("line") or item.get("text") or "").split())
+        if not line:
+            continue
+        tag = str(item.get("tag") or "always").strip().lower()
+        if tag not in CHARTER_RULE_TAGS:
+            raise ValueError("a rule tag is one of: %s (not %r)"
+                             % (", ".join(CHARTER_RULE_TAGS), item.get("tag")))
+        out.append({"tag": tag, "line": line[:RULE_LINE_MAX]})
+    return out[:RULES_MAX]
 
 
 def load_sidecar(charter_id):
@@ -854,6 +927,12 @@ def _mint_successor_charter(old, target_ref, reason, open_placements_n=0):
     sc["status"] = prior.get("status", "active")
     sc["artifacts"] = list(prior.get("artifacts") or [])
     sc["linked_domain_refs"] = list(prior.get("linked_domain_refs") or [])
+    # DS-1/DS-2: a re-homed charter keeps when it is done, the rules it holds
+    # and whose role it is. Dropping them would silently empty the Identity
+    # card of a department that only moved.
+    sc["done_when"] = list(prior.get("done_when") or [])
+    sc["rules"] = [dict(r) for r in (prior.get("rules") or []) if isinstance(r, dict)]
+    sc["person"] = prior.get("person") or ""
     # §3.5 handoff: the receiving domain gets a briefing instead of bare
     # responsibility. Sidecar-only — the hashed body stays clean.
     sc["handoff"] = {"from_domain_ref": old.get("domain_ref"),

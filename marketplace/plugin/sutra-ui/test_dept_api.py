@@ -346,7 +346,8 @@ def test_waits_states_are_the_engines_own_words():
 
 
 def _charter(E, ref, purpose, invariants=(), constraints=(), authority=None,
-             milestones=(), title="A Charter", kind="standing"):
+             milestones=(), title="A Charter", kind="standing",
+             done_when=(), rules=(), person=""):
     """A charter body written the way fixture_seed.py:465-487 and
     org_import.py:600-620 write one -- composed, hashed with charter_id_of,
     saved under its own id -- because `invariants`, `constraints` and
@@ -371,6 +372,12 @@ def _charter(E, ref, purpose, invariants=(), constraints=(), authority=None,
         json.dumps(body, sort_keys=True, indent=2), encoding="utf-8")
     sc = E._sidecar_default(1)
     sc["milestones"] = [dict(m) for m in milestones]
+    # DS-1/DS-2: the three sidecar fields slice G added. Written here the way
+    # the org.charter proposal writes them, so a reader test does not have to
+    # drive the whole request path to exercise the card.
+    sc["done_when"] = list(done_when)
+    sc["rules"] = [dict(r) for r in rules]
+    sc["person"] = person
     E.save_sidecar(cid, sc)
     return cid
 
@@ -1737,3 +1744,263 @@ def test_writes_only_through_proposals():
     for forbidden in ("routines.update(", "routines.create(", "routines.delete(",
                       "E.write_placement(", "E.mint_domain("):
         assert forbidden not in text, "dept_api.py calls %s" % forbidden
+
+
+# ----------------------------------------------------------------- slice G --
+# DS-1: `done_when` and `rules` on the charter sidecar, written through the
+# org.charter proposal and read by Identity. DS-2: `role` as a charter kind,
+# carrying the person who holds it, listed under People and nowhere else.
+#
+# The proposal path is driven END TO END here (file the request -> nothing is
+# written -> approve -> the card reads it), because the whole claim of this
+# slice is that a record the operator can edit reaches the screen through the
+# one writer. A unit test on either half alone would not show that.
+
+
+@contextlib.contextmanager
+def _org2():
+    """org2_api + org2_apply rebound to the registry `_fresh` just made.
+
+    Both bind `placement_engine` at import, and `_fresh` replaces that module
+    object; a stale import would write into the real registry. Popped on the
+    way in AND on the way out, so no other module's test inherits the binding.
+    """
+    for m in ("org2_api", "org2_apply"):
+        sys.modules.pop(m, None)
+    import org2_apply
+    import org2_api
+    try:
+        yield org2_api, org2_apply
+    finally:
+        for m in ("org2_api", "org2_apply"):
+            sys.modules.pop(m, None)
+
+
+def _file_charter(api, ref, **args):
+    """One org.charter request, as the charter sheet files it."""
+    return api.request(api.RequestBody(kind="org.charter", args=dict(ref=ref, **args)))["proposal"]
+
+
+def test_the_charter_sidecar_carries_done_when_rules_and_person():
+    """DS-1/DS-2 round trip: written at mint, read back, and absent from the
+    hashed body -- re-wording a rule must not move the charter's id."""
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        cid = E.mint_charter_stub(
+            a, "A Charter", "Own the release.", [], [], "T-local",
+            extras={"done_when": ["every screen reads its own record"],
+                    "rules": [{"tag": "refuse", "line": "Never a third AI in one task"}]})
+        sc = E.load_sidecar(cid)
+        assert sc["done_when"] == ["every screen reads its own record"]
+        assert sc["rules"] == [{"tag": "refuse", "line": "Never a third AI in one task"}]
+        assert sc["person"] == ""
+        body = E.load_charter(cid)
+        for key in ("done_when", "rules", "person"):
+            assert key not in body, "%s rode into the hashed body" % key
+        assert E.charter_id_of(body) == cid
+        view = E.charter_view(cid)
+        assert view["rules"][0]["tag"] == "refuse" and view["done_when"]
+
+
+def test_a_sidecar_written_before_the_fields_existed_still_reads():
+    """The defaults are [] / "", so every charter on disk stays valid and
+    simply reads as "nothing said yet" (DS-1's reversal clause)."""
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        cid = E.mint_charter_stub(a, "Old", "An older goal.", [], [], "T-local")
+        legacy = {"status": "active", "artifacts": [], "linked_domain_refs": [],
+                  "goals": [], "metrics": [], "milestones": [], "todos": [], "ts_ms": 1}
+        E.save_sidecar(cid, legacy)
+        sc = E.load_sidecar(cid)
+        assert sc["done_when"] == [] and sc["rules"] == [] and sc["person"] == ""
+        assert M.identity(a)["rules"] == [] and M.identity(a)["done"] is None
+
+
+def test_the_rule_normalizer_keeps_the_four_words_and_refuses_a_fifth():
+    with _fresh() as (_M, E, _tmp):
+        assert E.CHARTER_RULE_TAGS == ("go", "ask", "refuse", "always")
+        assert E.normalize_rules([{"tag": "GO ", "line": "  Ship a patch  "},
+                                  {"tag": "ask", "line": ""}]) == \
+            [{"tag": "go", "line": "Ship a patch"}], "a rule with no line is not a rule"
+        assert E.normalize_rules(None) == []
+        with __import__("pytest").raises(ValueError):
+            E.normalize_rules([{"tag": "shout", "line": "five"}])
+        assert E.normalize_done_when("one\n\n  two  ") == ["one", "two"]
+        assert E.normalize_done_when(None) == []
+
+
+def test_the_org_charter_proposal_writes_the_rules_and_identity_reads_them():
+    """The whole path: file it, nothing changes, approve it, the card reads it."""
+    with _fresh() as (M, E, tmp):
+        import proposals
+        root, desk, a, a1 = _tree(E, tmp)
+        with _org2() as (api, apply_):
+            rec = _file_charter(api, a, title="A Charter", purpose="Own the release.",
+                                done_when=["every screen reads its own record"],
+                                rules=[{"tag": "refuse", "line": "Never a third AI in one task"},
+                                       {"tag": "go", "line": "Ship a patch without asking"}])
+            assert M.identity(a)["rules"] == [], "a proposal applies nothing"
+            assert M.identity(a)["goal"] is None
+            out = proposals.decide(rec["id"], True, apply_fn=apply_.apply_request)
+        assert out["status"] == "approved", out.get("result")
+        card = M.identity(a)
+        assert card["goal"] == "Own the release."
+        assert card["done"] == "every screen reads its own record."
+        assert card["rules"] == [
+            {"tag": "refuse", "text": "Never a third AI in one task"},
+            {"tag": "go", "text": "Ship a patch without asking"}]
+
+
+def test_amending_a_charter_keeps_the_rules_it_was_not_asked_about():
+    """A request that says nothing about a field keeps the prior value; one
+    that sends it empty clears it. Both ride the succession, never an edit."""
+    with _fresh() as (M, E, tmp):
+        import proposals
+        root, desk, a, a1 = _tree(E, tmp)
+        with _org2() as (api, apply_):
+            first = _file_charter(api, a, title="A Charter", purpose="Own the release.",
+                                  done_when=["the screen reads its own record"],
+                                  rules=[{"tag": "ask", "line": "Ask before a push"}])
+            proposals.decide(first["id"], True, apply_fn=apply_.apply_request)
+            cid = M._standing_charter(a)["id"]
+            # a title-only edit: the rules are not mentioned and must survive
+            second = _file_charter(api, a, charter_id=cid, title="The Charter",
+                                   purpose="Own the release.")
+            r2 = proposals.decide(second["id"], True, apply_fn=apply_.apply_request)
+            assert r2["status"] == "approved", r2.get("result")
+            assert M.identity(a)["rules"] == [{"tag": "ask", "text": "Ask before a push"}]
+            assert M.identity(a)["done"] == "the screen reads its own record."
+            # sending them empty is a deletion, and is meant to be
+            third = _file_charter(api, a, charter_id=M._standing_charter(a)["id"],
+                                  title="The Charter", purpose="Own the release.",
+                                  done_when=[], rules=[])
+            r3 = proposals.decide(third["id"], True, apply_fn=apply_.apply_request)
+            assert r3["status"] == "approved", r3.get("result")
+        assert M.identity(a)["rules"] == [] and M.identity(a)["done"] is None
+
+
+def test_a_rule_change_alone_is_a_change():
+    """The old guard compared the title and the purpose only, so an edit that
+    reworded a rule read as "nothing changed" and was refused."""
+    with _fresh() as (M, E, tmp):
+        import proposals
+        root, desk, a, a1 = _tree(E, tmp)
+        with _org2() as (api, apply_):
+            rec = _file_charter(api, a, title="A Charter", purpose="Own the release.")
+            proposals.decide(rec["id"], True, apply_fn=apply_.apply_request)
+            cid = M._standing_charter(a)["id"]
+            again = _file_charter(api, a, charter_id=cid, title="A Charter",
+                                  purpose="Own the release.",
+                                  rules=[{"tag": "refuse", "line": "Never a third AI in one task"}])
+            out = proposals.decide(again["id"], True, apply_fn=apply_.apply_request)
+            assert out["status"] == "approved", out.get("result")
+            assert M._standing_charter(a)["id"] != cid, "by succession, never in place"
+            # and a request that truly changes nothing is still refused
+            same = _file_charter(api, a, charter_id=M._standing_charter(a)["id"],
+                                 title="A Charter", purpose="Own the release.",
+                                 rules=[{"tag": "refuse", "line": "Never a third AI in one task"}])
+            refused = proposals.decide(same["id"], True, apply_fn=apply_.apply_request)
+            assert refused["status"] == "failed"
+            assert "nothing changed" in refused["result"]["error"]
+
+
+def test_identity_prefers_the_charters_own_rules_over_invariants():
+    """DS-1's order of record: the charter's own tagged rules first, the
+    invariants and constraints tagged `always` only when none is written."""
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _charter(E, a, "Own the release.",
+                 invariants=["A mock is the app's own markup"],
+                 constraints=["Never a third AI in one task"],
+                 milestones=[{"label": "v1", "status": "now", "done_when": "the milestone line"}],
+                 done_when=["the charter's own line"],
+                 rules=[{"tag": "refuse", "line": "Never ship on a Friday"}])
+        out = M.identity(a)
+        assert out["rules"] == [{"tag": "refuse", "text": "Never ship on a Friday"}]
+        assert out["done"] == "the charter's own line."
+
+
+def test_identity_still_falls_back_to_the_milestones_and_the_invariants():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _charter(E, a, "Own the release.",
+                 invariants=["A mock is the app's own markup"],
+                 milestones=[{"label": "v1", "status": "now", "done_when": "the milestone line"}])
+        out = M.identity(a)
+        assert out["rules"] == [{"tag": "always", "text": "A mock is the app's own markup"}]
+        assert out["done"] == "the milestone line."
+
+
+def test_identity_ignores_a_rule_whose_tag_is_not_one_of_the_four():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _charter(E, a, "Own the release.",
+                 rules=[{"tag": "shout", "line": "five"}, {"tag": "go", "line": "Ship it"}])
+        assert M.identity(a)["rules"] == [{"tag": "go", "text": "Ship it"}]
+
+
+# --------------------------------------------------------------- DS-2 role --
+
+def test_role_is_a_legal_charter_kind_and_junk_is_not():
+    with _fresh() as (M, E, tmp):
+        import fastapi
+        import pytest as _pytest
+        root, desk, a, a1 = _tree(E, tmp)
+        assert E.CHARTER_KINDS == ("standing", "project", "role")
+        cid = E.mint_charter_stub(a, "Reviewer", "Stamp the release notes.",
+                                  [], [], "T-local", kind="role")
+        assert E.load_charter(cid)["kind"] == "role"
+        for legal in ("standing", "project"):
+            assert E.mint_charter_stub(a, legal.title(), "A goal.", [], [], "T-local", kind=legal)
+        with _pytest.raises(ValueError):
+            E.mint_charter_stub(a, "Nope", "A goal.", [], [], "T-local", kind="wizard")
+        with _org2() as (api, _apply):
+            with _pytest.raises(fastapi.HTTPException) as exc:
+                _file_charter(api, a, purpose="A goal.", kind="wizard")
+            assert exc.value.status_code == 400
+            with _pytest.raises(fastapi.HTTPException) as exc2:
+                _file_charter(api, a, purpose="A goal.", rules=[{"tag": "shout", "line": "five"}])
+            assert exc2.value.status_code == 400
+
+
+def test_people_lists_a_role_with_its_person_after_the_owner():
+    """A36, through the one writer: the role names the person, and `unfilled`
+    is an answer rather than a blank."""
+    with _fresh() as (M, E, tmp):
+        import proposals
+        root, desk, a, a1 = _tree(E, tmp)
+        _charter(E, a, "Own the release.", authority={"name": "Meera"})
+        with _org2() as (api, apply_):
+            held = _file_charter(api, a, title="Reviewer", purpose="Stamp the release notes.",
+                                 kind="role", person="Devansh")
+            assert "for Devansh" in held["summary"], held["summary"]
+            proposals.decide(held["id"], True, apply_fn=apply_.apply_request)
+            open_role = _file_charter(api, a, title="Release manager", purpose="Run the release.",
+                                      kind="role")
+            proposals.decide(open_role["id"], True, apply_fn=apply_.apply_request)
+        out = M.people(a)
+        assert out["owner"]["name"] == "Meera", "the owner is still first"
+        assert [r["title"] for r in out["roles"]] == ["Release manager", "Reviewer"]
+        by_title = {r["title"]: r for r in out["roles"]}
+        assert by_title["Reviewer"]["name"] == "Devansh"
+        assert by_title["Reviewer"]["person"] == "Devansh"
+        assert by_title["Reviewer"]["unfilled"] is False
+        assert by_title["Reviewer"]["stamps"] == "Stamp the release notes."
+        assert by_title["Release manager"]["person"] == "unfilled"
+        assert by_title["Release manager"]["unfilled"] is True
+
+
+def test_a_role_charter_appears_under_people_and_nowhere_else():
+    """A role speaks for a person, not for the department, so it is never the
+    charter Identity reads -- not even when it is the only one on the row."""
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _charter(E, a, "Stamp the release notes.", title="Reviewer", kind="role",
+                 person="Devansh", rules=[{"tag": "go", "line": "Ship a patch"}])
+        card = M.identity(a)
+        assert card["goal"] is None, "a role is not the department's goal"
+        assert card["rules"] == [] and card["done"] is None
+        assert M.filed(a)["filed"] == []
+        assert [r["name"] for r in M.people(a)["roles"]] == ["Devansh"]
+        _charter(E, a, "Own the release.", title="A Charter")
+        assert M.identity(a)["goal"] == "Own the release."

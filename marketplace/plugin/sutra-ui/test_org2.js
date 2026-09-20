@@ -229,8 +229,11 @@ test("edit charter: the sheet is prefilled, refuses no change, files org.charter
   assert.strictEqual(c.calls.apiPost.length, 0); assert.strictEqual(sh.error, "Nothing changed");
   sh.purpose = "Own the operator's experience of Sutra Desktop, end to end.";
   await c.o2SendRequest();
+  /* PIN MOVED (slice G, DS-1): the request now carries the charter's own two
+     extra records. Empty here because this charter has neither -- absent would
+     mean "the sheet said nothing", and the writer would keep the prior value. */
   assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost[0].body)),
-    { kind: "org.charter", args: { ref: "r4", charter_id: "C-1", title: "Experience Charter", purpose: "Own the operator's experience of Sutra Desktop, end to end." } });
+    { kind: "org.charter", args: { ref: "r4", charter_id: "C-1", title: "Experience Charter", purpose: "Own the operator's experience of Sutra Desktop, end to end.", done_when: [], rules: [] } });
   /* no charter yet: the sheet writes one, title defaulted from the name, no charter_id */
   const c2 = fresh(); c2.loadProposals = () => {};
   c2.o2Select("r4"); c2.o2S().dept.r4 = Object.assign({}, DEPT_EXP, { charter: null });
@@ -241,7 +244,40 @@ test("edit charter: the sheet is prefilled, refuses no change, files org.charter
   c2.o2S().sheet.purpose = "  Everything the operator sees.  ";
   await c2.o2SendRequest();
   assert.deepStrictEqual(JSON.parse(JSON.stringify(c2.calls.apiPost[0].body)),
-    { kind: "org.charter", args: { ref: "r4", charter_id: null, title: "Experience Charter", purpose: "Everything the operator sees." } });
+    { kind: "org.charter", args: { ref: "r4", charter_id: null, title: "Experience Charter", purpose: "Everything the operator sees.", done_when: [], rules: [] } });
+});
+/* ── DS-1: the sheet's two new fields ─────────────────────────────────────── */
+test("S-G/DS-1: the charter sheet carries Done when and tagged rules, and files them", async () => {
+  const c = fresh(); c.loadProposals = () => {};
+  c.o2Select("r4");
+  c.o2S().dept.r4 = Object.assign({}, DEPT_EXP, {
+    charter: Object.assign({}, DEPT_EXP.charter, {
+      done_when: ["every screen reads its own record"],
+      rules: [{ tag: "refuse", line: "Never a third AI in one task" }] }) });
+  c.o2OpenSheet("charter");
+  const sh = c.o2S().sheet;
+  assert.strictEqual(sh.done, "every screen reads its own record", "prefilled, one line per row");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sh.rules)), [{ tag: "refuse", line: "Never a third AI in one task" }]);
+  const d = c.o2Data();
+  const html = c.o2SheetHtml(d.byRef.get("r4"), d);
+  assert.ok(/data-o2sdone/.test(html), "the sheet has a Done when field");
+  assert.ok(/data-o2srtag="0"/.test(html) && /data-o2srline="0"/.test(html), "one row per rule");
+  assert.ok(/<option value="refuse" selected>/.test(html), "the row's tag is the one on the record");
+  for (const t of ["go", "ask", "refuse", "always"]) assert.ok(html.indexOf(`<option value="${t}"`) !== -1, t + " is offered");
+  assert.ok(/data-o2act="addrule"/.test(html), "a rule is added, never typed as a tag");
+  /* nothing changed: the same title, purpose, done lines and rules */
+  await c.o2SendRequest();
+  assert.strictEqual(c.calls.apiPost.length, 0); assert.strictEqual(sh.error, "Nothing changed");
+  /* one more rule, a blank row dropped, and the whole set rides the request */
+  c.o2AddRule(); c.o2AddRule();
+  c.o2S().sheet.rules[1].tag = "ask"; c.o2S().sheet.rules[1].line = "  Ask before a push  ";
+  c.o2S().sheet.done = "every screen reads its own record\n\n  the words are the D78 words  ";
+  await c.o2SendRequest();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost[0].body.args.done_when)),
+    ["every screen reads its own record", "the words are the D78 words"]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost[0].body.args.rules)),
+    [{ tag: "refuse", line: "Never a third AI in one task" }, { tag: "ask", line: "Ask before a push" }],
+    "the empty third row is not a rule");
 });
 test("the department read failing: one line and one action, never blank", () => {
   const c = fresh(); const d = c.o2Data();
