@@ -25,12 +25,16 @@
    ============================================================ */
 /* the app css locks the shell (body overflow:hidden, .wrap 100vh); a page must scroll */
 html,body{height:auto;overflow:auto}
-body{background:#f2f0ec;margin:0;padding:20px 18px 60px;font:13px/1.5 var(--sans);color:var(--ink)}
-.wrap{height:auto;overflow:visible;max-width:1180px;margin:0 auto}
+body{background:#f2f0ec;margin:0;padding:12px 18px 20px;font:13px/1.5 var(--sans);color:var(--ink)}
+/* ONE SCREEN (founder 2026-09-21 "I'm not able to scroll"): the controls sit
+   ABOVE the chat and the whole page fits a laptop window, so nothing has to
+   scroll. Order is css, so the markup order below is unchanged. */
+.wrap{height:auto;overflow:visible;max-width:1180px;margin:0 auto;display:flex;flex-direction:column}
+.topstrip{order:0}.controls-first{order:1}.mockapp{order:2}.cap{order:3}
 
 .topstrip{display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap;
   background:var(--card);border:1px solid var(--line);border-radius:12px;
-  padding:14px 18px;margin-bottom:16px}
+  padding:10px 16px;margin-bottom:12px}
 .topmain{flex:1;min-width:260px}
 .topmain h1{font-size:16px;margin:0 0 4px;letter-spacing:-.01em}
 .topmain p{margin:0;color:var(--muted);font-size:12.5px;max-width:74ch}
@@ -50,37 +54,45 @@ body{background:#f2f0ec;margin:0;padding:20px 18px 60px;font:13px/1.5 var(--sans
 
 .mockapp{background:var(--surface);border:1px solid var(--line);border-radius:12px;
   box-shadow:var(--shadow, 0 1px 2px rgba(0,0,0,.06));padding:10px;margin-bottom:20px}
-.app{display:grid;grid-template-columns:220px 1fr;gap:10px;height:560px}
+.app{display:grid;grid-template-columns:220px 1fr;gap:10px;height:410px}
 @media(max-width:760px){.app{grid-template-columns:1fr;height:auto}
   .app .rail{max-height:220px}.app .panes{min-height:460px}}
 .rail{display:flex;flex-direction:column;min-height:0}
 .panes{display:flex;min-height:0}
 .panes .pane{width:100%}
 
-/* controls strip */
-.controls{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
-.controls h2{font-size:13.5px;margin:0 0 4px;letter-spacing:-.01em}
-.controls > p.lede{margin:0 0 14px;color:var(--muted);font-size:12px}
-.ctrl{border-top:1px solid var(--line-soft);padding:13px 0}
-.ctrl:first-of-type{border-top:0;padding-top:2px}
-.ctrlhead{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin-bottom:3px}
-.ctrlhead .num{flex:none;width:19px;height:19px;border-radius:50%;background:var(--acc-bg);
-  color:var(--acc);font:700 11px/19px var(--mono);text-align:center}
-.ctrlhead .name{font-weight:600;font-size:12.5px}
-.ctrlhead .timing{margin-left:auto;font:500 10.5px/1 var(--mono);color:var(--faint)}
-.ctrldesc{margin:0 0 9px;color:var(--muted);font-size:12px;max-width:76ch}
-.ctrlrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+/* controls strip: a compact grid of seven cards; each description is the
+   trigger button's tooltip (set by the script at load) */
+.controls{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;
+  background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px 12px;margin-bottom:12px}
+@media(max-width:1100px){.controls{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:700px){.controls{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.controls h2{grid-column:1/-1;font-size:12.5px;margin:0;letter-spacing:-.01em}
+.controls > p.lede{grid-column:1/-1;margin:-4px 0 2px;color:var(--muted);font-size:11.5px}
+.ctrl{border:1px solid var(--line-soft);border-radius:9px;padding:8px 10px;min-width:0}
+.ctrlhead{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;margin-bottom:6px}
+.ctrlhead .num{flex:none;width:18px;height:18px;border-radius:50%;background:var(--acc-bg);
+  color:var(--acc);font:700 10.5px/18px var(--mono);text-align:center}
+.ctrlhead .name{font-weight:600;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctrlhead .timing{flex-basis:100%;font:500 10px/1.3 var(--mono);color:var(--faint)}
+.ctrldesc{display:none}
+.ctrlrow{display:flex;flex-direction:column;align-items:stretch;gap:7px}
+.ctrlrow .seg{align-self:flex-start}
+.ctrlrow .trig{width:100%;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;flex:none}
-.seg button{background:none;border:0;padding:5px 10px;font:500 11px/1 var(--sans);
+/* Laws of UX pass (2026-09-21): the trigger is the ONE accent element on each
+   card (Von Restorff) and is sized for a fast hit (Fitts, 34 px); the as-today /
+   proposed toggle is quiet so it never competes with the action. */
+.seg button{background:none;border:0;padding:7px 9px;font:500 11px/1 var(--sans);
   color:var(--muted);cursor:pointer}
-.seg button.on{background:var(--acc-bg);color:var(--acc)}
+.seg button.on{background:var(--inset);color:var(--ink)}
 .seg button:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
-.trig{background:var(--inset);border:1px solid var(--line);border-radius:8px;
-  padding:7px 12px;font:500 12px/1 var(--sans);color:var(--ink);cursor:pointer}
-.trig:hover{border-color:var(--acc);color:var(--acc)}
+.trig{background:var(--acc);border:1px solid var(--acc);border-radius:8px;min-height:34px;
+  padding:9px 12px;font:600 12px/1 var(--sans);color:var(--on-acc);cursor:pointer}
+.trig:hover{filter:brightness(.94)}
 .trig:disabled{opacity:.5;cursor:default}
 .trig:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
-.cap{font:12px/1.5 var(--sans);color:var(--muted);margin:14px 0 0}
+.cap{font:11.5px/1.4 var(--sans);color:var(--muted);margin:8px 0 0}
 
 /* ============================================================
    motion layer: what a builder ports into panel.css
@@ -155,7 +167,7 @@ html.reduced *,html.reduced *::before,html.reduced *::after{
     <h1>Six chat micro-interactions</h1>
     <p>Each control below runs its interaction inside the chat screen. Flip "as today" / "proposed" on a control to feel the difference. Timings are on every card. Nothing here is built yet.</p>
   </div>
-  <label class="swrow topswitch" data-demo="reduced">
+  <label class="swrow topswitch" data-demo="reduced" title="On, every proposed transition becomes an instant state change; the OS-level setting is honoured regardless">
     <b>Reduced motion</b>
     <input type="checkbox" id="reduceTop" aria-label="Reduced motion">
     <span class="swtrack"><span class="swknob"></span></span>
@@ -306,16 +318,16 @@ html.reduced *,html.reduced *::before,html.reduced *::after{
   </div>
 </div>
 
-<div class="controls">
+<div class="controls controls-first">
   <h2>The six micro-interactions, one control each</h2>
-  <p class="lede">Each trigger runs its interaction inside the chat screen above. The toggle chooses which behaviour it runs: the app's current abrupt state change, or the proposal with its named timing.</p>
+  <p class="lede">Each button runs its interaction inside the chat screen below. The toggle picks which behaviour runs: the app's current abrupt state change, or the proposal with its named timing. Hover a button for what it does.</p>
 
   <div class="ctrl" data-demo="jump">
     <div class="ctrlhead"><span class="num">1</span><span class="name">Jump to latest</span><span class="timing">150 ms fade / smooth scroll</span></div>
     <p class="ctrldesc">While a reply streams and you have scrolled up, a pill fades in with a count; click it, or scroll to the bottom by hand, and it goes away. As today: every new token yanks you back down.</p>
     <div class="ctrlrow">
       <div class="seg" data-seg="jump"><button type="button" data-mode="today">as today</button><button type="button" class="on" data-mode="proposed">proposed</button></div>
-      <button class="trig" type="button" data-run="jump">1 Stream a reply, then scroll up</button>
+      <button class="trig" type="button" data-run="jump">1 Stream, then scroll up</button>
     </div>
   </div>
 
@@ -333,7 +345,7 @@ html.reduced *,html.reduced *::before,html.reduced *::after{
     <p class="ctrldesc">A steady dot with a soft halo breathes once every 4 seconds while a turn runs; one word, "live". As today: the word alternates between "running" and "live" as the state flips.</p>
     <div class="ctrlrow">
       <div class="seg" data-seg="live"><button type="button" data-mode="today">as today</button><button type="button" class="on" data-mode="proposed">proposed</button></div>
-      <button class="trig" type="button" data-run="live">3 Toggle live on the first row</button>
+      <button class="trig" type="button" data-run="live">3 Toggle live, first row</button>
     </div>
   </div>
 
@@ -342,7 +354,7 @@ html.reduced *,html.reduced *::before,html.reduced *::after{
     <p class="ctrldesc">The menu scales in from its corner; a row's changed value flashes once instead of silently updating. As today: it appears in place, and the value just changes.</p>
     <div class="ctrlrow">
       <div class="seg" data-seg="menu"><button type="button" data-mode="today">as today</button><button type="button" class="on" data-mode="proposed">proposed</button></div>
-      <button class="trig" type="button" data-run="menu">4 Open the menu, change Access</button>
+      <button class="trig" type="button" data-run="menu">4 Menu, change Access</button>
     </div>
   </div>
 
@@ -351,7 +363,7 @@ html.reduced *,html.reduced *::before,html.reduced *::after{
     <p class="ctrldesc">The box grows as lines are added, Send presses in on click, and it cross-fades into Stop while a reply streams. As today: the box jumps in height and the icons swap.</p>
     <div class="ctrlrow">
       <div class="seg" data-seg="compose"><button type="button" data-mode="today">as today</button><button type="button" class="on" data-mode="proposed">proposed</button></div>
-      <button class="trig" type="button" data-run="compose">5 Type three lines and send</button>
+      <button class="trig" type="button" data-run="compose">5 Type 3 lines, send</button>
     </div>
   </div>
 
@@ -360,17 +372,10 @@ html.reduced *,html.reduced *::before,html.reduced *::after{
     <p class="ctrldesc">Switching chats cross-fades the pane, and each chat keeps its own scroll position for when you come back. As today: a hard swap that lands at the top.</p>
     <div class="ctrlrow">
       <div class="seg" data-seg="switch"><button type="button" data-mode="today">as today</button><button type="button" class="on" data-mode="proposed">proposed</button></div>
-      <button class="trig" type="button" data-run="switch">6 Switch to the other chat</button>
+      <button class="trig" type="button" data-run="switch">6 Switch chat</button>
     </div>
   </div>
 
-  <div class="ctrl reduced-ctrl" data-demo="reduced">
-    <div class="ctrlhead"><span class="num">7</span><span class="name">Reduced motion</span><span class="timing">instant</span></div>
-    <p class="ctrldesc">On, every proposed transition above becomes an instant state change (the proposed design still applies). The page also honours the OS-level setting regardless of this switch.</p>
-    <div class="ctrlrow">
-      <label class="swrow"><input type="checkbox" id="reduceCtrl" aria-label="Reduced motion"><span class="swtrack"><span class="swknob"></span></span><span>Reduced motion</span></label>
-    </div>
-  </div>
 </div>
 
 <p class="cap">Chat micro-interactions - 2026-09-21 - the app's own panel.css and markup, plus a motion layer to port - follows sutra 200f77ea (chat chrome unit)</p>
@@ -403,15 +408,21 @@ html.reduced *,html.reduced *::before,html.reduced *::after{
   function $(id){ return document.getElementById(id); }
   function qsa(sel, root){ return Array.prototype.slice.call((root||document).querySelectorAll(sel)); }
 
+  /* each card's description becomes its trigger button's tooltip (compact grid) */
+  qsa(".ctrl").forEach(function(c){
+    var d = c.querySelector(".ctrldesc"), b = c.querySelector(".trig") || c.querySelector(".swrow");
+    if (d && b) b.title = d.textContent.replace(/\s+/g, " ").trim();
+  });
+
   /* ---- reduced-motion switches (kept in sync, also follow the OS live) ---- */
-  var reduceTop = $("reduceTop"), reduceCtrl = $("reduceCtrl");
+  /* one switch, in the top strip (the second, in a seventh card, was cut: Occam) */
+  var reduceTop = $("reduceTop");
   function setReduced(on){
     manualReduced = on;
-    reduceTop.checked = on; reduceCtrl.checked = on;
+    reduceTop.checked = on;
     document.documentElement.classList.toggle("reduced", on);
   }
   reduceTop.addEventListener("change", function(){ setReduced(reduceTop.checked); });
-  reduceCtrl.addEventListener("change", function(){ setReduced(reduceCtrl.checked); });
   setReduced(osReduced());
   try {
     window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", function(e){ setReduced(e.matches); });
