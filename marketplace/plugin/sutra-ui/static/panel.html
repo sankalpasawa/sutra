@@ -197,4 +197,9 @@
      14/15/16 shipped unversioned until now (codex fold 2026-09-08). -->
 <script src="/static/js/18-modules.js?v=__ASSETVER__"></script>
 <script src="/static/js/19-org2.js?v=__ASSETVER__"></script>
+<!-- 20-dept.js: the department screen inside the Org structure tree. It registers
+     no SCREENS entry of its own; the Org structure module delegates to it when a
+     department is selected. It loads after that module, whose functions it calls,
+     and before the tail, whose boot() must stay the final statement (test 21b). -->
+<script src="/static/js/20-dept.js?v=__ASSETVER__"></script>
 <script src="/static/js/09-tail.js?v=__ASSETVER__"></script>

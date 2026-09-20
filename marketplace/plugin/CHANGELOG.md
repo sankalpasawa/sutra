@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.288.1 (2026-09-21)
+
+- **Sutra Desktop: department screen slice A** (holding/plans/department-screen, BUILD-PLAN S1-S22). Selecting a department or an organisation in Org structure now opens the department itself: a list column of Now, Functions, Engines, Filed work, People, Documents, Apps, and a Now card built from real records. New `dept_api.py` (`/api/dept/{ref}/now|running|waits` + `/ping`) reads open proposals cross-referenced by the department's working folder, open atom-ledger rows, and queued or blocked tasks; it writes nothing. New `static/js/20-dept.js` paints them, with Stamp and Refuse going through the existing `decideProposal`, an expired ask showing its default as taken, and an ask that leaves this machine stamped twice. `19-org2.js` gains one delegating branch; `org_api.py` is untouched. Lanes: test_dept.js (38), test_dept_api.py (19), `dept_api.py` joined test_forbidden_calls.py.
+
 ## 2.288.0 (2026-09-21)
 
 - **Shadow v4.1: your words set the task, and a finished task reopens** (founder 2026-09-21; SHADOW-V3 section 13, V4-7 to V4-9). A limit said in a task's chat binds that task at once, even mid-run: new `limits` fence (`turns` number or `"none"`, `running_at_once`, scope task or default), `mission_engine.set_task_turns` / `undo_task_turns`, `no_turn_limit` switches only the turn check off, a chip with Undo in the stream. A finished task (done, stopped, failed) reopens on the founder's words through `mission_engine.reopen` (same record, same chats, fresh allowance from the reopen, the new words as the check of this leg) instead of the 409; `say` reopens too; new actions `reopen`, `set_limits`, `undo_limits`; Hand back to Shadow on every finished card. The transition table is not loosened. Lanes: test_shadow_v41_engine.py (25), test_shadow_v41_routes.py (28), test_shadow_v41_ui.js (8); two old 409 pins moved.

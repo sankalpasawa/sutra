@@ -866,7 +866,19 @@ function o2ScreenHtml(){
     content = `<div class="o2strip"><div class="o2skel" style="width:170px;height:18px;margin:0"></div></div><div class="o2body"><div class="o2list">${[110, 140, 96, 128].map(w => `<div class="o2skel" style="width:${w}px"></div>`).join("")}</div><div class="o2viewer" aria-busy="true"></div></div>`;
   } else {
     const wide = !st.sheet && (st.view === "chart" || st.view === "app" || st.view === "page");
-    content = `${o2StripHtml(n, d, dept)}<div class="o2body${wide ? " wide" : ""}">${wide ? "" : o2ListHtml(n, d, dept, err)}${o2ViewerHtml(n, d, dept, err)}${st.panel ? o2PanelHtml(n, d) : ""}</div>`;
+    /* The department screen (20-dept.js; holding/plans/department-screen/LLD.md
+       section 4 "Mount point"). Selecting a department or an organisation paints
+       ITS list column and viewer instead of the charter-only pair. This is the
+       one line of adaptation inside this file; everything else the department
+       screen does lives in 20-dept.js. When that module is absent -- a build
+       without it, and every test that loads only this file -- the condition is
+       false and the charter view below is exactly what it always was. */
+    const dp = !st.sheet && st.view === "charter" && typeof dpListHtml === "function"
+      && (o2Kind(n, d) === "dept" || o2Kind(n, d) === "org");
+    const body = dp
+      ? dpListHtml(n, d, dept, err) + dpViewerHtml(n, d, dept, err)
+      : (wide ? "" : o2ListHtml(n, d, dept, err)) + o2ViewerHtml(n, d, dept, err);
+    content = `${o2StripHtml(n, d, dept)}<div class="o2body${wide ? " wide" : ""}">${body}${st.panel ? o2PanelHtml(n, d) : ""}</div>`;
   }
   return `<div class="o2${st.error ? " off" : ""}">${left}<div class="o2main">${banner}${content}</div></div>`;
 }

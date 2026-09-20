@@ -142,6 +142,11 @@ app.include_router(modules_api.router)
 # The new Org screen's read-only aggregates (org2_api.py; holding BUILD-PLAN.md).
 import org2_api
 app.include_router(org2_api.router)
+# The department screen's read-only aggregates (dept_api.py; holding
+# plans/department-screen/LLD.md). Reads only; its one future POST files a
+# proposal and applies nothing.
+import dept_api
+app.include_router(dept_api.router)
 # Optimus (Focus > Optimus): a window over sutra-daemon's stores. Reads are
 # fixed-path + bounded; mutations shell the daemon CLI (desktop-token gated).
 import optimus_api

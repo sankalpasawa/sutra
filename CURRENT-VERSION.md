@@ -2,7 +2,13 @@
 
 **status**: active · **updated**: 2026-09-21
 
-## v2.288.0 (2026-09-21, HEAD)
+## v2.288.1 (2026-09-21, HEAD)
+
+**Department screen, slice A** (holding/plans/department-screen, Gate 4): a department opened in Org structure shows its own seven-group list and a Now card of open asks, waits and running work, read through the new `/api/dept` router. Stamp and Refuse reuse the proposal gate; nothing new writes. `org_api.py` unchanged.
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.288.0 (2026-09-21)
 
 **Shadow v4.1** (founder 2026-09-21, SHADOW-V3 section 13): a limit said in a task's chat binds that task at once, even while it runs (`limits` fence, "no limit" legal, Undo on the row); a finished task reopens on the founder's words instead of answering 409, and Hand back to Shadow sits on every finished card; a take-over pause never times out. Engine, routes and UI each ship a test lane (test_shadow_v41_*). DeepSeek SKIPPED (key path unreadable in-session); codex SKIPPED until 2026-10-16.
 
@@ -1049,7 +1055,7 @@ on syncing — a newer Sutra growing a table is not a broken workspace — and `
 rather than queues** a row its workspace cannot take, because the outbox retries for ever in order
 and one undeliverable row would hold every idea, article and prompt edit behind it.
 
-## v2.257.0 (2026-09-10, HEAD)
+## v2.257.0 (2026-09-10)
 
 **The Agents tab is a marketplace, and opening an agent explains itself.** It used to drop straight
 into the last conversation. Now the tab opens on a shelf — the company name, one card for the one
