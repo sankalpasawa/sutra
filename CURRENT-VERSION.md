@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-09-20
 
-## v2.287.3 (2026-09-20, HEAD)
+## v2.287.4 (2026-09-20, HEAD)
+
+**Prompt-time budgets raised** (founder 2026-09-20 "Budget has to be increased now."): ledger step 10 s, event wall 50 s, host timeout 30 s; worst-case bounds, a normal prompt is unchanged. DeepSeek review folded; codex SKIPPED until 2026-10-16.
+
+## v2.287.3 (2026-09-20)
 
 **No silent ungoverned turn** (founder 2026-09-20 "Raise the budget."): the ledger step's budget is 6000 ms, a killed runtime step is printed, and the gate opens a missing ledger at the first tool call instead of allowing by bootstrap. DeepSeek review folded; codex SKIPPED until 2026-10-16.
 

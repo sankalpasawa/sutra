@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-20
+## 2.287.4 (2026-09-20)
+
+- **Prompt-time budgets raised** (founder 2026-09-20: "Budget has to be increased now."): `ups.steps_ledger` 6000 -> 10000 ms, the UserPromptSubmit event wall 40 -> 50 s, the host timeout of the UserPromptSubmit hook 20 -> 30 s. Worst-case bounds only; a normal prompt is unchanged. DeepSeek review folded.
+
 ## 2.287.3 (2026-09-20)
 
 - **No silent ungoverned turn.** `ups.steps_ledger` gets 6000 ms (2500 was exceeded on a loaded box after a reload; the turn then ran with no ledger and no refusal). A killed native runtime step now prints a systemMessage, not only a stderr line. When a real prompt's ledger is missing at the first tool call, `pre.adherence_gate` opens it itself (shared `sutra_steps_open_ledger`), prints `ledger opened late`, and evaluates the rules as usual; only a synthetic prompt keeps the bootstrap allow. Tests: test-adherence case 12 rewritten, case 16 added. DeepSeek review folded.

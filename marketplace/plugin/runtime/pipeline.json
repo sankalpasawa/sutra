@@ -9,7 +9,7 @@
   "budgets": {
     "event_wall_ms": {
       "SessionStart": 90000,
-      "UserPromptSubmit": 40000,
+      "UserPromptSubmit": 50000,
       "PreToolUse": 170000,
       "PostToolUse": 120000,
       "PermissionRequest": 8000,
@@ -359,14 +359,14 @@
         "class": "A",
         "impl": "native:steps_ledger",
         "phase": "post",
-        "timeout_ms": 6000,
+        "timeout_ms": 10000,
         "killswitch_aliases": [
           ".sutra-runtime-adherence-disabled"
         ],
         "replaces": [],
         "on_error": "warn",
         "flag": "~/.sutra-runtime-adherence",
-        "notes": "adherence row 1: opens .sutra/turn/<sid>/<turn>.steps.json and emits the STEP TRACE when the per-box flag is on|warn; emits nothing when off 2.286.3: budget 8000 ms (2500 was exceeded on a loaded box after a reload: 2565 ms, no ledger, silent turn); a killed run is printed by sutra-turn and the gate opens the ledger late 2.286.3: budget 6000 ms (2500 was exceeded on a loaded box after a reload: 2565 ms, no ledger, silent turn; the event sum rule caps it at 6000); a killed run is printed by sutra-turn and the gate opens the ledger late"
+        "notes": "adherence row 1: opens .sutra/turn/<sid>/<turn>.steps.json and emits the STEP TRACE when the per-box flag is on|warn; emits nothing when off 2.286.3: budget 8000 ms (2500 was exceeded on a loaded box after a reload: 2565 ms, no ledger, silent turn); a killed run is printed by sutra-turn and the gate opens the ledger late 2.286.3: budget 6000 ms (2500 was exceeded on a loaded box after a reload: 2565 ms, no ledger, silent turn; the event sum rule caps it at 6000); a killed run is printed by sutra-turn and the gate opens the ledger late 2.287.4 (founder: the budget has to be increased now): 10000 ms under a 50000 ms prompt-time wall (host default hook timeout 60 s)"
       }
     ],
     "PreToolUse": [
