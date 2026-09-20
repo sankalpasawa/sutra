@@ -557,6 +557,463 @@ def test_identity_chat_leaves_an_open_ask_unanswered():
         assert rows[0]["row"]["status"] == "pending"
 
 
+# --------------------------------------------------------------------- S35 --
+
+def _aged(pid, days):
+    """Move a proposal's own clock back. proposals.create() stamps `now`, and a
+    seven-day window cannot be exercised without a row outside it."""
+    import proposals
+    rec = proposals.get(pid)
+    rec["created_ms"] = rec["created_ms"] - int(days * 24 * 3600 * 1000)
+    proposals._write(rec)
+    return rec
+
+
+def test_adaptation_reads_three_of_a_kind_as_one_pattern():
+    with _fresh() as (M, E, tmp):
+        import proposals
+        root, desk, a, a1 = _tree(E, tmp)
+        for _ in range(3):
+            proposals.create("org.charter", {"ref": a1}, "Write the goal of A1")
+            time.sleep(0.002)
+        proposals.create("org.rename", {"ref": a1, "name": "A2"}, "Rename A1")
+        out = M.adaptation(a)
+        assert [(p["kind"], p["summary"], p["count"]) for p in out["patterns"]] == [
+            ("org.charter", "Write the goal of A1", 3)], out["patterns"]
+        assert out["patterns"][0]["since_ms"] > 0, "the pattern says when it started"
+
+
+def test_adaptation_does_not_pattern_two_of_a_kind():
+    with _fresh() as (M, E, tmp):
+        import proposals
+        root, desk, a, a1 = _tree(E, tmp)
+        for _ in range(2):
+            proposals.create("org.charter", {"ref": a1}, "Write the goal of A1")
+            time.sleep(0.002)
+        assert M.adaptation(a)["patterns"] == [], "A13: two is not a pattern"
+
+
+def test_adaptation_pattern_window_is_seven_days():
+    with _fresh() as (M, E, tmp):
+        import proposals
+        root, desk, a, a1 = _tree(E, tmp)
+        ids = []
+        for _ in range(3):
+            ids.append(proposals.create("org.charter", {"ref": a1}, "Write the goal of A1")["id"])
+            time.sleep(0.002)
+        assert M.adaptation(a)["patterns"][0]["count"] == 3
+        _aged(ids[0], 8)
+        assert M.adaptation(a)["patterns"] == [], \
+            "an ask outside the window counts toward nothing"
+
+
+def test_adaptation_proposal_rows_are_newest_first_with_their_state():
+    with _fresh() as (M, E, tmp):
+        import proposals
+        root, desk, a, a1 = _tree(E, tmp)
+        p1 = proposals.create("org.charter", {"ref": a1}, "Write the goal of A1")
+        time.sleep(0.002)
+        proposals.create("org.rename", {"ref": a1, "name": "A2"}, "Rename A1")
+        proposals.decide(p1["id"], False)
+        rows = M.adaptation(a)["proposals"]
+        assert [r["change"] for r in rows] == ["Rename A1", "Write the goal of A1"]
+        assert [r["state"] for r in rows] == ["Waits.", "Refused."]
+        assert [r["open"] for r in rows] == [True, False]
+        assert rows[0]["window_ms"] == proposals.TTL_SECONDS * 1000, \
+            "an open change carries its window so the card can draw it"
+        assert rows[0]["created_ms"] > 0
+        assert rows[0]["row"]["id"].startswith("p-"), "the raw row rides along for Exact"
+
+
+def test_adaptation_evidence_is_the_repeat_count_and_nothing_when_there_is_none():
+    with _fresh() as (M, E, tmp):
+        import proposals
+        root, desk, a, a1 = _tree(E, tmp)
+        for _ in range(3):
+            proposals.create("org.charter", {"ref": a1}, "Write the goal of A1")
+            time.sleep(0.002)
+        proposals.create("org.rename", {"ref": a1, "name": "A2"}, "Rename A1")
+        rows = {r["change"]: r["evidence"] for r in M.adaptation(a)["proposals"]}
+        assert rows["Write the goal of A1"] == "Asked 3 times in seven days"
+        assert rows["Rename A1"] == "", "a change that stands alone invents no evidence"
+
+
+def test_adaptation_is_empty_for_a_department_with_nothing_put_forward():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        out = M.adaptation(a)
+        assert out == {"proposals": [], "patterns": [], "chat": []}
+
+
+def test_adaptation_chat_is_the_exchange_that_carried_the_changes():
+    with _fresh() as (M, E, tmp):
+        import proposals
+        root, desk, a, a1 = _tree(E, tmp)
+        p = proposals.create("org.charter", {"ref": a}, "Write the goal of A")
+        proposals.decide(p["id"], False)
+        assert [(r["who"], r["to"], r["line"]) for r in M.adaptation(a)["chat"]] == [
+            ("Adaptation", "Identity", "Write the goal of A"),
+            ("Identity", "Adaptation", "Refused.")]
+
+
+def test_adaptation_404s_on_an_unknown_department():
+    import fastapi
+    with _fresh() as (M, E, tmp):
+        _tree(E, tmp)
+        with __import__("pytest").raises(fastapi.HTTPException) as exc:
+            M.adaptation("no-such-ref")
+        assert exc.value.status_code == 404
+
+
+# --------------------------------------------------------------------- S36 --
+
+def _dispatch(tmp, sid, unit, model, ts, touches="here/", extra=None):
+    """One dispatch record, written the way holding/bin/sutra-dispatch writes
+    one: a KEY=VALUE marker under `.sutra/dispatch/<session>/`."""
+    d = tmp / ".sutra" / "dispatch" / sid
+    d.mkdir(parents=True, exist_ok=True)
+    rows = {"UNIT": unit, "MODEL": model, "PROVIDER": "claude", "CLASS": "3",
+            "TOUCHES": touches, "SESSION": sid, "TS": str(ts)}
+    rows.update(extra or {})
+    (d / "dispatch-record").write_text(
+        "".join("%s=%s\n" % (k, v) for k, v in rows.items()), encoding="utf-8")
+
+
+def test_priority_reads_the_newest_dispatch_record_first():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        (tmp / "here").mkdir()
+        _dispatch(tmp, "s-old", "Land the list column", "claude-sonnet-5", 1000)
+        _dispatch(tmp, "s-new", "Land the department screen", "claude-opus-5", 2000)
+        out = M.priority(a)
+        assert [q["next"] for q in out["queue"]] == [
+            "Land the department screen", "Land the list column"]
+        assert out["model"] == "claude-opus-5", "the newest record says what it runs as"
+        assert out["class"] == "3"
+        assert out["queue"][0]["runs_as"] == "claude-opus-5"
+        assert out["queue"][0]["when_ms"] == 2000 * 1000
+        assert out["queue"][0]["row"]["SESSION"] == "s-new", "the raw row rides along"
+
+
+def test_priority_leaves_out_a_record_that_touched_another_department():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        (tmp / "here").mkdir()
+        _dispatch(tmp, "s-here", "Land the list column", "claude-opus-5", 2000,
+                  touches="here/|holding/")
+        _dispatch(tmp, "s-away", "Somewhere else", "claude-opus-5", 3000,
+                  touches="/tmp/not-here/")
+        assert [q["next"] for q in M.priority(a)["queue"]] == ["Land the list column"]
+
+
+def test_priority_is_empty_with_no_dispatch_record_and_never_raises():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        out = M.priority(a)
+        assert out["queue"] == [] and out["class"] is None and out["model"] is None
+        assert out["chat"] == []
+        assert M.priority(root)["queue"] == [], "no cwd, no attribution"
+
+
+def test_priority_carries_the_turn_budget_from_the_task_limits_store():
+    with _fresh() as (M, E, tmp):
+        import mission_engine
+        root, desk, a, a1 = _tree(E, tmp)
+        assert M.priority(a)["budget"]["running_at_once"] is None, "A11: nothing set"
+        Path(mission_engine.limits_path()).parent.mkdir(parents=True, exist_ok=True)
+        Path(mission_engine.limits_path()).write_text(
+            json.dumps({"running_at_once": 4, "turn_budget": {"task": 12}}),
+            encoding="utf-8")
+        b = M.priority(a)["budget"]
+        assert b["running_at_once"] == 4
+        assert b["turn_budget"] == {"task": 12}
+        assert b["ceiling"] == mission_engine.RUNNING_CEILING
+
+
+def test_priority_survives_a_half_written_dispatch_record():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        (tmp / "here").mkdir()
+        d = tmp / ".sutra" / "dispatch" / "s-junk"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "dispatch-record").write_text("not a marker at all\n", encoding="utf-8")
+        _dispatch(tmp, "s-good", "Land the list column", "claude-opus-5", 2000)
+        assert [q["next"] for q in M.priority(a)["queue"]] == ["Land the list column"]
+
+
+def test_priority_chat_is_what_it_admitted():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        (tmp / "here").mkdir()
+        _dispatch(tmp, "s-new", "Land the department screen", "claude-opus-5", 2000)
+        rows = M.priority(a)["chat"]
+        assert [(r["who"], r["to"], r["line"]) for r in rows] == [
+            ("Priority", "Coordination",
+             "Admitted: Land the department screen. Runs as claude-opus-5.")]
+        assert rows[0]["at"], "the record's own stamp, formatted like every other"
+
+
+def test_priority_404s_on_an_unknown_department():
+    import fastapi
+    with _fresh() as (M, E, tmp):
+        _tree(E, tmp)
+        with __import__("pytest").raises(fastapi.HTTPException) as exc:
+            M.priority("no-such-ref")
+        assert exc.value.status_code == 404
+
+
+# --------------------------------------------------------------------- S37 --
+
+def _lock(tmp, rid):
+    """The overlap lock routines.py takes around a run (routines.py:566): a
+    directory beside the run folder. Made here with mkdir, exactly as the
+    module makes it, and never through acquire_lock()."""
+    d = tmp / "runs" / rid / ".lock"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _heartbeat(tmp, sid):
+    d = tmp / ".claude" / "heartbeats"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / sid).write_text("", encoding="utf-8")
+    return d / sid
+
+
+def test_coordination_reads_a_routine_lock_as_a_hold():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("held-one", tmp / "here", description="Nightly sweep")
+        _routine("free-one", tmp / "here", description="Weekly sweep")
+        _lock(tmp, "held-one")
+        held = M.coordination(a)["held"]
+        assert [(h["resource"], h["holder"]) for h in held] == [
+            ("Nightly sweep", "Its own run")]
+        assert held[0]["since_ms"] > 0, "a hold says since when"
+
+
+def test_coordination_leaves_out_a_lock_in_another_department():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        outside = Path(os.path.realpath(str(tmp.parent))) / ("out-" + tmp.name)
+        outside.mkdir()
+        try:
+            _routine("elsewhere", outside, description="Another sweep")
+            _lock(tmp, "elsewhere")
+            assert M.coordination(a)["held"] == []
+        finally:
+            for f in outside.glob("*"):
+                f.unlink()
+            outside.rmdir()
+
+
+def test_coordination_reads_a_live_heartbeat_as_a_hold_and_a_stale_one_as_none():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        live = _heartbeat(tmp, "s-live")
+        held = M.coordination(a)["held"]
+        assert [(h["resource"], h["holder"]) for h in held] == [("A", "A session")]
+        old = time.time() - (M.HEARTBEAT_FRESH_MS / 1000.0) - 60
+        os.utime(str(live), (old, old))
+        assert M.coordination(a)["held"] == [], "a stale mark is not a holder"
+
+
+def test_coordination_lists_the_hand_off_a_placement_chain_left_behind():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        c_a = _charter(E, a, "A goal.", title="A charter")
+        c_a1 = _charter(E, a1, "A1 goal.", title="A1 charter")
+        wr = {"id": "holding/departments/a/NOTE.md", "kind": "task"}
+        E.write_placement(wr, a1, c_a1, "test", 1.0, "2026-09-20", "T-local")
+        E.write_placement(wr, a, c_a, "test", 1.0, "2026-09-21", "T-local")
+        rows = M.coordination(a)["handoffs"]
+        assert [(r["from"], r["to"], r["what"]) for r in rows] == [("A1", "A", "NOTE")], rows
+        assert rows[0]["ts_ms"] > 0
+        assert rows[0]["row"]["supersedes"], "the raw row carries the chain"
+
+
+def test_coordination_does_not_call_a_move_inside_one_department_a_hand_off():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        c1 = _charter(E, a, "A goal.", title="One")
+        c2 = _charter(E, a, "A goal, again.", title="Two")
+        wr = {"id": "holding/departments/a/NOTE.md", "kind": "task"}
+        E.write_placement(wr, a, c1, "test", 1.0, "2026-09-20", "T-local")
+        E.write_placement(wr, a, c2, "test", 1.0, "2026-09-21", "T-local")
+        assert M.coordination(a)["handoffs"] == []
+
+
+def test_coordination_is_empty_with_nothing_held_and_nothing_handed_over():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        assert M.coordination(a) == {"held": [], "handoffs": [], "chat": []}
+
+
+def test_coordination_chat_says_what_is_held_and_what_changed_hands():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("held-one", tmp / "here", description="Nightly sweep")
+        _lock(tmp, "held-one")
+        rows = M.coordination(a)["chat"]
+        assert [(r["who"], r["to"], r["line"]) for r in rows] == [
+            ("Coordination", "Priority", "Nightly sweep held by its own run.")]
+
+
+def test_coordination_404s_on_an_unknown_department():
+    import fastapi
+    with _fresh() as (M, E, tmp):
+        _tree(E, tmp)
+        with __import__("pytest").raises(fastapi.HTTPException) as exc:
+            M.coordination("no-such-ref")
+        assert exc.value.status_code == 404
+
+
+# ---------------------------------------------------------------- S38, S46 --
+
+def _findings(tmp, rows, base=None):
+    """The daily governance audit's own log, where it writes it."""
+    d = Path(base or tmp)
+    for part in ("holding", "observability", "governance-audit"):
+        d = d / part
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / "findings.jsonl"
+    p.write_text("".join(
+        (r if isinstance(r, str) else json.dumps(r)) + "\n" for r in rows),
+        encoding="utf-8")
+    return p
+
+
+def _finding(fid, text, severity="warn", status="open",
+             first="2026-09-01", last="2026-09-20", check="C2", **kw):
+    row = {"id": fid, "check": check, "severity": severity, "text": text,
+           "status": status, "first_seen": first, "last_seen": last}
+    row.update(kw)
+    return row
+
+
+def test_audit_lists_findings_that_name_a_path_under_the_department_newest_first():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        (tmp / "here").mkdir()
+        _findings(tmp, [
+            _finding("f-1", "here/one.sh is missing or not executable", last="2026-09-18"),
+            _finding("f-2", "here/two-thing.sh still emits on stderr",
+                     severity="critical", last="2026-09-20"),
+            _finding("f-3", "/tmp/not-here/three.sh is another department's",
+                     last="2026-09-19"),
+            "{ this line is not json",
+        ])
+        out = M.audit(a)
+        assert [f["id"] for f in out["findings"]] == ["f-2", "f-1"], out["findings"]
+        assert out["findings"][0]["dot"] == "block", "critical is a block dot"
+        assert out["findings"][1]["dot"] == "warn"
+        assert out["skipped"] == 1, "a malformed line is counted, not fatal (PRD J)"
+
+
+def test_audit_puts_the_name_on_the_claim_and_leaves_the_path_in_the_raw_row():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        (tmp / "here").mkdir()
+        _findings(tmp, [_finding("f-1", "here/sessionstart-audit.sh emits on stderr")])
+        row = M.audit(a)["findings"][0]
+        assert row["claim"] == "sessionstart audit emits on stderr", row["claim"]
+        assert "/" not in row["claim"], "A28: names, never paths"
+        assert row["row"]["text"].startswith("here/"), "the raw row keeps it"
+
+
+def test_audit_reads_the_last_row_per_finding():
+    """The log is appended to every audit day under one id; where a finding
+    stands is what the last row says, not the first."""
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        (tmp / "here").mkdir()
+        _findings(tmp, [
+            _finding("f-1", "here/one.sh is missing", status="open", last="2026-09-18"),
+            _finding("f-1", "here/one.sh is missing", status="fixed",
+                     last="2026-09-20", fix_ref="abc123"),
+        ])
+        out = M.audit(a)
+        assert len(out["findings"]) == 1
+        assert out["findings"][0]["record"] == "Fixed."
+        assert out["findings"][0]["dot"] == "ok"
+        assert out["unseen"] == [], "a fixed finding was looked at"
+
+
+def test_audit_never_looked_at_is_what_nobody_has_written_a_word_against():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        (tmp / "here").mkdir()
+        _findings(tmp, [
+            _finding("f-1", "here/one.sh is missing", first="2026-08-04"),
+            _finding("f-2", "here/two.sh is missing", first="2026-09-01",
+                     note="judged a measurement artifact"),
+            _finding("f-3", "here/three.sh is missing", first="2026-09-02",
+                     fix_ref="abc123"),
+        ])
+        out = M.audit(a)
+        assert [u["claim"] for u in out["unseen"]] == ["one is missing"], out["unseen"]
+        assert out["unseen"][0]["since"] == "2026-08-04", "it says since when"
+        recs = {f["id"]: f["record"] for f in out["findings"]}
+        assert recs["f-1"] == "Still open."
+        assert recs["f-2"] == "judged a measurement artifact", "the record's own words"
+
+
+def test_audit_missing_file_is_an_empty_list_and_never_a_500():
+    """S46 + PRD section J: the findings log is holding's own routine, so most
+    installs have never had one. That is an empty card, not an error."""
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        assert M.audit(a) == {"findings": [], "unseen": [], "skipped": 0, "chat": []}
+        assert M.audit(root)["findings"] == [], "no cwd, no attribution"
+        assert M.audit(a1)["findings"] == []
+
+
+def test_audit_missing_file_survives_an_unreadable_workdir():
+    with _fresh() as (M, E, tmp):
+        import providers
+        root, desk, a, a1 = _tree(E, tmp)
+        (tmp / "settings.json").write_text(json.dumps({"workdir": "/nope/gone"}),
+                                           encoding="utf-8")
+        importlib.reload(providers)
+        assert M.audit(a)["findings"] == []
+
+
+def test_audit_chat_flags_what_is_not_ok_and_otherwise_says_every_claim_has_its_row():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        (tmp / "here").mkdir()
+        _findings(tmp, [_finding("f-1", "here/one.sh is missing", severity="critical")])
+        rows = M.audit(a)["chat"]
+        assert [(r["who"], r["to"]) for r in rows] == [("Audit", "Priority")]
+        assert rows[0]["line"] == 'Flag: claimed "one is missing"; the record says Still open.'
+        _findings(tmp, [_finding("f-1", "here/one.sh is missing", status="fixed")])
+        rows = M.audit(a)["chat"]
+        assert [r["line"] for r in rows] == ["Every claim has its row."]
+
+
+def test_audit_never_scores_a_check():
+    """A16: a check is a check. The route answers rows and no number -- no
+    total, no share, no count of any kind."""
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        (tmp / "here").mkdir()
+        _findings(tmp, [_finding("f-%d" % i, "here/%d.sh is missing" % i) for i in range(4)])
+        out = M.audit(a)
+        assert set(out) == {"findings", "unseen", "skipped", "chat"}
+        assert set(out["findings"][0]) == {
+            "id", "check", "claim", "record", "dot", "first_seen", "last_seen", "row"}
+        assert all(not isinstance(f.get("dot"), (int, float)) for f in out["findings"])
+
+
+def test_audit_404s_on_an_unknown_department():
+    import fastapi
+    with _fresh() as (M, E, tmp):
+        _tree(E, tmp)
+        with __import__("pytest").raises(fastapi.HTTPException) as exc:
+            M.audit("no-such-ref")
+        assert exc.value.status_code == 404
+
+
 def test_writes_only_through_proposals():
     """R2: the read side files nothing. dept_api never calls a routines mutator
     and never writes a placement; the only create() it may ever name is

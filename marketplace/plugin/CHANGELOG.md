@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.289.4 (2026-09-21)
+
+- **Sutra Desktop: department screen slice C, the four functions and their chats** (holding/plans/department-screen, BUILD-PLAN S35-S48). Adaptation, Priority, Coordination and Audit each open on their own card with a Chat tab (the shared Summary / Exact component). Adaptation: the changes put forward with the repeat count behind them and the patterns from repeated asks (3+ in seven days), plus a one-click offer to change a rule. Priority: the queue — next, what it runs as, when — off the dispatch records under the department, and the budget as one bar. Coordination: the live board, who holds what since when (routine locks and session heartbeats), and the last hand-off from the placement chain. Audit: each check as a claim, what the record says and a dot — never a score — with what nobody has looked at. Four new reads `GET /api/dept/{ref}/{adaptation,priority,coordination,audit}`; a missing store is an empty card, never a 500. Reads only: `org_api.py` untouched, no new write path.
+
 ## 2.289.3 (2026-09-21)
 
 - **Sutra Desktop: the runtime's own blocks reach the governance chip** (founder 2026-09-21: "the work, audit, close, the step trace and the bound query are all there -- add those into the governance block, in detail"). `parseGov` lifts three more families out of a reply, verbatim, into the chip's panel: the STEP TRACE ledger (Step trace), the `+-- DISPATCH --+` box (Dispatch) and the `+== ATOM OPEN / CLOSED / ABANDONED ==+` cards (Work atom). Found while pinning: the runtime-rendered one-line DEPTH and the FLOW one-liner (2.286+) had been leaking into the body as prose; both are captured now, and a prose "DEPTH: 3/5 is what I'd pick" or "FLOW: 3.2 L/min" still stays. Lanes: test_gov_capture.js (16); governance projections 104 and panel 406 unchanged.

@@ -2,7 +2,13 @@
 
 **status**: active · **updated**: 2026-09-21
 
-## v2.289.3 (2026-09-21, HEAD)
+## v2.289.4 (2026-09-21, HEAD)
+
+**Department screen, slice C** (holding/plans/department-screen, Gate 4): Adaptation, Priority, Coordination and Audit open on their own cards, each with its Chat tab. Four new `/api/dept/{ref}/...` reads over records that already exist — proposals, dispatch records, routine locks and heartbeats, the placement chain, the governance findings. Nothing new writes.
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.289.3 (2026-09-21)
 
 **Sutra Desktop: STEP TRACE, DISPATCH and the atom cards reach the governance chip** (founder 2026-09-21): `parseGov` captures the three runtime families verbatim into the chip's panel; the rendered one-line DEPTH and FLOW stop leaking into the body. Lane test_gov_capture.js 16.
 

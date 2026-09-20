@@ -73,6 +73,12 @@ function dpLoadWaits(ref, force){ return dpLoad("waits", ref, dpUrl(ref, "waits"
    department must cost the three reads Now needs and no more, and the
    call-on-render pattern is the one o2LoadApps already uses (19-org2.js:639). */
 function dpLoadIdentity(ref, force){ return dpLoad("identity", ref, dpUrl(ref, "identity"), force); }
+/* The other four functions read the same way Identity does: when their own
+   card opens, never when the department does. */
+function dpLoadAdaptation(ref, force){ return dpLoad("adaptation", ref, dpUrl(ref, "adaptation"), force); }
+function dpLoadPriority(ref, force){ return dpLoad("priority", ref, dpUrl(ref, "priority"), force); }
+function dpLoadCoordination(ref, force){ return dpLoad("coordination", ref, dpUrl(ref, "coordination"), force); }
+function dpLoadAudit(ref, force){ return dpLoad("audit", ref, dpUrl(ref, "audit"), force); }
 
 /* ── selection ────────────────────────────────────────────────────────────── */
 /* Opening a department, mirroring o2Select (19-org2.js:250-261): everything the
@@ -160,8 +166,12 @@ function dpQuiet(line){ return `<div class="o2quiet dpq">${dpEsc(line)}</div>`; 
 function dpSkel(){ return [220, 180, 260].map(w => `<div class="o2skel" style="width:${w}px"></div>`).join(""); }
 function dpCard(title, body){ return `<div class="dpcard"><h3>${dpEsc(title)}</h3>${body}</div>`; }
 
-function dpRunRow(label, note){
-  return `<div class="dprow"><span class="dpdot"></span><span>${dpEsc(label)}${note ? `<div class="dpchk">${dpEsc(note)}</div>` : ""}</span></div>`;
+/* One line of a list: the name, what the record says under it, and a dot that
+   carries the record's own word for how it stands. The dot is a colour and
+   nothing else -- there is no number beside it anywhere on this screen (A28). */
+function dpRunRow(label, note, dot, extra){
+  return `<div class="dprow"><span class="dpdot${dot ? " " + dot : ""}"></span>` +
+    `<span>${dpEsc(label)}${note ? `<div class="dpchk">${dpEsc(note)}</div>` : ""}${extra || ""}</span></div>`;
 }
 /* How much of the window is left, as a share of it. A bar, never a number:
    the owner needs to see "soon" or "not yet", and a count at rest is the one
@@ -228,7 +238,32 @@ function dpNowHtml(){
    the record itself. Exact is the one place on this screen where a raw path,
    or the word the card is forbidden to say, is allowed to appear (A29). */
 const DP_MODES = [["summary", "Summary"], ["exact", "Exact"]];
-function dpWhen(at){ const m = /T(\d\d:\d\d)/.exec(String(at || "")); return m ? m[1] : ""; }
+const DP_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/* A record's own stamp, read as a person reads one: the clock when the record
+   carries a time, the day when it carries only a date (a governance finding is
+   dated, not timed), and nothing at all when it carries neither. */
+function dpWhen(at){
+  const s = String(at || "");
+  const t = /T(\d\d:\d\d)/.exec(s);
+  if (t) return t[1];
+  const d = /^(\d{4})-(\d\d)-(\d\d)$/.exec(s);
+  return d ? (Number(d[3]) + " " + (DP_MON[Number(d[2]) - 1] || "")).trim() : "";
+}
+function dpStamp(ms){
+  const n = Number(ms) || 0;
+  if (!n) return "";
+  const d = new Date(n);
+  return d.getDate() + " " + (DP_MON[d.getMonth()] || "");
+}
+/* Today reads as a clock, any other day as the day. The owner asking "when"
+   means "how long ago" while it is today, and "which day" once it is not. */
+function dpWhenMs(ms){
+  const n = Number(ms) || 0;
+  if (!n) return "";
+  const d = new Date(n), today = new Date(dpNow());
+  if (d.getDate() !== today.getDate() || d.getMonth() !== today.getMonth()) return dpStamp(n);
+  return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+}
 function dpChatLine(row){
   const to = row.to ? " to " + dpEsc(row.to) : "";
   return `<div class="dpmsg${row.mode === "think" ? " think" : ""}">` +
@@ -322,6 +357,91 @@ function dpIdentityHtml(){
   return tabs + dpIdentityCardHtml(id);
 }
 
+/* ── the other four functions ──────────────────────────────────────────────
+   Adaptation, Priority, Coordination and Audit are one shape with four sets of
+   rows: the function's own card, and beside it the Chat tab carrying the turns
+   its route wrote (A17). The tabs, the chat, the bar and the row are slice B's
+   -- only the rows below are new. Every card follows Now's rule for empty: a
+   section with no rows is not drawn at all, and a function with nothing
+   anywhere is ONE quiet line, never one per section. */
+function dpPane(ref, tab){ return dpS().pane[ref + ":" + tab] || tab; }
+function dpFnHtml(tab, label, card){
+  const st = dpS(), ref = st.sel;
+  const data = (st[tab] && st[tab].ref === ref) ? st[tab] : null;
+  if (!data) return st.error[tab] ? dpQuiet("Could not read") : dpSkel();
+  const tabs = dpTabsHtml(dpPane(ref, tab), [[tab, label], ["chat", "Chat"]], "data-dppane");
+  if (dpPane(ref, tab) === "chat") return tabs + dpChatCard("Chat", data.chat, ref + ":" + tab + ":chat");
+  return tabs + card(data);
+}
+
+/* Adaptation: what it wants changed, and the asking behind it. */
+function dpPropHtml(p){
+  const note = [p.evidence, p.state].filter(Boolean).join(" · ");
+  return dpRunRow(p.change, note, p.open ? "warn" : "ok", p.open ? dpBar(dpLeft(p)) : "");
+}
+function dpAdaptationCard(a){
+  const props = a.proposals || [], pats = a.patterns || [];
+  /* the one action: the Org screen's existing write-it ask, which is how a
+     rule is changed here too -- this screen still files nothing of its own */
+  const offer = `<div class="dpoffer"><button type="button" class="btn" data-dprule="1">Change a rule</button></div>`;
+  if (!props.length && !pats.length) return dpQuiet("Nothing to change yet") + offer;
+  let body = "";
+  if (props.length) body += dpCard("Proposals", props.map(dpPropHtml).join(""));
+  if (pats.length) body += dpCard("Seen in the logbook", pats.map(p =>
+    dpRunRow(p.summary, "Since " + dpStamp(p.since_ms))).join(""));
+  return body + offer;
+}
+
+/* Priority: what it took on, in the order it took it, under one ceiling. */
+function dpPriorityCard(p){
+  const q = p.queue || [];
+  const budget = dpBudgetHtml(p.budget);
+  if (!q.length && !(p.budget && p.budget.running_at_once != null)) return dpQuiet("Nothing in the queue");
+  let body = "";
+  if (q.length) body += dpCard("Queue", q.map(r => dpRunRow(r.next,
+    [r.runs_as ? "Runs as " + r.runs_as : "", dpWhenMs(r.when_ms)].filter(Boolean).join(" · "),
+    "ok")).join(""));
+  return body + dpCard("Budget", budget);
+}
+
+/* Coordination: what is moving, what is held, and what changed hands last. */
+function dpCoordinationCard(c){
+  const st = dpS();
+  const runR = (st.running && st.running.ref === st.sel) ? st.running : null;
+  const live = (runR && runR.running) || [], held = c.held || [], hand = c.handoffs || [];
+  if (!live.length && !held.length && !hand.length) return dpQuiet("Nothing held");
+  let body = "";
+  if (live.length) body += dpCard("Live board", live.map(r => dpRunRow(r.goal, "", "ok")).join(""));
+  if (held.length) body += dpCard("Locks", held.map(h => dpRunRow(h.resource,
+    [h.holder, h.since_ms ? "since " + dpWhenMs(h.since_ms) : ""].filter(Boolean).join(" · "),
+    "warn")).join(""));
+  /* the LAST hand-off, not every one: the question the card answers is who
+     has it now, and the chain behind that is the Chat tab's business */
+  if (hand.length) body += dpCard("Hand-offs", dpRunRow(hand[0].what,
+    [hand[0].from + " to " + hand[0].to, dpStamp(hand[0].ts_ms)].filter(Boolean).join(" · ")));
+  return body;
+}
+
+/* Audit: one claim per line and what the record answered. A check is a check
+   (A16) -- no score, no share, no total, and no bar on this card at all. */
+function dpAuditCard(v){
+  const found = v.findings || [], unseen = v.unseen || [];
+  if (!found.length && !unseen.length) return dpQuiet("No check has run here");
+  let body = "";
+  if (found.length) body += dpCard("Checks", found.map(f =>
+    dpRunRow(f.claim, f.record, f.dot)).join(""));
+  if (unseen.length) body += dpCard("Never looked at", unseen.map(u =>
+    dpQuiet(u.claim + (u.since ? " — open since " + dpWhen(u.since) : ""))).join(""));
+  return body;
+}
+
+const DP_CARDS = {
+  adaptation: [dpLoadAdaptation, dpAdaptationCard],
+  priority: [dpLoadPriority, dpPriorityCard],
+  coordination: [dpLoadCoordination, dpCoordinationCard],
+  audit: [dpLoadAudit, dpAuditCard],
+};
+
 function dpViewerHtml(n, d, dept, err){
   const st = dpS();
   const tab = st.tab[n.ref] || "now";
@@ -331,6 +451,11 @@ function dpViewerHtml(n, d, dept, err){
     return dpViewerShell("Identity", dpIdentityHtml());
   }
   const label = (DP_FUNCS.find(f => f[0] === tab) || [tab, tab])[1];
+  const card = DP_CARDS[tab];
+  if (card){
+    card[0](n.ref);                                      /* read on open, the same way */
+    return dpViewerShell(label, dpFnHtml(tab, label, card[1]));
+  }
   return dpViewerShell(label, dpQuiet("Not read yet"));
 }
 
@@ -365,7 +490,7 @@ async function dpDecide(pid, ok){
    landed inside a `.dp` element. That is 19-org2.js:875-880's own guard with
    this screen's class, so nothing here can fire on another screen. */
 if (typeof document !== "undefined" && document.addEventListener){
-  const DP_SEL = "[data-dptab],[data-dpdecide],[data-dpmore],[data-dpfiled],[data-dpdoc],[data-dpengine],[data-dpchatmode],[data-dppane],[data-dpgoal]";
+  const DP_SEL = "[data-dptab],[data-dpdecide],[data-dpmore],[data-dpfiled],[data-dpdoc],[data-dpengine],[data-dpchatmode],[data-dppane],[data-dpgoal],[data-dprule]";
   document.addEventListener("click", (ev) => {
     if (!S.dp || S.screen !== "org2") return;
     const t = ev.target && ev.target.closest ? ev.target.closest(DP_SEL) : null;
@@ -386,10 +511,11 @@ if (typeof document !== "undefined" && document.addEventListener){
       st.chatMode[ds.dpchatkey || ""] = ds.dpchatmode;
       dpRender(); return;
     }
-    if (ds.dpgoal !== undefined){
+    if (ds.dpgoal !== undefined || ds.dprule !== undefined){
       ev.preventDefault();
       /* the Org screen's own write-it sheet, which posts org.charter through
-         /api/org2/request -- this screen adds no second way to ask (A12) */
+         /api/org2/request -- this screen adds no second way to ask (A12), and
+         changing a rule is the same ask on the same record (A13) */
       if (typeof o2OpenSheet === "function") o2OpenSheet("charter");
       return;
     }

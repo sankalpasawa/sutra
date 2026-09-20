@@ -358,15 +358,22 @@ test("S17: before the reads land the card shows neither rows nor help text", () 
   assert.ok(!/help|Help/.test(view));
 });
 
-/* Identity was that card until slice B built it; Adaptation is the next one
-   in the Functions list that slice C still owes. */
-test("S17: a card that has not been built yet says one quiet line", () => {
-  const c = fresh();
-  const d = c.o2Data(), n = d.byRef.get("r4");
-  c.dpS().sel = "r4"; c.dpS().tab.r4 = "adaptation";
-  const view = c.dpViewerHtml(n, d, DEPT_EXP, null);
-  assert.ok(view.indexOf("<b>Adaptation</b>") !== -1);
-  assert.strictEqual((view.match(/o2quiet dpq/g) || []).length, 1, "exactly one quiet line");
+/* Identity was that card until slice B built it, and Adaptation until slice C.
+   Every function card is built now, so what this pins is the state BEFORE its
+   read lands: a skeleton under the right title, never a guess and never help. */
+const FUNCS = [["identity", "Identity"], ["adaptation", "Adaptation"], ["priority", "Priority"],
+               ["coordination", "Coordination"], ["audit", "Audit"]];
+test("S17: a function card whose read has not landed shows a skeleton under its own title", () => {
+  for (const [tab, label] of FUNCS){
+    const c2 = fresh();
+    const d = c2.o2Data(), n = d.byRef.get("r4");
+    c2.dpS().sel = "r4"; c2.dpS().tab.r4 = tab;
+    const view = c2.dpViewerHtml(n, d, DEPT_EXP, null);
+    assert.ok(view.indexOf("<b>" + label + "</b>") !== -1, label + " names its own card");
+    assert.ok(/o2skel/.test(view), label + ": a skeleton, not a guess");
+    assert.ok((view.match(/o2quiet dpq/g) || []).length === 0, label + ": nothing quiet yet");
+    assert.ok(!/help|Help/.test(view), label + ": A28 no help text");
+  }
 });
 
 /* ── S18 / A4, A5: the ask card ── */
@@ -788,6 +795,349 @@ test("S32/A29: the word charter reaches the screen only inside an Exact row", ()
   assert.ok(at !== -1, "the raw row carries the record's own kind");
   assert.ok(exact.lastIndexOf("<pre class=\"dpexact\">") < at && at < exact.indexOf("</pre>"),
     "and it is inside the pre, nowhere else");
+});
+
+/* ── slice C: Adaptation, Priority, Coordination, Audit and their chats ── */
+const DAY = 24 * HOUR;
+const ADAPTATION = {
+  proposals: [
+    { id: "p-aa11", change: "Pause the nightly sweep", evidence: "Asked 3 times in seven days",
+      state: "Waits.", open: true, created_ms: Date.now() - HOUR, window_ms: 24 * HOUR,
+      row: { id: "p-aa11", kind: "routine.update", status: "pending" } },
+    { id: "p-bb22", change: "Write the goal of Org", evidence: "", state: "Refused.",
+      open: false, created_ms: Date.now() - 3 * DAY, window_ms: 24 * HOUR,
+      row: { id: "p-bb22", kind: "org.charter", status: "rejected" } },
+  ],
+  patterns: [{ kind: "routine.update", summary: "Pause the nightly sweep", count: 3,
+               since_ms: Date.now() - 5 * DAY }],
+  chat: [{ who: "Adaptation", to: "Identity", mode: "say", line: "Pause the nightly sweep",
+           at: "2026-09-21T10:12:00+05:30", row: { id: "p-aa11", kind: "routine.update" } }],
+};
+const PRIORITY = {
+  queue: [{ next: "Land the department screen", runs_as: "claude-opus-5",
+            when_ms: Date.now() - HOUR, row: { SESSION: "s-1", TOUCHES: "/Users/x/a" } },
+          { next: "Land the list column", runs_as: "claude-sonnet-5",
+            when_ms: Date.now() - 3 * DAY, row: { SESSION: "s-2" } }],
+  class: "3", model: "claude-opus-5",
+  budget: { running_at_once: 4, ceiling: 20, turn_budget: { task: 12 } },
+  chat: [{ who: "Priority", to: "Coordination", mode: "say",
+           line: "Admitted: Land the department screen. Runs as claude-opus-5.",
+           at: "2026-09-21T09:00:00+05:30", row: { SESSION: "s-1" } }],
+};
+const COORD = {
+  held: [{ resource: "Nightly sweep", holder: "Its own run", since_ms: Date.now() - HOUR,
+           row: { id: "rt-1" } }],
+  handoffs: [{ from: "Org", to: "Experience", what: "HLD", ts_ms: Date.now() - 3 * DAY,
+               row: { id: "PL-1", supersedes: "PL-0" } }],
+  chat: [{ who: "Coordination", to: "Priority", mode: "say",
+           line: "Nightly sweep held by its own run.", at: "", row: { id: "rt-1" } }],
+};
+const AUDIT = {
+  findings: [
+    { id: "f-2", check: "C17", claim: "sessionstart audit emits on stderr",
+      record: "Still open.", dot: "block", first_seen: "2026-09-01", last_seen: "2026-09-20",
+      row: { id: "f-2", text: "sutra/marketplace/plugin/hooks/sessionstart-audit.sh emits" } },
+    { id: "f-1", check: "C5", claim: "overdue promotion dates in holding hooks",
+      record: "judged a measurement artifact", dot: "warn",
+      first_seen: "2026-08-04", last_seen: "2026-09-18", row: { id: "f-1" } },
+  ],
+  unseen: [{ claim: "sessionstart audit emits on stderr", since: "2026-09-01",
+             row: { id: "f-2" } }],
+  chat: [{ who: "Audit", to: "Priority", mode: "say",
+           line: 'Flag: claimed "sessionstart audit emits on stderr"; the record says Still open.',
+           at: "2026-09-20",
+           row: { id: "f-2", text: "sutra/marketplace/plugin/hooks/sessionstart-audit.sh emits" } }],
+};
+/* one plain fragment of each function's chat, free of the quotes an Exact row
+   escapes, so a Summary can be looked for by eye the way a reader would */
+const CHAT_SAYS = { adaptation: "Pause the nightly sweep",
+                    priority: "Admitted: Land the department screen",
+                    coordination: "held by its own run",
+                    audit: "the record says Still open" };
+const EMPTY = { adaptation: { proposals: [], patterns: [], chat: [] },
+                priority: { queue: [], class: null, model: null,
+                            budget: { running_at_once: null, ceiling: 20, turn_budget: {} }, chat: [] },
+                coordination: { held: [], handoffs: [], chat: [] },
+                audit: { findings: [], unseen: [], chat: [] } };
+
+/* Open one function card with its read already landed. */
+function fnCard(c, tab, data, pane, seed){
+  const st = c.dpS();
+  st.sel = "r4"; st.tab.r4 = tab;
+  st[tab] = Object.assign({ ref: "r4" }, data);
+  if (pane) st.pane["r4:" + tab] = pane;
+  Object.assign(st, seed || {});
+  const d = c.o2Data();
+  return c.dpViewerHtml(d.byRef.get("r4"), d, DEPT_EXP, null);
+}
+
+/* ── S39: the four loaders ── */
+test("S39: each function card reads its own route, when it opens and not before", async () => {
+  const c = fresh();
+  c.dpSelect("r4");
+  await sleep();
+  assert.deepStrictEqual(c.calls.apiGet.slice().sort(),
+    ["/api/dept/r4/now", "/api/dept/r4/running", "/api/dept/r4/waits"],
+    "opening a department still costs three reads");
+  const d = c.o2Data(), n = d.byRef.get("r4");
+  for (const [tab] of FUNCS.slice(1)){
+    c.dpS().tab.r4 = tab;
+    c.dpViewerHtml(n, d, DEPT_EXP, null);
+    await sleep();
+    assert.ok(c.calls.apiGet.indexOf("/api/dept/r4/" + tab) !== -1, tab + " is read on open");
+    c.dpViewerHtml(n, d, DEPT_EXP, null);
+    await sleep();
+    assert.strictEqual(c.calls.apiGet.filter(p => p === "/api/dept/r4/" + tab).length, 1,
+      tab + ": a repaint is not a second read");
+  }
+});
+
+test("S39: two overlapping reads of one function make exactly one network call", async () => {
+  const c = fresh();
+  c.dpS().sel = "r4";
+  c.dpLoadAdaptation("r4"); c.dpLoadAdaptation("r4");
+  c.dpLoadPriority("r4"); c.dpLoadCoordination("r4"); c.dpLoadAudit("r4");
+  await sleep();
+  assert.deepStrictEqual(c.calls.apiGet.slice().sort(),
+    ["/api/dept/r4/adaptation", "/api/dept/r4/audit",
+     "/api/dept/r4/coordination", "/api/dept/r4/priority"]);
+});
+
+test("S39: a failed read says so under the card's own title, never a guess", () => {
+  for (const [tab, label] of FUNCS.slice(1)){
+    const c = fresh();
+    const d = c.o2Data();
+    c.dpS().sel = "r4"; c.dpS().tab.r4 = tab; c.dpS().error[tab] = "Sutra did not answer";
+    const html = c.dpViewerHtml(d.byRef.get("r4"), d, DEPT_EXP, null);
+    assert.ok(html.indexOf("<b>" + label + "</b>") !== -1, label);
+    assert.ok(html.indexOf("Could not read") !== -1, label + ": it says so");
+  }
+});
+
+/* ── S40 / A13: Adaptation ── */
+test("S40/A13: Adaptation shows what it wants changed, the asking behind it, and the offer", () => {
+  const c = fresh();
+  const html = fnCard(c, "adaptation", ADAPTATION);
+  assert.ok(html.indexOf("<b>Adaptation</b>") !== -1);
+  assert.ok(html.indexOf("Proposals") !== -1 && html.indexOf("Seen in the logbook") !== -1);
+  assert.ok(html.indexOf("Pause the nightly sweep") !== -1, "the change");
+  assert.ok(html.indexOf("Asked 3 times in seven days · Waits.") !== -1, "evidence and state");
+  assert.ok(html.indexOf("Refused.") !== -1, "a decided change says so");
+  assert.ok(/class="dpbar"><i style="width:9[0-9.]+%"/.test(html), "an open change carries its window");
+  assert.strictEqual((html.match(/class="dpbar"/g) || []).length, 1, "and a decided one does not");
+  assert.ok(/Since \d+ [A-Z][a-z]{2}/.test(html), "the pattern says since when");
+  assert.strictEqual((html.match(/data-dprule/g) || []).length, 1, "exactly one action");
+  assert.ok(html.indexOf(">Change a rule<") !== -1);
+  assert.ok(html.toLowerCase().indexOf("charter") === -1, "A29: not the word on the card");
+  assert.ok(html.indexOf("/Users/") === -1, "A28: no path");
+  assert.ok(!/help|Help|How to|Learn/.test(html), "A28: no help text");
+});
+
+test("S40: the offer opens the Org screen's own write-it sheet and posts nothing itself", async () => {
+  const opened = [];
+  const c = fresh();
+  c.o2OpenSheet = (kind) => { opened.push(kind); };
+  fnCard(c, "adaptation", ADAPTATION);
+  assert.strictEqual(click(c, elem({ dprule: "1" })), true);
+  await sleep();
+  assert.deepStrictEqual(opened, ["charter"], "the existing ask, not a second one");
+  assert.deepStrictEqual(c.calls.apiPost, [], "this screen files no write of its own");
+  click(c, elem({ dprule: "1" }, ".o2"));
+  await sleep();
+  assert.strictEqual(opened.length, 1, "scoped to .dp");
+});
+
+/* ── S41 / A14: Priority ── */
+test("S41/A14: Priority shows the queue — next, what it runs as, when — and one budget bar", () => {
+  const c = fresh();
+  const html = fnCard(c, "priority", PRIORITY);
+  assert.ok(html.indexOf("<b>Priority</b>") !== -1);
+  assert.ok(html.indexOf("Queue") !== -1 && html.indexOf("Budget") !== -1);
+  assert.ok(html.indexOf("Land the department screen") !== -1, "next");
+  assert.ok(html.indexOf("Runs as claude-opus-5 · ") !== -1, "what it runs as, and when");
+  assert.ok(html.indexOf("Land the list column") !== -1, "the row behind it");
+  assert.strictEqual((html.match(/class="dpbar"/g) || []).length, 1, "the budget is ONE bar");
+  assert.ok(/class="dpbar"><i style="width:20%"/.test(html), "out of the ceiling");
+  assert.ok(html.indexOf("Turns set for task") !== -1);
+  assert.ok(html.indexOf("/Users/") === -1, "A28: the touches stay in the raw row");
+  assert.ok(!/>\s*\d+\s*</.test(html), "A28: no raw count at rest");
+});
+
+test("S41/A11: a department with no queue and no budget reading is one quiet line", () => {
+  const c = fresh();
+  const html = fnCard(c, "priority", EMPTY.priority);
+  assert.ok(html.indexOf("Nothing in the queue") !== -1);
+  assert.strictEqual((html.match(/o2quiet dpq/g) || []).length, 1, "one line, not two");
+  assert.ok(html.indexOf("dpbar") === -1, "A11: no reading is not a bar at zero");
+});
+
+/* ── S42 / A15: Coordination ── */
+test("S42/A15: Coordination shows the live board, who holds what since when, and the last hand-off", () => {
+  const c = fresh();
+  const html = fnCard(c, "coordination", COORD, null,
+    { running: { ref: "r4", running: RUNNING } });
+  assert.ok(html.indexOf("<b>Coordination</b>") !== -1);
+  assert.ok(html.indexOf("Live board") !== -1 && html.indexOf("Locks") !== -1
+         && html.indexOf("Hand-offs") !== -1);
+  assert.ok(html.indexOf("Land the department screen") !== -1, "the running row");
+  assert.ok(html.indexOf("Nightly sweep") !== -1, "what is held");
+  assert.ok(/Its own run · since \d/.test(html), "by whom, since when");
+  assert.ok(html.indexOf("Org to Experience") !== -1, "the hand-off, from and to");
+  assert.ok(html.indexOf(">HLD") !== -1, "and what changed hands");
+  assert.ok(html.indexOf("/Users/") === -1, "A28: no path");
+});
+
+test("S42: only the LAST hand-off is on the card", () => {
+  const c = fresh();
+  const two = Object.assign({}, COORD, { handoffs: [
+    COORD.handoffs[0],
+    { from: "Experience", to: "Org", what: "PRD", ts_ms: Date.now() - 9 * DAY, row: {} }] });
+  const html = fnCard(c, "coordination", two);
+  assert.ok(html.indexOf(">HLD") !== -1);
+  assert.ok(html.indexOf(">PRD") === -1, "the chain behind it belongs to the Chat tab");
+});
+
+test("S42: nothing running, nothing held, nothing handed over is one quiet line", () => {
+  const c = fresh();
+  const html = fnCard(c, "coordination", EMPTY.coordination);
+  assert.ok(html.indexOf("Nothing held") !== -1);
+  assert.strictEqual((html.match(/o2quiet dpq/g) || []).length, 1, "one line, not three");
+  assert.ok(html.indexOf("dpcard") === -1, "no empty Live board / Locks / Hand-offs cards");
+});
+
+/* ── S43 / A16: Audit ── */
+test("S43/A16: Audit lists a claim, what the record says, and a dot — never a score", () => {
+  const c = fresh();
+  const html = fnCard(c, "audit", AUDIT);
+  assert.ok(html.indexOf("<b>Audit</b>") !== -1);
+  assert.ok(html.indexOf("Checks") !== -1 && html.indexOf("Never looked at") !== -1);
+  assert.ok(html.indexOf("sessionstart audit emits on stderr") !== -1, "the claim");
+  assert.ok(html.indexOf("judged a measurement artifact") !== -1, "what the record says");
+  assert.ok(html.indexOf('class="dpdot block"') !== -1, "severity is a dot");
+  assert.ok(html.indexOf('class="dpdot warn"') !== -1);
+  assert.ok(html.indexOf("%") === -1, "A16: no share");
+  assert.ok(html.indexOf("dpbar") === -1, "A16: no meter on a check");
+  assert.ok(!/>\s*\d+\s*</.test(html), "A16: no total");
+  assert.ok(html.indexOf("open since 1 Sep") !== -1, "never looked at says since when");
+  assert.ok(html.indexOf("/Users/") === -1 && html.indexOf("marketplace/plugin") === -1,
+    "A28: the path stays in the raw row");
+});
+
+test("S43: the checks arrive in the order the route gave them, newest first", () => {
+  const c = fresh();
+  const html = fnCard(c, "audit", AUDIT);
+  assert.ok(html.indexOf("sessionstart audit emits on stderr")
+          < html.indexOf("overdue promotion dates"), "newest first, as read");
+});
+
+test("S43/A16: a department no check has named is one quiet line", () => {
+  const c = fresh();
+  const html = fnCard(c, "audit", EMPTY.audit);
+  assert.ok(html.indexOf("No check has run here") !== -1);
+  assert.strictEqual((html.match(/o2quiet dpq/g) || []).length, 1);
+  assert.ok(html.indexOf("dpcard") === -1);
+});
+
+/* ── S44 / A17: the Chat tab on all four ── */
+test("S44/A17: every function card carries a Chat tab with Summary and Exact", () => {
+  const DATA = { adaptation: ADAPTATION, priority: PRIORITY, coordination: COORD, audit: AUDIT };
+  for (const [tab, label] of FUNCS.slice(1)){
+    const c = fresh();
+    const card = fnCard(c, tab, DATA[tab]);
+    const panes = (card.match(/data-dppane="([a-z]+)"/g) || []).map(m => /"([a-z]+)"/.exec(m)[1]);
+    assert.deepStrictEqual(panes, [tab, "chat"], label + ": its own tab, then Chat");
+    assert.ok(new RegExp('aria-pressed="true" data-dppane="' + tab + '"').test(card),
+      label + " is the open one");
+    const chat = fnCard(fresh(), tab, DATA[tab], "chat");
+    const modes = (chat.match(/data-dpchatmode="([a-z]+)"/g) || []).map(m => /"([a-z]+)"/.exec(m)[1]);
+    assert.deepStrictEqual(modes, ["summary", "exact"], label + ": both readings");
+    assert.ok(chat.indexOf(CHAT_SAYS[tab]) !== -1,
+      label + ": the turns its own route wrote");
+    assert.ok(chat.indexOf("dpmsg") !== -1, label + ": rendered as turns");
+  }
+});
+
+test("S44/A17: Exact on a function chat is the raw row, and it is the only place a path may be", () => {
+  const c = fresh();
+  c.dpS().chatMode["r4:audit:chat"] = "exact";
+  const html = fnCard(c, "audit", AUDIT, "chat");
+  assert.ok(html.indexOf("dpexact") !== -1);
+  const at = html.indexOf("marketplace/plugin");
+  assert.ok(at !== -1, "the record's own words");
+  assert.ok(html.lastIndexOf('<pre class="dpexact">') < at && at < html.indexOf("</pre>"),
+    "inside the pre, nowhere else");
+});
+
+test("S44: switching one function's chat mode leaves the others alone", () => {
+  const c = fresh();
+  fnCard(c, "adaptation", ADAPTATION, "chat");
+  assert.strictEqual(click(c, elem({ dpchatmode: "exact", dpchatkey: "r4:adaptation:chat" })), true);
+  assert.strictEqual(c.dpS().chatMode["r4:adaptation:chat"], "exact");
+  assert.strictEqual(c.dpS().chatMode["r4:audit:chat"], undefined);
+  assert.ok(fnCard(c, "audit", AUDIT, "chat").indexOf("dpexact") === -1);
+});
+
+/* ── S45: the empty states, one quiet line each ── */
+test("S45: a department with nothing anywhere says one quiet line per function", () => {
+  const lines = { adaptation: "Nothing to change yet", priority: "Nothing in the queue",
+                  coordination: "Nothing held", audit: "No check has run here" };
+  for (const [tab, label] of FUNCS.slice(1)){
+    const c = fresh();
+    const html = fnCard(c, tab, EMPTY[tab]);
+    assert.ok(html.indexOf(lines[tab]) !== -1, label + ": " + lines[tab]);
+    assert.strictEqual((html.match(/o2quiet dpq/g) || []).length, 1, label + ": exactly one line");
+    assert.ok(!/help|Help|How to|Learn/.test(html), label + ": A28 no help text");
+    assert.ok(!/>\s*\d+\s*</.test(html), label + ": A28 no raw count at rest");
+    assert.ok(html.toLowerCase().indexOf("charter") === -1, label + ": A29");
+  }
+});
+
+test("S45: an empty function still offers what it can, and nothing it cannot", () => {
+  const c = fresh();
+  const adapt = fnCard(c, "adaptation", EMPTY.adaptation);
+  assert.strictEqual((adapt.match(/data-dprule/g) || []).length, 1,
+    "a rule can still be changed when nothing has been proposed");
+  const audit = fnCard(fresh(), "audit", EMPTY.audit);
+  assert.strictEqual((audit.match(/data-dp(rule|goal|decide|pause)/g) || []).length, 0,
+    "a check nobody ran offers nothing but its own two tabs");
+});
+
+test("S45: an empty chat on any function is one quiet line", () => {
+  for (const [tab] of FUNCS.slice(1)){
+    const c = fresh();
+    const html = fnCard(c, tab, EMPTY[tab], "chat");
+    assert.ok(html.indexOf("Nothing yet.") !== -1, tab);
+    assert.ok(html.indexOf("dpmsg") === -1, tab);
+  }
+});
+
+test("S45: opening another department drops what all four answered", async () => {
+  const c = fresh();
+  fnCard(c, "audit", AUDIT);
+  fnCard(c, "priority", PRIORITY);
+  c.dpSelect("r5");
+  await sleep();
+  for (const k of ["adaptation", "priority", "coordination", "audit"]) {
+    assert.strictEqual(c.dpS()[k], null, k + " is dropped");
+  }
+});
+
+/* ── S32 / A29 again, now over all five function cards ── */
+test("S32/A29: the word charter reaches no function card, and every screen word is on one", () => {
+  const DATA = { adaptation: ADAPTATION, priority: PRIORITY, coordination: COORD, audit: AUDIT };
+  let all = "";
+  for (const [tab] of FUNCS.slice(1)){
+    for (const pane of [null, "chat"]) all += fnCard(fresh(), tab, DATA[tab], pane);
+    all += fnCard(fresh(), tab, EMPTY[tab]);
+  }
+  assert.strictEqual(all.toLowerCase().indexOf("charter"), -1, "A29: never on a card");
+  for (const w of ["Adaptation", "Priority", "Coordination", "Audit", "Queue", "Budget",
+                   "Locks", "Checks", "Chat", "Summary", "Exact"]) {
+    assert.ok(all.indexOf(w) !== -1, "missing screen word: " + w);
+  }
+  for (const w of ["cut", "seam", "overlay", "cascade", "score"]) {
+    assert.ok(new RegExp("\\b" + w + "\\b", "i").test(all) === false, "off-list word: " + w);
+  }
 });
 
 /* ── S15 / TEST-PLAN component 39: the one branch inside 19-org2.js ── */

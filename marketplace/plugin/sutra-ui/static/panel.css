@@ -4605,7 +4605,17 @@
   box-shadow:var(--row-shadow);margin:5px 0;font:400 12.5px/1.4 var(--sans);
   color:var(--ink)}
 .dpdot{width:7px;height:7px;border-radius:50%;background:var(--acc);margin-top:5px}
+/* How a row stands, as a colour and nothing else -- a check is a check, never
+   a score (A16), so no number ever sits beside one of these. */
+.dpdot.ok{background:var(--ok)}
+.dpdot.warn{background:var(--warn)}
+.dpdot.block{background:var(--block)}
 .dpchk{font:400 11.5px/1.4 var(--sans);color:var(--muted)}
+/* a window bar inside a list row, under the line it belongs to */
+.dprow .dpbar{margin:7px 0 1px}
+/* the one action under a function card, kept to its own width in the viewer's
+   flex column (a bare button there would stretch across it) */
+.dpoffer{flex:none;display:flex}
 .dpask{border:1px solid var(--warn-line);background:var(--warn-bg);
   border-radius:9px;padding:9px 11px;margin:6px 0}
 .dpask.hard{border-color:var(--block-line);background:var(--block-bg)}

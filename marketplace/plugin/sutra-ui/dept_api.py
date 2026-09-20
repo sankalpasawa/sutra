@@ -18,8 +18,10 @@ scans this file too):
 """
 import json
 import os
+import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -128,21 +130,48 @@ def _subtree_refs(ref: str, domains: Dict[str, Dict[str, Any]]) -> set:
     return out
 
 
-def _routine_cwds() -> Dict[str, str]:
-    """{routine id: its working folder}. Read through routines.py's own store
-    functions -- list_ids() and load() -- never by re-reading its files. A
-    store that is absent or half-written is an empty map, not an error."""
+def _routine_rows() -> Dict[str, Dict[str, Any]]:
+    """{routine id: its record}. Read through routines.py's own store functions
+    -- list_ids() and load() -- never by re-reading its files. A store that is
+    absent or half-written is an empty map, not an error."""
     try:
         import routines
     except Exception:
         return {}
-    out: Dict[str, str] = {}
+    out: Dict[str, Dict[str, Any]] = {}
     for rid in routines.list_ids():
         try:
-            out[rid] = str(routines.load(rid).get("cwd") or "")
+            rec = routines.load(rid)
         except Exception:
             continue
+        if isinstance(rec, dict):
+            out[rid] = rec
     return out
+
+
+def _routine_cwds() -> Dict[str, str]:
+    """{routine id: its working folder} -- the one field every department
+    filter needs, off the records above."""
+    return {rid: str(rec.get("cwd") or "") for rid, rec in _routine_rows().items()}
+
+
+def _mtime_ms(path: str) -> int:
+    try:
+        return int(os.stat(path).st_mtime * 1000)
+    except OSError:
+        return 0
+
+
+def _iso_ms(ms: Any) -> str:
+    """A millisecond stamp written the way every other record on this screen
+    writes a time, so one client formatter reads them all."""
+    n = _int(ms)
+    if not n:
+        return ""
+    try:
+        return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(n / 1000.0))
+    except (OverflowError, OSError, ValueError):
+        return ""
 
 
 @router.get("/ping")
@@ -659,3 +688,443 @@ def identity(ref: str):
             "adaptation": _adaptation_chat(props),
         },
     }
+
+
+# ---------------------------------------------------------------- ADAPTATION --
+# R5. What the department has learned about itself: the changes that were put
+# forward, and the asks that keep coming back. Both are readings of ONE store,
+# the proposal log -- there is no learning record anywhere (PRD S4) -- so a
+# pattern here is COUNTED on every read, never remembered.
+
+PATTERN_MIN = 3                              # A13: three of a kind make a pattern
+PATTERN_WINDOW_MS = 7 * 24 * 3600 * 1000     # A13: inside seven days
+PROPOSALS_MAX = 12
+PATTERNS_MAX = 8
+
+
+def _ttl_ms() -> int:
+    """How long an ask stays answerable, from the gate's own constant."""
+    try:
+        import proposals
+        return int(proposals.TTL_SECONDS) * 1000
+    except Exception:
+        return 0
+
+
+def _state_line(rec: Dict[str, Any]) -> str:
+    """Where a proposal stands, in the same words the chat uses for it. An
+    undecided one is still waiting, and its window says until when."""
+    return ANSWERS.get(str(rec.get("status") or "")) or "Waits."
+
+
+def _patterns(props: List[Dict[str, Any]], now_ms: int) -> List[Dict[str, Any]]:
+    """The same ask, asked again and again.
+
+    A13: one line per kind-and-summary seen PATTERN_MIN times or more inside
+    the last seven days. Two of a kind is not a pattern, and an ask older than
+    the window counts toward nothing -- which is why the answer shrinks again
+    on its own once the asking stops."""
+    groups: Dict[Any, List[int]] = {}
+    for rec in props:
+        made = _int(rec.get("created_ms"))
+        if not made or now_ms - made > PATTERN_WINDOW_MS:
+            continue
+        summary = _text(rec.get("summary"))
+        if not summary:
+            continue
+        groups.setdefault((str(rec.get("kind") or ""), summary), []).append(made)
+    out = []
+    for (kind, summary), stamps in groups.items():
+        if len(stamps) < PATTERN_MIN:
+            continue
+        out.append({"kind": kind, "summary": summary, "count": len(stamps),
+                    "since_ms": min(stamps)})
+    out.sort(key=lambda r: (-r["count"], r["since_ms"]))
+    return out[:PATTERNS_MAX]
+
+
+def _adaptation_rows(props: List[Dict[str, Any]], patterns: List[Dict[str, Any]],
+                     window_ms: int) -> List[Dict[str, Any]]:
+    """Every change put forward, newest first: what it would change, what is
+    behind it, and where it stands.
+
+    The evidence column is the repeat count and nothing else -- a proposal row
+    carries no evidence field (PRD S4), so the only thing the store can
+    honestly put there is how often the same ask has come back. A change that
+    stands alone shows no evidence rather than a sentence composed here."""
+    hits = {(p["kind"], p["summary"]): p for p in patterns}
+    rows = []
+    for rec in reversed(props):                  # _dept_proposals reads oldest first
+        summary = _text(rec.get("summary"))
+        pat = hits.get((str(rec.get("kind") or ""), summary))
+        rows.append({
+            "id": rec.get("id"),
+            "change": summary,
+            "evidence": ("Asked %d times in seven days" % pat["count"]) if pat else "",
+            "state": _state_line(rec),
+            "open": str(rec.get("status") or "") == "pending",
+            "created_ms": _int(rec.get("created_ms")),
+            "window_ms": window_ms,
+            "row": rec,
+        })
+    return rows[:PROPOSALS_MAX]
+
+
+@router.get("/{ref}/adaptation")
+def adaptation(ref: str):
+    """R5: the changes put forward under this department and the patterns
+    behind them, with the exchange that carried them as its chat."""
+    domains = _domain(ref)
+    cwd = _dept_cwd(ref, domains)
+    props = _dept_proposals(ref, domains, cwd)
+    pats = _patterns(props, int(time.time() * 1000))
+    return {
+        "proposals": _adaptation_rows(props, pats, _ttl_ms()),
+        "patterns": pats,
+        "chat": _adaptation_chat(props),
+    }
+
+
+# ------------------------------------------------------------------ PRIORITY --
+# R6. What the department took on, in the order it took it: the queue, and the
+# ceiling it all runs under. The dispatch record is the only row in the system
+# that says a unit of work was admitted and what it was routed to -- nothing in
+# sutra-ui has ever read one (PRD F-3), so the reader below is new, and it is a
+# reader: this module writes no marker of any kind.
+
+KV_MAX_BYTES = 64 * 1024
+QUEUE_MAX = 8
+
+
+def _kv(path: str) -> Dict[str, str]:
+    """A KEY=VALUE marker file as a map. Absent, oversized or unreadable is an
+    empty map -- a department whose sessions left no record is quiet, not
+    broken (PRD section J)."""
+    if not os.path.isfile(path):
+        return {}
+    try:
+        if os.path.getsize(path) > KV_MAX_BYTES:
+            return {}
+        out: Dict[str, str] = {}
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                key, sep, val = line.partition("=")
+                if sep and key.strip():
+                    out[key.strip()] = val.strip()
+        return out
+    except OSError:
+        return {}
+
+
+def _dispatch_rows(cwd: Optional[str], root: Optional[str]) -> List[Dict[str, str]]:
+    """Every unit of work admitted under this department, newest first.
+
+    One record per session at `.sutra/dispatch/<session>/dispatch-record`. The
+    record carries no department (PRD F-3); the only thing it names that says
+    WHERE the work went is its TOUCHES list, so that is the join -- the same
+    one Running makes with the ledger's touches, resolved against the same
+    folder."""
+    out: List[Dict[str, str]] = []
+    if not cwd or not root:
+        return out
+    base = os.path.join(root, ".sutra", "dispatch")
+    try:
+        sessions = os.listdir(base)
+    except OSError:
+        return out
+    for sid in sessions:
+        rec = _kv(os.path.join(base, sid, "dispatch-record"))
+        if not rec:
+            continue
+        touches = [t for t in str(rec.get("TOUCHES") or "").split("|") if t.strip()]
+        if not any(_under(cwd, _abs(root, t)) for t in touches):
+            continue
+        out.append(rec)
+    out.sort(key=lambda r: -_int(r.get("TS")))
+    return out
+
+
+def _runs_as(rec: Dict[str, str]) -> str:
+    """What a row runs as, in the record's own word. The dispatch record names
+    a model, never a person (PRD F-3), so a row a person answers cannot be told
+    apart here and is not guessed at."""
+    return _text(rec.get("MODEL")) or _text(rec.get("PROVIDER"))
+
+
+def _priority_chat(queue: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [_turn("Priority", "Coordination", "say",
+                  "Admitted: %s. Runs as %s." % (q["next"], q["runs_as"] or "nothing named"),
+                  _iso_ms(q["when_ms"]), q["row"])
+            for q in queue][:CHAT_MAX]
+
+
+@router.get("/{ref}/priority")
+def priority(ref: str):
+    """R6: the queue this department is working down, and its budget."""
+    domains = _domain(ref)
+    cwd = _dept_cwd(ref, domains)
+    root = _workdir()
+    recs = _dispatch_rows(cwd, root)
+    queue = [{"next": _text(r.get("UNIT")), "runs_as": _runs_as(r),
+              "when_ms": _int(r.get("TS")) * 1000, "row": r}
+             for r in recs[:QUEUE_MAX] if _text(r.get("UNIT"))]
+    top = recs[0] if recs else {}
+    return {
+        "queue": queue,
+        "class": _text(top.get("CLASS")) or None,
+        "model": _runs_as(top) or None,
+        "budget": _budget(),
+        "chat": _priority_chat(queue),
+    }
+
+
+# -------------------------------------------------------------- COORDINATION --
+# R7. Who is holding something, and what changed hands. No record in the system
+# names a holder or a hand-off (PRD F-6): the only marks that exist are a
+# routine's own run lock, a session's heartbeat file, and the supersedes chain
+# a placement leaves behind when the same work item is re-filed under another
+# department. All three are READ here -- isdir, mtime, the chain -- and none is
+# taken, released or written (LLD reuse row 14).
+
+HELD_MAX = 8
+HANDOFF_MAX = 6
+#: A heartbeat file is touched while a session is alive. Older than this and
+#: nobody is there, so it is not a holder -- a stale mark must not read as one.
+HEARTBEAT_FRESH_MS = 15 * 60 * 1000
+LABEL_MAX = 60
+_EXT = re.compile(r"\.[A-Za-z0-9]{1,5}$")
+_SEP = re.compile(r"[-_]+")
+
+
+def _label(work_id: Any) -> str:
+    """A NAME for a filed item, never a path (founder, 2026-09-14). The rule is
+    org2_api._label's (org2_api.py:49-63), applied here rather than imported --
+    that helper is module-private there."""
+    s = str(work_id or "").strip()
+    if not s:
+        return ""
+    if "/" in s and " " not in s:
+        seg = _EXT.sub("", s.rstrip("/").rsplit("/", 1)[-1])
+        s = _SEP.sub(" ", seg).strip() or seg
+    s = " ".join(s.split())
+    return s if len(s) <= LABEL_MAX else s[:LABEL_MAX - 1].rstrip() + "…"
+
+
+def _dept_name(ref: Any, domains: Dict[str, Dict[str, Any]]) -> str:
+    return _text((domains.get(str(ref or "")) or {}).get("name"))
+
+
+def _heartbeats(cwd: Optional[str], name: str) -> List[Dict[str, Any]]:
+    """The sessions alive in this department's own folder.
+
+    The file is empty and its name is a session id: the only thing it says is
+    WHEN it was last touched. That is enough to answer "someone is working
+    here" and not enough to answer "who", so the holder is stated as a session
+    and no name is invented for it."""
+    if not cwd:
+        return []
+    folder = os.path.join(cwd, ".claude", "heartbeats")
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return []
+    now = int(time.time() * 1000)
+    out = []
+    for n in names:
+        ts = _mtime_ms(os.path.join(folder, n))
+        if ts and 0 <= now - ts <= HEARTBEAT_FRESH_MS:
+            out.append({"resource": name or "This department", "holder": "A session",
+                        "since_ms": ts, "row": {"heartbeat": n, "mtime_ms": ts}})
+    return out
+
+
+def _locks_held(cwd: Optional[str], name: str) -> List[Dict[str, Any]]:
+    """What is held right now, newest hold first."""
+    held: List[Dict[str, Any]] = []
+    try:
+        import routines
+        runs = str(routines.runs_dir())
+    except Exception:
+        runs = ""
+    if runs and cwd:
+        for rid, rec in _routine_rows().items():
+            if not _under(cwd, rec.get("cwd")):
+                continue
+            lock = os.path.join(runs, rid, ".lock")
+            if not os.path.isdir(lock):
+                continue
+            held.append({"resource": _text(rec.get("description")) or rid,
+                         "holder": "Its own run", "since_ms": _mtime_ms(lock),
+                         "row": {"id": rid, "enabled": rec.get("enabled"),
+                                 "since_ms": _mtime_ms(lock)}})
+    held.extend(_heartbeats(cwd, name))
+    held.sort(key=lambda r: -(r["since_ms"] or 0))
+    return held[:HELD_MAX]
+
+
+def _handoffs(ref: str, domains: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Work that changed hands, newest first.
+
+    A placement whose predecessor sat under a DIFFERENT department is that work
+    item moving from the one to the other, and it is the only trace a hand-off
+    leaves anywhere (PRD F-6). A move inside one department is not a hand-off
+    and is left out."""
+    try:
+        places = E.all_placements()
+    except Exception:
+        return []
+    by_id = {p.get("id"): p for p in places if isinstance(p, dict)}
+    inside = _subtree_refs(ref, domains)
+    out = []
+    for p in places:
+        prev = by_id.get(p.get("supersedes"))
+        if not isinstance(prev, dict):
+            continue
+        src, dst = prev.get("domain_ref"), p.get("domain_ref")
+        if not src or not dst or src == dst:
+            continue
+        if dst not in inside and src not in inside:
+            continue
+        a, b = _dept_name(src, domains), _dept_name(dst, domains)
+        if not a or not b:
+            continue
+        out.append({"from": a, "to": b,
+                    "what": _label((p.get("work_ref") or {}).get("id")),
+                    "ts_ms": _int(p.get("ts_ms")), "row": p})
+    out.sort(key=lambda r: -(r["ts_ms"] or 0))
+    return out[:HANDOFF_MAX]
+
+
+def _coordination_chat(held: List[Dict[str, Any]],
+                       hand: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    turns = [_turn("Coordination", "Priority", "say",
+                   "%s held by %s." % (h["resource"], h["holder"].lower()),
+                   _iso_ms(h["since_ms"]), h["row"]) for h in held]
+    turns += [_turn("Coordination", h["to"], "say",
+                    "%s hands from %s to %s." % (h["what"], h["from"], h["to"]),
+                    _iso_ms(h["ts_ms"]), h["row"]) for h in hand]
+    return turns[:CHAT_MAX]
+
+
+@router.get("/{ref}/coordination")
+def coordination(ref: str):
+    """R7: what this department is holding, and what changed hands."""
+    domains = _domain(ref)
+    cwd = _dept_cwd(ref, domains)
+    held = _locks_held(cwd, _dept_name(ref, domains))
+    hand = _handoffs(ref, domains)
+    return {"held": held, "handoffs": hand, "chat": _coordination_chat(held, hand)}
+
+
+# --------------------------------------------------------------------- AUDIT --
+# R8. What the checks say about this department. A CHECK IS A CHECK (A16): every
+# row is one claim and what the record answered, and nothing here is scored,
+# totalled or turned into a share -- there is no number on this card at all.
+#
+# The findings log is written by the daily governance audit, which is holding's
+# own routine (PRD S6): most installs have never had one, so the read is
+# best-effort by design and an absent file is an empty card, never a 500.
+
+FINDINGS_MAX = 24
+UNSEEN_MAX = 6
+CLAIM_MAX = 200
+FINDINGS_REL = ("holding", "observability", "governance-audit", "findings.jsonl")
+#: A word with a slash in it, which is the only shape a path takes in a
+#: finding's sentence. The leading slash is part of the match ON PURPOSE:
+#: without it an absolute path elsewhere on the machine reads as a relative one
+#: and is joined onto this department's folder, where every one of them would
+#: then look like a hit. "323/332" matches too, so the caller checks for a letter.
+_PATHISH = re.compile(r"/?[A-Za-z0-9_.\-]+(?:/[A-Za-z0-9_.\-]+)+")
+#: severity -> the dot's own word. Anything unrecognised reads ok rather than
+#: alarming the owner over a word this screen does not know.
+DOTS = {"critical": "block", "warn": "warn"}
+
+
+def _pathish(token: str) -> bool:
+    return any(c.isalpha() for c in token)
+
+
+def _no_paths(text: str) -> str:
+    """The same sentence with every path-shaped word replaced by the NAME at
+    its end (founder, 2026-09-14: names, never paths). The whole path stays in
+    the raw row, which is what an Exact tab is for (A28, A29)."""
+    return _PATHISH.sub(
+        lambda m: _label(m.group(0)) if _pathish(m.group(0)) else m.group(0), text)
+
+
+def _finding_rows(cwd: Optional[str], root: Optional[str]):
+    """(rows, unreadable lines) from the first findings log that exists -- the
+    department's own folder first, then the folder the work runs in."""
+    for base in (cwd, root):
+        if not base:
+            continue
+        path = os.path.join(base, *FINDINGS_REL)
+        if os.path.isfile(path):
+            return _jsonl(path, 0)
+    return [], 0
+
+
+def _names_a_path_under(text: str, cwd: Optional[str], root: Optional[str]) -> bool:
+    """Does this finding name something inside the department?
+
+    No finding row carries a department, a domain or a path field (PRD S6): the
+    only thing it names is whatever paths its own sentence spells. Those are
+    resolved against the folder the work runs in and tested the way a ledger
+    touch is -- the same heuristic, and the same honest limit (PRD F-3)."""
+    for token in _PATHISH.findall(text):
+        if _pathish(token) and _under(cwd, _abs(root or cwd or "", token)):
+            return True
+    return False
+
+
+def _clip(line: str) -> str:
+    return line if len(line) <= CLAIM_MAX else line[:CLAIM_MAX - 1].rstrip() + "…"
+
+
+def _audit_chat(found: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    turns = [_turn("Audit", "Priority", "say",
+                   'Flag: claimed "%s"; the record says %s' % (f["claim"], f["record"]),
+                   f["last_seen"], f["row"])
+             for f in found if f["dot"] != "ok"]
+    if found and not turns:
+        turns.append(_turn("Audit", "Priority", "say", "Every claim has its row.", "", {}))
+    return turns[:CHAT_MAX]
+
+
+@router.get("/{ref}/audit")
+def audit(ref: str):
+    """R8: the checks that name this department, newest first."""
+    domains = _domain(ref)
+    cwd = _dept_cwd(ref, domains)
+    root = _workdir()
+    rows, skipped = _finding_rows(cwd, root)
+    # The log is appended to on every audit day, so the same finding is written
+    # again and again under one id. The LAST row for an id is where it stands.
+    latest: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        if isinstance(r, dict) and r.get("id"):
+            latest[str(r["id"])] = r
+    found, unseen = [], []
+    for r in latest.values():
+        text = _text(r.get("text"))
+        if not text or not _names_a_path_under(text, cwd, root):
+            continue
+        claim = _clip(_no_paths(text))
+        status = str(r.get("status") or "")
+        note = _clip(_no_paths(_text(r.get("note") or r.get("fix_note"))))
+        found.append({
+            "id": r.get("id"), "check": _text(r.get("check")), "claim": claim,
+            "record": note or ("Fixed." if status == "fixed" else "Still open."),
+            "dot": "ok" if status == "fixed" else DOTS.get(str(r.get("severity") or ""), "ok"),
+            "first_seen": _text(r.get("first_seen")),
+            "last_seen": _text(r.get("last_seen")), "row": r,
+        })
+        # Never looked at: still open, and not one word has been written
+        # against it -- no note, no fix note, no reference to a fix.
+        if status != "fixed" and not (note or r.get("fix_ref")):
+            unseen.append({"claim": claim, "since": _text(r.get("first_seen")), "row": r})
+    found.sort(key=lambda r: (r["last_seen"], str(r["id"] or "")), reverse=True)
+    unseen.sort(key=lambda r: (r["since"], r["claim"]))
+    found = found[:FINDINGS_MAX]
+    return {"findings": found, "unseen": unseen[:UNSEEN_MAX], "skipped": skipped,
+            "chat": _audit_chat(found)}
