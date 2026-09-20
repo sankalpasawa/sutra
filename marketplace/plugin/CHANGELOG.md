@@ -1,6 +1,12 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-20
+## 2.287.1 (2026-09-20)
+
+- **v2.287.0 never built a DMG, and neither did v2.286.1.** Both died on the dmg leg's "Engine + importer tests" step before a single build command ran. Nothing in either release caused it: the suite is pinned to the departments export checked into `website/domains/`, and the unattended publisher had regenerated that export from one machine's own registry — the fourth time (bb66966, 7973d6c, c991193b, 33b7be5f). That commit is reverted here, so this tag carries everything 2.287.0 carried and actually ships it.
+- **The 2.263.1 never-shrink guard did not catch this one, because nothing shrank.** The regenerating machine's registry was a *superset* — 77 rows against 55 — and it added three machine-local roots (Asawa Holding, Claude, Desktop) above the published tree. Both halves of the guard, the row-count precheck and the page-loss dry-run, pass a superset. It needs a root-set check; that is not in this release.
+- **The release gates now run the suite that keeps breaking.** `scripts/release-desktop.sh` simulated the Panel step and not this one, so `check` printed READY for both failed releases. `gate_engine_importer` runs the workflow's exact command, names each red test and says what usually causes it. Verified red against the export as 33b7be5f left it and green against the reverted one; release-script unit tests 88 passed.
+
 ## 2.287.0 (2026-09-20)
 
 - **Shadow settles its own checks now (D-SH-1).** Across every mission on the founder's install, 9 done-when checks out of 9 were `founder_confirm` and every one carried `proposed_tier: None` — Shadow had never once closed a check by itself. Not distrust: vocabulary. Its only machine lane could read a file, so "the tests pass", "nothing else broke" and "that is the root cause, not a workaround" all fell off the end of `tier_for` and went to a signature.
