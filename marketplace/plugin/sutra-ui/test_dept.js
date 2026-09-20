@@ -28,6 +28,36 @@ const css = fs.readFileSync(path.join(__dirname, "static", "panel.css"), "utf8")
 const RB = "/* rail-helpers:begin */", RE = "/* rail-helpers:end */";
 const railSrc = orgSrc.slice(orgSrc.indexOf(RB), orgSrc.indexOf(RE));
 
+/* ── B1: the request writer's own words ───────────────────────────────────────
+   A card paints an ask's summary VERBATIM -- the screen never rewrites a
+   record's words -- so a fixture summary written by hand here proves nothing
+   about what the owner reads. These templates are read out of org2_api.py's
+   REQUEST_SUMMARIES, the one place the writer chooses those words, and every
+   fixture below that stands for a filed ask is composed with them. A template
+   that carries the word charter again therefore fails on the card that paints
+   it. The other side of the pin is test_org2_api.py's
+   test_request_summaries_are_screen_words_and_never_say_charter, which walks
+   the live endpoint. */
+const apiSrc = fs.readFileSync(path.join(__dirname, "org2_api.py"), "utf8");
+const WRITER = (() => {
+  const block = /REQUEST_SUMMARIES\s*=\s*\{([\s\S]*?)\n\}/.exec(apiSrc);
+  if (!block) throw new Error("org2_api.py no longer holds a REQUEST_SUMMARIES table");
+  const out = {};
+  const re = /"([a-z.]+)"\s*:\s*"([^"]*)"/g;
+  let m;
+  while ((m = re.exec(block[1]))) out[m[1]] = m[2];
+  if (!Object.keys(out).length) throw new Error("REQUEST_SUMMARIES parsed empty");
+  return out;
+})();
+function writerSummary(key, ...names){
+  const t = WRITER[key];
+  if (!t) throw new Error("the request writer has no " + key + " summary");
+  let i = 0;
+  const said = t.replace(/%s/g, () => names[i++]);
+  if (i !== names.length) throw new Error(key + " takes " + i + " names, not " + names.length);
+  return said;
+}
+
 let failed = 0, ran = 0;
 const pending = [];
 function test(name, fn){
@@ -824,6 +854,31 @@ test("S32/A29: the word charter reaches the screen only inside an Exact row", ()
     "and it is inside the pre, nowhere else");
 });
 
+/* B1, the bug the acceptance walk found: the fixture is not hand-written. Every
+   summary the request writer can compose is put on the Now card the way a filed
+   ask reaches it, and read back. A29 as amended: the word reaches a card only
+   when a RECORD's own words carry it -- the screen never composes it. */
+test("S32/A29/B1: no summary the request writer composes carries the word charter", () => {
+  const keys = Object.keys(WRITER);
+  assert.ok(keys.length >= 5, "the writer holds its five shapes: " + keys.join(", "));
+  const said = keys.map(k => writerSummary.apply(null,
+    [k].concat(new Array((WRITER[k].match(/%s/g) || []).length).fill("Doctrine"))));
+  for (const s of said) assert.strictEqual(s.toLowerCase().indexOf("charter"), -1, "the writer: " + s);
+  const c = fresh();
+  const html = nowCard(c, said.map((s, i) => Object.assign({}, ASK, { id: "p-w" + i, summary: s })));
+  for (const s of said) assert.ok(html.indexOf(s) !== -1, "painted verbatim: " + s);
+  assert.strictEqual(html.toLowerCase().indexOf("charter"), -1, "and none of them says it");
+});
+
+/* The other half of the amended A29: a record whose OWN words carry it is still
+   painted verbatim -- the screen rewrites nothing. */
+test("S32/A29/B1: a record that says it itself is still painted as written", () => {
+  const c = fresh();
+  const own = "Edit the charter of Doctrine";     /* an old row, filed before B1 */
+  const html = nowCard(c, [Object.assign({}, ASK, { summary: own })]);
+  assert.ok(html.indexOf(own) !== -1, "the card never rewrites a record's words");
+});
+
 /* ── slice C: Adaptation, Priority, Coordination, Audit and their chats ── */
 const DAY = 24 * HOUR;
 const ADAPTATION = {
@@ -831,7 +886,9 @@ const ADAPTATION = {
     { id: "p-aa11", change: "Pause the nightly sweep", evidence: "Asked 3 times in seven days",
       state: "Waits.", open: true, created_ms: Date.now() - HOUR, window_ms: 24 * HOUR,
       row: { id: "p-aa11", kind: "routine.update", status: "pending" } },
-    { id: "p-bb22", change: "Write the goal of Org", evidence: "", state: "Refused.",
+    /* B1: composed by the request writer, not by hand -- this is the very row
+       the acceptance walk read the word charter off (ACCEPTANCE B1) */
+    { id: "p-bb22", change: writerSummary("goal.edit", "Org"), evidence: "", state: "Refused.",
       open: false, created_ms: Date.now() - 3 * DAY, window_ms: 24 * HOUR,
       row: { id: "p-bb22", kind: "org.charter", status: "rejected" } },
   ],
@@ -1506,7 +1563,8 @@ const FILED = { filed: [
                 charter_id: "C-1", where: "Experience", ts_ms: Date.now() - 2 * HOUR, row: { id: "PL-9" } }] },
 ] };
 const PEOPLE = { owner: { source: "charter", name: "Meera", stamps: "Every release of Desktop",
-                          seen: [{ id: "p-aa11", summary: "Write the goal of Org",
+                          /* B1: the writer's words again, on the card that echoed them */
+                          seen: [{ id: "p-aa11", summary: writerSummary("goal.edit", "Org"),
                                    answer: "Refused.", at: "2026-09-21T09:01:04+05:30",
                                    at_ms: Date.now() - HOUR, row: { id: "p-aa11" } }] },
                  roles: [{ charter_id: "C-7", title: "Reviewer", name: "Reviewer",
@@ -1687,7 +1745,7 @@ test("S67: a person opens on their name, what they stamp and the asks they saw",
   const html = cardE(c, "people", { people: Object.assign({ ref: "r4" }, PEOPLE), personSel: "owner" });
   assert.ok(html.indexOf(">Meera<") !== -1, "the name");
   assert.ok(html.indexOf("Every release of Desktop") !== -1, "what they stamp");
-  assert.ok(html.indexOf("Write the goal of Org") !== -1 && html.indexOf("Refused.") !== -1,
+  assert.ok(html.indexOf(writerSummary("goal.edit", "Org")) !== -1 && html.indexOf("Refused.") !== -1,
     "the ask they saw and the answer they gave");
   assert.ok(html.indexOf("The person") !== -1 && html.indexOf("Asks they saw") !== -1);
 });
@@ -2048,6 +2106,73 @@ test("S77/A27: an engine whose records answer nothing says No reading yet", () =
   const view = engCard(c, null, "hourly", { meters: Object.assign({ ref: "r4" }, METERS) });
   assert.ok(view.indexOf(">Meters<") !== -1 && view.indexOf("No reading yet") !== -1);
   assert.ok(view.indexOf("dpmet\"") === -1, "one line, no dots");
+});
+
+/* ── B2: the state word after a decision ──────────────────────────────────
+   The bug the acceptance walk found (ACCEPTANCE B2): answering an ask re-read
+   Now and nothing else, so an approval that changed a routine left the Engines
+   list and the engine card saying what the routine used to be until the
+   department was opened again. The decide now re-reads the cards that read the
+   record it changed -- and only those, and only on a decide: opening a
+   department still costs the three reads Now needs. */
+test("B2: a stamped routine ask flips the engine's state word without reopening the department", async () => {
+  const after = { engines: ENGINES.engines.map(e =>
+    Object.assign({}, e, e.id === "nightly" ? { state: "paused" } : {})) };
+  const c = fresh({ apiGet: (p) => {
+    c.calls.apiGet.push(p);
+    if (/\/engines$/.test(p)) return Promise.resolve(after);
+    return Promise.resolve({ asks: [], decidable: true });
+  } });
+  const st = c.dpS();
+  st.sel = "r4"; st.tab.r4 = "engines"; st.engineSel = "nightly";
+  st.engines = Object.assign({ ref: "r4" }, ENGINES);
+  st.now = { ref: "r4", asks: [Object.assign({}, ASK, { args: { id: "nightly" } })], decidable: true };
+  st.running = { ref: "r4", running: [] }; st.waits = { ref: "r4", waits: [] };
+  const d = c.o2Data(), n = d.byRef.get("r4");
+  assert.ok(c.dpListHtml(n, d, DEPT_EXP, null).indexOf(">Idle<") !== -1, "Idle before the decision");
+  click(c, elem({ dpdecide: "p-aa11", dpok: "1" }));
+  await sleep(); await sleep(); await sleep();
+  assert.deepStrictEqual(c.calls.decide, [{ pid: "p-aa11", ok: true }]);
+  assert.strictEqual(c.calls.apiGet.filter(p => /\/engines$/.test(p)).length, 1,
+    "the decide re-read the engines once, not on every repaint");
+  const list = c.dpListHtml(n, d, DEPT_EXP, null);
+  assert.ok(list.indexOf("Paused") !== -1 && list.indexOf(">Idle<") === -1, "the row moved in place");
+  assert.ok(c.dpViewerHtml(n, d, DEPT_EXP, null).indexOf("Paused") !== -1,
+    "and the open engine card's Engine tab says it too");
+});
+
+test("B2: a stamped org ask re-reads Identity and People, and a routine ask does not", async () => {
+  const seen = [];
+  const mk = (kind) => {
+    const c = fresh({ apiGet: (p) => { seen.push(p); return Promise.resolve({ asks: [], decidable: true }); } });
+    const st = c.dpS();
+    st.sel = "r4"; st.tab.r4 = "now";
+    st.now = { ref: "r4", asks: [Object.assign({}, ASK, { kind: kind })], decidable: true };
+    st.identity = Object.assign({ ref: "r4" }, IDENTITY);
+    st.people = Object.assign({ ref: "r4" }, PEOPLE);
+    st.engines = Object.assign({ ref: "r4" }, ENGINES);
+    return c;
+  };
+  const c1 = mk("org.charter");
+  click(c1, elem({ dpdecide: "p-aa11", dpok: "1" }));
+  await sleep(); await sleep(); await sleep();
+  assert.deepStrictEqual(seen.sort(), ["/api/dept/r4/identity", "/api/dept/r4/now", "/api/dept/r4/people"]);
+  seen.length = 0;
+  const c2 = mk("routine.update");
+  click(c2, elem({ dpdecide: "p-aa11", dpok: "1" }));
+  await sleep(); await sleep(); await sleep();
+  assert.deepStrictEqual(seen.sort(), ["/api/dept/r4/engines", "/api/dept/r4/now"]);
+});
+
+test("B2: a card this department has not read is not read by a decision", async () => {
+  const seen = [];
+  const c = fresh({ apiGet: (p) => { seen.push(p); return Promise.resolve({ asks: [], decidable: true }); } });
+  const st = c.dpS();
+  st.sel = "r4"; st.tab.r4 = "now";
+  st.now = { ref: "r4", asks: [Object.assign({}, ASK, { kind: "org.charter" })], decidable: true };
+  click(c, elem({ dpdecide: "p-aa11", dpok: "1" }));
+  await sleep(); await sleep(); await sleep();
+  assert.deepStrictEqual(seen, ["/api/dept/r4/now"], "Now, and nothing it never opened");
 });
 
 /* ── S78, S79: every card of a full department, swept once ────────────────

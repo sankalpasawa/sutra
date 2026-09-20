@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.289.9 (2026-09-21)
+
+- **Sutra Desktop: department screen slice H, ask summaries in screen words, state words refresh after a decision** (holding/plans/department-screen, ACCEPTANCE.md B1 and B2). The request writer composes every proposal summary from one table in the screen's own words — "Write / Edit the goal and rules of <department>", "New role under <department> for <person>", "New department", "Rename", "Move" — so the word charter no longer reaches a card that paints a summary verbatim; rows filed before this keep the words they were written with. Answering an ask now re-reads the cards that read the record the decision changed: the engines answer behind the Engines list and the open engine card for a routine ask, Identity and People for an org ask. Opening a department still costs the three reads Now needs.
+
 ## 2.289.8 (2026-09-21)
 
 - **Sutra Desktop: department screen slice G, done-when and rules on the charter, role charters under People** (holding/plans/department-screen, DECISIONS.md DS-1, DS-2, DS-7). A charter's sidecar now carries `done_when` and `rules` (each rule one of go / ask / refuse / always), written through the existing org.charter proposal and read first by Identity, which falls back to the milestones and to invariants and constraints when none is written. `role` becomes a legal charter kind: a role names the person who holds it — or reads `unfilled` — and is listed under People and nowhere else. The Org screen's charter sheet gains a Done when field and one row per rule with its tag. The domains payload forwards the engine's stored `node_kind`, so an organisation that carries a working folder opens the department screen instead of reading as the machine.

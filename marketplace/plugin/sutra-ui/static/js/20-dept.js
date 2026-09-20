@@ -892,6 +892,29 @@ function dpViewerHtml(n, d, dept, err){
 /* Stamp and Refuse call decideProposal (08-boot.js:145-153) -- the SAME call
    the Approvals panel makes -- and nothing else. This screen files no write of
    its own; the answer lands, then Now is re-read so the card tells the truth. */
+/* B2 (2026-09-21): a decision changes a RECORD, and Now is not the only card
+   that reads it. A stamped routine ask flips the routine's own state word,
+   which the Engines list AND the open engine card's Engine tab both read out of
+   the one /engines answer; a stamped org ask rewrites the goal, the rules and
+   who holds a role, which Identity and People read. Those cards are re-read
+   HERE, on the decide, and nowhere else -- opening a department still costs the
+   three reads Now needs (S14). A card that holds no answer for this department
+   is left alone: it reads itself when it opens. */
+const DP_DECIDE_READS = [
+  [/^routine\./, [["engines", dpLoadEngines]]],
+  [/^org\./, [["identity", dpLoadIdentity], ["people", dpLoadPeople]]],
+];
+function dpAfterDecide(ref, kind){
+  const st = dpS(), out = [];
+  for (const pair of DP_DECIDE_READS){
+    if (!pair[0].test(String(kind || ""))) continue;
+    for (const one of pair[1]){
+      if (st[one[0]] && st[one[0]].ref === ref) out.push(one[1](ref, true));
+    }
+  }
+  return Promise.all(out);
+}
+
 async function dpDecide(pid, ok){
   const st = dpS();
   if (!pid || st.busy["decide:" + pid]) return;
@@ -910,7 +933,10 @@ async function dpDecide(pid, ok){
     st.error.now = (e && e.message) || String(e);
   }
   delete st.busy["decide:" + pid];
-  if (st.sel) await dpLoadNow(st.sel, true);
+  if (st.sel){
+    await dpLoadNow(st.sel, true);
+    await dpAfterDecide(st.sel, ask && ask.kind);
+  }
   dpRender();
 }
 

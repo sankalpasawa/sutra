@@ -199,7 +199,7 @@ def test_request_files_a_proposal_and_refuses_bad_shapes():
         out = M.request(M.RequestBody(kind="org.move", args={"ref": a1, "target": root}))
         assert out["summary"] == "Move A1 under Co"
         out = M.request(M.RequestBody(kind="org.charter", args={"ref": a, "purpose": "Everything under A."}))
-        assert out["summary"] == "Write the charter of A"
+        assert out["summary"] == "Write the goal and rules of A"
         other = E.mint_charter_stub(a1, "A1 Charter", "A1 work.", [], [], "T-local")
         for body, code in ((M.RequestBody(kind="org.charter", args={"ref": a}), 400),
                            (M.RequestBody(kind="org.charter", args={"ref": a, "purpose": "x", "charter_id": other}), 400),
@@ -218,6 +218,52 @@ def test_request_files_a_proposal_and_refuses_bad_shapes():
                 M.request(body)
             assert ei.value.status_code == code, body.kind
         assert len(proposals.pending()) == 4, "refusals file nothing"
+
+
+def test_request_summaries_are_screen_words_and_never_say_charter():
+    """B1: the request writer is the one place a summary's words are chosen, and
+    the department screen paints that summary verbatim (PRD A29). Every summary
+    the composer can produce is checked here -- the five shapes and the two edit
+    variants -- so a template that ever carries the word again fails at the
+    writer rather than on a card."""
+    with tempfile.TemporaryDirectory() as tmp:
+        os.environ["SUTRA_UI_PROPOSALS"] = os.path.join(tmp, "props")
+        M, E = _fresh(Path(tmp))
+        root, desk, a, a1 = _tree(E)
+        import proposals
+        cid = E.mint_charter_stub(a, "A Charter", "A work.", [], [], "T-local")
+        said = [
+            M.request(M.RequestBody(kind="org.rename", args={"ref": a1, "name": "B"}))["summary"],
+            M.request(M.RequestBody(kind="org.move", args={"ref": a1, "target": root}))["summary"],
+            M.request(M.RequestBody(kind="org.create", args={"parent": a, "name": "New"}))["summary"],
+            M.request(M.RequestBody(kind="org.charter", args={"ref": a, "purpose": "All of A."}))["summary"],
+            M.request(M.RequestBody(kind="org.charter",
+                                    args={"ref": a, "purpose": "All of A.", "charter_id": cid}))["summary"],
+            M.request(M.RequestBody(kind="org.charter",
+                                    args={"ref": a, "purpose": "Run A.", "kind": "role",
+                                          "person": " Sankalp  Asawa "}))["summary"],
+            M.request(M.RequestBody(kind="org.charter",
+                                    args={"ref": a, "purpose": "Run A.", "kind": "role"}))["summary"],
+            M.request(M.RequestBody(kind="org.charter",
+                                    args={"ref": a, "purpose": "Run A.", "kind": "role",
+                                          "person": "Sankalp Asawa", "charter_id": cid}))["summary"],
+        ]
+        assert said == [
+            "Rename A1 to B",
+            "Move A1 under Co",
+            "New department New under A",
+            "Write the goal and rules of A",
+            "Edit the goal and rules of A",
+            "New role under A for Sankalp Asawa",
+            "New role under A for nobody yet",
+            "Edit the role under A for Sankalp Asawa",
+        ]
+        assert set(M.REQUEST_SUMMARIES) == {"rename", "move", "create", "role", "role.edit",
+                                            "goal", "goal.edit"}, "every template above is walked"
+        for s in said + list(M.REQUEST_SUMMARIES.values()):
+            assert "charter" not in s.lower(), s
+        # the record carries the very words the approver was shown
+        assert sorted(r["summary"] for r in proposals.pending()) == sorted(said)
 
 
 def test_apply_charter_writes_then_amends_by_succession():

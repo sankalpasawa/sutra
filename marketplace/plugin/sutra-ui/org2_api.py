@@ -455,6 +455,43 @@ def _request_check(kind: str, args: Dict[str, Any]):
     return live
 
 
+#: B1 (2026-09-21): the words a proposal summary is composed OF. A card on the
+#: department screen paints a summary VERBATIM -- it never rewrites a record's
+#: own words -- so this table is the one place those words are chosen, and
+#: "charter" is not one of them (PRD A29: goal and rules is what the owner reads
+#: on Identity, so it is what the ask asking to change them says). Rows already
+#: filed keep the text they were written with: a record is a record.
+REQUEST_SUMMARIES = {
+    "rename": "Rename %s to %s",
+    "move": "Move %s under %s",
+    "create": "New department %s under %s",
+    "role": "New role under %s for %s",
+    "role.edit": "Edit the role under %s for %s",
+    "goal": "Write the goal and rules of %s",
+    "goal.edit": "Edit the goal and rules of %s",
+}
+
+
+def _summary(kind: str, args: Dict[str, Any], name_of) -> str:
+    """The one composer. Every summary the approver reads comes from here, in
+    the screen's own words (B1) and off the tree's names, never off client
+    text."""
+    T = REQUEST_SUMMARIES
+    if kind == "org.rename":
+        return T["rename"] % (name_of(args["ref"]), " ".join(str(args["name"]).split()))
+    if kind == "org.move":
+        return T["move"] % (name_of(args["ref"]), name_of(args["target"]))
+    if kind == "org.charter":
+        # DS-2: a role reads differently to the approver than a department's
+        # own goal does -- it names a person -- so the summary says which.
+        edit = ".edit" if args.get("charter_id") else ""
+        if str(args.get("kind") or "").strip().lower() == "role":
+            who = " ".join(str(args.get("person") or "").split()) or "nobody yet"
+            return T["role" + edit] % (name_of(args["ref"]), who)
+        return T["goal" + edit] % name_of(args["ref"])
+    return T["create"] % (" ".join(str(args["name"]).split()), name_of(args["parent"]))
+
+
 @router.post("/request", status_code=201)
 def request(body: RequestBody):
     """File a rename, a move or a new sub-department as a PROPOSAL (plan S60,
@@ -465,21 +502,7 @@ def request(body: RequestBody):
     args = dict(body.args or {})
     live = _request_check(body.kind, args)
     name_of = lambda r: (live.get(r) or {}).get("name") or r   # noqa: E731
-    if body.kind == "org.rename":
-        summary = "Rename %s to %s" % (name_of(args["ref"]), " ".join(str(args["name"]).split()))
-    elif body.kind == "org.move":
-        summary = "Move %s under %s" % (name_of(args["ref"]), name_of(args["target"]))
-    elif body.kind == "org.charter":
-        # DS-2: a role reads differently to the approver than a department's
-        # own charter does -- it names a person -- so the summary says which.
-        if str(args.get("kind") or "").strip().lower() == "role":
-            who = " ".join(str(args.get("person") or "").split()) or "nobody yet"
-            summary = "%s a role under %s for %s" % (
-                "Edit" if args.get("charter_id") else "Write", name_of(args["ref"]), who)
-        else:
-            summary = ("Edit the charter of %s" if args.get("charter_id") else "Write the charter of %s") % name_of(args["ref"])
-    else:
-        summary = "New department %s under %s" % (" ".join(str(args["name"]).split()), name_of(args["parent"]))
+    summary = _summary(body.kind, args, name_of)
     try:
         rec = proposals.create(body.kind, args, summary, session_id="org2")
     except ValueError as exc:
