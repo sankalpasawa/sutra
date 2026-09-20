@@ -2,7 +2,13 @@
 
 **status**: active · **updated**: 2026-09-21
 
-## v2.289.1 (2026-09-21, HEAD)
+## v2.289.2 (2026-09-21, HEAD)
+
+**Department screen, slice B** (holding/plans/department-screen, Gate 4): Identity opens on its own card — goal, done line, tagged rules, budget bar, owner — with three tabs and the Summary / Exact chat component every later card reuses. New `/api/dept/{ref}/identity` read; nothing new writes.
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.289.1 (2026-09-21)
 
 **Sutra Desktop: one row per turn for tool calls** (founder 2026-09-21): a settled turn's tool calls fold behind one row (count, kinds, failures) that opens into the cards; a streaming turn draws none at the top, its loader carries the runs and states a failure; the loader's fixed "thinking" label is gone. Lanes test_chat_condense.js 21, test_panel.js section 56.
 

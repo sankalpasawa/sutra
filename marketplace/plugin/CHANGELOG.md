@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.289.2 (2026-09-21)
+
+- **Sutra Desktop: department screen slice B, Identity's card and its two chats** (holding/plans/department-screen, BUILD-PLAN S23-S34). Identity in a department's Functions group now opens its own card: the goal, the done line from the milestones' `done_when` lines, the rules as tagged go / ask / refuse / always lines, the budget as a bar off the task-limits store, and the owner. Three tabs sit above it — Identity, With `<owner>`, With Adaptation — and the two chats render through `dpChatHtml`, the shared Summary / Exact component slices C and D reuse. New route `GET /api/dept/{ref}/identity`; a department with nothing written says "No goal yet" and offers the Org screen's existing write-it ask in one click. Reads only: `org_api.py` untouched, no new write path.
+
 ## 2.289.1 (2026-09-21)
 
 - **Sutra Desktop: one row per turn for tool calls; no fixed "thinking" word** (founder 2026-09-21: "the model output call is written one by one, like an output terminal ... there's also thinking written, are both required?"). A settled turn folds its tool calls behind one row (count, kinds by count, failures) that opens into the same cards; a streaming turn draws none at the top, its loader carries the runs and now states a failure; the loader's static "thinking" label is gone, the measured strip shimmers instead. New `toolFoldHtml` (06-render.js); `[data-toolfold]` and `[data-thinkopen]` share `S.thinkOpen`. Lanes: test_chat_condense.js (21) + section 56 in test_panel.js; runner test_chat_condense.sh.

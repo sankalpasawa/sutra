@@ -28,7 +28,7 @@ const DP_FUNCS = [["identity", "Identity"], ["adaptation", "Adaptation"],
    opened while the first is still in flight can never paint the first one's
    rows. `busy` is keyed by card AND ref for the same reason. */
 function dpS(){
-  if (!S.dp) S.dp = { sel:null, tab:{}, engineSel:null, filedSel:null, chatMode:{},
+  if (!S.dp) S.dp = { sel:null, tab:{}, pane:{}, engineSel:null, filedSel:null, chatMode:{},
                       loading:{}, error:{}, busy:{}, more:{}, confirm:null,
                       identity:null, now:null, running:null, waits:null,
                       adaptation:null, priority:null, coordination:null, audit:null,
@@ -68,6 +68,11 @@ function dpUrl(ref, tail){ return "/api/dept/" + encodeURIComponent(ref) + "/" +
 function dpLoadNow(ref, force){ return dpLoad("now", ref, dpUrl(ref, "now"), force); }
 function dpLoadRunning(ref, force){ return dpLoad("running", ref, dpUrl(ref, "running"), force); }
 function dpLoadWaits(ref, force){ return dpLoad("waits", ref, dpUrl(ref, "waits"), force); }
+/* Identity is read when its card OPENS, not when the department does (drift
+   from LLD section 4, which fires every loader from dpSelect): opening a
+   department must cost the three reads Now needs and no more, and the
+   call-on-render pattern is the one o2LoadApps already uses (19-org2.js:639). */
+function dpLoadIdentity(ref, force){ return dpLoad("identity", ref, dpUrl(ref, "identity"), force); }
 
 /* ── selection ────────────────────────────────────────────────────────────── */
 /* Opening a department, mirroring o2Select (19-org2.js:250-261): everything the
@@ -84,7 +89,7 @@ function dpSelect(ref){
     st.engines = null; st.filed = null; st.people = null; st.meters = null;
     st.engineRuns = {}; st.engineData = {};
     st.engineSel = null; st.filedSel = null; st.confirm = null;
-    st.more = {}; st.error = {}; st.loading = {};
+    st.more = {}; st.error = {}; st.loading = {}; st.pane = {}; st.chatMode = {};
   }
   if (!st.tab[ref]) st.tab[ref] = "now";                /* A2: Now without a click */
   dpLoadNow(ref);
@@ -215,10 +220,116 @@ function dpNowHtml(){
   if (running.length) body += dpCard("Running", running.map(r => dpRunRow(r.goal, "")).join(""));
   return body;
 }
+
+/* ── the chat every card keeps ─────────────────────────────────────────────
+   Written once here and reused by every function card and every engine card
+   (LLD section 4). Two readings of ONE row array, never two stores: Summary
+   is the turn as a person reads it -- who, to whom, the line -- and Exact is
+   the record itself. Exact is the one place on this screen where a raw path,
+   or the word the card is forbidden to say, is allowed to appear (A29). */
+const DP_MODES = [["summary", "Summary"], ["exact", "Exact"]];
+function dpWhen(at){ const m = /T(\d\d:\d\d)/.exec(String(at || "")); return m ? m[1] : ""; }
+function dpChatLine(row){
+  const to = row.to ? " to " + dpEsc(row.to) : "";
+  return `<div class="dpmsg${row.mode === "think" ? " think" : ""}">` +
+    `<span><div class="dpwho">${dpEsc(row.who || "")}${to}</div>${dpEsc(row.line || "")}</span>` +
+    `<span class="dpat">${dpEsc(dpWhen(row.at))}</span></div>`;
+}
+function dpChatHtml(rows, mode){
+  rows = rows || [];
+  if (!rows.length) return dpQuiet("Nothing yet.");
+  if (mode === "exact"){
+    return `<pre class="dpexact">${dpEsc(rows.map(r => JSON.stringify(r, null, 2)).join("\n\n"))}</pre>`;
+  }
+  return `<div class="dpchat">${rows.map(dpChatLine).join("")}</div>`;
+}
+/* The Summary / Exact control is the panel's own `.tabs` (panel.css:595-597)
+   with one placement rule of its own, so the two readings switch the way
+   every other pair of tabs in this app does. */
+function dpTabsHtml(cur, panes, attr){
+  return `<div class="tabs dptabs">` + panes.map(([v, label]) =>
+    `<button type="button" aria-pressed="${v === cur}" ${attr}="${dpEsc(v)}">${dpEsc(label)}</button>`
+  ).join("") + `</div>`;
+}
+function dpChatCard(title, rows, key){
+  const mode = dpS().chatMode[key] || "summary";
+  const modes = `<div class="tabs dptabs dpmodes">` + DP_MODES.map(([v, label]) =>
+    `<button type="button" aria-pressed="${v === mode}" data-dpchatmode="${v}" data-dpchatkey="${dpEsc(key)}">${label}</button>`
+  ).join("") + `</div>`;
+  return dpCard(title, modes + dpChatHtml(rows, mode));
+}
+
+/* ── Identity ──────────────────────────────────────────────────────────────
+   What the department is for, when it is done, what it may and may not do,
+   what it may spend, and whose it is -- every line a projection of the record
+   behind it, and a quiet line wherever the record carries nothing. */
+const DP_TAGS = ["go", "ask", "refuse", "always"];
+function dpCell(label, body){ return `<div class="dpcell"><div class="dpk">${dpEsc(label)}</div>${body}</div>`; }
+function dpBig(text){ return `<div class="dpbig">${dpEsc(text)}</div>`; }
+function dpRuleHtml(r){
+  const tag = DP_TAGS.indexOf(String(r && r.tag)) === -1 ? "always" : String(r.tag);
+  return `<div class="dprule"><span class="dptag ${tag}">${dpEsc(tag)}</span>` +
+         `<span>${dpEsc((r && r.text) || "")}</span></div>`;
+}
+/* The bar says how much of the ceiling the founder's setting takes, and no
+   number is printed (A28). Nothing set is not zero -- it is no reading. */
+function dpBudgetHtml(b){
+  if (!b || b.running_at_once == null) return dpQuiet("No reading yet");
+  const ceiling = Number(b.ceiling) || 0;
+  const share = ceiling ? Math.min(1, Number(b.running_at_once) / ceiling) : 0;
+  const kinds = Object.keys(b.turn_budget || {});
+  return dpBar(share) + (kinds.length ? `<div class="dpchk">Turns set for ${dpEsc(kinds.join(", "))}</div>` : "");
+}
+function dpOwnerHtml(o){
+  const name = (o && o.name) || "";
+  if (!name) return dpQuiet("No owner yet");
+  return `<div class="dpown"><span class="dpav">${dpEsc(name.slice(0, 1).toUpperCase())}</span><span>${dpEsc(name)}</span></div>`;
+}
+/* A12: a department nobody has written a goal for says so in its own words,
+   and the one action beside it is the Org screen's existing write-it ask
+   (o2OpenSheet -> POST /api/org2/request kind org.charter). The word that
+   names that record is not on this card. */
+function dpNoGoalHtml(){
+  return dpQuiet("No goal yet") + `<button type="button" class="btn" data-dpgoal="1">Write the goal</button>`;
+}
+function dpIdentityCardHtml(id){
+  const grid = `<div class="dpid">` +
+    dpCell("Goal", id.goal ? dpBig(id.goal) : dpNoGoalHtml()) +
+    dpCell("Done when", id.done ? dpBig(id.done) : dpQuiet("No done line yet")) +
+    dpCell("Budget", dpBudgetHtml(id.budget)) +
+    dpCell("Owner", dpOwnerHtml(id.owner)) +
+    `</div>`;
+  const rules = (id.rules || []).length ? id.rules.map(dpRuleHtml).join("")
+                                        : dpQuiet("No rules yet");
+  return dpCard("The department", grid) + dpCard("Rules", rules);
+}
+/* Three tabs above the card (A10): the department itself, and the two chats
+   Identity keeps -- one with the person who owns it, one with Adaptation. */
+function dpIdentityHtml(){
+  const st = dpS(), ref = st.sel;
+  const id = (st.identity && st.identity.ref === ref) ? st.identity : null;
+  if (!id) return st.error.identity ? dpQuiet("Could not read") : dpSkel();
+  const pane = st.pane[ref + ":identity"] || "identity";
+  const owner = (id.owner && id.owner.name) || "";
+  const chats = id.chats || {};
+  const tabs = dpTabsHtml(pane, [
+    ["identity", "Identity"],
+    ["owner", "With " + (owner || "the owner")],
+    ["adaptation", "With Adaptation"],
+  ], "data-dppane");
+  if (pane === "owner") return tabs + dpChatCard(owner || "The owner", chats.owner, ref + ":owner");
+  if (pane === "adaptation") return tabs + dpChatCard("Adaptation", chats.adaptation, ref + ":adaptation");
+  return tabs + dpIdentityCardHtml(id);
+}
+
 function dpViewerHtml(n, d, dept, err){
   const st = dpS();
   const tab = st.tab[n.ref] || "now";
   if (tab === "now") return dpViewerShell("Now", dpNowHtml());
+  if (tab === "identity"){
+    dpLoadIdentity(n.ref);                               /* read on open, as o2LoadApps does */
+    return dpViewerShell("Identity", dpIdentityHtml());
+  }
   const label = (DP_FUNCS.find(f => f[0] === tab) || [tab, tab])[1];
   return dpViewerShell(label, dpQuiet("Not read yet"));
 }
@@ -254,7 +365,7 @@ async function dpDecide(pid, ok){
    landed inside a `.dp` element. That is 19-org2.js:875-880's own guard with
    this screen's class, so nothing here can fire on another screen. */
 if (typeof document !== "undefined" && document.addEventListener){
-  const DP_SEL = "[data-dptab],[data-dpdecide],[data-dpmore],[data-dpfiled],[data-dpdoc],[data-dpengine],[data-dpchatmode]";
+  const DP_SEL = "[data-dptab],[data-dpdecide],[data-dpmore],[data-dpfiled],[data-dpdoc],[data-dpengine],[data-dpchatmode],[data-dppane],[data-dpgoal]";
   document.addEventListener("click", (ev) => {
     if (!S.dp || S.screen !== "org2") return;
     const t = ev.target && ev.target.closest ? ev.target.closest(DP_SEL) : null;
@@ -264,6 +375,23 @@ if (typeof document !== "undefined" && document.addEventListener){
       ev.preventDefault();
       if (st.sel){ st.tab[st.sel] = ds.dptab; st.confirm = null; }
       dpRender(); return;
+    }
+    if (ds.dppane !== undefined){
+      ev.preventDefault();
+      if (st.sel) st.pane[st.sel + ":" + (st.tab[st.sel] || "now")] = ds.dppane;
+      dpRender(); return;
+    }
+    if (ds.dpchatmode !== undefined){
+      ev.preventDefault();
+      st.chatMode[ds.dpchatkey || ""] = ds.dpchatmode;
+      dpRender(); return;
+    }
+    if (ds.dpgoal !== undefined){
+      ev.preventDefault();
+      /* the Org screen's own write-it sheet, which posts org.charter through
+         /api/org2/request -- this screen adds no second way to ask (A12) */
+      if (typeof o2OpenSheet === "function") o2OpenSheet("charter");
+      return;
     }
     if (ds.dpmore !== undefined){ st.more[ds.dpmore] = true; dpRender(); return; }
     if (ds.dpdecide !== undefined){ ev.preventDefault(); dpDecide(ds.dpdecide, ds.dpok === "1"); return; }
