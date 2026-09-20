@@ -373,6 +373,26 @@ gate_python() {
   else bad "python: $failed lane(s) red of $((passed + failed))"; printf '%s\n' "$out" | grep ' FAIL' | sed 's/^/        /'; fi
 }
 
+# THE SUITE THAT HAS TAKEN DOWN FOUR RELEASES, and which this script did not
+# run until 2.287.1. `Engine + importer tests` is a dmg-leg step, so a red one
+# aborts the leg before a DMG exists -- exactly like the Panel step gate_panel_step
+# already simulates -- yet `check` printed READY for v2.286.1 and v2.287.0 and
+# both died there. It is pinned to the export checked into website/domains/, so
+# the thing that breaks it is never a code change: it is an unattended regen of
+# that export (bb66966, 7973d6c, c991193b, 33b7be5f). Run the workflow's exact
+# command, not an approximation of it.
+gate_engine_importer() {
+  local out rc
+  out="$(python3 -m unittest discover -s marketplace/plugin/lib/tests -p 'test_*.py' 2>&1)"; rc=$?
+  local ran; ran="$(printf '%s\n' "$out" | grep -oE '^Ran [0-9]+ tests?' | grep -oE '[0-9]+' | head -1)"
+  if [ "$rc" = 0 ]; then ok "engine + importer: ${ran:-?} tests green (the dmg leg's other gate)"
+  else
+    bad "engine + importer: red -- the dmg leg would abort here, before any DMG is built"
+    printf '%s\n' "$out" | grep -E '^(FAIL|ERROR):' | sed 's/^/        /'
+    note "pinned to website/domains/ -- an unattended regen of that export is the usual cause"
+  fi
+}
+
 gate_main_synced() {
   git fetch origin --quiet 2>/dev/null || { bad "sync: could not fetch origin"; return; }
   local counts behind ahead
@@ -433,12 +453,13 @@ cmd_check() {
   gate_workflow_integrity
   gate_shadow_wiring
   if [ "${FAST:-0}" = 1 ]; then
-    note "skipped (FAST=1): panel step, check 5, check 6, python lanes"
+    note "skipped (FAST=1): panel step, check 5, check 6, python lanes, engine + importer"
   else
     gate_panel_step
     gate_all_js
     gate_panel_repeat
     gate_python
+    gate_engine_importer
   fi
 
   head_ "VERDICT"
@@ -554,7 +575,7 @@ cmd_release() {
     git --no-pager diff --stat
     head_ "2. gates, after the bump"
     _fails=0; gate_versions_aligned; gate_guard_simulation "$TAG" "$TARGET"; gate_shadow_wiring
-    gate_panel_step; gate_all_js; gate_panel_repeat; gate_python
+    gate_panel_step; gate_all_js; gate_panel_repeat; gate_python; gate_engine_importer
     [ "$_fails" = 0 ] || die "a gate failed after the bump -- nothing committed"
     head_ "3. commit"
     git add -- "$PLUGIN_JSON" "$MARKET_JSON" "$CHANGELOG" "$CURRENT_VERSION"
