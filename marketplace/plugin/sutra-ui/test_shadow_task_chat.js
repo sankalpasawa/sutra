@@ -113,7 +113,9 @@ function pane(ctx, m){
   assert(!/worker chat/i.test(h), "the toggle label must be gone");
   assert.strictEqual(ctx.fetched.length, 0, "the card must fetch nothing");
   /* the control room itself is untouched */
-  assert(/where it runs/.test(h) && />turn</.test(h),
+  /* the turn row left for the pinned header on 2026-09-20; `done when` is
+     the brief's other key row and stands in for it here. */
+  assert(/where it runs/.test(h) && /done when/.test(h),
     "the brief rows must survive");
   console.log("ok 2 the card carries no worker-chat door and no transcript");
 }

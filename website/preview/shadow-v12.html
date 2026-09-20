@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Focus &rsaquo; Shadow — design v12</title>
+<!-- v12 (2026-09-20): the Shadow TASK PANE only. Founder: "it should be user usable, user
+     shouldn't struggle to see what's happening — no unnecessary scrolls".
+
+     THE DEFECT, from panel.css as it stands today. Three boxes in the right column each
+     declare their own overflow and each take height from the same budget:
+         .shwright>.shwscroll   flex:1 1000 auto; min-height:min(220px,40%)   (line ~3477)
+         .shwright>.shiv        flex:0 1 auto;    max-height:38%; overflow-y:auto  (~3892)
+         .shwright .shthread    max-height:280px; overflow-y:auto              (~3999)
+     plus .shwleft>.shtasks (~3495). So on a blocked task the founder can have FOUR scrollbars
+     on screen, and the conversation — the one region that says what is happening — is pinned
+     at its 220px floor because the ask above it is allowed 38% of the pane.
+
+     THE FIX IS ONE SUBTRACTION AND ONE ADDITION.
+       subtract: .shiv and .shthread stop being pinned, capped, self-scrolling blocks. They go
+                 back into .shwscroll and are sized by their own content. One scroller.
+       add:      a 40px DOCK above the composer carrying the question as ONE line + Answer.
+                 Fixed height, not a percentage, so the conversation's share stops moving.
+
+     Computed at a 640px pane (604px of content after .pb padding):
+         today   head 56 + scroller 220 + ask 229 + composer 64 + gaps 30 = 599
+         v12     head 62 + hairline 2 + scroller 424 + dock 40 + composer 64
+     The region that holds the conversation goes 220px → 424px, +93%, and the question is on
+     screen at 40px instead of 229px. HONESTLY, THOUGH: on a BLOCKED task the form now lives
+     inside that region, so parked at the newest row you see the form and the tail of the turns
+     rather than nine turns. What changed there is not how much is visible at rest — it is that
+     reading back is ONE gesture in ONE box instead of picking between three, and that the
+     question stays put while you do it. On every other state the 424px is turns.
+
+     Same app css as the live build (shadow-assets-v12/ are byte copies of what the app serves,
+     taken 2026-09-20) and the same class names 16-shadow-home.js renders (.shwork .shwleft
+     .shtasks .shwsec .shtaskrow .shtask .shtaskdot .shtaskname .shtpill .shtaskdel .shdelegate
+     .shwfoot .shwright .shwhead .shwseal .shwtitle .shwturn .shwscroll .shcard2 .shtimeline
+     .shagent .shsaid .shiv .shivq .shcompwrap .shcompose .shsend). Everything under "v12" in the
+     style block below is what a builder ports into panel.css; the new markup hooks are named in
+     the caption under each frame. Lineage: v7 (task pane) → v11 (Now) → v12 (task pane). -->
+<link rel="stylesheet" href="shadow-assets-v12/panel.css">
+<link rel="stylesheet" href="shadow-assets-v12/workspace.css">
+<link rel="stylesheet" href="shadow-assets-v12/agents.css">
+<style>
+/* mock-only: app shells stacked on a page */
+html,body{height:auto;overflow:auto}
+body{background:#ECEAE6;padding:26px 18px 60px}
+.wrap{height:auto;overflow:visible;max-width:1280px;margin:0 auto}
+.cap{font:12.5px/1.6 var(--sans);color:var(--muted);margin:0 0 9px}
+.cap b{color:var(--ink);font-weight:600}
+.cap code{font:11.5px/1 var(--mono);background:rgba(28,25,23,.05);padding:2px 5px;border-radius:4px}
+.app{height:640px;position:relative;margin:0 0 34px;border:1px solid var(--line);
+  border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
+.mtbl{width:100%;border-collapse:collapse;font:12px/1.5 var(--sans);margin:0 0 30px;background:var(--card);
+  border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.mtbl th,.mtbl td{padding:7px 11px;text-align:left;border-bottom:1px solid var(--line-soft)}
+.mtbl th{font:600 10px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+.mtbl tr:last-child td{border-bottom:0}
+.mtbl td b{color:var(--ink)}
+h2.mh{font:600 15px/1.3 var(--serif);color:var(--ink);margin:30px 0 8px}
+
+/* ═══ v12 — what a builder ports into panel.css ═════════════════════════════
+   Every rule below supersedes a named rule in the shipped file or adds a hook
+   that does not exist yet. Nothing renames an existing class. */
+
+/* ── R1. ONE SCROLLER IN THE PANE ────────────────────────────────────────
+   Supersedes `.shwright>.shiv{flex:0 1 auto;min-height:0;max-height:38%;
+   overflow-y:auto}` and `.shwright .shthread{max-height:280px;overflow-y:auto}`.
+   Both go back inside .shwscroll and are sized by their own content, so the
+   pane has exactly one region that owns the wheel. */
+.shwright>.shiv,.shwscroll>.shiv{max-height:none;overflow:visible;
+  flex:none;margin-top:0}
+.shwright .shthread{max-height:none;overflow:visible}
+/* with the ask no longer competing, the conversation needs no artificial
+   floor — it simply takes what is left */
+.shwright>.shwscroll{flex:1 1 auto;min-height:0}
+
+/* ── R2. THE HEAD SAYS WHAT IS HAPPENING, IN ONE LINE ────────────────────
+   New: .shwheadmain wraps the existing .shwtitle and adds .shwnow. The line
+   is derived from fields the record already carries — never invented:
+     running + open turn   → turn n · working for m:ss     (turns_used, turn stamp)
+     running + reported    → turn n · "<the say gist>"     (shadowSayGist)
+     blocked               → Waiting on you · <question>   (intervention.question)
+     needs sign-off        → Waiting on your sign-off · <first unmet check>
+     done                  → Verified · n of n checks · <ago>   (completion)
+     queued/paused/stopped → the reason, as the face already words it
+   When no source applies the line is OMITTED, exactly as shadowActivityLine
+   already does. */
+.shwhead{align-items:flex-start;gap:10px}
+.shwheadmain{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.shwhead .shwtitle{flex:none;font-size:16px;line-height:1.3}
+.shwnow{display:flex;align-items:center;gap:7px;min-width:0;
+  font:12.5px/1.35 var(--sans);color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.shwnow>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.shwnow em{font-style:normal;color:var(--ink)}
+.shwnowdot{width:6px;height:6px;border-radius:50%;flex:none;background:var(--line)}
+.shwnow-run .shwnowdot{background:#4A6B8B;box-shadow:0 0 0 3px rgba(74,107,139,.16);
+  animation:shwbreathe 2.2s ease-in-out infinite}
+.shwnow-needs{color:var(--ink)}
+.shwnow-needs .shwnowdot{background:#8B4A6B;box-shadow:0 0 0 3px rgba(139,74,107,.18)}
+.shwnow-done .shwnowdot{background:#2D5A3E;box-shadow:0 0 0 3px rgba(45,90,62,.14)}
+@keyframes shwbreathe{0%,100%{opacity:1}50%{opacity:.45}}
+@media (prefers-reduced-motion:reduce){.shwnow-run .shwnowdot{animation:none}}
+.shwheadacts{flex:none;display:flex;align-items:center;gap:8px}
+
+/* ── R3. BUDGET IS A HAIRLINE, NOT A BLOCK ──────────────────────────────
+   shadowBudgetBarHtml's track costs ~18px of the pane and is read once. As a
+   2px rule under the header it costs nothing and is never scrolled away.
+   --fuel is turns_used/max_turns; the two severity classes are the existing
+   shadowBudgetSev bands. */
+.shwfuel{flex:none;height:2px;background:var(--line-soft);border-radius:2px;
+  overflow:hidden;margin:0 0 2px}
+.shwfuel>i{display:block;height:100%;width:var(--fuel,0%);background:var(--acc);
+  transition:width .45s ease}
+.shwfuel-warn>i{background:#B8863B}
+.shwfuel-hot>i{background:#8B4A6B}
+
+/* ── R4. THE DOCK: THE QUESTION, ONE LINE, ALWAYS ON SCREEN ─────────────
+   This is what replaces the pinned .shiv. 40px fixed — not 38% — so the
+   conversation's height stops depending on how many fields Shadow asked for.
+   The FORM itself is the last row of the scroller (R1); Answer scrolls to it,
+   which costs nothing because a blocked pane already opens at its newest row.
+   Rendered only when the mission carries an intervention, so every running,
+   done, failed and stopped task draws exactly what it draws today. */
+.shdock{flex:none;display:flex;align-items:center;gap:10px;min-height:40px;
+  padding:0 12px 0 14px;border-radius:0 10px 10px 0;background:var(--acc-bg);
+  border:1px solid var(--line-soft);border-left:4px solid var(--acc)}
+.shdockk{flex:none;font:600 9.5px/1 var(--mono);letter-spacing:.11em;
+  text-transform:uppercase;color:var(--acc)}
+.shdockq{flex:1;min-width:0;font:600 12.5px/1.35 var(--sans);color:var(--ink);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.shdock .btn{flex:none;padding:5px 11px;font-size:11.5px}
+
+/* ── R5. NEW TURNS ANNOUNCE THEMSELVES; THEY DO NOT YANK THE VIEW ───────
+   Reading turn 3 while turn 9 lands must not move the page. The pill appears
+   only when the scroller is NOT at its bottom, and clicking it goes there. */
+.shwright{position:relative}
+.shnewturns{position:absolute;left:50%;transform:translateX(-50%);
+  bottom:86px;z-index:4;display:none;align-items:center;gap:6px;
+  padding:5px 12px;border-radius:99px;background:var(--card);
+  border:1px solid var(--line);box-shadow:0 4px 14px rgba(28,25,23,.12);
+  font:600 11.5px/1 var(--sans);color:var(--ink);cursor:pointer}
+.shnewturns.on{display:flex}
+
+/* ── R6. THE LEFT LIST RARELY SCROLLS ──────────────────────────────────
+   It keeps its scroller — twenty tasks is a real list — but DONE TODAY is
+   capped at 3 rows behind an existing-hook "N more", so in ordinary use the
+   rail fits and the wheel has one unambiguous target. */
+.shwsec{position:sticky;top:0;z-index:2;background:var(--bg);
+  padding:9px 0 5px;margin:0}
+.shtaskmore{width:100%;text-align:left;font-size:11px;color:var(--muted);
+  padding:5px 8px;background:none;border:0;cursor:pointer}
+.shtaskmore:hover{color:var(--acc)}
+
+/* ── R7. NOTHING IN FOCUS IS ONE BOX, CENTRED ──────────────────────────
+   The two-column frame drawn around an empty pane reads as a broken screen.
+   With no task selected the right pane is v11's single box and one line. */
+.shwcalm{flex:1;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:14px;text-align:center;padding:0 24px}
+.shwcalmq{font:600 17px/1.35 var(--serif);color:var(--ink);margin:0}
+.shwcalmsub{font:12.5px/1.5 var(--sans);color:var(--muted);margin:0;max-width:340px}
+.shwcalm .shcompwrap{width:100%;max-width:460px}
+
+/* ── R8. THE SEND BUTTON BELONGS TO THE BOX, NOT THE PANE ───────────────
+   `.shsend{position:absolute;right:12px;bottom:12px}` (panel.css ~3127) with
+   no positioned `.shcompwrap` around it resolves against whatever is
+   positioned further up, so the arrow is laid on the pane's bottom-right
+   corner and only LOOKS correct while the composer happens to be full-width
+   and flush to that corner. The moment it is not — the calm state's centred
+   box (R7) — the arrow detaches. `.shwright .shcompwrap` is already written
+   as a flex ROW with `align-items:flex-end` and an 8px gap, which is a layout
+   for a send button IN THE FLOW; this is the one line that lets it be one. */
+.shwright .shcompwrap{position:relative;flex:none}
+.shwright .shsend{position:static}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<p class="cap"><b>Focus &rsaquo; Shadow, v12.</b> Three states, same pane. The rule is one scroller
+and one line that answers &ldquo;what is happening&rdquo;. Scroll up inside frame A to see the
+&ldquo;new turn&rdquo; pill; the dock&rsquo;s <b>Answer</b> takes you to the form.</p>
+
+<h2 class="mh">A &middot; Needs you — the state that was broken</h2>
+<p class="cap">Today this is the four-scrollbar frame: the ask takes 38% of the pane, the
+conversation is squeezed to its 220px floor, and the thread has a third bar under it. Here the ask
+is <b>40px on the dock</b>, the form is the last row of the conversation, and there is one box to
+scroll. <code>.shdock</code> <code>.shdockk</code>
+<code>.shdockq</code> <code>.shwnow</code> <code>.shwfuel</code> are the new hooks.</p>
+
+<div class="app" id="appA">
+  <nav class="rail" aria-label="Sutra">
+    <div class="rtop"><div class="rmark">s</div><b>Sutra</b></div>
+    <div class="rscroll"><ul class="nav">
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>Now</button></li>
+      <li><button type="button" aria-current="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>Focus<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-4.5A8 8 0 1 1 21 12z"/></svg>Chats</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="8.5" y="14" width="7" height="7"/></svg>Org<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/></svg>Settings</button></li>
+    </ul></div>
+  </nav>
+  <div class="panes"><section class="pane browse">
+    <div class="ph"><h3>Shadow</h3></div>
+    <div class="pb">
+      <div class="shwork">
+
+        <aside class="shwleft">
+          <button class="shdelegate" type="button">+ Delegate</button>
+          <div class="shtasks">
+            <div class="shwsec shwsec-wait">WAITING ON YOU</div>
+            <div class="shtaskrow on"><button class="shtask on" type="button">
+              <span class="shtaskdot d-blocked"></span>
+              <span class="shtaskname">Fix the auth redirect loop</span>
+              <span class="shtpill shtpill-blocked">NEEDS YOU</span></button>
+              <button class="shtaskdel" type="button" aria-label="Archive task">&times;</button></div>
+
+            <div class="shwsec shwsec-run">RUNNING</div>
+            <div class="shtaskrow"><button class="shtask" type="button">
+              <span class="shtaskdot d-running"></span>
+              <span class="shtaskname">Port the panel tokens to v12</span>
+              <span class="shtpill shtpill-running"><span class="shtpillspin"></span>RUNNING</span></button>
+              <button class="shtaskdel" type="button" aria-label="Archive task">&times;</button></div>
+            <div class="shtaskrow"><button class="shtask" type="button">
+              <span class="shtaskdot d-"></span>
+              <span class="shtaskname">Write the release note for 2.286</span>
+              <span class="shtpill shtpill-">QUEUED</span></button>
+              <button class="shtaskdel" type="button" aria-label="Archive task">&times;</button></div>
+
+            <div class="shwsec shwsec-done">DONE TODAY</div>
+            <div class="shtaskrow"><button class="shtask" type="button">
+              <span class="shtaskdot d-done"></span>
+              <span class="shtaskname">Cut the stale marker writes</span>
+              <span class="shtpill shtpill-done">DONE</span></button>
+              <button class="shtaskdel" type="button" aria-label="Archive task">&times;</button></div>
+            <button class="shtaskmore" type="button">4 more &mdash; open all tasks</button>
+          </div>
+          <div class="shwfoot"><nav class="shfoot shnav">
+            <button class="btn shfootitem shnavitem shsetdoor" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/></svg>
+              <span>What Shadow knows</span></button>
+          </nav></div>
+        </aside>
+
+        <section class="shwright">
+          <header class="shwhead">
+            <span class="shwseal">S</span>
+            <div class="shwheadmain">
+              <h2 class="shwtitle">Fix the auth redirect loop</h2>
+              <div class="shwnow shwnow-needs"><span class="shwnowdot"></span>
+                <span>Waiting on you &middot; <em>which redirect wins when both are set?</em></span></div>
+            </div>
+            <div class="shwheadacts">
+              <span class="shwturn" title="turn 12 of 20">12/20</span>
+              <span class="shtpill shtpill-blocked">NEEDS YOU</span>
+              <button class="btn" type="button">Open the chat</button>
+            </div>
+          </header>
+          <div class="shwfuel shwfuel-warn" style="--fuel:60%"><i></i></div>
+
+          <div class="shwscroll" id="scrollA">
+            <div class="shcard2">
+              <div class="shcard2head"><span class="shcard2obj">Fix the auth redirect loop</span></div>
+              <div class="shcard2row"><span class="shcard2k">where it runs</span>
+                <span class="shcard2v">its own chat &middot; auth-redirect-fix</span></div>
+              <div class="shcard2row"><span class="shcard2k">done when</span>
+                <span class="shcard2v">login lands on /app once &middot; suite green on main</span></div>
+            </div>
+
+            <div class="shtimeline">
+              <div class="shagent"><div class="shagenthead">Worker agent &middot; turn 8</div>
+                <div class="shagentsay">Reproduced it: /login redirects to /app, /app bounces back to /login when the session cookie is unset.</div></div>
+              <div class="shagent"><div class="shagenthead">Worker agent &middot; turn 9</div>
+                <div class="shagentsay">Two redirect rules are live &mdash; middleware.ts:41 and the Next config. Both fire.</div></div>
+              <div class="shsaid"><div class="shsaidhead">You &rarr; Shadow</div>
+                <div class="shsaidtext">Don&rsquo;t touch the Next config, it&rsquo;s shared with marketing.</div></div>
+              <div class="shagent"><div class="shagenthead">Worker agent &middot; turn 10</div>
+                <div class="shagentsay">Held off the config. Narrowed the middleware matcher to /app/* and the loop stops locally.</div></div>
+              <div class="shagent"><div class="shagenthead">Worker agent &middot; turn 11</div>
+                <div class="shagentsay">Suite is 212/214 &mdash; two redirect tests assert the old behaviour.</div></div>
+              <div class="shagent"><div class="shagenthead">Worker agent &middot; turn 12</div>
+                <div class="shagentsay">Those two tests encode the rule I&rsquo;d be changing, so I stopped rather than rewrite them.</div></div>
+              <div class="shsaid"><div class="shsaidhead">Shadow</div>
+                <div class="shsaidtext">The worker is at the boundary: fixing the loop means one of the two redirect rules loses, and the tests are the record of which one you meant. That is yours, not mine.</div></div>
+            </div>
+
+            <div class="shiv" id="formA">
+              <div class="shivq">Which redirect should win when both rules match?</div>
+              <div class="shivev">
+                <div class="shivevrow"><span class="shivevref">middleware.ts:41</span><span>matcher /*, redirects unauthenticated to /login</span></div>
+                <div class="shivevrow"><span class="shivevref">next.config.js:18</span><span>permanent redirect /login &rarr; /app</span></div>
+              </div>
+              <div class="shivfield">
+                <label class="shnewlabel">Your call</label>
+                <div class="shnewkinds">
+                  <button class="shkind on" type="button">Middleware wins</button>
+                  <button class="shkind" type="button">Config wins</button>
+                  <button class="shkind" type="button">Neither &mdash; ask again</button>
+                </div>
+              </div>
+              <div class="shivfield">
+                <label class="shnewlabel">Anything Shadow should carry into the fix</label>
+                <textarea rows="2" placeholder="Optional &mdash; one line is enough"></textarea>
+              </div>
+              <div class="shnewacts"><button class="btn pri" type="button">Send to Shadow</button></div>
+            </div>
+          </div>
+
+          <button class="shnewturns" id="pillA" type="button">&darr; 1 new turn</button>
+
+          <div class="shdock">
+            <span class="shdockk">Needs you</span>
+            <span class="shdockq">Which redirect should win when both rules match?</span>
+            <button class="btn pri" type="button" data-answer="formA">Answer</button>
+          </div>
+
+          <div class="shcompwrap">
+            <textarea class="shcompose" rows="1" placeholder="Say anything&hellip;"></textarea>
+            <button class="shsend" type="button" aria-label="Send">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </section></div>
+</div>
+
+<h2 class="mh">B &middot; Working — the ordinary state</h2>
+<p class="cap">No dock, because nothing is being asked. The head&rsquo;s second line is the whole
+answer to &ldquo;what is it doing&rdquo;, the hairline is the budget, and the turns own the pane.
+One scrollbar, and it is under the pointer where the reading is.</p>
+
+<div class="app" id="appB">
+  <nav class="rail" aria-label="Sutra">
+    <div class="rtop"><div class="rmark">s</div><b>Sutra</b></div>
+    <div class="rscroll"><ul class="nav">
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>Now</button></li>
+      <li><button type="button" aria-current="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>Focus<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-4.5A8 8 0 1 1 21 12z"/></svg>Chats</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/></svg>Settings</button></li>
+    </ul></div>
+  </nav>
+  <div class="panes"><section class="pane browse">
+    <div class="ph"><h3>Shadow</h3></div>
+    <div class="pb">
+      <div class="shwork">
+        <aside class="shwleft">
+          <button class="shdelegate" type="button">+ Delegate</button>
+          <div class="shtasks">
+            <div class="shwsec shwsec-run">RUNNING</div>
+            <div class="shtaskrow on"><button class="shtask on" type="button">
+              <span class="shtaskdot d-running"></span>
+              <span class="shtaskname">Port the panel tokens to v12</span>
+              <span class="shtpill shtpill-running"><span class="shtpillspin"></span>RUNNING</span></button>
+              <button class="shtaskdel" type="button" aria-label="Archive task">&times;</button></div>
+            <div class="shtaskrow"><button class="shtask" type="button">
+              <span class="shtaskdot d-"></span>
+              <span class="shtaskname">Write the release note for 2.286</span>
+              <span class="shtpill shtpill-">QUEUED</span></button>
+              <button class="shtaskdel" type="button" aria-label="Archive task">&times;</button></div>
+            <div class="shwsec shwsec-done">DONE TODAY</div>
+            <div class="shtaskrow"><button class="shtask" type="button">
+              <span class="shtaskdot d-done"></span>
+              <span class="shtaskname">Cut the stale marker writes</span>
+              <span class="shtpill shtpill-done">DONE</span></button>
+              <button class="shtaskdel" type="button" aria-label="Archive task">&times;</button></div>
+            <button class="shtaskmore" type="button">4 more &mdash; open all tasks</button>
+          </div>
+          <div class="shwfoot"><nav class="shfoot shnav">
+            <button class="btn shfootitem shnavitem shsetdoor" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/></svg>
+              <span>What Shadow knows</span></button>
+          </nav></div>
+        </aside>
+
+        <section class="shwright">
+          <header class="shwhead">
+            <span class="shwseal">S</span>
+            <div class="shwheadmain">
+              <h2 class="shwtitle">Port the panel tokens to v12</h2>
+              <div class="shwnow shwnow-run"><span class="shwnowdot"></span>
+                <span>Turn 3 &middot; <em>working for 1:42</em> &middot; last said &ldquo;reading panel.css for the shadow block&rdquo;</span></div>
+            </div>
+            <div class="shwheadacts">
+              <span class="shwturn" title="turn 3 of 30">3/30</span>
+              <span class="shtpill shtpill-running"><span class="shtpillspin"></span>RUNNING</span>
+              <button class="btn" type="button">Open the chat</button>
+            </div>
+          </header>
+          <div class="shwfuel" style="--fuel:10%"><i></i></div>
+
+          <div class="shwscroll">
+            <div class="shcard2">
+              <div class="shcard2head"><span class="shcard2obj">Port the panel tokens to v12</span></div>
+              <div class="shcard2row"><span class="shcard2k">where it runs</span>
+                <span class="shcard2v">its own chat &middot; panel-tokens-v12</span></div>
+              <div class="shcard2row"><span class="shcard2k">done when</span>
+                <span class="shcard2v">v12 block lands in panel.css &middot; the shadow tests pass</span></div>
+            </div>
+            <div class="shtimeline">
+              <div class="shagent"><div class="shagenthead">Worker agent &middot; turn 1</div>
+                <div class="shagentsay">Found the shadow block &mdash; panel.css 3440&ndash;4030, four overflow rules in the right pane.</div></div>
+              <div class="shagent"><div class="shagenthead">Worker agent &middot; turn 2</div>
+                <div class="shagentsay">Wrote the v12 rules against the mock and diffed them against the shipped ones.</div></div>
+              <div class="shagent shagentopen"><div class="shagenthead">Worker agent &middot; turn 3<span class="shturnlive"></span><span class="shturntimer">1:42</span></div>
+                <div class="shturnsweep"><i></i></div></div>
+            </div>
+          </div>
+
+          <div class="shcompwrap">
+            <textarea class="shcompose" rows="1" placeholder="Say anything&hellip;"></textarea>
+            <button class="shsend" type="button" aria-label="Send">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </section></div>
+</div>
+
+<h2 class="mh">C &middot; Nothing in focus</h2>
+<p class="cap">The empty two-column frame reads as a broken screen. With no task selected the right
+pane is one box and one line &mdash; the same shape the Now screen already uses (v11).
+<code>.shwcalm</code> is the only new hook.</p>
+
+<div class="app" id="appC">
+  <nav class="rail" aria-label="Sutra">
+    <div class="rtop"><div class="rmark">s</div><b>Sutra</b></div>
+    <div class="rscroll"><ul class="nav">
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>Now</button></li>
+      <li><button type="button" aria-current="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>Focus<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/></svg>Settings</button></li>
+    </ul></div>
+  </nav>
+  <div class="panes"><section class="pane browse">
+    <div class="ph"><h3>Shadow</h3></div>
+    <div class="pb">
+      <div class="shwork">
+        <aside class="shwleft">
+          <button class="shdelegate" type="button">+ Delegate</button>
+          <div class="shtasks">
+            <div class="shtaskempty">Nothing yet &mdash; delegate a task and Shadow will run it in its own chat.</div>
+          </div>
+          <div class="shwfoot"><nav class="shfoot shnav">
+            <button class="btn shfootitem shnavitem shsetdoor" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/></svg>
+              <span>What Shadow knows</span></button>
+          </nav></div>
+        </aside>
+        <section class="shwright">
+          <div class="shwcalm">
+            <p class="shwcalmq">Give me the outcome, I&rsquo;ll take it from here.</p>
+            <p class="shwcalmsub">Nothing is running and nothing needs you. Say what you want to be
+              true and Shadow will start a chat for it.</p>
+            <div class="shcompwrap">
+              <textarea class="shcompose" rows="2" placeholder="Tell Shadow what outcome you want&hellip;"></textarea>
+              <button class="shsend" type="button" aria-label="Send">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </section></div>
+</div>
+
+<h2 class="mh">What a builder ports</h2>
+<table class="mtbl">
+  <tr><th>rule</th><th>change</th><th>supersedes</th></tr>
+  <tr><td><b>R1</b> one scroller</td><td><code>.shiv</code> and <code>.shthread</code> lose their
+    cap and their own overflow, and go back inside <code>.shwscroll</code></td>
+    <td>panel.css <code>.shwright&gt;.shiv</code> (~3892), <code>.shwright .shthread</code> (~3999);
+    16-shadow-home.js moves <code>shadowInterventionHtml(sel)</code> back inside
+    <code>.shwscroll</code></td></tr>
+  <tr><td><b>R2</b> the now line</td><td><code>.shwheadmain</code> wraps the title and adds
+    <code>.shwnow</code> &mdash; one derived line, omitted when no source applies</td>
+    <td>new; sources are <code>turns_used</code>, the turn stamp, <code>shadowSayGist</code>,
+    <code>intervention.question</code>, the first unmet check, <code>completion</code></td></tr>
+  <tr><td><b>R3</b> hairline budget</td><td><code>.shwfuel</code>, 2px, under the header</td>
+    <td><code>shadowBudgetBarHtml</code>&rsquo;s block track (~18px)</td></tr>
+  <tr><td><b>R4</b> the dock</td><td><code>.shdock</code>, 40px fixed, question + Answer, drawn
+    only when an intervention exists</td>
+    <td>the pinned, 38%-capped, self-scrolling <code>.shiv</code></td></tr>
+  <tr><td><b>R5</b> new-turn pill</td><td><code>.shnewturns</code> instead of moving the view under
+    the reader</td><td>new</td></tr>
+  <tr><td><b>R6</b> quiet rail</td><td>sticky section heads, DONE TODAY capped at 3 behind
+    <code>.shtaskmore</code></td><td><code>SH_SECTIONS</code> render in
+    <code>shadowTaskListHtml</code></td></tr>
+  <tr><td><b>R7</b> calm state</td><td><code>.shwcalm</code> when nothing is selected</td>
+    <td>the empty two-column frame</td></tr>
+  <tr><td><b>R8</b> send in the flow</td><td><code>.shwright .shcompwrap{position:relative}</code>
+    + <code>.shsend{position:static}</code></td>
+    <td><code>.shsend{position:absolute}</code> (~3127) resolving against the pane &mdash; correct
+    only while the composer is full-width and flush to its corner</td></tr>
+</table>
+
+<table class="mtbl">
+  <tr><th>at a 640px pane</th><th>today</th><th>v12</th></tr>
+  <tr><td>scrollbars on a blocked task</td><td><b>4</b> (rail, conversation, ask, thread)</td><td><b>2</b> (rail, conversation)</td></tr>
+  <tr><td>region the conversation gets</td><td><b>220px</b> &mdash; its floor</td><td><b>424px</b></td></tr>
+  <tr><td>reading back through the turns</td><td>pick the right one of three boxes</td><td>one gesture, one box</td></tr>
+  <tr><td>where the question lives</td><td>a 229px block that scrolls inside itself</td>
+    <td>one 40px line, pinned &mdash; the form is the last row of the conversation</td></tr>
+  <tr><td>&ldquo;what is it doing&rdquo;</td><td>inferred from a pill + a bar + the last turn</td><td>one line under the title</td></tr>
+</table>
+
+<p class="cap">Shadow v12 &middot; 2026-09-20 &middot; the app&rsquo;s own panel.css and markup plus
+the v12 rules to port &middot; lineage: v7 (task pane) &rarr; v11 (Now) &rarr; v12</p>
+</div>
+
+<script>
+(function(){
+  // R5 demo: the pill shows only when the scroller is off its bottom
+  var sc = document.getElementById('scrollA'), pill = document.getElementById('pillA');
+  function atBottom(){ return sc.scrollHeight - sc.scrollTop - sc.clientHeight < 24; }
+  function sync(){ pill.classList.toggle('on', !atBottom()); }
+  sc.addEventListener('scroll', sync);
+  pill.addEventListener('click', function(){ sc.scrollTo({top:sc.scrollHeight, behavior:'smooth'}); });
+  // R4 demo: Answer goes to the form, which is already the last row
+  document.querySelectorAll('[data-answer]').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.getElementById(b.dataset.answer)
+        .scrollIntoView({behavior:'smooth', block:'end'});
+    });
+  });
+  // every pane opens at its newest row
+  document.querySelectorAll('.shwscroll').forEach(function(el){ el.scrollTop = el.scrollHeight; });
+  sync();
+})();
+</script>
+</body>
+</html>

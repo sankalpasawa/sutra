@@ -265,19 +265,18 @@ function shadowChatKeys(){
 const SH_TASK = {
   brief_confirm: { label: "READY",    cls: "ready"   },
   running:       { label: "RUNNING",  cls: "running" },
-  /* THESE THREE CARRIED NO CLASS while the list printed the word beside the
-     dot. The word came off the row on 2026-09-19 and the dot became the only
-     thing saying which state a row is in -- so an empty class meant QUEUED,
-     PAUSED and DRAFT drew one identical grey dot between them. The pill
-     modifier `shtpill-<cls>` has no rule for any of these three, then or
-     now, so the one surviving pill is byte-identical. */
-  queued:        { label: "QUEUED",   cls: "queued"  },
-  paused:        { label: "PAUSED",   cls: "paused"  },
+  /* NO CLASS, DELIBERATELY: none of these three is work in flight and none
+     is asking for the founder, so they take the default face. (They were
+     given classes of their own for one day, 2026-09-19, while the row had
+     no pill and the dot was its only signal; the founder brought the pill
+     back on 2026-09-20 and the reason went with it.) */
+  queued:        { label: "QUEUED",   cls: ""        },
+  paused:        { label: "PAUSED",   cls: ""        },
   blocked:       { label: "NEEDS YOU", cls: "blocked" },
   done:          { label: "DONE",     cls: "done"    },
   failed:        { label: "FAILED",   cls: "failed"  },
   stopped:       { label: "STOPPED",  cls: "stopped" },
-  draft:         { label: "DRAFT",    cls: "draft"   },
+  draft:         { label: "DRAFT",    cls: ""        },
 };
 function shadowTaskFace(state){
   return SH_TASK[String(state || "")] || { label: String(state || ""), cls: "" };
@@ -352,6 +351,22 @@ function shadowTaskFaceFor(m){
    `running` is read from the FACE, not from m.state, so the two states that
    are not their own face (a founder-pause, an accepted-but-not-started) keep
    showing their real face and never spin. */
+/* THE LIVE COUNT, ON THE ONE LINE THAT NEVER SCROLLS (founder, 2026-09-20).
+   Same two numbers the brief card printed as `TURN | 2 of 25`, in the header
+   that stays put, written compactly because it sits beside the status pill
+   rather than in a key/value column.
+
+   SILENT WHEN THERE IS NOTHING TO COUNT: a draft with no budget yet would
+   otherwise read `0/0`, which looks like a task that has run out rather than
+   one that has not begun. */
+function shadowHeadTurnHtml(m){
+  const max = (m && m.max_turns) || 0;
+  if (!max) return "";
+  const now = (typeof shadowTurnNow === "function") ? shadowTurnNow(m) : 0;
+  return `<span class="shwturn" title="turn ${esc(String(now))} of ${
+    esc(String(max))}">${esc(String(now))}/${esc(String(max))}</span>`;
+}
+
 function shadowTaskPillHtml(face){
   const f = face || { label: "", cls: "" };
   const spin = f.cls === "running"
@@ -664,15 +679,22 @@ function shadowTaskListHtml(){
       type="button" data-shtask="${escAttr(m.id)}">
       <span class="shtaskdot d-${esc(f.cls)}" aria-hidden="true"></span>
       <span class="shtaskname">${esc(m.objective || "(no objective)")}</span>
-      ${/* NO PILL HERE ANY MORE (founder, 2026-09-19: "remove Running status
-           in 2 places, keep only 1"). The same word was printed three times
-           for one task -- this row, the brief card and the workspace header
-           -- and the header is the copy that survived, because it sits
-           beside the objective of the task actually in focus.
+      ${/* THE ROW KEEPS ITS PILL (founder, 2026-09-20, correcting the
+           2026-09-19 pass: "let's not remove showing status on the LHS ...
+           bring back the LHS list status like we had before").
 
-           THE DOT STILL CARRIES IT. `shtaskdot d-<cls>` is the same face
-           class the pill was built from, so the row keeps its state at a
-           glance and the list stops shouting it in words. */""}
+           WHAT THE TWO DIRECTIONS TOGETHER SAY. The duplication worth
+           removing was the RIGHT pane's -- the brief card printed the same
+           word the header printed, about the same task, forty pixels apart.
+           The LIST is not that: it is the one place a founder reads the
+           state of every OTHER task, the ones the header can never speak
+           for. So the card's pill is gone and this one is back.
+
+           The dot beside it keeps the face classes added on 2026-09-19 --
+           queued, paused and draft had none -- which costs nothing and
+           leaves the row readable at a glance even where the name is long
+           enough to crowd the word. */""}
+      ${shadowTaskPillHtml(f)}
     </button>
       <button class="shtaskdel" type="button"
         data-shtaskdel="${escAttr(m.id)}"
@@ -3038,9 +3060,12 @@ function shadowTaskCardHtml(m){
          The meter came off the brief; the numbers it was drawn from are
          exactly the ones still printed here. shadowBudgetPct / SevbarHtml,
          the thresholds and turn counting itself are all untouched. */""}
-    <div class="shcard2row"><span class="shcard2k">turn</span>
-      <span class="shcard2v">${esc(String(shadowTurnNow(m)))} of ${
-        esc(String(m.max_turns || 0))}</span></div>
+    ${/* THE TURN ROW MOVED TO THE HEADER (founder, 2026-09-20). It is the
+         one fact on this card that CHANGES while you read -- and the card
+         now scrolls away with the conversation, so a live count sitting in
+         it would be invisible for exactly the long run it matters on. The
+         header is the pane's one pinned line; shadowTurnNow and max_turns
+         are unchanged, and shadowHeadTurnHtml is their only new reader. */""}
     ${/* WHY IT IS WAITING, ON THE CARD THE FOUNDER ACTUALLY OPENS.
 
          The QUEUED pill says the state; it does not say the cause, and the
@@ -3836,6 +3861,7 @@ function shadowHomeHtml(){
         <h2 class="shwtitle">${newOpen ? "New task"
           : esc((sel && sel.objective) || "Shadow")}</h2>
         <div class="shwheadacts">
+          ${!newOpen && sel ? shadowHeadTurnHtml(sel) : ""}
           ${!newOpen && face ? shadowTaskPillHtml(face) : ""}
           ${/* THE WORKER CHAT LIVES BEHIND THIS BUTTON AND NOWHERE ELSE.
                Same data-shtakeover hook and same target_session it has
@@ -3856,7 +3882,11 @@ function shadowHomeHtml(){
       ${newOpen ? (shadowFormOn() ? shadowDelegatePanelHtml()
                                   : `<div class="shnewhost"
                                        data-shnewhost="1"></div>`)
-                : (sel ? shadowTaskCardHtml(sel) : "")}
+                : ""}
+      ${/* THE BRIEF IS NO LONGER PINNED HERE -- it is the first message of
+           the conversation, inside the scroller below (founder, 2026-09-20:
+           "way too complicated with many scroll bars ... make it like a long
+           interactive chat"). See the block above .shwscroll. */""}
       ${/* ── ONE SCROLLER, AND IT IS THE CONVERSATION (founder, 2026-09-18)
            THE PROBLEM. `.pb` (#scBody) scrolls the whole screen, so reading
            back through a long delegation carried the objective and the brief
@@ -3882,6 +3912,31 @@ function shadowHomeHtml(){
            block, outside it, always reachable. */""}
       <div class="shwscroll"${sel && !newOpen
         ? ` data-shscroll="${escAttr(sel.id)}"` : ""}>
+      ${/* ── MESSAGE ZERO (founder, 2026-09-20) ──────────────────────────
+           THE REPORT: "way too complicated with many scroll bars ... let's
+           make it like a long interactive chat".
+
+           WHAT WAS COMPLICATED. Five regions of this pane declared their own
+           overflow -- the task list, the brief card, the conversation, a turn
+           log and the done summary -- and up to four could be on screen at
+           once. Every one of them was a correct local fix; their SUM is that
+           nothing tells you which box your wheel is about to move.
+
+           THE BRIEF WAS ALREADY A MESSAGE. "here is the task, here is where
+           it runs, here is what done means" is the opening line of the
+           conversation, and it was drawn as a pinned form above it with a
+           32% cap and a scrollbar of its own -- so on a short pane the
+           founder scrolled a brief inside a pane inside a screen.
+
+           IT IS THE FIRST ROW OF THE THREAD NOW. It scrolls with everything
+           else and it clips nothing, so the Confirm buttons the cap existed
+           to keep reachable are simply always at their full height.
+
+           WHAT STAYS PINNED IS THE HEADER, which is what the 2026-09-18
+           change was actually protecting: the objective, the state and --
+           new, below -- the live turn count never leave the screen, so
+           reading back through twenty turns still has its anchor. */""}
+      ${newOpen || !sel ? "" : shadowTaskCardHtml(sel)}
       ${newOpen || !sel ? "" : shadowTimelineHtml(sel)}
       ${/* the founder's answer is INSIDE the timeline now, at the point it
            happened -- drawing it here as well would be the same card twice */""}

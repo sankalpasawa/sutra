@@ -73,14 +73,15 @@ function surfaces(state, extra){
            header: ctx.shadowHomeHtml() };
 }
 
-/* ONE SURFACE SINCE 2026-09-19, not three. The founder took the pill off the
-   list row and the detail card -- "remove Running status in 2 places, keep
-   only 1" -- so the ring has exactly one place left to be, and the other two
-   are asserted to carry no pill at all rather than a still one. The rule the
-   original three-surface sweep protected is intact and cheaper to hold: one
-   printer, one caller. */
-const SURFACES = ["header"];
-const NO_PILL = ["list", "card"];
+/* TWO SURFACES SINCE 2026-09-20, not three. The founder removed the pill
+   from the DETAIL CARD -- it said the same word the header said, about the
+   same task, forty pixels apart -- and kept it on the list row, which is
+   where the state of every OTHER task is read ("let's not remove showing
+   status on the LHS ... bring back the LHS list status"). So the ring has
+   two places to be and must be on both; the card is asserted to carry no
+   pill at all rather than a still one. */
+const SURFACES = ["list", "header"];
+const NO_PILL = ["card"];
 
 /* 1. the ask itself, on every surface that shows a status */
 {
@@ -90,8 +91,8 @@ const NO_PILL = ["list", "card"];
   for (const k of NO_PILL)
     assert(!/shtpill/.test(r[k]), k + " must no longer print a pill at all");
   assert(/shtaskdot d-running/.test(r.list),
-    "…and the list row says running through its dot");
-  console.log("ok 1 running spins on the one surface that still has a pill");
+    "…and the list row carries the running dot beside its pill");
+  console.log("ok 1 running spins on both surfaces that still have a pill");
 }
 
 /* 2. inside the pill and BEFORE the word -- the ring is part of the status,
@@ -139,8 +140,14 @@ const NO_PILL = ["list", "card"];
   for (const state of ["running", "blocked", "done", "stopped", "failed",
                        "queued"]){
     const h = surfaces(state);
-    assert.strictEqual((h.header.match(/class="shtpill /g) || []).length, 1,
-      state + ": the workspace must draw exactly one pill");
+    /* COUNTED IN THE HEADER ITSELF, not across the screen: whether the row
+       is ALSO in the list is shadowTaskIsActive's business and varies by
+       state (a machine `stopped` leaves it). What this asserts is the rule
+       the founder gave -- the pane in focus says the state once. */
+    const head = (h.header.match(/<header class="shwhead">[\s\S]*?<\/header>/)
+                  || [""])[0];
+    assert.strictEqual((head.match(/class="shtpill /g) || []).length, 1,
+      state + ": the task header must say the state exactly once");
     assert(!/shtpill/.test(h.card),
       state + ": the card must not draw a second one");
   }

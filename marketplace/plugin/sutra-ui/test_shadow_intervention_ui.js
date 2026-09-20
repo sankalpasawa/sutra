@@ -73,7 +73,11 @@ const card = (ctx, m) =>
   const ctx = fresh();
   const h = card(ctx, mission(null));
   assert(!/shiv/.test(h), "a mission with no intervention must gain nothing");
-  assert(/>turn</.test(h) && /done when/.test(h), "the brief still renders");
+  /* `where it runs` rather than `turn`: the count moved to the pinned
+     header on 2026-09-20 when the brief became the first message of the
+     conversation. The brief itself renders exactly as it did. */
+  assert(/where it runs/.test(h) && /done when/.test(h),
+    "the brief still renders");
   console.log("ok 1 no intervention -> the card is unchanged");
 }
 

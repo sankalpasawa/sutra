@@ -133,8 +133,10 @@ function pane(ctx, m, extra){
   const h = pane(ctx, M());
   assert(/shcard2k">where it runs</.test(h), "WHERE IT RUNS row missing");
   assert(/shcard2k">done when</.test(h), "DONE WHEN row missing");
-  assert(/shcard2k">turn<\/span>\s*<span class="shcard2v">10 of 12/.test(h),
-    "TURN row must read 10 of 12, from the record");
+  /* the turn count left the card for the pinned header on 2026-09-20 (shadowHeadTurnHtml) -- the card scrolls with the conversation now, and a LIVE number may not scroll away */
+  assert(/class="shwturn"[^>]*>10\/12</.test(h),
+    "the header must read 10/12, from the record");
+  assert(!/shcard2k">turn</.test(h), "…and the brief must not repeat it");
   assert(/its own chat/.test(h), "where it runs still resolves the target");
   assert(/a tested PR is open/.test(h), "done_when still comes from the record");
   /* and nothing else: no STOPPED ON, no LAST UPDATED, no floors */
@@ -689,8 +691,10 @@ const askMission = (over, checks, fields) => M(Object.assign({
   assert.strictEqual(h.split(C_README).length - 1, 1,
     "the criterion must appear exactly once, in the sign-off row");
   assert(/Yes signs off/.test(h), "and it is the sign-off that carries it");
-  assert(/shcard2k">where it runs</.test(h) && /shcard2k">turn</.test(h),
+  assert(/shcard2k">where it runs</.test(h),
     "the rest of the brief is untouched");
+  assert(/class="shwturn"/.test(h),
+    "…and the count is on the header, where it moved on 2026-09-20");
 
   /* TWO unmet, the ask signs ONE -> the row stays, because it still says
      something the ask does not */

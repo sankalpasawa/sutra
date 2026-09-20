@@ -299,9 +299,20 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
     "exactly one scroll region");
   const iScroll = h.indexOf('class="shwscroll"');
 
-  /* ORDER: head and card BEFORE it, so they cannot be inside it */
+  /* ORDER: the HEAD before it, so it cannot be inside it. The BRIEF CARD is
+     inside it now (founder, 2026-09-20: "many scroll bars ... make it like a
+     long interactive chat") -- it was the second pinned block, with a 32%
+     cap and a scrollbar of its own, and it is the conversation's first
+     message instead. What the 2026-09-18 pinning was protecting is the
+     anchor, and the header still provides it: objective, state, and now the
+     live turn count. */
   assert(h.indexOf('class="shwhead"') < iScroll, "the outcome is pinned above");
-  assert(h.indexOf('class="shcard2') < iScroll, "the brief card is pinned above");
+  assert(h.indexOf('class="shcard2') > iScroll,
+    "the brief is the first message INSIDE the conversation");
+  assert(h.indexOf('class="shcard2') < h.indexOf('class="shtimeline"'),
+    "...and it is FIRST: the brief opens the thread it belongs to");
+  assert(/class="shwturn"/.test(h),
+    "the live turn count moved to the pinned header");
 
   /* the conversation is INSIDE it */
   assert(h.indexOf('class="shtimeline"') > iScroll,
@@ -329,6 +340,11 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
     [/\.shwright>\.shwhead[^{]*\{[^}]*flex:0 0 auto/,
      "the pinned children need flex-shrink:0 -- a flex item shrinks by "
      + "default, so a long objective would give up height and creep upward"],
+    [/\.shwscroll>\.shcard2\{[^}]*overflow:visible/,
+     "the brief must not keep a scrollbar of its own inside the scroller -- "
+     + "a box that scrolls inside a box is the thing being removed"],
+    [/\.shwscroll>\.shcard2\{[^}]*max-height:none/,
+     "...nor a cap, which is what made it clip and need that scrollbar"],
   ];
   for (const [re, why] of need) assert(re.test(css), why);
 
@@ -339,7 +355,7 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
   /* and .pb -- shared by every other screen -- is NOT touched */
   assert(!/\.shwork[^{]*\.pb|\.pb[^{]*\{[^}]*shwork/.test(css),
     "the fix must not reach into .pb, which every screen shares");
-  pass("8: outcome + card pinned, conversation scrolls, composer stays");
+  pass("8: outcome pinned, brief opens the conversation, composer stays");
 }
 
 /* ══ 9. NEEDS YOU MUST NOT EAT THE CONVERSATION ═══════════════════════════
@@ -367,15 +383,16 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
  *     Turn 1 every time the delegate speaks
  */
 {
+  /* THE CARD IS NO LONGER A COMPETITOR AT ALL (founder, 2026-09-20). The
+     three rules that stood here -- shrinkable, self-scrolling, capped --
+     were how a PINNED brief was stopped from starving the conversation.
+     The brief is inside the conversation now, so it cannot take height from
+     it by construction, and the cure went with the disease. What survives
+     is the pair below: the question pinned under the scroller is still a
+     competitor, and the scroller must still hold a floor against it. */
   const need = [
-    [/\.shwright>\.shcard2\{[^}]*flex:0 1 auto/,
-     "the brief card must be SHRINKABLE -- flex:0 0 auto is what let it "
-     + "starve the conversation to zero in NEEDS YOU"],
-    [/\.shwright>\.shcard2\{[^}]*overflow-y:auto/,
-     "a card shorter than its content must scroll, or the Confirm buttons "
-     + "on the sign-off list become unreachable"],
-    [/\.shwright>\.shcard2\{[^}]*max-height:/,
-     "the card needs a cap on its share of the pane"],
+    [/\.shwscroll>\.shcard2\{[^}]*flex:none/,
+     "the brief, inside the scroller, must size to its own content"],
     [/\.shwright>\.shwscroll\{[^}]*min-height:min\(/,
      "the conversation needs a FLOOR, expressed as a min() so the floor "
      + "itself cannot push the composer off a short pane"],
@@ -384,11 +401,14 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
      + "proportional shrink had the card scrolling on a roomy window"],
   ];
   for (const [re, why] of need) assert(re.test(css), why);
-  /* the card must no longer be in the never-shrink list */
+  /* the card must no longer be in the never-shrink list -- nor in any of
+     .shwright's direct-child rules, since it is not a direct child now */
   const pinned = css.match(/\.shwright>\.shwhead[^{]*\{flex:0 0 auto\}/);
   assert(pinned, "the pinned rule still exists");
   assert(pinned[0].indexOf("shcard2") === -1,
     "the brief card must NOT be in the flex:0 0 auto list any more");
+  assert(!/\.shwright>\.shcard2\{/.test(css),
+    "the brief is not a direct child of the pane any more");
 
   /* THE HOOK. The scroller names the mission it is showing, so a rebuild can
      tell "same conversation, keep the founder's place" from "different task,
@@ -408,8 +428,9 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
   const h = ctx.shadowHomeHtml();
   assert(/class="shwscroll" data-shscroll="m-9"/.test(h),
     "the scroller carries the mission it is drawn for");
-  /* the check rows ARE on the card -- this test is about the card being able
-     to yield, not about moving the sign-off list somewhere else */
+  /* the check rows ARE still on the card, wherever the card lives -- this
+     block is about the conversation keeping its height, not about moving
+     the sign-off list somewhere else */
   assert(h.indexOf('class="shconfirm"') !== -1, "NEEDS YOU still signs off");
   ctx.S.shadowNewOpen = true;
   assert(!/data-shscroll/.test(ctx.shadowHomeHtml()),
@@ -694,10 +715,13 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
      "a six-field question needs a cap or it starves the turns"],
     [/\.shwright>\.shiv\{[^}]*overflow-y:auto/,
      "a capped form must scroll, or Send becomes unreachable"],
-    [/\.shwright>\.shcard2\{[^}]*max-height:32%/,
-     "the card's cap came down so the conversation is at least its equal"],
+    /* THE CARD'S CAP IS GONE, NOT LOWERED (founder, 2026-09-20): the brief
+       moved inside the conversation, so there is no longer a third block
+       bidding for the pane's height -- only the question below it, which is
+       what the two rules above cap. The floor stays: it is what the
+       question yields to. */
     [/\.shwright>\.shwscroll\{[^}]*min-height:min\(220px/,
-     "the conversation's floor went up with it"],
+     "the conversation's floor must hold against the pinned question"],
   ];
   for (const [re, why] of need) assert(re.test(css), why);
   /* .shwright>.shiv must come AFTER .shwright .shiv -- same specificity, so

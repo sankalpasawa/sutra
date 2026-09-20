@@ -615,17 +615,18 @@ console.log("ok 6 controls wired");
     { id: "m-e", objective: "failed one",  state: "failed" },
   ];
   const h = ctx.shadowHomeHtml();
-  /* THE STATE IS ON THE ROW, IT IS NO LONGER THE WORD (founder,
-     2026-09-19). Every row used to carry a pill; the one pill left on this
-     screen is the header's, for the task in focus. So the five states are
-     asserted where they still live -- the dot's face class, which is what
-     the pill was always built from -- plus the header's word for the
-     selected one. Same five states, same source, one surface. */
-  ["ready", "running", "queued", "blocked", "failed"].forEach(c =>
+  /* the LIST keeps its pill (founder, 2026-09-20): the duplication that was
+     worth removing is the RIGHT pane's -- card and header saying the same
+     word about the same task -- not the list, which is where the founder
+     reads the state of every OTHER task. So every state is still named in words on its row, and the dot
+     carries the same face class beside it. */
+  ["READY", "RUNNING", "QUEUED", "NEEDS YOU", "FAILED"].forEach(p =>
+    assert(new RegExp(">" + p + "<").test(h), "status pill missing: " + p));
+  /* the dot carries the states that HAVE a face colour; queued, paused and
+     draft take the default grey and are named by the pill beside them. */
+  ["ready", "running", "blocked", "failed"].forEach(c =>
     assert(new RegExp('shtaskdot d-' + c).test(h),
       "status dot missing: " + c));
-  assert.strictEqual((h.match(/shtpill /g) || []).length, 1,
-    "the pill survives exactly once, in the workspace header");
   assert(/data-shtask="m-a"/.test(h), "task rows are not selectable");
   /* the empty state says what to do, rather than nothing */
   const ctx2 = fresh();
@@ -1267,14 +1268,14 @@ const AWAITING = {
   const h = ctx.shadowHomeHtml();
   assert(!/>PAUSED</.test(h),
     "waiting on the founder must not read as a stalled task");
-  /* ONCE, NOT TWICE (founder, 2026-09-19). This asserted the word in the
-     list row AND the header, back when a task's state was printed on three
-     surfaces. The state the founder must not miss is the same one; it is
-     said once, in the header, and the row carries it as the blocked dot. */
-  assert.strictEqual((h.match(/>NEEDS YOU</g) || []).length, 1,
-    "NEEDS YOU is said once, in the task header");
+  /* TWICE, NOT THREE TIMES (founder, 2026-09-20). The list row and the
+     header both say it -- they speak for different things, the row for this
+     task among all the others and the header for the one in focus. The
+     BRIEF CARD's third copy is the one that went. */
+  assert.strictEqual((h.match(/>NEEDS YOU</g) || []).length, 2,
+    "NEEDS YOU on the list row and the task header");
   assert(/shtaskdot d-blocked/.test(h),
-    "…and the list row still shows it as the blocked dot");
+    "…and the row carries the blocked dot beside it");
   assert(/shtpill-blocked/.test(h), "it wears the needs-you pill family");
   /* a mission paused for any OTHER reason is untouched */
   ctx.S.shadowMissions = [{ id: "m-r", objective: "x", state: "paused",
@@ -3043,14 +3044,10 @@ const SET = { engage: ["outcome first"],
     assert(h.indexOf('data-shtaskdel="' + m.id + '"') !== -1,
       "no remove control on row " + m.id);
   });
-  /* the selector button is untouched: same hook, same spans -- TWO of them
-     since 2026-09-19, when the founder took the status pill off the row.
-     The dot and the name are what is left, and losing either is still the
-     regression this line exists to catch. */
+  /* the selector button is untouched: same hook, same three spans */
   assert(/data-shtask="m-1"/.test(h), "the row selector hook was lost");
-  assert(/shtaskdot/.test(h) && /shtaskname/.test(h),
-    "the row lost one of its two spans");
-  assert(!/shtpill/.test(h), "the row's status pill did not come off");
+  assert(/shtaskdot/.test(h) && /shtaskname/.test(h) && /shtpill/.test(h),
+    "the row lost one of its three spans");
   /* a button may not contain a button: the delete control must be a SIBLING
      of the selector, not inside it */
   const rowStart = h.indexOf('data-shtask="m-1"');
@@ -3197,12 +3194,9 @@ const SET = { engage: ["outcome first"],
     "a started task must read as the existing QUEUED state");
   /* the LIST agrees with the card -- one predicate, both surfaces */
   const list = ctx.shadowTaskListHtml();
-  /* THE LIST AGREES THROUGH THE DOT NOW (2026-09-19): the pill came off the
-     row, and the face class the pill was built from is what the dot wears.
-     Same predicate, same two rows, one surface each. */
-  assert(/shtaskdot d-ready/.test(list), "the READY row lost its face");
-  assert(/shtaskdot d-queued/.test(list),
-    "the started row must read as QUEUED in the list, not as READY");
+  /* the LIST agrees with the card -- one predicate, both surfaces */
+  assert(/shtpill-ready[^>]*>READY/.test(list), "the READY row lost its pill");
+  assert(/QUEUED/.test(list), "the started row still reads READY in the list");
   /* and the compact in-thread card, which draws Start too */
   assert(!/data-shstart="m-s"/.test(ctx.missionCardHtml(started)),
     "the in-thread mission card still offers Start");
@@ -3349,8 +3343,11 @@ const SET = { engage: ["outcome first"],
      are untouched */
   /* the row is `TURN | 1 of 20` now: the key carries the word, the value
      carries the count, and the meter beside it is unchanged. */
-  assert(/shcard2k">turn<\/span>\s*<span class="shcard2v">1 of 20/.test(live),
-    "the budget row must survive");
+  /* the turn count left the card for the pinned header on 2026-09-20 (shadowHeadTurnHtml) -- the card scrolls with the conversation now, and a LIVE number may not scroll away */
+  assert(!/shcard2k">turn</.test(live), "the card's turn row moved out");
+  assert(/>1\/20</.test(ctx.shadowHeadTurnHtml(
+    Object.assign({ turns_used: 0, turn_open: 1, max_turns: 20 }))),
+    "…and the header prints the same two numbers");
   /* THE CARD'S PILL IS GONE ON PURPOSE (2026-09-19) -- it said the same word
      the workspace header says, about the same task, forty pixels apart. What
      this block is about, the facts BESIDE it, is what must survive. */
@@ -3442,11 +3439,16 @@ const SET = { engage: ["outcome first"],
   assert.strictEqual(s(pct({ turns_used: 30, max_turns: 20 })), "p-block",
     "turns_used past max_turns is critical, not wrapped or negative");
 
-  /* THE CARD PRINTS THE COUNT AND NOTHING ELSE. The bar came off the brief;
-     the numbers it was drawn from are exactly the ones still printed. */
-  const live = card({ turns_used: 5, max_turns: 20 });
-  assert(/shcard2k">turn<\/span>\s*<span class="shcard2v">5 of 20/.test(live),
-    "the TURN row must still print the count, straight from the record");
+  /* THE HEADER PRINTS THE COUNT AND NOTHING ELSE. The bar came off the brief
+     in 2026-09-15 and the numbers followed it to the pinned header on
+     2026-09-20, when the brief became the conversation's first message --
+     they are still the same two numbers, read from the same record. */
+  const five = { turns_used: 5, max_turns: 20 };
+  const live = card(five);          /* the blocks below read this card too */
+  assert(!/shcard2k">turn</.test(live),
+    "the brief no longer counts turns");
+  assert(/>5\/20</.test(ctx.shadowHeadTurnHtml(five)),
+    "the header must print the count, straight from the record");
   assert.strictEqual(bar(live), "", "the card must draw no track");
   assert(!/ubar|shcard2bar/.test(live), "and no meter markup of any kind");
   assert(!/turns left/.test(live), "nor the meter's words");
@@ -3482,9 +3484,12 @@ const SET = { engage: ["outcome first"],
   /* NO CEILING, NO BAR: the row keeps the text it has always had */
   assert.strictEqual(meter({ turns_used: 4, max_turns: 0 }), "",
     "with no stated ceiling the meter draws no track, not a full one");
-  const unbounded = card({ turns_used: 4, max_turns: 0 });
-  assert(/shcard2k">turn<\/span>\s*<span class="shcard2v">4 of 0/.test(unbounded),
-    "and the budget row itself is untouched");
+  /* AND THE HEADER SAYS NOTHING RATHER THAN `4/0` (2026-09-20). With the
+     count on the pinned line there is no key column to carry the word, so a
+     mission with no stated ceiling prints no count at all -- `4/0` reads as
+     a task that has run out, which is the opposite of what it means. */
+  assert.strictEqual(ctx.shadowHeadTurnHtml({ turns_used: 4, max_turns: 0 }),
+    "", "no ceiling, no count");
 
   /* it is an addition to a row, not a replacement for the card: the facts
      around it survive */
@@ -3511,9 +3516,9 @@ const SET = { engage: ["outcome first"],
   assert.strictEqual(now({ turns_used: 5, turn_open: 3 }), 5,
     "a stale open turn can never DROP the count backwards");
   assert.strictEqual(now({}), 0, "an empty record is zero, not NaN");
-  const inflight = card({ turns_used: 5, turn_open: 6, max_turns: 20 });
-  assert(/shcard2k">turn<\/span>\s*<span class="shcard2v">6 of 20/.test(inflight),
-    "the card must print the in-flight turn");
+  const inflight = { turns_used: 5, turn_open: 6, max_turns: 20 };
+  assert(/>6\/20</.test(ctx.shadowHeadTurnHtml(inflight)),
+    "the header must print the in-flight turn");
   /* THE BUDGET IS DELIBERATELY NOT MOVED: max_turns is compared against
      turns_used in the engine, and a meter disagreeing with the thing that
      ends the mission would be the worse of the two bugs. */
@@ -4113,8 +4118,13 @@ const TURN_M = (over) => Object.assign({ id: "m-turn", objective: "ship it",
   over);
 const OVERLAY_TURNS = (h) => (h.match(/shturns">([^<]*)</) || [])[1];
 /* the card's row reads `turn | N of MAX`; take the N */
-const CARD_TURN = (h) =>
-  (h.match(/shcard2k">turn<\/span>\s*<span class="shcard2v">(\d+) of /) || [])[1];
+/* THE WORKSPACE'S COUNT, wherever it is printed. It was a row on the brief
+   card; since 2026-09-20 the brief is the conversation's first message and
+   the count is on the pane's pinned header, so this reads shadowHeadTurnHtml
+   -- the same two numbers from the same record. Takes the MISSION now, not
+   the card's html, because the printer is a different one. */
+const CARD_TURN = (ctx, m) =>
+  (ctx.shadowHeadTurnHtml(m).match(/>(\d+)\/\d+</) || [])[1];
 
 /* 39a. an open turn is the turn being worked, on both surfaces */
 {
@@ -4124,7 +4134,7 @@ const CARD_TURN = (h) =>
   assert.strictEqual(ctx.shadowTurnNow(m), 2, "the reader names the open turn");
   assert.strictEqual(OVERLAY_TURNS(ctx.missionCardHtml(m)), "2/12",
     "the overlay card must show the turn in flight");
-  assert.strictEqual(CARD_TURN(ctx.shadowTaskCardHtml(m)), "2",
+  assert.strictEqual(CARD_TURN(ctx, m), "2",
     "the workspace card must agree");
   console.log("ok 39a overlay and card both name the open turn");
 }
@@ -4137,7 +4147,7 @@ const CARD_TURN = (h) =>
     const m = TURN_M(over);
     assert.strictEqual(OVERLAY_TURNS(ctx.missionCardHtml(m)), "1/12",
       "overlay fallback: " + JSON.stringify(over));
-    assert.strictEqual(CARD_TURN(ctx.shadowTaskCardHtml(m)), "1",
+    assert.strictEqual(CARD_TURN(ctx, m), "1",
       "card fallback: " + JSON.stringify(over));
   }
   console.log("ok 39b both fall back to the finished count");
@@ -4152,7 +4162,7 @@ const CARD_TURN = (h) =>
   const m = TURN_M({ turns_used: 5, turn_open: 3 });
   assert.strictEqual(ctx.shadowTurnNow(m), 5);
   assert.strictEqual(OVERLAY_TURNS(ctx.missionCardHtml(m)), "5/12");
-  assert.strictEqual(CARD_TURN(ctx.shadowTaskCardHtml(m)), "5");
+  assert.strictEqual(CARD_TURN(ctx, m), "5");
   console.log("ok 39c a stale lower value never moves the count back");
 }
 
@@ -4190,7 +4200,7 @@ const CARD_TURN = (h) =>
     assert.strictEqual(String(ctx.shadowTurnNow(m)), want, what);
     assert.strictEqual(OVERLAY_TURNS(ctx.missionCardHtml(m)), want + "/25",
       "overlay at: " + what);
-    assert.strictEqual(CARD_TURN(ctx.shadowTaskCardHtml(m)), want,
+    assert.strictEqual(CARD_TURN(ctx, m), want,
       "card at: " + what);
   }
   console.log("ok 39e the whole turn sequence reads correctly on both");
@@ -4209,7 +4219,7 @@ const CARD_TURN = (h) =>
   assert.strictEqual(ctx.shadowTurnNow(last), 25, "the final turn is 25");
   assert.strictEqual(OVERLAY_TURNS(ctx.missionCardHtml(last)), "25/25",
     "the overlay must read 25/25 on the last turn");
-  assert.strictEqual(CARD_TURN(ctx.shadowTaskCardHtml(last)), "25",
+  assert.strictEqual(CARD_TURN(ctx, last), "25",
     "…and the workspace card must agree");
   /* the same turn once it has landed: the count does not move again */
   const spent = TURN_M({ turns_used: 25, turn_open: null, max_turns: 25 });
@@ -4233,8 +4243,10 @@ const CARD_TURN = (h) =>
     const m = TURN_M({ turns_used: 0, turn_open: 1, max_turns: max });
     assert.strictEqual(OVERLAY_TURNS(ctx.missionCardHtml(m)), "1/" + max,
       "overlay must use the mission's max_turns (" + max + ")");
-    assert(new RegExp("1 of " + max).test(ctx.shadowTaskCardHtml(m)),
-      "card must use the mission's max_turns (" + max + ")");
+    assert.strictEqual(
+      (ctx.shadowHeadTurnHtml(m).match(/>([0-9]+\/[0-9]+)</) || [])[1],
+      "1/" + max,
+      "the header must use the mission's max_turns (" + max + ")");
   }
   console.log("ok 39f the displayed budget is the mission's own max_turns");
 }
@@ -4260,19 +4272,18 @@ const CARD_TURN = (h) =>
 
   const row = ctx.shadowTaskListHtml();
   assert(/shtaskrow/.test(row), "the row still renders");
-  assert(!/shtpill/.test(row), "the list row may not print a status pill");
-  assert(/shtaskdot d-running/.test(row),
-    "the dot still carries the state the pill used to say");
+  assert(/shtpill/.test(row), "the list row keeps its status pill");
+  assert(/shtaskdot d-running/.test(row), "…and its dot");
 
   assert(!/shtpill/.test(ctx.shadowTaskCardHtml(run)),
-    "the brief card may not print a status pill either");
+    "the brief card may not print a status pill");
 
   const home = ctx.shadowHomeHtml();
-  assert.strictEqual((home.match(/shtpill /g) || []).length, 1,
-    "exactly one status pill on the whole workspace");
+  assert.strictEqual((home.match(/shtpill /g) || []).length, 2,
+    "one pill per list row, plus the header's -- and none on the brief");
   assert(/shwhead[\s\S]*shtpill/.test(home),
-    "…and it is the header's");
-  console.log("ok 40 one status pill, in the workspace header");
+    "…and one of them is the header's");
+  console.log("ok 40 the brief lost its pill; the list and the header keep theirs");
 }
 
 {
