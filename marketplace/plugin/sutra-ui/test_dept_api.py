@@ -1014,6 +1014,326 @@ def test_audit_404s_on_an_unknown_department():
         assert exc.value.status_code == 404
 
 
+# ---------------------------------------------------------------- S49-S52 --
+# The engines: the routines that run in the department's folder, their runs,
+# what they filed, and the one ask this screen files of its own.
+
+
+def _runs_index(tmp, rid, rows):
+    """The run index routines.py appends to (routines.py:112, 729): one JSON
+    row per line under the run store. Written here, never through run_now()."""
+    d = tmp / "runs" / rid
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "index.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    return d
+
+
+def _run_row(rid, started, ended="2026-09-20T04:00:00+05:30", outcome="ok",
+             trigger="schedule", duration=120.0):
+    row = {"schema": 1, "id": rid, "trigger": trigger, "started_at": started,
+           "outcome": outcome, "duration_s": duration}
+    if ended:
+        row["ended_at"] = ended
+    return row
+
+
+def _workflow(tmp, wid, steps):
+    d = tmp / "workflows"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / (wid + ".json")).write_text(json.dumps(
+        {"id": wid, "title": wid + " title", "goal": "do the thing",
+         "steps": steps}), encoding="utf-8")
+
+
+def test_engines_list_names_each_routine_under_the_department():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        inside = tmp / "inside"
+        inside.mkdir()
+        outside = Path(os.path.realpath(str(tmp.parent))) / ("out-" + tmp.name)
+        outside.mkdir()
+        try:
+            _routine("in-here", inside, description="Nightly sweep")
+            _routine("elsewhere", outside, description="Another sweep")
+            rows = M.engines(a)["engines"]
+            assert [r["id"] for r in rows] == ["in-here"], \
+                "a routine whose folder is outside is another department's"
+            assert rows[0]["name"] == "Nightly sweep"
+            assert set(rows[0]) == {
+                "id", "name", "state", "enabled", "cwd", "runs_as", "cadence",
+                "made_by", "needs", "makes", "read_by", "workflow", "prompt"}
+        finally:
+            for f in outside.glob("*"):
+                f.unlink()
+            outside.rmdir()
+
+
+def test_engines_list_state_word_is_paused_running_or_idle():
+    """A18: the word is DERIVED -- `enabled` and the run lock are the whole
+    answer, and a paused engine holding a stale lock is paused, not running."""
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("idle-one", tmp, description="Idle sweep")
+        _routine("busy-one", tmp, description="Busy sweep")
+        _routine("off-one", tmp, description="Off sweep", enabled=False)
+        _lock(tmp, "busy-one")
+        _lock(tmp, "off-one")
+        got = {r["id"]: r["state"] for r in M.engines(a)["engines"]}
+        assert got == {"idle-one": "idle", "busy-one": "running",
+                       "off-one": "paused"}
+
+
+def test_engines_list_reads_a_run_with_no_end_as_running():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("live-one", tmp, description="Live sweep")
+        _runs_index(tmp, "live-one",
+                    [_run_row("live-one", "2026-09-20T03:00:00+05:30", ended=None)])
+        assert M.engines(a)["engines"][0]["state"] == "running"
+
+
+def test_engines_list_is_empty_above_the_machine_and_never_raises():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("in-here", tmp)
+        assert M.engines(root)["engines"] == [], "PRD F-3: nothing to attribute"
+
+
+def test_engines_list_reads_without_writing_anything():
+    """The drift stated in dept_api's ENGINES header: routines.state() writes a
+    .heartbeat file and shells launchctl, so it is not called. Pin that the
+    read leaves the routine store exactly as it found it."""
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("in-here", tmp, description="Nightly sweep")
+        before = sorted(p.name for p in (tmp / "routines").iterdir())
+        M.engines(a)
+        assert sorted(p.name for p in (tmp / "routines").iterdir()) == before
+        code = [l for l in (HERE / "dept_api.py").read_text(encoding="utf-8").splitlines()
+                if not l.lstrip().startswith("#")]
+        assert not any("routines.state(" in l for l in code), \
+            "the ENGINES header says state() is not called -- keep it that way"
+
+
+def test_engines_list_404s_on_an_unknown_department():
+    import fastapi
+    with _fresh() as (M, E, tmp):
+        _tree(E, tmp)
+        with __import__("pytest").raises(fastapi.HTTPException) as exc:
+            M.engines("no-such-ref")
+        assert exc.value.status_code == 404
+
+
+def test_engines_list_cadence_is_the_records_own_sentence():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        rec = _routine("in-here", tmp)
+        assert M.engines(a)["engines"][0]["cadence"] == rec["schedule"]["human"]
+
+
+def test_engines_list_workflow_is_the_one_its_instruction_names():
+    """A19: no routine record references a workflow, so the join is the
+    engine's own instruction naming one -- and nothing looser."""
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _workflow(tmp, "W-sweep", [{"id": "S1", "name": "read the folder",
+                                    "produces": ["a list"], "verify": "the list exists"}])
+        import routines
+        rec = _routine("named-one", tmp, description="Named sweep")
+        rec["prompt"] = "run W-sweep over the department"
+        routines.save(rec)
+        _routine("plain-one", tmp, description="Plain sweep")
+        got = {r["id"]: (r["workflow"] or {}).get("id") for r in M.engines(a)["engines"]}
+        assert got == {"named-one": "W-sweep", "plain-one": None}
+        flow = [r for r in M.engines(a)["engines"] if r["id"] == "named-one"][0]["workflow"]
+        assert [s["name"] for s in flow["steps"]] == ["read the folder"]
+
+
+def test_engines_list_makes_prefers_what_was_filed_over_what_was_declared():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _workflow(tmp, "W-sweep", [{"id": "S1", "name": "sweep",
+                                    "produces": ["a list"], "verify": "x"}])
+        import routines
+        rec = _routine("named-one", tmp, description="Named sweep")
+        rec["prompt"] = "run W-sweep"
+        routines.save(rec)
+        rows = M.engines(a)["engines"]
+        assert rows[0]["makes"] == ["a list"], "the declaration, until something is filed"
+        assert rows[0]["needs"] is None and rows[0]["read_by"] is None, \
+            "no record names either -- the card says so in a quiet line"
+        cid = _charter(E, a, "Own the sweep")
+        E.write_placement({"id": "holding/observability/LATEST.md", "kind": "task"},
+                          a, cid, "named-one", 1.0, "2026-09-20", "T-local")
+        rows = M.engines(a)["engines"]
+        assert rows[0]["makes"] == ["LATEST"], "evidence beats the declaration"
+
+
+def test_engine_runs_pass_routines_runs_through_with_its_chat():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("in-here", tmp, description="Nightly sweep")
+        _runs_index(tmp, "in-here", [
+            _run_row("in-here", "2026-09-19T03:00:00+05:30"),
+            _run_row("in-here", "2026-09-20T03:00:00+05:30", outcome="failed"),
+        ])
+        out = M.engine_runs(a, "in-here")
+        assert out["id"] == "in-here" and out["total"] == 2 and out["never_run"] is False
+        assert [r["outcome"] for r in out["runs"]] == ["failed", "ok"], "newest first"
+        assert [t["who"] for t in out["chat"]] == ["Nightly sweep", "Nightly sweep"]
+        assert out["chat"][0]["line"] == "On the schedule: failed."
+        assert out["chat"][0]["row"] is out["runs"][0], "Exact shows the run row itself"
+
+
+def test_engine_runs_of_a_live_row_say_running():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("in-here", tmp, description="Nightly sweep")
+        _runs_index(tmp, "in-here",
+                    [_run_row("in-here", "2026-09-20T03:00:00+05:30", ended=None)])
+        out = M.engine_runs(a, "in-here")
+        assert out["runs"][0].get("ended_at") is None
+        assert out["chat"][0]["line"] == "On the schedule: running."
+
+
+def test_engine_runs_is_never_run_with_no_index():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("in-here", tmp)
+        out = M.engine_runs(a, "in-here")
+        assert out["runs"] == [] and out["never_run"] is True and out["chat"] == []
+
+
+def test_engine_runs_404s_for_an_engine_in_another_department():
+    import fastapi
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        outside = Path(os.path.realpath(str(tmp.parent))) / ("out-" + tmp.name)
+        outside.mkdir()
+        try:
+            _routine("elsewhere", outside)
+            with __import__("pytest").raises(fastapi.HTTPException) as exc:
+                M.engine_runs(a, "elsewhere")
+            assert exc.value.status_code == 404
+            with __import__("pytest").raises(fastapi.HTTPException) as exc:
+                M.engine_runs(a, "no-such-engine")
+            assert exc.value.status_code == 404
+        finally:
+            for f in outside.glob("*"):
+                f.unlink()
+            outside.rmdir()
+
+
+def test_engine_data_lists_the_placements_whose_origin_names_the_engine():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("in-here", tmp, description="Nightly sweep")
+        cid = _charter(E, a, "Own the sweep")
+        wr = {"id": "holding/observability/LATEST.md", "kind": "task"}
+        E.write_placement(wr, a, cid, "in-here", 1.0, "2026-09-20", "T-local")
+        E.write_placement({"id": "holding/other.md", "kind": "task"}, a, cid,
+                          "system-minted", 1.0, "2026-09-20", "T-local")
+        filed = M.engine_data(a, "in-here")["filed"]
+        assert [f["label"] for f in filed] == ["LATEST"], \
+            "only the rows whose origin names this engine, and as a name"
+        assert filed[0]["ts_ms"] > 0 and filed[0]["row"]["origin"] == "in-here"
+
+
+def test_engine_data_is_nothing_filed_when_no_origin_names_it():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("in-here", tmp)
+        assert M.engine_data(a, "in-here") == {"filed": []}
+
+
+def test_engine_pause_files_one_ask_and_changes_nothing():
+    """A22 + R2: the routine's `enabled` is untouched until the ask is stamped
+    somewhere else. This route writes a proposal and nothing else."""
+    with _fresh() as (M, E, tmp):
+        import proposals
+        import routines
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("in-here", tmp, description="Nightly sweep")
+        out = M.engine_pause(a, "in-here")
+        rows = proposals.listing()
+        assert len(rows) == 1 and rows[0]["kind"] == "routine.update"
+        assert rows[0]["args"] == {"id": "in-here", "patch": {"enabled": False}}
+        assert rows[0]["status"] == "pending"
+        assert out["summary"] == "Pause Nightly sweep"
+        assert out["proposal"]["id"] == rows[0]["id"]
+        assert routines.load("in-here")["enabled"] is True, "nothing applied"
+        assert M.engines(a)["engines"][0]["state"] == "idle", \
+            "the state word does not move until the ask is stamped"
+
+
+def test_engine_pause_400s_when_it_is_already_paused():
+    import fastapi
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("off-one", tmp, enabled=False)
+        with __import__("pytest").raises(fastapi.HTTPException) as exc:
+            M.engine_pause(a, "off-one")
+        assert exc.value.status_code == 400
+
+
+def test_engine_pause_404s_for_an_engine_in_another_department():
+    import fastapi
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        with __import__("pytest").raises(fastapi.HTTPException) as exc:
+            M.engine_pause(a, "no-such-engine")
+        assert exc.value.status_code == 404
+
+
+# --------------------------------------------------------------------- S61 --
+
+def test_engine_birth_is_from_an_ask_when_the_stamps_line_up():
+    """A23 / F-10: no routine row references the ask that made it, so the match
+    is the ask being DECIDED in the same minute the record was written."""
+    with _fresh() as (M, E, tmp):
+        import proposals
+        import routines
+        root, desk, a, a1 = _tree(E, tmp)
+        rec = _routine("in-here", tmp, description="Nightly sweep")
+        p = proposals.create("routine.create", {"id": "in-here"}, "Add the sweep")
+        proposals.decide(p["id"], True, apply_fn=lambda kind, args: {"routine": "in-here"})
+        born = M.engines(a)["engines"][0]["made_by"]
+        assert born["from_ask"] is True
+        assert born["at"] == rec["created_at"] and born["at_ms"] > 0
+
+
+def test_engine_birth_is_written_when_the_ask_names_another_engine():
+    with _fresh() as (M, E, tmp):
+        import proposals
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("in-here", tmp, description="Nightly sweep")
+        p = proposals.create("routine.create", {"id": "other-one"}, "Add another")
+        proposals.decide(p["id"], True, apply_fn=lambda kind, args: {"routine": "other-one"})
+        assert M.engines(a)["engines"][0]["made_by"]["from_ask"] is False
+
+
+def test_engine_birth_is_written_when_the_ask_was_decided_much_later():
+    with _fresh() as (M, E, tmp):
+        import proposals
+        import routines
+        root, desk, a, a1 = _tree(E, tmp)
+        rec = _routine("in-here", tmp, description="Nightly sweep")
+        rec["created_at"] = "2026-01-01T00:00:00+05:30"
+        routines.save(rec)
+        p = proposals.create("routine.create", {"id": "in-here"}, "Add the sweep")
+        proposals.decide(p["id"], True, apply_fn=lambda kind, args: {"routine": "in-here"})
+        assert M.engines(a)["engines"][0]["made_by"]["from_ask"] is False, \
+            "two stamps a year apart are not one act"
+
+
+def test_engine_birth_is_written_with_no_ask_at_all():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("in-here", tmp)
+        assert M.engines(a)["engines"][0]["made_by"]["from_ask"] is False
+
+
 def test_writes_only_through_proposals():
     """R2: the read side files nothing. dept_api never calls a routines mutator
     and never writes a placement; the only create() it may ever name is

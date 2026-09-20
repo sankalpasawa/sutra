@@ -79,6 +79,32 @@ function dpLoadAdaptation(ref, force){ return dpLoad("adaptation", ref, dpUrl(re
 function dpLoadPriority(ref, force){ return dpLoad("priority", ref, dpUrl(ref, "priority"), force); }
 function dpLoadCoordination(ref, force){ return dpLoad("coordination", ref, dpUrl(ref, "coordination"), force); }
 function dpLoadAudit(ref, force){ return dpLoad("audit", ref, dpUrl(ref, "audit"), force); }
+/* Engines is read when the LIST COLUMN paints, not when a card opens: the
+   group carries a state word per row (A18), so the column itself needs it. */
+function dpLoadEngines(ref, force){ return dpLoad("engines", ref, dpUrl(ref, "engines"), force); }
+/* The two engine-scoped reads are kept per engine, so opening a second engine
+   never drops the first one's rows. The guard is dpLoad's, widened by one key:
+   a read is in flight per department AND per engine. */
+const DP_ENG_READS = { engineRuns: "runs", engineData: "data" };
+async function dpLoadEngine(key, ref, id, force){
+  const st = dpS();
+  if (!ref || !id) return;
+  const bag = st[key];
+  if (bag[id] && bag[id].ref === ref && !force) return;
+  const lock = key + ":" + ref + ":" + id;
+  if (st.busy[lock]) return;
+  st.busy[lock] = true;
+  try {
+    const r = await apiGet(dpUrl(ref, "engines/" + encodeURIComponent(id) + "/" + DP_ENG_READS[key]));
+    if (dpS().sel === ref){ bag[id] = Object.assign({ ref: ref }, r || {}); delete st.error[lock]; }
+  } catch (e) {
+    if (dpS().sel === ref) st.error[lock] = (e && e.message) || String(e);
+  }
+  delete st.busy[lock];
+  dpRender();
+}
+function dpLoadEngineRuns(ref, id, force){ return dpLoadEngine("engineRuns", ref, id, force); }
+function dpLoadEngineData(ref, id, force){ return dpLoadEngine("engineData", ref, id, force); }
 
 /* ── selection ────────────────────────────────────────────────────────────── */
 /* Opening a department, mirroring o2Select (19-org2.js:250-261): everything the
@@ -137,9 +163,12 @@ function dpListHtml(n, d, dept, err){
   groups += dpGroup("Now", [dpRow("Now", `data-dptab="now"`, tab === "now")], null, "");
   groups += dpGroup("Functions", DP_FUNCS.map(([v, label]) =>
     dpRow(label, `data-dptab="${dpEsc(v)}"`, tab === v)), null, "");
-  /* Engines, People and Apps read routes that land in a later slice; until then
-     the group is on screen and says so in one line rather than showing nothing. */
-  groups += dpGroup("Engines", [], "engines", "Not read yet");
+  /* People and Apps read routes that land in a later slice; until then the
+     group is on screen and says so in one line rather than showing nothing. */
+  dpLoadEngines(n.ref);                    /* call-on-render, as o2LoadApps does */
+  const eng = (st.engines && st.engines.ref === n.ref) ? st.engines : null;
+  groups += dpGroup("Engines", ((eng && eng.engines) || []).map(dpEngRow), "engines",
+    eng ? "No engines here" : (st.error.engines ? "Could not read" : "Not read yet"));
   groups += dpGroup("Filed work", filed.map(x =>
     dpRow(x.label, `data-dpfiled="${dpEsc(x.id || "")}"`, st.filedSel === x.id)), "filed", "Nothing filed yet");
   groups += dpGroup("People", [], "people", "Not read yet");
@@ -365,13 +394,21 @@ function dpIdentityHtml(){
    section with no rows is not drawn at all, and a function with nothing
    anywhere is ONE quiet line, never one per section. */
 function dpPane(ref, tab){ return dpS().pane[ref + ":" + tab] || tab; }
-function dpFnHtml(tab, label, card){
+/* The frame every card with tabs wears. A function card passes nothing but its
+   renderer and gets two tabs; the engine card passes five panes and its own
+   chat rows, and gets the same pane key (`<ref>:<tab>`), the same chat key
+   (`<ref>:<tab>:chat`) and the same read guard. One frame, not two. */
+function dpFnHtml(tab, label, card, panes, chat){
   const st = dpS(), ref = st.sel;
   const data = (st[tab] && st[tab].ref === ref) ? st[tab] : null;
   if (!data) return st.error[tab] ? dpQuiet("Could not read") : dpSkel();
-  const tabs = dpTabsHtml(dpPane(ref, tab), [[tab, label], ["chat", "Chat"]], "data-dppane");
-  if (dpPane(ref, tab) === "chat") return tabs + dpChatCard("Chat", data.chat, ref + ":" + tab + ":chat");
-  return tabs + card(data);
+  const pane = dpPane(ref, tab);
+  const tabs = dpTabsHtml(pane, panes || [[tab, label], ["chat", "Chat"]], "data-dppane");
+  if (pane === "chat"){
+    const rows = (typeof chat === "function") ? chat(data) : (chat || data.chat);
+    return tabs + dpChatCard("Chat", rows, ref + ":" + tab + ":chat");
+  }
+  return tabs + card(data, pane);
 }
 
 /* Adaptation: what it wants changed, and the asking behind it. */
@@ -435,6 +472,173 @@ function dpAuditCard(v){
   return body;
 }
 
+/* ── Engines ───────────────────────────────────────────────────────────────
+   An engine is a routine that runs in this department's folder. The list column
+   names each one with the state word its records add up to (A18); the card is
+   the same frame every function card wears, with five panes instead of two:
+   what the engine IS, the steps it follows, what it has done, what it filed,
+   and the chat those runs make (A19). The one action is Pause, and Pause files
+   an ask -- the word on the row does not move until that ask is stamped (A22). */
+const DP_ENG_PANES = [["engines", "Engine"], ["workflow", "Workflow"],
+                      ["runs", "Runs"], ["data", "Data"], ["chat", "Chat"]];
+const DP_STATES = { running: "Running", paused: "Paused", idle: "Idle" };
+const DP_RUN_WORDS = { ok: "Done", failed: "Failed", timeout: "Ran out of time",
+                       skipped: "Skipped" };
+const DP_RUN_DOTS = { ok: "ok", failed: "block", timeout: "block", skipped: "warn" };
+
+function dpEngRow(e){
+  const st = dpS();
+  const on = st.engineSel === e.id && st.tab[st.sel] === "engines";
+  const word = DP_STATES[String(e.state)] || DP_STATES.idle;
+  return `<button type="button" class="o2li dpli dpeng${on ? " on" : ""}" data-dpengine="${dpEsc(e.id)}">` +
+    `<span>${dpEsc(e.name)}</span><span class="dpst ${dpEsc(String(e.state || "idle"))}">${dpEsc(word)}</span></button>`;
+}
+/* The engine the card is on: the selected one, or the first, so opening the
+   group from the Engines row lands somewhere rather than nowhere. */
+function dpEngine(){
+  const st = dpS();
+  const list = (st.engines && st.engines.ref === st.sel && st.engines.engines) || [];
+  return list.filter(e => e.id === st.engineSel)[0] || list[0] || null;
+}
+function dpNames(xs){ return (xs && xs.length) ? xs.join(", ") : ""; }
+function dpKV(label, value, quiet){
+  return dpCell(label, value ? dpBig(value) : dpQuiet(quiet));
+}
+/* A23: where the engine came from, as one line. "From an ask" when an approved
+   ask was decided in the same minute the record was written; "Written" when it
+   was not -- no record links the two, so those two are the only honest words. */
+function dpMade(e){
+  const b = e.made_by || {};
+  const when = dpStamp(b.at_ms);
+  return (b.from_ask ? "From an ask" : "Written") + (when ? ", " + when : "");
+}
+/* An ask already waiting on this engine: the Pause button says so rather than
+   filing a second one, and the state word still does not move (A22). */
+function dpAsked(id){
+  const st = dpS();
+  const asks = (st.now && st.now.ref === st.sel && st.now.asks) || [];
+  return asks.some(a => a.kind === "routine.update" && a.args && a.args.id === id);
+}
+function dpEngineTable(e){
+  const st = dpS();
+  const grid = `<div class="dpengines">` +
+    dpKV("Made by", dpMade(e), "") +
+    dpKV("Runs as", e.runs_as, "Not named") +
+    dpKV("Cadence", e.cadence, "Not set") +
+    dpKV("Needs", dpNames(e.needs), "Not named") +
+    dpKV("Makes", dpNames(e.makes), "Not named") +
+    dpKV("Read by", dpNames(e.read_by), "Not named") +
+    `</div>`;
+  const asked = dpAsked(e.id) || !!st.busy["pause:" + e.id];
+  const act = e.state === "paused" ? "" :
+    `<div class="dpoffer"><button type="button" class="btn" data-dppause="${dpEsc(e.id)}">` +
+    (asked ? "Asked to pause" : "Pause") + `</button></div>`;
+  return dpCard("The engine", grid) + act;
+}
+/* F-11: a run row carries no step, so there is nothing to mark. When one ever
+   names where it is, the live run lights that step and no other. */
+function dpStepDot(s, runs){
+  const live = ((runs && runs.runs) || []).filter(r => r.started_at && !r.ended_at)[0];
+  const at = live && (live.step || live.step_id);
+  return at && String(at) === String(s.id) ? "ok" : "";
+}
+function dpWorkflowCard(e){
+  const st = dpS();
+  const read = st.engineRuns[e.id];
+  const runs = (read && read.ref === st.sel) ? read : null;
+  const w = e.workflow, steps = (w && w.steps) || [];
+  if (!steps.length){
+    /* no registered workflow: what the engine is told to do, in its own words */
+    return e.prompt ? dpCard("What it is told to do", `<pre class="dpexact">${dpEsc(e.prompt)}</pre>`)
+                    : dpQuiet("No steps written yet");
+  }
+  return dpCard(w.title || "Steps", steps.map(s => dpRunRow(s.name || s.id,
+    [dpNames(s.produces), s.verify].filter(Boolean).join(" · "),
+    dpStepDot(s, runs))).join(""));
+}
+/* How long a run took, against the longest run on the card. A bar, never a
+   number of seconds (A28) -- the owner reads "that one was the long one". */
+function dpDur(r, full){
+  const s = Number(r.duration_s) || 0;
+  return (s && full) ? dpBar(Math.min(1, s / full)) : "";
+}
+function dpElapsed(at){
+  const t = Date.parse(String(at || ""));
+  if (!t) return "";
+  const m = Math.floor((dpNow() - t) / 60000);
+  if (m < 1) return "just started";
+  return m < 60 ? m + "m so far" : Math.floor(m / 60) + "h so far";
+}
+/* When a run started: the clock while it is today, the day once it is not.
+   A list of nightly runs is a list of DAYS, and a bare clock hides that. */
+function dpAt(iso){ return dpWhenMs(Date.parse(String(iso || "")) || 0); }
+function dpRunsCard(e){
+  const st = dpS();
+  const read = st.engineRuns[e.id];
+  const mine = (read && read.ref === st.sel) ? read : null;
+  if (!mine) return st.error["engineRuns:" + st.sel + ":" + e.id] ? dpQuiet("Could not read") : dpSkel();
+  const rows = mine.runs || [];
+  if (!rows.length) return dpQuiet("Never run");
+  const full = rows.reduce((m, r) => Math.max(m, Number(r.duration_s) || 0), 0);
+  return dpCard("Runs", rows.map(r => {
+    const live = r.started_at && !r.ended_at;
+    if (live) return dpRunRow("Running", [dpAt(r.started_at), dpElapsed(r.started_at)].filter(Boolean).join(" · "));
+    const word = DP_RUN_WORDS[String(r.outcome)] || DP_RUN_WORDS.ok;
+    return dpRunRow(word, dpAt(r.started_at), DP_RUN_DOTS[String(r.outcome)] || "ok", dpDur(r, full));
+  }).join(""));
+}
+function dpDataCard(e){
+  const st = dpS();
+  const read = st.engineData[e.id];
+  const mine = (read && read.ref === st.sel) ? read : null;
+  if (!mine) return st.error["engineData:" + st.sel + ":" + e.id] ? dpQuiet("Could not read") : dpSkel();
+  const rows = mine.filed || [];
+  if (!rows.length) return dpQuiet("Nothing filed");
+  return dpCard("Filed work", rows.map(f => dpRunRow(f.label, dpStamp(f.ts_ms), "ok")).join(""));
+}
+const DP_ENG_CARDS = { engines: dpEngineTable, workflow: dpWorkflowCard,
+                       runs: dpRunsCard, data: dpDataCard };
+/* The two engine-scoped reads fire when the pane that needs them opens, never
+   before -- the same call-on-render rule every card on this screen follows. */
+function dpEngineCard(_data, pane){
+  const st = dpS(), e = dpEngine();
+  if (!e) return dpQuiet("No engines here");
+  if (pane === "runs" || pane === "workflow") dpLoadEngineRuns(st.sel, e.id);
+  if (pane === "data") dpLoadEngineData(st.sel, e.id);
+  return (DP_ENG_CARDS[pane] || dpEngineTable)(e);
+}
+function dpEngineChat(){
+  const st = dpS(), e = dpEngine();
+  if (!e) return [];
+  dpLoadEngineRuns(st.sel, e.id);
+  const read = st.engineRuns[e.id];
+  return (read && read.ref === st.sel && read.chat) || [];
+}
+function dpEnginesHtml(){
+  return dpFnHtml("engines", "Engine", dpEngineCard, DP_ENG_PANES, dpEngineChat);
+}
+
+/* ── answering an ask about an engine ─────────────────────────────────────── */
+/* Pause posts to the one route this screen has that writes, and what that route
+   writes is an ASK (A22). Nothing is applied here: Now grows a row, the state
+   word stays exactly where it was, and Approvals is where it moves. */
+async function dpPause(id){
+  const st = dpS(), ref = st.sel;
+  if (!id || !ref || st.busy["pause:" + id]) return;
+  st.busy["pause:" + id] = true;
+  dpRender();
+  try {
+    await apiPost(dpUrl(ref, "engines/" + encodeURIComponent(id) + "/pause"), {});
+  } catch (e) {
+    st.error.engines = (e && e.message) || String(e);
+  }
+  delete st.busy["pause:" + id];
+  if (typeof loadProposals === "function") loadProposals();
+  await dpLoadNow(ref, true);
+  await dpLoadEngines(ref, true);
+  dpRender();
+}
+
 const DP_CARDS = {
   adaptation: [dpLoadAdaptation, dpAdaptationCard],
   priority: [dpLoadPriority, dpPriorityCard],
@@ -449,6 +653,11 @@ function dpViewerHtml(n, d, dept, err){
   if (tab === "identity"){
     dpLoadIdentity(n.ref);                               /* read on open, as o2LoadApps does */
     return dpViewerShell("Identity", dpIdentityHtml());
+  }
+  if (tab === "engines"){
+    dpLoadEngines(n.ref);
+    const e = dpEngine();
+    return dpViewerShell(e ? e.name : "Engines", dpEnginesHtml());
   }
   const label = (DP_FUNCS.find(f => f[0] === tab) || [tab, tab])[1];
   const card = DP_CARDS[tab];
@@ -490,7 +699,7 @@ async function dpDecide(pid, ok){
    landed inside a `.dp` element. That is 19-org2.js:875-880's own guard with
    this screen's class, so nothing here can fire on another screen. */
 if (typeof document !== "undefined" && document.addEventListener){
-  const DP_SEL = "[data-dptab],[data-dpdecide],[data-dpmore],[data-dpfiled],[data-dpdoc],[data-dpengine],[data-dpchatmode],[data-dppane],[data-dpgoal],[data-dprule]";
+  const DP_SEL = "[data-dptab],[data-dpdecide],[data-dpmore],[data-dpfiled],[data-dpdoc],[data-dpengine],[data-dppause],[data-dpchatmode],[data-dppane],[data-dpgoal],[data-dprule]";
   document.addEventListener("click", (ev) => {
     if (!S.dp || S.screen !== "org2") return;
     const t = ev.target && ev.target.closest ? ev.target.closest(DP_SEL) : null;
@@ -519,6 +728,18 @@ if (typeof document !== "undefined" && document.addEventListener){
       if (typeof o2OpenSheet === "function") o2OpenSheet("charter");
       return;
     }
+    if (ds.dpengine !== undefined){
+      ev.preventDefault();
+      if (st.sel){
+        /* a different engine opens on its own Engine tab, not on whichever
+           pane the last one was left on */
+        if (st.engineSel !== ds.dpengine) st.pane[st.sel + ":engines"] = "engines";
+        st.engineSel = ds.dpengine;
+        st.tab[st.sel] = "engines";
+      }
+      dpRender(); return;
+    }
+    if (ds.dppause !== undefined){ ev.preventDefault(); dpPause(ds.dppause); return; }
     if (ds.dpmore !== undefined){ st.more[ds.dpmore] = true; dpRender(); return; }
     if (ds.dpdecide !== undefined){ ev.preventDefault(); dpDecide(ds.dpdecide, ds.dpok === "1"); return; }
     if (ds.dpfiled !== undefined){ ev.preventDefault(); st.filedSel = ds.dpfiled; dpRender(); return; }

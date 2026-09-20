@@ -326,7 +326,11 @@ test("S16: the first paint opens the department without a click", async () => {
   c.dpListHtml(n, d, DEPT_EXP, null);
   await sleep();
   assert.strictEqual(c.dpS().sel, "r4");
-  assert.strictEqual(c.calls.apiGet.length, 3);
+  /* three for Now, and one for Engines: the LIST COLUMN carries a state word
+     per engine (A18), so the column itself needs that read. The pin moved from
+     3 to 4 in slice D, and dpSelect still costs exactly three (S14, S39). */
+  assert.deepStrictEqual(c.calls.apiGet.slice().sort(),
+    ["/api/dept/r4/engines", "/api/dept/r4/now", "/api/dept/r4/running", "/api/dept/r4/waits"]);
 });
 
 /* ── S17 / A2: Now is the card on open ── */
@@ -1120,6 +1124,327 @@ test("S45: opening another department drops what all four answered", async () =>
   for (const k of ["adaptation", "priority", "coordination", "audit"]) {
     assert.strictEqual(c.dpS()[k], null, k + " is dropped");
   }
+});
+
+/* ── slice D: Engines (S53-S62) ──────────────────────────────────────────── */
+const ENG_BORN = Date.parse("2026-08-01T09:00:00+05:30");
+const ENGINES = { engines: [
+  { id: "nightly", name: "Nightly sweep", state: "idle", enabled: true,
+    cwd: "/Users/x/a", runs_as: "haiku", cadence: "Every day at 3:30 AM (local)",
+    made_by: { from_ask: true, at: "2026-08-01T09:00:00+05:30", at_ms: ENG_BORN },
+    needs: null, makes: ["LATEST"], read_by: null,
+    workflow: { id: "W-sweep", title: "Sweep", goal: "sweep it", steps: [
+      { id: "S1", name: "read the folder", produces: ["a list"], needs: [], verify: "the list exists" },
+      { id: "S2", name: "file what changed", produces: ["LATEST"], needs: [], verify: "the row is filed" }] },
+    prompt: "run W-sweep over the department" },
+  { id: "hourly", name: "Teamsutra worker", state: "running", enabled: true,
+    cwd: "/Users/x/a", runs_as: "sonnet", cadence: "Every hour at :20 (local)",
+    made_by: { from_ask: false, at: "", at_ms: 0 },
+    needs: null, makes: null, read_by: null, workflow: null,
+    prompt: "claim the oldest queued task and return a diff" },
+  { id: "off-one", name: "Weekly sweep", state: "paused", enabled: false,
+    cwd: "/Users/x/a", runs_as: "", cadence: "",
+    made_by: { from_ask: false, at: "", at_ms: 0 },
+    needs: null, makes: null, read_by: null, workflow: null, prompt: "" },
+] };
+const ENG_RUNS = { id: "nightly", total: 3, unreadable: 0, never_run: false, runs: [
+  { schema: 1, id: "nightly", trigger: "schedule", started_at: "2026-09-20T03:00:00+05:30",
+    ended_at: "2026-09-20T03:04:00+05:30", duration_s: 240, outcome: "ok" },
+  { schema: 1, id: "nightly", trigger: "manual", started_at: "2026-09-19T03:00:00+05:30",
+    ended_at: "2026-09-19T03:40:00+05:30", duration_s: 2400, outcome: "failed" },
+], chat: [{ who: "Nightly sweep", to: "Coordination", mode: "say",
+            line: "On the schedule: done.", at: "2026-09-20T03:00:00+05:30",
+            row: { id: "nightly", outcome: "ok" } }] };
+const ENG_LIVE = { id: "hourly", total: 1, unreadable: 0, never_run: false, runs: [
+  { schema: 1, id: "hourly", trigger: "schedule",
+    started_at: new Date(Date.now() - 12 * 60000).toISOString(), outcome: "ok", duration_s: 0 },
+], chat: [] };
+const ENG_NEVER = { id: "off-one", total: 0, unreadable: 0, never_run: true, runs: [], chat: [] };
+const ENG_DATA = { filed: [{ id: "PL-1", label: "LATEST", ts_ms: Date.now() - 3 * DAY,
+                             row: { id: "PL-1", origin: "nightly" } }] };
+
+/* Open the engine card with the engines read already landed. */
+function engCard(c, pane, id, seed){
+  const st = c.dpS();
+  st.sel = "r4"; st.tab.r4 = "engines";
+  st.engines = Object.assign({ ref: "r4" }, ENGINES);
+  if (id) st.engineSel = id;
+  if (pane) st.pane["r4:engines"] = pane;
+  Object.assign(st, seed || {});
+  const d = c.o2Data();
+  return c.dpViewerHtml(d.byRef.get("r4"), d, DEPT_EXP, null);
+}
+function engList(c){
+  const st = c.dpS();
+  st.sel = "r4";
+  st.engines = Object.assign({ ref: "r4" }, ENGINES);
+  const d = c.o2Data();
+  return c.dpListHtml(d.byRef.get("r4"), d, DEPT_EXP, null);
+}
+
+/* ── S53: the three engine loaders ── */
+test("S53: the engines read fires when the list column paints, once", async () => {
+  const c = fresh();
+  const d = c.o2Data(), n = d.byRef.get("r4");
+  c.dpListHtml(n, d, DEPT_EXP, null);
+  await sleep();
+  assert.ok(c.calls.apiGet.indexOf("/api/dept/r4/engines") !== -1, "the column reads it");
+  c.dpListHtml(n, d, DEPT_EXP, null);
+  await sleep();
+  assert.strictEqual(c.calls.apiGet.filter(p => /\/engines$/.test(p)).length, 1,
+    "a repaint is not a second read");
+});
+
+test("S53: the runs and data reads fire when their pane opens, and not before", async () => {
+  const c = fresh();
+  engCard(c, null, "nightly");
+  await sleep();
+  assert.strictEqual(c.calls.apiGet.filter(p => /\/runs$/.test(p)).length, 0,
+    "the Engine tab costs neither read");
+  assert.strictEqual(c.calls.apiGet.filter(p => /\/data$/.test(p)).length, 0);
+  engCard(c, "runs", "nightly");
+  await sleep();
+  assert.ok(c.calls.apiGet.indexOf("/api/dept/r4/engines/nightly/runs") !== -1);
+  engCard(c, "data", "nightly");
+  await sleep();
+  assert.ok(c.calls.apiGet.indexOf("/api/dept/r4/engines/nightly/data") !== -1);
+});
+
+test("S53: each engine keeps its own rows, and two overlapping reads make one call", async () => {
+  const c = fresh();
+  c.dpS().sel = "r4";
+  c.dpLoadEngineRuns("r4", "nightly"); c.dpLoadEngineRuns("r4", "nightly");
+  c.dpLoadEngineRuns("r4", "hourly");
+  await sleep();
+  assert.deepStrictEqual(c.calls.apiGet.slice().sort(),
+    ["/api/dept/r4/engines/hourly/runs", "/api/dept/r4/engines/nightly/runs"]);
+});
+
+test("S53: an engine answer for a department that is no longer open is dropped", async () => {
+  let release;
+  const c = fresh({ apiGet: () => new Promise(r => { release = r; }) });
+  c.dpS().sel = "r4";
+  const p = c.dpLoadEngineRuns("r4", "nightly");
+  c.dpS().sel = "r5";
+  release(ENG_RUNS);
+  await p;
+  assert.strictEqual(c.dpS().engineRuns.nightly, undefined, "the late answer is dropped");
+});
+
+/* ── S54: the Engines group ── */
+test("S54: every engine is a row with its own state word", () => {
+  const c = fresh();
+  const list = engList(c);
+  for (const [name, word] of [["Nightly sweep", "Idle"], ["Teamsutra worker", "Running"],
+                              ["Weekly sweep", "Paused"]]) {
+    assert.ok(list.indexOf(name) !== -1, name + " is a row");
+    assert.ok(list.indexOf(">" + word + "<") !== -1, name + " says " + word);
+  }
+  assert.ok(/data-dpengine="nightly"/.test(list), "the row opens the engine");
+  assert.ok(list.indexOf("/Users/") === -1, "A28: no path on the column");
+});
+
+test("S54: a department with no engines says so in one quiet line", () => {
+  const c = fresh();
+  const st = c.dpS();
+  st.sel = "r4"; st.engines = { ref: "r4", engines: [] };
+  const d = c.o2Data();
+  const list = c.dpListHtml(d.byRef.get("r4"), d, DEPT_EXP, null);
+  assert.ok(list.indexOf("No engines here") !== -1);
+  assert.ok(list.indexOf("data-dpengine") === -1);
+});
+
+test("S54: clicking an engine row opens its card on the Engine tab", () => {
+  const c = fresh();
+  engList(c);
+  click(c, elem({ dpengine: "hourly" }));
+  assert.strictEqual(c.dpS().engineSel, "hourly");
+  assert.strictEqual(c.dpS().tab.r4, "engines");
+  c.dpS().pane["r4:engines"] = "runs";
+  click(c, elem({ dpengine: "nightly" }));
+  assert.strictEqual(c.dpS().pane["r4:engines"], "engines",
+    "another engine opens on its own Engine tab");
+});
+
+/* ── S55: the five tabs ── */
+test("S55: an engine card carries Engine, Workflow, Runs, Data and Chat", () => {
+  const c = fresh();
+  const view = engCard(c, null, "nightly");
+  assert.ok(view.indexOf("<b>Nightly sweep</b>") !== -1, "the card is the engine");
+  for (const [v, label] of [["engines", "Engine"], ["workflow", "Workflow"],
+                            ["runs", "Runs"], ["data", "Data"], ["chat", "Chat"]]) {
+    assert.ok(view.indexOf(`data-dppane="${v}">${label}<`) !== -1, label + " is a tab");
+  }
+  assert.ok(/aria-pressed="true" data-dppane="engines"/.test(view), "Engine is the open one");
+});
+
+test("S55: an engine card whose read has not landed shows a skeleton", () => {
+  const c = fresh();
+  const st = c.dpS();
+  st.sel = "r4"; st.tab.r4 = "engines";
+  const d = c.o2Data();
+  const view = c.dpViewerHtml(d.byRef.get("r4"), d, DEPT_EXP, null);
+  assert.ok(/o2skel/.test(view), "a skeleton, not a guess");
+  assert.ok(view.indexOf("<b>Engines</b>") !== -1, "the card names the group until one is picked");
+});
+
+/* ── S56: the Engine table ── */
+test("S56: the Engine tab is one table of what the engine is", () => {
+  const c = fresh();
+  const view = engCard(c, null, "nightly");
+  for (const k of ["Made by", "Runs as", "Cadence", "Needs", "Makes", "Read by"]) {
+    assert.ok(view.indexOf(">" + k + "<") !== -1, k + " is a cell");
+  }
+  assert.ok(view.indexOf("From an ask, 1 Aug") !== -1, "A23: the birth line");
+  assert.ok(view.indexOf("haiku") !== -1 && view.indexOf("Every day at 3:30 AM (local)") !== -1);
+  assert.ok(view.indexOf("LATEST") !== -1, "what it makes");
+  assert.strictEqual((view.match(/Not named/g) || []).length, 2,
+    "what no record names is a quiet line, twice: needs and read by");
+});
+
+test("S56/A23: an engine nobody asked for reads Written", () => {
+  const c = fresh();
+  const view = engCard(c, null, "hourly");
+  assert.ok(view.indexOf("Written") !== -1);
+  assert.ok(view.indexOf("From an ask") === -1);
+  assert.ok(view.indexOf("Not set") !== -1 || view.indexOf("Every hour") !== -1);
+});
+
+/* ── S57: the Workflow tab ── */
+test("S57: the Workflow tab is the registered workflow's steps when one exists", () => {
+  const c = fresh();
+  const view = engCard(c, "workflow", "nightly");
+  assert.ok(view.indexOf("read the folder") !== -1 && view.indexOf("file what changed") !== -1);
+  assert.ok(view.indexOf("a list · the list exists") !== -1, "what a step makes and how it is checked");
+  assert.ok(view.indexOf("dpdot ") === -1 || !/dpdot (ok|warn|block)/.test(view),
+    "F-11: no progress is marked, because no run row carries a step");
+});
+
+test("S57: an engine with no registered workflow shows what it is told to do", () => {
+  const c = fresh();
+  const view = engCard(c, "workflow", "hourly");
+  assert.ok(view.indexOf("claim the oldest queued task and return a diff") !== -1);
+  assert.ok(view.indexOf("What it is told to do") !== -1);
+});
+
+test("S57: an engine with neither says so in one quiet line", () => {
+  const c = fresh();
+  const view = engCard(c, "workflow", "off-one");
+  assert.ok(view.indexOf("No steps written yet") !== -1);
+});
+
+/* ── S58: the Runs tab ── */
+test("S58: Runs is one line per execution row with its dot and its duration bar", () => {
+  const c = fresh();
+  const view = engCard(c, "runs", "nightly", { engineRuns: { nightly: Object.assign({ ref: "r4" }, ENG_RUNS) } });
+  assert.ok(view.indexOf(">Done<") !== -1 && view.indexOf(">Failed<") !== -1);
+  assert.ok(view.indexOf("20 Sep") !== -1 && view.indexOf("19 Sep") !== -1,
+    "A20: when it started, as the DAY once the day is not today");
+  assert.ok(/dpdot ok/.test(view) && /dpdot block/.test(view), "the outcome is a dot");
+  assert.strictEqual((view.match(/dpbar/g) || []).length, 2, "one duration bar per run");
+  assert.ok(view.indexOf("100%") !== -1, "the longest run fills its bar");
+  assert.ok(!/>\s*\d+\s*</.test(view), "A28: no raw count at rest");
+});
+
+test("S58/A20: a live run reads Running with the time it has been going", () => {
+  const c = fresh();
+  const view = engCard(c, "runs", "hourly", { engineRuns: { hourly: Object.assign({ ref: "r4" }, ENG_LIVE) } });
+  assert.ok(view.indexOf(">Running") !== -1, "the row says Running");
+  assert.ok(/1[12]m so far/.test(view), "and how long it has been going");
+  assert.ok(view.indexOf("dpbar") === -1, "a run that has not ended has no duration to draw");
+});
+
+test("S58: an engine that never ran says so, and a failed read says so", () => {
+  const c = fresh();
+  assert.ok(engCard(c, "runs", "off-one",
+    { engineRuns: { "off-one": Object.assign({ ref: "r4" }, ENG_NEVER) } }).indexOf("Never run") !== -1);
+  const c2 = fresh();
+  assert.ok(engCard(c2, "runs", "nightly",
+    { error: { "engineRuns:r4:nightly": "boom" } }).indexOf("Could not read") !== -1);
+});
+
+test("S58: the Chat tab reads the same run rows, as turns and as the rows themselves", () => {
+  const c = fresh();
+  const seed = { engineRuns: { nightly: Object.assign({ ref: "r4" }, ENG_RUNS) } };
+  const summary = engCard(c, "chat", "nightly", seed);
+  assert.ok(summary.indexOf("On the schedule: done.") !== -1, "the turn");
+  assert.ok(summary.indexOf("dpmsg") !== -1);
+  const c2 = fresh();
+  const exact = engCard(c2, "chat", "nightly",
+    Object.assign({ chatMode: { "r4:engines:chat": "exact" } }, seed));
+  const at = exact.indexOf("&quot;outcome&quot;");
+  assert.ok(exact.indexOf("dpexact") !== -1 && at !== -1, "Exact is the run row itself");
+  assert.ok(exact.lastIndexOf('<pre class="dpexact">') < at && at < exact.indexOf("</pre>"),
+    "and it sits inside the raw block");
+  const c3 = fresh();
+  assert.ok(engCard(c3, "chat", "off-one",
+    { engineRuns: { "off-one": Object.assign({ ref: "r4" }, ENG_NEVER) } }).indexOf("Nothing yet.") !== -1);
+});
+
+/* ── S59: the Data tab ── */
+test("S59: Data lists what the engine's runs filed, and says Nothing filed when none", () => {
+  const c = fresh();
+  const view = engCard(c, "data", "nightly",
+    { engineData: { nightly: Object.assign({ ref: "r4" }, ENG_DATA) } });
+  assert.ok(view.indexOf("LATEST") !== -1 && view.indexOf("Filed work") !== -1);
+  const c2 = fresh();
+  assert.ok(engCard(c2, "data", "hourly",
+    { engineData: { hourly: { ref: "r4", filed: [] } } }).indexOf("Nothing filed") !== -1);
+});
+
+/* ── S60: Pause ── */
+test("S60/A22: Pause posts the ask and nothing else, and the word does not move", async () => {
+  const c = fresh({ apiGet: (p) => { c.calls.apiGet.push(p); return Promise.resolve(ENGINES); } });
+  engCard(c, null, "nightly");
+  click(c, elem({ dppause: "nightly" }));
+  await sleep(); await sleep(); await sleep();
+  assert.deepStrictEqual(c.calls.apiPost.map(x => x.p),
+    ["/api/dept/r4/engines/nightly/pause"], "one post, to the one route that writes");
+  const list = engList(c);
+  assert.ok(list.indexOf(">Idle<") !== -1, "the state word is still what the record says");
+  assert.ok(list.indexOf(">Paused<") !== -1, "and the engine that IS paused still reads Paused");
+});
+
+test("S60: an engine already waiting on an ask says so instead of asking twice", () => {
+  const c = fresh();
+  const view = engCard(c, null, "nightly", { now: { ref: "r4", asks: [
+    { id: "p-zz99", kind: "routine.update", args: { id: "nightly" }, summary: "Pause Nightly sweep",
+      created_ms: Date.now(), window_ms: 24 * HOUR, default: "Nothing happens" }] } });
+  assert.ok(view.indexOf("Asked to pause") !== -1);
+});
+
+test("S60: a paused engine offers no Pause at all", () => {
+  const c = fresh();
+  assert.ok(engCard(c, null, "off-one").indexOf("data-dppause") === -1);
+});
+
+/* ── A28 / A29 over the engine card ── */
+test("S55/A28/A29: no engine pane carries a path, a raw count or the word charter", () => {
+  const seed = { engineRuns: { nightly: Object.assign({ ref: "r4" }, ENG_RUNS) },
+                 engineData: { nightly: Object.assign({ ref: "r4" }, ENG_DATA) } };
+  let all = "";
+  for (const pane of ["engines", "workflow", "runs", "data"]){
+    const html = engCard(fresh(), pane, "nightly", seed);
+    all += html;
+    assert.ok(html.indexOf("/Users/") === -1, pane + ": A28 no path");
+    assert.ok(!/help|Help/.test(html), pane + ": A28 no help text");
+    assert.ok(html.toLowerCase().indexOf("charter") === -1, pane + ": A29");
+  }
+  for (const w of ["Engine", "Workflow", "Runs", "Data", "Chat", "Made by", "Cadence"]) {
+    assert.ok(all.indexOf(w) !== -1, "missing screen word: " + w);
+  }
+});
+
+test("S53: opening another department drops every engine read", async () => {
+  const c = fresh();
+  engCard(c, "runs", "nightly", { engineRuns: { nightly: { ref: "r4" } },
+                                  engineData: { nightly: { ref: "r4" } } });
+  c.dpSelect("r5");
+  await sleep();
+  assert.strictEqual(c.dpS().engines, null);
+  assert.deepStrictEqual(Object.keys(c.dpS().engineRuns), []);
+  assert.deepStrictEqual(Object.keys(c.dpS().engineData), []);
+  assert.strictEqual(c.dpS().engineSel, null);
 });
 
 /* ── S32 / A29 again, now over all five function cards ── */

@@ -22,6 +22,7 @@ import re
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -1128,3 +1129,370 @@ def audit(ref: str):
     found = found[:FINDINGS_MAX]
     return {"findings": found, "unseen": unseen[:UNSEEN_MAX], "skipped": skipped,
             "chat": _audit_chat(found)}
+
+
+# ------------------------------------------------------------------- ENGINES --
+# R9-R12. The routines whose working folder falls under the department: what
+# each one is, what it has done, what it filed, and the ONE ask this screen
+# files of its own.
+#
+# The state WORD is derived, because no record carries one. A routine stores
+# `enabled`, and while a run is in flight routines.py leaves a lock directory
+# beside that run's folder (routines.py:566). Those two answer Paused, Running
+# and Idle between them, and neither is written from here (PRD F-8).
+#
+# DRIFT from BUILD-PLAN reuse row 12 / S49, stated rather than hidden:
+# routines.state() is NOT called. It writes a `.heartbeat` file into the routine
+# store (routines.py:1246-1251) and shells `launchctl list` once per routine
+# (routines.py:901-914) -- a read route may do neither, and a screen that paints
+# on every render may afford neither. The readers state() itself composes --
+# list_ids(), load(), runs() -- are called instead, so nothing is
+# re-implemented, nothing is shelled out to, and nothing is written.
+
+ENGINES_MAX = 24
+RUNS_LIMIT = 10                              # run rows per read, newest first
+RUNS_LIMIT_MAX = 50
+ENGINE_FILED_MAX = 24
+MAKES_MAX = 4                                # names on the Makes / Needs line
+STEPS_MAX = 24                               # steps read off a registered workflow
+#: A23: a routine minted by an approved ask is saved in the same moment the ask
+#: is decided, and NO record links the two. The match is therefore the two
+#: stamps landing inside this window -- far longer than the write takes, far
+#: shorter than the gap between two separate decisions.
+BIRTH_WINDOW_MS = 60 * 1000
+#: Splits a stored string into the words a record can be named by. A routine id
+#: and a workflow id are both `word-with-dashes`, so dots, dashes and
+#: underscores are part of a word here and everything else is a boundary.
+_WORDS = re.compile(r"[^A-Za-z0-9_.-]+")
+#: What a run row's own two words become on screen. Anything the record says
+#: that is not in here is shown as the record's own word rather than guessed at.
+RUN_OUTCOMES = {"ok": "Done", "failed": "Failed", "timeout": "Ran out of time",
+                "skipped": "Skipped"}
+RUN_DOTS = {"ok": "ok", "failed": "block", "timeout": "block", "skipped": "warn"}
+RUN_TRIGGERS = {"schedule": "On the schedule", "manual": "By hand"}
+
+
+def _ms_iso(value: Any) -> int:
+    """An ISO stamp as milliseconds, 0 when the record carries none or carries
+    something that is not one. Both stores this reads write `now_iso()`
+    (routines.py:161, proposals.py:78), which carries its own offset."""
+    text = _text(value)
+    if not text:
+        return 0
+    try:
+        return int(datetime.fromisoformat(text).timestamp() * 1000)
+    except (TypeError, ValueError, OverflowError, OSError):
+        return 0
+
+
+def _tokens(text: Any) -> set:
+    return {w for w in _WORDS.split(_text(text)) if w}
+
+
+def _runs_root() -> str:
+    """Where routines.py keeps its run folders, asked of routines.py."""
+    try:
+        import routines
+        return str(routines.runs_dir())
+    except Exception:
+        return ""
+
+
+def _last_run(rid: str) -> Dict[str, Any]:
+    """The newest run row, or {}. routines.runs() is the reader (reuse row 13);
+    a store that was never written is an empty row, never an error."""
+    try:
+        import routines
+        rows = routines.runs(rid, limit=1).get("runs") or []
+    except Exception:
+        return {}
+    return rows[0] if rows and isinstance(rows[0], dict) else {}
+
+
+def _engine_state(rid: str, rec: Dict[str, Any], runs_root: str) -> str:
+    """Paused, Running or Idle, in that order of precedence: a paused engine
+    that left a stale lock behind is paused, not running."""
+    if not bool(rec.get("enabled", True)):
+        return "paused"
+    if runs_root and os.path.isdir(os.path.join(runs_root, rid, ".lock")):
+        return "running"
+    last = _last_run(rid)
+    if last.get("started_at") and not last.get("ended_at"):
+        return "running"
+    return "idle"
+
+
+def _engine_name(rid: str, rec: Dict[str, Any]) -> str:
+    """A NAME for an engine. The record's `description` is free text and some
+    of them are a paragraph long, so it goes through the same clip every other
+    name on this screen goes through (_label, org2_api's rule) rather than
+    running off the row."""
+    return _label(rec.get("description")) or rid
+
+
+def _cadence(rec: Dict[str, Any]) -> str:
+    """When it runs, in the record's own sentence. routines.py writes that
+    sentence onto the record at save time (routines.py:304-326) precisely so it
+    reads correctly outside the app; it is passed through, never re-phrased."""
+    sched = rec.get("schedule")
+    return _text(sched.get("human")) if isinstance(sched, dict) else ""
+
+
+def _workflows() -> List[Dict[str, Any]]:
+    """The workflows registered in the user kit, as the registry stores them
+    (`<registry>/workflows/W-*.json`). No kit, an unreadable file or a file
+    that is not a workflow is simply not a workflow -- never an error."""
+    out: List[Dict[str, Any]] = []
+    folder = os.path.join(E.HOME or "", "workflows")
+    try:
+        names = sorted(os.listdir(folder))
+    except OSError:
+        return out
+    for name in names:
+        if not (name.startswith("W-") and name.endswith(".json")):
+            continue
+        try:
+            with open(os.path.join(folder, name), encoding="utf-8") as fh:
+                rec = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(rec, dict) or not _text(rec.get("id")):
+            continue
+        steps = []
+        for s in (rec.get("steps") or [])[:STEPS_MAX]:
+            if not isinstance(s, dict):
+                continue
+            steps.append({
+                "id": _text(s.get("id")),
+                "name": _text(s.get("name")) or _text(s.get("id")),
+                "produces": [_text(p) for p in (s.get("produces") or []) if _text(p)],
+                "needs": [_text(p) for p in (s.get("needs") or s.get("inputs") or [])
+                          if _text(p)],
+                "verify": _text(s.get("verify")),
+            })
+        out.append({"id": _text(rec.get("id")), "title": _text(rec.get("title")),
+                    "goal": _text(rec.get("goal")), "steps": steps})
+    return out
+
+
+def _workflow_for(rid: str, rec: Dict[str, Any],
+                  flows: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The registered workflow an engine runs, when it runs one.
+
+    No routine record references a workflow (PRD F-8). The only honest join is
+    the engine's own instruction NAMING one, which is how the natural-language
+    table in CLAUDE.md fires them, plus the case where the two carry the same
+    id. Anything looser would put another engine's steps on this card."""
+    if not flows:
+        return None
+    named = _tokens(rec.get("prompt"))
+    for flow in flows:
+        if flow["id"] == rid or flow["id"] in named:
+            return flow
+    return None
+
+
+def _filed_by_engine(ids: List[str]) -> Dict[str, List[Dict[str, Any]]]:
+    """{engine id: the work its runs filed, newest first}.
+
+    A placement carries no run reference either; what it carries is `origin`,
+    a free string the filer writes. A placement is this engine's when its
+    origin NAMES the engine -- the engine's id as a whole word, never a
+    substring, so `audit` cannot claim `governance-audit-daily`'s rows."""
+    out: Dict[str, List[Dict[str, Any]]] = {}
+    wanted = {rid for rid in ids if rid}
+    if not wanted:
+        return out
+    try:
+        places = E.all_placements()
+    except Exception:
+        return out
+    for p in places:
+        if not isinstance(p, dict):
+            continue
+        hit = wanted & _tokens(p.get("origin"))
+        if not hit:
+            continue
+        row = {"id": _text(p.get("id")),
+               "label": _label((p.get("work_ref") or {}).get("id")),
+               "ts_ms": _int(p.get("ts_ms")), "row": p}
+        for rid in hit:
+            out.setdefault(rid, []).append(row)
+    for rid in list(out):
+        out[rid].sort(key=lambda r: -(r["ts_ms"] or 0))
+        out[rid] = out[rid][:ENGINE_FILED_MAX]
+    return out
+
+
+def _routine_creates() -> List[Dict[str, Any]]:
+    """Every ask that ever asked for an engine to exist."""
+    try:
+        import proposals
+        rows = proposals.listing()
+    except Exception:
+        return []
+    return [r for r in rows
+            if isinstance(r, dict) and r.get("kind") == "routine.create"]
+
+
+def _birth(rid: str, rec: Dict[str, Any],
+           creates: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """A23 / F-10: where the engine came from. `from_ask` when an approved
+    routine.create was decided in the same minute the record was written; an
+    ask that names another engine is never the match."""
+    made = _ms_iso(rec.get("created_at"))
+    for p in creates:
+        args = p.get("args") if isinstance(p.get("args"), dict) else {}
+        result = p.get("result") if isinstance(p.get("result"), dict) else {}
+        for named in (_text(args.get("id")), _text(result.get("routine"))):
+            if named and named != rid:
+                break
+        else:
+            decided = _ms_iso(p.get("decided_at"))
+            if made and decided and abs(made - decided) <= BIRTH_WINDOW_MS:
+                return {"from_ask": True, "at": _text(rec.get("created_at")),
+                        "at_ms": made}
+    return {"from_ask": False, "at": _text(rec.get("created_at")), "at_ms": made}
+
+
+def _engines_under(cwd: Optional[str]) -> List[Any]:
+    """Every engine whose folder falls inside the department's, by name."""
+    if not cwd:
+        return []
+    rows = [(rid, rec) for rid, rec in _routine_rows().items()
+            if _under(cwd, rec.get("cwd"))]
+    rows.sort(key=lambda x: (_text(x[1].get("description")).lower(), x[0]))
+    return rows[:ENGINES_MAX]
+
+
+def _engine_row(rid: str, rec: Dict[str, Any], runs_root: str,
+                flows: List[Dict[str, Any]],
+                filed: Dict[str, List[Dict[str, Any]]],
+                creates: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """One engine, as the list row and the Engine tab both read it (A18, A19).
+
+    `makes` prefers what the engine's runs actually filed over what its
+    workflow says it will produce -- evidence before declaration -- and falls
+    back to the declaration when nothing has been filed. `read_by` is None
+    always: no record anywhere names who reads an engine's output, so the card
+    says so in one quiet line rather than inventing a reader (PRD F-8)."""
+    flow = _workflow_for(rid, rec, flows)
+    steps = (flow or {}).get("steps") or []
+    makes = [f["label"] for f in (filed.get(rid) or []) if f["label"]][:MAKES_MAX]
+    if not makes:
+        makes = [p for s in steps for p in s["produces"]][:MAKES_MAX]
+    needs = [n for s in steps for n in s["needs"]][:MAKES_MAX]
+    return {
+        "id": rid,
+        "name": _engine_name(rid, rec),
+        "state": _engine_state(rid, rec, runs_root),
+        "enabled": bool(rec.get("enabled", True)),
+        "cwd": _norm(rec.get("cwd")),
+        "runs_as": _text(rec.get("model")),
+        "cadence": _cadence(rec),
+        "made_by": _birth(rid, rec, creates),
+        "needs": needs or None,
+        "makes": makes or None,
+        "read_by": None,
+        "workflow": flow,
+        "prompt": _text(rec.get("prompt")),
+    }
+
+
+@router.get("/{ref}/engines")
+def engines(ref: str):
+    """R9: every engine that runs in this department's folder, each with the
+    state word its records add up to."""
+    domains = _domain(ref)
+    cwd = _dept_cwd(ref, domains)
+    rows = _engines_under(cwd)
+    runs_root = _runs_root()
+    flows = _workflows()
+    filed = _filed_by_engine([rid for rid, _rec in rows])
+    creates = _routine_creates()
+    return {"engines": [_engine_row(rid, rec, runs_root, flows, filed, creates)
+                        for rid, rec in rows]}
+
+
+def _engine(ref: str, eid: str) -> Dict[str, Any]:
+    """The engine record, or 404. An id that does not fall under this
+    department is not this department's to read (LLD R10-R12): the ref in the
+    path is the scope, and an engine outside it answers the same way an unknown
+    department does."""
+    domains = _domain(ref)
+    cwd = _dept_cwd(ref, domains)
+    rec = _routine_rows().get(eid)
+    if not rec or not _under(cwd, rec.get("cwd")):
+        raise HTTPException(status_code=404, detail="no engine %s here" % eid)
+    return rec
+
+
+def _run_line(row: Dict[str, Any]) -> str:
+    """One run in a sentence: what started it, and how it ended."""
+    trigger = _text(row.get("trigger"))
+    start = RUN_TRIGGERS.get(trigger, trigger.capitalize() or "Started")
+    if row.get("started_at") and not row.get("ended_at"):
+        return "%s: running." % start
+    outcome = _text(row.get("outcome"))
+    word = RUN_OUTCOMES.get(outcome, outcome.capitalize() or "Done")
+    detail = _text(row.get("reason")) or _text(row.get("detail"))
+    return ("%s: %s." % (start, word.lower())) + (" " + _clip(detail) if detail else "")
+
+
+def _runs_chat(name: str, rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """What the engine reported, newest first, as the exchange it is: the
+    engine tells Coordination how each run went. The run row itself is what
+    the Exact tab shows."""
+    return [_turn(name, "Coordination", "say", _run_line(r),
+                  _at(r, "started_at"), r) for r in rows][:CHAT_MAX]
+
+
+@router.get("/{ref}/engines/{eid}/runs")
+def engine_runs(ref: str, eid: str, limit: int = RUNS_LIMIT):
+    """R10: one engine's run rows, department-scoped. routines.runs() is the
+    reader and its answer is passed through (reuse row 13); the only thing
+    added is the chat those same rows make."""
+    rec = _engine(ref, eid)
+    try:
+        want = int(limit)
+    except (TypeError, ValueError):
+        want = RUNS_LIMIT
+    want = max(1, min(want, RUNS_LIMIT_MAX))
+    try:
+        import routines
+        out = dict(routines.runs(eid, limit=want))
+    except Exception:
+        out = {"id": eid, "total": 0, "runs": [], "unreadable": 0, "never_run": True}
+    rows = [r for r in (out.get("runs") or []) if isinstance(r, dict)]
+    out["runs"] = rows
+    out["chat"] = _runs_chat(_engine_name(eid, rec), rows)
+    return out
+
+
+@router.get("/{ref}/engines/{eid}/data")
+def engine_data(ref: str, eid: str):
+    """R11: the work this engine's runs filed. Nothing filed is an empty
+    list, which the card reads as one quiet line (A21)."""
+    _engine(ref, eid)
+    return {"filed": _filed_by_engine([eid]).get(eid) or []}
+
+
+@router.post("/{ref}/engines/{eid}/pause")
+def engine_pause(ref: str, eid: str):
+    """R12: the only write this screen has, and it writes an ASK.
+
+    proposals.create() records the intent and applies nothing (proposals.py:111);
+    `enabled` is untouched until the ask is stamped in Approvals, and only then
+    does the state word change (A22). Nothing here calls routines.update."""
+    rec = _engine(ref, eid)
+    if not bool(rec.get("enabled", True)):
+        raise HTTPException(status_code=400, detail="already paused")
+    summary = "Pause %s" % _engine_name(eid, rec)
+    try:
+        import proposals
+        row = proposals.create("routine.update",
+                               {"id": eid, "patch": {"enabled": False}},
+                               summary, session_id="dept")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"proposal": row, "summary": summary}

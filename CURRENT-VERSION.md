@@ -2,7 +2,13 @@
 
 **status**: active · **updated**: 2026-09-21
 
-## v2.289.4 (2026-09-21, HEAD)
+## v2.289.5 (2026-09-21, HEAD)
+
+**Department screen, slice D** (holding/plans/department-screen, Gate 4): the Engines group with a state word per engine, and an engine card with Engine, Workflow, Runs, Data and Chat. Reads `routines.py`'s own store functions rather than `state()` (which writes a heartbeat and shells launchctl); the one write is a Pause ask through the proposal gate.
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.289.4 (2026-09-21)
 
 **Department screen, slice C** (holding/plans/department-screen, Gate 4): Adaptation, Priority, Coordination and Audit open on their own cards, each with its Chat tab. Four new `/api/dept/{ref}/...` reads over records that already exist — proposals, dispatch records, routine locks and heartbeats, the placement chain, the governance findings. Nothing new writes.
 
