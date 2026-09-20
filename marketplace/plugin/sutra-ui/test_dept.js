@@ -388,12 +388,13 @@ test("S17: a function card whose read has not landed shows a skeleton under its 
 });
 
 /* ── S18 / A4, A5: the ask card ── */
-function nowCard(c, asks){
+function nowCard(c, asks, seed){
   const st = c.dpS();
   st.sel = "r4"; st.tab.r4 = "now";
   st.now = { ref: "r4", asks: asks, decidable: true };
   st.running = { ref: "r4", running: [] };
   st.waits = { ref: "r4", waits: [] };
+  Object.assign(st, seed || {});
   const d = c.o2Data();
   return c.dpViewerHtml(d.byRef.get("r4"), d, DEPT_EXP, null);
 }
@@ -1743,6 +1744,391 @@ test("S69/A26: an app opens through o2OpenApp, over the module that loader cache
   c.o2S().apps.r4 = [];
   click(c, elem({ dpapp: "m-2" }));
   assert.deepStrictEqual(opened, ["m-2"], "an id the cache does not hold opens nothing");
+});
+
+/* ── slice F: meters, births, empty and paused states (S73-S82) ──────────── */
+const METERS = { month: "2026-09",
+  meters: [{ key: "runs", label: "Runs", reading: true, value: 12, of: 30 },
+           { key: "asks", label: "Asks", reading: true, value: 4, of: 8 },
+           { key: "refuses", label: "Refuses", reading: true, value: 1, of: 4 },
+           { key: "spend", label: "Spend", reading: false, value: 0, of: 0 }],
+  runs: 12, asks: 4, refuses: 1, spend_usd: null,
+  engines: [{ id: "nightly", name: "Nightly sweep", meters: [
+               { key: "tick", label: "Tick", dot: "ok" },
+               { key: "asks", label: "Asks", dot: "warn" }] },
+            { id: "hourly", name: "Teamsutra worker", meters: [] }] };
+const METERS_NONE = { month: "2026-09",
+  meters: [{ key: "runs", label: "Runs", reading: false, value: 0, of: 0 },
+           { key: "asks", label: "Asks", reading: false, value: 0, of: 0 },
+           { key: "refuses", label: "Refuses", reading: false, value: 0, of: 0 },
+           { key: "spend", label: "Spend", reading: false, value: 0, of: 0 }],
+  runs: 0, asks: 0, refuses: 0, spend_usd: null, engines: [] };
+const BIRTHS = [{ id: "nightly", name: "Nightly sweep",
+                  at: "2026-08-01T09:00:00+05:30", at_ms: ENG_BORN }];
+
+/* ── S74: the meters loader ── */
+test("S74: dpLoadMeters reads its own route once, and the busy guard holds", async () => {
+  const c = fresh();
+  c.dpS().sel = "r4";
+  c.dpLoadMeters("r4"); c.dpLoadMeters("r4"); c.dpLoadMeters("r4");
+  await sleep();
+  assert.deepStrictEqual(c.calls.apiGet, ["/api/dept/r4/meters"]);
+});
+
+test("S74: a meters answer for a department nobody is on is dropped", async () => {
+  let release;
+  const c = fresh({ apiGet: () => new Promise(r => { release = r; }) });
+  c.dpS().sel = "r4";
+  const p = c.dpLoadMeters("r4");
+  c.dpS().sel = "r5";
+  release(METERS);
+  await p;
+  assert.strictEqual(c.dpS().meters, null);
+});
+
+test("S74: opening another department drops the meters it read", async () => {
+  const c = fresh();
+  c.dpSelect("r4");
+  c.dpS().meters = Object.assign({ ref: "r4" }, METERS);
+  c.dpSelect("r5");
+  await sleep();
+  assert.strictEqual(c.dpS().meters, null);
+});
+
+test("S74: opening a department still costs exactly the three Now reads", async () => {
+  const c = fresh();
+  c.dpSelect("r4");
+  await sleep();
+  assert.deepStrictEqual(c.calls.apiGet.slice().sort(),
+    ["/api/dept/r4/now", "/api/dept/r4/running", "/api/dept/r4/waits"],
+    "the meters are not one of them");
+});
+
+/* ── S75 / A27: the meters on Now ── */
+test("S75: the Now card reads the meters when it opens, once", async () => {
+  const c = fresh();
+  const d = c.o2Data(), n = d.byRef.get("r4");
+  c.dpS().sel = "r4"; c.dpS().tab.r4 = "now";
+  c.dpViewerHtml(n, d, DEPT_EXP, null);
+  await sleep();
+  assert.ok(c.calls.apiGet.indexOf("/api/dept/r4/meters") !== -1, "the card reads it");
+  c.dpViewerHtml(n, d, DEPT_EXP, null);
+  await sleep();
+  assert.strictEqual(c.calls.apiGet.filter(p => /\/meters$/.test(p)).length, 1,
+    "a repaint is not a second read");
+});
+
+test("S75/A27: the month is four bars, drawn against the busiest month on record", () => {
+  const c = fresh();
+  const html = nowCard(c, [], { meters: Object.assign({ ref: "r4" }, METERS) });
+  assert.ok(html.indexOf(">Meters<") !== -1, "the card is on Now");
+  for (const w of ["Runs", "Asks", "Refuses", "Spend"]) {
+    assert.ok(html.indexOf(">" + w + "<") !== -1, w + " is a meter");
+  }
+  assert.ok(/class="dpbar"><i style="width:40%"/.test(html), "runs: 12 of 30");
+  assert.ok(/class="dpbar"><i style="width:50%"/.test(html), "asks: 4 of 8");
+  assert.ok(/class="dpbar"><i style="width:25%"/.test(html), "refuses: 1 of 4");
+  assert.strictEqual((html.match(/dpbar/g) || []).length, 3, "the unread meter draws no bar");
+  assert.ok(!/>\s*\d+\s*</.test(html), "A28: a bar, never a number");
+});
+
+test("S75/A27: a meter with nothing on record reads No reading yet", () => {
+  const c = fresh();
+  const html = nowCard(c, [], { meters: Object.assign({ ref: "r4" }, METERS) });
+  assert.ok(html.indexOf("No reading yet") !== -1, "the spend meter says so");
+  assert.strictEqual((html.match(/No reading yet/g) || []).length, 1, "once, for the one");
+});
+
+test("S75/A9: with nothing open and nothing on record Now is still one quiet line", () => {
+  const c = fresh();
+  const html = nowCard(c, [], { meters: Object.assign({ ref: "r4" }, METERS_NONE) });
+  assert.ok(html.indexOf("Nothing waiting on you") !== -1);
+  assert.strictEqual((html.match(/o2quiet dpq/g) || []).length, 1, "no empty meters card");
+  assert.ok(html.indexOf("dpcard") === -1, "and no card at all");
+});
+
+test("S75: the meters sit under the asks, and the card keeps both", () => {
+  const c = fresh();
+  const html = nowCard(c, [ASK], { meters: Object.assign({ ref: "r4" }, METERS) });
+  assert.ok(html.indexOf("Pause the nightly sweep") !== -1, "the ask is still there");
+  assert.ok(html.indexOf(">Asks<") < html.indexOf(">Meters<"), "the month comes after what waits");
+});
+
+/* ── S75 / A23: the births on Adaptation and on Priority ── */
+test("S75/A23: Adaptation's Runs says an engine was born of an ask", () => {
+  const c = fresh();
+  const html = fnCard(c, "adaptation", Object.assign({}, ADAPTATION, { births: BIRTHS }));
+  assert.ok(html.indexOf("Engine born: Nightly sweep") !== -1, "the birth line");
+  assert.ok(html.indexOf("1 Aug") !== -1, "when it happened");
+  assert.ok(html.indexOf(">Runs<") !== -1, "under the card the locked screen names");
+});
+
+test("S75/A23: Priority's Runs says the first row that engine was admitted", () => {
+  const c = fresh();
+  const html = fnCard(c, "priority", Object.assign({}, PRIORITY, { births: BIRTHS }));
+  assert.ok(html.indexOf("First row admitted: Nightly sweep") !== -1);
+  assert.ok(html.indexOf(">Runs<") !== -1 && html.indexOf(">Budget<") !== -1);
+});
+
+test("S75/A23: an engine nobody asked for is on neither card", () => {
+  const c = fresh();
+  for (const [tab, line] of [["adaptation", "Engine born"], ["priority", "First row admitted"]]) {
+    const html = fnCard(fresh(), tab, Object.assign({}, tab === "adaptation" ? ADAPTATION : PRIORITY,
+                                                    { births: [] }));
+    assert.strictEqual(html.indexOf(line), -1, tab + ": nothing invented");
+  }
+  assert.ok(c);
+});
+
+test("S75/A23: a birth alone is enough to fill a card that is otherwise empty", () => {
+  const c = fresh();
+  const a = fnCard(c, "adaptation", Object.assign({}, EMPTY.adaptation, { births: BIRTHS }));
+  assert.ok(a.indexOf("Engine born: Nightly sweep") !== -1);
+  assert.ok(a.indexOf("Nothing to change yet") === -1);
+  const p = fnCard(fresh(), "priority", Object.assign({}, EMPTY.priority, { births: BIRTHS }));
+  assert.ok(p.indexOf("First row admitted: Nightly sweep") !== -1);
+  assert.ok(p.indexOf("Nothing in the queue") === -1);
+});
+
+/* ── S76 / A33: the empty department ── */
+const BARE_DEPT = { filed: [], docs: [], charter: null, charters: [] };
+const EMPTY_READS = {
+  now: { ref: "r4", asks: [], decidable: true },
+  running: { ref: "r4", running: [] },
+  waits: { ref: "r4", waits: [] },
+  meters: Object.assign({ ref: "r4" }, METERS_NONE),
+  engines: { ref: "r4", engines: [] },
+  filed: { ref: "r4", filed: [] },
+  people: Object.assign({ ref: "r4" }, PEOPLE_NONE),
+  identity: Object.assign({ ref: "r4" }, BARE_ID),
+  adaptation: Object.assign({ ref: "r4" }, EMPTY.adaptation),
+  priority: Object.assign({ ref: "r4" }, EMPTY.priority),
+  coordination: Object.assign({ ref: "r4" }, EMPTY.coordination),
+  audit: Object.assign({ ref: "r4" }, EMPTY.audit),
+};
+function emptyDept(c, tab){
+  const st = c.dpS();
+  st.sel = "r4";
+  Object.assign(st, EMPTY_READS);
+  st.tab.r4 = tab || "now";
+  if (typeof c.o2S === "function") c.o2S().apps.r4 = [];
+  const d = c.o2Data(), n = d.byRef.get("r4");
+  return { list: c.dpListHtml(n, d, BARE_DEPT, null),
+           card: c.dpViewerHtml(n, d, BARE_DEPT, null) };
+}
+
+test("S76/A33: an empty department still shows all seven groups, one quiet line each", () => {
+  const c = fresh();
+  const { list } = emptyDept(c);
+  assert.deepStrictEqual(groupLabels(list), GROUPS, "nothing is hidden because it is empty");
+  const quiet = (list.match(/class="o2quiet dpq">([^<]*)</g) || []).map(m => /">([^<]*)<$/.exec(m)[1]);
+  assert.deepStrictEqual(quiet, ["No engines here", "Nothing filed yet", "No people yet",
+                                 "No documents yet", "No apps yet"],
+    "five empty groups, five lines; Now and Functions carry their fixed rows");
+  assert.strictEqual((list.match(/data-dptab=/g) || []).length, 6, "Now and the five functions");
+});
+
+test("S76/A33: every card of an empty department is exactly one quiet line", () => {
+  const want = { now: "Nothing waiting on you", adaptation: "Nothing to change yet",
+                 priority: "Nothing in the queue", coordination: "Nothing held",
+                 audit: "No check has run here", engines: "No engines here",
+                 filed: "Nothing filed yet", people: "No people yet" };
+  for (const tab of Object.keys(want)) {
+    const { card } = emptyDept(fresh(), tab);
+    assert.ok(card.indexOf(want[tab]) !== -1, tab + ' says "' + want[tab] + '"');
+    const quiet = (card.match(/o2quiet dpq/g) || []).length;
+    assert.strictEqual(quiet, 1, tab + ": one line, not several");
+    assert.ok(!/help|Help|How to|Learn/.test(card), tab + ": A28 no help text");
+    assert.ok(card.indexOf("/Users/") === -1, tab + ": A28 no path");
+  }
+});
+
+test("S76/A12: an empty Identity reads No goal yet and never the word behind it", () => {
+  const c = fresh();
+  const { card } = emptyDept(c, "identity");
+  assert.ok(card.indexOf("No goal yet") !== -1, "A12");
+  assert.ok(card.indexOf("Write the goal") !== -1, "and the one action beside it");
+  assert.strictEqual(card.toLowerCase().indexOf("charter"), -1, "A12: not the word");
+  for (const line of ["No done line yet", "No rules yet", "No reading yet", "No owner yet"]) {
+    assert.ok(card.indexOf(line) !== -1, "the cell says " + line);
+  }
+});
+
+/* ── S77 / A34: the paused engine ── */
+const ENG_PAUSED_RUNS = { id: "off-one", total: 2, unreadable: 0, never_run: false, runs: [
+  { schema: 1, id: "off-one", trigger: "schedule",
+    started_at: new Date(Date.now() - 40 * 60000).toISOString(), outcome: "ok", duration_s: 0 },
+  { schema: 1, id: "off-one", trigger: "schedule", started_at: "2026-09-14T03:00:00+05:30",
+    ended_at: "2026-09-14T03:02:00+05:30", duration_s: 120, outcome: "ok" },
+], chat: [] };
+
+test("S77/A34: a paused engine reads Paused in the list and on its card", () => {
+  const c = fresh();
+  assert.ok(engList(c).indexOf(">Paused<") !== -1, "the row says it");
+  const card = engCard(fresh(), null, "off-one");
+  assert.ok(card.indexOf(">State<") !== -1 && card.indexOf(">Paused<") !== -1,
+    "and so does the card");
+  assert.ok(card.indexOf("data-dppause") === -1, "a paused engine is not offered a pause");
+});
+
+test("S77/A34: the two engines that are not paused say what they are instead", () => {
+  for (const [id, word] of [["nightly", "Idle"], ["hourly", "Running"]]) {
+    const card = engCard(fresh(), null, id);
+    assert.ok(card.indexOf(">" + word + "<") !== -1, id + " says " + word);
+    assert.ok(card.indexOf(">Paused<") === -1, id + " is not paused");
+  }
+});
+
+test("S77/A34: a paused engine's Runs shows the last run and no live row", () => {
+  const c = fresh();
+  const view = engCard(c, "runs", "off-one",
+    { engineRuns: { "off-one": Object.assign({ ref: "r4" }, ENG_PAUSED_RUNS) } });
+  assert.strictEqual((view.match(/>Running/g) || []).length, 0,
+    "a switched-off engine has nothing going");
+  assert.ok(view.indexOf("so far") === -1, "and no clock on it");
+  assert.strictEqual((view.match(/>Done</g) || []).length, 2, "both rows read as they ended");
+  const live = engCard(fresh(), "runs", "hourly",
+    { engineRuns: { hourly: Object.assign({ ref: "r4" }, ENG_LIVE) } });
+  assert.ok(live.indexOf(">Running") !== -1, "a running engine still reads Running");
+});
+
+/* ── S77 / A27: the per-engine meters ── */
+test("S77/A27: the Engine tab reads the meters and shows the ones a record answers", async () => {
+  const c = fresh();
+  engCard(c, null, "nightly");
+  await sleep();
+  assert.ok(c.calls.apiGet.indexOf("/api/dept/r4/meters") !== -1, "the card reads them");
+  const view = engCard(fresh(), null, "nightly", { meters: Object.assign({ ref: "r4" }, METERS) });
+  assert.ok(view.indexOf(">Meters<") !== -1, "the card is there");
+  assert.ok(/class="dpmet"><i class="dpdot ok"><\/i>Tick/.test(view), "Tick is a dot");
+  assert.ok(/class="dpmet"><i class="dpdot warn"><\/i>Asks/.test(view), "so is Asks");
+  assert.ok(view.indexOf(">Fit<") === -1, "Fit has no record and is given no dot");
+  assert.ok(!/>\s*\d+\s*</.test(view.slice(view.indexOf(">Meters<"))), "A28: dots, never counts");
+});
+
+test("S77/A27: an engine whose records answer nothing says No reading yet", () => {
+  const c = fresh();
+  const view = engCard(c, null, "hourly", { meters: Object.assign({ ref: "r4" }, METERS) });
+  assert.ok(view.indexOf(">Meters<") !== -1 && view.indexOf("No reading yet") !== -1);
+  assert.ok(view.indexOf("dpmet\"") === -1, "one line, no dots");
+});
+
+/* ── S78, S79: every card of a full department, swept once ────────────────
+   The two sweeps below are the slice's closing gate: one card at a time was
+   checked as it was built, and this walks ALL of them with the richest
+   fixtures each one has, so a rule that a later slice broke on an earlier
+   card is caught here rather than on the screen. The Exact panes are left out
+   on purpose -- a raw row is the ONE place a path, a count or the record's own
+   word is allowed to appear (A28, A29), and it is checked separately. */
+const FULL = {
+  now: { ref: "r4", asks: [ASK, HARD_ASK, OLD_ASK], decidable: true },
+  running: { ref: "r4", running: RUNNING },
+  waits: { ref: "r4", waits: WAITS },
+  meters: Object.assign({ ref: "r4" }, METERS),
+  identity: Object.assign({ ref: "r4" }, IDENTITY),
+  adaptation: Object.assign({ ref: "r4" }, ADAPTATION, { births: BIRTHS }),
+  priority: Object.assign({ ref: "r4" }, PRIORITY, { births: BIRTHS }),
+  coordination: Object.assign({ ref: "r4" }, COORD),
+  audit: Object.assign({ ref: "r4" }, AUDIT),
+  engines: Object.assign({ ref: "r4" }, ENGINES),
+  engineRuns: { nightly: Object.assign({ ref: "r4" }, ENG_RUNS),
+                hourly: Object.assign({ ref: "r4" }, ENG_LIVE),
+                "off-one": Object.assign({ ref: "r4" }, ENG_PAUSED_RUNS) },
+  engineData: { nightly: Object.assign({ ref: "r4" }, ENG_DATA) },
+  filed: Object.assign({ ref: "r4" }, FILED),
+  people: Object.assign({ ref: "r4" }, PEOPLE),
+};
+/* [label, html] for the list column and every card, every pane, every row a
+   fixture holds -- Exact excluded. */
+function sweep(){
+  const out = [];
+  const paint = (label, tab, seed) => {
+    const c = fresh();
+    const st = c.dpS();
+    st.sel = "r4";
+    Object.assign(st, FULL, seed || {});
+    st.tab.r4 = tab;
+    c.o2S().apps.r4 = APPS;
+    const d = c.o2Data(), n = d.byRef.get("r4");
+    out.push([label, c.dpViewerHtml(n, d, DEPT_EXP, null)]);
+    if (tab === "now") out.push(["list", c.dpListHtml(n, d, DEPT_EXP, null)]);
+  };
+  paint("now", "now");
+  for (const pane of ["identity", "owner", "adaptation"]) {
+    paint("identity/" + pane, "identity", { pane: { "r4:identity": pane } });
+  }
+  for (const [tab] of FUNCS.slice(1)) {
+    for (const pane of [tab, "chat"]) paint(tab + "/" + pane, tab, { pane: { ["r4:" + tab]: pane } });
+  }
+  for (const id of ["nightly", "hourly", "off-one"]) {
+    for (const pane of ["engines", "workflow", "runs", "data", "chat"]) {
+      paint("engine " + id + "/" + pane, "engines",
+            { engineSel: id, pane: { "r4:engines": pane } });
+    }
+  }
+  for (const f of FILED.filed) paint("filed/" + f.label, "filed", { filedSel: f.id });
+  for (const p of ["owner", "C-7"]) paint("people/" + p, "people", { personSel: p });
+  return out;
+}
+
+test("S78/A28: no card shows help text, a path or a raw count at rest", () => {
+  for (const [label, html] of sweep()) {
+    /* what a person READS is the text between the tags; a path may ride an
+       attribute (it is how a row opens its document), never a label */
+    const text = html.replace(/<[^>]*>/g, "\n");
+    assert.ok(!/help|Help|How to|Learn more/.test(text), label + ": no help text");
+    assert.strictEqual(html.indexOf("/Users/"), -1, label + ": no path, not even in an attribute");
+    assert.strictEqual(text.indexOf("holding/plans"), -1, label + ": a name, never the path");
+    const counts = (html.match(/>\s*\d+\s*</g) || []);
+    assert.deepStrictEqual(counts, [], label + ": counts are bars and dots only");
+  }
+});
+
+test("S78/A27: every bar on the screen is a share, and every dot is a word", () => {
+  for (const [label, html] of sweep()) {
+    for (const m of (html.match(/<i style="width:([0-9.]+)%"/g) || [])) {
+      const pct = Number(/([0-9.]+)%/.exec(m)[1]);
+      assert.ok(pct >= 0 && pct <= 100, label + ": a bar stays inside its track (" + m + ")");
+    }
+    for (const m of (html.match(/class="dpdot ([a-z]*)"/g) || [])) {
+      const dot = /dpdot ([a-z]*)"/.exec(m)[1];
+      assert.ok(["", "ok", "warn", "block"].indexOf(dot) !== -1, label + ": " + dot + " is not a dot");
+    }
+  }
+});
+
+test("S79/A29: every screen word is from the D78 list, on every card", () => {
+  const all = sweep().map(x => x[1]).join("\n");
+  for (const w of ["department", "Now", "Identity", "Adaptation", "Priority", "Coordination",
+                   "Audit", "Engines", "Engine", "work item", "Filed work", "People",
+                   "Documents", "Apps", "Rules", "Budget", "Owner", "Meters"]) {
+    assert.ok(all.indexOf(w) !== -1, "missing screen word: " + w);
+  }
+  for (const w of ["cut", "seam", "overlay", "cascade", "score"]) {
+    assert.ok(new RegExp("\\b" + w + "\\b", "i").test(all) === false, "off-list word: " + w);
+  }
+});
+
+test("S79/A29: the word charter is on no card at all", () => {
+  for (const [label, html] of sweep()) {
+    assert.strictEqual(html.toLowerCase().indexOf("charter"), -1, label + ": A29");
+  }
+});
+
+test("S79/A29: and it reaches the screen only inside an Exact row", () => {
+  const c = fresh();
+  const st = c.dpS();
+  st.sel = "r4";
+  Object.assign(st, FULL);
+  st.tab.r4 = "identity";
+  st.pane["r4:identity"] = "owner";
+  st.chatMode["r4:owner"] = "exact";
+  const d = c.o2Data();
+  const exact = c.dpViewerHtml(d.byRef.get("r4"), d, DEPT_EXP, null);
+  const at = exact.toLowerCase().indexOf("charter");
+  assert.ok(at !== -1, "the raw row carries the record's own kind");
+  assert.ok(exact.lastIndexOf('<pre class="dpexact">') < at && at < exact.indexOf("</pre>"),
+    "and it is inside the pre, nowhere else");
 });
 
 /* ── S15 / TEST-PLAN component 39: the one branch inside 19-org2.js ── */

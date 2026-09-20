@@ -111,6 +111,11 @@ function dpLoadEngineData(ref, id, force){ return dpLoadEngine("engineData", ref
    opened first would have nothing to open. */
 function dpLoadFiled(ref, force){ return dpLoad("filed", ref, dpUrl(ref, "filed"), force); }
 function dpLoadPeople(ref, force){ return dpLoad("people", ref, dpUrl(ref, "people"), force); }
+/* The meters are read when a card that DRAWS one opens -- Now, and an engine's
+   Engine tab -- never when the department does. Opening a department still
+   costs the three reads Now needs (S14); a month of run rows behind four bars
+   is not one of them. */
+function dpLoadMeters(ref, force){ return dpLoad("meters", ref, dpUrl(ref, "meters"), force); }
 
 /* ── selection ────────────────────────────────────────────────────────────── */
 /* Opening a department, mirroring o2Select (19-org2.js:250-261): everything the
@@ -309,6 +314,30 @@ function dpAskHtml(a){
     `<div class="dpaskd">${line}</div>` +
     (gone ? "" : dpBar(share, hard ? "hard" : "")) + acts + `</div>`;
 }
+/* ── the month's meters ────────────────────────────────────────────────────
+   A27: what the department did this calendar month -- runs, asks, refuses and
+   spend -- each as a bar and never as a number (A28). The bar is this month
+   against the department's OWN busiest month, because no record anywhere
+   carries a target; what the owner reads off it is "busy or quiet, for us".
+   A meter with nothing on record is not a zero: it says so in its own line. */
+function dpMeterHtml(m){
+  const of = Number(m.of) || 0, v = Number(m.value) || 0;
+  return dpCell(m.label, m.reading ? dpBar(of ? Math.min(1, v / of) : 0)
+                                   : dpQuiet("No reading yet"));
+}
+function dpMeters(){
+  const st = dpS();
+  const read = (st.meters && st.meters.ref === st.sel) ? st.meters : null;
+  return (read && read.meters) || [];
+}
+/* Nothing read anywhere draws no card at all, so a department with nothing
+   open still says exactly one line on Now (A9). */
+function dpMetersHtml(){
+  const rows = dpMeters();
+  if (!rows.some(m => m.reading)) return "";
+  return dpCard("Meters", `<div class="dpmets">${rows.map(dpMeterHtml).join("")}</div>`);
+}
+
 /* Now: what is waiting on the owner, what is stuck, what is moving. When all
    three are empty the card says so ONCE (A9) rather than three times. */
 function dpNowHtml(){
@@ -320,14 +349,15 @@ function dpNowHtml(){
   const asks = (nowR && nowR.asks) || [];
   const waits = (waitR && waitR.waits) || [];
   const running = (runR && runR.running) || [];
+  const meters = dpMetersHtml();
   if (!asks.length && !waits.length && !running.length){
-    return failed ? dpQuiet("Could not read") : dpQuiet("Nothing waiting on you");
+    return failed ? dpQuiet("Could not read") : dpQuiet("Nothing waiting on you") + meters;
   }
   let body = "";
   if (asks.length) body += dpCard("Asks", asks.map(dpAskHtml).join(""));
   if (waits.length) body += dpCard("Waits", waits.map(w => dpRunRow(w.objective, w.state)).join(""));
   if (running.length) body += dpCard("Running", running.map(r => dpRunRow(r.goal, "")).join(""));
-  return body;
+  return body + meters;
 }
 
 /* ── the chat every card keeps ─────────────────────────────────────────────
@@ -486,28 +516,39 @@ function dpPropHtml(p){
   const note = [p.evidence, p.state].filter(Boolean).join(" · ");
   return dpRunRow(p.change, note, p.open ? "warn" : "ok", p.open ? dpBar(dpLeft(p)) : "");
 }
+/* A23: an engine an ask brought into being, on the two cards that were part of
+   it. Adaptation put the change forward, so its Runs row is the engine's
+   birth; Priority admitted the first row that engine ever got, so its row says
+   that. Both read the same match slice D made -- the ask decided in the minute
+   the record was written -- and neither invents a row for an engine somebody
+   wrote by hand. */
+function dpBirthRows(births, line){
+  return (births || []).map(b => dpRunRow(line + b.name, dpStamp(b.at_ms), "ok")).join("");
+}
 function dpAdaptationCard(a){
-  const props = a.proposals || [], pats = a.patterns || [];
+  const props = a.proposals || [], pats = a.patterns || [], born = a.births || [];
   /* the one action: the Org screen's existing write-it ask, which is how a
      rule is changed here too -- this screen still files nothing of its own */
   const offer = `<div class="dpoffer"><button type="button" class="btn" data-dprule="1">Change a rule</button></div>`;
-  if (!props.length && !pats.length) return dpQuiet("Nothing to change yet") + offer;
+  if (!props.length && !pats.length && !born.length) return dpQuiet("Nothing to change yet") + offer;
   let body = "";
   if (props.length) body += dpCard("Proposals", props.map(dpPropHtml).join(""));
   if (pats.length) body += dpCard("Seen in the logbook", pats.map(p =>
     dpRunRow(p.summary, "Since " + dpStamp(p.since_ms))).join(""));
+  if (born.length) body += dpCard("Runs", dpBirthRows(born, "Engine born: "));
   return body + offer;
 }
 
 /* Priority: what it took on, in the order it took it, under one ceiling. */
 function dpPriorityCard(p){
-  const q = p.queue || [];
+  const q = p.queue || [], born = p.births || [];
   const budget = dpBudgetHtml(p.budget);
-  if (!q.length && !(p.budget && p.budget.running_at_once != null)) return dpQuiet("Nothing in the queue");
+  if (!q.length && !born.length && !(p.budget && p.budget.running_at_once != null)) return dpQuiet("Nothing in the queue");
   let body = "";
   if (q.length) body += dpCard("Queue", q.map(r => dpRunRow(r.next,
     [r.runs_as ? "Runs as " + r.runs_as : "", dpWhenMs(r.when_ms)].filter(Boolean).join(" · "),
     "ok")).join(""));
+  if (born.length) body += dpCard("Runs", dpBirthRows(born, "First row admitted: "));
   return body + dpCard("Budget", budget);
 }
 
@@ -589,9 +630,29 @@ function dpAsked(id){
   const asks = (st.now && st.now.ref === st.sel && st.now.asks) || [];
   return asks.some(a => a.kind === "routine.update" && a.args && a.args.id === id);
 }
+/* The meters the record can answer for ONE engine, as dots (A27). Fit is named
+   by the locked screen and has no record anywhere -- nothing measures how much
+   of an instruction its rules take -- so it never carries a dot, and an engine
+   whose records answer none of them shows the one quiet line instead. */
+function dpEngMeters(id){
+  const st = dpS();
+  const read = (st.meters && st.meters.ref === st.sel) ? st.meters : null;
+  const row = ((read && read.engines) || []).filter(e => e.id === id)[0];
+  return (row && row.meters) || [];
+}
+function dpEngMetersCard(id){
+  const rows = dpEngMeters(id);
+  if (!rows.length) return dpCard("Meters", dpQuiet("No reading yet"));
+  return dpCard("Meters", `<div class="dpmets">` + rows.map(m =>
+    `<span class="dpmet"><i class="dpdot ${dpEsc(m.dot || "")}"></i>${dpEsc(m.label)}</span>`
+  ).join("") + `</div>`);
+}
 function dpEngineTable(e){
   const st = dpS();
   const grid = `<div class="dpengines">` +
+    /* A34: the state word belongs on the card as well as on the row, so an
+       engine opened from anywhere says what it is doing without going back */
+    dpKV("State", DP_STATES[String(e.state)] || DP_STATES.idle, "") +
     dpKV("Made by", dpMade(e), "") +
     dpKV("Runs as", e.runs_as, "Not named") +
     dpKV("Cadence", e.cadence, "Not set") +
@@ -603,7 +664,7 @@ function dpEngineTable(e){
   const act = e.state === "paused" ? "" :
     `<div class="dpoffer"><button type="button" class="btn" data-dppause="${dpEsc(e.id)}">` +
     (asked ? "Asked to pause" : "Pause") + `</button></div>`;
-  return dpCard("The engine", grid) + act;
+  return dpCard("The engine", grid) + dpEngMetersCard(e.id) + act;
 }
 /* F-11: a run row carries no step, so there is nothing to mark. When one ever
    names where it is, the live run lights that step and no other. */
@@ -650,8 +711,12 @@ function dpRunsCard(e){
   const rows = mine.runs || [];
   if (!rows.length) return dpQuiet("Never run");
   const full = rows.reduce((m, r) => Math.max(m, Number(r.duration_s) || 0), 0);
+  /* A34: a paused engine has no live run. A row it left behind with no end
+     stamp is a run that was stopped, not one that is going, and reading it as
+     live would put a clock on a card whose engine is switched off. */
+  const paused = e.state === "paused";
   return dpCard("Runs", rows.map(r => {
-    const live = r.started_at && !r.ended_at;
+    const live = !paused && r.started_at && !r.ended_at;
     if (live) return dpRunRow("Running", [dpAt(r.started_at), dpElapsed(r.started_at)].filter(Boolean).join(" · "));
     const word = DP_RUN_WORDS[String(r.outcome)] || DP_RUN_WORDS.ok;
     return dpRunRow(word, dpAt(r.started_at), DP_RUN_DOTS[String(r.outcome)] || "ok", dpDur(r, full));
@@ -673,6 +738,7 @@ const DP_ENG_CARDS = { engines: dpEngineTable, workflow: dpWorkflowCard,
 function dpEngineCard(_data, pane){
   const st = dpS(), e = dpEngine();
   if (!e) return dpQuiet("No engines here");
+  if (pane === "engines") dpLoadMeters(st.sel);          /* the meters the card draws */
   if (pane === "runs" || pane === "workflow") dpLoadEngineRuns(st.sel, e.id);
   if (pane === "data") dpLoadEngineData(st.sel, e.id);
   return (DP_ENG_CARDS[pane] || dpEngineTable)(e);
@@ -790,7 +856,10 @@ const DP_CARDS = {
 function dpViewerHtml(n, d, dept, err){
   const st = dpS();
   const tab = st.tab[n.ref] || "now";
-  if (tab === "now") return dpViewerShell("Now", dpNowHtml());
+  if (tab === "now"){
+    dpLoadMeters(n.ref);                                 /* read on open, as o2LoadApps does */
+    return dpViewerShell("Now", dpNowHtml());
+  }
   if (tab === "identity"){
     dpLoadIdentity(n.ref);                               /* read on open, as o2LoadApps does */
     return dpViewerShell("Identity", dpIdentityHtml());

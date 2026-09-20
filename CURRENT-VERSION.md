@@ -2,7 +2,13 @@
 
 **status**: active · **updated**: 2026-09-21
 
-## v2.289.6 (2026-09-21, HEAD)
+## v2.289.7 (2026-09-21, HEAD)
+
+**Department screen, slice F — the screen is complete** (holding/plans/department-screen, Gate 4): the month's meters on Now and per engine, the birth lines on Adaptation and Priority, the Paused word on the engine card, and one quiet line per empty group and card.
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.289.6 (2026-09-21)
 
 **Department screen, slice E** (holding/plans/department-screen, Gate 4): Filed work with a version chain per work item and the three state words off `supersedes` and `phase`, People with the owner and the asks they saw, and Documents and Apps read and opened through the Org screen's own loaders.
 

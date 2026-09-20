@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.289.7 (2026-09-21)
+
+- **Sutra Desktop: department screen slice F, meters, births, empty and paused states; the department screen is complete** (holding/plans/department-screen, BUILD-PLAN S73-S82). Now carries the calendar month as four bars — runs, asks, refuses, spend — each drawn against the department's own busiest month and never as a number; a meter with nothing on record reads "No reading yet". An engine card carries the meters its records answer as dots (Fit has no record anywhere and is given none), its state word, and a Runs tab that shows no live row once the engine is paused. Adaptation and Priority name the engines an ask brought into being. An empty department still shows all seven groups, each with its one quiet line. One new read under `/api/dept/{ref}`; `org_api.py` untouched.
+
 ## 2.289.6 (2026-09-21)
 
 - **Sutra Desktop: department screen slice E, filed work with versions, people, documents and apps** (holding/plans/department-screen, BUILD-PLAN S63-S72). Filed work lists one row per work item with its versions as dots, never a count; opening one shows every version newest first with the word the record carries — in use, waits or retired, derived from the supersedes chain and the placement phase — plus who filed it, where it sits, and a quiet line where no record names a reader. People lists the owner (Identity's own rule) and then any role charters, and a person opens on their name, what they stamp and the asks they answered. Documents and Apps are the Org screen's own rows, opened by its own o2OpenDoc and o2OpenApp. Two new reads under `/api/dept/{ref}`; `org_api.py` untouched.

@@ -782,6 +782,7 @@ def adaptation(ref: str):
     return {
         "proposals": _adaptation_rows(props, pats, _ttl_ms()),
         "patterns": pats,
+        "births": _births(cwd),
         "chat": _adaptation_chat(props),
     }
 
@@ -875,6 +876,7 @@ def priority(ref: str):
         "class": _text(top.get("CLASS")) or None,
         "model": _runs_as(top) or None,
         "budget": _budget(),
+        "births": _births(cwd),
         "chat": _priority_chat(queue),
     }
 
@@ -1723,3 +1725,176 @@ def people(ref: str):
     owner["stamps"] = _stamps(charter)
     owner["seen"] = _seen_rows(_dept_proposals(ref, domains, cwd))
     return {"owner": owner, "roles": _roles(ref)}
+
+
+# -------------------------------------------------------------------- METERS --
+# R15. What the department did this calendar month, and where each engine
+# stands -- the last two readings the locked screen asks for.
+#
+# NOTHING stores a meter (PRD F-7, S10). Every reading below is COUNTED on each
+# read off two stores this router already has: the engines' run rows and the
+# department's own proposals. Three consequences, all of them deliberate:
+#
+#   1. A reading with no row behind it is NOT a zero. A department whose
+#      engines never ran has no runs meter at all, and the card says "No
+#      reading yet" (A27) rather than drawing an empty bar that would read as
+#      "we did nothing this month".
+#   2. The bar's ceiling is the department's OWN busiest month on record. No
+#      record anywhere carries a target for runs, asks or refuses, so "busy or
+#      quiet, for us" is the only thing a bar can honestly say -- and it says
+#      it without printing a number (A28).
+#   3. `Fit` is named by the locked screen's meter lines ("rules and slice
+#      under 60% of a prompt") and has NO record anywhere: nothing measures how
+#      much of an engine's instruction its rules take. It therefore never
+#      carries a dot. Stated here rather than computed from something else that
+#      happens to be a number.
+
+METER_RUNS_LIMIT = 500       # run rows read per engine when counting a month
+METER_MONTHS = 36            # months of history a ceiling may be looked for in
+BIRTHS_MAX = 8               # birth lines per card
+#: A13's own rule, reused: three asks of a kind is what this screen already
+#: calls a lot, so it is where an engine's Asks meter turns.
+METER_ASK_WARN = PATTERN_MIN
+#: The locked screen's own meter line: spend under 40% of the budget.
+METER_SPEND_WARN = 0.4
+METER_LABELS = (("runs", "Runs"), ("asks", "Asks"),
+                ("refuses", "Refuses"), ("spend", "Spend"))
+
+
+def _month_of(ms: Any) -> str:
+    """The calendar month a stamp falls in, local time (PRD F-2)."""
+    n = _int(ms)
+    if not n:
+        return ""
+    try:
+        return time.strftime("%Y-%m", time.localtime(n / 1000.0))
+    except (OverflowError, OSError, ValueError):
+        return ""
+
+
+def _add(buckets: Dict[str, float], ms: Any, amount: float = 1.0) -> None:
+    """One row into its month's bucket. A row with no readable stamp belongs to
+    no month and is counted nowhere -- it would otherwise land in whichever
+    month the fallback picked and quietly inflate it."""
+    key = _month_of(ms)
+    if key:
+        buckets[key] = buckets.get(key, 0.0) + amount
+
+
+def _meter(key: str, label: str, buckets: Dict[str, float], month: str) -> Dict[str, Any]:
+    """One bar: this month, and the biggest month on record beside it."""
+    months = sorted(buckets)[-METER_MONTHS:]
+    value = float(buckets.get(month) or 0.0)
+    peak = max([buckets[m] for m in months] + [value]) if months else value
+    return {"key": key, "label": label, "reading": bool(months),
+            "value": round(value, 4), "of": round(peak, 4)}
+
+
+def _engine_runs(rid: str) -> List[Dict[str, Any]]:
+    """A month of one engine's run rows, through routines.runs() as every other
+    run read on this screen goes (reuse row 13)."""
+    try:
+        import routines
+        rows = routines.runs(rid, limit=METER_RUNS_LIMIT).get("runs") or []
+    except Exception:
+        return []
+    return [r for r in rows if isinstance(r, dict)]
+
+
+def _cost(row: Dict[str, Any]) -> Optional[float]:
+    """What a run cost, when the row carries it. routines.py writes `cost_usd`
+    off the model's own total (routines.py:645, 732); a row without one is not
+    a free run, it is an unmeasured one, and returns None."""
+    v = row.get("cost_usd")
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    return float(v)
+
+
+def _engine_meters(rid: str, rec: Dict[str, Any], rows: List[Dict[str, Any]],
+                   ask_ids: List[str], month: str) -> List[Dict[str, str]]:
+    """The meters a record can answer for ONE engine, as dots (A27).
+
+    Only the answerable ones are returned, so a card with nothing to read shows
+    its one quiet line rather than four grey dots that look like readings. Fit
+    is never here -- see this section's note 3."""
+    out: List[Dict[str, str]] = []
+    mine = [r for r in rows if _month_of(_ms_iso(r.get("started_at"))) == month]
+    if mine:
+        outcomes = {_text(r.get("outcome")) for r in mine}
+        dot = "block" if "failed" in outcomes else (
+            "warn" if "timeout" in outcomes else "ok")
+        out.append({"key": "tick", "label": "Tick", "dot": dot})
+    asked = len([a for a in ask_ids if a == rid])
+    if mine or asked:
+        out.append({"key": "asks", "label": "Asks",
+                    "dot": "warn" if asked >= METER_ASK_WARN else "ok"})
+    costs = [c for c in (_cost(r) for r in mine) if c is not None]
+    opts = rec.get("opts") if isinstance(rec.get("opts"), dict) else {}
+    ceiling = opts.get("max_budget_usd")
+    if costs and isinstance(ceiling, (int, float)) and not isinstance(ceiling, bool) \
+            and float(ceiling) > 0:
+        share = sum(costs) / (float(ceiling) * len(costs))
+        out.append({"key": "spend", "label": "Spend",
+                    "dot": "warn" if share >= METER_SPEND_WARN else "ok"})
+    return out
+
+
+def _births(cwd: Optional[str]) -> List[Dict[str, Any]]:
+    """Every engine here that an ask brought into being, newest first (A23).
+
+    The match is slice D's `_birth` and nothing looser -- the two stamps inside
+    one minute -- so an engine somebody wrote by hand is never called born."""
+    creates = _routine_creates()
+    out = []
+    for rid, rec in _engines_under(cwd):
+        b = _birth(rid, rec, creates)
+        if not b.get("from_ask"):
+            continue
+        out.append({"id": rid, "name": _engine_name(rid, rec),
+                    "at": b.get("at"), "at_ms": b.get("at_ms")})
+    out.sort(key=lambda r: -(r["at_ms"] or 0))
+    return out[:BIRTHS_MAX]
+
+
+@router.get("/{ref}/meters")
+def meters(ref: str):
+    """R15: runs, asks, refuses and spend for the calendar month, and the same
+    question asked of each engine (A27)."""
+    domains = _domain(ref)
+    cwd = _dept_cwd(ref, domains)
+    month = _month_of(int(time.time() * 1000))
+    props = _dept_proposals(ref, domains, cwd)
+    asks: Dict[str, float] = {}
+    refuses: Dict[str, float] = {}
+    ask_ids: List[str] = []
+    for rec in props:
+        _add(asks, rec.get("created_ms"))
+        args = rec.get("args") if isinstance(rec.get("args"), dict) else {}
+        if _month_of(rec.get("created_ms")) == month:
+            ask_ids.append(_text(args.get("id")))
+        if str(rec.get("status") or "") == "rejected":
+            _add(refuses, _ms_iso(rec.get("decided_at")) or _int(rec.get("created_ms")))
+    runs: Dict[str, float] = {}
+    spend: Dict[str, float] = {}
+    per_engine = []
+    for rid, rec in _engines_under(cwd):
+        rows = _engine_runs(rid)
+        for r in rows:
+            started = _ms_iso(r.get("started_at"))
+            _add(runs, started)
+            cost = _cost(r)
+            if cost is not None:
+                _add(spend, started, cost)
+        per_engine.append({"id": rid, "name": _engine_name(rid, rec),
+                           "meters": _engine_meters(rid, rec, rows, ask_ids, month)})
+    buckets = {"runs": runs, "asks": asks, "refuses": refuses, "spend": spend}
+    return {
+        "month": month,
+        "meters": [_meter(k, label, buckets[k], month) for k, label in METER_LABELS],
+        "runs": int(runs.get(month) or 0),
+        "asks": int(asks.get(month) or 0),
+        "refuses": int(refuses.get(month) or 0),
+        "spend_usd": round(float(spend.get(month) or 0.0), 4) if spend else None,
+        "engines": per_engine,
+    }

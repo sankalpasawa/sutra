@@ -642,7 +642,7 @@ def test_adaptation_is_empty_for_a_department_with_nothing_put_forward():
     with _fresh() as (M, E, tmp):
         root, desk, a, a1 = _tree(E, tmp)
         out = M.adaptation(a)
-        assert out == {"proposals": [], "patterns": [], "chat": []}
+        assert out == {"proposals": [], "patterns": [], "births": [], "chat": []}
 
 
 def test_adaptation_chat_is_the_exchange_that_carried_the_changes():
@@ -1552,6 +1552,181 @@ def test_people_404s_on_an_unknown_department():
         with __import__("pytest").raises(fastapi.HTTPException) as exc:
             M.people("dref-nope")
         assert exc.value.status_code == 404
+
+
+# -------------------------------------------------------------- S73, S82 --
+# The meters and the births: the last two readings, both COUNTED on the read.
+
+
+def _this_month(days_back=0):
+    """An ISO stamp inside the current calendar month, never spilling into the
+    previous one on the 1st (a test that runs at 00:30 on the 1st must not be
+    the one that fails)."""
+    now = time.localtime()
+    day = max(1, now.tm_mday - days_back)
+    return time.strftime("%%Y-%%m-%02dT03:00:00" % day, now)
+
+
+def _last_month():
+    now = time.time()
+    back = now
+    this = time.strftime("%Y-%m", time.localtime(now))
+    while time.strftime("%Y-%m", time.localtime(back)) == this:
+        back -= 3 * 24 * 3600
+    return time.strftime("%Y-%m-%dT03:00:00", time.localtime(back))
+
+
+def test_meters_count_this_calendar_month_and_say_so_with_no_row_at_all():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        out = M.meters(a)
+        assert out["month"] == time.strftime("%Y-%m")
+        assert [m["key"] for m in out["meters"]] == ["runs", "asks", "refuses", "spend"]
+        assert [m["reading"] for m in out["meters"]] == [False, False, False, False], \
+            "A27: nothing on record is no reading, never a zero"
+        assert out["runs"] == 0 and out["asks"] == 0 and out["refuses"] == 0
+        assert out["spend_usd"] is None
+        assert out["engines"] == []
+
+
+def test_meters_runs_are_this_months_run_rows_against_the_busiest_month():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("sweep", tmp)
+        _runs_index(tmp, "sweep", [
+            _run_row("sweep", _last_month()), _run_row("sweep", _last_month()),
+            _run_row("sweep", _last_month()), _run_row("sweep", _this_month()),
+        ])
+        out = M.meters(a)
+        runs = [m for m in out["meters"] if m["key"] == "runs"][0]
+        assert out["runs"] == 1
+        assert runs["reading"] is True
+        assert runs["value"] == 1 and runs["of"] == 3, \
+            "the ceiling is the department's own busiest month"
+
+
+def test_meters_asks_and_refuses_read_the_departments_own_proposals():
+    with _fresh() as (M, E, tmp):
+        import proposals
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("here", tmp)
+        p1 = proposals.create("routine.update", {"id": "here"}, "Pause the sweep")
+        proposals.create("routine.update", {"id": "here"}, "Pause it again")
+        proposals.decide(p1["id"], False)
+        out = M.meters(a)
+        assert out["asks"] == 2
+        assert out["refuses"] == 1
+        assert [m["reading"] for m in out["meters"] if m["key"] in ("asks", "refuses")] \
+            == [True, True]
+
+
+def test_meters_spend_is_none_until_a_run_row_carries_a_cost():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("sweep", tmp)
+        _runs_index(tmp, "sweep", [_run_row("sweep", _this_month())])
+        assert M.meters(a)["spend_usd"] is None, "an unmeasured run is not a free one"
+        row = _run_row("sweep", _this_month())
+        row["cost_usd"] = 0.25
+        _runs_index(tmp, "sweep", [row])
+        out = M.meters(a)
+        assert out["spend_usd"] == 0.25
+        assert [m["reading"] for m in out["meters"] if m["key"] == "spend"] == [True]
+
+
+def test_meters_per_engine_answer_only_what_a_record_carries():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("sweep", tmp)
+        rows = M.meters(a)["engines"]
+        assert [e["id"] for e in rows] == ["sweep"]
+        assert rows[0]["meters"] == [], \
+            "an engine with no run this month and no ask answers nothing"
+        _runs_index(tmp, "sweep", [_run_row("sweep", _this_month(), outcome="failed")])
+        one = M.meters(a)["engines"][0]["meters"]
+        assert [m["key"] for m in one] == ["tick", "asks"]
+        assert one[0]["dot"] == "block" and one[1]["dot"] == "ok"
+        assert "fit" not in [m["key"] for m in one], \
+            "Fit has no record anywhere and is never given a dot"
+
+
+def test_meters_per_engine_asks_turn_at_three_of_a_kind():
+    with _fresh() as (M, E, tmp):
+        import proposals
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("sweep", tmp)
+        for _ in range(M.METER_ASK_WARN):
+            proposals.create("routine.update", {"id": "sweep"}, "Pause the sweep")
+        one = M.meters(a)["engines"][0]["meters"]
+        assert [m["dot"] for m in one if m["key"] == "asks"] == ["warn"]
+
+
+def test_meters_per_engine_spend_turns_at_the_designs_own_share():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("sweep", tmp)                    # opts max_budget_usd = 1.0
+        low = _run_row("sweep", _this_month())
+        low["cost_usd"] = 0.1
+        _runs_index(tmp, "sweep", [low])
+        assert [m["dot"] for m in M.meters(a)["engines"][0]["meters"]
+                if m["key"] == "spend"] == ["ok"]
+        high = _run_row("sweep", _this_month())
+        high["cost_usd"] = 0.9
+        _runs_index(tmp, "sweep", [high])
+        assert [m["dot"] for m in M.meters(a)["engines"][0]["meters"]
+                if m["key"] == "spend"] == ["warn"]
+
+
+def test_meters_are_empty_above_the_machine_and_never_raise():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("sweep", tmp)
+        _runs_index(tmp, "sweep", [_run_row("sweep", _this_month())])
+        out = M.meters(root)
+        assert out["runs"] == 0 and out["engines"] == []
+
+
+def test_meters_404s_on_an_unknown_department():
+    import fastapi
+    with _fresh() as (M, E, tmp):
+        _tree(E, tmp)
+        with __import__("pytest").raises(fastapi.HTTPException) as exc:
+            M.meters("dref-nope")
+        assert exc.value.status_code == 404
+
+
+def test_meters_read_without_writing_anything():
+    """R15 files nothing: no run folder, no proposal, no placement."""
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("sweep", tmp)
+        before = sorted(p.name for p in (tmp / "proposals").iterdir())
+        M.meters(a)
+        assert sorted(p.name for p in (tmp / "proposals").iterdir()) == before
+
+
+def test_births_are_the_engines_an_ask_brought_into_being():
+    with _fresh() as (M, E, tmp):
+        import proposals
+        import routines
+        root, desk, a, a1 = _tree(E, tmp)
+        rec = _routine("born", tmp, description="Nightly sweep")
+        p = proposals.create("routine.create", {"id": "born"}, "Make a nightly sweep")
+        proposals.decide(p["id"], True, apply_fn=lambda kind, args: {"routine": "born"})
+        rec["created_at"] = routines.now_iso()
+        routines.save(rec)
+        rows = M._births(M._dept_cwd(a, E.load_domains()))
+        assert [r["name"] for r in rows] == ["Nightly sweep"]
+        assert M.adaptation(a)["births"] == rows
+        assert M.priority(a)["births"] == rows
+
+
+def test_births_leave_out_an_engine_nobody_asked_for():
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        _routine("written", tmp)
+        assert M.adaptation(a)["births"] == []
+        assert M.priority(a)["births"] == []
 
 
 def test_writes_only_through_proposals():
