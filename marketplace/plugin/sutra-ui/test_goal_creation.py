@@ -404,6 +404,8 @@ class TestEveryDocumentedFenceParses(unittest.TestCase):
         "module": {"name": "Friday review", "kind": "chat"},
         # v4: the brief is prose, not json; a json string is still prose
         "brief": "Objective: \"fix it\". Where: the repo. Done when: tests pass.",
+        # v4.1 (V4-7): the founder's words set the task's limits
+        "limits": {"turns": "none"},
     }
 
     def _documented(self):

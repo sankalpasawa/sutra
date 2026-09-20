@@ -1,8 +1,12 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-09-20
+**status**: active · **updated**: 2026-09-21
 
-## v2.287.4 (2026-09-20, HEAD)
+## v2.288.0 (2026-09-21, HEAD)
+
+**Shadow v4.1** (founder 2026-09-21, SHADOW-V3 section 13): a limit said in a task's chat binds that task at once, even while it runs (`limits` fence, "no limit" legal, Undo on the row); a finished task reopens on the founder's words instead of answering 409, and Hand back to Shadow sits on every finished card; a take-over pause never times out. Engine, routes and UI each ship a test lane (test_shadow_v41_*). DeepSeek SKIPPED (key path unreadable in-session); codex SKIPPED until 2026-10-16.
+
+## v2.287.4 (2026-09-20)
 
 **Prompt-time budgets raised** (founder 2026-09-20 "Budget has to be increased now."): ledger step 10 s, event wall 50 s, host timeout 30 s; worst-case bounds, a normal prompt is unchanged. DeepSeek review folded; codex SKIPPED until 2026-10-16.
 

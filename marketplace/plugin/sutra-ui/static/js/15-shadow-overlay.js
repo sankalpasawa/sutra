@@ -1013,6 +1013,11 @@ async function shadowMissionAct(mid, action, extra){
         /* the chat strip's Take over: ownership ended, so say what that BUYS
            rather than that a state changed */
         take_over: "You have the chat \u2014 Shadow stepped back.",
+        /* v4.1 (SHADOW-V3 section 13): a finished task back at work, and
+           the limits chip's Undo */
+        reopen: "Shadow is back on it.",
+        undo_limits: "Put back.",
+        set_limits: "Set.",
         /* the task AND the chat Shadow made for it are gone; the
            transcript is recoverable from ~/.sutra-ui/trash. This is the
            SECOND press -- see the archive line below. */

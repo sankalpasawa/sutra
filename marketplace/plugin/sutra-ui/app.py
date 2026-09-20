@@ -2990,6 +2990,32 @@ async def api_shadow_chat(request: Request):
             created.append(store.load(m["id"]))
         except ValueError:
             pass                      # invalid proposal: reply text stands
+    if "limits" in blocks:
+        # v4.1 (V4-7). "Start X, no turn limit" in ONE line: the limit binds
+        # the task(s) that same reply drafted. With no task drafted, a limit
+        # said here is about every task -- the default on the sheet
+        # (SHADOW-V3 section 13.1, scope row).
+        spec = blocks["limits"]
+        if spec.get("scope") == "task" and created and "turns" in spec:
+            merged = {"applied": [], "refused": []}
+            for c in created:
+                got = _apply_limits_fence(
+                    {"limits": {"scope": "task", "turns": spec["turns"]}},
+                    c["id"]) or {}
+                merged["applied"] += got.get("applied") or []
+                merged["refused"] += got.get("refused") or []
+            if "running_at_once" in spec:
+                got = _apply_limits_fence({"limits": {
+                    "scope": "default",
+                    "running_at_once": spec["running_at_once"]}}) or {}
+                merged["applied"] += got.get("applied") or []
+                merged["refused"] += got.get("refused") or []
+            created = [_mission_engine.MissionStore().load(c["id"]) or c
+                       for c in created]
+            out["limits"] = merged
+        else:
+            out["limits"] = _apply_limits_fence(
+                {"limits": {**spec, "scope": "default"}})
     if created:
         out["missions"] = created
         out["mission"] = created[0]
@@ -4001,6 +4027,78 @@ def _apply_task_fence(mid, blocks, scope_id=None):
     return store.load(mid)
 
 
+def _apply_limits_fence(blocks, mid=None):
+    """Shadow v4.1 (V4-7): THE FOUNDER'S WORDS SET THE TASK.
+
+    A `limits` fence in a reply to the founder's OWN line is applied by the
+    app, at once: scope `task` binds the task whose chat this is (even while
+    it runs); scope `default` writes the same task-limits store the sheet
+    writes. Returns what the chip shows, or None when the reply carried no
+    fence.
+
+    ONLY EVER CALLED ON A REPLY TO THE FOUNDER. Its two callers are the task
+    chat route and the Now chat route, both founder-typed; nothing the worker
+    says, and nothing Shadow says unprompted, reaches this.
+
+    A REFUSAL IS AN ANSWER, NOT AN ERROR. The founder said something and
+    Shadow heard it; if the store says no (a number already spent, a kind that
+    never speaks) the chip says why in the store's own words and nothing is
+    written. Never raises: a limits fault must not cost the founder the reply.
+    """
+    spec = (blocks or {}).get("limits")
+    if not isinstance(spec, dict):
+        return None
+    store = _mission_engine.MissionStore()
+    done, refused = [], []
+    try:
+        if "turns" in spec:
+            turns = spec["turns"]
+            if spec["scope"] == "task" and mid:
+                m = _mission_engine.set_task_turns(store, mid, turns)
+                done.append({"label": _mission_engine.limits_label(m),
+                             "undo": {"mid": mid, "action": "undo_limits"}})
+            elif turns == "none":
+                refused.append("No limit is set per task -- say it in that "
+                               "task's chat.")
+            else:
+                m = store.load(mid) if mid else None
+                kind = (m or {}).get("template") \
+                    or _mission_engine.default_offer()
+                n = _mission_engine.set_turn_budget(kind, turns)
+                done.append({"label": "turns: %d, every new %s task"
+                                      % (n, kind)})
+        if "running_at_once" in spec:
+            n = _mission_engine.set_max_running(spec["running_at_once"])
+            done.append({"label": "running at once: %d" % n})
+            _drain_queue_after("running at once set from a chat")
+    except ValueError as exc:
+        refused.append(str(exc))
+    except Exception as exc:            # noqa: BLE001 -- see docstring
+        refused.append("could not save that: %s" % str(exc)[:140])
+    return {"applied": done, "refused": refused}
+
+
+def _reopen_and_launch(store, mid, words, via):
+    """Shadow v4.1 (V4-9): DONE IS NOT A DEAD END. The one place the app
+    reopens a finished task, so the three doors (the task chat, "give
+    instruction", Hand back) cannot drift.
+
+    mission_engine.reopen does the record; this does what `resume` does after
+    it: a task that came back `running` gets its loop, a task that came back
+    `queued` is promoted by the ordinary path when a slot frees
+    (_promote_after_slot_freed launches an existing chat without provisioning
+    a second one). A refusal is the store's own sentence, as a 409.
+    """
+    try:
+        m = _mission_engine.reopen(store, mid, words, via=via)
+    except ValueError as exc:
+        raise HTTPException(409, {"detail": str(exc),
+                                  "state": (store.load(mid) or {}).get("state")})
+    if m["state"] == "running":
+        shadow_runner._launch(mid, _validated_say, _shadow_verifier)
+    return m
+
+
 @app.post("/api/shadow/tasks")
 async def api_shadow_task_open(request: Request):
     """Shadow v4 (J1): one line from the founder opens a task.
@@ -4111,10 +4209,10 @@ async def api_shadow_task_chat(mid: str, request: Request):
     (founder, 2026-09-16, step 1 of the Shadow conversation UX). The route is
     otherwise untouched: same chat, same `talk`, same reply.
 
-    A TERMINAL TASK IS NOT LISTENING. Shadow has left the loop, and a `talk`
-    here would --resume a finished task's Shadow session to answer as though
-    the work were live. Refused with the same 409 shape `say` already uses
-    (api_shadow_mission_act), so the pane can say the same thing.
+    A FINISHED TASK REOPENS (v4.1, V4-9). Until 2026-09-21 a terminal task
+    refused the founder's words with a 409. It now goes back to work on those
+    words first (_reopen_and_launch) and the chat answers afterwards, so
+    Shadow never answers as though finished work were live.
 
     THE `mission` FENCE AMENDS A DRAFT, AND ONLY A DRAFT. _apply_task_fence
     was written for the drafting conversation -- "amends THAT draft" -- and
@@ -4135,25 +4233,43 @@ async def api_shadow_task_chat(mid: str, request: Request):
     mission = store.load(mid)
     if mission is None:
         raise HTTPException(404, "no task %s" % mid)
-    if mission["state"] in _mission_engine.TERMINAL:
-        raise HTTPException(409, {
-            "detail": "this task has finished -- Shadow is no longer "
-                      "working on it",
-            "state": mission["state"]})
+    # v4.1 (V4-9, founder 2026-09-21): DONE IS NOT A DEAD END. This used to
+    # answer 409 "this task has finished" -- the founder gave a finished task
+    # more to do and was told no. The words now REOPEN the task (same record,
+    # same chats) before the chat answers, so the answer comes from a Shadow
+    # that is working again rather than one talking about live work that is
+    # not live. The guard the old refusal stood for still holds: a terminal
+    # task is never talked to AS terminal.
+    reopened = mission["state"] in _mission_engine.TERMINAL
+    if reopened:
+        mission = _reopen_and_launch(store, mid, message, "talk")
     drafting = mission["state"] in ("draft", "brief_confirm")
     try:
         chat = await _ensure_task_chat(mission)
         reply, blocks = await chat.talk(message)
     except Exception as exc:            # noqa: BLE001
-        raise HTTPException(503, "this task's Shadow chat is not available: %s"
-                            % str(exc)[:140])
-    if not drafting:
+        if not reopened:
+            raise HTTPException(
+                503, "this task's Shadow chat is not available: %s"
+                % str(exc)[:140])
+        # THE REOPEN STANDS. The words are already on the record
+        # (founder_says, via "reopen") and the loop is already running on
+        # them; a Shadow chat that will not boot costs the reply, never the
+        # work -- the same rule api_shadow_task_open applies to a draft.
+        reply, blocks = "", {}
+    if not drafting and not reopened:
         _record_founder_talk(mid, message)
     out = {"mission": (_apply_task_fence(mid, blocks) if drafting
                        else store.load(mid)),
            "reply": reply}
     if "chips" in blocks:
         out["chips"] = blocks["chips"]
+    limits = _apply_limits_fence(blocks, mid)
+    if limits is not None:
+        out["limits"] = limits
+        out["mission"] = store.load(mid)
+    if reopened:
+        out["reopened"] = True
     return out
 
 
@@ -4775,6 +4891,30 @@ async def api_shadow_mission_act(mid: str, request: Request):
             m = store.transition(mid, "running", "explicit resume (home)")
             shadow_runner._launch(mid, _validated_say, _shadow_verifier)
             return m
+        if action == "reopen":
+            # v4.1 (V4-9): HAND BACK TO SHADOW, AFTER THE END. The founder
+            # went into the working chat of a finished task, did what they
+            # wanted, and gives the chat back. Optional `text` is what they
+            # want next; with none, Shadow picks up from the chat and the
+            # founder confirms at the end (mission_engine._HAND_BACK_CHECK).
+            # Launches exactly as `resume` does after a take-over: the say
+            # path is the single writer into the chat either way.
+            text = str(body.get("text") or "").strip()
+            if store.load(mid) is None:
+                raise HTTPException(404, "no mission %s" % mid)
+            return _reopen_and_launch(
+                store, mid, text[:_SAY_MAX], "talk" if text else "hand_back")
+        if action == "set_limits":
+            # v4.1 (V4-7), THE SAME WRITER THE FENCE USES, for the sheet row
+            # and for a founder who would rather click than say it. `turns`
+            # is a whole number, or null / "none" for no limit.
+            if "turns" not in body:
+                raise HTTPException(400, "turns required (a number, or none)")
+            m = _mission_engine.set_task_turns(store, mid, body.get("turns"))
+            return {**m, "limits_label": _mission_engine.limits_label(m)}
+        if action == "undo_limits":
+            m = _mission_engine.undo_task_turns(store, mid)
+            return {**m, "limits_label": _mission_engine.limits_label(m)}
         if action == "say":
             # FREE-FORM FOUNDER INPUT, UNPROMPTED. "Actually, prioritise
             # release safety." -- something the founder decides to tell
@@ -4799,15 +4939,13 @@ async def api_shadow_mission_act(mid: str, request: Request):
             m = store.load(mid)
             if m is None:
                 raise HTTPException(404, "no mission %s" % mid)
-            # A TERMINAL MISSION IS NOT LISTENING. run_mission has already
-            # left its loop, so nothing would ever read this -- and writing it
-            # would tell the founder a finished task had been re-steered.
-            # Refuse, and let the pane say so.
+            # A FINISHED TASK REOPENS ON THE FOUNDER'S WORDS (v4.1, V4-9).
+            # run_mission has left its loop, so appending to founder_says
+            # alone would be read by nothing -- which is why this used to
+            # refuse. reopen puts the words on the record AND puts the loop
+            # back, so the instruction is heard rather than refused.
             if m["state"] in _mission_engine.TERMINAL:
-                raise HTTPException(409, {
-                    "detail": "this task has finished -- Shadow is no longer "
-                              "working on it",
-                    "state": m["state"]})
+                return _reopen_and_launch(store, mid, text[:_SAY_MAX], "say")
             says = list(m.get("founder_says") or [])
             says.append({"text": text[:_SAY_MAX],
                          "at": _mission_engine._now(),

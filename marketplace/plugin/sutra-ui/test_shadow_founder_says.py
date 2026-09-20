@@ -124,16 +124,26 @@ class SayLands(SayBase):
 
 
 class SayRespectsState(SayBase):
-    def test_terminal_missions_refuse_and_write_nothing(self):
+    def test_terminal_missions_reopen_on_the_founders_words(self):
+        """PIN MOVED for Shadow v4.1 (V4-9, founder 2026-09-21). This used to
+        assert a 409 and an untouched record, because a finished loop reads
+        nothing and writing the aside would have told the founder a finished
+        task had been re-steered. The reason still holds, so the fix is not
+        "write it anyway": the task goes BACK TO WORK on those words, which
+        is what makes writing them true."""
         for state in ("done", "failed", "stopped"):
             mid = self.mission(state)
             r = self.say(mid, "actually, do it differently")
-            self.assertEqual(r.status_code, 409, "%s must refuse" % state)
+            self.assertEqual(r.status_code, 200, "%s must reopen" % state)
             m = self.store.load(mid)
-            self.assertIsNone(m.get("founder_says"),
-                              "%s must write nothing" % state)
-            self.assertEqual(m["state"], state,
-                             "%s must not be resurrected" % state)
+            self.assertEqual(m["state"], "running",
+                             "%s goes back to work" % state)
+            says = m.get("founder_says") or []
+            self.assertEqual(says[-1]["text"], "actually, do it differently")
+            self.assertEqual(says[-1]["via"], "reopen")
+            self.assertEqual(m["reopened"][-1]["from"], state)
+            # free the shared test chat for the next state
+            self.store.transition(mid, "stopped", "test teardown")
 
     def test_live_and_waiting_states_accept(self):
         for state in ("running", "paused", "blocked", "brief_confirm"):

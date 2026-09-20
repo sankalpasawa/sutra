@@ -2325,11 +2325,22 @@ async function shadowSayToShadow(mid, text, el){
       doc = await r.json();
       if (typeof showNudge === "function") showNudge("Sent to Shadow.");
     } else {
-      /* 409 is the one refusal with a reason the founder needs in words: the
-         task has finished, so nothing is listening. Everything else is a
-         plain failure. */
+      /* 409 is the one refusal with a reason the founder needs in words.
+         v4.1 (V4-9): a finished task no longer refuses -- it reopens on the
+         instruction -- so the reason is the server's own sentence (another
+         task has that chat; it never got one). Everything else is a plain
+         failure. */
+      let refusal = null;
+      if (r && r.status === 409){
+        try {
+          const j = await r.json();
+          const d = j && j.detail;
+          refusal = (d && typeof d === "object") ? d.detail : d;
+        } catch (e){ refusal = null; }
+      }
       const why = (r && r.status === 409)
-        ? "That task has finished — Shadow is no longer working on it."
+        ? (refusal ? String(refusal)
+                   : "That task has finished — Shadow is no longer working on it.")
         : "That did not send" + (r ? " (" + r.status + ")" : "")
           + " — your message is still in the box.";
       if (typeof showNudge === "function") showNudge(why);
@@ -2503,6 +2514,18 @@ async function shadowTalkSend(mid, el){
     body = (r && r.ok) ? await r.json() : null;
   } catch (e){ body = null; }
   T.busy = false;
+  /* v4.1 (V4-9): a 409 is no longer "that task has finished" -- a finished
+     task REOPENS on the founder's words. The one 409 left is the server's
+     own sentence (another task has that chat; it never got a chat), and
+     that sentence is what the founder needs, so it is read off the body. */
+  let refusal = null;
+  if (r && !r.ok && r.status === 409){
+    try {
+      const j = await r.json();
+      const d = j && j.detail;
+      refusal = (d && typeof d === "object") ? d.detail : d;
+    } catch (e){ refusal = null; }
+  }
   if (!body){
     /* THE REFUSAL HAS TO LAND SOMEWHERE THE FOUNDER LOOKS. It used to be
        drawn inside the panel; with one composer it goes to that composer's
@@ -2514,7 +2537,8 @@ async function shadowTalkSend(mid, el){
        feels instant; a send that does not land hands the text back, the same
        way the say path always did. */
     const why = (r && r.status === 409)
-      ? "That task has finished \u2014 Shadow is no longer on it."
+      ? (refusal ? String(refusal)
+                 : "That task has finished \u2014 Shadow is no longer on it.")
       : "Shadow could not answer" + (r ? " (" + r.status + ")" : "")
         + " \u2014 your message is still in the box.";
     if (typeof S !== "undefined") S.shadowScopeErr = why;
@@ -2523,9 +2547,31 @@ async function shadowTalkSend(mid, el){
        S.shadowComposeDraft now, so a bare `el.value = text` would be undone
        by the very next repaint -- and this path always causes one. */
     shadowComposeSet(el, text);
-  } else if (body.reply){
-    /* the instant the answer reached us, for the same reason as above */
-    live.push({ who: "shadow", text: String(body.reply), ts: Date.now() });
+  } else {
+    /* v4.1 (V4-9): the task was finished and the founder's line reopened it.
+       Said in the stream, once, before Shadow's answer -- and the list is
+       re-read so the row moves out of Done today without a reload. */
+    if (body.reopened)
+      live.push({ who: "shadow", ts: Date.now(),
+                  text: "Back on it \u2014 this task is running again." });
+    if (body.reply)
+      /* the instant the answer reached us, for the same reason as above */
+      live.push({ who: "shadow", text: String(body.reply), ts: Date.now() });
+    /* v4.1 (V4-7): what the founder's words SET, as the app applied it --
+       fixed copy from the server (mission_engine.limits_label), never
+       Shadow's prose, with Undo on the row. A refusal is the store's own
+       sentence and gets the same row without the button. */
+    const lim = body.limits;
+    if (lim && typeof lim === "object"){
+      for (const a of (lim.applied || []))
+        if (a && a.label)
+          live.push({ who: "shadow", text: String(a.label), ts: Date.now(),
+                      limits: a.undo ? { mid: mid } : null });
+      for (const why of (lim.refused || []))
+        if (why) live.push({ who: "shadow", text: String(why), ts: Date.now() });
+    }
+    if ((body.reopened || lim) && typeof loadShadowHome === "function")
+      loadShadowHome(true);
   }
   if (typeof scheduleRender === "function") scheduleRender();
   return body;
@@ -2760,7 +2806,11 @@ function shadowTimelineEvents(m){
       spoken[key] = 1;
       /* its OWN stamp, written by shadowTalkSend when the line was sent or
          the reply arrived. NaN only for a row from before that existed. */
+      /* v4.1: a limits row carries its Undo (shadowTalkSend). The stamp
+         stays the last field, byte for byte: test_shadow_v4_talk.js pins
+         that text to mutate it. */
       out.push({ kind: "talk", who: t.who, text: text,
+                 limits: (t && t.limits) || null,
                  ts: Number(t && t.ts) });
     }
   }
@@ -2861,9 +2911,15 @@ function shadowTimelineHtml(m){
         : (typeof shadowProseHtml === "function") ? shadowProseHtml(e.text)
         : (typeof shadowProseText === "function") ? esc(shadowProseText(e.text))
         : esc(e.text);
-      return `<div class="shsaid">
+      /* v4.1 (V4-7): the chip under the reply -- the label the server set,
+         and Undo through the same mission-action door every control uses */
+      const undo = (e.limits && e.limits.mid)
+        ? ` <button class="btn shlimundo" type="button" data-shact="undo_limits"
+            data-shmid="${escAttr(e.limits.mid)}"
+            title="Put the previous limit back">Undo</button>` : "";
+      return `<div class="shsaid${undo ? " shlimits" : ""}">
       <div class="shsaidhead">${who}</div>
-      <div class="shsaidtext">${body}</div>
+      <div class="shsaidtext">${body}${undo}</div>
     </div>`;
     }
     /* a turn with no report yet is the one IN FLIGHT -- it gets the clock */
@@ -3176,6 +3232,16 @@ function shadowTaskCardHtml(m){
         data-shact="drop" data-shmid="${escAttr(m.id)}">Drop</button>` : ""}
       ${["failed", "stopped"].includes(m.state) ? `<button class="btn"
         type="button" data-shact="retry" data-shmid="${escAttr(m.id)}">Retry</button>` : ""}
+      ${/* v4.1 (V4-9): DONE IS NOT A DEAD END. Hand back puts Shadow back to
+           work in the SAME chat -- what the founder did there by hand is read
+           as chat, and they confirm at the end. Retry (above) stays for "run
+           it again from the start in a new chat". Typing in the task's chat
+           does the same reopen; this is the click for it. */""}
+      ${["done", "failed", "stopped"].includes(m.state) && m.target_session
+        ? `<button class="btn" type="button" data-shact="reopen"
+        data-shmid="${escAttr(m.id)}"
+        title="Shadow goes back to work in the same chat; you confirm when it is done"
+        >Hand back to Shadow</button>` : ""}
     </div>
     ${/* THE FLOORS LINE IS NOT DRAWN (founder, 2026-09-15). What Shadow may
          not do on its own is safety CONFIGURATION, and it belongs in Shadow

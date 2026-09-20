@@ -348,10 +348,15 @@ class TestOpeningATask(Base):
         self.assertEqual(doc["mission"]["objective"], before["objective"],
                          "the payload shows the record as it stands")
 
-    def test_16_a_terminal_task_refuses_and_starts_no_chat(self):
-        """DONE / FAILED / STOPPED: Shadow has left the loop, so a `talk`
-        would --resume a finished task's session to answer as though the work
-        were live. Same 409 shape `say` already uses."""
+    def test_16_a_terminal_task_never_talks_as_though_finished_work_is_live(self):
+        """PIN MOVED for Shadow v4.1 (V4-9, founder 2026-09-21: "it should
+        resume the work and not say that the work is done"). This used to
+        assert a 409 on done / failed / stopped. The guard it stood for is
+        kept and made stronger: a terminal task is never talked to AS
+        terminal. One that cannot go back to work (this one never got a
+        worker chat) still refuses with a 409 and sends nothing into the
+        Shadow chat; one that can is reopened FIRST -- covered end to end in
+        test_shadow_v41_routes.py."""
         self.next_reply = ["READY", "Got it.\n" + self.fence()]
         doc = self.client.post("/api/shadow/tasks",
                                json={"message": "top 10 fruits"},
@@ -366,6 +371,8 @@ class TestOpeningATask(Base):
                                  json={"message": "still there?"},
                                  headers=HDR)
             self.assertEqual(r.status_code, 409, "%s must refuse" % state)
+            self.assertIn("Retry", r.json()["detail"]["detail"],
+                          "and the refusal says what to do instead")
             self.assertEqual(self.store.load(mid)["state"], state,
                              "%s must not be resurrected" % state)
         self.assertEqual(len(self.runtimes[0].sent), sent_before,

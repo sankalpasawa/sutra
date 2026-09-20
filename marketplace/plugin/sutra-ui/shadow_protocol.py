@@ -20,6 +20,11 @@ Shadow's replies may carry fenced blocks the app parses DETERMINISTICALLY:
     ```brief
     <the worker's opening brief, in prose; a task chat's answer, v4>
     ```
+    ```limits
+    {"scope": "task", "turns": 100}          (v4.1; "turns": "none" = no limit;
+                                              "scope": "default" = the sheet;
+                                              "running_at_once": n)
+    ```
 
 Blocks are stripped from the displayed reply. remember rows land UNCONFIRMED
 (inert until the founder taps Confirm). SHADOW.md documents the same protocol
@@ -44,7 +49,55 @@ kept handling `blocks["goal"]`). Both fences are load-bearing; keep both.
 import json
 import re
 
-_BLOCK = re.compile(r"```(mission|goal|chips|remember|module|brief)\s*\n(.*?)```", re.S)
+_BLOCK = re.compile(r"```(mission|goal|chips|remember|module|brief|limits)\s*\n(.*?)```", re.S)
+
+#: Shadow v4.1 (V4-7): what the founder may say for "no limit". A closed list,
+#: matched whole, and deliberately the SAME list mission_engine coerces with.
+_NO_LIMIT_WORDS = ("none", "no limit", "unlimited", "off")
+_LIMITS_SCOPES = ("task", "default")
+
+
+def parse_limits(val):
+    """A `limits` fence -> {scope, turns?, running_at_once?}, or None.
+
+    THE FOUNDER'S WORDS SET THE TASK (SHADOW-V3 section 13.1). Shadow hears
+    "no turn limit" / "give it 100 turns" / "run 8 at once" and emits ONE
+    fence; the app -- never a model -- writes the store. This only says
+    whether the fence is well-formed; clamping and every refusal that needs
+    the task record (already-spent turns, a kind that never speaks) belong to
+    mission_engine, which is the one writer.
+
+    STRICT, like every other fence: a shape this does not recognise returns
+    None and the caller leaves the block VISIBLE in the reply. There is no
+    key here that reaches a floor, another task, or anything but the two
+    numbers the sheet already exposes.
+    """
+    if not isinstance(val, dict):
+        return None
+    scope = val.get("scope", "task")
+    if scope not in _LIMITS_SCOPES:
+        return None
+    if set(val) - {"scope", "turns", "running_at_once"}:
+        return None
+    out = {"scope": scope}
+    if "turns" in val:
+        t = val["turns"]
+        if t is None or (isinstance(t, str)
+                         and t.strip().lower() in _NO_LIMIT_WORDS):
+            out["turns"] = "none"
+        elif isinstance(t, int) and not isinstance(t, bool) and t >= 1:
+            out["turns"] = t
+        else:
+            return None
+    if "running_at_once" in val:
+        r = val["running_at_once"]
+        if isinstance(r, int) and not isinstance(r, bool) and r >= 1:
+            out["running_at_once"] = r
+        else:
+            return None
+    if len(out) == 1:
+        return None                     # a scope and nothing to set
+    return out
 
 # A `module` fence creates a module (Org > Modules). Kinds mirror
 # modules_api.KINDS; kept literal here so the parser stays import-free.
@@ -407,6 +460,11 @@ def parse_reply(text, kinds=None):
             # (unconfirmed). Deliberate: a draft module runs nothing until the
             # operator opens it, and archive is one click.
             out["module"] = val
+        elif kind == "limits" and parse_limits(val) is not None:
+            # v4.1 (V4-7). FIRST FENCE WINS, like `mission`: one founder line
+            # states one change, and a second fence must not quietly override
+            # the first.
+            out.setdefault("limits", parse_limits(val))
         else:
             return match.group(0)
         return ""

@@ -1,6 +1,10 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-20
+**status**: active · **updated**: 2026-09-21
+## 2.288.0 (2026-09-21)
+
+- **Shadow v4.1: your words set the task, and a finished task reopens** (founder 2026-09-21; SHADOW-V3 section 13, V4-7 to V4-9). A limit said in a task's chat binds that task at once, even mid-run: new `limits` fence (`turns` number or `"none"`, `running_at_once`, scope task or default), `mission_engine.set_task_turns` / `undo_task_turns`, `no_turn_limit` switches only the turn check off, a chip with Undo in the stream. A finished task (done, stopped, failed) reopens on the founder's words through `mission_engine.reopen` (same record, same chats, fresh allowance from the reopen, the new words as the check of this leg) instead of the 409; `say` reopens too; new actions `reopen`, `set_limits`, `undo_limits`; Hand back to Shadow on every finished card. The transition table is not loosened. Lanes: test_shadow_v41_engine.py (25), test_shadow_v41_routes.py (28), test_shadow_v41_ui.js (8); two old 409 pins moved.
+
 ## 2.287.4 (2026-09-20)
 
 - **Prompt-time budgets raised** (founder 2026-09-20: "Budget has to be increased now."): `ups.steps_ledger` 6000 -> 10000 ms, the UserPromptSubmit event wall 40 -> 50 s, the host timeout of the UserPromptSubmit hook 20 -> 30 s. Worst-case bounds only; a normal prompt is unchanged. DeepSeek review folded.

@@ -1825,6 +1825,215 @@ def clone_for_retry(store, mid):
                             "retry of %s" % mid)
 
 
+# ---------------------------------------------------------------------------
+# Shadow v4.1 (SHADOW-V3 section 13, founder 2026-09-21)
+# ---------------------------------------------------------------------------
+
+#: What the founder may say for "no limit". A closed list, matched whole: the
+#: fence is model-written, and a loose match would let "no limit on scope"
+#: switch a turn check off.
+_NO_LIMIT_WORDS = ("none", "no limit", "unlimited", "off")
+
+#: How many earlier values Undo can walk back through. Small on purpose: Undo
+#: is the chip under the reply, not a history browser.
+_LIMITS_UNDO_DEPTH = 5
+
+
+def out_of_turns(mission):
+    """THE turn check, as one question. run_mission asks it and so does every
+    test; `no_turn_limit` is the founder's "no limit" for THIS task (V4-7) and
+    switches this check off -- and only this check: the ping-pong, stalled-turn
+    and refused-say exits and the four floors never read it."""
+    if mission.get("no_turn_limit"):
+        return False
+    return (mission.get("turns_used") or 0) >= (mission.get("max_turns") or 0)
+
+
+def _coerce_task_turns(value):
+    """-> None for "no limit", else a clamped int. Raises ValueError on junk.
+
+    bool is refused by name: `int(True)` is 1, and a fence carrying
+    `"turns": true` must not become a one-turn task."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError("turns must be a whole number or none")
+    if isinstance(value, str):
+        if value.strip().lower() in _NO_LIMIT_WORDS:
+            return None
+        if not value.strip():
+            raise ValueError("turns must be a whole number or none")
+    if not isinstance(value, (int, str)):
+        raise ValueError("turns must be a whole number or none")
+    return clamp_turns(value)
+
+
+def limits_label(mission):
+    """The one line the chip and the sheet row show for a task's override,
+    or "" when the task runs on the defaults. Fixed copy, never model text."""
+    over = mission.get("limits_override") or {}
+    if "turns" not in over:
+        return ""
+    if over["turns"] == "none":
+        return "turns: no limit, this task"
+    return "turns: %d, this task" % over["turns"]
+
+
+def set_task_turns(store, mid, value):
+    """V4-7: the founder's words set THIS task's turn limit, at once, even
+    while it runs. `value` is a whole number or None / "none" for no limit.
+
+    THE SNAPSHOT RULE IS UNCHANGED. set_turn_budget still binds the next task
+    only; this is the other door, and it writes the mission record -- which
+    is what run_mission re-reads at the top of every turn -- so the change
+    binds at the next turn boundary with no signal to the loop.
+
+    Refused: junk, a kind that never speaks (its budget could never bind), and
+    a number the task has already spent (it would die at its next turn as
+    budget_exhausted, by the founder's own hand).
+    """
+    turns = _coerce_task_turns(value)
+    m = store.load(mid)
+    if m is None:
+        raise ValueError("no mission %s" % mid)
+    if "never_say" in (m.get("invariants") or ()):
+        raise ValueError("a %s task never speaks, so it has no turn limit "
+                         "to set" % (m.get("template"),))
+    used = m.get("turns_used") or 0
+    if turns is not None and turns <= used:
+        raise ValueError("this task has already used %d turns -- say a "
+                         "bigger number, or no limit" % used)
+    prior = list(m.get("limits_prior") or [])
+    prior.append({"max_turns": m.get("max_turns") or 0,
+                  "no_turn_limit": bool(m.get("no_turn_limit")),
+                  "override": m.get("limits_override")})
+    m["limits_prior"] = prior[-_LIMITS_UNDO_DEPTH:]
+    if turns is None:
+        m["no_turn_limit"] = True
+    else:
+        m["no_turn_limit"] = False
+        m["max_turns"] = turns
+    m["limits_override"] = {"turns": "none" if turns is None else turns,
+                            "at": _now(), "at_turn": used}
+    store.save(m)
+    shadow_ledger.append("missions", {
+        "mission_id": mid, "state": m["state"], "seq": m["seq"],
+        "note": "founder set %s" % limits_label(m)})
+    return m
+
+
+def undo_task_turns(store, mid):
+    """The chip's Undo: put back what was there before the last
+    set_task_turns. Raises when there is nothing to undo."""
+    m = store.load(mid)
+    if m is None:
+        raise ValueError("no mission %s" % mid)
+    prior = list(m.get("limits_prior") or [])
+    if not prior:
+        raise ValueError("nothing to undo on %s" % mid)
+    last = prior.pop()
+    m["limits_prior"] = prior
+    m["max_turns"] = last.get("max_turns") or 0
+    m["no_turn_limit"] = bool(last.get("no_turn_limit"))
+    if last.get("override"):
+        m["limits_override"] = last["override"]
+    else:
+        m.pop("limits_override", None)
+    store.save(m)
+    shadow_ledger.append("missions", {
+        "mission_id": mid, "state": m["state"], "seq": m["seq"],
+        "note": "founder undid a turn limit (now %s)"
+                % (limits_label(m) or "the default")})
+    return m
+
+
+#: What a hand-back with no words asks at the end of the leg. founder_confirm
+#: by construction: Shadow cannot know what "finished" means for work the
+#: founder did by hand, so the founder says so.
+_HAND_BACK_CHECK = "You confirm this is finished"
+
+
+def reopen(store, mid, words="", via="talk"):
+    """V4-9: DONE IS NOT A DEAD END. A finished task (done, stopped, failed)
+    goes back to work on the SAME record and the SAME target chat.
+
+    THE TABLE IS NOT LOOSENED. TRANSITIONS keeps its three empty terminal
+    rows, so every existing caller that hops out of a finished state by
+    accident still raises. This is the one door, and it does the bookkeeping
+    a bare transition could not:
+
+      allowance   turns_used stays on the record; max_turns becomes
+                  turns_used + the budget in force now, so the leg gets a
+                  full allowance counted from the reopen. no_turn_limit rides
+                  through untouched.
+      done_when   the old checks may all be met, and a loop that re-read them
+                  would finish again on its first evaluation. The founder's
+                  new words become the one check of this leg (tiered by the
+                  same ladder as any other check); no words (a hand-back)
+                  asks the founder at the end. The old checks are kept on the
+                  `reopened` row, never rewritten.
+      the words   appended to founder_says (via "reopen"), which is the list
+                  both the task chat and the one-shot decider already read.
+      the end     ended_by / failure_class are cleared; the completion
+                  summary moves onto the `reopened` row.
+
+    THROUGH THE CAP, like every other door into running: queued when the cap
+    is full. Refused only when another running task already targets the same
+    chat -- the error names it.
+    """
+    m = store.load(mid)
+    if m is None:
+        raise ValueError("no mission %s" % mid)
+    if m["state"] not in TERMINAL:
+        raise ValueError("reopen is only for finished tasks (%s is %s)"
+                         % (mid, m["state"]))
+    if not m.get("target_session"):
+        # it died before provisioning: there is no chat to go back INTO, and
+        # a `running` row with no target is a loop with nowhere to speak
+        raise ValueError("this task never got a chat to work in -- "
+                         "Retry starts it fresh")
+    running = store.list(states=("running",))
+    target = m.get("target_session")
+    if target:
+        for r in running:
+            if r.get("target_session") == target and r["id"] != mid:
+                raise ValueError(
+                    "that chat is already driven by task %s (%s) -- "
+                    "tell that task instead"
+                    % (r["id"], (r.get("objective") or "")[:80]))
+    words = str(words or "").strip()
+    used = m.get("turns_used") or 0
+    leg = {"at": _now(), "from": m["state"], "at_turn": used, "via": via,
+           "words": words[:2000], "done_when": m.get("done_when") or []}
+    if "completion" in m:
+        leg["completion"] = m.pop("completion")
+    m["reopened"] = list(m.get("reopened") or []) + [leg]
+    for stale in ("ended_by", "failure_class", "pause_reason",
+                  "block_reason"):
+        m.pop(stale, None)
+    if words:
+        check = words[:300]
+        m["done_when"] = sanitise_probes(
+            [{"tier": shadow_protocol.tier_for(check), "check": check}])
+        says = list(m.get("founder_says") or [])
+        says.append({"text": words[:2000], "at": _now(), "at_turn": used,
+                     "via": "reopen", "seen": False})
+        m["founder_says"] = says
+    else:
+        m["done_when"] = [{"tier": "founder_confirm",
+                           "check": _HAND_BACK_CHECK}]
+    if "never_say" not in (m.get("invariants") or ()):
+        m["max_turns"] = used + turn_budget(m.get("template"))
+    m["version"] = int(m.get("version") or 1) + 1
+    m["state"] = "running" if len(running) < max_running() else "queued"
+    store.save(m)
+    shadow_ledger.append("missions", {
+        "mission_id": mid, "state": m["state"], "seq": m["seq"],
+        "note": ("reopened from %s (%s): %s"
+                 % (leg["from"], via, words or "hand back"))[:500]})
+    return m
+
+
 def _call_verifier(verifier, check_text, evidence):
     """Ask a verifier about one check, with or without the evidence.
 
@@ -2430,7 +2639,7 @@ class MissionEngine:
                 m["pause_reason"] = "autonomy_hold"
                 self.store.save(m)
                 return m
-            if m["turns_used"] >= m["max_turns"]:
+            if out_of_turns(m):
                 return self._out_of_road(
                     m, "failed", "budget_exhausted",
                     "max turns (%d) reached" % m["max_turns"])
@@ -3293,7 +3502,11 @@ class MissionEngine:
                         "probe": bool(c.get("probe"))}
                        for c in (m.get("done_when") or [])],
             "turns_used": m.get("turns_used") or 0,
-            "max_turns": m.get("max_turns") or 0,
+            # v4.1: a task the founder uncapped must not be told it is
+            # "turn 19 of 20" -- Shadow would wind the work down to fit a
+            # limit that no longer exists.
+            "max_turns": ("no limit" if m.get("no_turn_limit")
+                          else m.get("max_turns") or 0),
             "last_instruction": m.get("last_instruction") or "",
             "last_response": (last_response or "")[-DECISION_TAIL:],
             # THE ANSWER COMES TO SHADOW, NOT TO THE WORKER. The founder's
