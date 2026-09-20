@@ -60,9 +60,11 @@ function turnControlClick(e){
   const inTurn = e.target && e.target.closest && e.target.closest(".turn");
   if (!inTurn) return;
 
-  const think = e.target.closest("[data-thinkopen]");
+  /* the loader's button (live) and the activity fold's head (settled) toggle
+     the SAME per-turn state -- one list of what ran, two doors into it */
+  const think = e.target.closest("[data-thinkopen]") || e.target.closest("[data-toolfold]");
   if (think){
-    const uid = think.dataset.thinkopen;
+    const uid = think.dataset.thinkopen || think.dataset.toolfold;
     if (!uid) return;
     S.thinkOpen = S.thinkOpen || {};
     if (S.thinkOpen[uid]) delete S.thinkOpen[uid];

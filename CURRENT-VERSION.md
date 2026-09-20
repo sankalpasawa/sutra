@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-09-21
 
-## v2.289.0 (2026-09-21, HEAD)
+## v2.289.1 (2026-09-21, HEAD)
+
+**Sutra Desktop: one row per turn for tool calls** (founder 2026-09-21): a settled turn's tool calls fold behind one row (count, kinds, failures) that opens into the cards; a streaming turn draws none at the top, its loader carries the runs and states a failure; the loader's fixed "thinking" label is gone. Lanes test_chat_condense.js 21, test_panel.js section 56.
+
+## v2.289.0 (2026-09-21)
 
 **Shadow v4.2: the asks live in the chat** (founder 2026-09-21, SHADOW-V3 section 13.5): what a task waits on is drawn as rows at the end of its chat with the button that answers it (Approve / Withdraw, Confirm, Hand back); the task chat is told the pending asks before every line; a typed "yes" / "change it to X" / "I did it" is bound by the app to the one ask it can mean (`answer` fence) and does what the button does; a take-over parks a held instruction and hand back re-asks; the Retry button is gone (the action stays). Lanes test_shadow_v42_engine.py 21, test_shadow_v42_routes.py 18, test_shadow_v42_ui.js 7; six Retry pins moved. DeepSeek and codex SKIPPED.
 

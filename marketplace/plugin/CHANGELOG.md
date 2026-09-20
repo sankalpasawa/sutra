@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.289.1 (2026-09-21)
+
+- **Sutra Desktop: one row per turn for tool calls; no fixed "thinking" word** (founder 2026-09-21: "the model output call is written one by one, like an output terminal ... there's also thinking written, are both required?"). A settled turn folds its tool calls behind one row (count, kinds by count, failures) that opens into the same cards; a streaming turn draws none at the top, its loader carries the runs and now states a failure; the loader's static "thinking" label is gone, the measured strip shimmers instead. New `toolFoldHtml` (06-render.js); `[data-toolfold]` and `[data-thinkopen]` share `S.thinkOpen`. Lanes: test_chat_condense.js (21) + section 56 in test_panel.js; runner test_chat_condense.sh.
+
 ## 2.289.0 (2026-09-21)
 
 - **Shadow v4.2: the asks live in the chat** (founder 2026-09-21: "I typed Yes. and Shadow said my yes does not count; there are no buttons in the chat; remove Retry"). New `mission_engine.pending_asks` / `pending_asks_text` / `apply_answer` / `park_hold` / `unpark`; new `answer` fence (approve | confirm | withdraw | change); the task chat is told `[Pending asks]` before every founder line and the app applies its answer fence bound to the one ask (same one-use approval, same check index); `answer` action for the ask-row buttons; take_over parks a held instruction, resume and hand back unpark it into a question; ask rows and resolved rows in the task stream (`shadowAskRowsHtml`); the Retry button is removed everywhere (the `retry` action stays). Lanes: test_shadow_v42_engine.py (21), test_shadow_v42_routes.py (18), test_shadow_v42_ui.js (7); six Retry pins moved.

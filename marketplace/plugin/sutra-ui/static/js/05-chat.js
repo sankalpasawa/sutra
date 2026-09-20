@@ -2360,9 +2360,12 @@ function gvClean(s, cap){
   return v;
 }
 
-/* The turn's step log \u2014 what the loader opens into. Every line traces to a
-   real `toolRuns` entry; nothing here is narrated, inferred or padded. A turn
-   that ran no tools has no log, and the loader stays what it is today. */
+/* The turn's step log — what the loader opens into while the turn RUNS.
+   Every line traces to a real `toolRuns` entry; nothing here is narrated,
+   inferred or padded. A turn that ran no tools has no log, and the loader
+   stays what it is today. Once the turn settles the same runs fold behind
+   one row at the top (toolFoldHtml, 06-render.js), which opens into the
+   cards; while it runs, these one-liners are the lighter picture. */
 function gvLog(t){
   const out = [];
   const runs = (t && t.toolRuns) || [];
@@ -2373,7 +2376,7 @@ function gvLog(t){
     const state = r.running ? "run" : (r.ok === false ? "bad" : (r.ok === null ? "unk" : "ok"));
     const name = gvClean(r.name || "tool", 24);
     const sum = gvClean(r.summary, 96);
-    out.push({ state, text: sum ? name + " \u00b7 " + sum : name });
+    out.push({ state, text: sum ? name + " · " + sum : name });
   }
   /* Bounded. A long turn can run hundreds of tools, and an unbounded log inside
      a chat turn is a memory leak with a scrollbar. The OLDEST go: the recent
@@ -2452,8 +2455,13 @@ function turnResponse(t){
      same in-memory, per-page-load pattern S.govOpen uses; it survives
      patchTurn() because the render reads it, and it is deliberately NOT
      persisted, because a uid means nothing after a reload. */
+  /* ONE open state for the runs (S.thinkOpen[uid]): the loader's button while
+     the turn streams, the activity fold's head once it has settled. */
   const logLines = t.streaming && !q ? gvLog(t) : [];
   const logOpen = !!(S.thinkOpen && t.uid && S.thinkOpen[t.uid]);
+  /* A failure mid-turn is stated on the loader itself, outside the ticker's
+     text node: the strip says what is running, not what already broke. */
+  const failed = runs.filter(r => r.ok === false).length;
   const stateBottom = q
       ? `<div class="gv-waiting${q.behind ? " gv-queued" : ""}">
            <span class="gv-wdot" aria-hidden="true"></span><span>${
@@ -2463,13 +2471,18 @@ function turnResponse(t){
                : "Sent — waiting for the agent to start"
            }</span></div>`
       : t.streaming
+      /* The fixed word "thinking" beside the strip is GONE (founder 2026-09-21:
+         "there's also thinking written -- are both required?"). It was a label
+         that never changed while the strip beside it already said the measured
+         phase -- thinking / working / writing / the tool running now -- so the
+         strip itself now carries the shimmer, and one line says everything. */
       ? `<div><button class="gv-thinkbtn" type="button" data-thinkopen="${esc(t.uid||"")}"
              aria-expanded="${logOpen?"true":"false"}" title="${logLines.length
                ? "What has run so far in this turn"
                : "Nothing has run yet in this turn"}"
            ><span class="gv-think"><span class="gv-pulse gv-beat" aria-hidden="true"></span
-           ><span class="gv-tlabel">thinking</span><b class="gv-tmeta" data-runstrip="${esc(t.uid||"")}"
-           >${esc(runPhrase(t))}</b></span></button>${
+           ><span class="gv-tlabel" data-runstrip="${esc(t.uid||"")}">${esc(runPhrase(t))}</span>${
+           failed ? `<span class="gv-tbad">${failed} failed</span>` : ""}</span></button>${
           logOpen
             ? `<div class="gv-log">${logLines.length
                 ? logLines.map(l=>
@@ -2510,9 +2523,17 @@ function turnResponse(t){
      the output expander (same data-toolout key), and the terminal re-open
      control for a shell command. `tools` -- the flat name list a transcript
      records and a test pins -- is untouched and is still the last fallback. */
-  const tools = runs.length
-    ? toolTimelineHtml(t)
-    : (t.calls && t.calls.length ? toolCallsHtml(t.calls)
+  /* CONDENSED (founder 2026-09-21). While the turn STREAMS the runs live
+     behind the loader at the bottom (stateBottom), so nothing is drawn here
+     and the turn is one growing answer plus one status line. Once it has
+     SETTLED they fold behind one row at the top (toolFoldHtml), which opens
+     into the same cards. The flat name-list fallback for a transcript that
+     recorded only names is unchanged. */
+  const tools = t.streaming
+    ? ""
+    : runs.length
+    ? toolFoldHtml(runs, t.uid, { live: true })
+    : (t.calls && t.calls.length ? toolFoldHtml(t.calls, t.uid)
        : (nTools ? `<div class="toolRow" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
       <span class="pill p-mut">${nTools} tool call${nTools===1?"":"s"}</span>
       ${[...new Set(t.tools)].slice(0,8).map(n=>`<span class="pill p-acc">${esc(n)}</span>`).join("")}
@@ -2595,7 +2616,10 @@ function turnBlock(t, i){
        The "turn N · from transcript" pill + provenance note are GONE
        (founder 2026-08-24: per-turn boilerplate, not user-relevant); the
        orphan warning stays — it reports a real anomaly, not provenance. */
-    const gvT = gvHasCapture(t) ? (turnUid(t), gvChipHtml(t, i)) : "";
+    /* every transcript turn gets its uid here, not only one with a governance
+       capture: the activity fold keys its open state on it (S.thinkOpen) */
+    turnUid(t);
+    const gvT = gvHasCapture(t) ? gvChipHtml(t, i) : "";
     return `<div class="turn">
       ${t.orphan
         ? `<div class="a"><span class="pill p-warn">assistant message with no recorded prompt</span></div>`

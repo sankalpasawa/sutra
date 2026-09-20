@@ -337,6 +337,59 @@ function toolTimelineHtml(t){
   return toolCallsHtml(runs, { live: true });
 }
 
+/* ══════════════════ one row per turn: the activity fold ═══════════════════
+   Founder 2026-09-21: "the model output call is written one by one, like an
+   output terminal ... can we condense that?" A settled turn that ran 14 tools
+   drew 14 cards (12 plus the "earlier" line); a streaming one drew them at
+   the top AND, behind the loader at the bottom, a step log that listed the
+   same runs a second time in a second idiom. Neither said first what a reader
+   wants first: how much ran, of what kind, and whether anything failed.
+   The fold is that ONE row -- a dot in the four card states, the count, the
+   kinds by count, the failure count when there is one -- and it opens into
+   exactly the cards toolCallsHtml has always drawn (same keys, same cap, same
+   output expanders). Its open state is S.thinkOpen[uid]: the SAME map the
+   streaming loader's button toggles, so while the turn runs the loader at the
+   bottom opens these cards, and once it settles the fold at the top does.
+   Nothing here is invented: every number is a count over the calls given. */
+function toolFoldParts(calls, live){
+  const byKind = {};
+  let bad = 0, running = 0, unk = 0;
+  calls.forEach(c => {
+    const p = toolCardParts(c);
+    /* grouped by the card's own head: a base kind by its label, a subagent by
+       its agent, an MCP call by its server, an unknown tool by its name */
+    const g = (p.kind === "other" || p.kind === "mcp" || p.kind === "subagent")
+      ? p.label : (TOOL_KIND_LABEL[p.kind] || p.label);
+    byKind[g] = (byKind[g] || 0) + 1;
+    if (live ? c.ok === false : !!c.is_error) bad++;
+    if (live && c.running) running++;
+    else if (live && c.ok === null) unk++;
+  });
+  const names = Object.keys(byKind)
+    .sort((a, b) => byKind[b] - byKind[a] || a.localeCompare(b));
+  const kinds = names.slice(0, 4).map(k => k + " " + byKind[k]);
+  if (names.length > 4) kinds.push("+" + (names.length - 4) + " more");
+  const state = running ? "run" : bad ? "bad" : unk ? "unk" : "ok";
+  return { n: calls.length, kinds, bad, running, state };
+}
+function toolFoldHtml(calls, uid, opts){
+  if (!calls || !calls.length) return "";
+  const f = toolFoldParts(calls, !!(opts && opts.live));
+  const key = String(uid || "");
+  const open = !!(key && S.thinkOpen && S.thinkOpen[key]);
+  /* a turn with no uid has nothing to key the open state on, so the row still
+     states the facts but does not pretend to be a control */
+  return `<div class="tfold${open ? " open" : ""}"><button class="tfhead ${f.state}" type="button"
+      data-toolfold="${esc(key)}" aria-expanded="${open ? "true" : "false"}"${key ? "" : " disabled"}
+      title="${open ? "Hide the tool calls" : "Show each tool call"}"
+      ><span class="tfdot" aria-hidden="true"></span
+      ><b class="tfn">${f.n} tool call${f.n === 1 ? "" : "s"}</b
+      ><span class="tfk">${esc(f.kinds.join(" · "))}</span>${
+      f.bad ? `<span class="tfbad">${f.bad} failed</span>` : ""
+      }<span class="tfchev" aria-hidden="true">▾</span></button>${
+    open ? toolCallsHtml(calls, opts) : ""}</div>`;
+}
+
 /* The composer's PANE menu (chat-surface chrome, founder 2026-08-18): every
    control the pane header used to carry, in one place. Namespaced paneMenu /
    data-panemenu on purpose -- S.sessMenu + sessMenuHtml() already belong to the

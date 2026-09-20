@@ -1817,9 +1817,36 @@
   .gv-ln.bad{color:var(--block)}
   .gv-ln.run{color:var(--acc)}
   .gv-ln.unk{color:var(--warn)}
+  /* the loader's log IS the tool cards (2026-09-21): one list in one idiom,
+     not a second list of the same runs in a second one */
+  .gv-log .toolcalls{margin-top:2px}
+  .gv-tbad{color:var(--block);font-weight:600}
   @media (prefers-reduced-motion: reduce){
     .gv-beat,.gv-tlabel{animation:none}
   }
+  /* ══ the activity fold: one row per settled turn ══
+     Founder 2026-09-21: "written one by one, like an output terminal". The
+     row carries the count, the kinds and the failures; the cards live behind
+     it. Same four state colours as a card's dot, same spinner as .trow.run. */
+  .tfold{margin-top:6px}
+  .tfhead{display:flex;align-items:center;gap:8px;width:100%;min-width:0;text-align:left;
+    background:none;border:0;padding:2px 0;font:11px/1.6 var(--mono);color:var(--muted);cursor:pointer}
+  .tfhead:hover{color:var(--ink)}
+  .tfhead:focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:5px}
+  .tfhead:disabled{cursor:default}
+  .tfdot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--faint)}
+  .tfhead.ok  .tfdot{background:var(--ok)}
+  .tfhead.bad .tfdot{background:var(--block)}
+  .tfhead.unk .tfdot{background:var(--warn)}
+  .tfhead.run .tfdot{background:none;border:1.5px solid var(--acc);border-top-color:transparent;
+    width:9px;height:9px;animation:sutraSpin .7s linear infinite}
+  .tfn{flex:none;font-weight:600;color:var(--ink)}
+  .tfk{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--faint)}
+  .tfbad{flex:none;color:var(--block);font-weight:600}
+  .tfchev{margin-left:auto;flex:none;font-size:9px;color:var(--faint);transition:transform .22s}
+  .tfold.open .tfchev{transform:rotate(180deg)}
+  .tfold.open>.toolcalls{margin:4px 0 0 3px;padding-left:10px;border-left:2px solid var(--line)}
+  @media (prefers-reduced-motion: reduce){ .tfhead.run .tfdot{animation:none} }
 
   /* ── Connectors (External World projection, ADR-023) ────────────────────
      Scoped to conn* selectors so nothing here can reach another screen. The
@@ -4566,8 +4593,11 @@
 .dpli.on span{font-weight:500;color:var(--ink)}
 .dpq{padding:4px 8px}
 .dpviewer .o2vb{display:flex;flex-direction:column;gap:10px;padding:12px}
+/* flex:none on both -- the viewer body is a scrolling column, and a flex item
+   in one shrinks to nothing when the column overflows. A long chat squashed
+   Identity's tabs to a hairline before this landed (headless capture, slice B). */
 .dpcard{background:var(--surface);border:1px solid var(--line-soft);
-  border-radius:var(--r);padding:11px 13px}
+  border-radius:var(--r);padding:11px 13px;flex:none}
 .dpcard h3{font:600 10.5px/1.4 var(--sans);letter-spacing:.06em;
   text-transform:uppercase;color:var(--muted);margin:0 0 7px}
 .dprow{display:grid;grid-template-columns:8px minmax(0,1fr);gap:10px;
@@ -4588,3 +4618,38 @@
 .dpbar.hard i{background:var(--block)}
 .dpask .btn{margin-right:6px}
 .dpstamp{background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
+/* Identity's three tabs and every chat's Summary / Exact pair are the panel's
+   own .tabs control (panel.css:595-597); these two rules only place them, so
+   the department screen introduces no second tab pattern. */
+.dptabs{margin:0 0 2px;display:flex;flex:none}
+.dpmodes{margin:0 0 8px}
+.dpid{display:grid;grid-template-columns:1.4fr 1.2fr .8fr .8fr;gap:16px}
+.dpcell{min-width:0}
+.dpk{font:400 10.5px/1.4 var(--sans);letter-spacing:.04em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:3px}
+.dpbig{font:400 15px/1.35 var(--serif);color:var(--ink)}
+.dprule{display:flex;gap:8px;align-items:flex-start;margin:3px 0;
+  font:400 12.5px/1.45 var(--sans);color:var(--ink)}
+.dptag{font:400 10px/1.5 var(--sans);padding:1px 6px;border-radius:5px;
+  border:1px solid var(--line);color:var(--muted);flex:none;margin-top:2px;white-space:nowrap}
+.dptag.go{color:var(--ok);border-color:var(--ok-line);background:var(--ok-bg)}
+.dptag.ask{color:var(--warn);border-color:var(--warn-line);background:var(--warn-bg)}
+.dptag.refuse{color:var(--block);border-color:var(--block-line);background:var(--block-bg)}
+.dptag.always{color:var(--acc);border-color:var(--acc);background:var(--acc-bg)}
+.dpown{display:flex;align-items:center;gap:8px;font:400 12.5px/1.4 var(--sans);color:var(--ink)}
+.dpav{width:24px;height:24px;border-radius:50%;background:var(--acc-bg);color:var(--acc);
+  display:inline-flex;align-items:center;justify-content:center;flex:none;
+  font:600 11px/1 var(--sans)}
+.dpchat{display:flex;flex-direction:column;gap:6px}
+.dpmsg{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;padding:7px 10px;
+  border-radius:8px;background:var(--card);box-shadow:var(--row-shadow);
+  font:400 12.5px/1.45 var(--sans);color:var(--ink)}
+.dpmsg.think{background:none;box-shadow:none;border:1px dashed var(--line-soft);
+  color:var(--muted);font-style:italic}
+.dpwho{font:400 10.5px/1.4 var(--sans);letter-spacing:.04em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:2px}
+.dpat{font:400 11px/1.4 var(--mono);color:var(--faint);align-self:start}
+.dpexact{margin:0;padding:9px 11px;border-radius:8px;background:var(--inset);
+  border:1px solid var(--line-soft);font:400 11px/1.5 var(--mono);color:var(--muted);
+  white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto}
+@media (max-width:980px){.dpid{grid-template-columns:1fr 1fr}}

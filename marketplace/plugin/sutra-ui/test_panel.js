@@ -7349,3 +7349,64 @@ ASYNC_CHECKS.push(new Promise(r => setTimeout(r, 60)).then(async () => {
     T.S.needsYou = prevNY; T.S._needsYouBusy = prevBusy; T.S._needsYouKey = prevKey;
   }
 }));
+
+/* ── 56. the activity fold: one row per settled turn (founder 2026-09-21) ────
+   "The model output call is written one by one, like an output terminal.
+   Can we condense that? There's also 'thinking' written. Are both required?"
+   A settled turn's tool calls now fold behind ONE row that opens into the
+   cards; a streaming turn draws none at the top (the loader carries them);
+   the loader's fixed word is gone. Unit pins: test_chat_condense.js. */
+const FOLD_RUNS = [
+  { id: "a", name: "Read", summary: "os/engines/LEDGER.md", running: false, ok: true, startedAt: 1, endedAt: 2 },
+  { id: "b", name: "Bash", command: "bats placement.bats", summary: "bats placement.bats",
+    running: false, ok: false, startedAt: 1, endedAt: 2 },
+  { id: "c", name: "Read", summary: "x.md", running: false, ok: true, startedAt: 1, endedAt: 2 },
+];
+
+test("56a. a settled turn shows ONE row, not a card per call", () => {
+  T.S.thinkOpen = {};
+  const html = T.turnResponse({ uid: "t9", streaming: false, response: "done",
+                                tools: FOLD_RUNS.map(r => r.name), toolRuns: FOLD_RUNS });
+  assert.strictEqual((html.match(/class="tfhead /g) || []).length, 1, html);
+  assert.ok(/3 tool calls/.test(html) && /Read 2 · Command 1/.test(html), html);
+  assert.ok(/1 failed/.test(html), "the failure is on the row");
+  assert.ok(!/toolcall tcard/.test(html), "no card is drawn until the row is opened");
+});
+
+test("56b. opened, the row shows the cards the turn always had", () => {
+  T.S.thinkOpen = { t9: true };
+  const html = T.turnResponse({ uid: "t9", streaming: false, response: "done",
+                                tools: FOLD_RUNS.map(r => r.name), toolRuns: FOLD_RUNS });
+  assert.strictEqual((html.match(/class="toolcall tcard/g) || []).length, 3);
+  assert.ok(/data-toolterm="b"/.test(html), "the shell card keeps its terminal control");
+  T.S.thinkOpen = {};
+});
+
+test("56c. while streaming nothing is drawn at the top -- the loader carries the runs", () => {
+  T.S.thinkOpen = {};
+  const html = T.turnResponse({ uid: "t9", streaming: true, response: "…",
+                                tools: FOLD_RUNS.map(r => r.name), toolRuns: FOLD_RUNS });
+  assert.ok(!/tfhead|toolcall tcard/.test(html), "cards at the top of a live turn: " + html);
+  assert.ok(/gv-thinkbtn/.test(html));
+  assert.ok(/<span class="gv-tbad">1 failed<\/span>/.test(html), "the failure is on the loader");
+});
+
+test("56d. the loader carries the measured strip and no fixed word", () => {
+  const html = T.turnResponse({ uid: "t9", streaming: true, response: "",
+                                tools: [], toolRuns: [] });
+  assert.ok(!/gv-tlabel">thinking</.test(html), "the static label is back: " + html);
+  const m = html.match(/class="gv-tlabel" data-runstrip="t9"[^>]*>([^<]*)</);
+  assert.ok(m, "the strip is the shimmer element: " + html.slice(-400));
+  assert.ok(!/[<>]/.test(m[1]), "text only inside the strip");
+});
+
+test("56e. a replayed transcript turn folds its calls and can open them", () => {
+  T.S.thinkOpen = {};
+  const t = { transcript: true, text: "q", response: "a",
+              calls: [{ id: "c1", name: "Read", input: "a.md" }, { id: "c2", name: "Bash", input: "ls" }] };
+  const html = T.turnBlock(t, 0);
+  assert.ok(t.uid, "the transcript turn got a uid");
+  assert.ok(new RegExp('data-toolfold="' + t.uid + '"').test(html), html);
+  assert.ok(!/ disabled/.test(html.match(/<button class="tfhead[^>]*>/)[0]), "the row is a live control");
+  assert.ok(/2 tool calls/.test(html));
+});
