@@ -1,0 +1,394 @@
+/* ── Workspace screen (PLAN-100 S13-S20) ─────────────────────────────────────
+   One namespaced block: every selector is rooted at a ws-* class, so this file
+   is INERT until 13-workspace.js renders ws-* markup — flag off (FLAG.md)
+   means zero behaviour change even with the stylesheet linked.
+
+   Source of record: holding/plans/workspace-program/DESIGN-LOCK.md (states
+   01-14 of workspace-states.html). Every px below is copied from its redline
+   tables; any delta needs founder sign-off (S20 diffs this file vs the lock).
+
+   NAMING source of truth: static/js/13-workspace.js (S20 reconciliation) —
+   every class that file emits has a rule here, and no rule here styles a
+   class the JS does not emit. The old mock-derived names (.ws-q .ws-msg
+   .ws-doc-i .ws-sk .ws-lk .ws-cx .ws-chd .ws-right .ws-screen .ws-body …)
+   are renamed to the JS vocabulary; the rail (.ws-rail*) and the fake caret
+   are dropped — the JS renders neither (the shipped panel owns the rail,
+   and a live <input> owns its own caret).
+
+   TOKEN MAP — the mock's tokens.css names do not exist in the panel; panel.css
+   :root is authoritative at runtime, so each mock ROLE maps onto the panel
+   variable already carrying that role. Dark mode comes free (S19): the panel
+   redefines these same variables under :root,[data-theme="dark"] — this file
+   contains no hex at all, light-only or otherwise.
+     mock --bg           -> var(--bg)      screen ground
+     mock --panel        -> var(--card)    top bar, doc pane
+     mock --ink          -> var(--ink)     department level, selected doc, typed query
+     mock --stone        -> var(--muted)   document level, top actions, empty message
+     mock --faint        -> var(--faint)   placeholder, counts, meta, gone docs
+     mock --line         -> var(--line)    every border and rule
+     mock --cream        -> var(--bubble)  skeleton blocks (nearest: #F5F0E8 ~ #f5f4f2)
+     mock --gold         -> var(--acc)     gold actions (Done / File it / go)
+     mock --gold-glow    -> var(--acc-bg)  selection wash: doc.on, fold.on
+     mock --review       -> var(--acc)     charter level, record edge. The panel has
+                                           NO blue anywhere; its one link colour is
+                                           --acc (.md .md-a, panel.css:623). Charter
+                                           blue therefore lands on the accent. The
+                                           tree still reads in three levels — ink
+                                           600/8 · acc 400/20 · muted 400/32 — via
+                                           weight + indent, which the lock itself
+                                           names as the level-telling mechanism
+                                           (workspace-states.html:41).
+     mock --decide       -> var(--warn)    notice-bar default edge (#8B6B4A -> warn role)
+     mock --alert        -> var(--block)   changed-on-disk edge, offline dot
+     mock --done         -> (unused on this screen; reserved — DESIGN-LOCK)
+     mock --font-display -> var(--serif)   charter-page h1
+     mock --font-body    -> var(--sans)    everything else
+     mock --font-mono    -> var(--mono)    (document body lives in the sidecar iframe)
+
+   OFF-TOKEN LITERALS (DESIGN-LOCK §off-token) — each mapped to the NEAREST
+   existing panel variable; nothing minted:
+     #fbfaf7  (side+ctx pane bg)      -> var(--inset)     #fafaf9 light / #161412 dark
+     #f4f6f9  (charter/record sel)    -> var(--line-soft) #eeecea light / #221F1C dark.
+              --bubble is the closer literal in light BUT is byte-equal to --inset in
+              dark, which would make the selection invisible on the side pane;
+              --line-soft stays one step off the pane ground in BOTH themes.
+     #fbf0d8  (search <mark>)         -> var(--warn-bg)   #f8f3e4 light — same pale-amber role
+     #2b2723  (doc body text)         -> var(--ink)       nearest by colour distance; the
+              one-step softness vs full ink is dropped — flagged for S20/founder.
+     #dedad3  (mock sheet ground)     -> never ships (mock chrome — lock rule)
+
+   CLASS MAP (mock -> shipped, JS names). Bare helpers (.on .gone .i1 .alert
+   .gold .stone) only match inside a ws-* compound, so they cannot leak:
+     .screen>.ws          .top>.ws-top       .q>.ws-search     .right>.ws-topright
+     .panes>.ws-panes     .side>.ws-side     .dep>.ws-dep      dep count>.ws-count
+     .cha>.ws-cha         .doc-i>.ws-doc     .rule>.ws-rule    .lens>.ws-lens
+     .grp>.ws-grp         .rec>.ws-rec       .fold>.ws-fold    fold dir>.ws-fold-dir
+     .doc>.ws-doccol      .col>.ws-col       .crumb>.ws-crumb  .act>.ws-act
+     .msg>.ws-notice      .empty>.ws-empty   .sk>.ws-skel (+.ws-skel-wrap)
+     .chd>.ws-desc        .chlist>.ws-chlist chlist a>.ws-chrow  date>.ws-chdate
+     .ctx>.ws-ctx         .cx>.ws-cs         .ck>.ws-ck (+.ws-cshead)
+     .cr>.ws-cr           cr value>.ws-cv    .lk>.ws-cl        .dot>.ws-dot
+     chip>.ws-chip        count>.ws-rescount charter page>.ws-page
+     .s>.ws-s (+.ws-loc .ws-snip)  .i8>.ws-hit  .i20>.ws-und  .unfiled>.ws-unfiled
+     iframe>.ws-frame     empty side>.ws-none
+   The mock's per-state INLINE styles are promoted to modifiers so the frontend
+   agent never writes style=: .ws-dep.ws-unfiled  .ws-doc.ws-und  .ws-doc.ws-hit
+   .ws-cha.on  .ws-notice.alert  .ws-chip.alert  .ws-doc.gone
+   ─────────────────────────────────────────────────────────────────────────── */
+
+  /* screen — 1440x900 is the MOCK SHEET's framing (workspace-states.html:16);
+     in the app the panel's pane box supplies the dimensions. radius 10 is the
+     panel's own --r (10px), so the lock value rides the existing token.
+     .ws stacks the top bar over the panes (the mock's .body). */
+  .ws{display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden;
+    border-radius:var(--r);background:var(--bg);color:var(--ink);font-family:var(--sans)}
+  /* full-bleed (founder spacing directive 2026-08-25): the pane body's 13px/14px
+     inset doubled the workspace's own chrome — the screen owns its edges.
+     Direct-child match only (dual consult): never fires on nested .ws-likes. */
+  .pb:has(> .ws){padding:0}
+
+  /* shared reset — the JS renders rows and actions as real <button>s the
+     static mock never needed; one reset, per-class values below */
+  .ws button{border:0;background:none;font-family:inherit;text-align:left;
+    color:inherit;padding:0;cursor:pointer}
+
+  /* The search lives in the browse pane's .ph row now (r3, founder
+     2026-08-25: "the rectangular plane can go") — the .ws-top band is gone.
+     Location-agnostic classes; margin-left keeps a breath after the title. */
+  .ws-search{flex:1;min-width:120px;max-width:520px;margin-left:10px;
+    font-size:13px;font-weight:400;color:var(--ink);caret-color:var(--ink);
+    border:0;border-bottom:1px solid transparent;background:transparent;
+    outline:none;font-family:inherit}
+  /* focus visibility (visual audit r3): the bare input in the pane head was
+     indistinguishable from a static label when focused */
+  .ws-search:focus{border-bottom-color:var(--acc)}
+  .ws-search::placeholder{color:var(--faint)}
+  .ws-topright{margin-left:auto;display:flex;align-items:center;gap:14px;
+    font-size:11.5px;color:var(--faint)}
+  .ws-rescount{font-size:11.5px;color:var(--faint)}   /* SC7 total, top-right cluster */
+  .ws-chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--faint)}
+  .ws-dot{width:6px;height:6px;border-radius:50%;display:inline-block;background:var(--faint)}
+  .ws-chip.alert .ws-dot{background:var(--block)}  /* state 13 offline dot (mock :598 inline --alert) */
+  .ws-act{font-size:12px;color:var(--muted);cursor:pointer;border:0;background:none;
+    padding:0;font-family:inherit}
+  .ws-act.gold{color:var(--acc)}
+  .ws-act.stone{color:var(--muted)}   /* "Keep mine" (state 12, mock :570 inline .go.s) */
+  .ws-act[disabled]{opacity:.55;cursor:default}  /* busy actions (fileit/newdoc/savecopy) */
+
+  /* panes: side 286 · doc flex · ctx 250. overflow-y:auto, NOT the mock's
+     hidden — the mock crops static 900px snapshots; a live tree (5k-doc
+     fixture, S87) and a live document must scroll. Behavioural, not visual;
+     flagged for the S20 diff. */
+  .ws-panes{flex:1;display:flex;min-height:0}
+  /* SHRINKABLE, not fixed (r9 root cause): with `flex:none` the side pane and
+     the context rail (286+232=518) exceeded a browse pane dragged to 505px,
+     so the flexible DOCUMENT column absorbed the whole deficit and measured
+     ZERO — the editor's content then painted outside the pane, over the
+     neighbouring session pane, and swallowed every click there. The tree
+     yields first; the document always keeps its floor (.ws-doccol). */
+  .ws-side{flex:0 1 286px;width:auto;min-width:184px;
+    border-right:1px solid var(--line);background:var(--inset);
+    padding:10px 10px 12px;overflow-y:auto;font-size:12.5px;
+    scrollbar-gutter:stable}  /* classic-scrollbar appear/disappear reflowed
+                                 every ellipsized row (glitch fix 2026-08-25) */
+  .ws-searching{padding:10px 8px;font-size:12px;color:var(--faint)}
+  .ws-none{min-height:8px}   /* empty tree/results render — no lock value; inert spacer */
+
+  /* the three levels, told by weight and indent — no chevrons, no icons.
+     .ws-prefixed: the shared `.ws button` reset is (0,1,1) and silently
+     zeroed these paddings for months — row rules must outrank it. */
+  .ws .ws-dep{display:block;width:100%;text-align:left;cursor:pointer;
+    padding:6px 8px 3px;color:var(--ink);font-weight:600;font-size:12.5px;
+    letter-spacing:-.01em;border-radius:6px}
+  .ws .ws-dep:hover{background:var(--line-soft)}
+  .ws-count{float:right;font-weight:400;color:var(--faint);font-size:11px}
+  /* hygiene (founder 2026-08-25): a department with no documents keeps its
+     row — the tree is MECE — but recedes; 50 bold zero rows were shouting */
+  .ws .ws-dep.ws-quiet{color:var(--muted);font-weight:500}
+  .ws-dep.ws-unfiled{color:var(--muted)}                    /* mock :138/:195 inline */
+  .ws .ws-cha{display:block;width:100%;padding:4px 8px 4px 20px;color:var(--acc);
+    font-size:12px;cursor:pointer}
+  .ws-cha.on{background:var(--line-soft);border-radius:6px}  /* state 02 (mock :184 inline) */
+  .ws .ws-doc{display:block;width:100%;padding:4px 8px 4px 32px;color:var(--muted);
+    border-radius:6px;line-height:1.35;font-size:12px;cursor:pointer;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ws-doc.on{background:var(--acc-bg);color:var(--ink)}
+  .ws-doc.gone{color:var(--faint);text-decoration:line-through}
+  .ws .ws-doc.ws-und{padding-left:20px}  /* Unfiled docs indent (mock :139/:376 inline) */
+  .ws .ws-doc.ws-more{color:var(--faint);font-style:italic}
+  .ws .ws-doc.ws-hit{padding:9px 8px;border-bottom:1px solid var(--line-soft)}
+  /* search doc-result rows (mock :235-:241): breathing room + a soft divider,
+     and the match highlight stays a tint, not a highlighter stroke — token
+     colors so both themes keep contrast without glare */
+  .ws-doc.ws-hit mark, .ws-side mark{background:var(--warn-bg);color:inherit;border-radius:2px}
+  .ws-s{display:block;font-size:10.5px;color:var(--faint);margin-top:2px}
+  .ws-s.ws-loc{color:var(--muted)}   /* result-location variant --stone (lock type table) */
+  .ws-s.ws-snip{color:var(--faint)}
+  .ws-s mark{background:var(--warn-bg);color:var(--muted);border-radius:2px}
+  .ws-rec .ws-s{color:var(--muted)}
+  .ws-rule{border:0;border-top:1px solid var(--line);margin:12px 6px}
+  .ws-lens{display:flex;gap:14px;padding:0 8px 10px;font-size:11px;color:var(--faint)}
+  .ws-lens button{font-size:11px;color:var(--faint);cursor:pointer}
+  .ws-lens button[aria-selected="true"]{color:var(--ink);font-weight:500}
+  .ws-grp{font-size:9px;letter-spacing:.14em;color:var(--faint);margin:16px 8px 7px}
+  .ws-rec{display:block;width:calc(100% - 8px);padding:5px 8px;line-height:1.35;
+    border-left:2px solid var(--acc);margin:0 0 3px 8px;cursor:pointer;font-size:12.5px;
+    color:var(--ink)}
+  .ws-fold{display:block;width:100%;padding:4px 8px;border-radius:6px;font-size:12.5px;
+    color:var(--muted);cursor:pointer}
+  .ws-fold-dir{color:var(--ink)}     /* directory headers (mock .fold.d) */
+  .ws-fold.i1{padding-left:22px}
+  .ws-fold.i2{padding-left:36px}
+  .ws-fold.i3{padding-left:50px}   /* indent caps at 3 visual levels (r7) */
+  .ws-fold.ws-more{color:var(--faint);font-style:italic}
+  .ws-fold.on{background:var(--acc-bg);color:var(--ink)}
+
+  /* doc pane — 620 centred column (fixed by design, A11Y.md §4). The column
+     is a flex stack so the sidecar iframe fills the height below the crumb
+     and notices; the document body itself renders inside the iframe. */
+  /* min-width is the DOCUMENT'S FLOOR (r9): flexible columns hit zero when
+     their fixed siblings outgrow the row, and a zero-width editor spills its
+     content across the app. 280px keeps a readable column; the supplementary
+     rail yields before this does (container query below). */
+  .ws-doccol{flex:1 1 auto;min-width:280px;overflow-y:auto;background:var(--card);
+    padding:12px 0 40px;display:flex;flex-direction:column}
+  /* padding-top 22->12 (founder spacing directive 2026-08-25) */
+  .ws-col{width:100%;max-width:680px;margin:0 auto;padding:0 28px;box-sizing:border-box;
+    flex:1;display:flex;flex-direction:column;min-height:0}
+  /* was width:620px FIXED — narrower panes clipped the content mid-word at
+     the FILING boundary (reviewer 2026-08-25, blocker 2) */
+  .ws-crumb{font-size:11.5px;color:var(--faint);margin-bottom:6px;flex:none}
+  .ws-read{cursor:text}   /* click-to-edit surface (r4): the body invites the caret */
+  /* leading-metadata block (r5): key/value rows instead of a bullet list */
+  .ws-metablock{margin:0 0 16px;padding:8px 12px;background:var(--inset);
+    border-radius:8px;font-size:12px}
+  .ws-metarow{display:flex;gap:10px;padding:2px 0}
+  .ws-metak{flex:none;min-width:88px;color:var(--muted);font-weight:600}
+  .ws-metav{color:var(--ink);min-width:0}
+  .ws-twin{color:var(--faint);font-size:10.5px}   /* twin-title dir suffix (r5) */
+  .ws-frame{flex:1;width:100%;min-height:0;border:0;background:var(--card)}
+  .ws-col h1{font-family:var(--serif);font-size:28px;font-weight:500;margin:0 0 16px;
+    letter-spacing:-.01em}
+  /* Measure (reviewer round-3 minor 5): 680px reading column against a 232px
+     meta pane restores the mock's reading-dominant ratio at 1440.
+  read state (mock 02/03): serif title + proportional themed body — the
+     panel's own render; the editor iframe exists only behind Edit */
+  .ws-read{overflow-y:auto;min-height:0;flex:1;padding-bottom:40px}
+  .ws-doctitle{font-family:var(--serif);font-size:28px;font-weight:500;margin:0 0 16px;
+    letter-spacing:-.01em;color:var(--ink)}
+  .ws-mdbody{font-size:13.5px;line-height:1.65;color:var(--ink)}
+  .ws-mdbody p{margin:0 0 12px}
+  .ws-mdbody h1,.ws-mdbody h2{font-family:var(--serif);font-size:19px;font-weight:500;margin:22px 0 8px}
+  .ws-mdbody h3,.ws-mdbody h4{font-size:14px;font-weight:600;margin:18px 0 6px}
+  .ws-mdbody code{font-family:var(--mono);font-size:12px;background:var(--inset);
+    border-radius:4px;padding:1px 5px}
+  .ws-mdbody pre{background:var(--inset);border:1px solid var(--line-soft);border-radius:8px;
+    padding:12px 14px;overflow-x:auto;margin:0 0 14px}
+  .ws-mdbody pre code{background:none;padding:0}
+  .ws-mdbody ul,.ws-mdbody ol{margin:0 0 12px;padding-left:22px}
+  .ws-mdbody li{margin:2px 0}
+  .ws-mdbody blockquote{border-left:2px solid var(--acc);margin:0 0 12px;padding:2px 0 2px 12px;
+    color:var(--muted)}
+  .ws-mdbody table{border-collapse:collapse;margin:0 0 14px;font-size:12.5px;max-width:100%}
+  .ws-mdbody th{text-align:left;font-size:10.5px;letter-spacing:.08em;color:var(--muted);
+    border-bottom:1px solid var(--line);padding:5px 10px 5px 0}
+  .ws-mdbody td{border-bottom:1px solid var(--line-soft);padding:6px 10px 6px 0;vertical-align:top}
+  .ws-mdbody a{color:var(--acc)}
+  .ws-mdbody hr{border:0;border-top:1px solid var(--line);margin:18px 0}
+  .ws-wikilink{color:var(--acc)}
+  /* ── native editor (PLAN-25-EDITOR S11/S15) ────────────────────────────────
+     The forked SilverBullet editor core mounts HERE as a plain div — one
+     origin, panel tokens straight in, no bridge, no space style, no iframe.
+     Selectors pinned to CM6 + SB 2.10 line classes (same vocabulary the old
+     space-style theme used; kept in sync with the fork). */
+  /* ONE scroller (r6): the CM scroller owns editor scrolling — .ws-editor
+     stacking its own overflow on top of .ws-doccol's made wheel input glitchy
+     (three nested scrollers). Read views still scroll via .ws-doccol. */
+  .ws-editor{flex:1;min-height:0;overflow:hidden}
+  .ws-editor .cm-scroller{overflow-y:auto}
+  .ws-editor .cm-editor{font-size:13.5px;line-height:1.65;height:100%;
+    background:var(--card);color:var(--ink)}
+  .ws-editor .cm-editor.cm-focused{outline:none}
+  .ws-editor .cm-content{caret-color:var(--ink);padding:4px 0 60px;
+    font-family:var(--sans)}
+  .ws-editor .cm-cursor{border-left-color:var(--ink)}
+  .ws-editor .cm-selectionBackground{background:var(--acc-bg) !important}
+  .ws-editor .cm-gutters{display:none}
+  .ws-editor .sb-line-h1,.ws-editor .sb-line-h2,.ws-editor .sb-line-h3{
+    font-family:var(--serif);font-weight:500}
+  .ws-editor .sb-line-h1{font-size:24px}
+  .ws-editor .sb-line-h2{font-size:19px}
+  .ws-editor .sb-line-h3{font-size:15px}
+  .ws-editor .sb-line-code,.ws-editor .sb-line-fenced-code{
+    font-family:var(--mono);font-size:12px;background:var(--inset)}
+  .ws-editor .sb-line-blockquote{border-left:2px solid var(--acc);
+    padding-left:10px;color:var(--muted)}
+  .ws-editor .sb-line-comment{color:var(--faint)}
+  /* clean-mode emphasis (reviewer editor-round-1 minor 3): SB's highlight
+     style tags emphasis with sb-strong/sb-emphasis classes — give them the
+     panel's actual weights so bold IS bold when the marks hide */
+  .ws-editor .sb-strong{font-weight:600}
+  .ws-editor .sb-emphasis{font-style:italic}
+  .ws-editor .sb-strikethrough{text-decoration:line-through}
+  .ws-editor .sb-code{font-family:var(--mono);font-size:12px;background:var(--inset);
+    border-radius:4px;padding:0 4px}
+  .ws-editor a,.ws-editor .sb-wiki-link{color:var(--acc)}
+  /* tables (founder 2026-08-25; dual consult). SB's tablePlugin renders the
+     widget but hides source rows 2..N by CLASS, not by replace — without the
+     upstream rule (fork editor.scss:391) the raw pipes stayed visible under
+     the widget. Same mechanism for fenced-code hiding (editor.scss vocab).
+     Widget th/td mirror the read view's .ws-mdbody table rules for parity. */
+  .ws-editor .sb-line-table-outside,
+  .ws-editor .sb-fenced-code-hide{display:none}
+  .ws-editor .sb-line-tbl-header{font-weight:600}
+  /* The widget must NOT widen the editor's content layer (r9): a table's
+     intrinsic width (520px here) pushed .cm-content past the pane, so prose
+     stopped wrapping and BOTH were clipped mid-word. `width:0;min-width:100%`
+     contributes zero intrinsic width while still filling the column;
+     table-layout:fixed then keeps the table inside it, wrapping cells rather
+     than growing. Shape is preserved — which is the whole point. */
+  .ws-editor .sb-table-widget{display:block;width:0;min-width:100%;overflow-x:auto}
+  .ws-editor .sb-table-widget table{border-collapse:collapse;margin:0 0 14px;
+    font-size:12.5px;table-layout:fixed;width:100%;max-width:100%}
+  .ws-editor .sb-table-widget th,.ws-editor .sb-table-widget td{overflow-wrap:anywhere}
+  .ws-editor .sb-table-widget th{text-align:left;font-size:10.5px;letter-spacing:.08em;
+    color:var(--muted);border-bottom:1px solid var(--line);padding:5px 10px 5px 0;
+    font-weight:600}
+  .ws-editor .sb-table-widget td{border-bottom:1px solid var(--line-soft);
+    padding:6px 10px 6px 0;vertical-align:top}
+  /* in-cell editing (r6): the input inherits the cell's type entirely */
+  .ws-editor .sb-cell-input{width:100%;min-width:60px;border:0;outline:none;
+    border-bottom:1px solid var(--acc);background:transparent;color:var(--ink);
+    font:inherit;padding:0;caret-color:var(--ink)}
+  .ws-editor .sb-table-addrow{display:inline-block;margin:4px 0 0;border:0;
+    background:none;color:var(--faint);font:inherit;font-size:11px;
+    cursor:pointer;padding:2px 0}
+  .ws-editor .sb-table-addrow:hover{color:var(--acc)}
+
+
+  .ws-skel-wrap{padding-top:4px}
+  .ws-skel{height:11px;border-radius:4px;background:var(--bubble);margin:13px 0}
+  .ws-skel:first-child{height:22px;width:56%;margin-bottom:24px}  /* heading variant */
+  .ws-skel:nth-child(3n+2){width:92%}
+  .ws-skel:nth-child(3n){width:74%}
+  .ws-skel:nth-child(3n+1){width:45%}
+
+  /* charter page — the middle level is itself readable (state 02) */
+  .ws-page{font-size:14px;line-height:1.72;color:var(--ink)}
+  .ws-desc{font-size:14px;line-height:1.72;margin:0 0 13px;color:var(--ink)}
+  .ws-chlist{margin-top:26px}
+  .ws-chrow{display:flex;width:100%;justify-content:space-between;padding:11px 0;
+    border-bottom:1px solid var(--line);color:var(--ink);text-decoration:none;
+    font-size:13.5px;cursor:pointer}
+  .ws-chdate{color:var(--faint);font-size:11.5px}
+  .ws-page .ws-act{margin-top:22px}
+
+  /* context rail 250 */
+  .ws-ctx{flex:0 1 232px;width:auto;min-width:0;border-left:1px solid var(--line);background:var(--inset);
+    padding:16px 14px;font-size:12px;overflow-y:auto}
+  .ws-cs{margin-bottom:26px}         /* one ctx section (mock .cx) */
+  .ws-ck{color:var(--muted)}         /* row key (mock .cr span:first-child) */
+  .ws-cshead{display:block;font-size:9px;letter-spacing:.14em;color:var(--faint);
+    margin:0 0 9px}                  /* section heading (mock .ck) */
+  .ws-cr{display:flex;justify-content:space-between;padding:5px 0;color:var(--ink)}
+  .ws-cv{color:var(--ink);text-align:right}
+  .ws-cl{display:block;width:100%;padding:6px 0;color:var(--ink);text-decoration:none;
+    border-bottom:1px solid var(--line);cursor:pointer;font-size:12px}
+  .ws-cl:last-child{border:0}
+
+  /* notice bar (states 06/12/14 + transient server notices) + empty pane
+     (states 08/09/13) */
+  .ws-notice{border-left:2px solid var(--warn);padding:1px 0 1px 13px;margin:0 0 12px;
+    font-size:13.5px;color:var(--ink);flex:none}
+  .ws-notice.alert{border-color:var(--block)}
+  .ws-notice .ws-act{font-size:13.5px;color:var(--acc);margin-left:12px;cursor:pointer}
+  .ws-notice .ws-act.stone{color:var(--muted)}   /* "Keep mine" (state 12, mock :570 inline) */
+  .ws-empty{height:100%;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:22px}
+  .ws-empty p{font-size:14px;color:var(--muted);margin:0;line-height:1.6;
+    max-width:380px;text-align:center}
+  .ws-empty .ws-act{font-size:13px;color:var(--acc);cursor:pointer}
+
+  /* ── Keyboard focus (A11Y.md §3) — accent outline, distinct from the --acc-bg
+     pointer-selection wash; -2px inset matches the panel's .node treatment so
+     outlines never clip against pane edges. Not in the mock (static screens
+     carry no focus); mandated by A11Y.md, judged at S74. The roving-tabindex
+     cursor row is focused programmatically (wireWorkspace), so [data-wsfocus]
+     gets the outline on plain :focus, not only :focus-visible. */
+  .ws-search:focus-visible,.ws-act:focus-visible,
+  .ws-dep:focus-visible,.ws-cha:focus-visible,.ws-doc:focus-visible,
+  .ws-rec:focus-visible,.ws-fold:focus-visible,.ws-lens button:focus-visible,
+  .ws-chrow:focus-visible,.ws-cl:focus-visible,
+  .ws-side [data-wsfocus]:focus{
+    outline:2px solid var(--acc);outline-offset:-2px}
+
+  /* r8 row motion — the app's interaction vocabulary on the tree rows.
+     Pays off now that idle frames stop rebuilding #panes (unchanged-HTML
+     skip); reduced-motion users get none (repo QA surface). */
+  .ws .ws-cha, .ws .ws-doc, .ws .ws-fold, .ws .ws-rec,
+  .ws-act, .ws-lens button {
+    transition: background-color .12s ease, color .12s ease;
+  }
+  .ws .ws-cha:hover, .ws .ws-doc:hover, .ws .ws-fold:hover, .ws .ws-rec:hover {
+    background: var(--line-soft);
+  }
+  .ws .ws-cha, .ws .ws-rec { border-radius: 6px; }
+  @media (prefers-reduced-motion: reduce) {
+    .ws .ws-cha, .ws .ws-doc, .ws .ws-fold, .ws .ws-rec,
+    .ws-act, .ws-lens button { transition: none; }
+  }
+
+  /* ── narrow-pane ladder (r9) ────────────────────────────────────────────
+     The browse pane carries `container-type:inline-size` (panel.css), so the
+     workspace degrades against ITS width, not the viewport's — the founder
+     drags this divider, and a 505px pane is normal. Supplementary columns
+     yield in order; nothing ever collapses to zero. */
+  @container (max-width: 820px){
+    .ws-ctx{display:none}          /* FILING is supplementary metadata */
+  }
+  @container (max-width: 560px){
+    .ws-side{flex:0 1 200px}       /* the tree tightens before the document */
+  }
+  /* Last resort at extreme widths: scroll the row rather than destroy the
+     content (the panel's own rule for the pane row, panel.css .panes). */
+  .ws-panes{overflow-x:auto}

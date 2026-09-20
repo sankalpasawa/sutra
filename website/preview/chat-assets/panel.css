@@ -2097,9 +2097,7 @@
    which is what a chat does with one. The rule itself is gone rather than
    emptied -- an empty selector is a place a cap grows back. */
 .shmsg{ margin:4px 0; padding:6px 8px; border-radius:8px; font-size:12px; }
-/* user turn, minimal (founder 2026-09-21): the founder's own line carries the
-   same hairline rail as .turn .u and .gwturn-founder, no wash, no box */
-.shmine{ padding-left:10px; border-left:2px solid var(--line); border-radius:0; }
+.shmine{ background:var(--bg); }
 .shshadow{ background:var(--inset); border:1px solid var(--line); }
 .shempty{ color:var(--faint); font-size:12px; padding:8px 0; }
 .shchips{ display:flex; gap:6px; margin:8px 0; flex-wrap:wrap; }
@@ -4588,3 +4586,38 @@
 .dpbar.hard i{background:var(--block)}
 .dpask .btn{margin-right:6px}
 .dpstamp{background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
+/* Identity's three tabs and every chat's Summary / Exact pair are the panel's
+   own .tabs control (panel.css:595-597); these two rules only place them, so
+   the department screen introduces no second tab pattern. */
+.dptabs{margin:0 0 2px;display:flex}
+.dpmodes{margin:0 0 8px}
+.dpid{display:grid;grid-template-columns:1.4fr 1.2fr .8fr .8fr;gap:16px}
+.dpcell{min-width:0}
+.dpk{font:400 10.5px/1.4 var(--sans);letter-spacing:.04em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:3px}
+.dpbig{font:400 15px/1.35 var(--serif);color:var(--ink)}
+.dprule{display:flex;gap:8px;align-items:flex-start;margin:3px 0;
+  font:400 12.5px/1.45 var(--sans);color:var(--ink)}
+.dptag{font:400 10px/1.5 var(--sans);padding:1px 6px;border-radius:5px;
+  border:1px solid var(--line);color:var(--muted);flex:none;margin-top:2px;white-space:nowrap}
+.dptag.go{color:var(--ok);border-color:var(--ok-line);background:var(--ok-bg)}
+.dptag.ask{color:var(--warn);border-color:var(--warn-line);background:var(--warn-bg)}
+.dptag.refuse{color:var(--block);border-color:var(--block-line);background:var(--block-bg)}
+.dptag.always{color:var(--acc);border-color:var(--acc);background:var(--acc-bg)}
+.dpown{display:flex;align-items:center;gap:8px;font:400 12.5px/1.4 var(--sans);color:var(--ink)}
+.dpav{width:24px;height:24px;border-radius:50%;background:var(--acc-bg);color:var(--acc);
+  display:inline-flex;align-items:center;justify-content:center;flex:none;
+  font:600 11px/1 var(--sans)}
+.dpchat{display:flex;flex-direction:column;gap:6px}
+.dpmsg{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;padding:7px 10px;
+  border-radius:8px;background:var(--card);box-shadow:var(--row-shadow);
+  font:400 12.5px/1.45 var(--sans);color:var(--ink)}
+.dpmsg.think{background:none;box-shadow:none;border:1px dashed var(--line-soft);
+  color:var(--muted);font-style:italic}
+.dpwho{font:400 10.5px/1.4 var(--sans);letter-spacing:.04em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:2px}
+.dpat{font:400 11px/1.4 var(--mono);color:var(--faint);align-self:start}
+.dpexact{margin:0;padding:9px 11px;border-radius:8px;background:var(--inset);
+  border:1px solid var(--line-soft);font:400 11px/1.5 var(--mono);color:var(--muted);
+  white-space:pre-wrap;word-break:break-word;max-height:420px;overflow:auto}
+@media (max-width:980px){.dpid{grid-template-columns:1fr 1fr}}
