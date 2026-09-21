@@ -1358,7 +1358,7 @@ function turnOptsHtml(sid, mpid, model){
     ${f("effort", `<label><span>Effort</span>
       <select data-opt="effort" data-sid="${sid}">
         ${EFFORTS.map(e=>`<option value="${e}" ${o.effort===e?"selected":""}>${
-          e||"default"}</option>`).join("")}
+          e||"default (xhigh)"}</option>`).join("")}
       </select></label>`)}
     ${f("max_budget_usd", `<label><span>Budget</span>
       <input type="number" step="0.5" min="0" placeholder="no cap"

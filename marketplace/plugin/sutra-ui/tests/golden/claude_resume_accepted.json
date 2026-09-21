@@ -17,6 +17,8 @@
     "plan",
     "--resume",
     "claude-golden-session",
+    "--effort",
+    "xhigh",
     "--allowedTools",
     "mcp__sutra__*"
   ],

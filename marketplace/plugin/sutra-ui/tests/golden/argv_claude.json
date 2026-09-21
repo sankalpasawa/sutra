@@ -23,6 +23,8 @@
       "--include-partial-messages",
       "--permission-mode",
       "plan",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -50,6 +52,8 @@
       "--include-partial-messages",
       "--permission-mode",
       "plan",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -163,6 +167,8 @@
       "plan",
       "--resume",
       "a-claude-session",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -192,6 +198,8 @@
       "plan",
       "--resume",
       "a-claude-session",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -214,6 +222,50 @@
       "{\"hooks\": {\"PreToolUse\": [{\"matcher\": \"mcp__sutra__.*\", \"hooks\": [{\"type\": \"command\", \"command\": \"<python> <app_dir>/mcp_allow_hook.py\"}]}]}}",
       "--input-format",
       "stream-json",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--include-partial-messages",
+      "--permission-mode",
+      "plan",
+      "--resume",
+      "a-claude-session",
+      "--fork-session",
+      "--fallback-model",
+      "sonnet",
+      "--effort",
+      "high",
+      "--add-dir",
+      "<home>/Desktop",
+      "--allowedTools",
+      "Bash",
+      "Read",
+      "mcp__sutra__*",
+      "--disallowedTools",
+      "WebFetch",
+      "--append-system-prompt",
+      "be brief",
+      "--max-budget-usd",
+      "2.5"
+    ]
+  },
+  {
+    "case": {
+      "perm_mode": "plan",
+      "model": null,
+      "session_id": "a-claude-session",
+      "opts": "full",
+      "stream_input": false
+    },
+    "argv": [
+      "claude",
+      "-p",
+      "--mcp-config",
+      "{\"mcpServers\": {\"sutra\": {\"type\": \"stdio\", \"command\": \"<python>\", \"args\": [\"<app_dir>/sutra_mcp.py\"], \"env\": {\"SUTRA_NATIVE_HOME\": \"<native_home>\"}}}}",
+      "--strict-mcp-config",
+      "--settings",
+      "{\"hooks\": {\"PreToolUse\": [{\"matcher\": \"mcp__sutra__.*\", \"hooks\": [{\"type\": \"command\", \"command\": \"<python> <app_dir>/mcp_allow_hook.py\"}]}]}}",
+      "the prompt",
       "--output-format",
       "stream-json",
       "--verbose",
@@ -244,50 +296,6 @@
   {
     "case": {
       "perm_mode": "plan",
-      "model": null,
-      "session_id": "a-claude-session",
-      "opts": "full",
-      "stream_input": false
-    },
-    "argv": [
-      "claude",
-      "-p",
-      "--mcp-config",
-      "{\"mcpServers\": {\"sutra\": {\"type\": \"stdio\", \"command\": \"<python>\", \"args\": [\"<app_dir>/sutra_mcp.py\"], \"env\": {\"SUTRA_NATIVE_HOME\": \"<native_home>\"}}}}",
-      "--strict-mcp-config",
-      "--settings",
-      "{\"hooks\": {\"PreToolUse\": [{\"matcher\": \"mcp__sutra__.*\", \"hooks\": [{\"type\": \"command\", \"command\": \"<python> <app_dir>/mcp_allow_hook.py\"}]}]}}",
-      "the prompt",
-      "--output-format",
-      "stream-json",
-      "--verbose",
-      "--include-partial-messages",
-      "--permission-mode",
-      "plan",
-      "--resume",
-      "a-claude-session",
-      "--fork-session",
-      "--fallback-model",
-      "sonnet",
-      "--effort",
-      "high",
-      "--add-dir",
-      "<home>/Desktop",
-      "--allowedTools",
-      "Bash",
-      "Read",
-      "mcp__sutra__*",
-      "--disallowedTools",
-      "WebFetch",
-      "--append-system-prompt",
-      "be brief",
-      "--max-budget-usd",
-      "2.5"
-    ]
-  },
-  {
-    "case": {
-      "perm_mode": "plan",
       "model": "opus",
       "session_id": null,
       "opts": "none",
@@ -311,6 +319,8 @@
       "plan",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -340,6 +350,8 @@
       "plan",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -459,6 +471,8 @@
       "a-claude-session",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -490,6 +504,8 @@
       "a-claude-session",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -512,52 +528,6 @@
       "{\"hooks\": {\"PreToolUse\": [{\"matcher\": \"mcp__sutra__.*\", \"hooks\": [{\"type\": \"command\", \"command\": \"<python> <app_dir>/mcp_allow_hook.py\"}]}]}}",
       "--input-format",
       "stream-json",
-      "--output-format",
-      "stream-json",
-      "--verbose",
-      "--include-partial-messages",
-      "--permission-mode",
-      "plan",
-      "--resume",
-      "a-claude-session",
-      "--fork-session",
-      "--model",
-      "opus",
-      "--fallback-model",
-      "sonnet",
-      "--effort",
-      "high",
-      "--add-dir",
-      "<home>/Desktop",
-      "--allowedTools",
-      "Bash",
-      "Read",
-      "mcp__sutra__*",
-      "--disallowedTools",
-      "WebFetch",
-      "--append-system-prompt",
-      "be brief",
-      "--max-budget-usd",
-      "2.5"
-    ]
-  },
-  {
-    "case": {
-      "perm_mode": "plan",
-      "model": "opus",
-      "session_id": "a-claude-session",
-      "opts": "full",
-      "stream_input": false
-    },
-    "argv": [
-      "claude",
-      "-p",
-      "--mcp-config",
-      "{\"mcpServers\": {\"sutra\": {\"type\": \"stdio\", \"command\": \"<python>\", \"args\": [\"<app_dir>/sutra_mcp.py\"], \"env\": {\"SUTRA_NATIVE_HOME\": \"<native_home>\"}}}}",
-      "--strict-mcp-config",
-      "--settings",
-      "{\"hooks\": {\"PreToolUse\": [{\"matcher\": \"mcp__sutra__.*\", \"hooks\": [{\"type\": \"command\", \"command\": \"<python> <app_dir>/mcp_allow_hook.py\"}]}]}}",
-      "the prompt",
       "--output-format",
       "stream-json",
       "--verbose",
@@ -589,6 +559,52 @@
   },
   {
     "case": {
+      "perm_mode": "plan",
+      "model": "opus",
+      "session_id": "a-claude-session",
+      "opts": "full",
+      "stream_input": false
+    },
+    "argv": [
+      "claude",
+      "-p",
+      "--mcp-config",
+      "{\"mcpServers\": {\"sutra\": {\"type\": \"stdio\", \"command\": \"<python>\", \"args\": [\"<app_dir>/sutra_mcp.py\"], \"env\": {\"SUTRA_NATIVE_HOME\": \"<native_home>\"}}}}",
+      "--strict-mcp-config",
+      "--settings",
+      "{\"hooks\": {\"PreToolUse\": [{\"matcher\": \"mcp__sutra__.*\", \"hooks\": [{\"type\": \"command\", \"command\": \"<python> <app_dir>/mcp_allow_hook.py\"}]}]}}",
+      "the prompt",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--include-partial-messages",
+      "--permission-mode",
+      "plan",
+      "--resume",
+      "a-claude-session",
+      "--fork-session",
+      "--model",
+      "opus",
+      "--fallback-model",
+      "sonnet",
+      "--effort",
+      "high",
+      "--add-dir",
+      "<home>/Desktop",
+      "--allowedTools",
+      "Bash",
+      "Read",
+      "mcp__sutra__*",
+      "--disallowedTools",
+      "WebFetch",
+      "--append-system-prompt",
+      "be brief",
+      "--max-budget-usd",
+      "2.5"
+    ]
+  },
+  {
+    "case": {
       "perm_mode": "acceptEdits",
       "model": null,
       "session_id": null,
@@ -611,6 +627,8 @@
       "--include-partial-messages",
       "--permission-mode",
       "acceptEdits",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -638,6 +656,8 @@
       "--include-partial-messages",
       "--permission-mode",
       "acceptEdits",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -751,6 +771,8 @@
       "acceptEdits",
       "--resume",
       "a-claude-session",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -780,6 +802,8 @@
       "acceptEdits",
       "--resume",
       "a-claude-session",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -899,6 +923,8 @@
       "acceptEdits",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -928,6 +954,8 @@
       "acceptEdits",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -1047,6 +1075,8 @@
       "a-claude-session",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -1078,6 +1108,8 @@
       "a-claude-session",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -1100,52 +1132,6 @@
       "{\"hooks\": {\"PreToolUse\": [{\"matcher\": \"mcp__sutra__.*\", \"hooks\": [{\"type\": \"command\", \"command\": \"<python> <app_dir>/mcp_allow_hook.py\"}]}]}}",
       "--input-format",
       "stream-json",
-      "--output-format",
-      "stream-json",
-      "--verbose",
-      "--include-partial-messages",
-      "--permission-mode",
-      "acceptEdits",
-      "--resume",
-      "a-claude-session",
-      "--fork-session",
-      "--model",
-      "opus",
-      "--fallback-model",
-      "sonnet",
-      "--effort",
-      "high",
-      "--add-dir",
-      "<home>/Desktop",
-      "--allowedTools",
-      "Bash",
-      "Read",
-      "mcp__sutra__*",
-      "--disallowedTools",
-      "WebFetch",
-      "--append-system-prompt",
-      "be brief",
-      "--max-budget-usd",
-      "2.5"
-    ]
-  },
-  {
-    "case": {
-      "perm_mode": "acceptEdits",
-      "model": "opus",
-      "session_id": "a-claude-session",
-      "opts": "full",
-      "stream_input": false
-    },
-    "argv": [
-      "claude",
-      "-p",
-      "--mcp-config",
-      "{\"mcpServers\": {\"sutra\": {\"type\": \"stdio\", \"command\": \"<python>\", \"args\": [\"<app_dir>/sutra_mcp.py\"], \"env\": {\"SUTRA_NATIVE_HOME\": \"<native_home>\"}}}}",
-      "--strict-mcp-config",
-      "--settings",
-      "{\"hooks\": {\"PreToolUse\": [{\"matcher\": \"mcp__sutra__.*\", \"hooks\": [{\"type\": \"command\", \"command\": \"<python> <app_dir>/mcp_allow_hook.py\"}]}]}}",
-      "the prompt",
       "--output-format",
       "stream-json",
       "--verbose",
@@ -1177,6 +1163,52 @@
   },
   {
     "case": {
+      "perm_mode": "acceptEdits",
+      "model": "opus",
+      "session_id": "a-claude-session",
+      "opts": "full",
+      "stream_input": false
+    },
+    "argv": [
+      "claude",
+      "-p",
+      "--mcp-config",
+      "{\"mcpServers\": {\"sutra\": {\"type\": \"stdio\", \"command\": \"<python>\", \"args\": [\"<app_dir>/sutra_mcp.py\"], \"env\": {\"SUTRA_NATIVE_HOME\": \"<native_home>\"}}}}",
+      "--strict-mcp-config",
+      "--settings",
+      "{\"hooks\": {\"PreToolUse\": [{\"matcher\": \"mcp__sutra__.*\", \"hooks\": [{\"type\": \"command\", \"command\": \"<python> <app_dir>/mcp_allow_hook.py\"}]}]}}",
+      "the prompt",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--include-partial-messages",
+      "--permission-mode",
+      "acceptEdits",
+      "--resume",
+      "a-claude-session",
+      "--fork-session",
+      "--model",
+      "opus",
+      "--fallback-model",
+      "sonnet",
+      "--effort",
+      "high",
+      "--add-dir",
+      "<home>/Desktop",
+      "--allowedTools",
+      "Bash",
+      "Read",
+      "mcp__sutra__*",
+      "--disallowedTools",
+      "WebFetch",
+      "--append-system-prompt",
+      "be brief",
+      "--max-budget-usd",
+      "2.5"
+    ]
+  },
+  {
+    "case": {
       "perm_mode": "bypassPermissions",
       "model": null,
       "session_id": null,
@@ -1199,6 +1231,8 @@
       "--include-partial-messages",
       "--permission-mode",
       "bypassPermissions",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -1226,6 +1260,8 @@
       "--include-partial-messages",
       "--permission-mode",
       "bypassPermissions",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -1339,6 +1375,8 @@
       "bypassPermissions",
       "--resume",
       "a-claude-session",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -1368,6 +1406,8 @@
       "bypassPermissions",
       "--resume",
       "a-claude-session",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -1487,6 +1527,8 @@
       "bypassPermissions",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -1516,6 +1558,8 @@
       "bypassPermissions",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -1635,6 +1679,8 @@
       "a-claude-session",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -1666,6 +1712,8 @@
       "a-claude-session",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -1787,6 +1835,8 @@
       "--include-partial-messages",
       "--permission-mode",
       "auto",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -1814,6 +1864,8 @@
       "--include-partial-messages",
       "--permission-mode",
       "auto",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -1927,6 +1979,8 @@
       "auto",
       "--resume",
       "a-claude-session",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -1956,6 +2010,8 @@
       "auto",
       "--resume",
       "a-claude-session",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -2075,6 +2131,8 @@
       "auto",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -2104,6 +2162,8 @@
       "auto",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -2223,6 +2283,8 @@
       "a-claude-session",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -2254,6 +2316,8 @@
       "a-claude-session",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -2375,6 +2439,8 @@
       "--include-partial-messages",
       "--permission-mode",
       "manual",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -2402,6 +2468,8 @@
       "--include-partial-messages",
       "--permission-mode",
       "manual",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -2515,6 +2583,8 @@
       "manual",
       "--resume",
       "a-claude-session",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -2544,6 +2614,8 @@
       "manual",
       "--resume",
       "a-claude-session",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -2663,6 +2735,8 @@
       "manual",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -2692,6 +2766,8 @@
       "manual",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -2811,6 +2887,8 @@
       "a-claude-session",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -2842,6 +2920,8 @@
       "a-claude-session",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -2963,6 +3043,8 @@
       "--include-partial-messages",
       "--permission-mode",
       "dontAsk",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -2990,6 +3072,8 @@
       "--include-partial-messages",
       "--permission-mode",
       "dontAsk",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -3103,6 +3187,8 @@
       "dontAsk",
       "--resume",
       "a-claude-session",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -3132,6 +3218,8 @@
       "dontAsk",
       "--resume",
       "a-claude-session",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -3251,6 +3339,8 @@
       "dontAsk",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -3280,6 +3370,8 @@
       "dontAsk",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -3399,6 +3491,8 @@
       "a-claude-session",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -3430,6 +3524,8 @@
       "a-claude-session",
       "--model",
       "opus",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]
@@ -3548,6 +3644,8 @@
       "--include-partial-messages",
       "--permission-mode",
       "plan",
+      "--effort",
+      "xhigh",
       "--allowedTools",
       "mcp__sutra__*"
     ]

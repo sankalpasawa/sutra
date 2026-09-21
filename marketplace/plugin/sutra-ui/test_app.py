@@ -360,7 +360,21 @@ class TestApp(unittest.TestCase):
         a = _without_mcp(A.build_agent_args("claude", "hi", "plan"))
         self.assertEqual(a, ["claude", "-p", "hi", "--output-format", "stream-json",
                              "--verbose", "--include-partial-messages",
-                             "--permission-mode", "plan"])
+                             "--permission-mode", "plan",
+                             "--effort", "xhigh"])
+
+    def test_effort_defaults_to_xhigh(self):
+        """Founder direction 2026-09-21: a chat whose options box names no
+        effort runs at providers.DEFAULT_EFFORT, and a chat's own pick wins."""
+        import app as A
+        import providers as P
+        self.assertEqual(P.DEFAULT_EFFORT, "xhigh")
+        blank = _without_mcp(A.build_agent_args("claude", "hi", "plan"))
+        self.assertEqual(blank[blank.index("--effort") + 1], "xhigh")
+        picked = _without_mcp(A.build_agent_args("claude", "hi", "plan",
+                                                 opts={"effort": "low"}))
+        self.assertEqual(picked[picked.index("--effort") + 1], "low")
+        self.assertEqual(picked.count("--effort"), 1)
 
     def test_03f_arg_builder_validates_everything(self):
         """A value that reaches the CLI unchecked fails seconds later as a dead
@@ -375,7 +389,9 @@ class TestApp(unittest.TestCase):
             "add_dir": ["/etc"],               # outside $HOME
         }))
         self.assertNotIn("--fallback-model", a)
-        self.assertNotIn("--effort", a)
+        # junk never reaches the CLI; it falls to the default level instead
+        self.assertNotIn("bogus", a)
+        self.assertEqual(a[a.index("--effort") + 1], "xhigh")
         self.assertNotIn("--max-budget-usd", a)
         self.assertNotIn("--allowedTools", a)
         self.assertNotIn("--add-dir", a)
@@ -430,7 +446,8 @@ class TestApp(unittest.TestCase):
         self.assertEqual(
             _without_mcp(A.build_agent_args("claude", "hello", "plan")),
             ["claude", "-p", "hello", "--output-format", "stream-json",
-             "--verbose", "--include-partial-messages", "--permission-mode", "plan"])
+             "--verbose", "--include-partial-messages", "--permission-mode", "plan",
+             "--effort", "xhigh"])
 
     def test_03l_spawn_time_options_change_the_spawn_key(self):
         """model / permission mode / effort / budget are SPAWN-TIME flags: they
