@@ -48,9 +48,11 @@ against the same base `X.Y.Z`, so a branch may cut `beta.1`, `beta.2` … agains
 Wired 2026-09-16. The step ran three suites — `test_panel.js`, `test_nav.js`,
 `test_charter_filter.js` — and every `test_shadow_*.js` was invisible to the DMG build, so a
 regression in Shadow home, the overlay or the settings screen shipped without failing a single leg.
-All 11 now run in that step, listed one per line.
+All of them now run in that step, listed one per line.
 
-Pass condition — these two print the SAME number, and it is `11` today:
+Pass condition — these two print the SAME number, and it is `31` today (was `11` when this check
+was written, `30` before the Shadow conversation work of 2026-09-21 added `test_shadow_hi_trace.js`;
+the number in this sentence is documentation, the equality of the two commands is the check):
 
 ```bash
 grep -c 'node test_shadow_.*\.js' .github/workflows/release-dmg.yml

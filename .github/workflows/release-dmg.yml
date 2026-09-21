@@ -178,9 +178,11 @@ jobs:
           node test_shadow_completion_ui.js
           node test_shadow_compose_focus.js
           node test_shadow_conversation.js
+          node test_shadow_conversation_model.js
           node test_shadow_decision_ui.js
           node test_shadow_delegate_focus.js
           node test_shadow_floor_needs_you.js
+          node test_shadow_hi_trace.js
           node test_shadow_home.js
           node test_shadow_intervention_ui.js
           node test_shadow_live_refresh.js
