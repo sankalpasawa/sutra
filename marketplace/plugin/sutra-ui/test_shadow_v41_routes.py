@@ -297,8 +297,16 @@ class TestJ8AFinishedTaskReopens(Base):
         r = self.talk(mid, "more please")
         self.assertEqual(r.status_code, 409)
         self.assertIn(other, r.json()["detail"]["detail"])
-        self.assertEqual(self.chat.heard, [],
-                         "a refused reopen never reaches the Shadow chat")
+        # PASS 13 (founder, 2026-09-21): SHADOW ANSWERS FIRST, then the task
+        # comes back -- because whether the line is new work at all is
+        # Shadow's own `forward` verdict, produced by that very turn. So the
+        # chat IS reached before a refusal, and that is the cost of never
+        # again reopening a finished task on a question about its result.
+        # The claim that matters is unchanged and is asserted above: the
+        # reopen is refused, and the founder is told which task holds the
+        # chat.
+        self.assertEqual(self.chat.heard, ["more please"],
+                         "Shadow answers before the reopen is attempted")
 
     def test_26_give_instruction_reopens_too(self):
         mid = self.task(state="done")

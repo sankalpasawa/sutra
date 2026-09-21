@@ -148,6 +148,11 @@ class ShadowWritesTheMissingCriteria(CriteriaBase):
             "max_turns": 20, "last_instruction": "(none)",
             "last_response": "(nothing yet)", "founder_response": "(none)",
             "founder_says": "(none)", "standing": "(none)",
+            # pass 10: the decide prompt now also renders the task's own
+            # files. These fixtures hand-build the % dict, so every
+            # placeholder has to be listed; render_decide_prompt supplies
+            # this one from shadow_decision.state_for.
+            "artifact_state": "(none recorded)",
             "carry": "(none)",
             "criteria_ask": shadow_runner._CRITERIA_ASK,
             "verify_ask": ""}
@@ -160,6 +165,11 @@ class ShadowWritesTheMissingCriteria(CriteriaBase):
             "turns_used": 1, "max_turns": 20, "last_instruction": "(none)",
             "last_response": "(nothing yet)", "founder_response": "(none)",
             "founder_says": "(none)", "standing": "(none)",
+            # pass 10: the decide prompt now also renders the task's own
+            # files. These fixtures hand-build the % dict, so every
+            # placeholder has to be listed; render_decide_prompt supplies
+            # this one from shadow_decision.state_for.
+            "artifact_state": "(none recorded)",
             "carry": "(none)",
             "criteria_ask": "", "verify_ask": ""}
         self.assertNotIn("THIS MISSION HAS NO COMPLETION CHECKS", rendered)

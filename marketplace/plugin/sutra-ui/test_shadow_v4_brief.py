@@ -411,8 +411,16 @@ class TestOpeningATask(Base):
                           "and the refusal says what to do instead")
             self.assertEqual(self.store.load(mid)["state"], state,
                              "%s must not be resurrected" % state)
-        self.assertEqual(len(self.runtimes[0].sent), sent_before,
-                         "and nothing was ever sent into the Shadow chat")
+        # PASS 13 (founder, 2026-09-21): the title claim -- a terminal task
+        # never talks as though finished work is LIVE -- is unchanged and is
+        # asserted above: every state is refused and none is resurrected.
+        # What changed is that Shadow now ANSWERS a question about finished
+        # work instead of refusing to speak, which is the whole point of the
+        # follow-up lanes (test_shadow_done_followup.py): "can you print
+        # those ten lines here" must be answered from the result that
+        # already exists, without the task coming back.
+        self.assertGreater(len(self.runtimes[0].sent), sent_before,
+                           "Shadow answers a question about finished work")
 
     # ---------------------------------------------------------- step 2 ---
     # ONE MEMORY OF THE FOUNDER. A post-Start conversational line is appended

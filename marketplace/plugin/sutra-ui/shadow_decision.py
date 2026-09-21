@@ -261,6 +261,105 @@ def candidate_paths(mission, root):
         return []
 
 
+def state_for(mission, root):
+    """WHAT THIS MISSION'S OWN FILES ACTUALLY ARE ON DISK -- counts only.
+
+    WHY IT IS NOT artifacts_for (founder, 2026-09-21, pass 10). That function
+    exists to put a file IN FRONT OF THE FOUNDER for a decision, so it
+    carries the text. This one exists to put the file in front of SHADOW at
+    the decide turn, and Shadow must never be handed a payload it could
+    paste: it is being asked to describe the result, not to quote it. So the
+    text is deliberately absent and only the deterministic counts travel.
+
+    IT IS WHAT MAKES "the worker said it wrote the file" CHECKABLE. A worker
+    claiming completion in prose is not proof that a file exists, and until
+    now the decide turn had no way to tell -- `exists` is the fact that
+    settles it, read off the same reader the evidence lane uses.
+
+    OWNERSHIP ONLY, exactly like candidate_paths: a mission sees its own
+    files and nobody else's. NEVER RAISES -- a decide turn must not fail
+    because a path was unreadable, so an unreadable file is reported as
+    absent and the turn goes on.
+    """
+    try:
+        import shadow_evidence
+    except Exception:                    # noqa: BLE001 -- no state, not fatal
+        return []
+    out = []
+    for path in candidate_paths(mission, root)[:MAX_ARTIFACTS]:
+        row = {"path": path, "exists": False}
+        try:
+            text, _note = shadow_evidence.read_artifact(root, path)
+        except Exception:                # noqa: BLE001 -- absent, not fatal
+            text = None
+        if text is not None:
+            row["exists"] = True
+            try:
+                facts = shadow_evidence.facts_for(text) or {}
+            except Exception:            # noqa: BLE001 -- counts are optional
+                facts = {}
+            for key in ("lines", "non_empty_lines", "distinct_non_empty_lines",
+                        "bytes"):
+                if key in facts:
+                    row[key] = facts[key]
+        out.append(row)
+    return out
+
+
+#: What a COMPLETION shows of the deliverable. Deliberately far smaller than
+#: MAX_TEXT: a decision packet exists so the founder can approve a whole
+#: ranking, and a completion exists so they can see what was produced without
+#: opening anything. The file itself is one click away, always.
+PREVIEW_LINES = 24
+PREVIEW_CHARS = 1400
+
+
+def preview_for(mission, root):
+    """A CONCISE, GROUNDED RENDERING OF WHAT WAS PRODUCED, or None.
+
+    THE GAP (founder, 2026-09-21, pass 14). A confirmed proposal finished as
+    a filename and a one-line description -- "Done -- africa-5-day-plan.md ...
+    Tanzania northern circuit". The artifact existed and Shadow was not
+    actually delivering it: the founder had to open the file to find out what
+    they had approved.
+
+    READ OFF DISK, NEVER OFF THE WORKER. Same reader the evidence and
+    decision lanes use, same ownership rule (candidate_paths -> owned
+    artifacts only), so the completion cannot show a file this mission did
+    not produce and cannot describe contents that are not there. If the
+    worker's prose and the file disagree, this is the file.
+
+    BOUNDED, AND THE CUT IS REPORTED. `truncated` is a field the surface
+    renders as an ellipsis; nobody reads a partial plan believing it whole.
+    An image artifact is not previewed here -- the completion is a message,
+    and the decision packet is where an image belongs.
+
+    NEVER RAISES: a completion must not fail because a file moved.
+    """
+    try:
+        import shadow_evidence
+    except Exception:                    # noqa: BLE001 -- no preview, not fatal
+        return None
+    for path in candidate_paths(mission, root)[:MAX_ARTIFACTS]:
+        if os.path.splitext(path)[1].lower() in IMAGE_TYPES:
+            continue
+        try:
+            text, _note = shadow_evidence.read_artifact(root, path)
+        except Exception:                # noqa: BLE001 -- try the next one
+            continue
+        if not text or not text.strip():
+            continue
+        lines = text.splitlines()
+        kept = lines[:PREVIEW_LINES]
+        body = "\n".join(kept)
+        cut = len(kept) < len(lines)
+        if len(body) > PREVIEW_CHARS:
+            body, cut = body[:PREVIEW_CHARS], True
+        return {"path": path, "text": body, "truncated": cut,
+                "lines": len(lines)}
+    return None
+
+
 def artifacts_for(mission, root):
     """The evidence, read from disk. PART 2 OF THE PACKET.
 

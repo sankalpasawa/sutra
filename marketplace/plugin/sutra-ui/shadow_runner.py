@@ -148,6 +148,19 @@ def remember_delegate_pid(store, mid):
             return
         pid = DELEGATE_PIDS.get(m.get("target_session"))
         if not pid:
+            # ── A MISS HERE IS WHY A MISSION CAN NEVER BE ADOPTED ───────
+            # (founder, 2026-09-21.) This return is correct -- there is
+            # nothing to record -- but it was SILENT, and a silent miss is
+            # invisible until a restart fences the mission and nobody can
+            # say why. Measured: every mission created after one particular
+            # minute had `delegate_pid: None`, and the only trace was the
+            # absence itself. The spawn is still never failed for this; it
+            # is simply now on the record.
+            shadow_ledger.append("missions", {
+                "mission_id": mid, "state": m.get("state"),
+                "note": "no delegate pid to record for session %s -- this "
+                        "mission cannot be auto-adopted after a restart"
+                        % ((m.get("target_session") or "?")[:12])})
             return
         m["delegate_pid"] = int(pid)
         store.save(m)
@@ -1301,9 +1314,21 @@ async def resume_after_restart(ensure_runtime_async, validated_say,
                                   "founder resumes or stops it")
                 left.append(mid)
                 continue
+            # ── SAY WHICH OF THE TWO IT IS (founder, 2026-09-21) ────────
+            # delegate_alive FAILS CLOSED: no pid recorded returns True, the
+            # same answer as a pid that is provably running. Reporting both
+            # as "delegate worker still alive" states a fact the code never
+            # established -- three live missions were fenced under that
+            # sentence with `delegate_pid: None`, and the note sent the
+            # founder looking for a process that was never recorded.
+            # Same fence, same safety; only the sentence is now true.
             if delegate_alive(m.get("delegate_pid"), sid):
-                _left_paused(mid, "delegate worker still alive -- fenced "
-                                  "until the founder resumes or stops it")
+                _left_paused(mid, ("delegate worker still alive -- fenced "
+                                   "until the founder resumes or stops it")
+                             if m.get("delegate_pid") else
+                             ("no delegate pid was recorded, so whether the "
+                              "worker is alive is unknown -- fenced until "
+                              "the founder resumes or stops it"))
                 left.append(mid)
                 continue
             if sid in running_sids:
@@ -1708,6 +1733,40 @@ checks that, taken together, mean the outcome above is genuinely achieved.
     EVERY CHECK YOU MARK `founder_confirm` IS A CLICK YOU ARE ASKING A HUMAN
     FOR. On this install, every check ever written was that tier and the
     founder had to sign off "the tests pass" by hand. Do not do that to them.
+
+    THERE IS ONE DELIVERABLE THAT ALWAYS NEEDS THEM, AND IT IS NOT A
+    QUESTION ABOUT CORRECTNESS. Ask what the thing you are producing IS:
+
+      a DIRECT DELIVERABLE is right or wrong on its own terms, and you can
+      establish which. A file with ten distinct lines, a passing suite, a
+      fixed bug, a renamed column. Nobody has to agree with it for it to be
+      done -- so do NOT write a founder check, settle it yourself, and
+      finish. An artifact existing is not a reason to ask.
+
+      a PROPOSAL is something the founder will ACT ON, LIVE WITH, or CHOOSE
+      BETWEEN, and whose merit is theirs and not yours. An itinerary, a
+      schedule, a budget allocation, a design direction, a shortlist, a
+      recommendation, a piece of writing in their voice. It can be complete,
+      internally consistent and well made and still not be the one they
+      want -- and you cannot find out which by reading anything, because the
+      answer exists nowhere but in their head. THAT IS THE DEFINITION OF THE
+      FOUNDER'S TIER, so write exactly ONE `founder_confirm` check for it:
+
+        {"tier": "founder_confirm",
+         "check": "the 15-day Europe itinerary is the trip you want"}
+
+      Producing a plan is not the same as the plan being accepted, and
+      finishing a mission on your own judgement of a proposal decides on
+      their behalf something that was never yours to decide.
+
+    IT IS THE INTENT THAT DECIDES, NOT THE WORDS. "Make a file of 10 lines
+    about X" is direct even though it produces a document; "work out how I
+    should spend the Q3 budget" is a proposal even though it produces a
+    number. Read what the founder will DO with the result.
+
+    STILL EXACTLY ONE. A proposal needs a single sign-off on the whole
+    thing, not a founder check per section -- everything mechanical about it
+    (the file exists, it covers 15 days) is still yours to verify.
   * A `verify` check about a FILE should carry a `probe`, and then Shadow
     reads that file itself instead of believing what the chat says about it:
 
@@ -1889,6 +1948,13 @@ YOUR PREVIOUS INSTRUCTION
 WHAT THE TARGET CHAT SAID BACK (most recent output)
 %(last_response)s
 
+THE FILES THIS TASK OWNS, AS THEY ACTUALLY ARE ON DISK
+%(artifact_state)s
+Read off disk by the same reader the verifier uses -- not from anything the
+worker said. A worker sentence claiming a file was written is NOT proof that
+it exists; this block is. Never tell the founder a file exists unless it is
+listed here as present, whatever the worker wrote.
+
 WHAT THE FOUNDER TOLD YOU (their answer to your last question, if any)
 %(founder_response)s
 
@@ -1931,6 +1997,8 @@ Decide. Reply with ONE fenced json block and nothing else:
 ```json
 {"action": "continue", "instruction": "<what to send into the chat next>",
  "reason": "<one short line: why this, now>",
+ "update": "<what you would tell the founder about this turn, or omit>",
+ "result": "<what the work has PRODUCED so far, or omit>",
  "standing": ["<every instruction that still governs this task>"]}
 ```
 
@@ -1939,8 +2007,96 @@ or, if you genuinely cannot make progress and the founder is needed:
 
 ```json
 {"action": "ask_founder", "reason": "<what you need from the founder>",
+ "update": "<what you would tell the founder about this turn, or omit>",
+ "result": "<what the work has PRODUCED so far, or omit>",
  "ask_kind": "founder_fact"}
 ```
+
+`update` IS THE ONLY THING THE FOUNDER READS, AND IT IS YOU TALKING TO THEM.
+`instruction` goes to the worker and `reason` is for the record; neither is
+ever shown. Without an `update` the founder sees the worker's own sentence,
+written by the worker about its own work -- which is why this key exists.
+
+WRITE IT THE WAY YOU WOULD SAY IT. One or two sentences, first person, your
+own voice, addressed to the founder:
+
+    "I've got the 10-day plan -- Bengaluru, the Western Ghats, the Konkan
+     coast and Hampi. I need your call on the pace before I finalise it."
+    "The first search gave conflicting scorelines, so I went back to the
+     boards themselves."
+    "That part is done. I'm checking the travel legs now."
+
+ANSWER THE REQUEST, NOT THE LAST SENTENCE. The founder asked for something
+specific -- it is the OUTCOME block at the top of this prompt. Describe the
+result AT THAT LEVEL. Do not summarise whichever sentence happened to come
+last out of the worker; that sentence is evidence, not the deliverable.
+
+  they asked for a FILE            say what was written and where, and any
+                                   count that is established above. Do not
+                                   paste the file's contents -- they open it
+                                   in the artifact surface.
+     "Done -- I wrote 10 sourced, unique lines on recent extraterrestrial-life
+      research to alien-species.txt. The file has exactly 10 lines."
+
+  they asked to be TOLD something  the answer IS the update. Put the material
+                                   they asked for in it. "I found 10 lines"
+                                   with the lines somewhere else is not an
+                                   answer to the question they asked.
+
+  they asked for BOTH              name the artifact and give a short, useful
+                                   synthesis; the full material stays in the
+                                   file.
+
+KEEP THE FACTS THE WORKER ACTUALLY PRODUCED -- the file it wrote, the number
+it found, the thing it could not do. Those are the point. What you leave out
+is how it got there.
+
+NEVER:
+  * paste the worker's output, or any part of it verbatim
+  * quote JSON, a search result, a tool call, a file listing or a count of
+    any of them
+  * say a check passed, that the work is done, or that anything is verified
+    -- the verifier owns all three and you do not know
+  * say a file was created, changed or contains anything unless THE FILES
+    block above lists it as present. The worker saying so is not evidence
+  * state a count the blocks above do not give you
+  * invent progress, a finding or a decision that did not happen
+
+OMIT THE KEY when the turn produced nothing a person would want to hear.
+Silence is correct and costs nothing; a sentence that says "still working"
+is noise the founder has asked not to receive.
+
+`result` IS A DIFFERENT SENTENCE, AND IT IS THE ONE THE FOUNDER READS AT THE
+END. `update` is about THIS TURN and is written for the moment it is sent.
+`result` is about WHAT NOW EXISTS -- it is what the founder sees when the
+task finishes, and it carries NO question, no "next" and no ask, because by
+then there is nothing left to ask:
+
+    "I built a 10-day Africa plan -- Cape Town, three nights in Sabi Sand
+     and Victoria Falls to close -- in africa-10-day-plan.md."
+    "alien-species.txt has 10 sourced, unique lines on recent
+     extraterrestrial-life research."
+
+SEND IT ON THE TURN YOU CAN SEE THE RESULT: the turn that raises a proposal
+for approval, and the turn the work is finished. It is REPLACED each time you
+send it, so the newest one is always the description of what exists now. On a
+turn that produced nothing new, omit it -- the previous one still stands.
+
+WHY IT EXISTS AT ALL: a founder_confirm pause is settled without spending a
+turn, so on the confirm -> done path there is no later turn to write this.
+What you send now is what they will read when they press Confirm.
+
+WHEN THE FOUNDER ASKED TO BE GIVEN THE CONTENT, GIVE IT. "Print the 10
+lines", "show me the list", "tell me what you found" -- the content IS the
+result, so it goes in `result`, not a sentence saying a file now has it. The
+file is shown beside your line either way; a request to be TOLD something is
+not answered by naming where it was written.
+
+SAME FLOOR AS `update`, exactly: grounded in what the work actually produced,
+no claim that a file exists unless THE FILES block says so, no count the
+blocks above do not give you, and nothing invented. If the work has produced
+nothing you can honestly describe, OMIT IT -- a completion with no line says
+"Done." and that is the correct, grounded answer.
 
 `ask_kind` is one of exactly three strings: "floor", "founder_fact", "taste".
 
@@ -2060,6 +2216,31 @@ def _first_decision(text):
     return None
 
 
+def _artifact_state_text(rows):
+    """The task's own files as lines the decider can read: the path, whether
+    it is there, and the counts. No contents -- Shadow is being asked to
+    describe the result, not to quote it (mission_engine._artifact_state).
+
+    "(none recorded)" for a task that owns no files, which is every task
+    until a probe names one, and which Shadow must read as "I cannot claim
+    any file exists". Never raises: a malformed row is skipped.
+    """
+    out = []
+    for r in (rows or []):
+        if not isinstance(r, dict) or not r.get("path"):
+            continue
+        if not r.get("exists"):
+            out.append("- %s  NOT PRESENT" % r["path"])
+            continue
+        counts = ", ".join(
+            "%s %s" % (r[k], k.replace("_", " "))
+            for k in ("lines", "non_empty_lines", "distinct_non_empty_lines")
+            if isinstance(r.get(k), int))
+        out.append("- %s  present%s" % (r["path"],
+                                        (" (%s)" % counts) if counts else ""))
+    return "\n".join(out) or "(none recorded)"
+
+
 def _standing_text(standing):
     """What currently governs the task, as lines the decider can read.
 
@@ -2173,6 +2354,7 @@ def render_decide_prompt(context):
         "max_turns": context.get("max_turns"),
         "last_instruction": context.get("last_instruction") or "(none)",
         "last_response": context.get("last_response") or "(nothing yet)",
+        "artifact_state": _artifact_state_text(context.get("artifact_state")),
         # .get() like every key above, so a mission that was never asked
         # anything cannot KeyError here -- and _decision_context keeps
         # omitting the key entirely for those, exactly as before.

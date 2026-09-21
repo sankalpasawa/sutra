@@ -94,6 +94,147 @@ class Base(unittest.TestCase):
                                          launch=self.launch)
 
 
+class TestAReplyWithNoFenceStillResumes(Base):
+    """PASS 8 (founder, 2026-09-21): THE OTHER HALF OF THE DEAD END.
+
+    The lane above covers the reply Shadow WRAPPED IN A `mission` FENCE --
+    the task is amended, the pause is released by _invalidate_for_revision,
+    and resume_after_revision relaunches. But Shadow answers most replies
+    CONVERSATIONALLY, with no fence at all. On that path nothing amended, so
+    nothing released the pause; forward_to_worker returned immediately
+    because "a mission that is not running has no worker listening"; and the
+    task sat at NEEDS YOU forever with the founder's words on the record and
+    no loop to read them.
+
+    `resume_after_reply` is the last-resort door for exactly that shape, and
+    the distinction it turns on is Shadow's own forwarding verdict:
+
+        a STATUS QUESTION leaves the worker exactly as it is
+        NEW DIRECTION releases the pause and starts the loop
+
+    Asserted at the launch boundary, like everything else in this file.
+    """
+
+    #: Shadow answered in words: no `mission` fence, and its `forward`
+    #: verdict says the worker needs to hear this.
+    DIRECTION = {"forward": {"worker": True}}
+    #: ...and the same reply classified as a question about the work.
+    STATUS = {"forward": {"worker": False}}
+
+    def talk(self, mid, text, blocks, was=None, reason=None):
+        """A founder line through the calls the chat route makes, minus the
+        fence -- which is the whole point of this lane."""
+        m = self.store.load(mid)
+        was = was if was is not None else m["state"]
+        reason = reason if reason is not None else m.get("pause_reason")
+        app._record_founder_talk(mid, text, blocks)
+        return app.resume_after_reply(mid, was, reason, text, blocks,
+                                      store=self.store, launch=self.launch)
+
+    def test_new_direction_at_needs_you_relaunches_the_worker(self):
+        mid = self.europe()
+        self.assertTrue(self.talk(mid, "Let's roam North India also.",
+                                  self.DIRECTION))
+        self.assertEqual(self.launched, [mid])
+        self.assertEqual(self.store.load(mid)["state"], "running",
+                         "the pause must be released")
+
+    def test_the_founders_words_are_on_the_record_for_the_decider(self):
+        """NOTHING COMPOSES AN INSTRUCTION HERE. The line is queued on
+        `founder_says`, which is what the decider reads at the top of the
+        resumed turn -- with the existing plan in front of it."""
+        mid = self.europe()
+        self.talk(mid, "Let's roam North India also.", self.DIRECTION)
+        says = self.store.load(mid)["founder_says"]
+        self.assertEqual(says[-1]["text"], "Let's roam North India also.")
+        self.assertFalse(says[-1]["seen"], "the decider has not read it yet")
+        self.assertEqual(says[-1]["fwd"], "queued",
+                         "and it is queued for the worker")
+
+    def test_a_status_question_leaves_the_worker_alone(self):
+        """"alright where are we at right now with this?" is not an
+        instruction, and answering it must not restart anything."""
+        mid = self.europe()
+        self.assertFalse(self.talk(mid, "alright where are we at right now?",
+                                   self.STATUS))
+        self.assertEqual(self.launched, [], "nothing may be launched")
+        self.assertEqual(self.store.load(mid)["state"], "paused",
+                         "and the task stays where it was")
+
+    def test_a_status_question_is_still_recorded(self):
+        mid = self.europe()
+        self.talk(mid, "where are we at?", self.STATUS)
+        says = self.store.load(mid)["founder_says"]
+        self.assertEqual(says[-1]["text"], "where are we at?")
+        self.assertEqual(says[-1]["fwd"], "skip",
+                         "recorded, and not queued for the worker")
+
+    def test_a_running_task_is_not_touched(self):
+        """A message while the worker is RUNNING goes through the ordinary
+        forward path; this door must not fire and must not restart it."""
+        mid = self.europe(state="running")
+        self.assertFalse(self.talk(mid, "Let's roam North India also.",
+                                   self.DIRECTION, was="running", reason=None))
+        self.assertEqual(self.launched, [])
+
+    def test_a_take_over_pause_is_not_resumed_behind_the_founder(self):
+        """`founder_intervened` has its own door -- Hand back to Shadow --
+        and resuming it from a chat line is the bug park_hold prevents."""
+        mid = self.europe()
+        m = self.store.load(mid)
+        m["pause_reason"] = "founder_intervened"
+        self.store.save(m)
+        self.assertFalse(self.talk(mid, "Let's roam North India also.",
+                                   self.DIRECTION))
+        self.assertEqual(self.launched, [])
+
+    def test_it_defers_to_the_fence_path(self):
+        """A reply Shadow DID fence is handled by resume_after_revision, which
+        leaves the mission running -- so this door must find nothing to do and
+        must not launch a second time."""
+        mid = self.europe()
+        was = self.store.load(mid)["state"]
+        self.reply(mid)                          # the fenced path, launches
+        self.assertEqual(self.launched, [mid])
+        self.assertFalse(app.resume_after_reply(
+            mid, was, "founder_confirm", "I want 5 days in London.",
+            self.LONDON, store=self.store, launch=self.launch))
+        self.assertEqual(self.launched, [mid], "no duplicate execution")
+
+    def test_no_duplicate_launch_when_a_loop_is_already_live(self):
+        mid = self.europe()
+
+        class _Live:
+            def done(self):
+                return False
+
+        app.shadow_runner.RUNNING[mid] = _Live()
+        try:
+            self.assertFalse(self.talk(mid, "Let's roam North India also.",
+                                       self.DIRECTION))
+            self.assertEqual(self.launched, [])
+        finally:
+            app.shadow_runner.RUNNING.pop(mid, None)
+
+    def test_a_missing_forward_fence_defaults_to_resuming(self):
+        """THE FLOOR, not an opinion: a dropped fence must never silently
+        swallow "actually make it 20 lines". shadow_forward._is_meta_only
+        answers, defaulting to forward."""
+        mid = self.europe()
+        self.assertTrue(self.talk(mid, "Let's roam North India also.", {}))
+        self.assertEqual(self.launched, [mid])
+
+    def test_confirm_is_a_different_door_and_is_untouched(self):
+        """CONFIRM answers the question; a reply changes the work. This lane
+        must not turn one into the other."""
+        mid = self.europe()
+        self.talk(mid, "Let's roam North India also.", self.DIRECTION)
+        m = self.store.load(mid)
+        self.assertFalse(
+            (m.get("done_when") or [{}])[0].get("met"),
+            "a reply must not satisfy the check the way Confirm does")
+
+
 class TestTheReplyPutsTheWorkerBackToWork(Base):
     def test_the_worker_is_actually_launched(self):
         """THE BUG ITSELF. Everything else about the revision already

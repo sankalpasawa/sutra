@@ -320,6 +320,49 @@ _FOUNDER_ONLY_MARKER = re.compile(
     r")\b", re.I)
 
 
+#: A check whose SUBJECT is this conversation -- what Shadow said, what the
+#: chat answered, whether a greeting was acknowledged. Anchored at the head
+#: so the SUBJECT is what matches: "the README answers the setup question" is
+#: about a file and is untouched; "the chat has answered the greeting" is
+#: about Shadow's own output and is not a completion criterion at all.
+_SELF_REFERENTIAL_MARKER = re.compile(
+    r"^\s*(?:the\s+|this\s+|a\s+|an\s+|its\s+|your\s+)?"
+    r"(?:chat|conversation|shadow|assistant|reply|response|greeting|"
+    r"message|answer)\b"
+    r"[^.]{0,60}?"
+    r"\b(?:answer(?:s|ed)?|repl(?:y|ies|ied)|respond(?:s|ed)?|said|says|"
+    r"greet(?:s|ed|ing)?|acknowledg\w+|state[sd]?|confirm(?:s|ed)?|"
+    r"exists?|was\s+(?:sent|given|shown|delivered))\b", re.I)
+
+
+def is_self_referential(check):
+    """Is this check about THE CONVERSATION rather than about the world?
+
+    THE FAILURE IT REFUSES (founder, 2026-09-21, pass 15). A task opened with
+    "Hi" produced the criterion
+
+        "the chat has answered the greeting with a short reply that states
+         it is ready for a task"
+
+    -- a claim about Shadow's own output, asserted by the same model that
+    would be asked to settle it. Nothing in the world can make it true or
+    false, and the founder never saw the reply it asserts.
+
+    THIS IS THE SAME RULE `contains_artifact` ALREADY CARRIES ONE LAYER UP,
+    where validate_done_when refuses it for a Shadow-written check because
+    "a check describing a state could be satisfied by the worker uttering the
+    sentence". A check about what was SAID is that failure in its purest
+    form: the utterance IS the evidence.
+
+    ANCHORED ON THE SUBJECT, deliberately. A check is refused when the thing
+    it is about is the conversation. "The README answers the setup question"
+    is about a file; "the chat has answered" is about the chat. Conservative
+    in the safe direction: a false negative costs one ordinary check, a false
+    positive costs a criterion that could never have been honestly settled.
+    """
+    return _SELF_REFERENTIAL_MARKER.search(str(check or "")) is not None
+
+
 def is_founder_only(check):
     """Is this a question ONLY the founder can answer?
 

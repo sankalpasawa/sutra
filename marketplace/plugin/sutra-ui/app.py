@@ -4450,6 +4450,99 @@ def resume_after_revision(mid, was_state, store=None, launch=None):
         return False
 
 
+#: the pauses that are a QUESTION TO THE FOUNDER. A take-over pause
+#: (`founder_intervened`) is not one of them: it has its own door, Hand back
+#: to Shadow, and resuming it behind the founder's back is the exact bug
+#: park_hold exists to prevent.
+_FOUNDER_DECISION_PAUSES = ("founder_confirm", "floor_confirm",
+                            "autonomy_suggest", "autonomy_top_tier")
+
+
+def resume_after_reply(mid, was_state, was_reason, text, blocks=None,
+                       store=None, launch=None):
+    """A REPLY AT NEEDS YOU PUTS THE WORKER BACK TO WORK (founder,
+    2026-09-21, pass 8).
+
+    THE BUG, and it is a dead end rather than a wrong answer. At NEEDS YOU
+    the mission is PAUSED. The founder types "let's roam North India also";
+    the route records it on `founder_says` and calls forward_to_worker --
+    which returns immediately, by design, because "a mission that is not
+    running has no worker listening". `resume_after_revision` does not fire
+    either: it only acts when the `mission` fence AMENDED the task, and
+    Shadow answering conversationally emits no fence. So the line was
+    durable, the founder had an answer, and nothing ever ran again. The task
+    sat at NEEDS YOU with the old decision still on screen above the reply.
+
+    THE DISTINCTION IS SHADOW'S OWN, AND IT ALREADY EXISTS. shadow_forward
+    classifies every founder line at arrival, on the supervisory turn that
+    was happening anyway, as worker-relevant or not (`forward` fence, with
+    _is_meta_only as the floor). That is exactly the founder's own
+    "STATUS QUESTION != NEW TASK INSTRUCTION":
+
+        "alright where are we at right now?"  -> not forwarded, nothing
+                                                resumes, the worker is left
+                                                exactly as it is
+        "let's roam North India also"        -> forwarded, and now the
+                                                pause is released too
+
+    No second authority, no new classifier, no extra model call.
+
+    NOTHING COMPOSES AN INSTRUCTION HERE. The founder's words are already on
+    `founder_says` with `fwd=queued`, so the DECIDER reads them at the top of
+    the resumed turn and composes the instruction itself -- with the existing
+    plan, the objective and the prior preferences in front of it, which is
+    what "do not make the worker start from scratch" means. This function
+    releases a pause and starts the loop; it does not speak to the worker.
+
+    IT DEFERS TO EVERY DOOR THAT MAY HAVE ACTED FIRST. A `mission` fence
+    (resume_after_revision), an `answer` fence (_continue_after_answer) and
+    the Approve/Confirm buttons all run before this and all leave the mission
+    RUNNING or SETTLED; the `state != paused` check below is what makes this
+    the last resort rather than a competing path.
+
+    THE RUNNING CAP IS THE SAME ONE, checked the same way _continue_after_answer
+    checks it -- a reply must not quietly exceed a limit a button would refuse.
+
+    BEST-EFFORT AND LOUD, for the same reason as resume_after_revision: this
+    runs inside the founder's own chat request, so a launch failure costs the
+    resume and never the reply.
+    """
+    if was_state != "paused" or was_reason not in _FOUNDER_DECISION_PAUSES:
+        return False
+    if not shadow_forward.classify(text, blocks):
+        return False                     # a status question changes nothing
+    store = store or _mission_engine.MissionStore()
+    try:
+        m = store.load(mid)
+        if m is None or m.get("state") != "paused":
+            return False                 # another door already acted
+        if m.get("pause_reason") not in _FOUNDER_DECISION_PAUSES:
+            return False
+        if mid in shadow_runner.RUNNING and not shadow_runner.RUNNING[mid].done():
+            return False
+        running_n = len(store.list(states=("running",)))
+        cap = _mission_engine.max_running()
+        if running_n >= cap:
+            _shadow_ledger_safe({
+                "kind": "spawn", "mission_id": mid,
+                "summary": "reply not resumed: already running %d of %d"
+                           % (running_n, cap)})
+            return False
+        store.transition(mid, "running", "founder replied at needs-you")
+        (launch or shadow_runner._launch)(
+            mid, _validated_say, _shadow_verifier)
+        _shadow_ledger_safe({
+            "kind": "spawn", "mission_id": mid,
+            "summary": "resumed after a reply at needs-you (%s)"
+                       % (was_reason or "")})
+        return True
+    except Exception as exc:            # noqa: BLE001 -- audible, never fatal
+        _shadow_ledger_safe({
+            "kind": "spawn", "mission_id": mid,
+            "summary": "could not resume after the reply: %s" % str(exc)[:140]})
+        return False
+
+
 def _record_founder_talk(mid, text, blocks=None):
     """ONE MEMORY OF THE FOUNDER (founder, 2026-09-16, step 2).
 
@@ -4581,9 +4674,30 @@ async def api_shadow_task_chat(mid: str, request: Request):
     # that is working again rather than one talking about live work that is
     # not live. The guard the old refusal stood for still holds: a terminal
     # task is never talked to AS terminal.
-    reopened = mission["state"] in _mission_engine.TERMINAL
-    if reopened:
-        mission = _reopen_and_launch(store, mid, message, "talk")
+    # ── ANSWERING A FINISHED TASK IS NOT REOPENING IT (founder,
+    #    2026-09-21, pass 13) ────────────────────────────────────────────
+    #
+    # THE BUG, and it was an ORDERING bug rather than a missing rule. V4-9
+    # made a terminal task reopen on the founder's words instead of refusing
+    # them with a 409 -- right, and it reopened UNCONDITIONALLY, before
+    # Shadow had read the message. So "Can you print those 10 lines here
+    # please?" about a file the task had already written moved the mission
+    # done -> running and relaunched the worker: the founder asked to see
+    # existing output and the rail went back to RUNNING.
+    #
+    # THE VERDICT ALREADY EXISTS AND IS ALREADY SHADOW'S. Every talk turn
+    # ends in a `forward` fence -- "`false` means the founder was asking YOU
+    # something: status, progress, what you just did, an explanation" -- and
+    # shadow_forward.classify is the same authority resume_after_reply uses
+    # for the paused case. It simply could not be consulted here, because
+    # the reopen happened first.
+    #
+    # SO THE TALK MOVES AHEAD OF THE REOPEN. Answering is always safe: it
+    # mutates nothing. Only once Shadow has said whether the line is new
+    # work does the task come back. `was_terminal` is remembered because the
+    # state may be about to change.
+    was_terminal = mission["state"] in _mission_engine.TERMINAL
+    reopened = False
     drafting = mission["state"] in ("draft", "brief_confirm")
     # v4.2: THE CHAT IS TOLD WHAT THE TASK IS WAITING ON before it answers,
     # the same way the Now box prefixes [Intake]. Without this Shadow said
@@ -4595,15 +4709,27 @@ async def api_shadow_task_chat(mid: str, request: Request):
             (pending + "[The founder says:] " + message) if pending
             else message)
     except Exception as exc:            # noqa: BLE001
-        if not reopened:
+        if not was_terminal:
             raise HTTPException(
                 503, "this task's Shadow chat is not available: %s"
                 % str(exc)[:140])
-        # THE REOPEN STANDS. The words are already on the record
-        # (founder_says, via "reopen") and the loop is already running on
-        # them; a Shadow chat that will not boot costs the reply, never the
-        # work -- the same rule api_shadow_task_open applies to a draft.
+        # A CHAT THAT WILL NOT BOOT COSTS THE REPLY, NEVER THE WORK -- the
+        # same rule api_shadow_task_open applies to a draft. With no verdict
+        # the classify below falls to its floor (_is_meta_only), which
+        # defaults to forwarding, so a substantive line still reopens the
+        # task exactly as V4-9 intended.
         reply, blocks = "", {}
+
+    # ── AND NOW, WITH SHADOW'S VERDICT IN HAND, WHETHER IT COMES BACK ────
+    # `classify` is the primary; its floor defaults to forwarding, so the
+    # only way a finished task stays finished is Shadow saying, on this
+    # turn, that the founder was asking IT something. An artifact follow-up
+    # ("print those ten lines", "what did you put in the file") is answered
+    # from what already exists and changes no state at all.
+    if was_terminal and shadow_forward.classify(message, blocks):
+        mission = _reopen_and_launch(store, mid, message, "talk")
+        reopened = True
+        drafting = mission["state"] in ("draft", "brief_confirm")
     if not drafting and not reopened:
         # RECORD, THEN FORWARD, AND BOTH BEFORE THE REPLY GOES OUT. Shadow
         # has already answered the founder above -- that never waited on
@@ -4627,6 +4753,7 @@ async def api_shadow_task_chat(mid: str, request: Request):
     # overwrite it -- and whether the founder's reply RELEASED A PAUSE is the
     # whole question resume_after_revision asks.
     was_state = mission["state"]
+    was_reason = mission.get("pause_reason")
     out = {"mission": (_apply_task_fence(mid, blocks)
                        if (drafting or not reopened) else store.load(mid)),
            "reply": reply}
@@ -4654,6 +4781,18 @@ async def api_shadow_task_chat(mid: str, request: Request):
         out["mission"] = store.load(mid)
     if reopened:
         out["reopened"] = True
+    # ── AND A REPLY AT NEEDS YOU IS NOT A DEAD END (founder, 2026-09-21) ──
+    # LAST, deliberately: the fence, the answer fence and the buttons above
+    # all leave the mission running or settled, and this only acts on one
+    # still sitting paused on a question. A status question is classified as
+    # such by Shadow's own `forward` verdict and leaves the worker alone.
+    if resume_after_reply(mid, was_state, was_reason, message, blocks,
+                          store=store):
+        out["mission"] = store.load(mid) or out["mission"]
+        out["resumed"] = True
+        # the founder's words are already queued on founder_says; now that
+        # the loop is live, hand them over through the one existing door
+        forward_to_worker(mid)
     return out
 
 

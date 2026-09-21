@@ -285,6 +285,27 @@ def validate_done_when(raw):
         check = str(row.get("check") or "").strip()
         if not check:
             continue
+        # ── A CHECK IS ABOUT THE WORLD, NEVER ABOUT THIS CONVERSATION ────
+        # (founder, 2026-09-21, pass 15.) A task opened with "Hi" produced
+        # "the chat has answered the greeting with a short reply that states
+        # it is ready for a task" -- a claim about Shadow's own output,
+        # written by the model that would then be asked to settle it, and
+        # asserting a reply the founder never saw.
+        #
+        # THIS IS THE SAME RULE `contains_artifact` CARRIES BELOW, where a
+        # Shadow-written check is refused that tier because "a check
+        # describing a state could be satisfied by the worker uttering the
+        # sentence". A check about what was SAID is that failure in its
+        # purest form: the utterance IS the evidence, so no tier can settle
+        # it honestly -- not the judge, not a probe, and least of all the
+        # founder, who would be signing off a sentence they were never
+        # shown. It is dropped rather than re-tiered.
+        #
+        # DROPPED, NOT FATAL: the rest of the list stands, and a mission left
+        # with no checks is asked for them again next turn, which is the
+        # existing behaviour for a mission that never had any.
+        if shadow_protocol.is_self_referential(check):
+            continue
         # ONE LADDER, IN ONE PLACE (D-SH-1). This used to read
         # `str(row.get("tier")) or "founder_confirm"` -- a default that is how
         # all 9 checks on the founder's live install reached their desk, every
@@ -518,6 +539,126 @@ def _carry_verification(out, raw):
         out["verification"] = rows
 
 
+#: A founder-facing update is a short message, not a transcript.
+#:
+#: RAISED FROM 400 (founder, 2026-09-21, pass 10). A task can ask to be TOLD
+#: something -- "give me 10 lines with the latest information about alien
+#: species" -- and there the answer IS the update: ten lines will not fit in
+#: a paragraph, and an update that says "I found 10 lines" while the lines
+#: live somewhere else is not an answer to the question that was asked.
+#:
+#: STILL A HARD CEILING, and that is the point of having one. It is the
+#: bound that stops the worker's whole output arriving by this route; the
+#: shape rules below (no fences, no JSON, no URLs, no tool tallies) are what
+#: stop it arriving in pieces.
+SHADOW_UPDATE_MAX = 1400
+
+#: What an update may NEVER contain. Not a style rule -- these are the shapes
+#: that mean the model pasted the worker's output instead of reading it: a
+#: fence, a JSON object, a bare URL, a tool-call tally.
+_UPDATE_REFUSE = re.compile(
+    r"```|[{}]|\bhttps?://|\b\d+\s+tool[ -]calls?\b", re.I)
+
+
+def validate_update(raw):
+    """Shadow's own sentence to the founder about this turn, or None.
+
+    WHY THIS EXISTS (founder, 2026-09-21, pass 9). The worker writes in the
+    first person about its own work -- "I'll pull current India cricket news
+    and write it to a file" -- and the founder is not talking to the worker.
+    Until now the UI shifted that sentence's subject deterministically
+    ("The worker will pull..."), which attributed it correctly and read like
+    a translation, because it was one. The founder asked for the real thing:
+
+        "Worker output should always come back through Shadow's existing
+         task-chat/conversation layer before it is shown to the founder."
+
+    SO SHADOW WRITES IT, ON THE TURN IT ALREADY TAKES. The decider reads the
+    worker's latest output on every boundary and answers as Shadow. This is
+    one more optional key in that same reply -- no second model call, no
+    second conversation, no new process.
+
+    STRICT, AND IT DEGRADES TO SILENCE. An update that is absent, empty, too
+    long, or shaped like pasted machinery is simply not carried: the caller
+    falls back to exactly the behaviour it had before, which is what every
+    record written before this key existed gets. It can never widen what
+    reaches the founder -- only replace a translation with a sentence.
+
+    NOT A PLACE TO CLAIM ANYTHING. The prompt is explicit that an update
+    reports what the worker produced and never that a check passed or the
+    work is done; the verifier owns both, and nothing here can change a
+    check, a state or a completion.
+    """
+    if not isinstance(raw, str):
+        return None
+    text = " ".join(raw.split())
+    if not text or len(text) > SHADOW_UPDATE_MAX:
+        return None
+    if _UPDATE_REFUSE.search(text):
+        return None
+    return text
+
+
+def validate_result(raw):
+    """Shadow's own sentence about WHAT WAS PRODUCED, or None.
+
+    WHY IT IS NOT `update` (founder, 2026-09-21, pass 12). An update is about
+    a TURN -- "I've got the plan, I need your call on the pace before I
+    finalise it" -- and it is written for the moment it is sent. A completion
+    message is about the RESULT, and the two are not the same sentence: read
+    back at DONE, the update above asks for something the founder has already
+    given.
+
+    THE GAP IT CLOSES. A founder_confirm pause is settled WITHOUT A TURN
+    (MissionEngine.settle: "decide a founder_confirm pause, without spending
+    a turn"), which is correct -- a signature is not a reason to spend the
+    worker's budget. But it means no decide turn runs on confirm -> done, so
+    nothing Shadow-authored existed for the completion to carry, and the pane
+    fell back to the worker's last message. When that cleaned to nothing the
+    founder read a bare "Done."
+
+    SO SHADOW WRITES IT WHILE IT CAN SEE THE RESULT -- on the turn that
+    raises the proposal, or the turn that finishes the work. Same decide
+    turn, no second model call. _complete stamps the latest one onto the
+    completion, so BOTH routes to a done mission carry it.
+
+    SAME FLOOR AS AN UPDATE, and for the same reasons: bounded, and refused
+    outright when it is shaped like pasted machinery. Absent is absent -- a
+    completion with no result line falls back exactly as it did before, which
+    is what keeps this from inventing anything.
+    """
+    return validate_update(raw)
+
+
+def _carry_result(out, raw):
+    """ADDITIVE, exactly like `update`. Absent or unusable leaves `out`
+    byte-identical to what validate_decision returned before."""
+    result = validate_result(raw.get("result"))
+    if result is not None:
+        out["result"] = result
+
+
+def _carry_update(out, raw):
+    """ADDITIVE, exactly like `standing` and `intervention`: a decision MAY
+    carry Shadow's own line to the founder about this turn. Absent or
+    unusable leaves `out` byte-identical to what validate_decision returned
+    before."""
+    update = validate_update(raw.get("update"))
+    if update is not None:
+        out["update"] = update
+
+
+def _artifact_state(m, root):
+    """shadow_decision.state_for, and NEVER a raised exception: a decide turn
+    must not fail because a path was unreadable. An error is no state, which
+    the prompt renders as "(none recorded)" and Shadow reads as "I cannot
+    claim a file exists"."""
+    try:
+        return shadow_decision.state_for(m, root) or []
+    except Exception:                    # noqa: BLE001 -- no state, not fatal
+        return []
+
+
 def _carry_standing(out, raw):
     """ADDITIVE, exactly like `done_when` and `intervention`: a decision MAY
     carry the active instruction set. Absent or unusable leaves `out`
@@ -680,6 +821,8 @@ def validate_decision(raw):
         # accepted for a check the first may not touch.
         _carry_verification(out, raw)
         _carry_standing(out, raw)
+        _carry_update(out, raw)
+        _carry_result(out, raw)
         return out
     out = {"action": action, "reason": reason, "instruction": ""}
     # VERIFICATION RIDES EITHER SHAPE. Shadow working out how to check
@@ -709,6 +852,8 @@ def validate_decision(raw):
     kind = str(raw.get("ask_kind") or "").strip().lower()
     if kind in ASK_KINDS:
         out["ask_kind"] = kind
+    _carry_update(out, raw)
+    _carry_result(out, raw)
     return out
 
 
@@ -3281,6 +3426,10 @@ class MissionEngine:
             # one line above can be probed on the same decision.
             self._adopt_verification(m, decision)
             self._adopt_standing(m, decision)
+            # ...and what Shadow has to SAY about the turn it just read. On
+            # every branch, because a turn that ends in a question is exactly
+            # the turn the founder most needs a sentence about.
+            self._adopt_update(m, decision)
             if decision is not None:
                 # one row per decision, so a mission reads as a conversation
                 # in the ledger: decided -> said -> answered -> evaluated
@@ -3747,6 +3896,44 @@ class MissionEngine:
             except Exception:
                 outcome = ""
         mm["completion"] = completion_summary(mm, results, t, outcome)
+        # ── SHADOW'S OWN CLOSING LINE, ON BOTH ROUTES (pass 12) ──────────
+        # Stamped HERE because this is the one writer of a done mission, so
+        # the loop's completion and the founder's confirm cannot disagree
+        # about it -- and the confirm route is exactly the one that spends no
+        # turn and so has nothing else to offer. QUOTED, never composed: an
+        # absent result stays absent and every surface falls back to what it
+        # drew before, which is what stops this inventing a summary for a
+        # mission whose worker produced nothing describable.
+        said = (mm.get("shadow_result") or {}).get("text")
+        if said:
+            mm["completion"]["said"] = said
+        # ── AND WHAT WAS ACTUALLY PRODUCED (founder, 2026-09-21, pass 14) ──
+        # THE RULE: the founder's confirmation controls WHETHER a proposal may
+        # become done; it does not control whether Shadow shows them the
+        # result. A confirmed itinerary that finishes as a filename and a
+        # one-line description has not been delivered -- it has been filed.
+        #
+        # READ OFF DISK, HERE, where the state it describes is already
+        # settled: shadow_decision.preview_for uses the same reader and the
+        # same ownership rule as the evidence and decision lanes, so the
+        # completion cannot show contents the artifact does not have. That is
+        # what makes it safe to render: if the worker's prose and the file
+        # disagree, THIS is the file.
+        #
+        # BOUNDED BY THE READER, not by the surface: 24 lines or 1400
+        # characters, with `truncated` set when it was cut. The whole file is
+        # one click away and always was.
+        #
+        # ABSENT IS ABSENT. A mission that owns no readable artifact stamps
+        # nothing and every surface falls back exactly as it did, which is
+        # what keeps this from inventing a deliverable for work that produced
+        # none.
+        try:
+            preview = shadow_decision.preview_for(mm, self.probe_root)
+        except Exception:                # noqa: BLE001 -- never fail a done
+            preview = None
+        if preview:
+            mm["completion"]["preview"] = preview
         self.store.save(mm)
         shadow_ledger.append("actions", {
             "mission_id": mid, "kind": "result",
@@ -4160,6 +4347,7 @@ class MissionEngine:
         Shadow's own turns) stays the verifier's input, not the driver's.
         """
         carry = carry_block()          # one limits read, not two
+        files = _artifact_state(m, self.probe_root)   # one disk read, not two
         return {
             # Shadow v4 (ADR-043): the decider router needs to know WHICH
             # task is asking, so it can hand the turn to that task's own
@@ -4219,7 +4407,71 @@ class MissionEngine:
                              if isinstance(r, dict)
                              and str(r.get("text") or "").strip()]}
                if (m.get("standing_instructions") or []) else {}),
+            # ── WHAT THE FILES ACTUALLY ARE (founder, 2026-09-21, pass 10)
+            #
+            # THE CASE THIS CLOSES: a worker that says "Done, I created
+            # alien-species.txt" when no such file exists. Worker prose is
+            # not proof of an artifact, and until now the decide turn had no
+            # way to tell -- so Shadow could repeat the claim to the founder
+            # in good faith.
+            #
+            # COUNTS ONLY, NEVER THE TEXT (shadow_decision.state_for). Shadow
+            # is being asked to DESCRIBE the result at the level the founder
+            # asked for it, not to quote the file; handing it the contents
+            # would invite exactly the paste this pass exists to prevent.
+            # The founder inspects the file through the artifact surface.
+            #
+            # OMITTED WHEN THE MISSION OWNS NOTHING, so a prompt for a task
+            # with no artifacts is byte-identical to what it was.
+            **({"artifact_state": files} if files else {}),
         }
+
+    #: How many of Shadow's founder-facing lines a mission keeps. One per
+    #: turn at most, and a mission's turn budget is bounded, so this is a
+    #: floor against a pathological record rather than a policy.
+    SHADOW_UPDATES_MAX = 120
+
+    def _adopt_update(self, m, decision):
+        """Append Shadow's own line to the founder for this turn.
+
+        APPEND-ONLY AND STAMPED, because the founder reads it as a
+        conversation: `at_turn` is the turn whose output Shadow just read, so
+        the UI can put the sentence exactly where that turn's result belongs
+        and nowhere else. Nothing is ever rewritten -- an update is what
+        Shadow said at the time.
+
+        ABSENT MEANS SILENCE, not a placeholder. A decision that carried no
+        usable update writes nothing, and the pane falls back to what it drew
+        before this field existed. Shadow having nothing worth saying about a
+        turn is a normal turn.
+
+        ONE PER TURN. A decider that answers twice for the same turn replaces
+        its own line rather than stacking two, so a retry cannot double the
+        conversation.
+
+        IT CHANGES NOTHING ELSE. This is a record of speech: no check, no
+        state, no completion and no instruction is touched by it.
+        """
+        # ── WHAT WAS PRODUCED, kept apart from what was SAID (pass 12) ──
+        # `shadow_updates` is the conversation -- one line per turn, in
+        # order, never rewritten. `shadow_result` is a single CURRENT fact:
+        # Shadow's description of what the work has produced so far, replaced
+        # each time it can see more. _complete stamps the latest onto the
+        # completion, which is how the confirm -> done path (which spends no
+        # turn) gets a Shadow-authored line at all.
+        got = (decision or {}).get("result")
+        if got:
+            m["shadow_result"] = {"text": got, "at": _now(),
+                                  "at_turn": m.get("turns_used") or 0}
+        text = (decision or {}).get("update")
+        if not text:
+            return
+        rows = [r for r in (m.get("shadow_updates") or [])
+                if isinstance(r, dict)]
+        turn = m.get("turns_used") or 0
+        rows = [r for r in rows if r.get("at_turn") != turn]
+        rows.append({"text": text, "at": _now(), "at_turn": turn})
+        m["shadow_updates"] = rows[-self.SHADOW_UPDATES_MAX:]
 
     def _adopt_standing(self, m, decision):
         """Write the ACTIVE instruction set Shadow composed, onto the task.
