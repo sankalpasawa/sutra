@@ -1088,8 +1088,6 @@ def backfill_owners(client=None, now=None, rows=None):
             return ""
         st = read_state()
         bf = st.get("owners_backfill") or {}
-        if bf.get("done"):
-            return ""
         if now - float(bf.get("at") or 0) < OWNERS_BACKFILL_EVERY:
             return ""
         s = _client(client).settings() or {}
@@ -1100,10 +1098,33 @@ def backfill_owners(client=None, now=None, rows=None):
         if rows is None:
             rows = store.library_list()
         # No words means a run that never produced an article; `push` refuses it anyway.
-        rows = [r for r in (rows or [])
-                if isinstance(r, dict) and r.get("id") and int(r.get("words") or 0) > 0
-                and not r.get("owner_id") and not r.get("owner")
-                and store.library_is_mine(r, me)]
+        unowned = [r for r in (rows or [])
+                   if isinstance(r, dict) and r.get("id") and int(r.get("words") or 0) > 0
+                   and not r.get("owner_id") and not r.get("owner")]
+        mine = [r for r in unowned if store.library_is_mine(r, me)]
+        # AND THE ONES THIS MAC CANNOT CLAIM (owner, 2026-09-21). A row whose chat folder is gone
+        # from every Mac -- deleted, or lost -- can be claimed by nobody, so the chip would say "by
+        # a teammate" for ever. The team's own table still knows who last sent each row, in its
+        # `actor` column, and `from_wire` already brings that down as `last_by` for any row that
+        # arrives after this shipped. This asks for it directly, once, for the rows that are
+        # already here and will not arrive again. It is a READ and a local stamp: nothing is
+        # pushed, because who last touched a row is the table's fact to state, not ours to write
+        # back to it.
+        theirs = [r for r in unowned if r not in mine and not r.get("last_by")]
+        named = 0
+        if theirs:
+            try:
+                have = {str(x.get("item_id")): str(x.get("actor") or "").strip()
+                        for x in (_client(client).select("library",
+                                                         columns="item_id,actor") or [])
+                        if isinstance(x, dict) and x.get("item_id")}
+                for r in theirs:
+                    who = have.get(str(r["id"]))
+                    if who and store.library_stamp_last_by(str(r["id"]), who):
+                        named += 1
+            except Exception:                # noqa: BLE001 -- a name is never worth failing a poll
+                pass
+        rows = mine
         stamped, sent, fail_why = 0, 0, ""
         for r in rows:
             item_id = str(r["id"])
@@ -1116,8 +1137,12 @@ def backfill_owners(client=None, now=None, rows=None):
                     sent += 1
             except Exception as e:           # noqa: BLE001 -- one bad row must not stop the rest
                 fail_why = str(e)[:300]
-        st["owners_backfill"] = {"at": now, "done": not fail_why, "stamped": stamped, "sent": sent,
-                                 "why": fail_why or ("nothing unowned" if not stamped else "")}
+        # Same rule as the tabs pass next door: never retire. A row that arrives tomorrow with no
+        # owner, from a Mac still on an older Sutra, deserves the same name as the ones here today.
+        st["owners_backfill"] = {"at": now, "done": False, "stamped": stamped, "named": named,
+                                 "sent": sent,
+                                 "why": fail_why or ("nothing unowned" if not (stamped or named)
+                                                     else "")}
         _save_state(st)
         return "sent" if sent else ""
     except Exception:                       # noqa: BLE001 -- a background nicety must never break a poll
