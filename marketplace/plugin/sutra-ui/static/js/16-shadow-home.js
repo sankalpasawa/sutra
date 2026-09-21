@@ -771,6 +771,56 @@ function shadowFloorsLine(){
    "done by Shadow without aid" -- it is work still in flight, and it is
    counted separately so a founder reading "2 still running" knows the task
    is not merely waiting on them. */
+/* ── WHAT THE FOUNDER SUPERSEDED, SAID OUT LOUD ──────────────────────────
+   THE FAILURE (founder, 2026-09-21). A founder watching an Africa trip at
+   NEEDS YOU said "actually, I want India". The record did the right thing --
+   MissionStore.amend bumps the revision and _invalidate_for_revision strips
+   every verdict the old objective earned -- and the screen said nothing at
+   all. The Africa question the founder had been reading simply was not there
+   on the next render.
+
+   "OUTDATED" AND "NEVER HAPPENED" ARE DIFFERENT STATEMENTS, and the founder
+   is owed the first one. Work was done, they changed their mind, and the
+   work stopped counting: that is a fact about their task and it belongs in
+   the conversation, not in a diff of two renders.
+
+   IT IS DELIBERATELY INERT. No button, no index, no data-shact, no confirm
+   hook -- a superseded check must be impossible to act on, which is the
+   whole point of showing it. The live decision is drawn by
+   shadowCheckRowsHtml from `done_when`, and these rows come from
+   `revisions`, a ledger the engine writes and never reads. The two cannot
+   be confused because they are not the same field.
+
+   ONLY THE LAST ONE IS DRAWN. A founder who changed direction four times
+   does not need all four struck-through objectives stacked above the live
+   one; they need to know the previous thing is dead. The record keeps up to
+   MAX_REVISIONS for the chat and the ledger. */
+function shadowRevisionsHtml(m){
+  const log = (m && Array.isArray(m.revisions)) ? m.revisions : [];
+  const last = log.length ? log[log.length - 1] : null;
+  if (!last) return "";
+  const checks = Array.isArray(last.checks) ? last.checks : [];
+  const was = String(last.objective || "").trim();
+  return `<div class="shsaid shstale">
+    <div class="shsaidhead">Outdated</div>
+    <div class="shsaidtext">Superseded by your latest instruction.</div>
+    ${was ? `<div class="shstalewas">${esc(was)}</div>` : ""}
+    ${/* THE CRITERIA DO NOT COME WITH IT (founder, 2026-09-21: "even in
+         summary -- don't show user stuff he doesn't care about, Done checks
+         and all"). This listed every superseded predicate struck through,
+         which put the longest strings in the product on screen to say
+         something the founder already knows: the old plan is off.
+
+         WHAT IT SAYS INSTEAD is what changed and how much went with it. The
+         superseded checks stay on the record in `revisions` for anyone
+         reading it back; they are not what this moment is about. */""}
+    ${checks.length ? `<div class="shstalecount">${checks.length === 1
+      ? "1 check retired with it" : checks.length + " checks retired with it"
+      }</div>` : ""}
+  </div>`;
+}
+
+
 function shadowCheckRowsHtml(m){
   const all = (m.done_when || []).filter(c => c && c.check);
   if (!all.length) return "";
@@ -847,10 +897,27 @@ function shadowCheckRowsHtml(m){
 
      THE FOLD STAYS CLOSED and now says nothing about tiers or who settled
      what on the outside of it. */
+  /* ── WHY THE FOUNDER IS THE ONE BEING ASKED (founder, 2026-09-21) ─────
+     "Only you can decide whether this actually matches the trip you want."
+     A Confirm button with no account of why it exists reads as a chore; the
+     founder's own framing is that these are the checks Shadow CANNOT settle,
+     which is a different and much shorter sentence than the tier machinery
+     behind it.
+
+     ONE LINE, CLOSED, AND THE SAME EVERY TIME. It explains the CLASS of
+     question rather than this instance -- Shadow composing a bespoke
+     justification per check would be one more thing to read and one more
+     thing that can be wrong. Deliberately not a help panel. */
+  const why = `<details class="shwhyme"><summary>Why am I needed?</summary>
+    <div class="shwhymebody">Shadow settles everything it can check for
+      itself \u2014 what was produced, whether it is there, whether it holds
+      together. What is left is judgement about what you actually wanted,
+      and that is not Shadow\u2019s to make.</div></details>`;
   return `<div class="shconfirm">
     <div class="shconfirmq">Shadow needs your decision</div>
     ${shadowDecisionHtml(m)}
     <div class="shchecks">${rows}</div>
+    ${why}
     ${fold}
   </div>`;
 }
@@ -1262,20 +1329,72 @@ function shadowCompletionHtml(m){
     ${/* WHAT WAS PRODUCED, when the server recorded any. Paths only -- the
          founder is told WHERE the work landed; the content is the summary's
          job and the chat's. */""}
-    ${(c.artifacts || []).length ? `<div class="shdonefiles">${
-      (c.artifacts || []).map(pth =>
-        `<span class="shdonefile">${esc(String(pth))}</span>`).join("")
-    }</div>` : ""}
+    ${/* ── THE FINAL STATE, IN THE FOUNDER'S TERMS (founder, 2026-09-21,
+           pass 2) ────────────────────────────────────────────────────────
+
+         THE ASK: a finished task must answer "what was accomplished, what
+         artefact exists, what was discarded, what remains" -- not "3 of 3
+         checks passed", which is how Shadow convinced itself and is of no
+         use to the person who asked for the work.
+
+         EVERY LINE IS A RECORD FIELD. `completed`, `remains`, `was` and
+         `revised` are stamped by mission_engine.completion_summary off the
+         mission AS IT ENDED. Nothing here reads the transcript and nothing
+         is concatenated out of worker messages -- the construction the
+         founder ruled out, because a worker that narrated a plan it then
+         abandoned would otherwise dictate the summary.
+
+         SO A REDIRECTED TASK REPORTS THE OBJECTIVE IT FINISHED ON. The
+         Africa-to-India case lands here as an India summary with one line
+         naming what it stopped being; the Africa work is history, drawn by
+         shadowRevisionsHtml, and never the result.
+
+         FALLS BACK CLEANLY. A record stamped before these fields existed
+         has neither list, so the block is skipped entirely and the card is
+         exactly what it was. */""}
+    ${c.was ? `<div class="shdonewas">Replaced an earlier plan:
+      ${esc(c.was)}</div>` : ""}
+    ${(c.artifacts || []).length ? `<div class="shdonesec">
+      <div class="shdoneseclabel">What you can open</div>
+      <div class="shdonefiles">${(c.artifacts || []).map(pth =>
+        `<span class="shdonefile">${esc(String(pth))}</span>`).join("")}</div>
+    </div>` : ""}
+    ${/* ── A CHECK IS NOT A RESULT (founder, 2026-09-21) ────────────────
+         "Even in summary -- don't show user stuff he doesn't care about
+         (Done checks and all)."
+
+         WHAT LEFT THIS SURFACE: "What I completed" and "What remains", both
+         built from `done_when`. They were an improvement on "3 of 3 checks
+         passed" and still the wrong thing to lead with -- a criterion is
+         written to be MATCHED, not read, and a list of them is a QA report
+         however it is worded. The founder asked what happened, not how
+         Shadow satisfied itself.
+
+         WHAT LEADS INSTEAD is what they can act on: the file the work
+         produced, and the worker's own closing account of it in its own
+         words. Both are already on the record.
+
+         NOTHING IS LOST. `completion.checks` still carries every criterion,
+         verdict, `how` line and piece of evidence, and the Verification
+         fold below -- closed, one click -- still renders all of it.
+         shadowCompletionText still copies the full record to the clipboard,
+         and `completed`/`remains` are still stamped by completion_summary
+         for anything that wants them. Only the lead changed. */""}
     ${work ? `<div class="shdonework" title="${escAttr(c.outcome || "")}"
       >${esc(work)}</div>` : ""}
     ${summary}
     ${/* A CAVEAT IS PART OF THE ANSWER. A check that did NOT pass is the one
          piece of verification the founder genuinely needs on the surface --
          it qualifies the result rather than explaining the machinery. */""}
+    ${/* THE CAVEAT IS A COUNT, NOT THE CRITERIA. Something that did not
+         pass is the one piece of verification a founder genuinely needs on
+         the surface -- it qualifies the result -- but the criteria
+         THEMSELVES are the test report they asked not to read. So the
+         surface says how many and where to look; the fold says which. */""}
     ${failed.length ? `<div class="shdonecaveat">${failed.length === 1
-        ? "One thing did not pass:" : failed.length + " things did not pass:"}
-      ${failed.map(k => `<span class="shdonecavrow">${esc(k.check || "")}</span>`)
-        .join("")}</div>` : ""}
+        ? "One check did not pass \u2014 see Verification below."
+        : failed.length + " checks did not pass \u2014 see Verification below."
+      }</div>` : ""}
     <details class="shcheckfold shdoneverif">
       <summary>Verification</summary>
       <div class="shconfirmsub">${esc(shadowTurnNow(c) + " of "
@@ -3136,6 +3255,95 @@ function shadowTimelineEvents(m){
   return shadowTimelinePair(sorted);
 }
 
+/* ── THE CONVERSATION OPENS WITH WHAT THE FOUNDER ASKED FOR ──────────────
+   (founder, 2026-09-21, pass 3: "the user's original objective should
+   appear naturally as the YOU message at the beginning of the conversation
+   ... think of the mission metadata as backend state, not UI content".)
+
+   WHAT THIS REPLACES. shadowTaskCardHtml -- objective, WHERE IT RUNS, DONE
+   WHEN, and a row of actions -- was the first and largest block of the main
+   surface. Pass 3's first cut moved it INSIDE the stream, which made the
+   architecture right and the screen no better: the founder still read a
+   task record before reaching a word anybody said.
+
+   THE TEST THE FOUNDER GAVE: "if a piece of information is not something
+   Shadow would naturally say to the founder at that moment, it should not
+   become a large UI card." Applied to the card's four parts:
+
+     objective    IS said -- it is the founder's own opening line, so it is
+                  drawn as one, from them, at the top of the thread.
+     where it runs  implementation metadata. The session id is on the record
+                  and behind Open the chat; it is not a thing Shadow says.
+     done when    said only when Shadow needs a decision, and then it is the
+                  inline DONE WHEN element, which already exists and already
+                  carries its evidence. Printing it here as well is the
+                  duplicate the whole redesign removes.
+     actions      controls, not speech. They are on the pinned header.
+
+   shadowTaskCardHtml IS NOT DELETED. It is still exported and still
+   rendered by the tests that pin its content, and nothing that reads a
+   mission changed. It simply no longer draws the main surface. */
+function shadowOpeningHtml(m){
+  /* ── IT IS WHAT THEY ASKED FOR, NOT WHAT THE TASK IS NOW ──────────────
+     `objective` is the CURRENT revision, so on a task the founder redirected
+     it holds the new one -- and the thread opened "Plan a trip to India",
+     three messages above the founder saying "actually, I want India". The
+     opening line of a conversation is what was said at the beginning.
+
+     THE FIRST REVISION'S OBJECTIVE IS THAT LINE. `revisions` is the ledger
+     _invalidate_for_revision writes, oldest first, and revisions[0] is the
+     objective the task was created with. With no revisions the current one
+     IS the original, which is the ordinary case and is unchanged. */
+  const log = (m && Array.isArray(m.revisions)) ? m.revisions : [];
+  const first = log.length ? String(log[0].objective || "").trim() : "";
+  const text = first || String((m && m.objective) || "").trim();
+  if (!text) return "";
+  return `<div class="shsaid shopening">
+    <div class="shsaidhead">You \u2192 Shadow</div>
+    <div class="shsaidtext">${esc(text)}</div>
+  </div>`;
+}
+
+
+/* ── WHEN THERE IS NOTHING TO REPORT, SAY THAT, IN ONE LINE ──────────────
+   (founder, 2026-09-21: "if Shadow genuinely needs the user to start the
+   task, use a concise conversational message ... do not expose internal
+   state explanation".)
+
+   THE GAP THIS FILLS, found by rendering it: a freshly running task has no
+   worker turn yet and, once the metadata card left, drew NOTHING AT ALL --
+   an empty pane under a header. That is worse than the card it replaced.
+
+   IT IS A STATE OF FACT, NOT FABRICATED PROGRESS. Each line below is true
+   by construction from the record and says nothing about what the work
+   found: "on it" when the loop is running and the worker has not reported,
+   "ready when you are" when the task is waiting to be started. Neither
+   claims a result, and neither survives the first real turn -- the moment
+   there is an event, the events are what render.
+
+   NO INTERNAL VOCABULARY. No brief, no turn count, no done_when, no pause
+   reason, no state name. Those are the sentences the founder objected to. */
+function shadowIdleLineHtml(m){
+  if (!m) return "";
+  const startable = (typeof shadowMissionStartable === "function")
+    ? shadowMissionStartable(m) : m.state === "brief_confirm";
+  if (startable){
+    return `<div class="shsaid shidle">
+      <div class="shsaidhead">Shadow</div>
+      <div class="shsaidtext">Everything is ready \u2014 start when you are.</div>
+    </div>`;
+  }
+  if (m.state === "running"){
+    return `<div class="shsaid shidle">
+      <div class="shsaidhead">Shadow</div>
+      <div class="shsaidtext">On it. I\u2019ll come back to you when I need
+        something.</div>
+    </div>`;
+  }
+  return "";
+}
+
+
 function shadowTimelineHtml(m){
   const events = shadowTimelineEvents(m);
   /* the founder has sent and Shadow has not answered yet. Appended rather
@@ -3149,8 +3357,59 @@ function shadowTimelineHtml(m){
      the composer's typed line answers the same row (the server binds it).
      Nothing here is a second store: shadowAskRowsHtml reads the record. */
   const asks = shadowAskRowsHtml(m);
-  if (!events.length && !waiting && !asks) return "";
-  return `<div class="shtimeline">${events.map(e => {
+  /* ── EVERYTHING IS AN EVENT IN ONE STREAM (founder, 2026-09-21, pass 3)
+       ──────────────────────────────────────────────────────────────────
+     WHAT WAS WRONG, and it was architectural rather than cosmetic. This
+     timeline was ONE OF SEVEN SIBLING BLOCKS in shadowHomeHtml: the task
+     card above it, then the stream, then the superseded revisions, then the
+     decision, then the completion, each a separate surface stacked down the
+     page. Passes 1 and 2 put the right content in those blocks and left the
+     blocks where they were, so the founder still read a dashboard whose
+     panels happened to contain conversational copy.
+
+     THE PROTOTYPE'S DECISION is that there is no second surface: the brief,
+     the worker's turns, Shadow's narration, the decision, what was
+     superseded and the final summary are all MESSAGES, in one column, in
+     the order they happened. That is what this now assembles.
+
+     ORDER IS CHRONOLOGY, and each piece sits where it occurred:
+       brief      what the founder asked for -- the first thing said
+       events     the worker's turns and Shadow's replies, interleaved
+       outdated   the moment the founder changed direction
+       asks       what is being waited on now (hold, question, parked)
+       decision   the canonical check surface, with its evidence
+       done       the end of the conversation
+     A piece that does not apply renders "" and takes no room, so a running
+     task with nothing outstanding is just brief + turns.
+
+     NOTHING IS RE-IMPLEMENTED. Every one of these is the same function that
+     drew it as a panel a moment ago, called from here instead. What changed
+     is where they are rendered, not what they render. */
+  /* ── THE HEADER ALREADY SAYS WHAT THE TASK IS (founder, 2026-09-21) ───
+       "The objective is already represented by the page header. Do not
+       repeat the full objective in a huge card immediately below it. The
+       conversation should begin naturally with Shadow speaking."
+
+     THE OPENING MESSAGE WAS THE CARD'S REPLACEMENT AND INHERITED ITS FAULT.
+     Removing shadowTaskCardHtml fixed the architecture; drawing the same
+     objective as a sepia .shsaid block directly under the header restated
+     it in a second place and still filled the top of the stream before
+     anybody spoke. The header is pinned, carries the objective, the state
+     and the controls, and is enough.
+
+     shadowOpeningHtml IS KEPT AND STILL EXPORTED -- it is the honest render
+     of "the founder's opening line" and the lane that pins it is unchanged
+     -- but the stream no longer opens with it. */
+  /* the opening line stands only while the conversation is genuinely empty:
+     one real event and the events speak for themselves */
+  const brief = "";
+  const outdated = shadowRevisionsHtml(m);
+  const decision = shadowMissionNeedsFounder(m) ? shadowCheckRowsHtml(m) : "";
+  const done = (m && m.completion) ? shadowCompletionHtml(m) : "";
+  const tail = outdated + asks + decision + done;
+  const idle = (!events.length && !tail) ? shadowIdleLineHtml(m) : "";
+  if (!events.length && !waiting && !tail && !idle) return "";
+  return `<div class="shtimeline">${brief}${idle}${events.map(e => {
     if (e.kind === "answered") return shadowStoryHtml(m);
     if (e.kind === "ask_done"){
       const head = e.what === "approve" ? "Shadow · held, then sent"
@@ -3199,7 +3458,8 @@ function shadowTimelineHtml(m){
     /* a turn with no report yet is the one IN FLIGHT -- it gets the clock */
     if (e.kind === "worker" && !e.say) return shadowOpenTurnHtml(e.n, e.ts);
     return shadowAgentRowHtml(e.n, e.say);
-  }).join("")}${asks}${waiting ? shadowThinkingHtml() : ""}</div>`;
+  }).join("")}${outdated}${asks}${decision}${done}${
+    waiting ? shadowThinkingHtml() : ""}</div>`;
 }
 
 /* ── THE ASK ROWS (v4.2) ─────────────────────────────────────────────────
@@ -3239,23 +3499,25 @@ function shadowAskRowsHtml(m){
       <div class="shsaidtext shaskhint">Answer on the form below.</div>
     </div>`);
   }
-  if (m.state === "paused" && m.pause_reason === "founder_confirm"){
-    (m.done_when || []).forEach((c, i) => {
-      if (!c || c.tier !== "founder_confirm" || c.met) return;
-      rows.push(`<div class="shsaid shask shask-check">
-        <div class="shsaidhead">Shadow · done when</div>
-        <div class="shcard2 shaskcard">
-          <div class="shcard2row"><span class="shcard2k">needs you</span>
-            <span class="shcard2v">#${i + 1} ${esc(c.check || "")}</span></div>
-          <div class="shcard2acts">
-            <button class="btn pri" type="button" data-shact="answer"
-              data-shkind="confirm" data-shindex="${i}" data-shmid="${id}">Confirm</button>
-          </div>
-        </div>
-        <div class="shsaidtext shaskhint">Or say “yes” here.</div>
-      </div>`);
-    });
-  }
+  /* ── ONE DECISION, ONE PLACE (founder, 2026-09-21) ──────────────────
+     A founder_confirm row USED TO BE DRAWN HERE TOO, with its own live
+     Confirm button, while shadowCheckRowsHtml drew the same row with
+     another one a few hundred pixels below. The same criterion carried two
+     working buttons on one screen, and answering either left the other
+     sitting there looking unanswered. That is the duplicate the founder
+     named: "there should be ONE canonical representation of a user
+     decision".
+
+     THE ONE THAT SURVIVED IS THE RICHER ONE. shadowCheckRowsHtml draws the
+     decision packet with it -- shadowDecisionHtml: the artifact the
+     decision is about and the facts shadow_evidence counted -- so the
+     question is asked next to the thing being judged. This block could
+     only ever print the sentence. Keeping the poorer copy and deleting the
+     evidence would have been the wrong half to keep.
+
+     NOTHING ELSE IN THIS FUNCTION MOVED. The holding/approval row, the
+     intervention question and the parked say are not drawn anywhere else
+     and are untouched. */
   if (m.state === "paused" && m.parked_say){
     rows.push(`<div class="shsaid shask shask-parked">
       <div class="shsaidhead">Shadow · parked</div>
@@ -3447,10 +3709,28 @@ function shadowTaskCardHtml(m){
   return `<div class="shcard2" data-shtaskcard="${escAttr(m.id)}">
     <div class="shcard2head">
       <span class="shcard2obj">${esc(m.objective || "")}</span>
-      ${/* THE SECOND OF THE THREE, ALSO GONE (founder, 2026-09-19). This
-           pill sat roughly 40px below the header's, saying the same word
-           about the same task. The header's is pinned and adjacent to the
-           title, so it is the one that stays. */""}
+      ${/* KEPT, AND THE ATTEMPT TO REMOVE IT IS WHY THIS NOTE EXISTS
+           (founder, 2026-09-21, pass 2). This line restates the objective
+           about 80px below the same sentence in the pinned header, which
+           reads as the title twice and was removed on exactly that
+           reasoning -- the same reasoning that took the state pill out
+           below.
+
+           IT WENT STRAIGHT BACK. `.shwtitle` is `white-space:nowrap` with
+           `text-overflow:ellipsis`, so the header shows as much of the
+           objective as the width allows and no more. On the short fixtures
+           this looks like pure duplication; on a real 443-character
+           objective the header is a truncated fragment and THIS is the only
+           place the founder can read what they asked for. Two lanes pinned
+           it (test_shadow_home, test_shadow_rhs) and both were right.
+
+           The duplication is real and is the price of the header not
+           wrapping. If it is worth removing, the header is what changes.
+
+           THE SECOND OF THE THREE, GONE 2026-09-19. This pill sat roughly
+           40px below the header's, saying the same word about the same
+           task. The header's is pinned and adjacent to the title, so it is
+           the one that stays. */""}
     </div>
     <div class="shcard2row"><span class="shcard2k">where it runs</span>
       <span class="shcard2v">${acts}</span></div>
@@ -3589,9 +3869,28 @@ function shadowTaskCardHtml(m){
            answered by its intervention form (shadowInterventionHtml) or from
            the Watching screen, and ending work the founder no longer wants
            is the ask this slice covers. */""}
-      ${["running", "paused", "blocked"].includes(m.state) ? `<button
-        class="btn" type="button" data-shact="stop"
-        data-shmid="${escAttr(m.id)}">Stop</button>` : ""}
+      ${/* STOP IS WITHHELD AT NEEDS YOU, AND NOWHERE ELSE (founder,
+           2026-09-21: "do not show Stop as though a worker is currently
+           burning turns"). A task parked on the founder's signature has no
+           turn in flight -- the loop is waiting on them -- so Stop there
+           described a cost that was not being incurred.
+
+           THE NARROWING IS shadowMissionNeedsFounder, NOT `state`. The
+           first cut of this withheld Stop from every paused and blocked
+           task, and test_shadow_home caught it: a task paused for a STALL,
+           or blocked, is exactly when the founder most needs to end work,
+           and the assertion that pins Stop to the card ("ending work the
+           founder no longer wants is the one control that has to be where
+           the work is") was written for that case. Only the four founder
+           pause reasons are a decision the founder is being asked for; the
+           rest keep the control they had.
+
+           NOTHING IS STRANDED EITHER WAY. Answering the ask releases the
+           pause and Stop returns on the same render, and the task list row
+           carries its own stop throughout. */""}
+      ${/* STOP IS ON THE HEADER NOW, not here -- see the note at its new
+           site in shadowHomeHtml. Drawing it in both places would be the
+           duplicate-control bug this pass exists to remove. */""}
       ${m.state === "queued" ? `<button class="btn" type="button"
         data-shact="drop" data-shmid="${escAttr(m.id)}">Drop</button>` : ""}
       ${/* v4.2 (founder 2026-09-21): the Retry button is gone from here too.
@@ -4065,6 +4364,32 @@ function shadowMastHtml(){
    dropdown list has always used, shown inline instead of behind a toggle.
    "+N more" opens the existing list rather than inventing a second one. */
 const SH_CHIP_CAP = 4;
+/* ── THE COMPOSER SAYS WHAT IT IS FOR RIGHT NOW (founder, 2026-09-21) ────
+   "When RUNNING: Talk to Shadow... When NEEDS YOU: Reply or change the
+   plan..." -- and the second half of that is the point. A founder looking at
+   a Confirm button needs to know the box below it is not a form field for
+   that question: they can answer it, ignore it, or change the task outright,
+   and the placeholder is the only thing on screen that says so.
+
+   IT IS A LABEL, NOT A MODE. Nothing about what the composer DOES changes
+   with the state -- the same send path, the same task chat, the same
+   `mission` fence that can amend a live task. Only the invitation changes. */
+function shadowComposePlaceholder(compact){
+  if (!compact) return "Tell Shadow what outcome you want\u2026";
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const sel = (typeof shadowSelectedTask === "function")
+    ? shadowSelectedTask() : null;
+  if (sel && typeof shadowMissionNeedsFounder === "function"
+      && shadowMissionNeedsFounder(sel)) {
+    return "Reply, or change the plan\u2026";
+  }
+  if (sel && SH_TERMINAL.indexOf(sel.state) !== -1) {
+    return "Ask Shadow about this, or start something new\u2026";
+  }
+  return "Talk to Shadow\u2026";
+}
+
+
 function shadowStageHtml(compact){
   const S_ = (typeof S !== "undefined") ? S : {};
   return `<section class="shstage${compact ? " shstage-calm" : ""}">
@@ -4091,8 +4416,7 @@ function shadowStageHtml(compact){
            other text stores exist to avoid. */""}
       <textarea class="shcompose" data-shhomecompose="1"
         data-shscope="${escAttr(S_.shadowChat || "global")}"
-        placeholder="${compact ? "Talk to Shadow…"
-          : "Tell Shadow what outcome you want…"}">${
+        placeholder="${escAttr(shadowComposePlaceholder(compact))}">${
         esc(S_.shadowComposeDraft || "")}</textarea>
       <button class="shsend" type="button" data-shsend="1"
         title="Hand it over (or press Enter)" aria-label="Hand it over">
@@ -4304,6 +4628,74 @@ function shadowHomeHtml(){
                2026-09-17): the founder's conversation with Shadow is the
                workspace composer and the stream below it, not a second
                surface to open. Same hook, same target_session, unchanged. */""}
+          ${/* ── REPLAY, ON A TASK THAT HAS STOPPED (founder, 2026-09-21,
+                 pass 2: "DONE [Replay] [Open the chat] / STOPPED [Replay]
+                 [Open the chat]").
+
+                 THIS REVERSES A SAME-DAY RULING, and says so rather than
+                 quietly differing from it. shadowPlaneHtml still carries
+                 the note "v4.2 (founder 2026-09-21): no Retry button. The
+                 retry action stays on the server; the way back is the
+                 task's chat or Hand back to Shadow." That was about the
+                 finished-task ROWS on the Watching plane, where five of
+                 them stacked their own buttons; pass 2 asks for one control
+                 on the HEADER of the task you are reading. Both can be
+                 true, and the plane's rows are untouched.
+
+                 NOTHING NEW ON THE SERVER. `retry` is the existing action
+                 (app.py -> mission_engine.clone_for_retry), which rebuilds
+                 the mission from its ORIGINAL brief as a new attempt. It is
+                 labelled Replay because that is what it does to the founder:
+                 run this again. The old mission is not mutated. */""}
+          ${/* DONE AND STOPPED ONLY, which is exactly the two states pass 2
+               names. A FAILED task is deliberately excluded: the v4.2
+               ruling above is still live for it (test_shadow_home pins
+               "no Retry button" on a selected failure), and a failure is
+               the one ending where re-running the same brief unchanged is
+               usually the wrong move -- the way back there is the task's
+               chat or Hand back to Shadow, as that ruling says. */""}
+          ${/* ── STOP BELONGS WITH THE OTHER HEADER CONTROLS (founder,
+                 2026-09-21, pass 2: "RUNNING [Stop] [Open the chat]").
+                 It was drawn inside the task card's action row, which is
+                 the first block of the SCROLLER -- so on a long task it
+                 left the screen and the founder could not end work without
+                 scrolling back. The header is pinned; the controls that
+                 change the task's state belong on it.
+
+                 SAME HOOK, SAME PREDICATE. data-shact="stop" and the
+                 needs-founder guard from pass 1 are unchanged; only where
+                 the button is drawn moved. The card's row keeps Resume,
+                 Approve and Hand back, which are answers to what the card
+                 is showing rather than controls over the run. */""}
+          ${/* THE TASK'S OWN CONTROLS, ON THE PINNED HEADER (founder,
+               2026-09-21, pass 3). Start, Drop and Hand back used to sit in
+               the metadata card's action row; that card has left the main
+               surface, and these are controls rather than things Shadow
+               says, so the header is where they belong. Same hooks, same
+               predicates, same handlers -- only the site moved. */""}
+          ${!newOpen && sel && (typeof shadowMissionStartable === "function"
+              ? shadowMissionStartable(sel) : sel.state === "brief_confirm")
+            ? `<button class="btn pri" type="button"
+                data-shstart="${escAttr(sel.id)}">Start the task</button>
+               <span class="shcard2hint shwhint">\u2026or keep telling me</span>`
+            : ""}
+          ${!newOpen && sel && sel.state === "queued"
+            ? `<button class="btn" type="button" data-shact="drop"
+                data-shmid="${escAttr(sel.id)}">Drop</button>` : ""}
+          ${!newOpen && sel && !shadowMissionNeedsFounder(sel)
+            && ["running", "paused", "blocked"].includes(sel.state)
+            ? `<button class="btn" type="button" data-shact="stop"
+                data-shmid="${escAttr(sel.id)}">Stop</button>` : ""}
+          ${!newOpen && sel && ["done", "stopped"].includes(sel.state)
+            ? `<button class="btn" type="button" data-shact="retry"
+                data-shmid="${escAttr(sel.id)}">Replay</button>` : ""}
+          ${/* HAND BACK: done is not a dead end. Same hook and same
+               condition it had on the card -- Shadow returns to work in the
+               SAME chat, where Replay starts a fresh attempt. */""}
+          ${!newOpen && sel && ["done", "failed", "stopped"].includes(sel.state)
+            && sel.target_session
+            ? `<button class="btn" type="button" data-shact="reopen"
+                data-shmid="${escAttr(sel.id)}">Hand back to Shadow</button>` : ""}
           ${!newOpen && sel && sel.target_session ? `<button class="btn"
             type="button" data-shtakeover="${escAttr(sel.target_session)}"
             >Open the chat</button>` : ""}
@@ -4366,7 +4758,19 @@ function shadowHomeHtml(){
            change was actually protecting: the objective, the state and --
            new, below -- the live turn count never leave the screen, so
            reading back through twenty turns still has its anchor. */""}
-      ${newOpen || !sel ? "" : shadowTaskCardHtml(sel)}
+      ${/* ── THE STREAM IS THE SURFACE (founder, 2026-09-21, pass 3) ─────
+           The card, the superseded revisions, the decision and the
+           completion used to be drawn HERE, as four siblings around the
+           timeline. They are now messages inside it -- see the long note at
+           the top of shadowTimelineHtml -- so this is one call, and the
+           main content area is one continuous conversation rather than a
+           stack of panels.
+
+           WHAT IS STILL A SIBLING, and why each has to be: the pending
+           MEMORY rows are global to Shadow rather than to this task; the
+           intervention FORM is an input, not a message, and answers a
+           question the stream has already shown; and the composer is the
+           bottom of the conversation, not part of it. Nothing else. */""}
       ${newOpen || !sel ? "" : shadowTimelineHtml(sel)}
       ${/* WHAT IT CAME TO, AT THE END OF WHAT HAPPENED (founder,
            2026-09-20). These two used to render inside the task card above,
@@ -4376,9 +4780,6 @@ function shadowHomeHtml(){
            they are the last rows before the composer, which is where the
            pane already opens. See the note at their old site in
            shadowTaskCardHtml; the predicates are unchanged. */""}
-      ${newOpen || !sel || !shadowMissionNeedsFounder(sel) ? ""
-        : shadowCheckRowsHtml(sel)}
-      ${newOpen || !sel || !sel.completion ? "" : shadowCompletionHtml(sel)}
       ${/* the founder's answer is INSIDE the timeline now, at the point it
            happened -- drawing it here as well would be the same card twice */""}
       ${thread ? `<div class="shthread">${thread}</div>` : ""}

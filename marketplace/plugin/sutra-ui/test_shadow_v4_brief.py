@@ -313,13 +313,26 @@ class TestOpeningATask(Base):
                           "recording input must not compose an instruction")
         self.assertEqual(self.spawned, [], "and no worker was spawned")
 
-    def test_15_after_Start_a_mission_fence_can_no_longer_re_scope(self):
-        """THE FENCE AMENDS A DRAFT, AND ONLY A DRAFT. _apply_task_fence
-        reaches MissionStore.amend, which refuses a TERMINAL mission but not
-        a running one -- it would bump the version and rewrite the objective
-        and the done_when of work the worker is already executing. Before
-        Start that is the feature (test_11); after Start it would let a
-        casual question re-scope live work."""
+    def test_15_after_Start_a_mission_fence_RE_SCOPES_the_live_task(self):
+        """INVERTED 2026-09-21, and the inversion is the fix.
+
+        This asserted that a running task could not be re-scoped, on the
+        reasoning that "after Start it would let a casual question re-scope
+        live work". That guard was too blunt and it was the bug: watching an
+        Africa trip sit at NEEDS YOU the founder said "I changed my mind, I
+        want India", Shadow answered "India it is -- amending now", and
+        nothing amended. The objective, the done_when and the version never
+        moved, so the Africa criteria stayed authoritative.
+
+        A CASUAL QUESTION STILL RE-SCOPES NOTHING -- see test_15b. The
+        discriminator was already in the protocol: the task chat emits a
+        `mission` fence only when it MEANS to amend, and prose produces no
+        fence. What this test exercises is a reply that DOES carry one, so
+        it is the change-of-mind case, not the question case.
+
+        The amend bumps `version`, which is the revision the loop, the
+        approval and the sign-off all validate against -- so a turn composed
+        under the old objective can no longer complete the new one."""
         self.next_reply = ["READY", "Got it.\n" + self.fence()]
         doc = self.client.post("/api/shadow/tasks",
                                json={"message": "top 10 fruits"},
@@ -339,14 +352,37 @@ class TestOpeningATask(Base):
                                headers=HDR).json()
         self.assertEqual(doc["reply"], "Sure.", "the reply still comes back")
         after = self.store.load(mid)
-        self.assertEqual(after["objective"], before["objective"],
-                         "a running task must not be re-scoped by a chat")
-        self.assertEqual(after["done_when"], before["done_when"],
-                         "nor its checks rewritten")
+        self.assertEqual(after["objective"], "Something else entirely",
+                         "a founder who changes their mind changes the task")
+        self.assertEqual([c["check"] for c in after["done_when"]], ["nothing"],
+                         "and its checks come with it")
+        self.assertEqual(after["version"], before["version"] + 1,
+                         "a material change is a new revision")
+        self.assertEqual(doc["mission"]["objective"], after["objective"],
+                         "the payload shows the record as it now stands")
+
+    def test_15b_prose_with_no_fence_re_scopes_nothing(self):
+        """The other half, and the reason no classifier was needed: an
+        ordinary question produces no `mission` fence, so it reaches
+        founder_says and changes no state."""
+        self.next_reply = ["READY", "Got it.\n" + self.fence()]
+        doc = self.client.post("/api/shadow/tasks",
+                               json={"message": "top 10 fruits"},
+                               headers=HDR).json()
+        mid = doc["mission"]["id"]
+        m = self.store.load(mid)
+        m["state"] = "running"
+        self.store.save(m)
+        before = self.store.load(mid)
+
+        self.runtimes[0].replies = ["Still on it -- about two more turns."]
+        self.client.post("/api/shadow/tasks/%s/chat" % mid,
+                         json={"message": "how long will this take?"},
+                         headers=HDR)
+        after = self.store.load(mid)
+        self.assertEqual(after["objective"], before["objective"])
         self.assertEqual(after["version"], before["version"],
-                         "and no new version was cut")
-        self.assertEqual(doc["mission"]["objective"], before["objective"],
-                         "the payload shows the record as it stands")
+                         "a question is not a change of mind")
 
     def test_16_a_terminal_task_never_talks_as_though_finished_work_is_live(self):
         """PIN MOVED for Shadow v4.1 (V4-9, founder 2026-09-21: "it should

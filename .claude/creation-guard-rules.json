@@ -9,6 +9,18 @@
       "charter_title": "Joy Tadanki Charter",
       "charter_purpose": "Work carried out under Joy Tadanki.",
       "source": "~/.sutra-native/user-kit: domains/dref-01e2ca27ff01c416.json (name=Desktop, parent_ref=dref-feea2aad0128397f), charters/C-caa001c80ac5023b.json (domain_ref=dref-feea2aad0128397f)"
+    },
+    {
+      "prefix": "shadow-",
+      "match": "basename-prefix",
+      "domain": "dref-01e2ca27ff01c416",
+      "domain_name": "Desktop",
+      "charter": "C-caa001c80ac5023b",
+      "charter_title": "Joy Tadanki Charter",
+      "charter_purpose": "Work carried out under Joy Tadanki.",
+      "kind": "design-artifact",
+      "_why": "Shadow UI design artifacts the founder asked to keep at the repo root so they open by a stable path (shadow-chat-prototype.html is the conversational reference the 2026-09-21 redesign was built against; shadow-rendered.html is the render of the result). They answer to the same domain and charter as the code they describe, marketplace/plugin/sutra-ui/ -- this row says so rather than moving the files away from the path the founder uses.",
+      "source": "same domain/charter as the sutra-ui rule above"
     }
   ]
 }

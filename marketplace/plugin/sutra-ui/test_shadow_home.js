@@ -809,8 +809,12 @@ console.log("ok 6 controls wired");
   ctx.S.shadowTaskSel = "m-fs";
   const h = ctx.shadowHomeHtml();
   assert(/data-shtask="m-fs"/.test(h), "the row must render");
-  assert(!/data-shact="retry"/.test(h),
-    "a founder-stopped task offers no Retry button (v4.2)");
+  /* PASS 2 (founder, 2026-09-21): a STOPPED task offers Replay on its
+     header -- see the long note in test_shadow_v42_ui block 6 for why this
+     and the v4.2 ruling are both live. The plane's finished ROWS still
+     carry none, which is what v4.2 was actually about. */
+  assert(/data-shact="retry"/.test(h),
+    "a stopped task must offer Replay on its header");
   assert(/STOPPED/.test(h), "it must still read as stopped, not as live work");
 
   /* 7. nothing was mutated -- this is a filter, not a write */
@@ -1135,9 +1139,32 @@ console.log("ok 6 controls wired");
   ctx.S.shadowTaskSel = "m-k";
   const h = ctx.shadowHomeHtml();
   assert(/fix the EMI rounding/.test(h), "objective missing");
-  assert(/where it runs/.test(h) && /a new chat/.test(h),
-    "must say it runs in a new chat Shadow starts");
-  assert(/done when/.test(h) && /a tested PR is open/.test(h), "done-when missing");
+/* PASS 3 (founder, 2026-09-21): "remove the large WHERE IT RUNS / DONE WHEN
+   card from the main conversation flow ... the user's original objective
+   should appear naturally as the YOU message at the beginning of the
+   conversation ... think of the mission metadata as backend state, not UI
+   content."
+
+   The founder's test for what may take space: "if a piece of information is
+   not something Shadow would naturally say to the founder at that moment,
+   it should not become a large UI card." WHERE IT RUNS is a session id, and
+   DONE WHEN is said only when Shadow needs a decision -- and then it is the
+   inline DONE WHEN element, which carries its own evidence. Printing it on
+   arrival as well is the duplication the redesign removes.
+
+   shadowTaskCardHtml still exists and is still asserted directly by the
+   lanes that pin its content; it no longer draws the main surface. */
+  assert(!/shcard2k">where it runs</.test(h),
+    "WHERE IT RUNS must not draw the main surface");
+  assert(!/shcard2k">done when</.test(h),
+    "DONE WHEN must not draw the main surface");
+  /* PASS 3 (founder, 2026-09-21): "the objective is already represented by
+     the page header -- do not repeat the full objective in a huge card
+     immediately below it. The conversation should begin naturally with
+     Shadow speaking." shadowOpeningHtml is still exported and still
+     asserted on its own; the stream no longer opens with it. */
+  assert(!/class="shsaid shopening"/.test(h),
+    "the objective is restated below the header it is already in");
   assert(/data-shstart="m-k"/.test(h), "Start the task missing");
   assert(/Start the task</.test(h), "Start is not labelled as the design asks");
   assert(/or keep telling me/.test(h), "the keep-talking affordance is missing");
@@ -3260,6 +3287,8 @@ const SET = { engage: ["outcome first"],
   assert(!has(queued, "start"), "queued: Start must be gone");
   assert(has(queued, "drop"), "queued: Drop is the legal exit");
 
+  /* a plain paused task -- no founder pause_reason, so it is NOT NEEDS YOU
+     and keeps Stop (see 23b/c for the one state that stands down) */
   const paused = card({ id: "d", state: "paused" });
   assert(!has(paused, "start"), "paused: Start must be gone");
 
@@ -3285,10 +3314,19 @@ const SET = { engage: ["outcome first"],
      control that has to be where the work is. Resume stays off the card --
      a NEEDS YOU task is answered by its intervention form, and the plane
      still offers it -- so the second assertion below is untouched. */
+  /* ── STOP MOVED TO THE HEADER (founder, 2026-09-21, pass 2: "RUNNING
+     [Stop] [Open the chat]"). The ruling above -- that Stop must be on the
+     surface the founder works from, not only on the Watching plane -- is
+     unchanged and is now asserted where the button actually lives: blocks
+     23a-e drive SCREENS.shadow and check the rendered header.
+
+     WHY IT MOVED. The card is the FIRST block of the scroller, so on a task
+     with any conversation behind it Stop scrolled off the screen; the
+     header is pinned. Asserting it on the card here would now pin it in two
+     places, which is the duplicate-control bug this pass removes. */
   for (const [name, h] of [["running", running], ["paused", paused],
                            ["blocked", blocked]]){
-    assert(has(h, "stop"), name + ": Stop must be on the card the workspace "
-      + "renders -- the plane is a different screen");
+    assert(!has(h, "stop"), name + ": Stop is on the header, not the card");
   }
   assert(!has(done, "stop"),
     "done: a completed task must never be offered Stop");
@@ -3872,15 +3910,39 @@ const stopBtn = /data-shact="stop"\s+data-shmid="m-stop"|data-shact="stop"[^>]*m
   console.log("ok 37a RUNNING offers Stop");
 }
 
-/* 23b + 23c. the two states that read NEEDS YOU. Existing semantics say Stop
-   is available in both (shadowPlaneHtml has always drawn it for
-   running/paused/blocked, and TRANSITIONS allows stopped from each). */
+/* 23b + 23c. REVERSED FOR NEEDS YOU (founder, 2026-09-21): "do not show
+   Stop as though a worker is currently burning turns".
+
+   WHAT THIS USED TO PIN, and why it was reasonable: shadowPlaneHtml had
+   always drawn Stop for running/paused/blocked and TRANSITIONS allows
+   stopped from each, so the card matched the plane. What the founder
+   objected to is not the legality of the transition but the CLAIM the
+   button makes. A task parked on their signature has no turn in flight --
+   the loop is waiting on them -- so Stop there advertised a cost that was
+   not being incurred, and they read it as "this is burning turns while I
+   decide".
+
+   THE LINE IS shadowMissionNeedsFounder, NOT `state`, and that distinction
+   is what the blocked case below now pins. A task paused for a STALL, or
+   blocked for a reason the founder did not create, is exactly when ending
+   work matters most -- and the assertion above ("ending work the founder no
+   longer wants is the one control that has to be where the work is") was
+   written for that case and still holds. Only the four founder pause
+   reasons stand down.
+
+   NOTHING IS STRANDED: answering the ask releases the pause and Stop
+   returns on the same render, and the task list row carries its own stop
+   throughout. */
 {
-  const paused = screenFor({ state: "paused", pause_reason: "founder_confirm" });
-  assert(stopBtn.test(paused), "a NEEDS YOU (paused) task must offer Stop");
+  const needsYou = screenFor({ state: "paused", pause_reason: "founder_confirm" });
+  assert(!stopBtn.test(needsYou),
+    "a NEEDS YOU task must not offer Stop -- no worker is burning turns");
+  const stalled = screenFor({ state: "paused", pause_reason: "stalled" });
+  assert(stopBtn.test(stalled),
+    "a task paused for a stall must still offer Stop");
   const blocked = screenFor({ state: "blocked", block_reason: "needs_founder" });
-  assert(stopBtn.test(blocked), "a NEEDS YOU (blocked) task must offer Stop");
-  console.log("ok 37b/c paused and blocked offer Stop");
+  assert(stopBtn.test(blocked), "a blocked task must still offer Stop");
+  console.log("ok 37b/c Stop stands down at NEEDS YOU, stays everywhere else");
 }
 
 /* 23d. QUEUED keeps Drop and does NOT gain Stop: nothing is running to stop,
@@ -3894,18 +3956,32 @@ const stopBtn = /data-shact="stop"\s+data-shmid="m-stop"|data-shact="stop"[^>]*m
 
 /* 23e. DONE IS NEVER OFFERED A STOP. The backend refuses it -- founder_force_stop
    returns a terminal mission untouched -- and the UI must not ask a question
-   whose answer is "no". Retry is the existing offer for failed/stopped. */
+   whose answer is "no".
+
+   BUT IT IS OFFERED REPLAY (founder, 2026-09-21, pass 2: "DONE [Replay]
+   [Open the chat]"). The old line here read "nor Retry -- it succeeded",
+   which assumed re-running is something you only want after a failure. The
+   founder's framing is the opposite: a trip plan they liked is exactly the
+   thing they want to run again with different dates, and Replay rebuilds
+   the brief as a NEW attempt rather than touching the finished one. See
+   test_shadow_v42_ui block 6 for how this sits beside the v4.2 ruling. */
 {
   const done = screenFor({ state: "done" });
   assert(!/data-shact="stop"/.test(done),
     "a completed task must never be offered Stop");
-  assert(!/data-shact="retry"/.test(done), "nor Retry -- it succeeded");
+  assert(/data-shact="retry"/.test(done), "a done task offers Replay");
   for (const st of ["failed", "stopped"]){
     const h = screenFor({ state: st });
     assert(!/data-shact="stop"/.test(h), st + " is already ended");
-    /* v4.2 (founder 2026-09-21): no Retry button on an ended task */
-    assert(!/data-shact="retry"/.test(h), st + " draws no Retry button");
   }
+  /* PASS 2 (founder, 2026-09-21): Replay on DONE and STOPPED, never on
+     FAILED. The v4.2 rule is kept exactly where it was argued -- a failure
+     goes back through Hand back to Shadow or the task's own chat, not
+     through re-running a brief that already did not work. */
+  assert(/data-shact="retry"/.test(screenFor({ state: "stopped" })),
+    "a stopped task offers Replay");
+  assert(!/data-shact="retry"/.test(screenFor({ state: "failed" })),
+    "a failed task still draws no Replay (v4.2)");
   console.log("ok 37e terminal states are not offered Stop");
 }
 
@@ -3945,9 +4021,13 @@ const stopBtn = /data-shact="stop"\s+data-shmid="m-stop"|data-shact="stop"[^>]*m
     return ctx.shadowTaskCardHtml(
       Object.assign({}, STOPPABLE, { state: "running" }));
   })();
-  assert(/data-shact="stop"/.test(card), "the card draws it…");
+  /* PASS 2: the card no longer draws it -- the pinned header does. The
+     second assertion is the one that mattered and is unchanged: asserting
+     the helper alone is what let the original bug ship, so the SCREEN is
+     what gets checked. */
+  assert(!/data-shact="stop"/.test(card), "the card hands Stop to the header");
   assert(/data-shact="stop"/.test(h),
-    "…and the SCREEN that renders the card must show it -- asserting the " +
+    "the SCREEN the founder works from must show Stop -- asserting the " +
     "helper alone is what let this ship");
   console.log("ok 37g Stop is reachable from the workspace screen itself");
 }

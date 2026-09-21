@@ -131,14 +131,44 @@ function pane(ctx, m, extra){
   const ctx = fresh();
   ctx.S.sessions = [{ id: "sess-1", title: "paisa" }];
   const h = pane(ctx, M());
-  assert(/shcard2k">where it runs</.test(h), "WHERE IT RUNS row missing");
-  assert(/shcard2k">done when</.test(h), "DONE WHEN row missing");
+/* PASS 3 (founder, 2026-09-21): "remove the large WHERE IT RUNS / DONE WHEN
+   card from the main conversation flow ... the user's original objective
+   should appear naturally as the YOU message at the beginning of the
+   conversation ... think of the mission metadata as backend state, not UI
+   content."
+
+   The founder's test for what may take space: "if a piece of information is
+   not something Shadow would naturally say to the founder at that moment,
+   it should not become a large UI card." WHERE IT RUNS is a session id, and
+   DONE WHEN is said only when Shadow needs a decision -- and then it is the
+   inline DONE WHEN element, which carries its own evidence. Printing it on
+   arrival as well is the duplication the redesign removes.
+
+   shadowTaskCardHtml still exists and is still asserted directly by the
+   lanes that pin its content; it no longer draws the main surface. */
+  assert(!/shcard2k">where it runs</.test(h),
+    "WHERE IT RUNS is metadata and must not open the conversation");
+  assert(!/shcard2k">done when</.test(h),
+    "DONE WHEN belongs to the decision, not to the arrival screen");
+  /* PASS 3 (founder, 2026-09-21): "the objective is already represented by
+     the page header -- do not repeat the full objective in a huge card
+     immediately below it. The conversation should begin naturally with
+     Shadow speaking." shadowOpeningHtml is still exported and still
+     asserted on its own; the stream no longer opens with it. */
+  assert(!/class="shsaid shopening"/.test(h),
+    "the objective must not be restated under the header");
   /* the turn count left the card for the pinned header on 2026-09-20 (shadowHeadTurnHtml) -- the card scrolls with the conversation now, and a LIVE number may not scroll away */
   assert(/class="shwturn"[^>]*>10\/12</.test(h),
     "the header must read 10/12, from the record");
   assert(!/shcard2k">turn</.test(h), "…and the brief must not repeat it");
-  assert(/its own chat/.test(h), "where it runs still resolves the target");
-  assert(/a tested PR is open/.test(h), "done_when still comes from the record");
+  /* PASS 3 (founder, 2026-09-21): metadata left the main surface. WHERE IT
+     RUNS is a session id and DONE WHEN is said only when Shadow needs a
+     decision -- both are on the record and neither opens the conversation
+     any more. See the long note in test_shadow_rhs block 3. */
+  assert(!/its own chat/.test(h),
+    "the target session must not be drawn on the conversation surface");
+  assert(!/a tested PR is open/.test(h),
+    "the criteria belong to the decision, not to the arrival screen");
   /* and nothing else: no STOPPED ON, no LAST UPDATED, no floors */
   const blocked = pane(fresh(), M({ state: "blocked",
     block_reason: "needs_founder" }));
@@ -166,10 +196,16 @@ function pane(ctx, m, extra){
 {
   const h = pane(fresh(), M());
   assert(!/shcard2tag/.test(h), "the kind badge must be off the task card");
-  /* the head is now the objective and the state pill, in that order */
-  const head = (h.match(/<div class="shcard2head">[\s\S]*?<\/div>/) || [])[0] || "";
+  /* PASS 3: the card no longer draws the main surface, so the head is
+     asserted where it still exists -- on shadowTaskCardHtml itself, which
+     is unchanged and still exported. What the SURFACE must show is the
+     objective as the founder's own opening line. */
+  const card = fresh().shadowTaskCardHtml(M());
+  const head = (card.match(/<div class="shcard2head">[\s\S]*?<\/div>/) || [])[0] || "";
   assert(/class="shcard2obj">EMI auto-fix</.test(head),
     "the objective still opens the card head");
+  assert(!/class="shsaid shopening"/.test(h),
+    "the objective is not restated in the stream -- the header carries it");
   for (const k of ["research", "watch", "feature"]){
     const other = pane(fresh(), M({ template: k }));
     assert(!/shcard2tag/.test(other),
@@ -691,14 +727,23 @@ const askMission = (over, checks, fields) => M(Object.assign({
   assert.strictEqual(h.split(C_README).length - 1, 1,
     "the criterion must appear exactly once, in the sign-off row");
   assert(/Yes signs off/.test(h), "and it is the sign-off that carries it");
-  assert(/shcard2k">where it runs</.test(h),
-    "the rest of the brief is untouched");
+  /* PASS 3: there is no "rest of the brief" on the surface any more -- the
+     metadata card left the conversation flow. What this block is really
+     pinning is above: the criterion appears exactly ONCE, in the row that
+     signs it. */
+  assert(!/shcard2k">where it runs</.test(h),
+    "the metadata card must not draw the conversation surface");
   assert(/class="shwturn"/.test(h),
     "…and the count is on the header, where it moved on 2026-09-20");
 
   /* TWO unmet, the ask signs ONE -> the row stays, because it still says
      something the ask does not */
-  const two = pane(fresh(), askMission(null, [
+  /* PASS 3: this is a statement about shadowTaskCardHtml's own logic --
+     when the ask does not cover every unmet check, the card keeps its DONE
+     WHEN row -- so it is asserted against that function. The card no longer
+     draws the conversation surface; on the surface the uncovered check
+     reaches the founder through the inline decision and its fold. */
+  const two = fresh().shadowTaskCardHtml(askMission(null, [
     { tier: "founder_confirm", check: C_README },
     { tier: "founder_confirm", check: "A CHANGELOG entry exists." }]));
   assert(/shcard2k">done when</.test(two),
@@ -706,14 +751,14 @@ const askMission = (over, checks, fields) => M(Object.assign({
   assert(/A CHANGELOG entry exists/.test(two), "and must be readable in it");
 
   /* an unmet MACHINE-tier check is never the founder's to sign */
-  const machine = pane(fresh(), askMission(null, [
+  const machine = fresh().shadowTaskCardHtml(askMission(null, [
     { tier: "founder_confirm", check: C_README },
     { tier: "contains_artifact", check: "The PR is open." }]));
   assert(/shcard2k">done when</.test(machine),
     "a machine-tier check the verifier owns must keep the row");
 
   /* an ordinary ask that confirms nothing changes nothing */
-  const plain = pane(fresh(), askMission({ intervention: {
+  const plain = fresh().shadowTaskCardHtml(askMission({ intervention: {
     id: "iv-p", question: "Which region?", evidence: [], fields: [
       { key: "region", type: "choice", label: "Region", options: [
         { value: "eu", label: "EU" }, { value: "us", label: "US" }] }] } }));
@@ -721,12 +766,12 @@ const askMission = (over, checks, fields) => M(Object.assign({
     "an ask unrelated to completion must not hide the checklist");
 
   /* no intervention at all -> untouched */
-  assert(/shcard2k">done when</.test(pane(fresh(),
+  assert(/shcard2k">done when</.test(fresh().shadowTaskCardHtml(
     askMission({ intervention: null }))),
     "a card with no ask keeps its done-when row");
 
   /* a check already MET is not outstanding, so it cannot be 'covered' */
-  assert(/shcard2k">done when</.test(pane(fresh(), askMission(null,
+  assert(/shcard2k">done when</.test(fresh().shadowTaskCardHtml(askMission(null,
     [{ tier: "founder_confirm", check: C_README, met: true }]))),
     "with nothing unmet the row behaves exactly as it always did");
   console.log("ok 8i DONE WHEN hides only when the ask covers every unmet check");
@@ -1504,8 +1549,11 @@ function stream(msgs, says, turns){
   assert(!/data-shact="retry"/.test(failed), "no Retry button on failed");
   assert(/data-shact="reopen" data-shmid="m-1"/.test(failed.replace(/\s+/g, " ")),
     "Hand back to Shadow is the way back");
+  /* PASS 2 (founder, 2026-09-21): Replay is on the header of a stopped
+     task. FAILED above keeps the v4.2 rule -- Hand back to Shadow is the
+     way back from a failure and is asserted on the line above. */
   const stopped = pane(fresh(), M({ state: "stopped" }));
-  assert(!/data-shact="retry"/.test(stopped), "no Retry button on stopped");
+  assert(/data-shact="retry"/.test(stopped), "Replay is offered on stopped");
   const ready = pane(fresh(), M({ state: "brief_confirm",
     target_session: null, start_requested_at: null }));
   assert(/data-shstart="m-1"/.test(ready), "Start was lost");

@@ -189,9 +189,31 @@ class TestApproving(Base):
         self.assertIsNone(self.store.load(held["id"]).get("approved_say"))
 
     def test_13_a_stale_version_is_refused(self):
+        """REFUSED EARLIER AS OF 2026-09-21, and that is the change. An
+        amend is now a REVISION: it drops the held say and its approval
+        outright, because both were bound to an objective the founder has
+        replaced. So this no longer reaches the version comparison inside
+        approve_held_say -- there is nothing left to compare.
+
+        The guarantee is unchanged and stronger: a say composed for the old
+        objective can never be released against the new one."""
         held = self.held()
         ap = held["approval"]
         self.store.amend(held["id"], objective="Ship the fix, carefully")
+        after = self.store.load(held["id"])
+        self.assertNotIn("approval", after)
+        self.assertNotIn("pending_say", after)
+        with self.assertRaises(ValueError) as cm:
+            mission_engine.approve_held_say(self.store, held["id"], ap["id"])
+        self.assertIn("nothing is waiting", str(cm.exception))
+
+    def test_13b_the_version_comparison_itself_still_guards(self):
+        """...and the original mechanism is still live for the case it was
+        written for: the record moved without the approval being cleared."""
+        held = self.held()
+        ap = held["approval"]
+        held["version"] = int(held["version"]) + 1
+        self.store.save(held)
         with self.assertRaises(ValueError) as cm:
             mission_engine.approve_held_say(self.store, held["id"], ap["id"])
         self.assertIn("stale", str(cm.exception))

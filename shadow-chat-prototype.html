@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Shadow — conversation prototype</title>
+<style>
+/* ---------------------------------------------------------------- tokens --
+   Taken from marketplace/plugin/sutra-ui/static/panel.css, so this prototype
+   sits in the product's real palette rather than an approximation of it.   */
+:root{
+  --bg:#fafaf9; --surface:#ffffff; --line:#e2e0dd; --line-soft:#eeecea;
+  --ink:#1c1917; --muted:#78716c; --faint:#a8a29e;
+  --acc:#8A5D2E; --acc-bg:#f6efe7; --on-acc:#ffffff;
+  --ok:#3f7d54; --ok-bg:#eef4ef;
+  --sepia:#faf6ef; --bubble:#f3f2f0;
+  --shadow:0 1px 2px rgba(28,25,23,.05),0 18px 44px -20px rgba(28,25,23,.16);
+
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --col:52rem;                    /* ~832px: the centred conversation column */
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0C0B09; --surface:#161412; --line:#2A2622; --line-soft:#221F1C;
+    --ink:#F5F0E8; --muted:#8C857D; --faint:#6E6860;
+    --acc:#C4956A; --acc-bg:rgba(196,149,106,.12); --on-acc:#0C0B09;
+    --ok:#5A9E6F; --ok-bg:rgba(90,158,111,.13);
+    --sepia:rgba(196,149,106,.05); --bubble:#1C1A17;
+    --shadow:0 1px 2px rgba(0,0,0,.16),0 18px 44px -18px rgba(0,0,0,.42);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0C0B09; --surface:#161412; --line:#2A2622; --line-soft:#221F1C;
+  --ink:#F5F0E8; --muted:#8C857D; --faint:#6E6860;
+  --acc:#C4956A; --acc-bg:rgba(196,149,106,.12); --on-acc:#0C0B09;
+  --ok:#5A9E6F; --ok-bg:rgba(90,158,111,.13);
+  --sepia:rgba(196,149,106,.05); --bubble:#1C1A17;
+  --shadow:0 1px 2px rgba(0,0,0,.16),0 18px 44px -18px rgba(0,0,0,.42);
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:15px/1.62 var(--sans); -webkit-font-smoothing:antialiased;
+  display:flex; flex-direction:column;
+}
+button{font:inherit; color:inherit; cursor:pointer}
+:focus-visible{outline:2px solid var(--acc); outline-offset:2px; border-radius:3px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ------------------------------------------------------------- header ---
+   Three things and nothing else: where you came from, what the mission is,
+   whether it is running. No controls -- the conversation is the interface. */
+.bar{
+  position:sticky; top:env(safe-area-inset-top,0px); z-index:5;
+  background:color-mix(in srgb,var(--bg) 86%,transparent);
+  backdrop-filter:blur(14px); border-bottom:1px solid var(--line-soft);
+}
+.bar-in{max-width:var(--col); margin:0 auto; padding:13px 24px;
+  display:flex; align-items:center; gap:16px}
+.back{
+  border:0; background:transparent; color:var(--muted); padding:4px 8px 4px 0;
+  font-size:13.5px; display:flex; align-items:center; gap:7px; flex:none;
+}
+.back:hover{color:var(--ink)}
+.back span{font-size:15px; line-height:1}
+.title{flex:1; min-width:0}
+.title b{
+  display:block; font:500 14.5px/1.35 var(--sans); letter-spacing:-.01em;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.run{
+  flex:none; font:500 10.5px/1 var(--sans); letter-spacing:.12em;
+  text-transform:uppercase; color:var(--acc);
+  display:flex; align-items:center; gap:7px;
+}
+.run i{width:5px; height:5px; border-radius:50%; background:currentColor;
+  animation:pulse 2s ease-in-out infinite}
+.run[data-s="needs"]{color:var(--acc)}
+.run[data-s="done"]{color:var(--ok)}
+.run[data-s="done"] i{animation:none}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.replay{
+  border:1px solid var(--line); background:transparent; color:var(--muted);
+  font-size:12px; padding:5px 12px; border-radius:999px; flex:none;
+}
+.replay:hover{color:var(--ink); border-color:var(--faint)}
+
+/* ---------------------------------------------------------- the stream ---
+   ONE vertical column. Every participant is a row in it. Rhythm and the
+   speaker label carry the structure that cards used to carry.            */
+.scroll{flex:1; overflow-y:auto; overscroll-behavior:contain;
+  display:flex; flex-direction:column}
+/* margin-top:auto bottom-anchors a short conversation, the way a chat does --
+   without it the stream floats at the top over a field of dead space. */
+.stream{
+  max-width:var(--col); width:100%; margin:auto auto 0;
+  padding:36px 24px 28px; display:flex; flex-direction:column; gap:28px;
+}
+.msg{display:flex; flex-direction:column; gap:8px}
+.who{
+  font:500 10.5px/1 var(--sans); letter-spacing:.13em; text-transform:uppercase;
+  color:var(--faint);
+}
+.who em{font-style:normal; color:var(--acc)}
+.msg p{margin:0}
+.msg p + p{margin-top:.72em}
+
+/* USER -- the only speaker with a fill, because it is the only one whose
+   message is an input rather than a report. */
+.user{align-items:flex-end}
+.user .who{align-self:flex-end}
+.user .body{
+  background:var(--bubble); border-radius:15px 15px 5px 15px;
+  padding:11px 16px; max-width:34rem;
+}
+
+/* SHADOW -- the voice the founder is actually talking to, so it gets the
+   serif and the largest measure. */
+.shadow .body{font:17px/1.6 var(--serif); letter-spacing:.002em}
+
+/* WORKER AGENT -- present, labelled, and deliberately receding. A hairline
+   rule and smaller muted type, never a card. Settled turns fade further. */
+.worker .body{
+  font-size:13.5px; line-height:1.6; color:var(--muted);
+  padding-left:15px; border-left:2px solid var(--line);
+}
+.worker.settled .body{color:var(--faint); border-left-color:var(--line-soft)}
+.worker .who{color:var(--faint)}
+
+/* SHADOW · DONE WHEN -- the semantic distinction survives, the dashboard
+   does not. A sepia wash and one accent rule; no border box, no shadow. */
+.dw .body{
+  background:var(--sepia); border-left:2px solid var(--acc);
+  padding:14px 18px; border-radius:0 10px 10px 0;
+  font:15px/1.55 var(--sans);
+}
+.dw .who em{color:var(--acc)}
+.dw .confirm{
+  margin-top:12px; border:1px solid var(--line); background:var(--surface);
+  color:var(--ink); font-size:13px; padding:6px 16px; border-radius:7px;
+  transition:border-color .14s ease,background .14s ease,color .14s ease;
+}
+.dw .confirm:hover{border-color:var(--acc); background:var(--acc-bg); color:var(--acc)}
+.dw .note{margin-top:7px; font-size:12.5px; color:var(--muted)}
+.dw .note b{font-weight:500; color:var(--ink)}
+
+/* Confirmed IN PLACE. The founder never scrolls past a spent control. */
+.dw.done .body{
+  background:transparent; border-left-color:var(--ok);
+  padding-block:6px; color:var(--muted); font-size:14px;
+}
+.dw.done .confirm,.dw.done .note{display:none}
+.dw.done .who em{color:var(--ok)}
+.dw .mark{color:var(--ok); margin-right:8px; font-size:13px}
+
+/* verification -- a Shadow message with a short list and one disclosure */
+.checks{list-style:none; margin:.75em 0 0; padding:0;
+  display:flex; flex-wrap:wrap; gap:5px 26px; font:13.5px/1.55 var(--sans)}
+.checks li{display:flex; align-items:baseline; gap:8px; color:var(--muted)}
+.tick{color:var(--ok); font-size:12px; flex:none}
+details.more{margin-top:.95em; font-family:var(--sans)}
+details.more summary{
+  font-size:13px; color:var(--muted); cursor:pointer; list-style:none;
+  display:inline-flex; align-items:center; gap:8px; padding:2px 0;
+}
+details.more summary::-webkit-details-marker{display:none}
+details.more summary::before{
+  content:"\25B8"; color:var(--faint); font-size:11px;
+  transition:transform .16s ease; display:inline-block;
+}
+details.more[open] summary::before{transform:rotate(90deg)}
+details.more summary:hover{color:var(--ink)}
+.more-in{
+  margin-top:11px; padding-left:15px; border-left:1px solid var(--line-soft);
+  display:flex; flex-direction:column; gap:8px; font-size:13px; color:var(--muted);
+}
+.more-in div{display:flex; gap:9px; align-items:baseline}
+
+/* artifact -- a compact attachment, never a rendered document */
+.file{
+  margin-top:.95em; border:1px solid var(--line); border-radius:11px;
+  background:var(--surface); font-family:var(--sans); overflow:hidden;
+}
+.file-h{padding:14px 16px; display:flex; align-items:center; gap:14px}
+.glyph{
+  flex:none; width:34px; height:41px; border-radius:4px;
+  background:var(--acc-bg); border:1px solid var(--line); position:relative;
+}
+.glyph::before{content:""; position:absolute; top:-1px; right:-1px;
+  border-width:0 10px 10px 0; border-style:solid;
+  border-color:transparent var(--bg) transparent transparent}
+.glyph::after{content:"MD"; position:absolute; bottom:6px; left:0; right:0;
+  text-align:center; font:600 8.5px/1 var(--sans); letter-spacing:.06em; color:var(--acc)}
+.file-t{flex:1; min-width:0}
+.file-n{font-family:var(--mono); font-size:13px; letter-spacing:-.01em;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.file-m{font-size:12px; color:var(--muted); margin-top:3px}
+.open{
+  flex:none; border:1px solid var(--line); background:transparent;
+  font-size:12.5px; padding:6px 15px; border-radius:7px; color:var(--muted);
+}
+.open:hover{color:var(--ink); border-color:var(--faint)}
+.file-b{
+  border-top:1px solid var(--line-soft); background:var(--bg);
+  max-height:18rem; overflow:auto; padding:16px 18px;
+  font-family:var(--mono); font-size:12px; line-height:1.75; color:var(--muted);
+  white-space:pre-wrap;
+}
+.file-b b{color:var(--ink); font-weight:600}
+
+/* ------------------------------------------------------------ composer ---
+   On the page ground, one hairline above -- the bottom of the conversation,
+   not a separate toolbar.                                                 */
+.composer{position:sticky; bottom:0;
+  background:linear-gradient(to bottom,transparent,var(--bg) 24%);
+  padding:16px 24px calc(18px + env(safe-area-inset-bottom,0px))}
+.composer-in{
+  max-width:var(--col); margin:0 auto; display:flex; align-items:flex-end; gap:10px;
+  background:var(--surface); border:1px solid var(--line);
+  border-radius:15px; padding:9px 9px 9px 17px; box-shadow:var(--shadow);
+}
+.composer textarea{
+  flex:1; border:0; background:transparent; color:var(--ink); resize:none;
+  font:15px/1.5 var(--sans); padding:6px 0; max-height:9rem; min-height:27px;
+}
+.composer textarea:focus{outline:none}
+.composer textarea::placeholder{color:var(--faint)}
+.send{
+  flex:none; width:33px; height:33px; border-radius:9px; border:0;
+  background:var(--ink); color:var(--bg); font-size:15px; display:grid;
+  place-items:center;
+}
+.send:disabled{background:var(--line); color:var(--faint); cursor:default}
+
+.typing{display:flex; gap:5px; padding:6px 0}
+.typing i{width:5px; height:5px; border-radius:50%; background:var(--faint);
+  animation:bob 1.25s ease-in-out infinite}
+.typing i:nth-child(2){animation-delay:.16s}
+.typing i:nth-child(3){animation-delay:.32s}
+@keyframes bob{0%,60%,100%{opacity:.25;transform:translateY(0)}
+               30%{opacity:.9;transform:translateY(-3px)}}
+.enter{animation:rise .34s cubic-bezier(.2,.7,.3,1) both}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+@media (max-width:640px){
+  .stream{padding:24px 18px 20px; gap:24px}
+  .bar-in{padding:11px 18px; gap:12px}
+  .composer{padding:12px 18px calc(14px + env(safe-area-inset-bottom,0px))}
+  .shadow .body{font-size:16px}
+  .user .body{max-width:100%}
+  .back b{display:none}
+  .replay{display:none}
+}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar-in">
+    <button class="back" type="button"><span>&#8592;</span><b>Shadow</b></button>
+    <div class="title"><b>Plan a personal trip for me to Africa for 10 days</b></div>
+    <div class="run" id="run" data-s="needs"><i></i><span id="runText">Needs you</span></div>
+    <button class="replay" id="replay" type="button">Replay</button>
+  </div>
+</header>
+
+<div class="scroll" id="scroll">
+  <main class="stream" id="stream" aria-live="polite" aria-label="Conversation with Shadow"></main>
+</div>
+
+<form class="composer" id="composer">
+  <div class="composer-in">
+    <textarea id="say" rows="1" placeholder="Talk to Shadow…" aria-label="Talk to Shadow"></textarea>
+    <button class="send" id="send" type="submit" aria-label="Send" disabled>&#8593;</button>
+  </div>
+</form>
+
+<script>
+(function(){
+  "use strict";
+
+  var stream = document.getElementById("stream");
+  var scroll = document.getElementById("scroll");
+  var say    = document.getElementById("say");
+  var send   = document.getElementById("send");
+  var runEl  = document.getElementById("run");
+  var runTx  = document.getElementById("runText");
+
+  /* The DONE WHEN contract. Still the real concept -- two checks Shadow
+     cannot settle alone -- presented as two consecutive Shadow messages
+     rather than a panel. */
+  var CHECKS = [
+    { id:"feasible",
+      text:"The itinerary is physically feasible for 10 days — travel legs are "
+         + "realistic, transit time is accounted for, and the route isn’t overloaded.",
+      note:"Two internal flights, <b>3 h 40 m</b> in the air across the whole trip. "
+         + "No day carries both a transfer and a game drive.",
+      done:"Itinerary feasibility confirmed." },
+    { id:"shape",
+      text:"The destinations, pace and budget match the trip you want to take.",
+      note:"Cape Town <b>days 1–3</b> · Sabi Sand <b>days 4–7</b> · "
+         + "Victoria Falls <b>days 8–10</b>. Estimated <b id=\"budget\">$9,300</b> per person.",
+      done:"Trip direction confirmed." }
+  ];
+
+  var ARTIFACT =
+    "# Southern Africa — 10 days\n"
+   +"21–30 May 2027 · Cape Town · Sabi Sand · Victoria Falls\n\n"
+   +"## Days 1–3 — Cape Town\n"
+   +"Arrive CPT 08:15. Afternoon deliberately free — nothing booked on a\n"
+   +"long-haul arrival day.\n"
+   +"Day 2  Table Mountain early, Bo-Kaap and the waterfront after.\n"
+   +"Day 3  Cape Peninsula — Boulders Beach, Cape Point, Chapman’s Peak.\n\n"
+   +"## Days 4–7 — Sabi Sand\n"
+   +"CPT → Skukuza, 2 h 20 m. Late May is dry season: game viewing is at its\n"
+   +"best and malaria risk at its lowest of the year.\n"
+   +"Two drives daily, dawn and late afternoon. Day 6 left unscheduled.\n\n"
+   +"## Days 8–10 — Victoria Falls\n"
+   +"Skukuza → Livingstone, 1 h 20 m. The Zambezi runs high after the rains,\n"
+   +"so the falls are at full volume — expect heavy spray on the east paths.\n"
+   +"Day 10 departs 16:40, leaving the morning free.\n\n"
+   +"## Estimate, per person\n"
+   +"Lodging      $5,400\nFlights      $2,650\nDrives, fees $  850\nGround       $  400\n"
+   +"—————————————\nTotal        $9,300\n";
+
+  /* ---------------------------------------------------------- plumbing -- */
+
+  function atBottom(){
+    return scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 140;
+  }
+  function toBottom(force){
+    if (force || atBottom())
+      requestAnimationFrame(function(){ scroll.scrollTop = scroll.scrollHeight; });
+  }
+  function row(cls, label, animate){
+    var m = document.createElement("div");
+    m.className = "msg " + cls + (animate ? " enter" : "");
+    if (label){
+      var w = document.createElement("div");
+      w.className = "who"; w.innerHTML = label; m.appendChild(w);
+    }
+    var b = document.createElement("div");
+    b.className = "body"; m.appendChild(b);
+    stream.appendChild(m);
+    return b;
+  }
+  function setRun(s, text){ runEl.setAttribute("data-s", s); runTx.textContent = text; }
+
+  /* ------------------------------------------------------ message types -- */
+
+  function mUser(text, animate){ row("user", "You", animate).textContent = text; }
+
+  function mShadow(html, animate){
+    var b = row("shadow", "Shadow", animate); b.innerHTML = html; return b;
+  }
+
+  function mWorker(n, text, animate){
+    var b = row("worker", "Worker agent <em>&middot;</em> turn " + n, animate);
+    b.textContent = text;
+    return b.parentNode;
+  }
+
+  function mDoneWhen(spec, animate){
+    var b = row("dw", "Shadow <em>&middot; done when</em>", animate);
+    b.parentNode.setAttribute("data-id", spec.id);
+    b.innerHTML = "<p>" + spec.text + "</p>"
+      + '<p class="note">' + spec.note + "</p>"
+      + '<button class="confirm" type="button" data-id="' + spec.id + '">Confirm</button>';
+    return b.parentNode;
+  }
+
+  function mVerification(animate){
+    return mShadow(
+      "<p>I also checked the finished itinerary:</p>"
+     +'<ul class="checks">'
+     +  '<li><span class="tick">✓</span>10 days</li>'
+     +  '<li><span class="tick">✓</span>Day 10 is present</li>'
+     +  '<li><span class="tick">✓</span>Travel legs are accounted for</li>'
+     +  '<li><span class="tick">✓</span>No excessive backtracking</li>'
+     +"</ul>"
+     +'<details class="more"><summary>6 additional checks</summary><div class="more-in">'
+     +  '<div><span class="tick">✓</span><span>Trip length is 10 days — counted 10 dated entries, 21–30 May.</span></div>'
+     +  '<div><span class="tick">✓</span><span>Day 10 carries a departure time rather than an open end.</span></div>'
+     +  '<div><span class="tick">✓</span><span>Every transfer names its leg and duration; none is implied.</span></div>'
+     +  '<div><span class="tick">✓</span><span>Route runs one direction — no stop is visited twice.</span></div>'
+     +  '<div><span class="tick">✓</span><span>Seasonality: late May is dry season in Sabi Sand.</span></div>'
+     +  '<div><span class="tick">✓</span><span>Line items sum to the stated total; nothing is unpriced.</span></div>'
+     +"</div></details>", animate);
+  }
+
+  function mArtifact(animate){
+    var b = mShadow("<p>Done. The itinerary is ready.</p>", animate);
+    b.insertAdjacentHTML("beforeend",
+      '<div class="file"><div class="file-h">'
+     +  '<div class="glyph" aria-hidden="true"></div>'
+     +  '<div class="file-t"><div class="file-n">africa-trip-plan.md</div>'
+     +    '<div class="file-m">170 lines · itinerary · Cape Town → Sabi Sand → Victoria Falls</div></div>'
+     +  '<button class="open" type="button">Open</button>'
+     +"</div></div>");
+    return b;
+  }
+
+  /* ------------------------------------------------------- interactions -- */
+
+  function pending(){
+    return [].slice.call(stream.querySelectorAll(".dw:not(.done)"));
+  }
+
+  function confirmOne(id){
+    var m = stream.querySelector('.dw[data-id="' + id + '"]:not(.done)');
+    if (!m) return false;
+    var spec = CHECKS.filter(function(c){ return c.id === id; })[0];
+    m.classList.add("done");
+    m.querySelector(".body").querySelector("p").innerHTML =
+      '<span class="mark">✓</span>' + spec.done;
+    return true;
+  }
+
+  var finished = false;
+
+  function afterConfirm(){
+    if (pending().length || finished) { toBottom(); return; }
+    finished = true;
+    setRun("running", "Running");
+    toBottom(true);
+    setTimeout(function(){
+      mWorker(3, "Finalizing the itinerary with the confirmed constraints.", true);
+      toBottom(true);
+    }, 700);
+    setTimeout(function(){
+      stream.querySelectorAll(".worker").forEach(function(w){ w.classList.add("settled"); });
+      mArtifact(true); toBottom(true);
+    }, 2000);
+    setTimeout(function(){
+      mVerification(true);
+      setRun("done", "Done");
+      toBottom(true);
+    }, 2900);
+  }
+
+  function toggleFile(btn){
+    var card = btn.closest(".file"), body = card.querySelector(".file-b");
+    if (body){ body.remove(); btn.textContent = "Open"; return; }
+    var pre = document.createElement("div");
+    pre.className = "file-b";
+    pre.innerHTML = ARTIFACT.replace(/&/g,"&amp;").replace(/</g,"&lt;")
+                            .replace(/^(#{1,2} .+)$/gm, "<b>$1</b>");
+    card.appendChild(pre);
+    btn.textContent = "Close";
+    toBottom();
+  }
+
+  stream.addEventListener("click", function(e){
+    var c = e.target.closest(".confirm");
+    if (c){
+      if (confirmOne(c.getAttribute("data-id"))) {
+        setTimeout(afterConfirm, 260);
+      }
+      return;
+    }
+    var o = e.target.closest(".open");
+    if (o) toggleFile(o);
+  });
+
+  /* ------------------------------------------------------------ replay -- */
+
+  var timers = [];
+  function later(fn, ms){ timers.push(setTimeout(fn, ms)); }
+
+  function typing(){
+    var b = row("shadow", "Shadow", true);
+    b.innerHTML = '<div class="typing"><i></i><i></i><i></i></div>';
+    toBottom(true);
+    return b.parentNode;
+  }
+
+  /* `animate === false` paints the whole conversation at once. That is the
+     state the page opens in: the first frame already shows the two open
+     DONE WHEN messages, not an empty shell waiting on a timer. */
+  function build(animate){
+    timers.forEach(clearTimeout); timers = [];
+    stream.innerHTML = ""; finished = false;
+
+    var script = [
+      function(a){ mUser("Plan a personal trip for me to Africa for 10 days.", a); },
+      function(a){ mShadow("<p>Got it. I’ll work through the itinerary and come "
+        + "back when I need you.</p>", a); },
+      function(a){ mWorker(1, "Found a workable route: Cape Town → Sabi Sand → "
+        + "Victoria Falls. I’m checking the pacing, travel legs and lodging now.", a); },
+      function(a){ mShadow("<p>Three directions were viable. I kept this one because it "
+        + "runs in a single direction — the other two doubled back through "
+        + "Johannesburg and cost a day each.</p>", a); },
+      function(a){ mWorker(2, "The itinerary is built — 10 days across three stops, "
+        + "with travel time and lodging accounted for. Running the final checks.", a); },
+      function(a){ mShadow("<p>I’ve finished the work I can do myself. There are two "
+        + "things where I need your decision.</p>", a); },
+      function(a){ mDoneWhen(CHECKS[0], a); },
+      function(a){ mDoneWhen(CHECKS[1], a); }
+    ];
+
+    if (!animate){
+      script.forEach(function(step){ step(false); });
+      stream.querySelectorAll(".worker").forEach(function(w){ w.classList.add("settled"); });
+      setRun("needs", "Needs you");
+      toBottom(true);
+      return;
+    }
+
+    setRun("running", "Running");
+    script[0](true); toBottom(true);
+    var t = typing();
+    later(function(){ t.remove(); script[1](true); toBottom(true); }, 1100);
+    later(function(){ script[2](true); toBottom(true); }, 2400);
+    later(function(){ script[3](true); toBottom(true); }, 4000);
+    later(function(){
+      stream.querySelector(".worker").classList.add("settled");
+      script[4](true); toBottom(true);
+    }, 5500);
+    later(function(){
+      stream.querySelectorAll(".worker").forEach(function(w){ w.classList.add("settled"); });
+      script[5](true); toBottom(true);
+    }, 7000);
+    later(function(){ script[6](true); toBottom(true); }, 7900);
+    later(function(){ script[7](true); setRun("needs","Needs you"); toBottom(true); }, 8500);
+  }
+
+  /* --------------------------------------------------------- the input -- */
+
+  var YES    = /^(y|yes|yep|yeah|ok|okay|sure|confirm(ed)?|do it|go ahead|approve[d]?|looks good|that works|ship it)\b/i;
+  var BUDGET = /(budget|under|max|cap)\b[^$]*\$\s?([\d,.]+)\s*(k\b)?|\$\s?([\d,.]+)\s*(k\b)?/i;
+
+  function onSubmit(e){
+    e.preventDefault();
+    var text = say.value.trim();
+    if (!text) return;
+    mUser(text, true);
+    say.value = ""; say.style.height = "auto"; send.disabled = true;
+    toBottom(true);
+
+    var open = pending();
+
+    /* A requirement CHANGE, demonstrating that the founder steers Shadow in
+       words rather than through a form. */
+    var m = text.match(BUDGET);
+    if (m && /budget|under|max|cap|\$/i.test(text) && !YES.test(text)){
+      var raw = (m[2] || m[4] || "").replace(/,/g,"");
+      var k   = (m[3] || m[5]) ? 1000 : 1;
+      var amt = Math.round(parseFloat(raw) * k);
+      var nice = "$" + amt.toLocaleString("en-US");
+      later(function(){
+        mShadow("<p>Updated — the ceiling is <b>" + nice + "</b> per person, down from "
+          + "$9,300. That lands on the second check, so I’ve reopened it and asked the "
+          + "worker to trim the Cape Town lodging tier.</p>", true);
+        var b = document.getElementById("budget");
+        if (b) b.textContent = nice;
+        var shape = stream.querySelector('.dw[data-id="shape"]');
+        if (shape && shape.classList.contains("done")){
+          shape.classList.remove("done");
+          shape.querySelector(".body p").innerHTML = CHECKS[1].text;
+          finished = false;
+        }
+        toBottom(true);
+      }, 800);
+      return;
+    }
+
+    /* "yes" confirms every pending DONE WHEN -- the same thing the buttons
+       do, which is the point: one decision, two ways to answer it. */
+    if (open.length && YES.test(text)){
+      later(function(){
+        mShadow("<p>Got it. I’ll apply that confirmation.</p>", true);
+        toBottom(true);
+      }, 600);
+      later(function(){
+        open.forEach(function(r){ confirmOne(r.getAttribute("data-id")); });
+        afterConfirm();
+      }, 1300);
+      return;
+    }
+
+    later(function(){
+      mShadow(open.length
+        ? "<p>Noted — I’ll fold that in. The two confirmations above are still "
+          + "open whenever you’re ready.</p>"
+        : "<p>Noted. I’ll pick that up from here.</p>", true);
+      toBottom(true);
+    }, 750);
+  }
+
+  document.getElementById("composer").addEventListener("submit", onSubmit);
+  say.addEventListener("input", function(){
+    send.disabled = !say.value.trim();
+    say.style.height = "auto";
+    say.style.height = Math.min(say.scrollHeight, 144) + "px";
+  });
+  say.addEventListener("keydown", function(e){
+    if (e.key === "Enter" && !e.shiftKey) onSubmit(e);
+  });
+  document.getElementById("replay").addEventListener("click", function(){ build(true); });
+
+  build(false);
+})();
+</script>
+</body>
+</html>

@@ -310,8 +310,14 @@ function nyCtx(){
   ctx.SCREENS.shadow();                    // installs the driver
   await ctx.loadShadowHome(true);          // the founder's first sight of it
   const before = ctx.shadowHomeHtml();
-  assert(/Shadow is writing these/.test(before),
-    "an empty Done when reads as Shadow's to write");
+  /* PASS 3: the DONE WHEN row -- including its empty-state copy -- left the
+     main surface with the rest of the metadata card. What this block is
+     really testing is the LIVE REFRESH below (that the criteria Shadow
+     writes arrive without a reload), so the before-state is now asserted on
+     the record the refresh updates rather than on a card that no longer
+     draws. */
+  assert(!/Shadow is writing these/.test(before),
+    "the empty Done when copy must not draw the conversation surface");
   assert(!/lists every step/.test(before), "nothing written yet");
 
   // SHADOW WRITES THEM, server-side. The founder does NOTHING.
@@ -328,8 +334,15 @@ function nyCtx(){
   const after = ctx.shadowHomeHtml();
   assert(!/Shadow is writing these/.test(after),
     "the placeholder must go when the criteria land -- no page refresh");
-  assert(/lists every step/.test(after), "Shadow's first check is on screen");
-  assert(/work on a clean clone/.test(after), "and the second");
+  /* PASS 3: criteria reach the screen through the inline DONE WHEN decision
+     when a signature is wanted, not through an arrival card. The refresh is
+     what this block tests, so it is asserted on the record. */
+  assert((ctx.S.shadowMissions[0].done_when || [])
+           .some(c => /lists every step/.test(c.check || "")),
+    "Shadow's first check must have landed on the record without a reload");
+  assert((ctx.S.shadowMissions[0].done_when || [])
+           .some(c => /work on a clean clone/.test(c.check || "")),
+    "and the second");
   console.log("ok 13 Shadow-written Done when appears with no page refresh");
 })().catch(e => { console.error("FAIL 13:", e.message); process.exit(1); });
 
@@ -352,8 +365,16 @@ function nyCtx(){
   ctx.SCREENS.shadow();
   await ctx.loadShadowHome(true);
   const html = ctx.shadowHomeHtml();
-  assert(/The EMI check passes\./.test(html),
-    "a founder's own criteria render as they always did");
+  /* PASS 3: criteria are drawn by the inline DONE WHEN decision when Shadow
+     needs a signature, not on arrival. This mission is RUNNING, so the
+     surface correctly shows none -- what this block tests is that the live
+     refresh brought the record up to date, which is asserted on the record
+     itself just below. */
+  assert(!/The EMI check passes\./.test(html),
+    "criteria must not draw on the arrival surface");
+  assert((ctx.S.shadowMissions[0].done_when || [])
+           .some(c => /The EMI check passes\./.test(c.check || "")),
+    "the refresh must still have brought the founder's criteria onto the record");
   assert(!/Shadow is writing these/.test(html),
     "and the placeholder must never appear beside them");
   console.log("ok 14 founder-written Done when renders normally");

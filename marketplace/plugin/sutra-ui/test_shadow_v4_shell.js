@@ -311,11 +311,23 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
      message instead. What the 2026-09-18 pinning was protecting is the
      anchor, and the header still provides it: objective, state, and now the
      live turn count. */
+  /* PASS 3 (founder, 2026-09-21): the brief is now literally inside the
+     stream, not merely positioned above it. It used to be a SIBLING that
+     happened to be drawn first; shadowTimelineHtml renders it as the
+     conversation's opening message, which is what the note above always
+     described and what the prototype's architecture requires. So the index
+     check inverts: .shcard2 comes AFTER the opening .shtimeline tag,
+     because it is inside it. */
   assert(h.indexOf('class="shwhead"') < iScroll, "the outcome is pinned above");
-  assert(h.indexOf('class="shcard2') > iScroll,
-    "the brief is the first message INSIDE the conversation");
-  assert(h.indexOf('class="shcard2') < h.indexOf('class="shtimeline"'),
-    "...and it is FIRST: the brief opens the thread it belongs to");
+  /* PASS 3 (founder, 2026-09-21): "the objective is already represented by
+     the page header -- do not repeat the full objective in a huge card
+     immediately below it. The conversation should begin naturally with
+     Shadow speaking." shadowOpeningHtml is still exported and still
+     asserted on its own; the stream no longer opens with it. */
+  assert(h.indexOf('class="shsaid shopening"') === -1,
+    "the stream must not restate the objective");
+  assert(h.indexOf('class="shcard2') === -1,
+    "and the metadata card must not draw the surface at all");
   assert(/class="shwturn"/.test(h),
     "the live turn count moved to the pinned header");
 

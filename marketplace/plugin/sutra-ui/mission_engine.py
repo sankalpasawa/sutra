@@ -1705,7 +1705,7 @@ class MissionStore:
         self.save(m)
         return m
 
-    def confirm_check(self, mid, index, by="founder"):
+    def confirm_check(self, mid, index, by="founder", version=None):
         """The ONLY writer of a founder_confirm `met` flag (dual-lane fold):
         transcript text, verify callables, and Shadow itself cannot satisfy
         this tier -- an explicit founder action calls this, it stamps who and
@@ -1713,6 +1713,18 @@ class MissionStore:
         m = self.load(mid)
         if m is None:
             raise ValueError("no mission %s" % mid)
+        # THE SIGNATURE IS BOUND TO THE REVISION IT WAS SHOWN FOR (founder,
+        # 2026-09-21). A founder_confirm is signed BY INDEX, and an amend
+        # replaces done_when wholesale -- so index 1 of the Africa brief and
+        # index 1 of the India brief are different questions. A click that
+        # left the browser before the amend landed would otherwise sign the
+        # new one. Same rule, same wording, as approve_held_say's.
+        #
+        # OPTIONAL, so every existing caller is unchanged: a confirm that
+        # names no version is the historical behaviour.
+        if version is not None and int(version) != int(m.get("version") or 1):
+            raise ValueError("this sign-off is stale: the task changed since "
+                             "it was asked")
         checks = m.get("done_when", [])
         if not (0 <= index < len(checks)):
             raise ValueError("no check %d on %s" % (index, mid))
@@ -1815,12 +1827,54 @@ class MissionStore:
     def amend(self, mid, **fields):
         """Amend-not-spawn (S54): a changed brief is a NEW VERSION of the
         same mission -- version bumps, the budget already spent stays spent,
-        and the mission returns to brief_confirm for a fresh yes."""
+        and the mission returns to brief_confirm for a fresh yes.
+
+        `version` IS THE REVISION (founder, 2026-09-21), and it was already
+        the revision -- `mint_approval` stamps it and `approve_held_say`
+        refuses a say whose version has moved ("the task changed since it
+        asked"). What follows extends that one narrow guard to the rest of
+        the mission, because the founder is allowed to change their mind at
+        any point and the work done before they did is now stale.
+
+        THE FAILURE. A founder watching an Africa trip reach NEEDS YOU said
+        "I changed my mind, I want India". Shadow answered "India it is,
+        amending the task now" -- and nothing amended: app's chat route
+        applied a `mission` fence only while DRAFTING, so the objective, the
+        done_when and the version never moved. The Africa criteria stayed
+        authoritative, the Africa artifact stayed the answer, and NEEDS YOU
+        kept asking about a trip the founder had abandoned.
+
+        WHAT A NEW REVISION INVALIDATES, and why each one:
+          * `met` flags and judge verdicts -- they were reached against the
+            OLD criteria. A check that passed for Africa says nothing about
+            India, and leaving the flag set would let the new revision
+            complete on the old revision's evidence.
+          * the decision packet -- it carries the old artifact and the old
+            question, and it is what the founder is looking at.
+          * the pending say and its approval -- both are bound to a version
+            that no longer exists; approve_held_say would refuse them anyway,
+            and leaving them draws a stale ask on the card.
+          * `completion` -- an amended mission is not finished.
+
+        WHAT IT KEEPS: turns_used (the budget really was spent),
+        founder_says, the seq and the task chat. A revision is a change of
+        objective, not a new task.
+        """
         m = self.load(mid)
         if m is None:
             raise ValueError("no mission %s" % mid)
         if m["state"] in TERMINAL:
             raise ValueError("cannot amend a terminal mission")
+        changed = [k for k in ("objective", "done_when", "manifest",
+                               "max_turns")
+                   if k in fields and fields[k] != m.get(k)]
+        # THE SNAPSHOT IS TAKEN HERE AND NOWHERE ELSE, because the loop
+        # below overwrites the very fields the founder is superseding. Taken
+        # after `changed` so it costs nothing on a no-op amend.
+        was = {"version": int(m.get("version") or 1),
+               "objective": m.get("objective") or "",
+               "done_when": [dict(c) for c in (m.get("done_when") or [])
+                             if isinstance(c, dict)]}
         for k in ("objective", "done_when", "manifest", "max_turns"):
             if k in fields:
                 # same door, same narrowing as create(): a `mission` fence
@@ -1828,6 +1882,8 @@ class MissionStore:
                 m[k] = (sanitise_probes(fields[k]) if k == "done_when"
                         else fields[k])
         m["version"] += 1
+        if changed:
+            _invalidate_for_revision(m, was)
         if m["state"] != "draft":
             if "brief_confirm" not in TRANSITIONS[m["state"]]:
                 # running/paused missions detour via their legal edges
@@ -1840,6 +1896,89 @@ class MissionStore:
             "note": "amended to v%d (budget kept: %d turns used)"
                     % (m["version"], m["turns_used"])})
         return m
+
+
+#: How many superseded revisions a mission record keeps for the conversation
+#: to draw. A founder who changes direction repeatedly sees the recent ones;
+#: the record is not an archive of every abandoned objective.
+MAX_REVISIONS = 5
+
+
+def _invalidate_for_revision(m, was=None):
+    """Strip every piece of state the PREVIOUS revision earned.
+
+    `was` is the snapshot of that previous revision, taken by amend BEFORE
+    it overwrote the fields. Absent (an older caller) the revision ledger is
+    simply not written -- the invalidation below is unchanged either way.
+
+    THE RULE (founder, 2026-09-21): "Old worker results must never be
+    allowed to advance, complete, verify, or overwrite the new revision."
+    A revision is a change of what the work is FOR, so everything that was
+    established about the old objective stops being an answer about the new
+    one. Nothing here judges whether the old work was good -- it was, for a
+    question nobody is asking any more.
+
+    IN PLACE, and the caller saves. Never raises: an amend must not fail
+    because one optional key was an unexpected shape.
+    """
+    # WHAT WAS SUPERSEDED IS KEPT, NOT ERASED (founder, 2026-09-21, UI pass).
+    #
+    # Invalidating by DELETION made the old work vanish from the founder's
+    # screen: the Africa checks were simply gone on the next render, so a
+    # founder who had been looking at "confirm the Africa itinerary" saw it
+    # disappear with nothing said. "Outdated" and "never happened" are not
+    # the same statement, and the founder is owed the first one.
+    #
+    # A LEDGER OF REVISIONS, BOUNDED AND FLAT. One row per revision holding
+    # the objective that was replaced and the checks that died with it --
+    # enough for the conversation to show them struck through, and nothing
+    # more. It is NEVER read by the engine: no loop, decision, verdict or
+    # completion consults it, so a mission cannot complete on a superseded
+    # revision's evidence. It exists to be rendered.
+    superseded = [c for c in ((was or {}).get("done_when") or [])
+                  if isinstance(c, dict) and str(c.get("check") or "").strip()]
+    if was and (superseded or was.get("objective")):
+        log = [r for r in (m.get("revisions") or []) if isinstance(r, dict)]
+        log.append({
+            "version": was.get("version"),
+            "objective": was.get("objective") or "",
+            "checks": [{"check": c.get("check"),
+                        "tier": c.get("tier"),
+                        "met": bool(c.get("met"))} for c in superseded],
+            "at": _now()})
+        # bounded: a founder who changes their mind ten times gets the last
+        # few, not an unbounded second copy of the mission's whole history
+        m["revisions"] = log[-MAX_REVISIONS:]
+
+    rows = []
+    for c in (m.get("done_when") or []):
+        if not isinstance(c, dict):
+            rows.append(c)
+            continue
+        row = dict(c)
+        # a verdict reached against the OLD criteria proves nothing about
+        # the new ones -- including a founder signature, which was given for
+        # a question that no longer stands
+        for key in ("met", "judged", "confirmed_by", "confirmed_at"):
+            row.pop(key, None)
+        rows.append(row)
+    m["done_when"] = rows
+    # the founder-facing ask, the held say and its approval all name a
+    # version that no longer exists
+    for key in ("decision", "completion", "approval", "pending_say",
+                "approved_say", "pending_floor_say", "pending_autonomy_say",
+                "intervention", "founder_response", "result_excerpt"):
+        m.pop(key, None)
+    # a pause earned by the old revision is not a pause the new one is in:
+    # the founder answered by changing the task, which IS their answer
+    if m.get("state") == "paused" and m.get("pause_reason") in (
+            "founder_confirm", "floor_confirm", "autonomy_suggest",
+            "autonomy_top_tier"):
+        m["state"] = "running"
+    m.pop("pause_reason", None)
+    m.pop("block_reason", None)
+    m.pop("failure_class", None)
+    return m
 
 
 def sanitise_probes(rows):
@@ -2633,8 +2772,37 @@ def completion_summary(mission, results, transcript="", outcome=""):
                 row["at"] = src["confirmed_at"]
         rows.append(row)
     met_n = sum(1 for r in rows if r["met"])
+    # ── THE FINAL STATE, NOT THE TALLY (founder, 2026-09-21, pass 2) ──────
+    #
+    # THE ASK: "do not show '3 of 3 checks passed' ... provide a COMPLETE
+    # FINAL-STATE SUMMARY ... what was completed, what remains". `headline`
+    # is kept -- shadowCompletionText copies it and older surfaces read it --
+    # but it is no longer the only thing a finished task can say.
+    #
+    # DERIVED FROM THE RECORD, NEVER FROM THE TRANSCRIPT. Each line below is
+    # a check the loop already evaluated or a path shadow_evidence already
+    # found. Nothing is concatenated out of worker messages, which is the one
+    # construction the founder ruled out: a worker that narrated a plan it
+    # abandoned would otherwise dictate the final summary.
+    #
+    # AND IT DESCRIBES THE FINAL REVISION ONLY. `objective`, `done_when` and
+    # the artifacts are all read off the mission AS IT ENDS, so a task the
+    # founder redirected from Africa to India reports India. The superseded
+    # objectives live in `revisions` and are drawn as history by the front
+    # end, never as the result. `revised` is how the summary says that
+    # happened at all -- a founder who changed direction is owed the fact
+    # that some work was dropped, without the dropped work being the answer.
+    done_lines = [r["check"] for r in rows if r["met"] and r["check"]]
+    open_lines = [r["check"] for r in rows if not r["met"] and r["check"]]
+    prior = [r for r in (mission.get("revisions") or []) if isinstance(r, dict)]
     return {
         "objective": mission.get("objective") or "",
+        "completed": done_lines,
+        "remains": open_lines,
+        "revised": len(prior),
+        # the objective this task STOPPED being, for the one line that says
+        # so. The full list stays on the record; the summary names the last.
+        "was": (prior[-1].get("objective") or "") if prior else "",
         "outcome": str(outcome or ""),
         "headline": ("%d of %d checks passed" % (met_n, len(rows))
                      if rows else "no check was set"),
@@ -3495,6 +3663,21 @@ class MissionEngine:
             if fresh["state"] in TERMINAL \
                     or fresh["state"] in ("paused", "blocked"):
                 return fresh
+            # ...AND SO MUST AN AMEND (founder, 2026-09-21). The check above
+            # has always reloaded for exactly this class of race; it compared
+            # STATE, and an amend leaves a running mission running. So a turn
+            # composed under the Africa brief could reach `_complete` below
+            # and finish the India mission on Africa's evidence. `results`
+            # and `transcript` both belong to the version this iteration
+            # started with, so neither may advance a version that has moved.
+            #
+            # CONTINUE, NEVER TERMINATE. The mission is not over -- it has a
+            # new objective and needs a turn against it, which the next
+            # iteration composes from the reloaded record.
+            moved, why = self._revision_moved(m, fresh)
+            if moved:
+                self._ledger_stale(mid, why)
+                continue
             if done:
                 return self._complete(mid, results, transcript)
             # A CONFIRMATION PAUSE MUST BE EARNED, NOT INHERITED FROM AN
@@ -3671,6 +3854,41 @@ class MissionEngine:
         held["approval"] = mint_approval(held, reason, say_text)
         self.store.save(held)
         return held
+
+    def _revision_moved(self, m, fresh=None):
+        """Did the founder change the objective while this turn was in
+        flight? -> (moved, note).
+
+        THE CORRECTNESS BOUNDARY IS mission_id + version, and this is where
+        it is checked. The loop already reloads before any terminal decision
+        -- "a takeover that landed while we evaluated must win" -- but it
+        compared STATE only. An amend leaves a running mission running, so a
+        worker turn composed under the Africa brief could still reach
+        `_complete` and finish the India mission with Africa's evidence.
+
+        NEVER RAISES: a store that cannot be read answers "not moved", which
+        leaves the existing behaviour exactly as it was.
+        """
+        try:
+            was = int((m or {}).get("version") or 1)
+            if fresh is None:
+                fresh = self.store.load(m["id"])
+            now = int((fresh or {}).get("version") or was)
+        except Exception:            # noqa: BLE001 -- see docstring
+            return False, ""
+        if now == was:
+            return False, ""
+        return True, ("worker result is stale: composed at v%d, the task is "
+                      "now v%d" % (was, now))
+
+    def _ledger_stale(self, mid, note, kind="worker_result_stale"):
+        """One structured row per discarded result. Observability only --
+        ids and versions, never the payload."""
+        try:
+            shadow_ledger.append("actions", {
+                "mission_id": mid, "kind": kind, "summary": note[:200]})
+        except Exception:            # noqa: BLE001 -- never fail a turn
+            pass
 
     def _work_says(self, m):
         """The loop's own evaluation, asked from an ENDING path.

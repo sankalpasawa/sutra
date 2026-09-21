@@ -97,8 +97,21 @@ const HELD = { id: "m-1", objective: "Ship the fix", state: "paused",
      Only the Stop half moves. Resume is still not drawn on this card, so the
      other half of the ruling is asserted exactly as v4 wrote it. */
   assert(!/data-shact="resume"/.test(card), "Resume stays off the card");
-  assert(/data-shact="stop"/.test(card),
-    "a paused task must offer Stop on the card the workspace renders");
+  /* AND STOP STANDS DOWN HERE TOO (founder, 2026-09-21: "do not show Stop
+     as though a worker is currently burning turns"). `floor_confirm` is one
+     of the four founder pauses: the loop is parked holding an instruction
+     until the founder answers, so no turn is in flight and Stop advertised
+     a cost that was not being incurred.
+
+     REFUSAL IS NOT LOST, which is the only thing that would have made this
+     wrong. The hold row carries Withdraw (data-shkind="withdraw") -- the
+     control that actually answers "no" to a held instruction -- and the
+     task-list row keeps its own stop for ending the task outright. Stop
+     returns on this card the moment the hold is answered. The predicate is
+     shadowMissionNeedsFounder, so a task paused for a STALL still offers it
+     (test_shadow_home 23b/c). */
+  assert(!/data-shact="stop"/.test(card),
+    "a task waiting on the founder must not offer Stop");
   const spent = ctx.shadowTaskCardHtml(Object.assign({}, HELD, { approval: Object.assign({}, HELD.approval, { used: true }) }));
   assert(!/data-shapprove/.test(spent), "a spent approval draws nothing");
   console.log("ok 4 the task card shows the held string with Approve");

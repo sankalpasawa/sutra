@@ -690,7 +690,15 @@ function missionCardHtml(m){
    when it is loaded; the protocol fences; then a belt for what a stream can
    leak past both -- a lone header, a key line, an ASCII box. Nothing is
    generated: every word shown is Shadow's own. */
-const SH_PROTO_FENCE = /```(?:mission|goal|chips|remember|module|brief)[ \t]*\n[\s\S]*?```/g;
+/* `forward` JOINED THIS LIST LATE, AND THAT WAS A BUG (founder, 2026-09-21).
+   The forwarding lane added a ```forward fence to Shadow's task-chat reply
+   (shadow_protocol, shadow_forward.classify) and did NOT add it here, so a
+   verdict Shadow emitted for the app reached the founder as literal
+   `{"worker": false}` in the middle of a sentence. Every fence the protocol
+   can emit has to be in BOTH places: the parser that consumes it and this
+   stripper, which is the belt for anything the parser did not reach.
+   Keep them in step -- test_shadow_conversation asserts it. */
+const SH_PROTO_FENCE = /```(?:mission|goal|chips|remember|module|brief|forward)[ \t]*\n[\s\S]*?```/g;
 /* ...AND THE SAME FENCE WHEN IT NEVER CLOSES (founder, 2026-09-17). The rule
    above needs a closing ```; a reply that opened ```chips and stopped left the
    opener on screen, and the line loop below then read it as the start of a
@@ -702,7 +710,7 @@ const SH_PROTO_FENCE = /```(?:mission|goal|chips|remember|module|brief)[ \t]*\n[
    ordinary ``` or ```js is untouched, because the kind list is the protocol's
    own and nothing else matches it. */
 const SH_PROTO_FENCE_OPEN =
-  /```(?:mission|goal|chips|remember|module|brief)[ \t]*(?:\n[\s\S]*)?$/;
+  /```(?:mission|goal|chips|remember|module|brief|forward)[ \t]*(?:\n[\s\S]*)?$/;
 const SH_GOV_HEADER = /^\s*\[[A-Z0-9-]+\s*·\s*[A-Z0-9-]+[^\]]*\]\s*$/;
 const SH_GOV_KEY = new RegExp("^[\\s>*#\\-]*(" + [
   "INPUT", "TYPE", "EXISTING HOME", "ROUTE", "FIT CHECK", "ACTION",

@@ -610,8 +610,12 @@ class TheConfirmationChangesNoAuthority(Fixture):
             {"tier": "verify", "check": "x",
              "probe": {"kind": "file_exists", "path": "riders.txt"}},
         ]), self.root)
+        # `version` ADDED 2026-09-21: the packet names the revision it
+        # speaks for, so confirm_check can refuse a sign-off given for a
+        # question the founder has since replaced. An integer, not a
+        # capability -- the screen below still holds.
         self.assertEqual(sorted(p), ["artifacts", "asks", "at",
-                                     "established", "missing"])
+                                     "established", "missing", "version"])
         for banned in ("instruction", "approve", "permission", "autonomy",
                        "say", "command", "argv"):
             self.assertNotIn(banned, repr(sorted(p)))

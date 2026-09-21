@@ -340,5 +340,10 @@ def packet_for(mission, root=None):
                    "about — no file it checked is readable in the "
                    "workdir. Open the task's chat to see what the worker "
                    "produced.")
+    # THE REVISION THIS PACKET SPEAKS FOR (founder, 2026-09-21). The
+    # founder answers by index, and an amend replaces done_when wholesale --
+    # so the answer has to name the version it was shown, exactly as an
+    # approval does. MissionStore.confirm_check refuses a stale one.
     return {"at": _now(), "asks": asks, "established": established,
-            "artifacts": artifacts, "missing": missing}
+            "artifacts": artifacts, "missing": missing,
+            "version": int(mission.get("version") or 1)}

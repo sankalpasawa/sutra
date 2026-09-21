@@ -4376,6 +4376,68 @@ def forward_to_worker(mid, store=None, enqueue=None, revive=False):
         return None
 
 
+def resume_after_revision(mid, was_state, store=None, launch=None):
+    """A REVISED TASK MUST ACTUALLY GO BACK TO WORK (founder, 2026-09-21).
+
+    THE BUG, reproduced before it was fixed. A mission at NEEDS YOU is
+    PAUSED, and run_mission has already left its loop -- the top of the loop
+    returns as soon as it reads a paused state (mission_engine, "founder stop
+    / intervention / done"). When the founder then replies with a change,
+    `_apply_task_fence` amends the mission and `_invalidate_for_revision`
+    releases the pause by setting the state back to `running`. The record
+    then reads: running, v2, new objective, old decision superseded -- and
+    NOTHING IS DRIVING IT. Shadow had said "I'll build that into its next
+    instruction", and there was no next instruction, because there was no
+    loop left to compose one.
+
+    THE FIX IS THE DOOR THAT ALREADY EXISTS. The `resume` action ends with
+    `shadow_runner._launch(mid, _validated_say, _shadow_verifier)`, which is
+    exactly what restarts a loop that has exited. A revision that releases a
+    pause needs the same call, so it makes it. No new state, no second
+    runner, no parallel path.
+
+    ONLY WHEN THE REVISION ACTUALLY RELEASED A PAUSE. `was_state` is what
+    the mission was before the fence touched it, so a task that was already
+    running is left alone (its loop is live and will read the new revision
+    at the top of its next iteration) and a DRAFT is left alone (amend puts
+    it in brief_confirm and Start is the founder's). The only case that
+    launches is paused-or-blocked -> running, which is the one that was dead.
+
+    IT IS NOT THE ANSWER TO THE QUESTION. Confirm is a different door
+    entirely -- confirm_check / settle_confirmation, which satisfy the check
+    and let the mission complete -- and is untouched by this. A reply CHANGES
+    the work; it does not satisfy it. The worker still has to execute the
+    revised task and Shadow still has to verify the result.
+
+    BEST-EFFORT AND LOUD. This runs inside the founder's own chat request; a
+    launch failure must cost the resume and not the reply, so it ledgers and
+    returns False rather than raising into their conversation.
+    """
+    if was_state not in ("paused", "blocked"):
+        return False
+    store = store or _mission_engine.MissionStore()
+    try:
+        m = store.load(mid)
+        if m is None or m.get("state") != "running":
+            return False
+        # already driven: _launch guards this too, but saying so here keeps
+        # the ledger row honest about what actually happened
+        if mid in shadow_runner.RUNNING and not shadow_runner.RUNNING[mid].done():
+            return False
+        (launch or shadow_runner._launch)(
+            mid, _validated_say, _shadow_verifier)
+        _shadow_ledger_safe({
+            "kind": "spawn", "mission_id": mid,
+            "summary": "resumed after revision to v%s (founder changed the task)"
+                       % m.get("version")})
+        return True
+    except Exception as exc:            # noqa: BLE001 -- audible, never fatal
+        _shadow_ledger_safe({
+            "kind": "spawn", "mission_id": mid,
+            "summary": "could not resume after revision: %s" % str(exc)[:140]})
+        return False
+
+
 def _record_founder_talk(mid, text, blocks=None):
     """ONE MEMORY OF THE FOUNDER (founder, 2026-09-16, step 2).
 
@@ -4468,15 +4530,28 @@ async def api_shadow_task_chat(mid: str, request: Request):
     words first (_reopen_and_launch) and the chat answers afterwards, so
     Shadow never answers as though finished work were live.
 
-    THE `mission` FENCE AMENDS A DRAFT, AND ONLY A DRAFT. _apply_task_fence
-    was written for the drafting conversation -- "amends THAT draft" -- and
-    reaches MissionStore.amend, which refuses a terminal mission but NOT a
-    running one: it would bump the version and rewrite the objective and the
-    done_when of a task the worker is already executing. Before Start that is
-    the feature; after Start it would make a casual question re-scope live
-    work. So the fence is applied while the task is still a draft and the
-    record is returned untouched once it has started. Nothing about
-    _apply_task_fence, amend, the decider or founder_says moved."""
+    THE `mission` FENCE NOW AMENDS A LIVE TASK TOO (founder, 2026-09-21).
+    It used to apply only while DRAFTING, and the reasoning was that after
+    Start "it would make a casual question re-scope live work". That guard
+    was too blunt, and it is the bug the founder hit: watching an Africa
+    trip sit at NEEDS YOU they said "I changed my mind, I want India", Shadow
+    answered "India it is, amending the task now" -- and nothing amended.
+    The objective, the done_when and the version never moved, so the Africa
+    criteria stayed authoritative and NEEDS YOU kept asking about a trip
+    that had been abandoned. Shadow said one thing and the record said
+    another.
+
+    A CASUAL QUESTION STILL RE-SCOPES NOTHING, and the discriminator was
+    already here: the task chat emits a `mission` fence only when it means
+    to amend (SHADOW.md: "a `mission` fence from you AMENDS it"). "What are
+    you doing?" and "thanks" produce prose and no fence, so they reach
+    `founder_says` exactly as before and change no state. No classifier was
+    added; the existing protocol IS the signal.
+
+    WHAT THE AMEND DOES is MissionStore.amend's business, and it bumps
+    `version` -- the revision the loop, the approval and the sign-off all
+    validate against. A turn composed under the old objective can no longer
+    complete the new one."""
     if not providers.shadow_enabled():
         raise HTTPException(403, "the shadow flag is off")
     body = await request.json()
@@ -4532,9 +4607,27 @@ async def api_shadow_task_chat(mid: str, request: Request):
         # would double a line the worker is about to act on.
         _record_founder_talk(mid, message, blocks)
         forward_to_worker(mid)
-    out = {"mission": (_apply_task_fence(mid, blocks) if drafting
-                       else store.load(mid)),
+    # DRAFTING OR LIVE, the fence is the founder changing what the task is
+    # for. A terminal task is still refused -- amend raises on one, and the
+    # reopen path above is how a finished task comes back.
+    # WHAT THE TASK WAS BEFORE THE FENCE TOUCHED IT. Read here, from the
+    # record loaded at the top of this route, because the fence is about to
+    # overwrite it -- and whether the founder's reply RELEASED A PAUSE is the
+    # whole question resume_after_revision asks.
+    was_state = mission["state"]
+    out = {"mission": (_apply_task_fence(mid, blocks)
+                       if (drafting or not reopened) else store.load(mid)),
            "reply": reply}
+    # ── AND THE WORKER ACTUALLY GOES BACK TO WORK (founder, 2026-09-21) ────
+    # A reply from NEEDS YOU that changes the task amends it and releases the
+    # pause, and until this line nothing restarted the loop that had already
+    # exited on that pause -- so the record read `running` with nobody driving
+    # it and Shadow's "I'll build that into its next instruction" was a
+    # promise about a turn that never came. Confirm is a different door and is
+    # untouched: it satisfies the check, it does not change the work.
+    if resume_after_revision(mid, was_state, store=store):
+        out["mission"] = store.load(mid) or out["mission"]
+        out["resumed"] = True
     if "chips" in blocks:
         out["chips"] = blocks["chips"]
     limits = _apply_limits_fence(blocks, mid)

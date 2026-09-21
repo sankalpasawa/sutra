@@ -276,9 +276,15 @@ function doneMission(over){
   m.completion.checks[2].how = "still outstanding";
   const h = ctx.shadowCompletionHtml(m);
   const above = h.split("shdoneverif")[0];
+  /* PASS 3 (founder, 2026-09-21): "even in summary -- don't show user stuff
+     he doesn't care about (Done checks and all)." The surface says that
+     something did not pass and where to look; the criterion itself is in
+     the Verification fold, whole, one click away. */
   assert(/did not pass/.test(above), "an unmet check is surfaced");
-  assert(above.indexOf("every item is sourced") !== -1,
-    "and it says which");
+  assert(above.indexOf("every item is sourced") === -1,
+    "the criterion itself must stay in Verification");
+  assert(h.split("shdoneverif")[1].indexOf("every item is sourced") !== -1,
+    "...and it must still be there, whole");
   console.log("ok 14 a failed check is a caveat, not hidden bookkeeping");
 }
 

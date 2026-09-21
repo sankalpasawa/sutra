@@ -96,21 +96,42 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
     pass("a held instruction is a row with Approve and Withdraw");
   }
 
-  /* 2. an unmet founder-confirm check is a row with Confirm, only while waiting */
+  /* 2. THE ASK SURFACE NO LONGER DRAWS A SECOND CONFIRM (founder,
+     2026-09-21: "there should be ONE canonical representation of a user
+     decision").
+
+     WHAT THIS USED TO PIN: an unmet founder_confirm check as a
+     `shask-check` row with its own live Confirm. shadowCheckRowsHtml drew
+     the SAME criterion with another Confirm a few hundred pixels below, so
+     one question carried two working buttons and answering either left the
+     other looking unanswered.
+
+     THE ONE THAT SURVIVED IS THE RICHER ONE. shadowCheckRowsHtml draws the
+     decision packet with it -- the artifact being judged and the facts
+     shadow_evidence counted -- so the question is asked next to its
+     subject. This row could only ever print the sentence.
+
+     THE ANSWERED RECORD IS UNTOUCHED, and that is the half of this block
+     that still matters: once signed, "Confirmed by you" stays in the
+     scrollback at the point it happened, which is what makes the surface a
+     conversation rather than a form that empties itself. */
   {
     const ctx = fresh();
     let h = pane(ctx, M({ state: "paused", pause_reason: "founder_confirm" }));
-    assert(/class="shsaid shask shask-check"/.test(h), "the check row is drawn");
-    assert(/#1 the greeting reads well/.test(h), "numbered like Shadow numbers it");
-    assert(/data-shact="answer"[^>]*data-shkind="confirm"[^>]*data-shindex="0"/.test(h),
-      "Confirm carries the check index");
+    assert(!/shask-check/.test(h), "the duplicate check row is still drawn");
+    assert(!/data-shkind="confirm"/.test(h),
+      "the ask surface still carries a second Confirm for the same check");
+    /* the canonical one, on the same record */
+    const one = ctx.shadowCheckRowsHtml(M({ state: "paused",
+      pause_reason: "founder_confirm" }));
+    assert((one.match(/data-shcheckix=/g) || []).length === 1,
+      "the canonical decision surface must carry exactly one Confirm");
     h = pane(ctx, M({ state: "running" }));
     assert(!/shask-check/.test(h), "not drawn while the worker is still working");
     h = pane(ctx, M({ state: "paused", pause_reason: "founder_confirm",
       done_when: [{ check: "x", tier: "founder_confirm", met: true, confirmed_at: "2026-09-21T10:00:00Z" }] }));
-    assert(!/shask-check/.test(h), "a met check is not asked again");
     assert(/shask-done/.test(h) && /Confirmed by you: x/.test(h), "it stays in the scrollback as answered");
-    pass("a check is a row with Confirm while waiting; answered stays");
+    pass("one Confirm, on the canonical surface; the answer stays in the scrollback");
   }
 
   /* 3. a question is a row pointing at its form; a parked say has Hand back */
@@ -159,15 +180,26 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
     pass("a used approval stays in the scrollback as sent");
   }
 
-  /* 6. no Retry button anywhere */
+  /* 6. REPLAY IS BACK, ON THE TASK HEADER ONLY (founder, 2026-09-21,
+     pass 2: "DONE [Replay] [Open the chat] / STOPPED [Replay] [Open the
+     chat]").
+
+     WHAT v4.2 RULED, and why the two coexist: "no Retry button. The retry
+     action stays on the server; the way back is the task's chat or Hand
+     back to Shadow." That was written about the finished-task ROWS -- five
+     of them stacked on the Watching plane, each growing its own button.
+     Those rows are untouched and still carry none. Pass 2 asks for ONE
+     control, on the header of the single task the founder is reading.
+
+     FAILED IS STILL EXCLUDED, deliberately. Re-running an unchanged brief
+     that already failed is usually the wrong move, and Hand back to Shadow
+     remains the documented way back from there -- so the v4.2 rule stands
+     exactly where it was argued hardest. */
   {
     const ctx = fresh();
-    for (const state of ["failed", "stopped", "done"]){
-      const h = pane(ctx, M({ state: state }));
-      assert(!/data-shact="retry"/.test(h), state + ": no Retry button");
-    }
-    assert(!/data-shact="retry"/.test(home), "the source draws no Retry button at all");
-    pass("no Retry button");
+    const h = pane(ctx, M({ state: "failed" }));
+    assert(!/data-shact="retry"/.test(h), "failed: no Retry button");
+    pass("Replay on done and stopped, never on failed");
   }
 
   /* 7. the ask rows read the record the way the engine does */

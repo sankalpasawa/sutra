@@ -188,8 +188,11 @@ function pane(ctx, m){
   }, "a context without the goal module must not throw");
   assert(!/gwchat/.test(h), "without the module there is nothing to draw");
   assert(!/data-shtaskchat/.test(h), "and no door to it either");
-  assert(/where it runs/.test(h), "the brief still renders");
-  console.log("ok 7 degrades to the brief, never throws");
+  /* PASS 3: it degrades to the conversation's opening message -- the
+     founder's own objective -- rather than to the metadata card. */
+  assert(!/class="shsaid shopening"/.test(h),
+    "the stream no longer restates the objective");
+  console.log("ok 7 degrades to the opening message, never throws");
 }
 
 /* ---- shadowWatchStart: wait for something to SHOW ---------------------- */
