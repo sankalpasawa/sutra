@@ -239,7 +239,13 @@ classify_dirty() {
     [ -n "$line" ] || continue
     path="$(printf %s "$line" | cut -c4-)"
     path="${path##* -> }"          # a rename reports "old -> new"; judge the new
-    if is_never_commit "$path"; then printf "block %s\n" "$path"
+    # THE PIPELINE'S OWN AUDIT ROWS (D82): an UNTRACKED file on a never-commit
+    # path -- .enforcement/beta-smoke.jsonl, release-beta-skips.jsonl -- was
+    # written by this very pipeline and can never be committed, so it is
+    # neither carried nor a reason to stop. A TRACKED never-path that changed
+    # still blocks: that is a real edit to something a release must not touch.
+    if is_never_commit "$path"; then
+      case "$line" in '??'*) printf "ignore %s\n" "$path" ;; *) printf "block %s\n" "$path" ;; esac
     elif in_release_scope "$path"; then printf "include %s\n" "$path"
     else printf "block %s\n" "$path"; fi
   done
@@ -667,13 +673,18 @@ cmd_release() {
       printf '%s\n' "$blocked" | sed 's/^/  out of scope: /'
       die "the tree carries change a desktop release must not sweep in -- commit, revert or stash it yourself"
     fi
-    printf '%s\n' "$included" | sed 's/^/  including: /'
-    if [ "${ASSUME_YES:-0}" != 1 ]; then
-      printf 'Commit these as release prep? [y/N] '; read -r a; [ "$a" = y ] || die "aborted"
+    if [ -z "$included" ]; then
+      # only the pipeline's own audit rows are dirty (classify_dirty: ignore)
+      note "nothing to commit: the only dirt is the pipeline's own audit rows"
+    else
+      printf '%s\n' "$included" | sed 's/^/  including: /'
+      if [ "${ASSUME_YES:-0}" != 1 ]; then
+        printf 'Commit these as release prep? [y/N] '; read -r a; [ "$a" = y ] || die "aborted"
+      fi
+      printf '%s\n' "$included" | while IFS= read -r f; do [ -n "$f" ] && git add -- "$f"; done
+      git commit -m "release prep for $TAG" -- $(printf '%s ' $included) || die "release-prep commit failed"
+      ok "release prep committed as $(git rev-parse --short HEAD)"
     fi
-    printf '%s\n' "$included" | while IFS= read -r f; do [ -n "$f" ] && git add -- "$f"; done
-    git commit -m "release prep for $TAG" -- $(printf '%s ' $included) || die "release-prep commit failed"
-    ok "release prep committed as $(git rev-parse --short HEAD)"
   fi
 
   if [ "$NEEDS_COMMIT" = yes ]; then

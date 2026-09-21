@@ -230,6 +230,17 @@ is "rename judged on its new path" \
 is "denylist beats scope" \
    "$(classify_dirty "$(printf ' M marketplace/plugin/sutra-ui/.enforcement/x.jsonl')")" \
    "block marketplace/plugin/sutra-ui/.enforcement/x.jsonl"
+# D82: the pipeline's OWN audit rows -- untracked files on a never-commit path
+# (the smoke's beta-smoke.jsonl, the D80 skip's release-beta-skips.jsonl) --
+# are ignored, not a reason to stop; a TRACKED never-path that changed still blocks
+is "untracked audit row is ignored" \
+   "$(classify_dirty "$(printf '?? .enforcement/beta-smoke.jsonl')")" \
+   "ignore .enforcement/beta-smoke.jsonl"
+is "tracked never-path still blocks" \
+   "$(classify_dirty "$(printf ' M .enforcement/beta-smoke.jsonl')")" \
+   "block .enforcement/beta-smoke.jsonl"
+is "ignored rows are neither block nor include" \
+   "$(classify_dirty "$(printf '?? .enforcement/beta-smoke.jsonl\n?? scripts/y.sh')" | grep -cE '^(block|include) ')" "1"
 
 # ---- 11. the generated entry ----------------------------------------------
 # The contract: every bullet is a commit subject, verbatim. Nothing here reads
