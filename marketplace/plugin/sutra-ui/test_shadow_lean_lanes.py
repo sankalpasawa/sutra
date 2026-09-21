@@ -95,9 +95,14 @@ class TestReasoningArgv(unittest.TestCase):
 
 class TestDeciderUsesTheLeanLane(unittest.TestCase):
 
-    def test_08_app_wires_the_decider_to_decide_args(self):
+    def test_08_app_binds_no_one_shot_decider_any_more(self):
+        """D81 (2026-09-21): the one-shot decider is retired from the app.
+        Every decision is a turn in the task's own Shadow chat; the lean
+        lane's argv is pinned above for the day these lanes are retired
+        with it."""
         src = Path(app.__file__).read_text()
-        self.assertIn("make_decider(_decide_args, _shadow_workdir(),", src)
+        self.assertNotIn("make_decider(_decide_args, _shadow_workdir(),", src)
+        self.assertNotIn("shadow_runner.make_decider(", src)
         self.assertEqual(1, src.count("set_default_decider("))
 
     def test_09_the_prompt_ITSELF_is_untouched(self):

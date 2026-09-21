@@ -406,8 +406,14 @@ class TestNothingElseMoved(Base):
         # no --settings at all and `--tools ""`, so "does not inherit repo
         # permissions" stopped being something we decline to inject and
         # became something the process cannot reach.
-        self.assertIn("make_decider(_decide_args, _shadow_workdir()", src,
-                      "the decider must NOT inherit repo permissions")
+        #
+        # D81 (2026-09-21): the one-shot decider is retired from the app
+        # altogether -- every decision is a turn in the task's Shadow chat,
+        # which spawns from _shadow_args. The claim this pins survives as
+        # its strongest form: no decider process is built here at all, and
+        # certainly not from the worker builder.
+        self.assertNotIn("shadow_runner.make_decider(", src,
+                         "no one-shot decider process is built by app (D81)")
         self.assertNotIn("make_decider(_worker_args", src)
 
 

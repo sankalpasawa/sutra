@@ -4605,10 +4605,22 @@ class MissionEngine:
         evidence = self._judge_evidence(m)
         outcome = m.get("objective") or ""
         changed = False
+        # D81: the app's judge is a turn in THIS task's Shadow chat, so it
+        # needs to know which task is asking. A judge that takes only the
+        # three classic arguments (every test fake, and any older binding)
+        # is called exactly as before -- the mission id is offered, never
+        # forced.
+        judge_kw = {}
+        try:
+            import inspect
+            if "mission_id" in inspect.signature(self.judge).parameters:
+                judge_kw = {"mission_id": m.get("id")}
+        except (TypeError, ValueError):
+            judge_kw = {}
         for i in pending:
             try:
                 verdict = await self.judge(checks[i].get("check") or "",
-                                           evidence, outcome)
+                                           evidence, outcome, **judge_kw)
             except Exception as exc:   # noqa: BLE001 -- row untouched, see doc
                 shadow_ledger.append("actions", {
                     "mission_id": m["id"], "kind": "judge",

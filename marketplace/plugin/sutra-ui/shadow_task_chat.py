@@ -13,8 +13,18 @@ one-shot in shadow_runner.make_decider was separated from the founder's
 single Shadow session so reasoning would not serialise against their typing
 nor grow one context without bound. Both reasons were about ONE global chat;
 a chat per task has neither problem, and it gives the founder a conversation
-to open for every task. The one-shot stays as the FALLBACK (route_decision)
-so a task whose Shadow chat has died keeps moving.
+to open for every task.
+
+NOTHING IN THE BACKGROUND (founder D81, 2026-09-21: "I don't want anything to
+be in the background of the conversations with the app"; "either it should
+happen in Shadow Chat or it should happen in Worker Chat"). A task has TWO
+chats and every model call the app makes on its behalf is a turn in one of
+them. So the one-shot decider is no longer a fallback: a Shadow chat that has
+died is REVIVED (--resume of its own transcript, else a fresh start on the
+same record) and asked again, and when even that fails the turn is undecided
+-- audibly, in the ledger -- rather than answered by a process nobody can
+open. The judge (shadow_judge) speaks here too, as a turn in this chat, so
+its verdict is a row the founder can read where the task lives.
 
 WHAT IT DELIBERATELY DOES NOT DO. It never spawns through
 shadow_session.ShadowSession.start, which seeds SUTRA_MCP_SHADOW=1 (Shadow
@@ -30,6 +40,7 @@ app.
 import asyncio
 import re
 
+import shadow_judge
 import shadow_ledger
 import shadow_protocol
 import shadow_session
@@ -367,36 +378,98 @@ class TaskChat:
                                DECIDE_TIMEOUT_S)
         return shadow_runner._first_decision(raw)
 
+    async def judge(self, check, evidence, outcome=""):
+        """Settle ONE check as a turn in THIS conversation (D81).
+
+        The prompt is shadow_judge's, unchanged: the check, the outcome and
+        the evidence as text, and the instruction to answer from the
+        evidence alone. What changed is only WHERE it is asked -- here,
+        where the founder can open it, rather than in a process nobody can.
+        The verdict is still parsed and validated by shadow_judge and still
+        applied by the engine; a reply that is not a verdict is None, which
+        the engine reads as "said nothing".
+        """
+        raw = await self._turn(
+            shadow_judge.render_prompt(check, evidence, outcome),
+            DECIDE_TIMEOUT_S)
+        return shadow_judge.parse_verdict(raw)
+
 
 # ------------------------------------------------------------- routing ----
-async def route_decision(context, fallback):
-    """The decider the engine is given: this task's Shadow chat when it is
-    alive, else `fallback` (the one-shot decider), never nothing.
+def _ledger(mid, kind, summary):
+    try:
+        shadow_ledger.append("actions", {
+            "mission_id": mid, "kind": kind, "summary": summary})
+    except Exception:                   # noqa: BLE001 -- never fail a turn
+        pass
 
-    A chat that raises mid-turn is treated as dead for THIS decision only:
-    the fault is ledgered, the fallback answers, and the next turn asks the
-    chat again (it may have been resumed by then). Nothing existing is
-    removed: the one-shot path is byte-identical to what ran before v4.
-    """
-    mid = (context or {}).get("mission_id")
+
+async def _live_chat(mid, revive, what):
+    """This task's Shadow chat, alive: the one in memory, else `revive(mid)`
+    (app._ensure_task_chat: --resume of the recorded session, else a fresh
+    start on the same record). None -- ledgered -- when there is no chat and
+    no way to bring one back. NEVER a substitute process (D81)."""
     chat = TASK_CHATS.get(mid) if mid else None
     if chat is not None and chat.alive:
-        try:
-            decision = await chat.decide(context)
-            if decision is not None:
-                return decision
-            why = "task chat returned no decision"
-        except Exception as exc:        # noqa: BLE001 -- fall back, audibly
-            why = "task chat turn failed: %s" % str(exc)[:120]
-        try:
-            shadow_ledger.append("actions", {
-                "mission_id": mid, "kind": "decision",
-                "summary": "fallback to the one-shot decider: %s" % why})
-        except Exception:               # noqa: BLE001
-            pass
-    if fallback is None:
+        return chat
+    if not mid or revive is None:
+        _ledger(mid, what, "no task chat and no way to revive one; %s is "
+                           "undecided" % what)
         return None
-    return await fallback(context)
+    try:
+        chat = await revive(mid)
+    except Exception as exc:            # noqa: BLE001 -- undecided, audibly
+        _ledger(mid, what, "task chat could not be revived: %s; %s is "
+                           "undecided" % (str(exc)[:120], what))
+        return None
+    if chat is None or not getattr(chat, "alive", False):
+        _ledger(mid, what, "task chat did not come back alive; %s is "
+                           "undecided" % what)
+        return None
+    _ledger(mid, "spawn", "task chat revived for the %s" % what)
+    return chat
+
+
+async def route_decision(context, revive=None):
+    """The decider the engine is given: this task's Shadow chat, revived
+    when it has died, and NOTHING ELSE (D81, 2026-09-21).
+
+    Before D81 a dead or failing chat fell back to the one-shot decider, a
+    fresh process with no chat record. That is exactly the background the
+    founder ruled out, so it is gone: a chat that raises mid-turn or answers
+    without a decision leaves the turn undecided (None), ledgered, and the
+    next turn asks the chat again.
+    """
+    mid = (context or {}).get("mission_id")
+    chat = await _live_chat(mid, revive, "decision")
+    if chat is None:
+        return None
+    try:
+        decision = await chat.decide(context)
+    except Exception as exc:            # noqa: BLE001 -- undecided, audibly
+        _ledger(mid, "decision", "task chat turn failed: %s; the turn is "
+                                 "undecided" % str(exc)[:120])
+        return None
+    if decision is None:
+        _ledger(mid, "decision", "task chat returned no decision; the turn "
+                                 "is undecided")
+    return decision
+
+
+async def route_judgement(check, evidence, outcome="", mission_id=None,
+                          revive=None):
+    """The judge the engine is given: a turn in this task's Shadow chat
+    (D81). None when the task has no chat that can be brought back, which
+    the engine reads as "said nothing" and leaves the row exactly as it was."""
+    chat = await _live_chat(mission_id, revive, "judgement")
+    if chat is None:
+        return None
+    try:
+        return await chat.judge(check, evidence, outcome)
+    except Exception as exc:            # noqa: BLE001 -- said nothing
+        _ledger(mission_id, "judge", "task chat judge turn failed: %s"
+                                     % str(exc)[:120])
+        return None
 
 
 def get(mission_id):

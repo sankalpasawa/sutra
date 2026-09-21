@@ -667,9 +667,12 @@ class TestTheProductionDecider(unittest.TestCase):
         # built by _decide_args (no tools, no settings, no plugins) rather
         # than by the full-agent _shadow_args. The workdir, the runtime
         # factory and the single wiring below are unchanged.
-        self.assertIn("shadow_runner.make_decider(_decide_args, "
-                      "_shadow_workdir(),", app)
-        self.assertIn("new_runtime=_shadow_new_runtime", app)
+        # 2026-09-21 (D81): the one-shot is RETIRED from the app. The one
+        # wiring now routes every decision into the task's own Shadow chat
+        # (shadow_task_chat.route_decision, revived when dead), and nothing
+        # in app builds a decider process any more.
+        self.assertNotIn("shadow_runner.make_decider(", app)
+        self.assertIn("shadow_task_chat.route_decision(", app)
         self.assertEqual(app.count("set_default_decider("), 1)
 
 

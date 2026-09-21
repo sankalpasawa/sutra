@@ -202,13 +202,19 @@ const TRANSCRIPT = [
   const h = pane(ctx, M());
   assert(/What are you waiting on\?/.test(h), "the founder's line returns");
   assert(/Waiting on the worker/.test(h), "and Shadow's answer");
-  /* the orchestration that shares the same session never surfaces */
+  /* D81 (2026-09-21): the orchestration that shares the same session is
+     FOLDED, never dropped -- one closed row per app prompt, verbatim inside.
+     It is never drawn as a founder line or as a bare Shadow reply. */
   const stream = h.slice(h.indexOf("shtimeline"));
-  for (const hidden of ["[Shadow boot]", "READY", "Write the opening brief",
-                        "driving one target chat", '"action"', "```brief"]){
-    assert(stream.indexOf(hidden) === -1,
-      "orchestration leaked into the founder's conversation: " + hidden);
+  assert.strictEqual((stream.match(/<details class="shsaid shfold"/g) || []).length, 3,
+    "boot, brief and steering: three folded rows");
+  for (const folded of ["[Shadow boot]", "Write the opening brief",
+                        "driving one target chat", "```brief"]){
+    assert(stream.indexOf(folded) !== -1,
+      "the app's prompt is in the page, folded: " + folded);
   }
+  assert(!/You → Shadow<\/div>\s*<div class="shsaidtext">\[Shadow boot\]/.test(stream),
+    "an app prompt is never drawn as the founder's own line");
   assert(ctx.fetched.indexOf("shadow-1") !== -1,
     "read through the existing throttled transcript reader");
   pass("the conversation survives reload and restart, from the record");

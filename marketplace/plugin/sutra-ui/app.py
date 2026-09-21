@@ -1650,6 +1650,12 @@ SHADOW_DECIDER_SYSTEM_PROMPT = (
 def _decide_args():
     """argv for Shadow's one-shot DECIDER -- the reasoning lane.
 
+    NO LONGER BOUND (founder D81, 2026-09-21): the one-shot decider and the
+    one-shot judge are retired from the app; every decision and every
+    judgement is a turn in the task's own Shadow chat, built by
+    _shadow_args. This builder stays for the lean-lane tests that pin its
+    argv until those lanes are retired with it.
+
     WAS `_shadow_args`, and the split is the whole optimisation. That builder
     makes a full Claude Code agent: every built-in tool schema, the skills
     catalog, the agent roster, the MCP servers, the founder's settings and
@@ -2783,40 +2789,46 @@ async def _shadow_recover():
         except Exception:
             pass
         try:
-            # SHADOW DRIVES from turn 1. Same argv builder and same empty
-            # workdir Shadow's own session uses (SHADOW.md-only context,
-            # fast turns) -- and deliberately WITHOUT SUTRA_MCP_SHADOW, so
-            # the reasoning call has no shadow tools and can only answer.
+            # SHADOW DRIVES from turn 1, FROM THE TASK'S OWN CHAT AND NOWHERE
+            # ELSE (founder D81, 2026-09-21: "I don't want anything to be in
+            # the background of the conversations with the app"; "either it
+            # should happen in Shadow Chat or it should happen in Worker
+            # Chat"). Until D81 the decider fell back to a one-shot process
+            # (shadow_runner.make_decider) when the task chat was dead, and
+            # the judge ALWAYS ran as one (shadow_runner.make_judge) -- two
+            # model calls no chat recorded and no founder could open. Both
+            # are unbound here. A dead task chat is REVIVED through the same
+            # door the founder's own line uses (_ensure_task_chat: --resume
+            # of the recorded session, else a fresh start on the record);
+            # a chat that cannot come back leaves the turn undecided,
+            # ledgered, rather than answered out of sight.
             #
-            # Shadow v4 (ADR-043): the task's OWN Shadow chat decides when it
-            # is alive; the one-shot below is the fallback, byte-identical to
-            # what ran before v4. Routed per decision by mission_id.
-            # `_decide_args`, NOT `_shadow_args` (2026-09-19): the reasoning
-            # lane buys no tools, no settings and no plugins, because it is
-            # allowed to use none of them. See _decide_args for the numbers.
-            _one_shot = shadow_runner.make_decider(_decide_args, _shadow_workdir(),
-                                                   new_runtime=_shadow_new_runtime)
+            # THE JUDGE IN THE TASK CHAT. The verdict is still formed from
+            # the evidence text shadow_judge hands it and still validated by
+            # shadow_judge.parse_verdict; the engine still applies it. What
+            # D81 traded away is session separation (the chat has read the
+            # worker's prose all mission) for a verdict the founder can read
+            # where the task lives. "Shadow drives, the verifier decides"
+            # holds at the engine, not by process boundary.
+            async def _revive_task_chat(mid):
+                store = _mission_engine.MissionStore()
+                m = store.load(mid)
+                if m is None:
+                    raise RuntimeError("no mission %s" % mid)
+                return await _ensure_task_chat(m)
 
-            async def _routed(context, _fallback=_one_shot):
-                return await shadow_task_chat.route_decision(context, _fallback)
+            async def _routed(context):
+                return await shadow_task_chat.route_decision(
+                    context, revive=_revive_task_chat)
+
+            async def _routed_judge(check, evidence, outcome="",
+                                    mission_id=None):
+                return await shadow_task_chat.route_judgement(
+                    check, evidence, outcome, mission_id=mission_id,
+                    revive=_revive_task_chat)
 
             shadow_runner.set_default_decider(_routed)
-            # THE JUDGE IS BOUND BESIDE THE DECIDER (D-SH-1, 2026-09-20), on
-            # the SAME argv builder and the same runtime factory -- so it
-            # buys no tools, no settings and no plugins, for the same reason
-            # the reasoning lane does not: it is allowed to use none of them.
-            # It reads a diff handed to it as text and answers met / unmet /
-            # cannot_tell.
-            #
-            # NOT ROUTED THROUGH THE TASK CHAT, deliberately. The decider is
-            # routed there so a task's own Shadow conversation can steer it;
-            # a judgement must NOT land in a conversation that has been
-            # reading the worker's prose all mission, because the whole
-            # property shadow_judge exists to hold is that the verdict was
-            # formed from the artifact and not from anybody's account of it.
-            shadow_runner.set_default_judge(
-                shadow_runner.make_judge(_decide_args, _shadow_workdir(),
-                                         new_runtime=_shadow_new_runtime))
+            shadow_runner.set_default_judge(_routed_judge)
         except Exception:
             pass
         try:

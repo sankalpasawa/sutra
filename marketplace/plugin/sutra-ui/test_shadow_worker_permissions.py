@@ -237,7 +237,10 @@ class TestShadowItselfStaysIsolated(Base):
                          args[args.index("--permission-mode") + 1],
                          "a process that cannot act takes the narrowest mode")
         src = Path(app.__file__).read_text()
-        self.assertIn("make_decider(_decide_args, _shadow_workdir(),", src)
+        # D81 (2026-09-21): app builds no one-shot decider at all any more;
+        # the reasoning lane's argv is pinned above for the day it is
+        # retired with its tests.
+        self.assertNotIn("shadow_runner.make_decider(", src)
         self.assertNotIn("make_decider(_worker_args", src,
                          "the decider must never get repo authority")
 

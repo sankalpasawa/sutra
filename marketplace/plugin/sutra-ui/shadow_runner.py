@@ -2204,6 +2204,13 @@ def render_decide_prompt(context):
 def make_decider(build_args, cwd, timeout_s=DECIDE_TIMEOUT_S, new_runtime=None):
     """Shadow's reasoning step as ONE bounded call per mission turn.
 
+    RETIRED FROM THE APP (founder D81, 2026-09-21): app no longer binds this.
+    Every decision is a turn in the task's own Shadow chat
+    (shadow_task_chat.route_decision), revived when it has died, never a
+    process with no chat record. Kept, unbound, for the lean-lane tests that
+    pin its argv and its no-tools property until those lanes are retired
+    with it.
+
     WHY NOT THE FOUNDER'S SHADOW SESSION. app keeps a single persistent
     ShadowSession behind _SHADOW_LOCK. It is the founder's CONVERSATION:
     putting mission reasoning in it would write into the thread they read,
@@ -2264,6 +2271,11 @@ def make_decider(build_args, cwd, timeout_s=DECIDE_TIMEOUT_S, new_runtime=None):
 
 def make_judge(build_args, cwd, timeout_s=DECIDE_TIMEOUT_S, new_runtime=None):
     """One bounded call that settles ONE check by reading the evidence.
+
+    RETIRED FROM THE APP (founder D81, 2026-09-21): app no longer binds this.
+    The judge is a turn in the task's own Shadow chat
+    (shadow_task_chat.route_judgement -> TaskChat.judge), same prompt, same
+    parser. Kept, unbound, beside make_decider for the same reason.
 
     BUILT FROM make_decider'S PRIMITIVES ON PURPOSE, and it inherits every
     property that made the decider safe: a fresh one-shot process, the same

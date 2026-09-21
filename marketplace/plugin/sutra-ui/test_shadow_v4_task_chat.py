@@ -4,8 +4,8 @@ shadow_task_chat.TaskChat is the second of the two AIs: it boots with the
 Shadow persona plus a TASK CONTEXT block, carries no Shadow tools, talks to
 the founder about its task, writes the worker's brief, and decides the next
 instruction in its own conversation. route_decision hands the engine's turn
-to that chat when it is alive and to the one-shot decider otherwise, so the
-pre-v4 path stays byte-identical as the fallback.
+to that chat, revived when it has died; since D81 (2026-09-21) there is no
+one-shot fallback -- see test_shadow_d81.py.
 
 Faked at the process boundary only (FakeRuntime = a scripted claude), never
 at the engine or the store.
@@ -270,29 +270,31 @@ class TestRouting(Base):
         self.assertEqual(d["instruction"], "from the chat")
         self.assertEqual(calls, [], "the one-shot was not consulted")
 
-    def test_31_no_task_chat_means_the_one_shot(self):
-        async def fallback(ctx):
-            return {"action": "continue", "instruction": "from the one-shot",
-                    "reason": "r"}
+    # D81 (2026-09-21): there is NO one-shot fallback any more. The four
+    # tests that pinned it now pin its absence; the revival path and the
+    # judge turn are covered in test_shadow_d81.py.
 
+    def test_31_no_task_chat_and_no_revive_is_undecided(self):
         ctx = {"mission_id": "m-nobody", "outcome": "x", "checks": []}
-        d = run(stc.route_decision(ctx, fallback))
-        self.assertEqual(d["instruction"], "from the one-shot")
+        self.assertIsNone(run(stc.route_decision(ctx)))
 
-    def test_32_a_dead_task_chat_falls_back(self):
+    def test_32_a_dead_task_chat_is_revived_never_replaced(self):
         c, rt = self.chat(["READY"])
         self.start(c)
         c.stop()
+        c2, rt2 = self.chat(["READY", self.decision("from the revived chat")],
+                            sid="tc-fake-2")
 
-        async def fallback(ctx):
-            return {"action": "continue", "instruction": "from the one-shot",
-                    "reason": "r"}
+        async def revive(mid):
+            await c2.start(build_args, "/tmp/shadow-home", self.mission,
+                           publish=lambda sid: "chat-2")
+            return c2
 
         ctx = {"mission_id": self.mission["id"], "outcome": "x", "checks": []}
-        d = run(stc.route_decision(ctx, fallback))
-        self.assertEqual(d["instruction"], "from the one-shot")
+        d = run(stc.route_decision(ctx, revive=revive))
+        self.assertEqual(d["instruction"], "from the revived chat")
 
-    def test_33_a_chat_that_fails_mid_turn_falls_back_and_is_ledgered(self):
+    def test_33_a_chat_that_fails_mid_turn_is_undecided_and_ledgered(self):
         c, rt = self.chat(["READY"])
         self.start(c)
 
@@ -300,27 +302,17 @@ class TestRouting(Base):
             raise RuntimeError("stream broke")
         rt.demux_turn = boom
 
-        async def fallback(ctx):
-            return {"action": "continue", "instruction": "from the one-shot",
-                    "reason": "r"}
-
         ctx = {"mission_id": self.mission["id"], "outcome": "x", "checks": []}
-        d = run(stc.route_decision(ctx, fallback))
-        self.assertEqual(d["instruction"], "from the one-shot")
+        self.assertIsNone(run(stc.route_decision(ctx)))
         acts = shadow_ledger.read("actions", 10)
-        self.assertTrue(any("fallback to the one-shot" in a["summary"]
-                            for a in acts), acts)
+        self.assertTrue(any("turn failed" in a["summary"] for a in acts), acts)
+        self.assertFalse(any("one-shot" in a["summary"] for a in acts), acts)
 
-    def test_34_a_chat_with_no_decision_falls_back(self):
+    def test_34_a_chat_with_no_decision_is_undecided(self):
         c, rt = self.chat(["READY", "I have no idea."])
         self.start(c)
-
-        async def fallback(ctx):
-            return {"action": "ask_founder", "reason": "one-shot asks"}
-
         ctx = {"mission_id": self.mission["id"], "outcome": "x", "checks": []}
-        d = run(stc.route_decision(ctx, fallback))
-        self.assertEqual(d["action"], "ask_founder")
+        self.assertIsNone(run(stc.route_decision(ctx)))
 
 
 class TestEngineContext(Base):

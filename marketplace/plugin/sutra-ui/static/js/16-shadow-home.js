@@ -2697,19 +2697,33 @@ async function shadowSayToShadow(mid, text, el){
    spend a turn and does not enter the decider's context. Whether a casual
    line should ever become work is step 2, and deliberately not here. */
 
-/* The prompts this conversation is NOT: the boot, the brief ask and the
-   steering turn all travel down the SAME session, so the transcript holds
-   them beside the founder's own lines. They are matched on the opening
-   words their one writer emits -- shadow_task_chat.BOOT_PREFIX,
-   shadow_task_chat.BRIEF_ASK and shadow_runner._DECIDE_PROMPT -- and a
-   dropped prompt takes every reply that follows it, to the next founder
-   line. Presentation only: the transcript is untouched, and the whole
-   conversation is still in the chat this session was published as. */
-const SH_TALK_SKIP = [
-  /^\[Shadow boot\]/,
-  /^Write the opening brief for this task's worker chat\./,
-  /^You are Shadow, driving one target chat toward an outcome\./,
+/* THE PROMPTS THE APP SENDS INTO THIS CONVERSATION -- the boot, the brief
+   ask, the steering turn and (D81) the judge -- travel down the SAME session,
+   so the transcript holds them beside the founder's own lines. They are
+   matched on the opening words their one writer emits
+   (shadow_task_chat.BOOT_PREFIX, shadow_task_chat.BRIEF_ASK,
+   shadow_runner._DECIDE_PROMPT, shadow_judge._PROMPT).
+
+   FOLDED, NEVER DROPPED (founder D81, 2026-09-21: "All the conversations
+   with the app should happen in the Sutra chat UI and should be shown
+   there"). Until D81 a matched prompt and every reply that followed it were
+   left out of the stream. Now each one is ONE folded row: a one-line label
+   the founder can open to read the prompt and Shadow's answer verbatim. The
+   view shows the chat's own transcript, not a filtered copy of it. */
+const SH_TALK_FOLD = [
+  { re: /^\[Shadow boot\]/, kind: "boot",
+    label: "Shadow booted with its operating context" },
+  { re: /^Write the opening brief for this task's worker chat\./, kind: "brief",
+    label: "Shadow wrote the worker's brief" },
+  { re: /^You are Shadow, driving one target chat toward an outcome\./, kind: "steer",
+    label: "Shadow read the worker and chose the next instruction" },
+  { re: /^You are settling ONE completion check by reading evidence\./, kind: "judge",
+    label: "Shadow judged a check from the evidence" },
 ];
+function shTalkFold(text){
+  for (const f of SH_TALK_FOLD) if (f.re.test(text)) return f;
+  return null;
+}
 
 /* THE LIVE LINES ARE KEYED BY MISSION, AND THAT IS THE WHOLE BUG (founder,
    2026-09-17). `live` was a single flat array. While the floating panel
@@ -2772,19 +2786,30 @@ function shadowTalkTurns(m){
   const msgs = shadowTaskTranscript(sid, true);
   if (!Array.isArray(msgs)) return [];
   const out = [];
-  let skip = false;
+  /* the folded row the replies currently belong to, or null when the last
+     user line was the founder's own */
+  let fold = null;
   for (const t of msgs){
     if (!t) continue;
     const text = String(t.text || "").trim();
     if (t.role === "user"){
-      skip = !text || SH_TALK_SKIP.some(re => re.test(text));
-      if (!skip) out.push({ who: "founder", text: text,
-                            ts: Date.parse(t.ts || "") });
+      if (!text){ fold = null; continue; }
+      const f = shTalkFold(text);
+      if (f){
+        /* ONE ROW PER APP PROMPT: the prompt and every reply to it, folded */
+        fold = { who: "system", fold: f.kind, label: f.label, text: text,
+                 replies: [], ts: Date.parse(t.ts || "") };
+        out.push(fold);
+      } else {
+        fold = null;
+        out.push({ who: "founder", text: text, ts: Date.parse(t.ts || "") });
+      }
       continue;
     }
-    /* every reply to a dropped prompt is dropped with it -- one prompt can
-       answer across several messages, so this does NOT reset per message */
-    if (t.role !== "assistant" || skip || !text) continue;
+    if (t.role !== "assistant" || !text) continue;
+    /* a reply to an app prompt goes INTO its fold -- one prompt can answer
+       across several messages, so this does NOT reset per message */
+    if (fold){ fold.replies.push(text); continue; }
     out.push({ who: "shadow", text: text, ts: Date.parse(t.ts || "") });
   }
   return out;
@@ -3139,6 +3164,14 @@ function shadowTimelineEvents(m){
   let lastAsk = null;
   const spoken = {};
   for (const t of talk){
+    /* D81: an app prompt and its replies are one folded row. It is never
+       in the live lines (the app sent it, not the founder), so it takes no
+       part in the dedupe and never closes a founder's question. */
+    if (t.fold){
+      out.push({ kind: "talk", who: "system", fold: t.fold, label: t.label,
+                 text: t.text, replies: t.replies || [], ts: t.ts });
+      continue;
+    }
     if (t.who === "founder") lastAsk = shadowTalkKey(t.text);
     else if (t.who === "shadow" && lastAsk) answered[lastAsk] = 1;
     /* The founder's OWN lines are byte-identical in both sources -- the
@@ -3421,6 +3454,18 @@ function shadowTimelineHtml(m){
       <div class="shsaidhead">${head}</div>
       <div class="shsaidtext">${line}</div>
     </div>`;
+    }
+    if (e.kind === "talk" && e.fold){
+      /* D81: an app prompt and Shadow's answer, FOLDED -- one line the
+         founder can open, nothing removed. Native <details>: no script, no
+         state, and the verbatim text is in the page for search. The prompt
+         and the replies are the transcript's own bytes, only escaped. */
+      const replies = (e.replies || []).map(r =>
+        `<div class="shfoldreply"><div class="shsaidhead">Shadow</div><div class="shsaidtext">${esc(r)}</div></div>`).join("");
+      return `<details class="shsaid shfold" data-shfold="${escAttr(e.fold)}">
+      <summary class="shsaidhead">${esc(e.label || "Shadow, from the app")}</summary>
+      <div class="shfoldprompt"><div class="shsaidhead">The app → Shadow</div><div class="shsaidtext">${esc(e.text)}</div></div>${replies}
+    </details>`;
     }
     if (e.kind === "said" || e.kind === "talk"){
       /* THE SAME BLOCK BOTH SIDES SPEAK IN, and the same one the worker's
