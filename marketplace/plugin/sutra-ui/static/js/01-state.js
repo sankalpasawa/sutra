@@ -437,7 +437,9 @@ function panelToken(){
   return m ? m.content : "";
 }
 async function apiGet(path){
-  const r = await fetch(API + path, { headers: { "X-Sutra-Panel": panelToken() } });
+  const go = () => fetch(API + path, { headers: { "X-Sutra-Panel": panelToken() } });
+  let r = await go();
+  if (r.status === 403 && await refreshPanelToken()) r = await go();
   if (!r.ok) throw await _fail(r, path);
   return r.json();
 }
@@ -446,10 +448,22 @@ async function apiGet(path){
    desktop token or a paired browser session token. Merged over the defaults so
    a caller cannot accidentally drop X-Sutra-Panel and get a silent 403. */
 async function apiPost(path, body, headers){
-  const r = await fetch(API + path, { method:"POST",
+  /* ONE RETRY AFTER A TOKEN REFRESH, and it belongs HERE rather than in each
+     caller. PANEL_TOKEN is minted per backend process (app.py), so a page that
+     outlives a restart carries a dead token and EVERY mutation 403s. The heal
+     (refreshPanelToken) shipped 2026-08-25 but was only ever wired into the two
+     Shadow surfaces, each with its own private wrapper -- so Shadow self-healed
+     while Settings silently did nothing. Found live 2026-09-21: clicking Full
+     access after a `python` restart 403'd, applyPermMode stored the error in
+     S.permError, and nothing on the access screen draws it. Five identical
+     clicks, no setting written, no message. One retry at the shared door fixes
+     that class, not one instance of it. */
+  const go = () => fetch(API + path, { method:"POST",
     headers: Object.assign({"Content-Type":"application/json",
                             "X-Sutra-Panel": panelToken()}, headers || {}),
     body: JSON.stringify(body||{}) });
+  let r = await go();
+  if (r.status === 403 && await refreshPanelToken()) r = await go();
   if (!r.ok) throw await _fail(r, path);
   return r.json();
 }

@@ -1363,6 +1363,17 @@ function accessSectionHtml(st){
     ${settingsHeadHtml("Access and permissions",
       "What the AI may change on this Mac without asking you first.", "Setup")}
     ${settingsBanner()}
+    ${/* A REFUSED CLICK HAS TO SAY SO. S.permError was written by applyPermMode
+          and rendered in exactly one place -- permConfirmHtml -- which is skipped
+          entirely once consent is on file. So on the machines where the four
+          buttons are freely settable, a failed save was invisible: the POST
+          errored, the screen re-rendered from unchanged server state, and the
+          radio simply stayed where it was. Found live 2026-09-21 (stale panel
+          token after a backend restart; five clicks, no message). */""}
+    ${S.permError?`<div class="note w" role="alert"><b>That did not save.</b>
+      <p style="margin:6px 0">${esc(S.permError)}</p>
+      <p class="why" style="margin:0">The setting below is still what the server
+      has. If this mentions a stale panel token, reload the window.</p></div>`:""}
     ${st.permission_mode_clamped?`<div class="note w"><b>The setting on file is not the one running.</b>
       Sutra is starting sessions as <b>${esc(accessLabelFor(active, running))}</b>.
       ${esc(st.permission_mode_clamp_reason||"")}
