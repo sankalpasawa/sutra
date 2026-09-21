@@ -4,756 +4,443 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Chat micro-interactions - Sutra Desktop</title>
-<!-- 2026-09-21: the six chat micro-interactions proposed after the chat-chrome
-     unit (sutra 200f77ea), shown on the app's OWN css so the founder can feel
-     them before any renderer code is written. chat-assets/{panel,agents,
-     workspace}.css are byte copies of what the app served on 2026-09-21; the
-     markup uses the app's class names (.rlist .srow .t .m .livedot, .pane .ph
-     .pb .pc, .uchip[data-panemenu], .upop.panemenu .mrow .mk .mv .ma,
-     textarea[data-sask], .send) read from 06-render.js, 02-helpers.js and
-     panel.css. Shell approach from shadow-v10.html. Built by a three-builder
-     workflow; this is variant B (motion first) with the judge panel's
-     must-fixes folded: reduced motion is independent of the "as today"
-     toggle, no stuck timers, re-runnable controls, ASCII copy. -->
+<!-- 2026-09-21, walkthrough version (founder: "The page is not understandable.
+     How exactly are those things applied?"). Six rows. Each row names the
+     moment in the app, then shows two small chat panels side by side: TODAY
+     (what the app does now) and PROPOSED (the change), replaying by
+     themselves every 7 seconds. Nothing to operate except the reduced-motion
+     switch. Built on the app's own css (chat-assets/ byte copies of
+     panel.css, agents.css, workspace.css taken 2026-09-21) and the app's
+     class names (.turn .u .a, .pb, .pc, .uchip, .send, .upop.panemenu .mrow,
+     .rlist .srow .livedot). The motion layer is the same one as the earlier
+     control-panel version; only the presentation changed. -->
 <link rel="stylesheet" href="chat-assets/panel.css">
 <link rel="stylesheet" href="chat-assets/agents.css">
 <link rel="stylesheet" href="chat-assets/workspace.css">
 <style>
 /* ============================================================
-   mock-only chrome: the page shell around the app's own css.
-   Nothing in this block ships anywhere.
+   page chrome (mock only). The app css locks its shell (body
+   overflow:hidden, .wrap 100vh); a page must scroll.
    ============================================================ */
-/* the app css locks the shell (body overflow:hidden, .wrap 100vh); a page must scroll */
 html,body{height:auto;overflow:auto}
-body{background:#f2f0ec;margin:0;padding:12px 18px 20px;font:13px/1.5 var(--sans);color:var(--ink)}
-/* ONE SCREEN (founder 2026-09-21 "I'm not able to scroll"): the controls sit
-   ABOVE the chat and the whole page fits a laptop window, so nothing has to
-   scroll. Order is css, so the markup order below is unchanged. */
-.wrap{height:auto;overflow:visible;max-width:1180px;margin:0 auto;display:flex;flex-direction:column}
-.topstrip{order:0}.controls-first{order:1}.mockapp{order:2}.cap{order:3}
-
-.topstrip{display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap;
-  background:var(--card);border:1px solid var(--line);border-radius:12px;
-  padding:10px 16px;margin-bottom:12px}
+body{background:#f2f0ec;margin:0;padding:18px 18px 40px;font:13px/1.5 var(--sans);color:var(--ink)}
+.wrap{height:auto;overflow:visible;max-width:1180px;margin:0 auto}
+.top{display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap;background:var(--card);
+  border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:14px}
+.top h1{font-size:16px;margin:0 0 3px;letter-spacing:-.01em}
+.top p{margin:0;color:var(--muted);font-size:12.5px;max-width:80ch}
 .topmain{flex:1;min-width:260px}
-.topmain h1{font-size:16px;margin:0 0 4px;letter-spacing:-.01em}
-.topmain p{margin:0;color:var(--muted);font-size:12.5px;max-width:74ch}
-.topswitch{flex:none;display:flex;align-items:center;gap:9px;padding-top:2px}
-.topswitch b{font-size:11.5px;color:var(--ink)}
-
-/* the reduced-motion switch, x2 (top strip + control 7), kept in sync by JS */
-.swrow{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+.swrow{display:inline-flex;align-items:center;gap:8px;cursor:pointer;user-select:none;flex:none;padding-top:2px}
+.swrow b{font-size:11.5px}
 .swrow input{position:absolute;opacity:0;width:1px;height:1px}
-.swtrack{width:34px;height:19px;border-radius:99px;background:var(--line);
-  border:1px solid var(--line);position:relative;transition:background .12s ease;flex:none}
-.swknob{position:absolute;top:1px;left:1px;width:15px;height:15px;border-radius:50%;
-  background:var(--card);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .12s ease}
+.swtrack{width:34px;height:19px;border-radius:99px;background:var(--line);border:1px solid var(--line);
+  position:relative;transition:background .12s ease;flex:none}
+.swknob{position:absolute;top:1px;left:1px;width:15px;height:15px;border-radius:50%;background:var(--card);
+  box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .12s ease}
 .swrow input:checked + .swtrack{background:var(--acc)}
 .swrow input:checked + .swtrack .swknob{transform:translateX(15px)}
 .swrow input:focus-visible + .swtrack{outline:2px solid var(--acc);outline-offset:2px}
 
-.mockapp{background:var(--surface);border:1px solid var(--line);border-radius:12px;
-  box-shadow:var(--shadow, 0 1px 2px rgba(0,0,0,.06));padding:10px;margin-bottom:20px}
-.app{display:grid;grid-template-columns:220px 1fr;gap:10px;height:410px}
-@media(max-width:760px){.app{grid-template-columns:1fr;height:auto}
-  .app .rail{max-height:220px}.app .panes{min-height:460px}}
-.rail{display:flex;flex-direction:column;min-height:0}
-.panes{display:flex;min-height:0}
-.panes .pane{width:100%}
-
-/* controls strip: a compact grid of seven cards; each description is the
-   trigger button's tooltip (set by the script at load) */
-.controls{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;
-  background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px 12px;margin-bottom:12px}
-@media(max-width:1100px){.controls{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:700px){.controls{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.controls h2{grid-column:1/-1;font-size:12.5px;margin:0;letter-spacing:-.01em}
-.controls > p.lede{grid-column:1/-1;margin:-4px 0 2px;color:var(--muted);font-size:11.5px}
-.ctrl{border:1px solid var(--line-soft);border-radius:9px;padding:8px 10px;min-width:0}
-.ctrlhead{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;margin-bottom:6px}
-.ctrlhead .num{flex:none;width:18px;height:18px;border-radius:50%;background:var(--acc-bg);
-  color:var(--acc);font:700 10.5px/18px var(--mono);text-align:center}
-.ctrlhead .name{font-weight:600;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ctrlhead .timing{flex-basis:100%;font:500 10px/1.3 var(--mono);color:var(--faint)}
-.ctrldesc{display:none}
-.ctrlrow{display:flex;flex-direction:column;align-items:stretch;gap:7px}
-.ctrlrow .seg{align-self:flex-start}
-.ctrlrow .trig{width:100%;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;flex:none}
-/* Laws of UX pass (2026-09-21): the trigger is the ONE accent element on each
-   card (Von Restorff) and is sized for a fast hit (Fitts, 34 px); the as-today /
-   proposed toggle is quiet so it never competes with the action. */
-.seg button{background:none;border:0;padding:7px 9px;font:500 11px/1 var(--sans);
-  color:var(--muted);cursor:pointer}
-.seg button.on{background:var(--inset);color:var(--ink)}
-.seg button:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
-.trig{background:var(--acc);border:1px solid var(--acc);border-radius:8px;min-height:34px;
-  padding:9px 12px;font:600 12px/1 var(--sans);color:var(--on-acc);cursor:pointer}
-.trig:hover{filter:brightness(.94)}
-.trig:disabled{opacity:.5;cursor:default}
-.trig:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
-.cap{font:11.5px/1.4 var(--sans);color:var(--muted);margin:8px 0 0}
+/* one row per interaction: caption | TODAY | PROPOSED */
+.row{display:grid;grid-template-columns:250px 1fr 1fr;gap:12px;background:var(--card);
+  border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+@media(max-width:900px){.row{grid-template-columns:1fr}}
+.capt .num{display:inline-block;width:20px;height:20px;border-radius:50%;background:var(--acc-bg);color:var(--acc);
+  font:700 11px/20px var(--mono);text-align:center;margin-right:6px}
+.capt h2{font-size:13.5px;margin:0 0 8px;display:flex;align-items:center;letter-spacing:-.01em}
+.capt p{margin:0 0 7px;font-size:12px;color:var(--ink);line-height:1.5}
+.capt p b{font-weight:650}
+.capt .when{color:var(--muted)}
+.capt .t{font:500 10px/1.4 var(--mono);color:var(--faint);margin-top:6px}
+.capt .t span{display:inline-block;margin-right:8px}
+.mini{display:flex;flex-direction:column;min-width:0}
+.minihead{display:flex;align-items:center;gap:8px;font:650 9.5px/1 var(--mono);letter-spacing:.08em;
+  text-transform:uppercase;color:var(--faint);margin:0 0 6px 2px}
+.minihead.prop{color:var(--acc)}
+.minihead .bar{flex:1;height:2px;background:var(--line-soft);border-radius:2px;overflow:hidden}
+.minihead .bar i{display:block;height:100%;width:0;background:var(--line);}
+.screen{position:relative;height:230px;border:1px solid var(--line);border-radius:10px;background:var(--surface,#fff);
+  overflow:hidden;display:flex;flex-direction:column}
+/* the inner transcript never takes the wheel: the page keeps scrolling; scenes move it by script */
+.screen .pb{flex:1;min-height:0;overflow:hidden;padding:12px 14px;position:relative}
+.screen .pc{flex:none}
+.screen .turn{margin-bottom:12px}
+.screen .turn .u{font-size:11.5px}
+.screen .turn .a{font-size:11.5px;margin-top:6px}
+.screen .rlist{margin:0;padding:8px}
+.screen .srow .rowopen{width:100%}
+.screen textarea[data-sask]{min-height:22px}
+.foot{font:11.5px/1.4 var(--sans);color:var(--muted);margin:10px 0 0}
 
 /* ============================================================
-   motion layer: what a builder ports into panel.css
-   Named durations and eases only; existing tokens throughout
-   (--acc, --ok, --ok-bg, --line, --muted, --ink). --ease is the
-   one addition, already precedented in shadow-v10.html.
+   motion layer: what a builder ports into panel.css. Named
+   durations and eases only; existing tokens (--acc, --ok,
+   --ok-bg, --line, --muted, --ink). --ease as in shadow-v10.
    ============================================================ */
 :root{--ease:cubic-bezier(.2,.7,.2,1)}
-
-/* [1] jump: "Jump to latest" pill, 150 ms opacity fade; the transcript itself never moves */
-.jumppill{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);z-index:5;
-  opacity:0;pointer-events:none;transition:opacity 150ms var(--ease)}
+/* [1] jump: the pill fades in over 150 ms; the transcript itself never moves */
+.jumppill{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);z-index:5;opacity:0;
+  pointer-events:none;transition:opacity 150ms var(--ease)}
 .jumppill.show{opacity:1;pointer-events:auto}
-.jumppill button{display:inline-flex;align-items:center;gap:5px;background:var(--ink);
-  color:var(--bg);border:0;border-radius:99px;padding:6px 13px;font:600 11.5px/1 var(--sans);
-  cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.22)}
-.jumppill button:hover{background:var(--acc)}
-
-/* [2] arrive: a new turn fades in and rises 4 px over 120 ms; the caret is a soft 2 px bar */
+.jumppill button{display:inline-flex;align-items:center;gap:5px;background:var(--ink);color:var(--bg);border:0;
+  border-radius:99px;padding:6px 12px;font:600 11px/1 var(--sans);cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.22)}
+/* [2] arrive: fade + 4 px rise over 120 ms; soft 2 px caret */
 @keyframes riseIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 .turn.arriving{animation:riseIn 120ms var(--ease) both}
-.caret2{display:inline-block;width:2px;height:13px;margin-left:1px;vertical-align:-2px;
-  background:var(--acc);border-radius:1px;animation:caretsoft 1s ease-in-out infinite}
+.caret2{display:inline-block;width:2px;height:12px;margin-left:1px;vertical-align:-2px;background:var(--acc);
+  border-radius:1px;animation:caretsoft 1s ease-in-out infinite}
 @keyframes caretsoft{0%,100%{opacity:1}50%{opacity:.3}}
-/* as today: the whole block repaints (a flash) and the caret is a hard blinking block */
 .repaintflash{background:var(--acc-bg)}
-
-/* [3] live: the shipped steady .livedot plus one slow breath of its halo every 4 s */
-.livedot[data-state="off"]{display:none}
+/* [3] live: the shipped steady dot plus one slow breath of its halo every 4 s */
 .livedot.breathe::before{animation:breathe 4s var(--ease) infinite}
 @keyframes breathe{0%,80%,100%{box-shadow:0 0 0 3px var(--ok-bg)}40%{box-shadow:0 0 0 7px var(--ok-bg)}}
-
-/* [4] menu: 90 ms scale + opacity from the anchor corner; rows highlight over 60 ms;
-   a changed value flashes its tint away over 600 ms */
-.upop.panemenu{transform-origin:left bottom;opacity:0;transform:scale(.96);
-  pointer-events:none;transition:opacity 90ms var(--ease),transform 90ms var(--ease)}
-.upop.panemenu.open{opacity:1;transform:scale(1);pointer-events:auto}
-.mrow{transition:background 60ms ease}
+/* [4] menu: scale + opacity from the anchor corner over 90 ms; rows highlight over 60 ms; a changed value flashes 600 ms */
+.screen .upop.panemenu{transform-origin:left bottom;opacity:0;transform:scale(.96);pointer-events:none;
+  transition:opacity 90ms var(--ease),transform 90ms var(--ease);left:8px;right:auto;width:300px;bottom:52px}
+.screen .upop.panemenu.open{opacity:1;transform:scale(1);pointer-events:auto}
+.screen .mrow{transition:background 60ms ease}
+.screen .mrow.hov{background:var(--acc-bg)}
 .accn.flash{animation:flashtint 600ms ease-out}
 @keyframes flashtint{0%{background:var(--acc-bg);color:var(--acc)}100%{background:transparent;color:inherit}}
-
 /* [5] compose: height tweens 100 ms; Send presses to .94 over 80 ms; Send/Stop cross-fade 120 ms */
-textarea[data-sask]{transition:height 100ms ease}
-.send{transition:transform 80ms var(--ease)}
-.send.pressed{transform:scale(.94)}
-.send .ico{transition:opacity 120ms linear}
-.send .ico.hide{opacity:0;position:absolute}
-.send .ico.show{opacity:1;position:relative}
-
+.screen textarea[data-sask]{transition:height 100ms ease}
+.screen .send{transition:transform 80ms var(--ease)}
+.screen .send.pressed{transform:scale(.94)}
+.screen .send .ico{transition:opacity 120ms linear}
+.screen .send .ico.hide{opacity:0;position:absolute}
+.screen .send .ico.show{opacity:1;position:relative}
 /* [6] switch: 150 ms cross-fade between two chat bodies */
-#pb{position:relative}
 .chatbody{transition:opacity 150ms var(--ease)}
-.chatbody.fading-out{position:absolute;inset:0;opacity:0}
-.chatbody.fading-in{position:absolute;inset:0;opacity:1}
-
-/* [7] reduced motion: the floor under every rule above. The OS setting and the
-   page switch both land here; the PROPOSED design still applies, instantly. */
-@media (prefers-reduced-motion:reduce){
-  *,*::before,*::after{animation-duration:1ms !important;transition-duration:1ms !important}
-}
-html.reduced *,html.reduced *::before,html.reduced *::after{
-  animation-duration:1ms !important;transition-duration:1ms !important}
-/* the legacy "as today" states never animate: they are the abrupt behaviour being replaced */
+.chatbody.out{position:absolute;inset:12px 14px;opacity:0}
+.backlabel{position:absolute;top:8px;right:10px;background:var(--ink);color:var(--bg);border-radius:99px;
+  padding:4px 9px;font:600 10.5px/1 var(--sans);animation:riseIn 120ms var(--ease) both}
+/* [3] the demo dot is drawn larger than the app's so the breath reads at panel size */
+.screen .livedot::before{width:8px;height:8px}
+.screen .livedot.breathe::before{animation:breathe2 4s var(--ease) infinite}
+@keyframes breathe2{0%,80%,100%{box-shadow:0 0 0 3px var(--ok-bg)}40%{box-shadow:0 0 0 11px var(--ok-bg)}}
+/* the TODAY panels never animate: they are the abrupt behaviour being replaced */
 .legacy,.legacy *{animation:none !important;transition:none !important}
+/* reduced motion: the proposed design, instantly */
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:1ms !important;transition-duration:1ms !important}}
+html.reduced *,html.reduced *::before,html.reduced *::after{animation-duration:1ms !important;transition-duration:1ms !important}
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="wrap walkthrough">
 
-<div class="topstrip">
+<div class="top">
   <div class="topmain">
-    <h1>Six chat micro-interactions</h1>
-    <p>Each control below runs its interaction inside the chat screen. Flip "as today" / "proposed" on a control to feel the difference. Timings are on every card. Nothing here is built yet.</p>
+    <h1>Six chat micro-interactions, today beside proposed</h1>
+    <p>Each row is one moment in the chat. The left panel shows what the app does today, the right panel the proposal. Both replay by themselves every 7 seconds; click a panel to replay it now. Nothing here is built yet.</p>
+    <p>How they would be applied: small additions to the chat screen's existing stylesheet and script, on the elements it already has. No new screens, no new colours; each one is a few lines.</p>
   </div>
-  <label class="swrow topswitch" data-demo="reduced" title="On, every proposed transition becomes an instant state change; the OS-level setting is honoured regardless">
+  <label class="swrow" title="On, every proposed change happens instantly, with no motion. Also follows your Mac's reduce-motion setting.">
     <b>Reduced motion</b>
-    <input type="checkbox" id="reduceTop" aria-label="Reduced motion">
+    <input type="checkbox" id="reduce" aria-label="Reduced motion">
     <span class="swtrack"><span class="swknob"></span></span>
   </label>
 </div>
 
-<div class="mockapp">
-  <div class="app" id="app">
-    <nav class="rail" aria-label="Chats">
-      <div class="rscroll">
-        <ul class="rlist" id="chatlist">
-          <li class="srow" data-chat="c1">
-            <button type="button" class="rowopen" data-open="c1" aria-current="true"
-                    title="Meera Nair - loan application">
-              <span class="t">Meera Nair - loan application</span>
-              <span class="m" id="metac1"><span class="livedot" id="livedot1" data-state="off">live</span></span>
-            </button>
-            <button type="button" class="rowmenu" aria-label="Actions for Meera Nair">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
-            </button>
-          </li>
-          <li class="srow" data-chat="c2">
-            <button type="button" class="rowopen" data-open="c2" aria-current="false"
-                    title="Offer letter - Sethi Textiles">
-              <span class="t">Offer letter - Sethi Textiles</span>
-              <span class="m">6 turns</span>
-            </button>
-            <button type="button" class="rowmenu" aria-label="Actions for Sethi Textiles">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
-            </button>
-          </li>
-          <li class="srow" data-chat="c3">
-            <button type="button" class="rowopen" data-open="c3" aria-current="false" disabled
-                    title="Credit check - Anand Traders">
-              <span class="t">Credit check - Anand Traders</span>
-              <span class="m">3 turns</span>
-            </button>
-            <button type="button" class="rowmenu" aria-label="Actions for Anand Traders" disabled>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
-            </button>
-          </li>
-          <li class="srow" data-chat="c4">
-            <button type="button" class="rowopen" data-open="c4" aria-current="false" disabled
-                    title="EMI query - Rekha Devi">
-              <span class="t">EMI query - Rekha Devi</span>
-              <span class="m">5 turns</span>
-            </button>
-            <button type="button" class="rowmenu" aria-label="Actions for Rekha Devi" disabled>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
-            </button>
-          </li>
-        </ul>
-      </div>
-    </nav>
-
-    <div class="panes" id="panes">
-      <section class="pane" data-sess="open" aria-label="open chat pane">
-        <div class="ph">
-          <div class="phsum">
-            <span class="pht" id="paneTitle">Meera Nair - loan application</span>
-            <span class="phs" id="paneSub">Nair Fabrics - working-capital loan - GST verified</span>
-          </div>
-          <span class="dot" aria-hidden="true" style="width:6px;height:6px;border-radius:50%;background:var(--line);flex:none"></span>
-          <button class="ib" type="button" aria-label="Close session" title="Close this session">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
-          </button>
-        </div>
-
-        <div class="pb" id="pb">
-          <div class="chatbody" data-chat="c1" id="body-c1">
-
-            <div class="turn"><div class="u md">I run a small textile shop, Nair Fabrics. Can you help me apply for a working-capital loan?</div>
-              <div class="a"><div class="md" style="margin-top:6px;color:var(--ink)">Yes. I will need three things first: 12 months of GST returns, the last 6 months of current-account bank statements, and last year's ITR. Once those are in I can start the credit check.</div></div></div>
-
-            <div class="turn"><div class="u md">What documents do you need for the credit check specifically?</div>
-              <div class="a"><div class="md" style="margin-top:6px;color:var(--ink)">The credit check itself only needs the bank statements and a CIBIL pull. GST and ITR are for the eligibility calculation, not the check.</div></div></div>
-
-            <div class="turn"><div class="u md">I have uploaded the last 6 months of bank statements.</div>
-              <div class="a"><div class="md" style="margin-top:6px;color:var(--ink)">Got them. Average monthly balance looks steady at roughly Rs 1.4L. Starting the CIBIL pull now.</div></div></div>
-
-            <div class="turn"><div class="u md">What is the current status of my application?</div>
-              <div class="a"><div class="md" style="margin-top:6px;color:var(--ink)">Documents verified, credit check in progress. Sanctioned amount and offer letter follow once the CIBIL score comes back.</div></div></div>
-
-            <div class="turn"><div class="u md">How much can I borrow against a Rs 12 lakh annual turnover?</div>
-              <div class="a"><div class="md" style="margin-top:6px;color:var(--ink)">Working-capital limits here run 15-20% of annual turnover, so Rs 1.8L-2.4L is the likely band before the CIBIL score adjusts it.</div></div></div>
-
-            <div class="turn"><div class="u md">Can you draft the offer letter once it is approved?</div>
-              <div class="a"><div class="md" style="margin-top:6px;color:var(--ink)">Yes: sanctioned amount, tenure, rate and the first EMI date, ready the moment the credit check clears.</div></div></div>
-
-            <div class="turn"><div class="u md">What is the expected interest rate and tenure?</div>
-              <div class="a"><div class="md" style="margin-top:6px;color:var(--ink)">Indicative range for this profile: 13.5-15% per annum, 24-36 month tenure. The exact figure is set once the CIBIL score is in.</div></div></div>
-
-            <div class="turn"><div class="u md">Once you have the CIBIL score, let me know the sanctioned limit.</div>
-              <div class="a"><div class="md" style="margin-top:6px;color:var(--ink)">Will do. Checking now.</div></div></div>
-
-            <div class="jumppill" id="jumppill" hidden>
-              <button type="button" id="jumpBtn"><span id="jumpcount">3</span> new - jump to latest</button>
-            </div>
-          </div>
-
-          <div class="chatbody" data-chat="c2" id="body-c2" hidden>
-            <div class="turn"><div class="u md">The Sethi Textiles working-capital loan was approved. Can we finalise the offer letter?</div>
-              <div class="a"><div class="md" style="margin-top:6px;color:var(--ink)">Yes. Sanctioned: Rs 3.2L, 14.25% p.a., 30-month tenure. Drafting the letter now.</div></div></div>
-            <div class="turn"><div class="u md">Add a clause for early foreclosure without penalty after 12 months.</div>
-              <div class="a"><div class="md" style="margin-top:6px;color:var(--ink)">Added: clause 7, foreclosure after month 12 carries no charge.</div></div></div>
-            <div class="turn"><div class="u md">Good. Send it to accounts for the first disbursal.</div>
-              <div class="a"><div class="md" style="margin-top:6px;color:var(--ink)">Sent. First disbursal of Rs 1.6L scheduled once the signed letter comes back.</div></div></div>
-          </div>
-        </div>
-
-        <div class="pc">
-          <button class="uchip" type="button" id="paneMenuBtn" data-panemenu="open"
-                  aria-haspopup="true" aria-expanded="false" aria-label="Chat options - Meera Nair"
-                  title="Everything about this chat">
-            <span aria-hidden="true">&#8943;</span>
-          </button>
-          <button class="ib" type="button" aria-label="Attach a file" title="Attach a file">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M21 11l-8.5 8.5a4.6 4.6 0 01-6.5-6.5L14 4.5a3 3 0 014.3 4.3l-8.5 8.5a1.5 1.5 0 01-2.1-2.1l7.9-7.9"/></svg>
-          </button>
-          <textarea data-sask="open" id="composer" rows="1" aria-label="Continue this session"></textarea>
-
-          <div class="upop panemenu" id="paneMenu" role="group" aria-label="Chat options - Meera Nair" hidden>
-            <div class="msec">What answers</div>
-            <button class="mrow" type="button" title="Provider, model, thinking level">
-              <span class="mk">Model</span><span class="mv">Claude Code - Opus 5 - High</span><span class="ma">&rsaquo;</span>
-            </button>
-            <button class="mrow accrowm" type="button" id="accessRow"
-                    title="Read only / Accept edits / Approve for me / Full access">
-              <span class="mk">Access</span><span class="mv"><span class="accn" id="accessVal">Read only</span></span><span class="ma">&rsaquo;</span>
-            </button>
-            <div class="msec">This chat</div>
-            <button class="mrow" type="button" title="the working directory this chat is given">
-              <span class="mk">Folder</span><span class="mv">nair-fabrics</span><span class="ma">&rsaquo;</span>
-            </button>
-            <div class="msec">This pane</div>
-            <button class="mrow" type="button" title="Close this session">
-              <span class="mk">Close</span><span class="mv">close this session</span><span class="ma">&rsaquo;</span>
-            </button>
-          </div>
-
-          <button class="send" type="button" id="sendBtn" aria-label="Send">
-            <svg class="ico show" id="sendIcon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-            <svg class="ico hide" id="stopIcon" width="10" height="10" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
-          </button>
-        </div>
-      </section>
-    </div>
+<!-- 1 jump -->
+<section class="row" data-demo="jump">
+  <div class="capt">
+    <h2><span class="num">1</span>Jump to latest</h2>
+    <p class="when">When a reply is streaming and you scroll up to re-read something.</p>
+    <p><b>Today:</b> the view stays where you put it, but nothing tells you the reply kept going below.</p>
+    <p><b>Proposed:</b> a small pill appears at the bottom counting the new lines; click it and you are at the end.</p>
+    <div class="t"><span>pill fades in over 0.15 s</span><span>smooth scroll on click</span></div>
   </div>
-</div>
+  <div class="mini"><div class="minihead">Today<span class="bar"><i></i></span></div><div class="screen legacy" data-scene="jump" data-mode="today"></div></div>
+  <div class="mini"><div class="minihead prop">Proposed<span class="bar"><i></i></span></div><div class="screen" data-scene="jump" data-mode="proposed"></div></div>
+</section>
 
-<div class="controls controls-first">
-  <h2>The six micro-interactions, one control each</h2>
-  <p class="lede">Each button runs its interaction inside the chat screen below. The toggle picks which behaviour runs: the app's current abrupt state change, or the proposal with its named timing. Hover a button for what it does.</p>
-
-  <div class="ctrl" data-demo="jump">
-    <div class="ctrlhead"><span class="num">1</span><span class="name">Jump to latest</span><span class="timing">150 ms fade / smooth scroll</span></div>
-    <p class="ctrldesc">While a reply streams and you have scrolled up, a pill fades in with a count; click it, or scroll to the bottom by hand, and it goes away. As today: every new token yanks you back down.</p>
-    <div class="ctrlrow">
-      <div class="seg" data-seg="jump"><button type="button" data-mode="today">as today</button><button type="button" class="on" data-mode="proposed">proposed</button></div>
-      <button class="trig" type="button" data-run="jump">1 Stream, then scroll up</button>
-    </div>
+<!-- 2 arrive -->
+<section class="row" data-demo="arrive">
+  <div class="capt">
+    <h2><span class="num">2</span>A new reply arrives</h2>
+    <p class="when">When the assistant starts answering.</p>
+    <p><b>Today:</b> the caret at the end of the reply is a hard block that blinks on and off; the block pops in fully formed.</p>
+    <p><b>Proposed:</b> the caret is a thin bar that softly breathes; the block eases in instead of popping.</p>
+    <div class="t"><span>eases in over 0.12 s</span><span>caret breathes once a second</span></div>
   </div>
+  <div class="mini"><div class="minihead">Today<span class="bar"><i></i></span></div><div class="screen legacy" data-scene="arrive" data-mode="today"></div></div>
+  <div class="mini"><div class="minihead prop">Proposed<span class="bar"><i></i></span></div><div class="screen" data-scene="arrive" data-mode="proposed"></div></div>
+</section>
 
-  <div class="ctrl" data-demo="arrive">
-    <div class="ctrlhead"><span class="num">2</span><span class="name">New turn arrival</span><span class="timing">120 ms rise / 1 s caret cycle</span></div>
-    <p class="ctrldesc">A new turn fades in and rises 4 px; the streaming caret is a soft bar that breathes. As today: the block repaints in one flash and the caret is a hard blinking block.</p>
-    <div class="ctrlrow">
-      <div class="seg" data-seg="arrive"><button type="button" data-mode="today">as today</button><button type="button" class="on" data-mode="proposed">proposed</button></div>
-      <button class="trig" type="button" data-run="arrive">2 A turn arrives</button>
-    </div>
+<!-- 3 live -->
+<section class="row" data-demo="live">
+  <div class="capt">
+    <h2><span class="num">3</span>Live dot in the chat list</h2>
+    <p class="when">When a chat is working (a turn is running).</p>
+    <p><b>Today:</b> a steady green dot with the word "live" (since this morning; it used to blink).</p>
+    <p><b>Proposed:</b> the same dot; the ring around it swells and settles once every 4 seconds while the chat works, so "working" is visible without a blink. (Drawn larger here than in the app so you can see it.)</p>
+    <div class="t"><span>one breath every 4 s</span></div>
   </div>
+  <div class="mini"><div class="minihead">Today<span class="bar"><i></i></span></div><div class="screen legacy" data-scene="live" data-mode="today"></div></div>
+  <div class="mini"><div class="minihead prop">Proposed<span class="bar"><i></i></span></div><div class="screen" data-scene="live" data-mode="proposed"></div></div>
+</section>
 
-  <div class="ctrl" data-demo="live">
-    <div class="ctrlhead"><span class="num">3</span><span class="name">Live dot in the chat list</span><span class="timing">4 s breath cycle</span></div>
-    <p class="ctrldesc">A steady dot with a soft halo breathes once every 4 seconds while a turn runs; one word, "live". As today: the word alternates between "running" and "live" as the state flips.</p>
-    <div class="ctrlrow">
-      <div class="seg" data-seg="live"><button type="button" data-mode="today">as today</button><button type="button" class="on" data-mode="proposed">proposed</button></div>
-      <button class="trig" type="button" data-run="live">3 Toggle live, first row</button>
-    </div>
+<!-- 4 menu -->
+<section class="row" data-demo="menu">
+  <div class="capt">
+    <h2><span class="num">4</span>The three-dot menu</h2>
+    <p class="when">When you open the menu under the message box and change Access.</p>
+    <p><b>Today:</b> the menu appears in place; the value just changes.</p>
+    <p><b>Proposed:</b> the menu grows from the button's corner; the row you touch highlights; the changed value flashes once so you know it took.</p>
+    <div class="t"><span>opens in 0.09 s</span><span>row highlights in 0.06 s</span><span>flash fades over 0.6 s</span></div>
   </div>
+  <div class="mini"><div class="minihead">Today<span class="bar"><i></i></span></div><div class="screen legacy" data-scene="menu" data-mode="today"></div></div>
+  <div class="mini"><div class="minihead prop">Proposed<span class="bar"><i></i></span></div><div class="screen" data-scene="menu" data-mode="proposed"></div></div>
+</section>
 
-  <div class="ctrl" data-demo="menu">
-    <div class="ctrlhead"><span class="num">4</span><span class="name">Three-dot menu</span><span class="timing">90 ms scale / 60 ms hover / 600 ms flash</span></div>
-    <p class="ctrldesc">The menu scales in from its corner; a row's changed value flashes once instead of silently updating. As today: it appears in place, and the value just changes.</p>
-    <div class="ctrlrow">
-      <div class="seg" data-seg="menu"><button type="button" data-mode="today">as today</button><button type="button" class="on" data-mode="proposed">proposed</button></div>
-      <button class="trig" type="button" data-run="menu">4 Menu, change Access</button>
-    </div>
+<!-- 5 compose -->
+<section class="row" data-demo="compose">
+  <div class="capt">
+    <h2><span class="num">5</span>Typing and sending</h2>
+    <p class="when">When you type several lines and press Send.</p>
+    <p><b>Today:</b> the box jumps taller with each line; Send turns into Stop instantly.</p>
+    <p><b>Proposed:</b> the box grows smoothly; Send presses in when clicked and morphs into Stop while the reply streams.</p>
+    <div class="t"><span>grows in 0.1 s</span><span>press 0.08 s</span><span>Send becomes Stop in 0.12 s</span></div>
   </div>
+  <div class="mini"><div class="minihead">Today<span class="bar"><i></i></span></div><div class="screen legacy" data-scene="compose" data-mode="today"></div></div>
+  <div class="mini"><div class="minihead prop">Proposed<span class="bar"><i></i></span></div><div class="screen" data-scene="compose" data-mode="proposed"></div></div>
+</section>
 
-  <div class="ctrl" data-demo="compose">
-    <div class="ctrlhead"><span class="num">5</span><span class="name">Composer and Send</span><span class="timing">100 ms height / 80 ms press / 120 ms morph</span></div>
-    <p class="ctrldesc">The box grows as lines are added, Send presses in on click, and it cross-fades into Stop while a reply streams. As today: the box jumps in height and the icons swap.</p>
-    <div class="ctrlrow">
-      <div class="seg" data-seg="compose"><button type="button" data-mode="today">as today</button><button type="button" class="on" data-mode="proposed">proposed</button></div>
-      <button class="trig" type="button" data-run="compose">5 Type 3 lines, send</button>
-    </div>
+<!-- 6 switch -->
+<section class="row" data-demo="switch">
+  <div class="capt">
+    <h2><span class="num">6</span>Switching chats</h2>
+    <p class="when">When you click another chat in the list, then come back.</p>
+    <p><b>Today:</b> a hard swap; coming back lands you at the top of the chat.</p>
+    <p><b>Proposed:</b> a short cross-fade; each chat keeps the place you were reading.</p>
+    <div class="t"><span>cross-fade in 0.15 s</span><span>remembers your place</span></div>
   </div>
+  <div class="mini"><div class="minihead">Today<span class="bar"><i></i></span></div><div class="screen legacy" data-scene="switch" data-mode="today"></div></div>
+  <div class="mini"><div class="minihead prop">Proposed<span class="bar"><i></i></span></div><div class="screen" data-scene="switch" data-mode="proposed"></div></div>
+</section>
 
-  <div class="ctrl" data-demo="switch">
-    <div class="ctrlhead"><span class="num">6</span><span class="name">Chat switch</span><span class="timing">150 ms cross-fade</span></div>
-    <p class="ctrldesc">Switching chats cross-fades the pane, and each chat keeps its own scroll position for when you come back. As today: a hard swap that lands at the top.</p>
-    <div class="ctrlrow">
-      <div class="seg" data-seg="switch"><button type="button" data-mode="today">as today</button><button type="button" class="on" data-mode="proposed">proposed</button></div>
-      <button class="trig" type="button" data-run="switch">6 Switch chat</button>
-    </div>
-  </div>
-
-</div>
-
-<p class="cap">Chat micro-interactions - 2026-09-21 - the app's own panel.css and markup, plus a motion layer to port - follows sutra 200f77ea (chat chrome unit)</p>
+<p class="foot">Chat micro-interactions - 2026-09-21 - drawn with the app's own stylesheet and markup. Follows the chat-chrome change shipped this morning (labels into the three-dot menu, steady dot, scroll-up honoured).</p>
 
 </div>
 
 <script>
 (function(){
   "use strict";
-
-  /* ---- shared state ----
-     Two independent signals, never one boolean (judge panel, motion lens):
-       today(demo)  = the control is set to "as today": run the LEGACY behaviour
-       noMotion()   = reduced motion (page switch or OS): the PROPOSED design, instantly */
-  var modes = {jump:"proposed", arrive:"proposed", live:"proposed", menu:"proposed",
-               compose:"proposed", switch:"proposed"};
-  var manualReduced = false;
-  var busy = {jump:false, arrive:false, menu:false, compose:false, switch:false};
-  var scrollMem = {c1:0, c2:0};
-  var currentChat = "c1";
-
-  function osReduced(){
-    try { return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; }
-    catch(e){ return false; }
-  }
-  function noMotion(){ return manualReduced || osReduced(); }
-  function today(demo){ return modes[demo] === "today"; }
-  function ms(n){ return noMotion() ? 0 : n; }       /* wait only as long as the css really takes */
-
-  function $(id){ return document.getElementById(id); }
-  function qsa(sel, root){ return Array.prototype.slice.call((root||document).querySelectorAll(sel)); }
-
-  /* each card's description becomes its trigger button's tooltip (compact grid) */
-  qsa(".ctrl").forEach(function(c){
-    var d = c.querySelector(".ctrldesc"), b = c.querySelector(".trig") || c.querySelector(".swrow");
-    if (d && b) b.title = d.textContent.replace(/\s+/g, " ").trim();
-  });
-
-  /* ---- reduced-motion switches (kept in sync, also follow the OS live) ---- */
-  /* one switch, in the top strip (the second, in a seventh card, was cut: Occam) */
-  var reduceTop = $("reduceTop");
-  function setReduced(on){
-    manualReduced = on;
-    reduceTop.checked = on;
-    document.documentElement.classList.toggle("reduced", on);
-  }
-  reduceTop.addEventListener("change", function(){ setReduced(reduceTop.checked); });
+  var LOOP = 7000;
+  function $(sel, root){ return (root||document).querySelector(sel); }
+  function all(sel, root){ return Array.prototype.slice.call((root||document).querySelectorAll(sel)); }
+  function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+  var reduce = $("#reduce");
+  function osReduced(){ try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch(e){ return false; } }
+  function setReduced(on){ reduce.checked = on; document.documentElement.classList.toggle("reduced", on); }
+  reduce.addEventListener("change", function(){ setReduced(reduce.checked); });
   setReduced(osReduced());
-  try {
-    window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", function(e){ setReduced(e.matches); });
-  } catch(e){}
+  function noMotion(){ return reduce.checked; }
 
-  /* ---- per-control as-today/proposed segments ---- */
-  qsa(".seg").forEach(function(seg){
-    var demo = seg.getAttribute("data-seg");
-    qsa("button", seg).forEach(function(btn){
-      btn.addEventListener("click", function(){
-        modes[demo] = btn.getAttribute("data-mode");
-        qsa("button", seg).forEach(function(b){ b.classList.toggle("on", b === btn); });
+  /* --- shared markup --- */
+  var TURNS = [
+    ["I run a small textile shop, Nair Fabrics. Can you help me apply for a working-capital loan?",
+     "Yes. I will need 12 months of GST returns, 6 months of bank statements and last year's ITR."],
+    ["What documents do you need for the credit check specifically?",
+     "The credit check itself only needs the bank statements and a CIBIL pull."],
+    ["I have uploaded the last 6 months of bank statements.",
+     "Got them. Average monthly balance looks steady at roughly Rs 1.4L. Starting the CIBIL pull now."],
+    ["What is the current status of my application?",
+     "Documents verified, credit check in progress. The offer letter follows once the score is back."]
+  ];
+  function turnHtml(u, a, extra){
+    return '<div class="turn' + (extra ? " " + extra : "") + '"><div class="u md">' + esc(u) + '</div>'
+         + '<div class="a"><div class="md">' + (a || "") + '</div></div></div>';
+  }
+  function transcriptHtml(n){
+    var h = "";
+    for (var i = 0; i < n; i++) h += turnHtml(TURNS[i][0], esc(TURNS[i][1]));
+    return h;
+  }
+  var SEND_ICON = '<svg class="ico show" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>'
+                + '<svg class="ico hide" width="10" height="10" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>';
+  function composerHtml(withMenu){
+    return '<div class="pc">'
+      + '<button class="uchip" type="button" aria-label="Chat options" title="Chat options"><span aria-hidden="true">&#8943;</span></button>'
+      + '<button class="ib" type="button" aria-label="Attach a file"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M21 11l-8.5 8.5a4.6 4.6 0 01-6.5-6.5L14 4.5a3 3 0 014.3 4.3l-8.5 8.5a1.5 1.5 0 01-2.1-2.1l7.9-7.9"/></svg></button>'
+      + '<textarea data-sask="m" rows="1" aria-label="Continue this session"></textarea>'
+      + (withMenu ? '<div class="upop panemenu" role="group" aria-label="Chat options" hidden>'
+          + '<div class="msec">What answers</div>'
+          + '<button class="mrow" type="button"><span class="mk">Model</span><span class="mv">Claude Code - Opus 5</span><span class="ma">&rsaquo;</span></button>'
+          + '<button class="mrow accrowm" type="button"><span class="mk">Access</span><span class="mv"><span class="accn">Read only</span></span><span class="ma">&rsaquo;</span></button>'
+          + '<div class="msec">This chat</div>'
+          + '<button class="mrow" type="button"><span class="mk">Folder</span><span class="mv">nair-fabrics</span><span class="ma">&rsaquo;</span></button>'
+          + '</div>' : "")
+      + '<button class="send" type="button" aria-label="Send">' + SEND_ICON + '</button>'
+      + '</div>';
+  }
+  function railHtml(live){
+    return '<ul class="rlist">'
+      + '<li class="srow"><button type="button" class="rowopen" aria-current="true"><span class="t">Meera Nair - loan application</span>'
+      + '<span class="m"><span class="livedot' + (live ? " breathe" : "") + '">live</span></span></button></li>'
+      + '<li class="srow"><button type="button" class="rowopen" aria-current="false"><span class="t">Offer letter - Sethi Textiles</span><span class="m">6 turns</span></button></li>'
+      + '<li class="srow"><button type="button" class="rowopen" aria-current="false"><span class="t">Credit check - Anand Traders</span><span class="m">3 turns</span></button></li>'
+      + '</ul>';
+  }
+
+  /* --- a scene owns its timers; restart clears them --- */
+  function Scene(el){
+    this.el = el; this.mode = el.getAttribute("data-mode"); this.timers = [];
+    this.bar = el.parentNode.querySelector(".bar i");
+  }
+  Scene.prototype.at = function(ms, fn){ this.timers.push(setTimeout(fn, ms)); };
+  Scene.prototype.every = function(ms, fn){ this.timers.push(setInterval(fn, ms)); };
+  Scene.prototype.reset = function(){
+    this.timers.forEach(function(t){ clearTimeout(t); clearInterval(t); }); this.timers = [];
+    this.el.innerHTML = "";
+    if (this.bar){ this.bar.style.transition = "none"; this.bar.style.width = "0";
+      var b = this.bar; void b.offsetWidth; b.style.transition = "width " + LOOP + "ms linear"; b.style.width = "100%"; }
+  };
+  Scene.prototype.proposed = function(){ return this.mode === "proposed"; };
+
+  var SCENES = {
+    /* 1: a streaming reply while the reader has scrolled up */
+    jump: function(s){
+      var pb = document.createElement("div"); pb.className = "pb";
+      pb.innerHTML = transcriptHtml(3) + turnHtml("Does the rate change if I add a co-applicant?", "", "")
+        + '<div class="jumppill"><button type="button"><span class="n">0</span> new - jump to latest</button></div>';
+      s.el.appendChild(pb);
+      var pill = $(".jumppill", pb), n = $(".n", pill), target = $(".turn:last-of-type .a .md", pb);
+      var words = ("A co-applicant with a steady income can move the rate down by about half a point and raise the "
+        + "eligible amount, since the bank underwrites the household income. Send their payslips and I will re-run the check.").split(" ");
+      pb.scrollTop = pb.scrollHeight;
+      var i = 0, count = 0, dismissed = false;                                     /* 28 words x 150 ms = 4.2 s, inside the 7 s loop */
+      function jump(){
+        dismissed = true; pill.classList.remove("show");
+        if (noMotion()) pb.scrollTop = pb.scrollHeight; else pb.scrollTo({ top: pb.scrollHeight, behavior: "smooth" });
+      }
+      s.at(700, function(){ pb.scrollTop = Math.max(0, pb.scrollTop - 90); });      /* the reader scrolls up */
+      s.every(150, function(){
+        if (i >= words.length) return;
+        i++; target.textContent = words.slice(0, i).join(" ");
+        if (i > 4 && s.proposed() && !dismissed){ count++; n.textContent = count; pill.classList.add("show"); }
       });
+      if (s.proposed()) s.at(5200, jump);                                          /* the pill is clicked */
+      pill.querySelector("button").addEventListener("click", jump);
+    },
+    /* 2: a new reply block appears */
+    arrive: function(s){
+      var pb = document.createElement("div"); pb.className = "pb";
+      pb.innerHTML = transcriptHtml(2);
+      s.el.appendChild(pb);
+      pb.scrollTop = pb.scrollHeight;
+      s.at(900, function(){
+        var t = document.createElement("div");
+        var legacy = !s.proposed();
+        t.className = "turn" + (legacy ? "" : " arriving");
+        t.innerHTML = '<div class="u md">Can the first EMI date move to the 5th?</div><div class="a"><div class="md">Yes, the sanction letter carries a movable first-EMI date. '
+          + (legacy ? '<span class="caret blink" style="color:var(--acc)">&#9608;</span>' : '<span class="caret2" aria-hidden="true"></span>') + '</div></div>';
+        pb.appendChild(t);
+        if (legacy){ t.classList.add("repaintflash"); s.at(60, function(){ t.classList.remove("repaintflash"); }); }
+        pb.scrollTop = pb.scrollHeight;
+      });
+    },
+    /* 3: the chat list while a chat works */
+    live: function(s){
+      var wrapEl = document.createElement("div"); wrapEl.className = "pb";
+      wrapEl.innerHTML = railHtml(s.proposed());
+      s.el.appendChild(wrapEl);
+    },
+    /* 4: the three-dot menu, then Access changes */
+    menu: function(s){
+      var pb = document.createElement("div"); pb.className = "pb"; pb.innerHTML = transcriptHtml(2);
+      s.el.appendChild(pb); pb.scrollTop = pb.scrollHeight;
+      s.el.insertAdjacentHTML("beforeend", composerHtml(true));
+      var menu = $(".panemenu", s.el), row = $(".accrowm", s.el), val = $(".accn", s.el);
+      s.at(800, function(){ menu.hidden = false; void menu.offsetHeight; menu.classList.add("open"); });
+      s.at(2000, function(){ row.classList.add("hov"); });
+      s.at(2700, function(){
+        val.textContent = "Accept edits";
+        if (s.proposed()){ val.classList.remove("flash"); void val.offsetWidth; val.classList.add("flash"); }
+      });
+      s.at(3400, function(){ row.classList.remove("hov"); });
+      s.at(5200, function(){ menu.classList.remove("open"); s.at(noMotion() ? 0 : 90, function(){ menu.hidden = true; }); });
+    },
+    /* 5: typing three lines, sending, the reply streams */
+    compose: function(s){
+      var pb = document.createElement("div"); pb.className = "pb"; pb.innerHTML = transcriptHtml(2);
+      s.el.appendChild(pb); pb.scrollTop = pb.scrollHeight;
+      s.el.insertAdjacentHTML("beforeend", composerHtml(false));
+      var ta = $("textarea", s.el), send = $(".send", s.el), icons = all(".ico", s.el);
+      var lines = ["Loan account 8842771:", "please confirm the EMI date", "moves to the 5th, effective next cycle."];
+      ta.style.height = "22px";
+      var i = 0;
+      s.every(450, function(){
+        if (i >= lines.length) return;
+        ta.value = ta.value + (i > 0 ? "\n" : "") + lines[i]; i++;
+        ta.style.height = Math.min(ta.scrollHeight, 70) + "px";
+      });
+      s.at(2300, function(){ if (s.proposed()){ send.classList.add("pressed"); s.at(80, function(){ send.classList.remove("pressed"); }); } });
+      s.at(2500, function(){
+        var t = document.createElement("div"); t.className = "turn" + (s.proposed() ? " arriving" : "");
+        t.innerHTML = '<div class="u md">' + esc(ta.value.replace(/\n/g, " ")) + '</div><div class="a"><div class="md"></div></div>';
+        pb.appendChild(t); pb.scrollTop = pb.scrollHeight;
+        ta.value = ""; ta.style.height = "22px";
+        icons[0].classList.remove("show"); icons[0].classList.add("hide"); icons[1].classList.remove("hide"); icons[1].classList.add("show");
+        var words = "Confirmed: the first EMI now falls on the 5th, starting next cycle.".split(" "), w = 0, md = $(".md", $(".a", t));
+        s.every(140, function(){
+          if (w >= words.length) return;
+          w++; md.textContent = words.slice(0, w).join(" "); pb.scrollTop = pb.scrollHeight;
+          if (w === words.length){ icons[1].classList.remove("show"); icons[1].classList.add("hide"); icons[0].classList.remove("hide"); icons[0].classList.add("show"); }
+        });
+      });
+    },
+    /* 6: switch to another chat and come back */
+    switch: function(s){
+      s.el.innerHTML = '<div class="pb" style="display:grid;grid-template-columns:150px 1fr;gap:0;padding:0">'
+        + '<div style="border-right:1px solid var(--line-soft);overflow:hidden">' + railHtml(false) + '</div>'
+        + '<div class="body" style="position:relative;overflow:hidden;padding:12px 14px">'
+        + '<div class="chatbody" data-chat="a">' + transcriptHtml(4) + '</div>'
+        + '<div class="chatbody out" data-chat="b" hidden>' + turnHtml("The Sethi Textiles loan was approved. Can we finalise the offer letter?", "Yes. Sanctioned: Rs 3.2L, 14.25% p.a., 30-month tenure. Drafting the letter now.") + '</div>'
+        + '</div></div>';
+      var body = $(".body", s.el), a = $('[data-chat="a"]', s.el), b = $('[data-chat="b"]', s.el);
+      var rows = all(".rowopen", s.el);
+      function current(i){ rows.forEach(function(r, k){ r.setAttribute("aria-current", k === i ? "true" : "false"); }); }
+      var mem = { a: 0, b: 0 };
+      s.at(600, function(){ body.scrollTop = 140; });                              /* reading further down */
+      /* the payoff is said out loud when you come back: a small label for 1.5 s */
+      function say(text){
+        var l = document.createElement("div"); l.className = "backlabel"; l.textContent = text;
+        body.appendChild(l); s.at(1500, function(){ if (l.parentNode) l.parentNode.removeChild(l); });
+      }
+      function swap(from, to, keep){
+        mem[from.getAttribute("data-chat")] = body.scrollTop;
+        var restore = keep ? mem[to.getAttribute("data-chat")] : 0;
+        if (!s.proposed() || noMotion()){
+          from.hidden = true; from.classList.add("out"); to.hidden = false; to.classList.remove("out");
+          body.scrollTop = restore; return;
+        }
+        to.hidden = false; to.style.opacity = "0"; to.classList.remove("out"); void to.offsetHeight;
+        from.classList.add("out"); to.style.opacity = "1";
+        s.at(150, function(){ from.hidden = true; to.style.opacity = ""; body.scrollTop = restore; });
+      }
+      s.at(2200, function(){ current(1); swap(a, b, false); });
+      s.at(4400, function(){
+        current(0);
+        if (s.proposed()){ swap(b, a, true); s.at(200, function(){ say("back where you were"); }); }
+        else { swap(b, a, false); s.at(200, function(){ say("back at the top"); }); }
+      });
+    }
+  };
+
+  var scenes = all(".screen").map(function(el){ return new Scene(el); });
+  function run(s){ s.reset(); SCENES[s.el.getAttribute("data-scene")](s); }
+  function play(){ scenes.forEach(run); }
+  /* click either panel of a row: both panels of that row replay at once, so the comparison stays side by side */
+  scenes.forEach(function(s){
+    s.el.addEventListener("click", function(e){
+      if (e.target.closest && e.target.closest(".jumppill")) return;             /* the pill's own click */
+      var name = s.el.getAttribute("data-scene");
+      scenes.filter(function(x){ return x.el.getAttribute("data-scene") === name; }).forEach(run);
     });
   });
-
-  /* ============================================================
-     [1] jump: Jump to latest
-     ============================================================ */
-  var pb = $("pb"), pill = $("jumppill"), jumpBtn = $("jumpBtn"), jumpCount = $("jumpcount");
-  var body1 = $("body-c1");
-  var newCount = 0, pillShown = false, streamNode = null, jumpTimer = null;
-
-  function showPill(){
-    pill.hidden = false;
-    void pill.offsetHeight;
-    pill.classList.add("show");
-    pillShown = true;
-  }
-  function hidePill(){
-    if (!pillShown) return;
-    pill.classList.remove("show");
-    pillShown = false;
-    newCount = 0;
-    setTimeout(function(){ if (!pillShown) pill.hidden = true; }, ms(150));
-  }
-  pb.addEventListener("scroll", function(){
-    if (!pillShown) return;
-    var atBottom = (pb.scrollHeight - pb.scrollTop - pb.clientHeight) < 24;
-    if (atBottom) hidePill();
-  });
-  jumpBtn.addEventListener("click", function(){
-    if (noMotion()) pb.scrollTop = pb.scrollHeight; else pb.scrollTo({top: pb.scrollHeight, behavior: "smooth"});
-    hidePill();
-  });
-
-  function runJump(){
-    if (busy.jump) return;
-    busy.jump = true;
-    var legacy = today("jump");
-    if (streamNode && streamNode.parentNode) streamNode.parentNode.removeChild(streamNode);
-    hidePill();
-    pb.scrollTop = pb.scrollHeight;
-    var turn = document.createElement("div");
-    turn.className = "turn";
-    turn.innerHTML = '<div class="u md">Also confirm: does the rate change if I add a co-applicant?</div>'
-      + '<div class="a" id="jumpAnswer"><div class="md" style="margin-top:6px;color:var(--ink)"></div></div>';
-    body1.insertBefore(turn, pill);
-    streamNode = turn;
-    var target = document.querySelector("#jumpAnswer .md");
-    var full = "A co-applicant with a steady income can move the rate down by roughly half a point "
-      + "and can raise the eligible amount, since the bank underwrites the household income, not "
-      + "just the shop's turnover. If you want, send their last 3 months of payslips and I will "
-      + "re-run the eligibility check against both incomes together.";
-    var words = full.split(" ");
-    var i = 0;
-    jumpTimer = setInterval(function(){
-      i++;
-      target.textContent = words.slice(0, i).join(" ");
-      if (i === 1){
-        /* the reader scrolls up to re-read something */
-        if (noMotion()) pb.scrollTop -= 300;
-        else setTimeout(function(){ pb.scrollBy({top: -300, behavior: "smooth"}); }, 250);
-      }
-      if (legacy){
-        /* as today: every token re-pins the transcript to the bottom */
-        if (i > 2) pb.scrollTop = pb.scrollHeight;
-      } else {
-        var atBottom = (pb.scrollHeight - pb.scrollTop - pb.clientHeight) < 24;
-        if (i > 2 && !atBottom){
-          newCount++;
-          jumpCount.textContent = newCount;
-          if (!pillShown) showPill();
-        }
-      }
-      if (i >= words.length){
-        clearInterval(jumpTimer); jumpTimer = null;
-        busy.jump = false;
-      }
-    }, 300);
-  }
-  $('[data-run="jump"]').addEventListener("click", runJump);
-
-  /* ============================================================
-     [2] arrive: New turn arrival (re-runnable: the previous demo turn is replaced)
-     ============================================================ */
-  var arriveNode = null, arriveTimer = null;
-  function runArrive(){
-    if (busy.arrive) return;
-    busy.arrive = true;
-    var legacy = today("arrive");
-    if (arriveNode && arriveNode.parentNode) arriveNode.parentNode.removeChild(arriveNode);
-    var turn = document.createElement("div");
-    turn.className = "turn" + (legacy ? " legacy" : " arriving");
-    var caretHtml = legacy
-      ? '<span class="caret blink" style="color:var(--acc)">&#9608;</span>'
-      : '<span class="caret2" aria-hidden="true"></span>';
-    turn.innerHTML = '<div class="u md">One more thing: can the first EMI date move to the 5th of the month?</div>'
-      + '<div class="a"><div class="md" style="margin-top:6px;color:var(--ink)">'
-      + 'Yes, the sanction letter carries a movable first-EMI date. ' + caretHtml + '</div></div>';
-    body1.insertBefore(turn, pill);
-    arriveNode = turn;
-    if (legacy){
-      turn.classList.add("repaintflash");
-      setTimeout(function(){ turn.classList.remove("repaintflash"); }, 60);
-    }
-    pb.scrollTop = pb.scrollHeight;
-    clearTimeout(arriveTimer);
-    arriveTimer = setTimeout(function(){
-      var c = turn.querySelector(".caret, .caret2");
-      if (c) c.remove();
-      busy.arrive = false;
-    }, 2200);
-  }
-  $('[data-run="arrive"]').addEventListener("click", runArrive);
-
-  /* ============================================================
-     [3] live: the rail dot (a toggle; no busy lock, the timer is owned)
-     ============================================================ */
-  var dot1 = $("livedot1"), liveOn = false, liveTimer = null;
-  function runLive(){
-    liveOn = !liveOn;
-    if (liveTimer){ clearInterval(liveTimer); liveTimer = null; }
-    if (!liveOn){
-      dot1.setAttribute("data-state", "off");
-      dot1.classList.remove("breathe", "legacy");
-      dot1.textContent = "live";
-      return;
-    }
-    dot1.setAttribute("data-state", "on");
-    if (today("live")){
-      /* as today: the word flips as the server's state flips */
-      dot1.classList.add("legacy"); dot1.classList.remove("breathe");
-      var flip = false;
-      dot1.textContent = "running";
-      liveTimer = setInterval(function(){ flip = !flip; dot1.textContent = flip ? "live" : "running"; }, 1000);
-    } else {
-      dot1.classList.remove("legacy");
-      dot1.classList.add("breathe");
-      dot1.textContent = "live";
-    }
-  }
-  $('[data-run="live"]').addEventListener("click", runLive);
-
-  /* ============================================================
-     [4] menu: the three-dot pane menu
-     ============================================================ */
-  var menuBtn = $("paneMenuBtn"), menuPop = $("paneMenu"), accessRow = $("accessRow"), accessVal = $("accessVal");
-  var accessCycle = ["Read only", "Accept edits", "Approve for me", "Full access"];
-  var accessIdx = 0, menuTimer = null;
-
-  function openMenu(){
-    menuPop.classList.toggle("legacy", today("menu"));
-    menuPop.hidden = false;
-    void menuPop.offsetHeight;
-    menuPop.classList.add("open");
-    menuBtn.setAttribute("aria-expanded", "true");
-  }
-  function closeMenu(){
-    menuPop.classList.remove("open");
-    menuBtn.setAttribute("aria-expanded", "false");
-    clearTimeout(menuTimer);
-    menuTimer = setTimeout(function(){ menuPop.hidden = true; }, today("menu") ? 0 : ms(90));
-  }
-  function flashAccess(){
-    accessVal.classList.remove("flash");
-    if (today("menu")) return;                 /* as today: the value just changes */
-    void accessVal.offsetWidth;
-    accessVal.classList.add("flash");
-  }
-  menuBtn.addEventListener("click", function(){
-    if (menuPop.hidden) openMenu(); else closeMenu();
-  });
-  document.addEventListener("click", function(e){
-    if (menuPop.hidden) return;
-    if (menuPop.contains(e.target) || menuBtn.contains(e.target)) return;
-    if (e.target.closest && e.target.closest('[data-run="menu"]')) return;   /* the demo control itself */
-    closeMenu();
-  });
-  accessRow.addEventListener("click", function(){
-    accessIdx = (accessIdx + 1) % accessCycle.length;
-    accessVal.textContent = accessCycle[accessIdx];
-    flashAccess();
-  });
-
-  function runMenu(){
-    if (busy.menu) return;
-    busy.menu = true;
-    if (menuPop.hidden) openMenu();
-    setTimeout(function(){
-      accessRow.style.background = "var(--acc-bg)";                 /* the hover highlight */
-      setTimeout(function(){ accessRow.style.background = ""; }, today("menu") ? 0 : 60);
-    }, 250);
-    setTimeout(function(){
-      accessIdx = (accessIdx + 1) % accessCycle.length;
-      accessVal.textContent = accessCycle[accessIdx];
-      flashAccess();
-      busy.menu = false;
-    }, 600);
-  }
-  $('[data-run="menu"]').addEventListener("click", runMenu);
-
-  /* ============================================================
-     [5] compose: the composer and Send
-     ============================================================ */
-  var composer = $("composer"), sendBtn = $("sendBtn"), sendIcon = $("sendIcon"), stopIcon = $("stopIcon");
-  var composeTimers = [];
-  function later(fn, wait){ composeTimers.push(setTimeout(fn, wait)); }
-  function growTo(px){ composer.style.height = px + "px"; }
-  function setSending(on){
-    sendIcon.classList.toggle("show", !on); sendIcon.classList.toggle("hide", on);
-    stopIcon.classList.toggle("show", on); stopIcon.classList.toggle("hide", !on);
-  }
-  function press(){
-    if (today("compose")) return;
-    sendBtn.classList.add("pressed");
-    setTimeout(function(){ sendBtn.classList.remove("pressed"); }, 80);
-  }
-  function runCompose(){
-    if (busy.compose) return;
-    busy.compose = true;
-    var legacy = today("compose");
-    composer.classList.toggle("legacy", legacy);
-    sendBtn.classList.toggle("legacy", legacy);
-    var lines = ["Loan account 8842771:", "please confirm the EMI date", "moves to the 5th, effective next cycle."];
-    composer.value = "";
-    growTo(22);
-    var i = 0;
-    var typer = setInterval(function(){
-      composer.value = composer.value + (i > 0 ? "\n" : "") + lines[i];
-      growTo(Math.min(composer.scrollHeight, 88));
-      i++;
-      if (i >= lines.length){
-        clearInterval(typer);
-        later(function(){
-          press();
-          later(function(){
-            var turn = document.createElement("div");
-            turn.className = "turn" + (legacy ? " legacy" : " arriving");
-            turn.innerHTML = '<div class="u md">' + composer.value.replace(/\n/g, " ") + '</div>'
-              + '<div class="a"><div class="md" style="margin-top:6px;color:var(--ink)" id="composeAns"></div></div>';
-            body1.insertBefore(turn, pill);
-            pb.scrollTop = pb.scrollHeight;
-            composer.value = "";
-            growTo(22);
-            setSending(true);
-            var ans = "Confirmed: the first EMI now falls on the 5th, starting next cycle.";
-            var words = ans.split(" "), wi = 0;
-            var target = $("composeAns");
-            var st = setInterval(function(){
-              wi++; target.textContent = words.slice(0, wi).join(" ");
-              if (wi >= words.length){
-                clearInterval(st);
-                setSending(false);
-                busy.compose = false;
-              }
-            }, 140);
-          }, legacy ? 0 : ms(90));
-        }, 250);
-      }
-    }, 380);
-  }
-  $('[data-run="compose"]').addEventListener("click", runCompose);
-  sendBtn.addEventListener("click", function(){
-    if (sendIcon.classList.contains("show")) runCompose();
-  });
-
-  /* ============================================================
-     [6] switch: the chat switch
-     ============================================================ */
-  var titles = {
-    c1: {t: "Meera Nair - loan application", s: "Nair Fabrics - working-capital loan - GST verified"},
-    c2: {t: "Offer letter - Sethi Textiles", s: "Sethi Textiles - offer letter - foreclosure clause added"}
-  };
-  var paneTitle = $("paneTitle"), paneSub = $("paneSub");
-  var rows = {c1: document.querySelector('[data-open="c1"]'), c2: document.querySelector('[data-open="c2"]')};
-  var bodies = {c1: $("body-c1"), c2: $("body-c2")};
-
-  function setHeader(chat){
-    paneTitle.textContent = titles[chat].t;
-    paneSub.textContent = titles[chat].s;
-    rows.c1.setAttribute("aria-current", chat === "c1" ? "true" : "false");
-    rows.c2.setAttribute("aria-current", chat === "c2" ? "true" : "false");
-  }
-  function switchTo(target){
-    if (busy.switch || target === currentChat) return;
-    busy.switch = true;
-    var legacy = today("switch");
-    scrollMem[currentChat] = pb.scrollTop;
-    var from = bodies[currentChat], to = bodies[target];
-    if (legacy || noMotion()){
-      from.hidden = true; from.classList.remove("fading-out");
-      to.hidden = false; to.classList.remove("fading-in");
-      /* as today the position is lost; the proposal keeps it even without motion */
-      pb.scrollTop = legacy ? 0 : (scrollMem[target] || 0);
-      setHeader(target);
-      currentChat = target;
-      busy.switch = false;
-      return;
-    }
-    to.hidden = false;
-    to.classList.add("fading-in");
-    to.style.opacity = "0";
-    void to.offsetHeight;
-    from.classList.add("fading-out");
-    to.classList.remove("fading-in");
-    to.style.opacity = "1";
-    from.style.opacity = "0";
-    setHeader(target);
-    setTimeout(function(){
-      from.hidden = true; from.classList.remove("fading-out"); from.style.opacity = "";
-      to.classList.remove("fading-in"); to.style.opacity = "";
-      pb.scrollTop = scrollMem[target] || 0;
-      currentChat = target;
-      busy.switch = false;
-    }, 150);
-  }
-  rows.c1.addEventListener("click", function(){ switchTo("c1"); });
-  rows.c2.addEventListener("click", function(){ switchTo("c2"); });
-  $('[data-run="switch"]').addEventListener("click", function(){ switchTo(currentChat === "c1" ? "c2" : "c1"); });
-
+  play();
+  setInterval(play, LOOP);
 })();
 </script>
 </body>
