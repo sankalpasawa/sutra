@@ -113,7 +113,9 @@ before tagging — without it an Intel failure deletes the arm64 build instead o
 leg is missing, check whether it failed or was never assigned a runner; a retired runner label queues
 forever rather than failing.
 
-Then verify the artifact by hand, not from CI output alone:
+Then verify the artifact on a Mac, not from CI output alone. Since D82 (2026-09-21) this table is
+run by `scripts/beta-smoke.sh <beta-tag>` inside `scripts/release-desktop.sh release --auto`, on the
+Mac that releases, with no human step; the rows stay here as the contract the script implements:
 
 | Step | Pass condition |
 |---|---|
@@ -202,8 +204,11 @@ assertion is still racing, and the Intel runner will find it.
 
 ### 7. Walk the rewritten Shadow home in the installed app
 
-Checks 5–6 assert the code is right; this asserts the founder sees something right. On the DMG
-installed in check 3, open Shadow home and confirm each row:
+Checks 5–6 assert the code is right; this asserts the built app answers right. Since D82
+(2026-09-21) the walk is `scripts/beta-smoke.sh`: it launches the installed beta on its own port,
+waits for the backend's health answer, mints the panel token and reads `/`, state, sessions and the
+Shadow surfaces (status, settings, missions, feed); every route must answer 200 before the stable
+tag is cut. The rows below are what the suites in check 5 pin; nobody walks them by hand:
 
 | Surface | Pass condition |
 |---|---|

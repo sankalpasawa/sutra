@@ -29,11 +29,18 @@
 #
 # BETA FIRST (founder D80, 2026-09-21: "we first produce the app to beta; in
 # beta I see those features, and then I put it into production"). A release
-# is two runs of this script on the same version:
+# is two tags on the same version:
 #   1. `release --beta`   cuts vX.Y.Z-beta.N-desktop; the pipeline builds the
 #                         coexisting "Sutra Beta" app as a GitHub prerelease.
 #   2. `release`          cuts vX.Y.Z-desktop, and is REFUSED unless a beta
-#                         of that same X.Y.Z already exists.
+#                         of that same X.Y.Z already exists AND HEAD is that
+#                         beta's commit (D82: what was smoked is what ships).
+# NO HUMAN IN BETWEEN (founder D82, 2026-09-21: "I don't want any manual look
+# ... do that automatically in beta and then push out to main as well. No
+# human involvement"). One command does both tags and the look:
+#   `release --auto`      beta -> wait for the GitHub build -> scripts/beta-smoke.sh
+#                         on this Mac (fetch, checksum, staple, launch, walk,
+#                         quit) -> stable. Stops, named, at the first failure.
 # Founder skip, never the default and always audited to
 # .enforcement/release-beta-skips.jsonl:
 #   RELEASE_SKIP_BETA=1 RELEASE_SKIP_BETA_REASON='<why>' scripts/release-desktop.sh release
@@ -481,7 +488,33 @@ gate_beta_first() {                         # gate_beta_first <version> <stable-
       >> .enforcement/release-beta-skips.jsonl
     ok "beta: SKIPPED by founder -- $RELEASE_SKIP_BETA_REASON (audited: .enforcement/release-beta-skips.jsonl)"
   else
-    bad "beta: no v$version-beta.N-desktop exists -- cut it first: scripts/release-desktop.sh release --beta, install Sutra Beta, look, then release (D80). Founder skip: RELEASE_SKIP_BETA=1 RELEASE_SKIP_BETA_REASON='<why>'"
+    bad "beta: no v$version-beta.N-desktop exists -- cut it first (release --auto does the beta, the smoke and the stable in one run; D80/D82). Founder skip: RELEASE_SKIP_BETA=1 RELEASE_SKIP_BETA_REASON='<why>'"
+  fi
+}
+
+#: STABLE AT THE BETA'S COMMIT (founder D82, 2026-09-21). What ships is exactly
+#: what was smoked: a stable tag is refused when main has moved past the last
+#: beta of the same version. The fix is a new beta, which `release --auto`
+#: cuts by itself. Skipped for a beta tag; the audited D80 skip covers it.
+#: The two impure reads are functions so the tests can inject them.
+beta_commit_of() {                          # beta_commit_of <tag> -> sha, or nothing
+  local sha
+  sha="$(git rev-parse -q --verify "${1:-}^{commit}" 2>/dev/null)" && { printf '%s' "$sha"; return 0; }
+  git ls-remote origin "refs/tags/${1:-}^{}" 2>/dev/null | awk '{print $1}' | head -1
+}
+head_commit() { git rev-parse HEAD 2>/dev/null; }
+gate_stable_at_beta() {                     # gate_stable_at_beta <version> <stable-tag>
+  local version="$1" tag="$2" tags last want have
+  if [ "${BETA:-0}" = 1 ]; then ok "beta commit: $TAG is a beta; the stable of $version is cut at a beta's commit (D82)"; return; fi
+  if [ "${RELEASE_SKIP_BETA:-0}" = 1 ] && [ -n "${RELEASE_SKIP_BETA_REASON:-}" ]; then ok "beta commit: covered by the audited D80 skip"; return; fi
+  tags="$(all_desktop_tags)"
+  last="$(latest_beta_tag "$version" "$tags")"
+  [ -n "$last" ] || { bad "beta commit: no beta of $version to pin $tag to"; return; }
+  want="$(beta_commit_of "$last")"; have="$(head_commit)"
+  if [ -n "$want" ] && [ "$want" = "$have" ]; then
+    ok "beta commit: HEAD == $last ($(printf '%s' "$have" | cut -c1-8)) -- what was smoked is what ships (D82)"
+  else
+    bad "beta commit: HEAD $(printf '%s' "$have" | cut -c1-8) is not the last beta $last ($(printf '%s' "${want:-?}" | cut -c1-8)) -- main moved after the smoke; cut a new beta (release --auto does)"
   fi
 }
 
@@ -529,6 +562,7 @@ cmd_check() {
   gate_guard_simulation "$TAG" "$TARGET"
   gate_tag_free "$TAG"
   gate_beta_first "$TARGET" "$STABLE_TAG"
+  gate_stable_at_beta "$TARGET" "$STABLE_TAG"
   gate_main_synced
   gate_workflow_integrity
   gate_shadow_wiring
@@ -545,7 +579,7 @@ cmd_check() {
   head_ "VERDICT"
   if [ "$_fails" = 0 ]; then
     printf '  \033[32mREADY\033[0m -- %s can be cut from %s\n\n' "$TAG" "$(git rev-parse --short HEAD)"
-    note "checks 3 and 7 are MANUAL and remain yours: verify the DMGs, then walk the app."
+    note "checks 3 and 7 run by scripts/beta-smoke.sh inside 'release --auto' (D82): no manual step."
     return 0
   fi
   printf '  \033[31mBLOCKED\033[0m -- %d gate(s) failed\n\n' "$_fails"
@@ -654,7 +688,7 @@ cmd_release() {
     [ -z "$NOTES" ] && [ -n "$notes" ] && rm -f "$notes"
     git --no-pager diff --stat
     head_ "2. gates, after the bump"
-    _fails=0; gate_versions_aligned; gate_guard_simulation "$TAG" "$TARGET"; gate_beta_first "$TARGET" "$STABLE_TAG"; gate_shadow_wiring
+    _fails=0; gate_versions_aligned; gate_guard_simulation "$TAG" "$TARGET"; gate_beta_first "$TARGET" "$STABLE_TAG"; gate_stable_at_beta "$TARGET" "$STABLE_TAG"; gate_shadow_wiring
     gate_panel_step; gate_all_js; gate_panel_repeat; gate_python; gate_engine_importer
     [ "$_fails" = 0 ] || die "a gate failed after the bump -- nothing committed"
     head_ "3. commit"
@@ -663,9 +697,9 @@ cmd_release() {
       -- "$PLUGIN_JSON" "$MARKET_JSON" "$CHANGELOG" "$CURRENT_VERSION" || die "commit failed"
   else
     head_ "1-3. version already at $TARGET, nothing to commit"
-    # The beta gate runs here too: the bumped path ran it under "2. gates".
-    _fails=0; gate_beta_first "$TARGET" "$STABLE_TAG"
-    [ "$_fails" = 0 ] || die "beta first (D80) -- nothing tagged"
+    # The beta gates run here too: the bumped path ran them under "2. gates".
+    _fails=0; gate_beta_first "$TARGET" "$STABLE_TAG"; gate_stable_at_beta "$TARGET" "$STABLE_TAG"
+    [ "$_fails" = 0 ] || die "beta first, at the beta's commit (D80/D82) -- nothing tagged"
   fi
 
   head_ "4. sync"
@@ -699,10 +733,48 @@ cmd_release() {
   note "GitHub build: NOT YET -- the workflow has only just started"
   note "DMGs published: unknown.  Mac app verified: no."
   note "Run: scripts/release-desktop.sh verify $TAG"
-  if [ "${BETA:-0}" = 1 ]; then
-    note "THIS IS THE BETA. Install Sutra Beta from the prerelease, look at the features,"
-    note "then cut production for the same version: scripts/release-desktop.sh release"
+  if [ "${BETA:-0}" = 1 ] && [ "${AUTO:-0}" != 1 ]; then
+    note "THIS IS THE BETA. No human look (D82): run scripts/release-desktop.sh release --auto"
+    note "to smoke it on this Mac and cut production, or by hand: verify $TAG,"
+    note "scripts/beta-smoke.sh $TAG, then scripts/release-desktop.sh release"
   fi
+}
+
+# =============================================================================
+# release --auto (founder D82, 2026-09-21): beta -> build -> smoke on this Mac
+# -> stable, in one run, with no human step. Stops, named, at the first
+# failure; a stable tag is never cut past a smoke that did not pass.
+# =============================================================================
+wait_for_run() {                            # wait_for_run <tag> -> 0 when that tag's workflow run succeeded
+  local tag="$1" id="" i
+  for i in $(seq 1 30); do                  # the run appears a few seconds after the tag push
+    id="$(gh run list --workflow release-dmg.yml --branch "$tag" --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null)"
+    [ -n "$id" ] && [ "$id" != null ] && break
+    sleep 10
+  done
+  if [ -z "$id" ] || [ "$id" = null ]; then bad "build: no workflow run appeared for $tag"; return 1; fi
+  note "run $id: https://github.com/sankalpasawa/sutra/actions/runs/$id"
+  if gh run watch "$id" --interval 30 --exit-status >/dev/null 2>&1; then ok "build: run $id succeeded"; return 0; fi
+  bad "build: run $id did not succeed"; return 1
+}
+
+cmd_auto() {
+  command -v gh >/dev/null 2>&1 || die "gh is required for --auto (it waits for the build and fetches the beta)"
+  [ -x "$LIBDIR/beta-smoke.sh" ] || die "scripts/beta-smoke.sh is missing or not executable"
+  ASSUME_YES=1
+  head_ "AUTO 1/4: the beta"
+  BETA=1; read_state
+  local beta_tag="$TAG" version="$TARGET"
+  cmd_release
+  head_ "AUTO 2/4: the GitHub build of $beta_tag"
+  _fails=0; wait_for_run "$beta_tag" || die "the build of $beta_tag did not succeed -- nothing promoted"
+  _fails=0; cmd_verify "$beta_tag" || die "the beta release is incomplete -- nothing promoted"
+  head_ "AUTO 3/4: the look, by script, on this Mac"
+  "$LIBDIR/beta-smoke.sh" "$beta_tag" || die "the beta smoke FAILED -- the stable tag is not cut (D82)"
+  head_ "AUTO 4/4: the stable tag for $version"
+  BETA=0; _fails=0; read_state
+  cmd_release
+  note "production build started; verify with: scripts/release-desktop.sh verify $(tag_for "$version")"
 }
 
 cmd_verify() {
@@ -736,11 +808,12 @@ cmd_verify() {
 # =============================================================================
 main() {
   local cmd="${1:-check}"; shift || true
-  BUMP=patch; EXPLICIT=""; NOTES=""; ASSUME_YES=0; BETA=0
+  BUMP=patch; EXPLICIT=""; NOTES=""; ASSUME_YES=0; BETA=0; AUTO=0
   local rest=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --beta)    BETA=1; shift ;;
+      --auto)    AUTO=1; BETA=1; ASSUME_YES=1; shift ;;
       --bump)    BUMP="${2:-}"; shift 2 ;;
       --version) EXPLICIT="${2:-}"; shift 2 ;;
       --notes)   NOTES="${2:-}"; shift 2 ;;
@@ -757,9 +830,9 @@ main() {
   [ -f "$CHECKLIST" ] || die "release-checklist.md not found -- is this the sutra repo?"
   case "$cmd" in
     check)   cmd_check ;;
-    release) cmd_release ;;
+    release) if [ "${AUTO:-0}" = 1 ]; then cmd_auto; else cmd_release; fi ;;
     verify)  cmd_verify ${rest:-} ;;
-    *) die "unknown command '$cmd' (want: check | release | verify)" ;;
+    *) die "unknown command '$cmd' (want: check | release [--beta|--auto] | verify)" ;;
   esac
 }
 

@@ -90,6 +90,44 @@ BT="$(mktemp -d)"
 rm -rf "$BT"
 unset -f all_desktop_tags
 
+# ---- 13b. STABLE AT THE BETA'S COMMIT (D82): what was smoked is what ships --
+# The two git reads are injected (beta_commit_of, head_commit), like the tag
+# list above, so no git runs here.
+all_desktop_tags() { printf '%s\n' "$TAGS"; }
+beta_commit_of() { case "$1" in v2.290.0-beta.3-desktop) printf 'cafe0003' ;; v2.290.0-beta.1-desktop) printf 'cafe0001' ;; *) printf '' ;; esac; }
+head_commit() { printf '%s' "${HEADSHA:-}"; }
+_fails=0; BETA=0; TAG=v2.290.0-desktop; HEADSHA=cafe0003
+gate_stable_at_beta 2.290.0 v2.290.0-desktop >/dev/null
+is "HEAD at the last beta -> allowed"                "$_fails" "0"
+_fails=0; BETA=0; HEADSHA=cafe0001
+gate_stable_at_beta 2.290.0 v2.290.0-desktop >/dev/null
+is "HEAD at an OLDER beta -> refused (the last one was smoked)" "$_fails" "1"
+_fails=0; BETA=0; HEADSHA=deadbeef
+gate_stable_at_beta 2.290.0 v2.290.0-desktop >/dev/null
+is "main moved past the beta -> refused"             "$_fails" "1"
+_fails=0; BETA=0; HEADSHA=deadbeef
+gate_stable_at_beta 2.289.9 v2.289.9-desktop >/dev/null
+is "no beta at all -> refused"                       "$_fails" "1"
+_fails=0; BETA=1; TAG=v2.290.0-beta.4-desktop; HEADSHA=deadbeef
+gate_stable_at_beta 2.290.0 v2.290.0-desktop >/dev/null
+is "cutting a beta itself -> allowed"                "$_fails" "0"
+_fails=0; BETA=0; TAG=v2.290.0-desktop; HEADSHA=deadbeef
+RELEASE_SKIP_BETA=1 RELEASE_SKIP_BETA_REASON="hotfix" gate_stable_at_beta 2.290.0 v2.290.0-desktop >/dev/null
+is "the audited D80 skip covers the commit pin too"  "$_fails" "0"
+BETA=0; TAG=""; unset HEADSHA
+unset -f all_desktop_tags beta_commit_of head_commit
+# the smoke's pure helpers, sourced with nothing else running
+BETA_SMOKE_LIB=1 . "$HERE/beta-smoke.sh"
+is "smoke arch arm64"   "$(smoke_arch arm64)" "arm64"
+is "smoke arch aarch64" "$(smoke_arch aarch64)" "arm64"
+is "smoke arch x86_64"  "$(smoke_arch x86_64)" "x86_64"
+no_ smoke_arch i386
+is "smoke asset name"   "$(smoke_asset_for x86_64)" "Sutra-x86_64.dmg"
+is "smoke version of a beta tag" "$(smoke_version_of v2.291.1-beta.2-desktop)" "2.291.1"
+is "smoke refuses a stable tag"  "$(smoke_version_of v2.291.1-desktop)" ""
+is "smoke walks the Shadow surfaces" "$(printf '%s\n' $SMOKE_ROUTES | grep -c '/api/shadow/')" "4"
+is "smoke opens the panel itself"    "$(printf '%s\n' $SMOKE_ROUTES | grep -cx '/')" "1"
+
 # ---- 3. the bump, which is asked for and never assumed ---------------------
 is "patch"          "$(bump_version 2.282.3 patch)" "2.282.4"
 is "patch rollover" "$(bump_version 2.282.9 patch)" "2.282.10"
