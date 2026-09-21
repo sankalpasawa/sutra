@@ -1,6 +1,12 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.291.2 (2026-09-21)
+
+- Released from v2.291.1-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - release: no human between beta and production -- release --auto smokes the built beta on this Mac, then cuts stable at the beta's commit (founder D82, 2026-09-21)
+- Changed: 5 file(s), +340/-17
+
 ## 2.291.1 (2026-09-21)
 
 - **Release pipeline: no human between beta and production** (founder D82, 2026-09-21: "I don't want any manual look ... do that automatically in beta and then push out to main as well. No human involvement"). `scripts/release-desktop.sh release --auto` cuts the beta, waits for the GitHub build, runs the new `scripts/beta-smoke.sh` on the releasing Mac (download the DMG for this architecture, `shasum -c`, `xcrun stapler validate`, `spctl --assess`, mount and copy Sutra Beta, check the bundle version and channel, launch it on port 8331, wait for the backend's health answer, read the panel token and the panel, state, sessions and Shadow routes, quit) and then cuts the stable tag. New gate `gate_stable_at_beta`: a stable tag is refused when main has moved past the last beta of that version, so what ships is what was smoked. Checklist checks 3 and 7 are now the script's contract. Tests: test-release-desktop.sh section 13b.
