@@ -1,6 +1,13 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.291.5 (2026-09-21)
+
+- Released from v2.291.4-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - Updater: resume a dropped download, and stop blaming the checksum for it
+- Changed: 3 file(s), +283/-8
+- New test suites: test_update_download_resume.py
+
 ## 2.291.4 (2026-09-21)
 
 - Released from v2.291.3-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
