@@ -2301,6 +2301,15 @@ def api_workspace(check: int = 0):
         _spawn("workspace-tabs-backfill", lambda: mods["sync"].backfill_tabs())
     except Exception:  # noqa: BLE001
         pass
+    # AND WHO WROTE THEM (owner, 2026-09-21). Owners have only been stamped since 2026-09-18, so
+    # every older article reached the team with no author on it and drew "by a teammate" on
+    # everybody's card. Each Mac claims its own old articles here -- the chat folder is the proof,
+    # and it exists on one machine only -- and sends the stamp on. Same shape as the three
+    # backfills above, and it stops asking once it has been through the Library once.
+    try:
+        _spawn("workspace-owners-backfill", lambda: mods["sync"].backfill_owners())
+    except Exception:  # noqa: BLE001
+        pass
     checked = _ws_verify(mods) if check else _ws_checked["res"]
     return {
         "installed": True,
@@ -2531,8 +2540,23 @@ def api_library():
     me = library_edit.actor_id()
     for r in rows:
         r["mine"] = store.library_is_mine(r, me)
-        r["owner_name"] = "" if r["mine"] else (r.get("owner") or r.get("edited_by") or "a teammate")
-    return rows
+        # THE NAME, IN THE ORDER THE ANSWERS ARE TRUSTWORTHY (owner, 2026-09-21). `owner` is the
+        # author, stamped at the row's birth or by the owners backfill, and it is the real answer.
+        # `edited_by` is whoever saved it last, `last_by` is whoever sent it last: both are a real
+        # person who touched this article, and either beats telling him "a teammate" about an
+        # article that has a perfectly good name sitting on it in the database.
+        r["owner_name"] = "" if r["mine"] else (r.get("owner") or r.get("edited_by")
+                                                or r.get("last_by") or "a teammate")
+    # A TEAMMATE'S DEAD RUN IS NOT AN ARTICLE (owner, 2026-09-21: "why does he see those stale
+    # things like write a1007 ... which have not even been written"). A Library row is born the
+    # moment a run starts, before a single word exists, so it can be watched filling in. Until
+    # 2026-09-18 those empty rows were uploaded at birth, and the ones whose runs then died are
+    # still sitting in every teammate's Library as a title with nothing behind it. Your own are
+    # kept -- they are your runs and you may want to pick them up again -- but a row with no
+    # article, belonging to somebody else, is a thing you can neither read nor resume nor delete.
+    # The push guard added on 2026-09-18 stops new ones ever arriving; this hides the ones that
+    # already did.
+    return [r for r in rows if r.get("mine") or int(r.get("words") or 0) > 0]
 
 
 @router.get("/library/{item_id}")

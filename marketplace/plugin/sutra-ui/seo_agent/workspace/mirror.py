@@ -209,6 +209,18 @@ def from_wire(kind, key, payload):
         # otherwise be written into meta.json as a field nothing reads.
         if not isinstance(meta.get("tabs"), dict):
             meta.pop("tabs", None)
+        # A NAME FOR EVERY ROW, EVEN THE ONES FROM BEFORE OWNERS WERE STAMPED (owner, 2026-09-21:
+        # "I should be able to see the actual person name"). The Library card reads the name from
+        # `meta.owner`, and owner stamping only started on 2026-09-18, so every article written
+        # before that arrived nameless and drew the generic "by a teammate". The name was in the
+        # database the whole time: `library.actor` is who last sent the row, and it is a real
+        # person on every row we have. So it comes down as `last_by`, which is a DISPLAY fallback
+        # and nothing more -- the last sender is not necessarily the author, so it never becomes
+        # `owner` and never decides who may delete the row. `backfill_owners` is what puts the
+        # true author on the old rows; until it has been round, a real name beats no name.
+        who = str(p.get("actor") or "").strip()
+        if who:
+            meta["last_by"] = who
         return meta
     if kind == "pages":
         page = {"url": key, "title": p.get("title") or "", "description": p.get("description") or "",
@@ -242,9 +254,12 @@ def to_wire(kind, key, local, actor="", gone=False):
                 "one_liner": local.get("brand_oneliner") or "",
                 "niche": local.get("niche_definition") or "", "actor": actor}
     if kind == "library":
+        # `last_by` is not sent back up: from_wire derives it from this table's own `actor` column
+        # on the way down, so pushing it would be writing a column's own value back into the jsonb
+        # beside it, where the two could then disagree.
         meta = {k: v for k, v in local.items()
                 if k not in ("title", "status", "draft", "draft_md", "url", "id",
-                             "milestones", "research", "blueprint")}
+                             "milestones", "research", "blueprint", "last_by")}
         # THE FIVE TABS GO UP INSIDE `meta`, AND THAT IS A DELIBERATE CHOICE, NOT A LEFTOVER
         # (owner, 2026-09-21: the Library tabs only existed on the Mac that wrote the article).
         # `library` has fixed columns -- item_id, title, status, url, body_md, meta, actor -- so a
