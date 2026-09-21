@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.290.1 (2026-09-21)
+
+- **Sutra Desktop: the founder can change their mind mid-mission, and a refused click stops being silent.** A mission at NEEDS YOU now actually amends when the founder redirects it: objective, done_when and version move together, the superseded verdicts are recorded in a revision ledger rather than vanishing between two renders, and the reply restarts the worker whose run loop had already exited. A `founder_confirm` decision draws exactly one Confirm button instead of one in the timeline and another below it. Separately, the shared `apiGet`/`apiPost` now retry once after a panel-token refresh: `PANEL_TOKEN` is minted per backend process, so a window that outlives a restart carried a dead token and every mutation 403'd -- the heal existed since 2026-08-25 but was wired only into the two Shadow surfaces, so Settings -> Access and permissions silently discarded five attempts to switch to Full access over two days. The access screen now renders the refusal it was parking in `S.permError`.
+
 ## 2.290.0 (2026-09-21)
 
 - Released from v2.289.9-desktop..HEAD: 3 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
