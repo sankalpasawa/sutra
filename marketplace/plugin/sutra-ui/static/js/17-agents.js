@@ -2657,7 +2657,14 @@ function agMileStripHtml(id, miles, writing){
     const label = m.label || AG_MILE_LABEL[m.key] || m.key;
     if (!m.exists){
       const cur = i === nextIdx;
-      return `<span class="ag-mile ${cur ? "cur" : "todo"}" title="${agEsc(cur ? "being made now" : "not made yet")}"><i aria-hidden="true"></i>${agEsc(label)}</span>`;
+      /* `gone` says this article DID go through the step and the file is no longer anywhere we can
+         reach -- the run folder was deleted, or it sits on the Mac that wrote it and that Mac has
+         not sent it. "Not made yet" would be a plain untruth on a finished article, so it is only
+         said about a step that genuinely has not happened. */
+      const why = cur ? "being made now"
+        : (m.gone ? "This step ran, but its working files were not kept. They are either on the Mac that wrote the article, or gone."
+                  : "not made yet");
+      return `<span class="ag-mile ${cur ? "cur" : "todo"}" title="${agEsc(why)}"><i aria-hidden="true"></i>${agEsc(label)}</span>`;
     }
     /* opens the read-only tab overlay (agAction "libtabsopen"), not the old raw-file panel */
     return `<button class="ag-mile done" type="button" data-ag="libtabsopen" data-arg="${agEsc(id)}" data-name="${agEsc(m.key)}" data-label="${agEsc(label)}"
