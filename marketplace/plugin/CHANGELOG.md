@@ -1,6 +1,12 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.291.7 (2026-09-21)
+
+- Released from v2.291.6-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - Library: a real name on every article, including the ones nobody can claim
+- Changed: 4 file(s), +101/-9
+
 ## 2.291.6 (2026-09-21)
 
 - Released from v2.291.5-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
