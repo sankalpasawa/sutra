@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-09-21
 
-## v2.289.9 (2026-09-21, HEAD)
+## v2.290.0 (2026-09-21, HEAD)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.289.9 (2026-09-21)
 
 **Department screen, slice H — the two bugs the acceptance walk found** (holding/plans/department-screen, Gate 5): proposal summaries composed in screen words, and a state word that moves the moment its ask is stamped instead of waiting for the department to be opened again. A22 and A29 re-walked and passed; the walk is 28 passed, 9 gaps, 0 bugs.
 

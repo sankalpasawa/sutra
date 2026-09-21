@@ -1,6 +1,15 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.290.0 (2026-09-21)
+
+- Released from v2.289.9-desktop..HEAD: 3 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - an unclosed fence stops swallowing the reply that follows it
+  - release gate: every Shadow JS suite on disk runs in the dmg leg
+  - Shadow verifies its own checks, and one mission's work stops leaking into another's
+- Changed: 40 file(s), +6046/-220
+- New test suites: test_shadow_artifact_evidence.py test_shadow_context_isolation.py test_shadow_decision_packet.py test_shadow_decision_ui.js test_shadow_interactive_forward.py test_shadow_mission_isolation.py
+
 ## 2.289.9 (2026-09-21)
 
 - **Sutra Desktop: department screen slice H, ask summaries in screen words, state words refresh after a decision** (holding/plans/department-screen, ACCEPTANCE.md B1 and B2). The request writer composes every proposal summary from one table in the screen's own words — "Write / Edit the goal and rules of <department>", "New role under <department> for <person>", "New department", "Rename", "Move" — so the word charter no longer reaches a card that paints a summary verbatim; rows filed before this keep the words they were written with. Answering an ask now re-reads the cards that read the record the decision changed: the engines answer behind the Engines list and the open engine card for a routine ask, Identity and People for an org ask. Opening a department still costs the three reads Now needs.
