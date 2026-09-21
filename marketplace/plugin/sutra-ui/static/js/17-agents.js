@@ -1346,6 +1346,10 @@ function agDiveHtml(id){
 /* The main screen. Every sentence on it is the copy; the only two things decided at draw time
    are the domain and the tool count, and each is left OUT when it is not known rather than
    filled with something that looks like it was read. */
+/* The walkthrough that plays at the top of the guide. Just the YouTube id, so swapping the film
+   is a one-word change rather than a hunt through markup. */
+const AG_GUIDE_VIDEO = "JdflViBBsmo";
+
 function agGuideHtml(a){
   if (a && a.guideDive) return agDiveHtml(a.guideDive);
   const domain = agSiteDomain(a);
@@ -1356,6 +1360,19 @@ function agGuideHtml(a){
     <div class="g1">
       <h2>The SEO writer</h2>
       <p class="l">${agEsc(AG_GUIDE_LEAD)}</p>
+    </div>
+    <div class="g0">
+      <!-- THE WALKTHROUGH, PLAYED FROM YOUTUBE (owner, 2026-09-21). Deliberately an embed and not a
+           bundled file: the video is updated on YouTube, and whoever watches it here should get the
+           current one without waiting for a Sutra release. It is also the reason this is the only
+           outside thing this screen loads. With no network the player draws nothing and the guide
+           below it reads exactly as it did before, so the page never depends on it. -->
+      <div class="ag-guidevid">
+        <iframe src="https://www.youtube-nocookie.com/embed/${AG_GUIDE_VIDEO}?rel=0&modestbranding=1"
+                title="The SEO writer, in Sutra" loading="lazy" allowfullscreen
+                allow="accelerometer; clipboard-write; encrypted-media; picture-in-picture; fullscreen"
+                referrerpolicy="strict-origin-when-cross-origin" frameborder="0"></iframe>
+      </div>
     </div>
     <div class="g2">
       <h3 class="sec">How it works</h3>

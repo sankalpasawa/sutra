@@ -1367,6 +1367,13 @@ h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spaci
 
 /* the four steps. The numeral is the landmark, so it is set in the mono face the rest of
    the screen counts in, and it sits in its own column rather than in the text. */
+/* The walkthrough at the top of the guide (owner, 2026-09-21). 16:9 held by aspect-ratio so the
+   player never shifts the page as it loads, capped so it does not dwarf the words underneath, and
+   wearing the same rounded, bordered face as every other panel here. Palette tokens only: a raw
+   colour anywhere in this stylesheet fails the guide, workspace and marketplace palette tests. */
+.ag-guidevid{margin:16px 0 22px;max-width:min(100%,780px);aspect-ratio:16/9;border-radius:12px;
+  overflow:hidden;border:1px solid var(--bd);background:var(--bg2);box-shadow:var(--shadow)}
+.ag-guidevid iframe{display:block;width:100%;height:100%;border:0}
 .ag-gsteps{list-style:none;margin:0;padding:0;counter-reset:agstep}
 .ag-gsteps li{counter-increment:agstep;display:grid;grid-template-columns:22px 1fr;gap:11px;
   padding:7px 0;font-size:12.5px;line-height:1.6;color:var(--ink)}
