@@ -2177,7 +2177,16 @@ function parseGov(text){
       const e = evidence(inner);
       /* an unterminated fence is still streaming: one routing/depth key is
          enough to hold it back until the closing marker says what it is */
-      if (isGov(e, boxHead) || (!closed && e.run >= 1)){
+      /* AN UNTERMINATED FENCE IS ONLY "STREAMING" IF IT IS ALL KEYS SO FAR.
+         `!closed && e.run >= 1` alone captured any open fence whose first
+         line looked like a governance key -- so a checklist opening
+         "```\nVerify: backups exist" swallowed the prose and the SQL that
+         followed it, and the reply rendered as the one word before the
+         fence. The streaming case this exists for ("```\nINPUT: partial",
+         held back until the closing marker says what it is) has nothing in
+         it BUT the key, which is the discriminator. */
+      const allKeys = inner.every(l => !l.trim() || keyOf(unbox(l)));
+      if (isGov(e, boxHead) || (!closed && e.run >= 1 && allKeys)){
         const first = (boxHead && BOX_KEY[boxHead[1].toLowerCase()])
                    || inner.map(l => keyOf(unbox(l))).find(Boolean) || "fence";
         push(first, src.slice(i, closed ? j + 1 : j));   /* unterminated (streaming): capture what is there */
