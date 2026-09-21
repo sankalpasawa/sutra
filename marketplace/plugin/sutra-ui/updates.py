@@ -304,6 +304,87 @@ def _run(cmd, timeout=120):
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
 
+# HOW MANY TIMES A CUT-SHORT DOWNLOAD IS PICKED UP AGAIN before the updater
+# gives up. Four is not a magic number: it is "a flaky link gets a fair few
+# goes", and every go resumes rather than restarts, so the cost of another
+# attempt is the bytes still missing and not another 400MB.
+DOWNLOAD_TRIES = 4
+
+
+def _fetch_dmg(url, dmg, want_bytes=0):
+    """Download the release image to `dmg`, whole, or raise saying what happened.
+
+    WHY THIS IS NOT ONE urlopen INTO copyfileobj (owner, 2026-09-21). It was,
+    and a truncated download was then indistinguishable from a corrupt one. A
+    connection that dies at 263MB of 421MB leaves a perfectly readable short
+    file; copyfileobj is happy, because a socket that closes IS end-of-file as
+    far as it can tell. The checksum then fails, and the only thing the app
+    could say was "checksum mismatch: published 1e553c0e, downloaded 9dbb56a0"
+    -- which reads as "GitHub is serving a bad file, there is nothing you can
+    do", when the truth was "your link dropped, try again". The owner hit this
+    on a 421MB DMG, and so did two of my own downloads of the same file from
+    this network, one through `gh` and one through curl.
+
+    So: the expected length is known before a byte is read (the release says
+    so, and the response says so again), a short file is NAMED as short, and a
+    dropped connection is resumed with a Range request instead of starting the
+    whole thing over. The checksum stays exactly where it was, and now it only
+    ever fires for what it is actually for -- a file that arrived complete and
+    wrong.
+    """
+    last = ""
+    for attempt in range(1, DOWNLOAD_TRIES + 1):
+        have = dmg.stat().st_size if dmg.exists() else 0
+        if want_bytes and have > want_bytes:       # a stale part-file from an older,
+            have = 0                               # bigger release: start it again
+        headers = {"User-Agent": "sutra-ui-updater"}
+        if have:
+            headers["Range"] = "bytes=%d-" % have
+        req = urllib.request.Request(url, headers=headers)
+        expect = want_bytes
+        try:
+            with urllib.request.urlopen(req, timeout=300) as r:
+                # A server that ignored the Range gives 200 and the whole file, so
+                # the part-file must be thrown away rather than appended to.
+                resumed = r.status == 206 if hasattr(r, "status") else r.getcode() == 206
+                mode = "ab" if (have and resumed) else "wb"
+                length = r.headers.get("Content-Length")
+                expect = (int(length) + (have if resumed else 0)) if length else want_bytes
+                with open(dmg, mode) as fh:
+                    shutil.copyfileobj(r, fh)
+        except urllib.error.HTTPError as exc:
+            # 416 is the server saying "you already have at least all of it", which
+            # means the part-file on disk is stale, not resumable. Bin it and start
+            # the next attempt from zero rather than asking the same bad question.
+            if exc.code == 416 and have:
+                try:
+                    dmg.unlink()
+                except OSError:
+                    pass
+                last = "the part-file on disk did not match the release; starting again"
+            else:
+                last = "the server refused the download: %s" % exc
+        except (urllib.error.URLError, OSError) as exc:
+            last = "the connection dropped: %s" % exc
+        else:
+            got = dmg.stat().st_size
+            if not expect or got >= expect:
+                return
+            last = ("the download was cut short at %s of %s bytes"
+                    % ("{:,}".format(got), "{:,}".format(expect)))
+        if attempt < DOWNLOAD_TRIES:
+            time.sleep(2 * attempt)
+    try:
+        dmg.unlink()                               # never leave a short file to be found later
+    except OSError:
+        pass
+    raise RuntimeError(
+        "download failed after %d tries -- %s. This is a network problem, not a "
+        "bad release: the file on GitHub is fine. Try again on a steadier "
+        "connection, or download the DMG from the release page and install it "
+        "by hand." % (DOWNLOAD_TRIES, last))
+
+
 def download_and_verify(dest_dir=None):
     """Fetch the DMG for this arch and prove it before anything is replaced.
 
@@ -322,12 +403,7 @@ def download_and_verify(dest_dir=None):
     d.mkdir(parents=True, exist_ok=True)
     dmg = d / latest["asset"]
 
-    req = urllib.request.Request(url, headers={"User-Agent": "sutra-ui-updater"})
-    try:
-        with urllib.request.urlopen(req, timeout=300) as r, open(dmg, "wb") as fh:
-            shutil.copyfileobj(r, fh)
-    except (urllib.error.URLError, OSError) as exc:
-        raise RuntimeError("download failed: %s" % exc)
+    _fetch_dmg(url, dmg, int(latest.get("size") or 0))
 
     # GATE 1 -- checksum, against the file published beside the DMG.
     if latest.get("sha256_url"):
@@ -341,8 +417,19 @@ def download_and_verify(dest_dir=None):
         if want:
             got = _sha256(dmg)
             if got != want:
-                raise RuntimeError("checksum mismatch: published %s, downloaded %s"
-                                   % (want[:16], got[:16]))
+                # THE BAD FILE GOES, and that is not tidying. Staging keeps the
+                # image on disk between attempts so a download can be resumed, and
+                # a complete-but-wrong file left lying there is the one thing that
+                # rule cannot cope with: every later attempt would see the full
+                # byte count, ask for nothing, and fail the same way forever.
+                try:
+                    Path(dmg).unlink()
+                except OSError:
+                    pass
+                raise RuntimeError(
+                    "the downloaded image does not match the one published "
+                    "(published %s, downloaded %s). The copy here has been "
+                    "deleted; try the update again." % (want[:16], got[:16]))
 
     # GATE 2 -- Gatekeeper. Signed is not enough; this must be NOTARIZED, which
     # is what `spctl` reports and what a stranger's Mac will demand.
