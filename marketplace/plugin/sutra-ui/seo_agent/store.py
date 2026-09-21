@@ -939,6 +939,26 @@ def library_stamp_owner(item_id, owner_id, owner_name):
     return meta
 
 
+def library_stamp_last_by(item_id, who):
+    """Record who last sent this row, for the card to show when nothing else names an author.
+
+    A DISPLAY fallback and nothing else, which is why it is a separate field from `owner` and why
+    it is written even over an older value: the last sender is the table's fact and it can change,
+    while the author is set once and never renamed. It never decides who may delete a row. Like
+    `library_stamp_owner` this is not an edit -- no version, no editor.
+    """
+    who = str(who or "").strip()
+    if not item_id or not who:
+        return None
+    p = os.path.join(library_dir(), item_id, "meta.json")
+    meta = read_json(p)
+    if not meta or meta.get("last_by") == who:
+        return None
+    meta["last_by"] = who
+    write_json(p, meta)
+    return meta
+
+
 def _kept_strip(meta):
     """The progress strip for a row whose RUN is gone but whose tabs were kept. [] when neither.
 

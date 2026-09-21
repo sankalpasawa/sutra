@@ -302,7 +302,13 @@ class Team(object):
         return "Devansh"
 
     def select(self, table, where=None, order=None, limit=None, columns="*", offset=None):
-        return [{"item_id": k} for k in self.library]
+        # `actor` rides along because the owners backfill reads it to name a row nobody can
+        # claim; the real table has carried that column since the workspace shipped.
+        return [{"item_id": k, "actor": (v.get("actor") or "")}
+                for k, v in self.library.items()]
+
+    def settings(self):
+        return {"member_id": "m-devansh", "member_name": "Devansh"}
 
     def one(self, table, where=None, columns="*"):
         return {}
@@ -401,6 +407,46 @@ cC, rC, itemC = full_run("no workspace")
 ok("no tabs kept, nothing sent",
    sync.backfill_tabs(now=1000.0) == "" and store.read_library_tabs(itemC) is None)
 TEAM.on = True
+
+
+# ---- 5b. who wrote it -----------------------------------------------------------------------------
+print("\nthe owners backfill: a name on every row, and the right one")
+
+_st = sync.read_state()
+_st.pop("owners_backfill", None)
+sync._save_state(_st)
+
+cE, rE, itemE = full_run("mine, and unowned")          # chat still here: this Mac can claim it
+cF, rF, itemF = full_run("theirs, and unclaimable")    # chat killed: nobody can ever claim it
+kill_run(cF)
+TEAM.library.setdefault(itemF, {"item_id": itemF})["actor"] = "Aparna"
+
+got = sync.backfill_owners(now=3000.0)
+ok("the row whose chat is here is claimed by this Mac",
+   (store.library_get(itemE) or {}).get("owner") == "Devansh"
+   and (store.library_get(itemE) or {}).get("owner_id") == "m-devansh",
+   store.library_get(itemE))
+ok("and that claim is sent on, so every Mac shows the same name",
+   got == "sent" and (TEAM.library.get(itemE) or {}).get("meta", {}).get("owner") == "Devansh",
+   (TEAM.library.get(itemE) or {}).get("meta", {}))
+# The row nobody can claim is the one the old code left saying "by a teammate" for ever. Its name
+# is in the team's own actor column, so it is read and stamped locally -- and NOT pushed, because
+# who last sent a row is the table's fact, not this Mac's to write back.
+ok("the row nobody can claim still gets a real name, from the team's own record",
+   (store.library_get(itemF) or {}).get("last_by") == "Aparna",
+   store.library_get(itemF))
+ok("but it is never given an owner, because this Mac cannot know one",
+   not (store.library_get(itemF) or {}).get("owner")
+   and not (store.library_get(itemF) or {}).get("owner_id"))
+ok("and nothing about it was sent back to the team",
+   (TEAM.library.get(itemF) or {}).get("meta", {}).get("last_by") is None,
+   (TEAM.library.get(itemF) or {}).get("meta", {}))
+ok("an owner already on a row is never renamed",
+   store.library_stamp_owner(itemE, "m-someone-else", "Somebody Else") is None
+   and (store.library_get(itemE) or {}).get("owner") == "Devansh")
+ok("and this pass never declares itself finished either",
+   (sync.read_state().get("owners_backfill") or {}).get("done") is not True,
+   sync.read_state().get("owners_backfill"))
 
 
 # ---- 6. the route ------------------------------------------------------------------------------------
