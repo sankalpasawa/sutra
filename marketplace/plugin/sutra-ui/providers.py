@@ -615,6 +615,11 @@ _CLAUDE_MODELS = (
 #: NOT in the CLI's own list of valid values, so it is not offered.
 CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
+#: The effort a Claude session runs at when its options box names none (founder
+#: direction 2026-09-21: every chat defaults to xhigh). A chat's own pick still
+#: wins; this only replaces "blank means whatever the CLI decides".
+DEFAULT_EFFORT = "xhigh"
+
 #: The rows the picker shows first. Same ids as _CLAUDE_MODELS except that
 #: `fable` is published as `best` -- see the note above.
 _CLAUDE_CATALOG_MODELS = (

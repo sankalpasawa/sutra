@@ -395,9 +395,12 @@ def build_agent_args(agent_bin, msg, perm_mode, session_id=None, model=None,
     if fallback and fallback != model:
         args += ["--fallback-model", fallback]
 
+    # Blank or junk falls to providers.DEFAULT_EFFORT rather than to no flag:
+    # the flag is now always present, and only ever one of EFFORT_LEVELS.
     effort = _flag_str(opts.get("effort"))
-    if effort in EFFORT_LEVELS:
-        args += ["--effort", effort]
+    if effort not in EFFORT_LEVELS:
+        effort = providers.DEFAULT_EFFORT
+    args += ["--effort", effort]
 
     # Extra roots the tools may touch. Confined to $HOME for the same reason the
     # workdir is: this is a loopback web app, and a directory arriving over a

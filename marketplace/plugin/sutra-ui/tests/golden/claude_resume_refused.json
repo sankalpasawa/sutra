@@ -17,6 +17,8 @@
     "plan",
     "--resume",
     "a-foreign-id",
+    "--effort",
+    "xhigh",
     "--allowedTools",
     "mcp__sutra__*"
   ],
