@@ -1056,6 +1056,66 @@ def backfill_tabs(client=None, now=None, rows=None):
         return ""
 
 
+# WHO WROTE THE OLD ARTICLES (owner, 2026-09-21: "I should be able to see the actual person name").
+# Owners have been stamped on every new row since 2026-09-18, so everything written before that has
+# no author on it at all, and both the name on the card and the right to delete it fall back to a
+# guess. This is the one-off pass that fixes that, and the reason it can be done at all is that the
+# answer is on this Mac and nowhere else: `library_is_mine` says a row with no owner belongs to
+# whoever still has its chat folder, and a chat folder exists on exactly one machine. So each
+# person's Sutra claims its own old articles, once, and sends the stamp on. A row whose chat is
+# gone everywhere is claimed by nobody and keeps `last_by` for its name, which is honest -- nothing
+# left anywhere knows who wrote it.
+OWNERS_BACKFILL_EVERY = 600.0     # same retry gap as the other backfills
+
+
+def backfill_owners(client=None, now=None, rows=None):
+    """Stamp this person's name on their own old articles and send those rows on. Never raises.
+
+    Only rows that are MINE by the chat-folder rule and carry no owner yet are touched, so two
+    Macs can never claim the same row, and a row already stamped is never renamed.
+    """
+    now = time.time() if now is None else now
+    try:
+        if not configured(client):
+            return ""
+        st = read_state()
+        bf = st.get("owners_backfill") or {}
+        if bf.get("done"):
+            return ""
+        if now - float(bf.get("at") or 0) < OWNERS_BACKFILL_EVERY:
+            return ""
+        s = _client(client).settings() or {}
+        me = str(s.get("member_id") or "").strip()
+        my_name = str(s.get("member_name") or "").strip()
+        if not me or not my_name:
+            return ""
+        if rows is None:
+            rows = store.library_list()
+        # No words means a run that never produced an article; `push` refuses it anyway.
+        rows = [r for r in (rows or [])
+                if isinstance(r, dict) and r.get("id") and int(r.get("words") or 0) > 0
+                and not r.get("owner_id") and not r.get("owner")
+                and store.library_is_mine(r, me)]
+        stamped, sent, fail_why = 0, 0, ""
+        for r in rows:
+            item_id = str(r["id"])
+            try:
+                meta = store.library_stamp_owner(item_id, me, my_name)
+                if not meta:
+                    continue
+                stamped += 1
+                if push("library", item_id, store.library_get(item_id), client=client) is not None:
+                    sent += 1
+            except Exception as e:           # noqa: BLE001 -- one bad row must not stop the rest
+                fail_why = str(e)[:300]
+        st["owners_backfill"] = {"at": now, "done": not fail_why, "stamped": stamped, "sent": sent,
+                                 "why": fail_why or ("nothing unowned" if not stamped else "")}
+        _save_state(st)
+        return "sent" if sent else ""
+    except Exception:                       # noqa: BLE001 -- a background nicety must never break a poll
+        return ""
+
+
 def push_delete(kind, key, actor=None, client=None, item_id=None):
     """The thing is gone. The trigger logs it, and it reaches everyone as an ordinary change.
 

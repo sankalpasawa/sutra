@@ -919,6 +919,26 @@ def save_library_tabs(item_id, tabs, kept=None, dropped=None):
     return meta
 
 
+def library_stamp_owner(item_id, owner_id, owner_name):
+    """Write the author onto a row that never had one. None when the row is gone or already owned.
+
+    THE STAMP IS ONCE AND ONLY ONCE, like the id and like `library_finish`'s own owner rule: a row
+    that already names an author is left exactly as it is, so a second Mac passing over the same
+    article can never rename it. Like `save_library_tabs` this is NOT an edit -- no version is
+    bumped and no editor is stamped, because recording who wrote an article is not a change to it.
+    """
+    if not item_id or not owner_id or not owner_name:
+        return None
+    p = os.path.join(library_dir(), item_id, "meta.json")
+    meta = read_json(p)
+    if not meta or meta.get("owner_id") or meta.get("owner"):
+        return None
+    meta["owner_id"] = str(owner_id)
+    meta["owner"] = str(owner_name)
+    write_json(p, meta)
+    return meta
+
+
 def _kept_strip(meta):
     """The progress strip for a row whose RUN is gone but whose tabs were kept. [] when neither.
 
