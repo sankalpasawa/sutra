@@ -206,6 +206,116 @@ test("3c. the chat list row carries no provider tag; the row menu names the writ
   assert(/data-smsource/.test(grab(helpers, "sessMenuHtml")), "the row menu never says who wrote it");
 });
 
+/* ── 4. the six micro-interactions (founder 2026-09-21 "Do these changes.";
+   design of record: website/preview/chat-micro-interactions.html) ────────── */
+
+const state = J("01-state.js");
+const loaders = J("07-loaders.js");
+
+test("4a. the css carries all six, and reduced motion switches every one of them off", () => {
+  ["\\.jumpwrap\\{position:sticky", "\\.jumppill\\.show\\{opacity:1", "@keyframes riseIn", "\\.turn\\.arriving\\{animation:riseIn 120ms",
+   "\\.livedot\\.breathe::before\\{animation:breathe 4s", "@keyframes menuIn", "\\.upop\\.panemenu\\.fresh\\{", "\\.mrow\\{transition:background 60ms",
+   "\\.accn\\.flash\\{animation:flashtint 600ms", "\\.pc textarea\\[data-sask\\]\\{transition:height 100ms", "\\.send:active\\{transform:scale\\(\\.94\\)",
+   "\\.send\\.stop\\.fresh\\{animation:fadeIn 120ms", "\\.pane\\.fresh\\{animation:fadeIn 150ms"]
+    .forEach(re => assert(new RegExp(re).test(css), "missing rule: " + re));
+  const block = css.slice(css.indexOf(".jumpwrap{position:sticky"));
+  const reduced = block.indexOf("@media (prefers-reduced-motion:reduce){\n    .jumppill{transition:none}");
+  assert(reduced >= 0, "no reduced-motion block for the six");
+  const rm = block.slice(reduced, reduced + 400);
+  assert(rm.includes(".turn.arriving,.livedot.breathe::before,.upop.panemenu.fresh,.accn.flash,.send.stop.fresh,.pane.fresh{animation:none}"),
+         "reduced motion does not switch the animations off");
+  assert(rm.includes(".mrow,.pc textarea[data-sask],.send{transition:none}"), "reduced motion does not switch the transitions off");
+  assert(/\.caret\{display:inline-block;width:2px;height:12px;font-size:0/.test(css), "the caret is not a soft bar");
+  assert(/\.caret\.blink\{animation:caretsoft 1s ease-in-out infinite\}/.test(css), "the stalled caret still hard-blinks");
+});
+
+test("4b. the pane draws the pill at the end of its transcript and flags its mounts once", () => {
+  const pane = grab(render, "sessionPane");
+  assert(/<div class="jumpwrap"><button class="jumppill/.test(pane), "no pill at the end of .pb");
+  assert(/data-jump="\$\{esc\(s\.id\)\}"/.test(pane), "the pill does not name its pane");
+  assert(/const paneFresh = !\(S\._prevOpenPanes \|\| \[\]\)\.includes\(s\.id\)/.test(pane), "a pane is not flagged fresh against the previous render");
+  assert(/const stopFresh = streamingFor\(s\.id\) && !stopShown\[s\.id\]/.test(pane), "Stop is not flagged fresh once per stream");
+  assert(/class="send stop\$\{stopFresh\?" fresh":""\}"/.test(pane), "the Stop button does not carry the flag");
+  const tail = grab(render, "render");
+  assert(/S\.paneMenuFresh = null;\s*S\.accFlash = null;\s*S\._prevOpenPanes = \(S\.openPanes \|\| \[\]\)\.slice\(\);/.test(tail),
+         "render() does not spend the one-render flags at its end");
+  assert(/class="upop panemenu\$\{S\.paneMenuFresh===s\.id\?" fresh":""\}"/.test(grab(render, "paneMenuHtml")), "the menu does not grow in on open");
+  assert(/class="accn\$\{S\.accFlash===s\.id\?" flash":""\}"/.test(grab(render, "paneAccessRowHtml")), "the changed Access value does not flash");
+  assert(/S\.accFlash = sid;/.test(grab(render, "setSessAccess")), "setSessAccess does not arm the flash");
+  assert(/S\.paneMenuFresh = opening \? sid : null;/.test(loaders), "the chip toggle does not arm the menu animation");
+});
+
+test("4c. the rail dot breathes with a wall-clock phase, so a rebuild never restarts it", () => {
+  const src = grab(helpers, "rowMeta");
+  assert(/breathe" style="animation-delay:-\$\{Date\.now\(\) % 4000\}ms/.test(src), "no wall-clock phase on the breath");
+  assert(/livedot\$\{breath\}/.test(src), "the live badges do not carry the breath");
+});
+
+test("4d. a new streaming turn eases in once per uid", () => {
+  assert(/const arriving = !!\(t\.streaming && t\.uid && !arrived\[t\.uid\]\);\s*if \(arriving\) arrived\[t\.uid\] = 1;/.test(chat),
+         "the arrival class is not gated on the first draw");
+  assert(/class="turn\$\{arriving \? " arriving" : ""\}"/.test(chat), "the turn does not carry the class");
+});
+
+test("4e. the composer tweens from its previous height, and lands at once the first time", () => {
+  const box = { COMPOSER_MAX_PX: 200, console };
+  box.globalThis = box; vm.createContext(box);
+  new vm.Script(grab(render, "autoGrowComposer") + ";globalThis.__g=autoGrowComposer;", { filename: "grow#extract" }).runInContext(box);
+  function ta(prev, scrollHeight){
+    const writes = []; const style = {};
+    Object.defineProperty(style, "height", { get(){ return writes[writes.length-1] === undefined ? prev : writes[writes.length-1]; }, set(v){ writes.push(v); } });
+    return { tagName: "TEXTAREA", style, scrollHeight, offsetHeight: 0, writes };
+  }
+  const grown = ta("22px", 60);
+  box.__g(grown);
+  assert(grown.writes.join(">") === "auto>22px>60px", "no tween start value: " + grown.writes.join(">"));
+  const first = ta("", 60);
+  box.__g(first);
+  assert(first.writes.join(">") === "auto>60px", "the first sizing should land at once: " + first.writes.join(">"));
+});
+
+test("4f. patching under a parked reader shows the pill; the tail pin does not", () => {
+  assert(/\} else showJumpPill\(pb\);\s*\/\* parked/.test(state), "patchStreaming does not show the pill when parked");
+  assert(/\} else showJumpPill\(pb\);\s*return true;/.test(state), "patchTurn does not show the pill when parked");
+  assert(/function showJumpPill\(pb\)/.test(state), "no showJumpPill");
+  assert(/\(S\.jumpNew = S\.jumpNew \|\| \{\}\)\[sid\] = true/.test(state), "the pill is not remembered in state across a rebuild");
+  assert(/S\.userScrolled\.get\(s\.id\) && \(S\.jumpNew \|\| \{\}\)\[s\.id\] \? " show" : ""/.test(grab(render, "sessionPane")),
+         "a full render does not redraw the pill from state");
+  assert(/if \(S\.jumpNew\) delete S\.jumpNew\[sid\];/.test(loaders), "the pill click does not clear the state");
+  assert(/\.caret\{[^}]*animation:none\}/.test(css), "the older unconditional caret blink still applies to the bar");
+  assert(/\.jumpwrap\{[^}]*align-items:flex-end/.test(css), "a 0-height flex row would stretch the pill to nothing");
+});
+
+test("4g. back at the tail, the scroll listener hides the pill", () => {
+  const pb = fakeScroller(700, 1400, 400);
+  const pill = { cls: new Set(["jumppill", "show"]) };
+  pill.classList = { add: c => pill.cls.add(c), remove: c => pill.cls.delete(c) };
+  pb.querySelector = (sel) => sel === ".jumppill" ? pill : null;
+  const box = scrollBox(pb);
+  box.S.userScrolled.set("s1", true);
+  pb.scrollTop = 1000; pb.dispatch("scroll");
+  assert(!box.S.userScrolled.get("s1"), "not un-parked at the tail");
+  assert(!pill.cls.has("show"), "the pill is still shown at the tail");
+});
+
+test("4h. a reopened pane comes back where the reader was; a pinned one follows the tail", () => {
+  const pb = fakeScroller(0, 1400, 400);
+  const box = scrollBox(pb);
+  box.S.paneScrollMem = { s1: { top: 300, pinned: false } };
+  box.scrollNewSessionsToNewest();
+  assert(pb.scrollTop === 300, "the parked place was not restored: " + pb.scrollTop);
+  assert(box.S.userScrolled.get("s1") === true, "a restored parked pane must stay parked");
+  assert(!box.S.paneScrollMem.s1, "the memory was not spent");
+  const pb2 = fakeScroller(0, 1400, 400);
+  const box2 = scrollBox(pb2);
+  box2.S.paneScrollMem = { s1: { top: 990, pinned: true } };
+  box2.scrollNewSessionsToNewest();
+  assert(!box2.S.userScrolled.get("s1"), "a pinned place must not park the pane");
+  assert(/data-jump/.test(loaders) && /S\.userScrolled\.delete\(sid\);\s*if \(S\.jumpNew\) delete S\.jumpNew\[sid\];\s*b\.classList\.remove\("show"\);/.test(loaders),
+         "the pill click does not un-park, clear the state and hide");
+  assert(/S\.paneScrollMem = S\.paneScrollMem \|\| \{\}\)\[sid\] = \{/.test(loaders), "closePane does not remember the place");
+});
+
 /* ── run ─────────────────────────────────────────────────────────────────── */
 let pass = 0, fail = 0;
 for (const [n, f] of queue) {

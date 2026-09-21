@@ -1582,10 +1582,16 @@ function rowMeta(s){
   /* OFF THE ROW (founder 2026-09-21: the provider name leaves the chat list).
      The fact is not lost: the row's own three-dot menu says which assistant
      wrote the transcript (sessMenuHtml). */
+  /* THE DOT BREATHES WHILE THE CHAT WORKS (micro-interaction 3, founder
+     2026-09-21): one slow swell of the halo every 4 s. The rail is rebuilt on
+     every paint, which would restart the animation at 0 each time and it
+     would never be seen; the phase is taken from the wall clock instead, so a
+     rebuild lands mid-breath exactly where the last one was. */
+  const breath = ` breathe" style="animation-delay:-${Date.now() % 4000}ms`;
   const badge = ""
-    + (running ? `<span class="livedot" title="A turn is running in this panel">running</span>` : "")
+    + (running ? `<span class="livedot${breath}" title="A turn is running in this panel">running</span>` : "")
     + (!running && liveHeld(s)
-         ? `<span class="livedot" title="Being written right now in Claude">live</span>` : "")
+         ? `<span class="livedot${breath}" title="Being written right now in Claude">live</span>` : "")
     + (s.agents_live ? `<span class="livedot" title="Subagent transcripts being written right now"
          >${s.agents_live} agent${s.agents_live===1?"":"s"}</span>` : "");
   if (s.vanished) return badge + `<span style="color:var(--block)">deleted on disk</span>`;

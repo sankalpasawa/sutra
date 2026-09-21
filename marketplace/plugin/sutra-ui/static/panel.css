@@ -2037,12 +2037,58 @@
      when the operator actually needs to be told the turn is still alive.
      The old rule animated it unconditionally, which never showed: the element
      was recreated on every frame, restarting the animation at t=0 forever. */
-  .caret{opacity:1}
-  .caret.blink{animation:sutraBlink 1.05s steps(1,end) infinite}
+  /* A SOFT BAR, NOT A BLOCK (micro-interaction 2, founder 2026-09-21): the
+     glyph stays in the DOM (font-size 0) and the span itself is the 2 px bar;
+     the stalled blink is an opacity breath, not a hard on/off. */
+  .caret{display:inline-block;width:2px;height:12px;font-size:0;background:var(--acc);
+    border-radius:1px;vertical-align:-2px;margin-left:1px;opacity:1;animation:none}
+  .caret.blink{animation:caretsoft 1s ease-in-out infinite}
+  @keyframes caretsoft{0%,100%{opacity:1}50%{opacity:.3}}
   /* .caret.blink out-specifies the `.caret{animation:none}` in the
      prefers-reduced-motion block above, so without this the new rule quietly
      re-enabled motion for exactly the people who asked for none. */
   @media (prefers-reduced-motion:reduce){ .caret.blink{animation:none;opacity:1} }
+
+  /* ── chat micro-interactions (founder 2026-09-21; design of record:
+     website/preview/chat-micro-interactions.html). Named durations and eases
+     only, on the elements the chat already has; every rule below is instant
+     under prefers-reduced-motion. ──────────────────────────────────────── */
+  :root{--ease:cubic-bezier(.2,.7,.2,1)}
+  /* 1 jump to latest: sticky at the end of the transcript, zero height */
+  .jumpwrap{position:sticky;bottom:6px;height:0;display:flex;justify-content:center;align-items:flex-end;pointer-events:none}
+  .jumppill{pointer-events:auto;flex:none;opacity:0;transition:opacity 150ms var(--ease);
+    background:var(--ink);color:var(--bg);border:0;border-radius:99px;padding:6px 12px;
+    font:600 11px/1 var(--sans);cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.22)}
+  .jumppill.show{opacity:1}
+  .jumppill:hover{background:var(--acc)}
+  .jumppill:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  /* 2 a new turn eases in: 120 ms fade + 4 px rise, once per uid */
+  @keyframes riseIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+  .turn.arriving{animation:riseIn 120ms var(--ease) both}
+  /* 3 the live dot breathes once every 4 s while the chat works */
+  .livedot.breathe::before{animation:breathe 4s var(--ease) infinite}
+  @keyframes breathe{0%,80%,100%{box-shadow:0 0 0 3px var(--ok-bg)}40%{box-shadow:0 0 0 7px var(--ok-bg)}}
+  /* 4 the three-dot menu grows from its corner (once, on open); rows highlight
+     over 60 ms; a changed value flashes its tint away over 600 ms */
+  @keyframes menuIn{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:scale(1)}}
+  .upop.panemenu.fresh{transform-origin:left bottom;animation:menuIn 90ms var(--ease) both}
+  .mrow{transition:background 60ms ease}
+  @keyframes flashtint{0%{background:var(--acc-bg);color:var(--acc)}100%{background:transparent;color:inherit}}
+  .accn.flash{animation:flashtint 600ms ease-out;border-radius:4px;padding:0 3px;margin:0 -3px}
+  /* 5 composer: height tweens over 100 ms; Send presses in over 80 ms; Stop
+     fades in over 120 ms once per stream */
+  .pc textarea[data-sask]{transition:height 100ms ease}
+  .send{transition:transform 80ms var(--ease),background .12s ease}
+  .send:active{transform:scale(.94)}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+  .send.stop.fresh{animation:fadeIn 120ms linear both}
+  /* 6 a pane opened just now fades in over 150 ms */
+  .pane.fresh{animation:fadeIn 150ms var(--ease) both}
+  @media (prefers-reduced-motion:reduce){
+    .jumppill{transition:none}
+    .turn.arriving,.livedot.breathe::before,.upop.panemenu.fresh,.accn.flash,.send.stop.fresh,.pane.fresh{animation:none}
+    .mrow,.pc textarea[data-sask],.send{transition:none}
+  }
   /* The patch anchor now exists from the `start` frame, before any text. An
      empty one must not push the layout around while it waits. */
   .md[data-resp]:empty{margin:0 !important;display:none}

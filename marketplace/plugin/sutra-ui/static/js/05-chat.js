@@ -2681,7 +2681,16 @@ function turnBlock(t, i){
      rather than to a guess. A session holds MANY placements and the pane
      header shows only the last turn's, so per-turn provenance must live here,
      on the turn itself. Empty string when classification returned nothing. */
-  return `<div class="turn" data-turn-domain="${t.domain && t.domain.ref ? esc(t.domain.ref) : ""}">
+  /* A NEW TURN EASES IN ONCE (micro-interaction 2, founder 2026-09-21): the
+     class rides only the first draw of a streaming turn's uid. Later repaints
+     of the same turn carry no class, so a rebuild never replays the rise. */
+  const arrived = (S.arrived = S.arrived || {});
+  /* bounded: a page that has streamed hundreds of turns forgets the oldest
+     marks; the worst case is one extra rise on a turn that old, never growth */
+  if (Object.keys(arrived).length > 400) for (const k in arrived) delete arrived[k];
+  const arriving = !!(t.streaming && t.uid && !arrived[t.uid]);
+  if (arriving) arrived[t.uid] = 1;
+  return `<div class="turn${arriving ? " arriving" : ""}" data-turn-domain="${t.domain && t.domain.ref ? esc(t.domain.ref) : ""}">
     <div class="u md">${mdHtml(t.text)}</div>
     ${gvChipHtml(t, i)}${turnResponse(t)}</div>`;
 }

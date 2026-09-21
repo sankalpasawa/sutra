@@ -159,6 +159,20 @@ function closePane(sid){
      pane hides the view; it does not cancel the reply. Say so, because the
      control now does something different from what it used to. */
   const kept = closeClaudeChannel(sid);
+  /* Remember where the reader was (micro-interaction 6): a reopened pane comes
+     back to this place instead of the top. Read from the live element, since
+     the rebuild below discards it. */
+  let pbEl = null;
+  try {
+    const q = (typeof CSS !== "undefined" && CSS.escape) ? CSS.escape(sid) : sid;
+    pbEl = document.querySelector('#panes .pane[data-sess="' + q + '"] .pb');
+  } catch (_e) { pbEl = null; }                 /* a sandbox without a DOM: nothing to remember */
+  if (pbEl && typeof pbEl.scrollTop === "number"){
+    (S.paneScrollMem = S.paneScrollMem || {})[sid] = {
+      top: pbEl.scrollTop,
+      pinned: pbEl.scrollHeight - pbEl.clientHeight - pbEl.scrollTop
+              <= (typeof SESS_PIN_SLOP === "number" ? SESS_PIN_SLOP : 24) };
+  }
   S.openPanes = S.openPanes.filter(id=>id!==sid);
   if (kept.length){
     const s = S.sessions.find(x=>x.id===sid);
@@ -1680,12 +1694,26 @@ function wire(){
   });
 
   panes.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>closePane(b.dataset.close));
+  /* "New reply below" (micro-interaction 1): back to the tail, and the pane
+     follows the stream again. The scroll listener hides the pill on arrival. */
+  panes.querySelectorAll("[data-jump]").forEach(b=>b.onclick=()=>{
+    const sid = b.dataset.jump;
+    const pb = b.closest(".pb");
+    if (!pb) return;
+    S.userScrolled.delete(sid);
+    if (S.jumpNew) delete S.jumpNew[sid];
+    b.classList.remove("show");
+    const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced || !pb.scrollTo) pb.scrollTop = pb.scrollHeight;
+    else pb.scrollTo({ top: pb.scrollHeight, behavior: "smooth" });
+  });
   /* ⋯ pane menu (chat-surface chrome): the chip toggles, every row dispatches
      through paneMenuAction() to the SAME state the old header control mutated */
   panes.querySelectorAll("[data-panemenu]").forEach(b=>b.onclick=()=>{
     const sid = b.dataset.panemenu;
     const opening = S.paneMenu !== sid;
     S.paneMenu = opening ? sid : null;
+    S.paneMenuFresh = opening ? sid : null;          /* the next render grows it in, once */
     /* CODEX'S MODEL LIST, WARMED ON DEMAND -- through the path that already
        exists, not a new one.
 

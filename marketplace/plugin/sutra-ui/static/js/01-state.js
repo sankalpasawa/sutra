@@ -1095,8 +1095,21 @@ function patchTurn(t){
     pb.__pinning = true;
     pb.scrollTop = pb.scrollHeight;
     requestAnimationFrame(()=>{ pb.__pinning = false; });
-  }
+  } else showJumpPill(pb);
   return true;
+}
+
+/* The "New reply below" pill (micro-interaction 1, founder 2026-09-21): shown
+   by the patchers when content grows under a PARKED reader; hidden by the
+   scroll listener once the reader is back at the tail, or by its own click. */
+function showJumpPill(pb){
+  const pill = pb && pb.querySelector && pb.querySelector(".jumppill");
+  if (pill) pill.classList.add("show");
+  /* Remembered in state too, so a full render() while the reader is still
+     parked redraws the pill shown -- even after the stream has ended. */
+  const pane = pb && pb.closest && pb.closest(".pane[data-sess]");
+  const sid = pane && pane.dataset && pane.dataset.sess;
+  if (sid) (S.jumpNew = S.jumpNew || {})[sid] = true;
 }
 
 /* The streamed body for one token frame. gvBody (05-chat.js, reached via window
@@ -1166,7 +1179,7 @@ function caretIsStalled(t){
 
 function caretHtml(html, t){
   const cls = "caret" + (caretIsStalled(t) ? " blink" : "");
-  const span = '<span class="' + cls + '" style="color:var(--acc)">\u2588</span>';
+  const span = '<span class="' + cls + '" style="color:var(--acc)" aria-hidden="true">\u2588</span>';
   /* Land the caret inside the INNERMOST text-bearing element at the end of the
      output. The last characters of a reply are often inside a list item or a
      code block, so the string ends `</li></ul>` or `</code></pre>` -- matching
@@ -1296,7 +1309,7 @@ function patchStreaming(){
       pb.__pinning = true;
       pb.scrollTop = pb.scrollHeight;
       requestAnimationFrame(()=>{ pb.__pinning = false; });
-    }
+    } else showJumpPill(pb);                        /* parked: say the reply kept going */
   });
   _patchDirty.clear();
   if (missed) scheduleRender();

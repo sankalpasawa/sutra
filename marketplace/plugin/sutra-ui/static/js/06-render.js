@@ -539,7 +539,7 @@ function paneMenuHtml(s){
   /* role="group", not "menu": the rows are buttons and <label>s, not menuitems,
      and a menu role promises arrow-key navigation this popover does not have
      (refuter 2026-08-23). A labelled group is honest and valid. */
-  return `<div class="upop panemenu" id="panemenu-${esc(s.id)}" role="group" aria-label="Chat options — ${esc(s.title)}">
+  return `<div class="upop panemenu${S.paneMenuFresh===s.id?" fresh":""}" id="panemenu-${esc(s.id)}" role="group" aria-label="Chat options — ${esc(s.title)}">
     ${sec("What answers")}
     ${/* ── Model ────────────────────────────────────────────────────────────
          ONE ROW, AND IT OPENS THE REAL PICKER (owner, 2026-09-14: "when I click
@@ -813,7 +813,7 @@ function paneAccessRowHtml(s){
         title="${escAttr((hit ? hit.desc : "A permission mode saved earlier.")
           + (local ? "\nThis chat only — Settings keeps the default."
                    : "\nFrom Settings — shared by every chat that has not chosen."))}"
-      ><span class="mk">Access</span><span class="mv"><span class="accn">${esc(composerAccessLabel(s, pid))}</span>${
+      ><span class="mk">Access</span><span class="mv"><span class="accn${S.accFlash===s.id?" flash":""}">${esc(composerAccessLabel(s, pid))}</span>${
         local ? ` <span class="mvnote">· this chat only</span>` : ""}</span><span class="ma">›</span></button>`;
 }
 function composerAccessMenuHtml(s){
@@ -1005,6 +1005,7 @@ function setSessAccess(sid, mode){
     if (typeof setPermMode === "function"){ setPermMode(mode); return; }
   }
   S.perm[sid] = mode;
+  S.accFlash = sid;                    /* the next render flashes the new value, once */
   render();
 }
 
@@ -1105,7 +1106,16 @@ function sessionPane(s){
      (the strip's own .pfold) -- codex follow-up, 2026-08-21. */
   const live = streamingFor(s.id) || !!s.agents_live;
   const menuOpen = S.paneMenu === s.id;
-  return `<section class="pane ${collapsed?"collapsed":""}" data-sess="${s.id}"
+  /* MOUNT ANIMATIONS FIRE ONCE (micro-interactions, founder 2026-09-21).
+     render() rebuilds #panes on every paint, so "animate on mount" would
+     replay on every repaint. Each of these is a flag that exactly one render
+     sees: the pane is `fresh` when its id was not open at the previous
+     render; the Stop button is `fresh` once per stream (S.stopShown). */
+  const paneFresh = !(S._prevOpenPanes || []).includes(s.id);
+  const stopShown = (S.stopShown = S.stopShown || {});
+  const stopFresh = streamingFor(s.id) && !stopShown[s.id];
+  if (streamingFor(s.id)) stopShown[s.id] = true; else delete stopShown[s.id];
+  return `<section class="pane ${collapsed?"collapsed":""}${paneFresh?" fresh":""}" data-sess="${s.id}"
       aria-label="${esc(s.title)} — session pane">
     ${collapsed ? "" : `<button class="pgrip" type="button" data-pane-fold="${esc(s.id)}"
             aria-label="Collapse this session pane" title="Collapse this pane">
@@ -1145,7 +1155,15 @@ function sessionPane(s){
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
     </div>
-    <div class="pb">${shadowChip}${chip||chanChip?`<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap">${chip}${chanChip}</div>`:""}${body}</div>
+    <div class="pb">${shadowChip}${chip||chanChip?`<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap">${chip}${chanChip}</div>`:""}${body}<!--
+      JUMP TO LATEST (micro-interaction 1): sticky at the end of the
+      transcript, zero height, so it rides the bottom edge while the reader
+      is parked above and costs no scroll height. patchStreaming/patchTurn
+      show it when content grows under a parked reader; the scroll listener
+      hides it at the bottom; the click scrolls to the tail. -->
+      <div class="jumpwrap"><button class="jumppill${
+        S.userScrolled.get(s.id) && (S.jumpNew || {})[s.id] ? " show" : ""}" type="button"
+        data-jump="${esc(s.id)}" aria-label="Jump to the latest reply">New reply below</button></div></div>
     ${agentsFold(s)}
     ${S.sideOpen[s.id] ? `<div class="sidewrap">
       <div class="sidehead">
@@ -1240,7 +1258,7 @@ function sessionPane(s){
       ${composerAccessMenuHtml(s)}
       ${S.usagePop === s.id ? usagePopHtml() : ""}
       ${streamingFor(s.id)
-        ? `<button class="send stop" data-sstop="${s.id}" type="button" aria-label="Stop this turn"
+        ? `<button class="send stop${stopFresh?" fresh":""}" data-sstop="${s.id}" type="button" aria-label="Stop this turn"
                    title="Stop — kills the running process">
              <svg width="10" height="10" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
            </button>`
@@ -1420,10 +1438,20 @@ function turnOptsHtml(sid, mpid, model){
 
 function autoGrowComposer(el){
   if (!el || el.tagName !== "TEXTAREA") return;
+  /* Measure at auto, then set the new height FROM the previous one, so the
+     css `transition:height` has two pixel values to tween between (auto ->
+     px never animates). First sizing has no previous value and lands at once
+     (micro-interaction 5, founder 2026-09-21). */
+  const prev = el.style.height;
   el.style.height = "auto";
   const want = Math.min(el.scrollHeight, COMPOSER_MAX_PX);
+  const overflow = el.scrollHeight > COMPOSER_MAX_PX ? "auto" : "hidden";
+  if (prev && prev !== "auto" && prev !== want + "px"){
+    el.style.height = prev;
+    void el.offsetHeight;                          /* commit the start value */
+  }
   el.style.height = want + "px";
-  el.style.overflowY = el.scrollHeight > COMPOSER_MAX_PX ? "auto" : "hidden";
+  el.style.overflowY = overflow;
 }
 
 function _focusedInputSelector(){
@@ -2194,6 +2222,11 @@ function render(){
   }
   /* AFTER #panes is populated -- scrollHeight is meaningless before layout. */
   scrollNewSessionsToNewest();
+  /* The one-render flags behind the mount animations are spent here, so the
+     next repaint draws the same menu, value and panes without replaying them. */
+  S.paneMenuFresh = null;
+  S.accFlash = null;
+  S._prevOpenPanes = (S.openPanes || []).slice();
 }
 
 /* ── session transcript scroll, across a rebuild ──────────────────────────
@@ -2463,7 +2496,12 @@ function scrollNewSessionsToNewest(){
         pb.__lastTop = top;
         if (pb.__pinning && !movedUp) return;
         const atBottom = pb.scrollHeight - pb.clientHeight - top < 24;
-        if (atBottom) S.userScrolled.delete(sid); else S.userScrolled.set(sid, true);
+        if (atBottom){
+          S.userScrolled.delete(sid);
+          if (S.jumpNew) delete S.jumpNew[sid];
+          const pill = pb.querySelector(".jumppill");         /* back at the tail: nothing to jump to */
+          if (pill) pill.classList.remove("show");
+        } else S.userScrolled.set(sid, true);
       }, { passive:true });
       _sessUserIntent(pb, sid);
     });
@@ -2487,6 +2525,21 @@ function scrollNewSessionsToNewest(){
          gesture landing between them could be swallowed. */
       const prev = _pinTimers.get(sid);
       if (prev) clearInterval(prev);
+      /* A REOPENED PANE COMES BACK WHERE YOU WERE (micro-interaction 6).
+         closePane stored the reader's place; a parked place is restored and
+         the pane stays parked (no tail pin); a pinned place falls through to
+         the tail pin below, as any new pane does. */
+      const mem = S.paneScrollMem && S.paneScrollMem[sid];
+      if (mem){
+        delete S.paneScrollMem[sid];
+        if (!mem.pinned){
+          pb.__pinning = true;
+          pb.scrollTop = Math.min(mem.top, Math.max(0, pb.scrollHeight - pb.clientHeight));
+          requestAnimationFrame(()=>{ pb.__pinning = false; });
+          S.userScrolled.set(sid, true);
+          return;
+        }
+      }
       let lastH = -1, stable = 0, ticks = 0;
       const timer = setInterval(()=>{
         ticks++;
