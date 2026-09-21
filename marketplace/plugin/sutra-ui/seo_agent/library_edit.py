@@ -501,6 +501,16 @@ def redo(item_id, client=None):
 
 def _push(item_id, team, who, client):
     """The row to the team, queued on disk first. Never raises: the local save already stands."""
+    # THE TABS RIDE WITH EVERY EDIT THAT LEAVES THIS MAC (owner, 2026-09-21: the Library tabs only
+    # existed on the Mac that wrote the article). Every edit path -- save, revert, undo, redo, a
+    # status change -- funnels through here, so this is the one door to put it behind rather than
+    # five copies that would drift. `ensure` does nothing at all when the row already has its tabs
+    # (one stat), and nothing when the run folder is gone (there is nothing left to assemble); it
+    # earns its place on the article edited today whose run is still there but which was written
+    # before any of this shipped. Deliberately BEFORE the member check, so an edit made with no
+    # workspace connected still leaves the record on disk for the day one is.
+    from . import library_tabs
+    library_tabs.ensure(item_id)
     if not team["member"]:
         return dict(team, synced=False, queued=False)
     try:

@@ -203,6 +203,12 @@ def from_wire(kind, key, payload):
         meta["title"] = p.get("title") or meta.get("title") or "Untitled"
         meta["status"] = p.get("status") or meta.get("status") or "ready"
         meta["draft"] = p.get("body_md") if p.get("body_md") is not None else meta.get("draft")
+        # THE FIVE TABS COME DOWN INSIDE THE META JSONB (see to_wire for why there and nowhere
+        # else). Anything that is not the dict `library_finish` knows how to write is dropped here
+        # rather than handed on: a stray value from a hand-edited row in the Table Editor would
+        # otherwise be written into meta.json as a field nothing reads.
+        if not isinstance(meta.get("tabs"), dict):
+            meta.pop("tabs", None)
         return meta
     if kind == "pages":
         page = {"url": key, "title": p.get("title") or "", "description": p.get("description") or "",
@@ -239,6 +245,21 @@ def to_wire(kind, key, local, actor="", gone=False):
         meta = {k: v for k, v in local.items()
                 if k not in ("title", "status", "draft", "draft_md", "url", "id",
                              "milestones", "research", "blueprint")}
+        # THE FIVE TABS GO UP INSIDE `meta`, AND THAT IS A DELIBERATE CHOICE, NOT A LEFTOVER
+        # (owner, 2026-09-21: the Library tabs only existed on the Mac that wrote the article).
+        # `library` has fixed columns -- item_id, title, status, url, body_md, meta, actor -- so a
+        # new top-level key would be a column that is not there, which PostgREST refuses outright
+        # and which every workspace already out in the world would have to be migrated for. The
+        # meta jsonb is where a Library row's own facts already travel, and the tabs are 28 KB of
+        # them. `store.library_finish` takes them straight back out into tabs.json, so they never
+        # sit inside anybody's meta.json (see its own note on previous_draft, the same rule).
+        # An empty or absent set is not sent at all: an older Sutra pushing a meta-only update
+        # must not look like an instruction to blank the tabs a teammate already has.
+        tabs = local.get("tabs")
+        if isinstance(tabs, dict) and any(tabs.get(k) for k in store.TAB_MILESTONE):
+            meta["tabs"] = tabs
+        else:
+            meta.pop("tabs", None)
         return {"item_id": key, "title": local.get("title") or "",
                 "status": local.get("status") or "ready", "url": local.get("url") or "",
                 "body_md": local.get("draft") or local.get("draft_md") or "",
@@ -438,6 +459,11 @@ def _library(rows):
     Mac that run folder does not exist, so the copy loop finds nothing and skips, which is correct:
     `milestones()` then reports [] ("we cannot know") rather than five falses ("it never got that
     far"), and a colleague's finished article does not read as a broken one.
+
+    Since 2026-09-21 the payload also carries the five assembled tabs (see `to_wire`), and the same
+    `library_finish` writes them into this Mac's copy of the row as tabs.json. That is what puts a
+    teammate's search picture, research and architect on this screen at all: this Mac has no run to
+    assemble them from and never will.
     """
     out = []
     for row in rows:

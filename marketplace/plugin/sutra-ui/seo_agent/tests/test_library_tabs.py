@@ -282,8 +282,12 @@ except Exception as e:                                        # noqa: BLE001
     print("  SKIP  the route itself (agents_api would not import: %s)" % str(e)[:120])
 if agents_api:
     r = agents_api.api_library_tabs(item1)
+    # the four tabs, plus (2026-09-21) where they came from: the run itself, the copy kept with
+    # the article, or neither. See tests/test_library_tabs_shared.py for that half.
     ok("the route returns all four tabs in one payload",
-       isinstance(r, dict) and set(r) == {"search_picture", "research", "architect", "edits"}, r and list(r))
+       isinstance(r, dict) and set(r) == {"search_picture", "research", "architect", "edits",
+                                          "source", "dropped"}, r and list(r))
+    ok("assembled from the run, which is still on disk here", r.get("source") == "run", r.get("source"))
     ok("search_picture came through the route intact", r["search_picture"]["primary"]["keyword"] == "cost per hire")
     r404 = agents_api.api_library_tabs("no-such-item")
     ok("an item that does not exist is a 404", getattr(r404, "status_code", None) == 404, r404)

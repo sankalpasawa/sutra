@@ -430,6 +430,27 @@ knowledge pack split in two.
     left the Mac it was written on; `loop.save_to_library` now pushes when a workspace is connected.
     No schema change: version, editor and the previous body ride in the existing `meta` jsonb. 59
     checks in `test_library_edit.py`, 3 route tests, 14 screen tests.
+77. The five Library tabs travel with the article (2026-09-21, `library_tabs.py`). The owner:
+    *"when I open Sutra in the Library, all the things which are there, the search picture, the
+    research, the write, all of that, that particular file stays locally only. I don't want that.
+    Not the intermediate outputs, all those JSON, not required. Just these things should be
+    available for everybody in the workspace."* The body reached the team from 2026-09-16; the
+    tabs did not, because they were assembled on demand out of the run folder under
+    `chats/<chat>/runs/<run>/artifacts`, which exists on exactly one Mac. What travels is the
+    ASSEMBLED tabs and never the raw run: measured on a real article, 28.3 KB of tables against
+    4.5 MB of step files. `loop.save_to_library` now builds them while the run is still on disk
+    and keeps them in the row's own `tabs.json`, beside `meta.json` and `draft.md`; they ride to
+    the team inside the existing `meta` jsonb (no schema change, because `library` has fixed
+    columns) and `store.library_finish` takes them straight back out into the teammate's own
+    `tabs.json`, so 28 KB never sits in the `meta.json` the Library screen polls. A size guard
+    drops the largest tab over 400 KB, keeps the smaller ones and records what went.
+    `GET /library/{id}/tabs` assembles from the run whenever its folder is there, which keeps a
+    live run current to the second, and serves the kept copy once it is gone; the answer says
+    which (`source`: run / saved / none). `sync.backfill_tabs` walks everything saved before this
+    existed, once, and the progress strip is drawn from the kept record when the run is gone so
+    there is still a door into the overlay. An article whose steps were never kept says so in
+    plain words rather than drawing an empty tab. 67 checks in `test_library_tabs_shared.py`, 52
+    in `test_library_tabs.py`, 34 screen checks in `test_library_tabs.js`.
 
 ### Not done, and said so
 
