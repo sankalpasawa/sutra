@@ -1,6 +1,13 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.291.3 (2026-09-21)
+
+- **The five Library tabs now belong to the team, not to one Mac.** Opening a saved article showed its Search picture, Research, Architect and Edits only on the machine that wrote it, because those tabs were built on demand from the run's own working files. Anywhere else they were empty. The tabs are now assembled once when the article is saved, kept beside it, and carried to the team with it, so everyone opening that article sees the same five tabs. What travels is the readable contents, about 28 KB an article; the working files behind them, several megabytes of them, stay on the machine that made them.
+- **The articles you already have are caught up.** A one-off pass builds the tabs for every article whose run is still on disk and sends them, once, without touching a version or an editor's name.
+- **An article whose steps were never kept now says so.** Before, the tab opened on an empty shell with no explanation.
+- **The guide opens with the walkthrough film.** The SEO Writer's guide page explained itself in words alone; it now starts with the video, above How it works, played from YouTube so it is always the current cut.
+
 ## 2.291.2 (2026-09-21)
 
 - Released from v2.291.1-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
