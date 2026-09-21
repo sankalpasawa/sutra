@@ -4629,9 +4629,18 @@ class TestChatsAreSutrasOwn(unittest.TestCase):
         # too, so leaving those pointed at the real home would let this machine's own transcripts
         # into a test about which transcripts get listed.
         empty = Path(self.tmp) / "no-such-tree"
+        # THE SCOPED DEFAULT IS WHAT THIS CLASS IS ABOUT. api_sessions has a bypass,
+        # _list_every_chat(), that reads the operator's own ~/.sutra-ui/settings.json
+        # (chat_scope "all", a setting since 2026-09-13). Unpinned, this class read the
+        # founder's real setting and failed on his Mac alone -- and blocked the first
+        # beta cut under D80 (2026-09-21) while CI, with no settings file, stayed green.
+        # Pinned at the SETTINGS read, not at _list_every_chat itself, so the env escape
+        # hatch this class also tests keeps its own path.
+        import app as _app
         self._patches = [mock.patch.object(session_reader, "PROJECTS", self.projects),
                          mock.patch.object(session_reader, "GEMINI_ROOT", empty),
-                         mock.patch.object(session_reader, "CODEX_ROOT", empty)]
+                         mock.patch.object(session_reader, "CODEX_ROOT", empty),
+                         mock.patch.object(_app.providers, "load_settings", return_value={})]
         for pt in self._patches:
             pt.start()
         self.chats = os.path.join(self.tmp, "chats")
