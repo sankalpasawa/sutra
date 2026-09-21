@@ -12,8 +12,12 @@
 #   2. checksum shasum -a 256 -c against the published .sha256
 #   3. gate     xcrun stapler validate (the notarization ticket is stapled)
 #               + spctl --assess (Gatekeeper accepts it, no dialog would show)
-#   4. install  mount the DMG, copy "Sutra Beta.app" to a scratch folder,
-#               unmount; read the bundle's version and channel marker
+#   4. install  mount the DMG, quit any running Sutra Beta, replace
+#               "Sutra Beta.app" in Applications (/Applications when writable,
+#               else ~/Applications -- a packaged Electron app launched from
+#               anywhere else stops at "Move Sutra to Applications?" and never
+#               starts its backend), unmount; read the bundle's version and
+#               channel marker. The beta STAYS installed: this is the install.
 #   5. launch   start the app (its own port 8331, its own ~/.sutra-ui-beta
 #               data), wait for the backend's own health answer
 #   6. walk     the panel serves, the panel token is minted, and the Shadow
@@ -30,8 +34,9 @@
 #
 # Escape hatches, each audited in the row, none the default:
 #   SUTRA_SMOKE_ALLOW_UNSTAPLED=1   accept an ad-hoc (unsigned) build
-#   SUTRA_SMOKE_KEEP=1              leave the app running and the folder behind
+#   SUTRA_SMOKE_KEEP=1              leave the app running and the work folder behind
 #   SUTRA_SMOKE_BOOT_WAIT_S=N       seconds to wait for the backend (180)
+#   SUTRA_SMOKE_INSTALL_DIR=<dir>   install here instead of (~)/Applications
 # =============================================================================
 set -uo pipefail
 
@@ -49,6 +54,9 @@ smoke_asset_for() {                  # smoke_asset_for <arch> -> Sutra-<arch>.dm
 }
 smoke_version_of() {                 # smoke_version_of <beta-tag> -> X.Y.Z, or nothing
   printf '%s' "${1:-}" | sed -nE 's/^v([0-9]+\.[0-9]+\.[0-9]+)-beta\.[0-9]+-desktop$/\1/p'
+}
+smoke_install_dir() {                # smoke_install_dir <applications-writable:yes|no> <home> -> the folder the beta is installed in
+  if [ "${1:-no}" = yes ]; then printf '/Applications'; else printf '%s/Applications' "${2:-$HOME}"; fi
 }
 # the walk: every route the smoke must see answer 200
 SMOKE_ROUTES="/ /api/state /api/shadow/status /api/shadow/settings /api/shadow/missions /api/shadow/feed /api/sessions"
@@ -72,7 +80,8 @@ for t in gh curl hdiutil shasum spctl; do command -v "$t" >/dev/null 2>&1 || { e
 ARCH="$(smoke_arch "$(uname -m)")" || { echo "beta-smoke: unsupported architecture $(uname -m)" >&2; exit 2; }
 DMG="$(smoke_asset_for "$ARCH")"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/beta-smoke.XXXXXX")"
-MNT="$WORK/mnt"; APPDIR="$WORK/app"; mkdir -p "$MNT" "$APPDIR"
+MNT="$WORK/mnt"; mkdir -p "$MNT"
+INSTALL_DIR="${SUTRA_SMOKE_INSTALL_DIR:-$(smoke_install_dir "$( [ -w /Applications ] && echo yes || echo no )" "$HOME")}"
 LAUNCHED_PID=""
 
 stop_app() {
@@ -117,12 +126,27 @@ else
 fi
 
 # ---- 4. install -------------------------------------------------------------
+# INTO APPLICATIONS, NOT A SCRATCH FOLDER: a packaged Electron app started from
+# anywhere else asks "Move Sutra to Applications?" and waits for a click, so
+# the backend never comes up (main.js ensureInstalled). This IS the install:
+# the previous Sutra Beta is quit and replaced, and the new one stays.
 APP=""
 if [ -s "$WORK/$DMG" ] && hdiutil attach "$WORK/$DMG" -nobrowse -readonly -mountpoint "$MNT" -quiet 2>/dev/null; then
   src="$(find "$MNT" -maxdepth 1 -name "*.app" | head -1)"
-  if [ -n "$src" ] && cp -R "$src" "$APPDIR/" 2>/dev/null; then
-    APP="$APPDIR/$(basename "$src")"
-    ok "install: $(basename "$src") copied from the DMG" install
+  if [ -n "$src" ]; then
+    if pgrep -f "$APP_NAME.app/Contents/MacOS/" >/dev/null 2>&1; then
+      note "a Sutra Beta is running -- quitting it before the install"
+      pkill -f "$APP_NAME.app/Contents/MacOS/" 2>/dev/null || true
+      for i in $(seq 1 20); do pgrep -f "$APP_NAME.app/Contents/MacOS/" >/dev/null 2>&1 || break; sleep 1; done
+    fi
+    mkdir -p "$INSTALL_DIR" 2>/dev/null
+    dest="$INSTALL_DIR/$(basename "$src")"
+    if rm -rf "$dest" 2>/dev/null && cp -R "$src" "$INSTALL_DIR/" 2>/dev/null && [ -d "$dest" ]; then
+      APP="$dest"
+      ok "install: $(basename "$src") installed at $INSTALL_DIR (previous copy replaced)" install
+    else
+      bad "install: could not place $(basename "$src") in $INSTALL_DIR" install
+    fi
   else
     bad "install: no .app on the mounted DMG" install
   fi

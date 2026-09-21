@@ -125,6 +125,8 @@ no_ smoke_arch i386
 is "smoke asset name"   "$(smoke_asset_for x86_64)" "Sutra-x86_64.dmg"
 is "smoke version of a beta tag" "$(smoke_version_of v2.291.1-beta.2-desktop)" "2.291.1"
 is "smoke refuses a stable tag"  "$(smoke_version_of v2.291.1-desktop)" ""
+is "smoke installs into /Applications when writable" "$(smoke_install_dir yes /Users/x)" "/Applications"
+is "smoke falls back to ~/Applications"              "$(smoke_install_dir no /Users/x)" "/Users/x/Applications"
 is "smoke walks the Shadow surfaces" "$(printf '%s\n' $SMOKE_ROUTES | grep -c '/api/shadow/')" "4"
 is "smoke opens the panel itself"    "$(printf '%s\n' $SMOKE_ROUTES | grep -cx '/')" "1"
 
