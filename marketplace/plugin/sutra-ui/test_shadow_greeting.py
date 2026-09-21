@@ -36,6 +36,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
+# THE HOME IS BOUND BEFORE THE FIRST IMPORT, not in setUp. conftest.py
+# does this for pytest, and the DMG gate runs these lanes through
+# run-tests.sh (plain unittest), where nothing does -- so anything that
+# ledgers during import or outside a test method reached the LIVE shadow
+# home. shadow_ledger refuses that outright, which is how this was
+# caught; a per-test temp home still binds in setUp on top of it.
+os.environ.setdefault("SUTRA_SHADOW_HOME",
+                      tempfile.mkdtemp(prefix="shadow-greeting-"))
+
 import app as app_module
 from fastapi.testclient import TestClient
 

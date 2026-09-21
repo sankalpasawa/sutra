@@ -32,7 +32,17 @@ WHAT THESE TESTS PIN:
 
 Run: marketplace/plugin/sutra-ui/run-tests.sh test_shadow_update.py
 """
+import os
+import tempfile
 import unittest
+
+# THE HOME IS BOUND BEFORE THE FIRST IMPORT, not in setUp. conftest.py
+# does this for pytest, and the DMG gate runs these lanes through
+# run-tests.sh (plain unittest), where nothing does -- so anything that
+# ledgers during import or outside a test method reached the LIVE shadow
+# home. shadow_ledger refuses that outright, which is how this was caught.
+os.environ.setdefault("SUTRA_SHADOW_HOME",
+                      tempfile.mkdtemp(prefix="shadow-update-"))
 
 import mission_engine
 import shadow_runner
