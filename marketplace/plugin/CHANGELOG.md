@@ -1,6 +1,12 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.291.4 (2026-09-21)
+
+- Released from v2.291.3-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - Library: every article says who wrote it, and a teammate's dead runs stop showing up
+- Changed: 4 file(s), +122/-3
+
 ## 2.291.3 (2026-09-21)
 
 - **The five Library tabs now belong to the team, not to one Mac.** Opening a saved article showed its Search picture, Research, Architect and Edits only on the machine that wrote it, because those tabs were built on demand from the run's own working files. Anywhere else they were empty. The tabs are now assembled once when the article is saved, kept beside it, and carried to the team with it, so everyone opening that article sees the same five tabs. What travels is the readable contents, about 28 KB an article; the working files behind them, several megabytes of them, stay on the machine that made them.
