@@ -15,6 +15,16 @@ one-architecture release. The code was correct; the artifact was not.
 
 ## Release safety — blocking
 
+### 0. Beta first (founder D80, 2026-09-21)
+
+Every version is released twice: `scripts/release-desktop.sh release --beta` cuts `vX.Y.Z-beta.N-desktop`
+(the pipeline builds the coexisting "Sutra Beta" app as a prerelease); the founder installs it and looks at
+the features; then `scripts/release-desktop.sh release` cuts `vX.Y.Z-desktop`. The script refuses the stable
+tag when no beta of that version exists. Founder skip, audited to `.enforcement/release-beta-skips.jsonl`:
+`RELEASE_SKIP_BETA=1 RELEASE_SKIP_BETA_REASON='<why>'`.
+
+Pass condition: `scripts/release-desktop.sh check` prints `PASS  beta: vX.Y.Z-beta.N-desktop went before vX.Y.Z-desktop (D80)`.
+
 ### 1. Clean working tree, and a tag the `guard` job will accept
 
 The pipeline builds the tag, not your working tree. Anything uncommitted is absent from the DMG.

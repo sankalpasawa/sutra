@@ -43,9 +43,52 @@ is "tag_for"        "$(tag_for 2.282.3)" "v2.282.3-desktop"
 yes_ is_desktop_tag v2.282.3-desktop
 no_  is_desktop_tag v2.282.3                 # no suffix: guard refuses
 no_  is_desktop_tag 2.282.3-desktop          # no v
-no_  is_desktop_tag v2.282.3-beta.1-desktop  # valid for CI, but not cut here
+no_  is_desktop_tag v2.282.3-beta.1-desktop  # a beta is its own form (is_beta_tag), never a stable
 is "version_from_tag stable" "$(version_from_tag v2.282.3-desktop)" "2.282.3"
 is "version_from_tag beta"   "$(version_from_tag v2.282.3-beta.2-desktop)" "2.282.3"
+
+# ---- 13. BETA FIRST (D80): the beta tag form, and the gate ----------------
+# A stable tag needs a beta of the same version before it. The tag list is
+# injected (all_desktop_tags is overridden below), so no git runs here.
+is "beta_tag_for default N" "$(beta_tag_for 2.290.0)" "v2.290.0-beta.1-desktop"
+is "beta_tag_for N"         "$(beta_tag_for 2.290.0 3)" "v2.290.0-beta.3-desktop"
+yes_ is_beta_tag v2.290.0-beta.1-desktop
+no_  is_beta_tag v2.290.0-desktop
+no_  is_beta_tag v2.290.0-beta.1
+no_  is_beta_tag v2.290.0-beta.x-desktop
+TAGS="$(printf 'v2.289.9-desktop\nv2.290.0-beta.1-desktop\nv2.290.0-beta.3-desktop\nv2.290.10-beta.1-desktop\nv2.291.0-desktop')"
+yes_ has_beta 2.290.0 "$TAGS"
+no_  has_beta 2.289.9 "$TAGS"                  # a stable with no beta
+no_  has_beta 2.290.1 "$TAGS"
+no_  has_beta 2.290.0 ""
+is "latest beta is the highest N, not the last line" "$(latest_beta_tag 2.290.0 "$TAGS")" "v2.290.0-beta.3-desktop"
+is "next N after betas"      "$(next_beta_n 2.290.0 "$TAGS")" "4"
+is "next N when none"        "$(next_beta_n 2.289.9 "$TAGS")" "1"
+is "2.290.0 does not match 2.290.10" "$(next_beta_n 2.290.1 "$TAGS")" "1"
+is "betas_of is exact on the version" "$(betas_of 2.290.1 "$TAGS" | grep -c .)" "0"
+
+# the gate itself, on the injected list: refuse, allow after a beta, skip with a reason
+all_desktop_tags() { printf '%s\n' "$TAGS"; }
+# BETA is set explicitly on EVERY call: the gate's first branch reads it, and a
+# value left over from one case must never decide the next (review, 2026-09-21).
+_fails=0; BETA=0; TAG=v2.289.9-desktop
+gate_beta_first 2.289.9 v2.289.9-desktop >/dev/null
+is "no beta -> refused"            "$_fails" "1"
+_fails=0; BETA=0; gate_beta_first 2.290.0 v2.290.0-desktop >/dev/null
+is "beta exists -> allowed"        "$_fails" "0"
+_fails=0; BETA=0; RELEASE_SKIP_BETA=1 RELEASE_SKIP_BETA_REASON="" gate_beta_first 2.289.9 v2.289.9-desktop >/dev/null
+is "skip without a reason -> refused" "$_fails" "1"
+_fails=0; BETA=1; TAG=v2.289.9-beta.1-desktop
+gate_beta_first 2.289.9 v2.289.9-desktop >/dev/null
+is "cutting the beta itself -> allowed" "$_fails" "0"
+BETA=0; TAG=""
+# the audited skip writes its row somewhere we can throw away
+BT="$(mktemp -d)"
+( cd "$BT" && _fails=0 && BETA=0 && RELEASE_SKIP_BETA=1 RELEASE_SKIP_BETA_REASON="hotfix, founder on the call" gate_beta_first 2.289.9 v2.289.9-desktop >/dev/null \
+  && [ "$_fails" = 0 ] && grep -q '"reason": *"hotfix, founder on the call"' .enforcement/release-beta-skips.jsonl ) \
+  && pass=$((pass+1)) || { fail=$((fail+1)); printf 'FAIL skip with a reason must pass and be audited\n'; }
+rm -rf "$BT"
+unset -f all_desktop_tags
 
 # ---- 3. the bump, which is asked for and never assumed ---------------------
 is "patch"          "$(bump_version 2.282.3 patch)" "2.282.4"

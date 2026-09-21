@@ -19,13 +19,24 @@
 # script disagree the checklist wins and this script is wrong.
 #
 # Usage:
-#   scripts/release-desktop.sh check   [--bump patch|minor] [--version X.Y.Z]
-#   scripts/release-desktop.sh release [--bump patch|minor] [--version X.Y.Z]
+#   scripts/release-desktop.sh check   [--beta] [--bump patch|minor] [--version X.Y.Z]
+#   scripts/release-desktop.sh release [--beta] [--bump patch|minor] [--version X.Y.Z]
 #                                      [--notes FILE] [--yes]
 #   scripts/release-desktop.sh verify  [TAG]
 #
 # `check` is read-only and safe to run at any time. `release` refuses to start
 # unless `check` passes, and stops at the first failed gate.
+#
+# BETA FIRST (founder D80, 2026-09-21: "we first produce the app to beta; in
+# beta I see those features, and then I put it into production"). A release
+# is two runs of this script on the same version:
+#   1. `release --beta`   cuts vX.Y.Z-beta.N-desktop; the pipeline builds the
+#                         coexisting "Sutra Beta" app as a GitHub prerelease.
+#   2. `release`          cuts vX.Y.Z-desktop, and is REFUSED unless a beta
+#                         of that same X.Y.Z already exists.
+# Founder skip, never the default and always audited to
+# .enforcement/release-beta-skips.jsonl:
+#   RELEASE_SKIP_BETA=1 RELEASE_SKIP_BETA_REASON='<why>' scripts/release-desktop.sh release
 # =============================================================================
 set -uo pipefail
 
@@ -75,16 +86,44 @@ is_semver() {
   printf '%s' "${1:-}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'
 }
 
-# THE TAG FORM THE GUARD JOB ACCEPTS, and the only one this script cuts:
-# vX.Y.Z-desktop. The pipeline also accepts vX.Y.Z-beta.N-desktop, which this
-# script does NOT cut -- a beta is a branch decision, and automating it here
-# would mean guessing N.
+# THE TWO TAG FORMS THE GUARD JOB ACCEPTS. vX.Y.Z-desktop is the stable
+# release; vX.Y.Z-beta.N-desktop is the beta of the SAME version (guard strips
+# the -beta.N before it compares against the manifests). Since D80 this script
+# cuts both: N is not guessed, it is the next number after the betas that
+# already exist for that version (next_beta_n).
 tag_for() {
   printf 'v%s-desktop' "${1:-}"
+}
+beta_tag_for() {
+  printf 'v%s-beta.%s-desktop' "${1:-}" "${2:-1}"
 }
 
 is_desktop_tag() {
   printf '%s' "${1:-}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+-desktop$'
+}
+is_beta_tag() {
+  printf '%s' "${1:-}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+-desktop$'
+}
+
+# The betas of one version, out of a newline-separated tag list (the caller
+# supplies `git tag` + `ls-remote` output, so these stay pure and testable).
+betas_of() {                                   # betas_of <version> <taglist>
+  local v; v="$(printf '%s' "${1:-}" | sed 's/\./\\./g')"
+  printf '%s\n' "${2:-}" | grep -E "^v${v}-beta\.[0-9]+-desktop$" || true
+}
+has_beta() {                                   # has_beta <version> <taglist>
+  [ -n "$(betas_of "$1" "${2:-}")" ]
+}
+latest_beta_tag() {                            # highest N, or nothing
+  betas_of "$1" "${2:-}" | sed -E 's/^(.*-beta\.)([0-9]+)(-desktop)$/\2 \1\2\3/' | sort -n | tail -1 | awk '{print $2}'
+}
+next_beta_n() {                                # 1 when none exists
+  local last n
+  last="$(latest_beta_tag "$1" "${2:-}")"
+  if [ -z "$last" ]; then printf '1'; return 0; fi
+  n="$(printf '%s' "$last" | sed -E 's/^.*-beta\.([0-9]+)-desktop$/\1/')"
+  case "$n" in ''|*[!0-9]*) printf '1'; return 0 ;; esac   # never arithmetic on a non-number
+  printf '%s' "$((n + 1))"
 }
 
 # The version a tag claims, which is what guard compares against the manifests.
@@ -275,7 +314,7 @@ gate_guard_simulation() {                 # the workflow's own guard job
   # for a gate that is going to pass -- the one way a correct gate still lies.
   local tag="$1" target="$2" want p m
   want="$(version_from_tag "$tag")"
-  is_desktop_tag "$tag" || { bad "guard: '$tag' is not vX.Y.Z-desktop"; return; }
+  is_desktop_tag "$tag" || is_beta_tag "$tag" || { bad "guard: '$tag' is not vX.Y.Z[-beta.N]-desktop"; return; }
   if [ "$want" != "$target" ]; then
     bad "guard: tag $tag claims $want but the target version is $target"; return
   fi
@@ -411,6 +450,41 @@ gate_tag_free() {
   else ok "tag: $tag is free, locally and on origin"; fi
 }
 
+# Every desktop tag, local and on origin, one per line. The one impure input
+# the beta gate reads; tests override this function with a fixed list.
+all_desktop_tags() {
+  { git tag -l 'v*-desktop'
+    git ls-remote --tags origin 'v*-desktop' 2>/dev/null | awk '{print $2}' | sed 's#^refs/tags/##; s#\^{}$##'
+  } | sort -u
+}
+
+#: BETA FIRST (founder D80, 2026-09-21). A stable tag is refused unless a beta
+#: of the same version already exists: the founder sees the features in the
+#: Beta app, then puts them into production. The skip is the founder's, named
+#: and audited; it is never the default and a bare skip without a reason fails.
+gate_beta_first() {                         # gate_beta_first <version> <stable-tag>
+  local version="$1" tag="$2" tags last
+  if [ "${BETA:-0}" = 1 ]; then ok "beta: cutting $TAG -- the stable $tag comes after you have seen it (D80)"; return; fi
+  tags="$(all_desktop_tags)"
+  if has_beta "$version" "$tags"; then
+    last="$(latest_beta_tag "$version" "$tags")"
+    ok "beta: $last went before $tag (D80)"
+  elif [ "${RELEASE_SKIP_BETA:-0}" = 1 ]; then
+    if [ -z "${RELEASE_SKIP_BETA_REASON:-}" ]; then
+      bad "beta: RELEASE_SKIP_BETA=1 needs RELEASE_SKIP_BETA_REASON='<why>' -- a skip without a reason is not a founder decision"
+      return
+    fi
+    mkdir -p .enforcement
+    printf '{"ts":"%s","tag":"%s","version":"%s","actor":"%s","reason":%s}\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$tag" "$version" "$(git config user.name 2>/dev/null || echo unknown)" \
+      "$(printf '%s' "$RELEASE_SKIP_BETA_REASON" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null || printf '"%s"' "$RELEASE_SKIP_BETA_REASON")" \
+      >> .enforcement/release-beta-skips.jsonl
+    ok "beta: SKIPPED by founder -- $RELEASE_SKIP_BETA_REASON (audited: .enforcement/release-beta-skips.jsonl)"
+  else
+    bad "beta: no v$version-beta.N-desktop exists -- cut it first: scripts/release-desktop.sh release --beta, install Sutra Beta, look, then release (D80). Founder skip: RELEASE_SKIP_BETA=1 RELEASE_SKIP_BETA_REASON='<why>'"
+  fi
+}
+
 # =============================================================================
 # COMMANDS
 # =============================================================================
@@ -428,7 +502,12 @@ read_state() {
   derived="$(derive_target "$CUR" "$BUMP" "$CUR_TAGGED" "$EXPLICIT")" || die "could not derive the next version"
   TARGET="$(printf '%s' "$derived" | awk '{print $1}')"
   NEEDS_COMMIT="$(printf '%s' "$derived" | awk '{print $2}')"
-  TAG="$(tag_for "$TARGET")"
+  STABLE_TAG="$(tag_for "$TARGET")"
+  # A beta of the target version: beta.1 when none exists, else the next N.
+  # The version surfaces bump exactly as for a stable, so beta and stable of
+  # one version read the same X.Y.Z, which is what guard checks.
+  if [ "${BETA:-0}" = 1 ]; then TAG="$(beta_tag_for "$TARGET" "$(next_beta_n "$TARGET" "$(all_desktop_tags)")")"
+  else TAG="$STABLE_TAG"; fi
 }
 
 cmd_check() {
@@ -437,7 +516,7 @@ cmd_check() {
   printf '  Current version:  %s\n' "$CUR"
   printf '  Next version:     %s%s\n' "$TARGET" \
     "$( [ "$NEEDS_COMMIT" = no ] && printf '   (unchanged -- %s was never tagged)' "$CUR" )"
-  printf '  Desktop tag:      %s\n' "$TAG"
+  printf '  Desktop tag:      %s%s\n' "$TAG" "$( [ "${BETA:-0}" = 1 ] && printf '   (beta -- Sutra Beta app, prerelease)' )"
   printf '  Commit required:  %s\n' "$NEEDS_COMMIT"
   local counts
   counts="$(git rev-list --left-right --count origin/main...HEAD 2>/dev/null || echo '? ?')"
@@ -449,6 +528,7 @@ cmd_check() {
   gate_versions_aligned
   gate_guard_simulation "$TAG" "$TARGET"
   gate_tag_free "$TAG"
+  gate_beta_first "$TARGET" "$STABLE_TAG"
   gate_main_synced
   gate_workflow_integrity
   gate_shadow_wiring
@@ -574,7 +654,7 @@ cmd_release() {
     [ -z "$NOTES" ] && [ -n "$notes" ] && rm -f "$notes"
     git --no-pager diff --stat
     head_ "2. gates, after the bump"
-    _fails=0; gate_versions_aligned; gate_guard_simulation "$TAG" "$TARGET"; gate_shadow_wiring
+    _fails=0; gate_versions_aligned; gate_guard_simulation "$TAG" "$TARGET"; gate_beta_first "$TARGET" "$STABLE_TAG"; gate_shadow_wiring
     gate_panel_step; gate_all_js; gate_panel_repeat; gate_python; gate_engine_importer
     [ "$_fails" = 0 ] || die "a gate failed after the bump -- nothing committed"
     head_ "3. commit"
@@ -583,6 +663,9 @@ cmd_release() {
       -- "$PLUGIN_JSON" "$MARKET_JSON" "$CHANGELOG" "$CURRENT_VERSION" || die "commit failed"
   else
     head_ "1-3. version already at $TARGET, nothing to commit"
+    # The beta gate runs here too: the bumped path ran it under "2. gates".
+    _fails=0; gate_beta_first "$TARGET" "$STABLE_TAG"
+    [ "$_fails" = 0 ] || die "beta first (D80) -- nothing tagged"
   fi
 
   head_ "4. sync"
@@ -605,7 +688,7 @@ cmd_release() {
 
   head_ "7. tag"
   gate_tag_free "$TAG"; [ "$_fails" = 0 ] || die "tag exists -- a release tag is never overwritten"
-  git tag -a "$TAG" -m "Sutra Desktop $TARGET" || die "tag failed"
+  git tag -a "$TAG" -m "Sutra Desktop $TARGET$( [ "${BETA:-0}" = 1 ] && printf ' beta' )" || die "tag failed"
   git push origin "$TAG" || die "tag push failed"
   local peeled; peeled="$(git ls-remote origin "refs/tags/$TAG^{}" | awk '{print $1}')"
   [ "$peeled" = "$(git rev-parse HEAD)" ] || die "the remote tag does not point at HEAD"
@@ -616,6 +699,10 @@ cmd_release() {
   note "GitHub build: NOT YET -- the workflow has only just started"
   note "DMGs published: unknown.  Mac app verified: no."
   note "Run: scripts/release-desktop.sh verify $TAG"
+  if [ "${BETA:-0}" = 1 ]; then
+    note "THIS IS THE BETA. Install Sutra Beta from the prerelease, look at the features,"
+    note "then cut production for the same version: scripts/release-desktop.sh release"
+  fi
 }
 
 cmd_verify() {
@@ -649,10 +736,11 @@ cmd_verify() {
 # =============================================================================
 main() {
   local cmd="${1:-check}"; shift || true
-  BUMP=patch; EXPLICIT=""; NOTES=""; ASSUME_YES=0
+  BUMP=patch; EXPLICIT=""; NOTES=""; ASSUME_YES=0; BETA=0
   local rest=""
   while [ $# -gt 0 ]; do
     case "$1" in
+      --beta)    BETA=1; shift ;;
       --bump)    BUMP="${2:-}"; shift 2 ;;
       --version) EXPLICIT="${2:-}"; shift 2 ;;
       --notes)   NOTES="${2:-}"; shift 2 ;;
