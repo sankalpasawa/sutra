@@ -2290,6 +2290,17 @@ def api_workspace(check: int = 0):
         _spawn("workspace-library-backfill", lambda: mods["sync"].backfill_library())
     except Exception:  # noqa: BLE001
         pass
+    # AND THE FIVE TABS BEHIND EACH ARTICLE (owner, 2026-09-21). The row travelled; what the
+    # article was built from did not, because the tabs were assembled on demand out of the run
+    # folder, which exists on one Mac only. Articles saved from now on keep their tabs at save
+    # time; this walks the ones saved before that, keeps the tabs of every row whose run is still
+    # here, and pushes those rows so the team gets them. Same shape as the two backfills above:
+    # its own thread, its own rate limit and memory in sync-state.json, asked on every poll at no
+    # real cost, and it stops asking once it has been through the Library once.
+    try:
+        _spawn("workspace-tabs-backfill", lambda: mods["sync"].backfill_tabs())
+    except Exception:  # noqa: BLE001
+        pass
     checked = _ws_verify(mods) if check else _ws_checked["res"]
     return {
         "installed": True,
@@ -2612,14 +2623,22 @@ def api_library_revert(item_id: str):
 def api_library_tabs(item_id: str):
     """The four server-assembled tabs (Search picture, Research, Architect, Edits) in one call,
     each None when that tab is not available yet -- see seo_agent/library_tabs.py. Draft is not
-    here: the screen already has it on GET /library/{item_id}'s own `draft` field."""
+    here: the screen already has it on GET /library/{item_id}'s own `draft` field.
+
+    TWO PLACES THEY CAN COME FROM, AND THE ANSWER SAYS WHICH (owner, 2026-09-21: the Library tabs
+    only existed on the Mac that wrote the article). The run is read first whenever its folder is
+    there, so a run being watched shows tabs that are current to the second; otherwise the copy
+    kept with the article answers, which is what a teammate -- who has no run folder and never
+    will -- sees. `source` carries which of the two it was, or "none" when the article predates
+    the tabs being kept, so the screen can say that plainly instead of drawing an empty tab.
+    """
     if not _ok_id(item_id):
         return _bad("bad id")
     it = store.library_get(item_id)
     if not it:
         return _bad("not found", 404)
     from seo_agent import library_tabs
-    return library_tabs.all_tabs(it)
+    return library_tabs.served(it)
 
 
 @router.post("/library/{item_id}/undo")

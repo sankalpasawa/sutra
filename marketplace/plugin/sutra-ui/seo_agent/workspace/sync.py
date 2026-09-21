@@ -983,6 +983,79 @@ def backfill_library(client=None, now=None, rows=None):
         return ""
 
 
+# ---- the five tabs behind each article ---------------------------------------------------------
+#
+# THE TABS A TEAM NEVER SAW (owner, 2026-09-21: "when I open Sutra in the Library, all the things
+# which are there, the search picture, the research, the write, all of that, that particular file
+# stays locally only. I don't want that."). Until today the tabs were assembled on demand out of
+# the RUN folder, which exists on exactly one Mac, so every article already in every Library had
+# its five tabs on the author's machine and nowhere else. Articles saved from now on keep them at
+# save time (loop.save_to_library); this is the one-off pass over everything saved before that.
+#
+# It is the same shape as backfill_library above -- its own rate limit, its own memory in
+# sync-state.json, its own thread off the workspace poll -- and the same rule holds: this is a
+# SEND, never an edit. No version is bumped and no editor is stamped, because keeping a record of
+# how an article was made is not a change to the article.
+TABS_BACKFILL_EVERY = 600.0       # same retry gap as the other two backfills
+
+
+def backfill_tabs(client=None, now=None, rows=None):
+    """Keep the five tabs for every article that still has its run, and send those rows on.
+
+    Per row, exactly one of three things happens, and each of them is final:
+      * it already has tabs.json, or has already been looked at -> nothing;
+      * its run folder is still here -> the tabs are assembled, written beside the article, and
+        the row is pushed so the team gets them;
+      * its run is gone -> nothing can be assembled, so the row is STAMPED as looked-at with
+        nothing kept. That stamp is not bookkeeping: it is what lets the Library still draw a
+        strip for the article (store._kept_strip) so the overlay opens and says, in plain words,
+        that this article's steps were not kept -- rather than the row having no door at all.
+
+    Idempotent twice over: the state file's `done` flag stops a second pass, and every row is
+    skipped on its own evidence anyway, so a lost state file costs one harmless re-walk.
+    Never raises.
+    """
+    now = time.time() if now is None else now
+    try:
+        if not configured(client):
+            return ""
+        st = read_state()
+        bf = st.get("tabs_backfill") or {}
+        if bf.get("done"):
+            return ""
+        if now - float(bf.get("at") or 0) < TABS_BACKFILL_EVERY:
+            return ""
+        if rows is None:
+            rows = store.library_list()
+        # A row with no words is an article still being written (the row is born the moment a run
+        # starts). Its tabs are the save path's business, not this pass's, and `push` would refuse
+        # it anyway -- no draft, no send.
+        rows = [r for r in (rows or [])
+                if isinstance(r, dict) and r.get("id") and int(r.get("words") or 0) > 0]
+        from .. import library_tabs
+        built, sent, fail_why = 0, 0, ""
+        for r in rows:
+            item_id = str(r["id"])
+            try:
+                if store.read_library_tabs(item_id) or (r.get("tabs_saved") or {}).get("at"):
+                    continue
+                tabs = library_tabs.save(item_id)
+                if not tabs:
+                    store.save_library_tabs(item_id, {}, kept=[], dropped=[])
+                    continue
+                built += 1
+                if push("library", item_id, store.library_get(item_id), client=client) is not None:
+                    sent += 1
+            except Exception as e:           # noqa: BLE001 -- one bad row must not stop the rest
+                fail_why = str(e)[:300]
+        st["tabs_backfill"] = {"at": now, "done": not fail_why, "built": built, "sent": sent,
+                               "why": fail_why or ("nothing to keep" if not built else "")}
+        _save_state(st)
+        return "sent" if sent else ""
+    except Exception:                       # noqa: BLE001 -- a background nicety must never break a poll
+        return ""
+
+
 def push_delete(kind, key, actor=None, client=None, item_id=None):
     """The thing is gone. The trigger logs it, and it reaches everyone as an ordinary change.
 

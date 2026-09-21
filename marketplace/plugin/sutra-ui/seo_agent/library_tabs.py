@@ -15,7 +15,18 @@ Each tab function takes the meta dict store.library_get() already produced (so t
 strip is read once) and returns None when that tab's own gate is not met, so the screen can grey
 it out. `all_tabs` assembles the four that are server-side (Draft is the existing draft field on
 /library/{id}, read-only, and needs nothing extra).
+
+SINCE 2026-09-21 THE ASSEMBLED TABS ARE ALSO KEPT, and that is the one thing in this file that
+writes. The owner: "all of that, that particular file stays locally only. I don't want that. Just
+these things should be available for everybody in the workspace." Assembling is still the fresh
+path and still wins whenever the run folder is there; `save` writes the same assembled dict into
+the row's own tabs.json while the run still exists, and `served` falls back to it once the run is
+gone -- on the author's Mac after the chat is deleted, and on every teammate's Mac, where the run
+never existed at all. Nothing new is invented on that path: what is served from tabs.json is
+byte-for-byte what this file assembled on the Mac that ran the article.
 """
+import json
+
 from . import store
 
 
@@ -242,6 +253,118 @@ def edits(meta):
 
 def all_tabs(meta):
     """{"search_picture", "research", "architect", "edits"}, each None when not yet available.
-    Draft is not here: the screen already has it on /library/{id}'s own `draft` field."""
+    Draft is not here: the screen already has it on /library/{id}'s own `draft` field.
+
+    Gated on the milestone strip ON THE META IT IS HANDED, which is what makes `save` and `served`
+    below pass the RUN's own strip rather than the one library_get returns: since 2026-09-21 that
+    one can be a record of tabs already kept (store._kept_strip), and assembling against a record
+    would open every gate and then read a run folder that is not there -- four dicts full of
+    blanks, which is exactly the empty shell this whole change exists to stop showing.
+    """
     return {"search_picture": search_picture(meta), "research": research(meta),
            "architect": architect(meta), "edits": edits(meta)}
+
+
+# ---- keeping them, and serving them once the run is gone -----------------------------------------
+#
+# THE SIZE GUARD. Every row of the `library` table is carried to every teammate and sits in their
+# meta jsonb for good, so a pathological article must not make everyone pay for it. Measured on a
+# real article the four tabs are 28.3 KB in total, so 400 KB is roughly fourteen times the real
+# thing: comfortably out of the way of anything normal, and still a hard ceiling. Over it, the
+# LARGEST tab is dropped and the smaller ones are kept -- a person who loses the 300 KB architect
+# table still has the research and the search picture -- and what was dropped is recorded on the
+# row, so the screen can say so plainly instead of showing a tab that is silently empty.
+TABS_MAX_BYTES = 400_000
+
+TAB_KEYS = tuple(store.TAB_MILESTONE)          # the four assembled tabs, in strip order
+
+
+def _bytes(tabs):
+    return len(json.dumps(tabs, ensure_ascii=False).encode("utf-8"))
+
+
+def fit(tabs):
+    """(tabs, dropped): the tabs cut down to TABS_MAX_BYTES, largest first. Never raises.
+
+    Dropping is by whole tab, never by trimming inside one: half a research tab reads as a thin
+    run rather than as a cut, and a person cannot tell the two apart from the screen.
+    """
+    tabs = dict(tabs or {})
+    dropped = []
+    while _bytes(tabs) > TABS_MAX_BYTES:
+        present = [k for k in TAB_KEYS if tabs.get(k)]
+        if not present:
+            break                               # nothing left to drop: the shell alone is over
+        biggest = max(present, key=lambda k: _bytes({k: tabs[k]}))
+        tabs[biggest] = None
+        dropped.append(biggest)
+    return tabs, dropped
+
+
+def _run_strip(meta):
+    """The RUN's own milestone strip. [] when the run folder is gone (store.milestones' own rule)."""
+    return store.milestones(meta.get("chat_id"), meta.get("run_id"))
+
+
+def save(item_id, meta=None):
+    """Assemble this row's tabs from its run and keep them with the article. None when there is no
+    run to assemble from.
+
+    Called at the moment an article is saved to the Library, while the run's artifacts are
+    certainly still on disk, and again by the backfill for articles saved before this existed.
+    Idempotent: the same run assembles to the same four tables every time (nothing in this file
+    calls a model or reads a clock), so running it twice writes the same file twice.
+    """
+    meta = meta or store.library_get(item_id)
+    if not meta:
+        return None
+    strip = _run_strip(meta)
+    if not strip:
+        return None                             # the run is gone; there is nothing to assemble
+    tabs = all_tabs(dict(meta, milestones=strip))
+    if not any(tabs.get(k) for k in TAB_KEYS):
+        return None                             # the run never reached a single tab's gate
+    kept_now = [k for k in TAB_KEYS if tabs.get(k)]
+    tabs, dropped = fit(tabs)
+    tabs["dropped"] = dropped
+    store.save_library_tabs(item_id, tabs, kept=[k for k in kept_now if k not in dropped],
+                            dropped=dropped)
+    return tabs
+
+
+def ensure(item_id, meta=None):
+    """Keep the tabs if this row has none yet. Cheap enough to sit on every save path: one stat
+    when they are already there, and never raises -- an article must save whatever happens here."""
+    try:
+        if store.read_library_tabs(item_id):
+            return None
+        return save(item_id, meta)
+    except Exception:                           # noqa: BLE001 -- a record is not worth losing a save
+        return None
+
+
+def served(meta):
+    """What GET /library/{id}/tabs answers: the four tabs plus where they came from.
+
+    THE ORDER IS THE WHOLE POINT. The run is read FIRST whenever its folder is there, because a
+    live run's tabs change under you and a file written at save time would go stale on the one
+    screen a person watches while the article is being written. Only when the run is gone -- a
+    deleted chat, or a teammate who never had it -- does the kept copy answer, which is what makes
+    a teammate's screen show the same five tabs the author sees.
+
+      source "run"    assembled just now from the run's own artifacts
+      source "saved"  the copy kept with the article when it was saved
+      source "none"   neither: an article from before the tabs were kept, and nothing to show.
+                      The screen says that in plain words rather than drawing an empty tab.
+    """
+    strip = _run_strip(meta)
+    if strip:
+        tabs = all_tabs(dict(meta, milestones=strip))
+        if any(tabs.get(k) for k in TAB_KEYS):
+            return dict(tabs, source="run", dropped=[])
+    saved = store.read_library_tabs(meta.get("id") or "") or {}
+    out = {k: saved.get(k) for k in TAB_KEYS}
+    # what the size guard cut is read from the row's own stamp when tabs.json itself does not say,
+    # so "this one was too big to share" stays sayable even when every tab was over the ceiling
+    dropped = list(saved.get("dropped") or (meta.get("tabs_saved") or {}).get("dropped") or [])
+    return dict(out, source="saved" if any(out.values()) else "none", dropped=dropped)

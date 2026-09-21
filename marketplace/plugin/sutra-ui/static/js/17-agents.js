@@ -2682,9 +2682,31 @@ function agTabKwList(arr){
   return list.length ? `<ul class="ag-tabul">${list.map(k => `<li>${agTabKw(k)}</li>`).join("")}</ul>` : "";
 }
 
+/* ── an empty tab has to say WHICH kind of empty it is (owner, 2026-09-21) ────────────────
+   Three different things used to look identical on screen -- one blank panel reading "Not
+   written yet." -- and only one of them was true:
+     · the run has not reached this step yet            → "Not written yet."  (still true)
+     · the steps were never kept with the article       → say so, plainly. The article was
+       written before Sutra kept them, and the run folder it came from is gone, so there is
+       nothing to show and never will be. Telling somebody to wait for it would be a lie.
+     · this one tab was too big to travel to the team   → say that instead.
+   The server decides which (GET /library/{id}/tabs → `source` and `dropped`); this only puts
+   it into words. `st` is a.libTabs, so a renderer called without it (an old caller, a test)
+   falls back to the placeholder it has always shown. */
+function agTabEmptyHtml(st, field){
+  const data = (st && st.data) || {};
+  if (field && (data.dropped || []).indexOf(field) !== -1){
+    return `<p class="ag-tabempty">This step was too big to share with the team, so it was left out. It is still on the Mac the article was written on.</p>`;
+  }
+  if (data.source === "none"){
+    return `<p class="ag-tabempty">The steps behind this article were not kept. It was written before Sutra saved them with the article, and the run that made it is gone, so there is nothing to show here. The article itself is under Draft.</p>`;
+  }
+  return `<p class="ag-tabempty">Not written yet.</p>`;
+}
+
 /* ── Search picture ─────────────────────────────────────────────────────────────────────── */
-function agTabPictureHtml(sp){
-  if (!sp) return `<p class="ag-tabempty">Not written yet.</p>`;
+function agTabPictureHtml(sp, st){
+  if (!sp) return agTabEmptyHtml(st, "search_picture");
   const avgWords = sp.avg_words != null
     ? `${agEsc(agNum(sp.avg_words))} words${sp.band ? ` (${agEsc(agNum(sp.band.min))} to ${agEsc(agNum(sp.band.max))})` : ""}`
     : "";
@@ -2714,7 +2736,7 @@ function agTabPictureHtml(sp){
    call, the questions are already in memory on the payload. st (a.libTabs) carries which rows
    are open (rOpen), keyed by index, so a redraw does not collapse what he just opened. */
 function agTabResearchHtml(r, st){
-  if (!r) return `<p class="ag-tabempty">Not written yet.</p>`;
+  if (!r) return agTabEmptyHtml(st, "research");
   const rOpen = (st && st.rOpen) || {};
   const researchers = (r.researchers || []).map((x, i) => {
     const open = !!rOpen[i];
@@ -2751,7 +2773,7 @@ function agTabResearchHtml(r, st){
    (agAction's click listener uses closest("[data-ag]"), which finds the Purpose button first
    when that is what was actually clicked). */
 function agTabArchitectHtml(ar, st){
-  if (!ar) return `<p class="ag-tabempty">Not written yet.</p>`;
+  if (!ar) return agTabEmptyHtml(st, "architect");
   const secOpen = (st && st.secOpen) || {};
   const header = `${agEsc(ar.format || "")} · ${ar.target_words != null ? agEsc(agNum(ar.target_words)) + " target words" : ""} · ${agEsc(agNum(ar.n_sections))} sections · ${agEsc(agNum(ar.n_sub_headings))} sub-headings`;
   const sections = (ar.sections || []).map((sec, i) => {
@@ -2791,8 +2813,8 @@ function agTabDraftHtml(d){
 /* ── Edits ───────────────────────────────────────────────────────────────────────────────
    passes is already a list of full, plain-English sentences in run order -- nothing to word
    here, only to list. */
-function agTabEditsHtml(ed){
-  if (!ed) return `<p class="ag-tabempty">Not written yet.</p>`;
+function agTabEditsHtml(ed, st){
+  if (!ed) return agTabEmptyHtml(st, "edits");
   const sc = ed.source_check;
   const scLine = sc
     ? `Checked ${agEsc(agNum(sc.checked))} · Fine ${agEsc(agNum(sc.fine))} · Corrected ${agEsc(agNum(sc.corrected))} · Softened ${agEsc(agNum(sc.softened))} · Removed ${agEsc(agNum(sc.removed))}${
@@ -2813,10 +2835,20 @@ const AG_TAB_ORDER = ["picture", "research", "architect", "draft", "edits"];
    one place that mapping is decided, so the switcher's grey-out and the body both read it the
    same way. draft is never gated: it comes straight off GET /library/{id}, no /tabs null to
    check, so it is always offered even before anything else exists. */
+const AG_TAB_FIELD = { picture: "search_picture", research: "research", architect: "architect",
+                       edits: "edits" };
 function agTabPayload(id, data, draft){
   if (id === "draft") return draft || null;
-  if (id === "picture") return (data && data.search_picture) || null;
-  return (data && data[id]) || null;
+  return (data && data[AG_TAB_FIELD[id]]) || null;
+}
+/* Can this tab explain its own emptiness? If the server said the steps were never kept, or that
+   this one tab was dropped on the way to the team, the tab stays CLICKABLE with nothing in it --
+   because the sentence is the thing worth reading, and a greyed-out span cannot be opened to read
+   it. Anything else null is still greyed: "not made yet" needs no explaining. */
+function agTabTold(data, id){
+  if (!data) return false;
+  if (data.source === "none") return true;
+  return (data.dropped || []).indexOf(AG_TAB_FIELD[id]) !== -1;
 }
 
 function agLibTabsHtml(a){
@@ -2824,7 +2856,7 @@ function agLibTabsHtml(a){
   if (!st || !st.on) return "";
   const data = st.data || {};
   const tabbar = `<div class="ag-tabsbar" role="tablist" aria-label="Article tabs">${AG_TAB_ORDER.map(id => {
-    const avail = id === "draft" ? true : !!agTabPayload(id, data, st.draft);
+    const avail = id === "draft" ? true : (!!agTabPayload(id, data, st.draft) || agTabTold(data, id));
     const label = AG_TAB_LABEL[id];
     return avail
       ? `<button class="ag-tabsbtn${st.active === id ? " on" : ""}" type="button" role="tab" aria-selected="${st.active === id}" data-ag="libtabsswitch" data-arg="${id}">${agEsc(label)}</button>`
@@ -2833,11 +2865,11 @@ function agLibTabsHtml(a){
   let body;
   if (st.loading) body = `<div class="zero"><h4>Reading…</h4></div>`;
   else if (st.error) body = `<div class="ag-err">${agEsc(st.error)}</div>`;
-  else if (st.active === "picture") body = agTabPictureHtml(agTabPayload("picture", data, st.draft));
+  else if (st.active === "picture") body = agTabPictureHtml(agTabPayload("picture", data, st.draft), st);
   else if (st.active === "research") body = agTabResearchHtml(agTabPayload("research", data, st.draft), st);
   else if (st.active === "architect") body = agTabArchitectHtml(agTabPayload("architect", data, st.draft), st);
   else if (st.active === "draft") body = agTabDraftHtml(st.draft);
-  else if (st.active === "edits") body = agTabEditsHtml(agTabPayload("edits", data, st.draft));
+  else if (st.active === "edits") body = agTabEditsHtml(agTabPayload("edits", data, st.draft), st);
   else body = "";
   const title = AG_TAB_LABEL[st.active] || "Article";
   return `<div class="ag-tabsback" data-ag="libtabsclose"></div>

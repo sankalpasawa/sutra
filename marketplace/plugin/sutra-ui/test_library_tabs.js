@@ -224,6 +224,58 @@ test("a null payload on the CURRENTLY OPEN tab greys its own switcher button too
   assert.ok(/Not written yet\./.test(html), "the body still shows the placeholder rather than throwing");
   assert.ok((html.match(/ag-tabsbtn off/g) || []).length === 4, "all four /tabs-backed tabs grey out, Draft stays clickable: " + html);
 });
+/* ── the tabs that were never kept (owner, 2026-09-21) ─────────────────────────────────────
+   Three different empties used to look identical on screen. The server now says which one it
+   is (`source`, `dropped` on GET /library/{id}/tabs) and the tab says it in words. */
+test("an article whose steps were never kept says so, in plain words, on every tab", () => {
+  const data = { search_picture: null, research: null, architect: null, edits: null,
+                 source: "none", dropped: [] };
+  const st = { data };
+  [["picture", "search_picture"], ["research", "research"], ["architect", "architect"],
+   ["edits", "edits"]].forEach(([id, field]) => {
+    const html = A.agTabEmptyHtml(st, field);
+    assert.ok(/were not kept/.test(html), id + " says the steps were not kept: " + html);
+    assert.ok(!/Not written yet/.test(html), id + " does not promise something still coming");
+  });
+});
+test("and those tabs stay clickable, or the sentence could never be read", () => {
+  const a = { libTabs: { on: true, itemId: "lib9", active: "draft",
+    data: { search_picture: null, research: null, architect: null, edits: null,
+            source: "none", dropped: [] },
+    draft: { title: "An old article", words: 900, draft: "# An old article\n\nbody\n" },
+    loading: false, error: null, rOpen: {}, secOpen: {} } };
+  const html = A.agLibTabsHtml(a);
+  assert.ok(!/ag-tabsbtn off/.test(html), "nothing is greyed out: every tab has something to say");
+  ["picture", "research", "architect", "edits"].forEach(id => {
+    assert.ok(new RegExp('data-ag="libtabsswitch" data-arg="' + id + '"').test(html), id + " can be opened");
+  });
+});
+test("a tab the size guard dropped says THAT, not that the steps were never kept", () => {
+  const data = { search_picture: { primary: { keyword: "cost per hire" } }, research: { angle: "a" },
+                 architect: null, edits: { passes: ["x"] }, source: "saved", dropped: ["architect"] };
+  const st = { data };
+  const html = A.agTabArchitectHtml(null, st);
+  assert.ok(/too big to share/.test(html), "the real reason: " + html);
+  assert.ok(!/were not kept/.test(html), "the steps WERE kept; this one tab did not travel");
+  const a = { libTabs: Object.assign({ on: true, itemId: "lib9", active: "architect", draft: null,
+    loading: false, error: null, rOpen: {}, secOpen: {} }, { data }) };
+  assert.ok(/data-ag="libtabsswitch" data-arg="architect"/.test(A.agLibTabsHtml(a)),
+    "and it is still clickable so the reason can be read");
+});
+test("an ordinary not-there-yet tab is unchanged: Not written yet", () => {
+  const st = { data: { search_picture: null, research: null, architect: null, edits: null,
+                       source: "run", dropped: [] } };
+  assert.ok(/Not written yet\./.test(A.agTabResearchHtml(null, st)), "a live run has not got there yet");
+  assert.ok(/Not written yet\./.test(A.agTabPictureHtml(null)), "and a caller with no state at all still works");
+});
+test("a teammate's kept tabs render exactly like the author's assembled ones", () => {
+  /* source "saved" is the ONLY difference in the payload: the tables themselves are the same
+     dict the author's Mac assembled, so nothing about the drawing may depend on it. */
+  const fresh = A.agTabPictureHtml(SP, { data: { source: "run", dropped: [] } });
+  const kept = A.agTabPictureHtml(SP, { data: { source: "saved", dropped: [] } });
+  assert.strictEqual(fresh, kept, "byte-for-byte the same tab");
+});
+
 test("a milestone row from before /tabs existed (no milestones array) still draws no strip, no throw", () => {
   const html = A.agLibraryHtml([{ id: "old1", title: "Old row", status: "ready", words: 900, created_at: "2026-01-01T00:00:00Z" }]);
   assert.ok(!/ag-miles/.test(html), "no strip drawn for a row with nothing on it");

@@ -1066,6 +1066,22 @@ def save_to_library(chat_id, run_id, title=None, status="ready"):
         "idea_id": idea_id}), status=status)
     store.emit(chat_id, run_id, "saved_to_library", item_id=item, title=title)
 
+    # THE FIVE TABS ARE KEPT WITH THE ARTICLE, HERE, WHILE THE RUN IS STILL ON DISK (owner,
+    # 2026-09-21: "the search picture, the research, the write, all of that, that particular file
+    # stays locally only. I don't want that."). They are assembled from the run's artifacts, so
+    # this is the last honest moment to build them: the chat can be deleted tomorrow, and on every
+    # teammate's Mac the run folder never existed at all. Assembled, not copied -- 28 KB of tables
+    # rather than the 4.5 MB of raw step files, which is the owner's "not the intermediate
+    # outputs, all those JSON, not required".
+    #
+    # BEFORE the push below, not after: the push reads store.library_get(item), and that is what
+    # carries tabs.json to the team. Never fatal -- an article that saved must stay saved.
+    try:
+        from . import library_tabs as _lt
+        _lt.save(item)
+    except Exception as e:  # noqa: BLE001 -- the record is a nicety; the article is the thing
+        store.emit(chat_id, run_id, "note", text="Could not keep the article's tabs: %s" % str(e)[:160])
+
     # THE ARTICLE GOES TO THE TEAM. Until 2026-09-16 nothing pushed a `library` row: the table,
     # the trigger and the mirror that lands a teammate's article all existed, and no article ever
     # left the Mac it was written on. Only when a workspace is connected (a push with none

@@ -617,6 +617,28 @@ EXTRA_ARTIFACT_FILES = {
 }
 EXTRA_ARTIFACT_BY_FILE = {v["file"]: v for v in EXTRA_ARTIFACT_FILES.values()}
 
+# ---- the five tabs, kept WITH the article --------------------------------------------------
+#
+# THE INCIDENT (owner, 2026-09-21): "when I open Sutra in the Library, all the things which are
+# there, the search picture, the research, the write, all of that, that particular file stays
+# locally only. I don't want that." A saved article's BODY reached the team from the day the
+# `library` table shipped, but the five tabs did not: they were assembled on demand by
+# library_tabs.py out of the RUN folder under chats/<chat>/runs/<run>/artifacts, and a teammate
+# has no such folder. So everybody but the author saw an article with nothing behind it.
+#
+# WHAT TRAVELS IS THE ASSEMBLED TABS, NEVER THE RAW RUN. Measured on a real article: the four
+# assembled tabs are 28.3 KB of JSON in total (search picture 4.9, research 10.4, architect 12.6,
+# edits 0.4); the run artifacts they are read from are 4.5 MB. So the row keeps the 28 KB beside
+# draft.md as tabs.json, and that one file is what rides in the workspace payload. The owner's own
+# words: "not the intermediate outputs, all those JSON, not required".
+TABS_FILE = "tabs.json"
+
+# Which chip on the progress strip each assembled tab is the record of. Named HERE, next to
+# MILESTONES, because the strip is this module's vocabulary; library_tabs.py imports it rather
+# than keeping a second copy that could disagree (one concept, one wording).
+TAB_MILESTONE = {"search_picture": "picture", "research": "research",
+                 "architect": "plan", "edits": "edited"}
+
 
 def library_item_id(chat_id, run_id):
     """The id of the row for this run. Decided in ONE place, and derived only from the run.
@@ -811,11 +833,22 @@ def library_finish(item_id, title, draft_md, meta_extra=None, chat_id=None, run_
     # in every row would double that read for nothing. So it lands in previous.md beside draft.md,
     # and library_get puts it back on the single item only. (2026-09-16)
     previous_draft = extra.pop("previous_draft", None)
+    # THE FIVE TABS ARE A FILE TOO, for exactly the reason previous.md above is one (owner,
+    # 2026-09-21: the Library tabs only existed on the Mac that wrote the article). A teammate's
+    # article arrives with its assembled tabs inside the wire meta; 28 KB of them in meta.json
+    # would be read again for every row on every poll of the Library screen, for a thing only the
+    # open overlay ever asks for. So it lands in tabs.json beside draft.md, and library_get puts it
+    # back on the single item only. A payload with no tabs (an older Sutra, or a meta-only update
+    # such as a status change) must never blank the tabs already here, so only a real one is
+    # written -- the same rule previous_draft follows.
+    tabs = extra.pop("tabs", None)
     meta.update(extra)
     os.makedirs(d, exist_ok=True)
     _write_text(os.path.join(d, "draft.md"), draft_md or "")
     if isinstance(previous_draft, str) and previous_draft:
         _write_text(os.path.join(d, PREVIOUS_FILE), previous_draft)
+    if isinstance(tabs, dict) and any(tabs.get(k) for k in TAB_MILESTONE):
+        write_json(os.path.join(d, TABS_FILE), tabs)
     if meta.get("chat_id") and meta.get("run_id"):
         for name in ("research.json", "blueprint.json", "topics.json"):
             src = artifact_path(meta["chat_id"], meta["run_id"], name)
@@ -844,6 +877,77 @@ def _read_text(path):
             return f.read()
     except FileNotFoundError:
         return None
+
+
+def library_tabs_path(item_id):
+    return os.path.join(library_dir(), item_id, TABS_FILE)
+
+
+def read_library_tabs(item_id):
+    """The tabs kept with this article, or None when none were ever kept.
+
+    None is the honest answer for an article written before 2026-09-21, or restored from a
+    teammate who was on an older build: the run that made it is gone and nothing was saved in its
+    place, so there is nothing to show and the screen must say so rather than draw an empty shell.
+    """
+    return read_json(library_tabs_path(item_id))
+
+
+def save_library_tabs(item_id, tabs, kept=None, dropped=None):
+    """Keep the assembled tabs with the article, and stamp the row with what was kept.
+
+    Two writes, and the small one is the point. tabs.json is the 28 KB the overlay reads; the
+    stamp in meta.json is four short lists that `library_list` can afford on every poll, and it is
+    what lets the progress strip still be drawn once the run folder is gone (see `_kept_strip`).
+
+    THIS IS NOT AN EDIT. No version is bumped and no editor is stamped: keeping a record of how an
+    article was made is not a change to the article, and a Library row that jumped a version every
+    time a backfill passed over it would show a teammate's screen a conflict that never happened.
+    """
+    d = os.path.join(library_dir(), item_id)
+    p = os.path.join(d, "meta.json")
+    meta = read_json(p)
+    if not meta:
+        return None
+    if isinstance(tabs, dict) and any(tabs.get(k) for k in TAB_MILESTONE):
+        write_json(os.path.join(d, TABS_FILE), tabs)
+    meta["tabs_saved"] = {"at": now(),
+                          "kept": list(kept if kept is not None
+                                       else [k for k in TAB_MILESTONE if (tabs or {}).get(k)]),
+                          "dropped": list(dropped or [])}
+    write_json(p, meta)
+    return meta
+
+
+def _kept_strip(meta):
+    """The progress strip for a row whose RUN is gone but whose tabs were kept. [] when neither.
+
+    WHY THE STRIP HAS TO SURVIVE THE RUN (owner, 2026-09-21). The strip is the only door into the
+    read-only tab overlay -- every chip on it is the button that opens it -- and `milestones()`
+    reads the run's own artifacts folder, which exists on exactly one Mac. So a teammate holding a
+    perfectly good article with all five tabs beside it had no way to open any of them.
+
+    IT SAYS "THE RECORD EXISTS", NOT "THE RUN'S FILE EXISTS", and the two are different claims:
+    `milestones()` is untouched and still reports the run's own truth, and library_tabs assembles
+    from the run's strip rather than this one. `[]` keeps meaning exactly what it meant before --
+    "we cannot know" -- for a row nobody ever kept tabs for, so a row from before this shipped
+    renders precisely as it did.
+
+    The Draft chip rides along whenever the article has a body, because the Draft tab is the body
+    and it is the one tab that never needed the run at all.
+    """
+    saved = meta.get("tabs_saved")
+    if not isinstance(saved, dict):
+        return []
+    kept = {TAB_MILESTONE[k] for k in (saved.get("kept") or []) if k in TAB_MILESTONE}
+    if int(meta.get("words") or 0) > 0:
+        kept.add("draft")
+    if not kept:
+        return []
+    at = saved.get("at")
+    return [{"key": m["key"], "label": m["label"], "note": m["note"], "file": m["file"],
+             "exists": m["key"] in kept, "at": at if m["key"] in kept else None, "bytes": 0}
+            for m in MILESTONES]
 
 
 def _stamp_edit(meta, draft_md, title, actor, actor_id, old_draft):
@@ -1154,7 +1258,9 @@ def library_list():
             m = read_json(os.path.join(library_dir(), name, "meta.json"))
             if m:
                 m.setdefault("status", "draft")
-                m["milestones"] = milestones(m.get("chat_id"), m.get("run_id"))
+                # the run's own strip first, always; the kept one only once the run is gone, so a
+                # live run is never described by a record of itself (see _kept_strip)
+                m["milestones"] = milestones(m.get("chat_id"), m.get("run_id")) or _kept_strip(m)
                 m["stalled"] = _library_stalled(m)
                 m = _backfill_decision_fields(name, m)
                 out.append(m)
@@ -1178,8 +1284,16 @@ def library_get(item_id):
     previous = _read_text(os.path.join(d, PREVIOUS_FILE))
     if previous is not None:
         meta["previous_draft"] = previous
+    # THE TABS TRAVEL ON THE SINGLE ITEM, never on the list. This is what `sync.push` hands to
+    # `mirror.to_wire`, so putting them here is what carries them to the team -- one place, the
+    # same place the body and previous.md already come from. 28 KB on a screen that is already
+    # sending the whole article, and nothing at all on the list route the Library polls.
+    tabs = read_library_tabs(item_id)
+    if tabs:
+        meta["tabs"] = tabs
     meta.setdefault("status", "draft")
-    meta["milestones"] = milestones(meta.get("chat_id"), meta.get("run_id"))
+    meta["milestones"] = (milestones(meta.get("chat_id"), meta.get("run_id"))
+                          or _kept_strip(meta))
     meta["history"] = library_history_flags(meta)
     return meta
 
