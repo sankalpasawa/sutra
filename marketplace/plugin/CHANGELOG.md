@@ -3,6 +3,7 @@
 **status**: active · **updated**: 2026-09-21
 ## 2.291.1 (2026-09-21)
 
+- **Sutra Desktop: nothing in the background -- every AI turn on a task is in Shadow's chat or the worker's chat, and the app's own prompts are folded, not hidden** (founder D81, 2026-09-21: "I don't want anything to be in the background of the conversations with the app"; "either it should happen in Shadow Chat or it should happen in Worker Chat"). The one-shot decider fallback is gone: a task's Shadow chat that has died is resumed on its own transcript (else restarted on the record) and asked again, and when nothing can bring it back the turn is undecided and says so in the ledger. The judge that settles a `judge` check now speaks as a turn in the task's Shadow chat (same prompt, same parser) instead of a headless process. The task stream stops dropping the boot, brief, steering and judge prompts: each is one closed grey row ("Shadow wrote the worker's brief", "Shadow judged a check from the evidence") that opens to the verbatim prompt and answer. New lanes test_shadow_d81.py and test_shadow_d81_ui.js; six older pins moved. `shadow_runner.make_decider` / `make_judge` and `app._decide_args` stay unbound until their lanes are retired. Commit ef9d239d (beta.2).
 - Released from v2.291.0-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
   - test_app: TestChatsAreSutrasOwn pins the chat scope it is about
 - Changed: 1 file(s), +10/-1

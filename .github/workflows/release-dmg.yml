@@ -193,6 +193,7 @@ jobs:
           node test_shadow_task_status.js
           node test_shadow_v4_approve.js
           node test_shadow_v42_ui.js
+          node test_shadow_d81_ui.js
           node test_shadow_v41_ui.js
           node test_shadow_v4_now.js
           node test_shadow_v4_oversee.js
