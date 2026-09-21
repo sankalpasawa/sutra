@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.291.0 (2026-09-21)
+
+- **Sutra Desktop: the chat's chrome moves into the three-dot menu, the live dot holds steady, scrolling up while a reply streams stays put, and six micro-interactions land** (founder 2026-09-21). The provider name, the "this chat only" note and the Full access chip leave the composer and the chat list (the pane menu carries them: Model row facts, new Access row); the rail's live dot holds 3 min past the last write with no pulse; the reader's scroll-up during a stream is honoured. The founder's own turn is plain and left on every chat surface (no gray bubble). Six micro-interactions, design of record `website/preview/chat-micro-interactions.html`: a "New reply below" pill while parked, eased turn arrival with a soft caret, a breathing halo while a chat works, the three-dot menu growing in with a value flash, a smoothly growing composer with Send press and Stop fade, pane fade-in with kept scroll; all instant under reduced motion. Commits 200f77ea, 2caaf82a, c332fdf4, a45b8fb5, ae11f67b, 5aec545d.
+
 ## 2.290.1 (2026-09-21)
 
 - **Sutra Desktop: the founder can change their mind mid-mission, and a refused click stops being silent.** A mission at NEEDS YOU now actually amends when the founder redirects it: objective, done_when and version move together, the superseded verdicts are recorded in a revision ledger rather than vanishing between two renders, and the reply restarts the worker whose run loop had already exited. A `founder_confirm` decision draws exactly one Confirm button instead of one in the timeline and another below it. Separately, the shared `apiGet`/`apiPost` now retry once after a panel-token refresh: `PANEL_TOKEN` is minted per backend process, so a window that outlives a restart carried a dead token and every mutation 403'd -- the heal existed since 2026-08-25 but was wired only into the two Shadow surfaces, so Settings -> Access and permissions silently discarded five attempts to switch to Full access over two days. The access screen now renders the refusal it was parking in `S.permError`.
