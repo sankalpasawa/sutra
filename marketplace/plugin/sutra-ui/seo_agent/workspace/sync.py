@@ -1021,8 +1021,14 @@ def backfill_tabs(client=None, now=None, rows=None):
             return ""
         st = read_state()
         bf = st.get("tabs_backfill") or {}
-        if bf.get("done"):
-            return ""
+        # THIS PASS NEVER RETIRES, and the `done` flag it used to set is deliberately ignored here
+        # rather than deleted, so a state file written by an older Sutra still reads (owner,
+        # 2026-09-21). One walk was enough only if every article that will ever need tabs already
+        # existed when it ran, and that was never true: a teammate's Mac ran this the day it
+        # updated, marked itself finished, and then wrote an article -- whose tabs it would now
+        # never keep, because it had stopped asking. The walk is idempotent by row (each is skipped
+        # on its own stamp), so continuing to ask costs one meta read per row every ten minutes and
+        # buys the one thing the flag threw away: an article written later still gets its tabs.
         if now - float(bf.get("at") or 0) < TABS_BACKFILL_EVERY:
             return ""
         if rows is None:
@@ -1048,7 +1054,9 @@ def backfill_tabs(client=None, now=None, rows=None):
                     sent += 1
             except Exception as e:           # noqa: BLE001 -- one bad row must not stop the rest
                 fail_why = str(e)[:300]
-        st["tabs_backfill"] = {"at": now, "done": not fail_why, "built": built, "sent": sent,
+        # `done` is written as False and read by nobody: the pass keeps its place in the state file
+        # (and its shape, for anything reading it) without ever claiming it has finished for good.
+        st["tabs_backfill"] = {"at": now, "done": False, "built": built, "sent": sent,
                                "why": fail_why or ("nothing to keep" if not built else "")}
         _save_state(st)
         return "sent" if sent else ""

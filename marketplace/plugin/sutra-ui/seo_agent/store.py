@@ -965,8 +965,16 @@ def _kept_strip(meta):
     if not kept:
         return []
     at = saved.get("at")
+    # NOT KEPT IS NOT THE SAME AS NOT MADE, and the strip is the only place anyone can tell the
+    # difference (owner, 2026-09-21: "why are we not able to see all the things"). A grey chip on a
+    # LIVE run means that step has not happened yet, and the screen says "not made yet", which is
+    # true. On a row whose steps were looked for and not found, the same grey chip was saying the
+    # same thing about an article that HAD been through all five -- its run folder was simply gone,
+    # deleted or on another Mac. So a chip drawn from the kept record carries `gone`, and the panel
+    # says what actually happened instead of blaming a step that ran perfectly well.
     return [{"key": m["key"], "label": m["label"], "note": m["note"], "file": m["file"],
-             "exists": m["key"] in kept, "at": at if m["key"] in kept else None, "bytes": 0}
+             "exists": m["key"] in kept, "at": at if m["key"] in kept else None, "bytes": 0,
+             "gone": m["key"] not in kept}
             for m in MILESTONES]
 
 

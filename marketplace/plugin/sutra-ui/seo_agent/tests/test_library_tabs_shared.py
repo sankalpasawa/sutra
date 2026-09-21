@@ -352,10 +352,30 @@ ok("but it was looked at, and says so",
 ok("which is what gives it a strip, so its tabs can be opened and can say they were not kept",
    [m["key"] for m in store.library_get(itemB)["milestones"] if m["exists"]] == ["draft"],
    store.library_get(itemB)["milestones"])
+# NOT KEPT IS NOT NOT MADE. Every chip on this strip was grey and every one of them said "not made
+# yet", about an article that had been through all five steps. The strip has to carry the
+# difference, or the screen tells the person their finished article never did the work.
+ok("and each grey chip says its step is GONE, not that it never ran",
+   all(m["gone"] is (not m["exists"]) for m in store.library_get(itemB)["milestones"])
+   and [m["key"] for m in store.library_get(itemB)["milestones"] if m["gone"]] != [],
+   store.library_get(itemB)["milestones"])
 ok("and that article's tabs say exactly that",
    lt.served(store.library_get(itemB))["source"] == "none")
-ok("it remembers that it has finished",
-   (sync.read_state().get("tabs_backfill") or {}).get("done") is True, sync.read_state().get("tabs_backfill"))
+ok("it remembers when it last looked",
+   float((sync.read_state().get("tabs_backfill") or {}).get("at") or 0) == 1000.0,
+   sync.read_state().get("tabs_backfill"))
+# IT MUST NEVER RETIRE (owner, 2026-09-21). It used to set done=True after one walk, and a Mac that
+# updated, walked its Library and then wrote an article would never keep that article's tabs: it had
+# stopped asking. The walk is idempotent per row, so the only thing the flag ever bought was a
+# skipped meta read, and what it cost was every article written after the day of the update.
+ok("and never declares itself finished for good",
+   (sync.read_state().get("tabs_backfill") or {}).get("done") is not True,
+   sync.read_state().get("tabs_backfill"))
+cD, rD, itemD = full_run("written after the walk")
+ok("so an article written AFTER that walk still gets its tabs",
+   sync.backfill_tabs(now=2000.0) == "sent" and bool(store.read_library_tabs(itemD)),
+   (store.read_library_tabs(itemD) or {}) and sorted(store.read_library_tabs(itemD)))
+ok("and it reached the team too", itemD in TEAM.library, sorted(TEAM.library))
 
 print("\nit is idempotent, and it is a SEND, never an edit")
 meta_before = store.read_json(os.path.join(store.library_dir(), itemA, "meta.json"))
