@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-09-21
 
-## v2.291.0 (2026-09-21, HEAD)
+## v2.291.1 (2026-09-21, HEAD)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.291.0 (2026-09-21)
 
 **Chat chrome into the three-dot menu, steady live dot, scroll-up honoured, own turn plain, six micro-interactions** (founder 2026-09-21). See marketplace/plugin/CHANGELOG.md for this release's entry.
 

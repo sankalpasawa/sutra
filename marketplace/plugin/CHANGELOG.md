@@ -1,6 +1,12 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.291.1 (2026-09-21)
+
+- Released from v2.291.0-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - test_app: TestChatsAreSutrasOwn pins the chat scope it is about
+- Changed: 1 file(s), +10/-1
+
 ## 2.291.0 (2026-09-21)
 
 - **Sutra Desktop: the chat's chrome moves into the three-dot menu, the live dot holds steady, scrolling up while a reply streams stays put, and six micro-interactions land** (founder 2026-09-21). The provider name, the "this chat only" note and the Full access chip leave the composer and the chat list (the pane menu carries them: Model row facts, new Access row); the rail's live dot holds 3 min past the last write with no pulse; the reader's scroll-up during a stream is honoured. The founder's own turn is plain and left on every chat surface (no gray bubble). Six micro-interactions, design of record `website/preview/chat-micro-interactions.html`: a "New reply below" pill while parked, eased turn arrival with a soft caret, a breathing halo while a chat works, the three-dot menu growing in with a value flash, a smoothly growing composer with Send press and Stop fade, pane fade-in with kept scroll; all instant under reduced motion. Commits 200f77ea, 2caaf82a, c332fdf4, a45b8fb5, ae11f67b, 5aec545d.
