@@ -1,6 +1,12 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.291.6 (2026-09-21)
+
+- Released from v2.291.5-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - Library tabs: a grey chip says what really happened, and the catch-up never retires
+- Changed: 5 file(s), +51/-7
+
 ## 2.291.5 (2026-09-21)
 
 - Released from v2.291.4-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
