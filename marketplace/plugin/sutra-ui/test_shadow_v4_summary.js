@@ -129,13 +129,34 @@ const DONE = (over) => Object.assign({
   },
 }, over);
 
+/* ── PASS 7 (founder, 2026-09-21): THE SUMMARY BELONGS TO THE CARD ──────
+   "When the user does NOT need to do anything manually, do NOT expose
+   internal verification machinery ... make the completion appear as a
+   natural Shadow response."  So a CLEAN finish is one Shadow message and
+   the file; the card -- heading, Summary block, verdict rows -- is what
+   renders when something is still flagged for the founder.
+
+   These lanes are about the SUMMARY BLOCK, so they use the shape that
+   draws it: the same record with one check unmet. Nothing about
+   shadowSummaryHtml changed; only when the card that contains it renders.
+   The clean shape is asserted at the end of this file. */
+const CARD = (over) => {
+  const m = DONE(over);
+  m.completion = Object.assign({}, m.completion, {
+    headline: "2 of 3 checks passed", checks_met: 2,
+    checks: m.completion.checks.map((k, i) =>
+      i === 0 ? Object.assign({}, k, { met: false }) : k),
+  });
+  return m;
+};
+
 let ok = 0;
 const pass = (s) => console.log("ok " + (++ok) + " " + s);
 
 /* ══ 1. A DONE RESEARCH TASK RENDERS A SUMMARY BLOCK ════════════════════ */
 {
   const ctx = fresh();
-  const h = ctx.shadowCompletionHtml(DONE());
+  const h = ctx.shadowCompletionHtml(CARD());
   assert(/class="shdonesummary"/.test(h), "the Summary block is drawn");
   assert(/class="shdonesumhead"[^>]*>Summary</.test(h),
     "and it is labelled Summary");
@@ -155,7 +176,7 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
 /* ══ 2. IT IS THE OUTCOME, NOT THE ONE-LINE GIST ════════════════════════ */
 {
   const ctx = fresh();
-  const m = DONE();
+  const m = CARD();
   const h = ctx.shadowCompletionHtml(m);
   const sum = h.slice(h.indexOf('class="shdonesummary"'));
   /* content from the MIDDLE and the END of the answer -- a gist would carry
@@ -174,7 +195,7 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
 /* ══ 3. MARKDOWN IS RENDERED, NOT SHOWN AS SOURCE ═══════════════════════ */
 {
   const ctx = fresh();
-  const h = ctx.shadowCompletionHtml(DONE());
+  const h = ctx.shadowCompletionHtml(CARD());
   const sum = h.slice(h.indexOf('class="shdonesummary"'));
   assert(/<h2 class="md-h">Valentino Rossi/.test(sum), "the heading is an h2");
   assert(/<li[^>]*>Team: WRT/.test(sum), "the list is a list");
@@ -230,7 +251,7 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
 /* ══ 5. THE ONE-LINE GIST IS STILL THERE, AND UNMOVED ═══════════════════ */
 {
   const ctx = fresh();
-  const h = ctx.shadowCompletionHtml(DONE());
+  const h = ctx.shadowCompletionHtml(CARD());
   assert(/class="shdonework"/.test(h), "the gist block still renders");
   /* still ABOVE the checks, where it always was */
   assert(h.indexOf('class="shdonework"') < h.indexOf('class="shchecks"'),
@@ -248,6 +269,9 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
 /* ══ 6. THE CHECK ROWS ARE UNTOUCHED ════════════════════════════════════ */
 {
   const ctx = fresh();
+  /* PASS 7: every row is still rendered on a CLEAN finish too -- inside the
+     Verification fold, which is exactly where this lane already read them
+     from. Nothing about the row template moved. */
   const h = ctx.shadowCompletionHtml(DONE());
   /* the rows live inside the Verification fold as of 2026-09-21; the row
      TEMPLATE is unchanged, which is what this test is about */
@@ -264,7 +288,9 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
     "and the founder confirmation still names who");
   /* the headline is "Done" now; the count moved into the fold with the
      rows it counts (founder, 2026-09-21) */
-  assert(/class="shconfirmq">Done</.test(h), "the headline is unchanged");
+  /* PASS 7: on a clean finish the heading is Shadow's own message; the
+     budget line is unchanged, inside the fold with the rows it counts. */
+  assert(/<div class="shsaidtext">Done/.test(h), "the finish still says Done");
   assert(/4 of 12 turns used\./.test(h), "and the budget line");
   pass("6: the check rows, headline and budget line are unchanged");
 }
@@ -274,7 +300,7 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
   const ctx = fresh();
   for (const st of ["running", "paused", "blocked", "queued",
                     "failed", "stopped"]){
-    const h = ctx.shadowCompletionHtml(DONE({ state: st }));
+    const h = ctx.shadowCompletionHtml(CARD({ state: st }));
     assert(!/shdonesummary/.test(h),
       "no Summary for a " + st + " task");
   }
@@ -291,6 +317,9 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
 /* ══ 8. COPY RESULT IS UNTOUCHED ════════════════════════════════════════ */
 {
   const ctx = fresh();
+  /* PASS 7: Copy result renders on BOTH shapes and copies the same full
+     record either way -- the clean finish is used here because that is the
+     shape the founder meets most often. */
   const m = DONE();
   const h = ctx.shadowCompletionHtml(m);
   assert(/data-shcopydone="m-1"/.test(h), "the Copy result button still renders");
@@ -350,7 +379,7 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
   const ctx = fresh();
   const EVIL = "Done. <img src=x onerror=alert(1)> and "
     + "[click](javascript:alert(2)) and <script>alert(3)</script>";
-  const h = ctx.shadowCompletionHtml(DONE({
+  const h = ctx.shadowCompletionHtml(CARD({
     completion: Object.assign({}, DONE().completion, { outcome: EVIL }) }));
   const sum = h.slice(h.indexOf('class="shdonesummary"'));
   assert(sum.indexOf("<img") === -1, "no img element is created");

@@ -164,7 +164,8 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
   ctx.shadowTalk().busy = "m-1";
   ctx.shadowTalk().live["m-1"] = [{ who: "founder", text: "status?", ts: 1 }];
   const h = ctx.shadowTimelineHtml(m);
-  assert(/class="shsaid shthinking"/.test(h), "the thinking row is drawn");
+  assert(/class="shsaid shfrom-shadow shthinking"/.test(h),
+    "the thinking row is drawn, on Shadow's side of the conversation");
   assert(/role="status"/.test(h) && /aria-live="polite"/.test(h),
     "and it is announced, not just animated");
   assert(/shthinkword">thinking</.test(h));
@@ -188,6 +189,10 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
   assert.strictEqual(ctx.shadowTurnElapsed(NaN), "");
   assert.strictEqual(ctx.shadowTurnElapsed(0), "");
   assert.strictEqual(ctx.shadowTurnElapsed(Date.now() - 90000000), "");
+  /* shadowOpenTurnHtml is RETAINED and unchanged -- it is the honest render
+     of "the worker's Nth turn" for any caller that wants it. PASS 4 took it
+     off the founder's conversation (see test_shadow_v4_report.js block 1),
+     it did not delete it. */
   const open = ctx.shadowOpenTurnHtml(2, Date.now() - 84000);
   assert(/shagent shagentopen/.test(open), "it is still an agent row");
   assert(/Worker agent · turn 2/.test(open), "and still names the turn");
@@ -205,10 +210,16 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
 /* ══ 6. THE MOMENT IT LANDS ════════════════════════════════════════════ */
 {
   const ctx = fresh();
+  /* PASS 7 (founder, 2026-09-21): the CARD is what a finish renders when
+     something is still flagged for the founder -- here, a check that did
+     not pass. A clean finish is a Shadow message instead, and the flourish
+     goes with the card; that split is asserted at the end of this block. */
   const m = { id: "m-1", state: "done", turns_used: 2, max_turns: 12,
-    completion: { headline: "2 of 2 checks passed", turns_used: 2,
+    completion: { headline: "1 of 2 checks passed", turns_used: 2,
       max_turns: 12, outcome: "The file is written and verified.",
       checks: [{ check: "the file exists", tier: "verify", met: true,
+                 how: "Shadow checked this" },
+               { check: "the schema validates", tier: "verify", met: false,
                  how: "Shadow checked this" }] } };
   const h = ctx.shadowCompletionHtml(m);
   assert(/class="shdoneburst"/.test(h), "the flourish is drawn");
@@ -324,12 +335,21 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
      immediately below it. The conversation should begin naturally with
      Shadow speaking." shadowOpeningHtml is still exported and still
      asserted on its own; the stream no longer opens with it. */
-  assert(h.indexOf('class="shsaid shopening"') === -1,
-    "the stream must not restate the objective");
+  /* PASS 5 (founder, 2026-09-21): REVERSES pass 3. "The first user input
+     itself MUST appear as a normal USER \u2192 SHADOW conversation message.
+     That is conversational turn #1." The header still carries the objective
+     as the pinned anchor; the conversation now opens with the founder's own
+     request, where a conversation's first turn belongs. */
+  assert(h.indexOf('shsaid shfrom-you shopening') !== -1,
+    "the stream must open with the founder's own request");
   assert(h.indexOf('class="shcard2') === -1,
     "and the metadata card must not draw the surface at all");
-  assert(/class="shwturn"/.test(h),
-    "the live turn count moved to the pinned header");
+  /* PASS 4 (founder, 2026-09-21): and then it left the header too -- a
+     worker turn count is backend state, and the founder should never have
+     to understand how many worker executions happened. See block 3 of
+     test_shadow_rhs.js; shadowHeadTurnHtml itself is unchanged. */
+  assert(!/class="shwturn"/.test(h),
+    "the worker turn count is still on the founder's header");
 
   /* the conversation is INSIDE it */
   assert(h.indexOf('class="shtimeline"') > iScroll,

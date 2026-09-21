@@ -106,7 +106,8 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
     assert(/data-shact="undo_limits"[^>]*data-shmid="m-1"/.test(h)
            || /data-shmid="m-1"[^>]*data-shact="undo_limits"/.test(h),
            "with Undo on the row, through the mission-action hook");
-    assert(/class="shsaid shlimits"/.test(h), "as its own kind of row");
+    assert(/class="shsaid shfrom-shadow shlimits/.test(h),
+      "as its own kind of row, on Shadow's side");
     assert(/No turn limit on this task\./.test(h), "and Shadow's one line beside it");
     assert.strictEqual(ctx.reloads, 1, "the list is re-read so the card shows the override");
     pass("a limit said in the chat is drawn with Undo");

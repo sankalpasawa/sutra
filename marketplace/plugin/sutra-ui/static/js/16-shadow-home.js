@@ -474,6 +474,34 @@ function shadowTasks(){
 /* The task in focus: the founder's pick if it still exists, else the first
    thing that wants attention, else the newest. Never null-when-there-is-work,
    so the right pane is never blank for no reason. */
+/* ── THE LIST'S OWN ORDER, IN ONE PLACE (founder, 2026-09-21, pass 10) ──
+   "When we enter the Shadow tab we want the focus to be on the FIRST item
+   of the left-hand side -- not some fifth or sixth element."
+
+   THE TWO SURFACES HAD TWO ORDERS. shadowTaskListHtml drew sections in
+   SH_SECTIONS order with recency inside each; shadowSelectedTask picked by
+   a STATE RANKING (blocked, then startable, then running, paused, queued,
+   brief_confirm, then the last row of an unsorted array). They agreed only
+   by coincidence, so entering the tab routinely opened a task several rows
+   down -- the founder's report exactly.
+
+   SO THE ORDER IS COMPUTED ONCE, HERE, and both callers read it. The
+   ordering rules are unchanged, lifted verbatim out of the renderer:
+   membership by section first, recency inside a section, id to break a tie.
+   Nothing about which rows are LISTED moved -- shadowTasks() is still the
+   membership rule and shadowTaskIsActive still decides it. */
+function shadowTaskRowsInOrder(){
+  const rows = shadowTasks();
+  const out = [];
+  for (const [key] of SH_SECTIONS){
+    const mine = rows.filter(m => shadowTaskSection(m) === key)
+      .sort((a, b) => (shadowTaskLaunchedAt(b) - shadowTaskLaunchedAt(a))
+        || String((a && a.id) || "").localeCompare(String((b && b.id) || "")));
+    for (const m of mine) out.push(m);
+  }
+  return out;
+}
+
 function shadowSelectedTask(){
   const rows = shadowTasks();
   const S_ = (typeof S !== "undefined") ? S : {};
@@ -526,18 +554,19 @@ function shadowSelectedTask(){
      second state vocabulary is introduced, nothing is inferred from whether
      a chat exists, and no local "hasStarted" flag is invented. `blocked`
      keeps its place at the top untouched. */
-  const byState = (st) => rows.find(m => m.state === st);
-  const attention = byState("blocked");
-  if (attention) return attention;
-  const ready = rows.find(m => (typeof shadowMissionStartable === "function")
-    ? shadowMissionStartable(m)
-    : m.state === "brief_confirm");
-  if (ready) return ready;
-  for (const st of ["running", "paused", "queued", "brief_confirm"]){
-    const hit = byState(st);
-    if (hit) return hit;
-  }
-  return rows[rows.length - 1];
+  /* ── THE FIRST ROW OF THE LIST, AND NOTHING ELSE (pass 10) ──────────
+     The state ranking this replaces was a second opinion about which task
+     matters, and it disagreed with the list the founder is looking at. The
+     list already ranks by attention: WAITING ON YOU is its first section,
+     so a task that needs the founder is still what opens -- not because
+     this function knows about `blocked`, but because the list puts it
+     first. One rule, one order, and the pane always opens on the row at
+     the top of the rail.
+
+     THE FOUNDER'S OWN PICK STILL WINS, above -- this is only the default
+     for entering the tab with nothing chosen. */
+  const ordered = shadowTaskRowsInOrder();
+  return ordered.length ? ordered[0] : rows[rows.length - 1];
 }
 
 /* A task that is still WORKING says so in the ask: deleting it stops the work
@@ -707,11 +736,12 @@ function shadowTaskListHtml(){
     </div>`;
   };
   /* a section with nothing in it draws nothing -- not an empty heading */
+  /* THE ORDER IS shadowTaskRowsInOrder's, so the row this draws first is
+     by construction the row shadowSelectedTask opens on (pass 10). The
+     rules are unchanged; they simply live in one place now. */
+  const ordered = shadowTaskRowsInOrder();
   return SH_SECTIONS.map(([key, head]) => {
-    /* membership first, then recency INSIDE this section only */
-    const mine = rows.filter(m => shadowTaskSection(m) === key)
-      .sort((a, b) => (shadowTaskLaunchedAt(b) - shadowTaskLaunchedAt(a))
-        || String((a && a.id) || "").localeCompare(String((b && b.id) || "")));
+    const mine = ordered.filter(m => shadowTaskSection(m) === key);
     if (!mine.length) return "";
     return `<div class="shwsec shwsec-${key}">${head}</div>`
       + mine.map(rowHtml).join("");
@@ -963,33 +993,49 @@ function shadowDecisionHtml(m){
                src="${escAttr(a.data_uri)}">`}
       </div>`;
     }
-    const f = a.facts || {};
-    /* the measured line is the server's count, never this client's */
-    const measured = [
-      f.lines !== undefined ? f.lines + " lines" : "",
-      f.distinct_non_empty_lines !== undefined
-        ? f.distinct_non_empty_lines + " distinct" : "",
-    ].filter(Boolean).join(" · ");
+    /* ── THE PREVIEW IS FOR THE PERSON DECIDING (founder, 2026-09-21,
+         pass 8) ────────────────────────────────────────────────────────
+       WHAT LEFT THIS BLOCK, and why each one:
+
+         "233 lines · 181 distinct"   a MEASUREMENT taken to satisfy a
+                                      predicate. It answers "did the probe
+                                      pass", which Shadow already answered;
+                                      it does not help a person judge an
+                                      itinerary.
+         "shown in part — open the    a caveat about the RENDERER. The file
+          task's chat for the whole    is named right above it and is one
+          file"                        click away; saying so in the middle
+                                       of a decision is the debugger
+                                       talking.
+         "Shadow established: …"      the internal evidence assertion the
+                                      founder named outright. It is what
+                                      Shadow told ITSELF before asking.
+
+       WHAT STAYS is what the decision is actually about: the file's name,
+       the preview of its contents, and `missing` -- which explains why
+       there is no preview when Shadow could not gather one, and is the one
+       note here a person genuinely needs.
+
+       NOTHING IS DELETED FROM THE RECORD. `decision.artifacts[].facts`,
+       `.truncated` and `decision.established` are still stamped by
+       shadow_decision, still carried by /api/shadow/missions, still in the
+       Verification fold and still copied by shadowCompletionText. */
     return `<div class="shdecart">
-      <div class="shdecpath">${esc(a.path || "")}${measured
-        ? ` <span class="shdecmeta">${esc(measured)}</span>` : ""}</div>
+      <div class="shdecpath">${esc(a.path || "")}</div>
       <pre class="shdectext">${esc(a.text || "")}</pre>
-      ${a.truncated
-        ? `<div class="shdecnote">shown in part — open the task's chat for the
-           whole file</div>` : ""}
+      ${/* A CUT PREVIEW STILL SAYS SO -- nobody should approve a list
+           believing they saw all of it (the claim the 2026-09-21 sentence
+           existed for, kept). What went is the RENDERER'S instruction
+           ("open the task's chat for the whole file"); what stays is the
+           ordinary typographic mark for "there is more", which is a fact
+           about the preview rather than a note about the software. */""}
+      ${a.truncated ? `<div class="shdeccut" aria-label="preview continues"
+        >\u2026</div>` : ""}
     </div>`;
   }).join("");
-  /* WHAT IS ALREADY SETTLED, so the founder does not re-check by hand what
-     the machine already knows. Facts only -- never a verdict on the question
-     being asked, which is the one thing Shadow must not answer for them. */
-  const est = (d.established || []).filter(e => e && e.met);
-  const estHtml = est.length ? `<div class="shdecest">Shadow established:
-    ${est.map(e => `<span class="shdecfact">${esc(e.how || e.check)}</span>`)
-       .join("")}</div>` : "";
-  if (!arts && !d.missing && !estHtml) return "";
+  if (!arts && !d.missing) return "";
   return `<div class="shdec">
     ${arts}
-    ${estHtml}
     ${d.missing ? `<div class="shdecnote shdecmissing">${esc(d.missing)}</div>`
                 : ""}
   </div>`;
@@ -1287,6 +1333,146 @@ function shadowCompletionHtml(m){
     && S_.shadowResultCopied.id === m.id) ? S_.shadowResultCopied : null;
   /* the worker's account in full, under the verdicts -- see shadowSummaryHtml */
   const summary = shadowSummaryHtml(m);
+  /* the copy control is the same button in both shapes below */
+  const copyBtn = `<button class="btn shdonecopy${copied
+      ? (copied.ok ? " ok" : " bad") : ""}" type="button"
+      data-shcopydone="${escAttr(m.id)}" data-shcopystate="${copied
+        ? (copied.ok ? "copied" : "failed") : "idle"}"
+      aria-label="${copied
+        ? (copied.ok ? "Copied — the result is on your clipboard"
+                     : "Copy failed — the result is not on your clipboard")
+        : "Copy result — this summary as text"}"
+      title="Copy this result as text">${copied
+        ? (copied.ok ? "Copied" : "Copy failed") : "Copy result"}</button>`;
+  const files = (c.artifacts || []).length ? `<div class="shdonefiles"
+      >${(c.artifacts || []).map(pth =>
+        `<span class="shdonefile">${esc(String(pth))}</span>`).join("")}</div>`
+    : "";
+  const verif = `<details class="shcheckfold shdoneverif">
+      <summary>Verification</summary>
+      <div class="shconfirmsub">${esc(shadowTurnNow(c) + " of "
+        + (c.max_turns || 0) + " turns")} used.</div>
+      <div class="shchecks">${rows}</div>
+    </details>`;
+
+  /* ── A CLEAN FINISH IS A SENTENCE, NOT A REPORT (founder, 2026-09-21,
+       pass 7) ────────────────────────────────────────
+     THE ASK, and it is a split rather than a deletion:
+
+       "When Shadow/worker completes a task successfully and the user does
+        NOT need to do anything manually, do NOT expose internal
+        verification machinery in the main Shadow conversation ... make the
+        completion appear as a natural Shadow response. DO NOT hide the
+        checks when the user actually needs to inspect something."
+
+     SO THE PREDICATE IS "IS ANYTHING WAITING ON THE FOUNDER", and it is
+     read off the record rather than guessed: the task ended in `done`, no
+     check failed, nothing is paused for a founder decision, no question is
+     open and no instruction is held. Every one of those is the same field
+     the existing controls already read -- this adds no state and decides
+     nothing about the work.
+
+     WHEN NOTHING IS WAITING, the conversation gets what a person would say:
+     one line naming what was produced, the file itself, and the
+     Verification fold CLOSED beside them. When something IS waiting, the
+     card below renders exactly as it did -- caveat, criteria, evidence and
+     all -- because then the machinery is the actionable part.
+
+     NOTHING IS DELETED FROM THE RECORD. `completion.checks` still carries
+     every criterion, verdict, `how` line and piece of evidence; the fold
+     still renders all of it; shadowCompletionText still copies the full
+     record; shadowSummaryHtml is still exported and still tested. Only the
+     LEAD changed, and only on the clean path.
+
+     SHADOW SPEAKS IN ITS OWN VOICE HERE. This is the moment Shadow hands
+     the work back, so the line is Shadow's -- "Done — created x.txt with 10
+     items" -- and shadowThirdPerson is deliberately NOT applied. The
+     sentence is still the worker's own conclusion, selected and never
+     composed, and it is still put through shadowNotSpeech so a record can
+     never stand in for a result. */
+  const nothingWaiting = m.state === "done" && !failed.length
+    && !(typeof shadowMissionNeedsFounder === "function"
+         && shadowMissionNeedsFounder(m))
+    && !(m.intervention && m.intervention.id)
+    && !(m.approval && !m.approval.used && m.pending_say)
+    && !m.parked_say;
+  if (nothingWaiting){
+    /* ── SHADOW'S OWN CLOSING LINE WINS (founder, 2026-09-21, pass 10) ──
+       THE BUG THIS FIXES. `work` is the gist of the worker's LAST message,
+       so a task that asked for "a file of 10 lines about alien species"
+       finished with Shadow appearing to say "Done -- a NASA-led reanalysis
+       of JWST spectra...", which is one of the ten lines. The worker's
+       output is EVIDENCE; the artifact is the deliverable; and the right
+       level to describe the result at is the one the founder asked at.
+
+       Shadow's own update for the final turn is written against exactly
+       that -- the request, the worker's result, the artifact state and the
+       verification state (shadow_runner's decide prompt) -- so where one
+       exists it is the closing line. The worker gist stays the fallback,
+       unchanged, for every mission with no update. */
+    /* ── SHADOW'S CLOSING LINE, IN ORDER OF HOW WELL IT FITS (pass 12) ──
+         completion.said   what Shadow said the work PRODUCED, stamped by
+                           the one writer of a done mission, so the loop's
+                           completion and the founder's Confirm carry the
+                           same sentence. This is the only one written FOR
+                           this moment -- it carries no ask.
+         newest update     Shadow's last word about a turn. Better than the
+                           worker's sentence for a mission with no result
+                           line, and the shape every record before pass 12
+                           has.
+         the worker gist   the original fallback, unchanged.
+       All three can be empty, and then the finish is "Done." -- which is
+       the grounded answer for a mission whose work produced nothing
+       describable, and is deliberately not filled in with a guess. */
+    const stamped = (c && typeof c.said === "string") ? c.said.trim() : "";
+    const closing = (stamped && !(typeof shadowNotSpeech === "function"
+                                  && shadowNotSpeech(stamped)))
+      ? stamped
+      : ((typeof shadowLastUpdate === "function") ? shadowLastUpdate(m) : "");
+    /* the worker's own closing sentence, or nothing -- never a record, and
+       never a phrase invented to fill the gap */
+    const said = closing || ((work && !(typeof shadowNotSpeech === "function"
+                            && shadowNotSpeech(work))) ? work : "");
+    /* "Done — created the file" reads as one sentence; "Done — I created
+       the file" keeps its capital because the pronoun is one. Nothing else
+       about the sentence is touched. */
+    const tail = !said ? ""
+      : (/^I\b|^I['\u2019]/.test(said)
+          ? said : said.charAt(0).toLowerCase() + said.slice(1));
+    return `<div class="shsaid shfrom-shadow shdonesum shdonesay"
+        data-shdone="${escAttr(m.id)}">
+      <div class="shsaidhead">Shadow</div>
+      ${/* NO title ATTRIBUTE HERE, deliberately. The card hangs the whole
+           `outcome` on the preview's hover, and on this path that string
+           can be the worker's raw closing dump -- a file listing, a grep
+           table. Hover is still a surface. The full record is behind Copy
+           result and Open the chat, which is where it belongs. */""}
+      <div class="shsaidtext">Done${tail ? " \u2014 " + esc(tail) : "."}</div>
+      ${c.was ? `<div class="shdonewas">Replaced an earlier plan:
+        ${esc(c.was)}</div>` : ""}
+      ${/* ── THE DELIVERABLE, NOT JUST ITS NAME (founder, 2026-09-21,
+             pass 14) ────────────────────────────────────────────────────
+           "Founder confirmation controls WHETHER a proposal may become
+           done. It does NOT control whether Shadow shows the resulting
+           deliverable." A confirmed itinerary that finished as a filename
+           and one line had been filed, not delivered.
+
+           GROUNDED BY CONSTRUCTION. `completion.preview` is read off disk
+           by mission_engine._complete through the same reader and the same
+           ownership rule the evidence lane uses -- so this cannot show
+           contents the artifact does not have, and where the worker's prose
+           and the file disagree, this is the file.
+
+           CONCISE BY DEFAULT. The reader bounds it to 24 lines; the cut is
+           reported and drawn as the same ellipsis mark a decision preview
+           uses. The whole file stays one click away behind the chip below,
+           which is unchanged. */""}
+      ${shadowDonePreviewHtml(c)}
+      ${files}
+      <div class="shdoneacts">${copyBtn}${verif}</div>
+    </div>`;
+  }
+
   return `<div class="shconfirm shdonesum" data-shdone="${escAttr(m.id)}">
     ${/* ── THE MOMENT IT LANDS (founder, 2026-09-17) ──────────────
          A finished task simply appeared, fully formed, indistinguishable
@@ -1311,16 +1497,7 @@ function shadowCompletionHtml(m){
            stamped by the server and still copied by shadowCompletionText --
            it is simply not what a founder is shown first. */""}
       <div class="shconfirmq">Done</div>
-      <button class="btn shdonecopy${copied
-        ? (copied.ok ? " ok" : " bad") : ""}" type="button"
-        data-shcopydone="${escAttr(m.id)}" data-shcopystate="${copied
-          ? (copied.ok ? "copied" : "failed") : "idle"}"
-        aria-label="${copied
-          ? (copied.ok ? "Copied — the result is on your clipboard"
-                       : "Copy failed — the result is not on your clipboard")
-          : "Copy result — this summary as text"}"
-        title="Copy this result as text">${copied
-          ? (copied.ok ? "Copied" : "Copy failed") : "Copy result"}</button>
+      ${copyBtn}
     </div>
     ${/* THE OBJECTIVE IS ALREADY THE TITLE of this pane and the head of the
          card above it; restating all 443 characters of it here made the
@@ -1354,10 +1531,9 @@ function shadowCompletionHtml(m){
          exactly what it was. */""}
     ${c.was ? `<div class="shdonewas">Replaced an earlier plan:
       ${esc(c.was)}</div>` : ""}
-    ${(c.artifacts || []).length ? `<div class="shdonesec">
+    ${files ? `<div class="shdonesec">
       <div class="shdoneseclabel">What you can open</div>
-      <div class="shdonefiles">${(c.artifacts || []).map(pth =>
-        `<span class="shdonefile">${esc(String(pth))}</span>`).join("")}</div>
+      ${files}
     </div>` : ""}
     ${/* ── A CHECK IS NOT A RESULT (founder, 2026-09-21) ────────────────
          "Even in summary -- don't show user stuff he doesn't care about
@@ -1395,12 +1571,7 @@ function shadowCompletionHtml(m){
         ? "One check did not pass \u2014 see Verification below."
         : failed.length + " checks did not pass \u2014 see Verification below."
       }</div>` : ""}
-    <details class="shcheckfold shdoneverif">
-      <summary>Verification</summary>
-      <div class="shconfirmsub">${esc(shadowTurnNow(c) + " of "
-        + (c.max_turns || 0) + " turns")} used.</div>
-      <div class="shchecks">${rows}</div>
-    </details>
+    ${verif}
   </div>`;
 }
 
@@ -1417,6 +1588,20 @@ function shadowCompletionHtml(m){
    line per check carrying its verdict, the server's HOW copy, and the
    quoted artifact indented under it. No second evaluator, nothing
    recomputed, and no record without the field can produce text at all. */
+/* the produced deliverable, concisely, or "" -- see the note at its call
+   site in shadowCompletionHtml */
+function shadowDonePreviewHtml(c){
+  const p = c && c.preview;
+  if (!p || typeof p !== "object") return "";
+  const text = String(p.text || "");
+  if (!text.trim()) return "";
+  return `<div class="shdoneprev">
+    <pre class="shdectext">${esc(text)}</pre>
+    ${p.truncated ? `<div class="shdeccut" aria-label="continues"
+      >\u2026</div>` : ""}
+  </div>`;
+}
+
 function shadowCompletionText(m){
   const c = m && m.completion;
   if (!c) return "";
@@ -2509,8 +2694,404 @@ function shadowSayDropReport(text){
    IT IS DERIVED, NEVER STORED. No new state, nothing on the record, and it
    cannot outlive the request -- busy goes false in the same function that
    set it, including on the error path. */
+/* ── ONE COLUMN, TWO SPEAKERS (founder, 2026-09-21, pass 4) ──────────────
+   THE MODEL THE PRODUCT NOW CLAIMS: "I am talking to Shadow, and Shadow is
+   working on my task" -- not "I am watching Shadow operate a worker-agent
+   pipeline". So the main surface has exactly two visible participants, and
+   every ordinary message in the stream is built here so they cannot drift
+   apart:
+
+     you     right-aligned, filled, compact -- the only speaker whose
+             message is an INPUT rather than a report
+     shadow  left-aligned, roomy, no card -- the voice being talked to
+
+   THE CLASS NAMES ARE ADDITIVE. .shsaid / .shsaidhead / .shsaidtext are the
+   blocks this pane has always spoken in; .shfrom-you and .shfrom-shadow are
+   modifiers on top, so every row that is not a plain message (an ask, a
+   decision, a superseded revision, a fold) keeps the surface it already had
+   and is untouched by this. A DECISION still looks like a decision; a
+   SENTENCE stopped looking like one. */
+function shadowSaidRowHtml(who, bodyHtml, extra, head){
+  const mine = who === "you";
+  /* A SPEAKER IS NAMED ONCE PER RUN (pass 5). Three consecutive Shadow
+     messages each labelled SHADOW is a log's habit, not a conversation's;
+     `head === false` drops the label and the run reads as one voice
+     continuing. The row keeps its class, so alignment and the screen
+     reader's grouping are unchanged. */
+  return `<div class="shsaid shfrom-${mine ? "you" : "shadow"}${
+      extra ? " " + extra : ""}${head === false ? " shrun" : ""}">
+    ${head === false ? "" : `<div class="shsaidhead">${
+      head || (mine ? "You" : "Shadow")}</div>`}
+    <div class="shsaidtext">${bodyHtml}</div>
+  </div>`;
+}
+
+/* ── THE WORKER IS AN IMPLEMENTATION DETAIL (founder, 2026-09-21, pass 4) ──
+   WHAT THIS REPLACES. The stream drew one row per worker execution, headed
+   "Worker agent · turn 3", and the founder had to understand a turn count to
+   read their own task. The direction is explicit: internally retain turn
+   numbers, externally show none, and let the user see a continuous Shadow
+   conversation regardless of how many worker executions happened.
+
+   NOTHING IS FABRICATED, WHICH IS THE HARD PART. Shadow does not get to
+   invent progress it has not observed. So a narration row is still the
+   WORKER'S OWN REPORTED SENTENCE -- selected, never composed, by exactly the
+   machinery that selected it yesterday (shadowSayReport -> shadowSayClean ->
+   shadowSayGist). What changed is attribution and salience: it is drawn as
+   Shadow speaking, without a turn number, and only when it carries a real
+   transition.
+
+   THE SALIENCE RULE, and it is deliberately mechanical rather than clever:
+
+     keep   the FIRST report (the work started, and that is news)
+     keep   the LAST report (the current state, and the founder is never
+            left blind about where the task actually is)
+     drop   a report whose words repeat the previous kept one
+     drop   a report written in the PRESENT PARTICIPLE -- "Checking the rail
+            routes", "Searching for flights", "Still working". That aspect is
+            the "I'm searching... I'm checking... I'm checking again" stream
+            the direction names, and it is a statement about being mid-task
+            rather than about having reached anything.
+     keep   everything else, including every PAST-TENSE report ("Checked the
+            travel legs", "Rebuilt the route"), because a completed step IS a
+            meaningful transition and dropping it would lose real history.
+
+   Tense is the discriminator on purpose: it is a property of the worker's
+   own sentence, needs no model call, and cannot silently swallow a result.
+   A mission with one or two reports is never filtered at all. */
+const SH_WORK_NOISE = [
+  /* present participle at the head of the sentence, with or without its
+     pronoun: the grammar of "in flight", not of "done" */
+  /^(i’m |i'm |i am |we’re |we're |we are |just |now |still )?(search|look|check|re-?check|read|re-?read|run|re-?run|review|verify|verifying|scan|examin|investigat|explor|inspect|analys|analyz|continu|work|proceed|start|go)\w*ing\b/i,
+  /^(still|now|next|then)\b/i,
+  /^(let me|going to|about to|i will|i’ll|i'll)\b/i,
+  /^(no (change|update|news)s?|nothing (yet|new|to report))\b/i,
+];
+function shadowWorkNoise(say){
+  const t = String(say || "").trim();
+  if (!t) return true;
+  for (const re of SH_WORK_NOISE) if (re.test(t)) return true;
+  return false;
+}
+
+/* ── A RECORD IS NOT A SENTENCE (founder, 2026-09-21, pass 5) ────────
+   "Do NOT simply rename worker records to Shadow. That was the previous
+   mistake." Pass 4 attributed the worker's selected line to Shadow, which
+   was right for a line like "Rebuilt the route around five days in London"
+   and WRONG for the lines that are machinery wearing a sentence's clothes:
+
+       10 tool calls — Web search 6, fetched 3…
+       DONE-CHECK: india-cricket-news.txt exists and has 10 items
+       Sent worker first instruction: You are a delegate session…
+
+   Those are bookkeeping. Attributing them to Shadow put the execution log
+   back on the surface under a friendlier name.
+
+   SO A LINE MUST EARN ITS PLACE. This is a REJECTION list, not a rewriter:
+   a line that matches is not said at all, and nothing is generated to stand
+   in its place. Silence is the correct output -- pass 5 says so in as many
+   words. Every rejected line is still in the record and still behind Open
+   the chat.
+
+   IT IS KEYED ON SHAPE, NOT ON TOPIC. Each pattern below names a form the
+   substrate emits (a counter, a labelled check, an instruction addressed to
+   the worker, an id, a fence), so prose that merely mentions tools or a
+   file is untouched. */
+const SH_NOT_SPEECH = [
+  /* tool bookkeeping: "10 tool calls", "3 tool calls — Web search 2…" */
+  /^\s*\d+\s+tool[ -]calls?\b/i,
+  /\btool[ -]calls?\s*[:—–-]/i,
+  /* the machine-readable lines the worker agreement asks for, quoted raw */
+  /^\s*(DONE-?CHECK|REPORT|VERIFY|PROBE|EVIDENCE|CRITERION|ANSWER)\s*[:·]/i,
+  /* Shadow talking to the WORKER, not to the founder */
+  /^\s*(sent|sending|re-?sent|issued|composed|chose|selecting|selected)\b[^.]{0,40}\b(worker|delegate)\b/i,
+  /^\s*(worker|delegate)\s+(instruction|turn|session|contract|brief)\b/i,
+  /\byou are a delegate session\b/i,
+  /* orchestration vocabulary the founder has no use for */
+  /\b(answer fence|done_when|pending_say|turn_open|target_session|mission fence|task fence|invalidat\w+ for revision)\b/i,
+  /* a bare mission id is an identifier, never a sentence */
+  /^\s*m-[0-9a-f]{8,}\b/i,
+  /* a JSON or fence fragment that survived the cleaners */
+  /^\s*[{\[]|^\s*```/,
+  /* ── A SERIALIZED PAYLOAD IS NEVER A SENTENCE (founder, 2026-09-21,
+       pass 6) ────────────────────────────────────────
+     WHAT REACHED THE FOUNDER'S SCREEN:
+
+         "T20I series against Bangladesh announced"… "url"… {…}
+
+     a web-search result object flattened into one line. The rules above
+     only caught a payload that OPENED with a brace, and this one opens
+     with a quoted headline -- so it read as prose, survived the gist, and
+     was drawn as something Shadow said.
+
+     THESE ARE SHAPE TESTS, NOT TOPIC TESTS. A brace, a JSON key, a bare
+     URL and a run of straight quotes are all things a machine writes and a
+     person does not; ordinary prose with an apostrophe, a file name or a
+     domain mentioned in words is untouched. A line that matches is not
+     said at all -- the worker's output still flows through the mission and
+     the completion record exactly as before. */
+  /[{}]/,                                   /* a brace, anywhere */
+  /"[A-Za-z_][\w .-]*"\s*:/,                 /* a JSON key */
+  /\bhttps?:\/\//i,                         /* a bare URL */
+  /\b(url|href|link|snippet|source_?url|published_?at|timestamp)\s*[:=]/i,
+  /(?:"[^"]*"[^"]*){3,}/,                   /* three quoted fragments in a row */
+  /* ── THE DEBUGGER'S VOCABULARY (founder, 2026-09-21, pass 8) ────────
+     Named outright as "not useful conversation content": an assertion
+     Shadow made to itself, a note about the renderer, a reference to the
+     record or the payload or the tool count. Each is matched as a LABELLED
+     CLAIM at the head or as a distinctive phrase, so prose that merely uses
+     the word ("the record was set in 2019") is untouched. */
+  /^\s*shadow established\b/i,
+  /\bshown in part\b/i,
+  /^\s*(record|payload|evidence|probe|verdict|artifact facts)\s*[:=]/i,
+  /\b\d+\s+distinct\b/i,
+  /\bopen the task'?s chat for the whole\b/i,
+];
+function shadowNotSpeech(text){
+  const t = String(text || "").trim();
+  if (!t) return true;
+  for (const re of SH_NOT_SPEECH) if (re.test(t)) return true;
+  return false;
+}
+
+/* ── SHADOW IS THE NARRATOR, NOT A VENTRILOQUIST (founder, 2026-09-21,
+     pass 6) ───────────────────────────────────────────
+   THE BUG PASS 5 LEFT. A worker report is written in the FIRST PERSON --
+   "I’ll pull current India cricket news and write it to a file" -- and
+   attributing that sentence to Shadow makes Shadow claim the worker’s own
+   intentions as its own. The founder read a Shadow message that was really
+   the worker talking with a new name on it:
+
+       "Do not expose worker-facing narration/instructions as if they are
+        Shadow speaking to the user ... Shadow should be the narrator /
+        coordinator of the work, not a ventriloquist for the worker."
+
+   THE SHIFT IS DETERMINISTIC AND ADDS NO WORDS. No model is asked, no
+   sentence is composed, no progress is invented: the subject is moved from
+   first person to the worker and every content word stays exactly as the
+   worker wrote it. "I found 10 current items" becomes "The worker found 10
+   current items" -- the same claim, correctly attributed.
+
+   TWO PLACES ARE TOUCHED AND NO OTHERS:
+     the HEAD of the sentence, where a subject can be rewritten without
+       guessing at grammar; and
+     the PRONOUNS after it, as whole words only.
+   A sentence with no first person in it is returned byte-identical, so a
+   subject-less report ("Created india-cricket-news.txt with 10 items")
+   passes through untouched -- it is not ventriloquism and rewriting it
+   would be the guesswork this deliberately refuses.
+
+   THE ONE EXCEPTION IS THE BARE PRESENT PARTICIPLE, which is subject-less
+   but reads as Shadow doing the work ("Checking the last two sources"). It
+   is recognised by exactly the vocabulary SH_WORK_NOISE already uses, so
+   nothing new is being guessed at, and it is narrated the same way.
+
+   THIS DOES NOT APPLY TO SHADOW’S OWN REPLIES. What Shadow says in the
+   task chat is Shadow talking to the founder, and its "I" is its own. */
+const SH_PERSON_HEAD = [
+  [/^I\s*['\u2019]\s*ll\b/, "The worker will"],
+  [/^I\s*['\u2019]\s*ve\b/, "The worker has"],
+  [/^I\s*['\u2019]\s*m\b/,  "The worker is"],
+  [/^I\s*['\u2019]\s*d\b/,  "The worker would"],
+  [/^I will\b/,  "The worker will"],
+  [/^I have\b/,  "The worker has"],
+  [/^I am\b/,    "The worker is"],
+  [/^I would\b/, "The worker would"],
+  [/^Let me\b/i, "The worker will"],
+  [/^My\b/,      "The worker\u2019s"],
+  [/^We\s*['\u2019]\s*ll\b/i, "The worker will"],
+  [/^We\s*['\u2019]\s*ve\b/i, "The worker has"],
+  [/^We\s*['\u2019]\s*re\b/i, "The worker is"],
+  [/^We will\b/i, "The worker will"],
+  [/^We have\b/i, "The worker has"],
+  [/^We are\b/i,  "The worker is"],
+  [/^Our\b/i,     "The worker\u2019s"],
+  [/^I\b/,  "The worker"],
+  [/^We\b/, "The worker"],
+];
+const SH_PERSON_REST = [
+  [/\bI\s*['\u2019]\s*ll\b/g, "it will"],
+  [/\bI\s*['\u2019]\s*ve\b/g, "it has"],
+  [/\bI\s*['\u2019]\s*m\b/g,  "it is"],
+  [/\bI\s*['\u2019]\s*d\b/g,  "it would"],
+  [/\bI will\b/g, "it will"],
+  [/\bI have\b/g, "it has"],
+  [/\bI am\b/g,   "it is"],
+  [/\bI\b/g,      "it"],
+  [/\bmy\b/g,     "its"],
+  [/\bmine\b/g,   "its"],
+  [/\bwe\s*['\u2019]\s*(?:ll|ve|re)\b/gi, "it"],
+  [/\bwe\b/gi,    "it"],
+  [/\bour\b/gi,   "its"],
+];
+/* the present participles SH_WORK_NOISE already recognises as "in flight" */
+const SH_GERUND_HEAD =
+  /^(search|look|check|re-?check|read|re-?read|run|re-?run|review|verify|scan|examin|investigat|explor|inspect|analys|analyz|continu|work|proceed|start|go|writ|gather|collect|compil|updat|build|creat)\w*ing\b/i;
+
+/* A SUBJECT-LESS PAST-TENSE REPORT IS STILL THE WORKER'S ("Cut the list to
+   the last 7 days and re-checked each item"). It names no one, so it reads
+   as Shadow claiming the work -- the same ventriloquism in a quieter voice.
+   Recognised ONLY by an unambiguous past-tense opener: a regular -ed verb,
+   or one of the irregulars a worker report actually opens with. The
+   stop-list holds the handful of NOUNS that end in -ed and could otherwise
+   be mistaken for one. Anything else is left exactly as written. */
+const SH_PAST_HEAD =
+  /^(?:[A-Z][a-z]{2,}ed|Cut|Wrote|Rewrote|Ran|Built|Rebuilt|Found|Got|Made|Sent|Read|Put|Set|Took|Began|Chose|Left|Kept|Held|Went|Came|Saw|Said|Drew|Brought|Split|Broke|Spent|Met|Won|Threw|Swept)\b/;
+const SH_PAST_STOP =
+  /^(?:Indeed|Speed|Need|Feed|Deed|Breed|Creed|Greed|Freed|Agreed|Exceed|Succeed|Proceed|Embed|Seed|Weed|Bleed|Steed|Tweed|Shed|Sled|Bred|Fled)\b/;
+
+/* ── SHADOW'S OWN LINE FOR A TURN (founder, 2026-09-21, pass 9) ─────────
+   "Worker output should always come back through Shadow's existing
+   task-chat/conversation layer before it is shown to the founder."
+
+   IT IS WRITTEN ON THE TURN SHADOW ALREADY TAKES. The decider reads the
+   worker's latest output on every boundary and answers as Shadow; the
+   `update` key in that same reply is its sentence to the founder
+   (mission_engine.validate_update). No second model call, no second
+   conversation, no new process -- the architecture the founder asked for,
+   built out of the turn that was happening anyway.
+
+   KEYED ON THE TURN IT IS ABOUT. `at_turn` is the turn whose output Shadow
+   read, and a worker event carries that same number, so a sentence lands
+   exactly where that turn's result belongs and nowhere else.
+
+   ABSENT MEANS THE OLD BEHAVIOUR, EXACTLY. Every mission that ran before
+   this key existed, every turn Shadow had nothing to say about, and every
+   update that failed validation fall through to shadowThirdPerson -- the
+   deterministic subject shift -- which is what this pane drew yesterday. */
+function shadowUpdateFor(m, turn){
+  const rows = (m && Array.isArray(m.shadow_updates)) ? m.shadow_updates : [];
+  for (let i = rows.length - 1; i >= 0; i--){
+    const r = rows[i];
+    if (!r || Number(r.at_turn) !== Number(turn)) continue;
+    const t = String(r.text || "").trim();
+    /* the same floor every other founder-facing line crosses: Shadow's own
+       sentence is not exempt from the rule that a record is never speech */
+    if (!t || shadowNotSpeech(t)) return "";
+    return t;
+  }
+  return "";
+}
+
+/* the newest founder-facing line Shadow wrote on this mission, or "" --
+   the closing line of a finished task (see shadowCompletionHtml) */
+function shadowLastUpdate(m){
+  const rows = (m && Array.isArray(m.shadow_updates)) ? m.shadow_updates : [];
+  for (let i = rows.length - 1; i >= 0; i--){
+    const t = String((rows[i] && rows[i].text) || "").trim();
+    if (t && !shadowNotSpeech(t)) return t;
+  }
+  return "";
+}
+
+function shadowThirdPerson(say){
+  const raw = String(say || "").trim();
+  if (!raw) return "";
+  let t = raw;
+  for (const [re, to] of SH_PERSON_HEAD){
+    if (re.test(t)){ t = t.replace(re, to); break; }
+  }
+  for (const [re, to] of SH_PERSON_REST) t = t.replace(re, to);
+  if (t !== raw) return t;
+  const lower = () => raw.charAt(0).toLowerCase() + raw.slice(1);
+  /* no first person at all -- the two subject-less shapes that still read
+     as Shadow doing the work itself */
+  if (SH_GERUND_HEAD.test(raw)) return "The worker is " + lower();
+  if (SH_PAST_HEAD.test(raw) && !SH_PAST_STOP.test(raw))
+    return "The worker " + lower();
+  return raw;
+}
+
+/* the words, not the punctuation -- two reports that differ only in a
+   trailing ellipsis are the same report said twice */
+function shadowNarrationKey(say){
+  return String(say || "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/* Applied at RENDER, never to the event list itself: shadowTimelineEvents
+   stays the complete, ordered record of what happened, which is what every
+   other reader of it (and every test of it) depends on. This decides only
+   what is worth SAYING. */
+function shadowNarration(events){
+  /* A RECORD IS REFUSED OUTRIGHT, whatever its position -- first, last or
+     only. Unlike the salience rule below, this is not about how much to
+     say; it is about whether the line is something Shadow says at all. */
+  /* PASS 9: an event Shadow NARRATED is judged on Shadow's own sentence --
+     it has already crossed the record floor in shadowUpdateFor, it is not
+     the worker's prose, and Shadow choosing to say it IS the salience
+     decision this pass otherwise has to make mechanically. Only the
+     duplicate rule still applies to it. */
+  const all = Array.isArray(events) ? events : [];
+  /* ── ONE VOICE, OR THE OTHER (founder, 2026-09-21, pass 9) ───────────
+     Once Shadow is narrating this mission, it narrates ALL of it. Falling
+     back to the deterministic subject shift for the turns it said nothing
+     about would put the worker's own sentences back beside Shadow's --
+     two voices in one column, which is the thing this pass removes.
+
+     A TURN SHADOW DID NOT NARRATE IS SILENCE, and that is the prompt's own
+     instruction: omit the key when the turn produced nothing a person would
+     want to hear. The worker's words are still on the record and still
+     behind Open the chat.
+
+     THE SHIFT IS NOT DEAD. It is the whole rendering for a mission with no
+     updates at all -- every record written before this key existed, and
+     every mission whose decider never sent one. */
+  const narrating = all.some(e => e && e.kind === "worker" && e.own);
+  const rows = all.filter(
+    e => !(e && e.kind === "worker" && !e.own && !e.open
+           && (narrating || (e.say && shadowNotSpeech(e.say)))));
+  const shown = (e) => (e && (e.own || e.say)) || "";
+  const idx = [];
+  for (let i = 0; i < rows.length; i++)
+    if (rows[i] && rows[i].kind === "worker" && shown(rows[i])) idx.push(i);
+  if (idx.length < 2) return rows;          /* nothing to thin out */
+  /* PASS 5: ONLY THE NEWEST IS EXEMPT. Pass 4 also exempted the FIRST
+     report, to guarantee a start signal -- and the first report of a task is
+     routinely "Searching the cricket boards for today's reports", which is
+     exactly the line the founder refused. The start signal is Shadow's own
+     answer to the opening request (shadowIdleLineHtml), which is now
+     permanent, so the exemption has nothing left to buy. The newest report
+     stays exempt for a different reason: the founder must never be blind
+     about where the task is right now. */
+  const last = idx[idx.length - 1];
+  const drop = {};
+  let prev = "";
+  for (const i of idx){
+    const key = shadowNarrationKey(shown(rows[i]));
+    if (i !== last
+        && (key === prev
+            || (!rows[i].own && shadowWorkNoise(rows[i].say)))){
+      drop[i] = 1; continue;
+    }
+    prev = key;
+  }
+  return rows.filter((e, i) => !drop[i]);
+}
+
+/* ── "SHADOW IS WORKING" IS THE WHOLE OF THE ACTIVITY INDICATOR ──────────
+   The row a turn in flight gets. It replaces "Worker agent · turn 2" plus
+   its sweep: the founder is told that Shadow is working and, because a long
+   turn is the one case where silence is worrying, how long for. The clock is
+   the turn's own stamp, which the timeline already carries -- no new field,
+   no poll of its own. It must never become a worker log, so it says nothing
+   about what the worker is doing; the last thing it REPORTED is already the
+   row above. */
+function shadowWorkingHtml(ts, head){
+  const el = (typeof shadowTurnElapsed === "function") ? shadowTurnElapsed(ts) : "";
+  return `<div class="shsaid shfrom-shadow shworking${
+      head === false ? " shrun" : ""}" role="status"
+      aria-live="polite">
+    ${head === false ? "" : `<div class="shsaidhead">Shadow</div>`}
+    <div class="shsaidtext shworkingtext"
+      ><span class="shworkdot" aria-hidden="true"></span
+      ><span class="shworkword">Working</span>${el
+        ? `<span class="shworkclock"> \u00b7 ${esc(el)}</span>` : ""}</div>
+  </div>`;
+}
+
 function shadowThinkingHtml(){
-  return `<div class="shsaid shthinking" role="status" aria-live="polite">
+  return `<div class="shsaid shfrom-shadow shthinking" role="status" aria-live="polite">
       <div class="shsaidhead">Shadow</div>
       <div class="shsaidtext shthinkingtext"
         ><span class="shthinkdot" aria-hidden="true"></span
@@ -2719,7 +3300,49 @@ const SH_TALK_FOLD = [
     label: "Shadow read the worker and chose the next instruction" },
   { re: /^You are settling ONE completion check by reading evidence\./, kind: "judge",
     label: "Shadow judged a check from the evidence" },
+  /* the pending-ask briefing with no founder line after it -- the app
+     telling Shadow what the task is waiting on, and nothing else. Folded
+     rather than dropped: it IS a real message on the record. */
+  { re: /^\[Pending asks on this task/, kind: "asks",
+    label: "Shadow was told what this task is waiting on" },
 ];
+
+/* ── THE ENVELOPE IS NOT WHAT THE FOUNDER SAID (founder, 2026-09-21, pass 4)
+     ────────────────────────────────────────────────────────────────────
+   THE LEAK. api_shadow_task_chat prefixes a founder's line with
+   mission_engine.pending_asks_text before handing it to the task chat, so
+   what the transcript RECORDS for a line typed while an ask is open is
+
+       [Pending asks on this task -- the founder may answer any of them in
+        this chat; if their line answers one, emit ONE ```answer fence]
+       - confirm #1: the itinerary is feasible for 10 days
+       [The founder says:] I want to spend 5 days in London.
+
+   and this stream drew every byte of it as the founder's own message. Those
+   first lines are orchestration instructions addressed to Shadow; the
+   founder wrote one sentence and read a paragraph of machinery back.
+
+   THE STRIP IS HERE, AT THE PRESENTATION BOUNDARY, and nowhere else -- the
+   same rule SH_CONTROL_HEAD follows. The route still sends the envelope, the
+   chat still reads it, the transcript still stores it, and "Open the chat"
+   still shows the whole thing. Only this pane stopped drawing it.
+
+   IT ALSO FIXES A DUPLICATE. The live row holds what the founder TYPED and
+   the persisted row held the enveloped copy, so shadowTalkKey could never
+   match them and the same sentence drew twice. Both sides now key on the
+   founder's own words.
+
+   A LINE WITH NO `[The founder says:]` MARKER IS NOT THEIRS. It is the
+   briefing alone, and it folds through SH_TALK_FOLD above. */
+const SH_ASK_ENVELOPE = /^\[Pending asks on this task\b[\s\S]*?\[The founder says:\]\s*/;
+const SH_SAYS_PREFIX = /^\[The founder says:\]\s*/;
+
+function shadowStripEnvelope(text){
+  const t = String(text == null ? "" : text);
+  if (SH_ASK_ENVELOPE.test(t)) return t.replace(SH_ASK_ENVELOPE, "").trim();
+  if (SH_SAYS_PREFIX.test(t)) return t.replace(SH_SAYS_PREFIX, "").trim();
+  return t;
+}
 function shTalkFold(text){
   for (const f of SH_TALK_FOLD) if (f.re.test(text)) return f;
   return null;
@@ -2794,12 +3417,41 @@ function shadowTalkTurns(m){
     const text = String(t.text || "").trim();
     if (t.role === "user"){
       if (!text){ fold = null; continue; }
+      /* the founder's own words, with the app's envelope taken off. When
+         something was stripped this IS a founder line and never a fold --
+         the briefing it was wrapped in is Shadow's, not theirs. */
+      const own = shadowStripEnvelope(text);
+      if (own && own !== text){
+        fold = null;
+        out.push({ who: "founder", text: own, ts: Date.parse(t.ts || "") });
+        continue;
+      }
       const f = shTalkFold(text);
       if (f){
-        /* ONE ROW PER APP PROMPT: the prompt and every reply to it, folded */
-        fold = { who: "system", fold: f.kind, label: f.label, text: text,
-                 replies: [], ts: Date.parse(t.ts || "") };
-        out.push(fold);
+        /* ── THE SUBSTRATE IS NOT A PARTICIPANT (founder, 2026-09-21,
+             pass 5) ────────────────────────────────
+           THIS REVERSES D81 FOR THIS SURFACE, and says so rather than
+           quietly differing from it. D81 (same day) read "all the
+           conversations with the app should happen in the Sutra chat UI and
+           should be shown there", and these prompts became one folded row
+           each. Pass 5 is explicit that they must not be chat at all:
+           "SHADOW BOOTED WITH ITS OPERATING CONTEXT", "SHADOW READ THE
+           WORKER AND CHOSE THE NEXT INSTRUCTION" are implementation
+           records, and the founder should not meet one before they meet
+           their own request.
+
+           NOTHING IS DROPPED FROM THE RECORD. The task chat is a published
+           chat of its own (app.py _publish_task_chat -> m.task_chat), so
+           every one of these prompts and every reply to them is still
+           readable in Chats, verbatim, exactly as D81 required. What
+           changed is that the CONVERSATION stopped being the place it is
+           read.
+
+           THE REPLIES GO WITH THE PROMPT. `fold` still swallows every
+           assistant message until the next founder line, because a reply to
+           "choose the next instruction" is the instruction -- worker-facing
+           text, not something Shadow said to the founder. */
+        fold = { swallow: true };
       } else {
         fold = null;
         out.push({ who: "founder", text: text, ts: Date.parse(t.ts || "") });
@@ -2807,9 +3459,10 @@ function shadowTalkTurns(m){
       continue;
     }
     if (t.role !== "assistant" || !text) continue;
-    /* a reply to an app prompt goes INTO its fold -- one prompt can answer
-       across several messages, so this does NOT reset per message */
-    if (fold){ fold.replies.push(text); continue; }
+    /* a reply to an app prompt goes WITH it -- one prompt can answer across
+       several messages, so this does NOT reset per message. Pass 5: the
+       prompt is not drawn, so neither is its answer (see above). */
+    if (fold) continue;
     out.push({ who: "shadow", text: text, ts: Date.parse(t.ts || "") });
   }
   return out;
@@ -3055,7 +3708,7 @@ function shadowTimelineEvents(m){
         let at = t.at;
         for (let i = t.says.length - 1; i >= 0 && isNaN(at); i--)
           at = Date.parse(t.says[i].ts || "");
-        out.push({ kind: "worker", n: n, say: "", ts: at });
+        out.push({ kind: "worker", n: n, say: "", open: true, ts: at });
         continue;
       }
       /* ── THE WORKER'S OWN REPORT, WHEN IT WROTE ONE ──────────────────
@@ -3078,10 +3731,18 @@ function shadowTimelineEvents(m){
                    ts: isNaN(t.at) ? own : t.at });
         continue;
       }
+      /* ── A TURN SHADOW NARRATED IS NEVER A LOST TURN (pass 9) ───────
+         The worker's own output can clean to nothing -- all control plane,
+         a bare payload, an announcement -- and until now that turn simply
+         had no row. If Shadow wrote a founder-facing line about it, the
+         line is the row: the founder hears what happened even when the
+         worker said it in a shape this pane refuses to draw. */
+      let drew = false;
       for (let i = t.says.length - 1; i >= 0; i--){
         const say = shadowSayGist(
           shadowSayClean(shadowSayDropReport(t.says[i].text)));
         if (say){
+          drew = true;
           /* A TURN IS A SPAN, AND IT SORTS BY WHEN IT OPENED (founder,
              2026-09-15, mission m-8ef75c0f2f78). The row shows one message
              but the turn covers everything from Shadow's instruction to the
@@ -3101,6 +3762,12 @@ function shadowTimelineEvents(m){
                      ts: isNaN(t.at) ? own : t.at });
           break;
         }
+      }
+      if (!drew && shadowUpdateFor(m, n)){
+        let at = t.at;
+        for (let i = t.says.length - 1; i >= 0 && isNaN(at); i--)
+          at = Date.parse(t.says[i].ts || "");
+        out.push({ kind: "worker", n: n, say: "", ts: at });
       }
     }
   }
@@ -3331,10 +3998,7 @@ function shadowOpeningHtml(m){
   const first = log.length ? String(log[0].objective || "").trim() : "";
   const text = first || String((m && m.objective) || "").trim();
   if (!text) return "";
-  return `<div class="shsaid shopening">
-    <div class="shsaidhead">You \u2192 Shadow</div>
-    <div class="shsaidtext">${esc(text)}</div>
-  </div>`;
+  return shadowSaidRowHtml("you", esc(text), "shopening");
 }
 
 
@@ -3356,29 +4020,75 @@ function shadowOpeningHtml(m){
 
    NO INTERNAL VOCABULARY. No brief, no turn count, no done_when, no pause
    reason, no state name. Those are the sentences the founder objected to. */
+/* the states in which nothing has been accepted yet */
+const SH_DRAFT = ["draft", "brief_confirm"];
+
 function shadowIdleLineHtml(m){
   if (!m) return "";
   const startable = (typeof shadowMissionStartable === "function")
     ? shadowMissionStartable(m) : m.state === "brief_confirm";
-  if (startable){
-    return `<div class="shsaid shidle">
-      <div class="shsaidhead">Shadow</div>
-      <div class="shsaidtext">Everything is ready \u2014 start when you are.</div>
-    </div>`;
-  }
-  if (m.state === "running"){
-    return `<div class="shsaid shidle">
-      <div class="shsaidhead">Shadow</div>
-      <div class="shsaidtext">On it. I\u2019ll come back to you when I need
-        something.</div>
-    </div>`;
-  }
+  if (startable)
+    return shadowSaidRowHtml("shadow",
+      "Everything is ready \u2014 start when you are.", "shidle");
+  /* ── SHADOW ANSWERS THE OPENING REQUEST, AND KEEPS ANSWERING IT ─────
+     (founder, 2026-09-21, pass 5: START -> "Got it. I'm working through this
+     now.") It used to be drawn only while the stream was otherwise EMPTY, so
+     the first worker report erased it -- and a conversation whose second
+     line is the middle of the work reads as though Shadow never replied.
+
+     IT IS TRUE BY CONSTRUCTION AND SAYS NOTHING ABOUT THE WORK. The mission
+     has been accepted; that is the whole claim. It is the reply Shadow made
+     when the founder asked, and a transcript keeps what was said at the
+     time, which is why the tense does not move once the task finishes.
+
+     A DRAFT NEVER GETS IT -- nothing has been accepted yet, and the
+     startable line above is that state's honest answer. */
+  /* ── QUEUED IS NOT RUNNING, AND MUST NOT SOUND LIKE IT (founder,
+       2026-09-21, pass 10) ────────────────────────────────────────────
+     THE BUG. A queued task fell through to "I'm working through this now",
+     which is a claim about work that has not started -- the one thing this
+     line has always been careful not to make. The founder read a page with
+     a title, a badge, their own sentence and nothing else, and could not
+     tell a transient state from a broken one.
+
+     WHAT IT SAYS INSTEAD IS TRUE BY CONSTRUCTION AND SAYS NOTHING ABOUT
+     THE WORK: the task was accepted, it exists, it has not begun, and the
+     founder need do nothing. `queued` has exactly one cause -- every slot
+     the run limit allows is taken -- and that is what the second line
+     names, in the words the Watching plane already uses for it.
+
+     IT IS NOT A STATE OF ITS OWN ON SCREEN. Same Shadow row, same
+     typography, one muted line and the pill this pane already draws for
+     the state. No spinner, no bar, no timeline: queued must not look
+     busier than running.
+
+     IT TRANSITIONS BY CONSTRUCTION. This is computed from `state` on every
+     render, so the moment the scheduler promotes the task the queued line
+     is simply not what this function returns -- there is no stale
+     acknowledgement to clean up, on promotion or on a drop. */
+  if (m.state === "queued")
+    return shadowSaidRowHtml("shadow",
+      "Got it. I\u2019m lining this up now."
+      + `<div class="shqueued"><span class="shtpill shtpill-queued"
+          >QUEUED</span><span class="shqueuednote">Waiting for a free slot
+          \u2014 I\u2019ll start as soon as one opens. Nothing needed from
+          you.</span></div>`, "shidle shidlequeued");
+  if (SH_DRAFT.indexOf(m.state) === -1)
+    return shadowSaidRowHtml("shadow",
+      "Got it. I\u2019m working through this now.", "shidle");
   return "";
 }
 
 
 function shadowTimelineHtml(m){
-  const events = shadowTimelineEvents(m);
+  /* THE RECORD, THEN WHAT IS WORTH SAYING ABOUT IT. shadowTimelineEvents is
+     unchanged and still returns every event in order; shadowNarration is the
+     salience pass that keeps the founder from reading a worker log. */
+  const events = shadowNarration(shadowTimelineEvents(m).map(e => {
+    if (!e || e.kind !== "worker" || e.open) return e;
+    const own = shadowUpdateFor(m, e.n);
+    return own ? Object.assign({}, e, { own: own }) : e;
+  }));
   /* the founder has sent and Shadow has not answered yet. Appended rather
      than folded into shadowTimelineEvents because it is not an EVENT: it has
      no stamp, nothing records it, and it must never sort against real ones. */
@@ -3433,46 +4143,76 @@ function shadowTimelineHtml(m){
      shadowOpeningHtml IS KEPT AND STILL EXPORTED -- it is the honest render
      of "the founder's opening line" and the lane that pins it is unchanged
      -- but the stream no longer opens with it. */
-  /* the opening line stands only while the conversation is genuinely empty:
-     one real event and the events speak for themselves */
-  const brief = "";
+  /* ── TURN ONE IS THE FOUNDER'S (founder, 2026-09-21, pass 5) ────────
+     "The first user input itself MUST appear as a normal USER → SHADOW
+     conversation message. That is conversational turn #1 ... There is no
+     reason for the user to see 'Shadow booted with its operating context'
+     before seeing what THEY asked Shadow to do."
+
+     THIS REVERSES PASS 3, which removed this row on the grounds that the
+     pinned header already carries the objective. That was true and beside
+     the point: a header is a label, and a conversation that opens on the
+     other party talking has lost its first turn. The header is unchanged
+     and still the anchor when the stream is scrolled.
+
+     IT IS THE ORIGINAL ASK, not the current revision -- shadowOpeningHtml
+     reads revisions[0] for exactly that reason, so a task the founder
+     redirected still opens on the sentence they actually opened it with,
+     with the redirect further down where they said it. */
+  const brief = shadowOpeningHtml(m);
   const outdated = shadowRevisionsHtml(m);
   const decision = shadowMissionNeedsFounder(m) ? shadowCheckRowsHtml(m) : "";
   const done = (m && m.completion) ? shadowCompletionHtml(m) : "";
   const tail = outdated + asks + decision + done;
-  const idle = (!events.length && !tail) ? shadowIdleLineHtml(m) : "";
-  if (!events.length && !waiting && !tail && !idle) return "";
+  /* pass 5: Shadow's answer to the opening request stands whatever else
+     happened afterwards -- see shadowIdleLineHtml */
+  const idle = shadowIdleLineHtml(m);
+  if (!brief && !events.length && !waiting && !tail && !idle) return "";
+  /* who spoke last, so a run of messages from one side is labelled once.
+     brief is the founder; idle, when drawn, is Shadow answering it. */
+  let lastWho = idle ? "shadow" : (brief ? "you" : "");
+  const runHead = (who) => {
+    const same = lastWho === who;
+    lastWho = who;
+    return same ? false : undefined;
+  };
   return `<div class="shtimeline">${brief}${idle}${events.map(e => {
-    if (e.kind === "answered") return shadowStoryHtml(m);
+    /* ── AN ANSWER IS THE FOUNDER SPEAKING (pass 5) ──────────────
+       It was drawn as a `.shstory` card headed "You answered · 6d ago" with
+       the question and a label/value list under it -- a record of a form
+       submission, sitting in a stream of messages. Pass 5 names "answered"
+       among the internal records that must not be chat, and requires that
+       every actual user message become a USER message.
+
+       SO IT IS ONE, and its body is what the founder chose: the values
+       they picked, in the server's own labels. Nothing is composed -- if
+       the record carries no summary the row is not drawn, because a bare
+       "you answered" is the card this replaces. shadowStoryHtml is kept
+       and still exported. */
+    if (e.kind === "answered") return shadowAnsweredHtml(m, runHead("you"));
     if (e.kind === "ask_done"){
-      const head = e.what === "approve" ? "Shadow · held, then sent"
-                                        : "Shadow · done when";
+      /* WHAT WAS SETTLED, SAID RATHER THAN LABELLED (pass 4). The heads
+         read "Shadow · held, then sent" and "Shadow · done when" -- the
+         internal vocabulary of the hold and the criterion, on a surface
+         that is meant to be one voice talking. Same two facts, same
+         record, said the way Shadow would say them. */
       const line = e.what === "approve"
-        ? "Approved by you · sent once"
-        : "Confirmed by you: " + esc(e.text);
-      return `<div class="shsaid shask shask-done">
-      <div class="shsaidhead">${head}</div>
-      <div class="shsaidtext">${line}</div>
-    </div>`;
-    }
-    if (e.kind === "talk" && e.fold){
-      /* D81: an app prompt and Shadow's answer, FOLDED -- one line the
-         founder can open, nothing removed. Native <details>: no script, no
-         state, and the verbatim text is in the page for search. The prompt
-         and the replies are the transcript's own bytes, only escaped. */
-      const replies = (e.replies || []).map(r =>
-        `<div class="shfoldreply"><div class="shsaidhead">Shadow</div><div class="shsaidtext">${esc(r)}</div></div>`).join("");
-      return `<details class="shsaid shfold" data-shfold="${escAttr(e.fold)}">
-      <summary class="shsaidhead">${esc(e.label || "Shadow, from the app")}</summary>
-      <div class="shfoldprompt"><div class="shsaidhead">The app → Shadow</div><div class="shsaidtext">${esc(e.text)}</div></div>${replies}
-    </details>`;
+        ? "You approved that, so I sent it — once."
+        : "You confirmed: " + esc(e.text);
+      return shadowSaidRowHtml("shadow", line, "shask shask-done",
+                               runHead("shadow"));
     }
     if (e.kind === "said" || e.kind === "talk"){
       /* THE SAME BLOCK BOTH SIDES SPEAK IN, and the same one the worker's
          turns use: a head that names the speaker over the line itself. No new
          class, no new surface -- the head is the only thing that differs. */
       const mine = !(e.kind === "talk" && e.who === "shadow");
-      const who = mine ? "You \u2192 Shadow" : "Shadow";
+      /* TWO PARTICIPANTS, TWO NAMES (founder, 2026-09-21, pass 4). The head
+         used to read "You → Shadow", which is the shape of a message being
+         RELAYED -- true of the plumbing and wrong about the product. There
+         is one conversation and the founder is in it, so the founder is
+         "You" and the other side is "Shadow". */
+      const who = mine ? "You" : "Shadow";
       /* SHADOW'S OWN PROSE GOES THROUGH THE SANITISER, THE FOUNDER'S DOES NOT
          (founder, 2026-09-17) -- the same split shadowMsgHtml has always
          made. Shadow's replies can carry the protocol fences the Now chat
@@ -3485,6 +4225,15 @@ function shadowTimelineHtml(m){
          15-shadow-overlay.js is the existing one, and the unterminated-fence
          case was fixed there rather than here. The guards below keep this
          renderable in a context that loaded this module alone. */
+      /* ── A REPLY THAT IS A RECORD IS NOT DRAWN (pass 5) ──────────
+         Shadow's side of the task chat is mostly speech and occasionally
+         bookkeeping -- "Sent worker first instruction: You are a delegate
+         session…" is a real reply on real records, and it is the worker's
+         business. The founder's OWN lines are never tested: they are the
+         founder's words and belong on screen whatever shape they take. */
+      if (!mine && shadowNotSpeech(
+            (typeof shadowProseText === "function")
+              ? shadowProseText(e.text) : e.text)) return "";
       const body = mine ? esc(e.text)
         : (typeof shadowProseHtml === "function") ? shadowProseHtml(e.text)
         : (typeof shadowProseText === "function") ? esc(shadowProseText(e.text))
@@ -3495,14 +4244,31 @@ function shadowTimelineHtml(m){
         ? ` <button class="btn shlimundo" type="button" data-shact="undo_limits"
             data-shmid="${escAttr(e.limits.mid)}"
             title="Put the previous limit back">Undo</button>` : "";
-      return `<div class="shsaid${undo ? " shlimits" : ""}">
-      <div class="shsaidhead">${who}</div>
-      <div class="shsaidtext">${body}${undo}</div>
-    </div>`;
+      const run = runHead(mine ? "you" : "shadow");
+      return shadowSaidRowHtml(mine ? "you" : "shadow", body + undo,
+                               undo ? "shlimits" : "",
+                               run === false ? false : who);
     }
-    /* a turn with no report yet is the one IN FLIGHT -- it gets the clock */
-    if (e.kind === "worker" && !e.say) return shadowOpenTurnHtml(e.n, e.ts);
-    return shadowAgentRowHtml(e.n, e.say);
+    /* ── THE WORKER DOES NOT SPEAK ON THIS SURFACE (founder, 2026-09-21,
+         pass 4) ────────────────────────────────────
+       A turn in flight is "Shadow is working"; a turn that reported is
+       Shadow saying what the worker reported, in the worker's own words and
+       with no turn number attached. shadowOpenTurnHtml and
+       shadowAgentRowHtml are NOT deleted -- they are still exported, still
+       the honest render of "the worker's Nth turn", and still what any
+       caller wanting that view gets. The main conversation stopped being
+       one of those callers. */
+    if (e.kind === "worker" && e.open)
+      return shadowWorkingHtml(e.ts, runHead("shadow"));
+    /* ── SHADOW'S OWN SENTENCE WINS (pass 9) ─────────────────────────
+       When Shadow wrote one for this turn it IS the message -- first
+       person, its own voice, its own reading of what the worker produced.
+       shadowThirdPerson is the fallback for a turn it said nothing about,
+       and it stays exactly what it was. */
+    return shadowSaidRowHtml("shadow",
+                             esc(e.own || shadowThirdPerson(e.say)),
+                             e.own ? "shsay shsayown" : "shsay",
+                             runHead("shadow"));
   }).join("")}${outdated}${asks}${decision}${done}${
     waiting ? shadowThinkingHtml() : ""}</div>`;
 }
@@ -3595,6 +4361,37 @@ function shadowAskRowsHtml(m){
    Both are read-only reads of fields already delivered by
    /api/shadow/missions. Nothing is written, nothing is derived from state,
    and a mission without them draws nothing. */
+/* ── WHAT THE FOUNDER CHOSE, AS A MESSAGE FROM THE FOUNDER ──────────
+   (founder, 2026-09-21, pass 5.) An intervention is answered on a FORM, so
+   the record holds choices rather than a sentence: `founder_response.summary`
+   is the server's own [{label, value}] list. That is still the founder
+   speaking, and pass 5 requires every actual user message to be a USER
+   message, so it is drawn as one.
+
+   NOTHING IS COMPOSED. The labels and the values are the server's, joined
+   with a comma; no verb is added, no sentence is built around them. A
+   response with no summary draws nothing at all rather than a bare "you
+   answered", which is the record-shaped row this replaces.
+
+   THE QUESTION IS NOT REPEATED HERE. Shadow already asked it, in its own
+   row, above -- printing it again beside the answer is the duplication the
+   redesign removes. */
+function shadowAnsweredHtml(m, head){
+  const fr = m && m.founder_response;
+  if (!fr || typeof fr !== "object") return "";
+  const parts = (Array.isArray(fr.summary) ? fr.summary : [])
+    .map(x => {
+      const label = String((x && (x.label || x.key)) || "").trim();
+      const value = (x && x.value !== undefined && x.value !== null)
+        ? String(x.value).trim() : "";
+      if (!label && !value) return "";
+      return (label && value) ? label + ": " + value : (label || value);
+    })
+    .filter(Boolean);
+  if (!parts.length) return "";
+  return shadowSaidRowHtml("you", esc(parts.join(" · ")), "shanswered", head);
+}
+
 function shadowStoryHtml(m){
   if (!m) return "";
   const fr = m.founder_response;
@@ -4263,17 +5060,15 @@ function shadowNewTaskChatHtml(){
   </div>`;
 }
 
-/* THE ONE LINE, AND WHAT IT DOES. The founder's line becomes the objective
-   of a new task and the task STARTS -- the identical create-then-start
-   shadowCreateTask has always run for the form's button, called here with
-   the draft's default kind and no done-when. Everything that press did the
-   founder still gets: the panel closes, the new task takes focus, and the
-   brief that appears is a brief of work already under way.
+/* THE ONE LINE, AND WHAT IT DOES. The founder's line goes to Shadow and
+   Shadow answers it. If the line held work, Shadow says so with a mission
+   fence and the task opens as a brief for the founder to confirm; if it did
+   not, there is a reply and no task. Which of the two happened is Shadow's
+   read of the sentence, not a rule in this file.
 
    THE LINE IS NEVER LOST. It goes into the thread before the request and
-   stays there if the create fails, with the reason under it -- so a failed
-   create leaves the founder something to read and a box to type into again,
-   never a cleared field and no explanation. */
+   stays there whatever comes back -- the reply under it, or the reason the
+   turn failed. Never a cleared field and no explanation. */
 async function shadowNewTalk(){
   if (typeof fetch === "undefined" || typeof S === "undefined") return null;
   const c = shadowNewChat();
@@ -4282,23 +5077,63 @@ async function shadowNewTalk(){
   c.thread.push({ who: "founder", ts: Date.now(), text });
   c.text = ""; c.busy = true; c.err = null;
   if (typeof scheduleRender === "function") scheduleRender();
-  /* the draft IS the form's draft -- same objective field, same kind
-     default, done-when deliberately empty -- so one writer serves both */
-  const d = shadowNewDraft();
-  d.objective = text;
-  d.done = "";
+  /* ── THIS BOX IS A CHAT, SO IT TALKS FIRST (founder, 2026-09-21) ──────
+     THE BUG. It was chat-SHAPED and was not a chat: every Enter went
+     straight to shadowCreateTask -> POST /api/shadow/missions, and then to
+     `start_now`. So "Hi" became a task with no work in it, the worker was
+     spawned on it, reported "no work requested", and the founder was asked
+     "What do you want done?" -- a clarification about a task they never
+     opened. Traced end to end in test_shadow_hi_trace.js: two requests, and
+     Shadow was asked about neither.
+
+     IT NOW GOES WHERE THE ANSWERS COME FROM. /api/shadow/chat is the same
+     door the stage composer uses, and a mission exists there ONLY because
+     Shadow emits a `mission` fence -- so a greeting gets a reply and
+     nothing else, and a real ask opens a task through the path that already
+     existed. No second rule, no classifier here, nothing about the create
+     endpoint changed: the Delegate FORM still posts to it, where a founder
+     typing into "The outcome you want" is deliberate.
+
+     AND IT NO LONGER STARTS WHAT IT OPENS. The task lands as a draft and
+     Start is the founder's press, which is what SHADOW.md has always said
+     ("Start is the founder's") and what the rest of this pane already
+     assumes. Auto-starting a task Shadow had just inferred is how a
+     greeting reached a worker at all. */
   let m = null;
-  try { m = (typeof shadowCreateTask === "function") ? await shadowCreateTask() : null; }
-  catch (e){ m = null; }
+  try {
+    const r = await shadowPost("/api/shadow/chat",
+                               { message: text, intake: true });
+    /* the status is in the sentence the founder reads: a 503 is a Shadow
+       that has not booted and a 403 is a stale token, and those are two
+       different things to do about it */
+    if (!r || !r.ok)
+      throw new Error("Shadow could not answer ("
+                      + ((r && r.status) || "no reply") + ").");
+    const doc = await r.json();
+    if (doc && doc.reply)
+      c.thread.push({ who: "shadow", ts: Date.now(), text: String(doc.reply) });
+    m = (doc && (doc.mission || (doc.missions || [])[0])) || null;
+  } catch (e){
+    m = null;
+    c.err = String((e && e.message) || "Shadow could not answer.");
+  }
   c.busy = false;
   if (!m){
-    c.err = S.shadowNewErr || "Could not reach Shadow.";
-    /* the panel must stay open to say so: shadowCreateTask only closes it
-       on a create that landed, but be explicit rather than rely on that */
+    /* NO TASK IS THE ORDINARY OUTCOME NOW, not a failure: Shadow answered
+       and there was no work in the line. The panel stays open so the
+       conversation can continue -- the next line may well be the task. */
     S.shadowNewOpen = true;
   } else {
-    /* it landed, it started, and the task pane has it: this chat is done */
+    /* a real ask: the task exists, put it in focus and let this chat go */
+    if (typeof S !== "undefined"){
+      if (!Array.isArray(S.shadowMissions)) S.shadowMissions = [];
+      if (!S.shadowMissions.some(x => x && x.id === m.id))
+        S.shadowMissions = S.shadowMissions.concat([m]);
+      S.shadowTaskSel = m.id;
+      S.shadowNewOpen = false;
+    }
     S.shadowNewChat = null;
+    if (typeof loadShadowHome === "function") loadShadowHome(true);
   }
   if (typeof scheduleRender === "function") scheduleRender();
   return m;
@@ -4656,11 +5491,33 @@ function shadowHomeHtml(){
     </aside>
     <section class="shwright">${err}
       <header class="shwhead">
-        <span class="shwseal" aria-hidden="true">S</span>
+        ${/* THE SEAL IS GONE (founder, 2026-09-21, pass 4: "remove the S
+             logo"). A circled monogram beside a title that already says
+             Shadow is a brand mark on a surface that is meant to read as a
+             conversation -- and the pane has exactly one voice, so nothing
+             needs disambiguating. The header is now back-arrow, title,
+             state, controls; .shwseal's rules leave panel.css with it. */""}
         <h2 class="shwtitle">${newOpen ? "New task"
           : esc((sel && sel.objective) || "Shadow")}</h2>
         <div class="shwheadacts">
-          ${!newOpen && sel ? shadowHeadTurnHtml(sel) : ""}
+          ${/* ── THE TURN COUNT IS BACKEND STATE (founder, 2026-09-21,
+               pass 4) ─────────────────────────────────────────────────
+             THIS REVERSES THE 2026-09-20 RULING that pinned `2/25` to this
+             line, and says so rather than quietly differing from it. That
+             ruling was right about WHERE a live count belongs (the header,
+             which never scrolls) and this direction changes WHETHER the
+             founder should be reading a worker turn count at all: "the user
+             should never have to understand how many worker turns occurred",
+             and worker turn number is named as state that stays in the
+             backend. A budget the founder cannot act on, ticking beside the
+             status, is the worker pipeline showing through.
+
+             shadowHeadTurnHtml IS NOT DELETED -- it is still exported and
+             still the honest render of turns_used/max_turns for any surface
+             that wants it (the corner card, the watching plane). The task
+             header stopped being one of them. The RUNNING pill still says
+             the task is alive, and the activity row in the stream still
+             says how long the current turn has been going. */""}
           ${!newOpen && face ? shadowTaskPillHtml(face) : ""}
           ${/* THE WORKER CHAT LIVES BEHIND THIS BUTTON AND NOWHERE ELSE.
                Same data-shtakeover hook and same target_session it has

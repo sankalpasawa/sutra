@@ -112,16 +112,41 @@ const DONE = { id: "m-done", objective: "get the EMI check green",
   result_excerpt: '{"role": "assistant", "text": "..."} ... tail',
   completion: SUMMARY };
 
+/* ── PASS 7 (founder, 2026-09-21): THE CARD IS THE ACTIONABLE SHAPE ─────
+   "When the user does NOT need to do anything manually, do NOT expose
+   internal verification machinery ... DO NOT hide the checks when the user
+   actually needs to inspect something."
+
+   So the card -- heading, criteria, evidence, budget -- renders when
+   something is still flagged for the founder, and a clean finish is one
+   Shadow message plus the file. These lanes are about the CARD, so they use
+   the shape that draws it: the same record with one check unmet. Nothing
+   about the card's content changed. The clean shape is asserted at the end
+   of this file. */
+const CARD = Object.assign({}, DONE, {
+  completion: Object.assign({}, SUMMARY, {
+    checks: SUMMARY.checks.map((k, i) =>
+      i === 0 ? Object.assign({}, k, { met: false }) : k),
+  }),
+});
+
 /* 1. the block renders every fact the server stamped, and no other */
 {
   const ctx = fresh();
+  /* PASS 7: every criterion, verdict, evidence quote and the budget line
+     render on BOTH shapes -- inside the Verification fold, which is where
+     this lane already read them from. Only the card's own heading is
+     conditional, and that is asserted just below. */
   const h = ctx.shadowCompletionHtml(DONE);
   /* THE COUNT LEFT THE HEADLINE (founder, 2026-09-21): "do not show the
      user internal verification machinery such as '3 of 3 checks passed'".
      The headline is now just Done; the count is still stamped on the record
      (completion.headline), still copied by shadowCompletionText, and still
      inside the Verification fold. */
-  assert(/class="shconfirmq">Done</.test(h), "the headline leads");
+  /* PASS 7: a clean finish leads with Shadow's own message; the card's
+     "Done" heading is the actionable shape, asserted in lane 1b. */
+  assert(/<div class="shsaidtext">Done/.test(h), "the finish leads with Done");
+  assert(/shdonesay/.test(h), "as a message from Shadow");
   assert(!/3 of 3 checks passed/.test(h.split("shdoneverif")[0]),
     "no check count outside the verification fold");
   /* THE OBJECTIVE LEFT THIS LINE (founder, 2026-09-15). It is already the
@@ -147,6 +172,24 @@ const DONE = { id: "m-done", objective: "get the EMI check green",
     "every met check draws as met");
   assert.strictEqual((h.match(/✓/g) || []).length, 3, "three ticks");
   console.log("ok 1 the summary renders");
+}
+
+/* 1b. PASS 7 CASE B: something is still flagged, so the CARD renders with
+   the evidence on the surface rather than folded away. */
+{
+  const ctx = fresh();
+  const h = ctx.shadowCompletionHtml(CARD);
+  assert(/class="shconfirmq">Done</.test(h),
+    "a flagged finish must render the card");
+  assert(!/shdonesay/.test(h), "and not the clean message");
+  assert(/check did not pass/.test(h),
+    "the caveat names what qualifies the result");
+  assert(/What you can open/.test(h) || !(CARD.completion.artifacts || []).length,
+    "the artifact section keeps its label on the card");
+  /* every criterion is still rendered, exactly as before */
+  SUMMARY.checks.forEach(k =>
+    assert(h.indexOf(k.check) !== -1, "check missing: " + k.check));
+  console.log("ok 1b a flagged finish keeps the card, the caveat and the checks");
 }
 
 /* 2. no summary -> no block. The panel must not invent one. */
@@ -210,8 +253,9 @@ const DONE = { id: "m-done", objective: "get the EMI check green",
   const home = ctx.shadowHomeHtml();
   /* the RESULT is still drawn once on the pane; the count that used to
      stand in for it now lives in the Verification fold (2026-09-21) */
-  assert(/class="shconfirmq">Done</.test(home), "it is still drawn, once");
-  assert.strictEqual((home.match(/class="shconfirmq">Done</g) || []).length, 1,
+  /* PASS 7: a clean finish is Shadow's own closing message, drawn once */
+  assert(/shdonesay/.test(home), "it is still drawn, once");
+  assert.strictEqual((home.match(/shdonesay/g) || []).length, 1,
     "and exactly once");
   assert(/data-shdone="m-done"/.test(home), "the block has its own hook");
   /* ...and it is AFTER the conversation, which is the whole point */
@@ -270,7 +314,9 @@ const DONE = { id: "m-done", objective: "get the EMI check green",
      renders after the timeline rather than inside the card, so this asks
      the pane rather than the card -- what is being pinned is that the
      finished task still HAS a surface, which was always the point. */
-  assert(/class="shconfirmq">Done</.test(ctx.shadowHomeHtml()),
+  /* PASS 7: a clean finish is Shadow's own closing message; the guarantee
+     being pinned is unchanged -- the finished task still HAS a surface. */
+  assert(/shdonesay"/.test(ctx.shadowHomeHtml()),
     "and it is showing the summary");
 
   /* 5b. THE LIST KEEPS IT NOW (founder, 2026-09-15, rule 4a). This used to
@@ -356,7 +402,7 @@ const DONE = { id: "m-done", objective: "get the EMI check green",
       done_when: [] },
     DONE,
   ];
-  assert(/class="shconfirmq">Done</.test(ctx.shadowHomeHtml()),
+  assert(/shdonesay"/.test(ctx.shadowHomeHtml()),
     "the summary is on screen after following the link");
   console.log("ok 9 the Now row opens the task it is about");
 }
@@ -460,7 +506,7 @@ function copyBtn(ctx, m){
   const h = ctx.shadowCompletionHtml(DONE);
   assert(/data-shcopydone="m-done"/.test(h), "the button names its mission");
   assert(/Copy result/.test(h), "and says what it does");
-  assert(/class="shconfirmq">Done</.test(h), "the headline is still there");
+  assert(/<div class="shsaidtext">Done/.test(h), "the headline is still there");
   /* ON THE PANE, where the block now lives (2026-09-20) -- same hook, same
      handler, one surface further down the scroller. */
   ctx.S.shadowMissions = [DONE];
@@ -761,11 +807,18 @@ function copyBtn(ctx, m){
 const WORKED = "Added the tenant loop in emi.py and ran the suite: 42 passed.";
 const DONE_WORK = Object.assign({}, DONE, {
   completion: Object.assign({}, SUMMARY, { outcome: WORKED }) });
+/* PASS 7: .shdonework is the CARD's one-line account, so these lanes use
+   the shape that draws the card. The same sentence on a clean finish is
+   Shadow's own closing message, asserted in lane 18b. */
+const CARD_WORK = Object.assign({}, DONE, {
+  completion: Object.assign({}, SUMMARY, { outcome: WORKED,
+    checks: SUMMARY.checks.map((k, i) =>
+      i === 0 ? Object.assign({}, k, { met: false }) : k) }) });
 
 /* 18. the account renders, in its own place, in the worker's own words */
 {
   const ctx = fresh();
-  const h = ctx.shadowCompletionHtml(DONE_WORK);
+  const h = ctx.shadowCompletionHtml(CARD_WORK);
   assert(h.indexOf(WORKED) !== -1, "the worker's account is on the card");
   assert(/shdonework/.test(h), "and it has its own class");
   /* ORDER IS THE POINT: what was done sits under the criteria line and
@@ -780,8 +833,19 @@ const DONE_WORK = Object.assign({}, DONE, {
     "…and before the verification bookkeeping, not after it");
   /* it is still the SERVER's account and nothing else changed about it */
   assert(/class="shconfirmq">Done</.test(h), "the headline is untouched");
-  assert.strictEqual((h.match(/shcheckmet/g) || []).length, 3,
+  assert.strictEqual((h.match(/shcheckmet/g) || []).length, 2,
     "and so are the verdicts");
+
+  /* 18b. PASS 7 CASE A: the SAME sentence, on a clean finish, is Shadow's
+     own closing message -- no card, no heading, no Summary block. */
+  const clean = ctx.shadowCompletionHtml(DONE_WORK);
+  assert(/<div class="shsaidtext">Done \u2014 added the tenant loop in emi\.py/
+    .test(clean), "a clean finish says it in Shadow's own voice");
+  for (const gone of ["shconfirmq", "shdonework", "shdonesummary",
+                      "What you can open", "shdoneburst"])
+    assert(clean.indexOf(gone) === -1,
+      "card machinery on a clean finish: " + gone);
+  assert(/shdoneverif/.test(clean), "and Verification stays one click away");
 
   /* the worker writes prose, so it goes through the text escaper */
   const evil = ctx.shadowCompletionHtml({ id: "m-e", completion: {
@@ -797,10 +861,13 @@ const DONE_WORK = Object.assign({}, DONE, {
       transcript had nothing to quote. */
 {
   const ctx = fresh();
-  const before = ctx.shadowCompletionHtml(DONE);              /* no outcome */
+  /* PASS 7: asserted on the CARD, which is the shape that carries the two
+     account blocks. CARD and CARD_WORK differ only by `outcome`, which is
+     exactly what makes the byte-for-byte claim below meaningful. */
+  const before = ctx.shadowCompletionHtml(CARD);              /* no outcome */
   assert(!/shdonework/.test(before), "no field -> no block");
-  const blank = ctx.shadowCompletionHtml(Object.assign({}, DONE, {
-    completion: Object.assign({}, SUMMARY, { outcome: "" }) }));
+  const blank = ctx.shadowCompletionHtml(Object.assign({}, CARD, {
+    completion: Object.assign({}, CARD.completion, { outcome: "" }) }));
   assert.strictEqual(blank, before, "an empty account is an absent one");
   /* and the blocks are genuinely ADDITIVE: strip them back out of the
      rendered card and what is left is exactly what rendered before.
@@ -811,7 +878,7 @@ const DONE_WORK = Object.assign({}, DONE, {
      research task's founder opens the pane to read. The claim this pins is
      unchanged and is the reason it is worth pinning: a card with no account
      is byte-for-byte the card that shipped before either block existed. */
-  const stripped = ctx.shadowCompletionHtml(DONE_WORK)
+  const stripped = ctx.shadowCompletionHtml(CARD_WORK)
     .replace(/<div class="shdonework"[\s\S]*?<\/div>/, "")
     .replace(/<div class="shdonesummary">[\s\S]*?\n    <\/div>/, "");
   assert.strictEqual(stripped, before,

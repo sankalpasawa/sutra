@@ -135,8 +135,11 @@ const asyncChecks = [];
     assert(/What are you waiting on\?/.test(h), "the founder's line is drawn");
     assert(/I am waiting on the worker&#x27;s verification\.|I am waiting on the worker's verification\./.test(h),
       "and Shadow's answer with it");
-    assert(/shsaidhead">Shadow</.test(h), "attributed to Shadow");
-    assert(/shsaidhead">You → Shadow</.test(h), "and to the founder");
+    assert(/shsaid shfrom-shadow/.test(h), "attributed to Shadow");
+    /* PASS 4: two participants, two names -- "You → Shadow" was the shape
+       of a relay; the founder is simply "You", on their own side. */
+    assert(/shsaid shfrom-you/.test(h), "and to the founder");
+    assert(/shsaidhead">You</.test(h), "named as You, not as a relay");
     pass("a conversational message is answered, in the stream");
   }));
 }
@@ -202,19 +205,19 @@ const TRANSCRIPT = [
   const h = pane(ctx, M());
   assert(/What are you waiting on\?/.test(h), "the founder's line returns");
   assert(/Waiting on the worker/.test(h), "and Shadow's answer");
-  /* D81 (2026-09-21): the orchestration that shares the same session is
-     FOLDED, never dropped -- one closed row per app prompt, verbatim inside.
-     It is never drawn as a founder line or as a bare Shadow reply. */
+  /* PASS 5 (2026-09-21, supersedes D81 for this surface): the orchestration
+     that shares the same session is not in the conversation at all. It is
+     still in the record -- the task chat is a published chat of its own --
+     and it is never drawn here, folded or otherwise. See
+     test_shadow_d81_ui.js, which pins both halves. */
   const stream = h.slice(h.indexOf("shtimeline"));
-  assert.strictEqual((stream.match(/<details class="shsaid shfold"/g) || []).length, 3,
-    "boot, brief and steering: three folded rows");
-  for (const folded of ["[Shadow boot]", "Write the opening brief",
+  assert.strictEqual((stream.match(/shfold/g) || []).length, 0,
+    "no substrate row, folded or otherwise");
+  for (const hidden of ["[Shadow boot]", "Write the opening brief",
                         "driving one target chat", "```brief"]){
-    assert(stream.indexOf(folded) !== -1,
-      "the app's prompt is in the page, folded: " + folded);
+    assert(stream.indexOf(hidden) === -1,
+      "the app's prompt reached the conversation: " + hidden);
   }
-  assert(!/You → Shadow<\/div>\s*<div class="shsaidtext">\[Shadow boot\]/.test(stream),
-    "an app prompt is never drawn as the founder's own line");
   assert(ctx.fetched.indexOf("shadow-1") !== -1,
     "read through the existing throttled transcript reader");
   pass("the conversation survives reload and restart, from the record");
@@ -249,14 +252,20 @@ const TRANSCRIPT = [
     "shadow-1": TRANSCRIPT,
   };
   const h = pane(ctx, M({ turns_used: 1, turn_open: null }));
-  assert(/Worker agent · turn 1/.test(h), "the worker turn heading is unchanged");
-  assert(/Created the file and verified it\./.test(h),
+  /* PASS 4: the SELECTION is unchanged -- the REPORT line is still picked
+     by the same machinery and rendered verbatim. What changed is who it is
+     attributed to: Shadow, with no turn number. */
+  assert(!/Worker agent|\bturn \d/i.test(h), "a worker turn reached the founder");
+  /* PASS 6: the same sentence, with its SUBJECT shifted to the worker --
+     Shadow narrates the work rather than speaking as the worker. */
+  assert(/The worker created the file and verified it\./.test(h),
     "and the REPORT line still selects exactly as before");
-  assert(/class="shagentsay"/.test(h), "in the worker's own row shape");
+  assert(/class="shsaid shfrom-shadow shsay/.test(h),
+    "drawn as something Shadow said");
   /* and the conversation sits in the same stream */
   assert(/class="shtimeline"/.test(h), "one stream");
   assert(/What are you waiting on\?/.test(h), "carrying the conversation too");
-  pass("worker turns and REPORT selection render exactly as before");
+  pass("REPORT selection is unchanged; Shadow is who says it");
 }
 
 /* ══ a finished task: the route refuses, and it is said in words ════════ */

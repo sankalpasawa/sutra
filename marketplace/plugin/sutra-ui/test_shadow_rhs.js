@@ -70,6 +70,59 @@ function fresh(){
   return ctx;
 }
 
+/* ── PASS 4: THE WORKER DOES NOT SPEAK ON THIS SURFACE ───────────────────
+   (founder, 2026-09-21: "the worker is an implementation detail ... do NOT
+   show WORKER AGENT · TURN 1, worker turn numbers, raw worker messages".)
+
+   The rows this file used to read off `shagenthead` / `shagentsay` are now
+   SHADOW messages: the worker's own selected sentence, attributed to Shadow,
+   with no turn number. Every claim below about WHICH words survive the
+   filters is unchanged and still asserted -- only where they are read from
+   moved. shadowAgentRowHtml is still exported and still tested at the end of
+   this file; the main conversation simply stopped calling it. */
+const WORK_ROW =
+  /class="shsaid shfrom-shadow shsay[^"]*">\s*(?:<div class="shsaidhead">Shadow<\/div>\s*)?<div class="shsaidtext">([\s\S]*?)<\/div>/g;
+/* ── PASS 6: SHADOW NARRATES, IT DOES NOT VENTRILOQUISE ─────────────
+   A narration row is the worker's own sentence with its SUBJECT shifted to
+   the worker ("I found 10 items" -> "The worker found 10 items"), because
+   attributing the worker's first person to Shadow made Shadow claim the
+   worker's intentions as its own. Every content word is still the worker's.
+
+   THE LANES BELOW ARE ABOUT SELECTION -- which sentence wins, and what the
+   cleaners drop -- so they unwrap that attribution and go on comparing
+   against the worker's own words. The attribution itself is pinned, in
+   both directions, in test_shadow_conversation_model.js. Only the three
+   prefixes shadowThirdPerson can produce are unwrapped, so a row that grew
+   a second one would fail here rather than pass quietly. */
+function unattributed(x){
+  const t = String(x == null ? "" : x);
+  const m = t.match(/^The worker (?:is |has |will |would )?/);
+  if (!m) return t;
+  const rest = t.slice(m[0].length);
+  assert(!/^The worker\b/.test(rest), "attribution was applied twice: " + t);
+  /* the shift lowercases the verb it took the subject from, so putting the
+     subject back means putting the capital back with it */
+  return rest.charAt(0).toUpperCase() + rest.slice(1);
+}
+/* every narration line Shadow said, in order */
+function works(h){
+  const out = [];
+  let m; WORK_ROW.lastIndex = 0;
+  /* pass 6: unwrapped here, once, so every SELECTION lane below keeps
+     comparing against the worker's own words -- see unattributed() */
+  while ((m = WORK_ROW.exec(String(h)))) out.push(unattributed(m[1]));
+  return out;
+}
+/* the one narration line, or "" -- the shape the old one-row reads had */
+function work1(h){ const w = works(h); return w.length ? w[0] : ""; }
+
+/* the whole point: no turn ever reaches the founder as a turn */
+function noWorkerUI(h, why){
+  assert(!/Worker agent/i.test(h), why || "a worker turn reached the founder");
+  assert(!/shagenthead|shagentsay/.test(h),
+    "a worker-turn row is still drawn on the conversation surface");
+}
+
 const M = (over) => Object.assign({
   id: "m-1", objective: "EMI auto-fix", template: "fix",
   target_mode: "new", target_session: "sess-1", target_chat: "c-1",
@@ -90,7 +143,8 @@ function pane(ctx, m, extra){
 {
   const ctx = fresh();
   const h = pane(ctx, M());
-  assert(/class="shwseal"/.test(h), "the Shadow seal is the pane's identity");
+  /* pass 4: "remove the S logo". The title is the pane's identity. */
+  assert(!/shwseal/.test(h), "the S seal is still in the header");
   assert(/class="shwtitle">EMI auto-fix</.test(h), "the task titles the pane");
   /* the running pill now opens with an empty spinner span, so RUNNING is no
      longer adjacent to the pill's `>`. The claim being made is "the header
@@ -101,7 +155,7 @@ function pane(ctx, m, extra){
   assert(/class="shwheadacts"/.test(h), "the header's action group is missing");
   assert(/data-shtakeover="sess-1"[^>]*>Open the chat</.test(h),
     "Open the chat must be in the header, pointed at the worker session");
-  console.log("ok 1 header: seal, title, status pill, Open the chat");
+  console.log("ok 1 header: title, status pill, Open the chat -- no seal");
 }
 
 /* ── 2. OPEN THE CHAT IS THE ONLY DOOR TO THE WORKER CONVERSATION ────────
@@ -155,11 +209,25 @@ function pane(ctx, m, extra){
      immediately below it. The conversation should begin naturally with
      Shadow speaking." shadowOpeningHtml is still exported and still
      asserted on its own; the stream no longer opens with it. */
-  assert(!/class="shsaid shopening"/.test(h),
-    "the objective must not be restated under the header");
-  /* the turn count left the card for the pinned header on 2026-09-20 (shadowHeadTurnHtml) -- the card scrolls with the conversation now, and a LIVE number may not scroll away */
-  assert(/class="shwturn"[^>]*>10\/12</.test(h),
-    "the header must read 10/12, from the record");
+  /* PASS 5 (founder, 2026-09-21): REVERSES pass 3. "The first user input
+     itself MUST appear as a normal USER \u2192 SHADOW conversation message.
+     That is conversational turn #1." The header still carries the objective
+     as the pinned anchor; the conversation now opens with the founder's own
+     request, where a conversation's first turn belongs. */
+  assert(/class="shsaid shfrom-you shopening"/.test(h),
+    "the conversation must open with the founder's own request");
+  assert(h.indexOf("EMI auto-fix") !== -1, "and it must be their words");
+  /* PASS 4 (founder, 2026-09-21): the turn count came OFF the header. It
+     moved there on 2026-09-20 so a live number would not scroll away; this
+     direction says the founder should never have to understand how many
+     worker turns occurred, and names worker turn number as backend state.
+     shadowHeadTurnHtml is still exported and still asserted on its own. */
+  assert(!/class="shwturn"/.test(h),
+    "the worker turn count is still on the founder's header");
+  assert.strictEqual(
+    ctx.shadowHeadTurnHtml({ turns_used: 10, max_turns: 12 })
+      .indexOf('>10/12<') > 0, true,
+    "the counter itself must still render for the surfaces that want it");
   assert(!/shcard2k">turn</.test(h), "…and the brief must not repeat it");
   /* PASS 3 (founder, 2026-09-21): metadata left the main surface. WHERE IT
      RUNS is a session id and DONE WHEN is said only when Shadow needs a
@@ -176,7 +244,7 @@ function pane(ctx, m, extra){
     "STOPPED ON restates the NEEDS YOU pill in the engine's words");
   assert(!/needs founder/.test(blocked), "the raw blocker must not be drawn");
   assert(!/last updated/.test(blocked), "LAST UPDATED must stay off the brief");
-  console.log("ok 3 the brief is WHERE IT RUNS / DONE WHEN / TURN, and no more");
+  console.log("ok 3 the arrival screen carries no metadata card and no turn count");
 }
 
 /* ── 3b. THE KIND TAG IS OFF THE CARD (founder, 2026-09-19) ──────────────
@@ -228,7 +296,8 @@ function pane(ctx, m, extra){
       + "floor, so I stopped here." },
   ] };
   const h = pane(ctx, M());
-  assert(/class="shagent"/.test(h), "the agent block is missing");
+  assert.strictEqual(works(h).length, 2, "the narration rows are missing");
+  noWorkerUI(h);
   /* BOTH TURNS, IN ORDER (founder, 2026-09-15). This used to assert that
      only the latest survived; that was the defect -- turn 2 erased turn 1
      and the delegation lost its history. */
@@ -242,17 +311,20 @@ function pane(ctx, m, extra){
      six-turn release mission numbers 1..6 against turns_used 6. */
   /* two turns held, turns_used 10 -> they are turns 9 and 10, counted back
      from the record. Numbering them 1 and 2 would relabel history. */
-  assert(/Worker agent · turn 9</.test(h) && /Worker agent · turn 10</.test(h),
-    "turns are anchored to turns_used, not to what the transcript holds");
+  /* THE NUMBERS STAY INTERNAL (pass 4). They are still computed -- the
+     events carry `n`, anchored to turns_used exactly as before -- and they
+     are no longer rendered. A founder should never have to know how many
+     worker executions happened. */
+  assert(!/turn 9|turn 10/.test(h), "a turn number reached the founder");
   assert(!/>The agent/.test(h), "the old THE AGENT label is still on screen");
   /* A TIMELINE, NOT A DUMP: one line per turn, and Shadow's own injected
      instructions are never drawn as the worker speaking. */
-  assert.strictEqual((h.match(/class="shagentsay"/g) || []).length, 2,
-    "one line per turn -- not the transcript");
+  assert.strictEqual(works(h).length, 2,
+    "one line per reported turn -- not the transcript");
   assert(h.indexOf("carry on") === -1 && h.indexOf("and the PR?") === -1,
     "Shadow's own injected turns are not the agent reporting");
   assert(!/class="gwturns"/.test(h), "and the transcript is still not inlined");
-  console.log("ok 4 the timeline keeps every turn, one line each, in order");
+  console.log("ok 4 Shadow narrates every turn, one line each, in order");
 }
 
 /* ── 4b. THE PREVIEW IS A CLAMPED QUOTE, NOT A SUMMARY ─────────
@@ -268,17 +340,18 @@ function pane(ctx, m, extra){
   ctx.S.goalTranscript = { "sess-1": [{ role: "assistant", text: LONG }] };
   const h = pane(ctx, M({ turns_used: 4 }));
 
-  assert(/Worker agent \u00b7 turn 4/.test(h), "the WORKER AGENT heading is missing");
-  const say = (h.match(/class="shagentsay"[^>]*>([^<]*)</) || [])[1] || "";
+  noWorkerUI(h);
+  const say = work1(h);
   assert(say, "the preview line is missing");
   assert(!/\n/.test(say), "the preview must be a single line");
-  assert(LONG.indexOf(say.replace(/\s\u2026$/, "")) === 0,
+  assert(LONG.toLowerCase().indexOf(
+      unattributed(say).replace(/\s\u2026$/, "").toLowerCase()) === 0,
     "the preview must be a PREFIX of the worker's real words, got: " + say);
-  /* the full sentence is reachable without opening the chat */
-  assert(/class="shagentsay" title="/.test(h),
-    "the untruncated line must ride on the title attribute");
-
-  /* and the VISUAL floor, so a narrow pane cannot wrap it to two rows */
+  /* THE VISUAL FLOOR STILL GUARDS THE RETAINED WORKER ROW. The narration
+     row is a MESSAGE and is deliberately not clamped -- a sentence Shadow
+     says wraps like any other. shadowAgentRowHtml is still the honest
+     "worker's Nth turn" render for any caller that wants it, and its
+     one-line rule is unchanged. */
   const css = fs.readFileSync(
     path.join(__dirname, "static", "panel.css"), "utf8");
   const rule = css.slice(css.indexOf(".shagentsay{"));
@@ -294,7 +367,7 @@ function pane(ctx, m, extra){
 {
   const ctx = fresh();
   const h = pane(ctx, M({ target_session: null }));
-  assert(!/class="shagent"/.test(h),
+  assert.strictEqual(works(h).length, 0,
     "with nothing to report the block draws nothing at all");
   assert.strictEqual(ctx.fetched.length, 0,
     "a mission with no session must not trigger a transcript read");
@@ -381,12 +454,32 @@ const IV = {
                   value: "True" }] },
     last_instruction: "Accepted — folding the dual-arch verify gate in.",
   }));
-  assert(/class="shstory"/.test(h), "the story block is missing");
-  assert(/You answered · 1h ago/.test(h),
-    "what you answered, stamped from founder_response.answered_at");
-  assert(/Sign off on release-checklist\.md/.test(h),
-    "the question you answered is quoted from the record");
-  assert(/the checklist is approved/.test(h), "the answer summary renders");
+  /* PASS 5 (founder, 2026-09-21): an answer is the FOUNDER SPEAKING, not a
+     record of a form submission. It was a `.shstory` card headed "You
+     answered · 1h ago" with the question restated and a label/value list;
+     pass 5 names "answered" among the internal records that must not be
+     chat, and requires every actual user message to become a USER message.
+     Same record, same values, drawn as what it is. shadowStoryHtml is kept
+     and still exported -- it is simply not what the stream calls. */
+  assert(/class="shsaid shfrom-you shanswered"/.test(h),
+    "the founder's answer must be a message from the founder");
+  assert(/the checklist is approved: True/.test(h),
+    "carrying the server's own label and the value they chose");
+  assert(!/class="shstory"/.test(h), "and not the record-shaped card");
+  assert(!/You answered · 1h ago/.test(h), "nor its stamped heading");
+  /* the question is NOT restated beside the answer -- Shadow asked it in
+     its own row, above, and printing it twice is the duplication the
+     redesign removes */
+  assert(!/Sign off on release-checklist\.md/.test(h),
+    "the question must not be restated beside the answer");
+  /* an answer with nothing chosen draws nothing rather than a bare
+     "you answered" */
+  assert(!/shanswered/.test(pane(fresh(), M({ founder_response:
+    { intervention_id: "iv-1", question: "q?",
+      answered_at: "2026-09-21T10:00:00Z" } }))),
+    "an empty answer must draw nothing at all");
+  assert.strictEqual(typeof ctx.shadowStoryHtml, "function",
+    "shadowStoryHtml must still be exported");
   /* THE WORKER'S OWN INSTRUCTION IS NOT A FOUNDER REPORT (founder,
      2026-09-15). last_instruction is the turn Shadow injects INTO the
      delegate -- "You are a delegate session working for the founder via
@@ -441,7 +534,7 @@ const LEAKED = [
      2026-09-15). A numbered heading with an empty body under it is
      furniture, and on a timeline it reads as a turn that happened and was
      lost. The turn is still in the worker chat, unabridged. */
-  assert(!/class="shagent"/.test(h),
+  assert.strictEqual(works(h).length, 0,
     "an all-control turn must take no row on the timeline");
   for (const word of ["PLACEMENT", "domain_ref", "ROUTE:", "OBJECTIVE:",
                       "FIT:", "DEPTH:", "EFFORT:", "COST:", "IMPACT:",
@@ -452,8 +545,8 @@ const LEAKED = [
   /* A TURN THAT WAS ALL CONTROL PLANE QUOTES NOTHING (founder, 2026-09-15).
      The preview is the WORKER'S OWN WORDS; a state-derived stand-in in that
      slot reads as something the worker said, so no line is drawn at all. */
-  assert(!/class="shagentsay"/.test(h),
-    "an all-control turn must draw no preview line, not a substituted phrase");
+  assert.strictEqual(works(h).length, 0,
+    "an all-control turn must draw no line, not a substituted phrase");
   assert(!/Working on it/.test(h),
     "no hardcoded status phrase may stand in for the worker's own words");
   console.log("ok 8b the control plane never reaches the founder");
@@ -483,7 +576,7 @@ const LEAKED = [
   assert(!/PLACEMENT|DEPTH:|TRIAGE:/.test(h), "control plane leaked");
   /* ONE LINE (founder, 2026-09-15): one sentence, and short enough to read
      at a glance. The rest of the turn is in the worker chat. */
-  const say = (h.match(/class="shagentsay"[^>]*>([^<]*)</) || [])[1] || "";
+  const say = work1(h);
   assert(say.length <= 170, "the line must stay short, got " + say.length);
   assert(!/\n/.test(say), "the block must be a single line");
   assert.strictEqual(
@@ -529,7 +622,7 @@ const TABLE_TURN = [
   const ctx = fresh();
   ctx.S.goalTranscript = { "sess-1": [{ role: "assistant", text: TABLE_TURN }] };
   const h = pane(ctx, M({ state: "blocked", turns_used: 1 }));
-  const say = (h.match(/class="shagentsay"[^>]*>([^<]*)</) || [])[1] || "";
+  const say = work1(h);
 
   /* the heading IS the sentence the founder wanted, and it is the worker's
      own words -- only the hashes and a full stop were touched */
@@ -569,7 +662,7 @@ const TABLE_TURN = [
   ctl.S.goalTranscript = { "sess-1": [{ role: "assistant",
     text: "PLACEMENT: x\nDEPTH: 1/5\nTRIAGE: ok" }] };
   const h = pane(ctl, M({ state: "running", turns_used: 1 }));
-  assert(!/class="shagentsay"/.test(h), "no line may be drawn");
+  assert.strictEqual(works(h).length, 0, "no line may be drawn");
   assert(!/Working on it|Queued|Paused\./.test(h),
     "no state-derived phrase may stand in for the worker");
   console.log("ok 8e clean and gist can never emit structure or invention");
@@ -733,8 +826,10 @@ const askMission = (over, checks, fields) => M(Object.assign({
      signs it. */
   assert(!/shcard2k">where it runs</.test(h),
     "the metadata card must not draw the conversation surface");
-  assert(/class="shwturn"/.test(h),
-    "…and the count is on the header, where it moved on 2026-09-20");
+  /* PASS 4: and the count is nowhere on the founder's surface at all --
+     it is backend state (see block 3). */
+  assert(!/class="shwturn"/.test(h),
+    "…and the worker turn count must be off the header");
 
   /* TWO unmet, the ask signs ONE -> the row stays, because it still says
      something the ask does not */
@@ -787,7 +882,7 @@ const askMission = (over, checks, fields) => M(Object.assign({
     const c = fresh();
     c.S.goalTranscript = { "sess-1": [{ role: "assistant", text }] };
     const h = pane(c, M({ turns_used: 1 }));
-    return (h.match(/class="shagentsay"[^>]*>([^<]*)</) || [])[1] || "";
+    return work1(h);
   };
 
   /* THE REGRESSION, in the founder's own example */
@@ -812,9 +907,15 @@ const askMission = (over, checks, fields) => M(Object.assign({
     "a substantive heading must still win");
 
   /* an opener that carries its own news is kept whole, never re-cut */
+  /* PASS 6: unattributed() puts a shifted SUBJECT back, but it cannot
+     un-shift a pronoun in the middle of a sentence -- so where the fixture
+     itself is first-person the expectation is compared through the shift.
+     The claim under test is unchanged: this opener carries its own news and
+     is not skipped as an announcement. */
   assert.strictEqual(
     say("What I did: updated the README with setup and testing instructions."),
-    "What I did: updated the README with setup and testing instructions.",
+    ctx.shadowThirdPerson(
+      "What I did: updated the README with setup and testing instructions."),
     "an opener with three content words after it is not an announcement");
   assert.strictEqual(
     say("Summary: the migration removed 14 call sites and added 3 tests."),
@@ -826,7 +927,7 @@ const askMission = (over, checks, fields) => M(Object.assign({
   none.S.goalTranscript = { "sess-1": [{ role: "assistant",
     text: "## What I did\n\nDone." }] };
   const h = pane(none, M({ turns_used: 1 }));
-  assert(!/class="shagentsay"/.test(h),
+  assert.strictEqual(works(h).length, 0,
     "an all-announcement turn must draw no line");
   assert(!/What I did|Done\./.test(h), "and must not print the announcement");
 
@@ -853,11 +954,8 @@ const SH = (ts) => ({ role: "user", text: "[Shadow · mission m-1] go on",
 function timeline(ctx, msgs, over){
   ctx.S.goalTranscript = { "sess-1": msgs };
   const h = pane(ctx, M(Object.assign({ turns_used: 2 }, over || {})));
-  return { h: h,
-    rows: (h.match(/shagenthead">([^<]*)</g) || [])
-      .map(x => (x.match(/>([^<]*)</) || [])[1]),
-    says: (h.match(/class="shagentsay"[^>]*>([^<]*)</g) || [])
-      .map(x => (x.match(/>([^<]*)</) || [])[1]) };
+  const says = works(h);
+  return { h: h, rows: says, says: says };
 }
 
 /* 1. TWO worker turns -> BOTH render, in order */
@@ -866,9 +964,8 @@ function timeline(ctx, msgs, over){
     SH("2026-09-15T10:00:00Z"), W("Oriented in the repo.", "2026-09-15T10:01:00Z"),
     SH("2026-09-15T10:02:00Z"), W("Wrote the file.", "2026-09-15T10:03:00Z"),
   ]);
-  assert.deepStrictEqual(t.rows,
-    ["Worker agent · turn 1", "Worker agent · turn 2"],
-    "turn 2 must not erase turn 1");
+  assert.strictEqual(t.rows.length, 2, "turn 2 must not erase turn 1");
+  noWorkerUI(t.h);
   assert.deepStrictEqual(t.says, ["Oriented in the repo.", "Wrote the file."],
     "both turns keep their own words, in order");
 }
@@ -898,16 +995,11 @@ function timeline(ctx, msgs, over){
   const t = timeline(fresh(), msgs, { turns_used: 7 });
   assert.strictEqual(t.rows.length, 7,
     "seven turns must draw seven rows, got " + t.rows.length);
-  assert.deepStrictEqual(t.rows.slice(0, 3),
-    ["Worker agent \u00b7 turn 1", "Worker agent \u00b7 turn 2",
-     "Worker agent \u00b7 turn 3"], "numbered from the first turn");
-  assert.strictEqual(t.rows[6], "Worker agent \u00b7 turn 7",
-    "and the last is turn 7, not a truncation");
+  noWorkerUI(t.h, "seven turns must read as seven things Shadow said");
   assert.strictEqual(t.says[0], "Step 1 is finished.", "turn 1 survives");
   assert.strictEqual(t.says[6], "Step 7 is finished.", "and so does turn 7");
   /* one line each: a timeline, not a transcript */
-  assert.strictEqual((t.h.match(/class="shagentsay"/g) || []).length, 7,
-    "one line per turn, seven lines");
+  assert.strictEqual(works(t.h).length, 7, "one line per turn, seven lines");
   /* and no inner scroller was introduced to hold them */
   assert(!/shtimeline[^"]*"[^>]*style="[^"]*overflow/.test(t.h),
     "the pane stays the single scroll container");
@@ -924,18 +1016,29 @@ function timeline(ctx, msgs, over){
     intervention_id: "iv-1", question: "Ship it?",
     answered_at: "2026-09-15T10:03:00Z",
     summary: [{ key: "ok", label: "approved", value: "True" }] } }));
-  const order = [];
-  const re = /shagenthead">([^<]*)<|class="shstoryhead">([^<]*)</g;
-  let x; while ((x = re.exec(h))) order.push(x[1] || x[2]);
-  assert.strictEqual(order.length, 3, "three events, got " + order.join(" | "));
-  assert(/turn 1/.test(order[0]), "turn 1 first");
-  assert(/You answered/i.test(order[1]),
+  /* PASS 4: the rows are Shadow's words, not numbered turns, so the order
+     is read off the words themselves and off the answer card's own head.
+     PASS 6: and those words carry the attribution, so the needle does too. */
+  const at = (needle) => h.indexOf(ctx.shadowThirdPerson(needle));
+  assert(at("Oriented in the repo.") > -1 && at("Carried on as told.") > -1,
+    "both narration rows must be here");
+  /* PASS 5: the answer is the founder's own message, carrying the values
+     they chose -- so the ordering claim is made on those. */
+  assert(at("approved: True") > at("Oriented in the repo."),
     "the answer sits BETWEEN the turns, where answered_at puts it");
-  assert(/turn 2/.test(order[2]), "and the next turn follows it");
+  assert(at("Carried on as told.") > at("approved: True"),
+    "and the next turn follows it");
+  assert(/class="shsaid shfrom-you shanswered"/.test(h),
+    "and it is on the founder's side of the conversation");
+  noWorkerUI(h);
   /* and it is drawn ONCE -- the spine must not repeat it below */
-  assert.strictEqual((h.match(/class="shstory"/g) || []).length, 1,
-    "the answer card must not be duplicated");
-  assert(/Ship it\?/.test(h), "the question you answered is the record's");
+  assert.strictEqual((h.match(/shanswered/g) || []).length, 1,
+    "the answer must not be duplicated");
+  /* PASS 5: the question is NOT restated beside the answer -- Shadow asked
+     it in its own row when it asked, and a conversation does not quote
+     itself back. It is still on the record (founder_response.question). */
+  assert(!/Ship it\?/.test(h),
+    "the question must not be restated beside the answer");
 }
 
 /* 4. generic and control-plane turns stay filtered, and do not take a row */
@@ -945,7 +1048,7 @@ function timeline(ctx, msgs, over){
     SH(), W("## What I did\n\nAdded the troubleshooting section.",
             "2026-09-15T10:03:00Z"),
   ]);
-  assert.deepStrictEqual(t.rows, ["Worker agent · turn 2"],
+  assert.strictEqual(t.rows.length, 1,
     "a turn that said nothing readable takes no row");
   assert.deepStrictEqual(t.says, ["Added the troubleshooting section."],
     "and the announcement above the news is still skipped");
@@ -1043,7 +1146,15 @@ const doneMission = (outcome) => M({ state: "done", target_session: "sess-1",
      (founder, 2026-09-21). Both are still rendered and still on the record;
      they are simply no longer the first thing a founder reads about a
      finished task. */
-  assert(/class="shconfirmq">Done</.test(h), "the headline must remain");
+  /* PASS 7 (founder, 2026-09-21): nothing is waiting on the founder here,
+     so the finish is a Shadow MESSAGE rather than a card -- one sentence,
+     the file, and the Verification fold closed beside them. The card's own
+     "Done" heading belongs to the actionable shape, which is unchanged. */
+  assert(/class="shsaid shfrom-shadow shdonesum shdonesay/.test(h),
+    "a clean finish must be a message from Shadow");
+  assert(/<div class="shsaidtext">Done/.test(h), "and it must say Done");
+  assert(!/class="shconfirmq">Done</.test(h),
+    "the card's heading must not be drawn on a clean finish");
   assert(/6 of 20 turns used/.test(h), "the turn cost stays, in the fold");
   assert(h.indexOf("shdoneverif") < h.indexOf("6 of 20 turns used"),
     "...and it is inside the fold, not above it");
@@ -1083,10 +1194,14 @@ const doneMission = (outcome) => M({ state: "done", target_session: "sess-1",
   const h = pane(ctx, doneMission("The checklist now names release safety "
     + "first and all seven checks are concrete. Evidence: `grep -rn x` "
     + "returned four hits."));
-  const work = (h.match(/class="shdonework"[^>]*>([^<]*)</) || [])[1] || "";
-  assert.strictEqual(work,
-    "The checklist now names release safety first and all seven checks are "
-    + "concrete.", "a real conclusion is shown, got: " + work);
+  /* PASS 7: nothing is waiting on the founder, so the conclusion is drawn
+     as Shadow's own closing message -- "Done \u2014 <the worker's sentence>" --
+     rather than as the card's one-line preview. The SELECTION is unchanged:
+     it is still the conclusion and still not the evidence beside it. */
+  const done = (h.match(/shdonesay[^>]*>\s*<div class="shsaidhead">Shadow<\/div>\s*<div class="shsaidtext">([^<]*)</) || [])[1] || "";
+  assert.strictEqual(done,
+    "Done \u2014 the checklist now names release safety first and all seven "
+    + "checks are concrete.", "a real conclusion is shown, got: " + done);
   /* the evidence sentence is not VISIBLE text IN THE PREVIEW; it may still
      ride on the title, which is how the untrimmed outcome stays reachable.
 
@@ -1105,13 +1220,13 @@ const doneMission = (outcome) => M({ state: "done", target_session: "sess-1",
      never written. What is NOT relaxed: shadowSummaryHtml still draws
      nothing at all when the outcome is pure working with no conclusion in
      it (8l), which is the case that ruling was actually about. */
-  const beforeSummary = h.slice(0, h.indexOf('class="shdonesummary"') === -1
-    ? h.length : h.indexOf('class="shdonesummary"'));
-  assert(!/>[^<]*grep -rn x/.test(beforeSummary),
-    "the evidence sentence must not be rendered in the preview");
-  /* the untrimmed text is still reachable */
-  assert(/shdonework[^>]*title="The checklist now names/.test(h),
-    "the full outcome rides on the title");
+  assert(h.indexOf("grep -rn x") === -1,
+    "the evidence sentence must not reach the conversation at all");
+  /* PASS 7: and it does not ride on a hover title either -- `outcome` can be
+     the worker's raw closing dump, and hover is still a surface. The
+     untrimmed text is behind Copy result and Open the chat. */
+  assert(!/title="[^"]*grep -rn/.test(h),
+    "the raw outcome must not hang on a hover title");
   /* the evidence test itself */
   assert.strictEqual(ctx.shadowResultEvidence("Ran `grep -rn foo` twice."), true);
   assert.strictEqual(ctx.shadowResultEvidence("-rw-r--r--@ 1 joy staff"), true);
@@ -1252,19 +1367,30 @@ const asyncChecks = [];
     { text: "Prioritize release safety.", at: "2026-09-15T10:03:00Z" },
     { text: "Use the existing implementation.", at: "2026-09-15T10:07:00Z" },
   ] }));
+  /* PASS 4: every row is one of two speakers, so the stream reads as
+     Shadow / You / Shadow / You / Shadow -- the worker's turns are Shadow's
+     words now, and the founder's are simply "You". */
   const order = [];
-  const re = /shagenthead">([^<]*)<|class="shsaidhead">([^<]*)<|class="shsaidtext">([^<]*)</g;
-  let x; while ((x = re.exec(h))) order.push(x[1] || x[2] || x[3]);
+  const re = /class="shsaidhead">([^<]*)<|class="shsaidtext">([^<]*)</g;
+  let x; while ((x = re.exec(h))) order.push(x[1] || x[2]);
   assert.deepStrictEqual(order, [
-    "Worker agent \u00b7 turn 1",
-    "You \u2192 Shadow", "Prioritize release safety.",
-    "Worker agent \u00b7 turn 2",
-    "You \u2192 Shadow", "Use the existing implementation.",
-    "Worker agent \u00b7 turn 3",
-  ], "worker -> aside -> worker -> aside -> worker, in order");
-  /* 3. an aside must not replace worker history */
-  assert(/Inspected the repo/.test(h) && /Wrote the module/.test(h)
-      && /Added the tests/.test(h), "every worker turn survives");
+    /* PASS 5: turn #1 is the founder's own request, and Shadow answers it */
+    "You", "EMI auto-fix",
+    "Shadow", "Got it. I\u2019m working through this now.",
+    /* PASS 5: a speaker is named once per RUN, so the second consecutive
+       Shadow message carries no head of its own.
+       PASS 6: and a worker report is narrated, not ventriloquised. */
+    "The worker inspected the repo.",
+    "You", "Prioritize release safety.",
+    "Shadow", "The worker wrote the module.",
+    "You", "Use the existing implementation.",
+    "Shadow", "The worker added the tests.",
+  ], "you -> shadow -> you -> shadow -> you -> shadow, in order");
+  noWorkerUI(h);
+  /* 3. an aside must not replace worker history (pass 6: the verbs are
+     lowercased by the subject shift -- every content word is still there) */
+  assert(/inspected the repo/i.test(h) && /wrote the module/i.test(h)
+      && /added the tests/i.test(h), "every worker turn survives");
   /* 11. nothing is put in Shadow's mouth */
   assert(!/Shadow understood|Shadow is considering|Working on it/.test(h),
     "no fabricated Shadow reply");
@@ -1301,10 +1427,26 @@ function stream(msgs, says, turns){
   ctx.S.goalTranscript = { "sess-1": msgs };
   const h = pane(ctx, M({ state: "running", turns_used: turns,
                           founder_says: says }));
+  /* PASS 4: one column, two speakers. A row is "SHADOW: <what was said>"
+     or "YOU: <what was said>" -- the turn number is no longer rendered, so
+     the ORDER claims below are made on the words themselves, which is a
+     strictly stronger assertion than the heading was. */
   const out = [];
-  const re = /shagenthead">([^<]*)<|class="shsaidtext">([^<]*)</g;
-  let x; while ((x = re.exec(h))) out.push(x[1] || ("YOU: " + x[2]));
-  return { rows: out, h: h };
+  const re = /class="shsaid shfrom-(you|shadow)[^"]*">\s*(?:<div class="shsaidhead">[^<]*<\/div>\s*)?<div class="shsaidtext">([^<]*)</g;
+  let x;
+  /* pass 6: SHADOW rows carry the attribution; unwrap it so these ORDERING
+     lanes keep reading as the worker's own words -- see unattributed() */
+  while ((x = re.exec(h)))
+    out.push(x[1].toUpperCase() + ": "
+             + (x[1] === "shadow" ? unattributed(x[2]) : x[2]));
+  /* PASS 5: turn #1 is the founder's own request, asserted once here and
+     then dropped -- these blocks are about how the LATER events interleave,
+     and repeating the opening row in six expectations says nothing new. */
+  assert.strictEqual(out[0], "YOU: EMI auto-fix",
+    "the conversation must open with the founder's own request");
+  assert.strictEqual(out[1], "SHADOW: " + "Got it. I\u2019m working through this now.",
+    "and Shadow must answer it before any work is reported");
+  return { rows: out.slice(2), h: h };
 }
 
 /* A. turn 1 -> aside -> turn 2, exactly the founder's sequence */
@@ -1313,8 +1455,8 @@ function stream(msgs, says, turns){
     WU("2026-09-15T10:00:00Z"), WA("Inspected the repo.", "2026-09-15T10:01:00Z"),
     WU("2026-09-15T10:02:30Z"), WA("Wrote the module.", "2026-09-15T10:03:00Z"),
   ], [{ text: "Prioritize release safety.", at: "2026-09-15T10:02:00Z" }], 2);
-  assert.deepStrictEqual(t.rows, ["Worker agent \u00b7 turn 1",
-    "YOU: Prioritize release safety.", "Worker agent \u00b7 turn 2"],
+  assert.deepStrictEqual(t.rows, ["SHADOW: Inspected the repo.",
+    "YOU: Prioritize release safety.", "SHADOW: Wrote the module."],
     "the aside belongs between the turns it happened between");
 }
 
@@ -1326,9 +1468,9 @@ function stream(msgs, says, turns){
     WU("2026-09-15T10:02:30Z"), WA("Wrote the module."),
     WU("2026-09-15T10:04:30Z"), WA("Added the tests."),
   ], [{ text: "Prioritize release safety.", at: "2026-09-15T10:02:00Z" }], 3);
-  assert.deepStrictEqual(t.rows, ["Worker agent \u00b7 turn 1",
-    "YOU: Prioritize release safety.", "Worker agent \u00b7 turn 2",
-    "Worker agent \u00b7 turn 3"],
+  assert.deepStrictEqual(t.rows, ["SHADOW: Inspected the repo.",
+    "YOU: Prioritize release safety.", "SHADOW: Wrote the module.",
+    "SHADOW: Added the tests."],
     "an unstamped worker message must not push the aside to the end");
 }
 
@@ -1338,8 +1480,8 @@ function stream(msgs, says, turns){
     WU("2026-09-15T10:00:00Z"), WA("One.", "2026-09-15T10:01:00Z"),
     WU("2026-09-15T10:02:00Z"), WA("Two.", "2026-09-15T10:03:00Z"),
   ], [{ text: "That's good, leave it.", at: "2026-09-15T10:09:00Z" }], 2);
-  assert.deepStrictEqual(t.rows, ["Worker agent \u00b7 turn 1",
-    "Worker agent \u00b7 turn 2", "YOU: That's good, leave it."],
+  assert.deepStrictEqual(t.rows, ["SHADOW: One.", "SHADOW: Two.",
+    "YOU: That's good, leave it."],
     "an aside after the last turn must not be pulled forward");
 }
 
@@ -1352,9 +1494,9 @@ function stream(msgs, says, turns){
   ], [{ text: "a1", at: "2026-09-15T10:02:00Z" },
       { text: "a2", at: "2026-09-15T10:06:00Z" },
       { text: "a3", at: "2026-09-15T10:07:00Z" }], 3);
-  assert.deepStrictEqual(t.rows, ["Worker agent \u00b7 turn 1", "YOU: a1",
-    "Worker agent \u00b7 turn 2", "YOU: a2", "YOU: a3",
-    "Worker agent \u00b7 turn 3"], "every aside lands where it happened");
+  assert.deepStrictEqual(t.rows, ["SHADOW: One.", "YOU: a1",
+    "SHADOW: Two.", "YOU: a2", "YOU: a3",
+    "SHADOW: Three."], "every aside lands where it happened");
 }
 
 /* D. an aside is never pulled to the front merely for living in its own
@@ -1364,19 +1506,23 @@ function stream(msgs, says, turns){
     WU("2026-09-15T10:00:00Z"), WA("One.", "2026-09-15T10:01:00Z"),
     WU("2026-09-15T10:02:00Z"), WA("Two.", "2026-09-15T10:03:00Z"),
   ], [{ text: "later", at: "2026-09-15T10:04:00Z" }], 2);
-  assert.strictEqual(t.rows[0], "Worker agent \u00b7 turn 1",
+  assert.strictEqual(t.rows[0], "SHADOW: One.",
     "a worker turn opens the stream, never a separately-stored aside");
 }
 
-/* E. numbering is the record's, and inserting asides does not renumber */
+/* E. PASS 4: the numbering is still the record's -- and the founder never
+   sees it. Inserting an aside must not invent, drop or reorder a turn, and
+   no turn vocabulary may reach the surface. */
 {
   const t = stream([
     WU("2026-09-15T10:00:00Z"), WA("One.", "2026-09-15T10:01:00Z"),
     WU("2026-09-15T10:04:00Z"), WA("Two.", "2026-09-15T10:05:00Z"),
   ], [{ text: "mid", at: "2026-09-15T10:02:00Z" }], 2);
-  assert(/turn 1$/.test(t.rows[0]) && /turn 2$/.test(t.rows[2]),
-    "turns stay 1 and 2 with an aside between them");
-  assert(!/turn 3/.test(t.h), "no turn is invented by the insertion");
+  assert.deepStrictEqual(t.rows,
+    ["SHADOW: One.", "YOU: mid", "SHADOW: Two."],
+    "both turns stay, with the aside between them");
+  noWorkerUI(t.h);
+  assert(!/\bturn \d/i.test(t.h), "no turn number may reach the founder");
 }
 
 /* F. nothing is put in Shadow's mouth */
@@ -1384,8 +1530,8 @@ function stream(msgs, says, turns){
   const t = stream([WU("2026-09-15T10:00:00Z"),
                     WA("One.", "2026-09-15T10:01:00Z")],
     [{ text: "do X instead", at: "2026-09-15T10:02:00Z" }], 1);
-  assert(/YOU \u2192 Shadow/.test(t.h) || /shsaidhead/.test(t.h),
-    "the aside is labelled as the founder's");
+  assert(/class="shsaid shfrom-you/.test(t.h),
+    "the aside is on the founder's side of the conversation");
   assert(!/Shadow understood|Shadow is considering|Working on it/.test(t.h),
     "no fabricated Shadow reply");
 }

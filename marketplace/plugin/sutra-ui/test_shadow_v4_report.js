@@ -85,17 +85,30 @@ function timeline(msgs, over){
   ctx.S.shadowMissions = [m];
   ctx.S.shadowTaskSel = m.id;
   const h = ctx.shadowHomeHtml();
-  /* split rather than match a nested shape: a row with no line has one
-     fewer closing div, and a regex that assumed two silently read "" */
-  /* SPLIT ON THE CLASS PREFIX, not the exact tag (2026-09-17). A turn IN
-     FLIGHT now renders as `shagent shagentopen` -- same row, same heading,
-     plus a live dot, an elapsed clock and a sweep bar. Matching the closing
-     quote silently dropped that row and read "0 rows" for a turn the pane
-     was drawing, which is the opposite of what this lane asserts. */
-  const rows = h.split(/<div class="shagent[ "]/).slice(1).map(body => ({
-    head: (body.match(/shagenthead">([^<]*)</) || [])[1] || "",
-    say: (body.match(/class="shagentsay"[^>]*>([^<]*)</) || [])[1] || "",
-  }));
+  /* PASS 4 (founder, 2026-09-21): the worker does not speak on this
+     surface. A reported turn is a SHADOW message (`shsay`); a turn in
+     flight is the activity row (`shworking`), which carries no report --
+     exactly the rule this lane has always asserted, minus the turn number
+     the founder is no longer shown. Rows are read in document order so
+     every ordering claim below is unchanged. */
+  /* PASS 6: a narration row is the worker's own sentence with its SUBJECT
+     shifted to the worker, so the selection claims below unwrap that and go
+     on comparing against the worker's own words. The shift is pinned in
+     test_shadow_conversation_model.js. */
+  const unwrap = (x) => {
+    const t = String(x == null ? "" : x);
+    const m = t.match(/^The worker (?:is |has |will |would )?/);
+    if (!m) return t;
+    const rest = t.slice(m[0].length);
+    assert(!/^The worker\b/.test(rest), "attribution applied twice: " + t);
+    return rest.charAt(0).toUpperCase() + rest.slice(1);
+  };
+  const rows = [];
+  const RE = /<div class="shsaid shfrom-shadow (shsay|shworking)[^"]*"[^>]*>\s*(?:<div class="shsaidhead">[^<]*<\/div>\s*)?<div class="shsaidtext[^"]*"[^>]*>([\s\S]*?)<\/div>/g;
+  let x;
+  while ((x = RE.exec(h)))
+    rows.push({ open: x[1] === "shworking",
+                say: x[1] === "shsay" ? unwrap(x[2]) : "" });
   return { h: h, rows: rows, ctx: ctx };
 }
 
@@ -110,12 +123,14 @@ const pass = (s) => { console.log("ok " + (++ok) + " " + s); };
       "2026-09-16T10:00:20Z"),
   ], { turns_used: 0, turn_open: 1 });
   assert.strictEqual(t.rows.length, 1, "the turn in flight still takes a row");
-  assert(/Worker agent · turn 1/.test(t.rows[0].head),
-    "and the heading names it, got: " + t.rows[0].head);
+  assert.strictEqual(t.rows[0].open, true,
+    "and it is the activity row, not a report");
   assert.strictEqual(t.rows[0].say, "",
     "an active turn must show NO line, got: " + t.rows[0].say);
-  assert(!/class="shagentsay"/.test(t.h),
-    "and no line element at all is drawn");
+  /* PASS 4: no turn number, and the indicator says only that work is
+     happening -- it must never become a worker log. */
+  assert(!/Worker agent|\bturn \d/i.test(t.h),
+    "a worker turn reached the founder");
   /* not one word of the in-flight turn reached the founder */
   assert(t.h.indexOf("Reading the target directory") === -1,
     "partial worker output leaked onto the timeline");
@@ -171,8 +186,8 @@ const pass = (s) => { console.log("ok " + (++ok) + " " + s); };
       "2026-09-16T10:02:20Z"),
   ], { turns_used: 1, turn_open: 2 });
   assert.strictEqual(t.rows.length, 2, "both turns take a row");
-  assert(/turn 1/.test(t.rows[0].head) && /turn 2/.test(t.rows[1].head),
-    "in order: " + t.rows.map(r => r.head).join(" | "));
+  assert(!t.rows[0].open && t.rows[1].open,
+    "in order: the reported turn, then the one in flight");
   assert.strictEqual(t.rows[0].say,
     "Created the file and verified its contents.",
     "the finished turn keeps its report");
@@ -264,7 +279,10 @@ const pass = (s) => { console.log("ok " + (++ok) + " " + s); };
       "2026-09-16T09:56:03Z"),
   ], { turns_used: 2 });   /* no turn_open field at all -- an old record */
   assert.deepStrictEqual(t.rows.map(r => r.say),
-    ["Plan mode is active, so I have not created the file.",
+    [/* PASS 6: unwrap() puts a shifted SUBJECT back but cannot un-shift a
+        pronoun mid-sentence -- "so I have not" narrates as "so it has not".
+        Every content word is still the worker's. */
+     "Plan mode is active, so it has not created the file.",
      "One file written, three verifications pass."],
     "a historical timeline must render exactly as it always did");
   assert(!/PLACEMENT|TYPE:|\|/.test(t.h), "and the control plane stays out");
@@ -421,6 +439,10 @@ function sentenceOf(n, lead){
 assert.strictEqual(sentenceOf(MAX).length, MAX, "the fixture builder is off");
 assert.strictEqual(sentenceOf(MAX + 1).length, MAX + 1, "ditto");
 
+/* the pass-6 subject shift itself, so a lane can state its expectation in
+   the form the row actually renders */
+const shift = fresh().shadowThirdPerson;
+
 const reportSay = (report, over) => timeline(
   [SH("2026-09-16T10:00:00Z"), W("REPORT: " + report, "2026-09-16T10:01:00Z")],
   Object.assign({ turns_used: 1, turn_open: null }, over || {})).rows[0];
@@ -548,10 +570,17 @@ const reportSay = (report, over) => timeline(
   const long1 = sentenceOf(MAX + 40, "Rewired the delegate spawn path");
   const R = long1 + " The push is a floor, so I stopped there.";
   const say = reportSay(R).say;
-  assert(R.indexOf(say) !== -1,
-    "the line must be an exact substring of the worker's report, got: " + say);
-  assert.strictEqual(say, "The push is a floor, so I stopped there.",
-    "the worker's own words, unedited");
+  /* PASS 6 NARROWS THIS CLAIM, and says exactly how. The line is still the
+     worker's own sentence, selected and never composed -- but its SUBJECT
+     is shifted to the worker so Shadow narrates rather than ventriloquises.
+     So the invariant is: the rendered line is the deterministic shift of an
+     exact substring of the worker's report, and nothing else. Every content
+     word, and every mark of punctuation, is still the worker's. */
+  const picked = "The push is a floor, so I stopped there.";
+  assert(R.indexOf(picked) !== -1,
+    "the selected sentence must be an exact substring of the report");
+  assert.strictEqual(say, shift(picked),
+    "the worker's own words, with only the subject narrated: " + say);
   /* and a worker sentence left unterminated never gains a full stop */
   const open = reportSay(long1 + " the suite went green").say;
   assert(!/green\.$/.test(open), "punctuation must never be added");

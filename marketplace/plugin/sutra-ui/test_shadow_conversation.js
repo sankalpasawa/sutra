@@ -287,11 +287,23 @@ ok("no criterion reaches the completion surface", () => {
     "an unmet criterion is on the primary surface");
 });
 
-ok("what the founder CAN act on still leads", () => {
+ok("a clean finish is a Shadow message and the file, nothing else", () => {
+  /* PASS 7 (founder, 2026-09-21): "when the user does NOT need to do
+     anything manually, do NOT expose internal verification machinery ...
+     make the completion appear as a natural Shadow response." */
   const html = C.shadowCompletionHtml(DONE_INDIA);
-  assert(/Done/.test(html), "the plain ending is missing");
-  assert(/What you can open/.test(html), "the artifact section is missing");
+  assert(/class="shsaid shfrom-shadow shdonesum shdonesay/.test(html),
+    "a clean finish must be a message from Shadow, on Shadow's side");
+  assert(/<div class="shsaidtext">Done/.test(html), "and it must say Done");
   assert(/india-trip-plan\.md/.test(html), "the artifact is not named");
+  /* the card's furniture is gone with the card */
+  for (const gone of ["What you can open", "shconfirmq", "shdonesummary",
+                      "shdoneburst", "shdonework"])
+    assert(html.indexOf(gone) === -1,
+      "card machinery on a clean finish: " + gone);
+  /* and the record is untouched behind it */
+  assert(/shdoneverif/.test(html), "Verification must still be one click away");
+  assert(/data-shcopydone/.test(html), "and the full record still copyable");
 });
 
 ok("every criterion is still one click away, whole", () => {
@@ -402,7 +414,12 @@ ok("an unrevised task opens on its own objective", () => {
 
 ok("the opening message is the founder speaking, and carries no controls", () => {
   const html = C.shadowOpeningHtml(awaiting());
-  assert(/You \u2192 Shadow/.test(html), "it is not attributed to the founder");
+  /* pass 4: two participants, two names. "You \u2192 Shadow" was the shape of a
+     RELAY; the founder is simply "You", right-aligned. */
+  assert(/class="shsaidhead">You</.test(html),
+    "it is not attributed to the founder");
+  assert(/shsaid shfrom-you/.test(html),
+    "the founder's line is not on the founder's side");
   assert(!/<button/.test(html) && !/data-shact/.test(html),
     "the opening line carries a control");
 });
@@ -417,8 +434,13 @@ ok("the metadata card no longer draws the conversation surface", () => {
   assert(!/shcard2k">done when</.test(stream),
     "DONE WHEN is still on the conversation surface");
   /* The header carries the objective; the stream does not restate it. */
-  assert(!/class="shsaid shopening"/.test(stream),
-    "the objective is restated under the header it is already in");
+  /* PASS 5 (founder, 2026-09-21): REVERSES pass 3. "The first user input
+     itself MUST appear as a normal USER \u2192 SHADOW conversation message.
+     That is conversational turn #1." The header still carries the objective
+     as the pinned anchor; the conversation now opens with the founder's own
+     request, where a conversation's first turn belongs. */
+  assert(/class="shsaid shfrom-you shopening"/.test(stream),
+    "the conversation must open with the founder's own request");
 });
 
 ok("the decision, the outdated block and the completion are IN the stream", () => {

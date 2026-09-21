@@ -130,7 +130,10 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
     assert(!/shask-check/.test(h), "not drawn while the worker is still working");
     h = pane(ctx, M({ state: "paused", pause_reason: "founder_confirm",
       done_when: [{ check: "x", tier: "founder_confirm", met: true, confirmed_at: "2026-09-21T10:00:00Z" }] }));
-    assert(/shask-done/.test(h) && /Confirmed by you: x/.test(h), "it stays in the scrollback as answered");
+    /* PASS 4: said in words rather than labelled with the internal
+       vocabulary of the criterion -- the same record, the same row. */
+    assert(/shask-done/.test(h) && /You confirmed: x/.test(h),
+      "it stays in the scrollback as answered");
     pass("one Confirm, on the canonical surface; the answer stays in the scrollback");
   }
 
@@ -175,7 +178,9 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
     const h = pane(ctx, M({ state: "running",
       approval: { id: "ap-1", used: true, used_at: "2026-09-21T14:02:00Z" },
       approved_say: "Push fix/auth to origin and open the PR." }));
-    assert(/shask-done/.test(h) && /held, then sent/.test(h), "the resolved row");
+    /* PASS 4: the hold is said, not labelled. Same record, same row. */
+    assert(/shask-done/.test(h) && /You approved that, so I sent it/.test(h),
+      "the resolved row");
     assert(!/shask-hold/.test(h), "and no live hold");
     pass("a used approval stays in the scrollback as sent");
   }

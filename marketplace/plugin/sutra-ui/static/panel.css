@@ -3571,6 +3571,42 @@
   margin-right:-10px;padding-right:10px;overscroll-behavior:contain}
 /* an empty scroller must not hold open a gap the column then pads around */
 .shwscroll:empty{display:none}
+/* ── A CONVERSATION HAS A MEASURE (founder, 2026-09-21, pass 4) ─────────
+   The prototype centres the stream in a ~52rem column, and that is not
+   decoration: a message set to the full width of a wide monitor is a
+   paragraph the eye loses its place in, and a right-aligned founder bubble
+   pinned to a far edge stops reading as a reply to the line above it.
+   Scoped to the scroller's own children so the pinned header, the
+   intervention form and the composer are untouched. */
+/* ── THE CONVERSATION IS ANCHORED FROM THE LEFT (founder, 2026-09-21,
+     pass 6) ────────────────────────────────────────────────────────────
+   WHAT WAS WRONG, measured in Chrome at a 1160px window:
+
+       .shwscroll   L=323  W=831
+       .shtimeline  L=396  W=676      <- 73px of centring inset
+
+   pass 5 gave the stream a reading measure by CENTRING it (margin-left and
+   margin-right both auto). Centring is right for a document and wrong for a
+   conversation: Shadow ended up ~90px in from the pane's own content edge,
+   reading as an indented block rather than as the other participant.
+
+   SO THE MEASURE IS KEPT AND THE ANCHOR MOVES. max-width still caps the
+   line length; margin-left:0 pins that cap to the LEFT edge, which is where
+   Shadow's messages live. The founder's messages right-align inside the
+   same measure (align-self:flex-end below), so the two sides stay related
+   to each other instead of drifting apart on a wide monitor.
+
+   align-self:stretch is explicit because an auto cross-axis margin cancels
+   a flex item's stretch -- which is what shrank the stream to 676px in the
+   first place, and why the inset was not simply (831-832)/2. */
+.shwscroll>*{align-self:stretch;width:100%;max-width:60rem;
+  margin-left:0;margin-right:auto}
+/* A SHORT CONVERSATION SITS AT THE BOTTOM, the way a chat does -- otherwise
+   two messages float at the top of a tall pane over a field of dead space,
+   a long way from the composer they belong to. `margin-top:auto` in a flex
+   column takes the free space and collapses to nothing once the stream is
+   taller than the pane, so a long conversation is unaffected. */
+.shwscroll>.shtimeline{margin-top:auto}
 /* THE LEFT COLUMN SCROLLS ON ITS OWN. It used to grow with the page; with
    the page no longer growing, a long task list would be cut off instead. */
 .shwleft{min-height:0}
@@ -3588,7 +3624,6 @@
 .shwleft>.shwfoot{flex:0 0 auto;margin-top:auto}
 .shwhead{display:flex;align-items:center;gap:9px;
   padding-bottom:10px;border-bottom:1px solid var(--line-soft)}
-.shwseal{font-family:var(--serif);font-size:15px;color:var(--acc);flex:none}
 .shwtitle{font-family:var(--serif);font-size:17px;font-weight:600;margin:0;
   flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
@@ -3748,7 +3783,7 @@
 
 /* 1. WAITING ON SHADOW. A dot that breathes and an ellipsis that counts, in
       the row the answer will replace. */
-.shthinking .shsaidtext{color:var(--muted);font-style:italic}
+.shsaid.shthinking>.shsaidtext{color:var(--muted);font-style:italic}
 .shthinkdot{display:inline-block;width:6px;height:6px;border-radius:50%;
   background:currentColor;margin-right:7px;vertical-align:baseline;
   animation:livepulse 1.4s ease-in-out infinite}
@@ -3909,7 +3944,6 @@
 
 /* ── header: one row, baseline-aligned, pill beside the title ───────────── */
 .shwhead{gap:8px;padding-bottom:8px;margin-bottom:2px}
-.shwseal{font-size:14px;line-height:1}
 .shwtitle{font-size:15.5px;line-height:1.25}
 
 /* ── task card: a brief, not a modal ────────────────────────────────────── */
@@ -3943,12 +3977,10 @@
    PRESENTATION ONLY: every hook, handler and endpoint under these rules is
    the one that was already there. */
 
-/* ── header: seal, title, then the state and the way into the worker chat */
+/* ── header: title, then the state and the way into the worker chat.
+     NO SEAL (founder, 2026-09-21, pass 4: "remove the S logo"). */
 .shwhead{gap:11px;padding-bottom:13px;margin-bottom:16px;
   border-bottom:1px solid var(--line-soft)}
-.shwseal{display:flex;align-items:center;justify-content:center;
-  width:27px;height:27px;border:1px solid var(--line);border-radius:50%;
-  font-size:13px;line-height:1}
 .shwtitle{font-size:21px;line-height:1.2;font-weight:600;letter-spacing:-.01em}
 .shwheadacts{margin-left:auto;display:flex;align-items:center;gap:9px;
   flex:none}
@@ -3975,16 +4007,96 @@
    No inner scroller on purpose -- the pane is already the scroller, and a
    second one inside it is the thing this surface exists not to be. Rows are
    one line each, so a ten-turn mission is ten lines. */
-.shtimeline{display:flex;flex-direction:column}
-.shtimeline .shagent{margin-top:9px}
-.shtimeline .shstory{margin-top:9px}
-.shtimeline .shsaid{margin-top:9px}
-/* the founder's own aside: the accent rail the pane already uses for "this
-   came from you", set apart from the worker's grey rows */
+/* ══ THE CONVERSATION (founder, 2026-09-21, pass 4) ══════════════════════
+   USER ↔ SHADOW, and nothing else on this surface. The stream is one
+   vertical column with real breathing room; alignment and weight carry the
+   speaker, the way the prototype (shadow-chat-prototype.html) does, so
+   neither side needs a label-shaped card to be legible.
+
+   THE GAP MOVED FROM THE ROWS TO THE COLUMN. Every row used to set its own
+   margin-top:9px, which cannot express "a message is further from the one
+   before it than its own head is from its own body". A flex `gap` can, and
+   it also lets a row align itself without fighting a margin. */
+.shtimeline{display:flex;flex-direction:column;align-items:stretch;gap:22px;
+  padding:6px 0 2px}
+.shtimeline .shagent,.shtimeline .shstory,.shtimeline .shsaid{margin-top:0}
+/* the rows that are NOT plain speech -- an ask, a decision, a superseded
+   revision -- keep the accent rail they have always had. A DECISION still
+   looks like a decision; only a SENTENCE stopped looking like one. */
 .shsaid{padding:11px 15px;background:var(--acc-bg);
   border-left:3px solid var(--acc);border-radius:0 10px 10px 0}
 .shsaidhead{font:600 9.5px/1 var(--mono);letter-spacing:.11em;
   text-transform:uppercase;color:var(--acc);margin-bottom:6px}
+
+/* ── YOU: right, filled, compact ────────────────────────────────────────
+   The only speaker whose message is an INPUT rather than a report, so it is
+   the only one with a fill. Capped in width because a founder's line is
+   short and a full-width bubble reads as a document. */
+.shsaid.shfrom-you{align-self:flex-end;max-width:min(34rem,86%);
+  background:var(--bubble);border-left:0;border-radius:15px 15px 5px 15px;
+  padding:11px 16px}
+.shsaid.shfrom-you>.shsaidhead{text-align:right;color:var(--faint)}
+.shsaid.shfrom-you>.shsaidtext{color:var(--ink)}
+
+/* ── SHADOW: left, roomy, NOT A CARD ───────────────────────────────────
+   "Do not make every Shadow message a bordered dashboard card." So a plain
+   Shadow message has no fill, no border and no radius -- it is text on the
+   page, in the serif the pane titles in, at the widest measure. */
+.shsaid.shfrom-shadow{align-self:flex-start;max-width:min(44rem,100%);
+  background:transparent;border-left:0;border-radius:0;padding:0}
+.shsaid.shfrom-shadow>.shsaidhead{color:var(--faint)}
+.shsaid.shfrom-shadow>.shsaidtext{font:15.5px/1.62 var(--serif);
+  letter-spacing:.002em;color:var(--ink)}
+/* a narration row carries the worker's own sentence: same voice, same
+   weight -- the founder is not meant to be able to tell which turn it came
+   from, only that Shadow said it. */
+.shsaid.shsay>.shsaidtext{white-space:normal}
+/* ── THE QUEUED ACKNOWLEDGEMENT (founder, 2026-09-21, pass 10) ──────────
+   One muted line under Shadow's sentence, carrying the pill this pane
+   already draws for the state. Calm, not empty, and never busier than
+   running: no spinner, no bar, no second surface. */
+.shqueued{display:flex;align-items:baseline;gap:9px;margin-top:9px;
+  flex-wrap:wrap}
+.shqueuednote{font:400 12.5px/1.5 var(--sans);color:var(--muted)}
+
+/* ── THE DELIVERABLE ON A FINISH (founder, 2026-09-21, pass 14) ─────────
+   The same quiet monospace block a decision preview uses, because it is the
+   same thing being shown for the same reason: here is what was produced,
+   read for yourself. The chip below it opens the whole file. */
+.shsaid.shdonesay>.shdoneprev{margin-top:11px}
+.shdoneprev>.shdectext{margin:0}
+
+/* a decision preview that was cut: the mark, not a sentence about it */
+.shdeccut{font:400 13px/1 var(--mono);color:var(--faint);padding:2px 0 0 2px}
+
+/* ── A CLEAN FINISH IS A MESSAGE (founder, 2026-09-21, pass 7) ──────────
+   Shadow handing the work back: one sentence, the file it produced, and the
+   two quiet affordances beside them. No card, no "Done" heading, no
+   "WHAT YOU CAN OPEN" label, no Summary block -- those belong to the
+   actionable card, which is unchanged and still renders whenever something
+   is waiting on the founder. The Verification fold is here, closed, so
+   nothing is lost and nothing is pushed at anyone. */
+.shsaid.shdonesay>.shdonefiles{margin-top:10px}
+.shdoneacts{display:flex;align-items:center;gap:14px;margin-top:10px;
+  flex-wrap:wrap}
+.shdoneacts>.shcheckfold{margin-top:0}
+.shsaid.shdonesay .shdonecopy{padding:4px 11px;font-size:11.5px;
+  border-radius:7px}
+.shsaid.shdonesay>.shdonewas{margin-top:8px}
+/* a message CONTINUING a run: no label, and tucked closer to the one above
+   it so the run reads as one voice rather than three separate blocks */
+.shtimeline>.shsaid.shrun{margin-top:-13px}
+
+/* ── the activity indicator, and it must never become a worker log ─────
+   One word, one dot, and the elapsed clock the turn already carries. */
+.shworking>.shsaidtext{display:flex;align-items:center;gap:8px;
+  color:var(--muted);font-family:var(--sans);font-size:13px;font-style:italic}
+.shworkdot{width:6px;height:6px;border-radius:50%;background:var(--acc);
+  flex:none;animation:shworkpulse 1.9s ease-in-out infinite}
+.shworkclock{font-variant-numeric:tabular-nums;color:var(--faint);
+  font-style:normal}
+@keyframes shworkpulse{0%,100%{opacity:1}50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.shworkdot{animation:none}}
 .shsaidtext{font-size:13px;line-height:1.55;color:var(--ink);
   white-space:pre-wrap;overflow-wrap:anywhere}
 /* D81: an app prompt into Shadow's chat and its answer, folded to one line.
@@ -4873,7 +4985,7 @@
    The founder's own line opens the thread. It is drawn in the same .shsaid
    block every other speaker uses -- only the head differs -- so the column
    reads as one conversation rather than a panel followed by a chat. */
-.shopening .shsaidtext{font-size:14px;line-height:1.55}
+.shsaid.shopening>.shsaidtext{font-size:14px;line-height:1.55}
 .shwhint{margin-left:8px;color:var(--muted);font-size:11.5px}
 
 /* The former panels, now messages. Inside the stream they lose the card
@@ -4887,4 +4999,4 @@
 /* the one line a conversation with nothing in it yet is allowed to say */
 .shidle{background:transparent;border-left-color:var(--line)}
 .shidle .shsaidhead{color:var(--faint)}
-.shidle .shsaidtext{color:var(--muted)}
+.shsaid.shidle>.shsaidtext{color:var(--muted)}

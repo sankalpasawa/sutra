@@ -1,13 +1,25 @@
 #!/usr/bin/env node
-/* test_shadow_d81_ui.js -- FOLDED, NEVER DROPPED (founder D81, 2026-09-21).
+/* test_shadow_d81_ui.js -- THE SUBSTRATE IS NOT A PARTICIPANT
+ * (founder, 2026-09-21, pass 5; SUPERSEDES D81 for this surface).
  *
- * "All the conversations with the app should happen in the Sutra chat UI and
- * should be shown there." Until D81 the task stream left out every prompt the
- * app sends into the task's Shadow chat -- boot, brief ask, steering, and now
- * the judge -- together with Shadow's replies to them. This lane pins the
- * replacement: each app prompt is ONE folded row in the stream, a one-line
- * label the founder opens to read the prompt and the answer verbatim. The
- * founder's own lines and Shadow's answers to them draw exactly as before.
+ * D81, the same day, read "all the conversations with the app should happen
+ * in the Sutra chat UI and should be shown there", and every prompt the app
+ * sends into the task's Shadow chat -- boot, brief ask, steering, judge --
+ * became one folded row in the stream. Pass 5 is explicit that they must not
+ * be chat at all:
+ *
+ *     "The current UI is instead showing internal Shadow lifecycle/event
+ *      records such as SHADOW BOOTED WITH ITS OPERATING CONTEXT, SHADOW READ
+ *      THE WORKER AND CHOSE THE NEXT INSTRUCTION ... Those are
+ *      implementation/substrate details. They must NOT be rendered as
+ *      conversation messages."
+ *
+ * WHAT THIS LANE NOW PINS, and D81's requirement is still met by the second
+ * clause: the prompts and every reply to them are absent from the
+ * conversation, AND nothing was dropped from the record -- the task chat is
+ * a published chat of its own (app.py _publish_task_chat -> m.task_chat), so
+ * all of it is still readable in Chats, verbatim. The founder's own lines and
+ * Shadow's answers to them draw exactly as before.
  *
  * Run: node test_shadow_d81_ui.js
  */
@@ -83,80 +95,87 @@ const TRANSCRIPT = [
   { role: "assistant", text: '```json\n{"verdict":"met","reason":"suite ran green"}\n```', ts: "2026-09-21T10:02:10Z" },
 ];
 
-/* ══ 1. THE READER: one folded row per app prompt, replies inside it ═════ */
+/* ══ 1. THE READER: an app prompt and its replies leave the stream ══════ */
 {
   const ctx = fresh();
   ctx.S.goalTranscript = { "shadow-1": TRANSCRIPT };
   const rows = ctx.shadowTalkTurns(M());
-  assert.strictEqual(rows.length, 6, "4 folds + the founder's line + Shadow's answer");
-  /* JSON compare: arrays born inside the vm realm carry another Array
-     prototype, which deepStrictEqual (rightly) refuses to call equal */
-  assert.strictEqual(JSON.stringify(rows.map(r => r.fold || r.who)),
-    JSON.stringify(["boot", "brief", "steer", "founder", "shadow", "judge"]),
-    "in transcript order");
-  assert.strictEqual(JSON.stringify(rows[5].replies),
-    JSON.stringify(["Reading the diff.", '```json\n{"verdict":"met","reason":"suite ran green"}\n```']),
-    "every reply to an app prompt goes into its fold, across messages");
-  assert.strictEqual(rows[2].replies.length, 1);
-  assert(/Shadow booted/.test(rows[0].label));
-  assert(/worker's brief/.test(rows[1].label));
-  assert(/next instruction/.test(rows[2].label));
-  assert(/judged a check/.test(rows[5].label));
-  assert.strictEqual(rows[3].text, "What are you waiting on?");
-  assert.strictEqual(rows[4].text, "Waiting on the worker's verification.");
+  /* only the founder's line and Shadow's answer to it survive */
+  assert.strictEqual(rows.length, 2,
+    "only the two real conversational turns survive, got " + rows.length);
+  assert.strictEqual(JSON.stringify(rows.map(r => r.who)),
+    JSON.stringify(["founder", "shadow"]), "in transcript order");
+  assert.strictEqual(rows[0].text, "What are you waiting on?");
+  assert.strictEqual(rows[1].text, "Waiting on the worker's verification.");
+  /* the DETECTOR is unchanged -- this is what recognises a prompt as the
+     app's, and every one of the four shapes is still recognised */
+  for (const [text, kind] of [
+      ["[Shadow boot] Read your operating context", "boot"],
+      ["Write the opening brief for this task's worker chat.", "brief"],
+      ["You are Shadow, driving one target chat toward an outcome.", "steer"],
+      ["You are settling ONE completion check by reading evidence.", "judge"],
+      ["[Pending asks on this task -- ...]", "asks"]])
+    assert.strictEqual((ctx.shTalkFold(text) || {}).kind, kind,
+      "the detector must still recognise: " + kind);
+  assert.strictEqual(ctx.shTalkFold("What are you waiting on?"), null,
+    "and must never claim a founder's line");
   assert.strictEqual(src.indexOf("SH_TALK_SKIP"), -1, "the skip list is gone");
-  pass("the reader folds every app prompt with its replies and drops nothing");
+  pass("the reader drops every app prompt and every reply to it");
 }
 
-/* ══ 2. THE STREAM: folded rows drawn, verbatim text present, nothing hidden */
+/* ══ 2. THE STREAM: not one byte of the substrate reaches the founder ═══ */
 {
   const ctx = fresh();
   ctx.S.goalTranscript = { "shadow-1": TRANSCRIPT };
   const h = pane(ctx, M());
   const stream = h.slice(h.indexOf("shtimeline"));
-  const folds = stream.match(/<details class="shsaid shfold" data-shfold="([a-z]+)"/g) || [];
-  assert.strictEqual(folds.length, 4, "four folded rows: " + folds.join(","));
-  assert.strictEqual(JSON.stringify(folds.map(f => f.match(/data-shfold="([a-z]+)"/)[1])),
-    JSON.stringify(["boot", "brief", "steer", "judge"]));
-  for (const shown of ["[Shadow boot]", "READY", "Write the opening brief",
-                       "driving one target chat", '"instruction":"go"', "```brief",
-                       "settling ONE completion check", "suite ran green"]){
-    assert(stream.indexOf(shown) !== -1,
-      "the transcript's own text is in the page, folded, not dropped: " + shown);
+  assert.strictEqual((stream.match(/shfold/g) || []).length, 0,
+    "no folded substrate row may be drawn");
+  for (const hidden of ["[Shadow boot]", "READY", "Write the opening brief",
+                        "driving one target chat", '"instruction":"go"',
+                        "```brief", "settling ONE completion check",
+                        "suite ran green", "Reading the diff.",
+                        "Shadow booted", "next instruction", "judged a check",
+                        "The app \u2192 Shadow"]){
+    assert(stream.indexOf(hidden) === -1,
+      "substrate reached the conversation: " + hidden);
   }
-  /* each fold is a <details>: closed by default, one summary line, opens on click */
-  assert.strictEqual((stream.match(/<details class="shsaid shfold"[^>]*>\s*<summary class="shsaidhead">/g) || []).length, 4,
-    "one summary line per fold");
-  assert.strictEqual((stream.match(/<details class="shsaid shfold"[^>]* open/g) || []).length, 0,
-    "folded rows start closed");
-  assert(/Shadow judged a check from the evidence/.test(stream), "the judge row is labelled");
-  /* the founder's own exchange draws exactly as before */
+  /* the founder's own exchange draws exactly as before, on its own side */
   assert(/What are you waiting on\?/.test(stream), "the founder's line");
   assert(/Waiting on the worker/.test(stream), "and Shadow's answer");
-  assert(/You → Shadow/.test(stream), "with the same head as before");
-  assert(stream.indexOf("The app → Shadow") !== -1, "the fold names the app as the speaker");
-  pass("the stream draws every app prompt as a closed fold with its verbatim text");
+  assert(/class="shsaid shfrom-you/.test(stream),
+    "the founder's line is on the founder's side");
+  assert(/class="shsaid shfrom-shadow/.test(stream),
+    "and Shadow's answer is on Shadow's");
+  pass("every app prompt and reply is absent from the conversation");
 }
 
-/* ══ 3. ORDER: folds sit where the transcript puts them, founder rows unmoved */
+/* ══ 3. NOTHING WAS DROPPED FROM THE RECORD (D81's other half) ══════════
+   The task chat is a chat in its own right, published by the server and
+   stamped on the mission, so all of the above is still readable in Chats.
+   Asserted on the record the UI reads, not on a rendered string. */
+{
+  const ctx = fresh();
+  ctx.S.goalTranscript = { "shadow-1": TRANSCRIPT };
+  const m = M();
+  assert.strictEqual(m.task_chat, "c-2",
+    "the mission must still carry its Shadow chat");
+  assert.strictEqual(ctx.shadowTaskTranscript("shadow-1", true).length,
+    TRANSCRIPT.length,
+    "and the transcript reader must still return every message");
+  pass("the substrate is hidden from the conversation, never deleted");
+}
+
+/* ══ 4. ORDER: the two real turns keep their place ══════════════════════ */
 {
   const ctx = fresh();
   ctx.S.goalTranscript = { "shadow-1": TRANSCRIPT };
   const h = pane(ctx, M());
   const stream = h.slice(h.indexOf("shtimeline"));
-  const at = (s) => stream.indexOf(s);
-  assert(at('data-shfold="boot"') < at('data-shfold="brief"'), "boot before brief");
-  assert(at('data-shfold="brief"') < at('data-shfold="steer"'), "brief before steer");
-  assert(at('data-shfold="steer"') < at("What are you waiting on?"), "steer before the founder's line");
-  assert(at("Waiting on the worker") < at('data-shfold="judge"'), "the judge came after");
-  pass("folds keep their place in the conversation");
-}
-
-/* ══ 4. THE STYLE: a fold has its own rule, grey rail, closed marker ═════ */
-{
-  assert(css.indexOf(".shsaid.shfold{") !== -1, "a fold is styled");
-  assert(css.indexOf(".shsaid.shfold>summary{cursor:pointer") !== -1, "and reads as clickable");
-  pass("panel.css carries the fold");
+  assert(stream.indexOf("What are you waiting on?")
+         < stream.indexOf("Waiting on the worker"),
+    "the question comes before the answer");
+  pass("the surviving turns keep their order");
 }
 
 /* ══ 5. A TRANSCRIPT WITH NO APP PROMPTS is unchanged ════════════════════ */
@@ -167,9 +186,9 @@ const TRANSCRIPT = [
     { role: "assistant", text: "Hi.", ts: "2026-09-21T10:01:20Z" },
   ] };
   const h = pane(ctx, M());
-  assert.strictEqual((h.match(/shfold/g) || []).length, 0, "no fold without an app prompt");
+  assert.strictEqual((h.match(/shfold/g) || []).length, 0, "no fold anywhere");
   assert(/Hello\?/.test(h) && /Hi\./.test(h));
-  pass("a plain conversation draws with no folds");
+  pass("a plain conversation is untouched by any of this");
 }
 
 console.log("1.." + ok);

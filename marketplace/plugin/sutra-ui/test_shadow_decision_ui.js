@@ -138,7 +138,13 @@ function rankingMission(){
   const m = rankingMission();
   m.decision.artifacts[0].truncated = true;
   const h = ctx.shadowDecisionHtml(m);
-  assert(/shown in part/.test(h), "a cut artifact says so");
+  /* PASS 8 (founder, 2026-09-21): the CLAIM is unchanged -- a cut preview
+     must still say it is cut -- and the renderer's instruction ("shown in
+     part -- open the task's chat for the whole file") is gone with the rest
+     of the internal note vocabulary. What remains is the ordinary
+     typographic mark for "there is more". */
+  assert(/class="shdeccut"/.test(h), "a cut artifact says so");
+  assert(!/shown in part/.test(h), "and not in the renderer's words");
   console.log("ok 6 a bounded preview announces itself");
 }
 
@@ -228,7 +234,12 @@ function doneMission(over){
   const ctx = fresh();
   const h = ctx.shadowCompletionHtml(doneMission());
   const above = h.split("shdoneverif")[0];
-  assert(/class="shconfirmq">Done</.test(above), "it says Done");
+  /* PASS 7: a clean finish is a Shadow message, not a card -- so the
+     heading it used to say Done in is gone with it. The claim below (no
+     internal verification vocabulary above the fold) is unchanged and is
+     now made of the message. */
+  assert(/<div class="shsaidtext">Done/.test(above), "it says Done");
+  assert(/shdonesay/.test(above), "as a message from Shadow");
   for (const banned of ["3 of 3", "checks passed", "Shadow settled itself",
                         "DONE-CHECK", "probe", "tier", "founder_confirm"]){
     assert(above.indexOf(banned) === -1,
