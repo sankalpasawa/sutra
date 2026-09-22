@@ -1,6 +1,22 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.291.8 (2026-09-22)
+
+**Shadow is a conversation with one other person, and it answers you in its own words** (founder, 2026-09-21, seventeen passes over the Shadow surface).
+
+**The pane.** Two visible actors and only two: you on the right, Shadow on the left. The worker is how Shadow gets work done, not a third speaker. Worker payloads, tool counts, DONE-CHECK lines, JSON keys, bare URLs and quote runs are refused as speech rather than relabelled — renaming a worker record to "Shadow" was the earlier mistake — and what the worker did is restated in Shadow's own voice. Your first line is a message in the thread, not a header above it. Shadow's rows sat inset because an auto cross-margin was cancelling the flex stretch; measured in a real browser and fixed. QUEUED says "I'm lining this up now" instead of sitting silent, DONE renders a preview of what was produced, verification is hidden on an ordinary success and kept on NEEDS YOU where it is the thing being asked about, and entering the tab selects the first task rather than the fifth.
+
+**What Shadow says.** Shadow used to speak to you only through whatever the worker happened to print. The turn that already runs now authors the sentence: `update` and `result` keys, validated and carried, so every state has a line Shadow wrote, and a finished task says what was delivered instead of "Done." A done-when check that refers to itself ("the summary is accurate") is dropped rather than verified. A proposal and a deliverable are told apart by what was asked for and what is on disk, not by keywords.
+
+**NEEDS YOU is answerable again.** A reply to a paused mission resumed nothing — it reached a mission that was not running and returned early, so you answered into a dead end. It resumes now. Shadow also reads a follow-up before the task reopens, so a question about finished work cannot flip DONE back to RUNNING ahead of being understood; on a finished task, "show me the file" is an answer and only new work reopens.
+
+**+ Delegate is a chat now, which it always looked like.** Every Enter used to be a mission created with your line verbatim as the objective, and then started. Nobody was asked whether there was work in it — which is how "Hi" became a running task that reported "no work requested" and then asked you what you wanted, about a task you never opened. The box now talks to Shadow like every other box, and a task exists only because Shadow answered with one. It lands as a brief; Start stays your press. The Delegate form is untouched.
+
+**A restart that strands a task says why.** A mission held because its worker may still be alive now states which of the two it is — the worker is alive, or no pid was recorded so we do not know. A missed pid is written to the ledger instead of being silent; that silence is why restarts left tasks at PAUSED with nothing to read.
+
+Tests: 59 JS suites green, 4,260 Python checks passing with the 84 pre-existing failures unchanged from baseline (verified by running the suite against a stashed tree). Four new Python lanes (greeting, proposal boundary, the update key, done-then-follow-up) and two new JS lanes, both wired into the DMG Panel step.
+
 ## 2.291.7 (2026-09-21)
 
 - Released from v2.291.6-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
