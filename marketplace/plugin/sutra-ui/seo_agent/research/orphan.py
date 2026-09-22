@@ -3,12 +3,19 @@
 Ported from 13-research-structure/scripts/orphan.py. Against the research's EXISTING metrics (no
 new API calls): keywords at or over HIGH_VOL with KD under the ceiling, top ORPHAN_POOL by volume,
 judged by meaning against the H2 labels. A safety net for content-first.
+
+AND IT MUST SEE THE BOUNDARY (owner, 2026-09-22). It did not, and on a real run that showed: an
+article whose world statement says "Not about pre-employment medical or drug screening tests" was
+handed five drug-screening keywords as high-demand gaps it failed to cover, the biggest at 5,400
+searches a month. This step sorts by VOLUME, and a neighbouring world is exactly where the big
+volumes live -- which is the whole reason the world statement exists. Every other step that judges
+relevance has been given `about` / `not_about` for years; this one was missed.
 """
 from .. import llm
 from . import _common as _c
 
 
-def run(sections, metrics_rows):
+def run(sections, metrics_rows, world=None):
     hot = [r for r in (metrics_rows or []) if (r.get("vol") or 0) >= _c.HIGH_VOL
            and r.get("kd") is not None and r["kd"] < _c.KD_CEIL]
     hot.sort(key=lambda x: -(x.get("vol") or 0))
@@ -19,7 +26,8 @@ def run(sections, metrics_rows):
     kws = "\n".join("%s | %s" % (r["kw"], r["vol"]) for r in hot)
     allowed = {r["kw"].strip().lower(): r for r in hot}
     try:
-        got = llm.json_call(_c.prompt("orphan", sections=secs, keywords=kws))
+        got = llm.json_call(_c.prompt("orphan", sections=secs, keywords=kws,
+                                      **_c.world_tokens(world or {})))
         raw = (got.get("orphans") if isinstance(got, dict) else got) or []
     except Exception:  # noqa: BLE001 — no orphan list is a warning, not a failure
         return []

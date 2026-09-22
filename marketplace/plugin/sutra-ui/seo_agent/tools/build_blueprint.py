@@ -102,7 +102,11 @@ def run(ctx, redo=False, **_ignored):
 
     # ---- 7. orphan check ------------------------------------------------------------------------------
     metrics = (_c.load_work(ctx, "metrics") or {}).get("rows") or []
-    orphans, _ = _c.cached(ctx, "orphans", redo, lambda: {"orphans": orphan.run(sections, metrics)})
+    # The world goes in with it: a keyword from the NOT ABOUT list is a different article, not a
+    # gap in this one, and this step sorts by volume -- which is exactly where a neighbouring world
+    # outbids us. See orphan.py for the run that proved it.
+    orphans, _ = _c.cached(ctx, "orphans", redo,
+                           lambda: {"orphans": orphan.run(sections, metrics, world=research.get("world"))})
     orphans = orphans["orphans"]
     if orphans:
         say("%s no section covers" % sh.plural(len(orphans), "searched keyword"),

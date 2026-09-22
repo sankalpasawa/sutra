@@ -201,7 +201,14 @@ def apply_reply(w, reply):
     secs = [s for s in (reply.get("sections") or []) if isinstance(s, dict) and str(s.get("prose") or "").strip()]
     if secs:
         keep = {k: v for k, v in (w.get("sections") or [{}])[0].items() if k not in ("heading", "prose")} if w.get("sections") else {}
-        n["sections"] = [dict(keep, heading=str(s.get("heading") or "").strip() or "Section", prose=str(s.get("prose")).strip())
+        # A HEADING NEVER CARRIES ITS OWN HASHES (found in a published draft, 2026-09-23). This step
+        # may split one section into several, and when it does it hands back the old sub-heading text
+        # as a new section's heading -- with the "### " it wore as a sub-heading still attached.
+        # assemble then writes "## " in front of it and the reader gets a line reading
+        # "## ### Define Job-Specific Competencies". Five of them shipped in one article. The h1 on
+        # the line above has stripped hashes since it was written; the sections never did.
+        n["sections"] = [dict(keep, heading=_strip_heading(s.get("heading")).lstrip("#").strip() or "Section",
+                              prose=str(s.get("prose")).strip())
                          for s in secs]
     ans = {str(f.get("question", "")).strip(): str(f.get("answer") or "").strip()
            for f in (reply.get("faq") or []) if isinstance(f, dict)}

@@ -18,6 +18,17 @@ import re
 from . import _common as C
 from . import tags
 
+def _no_hashes(text):
+    """A heading's own text, never its markdown.
+
+    The backstop for a bug found in a published draft (2026-09-23): `readable` may split a section
+    and hand back the old SUB-heading as a new section's heading, with its "### " still attached.
+    This line then wrote "## " in front of it and the reader got "## ### Define Job-Specific
+    Competencies". Fixed at the source too; this is here so no other route can reintroduce it.
+    """
+    return re.sub(r"^\s*#+\s*", "", str(text or "")).strip()
+
+
 
 def _plain(text):
     return C.plain_links(text)
@@ -124,9 +135,11 @@ def render(w, idx):
     for s in w["sections"]:
         body = refs(s["prose"])
         bare += 0 if re.search(r"\[\d+\]", body) else 1
-        L += ["## %s" % s["heading"], "", body, ""]
+        # The backstop for the same bug: whatever route a heading arrived by, it is written with
+        # exactly one level of hashes here and no step upstream can smuggle its own in.
+        L += ["## %s" % _no_hashes(s["heading"]), "", body, ""]
     if w.get("close_heading"):
-        L += ["## %s" % w["close_heading"], ""]
+        L += ["## %s" % _no_hashes(w["close_heading"]), ""]
     L += [refs(w.get("close") or ""), ""]
     if w.get("faq"):
         L += ["## Frequently asked questions", ""]

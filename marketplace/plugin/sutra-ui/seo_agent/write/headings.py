@@ -107,8 +107,33 @@ def _write_one(n, sec, ctx, ks, found, pool, idx, memory):
     return rec
 
 
-def pass_all(ctx, ks, secs, recs, memory, say=lambda *a: None):
-    """6b: read every heading as a SET and edit them. Returns (applied_count, notes, per-heading log)."""
+def pass_all(ctx, ks, secs, recs, memory, say=lambda *a: None, table_stakes=None):
+    """6b: read every heading as a SET and edit them. Returns (applied_count, notes, per-heading log).
+
+    AND IT MAY NOW REORDER, AND REWRITE THE JOBS (owner's own design, 2026-09-23). This is the only
+    step that ever sees the finished shape, and its prompt has always opened "Nobody has yet read
+    the headings as a set. That is your job." It was then forbidden the two things that matter:
+
+        "You may not add, remove or reorder sections -- same headings, same count, same order,
+         in and out."
+
+    So on a real article it read a plan whose LAST section was "What pre-employment testing is",
+    with five sections above it leaning on that term, and could do nothing. The architect's own
+    prompt forbids exactly that, in capitals, and lost: the archetype was `listicle`, whose format
+    rule says the body is "the N parallel items", a definition is not an item, so it was pushed out
+    to a closer. An advisory rule lost to a structural one, and nothing downstream could correct it.
+
+    The same handcuffs produced the second complaint. This pass is told to BREAK THE TEMPLATE when
+    four headings in a row share a construction -- so with four headings about pass scores it varied
+    the fifth by changing its AXIS, to "Best for leadership and people-facing roles". The reader
+    then cannot compare cognitive against EQ, which is the only reason anyone opens a "types of"
+    article.
+
+    It may now reorder and rewrite jobs. It still may NOT add or delete a section: those were
+    decided with evidence behind them and this pass holds no cards. Code checks the order it
+    returns is a real permutation of the same sections, the same guard faq_order already applies to
+    its own ordering call, and a reply that fails it is discarded whole.
+    """
     cap = C.MAX_HEADINGS_PER_KEYWORD
     counts = {}
     for r in recs:
@@ -120,6 +145,11 @@ def pass_all(ctx, ks, secs, recs, memory, say=lambda *a: None):
     for sec, r in zip(secs, recs):
         lines.append("  %d. %s" % (r["n"], r["heading"]))
         lines.append("       job: %s" % (sec.get("job") or "(none)"))
+        # The architect already labelled which expected topic this section answers, and until now
+        # nobody read it. On the article that prompted this change it labelled its own LAST section
+        # "What is pre-employment testing? (definition)" and placed it sixth regardless.
+        if sec.get("covers"):
+            lines.append("       covers the expected topic: %s" % sec["covers"])
         kw = r.get("keyword_used")
         if kw and kw in overused:
             lines.append('       OVER-USED — "%s" is in %d of these headings. You may take it out of this one.' % (kw, overused[kw]))
@@ -140,8 +170,12 @@ def pass_all(ctx, ks, secs, recs, memory, say=lambda *a: None):
     else:
         fig_block = ("  · %d of these %d headings carry a figure, which is within the limit of %d. "
                      "Nothing to strip — do not add one either." % (len(numbered), len(recs), fig_cap))
+    stakes = [str(x).strip() for x in (table_stakes or []) if str(x).strip()]
+    stake_block = ("\n".join("  %d. %s" % (i, x) for i, x in enumerate(stakes, 1))
+                   or "  (none measured for this article)")
     try:
         out = llm.json_call(C.prompt("heading-pass", title=ctx["title"] or "(untitled)",
+                                     table_stakes=stake_block,
                                      angle=ctx["angle"] or "(none recorded)", spine=ctx["spine"] or "(not available)",
                                      primary=ks.get("primary") or "(none)", persona=ctx["persona"],
                                      keyword_cap=cap, overused=block, figure_cap=fig_cap, figure_heavy=fig_block,
@@ -156,7 +190,11 @@ def pass_all(ctx, ks, secs, recs, memory, say=lambda *a: None):
                 by_n[int(h["n"])] = h
             except (KeyError, TypeError, ValueError):
                 pass
-    if not by_n:
+    # A REPLY WITH AN ORDER BUT NO HEADING EDITS IS A REAL ANSWER, and until this guard was widened
+    # it was thrown away here: the early return fired before the order was ever looked at, so the
+    # one reply that fixes the basics-last article and changes nothing else did nothing at all.
+    # Caught by test_shape_pass.
+    if not by_n and not isinstance(out.get("order"), list):
         return 0, "", []
 
     # THE FLOOR, checked before anything is applied: for each over-used phrase, count how many headings
@@ -193,6 +231,51 @@ def pass_all(ctx, ks, secs, recs, memory, say=lambda *a: None):
             r["keyword_used"] = None          # it genuinely no longer carries it; keep the record honest
         log.append({"n": r["n"], "was": was, "heading": new, "kept": False, "why": str(h.get("why") or "").strip()})
         r["heading"], r["changed"], applied = new, True, applied + 1
+
+    # THE JOBS, which are what actually steer the writing. A heading is a label; the job is the
+    # brief. The five type sections that walked off in five directions each had a differently
+    # shaped job -- "settle what managers misread", "how it differs from cognitive", "who they
+    # suit" -- and fixing only their headings would have left the prose exactly as it was.
+    sec_by_n = {r["n"]: sec for sec, r in zip(secs, recs)}
+    for n, h in by_n.items():
+        job = str(h.get("job") or "").strip()
+        sec = sec_by_n.get(n)
+        if not sec or not job or job == (sec.get("job") or "").strip():
+            continue
+        log.append({"n": n, "was_job": sec.get("job"), "job": job, "kept": False,
+                    "why": str(h.get("why_job") or h.get("why") or "").strip()})
+        sec["job"] = job
+        applied += 1
+    # THE ORDER. Validated as a genuine permutation before anything moves: the same section
+    # numbers, all of them, once each. Anything else is discarded whole and the original order
+    # stands, because a "reorder" that loses a section is a deletion wearing a different hat, and
+    # this pass is not allowed to delete. Same guard faq_order applies to its own ordering call.
+    want = out.get("order")
+    if isinstance(want, list) and want:
+        try:
+            want = [int(x) for x in want]
+        except (TypeError, ValueError):
+            want = None
+        have = [r["n"] for r in recs]
+        if want and sorted(want) == sorted(have) and len(want) == len(have):
+            if want != have:
+                pos = {n: i for i, n in enumerate(want)}
+                pairs = sorted(zip(secs, recs), key=lambda pr: pos[pr[1]["n"]])
+                secs[:] = [a for a, _b in pairs]
+                recs[:] = [b for _a, b in pairs]
+                moved = [{"from": have.index(n) + 1, "to": i + 1,
+                          "heading": next(r["heading"] for r in recs if r["n"] == n)}
+                         for i, n in enumerate(want) if have[i] != n]
+                log.append({"n": 0, "kept": False, "reordered": moved,
+                            "why": str(out.get("why_order") or "").strip() or "reordered as a set"})
+                say("Reordered the article", "%d of %d sections moved: %s"
+                    % (len(moved), len(have), str(out.get("why_order") or "")[:110]))
+                applied += 1
+        elif want:
+            say("The heading pass returned a broken order", "the original order stands")
+            log.append({"n": 0, "kept": True,
+                        "why": "order refused: not a permutation of the same sections"})
+
     left = [r["n"] for r in recs if _has_figure(r["heading"])]
     if len(left) > fig_cap:
         log.append({"n": 0, "kept": True,
@@ -293,7 +376,8 @@ def run(st, inputs, ctx, idx, sk_result, planned_h1, say=lambda *a: None):
                            list(enumerate(secs))))
 
     say("Reading the headings as a set", "%d headings" % len(recs))
-    n_pass, pass_notes, pass_log = pass_all(ctx, ks, secs, recs, memory, say)
+    n_pass, pass_notes, pass_log = pass_all(ctx, ks, secs, recs, memory, say,
+                                            table_stakes=(inputs.get('group_a') or {}).get('table_stakes'))
 
     # The heading map is otherwise final at this point (per-section pass, then the cross-section
     # pass, both done) — the deterministic point Aparna's review calls for (2026-09-17).
