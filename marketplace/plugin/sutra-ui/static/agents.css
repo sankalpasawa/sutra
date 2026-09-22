@@ -1567,3 +1567,26 @@ h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spaci
 .tctodos li.completed{color:var(--faint);text-decoration:line-through}
 .tctodos li.in_progress{color:var(--acc)}
 @media (prefers-reduced-motion: reduce){ .tcard.run .tcdot{animation:none} }
+
+/* ── find in the article: the bar and the highlights (spec item 6) ────────────────────────
+   The bar is its own element under #agRoot (17-agents.js agDrawFind), never inside #agScroll or
+   #agPanel, so a repaint of either cannot take it or the caret in it away. It is fixed to the
+   top-right, where a find bar is expected to be, and sits above every overlay it can open over:
+   the five tabs (91), the stacked second layer (96), and the whole-Library article panel (80). */
+.ag-findbar{position:fixed;top:14px;right:20px;z-index:97;display:flex;align-items:center;gap:6px;
+  background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px 8px;
+  box-shadow:var(--shadow)}
+.ag-findbar input{width:190px;background:var(--inset);border:1px solid var(--line-soft);border-radius:6px;
+  color:var(--ink);font:400 12px/1.45 var(--sans);padding:5px 8px}
+.ag-findbar input:focus-visible{outline:2px solid var(--acc);outline-offset:-1px}
+/* tabular numerals and a floor on the width so stepping 9 -> 10 of 30 does not shuffle the
+   buttons sideways under the cursor that is clicking them */
+.ag-findbar .n{min-width:64px;text-align:right;font:500 10.5px/1 var(--mono);color:var(--faint);
+  font-variant-numeric:tabular-nums}
+.ag-findbar .ib{width:24px;height:24px;flex:none}
+
+/* EVERY match is tinted; the one being looked at is the accent itself, so "which of the twelve
+   am I on" is answerable at a glance rather than by reading the count. <mark> is given its
+   colours outright: the browser's own default is a yellow that belongs to neither theme. */
+mark.ag-hit{background:var(--acc-bg);color:var(--ink);border-radius:3px;padding:0 1px}
+mark.ag-hit.cur{background:var(--acc);color:var(--on-acc)}

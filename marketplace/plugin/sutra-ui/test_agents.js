@@ -4988,3 +4988,212 @@ test("changing one research number sends BOTH current values, so the other is ne
   assert.ok(/researchers:/.test(body) && /gap_rounds:/.test(body),
              "and posts both keys in the same call: " + body);
 });
+
+/* ── find in the article: Cmd+F (spec item 6) ─────────────────────────────────
+   There was no find anywhere in this app and the browser's own is off inside the Electron
+   shell. The whole feature is built around one hazard: this file has twice shipped a repaint
+   that took the caret off a box somebody was typing in ("it only lets me type one letter at a
+   time", Aparna, 2026-09-17). So most of what is proved below is what find REFUSES to do. */
+
+test("agFindRanges finds every occurrence, ignores case, and never overlaps them", () => {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(A.agFindRanges("Cost per hire and cost per seat", "cost"))),
+                         [[0, 4], [18, 22]], "both, whatever the case");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(A.agFindRanges("aaaa", "aa"))), [[0, 2], [2, 4]],
+                         "two, not three: a match starts after the one before it ends");
+  assert.strictEqual(A.agFindRanges("anything", "").length, 0, "an empty query matches nothing, not everything");
+  assert.strictEqual(A.agFindRanges(null, "x").length, 0, "and a missing text is no text, not a crash");
+  assert.strictEqual(A.agFindRanges("the cost", "COST").length, 1, "the query's case does not matter either");
+});
+
+test("find is offered over the article and the five tabs, and nowhere else", () => {
+  const w = s => A.agFindWhere(s);
+  assert.strictEqual(w({ panel: { view: "article" } }), "article", "a draft or a Library article");
+  assert.strictEqual(w({ libTabs: { on: true } }), "tabs", "the five-tab overlay");
+  assert.strictEqual(w({ libTabs: { on: true }, libTabs2: { on: true } }), null,
+                     "but NOT while the stacked second layer covers it: find must never search what is hidden");
+  assert.strictEqual(w({ panel: { view: "article", loading: true } }), null, "nothing to search while it is still reading");
+  assert.strictEqual(w({ panel: { view: "article", error: "no" } }), null, "or when it failed to read");
+  assert.strictEqual(w({ panel: { view: "article" }, libEdit: { draft: "x" } }), null,
+                     "or when the article has been swapped for the box you type it in");
+  assert.strictEqual(w({ panel: { view: "blueprint" } }), null, "the plan is not the article");
+  assert.strictEqual(w({}), null, "and a bare screen offers nothing");
+  assert.strictEqual(w(null), null);
+});
+
+test("Cmd+F is never taken from somebody typing", () => {
+  const prevDoc = A.document;
+  const root = { contains: () => true };
+  const doc = { getElementById: id => (id === "agRoot" ? root : null), activeElement: null };
+  A.document = doc;
+  try {
+    assert.strictEqual(A.agTyping(), false, "nothing focused");
+    doc.activeElement = { tagName: "TEXTAREA", matches: () => false };
+    assert.strictEqual(A.agTyping(), true, "a section editor, the instruction box, the composer");
+    doc.activeElement = { tagName: "INPUT", matches: () => false };
+    assert.strictEqual(A.agTyping(), true, "a one-line field counts just the same");
+    doc.activeElement = { tagName: "INPUT", matches: sel => sel === "[data-agfind]" };
+    assert.strictEqual(A.agTyping(), false,
+                       "except the find box itself, so pressing Cmd+F again re-selects it");
+    doc.activeElement = { tagName: "BUTTON", matches: () => false };
+    assert.strictEqual(A.agTyping(), false, "a focused button is not typing");
+    doc.activeElement = { tagName: "TEXTAREA", matches: () => false };
+    root.contains = () => false;
+    assert.strictEqual(A.agTyping(), false, "a box outside the agent is not ours to protect");
+  } finally { A.document = prevDoc; }
+});
+
+test("the Cmd+F handler checks who is typing BEFORE it takes the key", () => {
+  const i = SRC.indexOf('ev.key === "f" || ev.key === "F"');
+  assert.ok(i !== -1, "the handler exists");
+  const body = SRC.slice(i, SRC.indexOf("\n    }", i));
+  const guard = body.indexOf("!agTyping()"), taken = body.indexOf("ev.preventDefault()");
+  assert.ok(guard !== -1 && taken !== -1, "both the guard and the take are there: " + body);
+  assert.ok(guard < taken, "and the guard comes first, so a key that is not ours is left untouched");
+  assert.ok(/agFindWhere\(a1\)/.test(body), "it also refuses when there is nothing on screen to search");
+  assert.ok(/agRoot\(\)/.test(body), "and when the agent does not own the pane at all");
+});
+
+test("neither typing in the find box nor stepping through it ever repaints the screen", () => {
+  const inp = SRC.indexOf('t.matches("[data-agfind]")');
+  assert.ok(inp !== -1, "the input handler exists");
+  const body = SRC.slice(inp, SRC.indexOf("\n      return;", inp));
+  assert.ok(/agFindPaint\(a\)/.test(body), "a keystroke repaints the highlights: " + body);
+  assert.ok(!/agDraw\(/.test(body), "and NOT the screen -- that would destroy the box being typed in");
+  const nxt = SRC.slice(SRC.indexOf('case "findnext":'), SRC.indexOf('case "libopen":'));
+  assert.ok(/case "findnext": if \(a\.find\)\{ agFindStep\(a, 1\); agFindPaint\(a\); \}/.test(nxt),
+            "Next moves the highlight without a redraw: " + nxt);
+  assert.ok(/case "findprev": if \(a\.find\)\{ agFindStep\(a, -1\); agFindPaint\(a\); \}/.test(nxt), "and Previous");
+  assert.ok(/case "findclose": agFindClose\(a\); agDraw\(true\)/.test(nxt),
+            "only Close redraws, because the bar and every highlight have to go");
+});
+
+test("the find bar is built outside every region agDraw repaints, and only once", () => {
+  const i = SRC.indexOf("function agDrawFind(");
+  const body = SRC.slice(i, SRC.indexOf("\n}\n", i));
+  assert.ok(/root\.appendChild\(el\)/.test(body), "it hangs off #agRoot, beside #agScroll and #agPanel");
+  assert.ok(/if \(el\) return;/.test(body),
+            "and an already-open bar is left completely alone: no second innerHTML, no lost caret");
+  assert.ok(!/__agHtml/.test(body), "its markup is a constant, so there is nothing to diff and rewrite");
+  /* read from the source: a top-level const is script-scoped in the vm, not a global */
+  const shell = SRC.slice(SRC.indexOf("const AG_FIND_SHELL = `"), SRC.indexOf("`;", SRC.indexOf("const AG_FIND_SHELL")));
+  assert.ok(!/\$\{/.test(shell), "which really is constant: no state is interpolated into it");
+  assert.ok(/data-agfind /.test(shell) && /data-agfindn/.test(shell),
+            "the box and the count node the handlers reach for: " + shell);
+  ["findprev", "findnext", "findclose"].forEach(k =>
+    assert.ok(shell.indexOf('data-ag="' + k + '"') !== -1, k + " has a button"));
+});
+
+test("Enter steps forward, Shift+Enter back, and both wrap around", () => {
+  const a = { find: { on: true, q: "x", i: 0, n: 3, where: "article", scroll: false } };
+  A.agFindStep(a, 1); assert.strictEqual(a.find.i, 1);
+  A.agFindStep(a, 1); assert.strictEqual(a.find.i, 2);
+  A.agFindStep(a, 1); assert.strictEqual(a.find.i, 0, "past the last one comes the first");
+  A.agFindStep(a, -1); assert.strictEqual(a.find.i, 2, "and back past the first comes the last");
+  assert.strictEqual(a.find.scroll, true, "a step asks to be scrolled to");
+  const none = { find: { on: true, q: "zz", i: 0, n: 0 } };
+  A.agFindStep(none, 1);
+  assert.strictEqual(none.find.i, 0, "stepping through no matches goes nowhere, and never divides by zero");
+});
+
+test("the count says what it honestly knows, and says nothing before anything is typed", () => {
+  assert.strictEqual(A.agFindCount({ q: "", n: 0, i: 0 }), "", "an empty box is not a failed search");
+  assert.strictEqual(A.agFindCount({ q: "zebra", n: 0, i: 0 }), "No matches");
+  assert.strictEqual(A.agFindCount({ q: "cost", n: 12, i: 2 }), "3 of 12", "counted from one, the way a person counts");
+  assert.strictEqual(A.agFindCount({ q: "a", n: 1200, i: 0 }), "1 of 1,200", "and grouped, like every other number here");
+  assert.strictEqual(A.agFindCount(null), "");
+});
+
+/* The wrapping itself, against only as much of a document as agFindWrap reads: a walker over
+   some text nodes, and the four factories it calls. What is proved is which nodes it touches,
+   how it splits them, and that it leaves a box somebody types in alone. */
+function findDoc(nodes){
+  return {
+    createTreeWalker(){ let i = -1; return { nextNode(){ i++; return i < nodes.length ? nodes[i] : null; } }; },
+    createTextNode(s){ return { nodeValue: s }; },
+    createDocumentFragment(){ const f = { kids: [] }; f.appendChild = x => { f.kids.push(x); return x; }; return f; },
+    createElement(tag){ return { tag, className: "", textContent: "" }; },
+  };
+}
+function findNode(text, inside){
+  const n = { nodeValue: text };
+  n.parentNode = { closest: sel => (inside && sel.indexOf(inside) !== -1 ? {} : null),
+                   replaceChild: frag => { n.got = frag; } };
+  return n;
+}
+
+test("every match in the article is wrapped, in reading order, and the text around it survives", () => {
+  const prevDoc = A.document;
+  const nodes = [findNode("Cost per hire is the cost of a hire."), findNode("Nothing here."), findNode("cost")];
+  A.document = findDoc(nodes);
+  try {
+    const marks = A.agFindWrap({}, "cost");
+    assert.strictEqual(marks.length, 3, "two in the first node, none in the second, one in the third");
+    /* JSON, not deepStrictEqual: the array was built inside the vm realm, so only the wire
+       shape is comparable -- the same note the other realm-crossing checks in this file carry. */
+    assert.strictEqual(JSON.stringify(marks.map(m => m.textContent)), '["Cost","cost","cost"]',
+                       "each mark holds the text AS IT WAS WRITTEN, not the lower-cased query");
+    assert.ok(marks.every(m => m.className === "ag-hit" && m.tag === "mark"), "all real <mark> elements");
+    const kids = nodes[0].got.kids;
+    assert.strictEqual(kids.length, 4, "mark, between, mark, after -- the sentence is not lost");
+    assert.strictEqual(kids[0].tag, "mark", "the first match starts at offset 0, so nothing precedes it");
+    assert.strictEqual(kids[1].nodeValue, " per hire is the ");
+    assert.strictEqual(kids[3].nodeValue, " of a hire.");
+    assert.strictEqual(nodes[1].got, undefined, "a node with no match is never touched");
+  } finally { A.document = prevDoc; }
+});
+
+test("find never reaches into a box somebody is typing in, or into its own bar", () => {
+  const prevDoc = A.document;
+  const nodes = [findNode("cost", "textarea"), findNode("cost", "input"),
+                 findNode("cost", ".ag-findbar"), findNode("cost")];
+  A.document = findDoc(nodes);
+  try {
+    const marks = A.agFindWrap({}, "cost");
+    assert.strictEqual(marks.length, 1, "only the one in the article itself");
+    assert.strictEqual(nodes[0].got, undefined, "a textarea's own text is left alone");
+    assert.strictEqual(nodes[1].got, undefined, "and an input's");
+    assert.strictEqual(nodes[2].got, undefined, "and the find bar does not find itself");
+  } finally { A.document = prevDoc; }
+});
+
+test("an empty query wraps nothing at all, rather than everything", () => {
+  const prevDoc = A.document;
+  A.document = findDoc([findNode("Cost per hire")]);
+  try {
+    assert.strictEqual(A.agFindWrap({}, "").length, 0);
+    assert.strictEqual(A.agFindWrap(null, "cost").length, 0, "and no region is no search, not a crash");
+  } finally { A.document = prevDoc; }
+});
+
+test("Escape closes the find bar before anything else, and leaves what it was over open", () => {
+  const i = SRC.indexOf('if (ev.key === "Escape"){');
+  const body = SRC.slice(i, SRC.indexOf("if ((ev.metaKey", i));
+  const find = body.indexOf("agFindClose"), tabs2 = body.indexOf("agLibTabs2Close"),
+        tabs = body.indexOf("agLibTabsClose"), dfs = body.indexOf("a0.dfs.on = false");
+  assert.ok(find !== -1 && tabs2 !== -1 && tabs !== -1 && dfs !== -1, "all four layers are handled");
+  assert.ok(find < tabs2 && tabs2 < tabs && tabs < dfs,
+            "most specific first: find sits ON TOP of whatever it is searching, so it goes first");
+  assert.ok(/agFindClose\(a0\); agDraw\(true\); return;/.test(body),
+            "and it closes exactly ONE layer, leaving the article or the overlay where it was");
+});
+
+test("the bar shuts itself when the thing it was searching goes away", () => {
+  const i = SRC.indexOf("function agDrawFind(");
+  const body = SRC.slice(i, SRC.indexOf("\n}\n", i));
+  assert.ok(/a\.find\.on && !agFindWhere\(a\)\) a\.find = null/.test(body),
+            "no bar left hanging over a closed panel, holding a search for a document nobody has open");
+});
+
+test("the highlights are repainted after every draw, and cost nothing when find is shut", () => {
+  const i = SRC.indexOf("function agFindPaint(");
+  const body = SRC.slice(i, SRC.indexOf("\n}\n", i));
+  assert.ok(/if \(!\(f && f\.on\) && !agFindDirty\) return;/.test(body),
+            "a screen that has never been searched does no work at all on the poll: " + body);
+  assert.ok(body.indexOf("agFindClear()") < body.indexOf("agFindWrap("),
+            "the old marks come out before new ones go in, so a draw that skipped the repaint cannot double them");
+  assert.ok(/if \(f\.scroll && cur\.scrollIntoView\)/.test(body),
+            "the scroll is on a flag: the one-second poll must not keep yanking the page back to the match");
+  const draw = SRC.slice(SRC.indexOf("function agDraw(force){"), SRC.indexOf("function agDrawComposer("));
+  assert.ok(draw.indexOf('agSetHtml("agPanel"') < draw.indexOf("agFindPaint(a)"),
+            "and it runs AFTER the paint it writes into");
+});

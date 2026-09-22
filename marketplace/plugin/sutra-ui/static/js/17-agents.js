@@ -282,6 +282,9 @@ function agS(){
     /* the companies this person works for (GET /companies), the add/name form's mode, the last
        refusal in words, and whether a switch is in flight (owner, 2026-09-11) */
     companies: null, coForm: null, coErr: null, coBusy: false,
+    /* the find bar (Cmd+F) over the article or the five tabs: {on, q, i, n, where, scroll}.
+       null when it is shut, which is also how the highlighting knows to clear itself. */
+    find: null,
   };
   return S.ag;
 }
@@ -3811,6 +3814,209 @@ function agDrawLibTabs2(a, root){
   if (el.__agHtml !== want){ el.__agHtml = want; el.innerHTML = want; }
 }
 
+/* ── find in the article: Cmd+F / Ctrl+F (spec item 6) ────────────────────────────────────
+   There was no find anywhere in this app, and the browser's own is turned off inside the
+   Electron shell, so reviewing a 2,000-word article meant scrolling and hoping.
+
+   IT MUST NOT COST ANYONE THEIR CARET. This file already carries the scars of a repaint taking
+   focus off a text box -- agCaretGrab/agCaretPut a little below exist because of it, and Aparna
+   hit it twice, the second time as "it only lets me type one letter at a time". So find is built
+   so that it cannot do that again, in three separate ways:
+
+     1. THE KEY IS NEVER TAKEN FROM SOMEONE TYPING. If the focus is in any text box inside the
+        agent (agTyping), Cmd+F is left entirely alone: not handled, not preventDefault'ed. The
+        cost of being wrong that way is that a person clicks off the box and presses it again.
+        The cost of being wrong the other way is the bug that shipped twice.
+     2. THE BAR IS NOT IN A REPAINTED REGION. It is its own element under #agRoot, the way the
+        tab overlay is, so nothing agDraw does to #agScroll or #agPanel can destroy it.
+     3. THE BAR'S MARKUP IS A CONSTANT, written once when it opens. The count that changes as
+        you type is set as text on one node; the input's value is the person's, never re-rendered
+        from state. So no keystroke ever rebuilds the box the caret is sitting in.
+
+   The highlighting is done in the DOM after the paint rather than in the renderers, so that no
+   markdown, block id or editing affordance has to know find exists. A match that straddles two
+   elements ("cost per **hire**") is not found; that is the accepted limit of walking text nodes,
+   and the alternative is a second copy of the article in a shadow buffer. */
+const AG_FIND_SHELL = `<div class="ag-findbar" role="search">
+  <input type="text" data-agfind spellcheck="false" autocomplete="off" placeholder="Find" aria-label="Find in this article">
+  <span class="n" data-agfindn role="status" aria-live="polite"></span>
+  <button class="ib" type="button" data-ag="findprev" aria-label="Previous match" title="Previous (Shift+Enter)">↑</button>
+  <button class="ib" type="button" data-ag="findnext" aria-label="Next match" title="Next (Enter)">↓</button>
+  <button class="ib" type="button" data-ag="findclose" aria-label="Close find" title="Close (Escape)">✕</button>
+</div>`;
+
+/* Every non-overlapping, case-insensitive occurrence of `q` in `text`, as [start, end] pairs.
+   Pure, so the matching rule is testable without a DOM. */
+function agFindRanges(text, q){
+  const out = [];
+  const hay = String(text == null ? "" : text).toLowerCase();
+  const needle = String(q == null ? "" : q).toLowerCase();
+  if (!needle) return out;
+  let i = hay.indexOf(needle);
+  while (i !== -1){ out.push([i, i + needle.length]); i = hay.indexOf(needle, i + needle.length); }
+  return out;
+}
+
+/* Is there something on screen worth searching, and which is it? Decided from STATE, so the
+   keyboard can answer it before anything is drawn. The stacked second overlay (a dossier, a
+   section's purpose) deliberately says no: it sits ON TOP of the five tabs, and a find bar
+   quietly searching the layer underneath it would highlight what nobody can see. */
+function agFindWhere(a){
+  if (!a) return null;
+  if (a.libTabs2 && a.libTabs2.on) return null;
+  if (a.libTabs && a.libTabs.on) return "tabs";
+  if (a.panel && a.panel.view === "article" && !a.panel.loading && !a.panel.error && !a.libEdit) return "article";
+  return null;
+}
+
+/* Is somebody's caret in a text box in here right now? See rule 1 above. The find box itself
+   does not count, so pressing Cmd+F again while the bar is open re-selects it, as it should. */
+function agTyping(){
+  if (typeof document === "undefined") return false;
+  const el = document.activeElement;
+  if (!el || !el.tagName) return false;
+  if (el.tagName !== "TEXTAREA" && el.tagName !== "INPUT") return false;
+  if (el.matches && el.matches("[data-agfind]")) return false;
+  const root = agRoot();
+  return !!(root && root.contains && root.contains(el));
+}
+
+function agFindOpen(a){
+  const where = agFindWhere(a);
+  if (!where) return false;
+  /* the last thing looked for is kept, the way every find bar keeps it */
+  a.find = { on: true, q: (a.find && a.find.q) || "", i: 0, n: 0, where, scroll: true };
+  return true;
+}
+function agFindClose(a){ if (a) a.find = null; }
+/* What the bar says beside the box. Nothing at all before anything is typed -- "No matches" over
+   an empty box would read as a verdict on a search nobody has made yet. */
+function agFindCount(f){
+  if (!f || !f.q) return "";
+  if (!f.n) return "No matches";
+  return agNum(f.i + 1) + " of " + agNum(f.n);
+}
+function agFindStep(a, d){
+  const f = a && a.find;
+  if (!f || !f.n) return;
+  f.i = ((f.i + d) % f.n + f.n) % f.n;
+  f.scroll = true;
+}
+function agFindFocus(){
+  if (typeof document === "undefined") return;
+  try {
+    const i = document.querySelector("#agFind [data-agfind]");
+    if (i && i.focus){ i.focus(); if (i.select) i.select(); }
+  } catch (e) { /* no bar on screen: nothing to focus */ }
+}
+function agFindRegion(a){
+  if (typeof document === "undefined") return null;
+  const where = agFindWhere(a);
+  if (where === "tabs") return document.querySelector("#agLibTabs .ag-tabsb");
+  if (where === "article") return document.querySelector("#agPanel .ag-pb");
+  return null;
+}
+
+/* The bar itself. Written ONCE, when it opens (rule 3), and taken away whole when it shuts. */
+function agDrawFind(a, root){
+  if (typeof document === "undefined" || !root) return;
+  /* The thing being searched went away -- the panel was closed, the overlay shut, the article
+     swapped for its editor. The bar shuts with it rather than hanging over nothing and coming
+     back later holding a search for a document that is no longer open. */
+  if (a && a.find && a.find.on && !agFindWhere(a)) a.find = null;
+  const want = !!(a && a.find && a.find.on && agFindWhere(a));
+  let el = document.getElementById("agFind");
+  if (!want){ if (el && el.remove) el.remove(); return; }
+  if (el) return;
+  el = document.createElement("div"); el.id = "agFind";
+  el.innerHTML = AG_FIND_SHELL;
+  root.appendChild(el);
+  const inp = el.querySelector("[data-agfind]");
+  if (inp) inp.value = (a.find && a.find.q) || "";
+}
+
+/* True while highlights are sitting in the DOM. Without it, every draw of every screen would
+   sweep the document for marks that have never existed. */
+let agFindDirty = false;
+
+function agFindClear(){
+  if (typeof document === "undefined") return;
+  const marks = document.querySelectorAll("mark.ag-hit");
+  for (let i = 0; i < marks.length; i++){
+    const m = marks[i], p = m.parentNode;
+    if (!p) continue;
+    p.replaceChild(document.createTextNode(m.textContent || ""), m);
+    if (p.normalize) p.normalize();          /* put the split text node back as one */
+  }
+}
+
+/* Wrap every match inside `region` and hand back the marks in document order. The text nodes are
+   collected BEFORE any of them is replaced: replacing one invalidates a live TreeWalker, and a
+   half-walked article is worse than none. */
+function agFindWrap(region, q){
+  const out = [];
+  if (!region || !q || typeof document === "undefined" || !document.createTreeWalker) return out;
+  const walker = document.createTreeWalker(region, 4 /* SHOW_TEXT */, null);
+  const nodes = [];
+  let n;
+  while ((n = walker.nextNode())) nodes.push(n);
+  for (let k = 0; k < nodes.length; k++){
+    const node = nodes[k], parent = node.parentNode;
+    if (!parent || !parent.closest) continue;
+    /* never inside a box somebody types in, and never inside the find bar's own count */
+    if (parent.closest("textarea,input,script,style,.ag-findbar")) continue;
+    const text = node.nodeValue || "";
+    const ranges = agFindRanges(text, q);
+    if (!ranges.length) continue;
+    const frag = document.createDocumentFragment();
+    let at = 0;
+    for (let r = 0; r < ranges.length; r++){
+      const s = ranges[r][0], e = ranges[r][1];
+      if (s > at) frag.appendChild(document.createTextNode(text.slice(at, s)));
+      const m = document.createElement("mark");
+      m.className = "ag-hit";
+      m.textContent = text.slice(s, e);
+      frag.appendChild(m);
+      out.push(m);
+      at = e;
+    }
+    if (at < text.length) frag.appendChild(document.createTextNode(text.slice(at)));
+    parent.replaceChild(frag, node);
+  }
+  return out;
+}
+
+/* Clear, re-wrap, count, and bring the current match into view. Called after every agDraw while
+   the bar is open, and once more when it shuts so nothing is left highlighted.
+
+   THE SCROLL IS ON A FLAG, not on every call. This runs on the one-second poll as well as on a
+   keystroke, and scrolling the article back to the match every second would take it away from
+   anyone reading around it. Only a step, a new query or a fresh open asks to be scrolled to. */
+function agFindPaint(a){
+  if (typeof document === "undefined") return;
+  const f = a && a.find;
+  if (!(f && f.on) && !agFindDirty) return;
+  agFindClear();
+  agFindDirty = false;
+  if (!(f && f.on)) return;
+  const hits = agFindWrap(agFindRegion(a), f.q);
+  agFindDirty = hits.length > 0;
+  f.n = hits.length;
+  if (!f.n) f.i = 0;
+  else if (f.i >= f.n || f.i < 0) f.i = 0;
+  const cur = hits[f.i];
+  if (cur){
+    cur.className = "ag-hit cur";
+    if (f.scroll && cur.scrollIntoView){
+      try { cur.scrollIntoView({ block: "center" }); } catch (e) { cur.scrollIntoView(); }
+    }
+  }
+  f.scroll = false;
+  const bar = document.getElementById("agFind");
+  const nEl = bar && bar.querySelector("[data-agfindn]");
+  if (nEl) nEl.textContent = agFindCount(f);
+}
+
 /* THE CARET SURVIVES A REPAINT, IN EVERY BOX. agDraw repaints #agScroll and #agPanel wholesale on
    the poll (every second while a run is live, every four idle), and a repaint destroys the focused
    box, so whoever was typing lost the caret after every keystroke. That was fixed box by box: the
@@ -3926,6 +4132,12 @@ function agDraw(force){
   const quiet = document.getElementById("agQuiet");
   if (quiet){ const q = agQuietHtml(a); agSetHtml("agQuiet", q); quiet.hidden = !q; }
   if (anchor) agScrollRestore(document.getElementById("agScroll"), anchor);
+  /* LAST, and in this order. The highlights are written into the DOM the paint above just made,
+     so they have to come after it; and they are torn out and put back on every draw, because a
+     repaint destroys them and a draw that skipped the repaint leaves the old ones in place.
+     agFindPaint does nothing at all when the bar is shut and nothing is highlighted. */
+  agDrawFind(a, root);
+  agFindPaint(a);
   a.lastView = a.view; a.lastDive = a.guideDive;
 }
 
@@ -5188,6 +5400,13 @@ async function agAction(act, el){
       catch (e) { agToast("Could not change: " + (e.message || e)); }
       agDraw(); break;
     }
+    /* ── the find bar's three buttons (spec item 6) ────────────────────────── */
+    /* Next and Previous repaint the highlights only, never the screen, so clicking them does not
+       take the caret out of the find box. Close is the one that redraws, because the bar and
+       every highlight have to go. */
+    case "findnext": if (a.find){ agFindStep(a, 1); agFindPaint(a); } break;
+    case "findprev": if (a.find){ agFindStep(a, -1); agFindPaint(a); } break;
+    case "findclose": agFindClose(a); agDraw(true); break;
     case "libopen": case "libreload": {
       try { await agLibOpen(arg); }
       catch (e) { agToast("Could not open: " + (e.message || e)); }
@@ -5843,19 +6062,52 @@ if (typeof document !== "undefined" && typeof window !== "undefined" && !window.
        overlay itself, which is more specific than the DFS console. */
     if (ev.key === "Escape"){
       const a0 = agS();
+      /* the find bar is the most specific layer of all: it opens OVER whatever is being read,
+         so Escape shuts it first and leaves that thing open underneath */
+      if (a0 && a0.find && a0.find.on){ ev.preventDefault(); agFindClose(a0); agDraw(true); return; }
       if (a0 && a0.libTabs2 && a0.libTabs2.on){ ev.preventDefault(); const sel = agLibTabs2Close(a0); agDraw(true); agFocusSel(sel); return; }
       if (a0 && a0.libTabs && a0.libTabs.on){ ev.preventDefault(); const sel = agLibTabsClose(a0); agDraw(true); agFocusSel(sel); return; }
       if (a0 && a0.dfs && a0.dfs.on){ ev.preventDefault(); a0.dfs.on = false; agDraw(true); return; }
+    }
+    /* CMD+F / CTRL+F. Four things have to be true before this key is taken: the agent owns the
+       pane, nobody is typing in it, and there is something on screen worth searching. Any one of
+       them false and the event is left exactly as it arrived -- not handled, not prevented -- so
+       whatever else wanted it still gets it. See the find block above for why the typing check
+       is the load-bearing one. */
+    if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && (ev.key === "f" || ev.key === "F")){
+      const a1 = agS();
+      if (a1 && agRoot() && !agTyping() && agFindWhere(a1)){
+        ev.preventDefault();
+        agFindOpen(a1);
+        agDraw(true);
+        agFindFocus();
+        return;
+      }
     }
     const ta = ev.target;
     if (!ta || !ta.matches) return;
     if (ta.matches("[data-agask]") && ev.key === "Enter" && !ev.shiftKey){ ev.preventDefault(); agSend(ta.value); }
     if (ta.matches("[data-agpageq]") && ev.key === "Enter"){ ev.preventDefault(); agLoadPages(0); }
+    /* Enter walks forward through the matches, Shift+Enter back. agFindPaint, not agDraw: this
+       has to move the highlight without repainting the box the caret is in. */
+    if (ta.matches("[data-agfind]") && ev.key === "Enter"){
+      ev.preventDefault();
+      const a2 = agS();
+      if (a2 && a2.find){ agFindStep(a2, ev.shiftKey ? -1 : 1); agFindPaint(a2); }
+    }
   });
   let agSearchTimer = null;
   document.addEventListener("input", (ev) => {
     const t = ev.target; if (!t || !t.matches) return;
     const a = agS(); if (!a) return;
+    /* The find box re-highlights and re-counts on every keystroke through agFindPaint, and
+       deliberately never through agDraw: a repaint here would destroy the input the person is
+       typing in, which is the exact bug this feature was built not to repeat. */
+    if (t.matches("[data-agfind]")){
+      const f = a.find;
+      if (f){ f.q = t.value; f.i = 0; f.scroll = true; agFindPaint(a); }
+      return;
+    }
     if (t.matches("[data-agask]")){ a.draft = t.value; agGrow(t); }
     else if (t.matches("[data-agcomps]")){ a.compForm = { text: t.value, saved: false }; }
     else if (t.matches("[data-agmem]")){ a.memForm = { text: t.value }; }
