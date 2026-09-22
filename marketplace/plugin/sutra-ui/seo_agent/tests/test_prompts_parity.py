@@ -167,7 +167,17 @@ EXCLUDED_REGIONS = {
     # He pastes five of his own published paragraphs in as the bar to hit. Sutra fills that from the
     # company's own articles at run time ({{WRITING_EXAMPLES}}, filled in write/readable.py), so the
     # passages themselves and the sentences that count them ("These five") cannot match and must not.
-    "readable.md": [("REAL PUBLISHED ARTICLES BY", "  · The reader is")],
+    "readable.md": [
+        ("REAL PUBLISHED ARTICLES BY", "  · The reader is"),
+        # 2026-09-22 (Devansh approved, specs/parked-2026-09-22-engine-fixes.md item 9). His copy's
+        # item 5 names three keyword groups; Sutra's names four, because Sutra carries a fourth the
+        # engine buys and his workflow does not -- the SECONDARIES research chose and paid for, which
+        # no heading took. They reach the article here or nowhere: blend is handed only the primary
+        # and its variations, and this is the last step that rewrites the article whole. The added
+        # wording is the rule that comes with them ("only where they fit naturally... never bend a
+        # sentence to hold a phrase"), which is permission, not a quota.
+        ("5. THE KEYWORDS", "THE HEADLINE MUST STILL BE TRUE"),
+    ],
     # Aparna's 2026-09-17 Slack review of three shipped articles (blog 3 was about 45% TestGorilla,
     # with TestGorilla named in two H2s). Every rule below was written straight into Sutra's prompts
     # and has no counterpart in his repo: his workflow never wires a competitor list to the writer,
@@ -206,9 +216,48 @@ EXCLUDED_REGIONS = {
     # is handed the specific fixes that were rejected, with the reason each one failed, and returns
     # only those, corrected. The two no longer share a single line, so the whole file is the region.
     "coherence-retry.md": [("", None)],
+    # 2026-09-22 (Devansh approved, specs/parked-2026-09-22-engine-fixes.md item 5). His copy asks
+    # this call one question per topic: covered, yes or no. Sutra's asks it for the REASON as well,
+    # because Recruiting Metrics shipped missing two of the six topics every ranking page covers and
+    # nobody knew until a reviewer read it. It is a note, not a gate, so the two blocks below say so
+    # and hand the judge the architect's own record of what it left out, which is what keeps the
+    # reason grounded instead of guessed -- and keeps the whole thing to the one call that already
+    # reads the finished article against the whole expected list.
+    "readable-coverage.md": [
+        ("Nothing you say here blocks anything.", "WHAT COUNTS AS COVERED"),
+        ("FOR EVERY ONE OF THESE YOU MARK NOT COVERED", "LIST TWO"),
+    ],
 }
 
+_GAP_DEMOTION_WHY = ("the gap demotion, 2026-09-22: a gap is no longer framed as where the article "
+                     "wins, and is capped at one section. See the block comment below.")
+_GAP_DEMOTION = [
+    # His lines that Sutra REMOVED, which is what the diff reports.
+    ("What no ranking page does well", _GAP_DEMOTION_WHY),
+    ("then add what only we can say. The gap deserves a real", _GAP_DEMOTION_WHY),
+    ("position in the article, not the last section.", _GAP_DEMOTION_WHY),
+    # ...and the lines Sutra added in their place.
+    ("What no ranking page covers", _GAP_DEMOTION_WHY),
+    ("A GAP IS NOT A PROMOTION", _GAP_DEMOTION_WHY),
+    ("It tells you rivals left something out", _GAP_DEMOTION_WHY),
+    ("reader wants it, or that we have the material", _GAP_DEMOTION_WHY),
+    ("evidence as every other section", _GAP_DEMOTION_WHY),
+    ("gave two of its nine sections to a gap", _GAP_DEMOTION_WHY),
+    ("every ranking page covered were dropped to make room", _GAP_DEMOTION_WHY),
+    ("promises it.", _GAP_DEMOTION_WHY),
+    ("A gap that is genuinely", _GAP_DEMOTION_WHY),
+    ("wanted and genuinely evidenced deserves a real position", _GAP_DEMOTION_WHY),
+    ("neither deserves no section at all", _GAP_DEMOTION_WHY),
+]
+
 PORT_EDITS = {
+    "readable-coverage.md": [
+        # Same 2026-09-22 change, its two contract lines. Every row Sutra gets back carries a "why"
+        # for the topics marked not covered, and that is the sentence the Edits tab shows a reviewer.
+        ('{"table_stakes": [{"topic": "<copied exactly from list one>"',
+         'each row also returns "why": the plain-words reason a topic is not covered'),
+        ("covered is false", 'the same line, telling it to leave "why" empty when covered is true'),
+    ],
     "inline-links.md": [
         ("page is pricing,", "his product pages; Sutra serves any company, so the example is generic"),
         ("is the reader who wants the", "same line, his product named"),
@@ -235,6 +284,17 @@ PORT_EDITS = {
     "wrapper-cta-retry.md": [
         ("then rank...", "the CTA example links his own product page; the port made it example.com"),
     ],
+    # THE GAP DEMOTION (owner, 2026-09-22). Sutra's four structure prompts framed the gap list as
+    # "where this article can win", and treated a gap-tagged section as the equal of one every
+    # ranking page covers. On his own Recruiting Metrics article that gave the four-fifths adverse
+    # impact rule two of nine sections while Source of Hire and Offer Acceptance Rate -- covered by
+    # every rival -- were dropped silently. His originals still carry the old framing, so these
+    # lines are Sutra-side ADDITIONS by design, not drift. If he adopts the same demotion upstream,
+    # delete these entries and the parity check takes over again.
+    "structure-simple.md": _GAP_DEMOTION,
+    "structure-listicle.md": _GAP_DEMOTION,
+    "structure-comparison.md": _GAP_DEMOTION,
+    "structure-template.md": _GAP_DEMOTION,
 }
 
 # PROMPTS SUTRA CARRIES IN AN ADAPTED FORM ON PURPOSE. Checked for presence, not for line parity.

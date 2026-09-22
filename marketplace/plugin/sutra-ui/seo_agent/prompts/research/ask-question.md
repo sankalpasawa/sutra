@@ -8,6 +8,12 @@ Material that does not serve the title and the angle does not belong. You get on
 so spend them on what THIS article needs, not on the general subject. A question whose answer this
 article could never use is a wasted question.
 
+THE BRIEF BELOW MAY LIST WHAT EVERY RANKING PAGE ALREADY COVERS, AND WHAT PEOPLE ACTUALLY ASK
+GOOGLE. Read both before you choose. A reader who arrives expecting the basics and cannot find
+them leaves before reaching anything we do better, and the article can only cover what somebody
+here thought to ask about. Some of those expected topics have already been put to you as set
+questions; do not repeat those, but do notice the ones nobody has covered yet.
+
 STAY INSIDE OUR WORLD. Read the "NOT about" line below. Where this subject shares a word with a
 different world, never ask a question that belongs to that other world. Their questions look
 perfectly reasonable and pull in advice that is confidently wrong for our reader.

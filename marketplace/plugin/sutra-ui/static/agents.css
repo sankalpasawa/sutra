@@ -649,11 +649,42 @@
   /* the new text (the proposed diff, agDiffHtml) fades in line by line as it lands, each line's
      own order carried on --i (17-agents.js agDiffHtml) */
   .ag-secbox .ag-diff span{animation:agLineIn .35s ease both;animation-delay:calc(var(--i,0) * 45ms)}
+  /* THE SAME THING OVER THE WHOLE ARTICLE (spec item 7a). The rewrite above attaches to
+     .ag-artsec, which is a SECTION, so the whole-article rewrite -- which has no section to point
+     at -- ran with no sign of life at all: you pressed the button and the screen sat there. The
+     body of the article is .ag-doc, so it takes the dim, the label and the sweep as one, under
+     this same reduced-motion gate. */
+  .ag-doc.rewriting{border-left:2px solid var(--acc);background:var(--acc-bg);overflow:hidden}
+  .ag-doc.rewriting::before{content:"";position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(90deg,transparent,var(--acc) 50%,transparent);
+    opacity:.16;background-size:250% 100%;background-position:-100% 0;
+    animation:agRewriteSweep 2s ease-in-out infinite;z-index:1}
+  .ag-doc.rewriting .ag-artsec{opacity:.55;transition:opacity .3s ease}
+  /* nothing in a dimmed article is clickable, so a stray click cannot open a section editor
+     underneath the rewrite that is about to replace the text it would edit */
+  .ag-doc.rewriting .ag-artsec{pointer-events:none}
 }
 @keyframes agRewriteSweep{0%{background-position:-100% 0}100%{background-position:200% 0}}
 @keyframes agLineIn{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
+/* The article's own "Rewriting…" pill, outside the motion gate for the same reason the section's
+   is: a reduced-motion reader is still owed the word. Same pill, same place, one level up -- the
+   top-right of the body instead of the top-right of a section. */
+.ag-doc.rewriting{position:relative;padding:6px 10px;border-radius:6px}
+.ag-doc > .rewritelbl{position:absolute;top:6px;right:8px;font:600 10px/1 var(--sans);
+  color:var(--acc);background:var(--card);padding:4px 9px;border-radius:999px;
+  border:1px solid var(--line-soft);z-index:2}
 .ag-secbox .ag-secmodes .btn.on{border-color:var(--acc);color:var(--acc);font-weight:600}
 .ag-secbox textarea.tall{min-height:180px;max-height:50vh;font:12.5px/1.6 var(--mono);white-space:pre-wrap}
+/* WHY THIS RULE IS SPELLED OUT TWICE, AND SCOPED (spec item 7b -- the "Use this" that never
+   appeared). `.ag-editbox textarea.tall{min-height:60vh}` further down this file was written for
+   the full-page file and prompt editors. It has the SAME specificity as the rule above and comes
+   later, so it won, and the whole-article rewrite's instruction box -- the only .ag-secbox
+   textarea carrying `tall` -- was 60vh high inside a 340px side panel. The diff and "Use this"
+   were then pushed past the bottom of that panel on any window under about 1150px tall, which is
+   every laptop: the button really was rendered, and really was unreachable without scrolling a
+   narrow column whose diff swallows the wheel. Adding .ag-secpanel takes this to three classes,
+   so it wins on specificity and cannot be undone by anything's position in the file again. */
+.ag-secpanel .ag-editbox textarea.tall{min-height:180px;max-height:50vh}
 .ag-conflict{margin:0 0 12px;border-left:2px solid var(--warn,var(--block));background:var(--warn-bg,var(--block-bg));
   padding:9px 12px;border-radius:0 7px 7px 0;font-size:12px;line-height:1.5}
 .ag-conflict .row{display:flex;gap:7px;align-items:center;margin-top:8px}
@@ -1536,3 +1567,26 @@ h3.sec small{color:var(--faint);font-weight:500;text-transform:none;letter-spaci
 .tctodos li.completed{color:var(--faint);text-decoration:line-through}
 .tctodos li.in_progress{color:var(--acc)}
 @media (prefers-reduced-motion: reduce){ .tcard.run .tcdot{animation:none} }
+
+/* ── find in the article: the bar and the highlights (spec item 6) ────────────────────────
+   The bar is its own element under #agRoot (17-agents.js agDrawFind), never inside #agScroll or
+   #agPanel, so a repaint of either cannot take it or the caret in it away. It is fixed to the
+   top-right, where a find bar is expected to be, and sits above every overlay it can open over:
+   the five tabs (91), the stacked second layer (96), and the whole-Library article panel (80). */
+.ag-findbar{position:fixed;top:14px;right:20px;z-index:97;display:flex;align-items:center;gap:6px;
+  background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px 8px;
+  box-shadow:var(--shadow)}
+.ag-findbar input{width:190px;background:var(--inset);border:1px solid var(--line-soft);border-radius:6px;
+  color:var(--ink);font:400 12px/1.45 var(--sans);padding:5px 8px}
+.ag-findbar input:focus-visible{outline:2px solid var(--acc);outline-offset:-1px}
+/* tabular numerals and a floor on the width so stepping 9 -> 10 of 30 does not shuffle the
+   buttons sideways under the cursor that is clicking them */
+.ag-findbar .n{min-width:64px;text-align:right;font:500 10.5px/1 var(--mono);color:var(--faint);
+  font-variant-numeric:tabular-nums}
+.ag-findbar .ib{width:24px;height:24px;flex:none}
+
+/* EVERY match is tinted; the one being looked at is the accent itself, so "which of the twelve
+   am I on" is answerable at a glance rather than by reading the count. <mark> is given its
+   colours outright: the browser's own default is a yellow that belongs to neither theme. */
+mark.ag-hit{background:var(--acc-bg);color:var(--ink);border-radius:3px;padding:0 1px}
+mark.ag-hit.cur{background:var(--acc);color:var(--on-acc)}

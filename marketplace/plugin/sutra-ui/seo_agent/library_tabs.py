@@ -222,6 +222,33 @@ EDIT_STEP_LABELS = [
 ]
 
 
+def _coverage_rows(rows, field):
+    """One tab row per topic: its name, and the one thing the screen says next to it. A row with no
+    topic is dropped rather than rendered as a blank line."""
+    return [{"topic": str(r.get("topic") or "").strip(), field: str(r.get(field) or "").strip()}
+            for r in (rows or []) if isinstance(r, dict) and str(r.get("topic") or "").strip()]
+
+
+def _coverage(rep):
+    """What the draft covered of the topics every ranking page covers, and why each drop happened.
+
+    None for every article written before this shipped, which is the point: a run with no such
+    record renders nothing at all rather than an empty box claiming it covered nothing.
+
+    Read from the readable step's own report, which is where write/readable.py::coverage_report
+    puts it, and from the top level too, so it is found whichever place write-report.json carries
+    it. Nothing is computed here: what is on disk is what is shown, or there is no row.
+    """
+    cov = rep.get("coverage_report")
+    if not isinstance(cov, dict):
+        cov = ((rep.get("steps") or {}).get("readable") or {}).get("coverage_report")
+    if not isinstance(cov, dict) or not cov.get("expected_total"):
+        return None
+    return {"expected_total": cov.get("expected_total"),
+            "covered": _coverage_rows(cov.get("covered"), "section"),
+            "dropped": _coverage_rows(cov.get("dropped"), "why")}
+
+
 def edits(meta):
     if not _milestone_done(meta, "edited"):
         return None
@@ -246,7 +273,15 @@ def edits(meta):
     elif band.get("min") or band.get("max"):
         target = band.get("min") or band.get("max")
 
-    return {"passes": passes, "source_check": source_check,
+    # THE LINKS REPORT MOVED HERE FROM THE DRAFT (owner, 2026-09-22: "the draft should be super
+    # clean... just the article"). The draft view used to show, above the article, which internal
+    # pages were linked and which sources survived. That was stripped so the draft is only the
+    # article -- but stripped is not deleted. This is the only place anyone can see whether the
+    # links landed and the sources held, so it lands on the Edits tab beside the coverage report,
+    # which is where somebody opening a finished article goes looking for exactly this.
+    links = _run_artifact(meta, "links-report.json")
+    return {"passes": passes, "source_check": source_check, "coverage": _coverage(rep),
+           "links": links if isinstance(links, dict) and links else None,
            "has_source_check_doc": _has_doc(meta, "source-check.md"),
            "words": words, "target_words": target}
 

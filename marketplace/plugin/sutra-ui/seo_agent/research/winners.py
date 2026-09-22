@@ -49,10 +49,26 @@ def structure_only(pages):
     return slim
 
 
-def write_up(pages, angle, primary, company):
+def write_up(pages, angle, primary, company, paa=None):
+    """The study, and the gap list inside it.
+
+    `paa` is the People Also Ask questions off the SERP snapshot, and it is what makes a gap a gap
+    (owner, 2026-09-22). The prompt used to ask for gaps "judged against the distinct angle", which
+    handed our own angle back as an opportunity: on Recruiting Metrics that produced two whole
+    sections on the four-fifths rule, which nobody searching "recruiting metrics" had asked for,
+    while Source of Hire and Offer Acceptance Rate -- covered by every ranking page -- were dropped
+    entirely. A gap must now name a reader who wants it, and the PAA is where that reader is
+    visible.
+
+    A missing PAA becomes a plain note rather than an empty block: "(none captured)" tells the
+    model there is no demand signal to point at, which correctly makes a gap HARDER to claim,
+    where an empty string would read as a formatting slip and be ignored.
+    """
     tok = _c.company_tokens(company)
+    asked = [str(q).strip() for q in (paa or []) if str(q).strip()]
     p = _c.prompt("winners", brand=tok["brand"], distinct_angle=angle or "(none given yet)",
-                  primary_keyword=primary, parsed_pages=json.dumps(structure_only(pages), indent=2))
+                  primary_keyword=primary, parsed_pages=json.dumps(structure_only(pages), indent=2),
+                  paa="\n".join("- " + q for q in asked) or "(none captured for this search)")
     return (llm.text(p) or "").rstrip()
 
 

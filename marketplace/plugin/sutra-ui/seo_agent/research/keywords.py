@@ -146,8 +146,37 @@ def score_and_judge(rows, topic, angle, world, hygiene, company, say=None):
         "in_body": _c.strings(final.get("in_body")),
         "notes": str(final.get("notes") or "").strip(),
     }
+    # THE RUNNERS-UP, KEPT (owner, 2026-09-22). The judge picks one head term and everything else
+    # was thrown away, so a primary that turns out to be a different article had no replacement and
+    # the run carried on with it. See serp.same_article: the check is worthless without somewhere
+    # to go next. Ranked the way the judge ranks: the scorer's own relevance first, then volume.
+    final["alternates"] = _alternates(scored_rows, by_kw, primary["keyword"])
     return {"final": final, "verdicts": verdicts, "scored_rows": len(scored_rows),
             "failed_batches": failed, "candidates": len(cands)}
+
+
+def _alternates(scored_rows, by_kw, chosen, limit=4):
+    """The next-best head terms, best first, excluding the one already chosen.
+
+    Relevance is the scorer's judgment of how directly a keyword matches this article, so it leads;
+    volume breaks ties. Anything the scorer called off-topic (relevance <= 2, its own drop line) is
+    not a fallback at all -- swapping a wrong keyword for an irrelevant one is not a recovery.
+    """
+    seen, out = {str(chosen).strip().lower()}, []
+    rows = [r for r in (scored_rows or []) if isinstance(r, dict) and r.get("keyword")]
+    rows.sort(key=lambda r: (-float(r.get("relevance") or 0),
+                             -float((by_kw.get(str(r["keyword"]).strip().lower()) or {}).get("vol") or 0)))
+    for r in rows:
+        if float(r.get("relevance") or 0) <= 2:
+            continue
+        m = _measured(r, by_kw)
+        if not m or m["keyword"].lower() in seen:
+            continue
+        seen.add(m["keyword"].lower())
+        out.append(m)
+        if len(out) >= limit:
+            break
+    return out
 
 
 def _plural(n, word, many=None):

@@ -52,6 +52,25 @@ def _module(name):
 FINDERS = ("competitors", "formats", "trends")
 
 
+def _keys_used(builder, stamp=None):
+    """Read, or with `stamp` write, which keys this builder had the last time it ran.
+
+    One tiny file per builder, beside its own output. Deliberately NOT one shared file: the three
+    finders run independently, one can be redone alone, and a shared record would then claim
+    something about a builder that did not run. Never raises -- a record we cannot read means we
+    cannot prove the keys improved, and the ordinary skip rule stands.
+    """
+    name = "_keys-%s.json" % builder
+    if stamp is None:
+        got = cm.read(name, {})
+        return got if isinstance(got, dict) else {}
+    try:
+        cm.save(name, stamp)
+    except Exception:                      # noqa: BLE001 -- bookkeeping is never worth a run
+        pass
+    return stamp
+
+
 def _only(only):
     if not only:
         return set()
@@ -91,6 +110,23 @@ def run(ctx, redo=False, only=None):
                           "that is worked out from the brand pack. There is none on file. Run the "
                           "brand pack first, then ask me for asset ideas again.")}
 
+    # THE KEYS, BEFORE THE EVENING RATHER THAN AFTER IT (owner, 2026-09-22). A friend ran this
+    # whole engine with neither key connected. It never said so: the sort fell back to matching
+    # words, 200 posts became 151 fragments, the sheet came out empty, and the only two signals in
+    # the app were a "!" on a sidebar item and one line buried mid-log, after the damage.
+    #
+    # BOTH WARN HERE, NEITHER REFUSES, and that is deliberate. The first version of this refused on
+    # DataForSEO, copying run_research's guard, and test_assets_wiring caught it: this engine does
+    # not need DataForSEO. Two of the three finders never touch it, and `competitors` already
+    # degrades one step and says so ("no way to see which of a competitor's pages earn links").
+    # Refusing would have blocked people who could still get a perfectly good sheet, which is a
+    # worse bug than the one being fixed. The refusal belongs where the key is genuinely required,
+    # and that is run_research, where it already is.
+    #
+    # What was actually missing for his friend was VOYAGE, and this is where that gets said.
+    missing = sh.keys_missing()
+    sh.warn_missing_keys(say, ("dataforseo", "voyage"), missing)
+
     wanted = _only(only)
     redo = bool(redo)
     built, skipped, failed, notes, files = [], [], [], [], []
@@ -107,6 +143,18 @@ def run(ctx, redo=False, only=None):
         if wanted and key not in wanted:
             continue
         force = redo or key in wanted
+        # A KEY THAT ARRIVED SINCE UNDOES THE SKIP (owner, 2026-09-22). Skipping a builder whose
+        # files exist is right for an ordinary re-run and exactly wrong the moment a missing key is
+        # connected: the work being skipped is the work the new key would have fixed. Without this,
+        # the friend above adds his Voyage key, runs it again, is told "Already built", gets the
+        # same 151 fragments, and concludes the key did nothing. Only ever upwards -- losing a key
+        # never throws away work that was built properly.
+        stamp_now = sh.keys_stamp(missing)
+        if not force and sh.keys_improved(_keys_used(key), stamp_now):
+            force = True
+            say("Rebuilding %s" % key,
+                "it ran without a key that is connected now, so what it produced was cruder than "
+                "it needed to be")
         if not force and outputs and all(cm.exists(f) for f in outputs):
             say("Already built: %s" % key, ", ".join(outputs))
             files += outputs
@@ -131,6 +179,7 @@ def run(ctx, redo=False, only=None):
                     "done_so_far": built}
         files += out.get("files") or outputs
         notes += out.get("needs_review") or []
+        _keys_used(key, stamp_now)     # what it had when it ran; read by the skip rule above
         built.append(key)
 
     rows = cm.ideas()

@@ -10,6 +10,22 @@ its place.
           loss. Any failure and the ORIGINAL body publishes unchanged, loudly logged.
 The editor sees ONLY the prose, never the cards, so it cannot invent a fact. Code then audits the [c]
 tags: a tag present after blending that never existed in the body is stripped and logged.
+
+THIS STEP IS NO LONGER THE LAST WORD ON THE KEYWORDS (2026-09-22). It keeps its own pass, which is
+one narrow thing: where a sentence already says the primary or one of its variations in vaguer
+words, swap the exact phrase in. What it is NOT is the place keyword coverage is settled, because
+wrapper, coherence and readable all rewrite the whole article after this one, and until now nothing
+put back a phrase a later rewrite removed. write/readable.py -- the last step that rewrites the
+article whole -- now holds the keyword list while it rebuilds, so what this step places has somewhere
+to survive to.
+
+The split is by GROUP, so no phrase is placed twice: this step owns the primary and the variations,
+readable owns the secondaries and touches neither of the other two except to keep them. That is why
+the secondaries are still not passed here. They were never in the body, so placing them is a
+rewrite, not a swap, and the step that can still rewrite a sentence and have it survive is readable.
+
+kw_counts() below stays exactly as it is. It is free, it is code rather than the model's own report,
+and it is now the honest BEFORE reading that readable's keyword handling is measured against.
 """
 import difflib
 import re

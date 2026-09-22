@@ -1043,7 +1043,7 @@ def library_update(item_id, draft_md, title=None, actor="", actor_id=""):
         _write_text(os.path.join(d, PREVIOUS_FILE), old)
     _write_text(path, draft_md)
     _stamp_edit(meta, draft_md, title, actor, actor_id, old)
-    _record_version(item_id, meta, draft_md)
+    _record_version(item_id, meta, draft_md, previous_body=old)
     write_json(os.path.join(d, "meta.json"), meta)
     # Undo/Redo read their enabled state off THIS call's reply (agLibSave, 17-agents.js) rather
     # than a fresh GET, so it must carry the same "history" flags library_get computes -- without
@@ -1099,6 +1099,11 @@ def library_revert(item_id, actor="", actor_id=""):
 # A FRESH edit made while the cursor sits behind the tip drops every entry after it -- the redo
 # tail -- before appending the new one, exactly like any other editor: the future you could have
 # redone to is gone once you type something new.
+#
+# THE ONE EXCEPTION TO "only on an edit" (2026-09-22): the FIRST edit of an article writes two
+# entries, not one -- the body it replaced, then the body it wrote. Without the first of those
+# there was nothing behind the cursor after edit one and Undo could never light up. See
+# _record_version.
 MAX_VERSIONS = 20
 VERSIONS_SUBDIR = "versions"
 
@@ -1115,11 +1120,37 @@ def _version_index(versions, version):
     return next((i for i, v in enumerate(versions) if v.get("version") == version), None)
 
 
-def _record_version(item_id, meta, body):
+def _record_version(item_id, meta, body, previous_body=None):
     """Append `body` (the state meta["version"] now points at) to the kept timeline, dropping the
     redo tail first if the cursor was not already at the tip. Mutates and returns `meta`; the
-    caller still owns writing meta.json."""
+    caller still owns writing meta.json.
+
+    `previous_body` is the body this save replaces. On the FIRST edit of an article it becomes the
+    timeline's first entry -- see below.
+    """
     versions = [dict(v) for v in (meta.get("versions") or [])]
+    # THE ARTICLE'S OWN STATE IS THE FIRST ENTRY (owner, 2026-09-22: "undo is not at all
+    # working"). The timeline only ever grew on an edit, so after the first edit it held exactly
+    # one entry, the cursor sat on it, and can_undo -- "is there anything before the cursor" --
+    # was 0 > 0. You could never undo your first edit, which from the outside is undo being
+    # broken. Every article on his Mac had versions: [].
+    #
+    # So the body being REPLACED is written in as the entry before it. Doing this here, at the
+    # first edit, rather than when the article is saved to the Library, is deliberate: it is the
+    # one funnel every edit passes through, so it needs no second copy of this rule at the save
+    # path, it repairs the articles already sitting in the Library with an empty timeline, and it
+    # covers an article that arrived from the team workspace carrying no history at all. The
+    # version number and the by-line come from meta["previous"], which _stamp_edit has just filled
+    # with the pre-edit ones, so the entry is stamped with what that body really was.
+    #
+    # An empty previous body is not seeded. Restoring an article to nothing is not an undo anyone
+    # wants, and an article with no text has no state worth keeping.
+    if not versions and previous_body:
+        was = meta.get("previous") or {}
+        base = int(was.get("version") or 0)
+        versions.append({"version": base, "title": was.get("title") or "",
+                         "edited_by": was.get("edited_by") or "", "edited_at": was.get("edited_at") or ""})
+        _write_text(_version_file(item_id, base), previous_body)
     idx = _version_index(versions, meta.get("history_cursor"))
     if idx is not None:
         versions = versions[:idx + 1]               # drop the redo tail

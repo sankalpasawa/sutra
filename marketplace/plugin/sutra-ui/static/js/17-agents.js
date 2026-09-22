@@ -21,6 +21,17 @@ const AG_STAGES = [["setup", "Setup"], ["topic", "Topic"], ["research", "Researc
 const AG_VIEW_TITLE = { brand_pack: "The brand pack", topic_list: "Topic ideas", research_brief: "Research brief",
                         blueprint: "Article plan", article: "The draft", brand_file: "Brand file", page: "Page",
                         prompt: "Prompt" };
+/* WHERE EACH ARTIFACT ACTUALLY LIVES once the run has moved on (owner's friend, SustVest run,
+   2026-09-22). The "Ready to read" line used to end "It is in the Library too" whatever the
+   artifact was, so it sent people hunting for the brand pack in a tab that has never held one.
+   Only the three writing artifacts are Library rows; the brand pack and its files are Knowledge,
+   the idea sheet is Asset ideas, a prompt is Prompts. The names here are the sidebar's own words
+   (AG_GUIDE_TABS follows the same list), because that is the label the person has to go and
+   click. A view missing from this map gets NO second-home sentence at all: saying nothing is
+   honest, and guessing is exactly what caused the bug. */
+const AG_VIEW_HOME = { brand_pack: "Knowledge", brand_file: "Knowledge", page: "Knowledge",
+                       topic_list: "Asset ideas", research_brief: "Library", blueprint: "Library",
+                       article: "Library", prompt: "Prompts" };
 const AG_POLL_LIVE_MS = 1000;
 const AG_POLL_IDLE_MS = 4000;
 
@@ -271,6 +282,9 @@ function agS(){
     /* the companies this person works for (GET /companies), the add/name form's mode, the last
        refusal in words, and whether a switch is in flight (owner, 2026-09-11) */
     companies: null, coForm: null, coErr: null, coBusy: false,
+    /* the find bar (Cmd+F) over the article or the five tabs: {on, q, i, n, where, scroll}.
+       null when it is shut, which is also how the highlighting knows to clear itself. */
+    find: null,
   };
   return S.ag;
 }
@@ -725,10 +739,11 @@ function agEntryHtml(e, ctx){
     case "ready": {
       const isOpen = ctx.panel && ctx.panel.name === e.artifact && ctx.panel.run_id === ctx.run_id;
       const label = e.label || (AG_VIEW_TITLE[e.view] || "it").toLowerCase();
+      const home = AG_VIEW_HOME[e.view];
       return `<div class="ag-step quiet"><span class="ag-glyph" aria-hidden="true"></span>
         <div class="ag-note">Ready to read: <button class="ag-openlink ${isOpen ? "open" : ""}" type="button"
           data-ag="open" data-arg="${agEsc(e.artifact)}" data-view="${agEsc(e.view)}" data-run="${agEsc(ctx.run_id || "")}"
-          >${agEsc(label)}</button>. It is in the Library too.</div></div>`;
+          >${agEsc(label)}</button>.${home ? ` It is in the ${agEsc(home)} tab too.` : ""}</div></div>`;
     }
     case "mem":
       return `<div class="ag-step mem"><span class="ag-glyph" aria-hidden="true">${agGlyph(e)}</span>
@@ -820,8 +835,13 @@ function agRunHtml(run, events, ctx){
      how long it had taken rather than by what it was doing). The state word and the steps count
      stay; agDur(sum.elapsedMs) is gone from here. sum.elapsedMs itself is untouched -- other
      screens (the Library row, the notifications) still use it. */
+  /* The same test the composer's footer uses (agLiveWait): the strip may only say it is waiting
+     for him when the question is actually in the rows underneath it. The run's status alone was
+     enough to print "Waiting for you" over a transcript with nothing in it to answer. sum.waiting
+     itself is left as it is -- the Library row and the notifications read it too. */
+  const asked = entries.some(e => e.live && (e.kind === "ask" || e.kind === "approval" || e.kind === "artifact"));
   const head = sum.live
-    ? `<span class="runstrip live"><span class="spark" aria-hidden="true">${AG_ICON.spark}</span><b class="shim">${sum.waiting ? "Waiting for you" : "Working"}</b></span>${agStopBtnHtml(run, sum, ctx)}`
+    ? `<span class="runstrip live"><span class="spark" aria-hidden="true">${AG_ICON.spark}</span><b class="shim">${sum.waiting && asked ? "Waiting for you" : "Working"}</b></span>${agStopBtnHtml(run, sum, ctx)}`
     : `<span class="ag-worked">${run.status === "failed" ? "Stopped with an error" : run.status === "stopped" ? "Stopped" : "Worked"}</span>`;
   return `<div class="ag-turn" data-run="${agEsc(run.run_id)}">
     <div class="u">${agEsc(run.request || run.topic || "")}</div>
@@ -1520,11 +1540,36 @@ function agResearchSettingsHtml(rs){
   </div>`;
 }
 
+/* THE QUESTION THE RUN SAYS IT IS WAITING ON, but only if it is really in the transcript.
+   Returns the live checkpoint row agEntryHtml is drawing, or null.
+
+   The run's own status is not enough to go on. A checkpoint is marked in two writes -- state
+   patched to "waiting", then the "waiting" event emitted (loop._wait) -- and the screen reads
+   the two from two files, so it can hold the first without the second. When it does, the footer
+   used to say "waiting for you" and "Type your answer, or pick an option above" beside a
+   transcript with no question and no options in it at all, which is what the friend's SustVest
+   run showed. Reading the drawn row instead of the status makes that impossible: the footer and
+   the transcript now come from the same projection, so the footer can only ask for an answer to
+   a question that is on the screen next to it. The SEND path is untouched and still keys off the
+   run's status, so a message typed here goes the same way it always did. */
+function agLiveWait(a, live){
+  if (!live || live.status !== "waiting") return null;
+  const rows = agStepsFromEvents((a && a.events && a.events[live.run_id]) || [], live);
+  for (let i = rows.length - 1; i >= 0; i--){
+    const e = rows[i];
+    if (e.live && (e.kind === "ask" || e.kind === "approval" || e.kind === "artifact")) return e;
+  }
+  return null;
+}
+
 function agComposerHtml(a){
   const live = agLiveRun();
-  const running = live && live.status === "running";
-  const waiting = live && live.status === "waiting";
-  const w = waiting ? (live.waiting_on || {}) : null;
+  /* `w` is the checkpoint as DRAWN, not as the status claims. A live run with nothing asked of
+     him on screen reads as working, which is the honest half of the pair: something is in
+     flight and there is nothing for him to answer yet. */
+  const w = agLiveWait(a, live);
+  const waiting = !!w;
+  const running = !!live && !waiting;
   const setup = agSetupOf(a.health);
   /* NEVER DISABLED WHILE RUNNING (2026-09-17). Typing here used to be blocked the whole time a
      run was live, with Stop as the only thing you could click in this spot -- one stray tap
@@ -1785,18 +1830,28 @@ function agLinksHtml(rep){
   </div>`;
 }
 
+/* THE DRAFT IS JUST THE ARTICLE (spec item 10; owner, 2026-09-22: "the draft should be super
+   clean... just the article and for them to edit").
+
+   Three things used to sit above the text and push it off the screen: a stats line (words, the
+   band aimed at, the block count), the coverage checkmarks (agChecksHtml) and the links and
+   sources report (agLinksHtml). All three are workings, and a person opening their draft is
+   there to read it.
+
+   NONE OF IT IS LOST. Whether the keywords landed and whether the sources held is the only
+   thing in there a person ever needs again, and both moved to the Edits tab of the Library
+   overlay, where a reviewer opening the article weeks later still finds them: the coverage
+   report (spec item 5) and the links-and-sources report (agTabEditsHtml). They were moved, not
+   dropped.
+
+   `extra` still arrives and is deliberately not read here: the caller hands over p.links and
+   p.write whether or not this view wants them, and anything that wants them again belongs on
+   the Edits tab, not back above the article. */
 function agArticleHtml(md, edit, last, readOnly, extra){
   const text = typeof md === "string" ? md : (md && md.text) || "";
   const blocks = agBlocks(text);
   if (!blocks.length) return `<div class="zero"><h4>Empty draft</h4></div>`;
-  extra = extra || {};
-  const rep = extra.write || {};
-  const cov = rep.coverage_checklist || rep.checklist || rep.coverage;
-  const len = rep.length;
-  return `<p class="ag-sub" style="margin:0 0 10px">${agEsc(agNum(agWords(text)))} words${len && len.band_min ? ` · aimed ${agEsc(agNum(len.band_min))}–${agEsc(agNum(len.band_max))}` : ""} · ${blocks.length} blocks${readOnly ? "" : " · hover a paragraph to edit it"}</p>
-    ${cov ? agChecksHtml(cov) : last && last.checks ? agChecksHtml(last.checks) : ""}
-    ${extra.links ? agLinksHtml(extra.links) : ""}
-    <div class="ag-doc">${blocks.map((b, i) => {
+  return `<div class="ag-doc">${blocks.map((b, i) => {
       const id = "p" + i;
       const editing = edit && edit.id === id;
       return `<div class="ag-blk ${editing ? "editing" : ""}" data-blk="${id}">${agMd(b)}
@@ -1995,12 +2050,20 @@ function agLibArticleHtml(p, a){
   if (!secs.length) return `<div class="zero"><h4>Empty article</h4></div>`;
   const ed = a.libSec;
   const dirty = !!(a.libBuf && a.libBuf.dirty);
+  /* THE WHOLE-ARTICLE REWRITE HAS TO LOOK LIKE SOMETHING TOO (spec item 7a). The section rewrite
+     dims, labels and sweeps the one .ag-artsec it is working on; the article rewrite had no
+     section to point at, so it showed nothing at all and the screen just sat there. The body
+     itself -- .ag-doc -- is what is being rewritten, so the same three things land on it. Gated
+     on a.libArt.busy exactly the way `rewriting` below is gated on the section editor's own
+     busy, and the motion half is behind prefers-reduced-motion in agents.css, same as the
+     section's. */
+  const artRewriting = !!(a.libArt && a.libArt.busy);
   /* No meta line here any more (spec item 6: the word/section/team count is gone, to leave the
      room the right-hand edit panel needs). "Unsaved changes" still needs to say so somewhere --
      it moves onto the conflict/notice area instead of being dropped silently. */
   return `${dirty ? `<p class="ag-sub" style="margin:0 0 10px"><b>unsaved changes</b></p>` : ""}
     ${agLibConflictHtml(a.libConflict, p.libId)}
-    <div class="ag-doc">${secs.map(s => {
+    <div class="ag-doc${artRewriting ? " rewriting" : ""}">${artRewriting ? `<span class="rewritelbl" role="status">Rewriting…</span>` : ""}${secs.map(s => {
       const editing = ed && ed.id === s.id;
       /* AI is mid-rewrite of exactly this section: the sweep, the dim and the left accent line
          (agents.css .ag-artsec.rewriting) are all gated on this one class, never on ed.busy
@@ -2104,10 +2167,15 @@ function agPanelHtml(a){
           <button class="btn" type="button" data-ag="libedit" data-arg="${agEsc(p.libId)}">Edit whole article</button>
           <button class="btn" type="button" data-ag="libart" data-arg="${agEsc(p.libId)}">Rewrite with AI</button>`
       : `<button class="btn" type="button" data-ag="copymd">Copy markdown</button>`;
+    /* ONE BUTTON, NOT TWO (spec item 10). "Save to Library" and "Copy markdown" both left the
+       person somewhere other than where they wanted to be: the first saved and then made them go
+       and find the row, the second handed them text with nowhere to put it. What they are
+       actually doing at this point is going off to edit the thing, so the button says that and
+       does the whole errand -- save, Library tab, that article open. The run's own controls at a
+       checkpoint (approve, ask for changes) are untouched; they are a different question. */
     else footer = `${atCheckpoint ? `<button class="btn pri" type="button" data-ag="approvert">Looks good, finish</button>` : ""}
-      <button class="btn ${atCheckpoint ? "" : "pri"}" type="button" data-ag="publish" ${a.busy ? "disabled" : ""}>Save to Library</button>
-      ${atCheckpoint ? `<button class="btn" type="button" data-ag="changes" data-text="About the draft: ">Ask for changes</button>` : ""}
-      <button class="btn" type="button" data-ag="copymd">Copy markdown</button>`;
+      <button class="btn ${atCheckpoint ? "" : "pri"}" type="button" data-ag="editinlib" ${a.busy ? "disabled" : ""}>${a.busy ? "Saving…" : "Edit in library"}</button>
+      ${atCheckpoint ? `<button class="btn" type="button" data-ag="changes" data-text="About the draft: ">Ask for changes</button>` : ""}`;
   } else body = `<pre class="ag-detail">${agEsc(JSON.stringify(p.data, null, 2))}</pre>`;
   /* A Library article takes the whole Library area (agents.css .ag.liblarge, set in agDraw from
      this same p.libId), so the small X in the corner is no longer enough of a way back -- it
@@ -2836,7 +2904,40 @@ function agTabDraftHtml(d){
 
 /* ── Edits ───────────────────────────────────────────────────────────────────────────────
    passes is already a list of full, plain-English sentences in run order -- nothing to word
-   here, only to list. */
+   here, only to list.
+
+   THIS TAB IS ALSO WHERE THE DRAFT'S WORKINGS LANDED (spec item 10). The links-and-sources
+   report used to sit above the article in the draft view and is gone from there, because a
+   person opening their draft is there to read it. It is the only place anyone can see which of
+   their own pages the article points at and which sources survived, so it is drawn here instead,
+   where a reviewer opening the article later still finds it. `links` is the run's own
+   links-report.json, in the shape agLinksHtml has always taken. Absent, nothing draws: an empty
+   box says less than no box. */
+/* WHAT THE ARTICLE WAS MEANT TO COVER, AND WHAT IT DID NOT (spec item 5).
+
+   Recruiting Metrics shipped missing two of the six things every ranking page covers, and nobody
+   knew until Aparna read it. The coverage check had been running in write/readable.py the whole
+   time; it just wrote a report nobody surfaced. This is the surface, and it is deliberately not
+   a gate: the run says what it did, with a reason in plain words, and a person judges.
+
+   Rows in the tab's own vocabulary (agIr for a labelled line, agTabUl for a list), so it reads
+   as part of the tab rather than a report bolted on.
+
+   NOTHING IS INVENTED HERE. The count is covered.length against the report's own expected_total,
+   and if the report did not say how many were expected, that line is left out rather than
+   guessed from the two lists -- a total derived from what happened cannot say what was wanted.
+   An article written before any of this shipped carries no coverage at all and draws nothing:
+   every row falls away on its own, so there is no empty box to explain. */
+function agCoverageHtml(cov){
+  if (!cov) return "";
+  const total = Number(cov.expected_total);
+  const covered = cov.covered || [], dropped = cov.dropped || [];
+  const line = Number.isFinite(total) && total > 0 ? `${agNum(covered.length)} of ${agNum(total)}` : "";
+  return `${agIr("Expected topics", line ? agEsc(line) : "")}
+    ${agIr("Covered", agTabUl(covered.map(c => c && c.section ? `${c.topic} — in “${c.section}”` : (c && c.topic) || "")))}
+    ${agIr("Dropped", agTabUl(dropped.map(d => d && d.why ? `${d.topic}, because ${d.why}` : (d && d.topic) || "")))}`;
+}
+
 function agTabEditsHtml(ed, st){
   if (!ed) return agTabEmptyHtml(st, "edits");
   const sc = ed.source_check;
@@ -2846,10 +2947,12 @@ function agTabEditsHtml(ed, st){
     : "";
   const wordsLine = (ed.words != null && ed.target_words != null) ? `${agEsc(agNum(ed.words))} words against a target of ${agEsc(agNum(ed.target_words))}` : "";
   return `<div class="ag-tabrows">
+    ${agCoverageHtml(ed.coverage)}
     ${agIr("What was done", agTabUl(ed.passes))}
     ${agIr("Source check", scLine)}
     ${agIr("Words", wordsLine)}
-  </div>`;
+  </div>
+  ${ed.links ? agLinksHtml(ed.links) : ""}`;
 }
 
 /* ── the overlay shells themselves ──────────────────────────────────────────────────────── */
@@ -3711,6 +3814,209 @@ function agDrawLibTabs2(a, root){
   if (el.__agHtml !== want){ el.__agHtml = want; el.innerHTML = want; }
 }
 
+/* ── find in the article: Cmd+F / Ctrl+F (spec item 6) ────────────────────────────────────
+   There was no find anywhere in this app, and the browser's own is turned off inside the
+   Electron shell, so reviewing a 2,000-word article meant scrolling and hoping.
+
+   IT MUST NOT COST ANYONE THEIR CARET. This file already carries the scars of a repaint taking
+   focus off a text box -- agCaretGrab/agCaretPut a little below exist because of it, and Aparna
+   hit it twice, the second time as "it only lets me type one letter at a time". So find is built
+   so that it cannot do that again, in three separate ways:
+
+     1. THE KEY IS NEVER TAKEN FROM SOMEONE TYPING. If the focus is in any text box inside the
+        agent (agTyping), Cmd+F is left entirely alone: not handled, not preventDefault'ed. The
+        cost of being wrong that way is that a person clicks off the box and presses it again.
+        The cost of being wrong the other way is the bug that shipped twice.
+     2. THE BAR IS NOT IN A REPAINTED REGION. It is its own element under #agRoot, the way the
+        tab overlay is, so nothing agDraw does to #agScroll or #agPanel can destroy it.
+     3. THE BAR'S MARKUP IS A CONSTANT, written once when it opens. The count that changes as
+        you type is set as text on one node; the input's value is the person's, never re-rendered
+        from state. So no keystroke ever rebuilds the box the caret is sitting in.
+
+   The highlighting is done in the DOM after the paint rather than in the renderers, so that no
+   markdown, block id or editing affordance has to know find exists. A match that straddles two
+   elements ("cost per **hire**") is not found; that is the accepted limit of walking text nodes,
+   and the alternative is a second copy of the article in a shadow buffer. */
+const AG_FIND_SHELL = `<div class="ag-findbar" role="search">
+  <input type="text" data-agfind spellcheck="false" autocomplete="off" placeholder="Find" aria-label="Find in this article">
+  <span class="n" data-agfindn role="status" aria-live="polite"></span>
+  <button class="ib" type="button" data-ag="findprev" aria-label="Previous match" title="Previous (Shift+Enter)">↑</button>
+  <button class="ib" type="button" data-ag="findnext" aria-label="Next match" title="Next (Enter)">↓</button>
+  <button class="ib" type="button" data-ag="findclose" aria-label="Close find" title="Close (Escape)">✕</button>
+</div>`;
+
+/* Every non-overlapping, case-insensitive occurrence of `q` in `text`, as [start, end] pairs.
+   Pure, so the matching rule is testable without a DOM. */
+function agFindRanges(text, q){
+  const out = [];
+  const hay = String(text == null ? "" : text).toLowerCase();
+  const needle = String(q == null ? "" : q).toLowerCase();
+  if (!needle) return out;
+  let i = hay.indexOf(needle);
+  while (i !== -1){ out.push([i, i + needle.length]); i = hay.indexOf(needle, i + needle.length); }
+  return out;
+}
+
+/* Is there something on screen worth searching, and which is it? Decided from STATE, so the
+   keyboard can answer it before anything is drawn. The stacked second overlay (a dossier, a
+   section's purpose) deliberately says no: it sits ON TOP of the five tabs, and a find bar
+   quietly searching the layer underneath it would highlight what nobody can see. */
+function agFindWhere(a){
+  if (!a) return null;
+  if (a.libTabs2 && a.libTabs2.on) return null;
+  if (a.libTabs && a.libTabs.on) return "tabs";
+  if (a.panel && a.panel.view === "article" && !a.panel.loading && !a.panel.error && !a.libEdit) return "article";
+  return null;
+}
+
+/* Is somebody's caret in a text box in here right now? See rule 1 above. The find box itself
+   does not count, so pressing Cmd+F again while the bar is open re-selects it, as it should. */
+function agTyping(){
+  if (typeof document === "undefined") return false;
+  const el = document.activeElement;
+  if (!el || !el.tagName) return false;
+  if (el.tagName !== "TEXTAREA" && el.tagName !== "INPUT") return false;
+  if (el.matches && el.matches("[data-agfind]")) return false;
+  const root = agRoot();
+  return !!(root && root.contains && root.contains(el));
+}
+
+function agFindOpen(a){
+  const where = agFindWhere(a);
+  if (!where) return false;
+  /* the last thing looked for is kept, the way every find bar keeps it */
+  a.find = { on: true, q: (a.find && a.find.q) || "", i: 0, n: 0, where, scroll: true };
+  return true;
+}
+function agFindClose(a){ if (a) a.find = null; }
+/* What the bar says beside the box. Nothing at all before anything is typed -- "No matches" over
+   an empty box would read as a verdict on a search nobody has made yet. */
+function agFindCount(f){
+  if (!f || !f.q) return "";
+  if (!f.n) return "No matches";
+  return agNum(f.i + 1) + " of " + agNum(f.n);
+}
+function agFindStep(a, d){
+  const f = a && a.find;
+  if (!f || !f.n) return;
+  f.i = ((f.i + d) % f.n + f.n) % f.n;
+  f.scroll = true;
+}
+function agFindFocus(){
+  if (typeof document === "undefined") return;
+  try {
+    const i = document.querySelector("#agFind [data-agfind]");
+    if (i && i.focus){ i.focus(); if (i.select) i.select(); }
+  } catch (e) { /* no bar on screen: nothing to focus */ }
+}
+function agFindRegion(a){
+  if (typeof document === "undefined") return null;
+  const where = agFindWhere(a);
+  if (where === "tabs") return document.querySelector("#agLibTabs .ag-tabsb");
+  if (where === "article") return document.querySelector("#agPanel .ag-pb");
+  return null;
+}
+
+/* The bar itself. Written ONCE, when it opens (rule 3), and taken away whole when it shuts. */
+function agDrawFind(a, root){
+  if (typeof document === "undefined" || !root) return;
+  /* The thing being searched went away -- the panel was closed, the overlay shut, the article
+     swapped for its editor. The bar shuts with it rather than hanging over nothing and coming
+     back later holding a search for a document that is no longer open. */
+  if (a && a.find && a.find.on && !agFindWhere(a)) a.find = null;
+  const want = !!(a && a.find && a.find.on && agFindWhere(a));
+  let el = document.getElementById("agFind");
+  if (!want){ if (el && el.remove) el.remove(); return; }
+  if (el) return;
+  el = document.createElement("div"); el.id = "agFind";
+  el.innerHTML = AG_FIND_SHELL;
+  root.appendChild(el);
+  const inp = el.querySelector("[data-agfind]");
+  if (inp) inp.value = (a.find && a.find.q) || "";
+}
+
+/* True while highlights are sitting in the DOM. Without it, every draw of every screen would
+   sweep the document for marks that have never existed. */
+let agFindDirty = false;
+
+function agFindClear(){
+  if (typeof document === "undefined") return;
+  const marks = document.querySelectorAll("mark.ag-hit");
+  for (let i = 0; i < marks.length; i++){
+    const m = marks[i], p = m.parentNode;
+    if (!p) continue;
+    p.replaceChild(document.createTextNode(m.textContent || ""), m);
+    if (p.normalize) p.normalize();          /* put the split text node back as one */
+  }
+}
+
+/* Wrap every match inside `region` and hand back the marks in document order. The text nodes are
+   collected BEFORE any of them is replaced: replacing one invalidates a live TreeWalker, and a
+   half-walked article is worse than none. */
+function agFindWrap(region, q){
+  const out = [];
+  if (!region || !q || typeof document === "undefined" || !document.createTreeWalker) return out;
+  const walker = document.createTreeWalker(region, 4 /* SHOW_TEXT */, null);
+  const nodes = [];
+  let n;
+  while ((n = walker.nextNode())) nodes.push(n);
+  for (let k = 0; k < nodes.length; k++){
+    const node = nodes[k], parent = node.parentNode;
+    if (!parent || !parent.closest) continue;
+    /* never inside a box somebody types in, and never inside the find bar's own count */
+    if (parent.closest("textarea,input,script,style,.ag-findbar")) continue;
+    const text = node.nodeValue || "";
+    const ranges = agFindRanges(text, q);
+    if (!ranges.length) continue;
+    const frag = document.createDocumentFragment();
+    let at = 0;
+    for (let r = 0; r < ranges.length; r++){
+      const s = ranges[r][0], e = ranges[r][1];
+      if (s > at) frag.appendChild(document.createTextNode(text.slice(at, s)));
+      const m = document.createElement("mark");
+      m.className = "ag-hit";
+      m.textContent = text.slice(s, e);
+      frag.appendChild(m);
+      out.push(m);
+      at = e;
+    }
+    if (at < text.length) frag.appendChild(document.createTextNode(text.slice(at)));
+    parent.replaceChild(frag, node);
+  }
+  return out;
+}
+
+/* Clear, re-wrap, count, and bring the current match into view. Called after every agDraw while
+   the bar is open, and once more when it shuts so nothing is left highlighted.
+
+   THE SCROLL IS ON A FLAG, not on every call. This runs on the one-second poll as well as on a
+   keystroke, and scrolling the article back to the match every second would take it away from
+   anyone reading around it. Only a step, a new query or a fresh open asks to be scrolled to. */
+function agFindPaint(a){
+  if (typeof document === "undefined") return;
+  const f = a && a.find;
+  if (!(f && f.on) && !agFindDirty) return;
+  agFindClear();
+  agFindDirty = false;
+  if (!(f && f.on)) return;
+  const hits = agFindWrap(agFindRegion(a), f.q);
+  agFindDirty = hits.length > 0;
+  f.n = hits.length;
+  if (!f.n) f.i = 0;
+  else if (f.i >= f.n || f.i < 0) f.i = 0;
+  const cur = hits[f.i];
+  if (cur){
+    cur.className = "ag-hit cur";
+    if (f.scroll && cur.scrollIntoView){
+      try { cur.scrollIntoView({ block: "center" }); } catch (e) { cur.scrollIntoView(); }
+    }
+  }
+  f.scroll = false;
+  const bar = document.getElementById("agFind");
+  const nEl = bar && bar.querySelector("[data-agfindn]");
+  if (nEl) nEl.textContent = agFindCount(f);
+}
+
 /* THE CARET SURVIVES A REPAINT, IN EVERY BOX. agDraw repaints #agScroll and #agPanel wholesale on
    the poll (every second while a run is live, every four idle), and a repaint destroys the focused
    box, so whoever was typing lost the caret after every keystroke. That was fixed box by box: the
@@ -3826,6 +4132,12 @@ function agDraw(force){
   const quiet = document.getElementById("agQuiet");
   if (quiet){ const q = agQuietHtml(a); agSetHtml("agQuiet", q); quiet.hidden = !q; }
   if (anchor) agScrollRestore(document.getElementById("agScroll"), anchor);
+  /* LAST, and in this order. The highlights are written into the DOM the paint above just made,
+     so they have to come after it; and they are torn out and put back on every draw, because a
+     repaint destroys them and a draw that skipped the repaint leaves the old ones in place.
+     agFindPaint does nothing at all when the bar is shut and nothing is highlighted. */
+  agDrawFind(a, root);
+  agFindPaint(a);
   a.lastView = a.view; a.lastDive = a.guideDive;
 }
 
@@ -4897,6 +5209,31 @@ async function agAction(act, el){
       catch (e) { agToast("Could not save: " + (e.message || e)); }
       a.busy = false; agDraw(); break;
     }
+    /* EDIT IN LIBRARY (spec item 10) -- the draft's one footer button. The same publish route
+       "Save to Library" used, and then the two steps the person had to do by hand afterwards:
+       the Library tab, and that article open. agLibOpen is the identical call a click on the
+       Library row makes, so what they land on is the ordinary editable article, sections and
+       all, and the X out of it goes back to the list exactly as it already did.
+
+       ORDER MATTERS HERE. agLoadChat sets a.view = "chat" on its way through (it is how every
+       other caller gets back to the conversation), so the tab is switched AFTER it, not before,
+       or the person is dropped back in the chat with an article panel floating over it. A save
+       that fails leaves them where they were, with the draft still on screen and the reason in
+       a toast -- never half-moved to a Library row that was not written. */
+    case "editinlib": {
+      if (!a.panel || a.busy) break;
+      const runId = a.panel.run_id;
+      a.busy = true; agDraw();
+      try {
+        const r = await agPostApi(`/runs/${encodeURIComponent(a.chatId)}/${encodeURIComponent(runId)}/publish`, {});
+        a.library = await agApi("/library").catch(() => a.library);
+        await agLoadChat(a.chatId, true);
+        a.view = "library"; a.viewBusy = null; a.guideDive = null;
+        await agLibOpen(r.item_id);
+        agToast("Saved. Edit it here.");
+      } catch (e) { agToast("Could not save: " + (e.message || e)); }
+      a.busy = false; agDraw(); break;
+    }
     case "copymd": {
       const d = a.panel && a.panel.data; const text = typeof d === "string" ? d : (d && d.text) || "";
       try { await navigator.clipboard.writeText(text); agToast("Markdown copied"); } catch (e) { agToast("Could not copy"); }
@@ -5063,6 +5400,13 @@ async function agAction(act, el){
       catch (e) { agToast("Could not change: " + (e.message || e)); }
       agDraw(); break;
     }
+    /* ── the find bar's three buttons (spec item 6) ────────────────────────── */
+    /* Next and Previous repaint the highlights only, never the screen, so clicking them does not
+       take the caret out of the find box. Close is the one that redraws, because the bar and
+       every highlight have to go. */
+    case "findnext": if (a.find){ agFindStep(a, 1); agFindPaint(a); } break;
+    case "findprev": if (a.find){ agFindStep(a, -1); agFindPaint(a); } break;
+    case "findclose": agFindClose(a); agDraw(true); break;
     case "libopen": case "libreload": {
       try { await agLibOpen(arg); }
       catch (e) { agToast("Could not open: " + (e.message || e)); }
@@ -5718,19 +6062,52 @@ if (typeof document !== "undefined" && typeof window !== "undefined" && !window.
        overlay itself, which is more specific than the DFS console. */
     if (ev.key === "Escape"){
       const a0 = agS();
+      /* the find bar is the most specific layer of all: it opens OVER whatever is being read,
+         so Escape shuts it first and leaves that thing open underneath */
+      if (a0 && a0.find && a0.find.on){ ev.preventDefault(); agFindClose(a0); agDraw(true); return; }
       if (a0 && a0.libTabs2 && a0.libTabs2.on){ ev.preventDefault(); const sel = agLibTabs2Close(a0); agDraw(true); agFocusSel(sel); return; }
       if (a0 && a0.libTabs && a0.libTabs.on){ ev.preventDefault(); const sel = agLibTabsClose(a0); agDraw(true); agFocusSel(sel); return; }
       if (a0 && a0.dfs && a0.dfs.on){ ev.preventDefault(); a0.dfs.on = false; agDraw(true); return; }
+    }
+    /* CMD+F / CTRL+F. Four things have to be true before this key is taken: the agent owns the
+       pane, nobody is typing in it, and there is something on screen worth searching. Any one of
+       them false and the event is left exactly as it arrived -- not handled, not prevented -- so
+       whatever else wanted it still gets it. See the find block above for why the typing check
+       is the load-bearing one. */
+    if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && (ev.key === "f" || ev.key === "F")){
+      const a1 = agS();
+      if (a1 && agRoot() && !agTyping() && agFindWhere(a1)){
+        ev.preventDefault();
+        agFindOpen(a1);
+        agDraw(true);
+        agFindFocus();
+        return;
+      }
     }
     const ta = ev.target;
     if (!ta || !ta.matches) return;
     if (ta.matches("[data-agask]") && ev.key === "Enter" && !ev.shiftKey){ ev.preventDefault(); agSend(ta.value); }
     if (ta.matches("[data-agpageq]") && ev.key === "Enter"){ ev.preventDefault(); agLoadPages(0); }
+    /* Enter walks forward through the matches, Shift+Enter back. agFindPaint, not agDraw: this
+       has to move the highlight without repainting the box the caret is in. */
+    if (ta.matches("[data-agfind]") && ev.key === "Enter"){
+      ev.preventDefault();
+      const a2 = agS();
+      if (a2 && a2.find){ agFindStep(a2, ev.shiftKey ? -1 : 1); agFindPaint(a2); }
+    }
   });
   let agSearchTimer = null;
   document.addEventListener("input", (ev) => {
     const t = ev.target; if (!t || !t.matches) return;
     const a = agS(); if (!a) return;
+    /* The find box re-highlights and re-counts on every keystroke through agFindPaint, and
+       deliberately never through agDraw: a repaint here would destroy the input the person is
+       typing in, which is the exact bug this feature was built not to repeat. */
+    if (t.matches("[data-agfind]")){
+      const f = a.find;
+      if (f){ f.q = t.value; f.i = 0; f.scroll = true; agFindPaint(a); }
+      return;
+    }
     if (t.matches("[data-agask]")){ a.draft = t.value; agGrow(t); }
     else if (t.matches("[data-agcomps]")){ a.compForm = { text: t.value, saved: false }; }
     else if (t.matches("[data-agmem]")){ a.memForm = { text: t.value }; }

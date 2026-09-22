@@ -14,6 +14,21 @@ THIS step could break.
   5c  fix_plain (plain-english.md, at most 2 rounds): the worst-scoring blocks go back with their hard
       words named; a round that made the score worse is discarded whole.
   then judge_coverage (readable-coverage.md) and check(): every row protects something an earlier step bought.
+
+THE KEYWORDS END UP HERE, and that is deliberate (2026-09-22). blend weaves the primary and its
+variations into the body, and then wrapper, coherence and this step each rewrite the whole article
+after it, while assemble -- last of all -- counts what survived. So the keywords were placed, the
+article was rewritten three more times, and nothing put back what a later rewrite removed. This
+step is the last one that rewrites the article whole; everything after it is narrow (sentence
+length, AI-slop phrasing, links). So it is the step that holds the keyword list while it rebuilds,
+and it is where the SECONDARIES finally get used: research chooses and pays for them, a heading
+writer is offered them once, and anything no heading took has until now gone to a log nobody reads.
+They are handed over as PERMISSION, never as a quota -- see unused_secondaries() and section 5 of
+readable.md. Forcing a phrase in is exactly how an article starts reading as SEO filler.
+
+AND IT REPORTS ITS COVERAGE WITH REASONS. coverage_report() turns the coverage judge's verdicts
+into the two plain lists a reviewer needs -- what was covered and where, what was dropped and why.
+IT BLOCKS NOTHING. The owner asked for leeway, so the run says what it did and a person judges.
 """
 import re
 
@@ -404,9 +419,17 @@ def _numbers(w):
     return {x.rstrip(".,") for x in NUM.findall(t)}
 
 
-def judge_coverage(after, stakes, ai_overview, say=lambda *a: None):
+def judge_coverage(after, stakes, ai_overview, say=lambda *a: None, architect_note=""):
     """One AI call: which expected topics, and which of Google's own answer, this article covers.
-    Coverage is a judgment about meaning, so it goes to the model. None when the call fails."""
+    Coverage is a judgment about meaning, so it goes to the model. None when the call fails.
+
+    IT ALSO SAYS WHY A TOPIC IS NOT THERE, which is the reason this call is the one that carries
+    item 5's report rather than a new call of its own. It is already reading the whole article
+    against the whole expected list, so it is the only step that can answer both questions at once.
+    The architect's own coverage_note -- one line saying which expected topics it left out and why,
+    written before a word of the article existed -- is handed over with it, so a reason is grounded
+    in what the run actually decided instead of guessed from the finished page.
+    """
     if not (stakes or ai_overview):
         return None
     try:
@@ -414,6 +437,8 @@ def judge_coverage(after, stakes, ai_overview, say=lambda *a: None):
             reply = llm.json_call(C.prompt("readable-coverage",
                                            table_stakes="\n".join("   - %s" % x for x in stakes) or "   (none recorded)",
                                            ai_overview=str(ai_overview or "(none captured for this article)"),
+                                           architect_note=str(architect_note or "").strip()
+                                           or "(the step that designed this article recorded no note)",
                                            article=render(after))) or {}
     except Exception as e:      # noqa: BLE001
         say("The coverage check did not answer", type(e).__name__)
@@ -567,6 +592,86 @@ def _band_middle(plan):
     return (lo + hi) // 2 if lo and hi else (hi or lo)
 
 
+def unused_secondaries(ks):
+    """The secondaries research chose and PAID FOR that nothing has used yet.
+
+    headings.py has already worked this out and written it down: st["keywords"]["unplaced"] is the
+    secondary pool minus whatever a heading took. Nothing between there and here puts one in the
+    prose -- write_body is never shown a keyword at all, and blend is handed the primary and its
+    variations and nothing else -- so a phrase on this list is genuinely nowhere in the article,
+    and this step is the last one that can still rewrite a sentence to hold it.
+
+    A row is {"keyword": ..., "why": ...}; a plain string is accepted too, because an older run's
+    cached work file may carry one.
+    """
+    out = []
+    for row in (ks or {}).get("unplaced") or []:
+        k = str((row.get("keyword") if isinstance(row, dict) else row) or "").strip()
+        if k and k not in out:
+            out.append(k)
+    return out
+
+
+def _section_for(where, headings):
+    """The final heading that covers a topic, from the judge's free-text "where".
+
+    The judge is allowed to answer with a heading OR with a few words of the sentence that covers
+    the topic, so this resolves the first case to the real heading and passes the second through
+    unchanged. A snippet still tells a reviewer where to look; inventing a heading would not.
+    """
+    w = str(where or "").strip()
+    if not w:
+        return ""
+    low = w.lower()
+    for h in headings:
+        if h.lower() == low:
+            return h
+    for h in headings:
+        if h and (h.lower() in low or low in h.lower()):
+            return h
+    return w
+
+
+def coverage_report(after, stakes, judged):
+    """What the finished draft covered of the topics every ranking page covers, and why each drop
+    happened, in plain words. None when there is nothing honest to say.
+
+    A NOTE, NOT A GATE. Recruiting Metrics shipped missing Source of Hire and Offer Acceptance Rate
+    and nobody knew until a reviewer read it, but the answer the owner asked for is leeway, not a
+    block: "we need to leave some leeway... maybe it can write a reason." So nothing here stops
+    anything. The run says what it did and a person judges.
+
+    PURE ASSEMBLY. Every field is lifted from something an earlier step produced: the topics from
+    plan["table_stakes"], covered/where/why from the coverage judge, the heading from the article
+    in hand. Nothing is decided here, which is why a topic the judge never answered on is reported
+    as dropped with that as its reason rather than quietly counted either way.
+    """
+    stakes = [str(s).strip() for s in (stakes or []) if str(s).strip()]
+    if not stakes or not judged:
+        return None
+    rows = {}
+    for r in judged.get("table_stakes") or []:
+        if isinstance(r, dict) and str(r.get("topic") or "").strip():
+            rows.setdefault(str(r["topic"]).strip(), r)
+    headings = [str(s.get("heading") or "").strip() for s in (after or {}).get("sections") or []]
+    covered, dropped = [], []
+    for topic in stakes:
+        r = rows.get(topic)
+        if r and r.get("covered"):
+            covered.append({"topic": topic, "section": _section_for(r.get("where"), headings)})
+            continue
+        why = str((r or {}).get("why") or "").strip()
+        if not why:
+            why = ("it is not in the article, and no reason was recorded" if r
+                   else "the coverage check never answered on this one")
+        dropped.append({"topic": topic, "why": why})
+    # EVERY EXPECTED TOPIC IS IN EXACTLY ONE LIST. The whole value of this report is that the two
+    # lists add up to what the research said was expected; a report that silently loses a topic is
+    # the fault it was written to catch.
+    assert len(covered) + len(dropped) == len(stakes)
+    return {"expected_total": len(stakes), "covered": covered, "dropped": dropped}
+
+
 def _examples():
     ex = C.sh.brand_file("writing-examples.md").strip()
     return ex[:C.READABLE_EXAMPLES_CHARS] if ex else ("(no published examples on file for this brand; hold to the three moves "
@@ -579,6 +684,11 @@ def run(w, plan, st, say=lambda *a: None):
     prim = ks.get("primary") or "(none)"
     var = ", ".join(ks.get("variations") or []) or "(none)"
     h2 = ", ".join(ks.get("section_keywords") or []) or "(none)"
+    # THE SECONDARIES ARRIVE HERE AND NOWHERE ELSE. Research chooses and pays for them, a heading
+    # writer is offered them once, and until now anything no heading took was written to a log and
+    # forgotten. This is the last step that rewrites the article whole, so it is where they get
+    # their one chance -- as permission, never as a quota. See unused_secondaries() above.
+    unused = ", ".join(unused_secondaries(ks)) or "(none — every one of them is already in a heading)"
     now = words(w)
     target = target_words(w, plan, st)
     stakes = plan.get("table_stakes") or []
@@ -598,7 +708,7 @@ def run(w, plan, st, say=lambda *a: None):
                       facts_keep="{:,}".format(keep), facts_drop="{:,}".format(max(0, facts - keep)),
                       archetype=archetype or "general article", format_rule=rule,
                       table_stakes="\n".join("   - %s" % x for x in stakes) or "   (none recorded)",
-                      primary_keyword=prim, variations=var, heading_keywords=h2,
+                      primary_keyword=prim, variations=var, heading_keywords=h2, unused_keywords=unused,
                       ease_now="%.0f" % reading_ease(w), ease_target="%.0f" % C.READABLE_EASE,
                       hard_words=render_hard_words(w), long_sentences=render_long_sentences(w),
                       writing_examples=_examples(), article=render(w), memory=C.sh.memory_block())
@@ -610,14 +720,22 @@ def run(w, plan, st, say=lambda *a: None):
     new = apply_reply(w, reply)
     new, fat_report = fix_fat(new, say)
     new, plain_report = fix_plain(new, say=say)
-    judged = judge_coverage(new, stakes, ai_overview, say)
+    judged = judge_coverage(new, stakes, ai_overview, say, st.get("coverage_note") or "")
+    cover = coverage_report(new, stakes, judged)
     checks = check(w, new, ks.get("primary") or "", target, stakes, judged)
     failed = [c for c in checks if not c["ok"]]
+    if cover:
+        # SAID OUT LOUD, ONCE, AT THE END OF THE DRAFT. Not a gate: the run reports what it did and
+        # a person decides whether a drop was the right call.
+        say("Expected topics: %d of %d covered" % (len(cover["covered"]), cover["expected_total"]),
+            "; ".join("%s — %s" % (d["topic"], d["why"]) for d in cover["dropped"])
+            or "nothing every ranking page covers was left out")
     say("Readable rewrite done", "%d -> %d words (asked for %d); reading ease %s -> %s; %d of %d checks clean"
         % (words(w), words(new), target, reading_ease(w), reading_ease(new), len(checks) - len(failed), len(checks)))
     return {"article": new, "report": {"applied": True, "checks": checks, "archetype": archetype,
                                        "format_rule_used": bool(rule), "fat_paragraphs": fat_report,
                                        "plain_english": plain_report, "coverage": judged,
+                                       "coverage_report": cover,
                                        "h1_before": w.get("h1"), "h1_after": new.get("h1"),
                                        "words_before": words(w), "words_after": words(new),
                                        "ease_before": reading_ease(w), "ease_after": reading_ease(new)}}

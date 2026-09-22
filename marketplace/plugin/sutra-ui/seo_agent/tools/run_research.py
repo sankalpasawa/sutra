@@ -420,7 +420,40 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
                                                   "; shared with another field" if primary.get("split_world") else ""))
 
     # ---- 4. the live SERP + the snapshot ---------------------------------------------------------
-    sp, _ = step("serp", lambda: serp.fetch(primary["keyword"], company))
+    # IS THIS EVEN THE SAME ARTICLE? (owner, 2026-09-22.) The judge takes the highest-volume head
+    # term that clears difficulty and nothing asks whether a page ranking for it would be THIS
+    # article. "Skills Assessment: From Resume Claim to Cut Score" was built on "behavioral
+    # interview questions" (12,100/mo), so the pages it studied were "30 questions to ask"
+    # listicles and every demand signal for the run came from the wrong article.
+    #
+    # THE CHECK IS ALMOST FREE because the SERP is bought anyway: only a REJECTION costs an extra
+    # fetch. Up to SAME_ARTICLE_TRIES candidates, then it takes the best it has and says so. It
+    # never halts -- an article written on a second-choice keyword is worth far more than a run
+    # that stopped.
+    kw_log = []
+    _tried = [primary] + list(final.get("alternates") or [])
+    for _i, cand in enumerate(_tried[:_c.SAME_ARTICLE_TRIES]):
+        sp, _ = step("serp" if _i == 0 else "serp-%d" % _i,
+                     lambda c=cand: serp.fetch(c["keyword"], company))
+        ok_kw, why_kw = serp.same_article(cand["keyword"], sp["extract"], topic, w, company)
+        kw_log.append({"keyword": cand["keyword"], "same_article": ok_kw, "why": why_kw})
+        if ok_kw:
+            if _i:
+                say("Changed the keyword: %s" % cand["keyword"],
+                    "%s was dropped because %s" % (primary["keyword"], kw_log[0]["why"] or "its "
+                                                   "ranking pages are a different article"))
+                primary = cand
+                final["primary"] = cand
+            break
+        say("That keyword is a different article", "%s: %s" % (cand["keyword"], why_kw))
+    else:
+        # Nothing passed. Keep the judge's pick rather than a runner-up nobody vouched for, and
+        # make the doubt visible instead of burying it.
+        sp, _ = step("serp", lambda: serp.fetch(primary["keyword"], company))
+        say("Writing on %s anyway" % primary["keyword"],
+            "no measured keyword's ranking pages looked like this article; the research may not "
+            "match what people searching it expect")
+    final["keyword_checks"] = kw_log
     extract = sp["extract"]
     snap, _ = step("snapshot", lambda: serp.snapshot(extract, topic, angle, w, primary["keyword"], company))
     say("Read the first page of Google",
@@ -430,8 +463,13 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
 
     # ---- 5. the winning pages and what they cover -----------------------------------------------
     pages, _ = step("pages", lambda: winners.read_pages(snap["readlist"], demo=demo, say=say))
+    # THE PAA GOES IN WITH THE PAGES (2026-09-22). A gap has to name a reader who wants it, and
+    # this is the only place in the whole run where real readers say what they want in their own
+    # words. Both lists, on-angle and off: what people ask is not ours to pre-filter before
+    # working out what they want.
+    _asked = list(snap.get("paa_on") or []) + list(snap.get("paa_off") or [])
     win, _ = step("winners", lambda: (lambda md: dict(winners.extract(md), md=md))(
-        winners.write_up(pages, angle, primary["keyword"], company)))
+        winners.write_up(pages, angle, primary["keyword"], company, paa=_asked)))
     say("Studied the pages that win",
         "%s common headings, %s we can own" % (len(win.get("common_h2s") or []), _plural(len(win.get("gaps_to_own") or []), "gap")))
 
@@ -445,7 +483,7 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
     # write; now it only warns. One line in the chat, the verdict travels in decisions.json and
     # reaches the Library row, and the run carries on exactly as it would for an on-topic article:
     # no change of angle, no special handling. --------------------------------------------------
-    gate, _ = step("topic-gate", lambda: topic_gate.run(topic, angle, snap, win, company))
+    gate, _ = step("topic-gate", lambda: topic_gate.run(topic, angle, snap, win, company, primary=primary["keyword"]))
     angle_before = angle
     if gate.get("relevant"):
         if gate.get("angle"):
@@ -573,7 +611,17 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
     # A research TEAM, not a keyword lookup: four mixed personas interview an expert, each question
     # grounded in what the last answer said. The dossier is written from what they retrieved, and
     # the cards are lifted out of the dossier, which is what lets one card cite two sources.
-    spine_ctx = {"spine": spn["spine"], "about": w["about"], "not_about": w["not_about"]}
+    # WHAT THE READER ALREADY WANTS TRAVELS WITH THE SPINE (owner, 2026-09-22). All three of these
+    # were measured half an hour ago and then dropped on the floor: the research conversation saw
+    # only the title, the angle, the spine and the world. Twelve questions shaped by our angle
+    # alone is why an article on skills assessments never asked what the types of skills assessment
+    # are, and so could never have a section about them however loudly the architect was told to
+    # write one. curate._article_block reads these, and curate._seed_questions turns the table
+    # stakes into the first questions each researcher is made to ask.
+    spine_ctx = {"spine": spn["spine"], "about": w["about"], "not_about": w["not_about"],
+                 "table_stakes": list(win.get("common_h2s") or []),
+                 "paa": list(snap.get("paa_on") or []) + list(snap.get("paa_off") or []),
+                 "ai_overview": (snap.get("ai_overview_text") or "").strip()}
     cur, reused_cur = step("curate", lambda: _curate(ctx, redo, topic, angle, spine_ctx, company, say))
     article_brief = curate._article_block(topic, angle, spine_ctx)
     dos = har = None

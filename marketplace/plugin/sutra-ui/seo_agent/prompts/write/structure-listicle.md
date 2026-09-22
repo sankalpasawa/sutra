@@ -67,8 +67,15 @@ How Google itself answers this topic right now, in its own order:
 The topics almost every ranking page covers:
 {{TABLE_STAKES}}
 
-What no ranking page does well — where this article can win:
+What no ranking page covers. Useful to know, and NOT a brief:
 {{THE_GAP}}
+
+A GAP IS NOT A PROMOTION. It tells you rivals left something out. It does not tell you that our
+reader wants it, or that we have the material to write it. Judge a gap section on exactly the same
+evidence as every other section, and where the material is not there, leave it out. An article once
+gave two of its nine sections to a gap nobody searching the keyword had asked for, while two topics
+every ranking page covered were dropped to make room. At most ONE section, unless the title itself
+promises it.
 
 ────────────────────────────────────────────────────────────────────────
 THIS IS WHAT READERS EXPECT. IT IS NOT YOUR ARTICLE.
@@ -76,8 +83,9 @@ THIS IS WHAT READERS EXPECT. IT IS NOT YOUR ARTICLE.
 A reader who arrives expecting the basics and cannot find them leaves before reaching anything
 good. Cover the expected ground EARLY and BRIEFLY.
 
-Cover the expected ground properly, then add what only we can say. The gap deserves a real
-position in the article, not the last section.
+Cover the expected ground properly, then add what only we can say. A gap that is genuinely
+wanted and genuinely evidenced deserves a real position, not the last section. One that is
+neither deserves no section at all.
 
 Covering the expected topics is not enough on its own. Leaving them out is worse.
 
