@@ -17,6 +17,10 @@ DO THIS (descriptive, not prescriptive — report what the field DOES, not a mus
 - Confirm the dominant format from the real page structure (how-to / listicle / comparison / definitional).
 - State depth: the deepest / typical winner word counts.
 - Roll up the Common H2s most competitors share (deduped).
+  LIST THEM IN THE ORDER THE PAGES THEMSELVES USE, not by how many pages share them. A reader who
+  arrives from this search has read pages built in that order, so it is the order they expect: the
+  thing almost every page opens with goes first. A later step reorders the article's own sections
+  against this list, so an order invented here becomes an order invented there.
 - Note where any winner DRIFTS off the article's topic (a pivot into an adjacent audience/topic), if any.
 - Name the Gaps we can own, under the rules below.
 - If the heading parse is clearly capped (only ~15/page) and misses later sections, note it as a read caveat.

@@ -163,7 +163,26 @@ MUST_NOT_APPEAR = {
 # only when it contains one of these substrings. Anything else is drift and fails by name.
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 
+_JOB_REWRITE_WHY = ("the job rewrite, 2026-09-23 (item 19): Sutra's pass may rewrite a section's JOB, "
+                    "not just its heading, because the job is the brief the writer works from")
+
 EXCLUDED_REGIONS = {
+    # 2026-09-23, item 19 (Devansh's own design). Sutra's pass may REORDER sections and rewrite
+    # their JOBS; his copy forbids both: "You may not add, remove or reorder sections -- same
+    # headings, same count, same order, in and out." That ban shipped an article whose LAST section
+    # defined the subject the five above it assumed, and nothing downstream was allowed to correct
+    # it. The same ban produced the second complaint: told to BREAK THE TEMPLATE when four headings
+    # share a construction, it varied the fifth by changing its QUESTION, so the reader could no
+    # longer compare the items. These three regions are the rules that replace his ban.
+    # 2026-09-23 (Devansh's own design, specs/parked-2026-09-22-engine-fixes.md item 19). His copy
+    # of this pass is forbidden to reorder sections or touch their jobs: "You may not add, remove or
+    # reorder sections -- same headings, same count, same order, in and out." Sutra's may do both,
+    # because on a real article that ban shipped a piece whose LAST section defined the subject the
+    # five above it assumed, and nothing downstream was allowed to correct it. The same ban also
+    # produced the second complaint: told to BREAK THE TEMPLATE when four headings share a
+    # construction, it varied the fifth by changing its QUESTION, so the reader could no longer
+    # compare the items. Sutra's copy carries the reorder rule, the one-question rule, and the job
+    # rewrite. If he adopts them upstream, delete this entry and parity takes over again.
     # He pastes five of his own published paragraphs in as the bar to hit. Sutra fills that from the
     # company's own articles at run time ({{WRITING_EXAMPLES}}, filled in write/readable.py), so the
     # passages themselves and the sentences that count them ("These five") cannot match and must not.
@@ -191,7 +210,18 @@ EXCLUDED_REGIONS = {
         ("THE TARGET REGISTER, WORKED", "EVERY SENTENCE MUST STAND ON ITS OWN."),
     ],
     "write-heading.md": [("- NEVER NAME A RIVAL.", "Return ONLY this JSON")],
-    "heading-pass.md": [("- A RIVAL NAMED IN A HEADING.", "Return EVERY heading, in the same order")],
+    "heading-pass.md": [
+        ("- A RIVAL NAMED IN A HEADING.", "Return EVERY heading, in the same order"),
+        # 2026-09-23, item 19 (Devansh's design). Sutra's pass may REORDER sections and rewrite
+        # their JOBS; his copy forbids both: "same headings, same count, same order, in and out".
+        # That ban shipped an article whose LAST section defined the subject the five above it
+        # assumed, and nothing downstream could correct it. It also produced the second complaint:
+        # told to BREAK THE TEMPLATE when four headings share a construction, it varied the fifth by
+        # changing its QUESTION, so the reader could no longer compare the items.
+        ("Everything else is yours", "FIRST DUTY"),
+        ("- BREAK THE TEMPLATE", "- TOO MANY NUMBERS IN THE LIST"),
+        ("Return ONLY this JSON", None),
+    ],
     "slop-rules.md": [
         ('### "Not X, not Y" as a rhetorical tic', "### Rhythm and uniformity"),
         ('- "Not X, not Y" as a rhetorical tic (four or more in one piece)',
@@ -280,6 +310,16 @@ PORT_EDITS = {
         ("{{FORMAT_CRAFT}}", "his FORMAT_CRAFT wiring, not yet wired in Sutra; see formats/_craft/README.md"),
         ("the format rules win", "part of the same FORMAT_CRAFT block"),
         ("what makes this format's wrap its own", "part of the same FORMAT_CRAFT block"),
+    ],
+    "heading-pass.md": [
+        ("2b. THE JOB ITSELF", _JOB_REWRITE_WHY),
+        ("than the heading does", _JOB_REWRITE_WHY),
+        ("directions, rewrite them so they ask the same question", _JOB_REWRITE_WHY),
+        ("jobs were \"settle what managers misread\"", _JOB_REWRITE_WHY),
+        ("score\", \"who they suit\"", _JOB_REWRITE_WHY),
+        ("heading was written. Return \"job\" beside the heading", _JOB_REWRITE_WHY),
+        ("3. THE HEADING AND ITS JOB MUST MATCH", _JOB_REWRITE_WHY),
+        ("2. THE JOB. A heading promises what its section delivers", _JOB_REWRITE_WHY),
     ],
     "wrapper-cta-retry.md": [
         ("then rank...", "the CTA example links his own product page; the port made it example.com"),

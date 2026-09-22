@@ -53,12 +53,71 @@ TWO THINGS YOU MAY NEVER CHANGE:
    {{KEYWORD_CAP}} headings when you are done. Strip it from too many and the whole pass is thrown
    away, so do not overshoot.
 
-2. THE JOB. A heading promises what its section delivers. Rewrite the promise however you like, but
+2b. THE JOB ITSELF. The job is the brief the writer works from, so it steers the prose far more
+   than the heading does. Where a set of parallel sections has jobs pointing in different
+   directions, rewrite them so they ask the same question of each. On the article above the five
+   jobs were "settle what managers misread", "how it differs from cognitive", "what to read into a
+   score", "who they suit" — five different briefs, which is why the prose diverged before a single
+   heading was written. Return "job" beside the heading when you change it, and "why_job".
+
+3. THE HEADING AND ITS JOB MUST MATCH. A heading promises what its section delivers. Rewrite the promise however you like, but
    after your edit it must still be a promise that section can keep. Never point a heading at
    something the section does not do.
 
-Everything else is yours. You may not add, remove or reorder sections — same headings, same count,
-same order, in and out.
+Everything else is yours. You MAY NOT ADD OR REMOVE a section: those were chosen with evidence
+behind them and you are holding none, so the same count goes in and out.
+
+YOU MAY REORDER, AND YOU MAY REWRITE THE JOBS. You are the only step that ever sees the finished
+shape, and these two were withheld until a real article went out wrong because of it.
+
+════════════════════════════════════════════════════════════════════════
+WHAT EVERY PAGE RANKING FOR THIS SEARCH COVERS, in the order those pages use it:
+{{TABLE_STAKES}}
+
+Some sections below carry a "covers the expected topic" line saying which of these they answer.
+
+1. THE ORDER. THE BASICS COME FIRST.
+
+   A reader who meets a term before it is explained gives up, and no amount of good writing later
+   wins them back. If a section defines the subject the others assume, it goes at the top. If the
+   pages that rank all open with something, opening with it is what readers expect.
+
+   THIS IS THE ARTICLE THAT MADE THIS RULE, and it shipped:
+
+       1. Cognitive ability tests
+       2. Personality tests
+       3. Skills tests
+       4. Situational judgment tests
+       5. Emotional intelligence tests
+       6. What pre-employment testing is, and why employers use it     <- LAST
+
+   Five sections lean on a term the sixth finally explains. The reader is told what a cognitive
+   ability test scores before being told what a pre-employment test is. The section was even
+   labelled as covering the expected topic every ranking page opens with, and still sat sixth.
+
+   Return "order" as the section numbers in the order the article should read, and "why_order" as
+   one line. Same numbers, all of them, once each — anything else is thrown away and the original
+   order stands. If the order is already right, return it unchanged and say so.
+
+2. ONE QUESTION, ASKED OF EVERY PARALLEL SECTION.
+
+   Where sections are a set of like things — types, options, tools, steps — the reader is there to
+   COMPARE them. They can only do that if every one answers the same question. Vary the WORDING as
+   much as you like. Never vary the QUESTION.
+
+   THE SAME ARTICLE, and this is what a reader actually got:
+
+       Cognitive Ability Tests: What Score Counts as a Pass
+       Pre-Employment Personality Tests and What 'Failing' Means
+       Skills Tests: What Counts as a Passing Score
+       What Is a Situational Judgment Test, and What Scores Mean
+       EQ Tests: Best for Leadership and People-Facing Roles          <- a different question
+
+   Four say one thing four ways, and the fifth quietly changes the subject to which roles suit it.
+   Nobody can compare cognitive against EQ from that, which is the only reason they opened it.
+
+   Pick the ONE question the set answers, and hold it across all of them. Then make the four
+   near-identical ones genuinely different in WORDING, which is the job you were already doing.
 
 ────────────────────────────────────────────────────────────────────────
 FIRST DUTY — fix what only the whole set reveals. These are the real reason this step exists:
@@ -75,7 +134,10 @@ FIRST DUTY — fix what only the whole set reveals. These are the real reason th
   same thing.
 - ONE CASE. All Title Case, or all sentence case. Whichever most of the headings already use, make
   the rest match. A mixed list looks unproofed before a word is read.
-- BREAK THE TEMPLATE. When four or more headings in a row open with the same construction — "Why X
+- BREAK THE TEMPLATE, IN WORDING ONLY. Rule 2 above wins over this one wherever they meet: a set of
+  parallel sections keeps its shared question and varies how each is phrased. Changing one
+  section's question to make it look different is the bug this pass exists to stop.
+  When four or more headings in a row open with the same construction — "Why X
   is Y", "How to X", "The X of Y" — the list reads as generated. Vary the ones that can carry a
   different shape without losing what they say. Do not vary for the sake of it; a run of three is
   fine.
@@ -146,8 +208,16 @@ rule above that they contradict. "(none)" means there are none.
 {{MEMORY}}
 
 Return ONLY this JSON, nothing else:
-{"headings": [{"n": <the number shown above>,
+{"order": [<every section number, in the order the article should read>],
+ "why_order": "<one line: what you moved and why, or why nothing moved>",
+ "headings": [{"n": <the number shown above>,
                "heading": "<the final heading — unchanged, or your edit>",
+               "job": "<the section's job — only when you rewrite it; leave it out otherwise>",
                "changed": true | false,
-               "why": "<one short line, only when changed; empty string when not>"}],
+               "why": "<one short line, only when changed; empty string when not>",
+               "why_job": "<one short line, only when you rewrote the job>"}],
  "notes": "<one or two lines: what you found across the set, or empty if nothing needed fixing>"}
+
+"order" must hold every section number, all of them, once each. A list that adds, drops or repeats
+one is thrown away whole and the article keeps the order it came in with, so a careless list costs
+you the fix rather than half of it. Returning the order unchanged is a perfectly good answer.

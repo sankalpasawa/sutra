@@ -13,6 +13,16 @@ Output STRICT JSON, nothing else:
 (Return { "orphans": [] } if every high-demand keyword is already covered.)
 
 --- H2 SECTIONS ---
+STAY INSIDE OUR WORLD. Read these two lines before you name anything.
+
+- What this article IS about: {{ABOUT}}
+- What this article is NOT about: {{NOT_ABOUT}}
+
+A keyword belonging to the NOT ABOUT list is NEVER an orphan, whatever its volume. It is not a gap
+in our article; it is a different article. The keywords below are sorted by volume, and a
+neighbouring world is precisely where the big numbers sit, so this is the mistake to expect rather
+than an unlikely one. Naming one sends the article somewhere it has already decided not to go.
+
 {{SECTIONS}}
 
 --- CANDIDATE KEYWORDS (keyword | volume) ---
