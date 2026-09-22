@@ -61,6 +61,126 @@ def dfs_mode(dfs):
         return "off"
 
 
+# ---- the keys, asked about BEFORE a tool spends somebody's evening ----------------------
+#
+# WHY THIS IS HERE AND NOT INSIDE ONE TOOL (owner, 2026-09-22). A friend of his onboarded a new
+# company with neither key connected. Nothing said so. Setup ran a long time, the asset engine
+# sorted 200 Reddit posts into 151 fragments because it could not embed a single one, and the idea
+# sheet came out empty. The only two signals were a "!" on a sidebar item he had no reason to click
+# and one line buried mid-log, after the damage was done.
+#
+# The lesson was already learned and written down. run_research's own refusal note, 2026-09-09:
+#
+#     "why should it even go further if there is no DataForSEO? It never misfires. It is
+#      pointless, a very bad experience."
+#
+# It was applied to run_research and nowhere else. Measured across tools/ on 2026-09-22:
+# run_research checked; build_assets, onboard, learn_brand and suggest_topics did not. So the
+# entire first-run path -- every new person's first impression of this agent -- still failed in
+# exactly the way that note describes.
+#
+# THE TWO KEYS FAIL DIFFERENTLY AND MUST NOT BE TREATED ALIKE:
+#   * DataForSEO is money. Without it there are no real numbers at all, and a run that carries on
+#     produces an article built on placeholders. That is a REFUSAL.
+#   * Voyage is meaning. Without it the engine still runs, but it groups by shared words instead
+#     of by what things mean, so the result is worse rather than absent. That is a WARNING, said
+#     before the work instead of inside its wreckage -- a person may well want to carry on.
+
+def keys_missing():
+    """{"dataforseo": bool, "voyage": bool} -- which of the two are not connected right now.
+
+    Asked live, never cached: the Connections tab can be filled in while the app is running, and
+    somebody who pastes a key and presses go must not be told about the state before they did.
+
+    Fails OPEN on both. A check that cannot run must not become a refusal of its own: the paid
+    calls already fail loudly on their own, and NoVoyageKey is already caught where it matters.
+    """
+    out = {"dataforseo": False, "voyage": False}
+    try:
+        from . import dfs
+        out["dataforseo"] = not dfs.available()
+    except Exception:                      # noqa: BLE001 -- see "fails OPEN" above
+        pass
+    try:
+        from . import voyage
+        voyage.get_key()
+    except ImportError:
+        pass
+    except Exception:                      # noqa: BLE001 -- NoVoyageKey, or anything else
+        out["voyage"] = True
+    return out
+
+
+# What each missing key COSTS, in the words the person reads. Kept here rather than at each call
+# site so the same sentence is said wherever it is said.
+KEY_HELP = {
+    "dataforseo": ("DataForSEO is not connected, so there are no real search numbers to work from.",
+                   "Add dataforseo_login and dataforseo_password in Connections. Or say \"use "
+                   "placeholder numbers\" and it runs on demo figures, every one of them flagged."),
+    "voyage": ("No Voyage key, so things can only be grouped by the words they share, not by what "
+               "they mean. Two people describing the same problem in different words count as two "
+               "problems.",
+               "It is free at voyageai.com; add it in Connections. Carrying on without it works, "
+               "it is just cruder."),
+}
+
+
+def refuse_missing_keys(needs=("dataforseo",), missing=None):
+    """The refusal a tool returns when a key it truly needs is absent, or None to carry on.
+
+    The SAME SHAPE run_research has returned since 2026-09-09, and the same shape learn_brand uses
+    when there is no measured traffic, so loop.py already knows how to put it on screen: a summary,
+    and an error naming what is missing AND both ways out. A refusal that does not say how to fix
+    itself is just a wall.
+    """
+    missing = keys_missing() if missing is None else missing
+    gone = [k for k in needs if missing.get(k)]
+    if not gone:
+        return None
+    said = " ".join("%s %s" % KEY_HELP[k] for k in gone)
+    return {"summary": "Not started: %s is not connected." % " and ".join(gone),
+            "error": said}
+
+
+def warn_missing_keys(say, warn=("voyage",), missing=None):
+    """Say what a missing key will cost, BEFORE the work rather than in its wreckage.
+
+    `say` is the tool's own reporter, so this lands in the chat where the person is already
+    looking, which is the entire complaint. Returns what it warned about.
+    """
+    missing = keys_missing() if missing is None else missing
+    gone = [k for k in warn if missing.get(k)]
+    for k in gone:
+        why, fix = KEY_HELP[k]
+        try:
+            say(why, fix)
+        except Exception:                  # noqa: BLE001 -- a warning must never break a run
+            pass
+    return gone
+
+
+def keys_stamp(missing=None):
+    """What was connected when something was built, small enough to keep beside its output.
+
+    `build_assets` skips a builder whose files already exist, which is right for an ordinary re-run
+    and WRONG the moment a key arrives: the work it skips is precisely the work the new key would
+    have fixed. So each builder records what it had, and a later run compares. See build_assets.
+    """
+    missing = keys_missing() if missing is None else missing
+    return {k: not v for k, v in missing.items()}
+
+
+def keys_improved(then, now=None):
+    """True when a key that was NOT connected when something was built is connected now.
+
+    Only ever upwards. Losing a key is not a reason to throw away work that was built properly.
+    """
+    if not isinstance(then, dict):
+        return False
+    now = keys_stamp() if now is None else now
+    return any(now.get(k) and not then.get(k) for k in now)
+
+
 def num(v):
     """DataForSEO writes 0 where it means "not known". Treat that as missing for display,
     so a blank field never reads as a measured zero."""

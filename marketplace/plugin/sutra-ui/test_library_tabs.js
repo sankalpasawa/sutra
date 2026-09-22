@@ -195,6 +195,45 @@ test("Architect with left_out null draws no what-was-left-out door", () => {
   const html = A.agTabArchitectHtml(half, { secOpen: {} });
   assert.ok(!/data-ag="libtabs2open" data-arg="leftout"/.test(html), "nothing to open when there was nothing left out");
 });
+/* ── the coverage report on the Edits tab (spec item 5) ──────────────────────────────────
+   Recruiting Metrics shipped missing two of the six things every ranking page covers and nobody
+   knew until a person read it. The check had been running the whole time and writing a report
+   nobody surfaced; this is the surface. Deliberately a note, not a gate. */
+const COV = { expected_total: 6,
+              covered: [{ topic: "Time to Fill", section: "Time to Fill Formula" },
+                        { topic: "Cost per Hire", section: "What it costs" },
+                        { topic: "Quality of Hire", section: "Quality of Hire" },
+                        { topic: "Offer Acceptance", section: "Offers" }],
+              dropped: [{ topic: "Source of Hire", why: "no evidence was found" },
+                        { topic: "Candidate NPS", why: "it did not serve the angle" }] };
+test("Edits says how many of the expected topics landed, which ones, and why the rest did not", () => {
+  const html = A.agTabEditsHtml(Object.assign({}, EDITS, { coverage: COV }));
+  assert.ok(/<span class="k">Expected topics<\/span><span class="v">4 of 6<\/span>/.test(html),
+            "the count, against the report's own expected_total: " + html);
+  assert.ok(/Time to Fill — in “Time to Fill Formula”/.test(html), "a covered topic names the section it landed in");
+  assert.ok(/Source of Hire, because no evidence was found/.test(html), "and a dropped one carries its reason, in words");
+  assert.ok(/Candidate NPS, because it did not serve the angle/.test(html), "every dropped one, not just the first");
+});
+test("an article written before coverage existed draws no coverage rows and no empty box", () => {
+  const html = A.agTabEditsHtml(EDITS);
+  assert.ok(!/Expected topics/.test(html), "no heading with nothing under it: " + html);
+  assert.ok(!/>Covered</.test(html) && !/>Dropped</.test(html), "and neither list");
+  assert.ok(/What was done/.test(html), "the rest of the tab is untouched");
+});
+test("a coverage report missing pieces draws only the pieces it has, and invents no total", () => {
+  const noTotal = A.agTabEditsHtml(Object.assign({}, EDITS, {
+    coverage: { covered: [{ topic: "Time to Fill" }], dropped: [] } }));
+  assert.ok(!/Expected topics/.test(noTotal),
+            "a total the report did not give is left out, never derived from what happened: " + noTotal);
+  assert.ok(/Time to Fill/.test(noTotal) && !/ — in /.test(noTotal), "a covered topic with no section is just the topic");
+  assert.ok(!/>Dropped</.test(noTotal), "and an empty dropped list draws nothing");
+  const noWhy = A.agTabEditsHtml(Object.assign({}, EDITS, {
+    coverage: { expected_total: 2, covered: [], dropped: [{ topic: "Source of Hire" }] } }));
+  assert.ok(/Source of Hire/.test(noWhy) && !/because/.test(noWhy), "a dropped topic with no reason is just the topic");
+  assert.ok(/0 of 2/.test(noWhy), "and nothing covered is still an honest count");
+  assert.ok(!/undefined|NaN|\[object/.test(noTotal + noWhy), "nothing stringified badly");
+});
+
 test("Edits with source_check null draws no source-check row at all", () => {
   const half = Object.assign({}, EDITS, { source_check: null, has_source_check_doc: false });
   const html = A.agTabEditsHtml(half);

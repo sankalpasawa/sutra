@@ -430,8 +430,13 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
 
     # ---- 5. the winning pages and what they cover -----------------------------------------------
     pages, _ = step("pages", lambda: winners.read_pages(snap["readlist"], demo=demo, say=say))
+    # THE PAA GOES IN WITH THE PAGES (2026-09-22). A gap has to name a reader who wants it, and
+    # this is the only place in the whole run where real readers say what they want in their own
+    # words. Both lists, on-angle and off: what people ask is not ours to pre-filter before
+    # working out what they want.
+    _asked = list(snap.get("paa_on") or []) + list(snap.get("paa_off") or [])
     win, _ = step("winners", lambda: (lambda md: dict(winners.extract(md), md=md))(
-        winners.write_up(pages, angle, primary["keyword"], company)))
+        winners.write_up(pages, angle, primary["keyword"], company, paa=_asked)))
     say("Studied the pages that win",
         "%s common headings, %s we can own" % (len(win.get("common_h2s") or []), _plural(len(win.get("gaps_to_own") or []), "gap")))
 

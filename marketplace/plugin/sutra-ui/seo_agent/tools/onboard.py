@@ -331,6 +331,17 @@ def run(ctx, redo=False):
     say = sh.reporter(ctx, "onboard")
     led = ledger()
 
+    # SAY WHAT IS MISSING AT THE VERY START OF SETUP (owner, 2026-09-22). This is the first thing a
+    # new person does, so it is the first chance to say a key is absent, and the last cheap one.
+    # Every later step either spends an evening producing something crude (the asset engine, which
+    # is exactly what happened to his friend on SustVest) or refuses after the fact.
+    # A WARNING here, never a refusal: the interview costs nothing and needs neither key, and
+    # stopping somebody from answering questions about their own company because a key is missing
+    # would be absurd. Said ONCE, on the first pass -- this route is called again for every answer,
+    # and a warning per question is nagging.
+    if not led.get("answers") and not led.get("finished_at"):
+        sh.warn_missing_keys(say, ("dataforseo", "voyage"))
+
     if redo and led.get("finished_at"):
         say("Going through the setup questions again", "the previous answers are replaced as you answer")
         led = {"version": 1, "started_at": store.now(), "answers": {},

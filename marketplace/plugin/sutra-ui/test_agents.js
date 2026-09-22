@@ -227,6 +227,45 @@ test("the article view addresses blocks by the same ids the server uses", () => 
   BLK.ids.forEach(id => assert.ok(html.indexOf('data-blk="' + id + '"') !== -1, "block " + id + " rendered"));
   assert.ok(/data-ag="artedit" data-arg="p0"/.test(html));
 });
+/* ── the draft is JUST the article (spec item 10) ──────────────────────────────
+   A stats line, the coverage checkmarks and the links report used to sit above the text and
+   push it off the screen. All three are workings; a person opening their draft is there to
+   read it. The two that anyone needs again live on the Edits tab now. */
+test("nothing is drawn above the draft: no stats line, no checkmarks, no source report", () => {
+  const extra = { write: { length: { band_min: 2000, band_max: 2400 },
+                           coverage_checklist: [{ label: "the primary keyword is in the title", ok: true }] },
+                  links: { placed: [{ kind: "inline", anchor: "cost per hire", url: "https://x.com/a", section: "Costs" }],
+                           external_kept: [{ url: "https://s.com/p" }] } };
+  const html = A.agArticleHtml(BLK.md, null, null, false, extra);
+  assert.ok(/^<div class="ag-doc">/.test(html.trim()), "the article is the first thing in the view: " + html.slice(0, 120));
+  assert.ok(!/words/.test(html.slice(0, 200)), "no word count");
+  assert.ok(!/aimed/.test(html), "no band it was aimed at");
+  assert.ok(!/blocks<\/p>|hover a paragraph/.test(html), "no block count and no hover hint");
+  assert.ok(!/ag-checks|ag-links/.test(html), "and neither report, though both were handed to it");
+  assert.ok(/data-ag="artedit" data-arg="p0"/.test(html), "hover-to-edit is exactly as it was");
+});
+test("the draft's footer is one button that takes you to the Library to edit it", () => {
+  const S = A.S; S.ag = null;
+  const a = A.agS();
+  a.panel = { run_id: "r1", name: "draft.md", view: "article", data: { text: "# T\n\nbody" }, loading: false, title: "Draft" };
+  const html = A.agPanelHtml(a);
+  assert.ok(/data-ag="editinlib"[^>]*>Edit in library</.test(html), "the one button: " + html);
+  assert.ok(!/data-ag="publish"/.test(html), "Save to Library is gone -- this button saves");
+  assert.ok(!/data-ag="copymd"/.test(html), "and Copy markdown with it");
+});
+/* "Edit in library" really saving, switching tab and opening that article is proved in the
+   atest() sweep near the end of this file -- it is async, and a stub left in place by a test
+   that is not awaited would leak into the ones after it. */
+test("the links and sources report is drawn on the Edits tab instead", () => {
+  const ed = { passes: ["Read it for coherence."], source_check: null, words: null, target_words: null,
+               links: { placed: [{ kind: "inline", anchor: "cost per hire", url: "https://x.com/a", section: "Costs" }],
+                        external_kept: [{ url: "https://s.com/p" }] } };
+  const html = A.agTabEditsHtml(ed, { active: "edits" });
+  assert.ok(/class="ag-links"/.test(html), "the same renderer the draft used to call: " + html);
+  assert.ok(/cost per hire/.test(html), "with the link it placed");
+  const bare = A.agTabEditsHtml({ passes: [], source_check: null, words: null, target_words: null }, { active: "edits" });
+  assert.ok(!/ag-links/.test(bare), "an article with no report draws no empty box");
+});
 test("a read-only article never offers the per-block editor, and a Library one offers Edit", () => {
   const S = A.S; S.ag = null;
   const a = A.agS();
@@ -1370,6 +1409,24 @@ test("the announced artifact is clickable, to the same panel the checkpoint used
   assert.ok(/ag-openlink open/.test(open), "the one already on screen marks itself");
 });
 
+/* The line used to end "It is in the Library too" on every artifact, which sent the owner's
+   friend looking for the brand pack in a tab that has never held one (SustVest, 2026-09-22). */
+test("the second home named is the tab the artifact is really in, not always the Library", () => {
+  const line = (view, artifact) => A.agEntryHtml({ kind: "ready", artifact, view, label: "it", t: "t" }, { run_id: "r1" });
+  assert.ok(/It is in the Library tab too\./.test(line("research_brief", "research.json")), "research brief");
+  assert.ok(/It is in the Library tab too\./.test(line("blueprint", "blueprint.json")), "blueprint");
+  assert.ok(/It is in the Library tab too\./.test(line("article", "draft.md")), "the draft");
+  assert.ok(/It is in the Knowledge tab too\./.test(line("brand_pack", "brand.json")),
+            "the brand pack is Knowledge, and saying Library is the bug this replaces");
+  assert.ok(/It is in the Asset ideas tab too\./.test(line("topic_list", "topics.json")), "the idea sheet");
+  assert.ok(/It is in the Prompts tab too\./.test(line("prompt", "writer.md")), "a prompt");
+});
+test("an artifact with no known home says nothing rather than guessing a tab", () => {
+  const html = A.agEntryHtml({ kind: "ready", artifact: "x.json", view: "something_new", label: "it", t: "t" }, { run_id: "r1" });
+  assert.ok(/Ready to read: /.test(html), "the line still draws");
+  assert.ok(!/It is in the/.test(html), "and it makes no claim about where it also lives: " + html);
+});
+
 test("an artifact_ready in the middle of a run does not become the end of the transcript", () => {
   const evs = [
     { t: "2026-09-09T09:00:00Z", type: "step_started", id: "s1", label: "Researching", tool: "run_research", stage: "research" },
@@ -2301,6 +2358,58 @@ test("Stop lives in the run's own status row", () => {
              "and Stop sits beside it, plain (not armed) for a run this young: " + html);
 });
 
+/* ── "waiting for you" is only ever said with the question beside it ───────── */
+/* The friend's SustVest run (2026-09-22) showed a live spinner, a footer saying "waiting for you"
+   and "Type your answer, or pick an option above", and no question and no options anywhere. The
+   run is marked waiting in two writes -- state patched, THEN the event emitted (loop._wait) --
+   and the screen reads the two from two files, so it can hold the status without the question. */
+const WAIT_EV = [
+  { t: "2026-09-22T09:00:00Z", type: "step_started", id: "s1", label: "Working out what is worth writing", tool: "build_assets", stage: "setup" },
+  { t: "2026-09-22T09:05:00Z", type: "waiting", kind: "question", stage: "setup", call_id: "c9",
+    question: "Which of these is the article about?", options: ["Time to fill", "Cost per hire"] },
+];
+test("a run that says it is waiting, with the question on screen, asks for the answer as before", () => {
+  const a = agReset();
+  a.chatId = "c1";
+  a.chat = { runs: [{ run_id: "r1", status: "waiting", started_at: new Date().toISOString(),
+                      waiting_on: { kind: "question", options: ["Time to fill", "Cost per hire"] } }] };
+  a.events = { r1: WAIT_EV };
+  const html = A.agComposerHtml(a);
+  assert.ok(/waiting for you/.test(html), "the footer says so: " + html);
+  assert.ok(/Type your answer, or pick an option above/.test(html), "and points at the options that are really drawn");
+});
+test("waiting with NO question in the transcript never invites an answer", () => {
+  const a = agReset();
+  a.chatId = "c1";
+  a.chat = { runs: [{ run_id: "r1", status: "waiting", started_at: new Date().toISOString(),
+                      current_step: "build_assets",
+                      waiting_on: { kind: "question", options: ["Time to fill", "Cost per hire"] } }] };
+  a.events = { r1: [WAIT_EV[0]] };          // the status arrived; the "waiting" event has not
+  const html = A.agComposerHtml(a);
+  assert.ok(!/waiting for you/.test(html), "it must not say it is waiting for him: " + html);
+  assert.ok(!/pick an option above/.test(html), "there are no options above to pick");
+  assert.ok(!/Type your answer/.test(html), "and nothing was asked, so there is no answer to type");
+  assert.ok(/the agent is working/.test(html), "it reads as what it is: something in flight, nothing owed");
+});
+test("a question already answered does not leave the footer waiting", () => {
+  const a = agReset();
+  a.chatId = "c1";
+  a.chat = { runs: [{ run_id: "r1", status: "waiting", started_at: new Date().toISOString(),
+                      waiting_on: { kind: "question", options: ["a"] } }] };
+  a.events = { r1: WAIT_EV.concat([{ t: "2026-09-22T09:06:00Z", type: "resumed", by: "user", answer: "Time to fill" }]) };
+  const html = A.agComposerHtml(a);
+  assert.ok(!/waiting for you/.test(html), "the row it was waiting on is answered and no longer live: " + html);
+});
+test("the run's own status row holds the same line as the footer", () => {
+  const run = { run_id: "r1", status: "waiting", started_at: new Date(Date.now() - 5000).toISOString(),
+                waiting_on: { kind: "question", options: [] } };
+  const asked = A.agRunHtml(run, WAIT_EV, { now: Date.now() });
+  assert.ok(/Waiting for you/.test(asked), "with the question under it, the strip says it is waiting");
+  const blind = A.agRunHtml(run, [WAIT_EV[0]], { now: Date.now() });
+  assert.ok(!/Waiting for you/.test(blind), "without it, the strip must not claim to be: " + blind);
+  assert.ok(/>Working</.test(blind), "it says what is true instead");
+});
+
 /* the three tests below need agAction/agSend to really run and settle before their asserts, so
    they are async and live in the atest() sweep near the end of this file, with the same title. */
 
@@ -3208,6 +3317,57 @@ test("an empty whole-article instruction is refused before any model call", () =
   assert.ok(/Say what should change in the article/.test(a.libArt.error));
 });
 
+/* ── 7a: the whole-article rewrite shows it is working ─────────────────────────
+   The section rewrite dims, labels and sweeps its own .ag-artsec. The article rewrite had no
+   section to attach to, so it animated nothing at all: you pressed the button and the screen sat
+   there. The body itself is what is being rewritten, so it takes the same three things. */
+test("the whole article dims and says Rewriting while the model has it", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libart", { getAttribute: () => "lib7" });
+  const idle = A.agPanelHtml(a);
+  assert.ok(!/ag-doc rewriting/.test(idle) && !/rewritelbl/.test(idle), "nothing yet: " + idle.slice(0, 200));
+  a.libArt.busy = true;
+  const busy = A.agPanelHtml(a);
+  assert.ok(/class="ag-doc rewriting"/.test(busy), "the whole body carries the class, not one section: " + busy.slice(0, 400));
+  assert.ok(/<span class="rewritelbl" role="status">Rewriting/.test(busy), "and says so in words, for anyone who cannot see the sweep");
+  assert.ok(!/ag-artsec[^"]*rewriting/.test(busy), "no single section claims to be the one being rewritten");
+});
+test("the article-wide rewrite animation is gated on prefers-reduced-motion, like the section one", () => {
+  const gate = CSS.slice(CSS.indexOf("@media (prefers-reduced-motion:no-preference){"),
+                         CSS.indexOf("@keyframes agRewriteSweep"));
+  assert.ok(/\.ag-doc\.rewriting\{/.test(gate), "the dim and the accent edge are inside the gate");
+  assert.ok(/\.ag-doc\.rewriting::before\{/.test(gate), "and so is the sweep");
+  assert.ok(/\.ag-doc\.rewriting \.ag-artsec\{opacity/.test(gate), "the article's own text is what dims");
+  const lbl = CSS.slice(CSS.indexOf(".ag-doc > .rewritelbl{"), CSS.indexOf("}", CSS.indexOf(".ag-doc > .rewritelbl{")));
+  assert.ok(lbl.length > 10 && CSS.indexOf(".ag-doc > .rewritelbl{") > CSS.indexOf("@keyframes agLineIn"),
+            "but the WORD is outside it: a reduced-motion reader is still owed it");
+});
+
+/* ── 7b: "Use this" was rendered and unreachable ───────────────────────────────
+   `.ag-editbox textarea.tall{min-height:60vh}` (written for the full-page file and prompt
+   editors) has the same specificity as `.ag-secbox textarea.tall` and comes later in the file,
+   so it won. The whole-article instruction box -- the only .ag-secbox textarea carrying `tall` --
+   was 60vh high inside a 340px side panel, which pushed the diff and the Use this row past the
+   bottom of that panel on any laptop-sized window. */
+test("the instruction box in the side panel is sized by the side panel, whatever comes later in the file", () => {
+  assert.ok(/\.ag-secpanel \.ag-editbox textarea\.tall\{/.test(CSS),
+            "three classes, so it beats .ag-editbox textarea.tall on specificity and not on order");
+  const scoped = CSS.slice(CSS.indexOf(".ag-secpanel .ag-editbox textarea.tall{"),
+                           CSS.indexOf("}", CSS.indexOf(".ag-secpanel .ag-editbox textarea.tall{")));
+  assert.ok(/min-height:180px/.test(scoped) && !/60vh/.test(scoped),
+            "and it is a box, not most of the window: " + scoped);
+  const panel = CSS.slice(CSS.indexOf(".ag-secpanel{"), CSS.indexOf(".ag-secpanelh{"));
+  assert.ok(/overflow-y:auto/.test(panel), "the panel still scrolls, so a long diff is never a dead end");
+});
+test("Use this is drawn in the same box as the diff, so nothing can separate them", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libart", { getAttribute: () => "lib7" });
+  a.libArt.proposal = { proposed: "x", diff: [] };
+  const html = A.agPanelHtml(a);
+  assert.ok(/data-ag="libartuse"/.test(html),
+            "even a proposal whose diff came back empty still offers the button: " + html.slice(0, 200));
+});
+
 /* ── the typing bug (Aparna, 2026-09-17) ────────────────────────────────────────
    "it only lets me type one letter at a time" in the per-section editor. agDraw restores the
    caret after it repaints #agPanel, but the list it restored used to name only the two
@@ -3569,6 +3729,49 @@ async function atest(name, fn){
     assert.strictEqual(a.ctaForm.rows.length, 1, "nothing he typed is thrown away");
     assert.ok(/not on testlify\.com/.test(a.ctaForm.msg), "and the reason is his: " + a.ctaForm.msg);
     assert.ok(/not on testlify\.com/.test(A.agCtaHtml(a.cta, a.ctaForm)), "on the screen, beside the button");
+  });
+
+  /* ── "Edit in library", the draft's one footer button (spec item 10) ──────── */
+  await atest("Edit in library saves, switches to the Library tab, and opens THAT article", async () => {
+    const a = agReset();
+    a.chatId = "c1"; a.view = "chat"; a.chat = { runs: [] }; a.events = {};
+    a.panel = { run_id: "r1", name: "draft.md", view: "article", data: { text: "# T\n\nbody" }, loading: false, title: "Draft" };
+    const calls = [];
+    const prevPost = A.apiPost, prevGet = A.apiGet, prevLoad = A.agLoadChat;
+    A.apiPost = async (p) => { calls.push("POST " + p); return { ok: true, item_id: "2026-09-22-cost", title: "Cost" }; };
+    A.apiGet = async (p) => {
+      calls.push("GET " + p);
+      if (/\/library\/2026-09-22-cost$/.test(p))
+        return { id: "2026-09-22-cost", run_id: "r1", draft: "# T\n\nbody", title: "Cost", words: 2, version: 3 };
+      return [];
+    };
+    /* agLoadChat sets a.view = "chat" on its way through, and that is precisely what the handler
+       has to switch back AFTER. The stub keeps that behaviour rather than being a no-op, or the
+       test would pass over the one ordering mistake it exists to catch. */
+    A.agLoadChat = async () => { a.view = "chat"; };
+    try {
+      await A.agAction("editinlib", { getAttribute: () => "" });
+      assert.ok(calls.some(c => /^POST .*\/runs\/c1\/r1\/publish$/.test(c)),
+                "it saves through the same publish route the old button used: " + calls.join(", "));
+      assert.strictEqual(a.view, "library", "and lands on the Library tab, not back in the chat");
+      assert.strictEqual(a.panel && a.panel.libId, "2026-09-22-cost", "with THAT article open");
+      assert.ok(a.libBuf && a.libMeta, "opened the way a click on the Library row opens it, ready to edit");
+      assert.ok(/data-ag="libsec"/.test(A.agPanelHtml(a)), "so the sections are click-to-edit straight away");
+    } finally { A.apiPost = prevPost; A.apiGet = prevGet; A.agLoadChat = prevLoad; }
+  });
+
+  await atest("a save that fails leaves the draft where it was, nothing half-moved", async () => {
+    const a = agReset();
+    a.chatId = "c1"; a.view = "chat"; a.chat = { runs: [] };
+    a.panel = { run_id: "r1", name: "draft.md", view: "article", data: { text: "# T\n\nbody" }, loading: false, title: "Draft" };
+    const prevPost = A.apiPost;
+    A.apiPost = async () => { throw new Error("disk is full"); };
+    try {
+      await A.agAction("editinlib", { getAttribute: () => "" });
+      assert.strictEqual(a.view, "chat", "the tab did not move");
+      assert.ok(a.panel && !a.panel.libId, "and the draft is still the thing on screen");
+      assert.strictEqual(a.busy, false, "the button is usable again");
+    } finally { A.apiPost = prevPost; }
   });
 
   await atest("saving a Library article posts the title and the body, and the panel shows the saved one", async () => {

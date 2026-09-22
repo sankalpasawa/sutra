@@ -296,6 +296,31 @@ if t:
     t.join(2.0)
 
 
+# ============================================================================================
+print("\nthe events route never hands back a status newer than the events beside it")
+# A checkpoint is marked in TWO writes -- loop._wait patches state to "waiting" and only then
+# emits the "waiting" event -- and this route reads the two from two files while the engine
+# thread is writing them. One side is always allowed to be the older, and which one decides
+# what a person sees: state newer than events is a screen saying "waiting for you" with the
+# question missing, which is the SustVest report of 2026-09-22. Events newer than state is a
+# question that shows up a tick before the footer catches up, which reads as still working.
+# So state must be read FIRST. This pins the order, not the wording.
+c7 = store.new_chat("read order")
+r7 = store.new_run(c7, "topic")
+store.patch_state(c7, r7, status="running")
+_order = []
+_real_state, _real_events = store.get_state, store.get_events
+store.get_state = lambda *a, **k: (_order.append("state"), _real_state(*a, **k))[1]
+store.get_events = lambda *a, **k: (_order.append("events"), _real_events(*a, **k))[1]
+try:
+    api.api_events(c7, r7, since=0)
+finally:
+    store.get_state, store.get_events = _real_state, _real_events
+ok("state is read before the events, so it can only ever be the older of the two",
+   _order == ["state", "events"], _order)
+shutil.rmtree(store.chat_dir(c7))
+
+
 print()
 if FAILS:
     print("%d FAILED: %s" % (len(FAILS), ", ".join(FAILS)))

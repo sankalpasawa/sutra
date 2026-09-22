@@ -21,6 +21,17 @@ const AG_STAGES = [["setup", "Setup"], ["topic", "Topic"], ["research", "Researc
 const AG_VIEW_TITLE = { brand_pack: "The brand pack", topic_list: "Topic ideas", research_brief: "Research brief",
                         blueprint: "Article plan", article: "The draft", brand_file: "Brand file", page: "Page",
                         prompt: "Prompt" };
+/* WHERE EACH ARTIFACT ACTUALLY LIVES once the run has moved on (owner's friend, SustVest run,
+   2026-09-22). The "Ready to read" line used to end "It is in the Library too" whatever the
+   artifact was, so it sent people hunting for the brand pack in a tab that has never held one.
+   Only the three writing artifacts are Library rows; the brand pack and its files are Knowledge,
+   the idea sheet is Asset ideas, a prompt is Prompts. The names here are the sidebar's own words
+   (AG_GUIDE_TABS follows the same list), because that is the label the person has to go and
+   click. A view missing from this map gets NO second-home sentence at all: saying nothing is
+   honest, and guessing is exactly what caused the bug. */
+const AG_VIEW_HOME = { brand_pack: "Knowledge", brand_file: "Knowledge", page: "Knowledge",
+                       topic_list: "Asset ideas", research_brief: "Library", blueprint: "Library",
+                       article: "Library", prompt: "Prompts" };
 const AG_POLL_LIVE_MS = 1000;
 const AG_POLL_IDLE_MS = 4000;
 
@@ -725,10 +736,11 @@ function agEntryHtml(e, ctx){
     case "ready": {
       const isOpen = ctx.panel && ctx.panel.name === e.artifact && ctx.panel.run_id === ctx.run_id;
       const label = e.label || (AG_VIEW_TITLE[e.view] || "it").toLowerCase();
+      const home = AG_VIEW_HOME[e.view];
       return `<div class="ag-step quiet"><span class="ag-glyph" aria-hidden="true"></span>
         <div class="ag-note">Ready to read: <button class="ag-openlink ${isOpen ? "open" : ""}" type="button"
           data-ag="open" data-arg="${agEsc(e.artifact)}" data-view="${agEsc(e.view)}" data-run="${agEsc(ctx.run_id || "")}"
-          >${agEsc(label)}</button>. It is in the Library too.</div></div>`;
+          >${agEsc(label)}</button>.${home ? ` It is in the ${agEsc(home)} tab too.` : ""}</div></div>`;
     }
     case "mem":
       return `<div class="ag-step mem"><span class="ag-glyph" aria-hidden="true">${agGlyph(e)}</span>
@@ -820,8 +832,13 @@ function agRunHtml(run, events, ctx){
      how long it had taken rather than by what it was doing). The state word and the steps count
      stay; agDur(sum.elapsedMs) is gone from here. sum.elapsedMs itself is untouched -- other
      screens (the Library row, the notifications) still use it. */
+  /* The same test the composer's footer uses (agLiveWait): the strip may only say it is waiting
+     for him when the question is actually in the rows underneath it. The run's status alone was
+     enough to print "Waiting for you" over a transcript with nothing in it to answer. sum.waiting
+     itself is left as it is -- the Library row and the notifications read it too. */
+  const asked = entries.some(e => e.live && (e.kind === "ask" || e.kind === "approval" || e.kind === "artifact"));
   const head = sum.live
-    ? `<span class="runstrip live"><span class="spark" aria-hidden="true">${AG_ICON.spark}</span><b class="shim">${sum.waiting ? "Waiting for you" : "Working"}</b></span>${agStopBtnHtml(run, sum, ctx)}`
+    ? `<span class="runstrip live"><span class="spark" aria-hidden="true">${AG_ICON.spark}</span><b class="shim">${sum.waiting && asked ? "Waiting for you" : "Working"}</b></span>${agStopBtnHtml(run, sum, ctx)}`
     : `<span class="ag-worked">${run.status === "failed" ? "Stopped with an error" : run.status === "stopped" ? "Stopped" : "Worked"}</span>`;
   return `<div class="ag-turn" data-run="${agEsc(run.run_id)}">
     <div class="u">${agEsc(run.request || run.topic || "")}</div>
@@ -1520,11 +1537,36 @@ function agResearchSettingsHtml(rs){
   </div>`;
 }
 
+/* THE QUESTION THE RUN SAYS IT IS WAITING ON, but only if it is really in the transcript.
+   Returns the live checkpoint row agEntryHtml is drawing, or null.
+
+   The run's own status is not enough to go on. A checkpoint is marked in two writes -- state
+   patched to "waiting", then the "waiting" event emitted (loop._wait) -- and the screen reads
+   the two from two files, so it can hold the first without the second. When it does, the footer
+   used to say "waiting for you" and "Type your answer, or pick an option above" beside a
+   transcript with no question and no options in it at all, which is what the friend's SustVest
+   run showed. Reading the drawn row instead of the status makes that impossible: the footer and
+   the transcript now come from the same projection, so the footer can only ask for an answer to
+   a question that is on the screen next to it. The SEND path is untouched and still keys off the
+   run's status, so a message typed here goes the same way it always did. */
+function agLiveWait(a, live){
+  if (!live || live.status !== "waiting") return null;
+  const rows = agStepsFromEvents((a && a.events && a.events[live.run_id]) || [], live);
+  for (let i = rows.length - 1; i >= 0; i--){
+    const e = rows[i];
+    if (e.live && (e.kind === "ask" || e.kind === "approval" || e.kind === "artifact")) return e;
+  }
+  return null;
+}
+
 function agComposerHtml(a){
   const live = agLiveRun();
-  const running = live && live.status === "running";
-  const waiting = live && live.status === "waiting";
-  const w = waiting ? (live.waiting_on || {}) : null;
+  /* `w` is the checkpoint as DRAWN, not as the status claims. A live run with nothing asked of
+     him on screen reads as working, which is the honest half of the pair: something is in
+     flight and there is nothing for him to answer yet. */
+  const w = agLiveWait(a, live);
+  const waiting = !!w;
+  const running = !!live && !waiting;
   const setup = agSetupOf(a.health);
   /* NEVER DISABLED WHILE RUNNING (2026-09-17). Typing here used to be blocked the whole time a
      run was live, with Stop as the only thing you could click in this spot -- one stray tap
@@ -1785,18 +1827,28 @@ function agLinksHtml(rep){
   </div>`;
 }
 
+/* THE DRAFT IS JUST THE ARTICLE (spec item 10; owner, 2026-09-22: "the draft should be super
+   clean... just the article and for them to edit").
+
+   Three things used to sit above the text and push it off the screen: a stats line (words, the
+   band aimed at, the block count), the coverage checkmarks (agChecksHtml) and the links and
+   sources report (agLinksHtml). All three are workings, and a person opening their draft is
+   there to read it.
+
+   NONE OF IT IS LOST. Whether the keywords landed and whether the sources held is the only
+   thing in there a person ever needs again, and both moved to the Edits tab of the Library
+   overlay, where a reviewer opening the article weeks later still finds them: the coverage
+   report (spec item 5) and the links-and-sources report (agTabEditsHtml). They were moved, not
+   dropped.
+
+   `extra` still arrives and is deliberately not read here: the caller hands over p.links and
+   p.write whether or not this view wants them, and anything that wants them again belongs on
+   the Edits tab, not back above the article. */
 function agArticleHtml(md, edit, last, readOnly, extra){
   const text = typeof md === "string" ? md : (md && md.text) || "";
   const blocks = agBlocks(text);
   if (!blocks.length) return `<div class="zero"><h4>Empty draft</h4></div>`;
-  extra = extra || {};
-  const rep = extra.write || {};
-  const cov = rep.coverage_checklist || rep.checklist || rep.coverage;
-  const len = rep.length;
-  return `<p class="ag-sub" style="margin:0 0 10px">${agEsc(agNum(agWords(text)))} words${len && len.band_min ? ` · aimed ${agEsc(agNum(len.band_min))}–${agEsc(agNum(len.band_max))}` : ""} · ${blocks.length} blocks${readOnly ? "" : " · hover a paragraph to edit it"}</p>
-    ${cov ? agChecksHtml(cov) : last && last.checks ? agChecksHtml(last.checks) : ""}
-    ${extra.links ? agLinksHtml(extra.links) : ""}
-    <div class="ag-doc">${blocks.map((b, i) => {
+  return `<div class="ag-doc">${blocks.map((b, i) => {
       const id = "p" + i;
       const editing = edit && edit.id === id;
       return `<div class="ag-blk ${editing ? "editing" : ""}" data-blk="${id}">${agMd(b)}
@@ -1995,12 +2047,20 @@ function agLibArticleHtml(p, a){
   if (!secs.length) return `<div class="zero"><h4>Empty article</h4></div>`;
   const ed = a.libSec;
   const dirty = !!(a.libBuf && a.libBuf.dirty);
+  /* THE WHOLE-ARTICLE REWRITE HAS TO LOOK LIKE SOMETHING TOO (spec item 7a). The section rewrite
+     dims, labels and sweeps the one .ag-artsec it is working on; the article rewrite had no
+     section to point at, so it showed nothing at all and the screen just sat there. The body
+     itself -- .ag-doc -- is what is being rewritten, so the same three things land on it. Gated
+     on a.libArt.busy exactly the way `rewriting` below is gated on the section editor's own
+     busy, and the motion half is behind prefers-reduced-motion in agents.css, same as the
+     section's. */
+  const artRewriting = !!(a.libArt && a.libArt.busy);
   /* No meta line here any more (spec item 6: the word/section/team count is gone, to leave the
      room the right-hand edit panel needs). "Unsaved changes" still needs to say so somewhere --
      it moves onto the conflict/notice area instead of being dropped silently. */
   return `${dirty ? `<p class="ag-sub" style="margin:0 0 10px"><b>unsaved changes</b></p>` : ""}
     ${agLibConflictHtml(a.libConflict, p.libId)}
-    <div class="ag-doc">${secs.map(s => {
+    <div class="ag-doc${artRewriting ? " rewriting" : ""}">${artRewriting ? `<span class="rewritelbl" role="status">Rewriting…</span>` : ""}${secs.map(s => {
       const editing = ed && ed.id === s.id;
       /* AI is mid-rewrite of exactly this section: the sweep, the dim and the left accent line
          (agents.css .ag-artsec.rewriting) are all gated on this one class, never on ed.busy
@@ -2104,10 +2164,15 @@ function agPanelHtml(a){
           <button class="btn" type="button" data-ag="libedit" data-arg="${agEsc(p.libId)}">Edit whole article</button>
           <button class="btn" type="button" data-ag="libart" data-arg="${agEsc(p.libId)}">Rewrite with AI</button>`
       : `<button class="btn" type="button" data-ag="copymd">Copy markdown</button>`;
+    /* ONE BUTTON, NOT TWO (spec item 10). "Save to Library" and "Copy markdown" both left the
+       person somewhere other than where they wanted to be: the first saved and then made them go
+       and find the row, the second handed them text with nowhere to put it. What they are
+       actually doing at this point is going off to edit the thing, so the button says that and
+       does the whole errand -- save, Library tab, that article open. The run's own controls at a
+       checkpoint (approve, ask for changes) are untouched; they are a different question. */
     else footer = `${atCheckpoint ? `<button class="btn pri" type="button" data-ag="approvert">Looks good, finish</button>` : ""}
-      <button class="btn ${atCheckpoint ? "" : "pri"}" type="button" data-ag="publish" ${a.busy ? "disabled" : ""}>Save to Library</button>
-      ${atCheckpoint ? `<button class="btn" type="button" data-ag="changes" data-text="About the draft: ">Ask for changes</button>` : ""}
-      <button class="btn" type="button" data-ag="copymd">Copy markdown</button>`;
+      <button class="btn ${atCheckpoint ? "" : "pri"}" type="button" data-ag="editinlib" ${a.busy ? "disabled" : ""}>${a.busy ? "Saving…" : "Edit in library"}</button>
+      ${atCheckpoint ? `<button class="btn" type="button" data-ag="changes" data-text="About the draft: ">Ask for changes</button>` : ""}`;
   } else body = `<pre class="ag-detail">${agEsc(JSON.stringify(p.data, null, 2))}</pre>`;
   /* A Library article takes the whole Library area (agents.css .ag.liblarge, set in agDraw from
      this same p.libId), so the small X in the corner is no longer enough of a way back -- it
@@ -2836,7 +2901,40 @@ function agTabDraftHtml(d){
 
 /* ── Edits ───────────────────────────────────────────────────────────────────────────────
    passes is already a list of full, plain-English sentences in run order -- nothing to word
-   here, only to list. */
+   here, only to list.
+
+   THIS TAB IS ALSO WHERE THE DRAFT'S WORKINGS LANDED (spec item 10). The links-and-sources
+   report used to sit above the article in the draft view and is gone from there, because a
+   person opening their draft is there to read it. It is the only place anyone can see which of
+   their own pages the article points at and which sources survived, so it is drawn here instead,
+   where a reviewer opening the article later still finds it. `links` is the run's own
+   links-report.json, in the shape agLinksHtml has always taken. Absent, nothing draws: an empty
+   box says less than no box. */
+/* WHAT THE ARTICLE WAS MEANT TO COVER, AND WHAT IT DID NOT (spec item 5).
+
+   Recruiting Metrics shipped missing two of the six things every ranking page covers, and nobody
+   knew until Aparna read it. The coverage check had been running in write/readable.py the whole
+   time; it just wrote a report nobody surfaced. This is the surface, and it is deliberately not
+   a gate: the run says what it did, with a reason in plain words, and a person judges.
+
+   Rows in the tab's own vocabulary (agIr for a labelled line, agTabUl for a list), so it reads
+   as part of the tab rather than a report bolted on.
+
+   NOTHING IS INVENTED HERE. The count is covered.length against the report's own expected_total,
+   and if the report did not say how many were expected, that line is left out rather than
+   guessed from the two lists -- a total derived from what happened cannot say what was wanted.
+   An article written before any of this shipped carries no coverage at all and draws nothing:
+   every row falls away on its own, so there is no empty box to explain. */
+function agCoverageHtml(cov){
+  if (!cov) return "";
+  const total = Number(cov.expected_total);
+  const covered = cov.covered || [], dropped = cov.dropped || [];
+  const line = Number.isFinite(total) && total > 0 ? `${agNum(covered.length)} of ${agNum(total)}` : "";
+  return `${agIr("Expected topics", line ? agEsc(line) : "")}
+    ${agIr("Covered", agTabUl(covered.map(c => c && c.section ? `${c.topic} — in “${c.section}”` : (c && c.topic) || "")))}
+    ${agIr("Dropped", agTabUl(dropped.map(d => d && d.why ? `${d.topic}, because ${d.why}` : (d && d.topic) || "")))}`;
+}
+
 function agTabEditsHtml(ed, st){
   if (!ed) return agTabEmptyHtml(st, "edits");
   const sc = ed.source_check;
@@ -2846,10 +2944,12 @@ function agTabEditsHtml(ed, st){
     : "";
   const wordsLine = (ed.words != null && ed.target_words != null) ? `${agEsc(agNum(ed.words))} words against a target of ${agEsc(agNum(ed.target_words))}` : "";
   return `<div class="ag-tabrows">
+    ${agCoverageHtml(ed.coverage)}
     ${agIr("What was done", agTabUl(ed.passes))}
     ${agIr("Source check", scLine)}
     ${agIr("Words", wordsLine)}
-  </div>`;
+  </div>
+  ${ed.links ? agLinksHtml(ed.links) : ""}`;
 }
 
 /* ── the overlay shells themselves ──────────────────────────────────────────────────────── */
@@ -4895,6 +4995,31 @@ async function agAction(act, el){
       try { const r = await agPostApi(`/runs/${encodeURIComponent(a.chatId)}/${encodeURIComponent(a.panel.run_id)}/publish`, {});
         a.library = await agApi("/library").catch(() => a.library); agToast("Saved to the Library"); await agLoadChat(a.chatId, true); void r; }
       catch (e) { agToast("Could not save: " + (e.message || e)); }
+      a.busy = false; agDraw(); break;
+    }
+    /* EDIT IN LIBRARY (spec item 10) -- the draft's one footer button. The same publish route
+       "Save to Library" used, and then the two steps the person had to do by hand afterwards:
+       the Library tab, and that article open. agLibOpen is the identical call a click on the
+       Library row makes, so what they land on is the ordinary editable article, sections and
+       all, and the X out of it goes back to the list exactly as it already did.
+
+       ORDER MATTERS HERE. agLoadChat sets a.view = "chat" on its way through (it is how every
+       other caller gets back to the conversation), so the tab is switched AFTER it, not before,
+       or the person is dropped back in the chat with an article panel floating over it. A save
+       that fails leaves them where they were, with the draft still on screen and the reason in
+       a toast -- never half-moved to a Library row that was not written. */
+    case "editinlib": {
+      if (!a.panel || a.busy) break;
+      const runId = a.panel.run_id;
+      a.busy = true; agDraw();
+      try {
+        const r = await agPostApi(`/runs/${encodeURIComponent(a.chatId)}/${encodeURIComponent(runId)}/publish`, {});
+        a.library = await agApi("/library").catch(() => a.library);
+        await agLoadChat(a.chatId, true);
+        a.view = "library"; a.viewBusy = null; a.guideDive = null;
+        await agLibOpen(r.item_id);
+        agToast("Saved. Edit it here.");
+      } catch (e) { agToast("Could not save: " + (e.message || e)); }
       a.busy = false; agDraw(); break;
     }
     case "copymd": {

@@ -349,6 +349,39 @@ ok("undo on an article with nothing before it is None",
 ok("a save on an article that is not there is None", le.save("no-such", MD) is None)
 
 # =====================================================================================================
+print("\nthe FIRST edit can be undone (2026-09-22: 'undo is not at all working')")
+# The timeline only ever grew on an edit, so one edit left one entry, the cursor sat on it, and
+# can_undo -- "is there anything before the cursor" -- was 0 > 0. Undo was dead on every article
+# anyone had edited exactly once, which is most of them. Every article on his Mac had versions: [].
+fresh_mac()
+fitem = store.library_save("c2f", "r2f", "First", "# First\nas it was written")
+before = store.library_get(fitem)
+ok("a freshly saved article has no timeline and nothing to undo, which is right",
+   not (before.get("versions") or []) and store.library_history_flags(before)["can_undo"] is False)
+f1 = le.save(fitem, "# First\nedited once")
+ok("ONE edit and Undo is live", store.library_history_flags(f1)["can_undo"] is True, f1.get("versions"))
+ok("the entry behind it is the article's own body, not a copy of the edit",
+   len(f1["versions"]) == 2 and f1["versions"][0]["version"] == 0, f1.get("versions"))
+ok("and undoing really brings the original text back",
+   le.undo(fitem) and store.library_get(fitem)["draft"] == "# First\nas it was written",
+   store.library_get(fitem)["draft"])
+ok("redo puts the edit back", le.redo(fitem) and store.library_get(fitem)["draft"] == "# First\nedited once")
+
+# The same for an article that arrived from the team workspace carrying no history at all: it is
+# the identical empty timeline, so the first edit on THIS Mac seeds it the same way.
+fresh_mac()
+titem = store.library_save("c2t", "r2t", "Theirs", "# Theirs\ntheir version")
+store.library_finish(titem, "Theirs", "# Theirs\ntheir version",
+                     {"version": 7, "owner": "Someone else"})
+t1 = le.save(titem, "# Theirs\nmy change")
+ok("a teammate's article with no history is undoable after one edit too",
+   store.library_history_flags(t1)["can_undo"] is True, t1.get("versions"))
+ok("and its first entry is stamped with the version it arrived as, not zero",
+   t1["versions"][0]["version"] == 7, t1.get("versions"))
+ok("undo gives back exactly what they sent",
+   le.undo(titem) and store.library_get(titem)["draft"] == "# Theirs\ntheir version")
+
+# =====================================================================================================
 print("\nevery save makes a version (last 20), and Undo/Redo step through them")
 
 fresh_mac()
@@ -356,7 +389,8 @@ hitem = store.library_save("c2h", "r2h", "History", "# History\nv0")
 le.save(hitem, "# History\nv1")
 le.save(hitem, "# History\nv2")
 h3 = le.save(hitem, "# History\nv3")
-ok("three edits, three versions kept", len(h3["versions"]) == 3, h3.get("versions"))
+ok("three edits, four versions kept -- the three plus the article they started from",
+   len(h3["versions"]) == 4, h3.get("versions"))
 ok("can undo, cannot redo at the tip", store.library_history_flags(h3) == {"can_undo": True, "can_redo": False})
 
 u1 = le.undo(hitem)
@@ -380,7 +414,10 @@ ok("a fresh edit after undoing drops the redo tail",
 ok("redo after a fresh edit is None, the tail is really gone", le.redo(hitem) is None)
 ok("undo from the branch still walks the shared history back to v1",
    le.undo(hitem) and store.library_get(hitem)["draft"] == "# History\nv1")
-ok("undo has nothing further back than the first edit", le.undo(hitem) is None)
+ok("undo from the first edit reaches the article as it was saved",
+   le.undo(hitem) and store.library_get(hitem)["draft"] == "# History\nv0",
+   store.library_get(hitem)["draft"])
+ok("and THAT is the end of the line", le.undo(hitem) is None)
 
 ok("undo/redo on an article that is not there is None",
    le.undo("no-such") is None and le.redo("no-such") is None)

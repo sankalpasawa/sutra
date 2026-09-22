@@ -420,8 +420,17 @@ def api_events(chat_id: str, run_id: str, since: int = 0):
     if not _ok_id(chat_id, run_id):
         return _bad("bad id")
     since = max(0, int(since or 0))
+    # STATE IS READ FIRST, AND THAT ORDER MATTERS. These are two separate reads of two files the
+    # engine thread is writing as we go, so one of them is always allowed to be the older. The
+    # engine marks a checkpoint by patching state to "waiting" and only THEN emitting the
+    # "waiting" event (loop._wait). Reading events first therefore let a reply carry
+    # status="waiting" with the question missing from the events beside it, and the screen then
+    # asked for an answer to a question it had not been given. Reading state first makes the
+    # stale side the harmless one: at worst the question arrives a tick before the footer catches
+    # up, which reads as the run still working, not as a demand with nothing behind it.
+    st = store.get_state(chat_id, run_id)
     evs = store.get_events(chat_id, run_id, since)
-    return {"events": evs, "next": since + len(evs), "state": store.get_state(chat_id, run_id)}
+    return {"events": evs, "next": since + len(evs), "state": st}
 
 
 @router.get("/runs/{chat_id}/{run_id}/trail")

@@ -28,6 +28,24 @@ Write two things.
    name. This single line is what stops the research collecting advice that reads sensible and is
    wrong for our reader. Take it seriously.
 
+────────────────────────────────────────────────────────────────────────
+KEEP IT SHORT. THIS IS A BOUNDARY, NOT AN ESSAY.
+
+Measured on real runs before this rule existed: "about" ran 75 to 88 words and "not about" ran 164
+to 200. That block is pasted into every research question, every keyword-scoring batch and the
+architect's own call, so it is paid for more than twenty times per article, and anyone who has to
+wade through 200 words of exclusions stops reading them.
+
+  - ABOUT: ONE sentence. The subject as our reader means it.
+  - NOT ABOUT: at most THREE neighbouring worlds, one short line each.
+  - Plain English. No numbered sub-clauses, no "i.e.", no parentheses inside parentheses.
+  - One idea per line.
+
+SHORTER, NOT VAGUER. The whole job is naming the confusable world BY NAME, and a boundary that
+says "other uses of this term" has stopped working altogether. "Hiring hackathons run by an
+employer, not public prize hackathons or charity coding weekends" is short AND specific. Keep the
+names. Drop the essay around them.
+
 Return ONLY this JSON, nothing else:
-{"about": "<what this is about, plainly>",
- "not_about": "<the neighbouring worlds this must not wander into>"}
+{"about": "<one sentence: what this is about, plainly>",
+ "not_about": "<up to three neighbouring worlds, named, one short line each>"}
