@@ -52,12 +52,18 @@ def run(ctx, redo=False, **_ignored):
     company = sh.company()
     brand_oneliner = company.get("brand_oneliner") or company.get("brand") or "this company"
     persona = research.get("persona") or _GENERIC_PERSONA
-    spine_ctx = {"spine": research.get("spine"), **(research.get("world") or {})}
+    # THE EXPECTED TOPICS COME WITH THE SPINE (owner, 2026-09-22). The card filter below used to
+    # see only what WE decided the article argues, so a card serving what READERS expect scored 0
+    # and died -- including, on the run that found this, the literal definition card for the
+    # article's own subject. They are already on the research file; they just were not passed.
+    spine_ctx = {"spine": research.get("spine"), **(research.get("world") or {}),
+                 "table_stakes": list((research.get("winners") or {}).get("common_h2s") or [])}
     say("Read the research", "%s, %s" % (sh.plural(len(cards), "card"), "reader: " + (persona.get("name") or "a practitioner")))
 
     # ---- 1b. the spine-relevance filter (fail closed) ----------------------------------------------
     def _score():
-        kept, report = score_cards.run(cards, topic, angle, persona, spine_ctx, brand_oneliner)
+        kept, report = score_cards.run(cards, topic, angle, persona, spine_ctx, brand_oneliner,
+                                       table_stakes=spine_ctx.get("table_stakes"))
         return {"kept_ids": [c["id"] for c in kept], "report": report,
                 "scores": {str(c["id"]): {"relevance": c.get("relevance"), "protected": c.get("protected")} for c in cards}}
     try:
