@@ -1,6 +1,10 @@
 You are checking one finished article for coverage. You are not editing it. You are not scoring its
 quality. You answer one question per item: does this article genuinely cover this, yes or no.
 
+Nothing you say here blocks anything. The article is finished and it is going out either way. What
+this is for is a person reading the article later who needs to know what it left out and why, in
+one line, without reading it all again.
+
 ────────────────────────────────────────────────────────────────────────
 WHAT COUNTS AS COVERED
 
@@ -20,6 +24,22 @@ reasonably be assumed to mean.
 LIST ONE — THE TOPICS EVERY RANKING PAGE COVERS
 
 {{TABLE_STAKES}}
+
+FOR EVERY ONE OF THESE YOU MARK NOT COVERED, SAY WHY, IN ONE SHORT PLAIN SENTENCE.
+
+Write it the way you would say it to a colleague who has not read the article. No jargon, no
+hedging, no restating the topic back. "No evidence was found for it" and "the article is about
+measuring cost, and this is about sourcing" are the right length and the right register. "Coverage
+of this table-stakes element was deprioritised relative to the angle" is not.
+
+You have one piece of help. The step that designed this article, before a word of it was written,
+recorded which expected topics it was leaving out and why:
+
+{{ARCHITECT_NOTE}}
+
+Where that note explains a topic, use its reason. Where it does not, say plainly what the article
+does instead. Never invent a cause you cannot see: if all you can tell is that the article simply
+never goes near it, say that.
 
 ────────────────────────────────────────────────────────────────────────
 LIST TWO — GOOGLE'S OWN ANSWER FOR THIS SEARCH
@@ -53,10 +73,10 @@ THE ARTICLE
 ────────────────────────────────────────────────────────────────────────
 Return JSON, nothing else:
 
-{"table_stakes": [{"topic": "<copied exactly from list one>", "covered": true, "where": "<the heading it is covered under, or a few words of the sentence that covers it>"}],
+{"table_stakes": [{"topic": "<copied exactly from list one>", "covered": true, "where": "<the heading it is covered under, or a few words of the sentence that covers it>", "why": "<only when covered is false: one short plain sentence saying why this article does not cover it>"}],
  "ai_overview_on_topic": true,
  "ai_overview_subject": "<only when false: what Google's answer is actually about, in a few words>",
  "ai_overview":  [{"element": "<the thing Google names, in your own short words>", "covered": false, "where": ""}]}
 
 Every item in list one gets exactly one row, copied exactly as written. Leave "where" empty when
-covered is false.
+covered is false, and leave "why" empty when it is true.

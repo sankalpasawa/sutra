@@ -216,9 +216,27 @@ EXCLUDED_REGIONS = {
     # is handed the specific fixes that were rejected, with the reason each one failed, and returns
     # only those, corrected. The two no longer share a single line, so the whole file is the region.
     "coherence-retry.md": [("", None)],
+    # 2026-09-22 (Devansh approved, specs/parked-2026-09-22-engine-fixes.md item 5). His copy asks
+    # this call one question per topic: covered, yes or no. Sutra's asks it for the REASON as well,
+    # because Recruiting Metrics shipped missing two of the six topics every ranking page covers and
+    # nobody knew until a reviewer read it. It is a note, not a gate, so the two blocks below say so
+    # and hand the judge the architect's own record of what it left out, which is what keeps the
+    # reason grounded instead of guessed -- and keeps the whole thing to the one call that already
+    # reads the finished article against the whole expected list.
+    "readable-coverage.md": [
+        ("Nothing you say here blocks anything.", "WHAT COUNTS AS COVERED"),
+        ("FOR EVERY ONE OF THESE YOU MARK NOT COVERED", "LIST TWO"),
+    ],
 }
 
 PORT_EDITS = {
+    "readable-coverage.md": [
+        # Same 2026-09-22 change, its two contract lines. Every row Sutra gets back carries a "why"
+        # for the topics marked not covered, and that is the sentence the Edits tab shows a reviewer.
+        ('{"table_stakes": [{"topic": "<copied exactly from list one>"',
+         'each row also returns "why": the plain-words reason a topic is not covered'),
+        ("covered is false", 'the same line, telling it to leave "why" empty when covered is true'),
+    ],
     "inline-links.md": [
         ("page is pricing,", "his product pages; Sutra serves any company, so the example is generic"),
         ("is the reader who wants the", "same line, his product named"),
