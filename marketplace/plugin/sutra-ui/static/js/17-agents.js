@@ -2910,6 +2910,31 @@ function agTabDraftHtml(d){
    where a reviewer opening the article later still finds it. `links` is the run's own
    links-report.json, in the shape agLinksHtml has always taken. Absent, nothing draws: an empty
    box says less than no box. */
+/* WHAT THE ARTICLE WAS MEANT TO COVER, AND WHAT IT DID NOT (spec item 5).
+
+   Recruiting Metrics shipped missing two of the six things every ranking page covers, and nobody
+   knew until Aparna read it. The coverage check had been running in write/readable.py the whole
+   time; it just wrote a report nobody surfaced. This is the surface, and it is deliberately not
+   a gate: the run says what it did, with a reason in plain words, and a person judges.
+
+   Rows in the tab's own vocabulary (agIr for a labelled line, agTabUl for a list), so it reads
+   as part of the tab rather than a report bolted on.
+
+   NOTHING IS INVENTED HERE. The count is covered.length against the report's own expected_total,
+   and if the report did not say how many were expected, that line is left out rather than
+   guessed from the two lists -- a total derived from what happened cannot say what was wanted.
+   An article written before any of this shipped carries no coverage at all and draws nothing:
+   every row falls away on its own, so there is no empty box to explain. */
+function agCoverageHtml(cov){
+  if (!cov) return "";
+  const total = Number(cov.expected_total);
+  const covered = cov.covered || [], dropped = cov.dropped || [];
+  const line = Number.isFinite(total) && total > 0 ? `${agNum(covered.length)} of ${agNum(total)}` : "";
+  return `${agIr("Expected topics", line ? agEsc(line) : "")}
+    ${agIr("Covered", agTabUl(covered.map(c => c && c.section ? `${c.topic} — in “${c.section}”` : (c && c.topic) || "")))}
+    ${agIr("Dropped", agTabUl(dropped.map(d => d && d.why ? `${d.topic}, because ${d.why}` : (d && d.topic) || "")))}`;
+}
+
 function agTabEditsHtml(ed, st){
   if (!ed) return agTabEmptyHtml(st, "edits");
   const sc = ed.source_check;
@@ -2919,6 +2944,7 @@ function agTabEditsHtml(ed, st){
     : "";
   const wordsLine = (ed.words != null && ed.target_words != null) ? `${agEsc(agNum(ed.words))} words against a target of ${agEsc(agNum(ed.target_words))}` : "";
   return `<div class="ag-tabrows">
+    ${agCoverageHtml(ed.coverage)}
     ${agIr("What was done", agTabUl(ed.passes))}
     ${agIr("Source check", scLine)}
     ${agIr("Words", wordsLine)}
