@@ -832,8 +832,13 @@ function agRunHtml(run, events, ctx){
      how long it had taken rather than by what it was doing). The state word and the steps count
      stay; agDur(sum.elapsedMs) is gone from here. sum.elapsedMs itself is untouched -- other
      screens (the Library row, the notifications) still use it. */
+  /* The same test the composer's footer uses (agLiveWait): the strip may only say it is waiting
+     for him when the question is actually in the rows underneath it. The run's status alone was
+     enough to print "Waiting for you" over a transcript with nothing in it to answer. sum.waiting
+     itself is left as it is -- the Library row and the notifications read it too. */
+  const asked = entries.some(e => e.live && (e.kind === "ask" || e.kind === "approval" || e.kind === "artifact"));
   const head = sum.live
-    ? `<span class="runstrip live"><span class="spark" aria-hidden="true">${AG_ICON.spark}</span><b class="shim">${sum.waiting ? "Waiting for you" : "Working"}</b></span>${agStopBtnHtml(run, sum, ctx)}`
+    ? `<span class="runstrip live"><span class="spark" aria-hidden="true">${AG_ICON.spark}</span><b class="shim">${sum.waiting && asked ? "Waiting for you" : "Working"}</b></span>${agStopBtnHtml(run, sum, ctx)}`
     : `<span class="ag-worked">${run.status === "failed" ? "Stopped with an error" : run.status === "stopped" ? "Stopped" : "Worked"}</span>`;
   return `<div class="ag-turn" data-run="${agEsc(run.run_id)}">
     <div class="u">${agEsc(run.request || run.topic || "")}</div>
@@ -1532,11 +1537,36 @@ function agResearchSettingsHtml(rs){
   </div>`;
 }
 
+/* THE QUESTION THE RUN SAYS IT IS WAITING ON, but only if it is really in the transcript.
+   Returns the live checkpoint row agEntryHtml is drawing, or null.
+
+   The run's own status is not enough to go on. A checkpoint is marked in two writes -- state
+   patched to "waiting", then the "waiting" event emitted (loop._wait) -- and the screen reads
+   the two from two files, so it can hold the first without the second. When it does, the footer
+   used to say "waiting for you" and "Type your answer, or pick an option above" beside a
+   transcript with no question and no options in it at all, which is what the friend's SustVest
+   run showed. Reading the drawn row instead of the status makes that impossible: the footer and
+   the transcript now come from the same projection, so the footer can only ask for an answer to
+   a question that is on the screen next to it. The SEND path is untouched and still keys off the
+   run's status, so a message typed here goes the same way it always did. */
+function agLiveWait(a, live){
+  if (!live || live.status !== "waiting") return null;
+  const rows = agStepsFromEvents((a && a.events && a.events[live.run_id]) || [], live);
+  for (let i = rows.length - 1; i >= 0; i--){
+    const e = rows[i];
+    if (e.live && (e.kind === "ask" || e.kind === "approval" || e.kind === "artifact")) return e;
+  }
+  return null;
+}
+
 function agComposerHtml(a){
   const live = agLiveRun();
-  const running = live && live.status === "running";
-  const waiting = live && live.status === "waiting";
-  const w = waiting ? (live.waiting_on || {}) : null;
+  /* `w` is the checkpoint as DRAWN, not as the status claims. A live run with nothing asked of
+     him on screen reads as working, which is the honest half of the pair: something is in
+     flight and there is nothing for him to answer yet. */
+  const w = agLiveWait(a, live);
+  const waiting = !!w;
+  const running = !!live && !waiting;
   const setup = agSetupOf(a.health);
   /* NEVER DISABLED WHILE RUNNING (2026-09-17). Typing here used to be blocked the whole time a
      run was live, with Stop as the only thing you could click in this spot -- one stray tap

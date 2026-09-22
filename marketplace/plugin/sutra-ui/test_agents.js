@@ -2319,6 +2319,58 @@ test("Stop lives in the run's own status row", () => {
              "and Stop sits beside it, plain (not armed) for a run this young: " + html);
 });
 
+/* ── "waiting for you" is only ever said with the question beside it ───────── */
+/* The friend's SustVest run (2026-09-22) showed a live spinner, a footer saying "waiting for you"
+   and "Type your answer, or pick an option above", and no question and no options anywhere. The
+   run is marked waiting in two writes -- state patched, THEN the event emitted (loop._wait) --
+   and the screen reads the two from two files, so it can hold the status without the question. */
+const WAIT_EV = [
+  { t: "2026-09-22T09:00:00Z", type: "step_started", id: "s1", label: "Working out what is worth writing", tool: "build_assets", stage: "setup" },
+  { t: "2026-09-22T09:05:00Z", type: "waiting", kind: "question", stage: "setup", call_id: "c9",
+    question: "Which of these is the article about?", options: ["Time to fill", "Cost per hire"] },
+];
+test("a run that says it is waiting, with the question on screen, asks for the answer as before", () => {
+  const a = agReset();
+  a.chatId = "c1";
+  a.chat = { runs: [{ run_id: "r1", status: "waiting", started_at: new Date().toISOString(),
+                      waiting_on: { kind: "question", options: ["Time to fill", "Cost per hire"] } }] };
+  a.events = { r1: WAIT_EV };
+  const html = A.agComposerHtml(a);
+  assert.ok(/waiting for you/.test(html), "the footer says so: " + html);
+  assert.ok(/Type your answer, or pick an option above/.test(html), "and points at the options that are really drawn");
+});
+test("waiting with NO question in the transcript never invites an answer", () => {
+  const a = agReset();
+  a.chatId = "c1";
+  a.chat = { runs: [{ run_id: "r1", status: "waiting", started_at: new Date().toISOString(),
+                      current_step: "build_assets",
+                      waiting_on: { kind: "question", options: ["Time to fill", "Cost per hire"] } }] };
+  a.events = { r1: [WAIT_EV[0]] };          // the status arrived; the "waiting" event has not
+  const html = A.agComposerHtml(a);
+  assert.ok(!/waiting for you/.test(html), "it must not say it is waiting for him: " + html);
+  assert.ok(!/pick an option above/.test(html), "there are no options above to pick");
+  assert.ok(!/Type your answer/.test(html), "and nothing was asked, so there is no answer to type");
+  assert.ok(/the agent is working/.test(html), "it reads as what it is: something in flight, nothing owed");
+});
+test("a question already answered does not leave the footer waiting", () => {
+  const a = agReset();
+  a.chatId = "c1";
+  a.chat = { runs: [{ run_id: "r1", status: "waiting", started_at: new Date().toISOString(),
+                      waiting_on: { kind: "question", options: ["a"] } }] };
+  a.events = { r1: WAIT_EV.concat([{ t: "2026-09-22T09:06:00Z", type: "resumed", by: "user", answer: "Time to fill" }]) };
+  const html = A.agComposerHtml(a);
+  assert.ok(!/waiting for you/.test(html), "the row it was waiting on is answered and no longer live: " + html);
+});
+test("the run's own status row holds the same line as the footer", () => {
+  const run = { run_id: "r1", status: "waiting", started_at: new Date(Date.now() - 5000).toISOString(),
+                waiting_on: { kind: "question", options: [] } };
+  const asked = A.agRunHtml(run, WAIT_EV, { now: Date.now() });
+  assert.ok(/Waiting for you/.test(asked), "with the question under it, the strip says it is waiting");
+  const blind = A.agRunHtml(run, [WAIT_EV[0]], { now: Date.now() });
+  assert.ok(!/Waiting for you/.test(blind), "without it, the strip must not claim to be: " + blind);
+  assert.ok(/>Working</.test(blind), "it says what is true instead");
+});
+
 /* the three tests below need agAction/agSend to really run and settle before their asserts, so
    they are async and live in the atest() sweep near the end of this file, with the same title. */
 
