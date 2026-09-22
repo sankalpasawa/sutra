@@ -1370,6 +1370,24 @@ test("the announced artifact is clickable, to the same panel the checkpoint used
   assert.ok(/ag-openlink open/.test(open), "the one already on screen marks itself");
 });
 
+/* The line used to end "It is in the Library too" on every artifact, which sent the owner's
+   friend looking for the brand pack in a tab that has never held one (SustVest, 2026-09-22). */
+test("the second home named is the tab the artifact is really in, not always the Library", () => {
+  const line = (view, artifact) => A.agEntryHtml({ kind: "ready", artifact, view, label: "it", t: "t" }, { run_id: "r1" });
+  assert.ok(/It is in the Library tab too\./.test(line("research_brief", "research.json")), "research brief");
+  assert.ok(/It is in the Library tab too\./.test(line("blueprint", "blueprint.json")), "blueprint");
+  assert.ok(/It is in the Library tab too\./.test(line("article", "draft.md")), "the draft");
+  assert.ok(/It is in the Knowledge tab too\./.test(line("brand_pack", "brand.json")),
+            "the brand pack is Knowledge, and saying Library is the bug this replaces");
+  assert.ok(/It is in the Asset ideas tab too\./.test(line("topic_list", "topics.json")), "the idea sheet");
+  assert.ok(/It is in the Prompts tab too\./.test(line("prompt", "writer.md")), "a prompt");
+});
+test("an artifact with no known home says nothing rather than guessing a tab", () => {
+  const html = A.agEntryHtml({ kind: "ready", artifact: "x.json", view: "something_new", label: "it", t: "t" }, { run_id: "r1" });
+  assert.ok(/Ready to read: /.test(html), "the line still draws");
+  assert.ok(!/It is in the/.test(html), "and it makes no claim about where it also lives: " + html);
+});
+
 test("an artifact_ready in the middle of a run does not become the end of the transcript", () => {
   const evs = [
     { t: "2026-09-09T09:00:00Z", type: "step_started", id: "s1", label: "Researching", tool: "run_research", stage: "research" },

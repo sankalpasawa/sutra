@@ -21,6 +21,17 @@ const AG_STAGES = [["setup", "Setup"], ["topic", "Topic"], ["research", "Researc
 const AG_VIEW_TITLE = { brand_pack: "The brand pack", topic_list: "Topic ideas", research_brief: "Research brief",
                         blueprint: "Article plan", article: "The draft", brand_file: "Brand file", page: "Page",
                         prompt: "Prompt" };
+/* WHERE EACH ARTIFACT ACTUALLY LIVES once the run has moved on (owner's friend, SustVest run,
+   2026-09-22). The "Ready to read" line used to end "It is in the Library too" whatever the
+   artifact was, so it sent people hunting for the brand pack in a tab that has never held one.
+   Only the three writing artifacts are Library rows; the brand pack and its files are Knowledge,
+   the idea sheet is Asset ideas, a prompt is Prompts. The names here are the sidebar's own words
+   (AG_GUIDE_TABS follows the same list), because that is the label the person has to go and
+   click. A view missing from this map gets NO second-home sentence at all: saying nothing is
+   honest, and guessing is exactly what caused the bug. */
+const AG_VIEW_HOME = { brand_pack: "Knowledge", brand_file: "Knowledge", page: "Knowledge",
+                       topic_list: "Asset ideas", research_brief: "Library", blueprint: "Library",
+                       article: "Library", prompt: "Prompts" };
 const AG_POLL_LIVE_MS = 1000;
 const AG_POLL_IDLE_MS = 4000;
 
@@ -725,10 +736,11 @@ function agEntryHtml(e, ctx){
     case "ready": {
       const isOpen = ctx.panel && ctx.panel.name === e.artifact && ctx.panel.run_id === ctx.run_id;
       const label = e.label || (AG_VIEW_TITLE[e.view] || "it").toLowerCase();
+      const home = AG_VIEW_HOME[e.view];
       return `<div class="ag-step quiet"><span class="ag-glyph" aria-hidden="true"></span>
         <div class="ag-note">Ready to read: <button class="ag-openlink ${isOpen ? "open" : ""}" type="button"
           data-ag="open" data-arg="${agEsc(e.artifact)}" data-view="${agEsc(e.view)}" data-run="${agEsc(ctx.run_id || "")}"
-          >${agEsc(label)}</button>. It is in the Library too.</div></div>`;
+          >${agEsc(label)}</button>.${home ? ` It is in the ${agEsc(home)} tab too.` : ""}</div></div>`;
     }
     case "mem":
       return `<div class="ag-step mem"><span class="ag-glyph" aria-hidden="true">${agGlyph(e)}</span>
