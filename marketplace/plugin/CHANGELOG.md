@@ -1,6 +1,15 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.293.1 (2026-09-23)
+
+- Released from v2.293.0-desktop..HEAD: 3 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - The step that sees the finished shape may finally fix it
+  - The card filter stops throwing away the basics it was just sent to find
+  - the two gaps a department's own chat hit, fixed
+- Changed: 21 file(s), +760/-31
+- New test suites: test_card_filter_stakes.py test_shape_pass.py
+
 ## 2.293.0 (2026-09-22)
 
 - Released from v2.292.0-desktop..HEAD: 17 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
