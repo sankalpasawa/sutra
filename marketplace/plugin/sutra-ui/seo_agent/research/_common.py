@@ -20,6 +20,7 @@ TIGHT_LIMIT = 200            # Step 1 — TIGHT net (keyword_suggestions, one ca
 SCORE_BATCH_KW = 60          # Step 3: keywords per scorer call (BATCH in s3_score.py)
 SERP_DEPTH = 20              # Step 4 — SERP on the primary
 PAA_CLICK_DEPTH = 3
+SAME_ARTICLE_TRIES = 3    # how many head terms get their ranking pages checked before one is taken anyway
 PAGES_TO_READ = 3            # Step 5: how many top URLs to free-fetch
 HEADINGS_PER_PAGE = 15       # Step 5: h1-h3 kept per page (the original's cap)
 # Credit guard (pre-flight): below this balance the paid run does not start. The original used $1;

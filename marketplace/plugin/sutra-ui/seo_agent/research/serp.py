@@ -12,6 +12,7 @@ import json
 import re
 
 from .. import llm
+from .. import llm
 from ..tools import dfs
 from . import _common as _c
 
@@ -21,6 +22,37 @@ def fetch(primary, company):
                             location_name=company.get("location_name") or "United States",
                             language_code=company.get("language_code") or "en")
     return {"extract": got.get("extract") or {}, "cost": got.get("cost") or 0.0, "demo": bool(got.get("demo"))}
+
+
+def same_article(keyword, extract, topic, world, company=None):
+    """Would somebody searching this keyword recognise our article as the right kind of page?
+
+    (ok, why). Fails OPEN in every direction: no pages, an unreadable reply, an exception -- all
+    answer yes. A check that cannot run must never be the reason a run stops, and the cost of a
+    false rejection is a worse keyword, which is the thing this exists to prevent.
+
+    WHY IT EXISTS (owner, 2026-09-22). The keyword judge is told to take the highest-volume head
+    term that clears difficulty, and nothing ever asked whether a page ranking for it would be THIS
+    article. "Skills Assessment: From Resume Claim to Cut Score" was built on "behavioral interview
+    questions" (12,100/mo), so the winners it studied were "30 questions to ask" listicles and every
+    demand signal for the run -- table stakes, format, gaps, the rewritten angle -- came from the
+    wrong article. The run cost $0.44 of DataForSEO and hours of model time researching something
+    else. One model call here is the cheapest guard in the engine.
+    """
+    rows = [r for r in (extract or {}).get("top_organic") or [] if isinstance(r, dict) and r.get("url")]
+    if not rows:
+        return True, "no ranking pages came back, so there is nothing to check against"
+    listed = "\n".join("- %s\n  %s" % ((r.get("title") or "(no title)").strip(), r["url"])
+                        for r in rows[:10])
+    try:
+        got = llm.json_call(_c.prompt("same-article", topic=_c.na(topic),
+                                      keyword=keyword, ranking_pages=listed,
+                                      **_c.world_tokens(world))) or {}
+    except Exception as e:      # noqa: BLE001 -- see "fails OPEN" above
+        return True, "the check could not run (%s)" % str(e)[:80]
+    if not isinstance(got, dict) or "same_article" not in got:
+        return True, "the check gave no verdict, so the keyword stands"
+    return bool(got.get("same_article")), str(got.get("why") or "").strip()
 
 
 def _readlist(text, extract):

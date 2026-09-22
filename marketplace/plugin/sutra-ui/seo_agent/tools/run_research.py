@@ -420,7 +420,40 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
                                                   "; shared with another field" if primary.get("split_world") else ""))
 
     # ---- 4. the live SERP + the snapshot ---------------------------------------------------------
-    sp, _ = step("serp", lambda: serp.fetch(primary["keyword"], company))
+    # IS THIS EVEN THE SAME ARTICLE? (owner, 2026-09-22.) The judge takes the highest-volume head
+    # term that clears difficulty and nothing asks whether a page ranking for it would be THIS
+    # article. "Skills Assessment: From Resume Claim to Cut Score" was built on "behavioral
+    # interview questions" (12,100/mo), so the pages it studied were "30 questions to ask"
+    # listicles and every demand signal for the run came from the wrong article.
+    #
+    # THE CHECK IS ALMOST FREE because the SERP is bought anyway: only a REJECTION costs an extra
+    # fetch. Up to SAME_ARTICLE_TRIES candidates, then it takes the best it has and says so. It
+    # never halts -- an article written on a second-choice keyword is worth far more than a run
+    # that stopped.
+    kw_log = []
+    _tried = [primary] + list(final.get("alternates") or [])
+    for _i, cand in enumerate(_tried[:_c.SAME_ARTICLE_TRIES]):
+        sp, _ = step("serp" if _i == 0 else "serp-%d" % _i,
+                     lambda c=cand: serp.fetch(c["keyword"], company))
+        ok_kw, why_kw = serp.same_article(cand["keyword"], sp["extract"], topic, w, company)
+        kw_log.append({"keyword": cand["keyword"], "same_article": ok_kw, "why": why_kw})
+        if ok_kw:
+            if _i:
+                say("Changed the keyword: %s" % cand["keyword"],
+                    "%s was dropped because %s" % (primary["keyword"], kw_log[0]["why"] or "its "
+                                                   "ranking pages are a different article"))
+                primary = cand
+                final["primary"] = cand
+            break
+        say("That keyword is a different article", "%s: %s" % (cand["keyword"], why_kw))
+    else:
+        # Nothing passed. Keep the judge's pick rather than a runner-up nobody vouched for, and
+        # make the doubt visible instead of burying it.
+        sp, _ = step("serp", lambda: serp.fetch(primary["keyword"], company))
+        say("Writing on %s anyway" % primary["keyword"],
+            "no measured keyword's ranking pages looked like this article; the research may not "
+            "match what people searching it expect")
+    final["keyword_checks"] = kw_log
     extract = sp["extract"]
     snap, _ = step("snapshot", lambda: serp.snapshot(extract, topic, angle, w, primary["keyword"], company))
     say("Read the first page of Google",
