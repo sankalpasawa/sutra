@@ -1239,8 +1239,14 @@ async function dpEmbedOpen(){
      operator's global mode, which is read-only by default. The native id comes
      from the provider's own map, never a literal. */
   try {
-    const opt = (typeof accessOptionsFor === "function")
-      ? accessOptionsFor(typeof providerId === "function" ? providerId() : "claude").find(o => o.id === "edits") : null;
+    const opts = (typeof accessOptionsFor === "function")
+      ? accessOptionsFor(typeof providerId === "function" ? providerId() : "claude") : [];
+    /* "Approve for me" before "Accept edits": in Accept edits a department chat
+       could not even list its own folder -- every command waited for a click
+       nobody makes inside a card (found 2026-09-22 running Deckem's Identity
+       chat). The department works in its own folder; anything outside it still
+       asks. */
+    const opt = opts.find(o => o.id === "auto") || opts.find(o => o.id === "edits") || null;
     if (opt && opt.mode){ S.perm = S.perm || {}; S.perm[s.id] = opt.mode; }
   } catch (e) {}
   S.openPanes = [s.id];
