@@ -167,7 +167,17 @@ EXCLUDED_REGIONS = {
     # He pastes five of his own published paragraphs in as the bar to hit. Sutra fills that from the
     # company's own articles at run time ({{WRITING_EXAMPLES}}, filled in write/readable.py), so the
     # passages themselves and the sentences that count them ("These five") cannot match and must not.
-    "readable.md": [("REAL PUBLISHED ARTICLES BY", "  · The reader is")],
+    "readable.md": [
+        ("REAL PUBLISHED ARTICLES BY", "  · The reader is"),
+        # 2026-09-22 (Devansh approved, specs/parked-2026-09-22-engine-fixes.md item 9). His copy's
+        # item 5 names three keyword groups; Sutra's names four, because Sutra carries a fourth the
+        # engine buys and his workflow does not -- the SECONDARIES research chose and paid for, which
+        # no heading took. They reach the article here or nowhere: blend is handed only the primary
+        # and its variations, and this is the last step that rewrites the article whole. The added
+        # wording is the rule that comes with them ("only where they fit naturally... never bend a
+        # sentence to hold a phrase"), which is permission, not a quota.
+        ("5. THE KEYWORDS", "THE HEADLINE MUST STILL BE TRUE"),
+    ],
     # Aparna's 2026-09-17 Slack review of three shipped articles (blog 3 was about 45% TestGorilla,
     # with TestGorilla named in two H2s). Every rule below was written straight into Sutra's prompts
     # and has no counterpart in his repo: his workflow never wires a competitor list to the writer,

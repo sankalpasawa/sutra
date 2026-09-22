@@ -14,6 +14,17 @@ THIS step could break.
   5c  fix_plain (plain-english.md, at most 2 rounds): the worst-scoring blocks go back with their hard
       words named; a round that made the score worse is discarded whole.
   then judge_coverage (readable-coverage.md) and check(): every row protects something an earlier step bought.
+
+THE KEYWORDS END UP HERE, and that is deliberate (2026-09-22). blend weaves the primary and its
+variations into the body, and then wrapper, coherence and this step each rewrite the whole article
+after it, while assemble -- last of all -- counts what survived. So the keywords were placed, the
+article was rewritten three more times, and nothing put back what a later rewrite removed. This
+step is the last one that rewrites the article whole; everything after it is narrow (sentence
+length, AI-slop phrasing, links). So it is the step that holds the keyword list while it rebuilds,
+and it is where the SECONDARIES finally get used: research chooses and pays for them, a heading
+writer is offered them once, and anything no heading took has until now gone to a log nobody reads.
+They are handed over as PERMISSION, never as a quota -- see unused_secondaries() and section 5 of
+readable.md. Forcing a phrase in is exactly how an article starts reading as SEO filler.
 """
 import re
 
@@ -567,6 +578,26 @@ def _band_middle(plan):
     return (lo + hi) // 2 if lo and hi else (hi or lo)
 
 
+def unused_secondaries(ks):
+    """The secondaries research chose and PAID FOR that nothing has used yet.
+
+    headings.py has already worked this out and written it down: st["keywords"]["unplaced"] is the
+    secondary pool minus whatever a heading took. Nothing between there and here puts one in the
+    prose -- write_body is never shown a keyword at all, and blend is handed the primary and its
+    variations and nothing else -- so a phrase on this list is genuinely nowhere in the article,
+    and this step is the last one that can still rewrite a sentence to hold it.
+
+    A row is {"keyword": ..., "why": ...}; a plain string is accepted too, because an older run's
+    cached work file may carry one.
+    """
+    out = []
+    for row in (ks or {}).get("unplaced") or []:
+        k = str((row.get("keyword") if isinstance(row, dict) else row) or "").strip()
+        if k and k not in out:
+            out.append(k)
+    return out
+
+
 def _examples():
     ex = C.sh.brand_file("writing-examples.md").strip()
     return ex[:C.READABLE_EXAMPLES_CHARS] if ex else ("(no published examples on file for this brand; hold to the three moves "
@@ -579,6 +610,11 @@ def run(w, plan, st, say=lambda *a: None):
     prim = ks.get("primary") or "(none)"
     var = ", ".join(ks.get("variations") or []) or "(none)"
     h2 = ", ".join(ks.get("section_keywords") or []) or "(none)"
+    # THE SECONDARIES ARRIVE HERE AND NOWHERE ELSE. Research chooses and pays for them, a heading
+    # writer is offered them once, and until now anything no heading took was written to a log and
+    # forgotten. This is the last step that rewrites the article whole, so it is where they get
+    # their one chance -- as permission, never as a quota. See unused_secondaries() above.
+    unused = ", ".join(unused_secondaries(ks)) or "(none — every one of them is already in a heading)"
     now = words(w)
     target = target_words(w, plan, st)
     stakes = plan.get("table_stakes") or []
@@ -598,7 +634,7 @@ def run(w, plan, st, say=lambda *a: None):
                       facts_keep="{:,}".format(keep), facts_drop="{:,}".format(max(0, facts - keep)),
                       archetype=archetype or "general article", format_rule=rule,
                       table_stakes="\n".join("   - %s" % x for x in stakes) or "   (none recorded)",
-                      primary_keyword=prim, variations=var, heading_keywords=h2,
+                      primary_keyword=prim, variations=var, heading_keywords=h2, unused_keywords=unused,
                       ease_now="%.0f" % reading_ease(w), ease_target="%.0f" % C.READABLE_EASE,
                       hard_words=render_hard_words(w), long_sentences=render_long_sentences(w),
                       writing_examples=_examples(), article=render(w), memory=C.sh.memory_block())

@@ -195,20 +195,42 @@ WHAT MUST SURVIVE, FIVE THINGS, AND ONLY THESE
    heading covering it carries that topic's own words rather than a renaming of them. A reader scans
    for the words already in their head. One that does not serve this article, drop in silence.
 
-5. THE KEYWORDS.
-   Main keyword:      {{PRIMARY_KEYWORD}}
-   Other forms of it: {{VARIATIONS}}
-   Bought per heading: {{HEADING_KEYWORDS}}
+5. THE KEYWORDS. Four groups, and each one wants something different from you. You are the LAST
+   step that rewrites this article whole, so whatever is true of the keywords when you hand back is
+   what ships.
 
-   Keep the main keyword where it already is, including in the opening. Do not add more of it.
+   Main keyword:                     {{PRIMARY_KEYWORD}}
+   Other forms of it:                {{VARIATIONS}}
+   Already used in headings:         {{HEADING_KEYWORDS}}
+   Chosen but not used anywhere yet: {{UNUSED_KEYWORDS}}
 
-   THE PER-HEADING ONES MATTER MOST TO YOU, because you are rewriting headings. Each was bought from
-   real search data for the section it sits in, and it is the only reason that section can be found.
+   THE MAIN KEYWORD IS ALREADY PLACED, in the headline and in the opening. Leave it where it is.
+   Do not add more of it.
+
+   THE OTHER FORMS OF IT are the same search typed differently, and an earlier step already swapped
+   them into sentences that were saying that thing in vaguer words. Keep the ones you find. If your
+   rebuild has lost one altogether you may put it back, but only into a sentence that was going to
+   say it anyway.
+
+   ALREADY USED IN HEADINGS MATTERS MOST TO YOU, because you are rewriting headings. Each was bought
+   from real search data for the section it sits in, and it is the only reason that section can be
+   found. They are spoken for, so do not go looking for places to repeat them in the prose.
 
    A HEADING YOU KEEP KEEPS ITS PHRASE, WORD FOR WORD. When you merge two sections, the surviving
    heading carries the phrase of the section it mostly is, and if the merged section genuinely covers
    both, carry both phrases, in the heading or in the first line under it. When you delete a section,
    its phrase goes with it, and that is allowed.
+
+   CHOSEN BUT NOT USED ANYWHERE YET is the list that needs a decision from you. The research chose
+   and paid for these, no heading took any of them, and nothing since has put one in the prose, so
+   right now they are nowhere in this article. You are the last step that can rewrite a sentence.
+
+   WORK THESE IN ONLY WHERE THEY FIT NATURALLY. IF ONE DOES NOT FIT, LEAVE IT OUT. NEVER BEND A
+   SENTENCE TO HOLD A PHRASE.
+
+   This is permission, not an instruction, and the difference is the whole point. An article written
+   around a list of phrases reads as filler, and a reader feels it in one paragraph. Leaving every
+   one of them out is a correct answer, and it is a better answer than one forced sentence.
 
 ════════════════════════════════════════════════════════════════════════
 THE HEADLINE MUST STILL BE TRUE WHEN YOU ARE DONE
