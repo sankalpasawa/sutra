@@ -578,7 +578,17 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
     # A research TEAM, not a keyword lookup: four mixed personas interview an expert, each question
     # grounded in what the last answer said. The dossier is written from what they retrieved, and
     # the cards are lifted out of the dossier, which is what lets one card cite two sources.
-    spine_ctx = {"spine": spn["spine"], "about": w["about"], "not_about": w["not_about"]}
+    # WHAT THE READER ALREADY WANTS TRAVELS WITH THE SPINE (owner, 2026-09-22). All three of these
+    # were measured half an hour ago and then dropped on the floor: the research conversation saw
+    # only the title, the angle, the spine and the world. Twelve questions shaped by our angle
+    # alone is why an article on skills assessments never asked what the types of skills assessment
+    # are, and so could never have a section about them however loudly the architect was told to
+    # write one. curate._article_block reads these, and curate._seed_questions turns the table
+    # stakes into the first questions each researcher is made to ask.
+    spine_ctx = {"spine": spn["spine"], "about": w["about"], "not_about": w["not_about"],
+                 "table_stakes": list(win.get("common_h2s") or []),
+                 "paa": list(snap.get("paa_on") or []) + list(snap.get("paa_off") or []),
+                 "ai_overview": (snap.get("ai_overview_text") or "").strip()}
     cur, reused_cur = step("curate", lambda: _curate(ctx, redo, topic, angle, spine_ctx, company, say))
     article_brief = curate._article_block(topic, angle, spine_ctx)
     dos = har = None

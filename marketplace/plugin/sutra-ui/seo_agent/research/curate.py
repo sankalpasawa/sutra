@@ -64,6 +64,13 @@ TURNS = 4                 # --turns 4, the original's run flag
 QUERIES_PER_TURN = 3      # max_search_queries_per_turn
 SEARCH_TOP_K = 5          # --topk 5
 FLOOR_TURNS = 3           # the breadth floor: no "thank you" before this many questions
+# HOW MANY OF EACH RESEARCHER'S TURNS ARE SPOKEN FOR (owner, 2026-09-22). Not a suggestion in a
+# prompt: the model is simply not asked on these turns, so it cannot decline. Two of four leaves
+# half the conversation free, which is where the interesting questions have always come from.
+# Asking nicely was tried and does not work -- the architect's own prompt shouts "AT LEAST 3 OR 4
+# OF THE EXPECTED TOPICS SHOULD BE SECTIONS" in capitals and is ignored, because by then the
+# evidence for them does not exist. This is the step that makes it exist.
+RESERVED_TURNS = 2
 MAX_PAGES = 140           # every persona's reading, deduped, capped so one run cannot run away
 READ_TIMEOUT = 90.0       # wall clock for one turn's page reads; a slow host never holds the run
 TOTAL_TIMEOUT = 900.0     # and for the whole conversation: past this it stops asking and works
@@ -88,16 +95,42 @@ def _words(text, limit):
 
 
 def _article_block(topic, angle, spine_ctx):
-    """The brief every question and every section write sees, so nothing drifts off the article."""
+    """The brief every question and every section write sees, so nothing drifts off the article.
+
+    WHAT READERS ALREADY WANT IS PART OF THE BRIEF NOW (owner, 2026-09-22). Until today this was
+    five lines -- title, angle, spine, about, not-about -- and nothing else. The engine had ALREADY
+    measured, minutes earlier, what every ranking page covers, what people ask Google about this
+    keyword, and how Google answers it itself. None of it was passed on. So twelve questions were
+    asked shaped only by our angle, nobody asked about the basics every rival covers, no evidence
+    came back for them, no cluster formed, no box existed, and the architect could not build those
+    sections however loudly its own prompt demanded them. Aparna: "why did it not even start with
+    what are the different types of skills assessments." Because nobody asked.
+
+    Costs about 280 words on a brief of 150 against a 2,500-word conversation cap, so roughly a
+    tenth more prompt for the thing the whole research round is for.
+    """
     sc = spine_ctx or {}
-    return "\n".join([
+    out = [
         "- Title: %s" % topic,
         "- Distinct angle: %s" % (angle or "(none given yet)"),
         "- The spine (what this argues, for whom, what the reader can do at the end): %s"
         % (sc.get("spine") or "(not written yet)"),
         "- What this is about: %s" % (sc.get("about") or "(not stated)"),
         "- What this is NOT about: %s" % (sc.get("not_about") or "(not stated)"),
-    ])
+    ]
+    stakes = [str(x).strip() for x in (sc.get("table_stakes") or []) if str(x).strip()]
+    asked = [str(x).strip() for x in (sc.get("paa") or []) if str(x).strip()]
+    aio = str(sc.get("ai_overview") or "").strip()
+    if stakes:
+        out += ["", "WHAT EVERY PAGE THAT RANKS FOR THIS ALREADY COVERS. A reader who arrives",
+                "expecting these and cannot find them leaves before reaching anything we do better:"]
+        out += ["  - " + x for x in stakes]
+    if asked:
+        out += ["", "WHAT PEOPLE ACTUALLY ASK GOOGLE ABOUT THIS, in their own words:"]
+        out += ["  - " + x for x in asked]
+    if aio:
+        out += ["", "HOW GOOGLE ANSWERS IT RIGHT NOW:", "  " + aio]
+    return "\n".join(out)
 
 
 def pick_team(topic, angle, spine_ctx, company, n=None):
@@ -125,6 +158,25 @@ def pick_team(topic, angle, spine_ctx, company, n=None):
         if isinstance(r, dict) and (r.get("role") or "").strip():
             team.append({"role": r["role"].strip(), "focus": (r.get("focus") or "").strip()})
     return team
+
+
+def _seed_questions(stakes, n_researchers):
+    """One plain question per expected topic, dealt out to the researchers.
+
+    Returns a list per researcher, each at most RESERVED_TURNS long. A topic is turned into a
+    question by asking it the way a person would, because these go through the same query builder
+    the model's own questions do and a bare heading ("Time to Fill") makes a poor search.
+
+    Deliberately round-robin rather than block-per-researcher: the four personas are chosen to
+    disagree (the builder, the sceptic, the evidence one, the practitioner), so spreading the
+    expected topics across all of them gets each one answered from a different direction.
+    """
+    topics = [str(x).strip() for x in (stakes or []) if str(x).strip()]
+    per = [[] for _ in range(max(1, n_researchers))]
+    for i, t in enumerate(topics[:max(1, n_researchers) * RESERVED_TURNS]):
+        q = t if t.endswith("?") else "What does a reader need to know about %s, for this article?" % t
+        per[i % len(per)].append(q)
+    return per
 
 
 def _ask(topic, article, persona, turns):
@@ -247,12 +299,16 @@ def _dead(budget):
     return budget["failed"] >= FAIL_FAST and budget["failed"] == budget["searched"]
 
 
-def _converse(persona, topic, article, company, pages, budget, say=None, turns=None, on_turn=None):
+def _converse(persona, topic, article, company, pages, budget, say=None, turns=None, on_turn=None,
+              seeds=None):
     """One persona's interview: TURNS questions, each one searched and answered.
 
     `turns` is the conversation so far when a saved round is resumed; `on_turn` is told after every
-    finished turn, so the work can be kept."""
+    finished turn, so the work can be kept. `seeds` are the expected topics this researcher must
+    cover before it is free to ask its own questions -- see RESERVED_TURNS.
+    """
     turns = list(turns or [])
+    seeds = list(seeds or [])
     for _ in range(TURNS - len(turns)):
         if _dead(budget):
             break
@@ -264,11 +320,19 @@ def _converse(persona, topic, article, company, pages, budget, say=None, turns=N
                 say("Stopping the interviews here", "the research has taken long enough; writing "
                     "up what the team already found")
             break
-        q = _ask(topic, article, persona, turns)
-        if not q:
-            break
-        if q.lower().startswith(END) and len(turns) >= FLOOR_TURNS:
-            break
+        # A RESERVED TURN IS NOT ASKED FOR, IT IS SET. The model is never given the chance to
+        # decline an expected topic, which is the whole difference between this and the version
+        # that asked politely and was ignored. A resumed round picks its seeds up from where the
+        # turn count left off, so a restart never re-asks a question it already paid to answer.
+        seed = seeds[len(turns)] if len(turns) < len(seeds) else ""
+        if seed:
+            q = seed
+        else:
+            q = _ask(topic, article, persona, turns)
+            if not q:
+                break
+            if q.lower().startswith(END) and len(turns) >= FLOOR_TURNS:
+                break
         qs = _queries(topic, q)
         urls, cost, demo, failed = [], 0.0, False, 0
         for query in qs:
@@ -361,11 +425,22 @@ def run(topic, angle, spine_ctx, company, own_domain="", max_pages=MAX_PAGES, sa
                          "cost": budget["cost"], "demo": budget["demo"]}
             keep(state)
 
+    # THE EXPECTED TOPICS, DEALT OUT BEFORE ANYONE ASKS ANYTHING. Each researcher's first
+    # RESERVED_TURNS questions are set from what every ranking page covers, so the evidence for
+    # those sections exists whatever the free questions turn out to be. Round-robin, so each
+    # expected topic is answered by a differently-minded researcher.
+    seeded = _seed_questions((spine_ctx or {}).get("table_stakes"), len(team))
+    if say and any(seeded):
+        say("Putting the expected topics to the researchers first",
+            "%d of the %d questions are set from what every ranking page covers"
+            % (sum(len(x) for x in seeded), len(team) * TURNS))
+
     def converse(r):
         if r["role"] in done:
             return prior.get(r["role"]) or []
         return _converse(r, topic, article, company, pages, budget, say=say,
-                         turns=prior.get(r["role"]), on_turn=on_turn)
+                         turns=prior.get(r["role"]), on_turn=on_turn,
+                         seeds=seeded[team.index(r)] if team.index(r) < len(seeded) else [])
 
     with llm.pool(len(team)) as pool:
         results = list(pool.map(converse, team))
