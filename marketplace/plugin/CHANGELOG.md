@@ -1,6 +1,14 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.292.0 (2026-09-22)
+
+- Released from v2.291.8-desktop..HEAD: 2 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - sutra-ui: slice I -- every function of a department runs a picked template and carries the live Sutra chat
+  - sutra-ui: function templates repository (slice I gate 1): a Default plus Money movement and Product build for each of the five functions, derived narrowing-only; test_function_templates.py is the law (59 checks)
+- Changed: 32 file(s), +1774/-35
+- New test suites: test_embed.js test_function_templates.py
+
 ## 2.291.8 (2026-09-22)
 
 **Shadow is a conversation with one other person, and it answers you in its own words** (founder, 2026-09-21, seventeen passes over the Shadow surface).
