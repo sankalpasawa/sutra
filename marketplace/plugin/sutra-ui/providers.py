@@ -210,31 +210,48 @@ def _known_bin_dirs(binaries):
 
 
 #: Where bundle-runtime.sh puts the vendored Node, relative to the payload root.
-#: One string, because deepseek_install's npm search and the spawn PATH both
-#: need it and a second copy is a second thing to keep in step.
-BUNDLED_NODE_SUBDIR = os.path.join("node", "bin")
+#: BUILD-SPECIFIC, because python-build-standalone and nodejs.org lay the two
+#: interpreters out differently on the two platforms:
+#:
+#:   macOS   payload/node/bin/node        payload/python/bin/python3
+#:   Windows payload/node/node.exe        payload/python/python.exe
+#:
+#: So on Windows node.exe sits at the ROOT of node/ (no bin/ level) and the
+#: interpreter is one directory shallower than on POSIX. bundled_node_bin_dir
+#: accounts for both. One string per platform, because deepseek_install's npm
+#: search and the spawn PATH both need it and a second copy is a second thing to
+#: keep in step.
+_IS_WINDOWS = (os.name == "nt")
+BUNDLED_NODE_SUBDIR = "node" if _IS_WINDOWS else os.path.join("node", "bin")
+_BUNDLED_NODE_EXE = "node.exe" if _IS_WINDOWS else "node"
 _BUNDLED_NODE_DONE = False
 
 
 def bundled_node_bin_dir():
-    """`payload/node/bin` inside a packaged Sutra.app, or None. Never raises.
+    """The vendored Node's directory inside a packaged Sutra build, or None.
+    Never raises. `payload/node/bin` on the macOS .app, `payload/node` on the
+    Windows .exe (node.exe has no bin/ level there).
 
-    None IS THE NORMAL ANSWER outside the DMG. A checkout, a dev server and the
-    test suite all have no payload, and every caller has to work the same way
-    there as it did before Node was bundled -- so this returns None rather than
-    guessing, and the callers fall back to the machine's own Node.
+    None IS THE NORMAL ANSWER outside the packaged build. A checkout, a dev
+    server and the test suite all have no payload, and every caller has to work
+    the same way there as it did before Node was bundled -- so this returns None
+    rather than guessing, and the callers fall back to the machine's own Node.
 
-    Resolved from sys.executable FIRST. In the packaged app the interpreter is
-    `payload/python/bin/python3`, which fixes the payload root exactly; __file__
-    is the fallback because this module lives at `payload/plugin/sutra-ui/`,
-    which is the same root two levels further down. Checking both means a build
-    that rearranges one of the two does not silently lose Node.
+    Resolved from sys.executable FIRST. In the packaged app the interpreter
+    fixes the payload root exactly -- but at a DIFFERENT depth per platform
+    (macOS `payload/python/bin/python3`, Windows `payload/python/python.exe`),
+    so the parent index is build-specific. __file__ is the fallback because this
+    module lives at `payload/plugin/sutra-ui/`, which is the same root two levels
+    further down ON BOTH platforms. Checking both means a build that rearranges
+    one of the two does not silently lose Node.
     """
     roots = []
+    # payload/python/python.exe -> parents[1]; payload/python/bin/python3 -> parents[2]
+    exe_depth = 1 if _IS_WINDOWS else 2
     try:
         exe = Path(sys.executable).resolve()
-        if len(exe.parents) >= 3:
-            roots.append(exe.parents[2])         # payload/python/bin/python3
+        if len(exe.parents) > exe_depth:
+            roots.append(exe.parents[exe_depth])
     except Exception:                            # noqa: BLE001
         pass
     try:
@@ -246,7 +263,8 @@ def bundled_node_bin_dir():
     for root in roots:
         d = root / BUNDLED_NODE_SUBDIR
         try:
-            if (d / "node").is_file() and os.access(str(d / "node"), os.X_OK):
+            node = d / _BUNDLED_NODE_EXE
+            if node.is_file() and os.access(str(node), os.X_OK):
                 return str(d)
         except OSError:
             continue
