@@ -3278,6 +3278,57 @@ test("an empty whole-article instruction is refused before any model call", () =
   assert.ok(/Say what should change in the article/.test(a.libArt.error));
 });
 
+/* ── 7a: the whole-article rewrite shows it is working ─────────────────────────
+   The section rewrite dims, labels and sweeps its own .ag-artsec. The article rewrite had no
+   section to attach to, so it animated nothing at all: you pressed the button and the screen sat
+   there. The body itself is what is being rewritten, so it takes the same three things. */
+test("the whole article dims and says Rewriting while the model has it", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libart", { getAttribute: () => "lib7" });
+  const idle = A.agPanelHtml(a);
+  assert.ok(!/ag-doc rewriting/.test(idle) && !/rewritelbl/.test(idle), "nothing yet: " + idle.slice(0, 200));
+  a.libArt.busy = true;
+  const busy = A.agPanelHtml(a);
+  assert.ok(/class="ag-doc rewriting"/.test(busy), "the whole body carries the class, not one section: " + busy.slice(0, 400));
+  assert.ok(/<span class="rewritelbl" role="status">Rewriting/.test(busy), "and says so in words, for anyone who cannot see the sweep");
+  assert.ok(!/ag-artsec[^"]*rewriting/.test(busy), "no single section claims to be the one being rewritten");
+});
+test("the article-wide rewrite animation is gated on prefers-reduced-motion, like the section one", () => {
+  const gate = CSS.slice(CSS.indexOf("@media (prefers-reduced-motion:no-preference){"),
+                         CSS.indexOf("@keyframes agRewriteSweep"));
+  assert.ok(/\.ag-doc\.rewriting\{/.test(gate), "the dim and the accent edge are inside the gate");
+  assert.ok(/\.ag-doc\.rewriting::before\{/.test(gate), "and so is the sweep");
+  assert.ok(/\.ag-doc\.rewriting \.ag-artsec\{opacity/.test(gate), "the article's own text is what dims");
+  const lbl = CSS.slice(CSS.indexOf(".ag-doc > .rewritelbl{"), CSS.indexOf("}", CSS.indexOf(".ag-doc > .rewritelbl{")));
+  assert.ok(lbl.length > 10 && CSS.indexOf(".ag-doc > .rewritelbl{") > CSS.indexOf("@keyframes agLineIn"),
+            "but the WORD is outside it: a reduced-motion reader is still owed it");
+});
+
+/* ── 7b: "Use this" was rendered and unreachable ───────────────────────────────
+   `.ag-editbox textarea.tall{min-height:60vh}` (written for the full-page file and prompt
+   editors) has the same specificity as `.ag-secbox textarea.tall` and comes later in the file,
+   so it won. The whole-article instruction box -- the only .ag-secbox textarea carrying `tall` --
+   was 60vh high inside a 340px side panel, which pushed the diff and the Use this row past the
+   bottom of that panel on any laptop-sized window. */
+test("the instruction box in the side panel is sized by the side panel, whatever comes later in the file", () => {
+  assert.ok(/\.ag-secpanel \.ag-editbox textarea\.tall\{/.test(CSS),
+            "three classes, so it beats .ag-editbox textarea.tall on specificity and not on order");
+  const scoped = CSS.slice(CSS.indexOf(".ag-secpanel .ag-editbox textarea.tall{"),
+                           CSS.indexOf("}", CSS.indexOf(".ag-secpanel .ag-editbox textarea.tall{")));
+  assert.ok(/min-height:180px/.test(scoped) && !/60vh/.test(scoped),
+            "and it is a box, not most of the window: " + scoped);
+  const panel = CSS.slice(CSS.indexOf(".ag-secpanel{"), CSS.indexOf(".ag-secpanelh{"));
+  assert.ok(/overflow-y:auto/.test(panel), "the panel still scrolls, so a long diff is never a dead end");
+});
+test("Use this is drawn in the same box as the diff, so nothing can separate them", () => {
+  const a = libPanel(SEC.md);
+  A.agAction("libart", { getAttribute: () => "lib7" });
+  a.libArt.proposal = { proposed: "x", diff: [] };
+  const html = A.agPanelHtml(a);
+  assert.ok(/data-ag="libartuse"/.test(html),
+            "even a proposal whose diff came back empty still offers the button: " + html.slice(0, 200));
+});
+
 /* ── the typing bug (Aparna, 2026-09-17) ────────────────────────────────────────
    "it only lets me type one letter at a time" in the per-section editor. agDraw restores the
    caret after it repaints #agPanel, but the list it restored used to name only the two

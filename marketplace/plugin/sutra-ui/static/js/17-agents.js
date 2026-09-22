@@ -2037,12 +2037,20 @@ function agLibArticleHtml(p, a){
   if (!secs.length) return `<div class="zero"><h4>Empty article</h4></div>`;
   const ed = a.libSec;
   const dirty = !!(a.libBuf && a.libBuf.dirty);
+  /* THE WHOLE-ARTICLE REWRITE HAS TO LOOK LIKE SOMETHING TOO (spec item 7a). The section rewrite
+     dims, labels and sweeps the one .ag-artsec it is working on; the article rewrite had no
+     section to point at, so it showed nothing at all and the screen just sat there. The body
+     itself -- .ag-doc -- is what is being rewritten, so the same three things land on it. Gated
+     on a.libArt.busy exactly the way `rewriting` below is gated on the section editor's own
+     busy, and the motion half is behind prefers-reduced-motion in agents.css, same as the
+     section's. */
+  const artRewriting = !!(a.libArt && a.libArt.busy);
   /* No meta line here any more (spec item 6: the word/section/team count is gone, to leave the
      room the right-hand edit panel needs). "Unsaved changes" still needs to say so somewhere --
      it moves onto the conflict/notice area instead of being dropped silently. */
   return `${dirty ? `<p class="ag-sub" style="margin:0 0 10px"><b>unsaved changes</b></p>` : ""}
     ${agLibConflictHtml(a.libConflict, p.libId)}
-    <div class="ag-doc">${secs.map(s => {
+    <div class="ag-doc${artRewriting ? " rewriting" : ""}">${artRewriting ? `<span class="rewritelbl" role="status">Rewriting…</span>` : ""}${secs.map(s => {
       const editing = ed && ed.id === s.id;
       /* AI is mid-rewrite of exactly this section: the sweep, the dim and the left accent line
          (agents.css .ag-artsec.rewriting) are all gated on this one class, never on ed.busy
