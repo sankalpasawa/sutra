@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-09-21
 
-## v2.292.1 (2026-09-22, HEAD)
+## v2.293.0 (2026-09-22, HEAD)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.292.1 (2026-09-22)
 
 See marketplace/plugin/CHANGELOG.md for this release's entry.
 

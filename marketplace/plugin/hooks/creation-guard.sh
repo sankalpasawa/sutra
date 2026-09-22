@@ -30,7 +30,13 @@ fi
 case "$FILE_PATH" in /*) ;; *) FILE_PATH="$ROOT/$FILE_PATH";; esac
 [ "$CHECK_ONLY" = 0 ] && [ -e "$FILE_PATH" ] && exit 0
 case "$FILE_PATH" in "$ROOT"/*) REL="${FILE_PATH#$ROOT/}";; *) exit 0;; esac
+# The runtime-owned folders, WHEREVER they land (2.293.1). A department's folder is a working
+# directory like any other: a chat that runs in it leaves the floors' own bookkeeping there --
+# session markers, turn files, a lint row. None of that is an artifact of any department, and a
+# nested copy used to reach the kind test and fail it as a NEW KIND (found 2026-09-22 by running
+# a department's Identity chat in its own folder).
 case "$REL" in .claude/*|.tmp/*|.enforcement/*|.analytics/*|.sutra/*|holding/state/*|holding/checkpoints/*|node_modules/*|.git/*|*.lock|*/__pycache__/*) exit 0;; esac
+case "$REL" in */.claude/*|*/.sutra/*|*/.enforcement/*|*/.analytics/*|*/.tmp/*|*/.venv/*) exit 0;; esac
 if [ -f "$HOME/.creation-guard-disabled" ]; then logrow "$REL" "skipped-kill-switch" "" "" ; exit 0; fi
 MISSING=""
 PM="$ROOT/.claude/sessions/$SID/placement-registered"; DREF=""; CID=""

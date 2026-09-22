@@ -1069,7 +1069,8 @@ def test_engines_list_names_each_routine_under_the_department():
             assert rows[0]["name"] == "Nightly sweep"
             assert set(rows[0]) == {
                 "id", "name", "state", "enabled", "cwd", "runs_as", "cadence",
-                "made_by", "needs", "makes", "read_by", "workflow", "prompt"}
+                "made_by", "needs", "makes", "read_by", "workflow", "prompt",
+                "next_run"}                          # slice J (DS-14): when it runs next
         finally:
             for f in outside.glob("*"):
                 f.unlink()
@@ -2025,8 +2026,13 @@ def test_functions_reads_the_default_until_a_pick_is_stamped():
         import org2_apply
         org2_apply.apply_request("org.template", {"ref": a, "function": "audit", "template": "audit/money-movement"})
         out = M.functions(a)
-        assert out["picked"]["audit"] == {"id": "audit/money-movement", "name": "Money movement",
-                                          "use_case": out["templates"]["audit"][1]["use_case"]}
+        # slice J (DS-14): the picked template comes back WHOLE, so the card opens
+        # on its framework; the picker rows stay the three-field row.
+        picked = out["picked"]["audit"]
+        assert picked["id"] == "audit/money-movement" and picked["name"] == "Money movement"
+        assert picked["use_case"] == out["templates"]["audit"][1]["use_case"]
+        assert picked["floor"] and picked["checks"] and picked["schedule"], "the framework rides with it"
+        assert "{department}" in picked["chat_brief"]
         assert M.functions(a1)["picked"]["audit"]["id"] == "audit/default", "a child keeps its own picks"
         (tmp / "function_templates.json").write_text("[1, 2", encoding="utf-8")
         assert M.functions(a)["picked"]["audit"]["id"] == "audit/default"

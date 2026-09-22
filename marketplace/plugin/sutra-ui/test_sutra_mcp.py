@@ -138,5 +138,64 @@ class AppPublishTool(unittest.TestCase):
         self.assertTrue(self.fn({"id": "loan-book", "bump": "huge"}).get("isError"))
 
 
+class DepartmentAskTool(unittest.TestCase):
+    """Slice J (DS-15): a chat may file the three department asks, and only
+    those; every one goes through the screen's own check and composer, and
+    nothing is applied by the chat."""
+
+    def fn(self, args):
+        return sutra_mcp.BY_NAME["sutra_department_ask"]["fn"](args)
+
+    def _tree(self):
+        import placement_engine as E
+        root, _ = E.mint_domain(None, "Co", ["root"], "T-local", origin="test")
+        a, _ = E.mint_domain(root, "A", ["a"], "T-local", origin="test")
+        return root, a
+
+    def test_it_is_listed_with_the_three_kinds(self):
+        t = sutra_mcp.BY_NAME["sutra_department_ask"]
+        self.assertIn("PROPOSE", t["description"])
+        self.assertEqual(t["schema"]["properties"]["kind"]["enum"],
+                         ["org.create", "org.charter", "org.template"])
+
+    def test_a_new_department_is_proposed_in_the_screens_words(self):
+        import proposals
+        root, a = self._tree()
+        before = len(proposals.pending())
+        out = self.fn({"kind": "org.create", "args": {"parent": a, "name": "Servicing"}})
+        self.assertFalse(out.get("isError"), out)
+        self.assertIn("PROPOSAL", out["content"][0]["text"])
+        rows = [p for p in proposals.pending() if p["kind"] == "org.create"]
+        self.assertEqual(len(proposals.pending()), before + 1)
+        self.assertEqual(rows[-1]["summary"], "New department Servicing under A")
+        self.assertNotIn("charter", rows[-1]["summary"].lower())
+
+    def test_a_goal_and_a_template_ask_are_proposed_too(self):
+        import proposals
+        root, a = self._tree()
+        out = self.fn({"kind": "org.charter", "args": {"ref": a, "purpose": "Own the book."}})
+        self.assertFalse(out.get("isError"), out)
+        out = self.fn({"kind": "org.template",
+                       "args": {"ref": a, "function": "audit", "template": "audit/money-movement"}})
+        self.assertFalse(out.get("isError"), out)
+        said = [p["summary"] for p in proposals.pending()]
+        self.assertIn("Write the goal and rules of A", said)
+        self.assertIn("Run Audit in A on the Money movement template", said)
+
+    def test_every_other_kind_and_every_bad_shape_is_refused_and_files_nothing(self):
+        import proposals
+        root, a = self._tree()
+        before = len(proposals.pending())
+        for args in ({"kind": "org.delete", "args": {"ref": a}},
+                     {"kind": "routine.create", "args": {}},
+                     {"kind": "org.create", "args": {"parent": "dref-none", "name": "X"}},
+                     {"kind": "org.create", "args": {"parent": a}},
+                     {"kind": "org.template", "args": {"ref": a, "function": "payroll", "template": "audit/default"}},
+                     {"kind": "org.template", "args": {"ref": a, "function": "audit", "template": "audit/nope"}}):
+            out = self.fn(args)
+            self.assertTrue(out.get("isError"), args)
+        self.assertEqual(len(proposals.pending()), before, "a refusal files nothing")
+
+
 if __name__ == "__main__":
     unittest.main()

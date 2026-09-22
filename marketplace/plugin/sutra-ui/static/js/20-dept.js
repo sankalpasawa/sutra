@@ -484,20 +484,17 @@ function dpIdentityHtml(){
   const pane = st.pane[ref + ":identity"] || "identity";
   const owner = (id.owner && id.owner.name) || "";
   const chats = id.chats || {};
-  const tabs = dpTabsHtml(pane, [
-    ["identity", "Identity"],
-    ["owner", "With " + (owner || "the owner")],
-    ["adaptation", "With Adaptation"],
-    ["log", "Log"],
-  ], "data-dppane");
+  /* DS-13 (the founder's structure, 2026-09-22): two tabs. The card, and the
+     chat -- the exact Sutra chat, which is also where a department is started.
+     The owner's turns and Adaptation's turns are the card's Recent section. */
+  const tabs = dpTabsHtml(pane, [["identity", "Identity"], ["chat", "Chat"]], "data-dppane");
   /* Slice I (DS-10): the owner's tab is the live Sutra chat with Identity; the
      With Adaptation tab keeps the record's turns, unchanged. */
-  if (pane === "owner") return tabs + dpLiveChatHtml("identity", "Identity");
-  if (pane === "adaptation") return tabs + dpChatCard("Adaptation", chats.adaptation, ref + ":adaptation");
-  /* the owner's turns as the record holds them, as before (the Log the other
-     four functions carry too) */
-  if (pane === "log") return tabs + dpChatCard(owner || "The owner", chats.owner, ref + ":owner");
-  return tabs + dpTemplateLine("identity") + dpIdentityCardHtml(id);
+  if (pane === "chat") return tabs + dpLiveChatHtml("identity", "Identity");
+  const recent = (chats.owner || []).concat(chats.adaptation || [])
+    .sort((a, b) => String(a.at || "").localeCompare(String(b.at || "")));
+  return tabs + dpTemplateLine("identity") + dpIdentityCardHtml(id) +
+         dpFrameworkHtml("identity") + dpRecentHtml(recent, "Recent");
 }
 
 /* ── the other four functions ──────────────────────────────────────────────
@@ -521,14 +518,20 @@ function dpFnHtml(tab, label, card, panes, chat){
      function, and the record's turns move to a Log tab beside it. An engine
      card passes its own panes and keeps its record chat exactly as before. */
   const isFn = !panes && DP_FUNCS.some(f => f[0] === tab);
-  const tabs = dpTabsHtml(pane, panes || (isFn ? [[tab, label], ["chat", "Chat"], ["log", "Log"]]
-                                               : [[tab, label], ["chat", "Chat"]]), "data-dppane");
+  const tabs = dpTabsHtml(pane, panes || [[tab, label], ["chat", "Chat"]], "data-dppane");
   if (isFn && pane === "chat") return tabs + dpLiveChatHtml(tab, label);
-  if (pane === "chat" || (isFn && pane === "log")){
+  if (pane === "chat"){                                  /* an engine card keeps its record chat */
     const rows = (typeof chat === "function") ? chat(data) : (chat || data.chat);
-    return tabs + dpChatCard(isFn ? "Log" : "Chat", rows, ref + ":" + tab + ":chat");
+    return tabs + dpChatCard("Chat", rows, ref + ":" + tab + ":chat");
   }
-  return tabs + (isFn ? dpTemplateLine(tab) : "") + card(data, pane);
+  if (!isFn) return tabs + card(data, pane);
+  /* DS-13 and DS-14: the template line, the card's own rows, its framework, the
+     sections this function adds, and the record's turns as Recent. */
+  const extra = tab === "adaptation" ? dpGraphHtml() + dpEngineStepsHtml()
+              : tab === "priority" ? dpNextRunsHtml()
+              : tab === "coordination" ? dpMakesReadsHtml() : "";
+  return tabs + dpTemplateLine(tab) + card(data, pane) + extra +
+         dpFrameworkHtml(tab) + dpRecentHtml((typeof chat === "function") ? chat(data) : (chat || data.chat), "Recent");
 }
 
 /* Adaptation: what it wants changed, and the asking behind it. */
@@ -909,6 +912,123 @@ function dpViewerHtml(n, d, dept, err){
   return dpViewerShell(label, dpQuiet("Not read yet"));
 }
 
+/* ── slice J: the template as the function's framework ────────────────────── */
+/* The founder's structure (2026-09-22, DS-14): a function card opens on the
+   template it runs -- its name, when it is picked, and the six parts of its
+   framework. The parts are the template's own lines; nothing here is written
+   by the screen. */
+const DP_FRAME_PARTS = [["floor", "Always does"], ["choices", "Decides"], ["reads", "Reads"],
+                        ["may_propose", "May propose"], ["checks", "How we know it worked"]];
+function dpFrameworkHtml(fn){
+  const st = dpS(), ref = st.sel;
+  if (!ref) return "";
+  dpLoadFunctions(ref);
+  const f = (st.functions && st.functions.ref === ref) ? st.functions : null;
+  const t = f && (f.picked || {})[fn];
+  if (!t) return "";
+  const rows = DP_FRAME_PARTS.map(([k, label]) => {
+    const lines = t[k] || [];
+    if (!lines.length) return "";
+    return `<div class="dpfpart"><div class="dpk">${dpEsc(label)}</div>` +
+           lines.map(l => `<div class="dpfline">${dpEsc(l)}</div>`).join("") + `</div>`;
+  }).join("");
+  const when = t.schedule ? `<div class="dpfpart"><div class="dpk">Runs</div><div class="dpfline">${dpEsc(t.schedule)}</div></div>` : "";
+  return dpCard("The " + (t.name || "Default") + " template",
+    `<div class="dpfuse">${dpEsc(t.use_case || "")}</div><div class="dpframework">` + rows + when + `</div>`);
+}
+/* The record's own turns, as the card's Recent section (DS-13): the summary
+   reading only -- the Exact tab and the Log tab are gone from a function card. */
+const DP_RECENT_MAX = 6;
+function dpRecentHtml(rows, title){
+  rows = (rows || []).slice(-DP_RECENT_MAX);
+  /* A33: a function with nothing anywhere is ONE quiet line, and the card's own
+     line is that one -- an empty Recent is not drawn at all. */
+  if (!rows.length) return "";
+  return dpCard(title || "Recent", `<div class="dpchat">` + rows.map(dpChatLine).join("") + `</div>`);
+}
+
+/* ── slice J: the department's graph (Adaptation) ─────────────────────────── */
+/* What the department is made of, drawn from the records it already reads: the
+   owner above Identity, the five functions, and every engine with the state
+   word its records add up to. Arrows say who proposes and who admits. */
+function dpGraphHtml(){
+  const st = dpS(), ref = st.sel;
+  dpLoadEngines(ref);                                   /* read on open, as the list column does */
+  const eng = (st.engines && st.engines.ref === ref) ? (st.engines.engines || []) : [];
+  const W = 860, top = 26, rowH = 62;
+  const fns = DP_FUNCS.map(f => f[1]);
+  const fnW = 150, gap = 14, fnY = top + rowH;
+  const fnX = i => 20 + i * (fnW + gap);
+  const engY = fnY + rowH + 8;
+  const cols = Math.max(1, Math.min(eng.length, 5));
+  const engW = Math.min(160, Math.floor((W - 40 - (cols - 1) * gap) / cols));
+  const engX = i => 20 + (i % 5) * (engW + gap);
+  const rows = Math.ceil(Math.max(eng.length, 1) / 5);
+  const H = engY + rows * 54 + 34;
+  const box = (x, y, w, h, label, note, cls) =>
+    `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="7" class="dpg-${cls}"/>` +
+    `<text x="${x + 9}" y="${y + 19}" class="dpg-t">${dpEsc(String(label).slice(0, 22))}</text>` +
+    (note ? `<text x="${x + 9}" y="${y + 35}" class="dpg-n">${dpEsc(String(note).slice(0, 24))}</text>` : "");
+  let s = `<svg viewBox="0 0 ${W} ${H}" class="dpgraph" role="img" aria-label="What this department is made of">`;
+  s += box(20, top, 200, 40, "The owner", "stamps every ask", "own");
+  s += box(240, top, 200, 40, "Identity", "goal, done, rules", "id");
+  s += `<line x1="220" y1="${top + 20}" x2="240" y2="${top + 20}" class="dpg-a"/>`;
+  fns.slice(1).forEach((label, i) => {
+    s += box(fnX(i), fnY, fnW, 40, label, "", "fn");
+    s += `<line x1="340" y1="${top + 40}" x2="${fnX(i) + fnW / 2}" y2="${fnY}" class="dpg-a"/>`;
+  });
+  if (!eng.length){
+    s += `<text x="20" y="${engY + 22}" class="dpg-n">No engines yet</text>`;
+  } else {
+    eng.slice(0, 10).forEach((e, i) => {
+      const y = engY + Math.floor(i / 5) * 54;
+      s += box(engX(i), y, engW, 40, e.name || e.id, DP_STATES[e.state] || e.state || "", "eng");
+      s += `<line x1="${fnX(0) + fnW / 2}" y1="${fnY + 40}" x2="${engX(i) + engW / 2}" y2="${y}" class="dpg-a"/>`;
+    });
+  }
+  return s + `</svg>`;
+}
+/* Every engine's steps, under the graph: the department's written ways, in one
+   place, without opening each engine (the founder's "various workflow things"). */
+function dpEngineStepsHtml(){
+  const st = dpS(), ref = st.sel;
+  dpLoadEngines(ref);                                   /* read on open, as the list column does */
+  const eng = (st.engines && st.engines.ref === ref) ? (st.engines.engines || []) : [];
+  if (!eng.length) return "";
+  const body = eng.map(e => {
+    const steps = ((e.workflow || {}).steps) || [];
+    const lines = steps.length
+      ? steps.map(x => `<div class="dpfline">${dpEsc(x.name || x.id || "")}</div>`).join("")
+      : `<div class="dpfline">${dpEsc(e.prompt ? "Told in its own words, no steps written yet" : "No steps written yet")}</div>`;
+    return `<div class="dpfpart"><div class="dpk">${dpEsc(e.name || e.id)}</div>${lines}</div>`;
+  }).join("");
+  return dpCard("What each engine does, step by step", `<div class="dpframework">${body}</div>`);
+}
+/* When each engine runs next, off its own record (Priority, DS-14). */
+function dpNextRunsHtml(){
+  const st = dpS(), ref = st.sel;
+  dpLoadEngines(ref);                                   /* read on open, as the list column does */
+  const eng = (st.engines && st.engines.ref === ref) ? (st.engines.engines || []) : [];
+  if (!eng.length) return "";
+  const rows = eng.map(e => dpRunRow(e.name || e.id,
+    [e.cadence || "", e.next_run ? "next " + dpWhen(e.next_run) : "not scheduled"].filter(Boolean).join(" · "),
+    e.next_run ? "ok" : "")).join("");
+  return dpCard("Next runs", rows);
+}
+/* Who makes each engine's work and who reads it (Coordination, DS-14). */
+function dpMakesReadsHtml(){
+  const st = dpS(), ref = st.sel;
+  dpLoadEngines(ref);                                   /* read on open, as the list column does */
+  const eng = (st.engines && st.engines.ref === ref) ? (st.engines.engines || []) : [];
+  if (!eng.length) return "";
+  const rows = eng.map(e => {
+    const by = (e.made_by && e.made_by.from_ask) ? "from an ask" : "written by the owner";
+    const reads = e.read_by || "nobody named yet";
+    return dpRunRow(e.name || e.id, by + " · read by " + reads, "");
+  }).join("");
+  return dpCard("Who makes it, who reads it", rows);
+}
+
 /* ── slice I: the template each function runs ─────────────────────────────── */
 /* holding/plans/department-screen/LLD-FUNCTIONS.md section 3 and 5. One line
    under a function's tabs names the template it runs; Change opens the picker
@@ -1114,6 +1234,21 @@ async function dpEmbedOpen(){
   const s = newSession((brief && brief.cwd) || "", { ref: ref, name: name });
   s.title = label + " · " + (name || "department");
   s.fnKey = key;
+  /* DS-15: a function chat may build inside its own department's folder, so it
+     opens on Accept edits (edits here, asks for anything else) rather than the
+     operator's global mode, which is read-only by default. The native id comes
+     from the provider's own map, never a literal. */
+  try {
+    const opts = (typeof accessOptionsFor === "function")
+      ? accessOptionsFor(typeof providerId === "function" ? providerId() : "claude") : [];
+    /* "Approve for me" before "Accept edits": in Accept edits a department chat
+       could not even list its own folder -- every command waited for a click
+       nobody makes inside a card (found 2026-09-22 running Deckem's Identity
+       chat). The department works in its own folder; anything outside it still
+       asks. */
+    const opt = opts.find(o => o.id === "auto") || opts.find(o => o.id === "edits") || null;
+    if (opt && opt.mode){ S.perm = S.perm || {}; S.perm[s.id] = opt.mode; }
+  } catch (e) {}
   S.openPanes = [s.id];
   submitTurn(seed, s.id, { pin: { department_ref: ref } });
   return s;
