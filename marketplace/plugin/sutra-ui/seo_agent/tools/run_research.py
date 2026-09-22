@@ -450,7 +450,7 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
     # write; now it only warns. One line in the chat, the verdict travels in decisions.json and
     # reaches the Library row, and the run carries on exactly as it would for an on-topic article:
     # no change of angle, no special handling. --------------------------------------------------
-    gate, _ = step("topic-gate", lambda: topic_gate.run(topic, angle, snap, win, company))
+    gate, _ = step("topic-gate", lambda: topic_gate.run(topic, angle, snap, win, company, primary=primary["keyword"]))
     angle_before = angle
     if gate.get("relevant"):
         if gate.get("angle"):

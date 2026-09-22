@@ -145,6 +145,79 @@ ok("and the cost is stated, so the cap is not mistaken for style",
    "twenty times" in wlow or "20+" in wlow)
 
 
+# ---- 6. the gap stops running the article ------------------------------------------------------
+print("\na gap may sharpen the angle; it may never become it")
+
+from seo_agent.research import topic_gate
+from seo_agent.write import plan_select
+
+calls = []
+_orig_json = llm.json_call
+llm.json_call = lambda p, **k: (calls.append(p),
+                                {"relevant": True, "why": "ours", "angle": "a new angle",
+                                 "why_changed": "x"})[1]
+try:
+    topic_gate.run("Recruiting Metrics", "the old angle",
+                   {"ai_overview_text": "aio", "who_ranks_text": "who"},
+                   {"common_h2s": ["Time to Fill"], "gaps_to_own": ["nobody shows the actual sum"]},
+                   {"brand": "Testlify", "brand_oneliner": "skills tests", "niche_definition": "hiring"},
+                   primary="recruiting metrics")
+finally:
+    llm.json_call = _orig_json
+
+angle_prompt = calls[1] if len(calls) > 1 else ""
+ok("the angle step is finally shown what people searched for",
+   "recruiting metrics" in angle_prompt, angle_prompt[:200])
+ok("and is told outright that a gap may never become the angle",
+   "may never become it" in angle_prompt.lower())
+ok("the real failure is named in the prompt, so the rule is not mistaken for style",
+   "four-fifths" in angle_prompt.lower())
+ok("it is no longer told to cover as much of the gap list as it can fit",
+   "cover as much of the gap list" not in angle_prompt.lower())
+ok("and every token was filled", "{{" not in angle_prompt, angle_prompt[:160])
+
+
+# The section-picker half: a gap tag alone stops being enough to keep a section alive.
+print("\na gap tag alone no longer keeps a section alive")
+
+gap_no_cards = [{"h3": "The four-fifths rule", "tags": ["gap: G1"], "cards": []}]
+gap_with_cards = [{"h3": "The four-fifths rule", "tags": ["gap: G1"],
+                   "cards": [{"card_id": 12}]}]
+gap_and_stakes = [{"h3": "Time to fill", "tags": ["gap: G1", "common-h2: T2"], "cards": []}]
+stakes_only = [{"h3": "Time to fill", "tags": ["common-h2: T2"], "cards": []}]
+
+ok("a section held up by a gap and nothing else is recognised",
+   plan_select._gap_only(gap_no_cards))
+ok("a section with a gap AND a table-stakes topic is not this rule's business",
+   not plan_select._gap_only(gap_and_stakes))
+ok("a section with no gap at all is not touched",
+   not plan_select._gap_only(stakes_only))
+ok("no tags at all is not a gap-only section either",
+   not plan_select._gap_only([{"h3": "x", "tags": [], "cards": []}]))
+ok("evidence is what separates a gap worth writing from a gap worth dropping",
+   plan_select._has_cards(gap_with_cards) and not plan_select._has_cards(gap_no_cards))
+ok("the tag kind is read from \"gap: G1\", not matched loosely",
+   plan_select._tag_kind("gap: G1") == "gap" and plan_select._tag_kind("common-h2: T2") == "common-h2")
+
+
+# The architect half: the gap stops being framed as the place we win.
+print("\nthe architect is told what the gap is NOT")
+
+import glob
+shapes = sorted(glob.glob("seo_agent/prompts/write/structure-*.md"))
+ok("all four architect prompts were updated, not just the common one",
+   len(shapes) >= 4, shapes)
+for f in shapes:
+    body = open(f).read()
+    name = f.rsplit("/", 1)[-1]
+    ok("%s no longer calls the gap 'where this article can win'" % name,
+       "where this article can win" not in body)
+    ok("%s says a gap is not a promotion" % name,
+       "a gap is not a promotion" in body.lower())
+    ok("%s caps it at one section unless the title promises it" % name,
+       "at most one section" in body.lower())
+
+
 print()
 if FAILS:
     print("%d FAILED: %s" % (len(FAILS), ", ".join(FAILS)))
