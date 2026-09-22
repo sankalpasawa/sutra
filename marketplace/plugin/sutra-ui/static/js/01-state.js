@@ -169,7 +169,21 @@ function lsGet(key, fallback){
   try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v); }
   catch (e) { return fallback; }
 }
+/* Slice I (holding/plans/department-screen/LLD-FUNCTIONS.md section 4): the
+   panel also loads INSIDE a department's function card, as `/?embed=chat`,
+   showing one chat and nothing else. That frame shares this origin and so this
+   localStorage: it must never write a key the main panel reads (its layout,
+   its theme, its rail, its terminal). The one key it may write is the map from
+   a department's function to its chat (20-dept.js DP_FNCHAT_KEY). */
+const EMBED_CHAT = (function(){
+  try { return typeof location !== "undefined" && new URLSearchParams(location.search).get("embed") === "chat"; }
+  catch (e) { return false; }
+})();
+const EMBED_KEYS = ["sutra.fnchat"];
+if (EMBED_CHAT && typeof document !== "undefined" && document.documentElement)
+  document.documentElement.classList.add("embed-chat");
 function lsSet(key, value){
+  if (EMBED_CHAT && EMBED_KEYS.indexOf(key) === -1) return;
   try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
 }
 /* ── the v3.3 navigation model (PLAN-25 S3) ─────────────────────────────────
@@ -1639,6 +1653,9 @@ function claudeChannel(s, side){
          The id is still kept on the turn, so the side chat can resume ITSELF. */
       if (!ch.side) s.claude_session = f.id;
       else ch.sideSession = f.id;
+      /* slice I: a function chat started from a department card records where
+         it lives, so the card reopens this chat next time (20-dept.js) */
+      if (!ch.side && typeof dpFnChatRemember === "function") dpFnChatRemember(s);
       if (ch.turn) ch.turn.claude_session = f.id;
     } else if (f.type === "token"){
       if (ch.turn){

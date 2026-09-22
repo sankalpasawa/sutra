@@ -39,7 +39,7 @@ ONE_LINE_MAX = 60        # a charter purpose shorter than this, with no second s
 DESKTOP_NAME = "Desktop"  # project_import.DESKTOP_NAME: the machine node under the root
 KINDS = ("root", "machine", "organisation", "department")
 STATES = ("active", "no-charter", "one-line")
-REQUEST_KINDS = ("org.rename", "org.move", "org.create", "org.charter")   # org2_apply.KINDS; pinned here so the route needs no import
+REQUEST_KINDS = ("org.rename", "org.move", "org.create", "org.charter", "org.template")   # org2_apply.KINDS; pinned here so the route needs no import
 PAGE_EXT = (".html", ".htm")
 
 _SEP = re.compile(r"[-_]+")
@@ -411,7 +411,7 @@ def _request_check(kind: str, args: Dict[str, Any]):
     domains = E.load_domains()
     live = E.live_refs(domains)
     need = {"org.rename": ("ref", "name"), "org.move": ("ref", "target"), "org.create": ("parent", "name"),
-            "org.charter": ("ref", "purpose")}[kind]
+            "org.charter": ("ref", "purpose"), "org.template": ("ref", "function", "template")}[kind]
     for k in need:
         if not str(args.get(k) or "").strip():
             raise HTTPException(status_code=400, detail="%s needs %s" % (kind, k))
@@ -436,6 +436,20 @@ def _request_check(kind: str, args: Dict[str, Any]):
                     args[key] = fn(args[key])
                 except ValueError as exc:
                     raise HTTPException(status_code=400, detail=str(exc))
+    if kind == "org.template":
+        # slice I (DS-9): the function is one of the five and the template is a
+        # file of that function in the repository -- refused HERE, to the owner
+        # filing it, not as a failed apply in Approvals later.
+        import function_templates as FT
+        fn = str(args["function"]).strip().lower()
+        if fn not in FT.FUNCTIONS:
+            raise HTTPException(status_code=400, detail="a function is one of: %s" % ", ".join(FT.FUNCTIONS))
+        t = FT.get(str(args["template"]).strip())
+        if not t or t["function"] != fn:
+            raise HTTPException(status_code=404, detail="no %s template %s" % (FT.LABELS[fn], args["template"]))
+        if FT.picked(args["ref"]).get(fn) == t["id"]:
+            raise HTTPException(status_code=400, detail="%s already runs the %s template" % (FT.LABELS[fn], t.get("name")))
+        args["function"], args["template"] = fn, t["id"]
     if kind == "org.charter" and args.get("charter_id"):
         v = E.charter_view(str(args["charter_id"]))
         if not v:
@@ -469,6 +483,7 @@ REQUEST_SUMMARIES = {
     "role.edit": "Edit the role under %s for %s",
     "goal": "Write the goal and rules of %s",
     "goal.edit": "Edit the goal and rules of %s",
+    "template": "Run %s in %s on the %s template",
 }
 
 
@@ -489,6 +504,10 @@ def _summary(kind: str, args: Dict[str, Any], name_of) -> str:
             who = " ".join(str(args.get("person") or "").split()) or "nobody yet"
             return T["role" + edit] % (name_of(args["ref"]), who)
         return T["goal" + edit] % name_of(args["ref"])
+    if kind == "org.template":
+        import function_templates as FT
+        t = FT.get(args["template"]) or {}
+        return T["template"] % (FT.LABELS[args["function"]], name_of(args["ref"]), t.get("name") or args["template"])
     return T["create"] % (" ".join(str(args["name"]).split()), name_of(args["parent"]))
 
 

@@ -247,6 +247,8 @@ def test_request_summaries_are_screen_words_and_never_say_charter():
             M.request(M.RequestBody(kind="org.charter",
                                     args={"ref": a, "purpose": "Run A.", "kind": "role",
                                           "person": "Sankalp Asawa", "charter_id": cid}))["summary"],
+            M.request(M.RequestBody(kind="org.template",
+                                    args={"ref": a, "function": "Audit", "template": "audit/money-movement"}))["summary"],
         ]
         assert said == [
             "Rename A1 to B",
@@ -257,9 +259,10 @@ def test_request_summaries_are_screen_words_and_never_say_charter():
             "New role under A for Sankalp Asawa",
             "New role under A for nobody yet",
             "Edit the role under A for Sankalp Asawa",
+            "Run Audit in A on the Money movement template",
         ]
         assert set(M.REQUEST_SUMMARIES) == {"rename", "move", "create", "role", "role.edit",
-                                            "goal", "goal.edit"}, "every template above is walked"
+                                            "goal", "goal.edit", "template"}, "every template above is walked"
         for s in said + list(M.REQUEST_SUMMARIES.values()):
             assert "charter" not in s.lower(), s
         # the record carries the very words the approver was shown
@@ -386,6 +389,65 @@ def test_forbidden_scan_covers_this_module():
     assert aliases, "org2_api.py must import placement_engine as an alias the scan can see"
     for name in T.FORBIDDEN_CALLS:
         assert not T._find_forbidden_calls(text, aliases, name), name
+
+
+def test_template_request_is_refused_on_bad_shapes_and_files_nothing():
+    """Slice I (DS-9): an org.template ask names one of the five functions, a
+    template of THAT function in the repository, and a live department; and it
+    changes something (the Default is already what a department runs)."""
+    from fastapi import HTTPException
+    with tempfile.TemporaryDirectory() as tmp:
+        os.environ["SUTRA_UI_PROPOSALS"] = os.path.join(tmp, "props")
+        M, E = _fresh(Path(tmp))
+        root, desk, a, a1 = _tree(E)
+        import proposals
+        for args, code in (({"ref": a, "function": "payroll", "template": "audit/default"}, 400),
+                           ({"ref": a, "function": "audit", "template": "audit/nope"}, 404),
+                           ({"ref": a, "function": "audit", "template": "priority/money-movement"}, 404),
+                           ({"ref": a, "function": "audit", "template": "../../etc/passwd"}, 404),
+                           ({"ref": "dref-none", "function": "audit", "template": "audit/money-movement"}, 404),
+                           ({"ref": a, "function": "audit", "template": "audit/default"}, 400),
+                           ({"ref": a, "function": "audit"}, 400)):
+            with pytest.raises(HTTPException) as ei:
+                M.request(M.RequestBody(kind="org.template", args=args))
+            assert ei.value.status_code == code, args
+        assert proposals.pending() == [], "refusals file nothing"
+        out = M.request(M.RequestBody(kind="org.template",
+                                      args={"ref": a1, "function": " PRIORITY ", "template": "priority/product-build"}))
+        assert out["summary"] == "Run Priority in A1 on the Product build template"
+        assert out["proposal"]["args"] == {"ref": a1, "function": "priority", "template": "priority/product-build"}
+
+
+def test_apply_template_writes_the_pick_and_nothing_else():
+    """The stamp's one write is the picks file under the registry home; the
+    tree and the charters are untouched, and a second identical pick is
+    refused rather than rewritten."""
+    with tempfile.TemporaryDirectory() as tmp:
+        M, E = _fresh(Path(tmp))
+        sys.modules.pop("org2_apply", None)
+        sys.modules.pop("org_apply", None)
+        import org2_apply
+        import function_templates as FT
+        root, desk, a, a1 = _tree(E)
+        domains_before = E.load_domains()
+        assert FT.picked(a)["audit"] == "audit/default"
+        out = org2_apply.apply_request("org.template", {"ref": a, "function": "audit", "template": "audit/money-movement"})
+        assert out == {"applied": True, "ref": a, "function": "audit",
+                       "template_before": "audit/default", "template_after": "audit/money-movement"}
+        assert FT.picks_path() == os.path.join(str(tmp), "function_templates.json")
+        assert FT.picked(a)["audit"] == "audit/money-movement"
+        assert FT.picked(a)["identity"] == "identity/default", "only the named function moved"
+        assert FT.picked(a1)["audit"] == "audit/default", "only the named department moved"
+        with pytest.raises(ValueError, match="already runs"):
+            org2_apply.apply_request("org.template", {"ref": a, "function": "audit", "template": "audit/money-movement"})
+        with pytest.raises(ValueError):
+            org2_apply.apply_request("org.template", {"ref": a, "function": "audit", "template": "identity/default"})
+        with pytest.raises(ValueError):
+            org2_apply.apply_request("org.template", {"ref": "dref-none", "function": "audit", "template": "audit/product-build"})
+        assert E.load_domains() == domains_before, "the tree is untouched"
+        # a broken picks file reads as nothing picked, never as an error
+        Path(FT.picks_path()).write_text("{not json", encoding="utf-8")
+        assert FT.picked(a)["audit"] == "audit/default"
 
 
 if __name__ == "__main__":

@@ -5000,3 +5000,35 @@
 .shidle{background:transparent;border-left-color:var(--line)}
 .shidle .shsaidhead{color:var(--faint)}
 .shsaid.shidle>.shsaidtext{color:var(--muted)}
+
+/* ── slice I: function templates and the live function chat ───────────────── */
+/* holding/plans/department-screen/LLD-FUNCTIONS.md sections 4 and 5. One line
+   names the template a function runs; the picker lists that function's
+   templates; the chat is the panel itself in a chat-only frame, laid over the
+   placeholder by a host that lives outside the region render() rebuilds. */
+.dptpl{display:flex;align-items:center;gap:10px;margin:0 0 10px;font-size:12.5px;color:var(--muted)}
+.dptpl .btn{margin-left:auto}
+.dptplpick{background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--r);
+  padding:4px 12px;margin:0 0 12px}
+.dptplrow{display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--line-soft)}
+.dptplrow:first-child{border-top:0}
+.dptplrow>div{flex:1;min-width:0}
+.dptplname{font-weight:600;font-size:12.5px;color:var(--ink)}
+.dpframe{height:calc(100vh - 190px);min-height:420px;border:1px solid var(--line-soft);
+  border-radius:var(--r);background:var(--surface)}
+.dpframehost{position:fixed;z-index:4;border-radius:var(--r);overflow:hidden}
+.dpframehost[hidden]{display:none}
+.dpframe-if{width:100%;height:100%;border:0;display:block;background:var(--surface)}
+/* the chat-only frame: one pane, no rail, no list, no terminal, no banners */
+html.embed-chat .app{grid-template-columns:minmax(0,1fr) !important;padding:0 !important;gap:0 !important}
+html.embed-chat .rail,
+html.embed-chat .plane,
+html.embed-chat .railshow,
+html.embed-chat .raildrag,
+html.embed-chat #termPane,
+html.embed-chat .shdot,
+html.embed-chat .shpill,
+html.embed-chat .onb{display:none !important}
+html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
+.dpembednote{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+  background:var(--surface);color:var(--muted);font-size:13px;z-index:10}

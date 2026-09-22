@@ -33,7 +33,10 @@ function dpS(){
                       identity:null, now:null, running:null, waits:null,
                       adaptation:null, priority:null, coordination:null, audit:null,
                       engines:null, engineRuns:{}, engineData:{}, filed:null,
-                      people:null, meters:null };
+                      people:null, meters:null,
+                      /* slice I: the template each function runs, the picker, the
+                         ask just filed, and the chats started on this department */
+                      functions:null, fnPick:null, fnAsked:{}, chatStart:{}, selName:"" };
   return S.dp;
 }
 function dpEsc(x){ return (typeof esc === "function") ? esc(x) : String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
@@ -116,6 +119,9 @@ function dpLoadPeople(ref, force){ return dpLoad("people", ref, dpUrl(ref, "peop
    costs the three reads Now needs (S14); a month of run rows behind four bars
    is not one of them. */
 function dpLoadMeters(ref, force){ return dpLoad("meters", ref, dpUrl(ref, "meters"), force); }
+/* Slice I: which template each function runs here, read when a function card
+   that shows its template line opens -- never when the department does. */
+function dpLoadFunctions(ref, force){ return dpLoad("functions", ref, dpUrl(ref, "functions"), force); }
 
 /* ── selection ────────────────────────────────────────────────────────────── */
 /* Opening a department, mirroring o2Select (19-org2.js:250-261): everything the
@@ -133,6 +139,8 @@ function dpSelect(ref){
     st.engineRuns = {}; st.engineData = {};
     st.engineSel = null; st.filedSel = null; st.personSel = null; st.confirm = null;
     st.more = {}; st.error = {}; st.loading = {}; st.pane = {}; st.chatMode = {};
+    st.functions = null; st.fnPick = null; st.fnAsked = {}; st.chatStart = {};
+    dpFrameDrop();                                       /* a chat belongs to its department */
   }
   if (!st.tab[ref]) st.tab[ref] = "now";                /* A2: Now without a click */
   dpLoadNow(ref);
@@ -480,10 +488,16 @@ function dpIdentityHtml(){
     ["identity", "Identity"],
     ["owner", "With " + (owner || "the owner")],
     ["adaptation", "With Adaptation"],
+    ["log", "Log"],
   ], "data-dppane");
-  if (pane === "owner") return tabs + dpChatCard(owner || "The owner", chats.owner, ref + ":owner");
+  /* Slice I (DS-10): the owner's tab is the live Sutra chat with Identity; the
+     With Adaptation tab keeps the record's turns, unchanged. */
+  if (pane === "owner") return tabs + dpLiveChatHtml("identity", "Identity");
   if (pane === "adaptation") return tabs + dpChatCard("Adaptation", chats.adaptation, ref + ":adaptation");
-  return tabs + dpIdentityCardHtml(id);
+  /* the owner's turns as the record holds them, as before (the Log the other
+     four functions carry too) */
+  if (pane === "log") return tabs + dpChatCard(owner || "The owner", chats.owner, ref + ":owner");
+  return tabs + dpTemplateLine("identity") + dpIdentityCardHtml(id);
 }
 
 /* ── the other four functions ──────────────────────────────────────────────
@@ -503,12 +517,18 @@ function dpFnHtml(tab, label, card, panes, chat){
   const data = (st[tab] && st[tab].ref === ref) ? st[tab] : null;
   if (!data) return st.error[tab] ? dpQuiet("Could not read") : dpSkel();
   const pane = dpPane(ref, tab);
-  const tabs = dpTabsHtml(pane, panes || [[tab, label], ["chat", "Chat"]], "data-dppane");
-  if (pane === "chat"){
+  /* Slice I (DS-10): a function card's Chat tab is the live Sutra chat with that
+     function, and the record's turns move to a Log tab beside it. An engine
+     card passes its own panes and keeps its record chat exactly as before. */
+  const isFn = !panes && DP_FUNCS.some(f => f[0] === tab);
+  const tabs = dpTabsHtml(pane, panes || (isFn ? [[tab, label], ["chat", "Chat"], ["log", "Log"]]
+                                               : [[tab, label], ["chat", "Chat"]]), "data-dppane");
+  if (isFn && pane === "chat") return tabs + dpLiveChatHtml(tab, label);
+  if (pane === "chat" || (isFn && pane === "log")){
     const rows = (typeof chat === "function") ? chat(data) : (chat || data.chat);
-    return tabs + dpChatCard("Chat", rows, ref + ":" + tab + ":chat");
+    return tabs + dpChatCard(isFn ? "Log" : "Chat", rows, ref + ":" + tab + ":chat");
   }
-  return tabs + card(data, pane);
+  return tabs + (isFn ? dpTemplateLine(tab) : "") + card(data, pane);
 }
 
 /* Adaptation: what it wants changed, and the asking behind it. */
@@ -856,6 +876,7 @@ const DP_CARDS = {
 function dpViewerHtml(n, d, dept, err){
   const st = dpS();
   const tab = st.tab[n.ref] || "now";
+  st.selName = n.name || "";                             /* the chat's title and its seed read it */
   if (tab === "now"){
     dpLoadMeters(n.ref);                                 /* read on open, as o2LoadApps does */
     return dpViewerShell("Now", dpNowHtml());
@@ -888,6 +909,226 @@ function dpViewerHtml(n, d, dept, err){
   return dpViewerShell(label, dpQuiet("Not read yet"));
 }
 
+/* ── slice I: the template each function runs ─────────────────────────────── */
+/* holding/plans/department-screen/LLD-FUNCTIONS.md section 3 and 5. One line
+   under a function's tabs names the template it runs; Change opens the picker
+   of that function's templates; picking files an org.template ask through the
+   Org screen's own request route. Nothing changes until the owner stamps it. */
+function dpTemplateLine(fn){
+  const st = dpS(), ref = st.sel;
+  if (!ref) return "";
+  dpLoadFunctions(ref);                                  /* read on open, as the cards do */
+  const f = (st.functions && st.functions.ref === ref) ? st.functions : null;
+  if (!f) return "";
+  const cur = (f.picked || {})[fn];
+  const asked = st.fnAsked[ref + ":" + fn];
+  let out = `<div class="dptpl"><span>Runs the ${dpEsc(cur ? cur.name : "Default")} template</span>` +
+    (asked ? `<span class="dpchk">${dpEsc(asked)}</span>`
+           : `<button type="button" class="btn" data-dptplopen="${dpEsc(fn)}">Change</button>`) + `</div>`;
+  if (st.fnPick === fn && !asked){
+    out += `<div class="dptplpick">` + (((f.templates || {})[fn]) || []).map(t => {
+      const on = !!(cur && cur.id === t.id);
+      return `<div class="dptplrow"><div><div class="dptplname">${dpEsc(t.name)}</div>` +
+        `<div class="dpchk">${dpEsc(t.use_case)}</div></div>` +
+        (on ? `<span class="dpchk">In use</span>`
+            : `<button type="button" class="btn" data-dptpluse="${dpEsc(t.id)}" data-dptplfn="${dpEsc(fn)}">Use this</button>`) +
+        `</div>`;
+    }).join("") + `</div>`;
+  }
+  return out;
+}
+async function dpTemplateAsk(fn, tid){
+  const st = dpS(), ref = st.sel;
+  if (!ref || !fn || !tid || st.busy["tpl:" + ref]) return;
+  st.busy["tpl:" + ref] = true;
+  dpRender();
+  try {
+    await apiPost("/api/org2/request", { kind: "org.template", args: { ref: ref, function: fn, template: tid } });
+    st.fnAsked[ref + ":" + fn] = "Asked; stamp it in Now";
+    st.fnPick = null;
+    if (typeof loadProposals === "function") loadProposals();
+    delete st.busy["tpl:" + ref];
+    await dpLoadNow(ref, true);
+  } catch (e) {
+    st.fnAsked[ref + ":" + fn] = "Could not ask: " + ((e && e.message) || e);
+    delete st.busy["tpl:" + ref];
+  }
+  dpRender();
+}
+
+/* ── slice I: the live chat on a function card ─────────────────────────────── */
+/* DS-10: the exact Sutra chat, fitted into the card. The panel loads itself in
+   a chat-only mode (`/?embed=chat&dept=&fn=`) inside ONE iframe that lives OUT
+   of the region render() rebuilds -- re-inserting an iframe reloads it, so it
+   is kept on a host element on <body> and laid over the placeholder the card
+   paints (the terminal pane's mount-once rule, 09-tail.js). The host is hidden,
+   never emptied, when the tab changes; the frame is dropped only when the
+   department changes or another function's chat opens (one live frame). */
+const DP_FNCHAT_KEY = "sutra.fnchat";                   /* {"<ref>:<fn>": {claude_session, sutra_id, at}} */
+const DP_FRAME = { key: null, el: null, host: null, observed: false };
+function dpFnChatMap(){
+  try {
+    const v = (typeof localStorage !== "undefined") ? localStorage.getItem(DP_FNCHAT_KEY) : null;
+    const m = v ? JSON.parse(v) : {};
+    return (m && typeof m === "object" && !Array.isArray(m)) ? m : {};
+  } catch (e) { return {}; }
+}
+function dpFnChatUrl(ref, fn, name, start){
+  return "/?embed=chat&dept=" + encodeURIComponent(ref) + "&fn=" + encodeURIComponent(fn) +
+         "&name=" + encodeURIComponent(name || "") + (start ? "&start=1" : "");
+}
+function dpLiveChatHtml(fn, label){
+  const st = dpS(), key = (st.sel || "") + ":" + fn;
+  if (dpFnChatMap()[key] || st.chatStart[key]) return `<div class="dpframe" data-dpframe="${dpEsc(key)}"></div>`;
+  return dpCard("Chat", dpQuiet("No chat with " + label + " yet") +
+    `<button type="button" class="btn" data-dpchatstart="${dpEsc(fn)}">Start the chat with ${dpEsc(label)}</button>`);
+}
+function dpFrameDrop(){
+  if (DP_FRAME.el && DP_FRAME.el.parentNode) DP_FRAME.el.parentNode.removeChild(DP_FRAME.el);
+  DP_FRAME.el = null; DP_FRAME.key = null;
+  if (DP_FRAME.host) DP_FRAME.host.hidden = true;
+}
+function dpFrameHost(){
+  if (DP_FRAME.host && DP_FRAME.host.isConnected) return DP_FRAME.host;
+  if (typeof document === "undefined" || !document.createElement || !document.body) return null;
+  const h = document.createElement("div");
+  h.className = "dpframehost";
+  h.hidden = true;
+  document.body.appendChild(h);
+  DP_FRAME.host = h;
+  return h;
+}
+/* Lay the host over the placeholder, or hide it when no placeholder is on
+   screen (another tab, another screen, the browse pane closed). */
+function dpFramePlace(){
+  const h = DP_FRAME.host;
+  if (!h) return;
+  const ph = (DP_FRAME.key && typeof document !== "undefined" && document.querySelector)
+    ? document.querySelector('[data-dpframe="' + String(DP_FRAME.key).replace(/"/g, "") + '"]') : null;
+  if (!ph || S.screen !== "org2" || !ph.getBoundingClientRect){ h.hidden = true; return; }
+  const r = ph.getBoundingClientRect();
+  h.style.left = r.left + "px"; h.style.top = r.top + "px";
+  h.style.width = r.width + "px"; h.style.height = r.height + "px";
+  h.hidden = !(r.width > 0 && r.height > 0);
+}
+/* Called after every paint of the Org screen (wireOrg2) and on every rebuild of
+   #panes (a MutationObserver, so leaving the screen hides the frame too). */
+function dpAfterPaint(scBody){
+  const root = (scBody && scBody.querySelector) ? scBody
+             : (typeof document !== "undefined" && document.querySelector ? document : null);
+  const ph = (root && S.screen === "org2") ? root.querySelector("[data-dpframe]") : null;
+  if (!ph){ if (DP_FRAME.host) DP_FRAME.host.hidden = true; return; }
+  const key = ph.getAttribute("data-dpframe") || "";
+  const cut = key.lastIndexOf(":");
+  const ref = key.slice(0, cut), fn = key.slice(cut + 1);
+  const st = dpS();
+  if (DP_FRAME.key !== key){
+    dpFrameDrop();
+    const host = dpFrameHost();
+    if (!host) return;
+    const fr = document.createElement("iframe");
+    const label = (DP_FUNCS.find(f => f[0] === fn) || [fn, fn])[1];
+    fr.className = "dpframe-if";
+    fr.title = "Chat with " + label;
+    fr.src = dpFnChatUrl(ref, fn, st.selName, !dpFnChatMap()[key] && !!st.chatStart[key]);
+    host.appendChild(fr);
+    DP_FRAME.el = fr; DP_FRAME.key = key;
+  }
+  dpFrameWatch();
+  dpFramePlace();
+}
+function dpFrameWatch(){
+  if (DP_FRAME.observed || typeof window === "undefined" || !window.addEventListener) return;
+  DP_FRAME.observed = true;
+  window.addEventListener("resize", dpFramePlace);
+  window.addEventListener("scroll", dpFramePlace, true);
+  const panes = document.getElementById && document.getElementById("panes");
+  if (panes && typeof MutationObserver !== "undefined"){
+    new MutationObserver(() => {
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => dpAfterPaint(null));
+      else dpAfterPaint(null);
+    }).observe(panes, { childList: true });
+  }
+}
+
+/* ── slice I: the chat-only mode (the panel inside the card) ──────────────── */
+/* EMBED_CHAT (01-state.js) is true only in the frame above. boot() (09-tail.js)
+   calls dpEmbedOpen once the sessions are read: with &start=1 it mints the
+   chat in the department's folder, filed under the department, and sends the
+   picked template's brief filled from Identity as the first turn; without it,
+   it reopens the chat this card started before. */
+function dpFillBrief(brief, v){
+  v = v || {};
+  let rules = (v.rules || []).map(r => (r && r.tag ? r.tag : "always") + ": " + ((r && (r.text || r.line)) || "")).join("; ");
+  if (rules.length > 1200) rules = rules.slice(0, 1197) + "...";
+  const say = {
+    department: v.department || "this department",
+    goal: v.goal || "not written yet",
+    done: v.done || "not written yet",
+    rules: rules || "none written yet",
+    owner: v.owner || "not named yet",
+    folder: v.folder || "no folder yet",
+  };
+  let out = String(brief || "").replace(/\{(department|goal|done|rules|owner|folder)\}/g, (m, k) => String(say[k]));
+  if (out.length > 4000) out = out.slice(0, 3997) + "...";
+  return out;
+}
+function dpEmbedNote(text){
+  if (typeof document === "undefined" || !document.createElement || !document.body) return;
+  const d = document.createElement("div");
+  d.className = "dpembednote";
+  d.textContent = text;
+  document.body.appendChild(d);
+}
+async function dpEmbedOpen(){
+  const p = new URLSearchParams(location.search);
+  const ref = p.get("dept") || "", fn = String(p.get("fn") || "").toLowerCase();
+  const name = p.get("name") || "", start = p.get("start") === "1";
+  const label = (DP_FUNCS.find(f => f[0] === fn) || [])[1];
+  S.ui.dest = "chats"; S.ui.browseClosed = true; S.openPanes = [];
+  if (!ref || !label){ dpEmbedNote("This chat is not one of the five functions."); return null; }
+  const key = ref + ":" + fn;
+  if (!start){
+    const saved = dpFnChatMap()[key];
+    const s = saved && (S.sessions || []).find(x => x.claude_session === saved.claude_session || x.id === saved.claude_session);
+    if (s){
+      s.fnKey = key;
+      pushPane(s.id);
+      if (typeof ensureTranscript === "function") ensureTranscript(s);
+      return s;
+    }
+    dpEmbedNote("This chat is no longer on this Mac.");
+    return null;
+  }
+  let brief, id;
+  try {
+    [brief, id] = await Promise.all([apiGet(dpUrl(ref, "functions/" + fn + "/brief")), apiGet(dpUrl(ref, "identity"))]);
+  } catch (e) {
+    dpEmbedNote("Sutra did not answer: " + ((e && e.message) || e));
+    return null;
+  }
+  const seed = dpFillBrief(brief && brief.brief, {
+    department: name, goal: id && id.goal, done: id && id.done, rules: id && id.rules,
+    owner: id && id.owner && id.owner.name, folder: brief && brief.cwd,
+  });
+  const s = newSession((brief && brief.cwd) || "", { ref: ref, name: name });
+  s.title = label + " · " + (name || "department");
+  s.fnKey = key;
+  S.openPanes = [s.id];
+  submitTurn(seed, s.id, { pin: { department_ref: ref } });
+  return s;
+}
+/* The one write the chat-only mode makes: once the chat has a session, the
+   card that started it can find it again. Called from the session frame
+   (01-state.js). Outside the chat-only mode it does nothing. */
+function dpFnChatRemember(s){
+  if (typeof EMBED_CHAT === "undefined" || !EMBED_CHAT || !s || !s.fnKey || !s.claude_session) return;
+  const m = dpFnChatMap();
+  if (m[s.fnKey] && m[s.fnKey].claude_session === s.claude_session) return;
+  m[s.fnKey] = { claude_session: s.claude_session, sutra_id: (S.sutraId || {})[s.id] || null, at: Date.now() };
+  lsSet(DP_FNCHAT_KEY, m);
+}
+
 /* ── answering an ask ─────────────────────────────────────────────────────── */
 /* Stamp and Refuse call decideProposal (08-boot.js:145-153) -- the SAME call
    the Approvals panel makes -- and nothing else. This screen files no write of
@@ -902,10 +1143,14 @@ function dpViewerHtml(n, d, dept, err){
    is left alone: it reads itself when it opens. */
 const DP_DECIDE_READS = [
   [/^routine\./, [["engines", dpLoadEngines]]],
-  [/^org\./, [["identity", dpLoadIdentity], ["people", dpLoadPeople]]],
+  [/^org\./, [["identity", dpLoadIdentity], ["people", dpLoadPeople], ["functions", dpLoadFunctions]]],
 ];
 function dpAfterDecide(ref, kind){
   const st = dpS(), out = [];
+  /* a stamped or refused template ask ends the "asked" line on every card */
+  if (String(kind || "") === "org.template"){
+    for (const k of Object.keys(st.fnAsked)) if (k.indexOf(ref + ":") === 0) delete st.fnAsked[k];
+  }
   for (const pair of DP_DECIDE_READS){
     if (!pair[0].test(String(kind || ""))) continue;
     for (const one of pair[1]){
@@ -945,7 +1190,7 @@ async function dpDecide(pid, ok){
    landed inside a `.dp` element. That is 19-org2.js:875-880's own guard with
    this screen's class, so nothing here can fire on another screen. */
 if (typeof document !== "undefined" && document.addEventListener){
-  const DP_SEL = "[data-dptab],[data-dpdecide],[data-dpmore],[data-dpfiled],[data-dpperson],[data-dpdoc],[data-dpapp],[data-dpengine],[data-dppause],[data-dpchatmode],[data-dppane],[data-dpgoal],[data-dprule]";
+  const DP_SEL = "[data-dptab],[data-dpdecide],[data-dpmore],[data-dpfiled],[data-dpperson],[data-dpdoc],[data-dpapp],[data-dpengine],[data-dppause],[data-dpchatmode],[data-dppane],[data-dpgoal],[data-dprule],[data-dpchatstart],[data-dptplopen],[data-dptpluse]";
   document.addEventListener("click", (ev) => {
     if (!S.dp || S.screen !== "org2") return;
     const t = ev.target && ev.target.closest ? ev.target.closest(DP_SEL) : null;
@@ -986,6 +1231,18 @@ if (typeof document !== "undefined" && document.addEventListener){
       dpRender(); return;
     }
     if (ds.dppause !== undefined){ ev.preventDefault(); dpPause(ds.dppause); return; }
+    /* slice I: nothing is sent without this click (DS-10) */
+    if (ds.dpchatstart !== undefined){
+      ev.preventDefault();
+      if (st.sel) st.chatStart[st.sel + ":" + ds.dpchatstart] = true;
+      dpRender(); return;
+    }
+    if (ds.dptplopen !== undefined){
+      ev.preventDefault();
+      st.fnPick = st.fnPick === ds.dptplopen ? null : ds.dptplopen;
+      dpRender(); return;
+    }
+    if (ds.dptpluse !== undefined){ ev.preventDefault(); dpTemplateAsk(ds.dptplfn, ds.dptpluse); return; }
     if (ds.dpmore !== undefined){ st.more[ds.dpmore] = true; dpRender(); return; }
     if (ds.dpdecide !== undefined){ ev.preventDefault(); dpDecide(ds.dpdecide, ds.dpok === "1"); return; }
     if (ds.dpfiled !== undefined){

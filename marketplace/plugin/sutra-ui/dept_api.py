@@ -716,6 +716,42 @@ def identity(ref: str):
     }
 
 
+# ----------------------------------------------------------------- TEMPLATES --
+# Slice I (DS-8, DS-9): which template each of the five functions runs in this
+# department, and what else each function could run. Reads the repository
+# folder and the picks file only (function_templates.py); the one writer of a
+# pick is the approved org.template ask, applied in org2_apply.
+
+@router.get("/{ref}/functions")
+def functions(ref: str):
+    """The picked template per function (the Default where none was picked)
+    and every template of each function, as picker rows."""
+    import function_templates as FT
+    _domain(ref)
+    picked = FT.picked(ref)
+    out = {"picked": {}, "templates": {}}
+    for fn in FT.FUNCTIONS:
+        t = FT.get(picked[fn])
+        out["picked"][fn] = FT.card(t) if t else None
+        out["templates"][fn] = [FT.card(x) for x in FT.templates(fn)]
+    return out
+
+
+@router.get("/{ref}/functions/{function}/brief")
+def function_brief(ref: str, function: str):
+    """The picked template's chat brief, unfilled, for the card to fill from
+    the Identity read it already holds (LLD-FUNCTIONS section 4)."""
+    import function_templates as FT
+    _domain(ref)
+    fn = str(function or "").strip().lower()
+    if fn not in FT.FUNCTIONS:
+        raise HTTPException(status_code=404, detail="no function %s" % function)
+    t = FT.get(FT.picked(ref)[fn]) or FT.get(FT.default_id(fn))
+    if not t:
+        raise HTTPException(status_code=404, detail="no template for %s" % fn)
+    return {"template": FT.card(t), "brief": t.get("chat_brief") or "", "cwd": _dept_cwd(ref)}
+
+
 # ---------------------------------------------------------------- ADAPTATION --
 # R5. What the department has learned about itself: the changes that were put
 # forward, and the asks that keep coming back. Both are readings of ONE store,

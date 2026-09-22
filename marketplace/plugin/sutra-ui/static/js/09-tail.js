@@ -232,6 +232,18 @@ async function boot(){
     S.drift = !!(S.draft.base && S.draft.base.domain_index_lines !== undefined &&
                  S.draft.base.domain_index_lines !== META.domain_index_lines);
 
+    /* Slice I: the panel inside a department's function card (`/?embed=chat`)
+       shows ONE chat: the one that card started, or a new one seeded from the
+       function's template (20-dept.js dpEmbedOpen). No terminal, no update
+       watch, no most-recent chat; the session stream keeps the chat live. */
+    if ((typeof EMBED_CHAT !== "undefined" && EMBED_CHAT)){
+      S.loaded = true;
+      if (typeof dpEmbedOpen === "function") await dpEmbedOpen();
+      render();
+      startSessionStream();
+      return;
+    }
+
     /* Open on two levels — root + its children. Deeper tiers collapse so the chart fits
        the pane; clicking a collapsed tile is the only control (feedback #4). */
     live().forEach(d=>{ if (d.parent_ref && DOMAINS.some(k=>k.parent_ref===d.ref)) S.collapsed.add(d.ref); });
@@ -383,7 +395,7 @@ function termMount(force){
 function termSetMode(mode){
   if (S.termMode === mode) return;
   S.termMode = mode;
-  try { localStorage.setItem("sutra.termMode", mode); } catch (e) {}
+  if (!(typeof EMBED_CHAT !== "undefined" && EMBED_CHAT)) try { localStorage.setItem("sutra.termMode", mode); } catch (e) {}
   /* termMount, not mountTerm: no such function has ever existed, so switching
      between the shell and the claude TUI threw a ReferenceError -- AFTER
      S.termMode had already been reassigned and persisted. The toggle moved, the
@@ -653,7 +665,7 @@ function railVar(w){
 function railSetW(w){
   w = Math.max(RAIL_MIN, Math.min(RAIL_MAX, Math.round(w)));
   railVar(w);
-  try { localStorage.setItem("sutra.railW", String(w)); } catch (e) {}
+  if (!(typeof EMBED_CHAT !== "undefined" && EMBED_CHAT)) try { localStorage.setItem("sutra.railW", String(w)); } catch (e) {}
   return w;
 }
 /* Put the stored width on the page before anything paints, so a reload never flashes 224px

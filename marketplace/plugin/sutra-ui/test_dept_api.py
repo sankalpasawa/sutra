@@ -2004,3 +2004,48 @@ def test_a_role_charter_appears_under_people_and_nowhere_else():
         assert [r["name"] for r in M.people(a)["roles"]] == ["Devansh"]
         _charter(E, a, "Own the release.", title="A Charter")
         assert M.identity(a)["goal"] == "Own the release."
+
+
+# ------------------------------------------------------------ slice I, DS-8 --
+
+def test_functions_reads_the_default_until_a_pick_is_stamped():
+    """Slice I: every function runs its Default until an approved org.template
+    ask picks another; the read lists each function's templates as picker rows,
+    Default first, and never 500s on a broken picks file."""
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        out = M.functions(a)
+        assert set(out["picked"]) == {"identity", "adaptation", "priority", "coordination", "audit"}
+        assert all(v["id"].endswith("/default") for v in out["picked"].values())
+        assert [r["id"] for r in out["templates"]["audit"]] == [
+            "audit/default", "audit/money-movement", "audit/product-build"]
+        assert all(set(r) == {"id", "name", "use_case"} for r in out["templates"]["audit"])
+        sys.modules.pop("org2_apply", None)
+        sys.modules.pop("org_apply", None)
+        import org2_apply
+        org2_apply.apply_request("org.template", {"ref": a, "function": "audit", "template": "audit/money-movement"})
+        out = M.functions(a)
+        assert out["picked"]["audit"] == {"id": "audit/money-movement", "name": "Money movement",
+                                          "use_case": out["templates"]["audit"][1]["use_case"]}
+        assert M.functions(a1)["picked"]["audit"]["id"] == "audit/default", "a child keeps its own picks"
+        (tmp / "function_templates.json").write_text("[1, 2", encoding="utf-8")
+        assert M.functions(a)["picked"]["audit"]["id"] == "audit/default"
+
+
+def test_function_brief_is_the_picked_templates_and_404s_cleanly():
+    from fastapi import HTTPException
+    with _fresh() as (M, E, tmp):
+        root, desk, a, a1 = _tree(E, tmp)
+        b = M.function_brief(a, "Priority")
+        assert b["template"]["id"] == "priority/default"
+        for ph in ("{department}", "{goal}", "{done}", "{rules}", "{owner}", "{folder}"):
+            assert ph in b["brief"]
+        assert os.path.realpath(b["cwd"]) == os.path.realpath(str(tmp)), \
+            "the department's working folder rides with the brief"
+        for ref, fn in ((a, "payroll"), ("dref-none", "audit")):
+            try:
+                M.function_brief(ref, fn)
+            except HTTPException as exc:
+                assert exc.status_code == 404
+            else:
+                raise AssertionError("no 404 for %s %s" % (ref, fn))

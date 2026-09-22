@@ -31,7 +31,7 @@ if _LIB_DIR not in sys.path:
 import placement_engine as E  # noqa: E402
 import org_apply              # noqa: E402  (the one validated move path)
 
-KINDS = ("org.rename", "org.move", "org.create", "org.charter")
+KINDS = ("org.rename", "org.move", "org.create", "org.charter", "org.template")
 NAME_MAX = 80
 TITLE_MAX = 60           # mint_charter_stub cuts titles here
 PURPOSE_MAX = 4000
@@ -94,6 +94,17 @@ def apply_request(kind, args):
         return {"applied": True, "ref": ref, "created": bool(created), "parent": args["parent"], "name": name}
     if kind == "org.charter":
         return _apply_charter(args)
+    if kind == "org.template":
+        # slice I (DS-9): the owner's stamp picks the template one function of a
+        # live department runs. The one write is function_templates.write_pick,
+        # a file under the registry home; the tree and the charters are untouched.
+        import function_templates as FT
+        domains = E.load_domains()
+        _live(args.get("ref"), domains)
+        fn = str(args.get("function") or "").strip().lower()
+        out = FT.write_pick(args["ref"], fn, str(args.get("template") or "").strip())
+        return {"applied": True, "ref": args["ref"], "function": fn,
+                "template_before": out["before"], "template_after": out["after"]}
     raise ValueError("no way to apply %r" % kind)
 
 

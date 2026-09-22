@@ -2427,7 +2427,7 @@ document.getElementById("newSession").onclick = () =>
 (function(){
   const r=document.documentElement, KEY="sutra.panel.theme";
   const rd=()=>{try{return localStorage.getItem(KEY)}catch(e){return null}};
-  const wr=v=>{try{localStorage.setItem(KEY,v)}catch(e){}};
+  const wr=v=>{if((typeof EMBED_CHAT !== "undefined" && EMBED_CHAT))return;try{localStorage.setItem(KEY,v)}catch(e){}};
   const saved=rd(); if(saved==="light"||saved==="dark") r.setAttribute("data-theme",saved);
   /* Desktop shell: mirror into nativeTheme so the SB iframe's scheme follows
      the panel (absent in a plain browser — presence-gated like the updater). */
@@ -2476,7 +2476,7 @@ document.getElementById("newSession").onclick = () =>
                : [{ name:ROLE_UNSET,      who:"not set yet" }];
   }
   const rd = ()=>{ try{ return localStorage.getItem(KEY) }catch(e){ return null } };
-  const wr = v =>{ try{ localStorage.setItem(KEY, v) }catch(e){} };
+  const wr = v =>{ if ((typeof EMBED_CHAT !== "undefined" && EMBED_CHAT)) return; try{ localStorage.setItem(KEY, v) }catch(e){} };
   /* A stored role that no longer exists falls back to the first live one --
      which is also how an operator upgrading from the hardcoded pair stops
      seeing "CEO of Asawa Inc." without any migration step. */
@@ -2658,7 +2658,7 @@ function applyAccent(hex){
   if (!hex){                      /* reset: the shipped token palette returns */
     r.style.removeProperty("--acc"); r.style.removeProperty("--on-acc");
     r.removeAttribute("data-accent");
-    try{ localStorage.removeItem(ACCENT_KEY) }catch(e){}
+    if (!(typeof EMBED_CHAT !== "undefined" && EMBED_CHAT)) try{ localStorage.removeItem(ACCENT_KEY) }catch(e){}
     return true;
   }
   const on = onAccFor(hex);
@@ -2666,7 +2666,7 @@ function applyAccent(hex){
   r.style.setProperty("--acc", hex);
   r.style.setProperty("--on-acc", on);
   r.setAttribute("data-accent", hex);
-  try{ localStorage.setItem(ACCENT_KEY, hex) }catch(e){}
+  if (!(typeof EMBED_CHAT !== "undefined" && EMBED_CHAT)) try{ localStorage.setItem(ACCENT_KEY, hex) }catch(e){}
   return true;
 }
 function buildAccentRow(){
@@ -2688,7 +2688,7 @@ function buildAccentRow(){
   /* boot apply (S17): a stored accent that no longer clears the floor (or was
      hand-edited into garbage) is dropped rather than half-applied. */
   let saved = null; try{ saved = localStorage.getItem(ACCENT_KEY) }catch(e){}
-  if (saved && !applyAccent(saved)) { try{ localStorage.removeItem(ACCENT_KEY) }catch(e){} }
+  if (saved && !applyAccent(saved) && !(typeof EMBED_CHAT !== "undefined" && EMBED_CHAT)) { try{ localStorage.removeItem(ACCENT_KEY) }catch(e){} }
   buildAccentRow();
 })();
 /* Telemetry line (PLAN-25 S14): the same utilization number the Usage screen

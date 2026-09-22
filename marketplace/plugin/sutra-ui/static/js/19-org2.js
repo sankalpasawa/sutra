@@ -402,6 +402,9 @@ function o2UnmountEditor(){
    view back in (the Workspace's own trick: state, undo and dirty survive), or
    tear down when the screen or the document is gone. */
 function wireOrg2(scBody){
+  /* slice I: the department screen's chat frame is laid over its placeholder
+     after every paint (20-dept.js dpAfterPaint); it hides itself elsewhere. */
+  if (typeof dpAfterPaint === "function") dpAfterPaint(scBody);
   const st = S.o2;
   if (!st) return;
   if (S.screen !== "org2"){ o2UnmountEditor(); return; }

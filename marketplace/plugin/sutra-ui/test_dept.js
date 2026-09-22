@@ -682,7 +682,7 @@ test("S26/A10: three tabs — Identity, With the owner, With Adaptation, in that
   const c = fresh();
   const html = idCard(c, IDENTITY);
   const panes = (html.match(/data-dppane="([a-z]+)"/g) || []).map(m => /"([a-z]+)"/.exec(m)[1]);
-  assert.deepStrictEqual(panes, ["identity", "owner", "adaptation"]);
+  assert.deepStrictEqual(panes, ["identity", "owner", "adaptation", "log"]);
   assert.ok(html.indexOf(">With Sankalp Asawa<") !== -1, "the owner's tab carries their name");
   assert.ok(html.indexOf(">With Adaptation<") !== -1);
   assert.ok(/aria-pressed="true" data-dppane="identity"/.test(html), "Identity is the open one");
@@ -788,7 +788,7 @@ test("S29: a row with no time and no addressee still renders", () => {
 /* ── S30: the chat tabs on the Identity card ── */
 test("S30/A17: each chat tab opens its own rows with Summary and Exact", () => {
   const c = fresh();
-  const owner = idCard(c, IDENTITY, "owner");
+  const owner = idCard(c, IDENTITY, "log");
   assert.ok(owner.indexOf("Write the goal of Org") !== -1, "the owner's own rows");
   assert.ok(owner.indexOf("Pause the nightly sweep") === -1, "and not Adaptation's");
   const modes = (owner.match(/data-dpchatmode="([a-z]+)"/g) || []).map(m => /"([a-z]+)"/.exec(m)[1]);
@@ -801,10 +801,10 @@ test("S30/A17: each chat tab opens its own rows with Summary and Exact", () => {
 
 test("S30: the Summary / Exact click switches one chat and leaves the other alone", () => {
   const c = fresh();
-  idCard(c, IDENTITY, "owner");
+  idCard(c, IDENTITY, "log");
   assert.strictEqual(click(c, elem({ dpchatmode: "exact", dpchatkey: "r4:owner" })), true);
   assert.strictEqual(c.dpS().chatMode["r4:owner"], "exact");
-  const html = idCard(c, IDENTITY, "owner");
+  const html = idCard(c, IDENTITY, "log");
   assert.ok(html.indexOf("dpexact") !== -1, "the owner's chat is in Exact");
   assert.strictEqual(c.dpS().chatMode["r4:adaptation"], undefined, "Adaptation's is untouched");
   const adapt = idCard(c, IDENTITY, "adaptation");
@@ -813,7 +813,7 @@ test("S30: the Summary / Exact click switches one chat and leaves the other alon
 
 test("S30: an empty chat tab says Nothing yet. and nothing else", () => {
   const c = fresh();
-  const html = idCard(c, BARE_ID, "owner");
+  const html = idCard(c, BARE_ID, "log");
   assert.ok(html.indexOf("Nothing yet.") !== -1);
   assert.ok(html.indexOf("dpmsg") === -1);
 });
@@ -824,7 +824,7 @@ test("S32/A29: every word on these screens is from the D78 list", () => {
   const d = c.o2Data(), n = d.byRef.get("r4");
   const list = c.dpListHtml(n, d, DEPT_EXP, null);
   const card = idCard(c, IDENTITY);
-  const owner = idCard(c, IDENTITY, "owner");
+  const owner = idCard(c, IDENTITY, "log");
   const all = list + card + owner;
   /* "work item" is slice D's, on the engine card; every other word the PRD's
      D78 list names is on screen by the end of slice B. */
@@ -843,11 +843,11 @@ test("S32/A29: the word charter reaches the screen only inside an Exact row", ()
   const d = c.o2Data(), n = d.byRef.get("r4");
   for (const html of [c.dpListHtml(n, d, DEPT_EXP, null),
                       idCard(c, IDENTITY), idCard(c, BARE_ID),
-                      idCard(c, IDENTITY, "owner"), idCard(c, IDENTITY, "adaptation")]) {
+                      idCard(c, IDENTITY, "log"), idCard(c, IDENTITY, "adaptation")]) {
     assert.strictEqual(html.toLowerCase().indexOf("charter"), -1, "no charter on a card");
   }
   c.dpS().chatMode["r4:owner"] = "exact";
-  const exact = idCard(c, IDENTITY, "owner");
+  const exact = idCard(c, IDENTITY, "log");
   const at = exact.toLowerCase().indexOf("charter");
   assert.ok(at !== -1, "the raw row carries the record's own kind");
   assert.ok(exact.lastIndexOf("<pre class=\"dpexact\">") < at && at < exact.indexOf("</pre>"),
@@ -1129,10 +1129,10 @@ test("S44/A17: every function card carries a Chat tab with Summary and Exact", (
     const c = fresh();
     const card = fnCard(c, tab, DATA[tab]);
     const panes = (card.match(/data-dppane="([a-z]+)"/g) || []).map(m => /"([a-z]+)"/.exec(m)[1]);
-    assert.deepStrictEqual(panes, [tab, "chat"], label + ": its own tab, then Chat");
+    assert.deepStrictEqual(panes, [tab, "chat", "log"], label + ": its own tab, then Chat, then Log");
     assert.ok(new RegExp('aria-pressed="true" data-dppane="' + tab + '"').test(card),
       label + " is the open one");
-    const chat = fnCard(fresh(), tab, DATA[tab], "chat");
+    const chat = fnCard(fresh(), tab, DATA[tab], "log");
     const modes = (chat.match(/data-dpchatmode="([a-z]+)"/g) || []).map(m => /"([a-z]+)"/.exec(m)[1]);
     assert.deepStrictEqual(modes, ["summary", "exact"], label + ": both readings");
     assert.ok(chat.indexOf(CHAT_SAYS[tab]) !== -1,
@@ -1144,7 +1144,7 @@ test("S44/A17: every function card carries a Chat tab with Summary and Exact", (
 test("S44/A17: Exact on a function chat is the raw row, and it is the only place a path may be", () => {
   const c = fresh();
   c.dpS().chatMode["r4:audit:chat"] = "exact";
-  const html = fnCard(c, "audit", AUDIT, "chat");
+  const html = fnCard(c, "audit", AUDIT, "log");
   assert.ok(html.indexOf("dpexact") !== -1);
   const at = html.indexOf("marketplace/plugin");
   assert.ok(at !== -1, "the record's own words");
@@ -1154,7 +1154,7 @@ test("S44/A17: Exact on a function chat is the raw row, and it is the only place
 
 test("S44: switching one function's chat mode leaves the others alone", () => {
   const c = fresh();
-  fnCard(c, "adaptation", ADAPTATION, "chat");
+  fnCard(c, "adaptation", ADAPTATION, "log");
   assert.strictEqual(click(c, elem({ dpchatmode: "exact", dpchatkey: "r4:adaptation:chat" })), true);
   assert.strictEqual(c.dpS().chatMode["r4:adaptation:chat"], "exact");
   assert.strictEqual(c.dpS().chatMode["r4:audit:chat"], undefined);
@@ -1189,7 +1189,7 @@ test("S45: an empty function still offers what it can, and nothing it cannot", (
 test("S45: an empty chat on any function is one quiet line", () => {
   for (const [tab] of FUNCS.slice(1)){
     const c = fresh();
-    const html = fnCard(c, tab, EMPTY[tab], "chat");
+    const html = fnCard(c, tab, EMPTY[tab], "log");
     assert.ok(html.indexOf("Nothing yet.") !== -1, tab);
     assert.ok(html.indexOf("dpmsg") === -1, tab);
   }
@@ -1532,7 +1532,7 @@ test("S32/A29: the word charter reaches no function card, and every screen word 
   const DATA = { adaptation: ADAPTATION, priority: PRIORITY, coordination: COORD, audit: AUDIT };
   let all = "";
   for (const [tab] of FUNCS.slice(1)){
-    for (const pane of [null, "chat"]) all += fnCard(fresh(), tab, DATA[tab], pane);
+    for (const pane of [null, "chat", "log"]) all += fnCard(fresh(), tab, DATA[tab], pane);
     all += fnCard(fresh(), tab, EMPTY[tab]);
   }
   assert.strictEqual(all.toLowerCase().indexOf("charter"), -1, "A29: never on a card");
@@ -2283,7 +2283,7 @@ test("S79/A29: and it reaches the screen only inside an Exact row", () => {
   st.sel = "r4";
   Object.assign(st, FULL);
   st.tab.r4 = "identity";
-  st.pane["r4:identity"] = "owner";
+  st.pane["r4:identity"] = "log";
   st.chatMode["r4:owner"] = "exact";
   const d = c.o2Data();
   const exact = c.dpViewerHtml(d.byRef.get("r4"), d, DEPT_EXP, null);
@@ -2386,6 +2386,225 @@ test("S22/A31: the .dp CSS block exists, uses tokens only, and covers what the m
     if (cls === "dp" || cls === "dplist" || cls === "dpviewer" || cls === "dpmore" || cls === "dpgl") continue;
     assert.ok(block.indexOf("." + cls) !== -1, cls + " is painted but has no rule");
   }
+});
+
+/* ── slice I: function templates and the live function chat ────────────────
+   holding/plans/department-screen/LLD-FUNCTIONS.md, DECISIONS.md DS-8..DS-12. */
+const FUNCTIONS_READ = {
+  picked: { identity: { id: "identity/default", name: "Default", use_case: "Any department" },
+            adaptation: { id: "adaptation/default", name: "Default", use_case: "Any department" },
+            priority: { id: "priority/default", name: "Default", use_case: "Any department" },
+            coordination: { id: "coordination/default", name: "Default", use_case: "Any department" },
+            audit: { id: "audit/money-movement", name: "Money movement", use_case: "A department that moves money" } },
+  templates: { audit: [{ id: "audit/default", name: "Default", use_case: "Any department" },
+                       { id: "audit/money-movement", name: "Money movement", use_case: "A department that moves money" },
+                       { id: "audit/product-build", name: "Product build", use_case: "A department that ships a product" }] },
+};
+function memStore(seed){
+  const m = Object.assign({}, seed || {});
+  return { getItem: k => (k in m ? m[k] : null), setItem: (k, v) => { m[k] = String(v); }, removeItem: k => { delete m[k]; }, _m: m };
+}
+/* A document just big enough for the frame manager: one body, elements that
+   remember their children, and a placeholder the card painted. */
+function frameDoc(key){
+  const made = [];
+  const mk = (tag) => {
+    const el = { tag, children: [], style: {}, hidden: false, isConnected: true, parentNode: null, className: "", src: "", title: "",
+      appendChild(ch){ ch.parentNode = el; el.children.push(ch); return ch; },
+      removeChild(ch){ el.children = el.children.filter(x => x !== ch); ch.parentNode = null; return ch; } };
+    made.push(el);
+    return el;
+  };
+  const ph = { getAttribute: () => key, getBoundingClientRect: () => ({ left: 10, top: 20, width: 600, height: 400 }) };
+  const doc = { listeners: {}, made, ph, body: mk("body"),
+    addEventListener(type, fn){ (this.listeners[type] = this.listeners[type] || []).push(fn); },
+    createElement: mk,
+    querySelector: (sel) => (doc.ph && /data-dpframe/.test(sel) ? doc.ph : null),
+    getElementById: () => null };
+  return doc;
+}
+
+test("slice I: a function card's tabs are its own, Chat (live) and Log (the record)", () => {
+  const c = fresh();
+  const card = fnCard(c, "audit", AUDIT);
+  const panes = (card.match(/data-dppane="([a-z]+)"/g) || []).map(m => /"([a-z]+)"/.exec(m)[1]);
+  assert.deepStrictEqual(panes, ["audit", "chat", "log"]);
+  const log = fnCard(fresh(), "audit", AUDIT, "log");
+  assert.ok(log.indexOf("<h3>Log</h3>") !== -1 && log.indexOf("data-dpchatmode") !== -1, "the Log keeps Summary and Exact");
+  const eng = c.dpFnHtml ? c.dpFnHtml("engines", "Engine", () => "", [["engines", "Engine"], ["chat", "Chat"]]) : "";
+  assert.ok(eng.indexOf("data-dpchatstart") === -1, "an engine card keeps its record chat, not a live one");
+});
+
+test("slice I: before a chat exists the Chat tab offers one button and sends nothing", () => {
+  const c = fresh();
+  c.localStorage = memStore();
+  const html = fnCard(c, "audit", AUDIT, "chat");
+  assert.ok(html.indexOf("No chat with Audit yet") !== -1);
+  assert.ok(html.indexOf('data-dpchatstart="audit"') !== -1 && html.indexOf(">Start the chat with Audit<") !== -1);
+  assert.ok(html.indexOf("<iframe") === -1 && html.indexOf("data-dpframe") === -1, "no frame until the click");
+  assert.strictEqual(c.calls.apiPost.length, 0, "nothing sent");
+  assert.strictEqual(click(c, elem({ dpchatstart: "audit" })), true);
+  assert.strictEqual(c.dpS().chatStart["r4:audit"], true);
+  const after = fnCard(c, "audit", AUDIT, "chat");
+  assert.ok(after.indexOf('data-dpframe="r4:audit"') !== -1, "the placeholder the frame is laid over");
+  assert.ok(after.indexOf("<iframe") === -1, "the frame never rides in the repainted HTML");
+});
+
+test("slice I: a chat this card started before is reopened, not offered again", () => {
+  const c = fresh();
+  c.localStorage = memStore({ "sutra.fnchat": JSON.stringify({ "r4:priority": { claude_session: "u-1" } }) });
+  const html = fnCard(c, "priority", PRIORITY, "chat");
+  assert.ok(html.indexOf('data-dpframe="r4:priority"') !== -1);
+  assert.ok(html.indexOf("data-dpchatstart") === -1);
+  c.localStorage = memStore({ "sutra.fnchat": "{not json" });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.dpFnChatMap())), {}, "a broken map reads as empty");
+});
+
+test("slice I: Identity's owner tab is the live chat, and the owner's record turns move to Log", () => {
+  const c = fresh();
+  c.localStorage = memStore();
+  const live = idCard(c, IDENTITY, "owner");
+  assert.ok(live.indexOf('data-dpchatstart="identity"') !== -1 && live.indexOf("Start the chat with Identity") !== -1);
+  const log = idCard(fresh(), IDENTITY, "log");
+  assert.ok(log.indexOf("Write the goal of Org") !== -1, "the owner's own rows, on Log");
+});
+
+test("slice I: the frame is made once, kept across paints, and hidden off the screen", () => {
+  const c = fresh();
+  c.localStorage = memStore();
+  const doc = frameDoc("r4:audit");
+  c.document = doc; c.window = { addEventListener(){} };
+  const st = c.dpS(); st.sel = "r4"; st.selName = "Experience"; st.chatStart["r4:audit"] = true;
+  c.dpAfterPaint(null);
+  const host = doc.made.find(e => e.className === "dpframehost");
+  assert.ok(host, "one host on the body");
+  assert.strictEqual(doc.body.children.length, 1);
+  assert.strictEqual(host.children.length, 1);
+  const fr = host.children[0];
+  assert.strictEqual(fr.tag, "iframe");
+  assert.strictEqual(fr.src, "/?embed=chat&dept=r4&fn=audit&name=Experience&start=1");
+  assert.strictEqual(host.hidden, false);
+  assert.strictEqual(host.style.width, "600px");
+  c.dpAfterPaint(null); c.dpAfterPaint(null);
+  assert.strictEqual(host.children.length, 1);
+  assert.strictEqual(host.children[0], fr, "the same element: a repaint never reloads the chat");
+  c.S.screen = "chats";
+  c.dpAfterPaint(null);
+  assert.strictEqual(host.hidden, true, "hidden, not emptied, when the screen changes");
+  assert.strictEqual(host.children[0], fr);
+  c.S.screen = "org2";
+  doc.ph = { getAttribute: () => "r4:priority", getBoundingClientRect: () => ({ left: 0, top: 0, width: 500, height: 300 }) };
+  c.dpAfterPaint(null);
+  assert.strictEqual(host.children.length, 1, "one live frame");
+  assert.notStrictEqual(host.children[0], fr, "another function's chat replaces it");
+  assert.ok(/fn=priority/.test(host.children[0].src) && !/start=1/.test(host.children[0].src),
+    "resume unless this card asked to start");
+  c.dpSelect("r5");
+  assert.strictEqual(host.children.length, 0, "a chat belongs to its department");
+});
+
+test("slice I: the brief is filled from Identity and stays under 4000 characters", () => {
+  const c = fresh();
+  const out = c.dpFillBrief("A {department} B {goal} C {done} D {rules} E {owner} F {folder}",
+    { department: "Servicing", goal: "Every EMI matched by 8", done: "Zero breaks for a week",
+      rules: [{ tag: "ask", text: "Payments over the line" }, { tag: "refuse", text: "Posting after cut-off" }],
+      owner: "Meera", folder: "/work/servicing" });
+  assert.strictEqual(out, "A Servicing B Every EMI matched by 8 C Zero breaks for a week D ask: Payments over the line; refuse: Posting after cut-off E Meera F /work/servicing");
+  const bare = c.dpFillBrief("{department}|{goal}|{done}|{rules}|{owner}|{folder}", {});
+  assert.strictEqual(bare, "this department|not written yet|not written yet|none written yet|not named yet|no folder yet");
+  const long = c.dpFillBrief("{rules}" + "x".repeat(3900), { rules: Array.from({ length: 200 }, (_, i) => ({ tag: "go", text: "rule " + i })) });
+  assert.ok(long.length <= 4000);
+});
+
+test("slice I: the template line names the template and Change files an ask, never a write", async () => {
+  const c = fresh();
+  const st = c.dpS();
+  st.functions = Object.assign({ ref: "r4" }, FUNCTIONS_READ);
+  const card = fnCard(c, "audit", AUDIT);
+  assert.ok(card.indexOf("Runs the Money movement template") !== -1);
+  assert.ok(card.indexOf('data-dptplopen="audit"') !== -1);
+  assert.strictEqual(click(c, elem({ dptplopen: "audit" })), true);
+  const pick = fnCard(c, "audit", AUDIT);
+  assert.ok(pick.indexOf(">In use<") !== -1, "the current one says so");
+  assert.strictEqual((pick.match(/data-dptpluse=/g) || []).length, 2, "the other two can be asked for");
+  assert.ok(pick.indexOf("A department that ships a product") !== -1, "each row carries its use case");
+  assert.strictEqual(click(c, elem({ dptpluse: "audit/product-build", dptplfn: "audit" })), true);
+  await sleep(); await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost[0])), { p: "/api/org2/request",
+    body: { kind: "org.template", args: { ref: "r4", function: "audit", template: "audit/product-build" } } });
+  const after = fnCard(c, "audit", AUDIT);
+  assert.ok(after.indexOf("Asked; stamp it in Now") !== -1);
+  assert.ok(after.indexOf("data-dptplopen") === -1 && after.indexOf("data-dptpluse") === -1, "one ask at a time");
+  c.dpAfterDecide("r4", "org.template");
+  assert.strictEqual(c.dpS().fnAsked["r4:audit"], undefined, "a decided ask ends the line");
+  assert.ok(c.calls.apiGet.indexOf("/api/dept/r4/functions") !== -1, "and the picks are read again");
+});
+
+test("slice I: no word the screen does not say, on the template line, the picker or the chat tab", () => {
+  const c = fresh();
+  c.localStorage = memStore();
+  const st = c.dpS();
+  st.functions = Object.assign({ ref: "r4" }, FUNCTIONS_READ);
+  st.fnPick = "audit";
+  const all = fnCard(c, "audit", AUDIT) + fnCard(c, "audit", AUDIT, "chat") + idCard(c, IDENTITY, "owner");
+  assert.strictEqual(all.toLowerCase().indexOf("charter"), -1);
+});
+
+test("slice I: the chat-only frame starts the chat from the brief, filed under the department", async () => {
+  const c = fresh();
+  const got = { newSession: null, submit: null };
+  c.URLSearchParams = URLSearchParams;
+  c.location = { search: "?embed=chat&dept=r4&fn=audit&name=Experience&start=1" };
+  c.S.ui = { dest: "org2" }; c.S.sessions = [];
+  c.apiGet = (p) => {
+    c.calls.apiGet.push(p);
+    if (/brief$/.test(p)) return Promise.resolve({ brief: "Audit for {department}: {goal}", cwd: "/work/exp", template: {} });
+    if (/identity$/.test(p)) return Promise.resolve({ goal: "Own the experience", done: null, rules: [], owner: { name: "Sankalp" } });
+    return new Promise(() => {});
+  };
+  c.newSession = (cwd, dept) => { got.newSession = { cwd, dept }; return { id: "s-9" }; };
+  c.submitTurn = (seed, sid, opts) => { got.submit = { seed, sid, opts }; };
+  const s = await c.dpEmbedOpen();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(got.newSession)), { cwd: "/work/exp", dept: { ref: "r4", name: "Experience" } });
+  assert.strictEqual(s.title, "Audit · Experience");
+  assert.strictEqual(s.fnKey, "r4:audit");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(got.submit)), { seed: "Audit for Experience: Own the experience", sid: "s-9",
+    opts: { pin: { department_ref: "r4" } } });
+  assert.strictEqual(c.S.ui.dest, "chats");
+  assert.deepStrictEqual(Array.from(c.S.openPanes), ["s-9"], "one chat and nothing else");
+});
+
+test("slice I: the chat-only frame reopens the chat it started, and makes no new one", async () => {
+  const c = fresh();
+  const opened = [];
+  c.URLSearchParams = URLSearchParams;
+  c.location = { search: "?embed=chat&dept=r4&fn=audit&name=Experience" };
+  c.localStorage = memStore({ "sutra.fnchat": JSON.stringify({ "r4:audit": { claude_session: "u-7" } }) });
+  c.S.ui = { dest: "org2" };
+  c.S.sessions = [{ id: "u-6", claude_session: "u-6" }, { id: "u-7", claude_session: "u-7" }];
+  c.S.openPanes = [];
+  c.pushPane = (id) => { opened.push(id); c.S.openPanes.push(id); };
+  c.ensureTranscript = () => {};
+  c.newSession = () => { throw new Error("no new chat on reopen"); };
+  const s = await c.dpEmbedOpen();
+  assert.strictEqual(s.id, "u-7");
+  assert.deepStrictEqual(opened, ["u-7"]);
+});
+
+test("slice I: only the chat-only frame records its chat, and only under its own key", () => {
+  const c = fresh();
+  const written = [];
+  c.lsSet = (k, v) => written.push([k, v]);
+  c.S.sutraId = { "s-9": "chat-9" };
+  c.dpFnChatRemember({ id: "s-9", fnKey: "r4:audit", claude_session: "u-9" });
+  assert.strictEqual(written.length, 0, "outside the frame, nothing is written");
+  c.EMBED_CHAT = true;
+  c.localStorage = memStore();
+  c.dpFnChatRemember({ id: "s-9", fnKey: "r4:audit", claude_session: "u-9" });
+  assert.strictEqual(written.length, 1);
+  assert.strictEqual(written[0][0], "sutra.fnchat");
+  assert.strictEqual(written[0][1]["r4:audit"].claude_session, "u-9");
+  assert.strictEqual(written[0][1]["r4:audit"].sutra_id, "chat-9");
 });
 
 Promise.all(pending).then(() => {
