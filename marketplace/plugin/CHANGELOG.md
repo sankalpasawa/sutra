@@ -1,6 +1,26 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.292.1 (2026-09-22)
+
+- Released from v2.292.0-desktop..HEAD: 14 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - The links report follows the draft's clutter onto the Edits tab
+  - The keyword has to be the same article, or it is replaced
+  - The researchers see what readers want, and must ask about it first
+  - Find in the article: Cmd+F over the draft and the five tabs
+  - A gap may sharpen the angle. A gap may never become it
+  - Coverage: say what the draft covered, and why each drop happened
+  - Edits tab: what the article was meant to cover, and what it did not
+  - Keywords: settle them in the last rewrite, and use the secondaries at last
+  - The draft is just the article, and one button to go and edit it
+  - Rewrite with AI: the animation, the missing "Use this", and Undo
+  - A gap comes from the reader, and the world statement stops being an essay
+  - A missing key is said up front, on every path, not only in research
+  - Never say "waiting for you" with nothing on screen to answer
+  - Ready to read: name the tab the artifact is actually in
+- Changed: 41 file(s), +3111/-84
+- New test suites: test_gap_and_world.py test_key_preflight.py test_keyword_same_article.py test_research_demand.py test_write_coverage.py test_write_keywords.py
+
 ## 2.292.0 (2026-09-22)
 
 - Released from v2.291.8-desktop..HEAD: 2 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
