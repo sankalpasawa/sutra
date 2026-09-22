@@ -3,3 +3,4 @@
 {"ts":"2026-09-21T11:50:07Z","tag":"v2.291.5-desktop","version":"2.291.5","actor":"Devansh Asawa","reason":"owner asked to skip the beta on 2026-09-21: this is the fix for the failed in-app update he is blocked on"}
 {"ts":"2026-09-21T12:01:26Z","tag":"v2.291.6-desktop","version":"2.291.6","actor":"Devansh Asawa","reason":"owner asked to skip the beta on 2026-09-21: he is blocked on the Library tabs and wants the DMG straight away"}
 {"ts":"2026-09-21T13:29:27Z","tag":"v2.291.7-desktop","version":"2.291.7","actor":"Devansh Asawa","reason":"owner asked to skip the beta on 2026-09-21: he is waiting on this fix and wants the DMG now"}
+{"ts":"2026-09-22T16:41:45Z","tag":"v2.292.1-desktop","version":"2.292.1","actor":"Devansh Asawa","reason":"owner approved the whole round on 2026-09-22 and asked for it pushed to the DMG in one go while he was out"}
