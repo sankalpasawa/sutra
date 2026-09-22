@@ -22,7 +22,7 @@ def brand_scope(company):
     return "\n".join("- " + p for p in parts)
 
 
-def run(topic, angle, snapshot, lists, company):
+def run(topic, angle, snapshot, lists, company, primary=""):
     tok = _c.company_tokens(company)
     scope = brand_scope(company)
     common = _c.render(lists.get("common_h2s"))
@@ -52,7 +52,20 @@ def run(topic, angle, snapshot, lists, company):
         return verdict
 
     # ---- call 2: what is the real angle? --------------------------------------------------
+    # THE KEYWORD GOES IN, AND IT IS THE WHOLE POINT (owner, 2026-09-22). This call used to see the
+    # gap list, the common topics and the AI Overview, and was told to "cover as much of the gap
+    # list as two lines honestly can". It never saw what people had actually searched for. So on
+    # Recruiting Metrics it read "no page covers the four-fifths adverse impact rule" and wrote
+    # that into the angle -- and the angle is the most reused string in this engine, feeding the
+    # researcher picker, every research question, the keyword scorer, the architect and the writer.
+    # One line from a research note became the article's purpose: two of nine sections, eleven
+    # mentions, and two topics every rival covered dropped to make room. Nobody ever decided that
+    # article was about the four-fifths rule.
+    #
+    # With the keyword in front of it the prompt can hold the line it now states outright: a gap
+    # may sharpen the angle, a gap may never become it.
     p2 = _c.prompt("topic-angle", brand=tok["brand"], old_angle=angle or "(none recorded)",
+                   primary_keyword=(primary or topic or "").strip() or "(not recorded)",
                    gaps=_c.render(lists.get("gaps_to_own")), common_topics=common, ai_overview=aio)
     new, got2 = "", {}
     for _ in range(2):                      # a parse-clean reply with an empty field still slips through

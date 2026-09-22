@@ -229,6 +229,27 @@ EXCLUDED_REGIONS = {
     ],
 }
 
+_GAP_DEMOTION_WHY = ("the gap demotion, 2026-09-22: a gap is no longer framed as where the article "
+                     "wins, and is capped at one section. See the block comment below.")
+_GAP_DEMOTION = [
+    # His lines that Sutra REMOVED, which is what the diff reports.
+    ("What no ranking page does well", _GAP_DEMOTION_WHY),
+    ("then add what only we can say. The gap deserves a real", _GAP_DEMOTION_WHY),
+    ("position in the article, not the last section.", _GAP_DEMOTION_WHY),
+    # ...and the lines Sutra added in their place.
+    ("What no ranking page covers", _GAP_DEMOTION_WHY),
+    ("A GAP IS NOT A PROMOTION", _GAP_DEMOTION_WHY),
+    ("It tells you rivals left something out", _GAP_DEMOTION_WHY),
+    ("reader wants it, or that we have the material", _GAP_DEMOTION_WHY),
+    ("evidence as every other section", _GAP_DEMOTION_WHY),
+    ("gave two of its nine sections to a gap", _GAP_DEMOTION_WHY),
+    ("every ranking page covered were dropped to make room", _GAP_DEMOTION_WHY),
+    ("promises it.", _GAP_DEMOTION_WHY),
+    ("A gap that is genuinely", _GAP_DEMOTION_WHY),
+    ("wanted and genuinely evidenced deserves a real position", _GAP_DEMOTION_WHY),
+    ("neither deserves no section at all", _GAP_DEMOTION_WHY),
+]
+
 PORT_EDITS = {
     "readable-coverage.md": [
         # Same 2026-09-22 change, its two contract lines. Every row Sutra gets back carries a "why"
@@ -263,6 +284,17 @@ PORT_EDITS = {
     "wrapper-cta-retry.md": [
         ("then rank...", "the CTA example links his own product page; the port made it example.com"),
     ],
+    # THE GAP DEMOTION (owner, 2026-09-22). Sutra's four structure prompts framed the gap list as
+    # "where this article can win", and treated a gap-tagged section as the equal of one every
+    # ranking page covers. On his own Recruiting Metrics article that gave the four-fifths adverse
+    # impact rule two of nine sections while Source of Hire and Offer Acceptance Rate -- covered by
+    # every rival -- were dropped silently. His originals still carry the old framing, so these
+    # lines are Sutra-side ADDITIONS by design, not drift. If he adopts the same demotion upstream,
+    # delete these entries and the parity check takes over again.
+    "structure-simple.md": _GAP_DEMOTION,
+    "structure-listicle.md": _GAP_DEMOTION,
+    "structure-comparison.md": _GAP_DEMOTION,
+    "structure-template.md": _GAP_DEMOTION,
 }
 
 # PROMPTS SUTRA CARRIES IN AN ADAPTED FORM ON PURPOSE. Checked for presence, not for line parity.

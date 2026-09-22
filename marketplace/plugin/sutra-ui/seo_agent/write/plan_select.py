@@ -83,6 +83,27 @@ def _id_block(maps, kind):
     return "\n".join("- %s: %s" % (i, x) for i, x in maps[kind].items()) or "(none)"
 
 
+def _tag_kind(tag):
+    """"gap: G1" -> "gap". A bare kind ("asset-angle") is its own kind."""
+    return str(tag or "").split(":", 1)[0].strip().lower()
+
+
+def _gap_only(tagged):
+    """Is a GAP the only reason any of these sub-sections is here?
+
+    True only when there is at least one tag and every one of them is a gap. A section carrying a
+    gap AND anything else -- a table-stakes topic, a PAA question, the asset's own angle -- has a
+    second reason to exist and is not this rule's business.
+    """
+    kinds = {_tag_kind(t) for h in (tagged or []) for t in (h.get("tags") or [])}
+    return bool(kinds) and kinds == {"gap"}
+
+
+def _has_cards(tagged):
+    """Is there real evidence under these sub-sections, or only the claim that rivals missed it?"""
+    return any(h.get("cards") for h in (tagged or []))
+
+
 def _clean_tags(raw, maps, h3_card_ids=None):
     """Validate one H3's tags. Each entry is {"tag": "kind: ID", "cards": [ids]} (a bare string is still
     accepted). A tag is kept only when it cites at least one card that really belongs to THIS H3, the
@@ -186,6 +207,20 @@ def run(inputs, ctx, say=lambda *a: None):
         tagged = [h for h in sec["h3s"] if h["tags"]]
         cov = (len(tagged) / total) if total else 0.0
         verdict = "keep" if cov >= thr and tagged else "cut"
+        # A GAP TAG ALONE NO LONGER KEEPS A SECTION ALIVE (owner, 2026-09-22). Every tag counted
+        # the same here, so a section tagged only "gap" -- meaning no ranking page covers it --
+        # survived exactly as easily as one tagged "common-h2", meaning every ranking page does.
+        # On Recruiting Metrics that is how the four-fifths rule held two of nine sections while
+        # Source of Hire and Offer Acceptance Rate, covered by every rival, were cut. A gap is a
+        # claim about what rivals LACK; it says nothing about whether we can write the section
+        # well. So a gap-only section must also carry real evidence, and where it does not it dies
+        # here and its sub-sections are re-homed as orphans like any other cut section's.
+        if verdict == "keep" and _gap_only(tagged) and not _has_cards(tagged):
+            verdict = "cut"
+            drops.append({"h3": sec["h2"], "from_h2": sec["h2"],
+                          "why": "its only tag was a gap, with no evidence behind it",
+                          "ai_reason": "a gap says rivals left something out, not that we can "
+                                       "write it: this section had nothing to write it from"})
         stats_rows.append({"h2": sec["h2"], "h3s": total, "tagged": len(tagged),
                            "coverage": round(cov, 2), "verdict": verdict})
         for h in sec["h3s"]:
