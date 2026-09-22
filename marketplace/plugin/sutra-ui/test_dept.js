@@ -678,20 +678,26 @@ test("S25: a department with nothing written says one quiet line per cell, never
 });
 
 /* ── S26 / A10: the three tabs ── */
-test("S26/A10: three tabs — Identity, With the owner, With Adaptation, in that order", () => {
+test("S26/A10 + DS-13: two tabs — Identity and Chat, in that order", () => {
   const c = fresh();
+  c.localStorage = memStore();
   const html = idCard(c, IDENTITY);
   const panes = (html.match(/data-dppane="([a-z]+)"/g) || []).map(m => /"([a-z]+)"/.exec(m)[1]);
-  assert.deepStrictEqual(panes, ["identity", "owner", "adaptation", "log"]);
-  assert.ok(html.indexOf(">With Sankalp Asawa<") !== -1, "the owner's tab carries their name");
-  assert.ok(html.indexOf(">With Adaptation<") !== -1);
+  assert.deepStrictEqual(panes, ["identity", "chat"], "the card, then the chat");
+  assert.ok(html.indexOf(">With Sankalp Asawa<") === -1, "no per-person tab any more");
+  assert.ok(html.indexOf(">With Adaptation<") === -1);
+  assert.ok(html.indexOf(">Log<") === -1, "the Log tab is gone");
   assert.ok(/aria-pressed="true" data-dppane="identity"/.test(html), "Identity is the open one");
+  assert.ok(html.indexOf("Write the goal of Org") !== -1, "the owner's turns are on the card, as Recent");
 });
 
-test("S26: with no owner the tab still opens and says whose chat it is", () => {
+test("S26: with no owner the card still opens, and its chat is offered by name", () => {
   const c = fresh();
+  c.localStorage = memStore();
   const html = idCard(c, BARE_ID);
-  assert.ok(html.indexOf(">With the owner<") !== -1);
+  assert.ok(html.indexOf(">Chat<") !== -1, "the chat tab is there");
+  const chat = idCard(fresh(), BARE_ID, "chat");
+  assert.ok(chat.indexOf("Start the chat with Identity") !== -1);
 });
 
 test("S26: a tab click switches the pane, and only inside .dp", () => {
@@ -786,36 +792,25 @@ test("S29: a row with no time and no addressee still renders", () => {
 });
 
 /* ── S30: the chat tabs on the Identity card ── */
-test("S30/A17: each chat tab opens its own rows with Summary and Exact", () => {
+test("S30/A17 + DS-13: Recent on the Identity card carries both records, in summary only", () => {
   const c = fresh();
-  const owner = idCard(c, IDENTITY, "log");
-  assert.ok(owner.indexOf("Write the goal of Org") !== -1, "the owner's own rows");
-  assert.ok(owner.indexOf("Pause the nightly sweep") === -1, "and not Adaptation's");
-  const modes = (owner.match(/data-dpchatmode="([a-z]+)"/g) || []).map(m => /"([a-z]+)"/.exec(m)[1]);
-  assert.deepStrictEqual(modes, ["summary", "exact"]);
-  assert.ok(/aria-pressed="true" data-dpchatmode="summary"/.test(owner), "Summary is the open one");
-  const adapt = idCard(fresh(), IDENTITY, "adaptation");
-  assert.ok(adapt.indexOf("Pause the nightly sweep") !== -1);
-  assert.ok(adapt.indexOf("Write the goal of Org") === -1);
+  c.localStorage = memStore();
+  const html = idCard(c, IDENTITY);
+  assert.ok(html.indexOf("<h3>Recent</h3>") !== -1, "the card's own section");
+  assert.ok(html.indexOf("Write the goal of Org") !== -1, "the owner's turns");
+  assert.ok(html.indexOf("Pause the nightly sweep") !== -1, "and Adaptation's, in one place");
+  assert.strictEqual((html.match(/data-dpchatmode=/g) || []).length, 0, "no Summary / Exact control");
+  assert.strictEqual(html.indexOf("dpexact"), -1, "and no raw rows on a function card");
 });
 
-test("S30: the Summary / Exact click switches one chat and leaves the other alone", () => {
-  const c = fresh();
-  idCard(c, IDENTITY, "log");
-  assert.strictEqual(click(c, elem({ dpchatmode: "exact", dpchatkey: "r4:owner" })), true);
-  assert.strictEqual(c.dpS().chatMode["r4:owner"], "exact");
-  const html = idCard(c, IDENTITY, "log");
-  assert.ok(html.indexOf("dpexact") !== -1, "the owner's chat is in Exact");
-  assert.strictEqual(c.dpS().chatMode["r4:adaptation"], undefined, "Adaptation's is untouched");
-  const adapt = idCard(c, IDENTITY, "adaptation");
-  assert.ok(adapt.indexOf("dpexact") === -1);
-});
 
-test("S30: an empty chat tab says Nothing yet. and nothing else", () => {
+test("S30 + A33: a department with nothing written shows no Recent at all", () => {
   const c = fresh();
-  const html = idCard(c, BARE_ID, "log");
-  assert.ok(html.indexOf("Nothing yet.") !== -1);
+  c.localStorage = memStore();
+  const html = idCard(c, BARE_ID);
+  assert.strictEqual(html.indexOf("<h3>Recent</h3>"), -1, "an empty Recent is not drawn");
   assert.ok(html.indexOf("dpmsg") === -1);
+  assert.ok(html.indexOf("No goal yet") !== -1, "the card's own line is the one quiet line");
 });
 
 /* ── S32 / A29, R5: the words on the screen ── */
@@ -838,21 +833,6 @@ test("S32/A29: every word on these screens is from the D78 list", () => {
   }
 });
 
-test("S32/A29: the word charter reaches the screen only inside an Exact row", () => {
-  const c = fresh();
-  const d = c.o2Data(), n = d.byRef.get("r4");
-  for (const html of [c.dpListHtml(n, d, DEPT_EXP, null),
-                      idCard(c, IDENTITY), idCard(c, BARE_ID),
-                      idCard(c, IDENTITY, "log"), idCard(c, IDENTITY, "adaptation")]) {
-    assert.strictEqual(html.toLowerCase().indexOf("charter"), -1, "no charter on a card");
-  }
-  c.dpS().chatMode["r4:owner"] = "exact";
-  const exact = idCard(c, IDENTITY, "log");
-  const at = exact.toLowerCase().indexOf("charter");
-  assert.ok(at !== -1, "the raw row carries the record's own kind");
-  assert.ok(exact.lastIndexOf("<pre class=\"dpexact\">") < at && at < exact.indexOf("</pre>"),
-    "and it is inside the pre, nowhere else");
-});
 
 /* B1, the bug the acceptance walk found: the fixture is not hand-written. Every
    summary the request writer can compose is put on the Now card the way a filed
@@ -1123,34 +1103,22 @@ test("S43/A16: a department no check has named is one quiet line", () => {
 });
 
 /* ── S44 / A17: the Chat tab on all four ── */
-test("S44/A17: every function card carries a Chat tab with Summary and Exact", () => {
+test("S44/A17 + DS-13: every function card is two tabs, and its turns are Recent on the card", () => {
   const DATA = { adaptation: ADAPTATION, priority: PRIORITY, coordination: COORD, audit: AUDIT };
   for (const [tab, label] of FUNCS.slice(1)){
     const c = fresh();
+    c.localStorage = memStore();
     const card = fnCard(c, tab, DATA[tab]);
     const panes = (card.match(/data-dppane="([a-z]+)"/g) || []).map(m => /"([a-z]+)"/.exec(m)[1]);
-    assert.deepStrictEqual(panes, [tab, "chat", "log"], label + ": its own tab, then Chat, then Log");
+    assert.deepStrictEqual(panes, [tab, "chat"], label + ": its own tab, then Chat");
     assert.ok(new RegExp('aria-pressed="true" data-dppane="' + tab + '"').test(card),
       label + " is the open one");
-    const chat = fnCard(fresh(), tab, DATA[tab], "log");
-    const modes = (chat.match(/data-dpchatmode="([a-z]+)"/g) || []).map(m => /"([a-z]+)"/.exec(m)[1]);
-    assert.deepStrictEqual(modes, ["summary", "exact"], label + ": both readings");
-    assert.ok(chat.indexOf(CHAT_SAYS[tab]) !== -1,
-      label + ": the turns its own route wrote");
-    assert.ok(chat.indexOf("dpmsg") !== -1, label + ": rendered as turns");
+    assert.strictEqual((card.match(/data-dpchatmode=/g) || []).length, 0, label + ": no Summary / Exact");
+    assert.ok(card.indexOf(CHAT_SAYS[tab]) !== -1, label + ": the turns its own route wrote, as Recent");
+    assert.ok(card.indexOf("<h3>Recent</h3>") !== -1, label + ": under one heading");
   }
 });
 
-test("S44/A17: Exact on a function chat is the raw row, and it is the only place a path may be", () => {
-  const c = fresh();
-  c.dpS().chatMode["r4:audit:chat"] = "exact";
-  const html = fnCard(c, "audit", AUDIT, "log");
-  assert.ok(html.indexOf("dpexact") !== -1);
-  const at = html.indexOf("marketplace/plugin");
-  assert.ok(at !== -1, "the record's own words");
-  assert.ok(html.lastIndexOf('<pre class="dpexact">') < at && at < html.indexOf("</pre>"),
-    "inside the pre, nowhere else");
-});
 
 test("S44: switching one function's chat mode leaves the others alone", () => {
   const c = fresh();
@@ -1186,12 +1154,14 @@ test("S45: an empty function still offers what it can, and nothing it cannot", (
     "a check nobody ran offers nothing but its own two tabs");
 });
 
-test("S45: an empty chat on any function is one quiet line", () => {
+test("S45 + A33: an empty function card draws no Recent and keeps its one quiet line", () => {
   for (const [tab] of FUNCS.slice(1)){
     const c = fresh();
-    const html = fnCard(c, tab, EMPTY[tab], "log");
-    assert.ok(html.indexOf("Nothing yet.") !== -1, tab);
+    c.localStorage = memStore();
+    const html = fnCard(c, tab, EMPTY[tab]);
+    assert.strictEqual(html.indexOf("<h3>Recent</h3>"), -1, tab);
     assert.ok(html.indexOf("dpmsg") === -1, tab);
+    assert.strictEqual((html.match(/o2quiet dpq/g) || []).length, 1, tab + ": exactly one quiet line");
   }
 });
 
@@ -1532,12 +1502,12 @@ test("S32/A29: the word charter reaches no function card, and every screen word 
   const DATA = { adaptation: ADAPTATION, priority: PRIORITY, coordination: COORD, audit: AUDIT };
   let all = "";
   for (const [tab] of FUNCS.slice(1)){
-    for (const pane of [null, "chat", "log"]) all += fnCard(fresh(), tab, DATA[tab], pane);
+    for (const pane of [null, "chat"]) all += fnCard(fresh(), tab, DATA[tab], pane);
     all += fnCard(fresh(), tab, EMPTY[tab]);
   }
   assert.strictEqual(all.toLowerCase().indexOf("charter"), -1, "A29: never on a card");
   for (const w of ["Adaptation", "Priority", "Coordination", "Audit", "Queue", "Budget",
-                   "Locks", "Checks", "Chat", "Summary", "Exact"]) {
+                   "Locks", "Checks", "Chat", "Recent"]) {
     assert.ok(all.indexOf(w) !== -1, "missing screen word: " + w);
   }
   for (const w of ["cut", "seam", "overlay", "cascade", "score"]) {
@@ -2282,15 +2252,18 @@ test("S79/A29: and it reaches the screen only inside an Exact row", () => {
   const st = c.dpS();
   st.sel = "r4";
   Object.assign(st, FULL);
-  st.tab.r4 = "identity";
-  st.pane["r4:identity"] = "log";
-  st.chatMode["r4:owner"] = "exact";
+  st.tab.r4 = "engines";
+  st.engines = Object.assign({ ref: "r4" }, ENGINES);
+  st.engineSel = "nightly";
+  st.pane["r4:engines"] = "chat";
+  st.chatMode["r4:engines:chat"] = "exact";
   const d = c.o2Data();
   const exact = c.dpViewerHtml(d.byRef.get("r4"), d, DEPT_EXP, null);
+  assert.ok(exact.indexOf('<pre class="dpexact">') !== -1, "an engine's Exact is the raw row");
   const at = exact.toLowerCase().indexOf("charter");
-  assert.ok(at !== -1, "the raw row carries the record's own kind");
-  assert.ok(exact.lastIndexOf('<pre class="dpexact">') < at && at < exact.indexOf("</pre>"),
-    "and it is inside the pre, nowhere else");
+  if (at !== -1)
+    assert.ok(exact.lastIndexOf('<pre class="dpexact">') < at && at < exact.indexOf("</pre>"),
+      "and where the word appears at all, it is inside that pre");
 });
 
 /* ── S15 / TEST-PLAN component 39: the one branch inside 19-org2.js ── */
@@ -2388,6 +2361,40 @@ test("S22/A31: the .dp CSS block exists, uses tokens only, and covers what the m
   }
 });
 
+test("S30 + DS-13: the Summary / Exact control lives on an engine card, and only there", () => {
+  const c = fresh();
+  c.localStorage = memStore();
+  const id = idCard(c, IDENTITY);
+  const fn = fnCard(fresh(), "audit", AUDIT);
+  assert.strictEqual((id + fn).indexOf("data-dpchatmode="), -1, "not on a function card");
+  const eng = engCard(fresh(), "chat", "nightly");
+  assert.ok(eng.indexOf("data-dpchatmode=") !== -1, "still on an engine's chat");
+  assert.strictEqual(click(c, elem({ dpchatmode: "exact", dpchatkey: "r4:engines:chat" })), true);
+  assert.strictEqual(c.dpS().chatMode["r4:engines:chat"], "exact", "and the click still switches it");
+});
+
+test("S32/A29 + DS-13: with the raw rows gone, the word charter reaches no department card", () => {
+  const c = fresh();
+  c.localStorage = memStore();
+  const d = c.o2Data(), n = d.byRef.get("r4");
+  for (const html of [c.dpListHtml(n, d, DEPT_EXP, null),
+                      idCard(c, IDENTITY), idCard(c, BARE_ID), idCard(fresh(), IDENTITY, "chat")]) {
+    assert.strictEqual(html.toLowerCase().indexOf("charter"), -1, "no charter on a card");
+  }
+  const eng = engCard(fresh(), "chat", "nightly", { chatMode: { "r4:engines:chat": "exact" } });
+  assert.ok(eng.indexOf('data-dpchatmode="exact"') !== -1, "an engine's chat still offers the raw reading");
+  assert.ok(/aria-pressed="true" data-dpchatmode="exact"/.test(eng), "and it is the open one here");
+});
+
+test("S44/A17 + DS-13: a path may still be read, on an engine's Exact and nowhere else", () => {
+  const c = fresh();
+  c.localStorage = memStore();
+  const fn = fnCard(c, "audit", AUDIT) + fnCard(fresh(), "audit", AUDIT, "chat");
+  assert.strictEqual(fn.indexOf("dpexact"), -1, "no raw rows on a function card");
+  const eng = engCard(fresh(), "chat", "nightly", { chatMode: { "r4:engines:chat": "exact" } });
+  assert.ok(/aria-pressed="true" data-dpchatmode="exact"/.test(eng), "the engine's chat is the one place Exact remains");
+});
+
 /* ── slice I: function templates and the live function chat ────────────────
    holding/plans/department-screen/LLD-FUNCTIONS.md, DECISIONS.md DS-8..DS-12. */
 const FUNCTIONS_READ = {
@@ -2424,15 +2431,15 @@ function frameDoc(key){
   return doc;
 }
 
-test("slice I: a function card's tabs are its own, Chat (live) and Log (the record)", () => {
+test("slice I + J: a function card's tabs are its own and Chat (live); an engine keeps its record chat", () => {
   const c = fresh();
+  c.localStorage = memStore();
   const card = fnCard(c, "audit", AUDIT);
   const panes = (card.match(/data-dppane="([a-z]+)"/g) || []).map(m => /"([a-z]+)"/.exec(m)[1]);
-  assert.deepStrictEqual(panes, ["audit", "chat", "log"]);
-  const log = fnCard(fresh(), "audit", AUDIT, "log");
-  assert.ok(log.indexOf("<h3>Log</h3>") !== -1 && log.indexOf("data-dpchatmode") !== -1, "the Log keeps Summary and Exact");
-  const eng = c.dpFnHtml ? c.dpFnHtml("engines", "Engine", () => "", [["engines", "Engine"], ["chat", "Chat"]]) : "";
+  assert.deepStrictEqual(panes, ["audit", "chat"]);
+  const eng = engCard(fresh(), "chat", "nightly");
   assert.ok(eng.indexOf("data-dpchatstart") === -1, "an engine card keeps its record chat, not a live one");
+  assert.ok(eng.indexOf("data-dpchatmode") !== -1, "with its two readings");
 });
 
 test("slice I: before a chat exists the Chat tab offers one button and sends nothing", () => {
@@ -2460,13 +2467,13 @@ test("slice I: a chat this card started before is reopened, not offered again", 
   assert.deepStrictEqual(JSON.parse(JSON.stringify(c.dpFnChatMap())), {}, "a broken map reads as empty");
 });
 
-test("slice I: Identity's owner tab is the live chat, and the owner's record turns move to Log", () => {
+test("slice I + J: Identity's Chat tab is the live chat, and its record turns are Recent on the card", () => {
   const c = fresh();
   c.localStorage = memStore();
-  const live = idCard(c, IDENTITY, "owner");
+  const live = idCard(c, IDENTITY, "chat");
   assert.ok(live.indexOf('data-dpchatstart="identity"') !== -1 && live.indexOf("Start the chat with Identity") !== -1);
-  const log = idCard(fresh(), IDENTITY, "log");
-  assert.ok(log.indexOf("Write the goal of Org") !== -1, "the owner's own rows, on Log");
+  const card = idCard(fresh(), IDENTITY);
+  assert.ok(card.indexOf("Write the goal of Org") !== -1, "the owner's own rows, on the card");
 });
 
 test("slice I: the frame is made once, kept across paints, and hidden off the screen", () => {
@@ -2605,6 +2612,85 @@ test("slice I: only the chat-only frame records its chat, and only under its own
   assert.strictEqual(written[0][0], "sutra.fnchat");
   assert.strictEqual(written[0][1]["r4:audit"].claude_session, "u-9");
   assert.strictEqual(written[0][1]["r4:audit"].sutra_id, "chat-9");
+});
+
+/* ── slice J: the template as a framework, the graph, the added sections ──── */
+const FULL_TPL = {
+  picked: {
+    identity: { id: "identity/default", name: "Default", use_case: "Any department",
+      floor: ["Holds the goal, done line, rules, budget and owner"], choices: ["Which effects to raise"],
+      reads: ["Every effect recorded"], may_propose: ["A change to the goal"], schedule: "On every effect",
+      checks: ["Every effect has a verdict"] },
+    adaptation: { id: "adaptation/default", name: "Default", use_case: "Any department",
+      floor: ["Reads the record for repeats"], choices: ["Which pattern is worth an engine"],
+      reads: ["Asks and their stamps"], may_propose: ["A new engine"], schedule: "Weekly",
+      checks: ["Every pattern is proposed or refused with a reason"] },
+    priority: { id: "priority/money-movement", name: "Money movement", use_case: "A department that moves money",
+      floor: ["Admits each row with its origin"], choices: ["The order of the queue"], reads: ["The queue"],
+      may_propose: ["A budget change"], schedule: "Each morning", checks: ["Every row has an origin"] },
+    coordination: { id: "coordination/default", name: "Default", use_case: "Any department",
+      floor: ["One holder per work item"], choices: ["Who takes it"], reads: ["Open work items"],
+      may_propose: ["A hand-off rule"], schedule: "On every hand-off", checks: ["Every hand-off has a row"] },
+    audit: { id: "audit/default", name: "Default", use_case: "Any department",
+      floor: ["Checks claims against the record"], choices: ["Which claims first"], reads: ["Claims"],
+      may_propose: ["A new standing check"], schedule: "Daily", checks: ["Every claim has a result"] },
+  },
+  templates: { audit: [{ id: "audit/default", name: "Default", use_case: "Any department" }] },
+};
+function withTpl(c){ c.dpS().functions = Object.assign({ ref: "r4" }, FULL_TPL); return c; }
+
+test("slice J: a function card opens on its template's framework, in the template's own lines", () => {
+  const c = withTpl(fresh());
+  c.localStorage = memStore();
+  const card = fnCard(c, "priority", PRIORITY);
+  assert.ok(card.indexOf("The Money movement template") !== -1, "the name of the template it runs");
+  assert.ok(card.indexOf("A department that moves money") !== -1, "when it is picked");
+  for (const label of ["Always does", "Decides", "Reads", "May propose", "How we know it worked", "Runs"])
+    assert.ok(card.indexOf(">" + label + "<") !== -1, "missing part: " + label);
+  assert.ok(card.indexOf("Admits each row with its origin") !== -1, "the template's own line");
+  assert.ok(card.indexOf("Each morning") !== -1, "and when it runs");
+});
+
+test("slice J: Adaptation draws the department and lists every engine's steps", () => {
+  const c = withTpl(fresh());
+  c.localStorage = memStore();
+  const card = fnCard(c, "adaptation", ADAPTATION, null, { engines: Object.assign({ ref: "r4" }, ENGINES) });
+  assert.ok(card.indexOf("<svg") !== -1 && card.indexOf("dpgraph") !== -1, "a drawing, not a list");
+  for (const w of ["The owner", "Identity", "Priority", "Coordination", "Audit", "Nightly sweep"])
+    assert.ok(card.indexOf(w) !== -1, "missing from the graph: " + w);
+  assert.ok(card.indexOf("What each engine does, step by step") !== -1);
+  assert.ok(card.indexOf("read the folder") !== -1 && card.indexOf("file what changed") !== -1, "its steps");
+});
+
+test("slice J: Priority shows when each engine runs next, off the engine's own record", () => {
+  const c = withTpl(fresh());
+  c.localStorage = memStore();
+  const eng = { engines: [Object.assign({}, ENGINES.engines[0], { next_run: "2026-09-23T03:30:00+05:30" }),
+                          Object.assign({}, ENGINES.engines[1], { next_run: null })] };
+  const card = fnCard(c, "priority", PRIORITY, null, { engines: Object.assign({ ref: "r4" }, eng) });
+  assert.ok(card.indexOf("Next runs") !== -1);
+  assert.ok(card.indexOf("next 03:30") !== -1, "the clock the record carries");
+  assert.ok(card.indexOf("not scheduled") !== -1, "and the one with no next run says so");
+});
+
+test("slice J: Coordination says who makes each engine's work and who reads it", () => {
+  const c = withTpl(fresh());
+  c.localStorage = memStore();
+  const card = fnCard(c, "coordination", COORD, null, { engines: Object.assign({ ref: "r4" }, ENGINES) });
+  assert.ok(card.indexOf("Who makes it, who reads it") !== -1);
+  assert.ok(card.indexOf("from an ask") !== -1, "the engine born from an ask");
+  assert.ok(card.indexOf("written by the owner") !== -1, "and the one written by hand");
+  assert.ok(card.indexOf("nobody named yet") !== -1, "no reader is invented");
+});
+
+test("slice J: a department with no engines still draws its graph and adds no empty section", () => {
+  const c = withTpl(fresh());
+  c.localStorage = memStore();
+  const card = fnCard(c, "adaptation", EMPTY.adaptation);
+  assert.ok(card.indexOf("dpgraph") !== -1 && card.indexOf("No engines yet") !== -1);
+  assert.ok(card.indexOf("What each engine does") === -1, "no section for engines that do not exist");
+  const pri = fnCard(withTpl(fresh()), "priority", EMPTY.priority);
+  assert.ok(pri.indexOf("Next runs") === -1);
 });
 
 Promise.all(pending).then(() => {

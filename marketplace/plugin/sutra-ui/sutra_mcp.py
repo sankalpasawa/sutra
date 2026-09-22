@@ -159,6 +159,33 @@ def t_routine_create(args):
                     "create routine %r (%s)" % (body["id"], sched))
 
 
+#: Slice J (DS-15, founder 2026-09-22: "if I want to start the department, I can
+#: just start from that identity chat ... if I give certain things to it, it
+#: should start creating those things"). The three asks a department is made of:
+#: a new department, its goal and rules, and which template a function runs.
+#: Validated by the SAME check the screen's own request route uses, so a chat
+#: cannot file an ask the screen would have refused, and composed into the same
+#: words the approver reads there.
+DEPARTMENT_KINDS = ("org.create", "org.charter", "org.template")
+
+
+def t_department_ask(args):
+    kind = str(args.get("kind") or "").strip()
+    if kind not in DEPARTMENT_KINDS:
+        return _err("a department ask is one of: %s" % ", ".join(DEPARTMENT_KINDS))
+    body = dict(args.get("args") or {})
+    try:
+        import org2_api
+    except Exception as exc:  # noqa: BLE001 - the panel's own module; say so plainly
+        return _err("the department routes are not loaded here: %s" % exc)
+    try:
+        live = org2_api._request_check(kind, body)
+        summary = org2_api._summary(kind, body, lambda r: (live.get(r) or {}).get("name") or r)
+    except Exception as exc:  # noqa: BLE001 - HTTPException or ValueError, same answer
+        return _err("that ask would be refused: %s" % getattr(exc, "detail", exc))
+    return _propose(kind, body, summary)
+
+
 def t_routine_update(args):
     rid = str(args.get("id") or "")
     try:
@@ -337,6 +364,20 @@ TOOLS = [
                         "minute": {"type": "integer", "minimum": 0, "maximum": 59},
                         "weekday": {"type": "integer", "minimum": 0, "maximum": 6},
                         "cron": {"type": "string"}}}}}},
+
+    {"name": "sutra_department_ask", "fn": t_department_ask,
+     "description": "PROPOSE one of the three asks a department is made of: a new "
+                    "department (org.create: parent, name), its goal and rules "
+                    "(org.charter: ref, purpose, done_when, rules[{tag,line}], kind), "
+                    "or which template one of its five functions runs (org.template: "
+                    "ref, function, template). This does NOT apply anything: the owner "
+                    "stamps it in the panel.",
+     "schema": {"type": "object", "required": ["kind", "args"], "properties": {
+         "kind": {"type": "string", "enum": list(DEPARTMENT_KINDS)},
+         "args": {"type": "object", "description":
+                  "org.create {parent, name}; org.charter {ref, purpose, title, "
+                  "done_when[], rules[{tag: go|ask|refuse|always, line}], kind: "
+                  "standing|project|role, person}; org.template {ref, function, template}"}}}},
 
     {"name": "sutra_routine_update", "fn": t_routine_update,
      "description": "PROPOSE a change to a routine, including pausing or "

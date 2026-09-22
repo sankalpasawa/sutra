@@ -5032,3 +5032,17 @@ html.embed-chat .onb{display:none !important}
 html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .dpembednote{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
   background:var(--surface);color:var(--muted);font-size:13px;z-index:10}
+
+/* ── slice J: the template as a framework, the graph, the added sections ──── */
+.dpfuse{font-size:12.5px;color:var(--muted);margin:0 0 10px}
+.dpframework{display:grid;gap:10px}
+.dpfpart{display:grid;grid-template-columns:132px minmax(0,1fr);gap:10px;align-items:start}
+.dpfline{font-size:12.5px;color:var(--ink);padding:1px 0}
+.dpgraph{width:100%;height:auto;display:block;margin:2px 0 4px}
+.dpg-own{fill:var(--acc-bg);stroke:var(--acc);stroke-width:1}
+.dpg-id{fill:var(--surface);stroke:var(--acc);stroke-width:1.4}
+.dpg-fn{fill:var(--surface);stroke:var(--line);stroke-width:1}
+.dpg-eng{fill:var(--soft);stroke:var(--line);stroke-width:1}
+.dpg-t{font:600 11.5px/1 var(--sans);fill:var(--ink)}
+.dpg-n{font:10.5px/1 var(--sans);fill:var(--muted)}
+.dpg-a{stroke:var(--line);stroke-width:1}

@@ -732,7 +732,10 @@ def functions(ref: str):
     out = {"picked": {}, "templates": {}}
     for fn in FT.FUNCTIONS:
         t = FT.get(picked[fn])
-        out["picked"][fn] = FT.card(t) if t else None
+        # slice J (DS-14): the picked template comes back WHOLE -- the card opens
+        # on its framework (floor, choices, reads, may propose, schedule, checks),
+        # not on its name alone. The picker rows stay the three-field row.
+        out["picked"][fn] = t if t else None
         out["templates"][fn] = [FT.card(x) for x in FT.templates(fn)]
     return out
 
@@ -1459,6 +1462,9 @@ def _engine_row(rid: str, rec: Dict[str, Any], runs_root: str,
         "read_by": None,
         "workflow": flow,
         "prompt": _text(rec.get("prompt")),
+        # slice J (DS-14): when this engine runs next, as its own record holds it
+        # (routines.py writes next_run at save; a disabled engine carries none).
+        "next_run": _text(rec.get("next_run")) or None,
     }
 
 
