@@ -114,7 +114,16 @@ if [ -n "$NODE_SUM" ]; then
   [ "$NODE_SUM" = "$got" ] || die "node checksum mismatch: want $NODE_SUM got $got"
 fi
 tmp="$CACHE/node-extract"; rm -rf "$tmp"; mkdir -p "$tmp"
-tar -xf "$CACHE/$NODE_ZIP" -C "$tmp"          # -> node-v<ver>-win-x64/
+# Git Bash's `tar` is GNU tar and cannot read a .zip ("does not look like a tar
+# archive"). Extract with Windows' bundled bsdtar (System32\tar.exe, which does
+# handle zip), falling back to PowerShell Expand-Archive.
+if [ -x "/c/Windows/System32/tar.exe" ]; then
+  /c/Windows/System32/tar.exe -xf "$CACHE/$NODE_ZIP" -C "$tmp" || die "node unzip (bsdtar) failed"
+else
+  powershell -NoProfile -Command \
+    "Expand-Archive -LiteralPath '$(cygpath -w "$CACHE/$NODE_ZIP")' -DestinationPath '$(cygpath -w "$tmp")' -Force" \
+    || die "node unzip (Expand-Archive) failed"
+fi                                             # -> node-v<ver>-win-x64/
 mkdir -p "$PAYLOAD/node"
 cp -R "$tmp/node-v${NODE_VERSION}-win-x64"/. "$PAYLOAD/node"/ || die "staging node failed"
 [ -f "$PAYLOAD/node/node.exe" ] || die "payload has no node/node.exe"
