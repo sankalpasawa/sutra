@@ -17,6 +17,7 @@ import time
 import weakref
 
 import mission_engine
+import proc_group
 import session_reader
 import session_runtime
 import shadow_egress
@@ -110,7 +111,7 @@ def delegate_alive(pid, session_id=None):
     if not pid:
         return True                     # nothing recorded -> assume the worst
     try:
-        os.kill(int(pid), 0)
+        proc_group.probe_pid(pid)
     except ProcessLookupError:
         return False                    # provably gone
     except (PermissionError, OSError):
@@ -183,7 +184,7 @@ def _app_process_alive(pid):
     if not pid:
         return False
     try:
-        os.kill(int(pid), 0)
+        proc_group.probe_pid(pid)
     except ProcessLookupError:
         return False                    # provably gone
     except (PermissionError, OSError):

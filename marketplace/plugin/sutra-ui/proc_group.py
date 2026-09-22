@@ -40,6 +40,7 @@ field a subclass already had.
 import asyncio
 import os
 import signal
+import subprocess    # Windows: CREATE_NEW_PROCESS_GROUP flag + taskkill tree-kill
 
 
 #: 8 MiB, not asyncio's 64 KiB default, on EVERY provider. All three transports
@@ -51,6 +52,41 @@ import signal
 #: mid-answer. Reproduced directly: a 200 KB line raises at the default and
 #: reads clean at this limit.
 STREAM_LIMIT = 8 * 1024 * 1024
+
+
+def probe_pid(pid):
+    """Liveness probe with the SAME exception contract on every OS.
+
+    Callers guard this with try/except (ProcessLookupError -> the process is
+    gone; PermissionError -> it exists but is not ours to signal). On POSIX that
+    is exactly `os.kill(pid, 0)`. On Windows `os.kill(pid, 0)` does NOT probe --
+    it maps to TerminateProcess and KILLS the target -- so this uses OpenProcess
+    and RAISES the matching error instead of signalling anything. Returns None
+    (no raise) when the process is alive.
+    """
+    pid = int(pid)
+    if os.name != "nt":
+        os.kill(pid, 0)
+        return None
+    import ctypes
+    from ctypes import wintypes
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    STILL_ACTIVE = 259
+    ERROR_ACCESS_DENIED = 5
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    h = k.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not h:
+        err = ctypes.get_last_error()
+        if err == ERROR_ACCESS_DENIED:
+            raise PermissionError(pid)       # exists, not ours to query
+        raise ProcessLookupError(pid)        # invalid pid / gone
+    try:
+        code = wintypes.DWORD()
+        if not k.GetExitCodeProcess(h, ctypes.byref(code)) or code.value != STILL_ACTIVE:
+            raise ProcessLookupError(pid)    # exited
+        return None                          # alive
+    finally:
+        k.CloseHandle(h)
 
 
 class ProcRuntime:
@@ -96,6 +132,21 @@ class ProcRuntime:
         p = self.proc
         if p is None or p.returncode is not None:
             return False
+        if os.name == "nt":
+            # No process groups / killpg on Windows. The child was spawned with
+            # CREATE_NEW_PROCESS_GROUP (see _spawn_process); taskkill /T reaps it
+            # AND its descendants (the model's shell commands, node helpers) --
+            # the same tree-kill guarantee killpg gives on POSIX. /F forces it.
+            try:
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(p.pid)],
+                               check=False, capture_output=True)
+                return True
+            except Exception:
+                try:
+                    p.kill()
+                except (ProcessLookupError, OSError):
+                    return False
+                return True
         try:
             os.killpg(os.getpgid(p.pid), signal.SIGTERM)
         except (ProcessLookupError, PermissionError, OSError):
@@ -175,15 +226,23 @@ class ProcRuntime:
         to os.sutra.ui, so the app's grant covers it. Same group-kill, no
         session detach. test_provider_spawn_group.py pins this for all three.
         """
-        p = await asyncio.create_subprocess_exec(
-            *args, cwd=cwd,
+        kw = dict(
+            cwd=cwd,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             limit=STREAM_LIMIT,
             env=dict(os.environ, **(env or {})),
-            process_group=0,
         )
+        if os.name == "nt":
+            # Windows has no process groups; CREATE_NEW_PROCESS_GROUP makes the
+            # child the root of a new group so taskkill /T (kill_group) can reap
+            # its whole tree. There is no macOS TCC concern here, so this is the
+            # simple analog of the POSIX process_group=0 below.
+            kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            kw["process_group"] = 0
+        p = await asyncio.create_subprocess_exec(*args, **kw)
         self.proc = p
         self.key = key
         return p
