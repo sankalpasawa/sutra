@@ -273,7 +273,15 @@ def edits(meta):
     elif band.get("min") or band.get("max"):
         target = band.get("min") or band.get("max")
 
+    # THE LINKS REPORT MOVED HERE FROM THE DRAFT (owner, 2026-09-22: "the draft should be super
+    # clean... just the article"). The draft view used to show, above the article, which internal
+    # pages were linked and which sources survived. That was stripped so the draft is only the
+    # article -- but stripped is not deleted. This is the only place anyone can see whether the
+    # links landed and the sources held, so it lands on the Edits tab beside the coverage report,
+    # which is where somebody opening a finished article goes looking for exactly this.
+    links = _run_artifact(meta, "links-report.json")
     return {"passes": passes, "source_check": source_check, "coverage": _coverage(rep),
+           "links": links if isinstance(links, dict) and links else None,
            "has_source_check_doc": _has_doc(meta, "source-check.md"),
            "words": words, "target_words": target}
 
