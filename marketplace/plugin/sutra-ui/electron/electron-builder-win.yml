@@ -1,0 +1,65 @@
+# Windows packaging for Sutra (electron-builder). The macOS build stays on
+# make-dmg.sh / electron-packager; this config is the Windows leg only.
+#
+# Produces, on a windows-latest runner:
+#   dist-win/Sutra-Setup-x64.exe   NSIS installer (per-user, no admin)
+#   dist-win/Sutra-x64.exe         portable single-file exe
+#
+# UNSIGNED for the beta: no cscLink/certificate is provided, so electron-builder
+# skips Authenticode signing. Windows SmartScreen will warn on first run until a
+# cert + download reputation exist (Stage C). appId/productName are overridden
+# per-channel from CI (-c.appId / -c.productName): beta -> "Sutra Beta" /
+# os.sutra.ui.beta so it coexists with a future stable install.
+#
+# The bundled runtime is staged into payload/ by bundle-runtime-win.sh BEFORE
+# this runs; extraResources copies it (and the channel marker CI writes) to
+# resources/, where main.js resolveRuntime (resources/payload) and readChannel
+# (resources/channel) look for them.
+appId: os.sutra.ui
+productName: Sutra
+copyright: Sutra
+
+directories:
+  output: dist-win
+  buildResources: build
+
+# Only the shell's own files ship in app.asar; the heavy runtime rides in
+# extraResources, and everything build-time is excluded.
+files:
+  - main.js
+  - preload.js
+  - provision.js
+  - package.json
+  - "!**/*.sh"
+  - "!**/*.plist"
+  - "!test_*.js"
+  - "!entitlements.plist"
+  - "!wincompat/**"
+  - "!payload/**"
+  - "!dist/**"
+  - "!dist-win/**"
+  - "!.cache-win/**"
+  - "!*.icns"
+
+extraResources:
+  - from: payload
+    to: payload
+  - from: channel
+    to: channel
+
+win:
+  target:
+    - nsis
+    - portable
+  # Icon is optional; without build/icon.ico electron-builder uses the default
+  # Electron icon (fine for the beta). A real .ico is a Stage-C polish item.
+
+nsis:
+  oneClick: false
+  perMachine: false                       # per-user install -> no admin prompt
+  allowToChangeInstallationDirectory: true
+  artifactName: Sutra-Setup-x64.${ext}
+  # Windows auto-update (electron-updater) is Stage C; not wired here.
+
+portable:
+  artifactName: Sutra-x64.${ext}

@@ -1,0 +1,125 @@
+# Build the installable Sutra Windows .exe and attach it to the GitHub Release.
+#
+# The Windows counterpart of release-dmg.yml. Same tags, same beta/stable flow:
+# a vX.Y.Z-beta.N-desktop tag builds the coexisting "Sutra Beta" and publishes a
+# PRERELEASE; a vX.Y.Z-desktop tag builds stable. Both legs (mac + windows) run
+# on the same tag and upload to the same release, so a beta carries both assets.
+#
+# STATUS: unsigned. Windows SmartScreen warns on first run until a code-signing
+# certificate + download reputation exist; wiring signtool / Azure Trusted
+# Signing is a later step. Providers (Claude/DeepSeek/Codex) do NOT work on
+# Windows yet -- the credential store (macOS keychain) and process-spawn layer
+# (POSIX groups / login shell) still need porting. This leg makes the app
+# install and open; provider support follows.
+#
+# Artifacts (stable asset names so /releases/latest/download/... keeps working):
+#   Sutra-Setup-x64.exe   NSIS installer (per-user, no admin) + .sha256
+#   Sutra-x64.exe         portable single-file exe + .sha256
+name: release-windows
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to attach the .exe to (must already exist)"
+        required: true
+
+permissions:
+  contents: write        # upload a release asset
+
+jobs:
+  # Same assertion as release-dmg.yml's guard: the tag must match the manifests.
+  # Cross-workflow jobs cannot be shared, so it is repeated here (cheap, ubuntu).
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag must match the plugin manifests
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          case "$TAG" in
+            v*-desktop) ;;
+            *) echo "::error::tag '$TAG' is not vX.Y.Z[-beta.N]-desktop"; exit 1 ;;
+          esac
+          want="${TAG#v}"; want="${want%-desktop}"; want="${want%-beta.*}"
+          plugin="$(jq -r .version marketplace/plugin/.claude-plugin/plugin.json)"
+          market="$(jq -r '.plugins[] | select(.name=="core") | .version' .claude-plugin/marketplace.json)"
+          echo "tag=$want  plugin.json=$plugin  marketplace(core)=$market"
+          if [ "$want" != "$plugin" ] || [ "$want" != "$market" ]; then
+            echo "::error::tag $TAG claims $want but manifests say $plugin / $market"
+            exit 1
+          fi
+
+  exe:
+    needs: guard
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash        # Git Bash: curl + tar for bundle-runtime-win.sh
+        working-directory: marketplace/plugin/sutra-ui/electron
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install the shell's build deps (electron)
+        run: npm ci
+
+      - name: Channel + version from the tag
+        id: chan
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          case "$TAG" in *-beta.*-desktop) CH=beta ;; *) CH=stable ;; esac
+          case "$CH" in
+            beta)   APPID=os.sutra.ui.beta; NAME="Sutra Beta" ;;
+            stable) APPID=os.sutra.ui;      NAME="Sutra" ;;
+          esac
+          want="${TAG#v}"; want="${want%-desktop}"; want="${want%-beta.*}"
+          printf '%s\n' "$CH" > channel        # -> resources/channel (extraResources)
+          echo "channel=$CH"   >> "$GITHUB_OUTPUT"
+          echo "appid=$APPID"  >> "$GITHUB_OUTPUT"
+          echo "name=$NAME"    >> "$GITHUB_OUTPUT"
+          echo "version=$want" >> "$GITHUB_OUTPUT"
+          echo "building channel: $CH ($NAME, $APPID, v$want)"
+
+      - name: Bundle the Windows runtime (python + node + plugin)
+        run: bash bundle-runtime-win.sh
+
+      - name: Package the unsigned installer + portable exe
+        run: |
+          set -euo pipefail
+          npx --yes electron-builder@26 --win --x64 \
+            --config electron-builder-win.yml \
+            -c.appId="${{ steps.chan.outputs.appid }}" \
+            -c.productName="${{ steps.chan.outputs.name }}" \
+            -c.extraMetadata.version="${{ steps.chan.outputs.version }}"
+          ls -la dist-win
+
+      - name: Name assets + checksums
+        run: |
+          set -euo pipefail
+          cd dist-win
+          # electron-builder already emits the stable names from artifactName.
+          for f in Sutra-Setup-x64.exe Sutra-x64.exe; do
+            [ -f "$f" ] || { echo "::error::expected $f not produced"; ls -la; exit 1; }
+            sha256sum "$f" > "$f.sha256"
+          done
+          ls -la
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          prerelease: ${{ contains(github.event.inputs.tag || github.ref_name, '-beta.') }}
+          files: |
+            marketplace/plugin/sutra-ui/electron/dist-win/Sutra-Setup-x64.exe
+            marketplace/plugin/sutra-ui/electron/dist-win/Sutra-Setup-x64.exe.sha256
+            marketplace/plugin/sutra-ui/electron/dist-win/Sutra-x64.exe
+            marketplace/plugin/sutra-ui/electron/dist-win/Sutra-x64.exe.sha256

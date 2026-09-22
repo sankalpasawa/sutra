@@ -86,7 +86,14 @@ function copyTree(src, dst) {
  * Returns {kind, appDir, python, payload, stamp} or {kind:"none", why}. */
 function resolveRuntime(resourcesPath, appDataDir) {
   const bundled = path.join(resourcesPath || "", "payload");
-  const bPy = path.join(bundled, "python", "bin", "python3");
+  // python-build-standalone lays the interpreter out differently by OS: macOS/
+  // Linux have python/bin/python3 (a symlink to python3.12); the Windows
+  // install_only build has python/python.exe at the root, no bin/ and no
+  // symlink chain. resolveRuntime is the one place the app turns a payload into
+  // a runnable interpreter, so the branch lives here.
+  const bPy = process.platform === "win32"
+    ? path.join(bundled, "python", "python.exe")
+    : path.join(bundled, "python", "bin", "python3");
   const bApp = path.join(bundled, "plugin", "sutra-ui");
   if (fs.existsSync(bPy) && fs.existsSync(path.join(bApp, "app.py"))) {
     return {
