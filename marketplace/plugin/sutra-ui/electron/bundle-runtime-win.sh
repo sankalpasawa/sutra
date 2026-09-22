@@ -67,18 +67,27 @@ PY="$PAYLOAD/python/python.exe"
 # 2. The plugin tree (panel + Claude Code plugin), then its Python deps
 # --------------------------------------------------------------------------
 step "plugin payload"
-mkdir -p "$PAYLOAD/plugin"
-cp -R "$PLUGIN"/. "$PAYLOAD/plugin"/ || die "copying the plugin failed"
-# Prune what the mac rsync excludes -- dev/build artifacts that must not ship.
+# PAYLOAD lives at electron/payload, which is INSIDE $PLUGIN -- so a direct
+# `cp -R "$PLUGIN"/. "$PAYLOAD/plugin"` copies the tree into a subdirectory of
+# itself and cp aborts ("cannot copy a directory into itself"). The mac bundler
+# sidesteps this with rsync excludes; here we stage through a temp dir OUTSIDE
+# the repo, prune the dev/build artifacts there, then copy the clean tree in.
+STAGE="${RUNNER_TEMP:-/tmp}/sutra-plugin-stage.$$"
+rm -rf "$STAGE"; mkdir -p "$STAGE"
+cp -R "$PLUGIN"/. "$STAGE"/ || die "staging the plugin failed"
 rm -rf \
-  "$PAYLOAD/plugin/sutra-ui/.venv" \
-  "$PAYLOAD/plugin/sutra-ui/electron/node_modules" \
-  "$PAYLOAD/plugin/sutra-ui/electron/dist" \
-  "$PAYLOAD/plugin/sutra-ui/electron/dist-win" \
-  "$PAYLOAD/plugin/sutra-ui/electron/payload" \
-  "$PAYLOAD/plugin/sutra-ui/electron/.cache-win"
-find "$PAYLOAD/plugin" -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true
-find "$PAYLOAD/plugin" -type f -name '*.pyc' -delete 2>/dev/null || true
+  "$STAGE/sutra-ui/.venv" \
+  "$STAGE/sutra-ui/electron/node_modules" \
+  "$STAGE/sutra-ui/electron/dist" \
+  "$STAGE/sutra-ui/electron/dist-win" \
+  "$STAGE/sutra-ui/electron/payload" \
+  "$STAGE/sutra-ui/electron/.cache-win" \
+  "$STAGE/.git"
+find "$STAGE" -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true
+find "$STAGE" -type f -name '*.pyc' -delete 2>/dev/null || true
+mkdir -p "$PAYLOAD/plugin"
+cp -R "$STAGE"/. "$PAYLOAD/plugin"/ || die "copying the plugin failed"
+rm -rf "$STAGE"
 [ -f "$PAYLOAD/plugin/sutra-ui/app.py" ] || die "payload has no sutra-ui/app.py"
 [ -f "$PAYLOAD/plugin/.claude-plugin/plugin.json" ] || die "payload has no plugin manifest"
 
