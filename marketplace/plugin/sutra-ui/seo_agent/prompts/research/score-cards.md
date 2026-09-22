@@ -37,12 +37,27 @@ field reads perfectly sensible and is still wrong for these readers.
 ────────────────────────────────────────────────────────────────────────
 For EACH card, return:
 
+WHAT EVERY PAGE RANKING FOR THIS SEARCH ALREADY COVERS — the expected ground:
+{{TABLE_STAKES}}
+
 - relevance: integer 0-5 — how directly does this card serve the spine?
   5 = the article cannot make its argument without it (a number, threshold, benchmark, or rule the
       spine promises to deliver)
   3 = genuinely supports the spine (real context, a mechanism, a worked example)
   1 = general knowledge about the wider field; the spine does not need it
   0 = does not serve the spine at all, or belongs to the NOT ABOUT list
+
+- covers_stake: the EXPECTED TOPIC this card answers, copied exactly from the list above, or "".
+
+  Read the expected topics before you score. They are what every page ranking for this search
+  already covers, and a reader who arrives expecting them and cannot find them leaves before
+  reaching anything we do better. So a card that answers one of them is worth keeping even when
+  it says nothing new and even when the spine does not need it. That is the whole point of this
+  field: the relevance score measures the card against OUR argument, and this measures it against
+  what the reader already came for. Those are different questions and both matter.
+
+  Only name a topic the card genuinely answers. A card that merely shares a word with one is "".
+  This is a receipt, not a rescue: naming a topic the card does not answer keeps rubbish alive.
 
 - protected: true ONLY if the card carries HARD data the article promises — a number / % /
   coefficient / threshold / statistic, OR a concrete sample/example item, OR it ties a SPECIFIC named
@@ -52,7 +67,7 @@ For EACH card, return:
   it fails against.
 
 Return STRICT JSON, nothing else:
-{"scores":[{"id":1,"relevance":0,"protected":false,"reason":"..."}]}
+{"scores":[{"id":1,"relevance":0,"protected":false,"covers_stake":"","reason":"..."}]}
 
 CARDS
 {{CARDS}}

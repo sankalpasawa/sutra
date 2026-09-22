@@ -747,9 +747,16 @@ def run(ctx, topic="", angle="", redo=False, placeholder_numbers=False, word_tar
     research = {
         "topic": topic, "angle": angle, "angle_before": angle_before,
         "world": w, "spine": spn["spine"],
+        # `keyword_checks` is the same-article verdict for every head term that was tried, and it
+        # belongs on the record rather than only on screen: a run whose keyword was swapped, or
+        # kept under protest, is exactly the run somebody reads back afterwards to understand why
+        # the research looks the way it does. Found missing on the first real run after the check
+        # shipped -- the check ran correctly, this block simply rebuilt `keywords` from named
+        # fields and dropped it.
         "keywords": {"primary": primary, "variations": final.get("variations") or [],
                      "secondary": final.get("secondary") or [], "in_body": final.get("in_body") or [],
-                     "spokes": (final.get("spoke_candidates") or [])[:_c.MAX_SPOKES], "notes": final.get("notes", "")},
+                     "spokes": (final.get("spoke_candidates") or [])[:_c.MAX_SPOKES], "notes": final.get("notes", ""),
+                     "keyword_checks": final.get("keyword_checks") or []},
         "serp": _serp_block(extract, snap),
         "winners": _win_block(win),
         "verdict": brief["verdict"], "build_spec": build_spec, "completeness": brief["completeness"],

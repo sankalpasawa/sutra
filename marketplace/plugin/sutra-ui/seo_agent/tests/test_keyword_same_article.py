@@ -166,6 +166,13 @@ print("\nthe run records what it checked, so a swap is never silent")
 src = open("seo_agent/tools/run_research.py").read()
 ok("every verdict is written onto the research, not just acted on",
    "keyword_checks" in src)
+# FOUND ON THE FIRST REAL RUN (2026-09-22). The check ran correctly and kept the right keyword,
+# but research.json rebuilds its `keywords` block from named fields, so the verdicts never reached
+# the file and nobody could read back WHY a keyword was kept or swapped. Acting on a judgment and
+# recording it are two different things, and only one of them was done.
+ok("and it survives into research.json, which rebuilds that block from named fields",
+   '"keyword_checks": final.get("keyword_checks")' in src,
+   "the verdicts are computed and then dropped when the research file is assembled")
 ok("a swap is said out loud, naming the keyword that was dropped",
    "Changed the keyword" in src)
 ok("and when nothing passes it carries on rather than halting, saying why",
