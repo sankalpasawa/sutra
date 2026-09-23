@@ -4834,6 +4834,30 @@ test("46a. codexError classifies and never quotes the child's stderr", () => {
   assert.ok(/exited 7/.test(fn(7, cases[4])), "an unknown failure carries the exit code");
 });
 
+test("46b. Claude auth launches Windows npm shims through cmd.exe", () => {
+  const { claudeAuthCommand } = require("./electron/claude_auth_command.js");
+
+  assert.deepStrictEqual(claudeAuthCommand("darwin", {}),
+    { command: "claude", args: ["auth", "login"] },
+    "macOS keeps using the Claude binary directly");
+  assert.deepStrictEqual(claudeAuthCommand("linux", {}),
+    { command: "claude", args: ["auth", "login"] },
+    "Linux keeps using the Claude binary directly");
+  assert.deepStrictEqual(claudeAuthCommand("win32", { ComSpec: "C:\\Windows\\System32\\cmd.exe" }),
+    { command: "C:\\Windows\\System32\\cmd.exe",
+      args: ["/d", "/s", "/c", "claude auth login"] },
+    "Windows uses ComSpec so npm's claude.cmd shim can run");
+  assert.deepStrictEqual(claudeAuthCommand("win32", {}),
+    { command: "cmd.exe", args: ["/d", "/s", "/c", "claude auth login"] },
+    "Windows has a safe cmd.exe fallback");
+
+  const src = fs.readFileSync(path.join(__dirname, "electron", "main.js"), "utf8");
+  assert.ok(src.includes("claudeAuthCommand(process.platform, env)"),
+    "the login handler must use the platform-aware launcher");
+  assert.ok(!src.includes('spawn("claude", ["auth", "login"]'),
+    "the broken direct Windows spawn must not return");
+});
+
 
 /* ── 46. DeepSeek sign-in block ─────────────────────────────────────────────
    Why this row exists: before it, the only way to get a DeepSeek key onto a

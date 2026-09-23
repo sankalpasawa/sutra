@@ -47,6 +47,7 @@ const os = require("os");
 const http = require("http");
 const net = require("net");
 const provision = require("./provision.js");
+const { claudeAuthCommand } = require("./claude_auth_command.js");
 
 const HOST = "127.0.0.1";
 
@@ -1284,9 +1285,9 @@ ipcMain.handle("sutra:teamsutra-action", async (_e, body) => {
    A second invocation while one runs CANCELS the running one (the panel's
    button doubles as Cancel) — an abandoned browser tab must not wedge the
    card. Teardown is SIGTERM, then SIGKILL after 5s; the busy slot clears on
-   actual child exit, never on a timer alone. The binary is whatever `claude`
-   the user's login shell resolves — deliberate for a desktop developer tool,
-   and the same resolution every terminal on this machine uses. */
+   actual child exit, never on a timer alone. Unix runs the `claude` binary
+   directly. Windows runs the fixed command through cmd.exe because npm exposes
+   Claude as a .cmd shim, which CreateProcess cannot execute directly. */
 let authChild = null;
 ipcMain.handle("sutra:auth-login", async (e) => {
   if (!desktopControl()) {
@@ -1308,7 +1309,8 @@ ipcMain.handle("sutra:auth-login", async (e) => {
     const done = (r) => { if (!settled) { settled = true; authChild = null; resolve(r); } };
     let child;
     try {
-      child = spawn("claude", ["auth", "login"], { env, stdio: ["ignore", "pipe", "pipe"] });
+      const auth = claudeAuthCommand(process.platform, env);
+      child = spawn(auth.command, auth.args, { env, stdio: ["ignore", "pipe", "pipe"] });
     } catch (err) { return done({ ok: false, error: "could not start claude: " + err.message }); }
     authChild = child;
     child.stdout.resume();                       // drained, never forwarded
