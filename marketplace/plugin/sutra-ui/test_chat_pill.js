@@ -86,6 +86,7 @@ function box(opts) {
     grab(chat, "gvPillMotion"), grabConst(chat, "STEP_DOT"), grab(chat, "gvStepDots"),
     grab(chat, "gvAgentsHtml"), grab(chat, "gvMarkNewCards"), grab(chat, "gvRuntimeHtml"),
     grab(chat, "gvPhase"), grab(chat, "gvPillHtml"), grab(chat, "turnResponse"),
+    grabConst(helpers, "_UID"), grab(helpers, "turnUid"), grab(chat, "chatNames"), grab(chat, "whoHtml"), grab(chat, "turnBlock"),
     grab(loaders, "pillReducedMotion"),
     grab(loaders, "turnControlClick"),
   ].join("\n"), b, { filename: "pill#extract" });
@@ -409,7 +410,8 @@ test("6c. no animation hangs off .turn.arriving inside the patched block", () =>
   /* .turn.arriving stays on the turn until the next full render, while
      patchTurn replaces .a on every tool frame: any animation keyed there
      would replay on every frame. Only .u (never patched) may use it. */
-  const bad = css.match(/\.turn\.arriving \.(?!u\b)[^{]*\{[^}]*animation/g);
+  /* .u and the two name lines are drawn by turnBlock, outside [data-aturn] */
+  const bad = css.match(/\.turn\.arriving \.(?!u\b|who-you\b|who-ai\b)[^{]*\{[^}]*animation/g);
   assert(!bad, "animation under .turn.arriving on a patched node: " + (bad || []).join(" | "));
 });
 test("6d. every looping pill animation reads its phase (review: all of them, not three)", () => {
@@ -422,14 +424,59 @@ test("6d. every looping pill animation reads its phase (review: all of them, not
   assert(/\.gv-pill \.tcard\.run \.tcdot\{animation-delay:var\(--gv-spin-d/.test(css), "the card spinner inside the pill");
   assert(/\.gv-pill \.gv-pbtn\.is-live\{transition:none\}/.test(css), "hover must not replay on a rebuilt live pill");
 });
-test("6e. your turn sits on the right, plain", () => {
+test("6e. your turn sits on the right, plain, and names replaced the rail", () => {
   const r = css.match(/\.turn \.u\{([^}]*)\}/);
-  assert(r && /margin-left:auto/.test(r[1]) && /border-right:2px solid var\(--line\)/.test(r[1]), "right side");
-  assert(!/background/.test(r[1]), "no bubble");
+  assert(r && /margin-left:auto/.test(r[1]), "right side");
+  assert(!/background|border/.test(r[1]), "no bubble and no rail");
+  assert(!/\.turn \.u::before\{content:"You"/.test(css), "the old YOU caption is back");
 });
 test("6f. depth comes from tokens in both themes", () => {
   ["--pill-bg", "--pill-lift", "--pill-lift-h"].forEach(v =>
     assert(count(css, new RegExp(v.replace(/-/g, "\\-") + ":", "g")) >= 3, v + " must be set for dark, system-light and light"));
+});
+
+/* ── 8. names over each side (founder 2026-09-23, version B) ──────────────── */
+test("8a. a panel turn: 'You' over your message, 'Sutra' over the answer", () => {
+  const b = box();
+  const h = b.turnBlock(Object.assign(settled({ uid: "w1" }), { text: "fix it" }), 0);
+  const iYou = h.indexOf('<div class="who who-you">You</div>'), iU = h.indexOf('<div class="u md">');
+  const iAi = h.indexOf('<div class="who who-ai">Sutra</div>'), iA = h.indexOf('<div class="a');
+  assert(iYou >= 0 && iYou < iU, "your name must sit over your message");
+  assert(iAi > iU && iAi < iA, "the answering name must sit over the answer");
+});
+test("8b. no answer yet drawn, no answering name", () => {
+  const b = box();
+  const h = b.turnBlock({ transcript: true, text: "hello", response: "" }, 0);
+  assert(/who-you/.test(h) && !/who-ai/.test(h), "a name over nothing: " + h);
+});
+test("8c. an orphan answer (no recorded prompt) has no 'You'", () => {
+  const b = box();
+  const h = b.turnBlock({ transcript: true, orphan: true, response: "an answer" }, 0);
+  assert(!/who-you/.test(h) && /who-ai/.test(h), h);
+});
+test("8d. the names are never inside the patched block", () => {
+  const b = box();
+  assert(!/who-/.test(b.turnResponse(liveT({ uid: "w2" }))), "patchTurn would rebuild a name");
+});
+test("8e. system-driven: the rule reads no setting, and there is nothing to edit", () => {
+  const src = grab(chat, "chatNames");
+  assert(!/S\.|SETTINGS|localStorage/.test(src), "the names must not come from a setting");
+  const all = helpers + chat + render + loaders;
+  assert(!/data-mrow="names"|data-names/.test(all), "an editing control for names exists");
+});
+test("8f. one colour for both names, from the app's own scheme", () => {
+  assert(/\.turn \.who\{[^}]*color:var\(--muted\)/.test(css), "the shared name colour");
+  assert(!/\.turn \.who-(you|ai)\{[^}]*color:/.test(css), "a side got its own colour");
+});
+test("8g. a narrow pane: plain words give way, the failure and the arrow never do", () => {
+  assert(/\.gv-pill \.gv-pbtn\{min-width:0;overflow:hidden\}/.test(css), "the pill contains its words");
+  assert(/\.gv-pill \.gv-pbtn>\*\{flex-shrink:0\}/.test(css), "nothing shrinks by default");
+  const m = css.match(/\.gv-pill \.gv-pbtn>span((?::not\(\.[a-z-]+\))+)\{\s*flex-shrink:1;min-width:2ch/);
+  assert(m, "the plain-word shrink rule is missing");
+  ["gv-pulse", "gv-sep", "gv-chev", "gv-pfail", "gv-pwarn", "gv-unres"].forEach(c =>
+    assert(m[1].includes(":not(." + c + ")"), c + " must keep its size"));
+  assert(/\.gv-pill \.gv-pbtn>\.gv-leaf,\.gv-pill \.gv-pbtn>\.gv-tlabel\{flex-shrink:4;min-width:3ch\}/.test(css),
+    "the department and the live phrase give way first, never to nothing");
 });
 
 /* ── 7. load: a long chat stays quiet ─────────────────────────────────────── */

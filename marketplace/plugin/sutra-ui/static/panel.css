@@ -606,13 +606,17 @@
      goal-workspace chat already uses (.gwwho), and a hairline rail so a long
      transcript still scans. No new tokens. */
   /* on the right (founder 2026-09-23: "a little bit of intention of left and
-     right"): still plain, no bubble; the rail sits on the side you speak from
-     and the caption lines up with it. The AI side (.a) stays on the left. */
-  .turn .u{margin-left:auto;width:fit-content;max-width:78%;padding:0 10px 0 0;
-           border-right:2px solid var(--line);font-size:12px;color:var(--ink)}
-  .turn .u::before{content:"You";display:block;font:600 9px/1.4 var(--mono);letter-spacing:.08em;
-                   text-transform:uppercase;color:var(--faint);margin-bottom:3px;text-align:right}
+     right"): still plain, no bubble. The rail and the YOU caption gave way to
+     NAMES the same day ("instead of the line ... you and Sutra", version B):
+     a plain name over each side, both in ONE colour from the app's own scheme
+     ("keep the uniform colors"), chosen by the system, never edited
+     (05-chat.js chatNames). The AI side (.a) stays on the left. */
+  .turn .u{margin-left:auto;width:fit-content;max-width:78%;font-size:12px;color:var(--ink)}
+  .turn .who{font:600 11px/1.4 var(--sans);color:var(--muted);margin:0 0 3px}
+  .turn .who-you{text-align:right}
+  .turn .who-ai{margin-top:10px}
   .turn .a{margin-top:9px;font-size:12px;color:var(--muted)}
+  .turn .who-ai + .a{margin-top:0}
   .turn .fchip{display:inline-flex;align-items:center;gap:5px;font:600 9.5px/1 var(--mono);
                padding:4px 7px;border-radius:5px;border:1px solid var(--acc);background:var(--acc-bg);
                color:var(--acc);margin-bottom:7px}
@@ -1879,6 +1883,16 @@
   .gv-pill{margin:0 0 4px}
   .gv-pill .gv-pbtn{border-radius:14px;background:var(--pill-bg);box-shadow:var(--pill-lift);max-width:100%;
     transition:transform .15s var(--ease),box-shadow .18s ease,color .2s,border-radius .12s var(--ease)}
+  /* a narrow pane (found 2026-09-23 at ~330px): the pill used to run past the
+     edge and the department collapsed to nothing. Now the plain words give way
+     with an ellipsis (the department and the live phrase first), while what
+     must never be lost keeps its size: the dot, a failure, held, stopped,
+     unresolved, and the arrow. Nothing spills out of the pill. */
+  .gv-pill .gv-pbtn{min-width:0;overflow:hidden}
+  .gv-pill .gv-pbtn>*{flex-shrink:0}
+  .gv-pill .gv-pbtn>span:not(.gv-pulse):not(.gv-sep):not(.gv-chev):not(.gv-pfail):not(.gv-pwarn):not(.gv-unres){
+    flex-shrink:1;min-width:2ch;max-width:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .gv-pill .gv-pbtn>.gv-leaf,.gv-pill .gv-pbtn>.gv-tlabel{flex-shrink:4;min-width:3ch}
   .gv-pill .gv-pbtn:hover{border-color:var(--line);color:var(--ink);transform:translateY(-1px);
     box-shadow:var(--pill-lift-h),inset 0 0 0 1px color-mix(in srgb,var(--acc) 45%,transparent)}
   .gv-pill .gv-pbtn:active{transform:translateY(0) scale(.985)}
@@ -1915,6 +1929,10 @@
   @keyframes gvInR{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
   .turn .a.gv-in-l{animation:gvInL .34s var(--ease) both}
   .turn.arriving .u{animation:gvInR .34s var(--ease) both}
+  /* the names ride the same one-render arriving flag; turnBlock draws them
+     outside [data-aturn], so patchTurn never rebuilds them mid-stream */
+  .turn.arriving .who-you{animation:gvInR .34s var(--ease) both}
+  .turn.arriving .who-ai{animation:gvInL .34s var(--ease) both}
   /* one-shot: open unfolds by height, rows rise in turn; close folds first */
   .gv-pill .gv-acc{display:grid;grid-template-rows:1fr}
   .gv-pill .gv-accin{min-height:0}
@@ -1963,7 +1981,7 @@
     .gv-pill .gv-pulse.gv-run,.gv-pill .gv-pulse.gv-settle,
     .gv-pill.gv-opening .gv-acc,.gv-pill.gv-closing .gv-acc,.gv-pill.gv-opening .gv-panel,.gv-pill.gv-closing .gv-panel,
     .gv-pill.gv-opening .gv-panel>*,.gv-pill.gv-opening .gv-rt .tcard,.gv-pill .tcard.gv-enter,
-    .turn .a.gv-in-l,.turn.arriving .u,.gv-pill .gv-sd.run{animation:none}
+    .turn .a.gv-in-l,.turn.arriving .u,.turn.arriving .who-you,.turn.arriving .who-ai,.gv-pill .gv-sd.run{animation:none}
   }
 
   /* ── Connectors (External World projection, ADR-023) ────────────────────

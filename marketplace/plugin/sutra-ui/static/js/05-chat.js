@@ -2774,6 +2774,21 @@ function turnResponse(t){
   return `<div class="a${m.enter ? " gv-in-l" : ""}" data-aturn="${esc(t.uid||"")}"
     >${pill}${replayed}${gvAgentsHtml(t)}${retrying}${body}${err}${stateBottom}</div>`;
 }
+/* ══ names over each side (founder 2026-09-23, version B) ══════════════════════
+   "Instead of the line ... I want you and Sutra" and then: "the name is on the
+   top ... keep the uniform colors ... the names will be system-driven, so let's
+   not give the option of editing". A plain name sits over your message (right)
+   and over the answer (left), both in one colour (panel.css .turn .who). The
+   SYSTEM picks the names; there is no setting. This is the one place that rule
+   lives, so a later rule (a department's agent answering in its own name) has
+   one home. Drawn by turnBlock, OUTSIDE [data-aturn], so patchTurn never
+   rebuilds them. */
+function chatNames(t){
+  return { you: "You", ai: "Sutra" };
+}
+function whoHtml(side, name){
+  return `<div class="who who-${side}">${esc(name)}</div>`;
+}
 /* One turn. Two provenances, told apart on purpose:
    - a turn the PANEL ran carries a placement (or an honest reason it has none)
    - a turn READ FROM A TRANSCRIPT carries none, because none was ever computed:
@@ -2799,11 +2814,12 @@ function turnBlock(t, i){
        combined pill, which shows for a transcript turn only when something was
        captured or something ran (gvPillParts) -- the same gate gvHasCapture was. */
     t._n = i + 1;
+    const nmT = chatNames(t), respT = turnResponse(t);
     return `<div class="turn">
       ${t.orphan
         ? `<div class="a"><span class="pill p-warn">assistant message with no recorded prompt</span></div>`
-        : `<div class="u md">${mdHtml(t.text)}</div>`}
-      ${turnResponse(t)}</div>`;
+        : `${whoHtml("you", nmT.you)}<div class="u md">${mdHtml(t.text)}</div>`}
+      ${respT ? whoHtml("ai", nmT.ai) : ""}${respT}</div>`;
   }
   /* DS port: the placement prose, grounding charter, and trace that used to
      print inline every turn now live behind the collapsed governance chip —
@@ -2828,9 +2844,10 @@ function turnBlock(t, i){
   /* the pill's Turn row says "turn N"; patchTurn keeps the same object, so the
      number survives every rebuild of the answer block */
   t._n = i + 1;
+  const nm = chatNames(t), resp = turnResponse(t);
   return `<div class="turn${arriving ? " arriving" : ""}" data-turn-domain="${t.domain && t.domain.ref ? esc(t.domain.ref) : ""}">
-    <div class="u md">${mdHtml(t.text)}</div>
-    ${turnResponse(t)}</div>`;
+    ${whoHtml("you", nm.you)}<div class="u md">${mdHtml(t.text)}</div>
+    ${resp ? whoHtml("ai", nm.ai) : ""}${resp}</div>`;
 }
 
 /* Chat body. A real session that has no readable transcript gets an HONEST
