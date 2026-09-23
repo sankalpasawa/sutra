@@ -20,7 +20,7 @@
 #
 # Usage:
 #   scripts/release-desktop.sh check   [--beta] [--bump patch|minor] [--version X.Y.Z]
-#   scripts/release-desktop.sh release [--beta] [--bump patch|minor] [--version X.Y.Z]
+#   scripts/release-desktop.sh release [--beta|--beta-only] [--bump patch|minor] [--version X.Y.Z]
 #                                      [--notes FILE] [--yes]
 #   scripts/release-desktop.sh verify  [TAG]
 #
@@ -41,6 +41,13 @@
 #   `release --auto`      beta -> wait for the GitHub build -> scripts/beta-smoke.sh
 #                         on this Mac (fetch, checksum, staple, launch, walk,
 #                         quit) -> stable. Stops, named, at the first failure.
+# BETA GOES TO PRODUCTION (founder D83, 2026-09-23: "unless explicitly
+# mentioned, every time we push to beta, we should push it to prod"):
+#   `release --beta`      is `release --auto` -- the beta is promoted to stable
+#                         in the same run once its build and smoke pass.
+#   `release --beta-only` the explicit exception: cut the beta and stop there.
+# Every release carries Mac AND Windows: the run waits for release-dmg.yml and
+# release-windows.yml, and verify requires the .exe beside the two DMGs.
 # Founder skip, never the default and always audited to
 # .enforcement/release-beta-skips.jsonl:
 #   RELEASE_SKIP_BETA=1 RELEASE_SKIP_BETA_REASON='<why>' scripts/release-desktop.sh release
@@ -57,12 +64,13 @@ MARKET_JSON=".claude-plugin/marketplace.json"                 # guard (core)
 CHANGELOG="marketplace/plugin/CHANGELOG.md"                   # checklist
 CURRENT_VERSION="CURRENT-VERSION.md"                          # checklist
 WORKFLOW=".github/workflows/release-dmg.yml"
+WIN_WORKFLOW=".github/workflows/release-windows.yml"   # uploads the .exe to the same release (D83)
 UI="marketplace/plugin/sutra-ui"
 CHECKLIST="$UI/release-checklist.md"
 
 #: The four assets `verify` requires. A one-architecture release is not
 #: shippable (release-checklist.md check 3).
-REQUIRED_ASSETS="Sutra-arm64.dmg Sutra-arm64.dmg.sha256 Sutra-x86_64.dmg Sutra-x86_64.dmg.sha256"
+REQUIRED_ASSETS="Sutra-arm64.dmg Sutra-arm64.dmg.sha256 Sutra-x86_64.dmg Sutra-x86_64.dmg.sha256 Sutra-Setup-x64.exe Sutra-Setup-x64.exe.sha256"
 
 #: WHAT A DESKTOP RELEASE MAY CARRY. `release` can start from a dirty tree --
 #: that is the normal release-prep state -- but only for paths a desktop
@@ -353,9 +361,13 @@ gate_workflow_integrity() {
   grep -qE 'runner: macos-15-intel([[:space:]]|$)' "$WORKFLOW" && runners=$((runners+1))
   if [ "$runners" = 2 ]; then ok "workflow: both arch legs have a runner label"
   else bad "workflow: expected two runner labels, found $runners -- a retired label HANGS rather than fails"; fi
-  local want miss=""
-  for want in $REQUIRED_ASSETS; do grep -q "$want" "$WORKFLOW" || miss="$miss $want"; done
-  if [ -z "$miss" ]; then ok "workflow: verify job names all four required assets"
+  local want wf miss=""
+  # Each asset is checked against the workflow that produces it.
+  for want in $REQUIRED_ASSETS; do
+    case "$want" in *.exe*) wf="$WIN_WORKFLOW" ;; *) wf="$WORKFLOW" ;; esac
+    grep -q "$want" "$wf" 2>/dev/null || miss="$miss $want"
+  done
+  if [ -z "$miss" ]; then ok "workflows name every required asset (Mac + Windows)"
   else bad "workflow: verify job does not name:$miss"; fi
 }
 
@@ -745,8 +757,7 @@ cmd_release() {
   note "DMGs published: unknown.  Mac app verified: no."
   note "Run: scripts/release-desktop.sh verify $TAG"
   if [ "${BETA:-0}" = 1 ] && [ "${AUTO:-0}" != 1 ]; then
-    note "THIS IS THE BETA. No human look (D82): run scripts/release-desktop.sh release --auto"
-    note "to smoke it on this Mac and cut production, or by hand: verify $TAG,"
+    note "THIS IS THE BETA, and it stops here (--beta-only). To promote it: verify $TAG,"
     note "scripts/beta-smoke.sh $TAG, then scripts/release-desktop.sh release"
   fi
 }
@@ -756,17 +767,21 @@ cmd_release() {
 # -> stable, in one run, with no human step. Stops, named, at the first
 # failure; a stable tag is never cut past a smoke that did not pass.
 # =============================================================================
-wait_for_run() {                            # wait_for_run <tag> -> 0 when that tag's workflow run succeeded
-  local tag="$1" id="" i
-  for i in $(seq 1 30); do                  # the run appears a few seconds after the tag push
-    id="$(gh run list --workflow release-dmg.yml --branch "$tag" --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null)"
-    [ -n "$id" ] && [ "$id" != null ] && break
-    sleep 10
+wait_for_run() {                            # wait_for_run <tag> -> 0 when every build of that tag succeeded
+  local tag="$1" wf id i
+  for wf in release-dmg.yml release-windows.yml; do   # Mac + Windows (D83): both legs, same release
+    id=""
+    for i in $(seq 1 30); do                # the run appears a few seconds after the tag push
+      id="$(gh run list --workflow "$wf" --branch "$tag" --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null)"
+      [ -n "$id" ] && [ "$id" != null ] && break
+      sleep 10
+    done
+    if [ -z "$id" ] || [ "$id" = null ]; then bad "build: no $wf run appeared for $tag"; return 1; fi
+    note "$wf run $id: https://github.com/sankalpasawa/sutra/actions/runs/$id"
+    if gh run watch "$id" --interval 30 --exit-status >/dev/null 2>&1; then ok "build: $wf run $id succeeded"
+    else bad "build: $wf run $id did not succeed"; return 1; fi
   done
-  if [ -z "$id" ] || [ "$id" = null ]; then bad "build: no workflow run appeared for $tag"; return 1; fi
-  note "run $id: https://github.com/sankalpasawa/sutra/actions/runs/$id"
-  if gh run watch "$id" --interval 30 --exit-status >/dev/null 2>&1; then ok "build: run $id succeeded"; return 0; fi
-  bad "build: run $id did not succeed"; return 1
+  return 0
 }
 
 cmd_auto() {
@@ -798,7 +813,7 @@ cmd_verify() {
     || die "no GitHub release for $tag (the workflow may still be running, or it failed)"
   printf '%s\n' "$assets" | sed 's/^/  /'
   local miss; miss="$(missing_assets "$assets")"
-  if [ -z "$miss" ]; then ok "all four assets present"
+  if [ -z "$miss" ]; then ok "all $(printf '%s' "$REQUIRED_ASSETS" | wc -w | tr -d ' ') assets present (Mac + Windows)"
   else bad "missing:$miss -- a one-architecture release is not shippable"; fi
   local state; state="$(gh release view "$tag" --json isDraft,isPrerelease --jq '"draft=\(.isDraft) prerelease=\(.isPrerelease)"' 2>/dev/null)"
   note "$state"
@@ -823,13 +838,14 @@ main() {
   local rest=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --beta)    BETA=1; shift ;;
-      --auto)    AUTO=1; BETA=1; ASSUME_YES=1; shift ;;
+      # D83: a beta goes to production unless --beta-only says otherwise.
+      --beta|--auto) AUTO=1; BETA=1; ASSUME_YES=1; shift ;;
+      --beta-only)   BETA=1; shift ;;
       --bump)    BUMP="${2:-}"; shift 2 ;;
       --version) EXPLICIT="${2:-}"; shift 2 ;;
       --notes)   NOTES="${2:-}"; shift 2 ;;
       --yes|-y)  ASSUME_YES=1; shift ;;
-      -h|--help) sed -n '1,30p' "$0"; exit 0 ;;
+      -h|--help) sed -n '1,54p' "$0"; exit 0 ;;
       *)         rest="$rest $1"; shift ;;
     esac
   done
@@ -843,7 +859,7 @@ main() {
     check)   cmd_check ;;
     release) if [ "${AUTO:-0}" = 1 ]; then cmd_auto; else cmd_release; fi ;;
     verify)  cmd_verify ${rest:-} ;;
-    *) die "unknown command '$cmd' (want: check | release [--beta|--auto] | verify)" ;;
+    *) die "unknown command '$cmd' (want: check | release [--beta|--beta-only] | verify)" ;;
   esac
 }
 

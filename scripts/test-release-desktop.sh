@@ -154,18 +154,21 @@ yes_ counts_agree 19 19
 no_  counts_agree 11 19
 no_  counts_agree "" 19
 
-# ---- 6. the four assets a shippable release carries ------------------------
-ALL="$(printf 'Sutra-arm64.dmg\nSutra-arm64.dmg.sha256\nSutra-x86_64.dmg\nSutra-x86_64.dmg.sha256')"
+# ---- 6. the six assets a shippable release carries (Mac + Windows, D83) ----
+WIN="Sutra-Setup-x64.exe Sutra-Setup-x64.exe.sha256"
+ALL="$(printf 'Sutra-arm64.dmg\nSutra-arm64.dmg.sha256\nSutra-x86_64.dmg\nSutra-x86_64.dmg.sha256\nSutra-Setup-x64.exe\nSutra-Setup-x64.exe.sha256')"
 is "complete release"    "$(missing_assets "$ALL")" ""
+is "mac only"            "$(missing_assets "$(printf 'Sutra-arm64.dmg\nSutra-arm64.dmg.sha256\nSutra-x86_64.dmg\nSutra-x86_64.dmg.sha256')")" \
+   "$WIN"
 is "arm64 only"          "$(missing_assets "$(printf 'Sutra-arm64.dmg\nSutra-arm64.dmg.sha256')")" \
-   "Sutra-x86_64.dmg Sutra-x86_64.dmg.sha256"
+   "Sutra-x86_64.dmg Sutra-x86_64.dmg.sha256 $WIN"
 is "dmg without checksum" "$(missing_assets "$(printf 'Sutra-arm64.dmg\nSutra-x86_64.dmg')")" \
-   "Sutra-arm64.dmg.sha256 Sutra-x86_64.dmg.sha256"
+   "Sutra-arm64.dmg.sha256 Sutra-x86_64.dmg.sha256 $WIN"
 is "empty release"       "$(missing_assets "")" \
-   "Sutra-arm64.dmg Sutra-arm64.dmg.sha256 Sutra-x86_64.dmg Sutra-x86_64.dmg.sha256"
+   "Sutra-arm64.dmg Sutra-arm64.dmg.sha256 Sutra-x86_64.dmg Sutra-x86_64.dmg.sha256 $WIN"
 # a near-miss name must not satisfy a requirement
 is "prefix is not a match" "$(missing_assets "$(printf 'Sutra-arm64.dmg.sha256sum')")" \
-   "Sutra-arm64.dmg Sutra-arm64.dmg.sha256 Sutra-x86_64.dmg Sutra-x86_64.dmg.sha256"
+   "Sutra-arm64.dmg Sutra-arm64.dmg.sha256 Sutra-x86_64.dmg Sutra-x86_64.dmg.sha256 $WIN"
 
 # ---- 7. the two markdown edits, on copies ---------------------------------
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
@@ -283,7 +286,11 @@ is "the named version loses its marker"   "$(grep -c '^## v1.0.2 (2026-01-02)$' 
 is "the new version gains one"            "$(grep -c '^## v1.0.3 (2026-09-17, HEAD)$' "$TMP/CV2.md")" "1"
 # ---- 8. the constants the release contract depends on ---------------------
 is "five panel runs (check 6)" "$PANEL_RUNS" "5"
-is "four required assets"      "$(printf '%s' "$REQUIRED_ASSETS" | wc -w | tr -d ' ')" "4"
+is "six required assets"       "$(printf '%s' "$REQUIRED_ASSETS" | wc -w | tr -d ' ')" "6"
+# ---- 9. D83: --beta goes to production, --beta-only stops at the beta -----
+is "--beta runs the auto path"      "$(grep -c -- '--beta|--auto) AUTO=1; BETA=1' "$HERE/release-desktop.sh")" "1"
+is "--beta-only is the opt-out"     "$(grep -cE -- '--beta-only\)[[:space:]]+BETA=1; shift' "$HERE/release-desktop.sh")" "1"
+is "auto waits for the windows leg" "$(grep -c 'release-dmg.yml release-windows.yml' "$HERE/release-desktop.sh")" "1"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" = 0 ]
