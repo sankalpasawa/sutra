@@ -745,13 +745,24 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
   assert(closed, "the scroller closes before the question is drawn");
 
   /* the stylesheet half: pinned, capped, scrolls itself */
+  /* ── THE PIN IS GONE (founder, 2026-09-23: "Avoid nested scrolling
+     wherever possible. The Shadow pane/page itself should handle
+     scrolling.") ───────────────────────────────────────────────────────
+     These three rules used to assert the OPPOSITE: that the question sat
+     below the scroller in a capped box with a scrollbar of its own, so
+     that it and the turns that earned it were on screen together. The
+     cost, which is what the founder is naming, is that a result worth
+     checking arrives inside a 38%-tall box and is read through a panel
+     inside a panel. The ask flows with the conversation now; the pane's
+     scroller is the only one. Inverted rather than deleted, so the next
+     person to reach for a cap here reads why it went. */
   const need = [
-    [/\.shwright>\.shiv\{[^}]*flex:0 1 auto/,
-     "the pinned question must be able to yield height"],
-    [/\.shwright>\.shiv\{[^}]*max-height:/,
-     "a six-field question needs a cap or it starves the turns"],
-    [/\.shwright>\.shiv\{[^}]*overflow-y:auto/,
-     "a capped form must scroll, or Send becomes unreachable"],
+    [/\.shwright>\.shiv\{[^}]*flex:0 0 auto/,
+     "the ask takes its natural height -- it no longer yields any"],
+    [/\.shwright>\.shiv\{[^}]*max-height:none/,
+     "and it is not capped: a capped result is one nobody can read"],
+    [/\.shwright>\.shiv\{[^}]*overflow:visible/,
+     "no scroller of its own -- the pane's is the only one"],
     /* THE CARD'S CAP IS GONE, NOT LOWERED (founder, 2026-09-20): the brief
        moved inside the conversation, so there is no longer a third block
        bidding for the pane's height -- only the question below it, which is
@@ -780,7 +791,7 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
   assert(h2.indexOf("data-shivform") === -1, "a running mission asks nothing");
   assert(h2.indexOf('class="shtimeline"') > h2.indexOf('class="shwscroll"'),
     "and its conversation is where it always was");
-  pass("10: the question is pinned, the conversation keeps the scroller");
+  pass("10: the ask flows with the conversation, and there is one scroller");
 }
 
 console.log("\nall shell + motion tests passed");

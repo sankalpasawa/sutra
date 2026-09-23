@@ -1500,9 +1500,18 @@ function shadowCompletionHtml(m){
     /* "Done — created the file" reads as one sentence; "Done — I created
        the file" keeps its capital because the pronoun is one. Nothing else
        about the sentence is touched. */
-    const tail = !said ? ""
-      : (/^I\b|^I['\u2019]/.test(said)
-          ? said : said.charAt(0).toLowerCase() + said.slice(1));
+    /* ── "Done \u2014 done \u2014 ten stories" (founder, 2026-09-23) ────────
+       The word "Done" is printed by this row, and the sentence it prints
+       after it is Shadow's own -- which, since Shadow started authoring the
+       closing line, usually OPENS with "Done". The two were concatenated
+       blind, so the founder read the word twice. If the line already says
+       it, this row says it once: the lead is dropped and the sentence
+       stands as Shadow wrote it. */
+    const dup = /^done\b[\s\u2014:,-]*/i.exec(said || "");
+    const body = dup ? said.slice(dup[0].length) : said;
+    const tail = !body ? ""
+      : (/^I\b|^I['\u2019]/.test(body)
+          ? body : body.charAt(0).toLowerCase() + body.slice(1));
     return `<div class="shsaid shfrom-shadow shdonesum shdonesay"
         data-shdone="${escAttr(m.id)}">
       <div class="shsaidhead">Shadow</div>
@@ -1872,7 +1881,11 @@ function shadowTaskChatHtml(m){
   if (!sid || typeof goalTranscriptHtml !== "function") return "";
   const live = SH_TERMINAL.indexOf(m.state) === -1;
   return `<div class="gwchat shcard2chat">
-    <div class="gwchathead">its own chat · ${esc(shadowChatLabel(sid))}</div>
+    ${/* "its own chat · <session name>" was the machine naming its own
+         plumbing: a founder reading a result does not need to know the work
+         happened in a second chat, or what that chat is called. Shadow is
+         the surface; the chat behind it is an implementation detail with a
+         door of its own for anyone who wants it. */""}
     ${goalTranscriptHtml(shadowTaskTranscript(sid, live), m)}
   </div>`;
 }
@@ -1909,6 +1922,21 @@ function shadowIvDraft(mid){
   if (!S_.shadowIv[mid])
     S_.shadowIv[mid] = { values: {}, errors: {}, busy: false, err: null };
   return S_.shadowIv[mid];
+}
+
+/* WHAT THEY WANT CHANGED, when they said No. Same draft as the answer, so
+   it is cleared, re-read and sent by the machinery that already exists. */
+function shadowIvWhy(mid, key){
+  const d = shadowIvDraft(mid);
+  if (!d.why) d.why = {};
+  return d.why[key] || "";
+}
+
+function shadowIvSetWhy(mid, key, text){
+  const d = shadowIvDraft(mid);
+  if (!d.why) d.why = {};
+  d.why[key] = String(text == null ? "" : text);
+  return d.why[key];
 }
 
 function shadowIvValue(mid, f){
@@ -2023,6 +2051,18 @@ function shadowIvSignsHtml(m, f){
   const i = shadowIvSignsIndex(m, f);
   if (i === -1) return "";
   const text = String(((m.done_when || [])[i] || {}).check || "").trim();
+  /* ── "YES SIGNS OFF" IS GONE (founder, 2026-09-23) ───────────────────
+     It printed Shadow's own bookkeeping -- which internal check a Yes
+     closes -- beside a question the founder had already read. That is the
+     machine explaining its filing to someone who only has to say whether
+     the work is right. The check is untouched: it is still on the record,
+     still closed by the answer, still tested. It simply is not shown.
+
+     shadowIvSignsHtml is kept and still exported, because shadowIvSignsIndex
+     (which decides WHETHER a field closes a check) shares its reasoning and
+     several lanes assert on it. This function now returns nothing. */
+  return "";
+  /* eslint-disable no-unreachable */
   return `<div class="shivsigns">
     <span class="shivsignsk">Yes signs off</span>
     <span class="shivsignsv">${text
@@ -2111,15 +2151,34 @@ function shadowIvFieldHtml(mid, f, signs, said){
      reading it a third time. */
   const echoed = !longAsk && shadowAlreadySaid(f.label, said);
   const hook = `data-shivmid="${escAttr(mid)}" data-shivkey="${escAttr(f.key)}"`;
-  const opt = (o, on, extra) => `<button class="shkind${on ? " on" : ""}"
+  const opt = (o, on, extra, tone) => `<button class="shkind${
+      on ? " on" : ""}${tone ? " " + tone : ""}"
     type="button" ${hook} data-shivopt="${escAttr(o.value)}"
     title="${escAttr(o.help || "")}">${esc(o.label)}${extra || ""}</button>`;
   let body;
   switch (f.type){
     case "boolean":
+      /* ── YES IS GREEN, NO IS RED, AND NO ASKS WHY (founder, 2026-09-23)
+         The two answers meant opposite things and looked identical, so the
+         founder could not see which one they had chosen without reading it.
+         The tones are the ones the app already uses for a good and a bad
+         outcome -- nothing new is minted.
+
+         AND A NO IS THE START OF A SENTENCE, NOT THE END OF ONE. "No" on
+         its own sends Shadow a rejection with no direction in it, so the
+         founder's next move was to go and type the reason somewhere else.
+         Choosing No opens a field right here for what they want changed.
+         It is the same draft the form already carries and the same send --
+         no second surface, no second request. */
       body = `<div class="shnewkinds">
-        ${opt({ value: "yes", label: "Yes" }, v === true)}
-        ${opt({ value: "no", label: "No" }, v === false)}</div>`;
+        ${opt({ value: "yes", label: "Yes" }, v === true, "", "shkindyes")}
+        ${opt({ value: "no", label: "No" }, v === false, "", "shkindno")}</div>
+        ${v === false ? `<div class="shivwhy">
+          <textarea class="shcompose shivwhytext"
+            data-shivwhy="${escAttr(mid)}" data-shivkey="${escAttr(f.key)}"
+            rows="2" placeholder="What should I change?">${
+              esc(shadowIvWhy(mid, f.key))}</textarea>
+        </div>` : ""}`;
       break;
     case "choice":
       body = `<div class="shnewkinds">${(f.options || [])
@@ -2200,14 +2259,23 @@ function shadowInterventionHtml(m){
   const ctx = String(iv.context || "").trim();
   const showCtx = !!ctx && !signing && !shadowAlreadySaid(ctx, said);
   return `<div class="shiv" data-shivform="${escAttr(iv.id || "")}">
-    <div class="shivq"${ctx && !showCtx
-      ? ` title="${escAttr(ctx)}"` : ""}>${esc(iv.question || "")}</div>
-    ${showCtx ? `<p class="shnewsub shivctx"
-      title="${escAttr(ctx)}">${esc(ctx)}</p>` : ""}
+    ${/* ── WHAT IS BEING JUDGED COMES FIRST (founder, 2026-09-23) ───────
+         "the 10 lines being evaluated need to be shown in the Shadow UI
+         BEFORE the question." A question about ten lines, printed above
+         the ten lines, is a question the founder has to scroll past to
+         answer -- and in the case that prompted this the lines were not on
+         this surface at all, so there was nothing to scroll to. Evidence
+         is the material; the question is what to do about it; the material
+         goes first. How much of it there is stays Shadow's call, not a
+         rule in this file -- see the decide prompt. */""}
     ${(iv.evidence || []).length ? `<div class="shivev">${
       iv.evidence.map(e => `<div class="shivevrow">${
         e.ref ? `<span class="shivevref">${esc(e.ref)}</span>` : ""
       }<span>${esc(e.text || "")}</span></div>`).join("")}</div>` : ""}
+    <div class="shivq"${ctx && !showCtx
+      ? ` title="${escAttr(ctx)}"` : ""}>${esc(iv.question || "")}</div>
+    ${showCtx ? `<p class="shnewsub shivctx"
+      title="${escAttr(ctx)}">${esc(ctx)}</p>` : ""}
     ${iv.fields.map(f => shadowIvFieldHtml(m.id, f,
       shadowIvSignsHtml(m, f), said)).join("")}
     <div class="shnewacts">
@@ -2234,11 +2302,56 @@ async function shadowSendIntervention(mid){
   const d = shadowIvDraft(mid);
   d.busy = true; d.err = null; d.errors = {};
   if (typeof scheduleRender === "function") scheduleRender();
+
+  /* ── A NO CARRIES WHAT THEY WANT CHANGED (founder, 2026-09-23) ────────
+     "No" on its own tells Shadow the work is wrong and nothing about what
+     would make it right, so the founder's next move was to go and say it
+     somewhere else. Whatever they typed under the No goes FIRST, down the
+     path they would have used anyway -- shadowTalkSend, the task's own
+     chat -- so it lands in this conversation as their words, in order,
+     before the answer that follows it.
+
+     NOTHING NEW IS SENT. Same endpoint, same conversation, same draft; the
+     answer POST below is untouched. If the line cannot be delivered the
+     answer still goes: a founder who pressed No must not be stuck because
+     their reason failed to send. */
+  const why = Object.keys(d.why || {})
+    .filter(k => d.values[k] === false)
+    .map(k => String(d.why[k] || "").trim())
+    .filter(Boolean)
+    .join("\n\n");
   let r = null;
   try {
     r = await shadowPost("/api/shadow/missions/" + mid + "/act", {
       action: "intervene", intervention_id: iv.id, values: d.values });
   } catch (e){ r = null; }
+
+  /* ── THE REASON IS SENT AFTER THE ANSWER, AND THAT ORDER IS THE POINT
+     (founder, 2026-09-23) ──────────────────────────────────────────────
+     It used to go first. The ask is drawn at the END of the conversation
+     while it is live, and a line sent through the task chat lands in the
+     TIMELINE above it -- so for the length of the round trip the founder
+     read their own words ABOVE the question they were answering:
+     "result / you answered / you said / question". Measured in the pane.
+
+     Answering first retires the ask, so by the time the reason appears
+     there is no live question below it to be above. The conversation then
+     reads in the order it happened: result, question, what they said, and
+     Shadow's reply to it.
+
+     STILL THE SAME PATH. shadowTalkSend, the task's own chat, the line the
+     founder typed -- identical to pressing Enter in the composer, which is
+     what makes it a message rather than a form submission. A reason that
+     cannot be delivered does not undo an answer that landed. */
+  if (why && typeof shadowTalkSend === "function"
+      && typeof shadowTalk === "function"){
+    try {
+      const T = shadowTalk();
+      if (!T.busy){ T.text = why; await shadowTalkSend(mid, null); }
+    } catch (e){}
+    d.why = {};
+  }
+
   d.busy = false;
   if (!r){
     d.err = "Could not reach Shadow just now.";
@@ -3852,6 +3965,48 @@ function shadowTimelineEvents(m){
   const fr = m && m.founder_response;
   if (fr && typeof fr === "object")
     out.push({ kind: "answered", ts: Date.parse(fr.answered_at || "") });
+
+  /* ── THE ROUNDS BEFORE THIS ONE (founder, 2026-09-23) ────────────────
+     THE BUG. Redirecting a task made its previous turn disappear: the
+     engine pops `completion`, `founder_response` and `intervention` on a
+     revision, correctly, because a LIVE ask must not stay answerable
+     against an objective nobody is working on. But what happened is not a
+     live thing, and it was being thrown away with them -- so a founder who
+     changed their mind lost the result they were changing their mind
+     ABOUT.
+
+     mission_engine now carries those three onto the `revisions` entry it
+     was already writing. This turns each entry into events in the SAME
+     stream, stamped with the revision's own clock, so the existing sorter
+     places them where they happened and the existing renderers draw them.
+     No second history, no second surface: one conversation that keeps
+     accumulating. */
+  for (const rev of (Array.isArray(m && m.revisions) ? m.revisions : [])){
+    if (!rev || typeof rev !== "object") continue;
+    if (rev.completion || rev.asked || rev.founder_response)
+      out.push({ kind: "round", rev: rev, ts: Date.parse(rev.at || "") });
+  }
+
+  /* ── AND THE ROUNDS A HAND-BACK CLOSED (founder, 2026-09-23: "Done means
+     the task is complete -- it does not mean its result is disposable") ──
+     `reopened` is the OTHER log the engine already keeps, and it already
+     carries the completion it displaced (mission_engine, `leg.completion =
+     m.pop("completion")`) together with the words the founder said when
+     they handed the task back. Nothing new is stored for this; it was
+     being archived correctly and drawn nowhere, so reopening a Done task
+     rebuilt the view from the LATEST result alone and every result before
+     it vanished. Same event, same renderer, same stream. */
+  for (const leg of (Array.isArray(m && m.reopened) ? m.reopened : [])){
+    if (!leg || typeof leg !== "object") continue;
+    const at = Date.parse(leg.at || "");
+    if (leg.completion)
+      out.push({ kind: "round", rev: leg, ts: at });
+    /* what they said when they reopened it is their own turn, and it comes
+       after the result it is about */
+    if (String(leg.words || "").trim())
+      out.push({ kind: "said", who: "founder", text: String(leg.words),
+                 ts: at + 1 });
+  }
   /* ── THE FOUNDER AND SHADOW, IN THE SAME STREAM (founder, 2026-09-17) ──
      One conversation, drawn where the worker's turns are drawn, because there
      is one door now and its answers belong beside the work they are about.
@@ -4254,6 +4409,9 @@ function shadowTimelineHtml(m){
        "you answered" is the card this replaces. shadowStoryHtml is kept
        and still exported. */
     if (e.kind === "answered") return shadowAnsweredHtml(m, runHead("you"));
+    /* an earlier round, drawn by the SAME pieces the current one uses: what
+       was produced, what was asked about it, and what the founder said */
+    if (e.kind === "round") return shadowRoundHtml(e.rev);
     if (e.kind === "ask_done"){
       /* WHAT WAS SETTLED, SAID RATHER THAN LABELLED (pass 4). The heads
          read "Shadow · held, then sent" and "Shadow · done when" -- the
@@ -4367,11 +4525,26 @@ function shadowAskRowsHtml(m){
       <div class="shsaidtext shaskhint">Or say it here: “yes”, “change it to …”, or “I did it myself”.</div>
     </div>`);
   }
-  if (m.intervention && m.intervention.id){
+  /* ── THE QUESTION IS ASKED ONCE (founder, 2026-09-23) ────────────────
+     This row announced the pending question HERE, and the ask itself
+     printed it again below with the result it is about. Two copies, and
+     the announcement came FIRST -- so the question stood above the very
+     output it was asking the founder to judge: "Better? Here is the new
+     list." and then, further down, the new list.
+
+     The ask carries the question now, beside its result, where the founder
+     can answer it. Nothing else about this row's neighbours moves: the
+     held-say row above and the check rows below are untouched, and an ask
+     held-say row above and the check rows below are untouched, and an ask
+     with no form needs this row, because shadowInterventionHtml draws
+     nothing without fields -- the question would then have no surface at
+     all. That is the one case it survives. */
+  if (m.intervention && m.intervention.id
+      && !(Array.isArray(m.intervention.fields)
+           && m.intervention.fields.length)){
     rows.push(`<div class="shsaid shask shask-question">
-      <div class="shsaidhead">Shadow · question</div>
+      <div class="shsaidhead">Shadow \u00b7 question</div>
       <div class="shsaidtext">${esc(m.intervention.question || "")}</div>
-      <div class="shsaidtext shaskhint">Answer on the form below.</div>
     </div>`);
   }
   /* ── ONE DECISION, ONE PLACE (founder, 2026-09-21) ──────────────────
@@ -4440,6 +4613,67 @@ function shadowAskRowsHtml(m){
    THE QUESTION IS NOT REPEATED HERE. Shadow already asked it, in its own
    row, above -- printing it again beside the answer is the duplication the
    redesign removes. */
+/* ── ONE EARLIER ROUND OF THE SAME CONVERSATION ────────────────────────
+   (founder, 2026-09-23.) Built from the entry mission_engine archives when
+   the founder redirects the task, and built out of the pieces the CURRENT
+   round already uses -- the result block, the question, the founder's
+   answer. Nothing here is a summary of what happened; it is what happened,
+   kept.
+
+   IT IS HISTORY, SO IT HAS NO CONTROLS. No form, no buttons, nothing to
+   answer twice: that ask was settled, by an answer or by the founder
+   changing their mind, which is itself an answer. */
+function shadowRoundHtml(rev){
+  if (!rev || typeof rev !== "object") return "";
+  const out = [];
+
+  /* what that round produced: Shadow's closing line AND the result behind
+     it. The line alone is a claim; the result is the thing the founder was
+     looking at when they changed their mind, and it is what they lost. */
+  const c = rev.completion;
+  if (c && c.said)
+    out.push(shadowSaidRowHtml("shadow", esc(String(c.said)), "shroundsaid"));
+  /* ONE COPY OF THE RESULT. When the round also carries the ask, its
+     evidence IS that result -- the thing the question was about -- and
+     drawing the completion's preview as well put the same lines on screen
+     twice, under two different headings. The ask's copy wins because it
+     is the one with the question attached to it. */
+  const askedEv = (rev.asked && (rev.asked.evidence || []).length);
+  const prev = !askedEv && c && c.preview && c.preview.text;
+  if (prev)
+    out.push(`<div class="shivev shivevdone"><div class="shivevrow">${
+      c.preview.ref ? `<span class="shivevref">${esc(c.preview.ref)}</span>` : ""
+    }<span>${esc(String(prev))}</span></div></div>`);
+  else if (c && !c.said && c.preview)
+    out.push(shadowSaidRowHtml("shadow", esc(String(c.preview.text || "")),
+                               "shroundsaid"));
+
+  /* what was asked about it, and what it was asked about */
+  const asked = rev.asked || {};
+  const ev = (asked.evidence || []).map(e => `<div class="shivevrow">${
+      e.ref ? `<span class="shivevref">${esc(e.ref)}</span>` : ""
+    }<span>${esc(e.text || "")}</span></div>`).join("");
+  if (ev) out.push(`<div class="shivev shivevdone">${ev}</div>`);
+  if (asked.question)
+    out.push(`<div class="shivq shivqdone">${esc(asked.question)}</div>`);
+
+  /* and what the founder said back */
+  const fr = rev.founder_response;
+  if (fr && typeof fr === "object"){
+    if (fr.question && !asked.question)
+      out.push(`<div class="shivq shivqdone">${esc(fr.question)}</div>`);
+    const parts = (Array.isArray(fr.summary) ? fr.summary : []).map(x => {
+      const label = String((x && (x.label || x.key)) || "").trim();
+      const value = (x && x.value !== undefined && x.value !== null)
+        ? String(x.value).trim() : "";
+      return (label && value) ? label + ": " + value : (label || value);
+    }).filter(Boolean);
+    if (parts.length)
+      out.push(shadowSaidRowHtml("you", esc(parts.join(" \u00b7 ")), "shanswered"));
+  }
+  return out.join("");
+}
+
 function shadowAnsweredHtml(m, head){
   const fr = m && m.founder_response;
   if (!fr || typeof fr !== "object") return "";
@@ -4453,7 +4687,39 @@ function shadowAnsweredHtml(m, head){
     })
     .filter(Boolean);
   if (!parts.length) return "";
-  return shadowSaidRowHtml("you", esc(parts.join(" · ")), "shanswered", head);
+  /* ── WHAT THEY WERE LOOKING AT WHEN THEY ANSWERED (founder, 2026-09-23:
+     "Done changes the task's state, not the visibility of its history") ──
+     Answering pops `intervention` -- it must, or a settled question would
+     draw a live form again -- and the result the question was ABOUT used to
+     go with it. So a founder returning to the finished task found their own
+     "yes" to a question about output that existed nowhere on this surface,
+     and the only way to see what they had agreed to was the worker's chat.
+
+     The ask now leaves that material on `founder_response`, and it is drawn
+     here, above the answer, in the order it happened: the result, then the
+     question, then what they said. Read-only by construction -- this is the
+     timeline, there is no form in it, and nothing here can be pressed
+     twice. */
+  const ev = (fr.evidence || []).map(e => `<div class="shivevrow">${
+      e.ref ? `<span class="shivevref">${esc(e.ref)}</span>` : ""
+    }<span>${esc(e.text || "")}</span></div>`).join("");
+  return (ev ? `<div class="shivev shivevdone">${ev}</div>` : "")
+    /* ONLY WHEN IT IS NOT ALREADY ABOVE. Pass 5 (2026-09-21) settled that
+       the question is not restated beside the answer -- Shadow asked it in
+       its own row, and printing it twice is duplication. That holds while
+       the ask is LIVE. Once answered, the record's `intervention` is popped
+       and that row is gone, so restating is the only way the question
+       survives. The two rules are one rule: say it exactly once. */
+    /* ONLY WHEN THIS EXACT ASK IS STILL ABOVE. The test was "is ANY ask
+       live", which is wrong the moment Shadow asks a SECOND question: the
+       first round's question then vanished from a conversation that still
+       held its result and its answer. It is the same ask only when the
+       live one carries the id this response answers. */
+    + ((fr.question
+        && !(m.intervention && m.intervention.id
+             && m.intervention.id === fr.intervention_id))
+        ? `<div class="shivq shivqdone">${esc(fr.question)}</div>` : "")
+    + shadowSaidRowHtml("you", esc(parts.join(" · ")), "shanswered", head);
 }
 
 function shadowStoryHtml(m){
@@ -6055,6 +6321,18 @@ function shadowHomeHtml(){
       ${/* the founder's answer is INSIDE the timeline now, at the point it
            happened -- drawing it here as well would be the same card twice */""}
       ${thread ? `<div class="shthread">${thread}</div>` : ""}
+      ${/* ── THE ASK FLOWS WITH THE CONVERSATION (founder, 2026-09-23) ───
+           It used to be pinned BELOW this scroller, in a capped box with a
+           scrollbar of its own, so a result worth checking was read through
+           a panel inside a panel. It is the last thing in the conversation
+           now -- what Shadow wants you to know, then the result, then the
+           question -- and the pane's scroller is the only one.
+
+           REVERSES the 2026-09-18 pinning, which put the question and the
+           turns that earned it on screen together. That is what is traded
+           for a result the founder can actually read; scrolling to the
+           bottom is how a conversation has always worked. */""}
+      ${newOpen || !sel ? "" : shadowInterventionHtml(sel)}
       ${newOpen ? "" : shadowPendingMemoryHtml()}
       </div>
       ${/* ── THE QUESTION IS PINNED, THE CONVERSATION SCROLLS (founder,
@@ -6086,7 +6364,6 @@ function shadowHomeHtml(){
            NO OTHER STATE MOVES: shadowInterventionHtml returns "" unless the
            mission is carrying a question, so every running, done, failed and
            stopped mission renders exactly the markup it did before. */""}
-      ${newOpen || !sel ? "" : shadowInterventionHtml(sel)}
       ${/* THE ASK BLOCK IS THE NEW-TASK COMPOSER (founder, 2026-09-15).
            "What should I take on? / Tell Shadow the outcome you want" is
            how a task is CREATED, and it was drawing under the workspace as
@@ -7892,6 +8169,13 @@ if (typeof document !== "undefined" && document.addEventListener){
     /* v4: the task chat line and the behaves text, kept across the
        background re-renders like every typed field here */
     if (d.shnewtalk){ shadowNewChat().text = t.value; return; }
+    /* THE NODE IS THE DRAFT, exactly as the composer above it is: a render
+       while the founder is typing their reason must not rewrite the box
+       under them. Stored on every keystroke, never re-rendered from. */
+    if (d.shivwhy && d.shivkey){
+      shadowIvSetWhy(d.shivwhy, d.shivkey, t.value);
+      return;
+    }
     if (d.shbehaves){
       if (typeof S !== "undefined"){ S.shadowBehavesDraft = t.value; S.shadowBehavesSaved = false; }
       return;

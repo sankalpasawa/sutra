@@ -148,15 +148,24 @@ class TestSignsEndToEnd(unittest.TestCase):
         self.assertEqual(iv.get("confirms_check"),
                          {"index": 1, "field": "tests_pass"})
 
-    def test_02_the_browser_quotes_the_check_verbatim(self):
-        """THE POINT OF THE FEATURE, on a payload nobody hand-wrote."""
+    def test_02_the_browser_never_shows_the_check(self):
+        """REVERSED 2026-09-23. This asserted the opposite: that the literal
+        criterion reached the browser, quoted, under a "Yes signs off" row.
+        The founder's ruling -- "Remove the YES SIGNS OFF line and the
+        internal acceptance criterion entirely" -- makes that the bug.
+
+        The BINDING is untested here and untouched: test_05 below still
+        drives the whole loop and still asserts the answer moves the check.
+        What this pins now is that the founder is not shown the bookkeeping
+        on the way."""
         html = self.render(self.wire(self.blocked(REQUEST)))
         form = self.form(html)
-        self.assertIn("shivsigns", form, "the sign-off row is not drawn")
-        self.assertIn("Yes signs off", form)
-        self.assertIn(CHECK, form,
-                      "the LITERAL check text must reach the browser")
-        self.assertIn("“" + CHECK + "”", form, "quoted verbatim")
+        self.assertNotIn("shivsigns", form, "the sign-off row is gone")
+        self.assertNotIn("Yes signs off", form, "and its label with it")
+        self.assertNotIn(CHECK, form,
+                         "the internal criterion never reaches the browser")
+        self.assertIn("Do the tests pass?", form,
+                      "while the question the founder must answer stands")
 
     def test_03_an_untargeted_intervention_renders_the_old_form(self):
         req = dict(REQUEST)
@@ -181,11 +190,14 @@ class TestSignsEndToEnd(unittest.TestCase):
         self.assertEqual(r.status_code, 200,
                          "a stale target must not reject the answer: " + r.text)
 
-    def test_05_answering_YES_closes_the_check_the_form_quoted(self):
-        """The whole loop: read the quote, answer it, and the check the
-        founder was shown is the check that moves."""
+    def test_05_answering_YES_closes_the_check_behind_the_question(self):
+        """The whole loop, which is the part that matters: answer the
+        question, and the check bound to it moves. The form no longer quotes
+        that check (2026-09-23) -- so what is asserted before the answer is
+        that the QUESTION is there to answer, not the bookkeeping."""
         mid = self.blocked(REQUEST)
-        self.assertIn(CHECK, self.form(self.render(self.wire(mid))))
+        self.assertIn("Do the tests pass?",
+                      self.form(self.render(self.wire(mid))))
         iv = self.wire(mid)["intervention"]
         r = self.client.post("%s/%s/act" % (MIS, mid), headers=HDR,
                              json={"action": "intervene",

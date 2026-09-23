@@ -275,18 +275,37 @@ function targeted(over, checks){
 /* 12. THE CHECK TEXT IS QUOTED, VERBATIM */
 {
   const ctx = fresh();
-  const h = card(ctx, targeted());
-  assert(/shivsigns/.test(h), "the sign-off row must render");
-  assert(h.indexOf(CHECK) !== -1,
-    "the LITERAL check string must appear -- not a paraphrase of it");
-  assert(/Yes signs off/.test(h), "the row says what the Yes does");
-  assert(h.indexOf("“" + CHECK + "”") !== -1,
-    "quoted, so the founder can see where the criterion starts and ends");
-  /* it belongs to the gating field, not to the form at large */
-  const fields = h.split('class="shivfield"');
-  assert(fields[1].indexOf(CHECK) !== -1, "it sits under tests_pass");
-  assert(fields[2].indexOf(CHECK) === -1, "and not under the other field");
-  console.log("ok 12 confirms_check renders the literal check string");
+  const M = targeted();
+  const h = card(ctx, M);
+  /* ── REVERSED 2026-09-23 ─────────────────────────────────────────────
+     This block pinned that the form SHOWS which internal check a Yes
+     closes. The founder's ruling: "Remove the YES SIGNS OFF line and the
+     internal acceptance criterion entirely. The user does not need to see
+     Shadow's internal judgment/sign-off language."
+
+     ONLY THE DISPLAY WENT. shadowIvSignsIndex still decides which check a
+     field closes, the answer still closes it, and the lanes that assert on
+     that behaviour are untouched -- see the confirms_check checks below and
+     test_shadow_intervention_confirms.py. What is gone is printing the
+     bookkeeping at the founder. */
+  assert(!/shivsigns/.test(h), "the internal sign-off row is not shown");
+  /* the check string went with the row that quoted it (2026-09-23): it is
+     Shadow's own acceptance criterion, and the founder is answering a
+     question, not auditing a checklist. Asserted where it still matters --
+     that the ANSWER closes it -- in test_shadow_intervention_confirms.py. */
+  assert(h.indexOf(CHECK) === -1,
+    "the internal acceptance criterion is not quoted at the founder");
+  assert(!/Yes signs off/.test(h), "nor its label");
+  /* THE BINDING IS UNCHANGED, and that is the point of keeping this block:
+     the field still KNOWS which check it closes, which is what the answer
+     acts on. Only the printing of it went. */
+  assert.strictEqual(
+    ctx.shadowIvSignsIndex(M, M.intervention.fields[0]), 1,
+    "the gating field still names the check it closes");
+  assert.strictEqual(
+    ctx.shadowIvSignsIndex(M, M.intervention.fields[1]), -1,
+    "and the other field still closes nothing");
+  console.log("ok 12 confirms_check still binds; it is no longer printed");
 }
 
 /* 13. an intervention WITHOUT confirms_check renders exactly as before */
@@ -337,13 +356,22 @@ function targeted(over, checks){
   const ctx = fresh();
   const blank = [{ tier: "founder_confirm", check: "   ", met: false }];
   const h = card(ctx, targeted({ index: 0 }, blank));
-  assert(/shivsigns/.test(h), "the sign-off still happens, so it still shows");
-  assert(/Yes signs off/.test(h), "and still says so");
-  assert(/check 1/.test(h), "named by position when it cannot be quoted");
-  assert(/no text for it/.test(h), "and honest that there is nothing to read");
-  assert(!/“\s*”/.test(h), "never quote an empty string as criterion");
-  console.log("ok 14 whitespace-only check text falls back to the generic"
-    + " label");
+  /* the sign-off still HAPPENS -- it is simply not narrated at the founder
+     (2026-09-23). shadowIvSignsIndex is what decides it, and it is asserted
+     directly rather than through markup that no longer exists. */
+  assert(!/shivsigns/.test(h), "it still happens; it is no longer shown");
+  assert(!/check 1/.test(h),
+    "and neither is the positional fallback it used when the check was blank");
+  assert(h.indexOf("no text for it") === -1,
+    "nor the apology it used to make for a check with no words in it");
+  assert(!/“\s*”/.test(h), "and no empty quotation anywhere");
+  /* the BINDING is still whatever it was -- a blank check is still the one
+     this field closes, and the answer still closes it */
+  assert.strictEqual(
+    ctx.shadowIvSignsIndex(targeted({ index: 0 }, blank),
+      targeted({ index: 0 }, blank).intervention.fields[0]), 0,
+    "a check with no text is still bound to its field");
+  console.log("ok 14 a blank check is bound and, like every check, unprinted");
 }
 
 /* 15. every target the SERVER would refuse draws nothing */
@@ -366,16 +394,144 @@ function targeted(over, checks){
   console.log("ok 15 nine refused targets draw nothing at all");
 }
 
-/* 16. the quote is ESCAPED -- a check is founder text, not markup */
+/* 16. A CHECK IS FOUNDER TEXT, AND IT IS NOT DRAWN AT ALL NOW. The row that
+   quoted it went on 2026-09-23, so the escaping it needed is moot HERE --
+   but the string must not reach this surface by any other route either,
+   which is the stronger thing to assert. The card's own done-when summary
+   still prints checks, and still escapes them; that is its own lane. */
 {
   const ctx = fresh();
   const evil = [{ tier: "founder_confirm", met: false,
     check: "<img src=x onerror=alert(1)>" }];
-  const h = card(ctx, targeted({ index: 0 }, evil));
-  assert(/shivsigns/.test(h), "it still renders");
-  assert(h.indexOf("<img") === -1, "the check text must go through esc()");
-  assert(/&lt;img/.test(h), "escaped, not dropped");
-  console.log("ok 16 check text is escaped before it is quoted");
+  const h = ctx.shadowInterventionHtml(targeted({ index: 0 }, evil));
+  assert(!/shivsigns/.test(h), "the sign-off row is gone");
+  assert(h.indexOf("<img") === -1, "and no raw markup reaches the ask");
+  assert(h.indexOf("onerror") === -1, "escaped or absent, never live");
+  console.log("ok 16 a check never reaches the ask, escaped or otherwise");
+}
+
+/* 17. WHAT IS BEING JUDGED IS ON SCREEN, AND IT IS ABOVE THE QUESTION
+   (founder, 2026-09-23). Shadow asked "are these the ten you wanted?" and
+   the ten were nowhere on this surface. The key was always validated and
+   always rendered -- it was documented nowhere, so Shadow never sent it,
+   and it drew UNDER the question when it did. Both halves pinned here. */
+{
+  const ctx = fresh();
+  const lines = "1. First story\n2. Second story\n3. Third story";
+  const m = mission(null, { intervention: {
+    id: "iv-ten", schema_version: 1,
+    question: "Are these the ten stories you wanted?",
+    context: "",
+    evidence: [{ kind: "output", ref: "news.md", text: lines }],
+    fields: [{ key: "list_ok", type: "boolean",
+               label: "These are the ten I wanted." }],
+    submit_label: "Send to Shadow", expires_at: null } });
+  const h = ctx.shadowInterventionHtml(m);
+
+  assert(/shivev/.test(h), "the material is drawn at all");
+  assert(h.indexOf("First story") !== -1, "verbatim, not summarised");
+  assert(h.indexOf("news.md") !== -1, "and it says where it came from");
+  assert(h.indexOf("shivev") < h.indexOf("shivq"),
+    "IT IS ABOVE THE QUESTION -- a question about ten lines printed above "
+    + "the ten lines is one the founder must scroll past to answer");
+  console.log("ok 17 the judged material is on screen, above the question");
+}
+
+/* 18. AN ASK THAT NEEDS NO EVIDENCE IS UNCHANGED. How much to show is
+   Shadow's judgement about the question; none is a legal answer to it, and
+   this renderer must not grow a placeholder for it. */
+{
+  const ctx = fresh();
+  const m = mission(null, { intervention: {
+    id: "iv-bare", schema_version: 1, question: "Which region?",
+    context: "", evidence: [],
+    fields: [{ key: "region", type: "text", label: "Region" }],
+    submit_label: "Send to Shadow", expires_at: null } });
+  const h = ctx.shadowInterventionHtml(m);
+  assert(!/shivev/.test(h), "no evidence block, and no empty one either");
+  assert(/shivq/.test(h) && /Which region\?/.test(h), "the ask still works");
+  console.log("ok 18 an ask needing no evidence draws none");
+}
+
+/* 19-26. THE ASK IS A USER-FACING SURFACE (founder, 2026-09-23). Nine
+   points, each one a thing the machine used to say out loud or a decision
+   the founder could not see. */
+{
+  const ctx = fresh();
+  const RESULT = "1. Fed holds rates steady\n2. EU agrees AI liability rules";
+  const ask = (over) => mission(null, { intervention: Object.assign({
+    id: "iv-9", schema_version: 1,
+    question: "Are these the ten stories you wanted?", context: "",
+    evidence: [{ kind: "output", ref: "international-news.md", text: RESULT }],
+    fields: [{ key: "list_ok", type: "boolean",
+               label: "These are the ten I wanted.", required: true,
+               options: [], constraints: {} }],
+    submit_label: "Send to Shadow", expires_at: null }, over || {}),
+    done_when: [{ tier: "founder_confirm",
+                  check: "The ten are the ones I wanted.", met: false }] });
+
+  const h = ctx.shadowInterventionHtml(ask());
+
+  /* (1) no internal vocabulary anywhere on this surface */
+  for (const word of ["Evidence", "worker reply", "worker chat", "its own chat",
+                      "predicate", "sign off", "signs off"])
+    assert(h.toLowerCase().indexOf(word.toLowerCase()) === -1,
+      "internal word on a user-facing surface: " + JSON.stringify(word));
+  console.log("ok 19 no internal vocabulary is rendered");
+
+  /* (2) the sign-off strip specifically */
+  assert(!/shivsigns/.test(h), "the Yes-signs-off strip is not drawn");
+  assert(h.indexOf("The ten are the ones I wanted") === -1,
+    "nor the internal check it would have quoted");
+  console.log("ok 20 'YES SIGNS OFF' and its criterion are gone");
+
+  /* (3) and (4) the result IS here, in the success tone */
+  assert(h.indexOf("Fed holds rates steady") !== -1,
+    "the result is in Shadow -- no other chat needed to read it");
+  assert(/shivev/.test(h), "drawn as the result block");
+  console.log("ok 21 the result is rendered directly in Shadow");
+
+  /* (5) and (6) the two answers carry the two tones */
+  assert(/shkindyes/.test(h) && /shkindno/.test(h),
+    "Yes and No are distinguishable at all");
+  const css = fs.readFileSync(
+    path.join(__dirname, "static", "panel.css"), "utf8");
+  assert(/\.shkindyes\.on\{[^}]*--ok/.test(css),
+    "a chosen Yes uses the success tone");
+  assert(/\.shkindno\.on\{[^}]*--block/.test(css),
+    "a chosen No uses the refusal tone");
+  assert(/\.shwright \.shivev\{[^}]*--ok/.test(css),
+    "and the result block is the success tone, not the warm accent");
+  console.log("ok 22 Yes is green, No is red, the result is green");
+
+  /* (7) choosing No opens somewhere to say what is wrong */
+  const m = ask();
+  assert(!/data-shivwhy/.test(ctx.shadowInterventionHtml(m)),
+    "nothing extra before an answer is chosen");
+  ctx.shadowIvDraft(m.id).values.list_ok = true;
+  assert(!/data-shivwhy/.test(ctx.shadowInterventionHtml(m)),
+    "and none on a Yes");
+  ctx.shadowIvDraft(m.id).values.list_ok = false;
+  const no = ctx.shadowInterventionHtml(m);
+  assert(/data-shivwhy/.test(no), "a No opens a field to say what is wrong");
+  assert(/What should I change\?/.test(no),
+    "asked in the founder's language, not a form label");
+  console.log("ok 23 selecting No exposes a field for what to change");
+
+  /* (8) what they type there rides the task's own conversation */
+  ctx.shadowIvSetWhy(m.id, "list_ok", "Too much finance \u2014 more science.");
+  assert.strictEqual(ctx.shadowIvWhy(m.id, "list_ok"),
+    "Too much finance \u2014 more science.", "it is kept on the same draft");
+  assert(/Too much finance/.test(ctx.shadowInterventionHtml(m)),
+    "and survives a re-render while they are typing");
+  console.log("ok 24 the No feedback is held on the ask's own draft");
+
+  /* (9) and the ask still works: question, answer, send */
+  assert(/Are these the ten stories you wanted\?/.test(no), "the question stands");
+  assert(/data-shivopt="yes"/.test(no) && /data-shivopt="no"/.test(no),
+    "both answers are still offered");
+  assert(/data-shivsend/.test(no), "and it can still be sent");
+  console.log("ok 25 the existing question behaviour is intact");
 }
 
 setTimeout(() => console.log("\nall shadow intervention UI tests passed"), 30);

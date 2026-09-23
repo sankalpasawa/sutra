@@ -5693,6 +5693,18 @@ async def api_shadow_mission_act(mid: str, request: Request):
                 "answered_at": _mission_engine._now(),
                 "values": clean,
                 "summary": _shadow_intervention.summarise(iv, clean),
+                # WHAT THEY WERE LOOKING AT WHEN THEY ANSWERED (founder,
+                # 2026-09-23). `intervention` is popped on the line below --
+                # it has been answered and must not draw a live form again --
+                # and the material the question was ABOUT went with it. So a
+                # founder returning to the finished task found the answer to
+                # a question about output that no longer existed anywhere on
+                # this surface: "Done", and nothing to check it against.
+                #
+                # Carried, not re-derived: the same validated pieces the ask
+                # already held. No new store, no new lifecycle, and nothing
+                # reads this but the pane that draws the exchange back.
+                "evidence": iv.get("evidence") or [],
             }
             m.pop("intervention", None)     # retired: it has been answered
             store.save(m)

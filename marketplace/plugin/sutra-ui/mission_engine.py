@@ -1700,6 +1700,77 @@ def _home():
     return d
 
 
+def _excerpt(text):
+    """The bounded gist of the worker's reply -- 150 off the head, 250 off
+    the tail, unchanged since `result_excerpt` was introduced. Lifted out of
+    _complete so the ask path below can hold to the SAME bound rather than
+    inventing a second one."""
+    t = str(text or "")
+    return t if len(t) <= 400 else t[:150] + " ... " + t[-250:]
+
+
+def _ask_with_result(iv, mission, root, reply=None):
+    """An ask the founder can answer without leaving Shadow.
+
+    THE GAP (founder, 2026-09-23). Shadow asked "should I save this as a
+    file?" about a three-day plan that existed only in the worker's chat.
+    The question was on one surface and the thing it was about was on
+    another, so the founder had to open the worker chat to answer a question
+    Shadow had put to them -- which is the one thing Shadow exists to make
+    unnecessary.
+
+    SHADOW'S OWN EVIDENCE WINS. When the decider attached evidence it chose
+    what mattered and how much, which is the judgement it should be making;
+    this never overrides it. The fallback runs ONLY when an ask arrived with
+    nothing attached, because the alternative there is a question about
+    material the founder cannot see.
+
+    IT IS NOT A TRANSCRIPT DUMP. preview_for is the SAME bounded, grounded
+    reader `_complete` already uses for the completion preview: owned
+    artifacts only, read off disk rather than off the worker's words, capped
+    in lines and characters, and it reports its own truncation. No tool
+    call, no intermediate turn and no status line can reach the founder
+    through it.
+
+    NEVER RAISES, and never blocks an ask: a question the founder can see is
+    better than no question at all, so a fallback that fails leaves the ask
+    exactly as Shadow wrote it.
+    """
+    try:
+        if not isinstance(iv, dict) or iv.get("evidence"):
+            return iv
+        preview = shadow_decision.preview_for(mission, root)
+        text = (preview or {}).get("text")
+        ref = (preview or {}).get("ref") or ""
+        if not text:
+            # ── AND WHEN THERE IS NO FILE TO READ (founder, 2026-09-23) ──
+            # preview_for reads ARTIFACTS OFF DISK, which is right when the
+            # worker wrote one. A worker running read-only cannot: it
+            # produces the plan in its reply and has nothing to save. Shadow
+            # noticed exactly that and said so in its own words -- "The
+            # 3-day plan exists only in the worker's reply" (mission
+            # m-8365d184b054) -- and then asked the founder to approve a
+            # plan that was, for that reason, nowhere they could see it.
+            #
+            # THE SAME BOUND, NOT THE TRANSCRIPT. _excerpt is the rule
+            # `result_excerpt` has always used on this very text: 150 off
+            # the head, 250 off the tail. One reply, capped; never the turn
+            # history, never a tool call, never a status line.
+            # STRIPPED BEFORE THE TEST, not after: a reply of three spaces
+            # is not a result, and `if not text` let it through as one --
+            # an evidence block with nothing in it, under a question about
+            # something the founder still could not see.
+            text = _excerpt(reply) if str(reply or "").strip() else ""
+            ref = ""
+            if not text:
+                return iv
+        out = dict(iv)
+        out["evidence"] = [{"kind": "output", "ref": ref, "text": text}]
+        return out
+    except Exception:                    # noqa: BLE001 -- never lose an ask
+        return iv
+
+
 class MissionStore:
     """File-per-mission store with ledger-audited transitions."""
 
@@ -2019,7 +2090,17 @@ class MissionStore:
         was = {"version": int(m.get("version") or 1),
                "objective": m.get("objective") or "",
                "done_when": [dict(c) for c in (m.get("done_when") or [])
-                             if isinstance(c, dict)]}
+                             if isinstance(c, dict)],
+               # ...AND WHAT THE ROUND ACTUALLY SAID (founder, 2026-09-23).
+               # The three fields above are the task; these three are the
+               # conversation about it, and they are popped a hundred lines
+               # below as things that "name a version that no longer
+               # exists". True of a live ask; false of what happened. The
+               # snapshot has to take them HERE for the same reason it takes
+               # the rest -- after this point they are gone.
+               "completion": m.get("completion"),
+               "founder_response": m.get("founder_response"),
+               "intervention": m.get("intervention")}
         for k in ("objective", "done_when", "manifest", "max_turns"):
             if k in fields:
                 # same door, same narrowing as create(): a `mission` fence
@@ -2084,13 +2165,41 @@ def _invalidate_for_revision(m, was=None):
                   if isinstance(c, dict) and str(c.get("check") or "").strip()]
     if was and (superseded or was.get("objective")):
         log = [r for r in (m.get("revisions") or []) if isinstance(r, dict)]
-        log.append({
+        # ── THE ROUND'S CONVERSATION GOES INTO THE LOG, NOT INTO THE BIN
+        # (founder, 2026-09-23) ──────────────────────────────────────────
+        # The pops below are right about LIVE things: an ask that names a
+        # version nobody is working on any more must not stay answerable,
+        # and a verdict reached against old criteria proves nothing. They
+        # were wrong about HISTORY. `completion` is what the last round
+        # produced and `founder_response` is what the founder said about
+        # it -- both things that HAPPENED, and both were dropped on the
+        # floor the moment the objective changed. The founder's report:
+        # redirect a task and the previous turn disappears from the
+        # conversation entirely.
+        #
+        # Carried on the entry this log already writes, so there is no
+        # second history: same list, same MAX_REVISIONS bound, same
+        # `revisions` field every existing reader already tolerates. The
+        # surface draws these back as the earlier rounds of one
+        # conversation.
+        entry = {
             "version": was.get("version"),
             "objective": was.get("objective") or "",
             "checks": [{"check": c.get("check"),
                         "tier": c.get("tier"),
                         "met": bool(c.get("met"))} for c in superseded],
-            "at": _now()})
+            "at": _now()}
+        if was.get("completion"):
+            entry["completion"] = was["completion"]
+        if was.get("founder_response"):
+            entry["founder_response"] = was["founder_response"]
+        # an ask still on the table when the founder changed their mind is
+        # history too: they saw the question and answered it by redirecting
+        if was.get("intervention"):
+            iv = was["intervention"]
+            entry["asked"] = {"question": iv.get("question") or "",
+                              "evidence": iv.get("evidence") or []}
+        log.append(entry)
         # bounded: a founder who changes their mind ten times gets the last
         # few, not an unbounded second copy of the mission's whole history
         m["revisions"] = log[-MAX_REVISIONS:]
@@ -3526,7 +3635,8 @@ class MissionEngine:
                 # is what keeps every prose-only ask_founder working.
                 iv = decision.get("intervention")
                 if iv:
-                    blocked["intervention"] = iv
+                    blocked["intervention"] = _ask_with_result(
+                        iv, blocked, self.probe_root, last_response)
                 # THE SECOND ROUTE TO A HUMAN, AND IT GETS THE SAME PACKET
                 # (founder, 2026-09-21). `_await_confirmation` is where a
                 # mission goes when the machine work is finished; this is
@@ -3874,8 +3984,7 @@ class MissionEngine:
         mm = self.store.transition(
             mid, "done", "done_when met: %s" % json.dumps(results)[:400])
         t = transcript or ""
-        mm["result_excerpt"] = (t if len(t) <= 400
-                                else t[:150] + " ... " + t[-250:])
+        mm["result_excerpt"] = _excerpt(t)
         # THE SUMMARY IS STAMPED HERE and nowhere else, for the same reason
         # the transition is: this is the one writer of a done mission, so it
         # is the one place where "what was done and why it counts" can never

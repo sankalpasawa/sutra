@@ -180,6 +180,7 @@ jobs:
           node test_shadow_conversation.js
           node test_shadow_conversation_model.js
           node test_shadow_decision_ui.js
+          node test_shadow_done_history.js
           node test_shadow_delegate_focus.js
           node test_shadow_floor_needs_you.js
           node test_shadow_hi_trace.js
@@ -187,6 +188,7 @@ jobs:
           node test_shadow_intervention_ui.js
           node test_shadow_live_refresh.js
           node test_shadow_now.js
+          node test_shadow_order.js
           node test_shadow_overlay.js
           node test_shadow_presence.js
           node test_shadow_rhs.js

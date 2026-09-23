@@ -4267,9 +4267,14 @@
   -webkit-box-orient:vertical;overflow-wrap:anywhere}
 
 /* ── the ask: Shadow's decision boundary, as its own card */
-.shwright .shiv{margin-top:14px;padding:16px 19px;background:var(--acc-bg);
-  border:1px solid var(--line-soft);border-left:4px solid var(--acc);
-  border-radius:0 12px 12px 0}
+/* THE ASK IS NOT A CARD ANY MORE. A tinted, bordered box around Shadow's
+   question made it a separate object in a conversation that is otherwise
+   a column of speech -- and the tint was the warm accent, which reads as a
+   warning next to work that went well. What is left is the hierarchy the
+   founder asked for and nothing else: what Shadow wants them to know, the
+   result, the question. */
+.shwright .shiv{margin-top:14px;padding:0;background:none;
+  border:0;border-radius:0}
 /* PINNED, CAPPED, AND IT SCROLLS ITSELF (founder, 2026-09-18). The form left
    .shwscroll so the conversation could have the scroller's whole floor back --
    see 16-shadow-home.js. As a direct child of the column it now takes height
@@ -4281,8 +4286,18 @@
    did. margin-top:0 because the column's own 10px gap now spaces it -- the
    14px above was for a block that sat inside the scroller. Same specificity as
    the rule above, so it must stay AFTER it. */
-.shwright>.shiv{flex:0 1 auto;min-height:0;max-height:38%;margin-top:0;
-  overflow-y:auto;overscroll-behavior:contain}
+/* ── NO SCROLLER INSIDE A SCROLLER (founder, 2026-09-23: "Avoid nested
+   scrolling wherever possible. The Shadow pane/page itself should handle
+   scrolling.") ──────────────────────────────────────────────────────────
+   THIS REVERSES the 2026-09-18 pinning, and says so. That ruling gave the
+   ask its own capped, self-scrolling box so the question and the turns
+   that earned it could both be on screen. The cost is the one the founder
+   is naming now: a result long enough to be worth checking arrives inside
+   a 38%-tall box with its own bar, and reading it means scrolling a panel
+   inside a panel. The ask flows with the conversation instead; the pane's
+   own scroller is the only one. */
+.shwright>.shiv{flex:0 0 auto;min-height:0;max-height:none;margin-top:0;
+  overflow:visible}
 .shwright .shivq{font-size:15px;font-weight:700;line-height:1.35;
   margin-bottom:4px}
 /* WHY SHADOW CANNOT SETTLE IT: kept, because it is the reason the founder is
@@ -4291,12 +4306,64 @@
 .shwright .shivctx{display:-webkit-box;-webkit-line-clamp:1;line-clamp:1;
   -webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;
   line-height:1.5;margin-bottom:9px}
-.shwright .shivev{margin:11px 0 3px;padding-left:0;border-left:0;
-  display:flex;gap:16px}
-.shwright .shivev::before{content:"Evidence";flex:0 0 104px;
-  font:600 9.5px/1.7 var(--mono);letter-spacing:.11em;
-  text-transform:uppercase;color:var(--faint)}
-.shwright .shivevrow{font-size:13px;color:var(--ink)}
+/* ── THE RESULT, AS THE FOUNDER READS IT (founder, 2026-09-23) ──────────
+   FOUR THINGS WENT, AND THEY WERE ALL THE MACHINE SHOWING THROUGH.
+
+   THE WORD "EVIDENCE" IS GONE. It was a label in a 104px column, and it
+   named how Shadow had CLASSIFIED the text rather than what the text is.
+   The founder is reading a result; being told it is evidence tells them
+   nothing they can act on and asks them to learn a vocabulary.
+
+   THE COLUMN IS GONE WITH IT. `display:flex` with a fixed label gutter
+   split one logical result into a caption and a body, which is two cards
+   for something that is one answer. It is one block that flows down the
+   page, full width, in the order it was written.
+
+   IT IS SOFT GREEN, NOT THE WARM RED. `--acc-bg` reads as pink beside a
+   result that went well; `--ok` is the green the pills and the done states
+   already use, so nothing new is minted -- the tint is that same token,
+   held back to a wash.
+
+   THE LINE BREAKS SURVIVE (pre-wrap, below): ten numbered stories are ten
+   lines or they are one paragraph nobody can check. */
+.shwright .shivev{margin:2px 0 13px;padding:11px 14px;
+  border-left:3px solid var(--ok);border-radius:0 8px 8px 0;
+  background:color-mix(in srgb, var(--ok) 8%, transparent)}
+/* display:block ON PURPOSE. The base .shivevrow (further down this file,
+   where the corner card uses it) is `display:flex`, which lays the source
+   and the result side by side and blockifies the caption without ever
+   letting it stack. In the pane the result is the object and the source is
+   a caption above it, so this row is a block. */
+.shwright .shivevrow{display:block;font-size:13.5px;line-height:1.55;
+  color:var(--ink)}
+.shwright .shivevrow + .shivevrow{margin-top:9px}
+/* THE LINE BREAKS ARE PART OF WHAT IS BEING JUDGED (founder, 2026-09-23).
+   Evidence is quoted material -- ten numbered stories, a changed
+   paragraph, a diff -- and the default collapsed every newline, so a list
+   the founder was asked to approve arrived as one running sentence.
+   pre-wrap keeps the shape it was written in and still wraps long lines. */
+.shwright .shivevrow span{white-space:pre-wrap}
+/* WHERE IT CAME FROM IS A CAPTION, NOT A COLUMN. Inline, the filename sat
+   to the left of the first line and pushed the rest into a second column --
+   the same split the Evidence gutter made, just smaller. Above the result,
+   quiet, it answers "where is this?" without competing with the result. */
+/* the same two blocks, inside the timeline, where the exchange is history:
+   a little quieter than the live ask, and the question is not a heading
+   competing with Shadow's own turns around it */
+/* ── THE TWO ANSWERS LOOK LIKE WHAT THEY MEAN (founder, 2026-09-23) ────
+   Yes and No were the same chip in the same tone, so the founder could not
+   see which they had chosen without reading it. `--ok` and `--block` are
+   the good and bad outcomes this app already draws everywhere else; only
+   the SELECTED one carries colour, because an unpressed button is not a
+   verdict. */
+/* and the field a No opens: the composer's own shape, because it is the
+   same act -- telling Shadow something -- not a form to fill in */
+.shwright .shivwhy{margin:9px 0 2px}
+.shwright .shivwhytext{width:100%;min-height:58px;resize:vertical}
+.shwright .shivqdone{font-size:13.5px;font-weight:600;margin:2px 0 6px}
+.shwright .shivevdone{margin-bottom:6px}
+.shwright .shivevrow .shivevref{display:block;white-space:nowrap;
+  margin-bottom:5px;font-size:11px;letter-spacing:.02em;color:var(--faint)}
 /* the answer chips read as the decision they are: the affirmative is solid,
    everything beside it is a quiet outline. The LABELS are the server's and
    the values are unchanged -- this is weight, not wording. */
@@ -4305,6 +4372,22 @@
   font-weight:600;background:var(--card)}
 .shwright .shiv .shkind.on{background:var(--ink);border-color:var(--ink);
   color:var(--bg)}
+/* ── THE TWO ANSWERS LOOK LIKE WHAT THEY MEAN (founder, 2026-09-23) ────
+   Yes and No were the same chip in the same tone -- the generic "chosen"
+   ink above -- so the founder could not see WHICH they had picked without
+   reading it. `--ok` and `--block` are the good and bad outcomes this app
+   already draws everywhere else; nothing new is minted, and only the
+   SELECTED one carries colour, because an unpressed button is not a
+   verdict.
+
+   SCOPED HERE, not earlier in the file: the rule above is
+   `.shwright .shiv .shkind.on`, and anything weaker or earlier loses to
+   it. Same scope, straight after -- which is how the first attempt at
+   this, further up, ended up drawing black chips in a browser. */
+.shwright .shiv .shkindyes.on{color:var(--ok);border-color:var(--ok);
+  background:color-mix(in srgb, var(--ok) 15%, transparent)}
+.shwright .shiv .shkindno.on{color:var(--block);border-color:var(--block);
+  background:color-mix(in srgb, var(--block) 13%, transparent)}
 .shwright .shiv .shnewacts{margin-top:13px}
 
 /* ── the story either side of your answer */
