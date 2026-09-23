@@ -3,16 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Library &mdash; design v1</title>
-<!-- Library v1 (2026-09-23): a new destination in the rail, under Org. It holds the
-     KINDS a department is built from, so the owner can look at one before putting it
-     in a department. Every shelf reads the same three bands:
-        1  How one is made      the ways to start one, and the settings that govern it
-        2  What it is made of   the parts the record actually carries
-        3  Ready-made           the ones that ship, with where each came from
-     Markup and css are the app's own (library-assets/, copied from sutra-ui/static on
-     2026-09-23). The .lb* block in <style> is the only addition and is what a builder
-     would port into panel.css. Nothing here is built yet: this is the design. -->
+<title>Library &mdash; design v2</title>
+<!-- Library v2 (2026-09-23, founder in-session): every shelf is a head plus TWO TABS --
+     About the thing, and the ready-made list of it. Tags live inside the list. Help and
+     Settings leave the rail and live behind the CEO Sutra icon at its foot. Focus gets
+     the same two tabs, so the pattern is the app's, not the Library's.
+     Design system: the app's own controls, not new ones --
+        .tabs .dptabs        the tab pair (panel.css:595, placed by the dept card)
+        .dptag               the tag (panel.css, the rules tag on a department card)
+        .rfoot .identity     the rail foot: avatar, role, caret, menu (panel.css:137-165)
+        .dpk .dpbig          the label and value type scale
+     Only the .lb rules below are new, and they are layout, never a second control.
+     Markup and css are the app's own (library-assets/, copied 2026-09-23). Nothing is
+     built: this is the design. -->
 <link rel="stylesheet" href="library-assets/panel.css">
 <link rel="stylesheet" href="library-assets/workspace.css">
 <link rel="stylesheet" href="library-assets/agents.css">
@@ -24,12 +27,13 @@ body{background:#ECEAE6;padding:26px 18px 70px}
 .cap{font:12.5px/1.6 var(--sans);color:var(--muted);margin:0 0 9px}
 .cap b{color:var(--ink);font-weight:600}
 .cap code{font:11.5px/1 var(--mono);background:rgba(28,25,23,.05);padding:2px 5px;border-radius:4px}
-.app{height:1220px;position:relative;margin:0 0 34px;border:1px solid var(--line);
+.app{height:1080px;position:relative;margin:0 0 34px;border:1px solid var(--line);
   border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
-/* mock-only: the shell is rendered at its widest, so the rail shows the accordion
-   rows at the width the app gives them instead of clipping the labels */
-.app{--railw:186px}
-.app .rail .nav>li>button{white-space:nowrap}
+/* the rail is the app's own: icon over label, rows in a flyout, the foot the
+   company mark over CEO Sutra. Nothing here widens or re-lays it. The one
+   mock-only rule lifts the rail over the pane, because a page of stacked
+   shells paints the panes after the rail that owns the flyout. */
+.app .rail{position:relative;z-index:60}
 .mtbl{width:100%;border-collapse:collapse;font:12px/1.5 var(--sans);margin:0 0 30px;background:var(--card);
   border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .mtbl th,.mtbl td{padding:7px 11px;text-align:left;border-bottom:1px solid var(--line-soft);vertical-align:top}
@@ -39,37 +43,27 @@ body{background:#ECEAE6;padding:26px 18px 70px}
 h2.mh{font:600 15px/1.3 var(--serif);color:var(--ink);margin:30px 0 8px}
 
 /* ═══ LIBRARY — what a builder ports into panel.css ══════════════════════════
-   Nothing below renames an existing class. Every rule is new and prefixed .lb,
-   so the shelf can land without touching a shipped rule. */
+   Layout only. Every control on these screens is one the app already ships. */
 
 /* ── L1. THE SHELF PAGE ──────────────────────────────────────────────────
-   One scroller, a head that says what the shelf holds, then the three bands.
-   Same skeleton on every shelf, so the seventh reads like the first. */
+   Head, then the tab pair, then one pane. The head never moves between tabs,
+   so switching reads as one shelf answering two questions, not two screens. */
 .lbpage{padding:16px 20px 30px;max-width:1080px}
 .lbhead{margin:0 0 4px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
 .lbhead h2{font:600 19px/1.25 var(--serif);color:var(--ink);margin:0}
-.lbkind{font:600 9.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;
-  color:var(--faint);border:1px solid var(--line);border-radius:999px;padding:4px 8px}
 .lbsub{font:13px/1.65 var(--sans);color:var(--muted);margin:0 0 4px;max-width:70ch}
-.lbcounts{display:flex;gap:16px;flex-wrap:wrap;margin:10px 0 22px;
-  padding:9px 0 0;border-top:1px solid var(--line-soft)}
-.lbcount{font:12px/1.4 var(--sans);color:var(--muted)}
-.lbcount b{display:block;font:600 17px/1.2 var(--serif);color:var(--ink)}
 
-/* ── L2. A BAND ──────────────────────────────────────────────────────────
-   Numbered, because the order is the answer to three questions in a row:
-   how do I get one, what is inside it, which ones already exist. */
-.lbband{margin:0 0 26px}
-.lbbh{display:flex;align-items:center;gap:9px;margin:0 0 11px}
-.lbbn{width:19px;height:19px;flex:none;border-radius:50%;border:1px solid var(--line);
-  font:600 10px/19px var(--mono);text-align:center;color:var(--faint)}
-.lbbh h3{font:600 11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;
-  color:var(--ink);margin:0}
-.lbbh span{font:12px/1 var(--sans);color:var(--faint)}
+/* ── L2. THE TAB ROW ─────────────────────────────────────────────────────
+   The app's .tabs control, moved to the LEFT (it ships margin-left:auto for
+   a header corner) and given a rule under it, so the pane below reads as the
+   tab's own body. .lbtabs is the only hook; the buttons stay the app's. */
+.lbtabrow{display:flex;align-items:center;gap:12px;margin:14px 0 0;
+  border-bottom:1px solid var(--line);padding-bottom:9px}
+.lbtabrow .tabs{margin-left:0}
+.lbtabcount{font:11.5px/1 var(--mono);color:var(--faint);margin-left:auto}
+.lbpane{padding:18px 0 0}
 
-/* ── L3. THE WAYS (band 1) ───────────────────────────────────────────────
-   Four cards, each one a way to start one. The card says what you do and
-   what lands; it never promises more than the record can hold. */
+/* ── L3. THE WAYS (About tab) ────────────────────────────────────────────*/
 .lbways{display:grid;grid-template-columns:repeat(auto-fit,minmax(224px,1fr));gap:10px}
 .lbway{border:1px solid var(--line);border-radius:9px;background:var(--card);padding:11px 12px}
 .lbway h4{font:600 13px/1.3 var(--sans);color:var(--ink);margin:0 0 5px}
@@ -77,11 +71,12 @@ h2.mh{font:600 15px/1.3 var(--serif);color:var(--ink);margin:30px 0 8px}
 .lbway .lbthen{font:11.5px/1.5 var(--sans);color:var(--faint);
   border-top:1px solid var(--line-soft);padding-top:6px;margin:0}
 .lbway .lbthen b{color:var(--ink);font-weight:600}
+.lbsec{margin:22px 0 10px;display:flex;align-items:center;gap:9px}
+.lbsec .dpk{margin:0}
+.lbsec hr{flex:1;border:0;border-top:1px solid var(--line-soft);margin:0}
 
-/* ── L4. THE SETTINGS TABLE (band 1, second half) ────────────────────────
-   The meta settings: what governs MAKING one, not what one does. Three
-   columns, because a setting nobody can read the default of is a rumour. */
-.lbset{width:100%;border-collapse:collapse;margin:12px 0 0;background:var(--card);
+/* ── L4. THE SETTINGS TABLE (About tab) ──────────────────────────────────*/
+.lbset{width:100%;border-collapse:collapse;margin:0;background:var(--card);
   border:1px solid var(--line);border-radius:9px;overflow:hidden;font:12px/1.5 var(--sans)}
 .lbset th,.lbset td{padding:7px 11px;text-align:left;border-bottom:1px solid var(--line-soft);vertical-align:top}
 .lbset th{font:600 9.5px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
@@ -89,9 +84,7 @@ h2.mh{font:600 15px/1.3 var(--serif);color:var(--ink);margin:30px 0 8px}
 .lbset td:first-child{color:var(--ink);font-weight:600;white-space:nowrap}
 .lbset td:last-child{font:11.5px/1.5 var(--mono);color:var(--muted);white-space:nowrap}
 
-/* ── L5. THE PARTS (band 2) ──────────────────────────────────────────────
-   One row per part the record carries, with a real line from the shipped
-   default beside it. The example is the proof the part is not a slogan. */
+/* ── L5. THE PARTS (About tab) ───────────────────────────────────────────*/
 .lbpart{display:grid;grid-template-columns:132px 1fr;gap:0;border:1px solid var(--line);
   border-radius:9px;background:var(--card);overflow:hidden}
 .lbpart>div{padding:9px 12px;border-bottom:1px solid var(--line-soft)}
@@ -101,123 +94,121 @@ h2.mh{font:600 15px/1.3 var(--serif);color:var(--ink);margin:30px 0 8px}
 .lbpval{font:12px/1.6 var(--sans);color:var(--muted)}
 .lbpval em{font-style:normal;color:var(--ink)}
 
-/* ── L6. READY-MADE (band 3) ─────────────────────────────────────────────
-   A row per one that exists. Derives-from is a column, not a footnote: the
-   whole point of a shelf is that you can see what a thing came from. */
+/* ── L6. THE LIST TAB ────────────────────────────────────────────────────
+   Tags first, as a filter; then a row per one that exists, carrying the same
+   tags. One vocabulary: what filters the list is what labels the row. */
+.lbfilter{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+.lbfilter .dptag{cursor:pointer;font-size:10.5px;padding:3px 8px}
+.lbfilter .dptag.on{color:var(--acc);border-color:var(--acc);background:var(--acc-bg)}
+.lbfilter .lbfl{font:600 9.5px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);margin-right:3px}
 .lbmade{border:1px solid var(--line);border-radius:9px;background:var(--card);overflow:hidden}
-.lbrow{display:grid;grid-template-columns:1fr 1.5fr 128px 74px auto;gap:12px;align-items:center;
+.lbrow{display:grid;grid-template-columns:1.15fr 1.45fr auto 96px auto;gap:12px;align-items:center;
   padding:10px 12px;border-bottom:1px solid var(--line-soft)}
 .lbmade .lbrow:last-child,.lbmade .lbopen:last-child{border-bottom:0}
 .lbrow>b{font:600 13px/1.35 var(--sans);color:var(--ink)}
 .lbrow>b span{display:block;font:10px/1.4 var(--mono);color:var(--faint);font-weight:400}
 .lbrow .lbuse{font:12px/1.5 var(--sans);color:var(--muted)}
-.lbrow .lbfrom{font:11px/1.4 var(--mono);color:var(--faint)}
-.lbrow .lbfloor{font:11.5px/1.4 var(--mono);color:var(--muted);white-space:nowrap}
-.lbpick{font:12px/1 var(--sans);border:1px solid var(--line);background:transparent;color:var(--ink);
-  border-radius:7px;padding:6px 11px;cursor:pointer;white-space:nowrap}
-.lbpick.on{background:var(--ink);color:var(--card);border-color:var(--ink)}
+.lbtags{display:flex;gap:5px;flex-wrap:wrap}
+.lbrow .lbfloor{font:11.5px/1.4 var(--mono);color:var(--muted);white-space:nowrap;text-align:right}
 .lbrow.on{background:rgba(28,25,23,.028)}
+.lbrow.tobuild>b,.lbrow.tobuild .lbuse{opacity:.62}
 .lbopen{padding:0 12px 12px 12px;border-bottom:1px solid var(--line-soft);background:rgba(28,25,23,.028)}
 .lbopen h5{font:600 9.5px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;
   color:var(--faint);margin:10px 0 6px}
 .lbopen ul{margin:0;padding:0 0 0 16px}
 .lbopen li{font:12px/1.6 var(--sans);color:var(--muted);margin:0 0 3px}
 .lbopen li b{color:var(--ink);font-weight:600}
-.lbnew{font:11.5px/1.5 var(--sans);color:var(--ink);background:rgba(120,160,120,.13);
-  border-radius:5px;padding:1px 5px}
-
-/* ── L7. STATE, SAID PLAINLY ─────────────────────────────────────────────
-   A shelf that shows what does not exist yet must say so on the row, or the
-   shelf becomes a promise. Two words only: shipped, to build. */
-.lbst{font:600 9.5px/1 var(--mono);letter-spacing:.07em;text-transform:uppercase;
-  border-radius:999px;padding:4px 7px;border:1px solid var(--line);color:var(--faint);white-space:nowrap}
-.lbst.ship{color:#3f6b3f;border-color:rgba(63,107,63,.35);background:rgba(120,160,120,.12)}
-.lbrow.tobuild>b,.lbrow.tobuild .lbuse{opacity:.62}
-
-/* ── L8. THE NOTE ────────────────────────────────────────────────────────
-   Where a shelf must say what it does NOT hold (Work item: no skills), it
-   says it on the shelf, not in a doc nobody opens. */
-.lbnote{border-left:2px solid var(--line);padding:2px 0 2px 11px;margin:12px 0 0;
+.lbnote{border-left:2px solid var(--line);padding:2px 0 2px 11px;margin:14px 0 0;
   font:12px/1.65 var(--sans);color:var(--muted);max-width:66ch}
 .lbnote b{color:var(--ink);font-weight:600}
 
-/* ── L9. THE RAIL ROW ────────────────────────────────────────────────────
-   Library is a destination with rows, like Org, so its rows live in the rail
-   accordion and no second plane opens. The divider separates the five
-   functions from the two parts. */
+/* ── L7. THE RAIL ────────────────────────────────────────────────────────
+   Library is a destination with rows, so its rows live in the rail accordion
+   the way Org's do. The divider names the two groups. Help and Settings are
+   gone from this list: they live behind the identity button at the foot. */
 .nav.sub li.lbdiv{margin:6px 0 2px;padding:0 0 0 30px;
   font:600 9px/1.4 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+/* mock-only: the rail foot is position:relative in the app shell; the menu
+   opens above it. Shown open on screen 1. */
+.rail .identity{position:relative}
 </style>
 </head>
 <body>
 <div class="wrap">
 
-<p class="cap"><b>Library &mdash; design v1, 2026-09-23.</b> A new destination in the rail, directly under Org.
-It holds the <b>kinds</b> a department is built from, so the owner can read one before putting it in a department.
-Three screens below: <b>Identity</b> (a function shelf), <b>Engines</b>, <b>Work item</b>.
-Nothing is built. The css in <code>&lt;style&gt;</code> is what a builder would port into <code>panel.css</code>.</p>
+<p class="cap"><b>Library &mdash; design v2, 2026-09-23.</b> Four changes from v1, all yours:
+every shelf is now <b>two tabs</b> (About the thing, and the ready-made list of it);
+<b>tags</b> live inside the list and filter it; <b>Help and Settings</b> leave the rail for the
+CEO Sutra icon at its foot; and <b>Focus</b> takes the same two tabs, so this is the app's
+pattern rather than the Library's. Every control is one the app already ships.</p>
 
-<h2 class="mh">What the Library holds</h2>
+<h2 class="mh">The pattern, on one line per shelf</h2>
 <table class="mtbl">
-  <tr><th>Shelf</th><th>What it holds</th><th>Where the rows come from</th><th>Today</th></tr>
-  <tr><td><b>Identity</b></td><td>What a department is for, and what it may do</td><td>The three shipped Identity templates</td><td>shipped</td></tr>
-  <tr><td><b>Adaptation</b></td><td>How a department changes itself</td><td>The three shipped Adaptation templates</td><td>shipped</td></tr>
-  <tr><td><b>Priority</b></td><td>What a department does next</td><td>The three shipped Priority templates</td><td>shipped</td></tr>
-  <tr><td><b>Coordination</b></td><td>How a department works with the others</td><td>The three shipped Coordination templates</td><td>shipped</td></tr>
-  <tr><td><b>Audit</b></td><td>What proves a department did what it said</td><td>The three shipped Audit templates</td><td>shipped</td></tr>
-  <tr><td><b>Engines</b></td><td>The routines a department runs without being asked</td><td>The engine records, and the two workflow records that ship</td><td>partly</td></tr>
-  <tr><td><b>Work item</b></td><td>One goal with one check that flips</td><td>The work-item ledger. <b>No skills</b></td><td>shipped</td></tr>
+  <tr><th>Shelf</th><th>Tab 1 &mdash; About</th><th>Tab 2 &mdash; the list</th><th>Tags inside</th></tr>
+  <tr><td><b>Identity</b></td><td>how one is made, what one is made of</td><td>Templates (3)</td><td>use case: any, money, product</td></tr>
+  <tr><td><b>Adaptation</b></td><td>the same two</td><td>Templates (3)</td><td>use case</td></tr>
+  <tr><td><b>Priority</b>, <b>Coordination</b>, <b>Audit</b></td><td>the same two</td><td>Templates (3 each)</td><td>use case</td></tr>
+  <tr><td><b>Engines</b></td><td>how one is made, what one is made of</td><td>Engines (6)</td><td>the function it serves</td></tr>
+  <tr><td><b>Work item</b></td><td>how one is made, what one is made of</td><td>Examples</td><td>who opened it. <b>No skills</b></td></tr>
+  <tr><td><b>Focus</b> (not a shelf)</td><td>About Shadow</td><td>Ready-made missions</td><td>the same shape, outside the Library</td></tr>
 </table>
 
-<h2 class="mh">Screen 1 &mdash; Library &rsaquo; Identity</h2>
-<p class="cap">The three bands in order: how one is made, what it is made of, the ready-made ones.
-<b>Money movement</b> is open, so you can see what a child adds to the base.</p>
+<h2 class="mh">Screen 1 &mdash; Library &rsaquo; Identity &rsaquo; About</h2>
+<p class="cap">The first tab answers &ldquo;what is this thing&rdquo;. The rail has lost Help and Settings:
+they are in the menu open at its foot, under <b>CEO Sutra</b>.</p>
 
-<div class="app" style="height:1600px">
+<div class="app">
   <nav class="rail" aria-label="Sutra">
     <div class="rtop"><div class="rmark">s</div><b>Sutra</b></div>
-    <div class="rscroll"><ul class="nav">
+    <div class="rscroll"><ul class="nav" id="railnav">
       <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>Now</button></li>
       <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>Focus<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></button></li>
       <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-4.5A8 8 0 1 1 21 12z"/></svg>Chats</button></li>
       <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="5" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/></svg>Market</button></li>
       <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="8.5" y="14" width="7" height="7"/></svg>Org<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></button></li>
       <li><button type="button" data-open="true" aria-expanded="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M11 4h3.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11z"/><path d="M18.5 6l2 12"/></svg>Library<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></button>
-        <ul class="nav sub" id="acc-library">
-          <li class="lbdiv">Functions</li>
-          <li><button type="button" aria-current="true"><span class="lab">Identity</span><span class="ct">3</span></button></li>
-          <li><button type="button"><span class="lab">Adaptation</span><span class="ct">3</span></button></li>
-          <li><button type="button"><span class="lab">Priority</span><span class="ct">3</span></button></li>
-          <li><button type="button"><span class="lab">Coordination</span><span class="ct">3</span></button></li>
-          <li><button type="button"><span class="lab">Audit</span><span class="ct">3</span></button></li>
-          <li class="lbdiv">Parts</li>
-          <li><button type="button"><span class="lab">Engines</span><span class="ct">6</span></button></li>
-          <li><button type="button"><span class="lab">Work item</span></button></li>
-        </ul></li>
-      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.2"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>Help</button></li>
-      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/></svg>Settings</button></li>
+        </li>
     </ul></div>
+    <div class="rfoot"><div class="identity open">
+      <div class="idmenu">
+        <div class="idsec">Sutra</div>
+        <button class="idrow" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.2 2.4c-.6.2-.7.6-.7 1.1v.5"/><path d="M12 17h.01"/></svg>Help</button>
+        <button class="idrow" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 8 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H2a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 3.7 8a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H8a1.6 1.6 0 0 0 1-1.5V2a2 2 0 1 1 4 0v.1A1.6 1.6 0 0 0 16 3.7a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V8c.3.6.9 1 1.5 1H22a2 2 0 1 1 0 4h-.1c-.6 0-1.2.4-1.5 1z"/></svg>Settings</button>
+        <div class="iddiv"></div>
+        <div class="idsec">Account</div>
+        <button class="idrow" type="button">Switch company</button>
+        <button class="idrow" type="button">Sign out</button>
+      </div>
+      <button class="idbtn" type="button" aria-expanded="true">
+        <span class="av">CS</span>
+        <span class="idtext"><span class="idrole">CEO Sutra</span><span class="idstat">Asawa Inc.</span></span>
+        <svg class="idcaret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+    </div></div>
   </nav>
   <div class="panes"><section class="pane browse">
     <div class="ph"><h3>Library</h3></div>
     <div class="pb">
       <div class="lbpage">
 
-        <div class="lbhead"><h2>Identity</h2><span class="lbkind">Function</span></div>
+        <div class="lbhead"><h2>Identity</h2><span class="dptag">Function</span></div>
         <p class="lbsub">What a department is for, and what it may do. Every department has one, and it holds
           the goal, the done line, the rules, the budget and the owner.</p>
-        <div class="lbcounts">
-          <div class="lbcount"><b>3</b>ready-made</div>
-          <div class="lbcount"><b>7</b>parts in every one</div>
-          <div class="lbcount"><b>5</b>lines in the base floor</div>
-          <div class="lbcount"><b>12</b>departments on the base</div>
+
+        <div class="lbtabrow lbtabs">
+          <div class="tabs dptabs">
+            <button type="button" aria-pressed="true">About</button>
+            <button type="button" aria-pressed="false">Templates</button>
+          </div>
+          <span class="lbtabcount">3 ready-made &middot; on 12 departments</span>
         </div>
 
-        <div class="lbband">
-          <div class="lbbh"><span class="lbbn">1</span><h3>How one is made</h3><span>four ways, same record at the end</span></div>
+        <div class="lbpane">
+          <div class="lbsec"><span class="dpk">How one is made</span><hr></div>
           <div class="lbways">
             <div class="lbway"><h4>From a ready-made one</h4>
-              <p>Pick one below and name the department.</p>
+              <p>Pick one in the next tab and name the department.</p>
               <p class="lbthen">Lands as <b>an ask you stamp</b>; the department runs on it from the next effect.</p></div>
             <div class="lbway"><h4>In the Identity chat</h4>
               <p>Say what the department is for. The chat writes the goal, the done line and the rules.</p>
@@ -229,6 +220,8 @@ Nothing is built. The css in <code>&lt;style&gt;</code> is what a builder would 
               <p>The base floor and nothing else, filled in as the department runs.</p>
               <p class="lbthen">Runs on <b>Default</b> until you pick something else.</p></div>
           </div>
+
+          <div class="lbsec"><span class="dpk">What governs the making</span><hr></div>
           <table class="lbset">
             <tr><th>Setting</th><th>What it decides</th><th>Now</th></tr>
             <tr><td>Starts on</td><td>Which one a new department runs on before anybody picks</td><td>Default</td></tr>
@@ -237,10 +230,8 @@ Nothing is built. The css in <code>&lt;style&gt;</code> is what a builder would 
             <tr><td>Who stamps</td><td>Who has to say yes before a pick takes effect</td><td>the owner</td></tr>
             <tr><td>Changing one</td><td>Whether a pick is an ask or takes effect at once</td><td>an ask</td></tr>
           </table>
-        </div>
 
-        <div class="lbband">
-          <div class="lbbh"><span class="lbbn">2</span><h3>What one is made of</h3><span>seven parts, every one of them read by the department screen</span></div>
+          <div class="lbsec"><span class="dpk">What one is made of</span><hr></div>
           <div class="lbpart">
             <div class="lbpname">Floor<span>always</span></div>
             <div class="lbpval">What it must always do, whatever else is picked. <em>&ldquo;Judges every effect against the rules: go passes, ask waits for the owner's stamp, refuse is stopped.&rdquo;</em></div>
@@ -259,31 +250,95 @@ Nothing is built. The css in <code>&lt;style&gt;</code> is what a builder would 
           </div>
         </div>
 
-        <div class="lbband">
-          <div class="lbbh"><span class="lbbn">3</span><h3>Ready-made</h3><span>three; each says what it came from</span></div>
+      </div>
+    </div>
+  </section></div>
+</div>
+
+<h2 class="mh">Screen 2 &mdash; Library &rsaquo; Identity &rsaquo; Templates</h2>
+<p class="cap">The second tab is the premade list. The tags above it are the same tags on the rows,
+so what filters the list is what labels a row. <b>Money movement</b> is open.</p>
+
+<div class="app" style="height:800px">
+  <nav class="rail" aria-label="Sutra">
+    <div class="rtop"><div class="rmark">s</div><b>Sutra</b></div>
+    <div class="rscroll"><ul class="nav">
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>Now</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>Focus<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-4.5A8 8 0 1 1 21 12z"/></svg>Chats</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="5" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/></svg>Market</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="8.5" y="14" width="7" height="7"/></svg>Org<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></button></li>
+      <li><button type="button" data-open="true" aria-expanded="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M11 4h3.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11z"/><path d="M18.5 6l2 12"/></svg>Library<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></button>
+        <ul class="nav sub">
+          <li class="lbdiv">Functions</li>
+          <li><button type="button" aria-current="true"><span class="lab">Identity</span><span class="ct">3</span></button></li>
+          <li><button type="button"><span class="lab">Adaptation</span><span class="ct">3</span></button></li>
+          <li><button type="button"><span class="lab">Priority</span><span class="ct">3</span></button></li>
+          <li><button type="button"><span class="lab">Coordination</span><span class="ct">3</span></button></li>
+          <li><button type="button"><span class="lab">Audit</span><span class="ct">3</span></button></li>
+          <li class="lbdiv">Parts</li>
+          <li><button type="button"><span class="lab">Engines</span><span class="ct">6</span></button></li>
+          <li><button type="button"><span class="lab">Work item</span></button></li>
+        </ul></li>
+    </ul></div>
+    <div class="rfoot"><div class="identity">
+      <button class="idbtn" type="button" aria-expanded="false">
+        <span class="av">CS</span>
+        <span class="idtext"><span class="idrole">CEO Sutra</span><span class="idstat">Asawa Inc.</span></span>
+        <svg class="idcaret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+    </div></div>
+  </nav>
+  <div class="panes"><section class="pane browse">
+    <div class="ph"><h3>Library</h3></div>
+    <div class="pb">
+      <div class="lbpage">
+
+        <div class="lbhead"><h2>Identity</h2><span class="dptag">Function</span></div>
+        <p class="lbsub">What a department is for, and what it may do.</p>
+
+        <div class="lbtabrow lbtabs">
+          <div class="tabs dptabs">
+            <button type="button" aria-pressed="false">About</button>
+            <button type="button" aria-pressed="true">Templates</button>
+          </div>
+          <span class="lbtabcount">3 ready-made</span>
+        </div>
+
+        <div class="lbpane">
+          <div class="lbfilter">
+            <span class="lbfl">Fits</span>
+            <span class="dptag on">All 3</span>
+            <span class="dptag">Any department</span>
+            <span class="dptag">Money movement</span>
+            <span class="dptag">Product build</span>
+          </div>
           <div class="lbmade">
             <div class="lbrow"><b>Default<span>identity/default</span></b>
               <span class="lbuse">Any department, until a use-case one is picked for it.</span>
-              <span class="lbfrom">base</span><span class="lbfloor">5 always</span>
-              <button class="lbpick" type="button">Use</button></div>
+              <span class="lbtags"><span class="dptag">any department</span><span class="dptag">base</span></span>
+              <span class="lbfloor">5 always</span>
+              <button class="btn" type="button">Use</button></div>
             <div class="lbrow on"><b>Money movement<span>identity/money-movement</span></b>
               <span class="lbuse">A department that moves money, or asks for money to be moved.</span>
-              <span class="lbfrom">from Default</span><span class="lbfloor">7 always</span>
-              <button class="lbpick on" type="button">In Paisa</button></div>
+              <span class="lbtags"><span class="dptag">money</span><span class="dptag">from Default</span></span>
+              <span class="lbfloor">7 always</span>
+              <button class="btn dpstamp" type="button">In Paisa</button></div>
             <div class="lbopen">
               <h5>What it always does</h5>
               <ul>
                 <li>The five it keeps from Default, unchanged.</li>
-                <li><span class="lbnew">adds</span> Every effect that moves money is an ask, whatever the rules say.</li>
-                <li><span class="lbnew">adds</span> The budget line is checked before the effect, not after it.</li>
+                <li><b>adds</b> Every effect that moves money is an ask, whatever the rules say.</li>
+                <li><b>adds</b> The budget line is checked before the effect, not after it.</li>
               </ul>
               <h5>Where it is in use</h5>
               <ul><li><b>Paisa</b> &mdash; picked 2026-09-21, stamped by the owner.</li></ul>
             </div>
             <div class="lbrow"><b>Product build<span>identity/product-build</span></b>
               <span class="lbuse">A department that builds and ships a product.</span>
-              <span class="lbfrom">from Default</span><span class="lbfloor">7 always</span>
-              <button class="lbpick" type="button">Use</button></div>
+              <span class="lbtags"><span class="dptag">product</span><span class="dptag">from Default</span></span>
+              <span class="lbfloor">7 always</span>
+              <button class="btn" type="button">Use</button></div>
           </div>
           <p class="lbnote">A department never runs on one of these directly. It writes <b>its own child</b> of the one
             you pick, even when it changes nothing, and that child is what runs. A child may add a line or
@@ -295,11 +350,11 @@ Nothing is built. The css in <code>&lt;style&gt;</code> is what a builder would 
   </section></div>
 </div>
 
-<h2 class="mh" id="s2">Screen 2 &mdash; Library &rsaquo; Engines</h2>
-<p class="cap">Same three bands. The ready-made band is honest about state: two exist as records today,
-four are named and not built.</p>
+<h2 class="mh">Screen 3 &mdash; Library &rsaquo; Engines &rsaquo; Engines</h2>
+<p class="cap">On a part, the tag is <b>the function it serves</b>, so you can ask the shelf for every engine
+Adaptation runs. Two of these exist; four are named and not built, and the row says so.</p>
 
-<div class="app" style="height:1560px">
+<div class="app" style="height:820px">
   <nav class="rail" aria-label="Sutra">
     <div class="rtop"><div class="rmark">s</div><b>Sutra</b></div>
     <div class="rscroll"><ul class="nav">
@@ -320,103 +375,77 @@ four are named and not built.</p>
           <li><button type="button" aria-current="true"><span class="lab">Engines</span><span class="ct">6</span></button></li>
           <li><button type="button"><span class="lab">Work item</span></button></li>
         </ul></li>
-      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.2"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>Help</button></li>
-      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/></svg>Settings</button></li>
     </ul></div>
+    <div class="rfoot"><div class="identity">
+      <button class="idbtn" type="button" aria-expanded="false">
+        <span class="av">CS</span>
+        <span class="idtext"><span class="idrole">CEO Sutra</span><span class="idstat">Asawa Inc.</span></span>
+        <svg class="idcaret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+    </div></div>
   </nav>
   <div class="panes"><section class="pane browse">
     <div class="ph"><h3>Library</h3></div>
     <div class="pb">
       <div class="lbpage">
 
-        <div class="lbhead"><h2>Engines</h2><span class="lbkind">Part</span></div>
-        <p class="lbsub">What a department runs without being asked each time. An engine has a folder it works in,
-          a moment it fires, one instruction, and a check that says whether the run counted.</p>
-        <div class="lbcounts">
-          <div class="lbcount"><b>2</b>ready-made</div>
-          <div class="lbcount"><b>4</b>named, not built</div>
-          <div class="lbcount"><b>8</b>parts in every one</div>
-          <div class="lbcount"><b>31</b>running across the org</div>
-        </div>
+        <div class="lbhead"><h2>Engines</h2><span class="dptag">Part</span></div>
+        <p class="lbsub">What a department runs without being asked each time. A folder it works in, a moment
+          it fires, one instruction, and a check that says whether the run counted.</p>
 
-        <div class="lbband">
-          <div class="lbbh"><span class="lbbn">1</span><h3>How one is made</h3><span>four ways; the last three all end as an ask</span></div>
-          <div class="lbways">
-            <div class="lbway"><h4>From work that repeated</h4>
-              <p>Adaptation sees the same work item three times and proposes the engine.</p>
-              <p class="lbthen">Lands as <b>an ask</b> carrying the three runs it came from.</p></div>
-            <div class="lbway"><h4>From a ready-made one</h4>
-              <p>Pick one below, name the folder and the moment it fires.</p>
-              <p class="lbthen">Lands as <b>an ask</b>, then runs on its own schedule.</p></div>
-            <div class="lbway"><h4>In any chat</h4>
-              <p>Ask for it in words. The chat files the engine and its check.</p>
-              <p class="lbthen">Lands as <b>an ask</b>; nothing runs before you stamp it.</p></div>
-            <div class="lbway"><h4>By hand</h4>
-              <p>Write the record in the department's folder.</p>
-              <p class="lbthen">Shows on the department's card at the <b>next read</b>.</p></div>
+        <div class="lbtabrow lbtabs">
+          <div class="tabs dptabs">
+            <button type="button" aria-pressed="false">About</button>
+            <button type="button" aria-pressed="true">Engines</button>
           </div>
-          <table class="lbset">
-            <tr><th>Setting</th><th>What it decides</th><th>Now</th></tr>
-            <tr><td>Starts</td><td>Whether a new engine is on the moment it is stamped</td><td>off</td></tr>
-            <tr><td>Tries</td><td>How many failed runs before it stops itself</td><td>3</td></tr>
-            <tr><td>Stops itself</td><td>Whether it goes quiet after those tries instead of retrying forever</td><td>on</td></tr>
-            <tr><td>May do</td><td>What a run may change without coming back to you</td><td>read only</td></tr>
-            <tr><td>Reports to</td><td>Where the run lands when it is finished</td><td>the department</td></tr>
-          </table>
+          <span class="lbtabcount">2 ready-made &middot; 31 running</span>
         </div>
 
-        <div class="lbband">
-          <div class="lbbh"><span class="lbbn">2</span><h3>What one is made of</h3><span>the record's own fields, in the words the screen uses</span></div>
-          <div class="lbpart">
-            <div class="lbpname">Its name<span>title</span></div>
-            <div class="lbpval">What it is called on the department's card. <em>&ldquo;Publish what is finished&rdquo;</em></div>
-            <div class="lbpname">Its folder<span>works in</span></div>
-            <div class="lbpval">The one folder a run may read and write. A run outside it is refused.</div>
-            <div class="lbpname">When it fires<span>schedule</span></div>
-            <div class="lbpval">A clock (<em>every weekday 09:00</em>) or a moment (<em>when filed work lands</em>).</div>
-            <div class="lbpname">Its instruction<span>body</span></div>
-            <div class="lbpval">The one thing a run does, in plain words. Longer than a line means it is two engines.</div>
-            <div class="lbpname">Done when<span>verify</span></div>
-            <div class="lbpval">The check that flips at the end of a run. Without it a run cannot be counted, only claimed.</div>
-            <div class="lbpname">May do<span>without asking</span></div>
-            <div class="lbpval">Read only, write in its folder, or file an ask. Anything above that waits for your stamp.</div>
-            <div class="lbpname">Tries<span>before it stops</span></div>
-            <div class="lbpval">How many failed runs before it goes quiet and says so on the card.</div>
-            <div class="lbpname">Its runs<span>history</span></div>
-            <div class="lbpval">Every run with what it changed, what the check said, and how long it took.</div>
+        <div class="lbpane">
+          <div class="lbfilter">
+            <span class="lbfl">Serves</span>
+            <span class="dptag on">All 6</span>
+            <span class="dptag">Identity</span>
+            <span class="dptag">Adaptation</span>
+            <span class="dptag">Priority</span>
+            <span class="dptag">Coordination</span>
+            <span class="dptag">Audit</span>
           </div>
-        </div>
-
-        <div class="lbband">
-          <div class="lbbh"><span class="lbbn">3</span><h3>Ready-made</h3><span>two exist; four are named and not built</span></div>
           <div class="lbmade">
             <div class="lbrow"><b>Start a department<span>W-start-department</span></b>
               <span class="lbuse">Reads one line and opens a department with its goal, rules and owner.</span>
-              <span class="lbfrom">on a chat's word</span><span class="lbst ship">shipped</span>
-              <button class="lbpick" type="button">Use</button></div>
+              <span class="lbtags"><span class="dptag">Identity</span><span class="dptag">on a chat's word</span></span>
+              <span class="lbfloor">shipped</span>
+              <button class="btn" type="button">Use</button></div>
             <div class="lbrow"><b>Write a document<span>W-md-authoring</span></b>
               <span class="lbuse">Writes or edits a document to the house standard and checks it against it.</span>
-              <span class="lbfrom">on a chat's word</span><span class="lbst ship">shipped</span>
-              <button class="lbpick" type="button">Use</button></div>
+              <span class="lbtags"><span class="dptag">Coordination</span><span class="dptag">on a chat's word</span></span>
+              <span class="lbfloor">shipped</span>
+              <button class="btn" type="button">Use</button></div>
             <div class="lbrow tobuild"><b>Daily brief</b>
-              <span class="lbuse">Each morning, what moved in this department and what is waiting on you.</span>
-              <span class="lbfrom">every day 08:00</span><span class="lbst">to build</span>
-              <button class="lbpick" type="button" disabled>Use</button></div>
+              <span class="lbuse">Each morning, what moved here and what is waiting on you.</span>
+              <span class="lbtags"><span class="dptag">Priority</span><span class="dptag">every day 08:00</span></span>
+              <span class="lbfloor">to build</span>
+              <button class="btn" type="button" disabled>Use</button></div>
             <div class="lbrow tobuild"><b>Weekly close</b>
               <span class="lbuse">On Friday, what the done line says against the work actually filed.</span>
-              <span class="lbfrom">Fridays 17:00</span><span class="lbst">to build</span>
-              <button class="lbpick" type="button" disabled>Use</button></div>
+              <span class="lbtags"><span class="dptag">Audit</span><span class="dptag">Fridays 17:00</span></span>
+              <span class="lbfloor">to build</span>
+              <button class="btn" type="button" disabled>Use</button></div>
             <div class="lbrow tobuild"><b>Watch a folder</b>
               <span class="lbuse">When something lands in the folder, do the one thing and file it.</span>
-              <span class="lbfrom">when work lands</span><span class="lbst">to build</span>
-              <button class="lbpick" type="button" disabled>Use</button></div>
+              <span class="lbtags"><span class="dptag">Adaptation</span><span class="dptag">when work lands</span></span>
+              <span class="lbfloor">to build</span>
+              <button class="btn" type="button" disabled>Use</button></div>
             <div class="lbrow tobuild"><b>Publish what is finished</b>
               <span class="lbuse">Work that passed its check goes out, and the link comes back to the card.</span>
-              <span class="lbfrom">when a check passes</span><span class="lbst">to build</span>
-              <button class="lbpick" type="button" disabled>Use</button></div>
+              <span class="lbtags"><span class="dptag">Coordination</span><span class="dptag">when a check passes</span></span>
+              <span class="lbfloor">to build</span>
+              <button class="btn" type="button" disabled>Use</button></div>
           </div>
           <p class="lbnote">An engine is the only part of a department that <b>makes</b> things. The five functions
-            judge, order and report. When a chat is asked to build something, this is what it hands the work to.</p>
+            judge, order and report. When a chat is asked to build something, this is what it hands the work to.
+            The About tab holds the eight parts every engine carries.</p>
         </div>
 
       </div>
@@ -424,113 +453,84 @@ four are named and not built.</p>
   </section></div>
 </div>
 
-<h2 class="mh" id="s3">Screen 3 &mdash; Library &rsaquo; Work item</h2>
-<p class="cap">The shelf with no ready-made list: a work item is written, not picked. So band 3 is
-<b>examples</b>, and the shelf says out loud what it does not hold.</p>
+<h2 class="mh">Screen 4 &mdash; Focus &rsaquo; Shadow, the same two tabs</h2>
+<p class="cap">The pattern is not the Library's. Focus takes it too: <b>About</b> says what Shadow is and
+what governs it, <b>Missions</b> is the premade list you can start one from.</p>
 
-<div class="app" style="height:1480px">
+<div class="app" style="height:760px">
   <nav class="rail" aria-label="Sutra">
     <div class="rtop"><div class="rmark">s</div><b>Sutra</b></div>
     <div class="rscroll"><ul class="nav">
       <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>Now</button></li>
-      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>Focus<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></button></li>
+      <li><button type="button" data-open="true" aria-expanded="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>Focus<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></button>
+        <ul class="nav sub">
+          <li><button type="button" aria-current="true"><span class="lab">Shadow</span></button></li>
+          <li><button type="button"><span class="lab">Balance</span></button></li>
+          <li><button type="button"><span class="lab">Optimus</span></button></li>
+        </ul></li>
       <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-4.5A8 8 0 1 1 21 12z"/></svg>Chats</button></li>
       <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="5" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/></svg>Market</button></li>
       <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="8.5" y="14" width="7" height="7"/></svg>Org<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></button></li>
-      <li><button type="button" data-open="true" aria-expanded="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M11 4h3.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11z"/><path d="M18.5 6l2 12"/></svg>Library<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></button>
-        <ul class="nav sub">
-          <li class="lbdiv">Functions</li>
-          <li><button type="button"><span class="lab">Identity</span><span class="ct">3</span></button></li>
-          <li><button type="button"><span class="lab">Adaptation</span><span class="ct">3</span></button></li>
-          <li><button type="button"><span class="lab">Priority</span><span class="ct">3</span></button></li>
-          <li><button type="button"><span class="lab">Coordination</span><span class="ct">3</span></button></li>
-          <li><button type="button"><span class="lab">Audit</span><span class="ct">3</span></button></li>
-          <li class="lbdiv">Parts</li>
-          <li><button type="button"><span class="lab">Engines</span><span class="ct">6</span></button></li>
-          <li><button type="button" aria-current="true"><span class="lab">Work item</span></button></li>
-        </ul></li>
-      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.2"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>Help</button></li>
-      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/></svg>Settings</button></li>
+      <li><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M11 4h3.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11z"/><path d="M18.5 6l2 12"/></svg>Library<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg></button></li>
     </ul></div>
+    <div class="rfoot"><div class="identity">
+      <button class="idbtn" type="button" aria-expanded="false">
+        <span class="av">CS</span>
+        <span class="idtext"><span class="idrole">CEO Sutra</span><span class="idstat">Asawa Inc.</span></span>
+        <svg class="idcaret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+    </div></div>
   </nav>
   <div class="panes"><section class="pane browse">
-    <div class="ph"><h3>Library</h3></div>
+    <div class="ph"><h3>Focus</h3></div>
     <div class="pb">
       <div class="lbpage">
 
-        <div class="lbhead"><h2>Work item</h2><span class="lbkind">Part</span></div>
-        <p class="lbsub">One goal with one check that flips. Everything a department does is one of these, whether
-          you wrote it, a function proposed it, or an engine opened it on a run.</p>
-        <div class="lbcounts">
-          <div class="lbcount"><b>7</b>parts in every one</div>
-          <div class="lbcount"><b>4</b>ways one is opened</div>
-          <div class="lbcount"><b>0</b>skills &mdash; on purpose</div>
-        </div>
+        <div class="lbhead"><h2>Shadow</h2><span class="dptag">Companion</span></div>
+        <p class="lbsub">The one that works while you are elsewhere. You hand it a task, it asks when it must,
+          and it comes back with the work and the check that proves it.</p>
 
-        <div class="lbband">
-          <div class="lbbh"><span class="lbbn">1</span><h3>How one is made</h3><span>four ways; the same record every time</span></div>
-          <div class="lbways">
-            <div class="lbway"><h4>You write it</h4>
-              <p>In Now, or in the department. A goal and the check that ends it.</p>
-              <p class="lbthen">Opens <b>at once</b>. Nothing needs stamping to start your own work.</p></div>
-            <div class="lbway"><h4>Priority proposes it</h4>
-              <p>The function reads the done line against what is filed and names the gap.</p>
-              <p class="lbthen">Lands <b>next on the list</b>, with the reason it was ordered there.</p></div>
-            <div class="lbway"><h4>An engine opens one</h4>
-              <p>Every run opens its own, so a run can be counted rather than claimed.</p>
-              <p class="lbthen">Closes when the run's <b>check flips</b>, and links to what changed.</p></div>
-            <div class="lbway"><h4>A chat opens one</h4>
-              <p>Before a chat changes anything it opens one saying what it is about to do.</p>
-              <p class="lbthen">Closes on <b>the check it declared</b>, not on the chat saying it is done.</p></div>
+        <div class="lbtabrow lbtabs">
+          <div class="tabs dptabs">
+            <button type="button" aria-pressed="false">About</button>
+            <button type="button" aria-pressed="true">Missions</button>
           </div>
-          <table class="lbset">
-            <tr><th>Setting</th><th>What it decides</th><th>Now</th></tr>
-            <tr><td>Needs a check</td><td>Whether one can be opened without a check that flips</td><td>no</td></tr>
-            <tr><td>Names its files</td><td>Whether it must say which files it will touch</td><td>yes</td></tr>
-            <tr><td>Closes by</td><td>What may close one: the check, or a person saying so</td><td>the check</td></tr>
-            <tr><td>Reopens</td><td>Whether a failed check reopens it instead of filing it</td><td>yes</td></tr>
-          </table>
+          <span class="lbtabcount">4 ready-made &middot; 2 running</span>
         </div>
 
-        <div class="lbband">
-          <div class="lbbh"><span class="lbbn">2</span><h3>What one is made of</h3><span>seven parts, and one thing that is not here</span></div>
-          <div class="lbpart">
-            <div class="lbpname">Its goal<span>one line</span></div>
-            <div class="lbpval">The outcome somebody could see. Two outcomes means two work items.</div>
-            <div class="lbpname">Done when<span>the check</span></div>
-            <div class="lbpval">The one check that flips. <em>&ldquo;the file exists and is not empty&rdquo;</em>, <em>&ldquo;the page answers on the live link&rdquo;</em>.</div>
-            <div class="lbpname">Who does it<span>owner</span></div>
-            <div class="lbpval">A person, a chat or an engine. Always one, never a team.</div>
-            <div class="lbpname">What it touches<span>files</span></div>
-            <div class="lbpval">The folders and files it may change. Anything outside is refused while it is open.</div>
-            <div class="lbpname">Its ref<span>id</span></div>
-            <div class="lbpval">The short name everything else points at: the filed work, the asks, the run.</div>
-            <div class="lbpname">Where it is<span>state</span></div>
-            <div class="lbpval">Open, waiting on you, filed, or reopened because the check did not flip.</div>
-            <div class="lbpname">What it left<span>evidence</span></div>
-            <div class="lbpval">The check's own output, kept, so the close can be read back a month later.</div>
+        <div class="lbpane">
+          <div class="lbfilter">
+            <span class="lbfl">Kind</span>
+            <span class="dptag on">All 4</span>
+            <span class="dptag">Watch</span>
+            <span class="dptag">Build</span>
+            <span class="dptag">Report</span>
           </div>
-          <p class="lbnote"><b>No skills here.</b> A work item says what is to be true when it is finished. It never
-            says who knows how, or which skill does it. That is the engine's business, or the chat's, and keeping it
-            out is what lets the same work item be done by a person today and an engine next month.</p>
-        </div>
-
-        <div class="lbband">
-          <div class="lbbh"><span class="lbbn">3</span><h3>Examples</h3><span>three real ones, from this week</span></div>
           <div class="lbmade">
-            <div class="lbrow"><b>The Library shelf design<span>a-b1732518-72</span></b>
-              <span class="lbuse">Done when: the mock page exists and is not empty.</span>
-              <span class="lbfrom">a chat opened it</span><span class="lbst ship">filed</span>
-              <button class="lbpick" type="button">Open</button></div>
-            <div class="lbrow"><b>Deckem goes public<span>its own ref</span></b>
-              <span class="lbuse">Done when: the live link answers and turns a pasted note into cards.</span>
-              <span class="lbfrom">you wrote it</span><span class="lbst ship">filed</span>
-              <button class="lbpick" type="button">Open</button></div>
-            <div class="lbrow"><b>The beta smoke run<span>its own ref</span></b>
-              <span class="lbuse">Done when: the beta build opens on this Mac and the version reads back.</span>
-              <span class="lbfrom">an engine opened it</span><span class="lbst ship">filed</span>
-              <button class="lbpick" type="button">Open</button></div>
+            <div class="lbrow"><b>Morning digest</b>
+              <span class="lbuse">Reads the night's news and leaves ten lines before you open the app.</span>
+              <span class="lbtags"><span class="dptag">Report</span><span class="dptag">every day 07:30</span></span>
+              <span class="lbfloor">running</span>
+              <button class="btn" type="button">Open</button></div>
+            <div class="lbrow"><b>Watch the release</b>
+              <span class="lbuse">Follows a build to the end and says only whether it landed.</span>
+              <span class="lbtags"><span class="dptag">Watch</span><span class="dptag">on a tag</span></span>
+              <span class="lbfloor">running</span>
+              <button class="btn" type="button">Open</button></div>
+            <div class="lbrow"><b>Fix the small thing</b>
+              <span class="lbuse">One defect, one check, hands back the change for you to read.</span>
+              <span class="lbtags"><span class="dptag">Build</span><span class="dptag">you start it</span></span>
+              <span class="lbfloor">ready</span>
+              <button class="btn" type="button">Start</button></div>
+            <div class="lbrow"><b>Answer the inbox</b>
+              <span class="lbuse">Drafts replies, sends none, parks anything it is unsure of.</span>
+              <span class="lbtags"><span class="dptag">Report</span><span class="dptag">you start it</span></span>
+              <span class="lbfloor">ready</span>
+              <button class="btn" type="button">Start</button></div>
           </div>
+          <p class="lbnote">Same spine as a shelf: the first tab is what the thing is, the second is the premade
+            list you start one from. <b>About</b> here holds what Shadow may do without asking, its limits, and
+            what it does when it is unsure.</p>
         </div>
 
       </div>
@@ -538,34 +538,27 @@ four are named and not built.</p>
   </section></div>
 </div>
 
-<h2 class="mh">What this costs to build</h2>
+<h2 class="mh">What changed from v1, and what it costs</h2>
 <table class="mtbl">
-  <tr><th>#</th><th>Piece</th><th>Impact (who/what changes)</th><th>Effort (time, files)</th></tr>
-  <tr><td>1</td><td>Library destination + rail accordion</td><td>The owner has a place to read a kind before using it</td><td>1 h, 3 files</td></tr>
-  <tr><td>2</td><td>The shelf page, one renderer for all seven</td><td>Every shelf reads alike; a new kind is a row, not a screen</td><td>3 h, 2 files</td></tr>
-  <tr><td>3</td><td>Five function shelves off the shipped templates</td><td>Nothing new to author: the fifteen records already carry every band</td><td>1 h, 1 file</td></tr>
-  <tr><td>4</td><td>Engines shelf off the engine records</td><td>The 31 engines running become readable in one place</td><td>2 h, 2 files</td></tr>
-  <tr><td>5</td><td>Work item shelf off the ledger</td><td>Examples come from real closes, so the shape cannot drift from practice</td><td>2 h, 2 files</td></tr>
-  <tr><td>6</td><td>Use puts the pick through an ask</td><td>Picking from the Library files the same ask the department card files</td><td>1 h, 1 file</td></tr>
-  <tr><td>7</td><td>The four engine starters that do not exist</td><td>The shelf stops saying &ldquo;to build&rdquo; on two thirds of its rows</td><td>4 h, 5 files</td></tr>
+  <tr><th>#</th><th>Change</th><th>Impact (who/what changes)</th><th>Effort (time, files)</th></tr>
+  <tr><td>1</td><td>Three bands become two tabs</td><td>A shelf answers one question per tab instead of scrolling three</td><td>1 h, 2 files</td></tr>
+  <tr><td>2</td><td>Tags inside the list, filtering it</td><td>&ldquo;Every engine Adaptation runs&rdquo; is one click, not a read</td><td>2 h, 2 files</td></tr>
+  <tr><td>3</td><td>Help and Settings into the identity menu</td><td>The rail holds only places you work; the account holds the rest</td><td>1 h, 3 files</td></tr>
+  <tr><td>4</td><td>Focus takes the same two tabs</td><td>One pattern across the app, so a new shelf teaches nothing new</td><td>2 h, 2 files</td></tr>
+  <tr><td>5</td><td>App controls only, no new ones</td><td>The shelf inherits every theme, accent and dark-mode rule already shipped</td><td>folded into 1 and 2</td></tr>
 </table>
 
-<h2 class="mh">Three calls for you</h2>
+<h2 class="mh">Two calls for you</h2>
 <table class="mtbl">
-  <tr><th>#</th><th>Call</th><th>What I did in this design</th><th>The other way</th></tr>
-  <tr><td>1</td><td>You said five things and named four</td>
-      <td>Seven shelves in two groups: the five functions, then Engines and Work item</td>
-      <td>Four shelves: Identity, Adaptation, Engines, Work item, and the other three functions live only on the department screen</td></tr>
-  <tr><td>2</td><td>What <b>Use</b> does</td>
-      <td>Files an ask you stamp, the same ask the department card files</td>
-      <td>Takes effect at once, and the Audit row is the only record</td></tr>
-  <tr><td>3</td><td>Rows that do not exist</td>
-      <td>Shown, marked <b>to build</b>, button dead</td>
-      <td>Hidden until built, so the shelf only ever shows what works</td></tr>
+  <tr><th>#</th><th>Call</th><th>What I did</th><th>The other way</th></tr>
+  <tr><td>1</td><td>The second tab's name</td><td>It is named for what it lists: Templates, Engines, Missions, Examples</td><td>One word everywhere, &ldquo;Ready-made&rdquo;, whatever the shelf</td></tr>
+  <tr><td>2</td><td>&ldquo;Cascadia&rdquo; on the rail</td>
+      <td>I read it as the mono caption face the Library already uses, and kept it on the shelf labels and row ids</td>
+      <td>You meant the rail's own labels in that face too. Say the word and it carries</td></tr>
 </table>
 
 <p class="cap">Design of record: this file. Nothing is wired. On your word I build it in the order of the
-cost table, one shelf at a time, starting with Identity.</p>
+change table, starting with the tabs.</p>
 
 </div>
 </body>
