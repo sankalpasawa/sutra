@@ -1,6 +1,14 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.293.2 (2026-09-23)
+
+- Released from v2.293.1-desktop..HEAD: 3 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - release prep for v2.293.2-beta.1-desktop
+  - library: the design of a shelf for the kinds a department is built from
+  - sutra-ui: a chat's default effort comes from its model's entry in the dispatch policy (founder 2026-09-22)
+- Changed: 10 file(s), +7695/-12
+
 ## 2.293.1 (2026-09-23)
 
 - Released from v2.293.0-desktop..HEAD: 3 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
