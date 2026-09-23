@@ -1,6 +1,12 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.296.1 (2026-09-23)
+
+- Fixed: Claude account sign-in now launches correctly on Windows when Claude Code is installed through npm as a `.cmd` shim.
+- Preserved: macOS and Linux continue to launch the Claude CLI directly.
+- Verified: Windows command resolution and the 407-test desktop panel suite.
+
 ## 2.296.0 (2026-09-23)
 
 - Released from v2.295.0-desktop..HEAD: 9 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
