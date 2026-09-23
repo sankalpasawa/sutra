@@ -29,6 +29,7 @@ files:
   - main.js
   - preload.js
   - provision.js
+  - claude_auth_command.js
   - package.json
   - "!**/*.sh"
   - "!**/*.plist"
