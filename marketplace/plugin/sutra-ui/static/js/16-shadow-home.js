@@ -5563,7 +5563,12 @@ async function shadowNewTalk(){
   S.shadowTaskSel = SH_NO_TASK;
   S.shadowNewOpen = false;
   S.shadowNewChat = null;
-  try { window.localStorage.setItem("sutra.shadow.conv", scopeKey); } catch (e){}
+  /* THROUGH lsSet, NOT localStorage DIRECTLY. The panel also loads inside a
+     department's function card as `/?embed=chat`, sharing this origin, and
+     it must never write a key the main panel reads -- lsSet is the one
+     writer that honours that (01-state.js, EMBED_KEYS). test_embed.js
+     refuses a direct write, and refused these two. */
+  if (typeof lsSet === "function") lsSet("sutra.shadow.conv", scopeKey);
   /* ── renderNow, NOT scheduleRender (founder, 2026-09-23) ──────────────
      THIS IS WHY THE SCREEN LAGGED. scheduleRender is a 100ms debounce that
      also returns early when a render is already pending (01-state.js), so
@@ -6491,7 +6496,9 @@ function shadowRestoreConversations(rows){
      is on the server; this is only the founder's place in it, so losing it
      costs a click and never a word. */
   try {
-    const last = window.localStorage.getItem("sutra.shadow.conv");
+    const last = (typeof lsGet === "function")
+      ? lsGet("sutra.shadow.conv", null)
+      : window.localStorage.getItem("sutra.shadow.conv");
     const rec = (rows || []).find(r => r && r.id === last);
     if (last && S.shadowThreads[last] && !S.shadowTaskSel && rec
         && !rec.mission_id && (S.shadowThreads[last] || []).length){
@@ -7808,8 +7815,7 @@ if (typeof document !== "undefined" && document.addEventListener){
         if (String(pick || "").indexOf("shc-") === 0){
           S.shadowChat = pick;
           S.shadowTaskSel = SH_NO_TASK;
-          try { window.localStorage.setItem("sutra.shadow.conv", pick); }
-          catch (e){}
+          if (typeof lsSet === "function") lsSet("sutra.shadow.conv", pick);
         } else {
           S.shadowTaskSel = pick;
         }
