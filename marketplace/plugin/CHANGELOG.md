@@ -1,6 +1,13 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.297.0 (2026-09-23)
+
+- Added: skill `native-builder` — one loop for building any part of Native, ending every phase on a check a machine can run.
+- Added: its four references — the ten skill sets and what each is proved by, where everything lives, the seven-phase loop, and the published skill-authoring contract checked on 2026-09-23.
+- Added: an eval case that fires the skill on natural phrasing, with a criteria grader and a fired grader.
+- Note: one skill invoking another is not a documented capability; the skill's routing table is a map for the session, not a call graph.
+
 ## 2.296.2 (2026-09-23)
 
 - Fixed: the Windows installer now includes `claude_auth_command.js`, preventing the startup crash introduced by the 2.296.1 Claude sign-in fix.
