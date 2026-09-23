@@ -4856,6 +4856,11 @@ test("46b. Claude auth launches Windows npm shims through cmd.exe", () => {
     "the login handler must use the platform-aware launcher");
   assert.ok(!src.includes('spawn("claude", ["auth", "login"]'),
     "the broken direct Windows spawn must not return");
+
+  const winBuild = fs.readFileSync(
+    path.join(__dirname, "electron", "electron-builder-win.yml"), "utf8");
+  assert.ok(/^\s*- claude_auth_command\.js\s*$/m.test(winBuild),
+    "the Windows package must include the helper imported by main.js");
 });
 
 
