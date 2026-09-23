@@ -291,6 +291,16 @@ is "six required assets"       "$(printf '%s' "$REQUIRED_ASSETS" | wc -w | tr -d
 is "--beta runs the auto path"      "$(grep -c -- '--beta|--auto) AUTO=1; BETA=1' "$HERE/release-desktop.sh")" "1"
 is "--beta-only is the opt-out"     "$(grep -cE -- '--beta-only\)[[:space:]]+BETA=1; shift' "$HERE/release-desktop.sh")" "1"
 is "auto waits for the windows leg" "$(grep -c 'release-dmg.yml release-windows.yml' "$HERE/release-desktop.sh")" "1"
+# ---- 10b. a stable leg already on origin/main is tagged as is, never rebased --
+# (2026-09-23: a peer pushed during the beta build; the stable leg refused to
+# rebase and nothing shipped. Rebasing would also have moved it off the smoked commit.)
+is "already-pushed HEAD skips the rebase" "$(grep -c 'if git merge-base --is-ancestor HEAD origin/main; then' "$HERE/release-desktop.sh")" "1"
+SB="$(mktemp -d)"; ( cd "$SB" && git init -q --bare origin.git && git clone -q origin.git w 2>/dev/null && cd w \
+  && git commit -q --allow-empty -m beta && git push -q origin HEAD:main && git commit -q --allow-empty -m peer \
+  && git push -q origin HEAD:main && git reset -q --hard HEAD~1 && git fetch -q origin \
+  && git merge-base --is-ancestor HEAD origin/main ) >/dev/null 2>&1
+is "a beta commit behind a peer push counts as on origin/main" "$?" "0"
+rm -rf "$SB"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" = 0 ]

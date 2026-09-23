@@ -727,6 +727,13 @@ cmd_release() {
 
   head_ "4. sync"
   git fetch origin || die "fetch failed"
+  # HEAD already on origin/main (a stable leg at its beta's commit, nothing
+  # committed this run): there is nothing to push, and rebasing would move the
+  # tag off the commit that was smoked (D82). Peers pushing during the beta's
+  # build must not block the stable tag -- tag HEAD as it is.
+  if git merge-base --is-ancestor HEAD origin/main; then
+    ok "HEAD $(git rev-parse --short HEAD) is already on origin/main -- nothing to push, tagging it as is"
+  else
   local behind; behind="$(git rev-list --count HEAD..origin/main)"
   if [ "$behind" != 0 ]; then
     [ -z "$(git status --porcelain)" ] || die "behind origin/main with a dirty tree -- refusing to rebase"
@@ -742,6 +749,7 @@ cmd_release() {
   git fetch origin --quiet
   [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || die "origin/main is not at HEAD after the push"
   ok "origin/main is at $(git rev-parse --short HEAD)"
+  fi
 
   head_ "7. tag"
   gate_tag_free "$TAG"; [ "$_fails" = 0 ] || die "tag exists -- a release tag is never overwritten"
