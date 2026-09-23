@@ -1,6 +1,12 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.299.0 (2026-09-23)
+
+- Released from v2.298.0-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - Default existing Sutra installs to full access
+- Changed: 3 file(s), +241/-0
+
 ## 2.298.0 (2026-09-23)
 
 - Added: skill `system-engineering` — design the layer that makes the thing, not the thing: the four-rung ladder from instance to law, when to climb and when not to, the seven-field component contract, the four growth laws, and proof by instantiation rather than argument.
