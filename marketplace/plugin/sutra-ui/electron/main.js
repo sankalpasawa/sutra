@@ -250,6 +250,9 @@ function shellEnvOnce(sh, flags) {
 }
 
 function loginShellEnv() {
+  // No login shell on Windows: PATH comes from the process environment, and
+  // spawning `zsh -lc` would only fail. Skip the harvest entirely.
+  if (process.platform === "win32") return null;
   const sh = process.env.SHELL || "/bin/zsh";
 
   /* INTERACTIVE FIRST, and it is load-bearing. `zsh -lc` is a LOGIN,
@@ -451,6 +454,15 @@ function startBackend() {
         // payload/sb/ is retired; the env stays for any bundled resource a
         // backend module resolves — e.g. the update sidecar's assets.)
         SUTRA_UI_RESOURCES: path.join(process.resourcesPath || "", "payload"),
+        // Windows only: the backend imports POSIX-only stdlib (fcntl / termios /
+        // pty) at module load across ~11 files, which would abort it before it
+        // can serve the panel. payload/wincompat holds import shims for those;
+        // putting it FIRST on PYTHONPATH makes `import fcntl` resolve to the
+        // shim so the backend boots. Never set on macOS/Linux (real modules).
+        ...(process.platform === "win32"
+          ? { PYTHONPATH: [path.join(process.resourcesPath || "", "payload", "wincompat"),
+                           process.env.PYTHONPATH].filter(Boolean).join(path.delimiter) }
+          : {}),
         // The agent's crawler can read a site behind a bot challenge through this
         // app's own hidden window. Address + token, both minted per launch.
         ...(browserFetchUrl ? { SEO_AGENT_BROWSER_FETCH: browserFetchUrl, SEO_AGENT_BROWSER_TOKEN: BROWSER_TOKEN } : {}),

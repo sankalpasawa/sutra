@@ -39,7 +39,11 @@ field a subclass already had.
 """
 import asyncio
 import os
+import posixpath     # host-agnostic path math for the Windows node-shim rewrite
+import re
+import shutil        # Windows: resolve node.exe on PATH for the node-shim rewrite
 import signal
+import subprocess    # Windows: CREATE_NEW_PROCESS_GROUP flag + taskkill tree-kill
 
 
 #: 8 MiB, not asyncio's 64 KiB default, on EVERY provider. All three transports
@@ -51,6 +55,114 @@ import signal
 #: mid-answer. Reproduced directly: a 200 KB line raises at the default and
 #: reads clean at this limit.
 STREAM_LIMIT = 8 * 1024 * 1024
+
+
+def probe_pid(pid):
+    """Liveness probe with the SAME exception contract on every OS.
+
+    Callers guard this with try/except (ProcessLookupError -> the process is
+    gone; PermissionError -> it exists but is not ours to signal). On POSIX that
+    is exactly `os.kill(pid, 0)`. On Windows `os.kill(pid, 0)` does NOT probe --
+    it maps to TerminateProcess and KILLS the target -- so this uses OpenProcess
+    and RAISES the matching error instead of signalling anything. Returns None
+    (no raise) when the process is alive.
+    """
+    pid = int(pid)
+    if os.name != "nt":
+        os.kill(pid, 0)
+        return None
+    import ctypes
+    from ctypes import wintypes
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    STILL_ACTIVE = 259
+    ERROR_ACCESS_DENIED = 5
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    h = k.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not h:
+        err = ctypes.get_last_error()
+        if err == ERROR_ACCESS_DENIED:
+            raise PermissionError(pid)       # exists, not ours to query
+        raise ProcessLookupError(pid)        # invalid pid / gone
+    try:
+        code = wintypes.DWORD()
+        if not k.GetExitCodeProcess(h, ctypes.byref(code)) or code.value != STILL_ACTIVE:
+            raise ProcessLookupError(pid)    # exited
+        return None                          # alive
+    finally:
+        k.CloseHandle(h)
+
+
+# --------------------------------------------------------- windows node shim --
+# The provider CLIs (claude, codex, deepseek) are node programs. On macOS npm
+# installs them as a single executable shim with a `#!/usr/bin/env node` line,
+# which create_subprocess_exec runs directly. On WINDOWS npm instead writes a
+# `.cmd` batch shim (plus a `.ps1` and an extensionless POSIX-sh shim), and
+# CreateProcess -- which is what create_subprocess_exec calls with no shell --
+# CANNOT execute a .cmd/.bat: it fails with WinError 193 "%1 is not a valid
+# Win32 application". Running it through `cmd.exe /c` instead reintroduces the
+# classic batch-quoting bug (cmd re-parses the whole line and mangles quoted
+# args). So we do what the shim itself does: run node.exe against the .js entry
+# the shim points at. That keeps the spawn a plain exec of two real tokens
+# (node.exe + the script), which list2cmdline quotes correctly and CreateProcess
+# runs -- no shell, no cmd re-parse.
+#
+# parse_node_shim_target is a PURE function (no filesystem, no OS branch) so it
+# is unit-tested on any host against fixture shim text (test_win_shim_argv.py);
+# win_shim_argv wraps it with the os.name guard and the file read, and is a
+# strict NO-OP on POSIX.
+
+def parse_node_shim_target(text, shim_dir):
+    """The .js entry a Windows npm/pnpm CLI shim launches, or None.
+
+    Handles the shim families npm/pnpm/yarn emit: the `.cmd` batch shim and the
+    extensionless POSIX-sh shim both name the script as a quoted path built from
+    a directory placeholder -- `%dp0%`/`%~dp0` in the batch shim, `$basedir` in
+    the sh shim -- which we substitute with `shim_dir`. Returns a normalised
+    forward-slash path (valid for CreateProcess on Windows); existence is the
+    caller's check. None when no `.js` token is present (not a node shim).
+    """
+    if not text:
+        return None
+    m = re.search(r'"([^"\n]*\.js)"', text)        # quoted (npm/pnpm always quote)
+    if not m:
+        m = re.search(r'(\S+\.js)', text)          # bare, last resort
+    if not m:
+        return None
+    target = m.group(1)
+    # The placeholders denote the shim's own directory. Substitute longest-first
+    # so "%dp0%" wins before a bare "$basedir"-style fragment could partial-match.
+    for ph in ("%~dp0%", "%dp0%", "%~dp0", "${basedir}", "$basedir"):
+        target = target.replace(ph, shim_dir + "/")
+    target = target.replace("\\", "/")
+    while "//" in target:
+        target = target.replace("//", "/")
+    return posixpath.normpath(target)
+
+
+def win_shim_argv(args):
+    """On Windows, rewrite [node-shim, *rest] to [node.exe, entry.js, *rest].
+
+    A strict NO-OP everywhere else: returns `args` unchanged on POSIX, for an
+    already-real `.exe`, when the shim cannot be read, or when it holds no
+    resolvable `.js` entry (so a provider we do not recognise fails exactly as it
+    would today, never worse). Node is taken from PATH, onto which
+    providers.ensure_bundled_node_path() has already put the vendored copy.
+    """
+    if os.name != "nt" or not args:
+        return args
+    exe = args[0]
+    if exe.lower().endswith(".exe"):
+        return args                                # a real binary; run it directly
+    try:
+        with open(exe, "r", encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError:
+        return args                                # unreadable -> leave unchanged
+    target = parse_node_shim_target(text, os.path.dirname(os.path.abspath(exe)))
+    if not target or not os.path.isfile(target):
+        return args                                # not a shim we understand
+    node = shutil.which("node") or "node"
+    return [node, target, *list(args)[1:]]
 
 
 class ProcRuntime:
@@ -96,6 +208,21 @@ class ProcRuntime:
         p = self.proc
         if p is None or p.returncode is not None:
             return False
+        if os.name == "nt":
+            # No process groups / killpg on Windows. The child was spawned with
+            # CREATE_NEW_PROCESS_GROUP (see _spawn_process); taskkill /T reaps it
+            # AND its descendants (the model's shell commands, node helpers) --
+            # the same tree-kill guarantee killpg gives on POSIX. /F forces it.
+            try:
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(p.pid)],
+                               check=False, capture_output=True)
+                return True
+            except Exception:
+                try:
+                    p.kill()
+                except (ProcessLookupError, OSError):
+                    return False
+                return True
         try:
             os.killpg(os.getpgid(p.pid), signal.SIGTERM)
         except (ProcessLookupError, PermissionError, OSError):
@@ -175,15 +302,27 @@ class ProcRuntime:
         to os.sutra.ui, so the app's grant covers it. Same group-kill, no
         session detach. test_provider_spawn_group.py pins this for all three.
         """
-        p = await asyncio.create_subprocess_exec(
-            *args, cwd=cwd,
+        # On Windows the provider bin is a node .cmd shim CreateProcess cannot
+        # exec; rewrite it to `node.exe <entry.js>`. NO-OP on POSIX -- args pass
+        # through untouched, so the spawn stays byte-identical on macOS.
+        args = win_shim_argv(args)
+        kw = dict(
+            cwd=cwd,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             limit=STREAM_LIMIT,
             env=dict(os.environ, **(env or {})),
-            process_group=0,
         )
+        if os.name == "nt":
+            # Windows has no process groups; CREATE_NEW_PROCESS_GROUP makes the
+            # child the root of a new group so taskkill /T (kill_group) can reap
+            # its whole tree. There is no macOS TCC concern here, so this is the
+            # simple analog of the POSIX process_group=0 below.
+            kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            kw["process_group"] = 0
+        p = await asyncio.create_subprocess_exec(*args, **kw)
         self.proc = p
         self.key = key
         return p
