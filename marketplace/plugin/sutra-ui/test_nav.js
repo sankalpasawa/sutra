@@ -84,6 +84,9 @@ sandbox.render = () => {};
 const T = vm.runInContext(`({ DESTS, DEST_PLANES, DEST_DEFAULT_SCREEN, S, SCREENS, TITLES,
   loadLayout, planeRows, goDest, renderRail, paintTelemetry, applyAccent, onAccFor,
   buildAccentRow, ACCENTS, document,
+  /* 2.294.0: the rail's hidden set and the label map, so a test can say which
+     destinations lost their button and that their names did not change. */
+  RAIL_HIDDEN, DEST_LABEL,
   get PROVIDERS(){ return PROVIDERS; }, set PROVIDERS(v){ PROVIDERS = v; },
   get SETTINGS(){ return SETTINGS; }, set SETTINGS(v){ SETTINGS = v; } })`, sandbox);
 /* spies for the 2.118.1 regressions: which lazy loaders fired */
@@ -101,7 +104,7 @@ function test(name, fn){
 }
 
 /* §model ─ S3 */
-test("model: seven destinations, in the founder's order; the one-screen Org is the Org accordion's first row", () => {
+test("model: eight destinations, in the founder's order; the one-screen Org is the Org accordion's first row", () => {
   /* 2.239.0: Agents joined the rail after Chats -- the SEO Writer is the first
      agent that works in front of you (design/GAME-PLAN-agents.md). */
   /* Seven again since 2026-09-04: Routines went back under Settings ->
@@ -109,8 +112,18 @@ test("model: seven destinations, in the founder's order; the one-screen Org is t
   /* Eight from 2.275.0 to 2.286.x (org2 as its own button above "Old Org").
      Seven again since 2.287.2 (founder 2026-09-20): org2 is the first row of
      the Org accordion, labelled "Org structure"; flags.org2 false hides the row. */
+  /* EIGHT since 2.294.0 (founder 2026-09-23): Library joins, under Org. It
+     holds the kinds a department is built from, and its rows are inline in the
+     rail like Org's. team and settings STAY in this list -- they route exactly
+     as before and only lose their rail buttons (RAIL_HIDDEN), because the
+     founder moved Help and Settings into the identity menu. */
   assert.strictEqual(JSON.stringify(T.DESTS),
-    JSON.stringify(["now","focus","chats","agents","org","team","settings"]));
+    JSON.stringify(["now","focus","chats","agents","org","library","team","settings"]));
+  assert.strictEqual(T.DEST_DEFAULT_SCREEN.library, "lib-identity",
+    "Library lands on its first shelf");
+  assert.strictEqual(T.DEST_PLANES.library.length, 2, "two groups: functions, parts");
+  assert.strictEqual(T.DEST_PLANES.library[0].rows.length, 5, "five function shelves");
+  assert.strictEqual(T.DEST_PLANES.library[1].rows.length, 2, "engines and work item");
   assert.strictEqual(T.DEST_DEFAULT_SCREEN.org2, undefined, "org2 is not a destination");
   const first = T.DEST_PLANES.org[0];
   assert.strictEqual(first.screen, "org2");
@@ -201,11 +214,21 @@ test("planes: focus leads with Shadow, Balance + Optimus live, one honest coming
 });
 
 /* §rail ─ S7 */
-test("rail: renderRail paints seven data-dest buttons; Org's accordion starts with Org structure; flags.org2 false drops that row only", () => {
+test("rail: renderRail paints six data-dest buttons; Help and Settings are not among them; Org's accordion starts with Org structure", () => {
   T.S.ui = T.loadLayout();
   T.renderRail();
   let out = els["railnav"].innerHTML;
-  assert.strictEqual((out.match(/data-dest="/g) || []).length, 7);
+  /* SIX since 2.294.0: eight destinations minus the two the founder moved into
+     the identity menu. The rail holds the places you work; the account holds
+     the rest. Both are still reachable -- RAIL_HIDDEN hides buttons, it does
+     not unregister a destination (panel.html #idMenu carries the two rows). */
+  assert.strictEqual((out.match(/data-dest="/g) || []).length, 6);
+  assert.strictEqual(out.indexOf('data-dest="team"'), -1, "Help is not a rail button");
+  assert.strictEqual(out.indexOf('data-dest="settings"'), -1, "Settings is not a rail button");
+  assert(out.indexOf('data-dest="library"') > -1, "Library is a rail button");
+  assert.strictEqual(T.RAIL_HIDDEN.has("team") && T.RAIL_HIDDEN.has("settings"), true,
+    "both are hidden by the one set, not deleted from DESTS");
+  assert.strictEqual(T.DESTS.indexOf("settings") > -1, true, "settings still routes");
   assert.strictEqual(out.indexOf('data-dest="org2"'), -1, "org2 is no longer a rail button");
   assert.strictEqual(out.indexOf("Old Org"), -1, "the accordion reads Org, not Old Org");
   const rows = T.planeRows("org").flatMap(g => g.rows);
@@ -215,7 +238,7 @@ test("rail: renderRail paints seven data-dest buttons; Org's accordion starts wi
   T.SETTINGS = { flags: { org2: false } };
   T.renderRail();
   out = els["railnav"].innerHTML;
-  assert.strictEqual((out.match(/data-dest="/g) || []).length, 7, "opt-out never changes the rail count");
+  assert.strictEqual((out.match(/data-dest="/g) || []).length, 6, "opt-out never changes the rail count");
   const rowsOff = T.planeRows("org").flatMap(g => g.rows).map(r => r.screen);
   assert.strictEqual(rowsOff.indexOf("org2"), -1, "opt-out drops the Org structure row");
   T.SETTINGS = prev;
@@ -914,10 +937,16 @@ test("v3.4: the role accessor is published for loadOrg", () => {
   assert.strictEqual(typeof vm.runInContext("panelRole", sandbox), "function");
 });
 
-test("v3.4.1: the rail says Help and gives it no plane", () => {
+test("v3.4.1: Help left the rail for the identity menu, and still opens with no plane", () => {
   T.S.ui = T.loadLayout();
   T.renderRail();
-  assert(/>\s*Help\s*</.test(els["railnav"].innerHTML), "rail label must be Help");
+  /* 2.294.0 (founder 2026-09-23): Help is no longer a rail button; it is a row
+     in the menu under the CEO Sutra icon. Its LABEL is unchanged, and so is
+     everything below: the destination routes, opens its own screen, and earns
+     no second plane. The label lives in DEST_LABEL, which the menu reads. */
+  assert.strictEqual(els["railnav"].innerHTML.indexOf('data-dest="team"'), -1,
+    "Help is not a rail button any more");
+  assert.strictEqual(T.DEST_LABEL.team, "Help", "the label is still Help");
   assert(els["railnav"].innerHTML.indexOf("Team Sutra") === -1, "Team Sutra must be gone from the rail");
   T.goDest("team");
   assert.strictEqual(T.S.screen, "teamsutra", "Help still opens its screen directly");
@@ -1197,7 +1226,8 @@ test("inline: entering Org renders its rows inside the rail with the plane's mar
   T.goDest("org");
   T.renderRail();
   const out = els["railnav"].innerHTML;
-  assert.strictEqual((out.match(/data-dest="/g) || []).length, 7, "still seven destinations (2.287.2)");
+  assert.strictEqual((out.match(/data-dest="/g) || []).length, 6,
+    "still six rail buttons: eight destinations less Help and Settings (2.294.0)");
   assert(/data-dest="org"[^>]*data-open="true"/.test(out), "Org parent reads open");
   assert(/data-dest="org"[^>]*aria-expanded="true"/.test(out), "aria-expanded on the parent");
   assert(/aria-controls="acc-org"/.test(out) && /id="acc-org"/.test(out), "aria-controls wires the list");
