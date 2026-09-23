@@ -3158,7 +3158,6 @@ async def api_shadow_chat(request: Request):
 # deleted: a revoked instruction stays on the record as inert history
 # (archive-never-delete), and a watch toggle is an auditable act.
 import mission_engine as _mission_engine
-import shadow_conversations as _shadow_conversations
 import shadow_intervention as _shadow_intervention
 import goal_lifecycle as _goal_lifecycle
 import goal_store as _goal_store
@@ -4873,6 +4872,7 @@ async def api_shadow_missions():
 async def api_shadow_conversations():
     if not providers.shadow_enabled():
         raise HTTPException(403, "the shadow flag is off")
+    import shadow_conversations as _shadow_conversations
     return {"conversations": _shadow_conversations.list_all()}
 
 
@@ -4880,6 +4880,7 @@ async def api_shadow_conversations():
 async def api_shadow_conversation(cid: str):
     if not providers.shadow_enabled():
         raise HTTPException(403, "the shadow flag is off")
+    import shadow_conversations as _shadow_conversations
     rec = _shadow_conversations.load(cid)
     if not rec:
         raise HTTPException(404, "no such conversation")
@@ -4890,6 +4891,7 @@ async def api_shadow_conversation(cid: str):
 async def api_shadow_conversation_create(request: Request):
     if not providers.shadow_enabled():
         raise HTTPException(403, "the shadow flag is off")
+    import shadow_conversations as _shadow_conversations
     try:
         body = await request.json()
     except Exception:
@@ -4912,6 +4914,7 @@ async def api_shadow_conversation_append(cid: str, request: Request):
     """
     if not providers.shadow_enabled():
         raise HTTPException(403, "the shadow flag is off")
+    import shadow_conversations as _shadow_conversations
     try:
         body = await request.json()
     except Exception:
