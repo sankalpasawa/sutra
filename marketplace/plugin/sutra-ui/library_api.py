@@ -59,7 +59,7 @@ SHELVES = (
 )
 
 #: The second tab is named for what it lists (LIB-3, open founder call).
-LIST_TAB = {"engines": "Engines", "work-atom": "Examples"}
+LIST_TAB = {"engines": "Engines", "work-atom": "Skills"}
 
 # ── the ways one is made ────────────────────────────────────────────────────
 # Each way says what you do and what LANDS, and every "lands" line names a
@@ -448,25 +448,67 @@ def _work_atom_rows(limit: int = 3) -> List[Dict[str, Any]]:
     return rows
 
 
+def _skill_rows() -> List[Dict[str, Any]]:
+    """Every skill this box can reach, as shelf rows, categorised by what it
+    DOES (skill_categories.py). Founder, 2026-09-23: "I want the skills to be
+    transferred in the library in the work atom" -- so the skills live here,
+    beside the thing they are used on, and the tag is the category."""
+    rows: List[Dict[str, Any]] = []
+    try:
+        import skills_catalog
+        import skill_categories
+    except Exception:
+        return rows
+    try:
+        items = skills_catalog.discover_all(project_dir=None)["items"]
+    except Exception:
+        return rows
+    skill_categories.annotate(items)
+    for e in items:
+        name = _text(e.get("slash") or e.get("name"))
+        rows.append({
+            "id": _text(e.get("name")) or name,
+            "name": name,
+            "sub": _text(e.get("source")),
+            "use": _text(e.get("description"))[:150],
+            "tags": [t for t in [_text(e.get("category")), _text(e.get("moment"))] if t],
+            "right": _text(e.get("category_how")) if e.get("category_how") != "named" else "named",
+            "state": "ready" if e.get("runnable") else "to-build",
+            "action": "Open",
+            "where": [],
+        })
+    rows.sort(key=lambda r: ((r["tags"][0] if r["tags"] else "z"), r["name"]))
+    return rows
+
+
 def _work_atom_shelf() -> Dict[str, Any]:
-    rows = _work_atom_rows()
-    tags: List[str] = []
-    for r in rows:
-        for tg in r["tags"]:
-            if tg not in tags:
-                tags.append(tg)
+    examples = _work_atom_rows()
+    skills = _skill_rows()
+    # the examples move into About: the second tab is the SKILLS a work atom
+    # draws on, which is what the founder asked the shelf to carry.
+    cats: List[str] = []
+    for r in skills:
+        c = r["tags"][0] if r["tags"] else ""
+        if c and c not in cats:
+            cats.append(c)
     return {
         "head": {
             "id": "work-atom", "name": "Work atom", "kind": "Part",
             "line": ("One goal with one check that flips. Everything a department does is "
                      "one of these, whether you wrote it, a function proposed it, or an "
                      "engine opened it on a run."),
-            "count_line": "%d parts · no skills" % len(WORK_ATOM_PARTS),
-            "tabs": ["About", "Examples"],
+            "count_line": "%d parts · %d skills to draw on" % (len(WORK_ATOM_PARTS), len(skills)),
+            "tabs": ["About", "Skills"],
         },
         "about": {"ways": WORK_ATOM_WAYS, "settings": WORK_ATOM_SETTINGS,
-                  "parts": WORK_ATOM_PARTS, "note": WORK_ATOM_NOTE},
-        "list": {"tag_label": "Closed by", "tags": tags, "rows": rows, "note": WORK_ATOM_NOTE},
+                  "parts": WORK_ATOM_PARTS, "note": WORK_ATOM_NOTE,
+                  "examples": examples},
+        "list": {"tag_label": "Does", "tags": cats, "rows": skills,
+                 "note": ("A work atom names what must be true when it is finished. These "
+                          "are the ways of working it may draw on: the ones it declares "
+                          "when it opens, and the ones it actually used when it closes. A "
+                          "declared skill never refuses anything, because refusing is a "
+                          "rule's job.")},
     }
 
 

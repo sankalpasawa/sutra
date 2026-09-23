@@ -135,11 +135,25 @@ function libPartsHtml(parts){
   ).join("") + `</div>`;
 }
 
+/* Examples, when a shelf has them in About. The Work atom shelf gave its
+   second tab to the skills (2.297.0, founder), so its examples moved here --
+   three real closes from the ledger, which is evidence rather than a menu. */
+function libExamplesHtml(rows){
+  if (!rows || !rows.length) return "";
+  return libSecHtml("Three from this week") + `<div class="lbmade">` + rows.map(r => `
+    <div class="lbrow"><b>${libEsc(r.name)}${r.sub ? `<span>${libEsc(r.sub)}</span>` : ""}</b>
+      <span class="lbuse">${libEsc(r.use || "")}</span>
+      <span class="lbtags">${(r.tags || []).map(t =>
+        `<span class="dptag">${libEsc(t)}</span>`).join("")}</span>
+      <span class="lbfloor">${libEsc(r.right || "")}</span></div>`).join("") + `</div>`;
+}
+
 function libAboutHtml(about){
   if (!about) return "";
   return libSecHtml("How one is made") + libWaysHtml(about.ways)
     + libSecHtml("What governs the making") + libSettingsHtml(about.settings)
     + libSecHtml("What one is made of") + libPartsHtml(about.parts)
+    + libExamplesHtml(about.examples)
     + (about.note ? `<p class="lbnote">${libEsc(about.note)}</p>` : "");
 }
 

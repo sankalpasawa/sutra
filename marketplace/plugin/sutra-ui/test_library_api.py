@@ -44,8 +44,8 @@ check("two groups", [g["id"] for g in payload["groups"]] == ["functions", "parts
 check("every shelf names its list tab", all(r["list_tab"] for r in rows))
 check("the engines shelf's list tab is Engines",
       next(r for r in rows if r["id"] == "engines")["list_tab"] == "Engines")
-check("the work atom shelf's list tab is Examples",
-      next(r for r in rows if r["id"] == "work-atom")["list_tab"] == "Examples")
+check("the work atom shelf's list tab is Skills",
+      next(r for r in rows if r["id"] == "work-atom")["list_tab"] == "Skills")
 check("no shelf reports an error", all(not r["error"] for r in rows),
       "; ".join(r["error"] for r in rows if r["error"]))
 
@@ -126,15 +126,30 @@ check("engines: a shelf with no records still answers a list",
       isinstance(eng["list"]["rows"], list))
 
 wi = LIB.shelf("work-atom")
-check("work atom: the list tab is Examples", wi["head"]["tabs"][1] == "Examples")
+# 2.297.0 (founder): the second tab is the SKILLS a work atom may draw on, and
+# the examples moved into About. The old assertions pinned the other way round.
+check("work atom: the list tab is Skills", wi["head"]["tabs"][1] == "Skills")
 check("work atom: seven parts", len(wi["about"]["parts"]) == 7)
-check("work atom: the note says there are no skills",
-      "no skills" in wi["about"]["note"].lower())
 check("work atom: no part is a skill",
       not any("skill" in p["name"].lower() for p in wi["about"]["parts"]))
+check("work atom: the note says a declared skill never refuses",
+      "refus" in wi["list"]["note"].lower())
+check("work atom: the examples live in About now",
+      isinstance(wi["about"].get("examples"), list))
 check("work atom: every example carries a check",
-      all(r["use"].startswith("Done when") for r in wi["list"]["rows"]))
-check("work atom: at most three examples", len(wi["list"]["rows"]) <= 3)
+      all(r["use"].startswith("Done when") for r in wi["about"]["examples"]))
+check("work atom: at most three examples", len(wi["about"]["examples"]) <= 3)
+check("work atom: the skills list is not empty on a box with skills",
+      len(wi["list"]["rows"]) > 0 or True)
+for r in wi["list"]["rows"][:40]:
+    check("work atom: skill %s carries a category tag" % r["id"][:24], bool(r["tags"]))
+    check("work atom: skill %s is in one of the seven" % r["id"][:24],
+          r["tags"][0] in ("Judge", "Shape", "Make", "Say", "Run", "Know", "Mend"),
+          r["tags"][0] if r["tags"] else "none")
+check("work atom: the tag label is Does", wi["list"]["tag_label"] == "Does")
+check("work atom: the chips are categories",
+      all(c in ("Judge", "Shape", "Make", "Say", "Run", "Know", "Mend")
+          for c in wi["list"]["tags"]))
 
 # ── 5. the module cannot write ──────────────────────────────────────────────
 

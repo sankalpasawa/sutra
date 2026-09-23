@@ -1190,9 +1190,9 @@ function sessMenuHtml(s){
 /* "Market" in the rail (founder, 2026-09-16: "replace agent marketplace with just
    market"); the screen keeps its full title (TITLES.agents in 17-agents.js). */
 const DEST_LABEL = { now:"Now", focus:"Focus", chats:"Chats", agents:"Market",
-                     org:"Org", library:"Library", team:"Help", settings:"Settings" };
+                     org:"Org", team:"Help", settings:"Settings" };
 const DEST_ICON  = { now:"hist", focus:"focus", chats:"chats", agents:"agents",
-                     org:"dept", library:"lib", team:"team", settings:"gear" };
+                     org:"dept", team:"team", settings:"gear" };
 /* Destinations that are REACHABLE but not rail rows (founder, 2026-09-23:
    "put the help and settings into the icon below CEO Sutra"). The rail holds
    the places you work; the account holds the rest, so both open from the
