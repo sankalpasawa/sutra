@@ -147,6 +147,11 @@ app.include_router(org2_api.router)
 # proposal and applies nothing.
 import dept_api
 app.include_router(dept_api.router)
+# The Library (library_api.py; holding plans/library-program/LLD.md): the kinds
+# a department is built from, read in one place. A projection like dept_api --
+# it has no writer, and a pick leaves through org2_api's proposal path.
+import library_api
+app.include_router(library_api.router)
 # Optimus (Focus > Optimus): a window over sutra-daemon's stores. Reads are
 # fixed-path + bounded; mutations shell the daemon CLI (desktop-token gated).
 import optimus_api

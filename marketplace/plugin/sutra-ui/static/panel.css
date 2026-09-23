@@ -5046,3 +5046,79 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .dpg-t{font:600 11.5px/1 var(--sans);fill:var(--ink)}
 .dpg-n{font:10.5px/1 var(--sans);fill:var(--muted)}
 .dpg-a{stroke:var(--line);stroke-width:1}
+
+/* ═══ LIBRARY (2.294.0) ══════════════════════════════════════════════════════
+   The Library destination's shelves (21-library.js). LAYOUT ONLY: the tab pair
+   is the app's .tabs .dptabs, a tag is .dptag, an action is .btn. Nothing here
+   creates a second control, so the shelf inherits every theme, accent and
+   dark-mode rule already written. Design of record: website/preview/library-v1.html (v2). */
+.lbpage{padding:16px 20px 30px;max-width:1080px}
+.lbhead{margin:0 0 4px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.lbhead h2{font:600 19px/1.25 var(--serif);color:var(--ink);margin:0}
+.lbsub{font:13px/1.65 var(--sans);color:var(--muted);margin:0 0 4px;max-width:70ch}
+.lbtabrow{display:flex;align-items:center;gap:12px;margin:14px 0 0;
+  border-bottom:1px solid var(--line);padding-bottom:9px}
+.lbtabrow .tabs{margin-left:0}
+.lbtabcount{font:11.5px/1 var(--mono);color:var(--faint);margin-left:auto}
+.lbpane{padding:18px 0 0}
+.lbsec{margin:22px 0 10px;display:flex;align-items:center;gap:9px}
+.lbsec .dpk{margin:0}
+.lbsec hr{flex:1;border:0;border-top:1px solid var(--line-soft);margin:0}
+.lbways{display:grid;grid-template-columns:repeat(auto-fit,minmax(224px,1fr));gap:10px}
+.lbway{border:1px solid var(--line);border-radius:9px;background:var(--card);padding:11px 12px}
+.lbway h4{font:600 13px/1.3 var(--sans);color:var(--ink);margin:0 0 5px}
+.lbway p{font:12px/1.55 var(--sans);color:var(--muted);margin:0 0 7px}
+.lbway .lbthen{font:11.5px/1.5 var(--sans);color:var(--faint);
+  border-top:1px solid var(--line-soft);padding-top:6px;margin:0}
+.lbset{width:100%;border-collapse:collapse;margin:0;background:var(--card);
+  border:1px solid var(--line);border-radius:9px;overflow:hidden;font:12px/1.5 var(--sans)}
+.lbset th,.lbset td{padding:7px 11px;text-align:left;border-bottom:1px solid var(--line-soft);
+  vertical-align:top}
+.lbset th{font:600 9.5px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+.lbset tr:last-child td{border-bottom:0}
+.lbset td:first-child{color:var(--ink);font-weight:600;white-space:nowrap}
+.lbset td:last-child{font:11.5px/1.5 var(--mono);color:var(--muted);white-space:nowrap}
+.lbpart{display:grid;grid-template-columns:132px 1fr;gap:0;border:1px solid var(--line);
+  border-radius:9px;background:var(--card);overflow:hidden}
+.lbpart>div{padding:9px 12px;border-bottom:1px solid var(--line-soft)}
+.lbpart>div:nth-last-child(-n+2){border-bottom:0}
+.lbpname{font:600 12px/1.5 var(--sans);color:var(--ink);border-right:1px solid var(--line-soft)}
+.lbpname span{display:block;font:10px/1.4 var(--mono);color:var(--faint);font-weight:400;margin-top:2px}
+.lbpval{font:12px/1.6 var(--sans);color:var(--muted)}
+.lbpval em{font-style:normal;color:var(--ink)}
+.lbfilter{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+.lbfilter .dptag{cursor:pointer;font-size:10.5px;padding:3px 8px}
+.lbfilter .dptag.on{color:var(--acc);border-color:var(--acc);background:var(--acc-bg)}
+.lbfilter .lbfl{font:600 9.5px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);margin-right:3px}
+.lbmade{border:1px solid var(--line);border-radius:9px;background:var(--card);overflow:hidden}
+/* A WRAPPING row, not a five-track grid: the shelf lives in the browse pane,
+   which the operator can drag down to ~400px, and fixed tracks there squeezed
+   the use text into a column one word wide and pushed the right column out of
+   sight (live walk, 2026-09-23). Flex wrap lets the line break where it must
+   and keeps every field legible at any pane width. */
+.lbrow{display:flex;flex-wrap:wrap;align-items:center;gap:7px 12px;
+  padding:10px 12px;border-bottom:1px solid var(--line-soft);cursor:pointer}
+.lbrow>b{flex:1 1 150px;min-width:0}
+.lbrow .lbuse{flex:2 1 220px;min-width:0}
+.lbrow .lbtags{flex:0 1 auto}
+.lbrow>.btn{flex:none;margin-left:auto}
+.lbmade .lbrow:last-child,.lbmade .lbopen:last-child{border-bottom:0}
+.lbrow>b{font:600 13px/1.35 var(--sans);color:var(--ink)}
+.lbrow>b span{display:block;font:10px/1.4 var(--mono);color:var(--faint);font-weight:400}
+.lbrow .lbuse{font:12px/1.5 var(--sans);color:var(--muted)}
+.lbtags{display:flex;gap:5px;flex-wrap:wrap}
+.lbrow .lbfloor{font:11.5px/1.4 var(--mono);color:var(--muted);white-space:nowrap;
+  text-align:right;flex:none}
+.lbrow.on{background:var(--inset)}
+.lbrow.tobuild>b,.lbrow.tobuild .lbuse{opacity:.62}
+.lbopen{padding:0 12px 12px 12px;border-bottom:1px solid var(--line-soft);background:var(--inset)}
+.lbopen h5{font:600 9.5px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);margin:10px 0 6px}
+.lbopen ul{margin:0;padding:0 0 0 16px}
+.lbopen li{font:12px/1.6 var(--sans);color:var(--muted);margin:0 0 3px}
+.lbopen li b{color:var(--ink);font-weight:600}
+.lbnote{border-left:2px solid var(--line);padding:2px 0 2px 11px;margin:14px 0 0;
+  font:12px/1.65 var(--sans);color:var(--muted);max-width:66ch}
+.nav.sub li.lbdiv{margin:6px 0 2px;padding:0 0 0 30px;font:600 9px/1.4 var(--mono);
+  letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}

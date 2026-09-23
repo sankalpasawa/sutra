@@ -45,6 +45,24 @@
           <div class="idsec">Accent</div>
           <div class="swrow" id="accentRow"></div>
           <div class="iddiv"></div>
+          <!-- 2.294.0 (founder, 2026-09-23: "put the help and settings into the
+               icon below CEO Sutra"). The rail holds the places you work; the
+               account holds the rest. Both destinations stay registered — only
+               their rail buttons are gone (02-helpers RAIL_HIDDEN) — so these
+               two rows are ordinary destination buttons. -->
+          <div class="idsec">Sutra</div>
+          <ul class="nav"><li>
+            <button class="idrow" type="button" data-dest="team">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.3 2.4c-.7.2-.9.6-.9 1.2v.4"/><path d="M12 17h.01"/></svg>
+              Help
+            </button>
+          </li><li>
+            <button class="idrow" type="button" data-dest="settings">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3.1"/><path d="M19.4 13.5a7.9 7.9 0 000-3l2-1.5-2-3.4-2.3 1a7.9 7.9 0 00-2.6-1.5L14 2.5h-4l-.5 2.6a7.9 7.9 0 00-2.6 1.5l-2.3-1-2 3.4 2 1.5a7.9 7.9 0 000 3l-2 1.5 2 3.4 2.3-1a7.9 7.9 0 002.6 1.5l.5 2.6h4l.5-2.6a7.9 7.9 0 002.6-1.5l2.3 1 2-3.4z"/></svg>
+              Settings
+            </button>
+          </li></ul>
+          <div class="iddiv"></div>
           <ul class="nav"><li>
             <button class="idrow" id="themeBtn" type="button" aria-label="Switch theme">
               <svg class="ico-sun" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg>
@@ -202,4 +220,8 @@
      department is selected. It loads after that module, whose functions it calls,
      and before the tail, whose boot() must stay the final statement (test 21b). -->
 <script src="/static/js/20-dept.js?v=__ASSETVER__"></script>
+<!-- 21-library.js: the Library destination (2.294.0). Registers SCREENS.lib-* and
+     TITLES.lib-* for its seven shelves and self-mounts its click listener, so it
+     loads before 09-tail.js, whose boot() must stay the final statement (test 21b). -->
+<script src="/static/js/21-library.js?v=__ASSETVER__"></script>
 <script src="/static/js/09-tail.js?v=__ASSETVER__"></script>

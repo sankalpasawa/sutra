@@ -203,7 +203,12 @@ function lsSet(key, value){
    2026-09-20: "shift the org tab into the old org tab, saying 'org structure'"):
    the one-screen Org is the FIRST ROW of the Org accordion, labelled
    "Org structure", and the accordion reads "Org" again. Seven destinations. */
-const DESTS = ["now","focus","chats","agents","org","team","settings"];
+/* library (2.294.0, founder 2026-09-23): the eighth destination, under Org. It
+   holds the KINDS a department is built from -- the five functions, engines,
+   work items -- so one can be read before it is put in a department. Its rows
+   are inline in the rail, like Org's. team and settings stay in this list and
+   leave the RAIL (02-helpers RAIL_HIDDEN): they open from the identity menu. */
+const DESTS = ["now","focus","chats","agents","org","library","team","settings"];
 const DEST_PLANES = {
   /* focus: Balance today; the rest of the companion arrives later — the rows
      exist now so the shape is honest about what is and is not built. */
@@ -238,6 +243,16 @@ const DEST_PLANES = {
                 screen id, flag and API keep the internal name `modules`. */
              {screen:"modules", label:"Apps", flag:"modules"},
              {screen:"reorg"}],
+  /* The Library's seven shelves in two groups (LIB-1). One screen per shelf,
+     all drawn by one renderer (21-library.js), so an eighth shelf is a row
+     here and a row in library_api.SHELVES, never a new screen. */
+  library:  [{group:"Functions", rows:[{screen:"lib-identity", label:"Identity"},
+                                       {screen:"lib-adaptation", label:"Adaptation"},
+                                       {screen:"lib-priority", label:"Priority"},
+                                       {screen:"lib-coordination", label:"Coordination"},
+                                       {screen:"lib-audit", label:"Audit"}]},
+             {group:"Parts",     rows:[{screen:"lib-engines", label:"Engines"},
+                                       {screen:"lib-work-item", label:"Work item"}]}],
   team:     [],   /* Help opens directly — a one-row plane earns no plane (2026-08-24) */
   settings: [{group:"Tools",       rows:[{screen:"terminal"},{screen:"git"},{screen:"editor"}]},
              /* routines came BACK to this group on 2026-09-04, in the position it
@@ -269,13 +284,14 @@ const DEST_PLANES = {
    render their DEST_PLANES rows INLINE in the rail as an accordion under the
    destination button, and the 240px second plane does not open for them.
    DEST_PLANES stays the single source — the accordion consumes planeRows(). */
-const DEST_INLINE = new Set(["focus","org"]);
+const DEST_INLINE = new Set(["focus","org","library"]);
 /* Where a destination lands before the operator has picked anything. */
 const DEST_DEFAULT_SCREEN = { now:"now", focus:"shadow", chats:null,
                               agents:"agents",
                               /* org lands on Org structure when it is registered
                                  (goDest resolves that at click time; 2.287.2). */
-                              org:"departments", team:"teamsutra", settings:"settings" };
+                              org:"departments", library:"lib-identity",
+                              team:"teamsutra", settings:"settings" };
 function loadLayout(){
   const raw = lsGet(LS_LAYOUT, null);
   const out = { paneCollapsed:{}, folds:{}, browseW:null, browseClosed:false,

@@ -978,6 +978,9 @@ const ICON = {
   link:'<path d="M10.1 13.9a4 4 0 0 0 5.7 0l2.8-2.8a4 4 0 0 0-5.7-5.7l-1.3 1.3"/><path d="M13.9 10.1a4 4 0 0 0-5.7 0l-2.8 2.8a4 4 0 1 0 5.7 5.7l1.3-1.3"/>',
   rout:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.4V12l3 1.8"/><path d="M4.5 5.5l2.2 2.2M19.5 5.5l-2.2 2.2"/>',
   auto:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.2V12l3.2 1.9"/><path d="M12 3.5v1.4M20.5 12h-1.4M12 20.5v-1.4M3.5 12h1.4"/>',
+  /* library (2.294.0): two books and a third leaning. The shelf of KINDS a
+     department is built from, so the mark is a shelf, not a document. */
+  lib:'<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M11 4h3.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11z"/><path d="M18.4 6.2l2.1 12"/>',
   gear:'<circle cx="12" cy="12" r="3.1"/><path d="M19.4 13.5a7.9 7.9 0 000-3l2-1.5-2-3.4-2.3 1a7.9 7.9 0 00-2.6-1.5L14 2.5h-4l-.5 2.6a7.9 7.9 0 00-2.6 1.5l-2.3-1-2 3.4 2 1.5a7.9 7.9 0 000 3l-2 1.5 2 3.4 2.3-1a7.9 7.9 0 002.6 1.5l.5 2.6h4l.5-2.6a7.9 7.9 0 002.6-1.5l2.3 1 2-3.4z"/>',
   chevron:'<path d="M6 9l6 6 6-6"/>',
   /* v3.3 destinations (PLAN-25 S7) */
@@ -1187,9 +1190,16 @@ function sessMenuHtml(s){
 /* "Market" in the rail (founder, 2026-09-16: "replace agent marketplace with just
    market"); the screen keeps its full title (TITLES.agents in 17-agents.js). */
 const DEST_LABEL = { now:"Now", focus:"Focus", chats:"Chats", agents:"Market",
-                     org:"Org", team:"Help", settings:"Settings" };
+                     org:"Org", library:"Library", team:"Help", settings:"Settings" };
 const DEST_ICON  = { now:"hist", focus:"focus", chats:"chats", agents:"agents",
-                     org:"dept", team:"team", settings:"gear" };
+                     org:"dept", library:"lib", team:"team", settings:"gear" };
+/* Destinations that are REACHABLE but not rail rows (founder, 2026-09-23:
+   "put the help and settings into the icon below CEO Sutra"). The rail holds
+   the places you work; the account holds the rest, so both open from the
+   identity menu at the rail's foot (panel.html #idMenu). They stay in DESTS so
+   goDest, destSel, DEST_PLANES and every stored selection keep working --
+   hiding a button is a rail decision, not a routing one. */
+const RAIL_HIDDEN = new Set(["team", "settings"]);
 
 /* A destination whose plane spec is empty is FULL-BLEED: no second plane, and
    its screen opens directly — a persisted destSel must not reroute it (codex
@@ -1664,7 +1674,7 @@ function renderRail(){
      after SETTINGS answered; its accordion row (Org structure) is dropped by
      planeRows() while flags.org2 is false. */
   if (typeof o2EnsureRegistered === "function") o2EnsureRegistered();
-  const railHtml = !nav ? "" : DESTS.map(d=>{
+  const railHtml = !nav ? "" : DESTS.filter(d=>!RAIL_HIDDEN.has(d)).map(d=>{
     const inline = destInline(d);
     const open = inline && S.ui.railOpen === d;
     /* While the accordion is open the CHILD row carries the highlight and the
