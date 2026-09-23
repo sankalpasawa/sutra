@@ -615,10 +615,46 @@ _CLAUDE_MODELS = (
 #: NOT in the CLI's own list of valid values, so it is not offered.
 CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
-#: The effort a Claude session runs at when its options box names none (founder
-#: direction 2026-09-21: every chat defaults to xhigh). A chat's own pick still
-#: wins; this only replaces "blank means whatever the CLI decides".
+#: WHERE A MODEL'S DEFAULT EFFORT LIVES (founder 2026-09-22: "xhigh should be
+#: drawn by the selection of the model ... in dispatch"): the `effort` field on
+#: that model's `catalog` entry in the plugin's dispatch routing policy. The Mac
+#: app bundles the whole plugin tree, so this file ships with it. The dispatch
+#: resolver never reads that field; work units still take effort from the ladder.
+ROUTING_POLICY_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "os", "routing-policy.json")
+
+#: Last resort only: the model box is blank ("Account default", so the model is
+#: unknown), the id names no catalog family, or the policy cannot be read.
 DEFAULT_EFFORT = "xhigh"
+
+#: Picker id -> the policy's catalog model, by family word, so a pinned snapshot
+#: (claude-opus-4-8) or a `[1m]` spelling takes its family's effort.
+_EFFORT_FAMILY = (("best", "claude-fable-5"), ("fable", "claude-fable-5"),
+                  ("opus", "claude-opus-5"), ("sonnet", "claude-sonnet-5"),
+                  ("haiku", "claude-haiku-4-5"))
+
+
+def _policy_efforts(path=None):
+    """{catalog model id: effort} from the routing policy; {} if unreadable."""
+    try:
+        with open(path or ROUTING_POLICY_PATH) as f:
+            catalog = json.load(f).get("catalog") or []
+    except (OSError, ValueError, AttributeError):
+        return {}
+    return {e.get("model"): e.get("effort") for e in catalog
+            if isinstance(e, dict) and e.get("effort") in CLAUDE_EFFORTS}
+
+
+def default_effort_for(model, path=None):
+    """The effort a Claude chat runs at when its options box names none: the
+    chosen model's catalog entry, else DEFAULT_EFFORT. A chat's own pick is
+    applied by the caller and always wins."""
+    m = (model or "").strip().lower()
+    for word, catalog_id in _EFFORT_FAMILY:
+        if word in m:
+            return _policy_efforts(path).get(catalog_id) or DEFAULT_EFFORT
+    return DEFAULT_EFFORT
 
 #: The rows the picker shows first. Same ids as _CLAUDE_MODELS except that
 #: `fable` is published as `best` -- see the note above.

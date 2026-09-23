@@ -376,6 +376,40 @@ class TestApp(unittest.TestCase):
         self.assertEqual(picked[picked.index("--effort") + 1], "low")
         self.assertEqual(picked.count("--effort"), 1)
 
+    def test_effort_comes_from_the_model_entry(self):
+        """Founder 2026-09-22: a blank effort is drawn from the chosen model's
+        catalog entry in the dispatch routing policy, not from a constant."""
+        import json, tempfile
+        import app as A
+        import providers as P
+        # the shipped policy: every Claude catalog entry says xhigh
+        shipped = json.load(open(P.ROUTING_POLICY_PATH))["catalog"]
+        self.assertEqual({e["model"]: e["effort"] for e in shipped},
+                         {"claude-fable-5": "xhigh", "claude-opus-5": "xhigh",
+                          "claude-sonnet-5": "xhigh", "claude-haiku-4-5": "xhigh"})
+        # the lookup really reads the file: a policy that says otherwise wins
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump({"catalog": [
+                {"model": "claude-fable-5", "effort": "max"},
+                {"model": "claude-opus-5", "effort": "high"},
+                {"model": "claude-sonnet-5", "effort": "medium"},
+                {"model": "claude-haiku-4-5", "effort": "low"}]}, f)
+        try:
+            for model, want in (("best", "max"), ("opus", "high"),
+                                ("claude-opus-4-8", "high"), ("opus[1m]", "high"),
+                                ("sonnet", "medium"), ("haiku", "low")):
+                self.assertEqual(P.default_effort_for(model, path=f.name), want, model)
+        finally:
+            os.unlink(f.name)
+        # blank model (account default), unknown id, unreadable policy -> fallback
+        self.assertEqual(P.default_effort_for(""), P.DEFAULT_EFFORT)
+        self.assertEqual(P.default_effort_for("mystery-model"), P.DEFAULT_EFFORT)
+        self.assertEqual(P.default_effort_for("opus", path="/nonexistent/p.json"),
+                         P.DEFAULT_EFFORT)
+        # end to end: a blank box on haiku spawns at the policy's effort
+        a = _without_mcp(A.build_agent_args("claude", "hi", "plan", model="haiku"))
+        self.assertEqual(a[a.index("--effort") + 1], "xhigh")
+
     def test_03f_arg_builder_validates_everything(self):
         """A value that reaches the CLI unchecked fails seconds later as a dead
         socket, which reads as 'the panel is broken' rather than 'that was
