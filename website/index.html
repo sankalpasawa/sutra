@@ -90,6 +90,9 @@ h1 .fork-b.deepen .w{color:var(--ink)}              /* …then commits. the fork
 .btn.wipe{clip-path:inset(0 100% 0 0 round 100px)}
 .btn.wipe.wiped{clip-path:inset(0 0 0 0 round 100px)}
 .close .btn{margin:0 auto}
+/* second platform button: outlined, so the Mac button stays the one loud thing */
+.btn-alt{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink);margin-top:10px}
+.close .btn-alt{margin-top:10px}
 .cta .note{display:block;margin:14px 0 0;font-size:13px;color:var(--muted)}
 
 /* non-Mac notice (built in JS, styled here) */
@@ -269,6 +272,7 @@ a:focus-visible,button:focus-visible,[role="button"]:focus-visible{
   .btn:hover{transform:translateY(-1px);background:#000;box-shadow:0 6px 18px -10px rgba(28,25,23,.35)}
   .btn:hover .ar{transform:translateX(5px)}
   .btn:hover::after{transform:scaleX(1)}
+  .btn-alt:hover{color:var(--paper);box-shadow:inset 0 0 0 1px #000,0 6px 18px -10px rgba(28,25,23,.35)}
   .card:hover{border-color:#4A4642;background:#2C2926}
   .card:hover .doing{color:#A79E96}
   nav a:hover,footer a:hover{color:var(--ink)}
@@ -287,6 +291,8 @@ a:focus-visible,button:focus-visible,[role="button"]:focus-visible{
   .sub{margin-top:34px;font-size:20px;line-height:1.62}
   .cta{margin-top:44px}
   .btn{display:inline-flex;width:auto;max-width:none;padding:15px 30px;font-size:15px;min-height:0}
+  .btn-alt{margin:0 0 0 10px}
+  .close .btn-alt{margin:12px auto 0}
   .cta .note{display:inline;margin:0 0 0 20px;font-size:14px}
   .cue{display:flex;flex-direction:column;align-items:center}
   section{padding:124px 0}
@@ -390,6 +396,8 @@ h1,h2,p{overflow-wrap:break-word}
     <div class="cta" data-anim>
       <a class="btn" data-dl
          href="https://github.com/sankalpasawa/sutra/releases/latest/download/Sutra-arm64.dmg">Download for Mac <span class="ar">→</span></a>
+      <a class="btn btn-alt" data-dl-win
+         href="https://github.com/sankalpasawa/sutra/releases/download/v2.291.8-beta.6-desktop/Sutra-Setup-x64.exe">Download for Windows <span class="ar">→</span></a>
       <span class="note">Free · runs on the Claude plan you already have</span>
     </div>
   </div>
@@ -518,7 +526,9 @@ h1,h2,p{overflow-wrap:break-word}
       <h2><span class="ln fork-a" data-anim="words">This used to take a company.</span><span class="ln fork-b" data-anim="words">Now it just takes <em>you</em>.</span></h2>
       <a class="btn" data-dl data-anim
          href="https://github.com/sankalpasawa/sutra/releases/latest/download/Sutra-arm64.dmg">Download for Mac <span class="ar">→</span></a>
-      <p class="fine" data-anim>macOS 11 or newer · signed and notarized</p>
+      <a class="btn btn-alt" data-dl-win data-anim
+         href="https://github.com/sankalpasawa/sutra/releases/download/v2.291.8-beta.6-desktop/Sutra-Setup-x64.exe">Download for Windows <span class="ar">→</span></a>
+      <p class="fine" data-anim>macOS 11 or newer · signed and notarized · Windows x64 preview</p>
     </div>
 
     <ul class="trust" data-anim>
@@ -681,6 +691,7 @@ function boot(){
   initBoard();
   wireBoardToggle();
   wireDownload();
+  wireWindows();
 }
 
 /* ── 4 · the board: one 23s shift, plays once, resolves ──── */
@@ -983,6 +994,29 @@ function wireDownload(){
      one destination that explains itself. No rewritten buttons, no share sheets,
      no notices -- founder 2026-08-20: "just write it as Download for Mac." */
   btns.forEach(function(a){ a.href = RELEASES; });
+}
+
+/* ── 7b · Windows button: newest release that carries the .exe ── */
+/* The static href is the last known build. Releases are listed newest first, so
+   the first one with the installer wins -- a beta today, stable once stable
+   carries it. Any API failure keeps the static href. */
+function wireWindows(){
+  var btns=$$('[data-dl-win]'); if(!btns.length || !window.fetch) return;
+  fetch('https://api.github.com/repos/sankalpasawa/sutra/releases?per_page=30')
+    .then(function(r){ return r.ok ? r.json() : []; })
+    .then(function(rels){
+      for(var i=0;i<rels.length;i++){
+        if(rels[i].draft) continue;
+        var as=rels[i].assets||[];
+        for(var j=0;j<as.length;j++){
+          if(as[j].name==='Sutra-Setup-x64.exe'){
+            var url=as[j].browser_download_url;
+            btns.forEach(function(a){ a.href=url; });
+            return;
+          }
+        }
+      }
+    }).catch(function(){});
 }
 
 })();
