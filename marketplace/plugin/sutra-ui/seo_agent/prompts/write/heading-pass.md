@@ -134,13 +134,15 @@ FIRST DUTY — fix what only the whole set reveals. These are the real reason th
   same thing.
 - ONE CASE. All Title Case, or all sentence case. Whichever most of the headings already use, make
   the rest match. A mixed list looks unproofed before a word is read.
-- BREAK THE TEMPLATE, IN WORDING ONLY. Rule 2 above wins over this one wherever they meet: a set of
-  parallel sections keeps its shared question and varies how each is phrased. Changing one
-  section's question to make it look different is the bug this pass exists to stop.
-  When four or more headings in a row open with the same construction — "Why X
-  is Y", "How to X", "The X of Y" — the list reads as generated. Vary the ones that can carry a
-  different shape without losing what they say. Do not vary for the sake of it; a run of three is
-  fine.
+- REPEATED HEADINGS ARE NOT A FAULT. There used to be a rule here telling you to vary four or more
+  headings that open the same way, because a repeated construction "reads as generated". It was
+  removed on 2026-09-23 (owner's call) because it was doing far more harm than good: on a list of
+  five test types it varied the fifth by changing what it was ABOUT, so four headings answered "what
+  score passes" and the fifth answered "which roles suit it", and the reader could no longer compare
+  the items at all. That is the only reason anyone opens a "types of" article.
+  So: a set of sections that look alike because they ARE alike is correct, and you leave it alone.
+  Fix genuine sloppiness -- a heading that lies, one that repeats another's content, mixed case --
+  and never reach for variety as an end in itself.
 
 - TOO MANY NUMBERS IN THE LIST. This is the one you are most likely to find, and only you can see it.
   Every heading above was written by someone holding a pile of statistics, alone, with no idea what

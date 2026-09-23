@@ -195,6 +195,34 @@ WHAT MUST SURVIVE, FIVE THINGS, AND ONLY THESE
    heading covering it carries that topic's own words rather than a renaming of them. A reader scans
    for the words already in their head. One that does not serve this article, drop in silence.
 
+4a. THE LENGTH IS NOT A SUGGESTION.
+
+{{OVER_BY}}
+
+   This is the last step that rewrites the whole article, so it is the last chance to hit the
+   length the person asked for. Cutting is not damage: an article 30% over is an article whose
+   plan was 30% too big, and the words to lose are the ones that were padding it.
+
+   Take them from: repeated points, background before the point, scaffolding sentences ("in this
+   section we will"), and any figure the argument does not lean on. Never from a section's answer.
+
+4b. IT MUST NOT READ AS A RESEARCH REPORT.
+
+   You are rewriting for a person who wants an answer, not a literature review. Every place the
+   prose leans on its evidence out loud, take the scaffolding out and leave the point:
+
+     · "Research shows that X" -> "X"
+     · "A 2023 study found a validity coefficient of 0.51" -> what 0.51 MEANS for this reader
+     · "According to a report by Y" -> the finding, with its tag left where it is
+
+   The [c] tags stay exactly where they are: they carry the provenance so the sentence does not
+   have to. Never remove a tag while doing this, and never add a figure that was not already there.
+
+   Validity coefficients, correlations, p-values and sample sizes are researchers talking to each
+   other. Keep a number only when the reader would act differently because of that number itself.
+
+   (Aparna, 2026-09-23: "The research should support the content, not drive it.")
+
 5. THE KEYWORDS. Four groups, and each one wants something different from you. You are the LAST
    step that rewrites this article whole, so whatever is true of the keywords when you hand back is
    what ships.

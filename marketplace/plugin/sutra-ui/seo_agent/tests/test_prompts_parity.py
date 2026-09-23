@@ -167,6 +167,16 @@ _JOB_REWRITE_WHY = ("the job rewrite, 2026-09-23 (item 19): Sutra's pass may rew
                     "not just its heading, because the job is the brief the writer works from")
 
 EXCLUDED_REGIONS = {
+    # 2026-09-23, Aparna's review of "5 types of pre-employment tests". His copy tells the architect
+    # "All supporting blocks (definitions, buying guide, pros/cons, data) go BELOW the items, never
+    # in front", which FORBADE the upfront map she asked for ("We should introduce all 5 types
+    # upfront, then explain each one") and is why the definition kept landing last. Sutra's version
+    # allows one short map before the items when the title promises a set, requires numbered plain
+    # headings ("1. Cognitive Ability Tests", her example), and requires every item to answer the
+    # same question. The whole Structure section differs, so it is compared no further.
+    "formats/listicle.md": [
+        ("## Structure (the format's signature)", "## The rewrite"),
+    ],
     # 2026-09-23, item 19 (Devansh's own design). Sutra's pass may REORDER sections and rewrite
     # their JOBS; his copy forbids both: "You may not add, remove or reorder sections -- same
     # headings, same count, same order, in and out." That ban shipped an article whose LAST section
@@ -187,6 +197,12 @@ EXCLUDED_REGIONS = {
     # company's own articles at run time ({{WRITING_EXAMPLES}}, filled in write/readable.py), so the
     # passages themselves and the sentences that count them ("These five") cannot match and must not.
     "readable.md": [
+        # 2026-09-23, Aparna: "Even when I am explicitly mentioning 1000 words, the churned article
+        # doesn't follow it", and "it reads more like a research report than a blog". This step is
+        # the last full rewrite, so it is the last chance at both. His copy has neither rule.
+        # MUST come before the keywords region below: regions are cut in order, and that one
+        # removes "5. THE KEYWORDS", which is this one's end anchor.
+        ("4a. THE LENGTH IS NOT A SUGGESTION", "5. THE KEYWORDS"),
         ("REAL PUBLISHED ARTICLES BY", "  · The reader is"),
         # 2026-09-22 (Devansh approved, specs/parked-2026-09-22-engine-fixes.md item 9). His copy's
         # item 5 names three keyword groups; Sutra's names four, because Sutra carries a fourth the
@@ -196,6 +212,12 @@ EXCLUDED_REGIONS = {
         # wording is the rule that comes with them ("only where they fit naturally... never bend a
         # sentence to hold a phrase"), which is permission, not a quota.
         ("5. THE KEYWORDS", "THE HEADLINE MUST STILL BE TRUE"),
+        # 2026-09-23, Aparna: "Even when I am explicitly mentioning 1000 words, the churned article
+        # doesn't follow it." This step is the last full rewrite, so it is the last chance to hit
+        # the length. His copy has no such rule; Sutra's is told the gap in words ({{OVER_BY}},
+        # filled by readable.py) and what to cut from. And: "it reads more like a research report
+        # than a blog" -- the same step can reintroduce the academic voice while tightening, so the
+        # rule that the finding leads and the study follows is repeated here.
     ],
     # Aparna's 2026-09-17 Slack review of three shipped articles (blog 3 was about 45% TestGorilla,
     # with TestGorilla named in two H2s). Every rule below was written straight into Sutra's prompts
@@ -203,6 +225,12 @@ EXCLUDED_REGIONS = {
     # and never carried these register rules. Declared as whole blocks rather than PORT_EDITS,
     # because one-substring-per-line would mean re-declaring nearly every line of them.
     "write-body.md": [
+        # 2026-09-23, Aparna: "There is a lot of 'this study found', 'the research says', validity
+        # figures, correlations... it reads more like a research report than a blog." His copy caps
+        # HOW MANY figures a section carries and says nothing about how to SAY one, so the writer
+        # reproduced the card verbatim. Sutra adds the voice rule; the count is untouched, because
+        # her complaint was the sound of a fact, not the number of them.
+        ("3b. THE FINDING GOES IN THE SENTENCE", "4. NO SENTENCE OVER 25 WORDS"),
         ("RIVALS ON RECORD FOR {{BRAND}}", "NEVER BREAK THESE:"),
         # one region: the source ranking and the four rival rules sit together, in that order
         ("- RANK SOURCES WHEN YOU HAVE A CHOICE", "- Numbers must reconcile."),
@@ -219,7 +247,12 @@ EXCLUDED_REGIONS = {
         # told to BREAK THE TEMPLATE when four headings share a construction, it varied the fifth by
         # changing its QUESTION, so the reader could no longer compare the items.
         ("Everything else is yours", "FIRST DUTY"),
+        # 2026-09-23: his copy still carries BREAK THE TEMPLATE; Sutra's carries the note recording
+        # why it was removed. Aparna's review: on five test types it varied the fifth by changing
+        # what it was ABOUT, so the items could no longer be compared. Owner's call to remove it
+        # outright rather than narrow it, on every format.
         ("- BREAK THE TEMPLATE", "- TOO MANY NUMBERS IN THE LIST"),
+        ("- REPEATED HEADINGS ARE NOT A FAULT", "- TOO MANY NUMBERS IN THE LIST"),
         ("Return ONLY this JSON", None),
     ],
     "slop-rules.md": [

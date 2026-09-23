@@ -6,7 +6,24 @@ Rules about the intro, the close and the FAQ live in `_craft/listicle.md` and ar
 
 ## Structure (the format's signature)
 - [ ] **Body = the N parallel items** (80%+ of the article), **kept flat — no nested sub-lists inside items.**
-- [ ] All supporting blocks (definitions, buying guide, pros/cons, data) go **below the items**, never in front.
+- [ ] **ONE SHORT SECTION BEFORE THE ITEMS, when the title promises a count or a set.** "5 types of
+      pre-employment tests" owes the reader all five up front: what each one is and when you would
+      use it, in a line each, so somebody skimming sees the whole set on the first screen and can
+      decide which item to read. Keep it short — it is a map, not a summary.
+      (Aparna, 2026-09-23: "We should introduce all 5 types upfront, then explain each one... A
+      skimming reader should be able to quickly see what each type is, what it measures, and when
+      to use it." Until today this section was FORBIDDEN by the line below, which is why the
+      definition kept ending up last and the article read as a research report from the first line.)
+- [ ] EVERY OTHER supporting block (buying guide, pros/cons, scoring models, data) goes **below the
+      items**. The map above is the one exception, and only when the title promises a set.
+- [ ] **NUMBER THE ITEMS when the title promises a count.** "1. Cognitive Ability Tests", not "How
+      Well Cognitive Ability Tests Predict Job Performance". A reader who came for five things wants
+      to see five things, numbered, and count them as they go. The plain label IS the heading: the
+      interesting part belongs in the prose, not in a heading that has to be decoded.
+- [ ] THE ITEMS ALL ANSWER THE SAME QUESTION. Pick the one dimension this article ranks them on and
+      hold it across every item. Vary the wording; never vary the question. Four items answering
+      "what score passes" and a fifth answering "which roles suit it" cannot be compared, and
+      comparing them is the whole reason the article exists.
 
 ## The rewrite
 

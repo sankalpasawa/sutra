@@ -87,6 +87,11 @@ EXPECTED_WORK_TOOLS = {
     "onboard", "learn_brand",                                             # the setup interview and the brand pack
     "build_assets", "suggest_topics",                                     # working out what is worth writing
     "run_research", "build_blueprint", "write_article",                   # making one article
+    # edit_article went on 2026-09-23. Aparna asked the chat to "simplify the content" and watched
+    # it start the research phase and take about an hour: the chat had no tool that could change an
+    # article, so the only way it could act was to research a new one from scratch. This is the
+    # Library's own one-call rewrite, given to the chat.
+    "edit_article",                                                       # changing one that exists
     "find_prompt",                                                        # which prompt owns a complaint
 }
 ok("the work tools are exactly the ones we mean to ship",
