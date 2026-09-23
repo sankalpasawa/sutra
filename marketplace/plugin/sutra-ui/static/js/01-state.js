@@ -205,7 +205,7 @@ function lsSet(key, value){
    "Org structure", and the accordion reads "Org" again. Seven destinations. */
 /* library (2.294.0, founder 2026-09-23): the eighth destination, under Org. It
    holds the KINDS a department is built from -- the five functions, engines,
-   work items -- so one can be read before it is put in a department. Its rows
+   work atoms -- so one can be read before it is put in a department. Its rows
    are inline in the rail, like Org's. team and settings stay in this list and
    leave the RAIL (02-helpers RAIL_HIDDEN): they open from the identity menu. */
 const DESTS = ["now","focus","chats","agents","org","library","team","settings"];
@@ -252,7 +252,7 @@ const DEST_PLANES = {
                                        {screen:"lib-coordination", label:"Coordination"},
                                        {screen:"lib-audit", label:"Audit"}]},
              {group:"Parts",     rows:[{screen:"lib-engines", label:"Engines"},
-                                       {screen:"lib-work-item", label:"Work item"}]}],
+                                       {screen:"lib-work-atom", label:"Work atom"}]}],
   team:     [],   /* Help opens directly — a one-row plane earns no plane (2026-08-24) */
   settings: [{group:"Tools",       rows:[{screen:"terminal"},{screen:"git"},{screen:"editor"}]},
              /* routines came BACK to this group on 2026-09-04, in the position it

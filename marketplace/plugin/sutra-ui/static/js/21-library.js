@@ -31,7 +31,7 @@
    picked, which row is open (LIB-12). A view is not a record, so none of it
    is written to the browser's storage. */
 const LIB_SHELVES = ["identity", "adaptation", "priority", "coordination", "audit",
-                     "engines", "work-item"];
+                     "engines", "work-atom"];
 const LIB_STATE = { shelf: {}, tab: {}, tag: {}, open: {}, busy: {}, err: {} };
 
 function libEsc(x){

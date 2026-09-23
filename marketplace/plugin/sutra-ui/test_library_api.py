@@ -44,8 +44,8 @@ check("two groups", [g["id"] for g in payload["groups"]] == ["functions", "parts
 check("every shelf names its list tab", all(r["list_tab"] for r in rows))
 check("the engines shelf's list tab is Engines",
       next(r for r in rows if r["id"] == "engines")["list_tab"] == "Engines")
-check("the work item shelf's list tab is Examples",
-      next(r for r in rows if r["id"] == "work-item")["list_tab"] == "Examples")
+check("the work atom shelf's list tab is Examples",
+      next(r for r in rows if r["id"] == "work-atom")["list_tab"] == "Examples")
 check("no shelf reports an error", all(not r["error"] for r in rows),
       "; ".join(r["error"] for r in rows if r["error"]))
 
@@ -125,16 +125,16 @@ check("engines: every row carries its own id",
 check("engines: a shelf with no records still answers a list",
       isinstance(eng["list"]["rows"], list))
 
-wi = LIB.shelf("work-item")
-check("work item: the list tab is Examples", wi["head"]["tabs"][1] == "Examples")
-check("work item: seven parts", len(wi["about"]["parts"]) == 7)
-check("work item: the note says there are no skills",
+wi = LIB.shelf("work-atom")
+check("work atom: the list tab is Examples", wi["head"]["tabs"][1] == "Examples")
+check("work atom: seven parts", len(wi["about"]["parts"]) == 7)
+check("work atom: the note says there are no skills",
       "no skills" in wi["about"]["note"].lower())
-check("work item: no part is a skill",
+check("work atom: no part is a skill",
       not any("skill" in p["name"].lower() for p in wi["about"]["parts"]))
-check("work item: every example carries a check",
+check("work atom: every example carries a check",
       all(r["use"].startswith("Done when") for r in wi["list"]["rows"]))
-check("work item: at most three examples", len(wi["list"]["rows"]) <= 3)
+check("work atom: at most three examples", len(wi["list"]["rows"]) <= 3)
 
 # ── 5. the module cannot write ──────────────────────────────────────────────
 
@@ -147,7 +147,7 @@ check("no proposal applied here", "_apply_proposal" not in src)
 
 # ── 6. the shape the renderer relies on ─────────────────────────────────────
 
-for sid in [f for f in LIB.FUNCTIONS] + ["engines", "work-item"]:
+for sid in [f for f in LIB.FUNCTIONS] + ["engines", "work-atom"]:
     sh = LIB.shelf(sid)
     check("%s: head carries a line" % sid, bool(sh["head"]["line"]))
     check("%s: head carries a count line" % sid, bool(sh["head"]["count_line"]))

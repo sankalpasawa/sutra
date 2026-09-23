@@ -55,11 +55,11 @@ SHELVES = (
     ("coordination", "Coordination", "Function", "functions"),
     ("audit", "Audit", "Function", "functions"),
     ("engines", "Engines", "Part", "parts"),
-    ("work-item", "Work item", "Part", "parts"),
+    ("work-atom", "Work atom", "Part", "parts"),
 )
 
 #: The second tab is named for what it lists (LIB-3, open founder call).
-LIST_TAB = {"engines": "Engines", "work-item": "Examples"}
+LIST_TAB = {"engines": "Engines", "work-atom": "Examples"}
 
 # ── the ways one is made ────────────────────────────────────────────────────
 # Each way says what you do and what LANDS, and every "lands" line names a
@@ -82,7 +82,7 @@ FUNCTION_WAYS = [
 
 ENGINE_WAYS = [
     {"name": "From work that repeated",
-     "does": "Adaptation sees the same work item three times and proposes the engine.",
+     "does": "Adaptation sees the same work atom three times and proposes the engine.",
      "lands": "Lands as an ask carrying the runs it came from."},
     {"name": "From a ready-made one",
      "does": "Pick one in the next tab, name the folder and the moment it fires.",
@@ -95,7 +95,7 @@ ENGINE_WAYS = [
      "lands": "Shows on the department's card at the next read."},
 ]
 
-WORK_ITEM_WAYS = [
+WORK_ATOM_WAYS = [
     {"name": "You write it",
      "does": "In Now, or in the department. A goal and the check that ends it.",
      "lands": "Opens at once. Your own work needs no stamp."},
@@ -139,7 +139,7 @@ ENGINE_SETTINGS = [
      "now": "the department", "source": "the routine record's working folder"},
 ]
 
-WORK_ITEM_SETTINGS = [
+WORK_ATOM_SETTINGS = [
     {"name": "Needs a check", "decides": "Whether one can be opened without a check that flips",
      "now": "no", "source": "sutra-atom open"},
     {"name": "Names its files", "decides": "Whether it must say which files it will touch",
@@ -176,7 +176,7 @@ ENGINE_PARTS = [
     {"name": "Its runs", "caption": "history", "says": "Every run, what it changed, what the check said."},
 ]
 
-WORK_ITEM_PARTS = [
+WORK_ATOM_PARTS = [
     {"name": "Its goal", "caption": "one line", "says": "The outcome somebody could see."},
     {"name": "Done when", "caption": "the check", "says": "The one check that flips."},
     {"name": "Who does it", "caption": "owner", "says": "A person, a chat or an engine. Always one."},
@@ -186,10 +186,10 @@ WORK_ITEM_PARTS = [
     {"name": "What it left", "caption": "evidence", "says": "The check's own output, kept."},
 ]
 
-#: The work item shelf holds no skills, on purpose (PRD, never #3).
-WORK_ITEM_NOTE = ("No skills here. A work item says what is to be true when it is "
+#: The work atom shelf holds no skills, on purpose (PRD, never #3).
+WORK_ATOM_NOTE = ("No skills here. A work atom says what is to be true when it is "
                   "finished, never who knows how. That is the engine's business, and "
-                  "keeping it out is what lets the same work item be done by a person "
+                  "keeping it out is what lets the same work atom be done by a person "
                   "today and an engine next month.")
 
 FUNCTION_NOTE = ("A department never runs on one of these directly. It writes its own "
@@ -400,7 +400,7 @@ def _engines_shelf() -> Dict[str, Any]:
     }
 
 
-# ── the work item shelf ─────────────────────────────────────────────────────
+# ── the work atom shelf ─────────────────────────────────────────────────────
 
 def _ledger_path() -> str:
     return os.path.join(_project_root(), ".sutra", "atom-ledger.jsonl")
@@ -412,9 +412,9 @@ def _project_root() -> str:
     return os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
 
 
-def _work_item_rows(limit: int = 3) -> List[Dict[str, Any]]:
-    """The most recent closed work items, from the ledger. Examples, not a
-    catalogue: a work item is written, never picked (PRD)."""
+def _work_atom_rows(limit: int = 3) -> List[Dict[str, Any]]:
+    """The most recent closed work atoms, from the ledger. Examples, not a
+    catalogue: a work atom is written, never picked (PRD)."""
     rows: List[Dict[str, Any]] = []
     try:
         with open(_ledger_path(), encoding="utf-8") as fh:
@@ -448,8 +448,8 @@ def _work_item_rows(limit: int = 3) -> List[Dict[str, Any]]:
     return rows
 
 
-def _work_item_shelf() -> Dict[str, Any]:
-    rows = _work_item_rows()
+def _work_atom_shelf() -> Dict[str, Any]:
+    rows = _work_atom_rows()
     tags: List[str] = []
     for r in rows:
         for tg in r["tags"]:
@@ -457,16 +457,16 @@ def _work_item_shelf() -> Dict[str, Any]:
                 tags.append(tg)
     return {
         "head": {
-            "id": "work-item", "name": "Work item", "kind": "Part",
+            "id": "work-atom", "name": "Work atom", "kind": "Part",
             "line": ("One goal with one check that flips. Everything a department does is "
                      "one of these, whether you wrote it, a function proposed it, or an "
                      "engine opened it on a run."),
-            "count_line": "%d parts · no skills" % len(WORK_ITEM_PARTS),
+            "count_line": "%d parts · no skills" % len(WORK_ATOM_PARTS),
             "tabs": ["About", "Examples"],
         },
-        "about": {"ways": WORK_ITEM_WAYS, "settings": WORK_ITEM_SETTINGS,
-                  "parts": WORK_ITEM_PARTS, "note": WORK_ITEM_NOTE},
-        "list": {"tag_label": "Closed by", "tags": tags, "rows": rows, "note": WORK_ITEM_NOTE},
+        "about": {"ways": WORK_ATOM_WAYS, "settings": WORK_ATOM_SETTINGS,
+                  "parts": WORK_ATOM_PARTS, "note": WORK_ATOM_NOTE},
+        "list": {"tag_label": "Closed by", "tags": tags, "rows": rows, "note": WORK_ATOM_NOTE},
     }
 
 
@@ -479,8 +479,8 @@ def shelf(shelf_id: str) -> Optional[Dict[str, Any]]:
         return _function_shelf(sid)
     if sid == "engines":
         return _engines_shelf()
-    if sid == "work-item":
-        return _work_item_shelf()
+    if sid == "work-atom":
+        return _work_atom_shelf()
     return None
 
 
