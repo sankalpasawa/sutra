@@ -3082,6 +3082,51 @@ async def api_shadow_chat(request: Request):
             out["limits"] = _apply_limits_fence(
                 {"limits": {**spec, "scope": "default"}})
     if created:
+        # ── WORK SHADOW READ IS WORK THAT STARTS (founder, 2026-09-23) ────
+        # THE BUG THIS CLOSES. A fence created the mission here and left it
+        # at `brief_confirm`, and a SECOND call from the client -- POST
+        # .../act {start_now} -- was what actually ran it. So the task's
+        # existence and the task's start had two different owners, and any
+        # way of losing the second call left a mission parked at READY with
+        # a "Start the task" button the founder had to press. Measured in
+        # the live store: m-14047f1adc4e ("Draw a diagram in a file about
+        # motorcycles"), target_mode new, created and never start-requested.
+        #
+        # THE DECISION AND THE START ARE ONE EVENT NOW. Shadow emitting the
+        # fence IS the classification; there is no second judgement to make
+        # and nothing for the founder to confirm. The start happens in the
+        # same turn that created the mission, on the server, so it cannot be
+        # lost by a reload, a closed tab, a dropped request or a stale
+        # bundle. No prompt is inspected here: a fence starts, no fence
+        # creates nothing.
+        #
+        # ONLY FROM INTAKE. `intake` is the New task door, where the founder
+        # asked for something to be done. A mission PROPOSED inside an
+        # ordinary chat is a proposal and keeps its brief -- that boundary
+        # is unchanged, and so is every other route into brief_confirm.
+        #
+        # IT IS SAFE TO DOUBLE-START. start_mission_async refuses a mission
+        # already running and holds a `_STARTING` guard, so a client that
+        # also calls start_now (older bundles do) is a no-op rather than a
+        # second delegate.
+        if intake:
+            store = _mission_engine.MissionStore()
+            for spec_m in created:
+                try:
+                    _mark_start_requested(store, spec_m["id"])
+
+                    async def _spawner(mission):
+                        return await _delegate_spawn(mission)
+
+                    shadow_runner.start_mission_async(
+                        spec_m["id"], _validated_say, provisioner=_spawner,
+                        verifier=_shadow_verifier)
+                except Exception:
+                    # a start that could not be taken must never lose the
+                    # founder the reply -- the brief stays, with its button
+                    pass
+            created = [_mission_engine.MissionStore().load(c["id"]) or c
+                       for c in created]
         out["missions"] = created
         out["mission"] = created[0]
     if "remember" in blocks:
@@ -3113,6 +3158,7 @@ async def api_shadow_chat(request: Request):
 # deleted: a revoked instruction stays on the record as inert history
 # (archive-never-delete), and a watch toggle is an auditable act.
 import mission_engine as _mission_engine
+import shadow_conversations as _shadow_conversations
 import shadow_intervention as _shadow_intervention
 import goal_lifecycle as _goal_lifecycle
 import goal_store as _goal_store
@@ -4807,6 +4853,85 @@ async def api_shadow_missions():
         raise HTTPException(403, "the shadow flag is off")
     store = _mission_engine.MissionStore()
     return {"missions": store.list()}
+
+
+# ----------------------------------------------- shadow conversations ----
+# A CONVERSATION IS NOT A MISSION (founder, 2026-09-23). The rail is built
+# from missions, and until now that was the ONLY durable Shadow identity --
+# so a conversation that produced no task existed in the client and nowhere
+# else, and a hard refresh lost it. These four routes are a thin shell over
+# shadow_conversations, which is the mission store's own file-per-record
+# pattern pointed at a second directory. No domain logic lives here: nothing
+# in this section decides whether a prompt is work, and nothing in it creates
+# a mission.
+#
+# THE ID ARRIVES FROM THE CLIENT. It has to: the New task screen must be
+# replaced synchronously on Enter, so the client mints `shc-<hex>`, renders
+# with it, and tells us after. create() is idempotent on that id, so a retry
+# or a double submit lands on one record rather than forking two.
+@app.get("/api/shadow/conversations")
+async def api_shadow_conversations():
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    return {"conversations": _shadow_conversations.list_all()}
+
+
+@app.get("/api/shadow/conversations/{cid}")
+async def api_shadow_conversation(cid: str):
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    rec = _shadow_conversations.load(cid)
+    if not rec:
+        raise HTTPException(404, "no such conversation")
+    return rec
+
+
+@app.post("/api/shadow/conversations")
+async def api_shadow_conversation_create(request: Request):
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "body must be json")
+    cid = (body.get("id") or "").strip()
+    try:
+        return _shadow_conversations.create(cid, body.get("prompt"))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post("/api/shadow/conversations/{cid}/messages")
+async def api_shadow_conversation_append(cid: str, request: Request):
+    """Append one turn, or bind the mission this conversation opened.
+
+    ONE ROUTE FOR BOTH because they are the same event from the client's
+    side -- an answer came back -- and two routes would mean two round trips
+    for one moment. `who`+`text` appends; `mission_id` binds; a body may
+    carry either or both.
+    """
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "body must be json")
+    try:
+        rec = None
+        if body.get("text") is not None:
+            rec = _shadow_conversations.append(
+                cid, (body.get("who") or "shadow"), body.get("text"))
+        if body.get("mission_id"):
+            rec = _shadow_conversations.bind_mission(cid, body["mission_id"])
+        if rec is None:
+            rec = _shadow_conversations.load(cid)
+        if rec is None:
+            raise HTTPException(404, "no such conversation")
+        return rec
+    except KeyError:
+        raise HTTPException(404, "no such conversation")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
 
 # ------------------------------------------------------------- goals ----

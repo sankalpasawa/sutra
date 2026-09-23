@@ -801,6 +801,11 @@ function shadowCardHtml(){
   </div>`;
 }
 
+/* A SCOPE KEY THIS CLIENT MINTED FOR A BRAND-NEW CONVERSATION. It exists
+   only in S.shadowThreads and must never be handed to the backend as a chat
+   id -- see the note inside sendToShadow. Minted in shadowNewTalk. */
+const SH_LOCAL_SCOPE = /^(shc|new)-[a-z0-9-]+$/;
+
 async function sendToShadow(text){
   if (typeof S === "undefined" || typeof fetch === "undefined") return null;
   if (isOwnTurn(text)) return null;               /* S75 self-loop guard */
@@ -817,9 +822,24 @@ async function sendToShadow(text){
                            + "to a minute)\u2026" });
   try {
     /* the tab the founder is typing in rides the turn: the server folds
-       that chat's confirmed rules in, and a remember lands scoped */
-    const scope = (S.shadowChat && S.shadowChat !== "global")
-      ? S.shadowChat : null;
+       that chat's confirmed rules in, and a remember lands scoped.
+
+       A CLIENT-SIDE INSTANCE KEY DOES NOT RIDE (founder, 2026-09-23). The
+       test was "not the word global", which was true of any string --
+       including the `new-...` key + Delegate now mints for a brand-new
+       conversation. That key names no session, and the server does two
+       things with scope_id: it writes "[Context] You are now talking about
+       the chat <id>" into the preamble, and it binds an existing-target
+       mission fence to it when the fence omits a target. Either one on an
+       id that is no chat is a lie the backend then acts on.
+
+       THE TEST IS THE PREFIX, NOT shadowChatKnown. Gating on "is this one
+       of the chats the app lists?" also drops a REAL scope whenever
+       S.sessions has not loaded yet -- a silent behaviour change well
+       outside this boundary, and test_shadow_overlay's scope check caught
+       it. SH_LOCAL_SCOPE matches only what this client minted. */
+    const scope = (S.shadowChat && S.shadowChat !== "global"
+                   && !SH_LOCAL_SCOPE.test(S.shadowChat)) ? S.shadowChat : null;
     const r = await shadowPost("/api/shadow/chat",
       scope ? { message: text, scope_id: scope } : { message: text });
     S.shadowBusy = false;
