@@ -1,6 +1,21 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.296.0 (2026-09-23)
+
+- Released from v2.295.0-desktop..HEAD: 9 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - skills: every skill says what it does, not only where it came from
+  - website: add adaptive download button
+  - release: a beta goes to production unless --beta-only; Mac + Windows required
+  - website: Download for Windows next to Download for Mac
+  - windows (Stage B, 2/2): spawn node .cmd shims via node.exe + resolved .js entry
+  - windows (Stage B, 1/2): build-specific credentials + Windows process spawn/kill/liveness
+  - windows: extract node .zip with bsdtar/Expand-Archive (Git Bash tar can't read zip)
+  - windows: stage plugin via a temp dir outside the repo (payload is inside the plugin, cp -R self-recursed)
+  - windows: build an unsigned installable .exe in CI (Stage A)
+- Changed: 26 file(s), +1452/-67
+- New test suites: test_skill_categories.py test_win_shim_argv.py
+
 ## 2.295.0 (2026-09-23)
 
 - Released from v2.294.0-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
