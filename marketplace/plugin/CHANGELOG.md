@@ -1,6 +1,13 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.295.0 (2026-09-23)
+
+- Released from v2.294.0-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - sutra-ui: one round pill for governance and runtime, your turn on the right, motion that fires once
+- Changed: 7 file(s), +1024/-221
+- New test suites: test_chat_pill.js
+
 ## 2.294.0 (2026-09-23)
 
 - Released from v2.293.1-desktop..HEAD: 7 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
