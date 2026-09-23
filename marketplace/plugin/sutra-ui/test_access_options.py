@@ -517,5 +517,155 @@ class OnlyAClaimedPickPinsReadOnly(TempSettings):
         self.assertEqual(providers.load_settings()["access_effective"], "read")
 
 
+class PlanToFullMigration(TempSettings):
+    """The one-time catch-up for installs that predate the Full-access default.
+
+    The resolution rule above already moves an UNSTAMPED `plan`. This is about
+    the ones it cannot reach -- a `plan` with permission_mode_chosen beside it,
+    which is what the unattributed write of 2026-09-19 left on the owner's own
+    machine and which no read-side rule can tell apart from a real pick.
+
+    Two promises, and the second is the one worth regressing: it moves that
+    value ONCE, and an operator who picks Read only afterwards keeps it.
+    """
+
+    def _write(self, raw):
+        providers.SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        providers.SETTINGS_PATH.write_text(json.dumps(raw))
+
+    # ---- what it moves ----
+
+    def test_a_stamped_plan_is_raised_to_full_access(self):
+        """The owner's settings.json, verbatim in shape (2026-09-23)."""
+        self._write({"onboarded": True, "permission_mode": "plan",
+                     providers.ACCESS_CHOSEN_KEY: True,
+                     "provider": "claude", "chat_scope": "sutra"})
+        self.assertEqual(providers.migrate_plan_to_full(),
+                         providers.DEFAULT_PERMISSION_MODE)
+        self.assertEqual(self.raw()["permission_mode"],
+                         providers.DEFAULT_PERMISSION_MODE)
+        self.assertEqual(providers.load_settings()["access_effective"], "full")
+
+    def test_the_stamp_goes_with_the_value_it_described(self):
+        """It said a human picked `plan`. `plan` is not what is stored now, and
+        leaving it would credit this migration's write to that human."""
+        self._write({"permission_mode": "plan",
+                     providers.ACCESS_CHOSEN_KEY: True})
+        providers.migrate_plan_to_full()
+        self.assertNotIn(providers.ACCESS_CHOSEN_KEY, self.raw())
+
+    def test_an_unstamped_plan_is_moved_too(self):
+        """Resolution already handled this one on READ. Storing it as well keeps
+        the file and the running mode saying the same thing."""
+        self._write({"permission_mode": "plan"})
+        self.assertEqual(providers.migrate_plan_to_full(),
+                         providers.DEFAULT_PERMISSION_MODE)
+        self.assertEqual(self.raw()["permission_mode"],
+                         providers.DEFAULT_PERMISSION_MODE)
+
+    def test_everything_else_in_the_file_survives(self):
+        """A migration that loses the workdir is worse than the mode it fixed."""
+        self._write({"permission_mode": "plan", "provider": "codex",
+                     "workdir": "/tmp/somewhere", "model": "gpt-5",
+                     "onboarded": True})
+        providers.migrate_plan_to_full()
+        raw = self.raw()
+        self.assertEqual(raw["provider"], "codex")
+        self.assertEqual(raw["workdir"], "/tmp/somewhere")
+        self.assertEqual(raw["model"], "gpt-5")
+        self.assertIs(raw["onboarded"], True)
+
+    # ---- what it leaves alone ----
+
+    def test_a_mode_that_is_not_the_floor_is_untouched(self):
+        self._write({"permission_mode": "acceptEdits",
+                     providers.ACCESS_CHOSEN_KEY: True})
+        self.assertIsNone(providers.migrate_plan_to_full())
+        self.assertEqual(self.raw()["permission_mode"], "acceptEdits")
+        self.assertIs(self.raw()[providers.ACCESS_CHOSEN_KEY], True)
+
+    def test_a_fresh_install_gets_no_settings_file(self):
+        """Absent-key already resolves to the default. Writing the value here
+        would pin this machine to it the next time the default moves."""
+        self.assertFalse(providers.SETTINGS_PATH.exists())
+        self.assertIsNone(providers.migrate_plan_to_full())
+        self.assertFalse(providers.SETTINGS_PATH.exists())
+        self.assertEqual(providers.load_settings()["access_effective"], "full")
+
+    def test_an_unreadable_file_is_not_rewritten(self):
+        """_raw_settings() answers {} for corrupt exactly as for absent, and a
+        migration that could not READ a file must not be what rewrites it."""
+        providers.SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        providers.SETTINGS_PATH.write_text("{not json at all")
+        self.assertIsNone(providers.migrate_plan_to_full())
+        self.assertEqual(providers.SETTINGS_PATH.read_text(), "{not json at all")
+
+    # ---- once, and only once ----
+
+    def test_it_is_marked_even_when_it_moved_nothing(self):
+        """The install on acceptEdits today must be able to choose `plan`
+        tomorrow -- so its first launch spends the one migration too."""
+        self._write({"permission_mode": "acceptEdits"})
+        providers.migrate_plan_to_full()
+        self.assertIs(self.raw()[providers.FULL_ACCESS_MIGRATION_KEY], True)
+
+    def test_a_second_launch_does_nothing(self):
+        self._write({"permission_mode": "plan"})
+        providers.migrate_plan_to_full()
+        self.assertIsNone(providers.migrate_plan_to_full())
+
+    def test_read_only_chosen_AFTER_the_migration_sticks(self):
+        """THE REGRESSION THIS FILE EXISTS FOR. Overruling the operator once is
+        the fix; overruling them every launch is the same bug pointed the other
+        way, and they would have no way to say otherwise."""
+        self._write({"permission_mode": "plan",
+                     providers.ACCESS_CHOSEN_KEY: True})
+        providers.migrate_plan_to_full()
+        providers.save_settings(permission_mode="plan", chosen=True)
+        self.assertIsNone(providers.migrate_plan_to_full())
+        self.assertEqual(self.raw()["permission_mode"], "plan")
+        self.assertEqual(providers.load_settings()["access_effective"], "read")
+
+    def test_it_asks_for_no_consent_and_records_none(self):
+        """An install that never acknowledged the write-capable modes is exactly
+        what is being migrated -- and is the same install the absent-key default
+        would have run at Full access without asking. The contrast that proves
+        the gate was genuinely skipped rather than merely absent is in
+        PlanToFullMigrationClamped below."""
+        self._write({"permission_mode": "plan"})
+        self.assertEqual(providers.migrate_plan_to_full(),
+                         providers.DEFAULT_PERMISSION_MODE)
+        self.assertNotIn(providers.UNSAFE_ACK_KEY, self.raw())
+
+
+class PlanToFullMigrationClamped(ClampedPosture):
+    """Under the opt-out posture the STORED value still moves; what RUNS is
+    clamped by effective_permission_mode(), as it is for every other mode."""
+
+    def test_it_writes_what_save_settings_would_refuse(self):
+        """THE CONTRAST. Under the opt-out posture the consent gate is live, so
+        an operator naming this mode is turned away -- and the migration, which
+        is not an operator naming a mode, still writes it. That is the whole
+        reason it goes to _write_settings instead of through save_settings."""
+        providers.SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        providers.SETTINGS_PATH.write_text(json.dumps({"permission_mode": "plan"}))
+        with self.assertRaises(ValueError):
+            providers.save_settings(
+                permission_mode=providers.DEFAULT_PERMISSION_MODE)
+        self.assertEqual(providers.migrate_plan_to_full(),
+                         providers.DEFAULT_PERMISSION_MODE)
+
+    def test_the_operator_who_opted_into_safe_modes_still_runs_clamped(self):
+        providers.SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        providers.SETTINGS_PATH.write_text(json.dumps({"permission_mode": "plan"}))
+        providers.migrate_plan_to_full()
+        self.assertEqual(self.raw()["permission_mode"],
+                         providers.DEFAULT_PERMISSION_MODE)
+        self.assertEqual(
+            providers.effective_permission_mode(
+                providers.load_settings()["permission_mode"]),
+            providers.PERMISSION_MODE_FLOOR)
+
+
 if __name__ == "__main__":
     unittest.main()

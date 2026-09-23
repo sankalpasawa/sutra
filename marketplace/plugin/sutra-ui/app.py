@@ -2719,6 +2719,27 @@ async def _mend_runs_left_running():
 
 
 @app.on_event("startup")
+async def _migrate_permission_mode():
+    """Existing installs join the Full-access default the fresh ones already get.
+
+    HERE AND NOT AT IMPORT, like every hook around it: the suites import app.py
+    in-process and must not rewrite the developer's own settings.json as a side
+    effect of collecting a test.
+
+    providers.migrate_plan_to_full() is the whole rule and runs at most once per
+    install -- see FULL_ACCESS_MIGRATION_KEY for why once and not every launch.
+    """
+    try:
+        moved = providers.migrate_plan_to_full()
+    except Exception:                   # noqa: BLE001 -- never a boot failure
+        return
+    if moved:
+        print("[settings] permission mode raised from %s to %s -- one-time "
+              "migration to the Full access default"
+              % (providers.PERMISSION_MODE_FLOOR, moved), file=sys.stderr)
+
+
+@app.on_event("startup")
 async def _shadow_apps():
     """Shadow v4 (C8): the two Shadow apps, only where the on-disk `shadow`
     link module already exists (instance-local, never a fleet seed). HERE AND
