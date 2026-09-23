@@ -71,6 +71,7 @@ One skill invoking another is **not a documented capability** (checked 2026-09-2
 |---|---|---|
 | Understand | `core:domains` | where a thing sits in the tree |
 | Understand | `core:architect` | whether the thing should exist at all, and its shape |
+| Understand | `core:system-engineering` | whether to build this, or the component that makes these |
 | Place | `core:input-routing`, `core:blueprint` | the route and the per-step checks |
 | Design | `core:incremental-architect` | when a live thing must change shape under traffic |
 | Build | `core:writing-style` | every file's shape, every turn's output |

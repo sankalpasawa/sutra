@@ -1,6 +1,12 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.298.0 (2026-09-23)
+
+- Added: skill `system-engineering` — design the layer that makes the thing, not the thing: the four-rung ladder from instance to law, when to climb and when not to, the seven-field component contract, the four growth laws, and proof by instantiation rather than argument.
+- Added: its three references — the ladder, what a component owes, and how a generative layer is proved at one, ten and a hundred.
+- Changed: `native-builder` now routes the first question to it — build this, or build the component that makes these.
+
 ## 2.297.0 (2026-09-23)
 
 - Added: skill `native-builder` — one loop for building any part of Native, ending every phase on a check a machine can run.
