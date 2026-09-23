@@ -348,6 +348,32 @@ WORK_TOOLS = [
         },
     },
     {
+        "name": "edit_article",
+        "description": (
+            "Change an article that ALREADY EXISTS, without researching it again. Use this for "
+            "every request about how a finished article reads: simplify it, make it skimmable, "
+            "shorten it, change the tone, cut a section, act on a reviewer's feedback. One model "
+            "call, about a minute. It returns a PROPOSAL -- the person presses Use this in the "
+            "Library to keep it -- and it writes nothing itself. "
+            "DO NOT call run_research or write_article to edit an article that exists: that "
+            "researches a new one from scratch and takes an hour to answer 'make it skimmable'. "
+            "Only reach for those when the request is a NEW article on a new topic. "
+            "`item_id` names the article; leave it out and the most recently finished one is used."
+        ),
+        "gate": "auto", "cost_credits": 0, "pauses": False,
+        "est_minutes": 1, "module": "tools.edit_article",
+        "input_schema": {"type": "object", "properties": {
+            "instruction": {"type": "string", "description": "What should change, in the person's own words."},
+            "item_id": {"type": "string", "description": "The Library article. Omit for the newest."},
+        }, "required": ["instruction"]},
+        "plain": {
+            "does": "Rewrites an article you already have, to your instruction. No new research.",
+            "when": "When you want a finished article changed rather than a new one written.",
+            "needs": "An article in the Library, and what you want changed.",
+            "takes": "About a minute.",
+        },
+    },
+    {
         "name": "find_prompt",
         "description": (
             "Find which prompt owns something the user disliked about how articles come out. Use "
@@ -423,6 +449,7 @@ LABELS = {
     "run_research": "Researching the topic",
     "build_blueprint": "Building the article plan",
     "write_article": "Writing the article",
+    "edit_article": "Rewriting the article",
     "find_prompt": "Finding which prompt owns that",
 }
 

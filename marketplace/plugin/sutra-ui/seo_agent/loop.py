@@ -385,7 +385,9 @@ def _wait(chat_id, run_id, kind, call_id, payload, stage=None):
 STAGE_FOR = {"index_site": "setup", "build_page_index": "setup", "learn_brand": "setup",
              "onboard": "setup", "refresh_site": "setup",
              "suggest_topics": "topic", "run_research": "research",
-             "build_blueprint": "blueprint", "write_article": "draft"}
+             "build_blueprint": "blueprint", "write_article": "draft",
+             # An edit is the draft stage too: it changes the draft, it does not make one.
+             "edit_article": "draft"}
 VIEW_STAGE = {"brand_pack": "setup", "topic_list": "topic", "research_brief": "research",
               "blueprint": "blueprint", "article": "draft"}
 

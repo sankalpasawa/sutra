@@ -277,6 +277,24 @@ def run(plan, idx, ctx, say=lambda *a: None):
     coverage, reopened = compute_coverage(sections, plan)
     result["coverage"] = coverage
     result["reopened_holes"] = reopened
+    # THE CEILING WAS ONLY EVER A SUGGESTION (Aparna, 2026-09-23: "Even when I am explicitly
+    # mentioning 1000 words, the churned article doesn't follow it"). The prompt tells the architect
+    # "{{SECTION_TARGET}} sections is the CEILING... NEVER exceed it" and nothing ever counted them.
+    # A 1,000-word article planned at 7 sections is 2,100 words before the intro, the FAQ and the
+    # close, so the overshoot is baked in here, long before any writer could be blamed for it.
+    #
+    # It is REPORTED, not truncated. Cutting a section off the end of a plan loses the evidence that
+    # was placed in it; the honest fix is to say the plan is too big for the length asked for, and
+    # let the length checks downstream do the cutting in prose where a person can read the result.
+    over = len(sections) - maths["section_target"]
+    result["over_section_ceiling"] = max(0, over)
+    if over > 0:
+        say("This plan is bigger than the length asked for",
+            "%d sections for about %s words, which is room for %d. Expect roughly %s words unless "
+            "the rewrite cuts hard."
+            % (len(sections), "{:,}".format(maths["budget"]), maths["section_target"],
+               "{:,}".format(len(sections) * C.WORDS_PER_SECTION)))
+
     n_h3 = sum(len(s["h3s"]) for s in sections)
     say("Structure designed", "%d sections, %d sub-headings, %d of %d boxes used, %d research requests"
         % (len(sections), n_h3, len(used), len(boxes), sum(len(s["needs_research"]) for s in sections)))

@@ -67,6 +67,32 @@ Everything below this block is detail. If you get only these seven right, the se
    If a solid statistic does not get a sentence of its own, it does not belong. A number squeezed
    into a list beside three others is not being used, it is being stored.
 
+3b. THE FINDING GOES IN THE SENTENCE. THE STUDY GOES BEHIND IT.
+
+   This is about how a fact SOUNDS, not how many you use, and it is the difference between a blog
+   and a literature review. The card hands you a study; the reader wants what the study means.
+
+     Research report:  "A 2023 meta-analysis found a validity coefficient of 0.51 for structured
+                        interviews, compared with 0.38 for unstructured."
+     Ours:             "A structured interview predicts performance about a third better than an
+                        unstructured one." [c12]
+
+   Same fact, same source tag, one of them is readable. The citation marker carries the provenance;
+   you do not have to say it out loud as well.
+
+   NEVER OPEN WITH THE EVIDENCE. "Research shows", "studies find", "the data suggests", "according
+   to a 2024 report" — all of these put the scaffolding before the point and make the reader work
+   for the payoff. Lead with what is true, and let the tag say who found it.
+
+   DROP THE APPARATUS. Validity coefficients, correlations, p-values, sample sizes and study names
+   are how researchers talk to each other. Unless the reader will DO something differently because
+   of the number itself, translate it and move on. "r = 0.51" changes nothing for a hiring manager;
+   "the best single predictor you can run in an hour" changes what they do on Monday.
+
+   (Aparna, 2026-09-23: "There is a lot of 'this study found', 'the research says', validity
+   figures, correlations... The research should support the content, not drive it. Right now, it
+   reads more like a research report than a blog.")
+
 4. NO SENTENCE OVER 25 WORDS. Not "most". None. Count them.
 
 5. NO PARAGRAPH OVER 4 SENTENCES. One idea per paragraph: make the claim, back it with one number or

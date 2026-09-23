@@ -708,6 +708,10 @@ def run(w, plan, st, say=lambda *a: None):
     # article keeps more facts and a shorter one keeps fewer, instead of the count being fixed by a
     # cap that ignored the article.
     keep = max(6, round(target / max(C.WORDS_PER_FACT, 1)))
+    # THE REWRITE IS TOLD THE GAP, not just the target. It is the last step that rewrites the
+    # article whole, so it is the only one that can honestly cut 400 words; before today it was
+    # handed the target and left to notice.
+    over_by = max(0, now - target)
     say("Rewriting the article to be read", "%d facts in %d words; aiming for about %d words carrying about %d facts"
         % (facts, now, target, min(keep, facts) if facts else keep))
     prompt = C.prompt("readable", brand=brand["brand"], facts_now="{:,}".format(facts), words_now="{:,}".format(now),
@@ -715,6 +719,8 @@ def run(w, plan, st, say=lambda *a: None):
                       facts_keep="{:,}".format(keep), facts_drop="{:,}".format(max(0, facts - keep)),
                       archetype=archetype or "general article", format_rule=rule,
                       table_stakes="\n".join("   - %s" % x for x in stakes) or "   (none recorded)",
+                      over_by=("You are %s words OVER the length asked for. Cut that many." % "{:,}".format(over_by))
+                              if over_by > 40 else "You are within the length asked for. Do not pad to fill it.",
                       primary_keyword=prim, variations=var, heading_keywords=h2, unused_keywords=unused,
                       ease_now="%.0f" % reading_ease(w), ease_target="%.0f" % C.READABLE_EASE,
                       hard_words=render_hard_words(w), long_sentences=render_long_sentences(w),
