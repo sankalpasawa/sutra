@@ -92,8 +92,25 @@ SCREENS.skills = () => {
   if (!provs.length && !SKILLS.length) return `<div class="zero"><h4>No capability files found</h4>
     <p>Nothing readable under any configured assistant's config directory.
     Install a plugin and reload.</p></div>`;
-  const match = k => !q ||
-    ((k.slash||"") + " " + (k.name||"") + " " + (k.description||"")).toLowerCase().includes(q);
+  /* WHAT A SKILL DOES, beside where it came from (2.296.0, founder
+     2026-09-23: "let's create the entire framework for skills: how we
+     categorize skills"). The seven categories and their tests come from the
+     server (skill_categories.py); this screen only filters and shows them, so
+     a category can never be one thing in the API and another on the row. */
+  const skcat = S.skcat || "";
+  const inCat = k => !skcat || (k.category || "Know") === skcat;
+  const match = k => inCat(k) && (!q ||
+    ((k.slash||"") + " " + (k.name||"") + " " + (k.description||"") + " " + (k.category||""))
+      .toLowerCase().includes(q));
+  const CATN = SKILLS_META.by_category || {};
+  const CATTEST = SKILLS_META.category_tests || {};
+  const CATORDER = ["Judge","Shape","Make","Say","Run","Know","Mend"];
+  const skcatBar = !Object.keys(CATN).length ? "" : `<div class="facets skcatbar">
+    <span class="skcatlab">Does</span>
+    <span class="pill ${skcat?"p-mut":"p-ok"}" data-skcat="">All ${SKILLS.length}</span>
+    ${CATORDER.filter(c=>CATN[c]).map(c=>`<span class="pill ${skcat===c?"p-ok":"p-mut"}"
+       data-skcat="${esc(c)}" title="${esc(CATTEST[c]||"")}">${esc(c)} ${CATN[c]}</span>`).join("")}
+  </div>`;
 
   const KINDNOTE = {
     instructions: "always loaded as standing instructions — there is nothing to invoke",
@@ -115,13 +132,18 @@ SCREENS.skills = () => {
       : !shown.length
         ? `<p style="color:var(--faint);margin:0">No entry here matches “${esc(S.q)}”.</p>`
         : `<div class="tw"><table><thead><tr>
-             <th>Entry</th><th>Kind</th><th>Source</th><th>Runnable</th><th>What it does</th>
+             <th>Entry</th><th>Does</th><th>Kind</th><th>Source</th><th>Runnable</th><th>What it does</th>
            </tr></thead><tbody>
            ${shown.map(k=>`<tr>
              <td class="k">${k.slash
                  ? `<code>${esc(k.slash)}</code>`
                  : `<span style="color:var(--ink)">${esc(k.name)}</span>
                     <span class="pill p-mut">no slash</span>`}</td>
+             <td class="skcatcell"><span class="pill ${k.category_how==="fallback"?"p-mut":"p-ok"}"
+                   title="${esc((CATTEST[k.category]||"") + (k.category_how==="fallback"
+                     ? " — nothing in its description declares an effect" : ""))}"
+                   >${esc(k.category||"Know")}</span>
+                 <div class="skmoment">${esc(k.moment||"")}</div></td>
              <td>${esc(k.kind)}${k.always_loaded?' <span class="pill p-warn">always loaded</span>':""}</td>
              <td>${esc(k.source)}</td>
              <td class="whynot">${k.runnable ? `<span class="pill p-ok">yes</span>`
@@ -160,6 +182,7 @@ SCREENS.skills = () => {
       <input type="search" id="q" placeholder="Filter entries…" value="${esc(S.q)}"
              style="margin-left:auto;width:200px">
     </div>
+    ${skcatBar}
     ${provs.map(group).join("")}`;
 };
 

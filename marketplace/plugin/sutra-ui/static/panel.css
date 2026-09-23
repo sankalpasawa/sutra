@@ -5240,3 +5240,15 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
   font:12px/1.65 var(--sans);color:var(--muted);max-width:66ch}
 .nav.sub li.lbdiv{margin:6px 0 2px;padding:0 0 0 30px;font:600 9px/1.4 var(--mono);
   letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+
+/* ═══ SKILLS: WHAT IT DOES (2.296.0) ═════════════════════════════════════════
+   The Skills screen said where a skill came from and never what it does. The
+   seven categories (skill_categories.py) ride on every catalogue row; this is
+   the chip bar above the table and the cell on each row. Layout only: the chip
+   is the app's own .pill, so it inherits every theme and accent rule. */
+.skcatbar{margin:0 0 10px;align-items:center;gap:6px;flex-wrap:wrap}
+.skcatbar .pill{cursor:pointer}
+.skcatlab{font:600 9.5px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);margin-right:3px}
+.skcatcell{white-space:nowrap}
+.skmoment{font:10px/1.4 var(--mono);color:var(--faint);margin-top:3px}

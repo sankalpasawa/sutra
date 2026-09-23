@@ -486,9 +486,20 @@ def api_skills(request: Request = None):
         by_kind[e["kind"]] = by_kind.get(e["kind"], 0) + 1
         by_source[e["source"]] = by_source.get(e["source"], 0) + 1
         by_provider[e["provider"]] = by_provider.get(e["provider"], 0) + 1
+    # What each skill DOES, beside where it came from (skill_categories.py;
+    # the framework is holding/plans/skills-program/FRAMEWORK.md). Named for
+    # everything we ship, ruled over the description for the rest, and
+    # "Know" when nothing declares an effect -- so an unknown reads as
+    # unknown rather than as a claim. Annotates the rows in place.
+    import skill_categories
+    facets = skill_categories.annotate(items)
     payload = {"items": items, "total": len(items),
                "by_kind": by_kind, "by_source": by_source,
                "by_provider": by_provider,
+               "by_category": facets["by_category"],
+               "by_moment": facets["by_moment"],
+               "by_how": facets["by_how"],
+               "category_tests": skill_categories.CATEGORY_TEST,
                "runnable": sum(1 for e in items if e.get("runnable")),
                "providers": bundle["providers"]}
 

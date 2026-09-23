@@ -2128,6 +2128,11 @@ function wire(){
   scBody.querySelectorAll("[data-facet]").forEach(b=>b.onclick=()=>{
     const g=S.cf[b.dataset.facet]; const v=b.dataset.val;
     g.has(v)?g.delete(v):g.add(v); render(); });
+  /* Skills > what it DOES (2.296.0): one chip at a time, clicking the live one
+     clears it. In memory for the session like every other view state on this
+     screen -- a filter is a view, not a record. */
+  scBody.querySelectorAll("[data-skcat]").forEach(b=>b.onclick=()=>{
+    const v=b.dataset.skcat||""; S.skcat = (S.skcat===v) ? "" : v; render(); });
   scBody.querySelectorAll("[data-sort]").forEach(h=>h.onclick=()=>{
     const c=h.dataset.sort; S.sort = {col:c, dir: S.sort.col===c ? -S.sort.dir : 1}; render(); });
   scBody.querySelectorAll("[data-charter]").forEach(r=>r.onclick=()=>{S.selCharter=r.dataset.charter;render();});
@@ -2898,8 +2903,14 @@ async function loadRuntime(){
   if (skillsR.status === "fulfilled"){
     const skills = skillsR.value;
     SKILLS = skills.items || [];
+    /* the BOOT path (08-boot.js loadSkills is the refresh path; this one runs
+       once at start). Both must carry the same fields, or a facet appears only
+       after a manual refresh -- which is how the category chips went missing
+       on their first live walk, 2026-09-23. */
     SKILLS_META = { by_kind: skills.by_kind, by_source: skills.by_source,
                     by_provider: skills.by_provider, total: skills.total,
+                    by_category: skills.by_category, by_moment: skills.by_moment,
+                    by_how: skills.by_how, category_tests: skills.category_tests,
                     runnable: skills.runnable, providers: skills.providers || [] };
     S.cat.etag = skills.signature || null;
   } else {

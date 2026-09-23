@@ -12,6 +12,13 @@ async function loadSkills(){
   SKILLS = payload.items || [];
   SKILLS_META = { by_kind: payload.by_kind, by_source: payload.by_source,
                   by_provider: payload.by_provider, total: payload.total,
+                  /* what each skill DOES (2.296.0): the seven categories, the
+                     moments, how each was decided, and the test behind each
+                     category. The screen reads these; it never derives them,
+                     so a category cannot mean one thing here and another in
+                     the API (skill_categories.py). */
+                  by_category: payload.by_category, by_moment: payload.by_moment,
+                  by_how: payload.by_how, category_tests: payload.category_tests,
                   runnable: payload.runnable, providers: payload.providers || [] };
   /* Commit the signature only AFTER the data it describes has been applied. The
      other order stores a fingerprint for a payload that was never installed. */
