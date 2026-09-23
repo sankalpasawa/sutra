@@ -2285,6 +2285,29 @@ function gvChipHtml(t, i){
       ? `<span>terminal</span>`
       : `<span class="gv-unres">unresolved</span>`));
   if (pg.risk) segs.push(`<span>risk:${esc(pg.risk.toLowerCase())}</span>`);
+  return `<div class="gv ${open?"gv-open":""}">
+    <button class="gv-chip" type="button" data-govopen="${esc(t.uid||"")}"
+      aria-expanded="${open?"true":"false"}"
+      title="Governance for this turn — click to ${open?"collapse":"expand"}">
+      <span class="gv-pulse${held||!t.domain?" gv-amber":""}" aria-hidden="true"></span>
+      ${segs.join(`<span class="gv-sep">·</span>`)}
+      <span class="gv-chev" aria-hidden="true">▼</span>
+    </button>
+    ${open?`<div class="gv-panel">
+      ${gvPanelRowsHtml(t, parsed)}
+    </div>`:""}
+  </div>`;
+}
+
+/* The panel rows of a turn's governance: placement prose, grounding, trace, and
+   every captured block verbatim. ONE writer for the legacy chip above and the
+   combined pill below (2026-09-23), so the honest wording cannot drift between
+   two copies. opts.skip names section keys the caller draws elsewhere (the pill
+   draws the step trace inside its Runtime block). */
+function gvPanelRowsHtml(t, parsed, opts){
+  const pg = parsed.g, secs = parsed.sections || [];
+  const skip = (opts && opts.skip) || {};
+  const held = t.mode === "floor";
   const prose = !t.domain
     ? (t.transcript
       ? `Ran in the terminal, outside this panel — no placement was ever computed, so none is reported.`
@@ -2297,24 +2320,13 @@ function gvChipHtml(t, i){
       : (held
         ? `No department claims this, so it was held at the nearest live ancestor rather than guessed.`
         : `Filed to <b style="color:var(--ink)">${esc(t.domain.name)}</b>${t.matched&&t.matched.length?` on <code>${t.matched.map(esc).join("</code> <code>")}</code>`:""}.`));
-  return `<div class="gv ${open?"gv-open":""}">
-    <button class="gv-chip" type="button" data-govopen="${esc(t.uid||"")}"
-      aria-expanded="${open?"true":"false"}"
-      title="Governance for this turn — click to ${open?"collapse":"expand"}">
-      <span class="gv-pulse${held||!t.domain?" gv-amber":""}" aria-hidden="true"></span>
-      ${segs.join(`<span class="gv-sep">·</span>`)}
-      <span class="gv-chev" aria-hidden="true">▼</span>
-    </button>
-    ${open?`<div class="gv-panel">
-      <div class="gv-row"><span class="gv-label">Placement</span><span class="gv-val">${
+  return `<div class="gv-row"><span class="gv-label">Placement</span><span class="gv-val">${
         t.domain?`<code>${esc(dPath(t.domain.ref))}</code> `:""}${prose}</span></div>
       ${t.charter?`<div class="gv-row"><span class="gv-label">Grounding</span><span class="gv-val">
         <span style="color:var(--acc);font-family:var(--mono);font-size:10px">${esc(t.charter.id)}</span>
         ${esc(t.charter.title)}<br><span style="font-style:italic">${esc(t.charter.purpose)}</span></span></div>`:""}
       ${pg.trace?`<div class="gv-row"><span class="gv-label">Trace</span><span class="gv-val"><code>${esc(pg.trace)}</code></span></div>`:""}
-      ${secs.filter(x=>x.key!=="trace").map(x=>`<div class="gv-row"><span class="gv-label">${esc(x.title)}</span><span class="gv-val"><pre class="gv-pre">${esc(x.lines.join("\n"))}</pre></span></div>`).join("")}
-    </div>`:""}
-  </div>`;
+      ${secs.filter(x=>x.key!=="trace" && !skip[x.key]).map(x=>`<div class="gv-row"><span class="gv-label">${esc(x.title)}</span><span class="gv-val"><pre class="gv-pre">${esc(x.lines.join("\n"))}</pre></span></div>`).join("")}`;
 }
 
 /* ── the per-turn agent roster ───────────────────────────────────────────────
@@ -2472,123 +2484,117 @@ function gvAgents(t){
   return out;
 }
 
-function turnResponse(t){
-  const nTools = (t.tools && t.tools.length) || 0;
-  if (!t.streaming && !t.response && !t.error && !nTools) return "";
-  const runs = t.toolRuns || [];
-  const active = runs.filter(r=>r.running).length;
-  /* THE ONLY whole-turn progress surface. Was an 8.5px word in a pill: no
-     elapsed time, no counts, no phase, no throughput -- a 3-second turn and a
-     wedged one were the same picture. data-runstrip is the ticker's patch anchor
-     (text node only); the sweep is indeterminate on purpose. */
-  /* DS port: the live loader is chip-less and BOTTOMMOST (rendered last in the
-     concat below); the settled verdict pill stays at the top. data-runstrip
-     stays the ticker's patch anchor and still holds ONLY a text node. */
-  /* A turn that has been SENT but not STARTED is not thinking, and must not
-     borrow the pulse that says it is. `q` is non-null exactly then. */
-  const q = (typeof queueState === "function") ? queueState(t) : null;
-  const stateTop = (t.streaming || q) ? ""
-      : (t.error ? `<span class="pill p-block">failed</span>`
-         : t.stopped ? `<span class="pill p-warn">stopped by you</span>`
-                 : `<span class="pill p-ok">answered</span>`);
-  /* The loader becomes the button that opens the turn's step log. It already
-     said the turn was working; it could not say what it was DOING, so a wedged
-     turn and a busy one looked the same. The loader markup itself is unchanged
-     — data-runstrip still holds ONLY a text node, so the 1s ticker keeps
-     patching text and nothing else. Open state lives in S.thinkOpen[uid], the
-     same in-memory, per-page-load pattern S.govOpen uses; it survives
-     patchTurn() because the render reads it, and it is deliberately NOT
-     persisted, because a uid means nothing after a reload. */
-  /* ONE open state for the runs (S.thinkOpen[uid]): the loader's button while
-     the turn streams, the activity fold's head once it has settled. */
-  const logLines = t.streaming && !q ? gvLog(t) : [];
-  const logOpen = !!(S.thinkOpen && t.uid && S.thinkOpen[t.uid]);
-  /* A failure mid-turn is stated on the loader itself, outside the ticker's
-     text node: the strip says what is running, not what already broke. */
-  const failed = runs.filter(r => r.ok === false).length;
-  const stateBottom = q
-      ? `<div class="gv-waiting${q.behind ? " gv-queued" : ""}">
-           <span class="gv-wdot" aria-hidden="true"></span><span>${
-             q.behind
-               ? "Queued" + (q.pos > 1 ? " · " + q.pos + nth(q.pos) + " in line" : "")
-                 + " — sends when the turn above finishes"
-               : "Sent — waiting for the agent to start"
-           }</span></div>`
-      : t.streaming
-      /* The fixed word "thinking" beside the strip is GONE (founder 2026-09-21:
-         "there's also thinking written -- are both required?"). It was a label
-         that never changed while the strip beside it already said the measured
-         phase -- thinking / working / writing / the tool running now -- so the
-         strip itself now carries the shimmer, and one line says everything. */
-      ? `<div><button class="gv-thinkbtn" type="button" data-thinkopen="${esc(t.uid||"")}"
-             aria-expanded="${logOpen?"true":"false"}" title="${logLines.length
-               ? "What has run so far in this turn"
-               : "Nothing has run yet in this turn"}"
-           ><span class="gv-think"><span class="gv-pulse gv-beat" aria-hidden="true"></span
-           ><span class="gv-tlabel" data-runstrip="${esc(t.uid||"")}">${esc(runPhrase(t))}</span>${
-           failed ? `<span class="gv-tbad">${failed} failed</span>` : ""}</span></button>${
-          logOpen
-            ? `<div class="gv-log">${logLines.length
-                ? logLines.map(l=>
-                    `<span class="gv-ln ${l.state}">${esc(l.text)}</span>`).join("")
-                /* an OPEN log must never render as nothing — a click that visibly
-                   does nothing reads as a dead button (founder, 2026-08-19).
-                   One honest line until the first real step arrives. */
-                : `<span class="gv-ln unk">nothing has run yet in this turn</span>`}</div>`
-            : ""}</div>`
-      : "";
-  /* A turn whose saved thread had gone and was re-sent as a new one. Stated,
-     because the reply legitimately will not remember the earlier conversation
-     and an operator who is not told that reads it as the model forgetting. */
-  const replayed = t.retried
-    ? `<span class="pill p-mut" title="${esc(t.retried)}">new thread</span>` : "";
-  /* Server-measured duration and cost, stated only when the server actually sent
-     them. A turn replayed from a transcript has neither, and inventing a number
-     there would be fabrication. */
-  const meta = (!t.streaming && (t.duration_ms != null || t.cost_usd != null
-                                 || t.num_turns != null))
-    ? `<span class="pill p-mut">${[
-         t.duration_ms != null ? (t.duration_ms/1000).toFixed(1) + "s" : null,
-         t.cost_usd != null ? "$" + Number(t.cost_usd).toFixed(4) : null,
-         /* the closest thing the stream has to "how much work was that" -- the
-            server sends it on every `done` and the client already stores it */
-         t.num_turns != null ? t.num_turns + " turn" + (t.num_turns===1?"":"s") : null,
-       ].filter(Boolean).join(" · ")}</span>` : "";
+/* ══ the combined pill (founder 2026-09-23) ═══════════════════════════════════
+   "Combine both the governance and the runtime" + "I like the round shape with
+   the accordion with the downward arrow". ONE round pill per turn carries the
+   governance (where the turn was filed, depth, risk) and the runtime (what ran,
+   what failed). While the turn streams it IS the loader: a spinner plus the
+   ticker's runPhrase in [data-runstrip] (text node only, as before). Opened, it
+   shows the governance rows and ONE Runtime block (step trace, tool cards, agent
+   roster), so a tool call never reads as another governance row. It renders
+   INSIDE [data-aturn], so patchTurn() keeps it live on every tool frame.
 
-  /* toolRuns (live, with lifecycle) is preferred; `tools` (flat names, which is all a
-     replayed transcript records) is the fallback. A replayed turn therefore shows what
-     ran but never claims a pass/fail it does not know. */
-  /* ONE RENDERER FOR BOTH (2026-09-14). This used to be an inline template that
-     drew every run as the same flat .trow -- so a subagent, a shell command and
-     a file edit were one picture -- while a REPLAYED turn went through
-     toolCallsHtml just below and got a second, different flat row. Both now go
-     through the card renderer in 06-render.js, which draws a card per `kind`
-     and keeps the three things this row has always carried: the running dot,
-     the output expander (same data-toolout key), and the terminal re-open
-     control for a shell command. `tools` -- the flat name list a transcript
-     records and a test pins -- is untouched and is still the last fallback. */
-  /* CONDENSED (founder 2026-09-21). While the turn STREAMS the runs live
-     behind the loader at the bottom (stateBottom), so nothing is drawn here
-     and the turn is one growing answer plus one status line. Once it has
-     SETTLED they fold behind one row at the top (toolFoldHtml), which opens
-     into the same cards. The flat name-list fallback for a transcript that
-     recorded only names is unchanged. */
-  const tools = t.streaming
-    ? ""
-    : runs.length
-    ? toolFoldHtml(runs, t.uid, { live: true })
-    : (t.calls && t.calls.length ? toolFoldHtml(t.calls, t.uid)
-       : (nTools ? `<div class="toolRow" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
-      <span class="pill p-mut">${nTools} tool call${nTools===1?"":"s"}</span>
-      ${[...new Set(t.tools)].slice(0,8).map(n=>`<span class="pill p-acc">${esc(n)}</span>`).join("")}
-    </div>` : ""));
-  /* The agent roster, nested under the tool rows it elaborates. A turn that
-     spawned nothing renders NOTHING here — no empty container, no heading — so
-     an ordinary turn's DOM is byte-identical to what it was before this shipped.
-     Capped at 12 with the same "N earlier" line and the same slice(-12) the tool
-     rows use: on a long fan-out, the ones still moving are the recent ones. */
+   It replaces four things that said parts of the same fact in four shapes: the
+   round governance chip above the answer, the square "answered" and meta pills,
+   the activity fold row, and the loader at the bottom.
+
+   MOTION THAT CANNOT MAKE THE CHAT BUGGY. patchTurn() rebuilds this node on
+   every tool frame and render() rebuilds everything on any state change, so an
+   animation keyed only on a class would replay on every rebuild. Two rules:
+     - ONE-SHOT motion (the AI side arriving, a failure glow, the spinner
+       settling, the panel unfolding, a new runtime row) is decided in
+       gvPillMotion() from per-turn memory S._pillFx[uid], and its class is
+       emitted only in the render where the event first happens;
+     - LOOPING motion (live sheen, spinner, shimmer) carries a negative
+       animation-delay from the clock, so a rebuilt node continues the phase
+       instead of restarting it.
+   prefers-reduced-motion (panel.css) turns every one of them off. */
+const PILL_FX_MAX = 400;
+/* the fold's length: the css gvFold animation, the click handler's timer and
+   the renderer's mid-fold phase all read this one number */
+const PILL_FOLD_MS = 220;
+function gvFx(uid){
+  S._pillFx = S._pillFx || {};
+  if (!uid) return null;           /* no uid: no memory, so no one-shot motion */
+  if (!S._pillFx[uid]){
+    /* bounded like S.arrived: a page that streamed hundreds of turns forgets the
+       oldest; the worst case is one missed glow on a turn that old */
+    const keys = Object.keys(S._pillFx);
+    if (keys.length >= PILL_FX_MAX) keys.slice(0, keys.length - PILL_FX_MAX + 1).forEach(k => { delete S._pillFx[k]; });
+    S._pillFx[uid] = { shown: false, live: false, failed: 0, rows: -1 };
+  }
+  return S._pillFx[uid];
+}
+
+/* Everything the pill says, computed once. Runs (live, with ok/running) win over
+   a transcript's calls (is_error); a transcript that recorded only tool NAMES
+   still counts them, and never claims a pass or a failure it does not know. */
+function gvPillParts(t){
+  const runs = (t.toolRuns && t.toolRuns.length) ? t.toolRuns : null;
+  const calls = runs || ((t.calls && t.calls.length) ? t.calls : null);
+  const names = (!calls && t.tools && t.tools.length) ? t.tools : null;
+  const n = calls ? calls.length : (names ? names.length : 0);
+  const failed = calls ? calls.filter(c => runs ? c.ok === false : !!c.is_error).length : 0;
+  const q = (typeof queueState === "function") ? queueState(t) : null;
+  const parsed = parseGov(t.response || "");
+  const pg = parsed.g;
+  const held = t.mode === "floor";
+  const unresolved = !t.domain && !t.transcript;
+  const state = q ? "queued" : t.streaming ? "live" : t.error ? "error" : t.stopped ? "stopped" : "done";
+  const dot = state === "live" ? "gv-run" : state === "queued" ? "gv-wait"
+            : (failed || state === "error") ? "gv-bad" : (held || unresolved) ? "gv-amber" : "";
+  const capture = !!((parsed.sections && parsed.sections.length) || pg.verb || pg.risk);
+  /* a panel turn always has governance to show; a terminal (transcript) turn
+     only when something was captured or something ran */
+  const show = !t.transcript || capture || n > 0 || !!t.streaming;
+  return { runs, calls, names, n, failed, q, parsed, pg, held, unresolved, state, dot, capture, show };
+}
+
+/* The one place one-shot motion is decided. Called once per turnResponse(), and
+   every decision is spent in the same call, so the next rebuild of the same
+   state emits no motion class at all. */
+function gvPillMotion(t, p){
+  const m = { enter: false, flash: false, settle: false };
+  if (!t.uid) return m;
+  const live = p.state === "live", queued = p.state === "queued";
+  /* a turn this page never watched run has no motion to remember, so a long
+     replayed transcript adds nothing to the memory */
+  if (!live && !queued && !(S._pillFx && S._pillFx[t.uid])) return m;
+  const fx = gvFx(t.uid);
+  /* a turn drawn while queued is already on screen: when it starts, it must
+     not slide in a second time (review, 2026-09-23) */
+  if (queued){ fx.shown = true; return m; }
+  if (live && !fx.shown){ fx.shown = true; m.enter = true; }
+  /* a failure glows only on a turn this page watched run; a replayed
+     transcript that already failed loads still */
+  if (p.failed > fx.failed){ if (fx.shown) m.flash = true; fx.failed = p.failed; }
+  if (live) fx.live = true;
+  else if (fx.live){ fx.live = false; m.settle = true; }
+  return m;
+}
+
+/* The runtime step trace, when the answer carried one, as one dot per step.
+   A line that does not parse is not guessed at: the block falls back to the
+   captured text, verbatim. */
+const STEP_DOT = { done: "ok", pending: "n", skipped: "n", running: "run", open: "run",
+                   refused: "b", failed: "b", fail: "b" };
+function gvStepDots(parsed){
+  const sec = (parsed.sections || []).find(x => x.key === "stepTrace");
+  if (!sec) return null;
+  const rows = [];
+  sec.lines.forEach(l => {
+    const m = /^\s*\d+\s+([a-z][\w-]*)\s+\S+\s+(done|pending|skipped|running|open|refused|failed|fail)\b/i.exec(l);
+    if (m) rows.push({ name: m[1], status: m[2].toLowerCase() });
+  });
+  return { rows, lines: sec.lines };
+}
+
+/* The per-turn agent roster (same markup as before, now its own function). It
+   stays VISIBLE under the pill, not folded into it: a fan-out must show which
+   agent is still running and which failed without a click (see gvAgents). */
+function gvAgentsHtml(t){
   const agentRows = gvAgents(t);
-  const agents = agentRows.length
+  return agentRows.length
     ? `<div class="gv-agents">${agentRows.length > 12 ? `<div class="trow unk">
            <span class="tstate" aria-hidden="true"></span>
            <span class="tname">${agentRows.length - 12} earlier agent${agentRows.length-12===1?"":"s"}</span>
@@ -2603,34 +2609,159 @@ function turnResponse(t){
            }<span class="tverdict">${a.ms != null
                ? esc(fmtDur(a.ms)) + " · " : ""}${a.verdict}</span></button>`).join("")}</div>`
     : "";
+}
+
+/* mark the last k tool cards of a rendered list as new (they rise in once) */
+function gvMarkNewCards(html, k){
+  if (!(k > 0)) return html;
+  const total = (html.match(/class="toolcall tcard /g) || []).length;
+  let idx = 0;
+  return html.replace(/class="toolcall tcard /g, s => (++idx > total - k) ? 'class="toolcall tcard gv-enter ' : s);
+}
+
+/* The Runtime block: everything that RAN, in one box under the governance rows. */
+function gvRuntimeHtml(t, p, opening){
+  const st = gvStepDots(p.parsed);
+  /* an OPEN pill on a live turn never says nothing about what ran (founder
+     2026-08-19: a click that visibly does nothing reads as a dead button) */
+  if (!p.n && !st) return p.state === "live"
+    ? `<div class="gv-rt"><div class="gv-rthead"><span class="gv-label">Runtime</span>`
+      + `<span class="gv-rtsum">nothing has run yet in this turn</span></div></div>` : "";
+  const fx = gvFx(t.uid);
+  const done = st ? st.rows.filter(r => r.status === "done").length : 0;
+  const sum = [st && st.rows.length ? done + " of " + st.rows.length + " steps" : "",
+               p.n ? p.n + " tool call" + (p.n === 1 ? "" : "s") : ""].filter(Boolean);
+  /* a settled turn has no looping motion: a step the trace left "running" is
+     drawn as a still hollow dot once the turn is over */
+  const dotOf = (s) => { const c = STEP_DOT[s] || "unk"; return (c === "run" && p.state !== "live") ? "n" : c; };
+  const steps = !st ? "" : (st.rows.length
+    ? `<div class="gv-steps">${st.rows.map(r =>
+        `<span class="gv-step"><i class="gv-sd ${dotOf(r.status)}" aria-hidden="true"></i>${esc(r.name)}</span>`).join("")}</div>`
+    : `<pre class="gv-pre">${esc(st.lines.join("\n"))}</pre>`);
+  let cards = "";
+  if (p.calls){
+    cards = toolCallsHtml(p.calls, { live: !!p.runs });
+    const count = (cards.match(/class="toolcall tcard /g) || []).length;
+    /* a row that arrives while the panel is open rises in once; the opening
+       render staggers every row instead, so it marks none */
+    if (fx && !opening && fx.rows >= 0 && count > fx.rows) cards = gvMarkNewCards(cards, count - fx.rows);
+    if (fx) fx.rows = count;
+  } else if (p.names){
+    cards = `<div class="toolRow" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:2px">
+      ${[...new Set(p.names)].slice(0,8).map(nm=>`<span class="pill p-acc">${esc(nm)}</span>`).join("")}</div>`;
+  }
+  return `<div class="gv-rt">
+      <div class="gv-rthead"><span class="gv-label">Runtime</span><span class="gv-rtsum">${sum.join(" · ")}${
+        p.failed ? `${sum.length ? " · " : ""}<span class="gv-pfail">${p.failed} failed</span>` : ""}</span></div>
+      ${steps}${cards}</div>`;
+}
+
+/* a looping animation's phase, from the clock: a rebuilt node picks up where
+   the old one was instead of restarting (the livedot breath uses the same trick) */
+function gvPhase(ms){ return "-" + (Date.now() % ms) + "ms"; }
+
+function gvPillHtml(t, p, m){
+  const uid = t.uid || "";
+  const open = !!(S.govOpen && uid && S.govOpen[uid]);
+  let opening = false;
+  if (open && uid && S._pillOpening === uid){ opening = true; S._pillOpening = null; }
+  /* closed: the panel's memory of how many rows it showed is dropped, so the
+     next open staggers every row rather than marking some as new */
+  if (!open && uid && S._pillFx && S._pillFx[uid]) S._pillFx[uid].rows = -1;
+  const live = p.state === "live";
+  const words = [];
+  if (live){
+    words.push(`<span class="gv-tlabel" data-runstrip="${esc(uid)}">${esc(runPhrase(t))}</span>`);
+  } else {
+    if (p.pg.depth) words.push(`<span>D${esc(p.pg.depth)}</span>`);
+    if (t.domain) words.push(`<span class="gv-leaf">${esc(t.domain.name)}</span>`);
+    else if (t.transcript){ if (p.capture) words.push(`<span>terminal</span>`); }
+    else words.push(`<span class="gv-unres">unresolved</span>`);
+    if (p.held) words.push(`<span class="gv-pwarn">held</span>`);
+    if (p.pg.risk) words.push(`<span>risk:${esc(p.pg.risk.toLowerCase())}</span>`);
+    if (p.n) words.push(`<span>${p.n} tool call${p.n === 1 ? "" : "s"}</span>`);
+  }
+  if (p.failed) words.push(`<span class="gv-pfail">${p.failed} failed</span>`);
+  if (p.state === "stopped") words.push(`<span class="gv-pwarn">stopped by you</span>`);
+  if (p.state === "error") words.push(`<span class="gv-pfail">turn failed</span>`);
+  /* a fold in progress lives in STATE (turnControlClick), so a patchTurn that
+     lands mid-fold redraws the pill still folding, at the elapsed point, instead
+     of popping it back open (review, 2026-09-23) */
+  const foldT0 = open && uid && S._pillClosing ? S._pillClosing[uid] : 0;
+  const closing = !!foldT0;
+  /* the phase variables sit on the wrapper, so the open panel's spinners
+     inherit them too */
+  const vars = [];
+  if (live) vars.push(`--gv-sheen-d:${gvPhase(2400)}`, `--gv-spin-d:${gvPhase(700)}`, `--gv-shim-d:${gvPhase(1800)}`);
+  if (closing) vars.push(`--gv-fold-d:-${Math.min(Math.max(Date.now() - foldT0, 0), PILL_FOLD_MS)}ms`);
+  const style = vars.length ? ` style="${vars.join(";")}"` : "";
+  const tn = t._n ? "turn " + t._n : "";
+  const bits = [tn, p.pg.verb ? esc(p.pg.verb) : "",
+    t.duration_ms != null ? (t.duration_ms / 1000).toFixed(1) + "s" : "",
+    t.cost_usd != null ? "$" + Number(t.cost_usd).toFixed(4) : "",
+    t.num_turns != null ? t.num_turns + " model turn" + (t.num_turns === 1 ? "" : "s") : "",
+    t.domain && !p.held ? "matched " + Number(t.confidence || 0).toFixed(2) : ""].filter(Boolean);
+  const turnRow = bits.length
+    ? `<div class="gv-row"><span class="gv-label">Turn</span><span class="gv-val">${bits.join(" · ")}</span></div>` : "";
+  const gov = (!t.transcript || p.capture) ? gvPanelRowsHtml(t, p.parsed, { skip: { stepTrace: true } }) : "";
+  return `<div class="gv gv-pill${open ? " gv-open" : ""}${opening && !closing ? " gv-opening" : ""}${closing ? " gv-closing" : ""}" data-pill="${esc(uid)}"${style}>`
+    + `<button class="gv-chip gv-pbtn${live ? " is-live" : ""}${m.flash ? " gv-flash" : ""}" type="button"`
+    + ` data-govopen="${esc(uid)}" aria-expanded="${open ? "true" : "false"}"`
+    + ` title="${open ? "Hide" : "Show"} this turn's governance and what ran">`
+    + `<span class="gv-pulse${p.dot ? " " + p.dot : ""}${m.settle ? " gv-settle" : ""}" aria-hidden="true"></span>`
+    + words.join(`<span class="gv-sep">·</span>`)
+    + `<span class="gv-chev" aria-hidden="true">▼</span></button>`
+    + (open ? `<div class="gv-acc"><div class="gv-accin"><div class="gv-panel">${turnRow}${gov}${gvRuntimeHtml(t, p, opening)}</div></div></div>` : "")
+    + `</div>`;
+}
+
+function turnResponse(t){
+  const nTools = (t.tools && t.tools.length) || 0;
+  /* An empty TERMINAL turn has nothing to draw. A PANEL turn always keeps its
+     pill -- where it was filed, and that it was stopped -- as the governance
+     chip always did from turnBlock (review, 2026-09-23). */
+  if (!t.streaming && !t.response && !t.error && !nTools && t.transcript) return "";
+  /* A turn that has been SENT but not STARTED is not thinking, and must not
+     borrow the pulse that says it is. `q` is non-null exactly then. */
+  const q = (typeof queueState === "function") ? queueState(t) : null;
+  /* ONE PILL (2026-09-23): governance + runtime, live or settled, at the top of
+     this block. It replaced the settled verdict pill ("answered" / "failed" /
+     "stopped by you"), the duration-cost pill (now the Turn row inside the
+     pill), the activity fold (now the Runtime block inside the pill), the agent
+     roster (same) and the live loader at the bottom (the pill IS the loader). */
+  const p = gvPillParts(t);
+  const m = gvPillMotion(t, p);
+  const pill = p.show ? gvPillHtml(t, p, m) : "";
+  const stateBottom = q
+      ? `<div class="gv-waiting${q.behind ? " gv-queued" : ""}">
+           <span class="gv-wdot" aria-hidden="true"></span><span>${
+             q.behind
+               ? "Queued" + (q.pos > 1 ? " · " + q.pos + nth(q.pos) + " in line" : "")
+                 + " — sends when the turn above finishes"
+               : "Sent — waiting for the agent to start"
+           }</span></div>`
+      : "";
+  /* A turn whose saved thread had gone and was re-sent as a new one. Stated,
+     because the reply legitimately will not remember the earlier conversation
+     and an operator who is not told that reads it as the model forgetting. */
+  const replayed = t.retried
+    ? `<span class="pill p-mut" title="${esc(t.retried)}">new thread</span>` : "";
   /* A backoff is not a hang, and the difference has to be visible or the
-     operator kills a turn that was about to succeed. */
-  /* ONLY while the turn is live. `retrying` is assigned in one place and cleared
-     by NO terminal branch, so a turn that hit one backoff kept an animated "Rate
-     limited — retrying…" row pinned above its completed answer. */
+     operator kills a turn that was about to succeed. ONLY while the turn is
+     live: `retrying` is cleared by no terminal branch. */
   const retrying = (t.streaming && t.retrying)
     ? `<div class="working"><i class="dot"></i>Rate limited — retrying<b class="ell"></b>
          <span class="tsum">${esc(t.retrying)}</span></div>` : "";
-  /* RETIRED. Its condition included `!runs.length`, so it was suppressed for the
-     rest of the turn as soon as any tool ran -- i.e. it went away exactly during
-     the compose window it was supposed to cover. The run strip now carries the
-     whole live window with a stopwatch, so keeping both meant two animated
-     elements per turn saying different amounts of nothing. */
-  const waiting = "";
   /* data-resp is the PATCH ANCHOR. While a reply streams, patchStreaming()
      rewrites the innerHTML of exactly this node instead of letting render()
      rebuild #panes -- see scheduleStreamPatch(). The id must be stable for the
-     life of the turn, which t.uid gives it (assigned once, never reused). */
-  /* Emitted while STREAMING as well as when text exists. It used to require
-     t.response, so on the `start` frame there was no anchor -- the first token
-     of every reply missed patchStreaming(), fell through to a 100ms-debounced
-     full #panes rebuild, and paid the heaviest path in the app at the exact
-     moment the operator is watching for the answer to begin. An empty anchor
-     costs one div and `.md[data-resp]:empty` gives it no height. */
+     life of the turn, which t.uid gives it (assigned once, never reused).
+     Emitted while STREAMING as well as when text exists, so the first token of
+     every reply lands on an anchor; `.md[data-resp]:empty` gives it no height. */
   const body = (t.response || (t.streaming && !q))
     ? `<div class="md" data-resp="${esc(t.uid||"")}" style="margin-top:6px;color:var(--ink)">${
-        t.response ? (t.streaming ? caretHtml(mdHtml(gvBody(t.response)), t)
-                                  : mdHtml(gvBody(t.response))) : ""}</div>` : "";
+        t.response ? (t.streaming ? caretHtml(mdHtml(p.parsed.body), t)
+                                  : mdHtml(p.parsed.body)) : ""}</div>` : "";
   /* the REAL failure text, never a fabricated answer and never nothing */
   const err = t.error
     ? `<div style="margin-top:6px;color:var(--block);white-space:pre-wrap">${esc(t.error)}</div>
@@ -2638,9 +2769,10 @@ function turnResponse(t){
          <button class="btn" type="button" data-retry="${esc(t.uid)}">Retry this message</button>
          </p>` : ""}` : "";
   /* data-aturn anchors this block for patchTurn(): a tool frame replaces THIS
-     node instead of re-rendering the pane. */
-  return `<div class="a" data-aturn="${esc(t.uid||"")}"
-    >${stateTop}${replayed}${meta}${tools}${agents}${retrying}${waiting}${body}${err}${stateBottom}</div>`;
+     node instead of re-rendering the pane. gv-in-l: the AI side arrives from
+     the left, once (gvPillMotion), never on a rebuild. */
+  return `<div class="a${m.enter ? " gv-in-l" : ""}" data-aturn="${esc(t.uid||"")}"
+    >${pill}${replayed}${gvAgentsHtml(t)}${retrying}${body}${err}${stateBottom}</div>`;
 }
 /* One turn. Two provenances, told apart on purpose:
    - a turn the PANEL ran carries a placement (or an honest reason it has none)
@@ -2663,12 +2795,15 @@ function turnBlock(t, i){
     /* every transcript turn gets its uid here, not only one with a governance
        capture: the activity fold keys its open state on it (S.thinkOpen) */
     turnUid(t);
-    const gvT = gvHasCapture(t) ? gvChipHtml(t, i) : "";
+    /* 2026-09-23: the governance chip now lives INSIDE turnResponse as the
+       combined pill, which shows for a transcript turn only when something was
+       captured or something ran (gvPillParts) -- the same gate gvHasCapture was. */
+    t._n = i + 1;
     return `<div class="turn">
       ${t.orphan
         ? `<div class="a"><span class="pill p-warn">assistant message with no recorded prompt</span></div>`
         : `<div class="u md">${mdHtml(t.text)}</div>`}
-      ${gvT}${turnResponse(t)}</div>`;
+      ${turnResponse(t)}</div>`;
   }
   /* DS port: the placement prose, grounding charter, and trace that used to
      print inline every turn now live behind the collapsed governance chip —
@@ -2690,9 +2825,12 @@ function turnBlock(t, i){
   if (Object.keys(arrived).length > 400) for (const k in arrived) delete arrived[k];
   const arriving = !!(t.streaming && t.uid && !arrived[t.uid]);
   if (arriving) arrived[t.uid] = 1;
+  /* the pill's Turn row says "turn N"; patchTurn keeps the same object, so the
+     number survives every rebuild of the answer block */
+  t._n = i + 1;
   return `<div class="turn${arriving ? " arriving" : ""}" data-turn-domain="${t.domain && t.domain.ref ? esc(t.domain.ref) : ""}">
     <div class="u md">${mdHtml(t.text)}</div>
-    ${gvChipHtml(t, i)}${turnResponse(t)}</div>`;
+    ${turnResponse(t)}</div>`;
 }
 
 /* Chat body. A real session that has no readable transcript gets an HONEST
@@ -2718,11 +2856,14 @@ function sessionBody(s){
     if (opened || all.length <= TURN_WINDOW) return all.map(turnBlock).join("");
     const hidden = all.length - TURN_WINDOW;
     /* The button says the real number, and says the reading will be slow, because on a chat
-       this long it genuinely is and a surprise freeze is worse than a warned one. */
+       this long it genuinely is and a surprise freeze is worse than a warned one.
+       Each drawn turn gets its ABSOLUTE index, so the pill's "turn N" is the
+       turn's real number and does not change when the older turns are
+       unfolded (review, 2026-09-23). */
     return `<button class="turnmore" type="button" data-act="fullturns" data-id="${esc(s.id)}">
         Show ${hidden} earlier turn${hidden === 1 ? "" : "s"}
         <span>this chat is long, so it may take a moment to draw</span>
-      </button>` + all.slice(-TURN_WINDOW).map(turnBlock).join("");
+      </button>` + all.slice(-TURN_WINDOW).map((t, j) => turnBlock(t, hidden + j)).join("");
   }
   if (s.real){
     if (s.loadState === "loading")

@@ -56,6 +56,11 @@ function wireDivider(){
    Scoped to .turn so nothing outside a chat turn is ever intercepted; dataset
    values are captured before any await, because the node a click landed on may
    be replaced while the handler is in flight. */
+/* the combined pill's fold length is PILL_FOLD_MS (05-chat.js, loaded first) */
+function pillReducedMotion(){
+  try { return !!(typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches); }
+  catch (e) { return false; }
+}
 function turnControlClick(e){
   const inTurn = e.target && e.target.closest && e.target.closest(".turn");
   if (!inTurn) return;
@@ -77,7 +82,26 @@ function turnControlClick(e){
     const uid = gov.dataset.govopen;
     if (!uid) return;
     S.govOpen = S.govOpen || {};
+    /* THE COMBINED PILL (2026-09-23) folds before it closes: the class plays on
+       the node that is on screen, then state changes and render() draws it
+       closed. A click during the fold is ignored; a render that lands mid-fold
+       only cuts the fold short (the timer still closes it). Reduced motion
+       skips the fold. The legacy chip has no .gv-pill and closes at once. */
+    const pill = (typeof gov.closest === "function") ? gov.closest(".gv-pill") : null;
+    /* the fold is STATE, not only a class on the node: patchTurn replaces the
+       node on every tool frame, and gvPillHtml redraws a pill that is folding
+       as folding (review, 2026-09-23). A click during the fold is ignored. */
+    S._pillClosing = S._pillClosing || {};
+    if (S._pillClosing[uid]) return;
+    if (pill && S.govOpen[uid] && !pillReducedMotion()){
+      S._pillClosing[uid] = Date.now();
+      pill.classList.add("gv-closing");
+      setTimeout(()=>{ delete S._pillClosing[uid]; S.govOpen[uid] = false; render(); }, PILL_FOLD_MS);
+      return;
+    }
     S.govOpen[uid] = !S.govOpen[uid];
+    /* one-render flag: the next draw of this pill unfolds it (gvPillHtml spends it) */
+    if (S.govOpen[uid] && pill) S._pillOpening = uid;
     render();
     return;
   }

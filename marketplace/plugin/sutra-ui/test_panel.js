@@ -2030,12 +2030,19 @@ test("28p. an unfenced governance run never reaches the rendered turn body", () 
     "a lone key-looking line inside prose was eaten by the strip: " + prose);
 });
 
-test("28n. turnResponse is pure — rendering a turn twice gives the same string", () => {
-  const t = { uid: "t9", streaming: true, response: "x",
+test("28n. turnResponse is stable — once its one-shot motion is spent, rebuilds give the same string", () => {
+  /* 2026-09-23: the combined pill fires one-shot motion (arrive, failure glow,
+     settle) exactly once, remembered in S._pillFx -- never in the turn -- and
+     its looping motion carries a clock phase in a style attribute. So: the
+     turn is never mutated, and after the first render every rebuild of the
+     same state is identical once that phase is set aside. */
+  const t = { uid: "t9n", streaming: true, response: "x",
               tools: ["Agent"], toolRuns: AG_FIX.toolRuns };
   const before = JSON.stringify(t);
-  const a = T.turnResponse(t), b = T.turnResponse(t);
-  assert.strictEqual(a, b, "a renderer with side effects would drift under the patch loop");
+  const norm = h => h.replace(/ style="--gv-sheen-d:[^"]*"/g, "");
+  T.turnResponse(t);
+  const a = norm(T.turnResponse(t)), b = norm(T.turnResponse(t));
+  assert.strictEqual(a, b, "a renderer that drifts under the patch loop");
   assert.strictEqual(JSON.stringify(t), before, "the renderer must not mutate the turn");
 });
 
@@ -2052,24 +2059,37 @@ const RUNS3 = [
   { id: "c", name: "Agent", summary: "Explore: audit pages", running: true, ok: null },
 ];
 
+/* 2026-09-23: the loader IS the combined pill now (gvPillHtml): the same
+   button opens governance and what ran, keyed on S.govOpen. These pins keep
+   the loader's promises -- a keyboard control, closed by default, one entry
+   per run coloured by outcome, bounded, honest when empty -- on the pill. */
+const pillTurn = (runs, open) => {
+  T.S.govOpen = open ? { t9: true } : {};
+  return T.turnResponse({ uid: "t9", streaming: true, response: "…",
+                          tools: runs.map(r => r.name), toolRuns: runs });
+};
+
 test("30a. the loader is a button, so it is reachable by keyboard", () => {
-  const html = logTurn(RUNS3, false);
-  assert.ok(/<button class="gv-thinkbtn" type="button" data-thinkopen="t9"/.test(html), html.slice(-400));
+  const html = pillTurn(RUNS3, false);
+  assert.ok(/<button class="gv-chip gv-pbtn is-live[^"]*" type="button" data-govopen="t9"/.test(html), html.slice(0, 400));
   assert.ok(/aria-expanded="false"/.test(html), "a collapsed control must say it is collapsed");
 });
 
-test("30b. the log is CLOSED by default — the turn looks as it does today", () => {
-  assert.ok(!/gv-log/.test(logTurn(RUNS3, false)), "an unopened log must not render");
+test("30b. the pill is CLOSED by default -- no panel, no cards", () => {
+  const html = pillTurn(RUNS3, false);
+  assert.ok(/aria-expanded="false"/.test(html), "closed must say closed");
+  assert.ok(!/gv-acc|gv-rt|toolcall tcard/.test(html), "an unopened pill must not render its panel");
 });
 
-test("30c. opened, it renders one line per run, coloured by outcome", () => {
-  const html = logTurn(RUNS3, true);
-  assert.ok(/<div class="gv-log">/.test(html));
-  assert.strictEqual((html.match(/class="gv-ln /g) || []).length, 3);
-  assert.ok(/class="gv-ln ok">Read · os\/engines\/LEDGER.md</.test(html));
-  assert.ok(/class="gv-ln bad">Bash · bats placement.bats</.test(html));
-  assert.ok(/class="gv-ln run">Agent · Explore: audit pages</.test(html));
+test("30c. opened, it renders one card per run, coloured by outcome, inside the Runtime block", () => {
+  const html = pillTurn(RUNS3, true);
+  assert.ok(/<div class="gv-rt">/.test(html), html.slice(0, 600));
+  assert.strictEqual((html.match(/class="toolcall tcard /g) || []).length, 3);
+  assert.ok(/class="toolcall tcard k-[a-z_]+ ok"/.test(html), "a finished run is ok");
+  assert.ok(/class="toolcall tcard k-[a-z_]+ bad"/.test(html), "a failed run is bad");
+  assert.ok(/class="toolcall tcard k-[a-z_]+ run"/.test(html), "the running run spins");
   assert.ok(/aria-expanded="true"/.test(html));
+  T.S.govOpen = {};
 });
 
 test("30d. data-runstrip still holds ONLY a text node — the ticker contract", () => {
@@ -2081,28 +2101,35 @@ test("30d. data-runstrip still holds ONLY a text node — the ticker contract", 
   assert.ok(!/[<>]/.test(m[1]), "the anchor must contain text and nothing else: " + m[1]);
 });
 
-test("30e. a settled turn has no loader and no log", () => {
-  T.S.thinkOpen = { t9: true };
+test("30e. a settled turn has no loader: its pill does not spin or shimmer", () => {
+  T.S.govOpen = {};
   const html = T.turnResponse({ uid: "t9", streaming: false, response: "done",
                                 tools: ["Read"], toolRuns: RUNS3 });
-  assert.ok(!/gv-thinkbtn|gv-log/.test(html),
-    "the log belongs to a turn in flight; a finished turn shows its answer");
+  assert.ok(/gv-pill/.test(html), "the settled pill is missing");
+  assert.ok(!/is-live|gv-run|data-runstrip|gv-thinkbtn/.test(html),
+    "the loader belongs to a turn in flight; a finished turn shows its answer");
 });
 
-test("30f. a hostile tool summary cannot open a tag in the log", () => {
-  const html = logTurn([{ id: "a", name: "Bash", running: true, ok: null,
-                          summary: '<img src=x onerror=1>' }], true);
-  assert.ok(!/<img/.test(html), "unescaped markup in the log: " + html);
-  assert.ok(/&lt;img/.test(html));
+test("30f. a hostile tool summary cannot open a tag, closed or open", () => {
+  /* summary feeds the live strip; command is what the open card shows */
+  const runs = [{ id: "a", name: "Bash", running: true, ok: null,
+                  summary: '<img src=x onerror=1>', command: '<img src=y onerror=2>' }];
+  const closed = pillTurn(runs, false);
+  assert.ok(!/<img/.test(closed) && /&lt;img/.test(closed), "the live strip must escape: " + closed.slice(0, 500));
+  const open = pillTurn(runs, true);
+  const rt = open.slice(open.indexOf('class="gv-rt"'));
+  assert.ok(rt.length > 20 && !/<img/.test(open) && /&lt;img/.test(rt), "the Runtime block must escape");
+  T.S.govOpen = {};
 });
 
-test("30g. the log is bounded in the DOM, not just in the projection", () => {
+test("30g. the open runtime list is bounded in the DOM, not just in the projection", () => {
   const many = Array.from({ length: 2000 }, (_, i) => ({
     id: "i" + i, name: "Bash", summary: "step " + i, running: false, ok: true }));
-  const html = logTurn(many, true);
-  assert.strictEqual((html.match(/class="gv-ln /g) || []).length, 61,
-    "60 lines plus the one saying what was dropped");
-  assert.ok(/1940 earlier steps not shown/.test(html));
+  const html = pillTurn(many, true);
+  assert.strictEqual((html.match(/class="toolcall tcard /g) || []).length, 13,
+    "12 cards plus the one saying what was dropped");
+  assert.ok(/1988 earlier tool calls/.test(html));
+  T.S.govOpen = {};
 });
 
 /* ── 29. focus survives a patch ──────────────────────────────────────────────
@@ -2671,27 +2698,27 @@ test("33f. the change view is hunk-aware, hides headers, escapes every line, and
    (Numbered 30h/30i in the fix plan; placed here after a cross-session merge
    renumbered the neighborhood.) */
 
-test("30h. an OPEN log with zero runs renders exactly one honest line", () => {
-  T.S.thinkOpen = { t9: true };
+test("30h. an OPEN live pill with zero runs says so in one honest line", () => {
+  T.S.govOpen = { t9: true };
   const html = T.turnResponse({ uid: "t9", streaming: true, response: "",
                                 tools: [], toolRuns: [] });
-  assert.ok(/<div class="gv-log">/.test(html), "the open log must render: " + html.slice(-300));
-  assert.strictEqual((html.match(/class="gv-ln /g) || []).length, 1);
+  assert.ok(/<div class="gv-rt">/.test(html), "the open pill must say what ran: " + html.slice(0, 400));
   assert.ok(/nothing has run yet in this turn/.test(html));
+  assert.ok(!/toolcall tcard/.test(html), "no card before the first run");
   /* the ticker contract survives the new branch */
   const m = html.match(/data-runstrip="t9"[^>]*>([^<]*)</);
   assert.ok(m && !/[<>]/.test(m[1]), "data-runstrip must stay text-only");
-  T.S.thinkOpen = {};
+  T.S.govOpen = {};
 });
 
 test("30i. the honest line yields to the first real step", () => {
-  T.S.thinkOpen = { t9: true };
+  T.S.govOpen = { t9: true };
   const html = T.turnResponse({ uid: "t9", streaming: true, response: "",
     tools: ["Read"], toolRuns: [{ id: "a", name: "Read", summary: "x.md", running: true, ok: null }] });
   assert.ok(!/nothing has run yet/.test(html), "the placeholder must disappear");
-  assert.strictEqual((html.match(/class="gv-ln /g) || []).length, 1, "one real line");
-  assert.ok(/class="gv-ln run">Read/.test(html));
-  T.S.thinkOpen = {};
+  assert.strictEqual((html.match(/class="toolcall tcard /g) || []).length, 1, "one real card");
+  assert.ok(/class="toolcall tcard k-[a-z_]+ run"/.test(html));
+  T.S.govOpen = {};
 });
 
 test("30j. a CLOSED log still renders nothing — the default is unchanged", () => {
@@ -2848,10 +2875,12 @@ test("42a. a turn waiting behind a running one does not claim to be thinking", (
   try {
     const run = T.turnResponse(running);
     const que = T.turnResponse(queued);
-    assert.ok(/gv-think/.test(run), "the RUNNING turn lost its thinking indicator");
+    /* 2026-09-23: the working indicator is the live pill (spinner + strip) */
+    assert.ok(/gv-pbtn is-live/.test(run) && /gv-pulse gv-run/.test(run),
+      "the RUNNING turn lost its working indicator");
     assert.ok(!/gv-waiting/.test(run), "the running turn was drawn as waiting");
-    assert.ok(!/gv-think/.test(que),
-      "the queued turn still shows the thinking pulse -- the two are indistinguishable");
+    assert.ok(!/is-live|gv-run|gv-think/.test(que),
+      "the queued turn still shows the working pulse -- the two are indistinguishable");
     assert.ok(/gv-waiting/.test(que), "the queued turn shows no waiting state");
     assert.ok(/Queued/.test(que), "the queued turn does not say it is queued");
   } finally { T.CLAUDE_SOCKETS.delete("sess-q"); }
@@ -7363,32 +7392,34 @@ const FOLD_RUNS = [
   { id: "c", name: "Read", summary: "x.md", running: false, ok: true, startedAt: 1, endedAt: 2 },
 ];
 
-test("56a. a settled turn shows ONE row, not a card per call", () => {
-  T.S.thinkOpen = {};
+/* 2026-09-23: the fold row and the loader are both the combined pill now
+   (test_chat_pill.js has the unit pins); these keep section 56's promises. */
+test("56a. a settled turn shows ONE pill, not a card per call", () => {
+  T.S.govOpen = {};
   const html = T.turnResponse({ uid: "t9", streaming: false, response: "done",
                                 tools: FOLD_RUNS.map(r => r.name), toolRuns: FOLD_RUNS });
-  assert.strictEqual((html.match(/class="tfhead /g) || []).length, 1, html);
-  assert.ok(/3 tool calls/.test(html) && /Read 2 · Command 1/.test(html), html);
-  assert.ok(/1 failed/.test(html), "the failure is on the row");
-  assert.ok(!/toolcall tcard/.test(html), "no card is drawn until the row is opened");
+  assert.strictEqual((html.match(/class="gv gv-pill/g) || []).length, 1, html);
+  assert.ok(/3 tool calls/.test(html), html);
+  assert.ok(/<span class="gv-pfail">1 failed<\/span>/.test(html), "the failure is on the pill");
+  assert.ok(!/toolcall tcard|tfhead/.test(html), "no card is drawn until the pill is opened");
 });
 
-test("56b. opened, the row shows the cards the turn always had", () => {
-  T.S.thinkOpen = { t9: true };
+test("56b. opened, the pill shows the cards the turn always had", () => {
+  T.S.govOpen = { t9: true };
   const html = T.turnResponse({ uid: "t9", streaming: false, response: "done",
                                 tools: FOLD_RUNS.map(r => r.name), toolRuns: FOLD_RUNS });
   assert.strictEqual((html.match(/class="toolcall tcard/g) || []).length, 3);
   assert.ok(/data-toolterm="b"/.test(html), "the shell card keeps its terminal control");
-  T.S.thinkOpen = {};
+  T.S.govOpen = {};
 });
 
-test("56c. while streaming nothing is drawn at the top -- the loader carries the runs", () => {
-  T.S.thinkOpen = {};
+test("56c. while streaming no card is drawn -- the live pill carries the runs", () => {
+  T.S.govOpen = {};
   const html = T.turnResponse({ uid: "t9", streaming: true, response: "…",
                                 tools: FOLD_RUNS.map(r => r.name), toolRuns: FOLD_RUNS });
-  assert.ok(!/tfhead|toolcall tcard/.test(html), "cards at the top of a live turn: " + html);
-  assert.ok(/gv-thinkbtn/.test(html));
-  assert.ok(/<span class="gv-tbad">1 failed<\/span>/.test(html), "the failure is on the loader");
+  assert.ok(!/tfhead|toolcall tcard/.test(html), "cards in a closed live turn: " + html);
+  assert.ok(/gv-pbtn is-live/.test(html));
+  assert.ok(/<span class="gv-pfail">1 failed<\/span>/.test(html), "the failure is on the live pill");
 });
 
 test("56d. the loader carries the measured strip and no fixed word", () => {
@@ -7400,13 +7431,14 @@ test("56d. the loader carries the measured strip and no fixed word", () => {
   assert.ok(!/[<>]/.test(m[1]), "text only inside the strip");
 });
 
-test("56e. a replayed transcript turn folds its calls and can open them", () => {
-  T.S.thinkOpen = {};
+test("56e. a replayed transcript turn folds its calls into the pill and can open them", () => {
+  T.S.govOpen = {};
   const t = { transcript: true, text: "q", response: "a",
               calls: [{ id: "c1", name: "Read", input: "a.md" }, { id: "c2", name: "Bash", input: "ls" }] };
   const html = T.turnBlock(t, 0);
   assert.ok(t.uid, "the transcript turn got a uid");
-  assert.ok(new RegExp('data-toolfold="' + t.uid + '"').test(html), html);
-  assert.ok(!/ disabled/.test(html.match(/<button class="tfhead[^>]*>/)[0]), "the row is a live control");
+  assert.ok(new RegExp('data-govopen="' + t.uid + '"').test(html), html);
+  assert.ok(!/ disabled/.test(html.match(/<button class="gv-chip gv-pbtn[^>]*>/)[0]), "the pill is a live control");
   assert.ok(/2 tool calls/.test(html));
+  assert.ok(!/gv-in-l|gv-flash|gv-settle/.test(html), "a replayed transcript plays no motion");
 });

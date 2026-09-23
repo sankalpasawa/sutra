@@ -229,18 +229,22 @@ test("3d. outside a turn the click is not intercepted", () => {
 
 /* ══ 4. the turn renderer and the stylesheet carry it ═════════════════════ */
 
-test("4a. turnResponse folds a settled turn and draws nothing at the top while streaming", () => {
+/* 2026-09-23: the fold row and the loader became ONE combined pill
+   (gvPillHtml, pinned in test_chat_pill.js). The condense promises hold on it:
+   one row per turn, no cards until opened, the measured strip, failures said. */
+test("4a. turnResponse draws one pill at the top, never a card list or a fold row", () => {
   const src = grab(chat, "turnResponse");
-  assert(/t\.streaming\s*\?\s*""/.test(src), "streaming must draw no tool block at the top");
-  assert(/toolFoldHtml\(runs, t\.uid, \{ live: true \}\)/.test(src), "live runs fold");
-  assert(/toolFoldHtml\(t\.calls, t\.uid\)/.test(src), "replayed calls fold");
+  assert(/gvPillParts\(t\)/.test(src) && /gvPillHtml\(t, p, m\)/.test(src), "the pill is the top of the block");
+  assert(!/toolFoldHtml\(|toolCallsHtml\(/.test(src), "no tool list at the top of a turn");
+  const pill = grab(chat, "gvPillHtml");
+  assert(/\(open \?/.test(pill) && /gvRuntimeHtml\(t, p, opening\)/.test(pill), "cards only when the pill is open");
 });
 
 test("4b. the loader has no fixed word beside the measured strip", () => {
-  const src = grab(chat, "turnResponse");
+  const src = grab(chat, "gvPillHtml");
   assert(!/gv-tlabel">thinking</.test(src), "the static 'thinking' label is back");
   assert(/class="gv-tlabel" data-runstrip=/.test(src), "the strip carries the shimmer");
-  assert(/gv-tbad">\$\{failed\} failed/.test(src), "a failure mid-turn is stated on the loader");
+  assert(/gv-pfail">\$\{p\.failed\} failed/.test(src), "a failure mid-turn is stated on the pill");
 });
 
 test("4c. the stylesheet styles the fold in the card palette", () => {

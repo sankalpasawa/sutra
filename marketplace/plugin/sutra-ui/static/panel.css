@@ -605,9 +605,13 @@
      left, plain ink, a small YOU caption in the mono caption style the
      goal-workspace chat already uses (.gwwho), and a hairline rail so a long
      transcript still scans. No new tokens. */
-  .turn .u{padding:0 0 0 10px;border-left:2px solid var(--line);font-size:12px;color:var(--ink)}
+  /* on the right (founder 2026-09-23: "a little bit of intention of left and
+     right"): still plain, no bubble; the rail sits on the side you speak from
+     and the caption lines up with it. The AI side (.a) stays on the left. */
+  .turn .u{margin-left:auto;width:fit-content;max-width:78%;padding:0 10px 0 0;
+           border-right:2px solid var(--line);font-size:12px;color:var(--ink)}
   .turn .u::before{content:"You";display:block;font:600 9px/1.4 var(--mono);letter-spacing:.08em;
-                   text-transform:uppercase;color:var(--faint);margin-bottom:3px}
+                   text-transform:uppercase;color:var(--faint);margin-bottom:3px;text-align:right}
   .turn .a{margin-top:9px;font-size:12px;color:var(--muted)}
   .turn .fchip{display:inline-flex;align-items:center;gap:5px;font:600 9.5px/1 var(--mono);
                padding:4px 7px;border-radius:5px;border:1px solid var(--acc);background:var(--acc-bg);
@@ -1847,6 +1851,120 @@
   .tfold.open .tfchev{transform:rotate(180deg)}
   .tfold.open>.toolcalls{margin:4px 0 0 3px;padding-left:10px;border-left:2px solid var(--line)}
   @media (prefers-reduced-motion: reduce){ .tfhead.run .tfdot{animation:none} }
+
+  /* ══ the combined pill (founder 2026-09-23) ══════════════════════════════
+     One round pill per turn carries governance + runtime (05-chat.js
+     gvPillHtml): live it is the loader, settled it is the summary, open it is
+     the governance rows over one Runtime block. Depth: a top-lit gradient and a
+     small shadow; it lifts on hover. Motion that cannot make the chat buggy:
+     every one-shot class below (gv-in-l, gv-flash, gv-settle, gv-opening,
+     gv-closing, gv-enter) is emitted by the renderer only in the render where
+     its event happens (gvPillMotion / a one-render flag), and every loop takes
+     its phase from --gv-*-d, a negative delay read off the clock, so a rebuild
+     by patchTurn() or render() never replays or restarts anything.
+     prefers-reduced-motion turns all of it off (end of this block). */
+  :root,[data-theme="dark"]{
+    --pill-bg:linear-gradient(180deg,color-mix(in srgb,var(--ink) 7%,var(--card)),var(--card));
+    --pill-lift:0 1px 2px rgba(0,0,0,.35),0 6px 14px -8px rgba(0,0,0,.6);
+    --pill-lift-h:0 2px 4px rgba(0,0,0,.35),0 12px 24px -10px rgba(0,0,0,.7)}
+  @media (prefers-color-scheme:light){:root:not([data-theme]){
+    --pill-bg:linear-gradient(180deg,var(--card),color-mix(in srgb,var(--ink) 4%,var(--card)));
+    --pill-lift:0 1px 2px rgba(28,25,23,.07),0 6px 14px -8px rgba(28,25,23,.2);
+    --pill-lift-h:0 2px 4px rgba(28,25,23,.08),0 12px 24px -10px rgba(28,25,23,.28)}}
+  [data-theme="light"]{
+    --pill-bg:linear-gradient(180deg,var(--card),color-mix(in srgb,var(--ink) 4%,var(--card)));
+    --pill-lift:0 1px 2px rgba(28,25,23,.07),0 6px 14px -8px rgba(28,25,23,.2);
+    --pill-lift-h:0 2px 4px rgba(28,25,23,.08),0 12px 24px -10px rgba(28,25,23,.28)}
+
+  .gv-pill{margin:0 0 4px}
+  .gv-pill .gv-pbtn{border-radius:14px;background:var(--pill-bg);box-shadow:var(--pill-lift);max-width:100%;
+    transition:transform .15s var(--ease),box-shadow .18s ease,color .2s,border-radius .12s var(--ease)}
+  .gv-pill .gv-pbtn:hover{border-color:var(--line);color:var(--ink);transform:translateY(-1px);
+    box-shadow:var(--pill-lift-h),inset 0 0 0 1px color-mix(in srgb,var(--acc) 45%,transparent)}
+  .gv-pill .gv-pbtn:active{transform:translateY(0) scale(.985)}
+  .gv-pill.gv-open .gv-pbtn{border-radius:14px 14px 0 0;border-bottom-color:transparent;box-shadow:none;transform:none}
+  .gv-pill.gv-closing .gv-pbtn{border-radius:14px;border-bottom-color:var(--line);transition-delay:.18s}
+  .gv-pill .gv-panel{background:var(--card);box-shadow:var(--pill-lift);max-width:720px}
+  .gv-pfail{color:var(--block);font-weight:600}
+  .gv-pwarn{color:var(--warn)}
+  .gv-pill .gv-pulse.gv-bad{background:var(--block)}
+  .gv-pill .gv-pulse.gv-wait{background:transparent;border:1.5px solid var(--faint)}
+  /* live: the pill is the loader; its loops keep their phase across rebuilds */
+  @keyframes gvSheen{from{background-position:180% 0,0 0}to{background-position:-80% 0,0 0}}
+  .gv-pill .gv-pbtn.is-live{background-image:linear-gradient(100deg,transparent 30%,
+      color-mix(in srgb,var(--acc) 16%,transparent) 50%,transparent 70%),var(--pill-bg);
+    background-size:250% 100%,100% 100%;animation:gvSheen 2.4s linear infinite;animation-delay:var(--gv-sheen-d,0s)}
+  .gv-pill .gv-pulse.gv-run{background:none;border:1.5px solid var(--acc);border-top-color:transparent;
+    width:9px;height:9px;animation:sutraSpin .7s linear infinite;animation-delay:var(--gv-spin-d,0s)}
+  .gv-pill .gv-tlabel{animation-delay:var(--gv-shim-d,0s)}
+  /* spinners inside the open panel take the same phase (the vars sit on the
+     .gv-pill wrapper), and a live pill rebuilt under a resting cursor must not
+     replay its hover transition on every tool frame */
+  .gv-pill .tcard.run .tcdot{animation-delay:var(--gv-spin-d,0s)}
+  .gv-pill .gv-pbtn.is-live{transition:none}
+  /* one-shot: a failure glows once, the spinner settles into a still dot */
+  @keyframes gvFlash{from{box-shadow:var(--pill-lift),0 0 0 0 color-mix(in srgb,var(--block) 60%,transparent)}
+                     to{box-shadow:var(--pill-lift),0 0 0 8px transparent}}
+  .gv-pill .gv-pbtn.gv-flash{animation:gvFlash .9s ease-out 1}
+  .gv-pill .gv-pbtn.is-live.gv-flash{animation:gvFlash .9s ease-out 1,gvSheen 2.4s linear infinite;
+    animation-delay:0s,var(--gv-sheen-d,0s)}
+  @keyframes gvSettle{0%{transform:scale(.3);opacity:.4}70%{transform:scale(1.25)}100%{transform:scale(1);opacity:1}}
+  .gv-pill .gv-pulse.gv-settle{animation:gvSettle .38s var(--ease) both}
+  /* one-shot: the sides arrive once -- you from the right, the AI from the left */
+  @keyframes gvInL{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:none}}
+  @keyframes gvInR{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+  .turn .a.gv-in-l{animation:gvInL .34s var(--ease) both}
+  .turn.arriving .u{animation:gvInR .34s var(--ease) both}
+  /* one-shot: open unfolds by height, rows rise in turn; close folds first */
+  .gv-pill .gv-acc{display:grid;grid-template-rows:1fr}
+  .gv-pill .gv-accin{min-height:0}
+  .gv-pill.gv-opening .gv-accin,.gv-pill.gv-closing .gv-accin{overflow:hidden}
+  @keyframes gvUnfold{from{grid-template-rows:0fr}to{grid-template-rows:1fr}}
+  @keyframes gvFold{from{grid-template-rows:1fr}to{grid-template-rows:0fr}}
+  @keyframes gvDrop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+  @keyframes gvLift{to{opacity:0;transform:translateY(-4px)}}
+  @keyframes gvRowIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  .gv-pill.gv-opening .gv-acc{animation:gvUnfold .26s var(--ease) both}
+  .gv-pill.gv-opening .gv-panel{animation:gvDrop .26s var(--ease) both}
+  .gv-pill.gv-closing .gv-acc{animation:gvFold .22s var(--ease) both;animation-delay:var(--gv-fold-d,0s)}
+  .gv-pill.gv-closing .gv-panel{animation:gvLift .22s ease both;animation-delay:var(--gv-fold-d,0s)}
+  .gv-pill.gv-opening .gv-panel>*,.gv-pill.gv-opening .gv-rt .tcard{animation:gvRowIn .3s var(--ease) both}
+  .gv-pill.gv-opening .gv-panel>:nth-child(2){animation-delay:.03s}
+  .gv-pill.gv-opening .gv-panel>:nth-child(3){animation-delay:.06s}
+  .gv-pill.gv-opening .gv-panel>:nth-child(4){animation-delay:.09s}
+  .gv-pill.gv-opening .gv-panel>:nth-child(n+5){animation-delay:.12s}
+  .gv-pill.gv-opening .gv-rt .tcard:nth-child(2){animation-delay:.15s}
+  .gv-pill.gv-opening .gv-rt .tcard:nth-child(3){animation-delay:.18s}
+  .gv-pill.gv-opening .gv-rt .tcard:nth-child(4){animation-delay:.21s}
+  .gv-pill.gv-opening .gv-rt .tcard:nth-child(n+5){animation-delay:.24s}
+  .gv-pill .tcard.gv-enter{animation:gvRowIn .3s var(--ease) both}
+  /* the Runtime block: everything that ran, in one box under the governance rows */
+  .gv-rt{padding:10px 12px 9px;border:1px solid var(--line-soft);border-radius:8px;min-width:0;
+    background:linear-gradient(180deg,var(--inset),color-mix(in srgb,var(--inset) 80%,var(--bg)));
+    display:flex;flex-direction:column;gap:8px}
+  .gv-rthead{display:flex;align-items:baseline;gap:10px}
+  .gv-rtsum{font:10.5px/1.4 var(--mono);color:var(--faint)}
+  .gv-steps{display:flex;flex-wrap:wrap;gap:3px 12px}
+  .gv-step{white-space:nowrap;font:10.5px/1.6 var(--mono);color:var(--muted)}
+  .gv-sd{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;vertical-align:1px;background:var(--faint)}
+  .gv-sd.ok{background:var(--ok)}
+  .gv-sd.b{background:var(--block)}
+  .gv-sd.unk{background:var(--warn)}
+  .gv-sd.n{background:none;border:1px solid var(--faint)}
+  .gv-pill .gv-sd.run{background:none;border:1.5px solid var(--acc);border-top-color:transparent;
+    animation:sutraSpin .7s linear infinite;animation-delay:var(--gv-spin-d,0s)}
+  .gv-rt .toolcalls{margin-top:0;padding-top:7px;border-top:1px solid var(--line-soft)}
+  .gv-rt .gv-agents{margin-top:0}
+  /* the AI side leans left: its prose stops short of the far edge */
+  .turn .a .md[data-resp]{max-width:94%}
+  @media (prefers-reduced-motion: reduce){
+    .gv-pill .gv-pbtn,.gv-pill .gv-pbtn:hover{transition:none;transform:none}
+    .gv-pill .gv-pbtn.is-live,.gv-pill .gv-pbtn.gv-flash,.gv-pill .gv-pbtn.is-live.gv-flash,
+    .gv-pill .gv-pulse.gv-run,.gv-pill .gv-pulse.gv-settle,
+    .gv-pill.gv-opening .gv-acc,.gv-pill.gv-closing .gv-acc,.gv-pill.gv-opening .gv-panel,.gv-pill.gv-closing .gv-panel,
+    .gv-pill.gv-opening .gv-panel>*,.gv-pill.gv-opening .gv-rt .tcard,.gv-pill .tcard.gv-enter,
+    .turn .a.gv-in-l,.turn.arriving .u,.gv-pill .gv-sd.run{animation:none}
+  }
 
   /* ── Connectors (External World projection, ADR-023) ────────────────────
      Scoped to conn* selectors so nothing here can reach another screen. The
