@@ -708,6 +708,74 @@ test("panel.css carries a scoped .o2 block with tokens only", () => {
   assert.ok(/data-o2q/.test(fs.readFileSync(path.join(JS, "06-render.js"), "utf8")), "the search input keeps focus across a re-render");
 });
 
+/* ── the Library, top right (2.299.0, founder) ───────────────────────────── */
+
+test("the Library button sits in the strip's action row, carrying the word", () => {
+  const c = fresh();
+  const html = c.o2LibBtnHtml();
+  assert.ok(/data-o2act="lib"/.test(html), "it is an action of this screen");
+  assert.ok(/aria-pressed="false"/.test(html), "off by default");
+  assert.ok(/<span>Library<\/span>/.test(html),
+    "the WORD rides with the mark: alone in that corner it reads as a tool for the selected department");
+  assert.ok(/<svg/.test(html), "and the mark is there too");
+});
+
+test("pressed, the button reads as pressed and offers the way back", () => {
+  const c = fresh();
+  c.o2S().lib = true;
+  const html = c.o2LibBtnHtml();
+  assert.ok(/aria-pressed="true"/.test(html));
+  assert.ok(/class="o2libbtn on"/.test(html));
+  assert.ok(/Back to the departments/.test(html), "the title says how to return");
+});
+
+test("the panel's second mode lists the seven shelves in two groups", () => {
+  const c = fresh();
+  const html = c.o2LibPanelHtml();
+  for (const label of ["Identity", "Adaptation", "Priority", "Coordination", "Audit",
+                       "Engines", "Work atom"])
+    assert.ok(new RegExp(">" + label + "<").test(html), label + " is a row");
+  assert.ok(/o2libgrp">Functions</.test(html) && /o2libgrp">Parts</.test(html),
+    "two groups, as in the rail");
+  assert.strictEqual((html.match(/class="o2librow"|class="o2librow /g) || []).length, 7);
+});
+
+test("a shelf row opens the screen the rail already opens, never a second one", () => {
+  const c = fresh();
+  const html = c.o2LibPanelHtml();
+  for (const screen of ["lib-identity", "lib-engines", "lib-work-atom"])
+    assert.ok(html.indexOf('data-screen="' + screen + '"') !== -1,
+      screen + " is opened by its own id");
+  assert.strictEqual(html.indexOf("data-o2ref"), -1,
+    "a shelf is not a domain: it never carries a tree ref");
+});
+
+test("the open shelf is marked in the panel", () => {
+  const c = fresh();
+  c.S.screen = "lib-engines";
+  const html = c.o2LibPanelHtml();
+  assert.ok(/data-screen="lib-engines"[^>]*aria-selected="true"/.test(html));
+  assert.ok(/data-screen="lib-identity"[^>]*aria-selected="false"/.test(html));
+});
+
+test("the toggle changes nothing about the tree, so pressing twice returns", () => {
+  const c = fresh();
+  const before = c.o2TreeHtml();
+  c.o2S().lib = true;
+  c.o2S().lib = false;
+  assert.strictEqual(c.o2TreeHtml(), before, "byte for byte, the same tree");
+});
+
+test("panel.css carries the button and the panel, in tokens only", () => {
+  const start = css.indexOf("THE LIBRARY, TOP RIGHT");
+  assert.ok(start !== -1, "the block is there");
+  const block = css.slice(start);
+  assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(block.replace(/var\(--[a-z-]+\)/g, "")),
+    "no literal colours");
+  assert.ok(/\.o2libbtn\.on\{/.test(block), "a pressed state");
+  assert.ok(/\.o2librow\[aria-selected="true"\]/.test(block), "a selected row");
+});
+
 Promise.all(pending).then(() => {
   console.log(`\n${ran - failed}/${ran} passed`);
   process.exit(failed ? 1 : 0);

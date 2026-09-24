@@ -5353,3 +5353,32 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
   color:var(--faint);margin-right:3px}
 .skcatcell{white-space:nowrap}
 .skmoment{font:10px/1.4 var(--mono);color:var(--faint);margin-top:3px}
+
+/* ═══ THE LIBRARY, TOP RIGHT OF THE ORG SCREEN (2.299.0) ═════════════════════
+   Founder, 2026-09-24: "you can keep it on the top right corner." The button
+   sits at the end of the strip's action row and carries the word beside the
+   mark, because in that corner an icon alone reads as a tool for the selected
+   department. Layout only; the panel's second mode reuses the tree's own row
+   metrics so the swap does not move anything. */
+.o2libbtn{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px;
+  border:1px solid transparent;border-radius:7px;background:none;color:var(--faint);
+  font:600 11.5px/1 var(--sans);cursor:pointer}
+.o2libbtn:hover{color:var(--ink);background:var(--acc-bg)}
+.o2libbtn.on{color:var(--acc);border-color:var(--acc);background:var(--acc-bg)}
+.o2libbtn svg{width:15px;height:15px;flex:none}
+.o2libbtn:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+/* the panel in its other mode */
+.o2libpanel{padding:2px 0 8px}
+.o2libhead{display:flex;align-items:baseline;gap:7px;padding:4px 12px 8px}
+.o2libhead b{font:600 11.5px/1.3 var(--sans);color:var(--ink)}
+.o2libhead span{font:10px/1.3 var(--mono);color:var(--faint);margin-left:auto}
+.o2libgrp{margin:8px 0 2px;padding:0 12px;font:600 9px/1.4 var(--mono);
+  letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.o2librow{display:flex;align-items:center;gap:8px;width:calc(100% - 12px);margin:0 6px;
+  padding:6px 8px;border:0;border-radius:6px;background:none;cursor:pointer;
+  font:12.5px/1.45 var(--sans);color:var(--ink);text-align:left}
+.o2librow:hover{background:var(--acc-bg)}
+.o2librow[aria-selected="true"]{background:var(--acc-bg);color:var(--acc)}
+.o2librow svg{width:15px;height:15px;flex:none;color:var(--faint)}
+.o2librow[aria-selected="true"] svg{color:var(--acc)}
+.o2librow:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}

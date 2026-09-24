@@ -42,7 +42,13 @@ function o2S(){
                       hits:null, filter:{ open:false, kind:[], state:[], refs:null, busy:false },
                       sheet:null, flash:null, health:{}, edHandle:null, recent:{}, appOk:{}, focusRef:null,
                       expanded:null, more:{}, loading:false, error:null, loaded:false,
-                      dept:{}, deptErr:{}, apps:{}, menu:false, panel:null };
+                      dept:{}, deptErr:{}, apps:{}, menu:false, panel:null,
+                      /* 2.299.0 (founder 2026-09-24: "you can keep it on the top
+                         right corner"): the left panel has a second mode. Off it
+                         lists the company's departments; on it lists the seven
+                         Library shelves -- the kinds a department is built from.
+                         A view, not a record, so it lives in memory only. */
+                      lib:false };
   return S.o2;
 }
 function o2Icon(k){ return (typeof ICON !== "undefined" && ICON && ICON[k]) ? ICON[k] : ""; }
@@ -640,6 +646,48 @@ function o2MenuHtml(n, d){
   acts += item("create", "New sub-department…");
   return `<div class="smenu o2menu" role="menu">${acts}<div class="o2msep"></div>${item("changes", "Changes")}${item("approvals", "Approvals")}${item("health", "Health")}</div>`;
 }
+/* ── THE LIBRARY, TOP RIGHT (2.299.0) ───────────────────────────────────────
+   Founder, 2026-09-24, choosing from six drawn options: "you can keep it on
+   the top right corner." It sits at the end of the strip's own action row --
+   the top right of this screen -- and it carries the WORD beside the mark.
+   That word is not decoration: in that corner, beside the selected
+   department's name, a lone book icon reads as a tool that acts on THAT
+   department, which is the one misread the options page named.
+
+   Pressed, the left panel stops listing the company's departments and lists
+   the seven shelves instead. Pressed again, the departments come back and the
+   tree reopens where it was, because nothing about the tree was touched. */
+const O2_LIB_SHELVES = [
+  ["Functions", [["lib-identity", "Identity"], ["lib-adaptation", "Adaptation"],
+                 ["lib-priority", "Priority"], ["lib-coordination", "Coordination"],
+                 ["lib-audit", "Audit"]]],
+  ["Parts", [["lib-engines", "Engines"], ["lib-work-atom", "Work atom"]]],
+];
+const O2_LIB_MARK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M11 4h3.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11z"/><path d="M18.4 6.2l2.1 12"/></svg>`;
+
+function o2LibBtnHtml(){
+  const on = !!o2S().lib;
+  return `<button type="button" class="o2libbtn${on ? " on" : ""}" data-o2act="lib"
+    aria-pressed="${on}" title="${on ? "Back to the departments"
+      : "The Library: the kinds a department is built from"}">${O2_LIB_MARK}<span>Library</span></button>`;
+}
+
+/* The panel in its other mode. Same width, same row height, same selection
+   behaviour as the tree: only the content differs, so the swap reads as one
+   place showing two things. A row opens the shelf screen the rail's Org
+   accordion already opens -- one screen, reached two ways, never two. */
+function o2LibPanelHtml(){
+  const cur = (typeof S !== "undefined" && S.screen) ? String(S.screen) : "";
+  const rows = O2_LIB_SHELVES.map(([group, shelves]) => `
+    <div class="o2libgrp">${o2Esc(group)}</div>` + shelves.map(([screen, label]) => `
+    <button type="button" class="o2librow" data-screen="${o2Esc(screen)}"
+      aria-selected="${cur === screen}">${O2_LIB_MARK}<span>${o2Esc(label)}</span></button>`).join("")).join("");
+  return `<div class="o2libpanel">
+    <div class="o2libhead"><b>Library</b><span>the kinds, not the departments</span></div>
+    ${rows}</div>`;
+}
+
 function o2StripHtml(n, d, dept){
   const st = o2S();
   const parent = n.parent_ref ? d.byRef.get(n.parent_ref) : null;
@@ -648,6 +696,7 @@ function o2StripHtml(n, d, dept){
   const pill = retired ? `<span class="pill p-mut">retired</span>${succ ? `<span class="o2parent">merged into ${o2Esc(succ.name || "")}</span>` : ""}` : "";
   return `<div class="o2strip"><h2>${o2Esc(n.name)}</h2>${parent ? `<span class="o2parent">${o2Esc(parent.name)}</span>` : ""}${pill}
     <span class="o2acts">
+      ${o2LibBtnHtml()}
       <button type="button" class="o2ib" data-o2act="chart" aria-label="Chart" aria-pressed="${st.view === "chart"}">${o2Svg("dept")}</button>
       <button type="button" class="o2ib" data-o2act="pencil" aria-label="Edit" aria-haspopup="menu" aria-expanded="${!!st.menu}">${o2Svg("edit")}</button>
       ${st.menu ? o2MenuHtml(n, d) : ""}
@@ -914,7 +963,12 @@ function o2ScreenHtml(){
     ? `<div class="o2line warn"><span>Sutra is not reachable</span><button type="button" class="btn" data-o2act="retry">Retry</button></div>` : "";
   if (st.stale && !st.error) banner += `<div class="o2line acc"><span>The registry changed</span><button type="button" class="btn" data-o2act="retry">Refresh</button></div>`;
   if (st.flash) banner += `<div class="o2line acc"><span>${o2Esc(st.flash)}</span><button type="button" class="o2ib o2x" data-o2act="flashclose" aria-label="Dismiss">${O2_X}</button></div>`;
-  const left = `<div class="o2left">${o2SearchHtml()}${(st.loading && !d.root) ? o2SkelTree() : o2TreeHtml()}</div>`;
+  /* the panel's two modes (2.299.0). The search stays in both: in the Library
+     it is the same box, and the shelves are few enough that it simply does
+     nothing yet -- better than a control that appears and disappears. */
+  const left = `<div class="o2left">${o2SearchHtml()}${
+    st.lib ? o2LibPanelHtml()
+           : ((st.loading && !d.root) ? o2SkelTree() : o2TreeHtml())}</div>`;
   let content;
   if (!d.root && !st.loading){
     content = `<div class="o2strip"><h2>Sutra</h2></div><div class="o2body">${o2ViewerShell("Sutra", o2Svg("dept"), `<div class="o2vb"><div class="o2empty">${o2Svg("dept")}<h1>No departments yet</h1></div></div>`)}</div>`;
@@ -967,6 +1021,9 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (act === "retrydept"){ if (st.sel){ delete st.deptErr[st.sel]; o2Render(); o2LoadDept(st.sel, true); } return; }
     if (act === "chart"){ o2UnmountEditor(); st.view = st.view === "chart" ? "charter" : "chart"; st.doc = null; st.app = null; st.other = null; st.page = null; st.sheet = null; st.menu = false; o2Render(); return; }
     if (act === "pencil"){ st.menu = !st.menu; o2Render(); return; }
+    /* 2.299.0: the top-right Library toggle. Nothing about the tree changes,
+       so pressing it twice returns to exactly what was there. */
+    if (act === "lib"){ st.lib = !st.lib; st.menu = false; o2Render(); return; }
     if (act === "charter"){ o2CloseViewer(); return; }
     if (act === "close"){ o2CloseViewer(); return; }
     if (act === "clearlq"){ st.lq = ""; o2Render(); return; }
