@@ -8087,7 +8087,28 @@ if (typeof document !== "undefined" && document.addEventListener){
        byte-identical to what it always was. */
     const sel = (typeof shadowSelectedTask === "function")
       ? shadowSelectedTask() : null;
-    if (sel && sel.id && !S_.shadowNewOpen){
+    /* ── A CONVERSATION ROW IS NOT A TASK, AND ITS ID IS NOT A MISSION ID
+       (founder, 2026-09-24) ─────────────────────────────────────────────
+       THE BUG. shadowSelectedTask returns the CONVERSATION row whenever
+       shadowTaskSel is SH_NO_TASK and shadowChat names it (line 568) --
+       which is exactly the state shadowNewTalk leaves behind when Shadow
+       read no work in the opening line. This guard then tested only
+       `sel.id`, so the composer posted to
+       /api/shadow/tasks/<shc-...>/chat, a MISSION route, with a
+       CONVERSATION id. The server has no such mission and answers 404 "no
+       task shc-...", so the first thing said after a greeting failed and
+       every later one failed the same way.
+
+       shadowIsConvRow is the existing discriminator and the same one every
+       other mission-only control already checks before drawing. Adding it
+       here cannot move a task: it is true only for rows shadowConvRows
+       built, and those carry no mission. A selected MISSION takes this
+       branch exactly as before, byte for byte.
+
+       Falling through is not a new path either -- it is the briefing
+       composer's own path, sendToShadow, which is where an unbound
+       conversation belonged all along. */
+    if (sel && sel.id && !shadowIsConvRow(sel) && !S_.shadowNewOpen){
       /* ONE DOOR TO SHADOW (founder, 2026-09-17). This box used to deposit a
          line on the record through shadowSayToShadow and nothing answered;
          a second, floating panel was the only surface that talked back. The
@@ -8109,7 +8130,76 @@ if (typeof document !== "undefined" && document.addEventListener){
       return;
     }
     shadowComposeSet(el, "");
-    sendToShadow(text.trim()).then(() => {
+    /* ── THE CONTINUATION IS KEPT THE WAY THE OPENING LINE IS KEPT ───────
+       (founder, 2026-09-24.) sendToShadow writes to S.shadowThread, which
+       is memory: the opening exchange survives a reload because
+       shadowNewTalk also calls shadowConvSay, and without the same call
+       here everything said after it would be gone on the next load while
+       the greeting above it remained. Same two writers, same endpoint, no
+       second store.
+
+       ONLY WHEN THE SCOPE IS AN UNBOUND CONVERSATION. convId is null for
+       the general thread and for every task, so this adds no write to any
+       path that had one. Fire-and-forget and chained, like every other
+       conversation write: the founder's line must land before the reply,
+       and a record that cannot be saved must never stop them talking.
+
+       IF IT TURNS OUT TO BE WORK, the conversation binds to the mission
+       Shadow opened -- the existing shadowConvBind, for the existing
+       reason: a bound conversation is drawn as its task, and skipping the
+       bind would leave the rail showing the conversation AND the new task
+       for the same submission. Nothing here decides whether it is work;
+       the server already did, and doc.mission is that answer. */
+    const convId = (sel && shadowIsConvRow(sel)) ? sel.id : null;
+    const line = text.trim();
+    sendToShadow(line).then((doc) => {
+      if (convId && typeof shadowConvSay === "function"){
+        const said = shadowConvSay(convId, null, "founder", line);
+        const after = () => {
+          if (doc && doc.reply)
+            shadowConvSay(convId, null, "shadow", String(doc.reply));
+          if (doc && doc.mission && doc.mission.id
+              && typeof shadowConvBind === "function")
+            shadowConvBind(convId, null, doc.mission.id);
+        };
+        if (said && typeof said.then === "function") said.then(after);
+        else after();
+      }
+      /* ── A TASK FOUND MID-CONVERSATION STARTS LIKE ANY OTHER (founder,
+         2026-09-24) ──────────────────────────────────────────────────────
+         THE ASYMMETRY. The server starts what it creates, but only from
+         intake (app.py: `if intake:`), because a mission PROPOSED inside an
+         ordinary chat is a proposal and keeps its brief. That boundary is
+         right and is not touched here -- this path is not an ordinary chat.
+         It is the founder's own Shadow conversation, which they opened by
+         asking for something, and which said "Give me the latest news about
+         MotoGP" in the same breath as "Hi". Sending `intake` on the shared
+         /api/shadow/chat call instead would have started proposals in every
+         other chat that route serves, which is the thing the boundary
+         exists to stop.
+
+         SO THE START IS TAKEN HERE, by the same call shadowNewTalk already
+         makes for exactly this reason (line 5699) -- shadowMissionAct
+         "start_now", the one action every Start control in the app uses. No
+         new mechanism, no second start path, and nothing about the first-
+         message flow moved: that one still starts on the server and reaches
+         this line already running.
+
+         SAFE TO DOUBLE-START, and the reason shadowNewTalk keeps its own
+         copy: start_mission_async refuses a mission that is already running
+         and holds a _STARTING guard, so a race with the server's start is a
+         no-op rather than a second delegate. The state test below skips the
+         call outright whenever the mission already left brief_confirm. */
+      const mm = doc && doc.mission;
+      if (mm && mm.id && (!mm.state || mm.state === "brief_confirm")
+          && typeof shadowMissionAct === "function"){
+        Promise.resolve(shadowMissionAct(mm.id, "start_now"))
+          .catch(() => null)
+          .then(() => {
+            if (typeof loadShadowHome === "function") loadShadowHome(true);
+            if (typeof scheduleRender === "function") scheduleRender();
+          });
+      }
       if (typeof loadShadowHome === "function") loadShadowHome(true);
       if (typeof scheduleRender === "function") scheduleRender();
     });
