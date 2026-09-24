@@ -910,6 +910,24 @@
   .rtoggle button{flex:1;background:none;border:1px solid var(--line);border-radius:5px;
     padding:4px 6px;font:500 9.5px/1 var(--sans);color:var(--muted);cursor:pointer}
   .rtoggle button[aria-pressed="true"]{background:var(--acc-bg);border-color:var(--acc);color:var(--acc)}
+  .rtoggle[hidden],.rsearch[hidden]{display:none}
+  .rtoggle .rsbtn{flex:none;width:26px;padding:0;display:grid;place-items:center;color:var(--acc)}
+  .rtoggle .rsbtn:hover{background:var(--acc-bg)}
+  .rsearch{padding:4px 8px 6px}
+  .rsbox{display:flex;align-items:center;gap:6px;height:26px;box-sizing:border-box;padding:0 3px 0 8px;
+    background:var(--bg);border:1px solid var(--acc);border-radius:5px;color:var(--acc)}
+  .rsbox:focus-within{box-shadow:0 0 0 3px var(--acc-bg)}
+  .rsbox input{flex:1;min-width:0;background:none;border:0;outline:none;color:var(--ink);
+    font:500 11.5px/1 var(--sans)}
+  .rsbox input::placeholder{color:var(--faint)}
+  .rsbox input::-webkit-search-cancel-button{display:none}
+  .rsbox button{flex:none;width:20px;height:20px;border:0;border-radius:4px;background:none;
+    color:var(--muted);display:grid;place-items:center;cursor:pointer;padding:0}
+  .rsbox button:hover{color:var(--ink);background:var(--acc-bg)}
+  .rscount{padding:5px 2px 0;font:500 9px/1.4 var(--mono);color:var(--muted)}
+  .rscount:empty{display:none}
+  mark.qhit{background:color-mix(in srgb,var(--acc) 22%,transparent);color:var(--acc);
+    border-radius:3px;padding:0 1px}
   .newBtn{margin:0 10px 10px;padding:8px 11px;border-radius:7px;border:0;width:calc(100% - 20px);
     background:var(--ink);color:var(--bg);font:600 12px/1 var(--sans);display:flex;
     align-items:center;justify-content:center;gap:7px;cursor:pointer}

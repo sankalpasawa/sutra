@@ -1668,6 +1668,80 @@ function setHtmlIfChanged(el, html){
 }
 function invalidateHtmlCache(el){ if (el) el.__lastHtml = null; }
 
+/* ── chat search (founder, 2026-09-24: "titles, folders, headers. That's it.") ──
+   The box filters the rail by a chat's title, its folder, and the header it is
+   grouped under by name (department, routine). Transcript text is NOT searched.
+   Loaded rows filter on every keystroke; S.chatSearch holds the server's answer
+   for the same query (/api/sessions?q=), which reaches chats older than the
+   loaded page. Nothing here is persisted: a search is a moment, not a setting. */
+function chatSearchNorm(q){ return String(q == null ? "" : q).trim().toLowerCase(); }
+function chatMatches(s, q){
+  if (!q) return true;
+  if (!s) return false;
+  const d = s.department, r = s.routine;
+  return [s.title, s.cwd, s.project, d && d.name, r && r.routine]
+    .some(h => h && String(h).toLowerCase().includes(q));
+}
+/* Loaded rows first, then server rows not already listed; newest first. */
+function chatSearchList(q){
+  const seen = new Set(), out = [];
+  const take = s => { if (s && !seen.has(s.id) && chatMatches(s, q)){ seen.add(s.id); out.push(s); } };
+  (S.sessions || []).forEach(take);
+  const cs = S.chatSearch;
+  if (cs && cs.q === q) (cs.rows || []).forEach(take);
+  return out.sort((a,b)=>(b.updated_ms||b.created_ms||0)-(a.updated_ms||a.created_ms||0));
+}
+/* Escaped text with every case-insensitive hit of q wrapped in <mark>. */
+function hlq(text, q){
+  const t = String(text == null ? "" : text);
+  if (!q) return esc(t);
+  const low = t.toLowerCase();
+  if (low.length !== t.length) return esc(t);   /* a case fold changed length: no offsets to trust */
+  let i = 0, j, out = "";
+  while ((j = low.indexOf(q, i)) !== -1){
+    out += esc(t.slice(i, j)) + '<mark class="qhit">' + esc(t.slice(j, j + q.length)) + "</mark>";
+    i = j + q.length;
+  }
+  return out + esc(t.slice(i));
+}
+let _chatSearchTimer = null;
+/* Debounced server search. Only the answer to the CURRENT query is kept, so a
+   slow reply to an earlier keystroke can never overwrite a newer one. */
+function chatSearchRemote(){
+  clearTimeout(_chatSearchTimer);
+  const q = chatSearchNorm(S.chatQ);
+  if (!q){ S.chatSearch = null; return; }
+  S.chatSearch = { q, rows: [], pending: true };
+  _chatSearchTimer = setTimeout(() => {
+    apiGet("/api/sessions?limit=200&q=" + encodeURIComponent(q))
+      .then(rows => {
+        if (chatSearchNorm(S.chatQ) !== q) return;
+        S.chatSearch = { q, rows: (rows || []).map(realSessionFromRow), pending: false };
+        renderRail();
+      })
+      .catch(() => {
+        if (chatSearchNorm(S.chatQ) !== q) return;
+        S.chatSearch = { q, rows: [], pending: false, error: true };
+        renderRail();
+      });
+  }, 250);
+}
+function chatSearchOpen(){
+  S.chatSearchOpen = true;
+  renderRail();
+  const el = document.querySelector("[data-chatq]");
+  if (el){ el.focus(); el.select(); }
+}
+function chatSearchClose(){
+  clearTimeout(_chatSearchTimer);
+  S.chatSearchOpen = false; S.chatQ = ""; S.chatSearch = null;
+  const el = document.querySelector("[data-chatq]");
+  if (el) el.value = "";
+  renderRail();
+  const b = document.querySelector("[data-chatsearch=open]");
+  if (b) b.focus();
+}
+
 function renderRail(){
   const nav = document.getElementById("railnav");
   /* The one-screen Org (19-org2.js) registers its screen here, on the first paint
@@ -1712,6 +1786,22 @@ function renderRail(){
      accountable department, so the session list and the org chart are the same tree. */
   document.querySelectorAll("[data-sgroup]").forEach(b=>
     b.setAttribute("aria-pressed", String(S.sgroup===b.dataset.sgroup)));
+  /* The rows every grouping below draws: the whole list, or the search's
+     matches while the box holds a query. */
+  const q = S.chatSearchOpen ? chatSearchNorm(S.chatQ) : "";
+  const LIST = q ? chatSearchList(q) : S.sessions;
+  const rtog = document.querySelector(".rtoggle"), rsrch = document.querySelector(".rsearch");
+  if (rtog && rsrch){
+    rtog.hidden = !!S.chatSearchOpen;
+    rsrch.hidden = !S.chatSearchOpen;
+    const cnt = rsrch.querySelector(".rscount");
+    const pend = !!(S.chatSearch && S.chatSearch.q === q && S.chatSearch.pending);
+    const n = LIST.length;
+    if (cnt) cnt.textContent = !q ? ""
+      : n ? n + " chat" + (n === 1 ? "" : "s") + " match" + (n === 1 ? "es" : "")
+            + (pend ? ", searching older chats…" : "")
+      : pend ? "Searching all chats…" : "No chat matches";
+  }
   const bucket = ms => {
     const d = Math.floor((NOW - ms)/DAY);
     return d<=0 ? "Today" : d===1 ? "Yesterday" : d<=7 ? "Previous 7 days"
@@ -1726,7 +1816,7 @@ function renderRail(){
       <button type="button" class="rowopen" data-open="${sid}"
           aria-current="${open}"
           title="${esc(s.real ? (s.cwd || s.project || "") : "started in this panel")}">
-        <span class="t">${isUnread(sid)?'<span class="udot" aria-label="unread"></span>':""}${esc(s.title)}</span>
+        <span class="t">${isUnread(sid)?'<span class="udot" aria-label="unread"></span>':""}${hlq(s.title, q)}</span>
         <span class="m">${sessMeta(s)}${trail||""}</span>
       </button>
       <button type="button" class="rowmenu" data-sessmenu="${sid}"
@@ -1808,19 +1898,22 @@ function renderRail(){
   if (S.sgroup === "recent"){
     const order = ["Today","Yesterday","Previous 7 days","Previous 30 days","Older"];
     const g = {};
-    S.sessions.forEach(s=>{ const k=bucket(s.updated_ms||s.created_ms); (g[k]=g[k]||[]).push(s); });
-    const wsDiffer = workspacesDiffer(S.sessions);   /* once per render, see workspaceLabel */
+    LIST.forEach(s=>{ const k=bucket(s.updated_ms||s.created_ms); (g[k]=g[k]||[]).push(s); });
+    /* once per render, see workspaceLabel; a search always shows the folder,
+       since the folder may be the very thing that matched */
+    const wsDiffer = q ? true : workspacesDiffer(LIST);
     html = order.filter(k=>g[k]).map(k=>`
       <div class="rgrp">${k}</div>
       <ul class="rlist">${pinFirst(g[k]).map(s=>{
         const ds = deptsOf(s);
         const held = s.turns.some(t=>t.mode==="floor");
-        const ws = s.real ? workspaceLabel(s, S.sessions, wsDiffer) : "";
+        const ws = s.real ? workspaceLabel(s, LIST, wsDiffer) : "";
         const trailTxt = s.real ? ws : (ds.length?ds.join(" → "):"—");
-        const trail = (trailTxt ? `<span>${esc(trailTxt)}</span>` : "")
+        const trail = (trailTxt ? `<span>${hlq(trailTxt, q)}</span>` : "")
           + (held?'<span style="color:var(--warn)">held</span>':"");
         return sessRow(s, trail);}).join("")}</ul>`).join("");
-    if (!S.sessions.length) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
+    if (q && !LIST.length) html = "";
+    else if (!S.sessions.length) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
       ${S.sessionsError
         ? `Could not read <code>~/.claude/projects</code> — ${esc(S.sessionsError)}.
            Nothing is claimed here about what is or is not on disk.`
@@ -1840,7 +1933,7 @@ function renderRail(){
        the fold state and the chevron come from the same code rather than a
        second implementation that drifts. */
     const g = {};
-    S.sessions.forEach(s=>{
+    LIST.forEach(s=>{
       const r = s.routine; if (!r || !r.routine) return;
       (g[r.routine] = g[r.routine] || {id:r.routine, items:[], ok:0, failed:0}).items.push(s);
     });
@@ -1859,7 +1952,7 @@ function renderRail(){
         ? `<span class="rgfail${bad?" all":""}">${gr.failed} failed${
              bad ? ", never succeeded" : ""}</span>`
         : "";
-      return deptGroup("rtn:" + gr.id, esc(gr.id) + health, uniq, "",
+      return deptGroup("rtn:" + gr.id, hlq(gr.id, q) + health, uniq, "",
                        s => { const oc=(s.routine||{}).outcome;
                               return `<span>${esc(oc || "—")}</span>`; });
     }).join("");
@@ -1867,7 +1960,7 @@ function renderRail(){
        produced are left out of this view entirely rather than collected in a
        "Not from a routine" group -- they already live in Recent and Dept, and
        repeating them here buried the routines under ~200 unrelated rows. */
-    if (!html) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
+    if (!html && !q) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
       No routine has recorded a run yet. A routine writes its chat here the first
       time it fires.</p>`;
   } else {
@@ -1924,7 +2017,7 @@ function renderRail(){
       if (dropped) saveLayout();
     }
     const g = {};
-    S.sessions.forEach(s=>{
+    LIST.forEach(s=>{
       const d = s.department; if (!d || !d.ref) return;
       (g[d.ref] = g[d.ref] || {dept:d, items:[]}).items.push(s);
     });
@@ -1941,7 +2034,8 @@ function renderRail(){
 
        GUARDED ON DOMAINS: with the tree unloaded this adds nothing and the
        view degrades to exactly its old behaviour rather than emptying. */
-    const imported = (Array.isArray(DOMAINS) ? DOMAINS : []).filter(d => d && d.cwd);
+    /* Not while searching: an empty department heading is not a match. */
+    const imported = q ? [] : (Array.isArray(DOMAINS) ? DOMAINS : []).filter(d => d && d.cwd);
     imported.forEach(d => {
       const slot = g[d.ref] || (g[d.ref] = {dept:{ref:d.ref, name:d.name, cwd:d.cwd},
                                             items:[]});
@@ -1979,7 +2073,7 @@ function renderRail(){
                      aria-label="New chat in ${esc(dept.name)}">+</button>`
           : "";
         return deptGroup("dept:" + dept.ref,
-                         `${path?esc(path)+" ":""}${esc(dept.name)}`,
+                         `${path?esc(path)+" ":""}${hlq(dept.name, q)}`,
                          uniq, plus, undefined, total);
       }).join("");
     /* One reason per chat, stated rather than guessed -- the 2026-09-02 rule,
@@ -1997,7 +2091,7 @@ function renderRail(){
       : SCRATCH.some(p => s.cwd === p || s.cwd.startsWith(p + "/"))
               ? "scratch folder, not imported"
       :         "folder is not an imported project";
-    const unfiled = S.sessions.filter(s => !filed.has(s.id));
+    const unfiled = LIST.filter(s => !filed.has(s.id));
     /* The catch-all collapses like any other group -- on a machine with a lot
        of scratch work it is the longest one on the list, and it is the one
        whose contents you least often need open. Its key is a constant rather
@@ -2009,7 +2103,7 @@ function renderRail(){
     /* Empty now means EMPTY -- with the partition in place the only way to
        render nothing is to have no sessions at all, so this says that and
        stops claiming anything about where the missing ones went. */
-    if (!html) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
+    if (!html && !q) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
       ${S.sessionsError
         ? `Could not read <code>~/.claude/projects</code> — ${esc(S.sessionsError)}.
            Nothing is claimed here about what is or is not on disk.`

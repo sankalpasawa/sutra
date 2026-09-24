@@ -807,7 +807,23 @@ function adoptRealSessions(rows){
       if (r.shadow_task !== undefined) k.shadow_task = r.shadow_task;
       return k;
     }
-    return {
+    return realSessionFromRow(r);
+  });
+  /* A CHAT OPENED FROM SEARCH can be older than the page a refresh loads
+     (founder, 2026-09-24). Keep an open pane's session that the new rows no
+     longer carry, or the pane would lose its chat on the next list refresh. */
+  const rowIds = new Set(real.map(s => s.id));
+  const keepOpen = S.sessions.filter(s => s.real && !s.local && s.fromSearch
+    && S.openPanes.includes(s.id) && !rowIds.has(s.id) && !owned.has(s.id));
+  S.sessions = local.concat(real, keepOpen)
+    .sort((a,b)=>(b.updated_ms||b.created_ms)-(a.updated_ms||a.created_ms));
+}
+
+/* One /api/sessions row -> the rail's session object. Shared by
+   adoptRealSessions and the chat search (chatSearchRemote), whose rows can be
+   older than the loaded page. */
+function realSessionFromRow(r){
+  return {
       id: r.id,
       title: r.title || "(no prompt)",
       real: true, local: false,
@@ -851,9 +867,6 @@ function adoptRealSessions(rows){
          from the composer resumes the real thread rather than starting a cold one */
       claude_session: r.id
     };
-  });
-  S.sessions = local.concat(real)
-    .sort((a,b)=>(b.updated_ms||b.created_ms)-(a.updated_ms||a.created_ms));
 }
 
 /* Fold a transcript's message list into the panel's turn shape.

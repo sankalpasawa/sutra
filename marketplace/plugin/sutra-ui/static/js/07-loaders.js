@@ -2298,8 +2298,18 @@ document.getElementById("app").addEventListener("click", e=>{
   }
   const sg = e.target.closest("[data-sgroup]");
   if (sg){ S.sgroup = sg.dataset.sgroup; render(); return; }
+  const cs = e.target.closest("[data-chatsearch]");
+  if (cs){ if (cs.dataset.chatsearch === "open") chatSearchOpen(); else chatSearchClose(); return; }
   const op = e.target.closest("[data-open]");
   if (op){ const id=op.dataset.open;
+    /* A search result older than the loaded page: adopt it into the list
+       before opening, so the pane, the transcript read and every later lookup
+       find it. fromSearch keeps it through list refreshes while its pane is
+       open (adoptRealSessions). */
+    if (!S.sessions.some(s=>s.id===id) && S.chatSearch){
+      const hit = (S.chatSearch.rows || []).find(s=>s.id===id);
+      if (hit){ hit.fromSearch = true; S.sessions.push(hit); }
+    }
     markRead(id); S.sessMenu = null; S.sessRename = null;
     pushPane(id);
     /* opening a REAL session is what triggers the transcript read -- the list
@@ -2314,6 +2324,14 @@ document.getElementById("app").addEventListener("keydown", e=>{
   const ri = e.target.closest("[data-renameinput]");
   if (ri && e.key === "Enter"){ e.preventDefault(); renameSession(ri.dataset.sid, ri.value); }
   if (ri && e.key === "Escape"){ S.sessRename = null; renderRail(); }
+  if (e.key === "Escape" && e.target.closest("[data-chatq]")){ e.preventDefault(); chatSearchClose(); }
+});
+/* Chat search typing: loaded rows filter at once, the server answer follows. */
+document.getElementById("app").addEventListener("input", e=>{
+  if (!e.target.closest("[data-chatq]")) return;
+  S.chatQ = e.target.value;
+  chatSearchRemote();
+  renderRail();
 });
 /* One global closer: any click not on a ⋮ trigger or inside an open menu dismisses
    it. The ⋮/menu-item branches stopPropagation(), so this never fires for the

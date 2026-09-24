@@ -844,8 +844,44 @@ def _shadow_task_row(session_id):
     return None
 
 
+#: Upper bound on the chats one search walks. list_sessions memoises every row on
+#: (mtime_ns, size), so after the first search this is a walk over cached dicts;
+#: the bound only stops a pathological disk from turning one keystroke into minutes.
+CHAT_SEARCH_POOL = 50000
+
+
+def _chat_matches(row, q):
+    """Does this rail row match the search box? q is already lower-cased.
+
+    TITLES, FOLDERS, HEADERS -- nothing else (founder, 2026-09-24). A header is
+    whatever the rail groups the row under by name: its department or the routine
+    that produced it. Transcript text is deliberately NOT searched."""
+    dept = row.get("department") or {}
+    rtn = row.get("routine") or {}
+    hay = (row.get("title"), row.get("cwd"), row.get("project"),
+           dept.get("name") if isinstance(dept, dict) else None,
+           rtn.get("routine") if isinstance(rtn, dict) else None)
+    return any(q in str(h).lower() for h in hay if h)
+
+
+def _chat_search_pool():
+    """Every chat the rail could list, in the rail's scope, newest first."""
+    if _list_every_chat():
+        return sr.list_sessions(CHAT_SEARCH_POOL, 0)
+    project_cwd = sr._gemini_project_cwd_map()
+    rows = []
+    for _mtime, source, _sid, path in _owned_transcripts()[:CHAT_SEARCH_POOL]:
+        try:
+            row = _session_row(source, path, project_cwd)
+        except OSError:
+            row = None
+        if row is not None:
+            rows.append(row)
+    return rows
+
+
 @app.get("/api/sessions")
-def api_sessions(limit: int = 100, offset: int = 0):
+def api_sessions(limit: int = 100, offset: int = 0, q: str = ""):
     """One page of SUTRA'S OWN chats, newest first. `offset` walks back into history
     so the panel can fetch more as it scrolls; a page shorter than `limit` means the
     end.
@@ -882,7 +918,17 @@ def api_sessions(limit: int = 100, offset: int = 0):
     """
     limit = max(0, int(limit or 0))
     offset = max(0, int(offset or 0))
-    if _list_every_chat():
+    # SEARCH (?q=) walks EVERY chat in scope, not one page: the rail holds at most
+    # 2,000 rows and a search that only saw those would miss exactly the old chat
+    # you are looking for. Departments and routines are joined BEFORE the filter
+    # because their names are headers the search matches.
+    q = (q or "").strip().lower()
+    searched = False
+    if q:
+        pool = routine_links.attach(_with_departments(_chat_search_pool()))
+        rows = [r for r in pool if _chat_matches(r, q)][offset:offset + limit]
+        searched = True
+    elif _list_every_chat():
         rows = sr.list_sessions(limit, offset)
     else:
         window = _owned_transcripts()[offset:offset + limit]
@@ -934,6 +980,8 @@ def api_sessions(limit: int = 100, offset: int = 0):
     # work. On the founder's machine 1,009 of 1,208 rows are routine runs, which
     # is the whole reason the rail needs to separate them. Cached on the runs
     # tree's mtimes; fails soft to routine:None.
+    if searched:
+        return rows            # already joined before the filter
     return routine_links.attach(_with_departments(rows))
 
 

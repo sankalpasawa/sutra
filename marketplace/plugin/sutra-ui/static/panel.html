@@ -125,6 +125,23 @@
           <button type="button" data-sgroup="recent">Recent</button>
           <button type="button" data-sgroup="dept">Dept</button>
           <button type="button" data-sgroup="routines">Routines</button>
+          <button type="button" class="rsbtn" data-chatsearch="open"
+                  aria-label="Search chats" title="Search chats">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+          </button>
+        </div>
+        <!-- CHAT SEARCH (founder, 2026-09-24): titles, folders, headers. The box
+             takes the toggle row's place while open; Esc or x gives it back. -->
+        <div class="rsearch" hidden>
+          <label class="rsbox">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+            <input type="search" data-chatq aria-label="Search chats"
+                   placeholder="Search titles, folders, headers" autocomplete="off" spellcheck="false">
+            <button type="button" data-chatsearch="close" aria-label="Close search" title="Close (Esc)">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+          </label>
+          <div class="rscount" aria-live="polite"></div>
         </div>
         <div id="sessions"></div>
       </div>
