@@ -187,6 +187,7 @@ jobs:
           node test_shadow_home.js
           node test_shadow_intervention_ui.js
           node test_shadow_live_refresh.js
+          node test_shadow_nontask_conv.js
           node test_shadow_now.js
           node test_shadow_order.js
           node test_shadow_overlay.js
