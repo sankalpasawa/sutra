@@ -890,6 +890,29 @@ function transcriptTurns(messages){
   return out;
 }
 
+/* A re-read builds NEW turn objects, but the open pill, the folds and the
+   one-shot motion memory are keyed by turn uid (turnUid). A fresh object had
+   no uid, so the pill closed on the next write to the transcript (founder
+   2026-09-24: "it closes after 34 seconds"). Each new turn takes the uid of
+   the old turn with the same prompt -- matched by its nth occurrence, so
+   "continue" twice stays two turns. When nothing a reader sees has changed the
+   OLD array comes back, so the caller can skip the render and nothing flickers. */
+function reconcileTurns(prev, next){
+  if (!Array.isArray(prev) || !prev.length || !Array.isArray(next)) return next;
+  const same = (a, b, last) => (a.text || "") === (b.text || "") && !!a.orphan === !!b.orphan
+    && (a.response || "") === (b.response || "")
+    && (a.tools || []).length === (b.tools || []).length
+    && (a.calls || []).length === (b.calls || []).length
+    /* earlier turns are settled; only the last one can have a call's result land */
+    && (!last || JSON.stringify(a.calls || []) === JSON.stringify(b.calls || []));
+  if (prev.length === next.length && prev.every((t, i) => same(t, next[i], i === prev.length - 1))) return prev;
+  const key = (t, seen) => { const k = (t.orphan ? "\u0002" : "") + (t.text || ""); seen[k] = (seen[k] || 0) + 1; return k + "\u0001" + seen[k]; };
+  const uids = {}, a = {}, b = {};
+  prev.forEach(t => { const k = key(t, a); if (t.uid) uids[k] = t.uid; });
+  next.forEach(t => { const k = key(t, b); if (!t.uid && uids[k]) t.uid = uids[k]; });
+  return next;
+}
+
 /* Read one transcript, once, on demand. Opening a pane is the trigger; the list
    endpoint never reads message bodies. Every terminal state is explicit so the
    pane can say which one it is in — "empty" and "error" are different facts and
@@ -899,7 +922,7 @@ function ensureTranscript(s){
   s.loadState = "loading";
   apiGet("/api/sessions/" + encodeURIComponent(s.id))
     .then(d => {
-      s.turns = transcriptTurns(d && d.messages);
+      s.turns = reconcileTurns(s.turns, transcriptTurns(d && d.messages));
       s.cwd = (d && d.cwd) || s.cwd;
       s.branch = (d && d.branch) || s.branch;
       s.loadState = s.turns.length ? "ok" : "empty";
