@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Library in the Org tree &mdash; design v1</title>
+<!-- Library inside the Org structure tree (2026-09-24, founder: "make a library
+     kind of section within the org structure on the left, add that somewhere as an
+     icon, which gives a library kind of structure, and show me the UI first").
+     Today the Library's shelves are rows in the RAIL accordion. This puts them in
+     the STRUCTURE ITSELF, as a second root at the foot of the tree, each row with
+     its own icon so a shelf can never be mistaken for a department.
+     Markup and css are the app's own (library-assets/, copied from sutra-ui/static).
+     The .o2lib block in <style> is the only addition. Nothing is built. -->
+<link rel="stylesheet" href="library-assets/panel.css">
+<link rel="stylesheet" href="library-assets/workspace.css">
+<link rel="stylesheet" href="library-assets/agents.css">
+<style>
+html,body{height:auto;overflow:auto}
+body{background:#ECEAE6;padding:26px 18px 70px}
+.wrap{height:auto;overflow:visible;max-width:1320px;margin:0 auto}
+.cap{font:12.5px/1.6 var(--sans);color:var(--muted);margin:0 0 9px}
+.cap b{color:var(--ink);font-weight:600}
+.cap code{font:11.5px/1 var(--mono);background:rgba(28,25,23,.05);padding:2px 5px;border-radius:4px}
+/* mock-only: the app shell is a three-track grid (rail, panes, terminal). This
+   page shows the Org screen alone, so the shell is a plain block and the screen
+   fills it; without this the panel lands in the 72px rail track. */
+.app{display:block !important;height:760px;position:relative;margin:0 0 30px;
+  border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;
+  background:var(--card)}
+.mtbl{width:100%;border-collapse:collapse;font:12px/1.5 var(--sans);margin:0 0 28px;background:var(--card);
+  border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.mtbl th,.mtbl td{padding:7px 11px;text-align:left;border-bottom:1px solid var(--line-soft);vertical-align:top}
+.mtbl th{font:600 10px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+.mtbl tr:last-child td{border-bottom:0}
+.mtbl td b{color:var(--ink)}
+h2.mh{font:600 15px/1.3 var(--serif);color:var(--ink);margin:28px 0 8px}
+
+/* ═══ THE LIBRARY SECTION IN THE TREE ════════════════════════════════════════
+   What a builder ports. Every rule is new and prefixed .o2lib, so nothing the
+   tree already does changes. The rows themselves are the tree's own .o2row, so
+   selection, keyboard movement and the indent variable all keep working. */
+
+/* ── 1. THE SECTION BREAK ────────────────────────────────────────────────
+   The tree has one root today. This adds a SECOND, separated by a rule and a
+   caption, so the eye reads "these are not departments" before it reads a
+   single row. */
+.o2libsec{margin:14px 0 2px;padding:10px 10px 0;border-top:1px solid var(--line-soft);
+  display:flex;align-items:center;gap:7px}
+.o2libsec svg{width:13px;height:13px;color:var(--faint);flex:none}
+.o2libsec span{font:600 9px/1.4 var(--mono);letter-spacing:.1em;text-transform:uppercase;
+  color:var(--faint)}
+.o2libsec .o2libn{margin-left:auto;font:10.5px/1 var(--mono);color:var(--faint);letter-spacing:0;
+  text-transform:none}
+
+/* ── 2. AN ICON PER ROW ──────────────────────────────────────────────────
+   A department row is text with a chevron. A shelf row carries a small mark in
+   the chevron's place, so the two kinds never look alike at a glance -- the
+   founder's "add that somewhere as an icon". The mark is the same stroke
+   weight as the rail's, and it inherits the accent when the row is selected. */
+.o2row.o2k-lib .o2ico{width:15px;height:15px;flex:none;color:var(--faint);margin-right:1px}
+.o2row.o2k-lib[aria-selected="true"] .o2ico{color:var(--acc)}
+.o2row.o2k-lib .o2name{font-weight:500}
+/* the group header row: the Library itself, which opens and closes the seven */
+.o2row.o2k-libroot .o2name{font-weight:600}
+.o2row.o2k-libroot .o2ico{color:var(--acc)}
+/* a count on the right of a shelf row, the way the rail carries one */
+.o2libct{margin-left:auto;font:10px/1 var(--mono);color:var(--faint);padding-left:8px}
+.o2row[aria-selected="true"] .o2libct{color:var(--acc)}
+
+/* mock-only scaffolding */
+.o2{display:flex !important;height:100%;background:var(--card)}
+.o2left{height:100%;width:268px;flex:none;border-right:1px solid var(--line-soft);
+  overflow:auto;padding:10px 0 20px;background:var(--card)}
+.o2main{display:block !important;flex:1 1 auto;min-width:0;height:100%;overflow:auto;
+  background:var(--card)}
+.o2tree{padding:4px 0}
+.o2row{display:flex;align-items:center;gap:6px;padding:5px 10px 5px calc(10px + var(--d,0) * 13px);
+  font:12.5px/1.45 var(--sans);color:var(--ink);cursor:pointer;border-radius:6px;margin:0 6px}
+.o2row:hover{background:var(--acc-bg)}
+.o2row[aria-selected="true"]{background:var(--acc-bg);color:var(--acc)}
+.o2chev{width:13px;height:13px;flex:none;color:var(--faint);display:flex;align-items:center}
+.o2name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.o2search{display:flex;align-items:center;gap:7px;padding:0 12px 8px;color:var(--faint)}
+.o2search input{flex:1;min-width:0}
+.o2strip{padding:12px 18px 0;border-bottom:1px solid var(--line-soft)}
+.o2strip h2{font:600 16px/1.3 var(--serif);color:var(--ink);margin:0 0 10px}
+.lbpage{padding:16px 20px 30px;max-width:900px}
+.lbhead{margin:0 0 4px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.lbhead h2{font:600 19px/1.25 var(--serif);color:var(--ink);margin:0}
+.lbsub{font:13px/1.65 var(--sans);color:var(--muted);margin:0 0 4px;max-width:70ch}
+.lbtabrow{display:flex;align-items:center;gap:12px;margin:14px 0 0;
+  border-bottom:1px solid var(--line);padding-bottom:9px}
+.lbtabrow .tabs{margin-left:0}
+.lbtabcount{font:11.5px/1 var(--mono);color:var(--faint);margin-left:auto}
+.lbpane{padding:18px 0 0}
+.lbfilter{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+.lbfilter .dptag{cursor:pointer;font-size:10.5px;padding:3px 8px}
+.lbfilter .dptag.on{color:var(--acc);border-color:var(--acc);background:var(--acc-bg)}
+.lbfl{font:600 9.5px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin-right:3px}
+.lbmade{border:1px solid var(--line);border-radius:9px;background:var(--card);overflow:hidden}
+.lbrow{display:flex;flex-wrap:wrap;align-items:center;gap:7px 12px;padding:10px 12px;
+  border-bottom:1px solid var(--line-soft)}
+.lbmade .lbrow:last-child{border-bottom:0}
+.lbrow>b{flex:1 1 150px;min-width:0;font:600 13px/1.35 var(--sans);color:var(--ink)}
+.lbrow>b span{display:block;font:10px/1.4 var(--mono);color:var(--faint);font-weight:400}
+.lbrow .lbuse{flex:2 1 220px;min-width:0;font:12px/1.5 var(--sans);color:var(--muted)}
+.lbtags{display:flex;gap:5px;flex-wrap:wrap}
+.lbrow>.btn{margin-left:auto;flex:none}
+.lbnote{border-left:2px solid var(--line);padding:2px 0 2px 11px;margin:14px 0 0;
+  font:12px/1.65 var(--sans);color:var(--muted);max-width:66ch}
+.lbnote b{color:var(--ink);font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<p class="cap"><b>The Library inside the Org structure tree &mdash; design v1, 2026-09-24.</b>
+Today its seven shelves are rows in the rail's Org accordion. This puts them in the
+<b>structure itself</b>: a second root at the foot of the same tree, each row with its own
+icon. Two screens: the tree with the Library open, and a shelf selected.</p>
+
+<h2 class="mh">The one decision on this page</h2>
+<table class="mtbl">
+  <tr><th>Question</th><th>What this draws</th><th>The other way</th></tr>
+  <tr><td>Where the Library sits in the tree</td>
+      <td>A <b>second root</b> at the foot, under a ruled caption, so departments and shelves never mix</td>
+      <td>A child of the org's own root, which would read as "the company contains a library"</td></tr>
+  <tr><td>How a shelf is told from a department</td>
+      <td>An <b>icon in the chevron's place</b>, and a count on the right</td>
+      <td>Text only, with indentation doing the work, which fails at a glance</td></tr>
+  <tr><td>What a shelf opens</td>
+      <td>The same shelf screen the rail rows open today, unchanged</td>
+      <td>A second viewer, which would double the code and drift</td></tr>
+</table>
+
+<h2 class="mh">Screen 1 &mdash; the tree, with the Library open</h2>
+<p class="cap">The org's own rows first, then the ruled <b>Library</b> caption, then the seven
+shelves. Each shelf carries its mark and its count.</p>
+
+<div class="app">
+  <div class="o2">
+    <div class="o2left">
+      <div class="o2search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input type="search" placeholder="Search" value="">
+      </div>
+      <div class="o2tree" role="tree">
+        <div role="treeitem" class="o2row o2k-org" style="--d:0"><span class="o2chev"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></span><span class="o2name">Sutra</span></div>
+        <div role="treeitem" class="o2row o2k-org" style="--d:1"><span class="o2chev"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></span><span class="o2name">Asawa Holding</span></div>
+        <div role="treeitem" class="o2row o2k-dept" style="--d:2"><span class="o2chev"></span><span class="o2name">Experience</span></div>
+        <div role="treeitem" class="o2row o2k-dept" style="--d:2"><span class="o2chev"></span><span class="o2name">Research</span></div>
+        <div role="treeitem" class="o2row o2k-dept" style="--d:2"><span class="o2chev"></span><span class="o2name">Observability</span></div>
+        <div role="treeitem" class="o2row o2k-dept" style="--d:2"><span class="o2chev"></span><span class="o2name">Deckem</span></div>
+        <div role="treeitem" class="o2row o2k-dept" style="--d:2"><span class="o2chev"></span><span class="o2name">Paisa</span></div>
+        <div role="treeitem" class="o2row o2k-org" style="--d:1"><span class="o2chev"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 6l6 6-6 6"/></svg></span><span class="o2name">Sutra Desktop</span></div>
+
+        <div class="o2libsec">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M11 4h3.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11z"/><path d="M18.4 6.2l2.1 12"/></svg>
+          <span>Library</span><span class="o2libn">the kinds, not the departments</span>
+        </div>
+
+        <div role="treeitem" class="o2row o2k-lib" style="--d:1"><svg class="o2ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg><span class="o2name">Identity</span><span class="o2libct">3</span></div>
+        <div role="treeitem" class="o2row o2k-lib" style="--d:1"><svg class="o2ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 16a8 8 0 0 1 16-8"/><path d="M20 8v4h-4"/><path d="M20 12a8 8 0 0 1-16 4"/></svg><span class="o2name">Adaptation</span><span class="o2libct">3</span></div>
+        <div role="treeitem" class="o2row o2k-lib" style="--d:1"><svg class="o2ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 6h14M5 12h9M5 18h5"/></svg><span class="o2name">Priority</span><span class="o2libct">3</span></div>
+        <div role="treeitem" class="o2row o2k-lib" style="--d:1"><svg class="o2ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="7" cy="8" r="2.6"/><circle cx="17" cy="16" r="2.6"/><path d="M9.4 9.6l5.2 4.8"/></svg><span class="o2name">Coordination</span><span class="o2libct">3</span></div>
+        <div role="treeitem" class="o2row o2k-lib" style="--d:1"><svg class="o2ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 12.5l4 4 10-10"/></svg><span class="o2name">Audit</span><span class="o2libct">3</span></div>
+        <div role="treeitem" class="o2row o2k-lib" style="--d:1"><svg class="o2ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg><span class="o2name">Engines</span><span class="o2libct">6</span></div>
+        <div role="treeitem" class="o2row o2k-lib" aria-selected="true" style="--d:1"><svg class="o2ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 10h8M8 14h5"/></svg><span class="o2name">Work atom</span><span class="o2libct">204</span></div>
+      </div>
+    </div>
+    <div class="o2main">
+      <div class="o2strip"><h2>Library &rsaquo; Work atom</h2></div>
+      <div class="lbpage">
+        <div class="lbhead"><h2>Work atom</h2><span class="dptag">Part</span></div>
+        <p class="lbsub">One goal with one check that flips. Everything a department does is one of
+          these, whether you wrote it, a function proposed it, or an engine opened it on a run.</p>
+        <div class="lbtabrow">
+          <div class="tabs dptabs">
+            <button type="button" aria-pressed="false">About</button>
+            <button type="button" aria-pressed="true">Skills</button>
+          </div>
+          <span class="lbtabcount">7 parts &middot; 204 skills to draw on</span>
+        </div>
+        <div class="lbpane">
+          <div class="lbfilter"><span class="lbfl">Does</span>
+            <span class="dptag">All 204</span><span class="dptag">Judge</span>
+            <span class="dptag">Know</span><span class="dptag">Make</span>
+            <span class="dptag on">Mend</span><span class="dptag">Run</span>
+            <span class="dptag">Say</span><span class="dptag">Shape</span></div>
+          <div class="lbmade">
+            <div class="lbrow"><b>/engineering:incident-response<span>plugin:engineering</span></b>
+              <span class="lbuse">Runs an incident end to end: severity triage, comms, then the postmortem.</span>
+              <span class="lbtags"><span class="dptag">Mend</span><span class="dptag">at-resolve</span></span>
+              <button class="btn" type="button">Open</button></div>
+            <div class="lbrow"><b>/operations:change-request<span>plugin:operations</span></b>
+              <span class="lbuse">Writes the rollback on paper before the deployment, not after it fails.</span>
+              <span class="lbtags"><span class="dptag">Mend</span><span class="dptag">at-resolve</span></span>
+              <button class="btn" type="button">Open</button></div>
+            <div class="lbrow"><b>/operations:runbook<span>plugin:operations</span></b>
+              <span class="lbuse">Turns tribal knowledge into an exact operating procedure.</span>
+              <span class="lbtags"><span class="dptag">Mend</span><span class="dptag">at-resolve</span></span>
+              <button class="btn" type="button">Open</button></div>
+            <div class="lbrow"><b>/superpowers:systematic-debugging<span>plugin:superpowers</span></b>
+              <span class="lbuse">Use when encountering any bug or unexpected behaviour, before proposing fixes.</span>
+              <span class="lbtags"><span class="dptag">Mend</span><span class="dptag">at-resolve</span></span>
+              <button class="btn" type="button">Open</button></div>
+          </div>
+          <p class="lbnote">A work atom names what must be true when it is finished. These are the ways
+            of working it may draw on: the ones it <b>declares</b> when it opens, and the ones it
+            <b>used</b> when it closes. A declared skill never refuses anything, because refusing is a
+            rule's job.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2 class="mh">Screen 2 &mdash; the same tree, Library closed</h2>
+<p class="cap">Closed it is one line, so the structure still reads as the company's. The caption
+stays, because a section nobody can see is a section nobody finds.</p>
+
+<div class="app" style="height:520px">
+  <div class="o2">
+    <div class="o2left">
+      <div class="o2search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input type="search" placeholder="Search" value="">
+      </div>
+      <div class="o2tree" role="tree">
+        <div role="treeitem" class="o2row o2k-org" style="--d:0"><span class="o2chev"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></span><span class="o2name">Sutra</span></div>
+        <div role="treeitem" class="o2row o2k-org" style="--d:1"><span class="o2chev"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></span><span class="o2name">Asawa Holding</span></div>
+        <div role="treeitem" class="o2row o2k-dept" aria-selected="true" style="--d:2"><span class="o2chev"></span><span class="o2name">Experience</span></div>
+        <div role="treeitem" class="o2row o2k-dept" style="--d:2"><span class="o2chev"></span><span class="o2name">Research</span></div>
+        <div role="treeitem" class="o2row o2k-dept" style="--d:2"><span class="o2chev"></span><span class="o2name">Observability</span></div>
+        <div role="treeitem" class="o2row o2k-dept" style="--d:2"><span class="o2chev"></span><span class="o2name">Deckem</span></div>
+        <div class="o2libsec">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M11 4h3.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11z"/><path d="M18.4 6.2l2.1 12"/></svg>
+          <span>Library</span><span class="o2libn">7 shelves</span>
+        </div>
+        <div role="treeitem" class="o2row o2k-libroot" style="--d:1"><svg class="o2ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 6l6 6-6 6"/></svg><span class="o2name">The kinds a department is built from</span></div>
+      </div>
+    </div>
+    <div class="o2main">
+      <div class="o2strip"><h2>Experience</h2></div>
+      <div class="lbpage"><p class="lbsub">The department's own screen, unchanged. The Library
+        section sits below the structure and does not compete with it.</p></div>
+    </div>
+  </div>
+</div>
+
+<h2 class="mh">What it costs</h2>
+<table class="mtbl">
+  <tr><th>#</th><th>Piece</th><th>Impact (who/what changes)</th><th>Effort (time, files)</th></tr>
+  <tr><td>1</td><td>The section break and its caption</td><td>The tree gains a second root that reads as a different kind</td><td>30 min, 2 files</td></tr>
+  <tr><td>2</td><td>An icon per shelf row</td><td>A shelf is told from a department at a glance</td><td>30 min, 2 files</td></tr>
+  <tr><td>3</td><td>Rows open the existing shelf screens</td><td>No second viewer, no drift</td><td>30 min, 1 file</td></tr>
+  <tr><td>4</td><td>Open and closed state remembered</td><td>The tree opens where you left it</td><td>20 min, 1 file</td></tr>
+  <tr><td>5</td><td>Tests for the new node kind</td><td>A shelf can never be filed as a department</td><td>40 min, 1 file</td></tr>
+</table>
+
+<p class="cap">Design of record: this file. Nothing is wired. Say the word and I build it in this
+order, and the rail's Org accordion keeps its rows as well, so both ways in keep working.</p>
+
+</div>
+</body>
+</html>
