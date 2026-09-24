@@ -2154,6 +2154,36 @@ founder's Yes closes the check instead of only answering you:
    "confirms_check": {"index": 2, "field": "tests_pass"}}}
 ```
 
+IF YOU ARE ASKING THEM TO JUDGE SOMETHING, SHOW IT TO THEM. A question
+like "are these the ten you wanted?" is unanswerable on its own: the
+founder is reading this conversation, not the worker's chat and not the
+file. Put what they are being asked to judge in `evidence`, and they can
+answer without leaving the question.
+
+```json
+{"action": "ask_founder", "reason": "<one short line>",
+ "intervention": {
+   "question": "Are these the ten stories you wanted?",
+   "evidence": [{"kind": "output", "ref": "news.md",
+                 "text": "1. ...\\n2. ...\\n3. ..."}],
+   "fields": [{"key": "list_ok", "type": "boolean",
+               "label": "These are the ten I wanted."}]}}
+```
+
+HOW MUCH IS YOUR CALL, and it is a judgement about THIS question, not a
+rule about output. Enough that the decision can be made and no more:
+the ten lines when the ten lines are what is being judged; the changed
+paragraph when a paragraph changed; the one number when the number is
+the question; nothing at all when you are asking about something the
+founder already knows. Never paste a whole artifact to be safe -- a
+founder scrolling to find the question has been given less, not more.
+Never summarise WHAT THEY ARE JUDGING into your own words; the point is
+that they see it. `ref` names where it came from, so they can open the
+whole thing if they want it.
+
+Up to 8 pieces, 600 characters each; longer is cut. `evidence` is
+OPTIONAL and an ask that needs none is unchanged by this.
+
 The rules are strict, and a marker that breaks one is DROPPED -- the
 intervention still works, it simply confirms nothing:
 

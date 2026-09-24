@@ -465,10 +465,49 @@ function shadowTaskIsActive(m, goals){
 }
 
 /* Every mission that still wants something from the founder, oldest first. */
+/* ── A SUBMISSION IS IN THE LIST FROM THE MOMENT IT EXISTS ──────────────
+   (founder, 2026-09-23.) The rail was S.shadowMissions and nothing else, so
+   a submission that had not yet become a mission -- every submission, for
+   the length of the classification round trip, and for ever if it turns out
+   to be a conversation -- was in the pane and nowhere else. Navigate away,
+   come back, and it was gone from the rail even though its record was on
+   disk the whole time.
+
+   A CONVERSATION ROW IS NOT A FAKE MISSION. It carries `conversation: true`
+   and a `queued` state, which is the EXISTING face ("admitted, not running
+   yet") and therefore the existing pill -- no new status vocabulary, and
+   nothing downstream has to learn a new word. What it does not carry is a
+   mission's fields, and every mission-only control checks `conversation`
+   before drawing.
+
+   A BOUND ONE IS NOT DRAWN, because its mission is: the task row IS the
+   conversation once work exists, which is what stops one submission
+   appearing twice. */
+function shadowConvRows(){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  return (S_.shadowConversations || [])
+    .filter(c => c && c.id && !c.mission_id)
+    .map(c => ({ id: c.id, objective: c.title || "", state: "queued",
+                 conversation: true, created_at: c.created_at,
+                 done_when: [], turns_used: 0 }));
+}
+
+function shadowIsConvRow(row){
+  return !!(row && row.conversation);
+}
+
 function shadowTasks(){
   const S_ = (typeof S !== "undefined") ? S : {};
   const goals = S_.goals || [];
-  return (S_.shadowMissions || []).filter(m => shadowTaskIsActive(m, goals));
+  const missions = (S_.shadowMissions || [])
+    .filter(m => shadowTaskIsActive(m, goals));
+  const convs = shadowConvRows();
+  /* the missions array UNCHANGED when there is nothing to prepend -- not an
+     optimisation but an identity: concat would hand back a different array
+     object every call, and callers that compare what this returns (and the
+     suite that deep-compares it across a vm boundary) would see a change
+     where the list has not changed. */
+  return convs.length ? convs.concat(missions) : missions;
 }
 
 /* The task in focus: the founder's pick if it still exists, else the first
@@ -502,9 +541,34 @@ function shadowTaskRowsInOrder(){
   return out;
 }
 
+/* ── "NOTHING IS SELECTED" IS NOT "NOTHING CHOSEN YET" ──────────────────
+   null has always meant the second, and shadowSelectedTask answers it by
+   defaulting to the first row of the list -- which is right for entering
+   the tab. It is wrong for a turn that deliberately opened no task: a
+   greeting would land the founder on some unrelated task, and because the
+   stage composer picks its DESTINATION from this function, their next
+   sentence would be delivered into that task's chat. A misrouted message,
+   not a layout detail. This sentinel is the one way to say "none", and it
+   is honoured in exactly one place -- the line below.
+
+   It cannot outlive the turn: shadowTaskSel is never persisted (no storage,
+   no boot restore), and clicking a row, opening a deep link or creating a
+   task all write a real id over it. */
+const SH_NO_TASK = "__none__";
+
 function shadowSelectedTask(){
   const rows = shadowTasks();
   const S_ = (typeof S !== "undefined") ? S : {};
+  /* A CONVERSATION IS SELECTED BY BEING THE ONE IN SCOPE. shadowTaskSel
+     names missions; S.shadowChat names conversations. Reading the scope
+     here is what makes the rail highlight the row the founder is reading
+     and the header carry its title -- without a second selection variable
+     and without teaching shadowTaskSel a second kind of id. */
+  if (S_.shadowTaskSel === SH_NO_TASK || !S_.shadowTaskSel){
+    const conv = rows.find(r => shadowIsConvRow(r) && r.id === S_.shadowChat);
+    if (conv) return conv;
+  }
+  if (S_.shadowTaskSel === SH_NO_TASK) return null;
   /* THE TASK YOU ARE LOOKING AT DOES NOT VANISH WHEN IT FINISHES
      (founder, 2026-09-15). shadowTaskIsActive rule 4 is right and stays --
      a conclusion leaves the LIST, or the workspace becomes the mission
@@ -1436,9 +1500,18 @@ function shadowCompletionHtml(m){
     /* "Done — created the file" reads as one sentence; "Done — I created
        the file" keeps its capital because the pronoun is one. Nothing else
        about the sentence is touched. */
-    const tail = !said ? ""
-      : (/^I\b|^I['\u2019]/.test(said)
-          ? said : said.charAt(0).toLowerCase() + said.slice(1));
+    /* ── "Done \u2014 done \u2014 ten stories" (founder, 2026-09-23) ────────
+       The word "Done" is printed by this row, and the sentence it prints
+       after it is Shadow's own -- which, since Shadow started authoring the
+       closing line, usually OPENS with "Done". The two were concatenated
+       blind, so the founder read the word twice. If the line already says
+       it, this row says it once: the lead is dropped and the sentence
+       stands as Shadow wrote it. */
+    const dup = /^done\b[\s\u2014:,-]*/i.exec(said || "");
+    const body = dup ? said.slice(dup[0].length) : said;
+    const tail = !body ? ""
+      : (/^I\b|^I['\u2019]/.test(body)
+          ? body : body.charAt(0).toLowerCase() + body.slice(1));
     return `<div class="shsaid shfrom-shadow shdonesum shdonesay"
         data-shdone="${escAttr(m.id)}">
       <div class="shsaidhead">Shadow</div>
@@ -1808,7 +1881,11 @@ function shadowTaskChatHtml(m){
   if (!sid || typeof goalTranscriptHtml !== "function") return "";
   const live = SH_TERMINAL.indexOf(m.state) === -1;
   return `<div class="gwchat shcard2chat">
-    <div class="gwchathead">its own chat · ${esc(shadowChatLabel(sid))}</div>
+    ${/* "its own chat · <session name>" was the machine naming its own
+         plumbing: a founder reading a result does not need to know the work
+         happened in a second chat, or what that chat is called. Shadow is
+         the surface; the chat behind it is an implementation detail with a
+         door of its own for anyone who wants it. */""}
     ${goalTranscriptHtml(shadowTaskTranscript(sid, live), m)}
   </div>`;
 }
@@ -1845,6 +1922,21 @@ function shadowIvDraft(mid){
   if (!S_.shadowIv[mid])
     S_.shadowIv[mid] = { values: {}, errors: {}, busy: false, err: null };
   return S_.shadowIv[mid];
+}
+
+/* WHAT THEY WANT CHANGED, when they said No. Same draft as the answer, so
+   it is cleared, re-read and sent by the machinery that already exists. */
+function shadowIvWhy(mid, key){
+  const d = shadowIvDraft(mid);
+  if (!d.why) d.why = {};
+  return d.why[key] || "";
+}
+
+function shadowIvSetWhy(mid, key, text){
+  const d = shadowIvDraft(mid);
+  if (!d.why) d.why = {};
+  d.why[key] = String(text == null ? "" : text);
+  return d.why[key];
 }
 
 function shadowIvValue(mid, f){
@@ -1959,6 +2051,18 @@ function shadowIvSignsHtml(m, f){
   const i = shadowIvSignsIndex(m, f);
   if (i === -1) return "";
   const text = String(((m.done_when || [])[i] || {}).check || "").trim();
+  /* ── "YES SIGNS OFF" IS GONE (founder, 2026-09-23) ───────────────────
+     It printed Shadow's own bookkeeping -- which internal check a Yes
+     closes -- beside a question the founder had already read. That is the
+     machine explaining its filing to someone who only has to say whether
+     the work is right. The check is untouched: it is still on the record,
+     still closed by the answer, still tested. It simply is not shown.
+
+     shadowIvSignsHtml is kept and still exported, because shadowIvSignsIndex
+     (which decides WHETHER a field closes a check) shares its reasoning and
+     several lanes assert on it. This function now returns nothing. */
+  return "";
+  /* eslint-disable no-unreachable */
   return `<div class="shivsigns">
     <span class="shivsignsk">Yes signs off</span>
     <span class="shivsignsv">${text
@@ -2047,15 +2151,34 @@ function shadowIvFieldHtml(mid, f, signs, said){
      reading it a third time. */
   const echoed = !longAsk && shadowAlreadySaid(f.label, said);
   const hook = `data-shivmid="${escAttr(mid)}" data-shivkey="${escAttr(f.key)}"`;
-  const opt = (o, on, extra) => `<button class="shkind${on ? " on" : ""}"
+  const opt = (o, on, extra, tone) => `<button class="shkind${
+      on ? " on" : ""}${tone ? " " + tone : ""}"
     type="button" ${hook} data-shivopt="${escAttr(o.value)}"
     title="${escAttr(o.help || "")}">${esc(o.label)}${extra || ""}</button>`;
   let body;
   switch (f.type){
     case "boolean":
+      /* ── YES IS GREEN, NO IS RED, AND NO ASKS WHY (founder, 2026-09-23)
+         The two answers meant opposite things and looked identical, so the
+         founder could not see which one they had chosen without reading it.
+         The tones are the ones the app already uses for a good and a bad
+         outcome -- nothing new is minted.
+
+         AND A NO IS THE START OF A SENTENCE, NOT THE END OF ONE. "No" on
+         its own sends Shadow a rejection with no direction in it, so the
+         founder's next move was to go and type the reason somewhere else.
+         Choosing No opens a field right here for what they want changed.
+         It is the same draft the form already carries and the same send --
+         no second surface, no second request. */
       body = `<div class="shnewkinds">
-        ${opt({ value: "yes", label: "Yes" }, v === true)}
-        ${opt({ value: "no", label: "No" }, v === false)}</div>`;
+        ${opt({ value: "yes", label: "Yes" }, v === true, "", "shkindyes")}
+        ${opt({ value: "no", label: "No" }, v === false, "", "shkindno")}</div>
+        ${v === false ? `<div class="shivwhy">
+          <textarea class="shcompose shivwhytext"
+            data-shivwhy="${escAttr(mid)}" data-shivkey="${escAttr(f.key)}"
+            rows="2" placeholder="What should I change?">${
+              esc(shadowIvWhy(mid, f.key))}</textarea>
+        </div>` : ""}`;
       break;
     case "choice":
       body = `<div class="shnewkinds">${(f.options || [])
@@ -2136,14 +2259,23 @@ function shadowInterventionHtml(m){
   const ctx = String(iv.context || "").trim();
   const showCtx = !!ctx && !signing && !shadowAlreadySaid(ctx, said);
   return `<div class="shiv" data-shivform="${escAttr(iv.id || "")}">
-    <div class="shivq"${ctx && !showCtx
-      ? ` title="${escAttr(ctx)}"` : ""}>${esc(iv.question || "")}</div>
-    ${showCtx ? `<p class="shnewsub shivctx"
-      title="${escAttr(ctx)}">${esc(ctx)}</p>` : ""}
+    ${/* ── WHAT IS BEING JUDGED COMES FIRST (founder, 2026-09-23) ───────
+         "the 10 lines being evaluated need to be shown in the Shadow UI
+         BEFORE the question." A question about ten lines, printed above
+         the ten lines, is a question the founder has to scroll past to
+         answer -- and in the case that prompted this the lines were not on
+         this surface at all, so there was nothing to scroll to. Evidence
+         is the material; the question is what to do about it; the material
+         goes first. How much of it there is stays Shadow's call, not a
+         rule in this file -- see the decide prompt. */""}
     ${(iv.evidence || []).length ? `<div class="shivev">${
       iv.evidence.map(e => `<div class="shivevrow">${
         e.ref ? `<span class="shivevref">${esc(e.ref)}</span>` : ""
       }<span>${esc(e.text || "")}</span></div>`).join("")}</div>` : ""}
+    <div class="shivq"${ctx && !showCtx
+      ? ` title="${escAttr(ctx)}"` : ""}>${esc(iv.question || "")}</div>
+    ${showCtx ? `<p class="shnewsub shivctx"
+      title="${escAttr(ctx)}">${esc(ctx)}</p>` : ""}
     ${iv.fields.map(f => shadowIvFieldHtml(m.id, f,
       shadowIvSignsHtml(m, f), said)).join("")}
     <div class="shnewacts">
@@ -2170,11 +2302,56 @@ async function shadowSendIntervention(mid){
   const d = shadowIvDraft(mid);
   d.busy = true; d.err = null; d.errors = {};
   if (typeof scheduleRender === "function") scheduleRender();
+
+  /* ── A NO CARRIES WHAT THEY WANT CHANGED (founder, 2026-09-23) ────────
+     "No" on its own tells Shadow the work is wrong and nothing about what
+     would make it right, so the founder's next move was to go and say it
+     somewhere else. Whatever they typed under the No goes FIRST, down the
+     path they would have used anyway -- shadowTalkSend, the task's own
+     chat -- so it lands in this conversation as their words, in order,
+     before the answer that follows it.
+
+     NOTHING NEW IS SENT. Same endpoint, same conversation, same draft; the
+     answer POST below is untouched. If the line cannot be delivered the
+     answer still goes: a founder who pressed No must not be stuck because
+     their reason failed to send. */
+  const why = Object.keys(d.why || {})
+    .filter(k => d.values[k] === false)
+    .map(k => String(d.why[k] || "").trim())
+    .filter(Boolean)
+    .join("\n\n");
   let r = null;
   try {
     r = await shadowPost("/api/shadow/missions/" + mid + "/act", {
       action: "intervene", intervention_id: iv.id, values: d.values });
   } catch (e){ r = null; }
+
+  /* ── THE REASON IS SENT AFTER THE ANSWER, AND THAT ORDER IS THE POINT
+     (founder, 2026-09-23) ──────────────────────────────────────────────
+     It used to go first. The ask is drawn at the END of the conversation
+     while it is live, and a line sent through the task chat lands in the
+     TIMELINE above it -- so for the length of the round trip the founder
+     read their own words ABOVE the question they were answering:
+     "result / you answered / you said / question". Measured in the pane.
+
+     Answering first retires the ask, so by the time the reason appears
+     there is no live question below it to be above. The conversation then
+     reads in the order it happened: result, question, what they said, and
+     Shadow's reply to it.
+
+     STILL THE SAME PATH. shadowTalkSend, the task's own chat, the line the
+     founder typed -- identical to pressing Enter in the composer, which is
+     what makes it a message rather than a form submission. A reason that
+     cannot be delivered does not undo an answer that landed. */
+  if (why && typeof shadowTalkSend === "function"
+      && typeof shadowTalk === "function"){
+    try {
+      const T = shadowTalk();
+      if (!T.busy){ T.text = why; await shadowTalkSend(mid, null); }
+    } catch (e){}
+    d.why = {};
+  }
+
   d.busy = false;
   if (!r){
     d.err = "Could not reach Shadow just now.";
@@ -3788,6 +3965,48 @@ function shadowTimelineEvents(m){
   const fr = m && m.founder_response;
   if (fr && typeof fr === "object")
     out.push({ kind: "answered", ts: Date.parse(fr.answered_at || "") });
+
+  /* ── THE ROUNDS BEFORE THIS ONE (founder, 2026-09-23) ────────────────
+     THE BUG. Redirecting a task made its previous turn disappear: the
+     engine pops `completion`, `founder_response` and `intervention` on a
+     revision, correctly, because a LIVE ask must not stay answerable
+     against an objective nobody is working on. But what happened is not a
+     live thing, and it was being thrown away with them -- so a founder who
+     changed their mind lost the result they were changing their mind
+     ABOUT.
+
+     mission_engine now carries those three onto the `revisions` entry it
+     was already writing. This turns each entry into events in the SAME
+     stream, stamped with the revision's own clock, so the existing sorter
+     places them where they happened and the existing renderers draw them.
+     No second history, no second surface: one conversation that keeps
+     accumulating. */
+  for (const rev of (Array.isArray(m && m.revisions) ? m.revisions : [])){
+    if (!rev || typeof rev !== "object") continue;
+    if (rev.completion || rev.asked || rev.founder_response)
+      out.push({ kind: "round", rev: rev, ts: Date.parse(rev.at || "") });
+  }
+
+  /* ── AND THE ROUNDS A HAND-BACK CLOSED (founder, 2026-09-23: "Done means
+     the task is complete -- it does not mean its result is disposable") ──
+     `reopened` is the OTHER log the engine already keeps, and it already
+     carries the completion it displaced (mission_engine, `leg.completion =
+     m.pop("completion")`) together with the words the founder said when
+     they handed the task back. Nothing new is stored for this; it was
+     being archived correctly and drawn nowhere, so reopening a Done task
+     rebuilt the view from the LATEST result alone and every result before
+     it vanished. Same event, same renderer, same stream. */
+  for (const leg of (Array.isArray(m && m.reopened) ? m.reopened : [])){
+    if (!leg || typeof leg !== "object") continue;
+    const at = Date.parse(leg.at || "");
+    if (leg.completion)
+      out.push({ kind: "round", rev: leg, ts: at });
+    /* what they said when they reopened it is their own turn, and it comes
+       after the result it is about */
+    if (String(leg.words || "").trim())
+      out.push({ kind: "said", who: "founder", text: String(leg.words),
+                 ts: at + 1 });
+  }
   /* ── THE FOUNDER AND SHADOW, IN THE SAME STREAM (founder, 2026-09-17) ──
      One conversation, drawn where the worker's turns are drawn, because there
      is one door now and its answers belong beside the work they are about.
@@ -4190,6 +4409,9 @@ function shadowTimelineHtml(m){
        "you answered" is the card this replaces. shadowStoryHtml is kept
        and still exported. */
     if (e.kind === "answered") return shadowAnsweredHtml(m, runHead("you"));
+    /* an earlier round, drawn by the SAME pieces the current one uses: what
+       was produced, what was asked about it, and what the founder said */
+    if (e.kind === "round") return shadowRoundHtml(e.rev);
     if (e.kind === "ask_done"){
       /* WHAT WAS SETTLED, SAID RATHER THAN LABELLED (pass 4). The heads
          read "Shadow · held, then sent" and "Shadow · done when" -- the
@@ -4303,11 +4525,26 @@ function shadowAskRowsHtml(m){
       <div class="shsaidtext shaskhint">Or say it here: “yes”, “change it to …”, or “I did it myself”.</div>
     </div>`);
   }
-  if (m.intervention && m.intervention.id){
+  /* ── THE QUESTION IS ASKED ONCE (founder, 2026-09-23) ────────────────
+     This row announced the pending question HERE, and the ask itself
+     printed it again below with the result it is about. Two copies, and
+     the announcement came FIRST -- so the question stood above the very
+     output it was asking the founder to judge: "Better? Here is the new
+     list." and then, further down, the new list.
+
+     The ask carries the question now, beside its result, where the founder
+     can answer it. Nothing else about this row's neighbours moves: the
+     held-say row above and the check rows below are untouched, and an ask
+     held-say row above and the check rows below are untouched, and an ask
+     with no form needs this row, because shadowInterventionHtml draws
+     nothing without fields -- the question would then have no surface at
+     all. That is the one case it survives. */
+  if (m.intervention && m.intervention.id
+      && !(Array.isArray(m.intervention.fields)
+           && m.intervention.fields.length)){
     rows.push(`<div class="shsaid shask shask-question">
-      <div class="shsaidhead">Shadow · question</div>
+      <div class="shsaidhead">Shadow \u00b7 question</div>
       <div class="shsaidtext">${esc(m.intervention.question || "")}</div>
-      <div class="shsaidtext shaskhint">Answer on the form below.</div>
     </div>`);
   }
   /* ── ONE DECISION, ONE PLACE (founder, 2026-09-21) ──────────────────
@@ -4376,6 +4613,67 @@ function shadowAskRowsHtml(m){
    THE QUESTION IS NOT REPEATED HERE. Shadow already asked it, in its own
    row, above -- printing it again beside the answer is the duplication the
    redesign removes. */
+/* ── ONE EARLIER ROUND OF THE SAME CONVERSATION ────────────────────────
+   (founder, 2026-09-23.) Built from the entry mission_engine archives when
+   the founder redirects the task, and built out of the pieces the CURRENT
+   round already uses -- the result block, the question, the founder's
+   answer. Nothing here is a summary of what happened; it is what happened,
+   kept.
+
+   IT IS HISTORY, SO IT HAS NO CONTROLS. No form, no buttons, nothing to
+   answer twice: that ask was settled, by an answer or by the founder
+   changing their mind, which is itself an answer. */
+function shadowRoundHtml(rev){
+  if (!rev || typeof rev !== "object") return "";
+  const out = [];
+
+  /* what that round produced: Shadow's closing line AND the result behind
+     it. The line alone is a claim; the result is the thing the founder was
+     looking at when they changed their mind, and it is what they lost. */
+  const c = rev.completion;
+  if (c && c.said)
+    out.push(shadowSaidRowHtml("shadow", esc(String(c.said)), "shroundsaid"));
+  /* ONE COPY OF THE RESULT. When the round also carries the ask, its
+     evidence IS that result -- the thing the question was about -- and
+     drawing the completion's preview as well put the same lines on screen
+     twice, under two different headings. The ask's copy wins because it
+     is the one with the question attached to it. */
+  const askedEv = (rev.asked && (rev.asked.evidence || []).length);
+  const prev = !askedEv && c && c.preview && c.preview.text;
+  if (prev)
+    out.push(`<div class="shivev shivevdone"><div class="shivevrow">${
+      c.preview.ref ? `<span class="shivevref">${esc(c.preview.ref)}</span>` : ""
+    }<span>${esc(String(prev))}</span></div></div>`);
+  else if (c && !c.said && c.preview)
+    out.push(shadowSaidRowHtml("shadow", esc(String(c.preview.text || "")),
+                               "shroundsaid"));
+
+  /* what was asked about it, and what it was asked about */
+  const asked = rev.asked || {};
+  const ev = (asked.evidence || []).map(e => `<div class="shivevrow">${
+      e.ref ? `<span class="shivevref">${esc(e.ref)}</span>` : ""
+    }<span>${esc(e.text || "")}</span></div>`).join("");
+  if (ev) out.push(`<div class="shivev shivevdone">${ev}</div>`);
+  if (asked.question)
+    out.push(`<div class="shivq shivqdone">${esc(asked.question)}</div>`);
+
+  /* and what the founder said back */
+  const fr = rev.founder_response;
+  if (fr && typeof fr === "object"){
+    if (fr.question && !asked.question)
+      out.push(`<div class="shivq shivqdone">${esc(fr.question)}</div>`);
+    const parts = (Array.isArray(fr.summary) ? fr.summary : []).map(x => {
+      const label = String((x && (x.label || x.key)) || "").trim();
+      const value = (x && x.value !== undefined && x.value !== null)
+        ? String(x.value).trim() : "";
+      return (label && value) ? label + ": " + value : (label || value);
+    }).filter(Boolean);
+    if (parts.length)
+      out.push(shadowSaidRowHtml("you", esc(parts.join(" \u00b7 ")), "shanswered"));
+  }
+  return out.join("");
+}
+
 function shadowAnsweredHtml(m, head){
   const fr = m && m.founder_response;
   if (!fr || typeof fr !== "object") return "";
@@ -4389,7 +4687,39 @@ function shadowAnsweredHtml(m, head){
     })
     .filter(Boolean);
   if (!parts.length) return "";
-  return shadowSaidRowHtml("you", esc(parts.join(" · ")), "shanswered", head);
+  /* ── WHAT THEY WERE LOOKING AT WHEN THEY ANSWERED (founder, 2026-09-23:
+     "Done changes the task's state, not the visibility of its history") ──
+     Answering pops `intervention` -- it must, or a settled question would
+     draw a live form again -- and the result the question was ABOUT used to
+     go with it. So a founder returning to the finished task found their own
+     "yes" to a question about output that existed nowhere on this surface,
+     and the only way to see what they had agreed to was the worker's chat.
+
+     The ask now leaves that material on `founder_response`, and it is drawn
+     here, above the answer, in the order it happened: the result, then the
+     question, then what they said. Read-only by construction -- this is the
+     timeline, there is no form in it, and nothing here can be pressed
+     twice. */
+  const ev = (fr.evidence || []).map(e => `<div class="shivevrow">${
+      e.ref ? `<span class="shivevref">${esc(e.ref)}</span>` : ""
+    }<span>${esc(e.text || "")}</span></div>`).join("");
+  return (ev ? `<div class="shivev shivevdone">${ev}</div>` : "")
+    /* ONLY WHEN IT IS NOT ALREADY ABOVE. Pass 5 (2026-09-21) settled that
+       the question is not restated beside the answer -- Shadow asked it in
+       its own row, and printing it twice is duplication. That holds while
+       the ask is LIVE. Once answered, the record's `intervention` is popped
+       and that row is gone, so restating is the only way the question
+       survives. The two rules are one rule: say it exactly once. */
+    /* ONLY WHEN THIS EXACT ASK IS STILL ABOVE. The test was "is ANY ask
+       live", which is wrong the moment Shadow asks a SECOND question: the
+       first round's question then vanished from a conversation that still
+       held its result and its answer. It is the same ask only when the
+       live one carries the id this response answers. */
+    + ((fr.question
+        && !(m.intervention && m.intervention.id
+             && m.intervention.id === fr.intervention_id))
+        ? `<div class="shivq shivqdone">${esc(fr.question)}</div>` : "")
+    + shadowSaidRowHtml("you", esc(parts.join(" · ")), "shanswered", head);
 }
 
 function shadowStoryHtml(m){
@@ -5060,15 +5390,71 @@ function shadowNewTaskChatHtml(){
   </div>`;
 }
 
-/* THE ONE LINE, AND WHAT IT DOES. The founder's line goes to Shadow and
-   Shadow answers it. If the line held work, Shadow says so with a mission
-   fence and the task opens as a brief for the founder to confirm; if it did
-   not, there is a reply and no task. Which of the two happened is Shadow's
-   read of the sentence, not a rule in this file.
+/* ── THE NEW TASK PANE OWNS ITS OWN, EMPTY SCOPE ───────────────────────
+   (founder, 2026-09-23.) The pane's transcript is S.shadowThread, a getter
+   over S.shadowThreads[S.shadowChat]. Opening + Delegate used to change
+   S.shadowNewOpen and NOTHING ELSE, so S.shadowChat still named whichever
+   conversation was last submitted -- and the New task pane rendered that
+   conversation's messages under a "New task" header. Reproduced in the
+   browser: header "New task", transcript ["YOU Hi","SHADOW Hi. What would
+   you like done?"].
 
-   THE LINE IS NEVER LOST. It goes into the thread before the request and
-   stays there whatever comes back -- the reply under it, or the reason the
-   turn failed. Never a cleared field and no explanation. */
+   THE FIX IS OWNERSHIP, NOT FILTERING. The door mints the scope, so the
+   pane reads an array that was created empty a moment ago and can contain
+   nothing else by construction. No predicate asks whether a task exists, no
+   message is inspected, and the render is untouched. */
+function shadowMintScope(){
+  if (typeof S === "undefined") return null;
+  if (!S.shadowThreads) S.shadowThreads = {};
+  const key = "shc-" + Date.now().toString(36)
+            + Math.random().toString(36).slice(2, 8);
+  S.shadowThreads[key] = [];
+  S.shadowChat = key;
+  return key;
+}
+
+/* ── THE CONVERSATION'S OWN DURABLE RECORD ─────────────────────────────
+   Three writers, all fire-and-forget: a conversation that cannot be saved
+   must never stop the founder talking, and none of these is on the path to
+   the screen. Each re-opens the record first (create is idempotent), so a
+   create that failed at Enter is repaired by the next turn rather than
+   leaving every later message homeless. */
+function shadowConvOpen(cid, prompt){
+  if (typeof shadowPost !== "function") return null;
+  return shadowPost("/api/shadow/conversations", { id: cid, prompt: prompt })
+    .catch(() => null);
+}
+
+function shadowConvSay(cid, prompt, who, text){
+  if (typeof shadowPost !== "function") return null;
+  return shadowConvOpen(cid, prompt)
+    .then(() => shadowPost("/api/shadow/conversations/" + cid + "/messages",
+                           { who: who, text: String(text) }))
+    .catch(() => null);
+}
+
+function shadowConvBind(cid, prompt, mid){
+  if (typeof shadowPost !== "function" || !mid) return null;
+  return shadowConvOpen(cid, prompt)
+    .then(() => shadowPost("/api/shadow/conversations/" + cid + "/messages",
+                           { mission_id: mid }))
+    .catch(() => null);
+}
+
+/* THE ONE LINE, AND WHAT IT DOES. Two halves, deliberately independent.
+
+   ONE: the screen changes. Always, on Enter, for any non-empty line,
+   before anything is sent. Nothing about the transition may depend on what
+   the line turns out to be.
+
+   TWO: Shadow reads the line. A `mission` fence means actionable work, so
+   the task opens, starts, and its conversation is the screen; no fence
+   means Shadow simply answers and no worker exists. That judgement happens
+   AFTER the founder has arrived, never as a condition of arriving.
+
+   THE LINE IS NEVER LOST. It moves into the conversation with them, under
+   a "thinking..." row, and whatever comes back lands beneath it. Never a
+   cleared field and no explanation. */
 async function shadowNewTalk(){
   if (typeof fetch === "undefined" || typeof S === "undefined") return null;
   const c = shadowNewChat();
@@ -5076,30 +5462,148 @@ async function shadowNewTalk(){
   if (!text || c.busy) return null;
   c.thread.push({ who: "founder", ts: Date.now(), text });
   c.text = ""; c.busy = true; c.err = null;
-  if (typeof scheduleRender === "function") scheduleRender();
-  /* ── THIS BOX IS A CHAT, SO IT TALKS FIRST (founder, 2026-09-21) ──────
-     THE BUG. It was chat-SHAPED and was not a chat: every Enter went
-     straight to shadowCreateTask -> POST /api/shadow/missions, and then to
-     `start_now`. So "Hi" became a task with no work in it, the worker was
-     spawned on it, reported "no work requested", and the founder was asked
-     "What do you want done?" -- a clarification about a task they never
-     opened. Traced end to end in test_shadow_hi_trace.js: two requests, and
-     Shadow was asked about neither.
 
-     IT NOW GOES WHERE THE ANSWERS COME FROM. /api/shadow/chat is the same
-     door the stage composer uses, and a mission exists there ONLY because
-     Shadow emits a `mission` fence -- so a greeting gets a reply and
-     nothing else, and a real ask opens a task through the path that already
-     existed. No second rule, no classifier here, nothing about the create
-     endpoint changed: the Delegate FORM still posts to it, where a founder
-     typing into "The outcome you want" is deliberate.
+  /* ── THE SCREEN CHANGES ON ENTER, NOT ON THE ANSWER (founder, 2026-09-23)
+     ────────────────────────────────────────────────────────────────────
+     Every earlier version decided WHERE the founder goes from what came
+     back -- a mission meant the task pane, no mission meant one thing, a
+     failure another -- so the New task screen stayed up for as long as the
+     round trip took, and stayed up forever down whichever branch had
+     forgotten to close it. That is the bug three passes kept re-finding in
+     different clothes. The transition no longer depends on the answer: the
+     box is dismissed HERE, before the request is sent, and the answer only
+     decides what Screen 2 fills with.
 
-     AND IT NO LONGER STARTS WHAT IT OPENS. The task lands as a draft and
-     Start is the founder's press, which is what SHADOW.md has always said
-     ("Start is the founder's") and what the rest of this pane already
-     assumes. Auto-starting a task Shadow had just inferred is how a
-     greeting reached a worker at all. */
+     THE LINE MOVES WITH THEM. It is pushed into S.shadowThread -- the
+     thread the stage composer already writes to and this pane already
+     renders -- with the same `busy` waiting row sendToShadow has always
+     used, so the conversation reads "you said X / thinking..." from the
+     first frame. Both rows are tagged `newtalk` so the branches below can
+     retract exactly what this block added and nothing else.
+
+     AND IT LANDS IN ITS OWN INSTANCE. + Delegate is the NEW-task door, so
+     a line typed here must never join a conversation that already exists --
+     not the general thread, and above all not whichever task is running in
+     the left rail.
+
+     THE MECHANISM IS THE ONE THAT WAS ALREADY THERE. S.shadowThread is a
+     getter over S.shadowThreads[S.shadowChat] (15-shadow-overlay), and the
+     getter creates an empty array for a key it has not seen -- so naming a
+     fresh key IS a fresh conversation context. No new state, no second
+     thread store, and the rail's tasks are not touched: they are missions,
+     and nothing here reads or writes one. */
+  if (typeof S !== "undefined" && !S.shadowThreads) S.shadowThreads = {};
+  /* ── ONE ID, DURABLE FROM THIS INSTANT ────────────────────────────────
+     (founder, 2026-09-23.) This used to be a `new-...` key that existed
+     only in memory, so a conversation which opened no task was lost on a
+     reload -- the mission id was the only durable Shadow identity there
+     was. It is now a CONVERSATION id, and shadow_conversations on the
+     server stores a record under exactly this name.
+
+     THE CLIENT MINTS IT, and that is the whole reason the transition can be
+     synchronous: the screen must be replaced on the keystroke, not when a
+     POST has decided what the conversation is called. The create below is
+     idempotent on this id, so a retry or a double Enter lands on one record.
+
+     IT IS STILL NOT A scope_id. A conversation is not a chat session; the
+     server's scope_id means "the chat the founder is typing in" and binds
+     an existing-target mission fence. SH_LOCAL_SCOPE keeps it at home. */
+  /* THE SCOPE THE PANE WAS ALREADY SHOWING, if the founder came through the
+     + Delegate door -- one conversation, opened and then typed into, rather
+     than an empty one on screen and a different one underneath. Anything
+     that calls this without opening the door (a deep link, a test) still
+     gets a fresh one. Cleared either way, so the next open mints again. */
+  const scopeKey = (S.shadowNewScope && S.shadowThreads
+                    && Array.isArray(S.shadowThreads[S.shadowNewScope])
+                    && !S.shadowThreads[S.shadowNewScope].length)
+    ? S.shadowNewScope : shadowMintScope();
+  S.shadowNewScope = null;
+  S.shadowChat = scopeKey;
+
+  /* ── THIS CALL OWNS ITS OWN THREAD, BY KEY, NOT BY "WHICHEVER IS CURRENT"
+     ────────────────────────────────────────────────────────────────────
+     S.shadowThread is a getter that resolves against S.shadowChat AT THE
+     MOMENT IT IS READ. Everything below the await used to read it, so a
+     second submission made while the first was still in flight moved
+     S.shadowChat -- and the FIRST call's reply was then appended to the
+     SECOND call's conversation. Measured in the browser: submit A, submit
+     B, answer B, answer A, and B's thread read
+     ["PROMPT B","ANSWER TO B","ANSWER TO A"] while A sat on "thinking..."
+     for ever.
+
+     `mine()` binds this call to the key it minted, once, so no later
+     submission can redirect it. The getter is still the right thing for
+     everything that means "the conversation on screen"; it is the wrong
+     thing for "the conversation this async call belongs to". */
+  const mine = () => {
+    if (!S.shadowThreads[scopeKey]) S.shadowThreads[scopeKey] = [];
+    return S.shadowThreads[scopeKey];
+  };
+  const saidRow = { who: "founder", ts: Date.now(), text: text, newtalk: true };
+  const waitRow = { who: "shadow", ts: Date.now(), busy: true, newtalk: true,
+                    text: "thinking\u2026" };
+  mine().push(saidRow, waitRow);
+
+  /* IN THE RAIL BEFORE THE REQUEST LEAVES. The server's record is opened
+     below and the next read would bring it back anyway, but "anyway" is a
+     round trip -- and the founder is looking at the rail now. Same shape
+     the server returns, so the read that follows replaces it silently. */
+  if (!Array.isArray(S.shadowConversations)) S.shadowConversations = [];
+  S.shadowConversations = [{ id: scopeKey, title: text, mission_id: null,
+                             created_at: new Date().toISOString() }]
+    .concat(S.shadowConversations.filter(c => c && c.id !== scopeKey));
+
+  /* THE RECORD IS OPENED NOW AND NOT AWAITED. The founder is already being
+     moved to this conversation; making them wait for a POST to agree would
+     put the debounce back in a new costume. If it fails the conversation
+     still works for this session -- it simply will not survive a reload,
+     and shadowConvSay below retries the create before each append. */
+  shadowConvOpen(scopeKey, text);
+  /* neutral until the answer says otherwise: a task selects itself below */
+  S.shadowTaskSel = SH_NO_TASK;
+  S.shadowNewOpen = false;
+  S.shadowNewChat = null;
+  /* THROUGH lsSet, NOT localStorage DIRECTLY. The panel also loads inside a
+     department's function card as `/?embed=chat`, sharing this origin, and
+     it must never write a key the main panel reads -- lsSet is the one
+     writer that honours that (01-state.js, EMBED_KEYS). test_embed.js
+     refuses a direct write, and refused these two. */
+  if (typeof lsSet === "function") lsSet("sutra.shadow.conv", scopeKey);
+  /* ── renderNow, NOT scheduleRender (founder, 2026-09-23) ──────────────
+     THIS IS WHY THE SCREEN LAGGED. scheduleRender is a 100ms debounce that
+     also returns early when a render is already pending (01-state.js), so
+     the three assignments above landed in 0.9ms and the DOM kept showing
+     "New task" for up to a tenth of a second afterwards -- measured in the
+     browser: state `shadowNewOpen=false`, composer still in the document,
+     title still "New task". Every version of this function since the box
+     existed has ended on the debounce, so the transition was never actually
+     synchronous; it only looked instant when the founder's eye was slower
+     than the timer.
+
+     renderNow exists for exactly this and says so: "Render on THIS tick,
+     cancelling any pending debounce." A transition the founder asked for by
+     pressing a key is not a hot path, and it is not a token stream. The
+     later renders in this function stay on the debounce. */
+  if (typeof renderNow === "function") renderNow();
+  else if (typeof scheduleRender === "function") scheduleRender();
+  /* ── SHADOW READS THE PROMPT; IT DOES NOT GATE THE SCREEN ────────────
+     (founder, 2026-09-23.) The transition above already happened. What
+     follows only decides what the founder finds when they get there.
+
+     /api/shadow/chat is the same door the stage composer uses. A task
+     exists because Shadow answered with a `mission` fence, and for a line
+     with no work in it there is no fence and no worker -- which is the
+     whole of the "Hi should not spawn a worker" requirement, handled where
+     the judgement belongs rather than in this box.
+
+     WHY THIS IS WRITTEN DOWN. Two earlier passes put "is this a task?"
+     BEFORE the transition, so a greeting left the founder standing on the
+     composer; a third removed the classification entirely, so a greeting
+     spawned a worker again. Neither is the shape. The shape is: transition
+     first, always; interpret second. The two halves are independent and
+     must stay that way. */
   let m = null;
+  let reply = "";
   try {
     const r = await shadowPost("/api/shadow/chat",
                                { message: text, intake: true });
@@ -5110,30 +5614,100 @@ async function shadowNewTalk(){
       throw new Error("Shadow could not answer ("
                       + ((r && r.status) || "no reply") + ").");
     const doc = await r.json();
-    if (doc && doc.reply)
-      c.thread.push({ who: "shadow", ts: Date.now(), text: String(doc.reply) });
+    if (doc && doc.reply) reply = String(doc.reply);
     m = (doc && (doc.mission || (doc.missions || [])[0])) || null;
   } catch (e){
     m = null;
     c.err = String((e && e.message) || "Shadow could not answer.");
   }
   c.busy = false;
+
+  /* the waiting row has done its job whatever came back -- in THIS call's
+     conversation, whichever one the founder is now looking at */
+  S.shadowThreads[scopeKey] = mine().filter(t => t !== waitRow);
+
   if (!m){
-    /* NO TASK IS THE ORDINARY OUTCOME NOW, not a failure: Shadow answered
-       and there was no work in the line. The panel stays open so the
-       conversation can continue -- the next line may well be the task. */
-    S.shadowNewOpen = true;
+    /* NO WORKER. Either Shadow read no work in the line -- the ordinary
+       case -- or the turn failed. Both are said here, on the screen the
+       founder is already on, beside the line that caused them. The pane
+       stays neutral, so the next message is ordinary Shadow chat in this
+       conversation and not a message into some task in the rail. */
+    const said = c.err || reply;
+    if (said){
+      mine().push({ who: "shadow", ts: Date.now(), text: String(said),
+                    newtalk: true });
+      shadowConvSay(scopeKey, text, "shadow", said);
+    }
   } else {
-    /* a real ask: the task exists, put it in focus and let this chat go */
+    /* ACTIONABLE. The task's own conversation is the screen now, so the two
+       rows this function put in the general thread come back out rather
+       than showing the same exchange twice. */
+    /* THE CONVERSATION KEEPS ITS OWN RECORD even though the task's pane is
+       what the founder now reads: the conversation is what they typed into,
+       the mission is what it opened, and after a reload the second is found
+       through the first. */
+    if (reply) shadowConvSay(scopeKey, text, "shadow", reply);
+    shadowConvBind(scopeKey, text, m.id);
+    /* THE ROW BECOMES THE TASK'S. A bound conversation is drawn as its
+       mission, so marking it here is what stops the same submission
+       appearing twice in the rail for the length of the next read. */
+    S.shadowConversations = (S.shadowConversations || []).map(c =>
+      (c && c.id === scopeKey) ? Object.assign({}, c, { mission_id: m.id }) : c);
+    S.shadowThreads[scopeKey] = mine().filter(t => !t || !t.newtalk);
+    /* ── NOTHING HERE DECIDES WHETHER IT RUNS (founder, 2026-09-23) ────
+       There used to be a carve-out on this line: a fence naming
+       target_mode "existing" was left unstarted, on the reasoning that it
+       drives a chat the founder is already in. That was a second opinion
+       about whether work should happen, taken in the client, after Shadow
+       had already said it should -- and it is exactly the kind of gate the
+       founder asked to be rid of. The server starts what it creates from
+       intake; this file's job is to show it. */
     if (typeof S !== "undefined"){
       if (!Array.isArray(S.shadowMissions)) S.shadowMissions = [];
+      /* the seeded row says what is about to be true: a brief_confirm
+         record with no start stamp is the shape that draws "Start the
+         task", and this function is committed to starting it. The stamp
+         comes off below if the start does not land. A take-over is not
+         stamped -- nothing is going to start it. */
+      const seedRow = Object.assign({}, m,
+        { start_requested_at: m.start_requested_at || new Date().toISOString() });
       if (!S.shadowMissions.some(x => x && x.id === m.id))
-        S.shadowMissions = S.shadowMissions.concat([m]);
-      S.shadowTaskSel = m.id;
-      S.shadowNewOpen = false;
+        S.shadowMissions = S.shadowMissions.concat([seedRow]);
+      /* THE VIEW IS ONLY TAKEN IF THE FOUNDER HAS NOT MOVED. The rail row
+         and the task are created either way -- that is the work, and it
+         happens regardless. But a slow submission must not yank the screen
+         away from wherever they went while it was in flight.
+
+         BOTH HALVES ARE CHECKED, because they move independently: a second
+         + Delegate submission changes shadowChat, and clicking a row in the
+         rail changes shadowTaskSel and leaves shadowChat alone (the click
+         handler writes exactly one of them). Testing only the scope would
+         let this steal the pane from a task the founder had just opened. */
+      if (S.shadowChat === scopeKey && S.shadowTaskSel === SH_NO_TASK)
+        S.shadowTaskSel = m.id;
     }
-    S.shadowNewChat = null;
-    if (typeof loadShadowHome === "function") loadShadowHome(true);
+    /* THE EXISTING START, through the action endpoint every other Shadow
+       control uses -- unchanged, and awaited so a second Enter cannot land
+       while it is in the air. */
+    /* THE START IS THE SERVER'S, AND THIS IS THE BELT TO ITS BRACES.
+       /api/shadow/chat now starts an intake mission in the same turn that
+       creates it, so `m` usually arrives already running. This call stays
+       because it costs nothing when it is redundant -- start_mission_async
+       refuses a mission that is already running -- and covers the case
+       where the server's start could not be taken. */
+    let started = (m.state && m.state !== "brief_confirm") ? m.state : null;
+    if (!started && typeof shadowMissionAct === "function"){
+      try { started = await shadowMissionAct(m.id, "start_now"); }
+      catch (e){ started = null; }
+    }
+    if (!started && typeof S !== "undefined"){
+      S.shadowMissions = (S.shadowMissions || []).map(x =>
+        (x && x.id === m.id) ? Object.assign({}, x, { start_requested_at: null })
+                             : x);
+      if (typeof showNudge === "function")
+        showNudge("Task created, but it did not start \u2014 press Start on the brief.");
+    }
+    if (typeof loadShadowHome === "function") await loadShadowHome(true);
   }
   if (typeof scheduleRender === "function") scheduleRender();
   return m;
@@ -5445,14 +6019,68 @@ function shadowHomeHtml(){
   <div class="zero"><h4>Shadow</h4>
     <p>Shadow is not enabled. Turn it on in Settings to get a chief of
     staff watching your sessions.</p></div>`;
-  /* the SAME thread the corner card renders -- a goal proposal (slice 8) or
-     a mission card appears here, right where the founder just typed */
-  const thread = (S.shadowThread || []).map(t => {
+  /* ── THE THREAD BELONGS TO THE CONVERSATION IN FOCUS, AND TO NOTHING
+     ELSE (founder, 2026-09-23) ──────────────────────────────────────────
+     THE LEAK THIS CLOSES, exactly as the founder screenshotted it. This
+     block read S.shadowThread -- the getter over S.shadowThreads[
+     S.shadowChat] -- and the row below rendered it UNCONDITIONALLY, beside
+     whatever the pane was otherwise drawing. So selecting a mission while
+     the scope named a different conversation composed the two into one
+     view: header "The culture of India", the mission's own line, and then
+     "YOU Hi" from somewhere else entirely. Reproduced in a real browser:
+     "The culture of India QUEUED YOU The culture of India YOU Hi SHADOW
+     Hi. What would you like done?"
+
+     IT IS RESOLVED BY OWNERSHIP, NOT BY A PREDICATE ABOUT TASKS. The pane
+     asks which row is in focus; if that row IS a conversation, its
+     messages are read BY ITS OWN ID, never through the mutable getter. A
+     mission in focus has no conversation thread to draw, so there is
+     nothing to filter and nothing to hide. */
+  /* resolved ONCE, here, and read by everything below -- the pane must not
+     ask "what is in focus?" twice and risk two answers in one frame */
+  const selRow = shadowSelectedTask();
+  const focusConv = shadowIsConvRow(selRow) ? selRow : null;
+  /* WHOSE THREAD, AND WHEN IT IS DRAWN AT ALL.
+       a conversation in focus -> ITS rows, read by its own id
+       nothing in focus       -> the current scope, which is the general
+                                 Shadow thread the stage composer, the goal
+                                 proposals and the mission cards write to
+       a MISSION in focus     -> none: the pane is that task's, and drawing
+                                 a conversation underneath it is the leak
+                                 the founder screenshotted
+     The last line is the fix; the middle one is why the gate cannot simply
+     be "only a conversation" -- three suites pin the general thread
+     rendering here, and they are right to. */
+  const focusRows = focusConv
+    ? ((S.shadowThreads || {})[focusConv.id] || [])
+    : (selRow ? [] : (S.shadowThread || []));
+  const thread = focusRows.map(t => {
     if (t.goalProposal && typeof goalProposalHtml === "function")
       return goalProposalHtml(t.goalProposal);
     if (t.mission && typeof missionCardHtml === "function")
       return missionCardHtml(t.mission);
-    /* v4 C6: Shadow's words as prose, the founder's verbatim */
+    /* ── ONE CONVERSATION LOOK, NOT TWO (founder, 2026-09-23) ───────────
+       This pane drew the thread through shadowMsgHtml (.shmsg/.shmine),
+       which is the CORNER CARD's vocabulary: .shmine is a left border on a
+       full-width block. The task conversation beside it draws the same
+       exchange through shadowSaidRowHtml, whose .shfrom-you is
+       `align-self:flex-end` -- the founder's words on the RIGHT, with a YOU
+       label. So one pane showed two different ideas of "you said", decided
+       by whether a task happened to exist.
+
+       It is the task renderer for both now. Nothing new is written: the
+       same function, the same classes, the same stylesheet rules the task
+       timeline has always used. shadowMsgHtml keeps every other caller --
+       the corner card and the goal workspace are untouched. */
+    if (typeof shadowSaidRowHtml === "function"){
+      const mine = t && t.who === "founder";
+      const body = mine
+        ? esc((t && t.text) || "")
+        : (typeof shadowProseHtml === "function"
+            ? shadowProseHtml((t && t.text) || "")
+            : esc((t && t.text) || ""));
+      return shadowSaidRowHtml(mine ? "you" : "shadow", body);
+    }
     if (typeof shadowMsgHtml === "function") return shadowMsgHtml(t);
     return `
     <div class="shmsg ${t.who === "founder" ? "shmine" : "shshadow"}">
@@ -5479,8 +6107,13 @@ function shadowHomeHtml(){
 
      LEFT is the inventory and the one new action. RIGHT is the single task in
      focus, the conversation, and everything that was already there. */
-  const sel = shadowSelectedTask();
   const newOpen = !!S.shadowNewOpen;
+  /* A CONVERSATION ROW IS NOT A TASK, so everything below that reads `sel`
+     to draw a task's furniture -- the timeline, the pills, Stop, Open the
+     chat, the intervention form -- sees null for one. The header still
+     titles itself from the row, and the conversation renders as the thread
+     it always was. One name change, no new branches. */
+  const sel = shadowIsConvRow(selRow) ? null : selRow;
   const face = sel ? shadowTaskFaceFor(sel) : null;
   return `<div class="shwork">
     <aside class="shwleft">
@@ -5498,7 +6131,15 @@ function shadowHomeHtml(){
              needs disambiguating. The header is now back-arrow, title,
              state, controls; .shwseal's rules leave panel.css with it. */""}
         <h2 class="shwtitle">${newOpen ? "New task"
-          : esc((sel && sel.objective) || "Shadow")}</h2>
+          : esc((sel && sel.objective) || "Shadow")}</h2>${
+          /* A CONVERSATION'S NAME IS ITS RAIL ROW, NOT THIS HEADER
+             (founder, 2026-09-23, the drawn UI: "Shadow / YOU Hi / SHADOW
+             thinking..."). A task's header is its objective because the
+             objective is the work; a conversation has no work, and naming
+             the header after the founder's first sentence would make the
+             pane read like a task that has not started. `sel` is the
+             mission-or-nothing row, so a conversation falls through to
+             the plain word -- which is what the reference draws. */""}
         <div class="shwheadacts">
           ${/* ── THE TURN COUNT IS BACKEND STATE (founder, 2026-09-21,
                pass 4) ─────────────────────────────────────────────────
@@ -5685,6 +6326,18 @@ function shadowHomeHtml(){
       ${/* the founder's answer is INSIDE the timeline now, at the point it
            happened -- drawing it here as well would be the same card twice */""}
       ${thread ? `<div class="shthread">${thread}</div>` : ""}
+      ${/* ── THE ASK FLOWS WITH THE CONVERSATION (founder, 2026-09-23) ───
+           It used to be pinned BELOW this scroller, in a capped box with a
+           scrollbar of its own, so a result worth checking was read through
+           a panel inside a panel. It is the last thing in the conversation
+           now -- what Shadow wants you to know, then the result, then the
+           question -- and the pane's scroller is the only one.
+
+           REVERSES the 2026-09-18 pinning, which put the question and the
+           turns that earned it on screen together. That is what is traded
+           for a result the founder can actually read; scrolling to the
+           bottom is how a conversation has always worked. */""}
+      ${newOpen || !sel ? "" : shadowInterventionHtml(sel)}
       ${newOpen ? "" : shadowPendingMemoryHtml()}
       </div>
       ${/* ── THE QUESTION IS PINNED, THE CONVERSATION SCROLLS (founder,
@@ -5716,7 +6369,6 @@ function shadowHomeHtml(){
            NO OTHER STATE MOVES: shadowInterventionHtml returns "" unless the
            mission is carrying a question, so every running, done, failed and
            stopped mission renders exactly the markup it did before. */""}
-      ${newOpen || !sel ? "" : shadowInterventionHtml(sel)}
       ${/* THE ASK BLOCK IS THE NEW-TASK COMPOSER (founder, 2026-09-15).
            "What should I take on? / Tell Shadow the outcome you want" is
            how a task is CREATED, and it was drawing under the workspace as
@@ -5777,6 +6429,95 @@ function shadowHomeOnScreen(){
   return S_.screen === "shadow" || S_.screen === "shadowwatching";
 }
 
+/* ── PUTTING THE SAVED CONVERSATIONS BACK ───────────────────────────────
+   (founder, 2026-09-23.) The server's records are the truth; this only
+   rebuilds the client's thread map from them.
+
+   A CONVERSATION IN FLIGHT IS NOT OVERWRITTEN. A read can land while a
+   submission is still waiting for its answer -- the record on disk then has
+   the prompt and not the reply, and copying it over the live thread would
+   erase the "thinking..." row the founder is looking at. So a scope that
+   already holds MORE rows than the record is left alone; the next append
+   reconciles it.
+
+   IT DOES NOT TOUCH THE RAIL. Conversations are not tasks and must not
+   appear as them -- the rail stays S.shadowMissions, exactly as it was. */
+function shadowRestoreConversations(rows){
+  if (typeof S === "undefined") return 0;
+  if (!S.shadowThreads) S.shadowThreads = {};
+  /* THE LIST THE RAIL DRAWS FROM. Merged rather than replaced: a submission
+     made a moment ago is already in here locally and the server's answer
+     may not carry it yet, and dropping it would take the founder's own
+     submission out of the rail while they were looking at it. */
+  const seen = {};
+  const local = {};
+  (S.shadowConversations || []).forEach(r => { if (r && r.id) local[r.id] = r; });
+  (rows || []).forEach(r => {
+    if (!r || !r.id) return;
+    /* A BINDING ONLY EVER GOES null -> SET, SO THE SET ONE WINS. The bind
+       POST is fire-and-forget, so a read can easily answer BEFORE it lands
+       and hand back the same conversation still saying mission_id null.
+       Taking the server's answer wholesale then un-bound it locally, the
+       conversation went back to being an unbound row, and the rail drew the
+       submission TWICE -- once as its conversation and once as its mission.
+       Caught in the browser on a clean store. */
+    const mine = local[r.id];
+    seen[r.id] = (mine && mine.mission_id && !r.mission_id)
+      ? Object.assign({}, r, { mission_id: mine.mission_id })
+      : r;
+  });
+  Object.keys(local).forEach(id => { if (!seen[id]) seen[id] = local[id]; });
+  S.shadowConversations = Object.keys(seen)
+    .map(k => seen[k])
+    .sort((a, b) => String(b.created_at || "").localeCompare(
+                    String(a.created_at || "")));
+  let put = 0;
+  (rows || []).forEach(rec => {
+    if (!rec || !rec.id) return;
+    const msgs = (rec.messages || []).map(msg => ({
+      who: msg.who === "founder" ? "founder" : "shadow",
+      text: String(msg.text == null ? "" : msg.text),
+      ts: msg.ts, newtalk: true }));
+    /* A BOUND CONVERSATION IS DRAWN AS ITS TASK, NOT TWICE. Once a
+       conversation names a mission, the task's own pane is what the founder
+       reads -- it renders the objective as their opening line and the
+       timeline underneath. Restoring this record's rows as well put the
+       prompt on screen a second time ("YOU ... YOU ... SHADOW"), which the
+       browser run caught. The record still exists and still names the
+       mission; it simply has no second rendering. */
+    if (rec.mission_id){ S.shadowThreads[rec.id] = []; return; }
+    const live = S.shadowThreads[rec.id];
+    if (Array.isArray(live) && live.length > msgs.length) return;
+    S.shadowThreads[rec.id] = msgs;
+    put++;
+  });
+  /* THE ONE THING THE BROWSER MAY REMEMBER is which conversation was open
+     -- a per-viewer convenience, the kind localStorage is for. The CONTENT
+     is on the server; this is only the founder's place in it, so losing it
+     costs a click and never a word. */
+  try {
+    const last = (typeof lsGet === "function")
+      ? lsGet("sutra.shadow.conv", null)
+      : window.localStorage.getItem("sutra.shadow.conv");
+    const rec = (rows || []).find(r => r && r.id === last);
+    if (last && S.shadowThreads[last] && !S.shadowTaskSel && rec
+        && !rec.mission_id && (S.shadowThreads[last] || []).length){
+      /* PUTTING THEM BACK WHERE THEY WERE. Naming the scope is not enough:
+         shadowSelectedTask falls back to the first row of the rail when
+         nothing is selected, so the task pane won and the restored
+         conversation was on screen nowhere. Caught in the browser once the
+         test backend had more than a couple of missions.
+
+         ONLY AN UNBOUND CONVERSATION CLAIMS THE VIEW. One that named a
+         mission is READ AS ITS TASK -- the rail row is the way back to it,
+         and the first-task landing is unchanged for everyone else. */
+      S.shadowChat = last;
+      S.shadowTaskSel = SH_NO_TASK;
+    }
+  } catch (e){}
+  return put;
+}
+
 function loadShadowHome(force){
   if (_shHomeRead && !force) return _shHomeRead;
   const p = _loadShadowHome(!force);
@@ -5808,14 +6549,24 @@ async function _loadShadowHome(lazy){
        names the floors, and reading them is cheaper than a second load path.
        It is NOT part of shadowHomeErr -- a missing settings answer costs one
        advisory line, never the page. */
-    const [w, m, i, g, s] = await Promise.all([
+    /* CONVERSATIONS RIDE THE SAME PARALLEL READ the home already does.
+       They are what makes a Shadow conversation survive a reload: the rail
+       is missions, and a conversation that opened no task is in neither the
+       rail nor anywhere else without this. Like settings, a missing answer
+       costs the conversations and never the page -- so it is NOT folded
+       into shadowHomeErr. */
+    const [w, m, i, g, s, cv] = await Promise.all([
       fetch("/api/shadow/watches").then(r => r.ok ? r.json() : null),
       fetch("/api/shadow/missions").then(r => r.ok ? r.json() : null),
       fetch("/api/shadow/instructions").then(r => r.ok ? r.json() : null),
       fetch("/api/shadow/goals").then(r => r.ok ? r.json() : null),
       fetch("/api/shadow/settings").then(r => r.ok ? r.json() : null)
         .catch(() => null),
+      fetch("/api/shadow/conversations").then(r => r.ok ? r.json() : null)
+        .catch(() => null),
     ]);
+    if (cv && typeof shadowRestoreConversations === "function")
+      shadowRestoreConversations(cv.conversations || []);
     if (s) S.shadowSettings = s;
     /* the durable presence choice rides this payload; seeding it here keeps
        the settings switch and the overlay reading one value, not two */
@@ -6971,7 +7722,16 @@ if (typeof document !== "undefined" && document.addEventListener){
         S.shadowNewErr = null;
         /* v4: opening starts an empty task chat; closing forgets nothing on
            the server (a draft already opened stays in the list as READY) */
-        if (S.shadowNewOpen) shadowNewChat();
+        if (S.shadowNewOpen){
+          shadowNewChat();
+          /* AND AN EMPTY SCOPE TO READ FROM. Opening this pane is the start
+             of a new conversation, so it points at a new conversation --
+             not at whichever one was last submitted. `shadowNewScope` is
+             the handoff: the submit below adopts this exact key instead of
+             minting a second one, so the conversation the founder started
+             looking at is the conversation their line lands in. */
+          S.shadowNewScope = shadowMintScope();
+        }
       }
       if (typeof scheduleRender === "function") scheduleRender();
       return;
@@ -7047,7 +7807,18 @@ if (typeof document !== "undefined" && document.addEventListener){
       ? ev.target.closest("[data-shtask]") : null;
     if (taskRow){
       if (typeof S !== "undefined"){
-        S.shadowTaskSel = taskRow.dataset.shtask;
+        const pick = taskRow.dataset.shtask;
+        /* THE TWO KINDS OF ROW GO TO THE TWO KINDS OF PLACE. A conversation
+           id opens the conversation (scope, and no task selected); a
+           mission id opens the task. Told apart by the id the row already
+           carries -- nothing new is stored on the element. */
+        if (String(pick || "").indexOf("shc-") === 0){
+          S.shadowChat = pick;
+          S.shadowTaskSel = SH_NO_TASK;
+          if (typeof lsSet === "function") lsSet("sutra.shadow.conv", pick);
+        } else {
+          S.shadowTaskSel = pick;
+        }
         S.shadowNewOpen = false;
       }
       if (typeof scheduleRender === "function") scheduleRender();
@@ -7404,6 +8175,13 @@ if (typeof document !== "undefined" && document.addEventListener){
     /* v4: the task chat line and the behaves text, kept across the
        background re-renders like every typed field here */
     if (d.shnewtalk){ shadowNewChat().text = t.value; return; }
+    /* THE NODE IS THE DRAFT, exactly as the composer above it is: a render
+       while the founder is typing their reason must not rewrite the box
+       under them. Stored on every keystroke, never re-rendered from. */
+    if (d.shivwhy && d.shivkey){
+      shadowIvSetWhy(d.shivwhy, d.shivkey, t.value);
+      return;
+    }
     if (d.shbehaves){
       if (typeof S !== "undefined"){ S.shadowBehavesDraft = t.value; S.shadowBehavesSaved = false; }
       return;

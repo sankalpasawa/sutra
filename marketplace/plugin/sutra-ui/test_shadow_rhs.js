@@ -467,11 +467,21 @@ const IV = {
     "carrying the server's own label and the value they chose");
   assert(!/class="shstory"/.test(h), "and not the record-shaped card");
   assert(!/You answered · 1h ago/.test(h), "nor its stamped heading");
-  /* the question is NOT restated beside the answer -- Shadow asked it in
-     its own row, above, and printing it twice is the duplication the
-     redesign removes */
-  assert(!/Sign off on release-checklist\.md/.test(h),
-    "the question must not be restated beside the answer");
+  /* ── REVERSED 2026-09-23, AND HERE IS WHY ───────────────────────────
+     This asserted the opposite: the question is NOT restated beside the
+     answer, because "Shadow asked it in its own row, above". That row is
+     the LIVE intervention -- and answering pops `intervention` from the
+     record, so once the ask is settled the row is gone and the question
+     was preserved nowhere. The founder's report (2026-09-23): returning to
+     a finished task showed their own "yes" to a question about output that
+     no longer existed on this surface, and the only way to see what they
+     had agreed to was to open the worker's chat.
+
+     The rule is unchanged in spirit -- say it exactly once. The renderer
+     restates the question ONLY when there is no live ask above it, so a
+     question in flight is still printed once and a settled one survives. */
+  assert(/Sign off on release-checklist\.md/.test(h),
+    "a settled question must survive: nothing else on this surface has it");
   /* an answer with nothing chosen draws nothing rather than a bare
      "you answered" */
   assert(!/shanswered/.test(pane(fresh(), M({ founder_response:
@@ -738,11 +748,15 @@ const CTX_README = "The delegate added a ## Shadow: the task pane section to "
       fields: [{ key: "readme_ok", type: "boolean", required: true,
                  label: L_README }] } }));
 
-  /* PRIMARY: the question and the criterion, both in full */
+  /* PRIMARY: the question, and only the question (founder, 2026-09-23).
+     The criterion used to be printed beside it, quoted verbatim, under a
+     "Yes signs off" label -- Shadow's own bookkeeping shown to someone who
+     only has to say whether the work is right. Removed; the check is still
+     bound to the field and still closed by the answer. */
   assert(h.indexOf(Q_README) !== -1, "the question is primary and unedited");
-  assert(h.indexOf("“" + C_README + "”") !== -1,
-    "the sign-off criterion is primary and quoted verbatim");
-  assert(/Yes signs off/.test(h), "and it still says what the Yes does");
+  assert(h.indexOf(C_README) === -1,
+    "the internal criterion is not shown to the founder");
+  assert(!/Yes signs off/.test(h), "nor the label that introduced it");
 
   /* GONE: the label that was the same sentence a third time */
   assert(h.indexOf(L_README) === -1 || !new RegExp(
@@ -816,10 +830,13 @@ const askMission = (over, checks, fields) => M(Object.assign({
   const h = pane(fresh(), askMission());
   assert(!/shcard2k">done when</.test(h),
     "DONE WHEN must stand aside when the ask signs off every unmet check");
-  /* the criterion is still on screen -- ONCE, where it is being signed */
-  assert.strictEqual(h.split(C_README).length - 1, 1,
-    "the criterion must appear exactly once, in the sign-off row");
-  assert(/Yes signs off/.test(h), "and it is the sign-off that carries it");
+  /* THE CRITERION IS NOT ON SCREEN AT ALL (founder, 2026-09-23). The rule
+     this block enforced -- say it exactly once -- is now satisfied by
+     saying it zero times: DONE WHEN stands aside, and the sign-off row that
+     used to carry it is gone. The check is still bound and still closed. */
+  assert.strictEqual(h.split(C_README).length - 1, 0,
+    "the internal criterion appears nowhere on this surface");
+  assert(!/Yes signs off/.test(h), "and nothing announces the sign-off");
   /* PASS 3: there is no "rest of the brief" on the surface any more -- the
      metadata card left the conversation flow. What this block is really
      pinning is above: the criterion appears exactly ONCE, in the row that
@@ -1034,11 +1051,14 @@ function timeline(ctx, msgs, over){
   /* and it is drawn ONCE -- the spine must not repeat it below */
   assert.strictEqual((h.match(/shanswered/g) || []).length, 1,
     "the answer must not be duplicated");
-  /* PASS 5: the question is NOT restated beside the answer -- Shadow asked
-     it in its own row when it asked, and a conversation does not quote
-     itself back. It is still on the record (founder_response.question). */
-  assert(!/Ship it\?/.test(h),
-    "the question must not be restated beside the answer");
+  /* REVERSED 2026-09-23 (see the longer note on the first of these). Pass 5
+     read "it is still on the record" as enough -- but the record is not a
+     surface, and the row that HAD asked it is popped the moment it is
+     answered. A founder returning to the finished task was left with an
+     answer to a question nothing showed them. Restated only when no live
+     ask is above it, so it is still said exactly once. */
+  assert(/Ship it\?/.test(h),
+    "a settled question survives beside the answer it earned");
 }
 
 /* 4. generic and control-plane turns stay filtered, and do not take a row */

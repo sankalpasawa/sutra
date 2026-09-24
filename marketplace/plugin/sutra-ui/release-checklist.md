@@ -50,8 +50,9 @@ Wired 2026-09-16. The step ran three suites — `test_panel.js`, `test_nav.js`,
 regression in Shadow home, the overlay or the settings screen shipped without failing a single leg.
 All of them now run in that step, listed one per line.
 
-Pass condition — these two print the SAME number, and it is `31` today (was `11` when this check
-was written, `30` before the Shadow conversation work of 2026-09-21 added `test_shadow_hi_trace.js`;
+Pass condition — these two print the SAME number, and it is `33` today (was `11` when this check
+was written, `30` before the Shadow conversation work of 2026-09-21 added `test_shadow_hi_trace.js`,
+and `31` before `test_shadow_done_history.js` and `test_shadow_order.js` on 2026-09-23;
 the number in this sentence is documentation, the equality of the two commands is the check):
 
 ```bash

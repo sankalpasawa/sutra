@@ -424,6 +424,25 @@ PERMISSION_MODE_FLOOR = "plan"
 # restart, which is what the founder asked to stop happening.
 ACCESS_CHOSEN_KEY = "permission_mode_chosen"
 
+# THE ONE-TIME CATCH-UP FOR THE MACHINES THE RESOLUTION RULE ABOVE CANNOT REACH
+# (founder, 2026-09-23: "make Full access the default for them too").
+#
+# ACCESS_CHOSEN_KEY moves an UNSTAMPED `plan`, and that was enough while the
+# only way to acquire one was the pre-2026-09-18 default. It is not enough now:
+# the unattributed write of 2026-09-19 left `plan` WITH the stamp beside it on
+# at least one of the five-to-ten installs that exist, and a stamp is
+# indistinguishable from a pick once it is on disk. So a stored floor mode is
+# raised to the default ONCE, stamp or no stamp, and this key records that it
+# happened so it can never happen twice.
+#
+# Twice is the whole risk. Without the key, an operator who picks Read only
+# AFTER this ships would be overruled at the next launch, every launch, with
+# no way to say otherwise -- the exact failure the founder asked to end, only
+# pointed the other way. So the key is written on the FIRST run whatever the
+# stored mode was, including when nothing needed moving: the install that sits
+# on `acceptEdits` today and chooses `plan` tomorrow must keep it.
+FULL_ACCESS_MIGRATION_KEY = "full_access_migrated"
+
 DEFAULT_WORKDIR = "~/sutra-ui-workspace"
 
 # Modes that let the spawned agent act without asking. The panel's settings
@@ -3212,6 +3231,57 @@ def save_settings(provider=None, permission_mode=None, workdir=None, onboarded=N
 
     _write_settings(raw)
     return load_settings()
+
+
+def migrate_plan_to_full():
+    """Raise a stored `plan` to the Full-access default, once per install.
+
+    Called at server startup (app.py `_migrate_permission_mode`). Returns the
+    mode it wrote, or None when it did nothing -- which is the common case,
+    since it does something at most once in the life of an install.
+
+    A FRESH INSTALL IS LEFT ALONE, and that is a rule about the FILE, not about
+    the mode. An install with no settings.json already resolves to
+    DEFAULT_PERMISSION_MODE by the absent-key branch of load_settings(), so
+    writing the same value here would change nothing today and freeze the value
+    forever after: the next time that default moves, the machine that was never
+    configured would be pinned to the old one by a file this function created
+    for it. Nothing to fix, so nothing is written.
+
+    AN UNREADABLE FILE IS ALSO LEFT ALONE. _raw_settings() answers {} for a
+    corrupt file exactly as it does for an absent one, and a migration that
+    could not read a file must never be the thing that rewrites it -- that
+    turns a parse error the operator can still recover by hand into a
+    two-key settings.json with their provider, workdir and model gone. An
+    empty {} needs no migration either way: it has no permission_mode, so it
+    already takes the default.
+
+    It writes RAW rather than going through save_settings() on purpose. This is
+    not an operator naming a mode, so it must not be validated as one: the
+    unsafe-mode consent gate would refuse `bypassPermissions` on an install
+    that never acknowledged it, even though that same install would run under
+    it from the absent-key default without being asked. Storing it keeps the
+    two paths saying the same thing, and effective_permission_mode() still
+    clamps the stored value for an operator who opted into SAFE_PERM_MODES.
+    """
+    if not SETTINGS_PATH.exists():
+        return None
+    raw = _raw_settings()
+    if not raw or raw.get(FULL_ACCESS_MIGRATION_KEY):
+        return None
+    raw[FULL_ACCESS_MIGRATION_KEY] = True
+    moved = None
+    if _clean_permission_mode(raw.get("permission_mode")) == PERMISSION_MODE_FLOOR:
+        raw["permission_mode"] = DEFAULT_PERMISSION_MODE
+        # THE STAMP GOES WITH THE VALUE IT DESCRIBED. It said a human picked
+        # `plan`; `plan` is no longer what is stored, and leaving it behind
+        # would attribute this migration's write to an operator who never made
+        # it -- the same confusion between a pick and an echo that put the
+        # stamp there in the first place.
+        raw.pop(ACCESS_CHOSEN_KEY, None)
+        moved = DEFAULT_PERMISSION_MODE
+    _write_settings(raw)
+    return moved
 
 
 # ================================================= tool versions & updates ==
