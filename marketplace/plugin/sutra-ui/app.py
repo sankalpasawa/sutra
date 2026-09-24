@@ -855,10 +855,16 @@ def _chat_matches(row, q):
 
     TITLES, FOLDERS, HEADERS -- nothing else (founder, 2026-09-24). A header is
     whatever the rail groups the row under by name: its department or the routine
-    that produced it. Transcript text is deliberately NOT searched."""
+    that produced it. Transcript text is deliberately NOT searched.
+
+    The folder is its NAME, the last segment the rail shows (rowWorkspace in
+    02-helpers.js), not the whole path: a path match lists rows with nothing on
+    them to say why they matched."""
     dept = row.get("department") or {}
     rtn = row.get("routine") or {}
-    hay = (row.get("title"), row.get("cwd"), row.get("project"),
+    cwd = (row.get("cwd") or "").rstrip("/")
+    folder = cwd.rsplit("/", 1)[-1] if cwd else (row.get("project") or "").strip("-")
+    hay = (row.get("title"), folder,
            dept.get("name") if isinstance(dept, dict) else None,
            rtn.get("routine") if isinstance(rtn, dict) else None)
     return any(q in str(h).lower() for h in hay if h)

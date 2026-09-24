@@ -60,6 +60,7 @@ function box(api) {
   vm.createContext(b);
   vm.runInContext([
     grabConst(helpers, "esc"),
+    grab(helpers, "rowWorkspace"),
     grab(helpers, "chatSearchNorm"), grab(helpers, "chatMatches"),
     grab(helpers, "chatSearchList"), grab(helpers, "hlq"),
     "let _chatSearchTimer = null;",
@@ -81,6 +82,13 @@ test("matches the title, case-insensitively", () => {
 test("matches the folder", () => {
   const b = box();
   assert(b.chatMatches(row({ cwd: "/Users/a/Claude/paisa" }), "paisa"));
+});
+test("the folder is the name the row shows, not a parent in its path", () => {
+  /* found in the live capture: "sutra" listed every ~/.sutra-ui/shadow/workdir
+     chat, whose row says only "workdir" */
+  const b = box();
+  assert(!b.chatMatches(row({ title: "Shadow boot", cwd: "/Users/a/.sutra-ui/shadow/workdir" }), "sutra"));
+  assert(b.chatMatches(row({ cwd: "/Users/a/.sutra-ui/shadow/workdir/" }), "workdir"));
 });
 test("matches the department header and the routine header", () => {
   const b = box();

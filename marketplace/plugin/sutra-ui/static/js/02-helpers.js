@@ -1678,8 +1678,11 @@ function chatSearchNorm(q){ return String(q == null ? "" : q).trim().toLowerCase
 function chatMatches(s, q){
   if (!q) return true;
   if (!s) return false;
+  /* The FOLDER is the name the row shows (rowWorkspace), not its whole path:
+     matching the path listed every chat under ~/.sutra-ui for "sutra" with
+     nothing visible on the row to say why. */
   const d = s.department, r = s.routine;
-  return [s.title, s.cwd, s.project, d && d.name, r && r.routine]
+  return [s.title, rowWorkspace(s), d && d.name, r && r.routine]
     .some(h => h && String(h).toLowerCase().includes(q));
 }
 /* Loaded rows first, then server rows not already listed; newest first. */

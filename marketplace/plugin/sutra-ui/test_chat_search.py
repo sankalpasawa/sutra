@@ -69,6 +69,13 @@ def test_matcher_covers_title_folder_and_both_headers():
     assert m({"routine": {"routine": "daily-paisa-sync"}}, "paisa")
 
 
+def test_folder_is_the_shown_name_not_a_parent_in_the_path():
+    # live capture 2026-09-24: "sutra" matched every ~/.sutra-ui/shadow/workdir chat
+    assert not app._chat_matches({"title": "Shadow boot", "cwd": "/u/.sutra-ui/shadow/workdir"}, "sutra")
+    assert app._chat_matches({"cwd": "/u/.sutra-ui/shadow/workdir/"}, "workdir")
+    assert not app._chat_matches({"project": "-Users-a-paisa-x"}, "sutra")
+
+
 def test_matcher_ignores_everything_else():
     assert not app._chat_matches({"title": "x", "branch": "paisa", "source": "paisa"}, "paisa")
     assert not app._chat_matches({"title": None, "department": None, "routine": None}, "paisa")
