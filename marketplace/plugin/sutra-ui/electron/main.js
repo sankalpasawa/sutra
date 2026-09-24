@@ -1289,6 +1289,21 @@ ipcMain.handle("sutra:teamsutra-action", async (_e, body) => {
    directly. Windows runs the fixed command through cmd.exe because npm exposes
    Claude as a .cmd shim, which CreateProcess cannot execute directly. */
 let authChild = null;
+function stopAuthChild(child) {
+  if (!child) return;
+  if (process.platform === "win32" && child.pid) {
+    /* The visible OAuth console is a grandchild created by `start`. Killing
+       only the outer cmd.exe leaves that prompt behind, so cancel the complete
+       fixed process tree. taskkill receives argv directly, never a shell. */
+    try {
+      spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"],
+            { windowsHide: true, stdio: "ignore" });
+    } catch (err) {}
+    return;
+  }
+  try { child.kill("SIGTERM"); } catch (err) {}
+  setTimeout(() => { try { child.kill("SIGKILL"); } catch (err) {} }, 5000);
+}
 ipcMain.handle("sutra:auth-login", async (e) => {
   if (!desktopControl()) {
     return { ok: false, error: "sign-in is only available when this window started its own backend" };
@@ -1298,8 +1313,7 @@ ipcMain.handle("sutra:auth-login", async (e) => {
   } catch { return { ok: false, error: "refused: unexpected caller" }; }
   if (authChild) {
     const c = authChild;
-    try { c.kill("SIGTERM"); } catch (err) {}
-    setTimeout(() => { try { c.kill("SIGKILL"); } catch (err) {} }, 5000);
+    stopAuthChild(c);
     return { ok: false, error: "cancelled" };
   }
   const env = { ...process.env, ...shellEnv() };
@@ -1316,8 +1330,7 @@ ipcMain.handle("sutra:auth-login", async (e) => {
     child.stdout.resume();                       // drained, never forwarded
     child.stderr.resume();
     const t = setTimeout(() => {
-      try { child.kill("SIGTERM"); } catch (err) {}
-      setTimeout(() => { try { child.kill("SIGKILL"); } catch (err) {} }, 5000);
+      stopAuthChild(child);
     }, 180000);
     child.on("error", (err) => { clearTimeout(t); done({ ok: false, error: String(err.message || err) }); });
     child.on("close", (code) => {

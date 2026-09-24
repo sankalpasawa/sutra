@@ -4845,10 +4845,14 @@ test("46b. Claude auth launches Windows npm shims through cmd.exe", () => {
     "Linux keeps using the Claude binary directly");
   assert.deepStrictEqual(claudeAuthCommand("win32", { ComSpec: "C:\\Windows\\System32\\cmd.exe" }),
     { command: "C:\\Windows\\System32\\cmd.exe",
-      args: ["/d", "/s", "/c", "claude auth login"] },
-    "Windows uses ComSpec so npm's claude.cmd shim can run");
+      args: ["/d", "/s", "/c",
+        'start "" /wait "%ComSpec%" /d /s /c "claude auth login"' +
+        ' & claude auth status >nul 2>&1'] },
+    "Windows uses ComSpec and a visible console so npm's shim and code prompt can run");
   assert.deepStrictEqual(claudeAuthCommand("win32", {}),
-    { command: "cmd.exe", args: ["/d", "/s", "/c", "claude auth login"] },
+    { command: "cmd.exe", args: ["/d", "/s", "/c",
+      'start "" /wait "%ComSpec%" /d /s /c "claude auth login"' +
+      ' & claude auth status >nul 2>&1'] },
     "Windows has a safe cmd.exe fallback");
 
   const src = fs.readFileSync(path.join(__dirname, "electron", "main.js"), "utf8");
@@ -4856,6 +4860,8 @@ test("46b. Claude auth launches Windows npm shims through cmd.exe", () => {
     "the login handler must use the platform-aware launcher");
   assert.ok(!src.includes('spawn("claude", ["auth", "login"]'),
     "the broken direct Windows spawn must not return");
+  assert.ok(src.includes('spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"]'),
+    "cancelling Windows OAuth must close its visible console process tree");
 
   const winBuild = fs.readFileSync(
     path.join(__dirname, "electron", "electron-builder-win.yml"), "utf8");

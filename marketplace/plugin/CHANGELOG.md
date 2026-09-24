@@ -1,6 +1,12 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.299.1 (2026-09-24)
+
+- Fixed: Windows Claude sign-in now runs in a visible interactive console, allowing the OAuth fallback code to be pasted instead of exiting immediately on closed stdin.
+- Fixed: cancelling or timing out Windows sign-in closes the complete OAuth console process tree.
+- Verified: the outer launcher checks `claude auth status` before reporting success; macOS and Linux launch behavior remains unchanged.
+
 ## 2.299.0 (2026-09-23)
 
 - Released from v2.298.0-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
