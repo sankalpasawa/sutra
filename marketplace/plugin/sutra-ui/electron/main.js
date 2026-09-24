@@ -87,6 +87,38 @@ if (IS_BETA) {
 const PORT = IS_BETA ? 8331 : 8330;
 const ORIGIN = `http://${HOST}:${PORT}`;
 
+/* BROWSER MODE (browser_mode.js). `--browser` (or SUTRA_BROWSER=1) opens the
+   panel in the default browser through an authenticated loopback gateway
+   instead of this app's window; `--no-open` mints the link without opening a
+   browser and writes it to userData/browser-pair-url (0600) and stdout, which
+   is how an agent drives the product. The gateway starts lazily, so a window-
+   mode app can also hand itself to a browser from the Dock menu. */
+const browserMode = require("./browser_mode.js");
+const GATEWAY_PORT = IS_BETA ? 8341 : 8340;
+const argvHas = (argv, flag) => (argv || []).some((a) => a === flag);
+let BROWSER_MODE = argvHas(process.argv, "--browser") || process.env.SUTRA_BROWSER === "1";
+const NO_OPEN = argvHas(process.argv, "--no-open");
+
+/* DEBUG PORT, for an agent that must drive the real window over the Chrome
+   DevTools Protocol. OFF unless SUTRA_DEBUG_PORT or --debug-port=N names a
+   port: while it is open, any program on this Mac can control the app. Chromium
+   binds it to 127.0.0.1. Must be set before `ready`, so it is read here. */
+const DEBUG_PORT = browserMode.debugPortFrom(process.env, process.argv);
+if (DEBUG_PORT) {
+  app.commandLine.appendSwitch("remote-debugging-port", String(DEBUG_PORT));
+  console.log(`[sutra] DEBUG PORT OPEN on 127.0.0.1:${DEBUG_PORT} -- any local program can control this app`);
+}
+
+/* Every IPC handler, by channel, so the browser gateway runs the SAME function
+   the preload reaches -- one implementation, two transports. Recorded as each
+   is registered below; call sites stay `ipcMain.handle(...)` because several
+   tests locate handlers by that literal text. */
+const ipcHandlers = new Map();
+{
+  const register = ipcMain.handle.bind(ipcMain);
+  ipcMain.handle = (channel, fn) => { ipcHandlers.set(channel, fn); return register(channel, fn); };
+}
+
 /* The data-path env the backend reads. STABLE passes nothing (the backend's
    own ~/.sutra-native + ~/.sutra-ui defaults stand). BETA redirects EVERY one
    to a parallel namespace so the two installs share no registry, chats,
@@ -544,6 +576,70 @@ function createWindow() {
   win.loadURL(ORIGIN);
 }
 
+/* ---------------------------------------------------------- browser mode --
+ * The gateway is started once, on first need, and lives until quit. Every
+ * "open in browser" mints a NEW single-use pairing link; nothing is reused. */
+let gateway = null;
+let gatewayStarting = null;
+
+function ensureGateway() {
+  if (gateway) return Promise.resolve(gateway);
+  if (gatewayStarting) return gatewayStarting;
+  const gw = browserMode.createGateway({
+    port: GATEWAY_PORT,
+    upstreamPort: PORT,
+    handlers: ipcHandlers,
+    callerUrl: ORIGIN + "/",
+    clientScript: path.join(__dirname, "bridge_client.js"),
+    log: (m) => console.error("[sutra] gateway:", m),
+  });
+  gatewayStarting = gw.listen().then(() => {
+    gateway = gw;
+    console.log(`[sutra] browser gateway on ${gw.origin} (${gw.verbs.length} bridge verbs)`);
+    return gw;
+  }, (err) => {
+    gatewayStarting = null;
+    throw new Error(err && err.code === "EADDRINUSE"
+      ? `Port ${GATEWAY_PORT} is in use, so Sutra cannot open in the browser.\n\nFind it with:  lsof -ti tcp:${GATEWAY_PORT}`
+      : `The browser gateway did not start: ${err && err.message}`);
+  });
+  return gatewayStarting;
+}
+
+function pairUrlFile() { return path.join(app.getPath("userData"), "browser-pair-url"); }
+
+/* Open the panel in the default browser, or with noOpen just publish the link
+   for an agent. The link is a live credential for two minutes, so the file is
+   0600 and the link is never logged when a browser is opened for a human. */
+async function openInBrowser(noOpen) {
+  let gw;
+  try { gw = await ensureGateway(); }
+  catch (err) { dialog.showErrorBox("Could not open Sutra in the browser", err.message); return false; }
+  const url = gw.pairingUrl();
+  // From here the app serves a browser tab, so closing the window (if there is
+  // one) must no longer quit it. Quit is the Dock's Quit, as for any Mac app.
+  BROWSER_MODE = true;
+  if (noOpen) {
+    try {
+      fs.mkdirSync(path.dirname(pairUrlFile()), { recursive: true });
+      fs.writeFileSync(pairUrlFile(), url + "\n", { mode: 0o600 });
+      fs.chmodSync(pairUrlFile(), 0o600);
+    } catch (e) { console.error("[sutra] could not write the pairing link:", e && e.message); }
+    process.stdout.write(`SUTRA_BROWSER_URL=${url}\n`);
+    return true;
+  }
+  await shell.openExternal(url);
+  return true;
+}
+
+function installDockMenu() {
+  if (process.platform !== "darwin" || !app.dock) return;
+  const { Menu } = require("electron");
+  app.dock.setMenu(Menu.buildFromTemplate([
+    { label: "Open in Browser", click: () => { openInBrowser(false); } },
+  ]));
+}
+
 /* ------------------------------------------------------------- installed? --
  * The one install mistake that costs a user everything and tells them nothing.
  *
@@ -781,7 +877,9 @@ async function boot() {
     // longer stops here: a deferred update from the last run is finished via
     // the bundled sidecar BEFORE the window, exactly like the own path below.
     if (await resolvePendingUpdate()) return;
-    createWindow();
+    installDockMenu();
+    // Browser mode shows no window; the Dock icon stays and opens another tab.
+    if (BROWSER_MODE) await openInBrowser(NO_OPEN); else createWindow();
     firstRunNotice(wasProvisioned);
     startUpdateSchedule();   // sidecar-backed in attach mode; see updateCapable()
     return;
@@ -810,7 +908,8 @@ async function boot() {
   // half a second later reads as a crash.
   if (await resolvePendingUpdate()) return;
 
-  createWindow();
+  installDockMenu();
+  if (BROWSER_MODE) await openInBrowser(NO_OPEN); else createWindow();
   firstRunNotice(wasProvisioned);
   startUpdateSchedule();
 }
@@ -847,8 +946,10 @@ function firstRunNotice(wasProvisioned) {
       "\n\nThe panel works without it. To install the plugin yourself, run:" +
       "\n  /plugin marketplace add sankalpasawa/sutra";
   }
-  dialog.showMessageBox(win, { type: r.status === "installed" ? "info" : "warning",
-                               title, message, detail, buttons: ["OK"] });
+  const box = { type: r.status === "installed" ? "info" : "warning",
+                title, message, detail, buttons: ["OK"] };
+  // Browser mode has no window to attach the sheet to.
+  if (win) dialog.showMessageBox(win, box); else dialog.showMessageBox(box);
 }
 
 /* ============================================================ auto-update ===
@@ -1003,6 +1104,8 @@ function stageNow() {
         if (win && !win.isDestroyed())
           win.webContents.send("sutra:update-staged", { staged: true, version: staged.version });
       } catch (e) { /* a closed window is not a failed stage */ }
+      // Paired browser tabs get the same push over the gateway's event stream.
+      if (gateway) gateway.emit("sutra:update-staged", { staged: true, version: staged.version });
     }
     return staged || { staged: false };
   })();
@@ -1161,10 +1264,17 @@ async function resolvePendingUpdate() {
   }
 }
 
-ipcMain.handle("sutra:update-apply", async () => {
+ipcMain.handle("sutra:update-apply", async (e) => {
   if (!updateCapable()) return { ok: false, error: "no update capability in this shell" };
   try {
     await armUpdate(true);
+    /* The helper relaunches the app with no arguments. A restart asked for from
+       a browser tab should come back as a browser tab, so leave a ONE-SHOT
+       marker that the next boot consumes; a normal launch never sees it. */
+    if (e && e.viaBrowserBridge) {
+      try { fs.writeFileSync(relaunchBrowserMarker(), new Date().toISOString() + "\n"); }
+      catch (err) { console.error("[sutra] could not mark browser relaunch:", err && err.message); }
+    }
     quitting = true;
     // Give the reply time to reach the renderer before the window goes.
     setTimeout(() => app.quit(), 250);
@@ -1786,7 +1896,10 @@ ipcMain.handle("sutra:pick-directory", async (_e, defaultPath) => {
   const opts = { title: "Choose working directory", properties: ["openDirectory", "createDirectory"] };
   if (dp) opts.defaultPath = dp;                 // open where they already are, not at random
   try {
-    const r = await dialog.showOpenDialog(win, opts);
+    /* From a browser tab there is no window to hang the sheet on: bring the app
+       forward so the chooser is not hidden behind the browser. */
+    if (!win) { try { app.focus({ steal: true }); } catch (err) {} }
+    const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
     return (r.canceled || !r.filePaths || !r.filePaths.length) ? null : r.filePaths[0];
   } catch (e) {
     return null;                                 // a dialog failure must not reject the renderer
@@ -1798,13 +1911,34 @@ ipcMain.handle("sutra:pick-directory", async (_e, defaultPath) => {
 if (!app.requestSingleInstanceLock()) {
   app.exit(0);
 } else {
-  app.on("second-instance", () => {
+  /* A second launch hands its request to this one: `--browser` opens (or, with
+     --no-open, publishes) a fresh paired tab even from a window-mode app. */
+  app.on("second-instance", (_e, argv) => {
+    if (argvHas(argv, "--browser") || (BROWSER_MODE && !win)) {
+      openInBrowser(argvHas(argv, "--no-open"));
+      return;
+    }
     if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
   });
-  app.whenReady().then(boot);
+  // Dock icon click in browser mode: there is no window to show, so open a tab.
+  app.on("activate", () => { if (BROWSER_MODE && !win && gateway) openInBrowser(false); });
+  app.whenReady().then(() => {
+    // One-shot: a restart for an update asked for from a browser tab.
+    try {
+      if (fs.existsSync(relaunchBrowserMarker())) {
+        fs.rmSync(relaunchBrowserMarker(), { force: true });
+        BROWSER_MODE = true;
+      }
+    } catch (e) { /* unreadable marker = normal launch */ }
+    return boot();
+  });
 }
 
-app.on("window-all-closed", () => app.quit());
+function relaunchBrowserMarker() { return path.join(app.getPath("userData"), "relaunch-in-browser"); }
+
+/* Browser mode has no window, and the hidden bot-challenge windows closing must
+   not quit an app whose UI lives in a browser tab. Quit from the Dock instead. */
+app.on("window-all-closed", () => { if (!BROWSER_MODE) app.quit(); });
 
 /* Apply a deferred update on the way out, then kill the child we started.
  *

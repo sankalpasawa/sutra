@@ -30,6 +30,8 @@ files:
   - preload.js
   - provision.js
   - claude_auth_command.js
+  - browser_mode.js
+  - bridge_client.js
   - package.json
   - "!**/*.sh"
   - "!**/*.plist"

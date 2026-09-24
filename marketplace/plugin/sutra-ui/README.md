@@ -59,6 +59,27 @@ git pull && ./install.sh
 | Terminal pane | your own login shell (`$SHELL`), resizable, top-right toggle |
 | First run | a one-time screen naming the CLI, workdir and permission mode in force |
 
+### Open in a browser, or hand it to an agent
+
+The app's UI is the same web page the backend serves, so it can run in your own
+browser with everything the window can do: sign-ins, keys, updates, the folder
+picker.
+
+| How | What happens |
+|---|---|
+| Dock icon, right-click, **Open in Browser** | opens a paired tab on `127.0.0.1:8340` (Beta `8341`) |
+| `open -a Sutra --args --browser` | starts with no window and opens the browser tab |
+| `open -a Sutra --args --browser --no-open` | no browser; writes a one-time link to `~/Library/Application Support/Sutra/browser-pair-url` (mode 0600) and prints `SUTRA_BROWSER_URL=...` for an agent |
+| `SUTRA_DEBUG_PORT=9229` or `--debug-port=9229` | opens a Chrome DevTools Protocol port on `127.0.0.1` so an agent can drive the app window itself. Off by default: while it is open, any program on this Mac can control the app |
+
+Each link works once, for two minutes, and swaps itself for an HttpOnly,
+SameSite=Strict cookie. Every request to the browser port needs that cookie;
+other sites and other hostnames are refused. Credentials still never reach the
+backend: the browser's calls run in the app process, exactly as the window's do.
+With a browser tab in use, closing the window does not quit Sutra; quit from the
+Dock. Design and threat model: `electron/browser_mode.js`. Tests:
+`node electron/test_browser_mode.js`.
+
 ---
 
 ## Requirements
