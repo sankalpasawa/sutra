@@ -1,6 +1,19 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.300.0 (2026-09-24)
+
+- Released from v2.299.0-beta.1-desktop..HEAD: 7 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - org: the Library sits at the top right, and swaps the panel
+  - The new Shadow suite runs in CI, like the other thirty-three
+  - A Shadow conversation outlives not being a task
+  - design: six places the Library icon could live, drawn
+  - design: the Library by one icon, the lighter option
+  - design: the Library as a section inside the Org structure tree
+  - windows: make Claude OAuth interactive
+- Changed: 16 file(s), +1379/-18
+- New test suites: test_shadow_nontask_conv.js
+
 ## 2.299.1 (2026-09-24)
 
 - Fixed: Windows Claude sign-in now runs in a visible interactive console, allowing the OAuth fallback code to be pasted instead of exiting immediately on closed stdin.
