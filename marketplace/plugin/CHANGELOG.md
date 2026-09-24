@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.301.0 (2026-09-24)
+
+- Chat search in the Chats rail: a search icon beside Recent / Dept / Routines opens a box that finds any chat by title, folder name, or department and routine name, across all history. Matches are highlighted; Esc closes.
+
 ## 2.300.0 (2026-09-24)
 
 - Released from v2.299.0-beta.1-desktop..HEAD: 7 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
