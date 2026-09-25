@@ -4846,12 +4846,12 @@ test("46b. Claude auth launches Windows npm shims through cmd.exe", () => {
   assert.deepStrictEqual(claudeAuthCommand("win32", { ComSpec: "C:\\Windows\\System32\\cmd.exe" }),
     { command: "C:\\Windows\\System32\\cmd.exe",
       args: ["/d", "/s", "/c",
-        'start "" /wait "%ComSpec%" /d /s /c "claude auth login"' +
+        'start "" /wait cmd.exe /d /s /c "claude auth login"' +
         ' & claude auth status >nul 2>&1'] },
-    "Windows uses ComSpec and a visible console so npm's shim and code prompt can run");
+    "Windows starts a visible command console without nested quoted executable paths");
   assert.deepStrictEqual(claudeAuthCommand("win32", {}),
     { command: "cmd.exe", args: ["/d", "/s", "/c",
-      'start "" /wait "%ComSpec%" /d /s /c "claude auth login"' +
+      'start "" /wait cmd.exe /d /s /c "claude auth login"' +
       ' & claude auth status >nul 2>&1'] },
     "Windows has a safe cmd.exe fallback");
 
