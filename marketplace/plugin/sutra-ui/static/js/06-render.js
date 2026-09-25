@@ -1772,7 +1772,11 @@ function renderUpdateBanner(){
      are not states the operator asked to stop hearing about. */
   const dismissed = !!(u && u.version && S.updDismissed === u.version
                        && !S.updApplyError && u.state !== "installing");
-  const show = !!(u && u.pending) && !dismissed;
+  /* The x closes ANY state, errors included (founder 2026-09-25: the error
+     card sat over the chat with no way out). Keyed to the version like the
+     dismissal, so a newer build still announces itself. */
+  const closed = !!(u && u.version && S.updClosed === u.version);
+  const show = !!(u && u.pending) && !dismissed && !closed;
   if (!show){ stopUpdCountdown(); if (host) host.remove(); return; }
   if (!host){
     host = document.createElement("div");
@@ -1842,8 +1846,13 @@ function renderUpdateBanner(){
   }
 
   host.innerHTML = `<style>
-    #updHost{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:9000;
-      max-width:min(720px,calc(100vw - 32px));}
+    #updHost{position:fixed;bottom:16px;right:16px;z-index:9000;
+      max-width:min(440px,calc(100vw - 32px));}
+    #updHost .updbar{position:relative;padding-right:34px !important;}
+    #updHost .updx{position:absolute;top:6px;right:6px;width:22px;height:22px;
+      border:0;background:none;color:var(--muted,#9b938a);font-size:16px;line-height:1;
+      cursor:pointer;border-radius:5px;}
+    #updHost .updx:hover{background:rgba(127,127,127,.18);color:inherit;}
     #updHost .updbar{display:flex;gap:14px;align-items:center;flex-wrap:wrap;
       background:var(--panel,#1b1917);border:1px solid var(--line,#332f2a);
       border-radius:10px;padding:11px 14px;box-shadow:0 8px 28px rgba(0,0,0,.45);}
@@ -1852,11 +1861,17 @@ function renderUpdateBanner(){
     #updHost .updn{font-variant-numeric:tabular-nums;}
     #updHost .updacts{display:flex;gap:8px;flex:0 0 auto;}
     #updHost .updwarn{flex:1 1 100%;font-size:11.5px;color:var(--warn,#d9a441);}
-  </style><div class="updbar">${body}${termWarn}</div>`;
+  </style><div class="updbar">${body}${termWarn}<button class="updx" type="button" data-upd2="close" title="Close" aria-label="Close">&times;</button></div>`;
 
   host.querySelectorAll("[data-upd2]").forEach(b=>b.onclick=()=>{
     const a = b.dataset.upd2;
     if (a === "now" || a === "retry") return applyUpdateNow();
+    /* The x (data-upd2="close"). Closing a live countdown is a "Not now": hiding it alone would let the
+       app restart with nothing on screen. Every other state just hides. */
+    if (a === "close" && !(counting && !S.updApplyError && !S.updFiring)){
+      S.updClosed = (S.updStaged && S.updStaged.version) || null;
+      return renderUpdateBanner();
+    }
     /* "Not now" is a DEFER: the staged build is kept and the shell applies it
        on the way out. It is also a DISMISSAL -- the banner goes away. Saying
        "not now" and being answered with a permanent notice is not a defer, it

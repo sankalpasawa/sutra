@@ -71,6 +71,31 @@ test("no banner branch renders without a way out", () => {
     "the dismissal gate is not keyed on the staged version");
 });
 
+/* Founder 2026-09-25: the error card sat top-centre over the chat with no
+   way to close it. It now lives bottom-right and every state has a close button. */
+test("the banner sits bottom-right, not over the top of the chat", () => {
+  const css = render.slice(render.indexOf("#updHost{"), render.indexOf("#updHost .updbar"));
+  assert(/bottom:\s*\d+px/.test(css) && /right:\s*\d+px/.test(css), "banner is not anchored bottom-right");
+  assert(!/top:\s*\d+px/.test(css), "banner is still anchored to the top");
+});
+
+test("every state has a close button", () => {
+  const bar = render.slice(render.indexOf('<div class="updbar">'), render.indexOf("</div>`;", render.indexOf('<div class="updbar">')));
+  assert(/data-upd2="close"/.test(bar), "the close button is not in the shared bar, so some states lack it");
+});
+
+test("close is keyed to a version and gates the show", () => {
+  assert(/updClosed\s*:/.test(state), "S.updClosed is not declared");
+  assert(/S\.updClosed\s*=\s*\(S\.updStaged/.test(render), "close must record the version, not a boolean");
+  assert(/const\s+show\s*=[^;]*!closed/.test(render), "the show gate ignores the close");
+});
+
+test("closing a running countdown also defers the restart", () => {
+  /* Hiding a live countdown would let the app restart with nothing on screen. */
+  const h = render.slice(render.indexOf('a === "close"'), render.indexOf('a === "close"') + 300);
+  assert(/counting/.test(h), "the close handler does not treat a running countdown as Not now");
+});
+
 /* Behavioural, not textual: run the real applyUpdateNow against a stub shell.
    The banner once said "Sutra 2.271.4 could not be applied. the update state
    is in use by another process" -- a busy lock presented as a failed install. */

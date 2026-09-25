@@ -633,7 +633,7 @@ const S = {
      persisted: deferring is not declining, and the update still applies on quit. */
   /* updDismissed holds the VERSION the operator waved away, not a boolean:
      dismissing 2.115.0 must not silence 2.116.0. */
-  updStaged:null, updLeft:null, updDeferred:false, updDismissed:null, updApplyError:null,
+  updStaged:null, updLeft:null, updDeferred:false, updDismissed:null, updClosed:null, updApplyError:null,
   updFiring:false,
   /* A session is a run of turns. Each turn resolves to exactly ONE department (ADR-028);
      successive turns may land in different ones, which is how a session traces a path
