@@ -1,6 +1,15 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.302.0 (2026-09-25)
+
+Browser mode: open Sutra in your own browser, or let an agent drive it.
+
+- Mac: right-click the Dock icon > Open in Browser. Windows: click the tray icon.
+- `--browser` starts with no window; `--no-open` writes a one-time link for an agent.
+- Each link works once, for two minutes, and pairs the tab with a private cookie.
+- `SUTRA_DEBUG_PORT=9229` opens a debug port on this Mac only; off by default.
+
 ## 2.301.0 (2026-09-24)
 
 - Chat search in the Chats rail: a search icon beside Recent / Dept / Routines opens a box that finds any chat by title, folder name, or department and routine name, across all history. Matches are highlighted; Esc closes.
