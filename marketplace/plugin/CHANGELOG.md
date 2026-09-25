@@ -1,6 +1,17 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.304.0 (2026-09-25)
+
+The Native builder gets a ladder for the how it does not know.
+
+- Added: skill `finding-the-how`, rung 1. Before any how is invented it is looked for in four places, child custody first: the company's own skills and playbooks, the core catalog, the Native page that owns the subject, and the record or the science note. It ends on a HOW card: found with its check, or GAP.
+- Added: skill `deriving-a-methodology`, rung 2, the runnable form of Mode 3 (how-of-how). It names a method whose output is a how, runs it inside a budget, and writes the produced how back as a workflow type so the next instance stops at rung 1. It ends on a METHOD card, or GAP.
+- Added: skill `synthesizing-a-methodology`, rung 3. When Native has no method, it scans the eleven fields the 2026-06-12 science note names, tests for convergence, assembles a method with a named result behind each step, and places it through the bootstrap's class-B rule; a new altitude waits for the founder's stamp. It halts by reflexivity and escalates with the field scan.
+- Changed: `native-builder` routes Understand and Design through the ladder (section 4b, three routing rows, the Design phase in build-loop.md); `native` lists the three as ladder members the Builder invokes; `native-method` hands to rung 1 when a test needs a how nobody knows.
+- Added: three eval cases, `finding-the-how-fires`, `deriving-a-methodology-fires`, `synthesizing-a-methodology-fires`.
+- Tested: three baseline and three with-skill subagent runs on 2026-09-25; results are in each skill's provenance line.
+
 ## 2.303.0 (2026-09-25)
 
 The Native family gets a front door, a coach and a method.

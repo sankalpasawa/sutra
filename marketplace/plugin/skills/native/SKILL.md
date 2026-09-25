@@ -30,6 +30,11 @@ Each member is invoked as `core:<name>`, because the plugin's namespace is `core
 | `core:native-method` | the Scientist | claims, tested |
 | `core:native-builder` | the Builder | supported work, built, proved, documented, recorded |
 | `core:native-author-part` | the Scribe | one canon part-file under `sutra/os/native/`, only for the canon migration named in its own description |
+| `core:finding-the-how` | the Scout | the how for a unit: found in one of four places, or declared a gap |
+| `core:deriving-a-methodology` | the Methodologist | the method that produces a how, run inside a budget and written back |
+| `core:synthesizing-a-methodology` | the Scholar | a method built from fields of science when Native has none |
+
+The last three are a ladder, not stages. The Builder, and the Coach when a design's how is unknown, invoke them in order from inside their own work; the Steward never routes to them directly.
 
 ## Every time, in order
 
