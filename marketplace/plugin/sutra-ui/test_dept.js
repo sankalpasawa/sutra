@@ -2581,6 +2581,62 @@ test("slice I: the chat-only frame starts the chat from the brief, filed under t
   assert.deepStrictEqual(Array.from(c.S.openPanes), ["s-9"], "one chat and nothing else");
 });
 
+/* ── the access a department chat opens on (DS-15, amended 2026-09-25) ────
+   The global default has been Full access since 2026-09-18. A department
+   chat must not narrow it: when the mode the server says will RUN already
+   writes files, no per-chat override is armed, so claudeWsUrl sends no
+   ?perm= and the chat runs exactly as every other chat does. Only a global
+   mode that cannot write still seeds Approve for me -- the case DS-15 was
+   written for, when the default was Read only. */
+function fnChatStart(c){
+  c.URLSearchParams = URLSearchParams;
+  c.location = { search: "?embed=chat&dept=r4&fn=audit&name=Experience&start=1" };
+  c.S.ui = { dest: "org2" }; c.S.sessions = [];
+  c.apiGet = (p) => {
+    if (/brief$/.test(p)) return Promise.resolve({ brief: "Audit for {department}: {goal}", cwd: "/work/exp", template: {} });
+    if (/identity$/.test(p)) return Promise.resolve({ goal: "Own the experience", done: null, rules: [], owner: { name: "Sankalp" } });
+    return new Promise(() => {});
+  };
+  c.newSession = () => ({ id: "s-9" });
+  c.submitTurn = () => {};
+  c.providerId = () => "claude";
+  c.accessOptionsFor = () => [
+    { id: "read", mode: "plan" }, { id: "edits", mode: "acceptEdits" },
+    { id: "auto", mode: "auto" }, { id: "full", mode: "bypassPermissions" },
+  ];
+  c.PERM_MODES = [
+    { id: "plan", writes_files: false }, { id: "acceptEdits", writes_files: true },
+    { id: "auto", writes_files: false }, { id: "bypassPermissions", writes_files: true },
+  ];
+}
+
+test("access: a department chat inherits a global mode that writes -- no per-chat override", async () => {
+  const c = fresh();
+  fnChatStart(c);
+  c._settingsGlobal = () => ({ permission_mode: "bypassPermissions", permission_mode_effective: "bypassPermissions" });
+  const s = await c.dpEmbedOpen();
+  assert.strictEqual(s.id, "s-9");
+  assert.ok(!(c.S.perm && c.S.perm["s-9"]), "Full access on file: the chat runs as the global mode, nothing is armed");
+});
+
+test("access: the EFFECTIVE mode decides, not the stored one", async () => {
+  const c = fresh();
+  fnChatStart(c);
+  /* Full access on file but clamped by the server to Read only: the chat
+     must not trust the stored value, exactly as sessPermEffective does not. */
+  c._settingsGlobal = () => ({ permission_mode: "bypassPermissions", permission_mode_effective: "plan" });
+  await c.dpEmbedOpen();
+  assert.strictEqual(c.S.perm["s-9"], "auto", "a clamped-to-read-only global still gets Approve for me");
+});
+
+test("access: a read-only global mode still opens the department chat on Approve for me (DS-15)", async () => {
+  const c = fresh();
+  fnChatStart(c);
+  c._settingsGlobal = () => ({ permission_mode: "plan", permission_mode_effective: "plan" });
+  await c.dpEmbedOpen();
+  assert.strictEqual(c.S.perm["s-9"], "auto");
+});
+
 test("slice I: the chat-only frame reopens the chat it started, and makes no new one", async () => {
   const c = fresh();
   const opened = [];

@@ -1234,20 +1234,35 @@ async function dpEmbedOpen(){
   const s = newSession((brief && brief.cwd) || "", { ref: ref, name: name });
   s.title = label + " · " + (name || "department");
   s.fnKey = key;
-  /* DS-15: a function chat may build inside its own department's folder, so it
-     opens on Accept edits (edits here, asks for anything else) rather than the
-     operator's global mode, which is read-only by default. The native id comes
-     from the provider's own map, never a literal. */
+  /* DS-15 (2026-09-22), amended 2026-09-25: a function chat builds inside its
+     own department's folder. It used to open on Approve for me whatever the
+     operator's setting, because the global default was Read only at the time.
+     The shipped default has been Full access since 2026-09-18, so the chat
+     now INHERITS the global mode whenever that mode already writes files: no
+     per-chat override is armed and claudeWsUrl sends no ?perm=. Only a global
+     mode that cannot write -- the original DS-15 case, where a read-only
+     default left the department chat unable to list its own folder -- still
+     seeds Approve for me. The native id comes from the provider's own map,
+     never a literal. Read off the EFFECTIVE mode, as sessPermEffective does:
+     the server clamps at the point of use. */
   try {
-    const opts = (typeof accessOptionsFor === "function")
-      ? accessOptionsFor(typeof providerId === "function" ? providerId() : "claude") : [];
-    /* "Approve for me" before "Accept edits": in Accept edits a department chat
-       could not even list its own folder -- every command waited for a click
-       nobody makes inside a card (found 2026-09-22 running Deckem's Identity
-       chat). The department works in its own folder; anything outside it still
-       asks. */
-    const opt = opts.find(o => o.id === "auto") || opts.find(o => o.id === "edits") || null;
-    if (opt && opt.mode){ S.perm = S.perm || {}; S.perm[s.id] = opt.mode; }
+    const st = (typeof _settingsGlobal === "function") ? (_settingsGlobal() || {})
+      : ((typeof SETTINGS !== "undefined" && SETTINGS) || {});
+    const running = st.permission_mode_effective || st.permission_mode || "";
+    const known = ((typeof PERM_MODES !== "undefined" && PERM_MODES) || []).find(m => m && m.id === running) || null;
+    const globalWrites = known ? !!known.writes_files
+      : (running === "acceptEdits" || running === "bypassPermissions");
+    if (!globalWrites){
+      const opts = (typeof accessOptionsFor === "function")
+        ? accessOptionsFor(typeof providerId === "function" ? providerId() : "claude") : [];
+      /* "Approve for me" before "Accept edits": in Accept edits a department
+         chat could not even list its own folder -- every command waited for a
+         click nobody makes inside a card (found 2026-09-22 running Deckem's
+         Identity chat). The department works in its own folder; anything
+         outside it still asks. */
+      const opt = opts.find(o => o.id === "auto") || opts.find(o => o.id === "edits") || null;
+      if (opt && opt.mode){ S.perm = S.perm || {}; S.perm[s.id] = opt.mode; }
+    }
   } catch (e) {}
   S.openPanes = [s.id];
   submitTurn(seed, s.id, { pin: { department_ref: ref } });
