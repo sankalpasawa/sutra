@@ -1,6 +1,16 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-21
+## 2.303.0 (2026-09-25)
+
+The Native family gets a front door, a coach and a method.
+
+- Added: skill `native`, the front door. It reads the stage from evidence (fix, idea, unverified, claim, testing, supported, untested by choice, refuted, built, canon, status), routes to the member for that stage, and keeps one ideas ledger at `holding/plans/native-ideas/LEDGER.md`.
+- Added: skill `native-coach`, a sparring partner for design work: mirror, verdict, steelman, one counter with its evidence rung, Lab card, one question, and what would change its mind.
+- Added: skill `native-method`, the scientific method for Native: a falsifiable claim, rivals, a principle check against 16 Native rules and 8 general laws, the cheapest test that could fail, and a kill line set before the run.
+- Added: five eval cases: `native-routes`, `native-status`, `native-coach-fires`, `native-coach-agrees` (the coach must agree when evidence earns it), `native-method-fires`.
+- Tested: baseline and with-skill subagent runs on 2026-09-25 (11 coach and method runs, 4 routing runs); results are in each skill's provenance line.
+
 ## 2.302.0 (2026-09-25)
 
 Browser mode: open Sutra in your own browser, or let an agent drive it.
