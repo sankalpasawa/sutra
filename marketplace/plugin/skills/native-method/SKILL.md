@@ -119,6 +119,7 @@ These are invoked in the session, per native-builder's routing note. They are no
 | Unsure whether cause and effect are knowable in advance | `core:cynefin`; complex means several small safe-to-fail probes, not one big test |
 | The claim mixes several dials | `core:lens`, to split it into one claim per axis |
 | Designing the step-6 test | `core:test-strategy`, `core:deterministic-testing` |
+| The test needs a how nobody here knows | `core:finding-the-how`, then up its ladder |
 | The founder and the method disagree on a one-way decision | `core:codex-sutra` or `core:deepseek` in Challenge mode |
 | Supported | `core:native-builder`, whose Record phase writes the dated row |
 

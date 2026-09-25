@@ -72,6 +72,9 @@ One skill invoking another is **not a documented capability** (checked 2026-09-2
 | Understand | `core:domains` | where a thing sits in the tree |
 | Understand | `core:architect` | whether the thing should exist at all, and its shape |
 | Understand | `core:system-engineering` | whether to build this, or the component that makes these |
+| Understand, Design | `core:finding-the-how` | whether a how for this unit already exists, in four places, before one is invented |
+| Design | `core:deriving-a-methodology` | when no how was found: the method that produces one, inside a budget |
+| Design | `core:synthesizing-a-methodology` | when no method is known: the fields of science that hold one |
 | Place | `core:input-routing`, `core:blueprint` | the route and the per-step checks |
 | Design | `core:incremental-architect` | when a live thing must change shape under traffic |
 | Build | `core:writing-style` | every file's shape, every turn's output |
@@ -81,6 +84,18 @@ One skill invoking another is **not a documented capability** (checked 2026-09-2
 | Record | `core:writing-adr` | the decision that outlives the session |
 
 Fan-out is allowed and often right: dispatch one agent per independent read (the registry, the app, the site) and synthesise. Never dispatch two agents that write the same file.
+
+## 4b. The ladder, when the how is unknown
+
+A unit whose how is not already written does not get one invented in the Design phase. It climbs a ladder of three rungs, one at a time, and each rung ends on a card whose last line is either the next move or a GAP. The next rung is entered only from a GAP line. Whatever a rung produces is written back, so the next unit with the same problem stops one rung lower.
+
+| Rung | Question | Skill | Ends on |
+|---|---|---|---|
+| 1 | Is there a how? | `core:finding-the-how` | a HOW card: found, with its check, or GAP |
+| 2 | Is there a method that yields the how? | `core:deriving-a-methodology` | a METHOD card: a how produced inside a budget and written back as a type, or GAP |
+| 3 | Which fields of science hold the method? | `core:synthesizing-a-methodology` | a SYNTHESIS card: a method with a named result behind each step, placed, or an escalation with the field scan |
+
+The ladder is the runnable form of what canon already rules: the three resolution modes and the Reflection ladder on `holding/website/native/platform/model/workflow-engine.html`, section "Recursion", and the science behind Native in `holding/research/2026-06-12-unit-work-record-science.md`. A rung's card carries its check into this unit's blueprint. A rung is never skipped upward: reaching for the fields before looking in the catalog is the same failure as inventing.
 
 ## 5. The three checks before anything ships
 
@@ -117,6 +132,7 @@ The system is meant to improve itself: Adaptation proposes engines from what rep
 | Situation | Use instead |
 |---|---|
 | ordinary repo work with no Native record behind it | nothing; just do it |
+| the how for a unit is not written anywhere | `core:finding-the-how`, then up the ladder in section 4b |
 | deciding whether a thing should exist | `core:architect` |
 | writing prose or a document's shape | `core:writing-style` |
 | a one-line fix to a page's typo | nothing; fix it |
