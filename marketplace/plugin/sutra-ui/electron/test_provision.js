@@ -96,6 +96,52 @@ t("repairDeps installs requirements into a STAGED runtime and never into a bundl
   assert(!no.ok && /staged/.test(no.why), "a bundled payload is never written to: " + no.why);
 });
 
+t("repairDeps installs a still-missing module at its pinned version when the staged requirements are stale", () => {
+  const root = fs.mkdtempSync(path.join(TMPROOT, "repair-stale-"));
+  const appDir = path.join(root, "plugin", "sutra-ui");
+  fs.mkdirSync(appDir, { recursive: true });
+  // Staged once, long ago: the file predates the modules that are now required.
+  fs.writeFileSync(path.join(appDir, "requirements.txt"), "fastapi\nuvicorn\n");
+  const calls = [];
+  let fixed = false;
+  const run = (bin, args) => {
+    if (args[0] === "-c" && /version_info/.test(args[1])) return "3.11\n";
+    if (args[0] === "-c") return fixed ? "[]" : JSON.stringify(["bs4", "numpy"]);
+    calls.push(args.join(" "));
+    if (args.includes("beautifulsoup4==4.15.0")) fixed = true;
+    return "";
+  };
+  const r = P.repairDeps({ kind: "staged", appDir, python: "py" }, { execFileSync: run });
+  assert(r.ok, "repaired: " + r.why);
+  assert(calls.length === 2, "requirements first, then the named packages: " + calls.join(" | "));
+  assert(/beautifulsoup4==4\.15\.0/.test(calls[1]) && /numpy==2\.0\.2/.test(calls[1]) && !/ bs4/.test(calls[1]),
+         "installs the pinned pip spec, not the import name or latest: " + calls[1]);
+});
+
+t("repairDeps refuses a venv on an unsupported Python instead of a pip install that must fail", () => {
+  const root = fs.mkdtempSync(path.join(TMPROOT, "repair-py39-"));
+  const appDir = path.join(root, "plugin", "sutra-ui");
+  fs.mkdirSync(appDir, { recursive: true });
+  fs.writeFileSync(path.join(appDir, "requirements.txt"), "fastapi\n");
+  const calls = [];
+  const run = (bin, args) => {
+    if (args[0] === "-c" && /version_info/.test(args[1])) return "3.9\n";
+    calls.push(args.join(" ")); return "[]";
+  };
+  const r = P.repairDeps({ kind: "staged", appDir, python: "py" }, { execFileSync: run });
+  assert(!r.ok && /Python 3\.9/.test(r.why) && /install\.sh/.test(r.why), "says why and what to do: " + r.why);
+  assert(calls.every((c) => !/pip install/.test(c)), "no pip run: " + calls.join(" | "));
+});
+
+t("every REQUIRED pin is a line of requirements.txt, so the two cannot drift", () => {
+  const lines = fs.readFileSync(path.join(__dirname, "..", "requirements.txt"), "utf8")
+    .split("\n").map((l) => l.trim());
+  for (const r of P.REQUIRED) {
+    assert(typeof r[2] === "string" && /==/.test(r[2]), r[0] + " has a pinned spec");
+    assert(lines.includes(r[2]), r[2] + " is in requirements.txt");
+  }
+});
+
 t("depsMessage tells a person what is missing and what to do, in plain words", () => {
   const msg = P.depsMessage([["bs4", "reading the HTML of a page (beautifulsoup4)"]]);
   assert(msg.indexOf("bs4") !== -1 && msg.indexOf("reading the HTML") !== -1, "names it and its job");
