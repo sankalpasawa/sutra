@@ -467,6 +467,25 @@ function startBrowserFetchService() {
   return server;
 }
 
+/* Windows only: what every python this shell spawns needs -- the backend and
+   the update sidecar alike, since both import updates.py. Never set on macOS.
+   - payload/wincompat FIRST on PYTHONPATH: the backend imports POSIX-only
+     stdlib (fcntl / termios / pty) at module load across ~11 files; the shims
+     there let it import. Without it the sidecar could not even load updates.py.
+   - SUTRA_DESKTOP_VERSION / SUTRA_DESKTOP_EXE: Windows has no Info.plist, so
+     the shell names its own version and exe. updates.py finds the install
+     folder from the exe; without these a Windows install reported itself
+     unmanaged and Settings said "up to date" forever. */
+function winPythonEnv() {
+  if (process.platform !== "win32") return {};
+  return {
+    PYTHONPATH: [path.join(process.resourcesPath || "", "payload", "wincompat"),
+                 process.env.PYTHONPATH].filter(Boolean).join(path.delimiter),
+    SUTRA_DESKTOP_VERSION: app.getVersion(),
+    SUTRA_DESKTOP_EXE: process.execPath,
+  };
+}
+
 function startBackend() {
   const child = spawn(
     RUNTIME.python,
@@ -494,15 +513,8 @@ function startBackend() {
         // payload/sb/ is retired; the env stays for any bundled resource a
         // backend module resolves — e.g. the update sidecar's assets.)
         SUTRA_UI_RESOURCES: path.join(process.resourcesPath || "", "payload"),
-        // Windows only: the backend imports POSIX-only stdlib (fcntl / termios /
-        // pty) at module load across ~11 files, which would abort it before it
-        // can serve the panel. payload/wincompat holds import shims for those;
-        // putting it FIRST on PYTHONPATH makes `import fcntl` resolve to the
-        // shim so the backend boots. Never set on macOS/Linux (real modules).
-        ...(process.platform === "win32"
-          ? { PYTHONPATH: [path.join(process.resourcesPath || "", "payload", "wincompat"),
-                           process.env.PYTHONPATH].filter(Boolean).join(path.delimiter) }
-          : {}),
+        // Windows only: import shims + the updater's identity. See winPythonEnv.
+        ...winPythonEnv(),
         // The agent's crawler can read a site behind a bot challenge through this
         // app's own hidden window. Address + token, both minted per launch.
         ...(browserFetchUrl ? { SEO_AGENT_BROWSER_FETCH: browserFetchUrl, SEO_AGENT_BROWSER_TOKEN: BROWSER_TOKEN } : {}),
@@ -1034,7 +1046,7 @@ function updateCli(args, timeoutMs) {
       // env is INHERITED and overlaid, never replaced -- HOME/TMPDIR/locale
       // matter, and shellEnv() brings the proxy vars a Finder launch lacks.
       cwd: RUNTIME.appDir,
-      env: { ...process.env, ...shellEnv(), PYTHONDONTWRITEBYTECODE: "1" },
+      env: { ...process.env, ...shellEnv(), ...winPythonEnv(), PYTHONDONTWRITEBYTECODE: "1" },
       timeout: timeoutMs || 30000,
       maxBuffer: 4 * 1024 * 1024,
     }, (err, stdout) => {

@@ -9,6 +9,13 @@ Conflating them is the mistake this module exists to prevent:
                 ships it; it is still not wired up. The auto-updater is the
                 staging machinery below, driven by the Electron shell.
 
+                On Windows the app is the per-user NSIS install (Sutra.exe),
+                released as Sutra-Setup-x64.exe. Same staging machinery; the
+                swap is that installer, run silently by a detached PowerShell
+                helper once the app has exited. Before 2026-09-25 this module
+                knew only the .app, so a Windows install reported itself
+                unmanaged and the Settings row said "up to date" forever.
+
   PLUGIN        core@sutra under ~/.claude/plugins. Already updates itself once
                 a day via hooks/sessionstart-auto-update.sh, applying to the
                 NEXT session. This module exposes the same operation on demand
@@ -52,12 +59,16 @@ INSTALLING THE DESKTOP UPDATE, and why it looks the way it does:
     4. only then: swap, and keep the old bundle until the new one is in place
 
   A failure at any gate leaves /Applications untouched and reports why.
+
+  On Windows gates 2 and 3 do not exist yet (the installer is not
+  Authenticode-signed), so gate 1 is REQUIRED there rather than best-effort.
 """
 import contextlib
 import fcntl
 import hashlib
 import json
 import os
+import platform
 import plistlib
 import re
 import shutil
@@ -90,6 +101,12 @@ RELEASE_DOWNLOAD = os.environ.get("SUTRA_UI_RELEASE_DOWNLOAD", "https://github.c
 # back to the full image; SUTRA_UPDATE_DELTA=0 forces the full image.
 DELTA_ENABLED = os.environ.get("SUTRA_UPDATE_DELTA", "1") != "0"
 
+_IS_WIN = sys.platform == "win32"
+_HERE = Path(os.path.abspath(__file__))
+# electron-builder-win.yml nsis.artifactName. x64 only; the portable
+# Sutra-x64.exe is never an update target (it cannot replace itself).
+WIN_SETUP_ASSET = "Sutra-Setup-x64.exe"
+
 # The desktop release tag is `v<version>-desktop`; the asset is per-arch.
 _TAG_RE = re.compile(r"^v?(\d+(?:\.\d+)*)")
 
@@ -119,9 +136,14 @@ def _get_json(url):
 
 def _arch():
     """The DMG asset suffix for this machine. Matches make-dmg.sh's spelling:
-    uname says arm64/x86_64 and that is what the filenames use."""
-    m = (os.uname().machine or "").lower()
+    uname says arm64/x86_64 and that is what the filenames use. Read through
+    platform.machine(): os.uname does not exist on Windows."""
+    m = (platform.machine() or "").lower()
     return "arm64" if m in ("arm64", "aarch64") else "x86_64"
+
+
+def _desktop_asset():
+    return WIN_SETUP_ASSET if _IS_WIN else "Sutra-%s.dmg" % _arch()
 
 
 # ------------------------------------------------------------- desktop ------
@@ -150,7 +172,35 @@ def app_bundle():
     return None
 
 
+def win_install():
+    """Windows: the folder of the installed app this backend belongs to, or None.
+
+    There is no Info.plist to walk up to, so the shell names its own exe
+    (SUTRA_DESKTOP_EXE, main.js winPythonEnv) and the answer is that exe's
+    folder -- but only if this file really lives under it. A source checkout
+    that inherited the variable must not look installed.
+    """
+    exe = os.environ.get("SUTRA_DESKTOP_EXE") or ""
+    if not exe or not os.path.isfile(exe):
+        return None
+    root = Path(exe).parent
+    try:
+        if root.resolve() in _HERE.resolve().parents:
+            return root
+    except OSError:
+        pass
+    return None
+
+
+def _installed_app():
+    return win_install() if _IS_WIN else app_bundle()
+
+
 def _installed_desktop_version():
+    if _IS_WIN:
+        # The shell knows its own version for certain and names it; believed
+        # only from inside an install.
+        return (os.environ.get("SUTRA_DESKTOP_VERSION") or None) if win_install() else None
     app = app_bundle()
     if not app:
         return None
@@ -169,14 +219,15 @@ def _latest_desktop():
         return {"error": "could not reach GitHub: %s" % exc}
     tag = rel.get("tag_name") or ""
     version = _TAG_RE.match(tag).group(1) if _TAG_RE.match(tag) else None
-    want = "Sutra-%s.dmg" % _arch()
+    want = _desktop_asset()
     assets = {a.get("name"): a for a in (rel.get("assets") or [])}
     dmg = assets.get(want)
     # The delta lane's two assets. Both optional: a release without them is
     # simply a full-image release, which is what every release was before.
+    # macOS bundles only: the x86_64 pack is a Mac's, never a Windows install's.
     man_name = "Sutra-%s.manifest.json" % _arch()
     pack_name = "Sutra-%s.delta.tar.xz" % _arch()
-    man, pack = assets.get(man_name), assets.get(pack_name)
+    man, pack = (None, None) if _IS_WIN else (assets.get(man_name), assets.get(pack_name))
     return {
         "version": version,
         "tag": tag,
@@ -215,7 +266,7 @@ def desktop_state():
         "component": "desktop",
         "managed": True,
         "installed": installed,
-        "app_path": str(app_bundle()),
+        "app_path": str(_installed_app()),
         "arch": _arch(),
         "latest": latest.get("version"),
         "release_url": latest.get("url"),
@@ -295,12 +346,17 @@ def plugin_state():
 
 def install_plugin():
     """Run the same two commands the daily hook runs, and report the move."""
-    if not shutil.which("claude"):
+    claude = shutil.which("claude")
+    if not claude:
         raise RuntimeError("the `claude` CLI is not on PATH")
     before = _installed_plugin_version()
     out = []
-    for cmd in (["claude", "plugin", "marketplace", "update", "sutra"],
-                ["claude", "plugin", "update", "core@sutra"]):
+    # By the path which() found, not the bare name: on Windows npm installs
+    # `claude` as a .cmd shim, which which() finds through PATHEXT and
+    # CreateProcess cannot find from the bare name -- both steps failed and
+    # the result still read "Already current."
+    for cmd in ([claude, "plugin", "marketplace", "update", "sutra"],
+                [claude, "plugin", "update", "core@sutra"]):
         try:
             p = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
             out.append({"cmd": " ".join(cmd), "code": p.returncode,
@@ -545,7 +601,7 @@ def download_and_verify(dest_dir=None):
         raise RuntimeError(latest["error"])
     url = latest.get("download_url")
     if not url:
-        raise RuntimeError("the latest release has no downloadable asset for this Mac")
+        raise RuntimeError("the latest release has no downloadable asset for this machine")
 
     d = Path(dest_dir or tempfile.mkdtemp(prefix="sutra-update-"))
     d.mkdir(parents=True, exist_ok=True)
@@ -569,24 +625,35 @@ def download_and_verify(dest_dir=None):
     _fetch_dmg(url, dmg, int(latest.get("size") or 0))
 
     # GATE 1 -- checksum, against the file published beside the DMG.
+    want = None
     if latest.get("sha256_url"):
         want = _published_sha256(latest["sha256_url"])
-        if want:
-            got = _sha256(dmg)
-            if got != want:
-                # THE BAD FILE GOES, and that is not tidying. Staging keeps the
-                # image on disk between attempts so a download can be resumed, and
-                # a complete-but-wrong file left lying there is the one thing that
-                # rule cannot cope with: every later attempt would see the full
-                # byte count, ask for nothing, and fail the same way forever.
-                try:
-                    Path(dmg).unlink()
-                except OSError:
-                    pass
-                raise RuntimeError(
-                    "the downloaded image does not match the one published "
-                    "(published %s, downloaded %s). The copy here has been "
-                    "deleted; try the update again." % (want[:16], got[:16]))
+    if want:
+        got = _sha256(dmg)
+        if got != want:
+            # THE BAD FILE GOES, and that is not tidying. Staging keeps the
+            # image on disk between attempts so a download can be resumed, and
+            # a complete-but-wrong file left lying there is the one thing that
+            # rule cannot cope with: every later attempt would see the full
+            # byte count, ask for nothing, and fail the same way forever.
+            try:
+                Path(dmg).unlink()
+            except OSError:
+                pass
+            raise RuntimeError(
+                "the downloaded image does not match the one published "
+                "(published %s, downloaded %s). The copy here has been "
+                "deleted; try the update again." % (want[:16], got[:16]))
+    elif _IS_WIN:
+        # On a Mac this is one gate of three. The Windows installer is unsigned,
+        # so here it is the only one, and an unchecked installer is not run.
+        raise RuntimeError(
+            "could not read the published checksum for %s. On Windows it is the "
+            "only check the installer gets, so it was not installed; try the "
+            "update again later." % latest["asset"])
+
+    if _IS_WIN:
+        return {"dmg": str(dmg), "version": latest.get("version"), "dir": str(d)}
 
     # GATE 2 -- Gatekeeper. Signed is not enough; this must be NOTARIZED, which
     # is what `spctl` reports and what a stranger's Mac will demand.
@@ -812,6 +879,47 @@ ON_IMAGE = (
     "open it from Applications. Updates work by themselves from then on."
 )
 
+PORTABLE = (
+    "This is the portable Sutra-x64.exe. It runs from a temporary copy, so it "
+    "cannot replace itself and no update can ever land.\n\n"
+    "Download Sutra-Setup-x64.exe from the release page and run it once. Sutra "
+    "then installs for your user account, and updates work by themselves from "
+    "then on."
+)
+
+
+def _win_exe_name():
+    return Path(os.environ.get("SUTRA_DESKTOP_EXE") or "Sutra.exe").name
+
+
+def _win_blocker(root):
+    """install_blocker() for Windows. The portable exe sets
+    PORTABLE_EXECUTABLE_FILE for its children; an NSIS install also leaves its
+    uninstaller beside the exe, which an unpacked portable copy never has."""
+    if os.environ.get("PORTABLE_EXECUTABLE_FILE") or not any(root.glob("Uninstall*.exe")):
+        return PORTABLE
+    # The feed (releases/latest) carries the stable installer only. macOS
+    # refuses a different app by bundle id; unsigned, the exe name is all
+    # Windows has, and running stable's installer into a beta's folder would
+    # replace one app with another.
+    if _win_exe_name().lower() != "sutra.exe":
+        return ("This is %s. Updates carry the stable Sutra installer only, which "
+                "would replace this app with a different one. Install the stable "
+                "release separately instead." % Path(_win_exe_name()).stem)
+    # A real write, not os.access: on Windows that checks only the read-only
+    # attribute and says yes to Program Files. The installer offers an
+    # all-users install there, and a silent update of it needs an admin.
+    try:
+        fd, probe = tempfile.mkstemp(prefix=".sutra-write-probe-", dir=str(root))
+        os.close(fd)
+        os.unlink(probe)
+    except OSError:
+        return ("Sutra is installed in %s for everyone on this PC, which this user "
+                "account cannot change without an administrator, so it cannot "
+                "update itself. Run Sutra-Setup-x64.exe by hand, or reinstall it "
+                "choosing \"Only for me\"." % root)
+    return None
+
 
 def install_blocker(app_path=None):
     """A plain-English reason this machine cannot install an update, or None.
@@ -823,10 +931,12 @@ def install_blocker(app_path=None):
     ever tells them they never installed it. Name that, rather than naming a
     path and a permission bit.
     """
-    target = app_path or app_bundle()
+    target = app_path or _installed_app()
     if not target:
         return None                      # a source checkout updates by git
     app = Path(target)
+    if _IS_WIN:
+        return _win_blocker(app)
     if str(app).startswith("/Volumes/"):
         return ON_IMAGE
     if not os.access(app.parent, os.W_OK):
@@ -852,6 +962,10 @@ def install_desktop(dmg, app_path=None, wait_pid=None, wait_start=None,
     getppid() is then a shell -- whose exit would release the helper while Sutra
     is still running. The shell passes its own pid, with its start time.
     """
+    if _IS_WIN:
+        return _install_desktop_windows(dmg, app_path=app_path, wait_pid=wait_pid,
+                                        relaunch=relaunch, version=version,
+                                        result_path=result_path)
     # The emptiness check is separate and comes FIRST because Path("") is
     # PosixPath("."), which is a real directory and passes every test below it.
     # In a source checkout app_bundle() is None, so the old `Path(x or "")`
@@ -907,6 +1021,198 @@ def install_desktop(dmg, app_path=None, wait_pid=None, wait_start=None,
                     + (" It reopens itself." if relaunch else "")}
 
 
+_WIN_INSTALLER = r"""# Written by sutra-ui updates.py. The Windows leg of the desktop updater: waits
+# for the app to be GONE, then runs the verified NSIS installer silently over
+# the existing install. The checksum was checked before this ran; from here on
+# there is no one to ask. Inputs arrive as environment variables, as on macOS:
+# SETUP APP_DIR APP_EXE LOG WAIT_PID RELAUNCH EXPECT_VERSION RESULT.
+$ErrorActionPreference = 'Stop'
+
+function Log([string]$m) {
+  try { Add-Content -LiteralPath $env:LOG -Value ('[' + (Get-Date -Format s) + '] ' + $m) } catch {}
+}
+
+# Terminal status, in the shape the macOS helper writes and resolve_pending()
+# reads. UTF-8 without a BOM: Windows PowerShell's own UTF8 writes one, and
+# json.load refuses it.
+function Result([bool]$ok, [string]$stage, [string]$err) {
+  if ($err.Length -gt 300) { $err = $err.Substring(0, 300) }
+  $o = [ordered]@{
+    ok = $ok
+    stage = $stage
+    version = [string]$env:EXPECT_VERSION
+    error = $err
+    ts = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+  }
+  $tmp = $env:RESULT + '.tmp'
+  [System.IO.File]::WriteAllText($tmp, ($o | ConvertTo-Json -Compress), (New-Object System.Text.UTF8Encoding($false)))
+  Move-Item -LiteralPath $tmp -Destination $env:RESULT -Force
+}
+
+function Die([string]$stage, [string]$msg) {
+  Log ('FAIL(' + $stage + '): ' + $msg)
+  Result $false $stage $msg
+  exit 1
+}
+
+Log ('installer start setup=' + $env:SETUP + ' app=' + $env:APP_DIR + ' wait_pid=' + $env:WAIT_PID + ' relaunch=' + $env:RELAUNCH)
+
+# 1. wait for THAT process to end. Its start time is taken now, while it is
+#    still the shell that armed us: a pid reused later has a different start
+#    time, which means ours is already gone.
+$waitPid = [int]$env:WAIT_PID
+$t0 = $null
+try { $t0 = (Get-Process -Id $waitPid -ErrorAction Stop).StartTime } catch {}
+function Shell-Alive {
+  try {
+    $p = Get-Process -Id $waitPid -ErrorAction Stop
+    if ($t0 -and $p.StartTime -ne $t0) { return $false }
+    return $true
+  } catch { return $false }
+}
+for ($i = 0; $i -lt 120; $i++) {
+  if (-not (Shell-Alive)) { break }
+  Start-Sleep -Seconds 1
+}
+if (Shell-Alive) { Die 'app-alive' ('app still running after 120s; ' + $env:APP_DIR + ' untouched') }
+
+# 2. the shell exiting is not the folder being free. Electron helpers, the
+#    bundled python backend and anything it started run out of the same folder,
+#    and the installer cannot replace a file in use. What the app that quit
+#    left behind is orphaned: stop it after a grace period. A Sutra.exe started
+#    AFTER this helper is the user opening Sutra again: touch nothing, and the
+#    next quit applies the update.
+$helperStart = (Get-Process -Id $PID).StartTime
+$prefix = $env:APP_DIR.TrimEnd('\') + '\'
+function From-App {
+  @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+    try { $_.Path -and $_.Path.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase) } catch { $false }
+  })
+}
+function Reopened {
+  @(From-App | Where-Object {
+    try { ($_.Path -ieq $env:APP_EXE) -and ($_.StartTime -gt $helperStart) } catch { $false }
+  })
+}
+for ($i = 0; $i -lt 30; $i++) {
+  if ((Reopened).Count -gt 0) { break }
+  if ((From-App).Count -eq 0) { break }
+  Start-Sleep -Seconds 1
+}
+if ((Reopened).Count -gt 0) {
+  Die 'app-reopened' ('Sutra was opened again before the update could apply; ' + $env:APP_DIR + ' untouched')
+}
+$left = From-App
+if ($left.Count -gt 0) {
+  Log ('stopping leftovers: ' + (($left | ForEach-Object { $_.ProcessName + ':' + $_.Id }) -join ', '))
+  $left | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop } catch {} }
+  Start-Sleep -Seconds 2
+}
+$left = From-App
+if ($left.Count -gt 0) {
+  Die 'procs-alive' ('processes are still running from ' + $env:APP_DIR + ': ' + (($left | ForEach-Object { $_.ProcessName }) -join ', '))
+}
+
+# 3. run the installer silently, as an update, into the SAME folder. These are
+#    the arguments electron-updater gives an electron-builder NSIS installer:
+#    --updated keeps user data, /S is silent, --force-run reopens the app, and
+#    /D= must come LAST, unquoted (NSIS reads the rest of the line as the path).
+$argList = @('--updated', '/S')
+if ($env:RELAUNCH -eq '1') { $argList += '--force-run' }
+$argList += ('/D=' + $env:APP_DIR)
+Log ('running ' + $env:SETUP + ' ' + ($argList -join ' '))
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = $env:SETUP
+$psi.Arguments = ($argList -join ' ')
+$psi.UseShellExecute = $false
+$psi.WorkingDirectory = Split-Path -Parent $env:SETUP
+try {
+  $proc = [System.Diagnostics.Process]::Start($psi)
+} catch {
+  Die 'spawn' ('could not start the installer: ' + $_.Exception.Message)
+}
+# The installer alone, not its tree: --force-run starts the app as its child,
+# and waiting on that would wait for the user to quit Sutra again.
+if (-not $proc.WaitForExit(600000)) { Die 'install-timeout' 'the installer did not finish within 10 minutes' }
+if ($proc.ExitCode -ne 0) { Die 'install' ('the installer exited with code ' + $proc.ExitCode) }
+
+# 4. exit code 0 is not proof the new version landed. electron-builder stamps
+#    the exe's FileVersion with the app version; read it back.
+if (-not (Test-Path -LiteralPath $env:APP_EXE)) { Die 'verify' ('no ' + $env:APP_EXE + ' after the installer finished') }
+$fv = [string](Get-Item -LiteralPath $env:APP_EXE).VersionInfo.FileVersion
+$want = [string]$env:EXPECT_VERSION
+if ($want -and $fv -and $fv -ne $want -and -not $fv.StartsWith($want + '.')) {
+  Die 'version' ('installed ' + $fv + ', but ' + $want + ' was staged and verified')
+}
+Result $true 'installed' ''
+Log ('installed ' + $want + ' (file version ' + $fv + ')')
+"""
+
+# Win32 process-creation flags (winbase.h), spelled out so this module imports
+# the same on every OS.
+_DETACHED_PROCESS = 0x00000008
+_CREATE_NEW_PROCESS_GROUP = 0x00000200
+_CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+
+
+def _install_desktop_windows(setup, app_path=None, wait_pid=None, relaunch=False,
+                             version=None, result_path=None):
+    """Spawn the detached helper that runs the verified installer once the app
+    has exited. Returns immediately, like the macOS leg. The installer does the
+    swap itself, so there is no two-rename window and no recover record."""
+    target = app_path or win_install()
+    if not target or not str(target).strip():
+        raise RuntimeError("no installed Sutra to replace")
+    root = Path(target)
+    if not root.is_dir():
+        raise RuntimeError("%s is not an installed Sutra folder" % root)
+    blocked = install_blocker(root)
+    if blocked:
+        raise RuntimeError(blocked)
+    setup = Path(setup)
+    if not setup.is_file() or setup.suffix.lower() != ".exe":
+        raise RuntimeError("no such installer: %s" % setup)
+
+    pid = int(wait_pid) if wait_pid else os.getppid()
+    d = Path(tempfile.mkdtemp(prefix="sutra-installer-"))
+    script = d / "install.ps1"
+    log = d / "install.log"
+    script.write_text(_WIN_INSTALLER, encoding="utf-8")
+
+    env = dict(os.environ)
+    env.update({
+        "SETUP": str(setup), "APP_DIR": str(root),
+        "APP_EXE": str(root / _win_exe_name()), "LOG": str(log),
+        "WAIT_PID": str(pid), "RELAUNCH": "1" if relaunch else "0",
+        "EXPECT_VERSION": str(version or ""),
+        "RESULT": str(result_path or (d / "install-result.json")),
+    })
+    # By absolute path: a powershell.exe earlier on PATH is not ours to run.
+    ps = os.path.join(os.environ.get("SystemRoot") or r"C:\Windows",
+                      "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+    argv = [ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+            "-WindowStyle", "Hidden", "-File", str(script)]
+    # Detached and out of the shell's job: Electron runs the backend in a
+    # kill-on-close job, and the helper has to outlive the app it waits for.
+    # A job that forbids breakaway refuses that flag; start without it then.
+    base = _DETACHED_PROCESS | _CREATE_NEW_PROCESS_GROUP
+    for flags in (base | _CREATE_BREAKAWAY_FROM_JOB, base):
+        try:
+            # cwd out of the install folder: the backend runs inside it, and a
+            # process's cwd pins that directory while the old version is removed.
+            subprocess.Popen(argv, env=env, cwd=str(d), creationflags=flags,
+                             close_fds=True, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            break
+        except OSError:
+            if flags == base:
+                raise
+    return {"scheduled": True, "log": str(log), "app": str(root),
+            "wait_pid": pid, "relaunch": bool(relaunch),
+            "note": "Quit Sutra to let the update apply."
+                    + (" It reopens itself." if relaunch else "")}
+
+
 # ----------------------------------------------------- staging / pending ----
 # Everything below exists so that an update can be downloaded NOW and applied
 # LATER -- possibly days later, across a reboot, by a process that has not been
@@ -915,6 +1221,9 @@ def install_desktop(dmg, app_path=None, wait_pid=None, wait_start=None,
 
 MAX_APPLY_ATTEMPTS = 2      # after this many tries at one version, stop trying
 ARM_LEASE_SECONDS = 300     # how long a spawned helper is presumed to be alive
+# The Windows helper can wait 120 s for the shell, 32 s for leftovers and 600 s
+# for the installer; a shorter lease lets a launch arm a second helper.
+WIN_ARM_LEASE_SECONDS = 900
 
 
 def stage_dir():
@@ -927,11 +1236,22 @@ def stage_dir():
     a file someone can swap, so the directory is locked down and every read out
     of it is re-verified rather than trusted.
     """
-    d = Path(os.path.expanduser(os.environ.get(
-        "SUTRA_UPDATE_DIR", "~/Library/Application Support/Sutra/updates")))
+    if _IS_WIN:
+        # Per app (Sutra / Sutra Beta): a shared manifest would let a beta
+        # launch arm stable's staged installer.
+        default = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"),
+                               Path(_win_exe_name()).stem, "updates")
+    else:
+        default = "~/Library/Application Support/Sutra/updates"
+    d = Path(os.path.expanduser(os.environ.get("SUTRA_UPDATE_DIR", default)))
     if d.is_symlink():
         raise RuntimeError("%s is a symlink; refusing to stage there" % d)
     d.mkdir(parents=True, exist_ok=True)
+    if _IS_WIN:
+        # No POSIX owner or mode bits here (st_uid is always 0; os.getuid does
+        # not exist). %LOCALAPPDATA% is private to the user by its default ACL,
+        # which is the property the checks below prove on a Mac.
+        return d
     # Ownership before permissions: chmod on a directory belonging to somebody
     # else either fails or, worse, succeeds and tells us nothing.
     if d.stat().st_uid != os.getuid():
@@ -1165,6 +1485,12 @@ def stage_desktop():
     if not state.get("update_available"):
         return {"staged": False, "reason": "already up to date",
                 "installed": state.get("installed")}
+    # Asked here and not only by the HTTP route: the sidecar (updates_cli stage)
+    # calls straight in, and a portable Windows copy downloaded the installer
+    # on every release only to be refused at every arm.
+    blocked = install_blocker()
+    if blocked:
+        raise RuntimeError(blocked)
 
     version = state.get("latest")
     existing = read_pending()
@@ -1255,8 +1581,8 @@ def _commit_stage(got, version, digest, latest, replaceable):
     })
     # Every other image here is now unreferenced: the only other holder of a
     # DMG path is a live install, refused above. This also retires the old
-    # unversioned Sutra-<arch>.dmg name.
-    for p in list(stage_dir().glob("*.dmg")) + list(stage_dir().glob("*.app")) \
+    # unversioned Sutra-<arch>.dmg name. (.exe on Windows.)
+    for p in list(stage_dir().glob("*" + final.suffix)) + list(stage_dir().glob("*.app")) \
             + list(stage_dir().glob("*.manifest.json")):
         try:
             if p in (final, manifest_final) or p.is_symlink():
@@ -1324,7 +1650,7 @@ def _arm_locked(man, proof, wait_pid, wait_start, relaunch):
     # Stamped BEFORE the spawn, so a crash between here and the helper starting
     # is still visible as an attempt at the next launch.
     man.update({"state": "installing", "armed_at": now,
-                "lease_until": now + ARM_LEASE_SECONDS,
+                "lease_until": now + (WIN_ARM_LEASE_SECONDS if _IS_WIN else ARM_LEASE_SECONDS),
                 "arm_attempts": int(man.get("arm_attempts", 0)) + 1,
                 "relaunch": bool(relaunch)})
     _write_json(_pending_path(), man)

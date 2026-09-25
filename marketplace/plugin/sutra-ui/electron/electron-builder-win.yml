@@ -62,7 +62,9 @@ nsis:
   perMachine: false                       # per-user install -> no admin prompt
   allowToChangeInstallationDirectory: true
   artifactName: Sutra-Setup-x64.${ext}
-  # Windows auto-update (electron-updater) is Stage C; not wired here.
+  # Auto-update is not electron-updater: updates.py stages this installer and
+  # runs it with --updated /S /D=<install dir> after the app exits. Keep
+  # artifactName and perMachine in step with updates.py WIN_SETUP_ASSET.
 
 portable:
   artifactName: Sutra-x64.${ext}
