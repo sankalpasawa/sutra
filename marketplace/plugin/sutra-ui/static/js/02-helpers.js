@@ -1152,8 +1152,7 @@ function sessMenuHtml(s){
         <button type="button" data-act="rename-save" data-sid="${sid}">Save</button>
       </div></div>`;
   }
-  const real=!!s.real, grp=groupMap()[sid]||"";
-  const groups=[...new Set(Object.values(groupMap()))].filter(Boolean);
+  const real=!!s.real, arch=chatArchived(s);
   const mi=(act,label,extra="")=>`<button type="button" role="menuitem" data-act="${act}" data-sid="${sid}" ${extra}>${label}</button>`;
   /* Which assistant wrote this transcript. It used to be a tag on every row of
      the list; it is a fact about the file, wanted rarely, so it lives here. */
@@ -1166,15 +1165,11 @@ function sessMenuHtml(s){
     ${mi("open-finder","Finder")}
     ${mi("open-repo","Repository bar")}
     <div class="smdiv"></div>
-    ${mi("pin", isPinned(sid)?"Unpin":"Pin")}
-    ${mi("unread","Mark as unread")}
+    ${arch?"":mi("pin", isPinned(sid)?"Unpin":"Pin")}
+    ${arch?"":mi("unread","Mark as unread")}
     ${real?mi("rename","Rename…"):""}
     ${real?mi("fork","Fork"):""}
-    <div class="smsec">Move to group</div>
-    ${groups.map(g=>mi("group",(g===grp?"✓ ":"")+esc(g),`data-group="${esc(g)}"`)).join("")}
-    ${mi("group-new","New group…")}
-    ${grp?mi("group","Remove from group",'data-group=""'):""}
-    ${real?`<div class="smdiv"></div>${mi("archive","Archive")}
+    ${real?`<div class="smdiv"></div>${arch?mi("unarchive","Unarchive"):chatIsLive(s)?"":mi("archive","Archive")}
       <button type="button" role="menuitem" class="danger" data-act="delete" data-sid="${sid}">Delete</button>`:""}
   </div>`;
 }
@@ -1678,11 +1673,11 @@ function chatSearchNorm(q){ return String(q == null ? "" : q).trim().toLowerCase
 function chatMatches(s, q){
   if (!q) return true;
   if (!s) return false;
-  /* The FOLDER is the name the row shows (rowWorkspace), not its whole path:
-     matching the path listed every chat under ~/.sutra-ui for "sutra" with
-     nothing visible on the row to say why. */
+  /* DEPARTMENTS, NOT FOLDERS (founder, 2026-09-25): the row shows its
+     department, so that is what matches; a folder match would light up a row
+     with nothing on it to say why. */
   const d = s.department, r = s.routine;
-  return [s.title, rowWorkspace(s), d && d.name, r && r.routine]
+  return [s.title, d && d.name, r && r.routine]
     .some(h => h && String(h).toLowerCase().includes(q));
 }
 /* Loaded rows first, then server rows not already listed; newest first. */
@@ -1743,6 +1738,75 @@ function chatSearchClose(){
   renderRail();
   const b = document.querySelector("[data-chatsearch=open]");
   if (b) b.focus();
+}
+
+/* ── chat states (founder, 2026-09-25): Live, Pinned, Active, Archived ──────
+   LIVE is a chat running in this panel or being written right now. ARCHIVED is
+   a mark in Sutra's own store (chat_archive.py), set by the x on a row, the row
+   menu, or an agent; the server clears it by itself once a chat is written to
+   again, and a live chat never reads as archived here either. Every row reads
+   department · touched <when> · <how long ago>. */
+function chatIsLive(s){
+  return !!(s && (sessionBusy(s.id) || (s.real && liveHeld(s))));
+}
+function chatArchived(s){
+  return !!(s && s.real && s.archived && !chatIsLive(s));
+}
+function chatAgo(ms, now){
+  if (!ms) return "";
+  const s = Math.max(0, Math.floor(((now || Date.now()) - ms) / 1000));
+  if (s < 60) return "now";
+  if (s < 3600) return Math.floor(s / 60) + " min ago";
+  if (s < 86400) return Math.floor(s / 3600) + " h ago";
+  const d = Math.floor(s / 86400);
+  if (d < 14) return d + (d === 1 ? " day ago" : " days ago");
+  if (d < 60) return Math.floor(d / 7) + " weeks ago";
+  return Math.floor(d / 30) + " months ago";
+}
+function chatTouched(ms){
+  if (!ms) return "";
+  const t = new Date(ms);
+  const mon = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][t.getMonth()];
+  const hh = String(t.getHours()).padStart(2, "0"), mm = String(t.getMinutes()).padStart(2, "0");
+  return t.getDate() + " " + mon + ", " + hh + ":" + mm;
+}
+/* The second line of every row. Badges (running / live / agents) stay first,
+   as rowMeta drew them; a transcript that cannot be read still says so. */
+function chatLine(s, q, now){
+  const meta = rowMeta(s);
+  const badge = meta.replace(/<span>(not opened yet|opening…|\d+ turns?)<\/span>$/, "");
+  const dept = (s.department && s.department.name) || "No department";
+  const ms = s.updated_ms || s.created_ms;
+  const by = s.archived && s.archived_by && s.archived_by !== "you"
+    ? ` · archived by ${esc(s.archived_by)}` : "";
+  /* One line in a 300 px rail: department, then when it was last touched.
+     How long ago sits at the right of the title line (chatAgo, sessRow),
+     because on this line it was the part the ellipsis cut. */
+  return badge + `<span class="rdept">${hlq(dept, q)}</span>`
+    + (ms ? `<span title="Last touched ${esc(chatTouched(ms))}">· ${esc(chatTouched(ms))}${by}</span>` : "");
+}
+/* Archive with the fold motion: the row closes up (panel.css .arch-out),
+   then the list re-renders with the chat under Archived. */
+function chatArchive(sid){
+  const s = S.sessions.find(x => x.id === sid);
+  if (!s || !s.real) return;
+  S.sessMenu = null;
+  const li = document.querySelector('.srow[data-sid="' + sid + '"]');
+  if (li) li.classList.add("arch-out");
+  S.archTick = Date.now();
+  setTimeout(() => {
+    s.archived = true; s.archived_by = "you";
+    renderRail();
+    apiPost("/api/sessions/" + encodeURIComponent(sid) + "/archive", {})
+      .catch(e => { s.archived = false; S.toast = "archive failed: " + e.message; render(); });
+  }, 200);
+}
+function chatUnarchive(sid){
+  const s = S.sessions.find(x => x.id === sid);
+  if (!s) return;
+  s.archived = false; s.archived_by = null;
+  apiPost("/api/sessions/" + encodeURIComponent(sid) + "/unarchive", {})
+    .catch(e => { S.toast = "could not bring the chat back: " + e.message; render(); });
 }
 
 function renderRail(){
@@ -1819,9 +1883,14 @@ function renderRail(){
       <button type="button" class="rowopen" data-open="${sid}"
           aria-current="${open}"
           title="${esc(s.real ? (s.cwd || s.project || "") : "started in this panel")}">
-        <span class="t">${isUnread(sid)?'<span class="udot" aria-label="unread"></span>':""}${hlq(s.title, q)}</span>
-        <span class="m">${sessMeta(s)}${trail||""}</span>
+        <span class="t">${isUnread(sid)?'<span class="udot" aria-label="unread"></span>':""}${hlq(s.title, q)}</span>${
+          (s.updated_ms || s.created_ms) ? `<span class="rago">${esc(chatAgo(s.updated_ms || s.created_ms))}</span>` : ""}
+        <span class="m">${chatLine(s, q)}${trail||""}</span>
       </button>
+      ${s.real && !chatArchived(s) && !chatIsLive(s) ? `<button type="button" class="rowarch"
+          data-chatarchive="${sid}" aria-label="Archive this chat" title="Archive">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>` : ""}
       <button type="button" class="rowmenu" data-sessmenu="${sid}"
           aria-haspopup="true" aria-expanded="${S.sessMenu===sid}"
           aria-label="Actions for ${esc(s.title)}">
@@ -1899,22 +1968,44 @@ function renderRail(){
 
   let html = "";
   if (S.sgroup === "recent"){
+    /* LIVE, PINNED, ACTIVE, ARCHIVED (founder, 2026-09-25). Each chat shows
+       once, first match wins: a running chat sits in Live even when pinned or
+       archived; an archived chat sits in Archived even when pinned. Active is
+       grouped by day of last touch, as Recent always was. */
+    const live = [], pinned = [], active = [], arch = [];
+    LIST.forEach(s => {
+      if (chatIsLive(s)) live.push(s);
+      else if (chatArchived(s)) arch.push(s);
+      else if (isPinned(s.id)) pinned.push(s);
+      else active.push(s);
+    });
+    const held = s => s.turns.some(t=>t.mode==="floor")
+      ? '<span style="color:var(--warn)">held</span>' : "";
+    const rows = list => `<ul class="rlist">${list.map(s=>sessRow(s, held(s))).join("")}</ul>`;
+    const PIN_SVG = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M9 4h6l-1 6 4 4H6l4-4z M12 14v6"/></svg>`;
+    const head = (cls, icon, label, n) =>
+      `<div class="rgrp rsec ${cls}">${icon}${label}<span class="rsecn">${n}</span></div>`;
+    if (live.length) html += head("rlive", '<span class="rlivedot" aria-hidden="true"></span>', "Live", live.length) + rows(live);
+    if (pinned.length) html += head("rpin", PIN_SVG, "Pinned", pinned.length) + rows(pinned);
     const order = ["Today","Yesterday","Previous 7 days","Previous 30 days","Older"];
     const g = {};
-    LIST.forEach(s=>{ const k=bucket(s.updated_ms||s.created_ms); (g[k]=g[k]||[]).push(s); });
-    /* once per render, see workspaceLabel; a search always shows the folder,
-       since the folder may be the very thing that matched */
-    const wsDiffer = q ? true : workspacesDiffer(LIST);
-    html = order.filter(k=>g[k]).map(k=>`
-      <div class="rgrp">${k}</div>
-      <ul class="rlist">${pinFirst(g[k]).map(s=>{
-        const ds = deptsOf(s);
-        const held = s.turns.some(t=>t.mode==="floor");
-        const ws = s.real ? workspaceLabel(s, LIST, wsDiffer) : "";
-        const trailTxt = s.real ? ws : (ds.length?ds.join(" → "):"—");
-        const trail = (trailTxt ? `<span>${hlq(trailTxt, q)}</span>` : "")
-          + (held?'<span style="color:var(--warn)">held</span>':"");
-        return sessRow(s, trail);}).join("")}</ul>`).join("");
+    active.forEach(s=>{ const k=bucket(s.updated_ms||s.created_ms); (g[k]=g[k]||[]).push(s); });
+    html += order.filter(k=>g[k]).map(k=>`<div class="rgrp">${k}</div>${rows(g[k])}`).join("");
+    /* ARCHIVED, folded at the bottom. Open while a search is running, so a
+       matching archived chat is never hidden behind a fold. */
+    if (arch.length){
+      const open = !!(S.ui.archOpen || q);
+      const shown = S.ui.archShow || 50;
+      const tick = S.archTick && Date.now() - S.archTick < 1200 ? " tick" : "";
+      html += `<div class="rarch${open ? " open" : ""}">
+        <button type="button" class="rarchtog" data-archtoggle aria-expanded="${open}">
+          <svg class="rgchev" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16v3H4z M5 10v9h14v-9 M10 14h4"/></svg>
+          Archived<span class="rsecn${tick}">${arch.length}</span></button>
+        ${open ? rows(arch.slice(0, shown)) + (arch.length > shown
+          ? `<button type="button" class="rarchmore" data-archmore>Show ${arch.length - shown} more</button>` : "") : ""}
+      </div>`;
+    }
     if (q && !LIST.length) html = "";
     else if (!S.sessions.length) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
       ${S.sessionsError

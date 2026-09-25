@@ -928,6 +928,39 @@
   .rscount:empty{display:none}
   mark.qhit{background:color-mix(in srgb,var(--acc) 22%,transparent);color:var(--acc);
     border-radius:3px;padding:0 1px}
+  /* chat states (2026-09-25): Live, Pinned, Active, Archived */
+  .rsec{display:flex;align-items:center;gap:6px}
+  .rsecn{font:600 9px/1 var(--mono);color:var(--faint);letter-spacing:0;border-radius:4px;padding:1px 3px;
+    transition:background .3s,color .3s}
+  .rsecn.tick{background:var(--acc-bg);color:var(--acc)}
+  .rsec.rlive{color:var(--ok)}
+  .rlivedot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--ok-bg)}
+  .rsec.rpin svg{color:var(--acc)}
+  .rlist .srow .rowopen{position:relative}
+  .rlist .srow .rowopen .t{padding-right:64px}
+  .rlist .srow .rago{position:absolute;right:8px;top:7px;font:500 9px/1.4 var(--mono);color:var(--faint);
+    white-space:nowrap}
+  .rlist .m .rdept{color:var(--muted);flex:none;white-space:nowrap}
+  .rlist .m .rdept + span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rlist .srow .rowarch{flex:none;width:22px;display:grid;place-items:center;background:none;border:0;
+    border-radius:5px;color:var(--muted);cursor:pointer;opacity:0}
+  .rlist .srow:hover .rowarch,.rlist .srow .rowarch:focus-visible{opacity:1}
+  .rlist .srow .rowarch:hover{background:var(--acc-bg);color:var(--ink)}
+  .rlist .srow.arch-out{animation:archOut .2s ease forwards;overflow:hidden}
+  @keyframes archOut{to{opacity:0;transform:translateY(6px) scale(.98);max-height:0;padding:0;margin:0}}
+  .rarch{border-top:1px solid var(--line-soft);margin-top:8px;padding:4px 0 6px}
+  .rarchtog{width:calc(100% - 12px);margin:0 6px;display:flex;align-items:center;gap:7px;background:none;border:0;
+    border-radius:6px;padding:8px 6px;font:600 9.5px/1 var(--sans);letter-spacing:.09em;text-transform:uppercase;
+    color:var(--muted);cursor:pointer}
+  .rarchtog:hover{background:var(--acc-bg);color:var(--ink)}
+  .rarchtog .rsecn{margin-left:auto}
+  .rarchtog .rgchev{transition:transform .15s}
+  .rarch.open .rarchtog{color:var(--ink)}
+  .rarch.open .rarchtog .rgchev{transform:rotate(90deg)}
+  .rarch .rlist .t{color:var(--muted)}
+  .rarchmore{margin:2px 14px 0;background:none;border:0;padding:6px 0;font:500 11px/1 var(--sans);
+    color:var(--acc);cursor:pointer}
+  @media (prefers-reduced-motion: reduce){.rlist .srow.arch-out{animation:none;opacity:0}}
   .newBtn{margin:0 10px 10px;padding:8px 11px;border-radius:7px;border:0;width:calc(100% - 20px);
     background:var(--ink);color:var(--bg);font:600 12px/1 var(--sans);display:flex;
     align-items:center;justify-content:center;gap:7px;cursor:pointer}

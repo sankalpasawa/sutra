@@ -805,6 +805,7 @@ function adoptRealSessions(rows){
       /* turn progress moves on every Shadow turn, so the strip has to be
          refreshed on the on-screen branch too, not only minted with the row */
       if (r.shadow_task !== undefined) k.shadow_task = r.shadow_task;
+      if (r.archived !== undefined){ k.archived = !!r.archived; k.archived_by = r.archived_by || null; }
       return k;
     }
     return realSessionFromRow(r);
@@ -847,6 +848,9 @@ function realSessionFromRow(r){
       /* what it is driving -- objective, turn budget, done-when -- for the
          pane's status strip. null unless Shadow actually owns this session. */
       shadow_task: r.shadow_task || null,
+      /* Archived in Sutra's own store (chat_archive.py); server-resolved, and a
+         chat written to since its archive comes back by itself. */
+      archived: !!r.archived, archived_by: r.archived_by || null,
       /* mtime is seconds since epoch; the rail's date buckets are in ms. This is
          the file's last write — genuinely "updated", not a fabricated "created". */
       created_ms: (r.mtime || 0) * 1000, updated_ms: (r.mtime || 0) * 1000,

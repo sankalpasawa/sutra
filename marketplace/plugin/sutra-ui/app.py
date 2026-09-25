@@ -36,6 +36,7 @@ import project_import as pi
 import routine_links
 import providers
 import chat_store
+import chat_archive
 import secrets as _secrets
 import shadow_egress
 import switch
@@ -857,14 +858,12 @@ def _chat_matches(row, q):
     whatever the rail groups the row under by name: its department or the routine
     that produced it. Transcript text is deliberately NOT searched.
 
-    The folder is its NAME, the last segment the rail shows (rowWorkspace in
-    02-helpers.js), not the whole path: a path match lists rows with nothing on
-    them to say why they matched."""
+    DEPARTMENTS, NOT FOLDERS (founder, 2026-09-25: "It should show departments
+    and not folders"). A row shows its department, so that is what a search
+    matches; a folder match would list rows with nothing on them to say why."""
     dept = row.get("department") or {}
     rtn = row.get("routine") or {}
-    cwd = (row.get("cwd") or "").rstrip("/")
-    folder = cwd.rsplit("/", 1)[-1] if cwd else (row.get("project") or "").strip("-")
-    hay = (row.get("title"), folder,
+    hay = (row.get("title"),
            dept.get("name") if isinstance(dept, dict) else None,
            rtn.get("routine") if isinstance(rtn, dict) else None)
     return any(q in str(h).lower() for h in hay if h)
@@ -986,9 +985,27 @@ def api_sessions(limit: int = 100, offset: int = 0, q: str = ""):
     # work. On the founder's machine 1,009 of 1,208 rows are routine runs, which
     # is the whole reason the rail needs to separate them. Cached on the runs
     # tree's mtimes; fails soft to routine:None.
-    if searched:
-        return rows            # already joined before the filter
-    return routine_links.attach(_with_departments(rows))
+    if not searched:
+        rows = routine_links.attach(_with_departments(rows))
+    return _with_archive(rows)
+
+
+def _with_archive(rows):
+    """Mark each row archived or not, from Sutra's own store (chat_archive).
+    One store read per list; fails soft to 'nothing archived', so a broken
+    store can never hide a chat."""
+    try:
+        store = chat_archive.load()
+    except Exception:   # noqa: BLE001
+        store = None
+    for row in rows:
+        try:
+            archived, by = chat_archive.state(row.get("id"), row.get("mtime"), store)
+        except Exception:   # noqa: BLE001
+            archived, by = False, None
+        row["archived"] = archived
+        row["archived_by"] = by
+    return rows
 
 
 # ---------------------------------------------------------------- live sync ---
@@ -1101,11 +1118,27 @@ def api_session_rename(sid: str, body: dict):
 
 
 @app.post("/api/sessions/{sid}/archive")
-def api_session_archive(sid: str):
-    r = sr.relocate(sid, "archive")
-    if r is None:
+def api_session_archive(sid: str, by: str = "you"):
+    """Archive a chat: a mark in Sutra's store, never a file move (chat_archive).
+    `by` names who archived it -- "you" from the rail, an agent's name when an
+    agent archives on its own; the row then says so."""
+    if sr.resolve_path(sid) is None:
         raise HTTPException(status_code=404, detail="session not found")
-    return {"ok": True, **r}
+    return {"ok": True, **chat_archive.archive(sid, by)}
+
+
+@app.post("/api/sessions/{sid}/unarchive")
+def api_session_unarchive(sid: str):
+    if sr.resolve_path(sid) is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    return {"ok": True, **chat_archive.unarchive(sid)}
+
+
+@app.post("/api/chats/archive-all")
+def api_chats_archive_all():
+    """One sweep: archive every chat last touched before now, except the chats
+    open in a terminal right now. Later writes bring any chat back by itself."""
+    return {"ok": True, **chat_archive.baseline()}
 
 
 @app.post("/api/sessions/{sid}/delete")

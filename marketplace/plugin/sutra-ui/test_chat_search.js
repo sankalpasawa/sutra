@@ -79,16 +79,12 @@ test("matches the title, case-insensitively", () => {
   assert(b.chatMatches(row({ title: "Paisa KYC flow" }), "paisa"));
   assert(b.chatMatches(row({ title: "PAISA" }), "paisa"));
 });
-test("matches the folder", () => {
+test("rows show departments, not folders: a folder alone never matches", () => {
+  /* founder 2026-09-25: "It should show departments and not folders" */
   const b = box();
-  assert(b.chatMatches(row({ cwd: "/Users/a/Claude/paisa" }), "paisa"));
-});
-test("the folder is the name the row shows, not a parent in its path", () => {
-  /* found in the live capture: "sutra" listed every ~/.sutra-ui/shadow/workdir
-     chat, whose row says only "workdir" */
-  const b = box();
-  assert(!b.chatMatches(row({ title: "Shadow boot", cwd: "/Users/a/.sutra-ui/shadow/workdir" }), "sutra"));
-  assert(b.chatMatches(row({ cwd: "/Users/a/.sutra-ui/shadow/workdir/" }), "workdir"));
+  assert(!b.chatMatches(row({ title: "x", cwd: "/Users/a/Claude/paisa" }), "paisa"));
+  assert(!b.chatMatches(row({ title: "Shadow boot", cwd: "/Users/a/.sutra-ui/shadow/workdir" }), "workdir"));
+  assert(b.chatMatches(row({ cwd: "/Users/a/Claude/paisa", department: { ref: "d", name: "Paisa" } }), "paisa"));
 });
 test("matches the department header and the routine header", () => {
   const b = box();
@@ -218,7 +214,8 @@ test("renderRail draws every grouping from the search list", () => {
   assert(/const LIST = q \? chatSearchList\(q\) : S\.sessions;/.test(body));
   assert(!/S\.sessions\.forEach/.test(body), "a grouping still reads S.sessions directly");
   assert(/hlq\(dept\.name, q\)/.test(body) && /hlq\(gr\.id, q\)/.test(body), "headers highlighted");
-  assert(/hlq\(s\.title, q\)/.test(body) && /hlq\(trailTxt, q\)/.test(body), "title + folder highlighted");
+  assert(/hlq\(s\.title, q\)/.test(body) && /chatLine\(s, q\)/.test(body), "title + department highlighted");
+  assert(/hlq\(dept, q\)/.test(grab(helpers, "chatLine")), "the row's department is highlighted");
 });
 
 (async () => {

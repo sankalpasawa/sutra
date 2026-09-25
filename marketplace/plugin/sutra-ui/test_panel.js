@@ -3678,7 +3678,6 @@ test("empty chat: every per-chat store the operator can write blocks reuse", () 
     "an in-chat provider switch": (s) => { T.S.chatProvider[s.id] = "codex"; },
     "a pin":                      (s) => { T.S._pinned.add(s.id); },
     "an unread mark":             (s) => { T.S._unread.add(s.id); },
-    "a group":                    (s) => { T.S._groups[s.id] = "Launch"; },
     "a fork marker":              (s) => { s.fork = true; s.forkOf = "s-9"; },
   };
   for (const [what, mark] of Object.entries(cases)) {

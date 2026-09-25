@@ -61,19 +61,18 @@ def _wire(monkeypatch, every=True):
     return seen
 
 
-def test_matcher_covers_title_folder_and_both_headers():
+def test_matcher_covers_title_and_both_headers():
     m = app._chat_matches
     assert m({"title": "Paisa KYC"}, "paisa")
-    assert m({"cwd": "/x/paisa"}, "paisa")
     assert m({"department": {"name": "Paisa"}}, "paisa")
     assert m({"routine": {"routine": "daily-paisa-sync"}}, "paisa")
 
 
-def test_folder_is_the_shown_name_not_a_parent_in_the_path():
-    # live capture 2026-09-24: "sutra" matched every ~/.sutra-ui/shadow/workdir chat
-    assert not app._chat_matches({"title": "Shadow boot", "cwd": "/u/.sutra-ui/shadow/workdir"}, "sutra")
-    assert app._chat_matches({"cwd": "/u/.sutra-ui/shadow/workdir/"}, "workdir")
-    assert not app._chat_matches({"project": "-Users-a-paisa-x"}, "sutra")
+def test_folders_never_match_rows_show_departments():
+    # founder 2026-09-25: "It should show departments and not folders"
+    assert not app._chat_matches({"title": "x", "cwd": "/x/paisa"}, "paisa")
+    assert not app._chat_matches({"title": "Shadow boot", "cwd": "/u/.sutra-ui/shadow/workdir"}, "workdir")
+    assert not app._chat_matches({"title": "x", "project": "-Users-a-paisa-x"}, "paisa")
 
 
 def test_matcher_ignores_everything_else():
@@ -84,7 +83,7 @@ def test_matcher_ignores_everything_else():
 def test_search_walks_every_chat_not_one_page(monkeypatch):
     seen = _wire(monkeypatch)
     ids = [r["id"] for r in app.api_sessions(limit=100, offset=0, q="  PAISA ")]
-    assert ids == ["s0", "s1", "s2", "s3", "s999"]      # s999 is past the first 300
+    assert ids == ["s0", "s2", "s3", "s999"]      # s999 past the first 300; s1 is folder-only
     assert seen["limit"] >= app.CHAT_SEARCH_POOL
 
 
@@ -111,10 +110,10 @@ def test_no_query_is_the_unchanged_page(monkeypatch):
 
 def test_scoped_list_searches_only_sutra_chats(monkeypatch):
     _wire(monkeypatch, every=False)
-    owned = [(1, "claude", "s1", Path("/p/s1.jsonl")), (2, "claude", "s4", Path("/p/s4.jsonl"))]
+    owned = [(1, "claude", "s0", Path("/p/s0.jsonl")), (2, "claude", "s4", Path("/p/s4.jsonl"))]
     monkeypatch.setattr(app, "_owned_transcripts", lambda: owned)
     monkeypatch.setattr(app.sr, "_gemini_project_cwd_map", lambda: {})
     rows_by_id = {r["id"]: r for r in POOL}
     monkeypatch.setattr(app, "_session_row", lambda src, p, pc: dict(rows_by_id[p.stem]))
     ids = [r["id"] for r in app.api_sessions(limit=100, offset=0, q="paisa")]
-    assert ids == ["s1"]
+    assert ids == ["s0"]
