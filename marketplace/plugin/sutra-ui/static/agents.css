@@ -590,6 +590,11 @@
   border-radius:7px;padding:10px 12px;margin:0 0 14px;overflow-x:auto}
 .ag-doc .md-pre code{font-family:var(--mono);font-size:.82em}
 .ag-doc .md-a{color:var(--acc);text-decoration:underline;text-underline-offset:2px}
+.ag-doc .md-callout{border:1px solid var(--acc);border-radius:var(--r);padding:8px 14px 12px;
+  margin:8px 0 16px;min-width:0;background:none;color:var(--ink)}
+.ag-doc .md-callout-k{font:650 .72em/1.4 var(--sans);letter-spacing:.1em;text-transform:uppercase;
+  color:var(--acc);padding:0 6px;margin-left:4px}
+.ag-doc .md-callout-b{line-height:1.6}
 /* a wide table scrolls inside its own box; the reader itself never scrolls sideways */
 .ag-doc .md-tw{overflow-x:auto;margin:0 0 14px}
 .ag-doc .md-t{border-collapse:collapse;font-family:var(--sans);font-size:.78em;min-width:100%}

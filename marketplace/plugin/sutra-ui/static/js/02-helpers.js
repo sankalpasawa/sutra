@@ -854,8 +854,35 @@ function mdHtml(src){
     if (open) t += "\n```";
   }
 
+  const inline = x => x
+    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*\w])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+    .replace(/(^|[^_\w])_([^_\n]+)_/g, "$1<em>$2</em>")
+    .replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
+
+  /* DECISION CALLOUT. The readability gate writes a decision as a box of
+     box-drawing (or +---) characters, usually inside a fence. Rendered as
+     code that is mono text with literal borders in a dark well -- nothing
+     else in the pane looks like it. Lift it into a .md-callout: a thin
+     accent frame with the label sitting on the border (a fieldset legend),
+     no fill -- the founder's pick from six token-only variants, 2026-09-25.
+     Only a DECISION: box is lifted; any other fence or box is left exactly
+     as before. `lines` are already esc()'d. */
+  const BOX_ROW = /^[\s]*[|+│╭╰┌└]/;
+  const unboxRow = l => BOX_ROW.test(l)
+    ? l.replace(/^[\s|+\-=│╭╰┌└─]+/, "").replace(/[\s|+\-=│╭╰╮╯┐┘─]+$/, "")
+    : l.trim();
+  const decisionCallout = lines => {
+    const body = lines.map(unboxRow).filter(Boolean);
+    if (!body.length || !/^DECISION:\s*/.test(body[0])) return null;
+    body[0] = body[0].replace(/^DECISION:\s*/, "");
+    return '<fieldset class="md-callout md-callout-decision"><legend class="md-callout-k">Decision</legend>'
+      + '<div class="md-callout-b">' + inline(body.filter(Boolean).join(" ")) + "</div></fieldset>";
+  };
+
   t = t.replace(/```[ \t]*([A-Za-z0-9_+.#-]*)\n([\s\S]*?)```/g,
-    (m, lang, code) => park('<pre class="md-pre"><code>' + code.replace(/\n+$/, "") + "</code></pre>"));
+    (m, lang, code) => park(decisionCallout(code.split("\n"))
+      || '<pre class="md-pre"><code>' + code.replace(/\n+$/, "") + "</code></pre>"));
   t = t.replace(/`([^`\n]+)`/g, (m, c) => park('<code class="md-code">' + c + "</code>"));
   t = t.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (m, label, url) =>
     MD_URL_OK.test(url)
@@ -863,12 +890,6 @@ function mdHtml(src){
       : m);
   t = t.replace(/(^|[\s(])(https?:\/\/[^\s<>()\[\]]+)/g, (m, pre, url) =>
     pre + park('<a class="md-a" href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + "</a>"));
-
-  const inline = x => x
-    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/(^|[^*\w])\*([^*\n]+)\*/g, "$1<em>$2</em>")
-    .replace(/(^|[^_\w])_([^_\n]+)_/g, "$1<em>$2</em>")
-    .replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
 
   const rows = t.split("\n");
   const out = [];
@@ -903,6 +924,14 @@ function mdHtml(src){
       while (i < rows.length && /^\s*&gt;\s?/.test(rows[i])){ buf.push(rows[i].replace(/^\s*&gt;\s?/, "")); i++; }
       out.push('<blockquote class="md-q">' + inline(buf.join(" ")) + "</blockquote>");
       continue;
+    }
+
+    /* an UNFENCED decision box: a run of box rows whose content is DECISION: */
+    if (BOX_ROW.test(line)){
+      let j = i;
+      while (j < rows.length && BOX_ROW.test(rows[j])) j++;
+      const callout = decisionCallout(rows.slice(i, j));
+      if (callout){ out.push(callout); i = j; continue; }
     }
 
     const ul = /^(\s*)[-*+]\s+(.*)$/, ol = /^(\s*)\d+[.)]\s+(.*)$/;

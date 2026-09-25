@@ -764,6 +764,15 @@
   .md .md-pre{background:var(--code-bg,rgba(0,0,0,.22));border:1px solid var(--line-soft);
     border-radius:7px;padding:9px 11px;margin:0 0 8px;overflow-x:auto}
   .md .md-pre code{font-family:var(--mono);font-size:.92em;background:none;border:0;padding:0;white-space:pre}
+  /* A DECISION callout. The readability gate boxes a decision in box-drawing
+     characters inside a fence; mdHtml lifts that into this frame so it reads
+     in the app's own tokens instead of as mono code. A fieldset: thin accent
+     border, the label sits ON the border as the legend, no fill. */
+  .md .md-callout{border:1px solid var(--acc);border-radius:var(--r);padding:6px 12px 10px;
+    margin:6px 0 12px;min-width:0;background:none;color:var(--ink)}
+  .md .md-callout-k{font:650 10px/1.4 var(--sans);letter-spacing:.1em;text-transform:uppercase;
+    color:var(--acc);padding:0 6px;margin-left:4px}
+  .md .md-callout-b{line-height:1.5}
   .md .md-a{color:var(--acc);text-decoration:underline;text-underline-offset:2px}
   .md .md-a:hover{text-decoration-thickness:2px}
   /* A wide table scrolls INSIDE its own box; the pane never scrolls sideways. */
