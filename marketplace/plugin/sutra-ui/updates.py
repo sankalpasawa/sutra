@@ -550,9 +550,33 @@ printf '{"app":"%s","backup":"%s","staged":"%s","ts":%s}\n' \
 if ! mv "$APP" "$BAK"; then
   rm -f "$RECOVER"; rm -rf "$STAGE"; die swap "could not move the old bundle aside"
 fi
+# `mv src dst` NESTS INSTEAD OF REPLACING WHEN dst IS AN EXISTING DIRECTORY, and
+# it exits 0 doing it. That broke a real install on 2026-09-24: the user was left
+# with Sutra.app/Sutra.app.new-<pid> sitting inside a Sutra.app whose
+# Contents/MacOS was gone, while every gate above had passed and the swap below
+# reported success. The mv is only a rename while $APP does not exist, so that is
+# checked rather than assumed -- the line above can report success and still
+# leave $APP standing, and from here exit 0 means the opposite of what it reads as.
+if [ -e "$APP" ]; then
+  mv "$BAK" "$APP" 2>/dev/null
+  rm -f "$RECOVER"; rm -rf "$STAGE"
+  die swap "$APP still exists after being moved aside; refusing to move the new bundle into it"
+fi
 if ! mv "$STAGE" "$APP"; then
   mv "$BAK" "$APP" 2>/dev/null
   rm -f "$RECOVER"; rm -rf "$STAGE"; die swap "could not move the new bundle into place"
+fi
+# A SWAP THAT EXITED 0 IS NOT A SWAP THAT LANDED. The executable is what macOS
+# needs to launch at all, so its absence is the whole difference between an
+# installed app and one that opens into nothing, which is the state the nesting
+# bug shipped. Checked while $BAK is still here, so there is something to go back
+# to; after the rm below there would not be.
+APP_EXE="$(plutil -extract CFBundleExecutable raw -o - "$APP/Contents/Info.plist" 2>/dev/null)"
+if [ -z "$APP_EXE" ] || [ ! -x "$APP/Contents/MacOS/$APP_EXE" ]; then
+  rm -rf "$APP"
+  mv "$BAK" "$APP" 2>/dev/null
+  rm -f "$RECOVER"
+  die swap "the installed bundle has no runnable executable; the old one was put back"
 fi
 rm -f "$RECOVER"
 rm -rf "$BAK"
