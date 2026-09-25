@@ -1134,11 +1134,9 @@ def api_session_unarchive(sid: str):
     return {"ok": True, **chat_archive.unarchive(sid)}
 
 
-@app.post("/api/chats/archive-all")
-def api_chats_archive_all():
-    """One sweep: archive every chat last touched before now, except the chats
-    open in a terminal right now. Later writes bring any chat back by itself."""
-    return {"ok": True, **chat_archive.baseline()}
+# No sweep endpoint. Archive is driven only by the app, one chat at a time
+# (founder, 2026-09-25); the one-time sweep that lived here archived the
+# founder's closed chats and was removed the same day. See chat_archive.py.
 
 
 @app.post("/api/sessions/{sid}/delete")

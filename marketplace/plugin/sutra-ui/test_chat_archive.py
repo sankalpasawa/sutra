@@ -3,14 +3,15 @@
 Founder, 2026-09-25: archived chats fold away in Recent; "no changes in the base
 layers"; the x archives; an agent may archive on its own; nothing archives on a
 timer; a chat that goes live comes back by itself; clicking an archived chat
-reopens it; everything archived for now except the chats open in a terminal.
+reopens it. Later the same day: "it should only be driven by the app and
+nothing else" -- the baseline sweep and the terminal watch are gone; only an
+archive mark from the app archives a chat.
 
-Pins the one rule in chat_archive.state, the three events, the terminal-open
-reader, and that the API marks rows and never touches a transcript.
+Pins the one rule in chat_archive.state, the two events, that the removed sweep
+stays removed, and that the API marks rows and never touches a transcript.
 
 Run: .venv/bin/python -m pytest -q test_chat_archive.py
 """
-import json
 import os
 import sys
 from pathlib import Path
@@ -25,7 +26,6 @@ import chat_archive as ca  # noqa: E402
 @pytest.fixture(autouse=True)
 def _store(tmp_path, monkeypatch):
     monkeypatch.setenv("SUTRA_UI_CHAT_ARCHIVE", str(tmp_path / "chat-archive.json"))
-    monkeypatch.setattr(ca, "_CLAUDE_SESSIONS", tmp_path / "claude-sessions")
     yield tmp_path
 
 
@@ -53,16 +53,28 @@ def test_unarchive_wins_over_an_older_archive():
     assert ca.state("a", 100) == (True, "you")
 
 
-def test_baseline_archives_everything_older_except_kept():
-    ca.baseline(keep={"open"}, now=500)
-    assert ca.state("old", 100) == (True, None)     # swept by the baseline, no "by"
-    assert ca.state("open", 100) == (False, None)   # open in a terminal: kept active
-    assert ca.state("new", 600) == (False, None)    # touched after the sweep
-
-
 def test_nothing_archives_on_a_timer():
     # No event, however old the chat: never archived.
     assert ca.state("ancient", 1) == (False, None)
+
+
+def test_only_the_app_archives_no_sweep_no_terminal_watch():
+    # The sweep and the terminal reader are gone for good (founder, 2026-09-25).
+    assert not hasattr(ca, "baseline")
+    assert not hasattr(ca, "open_in_terminal")
+    assert "baseline" not in ca._empty()
+
+
+def test_an_old_store_baseline_is_ignored(_store):
+    # A store written by the removed sweep still loads, and its sweep archives
+    # nothing: a chat with no mark of its own is active.
+    Path(os.environ["SUTRA_UI_CHAT_ARCHIVE"]).write_text(
+        '{"v": 1, "baseline": 500, "marks": {"m": {"at": 600, "by": "you"}}, "unarchived": {}}',
+        encoding="utf-8")
+    assert ca.state("swept", 100) == (False, None)
+    assert ca.state("m", 100) == (True, "you")
+    ca.archive("n", now=700)                        # a write drops the dead key
+    assert "baseline" not in ca.load()
 
 
 def test_a_broken_store_hides_nothing(_store):
@@ -70,25 +82,6 @@ def test_a_broken_store_hides_nothing(_store):
     assert ca.state("a", 1) == (False, None)
     ca.archive("a", now=5)                          # and the next write repairs it
     assert ca.state("a", 1) == (True, "you")
-
-
-def test_open_in_terminal_reads_live_claude_windows_only(_store):
-    d = _store / "claude-sessions"
-    d.mkdir()
-    (d / "1.json").write_text(json.dumps({"pid": os.getpid(), "sessionId": "alive"}))
-    (d / "2.json").write_text(json.dumps({"pid": 999999, "sessionId": "gone"}))
-    (d / "3.json").write_text("{broken")
-    assert ca.open_in_terminal() == {"alive"}
-
-
-def test_baseline_default_keeps_terminal_open_chats(_store):
-    d = _store / "claude-sessions"
-    d.mkdir()
-    (d / "1.json").write_text(json.dumps({"pid": os.getpid(), "sessionId": "mine"}))
-    out = ca.baseline(now=500)
-    assert out["kept"] == ["mine"]
-    assert ca.state("mine", 1) == (False, None)
-    assert ca.state("other", 1) == (True, None)
 
 
 # ---- the API: rows carry the mark; archive never moves a file -------------
@@ -106,6 +99,12 @@ def test_api_marks_rows_and_never_relocates(monkeypatch):
     assert rows[1]["archived"] is False
     app.api_session_unarchive("s1")
     assert app._with_archive([{"id": "s1", "mtime": 1}])[0]["archived"] is False
+
+
+def test_api_has_no_archive_all():
+    import app
+    assert not hasattr(app, "api_chats_archive_all")
+    assert all(getattr(r, "path", "") != "/api/chats/archive-all" for r in app.app.routes)
 
 
 def test_api_404_for_an_unknown_chat(monkeypatch):
