@@ -3441,7 +3441,10 @@ test("the reader's CSS gives the app's own serif font, a real measure, and three
   const h2 = Number((/\.ag-doc h2\.md-h\{font-size:([\d.]+)em/.exec(doc) || [])[1]);
   const h3 = Number((/\.ag-doc h3\.md-h\{font-size:([\d.]+)em/.exec(doc) || [])[1]);
   assert.ok(h1 > h2 && h2 > h3 && h3 > 1, "three real, distinct sizes, largest first: h1=" + h1 + " h2=" + h2 + " h3=" + h3);
-  assert.ok(!/text-transform:\s*uppercase/.test(doc), "nothing in the article's own reading rules shouts");
+  /* The DECISION callout's kicker (.md-callout-k, 5a89db43) is a legend label, not reading
+     text: it may be small caps. Everything else in the reader's rules must not shout. */
+  const reading = doc.replace(/\.ag-doc \.md-callout-k\{[^}]*\}/g, "");
+  assert.ok(!/text-transform:\s*uppercase/.test(reading), "nothing in the article's own reading rules shouts");
   assert.ok(/\.ag-doc \.md-t\{/.test(doc) && /border:1px solid var\(--line-soft\)/.test(doc), "tables get real borders");
   assert.ok(/\.ag-doc \.md-l\{/.test(doc), "lists get their own spacing");
 });
