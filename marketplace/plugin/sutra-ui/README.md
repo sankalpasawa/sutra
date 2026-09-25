@@ -67,9 +67,10 @@ picker.
 
 | How | What happens |
 |---|---|
-| Dock icon, right-click, **Open in Browser** | opens a paired tab on `127.0.0.1:8340` (Beta `8341`) |
-| `open -a Sutra --args --browser` | starts with no window and opens the browser tab |
-| `open -a Sutra --args --browser --no-open` | no browser; writes a one-time link to `~/Library/Application Support/Sutra/browser-pair-url` (mode 0600) and prints `SUTRA_BROWSER_URL=...` for an agent |
+| Mac: Dock icon, right-click, **Open in Browser** | opens a paired tab on `127.0.0.1:8340` (Beta `8341`) |
+| Windows: tray icon, click it, or right-click, **Open in Browser** | the same; the tray menu also has **Show Window** and **Quit Sutra** |
+| `open -a Sutra --args --browser` (Windows: `Sutra.exe --browser`) | starts with no window and opens the browser tab |
+| `... --browser --no-open` | no browser; writes a one-time link to `browser-pair-url` in the app's data folder (Mac: `~/Library/Application Support/Sutra/`, Windows: `%APPDATA%\Sutra\`) and prints only its path, `SUTRA_BROWSER_URL_FILE=...`, for an agent |
 | `SUTRA_DEBUG_PORT=9229` or `--debug-port=9229` | opens a Chrome DevTools Protocol port on `127.0.0.1` so an agent can drive the app window itself. Off by default: while it is open, any program on this Mac can control the app |
 
 Each link works once, for two minutes, and swaps itself for an HttpOnly,
@@ -77,7 +78,9 @@ SameSite=Strict cookie. Every request to the browser port needs that cookie;
 other sites and other hostnames are refused. Credentials still never reach the
 backend: the browser's calls run in the app process, exactly as the window's do.
 With a browser tab in use, closing the window does not quit Sutra; quit from the
-Dock. Design and threat model: `electron/browser_mode.js`. Tests:
+Dock (Mac) or the tray (Windows). If a tray icon cannot be made, Sutra keeps its
+window open in browser mode, so there is always something to quit. Design and
+threat model: `electron/browser_mode.js`. Tests:
 `node electron/test_browser_mode.js`.
 
 ---

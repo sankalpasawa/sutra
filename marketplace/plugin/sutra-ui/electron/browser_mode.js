@@ -223,12 +223,30 @@ function createGateway(opts) {
     return h;
   }
 
+  /* A redirect the backend builds from its own Host would send the tab to raw
+     8330, out of the gateway and away from window.sutra. Point it back here. */
+  function localLocation(loc) {
+    if (typeof loc !== "string") return loc;
+    for (const h of [`http://${HOST}:${upstreamPort}`, `http://localhost:${upstreamPort}`]) {
+      if (loc === h || loc.startsWith(h + "/") || loc.startsWith(h + "?")) return origin + loc.slice(h.length);
+    }
+    return loc;
+  }
+
   function proxy(req, res) {
     const up = http.request({ host: HOST, port: upstreamPort, method: req.method,
                               path: req.url, headers: upstreamHeaders(req) }, (ur) => {
+      // A backend that dies mid-stream must end the tab's request, not hang it.
+      ur.on("aborted", () => res.destroy());
+      ur.on("error", () => res.destroy());
+      const headers = { ...ur.headers };
+      if (headers.location) headers.location = localLocation(headers.location);
       const type = String(ur.headers["content-type"] || "");
-      if (!/^text\/html/i.test(type)) {
-        res.writeHead(ur.statusCode, ur.headers);
+      // No body to rewrite: HEAD, 1xx, 204, 304 carry none, so the tag cannot go in.
+      const bodyless = req.method === "HEAD" || ur.statusCode < 200 ||
+                       ur.statusCode === 204 || ur.statusCode === 304;
+      if (bodyless || !/^text\/html/i.test(type)) {
+        res.writeHead(ur.statusCode, headers);
         return ur.pipe(res);
       }
       const chunks = []; let size = 0;
@@ -236,7 +254,7 @@ function createGateway(opts) {
       ur.on("end", () => {
         if (size > MAX_HTML_BYTES) return plain(res, 502, "page too large to serve");
         const body = Buffer.from(injectBridge(Buffer.concat(chunks).toString("utf8")), "utf8");
-        const headers = { ...ur.headers, "content-length": body.length };
+        headers["content-length"] = body.length;
         delete headers["transfer-encoding"];
         delete headers.etag;       // the body is no longer the one the tag names
         res.writeHead(ur.statusCode, headers);
@@ -245,6 +263,8 @@ function createGateway(opts) {
       ur.on("error", () => { try { res.destroy(); } catch (e) {} });
     });
     up.on("error", () => { if (!res.headersSent) plain(res, 502, "Sutra backend is not answering"); else res.destroy(); });
+    // A tab closed mid-stream (chat, event stream) must release the backend too.
+    res.on("close", () => { if (!res.writableFinished) up.destroy(); });
     req.pipe(up);
   }
 
@@ -318,6 +338,9 @@ function createGateway(opts) {
      it on a handshake and cannot forge it, and the backend's own _origin_ok
      would otherwise accept any loopback origin. */
   server.on("upgrade", (req, sock, head) => {
+    // FIRST: Node drops its own listener on upgrade, and an unhandled reset on a
+    // refused handshake would be an uncaught exception in the app's main process.
+    sock.on("error", () => { try { sock.destroy(); } catch (e) {} });
     tunnels.add(sock);
     sock.on("close", () => tunnels.delete(sock));
     const refuse = (code, why) => { try { sock.end(`HTTP/1.1 ${code} ${why}\r\nConnection: close\r\n\r\n`); } catch (e) {} };

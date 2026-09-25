@@ -1,4 +1,7 @@
-node_modules/
+# No trailing slash: "node_modules/" matches only a directory, so a SYMLINK named
+# node_modules (a self-link, committed in fc041d1e) slipped past it and broke
+# every clone's `npm`/electron with "too many levels of symbolic links".
+node_modules
 dist/
 # Vendored by bundle-runtime.sh: a whole CPython, its site-packages and a copy
 # of the plugin tree -- ~95MB of BUILD OUTPUT, reproducible from the checkout

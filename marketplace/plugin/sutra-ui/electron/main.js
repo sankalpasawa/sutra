@@ -98,6 +98,13 @@ const GATEWAY_PORT = IS_BETA ? 8341 : 8340;
 const argvHas = (argv, flag) => (argv || []).some((a) => a === flag);
 let BROWSER_MODE = argvHas(process.argv, "--browser") || process.env.SUTRA_BROWSER === "1";
 const NO_OPEN = argvHas(process.argv, "--no-open");
+/* WINDOWLESS ONLY WITH A QUIT HANDLE. A windowless app with nothing to click
+   would hold 8330/8340 until Task Manager. macOS has the Dock icon and its menu;
+   Windows and Linux get a tray icon (installShellMenu) with the same two items.
+   Until the tray exists -- or if it cannot be made -- the window stays, and it
+   is the thing you close to quit. */
+let quitHandle = process.platform === "darwin";
+const windowless = () => BROWSER_MODE && quitHandle;
 
 /* DEBUG PORT, for an agent that must drive the real window over the Chrome
    DevTools Protocol. OFF unless SUTRA_DEBUG_PORT or --debug-port=N names a
@@ -618,26 +625,53 @@ async function openInBrowser(noOpen) {
   const url = gw.pairingUrl();
   // From here the app serves a browser tab, so closing the window (if there is
   // one) must no longer quit it. Quit is the Dock's Quit, as for any Mac app.
-  BROWSER_MODE = true;
+  if (quitHandle) BROWSER_MODE = true;
   if (noOpen) {
     try {
       fs.mkdirSync(path.dirname(pairUrlFile()), { recursive: true });
       fs.writeFileSync(pairUrlFile(), url + "\n", { mode: 0o600 });
       fs.chmodSync(pairUrlFile(), 0o600);
     } catch (e) { console.error("[sutra] could not write the pairing link:", e && e.message); }
-    process.stdout.write(`SUTRA_BROWSER_URL=${url}\n`);
+    /* The PATH, never the link: stdout is often captured to a log, and the link
+       is a live credential for two minutes. The 0600 file is the one copy. */
+    process.stdout.write(`SUTRA_BROWSER_URL_FILE=${pairUrlFile()}\n`);
     return true;
   }
   await shell.openExternal(url);
   return true;
 }
 
-function installDockMenu() {
-  if (process.platform !== "darwin" || !app.dock) return;
+/* The app's own menu outside any window. macOS: the Dock icon's menu. Windows
+   and Linux: a tray icon with the same entries plus Quit, and a left click opens
+   a tab -- this is what makes windowless browser mode safe there. The icon is
+   the executable's own, so no extra asset has to ship. */
+let tray = null;
+async function installShellMenu() {
   const { Menu } = require("electron");
-  app.dock.setMenu(Menu.buildFromTemplate([
-    { label: "Open in Browser", click: () => { openInBrowser(false); } },
-  ]));
+  if (process.platform === "darwin") {
+    if (app.dock) app.dock.setMenu(Menu.buildFromTemplate([
+      { label: "Open in Browser", click: () => { openInBrowser(false); } },
+    ]));
+    return;
+  }
+  if (tray) return;
+  try {
+    const { Tray } = require("electron");
+    const icon = await app.getFileIcon(process.execPath, { size: "small" });
+    tray = new Tray(icon);
+    tray.setToolTip(IS_BETA ? "Sutra Beta" : "Sutra");
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: "Open in Browser", click: () => { openInBrowser(false); } },
+      { label: "Show Window", click: () => { if (win) { win.show(); win.focus(); } else createWindow(); } },
+      { type: "separator" },
+      { label: IS_BETA ? "Quit Sutra Beta" : "Quit Sutra", click: () => app.quit() },
+    ]));
+    tray.on("click", () => { openInBrowser(false); });
+    quitHandle = true;
+  } catch (e) {
+    // No tray (some Linux desktops): browser mode keeps a window as the quit handle.
+    console.error("[sutra] no tray icon; browser mode keeps a window:", e && e.message);
+  }
 }
 
 /* ------------------------------------------------------------- installed? --
@@ -877,9 +911,10 @@ async function boot() {
     // longer stops here: a deferred update from the last run is finished via
     // the bundled sidecar BEFORE the window, exactly like the own path below.
     if (await resolvePendingUpdate()) return;
-    installDockMenu();
-    // Browser mode shows no window; the Dock icon stays and opens another tab.
-    if (BROWSER_MODE) await openInBrowser(NO_OPEN); else createWindow();
+    await installShellMenu();
+    // Browser mode shows no window; the Dock or tray icon stays and opens another tab.
+    if (!windowless()) createWindow();
+    if (BROWSER_MODE) await openInBrowser(NO_OPEN);
     firstRunNotice(wasProvisioned);
     startUpdateSchedule();   // sidecar-backed in attach mode; see updateCapable()
     return;
@@ -908,8 +943,9 @@ async function boot() {
   // half a second later reads as a crash.
   if (await resolvePendingUpdate()) return;
 
-  installDockMenu();
-  if (BROWSER_MODE) await openInBrowser(NO_OPEN); else createWindow();
+  await installShellMenu();
+  if (!windowless()) createWindow();
+  if (BROWSER_MODE) await openInBrowser(NO_OPEN);
   firstRunNotice(wasProvisioned);
   startUpdateSchedule();
 }
@@ -1272,7 +1308,7 @@ ipcMain.handle("sutra:update-apply", async (e) => {
        a browser tab should come back as a browser tab, so leave a ONE-SHOT
        marker that the next boot consumes; a normal launch never sees it. */
     if (e && e.viaBrowserBridge) {
-      try { fs.writeFileSync(relaunchBrowserMarker(), new Date().toISOString() + "\n"); }
+      try { fs.writeFileSync(relaunchBrowserMarker(), String(Date.now()) + "\n"); }
       catch (err) { console.error("[sutra] could not mark browser relaunch:", err && err.message); }
     }
     quitting = true;
@@ -1926,8 +1962,14 @@ if (!app.requestSingleInstanceLock()) {
     // One-shot: a restart for an update asked for from a browser tab.
     try {
       if (fs.existsSync(relaunchBrowserMarker())) {
+        /* Honoured only as the update's own relaunch, seconds later. A marker
+           left by a helper that never relaunched must not turn a launch days
+           later into a windowless one. */
+        const at = Number(fs.readFileSync(relaunchBrowserMarker(), "utf8").trim());
         fs.rmSync(relaunchBrowserMarker(), { force: true });
-        BROWSER_MODE = true;
+        if (Number.isFinite(at) && Date.now() - at >= 0 && Date.now() - at < RELAUNCH_MARKER_TTL_MS) {
+          BROWSER_MODE = true;
+        }
       }
     } catch (e) { /* unreadable marker = normal launch */ }
     return boot();
@@ -1935,10 +1977,11 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 function relaunchBrowserMarker() { return path.join(app.getPath("userData"), "relaunch-in-browser"); }
+const RELAUNCH_MARKER_TTL_MS = 10 * 60 * 1000;
 
-/* Browser mode has no window, and the hidden bot-challenge windows closing must
-   not quit an app whose UI lives in a browser tab. Quit from the Dock instead. */
-app.on("window-all-closed", () => { if (!BROWSER_MODE) app.quit(); });
+/* Windowless browser mode (macOS only) must not quit when the hidden
+   bot-challenge windows close; its UI lives in a tab. Quit from the Dock. */
+app.on("window-all-closed", () => { if (!windowless()) app.quit(); });
 
 /* Apply a deferred update on the way out, then kill the child we started.
  *

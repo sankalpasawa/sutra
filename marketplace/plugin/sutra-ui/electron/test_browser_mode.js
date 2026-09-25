@@ -160,12 +160,32 @@ async function live() {
   const upPort = await freePort();
   const gwPort = await freePort();
   const seen = [];   // requests the fake backend received
+  let streamClosed = false;
 
   const backend = http.createServer((req, res) => {
     let body = "";
     req.on("data", (d) => { body += d; });
     req.on("end", () => {
       seen.push({ url: req.url, headers: req.headers, body });
+      if (req.url === "/redirect") {
+        res.writeHead(307, { Location: `http://127.0.0.1:${upPort}/api/x?y=1` });
+        return res.end();
+      }
+      if (req.url === "/cached") {
+        res.writeHead(304, { "Content-Type": "text/html" });
+        return res.end();
+      }
+      if (req.url === "/stream") {         // never ends on its own: an event stream
+        res.writeHead(200, { "Content-Type": "text/event-stream" });
+        res.write("data: 1\n\n");
+        req.socket.on("close", () => { streamClosed = true; });
+        return;
+      }
+      if (req.url === "/die") {             // the backend crashing mid-body
+        res.writeHead(200, { "Content-Type": "application/octet-stream" });
+        res.write("partial");
+        return setTimeout(() => req.socket.destroy(), 50);
+      }
       if (req.url === "/") {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", ETag: "abc" });
         return res.end("<!doctype html><title>Sutra</title><script src=/static/app.js></script>");
@@ -320,6 +340,65 @@ async function live() {
       assert.ok(seen[0].ws && !seen[0].headers.cookie);
       assert.strictEqual(seen[0].headers.host, `127.0.0.1:${upPort}`);
     });
+    await t("live: HEAD and 304 pass through with no injected body", async () => {
+      const h = await request(gwPort, { path: "/", method: "HEAD", headers: { cookie } });
+      assert.strictEqual(h.status, 200);
+      assert.strictEqual(h.text, "");
+      assert.notStrictEqual(Number(h.headers["content-length"] || 0), bm.BRIDGE_SCRIPT_TAG.length + 68,
+                            "no length claiming an injected body");
+      const c = await request(gwPort, { path: "/cached", headers: { cookie } });
+      assert.strictEqual(c.status, 304);
+      assert.strictEqual(c.text, "");
+      assert.ok(!c.headers["content-length"] || c.headers["content-length"] === "0");
+    });
+    await t("live: a backend redirect to its own port is pointed back at the gateway", async () => {
+      const r = await request(gwPort, { path: "/redirect", headers: { cookie } });
+      assert.strictEqual(r.status, 307);
+      assert.strictEqual(r.headers.location, `${origin}/api/x?y=1`);
+    });
+    await t("live: closing a tab mid-stream releases the backend", async () => {
+      streamClosed = false;
+      await new Promise((resolve, reject) => {
+        const req = http.get({ host: "127.0.0.1", port: gwPort, path: "/stream",
+                               headers: { host: `127.0.0.1:${gwPort}`, cookie } }, (res) => {
+          res.once("data", () => { req.destroy(); resolve(); });
+        });
+        req.on("error", () => {});
+        setTimeout(() => reject(new Error("no first event")), 3000);
+      });
+      for (let i = 0; i < 30 && !streamClosed; i++) await new Promise((r) => setTimeout(r, 50));
+      assert.ok(streamClosed, "backend stream still open after the tab went away");
+    });
+    await t("live: a backend dying mid-body ends the tab's request, never hangs", async () => {
+      const outcome = await new Promise((resolve) => {
+        const req = http.get({ host: "127.0.0.1", port: gwPort, path: "/die",
+                               headers: { host: `127.0.0.1:${gwPort}`, cookie } }, (res) => {
+          res.on("data", () => {});
+          res.on("end", () => resolve("end"));
+          res.on("error", () => resolve("error"));
+          res.on("aborted", () => resolve("aborted"));
+        });
+        req.on("error", () => resolve("error"));
+        setTimeout(() => resolve("hung"), 3000);
+      });
+      assert.notStrictEqual(outcome, "hung");
+    });
+    await t("live: a refused handshake reset by the client never throws in the app", async () => {
+      let uncaught = null;
+      const onErr = (e) => { uncaught = e; };
+      process.on("uncaughtException", onErr);
+      try {
+        for (let i = 0; i < 20; i++) {
+          const s = net.connect(gwPort, "127.0.0.1", () => {
+            s.write(`GET /ws/chat HTTP/1.1\r\nHost: 127.0.0.1:${gwPort}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nOrigin: http://evil.example\r\n\r\n`);
+            s.resetAndDestroy ? s.resetAndDestroy() : s.destroy();
+          });
+          s.on("error", () => {});
+        }
+        await new Promise((r) => setTimeout(r, 400));
+      } finally { process.removeListener("uncaughtException", onErr); }
+      assert.strictEqual(uncaught, null, uncaught && uncaught.message);
+    });
     await t("live: events reach a paired tab", async () => {
       const got = await new Promise((resolve, reject) => {
         const req = http.get({ host: "127.0.0.1", port: gwPort, path: "/__sutra/events",
@@ -414,12 +493,33 @@ async function wiring() {
     const reg = main.indexOf("ipcMain.handle = (channel, fn)");
     assert.ok(reg > 0 && reg < main.indexOf('ipcMain.handle("sutra:'), "registry installed before first handler");
   });
-  await t("wiring: both boot paths branch on browser mode", () => {
-    const n = (main.match(/if \(BROWSER_MODE\) await openInBrowser\(NO_OPEN\); else createWindow\(\);/g) || []).length;
+  await t("wiring: both boot paths branch on browser mode, window kept off macOS", () => {
+    const n = (main.match(/if \(!windowless\(\)\) createWindow\(\);\s*\n\s*if \(BROWSER_MODE\) await openInBrowser\(NO_OPEN\);/g) || []).length;
     assert.strictEqual(n, 2);
+    assert.ok(main.includes('let quitHandle = process.platform === "darwin";'));
+    assert.ok(main.includes("const windowless = () => BROWSER_MODE && quitHandle;"));
+    assert.ok(main.includes("if (quitHandle) BROWSER_MODE = true;"), "no quit handle, no windowless");
   });
-  await t("wiring: browser mode does not quit when windows close", () => {
-    assert.ok(main.includes('app.on("window-all-closed", () => { if (!BROWSER_MODE) app.quit(); });'));
+  await t("wiring: Windows/Linux get a tray with Open in Browser and Quit, made before the UI", () => {
+    const fn = main.slice(main.indexOf("async function installShellMenu()"));
+    const body = fn.slice(0, fn.indexOf("\n}\n"));
+    assert.ok(/new Tray\(icon\)/.test(body));
+    assert.ok(/label: "Open in Browser"/.test(body) && /Quit Sutra/.test(body) && /app\.quit\(\)/.test(body));
+    assert.ok(/quitHandle = true;/.test(body), "a tray is what makes windowless safe");
+    assert.ok(/catch \(e\)/.test(body), "a tray failure falls back to a window, not a crash");
+    const boots = (main.match(/await installShellMenu\(\);\s*\n(\s*\/\/[^\n]*\n)?\s*if \(!windowless\(\)\) createWindow\(\);/g) || []).length;
+    assert.strictEqual(boots, 2, "the tray exists before deciding whether to show a window");
+  });
+  await t("wiring: only windowless mode survives its windows closing", () => {
+    assert.ok(main.includes('app.on("window-all-closed", () => { if (!windowless()) app.quit(); });'));
+  });
+  await t("wiring: update relaunch marker is time-limited", () => {
+    assert.ok(/String\(Date\.now\(\)\)/.test(main));
+    assert.ok(/Date\.now\(\) - at < RELAUNCH_MARKER_TTL_MS/.test(main));
+  });
+  await t("wiring: the pairing link never goes to stdout, only its file path", () => {
+    assert.ok(main.includes("SUTRA_BROWSER_URL_FILE=${pairUrlFile()}"));
+    assert.ok(!/SUTRA_BROWSER_URL=\$\{url\}/.test(main));
   });
   await t("wiring: pairing link file is 0600 and ships in the Windows build", () => {
     assert.ok(/mode: 0o600/.test(main));
