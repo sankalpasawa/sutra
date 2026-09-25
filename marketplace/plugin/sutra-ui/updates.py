@@ -80,6 +80,15 @@ higher desktop release, or users still on the old feed would be trapped on it
 DESKTOP_REPO = os.environ.get("SUTRA_UI_DESKTOP_REPO", "sankalpasawa/sutra")
 PLUGIN_REPO = os.environ.get("SUTRA_UI_PLUGIN_REPO", "sankalpasawa/sutra")
 NET_TIMEOUT = 15
+# Where the release API and the deterministic per-tag download URLs live. The
+# defaults are GitHub; a test harness points both at a local server so the
+# whole lane -- check, stage, arm, helper swap -- runs against fixture releases
+# without a network. Production never sets these.
+RELEASE_API = os.environ.get("SUTRA_UI_RELEASE_API", "https://api.github.com").rstrip("/")
+RELEASE_DOWNLOAD = os.environ.get("SUTRA_UI_RELEASE_DOWNLOAD", "https://github.com").rstrip("/")
+# The delta lane (updates_delta.py) is on by default and can only ever fall
+# back to the full image; SUTRA_UPDATE_DELTA=0 forces the full image.
+DELTA_ENABLED = os.environ.get("SUTRA_UPDATE_DELTA", "1") != "0"
 
 # The desktop release tag is `v<version>-desktop`; the asset is per-arch.
 _TAG_RE = re.compile(r"^v?(\d+(?:\.\d+)*)")
@@ -126,6 +135,14 @@ def app_bundle():
     number of parents, because a fixed count silently returns the wrong
     directory the moment the payload layout changes.
     """
+    # Test seam: the end-to-end harness runs this module from a checkout but
+    # needs it to believe it lives inside a fixture bundle. Never set in
+    # production; a bundled app ignores it because the walk below wins when
+    # the override is absent.
+    forced = os.environ.get("SUTRA_UI_APP_BUNDLE")
+    if forced:
+        p = Path(forced)
+        return p if p.suffix == ".app" and (p / "Contents" / "Info.plist").is_file() else None
     here = Path(__file__).resolve()
     for p in here.parents:
         if p.suffix == ".app" and (p / "Contents" / "Info.plist").is_file():
@@ -147,7 +164,7 @@ def _installed_desktop_version():
 def _latest_desktop():
     """The newest desktop release, or an {'error': ...}. Never raises."""
     try:
-        rel = _get_json("https://api.github.com/repos/%s/releases/latest" % DESKTOP_REPO)
+        rel = _get_json("%s/repos/%s/releases/latest" % (RELEASE_API, DESKTOP_REPO))
     except (urllib.error.URLError, ValueError, OSError) as exc:
         return {"error": "could not reach GitHub: %s" % exc}
     tag = rel.get("tag_name") or ""
@@ -155,6 +172,11 @@ def _latest_desktop():
     want = "Sutra-%s.dmg" % _arch()
     assets = {a.get("name"): a for a in (rel.get("assets") or [])}
     dmg = assets.get(want)
+    # The delta lane's two assets. Both optional: a release without them is
+    # simply a full-image release, which is what every release was before.
+    man_name = "Sutra-%s.manifest.json" % _arch()
+    pack_name = "Sutra-%s.delta.tar.xz" % _arch()
+    man, pack = assets.get(man_name), assets.get(pack_name)
     return {
         "version": version,
         "tag": tag,
@@ -163,6 +185,13 @@ def _latest_desktop():
         "download_url": (dmg or {}).get("browser_download_url"),
         "size": (dmg or {}).get("size"),
         "sha256_url": (assets.get(want + ".sha256") or {}).get("browser_download_url"),
+        "delta": bool(man and pack),
+        "manifest_asset": man_name,
+        "manifest_url": (man or {}).get("browser_download_url"),
+        "manifest_sha256_url": (assets.get(man_name + ".sha256") or {}).get("browser_download_url"),
+        "pack_url": (pack or {}).get("browser_download_url"),
+        "pack_sha256_url": (assets.get(pack_name + ".sha256") or {}).get("browser_download_url"),
+        "pack_size": (pack or {}).get("size"),
         # Stated rather than assumed: a release without an asset for THIS arch
         # is not an update this machine can take.
         "error": None if dmg else "release %s has no %s asset" % (tag or "?", want),
@@ -193,6 +222,10 @@ def desktop_state():
         "asset": latest.get("asset"),
         "size": latest.get("size"),
         "update_available": _newer(latest.get("version"), installed),
+        # Whether the release carries a delta pack for this arch, and how big it
+        # is: the number the Updates screen should show instead of the DMG size.
+        "delta": bool(latest.get("delta")) and DELTA_ENABLED,
+        "pack_size": latest.get("pack_size"),
         "error": latest.get("error"),
         # What the updater actually does, in the place an operator reads to
         # find out. It used to say there was no background updater at all;
@@ -385,12 +418,127 @@ def _fetch_dmg(url, dmg, want_bytes=0):
         "by hand." % (DOWNLOAD_TRIES, last))
 
 
-def download_and_verify(dest_dir=None):
-    """Fetch the DMG for this arch and prove it before anything is replaced.
+def _published_sha256(url):
+    """First token of a published .sha256 file, or None when it cannot be read.
+    The caller decides what None means; here it never means 'fine'."""
+    if not url:
+        return None
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "sutra-ui-updater"})
+        with urllib.request.urlopen(req, timeout=NET_TIMEOUT) as r:
+            return r.read(4096).decode("utf-8").split()[0].strip()
+    except (urllib.error.URLError, OSError, IndexError, UnicodeDecodeError):
+        return None
 
-    Returns {"dmg": path, "version": ...}. Raises RuntimeError naming the gate
-    that failed -- an update that cannot be verified is not installed, and the
-    reason is not swallowed.
+
+def _fetch_bytes(url, limit):
+    """A small asset (manifest, checksum) read whole, refused past `limit`."""
+    req = urllib.request.Request(url, headers={"User-Agent": "sutra-ui-updater"})
+    with urllib.request.urlopen(req, timeout=NET_TIMEOUT * 4) as r:
+        data = r.read(limit + 1)
+    if len(data) > limit:
+        raise RuntimeError("asset at %s is larger than %d bytes" % (url, limit))
+    return data
+
+
+def _staged_app_name(version):
+    safe = re.sub(r"[^0-9.]", "", str(version or "")).strip(".") or "unknown"
+    return "Sutra-%s-%s.app" % (_arch(), safe)
+
+
+def _delta_reconstruct(latest, installed_version, work, app):
+    """THE DELTA LANE. Rebuild the released bundle beside the staging dir from
+    the installed one plus the release's delta pack(s), then run the same
+    bundle-level gates the DMG lane runs. Raises (DeltaMiss or RuntimeError)
+    for anything short of a byte-exact, Gatekeeper-accepted bundle; the caller
+    then downloads the full image. See updates_delta.py for the format.
+
+    Returns {"app": path, "manifest_path": path, "sha256": <manifest sha256>,
+             "sha256_url": ..., "tree_sha256": ..., "asset": ..., "delta": stats}.
+    """
+    import updates_delta as ud
+    arch = _arch()
+    team, bundle_id = _bundle_identity(app)
+    chain = []          # newest first: {version, manifest, manifest_sha256, pack_url, pack_sha256_url, pack_size}
+    url = latest.get("manifest_url")
+    sha_url = latest.get("manifest_sha256_url")
+    pack_url, pack_sha_url, pack_size = latest.get("pack_url"), latest.get("pack_sha256_url"), latest.get("pack_size")
+    version = latest.get("version")
+    for _depth in range(ud.MAX_CHAIN):
+        if not url or not pack_url:
+            raise ud.DeltaMiss("release %s has no delta assets for %s" % (version, arch))
+        raw = _fetch_bytes(url, ud.MAX_MANIFEST_BYTES)
+        published = _published_sha256(sha_url)
+        if not published:
+            raise RuntimeError("the manifest for %s has no published checksum" % version)
+        if _sha256_bytes(raw) != published:
+            raise RuntimeError("the manifest for %s does not match its published checksum" % version)
+        man = ud.validate_manifest(json.loads(raw.decode("utf-8")))
+        if man.get("version") != version or man.get("arch") != arch:
+            raise RuntimeError("the manifest for %s describes %s/%s" % (version, man.get("version"), man.get("arch")))
+        if man.get("bundle_id") != bundle_id:
+            raise ud.DeltaMiss("the release is for bundle %s, this app is %s" % (man.get("bundle_id"), bundle_id))
+        chain.append({"version": version, "manifest": man, "manifest_raw": raw,
+                      "manifest_sha256": published, "manifest_sha256_url": sha_url,
+                      "pack_url": pack_url, "pack_sha256_url": pack_sha_url,
+                      "pack_size": int(pack_size or 0)})
+        prev = man.get("previous_version")
+        if prev == installed_version:
+            break
+        if not prev or not _newer(prev, installed_version):
+            raise ud.DeltaMiss("no delta chain from %s reaches the installed %s"
+                               % (latest.get("version"), installed_version))
+        # The previous release's assets have deterministic names under its tag.
+        version = prev
+        base = "%s/%s/releases/download/v%s-desktop/Sutra-%s" % (RELEASE_DOWNLOAD, DESKTOP_REPO, prev, arch)
+        url, sha_url = base + ".manifest.json", base + ".manifest.json.sha256"
+        pack_url, pack_sha_url, pack_size = base + ".delta.tar.xz", base + ".delta.tar.xz.sha256", 0
+    else:
+        raise ud.DeltaMiss("the installed %s is more than %d releases behind"
+                           % (installed_version, ud.MAX_CHAIN))
+
+    pack_dirs = []
+    for hop in chain:
+        p = work / ("pack-%s.tar.xz" % re.sub(r"[^0-9.]", "", hop["version"]))
+        _fetch_dmg(hop["pack_url"], p, hop["pack_size"])
+        published = _published_sha256(hop["pack_sha256_url"])
+        if not published or _sha256(p) != published:
+            raise RuntimeError("the delta pack for %s does not match its published checksum" % hop["version"])
+        d = work / ("pack-%s" % re.sub(r"[^0-9.]", "", hop["version"]))
+        ud.unpack_to_dir(p, d)
+        p.unlink()
+        pack_dirs.append(d)
+
+    dest = work / _staged_app_name(latest.get("version"))
+    stats = ud.reconstruct(app, chain[0]["manifest"], pack_dirs, dest)
+    for d in pack_dirs:
+        shutil.rmtree(d, ignore_errors=True)
+
+    # The bundle-level gates, BEFORE staging: a rebuilt tree that codesign or
+    # Gatekeeper will not accept is a miss, not something to hand the helper.
+    p = _run(["codesign", "--verify", "--deep", "--strict", str(dest)], timeout=300)
+    if p.returncode != 0:
+        raise RuntimeError("the rebuilt bundle failed codesign: %s"
+                           % (p.stderr or p.stdout or "").strip()[:300])
+    p = _run(["spctl", "-a", "-t", "execute", "-v", str(dest)])
+    if p.returncode != 0:
+        raise RuntimeError("the rebuilt bundle is not accepted by Gatekeeper: %s"
+                           % (p.stderr or p.stdout or "").strip()[:300])
+    man_path = work / (latest.get("manifest_asset") or "Sutra-%s.manifest.json" % arch)
+    man_path.write_bytes(chain[0]["manifest_raw"])
+    return {"app": str(dest), "manifest_path": str(man_path),
+            "sha256": chain[0]["manifest_sha256"], "sha256_url": chain[0]["manifest_sha256_url"],
+            "tree_sha256": chain[0]["manifest"].get("tree_sha256"),
+            "asset": latest.get("manifest_asset"), "delta": dict(stats, hops=len(chain))}
+
+
+def download_and_verify(dest_dir=None):
+    """Fetch the release for this arch and prove it before anything is replaced.
+
+    Returns {"kind": "dmg", "dmg": path, "version": ...} for a full image or
+    {"kind": "app", "app": path, ...} for a bundle rebuilt by the delta lane.
+    Raises RuntimeError naming the gate that failed -- an update that cannot
+    be verified is not installed, and the reason is not swallowed.
     """
     latest = _latest_desktop()
     if latest.get("error"):
@@ -401,19 +549,28 @@ def download_and_verify(dest_dir=None):
 
     d = Path(dest_dir or tempfile.mkdtemp(prefix="sutra-update-"))
     d.mkdir(parents=True, exist_ok=True)
-    dmg = d / latest["asset"]
 
+    # THE DELTA LANE FIRST. It can only fail towards the full image, and it
+    # says why, so a support log shows "delta update not possible (...)"
+    # rather than a silent 300 MB download.
+    delta_note = None
+    app = app_bundle()
+    if DELTA_ENABLED and latest.get("delta") and app:
+        try:
+            got = _delta_reconstruct(latest, _installed_desktop_version(), d, app)
+            got.update({"kind": "app", "dmg": None, "version": latest.get("version"), "dir": str(d)})
+            return got
+        except (RuntimeError, OSError, ValueError, KeyError, TypeError) as exc:
+            delta_note = "delta update not possible (%s); downloading the full image" % exc
+            for p in list(d.iterdir()):
+                shutil.rmtree(p, ignore_errors=True) if p.is_dir() and not p.is_symlink() else p.unlink(missing_ok=True)
+
+    dmg = d / latest["asset"]
     _fetch_dmg(url, dmg, int(latest.get("size") or 0))
 
     # GATE 1 -- checksum, against the file published beside the DMG.
     if latest.get("sha256_url"):
-        try:
-            req = urllib.request.Request(latest["sha256_url"],
-                                         headers={"User-Agent": "sutra-ui-updater"})
-            with urllib.request.urlopen(req, timeout=NET_TIMEOUT) as r:
-                want = r.read().decode("utf-8").split()[0].strip()
-        except (urllib.error.URLError, OSError, IndexError):
-            want = None
+        want = _published_sha256(latest["sha256_url"])
         if want:
             got = _sha256(dmg)
             if got != want:
@@ -439,7 +596,13 @@ def download_and_verify(dest_dir=None):
         raise RuntimeError("the downloaded image is not accepted by Gatekeeper: %s"
                            % (p.stderr or p.stdout or "").strip()[:300])
 
-    return {"dmg": str(dmg), "version": latest.get("version"), "dir": str(d)}
+    return {"kind": "dmg", "dmg": str(dmg), "version": latest.get("version"),
+            "dir": str(d), "sha256_url": latest.get("sha256_url"),
+            "asset": latest.get("asset"), "note": delta_note}
+
+
+def _sha256_bytes(data):
+    return hashlib.sha256(data).hexdigest()
 
 
 _INSTALLER = r"""#!/bin/bash
@@ -506,13 +669,23 @@ done
 pgrep -f "$APP/Contents/MacOS/" >/dev/null 2>&1 \
   && die procs-alive "processes are still running from $APP"
 
-MNT="$(mktemp -d /tmp/sutra-mnt.XXXXXX)"
-hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MNT" >/dev/null \
-  || die mount "could not mount $DMG"
-NEW="$MNT/Sutra.app"
-cleanup() { hdiutil detach "$MNT" -quiet 2>/dev/null || true; rmdir "$MNT" 2>/dev/null || true; }
+if [ "${ARTIFACT_KIND:-dmg}" = "app" ]; then
+  # A bundle the delta lane rebuilt in the staging directory. It was already
+  # verified file-by-file against the release manifest and passed codesign
+  # and Gatekeeper there; every gate below runs on it again regardless,
+  # because from here on there is no one to ask.
+  NEW="$DMG"
+  cleanup() { :; }
+  [ -d "$NEW" ] && [ ! -L "$NEW" ] || die contents "the staged bundle is gone"
+else
+  MNT="$(mktemp -d /tmp/sutra-mnt.XXXXXX)"
+  hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MNT" >/dev/null \
+    || die mount "could not mount $DMG"
+  NEW="$MNT/Sutra.app"
+  cleanup() { hdiutil detach "$MNT" -quiet 2>/dev/null || true; rmdir "$MNT" 2>/dev/null || true; }
+  [ -d "$NEW" ] || die contents "the disk image does not contain Sutra.app"
+fi
 trap cleanup EXIT
-[ -d "$NEW" ] || die contents "the disk image does not contain Sutra.app"
 
 # 3. the bundle inside must verify too -- the DMG passing Gatekeeper is not
 #    proof of what is inside it.
@@ -541,7 +714,14 @@ NEW_VER="$(plutil -extract CFBundleShortVersionString raw -o - "$NEW/Contents/In
 STAGE="${APP}.new-$$"
 BAK="${APP}.old-$$"
 rm -rf "$STAGE"
-ditto "$NEW" "$STAGE" || { rm -rf "$STAGE"; die copy "could not copy the new bundle into place"; }
+if [ "${ARTIFACT_KIND:-dmg}" = "app" ]; then
+  # Same volume, so this is an APFS clone: instant and costs no space. ditto
+  # remains the fallback for a staging dir on some other filesystem.
+  cp -c -R -p "$NEW" "$STAGE" 2>/dev/null \
+    || { rm -rf "$STAGE"; ditto "$NEW" "$STAGE" || { rm -rf "$STAGE"; die copy "could not copy the new bundle into place"; }; }
+else
+  ditto "$NEW" "$STAGE" || { rm -rf "$STAGE"; die copy "could not copy the new bundle into place"; }
+fi
 codesign --verify --deep --strict "$STAGE" 2>/dev/null \
   || { rm -rf "$STAGE"; die copy-verify "the copied bundle does not verify"; }
 
@@ -686,7 +866,14 @@ def install_desktop(dmg, app_path=None, wait_pid=None, wait_start=None,
     blocked = install_blocker(app)
     if blocked:
         raise RuntimeError(blocked)
-    if not Path(dmg).is_file():
+    artifact = Path(dmg)
+    if artifact.is_symlink():
+        raise RuntimeError("the staged artifact is a symlink: %s" % dmg)
+    if artifact.is_dir() and artifact.suffix == ".app":
+        kind = "app"
+    elif artifact.is_file():
+        kind = "dmg"
+    else:
         raise RuntimeError("no such disk image: %s" % dmg)
 
     pid = int(wait_pid) if wait_pid else os.getppid()
@@ -701,7 +888,7 @@ def install_desktop(dmg, app_path=None, wait_pid=None, wait_start=None,
 
     env = dict(os.environ)
     env.update({
-        "DMG": str(dmg), "APP": str(app), "LOG": str(log),
+        "DMG": str(dmg), "ARTIFACT_KIND": kind, "APP": str(app), "LOG": str(log),
         "WAIT_PID": str(pid), "WAIT_START": start or "",
         "RELAUNCH": "1" if relaunch else "0",
         "EXPECT_VERSION": str(version or ""),
@@ -856,8 +1043,17 @@ def clear_pending(also_remove_dmg=True):
     if also_remove_dmg and man and man.get("dmg"):
         try:
             p = Path(man["dmg"])
-            if p.is_file() and not p.is_symlink():
+            if p.is_symlink():
+                pass
+            elif p.is_file():
                 p.unlink()
+            elif p.is_dir() and p.suffix == ".app" and stage_dir().resolve() in p.resolve().parents:
+                shutil.rmtree(p, ignore_errors=True)
+        except (OSError, RuntimeError):
+            pass
+    if also_remove_dmg and man and man.get("manifest_path"):
+        try:
+            Path(man["manifest_path"]).unlink()
         except OSError:
             pass
     for p in (_pending_path(), _result_path()):
@@ -878,24 +1074,39 @@ def _verify_staged(man, recheck_online=True):
     than silently downgraded.
     """
     dmg = Path(man.get("dmg") or "")
-    if not dmg.is_file() or dmg.is_symlink():
-        raise RuntimeError("the staged disk image is gone")
     root = stage_dir().resolve()
-    if root not in dmg.resolve().parents:
-        raise RuntimeError("the staged image is not inside the staging directory")
-    got = _sha256(dmg)
-    if man.get("sha256") and got != man["sha256"]:
-        raise RuntimeError("the staged image changed on disk since it was verified")
+    if man.get("artifact_kind") == "app":
+        # A rebuilt bundle: its identity is the release manifest. Every file is
+        # re-hashed against it (a few seconds), and the manifest's own digest
+        # is what the online re-check compares with the published one.
+        import updates_delta as ud
+        if not dmg.is_dir() or dmg.is_symlink():
+            raise RuntimeError("the staged bundle is gone")
+        if root not in dmg.resolve().parents:
+            raise RuntimeError("the staged bundle is not inside the staging directory")
+        mp = Path(man.get("manifest_path") or "")
+        if not mp.is_file() or mp.is_symlink() or root not in mp.resolve().parents:
+            raise RuntimeError("the staged bundle's manifest is gone")
+        got = _sha256(mp)
+        if man.get("sha256") and got != man["sha256"]:
+            raise RuntimeError("the staged manifest changed on disk since it was verified")
+        manifest = ud.load_manifest(mp)
+        problems = ud.verify_tree(dmg, manifest)
+        if problems:
+            raise RuntimeError("the staged bundle changed on disk since it was verified: %s"
+                               % "; ".join(problems[:3]))
+    else:
+        if not dmg.is_file() or dmg.is_symlink():
+            raise RuntimeError("the staged disk image is gone")
+        if root not in dmg.resolve().parents:
+            raise RuntimeError("the staged image is not inside the staging directory")
+        got = _sha256(dmg)
+        if man.get("sha256") and got != man["sha256"]:
+            raise RuntimeError("the staged image changed on disk since it was verified")
 
     published = None
     if recheck_online and man.get("sha256_url"):
-        try:
-            req = urllib.request.Request(man["sha256_url"],
-                                         headers={"User-Agent": "sutra-ui-updater"})
-            with urllib.request.urlopen(req, timeout=NET_TIMEOUT) as r:
-                published = r.read().decode("utf-8").split()[0].strip()
-        except (urllib.error.URLError, OSError, IndexError, ValueError):
-            published = None
+        published = _published_sha256(man["sha256_url"])
     if published and published != got:
         raise RuntimeError("the staged image no longer matches the published "
                            "checksum for this release")
@@ -975,7 +1186,9 @@ def stage_desktop():
     work = Path(tempfile.mkdtemp(prefix=".download-", dir=str(root)))
     try:
         got = download_and_verify(dest_dir=str(work))
-        digest = _sha256(got["dmg"])
+        # A rebuilt bundle's identity is its manifest's digest; an image's is
+        # its own. Either way it is what arm re-checks against the release.
+        digest = got["sha256"] if got.get("kind") == "app" else _sha256(got["dmg"])
         with _state_lock():
             return _commit_stage(got, got.get("version") or version, digest,
                                  latest, replaceable=existing)
@@ -1003,18 +1216,32 @@ def _commit_stage(got, version, digest, latest, replaceable):
             return {"staged": True, "already": True, "discarded": version,
                     "version": cur.get("version"), "state": cur.get("state")}
 
-    src = Path(got["dmg"])
-    if src.is_symlink() or not src.is_file():
+    kind = got.get("kind") or "dmg"
+    src = Path(got["app"] if kind == "app" else got["dmg"])
+    if src.is_symlink() or not (src.is_dir() if kind == "app" else src.is_file()):
         raise RuntimeError("the verified download disappeared before it was staged")
-    final = _staged_dmg_path(latest.get("asset") or src.name, version)
+    manifest_final = None
+    if kind == "app":
+        final = stage_dir() / _staged_app_name(version)
+        if final.exists() and not final.is_symlink():
+            shutil.rmtree(final, ignore_errors=True)
+        manifest_final = stage_dir() / (final.name[:-4] + ".manifest.json")
+        os.replace(got["manifest_path"], manifest_final)
+    else:
+        final = _staged_dmg_path(latest.get("asset") or src.name, version)
     os.replace(src, final)
     _write_json(_pending_path(), {
         "state": "staged",
         "version": version,
         "dmg": str(final),
+        "artifact_kind": kind,
+        "manifest_path": str(manifest_final) if manifest_final else None,
+        "tree_sha256": got.get("tree_sha256"),
+        "delta": got.get("delta"),
+        "note": got.get("note"),
         "sha256": digest,
-        "sha256_url": latest.get("sha256_url"),
-        "asset": latest.get("asset"),
+        "sha256_url": got.get("sha256_url") if kind == "app" else latest.get("sha256_url"),
+        "asset": got.get("asset") if kind == "app" else latest.get("asset"),
         "staged_at": int(time.time()),
         "armed_at": None,
         "lease_until": None,
@@ -1029,17 +1256,23 @@ def _commit_stage(got, version, digest, latest, replaceable):
     # Every other image here is now unreferenced: the only other holder of a
     # DMG path is a live install, refused above. This also retires the old
     # unversioned Sutra-<arch>.dmg name.
-    for p in stage_dir().glob("*.dmg"):
+    for p in list(stage_dir().glob("*.dmg")) + list(stage_dir().glob("*.app")) \
+            + list(stage_dir().glob("*.manifest.json")):
         try:
-            if p != final and p.is_file() and not p.is_symlink():
+            if p in (final, manifest_final) or p.is_symlink():
+                continue
+            if p.is_file():
                 p.unlink()
+            elif p.is_dir() and p.suffix == ".app":
+                shutil.rmtree(p, ignore_errors=True)
         except OSError:
             pass
     try:
         _result_path().unlink()
     except OSError:
         pass
-    return {"staged": True, "version": version, "dmg": str(final)}
+    return {"staged": True, "version": version, "dmg": str(final), "artifact_kind": kind,
+            "delta": got.get("delta"), "note": got.get("note")}
 
 
 ARM_RECORD_RETRIES = 3      # manifest changed between verify and commit

@@ -4,13 +4,23 @@
 # WHY A RELEASE ASSET AND NOT THE WEBSITE
 # ---------------------------------------
 # The site is GitHub Pages, served straight out of this repository, and git
-# rejects any pushed file over 100 MB. A bundled DMG is ~160 MB because it
-# carries its own CPython. Release assets have no such limit, so the DMG ships
-# here and website/index.html links to
+# rejects any pushed file over 100 MB. A bundled DMG is 310-393 MB because it
+# carries its own CPython and Node. Release assets have no such limit, so the
+# DMG ships here and website/index.html links to
 #   /releases/latest/download/Sutra-<arch>.dmg
 # which always resolves to the newest release carrying that asset name. The
 # asset is therefore RENAMED to a stable, version-free name on upload -- the
 # versioned filename lives in the release title and notes.
+#
+# THE DELTA LANE (2026-09-25). Beside each stable DMG the leg also publishes
+#   Sutra-<arch>.manifest.json   every path in the signed app: sha256, mode, link
+#   Sutra-<arch>.delta.tar.xz    per-file deltas from the PREVIOUS stable release
+# plus their .sha256 files. An installed app rebuilds the new bundle from itself
+# and the pack (marketplace/plugin/sutra-ui/updates_delta.py), then runs the
+# same gates the DMG path runs. Measured on 2.300.0 -> 2.302.0: 0.48 MB instead
+# of 310 MB. The pack is PROVED in this workflow before upload: the previous
+# DMG's app plus the pack must rebuild this DMG's app byte-for-byte and pass
+# codesign, or the leg fails. Betas skip the lane (a beta never auto-updates).
 #
 # THIS WORKFLOW OWNS THOSE ASSET NAMES. Do not also upload them by hand. Each
 # leg publishes one Sutra-<arch>.dmg plus its own Sutra-<arch>.dmg.sha256, and
@@ -365,6 +375,95 @@ jobs:
             `ANTHROPIC_API_KEY` is set — so it always bills your Max plan rather than the
             per-token API.
 
+      # THE DELTA LANE. Runs AFTER the DMG upload, from the DMG this leg just
+      # published (never from a rebuild: re-signing makes every build differ),
+      # against the previous STABLE release's DMG for the same arch. Betas run
+      # it too (D80: every version is a beta first), so the proof happens on a
+      # prerelease nobody auto-updates from; a beta's assets sit on its own
+      # prerelease and never reach /releases/latest. The manifest is always
+      # produced; the pack only when a previous stable exists and the pack is
+      # worth it (< 50% of the DMG). Channel and bundle id follow the tag.
+      #
+      # PROOF BEFORE UPLOAD: the previous app plus the pack is rebuilt with the
+      # client's own code, compared byte-for-byte with the app in this DMG, and
+      # passed through codesign --verify --deep --strict. A pack that cannot do
+      # that is not uploaded, and the leg fails so nobody ships it by hand.
+      - name: Build and prove the delta manifest and pack
+        id: delta
+        working-directory: marketplace/plugin/sutra-ui
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          OUT="$PWD/electron/dist-delta"; mkdir -p "$OUT"
+          NEW_DMG="$PWD/electron/dist/Sutra-$ARCH.dmg"
+          ver="${TAG#v}"; ver="${ver%-desktop}"
+          case "$TAG" in *-beta.*-desktop) CH=beta ;; *) CH=stable ;; esac
+          ver="${ver%-beta.*}"
+          # Previous stable by SEMVER over tag names, never by list order or
+          # date, and never /releases/latest (which is already this tag).
+          prev="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-pre-releases --exclude-drafts \
+                    --limit 100 --json tagName --jq '.[].tagName' \
+                  | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-desktop$' | grep -vx "$TAG" \
+                  | sed 's/^v//; s/-desktop$//' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1 || true)"
+          echo "this=$ver previous_stable=${prev:-none}"
+          NEWM="$(mktemp -d "$RUNNER_TEMP/new.XXXXXX")"; OLDM=""
+          cleanup() { hdiutil detach "$NEWM" -quiet 2>/dev/null || true; [ -n "$OLDM" ] && hdiutil detach "$OLDM" -quiet 2>/dev/null || true; }
+          trap cleanup EXIT
+          hdiutil attach "$NEW_DMG" -nobrowse -readonly -noautoopen -mountpoint "$NEWM" >/dev/null
+          # "Sutra.app" on stable, "Sutra Beta.app" on a beta: discover, never assume.
+          NEW_APP="$(find "$NEWM" -maxdepth 1 -name '*.app' | head -1)"
+          [ -d "$NEW_APP" ] || { echo "::error::no .app inside $NEW_DMG"; exit 1; }
+          BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw -o - "$NEW_APP/Contents/Info.plist")"
+          prev_args=(); [ -n "$prev" ] && prev_args=(--previous "$prev")
+          python3 -m updates_delta manifest "$NEW_APP" --version "$ver" --arch "$ARCH" --channel "$CH" \
+            --bundle-id "$BUNDLE_ID" --tag "$TAG" "${prev_args[@]}" \
+            --out "$OUT/Sutra-$ARCH.manifest.json"
+          if [ -n "$prev" ]; then
+            gh release download "v$prev-desktop" --repo "$GITHUB_REPOSITORY" -p "Sutra-$ARCH.dmg" \
+              -D "$RUNNER_TEMP/prev" --clobber
+            OLDM="$(mktemp -d "$RUNNER_TEMP/old.XXXXXX")"
+            hdiutil attach "$RUNNER_TEMP/prev/Sutra-$ARCH.dmg" -nobrowse -readonly -noautoopen -mountpoint "$OLDM" >/dev/null
+            python3 -m updates_delta pack "$OLDM/Sutra.app" "$NEW_APP" --manifest "$OUT/Sutra-$ARCH.manifest.json" \
+              --from-version "$prev" --out "$OUT/Sutra-$ARCH.delta.tar.xz"
+            pack_bytes=$(stat -f%z "$OUT/Sutra-$ARCH.delta.tar.xz"); dmg_bytes=$(stat -f%z "$NEW_DMG")
+            echo "pack=$pack_bytes bytes, dmg=$dmg_bytes bytes"
+            if [ "$pack_bytes" -gt $(( dmg_bytes / 2 )) ]; then
+              echo "::warning::delta pack for $ARCH is $pack_bytes bytes, over half the DMG; publishing the manifest only"
+              rm -f "$OUT/Sutra-$ARCH.delta.tar.xz"
+            else
+              # THE PROOF. Same code the client runs, on a writable copy of the old app.
+              cp -R "$OLDM/Sutra.app" "$RUNNER_TEMP/base.app"
+              python3 -m updates_delta reconstruct "$RUNNER_TEMP/base.app" --manifest "$OUT/Sutra-$ARCH.manifest.json" \
+                --pack "$OUT/Sutra-$ARCH.delta.tar.xz" --dest "$RUNNER_TEMP/rebuilt.app"
+              diff -rq "$RUNNER_TEMP/rebuilt.app" "$NEW_APP"
+              codesign --verify --deep --strict "$RUNNER_TEMP/rebuilt.app"
+              echo "reconstructed $ARCH from $prev: OK"
+            fi
+          else
+            echo "::notice::no previous stable release found; manifest only (first delta-capable release)"
+          fi
+          cd "$OUT"
+          for f in "Sutra-$ARCH.manifest.json" "Sutra-$ARCH.delta.tar.xz"; do
+            [ -f "$f" ] && shasum -a 256 "$f" > "$f.sha256"
+          done
+          ls -la
+
+      # Same rule as the DMG: this leg writes its own checksums and uploads its
+      # own four files. A pack that was withheld above simply is not here.
+      - uses: softprops/action-gh-release@v2
+        if: ${{ steps.delta.outcome == 'success' }}
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          prerelease: ${{ contains(github.event.inputs.tag || github.ref_name, '-beta.') }}
+          files: |
+            marketplace/plugin/sutra-ui/electron/dist-delta/Sutra-${{ matrix.arch }}.manifest.json
+            marketplace/plugin/sutra-ui/electron/dist-delta/Sutra-${{ matrix.arch }}.manifest.json.sha256
+            marketplace/plugin/sutra-ui/electron/dist-delta/Sutra-${{ matrix.arch }}.delta.tar.xz
+            marketplace/plugin/sutra-ui/electron/dist-delta/Sutra-${{ matrix.arch }}.delta.tar.xz.sha256
+
   # A release that carries ONE architecture is a broken release, and the way it
   # happens is quiet: a leg dies (or, before the label fix, hung forever on a
   # retired runner) while the other leg succeeds, uploads, and the run reports
@@ -391,8 +490,15 @@ jobs:
                       --json assets --jq '.assets[].name')"
           echo "$assets" | sed 's/^/  /'
           missing=""
-          for want in Sutra-arm64.dmg Sutra-arm64.dmg.sha256 \
-                      Sutra-x86_64.dmg Sutra-x86_64.dmg.sha256; do
+          wanted="Sutra-arm64.dmg Sutra-arm64.dmg.sha256 Sutra-x86_64.dmg Sutra-x86_64.dmg.sha256"
+          # A stable release also carries a manifest per arch (the delta lane's
+          # anchor). The pack is optional -- withheld when no previous stable
+          # exists or when it would not save bytes -- so it is not required.
+          case "$TAG" in
+            *-beta.*) ;;
+            *) wanted="$wanted Sutra-arm64.manifest.json Sutra-arm64.manifest.json.sha256 Sutra-x86_64.manifest.json Sutra-x86_64.manifest.json.sha256" ;;
+          esac
+          for want in $wanted; do
             printf '%s\n' "$assets" | grep -qx "$want" || missing="$missing $want"
           done
           if [ -n "$missing" ]; then
