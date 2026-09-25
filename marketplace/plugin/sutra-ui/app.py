@@ -1121,15 +1121,18 @@ def api_session_rename(sid: str, body: dict):
 def api_session_archive(sid: str, by: str = "you"):
     """Archive a chat: a mark in Sutra's store, never a file move (chat_archive).
     `by` names who archived it -- "you" from the rail, an agent's name when an
-    agent archives on its own; the row then says so."""
-    if sr.resolve_path(sid) is None:
+    agent archives on its own; the row then says so.
+    ANY LISTED ROW, ANY PROVIDER: the mark never touches the transcript, so
+    the read-only resolver that spans all three trees is the right guard.
+    resolve_path knows Claude only and 404'd every codex row (2026-09-25)."""
+    if sr.read_resolve_path(sid) is None:
         raise HTTPException(status_code=404, detail="session not found")
     return {"ok": True, **chat_archive.archive(sid, by)}
 
 
 @app.post("/api/sessions/{sid}/unarchive")
 def api_session_unarchive(sid: str):
-    if sr.resolve_path(sid) is None:
+    if sr.read_resolve_path(sid) is None:
         raise HTTPException(status_code=404, detail="session not found")
     return {"ok": True, **chat_archive.unarchive(sid)}
 

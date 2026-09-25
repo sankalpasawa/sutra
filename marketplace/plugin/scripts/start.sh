@@ -417,8 +417,16 @@ SHIMEOF
   fi
 }
 
-if [ "$PROFILE" = "company" ] || [ "$INSTALL_OS" = 1 ]; then materialize_company_os; fi
-if [ "$PROFILE" = "company" ] || [ "$INSTALL_GATES" = 1 ]; then install_git_gates; fi
+# A holding-tier repo (Asawa: governance under holding/, its own hooks) already
+# has everything the company scaffold would add; scaffolding it again put an
+# empty os/ and a .githooks/ shim beside the real ones on every start, and the
+# founder ruled them out (2026-09-25: "Remove"). Nothing is written there.
+if [ -f "$PROJECT_ROOT/holding/TODO.md" ]; then
+  echo "holding-tier repo: governance lives under holding/ -- os/ scaffold and .githooks shim skipped"
+else
+  if [ "$PROFILE" = "company" ] || [ "$INSTALL_OS" = 1 ]; then materialize_company_os; fi
+  if [ "$PROFILE" = "company" ] || [ "$INSTALL_GATES" = 1 ]; then install_git_gates; fi
+fi
 if [ "$PROFILE" = "company" ]; then
   echo "routines:  schedule recurring work with bin/sutra-routine add --id <id> --schedule daily@09:00 --command <cmd>"
   echo "native:    the workflow runtime is a separate plugin -> claude plugin install native@sutra"

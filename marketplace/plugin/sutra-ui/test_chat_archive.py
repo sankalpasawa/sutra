@@ -88,7 +88,7 @@ def test_a_broken_store_hides_nothing(_store):
 
 def test_api_marks_rows_and_never_relocates(monkeypatch):
     import app
-    monkeypatch.setattr(app.sr, "resolve_path", lambda sid: Path("/p/%s.jsonl" % sid))
+    monkeypatch.setattr(app.sr, "read_resolve_path", lambda sid: Path("/p/%s.jsonl" % sid))
     moved = []
     monkeypatch.setattr(app.sr, "relocate", lambda *a: moved.append(a))
     r = app.api_session_archive("s1", by="Shadow")
@@ -107,9 +107,21 @@ def test_api_has_no_archive_all():
     assert all(getattr(r, "path", "") != "/api/chats/archive-all" for r in app.app.routes)
 
 
-def test_api_404_for_an_unknown_chat(monkeypatch):
+def test_api_archives_any_provider_row(monkeypatch):
+    # A codex rollout is not a Claude transcript: resolve_path (the write
+    # resolver) says None, read_resolve_path finds it. The mark must follow the
+    # read-only resolver, or every codex row 404s (2026-09-25, 705 rows).
     import app
     monkeypatch.setattr(app.sr, "resolve_path", lambda sid: None)
+    monkeypatch.setattr(app.sr, "read_resolve_path",
+                        lambda sid: Path("/codex/%s.jsonl" % sid) if sid == "cx" else None)
+    assert app.api_session_archive("cx")["archived"] is True
+    assert app.api_session_unarchive("cx")["archived"] is False
+
+
+def test_api_404_for_an_unknown_chat(monkeypatch):
+    import app
+    monkeypatch.setattr(app.sr, "read_resolve_path", lambda sid: None)
     with pytest.raises(app.HTTPException):
         app.api_session_archive("nope")
     with pytest.raises(app.HTTPException):

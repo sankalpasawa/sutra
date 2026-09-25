@@ -1,6 +1,14 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-21
+**status**: active · **updated**: 2026-09-25
+## 2.304.1 (2026-09-25)
+
+Chat archive is driven only by the app, for every provider's rows.
+
+- Changed: `POST /api/sessions/{id}/archive` and `/unarchive` resolve the row through the read-only resolver that spans Claude, DeepSeek and Codex trees; Codex rows no longer answer 404 (the mark never touches a transcript).
+- Changed: `/core:start` writes no `os/` scaffold and no `.githooks` shim in a holding-tier repo (one with `holding/TODO.md`); the founder ruled them out after they reappeared on every start.
+- Tests: test_chat_archive.py 12 passed.
+
 ## 2.304.0 (2026-09-25)
 
 The Native builder gets a ladder for the how it does not know.
