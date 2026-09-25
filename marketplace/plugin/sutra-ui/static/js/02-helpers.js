@@ -1275,6 +1275,23 @@ function goDest(d){
   saveLayout(); render();
 }
 
+/* A row can be feature-flagged (FLAG.md). With the flag off the row must not
+   render at all -- the byId fallback would otherwise show a bare id. Any flag
+   but workspace is opt-OUT: it renders unless settings.json carries an explicit
+   false. SETTINGS is null until /api/settings answers (and stays null if it
+   never does), so the guard must fail OPEN (codex fold 2026-09-08). offFlag is
+   the inverse (2026-09-25): the entry renders ONLY while that flag is opted out
+   -- Org's old rows, whose new home lives inside org2. One test for the rail's
+   rows, their group rows, and the Library panel's Archive (19-org2.js). */
+function destOptedOut(f){
+  return typeof SETTINGS !== "undefined" && !!SETTINGS && !!SETTINGS.flags && SETTINGS.flags[f] === false;
+}
+function destRowHidden(e){
+  return (e.flag === "workspace" && !(typeof wsFlagOn === "function" && wsFlagOn()))
+    || (!!e.flag && e.flag !== "workspace" && destOptedOut(e.flag))
+    || (!!e.offFlag && !destOptedOut(e.offFlag));
+}
+
 /* One destination's plane rows, decorated with railSpec()'s live counts. */
 function planeRows(dest){
   const spec = railSpec();
@@ -1288,17 +1305,9 @@ function planeRows(dest){
   };
   const groups = [];
   for (const entry of (DEST_PLANES[dest] || [])){
-    /* A row can be feature-flagged (FLAG.md). With the flag off the row must
-       not render at all — the byId fallback would otherwise show a bare id. */
-    if (entry.flag === "workspace" && !(typeof wsFlagOn === "function" && wsFlagOn())) continue;
-    /* Any other flagged row is opt-OUT: it renders unless settings.json carries
-       an explicit false. SETTINGS is null until /api/settings answers (and stays
-       null if it never does), so the guard must fail OPEN (codex fold 2026-09-08). */
-    if (entry.flag && entry.flag !== "workspace"
-        && typeof SETTINGS !== "undefined" && SETTINGS && SETTINGS.flags
-        && SETTINGS.flags[entry.flag] === false) continue;
+    if (destRowHidden(entry)) continue;
     /* (r5) the S92 foldsInto rows are gone from DEST_PLANES; no filter needed. */
-    if (entry.group) groups.push({ label: entry.group, rows: entry.rows.map(row) });
+    if (entry.group) groups.push({ label: entry.group, rows: entry.rows.filter(r => !destRowHidden(r)).map(row) });
     else {
       if (!groups.length || groups[groups.length-1].label) groups.push({ label:null, rows:[] });
       groups[groups.length-1].rows.push(row(entry));
