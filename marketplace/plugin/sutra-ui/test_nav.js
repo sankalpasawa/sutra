@@ -87,6 +87,9 @@ const T = vm.runInContext(`({ DESTS, DEST_PLANES, DEST_DEFAULT_SCREEN, S, SCREEN
   /* 2.294.0: the rail's hidden set and the label map, so a test can say which
      destinations lost their button and that their names did not change. */
   RAIL_HIDDEN, DEST_LABEL,
+  /* 2026-09-25: the Library panel's shelves and Archive, and the open path
+     their rows take. */
+  O2_LIB_SHELVES, openScreen,
   get PROVIDERS(){ return PROVIDERS; }, set PROVIDERS(v){ PROVIDERS = v; },
   get SETTINGS(){ return SETTINGS; }, set SETTINGS(v){ SETTINGS = v; } })`, sandbox);
 /* spies for the 2.118.1 regressions: which lazy loaders fired */
@@ -128,11 +131,17 @@ test("model: seven destinations, in the founder's order; the one-screen Org is t
   assert.strictEqual(lib.rows.length, 7, "seven shelves under Org");
   assert.strictEqual(lib.rows[0].screen, "lib-identity");
   assert.strictEqual(lib.rows[6].label, "Work atom", "the last shelf is the Work atom");
+  /* 2026-09-25 (founder): the shelves left the menu for the Library panel; the
+     group stays in the model only as the org2 opt-out's way to them. */
+  assert.strictEqual(lib.offFlag, "org2", "the shelves show only while org2 is opted out");
   assert.strictEqual(T.DEST_DEFAULT_SCREEN.org2, undefined, "org2 is not a destination");
   const first = T.DEST_PLANES.org[0];
   assert.strictEqual(first.screen, "org2");
   assert.strictEqual(first.label, "Org structure");
   assert.strictEqual(first.flag, "org2", "opt-out flag rides the row");
+  /* 2026-09-25 (founder): "we already have it in the library section" -- the
+     menu's Identity row is gone; lib-identity is Identity's one home. */
+  assert(!T.DEST_PLANES.org.some(e => e.screen === "org-identity"), "no Identity row in the Org menu");
 });
 test("model: routines is a Settings -> Automation row, not a destination", () => {
   /* One home, not two: it must be a row on the Settings plane AND absent from
@@ -180,26 +189,35 @@ test("now: SCREENS.now renders the honest empty state and TITLES carries it", ()
 });
 
 /* §planes ─ S6 */
-test("planes: org post-S92 — Workspace leads; Knowledge/Files folded in", () => {
-  /* S92 cutover (founder 2026-08-25): the flag defaults ON, Knowledge and
-     Files fold into the Workspace (openScreen redirects their ids). */
-  const rows = T.planeRows("org").flatMap(g => g.rows).map(r => r.screen);
-  /* 2.247.0: Modules sits after Placements (design D-M7) -- the products the
-     operator builds, before the one row that changes the org itself.
-     2.287.2: Org structure (the one-screen Org, org2) leads the accordion. */
-  /* 2.297.0 (founder): the Library's seven shelves are a GROUP at the end of
-     the same plane, so the flattened list carries them after reorg. The org's
-     own rows keep their order, which is what this test has always pinned. */
-  assert.strictEqual(JSON.stringify(rows), JSON.stringify(
-    ["org2","workspace","departments","charters","placements","modules","reorg",
-     "lib-identity","lib-adaptation","lib-priority","lib-coordination","lib-audit",
-     "lib-engines","lib-work-atom"]));
-  const own = rows.slice(0, 7);
-  assert.strictEqual(JSON.stringify(own), JSON.stringify(
-    ["org2","workspace","departments","charters","placements","modules","reorg"]),
-    "the org's own rows lead, in their own order");
-  const groups = T.planeRows("org").map(g => g.label).filter(Boolean);
-  assert(groups.includes("Library"), "the shelves arrive as a labelled group");
+test("planes: org is one row, Org structure; the rest live in the Library panel", () => {
+  /* Founder 2026-09-25: "From Identity to Work Item, we can remove them because
+     we have shifted into a library." Was 14 rows (2.297.0). An Identity row
+     that followed the same day left again: "we already have it in the library
+     section." */
+  const rows = T.planeRows("org").flatMap(g => g.rows);
+  assert.strictEqual(JSON.stringify(rows.map(r => r.screen)), JSON.stringify(["org2"]));
+  assert.strictEqual(T.planeRows("org").map(g => g.label).filter(Boolean).length, 0,
+    "no Library or Archive group in the menu");
+  /* Every row that left sits in the Library panel, in the order it had. */
+  const shelves = T.O2_LIB_SHELVES.map(([g]) => g);
+  assert.strictEqual(JSON.stringify(shelves), JSON.stringify(["Functions","Parts","Archive"]));
+  assert.strictEqual(T.O2_LIB_SHELVES[0][1][0][0], "lib-identity", "Identity is reached from the Library");
+  const archive = T.O2_LIB_SHELVES.find(([g]) => g === "Archive")[1];
+  assert.strictEqual(JSON.stringify(archive.map(r => r[0])), JSON.stringify(
+    ["workspace","departments","charters","placements","modules","reorg"]),
+    "Workspace to Apps, then Reorg plans");
+  assert.strictEqual(archive.find(r => r[0] === "workspace")[2], "workspace", "Workspace keeps its flag");
+  assert.strictEqual(archive.find(r => r[0] === "modules")[2], "modules", "Apps keeps its flag");
+  /* The org2 opt-out is the rollback: the Library panel lives inside org2, so
+     with org2 off the old rows come back to the menu, flags still honoured. */
+  const prev = T.SETTINGS;
+  T.SETTINGS = { flags: { org2: false, modules: false } };
+  const off = T.planeRows("org");
+  T.SETTINGS = prev;
+  assert.strictEqual(JSON.stringify(off.map(g => g.label)), JSON.stringify(["Archive","Library"]));
+  const offIds = off.flatMap(g => g.rows).map(r => r.screen);
+  assert(offIds.includes("charters") && offIds.includes("reorg") && offIds.includes("lib-work-atom"));
+  assert.strictEqual(offIds.indexOf("modules"), -1, "an opted-out Apps stays out of the Archive");
 });
 test("planes: settings carries three labelled groups", () => {
   /* Was four. "Preferences" held exactly one row -- the AI Provider screen --
@@ -259,6 +277,7 @@ test("rail: renderRail paints five data-dest buttons; Help and Settings are not 
   assert.strictEqual((out.match(/data-dest="/g) || []).length, 5, "opt-out never changes the rail count");
   const rowsOff = T.planeRows("org").flatMap(g => g.rows).map(r => r.screen);
   assert.strictEqual(rowsOff.indexOf("org2"), -1, "opt-out drops the Org structure row");
+  assert(rowsOff.includes("departments"), "and brings the old rows back (2026-09-25)");
   T.SETTINGS = prev;
 });
 
@@ -717,6 +736,19 @@ test("switching: chats yields the browse pane; org restores the remembered pick"
   assert.strictEqual(T.S.ui.dest, "org", "an unknown destination must be refused");
 });
 
+test("switching: archived screens and Library > Identity still open and belong to Org", () => {
+  /* 2026-09-25 (founder): the rows left the menu, not the app. */
+  T.S.ui = T.loadLayout();
+  for (const id of ["departments", "charters", "placements", "reorg", "lib-identity", "lib-work-atom"]){
+    if (!T.SCREENS[id]) continue;
+    T.goDest("now");
+    T.openScreen(id);
+    assert.strictEqual(T.S.screen, id, id + " still opens");
+    assert.strictEqual(T.S.ui.dest, "org", id + " is still Org's");
+  }
+  T.goDest("now");
+});
+
 /* §footer + §menu ─ S11-S13 */
 test("footer: the identity block states a role and offers exactly the two jobs", () => {
   assert(html.indexOf('id="idRole"') !== -1 && html.indexOf('id="idStat"') !== -1);
@@ -994,6 +1026,9 @@ test("coverage: all 20 legacy rail ids stay reachable through the new shell", ()
     /* a plane-less destination (Now, Help) reaches its screen directly */
     if (T.DEST_DEFAULT_SCREEN[d]) reachable.add(T.DEST_DEFAULT_SCREEN[d]);
   }
+  /* 2026-09-25: the Org menu is two rows; departments, charters, placements
+     and reorg are reached from the Library panel's Archive inside Org. */
+  T.O2_LIB_SHELVES.forEach(([, rows]) => rows.forEach(r => reachable.add(r[0])));
   /* S92: knowledge + files no longer sit in a plane — they stay reachable
      because openScreen REDIRECTS their ids to the Workspace. The coverage
      claim they satisfy is the redirect, asserted here at the source level
@@ -1254,7 +1289,13 @@ test("inline: entering Org renders its rows inside the rail with the plane's mar
      (it does here: every panel script is loaded); otherwise on Departments. */
   const landed = T.SCREENS.org2 ? "org2" : "departments";
   assert(new RegExp('data-screen="' + landed + '"[^>]*aria-current="true"').test(out), "the landed child carries it");
-  assert(/data-screen="charters"/.test(out) && /data-screen="reorg"/.test(out), "rows come from DEST_PLANES");
+  /* 2026-09-25 (founder): exactly one row, Org structure; Identity lives in
+     the Library panel only. */
+  const acc = (out.split('id="acc-org"')[1] || "").split("</ul>")[0];
+  assert.strictEqual((acc.match(/data-screen="/g) || []).length, 1, "one row under Org");
+  assert(/data-screen="org2"/.test(acc), "the row comes from DEST_PLANES");
+  assert(!/>Identity</.test(acc) && !/data-screen="org-identity"/.test(acc), "no Identity in the menu");
+  assert(!/data-screen="charters"/.test(acc) && !/data-screen="lib-work-atom"/.test(acc), "the old rows left");
   assert(/data-dest="focus"[^>]*data-open="false"/.test(out), "only one accordion open");
   assert(!/id="acc-focus"/.test(out), "closed accordion renders no list");
   T.goDest("now");

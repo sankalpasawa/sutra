@@ -662,6 +662,13 @@ const O2_LIB_SHELVES = [
                  ["lib-priority", "Priority"], ["lib-coordination", "Coordination"],
                  ["lib-audit", "Audit"]]],
   ["Parts", [["lib-engines", "Engines"], ["lib-work-atom", "Work atom"]]],
+  /* Archive (founder, 2026-09-25: "in the library itself we can just have
+     Archive for those particular sections"). The sections that left the Org
+     menu, and Reorg plans with them. Same screens, same ids; the third field
+     is the row's flag, so Workspace and Apps keep their on/off settings. */
+  ["Archive", [["workspace", "Workspace", "workspace"], ["departments", "Departments"],
+               ["charters", "Charters"], ["placements", "Placements"],
+               ["modules", "Apps", "modules"], ["reorg", "Reorg plans"]]],
 ];
 const O2_LIB_MARK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M11 4h3.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11z"/><path d="M18.4 6.2l2.1 12"/></svg>`;
@@ -675,12 +682,14 @@ function o2LibBtnHtml(){
 
 /* The panel in its other mode. Same width, same row height, same selection
    behaviour as the tree: only the content differs, so the swap reads as one
-   place showing two things. A row opens the shelf screen the rail's Org
-   accordion already opens -- one screen, reached two ways, never two. */
+   place showing two things. A row opens its screen by its own id -- the one
+   screen the rail opened before these rows left it (2026-09-25), never a
+   second one. A flagged row answers to the rail's own test (destRowHidden). */
 function o2LibPanelHtml(){
   const cur = (typeof S !== "undefined" && S.screen) ? String(S.screen) : "";
+  const on = flag => !flag || typeof destRowHidden !== "function" || !destRowHidden({ flag: flag });
   const rows = O2_LIB_SHELVES.map(([group, shelves]) => `
-    <div class="o2libgrp">${o2Esc(group)}</div>` + shelves.map(([screen, label]) => `
+    <div class="o2libgrp">${o2Esc(group)}</div>` + shelves.filter(r => on(r[2])).map(([screen, label]) => `
     <button type="button" class="o2librow" data-screen="${o2Esc(screen)}"
       aria-selected="${cur === screen}">${O2_LIB_MARK}<span>${o2Esc(label)}</span></button>`).join("")).join("");
   return `<div class="o2libpanel">

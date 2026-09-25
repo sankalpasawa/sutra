@@ -729,15 +729,41 @@ test("pressed, the button reads as pressed and offers the way back", () => {
   assert.ok(/Back to the departments/.test(html), "the title says how to return");
 });
 
-test("the panel's second mode lists the seven shelves in two groups", () => {
+test("the panel's second mode lists the seven shelves, then the Archive", () => {
   const c = fresh();
   const html = c.o2LibPanelHtml();
   for (const label of ["Identity", "Adaptation", "Priority", "Coordination", "Audit",
                        "Engines", "Work atom"])
     assert.ok(new RegExp(">" + label + "<").test(html), label + " is a row");
   assert.ok(/o2libgrp">Functions</.test(html) && /o2libgrp">Parts</.test(html),
-    "two groups, as in the rail");
-  assert.strictEqual((html.match(/class="o2librow"|class="o2librow /g) || []).length, 7);
+    "the shelves keep their two groups");
+  /* 2026-09-25 (founder): "in the library itself we can just have Archive for
+     those particular sections" -- the rows that left the Org menu, plus Reorg
+     plans. This file loads without 02-helpers.js, so no flag hides a row. */
+  assert.ok(/o2libgrp">Archive</.test(html), "a third group, Archive");
+  const arch = html.split('o2libgrp">Archive<')[1];
+  assert.deepStrictEqual([...arch.matchAll(/data-screen="([^"]+)"/g)].map(m => m[1]),
+    ["workspace", "departments", "charters", "placements", "modules", "reorg"],
+    "each opens its old screen by its own id");
+  assert.ok(/>Apps</.test(arch) && />Reorg plans</.test(arch), "the words the menu used");
+  assert.strictEqual((html.match(/class="o2librow"|class="o2librow /g) || []).length, 13);
+});
+
+test("the Archive honours Workspace's and Apps' on/off settings", () => {
+  const c = fresh();
+  /* the rail's own test, as 02-helpers.js defines it: workspace is opt-in,
+     every other flag opt-out */
+  c.destRowHidden = e => e.flag === "workspace" ? !c.wsOn : !!(e.flag && c.SETTINGS.flags[e.flag] === false);
+  c.wsOn = false;
+  c.SETTINGS.flags.modules = false;
+  let arch = c.o2LibPanelHtml().split('o2libgrp">Archive<')[1];
+  assert.ok(!/data-screen="workspace"/.test(arch), "Workspace off: no row");
+  assert.ok(!/data-screen="modules"/.test(arch), "Apps off: no row");
+  assert.ok(/data-screen="departments"/.test(arch), "unflagged rows stay");
+  c.wsOn = true;
+  c.SETTINGS.flags.modules = true;
+  arch = c.o2LibPanelHtml().split('o2libgrp">Archive<')[1];
+  assert.ok(/data-screen="workspace"/.test(arch) && /data-screen="modules"/.test(arch), "both on: both rows");
 });
 
 test("a shelf row opens the screen the rail already opens, never a second one", () => {

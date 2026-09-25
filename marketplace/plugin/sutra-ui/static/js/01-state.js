@@ -208,6 +208,10 @@ function lsSet(key, value){
    are a GROUP inside the Org accordion, below the org's own rows, and their
    screen ids are unchanged -- so every route, every stored selection and every
    test that names lib-identity keeps working. Seven destinations again. */
+/* 2026-09-25 (founder): the Org accordion is ONE row, Org structure. The
+   shelves and the old sections moved into the Library panel inside Org
+   structure (19-org2.js O2_LIB_SHELVES); see DEST_PLANES.org. Identity is
+   reached there, as Library > Identity (lib-identity), not from the menu. */
 const DESTS = ["now","focus","chats","agents","org","team","settings"];
 const DEST_PLANES = {
   /* focus: Balance today; the rest of the companion arrives later — the rows
@@ -228,32 +232,38 @@ const DEST_PLANES = {
                 2.287.2. Opt-OUT flag like modules: flags.org2 false hides the row
                 and o2EnsureRegistered never registers the screen. */
              {screen:"org2", label:"Org structure", flag:"org2"},
+             /* An Identity row sat here for part of 2026-09-25; the founder removed
+                it the same day ("we already have it in the library section"). */
+             /* The rows that left the menu stay here, shown ONLY while org2 is
+                opted out (offFlag), because the Library panel that now holds them
+                (19-org2.js O2_LIB_SHELVES, Archive and the seven shelves) lives
+                inside org2. Staying in this list also keeps openScreen's owner
+                lookup pointing every one of them at Org. No screen was deleted. */
              /* workspace row is flag-gated at render: with the flag off,
                 SCREENS.workspace never registers and the row is dropped by the
                 same SCREENS[sel] validation every stale selection goes through. */
-             {screen:"workspace", flag:"workspace"},
-             {screen:"departments"},{screen:"charters"},{screen:"placements"},
              /* knowledge + files rows DELETED (r5): the S92 fold's one-release
-                clock expired — openScreen's redirect remains the only trace */
-             /* Modules (2.247.0, design 2026-09-08-modules-design.md D-M7): the
-                finished products the operator builds inside the app. Label is
-                explicit because railSpec() has no modules entry for planeRows()
-                to fall back on; flag is opt-OUT (absent = on) like workspace. */
-             /* User-facing word is App (Apps program D-M22, 2026-09-11); the
+                clock expired -- openScreen's redirect remains the only trace */
+             /* Modules (2.247.0, design 2026-09-08-modules-design.md D-M7): label
+                is explicit because railSpec() has no modules entry for planeRows()
+                to fall back on; flag is opt-OUT (absent = on) like workspace.
+                User-facing word is App (Apps program D-M22, 2026-09-11); the
                 screen id, flag and API keep the internal name `modules`. */
-             {screen:"modules", label:"Apps", flag:"modules"},
-             {screen:"reorg"},
-             /* the Library's seven shelves, inside Org (2.297.0, founder). The
-                kinds a department is built from belong with the departments,
-                not beside them. planeRows() takes a {group, rows} entry in the
-                same list as bare rows, so this needs no new shape. */
-             {group:"Library", rows:[{screen:"lib-identity", label:"Identity"},
-                                     {screen:"lib-adaptation", label:"Adaptation"},
-                                     {screen:"lib-priority", label:"Priority"},
-                                     {screen:"lib-coordination", label:"Coordination"},
-                                     {screen:"lib-audit", label:"Audit"},
-                                     {screen:"lib-engines", label:"Engines"},
-                                     {screen:"lib-work-atom", label:"Work atom"}]}],
+             {group:"Archive", offFlag:"org2",
+              rows:[{screen:"workspace", flag:"workspace"},
+                    {screen:"departments"},{screen:"charters"},{screen:"placements"},
+                    {screen:"modules", label:"Apps", flag:"modules"},
+                    {screen:"reorg"}]},
+             /* the Library's seven shelves (2.297.0, founder); their screen ids
+                are unchanged since they left the menu. */
+             {group:"Library", offFlag:"org2",
+              rows:[{screen:"lib-identity", label:"Identity"},
+                    {screen:"lib-adaptation", label:"Adaptation"},
+                    {screen:"lib-priority", label:"Priority"},
+                    {screen:"lib-coordination", label:"Coordination"},
+                    {screen:"lib-audit", label:"Audit"},
+                    {screen:"lib-engines", label:"Engines"},
+                    {screen:"lib-work-atom", label:"Work atom"}]}],
   team:     [],   /* Help opens directly — a one-row plane earns no plane (2026-08-24) */
   settings: [{group:"Tools",       rows:[{screen:"terminal"},{screen:"git"},{screen:"editor"}]},
              /* routines came BACK to this group on 2026-09-04, in the position it
