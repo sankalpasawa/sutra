@@ -231,11 +231,28 @@ class TheWorkerProcessDies(Base):
         self._spawned.append(pid)
         shadow_runner.DELEGATES["sess-grp"] = rt
         pgid = os.getpgid(pid)
+        # Stop only once the helper exists. Stopping mid-fork lets a child born
+        # a moment after the killpg escape it -- a race in this setup, not the
+        # scenario under test (helpers already running when the founder stops).
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            members = subprocess.run(["pgrep", "-g", str(pgid)],
+                                     capture_output=True, text=True).stdout.split()
+            if len(members) >= 2:
+                break
+            time.sleep(0.02)
         shadow_runner.founder_force_stop(mid)
         self.assertTrue(wait_gone(pid))
-        time.sleep(0.2)
-        left = subprocess.run(["pgrep", "-g", str(pgid)],
-                              capture_output=True, text=True)
+        # Poll, not a fixed 0.2 s: under the release gate's parallel load the
+        # signalled helper can take longer to exit, and a fixed sleep made this
+        # red on a correct kill (2026-09-26, blocked the 2.304.2 release).
+        deadline = time.time() + 3.0
+        while True:
+            left = subprocess.run(["pgrep", "-g", str(pgid)],
+                                  capture_output=True, text=True)
+            if not left.stdout.strip() or time.time() > deadline:
+                break
+            time.sleep(0.05)
         self.assertEqual(left.stdout.strip(), "",
                          "no member of the worker's group may survive")
 
