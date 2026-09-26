@@ -1,6 +1,14 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-25
+## 2.304.3 (2026-09-26)
+
+- Released from v2.304.2-desktop..HEAD: 2 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - sutra-ui: one bottom-right snack bar for the app's errors
+  - sutra-ui: update card shows download progress, then a ready state
+- Changed: 11 file(s), +590/-23
+- New test suites: test_snackbar.js
+
 ## 2.304.2 (2026-09-26)
 
 - Released from v2.304.1-desktop..HEAD: 3 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
