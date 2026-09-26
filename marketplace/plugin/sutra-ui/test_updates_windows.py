@@ -82,6 +82,11 @@ class _WinCase(unittest.TestCase):
         ]
         for p in self._patches:
             p.start()
+        # A fixture from this file once landed in the REAL Mac staging dir and
+        # blocked every update there (2026-09-26). Refuse to run otherwise.
+        if self.tmp.resolve() not in updates.stage_dir().resolve().parents:
+            self.tearDown()
+            raise RuntimeError("stage_dir() escaped the test's temp dir")
 
     def tearDown(self):
         for p in reversed(self._patches):

@@ -1488,6 +1488,8 @@ def _verify_staged(man, recheck_online=True):
             raise RuntimeError("the staged disk image is gone")
         if root not in dmg.resolve().parents:
             raise RuntimeError("the staged image is not inside the staging directory")
+        if dmg.suffix.lower() != (".exe" if _IS_WIN else ".dmg"):
+            raise RuntimeError("the staged installer is not for this platform")
         got = _sha256(dmg)
         if man.get("sha256") and got != man["sha256"]:
             raise RuntimeError("the staged image changed on disk since it was verified")
@@ -1566,13 +1568,18 @@ def stage_desktop():
         return {"staged": False, "version": existing.get("version"),
                 "reason": "an installer for %s is already waiting"
                           % existing.get("version")}
-    if existing and existing.get("version") == version and existing.get("dmg"):
+    replaceable = None
+    if existing and existing.get("dmg"):
         try:
             _verify_staged(existing, recheck_online=False)
-            return {"staged": True, "already": True, "version": version,
-                    "state": existing.get("state")}
+            if existing.get("version") == version:
+                return {"staged": True, "already": True, "version": version,
+                        "state": existing.get("state")}
         except RuntimeError:
-            pass     # unusable; fetch it again -- the commit replaces this record
+            # Unusable at ANY version; the commit replaces this record. A bad
+            # record claiming a newer version used to discard every real
+            # download as "already staged" (2026-09-26, a leaked test fixture).
+            replaceable = existing
 
     root = stage_dir()
     _sweep_stale_downloads(root)
@@ -1588,7 +1595,7 @@ def stage_desktop():
         digest = got["sha256"] if got.get("kind") == "app" else _sha256(got["dmg"])
         with _state_lock():
             return _commit_stage(got, got.get("version") or version, digest,
-                                 latest, replaceable=existing)
+                                 latest, replaceable=replaceable)
     finally:
         shutil.rmtree(work, ignore_errors=True)
         progress_clear()
@@ -1600,7 +1607,7 @@ def _commit_stage(got, version, digest, latest, replaceable):
     Re-reads the manifest, because the world moved during the download:
       - a live install  -> discard; its DMG is never deleted or overwritten
       - same or newer already staged by someone else -> discard
-      - the broken same-version record we set out to replace -> replace it
+      - the broken record we set out to replace, any version -> replace it
     """
     cur = read_pending()
     if _install_live(cur):
@@ -1609,8 +1616,7 @@ def _commit_stage(got, version, digest, latest, replaceable):
                 "reason": "an installer for %s is already waiting"
                           % cur.get("version")}
     if cur and cur.get("dmg") and _ver_tuple(cur.get("version")) >= _ver_tuple(version):
-        broken_same = cur == replaceable and cur.get("version") == version
-        if not broken_same:
+        if cur != replaceable:
             return {"staged": True, "already": True, "discarded": version,
                     "version": cur.get("version"), "state": cur.get("state")}
 
@@ -1654,9 +1660,10 @@ def _commit_stage(got, version, digest, latest, replaceable):
     })
     # Every other image here is now unreferenced: the only other holder of a
     # DMG path is a live install, refused above. This also retires the old
-    # unversioned Sutra-<arch>.dmg name. (.exe on Windows.)
-    for p in list(stage_dir().glob("*" + final.suffix)) + list(stage_dir().glob("*.app")) \
-            + list(stage_dir().glob("*.manifest.json")):
+    # unversioned Sutra-<arch>.dmg name. (.exe on Windows.) The other platform's
+    # installer is swept too: it can only be junk here, never armable.
+    for p in list(stage_dir().glob("*.dmg")) + list(stage_dir().glob("*.exe")) \
+            + list(stage_dir().glob("*.app")) + list(stage_dir().glob("*.manifest.json")):
         try:
             if p in (final, manifest_final) or p.is_symlink():
                 continue
