@@ -100,6 +100,11 @@ class DownloadResume(unittest.TestCase):
         p = mock.patch.object(updates.time, "sleep", lambda *_: None)
         p.start()
         self.addCleanup(p.stop)
+        # The download reports progress into stage_dir(); without this it wrote
+        # download-progress.json into the REAL ~/Library/.../Sutra/updates.
+        e = mock.patch.dict(os.environ, {"SUTRA_UPDATE_DIR": str(self.dir / "updates")})
+        e.start()
+        self.addCleanup(e.stop)
 
     def tearDown(self):
         shutil.rmtree(self.dir, ignore_errors=True)
