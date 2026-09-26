@@ -2826,6 +2826,7 @@ function backendError(e){
       <p>${esc(e.message)}</p>
       <p style="color:var(--faint)">Is the server running? <code>uvicorn app:app</code> from
       <code>sutra-ui/</code>.</p></div></div></section>`;
+  if (typeof snackError === "function") snackError(e, "Could not reach the backend");
   console.error(e);
 }
 

@@ -2531,3 +2531,131 @@ function toolKindFor(call){
   if (c.kind && TOOL_KINDS.includes(c.kind)) return c.kind;
   return toolKindOf(c.name, c.meta);
 }
+
+/* SNACK BAR -- founder 2026-09-26: "any kind of error messaging: a snack bar
+   should come in the bottom right." One place for an action that failed, an
+   uncaught error, or the backend going away. Screen-load errors stay inside
+   the screen that failed (a snack over an empty pane explains nothing) and
+   field validation stays beside its field.
+
+   snack(msg, {kind:"error"|"info"|"ok", action, onAction})
+   snackError(e, prefix)  -- an Error or string, as an error
+   toast(msg)             -- the name 03-org.js and 21-library.js already call
+                             (it was never defined, so their messages were lost)
+
+   Text goes in as textContent, never HTML. The same message twice counts up
+   instead of stacking; at most SNACK_MAX are on screen; errors stay longer
+   than notices and hovering holds them. The stack sits above the update card.
+
+   No module-level constants: if anything earlier in this file throws at load,
+   a `const` here would never initialise and the error net would fail with it.
+   Function declarations hoist, so the snack bar still works. */
+function snackHost(){
+  if (typeof document === "undefined" || !document.body) return null;
+  let h = document.getElementById("snackHost");
+  if (!h){
+    h = document.createElement("div");
+    h.id = "snackHost";
+    h.setAttribute("aria-live", "polite");
+    document.body.appendChild(h);
+  }
+  return h;
+}
+
+/* Lift the stack clear of the update card, which owns the corner below it. */
+function snackReflow(){
+  if (typeof document === "undefined") return;
+  const h = document.getElementById("snackHost");
+  if (!h || !h.style) return;
+  const upd = document.getElementById("updHost");
+  const tall = upd && upd.offsetHeight ? upd.offsetHeight : 0;
+  h.style.bottom = (tall ? 16 + tall + 10 : 16) + "px";
+}
+
+function snackArm(el, kind){
+  clearTimeout(el.__snackTimer);
+  const ms = kind === "info" ? 4500 : kind === "ok" ? 3500 : 9000;   /* errors stay to be read */
+  el.__snackTimer = setTimeout(() => snackClose(el), ms);
+}
+
+function snackClose(el){
+  if (!el) return;
+  clearTimeout(el.__snackTimer);
+  if (el.parentNode) el.parentNode.removeChild(el);
+}
+
+function snack(msg, opts){
+  const o = opts || {};
+  const kind = (o.kind === "info" || o.kind === "ok") ? o.kind : "error";
+  const text = String(msg == null ? "" : msg).trim() || "Something went wrong.";
+  const host = snackHost();
+  if (!host) return null;
+  snackReflow();
+  const live = () => Array.from(host.children).filter(c => c.__snackText != null);
+  for (const old of live()){
+    if (old.__snackText === text && old.__snackKind === kind){
+      old.__snackCount += 1;
+      const n = old.querySelector(".snack-n");
+      if (n) n.textContent = "x" + old.__snackCount;
+      snackArm(old, kind);
+      return old;
+    }
+  }
+  const el = document.createElement("div");
+  el.className = "snack snack-" + kind;
+  el.setAttribute("role", kind === "error" ? "alert" : "status");
+  el.__snackText = text; el.__snackKind = kind; el.__snackCount = 1;
+  const t = document.createElement("span"); t.className = "snack-t"; t.textContent = text;
+  const n = document.createElement("span"); n.className = "snack-n";
+  el.appendChild(t); el.appendChild(n);
+  if (o.action && typeof o.onAction === "function"){
+    const a = document.createElement("button");
+    a.type = "button"; a.className = "snack-a"; a.textContent = o.action;
+    a.onclick = () => { snackClose(el); o.onAction(); };
+    el.appendChild(a);
+  }
+  const x = document.createElement("button");
+  x.type = "button"; x.className = "snack-x"; x.textContent = "×";
+  x.setAttribute("aria-label", "Close");
+  x.onclick = () => snackClose(el);
+  el.appendChild(x);
+  el.onmouseenter = () => clearTimeout(el.__snackTimer);
+  el.onmouseleave = () => snackArm(el, kind);
+  host.appendChild(el);
+  const all = live();
+  while (all.length > 3) snackClose(all.shift());            /* at most three on screen */
+  snackArm(el, kind);
+  return el;
+}
+
+function snackError(e, prefix){
+  const m = String((e && e.message) || e || "").trim();
+  return snack(prefix ? prefix + (m ? ": " + m : "") : m, { kind: "error" });
+}
+
+/* The legacy callers pass HTML-escaped text; show it as the words it was. */
+function toast(msg){
+  const t = String(msg == null ? "" : msg)
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+  const bad = /\b(could not|couldn't|cannot|can't|failed|fail|error|refused|denied)\b/i.test(t);
+  return snack(t, { kind: bad ? "error" : "info" });
+}
+
+/* The net under everything else: an error nothing caught still reaches the
+   founder. Browser noise that is not a failure is left out. */
+function snackIgnorable(m){
+  return !m || /ResizeObserver loop|^Script error\.?$/i.test(m);
+}
+if (typeof window !== "undefined" && window.addEventListener){
+  window.addEventListener("error", (ev) => {
+    const m = String((ev && (ev.message || (ev.error && ev.error.message))) || "");
+    if (!snackIgnorable(m)) snack("Something went wrong: " + m, { kind: "error" });
+  });
+  window.addEventListener("unhandledrejection", (ev) => {
+    const r = ev && ev.reason;
+    const m = String((r && r.message) || r || "");
+    if (!snackIgnorable(m)) snack("Something went wrong: " + m, { kind: "error" });
+  });
+}
+/* /SNACK BAR */

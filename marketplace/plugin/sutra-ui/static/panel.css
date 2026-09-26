@@ -5442,3 +5442,24 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .o2librow svg{width:15px;height:15px;flex:none;color:var(--faint)}
 .o2librow[aria-selected="true"] svg{color:var(--acc)}
 .o2librow:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+
+/* Snack bar: errors and short notices, bottom-right (founder 2026-09-26).
+   snackReflow() lifts `bottom` above the update card when that is showing. */
+#snackHost{position:fixed;right:16px;bottom:16px;z-index:9500;display:flex;flex-direction:column;
+  align-items:flex-end;gap:8px;max-width:min(440px,calc(100vw - 32px));pointer-events:none}
+#snackHost>*{pointer-events:auto}
+.snack{display:flex;align-items:flex-start;gap:10px;min-width:240px;max-width:100%;
+  padding:10px 8px 10px 12px;border-radius:10px;background:var(--card);color:var(--ink);
+  border:1px solid var(--line);border-left:3px solid var(--muted);
+  box-shadow:0 8px 28px rgba(0,0,0,.28);font-size:12.5px;line-height:1.45;animation:snackin .18s ease-out}
+.snack-error{border-left-color:var(--block)}
+.snack-ok{border-left-color:var(--ok)}
+.snack-t{flex:1;white-space:pre-wrap;word-break:break-word;padding-top:1px}
+.snack-n{font-size:11px;color:var(--muted);padding-top:2px;font-variant-numeric:tabular-nums}
+.snack-n:empty{display:none}
+.snack-a{border:0;background:none;color:var(--acc);font-weight:600;cursor:pointer;padding:1px 4px;font:inherit}
+.snack-x{flex:none;width:22px;height:22px;border:0;border-radius:5px;background:none;color:var(--muted);
+  font-size:16px;line-height:1;cursor:pointer}
+.snack-x:hover{background:rgba(127,127,127,.18);color:var(--ink)}
+@keyframes snackin{from{opacity:0;transform:translateY(6px)}}
+@media (prefers-reduced-motion:reduce){.snack{animation:none}}

@@ -3640,12 +3640,11 @@ function agWhy(e){
   return m.replace(/\s*\([^()]*->\s*\d{3}\)\s*$/, "") || "That did not work.";
 }
 
+/* One snack bar for the whole app now (founder 2026-09-26); this screen's own
+   centred toast is retired. Kept as a name so every caller here is unchanged. */
 function agToast(msg){
   if (typeof document === "undefined") return;
-  let t = document.getElementById("agToast");
-  if (!t){ t = document.createElement("div"); t.id = "agToast"; t.className = "ag-toast"; t.setAttribute("role", "status"); document.body.appendChild(t); }
-  t.textContent = msg; t.classList.add("on");
-  clearTimeout(agToastTimer); agToastTimer = setTimeout(() => t.classList.remove("on"), 2600);
+  if (typeof toast === "function") return toast(msg);
 }
 
 function agRoot(){ return typeof document === "undefined" ? null : document.getElementById("agRoot"); }

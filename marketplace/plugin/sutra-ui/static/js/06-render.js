@@ -1835,7 +1835,11 @@ function renderUpdateBanner(){
   const dl = S.updProgress;
   const dlKey = dl ? "dl:" + (dl.version || "") : null;
   const downloading = !show && !!dl && !(u && u.pending) && S.updClosed !== dlKey;
-  if (!show && !downloading){ stopUpdCountdown(); if (host) host.remove(); return; }
+  if (!show && !downloading){
+    stopUpdCountdown(); if (host) host.remove();
+    if (typeof snackReflow === "function") snackReflow();   /* snacks drop back to the corner */
+    return;
+  }
   if (!host){
     host = document.createElement("div");
     host.id = "updHost";
@@ -1933,6 +1937,8 @@ function renderUpdateBanner(){
     #updHost .updbusy i{animation:updpulse 1.2s ease-in-out infinite;}
     @keyframes updpulse{50%{opacity:.45}}
   </style><div class="updbar">${body}${termWarn}<button class="updx" type="button" data-upd2="close" title="Close" aria-label="Close">&times;</button></div>`;
+
+  if (typeof snackReflow === "function") snackReflow();     /* snacks sit above this card */
 
   host.querySelectorAll("[data-upd2]").forEach(b=>b.onclick=()=>{
     const a = b.dataset.upd2;
