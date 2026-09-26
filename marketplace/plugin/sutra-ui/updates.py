@@ -400,6 +400,53 @@ def _run(cmd, timeout=120):
 DOWNLOAD_TRIES = 4
 
 
+# DOWNLOAD PROGRESS (founder 2026-09-26: "some bar showing how much MB and
+# time"). Only the download knows those numbers, and it runs in whichever
+# process staged it -- the backend or the sidecar CLI -- so it writes them to a
+# small file in the staging dir that the panel's local-only route reads.
+PROGRESS_EVERY_S = 0.5          # file refresh while bytes arrive
+PROGRESS_STALE_S = 60           # silent this long = a download that died
+DOWNLOAD_CHUNK = 1 << 14
+_progress_version = None        # set by stage_desktop for the run
+_downloaded_bytes = 0           # bytes fetched this run (delta packs + image)
+
+
+def _progress_path():
+    return stage_dir() / "download-progress.json"
+
+
+def _progress_write(**fields):
+    """Best effort: a progress file that cannot be written must never fail
+    the download it describes."""
+    try:
+        p = _progress_path()
+        rec = dict(fields, version=_progress_version, ts=time.time())
+        tmp = p.with_name(p.name + ".tmp")
+        tmp.write_text(json.dumps(rec))
+        os.replace(tmp, p)
+    except Exception:
+        pass
+
+
+def download_progress():
+    """The live download, or None. A file that stopped refreshing is a download
+    that died, and is not shown as one still running."""
+    try:
+        d = json.loads(_progress_path().read_text())
+    except Exception:
+        return None
+    if not isinstance(d, dict) or time.time() - float(d.get("ts") or 0) > PROGRESS_STALE_S:
+        return None
+    return d
+
+
+def progress_clear():
+    try:
+        _progress_path().unlink()
+    except Exception:
+        pass
+
+
 def _fetch_dmg(url, dmg, want_bytes=0):
     """Download the release image to `dmg`, whole, or raise saying what happened.
 
@@ -421,6 +468,7 @@ def _fetch_dmg(url, dmg, want_bytes=0):
     ever fires for what it is actually for -- a file that arrived complete and
     wrong.
     """
+    global _downloaded_bytes
     last = ""
     for attempt in range(1, DOWNLOAD_TRIES + 1):
         have = dmg.stat().st_size if dmg.exists() else 0
@@ -439,8 +487,26 @@ def _fetch_dmg(url, dmg, want_bytes=0):
                 mode = "ab" if (have and resumed) else "wb"
                 length = r.headers.get("Content-Length")
                 expect = (int(length) + (have if resumed else 0)) if length else want_bytes
+                # Chunked rather than copyfileobj so the panel can show MB, speed
+                # and time left. start_done is what a resumed attempt already had,
+                # so the speed is this attempt's, not inflated by the part-file.
+                base = have if (have and resumed) else 0
+                done, started, last_w = base, time.time(), 0.0
+                _progress_write(phase="downloading", done=done, total=expect or 0,
+                                start_done=base, started=started)
                 with open(dmg, mode) as fh:
-                    shutil.copyfileobj(r, fh)
+                    while True:
+                        chunk = r.read(DOWNLOAD_CHUNK)
+                        if not chunk:
+                            break
+                        fh.write(chunk)
+                        done += len(chunk)
+                        _downloaded_bytes += len(chunk)
+                        now = time.time()
+                        if now - last_w >= PROGRESS_EVERY_S:
+                            last_w = now
+                            _progress_write(phase="downloading", done=done, total=expect or 0,
+                                            start_done=base, started=started)
         except urllib.error.HTTPError as exc:
             # 416 is the server saying "you already have at least all of it", which
             # means the part-file on disk is stale, not resumable. Bin it and start
@@ -458,6 +524,8 @@ def _fetch_dmg(url, dmg, want_bytes=0):
         else:
             got = dmg.stat().st_size
             if not expect or got >= expect:
+                _progress_write(phase="verifying", done=got, total=expect or got,
+                                start_done=base, started=started)
                 return
             last = ("the download was cut short at %s of %s bytes"
                     % ("{:,}".format(got), "{:,}".format(expect)))
@@ -1510,8 +1578,11 @@ def stage_desktop():
     _sweep_stale_downloads(root)
     latest = _latest_desktop()
     work = Path(tempfile.mkdtemp(prefix=".download-", dir=str(root)))
+    global _progress_version, _downloaded_bytes
+    _progress_version, _downloaded_bytes = version, 0
     try:
         got = download_and_verify(dest_dir=str(work))
+        got["downloaded_bytes"] = _downloaded_bytes
         # A rebuilt bundle's identity is its manifest's digest; an image's is
         # its own. Either way it is what arm re-checks against the release.
         digest = got["sha256"] if got.get("kind") == "app" else _sha256(got["dmg"])
@@ -1520,6 +1591,7 @@ def stage_desktop():
                                  latest, replaceable=existing)
     finally:
         shutil.rmtree(work, ignore_errors=True)
+        progress_clear()
 
 
 def _commit_stage(got, version, digest, latest, replaceable):
@@ -1565,6 +1637,7 @@ def _commit_stage(got, version, digest, latest, replaceable):
         "tree_sha256": got.get("tree_sha256"),
         "delta": got.get("delta"),
         "note": got.get("note"),
+        "downloaded_bytes": got.get("downloaded_bytes"),
         "sha256": digest,
         "sha256_url": got.get("sha256_url") if kind == "app" else latest.get("sha256_url"),
         "asset": got.get("asset") if kind == "app" else latest.get("asset"),
@@ -1751,6 +1824,8 @@ def pending_state():
     out = {"pending": True, "version": man.get("version"),
            "state": man.get("state"), "staged_at": man.get("staged_at"),
            "install_failures": man.get("install_failures", 0),
+           "downloaded_bytes": man.get("downloaded_bytes"),
+           "delta": bool(man.get("artifact_kind") == "app"),
            "error": man.get("last_error")}
     rec = _read_json(_recover_path())
     if rec:

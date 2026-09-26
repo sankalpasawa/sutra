@@ -183,5 +183,62 @@ class DownloadResume(unittest.TestCase):
                          "resume into it and fail the same way for ever")
 
 
+class DownloadProgress(unittest.TestCase):
+    """The update card shows MB, speed and time left (founder 2026-09-26). The
+    download is the only thing that knows those numbers, so it writes them to a
+    small file the panel reads."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp(prefix="sutra-dl-prog-"))
+        self.dmg = self.dir / "Sutra-arm64.dmg"
+        self.pfile = self.dir / "download-progress.json"
+        for p in (mock.patch.object(updates.time, "sleep", lambda *_: None),
+                  mock.patch.object(updates, "_progress_path", lambda: self.pfile)):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def tearDown(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_nothing_downloading_reads_as_none(self):
+        self.assertIsNone(updates.download_progress())
+
+    def test_a_download_leaves_done_equal_to_total(self):
+        with mock.patch.object(updates.urllib.request, "urlopen",
+                               lambda req, timeout=None: _Resp(_Body(WHOLE), content_length=len(WHOLE))):
+            updates._fetch_dmg("https://example.invalid/x.dmg", self.dmg, len(WHOLE))
+        p = updates.download_progress()
+        self.assertIsNotNone(p, "a finished download wrote no progress")
+        self.assertEqual(p["done"], len(WHOLE))
+        self.assertEqual(p["total"], len(WHOLE))
+        self.assertEqual(p["phase"], "verifying")
+
+    def test_progress_moves_during_the_download(self):
+        seen = []
+        real = updates._progress_write
+        with mock.patch.object(updates, "_progress_write",
+                               lambda **kw: (seen.append(kw.get("done")), real(**kw))), \
+             mock.patch.object(updates, "PROGRESS_EVERY_S", 0), \
+             mock.patch.object(updates.urllib.request, "urlopen",
+                               lambda req, timeout=None: _Resp(_Body(WHOLE), content_length=len(WHOLE))):
+            updates._fetch_dmg("https://example.invalid/x.dmg", self.dmg, len(WHOLE))
+        self.assertGreater(len(set(seen)), 2, "progress was not reported as bytes arrived")
+        self.assertEqual(seen, sorted(seen), "progress went backwards")
+
+    def test_a_stale_download_is_not_reported_as_live(self):
+        import json
+        updates._progress_write(phase="downloading", done=10, total=100, start_done=0)
+        d = json.loads(self.pfile.read_text())
+        d["ts"] = d["ts"] - 600
+        self.pfile.write_text(json.dumps(d))
+        self.assertIsNone(updates.download_progress(),
+                          "a download that stopped reporting ten minutes ago is shown as live")
+
+    def test_clear_removes_it(self):
+        updates._progress_write(phase="downloading", done=1, total=2, start_done=0)
+        updates.progress_clear()
+        self.assertIsNone(updates.download_progress())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

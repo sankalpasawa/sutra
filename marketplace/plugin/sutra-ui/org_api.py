@@ -2800,6 +2800,15 @@ def api_updates_staged():
     return updates.pending_state()
 
 
+@router.get("/updates/progress")
+def api_updates_progress():
+    """The download in flight, if any: bytes done/total and when it started.
+    Reads one local file, never the network -- polled once a second while a
+    download runs, every few seconds otherwise."""
+    p = updates.download_progress()
+    return dict(p, active=True) if p else {"active": False}
+
+
 @router.post("/updates/desktop/stage")
 def api_updates_stage(request: Request):
     """Download + verify into durable staging. Arms nothing."""
