@@ -1234,11 +1234,20 @@ function destFullBleed(d){
 }
 /* An INLINE destination keeps its rows (so destSel still means something) but
    shows them in the rail accordion instead of a second plane (2.226.0). */
-function destInline(d){ return DEST_INLINE.has(d); }
+/* 2026-09-27 (founder): "remove the org structure from the org ... in the
+   left-hand plane". An inline destination showing ONE row is a plain button:
+   no chevron, no sub-list, it opens that screen (the Help rule, 2026-08-24).
+   Org is one row, Org structure, while org2 is on; opted out, its Archive and
+   Library rows return and so does the accordion. */
+function destOneRow(d){
+  return DEST_INLINE.has(d) && planeRows(d).reduce((n, g) => n + g.rows.length, 0) <= 1;
+}
+function destInline(d){ return DEST_INLINE.has(d) && !destOneRow(d); }
 /* The ONE predicate for "no 240px plane column" (codex P1, 2026-08-25):
-   full-bleed (no rows) or inline (rows live in the rail). renderPlane and the
-   terminal clamp key off this; destSel routing keys off destFullBleed alone. */
-function destNoPlane(d){ return destFullBleed(d) || destInline(d); }
+   full-bleed (no rows) or inline (rows live in the rail, or the one row is the
+   button itself). renderPlane and the terminal clamp key off this; destSel
+   routing keys off destFullBleed alone. */
+function destNoPlane(d){ return destFullBleed(d) || DEST_INLINE.has(d); }
 
 function goDest(d){
   if (!DESTS.includes(d)) return;

@@ -83,6 +83,7 @@ sandbox.render = () => {};
    gives for SETTINGS. */
 const T = vm.runInContext(`({ DESTS, DEST_PLANES, DEST_DEFAULT_SCREEN, S, SCREENS, TITLES,
   loadLayout, planeRows, goDest, renderRail, paintTelemetry, applyAccent, onAccFor,
+  destInline, destNoPlane, destOneRow,
   buildAccentRow, ACCENTS, document,
   /* 2.294.0: the rail's hidden set and the label map, so a test can say which
      destinations lost their button and that their names did not change. */
@@ -1274,31 +1275,40 @@ test("2.280.2: the click that opens the flyout does not close it (the re-render 
   assert.strictEqual(T.S.ui.railOpen, null);
   T.goDest("now");
 });
-test("inline: entering Org renders its rows inside the rail with the plane's markup", () => {
+test("inline: Org with one row is a plain button -- no one-row accordion, it opens Org structure", () => {
+  /* 2026-09-27 (founder): "remove the org structure from the org ... in the
+     left-hand plane". A one-row accordion is a click that buys nothing (the
+     Help rule, 2026-08-24): no chevron, no sub-list, Org opens the screen. */
   T.S.ui = T.loadLayout();
   T.goDest("org");
   T.renderRail();
   const out = els["railnav"].innerHTML;
   assert.strictEqual((out.match(/data-dest="/g) || []).length, 5,
     "still five rail buttons: seven destinations less Help and Settings (2.297.0)");
-  assert(/data-dest="org"[^>]*data-open="true"/.test(out), "Org parent reads open");
-  assert(/data-dest="org"[^>]*aria-expanded="true"/.test(out), "aria-expanded on the parent");
-  assert(/aria-controls="acc-org"/.test(out) && /id="acc-org"/.test(out), "aria-controls wires the list");
-  assert(/data-dest="org"[^>]*aria-current="false"/.test(out), "open parent yields the highlight");
-  /* 2.287.2: Org lands on Org structure when the one-screen Org registered
-     (it does here: every panel script is loaded); otherwise on Departments. */
-  const landed = T.SCREENS.org2 ? "org2" : "departments";
-  assert(new RegExp('data-screen="' + landed + '"[^>]*aria-current="true"').test(out), "the landed child carries it");
-  /* 2026-09-25 (founder): exactly one row, Org structure; Identity lives in
-     the Library panel only. */
-  const acc = (out.split('id="acc-org"')[1] || "").split("</ul>")[0];
-  assert.strictEqual((acc.match(/data-screen="/g) || []).length, 1, "one row under Org");
-  assert(/data-screen="org2"/.test(acc), "the row comes from DEST_PLANES");
-  assert(!/>Identity</.test(acc) && !/data-screen="org-identity"/.test(acc), "no Identity in the menu");
-  assert(!/data-screen="charters"/.test(acc) && !/data-screen="lib-work-atom"/.test(acc), "the old rows left");
-  assert(/data-dest="focus"[^>]*data-open="false"/.test(out), "only one accordion open");
-  assert(!/id="acc-focus"/.test(out), "closed accordion renders no list");
+  assert.strictEqual(T.destOneRow("org"), !!T.SCREENS.org2, "one visible row while org2 is on");
+  assert.strictEqual(T.destInline("org"), false, "so Org is not an accordion");
+  assert.strictEqual(T.S.ui.railOpen, null, "entering Org opens no section");
+  assert(!/id="acc-org"/.test(out), "no sub-list under Org");
+  assert(!/data-dest="org"[^>]*data-open=/.test(out), "no open/closed state on the button");
+  assert(!/data-dest="org"[^>]*aria-expanded=/.test(out), "no aria-expanded on the button");
+  assert(/data-dest="org"[^>]*aria-current="true"/.test(out), "the Org button carries the highlight");
+  assert(!/>Org structure</.test(out), "the Org structure row is gone from the rail");
+  assert.strictEqual(T.S.screen, "org2", "Org lands on Org structure");
+  assert(T.destNoPlane("org"), "and still opens no 240px plane");
   T.goDest("now");
+});
+test("inline: with org2 opted out, Org's Archive and Library rows bring the accordion back", () => {
+  const prev = T.SETTINGS;
+  T.SETTINGS = { flags: { org2: false } };
+  try {
+    T.S.ui = T.loadLayout();
+    T.goDest("org");
+    assert.strictEqual(T.destOneRow("org"), false);
+    assert.strictEqual(T.destInline("org"), true);
+    assert.strictEqual(T.S.ui.railOpen, "org");
+    T.renderRail();
+    assert(/id="acc-org"/.test(els["railnav"].innerHTML), "the accordion lists the old rows");
+  } finally { T.SETTINGS = prev; T.goDest("now"); }
 });
 test("inline: Focus rows keep the soon marker; child rows never carry data-dest", () => {
   T.S.ui = T.loadLayout();
@@ -1326,7 +1336,8 @@ test("inline: a remembered pick still routes; leaving closes the accordion (code
   T.S.ui.destSel.org = "charters";
   T.goDest("org");
   assert.strictEqual(T.S.screen, "charters", "destSel still outranks the default");
-  assert.strictEqual(T.S.ui.railOpen, "org");
+  T.goDest("focus");
+  assert.strictEqual(T.S.ui.railOpen, "focus");
   T.goDest("settings");
   assert.strictEqual(T.S.ui.railOpen, null, "no stale open section");
   T.goDest("now");
