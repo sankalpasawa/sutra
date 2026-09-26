@@ -1,6 +1,15 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-25
+## 2.304.2 (2026-09-26)
+
+- Released from v2.304.1-desktop..HEAD: 3 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - sutra-ui: force-stop test waits for the helper before stopping
+  - sutra-ui: Windows desktop app updates itself
+  - sutra-ui: update banner moves bottom-right and every state gets a close button
+- Changed: 9 file(s), +917/-50
+- New test suites: test_updates_windows.py
+
 ## 2.304.1 (2026-09-25)
 
 Chat archive is driven only by the app, for every provider's rows.
