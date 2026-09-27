@@ -1,6 +1,12 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-25
+## 2.304.5 (2026-09-27)
+
+- Released from v2.304.4-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - sutra-ui: the updater logs why a delta update fell back to the full image
+- Changed: 2 file(s), +32/-0
+
 ## 2.304.4 (2026-09-27)
 
 - Released from v2.304.3-desktop..HEAD: 3 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
