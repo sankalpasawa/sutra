@@ -19,17 +19,71 @@ function escAttr(x){
    without a DOM. */
 /* mock v5 parity: cards speak founder language — never a raw enum, one card
    per thing, and every card brings an action for this moment. */
-const NY_KIND = { needs_decision: "needs you", rescue: "needs you", info: "update" };
+/* Layout A (founder 2026-09-27): two lanes, what needs a decision and then
+   FYI; every reason a plain sentence, never the code the row carries. */
+const NY_REASON = {
+  needs_founder: "Waiting for your answer",
+  founder_confirm: "Waiting for your answer",
+  autonomy_top_tier: "Needs your go-ahead before it runs",
+  no_live_runtime: "Paused: its session closed. Resume when ready",
+  error_during_execution: "Hit an error. Open to retry",
+};
 function nyHumanMeta(t){
-  const s = String(t || "");
+  const s = String(t || "").trim();
+  if (NY_REASON[s]) return NY_REASON[s];
   if (/app_restart|app restarted/i.test(s))
-    return "paused when the app restarted \u2014 resume when ready";
-  if (/^mission failed$/i.test(s)) return "the mission failed \u2014 open to retry";
-  if (/^mission stopped$/i.test(s)) return "stopped \u2014 open to retry";
-  if (/^mission done$/i.test(s)) return "done \u2014 result inside";
-  if (/founder_confirm/i.test(s)) return "waiting for your confirmation";
-  return s.replace(/_/g, " ");
+    return "Paused when the app restarted. Resume when ready";
+  if (/^mission failed$/i.test(s)) return "Failed. Open to retry";
+  if (/^mission stopped$/i.test(s)) return "Stopped. Open to retry";
+  if (/^mission done$/i.test(s)) return "Done. The result is inside";
+  if (/founder_confirm/i.test(s)) return "Waiting for your answer";
+  const plain = s.replace(/_/g, " ");
+  return plain.charAt(0).toUpperCase() + plain.slice(1);
 }
+/* A stall row written before 2026-09-27 carries one generic title for every
+   task; read it as what it means rather than showing it. */
+const NY_OLD_STALL = /^mission may be stalled -- nothing from its session for (\d+) min/i;
+function nyView(it){
+  const old = NY_OLD_STALL.exec(String(it.title || ""));
+  if (old) return { title: "A running task went quiet", why: "Silent for " + old[1] + " min" };
+  return { title: String(it.title || it.item_id || ""),
+           why: it.why_now ? nyHumanMeta(it.why_now) : "" };
+}
+/* the same test loadNeedsYou's alert dot uses */
+function nyIsDecision(it){
+  const id = String(it.item_id || "");
+  return it.kind === "needs_decision" || it.kind === "rescue"
+      || id.indexOf("rescue-") === 0 || id.indexOf("stall-") === 0;
+}
+/* one card per TASK: its mission when the row names one (a stall row's id
+   does), else the old producer + title key */
+function nyTaskKey(it){
+  if (it.mission_id) return "m:" + it.mission_id;
+  const id = String(it.item_id || "");
+  if (id.indexOf("stall-") === 0 && id.length > 6) return "m:" + id.slice(6);
+  return "t:" + String(it.producer || "") + "|" + String(it.title || it.item_id || "");
+}
+/* today reads as a clock, any other day as the day (the department tab's rule) */
+const NY_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function nyWhen(ts){
+  const n = Number(ts) || 0;
+  if (!n) return "";
+  const d = new Date(n < 1e12 ? n * 1000 : n), t = new Date();
+  if (d.toDateString() !== t.toDateString()) return d.getDate() + " " + NY_MON[d.getMonth()];
+  return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+}
+/* decisions: the one waiting longest first; FYI: the newest first */
+function nySplit(items){
+  const dec = new Map(), fyi = new Map();
+  for (const it of items || []) (nyIsDecision(it) ? dec : fyi).set(nyTaskKey(it), it);
+  const at = it => Number(it.ts) || 0;
+  return {
+    decide: [...dec.values()].sort((a, b) =>
+      (at(a) || Number.MAX_SAFE_INTEGER) - (at(b) || Number.MAX_SAFE_INTEGER)),
+    fyi: [...fyi.values()].sort((a, b) => at(b) - at(a)),
+  };
+}
+const NY_FYI_SHOWN = 3;
 function nyAction(it){
   if (it.primary_action) return it.primary_action;
   if (String(it.item_id || "").indexOf("rescue-") === 0) return "Pick it up";
@@ -37,34 +91,61 @@ function nyAction(it){
   if (it.kind === "needs_decision") return "Open";
   return "View";
 }
+/* kept for any caller counting cards: one row per task, both lanes */
 function nyDedupe(items){
-  const seen = new Map();
-  for (const it of items || [])
-    seen.set(String(it.producer || "") + "|" + String(it.title || it.item_id || ""), it);
-  return [...seen.values()];
+  const lanes = nySplit(items);
+  return lanes.decide.concat(lanes.fyi);
 }
-function needsYouHtml(items){
-  items = nyDedupe(items);
-  if (!items || !items.length) return "";
-  const rows = items.map(it => {
-    const prod = String(it.producer || "");
-    const act = nyAction(it);
-    /* seen = opened, not answered: the card stays, drawn lighter (founder
-       2026-09-16); the state is a class so the look is css, not words */
-    return `
+/* the producer is named only when it is not Shadow: on Shadow's own cards
+   the tag said nothing the page did not */
+function nyProdTag(it){
+  const prod = String(it.producer || "");
+  if (!prod || prod.toLowerCase() === "shadow") return "";
+  return `<span class="nyprod">${esc(prod.charAt(0).toUpperCase() + prod.slice(1).toLowerCase())}</span>`;
+}
+function nyCardHtml(it){
+  const v = nyView(it), act = nyAction(it), when = nyWhen(it.ts);
+  /* seen = opened, not answered: the card stays, drawn lighter (founder
+     2026-09-16); the state is a class so the look is css, not words */
+  return `
     <div class="nycard${it.state === "seen" ? " seen" : ""}"
          data-deeplink="${escAttr(it.deep_link || "")}"
          data-itemid="${escAttr(it.item_id || "")}">
-      <div class="nyhead">
-        <span class="nyprod">${esc(prod.charAt(0).toUpperCase() + prod.slice(1).toLowerCase())}</span>
-        <span class="nykind">${esc(NY_KIND[it.kind] || String(it.kind || "").replace(/_/g, " "))}</span>
-      </div>
-      <div class="nytitle">${esc(it.title || "")}</div>
-      ${it.why_now ? `<div class="nywhy">${esc(nyHumanMeta(it.why_now))}</div>` : ""}
+      <div class="nyhead">${nyProdTag(it)}<span class="nytitle">${esc(v.title)}</span>${
+        when ? `<span class="nytime">${esc(when)}</span>` : ""}</div>
+      ${v.why ? `<div class="nywhy">${esc(v.why)}</div>` : ""}
       ${act ? `<button class="btn pri nyact" type="button"
          data-nyact="${escAttr(it.item_id || "")}">${esc(act)}</button>` : ""}
-    </div>`; }).join("");
-  return `<div class="nyfeed">${rows}</div>`;
+    </div>`;
+}
+/* an update is one line: the task, what happened, when; the row opens it */
+function nyFyiHtml(it){
+  const v = nyView(it), when = nyWhen(it.ts);
+  return `
+    <div class="nyfyi${it.state === "seen" ? " seen" : ""}"
+         data-deeplink="${escAttr(it.deep_link || "")}"
+         data-itemid="${escAttr(it.item_id || "")}">${nyProdTag(it)}<span class="nyfyit">${esc(v.title)}</span>${
+      v.why ? `<span class="nyfyiw">${esc(v.why)}</span>` : ""}${
+      when ? `<span class="nytime">${esc(when)}</span>` : ""}</div>`;
+}
+/* both lanes; "" when there is nothing at all. A lane with nothing in it is
+   not drawn: the greeting line already says nothing needs you. */
+function needsYouHtml(items){
+  const { decide, fyi } = nySplit(items);
+  if (!decide.length && !fyi.length) return "";
+  let out = "";
+  if (decide.length)
+    out += `<section class="nylane nydecide"><h5 class="nylaneh">Needs your decision</h5>
+      <div class="nyfeed">${decide.map(nyCardHtml).join("")}</div></section>`;
+  if (fyi.length){
+    const all = typeof S !== "undefined" && S && S.nyFyiAll;
+    const shown = all ? fyi : fyi.slice(0, NY_FYI_SHOWN);
+    const more = fyi.length - shown.length;
+    out += `<section class="nylane nyfyilane"><h5 class="nylaneh">FYI</h5>
+      <div class="nyfyis">${shown.map(nyFyiHtml).join("")}</div>${
+      more > 0 ? `<button class="btn nymore" type="button" data-nymore="1">Show ${more} more</button>` : ""}</section>`;
+  }
+  return out;
 }
 
 /* S60: a card click deep-links straight into the owning thread. The Shadow
@@ -160,19 +241,23 @@ function nowAskHtml(){
   const reply = c.reply
     ? ((typeof shadowProseHtml === "function") ? shadowProseHtml(c.reply) : esc(c.reply))
     : "";
-  return `<div class="nyask" data-nyask="1">
+  /* Layout A: Shadow's answer sits in the page, just above the box, so the
+     box itself stays one row high while it is pinned to the bottom */
+  const answer = (reply || cards) ? `<div class="nyasked">
+    ${reply ? `<div class="shmsg shshadow nyreply">${reply}</div>` : ""}
+    ${cards ? `<div class="nydrafts">${cards}</div>` : ""}
+    ${(c.missions || []).length > 1 ? `<div class="nydraftacts">
+      <button class="btn pri" type="button" data-nystartall="1"${
+        c.busy ? " disabled" : ""}>Start all</button></div>` : ""}
+  </div>` : "";
+  return answer + `<div class="nyask" data-nyask="1">
+    ${c.err ? `<div class="shnewerr">${esc(c.err)}</div>` : ""}
     <div class="shcompwrap">
       <textarea class="shcompose" data-nycomp="1" rows="2"
         placeholder="What do you have in mind?"${c.busy ? " disabled" : ""}>${esc(c.text || "")}</textarea>
       <button class="btn shsend" type="button" data-nysend="1"
         aria-label="Send"${c.busy ? " disabled" : ""}>↑</button>
     </div>
-    ${reply ? `<div class="shmsg shshadow nyreply">${reply}</div>` : ""}
-    ${cards ? `<div class="nydrafts">${cards}</div>` : ""}
-    ${(c.missions || []).length > 1 ? `<div class="nydraftacts">
-      <button class="btn pri" type="button" data-nystartall="1"${
-        c.busy ? " disabled" : ""}>Start all</button></div>` : ""}
-    ${c.err ? `<div class="shnewerr">${esc(c.err)}</div>` : ""}
   </div>`;
 }
 
@@ -285,24 +370,22 @@ if (typeof SCREENS !== "undefined"){
       loadNeedsYou();
     }
     const items = (typeof S !== "undefined" && S.needsYou) || null;
-    if (items && items.length){
-      /* mock v5: the module greets, then only what needs the founder */
-      const n = nyDedupe(items).length;
-      const hr = new Date().getHours();
-      const g = hr < 12 ? "Good morning" : hr < 17 ? "Good afternoon"
-                                         : "Good evening";
-      return `<div class="nygreet">${g}.</div>
-        <div class="nysub"><b>${n} thing${n === 1 ? "" : "s"} need${n === 1 ? "s" : ""} you.</b>
-        Everything else is handled.</div>` + needsYouHtml(items) + nowAskHtml();
-    }
-    /* v4: when nothing needs you, the box is the page (the door to Shadow
-       stays for anyone who used it) */
-    return `
-  <div class="zero"><h4>Now</h4>
-    <p>Nothing needs you right now.</p>
-    <p><button class="btn pri" type="button" data-nystart="1">Talk to
-    Shadow</button></p>
-  </div>` + nowAskHtml();
+    /* Layout A (founder 2026-09-27): ONE page in every state -- the
+       greeting, the line that counts decisions only (an update is not a
+       thing that needs you), the decisions, FYI, and the box pinned last.
+       With nothing to decide the line says so and keeps the door to
+       Shadow for anyone who used it. */
+    const n = items ? nySplit(items).decide.length : 0;
+    const hr = new Date().getHours();
+    const g = hr < 12 ? "Good morning" : hr < 17 ? "Good afternoon"
+                                       : "Good evening";
+    const line = n
+      ? `<b>${n} thing${n === 1 ? "" : "s"} need${n === 1 ? "s" : ""} you.</b> Everything else is handled.`
+      : `Nothing needs you right now. <button class="nylink" type="button"
+          data-nystart="1">Talk to Shadow</button>`;
+    return `<div class="nynow"><div class="nygreet">${g}.</div>
+      <div class="nysub">${line}</div>` +
+      ((items && items.length) ? needsYouHtml(items) : "") + nowAskHtml() + `</div>`;
   };
 }
 
@@ -326,6 +409,12 @@ if (typeof document !== "undefined" && document.addEventListener){
     const t = ev.target;
     if (t && t.dataset && t.dataset.nystart){
       openNeedsYouItem("sutra://shadow/home");
+      return;
+    }
+    if (t && t.dataset && t.dataset.nymore){
+      /* FYI shows three; the rest on ask, until the app reloads */
+      if (typeof S !== "undefined") S.nyFyiAll = true;
+      if (typeof scheduleRender === "function") scheduleRender();
       return;
     }
     if (t && t.dataset && t.dataset.nysend){ nowSend(); return; }

@@ -129,6 +129,8 @@ class TestFeedRelevance(unittest.TestCase):
             return base
         self.assertTrue(emit(mrow("m-blocked"))[0])
         self.assertTrue(emit(mrow("m-done", kind="info"))[0])
+        # an update is FYI for FYI_GRACE_SECS, then goes (Now layout A)
+        self.assertTrue(emit(mrow("m-done-old", kind="info", ts=now - 90_000))[0])
         self.assertTrue(emit(mrow("m-gone"))[0])
         self.assertTrue(emit(mrow("m-fresh-fail", ts=now - 3600))[0])
         self.assertTrue(emit(mrow("m-old-fail", ts=now - 90_000))[0])
@@ -175,10 +177,10 @@ class TestFeedRelevance(unittest.TestCase):
             sorted(it["item_id"] for it in live),
             sorted(["f-m-blocked", "f-m-fresh-fail", "f-m-restart",
                     "f-m-held", "stall-m-running", "rescue-s-live",
-                    "f-other"]))
+                    "f-other", "f-m-done"]))
         # the rows that failed the rule are persisted as expired ...
         states = {r["item_id"]: r["state"] for r in _rows()}
-        for iid in ("f-m-done", "f-m-gone", "f-m-old-fail",
+        for iid in ("f-m-done-old", "f-m-gone", "f-m-old-fail",
                     "f-m-legacy-fail", "f-m-took-over",
                     "stall-m-stalled-blocked", "rescue-s-dead"):
             self.assertEqual(states[iid], "expired", iid)

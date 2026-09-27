@@ -2431,16 +2431,43 @@
   box-shadow:var(--shadow);
   max-width:340px;
   pointer-events:none; }
-.nyfeed{ display:flex; flex-direction:column; gap:10px; max-width:560px; }
+/* Now, Layout A (founder 2026-09-27): greeting, what needs a decision, FYI,
+   and the box pinned to the bottom of the screen scroller (.pb, which pads
+   13px -- the box's negative bottom sits it on the scroller's edge). */
+.nynow{ max-width:620px; min-height:100%; display:flex; flex-direction:column; }
+.nylane{ margin:6px 0 16px; }
+.nylaneh{ margin:0 2px 8px; font-size:10.5px; font-weight:600; color:var(--faint);
+  text-transform:uppercase; letter-spacing:.06em; }
+.nyfeed{ display:flex; flex-direction:column; gap:8px; }
 .nycard{ border:1px solid var(--line); border-radius:10px; padding:10px 12px;
   background:var(--card); cursor:pointer; transition:opacity .16s; }
 /* opened but not answered (founder 2026-09-16): the card stays, lighter */
-.nycard.seen{ opacity:.72; }
-.nyhead{ display:flex; gap:8px; font-size:10px; color:var(--faint);
-  text-transform:uppercase; letter-spacing:.04em; }
-.nytitle{ font-size:13px; margin:4px 0; }
-.nywhy{ font-size:11px; color:var(--faint); }
-.nyact{ margin-top:6px; }
+.nycard.seen,.nyfyi.seen{ opacity:.72; }
+.nyhead{ display:flex; align-items:baseline; gap:8px; }
+.nyprod{ font-size:10px; color:var(--faint); text-transform:uppercase; letter-spacing:.04em; }
+.nytitle{ flex:1; min-width:0; font-size:13.5px; font-weight:600; color:var(--ink); }
+.nytime{ flex:none; margin-left:auto; font-size:11px; color:var(--faint);
+  font-variant-numeric:tabular-nums; }
+.nywhy{ font-size:12px; color:var(--muted); margin-top:3px; }
+.nyact{ margin-top:8px; }
+/* an update is one line: task, what happened, when */
+.nyfyis{ display:flex; flex-direction:column; border-top:1px solid var(--line-soft); }
+.nyfyi{ display:flex; align-items:baseline; gap:10px; padding:7px 4px;
+  border-bottom:1px solid var(--line-soft); cursor:pointer; font-size:12.5px; }
+.nyfyi:hover{ background:var(--surface); }
+.nyfyit{ flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; color:var(--ink); }
+.nyfyiw{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; color:var(--muted); }
+.nymore{ margin-top:8px; }
+.nylink{ background:none; border:0; padding:0; margin-left:4px; font:inherit;
+  color:var(--acc); cursor:pointer; text-decoration:underline; }
+.nyasked{ display:flex; flex-direction:column; gap:8px; margin:4px 0 8px; }
+.nyask{ position:sticky; bottom:-13px; z-index:2; margin-top:auto;
+  padding:10px 0 13px; background:var(--card); }
+/* .shcompose is width:100% plus padding; inside the Now column it must not
+   run past the cards' edge */
+.nyask .shcompose{ box-sizing:border-box; }
 
 /* Shadow home (P6) */
 .shhome{ max-width:640px; display:flex; flex-direction:column; gap:12px; }

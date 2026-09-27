@@ -68,8 +68,8 @@ const ITEMS = [{
   const out = ctx.needsYouHtml(ITEMS);
   assert(/Mission m-1 needs a yes/.test(out), "title rendered");
   assert(/data-deeplink="sutra:\/\/shadow\/mission\/m-1"/.test(out), "deep link on card");
-  assert(/nyprod/.test(out) && /shadow/.test(out) && /org/.test(out),
-         "producer tags rendered (Now is a multi-producer surface)");
+  assert(/class="nyprod">Org</.test(out),
+         "another producer keeps its tag (Now is a multi-producer surface)");
   assert(/data-nyact="f-1"/.test(out), "primary action is a button");
   assert.strictEqual(ctx.needsYouHtml([]), "", "empty feed renders nothing");
   console.log("ok 1 pure renderer");
@@ -141,6 +141,92 @@ const ITEMS = [{
   const html = ctx.needsYouHtml(ctx.S.needsYou);
   assert.ok(/class="nycard seen"/.test(html), "the seen look is a class");
   console.log("ok 5 seen on open, the card stays");
+}
+
+/* Layout A (founder 2026-09-27): two lanes -- what needs a decision, then FYI --
+   plain reasons, one card per task, the box last and pinned. */
+
+/* 6. two lanes, and the greeting counts decisions only */
+{
+  const ctx = fresh(false);
+  ctx.S.needsYou = ITEMS;                          /* 1 decision + 1 update */
+  const h = ctx.SCREENS.now();
+  assert(/nylane nydecide/.test(h) && /nylane nyfyilane/.test(h), "two lanes");
+  assert(h.indexOf("nydecide") < h.indexOf("nyfyilane"), "decisions first, then FYI");
+  assert(/<b>1 thing needs you\.<\/b>/.test(h), "the count is decisions only");
+  assert(h.indexOf("nyfyilane") < h.indexOf('data-nyask="1"'), "the box comes last");
+  console.log("ok 6 two lanes, honest count");
+}
+
+/* 7. stalls in different tasks stay separate and never show the generic
+   title; the producer tag shows only for a producer other than Shadow */
+{
+  const ctx = fresh(false);
+  const old = "mission may be stalled -- nothing from its session for 4 min";
+  const rows = ["m-a", "m-b", "m-c"].map(id => ({ item_id: "stall-" + id,
+    producer: "shadow", kind: "needs_decision", title: old,
+    deep_link: "sutra://shadow/mission/" + id, dedupe_key: "stall:" + id, state: "new" }));
+  const h = ctx.needsYouHtml(rows);
+  assert.strictEqual((h.match(/class="nycard/g) || []).length, 3, "one card per stalled task");
+  assert(!/mission may be stalled/.test(h), "the generic title is rewritten");
+  assert(/Silent for 4 min/.test(h), "the reason is plain");
+  const named = ctx.needsYouHtml([{ item_id: "stall-m-d", mission_id: "m-d",
+    producer: "shadow", kind: "needs_decision", title: "Weekly digest",
+    why_now: "silent for 6 min", deep_link: "sutra://shadow/mission/m-d",
+    dedupe_key: "stall:m-d", state: "new" }]);
+  assert(/Weekly digest/.test(named) && /Silent for 6 min/.test(named),
+         "a named stall reads as its task");
+  assert(!/class="nyprod"/.test(named), "no Shadow tag on Shadow's own cards");
+  console.log("ok 7 stalls stay separate and named");
+}
+
+/* 8. reasons read as plain words, never as a code */
+{
+  const ctx = fresh(false);
+  const codes = ["needs_founder", "autonomy_top_tier", "no_live_runtime",
+                 "error_during_execution", "founder_confirm"];
+  const rows = codes.map((c, i) => ({ item_id: "r-" + i, mission_id: "m-" + i,
+    producer: "shadow", kind: "needs_decision", title: "Task " + i, why_now: c,
+    deep_link: "sutra://x/" + i, dedupe_key: "k" + i, state: "new" }));
+  const h = ctx.needsYouHtml(rows);
+  for (const c of codes)
+    assert(h.indexOf(c) === -1 && h.indexOf(c.replace(/_/g, " ")) === -1, "raw code shown: " + c);
+  assert(/Waiting for your answer/.test(h) && /Needs your go-ahead before it runs/.test(h));
+  console.log("ok 8 plain reasons");
+}
+
+/* 9. the decision waiting longest comes first; FYI newest first, three shown,
+   the rest behind "Show N more" */
+{
+  const ctx = fresh(false);
+  const row = (kind, p, t) => ({ item_id: p + t, mission_id: "m" + p + t,
+    producer: "shadow", kind, title: (kind === "info" ? "Update " : "Decide ") + t,
+    ts: t, deep_link: "sutra://" + p + "/" + t, dedupe_key: p + t, state: "new" });
+  const all = [300, 100, 200].map(t => row("needs_decision", "d", t))
+    .concat([10, 50, 20, 40, 30].map(t => row("info", "f", t)));
+  const h = ctx.needsYouHtml(all);
+  assert(h.indexOf("Decide 100") < h.indexOf("Decide 200")
+      && h.indexOf("Decide 200") < h.indexOf("Decide 300"), "oldest decision first");
+  assert(h.indexOf("Update 50") < h.indexOf("Update 40")
+      && h.indexOf("Update 40") < h.indexOf("Update 30"), "newest update first");
+  assert(!/Update 20/.test(h) && !/Update 10/.test(h), "three updates shown");
+  assert(/data-nymore="1">Show 2 more</.test(h), "the rest behind Show 2 more");
+  ctx.S.nyFyiAll = true;
+  assert(/Update 10/.test(ctx.needsYouHtml(all)), "Show more reveals every update");
+  console.log("ok 9 order and the FYI cap");
+}
+
+/* 10. nothing to decide: the same page -- greeting, the door to Shadow,
+   updates still listed, the box still there */
+{
+  const ctx = fresh(false);
+  ctx.S.needsYou = [ITEMS[1]];
+  const h = ctx.SCREENS.now();
+  assert(/Nothing needs you right now/.test(h) && /data-nystart/.test(h));
+  assert(!/nydecide/.test(h) && /nyfyilane/.test(h), "no empty decision lane; updates listed");
+  assert(/class="nygreet"/.test(h), "one layout: the greeting stays");
+  assert(/data-nyask="1"/.test(h), "the box stays");
+  console.log("ok 10 nothing to decide keeps the page");
 }
 
 console.log("test_shadow_now.js: all green");
