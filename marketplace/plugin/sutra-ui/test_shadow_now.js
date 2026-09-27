@@ -70,7 +70,8 @@ const ITEMS = [{
   assert(/data-deeplink="sutra:\/\/shadow\/mission\/m-1"/.test(out), "deep link on card");
   assert(/class="nyprod">Org</.test(out),
          "another producer keeps its tag (Now is a multi-producer surface)");
-  assert(/data-nyact="f-1"/.test(out), "primary action is a button");
+  assert(/class="nygo">Review</.test(out), "the row names its action (shown on hover)");
+  assert(!/<button/.test(out), "no button inside a row: the whole row is the click (2026-09-27)");
   assert.strictEqual(ctx.needsYouHtml([]), "", "empty feed renders nothing");
   console.log("ok 1 pure renderer");
 }
@@ -158,9 +159,10 @@ const ITEMS = [{
   const h = ctx.SCREENS.now();
   assert(/nylane nydecide/.test(h) && /nylane nyfyilane/.test(h), "two lanes");
   assert(h.indexOf("nydecide") < h.indexOf("nyfyilane"), "decisions first, then FYI");
-  assert(/<b>1 thing needs you\.<\/b>/.test(h), "the count is decisions only");
-  assert(h.indexOf("nyfyilane") < h.indexOf('data-nyask="1"'), "the box comes last");
-  console.log("ok 6 two lanes, honest count");
+  assert(/what can we do for you\?/.test(h), "the Codex-style greeting (2026-09-27)");
+  assert(h.indexOf('data-nyask="1"') < h.indexOf("nydecide"), "the bar on top, rows under it");
+  assert(!/class="nynow center"/.test(h), "rows on screen: not centred");
+  console.log("ok 6 two lanes under the bar");
 }
 
 /* 7. stalls in different tasks stay separate and never show the generic
@@ -229,7 +231,7 @@ const ITEMS = [{
   const h = ctx.SCREENS.now();
   assert(/Nothing needs you right now/.test(h) && /data-nystart/.test(h));
   assert(!/nydecide/.test(h) && /nyfyilane/.test(h), "no empty decision lane; updates listed");
-  assert(/class="nygreet"/.test(h), "one layout: the greeting stays");
+  assert(/class="nyhero"/.test(h), "one layout: the greeting stays");
   assert(/data-nyask="1"/.test(h), "the box stays");
   console.log("ok 10 nothing to decide keeps the page");
 }
@@ -242,9 +244,23 @@ const ITEMS = [{
 {
   const ctx = fresh(false);
   const h = ctx.SCREENS.now();                    /* S.needsYou undefined */
-  assert(/nyskelrow/.test(h) && /Checking what needs you/.test(h));
+  assert(/Checking what needs you/.test(h));
   assert(!/Nothing needs you/.test(h), "no empty claim before the first answer");
   console.log("ok 11 first load");
+}
+
+/* 16. the home (founder 2026-09-27): with nothing under the bar, the
+   greeting and the bar sit in the middle of the screen */
+{
+  const ctx = fresh(false);
+  ctx.S.needsYou = [];
+  const h = ctx.SCREENS.now();
+  assert(/class="nynow center"/.test(h), "empty: centred");
+  assert(/Good (morning|afternoon|evening), what can we do for you\?/.test(h));
+  assert(/data-nyask="1"/.test(h), "the bar is there when nothing is");
+  ctx.S.needsYou = null;
+  assert(/class="nynow center"/.test(ctx.SCREENS.now()), "Shadow off: centred too");
+  console.log("ok 16 centred home");
 }
 
 /* 12. feed trouble: with rows, one line on top (since when, Try again) and

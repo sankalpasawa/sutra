@@ -45,12 +45,16 @@ const D = (id, objective) => ({ id, objective, template: "research", state: "bri
     const empty = ctx.SCREENS.now();
     assert(/Nothing needs you right now/.test(empty), "empty state kept");
     assert(/data-nystart/.test(empty), "the door to Shadow kept");
-    assert(/data-nyask="1"/.test(empty) && /What do you have in mind\?/.test(empty), "the box");
+    /* 2026-09-27: the greeting asks "what can we do for you?", so the
+       placeholder no longer repeats the question */
+    assert(/data-nyask="1"/.test(empty) && /Describe a task, or ask Shadow anything/.test(empty), "the box");
     ctx.S.needsYou = [{ item_id: "m-1", producer: "shadow", kind: "needs_decision",
       title: "Approve the push", why_now: "floor" }];
     const full = ctx.SCREENS.now();
-    assert(full.indexOf("nyfeed") < full.indexOf("data-nyask"), "cards first, then the box");
-    console.log("ok 1 the box is on Now, after the cards or alone");
+    /* 2026-09-27 (founder, Codex-style home): the box sits under the
+       greeting and the rows follow it; it was after the cards before */
+    assert(full.indexOf("data-nyask") < full.indexOf("nyfeed"), "the box first, then the rows");
+    console.log("ok 1 the box is on Now, above the rows or alone");
   }
 
   /* 2. Enter sends one message to the Now chat; many fences draw many cards and Start all */

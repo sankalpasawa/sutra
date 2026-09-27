@@ -2431,77 +2431,70 @@
   box-shadow:var(--shadow);
   max-width:340px;
   pointer-events:none; }
-/* Now (founder 2026-09-27: decisions, then FYI; "it's boxes" -> rows).
-   The app's own idiom, the Focus > Shadow task list: a status dot, the
-   task, the reason, the time, at most one button, hairlines between rows.
-   A new ask carries the accent bar and tint of the ask row in Shadow v13;
-   an opened one drops them. The box is pinned to the bottom of the screen
-   scroller (.pb pads 13px; the negative bottom sits it on the edge). */
-.nynow{ max-width:640px; min-height:100%; display:flex; flex-direction:column; }
-.nygreet{ font-family:var(--serif); font-size:26px; font-weight:500;
-  letter-spacing:-.01em; color:var(--ink); margin:8px 0 3px; }
-.nysub{ font-size:13px; color:var(--muted); margin:0 0 20px; }
-.nysub b{ color:var(--ink); font-weight:600; }
-.nylane{ margin:0 0 22px; }
-.nylaneh{ margin:0 0 6px; font-size:10.5px; font-weight:600; letter-spacing:.08em;
-  text-transform:uppercase; color:var(--faint); }
-.nyfeed,.nyfyis{ display:flex; flex-direction:column; border-top:1px solid var(--line-soft); }
-.nycard,.nyfyi{ display:flex; align-items:center; gap:12px; cursor:pointer;
-  border-bottom:1px solid var(--line-soft); outline:none; }
-.nycard{ padding:12px 12px 12px 11px; border-left:3px solid transparent; }
-.nycard:hover,.nyfyi:hover{ background:var(--surface); }
-/* an unopened decision carries its kind's colour as a bar and a tint, so
-   what broke reads louder than what only needs a yes */
-.nycard.tone-ask:not(.seen){ border-left-color:var(--acc); background:var(--acc-bg); }
-.nycard.tone-warn:not(.seen){ border-left-color:var(--warn); background:var(--warn-bg); }
-.nycard.tone-err:not(.seen){ border-left-color:#e5484d; background:rgba(229,72,77,.09); }
-.nycard:focus-visible,.nyfyi:focus-visible{ box-shadow:inset 0 0 0 2px var(--acc); }
-.nydot{ flex:none; width:8px; height:8px; border-radius:50%; background:var(--faint); }
-.tone-ask .nydot{ background:var(--acc); }
-.tone-warn .nydot{ background:var(--warn); }
-.tone-err .nydot{ background:#e5484d; }
-.tone-ok .nydot{ background:var(--ok); }
-.nymain{ flex:1; min-width:0; }
-.nyhead{ display:flex; align-items:baseline; gap:8px; min-width:0; }
-.nytitle{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-  font-size:14px; font-weight:600; color:var(--ink); }
-.nycard.seen .nytitle{ font-weight:500; color:var(--muted); }
-.nywhy{ margin-top:2px; font-size:12.5px; color:var(--muted); }
-.nyprod{ flex:none; font-size:10px; letter-spacing:.06em; text-transform:uppercase;
-  color:var(--faint); }
-.nytime{ flex:none; font-size:11.5px; color:var(--faint); font-variant-numeric:tabular-nums; }
-.nyact{ flex:none; }
-/* an update is one line: task, what happened, when */
-.nyfyi{ padding:9px 12px 9px 14px; font-size:13px; }
-.nyfyi .nydot{ width:7px; height:7px; }
-.nyfyit{ flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
-  white-space:nowrap; color:var(--ink); }
-.nyfyiw{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis;
-  white-space:nowrap; color:var(--muted); }
-.nyfyi.seen .nyfyit{ color:var(--muted); }
+/* Now, pass 3 (founder 2026-09-27: "clumsy", "like Linear", "take
+   inspiration from Codex"). A home, not a dashboard: the greeting asks
+   "what can we do for you?" over the bar; with nothing under the bar both
+   sit in the middle of the screen, with rows the bar stays on top. Rows
+   are single lines -- icon, task, reason, time -- with no borders, bars or
+   buttons; the whole row is the click, it tints on hover and names its
+   action where the time was. */
+.nynow{ width:100%; max-width:680px; margin:0 auto; min-height:100%;
+  display:flex; flex-direction:column; padding:6vh 0 24px; box-sizing:border-box; }
+.nynow.center{ justify-content:center; padding:0 0 12vh; }
+.nyhero{ font-family:var(--serif); font-size:28px; font-weight:500; line-height:1.25;
+  letter-spacing:-.01em; color:var(--ink); text-align:center; margin:0 0 22px; }
+.nystat{ margin:14px 0 0; text-align:center; font-size:12.5px; color:var(--muted); }
+.nynow .shcompwrap{ position:relative; }
+.nynow .shcompose{ box-sizing:border-box; min-height:96px; resize:none;
+  padding:14px 62px 14px 16px; border-radius:16px; font-size:14px; line-height:1.5;
+  border:1px solid var(--line);
+  box-shadow:0 1px 2px rgba(0,0,0,.06),0 12px 32px -18px rgba(0,0,0,.35); }
+.nynow .shcompose:focus{ outline:none; border-color:var(--acc); }
+.nynow .shsend{ right:11px; bottom:11px; width:36px; height:36px; }
+.nyask .shnewerr{ margin:8px 6px 0; font-size:12px; color:#e5484d; }
+.nybusy{ margin:8px 6px 0; font-size:12px; color:var(--muted); }
+.nyasked{ display:flex; flex-direction:column; gap:8px; margin:18px 0 0; }
+.nylane{ margin:30px 0 0; }
+.nylaneh{ margin:0 0 4px; padding:0 10px; font-size:12px; font-weight:600;
+  color:var(--muted); }
+.nyfeed,.nyfyis{ display:flex; flex-direction:column; }
+.nycard,.nyfyi{ display:flex; align-items:center; gap:10px; min-height:38px;
+  padding:0 10px; border-radius:8px; cursor:pointer; outline:none;
+  font-size:13.5px; color:var(--ink); }
+.nycard:hover,.nyfyi:hover,.nycard:focus-visible,.nyfyi:focus-visible{
+  background:color-mix(in srgb, var(--ink) 6%, transparent); }
+.nycard:focus-visible,.nyfyi:focus-visible{ box-shadow:inset 0 0 0 1.5px var(--acc); }
+.nyico{ flex:none; width:15px; height:15px; color:var(--faint); }
+.tone-ask .nyico{ color:var(--acc); }
+.tone-warn .nyico{ color:var(--warn); }
+.tone-err .nyico{ color:#e5484d; }
+.tone-ok .nyico{ color:var(--ok); }
+.nytitle{ flex:0 1 auto; max-width:62%; min-width:0; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
+.nywhy{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; font-size:13px; color:var(--muted); }
+.seen .nytitle{ font-weight:400; color:var(--muted); }
+.nyprod{ flex:none; font-size:11px; color:var(--faint); }
+.nytime,.nygo{ flex:none; min-width:56px; text-align:right; font-size:12px;
+  font-variant-numeric:tabular-nums; }
+.nytime{ color:var(--faint); }
+.nygo{ display:none; color:var(--acc); font-weight:500; }
+.nygo::after{ content:"\203A"; margin-left:4px; }
+.nycard:hover .nytime,.nyfyi:hover .nytime,
+.nycard:focus-visible .nytime,.nyfyi:focus-visible .nytime{ display:none; }
+.nycard:hover .nygo,.nyfyi:hover .nygo,
+.nycard:focus-visible .nygo,.nyfyi:focus-visible .nygo{ display:block; }
 .nymore,.nylink{ background:none; border:0; padding:0; font:inherit; cursor:pointer; }
-.nymore{ margin:8px 0 0 14px; font-size:12px; color:var(--muted); }
+.nymore{ margin:4px 0 0 35px; font-size:12.5px; color:var(--muted); }
 .nymore:hover{ color:var(--ink); }
 .nylink{ margin-left:4px; color:var(--acc); text-decoration:underline;
   text-underline-offset:2px; }
-/* feed trouble: one line on top -- since when, and Try again */
-.nyerr{ display:flex; align-items:center; gap:10px; margin:0 0 16px; padding:9px 12px;
-  border-radius:8px; font-size:12.5px; color:var(--ink); background:rgba(229,72,77,.09); }
-.nyerr .nydot{ background:#e5484d; }
+/* feed trouble: one line -- since when, and Try again */
+.nyerr{ display:flex; align-items:center; gap:10px; margin:26px 0 0; padding:8px 10px;
+  border-radius:8px; font-size:12.5px; color:var(--ink);
+  background:color-mix(in srgb, #e5484d 9%, transparent); }
+.nyerr .nyico{ color:#e5484d; }
 .nyerr .nylink{ margin-left:auto; }
-/* first load: three quiet rows, no spinner */
-.nyskelrow{ cursor:default; }
-.nyskelrow:hover{ background:none; }
-.nybar{ height:9px; width:62%; border-radius:5px; background:var(--line); }
-.nybar.short{ width:38%; margin-top:8px; opacity:.6; }
-.nyasked{ display:flex; flex-direction:column; gap:8px; margin:4px 0 8px; }
-.nyask{ position:sticky; bottom:-13px; z-index:2; margin-top:auto;
-  padding:10px 0 13px; background:var(--card); }
-/* .shcompose is width:100% plus padding; inside the Now column it must not
-   run past the rows' edge */
-.nyask .shcompose{ box-sizing:border-box; }
-.nyask .shnewerr{ margin:0 2px 6px; font-size:12px; color:#e5484d; }
-.nybusy{ margin:0 2px 6px; font-size:12px; color:var(--muted); }
 
 /* Shadow home (P6) */
 .shhome{ max-width:640px; display:flex; flex-direction:column; gap:12px; }

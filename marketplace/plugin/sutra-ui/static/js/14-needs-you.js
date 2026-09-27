@@ -103,11 +103,12 @@ function nyProdTag(it){
   if (!prod || prod.toLowerCase() === "shadow") return "";
   return `<span class="nyprod">${esc(prod.charAt(0).toUpperCase() + prod.slice(1).toLowerCase())}</span>`;
 }
-/* Restyle (founder 2026-09-27: "it's boxes"): rows in the app's own idiom,
-   the Focus > Shadow task list -- a status dot, the task, the reason, the
-   time and at most one button. The dot says what kind of wait it is at a
-   glance: ask = yours to answer, warn = gone quiet, err = broke,
-   ok = done, stop = stopped. */
+/* Pass 3 (founder 2026-09-27: "clumsy", "like Linear", no vertical bars,
+   rows clickable, simpler): one line per row -- a status icon, the task,
+   the reason, the time -- and the whole row is the click. The action is
+   named on hover or focus, where the time was; no button inside a row.
+   The icon says the kind of wait: ask = yours to answer, warn = gone
+   quiet, err = broke; for updates ok = done, err = failed, stop = stopped. */
 function nyTone(it){
   const id = String(it.item_id || ""), why = String(it.why_now || "").toLowerCase();
   if (nyIsDecision(it)){
@@ -120,6 +121,16 @@ function nyTone(it){
   if (/stop/.test(why)) return "stop";
   return "ok";
 }
+const NY_ICON = {
+  ask: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="2.4" fill="currentColor"/>',
+  warn: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.6 2.2"/>',
+  err: '<circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M8 4.6v4.1" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/><circle cx="8" cy="11.3" r="1" fill="#fff"/>',
+  ok: '<circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M5 8.2l2 2 4-4.2" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
+  stop: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4.6 11.4l6.8-6.8" stroke="currentColor" stroke-width="1.6"/>',
+};
+function nyIcon(tone){
+  return `<svg class="nyico" viewBox="0 0 16 16" aria-hidden="true">${NY_ICON[tone] || NY_ICON.ask}</svg>`;
+}
 /* a row is one button for the keyboard too (Enter or Space opens it) */
 function nyRowAttrs(it, v){
   return `data-deeplink="${escAttr(it.deep_link || "")}"
@@ -127,33 +138,21 @@ function nyRowAttrs(it, v){
          tabindex="0" role="button"
          aria-label="${escAttr(v.title + (v.why ? ". " + v.why : ""))}"`;
 }
-/* seen = opened, not answered: the row stays (founder 2026-09-16), without
-   the accent a new ask carries; the state is a class so the look is css */
-function nyCardHtml(it){
-  const v = nyView(it), act = nyAction(it), when = nyWhen(it.ts);
+/* seen = opened, not answered: the row stays (founder 2026-09-16), its
+   title drawn quieter; the state is a class so the look is css */
+function nyRowHtml(cls, it){
+  const v = nyView(it), when = nyWhen(it.ts), tone = nyTone(it);
+  const act = cls === "nycard" ? nyAction(it) : "View";
   return `
-    <div class="nycard tone-${nyTone(it)}${it.state === "seen" ? " seen" : ""}" ${nyRowAttrs(it, v)}>
-      <span class="nydot" aria-hidden="true"></span>
-      <div class="nymain">
-        <div class="nyhead">${nyProdTag(it)}<span class="nytitle">${esc(v.title)}</span></div>
-        ${v.why ? `<div class="nywhy">${esc(v.why)}</div>` : ""}
-      </div>
-      ${when ? `<span class="nytime">${esc(when)}</span>` : ""}
-      ${act ? `<button class="btn pri nyact" type="button" tabindex="-1"
-         data-nyact="${escAttr(it.item_id || "")}">${esc(act)}</button>` : ""}
-    </div>`;
+    <div class="${cls} tone-${tone}${it.state === "seen" ? " seen" : ""}" ${nyRowAttrs(it, v)}>${
+      nyIcon(tone)}${nyProdTag(it)}<span class="nytitle">${esc(v.title)}</span>${
+      v.why ? `<span class="nywhy">${esc(v.why)}</span>` : `<span class="nywhy"></span>`}${
+      when ? `<span class="nytime">${esc(when)}</span>` : ""}<span class="nygo">${esc(act)}</span></div>`;
 }
-/* an update is one line: the task, what happened, when; the row opens it */
-function nyFyiHtml(it){
-  const v = nyView(it), when = nyWhen(it.ts);
-  return `
-    <div class="nyfyi tone-${nyTone(it)}${it.state === "seen" ? " seen" : ""}" ${nyRowAttrs(it, v)}>
-      <span class="nydot" aria-hidden="true"></span>${nyProdTag(it)}<span class="nyfyit">${esc(v.title)}</span>${
-      v.why ? `<span class="nyfyiw">${esc(v.why)}</span>` : ""}${
-      when ? `<span class="nytime">${esc(when)}</span>` : ""}</div>`;
-}
+function nyCardHtml(it){ return nyRowHtml("nycard", it); }
+function nyFyiHtml(it){ return nyRowHtml("nyfyi", it); }
 /* both lanes; "" when there is nothing at all. A lane with nothing in it is
-   not drawn: the line under the greeting already says so. */
+   not drawn. */
 function needsYouHtml(items){
   const { decide, fyi } = nySplit(items);
   if (!decide.length && !fyi.length) return "";
@@ -171,19 +170,13 @@ function needsYouHtml(items){
   }
   return out;
 }
-/* feed trouble with rows on screen: one line on top -- since when, and a
-   way to try again -- and the last known rows stay under it */
+/* feed trouble with rows on screen: one line -- since when, and a way to
+   try again -- and the last known rows stay under it */
 function nyErrHtml(){
   const since = nyWhen(typeof S !== "undefined" && S ? S.nyErr : 0);
-  return `<div class="nyerr" role="status"><span class="nydot" aria-hidden="true"></span>
+  return `<div class="nyerr" role="status">${nyIcon("err")}
     <span>Couldn't refresh since ${esc(since)}. Showing what was here.</span>
     <button class="nylink" type="button" data-nyretry="1">Try again</button></div>`;
-}
-/* first load: three quiet rows, no spinner, and no claim yet */
-function nySkelHtml(){
-  const row = `<div class="nycard nyskelrow"><span class="nydot"></span>
-    <div class="nymain"><div class="nybar"></div><div class="nybar short"></div></div></div>`;
-  return `<section class="nylane" aria-hidden="true"><div class="nyfeed">${row + row + row}</div></section>`;
 }
 
 /* S60: a card click deep-links straight into the owning thread. The Shadow
@@ -281,29 +274,35 @@ function nowChat(){
 
 function nowAskHtml(){
   const c = nowChat();
+  /* pass 3 (Codex-style home): the bar sits under the greeting; what it
+     is doing -- sending, or why a send failed -- is said right under it */
+  return `<div class="nyask" data-nyask="1">
+    <div class="shcompwrap">
+      <textarea class="shcompose" data-nycomp="1" rows="2"
+        placeholder="Describe a task, or ask Shadow anything"${c.busy ? " disabled" : ""}>${esc(c.text || "")}</textarea>
+      <button class="btn shsend" type="button" data-nysend="1"
+        aria-label="Send"${c.busy ? " disabled" : ""}>&#8593;</button>
+    </div>
+    ${c.err ? `<div class="shnewerr" role="alert">${esc(c.err)}</div>` : ""}
+    ${c.busy ? `<div class="nybusy" role="status">Sending to Shadow…</div>` : ""}
+  </div>`;
+}
+/* Shadow's answer to the bar: its prose and one draft per task, right
+   under the bar and above the rows */
+function nowAnswerHtml(){
+  const c = nowChat();
   const cards = (c.missions || []).map(m =>
     (typeof missionCardHtml === "function") ? missionCardHtml(m) : "").join("");
   const reply = c.reply
     ? ((typeof shadowProseHtml === "function") ? shadowProseHtml(c.reply) : esc(c.reply))
     : "";
-  /* Layout A: Shadow's answer sits in the page, just above the box, so the
-     box itself stays one row high while it is pinned to the bottom */
-  const answer = (reply || cards) ? `<div class="nyasked">
+  if (!reply && !cards) return "";
+  return `<div class="nyasked">
     ${reply ? `<div class="shmsg shshadow nyreply">${reply}</div>` : ""}
     ${cards ? `<div class="nydrafts">${cards}</div>` : ""}
     ${(c.missions || []).length > 1 ? `<div class="nydraftacts">
       <button class="btn pri" type="button" data-nystartall="1"${
         c.busy ? " disabled" : ""}>Start all</button></div>` : ""}
-  </div>` : "";
-  return answer + `<div class="nyask" data-nyask="1">
-    ${c.err ? `<div class="shnewerr" role="alert">${esc(c.err)}</div>` : ""}
-    ${c.busy ? `<div class="nybusy" role="status">Sending to Shadow…</div>` : ""}
-    <div class="shcompwrap">
-      <textarea class="shcompose" data-nycomp="1" rows="2"
-        placeholder="What do you have in mind?"${c.busy ? " disabled" : ""}>${esc(c.text || "")}</textarea>
-      <button class="btn shsend" type="button" data-nysend="1"
-        aria-label="Send"${c.busy ? " disabled" : ""}>↑</button>
-    </div>
   </div>`;
 }
 
@@ -415,40 +414,42 @@ if (typeof SCREENS !== "undefined"){
       nyAt = nyNow;
       loadNeedsYou();
     }
-    /* Layout A (founder 2026-09-27): ONE page in every state -- the
-       greeting, one line that says what is true, the decisions, FYI, and
-       the box pinned last. The line counts decisions only (an update is not
-       a thing that needs you), and it never claims "nothing" before the
-       feed has answered or while the feed is failing.
-         undefined  first load        -> "Checking", three quiet rows
-         null       Shadow off (403)  -> says so; no box to send into
+    /* Pass 3 (founder 2026-09-27, Codex-style home): the greeting asks
+       "what can we do for you?" over the bar. With nothing under the bar
+       both sit in the middle of the screen; with rows, the bar stays on
+       top and the rows follow. Every state still says what is true:
+         undefined  first load        -> "Checking", no empty claim
+         null       Shadow off (403)  -> says so; no bar to send into
          [] + nyErr never loaded      -> "Couldn't load", Try again
-         rows + nyErr                  -> one trouble line on top, rows kept */
+         rows + nyErr                  -> one trouble line, rows kept */
     const S_ = (typeof S !== "undefined") ? S : {};
     const items = S_.needsYou, err = !!S_.nyErr;
     const hr = new Date().getHours();
     const g = hr < 12 ? "Good morning" : hr < 17 ? "Good afternoon"
                                        : "Good evening";
-    let line, body = "", box = true;
-    if (items === undefined){
-      line = "Checking what needs you…";
-      body = nySkelHtml();
-    } else if (items === null){
-      line = "Shadow is off, so nothing reaches Now.";
-      box = false;
+    const clear = `Nothing needs you right now. <button class="nylink" type="button"
+          data-nystart="1">Open Shadow</button>`;
+    let hero = g + ", what can we do for you?", stat = "", body = "", bar = true;
+    if (items === undefined) stat = "Checking what needs you…";
+    else if (items === null){
+      hero = g + ".";
+      stat = "Shadow is off, so nothing reaches Now.";
+      bar = false;
+    } else if (!items.length){
+      stat = err ? `Couldn't load what needs you. <button class="nylink" type="button"
+          data-nyretry="1">Try again</button>` : clear;
     } else {
-      const n = nySplit(items).decide.length;
-      if (n) line = `<b>${n} thing${n === 1 ? "" : "s"} need${n === 1 ? "s" : ""} you.</b> Everything else is handled.`;
-      else if (err && !items.length)
-        line = `Couldn't load what needs you. <button class="nylink" type="button"
-          data-nyretry="1">Try again</button>`;
-      else line = `Nothing needs you right now. <button class="nylink" type="button"
-          data-nystart="1">Talk to Shadow</button>`;
-      if (err && items.length) body += nyErrHtml();
-      if (items.length) body += needsYouHtml(items);
+      if (!nySplit(items).decide.length) stat = clear;
+      if (err) body += nyErrHtml();
+      body += needsYouHtml(items);
     }
-    return `<div class="nynow"><div class="nygreet">${g}.</div>
-      <div class="nysub">${line}</div>` + body + (box ? nowAskHtml() : "") + `</div>`;
+    const answer = bar ? nowAnswerHtml() : "";
+    const center = !body && !answer;
+    return `<div class="nynow${center ? " center" : ""}">
+      <div class="nyhero">${esc(hero)}</div>` +
+      (bar ? nowAskHtml() : "") +
+      (stat ? `<div class="nystat">${stat}</div>` : "") +
+      answer + body + `</div>`;
   };
 }
 
