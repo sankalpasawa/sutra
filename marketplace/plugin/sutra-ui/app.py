@@ -2820,7 +2820,7 @@ async def _migrate_permission_mode():
     try:
         moved = providers.migrate_plan_to_full()
     except Exception:                   # noqa: BLE001 -- never a boot failure
-        return
+        moved = None                    # and never a reason to skip the reset
     if moved:
         print("[settings] permission mode raised from %s to %s -- one-time "
               "migration to the Full access default"
