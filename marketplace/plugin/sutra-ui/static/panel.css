@@ -2537,9 +2537,9 @@ button.nychip:focus-visible{ outline:none; box-shadow:0 0 0 1.5px var(--acc); }
 .nynow.nyenter .nylane{ animation:nyrise .42s .08s cubic-bezier(.2,.8,.2,1) both; }
 .nyin{ animation:nyrise .32s cubic-bezier(.2,.8,.2,1) both; }
 .nyswap{ animation:nyfade .26s ease both; }
-.nypanel{ animation:nypop .18s cubic-bezier(.2,.8,.2,1) both; }
+.nypanel.nyopen{ animation:nypop .18s cubic-bezier(.2,.8,.2,1) both; }
 @media (prefers-reduced-motion: reduce){
-  .nynow.nyenter .nytop,.nynow.nyenter .nylane,.nyin,.nyswap,.nypanel{ animation:none; }
+  .nynow.nyenter .nytop,.nynow.nyenter .nylane,.nyin,.nyswap,.nypanel.nyopen{ animation:none; }
   .tone-wait .nyico{ animation:none; }
   .nytop{ transition:none !important; transform:none !important; }
   .nygo,.nytime{ transition:none; }

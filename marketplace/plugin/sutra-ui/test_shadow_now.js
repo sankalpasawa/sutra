@@ -300,8 +300,9 @@ const ITEMS = [{
   ctx.S.shadowMissions = [
     { id: "m-r", objective: "Draft the pricing page", state: "running" },
     { id: "m-d", objective: "Top 10 news of today", state: "done" },
+    { id: "m-s", objective: "Weekly digest", state: "stopped" },
     { id: "m-x", objective: "Old thing", state: "done" }];
-  ctx.shadowTasks = () => ctx.S.shadowMissions.slice(0, 2);
+  ctx.shadowTasks = () => ctx.S.shadowMissions.slice(0, 3);
   ctx.shadowTaskSection = m => m.state === "running" ? "run" : "done";
   let h = ctx.SCREENS.now();
   assert(/<button class="nychip tone-ok"[^>]*data-nyclear="1"/.test(h), "All clear is a button");
@@ -313,8 +314,12 @@ const ITEMS = [{
       && !/Old thing/.test(h), "Focus's own membership rule decides");
   assert(/data-deeplink="sutra:\/\/shadow\/mission\/m-r"/.test(h), "a row opens its task");
   assert(!/shadow/i.test(h.replace(/<[^>]*>/g, " ")), "the panel names no Shadow");
+  assert(/class="nyprow tone-stop"[^>]*m-s/.test(h), "a stopped task is not drawn as done (review 4)");
   ctx.nyToggleClear();
   assert(!/class="nypanel"/.test(ctx.SCREENS.now()), "a second click closes it");
+  ctx.nyToggleClear();
+  ctx.openNeedsYouItem("sutra://shadow/mission/m-r", "");
+  assert(!ctx.S.nyClearOpen, "opening a task from the panel closes it (review 3)");
   ctx.S.nyErr = Date.now();
   assert(/<button class="nychip tone-err"[^>]*data-nyretry="1"/.test(ctx.SCREENS.now()),
          "Offline is a button: a click retries");

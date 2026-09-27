@@ -192,7 +192,11 @@ function openNeedsYouItem(link, itemId){
       for (const it of S.needsYou)
         if (it && it.item_id === itemId && it.state === "new") it.state = "seen";
   }
-  if (typeof S !== "undefined") S.pendingDeepLink = link || null;
+  if (typeof S !== "undefined"){
+    S.pendingDeepLink = link || null;
+    /* opening a task from the All clear panel closes it (review 3) */
+    S.nyClearOpen = false;
+  }
   if (typeof shadowRouteDeepLink === "function")
     return shadowRouteDeepLink(link);
   if (typeof goDest === "function") goDest("focus");
@@ -302,7 +306,10 @@ function nyClearPanelHtml(){
       esc(m.objective || m.title || "Task")}</span></div>`;
   let body = "";
   if (run.length) body += `<div class="nyph">Running</div>` + run.slice(0, 5).map(m => prow(m, "wait")).join("");
-  if (done.length) body += `<div class="nyph">Done today</div>` + done.slice(0, 5).map(m => prow(m, "ok")).join("");
+  /* Focus files stopped tasks under Done today too; the icon still says
+     stopped, never done (review 4) */
+  if (done.length) body += `<div class="nyph">Done today</div>` + done.slice(0, 5).map(m =>
+    prow(m, String(m.state || "") === "stopped" ? "stop" : "ok")).join("");
   if (!body) body = `<div class="nypempty">Quiet today.</div>`;
   const at = S_.nyOkAt ? nyWhen(S_.nyOkAt) : "";
   return `<div class="nypanel" role="dialog" aria-label="All clear">${body}${
@@ -343,10 +350,17 @@ function nowAskHtml(chip, off, panel){
    when the page gains or loses rows (FLIP: measure, invert, play); the
    status mark cross-fades when it changes. Reduced motion: none of it. */
 let _nySeenRows = null, _nyLastCenter = null, _nyLastTop = null, _nyLastChip = null,
-    _nyLastPanel = false;
+    _nyLastPanel = false, _nyPaintQueued = false;
 function nyMotionReset(){
   _nySeenRows = null; _nyLastCenter = null; _nyLastTop = null; _nyLastChip = null;
   _nyLastPanel = false;
+}
+/* render() calls SCREENS.now on every socket frame; one queued frame is
+   enough however many calls land before it (review 2) */
+function nyQueuePaint(){
+  if (_nyPaintQueued || typeof requestAnimationFrame !== "function") return;
+  _nyPaintQueued = true;
+  requestAnimationFrame(() => { _nyPaintQueued = false; nyAfterPaint(); });
 }
 function nyAfterPaint(){
   if (typeof document === "undefined" || !document.querySelector) return;
@@ -375,6 +389,10 @@ function nyAfterPaint(){
      there, so the greeting and bar rise to make room for it) -- never on a
      plain repaint, where a scroll would read as a move */
   const moved = center !== _nyLastCenter || (center && panel !== _nyLastPanel);
+  /* the panel pops only when it newly opens, never on a rebuild while it is
+     open (review 1) */
+  if (panel && !_nyLastPanel && !first && !reduce)
+    root.querySelector(".nypanel").classList.add("nyopen");
   _nyLastPanel = panel;
   if (top){
     const y = top.getBoundingClientRect().top;
@@ -558,7 +576,7 @@ if (typeof SCREENS !== "undefined"){
     const center = !body && !answer;
     const hero = off ? g + "." : g + ", what can we do for you?";
     /* motion is decided after the paint (nyAfterPaint), never in the markup */
-    if (typeof requestAnimationFrame === "function") requestAnimationFrame(nyAfterPaint);
+    nyQueuePaint();
     return `<div class="nynow${center ? " center" : ""}"><div class="nytop">
       <div class="nyhero">${esc(hero)}</div>` + nowAskHtml(chip, off, panel) + `</div>` +
       answer + body + `</div>`;
@@ -602,10 +620,6 @@ if (typeof document !== "undefined" && document.addEventListener){
     /* a click anywhere outside the open panel closes it, then does its own thing */
     if (typeof S !== "undefined" && S.nyClearOpen
         && !(t && t.closest && t.closest(".nypanel"))) nyToggleClear(false);
-    if (t && t.dataset && t.dataset.nystart){
-      openNeedsYouItem("sutra://shadow/home");
-      return;
-    }
     if (t && t.dataset && t.dataset.nymore){
       /* FYI shows three; the rest on ask, until the app reloads */
       if (typeof S !== "undefined") S.nyFyiAll = true;
