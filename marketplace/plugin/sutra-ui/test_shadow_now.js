@@ -81,15 +81,15 @@ const ITEMS = [{
   const ctx = fresh(false);
   ctx.S.needsYou = null;             /* feature dark (403) */
   const off = ctx.SCREENS.now();
-  assert(/Shadow is off/.test(off),
-         "a dark feed says Shadow is off, never 'nothing needs you' (2026-09-27)");
-  assert(!/data-nyask="1"/.test(off), "no box that sends to a Shadow that is off");
+  /* 2026-09-27: every state is one status mark in the bar (nychip), never a
+     subtext line, and the screen never names Shadow */
+  assert(/class="nychip tone-stop"/.test(off) && />Paused</.test(off),
+         "a dark feed shows Paused, never 'all clear'");
+  assert(/data-nycomp="1"[^>]*disabled/.test(off), "the bar stays but cannot send while paused");
   ctx.S.needsYou = [];
   const empty = ctx.SCREENS.now();
-  assert(/Nothing needs you right now/.test(empty),
-         "an empty feed renders the honest empty state");
-  assert(/data-nystart/.test(empty),
-         "the empty state must offer a way to start talking to Shadow");
+  assert(/class="nychip tone-ok"/.test(empty) && />All clear</.test(empty),
+         "an empty feed says all clear, in the bar");
   ctx.S.needsYou = ITEMS;
   assert(/nyfeed/.test(ctx.SCREENS.now()), "items render as rows");
   console.log("ok 2 screen states");
@@ -229,7 +229,7 @@ const ITEMS = [{
   const ctx = fresh(false);
   ctx.S.needsYou = [ITEMS[1]];
   const h = ctx.SCREENS.now();
-  assert(/Nothing needs you right now/.test(h) && /data-nystart/.test(h));
+  assert(/>All clear</.test(h), "nothing to decide: all clear");
   assert(!/nydecide/.test(h) && /nyfyilane/.test(h), "no empty decision lane; updates listed");
   assert(/class="nyhero"/.test(h), "one layout: the greeting stays");
   assert(/data-nyask="1"/.test(h), "the box stays");
@@ -244,8 +244,8 @@ const ITEMS = [{
 {
   const ctx = fresh(false);
   const h = ctx.SCREENS.now();                    /* S.needsYou undefined */
-  assert(/Checking what needs you/.test(h));
-  assert(!/Nothing needs you/.test(h), "no empty claim before the first answer");
+  assert(/>Checking</.test(h));
+  assert(!/All clear/.test(h), "no empty claim before the first answer");
   console.log("ok 11 first load");
 }
 
@@ -263,6 +263,31 @@ const ITEMS = [{
   console.log("ok 16 centred home");
 }
 
+/* 17. founder 2026-09-27: "I don't want that Shadow word to be exposed",
+   minimal text, and no subtext line -- every state is one status mark in
+   the bar, and no visible word on Now names Shadow */
+{
+  const ctx = fresh(false);
+  const visible = h => h.replace(/<[^>]*>/g, " ");
+  for (const st of [undefined, null, [], ITEMS, [ITEMS[1]]]){
+    ctx.S.needsYou = st; ctx.S.nyErr = 0;
+    const h = ctx.SCREENS.now();
+    assert(!/shadow/i.test(visible(h)), "no Shadow word: " + JSON.stringify(st));
+    assert(!/class="nystat"/.test(h), "no subtext line under the bar");
+  }
+  ctx.S.needsYou = ITEMS; ctx.S.nyErr = Date.now();
+  assert(!/shadow/i.test(visible(ctx.SCREENS.now())), "feed trouble names no Shadow");
+  ctx.S.nyErr = 0;
+  ctx.nowChat().busy = true;
+  const busy = ctx.SCREENS.now();
+  assert(/>Sending</.test(busy) && !/shadow/i.test(visible(busy)), "sending, said plainly");
+  ctx.nowChat().busy = false; ctx.nowChat().err = "Didn't send";
+  const failed = ctx.SCREENS.now();
+  assert(/class="nychip tone-err"/.test(failed) && />Retry</.test(failed)
+      && !/shadow/i.test(visible(failed)), "a failed send: one mark, Retry");
+  console.log("ok 17 no Shadow word, one status mark");
+}
+
 /* 12. feed trouble: with rows, one line on top (since when, Try again) and
    the last known rows stay; with none, the line replaces the empty claim */
 {
@@ -270,13 +295,13 @@ const ITEMS = [{
   ctx.S.needsYou = ITEMS;
   ctx.S.nyErr = Date.now() - 6 * 60 * 1000;
   const h = ctx.SCREENS.now();
-  assert(/class="nyerr"/.test(h) && /Couldn't refresh since/.test(h)
-      && /data-nyretry="1"/.test(h), "one trouble line with Try again");
+  assert(/class="nychip tone-err"/.test(h) && /Offline since/.test(h)
+      && /data-nyretry="1"/.test(h), "one status mark with Retry");
   assert(/Mission m-1 needs a yes/.test(h), "the last known rows stay");
   ctx.S.needsYou = [];
   const none = ctx.SCREENS.now();
-  assert(/Couldn't load what needs you/.test(none) && /data-nyretry="1"/.test(none));
-  assert(!/Nothing needs you/.test(none), "a failed load never claims all clear");
+  assert(/>Offline</.test(none) && /data-nyretry="1"/.test(none));
+  assert(!/All clear/.test(none), "a failed load never claims all clear");
   console.log("ok 12 feed trouble");
 }
 

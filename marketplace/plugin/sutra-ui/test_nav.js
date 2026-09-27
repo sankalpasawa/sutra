@@ -188,8 +188,8 @@ test("now: SCREENS.now renders the honest empty state and TITLES carries it", ()
      it, Now says it is checking), so the test states the answer it means */
   const had = T.S.needsYou;
   T.S.needsYou = [];
-  assert(/Nothing needs you right now/.test(T.SCREENS.now()),
-         "empty-state wording missing");
+  assert(/>All clear</.test(T.SCREENS.now()),
+         "empty-state mark missing");
   T.S.needsYou = had;
   assert(Array.isArray(T.TITLES.now) && T.TITLES.now.length === 2);
 });

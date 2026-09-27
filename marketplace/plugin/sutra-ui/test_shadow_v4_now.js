@@ -43,11 +43,13 @@ const D = (id, objective) => ({ id, objective, template: "research", state: "bri
     const ctx = fresh();
     ctx.S.needsYou = [];
     const empty = ctx.SCREENS.now();
-    assert(/Nothing needs you right now/.test(empty), "empty state kept");
-    assert(/data-nystart/.test(empty), "the door to Shadow kept");
+    /* 2026-09-27: all clear is a status mark in the bar, and the door that
+       named Shadow is gone (founder: the word is not shown on Now) */
+    assert(/>All clear</.test(empty), "empty state kept");
+    assert(!/Open Shadow/.test(empty), "no door that names Shadow");
     /* 2026-09-27: the greeting asks "what can we do for you?", so the
        placeholder no longer repeats the question */
-    assert(/data-nyask="1"/.test(empty) && /Describe a task, or ask Shadow anything/.test(empty), "the box");
+    assert(/data-nyask="1"/.test(empty) && /placeholder="Describe a task"/.test(empty), "the box");
     ctx.S.needsYou = [{ item_id: "m-1", producer: "shadow", kind: "needs_decision",
       title: "Approve the push", why_now: "floor" }];
     const full = ctx.SCREENS.now();
@@ -145,7 +147,7 @@ const D = (id, objective) => ({ id, objective, template: "research", state: "bri
     ctx.nowChat().text = "top 10 fruits";
     await ctx.nowSend();
     const h = ctx.SCREENS.now();
-    assert(/could not take that \(503\)/.test(h));
+    assert(/Didn't send/.test(h) && />Retry</.test(h), "said in the bar's status mark, with Retry");
     assert(/top 10 fruits/.test(h), "the founder's words are not lost");
     console.log("ok 6 a failed send is honest and loses nothing");
   }

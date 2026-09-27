@@ -2431,7 +2431,7 @@
   box-shadow:var(--shadow);
   max-width:340px;
   pointer-events:none; }
-/* Now, pass 3 (founder 2026-09-27: "clumsy", "like Linear", "take
+/* Now, pass 3 + 4 (founder 2026-09-27: "clumsy", "like Linear", "take
    inspiration from Codex"). A home, not a dashboard: the greeting asks
    "what can we do for you?" over the bar; with nothing under the bar both
    sit in the middle of the screen, with rows the bar stays on top. Rows
@@ -2443,16 +2443,13 @@
 .nynow.center{ justify-content:center; padding:0 0 12vh; }
 .nyhero{ font-family:var(--serif); font-size:28px; font-weight:500; line-height:1.25;
   letter-spacing:-.01em; color:var(--ink); text-align:center; margin:0 0 22px; }
-.nystat{ margin:14px 0 0; text-align:center; font-size:12.5px; color:var(--muted); }
 .nynow .shcompwrap{ position:relative; }
-.nynow .shcompose{ box-sizing:border-box; min-height:96px; resize:none;
-  padding:14px 62px 14px 16px; border-radius:16px; font-size:14px; line-height:1.5;
+.nynow .shcompose{ box-sizing:border-box; min-height:108px; resize:none;
+  padding:14px 62px 46px 16px; border-radius:16px; font-size:14px; line-height:1.5;
   border:1px solid var(--line);
   box-shadow:0 1px 2px rgba(0,0,0,.06),0 12px 32px -18px rgba(0,0,0,.35); }
 .nynow .shcompose:focus{ outline:none; border-color:var(--acc); }
 .nynow .shsend{ right:11px; bottom:11px; width:36px; height:36px; }
-.nyask .shnewerr{ margin:8px 6px 0; font-size:12px; color:#e5484d; }
-.nybusy{ margin:8px 6px 0; font-size:12px; color:var(--muted); }
 .nyasked{ display:flex; flex-direction:column; gap:8px; margin:18px 0 0; }
 .nylane{ margin:30px 0 0; }
 .nylaneh{ margin:0 0 4px; padding:0 10px; font-size:12px; font-weight:600;
@@ -2489,12 +2486,16 @@
 .nymore:hover{ color:var(--ink); }
 .nylink{ margin-left:4px; color:var(--acc); text-decoration:underline;
   text-underline-offset:2px; }
-/* feed trouble: one line -- since when, and Try again */
-.nyerr{ display:flex; align-items:center; gap:10px; margin:26px 0 0; padding:8px 10px;
-  border-radius:8px; font-size:12.5px; color:var(--ink);
-  background:color-mix(in srgb, #e5484d 9%, transparent); }
-.nyerr .nyico{ color:#e5484d; }
-.nyerr .nylink{ margin-left:auto; }
+
+/* pass 4: the status mark -- bottom-left inside the bar, where Codex keeps
+   its chips; the only status on Now, so there is no subtext line */
+.nychip{ position:absolute; left:15px; bottom:15px; display:flex; align-items:center;
+  gap:6px; font-size:12px; color:var(--muted); }
+.nychip .nyico{ width:13px; height:13px; }
+.tone-wait .nyico{ color:var(--faint); animation:nyspin 1.8s linear infinite; }
+@keyframes nyspin{ to{ transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce){ .tone-wait .nyico{ animation:none; } }
+.nychip .nylink{ margin-left:2px; }
 
 /* Shadow home (P6) */
 .shhome{ max-width:640px; display:flex; flex-direction:column; gap:12px; }

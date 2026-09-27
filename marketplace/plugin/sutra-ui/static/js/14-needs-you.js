@@ -127,6 +127,7 @@ const NY_ICON = {
   err: '<circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M8 4.6v4.1" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/><circle cx="8" cy="11.3" r="1" fill="#fff"/>',
   ok: '<circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M5 8.2l2 2 4-4.2" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
   stop: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4.6 11.4l6.8-6.8" stroke="currentColor" stroke-width="1.6"/>',
+  wait: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.6 2.2"/>',
 };
 function nyIcon(tone){
   return `<svg class="nyico" viewBox="0 0 16 16" aria-hidden="true">${NY_ICON[tone] || NY_ICON.ask}</svg>`;
@@ -143,10 +144,13 @@ function nyRowAttrs(it, v){
 function nyRowHtml(cls, it){
   const v = nyView(it), when = nyWhen(it.ts), tone = nyTone(it);
   const act = cls === "nycard" ? nyAction(it) : "View";
+  /* minimal text (2026-09-27): an update's icon already says done, failed
+     or stopped, so its row is the task alone; the words wait on hover */
+  const why = cls === "nycard" ? v.why : "";
+  const tip = !why && v.why ? ` title="${escAttr(v.why)}"` : "";
   return `
-    <div class="${cls} tone-${tone}${it.state === "seen" ? " seen" : ""}" ${nyRowAttrs(it, v)}>${
-      nyIcon(tone)}${nyProdTag(it)}<span class="nytitle">${esc(v.title)}</span>${
-      v.why ? `<span class="nywhy">${esc(v.why)}</span>` : `<span class="nywhy"></span>`}${
+    <div class="${cls} tone-${tone}${it.state === "seen" ? " seen" : ""}" ${nyRowAttrs(it, v)}${tip}>${
+      nyIcon(tone)}${nyProdTag(it)}<span class="nytitle">${esc(v.title)}</span><span class="nywhy">${esc(why)}</span>${
       when ? `<span class="nytime">${esc(when)}</span>` : ""}<span class="nygo">${esc(act)}</span></div>`;
 }
 function nyCardHtml(it){ return nyRowHtml("nycard", it); }
@@ -169,14 +173,6 @@ function needsYouHtml(items){
       more > 0 ? `<button class="nymore" type="button" data-nymore="1">${more} more</button>` : ""}</section>`;
   }
   return out;
-}
-/* feed trouble with rows on screen: one line -- since when, and a way to
-   try again -- and the last known rows stay under it */
-function nyErrHtml(){
-  const since = nyWhen(typeof S !== "undefined" && S ? S.nyErr : 0);
-  return `<div class="nyerr" role="status">${nyIcon("err")}
-    <span>Couldn't refresh since ${esc(since)}. Showing what was here.</span>
-    <button class="nylink" type="button" data-nyretry="1">Try again</button></div>`;
 }
 
 /* S60: a card click deep-links straight into the owning thread. The Shadow
@@ -272,19 +268,25 @@ function nowChat(){
   return S_.nowChat;
 }
 
-function nowAskHtml(){
+/* One status mark (founder 2026-09-27: minimal text, no subtext line, the
+   word Shadow never shown): the bar carries it bottom-left, where Codex
+   keeps its chips -- All clear, Checking, Offline, Paused, Sending, Didn't
+   send -- with Retry when there is something to retry. */
+function nyChipHtml(tone, label, retry){
+  return `<div class="nychip tone-${tone}" role="status">${nyIcon(tone)}<span>${esc(label)}</span>${
+    retry ? `<button class="nylink" type="button" ${retry}="1">Retry</button>` : ""}</div>`;
+}
+function nowAskHtml(chip, off){
   const c = nowChat();
-  /* pass 3 (Codex-style home): the bar sits under the greeting; what it
-     is doing -- sending, or why a send failed -- is said right under it */
+  const dis = (c.busy || off) ? " disabled" : "";
   return `<div class="nyask" data-nyask="1">
     <div class="shcompwrap">
       <textarea class="shcompose" data-nycomp="1" rows="2"
-        placeholder="Describe a task, or ask Shadow anything"${c.busy ? " disabled" : ""}>${esc(c.text || "")}</textarea>
+        placeholder="Describe a task"${dis}>${esc(c.text || "")}</textarea>
+      ${chip || ""}
       <button class="btn shsend" type="button" data-nysend="1"
-        aria-label="Send"${c.busy ? " disabled" : ""}>&#8593;</button>
+        aria-label="Send"${dis}>&#8593;</button>
     </div>
-    ${c.err ? `<div class="shnewerr" role="alert">${esc(c.err)}</div>` : ""}
-    ${c.busy ? `<div class="nybusy" role="status">Sending to Shadow…</div>` : ""}
   </div>`;
 }
 /* Shadow's answer to the bar: its prose and one draft per task, right
@@ -322,8 +324,8 @@ async function nowSend(){
   try { body = (r && r.ok) ? await r.json() : null; } catch (e){ body = null; }
   c.busy = false;
   if (!body){
-    c.err = r ? "Shadow could not take that (" + r.status + ")."
-              : "Could not reach Shadow.";
+    /* the status mark in the bar says it; the words stay in the bar */
+    c.err = "Didn't send";
   } else {
     c.text = "";
     c.reply = body.reply || "";
@@ -353,7 +355,7 @@ async function nowStartAll(){
   c.busy = false; c.missions = left; if (!left.length) c.reply = "";
   if (typeof showNudge === "function")
     showNudge((n === total ? "Started " + n : "Started " + n + " of " + total)
-              + (n === 1 ? " task" : " tasks") + " — in Focus › Shadow.");
+              + (n === 1 ? " task" : " tasks") + ".");
   if (typeof scheduleRender === "function") scheduleRender();
   return n;
 }
@@ -414,42 +416,35 @@ if (typeof SCREENS !== "undefined"){
       nyAt = nyNow;
       loadNeedsYou();
     }
-    /* Pass 3 (founder 2026-09-27, Codex-style home): the greeting asks
-       "what can we do for you?" over the bar. With nothing under the bar
-       both sit in the middle of the screen; with rows, the bar stays on
-       top and the rows follow. Every state still says what is true:
-         undefined  first load        -> "Checking", no empty claim
-         null       Shadow off (403)  -> says so; no bar to send into
-         [] + nyErr never loaded      -> "Couldn't load", Try again
-         rows + nyErr                  -> one trouble line, rows kept */
+    /* Pass 4 (founder 2026-09-27): the Codex-style home stays -- the
+       greeting over the bar, centred when nothing is under it, rows under
+       it otherwise -- with minimal text and no subtext line: every state
+       is one status mark in the bar, and the word Shadow is never shown.
+         undefined  first load        -> Checking (no all-clear claim)
+         null       feed dark (403)   -> Paused; the bar cannot send
+         nyErr      feed failing      -> Offline (since when), Retry
+         no rows to decide            -> All clear
+         busy / err from the bar      -> Sending / Didn't send, Retry */
     const S_ = (typeof S !== "undefined") ? S : {};
-    const items = S_.needsYou, err = !!S_.nyErr;
+    const items = S_.needsYou, err = S_.nyErr || 0, off = items === null;
+    const c = nowChat();
     const hr = new Date().getHours();
     const g = hr < 12 ? "Good morning" : hr < 17 ? "Good afternoon"
                                        : "Good evening";
-    const clear = `Nothing needs you right now. <button class="nylink" type="button"
-          data-nystart="1">Open Shadow</button>`;
-    let hero = g + ", what can we do for you?", stat = "", body = "", bar = true;
-    if (items === undefined) stat = "Checking what needs you…";
-    else if (items === null){
-      hero = g + ".";
-      stat = "Shadow is off, so nothing reaches Now.";
-      bar = false;
-    } else if (!items.length){
-      stat = err ? `Couldn't load what needs you. <button class="nylink" type="button"
-          data-nyretry="1">Try again</button>` : clear;
-    } else {
-      if (!nySplit(items).decide.length) stat = clear;
-      if (err) body += nyErrHtml();
-      body += needsYouHtml(items);
-    }
-    const answer = bar ? nowAnswerHtml() : "";
+    let chip = "";
+    if (c.busy) chip = nyChipHtml("wait", "Sending");
+    else if (c.err) chip = nyChipHtml("err", c.err, "data-nysend");
+    else if (items === undefined) chip = nyChipHtml("wait", "Checking");
+    else if (off) chip = nyChipHtml("stop", "Paused");
+    else if (err) chip = nyChipHtml("err", items.length ? "Offline since " + nyWhen(err) : "Offline",
+                                    "data-nyretry");
+    else if (!nySplit(items).decide.length) chip = nyChipHtml("ok", "All clear");
+    const body = (items && items.length) ? needsYouHtml(items) : "";
+    const answer = off ? "" : nowAnswerHtml();
     const center = !body && !answer;
+    const hero = off ? g + "." : g + ", what can we do for you?";
     return `<div class="nynow${center ? " center" : ""}">
-      <div class="nyhero">${esc(hero)}</div>` +
-      (bar ? nowAskHtml() : "") +
-      (stat ? `<div class="nystat">${stat}</div>` : "") +
-      answer + body + `</div>`;
+      <div class="nyhero">${esc(hero)}</div>` + nowAskHtml(chip, off) + answer + body + `</div>`;
   };
 }
 
