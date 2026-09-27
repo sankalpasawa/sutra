@@ -2825,6 +2825,15 @@ async def _migrate_permission_mode():
         print("[settings] permission mode raised from %s to %s -- one-time "
               "migration to the Full access default"
               % (providers.PERMISSION_MODE_FLOOR, moved), file=sys.stderr)
+    # EVERY LAUNCH, after the one-time catch-up (founder ruling 2026-09-27):
+    # Sutra opens in Full access, whatever an earlier session stored.
+    try:
+        replaced = providers.reset_access_to_full_on_launch()
+    except Exception:                   # noqa: BLE001 -- never a boot failure
+        return
+    if replaced:
+        print("[settings] permission mode %s reset to %s at launch"
+              % (replaced, providers.DEFAULT_PERMISSION_MODE), file=sys.stderr)
 
 
 @app.on_event("startup")

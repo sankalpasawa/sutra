@@ -3284,6 +3284,39 @@ def migrate_plan_to_full():
     return moved
 
 
+def reset_access_to_full_on_launch():
+    """Put the global permission mode back to Full access, EVERY launch.
+
+    FOUNDER RULING 2026-09-27, superseding the once-only rule above: "whenever
+    you open Sutra, it's in full access mode only". Four fixes (2026-09-18,
+    -19, -23, -25) each let a stored Read only survive a restart by some path,
+    and the writer was never identified. So the launch no longer asks who
+    wrote the stored mode: any value other than the default is raised to it.
+    A chat can still narrow its own access from the composer for that session.
+
+    Left alone, and why: a fresh install (no file -- the default already
+    applies), an unreadable file (never rewrite what could not be read), and
+    an operator who set SUTRA_UI_PERMISSION_MODE or CLAMP_MODES_ENV on purpose
+    (both are deliberate out-of-band acts). Returns the mode it replaced, or
+    None. Writes RAW for the reason migrate_plan_to_full() gives.
+    """
+    if (os.environ.get("SUTRA_UI_PERMISSION_MODE")
+            or os.environ.get(CLAMP_MODES_ENV, "") == "1"):
+        return None
+    if not SETTINGS_PATH.exists():
+        return None
+    raw = _raw_settings()
+    if not raw:
+        return None
+    stored = raw.get("permission_mode")
+    if stored == DEFAULT_PERMISSION_MODE:
+        return None
+    raw["permission_mode"] = DEFAULT_PERMISSION_MODE
+    raw.pop(ACCESS_CHOSEN_KEY, None)
+    _write_settings(raw)
+    return stored
+
+
 # ================================================= tool versions & updates ==
 # WHICH BUILD OF EACH CLI IS ON THIS MAC, whether a newer one exists, and -- for
 # the installs Sutra is allowed to touch -- a button that fetches it.
