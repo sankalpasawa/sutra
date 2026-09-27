@@ -700,9 +700,10 @@ def run_slot(ref, name, inp, slot):
     return _put_run(ref, row)
 
 
-def motor_tick(inline=False):
+def motor_tick(inline=False, at=None):
     """One tick: a heartbeat, then at most one new run per department."""
-    _write(home() / "motor.json", {"last_tick": now(), "started": _MOTOR.get("started") or now(), "pid": os.getpid()})
+    _write((Path(at) if at else home()) / "motor.json",
+           {"last_tick": now(), "started": _MOTOR.get("started") or now(), "pid": os.getpid()})
     started = []
     for d in list_depts():
         ref = d["ref"]
@@ -750,7 +751,7 @@ def run_until_idle(ref, limit=40):
 _LOCK = {"fd": None}
 
 
-def hold_motor():
+def hold_motor(at=None):
     """True when THIS process is the motor of this record. One motor per record,
     across processes: two windows of the app, Sutra beside Sutra Beta, or a
     server that is slow to stop would otherwise each tick the same record and
@@ -758,8 +759,9 @@ def hold_motor():
     go the instant its holder dies, and the next process to ask takes over."""
     if _LOCK["fd"] is not None:
         return True
-    home().mkdir(parents=True, exist_ok=True)
-    fd = os.open(str(home() / "motor.lock"), os.O_RDWR | os.O_CREAT, 0o600)
+    h = Path(at) if at else home()
+    h.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(h / "motor.lock"), os.O_RDWR | os.O_CREAT, 0o600)
     try:
         if os.name == "nt":
             import msvcrt
@@ -777,9 +779,19 @@ def hold_motor():
     return True
 
 
-def stop_motor():
-    """The app is closing: stop ticking now, and let the record go."""
+def stop_motor(wait_s=4.0):
+    """The app is closing: stop ticking now, and let the record go.
+
+    WAITS FOR THE THREAD. Setting a flag and returning left a thread that could
+    still take the lock and tick once more, after its owner had moved on. The
+    thread is told through its own event, so a module reloaded under it cannot
+    hand it a fresh, unset flag."""
     _MOTOR["stop"] = True
+    ev, th = _MOTOR.get("event"), _MOTOR.get("thread")
+    if ev is not None:
+        ev.set()
+    if th is not None and th is not threading.current_thread() and th.is_alive():
+        th.join(wait_s)
     fd, _LOCK["fd"] = _LOCK["fd"], None
     if fd is not None:
         try:
@@ -801,17 +813,27 @@ def start_motor():
     if _MOTOR["thread"] is not None or os.environ.get("SUTRA_MOTOR") != "1" \
             or os.environ.get("SUTRA_MOTOR_OFF") == "1" or under_test():
         return False
-    _MOTOR["started"] = now()
-    _MOTOR["stop"] = False
+    try:
+        bound = os.path.realpath(str(home()))
+    except RuntimeError:
+        return False
+    stop = threading.Event()
+    _MOTOR.update({"started": now(), "stop": False, "event": stop, "home": bound})
 
     def loop():
-        while not _MOTOR["stop"]:
+        # ONE MOTOR, ONE HOME. The motor serves the records home it was started
+        # for. If the environment later names another, it stops; it never
+        # follows. Found 2026-09-28: a thread outliving its test's temp home
+        # landed on the operator's live one.
+        while not stop.is_set():
             try:
-                if hold_motor():
-                    motor_tick()
+                if os.path.realpath(str(home())) != bound:
+                    break
+                if hold_motor(bound):
+                    motor_tick(at=bound)
             except Exception:  # noqa: BLE001 -- the motor never dies of one department
                 pass
-            time.sleep(TICK_S)
+            stop.wait(TICK_S)
     _MOTOR["thread"] = threading.Thread(target=loop, name="sutra-motor", daemon=True)
     _MOTOR["thread"].start()
     return True

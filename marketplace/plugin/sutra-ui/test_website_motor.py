@@ -128,11 +128,49 @@ class TestWhoMayStartIt(unittest.TestCase):
         self.assertIsNone(W._MOTOR["thread"])
         self.assertFalse(os.path.exists(os.path.join(self.home, "motor.lock")), "and nothing was touched")
         W.under_test = lambda: False                # the app itself
+        W.TICK_S = 0.05
         os.environ["SUTRA_MOTOR_OFF"] = "1"
         self.assertFalse(W.start_motor(), "the off switch outranks the word")
         os.environ.pop("SUTRA_MOTOR_OFF")
         self.assertTrue(W.start_motor(), "the app, with the word: the motor starts")
         self.assertFalse(W.start_motor(), "once")
+        self.assertTrue(self.until(lambda: os.path.isfile(os.path.join(self.home, "motor.json"))),
+                        "and it ticks in the home it was started for")
+        thread = W._MOTOR["thread"]
+        W.stop_motor()
+        self.assertFalse(thread.is_alive(), "stopped means stopped: nothing ticks after stop_motor returns")
+        self.assertIsNone(W._LOCK["fd"], "and the record is let go")
+
+    def test_8_a_running_motor_never_follows_the_environment_to_another_home(self):
+        # The fault this file's own first draft had: a motor thread outlived its
+        # test's temp home, the environment moved on, and the thread landed on
+        # the operator's live home in 5 runs of 30.
+        W = self.W
+        W.under_test = lambda: False
+        W.TICK_S = 0.05
+        os.environ["SUTRA_MOTOR"] = "1"
+        other = tempfile.mkdtemp(prefix="website-motor-other-")
+        try:
+            self.assertTrue(W.start_motor())
+            self.assertTrue(self.until(lambda: os.path.isfile(os.path.join(self.home, "motor.json"))))
+            thread = W._MOTOR["thread"]
+            os.environ["SUTRA_NATIVE_DEPT_HOME"] = other
+            self.assertTrue(self.until(lambda: not thread.is_alive()), "the home moved: the motor stops")
+            self.assertEqual(os.listdir(other), [], "and it never touched the other home")
+        finally:
+            os.environ["SUTRA_NATIVE_DEPT_HOME"] = self.home
+            W.stop_motor()
+            shutil.rmtree(other, ignore_errors=True)
+
+    @staticmethod
+    def until(cond, wait_s=3.0):
+        import time
+        end = time.time() + wait_s
+        while time.time() < end:
+            if cond():
+                return True
+            time.sleep(0.01)
+        return bool(cond())
 
     def test_6_a_test_may_not_touch_the_live_records_home(self):
         W = self.W
