@@ -1,6 +1,11 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-25
+## 2.305.0 (2026-09-27)
+
+- Now is redesigned: with nothing waiting, a greeting and one bar sit in the middle of the screen; when something needs you, it appears under the bar as a single clickable row, with updates below.
+- One small mark in the bar says the state (All clear, Checking, Offline, Paused, Sending); clicking All clear shows what is running and what finished today, and Offline retries.
+
 ## 2.304.5 (2026-09-27)
 
 - Released from v2.304.4-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.

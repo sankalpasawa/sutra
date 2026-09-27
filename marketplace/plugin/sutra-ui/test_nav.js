@@ -184,8 +184,13 @@ test("now: SCREENS.now renders the honest empty state and TITLES carries it", ()
   /* v3.3 shipped a designed-later placeholder; PLAN-100 S59 made Now the
      needs-you feed consumer. Empty/dark feed = honest empty state. */
   assert(typeof T.SCREENS.now === "function", "SCREENS.now missing");
-  assert(/Nothing needs you right now/.test(T.SCREENS.now()),
-         "empty-state wording missing");
+  /* 2026-09-27: the empty claim waits for the feed's first answer (before
+     it, Now says it is checking), so the test states the answer it means */
+  const had = T.S.needsYou;
+  T.S.needsYou = [];
+  assert(/>All clear</.test(T.SCREENS.now()),
+         "empty-state mark missing");
+  T.S.needsYou = had;
   assert(Array.isArray(T.TITLES.now) && T.TITLES.now.length === 2);
 });
 

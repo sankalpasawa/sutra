@@ -19,17 +19,71 @@ function escAttr(x){
    without a DOM. */
 /* mock v5 parity: cards speak founder language — never a raw enum, one card
    per thing, and every card brings an action for this moment. */
-const NY_KIND = { needs_decision: "needs you", rescue: "needs you", info: "update" };
+/* Layout A (founder 2026-09-27): two lanes, what needs a decision and then
+   FYI; every reason a plain sentence, never the code the row carries. */
+const NY_REASON = {
+  needs_founder: "Waiting for your answer",
+  founder_confirm: "Waiting for your answer",
+  autonomy_top_tier: "Needs your go-ahead before it runs",
+  no_live_runtime: "Paused: its session closed. Resume when ready",
+  error_during_execution: "Hit an error. Open to retry",
+};
 function nyHumanMeta(t){
-  const s = String(t || "");
+  const s = String(t || "").trim();
+  if (NY_REASON[s]) return NY_REASON[s];
   if (/app_restart|app restarted/i.test(s))
-    return "paused when the app restarted \u2014 resume when ready";
-  if (/^mission failed$/i.test(s)) return "the mission failed \u2014 open to retry";
-  if (/^mission stopped$/i.test(s)) return "stopped \u2014 open to retry";
-  if (/^mission done$/i.test(s)) return "done \u2014 result inside";
-  if (/founder_confirm/i.test(s)) return "waiting for your confirmation";
-  return s.replace(/_/g, " ");
+    return "Paused when the app restarted. Resume when ready";
+  if (/^mission failed$/i.test(s)) return "Failed. Open to retry";
+  if (/^mission stopped$/i.test(s)) return "Stopped. Open to retry";
+  if (/^mission done$/i.test(s)) return "Done. The result is inside";
+  if (/founder_confirm/i.test(s)) return "Waiting for your answer";
+  const plain = s.replace(/_/g, " ");
+  return plain.charAt(0).toUpperCase() + plain.slice(1);
 }
+/* A stall row written before 2026-09-27 carries one generic title for every
+   task; read it as what it means rather than showing it. */
+const NY_OLD_STALL = /^mission may be stalled -- nothing from its session for (\d+) min/i;
+function nyView(it){
+  const old = NY_OLD_STALL.exec(String(it.title || ""));
+  if (old) return { title: "A running task went quiet", why: "Silent for " + old[1] + " min" };
+  return { title: String(it.title || it.item_id || ""),
+           why: it.why_now ? nyHumanMeta(it.why_now) : "" };
+}
+/* the same test loadNeedsYou's alert dot uses */
+function nyIsDecision(it){
+  const id = String(it.item_id || "");
+  return it.kind === "needs_decision" || it.kind === "rescue"
+      || id.indexOf("rescue-") === 0 || id.indexOf("stall-") === 0;
+}
+/* one card per TASK: its mission when the row names one (a stall row's id
+   does), else the old producer + title key */
+function nyTaskKey(it){
+  if (it.mission_id) return "m:" + it.mission_id;
+  const id = String(it.item_id || "");
+  if (id.indexOf("stall-") === 0 && id.length > 6) return "m:" + id.slice(6);
+  return "t:" + String(it.producer || "") + "|" + String(it.title || it.item_id || "");
+}
+/* today reads as a clock, any other day as the day (the department tab's rule) */
+const NY_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function nyWhen(ts){
+  const n = Number(ts) || 0;
+  if (!n) return "";
+  const d = new Date(n < 1e12 ? n * 1000 : n), t = new Date();
+  if (d.toDateString() !== t.toDateString()) return d.getDate() + " " + NY_MON[d.getMonth()];
+  return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+}
+/* decisions: the one waiting longest first; FYI: the newest first */
+function nySplit(items){
+  const dec = new Map(), fyi = new Map();
+  for (const it of items || []) (nyIsDecision(it) ? dec : fyi).set(nyTaskKey(it), it);
+  const at = it => Number(it.ts) || 0;
+  return {
+    decide: [...dec.values()].sort((a, b) =>
+      (at(a) || Number.MAX_SAFE_INTEGER) - (at(b) || Number.MAX_SAFE_INTEGER)),
+    fyi: [...fyi.values()].sort((a, b) => at(b) - at(a)),
+  };
+}
+const NY_FYI_SHOWN = 3;
 function nyAction(it){
   if (it.primary_action) return it.primary_action;
   if (String(it.item_id || "").indexOf("rescue-") === 0) return "Pick it up";
@@ -37,34 +91,88 @@ function nyAction(it){
   if (it.kind === "needs_decision") return "Open";
   return "View";
 }
+/* kept for any caller counting cards: one row per task, both lanes */
 function nyDedupe(items){
-  const seen = new Map();
-  for (const it of items || [])
-    seen.set(String(it.producer || "") + "|" + String(it.title || it.item_id || ""), it);
-  return [...seen.values()];
+  const lanes = nySplit(items);
+  return lanes.decide.concat(lanes.fyi);
 }
+/* the producer is named only when it is not Shadow: on Shadow's own rows
+   the tag said nothing the page did not */
+function nyProdTag(it){
+  const prod = String(it.producer || "");
+  if (!prod || prod.toLowerCase() === "shadow") return "";
+  return `<span class="nyprod">${esc(prod.charAt(0).toUpperCase() + prod.slice(1).toLowerCase())}</span>`;
+}
+/* Pass 3 (founder 2026-09-27: "clumsy", "like Linear", no vertical bars,
+   rows clickable, simpler): one line per row -- a status icon, the task,
+   the reason, the time -- and the whole row is the click. The action is
+   named on hover or focus, where the time was; no button inside a row.
+   The icon says the kind of wait: ask = yours to answer, warn = gone
+   quiet, err = broke; for updates ok = done, err = failed, stop = stopped. */
+function nyTone(it){
+  const id = String(it.item_id || ""), why = String(it.why_now || "").toLowerCase();
+  if (nyIsDecision(it)){
+    if (id.indexOf("rescue-") === 0 || /error|fail/.test(why)) return "err";
+    if (id.indexOf("stall-") === 0 || /silent/.test(why)
+        || NY_OLD_STALL.test(String(it.title || ""))) return "warn";
+    return "ask";
+  }
+  if (/fail|error/.test(why)) return "err";
+  if (/stop/.test(why)) return "stop";
+  return "ok";
+}
+const NY_ICON = {
+  ask: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="2.4" fill="currentColor"/>',
+  warn: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.6 2.2"/>',
+  err: '<circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M8 4.6v4.1" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/><circle cx="8" cy="11.3" r="1" fill="#fff"/>',
+  ok: '<circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M5 8.2l2 2 4-4.2" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
+  stop: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4.6 11.4l6.8-6.8" stroke="currentColor" stroke-width="1.6"/>',
+  wait: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.6 2.2"/>',
+};
+function nyIcon(tone){
+  return `<svg class="nyico" viewBox="0 0 16 16" aria-hidden="true">${NY_ICON[tone] || NY_ICON.ask}</svg>`;
+}
+/* a row is one button for the keyboard too (Enter or Space opens it) */
+function nyRowAttrs(it, v){
+  return `data-deeplink="${escAttr(it.deep_link || "")}"
+         data-itemid="${escAttr(it.item_id || "")}"
+         tabindex="0" role="button"
+         aria-label="${escAttr(v.title + (v.why ? ". " + v.why : ""))}"`;
+}
+/* seen = opened, not answered: the row stays (founder 2026-09-16), its
+   title drawn quieter; the state is a class so the look is css */
+function nyRowHtml(cls, it){
+  const v = nyView(it), when = nyWhen(it.ts), tone = nyTone(it);
+  const act = cls === "nycard" ? nyAction(it) : "View";
+  /* minimal text (2026-09-27): an update's icon already says done, failed
+     or stopped, so its row is the task alone; the words wait on hover */
+  const why = cls === "nycard" ? v.why : "";
+  const tip = !why && v.why ? ` title="${escAttr(v.why)}"` : "";
+  return `
+    <div class="${cls} tone-${tone}${it.state === "seen" ? " seen" : ""}" ${nyRowAttrs(it, v)}${tip}>${
+      nyIcon(tone)}${nyProdTag(it)}<span class="nytitle">${esc(v.title)}</span><span class="nywhy">${esc(why)}</span>${
+      when ? `<span class="nytime">${esc(when)}</span>` : ""}<span class="nygo">${esc(act)}</span></div>`;
+}
+function nyCardHtml(it){ return nyRowHtml("nycard", it); }
+function nyFyiHtml(it){ return nyRowHtml("nyfyi", it); }
+/* both lanes; "" when there is nothing at all. A lane with nothing in it is
+   not drawn. */
 function needsYouHtml(items){
-  items = nyDedupe(items);
-  if (!items || !items.length) return "";
-  const rows = items.map(it => {
-    const prod = String(it.producer || "");
-    const act = nyAction(it);
-    /* seen = opened, not answered: the card stays, drawn lighter (founder
-       2026-09-16); the state is a class so the look is css, not words */
-    return `
-    <div class="nycard${it.state === "seen" ? " seen" : ""}"
-         data-deeplink="${escAttr(it.deep_link || "")}"
-         data-itemid="${escAttr(it.item_id || "")}">
-      <div class="nyhead">
-        <span class="nyprod">${esc(prod.charAt(0).toUpperCase() + prod.slice(1).toLowerCase())}</span>
-        <span class="nykind">${esc(NY_KIND[it.kind] || String(it.kind || "").replace(/_/g, " "))}</span>
-      </div>
-      <div class="nytitle">${esc(it.title || "")}</div>
-      ${it.why_now ? `<div class="nywhy">${esc(nyHumanMeta(it.why_now))}</div>` : ""}
-      ${act ? `<button class="btn pri nyact" type="button"
-         data-nyact="${escAttr(it.item_id || "")}">${esc(act)}</button>` : ""}
-    </div>`; }).join("");
-  return `<div class="nyfeed">${rows}</div>`;
+  const { decide, fyi } = nySplit(items);
+  if (!decide.length && !fyi.length) return "";
+  let out = "";
+  if (decide.length)
+    out += `<section class="nylane nydecide"><h5 class="nylaneh">Waiting on you</h5>
+      <div class="nyfeed">${decide.map(nyCardHtml).join("")}</div></section>`;
+  if (fyi.length){
+    const all = typeof S !== "undefined" && S && S.nyFyiAll;
+    const shown = all ? fyi : fyi.slice(0, NY_FYI_SHOWN);
+    const more = fyi.length - shown.length;
+    out += `<section class="nylane nyfyilane"><h5 class="nylaneh">FYI</h5>
+      <div class="nyfyis">${shown.map(nyFyiHtml).join("")}</div>${
+      more > 0 ? `<button class="nymore" type="button" data-nymore="1">${more} more</button>` : ""}</section>`;
+  }
+  return out;
 }
 
 /* S60: a card click deep-links straight into the owning thread. The Shadow
@@ -84,7 +192,11 @@ function openNeedsYouItem(link, itemId){
       for (const it of S.needsYou)
         if (it && it.item_id === itemId && it.state === "new") it.state = "seen";
   }
-  if (typeof S !== "undefined") S.pendingDeepLink = link || null;
+  if (typeof S !== "undefined"){
+    S.pendingDeepLink = link || null;
+    /* opening a task from the All clear panel closes it (review 3) */
+    S.nyClearOpen = false;
+  }
   if (typeof shadowRouteDeepLink === "function")
     return shadowRouteDeepLink(link);
   if (typeof goDest === "function") goDest("focus");
@@ -121,13 +233,16 @@ function loadNeedsYou(){
        whose button is replaced between mousedown and mouseup never becomes a
        click. The comparison is on the serialised items, so a status flip or a
        new item still repaints; the same feed twice does not. */
-    const before = S._needsYouKey;
-    if (doc === "err"){ S.needsYou = S.needsYou || []; }
-    else S.needsYou = doc ? (doc.items || []) : null;
+    /* S.nyErr (2026-09-27): when the feed first stopped answering, 0 once it
+       answers again. It keeps the FIRST failure's time, so an outage repaints
+       once on the way in and once on the way out, never every poll. */
+    const before = S._needsYouKey, errBefore = S.nyErr || 0;
+    if (doc === "err"){ S.needsYou = S.needsYou || []; S.nyErr = errBefore || Date.now(); }
+    else { S.needsYou = doc ? (doc.items || []) : null; S.nyErr = 0; S.nyOkAt = Date.now(); }
     let key;
     try { key = JSON.stringify(S.needsYou); } catch (e) { key = String(Date.now()); }
     S._needsYouKey = key;
-    const changed = before === undefined || key !== before;
+    const changed = before === undefined || key !== before || errBefore !== S.nyErr;
     if (doc && typeof shadowDotAlerts === "function"){
       const alerts = (doc.items || []).filter(it => it.state === "new"
         && (it.kind === "needs_decision"
@@ -137,7 +252,11 @@ function loadNeedsYou(){
     }
     if (changed && typeof scheduleRender === "function") scheduleRender();
   }).catch(() => { S._needsYouBusy = false;
-    S.needsYou = S.needsYou || []; });
+    S.needsYou = S.needsYou || [];
+    if (!S.nyErr){
+      S.nyErr = Date.now();
+      if (typeof scheduleRender === "function") scheduleRender();
+    } });
 }
 
 /* ── v4: THE BOX (SHADOW-V3 v3.3, ADR-043) ─────────────────────────────
@@ -153,26 +272,164 @@ function nowChat(){
   return S_.nowChat;
 }
 
-function nowAskHtml(){
+/* One status mark (founder 2026-09-27: minimal text, no subtext line, the
+   word Shadow never shown): the bar carries it bottom-left, where Codex
+   keeps its chips -- All clear, Checking, Offline, Paused, Sending, Didn't
+   send. A mark that can do something is a button (founder: "if I click on
+   All clear, it should do something"): All clear opens what is running
+   and what finished today; Offline and Didn't send retry. */
+function nyChipHtml(tone, label, action){
+  const inner = nyIcon(tone) + `<span>${esc(label)}</span>` +
+    (tone === "err" && action ? `<span class="nyretry">Retry</span>` : "");
+  if (!action) return `<div class="nychip tone-${tone}" role="status">${inner}</div>`;
+  const open = typeof S !== "undefined" && S && S.nyClearOpen;
+  const exp = action === "data-nyclear" ? ` aria-expanded="${open ? "true" : "false"}"` : "";
+  return `<button class="nychip tone-${tone}" type="button" ${action}="1"${exp} aria-live="polite">${inner}</button>`;
+}
+/* the All clear panel: Running and Done today, by Focus's own rules --
+   shadowTasks() decides membership, shadowTaskSection() the lane -- so Now
+   never keeps a second copy of what counts as done today. Each row opens
+   its task; the foot says when Now last heard all clear. */
+function nyClearPanelHtml(){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const list = (typeof shadowTasks === "function") ? shadowTasks() : (S_.shadowMissions || []);
+  const lane = m => (typeof shadowTaskSection === "function") ? shadowTaskSection(m)
+    : (/^(running|queued|paused)$/.test(String(m.state || "")) ? "run" : "");
+  const run = [], done = [];
+  for (const m of list || []){
+    if (!m || !/^m-/.test(String(m.id || ""))) continue;
+    const l = lane(m);
+    if (l === "run") run.push(m); else if (l === "done") done.push(m);
+  }
+  const prow = (m, tone) => `<div class="nyprow tone-${tone}" tabindex="0" role="button"
+      data-deeplink="sutra://shadow/mission/${escAttr(m.id)}" data-itemid="">${nyIcon(tone)}<span>${
+      esc(m.objective || m.title || "Task")}</span></div>`;
+  let body = "";
+  if (run.length) body += `<div class="nyph">Running</div>` + run.slice(0, 5).map(m => prow(m, "wait")).join("");
+  /* Focus files stopped tasks under Done today too; the icon still says
+     stopped, never done (review 4) */
+  if (done.length) body += `<div class="nyph">Done today</div>` + done.slice(0, 5).map(m =>
+    prow(m, String(m.state || "") === "stopped" ? "stop" : "ok")).join("");
+  if (!body) body = `<div class="nypempty">Quiet today.</div>`;
+  const at = S_.nyOkAt ? nyWhen(S_.nyOkAt) : "";
+  return `<div class="nypanel" role="dialog" aria-label="All clear">${body}${
+    at ? `<div class="nypfoot">Checked ${esc(at)}</div>` : ""}</div>`;
+}
+/* open or close the panel; opening re-reads the task list so it is fresh */
+function nyToggleClear(force){
+  if (typeof S === "undefined") return;
+  S.nyClearOpen = force === undefined ? !S.nyClearOpen : !!force;
+  if (S.nyClearOpen && typeof fetch !== "undefined"){
+    fetch("/api/shadow/missions").then(r => r.ok ? r.json() : null).then(d => {
+      if (d && Array.isArray(d.missions)) S.shadowMissions = d.missions;
+      if (typeof scheduleRender === "function") scheduleRender();
+    }).catch(() => {});
+  }
+  if (typeof scheduleRender === "function") scheduleRender();
+}
+function nowAskHtml(chip, off, panel){
+  const c = nowChat();
+  const dis = (c.busy || off) ? " disabled" : "";
+  return `<div class="nyask" data-nyask="1">
+    <div class="shcompwrap">
+      <textarea class="shcompose" data-nycomp="1" rows="2"
+        placeholder="Describe a task"${dis}>${esc(c.text || "")}</textarea>
+      ${chip || ""}
+      <button class="btn shsend" type="button" data-nysend="1"
+        aria-label="Send"${dis}>&#8593;</button>
+    </div>${panel || ""}
+  </div>`;
+}
+
+/* ── motion (founder 2026-09-27: "animations, smoothness") ──────────────
+   The screen is rebuilt from markup, so motion is decided AFTER a paint,
+   never baked into the markup (the markup stays a pure function of state
+   and the repaint guard in render() keeps working). Three moments, each
+   answering a change: a row that was not on screen before rises in (a few
+   ms apart); the greeting and bar glide between the middle and the top
+   when the page gains or loses rows (FLIP: measure, invert, play); the
+   status mark cross-fades when it changes. Reduced motion: none of it. */
+let _nySeenRows = null, _nyLastCenter = null, _nyLastTop = null, _nyLastChip = null,
+    _nyLastPanel = false, _nyPaintQueued = false;
+function nyMotionReset(){
+  _nySeenRows = null; _nyLastCenter = null; _nyLastTop = null; _nyLastChip = null;
+  _nyLastPanel = false;
+}
+/* render() calls SCREENS.now on every socket frame; one queued frame is
+   enough however many calls land before it (review 2) */
+function nyQueuePaint(){
+  if (_nyPaintQueued || typeof requestAnimationFrame !== "function") return;
+  _nyPaintQueued = true;
+  requestAnimationFrame(() => { _nyPaintQueued = false; nyAfterPaint(); });
+}
+function nyAfterPaint(){
+  if (typeof document === "undefined" || !document.querySelector) return;
+  const root = document.querySelector(".nynow");
+  if (!root) return;
+  const reduce = typeof matchMedia === "function"
+    && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const first = _nyLastCenter === null;
+  if (first && !reduce) root.classList.add("nyenter");
+  const seen = _nySeenRows || new Set();
+  let i = 0;
+  root.querySelectorAll(".nycard[data-itemid], .nyfyi[data-itemid]").forEach(r => {
+    const id = r.getAttribute("data-itemid");
+    if (seen.has(id)) return;
+    seen.add(id);
+    if (reduce || first) return;          /* the page's own entrance covers the first paint */
+    r.style.animationDelay = (Math.min(i++, 8) * 28) + "ms";
+    r.classList.add("nyin");
+  });
+  _nySeenRows = seen;
+  const top = root.querySelector(".nytop");
+  const center = root.classList.contains("center");
+  const panel = !!root.querySelector(".nypanel");
+  /* glide when the page moves between the middle and the top, and when the
+     All clear panel opens or closes in the middle (it sits in the flow
+     there, so the greeting and bar rise to make room for it) -- never on a
+     plain repaint, where a scroll would read as a move */
+  const moved = center !== _nyLastCenter || (center && panel !== _nyLastPanel);
+  /* the panel pops only when it newly opens, never on a rebuild while it is
+     open (review 1) */
+  if (panel && !_nyLastPanel && !first && !reduce)
+    root.querySelector(".nypanel").classList.add("nyopen");
+  _nyLastPanel = panel;
+  if (top){
+    const y = top.getBoundingClientRect().top;
+    if (!first && !reduce && moved && _nyLastTop !== null && typeof requestAnimationFrame === "function"){
+      top.style.transition = "none";
+      top.style.transform = "translateY(" + (_nyLastTop - y) + "px)";
+      top.getBoundingClientRect();
+      requestAnimationFrame(() => {
+        top.style.transition = "transform .44s cubic-bezier(.2,.8,.2,1)";
+        top.style.transform = "";
+      });
+    }
+    _nyLastTop = y;
+  }
+  _nyLastCenter = center;
+  const chip = root.querySelector(".nychip");
+  const label = chip ? chip.textContent.trim() : "";
+  if (chip && !first && !reduce && label !== _nyLastChip) chip.classList.add("nyswap");
+  _nyLastChip = label;
+}
+
+/* Shadow's answer to the bar: its prose and one draft per task, right
+   under the bar and above the rows */
+function nowAnswerHtml(){
   const c = nowChat();
   const cards = (c.missions || []).map(m =>
     (typeof missionCardHtml === "function") ? missionCardHtml(m) : "").join("");
   const reply = c.reply
     ? ((typeof shadowProseHtml === "function") ? shadowProseHtml(c.reply) : esc(c.reply))
     : "";
-  return `<div class="nyask" data-nyask="1">
-    <div class="shcompwrap">
-      <textarea class="shcompose" data-nycomp="1" rows="2"
-        placeholder="What do you have in mind?"${c.busy ? " disabled" : ""}>${esc(c.text || "")}</textarea>
-      <button class="btn shsend" type="button" data-nysend="1"
-        aria-label="Send"${c.busy ? " disabled" : ""}>↑</button>
-    </div>
+  if (!reply && !cards) return "";
+  return `<div class="nyasked">
     ${reply ? `<div class="shmsg shshadow nyreply">${reply}</div>` : ""}
     ${cards ? `<div class="nydrafts">${cards}</div>` : ""}
     ${(c.missions || []).length > 1 ? `<div class="nydraftacts">
       <button class="btn pri" type="button" data-nystartall="1"${
         c.busy ? " disabled" : ""}>Start all</button></div>` : ""}
-    ${c.err ? `<div class="shnewerr">${esc(c.err)}</div>` : ""}
   </div>`;
 }
 
@@ -192,8 +449,8 @@ async function nowSend(){
   try { body = (r && r.ok) ? await r.json() : null; } catch (e){ body = null; }
   c.busy = false;
   if (!body){
-    c.err = r ? "Shadow could not take that (" + r.status + ")."
-              : "Could not reach Shadow.";
+    /* the status mark in the bar says it; the words stay in the bar */
+    c.err = "Didn't send";
   } else {
     c.text = "";
     c.reply = body.reply || "";
@@ -223,7 +480,7 @@ async function nowStartAll(){
   c.busy = false; c.missions = left; if (!left.length) c.reply = "";
   if (typeof showNudge === "function")
     showNudge((n === total ? "Started " + n : "Started " + n + " of " + total)
-              + (n === 1 ? " task" : " tasks") + " — in Focus › Shadow.");
+              + (n === 1 ? " task" : " tasks") + ".");
   if (typeof scheduleRender === "function") scheduleRender();
   return n;
 }
@@ -266,6 +523,9 @@ function ensureNeedsYouTicker(){
   _nyTicker = setInterval(() => {
     if (!nyOnScreen()){
       if (typeof clearInterval === "function") clearInterval(_nyTicker);
+      /* left Now: the next visit gets the page's entrance again */
+      nyMotionReset();
+      if (typeof S !== "undefined") S.nyClearOpen = false;
       _nyTicker = null;
       return;
     }
@@ -284,25 +544,42 @@ if (typeof SCREENS !== "undefined"){
       nyAt = nyNow;
       loadNeedsYou();
     }
-    const items = (typeof S !== "undefined" && S.needsYou) || null;
-    if (items && items.length){
-      /* mock v5: the module greets, then only what needs the founder */
-      const n = nyDedupe(items).length;
-      const hr = new Date().getHours();
-      const g = hr < 12 ? "Good morning" : hr < 17 ? "Good afternoon"
-                                         : "Good evening";
-      return `<div class="nygreet">${g}.</div>
-        <div class="nysub"><b>${n} thing${n === 1 ? "" : "s"} need${n === 1 ? "s" : ""} you.</b>
-        Everything else is handled.</div>` + needsYouHtml(items) + nowAskHtml();
-    }
-    /* v4: when nothing needs you, the box is the page (the door to Shadow
-       stays for anyone who used it) */
-    return `
-  <div class="zero"><h4>Now</h4>
-    <p>Nothing needs you right now.</p>
-    <p><button class="btn pri" type="button" data-nystart="1">Talk to
-    Shadow</button></p>
-  </div>` + nowAskHtml();
+    /* Pass 4 (founder 2026-09-27): the Codex-style home stays -- the
+       greeting over the bar, centred when nothing is under it, rows under
+       it otherwise -- with minimal text and no subtext line: every state
+       is one status mark in the bar, and the word Shadow is never shown.
+         undefined  first load        -> Checking (no all-clear claim)
+         null       feed dark (403)   -> Paused; the bar cannot send
+         nyErr      feed failing      -> Offline (since when), Retry
+         no rows to decide            -> All clear
+         busy / err from the bar      -> Sending / Didn't send, Retry */
+    const S_ = (typeof S !== "undefined") ? S : {};
+    const items = S_.needsYou, err = S_.nyErr || 0, off = items === null;
+    const c = nowChat();
+    const hr = new Date().getHours();
+    const g = hr < 12 ? "Good morning" : hr < 17 ? "Good afternoon"
+                                       : "Good evening";
+    let chip = "";
+    if (c.busy) chip = nyChipHtml("wait", "Sending");
+    else if (c.err) chip = nyChipHtml("err", c.err, "data-nysend");
+    else if (items === undefined) chip = nyChipHtml("wait", "Checking");
+    else if (off) chip = nyChipHtml("stop", "Paused");
+    else if (err) chip = nyChipHtml("err", items.length ? "Offline since " + nyWhen(err) : "Offline",
+                                    "data-nyretry");
+    else if (!nySplit(items).decide.length) chip = nyChipHtml("ok", "All clear", "data-nyclear");
+    /* the All clear panel lives only while All clear is what the mark says */
+    const clearNow = /data-nyclear/.test(chip);
+    if (!clearNow && S_.nyClearOpen) S_.nyClearOpen = false;
+    const panel = clearNow && S_.nyClearOpen ? nyClearPanelHtml() : "";
+    const body = (items && items.length) ? needsYouHtml(items) : "";
+    const answer = off ? "" : nowAnswerHtml();
+    const center = !body && !answer;
+    const hero = off ? g + "." : g + ", what can we do for you?";
+    /* motion is decided after the paint (nyAfterPaint), never in the markup */
+    nyQueuePaint();
+    return `<div class="nynow${center ? " center" : ""}"><div class="nytop">
+      <div class="nyhero">${esc(hero)}</div>` + nowAskHtml(chip, off, panel) + `</div>` +
+      answer + body + `</div>`;
   };
 }
 
@@ -316,6 +593,17 @@ if (typeof document !== "undefined" && document.addEventListener){
       ev.preventDefault && ev.preventDefault();
       nowChat().text = ev.target.value;
       nowSend();
+      return;
+    }
+    if (ev.key === "Escape" && typeof S !== "undefined" && S.nyClearOpen){
+      nyToggleClear(false);
+      return;
+    }
+    /* a focused row opens on Enter or Space, the same as a click */
+    if ((ev.key === "Enter" || ev.key === " ") && d.deeplink !== undefined
+        && ev.target.getAttribute && ev.target.getAttribute("role") === "button"){
+      ev.preventDefault && ev.preventDefault();
+      openNeedsYouItem(d.deeplink, d.itemid);
     }
   });
   document.addEventListener("input", (ev) => {
@@ -324,11 +612,22 @@ if (typeof document !== "undefined" && document.addEventListener){
   });
   document.addEventListener("click", (ev) => {
     const t = ev.target;
-    if (t && t.dataset && t.dataset.nystart){
-      openNeedsYouItem("sutra://shadow/home");
+    /* the status mark is a button with an icon and words inside, so the
+       click may land on a child: find the mark, not the exact target */
+    const mark = t && t.closest ? t.closest("[data-nyclear],[data-nyretry],[data-nysend]") : null;
+    const md = (mark && mark.dataset) || (t && t.dataset) || {};
+    if (md.nyclear){ nyToggleClear(); return; }
+    /* a click anywhere outside the open panel closes it, then does its own thing */
+    if (typeof S !== "undefined" && S.nyClearOpen
+        && !(t && t.closest && t.closest(".nypanel"))) nyToggleClear(false);
+    if (t && t.dataset && t.dataset.nymore){
+      /* FYI shows three; the rest on ask, until the app reloads */
+      if (typeof S !== "undefined") S.nyFyiAll = true;
+      if (typeof scheduleRender === "function") scheduleRender();
       return;
     }
-    if (t && t.dataset && t.dataset.nysend){ nowSend(); return; }
+    if (md.nyretry){ loadNeedsYou(); return; }
+    if (md.nysend){ nowSend(); return; }
     if (t && t.dataset && t.dataset.nystartall){ nowStartAll(); return; }
     if (t && t.dataset && t.dataset.shstart){
       const c = nowChat();

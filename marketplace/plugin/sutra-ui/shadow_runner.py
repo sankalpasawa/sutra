@@ -1108,8 +1108,13 @@ def check_stalls(now=None, stall_secs=STALL_SECS):
                 "item_id": "stall-%s" % m["id"],
                 "producer": "shadow",
                 "kind": "needs_decision",
-                "title": "mission may be stalled -- nothing from its "
-                         "session for %d min" % max(1, int(now - last) // 60),
+                # Now layout A (2026-09-27): the card reads as its task and
+                # the silence is the reason. One generic title for every
+                # stall made eight stalled tasks look like one card.
+                "title": (m.get("objective") or "").strip()[:120]
+                         or "A running task",
+                "why_now": "silent for %d min" % max(1, int(now - last) // 60),
+                "mission_id": m["id"],
                 "deep_link": "sutra://shadow/mission/%s" % m["id"],
                 "dedupe_key": "stall:%s" % m["id"],
                 "state": "new"})

@@ -132,6 +132,24 @@ class TestJourneySims(unittest.TestCase):
         with open(sf._feed_path()) as fh:
             self.assertTrue(any("stall-%s" % m["id"] in l for l in fh))
 
+    def test_u1b_a_stall_card_names_its_task(self):
+        """Now layout A (2026-09-27): the stall card reads as its task, the
+        silence is the reason, and the row names the mission it is about."""
+        store = MissionStore()
+        m = store.create("weekly digest", "fix", target_session="sess-named")
+        store.transition(m["id"], "brief_confirm")
+        store.transition(m["id"], "running")
+        shadow_runner._LAST_FRAME_TS["sess-named"] = 100.0
+        self.assertIn(m["id"], shadow_runner.check_stalls(now=1000.0, stall_secs=240))
+        import importlib, json, shadow_feed as sf
+        importlib.reload(sf)
+        with open(sf._feed_path()) as fh:
+            rows = [json.loads(l) for l in fh if ("stall-%s" % m["id"]) in l]
+        self.assertTrue(rows)
+        self.assertEqual(rows[-1]["title"], "weekly digest")
+        self.assertEqual(rows[-1]["why_now"], "silent for 15 min")
+        self.assertEqual(rows[-1]["mission_id"], m["id"])
+
     def test_failed_retry_clones_fresh_mission(self):
         """Mission-failed journey: Retry = same brief, NEW target."""
         from mission_engine import clone_for_retry
