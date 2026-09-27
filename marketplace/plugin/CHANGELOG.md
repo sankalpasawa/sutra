@@ -1,6 +1,14 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-25
+## 2.304.4 (2026-09-27)
+
+- Released from v2.304.3-desktop..HEAD: 3 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - sutra-ui: Org in the rail opens Org structure directly, no one-row accordion
+  - sutra-ui: download-resume test no longer writes the real update folder
+  - sutra-ui: an unusable staged update never blocks a real one
+- Changed: 6 file(s), +100/-34
+
 ## 2.304.3 (2026-09-26)
 
 - Released from v2.304.2-desktop..HEAD: 2 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
