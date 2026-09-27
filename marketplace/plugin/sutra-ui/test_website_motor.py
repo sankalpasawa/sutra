@@ -12,6 +12,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from pathlib import Path
 
 REF = "dref-motor0001"
 GOAL = "A website for City Care Hospital: departments, doctors, how to book."
@@ -183,7 +184,8 @@ class TestWhoMayStartIt(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             W.home()
         os.environ["SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS"] = "1"
-        self.assertEqual(str(W.home()), os.path.expanduser("~/.sutra-ui/native"), "unless it says so, by name")
+        # As paths, not as text: Windows writes the same folder with the other slash.
+        self.assertEqual(W.home(), Path(os.path.expanduser("~/.sutra-ui/native")), "unless it says so, by name")
 
     def test_7_every_launcher_says_the_word_and_the_beta_has_its_own_home(self):
         here = os.path.dirname(os.path.abspath(__file__))
