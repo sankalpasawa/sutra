@@ -1,6 +1,11 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-25
+## 2.306.1 (2026-09-28)
+
+- The website department's motor starts only in the app itself, and it stops the moment the app closes.
+- Sutra Beta keeps its website departments in its own folder, apart from Sutra's.
+
 ## 2.306.0 (2026-09-27)
 
 - A website department that runs itself. In Org, the Edit menu's "New website organisation…" founds a new organisation with its Root and a Website department from one line.
