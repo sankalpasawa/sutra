@@ -102,6 +102,10 @@ jobs:
           cd ..
           PYTHONPATH=electron/wincompat electron/payload/python/python.exe \
             -m unittest -v test_updates_windows
+          # The website department's motor holds its record by an operating
+          # system lock, and on Windows that is msvcrt, a path no Mac runs.
+          PYTHONPATH=electron/wincompat electron/payload/python/python.exe \
+            -m unittest -v test_website_motor
 
       - name: Package the unsigned installer + portable exe
         run: |

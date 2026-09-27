@@ -1,0 +1,97 @@
+"""test_website_motor.py -- the motor and the line, in plain unittest.
+
+test_website_dept.py is the full suite and needs pytest. This file is the part
+that must also run where pytest is not installed: the release pipelines, and
+above all the Windows one, where the motor's lock takes a different path
+(msvcrt, not fcntl) that no Mac can exercise.
+
+Run: python test_website_motor.py
+"""
+import importlib
+import os
+import shutil
+import tempfile
+import unittest
+
+REF = "dref-motor0001"
+GOAL = "A website for City Care Hospital: departments, doctors, how to book."
+
+
+class TestTheMotor(unittest.TestCase):
+    def setUp(self):
+        self.home = tempfile.mkdtemp(prefix="website-motor-")
+        self.prior = {k: os.environ.get(k) for k in ("SUTRA_NATIVE_DEPT_HOME", "SUTRA_WEBSITE_OFFLINE")}
+        os.environ["SUTRA_NATIVE_DEPT_HOME"] = self.home
+        os.environ["SUTRA_WEBSITE_OFFLINE"] = "1"
+        import website_dept
+        self.W = importlib.reload(website_dept)
+
+    def tearDown(self):
+        self.W.stop_motor()
+        for k, v in self.prior.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(self.home, ignore_errors=True)
+
+    def test_1_one_motor_per_record_and_the_next_takes_over(self):
+        W = self.W
+        self.assertTrue(W.hold_motor(), "the first app is the motor")
+        self.assertTrue(W.hold_motor(), "and stays it")
+        first = W._LOCK["fd"]
+        W._LOCK["fd"] = None                       # a second app on the same record
+        try:
+            self.assertFalse(W.hold_motor(), "the second may not tick")
+        finally:
+            W._LOCK["fd"] = first
+        W.stop_motor()                             # the first closes
+        self.assertTrue(W.hold_motor(), "and the next takes over")
+
+    def test_2_the_line_runs_to_the_first_publish_ask_then_publishes_on_a_stamp(self):
+        W = self.W
+        W.create(REF, "City Care Hospital Website", None)
+        self.assertEqual(W.due(REF)[2], "nothing due")
+        W.give_goal(REF, GOAL)
+        self.assertEqual(W.run_until_idle(REF), 3)
+        asks = W.status(REF)["asks"]
+        self.assertEqual([a["kind"] for a in asks], ["publish"])
+        W.decide_ask(REF, asks[0]["id"], True)
+        self.assertEqual(W.run_until_idle(REF), 1)
+        self.assertTrue((W.live_dir(REF) / "index.html").is_file())
+        self.assertEqual(W.run_until_idle(REF), 0, "a slot never runs twice")
+
+    def test_3_an_ask_grows_the_site_and_put_back_takes_it_away_again(self):
+        W = self.W
+        W.create(REF, "City Care Hospital Website", None)
+        W.give_goal(REF, GOAL)
+        W.run_until_idle(REF)
+        W.decide_ask(REF, W.status(REF)["asks"][0]["id"], True)
+        W.run_until_idle(REF)
+        W.owner_ask(REF, "Add a Careers page")
+        self.assertEqual(W.run_until_idle(REF), 4)
+        self.assertTrue((W.live_dir(REF) / "careers.html").is_file())
+        W.put_back(REF, "Live site", 1)
+        self.assertFalse((W.live_dir(REF) / "careers.html").exists())
+        states = {c["name"]: c["state"] for c in W.health(REF)["checks"]}
+        self.assertEqual((states["Slots"], states["Versions"]), ("ok", "ok"))
+
+    def test_4_a_run_cut_off_by_a_closed_app_runs_once_more(self):
+        W = self.W
+        W.create(REF, "City Care Hospital Website", None)
+        W.give_goal(REF, GOAL)
+        name, inp, slot = W.due(REF)
+        W._put_run(REF, {"id": "r-cut", "engine": name, "system": False, "slot": slot, "status": "running",
+                         "started": W.now(), "ended": None, "what": "reading", "wrote": None, "chain": None,
+                         "spend": {"calls": 0, "usd": 0.0}, "retries": 0})
+        self.assertTrue(W.hold_motor())            # the app reopens: the motor recovers
+        rows = [r for r in W.runs(REF) if r.get("slot") == slot]
+        self.assertEqual([r["status"] for r in rows], ["interrupted"])
+        W.run_until_idle(REF)
+        rows = [r for r in W.runs(REF) if r.get("slot") == slot]
+        self.assertEqual([r["status"] for r in rows], ["interrupted", "ok"])
+        self.assertEqual(rows[1]["retries"], 1)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=1)
