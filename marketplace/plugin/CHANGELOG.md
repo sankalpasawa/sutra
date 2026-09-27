@@ -1,6 +1,12 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-25
+## 2.306.0 (2026-09-27)
+
+- A website department that runs itself. In Org, the Edit menu's "New website organisation…" founds a new organisation with its Root and a Website department from one line.
+- Give the department a goal and it plans, writes, checks and publishes the site with nobody driving. The first publish waits for your stamp; after that an ask goes live by itself.
+- The department's screen shows its map, System status, the motor, each engine, every version with its trace, the live site, and Put back.
+
 ## 2.305.0 (2026-09-27)
 
 - Now is redesigned: with nothing waiting, a greeting and one bar sit in the middle of the screen; when something needs you, it appears under the bar as a single clickable row, with updates below.
