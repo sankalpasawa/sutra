@@ -656,6 +656,28 @@ def _delta_reconstruct(latest, installed_version, work, app):
             "asset": latest.get("manifest_asset"), "delta": dict(stats, hops=len(chain))}
 
 
+DELTA_MISS_KEEP = 50
+
+
+def _log_delta_miss(installed, version, exc):
+    """Append why the delta lane fell back to delta-misses.jsonl in the stage
+    dir. The staged record's note dies with the install (2026-09-27: a 377 KB
+    delta became a 257 MB download on the founder's Mac and no trace was left),
+    so this file is never cleared, only trimmed to the last DELTA_MISS_KEEP.
+    Best effort: logging must never stop the full-image fallback."""
+    try:
+        p = stage_dir() / "delta-misses.jsonl"
+        row = json.dumps({"ts": int(time.time()), "from": installed, "to": version,
+                          "error": type(exc).__name__, "reason": str(exc)[:1000]})
+        lines = p.read_text(encoding="utf-8").splitlines() if p.is_file() else []
+        lines = (lines + [row])[-DELTA_MISS_KEEP:]
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        os.replace(tmp, p)
+    except (OSError, RuntimeError, ValueError):
+        pass
+
+
 def download_and_verify(dest_dir=None):
     """Fetch the release for this arch and prove it before anything is replaced.
 
@@ -686,6 +708,7 @@ def download_and_verify(dest_dir=None):
             return got
         except (RuntimeError, OSError, ValueError, KeyError, TypeError) as exc:
             delta_note = "delta update not possible (%s); downloading the full image" % exc
+            _log_delta_miss(_installed_desktop_version(), latest.get("version"), exc)
             for p in list(d.iterdir()):
                 shutil.rmtree(p, ignore_errors=True) if p.is_dir() and not p.is_symlink() else p.unlink(missing_ok=True)
 

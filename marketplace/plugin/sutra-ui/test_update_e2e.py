@@ -425,6 +425,15 @@ class EndToEnd(unittest.TestCase):
         self.assertIn("delta update not possible", out.get("note") or "")
         self.assertTrue(self.server.hits("Sutra-%s.dmg" % self.arch))
         self.assertFalse(list(self.stage.glob("*.app")), "nothing half-built is left behind")
+        # 2026-09-27: the reason lived only in the staged record, which install
+        # deletes, so a real miss on the founder's Mac left no trace. It is now
+        # also appended to delta-misses.jsonl, which nothing clears.
+        log = self.stage / "delta-misses.jsonl"
+        rows = [json.loads(l) for l in log.read_text().splitlines()]
+        self.assertEqual((rows[-1]["from"], rows[-1]["to"]), (V1, V2))
+        self.assertTrue(rows[-1]["reason"], rows[-1])
+        self.cli("resolve", "--installed", V1)
+        self.assertTrue(log.is_file(), "resolve must not clear the miss log")
 
     def test_tampered_pack_falls_back_and_never_stages_it(self):
         a = self.assets[V2]
