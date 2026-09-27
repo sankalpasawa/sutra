@@ -234,7 +234,7 @@ function loadNeedsYou(){
        once on the way in and once on the way out, never every poll. */
     const before = S._needsYouKey, errBefore = S.nyErr || 0;
     if (doc === "err"){ S.needsYou = S.needsYou || []; S.nyErr = errBefore || Date.now(); }
-    else { S.needsYou = doc ? (doc.items || []) : null; S.nyErr = 0; }
+    else { S.needsYou = doc ? (doc.items || []) : null; S.nyErr = 0; S.nyOkAt = Date.now(); }
     let key;
     try { key = JSON.stringify(S.needsYou); } catch (e) { key = String(Date.now()); }
     S._needsYouKey = key;
@@ -271,12 +271,56 @@ function nowChat(){
 /* One status mark (founder 2026-09-27: minimal text, no subtext line, the
    word Shadow never shown): the bar carries it bottom-left, where Codex
    keeps its chips -- All clear, Checking, Offline, Paused, Sending, Didn't
-   send -- with Retry when there is something to retry. */
-function nyChipHtml(tone, label, retry){
-  return `<div class="nychip tone-${tone}" role="status">${nyIcon(tone)}<span>${esc(label)}</span>${
-    retry ? `<button class="nylink" type="button" ${retry}="1">Retry</button>` : ""}</div>`;
+   send. A mark that can do something is a button (founder: "if I click on
+   All clear, it should do something"): All clear opens what is running
+   and what finished today; Offline and Didn't send retry. */
+function nyChipHtml(tone, label, action){
+  const inner = nyIcon(tone) + `<span>${esc(label)}</span>` +
+    (tone === "err" && action ? `<span class="nyretry">Retry</span>` : "");
+  if (!action) return `<div class="nychip tone-${tone}" role="status">${inner}</div>`;
+  const open = typeof S !== "undefined" && S && S.nyClearOpen;
+  const exp = action === "data-nyclear" ? ` aria-expanded="${open ? "true" : "false"}"` : "";
+  return `<button class="nychip tone-${tone}" type="button" ${action}="1"${exp} aria-live="polite">${inner}</button>`;
 }
-function nowAskHtml(chip, off){
+/* the All clear panel: Running and Done today, by Focus's own rules --
+   shadowTasks() decides membership, shadowTaskSection() the lane -- so Now
+   never keeps a second copy of what counts as done today. Each row opens
+   its task; the foot says when Now last heard all clear. */
+function nyClearPanelHtml(){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const list = (typeof shadowTasks === "function") ? shadowTasks() : (S_.shadowMissions || []);
+  const lane = m => (typeof shadowTaskSection === "function") ? shadowTaskSection(m)
+    : (/^(running|queued|paused)$/.test(String(m.state || "")) ? "run" : "");
+  const run = [], done = [];
+  for (const m of list || []){
+    if (!m || !/^m-/.test(String(m.id || ""))) continue;
+    const l = lane(m);
+    if (l === "run") run.push(m); else if (l === "done") done.push(m);
+  }
+  const prow = (m, tone) => `<div class="nyprow tone-${tone}" tabindex="0" role="button"
+      data-deeplink="sutra://shadow/mission/${escAttr(m.id)}" data-itemid="">${nyIcon(tone)}<span>${
+      esc(m.objective || m.title || "Task")}</span></div>`;
+  let body = "";
+  if (run.length) body += `<div class="nyph">Running</div>` + run.slice(0, 5).map(m => prow(m, "wait")).join("");
+  if (done.length) body += `<div class="nyph">Done today</div>` + done.slice(0, 5).map(m => prow(m, "ok")).join("");
+  if (!body) body = `<div class="nypempty">Quiet today.</div>`;
+  const at = S_.nyOkAt ? nyWhen(S_.nyOkAt) : "";
+  return `<div class="nypanel" role="dialog" aria-label="All clear">${body}${
+    at ? `<div class="nypfoot">Checked ${esc(at)}</div>` : ""}</div>`;
+}
+/* open or close the panel; opening re-reads the task list so it is fresh */
+function nyToggleClear(force){
+  if (typeof S === "undefined") return;
+  S.nyClearOpen = force === undefined ? !S.nyClearOpen : !!force;
+  if (S.nyClearOpen && typeof fetch !== "undefined"){
+    fetch("/api/shadow/missions").then(r => r.ok ? r.json() : null).then(d => {
+      if (d && Array.isArray(d.missions)) S.shadowMissions = d.missions;
+      if (typeof scheduleRender === "function") scheduleRender();
+    }).catch(() => {});
+  }
+  if (typeof scheduleRender === "function") scheduleRender();
+}
+function nowAskHtml(chip, off, panel){
   const c = nowChat();
   const dis = (c.busy || off) ? " disabled" : "";
   return `<div class="nyask" data-nyask="1">
@@ -286,9 +330,72 @@ function nowAskHtml(chip, off){
       ${chip || ""}
       <button class="btn shsend" type="button" data-nysend="1"
         aria-label="Send"${dis}>&#8593;</button>
-    </div>
+    </div>${panel || ""}
   </div>`;
 }
+
+/* ── motion (founder 2026-09-27: "animations, smoothness") ──────────────
+   The screen is rebuilt from markup, so motion is decided AFTER a paint,
+   never baked into the markup (the markup stays a pure function of state
+   and the repaint guard in render() keeps working). Three moments, each
+   answering a change: a row that was not on screen before rises in (a few
+   ms apart); the greeting and bar glide between the middle and the top
+   when the page gains or loses rows (FLIP: measure, invert, play); the
+   status mark cross-fades when it changes. Reduced motion: none of it. */
+let _nySeenRows = null, _nyLastCenter = null, _nyLastTop = null, _nyLastChip = null,
+    _nyLastPanel = false;
+function nyMotionReset(){
+  _nySeenRows = null; _nyLastCenter = null; _nyLastTop = null; _nyLastChip = null;
+  _nyLastPanel = false;
+}
+function nyAfterPaint(){
+  if (typeof document === "undefined" || !document.querySelector) return;
+  const root = document.querySelector(".nynow");
+  if (!root) return;
+  const reduce = typeof matchMedia === "function"
+    && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const first = _nyLastCenter === null;
+  if (first && !reduce) root.classList.add("nyenter");
+  const seen = _nySeenRows || new Set();
+  let i = 0;
+  root.querySelectorAll(".nycard[data-itemid], .nyfyi[data-itemid]").forEach(r => {
+    const id = r.getAttribute("data-itemid");
+    if (seen.has(id)) return;
+    seen.add(id);
+    if (reduce || first) return;          /* the page's own entrance covers the first paint */
+    r.style.animationDelay = (Math.min(i++, 8) * 28) + "ms";
+    r.classList.add("nyin");
+  });
+  _nySeenRows = seen;
+  const top = root.querySelector(".nytop");
+  const center = root.classList.contains("center");
+  const panel = !!root.querySelector(".nypanel");
+  /* glide when the page moves between the middle and the top, and when the
+     All clear panel opens or closes in the middle (it sits in the flow
+     there, so the greeting and bar rise to make room for it) -- never on a
+     plain repaint, where a scroll would read as a move */
+  const moved = center !== _nyLastCenter || (center && panel !== _nyLastPanel);
+  _nyLastPanel = panel;
+  if (top){
+    const y = top.getBoundingClientRect().top;
+    if (!first && !reduce && moved && _nyLastTop !== null && typeof requestAnimationFrame === "function"){
+      top.style.transition = "none";
+      top.style.transform = "translateY(" + (_nyLastTop - y) + "px)";
+      top.getBoundingClientRect();
+      requestAnimationFrame(() => {
+        top.style.transition = "transform .44s cubic-bezier(.2,.8,.2,1)";
+        top.style.transform = "";
+      });
+    }
+    _nyLastTop = y;
+  }
+  _nyLastCenter = center;
+  const chip = root.querySelector(".nychip");
+  const label = chip ? chip.textContent.trim() : "";
+  if (chip && !first && !reduce && label !== _nyLastChip) chip.classList.add("nyswap");
+  _nyLastChip = label;
+}
+
 /* Shadow's answer to the bar: its prose and one draft per task, right
    under the bar and above the rows */
 function nowAnswerHtml(){
@@ -398,6 +505,9 @@ function ensureNeedsYouTicker(){
   _nyTicker = setInterval(() => {
     if (!nyOnScreen()){
       if (typeof clearInterval === "function") clearInterval(_nyTicker);
+      /* left Now: the next visit gets the page's entrance again */
+      nyMotionReset();
+      if (typeof S !== "undefined") S.nyClearOpen = false;
       _nyTicker = null;
       return;
     }
@@ -438,13 +548,20 @@ if (typeof SCREENS !== "undefined"){
     else if (off) chip = nyChipHtml("stop", "Paused");
     else if (err) chip = nyChipHtml("err", items.length ? "Offline since " + nyWhen(err) : "Offline",
                                     "data-nyretry");
-    else if (!nySplit(items).decide.length) chip = nyChipHtml("ok", "All clear");
+    else if (!nySplit(items).decide.length) chip = nyChipHtml("ok", "All clear", "data-nyclear");
+    /* the All clear panel lives only while All clear is what the mark says */
+    const clearNow = /data-nyclear/.test(chip);
+    if (!clearNow && S_.nyClearOpen) S_.nyClearOpen = false;
+    const panel = clearNow && S_.nyClearOpen ? nyClearPanelHtml() : "";
     const body = (items && items.length) ? needsYouHtml(items) : "";
     const answer = off ? "" : nowAnswerHtml();
     const center = !body && !answer;
     const hero = off ? g + "." : g + ", what can we do for you?";
-    return `<div class="nynow${center ? " center" : ""}">
-      <div class="nyhero">${esc(hero)}</div>` + nowAskHtml(chip, off) + answer + body + `</div>`;
+    /* motion is decided after the paint (nyAfterPaint), never in the markup */
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(nyAfterPaint);
+    return `<div class="nynow${center ? " center" : ""}"><div class="nytop">
+      <div class="nyhero">${esc(hero)}</div>` + nowAskHtml(chip, off, panel) + `</div>` +
+      answer + body + `</div>`;
   };
 }
 
@@ -460,6 +577,10 @@ if (typeof document !== "undefined" && document.addEventListener){
       nowSend();
       return;
     }
+    if (ev.key === "Escape" && typeof S !== "undefined" && S.nyClearOpen){
+      nyToggleClear(false);
+      return;
+    }
     /* a focused row opens on Enter or Space, the same as a click */
     if ((ev.key === "Enter" || ev.key === " ") && d.deeplink !== undefined
         && ev.target.getAttribute && ev.target.getAttribute("role") === "button"){
@@ -473,6 +594,14 @@ if (typeof document !== "undefined" && document.addEventListener){
   });
   document.addEventListener("click", (ev) => {
     const t = ev.target;
+    /* the status mark is a button with an icon and words inside, so the
+       click may land on a child: find the mark, not the exact target */
+    const mark = t && t.closest ? t.closest("[data-nyclear],[data-nyretry],[data-nysend]") : null;
+    const md = (mark && mark.dataset) || (t && t.dataset) || {};
+    if (md.nyclear){ nyToggleClear(); return; }
+    /* a click anywhere outside the open panel closes it, then does its own thing */
+    if (typeof S !== "undefined" && S.nyClearOpen
+        && !(t && t.closest && t.closest(".nypanel"))) nyToggleClear(false);
     if (t && t.dataset && t.dataset.nystart){
       openNeedsYouItem("sutra://shadow/home");
       return;
@@ -483,8 +612,8 @@ if (typeof document !== "undefined" && document.addEventListener){
       if (typeof scheduleRender === "function") scheduleRender();
       return;
     }
-    if (t && t.dataset && t.dataset.nyretry){ loadNeedsYou(); return; }
-    if (t && t.dataset && t.dataset.nysend){ nowSend(); return; }
+    if (md.nyretry){ loadNeedsYou(); return; }
+    if (md.nysend){ nowSend(); return; }
     if (t && t.dataset && t.dataset.nystartall){ nowStartAll(); return; }
     if (t && t.dataset && t.dataset.shstart){
       const c = nowChat();

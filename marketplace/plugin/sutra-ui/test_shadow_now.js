@@ -288,6 +288,39 @@ const ITEMS = [{
   console.log("ok 17 no Shadow word, one status mark");
 }
 
+/* 18. founder 2026-09-27: "if I click on All clear, it should do something".
+   All clear is a button: it opens a small panel with what is running and
+   what finished today -- by Focus's own rules (shadowTasks membership,
+   shadowTaskSection lanes), never a second copy of them -- each row opens
+   its task, and a second click closes it. The trouble marks are buttons
+   too: a click retries. */
+{
+  const ctx = fresh(false);
+  ctx.S.needsYou = [];
+  ctx.S.shadowMissions = [
+    { id: "m-r", objective: "Draft the pricing page", state: "running" },
+    { id: "m-d", objective: "Top 10 news of today", state: "done" },
+    { id: "m-x", objective: "Old thing", state: "done" }];
+  ctx.shadowTasks = () => ctx.S.shadowMissions.slice(0, 2);
+  ctx.shadowTaskSection = m => m.state === "running" ? "run" : "done";
+  let h = ctx.SCREENS.now();
+  assert(/<button class="nychip tone-ok"[^>]*data-nyclear="1"/.test(h), "All clear is a button");
+  assert(!/class="nypanel"/.test(h), "closed until clicked");
+  ctx.nyToggleClear();
+  h = ctx.SCREENS.now();
+  assert(/class="nypanel"/.test(h) && />Running</.test(h) && />Done today</.test(h));
+  assert(/Draft the pricing page/.test(h) && /Top 10 news of today/.test(h)
+      && !/Old thing/.test(h), "Focus's own membership rule decides");
+  assert(/data-deeplink="sutra:\/\/shadow\/mission\/m-r"/.test(h), "a row opens its task");
+  assert(!/shadow/i.test(h.replace(/<[^>]*>/g, " ")), "the panel names no Shadow");
+  ctx.nyToggleClear();
+  assert(!/class="nypanel"/.test(ctx.SCREENS.now()), "a second click closes it");
+  ctx.S.nyErr = Date.now();
+  assert(/<button class="nychip tone-err"[^>]*data-nyretry="1"/.test(ctx.SCREENS.now()),
+         "Offline is a button: a click retries");
+  console.log("ok 18 All clear opens what is running and done today");
+}
+
 /* 12. feed trouble: with rows, one line on top (since when, Try again) and
    the last known rows stay; with none, the line replaces the empty claim */
 {
