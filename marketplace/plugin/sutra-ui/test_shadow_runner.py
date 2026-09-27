@@ -204,17 +204,22 @@ class TestMountedEngine(unittest.TestCase):
         self.assertEqual(final["state"], "done",
                          "the mounted engine must drive the chat to done: %s"
                          % final)
-        # 4. the feed carries the completion -- in the file. Now never
-        # serves a finished task's card (relevance rule, 2026-09-16): the
-        # done row is an update, and a done task is not waiting on anyone.
+        # 4. the feed carries the completion -- in the file. A done task
+        # waits on no one, so Now never serves it as a DECISION (relevance
+        # rule, 2026-09-16). Since Now layout A (founder 2026-09-27: "things
+        # which need my decision and some basic updates, like FYI") its done
+        # row IS served, as an FYI update, for FYI_GRACE_SECS.
         import shadow_feed
         with open(shadow_feed._feed_path(), encoding="utf-8") as handle:
             rows = [json.loads(line) for line in handle if line.strip()]
         self.assertTrue(any(m2["id"] in (it.get("dedupe_key") or "")
                             for it in rows), "completion feed item")
         items = self._get("/api/shadow/feed")["items"]
-        self.assertFalse(any(m2["id"] in (it.get("dedupe_key") or "")
-                             for it in items), "a done task is not on Now")
+        mine = [it for it in items if m2["id"] in (it.get("dedupe_key") or "")]
+        self.assertFalse(any(it.get("kind") == "needs_decision" for it in mine),
+                         "a done task is never a decision on Now")
+        self.assertTrue(all(it.get("kind") == "info" for it in mine),
+                        "a done task shows on Now only as an FYI update")
         ws.close()
 
 
