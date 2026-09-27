@@ -150,6 +150,7 @@ function betaEnv() {
     SUTRA_UI_SETTINGS:    path.join(ui, "settings.json"),
     SUTRA_MODULES_HOME:   path.join(ui, "modules"),
     SUTRA_SHADOW_HOME:    path.join(ui, "shadow"),
+    SUTRA_NATIVE_DEPT_HOME: path.join(ui, "native"),
     SUTRA_UI_WS_TELEMETRY: path.join(ui, "workspace-telemetry.jsonl"),
   };
 }
@@ -513,6 +514,9 @@ function startBackend() {
         // payload/sb/ is retired; the env stays for any bundled resource a
         // backend module resolves — e.g. the update sidecar's assets.)
         SUTRA_UI_RESOURCES: path.join(process.resourcesPath || "", "payload"),
+        // The motor (website_dept.py) starts on the launcher's word and no
+        // other, so a server a test stands up never ticks anybody's record.
+        SUTRA_MOTOR: "1",
         // Windows only: import shims + the updater's identity. See winPythonEnv.
         ...winPythonEnv(),
         // The agent's crawler can read a site behind a bot challenge through this

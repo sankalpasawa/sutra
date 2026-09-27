@@ -50,6 +50,7 @@ PAUSED_SYSTEMS = ("Adaptation", "Audit")      # growth is paused in the first bu
 CHAIN_LIMIT = 12                              # runs one owner's ask may cause before it stops and asks
 ENVELOPE = {"calls": 30, "usd": 6.0}          # per engine, per day
 TICK_S = 3.0
+DEFAULT_HOME = "~/.sutra-ui/native"
 MODEL_TIMEOUT_S = 420
 STALE_ASK_S = 30 * 60
 RULES = [
@@ -78,8 +79,40 @@ def _ts(s):
         return 0.0
 
 
+def under_test():
+    """Is this process a test run? The house detector (shadow_ledger), which
+    knows pytest, unittest and a test file run by name. Never raises."""
+    try:
+        import shadow_ledger
+        return bool(shadow_ledger.running_under_test())
+    except Exception:  # noqa: BLE001
+        return bool(os.environ.get("PYTEST_CURRENT_TEST"))
+
+
 def home():
-    return Path(os.environ.get("SUTRA_NATIVE_DEPT_HOME") or os.path.expanduser("~/.sutra-ui/native"))
+    """The records home, resolved at call time.
+
+    REFUSES THE DEFAULT HOME UNDER ANY TEST RUNNER, by the house rule
+    (shadow_ledger.shadow_home, lib/placement_engine). Found 2026-09-28: a lane
+    of the release gates started the app, the app started the motor, and the
+    motor took its lock in the operator's live home. Nothing ran, because no
+    department lived there yet; with one there, a test process would have
+    started its runs. A test binds SUTRA_NATIVE_DEPT_HOME to a temp folder, or
+    says SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS=1.
+
+    The read is written in the two-argument form on purpose:
+    test_channel_isolation.py finds data paths by that form, and a path it
+    cannot see is a path the beta app shares with production.
+    """
+    h = os.path.expanduser(os.environ.get("SUTRA_NATIVE_DEPT_HOME", "~/.sutra-ui/native") or DEFAULT_HOME)
+    if os.environ.get("SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS") != "1" \
+            and os.path.realpath(h) == os.path.realpath(os.path.expanduser(DEFAULT_HOME)) \
+            and under_test():
+        raise RuntimeError(
+            "website_dept: refusing to touch the live records home %s from a test. "
+            "Set SUTRA_NATIVE_DEPT_HOME to a temp folder, or declare a deliberate "
+            "integration test with SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS=1." % h)
+    return Path(h)
 
 
 def ddir(ref):
@@ -756,7 +789,17 @@ def stop_motor():
 
 
 def start_motor():
-    if _MOTOR["thread"] is not None or os.environ.get("SUTRA_MOTOR_OFF") == "1" or "PYTEST_CURRENT_TEST" in os.environ:
+    """Start the one motor thread, on the launcher's word and no other.
+
+    SUTRA_MOTOR=1 is that word: the Electron shell and the panel's launchers
+    (run.sh, sutra-ui.sh, the one install.sh writes) say it; nothing else
+    does. A server a test stands up, in its own process or as
+    a child, never says it, so it never ticks anybody's record. The detector
+    is asked as well, for the case where the word leaks into a test's
+    environment from the shell that ran it.
+    """
+    if _MOTOR["thread"] is not None or os.environ.get("SUTRA_MOTOR") != "1" \
+            or os.environ.get("SUTRA_MOTOR_OFF") == "1" or under_test():
         return False
     _MOTOR["started"] = now()
     _MOTOR["stop"] = False

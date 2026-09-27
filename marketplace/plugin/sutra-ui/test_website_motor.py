@@ -93,5 +93,76 @@ class TestTheMotor(unittest.TestCase):
         self.assertEqual(rows[1]["retries"], 1)
 
 
+class TestWhoMayStartIt(unittest.TestCase):
+    """Found 2026-09-28: a lane of the release gates started the app, the app
+    started the motor, and the motor took its lock in the operator's live
+    home. These are the three things that were missing."""
+    KEYS = ("SUTRA_NATIVE_DEPT_HOME", "SUTRA_WEBSITE_OFFLINE", "SUTRA_MOTOR", "SUTRA_MOTOR_OFF",
+            "SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS")
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp(prefix="website-motor-")
+        self.prior = {k: os.environ.get(k) for k in self.KEYS}
+        for k in self.KEYS:
+            os.environ.pop(k, None)
+        os.environ["SUTRA_NATIVE_DEPT_HOME"] = self.home
+        os.environ["SUTRA_WEBSITE_OFFLINE"] = "1"
+        import website_dept
+        self.W = importlib.reload(website_dept)
+
+    def tearDown(self):
+        self.W.stop_motor()
+        for k, v in self.prior.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(self.home, ignore_errors=True)
+
+    def test_5_the_motor_starts_on_the_launchers_word_and_no_other(self):
+        W = self.W
+        self.assertTrue(W.under_test(), "this process is a test, and the detector says so")
+        self.assertFalse(W.start_motor(), "no word, no motor")
+        os.environ["SUTRA_MOTOR"] = "1"
+        self.assertFalse(W.start_motor(), "the word inside a test process is not the word")
+        self.assertIsNone(W._MOTOR["thread"])
+        self.assertFalse(os.path.exists(os.path.join(self.home, "motor.lock")), "and nothing was touched")
+        W.under_test = lambda: False                # the app itself
+        os.environ["SUTRA_MOTOR_OFF"] = "1"
+        self.assertFalse(W.start_motor(), "the off switch outranks the word")
+        os.environ.pop("SUTRA_MOTOR_OFF")
+        self.assertTrue(W.start_motor(), "the app, with the word: the motor starts")
+        self.assertFalse(W.start_motor(), "once")
+
+    def test_6_a_test_may_not_touch_the_live_records_home(self):
+        W = self.W
+        os.environ.pop("SUTRA_NATIVE_DEPT_HOME")
+        with self.assertRaises(RuntimeError):
+            W.home()
+        with self.assertRaises(RuntimeError):
+            W.hold_motor()
+        os.environ["SUTRA_NATIVE_DEPT_HOME"] = ""   # set and empty is still the default
+        with self.assertRaises(RuntimeError):
+            W.home()
+        os.environ["SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS"] = "1"
+        self.assertEqual(str(W.home()), os.path.expanduser("~/.sutra-ui/native"), "unless it says so, by name")
+
+    def test_7_every_launcher_says_the_word_and_the_beta_has_its_own_home(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        if not os.path.isfile(os.path.join(here, "electron", "main.js")):
+            self.skipTest("the shell's source is not beside this file (a packaged payload)")
+        main = open(os.path.join(here, "electron", "main.js"), encoding="utf-8").read()
+        self.assertIn('SUTRA_MOTOR: "1"', main[main.index("function startBackend()"):])
+        beta = main[main.index("function betaEnv()"):]
+        beta = beta[:beta.index("\n}\n")]
+        self.assertIn('SUTRA_NATIVE_DEPT_HOME: path.join(ui, "native")', beta)
+        for launcher in ("run.sh", "sutra-ui.sh", "install.sh"):
+            text = open(os.path.join(here, launcher), encoding="utf-8").read()
+            self.assertIn("SUTRA_MOTOR=1", text, launcher)
+        dept = open(os.path.join(here, "website_dept.py"), encoding="utf-8").read()
+        self.assertIn('os.environ.get("SUTRA_NATIVE_DEPT_HOME", "~/.sutra-ui/native")', dept,
+                      "the form test_channel_isolation.py can see")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

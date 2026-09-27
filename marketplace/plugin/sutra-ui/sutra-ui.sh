@@ -58,4 +58,6 @@ if [ "${SUTRA_UI_NO_OPEN:-0}" != "1" ] && command -v open >/dev/null 2>&1; then
 fi
 
 cd "$DIR"
+# The launcher's word that this is the app: the motor starts on it, and on nothing else.
+export SUTRA_MOTOR=1
 exec .venv/bin/python -m uvicorn app:app --host "$HOST" --port "$PORT" --log-level warning
