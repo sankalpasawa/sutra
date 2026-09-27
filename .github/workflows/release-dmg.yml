@@ -187,6 +187,7 @@ jobs:
           node test_charter_filter.js
           node test_website.js
           python3 test_website_motor.py
+          python3 test_engine_runtime.py
           node test_shadow_completion_ui.js
           node test_shadow_compose_focus.js
           node test_shadow_conversation.js

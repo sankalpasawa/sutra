@@ -10,7 +10,9 @@
                     department only; every other group is 20-dept.js's own
      wbViewer(n)    draws the viewer when one of this file's entries is open,
                     and adds the internal systems' own state under the five
-                    function cards
+                    function cards; for a department on the engine runtime
+                    it also draws the Board, and every engine and function as
+                    its steps, each on its rung
      wbMenuItem()   one line in the Org screen's Edit menu: the command that
                     founds an organisation, its root department and its
                     website department
@@ -27,12 +29,22 @@ const WB_PANES = [["item", "The work item"], ["preview", "Preview"], ["versions"
 const WB_ENG_PANES = [["engine", "Engine"], ["runs", "Runs"]];
 const WB_DOTS = { ok: "ok", failed: "block", running: "", skipped: "warn", interrupted: "warn" };
 const WB_WORDS = { ok: "Done", failed: "Failed", running: "Running", skipped: "Skipped", interrupted: "Interrupted" };
+/* A department on the engine runtime (engine_runtime.py) shows three things
+   more: every engine and function as its steps, each on its rung; the board
+   the engines speak on; and what the department said back to its owner. */
+const WB_RT_PANES = [["steps", "Steps"], ["engine", "Engine"], ["runs", "Runs"]];
+const WB_RUNGS = [["P", "Person"], ["C0", "Improvised call"], ["C1", "Checklist"], ["C2", "Code"]];
+const WB_THREADS = { "submitted": ["", "Sent"], "working": ["", "Working"], "input-required": ["warn", "Waits for you"],
+                     "completed": ["ok", "Done"], "failed": ["block", "Failed"], "canceled": ["off", "Let go"], "rejected": ["block", "Refused"] };
+const WB_ACTS = { "request": "asks", "agree": "agrees", "refuse": "refuses", "propose": "proposes", "accept-proposal": "accepts",
+                  "reject-proposal": "rejects", "inform": "tells", "failure": "could not", "not-understood": "did not follow", "cancel": "lets go" };
 
 function wbS(){
   if (!S.wb) S.wb = { refs: null, refsBusy: false, map: {}, sig: {}, tab: {}, pane: {}, sel: {}, draft: {},
-                      busy: {}, err: {}, engine: {}, art: {}, trace: {}, found: null, timer: null };
+                      busy: {}, err: {}, engine: {}, art: {}, trace: {}, steps: {}, board: {}, found: null, timer: null };
   return S.wb;
 }
+function wbRt(m){ return !!(m && m.runtime === 2); }
 function wbEsc(x){ return dpEsc(x); }
 function wbUrl(ref, tail){ return "/api/native/" + encodeURIComponent(ref) + "/" + tail; }
 function wbIs(ref){
@@ -77,6 +89,7 @@ async function wbLoadMap(ref, force){
     if (changed || force){
       /* what is open re-reads with it, so a run that just ended shows its row */
       st.engine = {}; st.art = {}; st.trace = {};
+      wbAgain(ref);
       if (!wbTyping()) dpRender();
     }
   } catch (e) {
@@ -125,7 +138,8 @@ function wbList(n){
   const top = `<div class="o2g dpg wb">` +
     dpRow("Map", `data-wbtab="map"`, tab === "map") +
     dpRow("System status", `data-wbtab="status"`, tab === "status") +
-    dpRow("Motor", `data-wbtab="motor"`, tab === "motor") + `</div>`;
+    dpRow("Motor", `data-wbtab="motor"`, tab === "motor") +
+    (wbRt(m) ? dpRow("Board", `data-wbtab="board"`, tab === "board") : "") + `</div>`;
   const engines = dpGroup("Engines", ((m && m.engines) || []).map(e => {
     const on = tab === "engine" && st.sel[n.ref] === e.name;
     const word = e.state === "Running" ? "running" : (e.state === "Waits" ? "paused" : "idle");
@@ -183,7 +197,7 @@ function wbSystemTile(s, m){
     const e = (m.engines || []).reduce((a, x) => Math.max(a, x.envelope ? x.envelope.used_calls / (x.envelope.calls || 1) : 0), 0);
     mark = dpBar(Math.min(1, e));
   } else if (s.name === "Coordination") mark = `<span class="dpdots">${(m.engines || []).map(() => "<i></i>").join("")}</span>`;
-  else mark = `<span class="dpchk">Paused</span>`;
+  else mark = `<span class="dpchk">${off ? "Paused" : "Awake"}</span>`;
   return `<button type="button" class="wbtile wb${off ? " off" : ""}" data-wbfn="${wbEsc(s.name.toLowerCase())}">` +
     `<b>${wbDot(off ? "off" : "ok")}${wbEsc(s.name)}</b>${mark}</button>`;
 }
@@ -206,6 +220,28 @@ function wbGoalHtml(n, m){
   return dpCard("Goal", `<div class="dpbig">${wbEsc(m.name)}</div>` +
     wbAskBox(n.ref, "goal", "What is this website for?", "data-wbgoal", "Start"));
 }
+/* One way in. A runtime department reads the words and recognises which of
+   the five journeys they are (a task, a question, a rule, feedback, an idea),
+   so the screen never asks the owner to choose. */
+function wbAskCard(n, m){
+  return wbRt(m) ? dpCard("Say", wbAskBox(n.ref, "ask", "A task, a question, a rule, feedback or an idea", "data-wbask", "Send"))
+                 : dpCard("Ask", wbAskBox(n.ref, "ask", "Ask for a page or a change", "data-wbask", "Ask"));
+}
+/* What the department said back to its owner, newest first: every exchange is
+   on the screen, none is hidden in a record. */
+function wbRepliesHtml(n, m){
+  if (!wbRt(m)) return "";
+  const b = wbS().board[n.ref];
+  if (!b){ wbLoadBoard(n.ref); return ""; }
+  const said = [];
+  (b.threads || []).forEach(t => (t.posts || []).forEach(p => {
+    if ((p.dst || []).indexOf("Owner") >= 0 && p.line) said.push(p);
+  }));
+  if (!said.length) return "";
+  said.sort((a, b2) => b2.n - a.n);
+  return dpCard("Replies", said.slice(0, 5).map(p => dpRunRow(p.line,
+    p.src + " " + (WB_ACTS[p.msg_type] || p.msg_type) + " · " + wbWhen(p.at), p.msg_type === "request" ? "warn" : (p.msg_type === "inform" ? "ok" : "block"))).join(""));
+}
 function wbMapHtml(n, m){
   if (!m.has_goal) return wbGoalHtml(n, m) + dpCard("The department", `<div class="wbgrid">${m.systems.map(s => wbSystemTile(s, m)).join("")}</div>` + wbFlowHtml(m));
   const [mc, mw] = wbMotorState(m);
@@ -223,7 +259,7 @@ function wbMapHtml(n, m){
       `<span class="dpchk">Motor</span>${m.stopped ? `<span class="dpst paused">Stopped</span>` : ""}${live}</div>` +
       `<div class="wbgrid">${m.systems.map(s => wbSystemTile(s, m)).join("")}</div>` + wbFlowHtml(m)) +
     dpCard("System status", status) +
-    dpCard("Ask", wbAskBox(n.ref, "ask", "Ask for a page or a change", "data-wbask", "Ask")) +
+    wbAskCard(n, m) + wbRepliesHtml(n, m) +
     dpCard("Health", health) +
     dpCard("Recent", (m.recent || []).length ? m.recent.map(r => wbRunRow(r)).join("") : dpQuiet("Nothing has run yet"));
 }
@@ -238,7 +274,7 @@ function wbStatusHtml(n, m){
     dpCard("Running", rows(st.running, r => dpRunRow(r.engine, r.what, "ok"), m.stopped ? "Stopped" : "Nothing is running")) +
     dpCard("Escalated", rows(st.escalated, a => dpRunRow(a.engine, a.text, "block",
       wbBtn("Stamp", `data-wbdecide="${wbEsc(a.id)}" data-wbok="1"`, "dpstamp")), "Nothing escalated")) +
-    dpCard("Ask", wbAskBox(n.ref, "ask", "Ask for a page or a change", "data-wbask", "Ask"));
+    wbAskCard(n, m) + wbRepliesHtml(n, m);
 }
 
 /* ── Motor ────────────────────────────────────────────────────────────────── */
@@ -288,10 +324,12 @@ async function wbLoadEngine(ref, name){
 }
 function wbEngineHtml(n){
   const st = wbS(), name = st.sel[n.ref], k = n.ref + ":" + name;
+  const rt = wbRt(st.map[n.ref]);
+  const pane = st.pane[k] || (rt ? "steps" : "engine");
+  const tabs = dpTabsHtml(pane, rt ? WB_RT_PANES : WB_ENG_PANES, `data-wbpanekey="${wbEsc(k)}" data-wbpane`);
+  if (rt && pane === "steps") return tabs + wbStepsHtml(n.ref, name);
   const e = st.engine[k];
-  if (!e){ wbLoadEngine(n.ref, name); return dpSkel(); }
-  const pane = st.pane[k] || "engine";
-  const tabs = dpTabsHtml(pane, WB_ENG_PANES, `data-wbpanekey="${wbEsc(k)}" data-wbpane`);
+  if (!e){ wbLoadEngine(n.ref, name); return (rt ? tabs : "") + dpSkel(); }
   if (pane === "runs"){
     return tabs + dpCard("Runs", (e.runs || []).length ? e.runs.map(r => wbRunRow(r,
       r.wrote ? ` <button type="button" class="o2more wb" data-wbart="${wbEsc(r.wrote.art.toLowerCase().replace(/[^a-z0-9]+/g, "-"))}" data-wbpane="trace" data-wbv="${r.wrote.v}">Trace</button>` : "")).join("")
@@ -304,6 +342,96 @@ function wbEngineHtml(n){
       dpKV("Slot", e.slot, "Not named") +
       dpCell("Envelope", dpBar(Math.min(1, (env.used_calls || 0) / (env.calls || 1)))) +
       dpCell("Autonomy window", dpBar(Math.min(1, (e.window_min || 0) / 30))) + `</div>`);
+}
+
+/* ── the engine runtime: steps on their rungs, and the board ──────────────── */
+async function wbLoadSteps(ref, name, again){
+  const st = wbS(), k = ref + ":" + name;
+  if ((st.steps[k] && !again) || st.busy["s:" + k]) return;
+  st.busy["s:" + k] = true;
+  try { st.steps[k] = await apiGet(wbUrl(ref, "steps/" + encodeURIComponent(name))); }
+  catch (e) { if (!st.steps[k]) st.steps[k] = { failed: true }; }
+  delete st.busy["s:" + k];
+  if (!again || !wbTyping()) dpRender();
+}
+async function wbLoadBoard(ref, again){
+  const st = wbS();
+  if ((st.board[ref] && !again) || st.busy["b:" + ref]) return;
+  st.busy["b:" + ref] = true;
+  try { st.board[ref] = await apiGet(wbUrl(ref, "board")); }
+  catch (e) { if (!st.board[ref]) st.board[ref] = { failed: true }; }
+  delete st.busy["b:" + ref];
+  if (!again || !wbTyping()) dpRender();
+}
+/* The record moved: what is already on the screen is read again and swapped in
+   when it arrives, so a card never blinks empty between two reads. */
+function wbAgain(ref){
+  const st = wbS();
+  Object.keys(st.steps).forEach(k => { if (k.indexOf(ref + ":") === 0) wbLoadSteps(ref, k.slice(ref.length + 1), true); });
+  if (st.board[ref]) wbLoadBoard(ref, true);
+}
+function wbRungHtml(s){
+  const at = WB_RUNGS.map(r => r[0]).indexOf(s.rung);
+  return `<span class="wbrung" title="${wbEsc(s.rung_name)}">` +
+    WB_RUNGS.map((r, i) => `<i${i <= at ? ` class="on"` : ""}></i>`).join("") + `</span>`;
+}
+function wbRungName(id){ return (WB_RUNGS.filter(r => r[0] === id)[0] || ["", ""])[1]; }
+function wbChip(word, cls){ return `<span class="wbchip${cls ? " " + cls : ""}">${wbEsc(word)}</span>`; }
+function wbStepHtml(s, need){
+  const last = s.last || {};
+  const dot = !s.ran ? "off" : (last.ok === false || last.status === "failed" ? "block" : (last.miss ? "warn" : "ok"));
+  const note = (last.notes && last.notes[0]) || String(s.check || "").replace(/_/g, " ");
+  const ev = s.evidence;
+  const climbs = s.soft && s.rung !== s.ceiling && !s.held;
+  const marks = wbRungHtml(s) + wbChip(s.rung_name, s.rung === "C2" ? "on" : "") +
+    (s.mode === "gate" ? wbChip("Gate") : "") + (s.each && s.side_by_side > 1 ? wbChip("Side by side") : "") +
+    (s.trial ? wbChip("On trial", "ask") : "") + (s.pending ? wbChip("Waits for your stamp", "ask") : "") +
+    (s.held ? wbChip("Held", "on") : "") +
+    `<button type="button" class="o2more wb" data-wbhold="${wbEsc(s.id)}" data-wbheld="${s.held ? "0" : "1"}">${s.held ? "Let go" : "Hold"}</button>`;
+  const bars = ev ? `<div class="wbev"><span class="dpk">Passing</span>${dpBar(ev.pass === null || ev.pass === undefined ? 0 : ev.pass)}` +
+    (climbs ? `<span class="dpk">To the next rung</span>${dpBar(Math.min(1, ev.runs / (need || 1)))}` : "") + `</div>` : "";
+  return dpRunRow(s.name, note, dot, `<div class="wbstep">${marks}</div>` + bars);
+}
+function wbStepsHtml(ref, name){
+  const st = wbS(), k = ref + ":" + name, v = st.steps[k];
+  if (!v){ wbLoadSteps(ref, name); return dpSkel(); }
+  if (v.failed) return dpQuiet("Could not read");
+  const need = (v.numbers && v.numbers.runs) || 0;
+  const steps = v.steps || [];
+  const card = (title, rows) => rows.length ? dpCard(title, rows.map(s => wbStepHtml(s, need)).join("")) : "";
+  const moves = [];
+  steps.forEach(s => (s.history || []).forEach(h => { if (h.from) moves.push([s, h]); }));
+  moves.sort((a, b) => String(b[1].at).localeCompare(String(a[1].at)));
+  return (v.description ? dpCard(v.kind === "function" ? "The function" : "The engine",
+        `<div class="dpbig">${wbEsc(v.description.charAt(0).toUpperCase() + v.description.slice(1))}</div>` +
+        ((v.skills || []).length ? `<div class="wbstep">${v.skills.map(x => wbChip(x)).join("")}</div>` : "")) : "") +
+    card("Gates", steps.filter(s => s.mode === "gate")) +
+    card("Steps", steps.filter(s => s.mode !== "gate" && !s.under)) +
+    (v.hears || []).map(h => card(h, steps.filter(s => s.under === h))).join("") +
+    (moves.length ? dpCard("Moves", moves.slice(0, 12).map(([s, h]) => dpRunRow(s.name,
+        wbRungName(h.from) + " to " + wbRungName(h.to) + " · " + String(h.by || "") + " · " + wbWhen(h.at),
+        WB_RUNGS.map(r => r[0]).indexOf(h.to) > WB_RUNGS.map(r => r[0]).indexOf(h.from) ? "ok" : "warn")).join("")) : "");
+}
+function wbIdeasHtml(b){
+  const rows = (b && b.ideas) || [];
+  if (!rows.length) return "";
+  return dpCard("Ideas, parked", rows.map(i => dpRunRow(i.reflected || i.words || "", i.question || "", "off",
+    `<div class="wbstep">${(i.shapes || []).map(x => wbChip(x)).join("")}</div>`)).join(""));
+}
+function wbBoardHtml(n){
+  const b = wbS().board[n.ref];
+  if (!b){ wbLoadBoard(n.ref); return dpSkel(); }
+  if (b.failed) return dpQuiet("Could not read");
+  if (!b.any) return dpQuiet("Nothing has been said yet");
+  return wbIdeasHtml(b) + (b.threads || []).map(t => {
+    const [dot, word] = WB_THREADS[t.state] || ["", t.state];
+    const posts = t.posts || [];
+    const head = (posts[0] && posts[0].line) || t.topic || "";
+    return `<div class="wbth wb"><div class="wbthh">${wbDot(dot)}<b>${wbEsc(head)}</b><span class="dpst">${wbEsc(word)}</span></div>` +
+      posts.map(p => `<div class="wbpost">${wbChip(p.src)}<span class="wbarrow">&rarr;</span>${wbChip((p.dst || []).join(", "))}` +
+        `<span class="dpchk">${wbEsc(WB_ACTS[p.msg_type] || p.msg_type)} · ${wbEsc(wbWhen(p.at))}</span>` +
+        (p.line && p !== posts[0] ? `<div class="wbsaid">${wbEsc(p.line)}</div>` : "") + `</div>`).join("") + `</div>`;
+  }).join("");
 }
 
 /* ── filed work: the item, Preview, Versions, Trace ───────────────────────── */
@@ -375,21 +503,32 @@ function wbReaderOf(name){ return ({ "Brief": "Plan", "Site plan": "Write", "Pag
 function wbFnExtra(tab, m){
   if (!m) return "";
   const engs = m.engines || [];
+  /* on the engine runtime a function is an engine too: its own steps, each on
+     its rung, under the state the card already shows */
+  const steps = wbRt(m) ? wbStepsHtml(m.ref, tab.charAt(0).toUpperCase() + tab.slice(1)) : "";
   if (tab === "identity"){
     return dpCard("Control", `<div class="dpengines">` + dpKV("Control", m.control === "granted" ? "Granted" : "Held", "") +
         dpKV("Owner", m.owner, "Not named") + dpKV("Stop", m.stopped ? "Stopped" : "Running", "") + `</div>`) +
       dpCard("Autonomy windows", engs.map(e => dpRunRow(e.name, "", "", dpBar(Math.min(1, (e.window_min || 0) / 30)))).join("")) +
-      dpCard("Stamped by rule", (m.recent || []).filter(r => r.engine === "Identity").map(r => wbRunRow(r)).join("") || dpQuiet("Nothing yet"));
+      dpCard("Stamped by rule", (m.recent || []).filter(r => r.engine === "Identity").map(r => wbRunRow(r)).join("") || dpQuiet("Nothing yet")) +
+      steps;
   }
   if (tab === "priority"){
     return dpCard("Envelopes", engs.map(e => dpRunRow(e.name, "", "", dpBar(Math.min(1, ((e.envelope || {}).used_calls || 0) / ((e.envelope || {}).calls || 1))))).join("")) +
-      dpCard("Queue", engs.map(e => dpRunRow(e.name, e.state === "Running" ? "Running" : (e.state === "Waits" ? "Waits for the stamp" : e.slot), wbEngDot(e))).join(""));
+      dpCard("Queue", engs.map(e => dpRunRow(e.name, e.state === "Running" ? "Running" : (e.state === "Waits" ? "Waits for the stamp" : e.slot), wbEngDot(e))).join("")) +
+      steps;
   }
   if (tab === "coordination"){
     return dpCard("Timetable", engs.map(e => dpRunRow(e.name, e.slot, "")).join("")) +
       dpCard("Hand-offs", engs.map(e => dpRunRow(e.reads + " → " + e.name, "", "ok")).join("")) +
       dpCard("Locks", (m.status && m.status.running && m.status.running.length)
-        ? m.status.running.map(r => dpRunRow(r.engine, "Holds the line", "warn")).join("") : dpQuiet("Nothing is held"));
+        ? m.status.running.map(r => dpRunRow(r.engine, "Holds the line", "warn")).join("") : dpQuiet("Nothing is held")) +
+      steps;
+  }
+  if (wbRt(m)){
+    const b = wbS().board[m.ref];
+    if (!b) wbLoadBoard(m.ref);
+    return (tab === "adaptation" ? wbIdeasHtml(b) : "") + steps;
   }
   return dpCard("State", dpRunRow("Paused", "Growth is paused in this build", "off"));
 }
@@ -415,6 +554,7 @@ function wbViewer(n){
   if (tab === "map") return dpViewerShell("Map", wbMapHtml(n, m), "wb");
   if (tab === "status") return dpViewerShell("System status", wbStatusHtml(n, m), "wb");
   if (tab === "motor") return dpViewerShell("Motor", wbMotorHtml(n, m), "wb");
+  if (tab === "board" && wbRt(m)) return dpViewerShell("Board", wbBoardHtml(n), "wb");
   if (tab === "engine") return dpViewerShell(st.sel[n.ref] || "Engine", wbEngineHtml(n), "wb");
   if (tab === "art"){
     const a = (m.artifacts || []).filter(x => x.slug === st.sel[n.ref])[0];
@@ -499,7 +639,7 @@ async function wbPost(ref, tail, body, key){
 }
 if (typeof document !== "undefined" && document.addEventListener){
   const WB_SEL = "[data-wbtab],[data-wbengine],[data-wbart],[data-wbpane],[data-wbdecide],[data-wbstop],[data-wbresume]," +
-    "[data-wbgoal],[data-wbask],[data-wbputback],[data-wbfn],[data-wbfound]";
+    "[data-wbgoal],[data-wbask],[data-wbputback],[data-wbfn],[data-wbfound],[data-wbhold]";
   /* capture phase: a click on one of 20-dept.js's own rows hands the viewer
      back to it BEFORE that file's handler paints */
   document.addEventListener("click", (ev) => {
@@ -522,6 +662,8 @@ if (typeof document !== "undefined" && document.addEventListener){
     }
     if (!ref || !wbIs(ref)) return;
     ev.preventDefault(); ev.stopPropagation();
+    /* Hold sits on a function card too, which 20-dept.js draws: the card stays open */
+    if (ds.wbhold !== undefined){ wbPost(ref, "hold", { step: ds.wbhold, held: ds.wbheld === "1" }); return; }
     /* one of this file's entries is opening: none of 20-dept.js's rows stays lit */
     if (ds.wbfn === undefined && dpS().tab[ref] !== "now") dpS().tab[ref] = "now";
     if (ds.wbtab !== undefined){ st.tab[ref] = ds.wbtab; dpRender(); return; }

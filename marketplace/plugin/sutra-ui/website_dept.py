@@ -255,6 +255,18 @@ def requests(ref):
     return _read(ddir(ref) / "requests.json", [])
 
 
+# ---- the engine runtime, behind its switch --------------------------------------------------------------------------
+def _runtime(ref):
+    """engine_runtime.py, for a department whose record says `runtime: 2`; None for every other. The switch is on the
+    record, written at birth, so a department never changes how it runs in the middle of its life. It is off unless
+    the app was started with SUTRA_ENGINE_RUNTIME=2, which no released launcher says."""
+    d = dept(ref)
+    if d and d.get("runtime") == 2:
+        import engine_runtime
+        return engine_runtime
+    return None
+
+
 # ---- the department's birth ----------------------------------------------------------------------------------------
 def create(ref, name, brief, owner="the owner", parent=None):
     """A new website department: Identity's rules, Priority's envelopes,
@@ -264,9 +276,14 @@ def create(ref, name, brief, owner="the owner", parent=None):
     brief = " ".join(str(brief or "").split())
     d = {"kind": "website", "ref": ref, "name": name, "owner": owner, "parent": parent, "created": now(),
          "goal": "A live website for " + name, "done": "Every page checked and live",
+         "runtime": 2 if os.environ.get("SUTRA_ENGINE_RUNTIME") == "2" else 1,
          "rules": RULES, "control": "granted", "stopped": False,
          "envelopes": {e[0]: dict(ENVELOPE) for e in ENGINES},
          "windows": {"Plan": 15, "Write": 30, "Check": 5, "Publish": 10}}
+    if d["runtime"] == 2:
+        # A step is a call, so Write costs a call a page where it cost one a run. The money bound is unchanged.
+        d["envelopes"] = {e[0]: {"calls": 8 * ENVELOPE["calls"], "usd": ENVELOPE["usd"]} for e in ENGINES}
+        d["envelopes"].update({s: dict(ENVELOPE) for s in SYSTEMS})
     ddir(ref).mkdir(parents=True, exist_ok=True)
     save_dept(ref, d)
     system_run(ref, "Identity", "set its rules within the parent's")
@@ -285,6 +302,9 @@ def give_goal(ref, text):
     d = dept(ref)
     if not d:
         raise ValueError("no website department at %s" % ref)
+    rt = _runtime(ref)
+    if rt:
+        return rt.request(ref, text)[1]        # the words go to Identity on the board; Identity files the Brief
     if versions(ref, "Brief"):
         return owner_ask(ref, text)[1]
     system_run(ref, "Identity", "took the goal from the owner")
@@ -303,6 +323,9 @@ def owner_ask(ref, text):
     d = dept(ref)
     if not d:
         raise ValueError("no website department at %s" % ref)
+    rt = _runtime(ref)
+    if rt:
+        return rt.request(ref, text)[0], None
     with _lock(ref):
         reqs = requests(ref)
         rq = {"id": "q-" + uuid.uuid4().hex[:8], "text": text, "at": now()}
@@ -339,7 +362,11 @@ def decide_ask(ref, aid, approve, by="the owner"):
             a["decided"] = now()
             a["by"] = by
             _put_ask(ref, a)
-            system_run(ref, "Identity", ("stamped: " if approve else "refused: ") + a["text"])
+            rt = _runtime(ref)
+            if rt and a.get("thread"):
+                rt.on_stamp(ref, a, approve)       # posted in the ask's thread; Identity applies it as a step
+            else:
+                system_run(ref, "Identity", ("stamped: " if approve else "refused: ") + a["text"])
             return a
     raise ValueError("no such ask")
 
@@ -636,6 +663,9 @@ def _chain_of(ref, art, v):
 def due(ref):
     """The first slot the motor may start now, or a reason it may not. Returns
     (engine, input_row, slot) or (None, None, why)."""
+    rt = _runtime(ref)
+    if rt:
+        return rt.next_due(ref)
     d = dept(ref)
     if not d:
         return None, None, "no department"
@@ -681,6 +711,9 @@ def due(ref):
 
 
 def run_slot(ref, name, inp, slot):
+    rt = _runtime(ref)
+    if rt:
+        return rt.run_engine(ref, name, inp, slot)
     d = dept(ref)
     reads = next(e[1] for e in ENGINES if e[0] == name)
     writes = next(e[2] for e in ENGINES if e[0] == name)
@@ -707,6 +740,11 @@ def motor_tick(inline=False, at=None):
     started = []
     for d in list_depts():
         ref = d["ref"]
+        if d.get("runtime") == 2:
+            try:
+                _runtime(ref).sweep(ref)           # threads past their bound; runs past their window
+            except Exception:  # noqa: BLE001 -- a sweep never stops the tick
+                pass
         if ref in _BUSY:
             continue
         name, inp, slot = due(ref)
@@ -867,8 +905,15 @@ def health(ref):
     stale = [a for a in ak if a["status"] == "pending" and time.time() - _ts(a["created"]) > STALE_ASK_S]
     pending = [a for a in ak if a["status"] == "pending"]
     checks.append(("Stuck", "warn" if stale or pending else "ok", "An ask is waiting" if pending else "Nothing is waiting"))
-    checks.append(("Awake", "ok", "Identity, Priority and Coordination run; Adaptation and Audit are paused"))
-    over = [e for e in (dept(ref) or {}).get("envelopes", {}) if _today_spend(ref, e)[0] >= ENVELOPE["calls"]]
+    checks.append(("Awake", "ok", "All five functions run as engines" if (dept(ref) or {}).get("runtime") == 2
+                   else "Identity, Priority and Coordination run; Adaptation and Audit are paused"))
+    envs = (dept(ref) or {}).get("envelopes", {})
+    over = []
+    for e in envs:                      # an envelope is two limits, and either one stops the engine (Priority's gate)
+        calls, usd = _today_spend(ref, e)
+        env = envs[e] or {}
+        if calls >= int(env.get("calls", ENVELOPE["calls"])) or usd >= float(env.get("usd", ENVELOPE["usd"])):
+            over.append(e)
     checks.append(("Budget", "warn" if over else "ok", "Inside every envelope" if not over else "Over: " + ", ".join(over)))
     live = latest(ref, "Live site")
     checks.append(("Done", "ok" if live and (live.get("check") or {}).get("ok") else "warn", "The site is live" if live else "Not live yet"))
@@ -926,7 +971,7 @@ def map_view(ref):
     st = status(ref)
     systems = []
     for s in SYSTEMS:
-        paused = s in PAUSED_SYSTEMS
+        paused = s in PAUSED_SYSTEMS and d.get("runtime") != 2
         last = next((r for r in reversed(rs) if r["engine"] == s), None)
         systems.append({"name": s, "state": "paused" if paused else "running", "last": last and last.get("what")})
     engines = [engine_view(ref, e[0]) for e in ENGINES]
@@ -946,4 +991,5 @@ def map_view(ref):
             "control": d["control"], "stopped": d.get("stopped"), "systems": systems, "engines": engines, "artifacts": arts,
             "status": st, "health": health(ref), "recent": recent,
             "live": bool(latest(ref, "Live site")), "requests": requests(ref)[-10:],
-            "has_goal": bool(versions(ref, "Brief")), "templates": d.get("templates") or {}}
+            "has_goal": bool(versions(ref, "Brief")) or bool(requests(ref)), "templates": d.get("templates") or {},
+            "runtime": d.get("runtime") or 1}

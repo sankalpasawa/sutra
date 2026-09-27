@@ -22,6 +22,15 @@
          before the tail
      W11 the stylesheet block is tokens only and every class the script emits
          has a rule or is one of 20-dept.js's own
+     W12 a department on the engine runtime gains the Board in its list; one
+         that is not on it gains nothing and reads neither steps nor board
+     W13 an engine opens on its steps: each with its rung, its check, what its
+         rows say and Hold; the words carry no step id, rung code or count
+     W14 Hold posts the one route it names, and the card that is open stays open
+     W15 the Board shows every thread, who spoke to whom and with which act,
+         and the ideas that are parked; an empty board is one quiet line
+     W16 the Map of a runtime department has one way in, shows what the
+         department said back, and a function's card carries its steps
 
    Harness: test_dept.js's fresh(), with 22-website.js loaded after 20-dept.js
    (panel.html's order). Run: node test_website.js */
@@ -66,7 +75,8 @@ function mapOf(o){
   return {
     ref: "r3", name: "City Care Hospital Website", goal: "A live website for City Care Hospital", done: "Every page checked and live",
     rules: [], owner: "Sankalp", control: "granted", stopped: !!o.stopped, has_goal: o.has_goal !== false, live: !!o.live,
-    systems: ["Identity", "Adaptation", "Priority", "Coordination", "Audit"].map(n => ({ name: n, state: /Adaptation|Audit/.test(n) ? "paused" : "running", last: null })),
+    runtime: o.runtime || 1,
+    systems: ["Identity", "Adaptation", "Priority", "Coordination", "Audit"].map(n => ({ name: n, state: /Adaptation|Audit/.test(n) && o.runtime !== 2 ? "paused" : "running", last: null })),
     engines: ENGS.map(e => ({ name: e[0], reads: e[1], writes: e[2], runs_as: e[3], slot: "after a new " + e[1],
       state: e[0] === "Publish" && o.ask ? "Waits" : "Idle", envelope: { calls: 30, usd: 6, used_calls: 3, used_usd: 0.4 }, window_min: 15,
       last: { status: "ok", at: "2026-09-27T11:02:00+05:30", what: "" } })),
@@ -81,6 +91,43 @@ function mapOf(o){
     requests: [], templates: {},
   };
 }
+/* What the engine runtime's two reads answer (engine_runtime.py: steps_view, board_view). */
+const AT = "2026-09-28T10:02:00+05:30";
+function stepOf(o){
+  return Object.assign({ nature: "transform", mode: "slot", under: null, rung: "C2", rung_name: "Code", form: null, born: "C2", ceiling: "C2",
+    soft: false, held: false, pending: null, trial: null, each: false, side_by_side: 1, ran: true,
+    last: { at: AT, status: "ok", rung: "C2", miss: false, by: "code", item: null, ok: true, notes: ["every page of the plan is listed"] },
+    evidence: { runs: 5, differing: 0, shape_drift: 0, pass: 1, marked: 0, misses: 0, usd: 0 },
+    history: [{ at: AT, from: null, to: "C2", by: "born", evidence: null }] }, o);
+}
+function stepsOf(name, o){
+  o = o || {};
+  const numbers = { runs: 40, differing: 1, trial: 20, misses: 3 };
+  if (name === "Write") return { name, kind: "work", description: "Writes every page the plan names", skills: ["Writing"], reads: "Site plan", writes: "Pages",
+    hears: [], numbers, steps: [
+      stepOf({ id: "write.list", name: "List the pages", check: "list_has_pages" }),
+      stepOf({ id: "write.page", name: "Write a page", nature: "make", rung: o.rung || "C0", rung_name: o.rung_name || "Improvised call", born: "C0", ceiling: "C1",
+               soft: true, each: true, side_by_side: 4, check: "page_has_body", held: !!o.held, trial: o.trial || null, pending: o.pending || null,
+               last: { at: AT, status: "ok", rung: "C0", miss: false, by: "model", item: "careers", ok: true, notes: ["the page has a body"] },
+               evidence: { runs: 10, differing: 0, shape_drift: 0, pass: 0.9, marked: 0, misses: 0, usd: 0.01 },
+               history: [{ at: AT, from: null, to: "C0", by: "born", evidence: null }].concat(o.moved ? [{ at: AT, from: "C0", to: "C1", by: "the owner's stamp", evidence: {} }] : []) }),
+      stepOf({ id: "write.file", name: "Put the pages together", check: "filed_has_files", ran: false, last: null, evidence: null })] };
+  return { name, kind: "function", description: "", skills: [], reads: null, writes: null, hears: ["Take a request"], numbers, steps: [
+    stepOf({ id: name.toLowerCase() + ".gate", name: "Say whether it may start", nature: "decide", mode: "gate", check: "gate_answer_is_known" }),
+    stepOf({ id: name.toLowerCase() + ".read", name: "Read the request", under: "Take a request", check: "brief_is_text" })] };
+}
+const BOARD = { any: true,
+  ideas: [{ id: "i-1", words: "what about a patient portal", reflected: "A place where patients sign in", question: "Who signs in first?",
+            shapes: ["A page that links out", "A sign-in of its own"], state: "parked", at: AT }],
+  threads: [
+    { id: "x-2", topic: "rule", protocol: "request", state: "input-required", decider: "Owner", opened: AT, closed: null, outcome: null,
+      bounds: { hops: 4, seconds: 900, usd: 0.5 }, hops: 0, default: "failure", posts: [
+        { n: 3, src: "Identity", dst: ["Owner"], msg_type: "request", at: AT, word: "rule", line: "A rule, as understood: every page names a phone line" }] },
+    { id: "x-1", topic: "request", protocol: "request", state: "completed", decider: "Identity", opened: AT, closed: AT, outcome: { by: "inform" },
+      bounds: { hops: 4, seconds: 900, usd: 0.5 }, hops: 0, default: "failure", posts: [
+        { n: 1, src: "Owner", dst: ["Identity"], msg_type: "request", at: AT, word: "request", line: "Which page lists the doctors?" },
+        { n: 2, src: "Identity", dst: ["Owner"], msg_type: "inform", at: AT, word: "answer", line: "The Doctors page lists them" }] }] };
+
 function fresh(opts){
   opts = opts || {};
   const calls = { apiGet: [], apiPost: [], render: 0 };
@@ -92,6 +139,9 @@ function fresh(opts){
       calls.apiGet.push(p);
       if (p === "/api/native/depts") return Promise.resolve({ depts: opts.none ? [] : [{ ref: "r3", name: "Website", stopped: false }] });
       if (/\/api\/native\/r3\/map$/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(map)));
+      if (/\/api\/native\/r3\/steps\//.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(stepsOf(decodeURIComponent(p.split("/steps/")[1]), opts.steps))));
+      if (/\/api\/native\/r3\/board$/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(opts.board || BOARD)));
+      if (/\/api\/native\/r3\/engine\//.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(Object.assign({ runs: [] }, map.engines[1]))));
       if (/\/artifact\//.test(p)) return Promise.resolve({ name: "Live site", slug: "live-site", versions: [
         { v: 2, at: "2026-09-27T11:20:00+05:30", made_from: [{ art: "Build", v: 6 }], run: "r-2", check: { ok: true, notes: ["live"] }, note: "" },
         { v: 1, at: "2026-09-27T11:10:00+05:30", made_from: [{ art: "Build", v: 5 }], run: "r-1", check: { ok: true, notes: ["live"] }, note: "" }] });
@@ -319,6 +369,122 @@ test("W11: the stylesheet block is tokens only and covers what the script emits"
   while ((m = re.exec(emitted))) classes.add(m[0]);
   classes.delete("wb");
   [...classes].forEach(k => assert.ok(block.indexOf("." + k) >= 0, "no rule for ." + k));
+});
+
+/* ── the engine runtime ─────────────────────────────────────────────────── */
+const words = h => h.replace(/<[^>]+>/g, " ").replace(/\b\d\d:\d\d\b/g, " ");
+const rtMap = o => mapOf(Object.assign({ runtime: 2, live: true }, o || {}));
+const readsOf = (c, re) => c.calls.apiGet.filter(p => re.test(p));
+async function fnCard(c, tab){
+  click(c, { dptab: tab });
+  for (let k = 0; k < 3; k++){ c.dpViewerHtml(WEB, {}, null, null); for (let i = 0; i < 6; i++) await sleep(); }
+  return c.dpViewerHtml(WEB, {}, null, null);
+}
+
+test("W12: a department on the engine runtime gains the Board; one that is not reads neither steps nor board", async () => {
+  const c = await opened({ map: rtMap() });
+  assert.ok(/data-wbtab="board"><span>Board<\/span>/.test(list(c)), "the Board is in the list");
+  const old = await opened();
+  assert.ok(!/data-wbtab="board"/.test(list(old)), "a department of the first build has no Board");
+  click(old, { wbengine: "Write" }); view(old); await sleep(); await sleep();
+  const html = view(old);
+  assert.ok(!/>Steps<\/button>/.test(html) && />Engine<\/button>/.test(html), "its engine card is the one it had");
+  click(old, { wbtab: "board" });
+  const back = view(old);
+  assert.ok(/<div class="o2vh"><b>Map<\/b>/.test(back) && !/class="wbth/.test(back), "and a Board that is asked for falls back to the Map");
+  ["identity", "adaptation", "audit"].forEach(f => old.wbFnOwn("r3", f));
+  await sleep();
+  assert.deepStrictEqual(readsOf(old, /\/steps\/|\/board$/), [], "no read of the runtime's routes");
+  assert.ok(/Paused/.test(old.wbFnOwn("r3", "audit")), "Audit says Paused, as before");
+});
+
+test("W13: an engine opens on its steps, each with its rung, its check, what its rows say and Hold", async () => {
+  const c = await opened({ map: rtMap(), steps: { moved: true } });
+  click(c, { wbengine: "Write" }); view(c); await sleep(); await sleep();
+  const html = view(c);
+  assert.deepStrictEqual(readsOf(c, /\/steps\//), ["/api/native/r3/steps/Write"]);
+  ["Steps", "Engine", "Runs"].forEach(t => assert.ok(html.indexOf(">" + t + "</button>") >= 0, t));
+  assert.ok(/aria-pressed="true" data-wbpanekey="r3:Write" data-wbpane="steps"/.test(html), "Steps is the pane it opens on");
+  ["List the pages", "Write a page", "Put the pages together"].forEach(s => assert.ok(html.indexOf(s) >= 0, s));
+  const row = name => html.slice(html.indexOf(name), html.indexOf("</div></div>", html.indexOf(name)) < 0 ? undefined : html.indexOf(name) + 1400);
+  const page = row("Write a page");
+  assert.ok(/<span class="wbrung" title="Improvised call"><i class="on"><\/i><i class="on"><\/i><i><\/i><i><\/i><\/span>/.test(page), "two of four pips lit");
+  assert.ok(/<span class="wbchip">Improvised call<\/span>/.test(page) && /<span class="wbchip">Side by side<\/span>/.test(page));
+  assert.ok(/the page has a body/.test(page), "what its check last said");
+  assert.ok(/<span class="dpk">Passing<\/span><div class="dpbar"><i style="width:90%">/.test(page), "its pass rate is a bar");
+  assert.ok(/<span class="dpk">To the next rung<\/span><div class="dpbar"><i style="width:25%">/.test(page), "and how far it is from the next rung");
+  assert.ok(/data-wbhold="write\.page" data-wbheld="1">Hold</.test(page));
+  const code = row("List the pages");
+  assert.ok(/<span class="wbchip on">Code<\/span>/.test(code.slice(0, 600)) && !/To the next rung/.test(code.slice(0, html.indexOf("Write a page") - html.indexOf("List the pages"))),
+    "a step that is code has nowhere to climb");
+  assert.ok(/<span class="dpdot off"><\/span><span>Put the pages together<div class="dpchk">filed has files<\/div>/.test(html), "a step that never ran says which check it names");
+  assert.ok(/<h3>Moves<\/h3>/.test(html) && /Improvised call to Checklist · the owner's stamp/.test(html), "a rung that moved says from, to and by whom");
+  const t = words(html);
+  assert.ok(!/\d/.test(t), "a number at rest: " + (t.match(/.{0,30}\d.{0,30}/) || [""])[0]);
+  assert.ok(!/write\.(list|page|file)|page_has_body|\bC[0-3]\b|\/api\//.test(t), "a step id, a check id, a rung code or a path in the words");
+  const marks = await opened({ map: rtMap(), steps: { held: true, trial: { rung: "C1" }, pending: { to: "C1" } } });
+  click(marks, { wbengine: "Write" }); view(marks); await sleep(); await sleep();
+  const mh = view(marks);
+  ["On trial", "Waits for your stamp", "Held"].forEach(w => assert.ok(mh.indexOf(">" + w + "</span>") >= 0, w));
+  assert.ok(/data-wbhold="write\.page" data-wbheld="0">Let go</.test(mh), "a held step can be let go");
+});
+
+test("W14: Hold posts the one route it names, and the card that is open stays open", async () => {
+  const c = await opened({ map: rtMap() });
+  assert.ok(/data-wbhold="identity\.read" data-wbheld="1">Hold</.test(await fnCard(c, "identity")), "Hold is on the function's card");
+  assert.ok(click(c, { wbhold: "identity.read", wbheld: "1" }));
+  await sleep(); await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost)), [{ p: "/api/native/r3/hold", body: { step: "identity.read", held: true } }]);
+  assert.strictEqual(vm.runInContext("dpS().tab['r3']", c), "identity", "the function's card is still the one open");
+  click(c, { wbhold: "identity.read", wbheld: "0" });
+  await sleep(); await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost[1])), { p: "/api/native/r3/hold", body: { step: "identity.read", held: false } });
+  assert.ok(readsOf(c, /\/steps\/Identity$/).length >= 2, "and its steps are read again after the post");
+});
+
+test("W15: the Board shows every thread, who spoke to whom and with which act, and the ideas that are parked", async () => {
+  const c = await opened({ map: rtMap() });
+  click(c, { wbtab: "board" }); view(c); await sleep(); await sleep();
+  const html = view(c);
+  assert.ok(/<h2[^>]*>Board<|>Board</.test(html));
+  assert.strictEqual((html.match(/class="wbth wb"/g) || []).length, 2, "one block to a thread");
+  assert.ok(html.indexOf("A rule, as understood") < html.indexOf("Which page lists the doctors?"), "newest thread first");
+  assert.ok(/<span class="dpdot warn"><\/span><b>A rule, as understood: every page names a phone line<\/b><span class="dpst">Waits for you<\/span>/.test(html));
+  assert.ok(/<span class="dpdot ok"><\/span><b>Which page lists the doctors\?<\/b><span class="dpst">Done<\/span>/.test(html));
+  assert.ok(/<span class="wbchip">Identity<\/span><span class="wbarrow">&rarr;<\/span><span class="wbchip">Owner<\/span><span class="dpchk">tells · /.test(html), "who, to whom, the act in a word");
+  assert.ok(/<div class="wbsaid">The Doctors page lists them<\/div>/.test(html), "and what was said");
+  assert.ok(/<h3>Ideas, parked<\/h3>/.test(html) && /A place where patients sign in/.test(html) && /<span class="wbchip">A sign-in of its own<\/span>/.test(html));
+  const t = words(html);
+  assert.ok(!/\d/.test(t), "a number at rest: " + (t.match(/.{0,30}\d.{0,30}/) || [""])[0]);
+  assert.ok(!/accept-proposal|input-required|msg_type|\bx-\d|\/api\//.test(t), "a protocol word or an id in the words");
+  const empty = await opened({ map: rtMap(), board: { any: false, threads: [], ideas: [] } });
+  click(empty, { wbtab: "board" }); view(empty); await sleep(); await sleep();
+  assert.ok(/Nothing has been said yet/.test(view(empty)));
+});
+
+test("W16: the Map of a runtime department has one way in, shows what was said back, and a function's card carries its steps", async () => {
+  const c = await opened({ map: rtMap() });
+  view(c); await sleep(); await sleep();
+  const html = view(c);
+  assert.ok(/<h3>Say<\/h3>/.test(html) && /data-wbask="ask"[^>]*>Send</.test(html) && !/<h3>Ask<\/h3>/.test(html), "one box, one button");
+  assert.strictEqual((html.match(/<textarea/g) || []).length, 1, "and no second way in");
+  assert.ok(/<h3>Replies<\/h3>/.test(html), "what the department said back is on the Map");
+  const replies = html.slice(html.indexOf("<h3>Replies</h3>"), html.indexOf("<h3>Health</h3>"));
+  assert.ok(replies.indexOf("A rule, as understood") < replies.indexOf("The Doctors page lists them") && replies.indexOf("A rule, as understood") > 0, "newest first");
+  assert.ok(!/Which page lists the doctors/.test(replies), "the owner's own words are not a reply");
+  assert.ok(!/Paused/.test(html), "no function is paused: " + (html.match(/.{0,60}Paused.{0,20}/) || [""])[0]);
+  const t = words(html);
+  assert.ok(!/\d/.test(t), "a number at rest: " + (t.match(/.{0,30}\d.{0,30}/) || [""])[0]);
+  (c.document.listeners.input || []).forEach(fn => fn({ target: { dataset: { wbdraft: "r3:ask" }, value: "Which page lists the doctors?" } }));
+  click(c, { wbask: "ask" }); await sleep(); await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost)), [{ p: "/api/native/r3/ask", body: { text: "Which page lists the doctors?" } }],
+    "every kind of words goes through the one route");
+  let fn = await fnCard(c, "audit");
+  assert.ok(!/Paused/.test(fn) && /<h3>Gates<\/h3>/.test(fn) && /<h3>Take a request<\/h3>/.test(fn), "Audit is an engine: its gate, and its steps under what it hears");
+  fn = await fnCard(c, "adaptation");
+  assert.ok(/<h3>Ideas, parked<\/h3>/.test(fn), "Adaptation carries the ideas it parked");
+  fn = await fnCard(c, "identity");
+  ["Control", "Autonomy windows", "Gates", "Take a request"].forEach(h => assert.ok(fn.indexOf("<h3>" + h + "</h3>") >= 0, h));
 });
 
 Promise.all(pending).then(() => {

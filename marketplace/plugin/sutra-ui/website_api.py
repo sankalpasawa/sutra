@@ -206,6 +206,44 @@ def engine(ref: str, name: str):
     return e
 
 
+def _rt(ref):
+    """The engine runtime's reads, for a department that runs on it (engine_runtime.py); 404 for every other."""
+    _need(ref)
+    rt = W._runtime(ref)
+    if not rt:
+        raise HTTPException(404, detail="this department does not run on the engine runtime")
+    return rt
+
+
+@router.get("/{ref}/steps/{name}")
+def steps(ref: str, name: str):
+    """An engine or a function as its steps: the rung each runs on, its check, and what its rows say."""
+    v = _rt(ref).steps_view(ref, name)
+    if not v:
+        raise HTTPException(404, detail="no such engine")
+    return v
+
+
+@router.get("/{ref}/board")
+def board(ref: str):
+    """The department's one board: every thread, every post, and the ideas that are parked."""
+    rt = _rt(ref)
+    out = rt.board_view(ref)
+    out["ideas"] = list(reversed(rt.ideas(ref)))[:20]
+    return out
+
+
+@router.post("/{ref}/hold")
+async def hold(ref: str, request: Request):
+    """The owner pins a step on its rung, or lets it go."""
+    rt = _rt(ref)
+    _, body = await _text(request)
+    try:
+        return rt.hold(ref, str(body.get("step") or ""), bool(body.get("held", True)))
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc))
+
+
 @router.get("/{ref}/artifact/{slug}")
 def artifact(ref: str, slug: str):
     _need(ref)
