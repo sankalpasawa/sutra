@@ -79,13 +79,18 @@ const ITEMS = [{
 {
   const ctx = fresh(false);
   ctx.S.needsYou = null;             /* feature dark (403) */
+  const off = ctx.SCREENS.now();
+  assert(/Shadow is off/.test(off),
+         "a dark feed says Shadow is off, never 'nothing needs you' (2026-09-27)");
+  assert(!/data-nyask="1"/.test(off), "no box that sends to a Shadow that is off");
+  ctx.S.needsYou = [];
   const empty = ctx.SCREENS.now();
   assert(/Nothing needs you right now/.test(empty),
-         "dark feed renders the honest empty state");
+         "an empty feed renders the honest empty state");
   assert(/data-nystart/.test(empty),
          "the empty state must offer a way to start talking to Shadow");
   ctx.S.needsYou = ITEMS;
-  assert(/nyfeed/.test(ctx.SCREENS.now()), "items render as cards");
+  assert(/nyfeed/.test(ctx.SCREENS.now()), "items render as rows");
   console.log("ok 2 screen states");
 }
 
@@ -139,7 +144,7 @@ const ITEMS = [{
   assert.strictEqual(ctx.S.needsYou[0].state, "seen",
     "and is drawn as seen until the next poll");
   const html = ctx.needsYouHtml(ctx.S.needsYou);
-  assert.ok(/class="nycard seen"/.test(html), "the seen look is a class");
+  assert.ok(/class="nycard[^"]* seen"/.test(html), "the seen look is a class");
   console.log("ok 5 seen on open, the card stays");
 }
 
@@ -210,7 +215,7 @@ const ITEMS = [{
   assert(h.indexOf("Update 50") < h.indexOf("Update 40")
       && h.indexOf("Update 40") < h.indexOf("Update 30"), "newest update first");
   assert(!/Update 20/.test(h) && !/Update 10/.test(h), "three updates shown");
-  assert(/data-nymore="1">Show 2 more</.test(h), "the rest behind Show 2 more");
+  assert(/data-nymore="1">2 more</.test(h), "the rest behind '2 more'");
   ctx.S.nyFyiAll = true;
   assert(/Update 10/.test(ctx.needsYouHtml(all)), "Show more reveals every update");
   console.log("ok 9 order and the FYI cap");
@@ -229,4 +234,76 @@ const ITEMS = [{
   console.log("ok 10 nothing to decide keeps the page");
 }
 
-console.log("test_shadow_now.js: all green");
+/* Restyle (founder 2026-09-27: "it's boxes ... show me empty states, error
+   states"): rows with a status dot, and every state says what is true. */
+
+/* 11. first load: quiet placeholder rows, never an empty claim before the
+   feed has answered */
+{
+  const ctx = fresh(false);
+  const h = ctx.SCREENS.now();                    /* S.needsYou undefined */
+  assert(/nyskelrow/.test(h) && /Checking what needs you/.test(h));
+  assert(!/Nothing needs you/.test(h), "no empty claim before the first answer");
+  console.log("ok 11 first load");
+}
+
+/* 12. feed trouble: with rows, one line on top (since when, Try again) and
+   the last known rows stay; with none, the line replaces the empty claim */
+{
+  const ctx = fresh(false);
+  ctx.S.needsYou = ITEMS;
+  ctx.S.nyErr = Date.now() - 6 * 60 * 1000;
+  const h = ctx.SCREENS.now();
+  assert(/class="nyerr"/.test(h) && /Couldn't refresh since/.test(h)
+      && /data-nyretry="1"/.test(h), "one trouble line with Try again");
+  assert(/Mission m-1 needs a yes/.test(h), "the last known rows stay");
+  ctx.S.needsYou = [];
+  const none = ctx.SCREENS.now();
+  assert(/Couldn't load what needs you/.test(none) && /data-nyretry="1"/.test(none));
+  assert(!/Nothing needs you/.test(none), "a failed load never claims all clear");
+  console.log("ok 12 feed trouble");
+}
+
+/* 14. the dot says what kind of wait it is, at a glance */
+{
+  const ctx = fresh(false);
+  const mk = over => Object.assign({ producer: "shadow", kind: "needs_decision",
+    title: "T", deep_link: "sutra://x", dedupe_key: "k", state: "new" }, over);
+  const tone = it => (/tone-(\w+)/.exec(ctx.needsYouHtml([it])) || [])[1];
+  assert.strictEqual(tone(mk({ item_id: "rescue-s1" })), "err", "a broken session");
+  assert.strictEqual(tone(mk({ item_id: "stall-m1" })), "warn", "a task gone quiet");
+  assert.strictEqual(tone(mk({ item_id: "f1", why_now: "needs_founder" })), "ask", "yours to answer");
+  assert.strictEqual(tone(mk({ item_id: "i1", kind: "info", why_now: "mission failed" })), "err");
+  assert.strictEqual(tone(mk({ item_id: "i2", kind: "info", why_now: "1 of 1 checks passed" })), "ok");
+  console.log("ok 14 status dots");
+}
+
+/* 15. every row can be reached from the keyboard */
+{
+  const ctx = fresh(false);
+  const h = ctx.needsYouHtml(ITEMS);
+  assert.strictEqual((h.match(/tabindex="0" role="button"/g) || []).length, 2,
+                     "both rows are focusable buttons");
+  console.log("ok 15 keyboard reachable");
+}
+
+/* 13. loadNeedsYou marks trouble on a failed answer and clears it on the
+   next good one (async, so it runs last) */
+(async () => {
+  const ctx = fresh(false);
+  let status = 500;
+  ctx.fetch = () => Promise.resolve({ ok: status === 200, status,
+    json: () => Promise.resolve({ items: ITEMS }) });
+  const tick = () => new Promise(r => setImmediate(r));
+  ctx.loadNeedsYou(); await tick(); await tick();
+  assert.ok(ctx.S.nyErr > 0, "a 500 marks trouble");
+  const first = ctx.S.nyErr;
+  ctx.loadNeedsYou(); await tick(); await tick();
+  assert.strictEqual(ctx.S.nyErr, first, "trouble keeps the time it started");
+  status = 200;
+  ctx.loadNeedsYou(); await tick(); await tick();
+  assert.strictEqual(ctx.S.nyErr, 0, "a good answer clears it");
+  assert.strictEqual(ctx.S.needsYou.length, 2);
+  console.log("ok 13 trouble marked and cleared");
+  console.log("test_shadow_now.js: all green");
+})();
