@@ -5463,3 +5463,56 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .snack-x:hover{background:rgba(127,127,127,.18);color:var(--ink)}
 @keyframes snackin{from{opacity:0;transform:translateY(6px)}}
 @media (prefers-reduced-motion:reduce){.snack{animation:none}}
+
+/* ── the website department (22-website.js) ─────────────────────────────
+   The first build of the Native design, drawn inside the department screen.
+   Every colour is a token above; nothing here styles another screen: each
+   class is prefixed `wb`, and `.dpdot.off` is the one state 20-dept.js's dot
+   did not carry (a slot that exists and is not awake). */
+.wbgrid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:0 0 12px}
+.wbtile{border:1px solid var(--line-soft);border-radius:10px;background:var(--card);padding:9px 11px;text-align:left;color:var(--ink);cursor:pointer;font:400 12.5px/1.4 var(--sans);display:flex;flex-direction:column;gap:7px;min-width:0}
+.wbtile:hover,.wbdoc:hover,.wbeng:hover{border-color:var(--acc)}
+.wbtile.off{color:var(--muted)}
+.wbtile b{display:flex;align-items:center;gap:7px;font-weight:600}
+.wbtile .dpdot,.wbeng .dpdot,.wbhealth .dpdot,.wbmotor .dpdot,.wbverh .dpdot,.wbprevh .dpdot,.wbtv .dpdot,.wblane .dpdot,.wbtm .dpdot,.dpbig .dpdot{margin-top:0;display:inline-block;flex:none}
+.dpdot.off{background:var(--line)}
+.wbflow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 8px}
+.wbdoc{border:1px solid var(--line);border-radius:6px;background:var(--card);padding:7px 12px;min-width:84px;color:var(--ink);cursor:pointer;font:500 12.5px/1.4 var(--sans);display:flex;flex-direction:column;align-items:center;gap:5px}
+.wbdoc.none{color:var(--faint);border-style:dashed;cursor:default}
+.wbeng{border:1px solid var(--acc);border-radius:16px;background:var(--surface);padding:6px 14px;color:var(--ink);cursor:pointer;font:500 12.5px/1.4 var(--sans);display:flex;align-items:center;gap:7px}
+.wbarrow{color:var(--muted);font:400 13px/1 var(--sans)}
+.wbmotor{display:flex;align-items:center;gap:8px;margin:0 0 10px;font:500 12.5px/1.4 var(--sans);color:var(--ink)}
+.wbmotor .btn{margin-left:auto}
+.wblanes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 10px}
+.wblane{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.wblane .dpk{width:100%}
+.wbctl{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
+.wbhealth{display:flex;flex-wrap:wrap;gap:6px 18px;font:400 12px/1.4 var(--sans);color:var(--muted)}
+.wbhealth span{display:flex;align-items:center;gap:6px}
+.wbask{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;margin-top:8px}
+.wbask textarea{flex:1;min-width:220px;box-sizing:border-box;background:var(--inset);border:1px solid var(--line);border-radius:6px;color:var(--ink);font:400 13px/1.45 var(--sans);padding:7px 9px;resize:vertical}
+.wbask textarea:focus{border-color:var(--acc);outline:0}
+.wbver{border:1px solid var(--line-soft);border-radius:8px;padding:9px 11px;margin:0 0 8px}
+.wbver.on{background:var(--card)}
+.wbverh,.wbverf,.wbprevh,.wbtv,.wbtr{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.wbverf{margin-top:7px}
+.wbchip{border:1px solid var(--line);border-radius:10px;padding:1px 9px;font:500 11.5px/1.6 var(--sans);color:var(--ink);display:inline-flex;align-items:center;gap:5px;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.wbchip.ask{border-color:var(--warn-line);color:var(--warn)}
+.wbchip.on{border-color:var(--acc);background:var(--acc-bg)}
+.wbcando{display:flex;gap:8px}
+.wbtrace{display:flex;flex-direction:column;align-items:flex-start}
+.wbtl1{width:1px;height:14px;background:var(--line);margin:3px 0 3px 3px}
+.wbprev{display:flex;flex-direction:column;gap:8px;flex:1;min-height:420px}
+.wbprevh{font:500 12px/1.4 var(--sans);color:var(--muted)}
+.wbprevh .o2more{margin-left:auto}
+.wbframe{flex:1;min-height:460px;width:100%;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.wbtl{display:flex;flex-direction:column;gap:6px}
+.wbtlr{display:grid;grid-template-columns:110px minmax(0,1fr);gap:10px;align-items:center;font:400 12px/1.4 var(--sans);color:var(--muted)}
+.wbtlb{position:relative;height:11px;border-radius:3px;background:var(--inset)}
+.wbtlb i{position:absolute;top:0;height:11px;border-radius:3px;background:var(--acc);min-width:3px}
+.wbtlb i.ok{background:var(--ok)}.wbtlb i.warn{background:var(--warn)}.wbtlb i.block{background:var(--block)}
+.wbtlx{display:flex;justify-content:space-between;font:400 10.5px/1.4 var(--sans);color:var(--faint);margin-left:120px}
+.wbtm{display:inline-flex;gap:3px;margin-left:8px;vertical-align:middle}
+.wbscrim{position:fixed;inset:0;background:var(--scrim);z-index:80}
+.wbsheet{position:fixed;z-index:81;top:18vh;left:50%;transform:translateX(-50%);width:min(520px,92vw);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 20px;box-shadow:var(--shadow)}
+.wbsheet h4{margin:0;font:600 15px/1.3 var(--serif);color:var(--ink)}

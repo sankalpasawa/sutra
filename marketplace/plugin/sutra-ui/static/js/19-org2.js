@@ -644,6 +644,7 @@ function o2MenuHtml(n, d){
   if (kind !== "root") acts += item("rename", "Rename…");
   if (kind !== "root" && kind !== "machine") acts += item("move", "Move…");
   acts += item("create", "New sub-department…");
+  if (typeof wbMenuItem === "function") acts += wbMenuItem();   /* 22-website.js: found an organisation with a website department */
   return `<div class="smenu o2menu" role="menu">${acts}<div class="o2msep"></div>${item("changes", "Changes")}${item("approvals", "Approvals")}${item("health", "Health")}</div>`;
 }
 /* ── THE LIBRARY, TOP RIGHT (2.299.0) ───────────────────────────────────────
@@ -863,7 +864,9 @@ function o2AppHtml(m){
 /* The chart from any level: this department, its sub-departments, and theirs,
    names only; a leaf shows one tile and a quiet line (design BareChart, StateLeafChart). */
 function o2ChartHtml(n, d){
-  const tile = (x, cls) => `<button type="button" class="o2tile${cls ? " " + cls : ""}" data-o2ref="${o2Esc(x.ref)}" title="${o2Esc(x.name)}">${o2Esc(x.name)}</button>`;
+  /* 22-website.js: a website department's tile carries its five systems' dots */
+  const mark = (x) => (typeof wbTileMark === "function") ? wbTileMark(x.ref) : "";
+  const tile = (x, cls) => `<button type="button" class="o2tile${cls ? " " + cls : ""}" data-o2ref="${o2Esc(x.ref)}" title="${o2Esc(x.name)}">${o2Esc(x.name)}${mark(x)}</button>`;
   const ks = d.kids.get(n.ref) || [];
   const head = `<div class="o2crow">${tile(n, "on")}</div>`;
   if (!ks.length) return `<div class="o2viewer wide"><div class="o2vb o2chart">${head}<div class="o2quiet">Nothing below ${o2Esc(n.name)}</div></div></div>`;

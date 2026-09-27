@@ -1,0 +1,550 @@
+/* 22-website.js -- the website department on the department screen.
+
+   The first build of the Native design (system/first-build.html): one
+   department whose four engines are run by the motor inside the app
+   (website_dept.py, routes in website_api.py). This file draws it INSIDE the
+   department screen 20-dept.js already owns, through three hooks there:
+
+     wbList(n)      replaces the list's first group (Map, System status, Motor)
+                    and its Engines and Filed work groups, for a website
+                    department only; every other group is 20-dept.js's own
+     wbViewer(n)    draws the viewer when one of this file's entries is open,
+                    and adds the internal systems' own state under the five
+                    function cards
+     wbMenuItem()   one line in the Org screen's Edit menu: the command that
+                    founds an organisation, its root department and its
+                    website department
+
+   Every other department is untouched: both list and viewer hooks answer null
+   unless the selected department has a website record.
+
+   Copy discipline is 20-dept.js's: names, never paths; no counts at rest; no
+   help text; one quiet line for an empty state; every colour a panel.css token. */
+
+const WB_POLL_MS = 2500;
+const WB_FUNCS = ["identity", "adaptation", "priority", "coordination", "audit"];
+const WB_PANES = [["item", "The work item"], ["preview", "Preview"], ["versions", "Versions"], ["trace", "Trace"]];
+const WB_ENG_PANES = [["engine", "Engine"], ["runs", "Runs"]];
+const WB_DOTS = { ok: "ok", failed: "block", running: "", skipped: "warn", interrupted: "warn" };
+const WB_WORDS = { ok: "Done", failed: "Failed", running: "Running", skipped: "Skipped", interrupted: "Interrupted" };
+
+function wbS(){
+  if (!S.wb) S.wb = { refs: null, refsBusy: false, map: {}, sig: {}, tab: {}, pane: {}, sel: {}, draft: {},
+                      busy: {}, err: {}, engine: {}, art: {}, trace: {}, found: null, timer: null };
+  return S.wb;
+}
+function wbEsc(x){ return dpEsc(x); }
+function wbUrl(ref, tail){ return "/api/native/" + encodeURIComponent(ref) + "/" + tail; }
+function wbIs(ref){
+  const st = wbS();
+  if (st.refs === null){ wbLoadRefs(); return false; }
+  return !!st.refs[ref];
+}
+async function wbLoadRefs(){
+  const st = wbS();
+  if (st.refsBusy) return;
+  st.refsBusy = true;
+  try {
+    const r = await apiGet("/api/native/depts");
+    st.refs = {};
+    ((r && r.depts) || []).forEach(d => { st.refs[d.ref] = d; });
+  } catch (e) { st.refs = {}; }
+  st.refsBusy = false;
+  wbTick();
+  dpRender();
+}
+function wbTab(ref){
+  const st = wbS();
+  return st.tab[ref] === undefined ? "map" : st.tab[ref];
+}
+/* What the screen compares to decide whether to paint again. The motor's
+   heartbeat moves every tick and is patched in place, so it is left out: a
+   preview frame must not reload because a clock moved. */
+function wbSig(m){
+  return JSON.stringify([m.stopped, m.has_goal, m.status, m.recent, m.live,
+    (m.artifacts || []).map(a => [a.name, a.versions]), (m.engines || []).map(e => [e.name, e.state, e.envelope])]);
+}
+async function wbLoadMap(ref, force){
+  const st = wbS();
+  if (!ref || st.busy["map:" + ref]) return;
+  st.busy["map:" + ref] = true;
+  try {
+    const m = await apiGet(wbUrl(ref, "map"));
+    const sig = wbSig(m);
+    const changed = sig !== st.sig[ref];
+    st.map[ref] = m; st.sig[ref] = sig; delete st.err[ref];
+    wbPatchMotor(m);
+    if (changed || force){
+      /* what is open re-reads with it, so a run that just ended shows its row */
+      st.engine = {}; st.art = {}; st.trace = {};
+      if (!wbTyping()) dpRender();
+    }
+  } catch (e) {
+    st.err[ref] = (e && e.message) || String(e);
+  }
+  delete st.busy["map:" + ref];
+}
+function wbTyping(){
+  const a = document.activeElement;
+  return !!(a && a.closest && a.closest(".wb") && /^(INPUT|TEXTAREA)$/.test(a.tagName));
+}
+function wbTick(){
+  const st = wbS();
+  if (st.timer) return;
+  st.timer = setInterval(() => {
+    if (S.screen !== "org2" || !S.dp || !S.dp.sel) return;
+    if (wbIs(S.dp.sel)) wbLoadMap(S.dp.sel);
+  }, WB_POLL_MS);
+}
+function wbMotorState(m){
+  const age = m && m.health && m.health.motor ? m.health.motor.age_s : null;
+  if (age === null || age === undefined) return ["block", "Not running"];
+  if (age < 15) return ["ok", "Running"];
+  return [age < 90 ? "warn" : "block", age < 90 ? "Slow" : "Not running"];
+}
+function wbPatchMotor(m){
+  const [cls, word] = wbMotorState(m);
+  document.querySelectorAll("[data-wbmotor]").forEach(el => {
+    el.className = "dpdot " + cls;
+    const w = el.parentNode && el.parentNode.querySelector("[data-wbmotorword]");
+    if (w) w.textContent = word;
+  });
+}
+
+/* ── the list ─────────────────────────────────────────────────────────────── */
+function wbEngDot(e){
+  if (e.state === "Running") return "";
+  if (e.state === "Waits") return "warn";
+  if (e.last && e.last.status === "failed") return "block";
+  return e.last ? "ok" : "off";
+}
+function wbList(n){
+  if (!wbIs(n.ref)) return null;
+  const st = wbS(), m = st.map[n.ref], tab = wbTab(n.ref);
+  if (!m) wbLoadMap(n.ref);
+  const top = `<div class="o2g dpg wb">` +
+    dpRow("Map", `data-wbtab="map"`, tab === "map") +
+    dpRow("System status", `data-wbtab="status"`, tab === "status") +
+    dpRow("Motor", `data-wbtab="motor"`, tab === "motor") + `</div>`;
+  const engines = dpGroup("Engines", ((m && m.engines) || []).map(e => {
+    const on = tab === "engine" && st.sel[n.ref] === e.name;
+    const word = e.state === "Running" ? "running" : (e.state === "Waits" ? "paused" : "idle");
+    return `<button type="button" class="o2li dpli dpeng wb${on ? " on" : ""}" data-wbengine="${wbEsc(e.name)}">` +
+      `<span>${wbEsc(e.name)}</span><span class="dpst ${word}">${wbEsc(e.state)}</span></button>`;
+  }), null, m ? "No engines here" : "Not read yet");
+  const filed = dpGroup("Filed work", ((m && m.artifacts) || []).filter(a => a.versions).map(a => {
+    const on = tab === "art" && st.sel[n.ref] === a.slug;
+    return `<button type="button" class="o2li dpli dpeng wb${on ? " on" : ""}" data-wbart="${wbEsc(a.slug)}">` +
+      `<span>${wbEsc(a.name)}</span>${dpVerDots(a.versions)}</button>`;
+  }), null, m ? "Nothing filed yet" : "Not read yet");
+  return { top, engines, filed };
+}
+
+/* ── shared pieces ────────────────────────────────────────────────────────── */
+function wbWhen(at){
+  const d = new Date(at);
+  if (isNaN(d)) return "";
+  const p = x => String(x).padStart(2, "0");
+  return p(d.getHours()) + ":" + p(d.getMinutes());
+}
+function wbDot(cls){ return `<span class="dpdot${cls ? " " + cls : ""}"></span>`; }
+function wbBtn(label, attrs, cls){ return `<button type="button" class="btn wb${cls ? " " + cls : ""}" ${attrs}>${wbEsc(label)}</button>`; }
+function wbRunRow(r, extra){
+  return dpRunRow((r.engine || "") + (r.at || r.started ? " · " + wbWhen(r.at || r.started) : ""), r.what || "",
+                  WB_DOTS[r.status] === undefined ? "" : WB_DOTS[r.status], extra || "");
+}
+/* The textarea carries an id: render() (06-render.js) carries focus, caret and
+   value across a rebuild for a focused input that has one, so a background
+   paint never takes the words out from under the person typing them. */
+function wbAskBox(ref, key, placeholder, action, label){
+  const st = wbS(), k = ref + ":" + key;
+  const err = st.err[k] ? `<div class="o2quiet dpq">${wbEsc(st.err[k])}</div>` : "";
+  return `<div class="wbask wb"><textarea id="wbd-${wbEsc(key)}" data-wbdraft="${wbEsc(k)}" rows="2" placeholder="${wbEsc(placeholder)}">${wbEsc(st.draft[k] || "")}</textarea>` +
+    wbBtn(label, `${action}="${wbEsc(key)}"`, "dpstamp") + err + `</div>`;
+}
+function wbAsksHtml(m){
+  const asks = (m.status && m.status.asks) || [];
+  if (!asks.length) return dpQuiet("Nothing is waiting for you");
+  return asks.map(a => `<div class="dpask wb"><div class="dpasks">${wbEsc(a.text)}</div>` +
+    `<div class="dpaskd">${wbEsc(a.engine)} · ${wbEsc(wbWhen(a.created))}</div>` +
+    wbBtn("Stamp", `data-wbdecide="${wbEsc(a.id)}" data-wbok="1"`, "dpstamp") +
+    wbBtn("Refuse", `data-wbdecide="${wbEsc(a.id)}" data-wbok="0"`) + `</div>`).join("");
+}
+function wbControls(m){
+  return `<div class="wbctl wb">` + wbBtn(m.stopped ? "Resume" : "Stop", m.stopped ? `data-wbresume="1"` : `data-wbstop="1"`) + `</div>`;
+}
+
+/* ── Map ──────────────────────────────────────────────────────────────────── */
+function wbSystemTile(s, m){
+  const off = s.state !== "running";
+  let mark = "";
+  if (s.name === "Identity") mark = dpBar(m.live ? 1 : ((m.artifacts || []).filter(a => a.versions).length / 5));
+  else if (s.name === "Priority"){
+    const e = (m.engines || []).reduce((a, x) => Math.max(a, x.envelope ? x.envelope.used_calls / (x.envelope.calls || 1) : 0), 0);
+    mark = dpBar(Math.min(1, e));
+  } else if (s.name === "Coordination") mark = `<span class="dpdots">${(m.engines || []).map(() => "<i></i>").join("")}</span>`;
+  else mark = `<span class="dpchk">Paused</span>`;
+  return `<button type="button" class="wbtile wb${off ? " off" : ""}" data-wbfn="${wbEsc(s.name.toLowerCase())}">` +
+    `<b>${wbDot(off ? "off" : "ok")}${wbEsc(s.name)}</b>${mark}</button>`;
+}
+function wbFlowHtml(m){
+  const arts = {}; (m.artifacts || []).forEach(a => { arts[a.name] = a; });
+  const doc = name => {
+    const a = arts[name] || { versions: 0, slug: "" };
+    return `<button type="button" class="wbdoc wb${a.versions ? "" : " none"}" ${a.versions ? `data-wbart="${wbEsc(a.slug)}"` : "disabled"}>` +
+      `${wbEsc(name)}${dpVerDots(a.versions) || `<span class="dpdots"><i></i></span>`}</button>`;
+  };
+  const eng = e => `<button type="button" class="wbeng wb" data-wbengine="${wbEsc(e.name)}">${wbDot(wbEngDot(e))}${wbEsc(e.name)}</button>`;
+  const arrow = `<span class="wbarrow">&rarr;</span>`;
+  /* two engines to a row, each row opening on the artifact it reads, as drawn */
+  const engs = m.engines || [], rows = [];
+  for (let i = 0; i < engs.length; i += 2) rows.push(engs.slice(i, i + 2));
+  return rows.map(r => `<div class="wbflow">` + doc(r[0].reads) +
+    r.map(e => arrow + eng(e) + arrow + doc(e.writes)).join("") + `</div>`).join("");
+}
+function wbGoalHtml(n, m){
+  return dpCard("Goal", `<div class="dpbig">${wbEsc(m.name)}</div>` +
+    wbAskBox(n.ref, "goal", "What is this website for?", "data-wbgoal", "Start"));
+}
+function wbMapHtml(n, m){
+  if (!m.has_goal) return wbGoalHtml(n, m) + dpCard("The department", `<div class="wbgrid">${m.systems.map(s => wbSystemTile(s, m)).join("")}</div>` + wbFlowHtml(m));
+  const [mc, mw] = wbMotorState(m);
+  const st = m.status || {};
+  const lane = (label, rows, cls) => `<div class="wblane"><div class="dpk">${label}</div>` +
+    (rows.length ? rows.map(() => wbDot(cls)).join("") : wbDot("off")) + `</div>`;
+  const status = `<div class="wblanes">` + lane("Asks", st.asks || [], "") + lane("Waits", st.waits || [], "warn") +
+    lane("Running", st.running || [], "ok") + lane("Escalated", st.escalated || [], "block") + `</div>` +
+    wbAsksHtml(m) + wbControls(m);
+  const health = `<div class="wbhealth">` + ((m.health && m.health.checks) || []).map(c =>
+    `<span title="${wbEsc(c.line)}">${wbDot(c.state)}${wbEsc(c.name)}</span>`).join("") + `</div>`;
+  const live = m.live ? wbBtn("Open the live site", `data-wbart="live-site" data-wbpane="preview"`) : "";
+  return dpCard("The department",
+      `<div class="wbmotor"><span class="dpdot ${mc}" data-wbmotor="1"></span><span data-wbmotorword="1">${wbEsc(mw)}</span>` +
+      `<span class="dpchk">Motor</span>${m.stopped ? `<span class="dpst paused">Stopped</span>` : ""}${live}</div>` +
+      `<div class="wbgrid">${m.systems.map(s => wbSystemTile(s, m)).join("")}</div>` + wbFlowHtml(m)) +
+    dpCard("System status", status) +
+    dpCard("Ask", wbAskBox(n.ref, "ask", "Ask for a page or a change", "data-wbask", "Ask")) +
+    dpCard("Health", health) +
+    dpCard("Recent", (m.recent || []).length ? m.recent.map(r => wbRunRow(r)).join("") : dpQuiet("Nothing has run yet"));
+}
+
+/* ── System status ────────────────────────────────────────────────────────── */
+function wbStatusHtml(n, m){
+  const st = m.status || {};
+  const rows = (xs, fn, quiet) => xs && xs.length ? xs.map(fn).join("") : dpQuiet(quiet);
+  return wbControls(m) +
+    dpCard("Asks", wbAsksHtml(m)) +
+    dpCard("Waits", rows(st.waits, w => dpRunRow(w.what, w.why, "warn"), "Nothing is waiting")) +
+    dpCard("Running", rows(st.running, r => dpRunRow(r.engine, r.what, "ok"), m.stopped ? "Stopped" : "Nothing is running")) +
+    dpCard("Escalated", rows(st.escalated, a => dpRunRow(a.engine, a.text, "block",
+      wbBtn("Stamp", `data-wbdecide="${wbEsc(a.id)}" data-wbok="1"`, "dpstamp")), "Nothing escalated")) +
+    dpCard("Ask", wbAskBox(n.ref, "ask", "Ask for a page or a change", "data-wbask", "Ask"));
+}
+
+/* ── Motor ────────────────────────────────────────────────────────────────── */
+function wbTimelineHtml(rows){
+  if (!rows.length) return dpQuiet("Nothing has run yet");
+  const t0 = Math.min.apply(null, rows.map(r => +new Date(r.started)));
+  const t1 = Math.max.apply(null, rows.map(r => +new Date(r.ended || r.started))) + 1000;
+  const span = Math.max(1000, t1 - t0);
+  const names = [];
+  rows.forEach(r => { if (names.indexOf(r.engine) < 0) names.push(r.engine); });
+  return `<div class="wbtl">` + names.map(nm => {
+    const bars = rows.filter(r => r.engine === nm).map(r => {
+      const a = (+new Date(r.started) - t0) / span * 100;
+      const w = Math.max(0.8, ((+new Date(r.ended || r.started)) - (+new Date(r.started))) / span * 100);
+      return `<i class="${WB_DOTS[r.status] || "run"}" style="left:${a.toFixed(2)}%;width:${w.toFixed(2)}%" title="${wbEsc((r.what || "") + " · " + wbWhen(r.started))}"></i>`;
+    }).join("");
+    return `<div class="wbtlr"><span>${wbEsc(nm)}</span><div class="wbtlb">${bars}</div></div>`;
+  }).join("") + `<div class="wbtlx"><span>${wbEsc(wbWhen(t0))}</span><span>${wbEsc(wbWhen(t1))}</span></div></div>`;
+}
+function wbMotorHtml(n, m){
+  const h = m.health || {}, [mc, mw] = wbMotorState(m);
+  const next = (m.status && m.status.next) || "";
+  const running = ((m.status && m.status.running) || [])[0];
+  const due = /@/.test(next) ? next.split("@")[0] : "";
+  const why = running ? "After this run" : (due ? "" : next.charAt(0).toUpperCase() + next.slice(1));
+  const loop = ["A tick, or a new version", "Due slots, from the timetable", "The envelope has room", "No lock is held", "The run starts", "A run row, and a new version"];
+  return dpCard("Motor", `<div class="dpengines">` +
+      dpCell("State", `<div class="dpbig"><span class="dpdot ${mc}" data-wbmotor="1"></span> <span data-wbmotorword="1">${wbEsc(mw)}</span></div>`) +
+      dpKV("Now", running ? running.engine : "", m.stopped ? "Stopped" : "Nothing is running") +
+      dpKV("Next", due, why || "Nothing due") + `</div>`) +
+    dpCard("It only reads", dpRunRow("When", "Coordination's timetable", "ok") + dpRunRow("How much", "Priority's envelope", "ok") +
+      dpRunRow("Whether", "Identity's rules", "ok") + dpRunRow("What", "The engine's own steps", "ok")) +
+    dpCard("What it does each tick", loop.map((l, i) => dpRunRow(l, "", i < 4 ? "" : "ok")).join("")) +
+    dpCard("Checks", (h.checks || []).map(c => dpRunRow(c.name, c.line, c.state)).join("")) +
+    dpCard("Timeline", wbTimelineHtml(h.timeline || [])) +
+    dpCard("Never happens", (h.never || []).map(x => dpRunRow(x.name, "", x.ok ? "ok" : "block")).join(""));
+}
+
+/* ── an engine ────────────────────────────────────────────────────────────── */
+async function wbLoadEngine(ref, name){
+  const st = wbS(), k = ref + ":" + name;
+  if (st.engine[k] || st.busy["e:" + k]) return;
+  st.busy["e:" + k] = true;
+  try { st.engine[k] = await apiGet(wbUrl(ref, "engine/" + encodeURIComponent(name))); } catch (e) { st.err["e:" + k] = String(e); }
+  delete st.busy["e:" + k];
+  dpRender();
+}
+function wbEngineHtml(n){
+  const st = wbS(), name = st.sel[n.ref], k = n.ref + ":" + name;
+  const e = st.engine[k];
+  if (!e){ wbLoadEngine(n.ref, name); return dpSkel(); }
+  const pane = st.pane[k] || "engine";
+  const tabs = dpTabsHtml(pane, WB_ENG_PANES, `data-wbpanekey="${wbEsc(k)}" data-wbpane`);
+  if (pane === "runs"){
+    return tabs + dpCard("Runs", (e.runs || []).length ? e.runs.map(r => wbRunRow(r,
+      r.wrote ? ` <button type="button" class="o2more wb" data-wbart="${wbEsc(r.wrote.art.toLowerCase().replace(/[^a-z0-9]+/g, "-"))}" data-wbpane="trace" data-wbv="${r.wrote.v}">Trace</button>` : "")).join("")
+      : dpQuiet("No runs yet"));
+  }
+  const env = e.envelope || {};
+  return tabs + dpCard("The engine", `<div class="dpengines">` +
+      dpKV("Runs as", e.runs_as, "Not named") + dpKV("Needs", e.reads, "Not named") + dpKV("Makes", e.writes, "Not named") + `</div>`) +
+    dpCard("In its slot", `<div class="dpengines">` +
+      dpKV("Slot", e.slot, "Not named") +
+      dpCell("Envelope", dpBar(Math.min(1, (env.used_calls || 0) / (env.calls || 1)))) +
+      dpCell("Autonomy window", dpBar(Math.min(1, (e.window_min || 0) / 30))) + `</div>`);
+}
+
+/* ── filed work: the item, Preview, Versions, Trace ───────────────────────── */
+async function wbLoadArt(ref, slug){
+  const st = wbS(), k = ref + ":" + slug;
+  if (st.art[k] || st.busy["a:" + k]) return;
+  st.busy["a:" + k] = true;
+  try { st.art[k] = await apiGet(wbUrl(ref, "artifact/" + encodeURIComponent(slug))); } catch (e) { st.err["a:" + k] = String(e); }
+  delete st.busy["a:" + k];
+  dpRender();
+}
+async function wbLoadTrace(ref, slug, v){
+  const st = wbS(), k = ref + ":" + slug + ":" + v;
+  if (st.trace[k] || st.busy["t:" + k]) return;
+  st.busy["t:" + k] = true;
+  try { st.trace[k] = await apiGet(wbUrl(ref, "trace/" + encodeURIComponent(slug) + "/" + v)); } catch (e) { st.err["t:" + k] = String(e); }
+  delete st.busy["t:" + k];
+  dpRender();
+}
+function wbFromHtml(v){
+  return (v.made_from || []).map(f => f.art ? `<span class="wbchip">${wbEsc(f.art)} ${dpVerDots(f.v) || ""}</span>`
+    : (f.ask ? `<span class="wbchip ask">${wbEsc(f.ask)}</span>` : "")).join("");
+}
+function wbArtHtml(n){
+  const st = wbS(), slug = st.sel[n.ref], k = n.ref + ":" + slug;
+  const a = st.art[k];
+  if (!a){ wbLoadArt(n.ref, slug); return dpSkel(); }
+  const vs = a.versions || [];
+  if (!vs.length) return dpQuiet("Nothing filed yet");
+  const pane = st.pane[k] || "preview";
+  const tabs = dpTabsHtml(pane, WB_PANES, `data-wbpanekey="${wbEsc(k)}" data-wbpane`);
+  const cur = vs.filter(v => String(v.v) === String(st.sel[k + ":v"]))[0] || vs[0];
+  const chk = v => (v.check && v.check.ok) ? "ok" : "block";
+  if (pane === "item"){
+    return tabs + dpCard("The work item", `<div class="dpengines">` +
+      dpKV("Made by", cur.run === "owner" ? "The owner" : (wbMakerOf(a.name)), "Not named") +
+      dpKV("Read by", wbReaderOf(a.name), "Nobody yet") +
+      dpCell("Check", `<div class="dpbig">${wbDot(chk(cur))} ${cur.check && cur.check.ok ? "Passed" : "Failed"}</div>`) + `</div>` +
+      ((cur.check && cur.check.notes) || []).map(x => dpRunRow(x, "", chk(cur))).join(""));
+  }
+  if (pane === "versions"){
+    return tabs + dpCard("Versions", vs.map((v, i) => `<div class="wbver${i === 0 ? " on" : ""}">` +
+      `<div class="wbverh">${wbDot(chk(v))}<span class="dpbig">${wbEsc(wbWhen(v.at))}</span>${dpVerDots(v.v) || ""}` +
+      `<span class="dpchk">${wbEsc(v.note || ((v.check && v.check.notes) || [])[0] || "")}</span></div>` +
+      `<div class="wbverf"><span class="dpk">From</span>${wbFromHtml(v)}` +
+      `<button type="button" class="o2more wb" data-wbart="${wbEsc(slug)}" data-wbpane="preview" data-wbv="${v.v}">Preview</button>` +
+      `<button type="button" class="o2more wb" data-wbart="${wbEsc(slug)}" data-wbpane="trace" data-wbv="${v.v}">Trace</button>` +
+      (i > 0 && a.name !== "Brief" ? wbBtn("Put back", `data-wbputback="${wbEsc(slug)}" data-wbv="${v.v}"`) : "") + `</div></div>`).join(""));
+  }
+  if (pane === "trace"){
+    const tk = n.ref + ":" + slug + ":" + cur.v, t = st.trace[tk];
+    if (!t){ wbLoadTrace(n.ref, slug, cur.v); return tabs + dpSkel(); }
+    return tabs + dpCard("Trace", `<div class="wbtrace">` + (t.chain || []).map(c => {
+      if (c.kind === "version") return `<div class="wbtv">${wbDot(c.check && c.check.ok ? "ok" : "block")}<b>${wbEsc(c.art)}</b>${dpVerDots(c.v) || ""}<span class="dpchk">${wbEsc(wbWhen(c.at))}</span></div>`;
+      if (c.kind === "run") return `<div class="wbtr"><span class="wbchip">${wbEsc(c.engine)}</span><span class="dpchk">${wbEsc(wbWhen(c.at))}</span></div>`;
+      return `<div class="wbtr"><span class="wbchip ask">${wbEsc(c.text)}</span></div>`;
+    }).join(`<div class="wbtl1"></div>`) + `</div>`);
+  }
+  const live = a.name === "Live site" && cur === vs[0];
+  const src = live ? wbUrl(n.ref, "site/index.html") : wbUrl(n.ref, "preview/" + encodeURIComponent(slug) + "/" + cur.v + "/index.html");
+  return tabs + `<div class="wbprev wb"><div class="wbprevh">${wbDot(chk(cur))}<span>${live ? "Live" : wbEsc(wbWhen(cur.at))}</span>` +
+    `<a class="o2more" href="${wbEsc(src)}" target="_blank" rel="noopener">Open</a></div>` +
+    `<iframe class="wbframe" sandbox="" src="${wbEsc(src)}" title="${wbEsc(a.name)}"></iframe></div>`;
+}
+function wbMakerOf(name){ return ({ "Site plan": "Plan", "Pages": "Write", "Build": "Check", "Live site": "Publish" })[name] || ""; }
+function wbReaderOf(name){ return ({ "Brief": "Plan", "Site plan": "Write", "Pages": "Check", "Build": "Publish" })[name] || ""; }
+
+/* ── the five systems' own state, under the function cards ────────────────── */
+function wbFnExtra(tab, m){
+  if (!m) return "";
+  const engs = m.engines || [];
+  if (tab === "identity"){
+    return dpCard("Control", `<div class="dpengines">` + dpKV("Control", m.control === "granted" ? "Granted" : "Held", "") +
+        dpKV("Owner", m.owner, "Not named") + dpKV("Stop", m.stopped ? "Stopped" : "Running", "") + `</div>`) +
+      dpCard("Autonomy windows", engs.map(e => dpRunRow(e.name, "", "", dpBar(Math.min(1, (e.window_min || 0) / 30)))).join("")) +
+      dpCard("Stamped by rule", (m.recent || []).filter(r => r.engine === "Identity").map(r => wbRunRow(r)).join("") || dpQuiet("Nothing yet"));
+  }
+  if (tab === "priority"){
+    return dpCard("Envelopes", engs.map(e => dpRunRow(e.name, "", "", dpBar(Math.min(1, ((e.envelope || {}).used_calls || 0) / ((e.envelope || {}).calls || 1))))).join("")) +
+      dpCard("Queue", engs.map(e => dpRunRow(e.name, e.state === "Running" ? "Running" : (e.state === "Waits" ? "Waits for the stamp" : e.slot), wbEngDot(e))).join(""));
+  }
+  if (tab === "coordination"){
+    return dpCard("Timetable", engs.map(e => dpRunRow(e.name, e.slot, "")).join("")) +
+      dpCard("Hand-offs", engs.map(e => dpRunRow(e.reads + " → " + e.name, "", "ok")).join("")) +
+      dpCard("Locks", (m.status && m.status.running && m.status.running.length)
+        ? m.status.running.map(r => dpRunRow(r.engine, "Holds the line", "warn")).join("") : dpQuiet("Nothing is held"));
+  }
+  return dpCard("State", dpRunRow("Paused", "Growth is paused in this build", "off"));
+}
+/* 20-dept.js's dpOwnState() asks this for every function card it draws. */
+function wbFnOwn(ref, tab){
+  if (!wbIs(ref)) return "";
+  const m = wbS().map[ref];
+  if (!m){ wbLoadMap(ref); return ""; }
+  return wbFnExtra(tab, m);
+}
+function wbCanDoHtml(m){
+  const owner = true;
+  const pill = (name, on) => `<span class="wbchip${on ? " on" : ""}">${name}</span>`;
+  return dpCard("Can do", `<div class="wbcando">` + pill("See", true) + pill("Stamp", owner) + pill("Ask", owner) + pill("Stop", owner) + `</div>`);
+}
+
+/* ── the viewer ───────────────────────────────────────────────────────────── */
+function wbViewer(n){
+  if (!wbIs(n.ref)) return null;
+  const st = wbS(), m = st.map[n.ref], tab = wbTab(n.ref);
+  wbTick();
+  if (!m){ wbLoadMap(n.ref); return dpViewerShell(n.name, st.err[n.ref] ? dpQuiet("Could not read") : dpSkel(), "wb"); }
+  if (tab === "map") return dpViewerShell("Map", wbMapHtml(n, m), "wb");
+  if (tab === "status") return dpViewerShell("System status", wbStatusHtml(n, m), "wb");
+  if (tab === "motor") return dpViewerShell("Motor", wbMotorHtml(n, m), "wb");
+  if (tab === "engine") return dpViewerShell(st.sel[n.ref] || "Engine", wbEngineHtml(n), "wb");
+  if (tab === "art"){
+    const a = (m.artifacts || []).filter(x => x.slug === st.sel[n.ref])[0];
+    return dpViewerShell(a ? a.name : "Filed work", wbArtHtml(n), "wb");
+  }
+  /* one of 20-dept.js's own cards is open: it draws it, and asks wbFnOwn for this
+     department's state; only People gains a section here */
+  const dtab = dpS().tab[n.ref] || "now";
+  if (dtab === "now"){ st.tab[n.ref] = "map"; return dpViewerShell("Map", wbMapHtml(n, m), "wb"); }
+  if (dtab === "people"){
+    dpLoadPeople(n.ref);
+    const p = dpPerson();
+    return dpViewerShell(p ? p.name : "People", dpPeopleCard() + wbCanDoHtml(m), "wb");
+  }
+  return null;
+}
+
+/* ── the organisation's chart: a website department's tile is live ────────── */
+function wbTileMark(ref){
+  if (!wbIs(ref)) return "";
+  const m = wbS().map[ref];
+  if (!m){ wbLoadMap(ref); return ""; }
+  const asks = ((m.status && m.status.asks) || []).length;
+  return `<span class="wbtm">` + m.systems.map(s => wbDot(s.state === "running" ? "ok" : "off")).join("") +
+    (asks ? wbDot("") : "") + `</span>`;
+}
+
+/* ── the command: found an organisation with a website department ─────────── */
+function wbMenuItem(){
+  return `<button type="button" role="menuitem" data-wbfound="open">New website organisation…</button>`;
+}
+function wbFoundHtml(){
+  const f = wbS().found;
+  if (!f) return "";
+  return `<div class="wbscrim wb" data-wbfound="close"></div><div class="o2sheet wbsheet wb" role="dialog" aria-label="New website organisation">` +
+    `<h4>New website organisation</h4>` +
+    `<label for="wbforg">Organisation</label><input id="wbforg" data-wbfield="org" value="${wbEsc(f.org)}" placeholder="City Care Hospital" autocomplete="off">` +
+    `<label for="wbfgoal">Goal</label><textarea id="wbfgoal" data-wbfield="goal" rows="3" placeholder="What is this website for?">${wbEsc(f.goal)}</textarea>` +
+    `<div class="o2acts2">${wbBtn(f.busy ? "Starting" : "Start", `data-wbfound="go"${f.busy ? " disabled" : ""}`, "dpstamp")}` +
+    wbBtn("Cancel", `data-wbfound="close"`) + (f.error ? `<span class="o2err">${wbEsc(f.error)}</span>` : "") + `</div></div>`;
+}
+function wbFoundPaint(){
+  let host = document.getElementById("wbfound");
+  if (!host){ host = document.createElement("div"); host.id = "wbfound"; document.body.appendChild(host); }
+  host.innerHTML = wbFoundHtml();
+  const el = document.getElementById("wbforg");
+  if (el && !wbS().found.org) el.focus();
+}
+async function wbFoundGo(){
+  const st = wbS(), f = st.found;
+  if (!f || f.busy) return;
+  if (!f.org.trim()){ f.error = "Name the organisation"; wbFoundPaint(); return; }
+  f.busy = true; f.error = null; wbFoundPaint();
+  try {
+    const out = await apiPost("/api/native/found", { org: f.org.trim(), dept: "Website" });
+    if (f.goal.trim()) await apiPost(wbUrl(out.ref, "goal"), { text: f.goal.trim() });
+    st.found = null; st.refs = null; wbFoundPaint();
+    await wbLoadRefs();
+    if (typeof loadOrg2 === "function") await loadOrg2(true);
+    if (typeof o2S === "function"){
+      const o = o2S();
+      if (o.expanded){ [out.org, out.root].forEach(r => o.expanded.add(r)); }
+    }
+    st.tab[out.ref] = "map";
+    if (typeof o2Select === "function") o2Select(out.ref);
+    wbLoadMap(out.ref, true);
+  } catch (e) {
+    f.busy = false; f.error = (e && e.message) || String(e); wbFoundPaint();
+  }
+}
+
+/* ── handlers ─────────────────────────────────────────────────────────────── */
+async function wbPost(ref, tail, body, key){
+  const st = wbS();
+  if (st.busy["p:" + tail]) return;
+  st.busy["p:" + tail] = true;
+  try { await apiPost(wbUrl(ref, tail), body || {}); if (key) { delete st.err[key]; delete st.draft[key]; } }
+  catch (e) { if (key) st.err[key] = (e && e.message) || String(e); }
+  delete st.busy["p:" + tail];
+  await wbLoadMap(ref, true);
+  dpRender();
+}
+if (typeof document !== "undefined" && document.addEventListener){
+  const WB_SEL = "[data-wbtab],[data-wbengine],[data-wbart],[data-wbpane],[data-wbdecide],[data-wbstop],[data-wbresume]," +
+    "[data-wbgoal],[data-wbask],[data-wbputback],[data-wbfn],[data-wbfound]";
+  /* capture phase: a click on one of 20-dept.js's own rows hands the viewer
+     back to it BEFORE that file's handler paints */
+  document.addEventListener("click", (ev) => {
+    if (S.screen !== "org2") return;
+    const st = wbS();
+    const own = ev.target && ev.target.closest ? ev.target.closest("[data-dptab],[data-dpengine],[data-dpfiled],[data-dpperson],[data-dpdoc],[data-dpapp]") : null;
+    if (own && S.dp && S.dp.sel && wbIs(S.dp.sel)) st.tab[S.dp.sel] = "";
+    const t = ev.target && ev.target.closest ? ev.target.closest(WB_SEL) : null;
+    if (!t) return;
+    const ds = t.dataset || {}, ref = S.dp && S.dp.sel;
+    if (ds.wbfound !== undefined){
+      ev.preventDefault(); ev.stopPropagation();
+      if (ds.wbfound === "open"){
+        st.found = { org: "", goal: "", busy: false, error: null };
+        if (typeof o2S === "function"){ o2S().menu = false; if (typeof o2Render === "function") o2Render(); }
+        wbFoundPaint();
+      } else if (ds.wbfound === "close"){ st.found = null; wbFoundPaint(); }
+      else if (ds.wbfound === "go") wbFoundGo();
+      return;
+    }
+    if (!ref || !wbIs(ref)) return;
+    ev.preventDefault(); ev.stopPropagation();
+    /* one of this file's entries is opening: none of 20-dept.js's rows stays lit */
+    if (ds.wbfn === undefined && dpS().tab[ref] !== "now") dpS().tab[ref] = "now";
+    if (ds.wbtab !== undefined){ st.tab[ref] = ds.wbtab; dpRender(); return; }
+    if (ds.wbfn !== undefined){ st.tab[ref] = ""; dpS().tab[ref] = ds.wbfn; dpRender(); return; }
+    if (ds.wbpane !== undefined && ds.wbpanekey !== undefined){ st.pane[ds.wbpanekey] = ds.wbpane; dpRender(); return; }
+    if (ds.wbengine !== undefined){ st.tab[ref] = "engine"; st.sel[ref] = ds.wbengine; dpRender(); return; }
+    if (ds.wbart !== undefined){
+      st.tab[ref] = "art"; st.sel[ref] = ds.wbart;
+      const k = ref + ":" + ds.wbart;
+      if (ds.wbpane) st.pane[k] = ds.wbpane;
+      st.sel[k + ":v"] = ds.wbv || "";
+      dpRender(); return;
+    }
+    if (ds.wbdecide !== undefined){ wbPost(ref, "asks/" + encodeURIComponent(ds.wbdecide), { approve: ds.wbok === "1" }); return; }
+    if (ds.wbstop !== undefined){ wbPost(ref, "stop"); return; }
+    if (ds.wbresume !== undefined){ wbPost(ref, "resume"); return; }
+    if (ds.wbgoal !== undefined){ const k = ref + ":goal"; wbPost(ref, "goal", { text: st.draft[k] || "" }, k); return; }
+    if (ds.wbask !== undefined){ const k = ref + ":ask"; wbPost(ref, "ask", { text: st.draft[k] || "" }, k); return; }
+    if (ds.wbputback !== undefined){ wbPost(ref, "putback", { slug: ds.wbputback, v: Number(ds.wbv) }); return; }
+  }, true);
+  document.addEventListener("input", (ev) => {
+    const t = ev.target, ds = (t && t.dataset) || {};
+    if (ds.wbdraft !== undefined) wbS().draft[ds.wbdraft] = t.value;
+    if (ds.wbfield !== undefined && wbS().found) wbS().found[ds.wbfield] = t.value;
+  });
+}

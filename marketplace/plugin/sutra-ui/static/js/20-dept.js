@@ -233,14 +233,18 @@ function dpListHtml(n, d, dept, err){
   const filed = (dept && dept.filed) || [];
   const docs = (dept && dept.docs) || [];
   let groups = "";
-  groups += dpGroup("Now", [dpRow("Now", `data-dptab="now"`, tab === "now")], null, "");
+  /* 22-website.js: a website department brings its own first group (Map,
+     System status, Motor), Engines and Filed work; every other department
+     answers null here and paints exactly as before. */
+  const wb = (typeof wbList === "function") ? wbList(n) : null;
+  groups += wb ? wb.top : dpGroup("Now", [dpRow("Now", `data-dptab="now"`, tab === "now")], null, "");
   groups += dpGroup("Functions", DP_FUNCS.map(([v, label]) =>
     dpRow(label, `data-dptab="${dpEsc(v)}"`, tab === v)), null, "");
   /* People and Apps read routes that land in a later slice; until then the
      group is on screen and says so in one line rather than showing nothing. */
   dpLoadEngines(n.ref);                    /* call-on-render, as o2LoadApps does */
   const eng = (st.engines && st.engines.ref === n.ref) ? st.engines : null;
-  groups += dpGroup("Engines", ((eng && eng.engines) || []).map(dpEngRow), "engines",
+  groups += wb ? wb.engines : dpGroup("Engines", ((eng && eng.engines) || []).map(dpEngRow), "engines",
     eng ? "No engines here" : (st.error.engines ? "Could not read" : "Not read yet"));
   /* Filed work reads its own route for the version count (A24); until that
      answer lands the rows the Org screen already loaded are shown, so the
@@ -248,7 +252,7 @@ function dpListHtml(n, d, dept, err){
   dpLoadFiled(n.ref);
   const fread = (st.filed && st.filed.ref === n.ref) ? st.filed : null;
   const rows = (fread && fread.filed) || filed;
-  groups += dpGroup("Filed work", rows.map(dpFiledRow), "filed",
+  groups += wb ? wb.filed : dpGroup("Filed work", rows.map(dpFiledRow), "filed",
     st.error.filed ? "Could not read" : "Nothing filed yet");
   dpLoadPeople(n.ref);
   const ppl = (st.people && st.people.ref === n.ref) ? st.people : null;
@@ -493,9 +497,13 @@ function dpIdentityHtml(){
   if (pane === "chat") return tabs + dpLiveChatHtml("identity", "Identity");
   const recent = (chats.owner || []).concat(chats.adaptation || [])
     .sort((a, b) => String(a.at || "").localeCompare(String(b.at || "")));
-  return tabs + dpTemplateLine("identity") + dpIdentityCardHtml(id) +
+  return tabs + dpTemplateLine("identity") + dpOwnState("identity") + dpIdentityCardHtml(id) +
          dpFrameworkHtml("identity") + dpRecentHtml(recent, "Recent");
 }
+/* 22-website.js: what THIS department's function holds right now (its rules and
+   windows, its envelopes, its timetable), drawn first so it is never under the
+   template's framework. Every department without a website record answers "". */
+function dpOwnState(tab){ return (typeof wbFnOwn === "function") ? wbFnOwn(dpS().sel, tab) : ""; }
 
 /* ── the other four functions ──────────────────────────────────────────────
    Adaptation, Priority, Coordination and Audit are one shape with four sets of
@@ -530,7 +538,7 @@ function dpFnHtml(tab, label, card, panes, chat){
   const extra = tab === "adaptation" ? dpGraphHtml() + dpEngineStepsHtml()
               : tab === "priority" ? dpNextRunsHtml()
               : tab === "coordination" ? dpMakesReadsHtml() : "";
-  return tabs + dpTemplateLine(tab) + card(data, pane) + extra +
+  return tabs + dpTemplateLine(tab) + dpOwnState(tab) + card(data, pane) + extra +
          dpFrameworkHtml(tab) + dpRecentHtml((typeof chat === "function") ? chat(data) : (chat || data.chat), "Recent");
 }
 
@@ -880,6 +888,9 @@ function dpViewerHtml(n, d, dept, err){
   const st = dpS();
   const tab = st.tab[n.ref] || "now";
   st.selName = n.name || "";                             /* the chat's title and its seed read it */
+  /* 22-website.js draws a website department's own entries (and adds its
+     state under the function cards); null hands the viewer back to this file */
+  if (typeof wbViewer === "function"){ const own = wbViewer(n); if (own) return own; }
   if (tab === "now"){
     dpLoadMeters(n.ref);                                 /* read on open, as o2LoadApps does */
     return dpViewerShell("Now", dpNowHtml());

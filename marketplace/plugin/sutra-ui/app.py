@@ -153,6 +153,26 @@ app.include_router(dept_api.router)
 # it has no writer, and a pick leaves through org2_api's proposal path.
 import library_api
 app.include_router(library_api.router)
+# The website department and the motor (website_dept.py, website_api.py): the
+# first build of the Native design. The motor is one thread in THIS process, so
+# it runs exactly while the app does; a slot missed while the app was closed is
+# still due when it returns, and runs once.
+import website_api
+app.include_router(website_api.router)
+
+
+@app.on_event("startup")
+def _start_motor():
+    import website_dept
+    website_dept.start_motor()
+
+
+@app.on_event("shutdown")
+def _stop_motor():
+    # The port is given up before the process ends (open connections are waited
+    # on), so the motor is told at once: a server on its way out never ticks.
+    import website_dept
+    website_dept.stop_motor()
 # Optimus (Focus > Optimus): a window over sutra-daemon's stores. Reads are
 # fixed-path + bounded; mutations shell the daemon CLI (desktop-token gated).
 import optimus_api
