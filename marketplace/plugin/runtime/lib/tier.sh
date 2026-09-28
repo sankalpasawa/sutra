@@ -187,8 +187,21 @@ if [ "${1:-}" = "--ask" ] && [ "$(basename -- "${0:-}")" = "tier.sh" ]; then
   _ask_caller="$_ask_root/runtime/lib/deepseek-review.sh"
   [ -x "$_ask_caller" ] || [ -f "$_ask_caller" ] || exit 3
   _ask_raw="$(mktemp "${TMPDIR:-/tmp}/tierask.XXXXXX")" || exit 4
-  DEEPSEEK_MODEL="${DEEPSEEK_MODEL:-deepseek-v4-pro}" \
-    timeout "${SUTRA_TIER_TIMEOUT:-25}" bash "$_ask_caller" "$_ask_q" "$_ask_raw" >/dev/null 2>&1
+  # macOS ships no `timeout`, and a missing binary made EVERY ask look
+  # unreachable on the founder's box (found by running 2.306.4 live on
+  # 2026-09-28, not by the suite, which always injected a stub). Bound the call
+  # with the runtime's own watchdog instead, the way blueprint_progress.sh does.
+  DEEPSEEK_MODEL="${DEEPSEEK_MODEL:-deepseek-v4-pro}" bash "$_ask_caller" "$_ask_q" "$_ask_raw" >/dev/null 2>&1 &
+  _ask_pid=$!
+  _ask_n=0
+  while kill -0 "$_ask_pid" 2>/dev/null && [ "$_ask_n" -lt "${SUTRA_TIER_TIMEOUT:-25}" ]; do
+    sleep 1; _ask_n=$((_ask_n + 1))
+  done
+  if kill -0 "$_ask_pid" 2>/dev/null; then
+    pkill -P "$_ask_pid" 2>/dev/null
+    kill "$_ask_pid" 2>/dev/null
+  fi
+  wait "$_ask_pid" 2>/dev/null
   # the caller's own exit code only reports its verdict contract; what decides
   # here is whether one usable JSON object came back
   grep -o '{.*}' "$_ask_raw" 2>/dev/null | head -1 \

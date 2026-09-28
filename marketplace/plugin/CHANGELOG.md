@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-28
+## 2.306.5 (2026-09-28)
+
+- **The standby agent now actually answers**: the ask wrapped its call in `timeout`, which macOS does not ship, so on a Mac every ask exited 127 and took the unreachable path while the suite stayed green. The call is bounded by the runtime's own watchdog instead (`kill -0` poll, `pkill -P` on expiry), and three suite cases now run the built-in caller itself - an answer parsed out of the caller's text, a slow caller cut off by the watchdog, and an unreadable answer refused rather than invented. Found by running the release live, not by the tests. Tests: test-tier 42.
+
 ## 2.306.4 (2026-09-28)
 
 - **A step that is unsure now asks an agent, and a turn can be replayed through its own code** (founder conditions C6-C9, 2026-09-28). `runtime/rules/tiers.json` gains each step's field, its stringency ladder and one measured threshold (placement 0.5, with the measurement and a reversal trigger recorded); `runtime/lib/tier.sh` asks the standby agent when a code step lands below its threshold - detached, so no model call sits on the turn's hot path - applies the answer only when it RAISES stringency, refuses an address the register does not hold, and keeps the code's own answer marked unresolved when the agent cannot be reached. Every decision is recorded with source, confidence and one line of reason, and the step-log row prints `code<agent` when the agent answered. `sutra-steps replay` re-runs classify, resolve and depth on the turn's own recorded inputs and reports SAME or DIFF per step; a step that cannot be replayed says so instead of being counted. Also: the review row no longer prints an empty byte count, and a killed step logs its reason. Tests: test-tier 35, test-step-log 31.

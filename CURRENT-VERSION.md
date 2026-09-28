@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-09-28
 
-## v2.306.4 (2026-09-28, HEAD)
+## v2.306.5 (2026-09-28, HEAD)
+
+**The standby agent actually answers** (RT-21, found by running v2.306.4 live on a Mac): the ask was bounded by `timeout`, a binary macOS does not ship, so every ask exited 127 and looked unreachable. The runtime's own watchdog bounds it now, and the suite runs the built-in caller instead of only an injected stub.
+
+## v2.306.4 (2026-09-28)
 
 **A step that is unsure asks an agent; a turn replays through its own code** (founder 2026-09-28: "if there is a program that has a low degree of confidence in it, then an agent works on it to figure that out"). Conditions C6-C9 of RUNTIME-ACCEPTANCE-CONDITIONS.md: the ask is detached, the answer may only raise stringency, an address the register does not hold is refused, an unreachable agent leaves the code's answer standing marked unresolved, and every decision carries source, confidence and a reason. `sutra-steps replay` reproduces the code steps from the turn's own inputs.
 

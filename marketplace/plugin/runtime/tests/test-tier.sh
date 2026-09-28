@@ -161,5 +161,39 @@ printf '%s' "$ROUT" | grep -q 'every replayable step reproduced' && pass "C6: th
 sutra_steps_runtime_owned_write "echo x > .sutra/turn/sid-r/$TIDR.replay.json" \
   && pass "C6: the replay record is runtime-owned" || fail "C6: a tool could write the replay record"
 
+# ============================================================== built-in ====
+# The path every other case skips: `tier.sh --ask` itself. Until 2026-09-28 it
+# wrapped its call in `timeout`, which macOS does not ship, so on the founder's
+# box every ask exited 127 and looked unreachable while the suite stayed green.
+echo "== the built-in caller runs, is bounded, and refuses what it cannot read =="
+mk_root() {  # <dir> <caller-body>
+  mkdir -p "$1/runtime/lib"
+  cp "$PLUGIN_MAIN/runtime/lib/tier.sh" "$1/runtime/lib/tier.sh"
+  { echo '#!/usr/bin/env bash'; printf '%s\n' "$2"; } > "$1/runtime/lib/deepseek-review.sh"
+  chmod +x "$1/runtime/lib/deepseek-review.sh"
+}
+R1="$WORK/root-ok"
+mk_root "$R1" 'printf "%s\n" "some preamble" "{\"value\":\"dref-abc123\",\"confidence\":\"0.7\",\"reason\":\"it is runtime work\"}" "VERDICT: ANSWERED" > "$2"'
+printf 'who owns this?\n' > "$WORK/q.txt"
+bash "$R1/runtime/lib/tier.sh" --ask "$WORK/q.txt" "$WORK/a1.json" >/dev/null 2>&1
+is "built-in: an answer is parsed out of the caller's text" "$(jq -r '.value' "$WORK/a1.json" 2>/dev/null)" dref-abc123
+is "built-in: the confidence rides with it" "$(jq -r '.confidence' "$WORK/a1.json" 2>/dev/null)" 0.7
+is "built-in: the source is recorded as the agent" "$(jq -r '.source' "$WORK/a1.json" 2>/dev/null)" agent
+
+R2="$WORK/root-slow"
+mk_root "$R2" 'sleep 30; printf "%s\n" "{\"value\":\"dref-abc123\"}" > "$2"'
+S0=$(date +%s)
+SUTRA_TIER_TIMEOUT=2 bash "$R2/runtime/lib/tier.sh" --ask "$WORK/q.txt" "$WORK/a2.json" >/dev/null 2>&1
+RC2=$?
+S1=$(date +%s)
+[ "$((S1 - S0))" -lt 15 ] && pass "built-in: a slow caller is cut off by the watchdog ($((S1 - S0))s, not 30)" || fail "built-in: the watchdog did not bound the call ($((S1 - S0))s)"
+is "built-in: a cut-off ask leaves no answer" "$( [ -f "$WORK/a2.json" ] && echo present || echo absent)" absent
+is "built-in: and reports unreachable" "$RC2" 3
+
+R3="$WORK/root-junk"
+mk_root "$R3" 'printf "%s\n" "I could not answer that." > "$2"'
+bash "$R3/runtime/lib/tier.sh" --ask "$WORK/q.txt" "$WORK/a3.json" >/dev/null 2>&1
+is "built-in: an unreadable answer is not invented into one" "$( [ -f "$WORK/a3.json" ] && echo present || echo absent)" absent
+
 echo "failed=$failed"
 [ "$failed" -eq 0 ]
