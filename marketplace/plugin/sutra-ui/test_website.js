@@ -817,10 +817,13 @@ test("W26: each function's card has its own Settings tab: its template, its own 
   assert.ok(!/>Settings<\/button>/.test(oh) && /<h3>Envelopes<\/h3>/.test(oh), "a department of the first build keeps the tabs it had");
 });
 
-/* ── V2: the second design (23-screens.js), behind the switch ──────────────
+/* ── V2: the Map and the Board of the second design (23-screens.js) ─────────
    The design of record is holding/plans/website-department/design-simplify.html
-   (third pass). One test a section; V12 is the stylesheet; V13 is the switch
-   off. The runtime map with an ask waiting is the fixture, as W25 uses it. */
+   (third pass). What the founder had built: "Make changes to map, chart, and
+   board. Do these changes... Don't change the navigation." One test each for
+   the Map, Root's Map and the Board; one that the navigation and every other
+   card stay the first design's with the switch on; V12 is the stylesheet.
+   The runtime map with an ask waiting is the fixture, as W25 uses it. */
 async function v2(opts){
   const c = fresh(opts);
   vm.runInContext("wbS().v2 = true; dpS().sel = 'r3'; dpS().tab['r3'] = 'now';", c);
@@ -834,20 +837,18 @@ async function paint(c, n){
   return c.dpViewerHtml(WEB, {}, null, null);
 }
 
-test("V2 frame: the list is Chat, Map, Board, Work, the five functions and the engines, a dot each and no state word; no System status, Motor, Filed work or Human Sutra; off, the old list plus one row", async () => {
+test("V2 navigation: with the switch on the list, Chat, a function card and an engine card are the first design's, unchanged", async () => {
   const c = await v2({ map: rtMap({ ask: true }) });
   const html = c.dpListHtml(WEB, {}, null, null);
-  ["Chat", "Map", "Board", "Work"].forEach(x => assert.ok(html.indexOf("<span>" + x + "</span>") >= 0, x));
-  ["System status", "Motor", "Human Sutra", "Filed work", "IDLE", "Idle", "Awake"].forEach(x => assert.ok(html.indexOf(x) < 0, "no " + x));
-  assert.ok(/wb2li on" data-wbtab="chat"/.test(html), "Chat opens first");
-  assert.ok(/data-wbtab="chat"><span class="dpdot warn"/.test(html), "an ask waiting: Chat's dot is amber");
-  assert.ok(/data-dptab="identity"><span class="dpdot warn"/.test(html), "Identity is the one asking");
-  assert.ok(/data-wbengine="Publish"><span class="dpdot warn"/.test(html) && /data-wbengine="Plan"><span class="dpdot ok"/.test(html), "engines carry a dot");
-  assert.ok(/data-wbv2="0"/.test(html), "the way back");
-  const old = await opened({ map: rtMap() });
-  const oh = old.dpListHtml(WEB, {}, null, null);
-  assert.ok(/data-wbv2="1"/.test(oh) && /<span>System status<\/span>/.test(oh) && !/wb2/.test(oh), "off: the old list, plus the one row");
-  assert.ok(!/wb2/.test(old.wbViewer(WEB)), "off: the old viewer");
+  ["Chat", "Map", "System status", "Motor", "Board", "Filed work", "Human Sutra"].forEach(x => assert.ok(html.indexOf(x) >= 0, x));
+  assert.ok(!/wb2/.test(html), "no second-design piece in the list");
+  let v = view(c);
+  assert.ok(/<div class="o2vh"><b>Chat<\/b>/.test(v) && !/wb2/.test(v), "Chat is the chat 22-website.js draws");
+  v = await fnCard(c, "priority");
+  assert.ok(/<h3>Envelopes<\/h3>/.test(v) && !/wb2/.test(v), "a function card, unchanged");
+  click(c, { wbengine: "Write" }); await sleep();
+  v = await paint(c);
+  assert.ok(/<div class="o2vh"><b>Write<\/b>/.test(v) && /data-wbpane="steps"/.test(v) && !/wb2/.test(v), "an engine card, unchanged");
 });
 
 test("V2 map: the head has one switch and the live site; four fixed rows; the running engine lit and its hand-offs marching; the NOW line names what is active; every node says where a click goes", async () => {
@@ -861,16 +862,20 @@ test("V2 map: the head has one switch and the live site; four fixed rows; the ru
   assert.ok(/<g class="n eng run" data-wbengine="Write"[^>]*><circle class="halo"/.test(html), "Write lit");
   assert.strictEqual((html.match(/class="e flow"/g) || []).length, 2, "the hand-off into it and out of it march");
   assert.ok(/<span class="wb2pill run">Write running<\/span><span class="wb2pill ask">Waiting for you: Publish<\/span>/.test(html), "the NOW line");
-  assert.ok(/<g class="n fn ask" data-dptab="identity"/.test(html) && /<g class="n who ask" data-wbtab="chat"/.test(html), "the ask is amber on Identity and on you");
+  assert.ok(/<g class="n fn ask" data-wbfn="identity"/.test(html) && /<g class="n who ask" data-wbtab="chat"/.test(html), "the ask is amber on Identity and on you");
   assert.ok(/<g class="n work done" data-wbart="site-plan"[^>]*><rect[^>]*><text x="8" y="17">Site plan<\/text><text class="v" x="8" y="30">v2<\/text>/.test(html), "work with its version");
-  assert.ok(/<g class="n work" data-wbtab="work"/.test(html), "unfiled work goes to Work");
   const nodes = html.match(/<g class="n[^"]*"[^>]*>/g) || [];
-  assert.ok(nodes.length >= 18 && nodes.every(g => /data-(wbtab|wbengine|wbart|dptab)=/.test(g)), "every node says where a click goes: " + nodes.length);
+  assert.ok(nodes.length >= 18 && nodes.every(g => /data-(wbtab|wbengine|wbart|wbfn)=/.test(g)), "every node says where a click goes: " + nodes.length);
   assert.ok(!/Nothing is waiting for you/.test(html) && !/<h3>System status<\/h3>/.test(html) && !/<h3>Health<\/h3>/.test(html) && !/<textarea/.test(html), "no empty box, no composer");
   click(c, { wbengine: "Write" });
   assert.strictEqual(vm.runInContext("S.wb.tab['r3'] + ':' + S.wb.sel['r3']", c), "engine:Write", "a click goes there");
+  click(c, { wbfn: "priority" });
+  assert.strictEqual(vm.runInContext("dpS().tab['r3']", c), "priority", "a function opens its own card");
   const t = words(html);
   assert.ok(!/\b\d{2,}\b/.test(t.replace(/v\d/g, "")), "a count at rest: " + (t.match(/.{0,30}\b\d{2,}\b.{0,30}/) || [""])[0]);
+  const old = await opened({ map: m });
+  vm.runInContext("S.wb.tab['r3'] = 'map';", old);
+  assert.ok(/<h3>The department<\/h3>/.test(old.wbViewer(WEB)) && !/wb2/.test(old.wbViewer(WEB)), "off: the first design's Map");
 });
 
 test("V2 root: Root's Map is its departments as boxes, each with a state dot and its line of work as a strip, and a way to a new one", async () => {
@@ -881,14 +886,6 @@ test("V2 root: Root's Map is its departments as boxes, each with a state dot and
   assert.ok(/<button type="button" class="wb2dept wb" data-wb2go="r5"><b><span class="dpdot [^"]*"><\/span>City Care Hospital Website<\/b><span class="wb2spark">/.test(html), "a department box");
   assert.ok(/class="wb2dept wb2new wb" data-wbtab="chat"/.test(html), "a new one, in Chat");
   assert.ok(!/<svg/.test(html), "no line of work of its own");
-});
-
-test("V2 chat: the one place to speak is the chat 22-website.js draws, under the head", async () => {
-  const m = rtMap({ ask: true }); m.root = "r2";
-  const c = await v2({ map: m });
-  const html = view(c);
-  assert.ok(/<div class="o2vh"><b>Chat<\/b>/.test(html) && /class="wb2head"/.test(html));
-  assert.ok(/<div class="who who-you">You<\/div>/.test(html) && /data-wbchip="off"/.test(html) && (html.match(/<textarea/g) || []).length === 1);
 });
 
 test("V2 board: one thread in time order, who spoke as the name, the act as a word, no arrows, one way to speak", async () => {
@@ -902,79 +899,8 @@ test("V2 board: one thread in time order, who spoke as the name, the act as a wo
   assert.strictEqual((html.match(/<textarea/g) || []).length, 1);
 });
 
-test("V2 work: one table, thing, latest, by, check, when; a filed thing opens; one not filed says not yet", async () => {
-  const c = await v2({ map: rtMap() });
-  click(c, { wbtab: "work" }); await sleep();
-  const html = await paint(c);
-  assert.ok(/<table class="wb2table wb"><tr><th>Thing<\/th><th>Latest<\/th><th>By<\/th><th>Check<\/th><th>When<\/th><\/tr>/.test(html));
-  assert.ok(/data-wbart="site-plan">Site plan<\/button><\/td><td class="wb2v">v2<\/td><td>Plan<\/td>/.test(html), "Site plan by Plan");
-  assert.ok(/<tr class="wb2tr none"><td>Live site<\/td><td class="wb2v"><\/td><td>not yet<\/td>/.test(html), "not filed");
-  assert.ok(/data-wbart="brief">Brief<\/button><\/td><td class="wb2v">v1<\/td><td>Identity, from your words<\/td>/.test(html));
-  click(c, { wbart: "site-plan" });
-  assert.strictEqual(vm.runInContext("S.wb.tab['r3']", c), "art", "opens the thing");
-});
-
-test("V2 function: a card is a state line, Activity and Settings, and About behind a disclosure; no help on the face; Settings is the function's own", async () => {
-  const c = await v2({ map: rtMap({ ask: true }) });
-  let html = await fnCard(c, "priority");
-  assert.ok(/<div class="o2vh"><b>Priority<\/b>/.test(html));
-  assert.ok(/aria-pressed="true" data-wbpanekey="r3:fn:priority" data-wbpane="activity">Activity<\/button><button type="button" aria-pressed="false" data-wbpanekey="r3:fn:priority" data-wbpane="settings">Settings<\/button>/.test(html), "two tabs");
-  assert.ok(/<details class="wb2about wb"><summary>About Priority<\/summary>/.test(html) && /Grants each engine its budget/.test(html), "About, behind a disclosure");
-  assert.ok(!/<h3>The function<\/h3>/.test(html) && !/<h3>Starts<\/h3>/.test(html) && !/<h3>Envelopes<\/h3>/.test(html) && !/<h3>Queue<\/h3>/.test(html), "no help, no old cards");
-  click(c, { wbpane: "settings", wbpanekey: "r3:fn:priority" });
-  html = await paint(c);
-  ["Template", "Limit", "Ladder", "Starts"].forEach(h => assert.ok(html.indexOf("<h3>" + h + "</h3>") >= 0, h));
-});
-
-test("V2 identity: Identity's Activity is the ask with its buttons and what was said; no engine windows, no ladder, no control card", async () => {
-  const c = await v2({ map: rtMap({ ask: true }) });
-  const html = await fnCard(c, "identity");
-  assert.ok(/<div class="wb2state"><span class="dpdot warn"><\/span>waiting on you · granted · Sankalp<\/div>/.test(html), "the state line");
-  assert.ok(/data-wbdecide="a-1" data-wbok="1"/.test(html), "the ask with its buttons");
-  assert.ok(/<b>your words<\/b><span>Which page lists the doctors\?<\/span>/.test(html) && /<b>tells<\/b><span>The Doctors page lists them<\/span>/.test(html), "what was said");
-  assert.ok(!/Autonomy windows/.test(html) && !/wb2ladder/.test(html) && !/<h3>Control<\/h3>/.test(html) && !/<h3>Stamped by rule<\/h3>/.test(html));
-});
-
-test("V2 priority: the limits are one table with what is used, and one Save posts only the engines whose numbers changed", async () => {
-  const c = await v2({ map: rtMap() });
-  let html = await fnCard(c, "priority");
-  assert.ok(/<th>Engine<\/th><th>Calls<\/th><th>USD a day<\/th><th>Used<\/th>/.test(html) && !/>Set<\/button>/.test(html), "one table, no Set");
-  assert.strictEqual((html.match(/data-wbenvall="1"/g) || []).length, 1, "one Save");
-  assert.ok(/<div class="wb2save">/.test(html), "hidden until a change");
-  (c.document.listeners.input || []).forEach(fn => fn({ target: { dataset: { wbdraft: "r3:env:Write:calls" }, value: "90" } }));
-  html = await paint(c, 1);
-  assert.ok(/<div class="wb2save show">/.test(html), "shown after a change");
-  assert.ok(click(c, { wbenvall: "1" })); await sleep(); await sleep(); await sleep();
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost)), [{ p: "/api/native/r3/envelope", body: { engine: "Write", calls: 90 } }], "only what changed");
-});
-
-test("V2 engine: the card is its flow with versions, a runs strip, a budget bar, its rung and its steps, one line each", async () => {
-  const c = await v2({ map: rtMap() });
-  click(c, { wbengine: "Write" }); await sleep();
-  const html = await paint(c);
-  assert.ok(/<div class="o2vh"><b>Write<\/b>/.test(html));
-  assert.ok(/<div class="wb2flow"><span class="wb2node work">Site plan<small>v2<\/small><\/span><span class="wbarrow">&rarr;<\/span><span class="wb2node">Write<\/span><span class="wbarrow">&rarr;<\/span><span class="wb2node work">Pages<small>v5<\/small><\/span><\/div>/.test(html), "the flow");
-  assert.ok(/<span class="dpk">Runs<\/span><div class="wb2runs">/.test(html) && /<span class="dpk">Budget<\/span><div class="dpbar/.test(html), "runs and budget");
-  assert.ok(/<span class="dpk">Rung<\/span><span class="wbrung"/.test(html) && /Improvised call/.test(html), "the lowest rung of its steps");
-  assert.ok(/<div class="dpk">Steps<\/div>/.test(html) && /List the pages<div class="dpchk">Code · Done<\/div>/.test(html), "steps, one line each");
-  assert.ok(!/<h3>The engine<\/h3>/.test(html) && !/data-wbhold/.test(html) && !/<h3>In its slot<\/h3>/.test(html));
-});
-
-test("V2 adaptation, coordination, audit: the ladder as a grid of dots; the line with now marked and who goes first; the checks as a strip", async () => {
-  const m = rtMap(); m.status.running = [{ engine: "Write", what: "" }];
-  const c = await v2({ map: m });
-  let html = await fnCard(c, "adaptation");
-  assert.ok(/<table class="wb2ladder wb"><tr><th><\/th><th title="Person">P<\/th><th title="Improvised call">C0<\/th>/.test(html), "the ladder");
-  assert.ok(/<tr><td>Write<\/td><td><\/td><td><span class="dpdot " title="Write a page"><\/span><\/td><td><\/td><td><span class="dpdot ok" title="List the pages"><\/span><span class="dpdot ok" title="Put the pages together"><\/span><\/td><\/tr>/.test(html), "Write's steps on their rungs");
-  assert.ok(/<h3>Ideas, parked<\/h3>/.test(html));
-  html = await fnCard(c, "coordination");
-  assert.ok(/<span class="wb2node now">Write<\/span>/.test(html) && /<b>first<\/b><span>A post waiting for its reader<\/span>/.test(html) && /<b>held<\/b><span>Write holds the line<\/span>/.test(html), "the line and the rows");
-  html = await fnCard(c, "audit");
-  assert.ok(/<div class="wb2runs"><i class="" title="Say whether it may start"><\/i>/.test(html) && /No check has run here/.test(html), "the strip");
-});
-
 test("V12: the second design's stylesheet block is tokens only and covers every class 23-screens.js emits", () => {
-  const i = css.indexOf("/* ── the second design (23-screens.js) ");
+  const i = css.indexOf("/* ── the second design (23-screens.js)");
   assert.ok(i > 0, "the block exists");
   const block = css.slice(i);
   assert.ok(!/#[0-9a-fA-F]{3,8}\b|rgba?\(/.test(block), "a literal colour");

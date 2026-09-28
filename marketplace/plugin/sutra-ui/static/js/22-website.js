@@ -46,11 +46,11 @@ function wbS(){
   return S.wb;
 }
 function wbRt(m){ return !!(m && m.runtime === 2); }
-/* The second design (23-screens.js) is the default for a department on the
-   engine runtime (founder, 2026-09-28: "Make changes to map, chart, and
-   board. Do these changes."). The way back is the Old screens row at the foot
-   of the list, or `?screens=v1` in the address, kept in localStorage; the
-   first design's tests set the switch off themselves. */
+/* The Map and the Board of the second design (23-screens.js) are the default
+   for a department on the engine runtime (founder, 2026-09-28: "Make changes
+   to map, chart, and board. Do these changes... Don't change the
+   navigation."). The way back is `?screens=v1` in the address, kept in
+   localStorage; the first design's tests set the switch off themselves. */
 function wbV2(){
   const st = wbS();
   if (st.v2 !== undefined) return st.v2;
@@ -157,15 +157,13 @@ function wbEngDot(e){
 function wbList(n){
   if (!wbIs(n.ref)) return null;
   const st = wbS(), m = st.map[n.ref], tab = wbTab(n.ref);
-  if (wbV2() && wbRt(m) && typeof wb2List === "function") return wb2List(n);
   if (!m) wbLoadMap(n.ref);
   const top = `<div class="o2g dpg wb">` +
     (wbRt(m) ? dpRow("Chat", `data-wbtab="chat"`, tab === "chat") : "") +
     dpRow("Map", `data-wbtab="map"`, tab === "map") +
     dpRow("System status", `data-wbtab="status"`, tab === "status") +
     dpRow("Motor", `data-wbtab="motor"`, tab === "motor") +
-    (wbRt(m) ? dpRow("Board", `data-wbtab="board"`, tab === "board") : "") +
-    (wbRt(m) && typeof wb2List === "function" ? dpRow("New screens", `data-wbv2="1"`, false) : "") + `</div>`;
+    (wbRt(m) ? dpRow("Board", `data-wbtab="board"`, tab === "board") : "") + `</div>`;
   const engines = dpGroup("Engines", ((m && m.engines) || []).map(e => {
     const on = tab === "engine" && st.sel[n.ref] === e.name;
     const word = e.state === "Running" ? "running" : (e.state === "Waits" ? "paused" : "idle");
@@ -821,7 +819,8 @@ function wbViewer(n){
   const st = wbS(), m = st.map[n.ref], tab = wbTab(n.ref);
   wbTick();
   if (!m){ wbLoadMap(n.ref); return dpViewerShell(n.name, st.err[n.ref] ? dpQuiet("Could not read") : dpSkel(), "wb"); }
-  if (wbV2() && wbRt(m) && typeof wb2Viewer === "function") return wb2Viewer(n);
+  /* the Map and the Board of the second design, when the switch is on; null hands the rest back to this file */
+  if (wbV2() && wbRt(m) && typeof wb2Viewer === "function"){ const own = wb2Viewer(n); if (own) return own; }
   if (tab === "chat" && wbRt(m)) return dpViewerShell("Chat", wbChatHtml(n, m), "wb");
   if (tab === "map") return dpViewerShell("Map", wbMapHtml(n, m), "wb");
   if (tab === "status") return dpViewerShell("System status", wbStatusHtml(n, m), "wb");
@@ -966,8 +965,6 @@ if (typeof document !== "undefined" && document.addEventListener){
       return;
     }
     if (ds.wbhost !== undefined){ const k = ref + ":host"; wbPost(ref, "host", { host: st.draft[k] || "" }, k); return; }
-    /* a tab on a function card of the second design (23-screens.js): the card stays open */
-    if (ds.wbpane !== undefined && ds.wbpanekey !== undefined && /:fn:/.test(ds.wbpanekey)){ st.pane[ds.wbpanekey] = ds.wbpane; dpRender(); return; }
     /* one of this file's entries is opening: none of 20-dept.js's rows stays lit */
     if (ds.wbfn === undefined && dpS().tab[ref] !== "now") dpS().tab[ref] = "now";
     if (ds.wbtab !== undefined){ st.tab[ref] = ds.wbtab; dpRender(); return; }
