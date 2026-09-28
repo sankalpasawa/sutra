@@ -185,7 +185,14 @@ function wbAsksHtml(m){
     wbBtn("Refuse", `data-wbdecide="${wbEsc(a.id)}" data-wbok="0"`) + `</div>`).join("");
 }
 function wbControls(m){
+  if (wbRt(m)) return `<div class="wbctl wb">` + wbOnOff(m) + `</div>`;
   return `<div class="wbctl wb">` + wbBtn(m.stopped ? "Resume" : "Stop", m.stopped ? `data-wbresume="1"` : `data-wbstop="1"`) + `</div>`;
+}
+/* Start is just a button (founder, 2026-09-28): one button on the department,
+   Start when it is off and Stop when it is on. It is a signal to every engine
+   and internal system of the department; each then looks to its own triggers. */
+function wbOnOff(m){
+  return m.stopped ? wbBtn("Start", `data-wbresume="1"`, "wbonoff dpstamp") : wbBtn("Stop", `data-wbstop="1"`, "wbonoff");
 }
 
 /* ── Map ──────────────────────────────────────────────────────────────────── */
@@ -248,15 +255,19 @@ function wbMapHtml(n, m){
   const st = m.status || {};
   const lane = (label, rows, cls) => `<div class="wblane"><div class="dpk">${label}</div>` +
     (rows.length ? rows.map(() => wbDot(cls)).join("") : wbDot("off")) + `</div>`;
+  const rt = wbRt(m);
   const status = `<div class="wblanes">` + lane("Asks", st.asks || [], "") + lane("Waits", st.waits || [], "warn") +
     lane("Running", st.running || [], "ok") + lane("Escalated", st.escalated || [], "block") + `</div>` +
-    wbAsksHtml(m) + wbControls(m);
+    wbAsksHtml(m) + (rt ? "" : wbControls(m));
   const health = `<div class="wbhealth">` + ((m.health && m.health.checks) || []).map(c =>
     `<span title="${wbEsc(c.line)}">${wbDot(c.state)}${wbEsc(c.name)}</span>`).join("") + `</div>`;
   const live = m.live ? wbBtn("Open the live site", `data-wbart="live-site" data-wbpane="preview"`) : "";
-  return dpCard("The department",
-      `<div class="wbmotor"><span class="dpdot ${mc}" data-wbmotor="1"></span><span data-wbmotorword="1">${wbEsc(mw)}</span>` +
-      `<span class="dpchk">Motor</span>${m.stopped ? `<span class="dpst paused">Stopped</span>` : ""}${live}</div>` +
+  const head = rt
+    ? `<div class="wbmotor">${wbDot(m.stopped ? "off" : mc)}<span>${m.stopped ? "Off" : (mw === "Running" ? "On" : wbEsc(mw))}</span>` +
+      `${wbOnOff(m)}${live}</div>`
+    : `<div class="wbmotor"><span class="dpdot ${mc}" data-wbmotor="1"></span><span data-wbmotorword="1">${wbEsc(mw)}</span>` +
+      `<span class="dpchk">Motor</span>${m.stopped ? `<span class="dpst paused">Stopped</span>` : ""}${live}</div>`;
+  return dpCard("The department", head +
       `<div class="wbgrid">${m.systems.map(s => wbSystemTile(s, m)).join("")}</div>` + wbFlowHtml(m)) +
     dpCard("System status", status) +
     wbAskCard(n, m) + wbRepliesHtml(n, m) +
@@ -402,15 +413,37 @@ function wbStepsHtml(ref, name){
   const moves = [];
   steps.forEach(s => (s.history || []).forEach(h => { if (h.from) moves.push([s, h]); }));
   moves.sort((a, b) => String(b[1].at).localeCompare(String(a[1].at)));
-  return (v.description ? dpCard(v.kind === "function" ? "The function" : "The engine",
+  return (v.description ? dpCard(v.kind === "function" ? "The internal system" : "The engine",
         `<div class="dpbig">${wbEsc(v.description.charAt(0).toUpperCase() + v.description.slice(1))}</div>` +
         ((v.skills || []).length ? `<div class="wbstep">${v.skills.map(x => wbChip(x)).join("")}</div>` : "")) : "") +
+    wbStartHtml(v) + wbTableHtml(v) +
     card("Gates", steps.filter(s => s.mode === "gate")) +
     card("Steps", steps.filter(s => s.mode !== "gate" && !s.under)) +
     (v.hears || []).map(h => card(h, steps.filter(s => s.under === h))).join("") +
     (moves.length ? dpCard("Moves", moves.slice(0, 12).map(([s, h]) => dpRunRow(s.name,
         wbRungName(h.from) + " to " + wbRungName(h.to) + " · " + String(h.by || "") + " · " + wbWhen(h.at),
         WB_RUNGS.map(r => r[0]).indexOf(h.to) > WB_RUNGS.map(r => r[0]).indexOf(h.from) ? "ok" : "warn")).join("")) : "");
+}
+function wbCap(x){ x = String(x || ""); return x.charAt(0).toUpperCase() + x.slice(1); }
+/* How this engine starts: what makes it want to run, and what holds it. The
+   same two lines on all nine cards, because all nine start by the same rule. */
+function wbStartHtml(v){
+  const s = v.start;
+  if (!s || !(s.on || []).length) return "";
+  const held = (s.unless || []).length ? s.unless.map(b => wbChip(b.by + ": " + b.name, "ask")).join("") : wbChip("Nothing holds it");
+  return dpCard("Starts", `<div class="wbstep"><span class="dpk">On</span>${s.on.map(x => wbChip(wbCap(x), "on")).join("")}</div>` +
+    `<div class="wbstep"><span class="dpk">Unless</span>${held}</div>`);
+}
+/* What engines share is Coordination's, and it is a record: who goes first
+   when several are ready, and who may post what to whom. */
+function wbTableHtml(v){
+  const t = v.table;
+  if (!t) return "";
+  const arrow = `<span class="wbarrow">&rarr;</span>`;
+  return dpCard("Who goes first", (t.first || []).map(x => dpRunRow(x, "", "")).join("") +
+      `<div class="wbstep"><span class="dpk">The line</span>${(t.line || []).map(x => wbChip(x)).join(arrow)}</div>`) +
+    dpCard("Who may post to whom", (t.may_post || []).map(r => `<div class="wbpost">${wbChip(r.from)}` +
+      `<span class="dpchk">${wbEsc(WB_ACTS[r.act] || r.act)}</span>${(r.to || []).map(x => wbChip(x)).join("")}</div>`).join(""));
 }
 function wbIdeasHtml(b){
   const rows = (b && b.ideas) || [];

@@ -785,5 +785,166 @@ class TestTheFiveJourneys(Base):
         self.assertEqual(self.M.calls.count("identity.recognise"), 2, "one call, and one more naming the fault; then the owner")
 
 
+class TestActivation(Base):
+    """Founder, 2026-09-28: every engine has its own start, a trigger and blockers; Start is a signal to all; "the rest
+    is in coordination"; once started each has its own agency. One rule for the five internal systems and the four
+    work engines, declared as data, refused if missing, read by one piece of code."""
+
+    NINE = ("Plan", "Write", "Check", "Publish", "Identity", "Adaptation", "Priority", "Coordination", "Audit")
+
+    def ctx(self, **more):
+        c = self.R._coord_ctx(REF)
+        c.update(more)
+        return c
+
+    def table(self, **change):
+        t = self.R.coordination(REF)
+        t.update(change)
+        self.W._write(self.W.ddir(REF) / "coordination.json", t)
+
+    def test_44_every_engine_names_its_start_and_one_without_is_refused(self):
+        R = self.R
+        self.assertEqual(sorted(R.defs()["engines"]), sorted(self.NINE))
+        for name in self.NINE:
+            st = R.engine_def(name)["start"]
+            self.assertTrue(st["on"], name + " names what makes it run")
+            self.assertTrue(all(t["kind"] in R.TRIGGER for t in st["on"]), name)
+
+        def faults(change):
+            bad = copy.deepcopy(R.defs())
+            change(bad["engines"])
+            return R.validate(bad)
+        self.assertEqual(R.validate(copy.deepcopy(R.defs())), [])
+        self.assertIn("Write: the engine names no start: no trigger makes it run", faults(lambda e: e["Write"].pop("start")))
+        self.assertIn("Audit: the engine names no start: no trigger makes it run", faults(lambda e: e["Audit"]["start"].update(on=[])))
+        self.assertIn("Plan, start: 'whim' is not a kind of trigger", faults(lambda e: e["Plan"]["start"]["on"].append({"kind": "whim"})))
+        self.assertIn("Plan, start: a version trigger names what it is a version of",
+                      faults(lambda e: e["Plan"]["start"].update(on=[{"kind": "version"}])))
+        self.assertIn("Audit, start: it is triggered by a post and no step of it reads one",
+                      faults(lambda e: e["Audit"]["start"]["on"].append({"kind": "post"})))
+        self.assertIn("Audit, start: a timer names its period in seconds",
+                      faults(lambda e: e["Audit"]["start"]["on"].append({"kind": "timer"})))
+        self.assertIn("Check, start: the blocker plan.pages is no gate of an internal system",
+                      faults(lambda e: e["Check"]["start"]["unless"].append("plan.pages")))
+
+    def test_45_one_piece_of_code_starts_all_nine_and_names_none_of_them(self):
+        import inspect
+        R, W = self.R, self.W
+        for fn in (R.next_due, R.ready, R.blocked, R.coord_pick, R.coord_busy, R.admit):
+            src = inspect.getsource(fn)
+            for name in self.NINE:
+                self.assertNotIn('"%s"' % name, src.replace('"Coordination", s', ""), "%s names %s" % (fn.__name__, name))
+        self.live()
+        self.ask("Add a page for the pharmacy")
+        ran = [r for r in W.runs(REF) if r.get("slot") and r.get("runtime") == 2 and r["status"] in ("ok", "failed")]
+        picked = {(r["slot"], r["answer"]) for r in self.rows("coord.pick")}
+        self.assertGreaterEqual(len({r["engine"] for r in ran}), 7, "work engines and internal systems alike")
+        for r in ran:
+            self.assertIn((r["slot"], r["engine"]), picked, "%s started without its start being read" % r["engine"])
+        self.assertTrue(all(r["engine"] == "Coordination" and r["check"]["ok"] for r in self.rows("coord.pick")))
+
+    def test_46_start_and_stop_are_one_signal_to_every_engine(self):
+        R, W = self.R, self.W
+        W.give_goal(REF, GOAL)
+        name, _, _ = R.next_due(REF)
+        self.assertEqual(name, "Identity", "an internal system, by a post")
+        W.set_stopped(REF, True)
+        self.assertEqual(R.next_due(REF), (None, None, "stopped"))
+        self.assertEqual(self.idle(), 0, "stopped: nothing starts, whatever its trigger")
+        W.set_stopped(REF, False)
+        self.idle()
+        self.assertTrue(W.versions(REF, "Build"), "started: the line ran by its own triggers, with nobody driving")
+        said = [r["what"] for r in W.runs(REF) if r["engine"] == "Identity" and "by the owner" in (r.get("what") or "")]
+        self.assertEqual(said, ["stopped by the owner: every engine stops",
+                                "started by the owner: every engine looks to its own triggers"])
+
+    def test_47_a_blocker_holds_its_own_engine_and_no_other(self):
+        R, W = self.R, self.W
+        d = W.dept(REF)
+        d["envelopes"]["Write"]["calls"] = 0
+        W.save_dept(REF, d)
+        W.give_goal(REF, GOAL)
+        self.idle()
+        self.assertTrue(W.versions(REF, "Site plan") and not W.versions(REF, "Pages"))
+        got = R.ready(self.ctx(), "Write")
+        self.assertEqual(got, (None, None, "Write is out of its envelope"), "a trigger is live, and its own blocker holds it")
+        self.assertIsNone(R.ready(self.ctx(), "Check"), "no trigger of Check's is live")
+        self.table(order=["line", "posts", "functions"])
+        R.request(REF, "Which page lists the doctors")
+        self.assertEqual(R.next_due(REF)[0], "Identity", "held at Write, the department still serves what is ready")
+
+    def test_48_who_goes_first_is_coordinations_table_on_the_record(self):
+        R, W = self.R, self.W
+        t = W._read(W.ddir(REF) / "coordination.json", None)
+        self.assertEqual((t["order"], t["line"], t["by"]), (["posts", "line", "functions"], ["Plan", "Write", "Check", "Publish"], "born"))
+        self.live()
+        cur = W.latest(REF, "Brief")
+        W.add_version(REF, "Brief", W.read_files(REF, "Brief", cur["v"]), [{"art": "Brief", "v": cur["v"]}], "owner",
+                      {"ok": True, "notes": ["a test's own version"]})
+        R.request(REF, "Which page lists the doctors")
+        self.assertEqual(R.next_due(REF)[0], "Identity", "born with: a post waiting for its reader goes first")
+        self.table(order=["line", "posts", "functions"])
+        self.assertEqual(R.next_due(REF)[0], "Plan", "the table on the record was changed, and the order with it")
+        self.table(line=["Plan", "Write", "Check", "Nobody"])
+        self.assertEqual(R.coordination(REF)["order"], ["posts", "line", "functions"], "a table with a fault is not read")
+
+    def test_49_who_may_post_is_coordinations_table_and_a_refusal_is_a_row(self):
+        R = self.R
+        self.assertTrue(R.post(REF, "Audit", "Identity", "inform", {"word": "finding", "claim": "a claim", "severity": "low"}))
+        edges = R.coordination(REF)["edges"]
+        edges.pop("Audit")
+        self.table(edges=edges)
+        with self.assertRaises(ValueError) as e:
+            R.post(REF, "Audit", "Identity", "inform", {"word": "finding", "claim": "a claim", "severity": "low"})
+        self.assertEqual(str(e.exception), "Audit may not post inform to Identity")
+        rows = [(r["engine"], r["answer"], r["check"]["ok"]) for r in self.rows("coord.edge") if r["slot"] == "Audit>Identity:inform"]
+        self.assertEqual(rows, [("Coordination", "admit", True), ("Coordination", "refuse", True)])
+
+    def test_50_a_time_is_a_trigger_too_once_in_each_period(self):
+        R = self.R
+        d = copy.deepcopy(R.defs())
+        d["engines"]["Audit"]["start"]["on"] = [{"kind": "timer", "every_s": 3600}]
+        self.assertEqual(R.validate(d), [])
+        R._DEFS["d"] = d
+        inp, slot, why = R.ready(self.ctx(now=7200.0), "Audit")
+        self.assertEqual((inp, slot, why), ({"timer": 2, "v": 2}, "Audit@timer.2", None))
+        self.assertIsNone(R.ready(self.ctx(now=7200.0, done={"Audit@timer.2"}), "Audit"), "once in a period")
+        self.assertEqual(R.ready(self.ctx(now=10800.0, done={"Audit@timer.2"}), "Audit")[1], "Audit@timer.3", "and again in the next")
+
+    def test_51_a_trigger_is_delivered_when_it_happens(self):
+        R, W = self.R, self.W
+        kick = W._MOTOR["kick"] = threading.Event()
+        try:
+            R.request(REF, "A website for the hospital")
+            self.assertTrue(kick.is_set(), "a post wakes the motor at once; no engine waits for a tick")
+            kick.clear()
+            W.set_stopped(REF, True)
+            self.assertTrue(kick.is_set(), "and so does the button")
+        finally:
+            W._MOTOR["kick"] = None
+        W.signal()                                       # with no motor in this process, a signal is a no-op
+
+    def test_52_the_owner_sees_each_engines_start_and_coordinations_table(self):
+        R = self.R
+        self.live()
+        w = R.steps_view(REF, "Write")["start"]
+        self.assertEqual(w["on"], ["a new Site plan"])
+        self.assertEqual([(b["by"], b["name"]) for b in w["unless"]],
+                         [("Identity", R.step_def("identity.gate")[1]["name"]), ("Priority", R.step_def("priority.envelope")[1]["name"]),
+                          ("Coordination", "Stop a chain at its limit")])
+        self.assertEqual(R.steps_view(REF, "Publish")["start"]["on"], ["a new Build that passed its check"])
+        self.assertEqual(R.steps_view(REF, "Adaptation")["start"]["on"], ["a post addressed to it", "a new Live site that passed its check"])
+        c = R.steps_view(REF, "Coordination")
+        self.assertEqual(c["hears"][0], "What engines share")
+        shared = [s["name"] for s in c["steps"] if s["under"] == "What engines share"]
+        self.assertEqual(shared, ["Keep one run at a time", "Say who goes first, when several are ready", "Say who may post what to whom",
+                                  "Ask an internal system for its verdict", "Close a thread at its bound",
+                                  "Raise an alarm for a run past its window"])
+        pick = next(s for s in c["steps"] if s["id"] == "coord.pick")
+        self.assertEqual((pick["mode"], pick["rung_name"], pick["ran"], pick["evidence"]["pass"]), ("rule", "Code", True, 1.0))
+        self.assertEqual(c["table"]["line"], ["Plan", "Write", "Check", "Publish"])
+        self.assertIn({"from": "Owner", "act": "request", "to": ["Identity"]}, c["table"]["may_post"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

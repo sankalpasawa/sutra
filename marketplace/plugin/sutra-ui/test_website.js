@@ -31,6 +31,10 @@
          and the ideas that are parked; an empty board is one quiet line
      W16 the Map of a runtime department has one way in, shows what the
          department said back, and a function's card carries its steps
+     W17 a runtime department has one button, Start when it is off and Stop
+         when it is on, at the top of its Map; each posts the one route
+     W18 every engine's card says how it starts, on what and unless what, and
+         Coordination's card carries its table: who goes first, who may post
 
    Harness: test_dept.js's fresh(), with 22-website.js loaded after 20-dept.js
    (panel.html's order). Run: node test_website.js */
@@ -104,6 +108,8 @@ function stepsOf(name, o){
   o = o || {};
   const numbers = { runs: 40, differing: 1, trial: 20, misses: 3 };
   if (name === "Write") return { name, kind: "work", description: "Writes every page the plan names", skills: ["Writing"], reads: "Site plan", writes: "Pages",
+    start: { on: ["a new Site plan"], unless: [{ by: "Identity", name: "Say whether it may start" }, { by: "Priority", name: "Keep it inside its envelope" },
+                                                { by: "Coordination", name: "Stop a chain at its limit" }] },
     hears: [], numbers, steps: [
       stepOf({ id: "write.list", name: "List the pages", check: "list_has_pages" }),
       stepOf({ id: "write.page", name: "Write a page", nature: "make", rung: o.rung || "C0", rung_name: o.rung_name || "Improvised call", born: "C0", ceiling: "C1",
@@ -112,8 +118,13 @@ function stepsOf(name, o){
                evidence: { runs: 10, differing: 0, shape_drift: 0, pass: 0.9, marked: 0, misses: 0, usd: 0.01 },
                history: [{ at: AT, from: null, to: "C0", by: "born", evidence: null }].concat(o.moved ? [{ at: AT, from: "C0", to: "C1", by: "the owner's stamp", evidence: {} }] : []) }),
       stepOf({ id: "write.file", name: "Put the pages together", check: "filed_has_files", ran: false, last: null, evidence: null })] };
-  return { name, kind: "function", description: "", skills: [], reads: null, writes: null, hears: ["Take a request"], numbers, steps: [
+  const table = name !== "Coordination" ? undefined : { first: ["A post waiting for its reader", "The line, in its order", "An internal system woken by new work"],
+    line: ["Plan", "Write", "Check", "Publish"], may_post: [{ from: "Audit", act: "inform", to: ["Identity"] }, { from: "Owner", act: "request", to: ["Identity"] }] };
+  return { name, kind: "function", description: "", skills: [], reads: null, writes: null, numbers, table,
+    start: { on: ["a post addressed to it"], unless: [] },
+    hears: (table ? ["What engines share"] : []).concat(["Take a request"]), steps: [
     stepOf({ id: name.toLowerCase() + ".gate", name: "Say whether it may start", nature: "decide", mode: "gate", check: "gate_answer_is_known" }),
+    stepOf({ id: name.toLowerCase() + ".pick", name: "Say who goes first, when several are ready", nature: "decide", mode: "rule", under: table ? "What engines share" : "Nowhere", check: "names_who_goes_first" }),
     stepOf({ id: name.toLowerCase() + ".read", name: "Read the request", under: "Take a request", check: "brief_is_text" })] };
 }
 const BOARD = { any: true,
@@ -485,6 +496,50 @@ test("W16: the Map of a runtime department has one way in, shows what was said b
   assert.ok(/<h3>Ideas, parked<\/h3>/.test(fn), "Adaptation carries the ideas it parked");
   fn = await fnCard(c, "identity");
   ["Control", "Autonomy windows", "Gates", "Take a request"].forEach(h => assert.ok(fn.indexOf("<h3>" + h + "</h3>") >= 0, h));
+});
+
+test("W17: a runtime department has one button, Start when it is off and Stop when it is on", async () => {
+  const on = await opened({ map: rtMap() });
+  let html = view(on);
+  assert.strictEqual((html.match(/data-wbstop="1"/g) || []).length, 1, "one Stop, and only one");
+  assert.ok(!/data-wbresume/.test(html) && !/>Resume</.test(html));
+  const first = html.slice(0, html.indexOf("<h3>System status</h3>"));
+  assert.ok(/<span>On<\/span><button type="button" class="btn wb wbonoff" data-wbstop="1">Stop<\/button>/.test(first), "at the top, beside its state: " + first.slice(0, 400));
+  assert.ok(!/>Motor</.test(first) && !/Stopped/.test(first), "its state is one word, On or Off");
+  click(on, { wbstop: "1" }); await sleep(); await sleep();
+  const off = await opened({ map: rtMap({ stopped: true }) });
+  html = view(off);
+  assert.ok(/<span class="dpdot off"><\/span><span>Off<\/span><button type="button" class="btn wb wbonoff dpstamp" data-wbresume="1">Start<\/button>/.test(html), html.slice(0, 500));
+  assert.strictEqual((html.match(/data-wbresume="1"/g) || []).length, 1);
+  click(off, { wbresume: "1" }); await sleep(); await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify([on.calls.apiPost[0], off.calls.apiPost[0]])),
+    [{ p: "/api/native/r3/stop", body: {} }, { p: "/api/native/r3/resume", body: {} }]);
+  click(off, { wbtab: "status" });
+  assert.ok(/data-wbresume="1">Start</.test(view(off)), "System status carries the same button");
+  const old = await opened({ map: mapOf({ stopped: true }) });
+  assert.ok(/data-wbresume="1">Resume</.test(view(old)) && !/wbonoff/.test(view(old)), "a department of the first build keeps its own");
+});
+
+test("W18: every engine's card says how it starts, and Coordination's card carries its table", async () => {
+  const c = await opened({ map: rtMap() });
+  click(c, { wbengine: "Write" }); view(c); await sleep(); await sleep();
+  const html = view(c);
+  const starts = html.slice(html.indexOf("<h3>Starts</h3>"), html.indexOf("<h3>Steps</h3>"));
+  assert.ok(/<span class="dpk">On<\/span><span class="wbchip on">A new Site plan<\/span>/.test(starts), starts.slice(0, 300));
+  assert.ok(/<span class="dpk">Unless<\/span><span class="wbchip ask">Identity: Say whether it may start<\/span><span class="wbchip ask">Priority: Keep it inside its envelope<\/span>/.test(starts));
+  assert.ok(!/Who goes first/.test(html), "only Coordination carries the table");
+  const fn = await fnCard(c, "identity");
+  assert.ok(/<h3>Starts<\/h3>/.test(fn) && /A post addressed to it/.test(fn) && /<span class="wbchip">Nothing holds it<\/span>/.test(fn));
+  const co = await fnCard(c, "coordination");
+  ["Starts", "Who goes first", "Who may post to whom", "What engines share"].forEach(h => assert.ok(co.indexOf("<h3>" + h + "</h3>") >= 0, h));
+  assert.ok(/<span class="dpk">The line<\/span><span class="wbchip">Plan<\/span><span class="wbarrow">&rarr;<\/span><span class="wbchip">Write<\/span>/.test(co));
+  assert.ok(/<span class="wbchip">Audit<\/span><span class="dpchk">tells<\/span><span class="wbchip">Identity<\/span>/.test(co), "who, the act in a word, to whom");
+  assert.ok(co.indexOf("<h3>What engines share</h3>") < co.indexOf("<h3>Take a request</h3>"), "what engines share comes before what it hears");
+  [html, co].forEach(h => {
+    const t = words(h);
+    assert.ok(!/\d/.test(t), "a number at rest: " + (t.match(/.{0,30}\d.{0,30}/) || [""])[0]);
+    assert.ok(!/coord\.|identity\.|write\.|names_who|\/api\//.test(t), "an id or a path in the words");
+  });
 });
 
 Promise.all(pending).then(() => {

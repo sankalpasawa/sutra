@@ -5634,3 +5634,6 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .wbthh .dpdot{margin-top:0;flex:none}
 .wbpost{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:5px 0;border-top:1px solid var(--line-soft)}
 .wbsaid{width:100%;font:400 12.5px/1.45 var(--sans);color:var(--muted)}
+/* the department's one button: beside its state, not pushed to the far edge */
+.wbmotor .wbonoff{margin-left:4px}
+.wbstep .dpk{margin-right:2px}

@@ -6,14 +6,22 @@ the five functions are engines too (the five functions, A1).
 
 OFF BY DEFAULT. A department runs here only when its dept.json says
 `runtime: 2`; every other department runs on website_dept.py's built path,
-unchanged. website_dept.py hands over at four places: due, run_slot, the
-owner's request, and a stamp.
+unchanged. website_dept.py hands over at six places: the goal, the owner's
+words, a stamp, due, run_slot, and the sweep of each tick.
 
-THE SKELETON, always code
-    next_due    what may start now: a post for a function, a slot of the line,
-                a function woken by a version
-    admit       the gates of Identity, Priority and Coordination, code only;
-                a gate that is not on the code rung answers "wait"
+START IS JUST A BUTTON; THE REST IS COORDINATION'S (founder, 2026-09-28).
+The skeleton holds no rule of its own. While the department is on, each
+tick it asks Coordination one question, "what is next?", and starts what
+Coordination names. What is served first, the order of the line, one run at
+a time, who is woken by a post, who may post to whom, which gates are asked,
+the thread's bounds and the alarm are all Coordination's: its own steps
+(coord.*), reading its own table on the department's record
+(coordination.json), each decision a row.
+
+THE SKELETON, always code, deciding nothing
+    next_due    is the button on? then Coordination's answer (coord.next)
+    admit       asks the gates Coordination's table names, in its order; a
+                gate that is not on the code rung answers "wait"
     run_engine  the steps of one run, in order; a finished step is not run
                 again; the items of a fan-out step run side by side
     run_step    one step on its rung; a miss goes down one rung for that run
@@ -98,7 +106,9 @@ def validate(d):
             faults.append("%s: kind is neither work nor function" % name)
         if e.get("kind") == "work" and not (e.get("reads") and e.get("writes")):
             faults.append("%s: a work engine names what it reads and what it writes" % name)
-        groups = [("gate", s) for s in e.get("gates") or []] + [("step", s) for s in e.get("steps") or []]
+        faults += start_faults(name, e, d.get("engines") or {})
+        groups = [("gate", s) for s in e.get("gates") or []] + [("rule", s) for s in e.get("rules") or []]
+        groups += [("step", s) for s in e.get("steps") or []]
         groups += [("step", s) for h in e.get("on") or [] for s in h.get("steps") or []]
         for mode, s in groups:
             sid = s.get("id") or "?"
@@ -127,12 +137,55 @@ def validate(d):
                     faults.append("%s: a soft step names the shape of its answer" % where)
             if not s.get("code") and not s.get("prompt"):
                 faults.append("%s: the step names neither code nor a prompt" % where)
-            if mode == "gate" and not s.get("code"):
-                faults.append("%s: a gate has its rule in code" % where)
+            if mode in ("gate", "rule") and not s.get("code"):
+                faults.append("%s: a %s has its rule in code" % (where, mode))
     for src, acts in (d.get("edges") or {}).items():
         for act in acts:
             if act not in ACTS:
                 faults.append("edges, %s: %s is not an act" % (src, act))
+    faults += table_faults(d.get("coordination"), d.get("engines") or {})
+    return faults
+
+
+def start_faults(name, e, engines):
+    """Every engine names its start. One that names none, a trigger of no known kind, or a blocker that is no gate, is
+    a fault, and one fault refuses the whole definition: this is how every engine comes to start by the same rule."""
+    st = e.get("start")
+    if not isinstance(st, dict) or not st.get("on"):
+        return ["%s: the engine names no start: no trigger makes it run" % name]
+    faults = []
+    for t in st["on"]:
+        kind = (t or {}).get("kind")
+        if kind not in ("version", "post", "timer"):
+            faults.append("%s, start: %r is not a kind of trigger" % (name, kind))
+        elif kind == "version" and not t.get("of"):
+            faults.append("%s, start: a version trigger names what it is a version of" % name)
+        elif kind == "post" and not e.get("on"):
+            faults.append("%s, start: it is triggered by a post and no step of it reads one" % name)
+        elif kind == "timer" and not (isinstance(t.get("every_s"), (int, float)) and t["every_s"] > 0):
+            faults.append("%s, start: a timer names its period in seconds" % name)
+    gates = {g.get("id") for x in engines.values() for g in x.get("gates") or []}
+    for gid in st.get("unless") or []:
+        if gid not in gates:
+            faults.append("%s, start: the blocker %s is no gate of an internal system" % (name, gid))
+    return faults
+
+
+def table_faults(t, engines):
+    """Coordination's table is data too: every name in it is an engine that exists, and nothing is served twice."""
+    if not isinstance(t, dict):
+        return ["coordination: the definitions carry no table for Coordination to be born with"]
+    faults = []
+    order = t.get("order") or []
+    if sorted(order) != sorted(set(order)) or not order or any(k not in ("posts", "line", "functions") for k in order):
+        faults.append("coordination, order: it names posts, line and functions, each at most once")
+    for key, kind in (("line", "work"), ("functions", "function")):
+        names = t.get(key) or []
+        if len(names) != len(set(names)):
+            faults.append("coordination, %s: a name is there twice" % key)
+        for n in names:
+            if (engines.get(n) or {}).get("kind") != kind:
+                faults.append("coordination, %s: %s is not a %s engine" % (key, n, kind))
     return faults
 
 
@@ -153,7 +206,8 @@ def engine_def(name):
 def all_steps(name):
     e = engine_def(name) or {}
     out, seen = [], set()
-    for s in list(e.get("gates") or []) + list(e.get("steps") or []) + [s for h in e.get("on") or [] for s in h["steps"]]:
+    for s in (list(e.get("gates") or []) + list(e.get("rules") or []) + list(e.get("steps") or [])
+              + [s for h in e.get("on") or [] for s in h["steps"]]):
         if s["id"] not in seen:
             seen.add(s["id"])
             out.append(s)
@@ -240,6 +294,34 @@ def numbers(ref):
     n = dict(LADDER)
     n.update((W.dept(ref) or {}).get("ladder") or {})
     return n
+
+
+# ---- Coordination's table ------------------------------------------------------------------------------------------
+def born_table():
+    """What Coordination is born with: the order of service and who may post what to whom, from the definitions."""
+    d = defs()
+    t = json.loads(json.dumps(d["coordination"]))
+    t["edges"] = json.loads(json.dumps(d["edges"]))
+    return t
+
+
+def coordination(ref):
+    """Coordination's table for this department. It is Coordination's state, kept on the department's record, and it
+    is the only copy that is read: a department made before the table was kept reads what Coordination is born with."""
+    t = W._read(W.ddir(ref) / "coordination.json", None) if ref else None
+    if not isinstance(t, dict) or table_faults(t, defs()["engines"]):
+        return born_table()
+    t.setdefault("edges", born_table()["edges"])
+    return t
+
+
+def born(ref):
+    """At the department's birth, Coordination writes its table. From then on the order of work is a record."""
+    t = born_table()
+    t.update({"since": W.now(), "by": "born"})
+    with W._lock(ref):
+        W._write(W.ddir(ref) / "coordination.json", t)
+    return t
 
 
 def _sha(obj):
@@ -382,10 +464,18 @@ def candidate(ref, step, rung):
 
 
 # ---- the board -----------------------------------------------------------------------------------------------------
-def may_post(src, dst, msg_type):
-    """Who may post what to whom: Coordination's table (coord.edge). A post with nobody named is refused."""
-    allowed = (defs()["edges"].get(src) or {}).get(msg_type) or []
+def may_post(src, dst, msg_type, ref=None):
+    """Who may post what to whom: Coordination's table, this department's copy. A post with nobody named is refused."""
+    allowed = ((coordination(ref)["edges"] if ref else defs()["edges"]).get(src) or {}).get(msg_type) or []
     return bool(dst) and all(d in allowed for d in dst)
+
+
+def coord_edge(ctx, step, item):
+    """Coordination's rule on a post: pass or refuse. `item` is (src, dst, act)."""
+    src, dst, act = item
+    if may_post(src, dst, act, ctx["ref"]):
+        return "admit", "%s may %s to %s" % (src, act, ", ".join(dst))
+    return "refuse", "%s may not post %s to %s" % (src, act, ", ".join(dst) or "nobody")
 
 
 def _save_threads(ref, ths):
@@ -416,8 +506,9 @@ def post(ref, src, dst, msg_type, payload=None, thread=None, about=None, by=None
         raise ValueError("not an act: %r" % (msg_type,))
     if not dst:
         raise ValueError("a post names who it is for")
-    if not may_post(src, dst, msg_type):
-        raise ValueError("%s may not post %s to %s" % (src, msg_type, ", ".join(dst)))
+    answer, why = _ask_rule(ref, "coord.edge", (src, dst, msg_type), key="%s>%s:%s" % (src, ",".join(dst), msg_type))
+    if answer != "admit":
+        raise ValueError(why)
     with W._lock(ref):
         ths = threads(ref)
         th = next((t for t in ths if t["id"] == thread), None) if thread else None
@@ -449,6 +540,7 @@ def post(ref, src, dst, msg_type, payload=None, thread=None, about=None, by=None
             th.update({"closed": W.now(), "outcome": {"by": msg_type, "n": row["n"]}})
         _append(ref, "board.jsonl", row)
         _save_threads(ref, ths)
+    W.signal()                                         # a post is a trigger: its reader looks now
     return row
 
 
@@ -472,41 +564,14 @@ def _thread_set(ref, tid, state=None, spent=0.0, outcome=None):
 
 
 def sweep(ref):
-    """Each tick: a thread past a bound is closed with the outcome it named; a run past its window raises an alarm."""
+    """Each tick of the system clock: Coordination closes what is past its bound and raises what is past its window.
+    A department that is off is left alone: its threads freeze, and their clocks do not run."""
     d = W.dept(ref)
     if not d or d.get("stopped"):
-        return []                                  # a stopped department's threads freeze; their clocks do not run
-    closed = []
-    with W._lock(ref):
-        ths = threads(ref)
-        for th in ths:
-            if th["state"] in CLOSED or th["state"] == "input-required":
-                continue
-            th["age_s"] = round(float(th.get("age_s") or 0) + W.TICK_S, 1)
-            which = None
-            if th["age_s"] > float(th["bounds"].get("seconds") or 1e12):
-                which = "seconds"
-            elif float(th.get("spent") or 0) > float(th["bounds"].get("usd") or 1e12):
-                which = "usd"
-            if which:
-                th.update({"state": "canceled", "closed": W.now(), "outcome": {"by": "bound", "which": which, "holds": th["default"]}})
-                closed.append(th["id"])
-        if ths:
-            _save_threads(ref, ths)
-    for tid in closed:
-        W.system_run(ref, "Coordination", "closed a thread at its bound; what holds: " + str((_thread(ref, tid) or {}).get("default")))
-    for r in W.runs(ref):
-        if r.get("status") == "running" and not r.get("alarmed"):
-            limit = 60 * int((d.get("windows") or {}).get(r["engine"]) or 30)
-            if time.time() - W._ts(r.get("started", "")) > limit:
-                r["alarmed"] = True
-                W._put_run(ref, r)
-                post(ref, "Coordination", "Identity", "inform",
-                     {"word": "alarm", "engine": r["engine"], "run": r["id"], "what": "%s has run past its window" % r["engine"]})
-                if not any(a.get("kind") == "alarm" and a.get("run") == r["id"] for a in W.asks(ref)):
-                    W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "alarm", "engine": r["engine"], "slot": r.get("slot"),
-                                     "run": r["id"], "text": "%s has run past its window" % r["engine"], "status": "pending",
-                                     "created": W.now(), "escalated": True})
+        return []
+    ctx = _coord_ctx(ref, d)
+    closed = _ask_rule(ref, "coord.bounds", key="bounds@%s" % W.now(), ctx=ctx)["closed"]
+    _ask_rule(ref, "coord.alarm", key="alarm@%s" % W.now(), ctx=ctx)
     return closed
 
 
@@ -574,119 +639,261 @@ def _held_back(ref, slot, rs):
 
 
 def next_due(ref):
-    """(engine, input, slot), or (None, None, why). Posts first, then the line, then functions woken by a version."""
+    """(engine, input, slot), or (None, None, why): what starts now in this department.
+
+    Founder, 2026-09-28: "start is just a button"; every engine "needs a trigger to start", inside or outside, and
+    starts "unless it has a blocker"; once started each has "their own internal agency". So nothing here tells an
+    engine to run. The skeleton reads whether the button is on, asks every engine whether it is ready by its own
+    start (`ready`), and, because a department runs one thing at a time, asks Coordination who goes first."""
     d = W.dept(ref)
     if not d:
         return None, None, "no department"
     if d.get("stopped"):
         return None, None, "stopped"
-    rs = W.runs(ref)
-    if any(r.get("status") == "running" for r in rs):
-        return None, None, "running"
-    done = {r["slot"] for r in rs if r.get("slot") and r.get("status") in ("ok", "failed", "skipped")}
-    why = None
+    ctx = _coord_ctx(ref, d)
+    name, inp, slot = _run_rule(ctx, "coord.pick")
+    if name:
+        _, s = step_def("coord.pick")
+        _gate_row(ref, slot, "Coordination", s, rung_of(ref, s), name, "ready by its own start; first by Coordination's table")
+    return name, inp, slot
 
-    def a_post():
-        nonlocal why
-        for p in board(ref):
-            for f in p["dst"]:
-                if f not in FUNCTIONS:
+
+# ---- activation: how every engine starts ---------------------------------------------------------------------------
+# One rule for all nine, the five internal systems and the four work engines alike. An engine's definition names its
+# start: `on`, the triggers that make it want to run, and `unless`, the blockers that hold it. `ready` is the one piece
+# of code that reads a start. No engine has a start of its own in code, so none can differ.
+def _on_version(ctx, name, e, trig):
+    """Outside trigger: a version of what it reads that it has not run on yet."""
+    v = W.latest(ctx["ref"], trig["of"], passed=bool(trig.get("checked")))
+    if v:
+        slot = W._slot_id(name, trig["of"], v["v"])
+        if slot not in ctx["done"]:
+            yield v, slot
+
+
+def _on_post(ctx, name, e, trig):
+    """Outside trigger: a post on the board that names this engine, oldest first."""
+    for p in board(ctx["ref"]):
+        if name not in p["dst"]:
+            continue
+        slot = "%s@board.n%d" % (name, p["n"])
+        if slot in ctx["done"]:
+            continue
+        if _handler(e, p) is None:
+            W._put_run(ctx["ref"], _run_row(name, True, slot, "skipped", "no step of %s reads a post of that kind" % name))
+            ctx["done"].add(slot)
+            continue
+        yield {"post": p, "v": p["n"]}, slot
+
+
+def _on_timer(ctx, name, e, trig):
+    """Inside trigger: a time. The system clock is a service; the engine asks it for one start in every period."""
+    n = int(ctx.get("now", time.time()) // max(1.0, float(trig["every_s"])))
+    slot = "%s@timer.%d" % (name, n)
+    if slot not in ctx["done"]:
+        yield {"timer": n, "v": n}, slot
+
+
+TRIGGER = {"version": _on_version, "post": _on_post, "timer": _on_timer}
+
+
+def ready(ctx, name, kinds=None):
+    """The start mechanism, the same for every engine. Returns
+         (input, slot, None)  a trigger of its own is live and nothing holds it: it may start
+         (None, None, why)    a trigger is live and something holds it
+         None                 no trigger of its own is live"""
+    e = engine_def(name)
+    why = None
+    for trig in e["start"]["on"]:
+        if kinds and trig["kind"] not in kinds:
+            continue
+        for inp, slot in TRIGGER[trig["kind"]](ctx, name, e, trig):
+            held = _held_back(ctx["ref"], slot, ctx["rs"])
+            if held == "skip":
+                continue
+            if held:
+                why = why or held
+                continue
+            answer, reason = blocked(ctx, name, e, inp, slot)
+            if answer == "admit":
+                return inp, slot, None
+            if answer == "wait":
+                why = why or reason
+    return (None, None, why) if why else None
+
+
+def blocked(ctx, name, e, inp, slot):
+    """The engine's own blockers, in the order its start names them. Each is a gate: a step of an internal system, and
+    each answer is a row. The rule in code is the floor: a gate that has gone soft can hold a start, never let one
+    through."""
+    ref = ctx["ref"]
+    gctx = {"ref": ref, "dept": ctx["dept"], "engine": name, "def": e, "slot": slot, "inp": inp, "post": None, "bag": {}, "how": {}}
+    for gid in e["start"]["unless"]:
+        fn, g = step_def(gid)
+        rung = rung_of(ref, g)
+        answer, why = CODE[g["code"]](gctx, g, None)
+        if rung != "C2" and answer == "admit":
+            key = slot + "|" + g["id"]
+            v = _verdicts(ref).get(key)
+            if v is None:
+                with W._lock(ref):
+                    vs = _verdicts(ref)
+                    vs[key] = {"answer": None, "asked": W.now()}
+                    W._write(W.ddir(ref) / "verdicts.json", vs)
+                _ask_rule(ref, "coord.verdict", (fn, g, name, slot, e.get("reads"), inp["v"]), key=key, ctx=ctx)
+            if v is None or v.get("answer") is None:
+                return "wait", "%s is judging" % fn
+            answer, why = v["answer"], v.get("why")
+        _gate_row(ref, slot, fn, g, rung, answer, why)
+        if answer != "admit":
+            return answer, why
+    return "admit", None
+
+
+def admit(ref, d, name, inp, slot):
+    """May this engine start on this input? Its own blockers say."""
+    return blocked(_coord_ctx(ref, d), name, engine_def(name), inp, slot)
+
+
+# ---- what engines share: Coordination's rules ----------------------------------------------------------------------
+# Each is a step of Coordination (engine_defs/website.json, "rules"), on the code rung, with a check; it reads
+# Coordination's table on the department's record; what it decides is a row. Coordination tells no engine to start.
+def _coord_ctx(ref, d=None):
+    rs = W.runs(ref)
+    return {"ref": ref, "dept": d or W.dept(ref), "engine": "Coordination", "def": engine_def("Coordination"), "slot": None,
+            "inp": None, "post": None, "bag": {}, "how": {}, "table": coordination(ref), "rs": rs,
+            "done": {r["slot"] for r in rs if r.get("slot") and r.get("status") in ("ok", "failed", "skipped")}}
+
+
+def _run_rule(ctx, sid, item=None):
+    _, s = step_def(sid)
+    return CODE[s["code"]](ctx, s, item)
+
+
+def _ask_rule(ref, sid, item=None, key=None, ctx=None):
+    """Ask one of Coordination's rules and write its decision down, once for each thing decided."""
+    ctx = ctx or _coord_ctx(ref)
+    _, s = step_def(sid)
+    got = CODE[s["code"]](ctx, s, item)
+    out = got if isinstance(got, dict) else {"answer": got[0], "why": got[1]}
+    if out.get("answer") or out.get("said"):
+        _gate_row(ref, key or sid, "Coordination", s, rung_of(ref, s), out.get("answer") or out.get("said"), out.get("why"), out=out)
+    return out if isinstance(got, dict) else (out["answer"], out["why"])
+
+
+def coord_busy(ctx, step, item):
+    """One run at a time in a department."""
+    if any(r.get("status") == "running" for r in ctx["rs"]):
+        return "wait", "running"
+    return "admit", None
+
+
+def coord_pick(ctx, step, item):
+    """When several engines are ready and one may run, who goes first: (engine, input, slot), or (None, None, why).
+    Coordination's table says what is served first (posts, the line, internal systems woken by a version) and the
+    order inside each. The line is kept in order: while an engine of the line is held, the ones after it wait."""
+    t = ctx["table"]
+    busy, why = _run_rule(ctx, "coord.busy")
+    if busy != "admit":
+        return None, None, why
+    why, posts = None, len(board(ctx["ref"]))
+
+    def first_post():
+        best = None
+        for f in t["functions"]:
+            got = ready(ctx, f, ("post",))
+            if got and got[1] and (best is None or got[0]["post"]["n"] < best[1]["post"]["n"]):
+                best = (f, got[0], got[1])
+        return best
+
+    for kind in t["order"]:
+        got = None
+        if kind == "posts":
+            got = first_post()
+        elif kind == "line":
+            for name in t["line"]:
+                r = ready(ctx, name, ("version", "timer"))
+                if r is None:
                     continue
-                slot = "%s@board.n%d" % (f, p["n"])
-                if slot in done:
-                    continue
-                if _handler(engine_def(f), p) is None:
-                    W._put_run(ref, _run_row(f, True, slot, "skipped", "no step of %s reads a post of that kind" % f))
-                    done.add(slot)
-                    continue
-                held = _held_back(ref, slot, rs)
-                if held == "skip":
-                    continue
-                if held:
-                    why = why or held
-                    continue
-                return f, {"post": p, "v": p["n"]}, slot
-        return None
-    got = a_post()
-    if got:
-        return got
-    line = None
-    for name in WORK:
-        e = engine_def(name)
-        inp = W.latest(ref, e["reads"], passed=(name == "Publish"))
-        if not inp:
-            continue
-        slot = W._slot_id(name, e["reads"], inp["v"])
-        if slot in done:
-            continue
-        held = _held_back(ref, slot, rs)
-        if held == "skip":
-            continue
-        if held:
-            why = why or held
-            break
-        verdict, reason = admit(ref, d, name, inp, slot)
-        if verdict == "admit":
-            line = (name, inp, slot)
-            break
-        if verdict == "refuse":
-            continue
-        why = why or reason
-        break
-    if line:
-        return line
-    got = a_post()                       # a gate may have posted just now, asking its function for a verdict
-    if got:
-        return got
-    for f in FUNCTIONS:
-        e = engine_def(f)
-        if not (e.get("reads") and e.get("steps")):
-            continue
-        inp = W.latest(ref, e["reads"], passed=True)
-        if not inp:
-            continue
-        slot = W._slot_id(f, e["reads"], inp["v"])
-        if slot in done or _held_back(ref, slot, rs):
-            continue
-        return f, inp, slot
+                if r[1]:
+                    got = (name, r[0], r[1])
+                else:
+                    why = why or r[2]
+                break
+            if not got and "posts" in t["order"] and len(board(ctx["ref"])) > posts:
+                got = first_post()                   # a blocker asked its internal system for a verdict just now
+        else:
+            for f in t["functions"]:
+                r = ready(ctx, f, ("version", "timer"))
+                if r and r[1]:
+                    got = (f, r[0], r[1])
+                    break
+        if got:
+            return got
     return None, None, why or "nothing due"
+
+
+def coord_verdict(ctx, step, item):
+    """A gate has gone soft: Coordination asks the gate's own internal system for its verdict, on the board.
+    `item` is (internal system, gate, engine, slot, what the engine reads, the version)."""
+    fn, g, name, slot, reads, v = item
+    post(ctx["ref"], "Coordination", fn, "request",
+         {"word": "verdict", "gate": g["id"], "engine": name, "slot": slot, "objective": "say whether this may start",
+          "output": "admit, wait or refuse", "may_read": [reads], "boundaries": "the department's rules"},
+         about={"art": reads, "v": v})
+    return {"said": "asked %s whether %s may start" % (fn, name)}
+
+
+def coord_bounds(ctx, step, item):
+    """A thread past its time or its spend is closed, and the outcome it named holds."""
+    ref, closed = ctx["ref"], []
+    with W._lock(ref):
+        ths = threads(ref)
+        for th in ths:
+            if th["state"] in CLOSED or th["state"] == "input-required":
+                continue
+            th["age_s"] = round(float(th.get("age_s") or 0) + W.TICK_S, 1)
+            which = None
+            if th["age_s"] > float(th["bounds"].get("seconds") or 1e12):
+                which = "seconds"
+            elif float(th.get("spent") or 0) > float(th["bounds"].get("usd") or 1e12):
+                which = "usd"
+            if which:
+                th.update({"state": "canceled", "closed": W.now(), "outcome": {"by": "bound", "which": which, "holds": th["default"]}})
+                closed.append(th["id"])
+        if ths:
+            _save_threads(ref, ths)
+    for tid in closed:
+        W.system_run(ref, "Coordination", "closed a thread at its bound; what holds: " + str((_thread(ref, tid) or {}).get("default")))
+    return {"said": "closed a thread at its bound" if closed else "", "closed": closed}
+
+
+def coord_alarm(ctx, step, item):
+    """A run past its window: Coordination tells Identity, and the owner is asked."""
+    ref, d, raised = ctx["ref"], ctx["dept"], []
+    for r in ctx["rs"]:
+        if r.get("status") == "running" and not r.get("alarmed"):
+            limit = 60 * int((d.get("windows") or {}).get(r["engine"]) or 30)
+            if time.time() - W._ts(r.get("started", "")) > limit:
+                r["alarmed"] = True
+                W._put_run(ref, r)
+                post(ref, "Coordination", "Identity", "inform",
+                     {"word": "alarm", "engine": r["engine"], "run": r["id"], "what": "%s has run past its window" % r["engine"]})
+                if not any(a.get("kind") == "alarm" and a.get("run") == r["id"] for a in W.asks(ref)):
+                    W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "alarm", "engine": r["engine"], "slot": r.get("slot"),
+                                     "run": r["id"], "text": "%s has run past its window" % r["engine"], "status": "pending",
+                                     "created": W.now(), "escalated": True})
+                raised.append(r["id"])
+    return {"said": "raised an alarm: a run is past its window" if raised else "", "raised": raised}
 
 
 def _verdicts(ref):
     return W._read(W.ddir(ref) / "verdicts.json", {})
 
 
-def admit(ref, d, name, inp, slot):
-    """The gates, in the built order. Each is a step of its function, and each answer is a row.
-    The rule in code is the floor: a gate that has gone soft can hold a run back, never let one through."""
-    e = engine_def(name)
-    ctx = {"ref": ref, "dept": d, "engine": name, "def": e, "slot": slot, "inp": inp, "post": None, "bag": {}, "how": {}}
-    for fn in ("Identity", "Priority", "Coordination"):
-        for g in engine_def(fn).get("gates") or []:
-            rung = rung_of(ref, g)
-            answer, why = CODE[g["code"]](ctx, g, None)
-            if rung != "C2" and answer == "admit":
-                key = slot + "|" + g["id"]
-                v = _verdicts(ref).get(key)
-                if v is None:
-                    with W._lock(ref):
-                        vs = _verdicts(ref)
-                        vs[key] = {"answer": None, "asked": W.now()}
-                        W._write(W.ddir(ref) / "verdicts.json", vs)
-                    post(ref, "Coordination", fn, "request",
-                         {"word": "verdict", "gate": g["id"], "engine": name, "slot": slot, "objective": "say whether this may start",
-                          "output": "admit, wait or refuse", "may_read": [e["reads"]], "boundaries": "the department's rules"},
-                         about={"art": e["reads"], "v": inp["v"]})
-                if v is None or v.get("answer") is None:
-                    return "wait", "%s is judging" % fn
-                answer, why = v["answer"], v.get("why")
-            _gate_row(ref, slot, fn, g, rung, answer, why)
-            if answer != "admit":
-                return answer, why
-    return "admit", None
-
-
-def _gate_row(ref, slot, fn, g, rung, answer, why):
+def _gate_row(ref, slot, fn, g, rung, answer, why, out=None):
+    """A decision made on the way to a start, as a row: a blocker's answer, or one of Coordination's rules. Written
+    once for each thing decided, however many times it is asked."""
     key0 = str(W.ddir(ref))
     seen = _GATE_SEEN.get(key0)
     if seen is None:
@@ -696,7 +903,7 @@ def _gate_row(ref, slot, fn, g, rung, answer, why):
     if key in seen:
         return
     seen.add(key)
-    check = CHECK[g["check"]](None, g, None, {"answer": answer, "why": why})
+    check = CHECK[g["check"]](None, g, None, out or {"answer": answer, "why": why})
     _append(ref, "steps.jsonl", {"id": "s-" + uuid.uuid4().hex[:10], "run": None, "engine": fn, "step": g["id"], "item": None,
                                  "mode": "gate", "slot": slot, "asked_rung": rung, "rung": rung, "miss": False, "by": "code",
                                  "in_sig": _sha({"slot": slot}), "out_hash": _sha(answer), "out_shape": "str", "answer": answer,
@@ -1595,6 +1802,8 @@ def audit_file(ctx, step, item):
 CODE = {"plan_read": plan_read, "plan_fit": plan_fit, "plan_file": plan_file, "write_list": write_list, "write_file": write_file,
         "check_build": check_build, "publish_copy": publish_copy, "identity_gate": identity_gate,
         "priority_envelope": priority_envelope, "coord_chain": coord_chain, "coord_heard": coord_heard,
+        "coord_busy": coord_busy, "coord_pick": coord_pick, "coord_edge": coord_edge, "coord_verdict": coord_verdict,
+        "coord_bounds": coord_bounds, "coord_alarm": coord_alarm,
         "identity_read": identity_read,
         "identity_file": identity_file, "identity_verdict": identity_verdict, "identity_rung": identity_rung,
         "identity_apply": identity_apply, "identity_drop": identity_drop, "identity_finding": identity_finding,
@@ -1863,6 +2072,11 @@ def c_gate_answer_is_known(ctx, step, item, out):
                     "not a gate's answer: %r" % (out.get("answer"),))
 
 
+def c_names_who_goes_first(ctx, step, item, out):
+    return _verdict(out.get("answer") in defs()["engines"], "it names an engine of this department",
+                    "it names no engine: %r" % (out.get("answer"),))
+
+
 def c_answer_is_known(ctx, step, item, out):
     return _verdict(out.get("answer") in ("accept", "reject"), "the answer is accept or reject", "not an answer: %r" % (out.get("answer"),))
 
@@ -1957,6 +2171,7 @@ CHECK = {"journey_is_known": c_journey_is_known, "answer_names_its_source": c_an
          "filed_has_files": c_filed_has_files, "list_has_pages": c_list_has_pages, "page_has_body": c_page_has_body,
          "verdict_is_known": c_verdict_is_known, "gate_verdict_is_known": c_gate_verdict_is_known,
          "gate_answer_is_known": c_gate_answer_is_known, "answer_is_known": c_answer_is_known,
+         "names_who_goes_first": c_names_who_goes_first,
          "facts_are_closed": c_facts_are_closed, "said_what_it_did": c_said_what_it_did, "counted_the_rows": c_counted_the_rows,
          "moves_are_known": c_moves_are_known, "picked_a_sample": c_picked_a_sample, "has_a_verdict": c_has_a_verdict,
          "findings_are_rows": c_findings_are_rows}
@@ -1971,13 +2186,17 @@ def steps_view(ref, name):
     rows = step_rows(ref)
     L = ladder(ref)
     gates = {g["id"] for g in e.get("gates") or []}
+    rules = {s["id"] for s in e.get("rules") or []}
     under = {s["id"]: h["name"] for h in e.get("on") or [] for s in h["steps"]}
+    under.update({sid: SHARED for sid in rules})
     out = []
     for s in all_steps(name):
         en = L.get(s["id"]) or entry(ref, s, name)
         mine = [r for r in rows if r.get("step") == s["id"]]
         last = mine[-1] if mine else None
-        out.append({"id": s["id"], "name": s["name"], "nature": s["nature"], "mode": "gate" if s["id"] in gates else "slot",
+        decides = s["id"] in gates or s["id"] in rules          # a decision on the way to a start, not a run of work
+        out.append({"id": s["id"], "name": s["name"], "nature": s["nature"],
+                    "mode": "gate" if s["id"] in gates else "rule" if s["id"] in rules else "slot",
                     "under": under.get(s["id"]),
                     "rung": en["rung"], "rung_name": RUNG_NAME[en["rung"]], "form": en.get("form"), "born": s["born"],
                     "ceiling": s.get("ceiling") or ("C2" if s.get("prompt") else s["born"]), "soft": bool(s.get("prompt")),
@@ -1988,11 +2207,43 @@ def steps_view(ref, name):
                                       "rung": last.get("rung"), "miss": bool(last.get("miss")), "by": last.get("by"),
                                       "item": last.get("item"), "ok": (last.get("check") or {}).get("ok"),
                                       "notes": (last.get("check") or {}).get("notes")},
-                    "evidence": evidence(ref, s["id"], rows=rows, since=en.get("since_row")) if mine else None,
+                    "evidence": (_decided(mine) if decides else evidence(ref, s["id"], rows=rows, since=en.get("since_row")))
+                    if mine else None,
                     "history": en.get("history") or []})
-    return {"name": name, "kind": e["kind"], "description": e.get("description"), "skills": e.get("skills") or [],
-            "reads": e.get("reads"), "writes": e.get("writes"), "steps": out, "hears": [h["name"] for h in e.get("on") or []],
-            "numbers": numbers(ref)}
+    view = {"name": name, "kind": e["kind"], "description": e.get("description"), "skills": e.get("skills") or [],
+            "reads": e.get("reads"), "writes": e.get("writes"), "steps": out,
+            "hears": ([SHARED] if rules else []) + [h["name"] for h in e.get("on") or []],
+            "start": start_view(e), "numbers": numbers(ref)}
+    if name == "Coordination":
+        t = coordination(ref)
+        view["table"] = {"first": [FIRST[k] for k in t["order"]], "line": list(t["line"]),
+                         "may_post": [{"from": src, "act": act, "to": list(dst)} for src, acts in sorted(t["edges"].items())
+                                      for act, dst in sorted(acts.items())]}
+    return view
+
+
+SHARED = "What engines share"
+FIRST = {"posts": "A post waiting for its reader", "line": "The line, in its order", "functions": "An internal system woken by new work"}
+
+
+def start_view(e):
+    """An engine's start, in words: what makes it run, and what holds it."""
+    on = []
+    for t in (e.get("start") or {}).get("on") or []:
+        if t["kind"] == "version":
+            on.append("a new %s%s" % (t["of"], " that passed its check" if t.get("checked") else ""))
+        elif t["kind"] == "post":
+            on.append("a post addressed to it")
+        else:
+            on.append("the clock, in every period it names")
+    unless = [(step_def(g)[0], (step_def(g)[1] or {}).get("name")) for g in (e.get("start") or {}).get("unless") or []]
+    return {"on": on, "unless": [{"by": fn, "name": nm} for fn, nm in unless]}
+
+
+def _decided(mine):
+    """What the rows of a gate or a rule say: how many decisions, and how many passed their check."""
+    ok = sum(1 for r in mine if (r.get("check") or {}).get("ok"))
+    return {"runs": len(mine), "differing": 0, "shape_drift": 0, "pass": round(ok / len(mine), 3), "marked": 0, "misses": 0, "usd": 0.0}
 
 
 def _line(p):

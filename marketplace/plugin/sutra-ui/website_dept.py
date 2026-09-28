@@ -61,7 +61,7 @@ RULES = [
 _LOCKS = {}
 _LOCKS_GUARD = threading.Lock()
 _BUSY = set()
-_MOTOR = {"thread": None, "stop": False, "started": None}
+_MOTOR = {"thread": None, "stop": False, "started": None, "kick": None}
 
 
 def slug(name):
@@ -289,6 +289,8 @@ def create(ref, name, brief, owner="the owner", parent=None):
     system_run(ref, "Identity", "set its rules within the parent's")
     system_run(ref, "Priority", "granted an envelope to each engine")
     system_run(ref, "Coordination", "timetabled each engine after its input's new version")
+    if d["runtime"] == 2:
+        _runtime(ref).born(ref)                        # Coordination writes its table: who goes first, who may post
     row = give_goal(ref, brief) if brief else None
     return d, row
 
@@ -349,7 +351,13 @@ def set_stopped(ref, stopped):
             raise ValueError("no website department at %s" % ref)
         d["stopped"] = bool(stopped)
         save_dept(ref, d)
-    system_run(ref, "Identity", "stopped by the owner" if stopped else "resumed by the owner")
+    if d.get("runtime") == 2:
+        # Start and Stop are one button, and a signal to every engine of the department (founder, 2026-09-28).
+        system_run(ref, "Identity", "stopped by the owner: every engine stops" if stopped
+                   else "started by the owner: every engine looks to its own triggers")
+        signal()
+    else:
+        system_run(ref, "Identity", "stopped by the owner" if stopped else "resumed by the owner")
     return d
 
 
@@ -761,6 +769,8 @@ def motor_tick(inline=False, at=None):
                     run_slot(r, n, i, s)
                 finally:
                     _BUSY.discard(r)
+                    if (dept(r) or {}).get("runtime") == 2:
+                        signal()                       # what it filed is the next engine's trigger
             threading.Thread(target=work, name="motor-" + ref, daemon=True).start()
     return started
 
@@ -772,6 +782,15 @@ def recover():
             if r.get("status") == "running":
                 r.update({"status": "interrupted", "ended": now(), "what": (r.get("what") or "") + "; the app closed mid-run"})
                 _put_run(d["ref"], r)
+
+
+def signal():
+    """A trigger just happened: a post, a new version, a stamp, Start. The motor looks now, not at its next tick.
+    An engine waits on no clock (founder, 2026-09-28); the tick is left as the system clock, for timers, and as the
+    way a trigger written by another process is found."""
+    k = _MOTOR.get("kick")
+    if k is not None:
+        k.set()
 
 
 def run_until_idle(ref, limit=40):
@@ -828,6 +847,7 @@ def stop_motor(wait_s=4.0):
     ev, th = _MOTOR.get("event"), _MOTOR.get("thread")
     if ev is not None:
         ev.set()
+    signal()                                           # wake it, so it sees the stop at once
     if th is not None and th is not threading.current_thread() and th.is_alive():
         th.join(wait_s)
     fd, _LOCK["fd"] = _LOCK["fd"], None
@@ -855,8 +875,8 @@ def start_motor():
         bound = os.path.realpath(str(home()))
     except RuntimeError:
         return False
-    stop = threading.Event()
-    _MOTOR.update({"started": now(), "stop": False, "event": stop, "home": bound})
+    stop, kick = threading.Event(), threading.Event()
+    _MOTOR.update({"started": now(), "stop": False, "event": stop, "home": bound, "kick": kick})
 
     def loop():
         # ONE MOTOR, ONE HOME. The motor serves the records home it was started
@@ -871,7 +891,8 @@ def start_motor():
                     motor_tick(at=bound)
             except Exception:  # noqa: BLE001 -- the motor never dies of one department
                 pass
-            stop.wait(TICK_S)
+            kick.wait(TICK_S)                          # a signal, or the system clock's next tick
+            kick.clear()
     _MOTOR["thread"] = threading.Thread(target=loop, name="sutra-motor", daemon=True)
     _MOTOR["thread"].start()
     return True
