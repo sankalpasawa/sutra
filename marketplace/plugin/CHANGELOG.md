@@ -1,6 +1,17 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-25
+## 2.306.2 (2026-09-28)
+
+- Released from v2.306.1-desktop..HEAD: 5 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - sutra-ui: every Library shelf page carries the way back to Org structure
+  - sutra-ui: the Org button opens Org structure whatever the saved pick; Settings columns follow the pane
+  - sutra-ui: on the screen the five are functions; "internal system" stays inside
+  - sutra-ui: every engine starts by its own activation; Start is one button
+  - sutra-ui: the engine runtime, behind a switch, with its screen
+- Changed: 13 file(s), +4898/-32
+- New test suites: test_engine_runtime.py
+
 ## 2.306.1 (2026-09-28)
 
 - The website department's motor starts only in the app itself, and it stops the moment the app closes.
