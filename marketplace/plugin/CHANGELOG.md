@@ -1,6 +1,30 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-25
+**status**: active · **updated**: 2026-09-28
+## 2.306.8 (2026-09-28)
+
+- **An agent answer that names a department is resolved against the register instead of being thrown away on spelling**: across 34 live examples the agent answered with the name ("Website") or the whole listed line ("Learning & Onboarding = dref-ccf...") in 8 of 17 refusals. Resolution is exact and register-backed - an address inside the text wins, otherwise an exact case-insensitive name match on one and only one department; anything ambiguous or unknown is left untouched and still refused, so an agent still cannot mint a department. Tests: test-tier 60.
+
+## 2.306.7 (2026-09-28)
+
+- **An agent may now correct the code, not only fill a blank**: on the same rung of a step marked `correct_on_confidence`, a DIFFERENT answer from a MORE confident agent replaces the code's, provided the register already holds it. Minting stays impossible and depth keeps the strict ladder, where a lower number is refused whatever the confidence. Every decision row now says which it was: the agent agreed, the agent corrected the code with both confidences named, the answer was refused, or the agent could not be reached. Only placement carries the mark. Ruling and reversal trigger: RUNTIME-ACCEPTANCE-CONDITIONS.md section 4a. Tests: test-tier 52.
+
+## 2.306.6 (2026-09-28)
+
+- **An agent answer that arrives is now heard**: the settle ran in the same event that started the ask, milliseconds later, so it always recorded "unreachable" and a real answer arriving seconds afterwards was ignored. An ask still inside its own timeout is now left unsettled and settled by a later event; only an ask past its timeout, or one that could not be made at all, records the code's value as the one that stands, and the two say which they were. Found by running 2.306.5 live. Tests: test-tier 44.
+
+## 2.306.5 (2026-09-28)
+
+- **The standby agent now actually answers**: the ask wrapped its call in `timeout`, which macOS does not ship, so on a Mac every ask exited 127 and took the unreachable path while the suite stayed green. The call is bounded by the runtime's own watchdog instead (`kill -0` poll, `pkill -P` on expiry), and three suite cases now run the built-in caller itself - an answer parsed out of the caller's text, a slow caller cut off by the watchdog, and an unreadable answer refused rather than invented. Found by running the release live, not by the tests. Tests: test-tier 42.
+
+## 2.306.4 (2026-09-28)
+
+- **A step that is unsure now asks an agent, and a turn can be replayed through its own code** (founder conditions C6-C9, 2026-09-28). `runtime/rules/tiers.json` gains each step's field, its stringency ladder and one measured threshold (placement 0.5, with the measurement and a reversal trigger recorded); `runtime/lib/tier.sh` asks the standby agent when a code step lands below its threshold - detached, so no model call sits on the turn's hot path - applies the answer only when it RAISES stringency, refuses an address the register does not hold, and keeps the code's own answer marked unresolved when the agent cannot be reached. Every decision is recorded with source, confidence and one line of reason, and the step-log row prints `code<agent` when the agent answered. `sutra-steps replay` re-runs classify, resolve and depth on the turn's own recorded inputs and reports SAME or DIFF per step; a step that cannot be replayed says so instead of being counted. Also: the review row no longer prints an empty byte count, and a killed step logs its reason. Tests: test-tier 35, test-step-log 31.
+
+## 2.306.3 (2026-09-28)
+
+- **Every step now prints its own log row, with the input it read and the output it produced** (founder conditions C1-C5 and C10, 2026-09-28). The runtime writes one row per step to `<turn>.steplog.jsonl` when the turn opens, when a step's status changes at a tool call, and again at Stop, so a step that never ran says so with its own status instead of being dropped. Every field is derived from files the runtime itself wrote, the file is runtime-owned so no tool call can forge a row, and the rows print to the terminal as they are written. `sutra-steps log` reads them back. `runtime/rules/tiers.json` declares as data which step is decided by code, which by the session model and which by an agent, plus the three standing rules (an agent may only raise stringency, the code's answer stands when the agent is unreachable, every answer records its source); thresholds stay null until measured over 200 turns. Tests: test-step-log 26. DeepSeek review folded (4 of 6 P1 fixed, 2 refuted by the suite).
+
 ## 2.306.2 (2026-09-28)
 
 - Released from v2.306.1-desktop..HEAD: 5 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.

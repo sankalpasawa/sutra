@@ -27,6 +27,12 @@ main() {
   [ -n "$_mw_root" ] && [ -f "$_mw_root/runtime/ledger.sh" ] && . "$_mw_root/runtime/ledger.sh"
   [ -n "$_mw_root" ] && [ -f "$_mw_root/runtime/flags.sh" ] && . "$_mw_root/runtime/flags.sh"
   [ -n "$_mw_root" ] && [ -f "$_mw_root/runtime/lib/prompt.sh" ] && . "$_mw_root/runtime/lib/prompt.sh"
+  # C7: the tier library, so a code step that lands below its threshold can ask
+  # the standby agent. Absent -> no ask is made and the code always stands.
+  [ -n "$_mw_root" ] && [ -f "$_mw_root/runtime/lib/tier.sh" ] && . "$_mw_root/runtime/lib/tier.sh"
+  # C6: the depth rule and the replay record live in the step library, so the
+  # rule this step applies is the same code the replay check re-applies.
+  [ -n "$_mw_root" ] && [ -f "$_mw_root/runtime/lib/steps.sh" ] && . "$_mw_root/runtime/lib/steps.sh"
   set -u
 
   # Own tools missing -> nothing this step can safely do. Never crash, never
@@ -180,7 +186,12 @@ main() {
     [ "$_mw_prof_val" = "company" ] && IS_COMPANY=1
   fi
 
-  if [ "$IS_COMPANY" = "1" ]; then
+  # the rule itself lives in runtime/lib/steps.sh, so the replay check (C6)
+  # re-decides depth with this exact code rather than a second copy of it
+  if command -v sutra_steps_depth_rubric >/dev/null 2>&1; then
+    _mw_dr="$(sutra_steps_depth_rubric "$IS_COMPANY" "$VERB" "$FF_DEGRADED" "$STEPS_EST" "$MUTATION_VERBS")"
+    DEPTH="${_mw_dr%% *}"; RUBRIC="${_mw_dr##* }"
+  elif [ "$IS_COMPANY" = "1" ]; then
     DEPTH=5; RUBRIC=profile-company
   elif [ "$VERB" = "QUERY" ]; then
     DEPTH=1; RUBRIC=verb-query
@@ -302,6 +313,71 @@ DEGRADED=python3"
     fi
   fi
 
+  _mw_replay_record
+  _mw_ask_when_unsure
+
+  return 0
+}
+
+# _mw_replay_record - C6: the inputs each code step consumed, written beside the
+# turn so `sutra-steps replay` can run the same code on the same inputs and
+# compare byte for byte. It stays out of git (the .replay.json rule in
+# .gitignore) because it holds the prompt verbatim.
+_mw_replay_record() {
+  command -v jq >/dev/null 2>&1 || return 0
+  _mwr_dir="$_MW_PROJ/.sutra/turn/$_MW_SID"
+  [ -d "$_mwr_dir" ] || return 0
+  _mwr_tmp="$_mwr_dir/.$_MW_TURN.replay.json.tmp.$$"
+  jq -n --arg turn_id "$_MW_TURN" --arg session_id "$_MW_SID" --arg prompt "$PROMPT" \
+    --arg classify_out "$CLASSIFY_OUT" --arg wtm_line "$WTM_LINE1" \
+    --arg wtm_degraded "$WTM_DEGRADED" --arg is_company "$IS_COMPANY" --arg verb "$VERB" \
+    --arg ff_degraded "$FF_DEGRADED" --arg steps_est "$STEPS_EST" \
+    --arg mutation_verbs "$MUTATION_VERBS" --arg depth "$DEPTH" --arg rubric "$RUBRIC" \
+    --arg slug "$SLUG" \
+    '{turn_id:$turn_id, session_id:$session_id, prompt:$prompt,
+      recorded:{classify:$classify_out, resolve:$wtm_line,
+                depth:($depth + " " + $rubric), slug:$slug},
+      degraded:{resolve:($wtm_degraded == "1")},
+      depth_inputs:{is_company:$is_company, verb:$verb, ff_degraded:$ff_degraded,
+                    steps_est:$steps_est, mutation_verbs:$mutation_verbs}}' \
+    > "$_mwr_tmp" 2>/dev/null && mv -f "$_mwr_tmp" "$_mwr_dir/$_MW_TURN.replay.json" 2>/dev/null
+  rm -f "$_mwr_tmp" 2>/dev/null
+  return 0
+}
+
+# _mw_ask_when_unsure - C7 of the acceptance conditions: when a code step lands
+# below its threshold, the runtime asks the standby agent. The ask is detached
+# and its answer is read later by whoever needs the field, so nothing here
+# waits on a model. A step whose threshold is null never reaches the ask.
+_mw_ask_when_unsure() {
+  command -v sutra_tier_due >/dev/null 2>&1 || return 0
+  _mwa_pl="$_MW_MDIR/placement-registered"
+  [ -f "$_mwa_pl" ] || return 0
+  _mwa_conf="$(awk -F= '$1 == "CONFIDENCE" { print $2; exit }' "$_mwa_pl" 2>/dev/null)"
+  sutra_tier_due "$_mw_root" placement "$_mwa_conf" || return 0
+  _mwa_unit="$(printf '%s' "$PROMPT" | tr '\n' ' ' | cut -c1-400)"
+  # The register the engine itself reads, as name = address pairs. The agent may
+  # only pick one of these; anything else is refused by the rank rule, so it can
+  # never mint a department (tiers.json never_agent).
+  _mwa_dir="${SUTRA_NATIVE_HOME:-$HOME/.sutra-native/user-kit}/domains"
+  [ -d "$_mwa_dir" ] || return 0
+  # one jq over the whole register, not one per entry: this runs inside a 2.5 s step
+  _mwa_reg="$(jq -r 'select((.status // "active") != "retired") | "\(.name // "?") = \(.ref // "?")"' \
+    "$_mwa_dir"/*.json 2>/dev/null | head -200 | tr '\n' ';')"
+  [ -n "$_mwa_reg" ] || return 0
+  sutra_tier_ask_detach "$_mw_root" "$_MW_PROJ" "$_MW_SID" "$_MW_TURN" placement "$(printf '%s\n' \
+    "A governance runtime could not place this unit of work in a department; its own confidence is $_mwa_conf." \
+    "" \
+    "Unit: $_mwa_unit" \
+    "" \
+    "The departments that exist, as name = address: $_mwa_reg" \
+    "" \
+    "Answer with ONE json object and nothing else:" \
+    '{"value":"<the address of the department that owns this work, exactly as listed, or the word unresolved>","confidence":"<0..1>","reason":"<one line>"}' \
+    "" \
+    "Rules: the address must be copied from the list; answer unresolved when none of them owns it; never invent one." \
+    "" \
+    "VERDICT: ANSWERED")"
   return 0
 }
 

@@ -22,45 +22,10 @@ if _LIB_DIR not in sys.path:
     sys.path.insert(0, _LIB_DIR)
 
 import placement_engine as E  # noqa: E402
-import org2_apply  # noqa: E402
-import proposals  # noqa: E402
+import founding  # noqa: E402
 import website_dept as W  # noqa: E402
 
 router = APIRouter(prefix="/api/native", tags=["native"])
-
-ROOT_PURPOSE = ("Makes, changes and ends this organisation's departments from the Library's templates; "
-                "its authority ends at the owner")
-ROOT_RULES = [{"tag": "ask", "line": "A new department is stamped by the owner"},
-              {"tag": "always", "line": "A child's rules can only tighten this one's"}]
-TEMPLATE = "product-build"          # the Library's use-case template for a department that builds a product
-
-
-def _apply(kind, args, summary):
-    """File the request as a proposal and apply it on the owner's command."""
-    rec = proposals.create(kind, args, summary)
-    rec = proposals.decide(rec["id"], True, apply_fn=org2_apply.apply_request)
-    if rec.get("status") != "approved":
-        raise HTTPException(400, detail=str((rec.get("result") or {}).get("error") or rec.get("status")))
-    return rec["result"]
-
-
-def _child(domains, parent, name):
-    for ref, d in E.live_refs(domains).items():
-        if d.get("parent_ref") == parent and (d.get("name") or "").lower() == name.lower():
-            return ref
-    return None
-
-
-def _ensure(parent, name, summary):
-    ref = _child(E.load_domains(), parent, name)
-    if ref:
-        return ref, False
-    out = _apply("org.create", {"parent": parent, "name": name}, summary)
-    return out["ref"], True
-
-
-def _charter(ref, purpose, done, rules, summary):
-    return _apply("org.charter", {"ref": ref, "purpose": purpose, "done_when": done, "rules": rules}, summary)
 
 
 @router.get("/ping")
@@ -70,43 +35,29 @@ def ping():
 
 @router.get("/depts")
 def depts():
-    return {"depts": [{"ref": d["ref"], "name": d["name"], "stopped": d.get("stopped")} for d in W.list_depts()]}
+    return {"depts": [{"ref": d["ref"], "name": d["name"], "stopped": d.get("stopped"), "kind": d.get("kind") or "website",
+                       "parent": d.get("parent")} for d in W.list_depts()]}
 
 
 @router.post("/found")
 async def found(request: Request):
-    """A new organisation with its root department, and under the root a website
-    department with the Library's templates picked, waiting for its goal."""
+    """A new organisation with its one Root, On: a department of the kind root, which spawns every other department
+    (founder, 2026-09-28: "root can always spawn off new departments. There will be one root for one organizational
+    structure"). Words for the first department, if given, go to Root as its first request; Root asks the owner."""
     body: Dict[str, Any] = await request.json()
     org_name = " ".join(str(body.get("org") or "").split())[:80]
-    dept_name = " ".join(str(body.get("dept") or "Website").split())[:80]
     owner = " ".join(str(body.get("owner") or "the owner").split())[:80]
+    first = " ".join(str(body.get("first") or "").split())[:2000]
     if not org_name:
         raise HTTPException(400, detail="name the organisation")
-    roots = E.active_roots(E.load_domains())
-    if not roots:
-        raise HTTPException(400, detail="the registry has no root")
-    org, org_new = _ensure(roots[0], org_name, "Found %s as a new organisation" % org_name)
-    if org_new:
-        _charter(org, "%s, as one organisation run on Sutra" % org_name, [], [], "Write %s's charter" % org_name)
-    root, root_new = _ensure(org, "Root", "Give %s its root department" % org_name)
-    if root_new:
-        _charter(root, ROOT_PURPOSE, [], ROOT_RULES, "Write the root department's charter")
-    ref, new = _ensure(root, dept_name, "The root department spins out %s" % dept_name)
-    if new or not W.dept(ref):
-        _charter(ref, "A live website for %s" % org_name, ["Every page checked and live"], W.RULES,
-                 "Write %s's charter" % dept_name)
-        picks = {}
-        for fn in ("identity", "adaptation", "priority", "coordination", "audit"):
-            tid = "%s/%s" % (fn, TEMPLATE)
-            _apply("org.template", {"ref": ref, "function": fn, "template": tid}, "%s runs the %s template" % (fn.title(), TEMPLATE))
-            picks[fn] = tid
-        d, _ = W.create(ref, "%s %s" % (org_name, dept_name), None, owner=owner, parent=root)
-        d["templates"] = picks
-        d["org"] = {"ref": org, "name": org_name}
-        d["root"] = root
-        W.save_dept(ref, d)
-    return {"org": org, "root": root, "ref": ref, "created": bool(new)}
+    try:
+        out = founding.found_structure(org_name, owner=owner)
+        if first:
+            rq, _ = W.owner_ask(out["root"], first)
+            out["asked"] = rq["id"] if isinstance(rq, dict) else True
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc))
+    return out
 
 
 def _need(ref):
@@ -156,12 +107,23 @@ async def goal(ref: str, request: Request):
 @router.post("/{ref}/ask")
 async def ask(ref: str, request: Request):
     _need(ref)
-    text, _ = await _text(request)
+    text, body = await _text(request)
+    about = str(body.get("about") or "").strip() or None
     try:
-        rq, row = W.owner_ask(ref, text)
+        rq, row = W.owner_ask(ref, text, about=about)
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
     return {"ok": True, "request": rq, "brief": row}
+
+
+@router.get("/{ref}/chat")
+def chat(ref: str, about: str = ""):
+    """The one chat with Root: whole on a Root, scoped on a department (or to `about`)."""
+    _need(ref)
+    rt = W._runtime(ref)
+    if not rt:
+        return {"root": None, "about": None, "turns": [], "asks": [], "departments": []}
+    return rt.chat_view(ref, about=about or None)
 
 
 @router.post("/{ref}/asks/{aid}")
@@ -190,9 +152,47 @@ def resume(ref: str):
 async def putback(ref: str, request: Request):
     _need(ref)
     _, body = await _text(request)
-    name = next((a for a in W.ARTIFACTS if W.slug(a) == body.get("slug")), None)
+    name = next((a for a in W.artifacts_of(W.dept(ref)) if W.slug(a) == body.get("slug")), None)
     try:
         return W.put_back(ref, name or "", int(body.get("v") or 0))
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc))
+
+
+@router.post("/{ref}/envelope")
+async def envelope(ref: str, request: Request):
+    """The owner's own limits for one engine, from Priority's card."""
+    _need(ref)
+    _, body = await _text(request)
+    try:
+        calls = body.get("calls")
+        usd = body.get("usd")
+        return {"ok": True, "envelope": W.set_envelope(ref, str(body.get("engine") or ""),
+                                                      None if calls in (None, "") else int(calls),
+                                                      None if usd in (None, "") else float(usd))}
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(400, detail=str(exc))
+
+
+@router.post("/{ref}/ladder")
+async def ladder(ref: str, request: Request):
+    """One engine's own ladder numbers, from its Settings tab."""
+    rt = _rt(ref)
+    _, body = await _text(request)
+    nums = {k: body[k] for k in ("runs", "differing", "trial", "misses") if body.get(k) not in (None, "")}
+    try:
+        return {"ok": True, "numbers": rt.set_numbers(ref, str(body.get("engine") or ""), nums)}
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc))
+
+
+@router.post("/{ref}/host")
+async def host(ref: str, request: Request):
+    """Where the site is served from: the owner's answer to the question the first publish asks."""
+    _need(ref)
+    text, body = await _text(request)
+    try:
+        return {"ok": True, "host": W.set_host(ref, body.get("host") or text)}
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
 
@@ -247,16 +247,17 @@ async def hold(ref: str, request: Request):
 @router.get("/{ref}/artifact/{slug}")
 def artifact(ref: str, slug: str):
     _need(ref)
-    name = next((a for a in W.ARTIFACTS if W.slug(a) == slug), None)
+    name = next((a for a in W.artifacts_of(W.dept(ref)) if W.slug(a) == slug), None)
     if not name:
         raise HTTPException(404, detail="no such artifact")
-    return {"name": name, "slug": slug, "versions": list(reversed(W.versions(ref, name)))}
+    import artifacts
+    return {"name": name, "slug": slug, "versions": list(reversed(W.versions(ref, name))), "template": artifacts.view(name)}
 
 
 @router.get("/{ref}/trace/{slug}/{v}")
 def trace(ref: str, slug: str, v: int):
     _need(ref)
-    name = next((a for a in W.ARTIFACTS if W.slug(a) == slug), None)
+    name = next((a for a in W.artifacts_of(W.dept(ref)) if W.slug(a) == slug), None)
     if not name:
         raise HTTPException(404, detail="no such artifact")
     return {"chain": W.trace(ref, name, v)}
@@ -279,7 +280,7 @@ def _page(title, body):
 def preview(ref: str, slug: str, v: int, path: str = "index.html"):
     """Anything made, seen as itself: a page rendered, a plan as a table, a brief as text."""
     d = _need(ref)
-    name = next((a for a in W.ARTIFACTS if W.slug(a) == slug), None)
+    name = next((a for a in W.artifacts_of(W.dept(ref)) if W.slug(a) == slug), None)
     if not name or not any(r["v"] == v for r in W.versions(ref, name)):
         raise HTTPException(404, detail="no such version")
     files = W.read_files(ref, name, v)

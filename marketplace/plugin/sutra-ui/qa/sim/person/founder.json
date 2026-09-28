@@ -1,0 +1,26 @@
+{
+  "id": "founder",
+  "name": "Sankalp",
+  "role": "owner and founder",
+  "who": "Runs the company. Opens the app to get a department to do a job, not to learn the app. Reads outcome first, names not paths, no help text. Types short sentences in his own words. Stamps what he understands, refuses what he does not, and says so when something is unclear.",
+  "how_he_acts": [
+    "one point of entry: he speaks to Root in the chat, or to a department inside it",
+    "he presses only what a person may press: the pencil, Found, Send, Stamp, Refuse, Start, Stop, a row, a tab",
+    "he waits like a person: up to two minutes for an ask, up to six for a line to run; then he says something is stuck",
+    "when a screen says nothing to him, that is a finding, not something he works around",
+    "he never opens a route, a file or a log; the screen is all he has"
+  ],
+  "waits_s": { "ask": 120, "line": 360, "answer": 120, "screen": 5 },
+  "words": {
+    "found": "Org, the pencil, New organisation...",
+    "start_department": "Start a website department for {org}: {purpose}",
+    "stamp": "Stamp",
+    "refuse": "Refuse",
+    "task": "Add a {page} page.",
+    "question": "Which page tells a {who} how to {act}?",
+    "rule": "From now on, every page must {rule}.",
+    "feedback": "The {page} page is too long.",
+    "stop": "Stop {department}.",
+    "start": "Start {department}"
+  }
+}

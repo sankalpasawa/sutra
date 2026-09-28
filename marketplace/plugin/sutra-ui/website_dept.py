@@ -38,6 +38,9 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 
+import record                      # the platform product: rows and documents, deployed into each thing's own folder
+import versions as VERS            # the platform product: versions, deployed into each artifact's own folder
+
 ENGINES = (  # name, reads, writes, runs as
     ("Plan", "Brief", "Site plan", "model"),
     ("Write", "Site plan", "Pages", "model"),
@@ -48,16 +51,42 @@ ARTIFACTS = ("Brief", "Site plan", "Pages", "Build", "Live site")
 SYSTEMS = ("Identity", "Adaptation", "Priority", "Coordination", "Audit")
 PAUSED_SYSTEMS = ("Adaptation", "Audit")      # growth is paused in the first build
 CHAIN_LIMIT = 12                              # runs one owner's ask may cause before it stops and asks
-ENVELOPE = {"calls": 30, "usd": 6.0}          # per engine, per day
+ENVELOPE = {"calls": 30, "usd": 6.0}          # per engine, per day: the first build's constant; a runtime department takes Priority's template
+HOST_DEFAULT = "this app's own server"        # where a site is served from unless the owner says another (asked at the first publish)
 TICK_S = 3.0
 DEFAULT_HOME = "~/.sutra-ui/native"
 MODEL_TIMEOUT_S = 420
 STALE_ASK_S = 30 * 60
-RULES = [
-    {"tag": "go", "line": "Plan, write and check inside the record"},
-    {"tag": "ask", "line": "Ask the owner before the first publish"},
-    {"tag": "refuse", "line": "Never publish a build whose check failed"},
-]
+# The kinds of department, from the definitions (engine_defs/website.json): each names its line of work engines, its
+# artifacts, and the goal, done line and rules it is born with. Read here as data; the runtime validates the whole file
+# when it loads. Root is a kind: one for one organisational structure, and it spawns every other department.
+_DEFS = json.loads((Path(__file__).parent / "engine_defs" / "website.json").read_text(encoding="utf-8"))
+KINDS = _DEFS.get("kinds") or {}
+RULES = [dict(r) for r in KINDS.get("website", {}).get("rules") or []]
+
+
+def engines_of(d):
+    """The work engines of a department, in its line: (name, reads, writes, runs as). A department born the old way
+    keeps the first build's four."""
+    if (d or {}).get("runtime") != 2:
+        return ENGINES
+    out = []
+    for n in KINDS.get((d or {}).get("kind") or "website", KINDS["website"])["line"]:
+        e = (_DEFS.get("engines") or {}).get(n) or {}
+        soft = any(s.get("prompt") for s in e.get("steps") or [])
+        out.append((n, e.get("reads"), e.get("writes"), "model" if soft else "code"))
+    return tuple(out)
+
+
+def artifacts_of(d):
+    """What a department files, first to last: its kind's artifacts; the first build's five for one born the old way."""
+    if (d or {}).get("runtime") != 2:
+        return ARTIFACTS
+    return tuple(KINDS.get((d or {}).get("kind") or "website", KINDS["website"])["artifacts"])
+
+
+def kind_of(d):
+    return KINDS.get((d or {}).get("kind") or "website") or KINDS["website"]
 _LOCKS = {}
 _LOCKS_GUARD = threading.Lock()
 _BUSY = set()
@@ -129,26 +158,17 @@ def _lock(ref):
 
 
 def _read(p, default):
-    try:
-        return json.loads(Path(p).read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return default
-    except Exception:  # noqa: BLE001
-        return default
+    return record.read(p, default)
 
 
 def _write(p, obj):
-    p = Path(p)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(p.suffix + ".tmp")
-    tmp.write_text(json.dumps(obj, indent=1, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, p)
+    record.write(p, obj)
 
 
 # ---- the record --------------------------------------------------------------------------------------------------
 def dept(ref):
     d = _read(ddir(ref) / "dept.json", None)
-    return d if isinstance(d, dict) and d.get("kind") == "website" else None
+    return d if isinstance(d, dict) and d.get("kind") in KINDS else None
 
 
 def list_depts():
@@ -158,7 +178,7 @@ def list_depts():
             if not p.is_dir() or p.name.startswith(("_", ".")):
                 continue
             d = _read(p / "dept.json", None)
-            if isinstance(d, dict) and d.get("kind") == "website":
+            if isinstance(d, dict) and d.get("kind") in KINDS:
                 out.append(d)
     return out
 
@@ -167,47 +187,37 @@ def save_dept(ref, d):
     _write(ddir(ref) / "dept.json", d)
 
 
+# An artifact deploys the versions product in its own folder; this file names the folder, nothing more.
+def _abase(ref, art):
+    return ddir(ref) / "artifacts" / slug(art)
+
+
 def versions(ref, art):
-    return _read(ddir(ref) / "artifacts" / slug(art) / "versions.json", [])
+    return VERS.rows(_abase(ref, art))
 
 
 def latest(ref, art, passed=False):
-    rows = versions(ref, art)
-    if passed:
-        rows = [r for r in rows if (r.get("check") or {}).get("ok")]
-    return rows[-1] if rows else None
+    return VERS.latest(_abase(ref, art), passed)
 
 
 def vdir(ref, art, v):
-    return ddir(ref) / "artifacts" / slug(art) / ("v%d" % int(v))
+    return VERS.vdir(_abase(ref, art), v)
 
 
 def read_files(ref, art, v):
-    base = vdir(ref, art, v)
-    out = {}
-    if base.is_dir():
-        for p in sorted(base.rglob("*")):
-            if p.is_file():
-                out[str(p.relative_to(base))] = p.read_text(encoding="utf-8", errors="replace")
-    return out
+    return VERS.files(_abase(ref, art), v)
 
 
 def add_version(ref, art, files, made_from, run, check, note=""):
-    with _lock(ref):
-        rows = versions(ref, art)
-        v = (rows[-1]["v"] + 1) if rows else 1
-        base = vdir(ref, art, v)
-        base.mkdir(parents=True, exist_ok=True)
-        for name, text in files.items():
-            p = (base / name).resolve()
-            if not str(p).startswith(str(base.resolve())):
-                raise ValueError("a file outside its version: %r" % name)
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(text, encoding="utf-8")
-        row = {"v": v, "at": now(), "made_from": made_from, "run": run, "check": check, "note": note}
-        rows.append(row)
-        _write(ddir(ref) / "artifacts" / slug(art) / "versions.json", rows)
-        return row
+    """A version, with the artifact's own check beside the engine's: the template in the Library says what a good one
+    is, and a version that fails it is filed and never read as passed (founder, 2026-09-28: operable artifacts)."""
+    import artifacts
+    own = artifacts.check(art, files)
+    if own is not None:
+        check = dict(check or {})
+        check["ok"] = bool(check.get("ok")) and own["ok"]
+        check["notes"] = list(check.get("notes") or []) + own["notes"]
+    return VERS.add(_abase(ref, art), files, made_from, run, check, now(), note=note, lock=_lock(ref))
 
 
 def runs(ref):
@@ -257,9 +267,10 @@ def requests(ref):
 
 # ---- the engine runtime, behind its switch --------------------------------------------------------------------------
 def _runtime(ref):
-    """engine_runtime.py, for a department whose record says `runtime: 2`; None for every other. The switch is on the
-    record, written at birth, so a department never changes how it runs in the middle of its life. It is off unless
-    the app was started with SUTRA_ENGINE_RUNTIME=2, which no released launcher says."""
+    """engine_runtime.py, for a department whose record says `runtime: 2`; None for every other. The way is on the
+    record, written at birth, so a department never changes how it runs in the middle of its life. Every department
+    is born on the runtime since 2026-09-28; a department born before that day, or one made with
+    SUTRA_ENGINE_RUNTIME=1 by the first build's suites, runs the old way."""
     d = dept(ref)
     if d and d.get("runtime") == 2:
         import engine_runtime
@@ -268,22 +279,34 @@ def _runtime(ref):
 
 
 # ---- the department's birth ----------------------------------------------------------------------------------------
-def create(ref, name, brief, owner="the owner", parent=None):
-    """A new website department: Identity's rules, Priority's envelopes,
-    Coordination's timetable, and Brief v1 from the owner's words."""
+def create(ref, name, brief, owner="the owner", parent=None, kind="website"):
+    """A new department of its kind: Identity's rules, Priority's envelopes, Coordination's table, and its first
+    artifact from the owner's words. Every department is born on the engine runtime (founder, 2026-09-28: "I don't
+    want to create the old way. I want it to be organic only"); SUTRA_ENGINE_RUNTIME=1 keeps the first build's way
+    only for its own suites and for the departments born before that day, which the record says."""
     if dept(ref):
-        raise ValueError("%s already has a website department" % ref)
+        raise ValueError("%s already has a department" % ref)
+    if kind not in KINDS:
+        raise ValueError("the Library has no department kind named %s" % kind)
     brief = " ".join(str(brief or "").split())
-    d = {"kind": "website", "ref": ref, "name": name, "owner": owner, "parent": parent, "created": now(),
-         "goal": "A live website for " + name, "done": "Every page checked and live",
-         "runtime": 2 if os.environ.get("SUTRA_ENGINE_RUNTIME") == "2" else 1,
-         "rules": RULES, "control": "granted", "stopped": False,
+    k = KINDS[kind]
+    d = {"kind": kind, "ref": ref, "name": name, "owner": owner, "parent": parent, "created": now(),
+         "goal": k["goal"].format(name=name), "done": k["done"],
+         "runtime": 1 if os.environ.get("SUTRA_ENGINE_RUNTIME") == "1" else 2,
+         "rules": [dict(r) for r in k["rules"]], "control": "granted", "stopped": False,
          "envelopes": {e[0]: dict(ENVELOPE) for e in ENGINES},
          "windows": {"Plan": 15, "Write": 30, "Check": 5, "Publish": 10}}
+    if d["runtime"] == 1 and kind != "website":
+        raise ValueError("only a website department is born the old way")
     if d["runtime"] == 2:
-        # A step is a call, so Write costs a call a page where it cost one a run. The money bound is unchanged.
-        d["envelopes"] = {e[0]: {"calls": 8 * ENVELOPE["calls"], "usd": ENVELOPE["usd"]} for e in ENGINES}
-        d["envelopes"].update({s: dict(ENVELOPE) for s in SYSTEMS})
+        # The limits come from Priority's template (founder, 2026-09-28: "some default limits which are in the priority
+        # templates"); the owner changes a department's own on Priority's card. A step is a call, so a work engine is
+        # given work_calls times the calls, Write costing a call a page where it cost one a run. The money is the same.
+        import engine_runtime
+        t = engine_runtime.priority_template()
+        base = {"calls": int(t.get("calls", ENVELOPE["calls"])), "usd": float(t.get("usd", ENVELOPE["usd"]))}
+        d["envelopes"] = {e[0]: {"calls": int(t.get("work_calls", 8)) * base["calls"], "usd": base["usd"]} for e in engines_of(d)}
+        d["envelopes"].update({s: dict(base) for s in SYSTEMS})
     ddir(ref).mkdir(parents=True, exist_ok=True)
     save_dept(ref, d)
     system_run(ref, "Identity", "set its rules within the parent's")
@@ -315,10 +338,11 @@ def give_goal(ref, text):
                        [{"ask": text, "at": now()}], "owner", {"ok": True, "notes": ["the owner's goal"]})
 
 
-def owner_ask(ref, text):
+def owner_ask(ref, text, about=None):
     """A person asks for something extra (the Ask control). Identity takes it,
     Priority admits it, and it becomes the next Brief version, so the line runs
-    again from Plan."""
+    again from Plan. On a Root, the words arrive at the front door; `about` is
+    the department the person stood in when he said them."""
     text = " ".join(str(text or "").split())
     if not text:
         raise ValueError("say what to add or change")
@@ -327,7 +351,7 @@ def owner_ask(ref, text):
         raise ValueError("no website department at %s" % ref)
     rt = _runtime(ref)
     if rt:
-        return rt.request(ref, text)[0], None
+        return rt.request(ref, text, about=about)[0], None
     with _lock(ref):
         reqs = requests(ref)
         rq = {"id": "q-" + uuid.uuid4().hex[:8], "text": text, "at": now()}
@@ -370,6 +394,13 @@ def decide_ask(ref, aid, approve, by="the owner"):
             a["decided"] = now()
             a["by"] = by
             _put_ask(ref, a)
+            if approve and a.get("kind") == "publish":
+                # the first publish ask carries the question where the site is served from; a stamp with no
+                # other answer takes the default, and the answer stays on the record for Publish to read
+                d = dept(ref)
+                if d is not None and not d.get("host"):
+                    d["host"] = HOST_DEFAULT
+                    save_dept(ref, d)
             rt = _runtime(ref)
             if rt and a.get("thread"):
                 rt.on_stamp(ref, a, approve)       # posted in the ask's thread; Identity applies it as a step
@@ -379,10 +410,43 @@ def decide_ask(ref, aid, approve, by="the owner"):
     raise ValueError("no such ask")
 
 
+def set_envelope(ref, name, calls=None, usd=None, by="the owner"):
+    """The owner's own limits for one engine, set on Priority's card. The defaults came from Priority's template
+    at birth (founder, 2026-09-28: "These limits can be configured in the relevant priority")."""
+    d = dept(ref)
+    if not d:
+        raise ValueError("no website department here")
+    if name not in {e[0] for e in engines_of(d)} | set(SYSTEMS):
+        raise ValueError("no engine named %s" % name)
+    env = dict((d.get("envelopes") or {}).get(name) or ENVELOPE)
+    if calls is not None:
+        env["calls"] = max(0, int(calls))
+    if usd is not None:
+        env["usd"] = max(0.0, float(usd))
+    d.setdefault("envelopes", {})[name] = env
+    save_dept(ref, d)
+    system_run(ref, "Priority", "%s set %s's envelope: %d calls, %.2f USD a day" % (by, name, env["calls"], env["usd"]))
+    return env
+
+
+def set_host(ref, host, by="the owner"):
+    """Where the site is served from: the owner's answer to the question the first publish asks, kept on the record;
+    Publish reads it (founder, 2026-09-28: "more of a question to the user and should be asked to the user")."""
+    d = dept(ref)
+    if not d:
+        raise ValueError("no website department here")
+    host = " ".join(str(host or "").split())[:200] or HOST_DEFAULT
+    d["host"] = host
+    save_dept(ref, d)
+    system_run(ref, "Identity", "%s said where the site is served from: %s" % (by, host))
+    return host
+
+
 def put_back(ref, art, v, by="the owner"):
     """Undo: the chosen version becomes the newest one again, as a new version
     (nothing is edited or deleted). Putting back the live site republishes it."""
-    if art not in ARTIFACTS or art == "Brief":
+    arts = artifacts_of(dept(ref))
+    if art not in arts or art == arts[0]:
         raise ValueError("only made work can be put back")
     rows = versions(ref, art)
     src = next((r for r in rows if r["v"] == int(v)), None)
@@ -635,7 +699,9 @@ def engine_publish(ref, d, inp):
     files = read_files(ref, "Build", inp["v"])
     _publish_files(ref, files)
     ok = (live_dir(ref) / "index.html").is_file()
-    return files, {"ok": ok, "notes": ["live at the department's site address" if ok else "the live copy has no home page"]}, {"calls": 0, "usd": 0.0}
+    host = (d or {}).get("host") or HOST_DEFAULT
+    return files, {"ok": ok, "notes": ["live at the department's site address, served from %s" % host if ok
+                                        else "the live copy has no home page"]}, {"calls": 0, "usd": 0.0}
 
 
 ENGINE_FN = {"Plan": engine_plan, "Write": engine_write, "Check": engine_check, "Publish": engine_publish}
@@ -904,6 +970,9 @@ def status(ref):
     pend = [a for a in ak if a["status"] == "pending"]
     name, inp, why = due(ref) if not any(r["status"] == "running" for r in rs) else (None, None, "running")
     waits = [{"what": a["engine"], "why": "for the stamp" if a["kind"] == "publish" else a["text"], "since": a["created"]} for a in pend]
+    rt = _runtime(ref)
+    if rt:                                     # the owner's own words nobody has answered yet (ER-9)
+        waits += [{"what": "Identity", "why": "your words wait: " + w["words"], "since": w["since"]} for w in rt.front_state(ref)["waiting"]]
     return {"asks": [a for a in pend if not a.get("escalated")],
             "escalated": [a for a in pend if a.get("escalated")],
             "waits": waits,
@@ -921,11 +990,18 @@ def health(ref):
     slots = [r["slot"] for r in rs if r.get("slot") and r.get("status") in ("ok", "failed")]
     twice = sorted({s for s in slots if slots.count(s) > 1})
     checks.append(("Slots", "block" if twice else "ok", "A slot ran twice" if twice else "Each slot ran once"))
-    gaps = [a for a in ARTIFACTS[1:] for v in versions(ref, a) if not v.get("run") or "check" not in v]
+    d = dept(ref) or {}
+    arts = artifacts_of(d)
+    gaps = [a for a in arts[1:] for v in versions(ref, a) if not v.get("run") or "check" not in v]
     checks.append(("Versions", "block" if gaps else "ok", "Every version has its run and its check" if not gaps else "A version with no run"))
     stale = [a for a in ak if a["status"] == "pending" and time.time() - _ts(a["created"]) > STALE_ASK_S]
     pending = [a for a in ak if a["status"] == "pending"]
     checks.append(("Stuck", "warn" if stale or pending else "ok", "An ask is waiting" if pending else "Nothing is waiting"))
+    rt = _runtime(ref)
+    if rt:                                     # the front door (ER-9): the owner's words answered, waiting, or lost at a bound
+        fs = rt.front_state(ref)
+        checks.append(("Front door", "warn" if fs["waiting"] or fs["lost"] else "ok",
+                       "Your words are waiting" if fs["waiting"] else ("A request was lost at its bound" if fs["lost"] else "Every request answered")))
     checks.append(("Awake", "ok", "All five functions run as engines" if (dept(ref) or {}).get("runtime") == 2
                    else "Identity, Priority and Coordination run; Adaptation and Audit are paused"))
     envs = (dept(ref) or {}).get("envelopes", {})
@@ -936,9 +1012,11 @@ def health(ref):
         if calls >= int(env.get("calls", ENVELOPE["calls"])) or usd >= float(env.get("usd", ENVELOPE["usd"])):
             over.append(e)
     checks.append(("Budget", "warn" if over else "ok", "Inside every envelope" if not over else "Over: " + ", ".join(over)))
-    live = latest(ref, "Live site")
-    checks.append(("Done", "ok" if live and (live.get("check") or {}).get("ok") else "warn", "The site is live" if live else "Not live yet"))
-    never = [("A run with no slot", not any(r for r in rs if not r.get("system") and r["engine"] in ENGINE_FN and not r.get("slot"))),
+    live = latest(ref, arts[-1])
+    dw = kind_of(d).get("done_words") or ["The site is live", "Not live yet"]
+    checks.append(("Done", "ok" if live and (live.get("check") or {}).get("ok") else "warn", dw[0] if live else dw[1]))
+    work = {e[0] for e in engines_of(d)}
+    never = [("A run with no slot", not any(r for r in rs if not r.get("system") and r["engine"] in work and not r.get("slot"))),
              ("A version with no run", not gaps), ("A slot run twice", not twice),
              ("An uncounted retry", True), ("A hidden exchange", True),
              ("A silent skip", all(r.get("what") for r in rs if r.get("status") == "skipped"))]
@@ -950,10 +1028,10 @@ def health(ref):
 
 
 def engine_view(ref, name):
-    reads, writes, how = next(((e[1], e[2], e[3]) for e in ENGINES if e[0] == name), (None, None, None))
+    d = dept(ref) or {}
+    reads, writes, how = next(((e[1], e[2], e[3]) for e in engines_of(d) if e[0] == name), (None, None, None))
     if not reads:
         return None
-    d = dept(ref) or {}
     rs = [r for r in runs(ref) if r["engine"] == name]
     calls, usd = _today_spend(ref, name)
     env = (d.get("envelopes") or {}).get(name) or ENVELOPE
@@ -995,22 +1073,26 @@ def map_view(ref):
         paused = s in PAUSED_SYSTEMS and d.get("runtime") != 2
         last = next((r for r in reversed(rs) if r["engine"] == s), None)
         systems.append({"name": s, "state": "paused" if paused else "running", "last": last and last.get("what")})
-    engines = [engine_view(ref, e[0]) for e in ENGINES]
+    engines = [engine_view(ref, e[0]) for e in engines_of(d)]
     for e in engines:
         e.pop("runs", None)
         last = next((r for r in reversed(rs) if r["engine"] == e["name"]), None)
         e["last"] = last and {"status": last["status"], "at": last["started"], "what": last.get("what")}
         if any(a["engine"] == e["name"] and a["status"] == "pending" for a in asks(ref)):
             e["state"] = "Waits"
+    names = artifacts_of(d)
     arts = []
-    for a in ARTIFACTS:
+    for a in names:
         vs = versions(ref, a)
         arts.append({"name": a, "slug": slug(a), "versions": len(vs), "latest": vs[-1] if vs else None})
     recent = [{"engine": r["engine"], "system": bool(r.get("system")), "status": r["status"], "at": r["started"], "what": r.get("what")}
               for r in reversed(rs[-10:])]
+    kind = d.get("kind") or "website"
     return {"ref": ref, "name": d["name"], "goal": d["goal"], "done": d["done"], "rules": d["rules"], "owner": d["owner"],
             "control": d["control"], "stopped": d.get("stopped"), "systems": systems, "engines": engines, "artifacts": arts,
             "status": st, "health": health(ref), "recent": recent,
-            "live": bool(latest(ref, "Live site")), "requests": requests(ref)[-10:],
-            "has_goal": bool(versions(ref, "Brief")) or bool(requests(ref)), "templates": d.get("templates") or {},
-            "runtime": d.get("runtime") or 1}
+            "live": kind == "website" and bool(latest(ref, "Live site")), "requests": requests(ref)[-10:],
+            # a Root is born with its goal: it makes departments; every other kind takes its goal from the owner's words
+            "has_goal": kind == "root" or bool(versions(ref, names[0])) or bool(requests(ref)), "templates": d.get("templates") or {},
+            "runtime": d.get("runtime") or 1, "kind": kind, "say": kind_of(d).get("say") or "",
+            "root": ref if kind == "root" else d.get("root"), "host": d.get("host")}

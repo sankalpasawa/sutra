@@ -1,0 +1,24 @@
+{
+ "id": "artifact/pages",
+ "name": "Pages",
+ "kind": "pages",
+ "use_case": "the body of every page the plan names",
+ "files": [
+  "*.html"
+ ],
+ "checks": [
+  "pages_have_html"
+ ],
+ "written_by": [
+  "Write"
+ ],
+ "counts_after": "filing",
+ "put_back": true,
+ "operations": [
+  "Check"
+ ],
+ "made_from": [
+  "artifact/site-plan"
+ ],
+ "version": 1
+}

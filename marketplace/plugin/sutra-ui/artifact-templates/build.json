@@ -1,0 +1,25 @@
+{
+ "id": "artifact/build",
+ "name": "Build",
+ "kind": "build",
+ "use_case": "every page in one layout, checked",
+ "files": [
+  "index.html",
+  "*.html"
+ ],
+ "checks": [
+  "has_index_html"
+ ],
+ "written_by": [
+  "Check"
+ ],
+ "counts_after": "filing",
+ "put_back": true,
+ "operations": [
+  "Publish"
+ ],
+ "made_from": [
+  "artifact/pages"
+ ],
+ "version": 1
+}

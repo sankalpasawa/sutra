@@ -662,7 +662,7 @@ const O2_LIB_SHELVES = [
   ["Functions", [["lib-identity", "Identity"], ["lib-adaptation", "Adaptation"],
                  ["lib-priority", "Priority"], ["lib-coordination", "Coordination"],
                  ["lib-audit", "Audit"]]],
-  ["Parts", [["lib-engines", "Engines"], ["lib-work-atom", "Work atom"]]],
+  ["Parts", [["lib-engines", "Engines"], ["lib-artifacts", "Artifacts"], ["lib-work-atom", "Work atom"]]],
   /* Archive (founder, 2026-09-25: "in the library itself we can just have
      Archive for those particular sections"). The sections that left the Org
      menu, and Reorg plans with them. Same screens, same ids; the third field
@@ -750,7 +750,9 @@ function o2ListHtml(n, d, dept, err){
     groups += o2Group("Departments", (dept.children || []).filter(x => keep(x.name)).map(x => o2Row(x.name, o2Svg("dept"), `data-o2ref="${o2Esc(x.ref)}"`, false)), "departments");
     groups += o2Group("Filed work", (dept.filed || []).filter(x => keep(x.label)).map(x => o2Row(x.label, o2IsPage(x.id) ? O2_PAGE : o2Svg("plc"), `data-o2filed="${o2Esc(x.id || "")}" data-o2title="${o2Esc(x.label)}"`, st.view === "page" && st.page && st.page.path === x.id)), "filed");
     groups += o2Group("Other charters", (dept.charters || []).filter(x => keep(x.title)).map(x => o2Row(x.title, O2_SHIELD, `data-o2charter="${o2Esc(x.id)}"`, st.view === "other" && st.other && st.other.id === x.id)), "charters");
-    groups += o2Group("Documents", (dept.docs || []).filter(x => keep(x.title)).map(x => o2Row(x.title, O2_DOC, `data-o2doc="${o2Esc(x.path)}" data-o2title="${o2Esc(x.title)}"`, st.view === "doc" && st.doc && st.doc.path === x.path)), "docs");
+    /* No Documents group (founder, 2026-09-28): a department's structure holds
+       Filed work; markdown placed under it stays on the Workspace tree and in
+       Recent once opened, through the same reader. */
     const apps = st.apps[n.ref];
     if (apps === undefined) o2LoadApps(n.ref);
     groups += o2Group("Apps", (apps || []).filter(m => keep(m.name)).map(m => o2Row(m.name, O2_APP, `data-o2app="${o2Esc(m.id)}"`, st.view === "app" && st.app && st.app.id === m.id)), "apps");

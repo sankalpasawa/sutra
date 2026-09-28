@@ -100,7 +100,14 @@ main() {
   # through systemMessage. Flag on only (D-A9 holds when off).
   # 2.285.1: the human-readable form (checkbox rows, one count line); the
   # fixed-width STEP TRACE stays the model's form in additionalContext.
+  # C1-C4: the closing state of all eleven is logged, so a step that never ran
+  # says so with its own status instead of being dropped.
+  command -v sutra_step_log >/dev/null 2>&1 && \
+    CLOSELOG="$(sutra_step_log "$_cl_root" "$_CL_PROJ" "$_CL_SID" "$_CL_TURN" "$_CL_EVENT" "$STEPS_JSON" 1 2>/dev/null)"
   FINAL="$(sutra_steps_render_pretty "$_CL_PATH")"
+  [ -n "${CLOSELOG:-}" ] && FINAL="$FINAL
+  step log, closing state:
+$CLOSELOG"
   [ -n "$FINAL" ] && jq -nc --arg m "$FINAL" '{systemMessage:$m}' 2>/dev/null
   return 0
 }

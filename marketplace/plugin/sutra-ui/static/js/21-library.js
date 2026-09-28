@@ -31,7 +31,7 @@
    picked, which row is open (LIB-12). A view is not a record, so none of it
    is written to the browser's storage. */
 const LIB_SHELVES = ["identity", "adaptation", "priority", "coordination", "audit",
-                     "engines", "work-atom"];
+                     "engines", "artifacts", "work-atom"];
 const LIB_STATE = { shelf: {}, tab: {}, tag: {}, open: {}, busy: {}, err: {} };
 
 function libEsc(x){
@@ -202,15 +202,16 @@ function libOpenHtml(shelf, row){
   const d = LIB_STATE.open[shelf];
   if (!d || d.id !== row.id) return "";
   if (d.loading) return `<div class="lbopen"><h5>Opening</h5></div>`;
-  const keeps = d.keeps || [], adds = d.adds || [], where = d.where || [];
+  const keeps = d.keeps || [], adds = d.adds || [], where = d.where || [], lines = d.lines || [];
   return `<div class="lbopen">
+    ${lines.length ? `<h5>The template</h5><ul>${lines.map(l => `<li>${libEsc(l)}</li>`).join("")}</ul>` : ""}
     ${(keeps.length || adds.length) ? `<h5>What it always does</h5><ul>
       ${keeps.length ? `<li>The ${keeps.length} it keeps from ${libEsc(d.parent || "the one above")}, unchanged.</li>` : ""}
       ${adds.map(a => `<li><b>adds</b> ${libEsc(a)}</li>`).join("")}
     </ul>` : ""}
     ${where.length ? `<h5>Where it is in use</h5><ul>${
       where.map(w => `<li>${libEsc(w)}</li>`).join("")}</ul>` : ""}
-    ${(!keeps.length && !adds.length && !where.length)
+    ${(!keeps.length && !adds.length && !where.length && !lines.length)
       ? `<h5>Nothing more on record</h5>` : ""}
   </div>`;
 }
@@ -283,6 +284,7 @@ function libUse(shelf, id){
   if (LIB_SHELVES.indexOf(shelf) < 0) return;
   const isFunction = ["identity", "adaptation", "priority", "coordination", "audit"]
     .indexOf(shelf) >= 0;
+  if (shelf === "artifacts"){ libOpenRow(shelf, id); return; }   /* a template opens; a department files it */
   if (!isFunction){
     if (typeof toast === "function") toast("Open it from the department that runs it.");
     return;

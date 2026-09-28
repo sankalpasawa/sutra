@@ -1,0 +1,30 @@
+{
+  "comment": "C7-C10 of RUNTIME-ACCEPTANCE-CONDITIONS.md (founder 2026-09-28): the direction for when the code decides and when an agent is called, as data the runtime reads. tier: code = a rule decides, no model in the loop; model = the session model answers in its own turn; agent = the code calls a model and waits. field: the one field of that step the tier decides. ladder: that field's stringency order, low to high; an agent answer is applied only when it moves UP the ladder. agent_when: the condition under which a code step escalates; null = never. never_agent: what an agent may never decide for this step. threshold: the confidence below which the code asks; null = never ask, the code always stands.",
+  "version": 2,
+  "steps": [
+    { "n": 1,  "id": "classify",  "tier": "code",  "field": "decision_risk", "ladder": ["low", "med", "high"], "agent_when": "confidence_below_threshold", "threshold": null, "never_agent": "the refusal itself" },
+    { "n": 2,  "id": "resolve",   "tier": "code",  "field": "resolution", "ladder": ["CONSTRUCT", "FOLLOW"], "agent_when": "no_match_above_threshold", "threshold": null, "never_agent": null },
+    { "n": 3,  "id": "depth",     "tier": "code",  "field": "n", "ladder": ["1", "2", "3", "4", "5"], "agent_when": "facts_disagree", "threshold": null, "never_agent": "lowering the number" },
+    { "n": 4,  "id": "placement", "tier": "code",  "field": "domain_ref", "ladder": ["unresolved", "resolved"], "agent_when": "no_register_match_and_new_path", "threshold": 0.5, "never_agent": "minting a new department", "correct_on_confidence": true },
+    { "n": 5,  "id": "lens",      "tier": "model", "field": null, "ladder": null, "agent_when": null, "threshold": null, "never_agent": null },
+    { "n": 6,  "id": "cynefin",   "tier": "model", "field": null, "ladder": null, "agent_when": null, "threshold": null, "never_agent": null },
+    { "n": 7,  "id": "blueprint", "tier": "model", "field": null, "ladder": null, "agent_when": null, "threshold": null, "never_agent": null },
+    { "n": 8,  "id": "codex",     "tier": "agent", "field": "verdict", "ladder": ["APPROVED", "CHANGES-REQUIRED"], "agent_when": "every_mutating_turn", "threshold": null, "never_agent": "skipping the call" },
+    { "n": 9,  "id": "atom",      "tier": "code",  "field": null, "ladder": null, "agent_when": null, "threshold": null, "never_agent": null },
+    { "n": 10, "id": "tests",     "tier": "code",  "field": null, "ladder": null, "agent_when": null, "threshold": null, "never_agent": null },
+    { "n": 11, "id": "close",     "tier": "code",  "field": null, "ladder": null, "agent_when": null, "threshold": null, "never_agent": null }
+  ],
+  "agent": {
+    "how": "the ask is detached the moment the code lands below its threshold; the answer lands in <turn>.<step>.ask.json and is read by the next step that needs the field. No agent call ever sits on the turn's hot path.",
+    "caller": "runtime/lib/tier.sh --ask, which goes through the review lane's own caller so the key resolution and the fail-closed egress scrub live in one place",
+    "timeout_s": 25,
+    "override_env": "SUTRA_TIER_AGENT_CMD"
+  },
+  "thresholds_note": "Only placement carries a number today, and it was measured rather than guessed: across session 94a0f78e every placement the engine produced scored 0.28-0.44 and every one of them was in fact answered by hand before a write could proceed, which is precisely the case the threshold names. Reversal trigger: if the agent's placement answer is refused by the raise-only rule, or disagrees with the address finally recorded, in more than 1 of 10 asks, the number comes back out and placement returns to null. Every other step stays null until 200 turns of confidence have been logged (section 4 of the conditions).",
+  "rules": {
+    "raise_only": "an agent answer may raise stringency (deeper, stricter, more review) and never lower it; a lowering answer is refused and the refusal is recorded (C8)",
+    "correct_on_confidence": "on the SAME rung, a step marked correct_on_confidence takes a DIFFERENT answer from a MORE confident agent, provided the value is already in the register; minting stays impossible and depth keeps the strict ladder. Ruling and reversal trigger: RUNTIME-ACCEPTANCE-CONDITIONS.md section 4a (2026-09-28)",
+    "unreachable": "if the agent cannot be reached or times out, the code's own answer stands, marked unresolved; nothing is guessed (C9)",
+    "recorded": "every answer carries source (code|model|agent), confidence and one line of reason; the tier that answered is in the row (C7)"
+  }
+}

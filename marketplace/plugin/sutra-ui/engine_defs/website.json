@@ -1,6 +1,74 @@
 {
- "comment": "The nine engines of a website department, as data (engine_runtime.py): four work engines and five internal systems. EVERY engine names its start: the triggers that make it want to run (a new version of something, a post addressed to it, a time) and the blockers that hold it (gates of the internal systems, by id). An engine with no start is refused when the definitions are loaded, so every engine starts by the same rule. A step names its code, its prompt and its check; a name resolves only in the registry that ships with the app. born is the rung a step starts on; the rung it runs on is read from the department's ladder. EVERY step names a check: a definition with a step that has none is refused. coordination is the table Coordination is born with: who goes first when several engines are ready; a department keeps its own copy on its record, and only that copy is read. The journeys are canon's five (holding/website/native/products/cos/design-journeys.html): task, query, directive, feedback, new idea. WORDS: a step's name and an engine's description are shown on the screen, so they say function, the users' word; internal system is the word inside, for this comment, the documents and the code.",
- "def_version": 2,
+ "comment": "The nine engines of a website department, as data (engine_runtime.py): four work engines and five internal systems. EVERY engine names its start: the triggers that make it want to run (a new version of something, a post addressed to it, a time) and the blockers that hold it (gates of the internal systems, by id). An engine with no start is refused when the definitions are loaded, so every engine starts by the same rule. A step names its code, its prompt and its check; a name resolves only in the registry that ships with the app. born is the rung a step starts on; the rung it runs on is read from the department's ladder. EVERY step names a check: a definition with a step that has none is refused. coordination is the table Coordination is born with: who goes first when several engines are ready; a department keeps its own copy on its record, and only that copy is read. The journeys are canon's five (holding/website/native/products/cos/design-journeys.html): task, query, directive, feedback, new idea. WORDS: a step's name and an engine's description are shown on the screen, so they say function, the users' word; internal system is the word inside, for this comment, the documents and the code. KINDS: a department has a kind; its kind names its line, its artifacts, its born goal, done line and rules; Coordination's table is born with the kind's line. Root is a department of the kind root: its one engine, Setup, sets up a department the owner asked for, from the Library's templates, and the owner's stamp is its rule; there is one Root for one organisational structure. SHAPE: every unit, the steps of a work engine or of a handler, starts with a step by code and ends with a step by code; agents come between, so the input, the output and the least steps of any unit are known (founder, 2026-09-28). FRONT DOOR: the person speaks with Root; on a Root the owner's words arrive with the word front, and Root's Identity hears them, finds the department they are about (the chip, a name in the words, or the only child) and hands them on as a post from Root to that department's Identity, whose answers come back onto Root's board; a stamp, a refusal, Stop and Start go the same way (founder, 2026-09-28: one point of entry; the user always speaks with the root). LOST: a request of the owner's, or one Root handed on, that nobody answered inside its bound is closed by Coordination, which tells Identity (word lost); Identity says it back to the person and asks for the words again, so nothing said at the front door dies unseen (ER-9, found live 2026-09-28).",
+ "def_version": 5,
+ "kinds": {
+  "website": {
+   "line": [
+    "Plan",
+    "Write",
+    "Check",
+    "Publish"
+   ],
+   "artifacts": [
+    "Brief",
+    "Site plan",
+    "Pages",
+    "Build",
+    "Live site"
+   ],
+   "goal": "A live website for {name}",
+   "done": "Every page checked and live",
+   "done_words": [
+    "The site is live",
+    "Not live yet"
+   ],
+   "rules": [
+    {
+     "tag": "go",
+     "line": "Plan, write and check inside the record"
+    },
+    {
+     "tag": "ask",
+     "line": "Ask the owner before the first publish"
+    },
+    {
+     "tag": "refuse",
+     "line": "Never publish a build whose check failed"
+    }
+   ],
+   "say": "A task, a question, a rule, feedback or an idea"
+  },
+  "root": {
+   "line": [
+    "Setup"
+   ],
+   "artifacts": [
+    "Request",
+    "Department"
+   ],
+   "goal": "{name}: makes, changes and ends this organisation's departments from the Library's templates; its authority ends at the owner",
+   "done": "Every department the owner asked for is set up and On",
+   "done_words": [
+    "A department is set up",
+    "No department set up yet"
+   ],
+   "rules": [
+    {
+     "tag": "ask",
+     "line": "A new department is stamped by the owner"
+    },
+    {
+     "tag": "always",
+     "line": "A child's rules can only tighten this one's"
+    },
+    {
+     "tag": "go",
+     "line": "Set up what the owner asked for, from the Library's templates"
+    }
+   ],
+   "say": "Ask Root for a department: what it is for"
+  }
+ },
  "edges": {
   "Owner": {
    "request": [
@@ -73,6 +141,20 @@
     "Priority"
    ],
    "inform": [
+    "Identity"
+   ]
+  },
+  "Root": {
+   "request": [
+    "Identity"
+   ],
+   "accept-proposal": [
+    "Identity"
+   ],
+   "reject-proposal": [
+    "Identity"
+   ],
+   "cancel": [
     "Identity"
    ]
   }
@@ -285,6 +367,70 @@
     }
    ]
   },
+  "Setup": {
+   "kind": "work",
+   "description": "sets up a department the owner asked for, from the Library's templates",
+   "skills": [
+    "set up a department from the owner's words"
+   ],
+   "reads": "Request",
+   "writes": "Department",
+   "start": {
+    "on": [
+     {
+      "kind": "version",
+      "of": "Request"
+     }
+    ],
+    "unless": [
+     "identity.gate",
+     "priority.envelope",
+     "coord.chain"
+    ]
+   },
+   "steps": [
+    {
+     "id": "setup.read",
+     "name": "Read the request",
+     "nature": "transform",
+     "born": "C2",
+     "code": "setup_read",
+     "check": "facts_are_closed"
+    },
+    {
+     "id": "setup.shape",
+     "name": "Shape the department",
+     "nature": "make",
+     "born": "C0",
+     "ceiling": "C2",
+     "prompt": "setup_shape",
+     "draft": "setup_shape_draft",
+     "out": {
+      "name": "str",
+      "kind": "str",
+      "goal": "str"
+     },
+     "check": "department_is_shaped"
+    },
+    {
+     "id": "setup.make",
+     "name": "Make it",
+     "nature": "make",
+     "born": "C2",
+     "code": "setup_make",
+     "check": "department_is_made"
+    },
+    {
+     "id": "setup.file",
+     "name": "File it",
+     "nature": "transform",
+     "born": "C2",
+     "code": "setup_file",
+     "files": true,
+     "check": "filed_has_files"
+    }
+   ]
+  },
   "Identity": {
    "kind": "function",
    "description": "holds the goal and the rules, judges every effect, and is the one the owner speaks with",
@@ -322,6 +468,39 @@
     }
    ],
    "on": [
+    {
+     "name": "Hear the owner at the front door",
+     "when": {
+      "msg_type": "request",
+      "word": "front"
+     },
+     "steps": [
+      {
+       "id": "identity.front",
+       "name": "Read what was said",
+       "nature": "transform",
+       "born": "C2",
+       "code": "hear",
+       "check": "facts_are_closed"
+      },
+      {
+       "id": "identity.route",
+       "name": "Find who it is for",
+       "nature": "decide",
+       "born": "C2",
+       "code": "identity_route",
+       "check": "facts_are_closed"
+      },
+      {
+       "id": "identity.hand",
+       "name": "Hand it on, or do it",
+       "nature": "transform",
+       "born": "C2",
+       "code": "identity_hand",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
     {
      "name": "Take a request",
      "when": {
@@ -473,6 +652,14 @@
      },
      "steps": [
       {
+       "id": "identity.hear",
+       "name": "Read what was asked",
+       "nature": "transform",
+       "born": "C2",
+       "code": "hear",
+       "check": "facts_are_closed"
+      },
+      {
        "id": "identity.judge",
        "name": "Judge whether it may start",
        "nature": "decide",
@@ -598,6 +785,23 @@
        "check": "said_what_it_did"
       }
      ]
+    },
+    {
+     "name": "Hear a lost request",
+     "when": {
+      "msg_type": "inform",
+      "word": "lost"
+     },
+     "steps": [
+      {
+       "id": "identity.lost",
+       "name": "Say it back",
+       "nature": "transform",
+       "born": "C2",
+       "code": "identity_lost",
+       "check": "said_what_it_did"
+      }
+     ]
     }
    ]
   },
@@ -608,6 +812,13 @@
     "hold an engine to its envelope",
     "answer a proposal that costs something"
    ],
+   "template": {
+    "envelope": {
+     "calls": 30,
+     "usd": 6.0,
+     "work_calls": 8
+    }
+   },
    "start": {
     "on": [
      {
@@ -677,14 +888,15 @@
   },
   "Coordination": {
    "kind": "function",
-   "description": "keeps what engines share: one run at a time, who goes first when several are ready, who may post to whom, the chain's limit, a thread's bounds, and the alarm. It tells no engine to start",
+   "description": "keeps what engines share: one run at a time, who goes first when several are ready, who may post to whom, the chain's limit, a thread's bounds, and the alarm. Its own agent says who goes first when several functions are ready at once",
    "skills": [
     "keep one run at a time",
     "say who goes first",
     "check who may post what to whom",
     "stop a chain at its limit",
     "close a thread at its bound",
-    "raise an alarm"
+    "raise an alarm",
+    "say who goes first among equals"
    ],
    "start": {
     "on": [
@@ -788,6 +1000,39 @@
        "check": "said_what_it_did"
       }
      ]
+    }
+   ],
+   "steps": [
+    {
+     "id": "coord.ready",
+     "name": "List who is ready",
+     "nature": "transform",
+     "born": "C2",
+     "code": "coord_ready",
+     "check": "facts_are_closed"
+    },
+    {
+     "id": "coord.tie",
+     "name": "Say who goes first among equals",
+     "nature": "decide",
+     "born": "C0",
+     "ceiling": "C2",
+     "prompt": "coord_tie",
+     "draft": "coord_tie_draft",
+     "out": {
+      "answer": "str",
+      "why": "str"
+     },
+     "answer": "answer",
+     "check": "names_who_goes_first"
+    },
+    {
+     "id": "coord.record",
+     "name": "Record the pick",
+     "nature": "transform",
+     "born": "C2",
+     "code": "coord_record",
+     "check": "said_what_it_did"
     }
    ]
   },
@@ -900,6 +1145,14 @@
       "word": "idea"
      },
      "steps": [
+      {
+       "id": "adapt.hear",
+       "name": "Read the idea",
+       "nature": "transform",
+       "born": "C2",
+       "code": "hear",
+       "check": "facts_are_closed"
+      },
       {
        "id": "adapt.shape",
        "name": "Reflect the idea back, in shapes",

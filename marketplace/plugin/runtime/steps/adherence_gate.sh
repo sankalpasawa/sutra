@@ -164,6 +164,12 @@ main() {
       | join("  |  ")' "$_AG_PATH" 2>/dev/null)"
     _upd="$(jq -c --argjson steps "$STEPS_JSON" '.steps = $steps' "$_AG_PATH" 2>/dev/null)"
     [ -n "$_upd" ] && sutra_steps_write "$_AG_PATH" "$_upd"
+    # C1-C5: one log row per step that changed, with its input and output,
+    # written by this code and printed in the same breath as the transition.
+    command -v sutra_step_log >/dev/null 2>&1 && \
+      STEPLOG="$(sutra_step_log "$_ag_root" "$_AG_PROJ" "$_AG_SID" "$_AG_TURN" "$_AG_EVENT" "$STEPS_JSON" 0 2>/dev/null)"
+    [ -n "${STEPLOG:-}" ] && TRANS="${TRANS:+$TRANS
+}$STEPLOG"
   fi
   _t8="$(printf '%s' "$_AG_TURN" | head -c 8)"
   [ -n "$TRANS" ] && _ag_row transition "$(jq -nc --arg t "$TRANS" '{transitions:$t}')"

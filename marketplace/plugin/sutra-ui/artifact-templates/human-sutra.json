@@ -1,0 +1,20 @@
+{
+ "id": "artifact/human-sutra",
+ "name": "Human Sutra",
+ "kind": "app",
+ "use_case": "a department's conversation as one stream: the owner's words, the replies, the functions' exchanges folded, the asks inline; speaks through the one way in",
+ "files": [],
+ "checks": [],
+ "written_by": [],
+ "counts_after": "filing",
+ "put_back": false,
+ "operations": [],
+ "made_from": [],
+ "screen": "conversation",
+ "reads": [
+  "board",
+  "asks",
+  "replies"
+ ],
+ "version": 1
+}

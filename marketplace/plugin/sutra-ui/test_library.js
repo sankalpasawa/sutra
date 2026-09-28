@@ -50,7 +50,8 @@ const L = Object.assign({}, sandbox.module.exports,
                         { SCREENS: sandbox.SCREENS, TITLES: sandbox.TITLES });
 
 /* ── 1. registration ───────────────────────────────────────────────────── */
-check("seven shelves are named", L.LIB_SHELVES.length === 7, String(L.LIB_SHELVES.length));
+check("eight shelves are named", L.LIB_SHELVES.length === 8, String(L.LIB_SHELVES.length));
+check("artifacts is one of them", L.LIB_SHELVES.indexOf("artifacts") >= 0);
 for (const sh of L.LIB_SHELVES){
   check("screen registered: " + sh, typeof L.SCREENS["lib-" + sh] === "function");
   check("title registered: " + sh, Array.isArray(L.TITLES["lib-" + sh]));

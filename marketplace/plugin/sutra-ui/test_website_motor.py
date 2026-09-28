@@ -21,9 +21,10 @@ GOAL = "A website for City Care Hospital: departments, doctors, how to book."
 class TestTheMotor(unittest.TestCase):
     def setUp(self):
         self.home = tempfile.mkdtemp(prefix="website-motor-")
-        self.prior = {k: os.environ.get(k) for k in ("SUTRA_NATIVE_DEPT_HOME", "SUTRA_WEBSITE_OFFLINE")}
+        self.prior = {k: os.environ.get(k) for k in ("SUTRA_NATIVE_DEPT_HOME", "SUTRA_WEBSITE_OFFLINE", "SUTRA_ENGINE_RUNTIME")}
         os.environ["SUTRA_NATIVE_DEPT_HOME"] = self.home
         os.environ["SUTRA_WEBSITE_OFFLINE"] = "1"
+        os.environ["SUTRA_ENGINE_RUNTIME"] = "1"          # this suite is the first build's floor: a department born the old way
         import website_dept
         self.W = importlib.reload(website_dept)
 
@@ -99,7 +100,7 @@ class TestWhoMayStartIt(unittest.TestCase):
     started the motor, and the motor took its lock in the operator's live
     home. These are the three things that were missing."""
     KEYS = ("SUTRA_NATIVE_DEPT_HOME", "SUTRA_WEBSITE_OFFLINE", "SUTRA_MOTOR", "SUTRA_MOTOR_OFF",
-            "SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS")
+            "SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS", "SUTRA_ENGINE_RUNTIME")
 
     def setUp(self):
         self.home = tempfile.mkdtemp(prefix="website-motor-")
@@ -108,6 +109,7 @@ class TestWhoMayStartIt(unittest.TestCase):
             os.environ.pop(k, None)
         os.environ["SUTRA_NATIVE_DEPT_HOME"] = self.home
         os.environ["SUTRA_WEBSITE_OFFLINE"] = "1"
+        os.environ["SUTRA_ENGINE_RUNTIME"] = "1"          # the first build's floor: a department born the old way
         import website_dept
         self.W = importlib.reload(website_dept)
 

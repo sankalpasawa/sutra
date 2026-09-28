@@ -47,7 +47,10 @@ FUNCTION_LINE = {
     "audit": "What proves a department did what it said it would.",
 }
 
-#: The seven shelves. Two groups: the five functions, then the parts (LIB-1).
+#: The eight shelves. Two groups: the five functions, then the parts (LIB-1).
+#: Artifacts joined on 2026-09-28 (founder: "we need to have a library of
+#: artifacts as well... templates of artifacts"; then "I don't see artifacts
+#: in the library"): the templates in artifact-templates/, read by artifacts.py.
 SHELVES = (
     ("identity", "Identity", "Function", "functions"),
     ("adaptation", "Adaptation", "Function", "functions"),
@@ -55,11 +58,12 @@ SHELVES = (
     ("coordination", "Coordination", "Function", "functions"),
     ("audit", "Audit", "Function", "functions"),
     ("engines", "Engines", "Part", "parts"),
+    ("artifacts", "Artifacts", "Part", "parts"),
     ("work-atom", "Work atom", "Part", "parts"),
 )
 
 #: The second tab is named for what it lists (LIB-3, open founder call).
-LIST_TAB = {"engines": "Engines", "work-atom": "Skills"}
+LIST_TAB = {"engines": "Engines", "artifacts": "Artifacts", "work-atom": "Skills"}
 
 # ── the ways one is made ────────────────────────────────────────────────────
 # Each way says what you do and what LANDS, and every "lands" line names a
@@ -200,6 +204,124 @@ FUNCTION_NOTE = ("A department never runs on one of these directly. It writes it
 ENGINE_NOTE = ("An engine is the only part of a department that makes things. The five "
                "functions judge, order and report. When a chat is asked to build "
                "something, this is what it hands the work to.")
+
+# ── artifacts: what a department files, and the apps it uses ────────────────
+# A template says once what a thing holds, its checks, who writes it, when a
+# version counts, and its operations: the engines that run on a new version.
+# Nothing acts but an engine, so an artifact's own actions are engines its
+# template names. A department grows versions of it, in its own folder.
+
+ARTIFACT_WAYS = [
+    {"name": "An engine files one",
+     "does": "Plan writes the Brief's next version, Write the Pages; every run files what its template says.",
+     "lands": "Lands as a version; the artifact's own check runs at filing, and a failed one is never read as passed."},
+    {"name": "You file one",
+     "does": "Say it in the department, or put the file back to an earlier version.",
+     "lands": "Lands as a version, or as an ask when the template says a stamp counts."},
+    {"name": "A department is born with them",
+     "does": "Its kind names the artifacts it files, in order; each must have a template here.",
+     "lands": "A kind naming an artifact with no template is refused before it runs."},
+    {"name": "An app",
+     "does": "A template of the kind app: what it reads and the screen it opens; reuse is the template.",
+     "lands": "Shows under Apps on every department that runs it."},
+]
+
+ARTIFACT_SETTINGS = [
+    {"name": "Counts", "decides": "When a new version counts: the moment it is filed, or after the owner's stamp",
+     "now": "per template", "source": "the template's counts_after"},
+    {"name": "Its own check", "decides": "Whether a version can be read as passed without the template's check",
+     "now": "off", "source": "website_dept.add_version runs artifacts.check"},
+    {"name": "Put back", "decides": "Whether an earlier version can be made current again",
+     "now": "per template", "source": "the template's put_back"},
+    {"name": "Strangers", "decides": "Whether a department may file an artifact the Library has no template for",
+     "now": "refused", "source": "engine_runtime.validate, artifacts.faults"},
+    {"name": "Acts on its own", "decides": "What runs when a new version lands",
+     "now": "the engines its template names", "source": "the template's operations"},
+]
+
+ARTIFACT_PARTS = [
+    {"name": "Its name", "caption": "name", "says": "What it is called on Filed work."},
+    {"name": "Holds", "caption": "files", "says": "The files one version is made of."},
+    {"name": "Checks", "caption": "checks", "says": "What every version must pass, run at filing."},
+    {"name": "Written by", "caption": "engines", "says": "The engines that file a new version."},
+    {"name": "Counts", "caption": "when", "says": "At filing, or after a stamp."},
+    {"name": "Runs on a new one", "caption": "operations", "says": "The engines a new version starts."},
+    {"name": "Made from", "caption": "sources", "says": "The artifacts a version is written from."},
+    {"name": "Its versions", "caption": "history", "says": "Every version, what made it, what its check said."},
+]
+
+ARTIFACT_NOTE = ("A template is the reusable part; a department keeps its own versions. "
+                 "An artifact never acts by itself: what runs on a new version is an "
+                 "engine, gated by Identity and Priority like every other.")
+
+
+def _artifact_rows() -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    try:
+        import artifacts
+        items = list(artifacts.templates().values())
+    except Exception:
+        return rows
+    for t in items:
+        kind = _text(t.get("kind"))
+        ops = _lines(t.get("operations"))
+        writers = _lines(t.get("written_by"))
+        counts = "counts after a stamp" if t.get("counts_after") == "stamp" else "counts when filed"
+        rows.append({
+            "id": _text(t.get("name")),
+            "name": _text(t.get("name")),
+            "sub": "app" if kind == "app" else kind,
+            "use": _text(t.get("use_case"))[:150],
+            "tags": [kind],
+            "right": ("opens " + _text(t.get("screen"))) if kind == "app" else counts,
+            "state": "ready",
+            "action": "Open",
+            "where": (["runs on a new one: " + ", ".join(ops)] if ops else [])
+                     + (["written by " + ", ".join(writers)] if writers else []),
+        })
+    return rows
+
+
+def _artifacts_shelf() -> Dict[str, Any]:
+    rows = _artifact_rows()
+    tags: List[str] = []
+    for r in rows:
+        for tg in r["tags"]:
+            if tg not in tags:
+                tags.append(tg)
+    apps = sum(1 for r in rows if r["tags"] == ["app"])
+    return {
+        "head": {
+            "id": "artifacts", "name": "Artifacts", "kind": "Part",
+            "line": ("What a department files, and the apps it uses. A template says what one "
+                     "holds, its checks, who writes it, when a version counts, and what runs "
+                     "on a new one."),
+            "count_line": "%d templates · %d apps" % (len(rows) - apps, apps),
+            "tabs": ["About", "Artifacts"],
+        },
+        "about": {"ways": ARTIFACT_WAYS, "settings": ARTIFACT_SETTINGS,
+                  "parts": ARTIFACT_PARTS, "note": ARTIFACT_NOTE},
+        "list": {"tag_label": "Kind", "tags": tags, "rows": rows, "note": ARTIFACT_NOTE},
+    }
+
+
+def _artifact_item(name: str) -> Optional[Dict[str, Any]]:
+    try:
+        import artifacts
+        v = artifacts.view(name)
+    except Exception:
+        return None
+    if not v:
+        return None
+    lines = ["Holds: " + (", ".join(v["files"]) or "a screen"),
+             "Checks: " + (", ".join(v["checks"]) or "none"),
+             "Written by: " + (", ".join(v["written_by"]) or "nobody; it is an app"),
+             "Counts: " + ("after a stamp" if v["counts_after"] == "stamp" else "when filed"),
+             "Put back: " + ("yes" if v["put_back"] else "no")]
+    return {"id": v["name"], "name": v["name"], "keeps": [], "adds": [], "lines": lines,
+            "where": [("runs on a new one: " + ", ".join(v["operations"])) if v["operations"]
+                      else "nothing runs on a new one"],
+            "error": ""}
 
 
 def _text(v: Any) -> str:
@@ -521,6 +643,8 @@ def shelf(shelf_id: str) -> Optional[Dict[str, Any]]:
         return _function_shelf(sid)
     if sid == "engines":
         return _engines_shelf()
+    if sid == "artifacts":
+        return _artifacts_shelf()
     if sid == "work-atom":
         return _work_atom_shelf()
     return None
@@ -574,6 +698,9 @@ def shelf_item(shelf_id: str, item_id: str):
     """One row opened. On a function shelf that means what the template adds to
     its parent (the narrowing rule made visible) and where it is in use."""
     sid = str(shelf_id or "")
+    if sid == "artifacts":
+        return _artifact_item(item_id) or {"error": "no template by that name", "id": item_id,
+                                           "keeps": [], "adds": [], "where": []}
     if sid not in FUNCTIONS:
         payload = shelf(sid) or {}
         for r in ((payload.get("list") or {}).get("rows") or []):

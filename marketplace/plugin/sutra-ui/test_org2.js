@@ -167,13 +167,14 @@ test("selecting a department fetches its read once and paints the strip", () => 
   assert.ok(/<h2>Experience<\/h2>/.test(strip) && /Holding Departments/.test(strip));
   assert.ok(/aria-label="Chart"/.test(strip) && /aria-label="Edit"/.test(strip), "two icons: Chart and the pencil");
 });
-test("list column: Charter, Departments, Filed work, Other charters, Documents, in that order, names only", () => {
+test("list column: Charter, Departments, Filed work, Other charters, in that order, names only; no Documents group", () => {
   const c = fresh(); c.o2S().sel = "r4"; c.o2S().dept.r4 = DEPT_EXP; c.o2S().apps.r4 = [];
   const d = c.o2Data();
   const html = c.o2ListHtml(d.byRef.get("r4"), d, DEPT_EXP, null);
-  const order = ["Charter", "Departments", "Filed work", "Other charters", "Documents"].map(l => html.indexOf(">" + l + "<"));
+  const order = ["Charter", "Departments", "Filed work", "Other charters"].map(l => html.indexOf(">" + l + "<"));
   assert.ok(order.every(i => i !== -1) && order.every((v, i, a) => i === 0 || v > a[i - 1]), "group order " + order.join(","));
-  assert.ok(html.indexOf("Experience Charter") !== -1 && html.indexOf(">HLD<") !== -1 && html.indexOf("Org HLD") !== -1);
+  assert.ok(html.indexOf(">Documents<") === -1 && html.indexOf("data-o2doc") === -1, "no Documents group (founder, 2026-09-28)");
+  assert.ok(html.indexOf("Experience Charter") !== -1 && html.indexOf(">HLD<") !== -1 && html.indexOf("Org HLD") === -1);
   assert.ok(!/experience\/org\/HLD\.md</.test(html), "no path shows as a name");
 });
 test("list column: more… appears past four names and expands", () => {
@@ -729,11 +730,12 @@ test("pressed, the button reads as pressed and offers the way back", () => {
   assert.ok(/Back to the departments/.test(html), "the title says how to return");
 });
 
-test("the panel's second mode lists the seven shelves, then the Archive", () => {
+test("the panel's second mode lists the eight shelves, then the Archive", () => {
   const c = fresh();
   const html = c.o2LibPanelHtml();
+  /* Artifacts joined the Parts on 2026-09-28 (founder: "I don't see artifacts in the library") */
   for (const label of ["Identity", "Adaptation", "Priority", "Coordination", "Audit",
-                       "Engines", "Work atom"])
+                       "Engines", "Artifacts", "Work atom"])
     assert.ok(new RegExp(">" + label + "<").test(html), label + " is a row");
   assert.ok(/o2libgrp">Functions</.test(html) && /o2libgrp">Parts</.test(html),
     "the shelves keep their two groups");
@@ -746,7 +748,7 @@ test("the panel's second mode lists the seven shelves, then the Archive", () => 
     ["workspace", "departments", "charters", "placements", "modules", "reorg"],
     "each opens its old screen by its own id");
   assert.ok(/>Apps</.test(arch) && />Reorg plans</.test(arch), "the words the menu used");
-  assert.strictEqual((html.match(/class="o2librow"|class="o2librow /g) || []).length, 13);
+  assert.strictEqual((html.match(/class="o2librow"|class="o2librow /g) || []).length, 14);
 });
 
 test("the Archive honours Workspace's and Apps' on/off settings", () => {
