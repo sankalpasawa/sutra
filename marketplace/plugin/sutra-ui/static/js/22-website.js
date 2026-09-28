@@ -576,8 +576,10 @@ function wbConversationHtml(n, m){
    (05-chat.js: turn, who, u, a), so it reads as a chat. */
 function wbChatTurn(t, scoped){
   const dept = !scoped && t.name ? wbChip(t.name) : "";
-  if (t.src === "Owner") return `<div class="turn wbturn"><div class="who who-you">${dept}You</div><div class="u md">${wbEsc(t.line)}</div></div>`;
-  return `<div class="turn wbturn"><div class="who who-ai">Root${dept}</div><div class="a">${wbEsc(t.line)}` +
+  /* a stamp or a refusal carries no words of its own: the act is the line */
+  const line = t.line || (t.msg_type === "accept-proposal" ? "Stamped" : t.msg_type === "reject-proposal" ? "Refused" : wbCap(t.word || ""));
+  if (t.src === "Owner") return `<div class="turn wbturn"><div class="who who-you">${dept}You</div><div class="u md">${wbEsc(line)}</div></div>`;
+  return `<div class="turn wbturn"><div class="who who-ai">Root${dept}</div><div class="a">${wbEsc(line)}` +
     `<span class="dpchk">${wbEsc(WB_ACTS[t.msg_type] || t.msg_type)} · ${wbEsc(wbWhen(t.at))}</span></div></div>`;
 }
 /* An ask is a line with its buttons, and it says where it lives: the stamp goes

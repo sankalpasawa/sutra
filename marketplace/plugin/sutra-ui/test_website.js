@@ -156,6 +156,7 @@ const DEPT = "City Care Hospital Website";
 const ROOT_CHAT = { root: "r3", about: null, departments: [{ ref: "r5", name: DEPT, stopped: false }], turns: [
     { n: 1, src: "Owner", dst: ["Identity"], msg_type: "request", at: AT, thread: "x-1", word: "front", line: "Start a website department for City Care Hospital", dept: null, name: null },
     { n: 2, src: "Identity", dst: ["Owner"], msg_type: "request", at: AT, thread: "x-1", word: "setup", line: "Set up a department: City Care Hospital Website", dept: null, name: null },
+    { n: 3, src: "Owner", dst: ["Identity"], msg_type: "accept-proposal", at: AT, thread: "x-1", word: "setup", line: "", dept: null, name: null },
     { n: 5, src: "Owner", dst: ["Identity"], msg_type: "request", at: AT, thread: "x-4", word: "front", line: "Which page lists the doctors?", dept: "r5", name: DEPT },
     { n: 6, src: "Identity", dst: ["Owner"], msg_type: "inform", at: AT, thread: "x-4", word: "request", line: "handed to City Care Hospital Website", dept: "r5", name: DEPT },
     { n: 7, src: "Identity", dst: ["Owner"], msg_type: "inform", at: AT, thread: null, word: "answer", line: "The Doctors page lists them", dept: "r5", name: DEPT }],
@@ -726,6 +727,7 @@ test("W25: the chat is the one point of entry: it opens first; inside a departme
   assert.ok(/<div class="who who-ai">Root<span class="wbchip">City Care Hospital Website<\/span><\/div><div class="a">The Doctors page lists them/.test(html), "on Root the department is a chip on the turn");
   assert.ok(/<div class="who who-you"><span class="wbchip">City Care Hospital Website<\/span>You<\/div><div class="u md">Which page lists the doctors\?/.test(html), "on the owner's turn too");
   assert.ok(/<div class="who who-ai">Root<\/div><div class="a">Set up a department: City Care Hospital Website<span class="dpchk">asks · /.test(html), "Root's own turns, with no chip");
+  assert.ok(/<div class="who who-you">You<\/div><div class="u md">Stamped<\/div>/.test(html), "a stamp is a turn with the act as its line, never an empty bubble");
   assert.ok(!/data-wbchip/.test(html) && /placeholder="Ask Root for a department: what it is for"/.test(html), "no chip on the box: Root is where you stand");
   assert.ok(/<span class="dpk">Departments<\/span><span class="wbchip on">City Care Hospital Website<\/span>/.test(html), "the departments under Root");
   assert.ok(/data-wbdecide="a-1" data-wbok="1" data-wbref="r5"/.test(html), "the department's ask, with where it lives");
