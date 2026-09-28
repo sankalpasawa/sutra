@@ -730,11 +730,12 @@ test("pressed, the button reads as pressed and offers the way back", () => {
   assert.ok(/Back to the departments/.test(html), "the title says how to return");
 });
 
-test("the panel's second mode lists the seven shelves, then the Archive", () => {
+test("the panel's second mode lists the eight shelves, then the Archive", () => {
   const c = fresh();
   const html = c.o2LibPanelHtml();
+  /* Artifacts joined the Parts on 2026-09-28 (founder: "I don't see artifacts in the library") */
   for (const label of ["Identity", "Adaptation", "Priority", "Coordination", "Audit",
-                       "Engines", "Work atom"])
+                       "Engines", "Artifacts", "Work atom"])
     assert.ok(new RegExp(">" + label + "<").test(html), label + " is a row");
   assert.ok(/o2libgrp">Functions</.test(html) && /o2libgrp">Parts</.test(html),
     "the shelves keep their two groups");
@@ -747,7 +748,7 @@ test("the panel's second mode lists the seven shelves, then the Archive", () => 
     ["workspace", "departments", "charters", "placements", "modules", "reorg"],
     "each opens its old screen by its own id");
   assert.ok(/>Apps</.test(arch) && />Reorg plans</.test(arch), "the words the menu used");
-  assert.strictEqual((html.match(/class="o2librow"|class="o2librow /g) || []).length, 13);
+  assert.strictEqual((html.match(/class="o2librow"|class="o2librow /g) || []).length, 14);
 });
 
 test("the Archive honours Workspace's and Apps' on/off settings", () => {

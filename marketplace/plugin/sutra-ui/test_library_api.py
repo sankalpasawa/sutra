@@ -35,11 +35,13 @@ def check(name, cond, detail=""):
 
 payload = LIB.shelves()
 rows = payload["shelves"]
-check("seven shelves", len(rows) == 7, "got %d" % len(rows))
+check("eight shelves", len(rows) == 8, "got %d" % len(rows))
 check("five of them are functions",
       sum(1 for r in rows if r["kind"] == "Function") == 5)
-check("two of them are parts",
-      sum(1 for r in rows if r["kind"] == "Part") == 2)
+check("three of them are parts",
+      sum(1 for r in rows if r["kind"] == "Part") == 3)
+check("the artifacts shelf's list tab is Artifacts",
+      next(r for r in rows if r["id"] == "artifacts")["list_tab"] == "Artifacts")
 check("two groups", [g["id"] for g in payload["groups"]] == ["functions", "parts"])
 check("every shelf names its list tab", all(r["list_tab"] for r in rows))
 check("the engines shelf's list tab is Engines",
@@ -125,6 +127,27 @@ check("engines: every row carries its own id",
 check("engines: a shelf with no records still answers a list",
       isinstance(eng["list"]["rows"], list))
 
+# Artifacts (founder, 2026-09-28: "I don't see artifacts in the library"): the
+# templates in artifact-templates/, one row each, apps among them.
+art = LIB.shelf("artifacts")
+check("artifacts: the list tab is Artifacts", art["head"]["tabs"][1] == "Artifacts")
+check("artifacts: eight parts", len(art["about"]["parts"]) == 8)
+check("artifacts: every template is a row",
+      {r["id"] for r in art["list"]["rows"]} >= {"Brief", "Site plan", "Pages", "Build", "Live site",
+                                                 "Request", "Department", "Human Sutra"},
+      ", ".join(r["id"] for r in art["list"]["rows"]))
+check("artifacts: an app is tagged app",
+      next(r for r in art["list"]["rows"] if r["id"] == "Human Sutra")["tags"] == ["app"])
+check("artifacts: the count line counts apps apart", "1 apps" in art["head"]["count_line"],
+      art["head"]["count_line"])
+check("artifacts: the chips are kinds", "plan" in art["list"]["tags"] and "app" in art["list"]["tags"])
+item = LIB.shelf_item("artifacts", "Site plan")
+check("artifacts: a row opens to its template", item.get("lines") and item["lines"][0] == "Holds: site-plan.json",
+      str(item.get("lines"))[:120])
+check("artifacts: the template says what runs on a new one", item["where"] == ["runs on a new one: Write"],
+      str(item.get("where")))
+check("artifacts: a stranger is an error", LIB.shelf_item("artifacts", "Ledger").get("error"))
+
 wi = LIB.shelf("work-atom")
 # 2.297.0 (founder): the second tab is the SKILLS a work atom may draw on, and
 # the examples moved into About. The old assertions pinned the other way round.
@@ -162,7 +185,7 @@ check("no proposal applied here", "_apply_proposal" not in src)
 
 # ── 6. the shape the renderer relies on ─────────────────────────────────────
 
-for sid in [f for f in LIB.FUNCTIONS] + ["engines", "work-atom"]:
+for sid in [f for f in LIB.FUNCTIONS] + ["engines", "artifacts", "work-atom"]:
     sh = LIB.shelf(sid)
     check("%s: head carries a line" % sid, bool(sh["head"]["line"]))
     check("%s: head carries a count line" % sid, bool(sh["head"]["count_line"]))

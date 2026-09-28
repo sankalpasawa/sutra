@@ -662,7 +662,7 @@ const O2_LIB_SHELVES = [
   ["Functions", [["lib-identity", "Identity"], ["lib-adaptation", "Adaptation"],
                  ["lib-priority", "Priority"], ["lib-coordination", "Coordination"],
                  ["lib-audit", "Audit"]]],
-  ["Parts", [["lib-engines", "Engines"], ["lib-work-atom", "Work atom"]]],
+  ["Parts", [["lib-engines", "Engines"], ["lib-artifacts", "Artifacts"], ["lib-work-atom", "Work atom"]]],
   /* Archive (founder, 2026-09-25: "in the library itself we can just have
      Archive for those particular sections"). The sections that left the Org
      menu, and Reorg plans with them. Same screens, same ids; the third field
