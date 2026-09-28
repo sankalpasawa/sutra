@@ -19,6 +19,14 @@ Live-panel determinism: boot freezes background `render()` (QA page only; origin
 tokens/contrast are pinned to an offscreen `#qa-probe` rig of the same app-rendered markup.
 Output: `runs/<runId>/` — 8 PNGs + `report.md`/`report.json`; exit 0 pass, 1 findings, 2 tool error.
 
+## Walks (2026-09-28): the app from source, a person at the front door, the screens captured
+
+`walks/` holds the tools that drive the engine runtime end to end on a record of its own: `devserver.sh`
+(the app from source, runtime and motor on), `devserver-detach.sh`, `devserver-stop.sh`, `kill-stale.sh`,
+`walk-front.sh` (words at the front door, the turns as they land), `shot-chat.js` (four headless captures)
+and `suites.sh`. Each takes its paths as arguments; `walks/README.md` has the usage and a walk end to end.
+The 73 checks the record quotes run from `holding/plans/engine-runtime/adherence-run.sh`.
+
 ## Known gaps (completeness critic, 2026-08-19)
 
 The 8 states all mount the same pre-opened, full-bodied, governance-free turn,
