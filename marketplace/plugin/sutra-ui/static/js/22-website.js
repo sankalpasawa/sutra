@@ -40,9 +40,9 @@ const WB_ACTS = { "request": "asks", "agree": "agrees", "refuse": "refuses", "pr
                   "reject-proposal": "rejects", "inform": "tells", "failure": "could not", "not-understood": "did not follow", "cancel": "lets go" };
 
 function wbS(){
-  if (!S.wb) S.wb = { refs: null, refsBusy: false, map: {}, sig: {}, tab: {}, pane: {}, sel: {}, draft: {},
+  if (!S.wb) S.wb = { refs: null, refsBusy: false, refsMissed: {}, map: {}, sig: {}, tab: {}, pane: {}, sel: {}, draft: {},
                       busy: {}, err: {}, engine: {}, art: {}, trace: {}, steps: {}, board: {}, chat: {}, chatSig: {},
-                      chip: {}, thread: {}, found: null, timer: null };
+                      chip: {}, thread: {}, turns: {}, scroll: {}, found: null, timer: null };
   return S.wb;
 }
 function wbRt(m){ return !!(m && m.runtime === 2); }
@@ -69,6 +69,12 @@ function wbUrl(ref, tail){ return "/api/native/" + encodeURIComponent(ref) + "/"
 function wbIs(ref){
   const st = wbS();
   if (st.refs === null){ wbLoadRefs(); return false; }
+  if (!st.refs[ref] && ref && !st.refsMissed[ref]){
+    /* a department born since the list was read (Root made it): the list is read again, once for that name, and the
+       department wears its own view when the read lands (found live 2026-09-28: the first build's card until a reload) */
+    st.refsMissed[ref] = true;
+    wbLoadRefs();
+  }
   return !!st.refs[ref];
 }
 async function wbLoadRefs(){
@@ -427,6 +433,7 @@ async function wbLoadChat(ref, again){
     if (st.chatSig[ref + ":depts"] !== undefined && now > known && typeof loadOrg2 === "function"){
       if (typeof o2S === "function" && o2S().expanded) o2S().expanded.add(ref);
       loadOrg2(true);
+      wbLoadRefs();                              /* and the list of departments on the runtime, so the new one opens on its own view */
     }
     st.chatSig[ref + ":depts"] = now;
     if (moved && (!again || !wbTyping())) dpRender();
@@ -632,8 +639,37 @@ function wbChatBoxHtml(n, m){
     ? `<button type="button" class="wbchip on wbto wb" data-wbchip="off">to ${wbEsc(m.name)} &times;</button>`
     : `<button type="button" class="wbchip wbto wb" data-wbchip="on">to Root</button>`;
   const err = st.err[k] ? `<div class="o2quiet dpq">${wbEsc(st.err[k])}</div>` : "";
-  return `<div class="wbbox wb">${chip}<textarea id="wbd-ask" data-wbdraft="${wbEsc(k)}" rows="2" placeholder="${wbEsc(on ? "Say it to " + m.name : (m.say || "Say it to Root"))}">${wbEsc(st.draft[k] || "")}</textarea>` +
+  /* Root's box: once departments exist, words for one of them are the usual thing to say (found live 2026-09-28:
+     "Ask Root for a department" invited a new one when the person meant the one they had) */
+  const depts = ((st.chat[n.ref] || {}).departments || []);
+  const rootSay = m.kind === "root" && depts.length ? "Say it to Root, or name a department: " + depts.map(d => d.name).join(", ") : (m.say || "Say it to Root");
+  return `<div class="wbbox wb">${chip}<textarea id="wbd-ask" data-wbdraft="${wbEsc(k)}" rows="2" placeholder="${wbEsc(on ? "Say it to " + m.name : rootSay)}">${wbEsc(st.draft[k] || "")}</textarea>` +
     wbBtn("Send", `data-wbask="ask"`, "dpstamp") + err + `</div>`;
+}
+/* The panel is painted whole, so a paint drops the chat to its top (found live 2026-09-28: after Send the person's
+   words and the answer sat out of view). After each paint the chat goes back where it was; when a turn has landed it
+   moves to that turn. The box that scrolls is found from the chat itself, so no other screen is touched. */
+function wbKeepPlace(ref, landed){
+  if (typeof document === "undefined" || !document.querySelector || typeof setTimeout !== "function") return;
+  const st = wbS();
+  setTimeout(() => {
+    try {
+      const chat = document.querySelector(".wbchat");
+      if (!chat) return;
+      let box = chat.parentElement;
+      while (box && !(box.scrollHeight > box.clientHeight + 4)) box = box.parentElement;
+      if (landed){
+        const last = chat.querySelector(".wbturn:last-of-type");
+        if (last && last.scrollIntoView) last.scrollIntoView({ block: "nearest" });
+        else if (box) box.scrollTop = box.scrollHeight;
+        if (box) st.scroll[ref] = box.scrollTop;
+      } else if (box && st.scroll[ref] !== undefined) box.scrollTop = st.scroll[ref];
+      if (box && !box.__wbKeep){
+        box.__wbKeep = true;
+        box.addEventListener("scroll", () => { const r = S.dp && S.dp.sel; if (r) st.scroll[r] = box.scrollTop; }, { passive: true });
+      }
+    } catch (e) {}
+  }, 0);
 }
 function wbChatHtml(n, m){
   const st = wbS(), c = st.chat[n.ref];
@@ -644,9 +680,12 @@ function wbChatHtml(n, m){
   const empty = m.kind === "root" && !depts.length ? "No department yet. Say what the first one is for." : "Nothing has been said yet";
   const names = !scoped && depts.length ? `<div class="wbstep"><span class="dpk">Departments</span>${depts.map(d => wbDeptChip(d.ref, d.name)).join("")}</div>` : "";
   /* while an engine runs, the chat says so under the last turn (founder, 2026-09-28: "I give a message to the chat,
-     and it seems something is happening, but I don't know") */
-  const running = (m.status && m.status.running) || [];
+     and it seems something is happening, but I don't know"); a department that is Off works on nothing */
+  const running = m.stopped ? [] : ((m.status && m.status.running) || []);
   const working = running.map(r => dpQuiet(`${r.engine} is working${r.what ? ": " + r.what : ""}`)).join("");
+  const count = (c.turns || []).length, seen = st.turns[n.ref];
+  st.turns[n.ref] = count;
+  wbKeepPlace(n.ref, seen !== undefined && count > seen);
   return `<div class="wbchat wb">${turns || (running.length ? "" : dpQuiet(empty))}${working}</div>` + wbChatAsksHtml(c) + wbChatBoxHtml(n, m) + names;
 }
 

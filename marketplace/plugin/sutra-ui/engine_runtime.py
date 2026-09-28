@@ -1063,8 +1063,22 @@ def run_engine(ref, name, inp, slot):
             if any(v is not None for v in kept.values()):
                 ctx["how"].setdefault(s["id"], "kept from before the app closed")
 
+            import threading
+            counted, guard = [0], threading.Lock()
+
             def one(i, s=s, items=items):
-                return i, run_step(ctx, s, items[i])
+                got1 = run_step(ctx, s, items[i])
+                if s.get("each") and len(items) > 1:
+                    # how far along: the run row says "page 3 of 8", and the chat's working line reads it (found live
+                    # 2026-09-28: one line for three minutes, and nothing said how far Write was)
+                    with guard:
+                        counted[0] += 1
+                        n_done = counted[0]
+                    try:
+                        W._put_run(ref, dict(row, what="%s %d of %d" % ("page" if "page" in s["name"].lower() else "item", n_done, len(items))))
+                    except Exception:  # noqa: BLE001 -- the count never fails the step
+                        pass
+                return i, got1
             width = max(1, min(int(s.get("side_by_side") or 1), len(todo) or 1))
             if width > 1:
                 with ThreadPoolExecutor(max_workers=width, thread_name_prefix="step") as pool:
@@ -1957,6 +1971,13 @@ def chat_view(ref, about=None):
             turns.append({"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
                           "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""),
                           "dept": dref, "name": ab.get("name") or pl.get("from"), "link": pl.get("link")})
+        # the person's words at the front door carry the department they reached, as Root's own hand-over says
+        # (found live 2026-09-28: a turn that named the department in its words showed no chip)
+        for t in turns:
+            if t["src"] == OWNER and t.get("word") == "front" and not t.get("dept"):
+                later = next((u for u in turns if u["thread"] == t["thread"] and u["n"] > t["n"] and u.get("dept")), None)
+                if later:
+                    t["dept"], t["name"] = later["dept"], later.get("name")
     kids = _children(root) if root else []
     if root:
         for c in ([W.dept(about)] if about else kids):

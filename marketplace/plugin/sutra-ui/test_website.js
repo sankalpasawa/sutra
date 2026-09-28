@@ -55,6 +55,13 @@
          turn carries "Open the live site", which previews it, and from Root's
          chat opens that department on it (Human Simulation run 1, findings 5
          and 6)
+     W30 a department born since the list was read is read again once and
+         wears its own view when the read lands (run 2, finding 17)
+     W31 the chat keeps its place across a paint and moves to a turn only when
+         one lands (run 2, the scroll-to-top after Send)
+     W32 Root's box, once departments exist, invites words for one of them
+     W33 the working line says how far along (page n of m) and is gone when
+         the department is Off (run 2, finding 15)
 
    Harness: test_dept.js's fresh(), with 22-website.js loaded after 20-dept.js
    (panel.html's order). Run: node test_website.js */
@@ -761,7 +768,7 @@ test("W25: the chat is the one point of entry: it opens first; inside a departme
   assert.ok(/<div class="who who-you"><button type="button" class="wbchip wbto wb" data-wbopen="r5">City Care Hospital Website<\/button>You<\/div><div class="u md">Which page lists the doctors\?/.test(html), "on the owner's turn too");
   assert.ok(/<div class="who who-ai">Root<\/div><div class="a">Set up a department: City Care Hospital Website<span class="dpchk">asks · /.test(html), "Root's own turns, with no chip");
   assert.ok(/<div class="who who-you">You<\/div><div class="u md">Stamped<\/div>/.test(html), "a stamp is a turn with the act as its line, never an empty bubble");
-  assert.ok(!/data-wbchip/.test(html) && /placeholder="Ask Root for a department: what it is for"/.test(html), "no chip on the box: Root is where you stand");
+  assert.ok(!/data-wbchip/.test(html) && /placeholder="Say it to Root, or name a department: City Care Hospital Website"/.test(html), "no chip on the box: Root is where you stand, and a department exists to name");
   assert.ok(/<span class="dpk">Departments<\/span><button type="button" class="wbchip wbto wb" data-wbopen="r5">City Care Hospital Website<\/button>/.test(html), "the departments under Root");
   assert.ok(/data-wbdecide="a-1" data-wbok="1" data-wbref="r5"/.test(html), "the department's ask, with where it lives");
   (r.document.listeners.input || []).forEach(fn => fn({ target: { dataset: { wbdraft: "r3:ask" }, value: "Stop City Care Hospital Website" } }));
@@ -834,6 +841,71 @@ test("W29: while a function runs the chat says so; the live turn carries Open th
   assert.ok(click(r, { wblive: "r5" }));
   assert.strictEqual(vm.runInContext("globalThis.__opened", r), "r5", "from Root the button opens that department");
   assert.strictEqual(vm.runInContext("[wbS().tab.r5, wbS().sel.r5, wbS().pane['r5:live-site']].join('|')", r), "art|live-site|preview", "on its Live site");
+});
+
+test("W30: a department born since the list was read is read again once, and wears its own view when the read lands", async () => {
+  const c = await opened({});
+  let listed = [{ ref: "r3", name: "Website", stopped: false }];
+  const asked = () => c.calls.apiGet.filter(p => p === "/api/native/depts").length;
+  c.apiGet = (p) => { c.calls.apiGet.push(p); if (p === "/api/native/depts") return Promise.resolve({ depts: listed }); return new Promise(() => {}); };
+  const before = asked();
+  assert.strictEqual(c.wbIs("r9"), false, "unknown to the list read at load");
+  assert.strictEqual(c.wbIs("r9"), false);
+  await sleep();
+  assert.strictEqual(asked(), before + 1, "the list is read again, once for that name, not on every ask");
+  listed = listed.concat([{ ref: "r9", name: "Newsletter", stopped: false }]);
+  vm.runInContext("wbS().refsMissed = {};", c);
+  assert.strictEqual(c.wbIs("r9"), false, "still unknown until the second read lands");
+  await sleep();
+  assert.strictEqual(c.wbIs("r9"), true, "known once the read lands: the runtime view, no reload");
+  assert.strictEqual(asked(), before + 2);
+});
+
+test("W31: the chat keeps its place across a paint, and moves to a turn only when one lands", async () => {
+  const chat = JSON.parse(JSON.stringify(CHAT));
+  const m = rtMap(); m.root = "r2";
+  const c = await opened({ map: m, chat });
+  vm.runInContext(`globalThis.__moves = []; globalThis.__box = { scrollHeight: 2000, clientHeight: 400, scrollTop: 0, parentElement: null, addEventListener(){}, __wbKeep: false };
+    globalThis.__last = { scrollIntoView(o){ globalThis.__moves.push(o); } };
+    document.querySelector = (sel) => sel === ".wbchat" ? { parentElement: globalThis.__box, querySelector: () => globalThis.__last } : null;`, c);
+  view(c); await sleep(); await sleep();
+  assert.strictEqual(vm.runInContext("globalThis.__moves.length", c), 0, "a paint with no new turn moves nothing");
+  vm.runInContext("wbS().scroll.r3 = 777;", c);
+  view(c); await sleep(); await sleep();
+  assert.strictEqual(vm.runInContext("globalThis.__box.scrollTop", c), 777, "the chat goes back where the person had it");
+  chat.turns.push({ n: 30, src: "Identity", dst: ["Owner"], msg_type: "inform", at: AT, thread: null, word: "answer", line: "A new turn", dept: "r3", name: DEPT, own: true });
+  await c.wbLoadChat("r3", true); await sleep();
+  view(c); await sleep(); await sleep();
+  assert.strictEqual(vm.runInContext("globalThis.__moves.length", c), 1, "a turn landed: the chat moves to it");
+  assert.strictEqual(vm.runInContext("JSON.stringify(globalThis.__moves[0])", c), '{"block":"nearest"}');
+});
+
+test("W32: Root's box, once departments exist, invites words for one of them", async () => {
+  const rm = rtMap(); rm.kind = "root"; rm.root = "r3"; rm.say = "Ask Root for a department: what it is for"; rm.live = false;
+  const r = await opened({ map: rm, chat: ROOT_CHAT });
+  view(r); await sleep(); await sleep();
+  assert.ok(/placeholder="Say it to Root, or name a department: City Care Hospital Website"/.test(view(r)), "Root with a department");
+  const none = JSON.parse(JSON.stringify(ROOT_CHAT)); none.departments = [];
+  const r0 = await opened({ map: rm, chat: none });
+  view(r0); await sleep(); await sleep();
+  assert.ok(/placeholder="Ask Root for a department: what it is for"/.test(view(r0)), "Root with none yet: the kind's own words");
+  const m = rtMap(); m.root = "r2";
+  const c = await opened({ map: m });
+  view(c); await sleep(); await sleep();
+  assert.ok(/placeholder="Say it to City Care Hospital Website"/.test(view(c)), "inside, with the chip on");
+});
+
+test("W33: the working line says how far along, and is gone when the department is Off", async () => {
+  const m = rtMap(); m.root = "r2";
+  m.status.running = [{ engine: "Write", since: AT, what: "page 3 of 8" }];
+  const c = await opened({ map: m });
+  view(c); await sleep(); await sleep();
+  assert.ok(/Write is working: page 3 of 8<\/div>/.test(view(c)), "page n of m from the run row");
+  const off = rtMap(); off.root = "r2"; off.stopped = true;
+  off.status.running = [{ engine: "Write", since: AT, what: "page 3 of 8" }];
+  const c2 = await opened({ map: off });
+  view(c2); await sleep(); await sleep();
+  assert.ok(!/is working/.test(view(c2)), "Off: nothing works, so nothing says it does");
 });
 
 test("W26: each function's card has its own Settings tab: its template, its own limit, its ladder numbers, how it starts; Identity's carries where the site is served from", async () => {

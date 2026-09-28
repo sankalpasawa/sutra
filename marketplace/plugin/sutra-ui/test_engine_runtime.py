@@ -1450,6 +1450,32 @@ class TestTheFrontDoor(Base):
         self.assertEqual(len(plans), 2, plans)
         self.assertIn("Parking", plans[-1])
 
+    def test_80_the_run_row_says_how_far_along_a_step_of_many_is(self):
+        """The chat's working line reads the run row's what: 'page 3 of 5' while Write writes the pages."""
+        W = self.W
+        whats = []
+        real = W._put_run
+
+        def spy(ref, row):
+            whats.append(row.get("what"))
+            return real(ref, row)
+        W._put_run = spy
+        try:
+            self.live()
+        finally:
+            W._put_run = real
+        self.assertEqual([w for w in whats if w and w.startswith("page ")], ["page %d of 5" % i for i in range(1, 6)])
+
+    def test_81_the_persons_front_turn_carries_the_department_it_reached(self):
+        """The person names the department in their words and no chip is on the box: Root's hand-over says where the
+        words went, and the person's own turn carries it too (run 2: a turn without the chip)."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        W.owner_ask(root, "On %s, add a parking page." % W.dept(child)["name"])
+        W.run_until_idle(root, limit=200)
+        mine = [t for t in R.chat_view(root)["turns"] if t["src"] == "Owner" and t["word"] == "front" and "parking" in t["line"]]
+        self.assertEqual([(t.get("dept"), t.get("name")) for t in mine], [(child, W.dept(child)["name"])])
+
     def test_79_a_quoted_hole_never_starts_mid_word(self):
         R = self.R
         holes = R.placeholders({"book.html": "<p>Write to care@parasthihospital.in or call. Appointment Availability: appointment availability is to be confirmed</p>"})
