@@ -5643,3 +5643,13 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 /* the department's one button: beside its state, not pushed to the far edge */
 .wbmotor .wbonoff{margin-left:4px}
 .wbstep .dpk{margin-right:2px}
+/* the conversation (Human Sutra, an app): one stream, the owner's own lines in
+   ink, the functions' exchanges folded under the line that started them */
+.wbconv .wbline{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:7px 0;border-top:1px solid var(--line-soft)}
+.wbconv .wbline:first-child{border-top:0}
+.wbconv .wbline.me .wbsaid{color:var(--ink)}
+.wbfold{border:1px solid var(--line-soft);border-radius:10px;background:var(--surface);padding:6px 12px;margin:6px 0}
+.wbfold summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px;cursor:pointer;font:500 12.5px/1.4 var(--sans);color:var(--muted)}
+.wbfold summary .dpst{margin-left:auto}
+/* Priority's limits: two numbers an engine, set by the owner */
+.wblim input{width:72px;margin:0 2px 0 6px}

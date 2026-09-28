@@ -51,6 +51,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import record                      # the platform product: rows, deployed into the department's own folder
 import website_dept as W
 
 RUNGS = ("P", "C0", "C1", "C2")
@@ -203,6 +204,13 @@ def engine_def(name):
     return defs()["engines"].get(name)
 
 
+def priority_template():
+    """The limits a department is born with: Priority's template, in the definitions (founder, 2026-09-28: "some
+    default limits which are in the priority templates"). calls and usd a day per engine; work_calls times the calls
+    for a work engine, whose steps are a call each."""
+    return dict(((engine_def("Priority") or {}).get("template") or {}).get("envelope") or {})
+
+
 def all_steps(name):
     e = engine_def(name) or {}
     out, seen = [], set()
@@ -250,28 +258,12 @@ def card(ctx):
 
 # ---- the record's new files ----------------------------------------------------------------------------------------
 def _lines(p):
-    try:
-        text = Path(p).read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return []
-    out = []
-    for line in text.splitlines():
-        line = line.strip()
-        if line:
-            try:
-                out.append(json.loads(line))
-            except Exception:  # noqa: BLE001 -- a line torn by a closed app is skipped, never fatal
-                pass
-    return out
+    return record.lines(p)
 
 
 def _append(ref, name, row):
-    with W._lock(ref):
-        p = W.ddir(ref) / name
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with open(p, "a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
-    return row
+    """A row onto one of the department's journals, through the core: the runtime files no row by code of its own."""
+    return record.append(W.ddir(ref) / name, row, lock=W._lock(ref))
 
 
 def step_rows(ref):
@@ -1311,14 +1303,19 @@ def identity_gate(ctx, step, item):
     with W._lock(ref):
         a = next((x for x in W.asks(ref) if x.get("slot") == slot and x.get("kind") == "publish"), None)
         if a is None:
+            # the ask carries the question where the site is served from (founder, 2026-09-28: "more of a question
+            # to the user and should be asked to the user"); the answer, or the default on a plain stamp, stays on
+            # the record and Publish reads it
+            host = ctx["dept"].get("host") or W.HOST_DEFAULT
             p = post(ref, "Identity", OWNER, "request",
                      {"word": "publish", "objective": "say whether the site may go live for the first time"
-                      + (" under its new goal" if ctx["dept"].get("publish_asks_from") else ""),
+                      + (" under its new goal" if ctx["dept"].get("publish_asks_from") else "")
+                      + ", and where it is served from: %s unless you say another" % host,
                       "output": "a stamp or a refusal", "may_read": ["Build"], "boundaries": "this one publish"},
                      about={"art": "Build", "v": inp["v"]})
             W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "publish", "engine": "Publish", "slot": slot,
-                             "text": "Publish: go live for the first time", "status": "pending", "created": W.now(),
-                             "thread": p["thread"] if p else None})
+                             "text": "Publish: go live for the first time, served from %s unless you say where else" % host,
+                             "status": "pending", "created": W.now(), "thread": p["thread"] if p else None})
             return "wait", "waits for the stamp"
     if a["status"] == "pending":
         return "wait", "waits for the stamp"
@@ -2219,6 +2216,15 @@ def steps_view(ref, name):
         view["table"] = {"first": [FIRST[k] for k in t["order"]], "line": list(t["line"]),
                          "may_post": [{"from": src, "act": act, "to": list(dst)} for src, acts in sorted(t["edges"].items())
                                       for act, dst in sorted(acts.items())]}
+    if name == "Priority":
+        # the limits, engine by engine: born from Priority's template, set by the owner on this card
+        envs = (W.dept(ref) or {}).get("envelopes") or {}
+        view["limits"] = []
+        for n in [x[0] for x in W.ENGINES] + list(W.SYSTEMS):
+            env = envs.get(n) or W.ENVELOPE
+            calls, usd = W._today_spend(ref, n)
+            view["limits"].append({"engine": n, "calls": int(env.get("calls", 0)), "usd": float(env.get("usd", 0.0)),
+                                   "used_calls": calls, "used_usd": round(usd, 3)})
     return view
 
 

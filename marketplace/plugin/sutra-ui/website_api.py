@@ -197,6 +197,32 @@ async def putback(ref: str, request: Request):
         raise HTTPException(400, detail=str(exc))
 
 
+@router.post("/{ref}/envelope")
+async def envelope(ref: str, request: Request):
+    """The owner's own limits for one engine, from Priority's card."""
+    _need(ref)
+    _, body = await _text(request)
+    try:
+        calls = body.get("calls")
+        usd = body.get("usd")
+        return {"ok": True, "envelope": W.set_envelope(ref, str(body.get("engine") or ""),
+                                                      None if calls in (None, "") else int(calls),
+                                                      None if usd in (None, "") else float(usd))}
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(400, detail=str(exc))
+
+
+@router.post("/{ref}/host")
+async def host(ref: str, request: Request):
+    """Where the site is served from: the owner's answer to the question the first publish asks."""
+    _need(ref)
+    text, body = await _text(request)
+    try:
+        return {"ok": True, "host": W.set_host(ref, body.get("host") or text)}
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc))
+
+
 @router.get("/{ref}/engine/{name}")
 def engine(ref: str, name: str):
     _need(ref)

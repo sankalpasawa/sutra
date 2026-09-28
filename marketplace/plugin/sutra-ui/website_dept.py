@@ -38,6 +38,9 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 
+import record                      # the platform product: rows and documents, deployed into each thing's own folder
+import versions as VERS            # the platform product: versions, deployed into each artifact's own folder
+
 ENGINES = (  # name, reads, writes, runs as
     ("Plan", "Brief", "Site plan", "model"),
     ("Write", "Site plan", "Pages", "model"),
@@ -48,7 +51,8 @@ ARTIFACTS = ("Brief", "Site plan", "Pages", "Build", "Live site")
 SYSTEMS = ("Identity", "Adaptation", "Priority", "Coordination", "Audit")
 PAUSED_SYSTEMS = ("Adaptation", "Audit")      # growth is paused in the first build
 CHAIN_LIMIT = 12                              # runs one owner's ask may cause before it stops and asks
-ENVELOPE = {"calls": 30, "usd": 6.0}          # per engine, per day
+ENVELOPE = {"calls": 30, "usd": 6.0}          # per engine, per day: the first build's constant; a runtime department takes Priority's template
+HOST_DEFAULT = "this app's own server"        # where a site is served from unless the owner says another (asked at the first publish)
 TICK_S = 3.0
 DEFAULT_HOME = "~/.sutra-ui/native"
 MODEL_TIMEOUT_S = 420
@@ -129,20 +133,11 @@ def _lock(ref):
 
 
 def _read(p, default):
-    try:
-        return json.loads(Path(p).read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return default
-    except Exception:  # noqa: BLE001
-        return default
+    return record.read(p, default)
 
 
 def _write(p, obj):
-    p = Path(p)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(p.suffix + ".tmp")
-    tmp.write_text(json.dumps(obj, indent=1, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, p)
+    record.write(p, obj)
 
 
 # ---- the record --------------------------------------------------------------------------------------------------
@@ -167,47 +162,29 @@ def save_dept(ref, d):
     _write(ddir(ref) / "dept.json", d)
 
 
+# An artifact deploys the versions product in its own folder; this file names the folder, nothing more.
+def _abase(ref, art):
+    return ddir(ref) / "artifacts" / slug(art)
+
+
 def versions(ref, art):
-    return _read(ddir(ref) / "artifacts" / slug(art) / "versions.json", [])
+    return VERS.rows(_abase(ref, art))
 
 
 def latest(ref, art, passed=False):
-    rows = versions(ref, art)
-    if passed:
-        rows = [r for r in rows if (r.get("check") or {}).get("ok")]
-    return rows[-1] if rows else None
+    return VERS.latest(_abase(ref, art), passed)
 
 
 def vdir(ref, art, v):
-    return ddir(ref) / "artifacts" / slug(art) / ("v%d" % int(v))
+    return VERS.vdir(_abase(ref, art), v)
 
 
 def read_files(ref, art, v):
-    base = vdir(ref, art, v)
-    out = {}
-    if base.is_dir():
-        for p in sorted(base.rglob("*")):
-            if p.is_file():
-                out[str(p.relative_to(base))] = p.read_text(encoding="utf-8", errors="replace")
-    return out
+    return VERS.files(_abase(ref, art), v)
 
 
 def add_version(ref, art, files, made_from, run, check, note=""):
-    with _lock(ref):
-        rows = versions(ref, art)
-        v = (rows[-1]["v"] + 1) if rows else 1
-        base = vdir(ref, art, v)
-        base.mkdir(parents=True, exist_ok=True)
-        for name, text in files.items():
-            p = (base / name).resolve()
-            if not str(p).startswith(str(base.resolve())):
-                raise ValueError("a file outside its version: %r" % name)
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(text, encoding="utf-8")
-        row = {"v": v, "at": now(), "made_from": made_from, "run": run, "check": check, "note": note}
-        rows.append(row)
-        _write(ddir(ref) / "artifacts" / slug(art) / "versions.json", rows)
-        return row
+    return VERS.add(_abase(ref, art), files, made_from, run, check, now(), note=note, lock=_lock(ref))
 
 
 def runs(ref):
@@ -281,9 +258,14 @@ def create(ref, name, brief, owner="the owner", parent=None):
          "envelopes": {e[0]: dict(ENVELOPE) for e in ENGINES},
          "windows": {"Plan": 15, "Write": 30, "Check": 5, "Publish": 10}}
     if d["runtime"] == 2:
-        # A step is a call, so Write costs a call a page where it cost one a run. The money bound is unchanged.
-        d["envelopes"] = {e[0]: {"calls": 8 * ENVELOPE["calls"], "usd": ENVELOPE["usd"]} for e in ENGINES}
-        d["envelopes"].update({s: dict(ENVELOPE) for s in SYSTEMS})
+        # The limits come from Priority's template (founder, 2026-09-28: "some default limits which are in the priority
+        # templates"); the owner changes a department's own on Priority's card. A step is a call, so a work engine is
+        # given work_calls times the calls, Write costing a call a page where it cost one a run. The money is the same.
+        import engine_runtime
+        t = engine_runtime.priority_template()
+        base = {"calls": int(t.get("calls", ENVELOPE["calls"])), "usd": float(t.get("usd", ENVELOPE["usd"]))}
+        d["envelopes"] = {e[0]: {"calls": int(t.get("work_calls", 8)) * base["calls"], "usd": base["usd"]} for e in ENGINES}
+        d["envelopes"].update({s: dict(base) for s in SYSTEMS})
     ddir(ref).mkdir(parents=True, exist_ok=True)
     save_dept(ref, d)
     system_run(ref, "Identity", "set its rules within the parent's")
@@ -370,6 +352,13 @@ def decide_ask(ref, aid, approve, by="the owner"):
             a["decided"] = now()
             a["by"] = by
             _put_ask(ref, a)
+            if approve and a.get("kind") == "publish":
+                # the first publish ask carries the question where the site is served from; a stamp with no
+                # other answer takes the default, and the answer stays on the record for Publish to read
+                d = dept(ref)
+                if d is not None and not d.get("host"):
+                    d["host"] = HOST_DEFAULT
+                    save_dept(ref, d)
             rt = _runtime(ref)
             if rt and a.get("thread"):
                 rt.on_stamp(ref, a, approve)       # posted in the ask's thread; Identity applies it as a step
@@ -377,6 +366,38 @@ def decide_ask(ref, aid, approve, by="the owner"):
                 system_run(ref, "Identity", ("stamped: " if approve else "refused: ") + a["text"])
             return a
     raise ValueError("no such ask")
+
+
+def set_envelope(ref, name, calls=None, usd=None, by="the owner"):
+    """The owner's own limits for one engine, set on Priority's card. The defaults came from Priority's template
+    at birth (founder, 2026-09-28: "These limits can be configured in the relevant priority")."""
+    d = dept(ref)
+    if not d:
+        raise ValueError("no website department here")
+    if name not in {e[0] for e in ENGINES} | set(SYSTEMS):
+        raise ValueError("no engine named %s" % name)
+    env = dict((d.get("envelopes") or {}).get(name) or ENVELOPE)
+    if calls is not None:
+        env["calls"] = max(0, int(calls))
+    if usd is not None:
+        env["usd"] = max(0.0, float(usd))
+    d.setdefault("envelopes", {})[name] = env
+    save_dept(ref, d)
+    system_run(ref, "Priority", "%s set %s's envelope: %d calls, %.2f USD a day" % (by, name, env["calls"], env["usd"]))
+    return env
+
+
+def set_host(ref, host, by="the owner"):
+    """Where the site is served from: the owner's answer to the question the first publish asks, kept on the record;
+    Publish reads it (founder, 2026-09-28: "more of a question to the user and should be asked to the user")."""
+    d = dept(ref)
+    if not d:
+        raise ValueError("no website department here")
+    host = " ".join(str(host or "").split())[:200] or HOST_DEFAULT
+    d["host"] = host
+    save_dept(ref, d)
+    system_run(ref, "Identity", "%s said where the site is served from: %s" % (by, host))
+    return host
 
 
 def put_back(ref, art, v, by="the owner"):
@@ -635,7 +656,9 @@ def engine_publish(ref, d, inp):
     files = read_files(ref, "Build", inp["v"])
     _publish_files(ref, files)
     ok = (live_dir(ref) / "index.html").is_file()
-    return files, {"ok": ok, "notes": ["live at the department's site address" if ok else "the live copy has no home page"]}, {"calls": 0, "usd": 0.0}
+    host = (d or {}).get("host") or HOST_DEFAULT
+    return files, {"ok": ok, "notes": ["live at the department's site address, served from %s" % host if ok
+                                        else "the live copy has no home page"]}, {"calls": 0, "usd": 0.0}
 
 
 ENGINE_FN = {"Plan": engine_plan, "Write": engine_write, "Check": engine_check, "Publish": engine_publish}

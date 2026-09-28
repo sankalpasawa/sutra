@@ -785,6 +785,92 @@ class TestTheFiveJourneys(Base):
         self.assertEqual(self.M.calls.count("identity.recognise"), 2, "one call, and one more naming the fault; then the owner")
 
 
+class TestTheRulingsOfTheAfternoon(Base):
+    """The founder's rulings of 2026-09-28, 13:35, each as a check that can fail: the host is asked; the limits come
+    from Priority's template and the owner sets a department's own; record and versions are one core deployed per
+    thing; Coordination has its own agent and its steps."""
+
+    def test_54_the_first_publish_asks_where_the_site_is_served_from_and_keeps_the_answer(self):
+        W = self.W
+        W.give_goal(REF, GOAL)
+        self.idle()
+        a = next(x for x in W.asks(REF) if x["kind"] == "publish" and x["status"] == "pending")
+        self.assertIn("served from", a["text"])
+        self.assertIn(W.HOST_DEFAULT, a["text"], "the ask names the default")
+        W.set_host(REF, "https://cityclinic.example")
+        self.stamp("publish")
+        self.idle()
+        self.assertEqual(W.dept(REF)["host"], "https://cityclinic.example", "the answer stays on the record")
+        self.assertIn("cityclinic.example", " ".join(W.latest(REF, "Live site")["check"]["notes"]), "and Publish read it")
+        self.assertTrue(any(r["engine"] == "Identity" and "served from" in (r.get("what") or "") for r in W.runs(REF)), "the answer is a row")
+        ref2 = "dref-host0002"
+        W.create(ref2, "Second Website", None)
+        W.give_goal(ref2, GOAL)
+        W.run_until_idle(ref2, limit=200)
+        a2 = next(x for x in W.asks(ref2) if x["kind"] == "publish" and x["status"] == "pending")
+        W.decide_ask(ref2, a2["id"], True)
+        W.run_until_idle(ref2, limit=200)
+        self.assertEqual(W.dept(ref2)["host"], W.HOST_DEFAULT, "a plain stamp takes the default")
+        self.assertIn(W.HOST_DEFAULT, " ".join(W.latest(ref2, "Live site")["check"]["notes"]))
+
+    def test_55_the_limits_come_from_priorities_template_and_the_owner_sets_a_departments_own(self):
+        W, R = self.W, self.R
+        t = R.priority_template()
+        self.assertEqual(set(t), {"calls", "usd", "work_calls"}, "the template names the two limits and the work factor")
+        d = W.dept(REF)
+        self.assertEqual(d["envelopes"]["Identity"], {"calls": t["calls"], "usd": t["usd"]})
+        self.assertEqual(d["envelopes"]["Write"], {"calls": t["work_calls"] * t["calls"], "usd": t["usd"]})
+        self.assertTrue(all(d["envelopes"][s] == {"calls": t["calls"], "usd": t["usd"]} for s in W.SYSTEMS))
+        env = W.set_envelope(REF, "Write", usd=0.0)
+        self.assertEqual(env, {"calls": t["work_calls"] * t["calls"], "usd": 0.0}, "one number changed, the other kept")
+        self.assertEqual(W.dept(REF)["envelopes"]["Write"]["usd"], 0.0)
+        with self.assertRaises(ValueError):
+            W.set_envelope(REF, "Nobody", calls=1)
+        self.assertTrue(any(r["engine"] == "Priority" and "set Write's envelope" in (r.get("what") or "") for r in W.runs(REF)), "the change is a row")
+        W.give_goal(REF, GOAL)
+        self.idle()
+        self.assertEqual(W.versions(REF, "Pages"), [], "Write never ran")
+        self.assertTrue(any(a["kind"] == "envelope" and a["engine"] == "Write" for a in W.asks(REF)), "Priority's gate holds Write at the owner's limit and asks")
+        v = R.steps_view(REF, "Priority")
+        self.assertEqual({x["engine"] for x in v["limits"]}, {e[0] for e in W.ENGINES} | set(W.SYSTEMS), "the card reads every engine's limits")
+        self.assertEqual(next(x for x in v["limits"] if x["engine"] == "Write")["usd"], 0.0)
+
+    def test_56_record_and_versions_are_one_core_deployed_per_thing_and_a_new_kind_needs_no_new_code(self):
+        W, R = self.W, self.R
+        import record
+        import versions as VERS
+        names = [e[0] for e in W.ENGINES] + list(W.SYSTEMS) + list(W.ARTIFACTS)
+        for mod in (record, VERS):
+            src = Path(mod.__file__).read_text(encoding="utf-8")
+            for word in names:
+                self.assertNotRegex(src, r"\b%s\b" % re.escape(word), "%s names %s" % (mod.__name__, word))
+        row = W.add_version(REF, "Newsletter", {"issue-1.md": "# Issue 1"}, [{"art": "Brief", "v": 0}], "r-new", {"ok": True, "notes": []})
+        self.assertEqual(row["v"], 1)
+        self.assertEqual(W.latest(REF, "Newsletter")["v"], 1)
+        self.assertEqual(W.read_files(REF, "Newsletter", 1), {"issue-1.md": "# Issue 1"})
+        self.assertTrue((W.ddir(REF) / "artifacts" / "newsletter" / "versions.json").is_file(), "kept with the thing, in its own folder")
+        R._append(REF, "steps.jsonl", {"id": "s-new", "engine": "Digest", "step": "digest.write", "by": "code", "status": "ok"})
+        self.assertEqual([r["engine"] for r in R.step_rows(REF) if r["id"] == "s-new"], ["Digest"], "a new engine's row, through the core alone")
+        self.live()
+        for art in W.ARTIFACTS:
+            self.assertTrue(W.versions(REF, art), art)
+            for v in W.versions(REF, art):
+                self.assertEqual(set(v), {"v", "at", "made_from", "run", "check", "note"}, "%s reads the same as every other thing" % art)
+
+    def test_57_coordination_has_its_own_agent_and_its_steps(self):
+        W, R = self.W, self.R
+        e = R.engine_def("Coordination")
+        steps = R.all_steps("Coordination")
+        self.assertGreaterEqual(len(steps), 8, "various steps")
+        self.assertEqual({s["id"].split(".")[0] for s in steps}, {"coord"})
+        self.assertTrue(R.card({"def": e, "dept": W.dept(REF), "engine": "Coordination"})
+                        .startswith("You are the agent of Coordination, one engine of the department"), "its own agent")
+        v = R.steps_view(REF, "Coordination")
+        self.assertEqual(len(v["steps"]), len(steps))
+        self.assertIn("What engines share", v["hears"])
+        self.assertTrue(all(s["rung"] == "C2" for s in v["steps"]), "every step is code today; a soft one comes the day code cannot decide")
+
+
 class TestActivation(Base):
     """Founder, 2026-09-28: every engine has its own start, a trigger and blockers; Start is a signal to all; "the rest
     is in coordination"; once started each has its own agency. One rule for the five internal systems and the four

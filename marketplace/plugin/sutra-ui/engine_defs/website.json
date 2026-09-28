@@ -608,6 +608,13 @@
     "hold an engine to its envelope",
     "answer a proposal that costs something"
    ],
+   "template": {
+    "envelope": {
+     "calls": 30,
+     "usd": 6.0,
+     "work_calls": 8
+    }
+   },
    "start": {
     "on": [
      {

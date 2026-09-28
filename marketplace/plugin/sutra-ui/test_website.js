@@ -122,7 +122,9 @@ function stepsOf(name, o){
       stepOf({ id: "write.file", name: "Put the pages together", check: "filed_has_files", ran: false, last: null, evidence: null })] };
   const table = name !== "Coordination" ? undefined : { first: ["A post waiting for its reader", "The line, in its order", "A function woken by new work"],
     line: ["Plan", "Write", "Check", "Publish"], may_post: [{ from: "Audit", act: "inform", to: ["Identity"] }, { from: "Owner", act: "request", to: ["Identity"] }] };
-  return { name, kind: "function", description: name === "Priority" ? "grants each engine its budget" : "", skills: [], reads: null, writes: null, numbers, table,
+  const limits = name !== "Priority" ? undefined : ENGS.map(e => ({ engine: e[0], calls: 240, usd: 6, used_calls: 3, used_usd: 0.4 }))
+    .concat(["Identity", "Adaptation", "Priority", "Coordination", "Audit"].map(s => ({ engine: s, calls: 30, usd: 6, used_calls: 0, used_usd: 0 })));
+  return { name, kind: "function", description: name === "Priority" ? "grants each engine its budget" : "", skills: [], reads: null, writes: null, numbers, table, limits,
     start: { on: ["a post addressed to it"], unless: [] },
     hears: (table ? ["What engines share"] : []).concat(["Take a request"]), steps: [
     stepOf({ id: name.toLowerCase() + ".gate", name: "Say whether it may start", nature: "decide", mode: "gate", check: "gate_answer_is_known" }),
@@ -556,6 +558,52 @@ test("W19: on the screen the five are functions; 'internal system' is printed no
   assert.ok(/<h3>The function<\/h3><div class="dpbig">Grants each engine its budget<\/div>/.test(pr), "a function's own card is titled The function");
   assert.ok(/<span>A function woken by new work<\/span>|A function woken by new work/.test(await fnCard(c, "coordination")));
   assert.ok(!/internal\s+system/i.test(wbSrc.replace(/\/\*[\s\S]*?\*\//g, "")), "nor in any string of the script");
+});
+
+test("W20: Human Sutra is an app in the list; it shows the department as one conversation in time order, the asks inline, the functions' exchanges folded, one way in", async () => {
+  const c = await opened({ map: rtMap({ ask: true }) });
+  const lst = c.dpListHtml(WEB, {}, null, null);
+  assert.ok(/data-wbtab="conversation"><span>Human Sutra<\/span>/.test(lst), "the app is listed");
+  assert.ok(/>Apps<\/div>[\s\S]{0,300}Human Sutra/.test(lst), "under Apps");
+  click(c, { wbtab: "conversation" }); view(c); await sleep(); await sleep();
+  const html = view(c);
+  assert.ok(/<div class="o2vh"><b>Human Sutra<\/b>/.test(html), "the app opens");
+  const i1 = html.indexOf("Which page lists the doctors?"), i2 = html.indexOf("The Doctors page lists them"), i3 = html.indexOf("A rule, as understood");
+  assert.ok(i1 > 0 && i1 < i2 && i2 < i3, "oldest first, newest at the bottom: " + [i1, i2, i3]);
+  assert.ok(/class="wbline wb me">/.test(html), "the owner's own line is marked");
+  assert.ok(/<h3>Waiting for you<\/h3>/.test(html) && /Publish: go live for the first time/.test(html) &&
+    /data-wbdecide="a-1" data-wbok="1"/.test(html) && /data-wbdecide="a-1" data-wbok="0"/.test(html), "an ask is a line with its buttons");
+  assert.strictEqual((html.match(/<textarea/g) || []).length, 1, "one way in");
+  assert.ok(/<h3>Say<\/h3>/.test(html) && /data-wbask="ask"[^>]*>Send</.test(html), "and it is Say");
+  assert.ok(!/internal\s+system/i.test(html));
+  const old = await opened();
+  assert.ok(!/Human Sutra/.test(old.dpListHtml(WEB, {}, null, null)), "a department of the first build has no app");
+  const b2 = JSON.parse(JSON.stringify(BOARD));
+  b2.threads.unshift({ id: "x-3", topic: "trial", protocol: "propose", state: "completed", decider: "Priority", opened: AT, closed: AT,
+    outcome: { by: "accept-proposal" }, bounds: { hops: 4, seconds: 900, usd: 0.5 }, hops: 2, default: "failure", posts: [
+      { n: 4, src: "Adaptation", dst: ["Priority"], msg_type: "propose", at: AT, word: "trial", line: "one more call a run, for 2 runs" },
+      { n: 5, src: "Priority", dst: ["Adaptation"], msg_type: "accept-proposal", at: AT, word: "trial", line: "Room in today's envelope covers it" }] });
+  const f = await opened({ map: rtMap(), board: b2 });
+  click(f, { wbtab: "conversation" }); view(f); await sleep(); await sleep();
+  const h2 = view(f);
+  assert.ok(/<details class="wbfold wb"><summary>[\s\S]*?Adaptation[\s\S]*?Priority[\s\S]*?one more call a run[\s\S]*?<\/summary>/.test(h2), "the functions' own exchange folds under the line that started it");
+  assert.ok(h2.indexOf("The Doctors page lists them") < h2.indexOf("<details") && h2.indexOf("<details") < h2.indexOf("Room in today"), "and sits in time order");
+  assert.ok(/<h3>Say<\/h3>/.test(h2) && !/<h3>Waiting for you<\/h3>/.test(h2), "nothing waits, so no empty card");
+});
+
+test("W21: Priority's card carries the limits, born from its template, and Set posts the owner's own for one engine", async () => {
+  const c = await opened({ map: rtMap() });
+  const pr = await fnCard(c, "priority");
+  assert.ok(/<h3>Limits<\/h3>/.test(pr), "the card is there");
+  assert.ok(/data-wbdraft="r3:env:Write:calls"[^>]*value="240"/.test(pr) && /data-wbdraft="r3:env:Write:usd"[^>]*value="6"/.test(pr), "each engine's two numbers");
+  assert.ok(/data-wbdraft="r3:env:Audit:calls"[^>]*value="30"/.test(pr), "the functions too");
+  assert.ok(/data-wbenv="Write"/.test(pr), "and a Set an engine");
+  (c.document.listeners.input || []).forEach(fn => fn({ target: { dataset: { wbdraft: "r3:env:Write:usd" }, value: "3" } }));
+  click(c, { wbenv: "Write" }); await sleep(); await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost)), [{ p: "/api/native/r3/envelope", body: { engine: "Write", usd: 3 } }],
+    "only what was typed is sent, for that engine");
+  const old = await opened();
+  assert.ok(!/<h3>Limits<\/h3>/.test(await fnCard(old, "priority")), "a department of the first build keeps its card");
 });
 
 Promise.all(pending).then(() => {

@@ -260,8 +260,11 @@ function dpListHtml(n, d, dept, err){
     ppl ? "No people yet" : (st.error.people ? "Could not read" : "Not read yet"));
   groups += dpGroup("Documents", docs.map(x =>
     dpRow(x.title, `data-dpdoc="${dpEsc(x.path)}" data-dptitle="${dpEsc(x.title)}"`, false)), "docs", "No documents yet");
-  groups += dpGroup("Apps", dpApps(n.ref).map(m =>
-    dpRow(m.name, `data-dpapp="${dpEsc(m.id)}"`, dpAppOn(m))), "apps", dpAppsQuiet(n.ref));
+  /* 22-website.js brings its own app rows (Human Sutra, on the engine runtime)
+     before the Library's; the quiet line stays for a department with neither */
+  const wapps = (wb && wb.apps) || [];
+  groups += dpGroup("Apps", wapps.concat(dpApps(n.ref).map(m =>
+    dpRow(m.name, `data-dpapp="${dpEsc(m.id)}"`, dpAppOn(m)))), "apps", wapps.length ? "" : dpAppsQuiet(n.ref));
   if (err) groups = `<div class="o2quiet dpq">Sutra did not answer for ${dpEsc(n.name)}</div>` + groups;
   /* `.dp` on the column itself: the delegated handlers below gate on
      closest(".dp"), the way 19-org2.js gates on closest(".o2"), and the two

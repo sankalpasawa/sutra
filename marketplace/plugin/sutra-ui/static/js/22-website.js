@@ -151,7 +151,10 @@ function wbList(n){
     return `<button type="button" class="o2li dpli dpeng wb${on ? " on" : ""}" data-wbart="${wbEsc(a.slug)}">` +
       `<span>${wbEsc(a.name)}</span>${dpVerDots(a.versions)}</button>`;
   }), null, m ? "Nothing filed yet" : "Not read yet");
-  return { top, engines, filed };
+  /* Human Sutra is an app, not part of the core: a department on the engine
+     runtime carries it in its Apps group (PRD section J) */
+  const apps = wbRt(m) ? [dpRow("Human Sutra", `data-wbtab="conversation"`, tab === "conversation")] : [];
+  return { top, engines, filed, apps };
 }
 
 /* ── shared pieces ────────────────────────────────────────────────────────── */
@@ -471,6 +474,66 @@ function wbBoardHtml(n){
   }).join("");
 }
 
+/* ── the conversation: Human Sutra, an app ────────────────────────────────── */
+/* Founder, 2026-09-28: "a much more conversational style... Assume Slack,
+   where everybody is talking about certain things, and whatever has been
+   decided, then they come as whatever things we need to do." One stream in
+   time order, newest at the bottom: the owner's words, what the department
+   said back, the functions' own exchanges folded under the line that started
+   them, the asks inline with their buttons, and the box to say more. It reads
+   the board, the asks and the replies and writes nothing of its own: a word
+   goes in by the one way in. It is an app in the department's list, not part
+   of the core (PRD section J); the Board stays as the record, one block a
+   thread. */
+function wbLineHtml(p){
+  const to = (p.dst || []).filter(d => d !== "Owner");
+  const mine = p.src === "Owner";
+  return `<div class="wbline wb${mine ? " me" : ""}">${wbChip(p.src, mine ? "on" : "")}` +
+    (to.length ? `<span class="wbarrow">&rarr;</span>${wbChip(to.join(", "))}` : "") +
+    `<span class="dpchk">${wbEsc(WB_ACTS[p.msg_type] || p.msg_type)}${p.line ? "" : " · " + wbEsc(wbCap(p.word || ""))} · ${wbEsc(wbWhen(p.at))}</span>` +
+    (p.line ? `<div class="wbsaid">${wbEsc(p.line)}</div>` : "") + `</div>`;
+}
+function wbConversationHtml(n, m){
+  const b = wbS().board[n.ref];
+  if (!b){ wbLoadBoard(n.ref); return dpSkel(); }
+  if (b.failed) return dpQuiet("Could not read");
+  const items = [];
+  (b.threads || []).forEach(t => {
+    const posts = (t.posts || []).slice().sort((a, c) => a.n - c.n);
+    const own = posts.filter(p => p.src === "Owner" || (p.dst || []).indexOf("Owner") >= 0);
+    const theirs = posts.filter(p => own.indexOf(p) < 0);
+    own.forEach(p => items.push({ n: p.n, html: wbLineHtml(p) }));
+    if (theirs.length){
+      const who = [];
+      theirs.forEach(p => { if (who.indexOf(p.src) < 0) who.push(p.src); });
+      const [dot, word] = WB_THREADS[t.state] || ["", t.state];
+      items.push({ n: theirs[0].n, html: `<details class="wbfold wb"><summary>${wbDot(dot)}${who.map(w => wbChip(w)).join("")}` +
+        `<span class="dpchk">${wbEsc(theirs[0].line || t.topic || "")}</span><span class="dpst">${wbEsc(word)}</span></summary>` +
+        theirs.map(wbLineHtml).join("") + `</details>` });
+    }
+  });
+  items.sort((a, c) => a.n - c.n);
+  const asks = (m.status && m.status.asks) || [];
+  return `<div class="wbconv wb">` + (items.length ? items.map(i => i.html).join("") : dpQuiet("Nothing has been said yet")) + `</div>` +
+    (asks.length ? dpCard("Waiting for you", wbAsksHtml(m)) : "") +
+    dpCard("Say", wbAskBox(n.ref, "ask", "A task, a question, a rule, feedback or an idea", "data-wbask", "Send"));
+}
+/* Priority's card: the limits, born from Priority's template, set here by the
+   owner (founder, 2026-09-28: "configured in the relevant priority"). */
+function wbLimitsHtml(ref){
+  const st = wbS(), v = st.steps[ref + ":Priority"];
+  const rows = (v && v.limits) || [];
+  if (!rows.length) return "";
+  return dpCard("Limits", rows.map(l => {
+    const kc = ref + ":env:" + l.engine + ":calls", ku = ref + ":env:" + l.engine + ":usd";
+    const val = (k, d) => wbEsc(st.draft[k] !== undefined ? st.draft[k] : d);
+    return `<div class="wbstep wblim"><b>${wbEsc(l.engine)}</b>` +
+      `<input type="number" min="0" step="1" data-wbdraft="${wbEsc(kc)}" value="${val(kc, l.calls)}" aria-label="calls a day"><span class="dpchk">calls</span>` +
+      `<input type="number" min="0" step="0.5" data-wbdraft="${wbEsc(ku)}" value="${val(ku, l.usd)}" aria-label="USD a day"><span class="dpchk">USD a day</span>` +
+      wbBtn("Set", `data-wbenv="${wbEsc(l.engine)}"`) + `</div>`;
+  }).join(""));
+}
+
 /* ── filed work: the item, Preview, Versions, Trace ───────────────────────── */
 async function wbLoadArt(ref, slug){
   const st = wbS(), k = ref + ":" + slug;
@@ -552,6 +615,7 @@ function wbFnExtra(tab, m){
   }
   if (tab === "priority"){
     return dpCard("Envelopes", engs.map(e => dpRunRow(e.name, "", "", dpBar(Math.min(1, ((e.envelope || {}).used_calls || 0) / ((e.envelope || {}).calls || 1))))).join("")) +
+      (wbRt(m) ? wbLimitsHtml(m.ref) : "") +
       dpCard("Queue", engs.map(e => dpRunRow(e.name, e.state === "Running" ? "Running" : (e.state === "Waits" ? "Waits for the stamp" : e.slot), wbEngDot(e))).join("")) +
       steps;
   }
@@ -592,6 +656,7 @@ function wbViewer(n){
   if (tab === "status") return dpViewerShell("System status", wbStatusHtml(n, m), "wb");
   if (tab === "motor") return dpViewerShell("Motor", wbMotorHtml(n, m), "wb");
   if (tab === "board" && wbRt(m)) return dpViewerShell("Board", wbBoardHtml(n), "wb");
+  if (tab === "conversation" && wbRt(m)) return dpViewerShell("Human Sutra", wbConversationHtml(n, m), "wb");
   if (tab === "engine") return dpViewerShell(st.sel[n.ref] || "Engine", wbEngineHtml(n), "wb");
   if (tab === "art"){
     const a = (m.artifacts || []).filter(x => x.slug === st.sel[n.ref])[0];
@@ -676,7 +741,7 @@ async function wbPost(ref, tail, body, key){
 }
 if (typeof document !== "undefined" && document.addEventListener){
   const WB_SEL = "[data-wbtab],[data-wbengine],[data-wbart],[data-wbpane],[data-wbdecide],[data-wbstop],[data-wbresume]," +
-    "[data-wbgoal],[data-wbask],[data-wbputback],[data-wbfn],[data-wbfound],[data-wbhold]";
+    "[data-wbgoal],[data-wbask],[data-wbputback],[data-wbfn],[data-wbfound],[data-wbhold],[data-wbenv]";
   /* capture phase: a click on one of 20-dept.js's own rows hands the viewer
      back to it BEFORE that file's handler paints */
   document.addEventListener("click", (ev) => {
@@ -701,6 +766,14 @@ if (typeof document !== "undefined" && document.addEventListener){
     ev.preventDefault(); ev.stopPropagation();
     /* Hold sits on a function card too, which 20-dept.js draws: the card stays open */
     if (ds.wbhold !== undefined){ wbPost(ref, "hold", { step: ds.wbhold, held: ds.wbheld === "1" }); return; }
+    /* Set on Priority's card, which 20-dept.js draws: the owner's own limits for one engine */
+    if (ds.wbenv !== undefined){
+      const kc = ref + ":env:" + ds.wbenv + ":calls", ku = ref + ":env:" + ds.wbenv + ":usd", body = { engine: ds.wbenv };
+      if (st.draft[kc] !== undefined && st.draft[kc] !== "") body.calls = Number(st.draft[kc]);
+      if (st.draft[ku] !== undefined && st.draft[ku] !== "") body.usd = Number(st.draft[ku]);
+      wbPost(ref, "envelope", body, kc).then(() => { delete st.draft[ku]; wbLoadSteps(ref, "Priority", true); });
+      return;
+    }
     /* one of this file's entries is opening: none of 20-dept.js's rows stays lit */
     if (ds.wbfn === undefined && dpS().tab[ref] !== "now") dpS().tab[ref] = "now";
     if (ds.wbtab !== undefined){ st.tab[ref] = ds.wbtab; dpRender(); return; }
