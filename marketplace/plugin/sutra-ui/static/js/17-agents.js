@@ -1280,6 +1280,7 @@ const AG_GUIDE_TABS = [
   ["Prompts", "The instructions it actually writes by. Change the wording and the next article uses your version."],
   ["Memory", "Rules you have told it to remember for every article."],
   ["Tools", null],
+  ["Blog performance", "How blogs live on your website are actually doing -- keywords, rankings, traffic, backlinks -- and how the ones it wrote compare to the rest."],
   ["Connections", "Your keys, and the workspace your team joins."],
 ];
 function agGuideTabNames(){ return AG_GUIDE_TABS.map(t => t[0]); }
@@ -3806,7 +3807,7 @@ function agConnectionsHtml(c, h, form, ws, wsForm){
       </div></div></div>
     <h3 class="sec">Semrush · blog performance</h3>
     <div class="ag-row"><div class="ri"><div class="rn">Semrush <span class="ag-status"><i class="dot ${smr ? "ok" : "warn"}"></i>${smr ? "connected" : "not connected"}</span></div>
-      <div class="rd">Tracks organic keywords, rankings, traffic and backlinks for blogs live on testlify.com. Used by the Blog performance tab.</div>
+      <div class="rd">Tracks organic keywords, rankings, traffic and backlinks for blogs live on your website. Used by the Blog performance tab.</div>
       <div class="ag-form" style="margin-top:10px">
         <label><b>API key</b><input type="password" data-agsemrush="key" autocomplete="off" placeholder="${smr ? "•••••• (set)" : "from semrush.com → Profile → API"}" value="${agEsc(form.semrush || "")}"></label>
         <div class="row"><button class="btn pri" type="button" data-ag="savesemrush">Save</button>${smr ? `<button class="btn" type="button" data-ag="clearsemrush">Disconnect</button>` : ""}<span class="sp">${form.smsg ? agEsc(form.smsg) : ""}</span></div>

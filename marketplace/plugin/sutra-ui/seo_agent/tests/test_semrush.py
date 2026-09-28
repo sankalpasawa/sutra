@@ -55,6 +55,88 @@ bl = client.backlinks_for_url("https://testlify.com/blog/example-post")
 ok("demo backlinks are flagged too", bl.get("_demo") is True, bl)
 
 
+# ---- client.py: credential precedence -- SEMRUSH_API_KEY overrides the Connections-tab key --------
+# The env var exists for the Mac-app-has-no-shell-env case (launchd/terminal runs of sync.py); the
+# Connections-tab key must still be the default so the app itself keeps working exactly as before.
+print("\nclient: SEMRUSH_API_KEY overrides the Connections-tab key, not the other way round")
+_conn_before = store.connections().get("semrush_key")
+_env_before = os.environ.get("SEMRUSH_API_KEY")
+try:
+    store.save_connections({"semrush_key": "connections-tab-key"})
+    os.environ.pop("SEMRUSH_API_KEY", None)
+    ok("with no env var, the Connections-tab key is used", client._key() == "connections-tab-key", client._key())
+    ok("available() follows it", client.available() is True)
+
+    os.environ["SEMRUSH_API_KEY"] = "env-var-key"
+    ok("with both set, the env var wins", client._key() == "env-var-key", client._key())
+
+    store.save_connections({"semrush_key": ""})
+    ok("the env var alone is still enough with no Connections-tab key at all",
+       client._key() == "env-var-key", client._key())
+
+    os.environ.pop("SEMRUSH_API_KEY", None)
+    ok("neither set -> no credential, demo mode", client._key() == "" and client.demo_mode())
+finally:
+    if _env_before is None:
+        os.environ.pop("SEMRUSH_API_KEY", None)
+    else:
+        os.environ["SEMRUSH_API_KEY"] = _env_before
+    store.save_connections({"semrush_key": _conn_before or ""})
+
+
+# ---- client.py: url_organic caps rows and sorts by position, both on the wire ---------------------
+# 10 units per RETURNED ROW (not per call) is what url_organic bills, so display_limit is the whole
+# cost lever -- and display_sort=po_asc is what makes a capped call still give an EXACT Top3/10/20
+# count: the rows that come back are guaranteed to be the best-ranked ones, so nothing better-ranked
+# is ever sitting outside the cap. Both are asserted on the actual outgoing request, not the parsed
+# result, because a typo in either param name fails exactly the way client.py's own docstring warns
+# about: an empty column, not an error.
+print("\nclient: url_organic sends display_limit and display_sort=po_asc on a real call")
+
+
+class _FakeResponse:
+    def __init__(self, text):
+        self.status_code = 200
+        self.text = text
+
+    def raise_for_status(self):
+        pass
+
+
+_seen_calls = []
+
+
+def _fake_get(url, params=None, timeout=None):
+    _seen_calls.append(params or {})
+    return _FakeResponse("Ph;Po;Nq;Cp;Kd;Tr\nbest keyword;3;500;1.2;40;12.5\n")
+
+
+_conn_before2 = store.connections().get("semrush_key")
+_real_get = client.httpx.get
+try:
+    store.save_connections({"semrush_key": "a-real-looking-key"})
+    client.httpx.get = _fake_get
+    ok("demo mode is off once a key is set", client.demo_mode() is False)
+
+    rows = client.url_organic("https://testlify.com/some-post")
+    ok("exactly one request went out", len(_seen_calls) == 1, _seen_calls)
+    sent = _seen_calls[0]
+    ok("display_limit defaults to 20, not Semrush's own 100-row default",
+       sent.get("display_limit") == 20, sent)
+    ok("display_sort is po_asc -- best position first, so a cap never drops a better-ranked keyword",
+       sent.get("display_sort") == "po_asc", sent)
+    ok("the row still parses correctly with the real (non-demo) path",
+       rows == [{"keyword": "best keyword", "position": 3, "volume": 500, "cpc": 1.2,
+                "difficulty": 40.0, "traffic_share": 12.5}], rows)
+
+    _seen_calls.clear()
+    client.url_organic("https://testlify.com/some-post", limit=5)
+    ok("a caller-supplied limit is honored on the wire", _seen_calls[0].get("display_limit") == 5, _seen_calls)
+finally:
+    client.httpx.get = _real_get
+    store.save_connections({"semrush_key": _conn_before2 or ""})
+
+
 # ---- db.py: idempotent snapshot writes -----------------------------------------------------------
 print("\ndb: snapshot writes are idempotent")
 blog_id = db.upsert_blog({"url": "https://testlify.com/blog/idempotency-check", "title": "Idempotency check",
