@@ -274,8 +274,13 @@ function wbMapHtml(n, m){
       `${wbOnOff(m)}${live}</div>`
     : `<div class="wbmotor"><span class="dpdot ${mc}" data-wbmotor="1"></span><span data-wbmotorword="1">${wbEsc(mw)}</span>` +
       `<span class="dpchk">Motor</span>${m.stopped ? `<span class="dpst paused">Stopped</span>` : ""}${live}</div>`;
+  /* a Root that has not been asked for anything yet: the one empty state that names the action, so the person who
+     just founded an organisation knows the next thing is to say what the first department is for */
+  const asked = ((m.artifacts || []).filter(a => a.name === "Request")[0] || {}).versions;
+  const rootEmpty = m.kind === "root" && !asked ? dpCard("Departments", dpQuiet("No department yet. Say what the first one is for.")) : "";
   return dpCard("The department", head +
       `<div class="wbgrid">${m.systems.map(s => wbSystemTile(s, m)).join("")}</div>` + wbFlowHtml(m)) +
+    rootEmpty +
     dpCard("System status", status) +
     wbAskCard(n, m) + wbRepliesHtml(n, m) +
     dpCard("Health", health) +

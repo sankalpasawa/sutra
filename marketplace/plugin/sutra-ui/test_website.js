@@ -622,6 +622,26 @@ test("W22: a Root is a department on the screen: its one engine, Setup; Say asks
   assert.ok(/data-wbengine="Setup"/.test(lst) && /Human Sutra/.test(lst) && /data-wbart="request"/.test(lst), "the list: Setup, the Request filed, the app");
 });
 
+test("W23: a Root that has not been asked for anything says so, and what to say; once asked, the line is gone", async () => {
+  const m = rtMap();
+  m.kind = "root"; m.say = "Ask Root for a department: what it is for"; m.has_goal = true; m.live = false;
+  m.engines = [{ name: "Setup", reads: "Request", writes: "Department", runs_as: "model", slot: "after a new Request", state: "Idle",
+                 envelope: { calls: 240, usd: 6, used_calls: 0, used_usd: 0 }, window_min: 15, last: null }];
+  m.artifacts = [{ name: "Request", slug: "request", versions: 0, latest: null }, { name: "Department", slug: "department", versions: 0, latest: null }];
+  const c = await opened({ map: m });
+  view(c); await sleep(); await sleep();
+  let html = view(c);
+  assert.ok(/<h3>Departments<\/h3>[\s\S]{0,80}No department yet\. Say what the first one is for\./.test(html), "the empty state names the action");
+  const m2 = JSON.parse(JSON.stringify(m)); m2.artifacts[0].versions = 1;
+  const c2 = await opened({ map: m2 });
+  view(c2); await sleep(); await sleep();
+  html = view(c2);
+  assert.ok(!/No department yet/.test(html), "asked once, the line is gone");
+  const w = await opened({ map: rtMap() });
+  view(w); await sleep(); await sleep();
+  assert.ok(!/No department yet/.test(view(w)), "a website department never says it");
+});
+
 Promise.all(pending).then(() => {
   console.log("-".repeat(60));
   console.log(failed ? " " + failed + " failed (" + ran + " tests)" : " all passed (" + ran + " tests)");
