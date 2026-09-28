@@ -419,8 +419,16 @@ async function wbLoadChat(ref, again){
     const v = await apiGet(wbUrl(ref, "chat"));
     const sig = JSON.stringify(v);
     const moved = sig !== st.chatSig[ref] || !st.chat[ref];
+    /* a department Root made since the tree was read: the tree learns of it here, without a reload (found live
+       2026-09-28: the person could not open the department he had just stamped) */
+    const known = ((st.chat[ref] || {}).departments || []).length, now = (v.departments || []).length;
     st.chat[ref] = v; st.chatSig[ref] = sig;
     delete st.busy["c:" + ref];
+    if (st.chatSig[ref + ":depts"] !== undefined && now > known && typeof loadOrg2 === "function"){
+      if (typeof o2S === "function" && o2S().expanded) o2S().expanded.add(ref);
+      loadOrg2(true);
+    }
+    st.chatSig[ref + ":depts"] = now;
     if (moved && (!again || !wbTyping())) dpRender();
   } catch (e) {
     if (!st.chat[ref]) st.chat[ref] = { failed: true };
@@ -592,8 +600,12 @@ function wbConversationHtml(n, m){
    you stand as a chip the person can take off. The left name is always Root;
    the department is a chip on the turn. The markup is the Sutra chat's own
    (05-chat.js: turn, who, u, a), so it reads as a chat. */
+/* The department a turn is about is a chip that opens it (found live 2026-09-28: the person clicked the chip first). */
+function wbDeptChip(ref, name){
+  return `<button type="button" class="wbchip wbto wb" data-wbopen="${wbEsc(ref)}">${wbEsc(name)}</button>`;
+}
 function wbChatTurn(t, scoped){
-  const dept = !scoped && t.name ? wbChip(t.name) : "";
+  const dept = !scoped && t.name ? (t.dept ? wbDeptChip(t.dept, t.name) : wbChip(t.name)) : "";
   /* a stamp or a refusal carries no words of its own: the act is the line */
   const line = t.line || (t.msg_type === "accept-proposal" ? "Stamped" : t.msg_type === "reject-proposal" ? "Refused" : wbCap(t.word || ""));
   if (t.src === "Owner") return `<div class="turn wbturn"><div class="who who-you">${dept}You</div><div class="u md">${wbEsc(line)}</div></div>`;
@@ -627,7 +639,7 @@ function wbChatHtml(n, m){
   const scoped = !!c.about, depts = c.departments || [];
   const turns = (c.turns || []).map(t => wbChatTurn(t, scoped)).join("");
   const empty = m.kind === "root" && !depts.length ? "No department yet. Say what the first one is for." : "Nothing has been said yet";
-  const names = !scoped && depts.length ? `<div class="wbstep"><span class="dpk">Departments</span>${depts.map(d => wbChip(d.name, d.stopped ? "" : "on")).join("")}</div>` : "";
+  const names = !scoped && depts.length ? `<div class="wbstep"><span class="dpk">Departments</span>${depts.map(d => wbDeptChip(d.ref, d.name)).join("")}</div>` : "";
   return `<div class="wbchat wb">${turns || dpQuiet(empty)}</div>` + wbChatAsksHtml(c) + wbChatBoxHtml(n, m) + names;
 }
 
@@ -925,7 +937,7 @@ async function wbPost(ref, tail, body, key, at){
 if (typeof document !== "undefined" && document.addEventListener){
   const WB_SEL = "[data-wbtab],[data-wbengine],[data-wbart],[data-wbpane],[data-wbdecide],[data-wbstop],[data-wbresume]," +
     "[data-wbgoal],[data-wbask],[data-wbputback],[data-wbfn],[data-wbfound],[data-wbhold],[data-wbenv]," +
-    "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost]";
+    "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost],[data-wbopen]";
   /* capture phase: a click on one of 20-dept.js's own rows hands the viewer
      back to it BEFORE that file's handler paints */
   document.addEventListener("click", (ev) => {
@@ -980,6 +992,7 @@ if (typeof document !== "undefined" && document.addEventListener){
       dpRender(); return;
     }
     if (ds.wbchip !== undefined){ st.chip[ref] = ds.wbchip === "on"; dpRender(); return; }
+    if (ds.wbopen !== undefined){ if (typeof o2Select === "function") o2Select(ds.wbopen); return; }
     if (ds.wbthread !== undefined){ st.thread[ref] = ds.wbthread; dpRender(); return; }
     if (ds.wbdecide !== undefined){ wbPost(ref, "asks/" + encodeURIComponent(ds.wbdecide), { approve: ds.wbok === "1" }, null, ds.wbref || ref); return; }
     if (ds.wbstop !== undefined){ wbPost(ref, "stop"); return; }

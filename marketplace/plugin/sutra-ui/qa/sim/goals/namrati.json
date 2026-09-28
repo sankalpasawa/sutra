@@ -1,0 +1,29 @@
+{
+  "id": "namrati",
+  "person": "founder",
+  "app": "http://127.0.0.1:8331/",
+  "organisation": "Namrati",
+  "goal": "A live website for Namrati, a D2C handloom saree brand: the collections, the weavers behind them, how to order, care instructions, and a page for wholesale enquiries.",
+  "why": "the second instance is a brand, not a hospital: different pages, different words; a site the kind was never walked with",
+  "outcomes": [
+    { "id": "founded", "expect": "Namrati in the tree with its Root, On", "verify": { "kind": "route", "get": "/api/native/depts", "check": "'Namrati Root', kind root, stopped false" } },
+    { "id": "root-asks", "expect": "Root asks to set up the department", "verify": { "kind": "route", "get": "/api/native/{root}/status", "check": "a pending setup ask" } },
+    { "id": "child-born", "expect": "Namrati Website under Root, On", "verify": { "kind": "route", "get": "/api/native/depts", "check": "a website department under the Root" } },
+    { "id": "line-ran", "expect": "Plan, Write, Check ran; the publish ask", "verify": { "kind": "route", "get": "/api/native/{child}/map", "check": "four artifacts at v1; a pending publish ask" } },
+    { "id": "live", "expect": "the live site with Collections, Weavers, How to order, Care, Wholesale", "verify": { "kind": "site", "get": "/api/native/{child}/site/index.html", "check": "200; the five page names" } }
+  ],
+  "variances": [
+    { "id": "refuse-first-publish", "say": "refuse", "where": "the publish ask", "then": "task Add a page on our dyes before we go live.",
+      "expect": "refused: nothing live; the task runs; the publish ask comes again with the dyes page in the plan; Stamp then goes live",
+      "verify": { "kind": "route", "get": "/api/native/{child}/map", "check": "Live site 0 after the refusal; then a new publish ask; then Live site 1 with dyes.html" } },
+    { "id": "second-department", "say": "Start a department for Namrati: a newsletter that goes out every month to our customers.", "where": "Root's chat",
+      "expect": "Root asks once; after Stamp a second department under the same Root; the first untouched",
+      "verify": { "kind": "route", "get": "/api/native/depts", "check": "two departments under Namrati Root" } },
+    { "id": "limit", "where": "Priority, Settings, Limit", "do": "set Write to 0 USD a day; then task Add a page on gifting.",
+      "expect": "Plan runs; Write waits; an ask says Write is out of today's envelope; the site unchanged",
+      "verify": { "kind": "route", "get": "/api/native/{child}/status", "check": "a pending envelope ask for Write" } },
+    { "id": "chip-off", "where": "inside Namrati Website's chat", "do": "take the chip off; say: Which departments do I have?",
+      "expect": "the words go to Root alone; Root answers about the organisation, not the website",
+      "verify": { "kind": "route", "get": "/api/native/{root}/chat", "check": "the last owner turn has no department; Root's answer follows" } }
+  ]
+}

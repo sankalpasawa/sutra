@@ -1207,6 +1207,55 @@ class TestTheFrontDoor(Base):
         self.assertTrue(any(t["src"] == "Owner" and t.get("own") and t["line"] == "Which page lists the therapists?" for t in scoped["turns"]))
         self.assertTrue(any(t["src"] == "Identity" and t.get("own") and t["word"] == "answer" for t in scoped["turns"]))
 
+    def test_67_a_step_not_needed_this_time_never_fails_a_run(self):
+        """Found live 2026-09-28 (Human Simulation run 1): a task said in several sentences made the skipped step
+        'Restate it as a rule' fail its one-line check, and the whole request failed unseen."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        child_name = W.dept(child)["name"]
+        before = len(W.versions(child, "Brief"))
+        words = ("The emergency number is 108. Our doctors: Dr. Meera Rao (cardiology), Dr. Arjun Nair (orthopaedics). "
+                 "We treat heart, bone and children's illnesses. Put the emergency number 108 on every page instead of 'to be confirmed'.")
+        W.owner_ask(root, "On %s, %s" % (child_name, words))
+        W.run_until_idle(root, limit=200)
+        W.run_until_idle(child, limit=200)
+        failed = [r for r in W.runs(child) if r["status"] == "failed"]
+        self.assertEqual(failed, [], "no run failed: %s" % [(r["engine"], r.get("what")) for r in failed])
+        rows = [r for r in R.step_rows(child) if r["engine"] == "Identity" and r["by"] == R.SKIPPED]
+        self.assertTrue(rows, "some steps were not needed")
+        self.assertTrue(all(r["status"] == "ok" and r["check"]["notes"] == [R.SKIPPED] for r in rows), "and none of them failed")
+        self.assertEqual(len(W.versions(child, "Brief")), before + 1, "the words were taken")
+        self.assertIn(("Identity", "Owner", "inform", "filed in the Brief", child_name), self.said(root)[-2:])
+
+    def test_68_a_request_whose_handling_failed_is_said_back_and_health_counts_it(self):
+        """A handed-on request that a failed run could not carry is a turn from Root, about the department, asking
+        for the words again; Health's Front door counts a Root-handed request too."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        child_name = W.dept(child)["name"]
+        real = R.CODE["identity_file"]                     # a model that answers nothing steps down and asks; a broken
+
+        def boom(ctx, step, item):                         # code step is the failure a person never sees
+            raise RuntimeError("the file step broke")
+        R.CODE["identity_file"] = boom
+        try:
+            W.owner_ask(root, "On %s, add a page on parking." % child_name)
+            W.run_until_idle(root, limit=200)
+            W.run_until_idle(child, limit=200)
+        finally:
+            R.CODE["identity_file"] = real
+        failed = [r for r in W.runs(child) if r["status"] == "failed" and r["engine"] == "Identity"]
+        self.assertTrue(failed, "the handling failed, as arranged")
+        said = [t for t in R.chat_view(root)["turns"] if t["word"] == "lost"]
+        self.assertEqual(len(said), 1, self.said(root)[-4:])
+        self.assertTrue(said[0]["line"].startswith("I could not act on this:") and said[0]["line"].endswith("Say it again, or say it differently."))
+        self.assertEqual(said[0]["dept"], child, "about the department")
+        scoped = [t for t in R.chat_view(child)["turns"] if t["word"] == "lost"]
+        self.assertEqual(len(scoped), 1, "once inside the department, not twice")
+        fs = R.front_state(child)
+        self.assertEqual(fs["lost"], [], "said back, so not lost")
+        self.assertEqual(next(c for c in W.health(child)["checks"] if c["name"] == "Front door")["line"], "Every request answered")
+
     def test_64_each_function_has_its_own_ladder_numbers_from_its_settings(self):
         """Founder, 2026-09-28: each of the five functions has a Settings tab with its own updates; an engine too."""
         W, R = self.W, self.R

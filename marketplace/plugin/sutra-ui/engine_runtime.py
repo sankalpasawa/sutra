@@ -1101,6 +1101,17 @@ def run_engine(ref, name, inp, slot):
         row.update({"status": "failed", "what": note or "failed"})
         if p:
             _thread_set(ref, p["thread"], state="failed", outcome={"by": "a failed step"})
+            # the owner's own request, or one Root handed on, that this run could not carry: the person is told, in
+            # the chat, and asked to say it again (found live 2026-09-28: a failed handling was silence)
+            if p.get("src") in (OWNER, "Root") and p.get("msg_type") == "request" and ctx["engine"] == "Identity":
+                try:
+                    pl = p.get("payload") or {}
+                    ab = pl.get("about") if isinstance(pl.get("about"), dict) else None
+                    _tell(ref, ctx["dept"], p, "inform",
+                          {"word": "lost", "for": p["thread"], "why": note or "failed",
+                           "done": "I could not act on this: %s. Say it again, or say it differently." % (note or "a step failed")}, about=ab)
+                except Exception:  # noqa: BLE001 -- saying it back never fails the row that says why
+                    pass
     return W._put_run(ref, row)
 
 
@@ -1166,8 +1177,14 @@ def run_step(ctx, step, item):
         return end(status="failed", why="%s: no answer that fits, on any rung" % step["name"]), None
     with _SPEND:
         ctx["how"][step["id"]] = how
-    check = CHECK[step["check"]](ctx, step, item, out)
-    trial, tcost, tcalls = _trial(ctx, step, item, out, check, facts)
+    if how == SKIPPED:
+        # a step not needed this time ran its draft only to fill the bag; its check is not a judgement of anything
+        # (found live 2026-09-28: a task's long words made "Restate it as a rule" fail its one-line check on a step
+        # that was skipped, and the whole request failed unseen)
+        check, trial, tcost, tcalls = {"ok": True, "notes": [SKIPPED]}, None, 0.0, 0
+    else:
+        check = CHECK[step["check"]](ctx, step, item, out)
+        trial, tcost, tcalls = _trial(ctx, step, item, out, check, facts)
     _spend(ctx, tcost, tcalls)
     answer = out.get(step["answer"]) if step.get("answer") else None
     hashed = answer if answer is not None else {k: v for k, v in out.items() if k != "files"}
@@ -1582,12 +1599,12 @@ def front_state(ref):
     waiting, lost = [], []
     for tid, posts in by_thread.items():
         first = posts[0]
-        if first["src"] != OWNER or first["msg_type"] != "request":
+        if first["src"] not in (OWNER, "Root") or first["msg_type"] != "request":   # the owner's own, or handed on by Root
             continue
-        answered = any(q["src"] != OWNER for q in posts[1:])
+        answered = any(q["src"] not in (OWNER, "Root") for q in posts[1:])
         words = str((first.get("payload") or {}).get("words") or "")
         state = (ths.get(tid) or {}).get("state")
-        if state == "canceled" and not answered and tid not in said_back:
+        if state in ("canceled", "failed") and not answered and tid not in said_back:
             lost.append({"words": words, "at": first["at"]})
         elif not answered and state not in CLOSED and time.time() - W._ts(first["at"]) > FRONT_WAIT_S:
             waiting.append({"words": words, "since": first["at"]})
@@ -2684,7 +2701,9 @@ def _line(p):
     pl = p.get("payload") or {}
     for k in ("words", "objective", "claim", "done", "reflected", "line", "what", "why", "cost", "answer"):
         if pl.get(k):
-            return str(pl[k])[:220]
+            # the person's own words are shown whole; a function's line is cut short (found live 2026-09-28: a
+            # four-sentence request lost its last sentence on the screen)
+            return str(pl[k]) if k in ("words", "done", "answer") else str(pl[k])[:220]
     if pl.get("step") and pl.get("to"):
         name = (step_def(str(pl["step"]))[1] or {}).get("name")
         if name:

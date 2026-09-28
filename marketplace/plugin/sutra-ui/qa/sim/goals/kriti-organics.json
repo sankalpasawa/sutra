@@ -1,0 +1,27 @@
+{
+  "id": "kriti-organics",
+  "person": "founder",
+  "app": "http://127.0.0.1:8331/",
+  "organisation": "Kriti Organics",
+  "goal": "A live website for Kriti Organics, a D2C cold-pressed oils brand: the oils, where the seeds come from, lab reports, how to subscribe monthly, and a store locator.",
+  "why": "the third instance: proves the component, not the first two; its variances are the non-linear ones",
+  "outcomes": [
+    { "id": "founded", "expect": "Kriti Organics in the tree with its Root, On", "verify": { "kind": "route", "get": "/api/native/depts", "check": "'Kriti Organics Root', kind root" } },
+    { "id": "child-born", "expect": "Kriti Organics Website under Root after one Stamp", "verify": { "kind": "route", "get": "/api/native/depts", "check": "a website department under the Root" } },
+    { "id": "live", "expect": "the live site with Oils, Our seeds, Lab reports, Subscribe, Stores", "verify": { "kind": "site", "get": "/api/native/{child}/site/index.html", "check": "200; the five page names" } }
+  ],
+  "variances": [
+    { "id": "two-asks-at-once", "where": "Root's chat", "do": "say two tasks back to back before the first finishes: Add a page on recipes. / Add a page on our founders.",
+      "expect": "both run, one after the other; the site gains both pages; no request is lost",
+      "verify": { "kind": "site", "get": "/api/native/{child}/site/{recipes,founders}.html", "check": "both 200" } },
+    { "id": "rule-then-refuse", "where": "Root's chat", "do": "say a rule; Refuse it",
+      "expect": "refused: no rule kept; the next live version unchanged", "verify": { "kind": "route", "get": "/api/native/{child}/map", "check": "rules[] unchanged" } },
+    { "id": "idea", "where": "the department's chat", "do": "say: What if we let customers build their own oil box?",
+      "expect": "the idea is shaped and parked, nothing built", "verify": { "kind": "route", "get": "/api/native/{child}/board", "check": "ideas[] has one parked; Live site unchanged" } },
+    { "id": "stop-mid-run", "where": "Root's chat", "do": "say a task; press Stop while Write runs; Start again",
+      "expect": "the run finishes or resumes cleanly; one version, no slot twice", "verify": { "kind": "route", "get": "/api/native/{child}/health", "check": "Slots: each slot ran once" } },
+    { "id": "host", "where": "Identity, Settings, Served from", "do": "set https://kritiorganics.example before the first publish",
+      "expect": "the publish ask names the host; Publish reads it", "verify": { "kind": "route", "get": "/api/native/{child}/map", "check": "host == https://kritiorganics.example" } },
+    { "id": "board-thread", "where": "the Board", "do": "open the newest thread", "expect": "a thread list, the open thread as turns", "verify": { "kind": "screen", "check": "wbthr rows and a turn block" } }
+  ]
+}

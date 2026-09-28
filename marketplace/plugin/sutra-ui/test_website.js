@@ -48,6 +48,9 @@
      W27 the department's own asks and answers are turns of the same chat
          (ER-10): inside the department without a chip, on Root with its chip;
          a stamp of its own says Stamped
+     W28 the department chip in Root's chat opens the department; the tree
+         learns of a Root-born department without a reload (Human Simulation
+         run 1, findings 1 and 2)
 
    Harness: test_dept.js's fresh(), with 22-website.js loaded after 20-dept.js
    (panel.html's order). Run: node test_website.js */
@@ -750,12 +753,12 @@ test("W25: the chat is the one point of entry: it opens first; inside a departme
   const r = await opened({ map: rm, chat: ROOT_CHAT });
   view(r); await sleep(); await sleep();
   html = view(r);
-  assert.ok(/<div class="who who-ai">Root<span class="wbchip">City Care Hospital Website<\/span><\/div><div class="a">The Doctors page lists them/.test(html), "on Root the department is a chip on the turn");
-  assert.ok(/<div class="who who-you"><span class="wbchip">City Care Hospital Website<\/span>You<\/div><div class="u md">Which page lists the doctors\?/.test(html), "on the owner's turn too");
+  assert.ok(/<div class="who who-ai">Root<button type="button" class="wbchip wbto wb" data-wbopen="r5">City Care Hospital Website<\/button><\/div><div class="a">The Doctors page lists them/.test(html), "on Root the department is a chip on the turn");
+  assert.ok(/<div class="who who-you"><button type="button" class="wbchip wbto wb" data-wbopen="r5">City Care Hospital Website<\/button>You<\/div><div class="u md">Which page lists the doctors\?/.test(html), "on the owner's turn too");
   assert.ok(/<div class="who who-ai">Root<\/div><div class="a">Set up a department: City Care Hospital Website<span class="dpchk">asks · /.test(html), "Root's own turns, with no chip");
   assert.ok(/<div class="who who-you">You<\/div><div class="u md">Stamped<\/div>/.test(html), "a stamp is a turn with the act as its line, never an empty bubble");
   assert.ok(!/data-wbchip/.test(html) && /placeholder="Ask Root for a department: what it is for"/.test(html), "no chip on the box: Root is where you stand");
-  assert.ok(/<span class="dpk">Departments<\/span><span class="wbchip on">City Care Hospital Website<\/span>/.test(html), "the departments under Root");
+  assert.ok(/<span class="dpk">Departments<\/span><button type="button" class="wbchip wbto wb" data-wbopen="r5">City Care Hospital Website<\/button>/.test(html), "the departments under Root");
   assert.ok(/data-wbdecide="a-1" data-wbok="1" data-wbref="r5"/.test(html), "the department's ask, with where it lives");
   (r.document.listeners.input || []).forEach(fn => fn({ target: { dataset: { wbdraft: "r3:ask" }, value: "Stop City Care Hospital Website" } }));
   click(r, { wbask: "ask" }); await sleep(); await sleep();
@@ -780,8 +783,27 @@ test("W27: the department's own asks and answers are turns of the same chat: ins
   const r = await opened({ map: rm, chat: ROOT_CHAT });
   view(r); await sleep(); await sleep();
   html = view(r);
-  assert.ok(/<div class="who who-ai">Root<span class="wbchip">City Care Hospital Website<\/span><\/div><div class="a">say whether the site may go live for the first time/.test(html), "on Root, the department's own ask carries its chip");
-  assert.ok(/<div class="who who-you"><span class="wbchip">City Care Hospital Website<\/span>You<\/div><div class="u md">Stamped<\/div>/.test(html), "so does its stamp");
+  assert.ok(/<div class="who who-ai">Root<button type="button" class="wbchip wbto wb" data-wbopen="r5">City Care Hospital Website<\/button><\/div><div class="a">say whether the site may go live for the first time/.test(html), "on Root, the department's own ask carries its chip");
+  assert.ok(/<div class="who who-you"><button type="button" class="wbchip wbto wb" data-wbopen="r5">City Care Hospital Website<\/button>You<\/div><div class="u md">Stamped<\/div>/.test(html), "so does its stamp");
+});
+
+test("W28: the department chip in Root's chat opens the department, and the tree learns of a Root-born department without a reload", async () => {
+  const rm = rtMap(); rm.kind = "root"; rm.root = "r3"; rm.say = "Ask Root for a department: what it is for"; rm.live = false;
+  const chat = JSON.parse(JSON.stringify(ROOT_CHAT));
+  const r = await opened({ map: rm, chat });
+  vm.runInContext("globalThis.__opened = null; o2Select = function(ref){ globalThis.__opened = ref; }; globalThis.__org = 0; loadOrg2 = function(){ globalThis.__org++; return Promise.resolve(); };", r);
+  view(r); await sleep(); await sleep();
+  const html = view(r);
+  assert.ok(/<button type="button" class="wbchip wbto wb" data-wbopen="r5">City Care Hospital Website<\/button>/.test(html), "the chip on a turn is a button that names the department");
+  assert.ok(/<span class="dpk">Departments<\/span><button type="button" class="wbchip wbto wb" data-wbopen="r5">/.test(html), "so is the chip under Departments");
+  assert.ok(click(r, { wbopen: "r5" }));
+  assert.strictEqual(vm.runInContext("globalThis.__opened", r), "r5", "clicking it opens the department");
+  assert.strictEqual(vm.runInContext("globalThis.__org", r), 0, "the tree is not re-read while nothing is new");
+  chat.departments.push({ ref: "r6", name: "City Care Hospital Newsletter", stopped: false });
+  await r.wbLoadChat("r3", true); await sleep(); await sleep();
+  assert.strictEqual(vm.runInContext("globalThis.__org", r), 1, "a department Root made since the tree was read re-reads the tree");
+  await r.wbLoadChat("r3", true); await sleep();
+  assert.strictEqual(vm.runInContext("globalThis.__org", r), 1, "once, not on every read");
 });
 
 test("W26: each function's card has its own Settings tab: its template, its own limit, its ladder numbers, how it starts; Identity's carries where the site is served from", async () => {
