@@ -2223,7 +2223,9 @@ def steps_view(ref, name):
 
 
 SHARED = "What engines share"
-FIRST = {"posts": "A post waiting for its reader", "line": "The line, in its order", "functions": "An internal system woken by new work"}
+#: Words the screen shows. The users' word for the five is function; "internal system" is the word inside and is
+#: never put in anything a screen reads (founder, 2026-09-28).
+FIRST = {"posts": "A post waiting for its reader", "line": "The line, in its order", "functions": "A function woken by new work"}
 
 
 def start_view(e):

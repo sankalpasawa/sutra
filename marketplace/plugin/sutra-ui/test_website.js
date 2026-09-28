@@ -35,6 +35,8 @@
          when it is on, at the top of its Map; each posts the one route
      W18 every engine's card says how it starts, on what and unless what, and
          Coordination's card carries its table: who goes first, who may post
+     W19 on the screen the five are functions; the word "internal system" is
+         the inside word and is printed nowhere
 
    Harness: test_dept.js's fresh(), with 22-website.js loaded after 20-dept.js
    (panel.html's order). Run: node test_website.js */
@@ -118,9 +120,9 @@ function stepsOf(name, o){
                evidence: { runs: 10, differing: 0, shape_drift: 0, pass: 0.9, marked: 0, misses: 0, usd: 0.01 },
                history: [{ at: AT, from: null, to: "C0", by: "born", evidence: null }].concat(o.moved ? [{ at: AT, from: "C0", to: "C1", by: "the owner's stamp", evidence: {} }] : []) }),
       stepOf({ id: "write.file", name: "Put the pages together", check: "filed_has_files", ran: false, last: null, evidence: null })] };
-  const table = name !== "Coordination" ? undefined : { first: ["A post waiting for its reader", "The line, in its order", "An internal system woken by new work"],
+  const table = name !== "Coordination" ? undefined : { first: ["A post waiting for its reader", "The line, in its order", "A function woken by new work"],
     line: ["Plan", "Write", "Check", "Publish"], may_post: [{ from: "Audit", act: "inform", to: ["Identity"] }, { from: "Owner", act: "request", to: ["Identity"] }] };
-  return { name, kind: "function", description: "", skills: [], reads: null, writes: null, numbers, table,
+  return { name, kind: "function", description: name === "Priority" ? "grants each engine its budget" : "", skills: [], reads: null, writes: null, numbers, table,
     start: { on: ["a post addressed to it"], unless: [] },
     hears: (table ? ["What engines share"] : []).concat(["Take a request"]), steps: [
     stepOf({ id: name.toLowerCase() + ".gate", name: "Say whether it may start", nature: "decide", mode: "gate", check: "gate_answer_is_known" }),
@@ -540,6 +542,20 @@ test("W18: every engine's card says how it starts, and Coordination's card carri
     assert.ok(!/\d/.test(t), "a number at rest: " + (t.match(/.{0,30}\d.{0,30}/) || [""])[0]);
     assert.ok(!/coord\.|identity\.|write\.|names_who|\/api\//.test(t), "an id or a path in the words");
   });
+});
+
+test("W19: on the screen the five are functions; 'internal system' is printed nowhere", async () => {
+  const c = await opened({ map: rtMap() });
+  const seen = [c.dpListHtml(WEB, {}, null, null), view(c)];
+  click(c, { wbtab: "board" }); view(c); await sleep(); await sleep(); seen.push(view(c));
+  click(c, { wbengine: "Write" }); view(c); await sleep(); await sleep(); seen.push(view(c));
+  for (const f of ["identity", "adaptation", "priority", "coordination", "audit"]) seen.push(await fnCard(c, f));
+  assert.strictEqual(seen.length, 9);
+  seen.forEach((h, i) => assert.ok(!/internal\s+system/i.test(h), "the inside word is on the screen, in view " + i + ": " + (h.match(/.{0,60}internal\s+system.{0,40}/i) || [""])[0]));
+  const pr = await fnCard(c, "priority");
+  assert.ok(/<h3>The function<\/h3><div class="dpbig">Grants each engine its budget<\/div>/.test(pr), "a function's own card is titled The function");
+  assert.ok(/<span>A function woken by new work<\/span>|A function woken by new work/.test(await fnCard(c, "coordination")));
+  assert.ok(!/internal\s+system/i.test(wbSrc.replace(/\/\*[\s\S]*?\*\//g, "")), "nor in any string of the script");
 });
 
 Promise.all(pending).then(() => {

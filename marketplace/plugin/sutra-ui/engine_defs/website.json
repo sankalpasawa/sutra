@@ -1,5 +1,5 @@
 {
- "comment": "The nine engines of a website department, as data (engine_runtime.py): four work engines and five internal systems. EVERY engine names its start: the triggers that make it want to run (a new version of something, a post addressed to it, a time) and the blockers that hold it (gates of the internal systems, by id). An engine with no start is refused when the definitions are loaded, so every engine starts by the same rule. A step names its code, its prompt and its check; a name resolves only in the registry that ships with the app. born is the rung a step starts on; the rung it runs on is read from the department's ladder. EVERY step names a check: a definition with a step that has none is refused. coordination is the table Coordination is born with: who goes first when several engines are ready; a department keeps its own copy on its record, and only that copy is read. The journeys are canon's five (holding/website/native/products/cos/design-journeys.html): task, query, directive, feedback, new idea.",
+ "comment": "The nine engines of a website department, as data (engine_runtime.py): four work engines and five internal systems. EVERY engine names its start: the triggers that make it want to run (a new version of something, a post addressed to it, a time) and the blockers that hold it (gates of the internal systems, by id). An engine with no start is refused when the definitions are loaded, so every engine starts by the same rule. A step names its code, its prompt and its check; a name resolves only in the registry that ships with the app. born is the rung a step starts on; the rung it runs on is read from the department's ladder. EVERY step names a check: a definition with a step that has none is refused. coordination is the table Coordination is born with: who goes first when several engines are ready; a department keeps its own copy on its record, and only that copy is read. The journeys are canon's five (holding/website/native/products/cos/design-journeys.html): task, query, directive, feedback, new idea. WORDS: a step's name and an engine's description are shown on the screen, so they say function, the users' word; internal system is the word inside, for this comment, the documents and the code.",
  "def_version": 2,
  "edges": {
   "Owner": {
@@ -721,7 +721,7 @@
     },
     {
      "id": "coord.verdict",
-     "name": "Ask an internal system for its verdict",
+     "name": "Ask a function for its verdict",
      "nature": "transform",
      "born": "C2",
      "code": "coord_verdict",

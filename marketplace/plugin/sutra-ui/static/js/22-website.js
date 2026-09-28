@@ -190,7 +190,11 @@ function wbControls(m){
 }
 /* Start is just a button (founder, 2026-09-28): one button on the department,
    Start when it is off and Stop when it is on. It is a signal to every engine
-   and internal system of the department; each then looks to its own triggers. */
+   and function of the department; each then looks to its own triggers.
+
+   WORDS. On this screen the five are functions: that is the users' word.
+   "Internal system" is the word inside, for documents and code, and it is
+   never printed here (founder, 2026-09-28; test_website.js W19). */
 function wbOnOff(m){
   return m.stopped ? wbBtn("Start", `data-wbresume="1"`, "wbonoff dpstamp") : wbBtn("Stop", `data-wbstop="1"`, "wbonoff");
 }
@@ -413,7 +417,7 @@ function wbStepsHtml(ref, name){
   const moves = [];
   steps.forEach(s => (s.history || []).forEach(h => { if (h.from) moves.push([s, h]); }));
   moves.sort((a, b) => String(b[1].at).localeCompare(String(a[1].at)));
-  return (v.description ? dpCard(v.kind === "function" ? "The internal system" : "The engine",
+  return (v.description ? dpCard(v.kind === "function" ? "The function" : "The engine",
         `<div class="dpbig">${wbEsc(v.description.charAt(0).toUpperCase() + v.description.slice(1))}</div>` +
         ((v.skills || []).length ? `<div class="wbstep">${v.skills.map(x => wbChip(x)).join("")}</div>` : "")) : "") +
     wbStartHtml(v) + wbTableHtml(v) +

@@ -938,12 +938,25 @@ class TestActivation(Base):
         self.assertEqual(c["hears"][0], "What engines share")
         shared = [s["name"] for s in c["steps"] if s["under"] == "What engines share"]
         self.assertEqual(shared, ["Keep one run at a time", "Say who goes first, when several are ready", "Say who may post what to whom",
-                                  "Ask an internal system for its verdict", "Close a thread at its bound",
+                                  "Ask a function for its verdict", "Close a thread at its bound",
                                   "Raise an alarm for a run past its window"])
         pick = next(s for s in c["steps"] if s["id"] == "coord.pick")
         self.assertEqual((pick["mode"], pick["rung_name"], pick["ran"], pick["evidence"]["pass"]), ("rule", "Code", True, 1.0))
         self.assertEqual(c["table"]["line"], ["Plan", "Write", "Check", "Publish"])
         self.assertIn({"from": "Owner", "act": "request", "to": ["Identity"]}, c["table"]["may_post"])
+
+    def test_53_what_the_screen_reads_says_function_never_internal_system(self):
+        """Founder, 2026-09-28: "the internal word is 'internal system' only. It is just for the users. They are
+        called functions." """
+        R, W = self.R, self.W
+        self.live()
+        self.ask("What if patients could book a visit on the site")
+        read = {name: R.steps_view(REF, name) for name in self.NINE}
+        read.update({"the board": R.board_view(REF), "the map": W.map_view(REF), "the ideas": R.ideas(REF)})
+        for what, view in read.items():
+            self.assertNotIn("internal system", json.dumps(view).lower(), "the inside word reached the screen, in " + what)
+        self.assertEqual(read["Coordination"]["table"]["first"][2], "A function woken by new work")
+        self.assertEqual([k for k in self.NINE if read[k]["kind"] == "function"], ["Identity", "Adaptation", "Priority", "Coordination", "Audit"])
 
 
 if __name__ == "__main__":
