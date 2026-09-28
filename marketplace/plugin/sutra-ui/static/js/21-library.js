@@ -87,10 +87,28 @@ function libTab(shelf){ return LIB_STATE.tab[shelf] || "about"; }
 function libTag(shelf){ return LIB_STATE.tag[shelf] || ""; }
 
 /* ── the head ────────────────────────────────────────────────────────────*/
+/* THE WAY BACK (founder, 2026-09-28: "when I click on the Adaptation function
+   it just shows the Adaptation function in the Library sections. I'm not able
+   to go back"). A shelf opens over the whole pane, and since 2026-09-25 the
+   rail has no row for it, so the page itself carries the return: the app's own
+   back control (.sxback, the one every Settings section uses), landing on Org
+   structure with the Library list still open -- the place the click came from. */
+function libBackHtml(){
+  return `<button type="button" class="sxback" data-libback="org2"
+    aria-label="Back to Org structure"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2.2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>Org</button>`;
+}
+function libBack(){
+  if (typeof o2S === "function"){ const st = o2S(); if (st) st.lib = true; }
+  if (typeof openScreen === "function") openScreen("org2");
+  libRender();
+}
+
 function libHeadHtml(head, shelf){
   const tabs = (head.tabs && head.tabs.length === 2) ? head.tabs : ["About", "Templates"];
   const on = libTab(shelf);
   return `
+  ${libBackHtml()}
   <div class="lbhead"><h2>${libEsc(head.name || shelf)}</h2>
     ${head.kind ? `<span class="dptag">${libEsc(head.kind)}</span>` : ""}</div>
   ${head.line ? `<p class="lbsub">${libEsc(head.line)}</p>` : ""}
@@ -298,6 +316,8 @@ function libWire(){
   document.addEventListener("click", function(e){
     const t = e.target && e.target.closest ? e.target : null;
     if (!t) return;
+    const back = t.closest("[data-libback]");
+    if (back){ libBack(); return; }
     const tab = t.closest("[data-libtab]");
     if (tab){
       LIB_STATE.tab[tab.getAttribute("data-libshelf")] = tab.getAttribute("data-libtab");
@@ -328,5 +348,6 @@ libWire();
 
 if (typeof module !== "undefined" && module.exports){
   module.exports = { LIB_SHELVES, LIB_STATE, libShelfOf, libScreenOf, libHeadHtml,
-                     libAboutHtml, libListHtml, libScreenHtml, libRowsOf, libTab };
+                     libAboutHtml, libListHtml, libScreenHtml, libRowsOf, libTab,
+                     libBackHtml, libBack };
 }
