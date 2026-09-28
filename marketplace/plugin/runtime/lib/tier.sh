@@ -81,7 +81,24 @@ sutra_tier_apply() {
   # rather than let a numeric comparison fail open (peer review P2)
   case "$_ta_rc" in ''|*[!0-9-]*) printf '%s' "$_ta_code"; return 1 ;; esac
   case "$_ta_ra" in ''|*[!0-9-]*) printf '%s' "$_ta_code"; return 1 ;; esac
-  if [ "$_ta_ra" -lt 0 ] || [ "$_ta_ra" -le "$_ta_rc" ]; then printf '%s' "$_ta_code"; return 1; fi
+  if [ "$_ta_ra" -lt 0 ] || [ "$_ta_ra" -lt "$_ta_rc" ]; then printf '%s' "$_ta_code"; return 1; fi
+  if [ "$_ta_ra" -eq "$_ta_rc" ]; then
+    # SAME RUNG. Until 2026-09-28 this was refused, which meant the agent could
+    # fill a blank address but never correct a wrong one - it could change no
+    # outcome at all (founder, on watching it: "as expected"). A step marked
+    # correct_on_confidence in tiers.json now takes the agent's answer when it
+    # is a DIFFERENT value and the agent is MORE confident than the code.
+    # Minting stays impossible: the register check above runs first. The two
+    # confidences are args 5 (code) and 6 (agent); without them the code stands.
+    # Ruling and reversal trigger: RUNTIME-ACCEPTANCE-CONDITIONS.md section 4a.
+    [ "$_ta_agent" != "$_ta_code" ] || { printf '%s' "$_ta_code"; return 1; }
+    [ "$(sutra_tier_cfg "$1" "$2" correct_on_confidence)" = "true" ] || { printf '%s' "$_ta_code"; return 1; }
+    _ta_cc="${5:-}"; _ta_ac="${6:-}"
+    case "$_ta_cc" in ''|*[!0-9.]*) printf '%s' "$_ta_code"; return 1 ;; esac
+    case "$_ta_ac" in ''|*[!0-9.]*) printf '%s' "$_ta_code"; return 1 ;; esac
+    awk -v a="$_ta_ac" -v c="$_ta_cc" 'BEGIN { exit !(a + 0 > c + 0) }' \
+      || { printf '%s' "$_ta_code"; return 1; }
+  fi
   printf '%s' "$_ta_agent"; return 0
 }
 
@@ -158,11 +175,19 @@ sutra_tier_settle() {
     _ts_av="$(printf '%s' "$_ts_ans" | jq -r '.value // ""' 2>/dev/null)"
     _ts_ac="$(printf '%s' "$_ts_ans" | jq -r '.confidence // ""' 2>/dev/null)"
     _ts_ar="$(printf '%s' "$_ts_ans" | jq -r '.reason // ""' 2>/dev/null)"
-    if _ts_kept="$(sutra_tier_apply "$_ts_root" "$_ts_id" "$_ts_v" "$_ts_av")"; then
-      sutra_tier_record "$_ts_p" "$_ts_s" "$_ts_t" "$_ts_id" "$_ts_kept" agent "$_ts_ac" "$_ts_ar" false
+    if _ts_kept="$(sutra_tier_apply "$_ts_root" "$_ts_id" "$_ts_v" "$_ts_av" "$_ts_c" "$_ts_ac")"; then
+      # the row says which it was: a raise up the ladder, or a correction on the
+      # same rung by a more confident agent
+      if [ "$_ts_v" = "$_ts_av" ]; then _ts_kind="the agent agreed"
+      else _ts_kind="the agent corrected the code (its $_ts_ac against the code's $_ts_c)"; fi
+      sutra_tier_record "$_ts_p" "$_ts_s" "$_ts_t" "$_ts_id" "$_ts_kept" agent "$_ts_ac" \
+        "$_ts_kind: $_ts_ar" false
+    elif [ "$_ts_av" = "$_ts_v" ]; then
+      sutra_tier_record "$_ts_p" "$_ts_s" "$_ts_t" "$_ts_id" "$_ts_kept" code "$_ts_c" \
+        "the agent agreed with the code: $_ts_ar" false
     else
       sutra_tier_record "$_ts_p" "$_ts_s" "$_ts_t" "$_ts_id" "$_ts_kept" code "$_ts_c" \
-        "the agent answered $_ts_av, which does not raise stringency; refused by the raise-only rule" false
+        "the agent answered $_ts_av at confidence $_ts_ac, which neither raises the ladder nor beats the code's $_ts_c; refused" false
     fi
   else
     # An ask that is still in flight is NOT unreachable: the settle that runs in

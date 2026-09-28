@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-28
+## 2.306.7 (2026-09-28)
+
+- **An agent may now correct the code, not only fill a blank**: on the same rung of a step marked `correct_on_confidence`, a DIFFERENT answer from a MORE confident agent replaces the code's, provided the register already holds it. Minting stays impossible and depth keeps the strict ladder, where a lower number is refused whatever the confidence. Every decision row now says which it was: the agent agreed, the agent corrected the code with both confidences named, the answer was refused, or the agent could not be reached. Only placement carries the mark. Ruling and reversal trigger: RUNTIME-ACCEPTANCE-CONDITIONS.md section 4a. Tests: test-tier 52.
+
 ## 2.306.6 (2026-09-28)
 
 - **An agent answer that arrives is now heard**: the settle ran in the same event that started the ask, milliseconds later, so it always recorded "unreachable" and a real answer arriving seconds afterwards was ignored. An ask still inside its own timeout is now left unsettled and settled by a later event; only an ask past its timeout, or one that could not be made at all, records the code's value as the one that stands, and the two say which they were. Found by running 2.306.5 live. Tests: test-tier 44.

@@ -63,6 +63,27 @@ is "placement: an address the register holds is taken" \
 is "placement: an address the register does not hold is refused" \
   "$(SUTRA_NATIVE_HOME="$WORK/reg" sutra_tier_apply "$PLUGIN_MAIN" placement unresolved dref-notthere)" unresolved
 is "depth: a garbled answer cannot fail the comparison open" "$(sutra_tier_apply "$PLUGIN_MAIN" depth 3 "five-ish")" 3
+
+# The correction rule (ruled 2026-09-28): on the SAME rung a more confident
+# agent may replace the code's answer, so the agent can fix a wrong address and
+# not only fill a blank one.
+printf '{"ref":"dref-other01","name":"Another real one"}\n' > "$REG/dref-other01.json"
+is "correct: a more confident agent replaces the code's address" \
+  "$(sutra_tier_apply "$PLUGIN_MAIN" placement dref-inreg01 dref-other01 0.39 0.85)" dref-other01
+is "correct: a less confident agent does not" \
+  "$(sutra_tier_apply "$PLUGIN_MAIN" placement dref-inreg01 dref-other01 0.85 0.39)" dref-inreg01
+is "correct: equal confidence leaves the code standing" \
+  "$(sutra_tier_apply "$PLUGIN_MAIN" placement dref-inreg01 dref-other01 0.5 0.5)" dref-inreg01
+is "correct: the same answer is agreement, not a correction" \
+  "$(sutra_tier_apply "$PLUGIN_MAIN" placement dref-inreg01 dref-inreg01 0.39 0.99)" dref-inreg01
+is "correct: a confident answer the register does not hold is still refused" \
+  "$(sutra_tier_apply "$PLUGIN_MAIN" placement dref-inreg01 dref-nowhere 0.39 0.99)" dref-inreg01
+is "correct: without both confidences nothing is replaced" \
+  "$(sutra_tier_apply "$PLUGIN_MAIN" placement dref-inreg01 dref-other01)" dref-inreg01
+is "correct: depth is never corrected downward, however confident" \
+  "$(sutra_tier_apply "$PLUGIN_MAIN" depth 4 2 0.2 0.99)" 4
+is "correct: a step without the mark keeps the strict rule" \
+  "$(sutra_tier_apply "$PLUGIN_MAIN" classify high low 0.2 0.99)" high
 is "classify: risk may go up" "$(sutra_tier_apply "$PLUGIN_MAIN" classify low high)" high
 is "classify: risk may not go down" "$(sutra_tier_apply "$PLUGIN_MAIN" classify high low)" high
 
@@ -98,7 +119,7 @@ sutra_tier_settle "$PLUGIN_MAIN" "$PJ2" sid-t "$TID" placement dref-existing 0.2
 TF2="$PJ2/.sutra/turn/sid-t/$TID.tier.jsonl"
 is "C8: the code's value stands" "$(jq -r '.value' "$TF2" | tail -1)" dref-existing
 is "C8: the source is the code, not the agent" "$(jq -r '.source' "$TF2" | tail -1)" code
-jq -r '.reason' "$TF2" | tail -1 | grep -q 'raise-only' && pass "C8: the refusal names the rule" || fail "C8: the refusal is not recorded"
+jq -r '.reason' "$TF2" | tail -1 | grep -qE 'refused|does not raise' && pass "C8: the refusal names what was refused and why" || fail "C8: the refusal is not recorded: [$(jq -r '.reason' "$TF2" | tail -1)]"
 
 # ====================================================================== C9 ===
 echo "== C9: an unreachable agent leaves the code's answer standing =="

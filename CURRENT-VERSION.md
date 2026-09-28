@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-09-28
 
-## v2.306.6 (2026-09-28, HEAD)
+## v2.306.7 (2026-09-28, HEAD)
+
+**An agent may correct the code, not only fill a blank** (RT-22, ruled 2026-09-28 after watching the agent answer every turn and change nothing). On the same rung, a different answer from a more confident agent replaces the code's when the register holds it; minting stays impossible, depth keeps the strict ladder, and the row names the outcome.
+
+## v2.306.6 (2026-09-28)
 
 **An agent answer that arrives is heard** (found by running v2.306.5 live): the settle ran in the same event that started the ask and always wrote "unreachable" before the answer could land. An ask inside its own timeout is now left open for a later event to settle.
 

@@ -5,7 +5,7 @@
     { "n": 1,  "id": "classify",  "tier": "code",  "field": "decision_risk", "ladder": ["low", "med", "high"], "agent_when": "confidence_below_threshold", "threshold": null, "never_agent": "the refusal itself" },
     { "n": 2,  "id": "resolve",   "tier": "code",  "field": "resolution", "ladder": ["CONSTRUCT", "FOLLOW"], "agent_when": "no_match_above_threshold", "threshold": null, "never_agent": null },
     { "n": 3,  "id": "depth",     "tier": "code",  "field": "n", "ladder": ["1", "2", "3", "4", "5"], "agent_when": "facts_disagree", "threshold": null, "never_agent": "lowering the number" },
-    { "n": 4,  "id": "placement", "tier": "code",  "field": "domain_ref", "ladder": ["unresolved", "resolved"], "agent_when": "no_register_match_and_new_path", "threshold": 0.5, "never_agent": "minting a new department" },
+    { "n": 4,  "id": "placement", "tier": "code",  "field": "domain_ref", "ladder": ["unresolved", "resolved"], "agent_when": "no_register_match_and_new_path", "threshold": 0.5, "never_agent": "minting a new department", "correct_on_confidence": true },
     { "n": 5,  "id": "lens",      "tier": "model", "field": null, "ladder": null, "agent_when": null, "threshold": null, "never_agent": null },
     { "n": 6,  "id": "cynefin",   "tier": "model", "field": null, "ladder": null, "agent_when": null, "threshold": null, "never_agent": null },
     { "n": 7,  "id": "blueprint", "tier": "model", "field": null, "ladder": null, "agent_when": null, "threshold": null, "never_agent": null },
@@ -23,6 +23,7 @@
   "thresholds_note": "Only placement carries a number today, and it was measured rather than guessed: across session 94a0f78e every placement the engine produced scored 0.28-0.44 and every one of them was in fact answered by hand before a write could proceed, which is precisely the case the threshold names. Reversal trigger: if the agent's placement answer is refused by the raise-only rule, or disagrees with the address finally recorded, in more than 1 of 10 asks, the number comes back out and placement returns to null. Every other step stays null until 200 turns of confidence have been logged (section 4 of the conditions).",
   "rules": {
     "raise_only": "an agent answer may raise stringency (deeper, stricter, more review) and never lower it; a lowering answer is refused and the refusal is recorded (C8)",
+    "correct_on_confidence": "on the SAME rung, a step marked correct_on_confidence takes a DIFFERENT answer from a MORE confident agent, provided the value is already in the register; minting stays impossible and depth keeps the strict ladder. Ruling and reversal trigger: RUNTIME-ACCEPTANCE-CONDITIONS.md section 4a (2026-09-28)",
     "unreachable": "if the agent cannot be reached or times out, the code's own answer stands, marked unresolved; nothing is guessed (C9)",
     "recorded": "every answer carries source (code|model|agent), confidence and one line of reason; the tier that answered is in the row (C7)"
   }
