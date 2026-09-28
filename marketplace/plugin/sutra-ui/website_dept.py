@@ -338,10 +338,11 @@ def give_goal(ref, text):
                        [{"ask": text, "at": now()}], "owner", {"ok": True, "notes": ["the owner's goal"]})
 
 
-def owner_ask(ref, text):
+def owner_ask(ref, text, about=None):
     """A person asks for something extra (the Ask control). Identity takes it,
     Priority admits it, and it becomes the next Brief version, so the line runs
-    again from Plan."""
+    again from Plan. On a Root, the words arrive at the front door; `about` is
+    the department the person stood in when he said them."""
     text = " ".join(str(text or "").split())
     if not text:
         raise ValueError("say what to add or change")
@@ -350,7 +351,7 @@ def owner_ask(ref, text):
         raise ValueError("no website department at %s" % ref)
     rt = _runtime(ref)
     if rt:
-        return rt.request(ref, text)[0], None
+        return rt.request(ref, text, about=about)[0], None
     with _lock(ref):
         reqs = requests(ref)
         rq = {"id": "q-" + uuid.uuid4().hex[:8], "text": text, "at": now()}
@@ -1085,4 +1086,5 @@ def map_view(ref):
             "live": kind == "website" and bool(latest(ref, "Live site")), "requests": requests(ref)[-10:],
             # a Root is born with its goal: it makes departments; every other kind takes its goal from the owner's words
             "has_goal": kind == "root" or bool(versions(ref, names[0])) or bool(requests(ref)), "templates": d.get("templates") or {},
-            "runtime": d.get("runtime") or 1, "kind": kind, "say": kind_of(d).get("say") or ""}
+            "runtime": d.get("runtime") or 1, "kind": kind, "say": kind_of(d).get("say") or "",
+            "root": ref if kind == "root" else d.get("root"), "host": d.get("host")}

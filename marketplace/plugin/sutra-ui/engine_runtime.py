@@ -298,10 +298,40 @@ def ladder(ref):
     return W._read(W.ddir(ref) / "ladder.json", {})
 
 
-def numbers(ref):
+def numbers(ref, engine=None):
+    """The ladder's numbers: born from LADDER, the department's own over them, and one engine's own over those (each
+    function's Settings tab has its own; founder, 2026-09-28: "each of the five functions has a default settings tab
+    which has its own updates")."""
+    d = W.dept(ref) or {}
     n = dict(LADDER)
-    n.update((W.dept(ref) or {}).get("ladder") or {})
+    n.update(d.get("ladder") or {})
+    if engine:
+        n.update((d.get("ladders") or {}).get(engine) or {})
     return n
+
+
+def set_numbers(ref, engine, nums, by="the owner"):
+    """The owner's own ladder numbers for one engine or function, from its Settings tab; whole numbers, none below zero."""
+    d = W.dept(ref)
+    if not d:
+        raise ValueError("no department here")
+    if not engine_def(engine):
+        raise ValueError("no such engine")
+    own = dict((d.get("ladders") or {}).get(engine) or {})
+    for k, v in (nums or {}).items():
+        if k not in LADDER:
+            raise ValueError("no such number: %s" % k)
+        try:
+            v = int(v)
+        except (TypeError, ValueError):
+            raise ValueError("%s must be a whole number" % k)
+        if v < 0 or (k in ("runs", "trial") and v < 1):
+            raise ValueError("%s is too small" % k)
+        own[k] = v
+    d.setdefault("ladders", {})[engine] = own
+    W.save_dept(ref, d)
+    W.system_run(ref, "Identity", "%s set %s's ladder: %s" % (by, engine, ", ".join("%s %d" % kv for kv in sorted(own.items()))))
+    return numbers(ref, engine)
 
 
 # ---- Coordination's table ------------------------------------------------------------------------------------------
@@ -322,7 +352,10 @@ def coordination(ref):
     kind = (W.dept(ref) or {}).get("kind") or "website"
     if not isinstance(t, dict) or table_faults(t, defs()["engines"]):
         return born_table(kind)
-    t.setdefault("edges", born_table(kind)["edges"])
+    born_edges = born_table(kind)["edges"]
+    t.setdefault("edges", born_edges)
+    if "Root" in born_edges:                         # a department born before Root spoke learns of it: Root carries the owner's words
+        t["edges"].setdefault("Root", born_edges["Root"])
     return t
 
 
@@ -413,7 +446,7 @@ def evidence(ref, step_id, window=None, rows=None, since=0):
     `since` is a count of rows, not a time: two rows written in one second are still in order."""
     mine = [r for i, r in enumerate(rows if rows is not None else step_rows(ref))
             if i >= int(since or 0) and r.get("step") == step_id and r.get("mode") != "gate" and r.get("by") != SKIPPED]
-    judged = [r for r in mine if r.get("status") in ("ok", "failed")][-(window or 2 * numbers(ref)["runs"]):]
+    judged = [r for r in mine if r.get("status") in ("ok", "failed")][-(window or 2 * numbers(ref, step_def(step_id)[0])["runs"]):]
     rows = [r for r in judged if r.get("status") == "ok" and r.get("mode") != "mark"]
     by = {}
     for r in rows:
@@ -586,8 +619,9 @@ def sweep(ref):
     return closed
 
 
-def request(ref, text):
-    """The owner's words reach the department as a request to Identity, on the board."""
+def request(ref, text, about=None):
+    """The owner's words reach the department as a request to Identity, on the board. On a Root they arrive at the front
+    door (the word front), with the department they are about when the person said them from inside one (the chip)."""
     text = " ".join(str(text or "").split())
     if not text:
         raise ValueError("say what the website is for")
@@ -600,9 +634,15 @@ def request(ref, text):
         rq = {"id": "q-" + uuid.uuid4().hex[:8], "text": text, "at": W.now()}
         reqs.append(rq)
         W._write(W.ddir(ref) / "requests.json", reqs)
+    front = d.get("kind") == "root"
+    ab = None
+    if about:
+        ad = W.dept(about)
+        ab = {"dept": about, "name": (ad or {}).get("name")}
     p = post(ref, OWNER, "Identity", "request",
-             {"word": "request", "words": text, "objective": text, "output": "the %s's next version" % first,
-              "may_read": [first], "boundaries": "inside the department's goal and rules", "request": rq["id"]})
+             {"word": "front" if front else "request", "words": text, "objective": text, "output": "the %s's next version" % first,
+              "may_read": [first], "boundaries": "inside the department's goal and rules", "request": rq["id"], "about": ab},
+             about=ab)
     return rq, p
 
 
@@ -1483,6 +1523,21 @@ def _mark(ref, about, words):
                                         "started": W.now(), "ended": W.now()})
 
 
+def _tell(ref, d, p, msg_type, payload, thread=None):
+    """What Identity says to the owner. On the department's own board as always; and when the words came through Root
+    (the front door), the same is said on Root's board too, about this department, so the one chat carries it."""
+    row = post(ref, "Identity", OWNER, msg_type, payload, thread=thread)
+    root = d.get("root")
+    if p.get("src") == "Root" and root and W.dept(root):
+        pl = dict(payload)
+        pl.update({"dept": ref, "from": d.get("name")})
+        try:
+            post(root, "Identity", OWNER, msg_type, pl, about={"dept": ref, "name": d.get("name")})
+        except ValueError:                       # Root's own table refuses nothing Identity says to the owner; a fault is a row here, not a crash
+            pass
+    return row
+
+
 def identity_file(ctx, step, item):
     ref, d, p = ctx["ref"], ctx["dept"], ctx["post"]
     got = ctx["bag"]["identity.read"]
@@ -1490,24 +1545,23 @@ def identity_file(ctx, step, item):
     journey = "task" if first else ctx["bag"]["identity.recognise"].get("journey")
     if journey == "query":
         a = ctx["bag"]["identity.answer"]
-        post(ref, "Identity", OWNER, "inform", {"word": "answer", "answer": a["answer"], "source": a["source"],
-                                                "confidence": a["confidence"], "done": a["answer"]}, thread=p["thread"])
+        _tell(ref, d, p, "inform", {"word": "answer", "answer": a["answer"], "source": a["source"],
+                                    "confidence": a["confidence"], "done": a["answer"]}, thread=p["thread"])
         return {"said": "answered the owner: " + str(a["answer"])[:160], "journey": journey}
     if journey == "directive":
         r = ctx["bag"]["identity.rule"]
         if r.get("scope") == "one-time":
             row = _file_words(ref, d, words, "the owner's directive, for this once")
-            post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "applied this once; not kept as a rule", "v": row["v"]},
-                 thread=p["thread"])
+            _tell(ref, d, p, "inform", {"word": "request", "done": "applied this once; not kept as a rule", "v": row["v"]}, thread=p["thread"])
             return {"said": "applied the owner's words once: " + words, "journey": journey, "filed": row["v"]}
         clash = [x["line"] for x in d.get("rules") or [] if x.get("line") and str(x["line"]).lower() == str(r["line"]).lower()]
         if clash:
-            post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "the department already has this rule"}, thread=p["thread"])
+            _tell(ref, d, p, "inform", {"word": "request", "done": "the department already has this rule"}, thread=p["thread"])
             return {"said": "the department already has this rule: " + r["line"], "journey": journey}
         text = _rule_ask(ref, ctx["slot"], r["line"], r["tag"], words, p["thread"], "A new goal, as understood" if r["tag"] == "goal"
                          else "A rule, as understood")
-        post(ref, "Identity", OWNER, "request", {"word": "rule", "objective": text, "output": "a stamp or a refusal", "may_read": [],
-                                                 "boundaries": "this department, until the owner says otherwise"}, thread=p["thread"])
+        _tell(ref, d, p, "request", {"word": "rule", "objective": text, "output": "a stamp or a refusal", "may_read": [],
+                                     "boundaries": "this department, until the owner says otherwise"}, thread=p["thread"])
         return {"said": "restated the owner's words and put them back: " + r["line"], "journey": journey}
     if journey == "feedback":
         w = ctx["bag"]["identity.weigh"]
@@ -1515,11 +1569,11 @@ def identity_file(ctx, step, item):
         _mark(ref, about, words)
         title = next((str(x.get("title")) for x in _pages(ref) if x.get("slug") == about), None)
         row = _file_words(ref, d, "Correct this%s: %s" % (" on " + title if title else "", w["now"]), "the owner's feedback")
-        post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "sent a correction to the line", "v": row["v"]}, thread=p["thread"])
+        _tell(ref, d, p, "inform", {"word": "request", "done": "sent a correction to the line", "v": row["v"]}, thread=p["thread"])
         if w.get("future"):
-            t = post(ref, "Identity", OWNER, "request", {"word": "rule", "objective": "Carry this forward: " + str(w["future"]),
-                                                         "output": "a stamp, or a refusal to keep it to this once", "may_read": [],
-                                                         "boundaries": "work like this, from now on"})
+            t = _tell(ref, d, p, "request", {"word": "rule", "objective": "Carry this forward: " + str(w["future"]),
+                                             "output": "a stamp, or a refusal to keep it to this once", "may_read": [],
+                                             "boundaries": "work like this, from now on"})
             _rule_ask(ref, ctx["slot"], str(w["future"]), "always", words, t["thread"] if t else None, "Carry this forward")
         return {"said": "took the owner's feedback%s: %s" % (" on " + title if title else "", w["now"]), "journey": journey, "filed": row["v"]}
     if journey == "new-idea":
@@ -1532,19 +1586,146 @@ def identity_file(ctx, step, item):
     verdict, why = out.get("verdict"), str(out.get("why") or "")
     if verdict == "go":
         row = _file_words(ref, d, words, "the owner's goal" if ctx["bag"]["identity.read"]["facts"]["first"] else "the owner's ask")
-        post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "filed in the %s" % W.artifacts_of(d)[0], "v": row["v"]},
-             thread=p["thread"])
+        _tell(ref, d, p, "inform", {"word": "request", "done": "filed in the %s" % W.artifacts_of(d)[0], "v": row["v"]}, thread=p["thread"])
         return {"said": "took the owner's words: " + words, "filed": row["v"]}
     if verdict == "ask":
         W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "request", "engine": "Identity", "slot": ctx["slot"],
                          "text": "This reaches outside the site: " + words, "why": why, "words": words, "status": "pending",
                          "created": W.now(), "thread": p["thread"]})
-        post(ref, "Identity", OWNER, "request", {"word": "request", "objective": "say whether this may go ahead",
-                                                 "output": "a stamp or a refusal", "may_read": ["Brief"], "boundaries": words,
-                                                 "why": why}, thread=p["thread"])
+        _tell(ref, d, p, "request", {"word": "request", "objective": "say whether this may go ahead",
+                                     "output": "a stamp or a refusal", "may_read": ["Brief"], "boundaries": words,
+                                     "why": why}, thread=p["thread"])
         return {"said": "put the owner's words back to the owner: " + (why or words)}
-    post(ref, "Identity", OWNER, "refuse", {"word": "request", "why": why or "it breaks a rule"}, thread=p["thread"])
+    _tell(ref, d, p, "refuse", {"word": "request", "why": why or "it breaks a rule"}, thread=p["thread"])
     return {"said": "refused: " + (why or words)}
+
+
+# ---- the front door: the person speaks with Root (founder, 2026-09-28) ----------------------------------------------
+FRONT = [(re.compile(r"^\s*(?:start|set up|create|make|found)\s+(?:a |an |the |another )?(?:new )?[\w -]*?\bdepartment\b", re.I), "setup"),
+         (re.compile(r"^\s*(?:stamp|yes|approve|approved|go ahead|ok)\b", re.I), "stamp"),
+         (re.compile(r"^\s*(?:refuse|no|reject|rejected)\b", re.I), "refuse"),
+         (re.compile(r"^\s*stop\b", re.I), "stop"),
+         (re.compile(r"^\s*(?:start|resume)\b", re.I), "start")]
+
+
+def _children(root_ref):
+    return [d for d in W.list_depts() if d.get("parent") == root_ref]
+
+
+def _named(children, words):
+    low = words.lower()
+    for c in children:
+        if c["name"].lower() in low:
+            return c
+    for c in children:                              # "meadow clinic" for "Meadow Clinic Website"
+        stem = c["name"].lower().replace(" website", "").strip()
+        if stem and re.search(r"\b%s\b" % re.escape(stem), low):
+            return c
+    return None
+
+
+def identity_route(ctx, step, item):
+    """Who the words are for, by code: the chip (the department the person stood in), a name in the words, the only
+    child; and what they want: a department set up, a stamp, a refusal, Stop, Start, or words for a department."""
+    ref, p = ctx["ref"], ctx["post"]
+    pl = p.get("payload") or {}
+    words = str(pl.get("words") or "")
+    about = ((pl.get("about") or {}) if isinstance(pl.get("about"), dict) else {}).get("dept")
+    kids = _children(ref)
+    wants = next((w for rx, w in FRONT if rx.search(words)), "words")
+    target = next((c for c in kids if c["ref"] == about), None) if about else None
+    if target is None:
+        target = _named(kids, words)
+    if target is None and wants != "setup" and len(kids) == 1:
+        target = kids[0]
+    if target is None and wants == "words" and not kids:
+        wants = "setup"                              # a Root with no department yet: the first words are for one
+    said = words
+    if target and wants == "words":
+        for rx in (r"^\s*(?:on|to|for|in)\s+%s\s*[,:]\s*(.+)$", r"^\s*%s\s*[,:]\s*(.+)$"):
+            m = re.match(rx % re.escape(target["name"]), words, re.I)
+            if m:
+                said = m.group(1).strip()
+                break
+    return {"wants": wants, "target": target["ref"] if target else None, "name": target["name"] if target else None, "words": said,
+            "facts": {"wants": wants, "targeted": bool(target), "children": str(len(kids))}}
+
+
+def identity_hand(ctx, step, item):
+    """Root does what the words want: files a department request (its engine Setup asks, then makes); stamps or refuses the
+    ask waiting; stops or starts a department; or hands the words to the department's Identity as a post from Root, and
+    tells the owner where they went. Every answer to the owner carries the department it is about."""
+    ref, d, p = ctx["ref"], ctx["dept"], ctx["post"]
+    r = ctx["bag"]["identity.route"]
+    wants, target, name, words, th = r["wants"], r["target"], r["name"], r["words"], p["thread"]
+    ab = {"dept": target, "name": name} if target else None
+    if wants == "setup":
+        row = _file_words(ref, d, words, "the owner's ask")
+        post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "filed as a request; a new department is stamped by you, so an ask follows",
+                                                "v": row["v"]}, thread=th)
+        return {"said": "filed a request for a department: " + words, "filed": row["v"]}
+    if wants in ("stamp", "refuse"):
+        for tref in ([target] if target else [c["ref"] for c in _children(ref)]) + [ref]:
+            pend = [x for x in W.asks(tref) if x["status"] == "pending" and not x.get("escalated")]
+            a = pend[-1] if pend else None             # the latest ask: the one the person just saw
+            if a:
+                W.decide_ask(tref, a["id"], wants == "stamp")
+                dn = (W.dept(tref) or {}).get("name")
+                post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "%s: %s" % ("stamped" if wants == "stamp" else "refused", a["text"]),
+                                                        "dept": tref, "from": dn}, thread=th, about={"dept": tref, "name": dn})
+                return {"said": "%s the ask on %s" % ("stamped" if wants == "stamp" else "refused", dn)}
+        post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "nothing is waiting for a stamp"}, thread=th)
+        return {"said": "nothing waits for a stamp"}
+    if wants in ("stop", "start"):
+        if not target:
+            post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "Say which department: " + (", ".join(c["name"] for c in _children(ref)) or "none yet")}, thread=th)
+            return {"said": "asked which department"}
+        W.set_stopped(target, wants == "stop")
+        post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "%s is %s" % (name, "Off" if wants == "stop" else "On"), "dept": target, "from": name},
+             thread=th, about=ab)
+        return {"said": "%s %s" % ("stopped" if wants == "stop" else "started", name)}
+    if not target:
+        kids = _children(ref)
+        post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "Say which department: " + ", ".join(c["name"] for c in kids) +
+                                                ". For a new one, say: start a department for ..."}, thread=th)
+        return {"said": "asked which department"}
+    post(target, "Root", "Identity", "request", {"word": "request", "words": words, "objective": words, "output": "the Brief's next version",
+                                                 "may_read": ["Brief"], "boundaries": "inside the department's goal and rules", "front": ref, "front_thread": th})
+    post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "handed to %s" % name, "dept": target, "from": name}, thread=th, about=ab)
+    return {"said": "handed to %s: %s" % (name, words)}
+
+
+def chat_view(ref, about=None):
+    """The one chat, read from Root's board: the owner's turns and what Identity said back, each with the department it is
+    about; the asks waiting, with the department they belong to; the departments under Root. For a department, the same
+    chat scoped to it."""
+    d = W.dept(ref) or {}
+    root = ref if d.get("kind") == "root" else d.get("root")
+    if root and not W.dept(root):
+        root = None
+    if root and d.get("kind") != "root" and not about:
+        about = ref
+    turns = []
+    if root:
+        for p in board(root):
+            if p["src"] != OWNER and OWNER not in p["dst"]:
+                continue
+            pl = p.get("payload") or {}
+            ab = p.get("about") if isinstance(p.get("about"), dict) else {}
+            dref = ab.get("dept") or pl.get("dept") or ((pl.get("about") or {}) if isinstance(pl.get("about"), dict) else {}).get("dept")
+            if about and dref != about:
+                continue
+            turns.append({"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
+                          "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""),
+                          "dept": dref, "name": ab.get("name") or pl.get("from")})
+    kids = _children(root) if root else []
+    refs = [about] if about else ([root] + [c["ref"] for c in kids] if root else [ref])
+    asks = []
+    for r in refs:
+        dn = (W.dept(r) or {}).get("name")
+        asks += [dict(a, ref=r, dept=dn) for a in W.asks(r) if a["status"] == "pending"]
+    return {"root": root, "about": about, "turns": turns, "asks": asks,
+            "departments": [{"ref": c["ref"], "name": c["name"], "stopped": bool(c.get("stopped"))} for c in kids]}
 
 
 def identity_verdict(ctx, step, item):
@@ -1709,12 +1890,13 @@ def adapt_sense(ctx, step, item):
 
 
 def adapt_ladder(ctx, step, item):
-    ref, n = ctx["ref"], numbers(ctx["ref"])
+    ref = ctx["ref"]
     moves = []
     for sid, ev in sorted(ctx["bag"]["adapt.sense"]["steps"].items()):
         eng, s = step_def(sid)
         if not s or not s.get("prompt"):
             continue                                   # a step with no softer form has nowhere to move
+        n = numbers(ref, eng)                          # the engine's own numbers, from its Settings
         e = entry(ref, s, eng)
         if e.get("held") or e.get("pending"):
             continue
@@ -1770,7 +1952,7 @@ def adapt_act(ctx, step, item):
                           ctx["run"], {"ok": True, "notes": ["from %d runs" % m["evidence"]["runs"]]})
             p = post(ref, "Adaptation", "Priority", "propose",
                      {"word": "trial", "step": s["id"], "engine": eng, "to": "C1", "form": None,
-                      "cost": "one more call a run, for %d runs" % numbers(ref)["trial"], "evidence": m["evidence"]})
+                      "cost": "one more call a run, for %d runs" % numbers(ref, eng)["trial"], "evidence": m["evidence"]})
             e["pending"] = "a trial, with Priority"
             _save_entry(ref, e)
             if p:
@@ -1958,7 +2140,7 @@ CODE = {"plan_read": plan_read, "plan_fit": plan_fit, "plan_file": plan_file, "w
         "priority_envelope": priority_envelope, "coord_chain": coord_chain, "coord_heard": coord_heard,
         "coord_busy": coord_busy, "coord_pick": coord_pick, "coord_edge": coord_edge, "coord_verdict": coord_verdict,
         "coord_bounds": coord_bounds, "coord_alarm": coord_alarm,
-        "identity_read": identity_read,
+        "identity_read": identity_read, "identity_route": identity_route, "identity_hand": identity_hand,
         "identity_file": identity_file, "identity_verdict": identity_verdict, "identity_rung": identity_rung,
         "identity_apply": identity_apply, "identity_drop": identity_drop, "identity_finding": identity_finding,
         "identity_alarm": identity_alarm, "identity_idea": identity_idea, "adapt_park": adapt_park,
@@ -2370,7 +2552,7 @@ def steps_view(ref, name):
     view = {"name": name, "kind": e["kind"], "description": e.get("description"), "skills": e.get("skills") or [],
             "reads": e.get("reads"), "writes": e.get("writes"), "steps": out,
             "hears": ([SHARED] if rules else []) + [h["name"] for h in e.get("on") or []],
-            "start": start_view(e), "numbers": numbers(ref)}
+            "start": start_view(e), "numbers": numbers(ref, name)}
     if name == "Coordination":
         t = coordination(ref)
         view["table"] = {"first": [FIRST[k] for k in t["order"]], "line": list(t["line"]),

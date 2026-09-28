@@ -5653,3 +5653,26 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .wbfold summary .dpst{margin-left:auto}
 /* Priority's limits: two numbers an engine, set by the owner */
 .wblim input{width:72px;margin:0 2px 0 6px}
+/* the chat, the one point of entry: the Sutra chat's own turns, the department
+   a chip on the turn, the box with where the words go as a chip */
+.wbchat{padding:4px 0 2px}
+.wbchat .wbturn .who{display:flex;align-items:center;gap:6px}
+.wbchat .wbturn .who-you{justify-content:flex-end}
+.wbchat .wbturn .u,.wbchat .wbturn .a{white-space:pre-wrap}
+.wbchat .wbturn .dpchk{margin-left:8px}
+.wbbox{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;margin-top:8px}
+.wbbox textarea{flex:1;min-width:220px;box-sizing:border-box;background:var(--inset);border:1px solid var(--line);border-radius:6px;color:var(--ink);font:400 13px/1.45 var(--sans);padding:7px 9px;resize:vertical}
+.wbbox textarea:focus{border-color:var(--acc);outline:0}
+.wbto{cursor:pointer;background:var(--surface);align-self:center}
+/* the Board as chats: the threads down the side, the open one as turns */
+.wbboard{display:grid;grid-template-columns:minmax(0,240px) minmax(0,1fr);gap:12px}
+.wbthreads{display:flex;flex-direction:column;gap:4px}
+.wbthr{display:flex;flex-wrap:wrap;align-items:center;gap:6px;border:1px solid var(--line-soft);border-radius:8px;background:var(--surface);padding:7px 9px;text-align:left;color:var(--ink);cursor:pointer;font:400 12px/1.4 var(--sans)}
+.wbthr.on{border-color:var(--acc);background:var(--acc-bg)}
+.wbthr b{font-weight:600;width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wbthr .dpst{margin-left:auto}
+.wbwho{display:inline-flex;flex-wrap:wrap;gap:4px}
+.wbthread{min-width:0}
+/* Settings: a function's own numbers, one row each */
+.wbset input{width:90px;margin-left:auto}
+.wbset input[type=text]{width:auto;flex:1;min-width:200px;margin-left:0}

@@ -495,15 +495,21 @@ function dpIdentityHtml(){
   /* DS-13 (the founder's structure, 2026-09-22): two tabs. The card, and the
      chat -- the exact Sutra chat, which is also where a department is started.
      The owner's turns and Adaptation's turns are the card's Recent section. */
-  const tabs = dpTabsHtml(pane, [["identity", "Identity"], ["chat", "Chat"]], "data-dppane");
+  /* 22-website.js: on the engine runtime each function has its own Settings tab
+     (founder, 2026-09-28), and its template line lives there */
+  const settings = dpFnSettings("identity");
+  const tabs = dpTabsHtml(pane, [["identity", "Identity"], ["chat", "Chat"]].concat(settings === null ? [] : [["settings", "Settings"]]), "data-dppane");
   /* Slice I (DS-10): the owner's tab is the live Sutra chat with Identity; the
      With Adaptation tab keeps the record's turns, unchanged. */
   if (pane === "chat") return tabs + dpLiveChatHtml("identity", "Identity");
+  if (pane === "settings" && settings !== null) return tabs + settings;
   const recent = (chats.owner || []).concat(chats.adaptation || [])
     .sort((a, b) => String(a.at || "").localeCompare(String(b.at || "")));
-  return tabs + dpTemplateLine("identity") + dpOwnState("identity") + dpIdentityCardHtml(id) +
+  return tabs + (settings === null ? dpTemplateLine("identity") : "") + dpOwnState("identity") + dpIdentityCardHtml(id) +
          dpFrameworkHtml("identity") + dpRecentHtml(recent, "Recent");
 }
+/* 22-website.js: a function's own Settings on the engine runtime; null for every other department */
+function dpFnSettings(tab){ return (typeof wbFnSettings === "function") ? wbFnSettings(dpS().sel, tab) : null; }
 /* 22-website.js: what THIS department's function holds right now (its rules and
    windows, its envelopes, its timetable), drawn first so it is never under the
    template's framework. Every department without a website record answers "". */
@@ -530,8 +536,10 @@ function dpFnHtml(tab, label, card, panes, chat){
      function, and the record's turns move to a Log tab beside it. An engine
      card passes its own panes and keeps its record chat exactly as before. */
   const isFn = !panes && DP_FUNCS.some(f => f[0] === tab);
-  const tabs = dpTabsHtml(pane, panes || [[tab, label], ["chat", "Chat"]], "data-dppane");
+  const settings = isFn ? dpFnSettings(tab) : null;
+  const tabs = dpTabsHtml(pane, panes || [[tab, label], ["chat", "Chat"]].concat(settings === null ? [] : [["settings", "Settings"]]), "data-dppane");
   if (isFn && pane === "chat") return tabs + dpLiveChatHtml(tab, label);
+  if (isFn && pane === "settings" && settings !== null) return tabs + settings;
   if (pane === "chat"){                                  /* an engine card keeps its record chat */
     const rows = (typeof chat === "function") ? chat(data) : (chat || data.chat);
     return tabs + dpChatCard("Chat", rows, ref + ":" + tab + ":chat");
@@ -542,7 +550,7 @@ function dpFnHtml(tab, label, card, panes, chat){
   const extra = tab === "adaptation" ? dpGraphHtml() + dpEngineStepsHtml()
               : tab === "priority" ? dpNextRunsHtml()
               : tab === "coordination" ? dpMakesReadsHtml() : "";
-  return tabs + dpTemplateLine(tab) + dpOwnState(tab) + card(data, pane) + extra +
+  return tabs + (settings === null ? dpTemplateLine(tab) : "") + dpOwnState(tab) + card(data, pane) + extra +
          dpFrameworkHtml(tab) + dpRecentHtml((typeof chat === "function") ? chat(data) : (chat || data.chat), "Recent");
 }
 

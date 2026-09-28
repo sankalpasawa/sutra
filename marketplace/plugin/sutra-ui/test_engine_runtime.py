@@ -1038,6 +1038,116 @@ class TestOperableArtifacts(Base):
         self.assertEqual((v["written_by"], v["operations"], v["counts_after"]), (["Plan"], ["Write"], "filing"))
 
 
+class TestTheFrontDoor(Base):
+    """The person speaks with Root (founder, 2026-09-28): Root's Identity hands his words to the department they are about,
+    the department's answers come back onto Root's board, and a stamp, Stop and Start go the same way."""
+
+    def structure(self, org="Meadow Clinic"):
+        reg = tempfile.mkdtemp(prefix="engine-runtime-front-")
+        self.prior_front = {k: os.environ.get(k) for k in ("SUTRA_NATIVE_HOME", "SUTRA_UI_PROPOSALS")}
+        os.environ["SUTRA_NATIVE_HOME"] = os.path.join(reg, "registry")
+        os.environ["SUTRA_UI_PROPOSALS"] = os.path.join(reg, "proposals")
+        self.addCleanup(self._unstructure, reg)
+        import founding
+        import placement_engine as E
+        importlib.reload(E)
+        import proposals
+        importlib.reload(proposals)
+        importlib.reload(founding)
+        if not E.active_roots(E.load_domains()):
+            E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
+        root = founding.found_structure(org)["root"]
+        self.W.owner_ask(root, "Start a website department for %s: what we treat, our doctors, how to book." % org)
+        self.W.run_until_idle(root, limit=200)
+        a = next(x for x in self.W.asks(root) if x["kind"] == "setup" and x["status"] == "pending")
+        self.W.decide_ask(root, a["id"], True)
+        self.W.run_until_idle(root, limit=200)
+        child = next(d for d in self.W.list_depts() if d.get("parent") == root)
+        self.W.run_until_idle(child["ref"], limit=200)
+        return root, child["ref"]
+
+    def _unstructure(self, reg):
+        for k, v in self.prior_front.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(reg, ignore_errors=True)
+
+    def said(self, root):
+        return [(p["src"], p["dst"][0], p["msg_type"], str((p.get("payload") or {}).get("done") or (p.get("payload") or {}).get("words") or ""),
+                 (p.get("about") or {}).get("name") if isinstance(p.get("about"), dict) else None) for p in self.R.board(root)]
+
+    def test_63_the_person_speaks_with_root_and_root_hands_the_words_to_the_department(self):
+        W, R = self.W, self.R
+        root, child = self.structure()
+        child_name = W.dept(child)["name"]
+        before = len(W.versions(child, "Brief"))
+        # a task, with the department named in the words
+        W.owner_ask(root, "On %s, add a Careers page for nurses who want to join." % child_name)
+        W.run_until_idle(root, limit=200)
+        s = self.said(root)
+        self.assertIn(("Owner", "Identity", "request", "On %s, add a Careers page for nurses who want to join." % child_name, None), s)
+        self.assertIn(("Identity", "Owner", "inform", "handed to %s" % child_name, child_name), s, "Root says where it went, about the department")
+        posts = [(p["src"], p["dst"][0], (p.get("payload") or {}).get("words")) for p in R.board(child)]
+        self.assertIn(("Root", "Identity", "add a Careers page for nurses who want to join."), posts, "the words reached the department as a post from Root")
+        W.run_until_idle(child, limit=200)
+        self.assertEqual(len(W.versions(child, "Brief")), before + 1, "the department took them")
+        self.assertIn(("Identity", "Owner", "inform", "filed in the Brief", child_name), self.said(root), "and its answer came back onto Root's board")
+        rows = {r["step"]: r["by"] for r in R.step_rows(root) if r["step"].startswith("identity.") and r["engine"] == "Identity"}
+        self.assertEqual({rows.get("identity.front"), rows.get("identity.route"), rows.get("identity.hand")}, {"code"}, "the front door is code, code, code")
+        # the chip: the department the person stood in, no name in the words
+        W.owner_ask(root, "Which page lists the doctors?", about=child)
+        W.run_until_idle(root, limit=200)
+        W.run_until_idle(child, limit=200)
+        s = self.said(root)
+        self.assertTrue(any(x[0] == "Identity" and x[2] == "inform" and x[4] == child_name and "Five pages" in x[3] for x in s), "the answer, about the department: %s" % s[-3:])
+        # a stamp at the front door reaches the department's ask
+        pend = [x for x in W.asks(child) if x["kind"] == "publish" and x["status"] == "pending"]
+        self.assertTrue(pend, "the department asks before its first publish")
+        a = pend[-1]                                   # the latest: a stamp at the front door takes the ask the person just saw
+        W.owner_ask(root, "Stamp")
+        W.run_until_idle(root, limit=200)
+        self.assertEqual(next(x for x in W.asks(child) if x["id"] == a["id"])["status"], "stamped")
+        W.run_until_idle(child, limit=200)
+        self.assertTrue(W.versions(child, "Live site"), "and the site went live")
+        # Stop and Start by name
+        W.owner_ask(root, "Stop %s." % child_name)
+        W.run_until_idle(root, limit=200)
+        self.assertTrue(W.dept(child)["stopped"])
+        self.assertIn(("Identity", "Owner", "inform", "%s is Off" % child_name, child_name), self.said(root))
+        W.owner_ask(root, "Start %s" % child_name)
+        W.run_until_idle(root, limit=200)
+        self.assertFalse(W.dept(child)["stopped"])
+        # the chat, whole and scoped
+        whole = R.chat_view(root)
+        self.assertEqual(whole["root"], root)
+        self.assertTrue(all(t["src"] == "Owner" or "Owner" in t["dst"] for t in whole["turns"]), "the chat is the owner's turns and what came back")
+        self.assertEqual([c["ref"] for c in whole["departments"]], [child])
+        scoped = R.chat_view(child)
+        self.assertEqual(scoped["about"], child)
+        self.assertTrue(scoped["turns"] and all(t["dept"] == child for t in scoped["turns"]), "inside the department, only its turns")
+        self.assertLess(len(scoped["turns"]), len(whole["turns"]), "the setup request and its answer are Root's own")
+        # a department born before Root spoke still hears Root: its table learns the new speaker
+        t = R.coordination(child)
+        self.assertIn("Root", t["edges"])
+
+    def test_64_each_function_has_its_own_ladder_numbers_from_its_settings(self):
+        """Founder, 2026-09-28: each of the five functions has a Settings tab with its own updates; an engine too."""
+        W, R = self.W, self.R
+        self.assertEqual(R.numbers(REF, "Write")["runs"], R.LADDER["runs"])
+        out = R.set_numbers(REF, "Write", {"runs": 12, "trial": "6"})
+        self.assertEqual((out["runs"], out["trial"], out["misses"]), (12, 6, R.LADDER["misses"]))
+        self.assertEqual(R.numbers(REF, "Plan")["runs"], R.LADDER["runs"], "Plan's own are untouched")
+        self.assertEqual(R.steps_view(REF, "Write")["numbers"]["runs"], 12, "the card reads the function's own")
+        for bad in ({"runs": 0}, {"hops": 5}, {"misses": "many"}):
+            with self.assertRaises(ValueError):
+                R.set_numbers(REF, "Write", bad)
+        with self.assertRaises(ValueError):
+            R.set_numbers(REF, "Nobody", {"runs": 5})
+        self.assertTrue(any(r["engine"] == "Identity" and "Write's ladder" in (r.get("what") or "") for r in W.runs(REF)), "the setting is a row")
+
+
 class TestActivation(Base):
     """Founder, 2026-09-28: every engine has its own start, a trigger and blockers; Start is a signal to all; "the rest
     is in coordination"; once started each has its own agency. One rule for the five internal systems and the four

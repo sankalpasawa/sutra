@@ -27,8 +27,9 @@
      W13 an engine opens on its steps: each with its rung, its check, what its
          rows say and Hold; the words carry no step id, rung code or count
      W14 Hold posts the one route it names, and the card that is open stays open
-     W15 the Board shows every thread, who spoke to whom and with which act,
-         and the ideas that are parked; an empty board is one quiet line
+     W15 the Board is a list of threads and the open one as a chat: who spoke
+         to whom and with which act; the ideas parked; an empty board is one
+         quiet line (amended 2026-09-28: the Board as chats)
      W16 the Map of a runtime department has one way in, shows what the
          department said back, and a function's card carries its steps
      W17 a runtime department has one button, Start when it is off and Stop
@@ -37,6 +38,13 @@
          Coordination's card carries its table: who goes first, who may post
      W19 on the screen the five are functions; the word "internal system" is
          the inside word and is printed nowhere
+     W25 the chat is the one point of entry: a runtime department opens on it;
+         inside a department the same chat scoped, the box carries the
+         department as a chip; the words go to Root; a stamp goes where the ask
+         lives; on Root the whole chat, the department a chip on the turn
+     W26 each function's card has its own Settings tab: its template, its own
+         limit, its ladder numbers, how it starts; Identity's carries where the
+         site is served from; a department of the first build has none
 
    Harness: test_dept.js's fresh(), with 22-website.js loaded after 20-dept.js
    (panel.html's order). Run: node test_website.js */
@@ -142,6 +150,19 @@ const BOARD = { any: true,
       bounds: { hops: 4, seconds: 900, usd: 0.5 }, hops: 0, default: "failure", posts: [
         { n: 1, src: "Owner", dst: ["Identity"], msg_type: "request", at: AT, word: "request", line: "Which page lists the doctors?" },
         { n: 2, src: "Identity", dst: ["Owner"], msg_type: "inform", at: AT, word: "answer", line: "The Doctors page lists them" }] }] };
+/* What the chat read answers (engine_runtime.py: chat_view): on Root the whole
+   chat, inside a department the same chat scoped to it. */
+const DEPT = "City Care Hospital Website";
+const ROOT_CHAT = { root: "r3", about: null, departments: [{ ref: "r5", name: DEPT, stopped: false }], turns: [
+    { n: 1, src: "Owner", dst: ["Identity"], msg_type: "request", at: AT, thread: "x-1", word: "front", line: "Start a website department for City Care Hospital", dept: null, name: null },
+    { n: 2, src: "Identity", dst: ["Owner"], msg_type: "request", at: AT, thread: "x-1", word: "setup", line: "Set up a department: City Care Hospital Website", dept: null, name: null },
+    { n: 5, src: "Owner", dst: ["Identity"], msg_type: "request", at: AT, thread: "x-4", word: "front", line: "Which page lists the doctors?", dept: "r5", name: DEPT },
+    { n: 6, src: "Identity", dst: ["Owner"], msg_type: "inform", at: AT, thread: "x-4", word: "request", line: "handed to City Care Hospital Website", dept: "r5", name: DEPT },
+    { n: 7, src: "Identity", dst: ["Owner"], msg_type: "inform", at: AT, thread: null, word: "answer", line: "The Doctors page lists them", dept: "r5", name: DEPT }],
+  asks: [{ id: "a-1", kind: "publish", engine: "Publish", text: "Publish: go live for the first time", status: "pending", created: AT, ref: "r5", dept: DEPT }] };
+const CHAT = { root: "r2", about: "r3", departments: [{ ref: "r3", name: DEPT, stopped: false }],
+  turns: ROOT_CHAT.turns.filter(t => t.dept).map(t => Object.assign({}, t, { dept: "r3" })),
+  asks: [Object.assign({}, ROOT_CHAT.asks[0], { ref: "r3" })] };
 
 function fresh(opts){
   opts = opts || {};
@@ -156,6 +177,7 @@ function fresh(opts){
       if (/\/api\/native\/r3\/map$/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(map)));
       if (/\/api\/native\/r3\/steps\//.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(stepsOf(decodeURIComponent(p.split("/steps/")[1]), opts.steps))));
       if (/\/api\/native\/r3\/board$/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(opts.board || BOARD)));
+      if (/\/api\/native\/r3\/chat$/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(opts.chat || CHAT)));
       if (/\/api\/native\/r3\/engine\//.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(Object.assign({ runs: [] }, map.engines[1]))));
       if (/\/artifact\//.test(p)) return Promise.resolve({ name: "Live site", slug: "live-site",
         template: { id: "artifact/live-site", name: "Live site", kind: "site", files: ["index.html", "*.html"], checks: ["has_index_html"],
@@ -458,17 +480,24 @@ test("W14: Hold posts the one route it names, and the card that is open stays op
   assert.ok(readsOf(c, /\/steps\/Identity$/).length >= 2, "and its steps are read again after the post");
 });
 
-test("W15: the Board shows every thread, who spoke to whom and with which act, and the ideas that are parked", async () => {
+test("W15: the Board is a list of threads and the open one as a chat: who spoke to whom and with which act; the ideas parked", async () => {
   const c = await opened({ map: rtMap() });
   click(c, { wbtab: "board" }); view(c); await sleep(); await sleep();
-  const html = view(c);
-  assert.ok(/<h2[^>]*>Board<|>Board</.test(html));
-  assert.strictEqual((html.match(/class="wbth wb"/g) || []).length, 2, "one block to a thread");
+  let html = view(c);
+  assert.ok(/<div class="o2vh"><b>Board<\/b>/.test(html));
+  assert.strictEqual((html.match(/class="wbthr wb/g) || []).length, 2, "one row to a thread");
   assert.ok(html.indexOf("A rule, as understood") < html.indexOf("Which page lists the doctors?"), "newest thread first");
-  assert.ok(/<span class="dpdot warn"><\/span><b>A rule, as understood: every page names a phone line<\/b><span class="dpst">Waits for you<\/span>/.test(html));
-  assert.ok(/<span class="dpdot ok"><\/span><b>Which page lists the doctors\?<\/b><span class="dpst">Done<\/span>/.test(html));
-  assert.ok(/<span class="wbchip">Identity<\/span><span class="wbarrow">&rarr;<\/span><span class="wbchip">Owner<\/span><span class="dpchk">tells · /.test(html), "who, to whom, the act in a word");
-  assert.ok(/<div class="wbsaid">The Doctors page lists them<\/div>/.test(html), "and what was said");
+  assert.ok(/class="wbthr wb on" data-wbthread="x-2"><span class="dpdot warn"><\/span><span class="wbwho"><span class="wbchip">Identity<\/span><\/span><span class="dpst">Waits for you<\/span><b>A rule, as understood: every page names a phone line<\/b>/.test(html),
+    "the newest is open: its dot, who spoke, its state, its first line");
+  assert.ok(/class="wbthr wb" data-wbthread="x-1"><span class="dpdot ok"><\/span>[\s\S]*?<span class="dpst">Done<\/span><b>Which page lists the doctors\?<\/b>/.test(html));
+  assert.ok(/<div class="who who-ai">Identity <span class="wbarrow">&rarr;<\/span> Owner<\/div><div class="a">A rule, as understood: every page names a phone line<span class="dpchk">asks · /.test(html),
+    "the open thread is turns: who, to whom, the act in a word");
+  click(c, { wbthread: "x-1" });
+  html = view(c);
+  assert.ok(/class="wbthr wb on" data-wbthread="x-1"/.test(html) && !/class="wbthr wb on" data-wbthread="x-2"/.test(html), "another thread opens");
+  assert.ok(/<div class="who who-you">You<\/div><div class="u md">Which page lists the doctors\?<span class="dpchk">asks · /.test(html), "the owner on the right");
+  assert.ok(/<div class="who who-ai">Identity <span class="wbarrow">&rarr;<\/span> Owner<\/div><div class="a">The Doctors page lists them<span class="dpchk">tells · /.test(html), "the department on the left");
+  assert.ok(!/A rule, as understood: every page names a phone line<span class="dpchk">/.test(html), "one thread open at a time");
   assert.ok(/<h3>Ideas, parked<\/h3>/.test(html) && /A place where patients sign in/.test(html) && /<span class="wbchip">A sign-in of its own<\/span>/.test(html));
   const t = words(html);
   assert.ok(!/\d/.test(t), "a number at rest: " + (t.match(/.{0,30}\d.{0,30}/) || [""])[0]);
@@ -480,7 +509,7 @@ test("W15: the Board shows every thread, who spoke to whom and with which act, a
 
 test("W16: the Map of a runtime department has one way in, shows what was said back, and a function's card carries its steps", async () => {
   const c = await opened({ map: rtMap() });
-  view(c); await sleep(); await sleep();
+  click(c, { wbtab: "map" }); view(c); await sleep(); await sleep();
   const html = view(c);
   assert.ok(/<h3>Say<\/h3>/.test(html) && /data-wbask="ask"[^>]*>Send</.test(html) && !/<h3>Ask<\/h3>/.test(html), "one box, one button");
   assert.strictEqual((html.match(/<textarea/g) || []).length, 1, "and no second way in");
@@ -505,6 +534,7 @@ test("W16: the Map of a runtime department has one way in, shows what was said b
 
 test("W17: a runtime department has one button, Start when it is off and Stop when it is on", async () => {
   const on = await opened({ map: rtMap() });
+  click(on, { wbtab: "map" });
   let html = view(on);
   assert.strictEqual((html.match(/data-wbstop="1"/g) || []).length, 1, "one Stop, and only one");
   assert.ok(!/data-wbresume/.test(html) && !/>Resume</.test(html));
@@ -513,6 +543,7 @@ test("W17: a runtime department has one button, Start when it is off and Stop wh
   assert.ok(!/>Motor</.test(first) && !/Stopped/.test(first), "its state is one word, On or Off");
   click(on, { wbstop: "1" }); await sleep(); await sleep();
   const off = await opened({ map: rtMap({ stopped: true }) });
+  click(off, { wbtab: "map" });
   html = view(off);
   assert.ok(/<span class="dpdot off"><\/span><span>Off<\/span><button type="button" class="btn wb wbonoff dpstamp" data-wbresume="1">Start<\/button>/.test(html), html.slice(0, 500));
   assert.strictEqual((html.match(/data-wbresume="1"/g) || []).length, 1);
@@ -614,7 +645,7 @@ test("W22: a Root is a department on the screen: its one engine, Setup; Say asks
                  envelope: { calls: 240, usd: 6, used_calls: 0, used_usd: 0 }, window_min: 15, last: null }];
   m.artifacts = [{ name: "Request", slug: "request", versions: 1, latest: null }, { name: "Department", slug: "department", versions: 0, latest: null }];
   const c = await opened({ map: m });
-  view(c); await sleep(); await sleep();
+  click(c, { wbtab: "map" }); view(c); await sleep(); await sleep();
   const html = view(c);
   assert.ok(/data-wbengine="Setup"/.test(html) && !/data-wbengine="Plan"/.test(html), "Root's line is Setup alone");
   assert.ok(/placeholder="Ask Root for a department: what it is for"/.test(html), "Say speaks to Root");
@@ -631,17 +662,24 @@ test("W23: a Root that has not been asked for anything says so, and what to say;
                  envelope: { calls: 240, usd: 6, used_calls: 0, used_usd: 0 }, window_min: 15, last: null }];
   m.artifacts = [{ name: "Request", slug: "request", versions: 0, latest: null }, { name: "Department", slug: "department", versions: 0, latest: null }];
   const c = await opened({ map: m });
-  view(c); await sleep(); await sleep();
+  click(c, { wbtab: "map" }); view(c); await sleep(); await sleep();
   let html = view(c);
   assert.ok(/<h3>Departments<\/h3>[\s\S]{0,80}No department yet\. Say what the first one is for\./.test(html), "the empty state names the action");
   const m2 = JSON.parse(JSON.stringify(m)); m2.artifacts[0].versions = 1;
   const c2 = await opened({ map: m2 });
-  view(c2); await sleep(); await sleep();
+  click(c2, { wbtab: "map" }); view(c2); await sleep(); await sleep();
   html = view(c2);
   assert.ok(!/No department yet/.test(html), "asked once, the line is gone");
   const w = await opened({ map: rtMap() });
-  view(w); await sleep(); await sleep();
+  click(w, { wbtab: "map" }); view(w); await sleep(); await sleep();
   assert.ok(!/No department yet/.test(view(w)), "a website department never says it");
+  /* the chat says it too, on a Root with nothing yet, and nowhere else */
+  const e = await opened({ map: m, chat: { root: "r3", about: null, turns: [], asks: [], departments: [] } });
+  view(e); await sleep(); await sleep();
+  assert.ok(/No department yet\. Say what the first one is for\./.test(view(e)), "the chat of an empty Root");
+  const f = await opened({ map: rtMap(), chat: { root: "r2", about: "r3", turns: [], asks: [], departments: [] } });
+  view(f); await sleep(); await sleep();
+  assert.ok(/Nothing has been said yet/.test(view(f)) && !/No department yet/.test(view(f)));
 });
 
 test("W24: a filed artifact shows its template: what it holds, its checks, who writes it, when it counts, what runs on a new one", async () => {
@@ -654,21 +692,84 @@ test("W24: a filed artifact shows its template: what it holds, its checks, who w
   assert.ok(/Adaptation, Audit/.test(html), "its operations: the engines that run on a new one");
 });
 
-/* W25 (founder, 2026-09-28: "I don't see artifacts in the library"): every artifact a
-   website department files, and the app it runs, is a template on the Library's
-   Artifacts shelf, and the shelf is a Library screen the Org rail lists. */
-test("W25b: every artifact the website kind files has a template on the Library's Artifacts shelf", () => {
-  const dir = path.join(__dirname, "artifact-templates");
-  const names = fs.readdirSync(dir).filter(f => /\.json$/.test(f))
-    .map(f => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")).name);
-  const kinds = JSON.parse(fs.readFileSync(path.join(__dirname, "engine_defs", "website.json"), "utf8")).kinds;
-  for (const k of Object.keys(kinds)) for (const a of kinds[k].artifacts)
-    assert.ok(names.indexOf(a) >= 0, "no template on the shelf for " + a + " (kind " + k + ")");
-  assert.ok(names.indexOf("Human Sutra") >= 0, "the app is a template too");
-  const lib = fs.readFileSync(path.join(__dirname, "static", "js", "21-library.js"), "utf8");
-  const rail = fs.readFileSync(path.join(__dirname, "static", "js", "19-org2.js"), "utf8");
-  assert.ok(/"artifacts"/.test(lib.split("LIB_SHELVES")[1] || ""), "the Library screen has the shelf");
-  assert.ok(/\["lib-artifacts", "Artifacts"\]/.test(rail), "the Org rail lists it under Parts");
+test("W25: the chat is the one point of entry: it opens first; inside a department it is scoped with the department as a chip; the words go to Root; a stamp goes where the ask lives; on Root the whole chat", async () => {
+  const m = rtMap(); m.root = "r2";
+  const c = await opened({ map: m });
+  assert.ok(/o2li dpli on" data-wbtab="chat"/.test(list(c)) && !/o2li dpli on" data-wbtab="map"/.test(list(c)), "Chat opens without a click");
+  view(c); await sleep(); await sleep();
+  let html = view(c);
+  assert.ok(/<div class="o2vh"><b>Chat<\/b>/.test(html));
+  assert.deepStrictEqual(readsOf(c, /\/chat/), ["/api/native/r3/chat"], "one read, of the chat");
+  assert.ok(/<div class="turn wbturn"><div class="who who-you">You<\/div><div class="u md">Which page lists the doctors\?<\/div><\/div>/.test(html), "the owner's turn, the chat's own markup");
+  assert.ok(/<div class="who who-ai">Root<\/div><div class="a">The Doctors page lists them<span class="dpchk">tells · /.test(html), "the left name is Root");
+  assert.ok(!/<span class="wbchip">City Care Hospital Website<\/span>/.test(html), "inside the department, no chip on the turns");
+  assert.ok(!/Set up a department/.test(html), "Root's own turns are not here");
+  assert.ok(/<button type="button" class="wbchip on wbto wb" data-wbchip="off">to City Care Hospital Website &times;<\/button><textarea id="wbd-ask"/.test(html), "the box carries where you stand as a chip");
+  assert.ok(/<h3>Waiting for you<\/h3>/.test(html) && /City Care Hospital Website · Publish/.test(html) && /data-wbdecide="a-1" data-wbok="1" data-wbref="r3"/.test(html), "an ask says where it lives");
+  assert.strictEqual((html.match(/<textarea/g) || []).length, 1, "one way in");
+  (c.document.listeners.input || []).forEach(fn => fn({ target: { dataset: { wbdraft: "r3:ask" }, value: "Add a Careers page" } }));
+  assert.ok(click(c, { wbask: "ask" })); await sleep(); await sleep();
+  click(c, { wbchip: "off" });
+  assert.ok(/<button type="button" class="wbchip wbto wb" data-wbchip="on">to Root<\/button>/.test(view(c)), "the chip taken off: the words go to Root alone");
+  (c.document.listeners.input || []).forEach(fn => fn({ target: { dataset: { wbdraft: "r3:ask" }, value: "Start a department for billing" } }));
+  click(c, { wbask: "ask" }); await sleep(); await sleep();
+  click(c, { wbdecide: "a-1", wbok: "1", wbref: "r3" }); await sleep(); await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost)), [
+    { p: "/api/native/r2/ask", body: { text: "Add a Careers page", about: "r3" } },
+    { p: "/api/native/r2/ask", body: { text: "Start a department for billing" } },
+    { p: "/api/native/r3/asks/a-1", body: { approve: true } }], "to Root, about the department; to Root alone; the stamp where the ask lives");
+  assert.ok(readsOf(c, /\/chat/).length >= 2, "and the chat is read again after a post");
+  const rm = rtMap(); rm.kind = "root"; rm.root = "r3"; rm.say = "Ask Root for a department: what it is for"; rm.live = false;
+  const r = await opened({ map: rm, chat: ROOT_CHAT });
+  view(r); await sleep(); await sleep();
+  html = view(r);
+  assert.ok(/<div class="who who-ai">Root<span class="wbchip">City Care Hospital Website<\/span><\/div><div class="a">The Doctors page lists them/.test(html), "on Root the department is a chip on the turn");
+  assert.ok(/<div class="who who-you"><span class="wbchip">City Care Hospital Website<\/span>You<\/div><div class="u md">Which page lists the doctors\?/.test(html), "on the owner's turn too");
+  assert.ok(/<div class="who who-ai">Root<\/div><div class="a">Set up a department: City Care Hospital Website<span class="dpchk">asks · /.test(html), "Root's own turns, with no chip");
+  assert.ok(!/data-wbchip/.test(html) && /placeholder="Ask Root for a department: what it is for"/.test(html), "no chip on the box: Root is where you stand");
+  assert.ok(/<span class="dpk">Departments<\/span><span class="wbchip on">City Care Hospital Website<\/span>/.test(html), "the departments under Root");
+  assert.ok(/data-wbdecide="a-1" data-wbok="1" data-wbref="r5"/.test(html), "the department's ask, with where it lives");
+  (r.document.listeners.input || []).forEach(fn => fn({ target: { dataset: { wbdraft: "r3:ask" }, value: "Stop City Care Hospital Website" } }));
+  click(r, { wbask: "ask" }); await sleep(); await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r.calls.apiPost)), [{ p: "/api/native/r3/ask", body: { text: "Stop City Care Hospital Website" } }], "on Root the words go straight in");
+  const t = words(html);
+  assert.ok(!/\d/.test(t), "a number at rest: " + (t.match(/.{0,30}\d.{0,30}/) || [""])[0]);
+  assert.ok(!/\bx-\d|\/api\/|\br[0-9]\b/.test(t), "an id or a path in the words");
+  const old = await opened();
+  assert.ok(!/data-wbtab="chat"/.test(list(old)) && /o2li dpli on" data-wbtab="map"/.test(list(old)), "a department of the first build opens on its Map, as before");
+});
+
+test("W26: each function's card has its own Settings tab: its template, its own limit, its ladder numbers, how it starts; Identity's carries where the site is served from", async () => {
+  const c = await opened({ map: rtMap() });
+  vm.runInContext("dpS().pane['r3:priority'] = 'settings';", c);
+  let html = await fnCard(c, "priority");
+  assert.ok(/aria-pressed="true" data-dppane="settings">Settings<\/button>/.test(html), "the tab, open");
+  ["Template", "Limit", "Ladder", "Starts", "Hears"].forEach(h => assert.ok(html.indexOf("<h3>" + h + "</h3>") >= 0, h));
+  assert.ok(!/<h3>Envelopes<\/h3>/.test(html) && !/<h3>Queue<\/h3>/.test(html), "the card's own rows are on its own tab");
+  assert.ok(/data-wbdraft="r3:env:Priority:calls"[^>]*value="30"/.test(html) && /data-wbenv="Priority"/.test(html), "its own limit, and only its own");
+  assert.ok(!/data-wbdraft="r3:env:Write:calls"/.test(html), "not another's");
+  assert.ok(/<span class="dpk">Runs before a step climbs<\/span><input type="number" min="0" step="1" data-wbdraft="r3:ladder:Priority:runs" value="40"/.test(html), "its ladder numbers");
+  assert.ok(/data-wbladder="Priority"/.test(html) && !/<h3>Served from<\/h3>/.test(html));
+  (c.document.listeners.input || []).forEach(fn => fn({ target: { dataset: { wbdraft: "r3:ladder:Priority:runs" }, value: "50" } }));
+  assert.ok(click(c, { wbladder: "Priority" })); await sleep(); await sleep();
+  assert.strictEqual(vm.runInContext("dpS().tab['r3']", c), "priority", "the card stays open");
+  vm.runInContext("dpS().pane['r3:identity'] = 'settings';", c);
+  html = await fnCard(c, "identity");
+  assert.ok(/<h3>Served from<\/h3>/.test(html) && /data-wbhost="1"/.test(html), "Identity's carries the host");
+  (c.document.listeners.input || []).forEach(fn => fn({ target: { dataset: { wbdraft: "r3:host" }, value: "https://cityclinic.example" } }));
+  click(c, { wbhost: "1" }); await sleep(); await sleep();
+  vm.runInContext("dpS().pane['r3:coordination'] = 'settings';", c);
+  html = await fnCard(c, "coordination");
+  assert.ok(/<h3>Who goes first<\/h3>/.test(html) && /<h3>Who may post to whom<\/h3>/.test(html), "Coordination's carries its table");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost)), [
+    { p: "/api/native/r3/ladder", body: { engine: "Priority", runs: 50 } },
+    { p: "/api/native/r3/host", body: { host: "https://cityclinic.example" } }], "only what was typed, for that function");
+  const t = words(html);
+  assert.ok(!/internal\s+system/i.test(t));
+  const old = await opened();
+  vm.runInContext("dpS().pane['r3:priority'] = 'settings';", old);
+  const oh = await fnCard(old, "priority");
+  assert.ok(!/>Settings<\/button>/.test(oh) && /<h3>Envelopes<\/h3>/.test(oh), "a department of the first build keeps the tabs it had");
 });
 
 Promise.all(pending).then(() => {

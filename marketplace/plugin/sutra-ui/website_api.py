@@ -107,12 +107,23 @@ async def goal(ref: str, request: Request):
 @router.post("/{ref}/ask")
 async def ask(ref: str, request: Request):
     _need(ref)
-    text, _ = await _text(request)
+    text, body = await _text(request)
+    about = str(body.get("about") or "").strip() or None
     try:
-        rq, row = W.owner_ask(ref, text)
+        rq, row = W.owner_ask(ref, text, about=about)
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
     return {"ok": True, "request": rq, "brief": row}
+
+
+@router.get("/{ref}/chat")
+def chat(ref: str, about: str = ""):
+    """The one chat with Root: whole on a Root, scoped on a department (or to `about`)."""
+    _need(ref)
+    rt = W._runtime(ref)
+    if not rt:
+        return {"root": None, "about": None, "turns": [], "asks": [], "departments": []}
+    return rt.chat_view(ref, about=about or None)
 
 
 @router.post("/{ref}/asks/{aid}")
@@ -160,6 +171,18 @@ async def envelope(ref: str, request: Request):
                                                       None if calls in (None, "") else int(calls),
                                                       None if usd in (None, "") else float(usd))}
     except (ValueError, TypeError) as exc:
+        raise HTTPException(400, detail=str(exc))
+
+
+@router.post("/{ref}/ladder")
+async def ladder(ref: str, request: Request):
+    """One engine's own ladder numbers, from its Settings tab."""
+    rt = _rt(ref)
+    _, body = await _text(request)
+    nums = {k: body[k] for k in ("runs", "differing", "trial", "misses") if body.get(k) not in (None, "")}
+    try:
+        return {"ok": True, "numbers": rt.set_numbers(ref, str(body.get("engine") or ""), nums)}
+    except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
 
 

@@ -41,7 +41,8 @@ const WB_ACTS = { "request": "asks", "agree": "agrees", "refuse": "refuses", "pr
 
 function wbS(){
   if (!S.wb) S.wb = { refs: null, refsBusy: false, map: {}, sig: {}, tab: {}, pane: {}, sel: {}, draft: {},
-                      busy: {}, err: {}, engine: {}, art: {}, trace: {}, steps: {}, board: {}, found: null, timer: null };
+                      busy: {}, err: {}, engine: {}, art: {}, trace: {}, steps: {}, board: {}, chat: {}, chatSig: {},
+                      chip: {}, thread: {}, found: null, timer: null };
   return S.wb;
 }
 function wbRt(m){ return !!(m && m.runtime === 2); }
@@ -65,9 +66,11 @@ async function wbLoadRefs(){
   wbTick();
   dpRender();
 }
+/* A department on the engine runtime opens on its chat: the one point of entry
+   (founder, 2026-09-28). One of the first build opens on its Map, as before. */
 function wbTab(ref){
   const st = wbS();
-  return st.tab[ref] === undefined ? "map" : st.tab[ref];
+  return st.tab[ref] === undefined ? (wbRt(st.map[ref]) ? "chat" : "map") : st.tab[ref];
 }
 /* What the screen compares to decide whether to paint again. The motor's
    heartbeat moves every tick and is patched in place, so it is left out: a
@@ -106,7 +109,10 @@ function wbTick(){
   if (st.timer) return;
   st.timer = setInterval(() => {
     if (S.screen !== "org2" || !S.dp || !S.dp.sel) return;
-    if (wbIs(S.dp.sel)) wbLoadMap(S.dp.sel);
+    if (!wbIs(S.dp.sel)) return;
+    wbLoadMap(S.dp.sel);
+    /* a department's answer lands on Root's board without a run of Root's own, so the open chat is read on its own clock */
+    if (wbTab(S.dp.sel) === "chat" && st.chat[S.dp.sel]) wbLoadChat(S.dp.sel, true);
   }, WB_POLL_MS);
 }
 function wbMotorState(m){
@@ -136,6 +142,7 @@ function wbList(n){
   const st = wbS(), m = st.map[n.ref], tab = wbTab(n.ref);
   if (!m) wbLoadMap(n.ref);
   const top = `<div class="o2g dpg wb">` +
+    (wbRt(m) ? dpRow("Chat", `data-wbtab="chat"`, tab === "chat") : "") +
     dpRow("Map", `data-wbtab="map"`, tab === "map") +
     dpRow("System status", `data-wbtab="status"`, tab === "status") +
     dpRow("Motor", `data-wbtab="motor"`, tab === "motor") +
@@ -386,12 +393,30 @@ async function wbLoadBoard(ref, again){
   delete st.busy["b:" + ref];
   if (!again || !wbTyping()) dpRender();
 }
+async function wbLoadChat(ref, again){
+  const st = wbS();
+  if ((st.chat[ref] && !again) || st.busy["c:" + ref]) return;
+  st.busy["c:" + ref] = true;
+  try {
+    const v = await apiGet(wbUrl(ref, "chat"));
+    const sig = JSON.stringify(v);
+    const moved = sig !== st.chatSig[ref] || !st.chat[ref];
+    st.chat[ref] = v; st.chatSig[ref] = sig;
+    delete st.busy["c:" + ref];
+    if (moved && (!again || !wbTyping())) dpRender();
+  } catch (e) {
+    if (!st.chat[ref]) st.chat[ref] = { failed: true };
+    delete st.busy["c:" + ref];
+    if (!again) dpRender();
+  }
+}
 /* The record moved: what is already on the screen is read again and swapped in
    when it arrives, so a card never blinks empty between two reads. */
 function wbAgain(ref){
   const st = wbS();
   Object.keys(st.steps).forEach(k => { if (k.indexOf(ref + ":") === 0) wbLoadSteps(ref, k.slice(ref.length + 1), true); });
   if (st.board[ref]) wbLoadBoard(ref, true);
+  if (st.chat[ref]) wbLoadChat(ref, true);
 }
 function wbRungHtml(s){
   const at = WB_RUNGS.map(r => r[0]).indexOf(s.rung);
@@ -463,20 +488,36 @@ function wbIdeasHtml(b){
   return dpCard("Ideas, parked", rows.map(i => dpRunRow(i.reflected || i.words || "", i.question || "", "off",
     `<div class="wbstep">${(i.shapes || []).map(x => wbChip(x)).join("")}</div>`)).join(""));
 }
+/* The Board as chats (founder, 2026-09-28: "even the board should also be like
+   a chat interface"): every thread a row down the side, newest first, and the
+   open one as turns in the Sutra chat's own markup, the owner on the right and
+   whoever spoke on the left, with the act in a word. */
+function wbBoardTurn(p){
+  const to = p.dst || [];                       /* the Board is the whole record: the owner is named as a reader too */
+  const said = p.line ? wbEsc(p.line) : wbEsc(wbCap(p.word || ""));
+  const act = `<span class="dpchk">${wbEsc(WB_ACTS[p.msg_type] || p.msg_type)} · ${wbEsc(wbWhen(p.at))}</span>`;
+  if (p.src === "Owner") return `<div class="turn wbturn"><div class="who who-you">You</div><div class="u md">${said}${act}</div></div>`;
+  const who = wbEsc(p.src) + (to.length ? ` <span class="wbarrow">&rarr;</span> ` + wbEsc(to.join(", ")) : "");
+  return `<div class="turn wbturn"><div class="who who-ai">${who}</div><div class="a">${said}${act}</div></div>`;
+}
 function wbBoardHtml(n){
-  const b = wbS().board[n.ref];
+  const st = wbS(), b = st.board[n.ref];
   if (!b){ wbLoadBoard(n.ref); return dpSkel(); }
   if (b.failed) return dpQuiet("Could not read");
   if (!b.any) return dpQuiet("Nothing has been said yet");
-  return wbIdeasHtml(b) + (b.threads || []).map(t => {
+  const threads = b.threads || [];
+  const cur = threads.some(t => t.id === st.thread[n.ref]) ? st.thread[n.ref] : (threads[0] || {}).id;
+  const rows = threads.map(t => {
     const [dot, word] = WB_THREADS[t.state] || ["", t.state];
-    const posts = t.posts || [];
-    const head = (posts[0] && posts[0].line) || t.topic || "";
-    return `<div class="wbth wb"><div class="wbthh">${wbDot(dot)}<b>${wbEsc(head)}</b><span class="dpst">${wbEsc(word)}</span></div>` +
-      posts.map(p => `<div class="wbpost">${wbChip(p.src)}<span class="wbarrow">&rarr;</span>${wbChip((p.dst || []).join(", "))}` +
-        `<span class="dpchk">${wbEsc(WB_ACTS[p.msg_type] || p.msg_type)} · ${wbEsc(wbWhen(p.at))}</span>` +
-        (p.line && p !== posts[0] ? `<div class="wbsaid">${wbEsc(p.line)}</div>` : "") + `</div>`).join("") + `</div>`;
+    const posts = t.posts || [], who = [];
+    posts.forEach(p => { if (who.indexOf(p.src) < 0) who.push(p.src); });
+    return `<button type="button" class="wbthr wb${t.id === cur ? " on" : ""}" data-wbthread="${wbEsc(t.id)}">${wbDot(dot)}` +
+      `<span class="wbwho">${who.map(w => wbChip(w)).join("")}</span><span class="dpst">${wbEsc(word)}</span>` +
+      `<b>${wbEsc((posts[0] && posts[0].line) || t.topic || "")}</b></button>`;
   }).join("");
+  const open = threads.filter(t => t.id === cur)[0];
+  const turns = open ? (open.posts || []).slice().sort((a, c) => a.n - c.n).map(wbBoardTurn).join("") : "";
+  return wbIdeasHtml(b) + `<div class="wbboard wb"><div class="wbthreads">${rows}</div><div class="wbthread"><div class="wbchat wb">${turns}</div></div></div>`;
 }
 
 /* ── the conversation: Human Sutra, an app ────────────────────────────────── */
@@ -523,20 +564,68 @@ function wbConversationHtml(n, m){
     (asks.length ? dpCard("Waiting for you", wbAsksHtml(m)) : "") +
     dpCard("Say", wbAskBox(n.ref, "ask", "A task, a question, a rule, feedback or an idea", "data-wbask", "Send"));
 }
+/* ── the chat: the one point of entry ─────────────────────────────────────── */
+/* Founder, 2026-09-28: "I want one point of entry, and that can be chat...
+   The user always speaks with the root, but the user can just open up at a
+   particular department and wants to speak there... It goes to the root, and
+   then it translates into that department appropriately." One record: Root's
+   board, every turn about a department. Two views: on Root the whole chat;
+   inside a department the same chat scoped to it, and the box carries where
+   you stand as a chip the person can take off. The left name is always Root;
+   the department is a chip on the turn. The markup is the Sutra chat's own
+   (05-chat.js: turn, who, u, a), so it reads as a chat. */
+function wbChatTurn(t, scoped){
+  const dept = !scoped && t.name ? wbChip(t.name) : "";
+  if (t.src === "Owner") return `<div class="turn wbturn"><div class="who who-you">${dept}You</div><div class="u md">${wbEsc(t.line)}</div></div>`;
+  return `<div class="turn wbturn"><div class="who who-ai">Root${dept}</div><div class="a">${wbEsc(t.line)}` +
+    `<span class="dpchk">${wbEsc(WB_ACTS[t.msg_type] || t.msg_type)} · ${wbEsc(wbWhen(t.at))}</span></div></div>`;
+}
+/* An ask is a line with its buttons, and it says where it lives: the stamp goes
+   to that department, never to the one the chat is read from. */
+function wbChatAsksHtml(c){
+  const asks = c.asks || [];
+  if (!asks.length) return "";
+  return dpCard("Waiting for you", asks.map(a => `<div class="dpask wb"><div class="dpasks">${wbEsc(a.text)}</div>` +
+    `<div class="dpaskd">${wbEsc([a.dept, a.engine].filter(Boolean).join(" · "))} · ${wbEsc(wbWhen(a.created))}</div>` +
+    wbBtn("Stamp", `data-wbdecide="${wbEsc(a.id)}" data-wbok="1" data-wbref="${wbEsc(a.ref || "")}"`, "dpstamp") +
+    wbBtn("Refuse", `data-wbdecide="${wbEsc(a.id)}" data-wbok="0" data-wbref="${wbEsc(a.ref || "")}"`) + `</div>`).join(""));
+}
+function wbChatBoxHtml(n, m){
+  const st = wbS(), k = n.ref + ":ask";
+  const inside = m.kind !== "root" && !!m.root, on = inside && st.chip[n.ref] !== false;
+  const chip = !inside ? "" : on
+    ? `<button type="button" class="wbchip on wbto wb" data-wbchip="off">to ${wbEsc(m.name)} &times;</button>`
+    : `<button type="button" class="wbchip wbto wb" data-wbchip="on">to Root</button>`;
+  const err = st.err[k] ? `<div class="o2quiet dpq">${wbEsc(st.err[k])}</div>` : "";
+  return `<div class="wbbox wb">${chip}<textarea id="wbd-ask" data-wbdraft="${wbEsc(k)}" rows="2" placeholder="${wbEsc(on ? "Say it to " + m.name : (m.say || "Say it to Root"))}">${wbEsc(st.draft[k] || "")}</textarea>` +
+    wbBtn("Send", `data-wbask="ask"`, "dpstamp") + err + `</div>`;
+}
+function wbChatHtml(n, m){
+  const st = wbS(), c = st.chat[n.ref];
+  if (!c){ wbLoadChat(n.ref); return dpSkel(); }
+  if (c.failed) return dpQuiet("Could not read");
+  const scoped = !!c.about, depts = c.departments || [];
+  const turns = (c.turns || []).map(t => wbChatTurn(t, scoped)).join("");
+  const empty = m.kind === "root" && !depts.length ? "No department yet. Say what the first one is for." : "Nothing has been said yet";
+  const names = !scoped && depts.length ? `<div class="wbstep"><span class="dpk">Departments</span>${depts.map(d => wbChip(d.name, d.stopped ? "" : "on")).join("")}</div>` : "";
+  return `<div class="wbchat wb">${turns || dpQuiet(empty)}</div>` + wbChatAsksHtml(c) + wbChatBoxHtml(n, m) + names;
+}
+
 /* Priority's card: the limits, born from Priority's template, set here by the
    owner (founder, 2026-09-28: "configured in the relevant priority"). */
+function wbLimitRow(ref, l){
+  const st = wbS(), kc = ref + ":env:" + l.engine + ":calls", ku = ref + ":env:" + l.engine + ":usd";
+  const val = (k, d) => wbEsc(st.draft[k] !== undefined ? st.draft[k] : d);
+  return `<div class="wbstep wblim"><b>${wbEsc(l.engine)}</b>` +
+    `<input type="number" min="0" step="1" data-wbdraft="${wbEsc(kc)}" value="${val(kc, l.calls)}" aria-label="calls a day"><span class="dpchk">calls</span>` +
+    `<input type="number" min="0" step="0.5" data-wbdraft="${wbEsc(ku)}" value="${val(ku, l.usd)}" aria-label="USD a day"><span class="dpchk">USD a day</span>` +
+    wbBtn("Set", `data-wbenv="${wbEsc(l.engine)}"`) + `</div>`;
+}
 function wbLimitsHtml(ref){
-  const st = wbS(), v = st.steps[ref + ":Priority"];
+  const v = wbS().steps[ref + ":Priority"];
   const rows = (v && v.limits) || [];
   if (!rows.length) return "";
-  return dpCard("Limits", rows.map(l => {
-    const kc = ref + ":env:" + l.engine + ":calls", ku = ref + ":env:" + l.engine + ":usd";
-    const val = (k, d) => wbEsc(st.draft[k] !== undefined ? st.draft[k] : d);
-    return `<div class="wbstep wblim"><b>${wbEsc(l.engine)}</b>` +
-      `<input type="number" min="0" step="1" data-wbdraft="${wbEsc(kc)}" value="${val(kc, l.calls)}" aria-label="calls a day"><span class="dpchk">calls</span>` +
-      `<input type="number" min="0" step="0.5" data-wbdraft="${wbEsc(ku)}" value="${val(ku, l.usd)}" aria-label="USD a day"><span class="dpchk">USD a day</span>` +
-      wbBtn("Set", `data-wbenv="${wbEsc(l.engine)}"`) + `</div>`;
-  }).join(""));
+  return dpCard("Limits", rows.map(l => wbLimitRow(ref, l)).join(""));
 }
 
 /* ── filed work: the item, Preview, Versions, Trace ───────────────────────── */
@@ -651,6 +740,54 @@ function wbFnOwn(ref, tab){
   if (!m){ wbLoadMap(ref); return ""; }
   return wbFnExtra(tab, m);
 }
+
+/* ── Settings: a function's own ────────────────────────────────────────────
+   Founder, 2026-09-28: "Each of the five functions has a default settings tab
+   which has its own updates", and "One identity is being used for everything":
+   never one template for all five. 20-dept.js draws the tab on each function
+   card and asks wbFnSettings for its body: the function's own template (the
+   line and its picker are 20-dept.js's), its own limit, the numbers of its
+   ladder, how it starts and what it hears; Identity's carries where the site
+   is served from, Coordination's its table. */
+const WB_LADDER = [["runs", "Runs before a step climbs"], ["differing", "Differing runs it may keep"],
+                   ["trial", "Runs a trial lasts"], ["misses", "Misses that step it down"]];
+function wbLadderHtml(ref, name, n){
+  const st = wbS();
+  return dpCard("Ladder", WB_LADDER.map(([k, label]) => {
+      const key = ref + ":ladder:" + name + ":" + k;
+      return `<div class="wbstep wbset"><span class="dpk">${wbEsc(label)}</span>` +
+        `<input type="number" min="0" step="1" data-wbdraft="${wbEsc(key)}" value="${wbEsc(st.draft[key] !== undefined ? st.draft[key] : (n[k] === undefined ? "" : n[k]))}" aria-label="${wbEsc(label)}"></div>`;
+    }).join("") + `<div class="wbctl">${wbBtn("Set", `data-wbladder="${wbEsc(name)}"`)}</div>`);
+}
+function wbHostHtml(ref, m){
+  const st = wbS(), key = ref + ":host";
+  return dpCard("Served from", `<div class="wbstep wbset"><input type="text" data-wbdraft="${wbEsc(key)}" value="${wbEsc(st.draft[key] !== undefined ? st.draft[key] : (m.host || ""))}"` +
+    ` aria-label="where the site is served from" placeholder="Where the site is served from">` + wbBtn("Set", `data-wbhost="1"`) + `</div>`);
+}
+function wbSettingsHtml(ref, fn){
+  const st = wbS(), m = st.map[ref], name = wbCap(fn), v = st.steps[ref + ":" + name];
+  if (!v){ wbLoadSteps(ref, name); return dpSkel(); }
+  if (v.failed) return dpQuiet("Could not read");
+  const pr = st.steps[ref + ":Priority"];
+  if (!pr) wbLoadSteps(ref, "Priority");
+  const lim = ((pr && pr.limits) || []).filter(l => l.engine === name)[0];
+  const tpl = (typeof dpTemplateLine === "function") ? dpTemplateLine(fn) : "";
+  return dpCard("Template", tpl || dpQuiet("Not read yet")) +
+    (lim ? dpCard("Limit", wbLimitRow(ref, lim)) : "") +
+    wbLadderHtml(ref, name, v.numbers || {}) +
+    (fn === "identity" ? wbHostHtml(ref, m) : "") +
+    wbStartHtml(v) +
+    ((v.hears || []).length ? dpCard("Hears", `<div class="wbstep">${v.hears.map(h => wbChip(h)).join("")}</div>`) : "") +
+    wbTableHtml(v);
+}
+/* 20-dept.js asks this for every function card: null for a department that is
+   not on the engine runtime, so its card keeps the tabs it had. */
+function wbFnSettings(ref, fn){
+  if (!wbIs(ref)) return null;
+  const m = wbS().map[ref];
+  if (!m){ wbLoadMap(ref); return null; }
+  return wbRt(m) ? wbSettingsHtml(ref, fn) : null;
+}
 function wbCanDoHtml(m){
   const owner = true;
   const pill = (name, on) => `<span class="wbchip${on ? " on" : ""}">${name}</span>`;
@@ -663,6 +800,7 @@ function wbViewer(n){
   const st = wbS(), m = st.map[n.ref], tab = wbTab(n.ref);
   wbTick();
   if (!m){ wbLoadMap(n.ref); return dpViewerShell(n.name, st.err[n.ref] ? dpQuiet("Could not read") : dpSkel(), "wb"); }
+  if (tab === "chat" && wbRt(m)) return dpViewerShell("Chat", wbChatHtml(n, m), "wb");
   if (tab === "map") return dpViewerShell("Map", wbMapHtml(n, m), "wb");
   if (tab === "status") return dpViewerShell("System status", wbStatusHtml(n, m), "wb");
   if (tab === "motor") return dpViewerShell("Motor", wbMotorHtml(n, m), "wb");
@@ -676,7 +814,10 @@ function wbViewer(n){
   /* one of 20-dept.js's own cards is open: it draws it, and asks wbFnOwn for this
      department's state; only People gains a section here */
   const dtab = dpS().tab[n.ref] || "now";
-  if (dtab === "now"){ st.tab[n.ref] = "map"; return dpViewerShell("Map", wbMapHtml(n, m), "wb"); }
+  if (dtab === "now"){
+    st.tab[n.ref] = wbRt(m) ? "chat" : "map";
+    return wbRt(m) ? dpViewerShell("Chat", wbChatHtml(n, m), "wb") : dpViewerShell("Map", wbMapHtml(n, m), "wb");
+  }
   if (dtab === "people"){
     dpLoadPeople(n.ref);
     const p = dpPerson();
@@ -736,8 +877,8 @@ async function wbFoundGo(){
       const o = o2S();
       if (o.expanded){ [out.org].forEach(r => o.expanded.add(r)); }
     }
-    /* Root is where the person goes on: its ask for the first department is on its Map */
-    st.tab[out.root] = "map";
+    /* Root is where the person goes on: its chat, where its ask for the first department is */
+    st.tab[out.root] = "chat";
     if (typeof o2Select === "function") o2Select(out.root);
     wbLoadMap(out.root, true);
   } catch (e) {
@@ -746,11 +887,14 @@ async function wbFoundGo(){
 }
 
 /* ── handlers ─────────────────────────────────────────────────────────────── */
-async function wbPost(ref, tail, body, key){
+/* `at` is the department the route is posted to when it is not the one on the
+   screen: Root for the words said inside a department, the department an ask
+   lives in for its stamp. What is on the screen is read again either way. */
+async function wbPost(ref, tail, body, key, at){
   const st = wbS();
   if (st.busy["p:" + tail]) return;
   st.busy["p:" + tail] = true;
-  try { await apiPost(wbUrl(ref, tail), body || {}); if (key) { delete st.err[key]; delete st.draft[key]; } }
+  try { await apiPost(wbUrl(at || ref, tail), body || {}); if (key) { delete st.err[key]; delete st.draft[key]; } }
   catch (e) { if (key) st.err[key] = (e && e.message) || String(e); }
   delete st.busy["p:" + tail];
   await wbLoadMap(ref, true);
@@ -758,7 +902,8 @@ async function wbPost(ref, tail, body, key){
 }
 if (typeof document !== "undefined" && document.addEventListener){
   const WB_SEL = "[data-wbtab],[data-wbengine],[data-wbart],[data-wbpane],[data-wbdecide],[data-wbstop],[data-wbresume]," +
-    "[data-wbgoal],[data-wbask],[data-wbputback],[data-wbfn],[data-wbfound],[data-wbhold],[data-wbenv]";
+    "[data-wbgoal],[data-wbask],[data-wbputback],[data-wbfn],[data-wbfound],[data-wbhold],[data-wbenv]," +
+    "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost]";
   /* capture phase: a click on one of 20-dept.js's own rows hands the viewer
      back to it BEFORE that file's handler paints */
   document.addEventListener("click", (ev) => {
@@ -791,6 +936,14 @@ if (typeof document !== "undefined" && document.addEventListener){
       wbPost(ref, "envelope", body, kc).then(() => { delete st.draft[ku]; wbLoadSteps(ref, "Priority", true); });
       return;
     }
+    /* Set on a function's Settings tab, which 20-dept.js draws: its own ladder numbers, or where the site is served from */
+    if (ds.wbladder !== undefined){
+      const body = { engine: ds.wbladder }, keys = WB_LADDER.map(([k]) => [k, ref + ":ladder:" + ds.wbladder + ":" + k]);
+      keys.forEach(([k, key]) => { if (st.draft[key] !== undefined && st.draft[key] !== "") body[k] = Number(st.draft[key]); });
+      wbPost(ref, "ladder", body).then(() => { keys.forEach(([, key]) => delete st.draft[key]); wbLoadSteps(ref, ds.wbladder, true); });
+      return;
+    }
+    if (ds.wbhost !== undefined){ const k = ref + ":host"; wbPost(ref, "host", { host: st.draft[k] || "" }, k); return; }
     /* one of this file's entries is opening: none of 20-dept.js's rows stays lit */
     if (ds.wbfn === undefined && dpS().tab[ref] !== "now") dpS().tab[ref] = "now";
     if (ds.wbtab !== undefined){ st.tab[ref] = ds.wbtab; dpRender(); return; }
@@ -804,11 +957,19 @@ if (typeof document !== "undefined" && document.addEventListener){
       st.sel[k + ":v"] = ds.wbv || "";
       dpRender(); return;
     }
-    if (ds.wbdecide !== undefined){ wbPost(ref, "asks/" + encodeURIComponent(ds.wbdecide), { approve: ds.wbok === "1" }); return; }
+    if (ds.wbchip !== undefined){ st.chip[ref] = ds.wbchip === "on"; dpRender(); return; }
+    if (ds.wbthread !== undefined){ st.thread[ref] = ds.wbthread; dpRender(); return; }
+    if (ds.wbdecide !== undefined){ wbPost(ref, "asks/" + encodeURIComponent(ds.wbdecide), { approve: ds.wbok === "1" }, null, ds.wbref || ref); return; }
     if (ds.wbstop !== undefined){ wbPost(ref, "stop"); return; }
     if (ds.wbresume !== undefined){ wbPost(ref, "resume"); return; }
     if (ds.wbgoal !== undefined){ const k = ref + ":goal"; wbPost(ref, "goal", { text: st.draft[k] || "" }, k); return; }
-    if (ds.wbask !== undefined){ const k = ref + ":ask"; wbPost(ref, "ask", { text: st.draft[k] || "" }, k); return; }
+    if (ds.wbask !== undefined){
+      /* the words go to Root, the front door; said inside a department they carry it, unless the person took the chip off */
+      const k = ref + ":ask", m = st.map[ref], body = { text: st.draft[k] || "" };
+      let at = ref;
+      if (wbRt(m) && m.root && m.root !== ref){ at = m.root; if (st.chip[ref] !== false) body.about = ref; }
+      wbPost(ref, "ask", body, k, at); return;
+    }
     if (ds.wbputback !== undefined){ wbPost(ref, "putback", { slug: ds.wbputback, v: Number(ds.wbv) }); return; }
   }, true);
   document.addEventListener("input", (ev) => {
