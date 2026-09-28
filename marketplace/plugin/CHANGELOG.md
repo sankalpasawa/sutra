@@ -1,6 +1,18 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-28
+## 2.306.10 (2026-09-28)
+
+## Sutra Desktop: what the first Human Simulation run found, fixed
+
+The app was walked as a person (Parasthi Hospital, from Org to a live site in 3 minutes) and the facts the person then gave in the chat vanished in a failed handling nobody saw. This release:
+
+- a step a request does not need never fails the request (the skipped step's check is no judgement)
+- a request whose handling failed is said back in the chat: "I could not act on this: ... Say it again, or say it differently."; Health's Front door counts it
+- the person's own words are shown whole in the chat, never cut at 220 characters
+- the department chip in Root's chat opens the department; the tree learns of a department Root has just made, without a reload
+- the Human Simulation program itself ships in `qa/sim/` (person, goals with verifiable outcomes, the agent's runbook, run 1's ledger, findings and report)
+
 ## 2.306.9 (2026-09-28)
 
 - **A message typed while a Claude reply runs is handed to Claude at once**: it is folded into the running turn at its next step, or runs right after; the pane says "handed", or "queued" with the reason (Shadow driving, other model or options, provider switch, an earlier message waiting). Echoes (`--replay-user-messages`) are matched by order, not text, so an attachment or an expanded slash command cannot leave the pane waiting for a turn that never comes. Only a turn the chat opened takes a handed message; Shadow, mission and helper turns never do.

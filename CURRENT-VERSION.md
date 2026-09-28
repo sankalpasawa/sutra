@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-09-28
 
-## v2.306.9 (2026-09-28, HEAD)
+## v2.306.10 (2026-09-28, HEAD)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.9 (2026-09-28)
 
 **A message typed during a reply goes to Claude at once, and Stop is Esc** (Claude chat panes). The message is folded into the running reply or runs right after it; Stop ends the reply and keeps the process, falling back to the old kill after 15s. Echoes are matched by order, so an attachment or an expanded slash command can no longer leave the chat waiting, and a Stop no longer raises a Shadow "hit an error" item.
 
