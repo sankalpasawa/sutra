@@ -225,13 +225,16 @@ function dpAppOn(m){
   const st = (typeof o2S === "function") ? o2S() : null;
   return !!(st && st.view === "app" && st.app && st.app.id === m.id);
 }
-const DP_GROUPS = ["Now", "Functions", "Engines", "Filed work", "People", "Documents", "Apps"];
+/* No Documents group (founder, 2026-09-28: "we can remove documents altogether,
+   from the structure of the department"): everything a department files is an
+   artifact under Filed work, with its template. Markdown placed under a
+   department stays on the Workspace tree, which is where it is written. */
+const DP_GROUPS = ["Now", "Functions", "Engines", "Filed work", "People", "Apps"];
 function dpListHtml(n, d, dept, err){
   const st = dpS();
   if (st.sel !== n.ref) dpSelect(n.ref);   /* the first paint opens it, as o2ListHtml does for Apps */
   const tab = st.tab[n.ref] || "now";
   const filed = (dept && dept.filed) || [];
-  const docs = (dept && dept.docs) || [];
   let groups = "";
   /* 22-website.js: a website department brings its own first group (Map,
      System status, Motor), Engines and Filed work; every other department
@@ -258,8 +261,6 @@ function dpListHtml(n, d, dept, err){
   const ppl = (st.people && st.people.ref === n.ref) ? st.people : null;
   groups += dpGroup("People", dpPeople(ppl).map(dpPersonRow), "people",
     ppl ? "No people yet" : (st.error.people ? "Could not read" : "Not read yet"));
-  groups += dpGroup("Documents", docs.map(x =>
-    dpRow(x.title, `data-dpdoc="${dpEsc(x.path)}" data-dptitle="${dpEsc(x.title)}"`, false)), "docs", "No documents yet");
   /* 22-website.js brings its own app rows (Human Sutra, on the engine runtime)
      before the Library's; the quiet line stays for a department with neither */
   const wapps = (wb && wb.apps) || [];
@@ -1354,7 +1355,7 @@ async function dpDecide(pid, ok){
    landed inside a `.dp` element. That is 19-org2.js:875-880's own guard with
    this screen's class, so nothing here can fire on another screen. */
 if (typeof document !== "undefined" && document.addEventListener){
-  const DP_SEL = "[data-dptab],[data-dpdecide],[data-dpmore],[data-dpfiled],[data-dpperson],[data-dpdoc],[data-dpapp],[data-dpengine],[data-dppause],[data-dpchatmode],[data-dppane],[data-dpgoal],[data-dprule],[data-dpchatstart],[data-dptplopen],[data-dptpluse]";
+  const DP_SEL = "[data-dptab],[data-dpdecide],[data-dpmore],[data-dpfiled],[data-dpperson],[data-dpapp],[data-dpengine],[data-dppause],[data-dpchatmode],[data-dppane],[data-dpgoal],[data-dprule],[data-dpchatstart],[data-dptplopen],[data-dptpluse]";
   document.addEventListener("click", (ev) => {
     if (!S.dp || S.screen !== "org2") return;
     const t = ev.target && ev.target.closest ? ev.target.closest(DP_SEL) : null;
@@ -1418,11 +1419,6 @@ if (typeof document !== "undefined" && document.addEventListener){
       ev.preventDefault();
       if (st.sel){ st.personSel = ds.dpperson; st.tab[st.sel] = "people"; }
       dpRender(); return;
-    }
-    if (ds.dpdoc !== undefined){
-      ev.preventDefault();
-      if (typeof o2OpenDoc === "function") o2OpenDoc(ds.dpdoc, ds.dptitle);   /* the Org screen's own reader */
-      return;
     }
     /* An app opens the way the Org screen opens it (A26): its own o2OpenApp,
        over the module o2LoadApps already put in that screen's cache. The

@@ -167,13 +167,14 @@ test("selecting a department fetches its read once and paints the strip", () => 
   assert.ok(/<h2>Experience<\/h2>/.test(strip) && /Holding Departments/.test(strip));
   assert.ok(/aria-label="Chart"/.test(strip) && /aria-label="Edit"/.test(strip), "two icons: Chart and the pencil");
 });
-test("list column: Charter, Departments, Filed work, Other charters, Documents, in that order, names only", () => {
+test("list column: Charter, Departments, Filed work, Other charters, in that order, names only; no Documents group", () => {
   const c = fresh(); c.o2S().sel = "r4"; c.o2S().dept.r4 = DEPT_EXP; c.o2S().apps.r4 = [];
   const d = c.o2Data();
   const html = c.o2ListHtml(d.byRef.get("r4"), d, DEPT_EXP, null);
-  const order = ["Charter", "Departments", "Filed work", "Other charters", "Documents"].map(l => html.indexOf(">" + l + "<"));
+  const order = ["Charter", "Departments", "Filed work", "Other charters"].map(l => html.indexOf(">" + l + "<"));
   assert.ok(order.every(i => i !== -1) && order.every((v, i, a) => i === 0 || v > a[i - 1]), "group order " + order.join(","));
-  assert.ok(html.indexOf("Experience Charter") !== -1 && html.indexOf(">HLD<") !== -1 && html.indexOf("Org HLD") !== -1);
+  assert.ok(html.indexOf(">Documents<") === -1 && html.indexOf("data-o2doc") === -1, "no Documents group (founder, 2026-09-28)");
+  assert.ok(html.indexOf("Experience Charter") !== -1 && html.indexOf(">HLD<") !== -1 && html.indexOf("Org HLD") === -1);
   assert.ok(!/experience\/org\/HLD\.md</.test(html), "no path shows as a name");
 });
 test("list column: more… appears past four names and expands", () => {
