@@ -33,6 +33,7 @@ class Model:
         self.journeys, self.future = {}, None
         self.tie, self.kind = None, None
         self.holes = False                               # a page that admits what nobody told it (test_69)
+        self.broken = []                                 # what Check's rules step reports broken (test_72)
 
     def __call__(self, prompt, step):
         sid = step["id"]
@@ -106,6 +107,8 @@ class Model:
             return {"name": org + " Website", "kind": self.kind or "website", "goal": words}, 0.02, "model"
         if sid == "audit.judge":
             return {"ok": not self.findings, "findings": list(self.findings)}, 0.02, "model"
+        if sid == "check.rules":
+            return {"broken": [dict(b) for b in self.broken]}, 0.02, "model"
         raise AssertionError("the model was asked for a step no test expects: " + sid)
 
 
@@ -677,7 +680,9 @@ class TestWhatTheOwnerSees(Base):
         self.stamp("request", approve=False)
         self.idle()
         self.assertEqual(len(W.versions(REF, "Brief")), n, "refused: the Brief did not change")
-        self.assertEqual(a["text"], "This reaches outside the site: Email the new site to every patient")
+        self.assertEqual(a["text"], "Your words reach outside the site: an email address, so people will write, call or come. "
+                                    "Put them on the site as said? Stamp to go ahead, Refuse to leave them out. Email the new site to every patient",
+                         "in the person's words: what reaches outside, and what a stamp does (finding 13)")
 
 
 class TestTheFiveJourneys(Base):
@@ -921,7 +926,8 @@ class TestOrganicRootAndShape(Base):
         self.assertIsNotNone(W._runtime(ref))
         self.assertTrue((W.ddir(ref) / "coordination.json").is_file(), "born with Coordination's table")
         self.assertEqual(W.engines_of(d), (("Plan", "Brief", "Site plan", "model"), ("Write", "Site plan", "Pages", "model"),
-                                           ("Check", "Pages", "Build", "code"), ("Publish", "Build", "Live site", "code")))
+                                           ("Check", "Pages", "Build", "model"), ("Publish", "Build", "Live site", "code")),
+                         "Check is code around one model step, which runs only when the person has stamped a rule (finding 12)")
         os.environ["SUTRA_ENGINE_RUNTIME"] = "1"
         with self.assertRaises(ValueError):
             W.create("dref-organic002", "Old Root", None, kind="root")       # only a website department is born the old way
@@ -1300,6 +1306,157 @@ class TestTheFrontDoor(Base):
         self.assertEqual(len(on_root), 1, self.said(root)[-4:])
         self.assertEqual((on_root[0]["link"], on_root[0]["dept"]), ("Live site", child), "on Root the turn carries the department and the way")
         self.assertTrue(all(t.get("link") is None for t in R.chat_view(root)["turns"] if t["word"] != "live"), "no other turn carries a link")
+
+    # ---- what the person found on Sutra Beta 2.306.10 (Human Simulation run 2, 2026-09-28), fixed ----------------
+    def test_71_a_panel_read_writes_nothing_and_never_asks_the_model(self):
+        """Finding 11: the panel stood still for 25 s at a publish, waiting on Coordination's tie inside a read. A read
+        peeks: no row, no ask, no post, no model call, while the motor still runs the line between the reads."""
+        W, R = self.W, self.R
+        self.live()
+        W.owner_ask(REF, "Add a page on parking.")
+        for _ in range(60):
+            before = (len(self.M.calls), len(R.step_rows(REF)), len(W.asks(REF)), len(R.board(REF)), len(W.runs(REF)))
+            W.status(REF)
+            W.map_view(REF)
+            after = (len(self.M.calls), len(R.step_rows(REF)), len(W.asks(REF)), len(R.board(REF)), len(W.runs(REF)))
+            self.assertEqual(before, after, "a read left the record and the model alone")
+            if not W.run_until_idle(REF, limit=1):
+                break
+        self.assertGreaterEqual(len(W.versions(REF, "Live site")), 2, "the line still ran to a second live version between the reads")
+        self.assertIn("coord.tie", self.M.calls, "the tie was asked by the motor, never by a read")
+
+    def test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live(self):
+        """Finding 12: with 'every page ends with 108' stamped, two versions went live with four pages breaking it.
+        Check holds every page to the person's rules; a build that breaks one is filed failed, sent back to be
+        rewritten with the finding, twice at most, and the person is told each time."""
+        W, R = self.W, self.R
+        self.live()
+        self.ask("From now on, every page ends with: Call 108.")
+        self.stamp("rule")
+        self.idle()
+        live = len(W.versions(REF, "Live site"))
+        self.assertEqual(live, 2, "the rule's own rerun went live: the harness meets every rule")
+        self.assertIn("check.rules", self.M.calls, "Check asked its agent to hold the pages to the rule")
+        self.M.broken = [{"rule": "Every page ends with: Call 108.", "pages": ["about", "contact"], "why": "no 108"}]
+        self.ask("Add a page on parking.")
+        self.idle()
+        self.assertEqual(len(W.versions(REF, "Live site")), live, "nothing went live while the rule was broken")
+        failed = [v for v in W.versions(REF, "Build") if not v["check"]["ok"]]
+        self.assertEqual(len(failed), 3, "three builds filed failed: the one, and two rewrites")
+        self.assertIn("breaks the rule 'Every page ends with: Call 108.' on about, contact", failed[-1]["check"]["notes"])
+        said = [t["line"] for t in R.chat_view(REF)["turns"] if t["word"] == "broken"]
+        self.assertEqual(len(said), 3, said)
+        self.assertTrue(said[0].startswith("Build v") and said[0].endswith("Sent back to be rewritten."), said[0])
+        self.assertIn("two rewrites did not mend it. Say the rule another way, or drop it.", said[-1])
+        brief = W.read_files(REF, "Brief", W.latest(REF, "Brief")["v"])["brief.md"]
+        self.assertEqual(brief.count(R.SEND_BACK), 2, "the finding went to the line twice, as a correction")
+        self.M.broken = []
+        self.ask("Add a page on visiting hours.")
+        self.idle()
+        self.assertEqual(len(W.versions(REF, "Live site")), live + 1, "with the rule met, the line goes live again")
+        drafted = R.d_check_rules({"bag": {"check.rules_of": {"rules": ["Every page ends with: Call 108."],
+                                                                "pages": [{"slug": "a", "text": "In doubt, call 108."}, {"slug": "b", "text": "Nothing here"}]}}}, None, None)
+        self.assertEqual(drafted, {"broken": [{"rule": "Every page ends with: Call 108.", "pages": ["b"], "why": "the page does not carry 'call 108'"}]},
+                         "and code's own reading of an every-page rule is the floor under the agent")
+
+    def test_73_a_stamp_on_an_ask_inside_the_department_is_a_turn_of_the_chat_inside_and_on_root(self):
+        """Finding 14: a stamp on a go-ahead ask inside the department left no turn (the publish stamp did). The person's
+        own act in a thread Root opened lives on the department's board alone, so the chat shows it once, and Root's
+        chat shows it with the department."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        child_name = W.dept(child)["name"]
+        W.owner_ask(root, "On %s, email the new site to every patient." % child_name)
+        W.run_until_idle(root, limit=200)
+        W.run_until_idle(child, limit=200)
+        a = next(x for x in W.asks(child) if x["kind"] == "request" and x["status"] == "pending")
+        self.assertTrue(a["text"].startswith("Your words reach outside the site: an email address, so people will write, call or come. Put them on the site as said?"), a["text"])
+        W.decide_ask(child, a["id"], True)
+        W.run_until_idle(child, limit=200)
+        W.run_until_idle(root, limit=200)
+        inside = [t for t in R.chat_view(child)["turns"] if t["src"] == "Owner" and t["msg_type"] == "accept-proposal"]
+        self.assertEqual(len(inside), 1, "the stamp is a turn inside the department")
+        on_root = [t for t in R.chat_view(root)["turns"] if t["src"] == "Owner" and t["msg_type"] == "accept-proposal" and t.get("dept") == child]
+        self.assertEqual(len(on_root), 1, "and on Root's chat, about the department")
+
+    def test_74_stop_and_start_are_turns_of_the_chat(self):
+        """Finding 15: the person stopped the department from the Map and the chat said nothing. Stop and Start are
+        the person's own acts: a turn inside, and on Root about the department."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        W.set_stopped(child, True)
+        W.set_stopped(child, False)
+        words = [t["line"] for t in R.chat_view(child)["turns"] if t["word"] in ("stopped", "started")]
+        self.assertEqual(words, ["Stopped by you: every engine stops where it is.", "Started by you: every engine looks to its own triggers."])
+        on_root = [(t["word"], t.get("dept")) for t in R.chat_view(root)["turns"] if t["word"] in ("stopped", "started")]
+        self.assertEqual(on_root, [("stopped", child), ("started", child)])
+        W.set_stopped(REF, True)
+        self.assertEqual([t["word"] for t in R.chat_view(REF)["turns"] if t["word"] == "stopped"], ["stopped"], "a department with no Root: its own chat")
+
+    def test_75_an_answer_to_the_departments_facts_question_is_the_facts_not_a_rule(self):
+        """Finding 16: the hours, said in answer to 'Tell me here and I will put them in', came back as a rule to stamp.
+        When the department's last word was its facts question and the answer carries no rule cue, it is a task."""
+        W, R = self.W, self.R
+        self.M.holes = True
+        root, child = self.structure()
+        child_name = W.dept(child)["name"]
+        a = next(x for x in W.asks(child) if x["kind"] == "publish" and x["status"] == "pending")
+        W.decide_ask(child, a["id"], True)
+        W.run_until_idle(child, limit=200)
+        W.run_until_idle(root, limit=200)
+        self.assertTrue([t for t in R.chat_view(child)["turns"] if t["word"] == "facts"], "the department asked for the facts")
+        answer = "Appointments are Monday to Saturday, 9 am to 6 pm."
+        for key in (answer, "On %s, %s" % (child_name, answer), "on %s, %s" % (child_name, answer)):
+            self.M.journeys[key] = "directive"                 # the agent misreads the answer as a rule
+        before = len(W.versions(child, "Brief"))
+        W.owner_ask(root, "On %s, %s" % (child_name, answer))
+        W.run_until_idle(root, limit=200)
+        W.run_until_idle(child, limit=200)
+        self.assertEqual([x for x in W.asks(child) if x["kind"] == "rule"], [], "no rule was put to the person")
+        self.assertEqual(len(W.versions(child, "Brief")), before + 1, "the answer was filed as the facts")
+        self.assertIn(answer, W.read_files(child, "Brief", W.latest(child, "Brief")["v"])["brief.md"])
+
+    def test_76_what_reaches_outside_is_named_in_the_persons_words(self):
+        """Finding 13: the person's own address, phone and email came back as 'This reaches outside the site'."""
+        R = self.R
+        self.assertEqual(R._reaches("Our address is 14 Lake Road, Nashik 422001. Phone 0253-2571108, email care@parasthi.in"),
+                         "an email address, a phone number, an address, so people will write, call or come")
+        self.assertEqual(R._reaches("Post it to our Instagram", "it names another site"), "it names another site")
+        self.assertEqual(R._reaches("Post it to our Instagram", "it reaches outside the site"), "", "the judge's stock reason adds nothing")
+
+    def test_77_the_goal_is_said_once_on_the_whole_chat_and_opens_the_departments_own(self):
+        """Finding 3: the goal was echoed on Root's chat as the person's turn again at the department's birth."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        words = R.board(child)[0]["payload"]["words"]          # what Root handed at the birth: the person's words
+        self.assertTrue(words.startswith("Start a website department for"), words)
+        whole = [t for t in R.chat_view(root)["turns"] if t["src"] == "Owner" and t["line"] == words]
+        self.assertEqual(len(whole), 1, "the person's words stand once on the whole chat: the front turn")
+        scoped = R.chat_view(child)["turns"]
+        self.assertEqual((scoped[0]["src"], scoped[0]["line"], scoped[0].get("birth")), ("Owner", words, True), "and open the department's own chat")
+
+    def test_78_plan_tells_the_person_which_pages_it_planned_whenever_they_change(self):
+        """Finding 8: three pages the goal never named went live unasked. Plan says its pages, once per change."""
+        W, R = self.W, self.R
+        self.live()
+        plans = [t["line"] for t in R.chat_view(REF)["turns"] if t["word"] == "plan"]
+        self.assertEqual(plans, ["Planned 5 pages: Index, About, Doctors, Contact, Book. Say which to drop or add."])
+        self.ask("Change the tagline to something warmer.")
+        self.idle()
+        self.assertEqual(len([t for t in R.chat_view(REF)["turns"] if t["word"] == "plan"]), 1, "the same pages: not said again")
+        self.ask("Add a parking page.")
+        self.idle()
+        plans = [t["line"] for t in R.chat_view(REF)["turns"] if t["word"] == "plan"]
+        self.assertEqual(len(plans), 2, plans)
+        self.assertIn("Parking", plans[-1])
+
+    def test_79_a_quoted_hole_never_starts_mid_word(self):
+        R = self.R
+        holes = R.placeholders({"book.html": "<p>Write to care@parasthihospital.in or call. Appointment Availability: appointment availability is to be confirmed</p>"})
+        self.assertEqual(len(holes), 1)
+        self.assertTrue(re.match(r"the page says '[A-Za-z]", holes[0]["claim"]), holes[0]["claim"])
+        self.assertNotIn("l.in", holes[0]["claim"])
+        self.assertTrue(holes[0]["claim"].endswith("is to be confirmed'"), holes[0]["claim"])
 
     def test_64_each_function_has_its_own_ladder_numbers_from_its_settings(self):
         """Founder, 2026-09-28: each of the five functions has a Settings tab with its own updates; an engine too."""

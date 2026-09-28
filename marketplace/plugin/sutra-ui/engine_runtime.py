@@ -665,8 +665,9 @@ def _run_row(engine, system, slot, status, what, **more):
     return row
 
 
-def _held_back(ref, slot, rs):
-    """Why a slot that is due may not start yet, or None. "skip" means it was let rest, and a row says so."""
+def _held_back(ref, slot, rs, peek=False):
+    """Why a slot that is due may not start yet, or None. "skip" means it was let rest, and a row says so (a peek writes
+    neither the row nor the ask)."""
     mine = [r for r in rs if r.get("slot") == slot]
     if not mine:
         return None
@@ -677,12 +678,14 @@ def _held_back(ref, slot, rs):
         if away and away["status"] == "pending":
             return "waits for the owner: the model is away"
         if away and away["status"] == "refused":
-            W._put_run(ref, _run_row(last["engine"], bool(last.get("system")), slot, "skipped", "the owner let it rest: the model is away"))
+            if not peek:
+                W._put_run(ref, _run_row(last["engine"], bool(last.get("system")), slot, "skipped", "the owner let it rest: the model is away"))
             return "skip"
         if len(waits) >= len(WAITS) and not away:
-            W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "model", "engine": last["engine"], "slot": slot,
-                             "text": "The model is away: %s cannot go on. Try again?" % last["engine"], "status": "pending",
-                             "created": W.now(), "escalated": True})
+            if not peek:
+                W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "model", "engine": last["engine"], "slot": slot,
+                                 "text": "The model is away: %s cannot go on. Try again?" % last["engine"], "status": "pending",
+                                 "created": W.now(), "escalated": True})
             return "waits for the owner: the model is away"
         if not away and time.time() < float(last.get("retry_at") or 0):
             return "waits for the model"
@@ -693,21 +696,26 @@ def _held_back(ref, slot, rs):
     return None
 
 
-def next_due(ref):
+def next_due(ref, peek=False):
     """(engine, input, slot), or (None, None, why): what starts now in this department.
 
     Founder, 2026-09-28: "start is just a button"; every engine "needs a trigger to start", inside or outside, and
     starts "unless it has a blocker"; once started each has "their own internal agency". So nothing here tells an
     engine to run. The skeleton reads whether the button is on, asks every engine whether it is ready by its own
-    start (`ready`), and, because a department runs one thing at a time, asks Coordination who goes first."""
+    start (`ready`), and, because a department runs one thing at a time, asks Coordination who goes first.
+
+    peek: a panel read asking the same question. It writes no row and no ask, and never calls the model: Coordination's
+    tie is left to the table's order (found live 2026-09-28: the panel stood still for 25 s at a publish, waiting on
+    the tie's model call inside a read)."""
     d = W.dept(ref)
     if not d:
         return None, None, "no department"
     if d.get("stopped"):
         return None, None, "stopped"
     ctx = _coord_ctx(ref, d)
+    ctx["peek"] = bool(peek)
     name, inp, slot = _run_rule(ctx, "coord.pick")
-    if name:
+    if name and not peek:
         _, s = step_def("coord.pick")
         _gate_row(ref, slot, "Coordination", s, rung_of(ref, s), name, "ready by its own start; first by Coordination's table")
     return name, inp, slot
@@ -735,7 +743,8 @@ def _on_post(ctx, name, e, trig):
         if slot in ctx["done"]:
             continue
         if _handler(e, p) is None:
-            W._put_run(ctx["ref"], _run_row(name, True, slot, "skipped", "no step of %s reads a post of that kind" % name))
+            if not ctx.get("peek"):
+                W._put_run(ctx["ref"], _run_row(name, True, slot, "skipped", "no step of %s reads a post of that kind" % name))
             ctx["done"].add(slot)
             continue
         yield {"post": p, "v": p["n"]}, slot
@@ -763,7 +772,7 @@ def ready(ctx, name, kinds=None):
         if kinds and trig["kind"] not in kinds:
             continue
         for inp, slot in TRIGGER[trig["kind"]](ctx, name, e, trig):
-            held = _held_back(ctx["ref"], slot, ctx["rs"])
+            held = _held_back(ctx["ref"], slot, ctx["rs"], ctx.get("peek", False))
             if held == "skip":
                 continue
             if held:
@@ -790,7 +799,7 @@ def blocked(ctx, name, e, inp, slot):
         if rung != "C2" and answer == "admit":
             key = slot + "|" + g["id"]
             v = _verdicts(ref).get(key)
-            if v is None:
+            if v is None and not ctx.get("peek"):
                 with W._lock(ref):
                     vs = _verdicts(ref)
                     vs[key] = {"answer": None, "asked": W.now()}
@@ -799,7 +808,8 @@ def blocked(ctx, name, e, inp, slot):
             if v is None or v.get("answer") is None:
                 return "wait", "%s is judging" % fn
             answer, why = v["answer"], v.get("why")
-        _gate_row(ref, slot, fn, g, rung, answer, why)
+        if not ctx.get("peek"):
+            _gate_row(ref, slot, fn, g, rung, answer, why)
         if answer != "admit":
             return answer, why
     return "admit", None
@@ -883,9 +893,10 @@ def coord_pick(ctx, step, item):
                 r = ready(ctx, f, ("version", "timer"))
                 if r and r[1]:
                     ready_now.append((f, r))
-            if len(ready_now) > 1:
+            if len(ready_now) > 1 and not ctx.get("peek"):
                 # several functions woken at once: Coordination's own unit says who goes first (founder, 2026-09-28:
-                # "coordination should have an agent as well"); the table's order stands when it says nothing
+                # "coordination should have an agent as well"); the table's order stands when it says nothing, and
+                # a peek never asks it
                 pick = _tie(ctx, [f for f, _ in ready_now])
                 if pick:
                     ready_now.sort(key=lambda fr: 0 if fr[0] == pick else 1)
@@ -1095,6 +1106,8 @@ def run_engine(ref, name, inp, slot):
                            "link": e["writes"], "v": out["v"]})
                 except Exception:  # noqa: BLE001 -- telling never fails the version that went out
                     pass
+            if not ok and filed["check"].get("broken"):
+                _send_back(ref, ctx["dept"], e["writes"], out["v"], filed["check"]["broken"])
         else:
             said = next((ctx["bag"][s["id"]].get("said") for s in reversed(steps)
                          if isinstance(ctx["bag"].get(s["id"]), dict) and ctx["bag"][s["id"]].get("said")), None)
@@ -1372,8 +1385,69 @@ def plan_fit(ctx, step, item):
 def plan_file(ctx, step, item):
     plan = ctx["bag"]["plan.fit"]
     n = len(plan["pages"])
+    _tell_plan(ctx, plan)
     return {"files": {"site-plan.json": json.dumps(plan, indent=1)},
             "check": {"ok": n >= 2, "notes": ["%d pages" % n, str(ctx["how"].get("plan.pages") or "")]}}
+
+
+def _tell_plan(ctx, plan):
+    """The pages Plan chose, said to the person whenever they change, so a page the person never named is theirs to
+    keep or drop (found live 2026-09-28: three pages the goal never asked for)."""
+    try:
+        ref = ctx["ref"]
+        titles = [str(p.get("title") or p.get("slug")) for p in plan["pages"]]
+        cur = W.latest(ref, "Site plan")
+        if cur:
+            before = json.loads(W.read_files(ref, "Site plan", cur["v"]).get("site-plan.json", "{}")).get("pages") or []
+            if [str(p.get("title") or p.get("slug")) for p in before] == titles:
+                return
+        _tell(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER}, "inform",
+              {"word": "plan", "done": "Planned %d pages: %s. Say which to drop or add." % (len(titles), ", ".join(titles))})
+    except Exception:  # noqa: BLE001 -- the plan is filed whether or not the word reached the person
+        pass
+
+
+def _owner_rules(d):
+    """The rules the person stamped, as lines: the ones the line is held to (a kind's born rules are process, not pages)."""
+    return [str(r["line"]) for r in d.get("rules") or [] if r.get("line") and str(r.get("id") or "").startswith("u-")]
+
+
+def check_rules_of(ctx, step, item):
+    """The person's own rules and every page as text: what the next step holds the site to (finding 12)."""
+    rules = _owner_rules(ctx["dept"])
+    src = W.read_files(ctx["ref"], "Pages", ctx["inp"]["v"])
+    pages = []
+    for name in sorted(src):
+        if not name.endswith(".html"):
+            continue
+        try:
+            data = json.loads(src[name])
+        except Exception:  # noqa: BLE001
+            data = {"title": name[:-5], "body_html": str(src[name])}
+        text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", str(data.get("body_html") or ""))).strip()
+        pages.append({"slug": name[:-5], "title": str(data.get("title") or name[:-5]), "text": text[:1500]})
+    return {"rules": rules, "any": bool(rules and pages), "pages": pages}
+
+
+SEND_BACK = "Correct this: the rule is broken"
+
+
+def _send_back(ref, d, art, v, broken):
+    """A build that breaks a stamped rule goes back to the line with the finding, twice at most, and the person is told
+    each time (finding 12: two versions broke a stamped rule and nothing said so)."""
+    try:
+        lines = ["'%s' on %s" % (b.get("rule"), ", ".join(b.get("pages") or [])) for b in broken]
+        cur = W.latest(ref, "Brief")
+        tries = W.read_files(ref, "Brief", cur["v"]).get("brief.md", "").count(SEND_BACK) if cur else 0
+        src = {"src": "Root" if d.get("root") else OWNER}
+        if tries >= 2:
+            _tell(ref, d, src, "inform", {"word": "broken", "done": "%s v%d breaks your rule %s, and two rewrites did not mend it. Say the rule another way, or drop it."
+                                          % (art, v, "; ".join(lines))})
+            return
+        _file_words(ref, d, "%s %s" % (SEND_BACK, "; ".join(lines)), "the check's finding")
+        _tell(ref, d, src, "inform", {"word": "broken", "done": "%s v%d breaks your rule %s. Sent back to be rewritten." % (art, v, "; ".join(lines))})
+    except Exception:  # noqa: BLE001 -- the failed version is filed either way
+        pass
 
 
 def write_list(ctx, step, item):
@@ -1394,6 +1468,12 @@ def write_file(ctx, step, item):
 
 def check_build(ctx, step, item):
     files, check, _ = W.engine_check(ctx["ref"], ctx["dept"], ctx["inp"])
+    held = ctx["bag"].get("check.rules")
+    broken = [b for b in ((held.get("broken") if isinstance(held, dict) else None) or []) if isinstance(b, dict) and b.get("rule")]
+    if broken:
+        # a rule the person stamped is a check the line runs: a build that breaks it is filed failed and never goes live
+        check = dict(check, ok=False, broken=broken,
+                     notes=list(check.get("notes") or []) + ["breaks the rule '%s' on %s" % (b["rule"], ", ".join(b.get("pages") or [])) for b in broken])
     return {"files": files, "check": check}
 
 
@@ -1475,6 +1555,40 @@ LEAVES = re.compile(r"\b(e-?mail|sms|text message|whatsapp|post (?:it )?to|tweet
 KINDS = ("goal", "add-page", "remove", "style", "change", "other")
 #: Canon's five journeys (holding/website/native/products/cos/design-journeys.html). Identity recognises one of them.
 JOURNEYS = ("task", "query", "directive", "feedback", "new-idea")
+PHONE = re.compile(r"(?<![\w.])\+?\d[\d -]{6,}\d(?![\w.])")
+ADDRESS = re.compile(r"\b(?:road|street|lane|avenue|nagar|marg|colony|sector|block|floor|\d{6})\b", re.I)
+
+
+def _reaches(words, why=""):
+    """What in the person's words reaches outside the site, named for them: an email, a phone number, an address, a
+    payment; or the judge's own reason when it said one."""
+    found = []
+    if re.search(r"\b(?:e-?mail|@)", words, re.I) or "@" in words:
+        found.append("an email address")
+    if PHONE.search(words):
+        found.append("a phone number")
+    if ADDRESS.search(words):
+        found.append("an address")
+    if re.search(r"\b(?:payment|charge|invoice|pay)\b", words, re.I):
+        found.append("a payment")
+    if found:
+        return ", ".join(found) + ", so people will write, call or come"
+    w = str(why or "").strip().rstrip(".")
+    return "" if not w or w.lower() in ("it reaches outside the site", "reaches outside the site") else w
+
+
+def _answers_facts(ref, words):
+    """True when the department's last word to the person was its facts question and these words carry no rule cue: the
+    person is answering, and an answer is the facts, never a rule (found live 2026-09-28: the hours came back as a rule
+    to stamp)."""
+    if re.search(CUES[0][1], words, re.I):
+        return False
+    for p in reversed(board(ref)):
+        if p["src"] == "Identity" and OWNER in p["dst"]:
+            return (p.get("payload") or {}).get("word") == "facts"
+    return False
+
+
 CUES = (("directive", r"\b(from now on|always|never|every time|going forward|in future|stop (?:doing|using|saying)|just this once)\b"),
         ("new-idea", r"\b(what if|could we|can we have|i want a new|explore|how about|imagine if)\b"),
         ("feedback", r"\b(wrong|too (?:long|short|much|many|little)|missed|should have|i don'?t like|not what i|is off|mistake|incorrect)\b"),
@@ -1580,6 +1694,17 @@ def _tell(ref, d, p, msg_type, payload, thread=None, about=None):
     return row
 
 
+def tell_switch(ref, d, stopped):
+    """Stop and Start are the person's own acts on the department: a turn of the chat, on Root's too, so a person who
+    comes back reads what they did (found live 2026-09-28: the chat said nothing of a stop and still said 'is working')."""
+    try:
+        _tell(ref, d, {"src": "Root" if d.get("root") else OWNER}, "inform",
+              {"word": "stopped" if stopped else "started",
+               "done": "Stopped by you: every engine stops where it is." if stopped else "Started by you: every engine looks to its own triggers."})
+    except Exception:  # noqa: BLE001 -- the switch never fails for a word
+        pass
+
+
 def identity_lost(ctx, step, item):
     """A request of the owner's, or one Root handed on, that Coordination closed at its bound before anyone answered:
     Identity says so to the person and asks for the words again (ER-9)."""
@@ -1628,6 +1753,8 @@ def identity_file(ctx, step, item):
     got = ctx["bag"]["identity.read"]
     words, first = got["words"], got["facts"]["first"]
     journey = "task" if first else ctx["bag"]["identity.recognise"].get("journey")
+    if not first and journey == "directive" and _answers_facts(ref, words):
+        journey = "task"                                 # an answer to the department's own question is the facts (finding 16)
     if journey == "query":
         a = ctx["bag"]["identity.answer"]
         _tell(ref, d, p, "inform", {"word": "answer", "answer": a["answer"], "source": a["source"],
@@ -1674,10 +1801,15 @@ def identity_file(ctx, step, item):
         _tell(ref, d, p, "inform", {"word": "request", "done": "filed in the %s" % W.artifacts_of(d)[0], "v": row["v"]}, thread=p["thread"])
         return {"said": "took the owner's words: " + words, "filed": row["v"]}
     if verdict == "ask":
+        # in the person's words: what reaches outside, and what a stamp does (found live 2026-09-28: the person's own
+        # address came back as "This reaches outside the site")
+        reach = _reaches(words, why)
+        lead = "Your words reach outside the site%s. Put them on the site as said? Stamp to go ahead, Refuse to leave them out." % (
+            (": " + reach) if reach else "")
         W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "request", "engine": "Identity", "slot": ctx["slot"],
-                         "text": "This reaches outside the site: " + words, "why": why, "words": words, "status": "pending",
+                         "text": lead + " " + words, "why": why, "words": words, "status": "pending",
                          "created": W.now(), "thread": p["thread"]})
-        _tell(ref, d, p, "request", {"word": "request", "objective": "say whether this may go ahead",
+        _tell(ref, d, p, "request", {"word": "request", "objective": lead,
                                      "output": "a stamp or a refusal", "may_read": ["Brief"], "boundaries": words,
                                      "why": why}, thread=p["thread"])
         return {"said": "put the owner's words back to the owner: " + (why or words)}
@@ -1785,16 +1917,20 @@ def _own_turns(dref, name):
     start, and the owner's own words and stamps there. A post that went to Root's board as well (via Root) is left to
     Root's copy, so the chat never counts it twice."""
     ths = {t["id"]: t for t in threads(dref)}
+    born_of_root = bool((W.dept(dref) or {}).get("root"))
     out = []
     for p in board(dref):
         if p["src"] != OWNER and OWNER not in p["dst"]:
             continue
         pl = p.get("payload") or {}
-        if (ths.get(p["thread"]) or {}).get("opened_by") == "Root" or pl.get("via") == "Root":
+        # what Identity said in a thread Root opened went to Root's board too; the person's own stamp or refusal in
+        # such a thread lives here alone, so it shows (found live 2026-09-28: a stamp inside the department left no turn)
+        if pl.get("via") == "Root" or ((ths.get(p["thread"]) or {}).get("opened_by") == "Root" and p["src"] != OWNER):
             continue
         out.append({"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
                     "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""),
-                    "dept": dref, "name": name, "own": True, "link": pl.get("link")})
+                    "dept": dref, "name": name, "own": True, "link": pl.get("link"),
+                    "birth": p["n"] == 1 and p["src"] == OWNER and born_of_root})   # the words Root handed at the birth
     return out
 
 
@@ -1828,6 +1964,10 @@ def chat_view(ref, about=None):
                 turns += _own_turns(c["ref"], c.get("name"))
     elif d:
         turns += _own_turns(ref, d.get("name"))         # a department with no Root: its own chat
+    if root and not about:
+        # the goal at a department's birth is the person's words said once at the front door; on the whole chat they
+        # already stand as the front turn and the setup ask, so the birth copy is not said again (finding 3)
+        turns = [t for t in turns if not t.get("birth")]
     turns.sort(key=lambda t: (str(t["at"]), t["n"]))
     refs = [about] if about else ([root] + [c["ref"] for c in kids] if root else [ref])
     asks = []
@@ -2160,7 +2300,10 @@ def placeholders(files):
         for m in PLACEHOLDER.finditer(text):
             before = text[max(0, m.start() - 60):m.start()]              # the sentence the phrase sits in, not a cut word
             cut = max(before.rfind(". "), before.rfind("! "), before.rfind("? "), before.rfind("\n"))
-            before = before[cut + 1:] if cut >= 0 else before
+            if cut >= 0:
+                before = before[cut + 1:]
+            elif m.start() > 60 and " " in before:
+                before = before[before.find(" ") + 1:]                  # a window that opened mid-word starts at the next word
             around = re.sub(r"\s+", " ", before + m.group(0)).strip()
             out.append({"page": name, "claim": "the page says '%s'" % around[-90:], "severity": "high", "kind": "hole"})
     return out
@@ -2287,6 +2430,7 @@ def c_department_is_made(ctx, step, item, out):
 
 
 CODE = {"plan_read": plan_read, "plan_fit": plan_fit, "plan_file": plan_file, "write_list": write_list, "write_file": write_file,
+        "check_rules_of": check_rules_of,
         "hear": hear, "coord_ready": coord_ready, "coord_record": coord_record,
         "setup_read": setup_read, "setup_make": setup_make, "setup_file": setup_file,
         "check_build": check_build, "publish_copy": publish_copy, "identity_gate": identity_gate,
@@ -2333,10 +2477,12 @@ def p_write_page(ctx, step, item):
     plan, page = _page_of(ctx, item)
     site = {"site_name": plan.get("site_name"), "tagline": plan.get("tagline"),
             "pages": [{"slug": p["slug"], "title": p.get("title")} for p in plan["pages"]]}
+    rules = _owner_rules(ctx["dept"])
     return ("Write the body of ONE page of this site. Return ONLY a JSON object, no prose: {\"title\": str, \"body_html\": str}. "
             "body_html is the inside of <main> only: semantic HTML (section, h1, h2, p, ul, a), no <html>, <head>, <script> or "
             "<style>, no external images or links. Link to other pages as '<slug>.html' and only to slugs of this site. "
             + NOTHING_INVENTED +
+            (("\n\nTHE OWNER'S RULES, EACH ONE MET HERE:\n- " + "\n- ".join(rules)) if rules else "") +
             "\n\nTHE BRIEF, AND WHAT WAS ASKED SINCE:\n" + _brief_text(ctx["ref"]) +
             "\n\nTHE SITE:\n" + json.dumps(site) + "\n\nTHIS PAGE:\n" + json.dumps(page))
 
@@ -2344,6 +2490,34 @@ def p_write_page(ctx, step, item):
 def d_write_page(ctx, step, item):
     plan, page = _page_of(ctx, item)
     return {"title": page.get("title") or item, "body_html": W._fallback_body(page, plan)}
+
+
+def p_check_rules(ctx, step, item):
+    got = ctx["bag"]["check.rules_of"]
+    return ("Hold every page of this site to the owner's rules. A rule about every page is broken on each page that does not meet it; "
+            "read the page's text as a visitor would.\nTHE RULES:\n- " + "\n- ".join(got["rules"]) +
+            "\n\nTHE PAGES (slug, title, text):\n" + json.dumps(got["pages"]) +
+            "\n\nReturn ONLY a JSON object, no prose: {\"broken\": [{\"rule\": str, \"pages\": [slug], \"why\": \"one line\"}]}; "
+            "a rule every page meets is not listed; broken is [] when every rule holds.")
+
+
+EVERY_PAGE = re.compile(r"\bevery page\b.*?(?:end(?:s)? with|carr(?:y|ies)|show(?:s)?|include(?:s)?|ha(?:s|ve)|say(?:s)?|name(?:s)?)\s*:?\s*(.+?)\.?\s*$", re.I)
+
+
+def d_check_rules(ctx, step, item):
+    """Code's own reading of a rule about every page: the words after the colon must be on each page. The draft when
+    the model is away, and the floor under its answer."""
+    got = ctx["bag"]["check.rules_of"]
+    broken = []
+    for rule in got["rules"]:
+        m = EVERY_PAGE.search(rule)
+        if not m:
+            continue
+        want = m.group(1).strip().strip("'\"").lower()
+        bad = [p["slug"] for p in got["pages"] if want and want not in p["text"].lower()]
+        if bad:
+            broken.append({"rule": rule, "pages": bad, "why": "the page does not carry '%s'" % want})
+    return {"broken": broken}
 
 
 def p_identity_take(ctx, step, item):
@@ -2492,9 +2666,9 @@ def d_adapt_shape(ctx, step, item):
 PROMPT = {"identity_recognise": p_identity_recognise, "identity_answer": p_identity_answer, "identity_rule": p_identity_rule,
           "identity_weigh": p_identity_weigh, "adapt_shape": p_adapt_shape, "plan_pages": p_plan_pages, "write_page": p_write_page, "identity_take": p_identity_take,
           "identity_gate_soft": p_identity_gate, "priority_bargain": p_priority_bargain, "audit_judge": p_audit_judge,
-          "coord_tie": p_coord_tie, "setup_shape": p_setup_shape}
+          "coord_tie": p_coord_tie, "setup_shape": p_setup_shape, "check_rules": p_check_rules}
 DRAFT = {"identity_recognise_draft": d_identity_recognise, "identity_answer_draft": d_identity_answer,
-         "coord_tie_draft": d_coord_tie, "setup_shape_draft": d_setup_shape,
+         "coord_tie_draft": d_coord_tie, "setup_shape_draft": d_setup_shape, "check_rules_draft": d_check_rules,
          "identity_rule_draft": d_identity_rule, "identity_weigh_draft": d_identity_weigh, "adapt_shape_draft": d_adapt_shape,
          "plan_pages_draft": d_plan_pages, "write_page_draft": d_write_page, "identity_take_draft": d_identity_take,
          "identity_gate_draft": d_identity_gate, "priority_bargain_draft": d_priority_bargain, "audit_judge_draft": d_audit_judge}
@@ -2534,6 +2708,19 @@ def c_filed_has_files(ctx, step, item, out):
 def c_list_has_pages(ctx, step, item, out):
     n = len(out.get("pages") or [])
     return _verdict(n >= 1 and isinstance(out.get("plan"), dict), "%d pages to write" % n, "the plan names no page")
+
+
+def c_rules_are_listed(ctx, step, item, out):
+    ok = isinstance(out.get("rules"), list) and isinstance(out.get("pages"), list)
+    return _verdict(ok, "%d rules of the owner's, %d pages" % (len(out.get("rules") or []), len(out.get("pages") or [])),
+                    "no list of rules and pages")
+
+
+def c_broken_is_listed(ctx, step, item, out):
+    broken = out.get("broken")
+    ok = isinstance(broken, list) and all(isinstance(b, dict) and b.get("rule") and isinstance(b.get("pages"), list) for b in broken)
+    return _verdict(ok, "every rule holds" if ok and not broken else "%d rules broken, each with its pages" % len(broken or []),
+                    "no verdict on the rules, or a broken rule without its pages")
 
 
 def c_page_has_body(ctx, step, item, out):
@@ -2660,6 +2847,7 @@ CHECK = {"journey_is_known": c_journey_is_known, "answer_names_its_source": c_an
          "rule_is_tagged": c_rule_is_tagged, "feedback_says_what_changes": c_feedback_says_what_changes,
          "idea_has_shapes": c_idea_has_shapes, "brief_is_text": c_brief_is_text, "plan_has_pages": c_plan_has_pages, "plan_is_fit": c_plan_is_fit,
          "filed_has_files": c_filed_has_files, "list_has_pages": c_list_has_pages, "page_has_body": c_page_has_body,
+         "rules_are_listed": c_rules_are_listed, "broken_is_listed": c_broken_is_listed,
          "verdict_is_known": c_verdict_is_known, "gate_verdict_is_known": c_gate_verdict_is_known,
          "gate_answer_is_known": c_gate_answer_is_known, "answer_is_known": c_answer_is_known,
          "names_who_goes_first": c_names_who_goes_first,

@@ -379,6 +379,9 @@ def set_stopped(ref, stopped):
         # Start and Stop are one button, and a signal to every engine of the department (founder, 2026-09-28).
         system_run(ref, "Identity", "stopped by the owner: every engine stops" if stopped
                    else "started by the owner: every engine looks to its own triggers")
+        rt = _runtime(ref)
+        if rt:
+            rt.tell_switch(ref, d, bool(stopped))       # a turn of the chat: the person's own act, said back
         signal()
     else:
         system_run(ref, "Identity", "stopped by the owner" if stopped else "resumed by the owner")
@@ -734,12 +737,12 @@ def _chain_of(ref, art, v):
     return "brief.v%d" % v if art == "Brief" else None
 
 
-def due(ref):
+def due(ref, peek=False):
     """The first slot the motor may start now, or a reason it may not. Returns
-    (engine, input_row, slot) or (None, None, why)."""
+    (engine, input_row, slot) or (None, None, why). peek: a panel read asking; it writes nothing and never waits on the model."""
     rt = _runtime(ref)
     if rt:
-        return rt.next_due(ref)
+        return rt.next_due(ref, peek=peek)
     d = dept(ref)
     if not d:
         return None, None, "no department"
@@ -968,7 +971,7 @@ def start_motor():
 def status(ref):
     rs, ak = runs(ref), asks(ref)
     pend = [a for a in ak if a["status"] == "pending"]
-    name, inp, why = due(ref) if not any(r["status"] == "running" for r in rs) else (None, None, "running")
+    name, inp, why = due(ref, peek=True) if not any(r["status"] == "running" for r in rs) else (None, None, "running")
     waits = [{"what": a["engine"], "why": "for the stamp" if a["kind"] == "publish" else a["text"], "since": a["created"]} for a in pend]
     rt = _runtime(ref)
     if rt:                                     # the owner's own words nobody has answered yet (ER-9)
