@@ -32,9 +32,16 @@ A screen that says nothing when the person expects something; a wait that runs o
 
 Reads a log, a record file or a route to decide the next action (routes are for verifying only); presses anything twice because it was slow; fixes anything; changes the goal to make it pass.
 
-## Productionizing
+## The tools (2026-09-29)
 
-`sim-agent.sh <goal.json>` starts a headless Claude session with this runbook, the person, the goal and a browser tool, and ends with the run folder; until that launcher exists (SIM-2), the agent is the session that reads this file.
+| Tool | When | What it gives |
+|---|---|---|
+| `sim-agent.sh <goal> [person]` | before the first click | the run folder, the app up on 8331, the person, the goal and this runbook printed for the agent |
+| `variance-order.py <goal> <run-dir> [seed]` | right after | `order.json`: the goal's variances in a random order, each with the moment it fires (after the goal is filed, while Plan or Write runs, after the publish ask, after the site is live, after Audit's question); the agent takes them at those moments, so no two runs walk the same path |
+| `probe-map.py <dept-ref> ... <run-dir>/probe.jsonl` | while a line runs, detached | how long the panel takes to answer, every 2 s: the numbers behind "the app went quiet" |
+| `reply-speed.py <record-dir>` | after the run | per request, the seconds from the person's words to the first answer, and where they went |
+
+The agent is still the session that reads this file, with a browser tool; a headless session started by the launcher is the next step (TODO SIM-4).
 
 ## Provenance
 
