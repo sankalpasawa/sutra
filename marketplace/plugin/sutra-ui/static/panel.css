@@ -5727,6 +5727,12 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .wb2lg.run{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-bg)}
 .wb2lg.ask{border-color:var(--warn);background:var(--warn-bg)}
 .wb2lg.block{border-color:var(--block);background:var(--block-bg)}
+.wb2lg.edge{width:22px;height:0;border:0;border-top:1.5px solid var(--line);border-radius:0;background:transparent}
+.wb2lg.edge.soft{border-top-style:dashed}
+.wb2pill.ok{background:var(--ok-bg);color:var(--ok)}
+.wb2map .n.fn .ic{stroke:var(--ink)}
+.wb2map .n.fn.ask .ic,.wb2map .n.fn.run .ic{stroke:var(--acc)}
+.wb2map .n.fn.off .ic{stroke:var(--faint)}
 .wb2org{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
 .wb2dept{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--card);cursor:pointer;text-align:left;color:var(--ink);font:400 13px/1.4 var(--sans);display:flex;flex-direction:column;gap:6px;transition:transform .18s ease,box-shadow .18s ease}
 .wb2dept:hover{transform:translateY(-1px);box-shadow:var(--shadow)}
@@ -5736,6 +5742,6 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .wb2new b{font-weight:500}
 .wb2spark{display:flex;gap:3px}
 .wb2spark i{width:9px;height:9px;border-radius:2px;border:1px solid var(--line);background:transparent}
-.wb2spark i.on{background:var(--ok-bg);border-color:var(--ok-line)}
+.wb2spark i.on{background:var(--ok);border-color:var(--ok);opacity:.6}
 .wb2spark i.run{background:var(--acc);border-color:var(--acc)}
 @media (prefers-reduced-motion:reduce){.wb2map .e.flow,.wb2map .n .halo{animation:none}}

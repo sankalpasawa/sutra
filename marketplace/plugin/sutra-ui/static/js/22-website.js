@@ -58,8 +58,9 @@ function wbV2(){
   try {
     const q = (typeof location !== "undefined" && location.search) || "";
     const m = /[?&]screens=(v2|v1)\b/.exec(q);
-    if (m){ st.v2 = m[1] === "v2"; if (typeof localStorage !== "undefined") localStorage.setItem("sutra.screens", m[1]); }
-    else if (typeof localStorage !== "undefined" && localStorage.getItem("sutra.screens") === "v1") st.v2 = false;
+    /* the one writer goes through lsSet (01-state.js), which the chat-only frame refuses (test_embed.js) */
+    if (m){ st.v2 = m[1] === "v2"; if (typeof lsSet === "function") lsSet("sutra.screens", m[1]); }
+    else if (typeof localStorage !== "undefined" && JSON.parse(localStorage.getItem("sutra.screens") || "null") === "v1") st.v2 = false;
   } catch (e) { st.v2 = true; }
   return st.v2;
 }

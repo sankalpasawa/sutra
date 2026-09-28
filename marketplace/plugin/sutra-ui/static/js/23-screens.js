@@ -48,16 +48,31 @@ function wb2Head(n, m){
   const live = m.live ? `<a class="o2more wb2live" href="${wbEsc(wbUrl(n.ref, "site/index.html"))}" target="_blank" rel="noopener">Live site</a>` : "";
   return crumb + `<div class="wb2head"><b>${wbEsc(m.name)}</b><span class="dpchk">${wbEsc(m.kind || "")}</span>${sw}${live}</div>`;
 }
-/* what is active now: names, never counts; nothing when nothing is */
+/* what is active now, as the design page draws it: what runs, what waits for you, how today's runs went, a fault by
+   its name; nothing when nothing is. The counts here are the NOW line's own, the one place the design carries them. */
+function wb2Today(m){
+  const rows = ((m.health && m.health.timeline) || []).filter(r => r.started && String(r.started).slice(0, 10) === new Date().toISOString().slice(0, 10));
+  return [rows.filter(r => r.status === "ok").length, rows.length];
+}
 function wb2NowHtml(m){
   const pills = [];
   wb2Running(m).forEach(e => pills.push(`<span class="wb2pill run">${wbEsc(e)} running</span>`));
   const asks = wb2Asks(m);
-  if (asks.length) pills.push(`<span class="wb2pill ask">Waiting for you: ${wbEsc(asks.map(a => a.engine).filter((x, i, xs) => xs.indexOf(x) === i).join(", "))}</span>`);
+  if (asks.length) pills.push(`<span class="wb2pill ask">${asks.length} ask${asks.length > 1 ? "s" : ""} for you</span>`);
+  const [ok, all] = wb2Today(m);
+  if (all) pills.push(`<span class="wb2pill ok">${ok} of ${all} runs passed today</span>`);
   wb2Faults(m).forEach(c => pills.push(`<span class="wb2pill block" title="${wbEsc(c.line || "")}">${wbEsc(c.name)}</span>`));
   if (m.stopped) pills.push(`<span class="wb2pill off">Off</span>`);
   return `<div class="wb2now">${pills.join("")}</div>`;
 }
+/* the five functions' marks, as the design page draws them, each in a 24-unit box */
+const WB2_ICONS = {
+  identity: `<path d="M4 5h16v10H11l-4 4v-4H4z"/><path d="M14 19l2 2 4-4"/>`,
+  adaptation: `<path d="M7 20V4M17 20V4M7 7h10M7 11h10M7 15h10"/>`,
+  priority: `<path d="M4 17a8 8 0 0 1 16 0"/><path d="M12 17l4-6"/>`,
+  coordination: `<circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M12 7v5M12 12l-5.5 5.5M12 12l5.5 5.5"/>`,
+  audit: `<rect x="5" y="3" width="11" height="14" rx="1"/><path d="M8 7h6M8 10h6M8 13h4M15 15l4 4"/>`
+};
 
 /* ── Map: the whole topology, fixed, the active parts lit ─────────────────── */
 function wb2MapHtml(n, m){
@@ -73,12 +88,18 @@ function wb2MapHtml(n, m){
   const fns = (m.systems || []).map(s => s.name);
   const fgap = fns.length > 1 ? (W - 260) / (fns.length - 1) : 0;
   const fx = i => 130 + i * fgap;
+  /* what the department knows: the template it runs (the functions read, 20-dept.js), its rules, its record, its host */
+  if (typeof dpLoadFunctions === "function") dpLoadFunctions(n.ref);
+  const fr = (typeof dpS === "function" && dpS().functions && dpS().functions.ref === n.ref) ? dpS().functions : null;
+  const picked = fr && fr.picked && (fr.picked.identity || fr.picked.adaptation);
+  const filed = (m.artifacts || []).filter(a => a.versions);
+  const versions = filed.reduce((s, a) => s + (a.versions || 0), 0);
   const knows = [
-    ["Template", m.template || "", `data-wbfn="adaptation"`],
-    ["Rules", "", `data-wbfn="identity"`],
-    ["Record", "", `data-wbtab="motor"`],
+    ["Template", picked ? picked.name : (fr ? "Default" : ""), `data-wbfn="adaptation"`],
+    ["Rules", (m.rules || []).length ? String(m.rules.length) : "none yet", `data-wbfn="identity"`],
+    ["Record", filed.length ? `${filed.length} thing${filed.length > 1 ? "s" : ""}, ${versions} version${versions > 1 ? "s" : ""}` : "nothing filed", `data-wbtab="motor"`],
     ["Host", m.host || "this app's server", `data-wbfn="identity"`]];
-  const kx = i => 150 + i * ((W - 300) / 3);
+  const kx = i => 170 + i * ((W - 340) / 3);
   const esc = wbEsc;
   let svg = `<svg viewBox="0 0 ${W} 400" role="img" aria-label="The department as a map">` +
     `<defs><marker id="sxarrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker></defs>` +
@@ -105,8 +126,10 @@ function wb2MapHtml(n, m){
   /* functions: a click opens the function's own card, as the tiles did */
   fns.forEach((f, i) => {
     const cls = wb2FnCls(m, f);
+    const ic = WB2_ICONS[f.toLowerCase()] || "";
     svg += `<g class="n fn ${cls}" data-wbfn="${esc(f.toLowerCase())}" transform="translate(${(fx(i) - 70).toFixed(0)},120)"><rect class="bx" width="140" height="32" rx="8"/>` +
-      (cls === "run" ? `<rect class="halo" width="140" height="32" rx="8"/>` : "") + `<text x="70" y="21" text-anchor="middle">${esc(f)}</text></g>`;
+      (cls === "run" ? `<rect class="halo" width="140" height="32" rx="8"/>` : "") +
+      (ic ? `<g class="ic" transform="translate(12,6) scale(0.85)">${ic}</g>` : "") + `<text x="${ic ? 40 : 70}" y="21"${ic ? "" : ` text-anchor="middle"`}>${esc(f)}</text></g>`;
   });
   /* the line of work: an engine opens its card, a filed thing opens itself */
   line.forEach((node, i) => {
@@ -128,7 +151,8 @@ function wb2MapHtml(n, m){
   svg += `</svg>`;
   return wb2NowHtml(m) + `<div class="wb2map wb">${svg}</div>` +
     `<div class="wb2legend"><span><i class="wb2lg fn"></i>function</span><span><i class="wb2lg eng"></i>engine</span><span><i class="wb2lg"></i>work, with its version</span>` +
-    `<span><i class="wb2lg done"></i>filed</span><span><i class="wb2lg run"></i>running</span><span><i class="wb2lg ask"></i>waiting on you</span><span><i class="wb2lg block"></i>fault</span></div>`;
+    `<span><i class="wb2lg done"></i>filed and checked</span><span><i class="wb2lg run"></i>running now</span><span><i class="wb2lg ask"></i>waiting on you</span><span><i class="wb2lg block"></i>fault</span>` +
+    `<span><i class="wb2lg edge"></i>hand-off</span><span><i class="wb2lg edge soft"></i>speaks to</span></div>`;
 }
 /* Root: the same map one level up, each department a box with its state and its line of work as a strip */
 function wb2RootHtml(n, m){

@@ -861,7 +861,10 @@ test("V2 map: the head has one switch and the live site; four fixed rows; the ru
   ["People", "Functions", "Work", "Knows"].forEach(l => assert.ok(html.indexOf(">" + l + "</text>") >= 0, l));
   assert.ok(/<g class="n eng run" data-wbengine="Write"[^>]*><circle class="halo"/.test(html), "Write lit");
   assert.strictEqual((html.match(/class="e flow"/g) || []).length, 2, "the hand-off into it and out of it march");
-  assert.ok(/<span class="wb2pill run">Write running<\/span><span class="wb2pill ask">Waiting for you: Publish<\/span>/.test(html), "the NOW line");
+  assert.ok(/<span class="wb2pill run">Write running<\/span><span class="wb2pill ask">1 ask for you<\/span>/.test(html), "the NOW line");
+  assert.ok(/<g class="n fn ask" data-wbfn="identity"[^>]*><rect[^>]*><g class="ic"/.test(html), "a function carries its mark");
+  assert.ok(/<text x="10" y="20">Rules<\/text><text class="v" x="56" y="20">none yet<\/text>/.test(html) && /<text class="v" x="64" y="20">4 things, 13 versions<\/text>/.test(html), "what the department knows, from the record");
+  assert.ok(/<i class="wb2lg edge"><\/i>hand-off/.test(html) && /<i class="wb2lg edge soft"><\/i>speaks to/.test(html), "the legend names the edges");
   assert.ok(/<g class="n fn ask" data-wbfn="identity"/.test(html) && /<g class="n who ask" data-wbtab="chat"/.test(html), "the ask is amber on Identity and on you");
   assert.ok(/<g class="n work done" data-wbart="site-plan"[^>]*><rect[^>]*><text x="8" y="17">Site plan<\/text><text class="v" x="8" y="30">v2<\/text>/.test(html), "work with its version");
   const nodes = html.match(/<g class="n[^"]*"[^>]*>/g) || [];
@@ -871,8 +874,8 @@ test("V2 map: the head has one switch and the live site; four fixed rows; the ru
   assert.strictEqual(vm.runInContext("S.wb.tab['r3'] + ':' + S.wb.sel['r3']", c), "engine:Write", "a click goes there");
   click(c, { wbfn: "priority" });
   assert.strictEqual(vm.runInContext("dpS().tab['r3']", c), "priority", "a function opens its own card");
-  const t = words(html);
-  assert.ok(!/\b\d{2,}\b/.test(t.replace(/v\d/g, "")), "a count at rest: " + (t.match(/.{0,30}\b\d{2,}\b.{0,30}/) || [""])[0]);
+  const t = words(html.replace(/<div class="wb2now">.*?<\/div>/, "").replace(/<text class="v"[^>]*>[^<]*<\/text>/g, ""));
+  assert.ok(!/\b\d{2,}\b/.test(t), "a count at rest outside the NOW line and the record: " + (t.match(/.{0,30}\b\d{2,}\b.{0,30}/) || [""])[0]);
   const old = await opened({ map: m });
   vm.runInContext("S.wb.tab['r3'] = 'map';", old);
   assert.ok(/<h3>The department<\/h3>/.test(old.wbViewer(WEB)) && !/wb2/.test(old.wbViewer(WEB)), "off: the first design's Map");
