@@ -970,6 +970,9 @@ def status(ref):
     pend = [a for a in ak if a["status"] == "pending"]
     name, inp, why = due(ref) if not any(r["status"] == "running" for r in rs) else (None, None, "running")
     waits = [{"what": a["engine"], "why": "for the stamp" if a["kind"] == "publish" else a["text"], "since": a["created"]} for a in pend]
+    rt = _runtime(ref)
+    if rt:                                     # the owner's own words nobody has answered yet (ER-9)
+        waits += [{"what": "Identity", "why": "your words wait: " + w["words"], "since": w["since"]} for w in rt.front_state(ref)["waiting"]]
     return {"asks": [a for a in pend if not a.get("escalated")],
             "escalated": [a for a in pend if a.get("escalated")],
             "waits": waits,
@@ -994,6 +997,11 @@ def health(ref):
     stale = [a for a in ak if a["status"] == "pending" and time.time() - _ts(a["created"]) > STALE_ASK_S]
     pending = [a for a in ak if a["status"] == "pending"]
     checks.append(("Stuck", "warn" if stale or pending else "ok", "An ask is waiting" if pending else "Nothing is waiting"))
+    rt = _runtime(ref)
+    if rt:                                     # the front door (ER-9): the owner's words answered, waiting, or lost at a bound
+        fs = rt.front_state(ref)
+        checks.append(("Front door", "warn" if fs["waiting"] or fs["lost"] else "ok",
+                       "Your words are waiting" if fs["waiting"] else ("A request was lost at its bound" if fs["lost"] else "Every request answered")))
     checks.append(("Awake", "ok", "All five functions run as engines" if (dept(ref) or {}).get("runtime") == 2
                    else "Identity, Priority and Coordination run; Adaptation and Audit are paused"))
     envs = (dept(ref) or {}).get("envelopes", {})

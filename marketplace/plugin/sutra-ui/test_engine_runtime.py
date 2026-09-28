@@ -1132,6 +1132,81 @@ class TestTheFrontDoor(Base):
         t = R.coordination(child)
         self.assertIn("Root", t["edges"])
 
+    def test_65_words_never_lost_a_front_post_nobody_answers_in_time_is_said_back_and_shows_as_waiting(self):
+        """ER-9 (found live 2026-09-28): the first words at the front door died at the thread's bound unseen."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        child_name = W.dept(child)["name"]
+        d = W.dept(root)
+        d["bounds"] = {"hops": 4, "seconds": 0.5, "usd": 0.5}  # the next thread on Root is out of time at the first tick
+        W.save_dept(root, d)
+        W.owner_ask(root, "On %s, add a page on parking." % child_name)
+        # nobody runs Root: the words sit unanswered
+        R.FRONT_WAIT_S, keep = 0, R.FRONT_WAIT_S
+        try:
+            fs = R.front_state(root)
+            self.assertEqual([w["words"] for w in fs["waiting"]], ["On %s, add a page on parking." % child_name])
+            self.assertIn("your words wait: On %s, add a page on parking." % child_name, [w["why"] for w in W.status(root)["waits"]])
+            self.assertEqual(next(c for c in W.health(root)["checks"] if c["name"] == "Front door")["line"], "Your words are waiting")
+        finally:
+            R.FRONT_WAIT_S = keep
+        R.sweep(root)                                          # the clock: the thread closes at its bound
+        th = next(t for t in R.threads(root) if t["opened_by"] == "Owner" and t["state"] == "canceled")
+        self.assertEqual(th["outcome"]["which"], "seconds")
+        self.assertEqual(next(c for c in W.health(root)["checks"] if c["name"] == "Front door")["line"], "A request was lost at its bound")
+        W.run_until_idle(root, limit=200)                     # Identity hears the lost request and says it back
+        said = [t for t in R.chat_view(root)["turns"] if t["word"] == "lost"]
+        self.assertEqual(len(said), 1, self.said(root)[-4:])
+        self.assertEqual(said[0]["line"], "I could not act on this in time: On %s, add a page on parking. Say it again." % child_name)
+        self.assertEqual(said[0]["dept"], child, "about the department the words named")
+        self.assertEqual(next(c for c in W.health(root)["checks"] if c["name"] == "Front door")["line"], "Every request answered")
+        rows = [r for r in R.step_rows(root) if r["step"] == "identity.lost"]
+        self.assertEqual([r["by"] for r in rows], ["code"], "one code step")
+        # said again, it goes through
+        d = W.dept(root)
+        d.pop("bounds", None)
+        W.save_dept(root, d)
+        W.owner_ask(root, "On %s, add a page on parking." % child_name)
+        W.run_until_idle(root, limit=200)
+        self.assertIn(("Identity", "Owner", "inform", "handed to %s" % child_name, child_name), self.said(root))
+
+    def test_66_one_place_to_read_the_departments_own_asks_and_answers_sit_in_its_chat_beside_roots(self):
+        """ER-10: inside a department the publish ask and its stamp are turns of the same chat; nothing counted twice."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        child_name = W.dept(child)["name"]
+        scoped = R.chat_view(child)
+        own = [t for t in scoped["turns"] if t.get("own")]
+        self.assertTrue(any(t["src"] == "Identity" and t["word"] == "publish" and "served from" in t["line"] for t in own),
+                        "the department's own publish ask is a turn: %s" % [(t["src"], t["word"], t["line"][:40]) for t in scoped["turns"]])
+        self.assertTrue(all(t["dept"] == child and t["name"] == child_name for t in own))
+        a = [x for x in W.asks(child) if x["kind"] == "publish" and x["status"] == "pending"][-1]
+        W.decide_ask(child, a["id"], True)
+        W.run_until_idle(child, limit=200)
+        scoped = R.chat_view(child)
+        self.assertTrue(any(t["src"] == "Owner" and t["msg_type"] == "accept-proposal" and t.get("own") for t in scoped["turns"]), "the stamp is a turn")
+        # through Root: handed on, answered, and the answer appears once, not once per board (the department's own goal
+        # filing at birth is its own "filed in the Brief" and stays)
+        filed = lambda v: sum(1 for t in v["turns"] if t["line"] == "filed in the Brief")  # noqa: E731
+        before_s, before_w = filed(R.chat_view(child)), filed(R.chat_view(root))
+        W.owner_ask(root, "On %s, add a Careers page." % child_name)
+        W.run_until_idle(root, limit=200)
+        W.run_until_idle(child, limit=200)
+        scoped = R.chat_view(child)
+        self.assertEqual(filed(scoped), before_s + 1, "one turn for one answer")
+        self.assertEqual(sum(1 for t in scoped["turns"] if t["line"].startswith("handed to")), 1)
+        ats = [str(t["at"]) for t in scoped["turns"]]
+        self.assertEqual(ats, sorted(ats), "in time order across the two boards")
+        whole = R.chat_view(root)
+        self.assertTrue(any(t.get("own") and t["dept"] == child and t["word"] == "publish" for t in whole["turns"]), "on Root, the child's own ask with its chip")
+        self.assertEqual(filed(whole), before_w + 1)
+        # the Map's Say on the department itself is its own turn too
+        W.owner_ask(child, "Which page lists the therapists?")
+        W.run_until_idle(child, limit=200)
+        scoped = R.chat_view(child)
+        self.assertTrue(any(t["src"] == "Owner" and t.get("own") and t["line"] == "Which page lists the therapists?" for t in scoped["turns"]))
+        self.assertTrue(any(t["src"] == "Identity" and t.get("own") and t["word"] == "answer" for t in scoped["turns"]))
+
     def test_64_each_function_has_its_own_ladder_numbers_from_its_settings(self):
         """Founder, 2026-09-28: each of the five functions has a Settings tab with its own updates; an engine too."""
         W, R = self.W, self.R

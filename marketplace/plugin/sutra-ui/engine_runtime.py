@@ -927,6 +927,14 @@ def coord_bounds(ctx, step, item):
             _save_threads(ref, ths)
     for tid in closed:
         W.system_run(ref, "Coordination", "closed a thread at its bound; what holds: " + str((_thread(ref, tid) or {}).get("default")))
+        # the owner's own request, or one Root handed on, that nobody answered in time: Identity is told, and says it
+        # back to the person (ER-9; found live 2026-09-28 when a stale clock let a front post die unseen)
+        first = next((q for q in board(ref) if q["thread"] == tid), None)
+        if first and first["src"] in (OWNER, "Root") and first["msg_type"] == "request":
+            fpl = first.get("payload") or {}
+            post(ref, "Coordination", "Identity", "inform",
+                 {"word": "lost", "for": tid, "from_src": first["src"], "words": str(fpl.get("words") or fpl.get("objective") or ""),
+                  "about": fpl.get("about") if isinstance(fpl.get("about"), dict) else None})
     return {"said": "closed a thread at its bound" if closed else "", "closed": closed}
 
 
@@ -1523,12 +1531,17 @@ def _mark(ref, about, words):
                                         "started": W.now(), "ended": W.now()})
 
 
-def _tell(ref, d, p, msg_type, payload, thread=None):
+def _tell(ref, d, p, msg_type, payload, thread=None, about=None):
     """What Identity says to the owner. On the department's own board as always; and when the words came through Root
-    (the front door), the same is said on Root's board too, about this department, so the one chat carries it."""
-    row = post(ref, "Identity", OWNER, msg_type, payload, thread=thread)
+    (the front door), the same is said on Root's board too, about this department, so the one chat carries it. The
+    department's own copy is marked via Root then, so the chat never counts it twice."""
     root = d.get("root")
-    if p.get("src") == "Root" and root and W.dept(root):
+    relay = p.get("src") == "Root" and root and W.dept(root)
+    own = dict(payload)
+    if relay:
+        own["via"] = "Root"
+    row = post(ref, "Identity", OWNER, msg_type, own, thread=thread, about=about)
+    if relay:
         pl = dict(payload)
         pl.update({"dept": ref, "from": d.get("name")})
         try:
@@ -1536,6 +1549,49 @@ def _tell(ref, d, p, msg_type, payload, thread=None):
         except ValueError:                       # Root's own table refuses nothing Identity says to the owner; a fault is a row here, not a crash
             pass
     return row
+
+
+def identity_lost(ctx, step, item):
+    """A request of the owner's, or one Root handed on, that Coordination closed at its bound before anyone answered:
+    Identity says so to the person and asks for the words again (ER-9)."""
+    ref, d, p = ctx["ref"], ctx["dept"], ctx["post"]
+    pl = p.get("payload") or {}
+    words = str(pl.get("words") or "")
+    ab = pl.get("about") if isinstance(pl.get("about"), dict) else None
+    if not ab and d.get("kind") == "root":               # no chip: the department the words named, as the route would have read it
+        target = _named(_children(ref), words)
+        if target:
+            ab = {"dept": target["ref"], "name": target["name"]}
+    _tell(ref, d, {"src": pl.get("from_src")}, "inform",
+          {"word": "lost", "done": "I could not act on this in time: %s Say it again." % words, "for": pl.get("for")}, about=ab)
+    return {"said": "said back a request lost at its bound: " + words[:80]}
+
+
+FRONT_WAIT_S = 60
+
+
+def front_state(ref):
+    """The owner's requests on this board that nobody answered: waiting (open past FRONT_WAIT_S) and lost (closed at a
+    bound, not yet said back). What the department's status and Health read (ER-9)."""
+    ths = {t["id"]: t for t in threads(ref)}
+    by_thread, said_back = {}, set()
+    for q in board(ref):
+        by_thread.setdefault(q["thread"], []).append(q)
+        if (q.get("payload") or {}).get("for") and OWNER in q["dst"]:   # said back to the person, not merely told to Identity
+            said_back.add(q["payload"]["for"])
+    waiting, lost = [], []
+    for tid, posts in by_thread.items():
+        first = posts[0]
+        if first["src"] != OWNER or first["msg_type"] != "request":
+            continue
+        answered = any(q["src"] != OWNER for q in posts[1:])
+        words = str((first.get("payload") or {}).get("words") or "")
+        state = (ths.get(tid) or {}).get("state")
+        if state == "canceled" and not answered and tid not in said_back:
+            lost.append({"words": words, "at": first["at"]})
+        elif not answered and state not in CLOSED and time.time() - W._ts(first["at"]) > FRONT_WAIT_S:
+            waiting.append({"words": words, "since": first["at"]})
+    return {"waiting": waiting, "lost": lost}
 
 
 def identity_file(ctx, step, item):
@@ -1695,10 +1751,28 @@ def identity_hand(ctx, step, item):
     return {"said": "handed to %s: %s" % (name, words)}
 
 
+def _own_turns(dref, name):
+    """A department's own owner-facing turns (ER-10): what its Identity asked or told its owner in threads Root did not
+    start, and the owner's own words and stamps there. A post that went to Root's board as well (via Root) is left to
+    Root's copy, so the chat never counts it twice."""
+    ths = {t["id"]: t for t in threads(dref)}
+    out = []
+    for p in board(dref):
+        if p["src"] != OWNER and OWNER not in p["dst"]:
+            continue
+        pl = p.get("payload") or {}
+        if (ths.get(p["thread"]) or {}).get("opened_by") == "Root" or pl.get("via") == "Root":
+            continue
+        out.append({"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
+                    "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""),
+                    "dept": dref, "name": name, "own": True})
+    return out
+
+
 def chat_view(ref, about=None):
-    """The one chat, read from Root's board: the owner's turns and what Identity said back, each with the department it is
-    about; the asks waiting, with the department they belong to; the departments under Root. For a department, the same
-    chat scoped to it."""
+    """The one chat: the owner's turns and what Identity said back, read from Root's board, each with the department it
+    is about, and each department's own asks and answers beside them (ER-10), in time order; the asks waiting, with the
+    department they belong to; the departments under Root. For a department, the same chat scoped to it."""
     d = W.dept(ref) or {}
     root = ref if d.get("kind") == "root" else d.get("root")
     if root and not W.dept(root):
@@ -1719,6 +1793,13 @@ def chat_view(ref, about=None):
                           "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""),
                           "dept": dref, "name": ab.get("name") or pl.get("from")})
     kids = _children(root) if root else []
+    if root:
+        for c in ([W.dept(about)] if about else kids):
+            if c and c.get("ref") and c["ref"] != root:
+                turns += _own_turns(c["ref"], c.get("name"))
+    elif d:
+        turns += _own_turns(ref, d.get("name"))         # a department with no Root: its own chat
+    turns.sort(key=lambda t: (str(t["at"]), t["n"]))
     refs = [about] if about else ([root] + [c["ref"] for c in kids] if root else [ref])
     asks = []
     for r in refs:
@@ -2140,7 +2221,7 @@ CODE = {"plan_read": plan_read, "plan_fit": plan_fit, "plan_file": plan_file, "w
         "priority_envelope": priority_envelope, "coord_chain": coord_chain, "coord_heard": coord_heard,
         "coord_busy": coord_busy, "coord_pick": coord_pick, "coord_edge": coord_edge, "coord_verdict": coord_verdict,
         "coord_bounds": coord_bounds, "coord_alarm": coord_alarm,
-        "identity_read": identity_read, "identity_route": identity_route, "identity_hand": identity_hand,
+        "identity_read": identity_read, "identity_route": identity_route, "identity_hand": identity_hand, "identity_lost": identity_lost,
         "identity_file": identity_file, "identity_verdict": identity_verdict, "identity_rung": identity_rung,
         "identity_apply": identity_apply, "identity_drop": identity_drop, "identity_finding": identity_finding,
         "identity_alarm": identity_alarm, "identity_idea": identity_idea, "adapt_park": adapt_park,
