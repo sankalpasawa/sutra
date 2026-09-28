@@ -84,6 +84,23 @@ is "correct: depth is never corrected downward, however confident" \
   "$(sutra_tier_apply "$PLUGIN_MAIN" depth 4 2 0.2 0.99)" 4
 is "correct: a step without the mark keeps the strict rule" \
   "$(sutra_tier_apply "$PLUGIN_MAIN" classify high low 0.2 0.99)" high
+
+# An answer that names a department instead of its address is resolved against
+# the register, not thrown away on spelling (8 of 17 refusals in the 34-example
+# run were exactly this).
+echo "== an answer that names a department is resolved against the register =="
+printf '{"ref":"dref-named01","name":"Session Lifecycle"}\n' > "$REG/dref-named01.json"
+printf '{"ref":"dref-named02","name":"Page Generators"}\n' > "$REG/dref-named02.json"
+printf '{"ref":"dref-dupe01","name":"Website"}\n' > "$REG/dref-dupe01.json"
+printf '{"ref":"dref-dupe02","name":"Website"}\n' > "$REG/dref-dupe02.json"
+is "normalize: a bare name becomes its address" "$(sutra_tier_normalize placement "Session Lifecycle")" dref-named01
+is "normalize: case and spacing do not matter" "$(sutra_tier_normalize placement "  page generators ")" dref-named02
+is "normalize: the whole listed line yields its address" "$(sutra_tier_normalize placement "Page Generators = dref-named02")" dref-named02
+is "normalize: an address passes through" "$(sutra_tier_normalize placement dref-named01)" dref-named01
+is "normalize: a name the register does not hold is left alone" "$(sutra_tier_normalize placement "The Ops Team")" "The Ops Team"
+is "normalize: a name held twice is ambiguous and left alone" "$(sutra_tier_normalize placement "Website")" Website
+is "normalize: unresolved stays unresolved" "$(sutra_tier_normalize placement unresolved)" unresolved
+is "normalize: another step is untouched" "$(sutra_tier_normalize depth "Session Lifecycle")" "Session Lifecycle"
 is "classify: risk may go up" "$(sutra_tier_apply "$PLUGIN_MAIN" classify low high)" high
 is "classify: risk may not go down" "$(sutra_tier_apply "$PLUGIN_MAIN" classify high low)" high
 

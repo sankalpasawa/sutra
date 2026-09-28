@@ -102,6 +102,33 @@ sutra_tier_apply() {
   printf '%s' "$_ta_agent"; return 0
 }
 
+# sutra_tier_normalize <step> <answer> -> the answer as an address when it names
+# a department the register holds. Across 34 live examples (2026-09-28) the
+# agent answered with the department's NAME ("Website") or the whole listed line
+# ("Learning & Onboarding = dref-ccf...") in 8 of 17 refusals, so a correct
+# answer was thrown away on spelling. Resolution is exact and register-backed:
+# a dref inside the text wins, else an exact case-insensitive name match on one
+# and only one department. Anything ambiguous or unknown is returned untouched,
+# which the apply rule then refuses.
+sutra_tier_normalize() {
+  [ "$1" = "placement" ] || { printf '%s' "$2"; return 0; }
+  case "$2" in dref-*) printf '%s' "$2"; return 0 ;; esac
+  _tn_d="${SUTRA_NATIVE_HOME:-$HOME/.sutra-native/user-kit}/domains"
+  _tn_in="$2"
+  # a dref anywhere in the text (the model echoed the whole "Name = ref" line)
+  _tn_ref="$(printf '%s' "$_tn_in" | tr ' ' '\n' | grep -m1 -E '^dref-[0-9a-f]+$')"
+  if [ -n "$_tn_ref" ] && [ -f "$_tn_d/$_tn_ref.json" ]; then printf '%s' "$_tn_ref"; return 0; fi
+  # an exact name, matched once and only once
+  command -v jq >/dev/null 2>&1 || { printf '%s' "$_tn_in"; return 0; }
+  _tn_name="$(printf '%s' "$_tn_in" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/[[:space:]]*=.*$//')"
+  [ -n "$_tn_name" ] || { printf '%s' "$_tn_in"; return 0; }
+  _tn_hits="$(jq -r --arg n "$_tn_name" 'select(((.name // "") | ascii_downcase) == ($n | ascii_downcase)) | .ref' "$_tn_d"/*.json 2>/dev/null | sort -u)"
+  if [ "$(printf '%s\n' "$_tn_hits" | grep -c .)" = "1" ] && [ -n "$_tn_hits" ]; then
+    printf '%s' "$_tn_hits"; return 0
+  fi
+  printf '%s' "$_tn_in"
+}
+
 # sutra_tier_path <proj> <sid> <turn> -> the turn's own decision file
 sutra_tier_path() { printf '%s/.sutra/turn/%s/%s.tier.jsonl' "$1" "$2" "$3"; }
 
@@ -172,7 +199,7 @@ sutra_tier_settle() {
   [ -n "$(sutra_tier_last "$_ts_p" "$_ts_s" "$_ts_t" "$_ts_id" source)" ] && return 0
   sutra_tier_due "$_ts_root" "$_ts_id" "$_ts_c" || return 0   # the code stands, nothing to settle
   if _ts_ans="$(sutra_tier_ask_read "$_ts_p" "$_ts_s" "$_ts_t" "$_ts_id")"; then
-    _ts_av="$(printf '%s' "$_ts_ans" | jq -r '.value // ""' 2>/dev/null)"
+    _ts_av="$(sutra_tier_normalize "$_ts_id" "$(printf '%s' "$_ts_ans" | jq -r '.value // ""' 2>/dev/null)")"
     _ts_ac="$(printf '%s' "$_ts_ans" | jq -r '.confidence // ""' 2>/dev/null)"
     _ts_ar="$(printf '%s' "$_ts_ans" | jq -r '.reason // ""' 2>/dev/null)"
     if _ts_kept="$(sutra_tier_apply "$_ts_root" "$_ts_id" "$_ts_v" "$_ts_av" "$_ts_c" "$_ts_ac")"; then
