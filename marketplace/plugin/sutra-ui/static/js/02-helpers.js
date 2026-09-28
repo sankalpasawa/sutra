@@ -1277,7 +1277,17 @@ function goDest(d){
       if (typeof o2EnsureRegistered === "function") o2EnsureRegistered();
       if (SCREENS.org2) fallback = "org2";
     }
-    const target = (sel && SCREENS[sel]) ? sel : fallback;
+    /* A ONE-ROW DESTINATION IS ITS OWN ROW (founder, 2026-09-28: "when I click
+       on Org the Adaptation screen is the only thing that comes"). Org has been
+       one row, Org structure, since 2026-09-25; the Library's shelves open by
+       their own screen id and openScreen records that shelf as Org's remembered
+       pick -- and with the accordion gone, nothing in the menu led back to the
+       tree: every Org click restored the shelf. When the button IS the row, the
+       button opens the row. Opted out, Org is an accordion again and the
+       remembered pick still restores, as every other accordion's does. */
+    const one = destOneRow(d) ? planeRows(d).flatMap(g => g.rows)[0] : null;
+    const target = (one && SCREENS[one.screen]) ? one.screen
+      : (sel && SCREENS[sel]) ? sel : fallback;
     if (typeof openScreen === "function" && SCREENS[target]) openScreen(target);
     else { S.ui.browseClosed = false; S.screen = target; }
   }

@@ -730,7 +730,10 @@ test("chats: the old tab chrome is gone", () => {
 
 /* §switching ─ S9 */
 test("switching: chats yields the browse pane; org restores the remembered pick", () => {
+  /* 2026-09-28: a remembered pick restores while Org is an ACCORDION (org2
+     opted out). With org2 on, Org is one row and the row wins -- pinned below. */
   T.S.ui = T.loadLayout();
+  T.SETTINGS = { flags: { org2: false } };
   T.S.ui.destSel.org = "charters";
   T.goDest("chats");
   assert.strictEqual(T.S.ui.dest, "chats");
@@ -740,6 +743,33 @@ test("switching: chats yields the browse pane; org restores the remembered pick"
   assert.strictEqual(T.S.ui.browseClosed, false);
   T.goDest("bogus");
   assert.strictEqual(T.S.ui.dest, "org", "an unknown destination must be refused");
+  T.SETTINGS = null;
+});
+
+test("switching: a one-row destination opens its row -- Org lands on Org structure whatever the saved pick", () => {
+  /* founder, 2026-09-28: "when I click on Org the Adaptation screen is the
+     only thing that comes". The Library's shelves record themselves as Org's
+     pick when opened; with the accordion gone (2026-09-25) every Org click
+     restored the shelf and nothing led back to the tree. */
+  T.S.ui = T.loadLayout();
+  T.SETTINGS = null;                            /* org2 on: Org is one row */
+  T.S.ui.destSel.org = "lib-adaptation";        /* what this Mac had saved */
+  T.goDest("org");
+  assert.strictEqual(T.destOneRow("org"), true, "Org is one row while org2 is on");
+  assert.strictEqual(T.S.screen, "org2", "the button is the row, so it opens Org structure");
+  assert.strictEqual(T.S.ui.destSel.org, "org2", "and the saved pick is repaired for the next launch");
+  T.goDest("now");
+});
+
+test("settings: the overview's two columns follow the pane's width, not the window's", () => {
+  /* founder, 2026-09-28: Settings beside an open chat was cut on the right
+     with no scrollbar -- a window query put two 1fr columns in a 510px pane. */
+  const css = fs.readFileSync(path.join(__dirname, "static", "panel.css"), "utf8");
+  assert(!/@media[^{]*\{\s*\.sxov/.test(css), "no window query may decide .sxov columns");
+  assert(/@container \(min-width:720px\)\{\.sxov\{grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\)\}\}/.test(css),
+    "the pane query sets two columns that can shrink");
+  assert(/\.sxov\{display:grid;grid-template-columns:minmax\(0,1fr\)/.test(css),
+    "one column that can shrink is the default");
 });
 
 test("switching: archived screens and Library > Identity still open and belong to Org", () => {
@@ -1338,9 +1368,11 @@ test("inline: collapsed accordion hands the highlight back to the parent", () =>
 });
 test("inline: a remembered pick still routes; leaving closes the accordion (codex P2)", () => {
   T.S.ui = T.loadLayout();
+  T.SETTINGS = { flags: { org2: false } };     /* accordion: the pick restores */
   T.S.ui.destSel.org = "charters";
   T.goDest("org");
   assert.strictEqual(T.S.screen, "charters", "destSel still outranks the default");
+  T.SETTINGS = null;
   T.goDest("focus");
   assert.strictEqual(T.S.ui.railOpen, "focus");
   T.goDest("settings");

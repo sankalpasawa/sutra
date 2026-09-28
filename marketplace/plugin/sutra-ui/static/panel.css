@@ -4843,8 +4843,14 @@ button.nychip:focus-visible{ outline:none; box-shadow:0 0 0 1.5px var(--acc); }
    subsection you happened to leave open. Six cards, each stating what it is and
    what it is set to; a click opens one, a back control returns. Nothing here
    collapses, because a collapsed card is the state this replaced. */
-.sxov{display:grid;grid-template-columns:1fr;gap:8px}
-@media (min-width:720px){.sxov{grid-template-columns:1fr 1fr}}
+.sxov{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+/* THE PANE'S WIDTH DECIDES THE COLUMNS, NOT THE WINDOW'S (founder, 2026-09-28:
+   Settings beside an open chat "doesn't show me the entire thing, no
+   scrollbar"). A window query put two columns in a 510px pane, and a bare 1fr
+   column refuses to shrink below its content, so the grid ran 145px past the
+   pane -- which #scBody hides sideways. .pane.browse is the container (line
+   534), as every other pane-width rule in this file already uses. */
+@container (min-width:720px){.sxov{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
 .sxcard{display:flex;align-items:center;gap:12px;width:100%;text-align:left;cursor:pointer;
   color:inherit;font:inherit;background:var(--card);border:1px solid var(--line);
   border-radius:10px;padding:13px 14px;transition:border-color .12s,background .12s}
