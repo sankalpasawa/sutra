@@ -108,6 +108,12 @@ def validate(d):
         if e.get("kind") == "work" and not (e.get("reads") and e.get("writes")):
             faults.append("%s: a work engine names what it reads and what it writes" % name)
         faults += start_faults(name, e, d.get("engines") or {})
+        # SHAPE (founder, 2026-09-28): every unit starts with a step by code and ends with a step by code; agents come
+        # between. So the input, the output and the least steps of any unit are known before its agent says a word.
+        for uname, steps in [("its steps", e.get("steps") or [])] + [(h.get("name") or "a handler", h.get("steps") or []) for h in e.get("on") or []]:
+            for which, s in ((("starts", steps[0]), ("ends", steps[-1])) if steps else ()):
+                if s.get("prompt") or s.get("born") != "C2" or not s.get("code"):
+                    faults.append("%s, %s: a unit %s with a step by code; agents come between" % (name, uname, which))
         groups = [("gate", s) for s in e.get("gates") or []] + [("rule", s) for s in e.get("rules") or []]
         groups += [("step", s) for s in e.get("steps") or []]
         groups += [("step", s) for h in e.get("on") or [] for s in h.get("steps") or []]
@@ -145,6 +151,14 @@ def validate(d):
             if act not in ACTS:
                 faults.append("edges, %s: %s is not an act" % (src, act))
     faults += table_faults(d.get("coordination"), d.get("engines") or {})
+    if not d.get("kinds"):
+        faults.append("kinds: the definitions name no kind of department")
+    for kind, k in (d.get("kinds") or {}).items():
+        for n in k.get("line") or []:
+            if ((d.get("engines") or {}).get(n) or {}).get("kind") != "work":
+                faults.append("kinds, %s: %s is not a work engine" % (kind, n))
+        if not k.get("artifacts") or not k.get("goal") or not k.get("rules"):
+            faults.append("kinds, %s: a kind names its artifacts, its goal and its rules" % kind)
     return faults
 
 
@@ -289,10 +303,12 @@ def numbers(ref):
 
 
 # ---- Coordination's table ------------------------------------------------------------------------------------------
-def born_table():
-    """What Coordination is born with: the order of service and who may post what to whom, from the definitions."""
+def born_table(kind="website"):
+    """What Coordination is born with: the order of service, the line of the department's kind, and who may post what
+    to whom, from the definitions."""
     d = defs()
     t = json.loads(json.dumps(d["coordination"]))
+    t["line"] = list((d.get("kinds") or {}).get(kind, {}).get("line") or t["line"])
     t["edges"] = json.loads(json.dumps(d["edges"]))
     return t
 
@@ -301,15 +317,16 @@ def coordination(ref):
     """Coordination's table for this department. It is Coordination's state, kept on the department's record, and it
     is the only copy that is read: a department made before the table was kept reads what Coordination is born with."""
     t = W._read(W.ddir(ref) / "coordination.json", None) if ref else None
+    kind = (W.dept(ref) or {}).get("kind") or "website"
     if not isinstance(t, dict) or table_faults(t, defs()["engines"]):
-        return born_table()
-    t.setdefault("edges", born_table()["edges"])
+        return born_table(kind)
+    t.setdefault("edges", born_table(kind)["edges"])
     return t
 
 
 def born(ref):
     """At the department's birth, Coordination writes its table. From then on the order of work is a record."""
-    t = born_table()
+    t = born_table((W.dept(ref) or {}).get("kind") or "website")
     t.update({"since": W.now(), "by": "born"})
     with W._lock(ref):
         W._write(W.ddir(ref) / "coordination.json", t)
@@ -572,16 +589,18 @@ def request(ref, text):
     text = " ".join(str(text or "").split())
     if not text:
         raise ValueError("say what the website is for")
-    if not W.dept(ref):
-        raise ValueError("no website department at %s" % ref)
+    d = W.dept(ref)
+    if not d:
+        raise ValueError("no department at %s" % ref)
+    first = W.artifacts_of(d)[0]              # the Brief; on a Root, a Request
     with W._lock(ref):
         reqs = W.requests(ref)
         rq = {"id": "q-" + uuid.uuid4().hex[:8], "text": text, "at": W.now()}
         reqs.append(rq)
         W._write(W.ddir(ref) / "requests.json", reqs)
     p = post(ref, OWNER, "Identity", "request",
-             {"word": "request", "words": text, "objective": text, "output": "the Brief's next version",
-              "may_read": ["Brief"], "boundaries": "inside the department's goal and rules", "request": rq["id"]})
+             {"word": "request", "words": text, "objective": text, "output": "the %s's next version" % first,
+              "may_read": [first], "boundaries": "inside the department's goal and rules", "request": rq["id"]})
     return rq, p
 
 
@@ -815,11 +834,20 @@ def coord_pick(ctx, step, item):
             if not got and "posts" in t["order"] and len(board(ctx["ref"])) > posts:
                 got = first_post()                   # a blocker asked its internal system for a verdict just now
         else:
+            ready_now = []
             for f in t["functions"]:
                 r = ready(ctx, f, ("version", "timer"))
                 if r and r[1]:
-                    got = (f, r[0], r[1])
-                    break
+                    ready_now.append((f, r))
+            if len(ready_now) > 1:
+                # several functions woken at once: Coordination's own unit says who goes first (founder, 2026-09-28:
+                # "coordination should have an agent as well"); the table's order stands when it says nothing
+                pick = _tie(ctx, [f for f, _ in ready_now])
+                if pick:
+                    ready_now.sort(key=lambda fr: 0 if fr[0] == pick else 1)
+            if ready_now:
+                f, r = ready_now[0]
+                got = (f, r[0], r[1])
         if got:
             return got
     return None, None, why or "nothing due"
@@ -1296,25 +1324,37 @@ def publish_copy(ctx, step, item):
 
 
 def identity_gate(ctx, step, item):
-    """The rule, as built: the first publish asks the owner; a refused one is skipped, never published."""
+    """The rule, as built: the first publish asks the owner, and so does every department a Root sets up ("A new
+    department is stamped by the owner"); a refused one is skipped, never done."""
     ref, name, slot, inp = ctx["ref"], ctx["engine"], ctx["slot"], ctx["inp"]
-    if name != "Publish" or len(W.versions(ref, "Live site")) > int(ctx["dept"].get("publish_asks_from") or 0):
+    if name == "Publish":
+        if len(W.versions(ref, "Live site")) > int(ctx["dept"].get("publish_asks_from") or 0):
+            return "admit", None
+        # the ask carries the question where the site is served from (founder, 2026-09-28: "more of a question
+        # to the user and should be asked to the user"); the answer, or the default on a plain stamp, stays on
+        # the record and Publish reads it
+        host = ctx["dept"].get("host") or W.HOST_DEFAULT
+        kind = "publish"
+        objective = ("say whether the site may go live for the first time"
+                     + (" under its new goal" if ctx["dept"].get("publish_asks_from") else "")
+                     + ", and where it is served from: %s unless you say another" % host)
+        text = "Publish: go live for the first time, served from %s unless you say where else" % host
+        may_read, about = ["Build"], {"art": "Build", "v": inp["v"]}
+    elif name == "Setup":
+        words = W.read_files(ref, "Request", inp["v"]).get("request.md", "").strip()
+        kind = "setup"
+        objective = "say whether Root may set up this department: " + words[:300]
+        text = "Set up a department: " + words[:200]
+        may_read, about = ["Request"], {"art": "Request", "v": inp["v"]}
+    else:
         return "admit", None
     with W._lock(ref):
-        a = next((x for x in W.asks(ref) if x.get("slot") == slot and x.get("kind") == "publish"), None)
+        a = next((x for x in W.asks(ref) if x.get("slot") == slot and x.get("kind") == kind), None)
         if a is None:
-            # the ask carries the question where the site is served from (founder, 2026-09-28: "more of a question
-            # to the user and should be asked to the user"); the answer, or the default on a plain stamp, stays on
-            # the record and Publish reads it
-            host = ctx["dept"].get("host") or W.HOST_DEFAULT
             p = post(ref, "Identity", OWNER, "request",
-                     {"word": "publish", "objective": "say whether the site may go live for the first time"
-                      + (" under its new goal" if ctx["dept"].get("publish_asks_from") else "")
-                      + ", and where it is served from: %s unless you say another" % host,
-                      "output": "a stamp or a refusal", "may_read": ["Build"], "boundaries": "this one publish"},
-                     about={"art": "Build", "v": inp["v"]})
-            W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "publish", "engine": "Publish", "slot": slot,
-                             "text": "Publish: go live for the first time, served from %s unless you say where else" % host,
+                     {"word": kind, "objective": objective, "output": "a stamp or a refusal", "may_read": may_read,
+                      "boundaries": "this one %s" % kind}, about=about)
+            W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": kind, "engine": name, "slot": slot, "text": text,
                              "status": "pending", "created": W.now(), "thread": p["thread"] if p else None})
             return "wait", "waits for the stamp"
     if a["status"] == "pending":
@@ -1381,7 +1421,7 @@ def _named_page(ref, words):
 
 def identity_read(ctx, step, item):
     words = str((ctx["post"].get("payload") or {}).get("words") or "")
-    first = not W.versions(ctx["ref"], "Brief")
+    first = not W.versions(ctx["ref"], W.artifacts_of(ctx["dept"])[0])
     if first:
         kind = "goal"
     elif re.search(r"\b(add|create|include|new)\b.{0,60}\b(page|section)\b", words, re.I):
@@ -1410,6 +1450,15 @@ def _file_brief(ref, d, words, note):
     body = base.rstrip() + ("\n\n## Asked since\n" if "## Asked since" not in base else "\n") + "- " + words + "\n"
     return W.add_version(ref, "Brief", {"brief.md": body}, [{"art": "Brief", "v": cur["v"]}, {"ask": words, "at": W.now()}],
                          "owner", {"ok": True, "notes": [note]})
+
+
+def _file_words(ref, d, words, note):
+    """The owner's words, filed as the department's first artifact: the Brief's next version; on a Root, a new Request,
+    which its engine Setup reads."""
+    if d.get("kind") == "root":
+        return W.add_version(ref, "Request", {"request.md": words + "\n"}, [{"ask": words, "at": W.now()}], "owner",
+                             {"ok": True, "notes": [note]})
+    return _file_brief(ref, d, words, note)
 
 
 def _rule_ask(ref, slot, line, tag, words, thread, lead):
@@ -1445,7 +1494,7 @@ def identity_file(ctx, step, item):
     if journey == "directive":
         r = ctx["bag"]["identity.rule"]
         if r.get("scope") == "one-time":
-            row = _file_brief(ref, d, words, "the owner's directive, for this once")
+            row = _file_words(ref, d, words, "the owner's directive, for this once")
             post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "applied this once; not kept as a rule", "v": row["v"]},
                  thread=p["thread"])
             return {"said": "applied the owner's words once: " + words, "journey": journey, "filed": row["v"]}
@@ -1463,7 +1512,7 @@ def identity_file(ctx, step, item):
         about = w.get("about") or got.get("about")
         _mark(ref, about, words)
         title = next((str(x.get("title")) for x in _pages(ref) if x.get("slug") == about), None)
-        row = _file_brief(ref, d, "Correct this%s: %s" % (" on " + title if title else "", w["now"]), "the owner's feedback")
+        row = _file_words(ref, d, "Correct this%s: %s" % (" on " + title if title else "", w["now"]), "the owner's feedback")
         post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "sent a correction to the line", "v": row["v"]}, thread=p["thread"])
         if w.get("future"):
             t = post(ref, "Identity", OWNER, "request", {"word": "rule", "objective": "Carry this forward: " + str(w["future"]),
@@ -1480,8 +1529,9 @@ def identity_file(ctx, step, item):
     out = ctx["bag"]["identity.take"]
     verdict, why = out.get("verdict"), str(out.get("why") or "")
     if verdict == "go":
-        row = _file_brief(ref, d, words, "the owner's goal" if ctx["bag"]["identity.read"]["facts"]["first"] else "the owner's ask")
-        post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "filed in the Brief", "v": row["v"]}, thread=p["thread"])
+        row = _file_words(ref, d, words, "the owner's goal" if ctx["bag"]["identity.read"]["facts"]["first"] else "the owner's ask")
+        post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "filed in the %s" % W.artifacts_of(d)[0], "v": row["v"]},
+             thread=p["thread"])
         return {"said": "took the owner's words: " + words, "filed": row["v"]}
     if verdict == "ask":
         W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "request", "engine": "Identity", "slot": ctx["slot"],
@@ -1772,7 +1822,7 @@ def audit_mechanical(ctx, step, item):
     if not ctx["bag"]["audit.pick"]["sample"]:
         return {"ok": True, "notes": ["not sampled"]}
     notes = []
-    for a in W.ARTIFACTS[1:]:
+    for a in W.artifacts_of(W.dept(ref))[1:]:
         for v in W.versions(ref, a):
             if not v.get("run") or "check" not in v:
                 notes.append("%s has a version with no run or no check" % a)
@@ -1796,7 +1846,112 @@ def audit_file(ctx, step, item):
     return {"said": "found %s: %s" % ("something to put right" if high else "something to note", claim), "filed": len(found)}
 
 
+# ---- the rulings of 2026-09-28: every unit starts and ends with code; Coordination's own agent; Root spawns ---------
+def hear(ctx, step, item):
+    """A unit that hears a post starts with code: who asked, with what act, in which word. Closed facts."""
+    p = ctx.get("post") or {}
+    pl = p.get("payload") or {}
+    return {"facts": {"from": str(p.get("src") or ""), "act": str(p.get("msg_type") or ""),
+                      "word": pl.get("word") if isinstance(pl.get("word"), str) else None}}
+
+
+def coord_ready(ctx, step, item):
+    names = list(ctx.get("ready") or [])
+    return {"ready": names, "facts": {"ready": ", ".join(names), "several": len(names) > 1}}
+
+
+def coord_record(ctx, step, item):
+    tie = ctx["bag"].get("coord.tie") or {}
+    return {"said": "%s goes first: %s" % (tie.get("answer"), tie.get("why") or "by the table")}
+
+
+def p_coord_tie(ctx, step, item):
+    ready_now = ctx["bag"]["coord.ready"]["ready"]
+    what = "; ".join("%s: %s" % (n, (engine_def(n) or {}).get("description") or "") for n in ready_now)
+    waiting = "; ".join(a["text"] for a in W.asks(ctx["ref"]) if a["status"] == "pending") or "nothing"
+    return ("Several functions of the department are ready at once, and one runs at a time. Say who goes first.\n"
+            "READY NOW: %s\nWHAT EACH DOES: %s\nCOORDINATION'S TABLE, THE USUAL ORDER: %s\nWAITING FOR THE OWNER: %s\n\n"
+            "Return ONLY a JSON object: {\"answer\": \"one of the ready names\", \"why\": \"one line\"}."
+            % (", ".join(ready_now), what, ", ".join(ctx["table"]["functions"]), waiting))
+
+
+def d_coord_tie(ctx, step, item):
+    ready_now = ctx["bag"]["coord.ready"]["ready"]
+    first = next((n for n in ctx["table"]["functions"] if n in ready_now), ready_now[0] if ready_now else None)
+    return {"answer": first, "why": "by Coordination's table"}
+
+
+def _tie(ctx, ready_now):
+    """Coordination's own unit, when several functions are ready at once: list who is ready (code), say who goes first
+    (its agent, until the step hardens to the table), record the pick (code). The name, or None to keep the table's
+    order. Each step is a row, so the owner sees Coordination's agent at work."""
+    steps = list((engine_def("Coordination") or {}).get("steps") or [])
+    if not steps or not ready_now:
+        return None
+    n = len(board(ctx["ref"]))
+    ctx2 = dict(ctx)
+    ctx2.update({"slot": "Coordination@tie.%d" % n, "run": None, "inp": {"v": n}, "post": None, "bag": {}, "how": {},
+                 "spend": {"calls": 0, "usd": 0.0}, "ready": list(ready_now)})
+    for s in steps:
+        row, out = run_step(ctx2, s, None)
+        if row.get("status") != "ok" or not isinstance(out, dict):
+            return None
+        ctx2["bag"][s["id"]] = out
+    pick = (ctx2["bag"].get("coord.tie") or {}).get("answer")
+    return pick if pick in ready_now else None
+
+
+def setup_read(ctx, step, item):
+    words = W.read_files(ctx["ref"], "Request", ctx["inp"]["v"]).get("request.md", "").strip()
+    return {"words": words, "facts": {"asked": bool(words), "kinds": ", ".join(k for k in W.KINDS if k != "root")}}
+
+
+def p_setup_shape(ctx, step, item):
+    got = ctx["bag"]["setup.read"]
+    org = (ctx["dept"].get("org") or {}).get("name") or ctx["dept"].get("name")
+    return ("The owner of %s asks Root for a department. Shape it: a short name (the organisation's name and what it is, like "
+            "\"%s Website\"), its kind from the Library, and its goal in one or two sentences in the owner's own words.\n"
+            "THE OWNER'S WORDS: %s\nKINDS IN THE LIBRARY: %s\n\nReturn ONLY a JSON object: {\"name\": str, \"kind\": str, \"goal\": str}."
+            % (org, org, got["words"], got["facts"]["kinds"]))
+
+
+def d_setup_shape(ctx, step, item):
+    got = ctx["bag"]["setup.read"]
+    org = (ctx["dept"].get("org") or {}).get("name") or ctx["dept"].get("name")
+    return {"name": "%s Website" % org, "kind": "website", "goal": got["words"]}
+
+
+def setup_make(ctx, step, item):
+    """Root makes the department: under itself, with its charter, its functions' templates, its record and its goal."""
+    shape = ctx["bag"]["setup.shape"]
+    import founding
+    return founding.spawn(ctx["ref"], shape["name"], shape["kind"], shape["goal"], owner=ctx["dept"].get("owner") or "the owner")
+
+
+def setup_file(ctx, step, item):
+    made = ctx["bag"]["setup.make"]
+    text = "# %s\n\nref: %s\nkind: %s\ngoal: %s\nset up by Root %s\n" % (made["name"], made["ref"], made["kind"], made["goal"],
+                                                                         "now" if made.get("created") else "earlier")
+    return {"files": {"department.md": text}, "check": {"ok": True, "notes": ["%s is set up and On" % made["name"]]}}
+
+
+def c_department_is_shaped(ctx, step, item, out):
+    ok = (isinstance(out.get("name"), str) and out["name"].strip() and out.get("kind") in W.KINDS and out.get("kind") != "root"
+          and isinstance(out.get("goal"), str) and out["goal"].strip())
+    return _verdict(ok, "a name, a kind the Library has, and a goal", "no name, a kind the Library lacks, or no goal")
+
+
+def c_department_is_made(ctx, step, item, out):
+    """The child exists under Root, on the runtime, and its goal reached it: the child's own Identity files the goal when
+    the child runs, which is its business, not Root's."""
+    d = W.dept(out.get("ref")) if isinstance(out, dict) and out.get("ref") else None
+    ok = bool(d) and d.get("runtime") == 2 and d.get("parent") == ctx["ref"] and bool(W.requests(out["ref"]))
+    return _verdict(ok, "the department exists under Root, on the runtime, and has its goal", "the department was not made under Root")
+
+
 CODE = {"plan_read": plan_read, "plan_fit": plan_fit, "plan_file": plan_file, "write_list": write_list, "write_file": write_file,
+        "hear": hear, "coord_ready": coord_ready, "coord_record": coord_record,
+        "setup_read": setup_read, "setup_make": setup_make, "setup_file": setup_file,
         "check_build": check_build, "publish_copy": publish_copy, "identity_gate": identity_gate,
         "priority_envelope": priority_envelope, "coord_chain": coord_chain, "coord_heard": coord_heard,
         "coord_busy": coord_busy, "coord_pick": coord_pick, "coord_edge": coord_edge, "coord_verdict": coord_verdict,
@@ -1932,7 +2087,7 @@ def _record_lines(ref):
     live = W.latest(ref, "Live site")
     out = ["pages in the plan: " + ", ".join(str(p.get("title")) for p in _pages(ref)) if _pages(ref) else "no plan yet",
            "the site is live, at its version %d" % live["v"] if live else "the site is not live yet"]
-    out += ["%s has %d versions" % (a, len(W.versions(ref, a))) for a in W.ARTIFACTS]
+    out += ["%s has %d versions" % (a, len(W.versions(ref, a))) for a in W.artifacts_of(W.dept(ref))]
     out += ["waiting for the owner: " + a["text"] for a in W.asks(ref) if a["status"] == "pending"]
     return out
 
@@ -1999,8 +2154,10 @@ def d_adapt_shape(ctx, step, item):
 
 PROMPT = {"identity_recognise": p_identity_recognise, "identity_answer": p_identity_answer, "identity_rule": p_identity_rule,
           "identity_weigh": p_identity_weigh, "adapt_shape": p_adapt_shape, "plan_pages": p_plan_pages, "write_page": p_write_page, "identity_take": p_identity_take,
-          "identity_gate_soft": p_identity_gate, "priority_bargain": p_priority_bargain, "audit_judge": p_audit_judge}
+          "identity_gate_soft": p_identity_gate, "priority_bargain": p_priority_bargain, "audit_judge": p_audit_judge,
+          "coord_tie": p_coord_tie, "setup_shape": p_setup_shape}
 DRAFT = {"identity_recognise_draft": d_identity_recognise, "identity_answer_draft": d_identity_answer,
+         "coord_tie_draft": d_coord_tie, "setup_shape_draft": d_setup_shape,
          "identity_rule_draft": d_identity_rule, "identity_weigh_draft": d_identity_weigh, "adapt_shape_draft": d_adapt_shape,
          "plan_pages_draft": d_plan_pages, "write_page_draft": d_write_page, "identity_take_draft": d_identity_take,
          "identity_gate_draft": d_identity_gate, "priority_bargain_draft": d_priority_bargain, "audit_judge_draft": d_audit_judge}
@@ -2171,7 +2328,8 @@ CHECK = {"journey_is_known": c_journey_is_known, "answer_names_its_source": c_an
          "names_who_goes_first": c_names_who_goes_first,
          "facts_are_closed": c_facts_are_closed, "said_what_it_did": c_said_what_it_did, "counted_the_rows": c_counted_the_rows,
          "moves_are_known": c_moves_are_known, "picked_a_sample": c_picked_a_sample, "has_a_verdict": c_has_a_verdict,
-         "findings_are_rows": c_findings_are_rows}
+         "findings_are_rows": c_findings_are_rows,
+         "department_is_shaped": c_department_is_shaped, "department_is_made": c_department_is_made}
 
 
 # ---- what the screens read -----------------------------------------------------------------------------------------
@@ -2218,9 +2376,10 @@ def steps_view(ref, name):
                                       for act, dst in sorted(acts.items())]}
     if name == "Priority":
         # the limits, engine by engine: born from Priority's template, set by the owner on this card
-        envs = (W.dept(ref) or {}).get("envelopes") or {}
+        d = W.dept(ref) or {}
+        envs = d.get("envelopes") or {}
         view["limits"] = []
-        for n in [x[0] for x in W.ENGINES] + list(W.SYSTEMS):
+        for n in [x[0] for x in W.engines_of(d)] + list(W.SYSTEMS):
             env = envs.get(n) or W.ENVELOPE
             calls, usd = W._today_spend(ref, n)
             view["limits"].append({"engine": n, "calls": int(env.get("calls", 0)), "usd": float(env.get("usd", 0.0)),

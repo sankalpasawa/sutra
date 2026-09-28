@@ -28,6 +28,7 @@ GOAL = ("A website for City Care Hospital, a 200-bed multi-speciality hospital i
 def W(tmp_path, monkeypatch):
     monkeypatch.setenv("SUTRA_NATIVE_DEPT_HOME", str(tmp_path / "native"))
     monkeypatch.setenv("SUTRA_WEBSITE_OFFLINE", "1")
+    monkeypatch.setenv("SUTRA_ENGINE_RUNTIME", "1")       # this suite is the first build's floor: a department born the old way
     import website_dept
     importlib.reload(website_dept)
     return website_dept
@@ -154,39 +155,51 @@ def test_the_trace_of_the_live_site_reaches_the_owners_words(W):
     assert chain[-1]["text"].startswith("A website for City Care Hospital")
 
 
-def test_found_gives_an_org_a_root_and_a_website_department_with_library_templates(W, tmp_path, monkeypatch):
+def test_found_gives_an_org_its_one_root_and_root_sets_up_the_website_department_the_owner_asks_for(W, tmp_path, monkeypatch):
+    """Founding is organic (founder, 2026-09-28): the organisation and its one Root, On; Root sets up the department the
+    owner asks for, after the owner's stamp, with the Library's templates picked. Offline: every soft step runs its draft."""
     monkeypatch.setenv("SUTRA_UI_PROPOSALS", str(tmp_path / "proposals"))
-    import sys
-    from pathlib import Path
-    lib = str(Path(__file__).resolve().parents[1] / "lib")
-    if lib not in sys.path:
-        sys.path.insert(0, lib)
+    monkeypatch.delenv("SUTRA_ENGINE_RUNTIME", raising=False)          # founding is never the old way
+    import founding
     import placement_engine as E
     importlib.reload(E)
     import org2_apply
     importlib.reload(org2_apply)
+    importlib.reload(founding)
     import website_api
     importlib.reload(website_api)
+    import engine_runtime
+    importlib.reload(engine_runtime)
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
     app = FastAPI()
     app.include_router(website_api.router)
     c = TestClient(app)
-    out = c.post("/api/native/found", json={"org": "City Care Hospital", "owner": "Sankalp"}).json()
+    out = c.post("/api/native/found", json={"org": "City Care Hospital", "owner": "Sankalp", "first": GOAL}).json()
     domains = E.load_domains()
     assert domains[out["org"]]["name"] == "City Care Hospital"
     assert domains[out["root"]]["name"] == "Root" and domains[out["root"]]["parent_ref"] == out["org"]
-    assert domains[out["ref"]]["parent_ref"] == out["root"]
-    import function_templates as FT
-    assert set(FT.picked(out["ref"]).values()) == {f + "/product-build" for f in FT.FUNCTIONS}
-    m = c.get("/api/native/%s/map" % out["ref"]).json()
-    assert m["has_goal"] is False and len(m["systems"]) == 5 and len(m["engines"]) == 4
+    assert "ref" not in out, "nothing founded the old way: departments are Root's to spawn"
+    root = out["root"]
+    assert W.dept(root)["kind"] == "root" and W.dept(root)["runtime"] == 2
+    m = c.get("/api/native/%s/map" % root).json()
+    assert m["kind"] == "root" and m["has_goal"] is True and len(m["systems"]) == 5 and [e["name"] for e in m["engines"]] == ["Setup"]
     again = c.post("/api/native/found", json={"org": "City Care Hospital"}).json()
-    assert again["ref"] == out["ref"] and again["created"] is False
-    assert c.post("/api/native/%s/goal" % out["ref"], json={"text": GOAL}).json()["ok"] is True
-    assert W.run_until_idle(out["ref"]) == 3
-    assert c.get("/api/native/%s/preview/build/1/index.html" % out["ref"]).status_code == 200
+    assert again["root"] == root and again["created"] is False, "one Root for one structure"
+    W.run_until_idle(root, limit=200)
+    a = next(x for x in W.asks(root) if x["kind"] == "setup" and x["status"] == "pending")
+    assert "Set up a department" in a["text"], "Root's rule: a new department is stamped by the owner"
+    assert c.post("/api/native/%s/asks/%s" % (root, a["id"]), json={"approve": True}).json()["status"] == "stamped"
+    W.run_until_idle(root, limit=200)
+    child = next(d for d in W.list_depts() if d.get("parent") == root)
+    assert child["kind"] == "website" and child["runtime"] == 2 and domains[child["ref"]]["parent_ref"] == root if child["ref"] in domains else True
+    import function_templates as FT
+    assert set(FT.picked(child["ref"]).values()) == {f + "/product-build" for f in FT.FUNCTIONS}
+    m = c.get("/api/native/%s/map" % child["ref"]).json()
+    assert m["has_goal"] is True and len(m["systems"]) == 5 and len(m["engines"]) == 4
+    W.run_until_idle(child["ref"], limit=200)
+    assert any(x["kind"] == "publish" for x in W.asks(child["ref"])), "the child ran its goal and asks before its first publish"
 
 
 if __name__ == "__main__":

@@ -353,11 +353,11 @@ test("W9: the screen prints no count and no path at rest", async () => {
 /* ── W10 ────────────────────────────────────────────────────────────────── */
 test("W10: the Edit menu carries the command, and panel.html loads the script before the tail", () => {
   const c = fresh();
-  assert.ok(/data-wbfound="open">New website organisation…<\/button>/.test(c.o2MenuHtml(WEB, c.o2Data())));
+  assert.ok(/data-wbfound="open">New organisation…<\/button>/.test(c.o2MenuHtml(WEB, c.o2Data())));
   const a = panelHtml.indexOf("/static/js/22-website.js"), b = panelHtml.indexOf("/static/js/09-tail.js"), d = panelHtml.indexOf("/static/js/20-dept.js");
   assert.ok(d >= 0 && a > d && b > a);
 });
-test("W10b: the command founds the organisation, gives the goal, and opens its department", async () => {
+test("W10b: the command founds the organisation with its Root, hands Root the first department's words, and opens Root", async () => {
   const c = fresh();
   click(c, { wbfound: "open" }, false);
   (c.document.listeners.input || []).forEach(fn => fn({ target: { dataset: { wbfield: "org" }, value: "City Care Hospital" } }));
@@ -365,10 +365,9 @@ test("W10b: the command founds the organisation, gives the goal, and opens its d
   click(c, { wbfound: "go" }, false);
   for (let i = 0; i < 8; i++) await sleep();
   const posts = JSON.parse(JSON.stringify(c.calls.apiPost));
-  assert.deepStrictEqual(posts.slice(0, 2), [
-    { p: "/api/native/found", body: { org: "City Care Hospital", dept: "Website" } },
-    { p: "/api/native/r3/goal", body: { text: "A website for the hospital" } }]);
-  assert.strictEqual(vm.runInContext("o2S().sel", c), "r3");
+  assert.deepStrictEqual(posts.slice(0, 1), [
+    { p: "/api/native/found", body: { org: "City Care Hospital", first: "A website for the hospital" } }], "one route, nothing founded the old way");
+  assert.strictEqual(vm.runInContext("o2S().sel", c), "r2", "Root is where the person goes on");
 });
 
 /* ── W11 ────────────────────────────────────────────────────────────────── */
@@ -604,6 +603,23 @@ test("W21: Priority's card carries the limits, born from its template, and Set p
     "only what was typed is sent, for that engine");
   const old = await opened();
   assert.ok(!/<h3>Limits<\/h3>/.test(await fnCard(old, "priority")), "a department of the first build keeps its card");
+});
+
+test("W22: a Root is a department on the screen: its one engine, Setup; Say asks Root for a department; no goal box; the app", async () => {
+  const m = rtMap();
+  m.kind = "root"; m.say = "Ask Root for a department: what it is for"; m.has_goal = true; m.live = false;
+  m.engines = [{ name: "Setup", reads: "Request", writes: "Department", runs_as: "model", slot: "after a new Request", state: "Idle",
+                 envelope: { calls: 240, usd: 6, used_calls: 0, used_usd: 0 }, window_min: 15, last: null }];
+  m.artifacts = [{ name: "Request", slug: "request", versions: 1, latest: null }, { name: "Department", slug: "department", versions: 0, latest: null }];
+  const c = await opened({ map: m });
+  view(c); await sleep(); await sleep();
+  const html = view(c);
+  assert.ok(/data-wbengine="Setup"/.test(html) && !/data-wbengine="Plan"/.test(html), "Root's line is Setup alone");
+  assert.ok(/placeholder="Ask Root for a department: what it is for"/.test(html), "Say speaks to Root");
+  assert.ok(!/What is this website for\?/.test(html), "a Root is born with its goal: no goal box");
+  assert.ok(!/Open the live site/.test(html), "nothing to open live");
+  const lst = c.dpListHtml(WEB, {}, null, null);
+  assert.ok(/data-wbengine="Setup"/.test(lst) && /Human Sutra/.test(lst) && /data-wbart="request"/.test(lst), "the list: Setup, the Request filed, the app");
 });
 
 Promise.all(pending).then(() => {

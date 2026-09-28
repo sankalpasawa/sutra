@@ -14,8 +14,8 @@
                     it also draws the Board, and every engine and function as
                     its steps, each on its rung
      wbMenuItem()   one line in the Org screen's Edit menu: the command that
-                    founds an organisation, its root department and its
-                    website department
+                    founds an organisation with its one Root; Root then sets
+                    up every department the person asks it for
 
    Every other department is untouched: both list and viewer hooks answer null
    unless the selected department has a website record.
@@ -238,7 +238,7 @@ function wbGoalHtml(n, m){
    the five journeys they are (a task, a question, a rule, feedback, an idea),
    so the screen never asks the owner to choose. */
 function wbAskCard(n, m){
-  return wbRt(m) ? dpCard("Say", wbAskBox(n.ref, "ask", "A task, a question, a rule, feedback or an idea", "data-wbask", "Send"))
+  return wbRt(m) ? dpCard("Say", wbAskBox(n.ref, "ask", m.say || "A task, a question, a rule, feedback or an idea", "data-wbask", "Send"))
                  : dpCard("Ask", wbAskBox(n.ref, "ask", "Ask for a page or a change", "data-wbask", "Ask"));
 }
 /* What the department said back to its owner, newest first: every exchange is
@@ -684,18 +684,22 @@ function wbTileMark(ref){
     (asks ? wbDot("") : "") + `</span>`;
 }
 
-/* ── the command: found an organisation with a website department ─────────── */
+/* ── the command: found an organisation, with its one Root ───────────────────
+   Founder, 2026-09-28: "root can always spawn off new departments. There will be
+   one root for one organizational structure." So founding makes the
+   organisation and its Root, On, and nothing else; words for the first
+   department go to Root as its first request, and Root asks the owner. */
 function wbMenuItem(){
-  return `<button type="button" role="menuitem" data-wbfound="open">New website organisation…</button>`;
+  return `<button type="button" role="menuitem" data-wbfound="open">New organisation…</button>`;
 }
 function wbFoundHtml(){
   const f = wbS().found;
   if (!f) return "";
-  return `<div class="wbscrim wb" data-wbfound="close"></div><div class="o2sheet wbsheet wb" role="dialog" aria-label="New website organisation">` +
-    `<h4>New website organisation</h4>` +
+  return `<div class="wbscrim wb" data-wbfound="close"></div><div class="o2sheet wbsheet wb" role="dialog" aria-label="New organisation">` +
+    `<h4>New organisation</h4>` +
     `<label for="wbforg">Organisation</label><input id="wbforg" data-wbfield="org" value="${wbEsc(f.org)}" placeholder="City Care Hospital" autocomplete="off">` +
-    `<label for="wbfgoal">Goal</label><textarea id="wbfgoal" data-wbfield="goal" rows="3" placeholder="What is this website for?">${wbEsc(f.goal)}</textarea>` +
-    `<div class="o2acts2">${wbBtn(f.busy ? "Starting" : "Start", `data-wbfound="go"${f.busy ? " disabled" : ""}`, "dpstamp")}` +
+    `<label for="wbfgoal">The first department</label><textarea id="wbfgoal" data-wbfield="goal" rows="3" placeholder="What should Root set up first? A website: what it is for">${wbEsc(f.goal)}</textarea>` +
+    `<div class="o2acts2">${wbBtn(f.busy ? "Founding" : "Found", `data-wbfound="go"${f.busy ? " disabled" : ""}`, "dpstamp")}` +
     wbBtn("Cancel", `data-wbfound="close"`) + (f.error ? `<span class="o2err">${wbEsc(f.error)}</span>` : "") + `</div></div>`;
 }
 function wbFoundPaint(){
@@ -711,18 +715,20 @@ async function wbFoundGo(){
   if (!f.org.trim()){ f.error = "Name the organisation"; wbFoundPaint(); return; }
   f.busy = true; f.error = null; wbFoundPaint();
   try {
-    const out = await apiPost("/api/native/found", { org: f.org.trim(), dept: "Website" });
-    if (f.goal.trim()) await apiPost(wbUrl(out.ref, "goal"), { text: f.goal.trim() });
+    const body = { org: f.org.trim() };
+    if (f.goal.trim()) body.first = f.goal.trim();
+    const out = await apiPost("/api/native/found", body);
     st.found = null; st.refs = null; wbFoundPaint();
     await wbLoadRefs();
     if (typeof loadOrg2 === "function") await loadOrg2(true);
     if (typeof o2S === "function"){
       const o = o2S();
-      if (o.expanded){ [out.org, out.root].forEach(r => o.expanded.add(r)); }
+      if (o.expanded){ [out.org].forEach(r => o.expanded.add(r)); }
     }
-    st.tab[out.ref] = "map";
-    if (typeof o2Select === "function") o2Select(out.ref);
-    wbLoadMap(out.ref, true);
+    /* Root is where the person goes on: its ask for the first department is on its Map */
+    st.tab[out.root] = "map";
+    if (typeof o2Select === "function") o2Select(out.root);
+    wbLoadMap(out.root, true);
   } catch (e) {
     f.busy = false; f.error = (e && e.message) || String(e); wbFoundPaint();
   }
