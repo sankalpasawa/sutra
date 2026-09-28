@@ -1,6 +1,20 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-28
+## 2.306.11 (2026-09-29)
+
+## Sutra Desktop: what the person found on 2.306.10, fixed
+
+Three sites were walked end to end on the Beta by clicks alone (Parasthi Hospital, Namrati, Kriti Organics) and every miss became a fix with a test:
+
+- a rule the person stamped is a check the line runs: a build that breaks it never goes live, is sent back with the finding (twice at most), and the person is told
+- the panel never waits on the model inside a read: no more 25-second stalls around a publish
+- the app opens on Org, the one-screen Org, whatever old row this Mac remembered
+- a department Root has just made wears its own view at once, without a reload
+- a stamp inside a department, a Stop and a Start are turns of the chat; the working line says "page 3 of 8" and is gone when the department is Off
+- the department asks for what it lacks in the person's words; an answer to its own question is taken as the facts, never as a rule; what reaches outside the site is named (an email, a phone, an address)
+- Plan says which pages it planned; the goal is said once on the whole chat; the chat keeps its place across a paint and moves only when a turn lands; Root's box invites words for a department that exists
+
 ## 2.306.10 (2026-09-28)
 
 ## Sutra Desktop: what the first Human Simulation run found, fixed
