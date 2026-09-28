@@ -1,0 +1,10 @@
+{
+ "goal": "namrati",
+ "person": "founder",
+ "panel": "http://127.0.0.1:8331",
+ "app_version": "2.306.10",
+ "started": "2026-09-28T22:03:00+0530",
+ "ledger": "ledger.jsonl",
+ "findings": "findings.jsonl",
+ "report": "report.md"
+}
