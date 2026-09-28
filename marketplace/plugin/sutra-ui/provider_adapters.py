@@ -1016,6 +1016,9 @@ class ClaudeAdapter(ProviderAdapter):
         """One stream-json frame on stdin, then demux the answer. The write may
         raise if the process died between the liveness check and here; the
         socket layer owns that policy."""
+        # so the demux can tell this turn's own echo from a message typed
+        # while it runs (SessionRuntime.sent_ahead)
+        rt.turn_own = str(msg or "").strip()
         await rt.send_user_frame(msg)
         return await rt.demux_turn(emit, session_id)
 

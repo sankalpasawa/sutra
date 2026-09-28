@@ -6536,6 +6536,62 @@ async def ws_chat(ws: WebSocket):
     rt = adapter.new_runtime()
     inbox = asyncio.Queue()
     reader_dead = asyncio.Event()
+    # ---- a second message while the reply runs ----------------------------
+    # Claude only (one persistent stream-json process). The Claude Code CLI
+    # does not make a second prompt wait for the first answer: it hands it to
+    # the work under way, which takes it in at its next step. So a message
+    # arriving while an operator turn streams is written to the process now
+    # (SessionRuntime.sent_ahead) instead of waiting in the inbox. Anything
+    # the main loop would handle differently -- another model or option, a
+    # provider switch, Shadow's lanes, older messages still waiting -- keeps
+    # the ordinary queue.
+    _joins = getattr(adapter, "turn_style", "") == "stream_input"
+    live_turn = None
+
+    def _why_not_join(payload):
+        """None when this message can go straight to the running turn, else
+        the reason it waits -- said to the pane, so a message that queues is
+        never a mystery. "" means no turn is running: nothing to explain."""
+        if not _joins or live_turn is None:
+            return ""
+        if rt.stopped or not rt.alive:
+            return "the running reply is ending"
+        if seed_switch:
+            return "this chat is switching provider"
+        if not inbox.empty():
+            return "an earlier message is still waiting"
+        msg = payload.get("message")
+        if (not isinstance(msg, str) or not msg.strip()
+                or payload.get("_source") or payload.get("_replay")):
+            return ""
+        if providers.shadow_enabled():
+            try:
+                if shadow_runner.driving(session_id or payload.get("resume")):
+                    return "Shadow is working in this chat"
+            except Exception:   # noqa: BLE001 -- the main loop decides then
+                return "Shadow's state could not be read"
+        try:
+            key = tuple(adapter.spawn_args(
+                agent_bin, msg, perm_mode, workdir,
+                model=(providers.clean_model(payload.get("model"), active_id)
+                       or providers.stored_model(active_id)),
+                session_id=session_id, opts=payload.get("opts"),
+                settings=provider_switches))
+        except Exception:   # noqa: BLE001
+            return "its options could not be checked"
+        if key != rt.key:
+            # model / effort / budget are spawn-time flags: the running
+            # process cannot take them, so this one runs on a fresh one
+            return "it asks for a different model or options"
+        return None
+
+    async def _kill_if_unheard(turn, grace=15.0):
+        """Stop's backstop: an interrupt that has not closed the reply within
+        `grace` seconds (a hung tool, a wedged process) becomes the old kill,
+        so Stop can never do nothing."""
+        await asyncio.sleep(grace)
+        if rt.soft_stop and live_turn is turn and rt.alive:
+            rt.stop()
 
     async def _reader():
         try:
@@ -6548,11 +6604,53 @@ async def ws_chat(ws: WebSocket):
                 if not isinstance(payload, dict):
                     payload = {"message": str(payload)}
                 if payload.get("type") == "stop":
-                    # Set the flag BEFORE killing: the stdout loop can end between
-                    # the signal and the assignment, and would then report the
+                    # STOP IS ESC (founder 2026-09-28). On Claude it ends the
+                    # reply and keeps the process, the way Esc does in Claude
+                    # Code: no cold start, and a message typed during the reply
+                    # (already on stdin) runs straight after. Measured on claude
+                    # 2.1.283: the reply closes within ~2-4s.
+                    if (_joins and live_turn is not None and rt.alive
+                            and not rt.stopped and not rt.soft_stop):
+                        rt.soft_stop = True
+                        try:
+                            await rt.send_interrupt()
+                        except Exception:   # noqa: BLE001 -- process gone
+                            rt.soft_stop = False
+                        else:
+                            asyncio.create_task(_kill_if_unheard(live_turn))
+                            continue
+                    # Everything else -- another provider, no reply running,
+                    # the interrupt unwritable -- ends the process. Set the
+                    # flag BEFORE killing: the stdout loop can end between the
+                    # signal and the assignment, and would then report the
                     # operator's own interrupt as a crash.
                     rt.stop()
                     continue
+                why = _why_not_join(payload)
+                if why is None:
+                    if session_id and providers.shadow_enabled():
+                        # the same R22 takeover the main loop applies
+                        try:
+                            if shadow_runner.founder_takeover(session_id) is not None:
+                                rt.turn_queue.clear_shadow()
+                        except Exception:
+                            pass
+                    payload["_sent_to"] = rt.proc
+                    rt.sent_ahead.append(payload)
+                    try:
+                        await rt.send_user_frame(payload["message"])
+                    except Exception:   # noqa: BLE001 -- process gone: queue it
+                        rt.sent_ahead = [p for p in rt.sent_ahead if p is not payload]
+                        payload.pop("_sent_to", None)
+                        why = "the running reply is ending"
+                    else:
+                        # claude HAS it: it reads it at its next step, or
+                        # right after this reply. The pane stops saying
+                        # "queued" about a message that is not in a queue.
+                        await ws.send_json({"type": "handed"})
+                        continue
+                if why:
+                    await ws.send_json({"type": "queued", "reason": why})
                 await inbox.put(payload)
         except (WebSocketDisconnect, RuntimeError):
             pass
@@ -6574,6 +6672,14 @@ async def ws_chat(ws: WebSocket):
                 # this text, and re-reading the inbox here would reorder it
                 # behind anything they typed while the failed turn was running.
                 payload, pending = pending, None
+            elif _joins and rt.sent_ahead:
+                # Typed during the last reply and handed to claude then, but
+                # not folded into it: claude runs it as its own turn now, so
+                # read that turn. A process that has gone since (stop, crash,
+                # a retry's respawn) never ran it -- it is sent the ordinary way.
+                payload = rt.sent_ahead.pop(0)
+                _to = payload.pop("_sent_to", None)
+                payload["_already_sent"] = rt.alive and _to is rt.proc
             elif inbox.empty() and len(rt.turn_queue) > 0:
                 # S37: a queued shadow turn runs ONLY at a boundary and ONLY
                 # when no operator frame is waiting -- the founder never queues
@@ -6622,7 +6728,8 @@ async def ws_chat(ws: WebSocket):
             # from the rail arrives with `resume` set and the socket's
             # session_id still None on its first message (see the chat-id
             # recovery below), which is precisely when the old code spawned.
-            if payload.get("_source") != "shadow" and providers.shadow_enabled():
+            if (payload.get("_source") != "shadow" and providers.shadow_enabled()
+                    and not payload.get("_already_sent")):   # checked on arrival
                 try:
                     _owned = shadow_runner.driving(
                         session_id or payload.get("resume"))
@@ -6973,7 +7080,12 @@ async def ws_chat(ws: WebSocket):
                     # turns the key resolved at connect into its env var.
                     spawn_env = adapter.spawn_env(deepseek_key)
                     try:
-                        proc = await rt.spawn(args, workdir, spawn_key, env=spawn_env)
+                        # --replay-user-messages: claude echoes each message as
+                        # it takes it in (see _why_not_join). Spawn argv only; the
+                        # reuse key is unchanged.
+                        proc = await rt.spawn(
+                            list(args) + (["--replay-user-messages"] if _joins else []),
+                            workdir, spawn_key, env=spawn_env)
                     except OSError as e:
                         # Real cause, verbatim -- a dead socket taught the operator nothing.
                         # And when the death IS the child closing stdout ("ACP
@@ -7095,10 +7207,25 @@ async def ws_chat(ws: WebSocket):
             # which is why everything below this point -- stderr/rc reap,
             # stop/failed/done handling, the chat bookkeeping -- was already
             # provider-neutral and needs no arm of its own.
+            #
+            # A message already on claude's stdin (sent while the last reply
+            # ran, see _why_not_join) is only READ here: writing it again would run
+            # it twice. `live_turn` opens joining for this turn; nothing awaits
+            # between it and run_turn's write, so a joined message can never
+            # reach stdin ahead of the one it joins.
+            _sent = bool(payload.pop("_already_sent", False)) and alive
+            if _joins and payload.get("_source") != "shadow":
+                live_turn = payload
             try:
-                (session_id, got_text, got_result,
-                 result_error, eof) = await adapter.run_turn(
-                     rt, msg, ws.send_json, session_id)
+                if _sent:
+                    rt.turn_own = msg.strip()
+                    (session_id, got_text, got_result,
+                     result_error, eof) = await rt.demux_turn(
+                         ws.send_json, session_id)
+                else:
+                    (session_id, got_text, got_result,
+                     result_error, eof) = await adapter.run_turn(
+                         rt, msg, ws.send_json, session_id)
             except (BrokenPipeError, ConnectionResetError, AttributeError) as e:
                 # The process died between the liveness check and the write.
                 # Claude's arm always handled this; Codex's prompt_turn handles
@@ -7110,6 +7237,12 @@ async def ws_chat(ws: WebSocket):
                 await ws.send_json({"type": "error", "detail":
                     "the agent process closed before the message was sent (%s)" % e})
                 continue
+            finally:
+                live_turn = None
+            # the messages claude folded into this turn, for the chat record
+            _absorbed = []
+            if _joins:
+                _absorbed, rt.absorbed = rt.absorbed, []
             # S23: now that the session id is known, make this runtime
             # discoverable (idempotent; same id + same rt every turn).
             register_runtime(session_id, rt)
@@ -7160,6 +7293,10 @@ async def ws_chat(ws: WebSocket):
                     if rec is not None:
                         chat_store.append_turn(
                             rec, "user", [chat_store.block_text(operator_msg)])
+                        for _j in _absorbed:
+                            chat_store.append_turn(
+                                rec, "user",
+                                [chat_store.block_text(_j.get("message", ""))])
                 except Exception:
                     # Bookkeeping must never take down a turn that worked. The
                     # cost of losing it is a switch that is not recorded, which
@@ -7194,6 +7331,20 @@ async def ws_chat(ws: WebSocket):
                     rc = -1
                 rt.clear()
 
+            if rt.soft_stop:
+                # Stop (Esc) cut this reply short on purpose. Its error result
+                # is the interrupt landing, not a failure -- and the failure
+                # branch would kill the process and re-send any message that
+                # is already on its stdin. The turn ends as stopped, the
+                # process lives, and the loop top reads a handed message's
+                # turn. An eof is a real death and takes the normal path, and a
+                # reply that finished before the interrupt landed already said
+                # `done` -- it is not relabelled.
+                rt.soft_stop = False
+                if not eof and result_error is not None:
+                    await ws.send_json({"type": "stopped", "session": session_id,
+                                        "soft": True})
+                    continue
             if rt.stopped:
                 # SIGTERM makes rc non-zero, which the branch below would report as
                 # "claude exited -15" -- i.e. blaming the tool for the operator's own
@@ -7201,8 +7352,10 @@ async def ws_chat(ws: WebSocket):
                 # The session id is KEPT: the thread is still resumable, the operator
                 # simply cut this turn short.
                 #
-                # A stop now ends the whole PERSISTENT process, because that is
-                # the only way to interrupt a turn in flight. Clear it so the
+                # This stop ENDED the process: a provider with no in-process
+                # interrupt, or a Claude interrupt that went unheard for 15s
+                # (_kill_if_unheard; a heard one is the soft_stop branch
+                # above). Clear it so the
                 # next message spawns a fresh one -- and because session_id is
                 # kept, that respawn carries --resume and the conversation
                 # continues where it was cut.
@@ -7215,6 +7368,15 @@ async def ws_chat(ws: WebSocket):
             # process has no return code, so a turn fails when it SAID it failed
             # or when the process died before producing a result.
             failed = (result_error is not None) or (eof and not got_result) or (eof and rc != 0)
+            if failed and _joins and rt.sent_ahead and rt.alive:
+                # messages queued inside claude behind a failed turn are sent
+                # afresh (loop top), through the replay/switch path if needed
+                rt.kill_group()
+                try:
+                    await asyncio.wait_for(proc.wait(), 5)
+                except Exception:
+                    pass
+                rt.clear()
             if failed:
                 # stderr carries the specific cause ("No conversation found with
                 # session ID: ..."); the result payload is the fallback.

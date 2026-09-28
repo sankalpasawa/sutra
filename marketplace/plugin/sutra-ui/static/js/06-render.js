@@ -1257,16 +1257,22 @@ function sessionPane(s){
       ${composerModelMenuHtml(s)}
       ${composerAccessMenuHtml(s)}
       ${S.usagePop === s.id ? usagePopHtml() : ""}
+      <!-- Stop sits BESIDE Send while a reply runs, never in its place (founder
+           2026-09-28): swapping Send for Stop left no way to send a second
+           message, and a click aimed at Send killed the reply instead. A message
+           sent now goes to Claude at once and is read at its next step
+           (the "handed" frame). Stop is Esc: it ends the reply, keeps the
+           process, and a message typed meanwhile runs right after. -->
       ${streamingFor(s.id)
         ? `<button class="send stop${stopFresh?" fresh":""}" data-sstop="${s.id}" type="button" aria-label="Stop this turn"
-                   title="Stop — kills the running process">
+                   title="Stop this reply (Esc) — the conversation carries on, and anything you typed runs next">
              <svg width="10" height="10" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
-           </button>`
-        : `<button class="send" data-ssend="${s.id}" type="button"${
+           </button>` : ""}
+      <button class="send" data-ssend="${s.id}" type="button"${
              shadowDriving ? " disabled" : ""} aria-label="${shadowDriving
                ? "Shadow is driving this chat — sending is unavailable" : "Send"}">
              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-           </button>`}
+           </button>
     </div>
     <!-- Nothing under the box (founder 2026-09-21). Access is a row in the ⋯
          menu now; its popover still renders inside .pc above, so it opens

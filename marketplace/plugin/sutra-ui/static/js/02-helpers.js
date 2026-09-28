@@ -499,23 +499,61 @@ function applyProviderRequest(s, text){
   return switchChatProvider(s, want.target) === "busy";
 }
 
+/* A PROVIDER SWITCH ASKED FOR MID-REPLY WAITS; THE MESSAGE IS NEVER DROPPED
+   (founder 2026-09-28). The switch closes the socket, so it cannot happen until
+   the running reply ends -- but the message stays in the chat, marked queued
+   (queueState), and goes on its own the moment the pane is idle. Anything typed
+   after it waits behind it, so what runs is the order the operator typed. */
+function drainHeldTurns(sid){
+  const held = S.heldTurns[sid] || [];
+  const s = S.sessions.find(x => x.id === sid);
+  while (s && held.length){
+    if (applyProviderRequest(s, held[0].text)) break;   /* still mid-reply */
+    askClaude(s, held.shift().turn);
+  }
+  if (s && held.length){
+    S.chatProviderNote[sid] = "Queued — the switch happens and your message "
+      + "sends as soon as the current reply ends.";
+    setTimeout(() => drainHeldTurns(sid), 500);
+  } else delete S.heldTurns[sid];
+  render();
+}
+
 async function submitTurn(text, sessionId, opts){
   /* opts is optional: {pin:{department_ref}} from the Apps seeded chats */
-  const { session, result } = await runTask(text, sessionId, opts);
-  /* BEFORE askClaude, because the socket it would otherwise reuse is the one
-     bound to the OLD provider. After runTask, because the turn has to exist to
-     be rendered against and the classify round-trip is unrelated to this. */
-  if (applyProviderRequest(session, text)){
-    /* Refused for now (a reply is streaming). The turn was created by runTask
-       and would sit forever with no answer, so it is taken back out rather
-       than left as a ghost the operator has to wonder about. */
-    const i = session.turns.indexOf(result);
-    if (i !== -1) session.turns.splice(i, 1);
+  /* IN THE ORDER TYPED. Each message first waits on its own /api/classify
+     round-trip, and those can come back in any order, so a message typed
+     quickly after another could overtake it. Each one waits for the one before
+     it in the same chat to be HANDED OVER -- not answered: askClaude only sends. */
+  const order = S.submitOrder || (S.submitOrder = {}), key = sessionId || "";
+  const before = order[key] || Promise.resolve();
+  let handed;
+  order[key] = new Promise(r => { handed = r; });
+  await before;
+  try {
+    const { session, result } = await runTask(text, sessionId, opts);
+    const held = S.heldTurns && S.heldTurns[session.id];
+    if (held && held.length){ held.push({ text, turn: result }); render(); return; }
+    /* BEFORE askClaude, because the socket it would otherwise reuse is the one
+       bound to the OLD provider. After runTask, because the turn has to exist to
+       be rendered against and the classify round-trip is unrelated to this. */
+    if (applyProviderRequest(session, text)){
+      if (streamingFor(session.id) || sideStreamingFor(session.id)){
+        (S.heldTurns || (S.heldTurns = {}))[session.id] = [{ text, turn: result }];
+        drainHeldTurns(session.id);
+        return;
+      }
+      /* Refused for now (the provider table has not loaded). The turn was created
+         by runTask and would sit forever with no answer, so it is taken back out
+         rather than left as a ghost the operator has to wonder about. */
+      const i = session.turns.indexOf(result);
+      if (i !== -1) session.turns.splice(i, 1);
+      render();
+      return;
+    }
     render();
-    return;
-  }
-  render();
-  askClaude(session, result);
+    askClaude(session, result);
+  } finally { handed(); }
 }
 
 /* ══════════════════════ state ══════════════════════ */
