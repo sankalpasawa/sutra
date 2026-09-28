@@ -321,6 +321,14 @@ if (typeof document !== "undefined" && document.addEventListener){
       if (S.cwdEdit){ S.cwdEdit = null; S.cwdError = null; render(); return; }
       if (S.runOpen){ S.runOpen = null; render(); return; }
       if (S.usagePop){ S.usagePop = null; render(); return; }
+      /* LAST, nothing left to dismiss: Esc stops the focused chat's running
+         reply, as in Claude Code. Same frame as Stop and Cmd/Ctrl+., main
+         channel only -- the side chat keeps its own stop button. */
+      const fp = S.openPanes[S.openPanes.length - 1] || null;
+      if (fp && streamingFor(fp)){
+        const ch = CLAUDE_SOCKETS.get(chanKey(fp, false));
+        if (ch && ch.open){ e.preventDefault(); ch.ws.send(JSON.stringify({type:"stop"})); }
+      }
       return;
     }
     /* Bare keys must never fire while the operator is typing. */

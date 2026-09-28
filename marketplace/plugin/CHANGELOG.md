@@ -1,6 +1,11 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-28
+## 2.306.9 (2026-09-28)
+
+- **A message typed while a Claude reply runs is handed to Claude at once**: it is folded into the running turn at its next step, or runs right after; the pane says "handed", or "queued" with the reason (Shadow driving, other model or options, provider switch, an earlier message waiting). Echoes (`--replay-user-messages`) are matched by order, not text, so an attachment or an expanded slash command cannot leave the pane waiting for a turn that never comes. Only a turn the chat opened takes a handed message; Shadow, mission and helper turns never do.
+- **Stop is Esc**: an interrupt control request ends the reply and keeps the process, so the next message has no cold start; an interrupt unheard for 15s falls back to the old kill. A stopped turn reaches observers as `stopped`, not as an error, so Shadow no longer raises a "hit an error" rescue for the founder's own Stop. Tests: test_midturn_messages 15.
+
 ## 2.306.8 (2026-09-28)
 
 - **An agent answer that names a department is resolved against the register instead of being thrown away on spelling**: across 34 live examples the agent answered with the name ("Website") or the whole listed line ("Learning & Onboarding = dref-ccf...") in 8 of 17 refusals. Resolution is exact and register-backed - an address inside the text wins, otherwise an exact case-insensitive name match on one and only one department; anything ambiguous or unknown is left untouched and still refused, so an agent still cannot mint a department. Tests: test-tier 60.

@@ -2729,20 +2729,35 @@ function turnResponse(t){
   const p = gvPillParts(t);
   const m = gvPillMotion(t, p);
   const pill = p.show ? gvPillHtml(t, p, m) : "";
-  const stateBottom = q
-      ? `<div class="gv-waiting${q.behind ? " gv-queued" : ""}">
+  /* HANDED is not queued: claude already has the message and takes it in at its
+     next step, the way Claude Code does. "Send now" is the same soft stop as
+     Esc, placed on the message: the reply ends, the process stays, this runs
+     at once (founder 2026-09-28: without it the wait read as a queue). */
+  const stateBottom = !q ? ""
+    : q.handed
+      ? `<div class="gv-waiting gv-handed">
+           <span class="gv-wdot" aria-hidden="true"></span><span>Sent to Claude — it reads this at its next step</span>
+           <button class="btn gv-sendnow" type="button" data-sendnow="${esc(q.key)}"
+                   title="Stop the current reply and answer this now (same as Esc). The conversation is kept.">Send now</button>
+         </div>`
+      : `<div class="gv-waiting${q.behind ? " gv-queued" : ""}">
            <span class="gv-wdot" aria-hidden="true"></span><span>${
-             q.behind
+             q.why
+               ? "Queued — " + esc(q.why) + ". Runs when the current reply ends"
+               : q.behind
                ? "Queued" + (q.pos > 1 ? " · " + q.pos + nth(q.pos) + " in line" : "")
-                 + " — sends when the turn above finishes"
+                 + " — picked up automatically, keep typing"
                : "Sent — waiting for the agent to start"
-           }</span></div>`
-      : "";
+           }</span></div>`;
   /* A turn whose saved thread had gone and was re-sent as a new one. Stated,
      because the reply legitimately will not remember the earlier conversation
      and an operator who is not told that reads it as the model forgetting. */
   const replayed = t.retried
     ? `<span class="pill p-mut" title="${esc(t.retried)}">new thread</span>` : "";
+  /* The next message was sent while this reply ran and Claude took it in (the
+     `joined` frame), so the answer carries on under that message. */
+  const joined = t.joinedNext
+    ? `<span class="pill p-mut" title="Your next message arrived while this reply ran. Claude took it in, and the answer continues under it.">continues below</span>` : "";
   /* A backoff is not a hang, and the difference has to be visible or the
      operator kills a turn that was about to succeed. ONLY while the turn is
      live: `retrying` is cleared by no terminal branch. */
@@ -2769,7 +2784,7 @@ function turnResponse(t){
      node instead of re-rendering the pane. gv-in-l: the AI side arrives from
      the left, once (gvPillMotion), never on a rebuild. */
   return `<div class="a${m.enter ? " gv-in-l" : ""}" data-aturn="${esc(t.uid||"")}"
-    >${pill}${replayed}${gvAgentsHtml(t)}${retrying}${body}${err}${stateBottom}</div>`;
+    >${pill}${replayed}${gvAgentsHtml(t)}${retrying}${body}${joined}${err}${stateBottom}</div>`;
 }
 /* ══ names over each side (founder 2026-09-23, version B) ══════════════════════
    "Instead of the line ... I want you and Sutra" and then: "the name is on the

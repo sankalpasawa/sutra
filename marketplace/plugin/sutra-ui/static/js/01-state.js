@@ -1603,10 +1603,29 @@ function queueState(turn){
   for (const ch of CLAUDE_SOCKETS.values()){
     const i = ch.pending.indexOf(turn);
     if (i === -1) continue;
-    return { pos: i + 1, behind: !!ch.turn || i > 0 };
+    return { pos: i + 1, behind: !!ch.turn || i > 0,
+             handed: !!turn.handed, why: turn.queuedWhy || "", key: ch.key };
+  }
+  /* held in the browser behind a mid-reply provider switch (drainHeldTurns) */
+  for (const held of Object.values(S.heldTurns || {})){
+    const i = held.findIndex(h => h.turn === turn);
+    if (i !== -1) return { pos: i + 1, behind: true };
   }
   return null;
 }
+
+/* "Send now" on a message waiting for the running reply: the same soft stop
+   as Esc/Stop (the reply ends, the process stays, this message runs at once),
+   put where the waiting message is. DELEGATED, once: the button lives in a
+   turn block patchTurn() rewrites without a full render. */
+document.addEventListener("click", ev => {
+  const b = ev.target && ev.target.closest && ev.target.closest("[data-sendnow]");
+  if (!b || b.disabled) return;
+  const ch = CLAUDE_SOCKETS.get(b.dataset.sendnow);
+  if (!ch || !ch.open) return;
+  b.disabled = true; b.textContent = "Sending…";
+  ch.ws.send(JSON.stringify({ type: "stop" }));
+});
 
 function claudeChannel(s, side){
   const key = chanKey(s.id, side);
@@ -1864,6 +1883,35 @@ function claudeChannel(s, side){
          bar's branch / ahead / diff numbers are stale the moment it ends. */
       loadRepo(ch.sid, true);
       if (S.prsOpen === ch.sid) loadPrs(ch.sid, true);
+    } else if (f.type === "joined"){
+      /* Claude took the next message typed during this reply INTO the reply,
+         the way the Claude Code CLI does. This turn's part ends here and the
+         rest streams under that message -- the same binding `start` does, with
+         no second `done`: the turn-level numbers arrive once, on the last. */
+      const next = ch.pending.shift();
+      if (next){
+        const prev = ch.turn;
+        if (prev){
+          prev.streaming = false; prev.thinking = false; prev.joinedNext = true;
+          (prev.toolRuns || []).forEach(r=>{ if (r.running){ r.running = false; r.ok = null; } });
+        }
+        ch.turn = next; ch.last = next;
+        next.streaming = true; next._lastTok = Date.now(); next._shown = 0;
+        if (prev && prev.claude_session) next.claude_session = prev.claude_session;
+        renderNow();
+        return;
+      }
+    } else if (f.type === "handed" || f.type === "queued"){
+      /* WHERE A MESSAGE TYPED MID-REPLY WENT, in send order (the server answers
+         each in the order it read them). `handed`: claude has it and reads it at
+         its next step -- not a queue. `queued`: it waits, and the reason says why. */
+      const t = ch.pending.find(p => !p.handed && !p.queuedWhy);
+      if (t){
+        if (f.type === "handed") t.handed = true;
+        else t.queuedWhy = f.reason || "the running reply has to finish first";
+        scheduleRender();
+      }
+      return;
     } else if (f.type === "stopped"){
       /* The operator's own interrupt is NOT an error. It gets its own state so the
          turn is not painted red and blamed on the tool. */
