@@ -172,7 +172,8 @@ def test_found_gives_an_org_its_one_root_and_root_sets_up_the_website_department
     importlib.reload(engine_runtime)
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
+    if not E.active_roots(E.load_domains()):                # one root on this registry, as structure() guards it
+        E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
     app = FastAPI()
     app.include_router(website_api.router)
     c = TestClient(app)
