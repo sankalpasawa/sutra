@@ -221,6 +221,8 @@ function fresh(opts){
   vm.runInContext(dpSrc, ctx);
   vm.runInContext(wbSrc, ctx);
   vm.runInContext(sxSrc, ctx);
+  /* the second design is the default; the first design's claims are pinned to the switch off, v2() sets it on */
+  vm.runInContext("wbS().v2 = false;", ctx);
   return ctx;
 }
 function click(c, ds, inside){
@@ -698,6 +700,23 @@ test("W24: a filed artifact shows its template: what it holds, its checks, who w
   assert.ok(/index\.html, \*\.html/.test(html) && /has_index_html/.test(html) && /Publish/.test(html), "holds, checks, written by");
   assert.ok(/After your stamp/.test(html), "when it counts");
   assert.ok(/Adaptation, Audit/.test(html), "its operations: the engines that run on a new one");
+});
+
+/* W25 (founder, 2026-09-28: "I don't see artifacts in the library"): every artifact a
+   website department files, and the app it runs, is a template on the Library's
+   Artifacts shelf, and the shelf is a Library screen the Org rail lists. */
+test("W25b: every artifact the website kind files has a template on the Library's Artifacts shelf", () => {
+  const dir = path.join(__dirname, "artifact-templates");
+  const names = fs.readdirSync(dir).filter(f => /\.json$/.test(f))
+    .map(f => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")).name);
+  const kinds = JSON.parse(fs.readFileSync(path.join(__dirname, "engine_defs", "website.json"), "utf8")).kinds;
+  for (const k of Object.keys(kinds)) for (const a of kinds[k].artifacts)
+    assert.ok(names.indexOf(a) >= 0, "no template on the shelf for " + a + " (kind " + k + ")");
+  assert.ok(names.indexOf("Human Sutra") >= 0, "the app is a template too");
+  const lib = fs.readFileSync(path.join(__dirname, "static", "js", "21-library.js"), "utf8");
+  const rail = fs.readFileSync(path.join(__dirname, "static", "js", "19-org2.js"), "utf8");
+  assert.ok(/"artifacts"/.test(lib.split("LIB_SHELVES")[1] || ""), "the Library screen has the shelf");
+  assert.ok(/\["lib-artifacts", "Artifacts"\]/.test(rail), "the Org rail lists it under Parts");
 });
 
 test("W25: the chat is the one point of entry: it opens first; inside a department it is scoped with the department as a chip; the words go to Root; a stamp goes where the ask lives; on Root the whole chat", async () => {

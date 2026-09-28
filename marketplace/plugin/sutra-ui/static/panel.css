@@ -5676,3 +5676,115 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 /* Settings: a function's own numbers, one row each */
 .wbset input{width:90px;margin-left:auto}
 .wbset input[type=text]{width:auto;flex:1;min-width:200px;margin-left:0}
+
+/* ── the second design (23-screens.js) ───────────────────────────────────
+   Behind the switch. State is colour and motion, never a word: a dot in the
+   list, a lit node on the map, a pill on the NOW line. Tokens only; every
+   class prefixed `wb2` (test_website.js V12). */
+.wb2li{display:flex;align-items:center;gap:7px}
+.wb2li .dpdot{margin-top:0;flex:none}
+.wb2li .dpdot.none{visibility:hidden}
+.wb2crumb{font:400 12px/1.4 var(--sans);color:var(--muted);margin:0 0 6px}
+.wb2crumb .o2more{padding:0;margin:0}
+.wb2head{display:flex;align-items:center;gap:10px;margin:0 0 12px;flex-wrap:wrap}
+.wb2head b{font:500 20px/1.15 var(--serif);color:var(--ink)}
+.wb2head .dpchk{margin-right:auto}
+.wb2switch{width:36px;height:20px;border-radius:999px;border:0;background:var(--line);position:relative;cursor:pointer;transition:background .2s ease;flex:none;padding:0}
+.wb2switch::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--knob);box-shadow:var(--row-shadow);transition:left .18s ease}
+.wb2switch.on{background:var(--ok)}
+.wb2switch.on::after{left:18px}
+.wb2live{flex:none}
+.wb2now{display:flex;flex-wrap:wrap;gap:8px;min-height:22px;margin:0 0 8px}
+.wb2pill{padding:2px 10px;border-radius:999px;font:600 12px/1.5 var(--sans)}
+.wb2pill.run{background:var(--acc-bg);color:var(--acc)}
+.wb2pill.ask{background:var(--warn-bg);color:var(--warn)}
+.wb2pill.block{background:var(--block-bg);color:var(--block)}
+.wb2pill.off{background:var(--inset);color:var(--muted)}
+.wb2map svg{width:100%;height:auto;display:block}
+.wb2map .lbl{font:600 10px var(--sans);letter-spacing:.08em;fill:var(--faint);text-transform:uppercase}
+.wb2map .e{stroke:var(--line);stroke-width:1.5;fill:none}
+.wb2map marker path{fill:var(--line)}
+.wb2map .e.soft{stroke-dasharray:3 4}
+.wb2map .e.flow{stroke:var(--acc);stroke-width:2;stroke-dasharray:6 6;animation:wb2march 1s linear infinite}
+@keyframes wb2march{to{stroke-dashoffset:-12}}
+.wb2map .n{cursor:pointer}
+.wb2map .n .bx{fill:var(--card);stroke:var(--line);stroke-width:1.4;transition:stroke .2s,fill .2s}
+.wb2map .n:hover .bx{stroke:var(--acc)}
+.wb2map .n.fn .bx{stroke:var(--acc);fill:var(--sepia)}
+.wb2map .n.run .bx{stroke:var(--acc);stroke-width:2.4}
+.wb2map .n .halo{fill:none;stroke:var(--acc);stroke-width:2;animation:wb2halo 1.4s ease-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes wb2halo{0%{opacity:.7;transform:scale(1)}100%{opacity:0;transform:scale(1.45)}}
+.wb2map .n.ask .bx{stroke:var(--warn);stroke-width:2.4;fill:var(--warn-bg)}
+.wb2map .n.block .bx{stroke:var(--block);stroke-width:2.4;fill:var(--block-bg)}
+.wb2map .n.off .bx{stroke:var(--line-soft)}
+.wb2map .n.off text{fill:var(--faint)}
+.wb2map .n.done .bx{fill:var(--ok-bg);stroke:var(--ok-line)}
+.wb2map .n text{font:12px var(--sans);fill:var(--ink);pointer-events:none}
+.wb2map .n text.v{font:10px var(--mono);fill:var(--muted)}
+.wb2map .n .ic{fill:none;stroke:var(--ink);stroke-width:1.6}
+.wb2legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin:6px 0 0;font:400 11.5px/1.4 var(--sans);color:var(--muted)}
+.wb2legend span{display:inline-flex;align-items:center;gap:6px}
+.wb2lg{display:inline-block;width:14px;height:12px;border:1.5px solid var(--line);border-radius:3px;background:var(--card)}
+.wb2lg.fn{border-color:var(--acc);background:var(--sepia)}
+.wb2lg.eng{border-radius:50%}
+.wb2lg.done{border-color:var(--ok-line);background:var(--ok-bg)}
+.wb2lg.run{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-bg)}
+.wb2lg.ask{border-color:var(--warn);background:var(--warn-bg)}
+.wb2lg.block{border-color:var(--block);background:var(--block-bg)}
+.wb2org{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.wb2dept{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--card);cursor:pointer;text-align:left;color:var(--ink);font:400 13px/1.4 var(--sans);display:flex;flex-direction:column;gap:6px;transition:transform .18s ease,box-shadow .18s ease}
+.wb2dept:hover{transform:translateY(-1px);box-shadow:var(--shadow)}
+.wb2dept b{display:flex;align-items:center;gap:7px;font-weight:600}
+.wb2dept b .dpdot{margin-top:0}
+.wb2new{border-style:dashed;color:var(--muted)}
+.wb2new b{font-weight:500}
+.wb2spark{display:flex;gap:3px}
+.wb2spark i{width:9px;height:9px;border-radius:2px;border:1px solid var(--line);background:transparent}
+.wb2spark i.on{background:var(--ok-bg);border-color:var(--ok-line)}
+.wb2spark i.run{background:var(--acc);border-color:var(--acc)}
+.wb2table{width:100%;border-collapse:collapse;font:400 13px/1.45 var(--sans);margin:0 0 12px}
+.wb2table th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line-soft);font:600 10.5px/1.4 var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.wb2table td{padding:6px 8px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+.wb2table td .dpdot{margin-top:0}
+.wb2table .o2more{padding:0;margin:0}
+.wb2tr.none td{color:var(--faint)}
+.wb2v{font:400 11px/1.4 var(--mono);color:var(--muted);white-space:nowrap}
+.wb2when{font:400 11.5px/1.4 var(--sans);color:var(--faint);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.wb2edit input{width:72px;background:var(--inset);border:1px solid var(--line);border-radius:6px;color:var(--ink);font:400 13px/1.4 var(--sans);padding:3px 6px}
+.wb2edit input:focus{border-color:var(--acc);outline:0}
+.wb2edit .dpbar{margin:0;min-width:80px}
+.wb2save{display:flex;justify-content:flex-end;opacity:0;transform:translateY(4px);transition:opacity .2s ease,transform .2s ease;pointer-events:none}
+.wb2save.show{opacity:1;transform:none;pointer-events:auto}
+.wb2row{display:grid;grid-template-columns:auto 96px minmax(0,1fr) auto;gap:10px;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--line-soft);font:400 13px/1.45 var(--sans)}
+.wb2row .dpdot{margin-top:5px}
+.wb2row b{font-weight:600;color:var(--ink)}
+.wb2state{display:flex;align-items:center;gap:7px;font:400 12.5px/1.4 var(--sans);color:var(--muted);margin:0 0 8px}
+.wb2state .dpdot{margin-top:0}
+.wb2about{margin:12px 0 0;font:400 13px/1.45 var(--sans)}
+.wb2about summary{cursor:pointer;color:var(--muted);list-style:none;display:inline-flex;align-items:center;gap:6px}
+.wb2about summary::before{content:"";width:6px;height:6px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:rotate(-45deg);transition:transform .18s ease;margin-left:2px}
+.wb2about[open] summary::before{transform:rotate(45deg)}
+.wb2aboutb{padding:8px 0 0 14px;color:var(--muted)}
+.wb2ladder{border-collapse:collapse;font:400 13px/1.45 var(--sans);margin:0 0 12px}
+.wb2ladder th{font:600 10.5px/1.4 var(--sans);letter-spacing:.06em;color:var(--muted);padding:4px 10px;text-align:center}
+.wb2ladder td{padding:5px 10px;border-bottom:1px solid var(--line-soft);text-align:center}
+.wb2ladder td:first-child{text-align:left}
+.wb2ladder .dpdot{margin:0 2px}
+.wb2line,.wb2flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 12px}
+.wb2node{padding:4px 11px;border-radius:999px;background:var(--acc-bg);font:400 12.5px/1.4 var(--sans);color:var(--ink)}
+.wb2node.work{background:transparent;border:1px solid var(--line)}
+.wb2node.now{box-shadow:0 0 0 2px var(--acc)}
+.wb2node small{font:400 10px/1 var(--mono);color:var(--muted);margin-left:5px}
+.wb2runs{display:inline-flex;gap:5px}
+.wb2runs i{width:10px;height:10px;border-radius:50%;background:var(--ok);display:inline-block;transition:transform .15s ease}
+.wb2runs i:hover{transform:scale(1.4)}
+.wb2runs i.bad{background:var(--block)}
+.wb2runs i.now{background:var(--acc)}
+.wb2runs i.none{background:transparent;border:1px solid var(--line)}
+.wb2kv{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--line-soft)}
+.wb2kv .dpk{width:64px;margin:0}
+.wb2kv .dpbar{margin:0;flex:1;max-width:220px}
+.wb2kv .wbrung{margin-right:4px}
+/* a row on a second-design card is a line, not a box: a border only where a decision lives */
+.wb2 .dprow{border:0;border-bottom:1px solid var(--line-soft);border-radius:0;background:transparent;padding:6px 0;margin:0}
+@media (prefers-reduced-motion:reduce){.wb2map .e.flow,.wb2map .n .halo{animation:none}}

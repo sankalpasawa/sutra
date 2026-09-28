@@ -241,7 +241,8 @@ function dpListHtml(n, d, dept, err){
      answers null here and paints exactly as before. */
   const wb = (typeof wbList === "function") ? wbList(n) : null;
   groups += wb ? wb.top : dpGroup("Now", [dpRow("Now", `data-dptab="now"`, tab === "now")], null, "");
-  groups += dpGroup("Functions", DP_FUNCS.map(([v, label]) =>
+  /* 23-screens.js: the second design draws the five with a state dot each */
+  groups += (wb && wb.functions) || dpGroup("Functions", DP_FUNCS.map(([v, label]) =>
     dpRow(label, `data-dptab="${dpEsc(v)}"`, tab === v)), null, "");
   /* People and Apps read routes that land in a later slice; until then the
      group is on screen and says so in one line rather than showing nothing. */
