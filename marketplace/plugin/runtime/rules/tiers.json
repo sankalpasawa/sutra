@@ -1,0 +1,22 @@
+{
+  "comment": "C10 of RUNTIME-ACCEPTANCE-CONDITIONS.md (founder 2026-09-28): the direction for when the code decides and when an agent is called, as data the runtime reads. tier: code = a rule decides, no model in the loop; model = the session model answers in its own turn; agent = the code calls a model and waits. agent_when: the condition under which a code step escalates; null = never. never_agent: what an agent may never decide for this step. threshold: null until measured over 200 turns (section 4 of the conditions); while null the runtime logs confidence and calls no agent.",
+  "version": 1,
+  "steps": [
+    { "n": 1,  "id": "classify",  "tier": "code",  "agent_when": "confidence_below_threshold", "threshold": null, "never_agent": "the refusal itself" },
+    { "n": 2,  "id": "resolve",   "tier": "code",  "agent_when": "no_match_above_threshold",   "threshold": null, "never_agent": null },
+    { "n": 3,  "id": "depth",     "tier": "code",  "agent_when": "facts_disagree",             "threshold": null, "never_agent": "lowering the number" },
+    { "n": 4,  "id": "placement", "tier": "code",  "agent_when": "no_register_match_and_new_path", "threshold": null, "never_agent": "minting a department" },
+    { "n": 5,  "id": "lens",      "tier": "model", "agent_when": null, "threshold": null, "never_agent": null },
+    { "n": 6,  "id": "cynefin",   "tier": "model", "agent_when": null, "threshold": null, "never_agent": null },
+    { "n": 7,  "id": "blueprint", "tier": "model", "agent_when": null, "threshold": null, "never_agent": null },
+    { "n": 8,  "id": "codex",     "tier": "agent", "agent_when": "every_mutating_turn", "threshold": null, "never_agent": "skipping the call" },
+    { "n": 9,  "id": "atom",      "tier": "code",  "agent_when": null, "threshold": null, "never_agent": null },
+    { "n": 10, "id": "tests",     "tier": "code",  "agent_when": null, "threshold": null, "never_agent": null },
+    { "n": 11, "id": "close",     "tier": "code",  "agent_when": null, "threshold": null, "never_agent": null }
+  ],
+  "rules": {
+    "raise_only": "an agent answer may raise stringency (deeper, stricter, more review) and never lower it; a lowering answer is refused and the refusal is recorded (C8)",
+    "unreachable": "if the agent cannot be reached or times out, the code's own answer stands, marked unresolved; nothing is guessed (C9)",
+    "recorded": "every answer carries source (code|model|agent), confidence and one line of reason; the tier that answered is in the row (C7)"
+  }
+}

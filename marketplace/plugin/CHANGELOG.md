@@ -1,6 +1,10 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-25
+**status**: active · **updated**: 2026-09-28
+## 2.306.3 (2026-09-28)
+
+- **Every step now prints its own log row, with the input it read and the output it produced** (founder conditions C1-C5 and C10, 2026-09-28). The runtime writes one row per step to `<turn>.steplog.jsonl` when the turn opens, when a step's status changes at a tool call, and again at Stop, so a step that never ran says so with its own status instead of being dropped. Every field is derived from files the runtime itself wrote, the file is runtime-owned so no tool call can forge a row, and the rows print to the terminal as they are written. `sutra-steps log` reads them back. `runtime/rules/tiers.json` declares as data which step is decided by code, which by the session model and which by an agent, plus the three standing rules (an agent may only raise stringency, the code's answer stands when the agent is unreachable, every answer records its source); thresholds stay null until measured over 200 turns. Tests: test-step-log 26. DeepSeek review folded (4 of 6 P1 fixed, 2 refuted by the suite).
+
 ## 2.306.2 (2026-09-28)
 
 - Released from v2.306.1-desktop..HEAD: 5 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.

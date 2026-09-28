@@ -592,3 +592,117 @@ sutra_steps_prompts() {
     printf 'CYNEFIN (core:cynefin, do it now, then write the cynefin artifact): clear = known method, fixed sequence, no gate; complicated = expert analysis first, review before commit; complex = parallel probes, small safe steps, human gate mandatory; chaotic = act to stabilize, then escalate. Name the domain, the shape, and whether a human gate is mandatory.\n'
   fi
 }
+
+# ===========================================================================
+# STEP LOG (founder conditions C1-C5, 2026-09-28: "whenever one particular
+# step is executed, we print the log of it ... input and output deterministi-
+# cally controlled by the code inside").
+#
+# One row per step execution at .sutra/turn/<sid>/<turn>.steplog.jsonl:
+#   {kind:"step_log", turn_id, event, n, step, status, tier, in, out, ts}
+# The file is runtime-owned (the .jsonl rule in _SUTRA_RO_RE): no tool call
+# may write it, so no model text can add, edit or remove a row (C3). Every
+# field is derived by this code from files the runtime itself wrote (C2). A
+# step that did not run is logged with its own status - pending, missing,
+# gated - and never silently dropped (C4). The caller prints what this
+# returns, so the founder sees the row as it is written (C5).
+# ===========================================================================
+
+sutra_steplog_path() {  # <proj> <sid> <turn>
+  printf '%s/.sutra/turn/%s/%s.steplog.jsonl' "$1" "$2" "$3"
+}
+
+# sutra_steps_tier <root> <step-id> -> code | model | agent (from runtime/rules/tiers.json, C10)
+sutra_steps_tier() {
+  _st_f="${1:-}/runtime/rules/tiers.json"
+  [ -f "$_st_f" ] || { printf 'code'; return 0; }
+  _st_v="$(jq -r --arg id "$2" '.steps[] | select(.id == $id) | .tier' "$_st_f" 2>/dev/null)"
+  [ -n "$_st_v" ] && [ "$_st_v" != "null" ] || _st_v=code
+  printf '%s' "$_st_v"
+}
+
+# sutra_steps_io <proj> <sid> <turn> <step-id> <status> <detail> -> {in,out} JSON.
+# Every branch reads a file the runtime wrote; nothing here is model text.
+sutra_steps_io() {
+  _io_p="$1"; _io_s="$2"; _io_t="$3"; _io_id="$4"; _io_st="$5"; _io_d="${6:-}"
+  _io_dir="$_io_p/.sutra/turn/$_io_s"
+  _io_facts="$_io_dir/$_io_t.facts.json"
+  _io_ledger="$_io_dir/$_io_t.steps.json"
+  _io_unit="$(jq -r '(.unit // "") | .[0:60]' "$_io_ledger" 2>/dev/null)"
+  [ -n "$_io_unit" ] || _io_unit="the prompt"
+  _io_in=""; _io_out="$_io_d"
+  case "$_io_id" in
+    classify)
+      _io_in="$_io_unit"
+      _io_out="$(jq -r '[(.classify.direction // "?"), (.classify.verb // "?"), (.classify.timing // "?"), (.classify.channel // "?"), (.classify.reversibility // "?"), (.classify.decision_risk // "?")] | join(" ")' "$_io_facts" 2>/dev/null)" ;;
+    resolve)
+      _io_in="$_io_unit"
+      _io_out="$(jq -r '"\(.resolve.resolution // "?") scope=\(.resolve.scope // "?")"' "$_io_facts" 2>/dev/null)" ;;
+    depth)
+      _io_in="company profile + this turn's facts"
+      _io_out="$(jq -r '"\(.depth.n // "?")/5 \(.depth.rubric // "")"' "$_io_facts" 2>/dev/null)" ;;
+    placement)
+      _io_in="$_io_unit" ;;
+    lens|cynefin|blueprint)
+      _io_in="the $_io_id prompt, injected while pending"
+      [ "$_io_st" = "done" ] && _io_out="$(sutra_artifact_rel "$_io_s" "$_io_t" "$_io_id")" ;;
+    codex)
+      _io_in="$(wc -c < "$_io_dir/lane-logs/$_io_t.diff" 2>/dev/null | tr -d ' ') bytes of diff"
+      [ -f "$_io_dir/$_io_t.review.json" ] && _io_out="$(jq -r '"\(.status // "?")\(if .verdict != null then ":" + .verdict else "" end)"' "$_io_dir/$_io_t.review.json" 2>/dev/null)" ;;
+    tests)
+      _io_in="no test command declared"
+      [ -f "$_io_dir/$_io_t.tests.json" ] && _io_in="$(jq -r '.cmd // "no test command declared"' "$_io_dir/$_io_t.tests.json" 2>/dev/null)"
+      case "$_io_in" in ''|null) _io_in="no test command declared" ;; esac
+      [ -f "$_io_dir/$_io_t.tests.json" ] && _io_out="$(jq -r '"\(.status // "?")\(if .exit != null then " exit=" + (.exit|tostring) else "" end)"' "$_io_dir/$_io_t.tests.json" 2>/dev/null)" ;;
+    atom)
+      _io_in="the atom ledger" ;;
+    close)
+      _io_in="the turn's own ledger" ;;
+  esac
+  case "$_io_in" in ''|null) _io_in="-" ;; esac
+  case "$_io_out" in ''|null) _io_out="$_io_st" ;; esac
+  jq -nc --arg i "$_io_in" --arg o "$_io_out" '{in:$i, out:$o}' 2>/dev/null
+}
+
+# sutra_step_log <root> <proj> <sid> <turn> <event> <steps-json> [force-all]
+# Appends one row per step whose status differs from the last logged row (or
+# every step when force-all is 1, used at open and at close), and prints one
+# human line per row it wrote. Returns 0 always; never blocks a turn.
+sutra_step_log() {
+  _sg_root="$1"; _sg_p="$2"; _sg_s="$3"; _sg_t="$4"; _sg_ev="$5"; _sg_json="$6"; _sg_all="${7:-0}"
+  command -v jq >/dev/null 2>&1 || return 0
+  [ -n "$_sg_json" ] || return 0
+  _sg_f="$(sutra_steplog_path "$_sg_p" "$_sg_s" "$_sg_t")"
+  mkdir -p "$(dirname "$_sg_f")" 2>/dev/null
+  _sg_now="$(date +%s 2>/dev/null)"; case "$_sg_now" in ''|*[!0-9]*) _sg_now=0 ;; esac
+  # DeepSeek P1-3: a turn's log is capped, so a long turn cannot grow it without bound.
+  if [ -f "$_sg_f" ] && [ "$(wc -l < "$_sg_f" 2>/dev/null | tr -d ' ')" -ge 400 ]; then return 0; fi
+  # DeepSeek P1-6: one pass for every step's last logged status, instead of a
+  # grep and a jq per step on every tool call.
+  _sg_last_map=""
+  [ -f "$_sg_f" ] && _sg_last_map="$(jq -R -r 'fromjson? // empty | select(.kind == "step_log") | "\(.step)=\(.status)"' "$_sg_f" 2>/dev/null | awk -F= '{m[$1]=$2} END {for (k in m) printf "%s=%s\n", k, m[k]}')"
+  _sg_rows="$(printf '%s' "$_sg_json" | jq -r '.[] | [(.n // 0), (.id // "?"), (.status // "?"), ((.detail // "") | tostring | gsub("[\t\n\r]"; " ") | .[0:70])] | @tsv' 2>/dev/null)"
+  printf '%s\n' "$_sg_rows" | while IFS="$(printf '\t')" read -r _n _id _status _detail; do
+    [ -n "${_id:-}" ] || continue
+    _last="$(printf '%s\n' "$_sg_last_map" | awk -F= -v k="$_id" '$1 == k {print $2; exit}')"
+    if [ "$_sg_all" != "1" ] && [ "$_last" = "$_status" ]; then continue; fi
+    _tier="$(sutra_steps_tier "$_sg_root" "$_id")"
+    _io="$(sutra_steps_io "$_sg_p" "$_sg_s" "$_sg_t" "$_id" "$_status" "$_detail")"
+    [ -n "$_io" ] || _io='{"in":"-","out":"-"}'
+    _row="$(jq -nc --arg t "$_sg_t" --arg ev "$_sg_ev" --argjson n "${_n:-0}" --arg id "$_id" \
+      --arg st "$_status" --arg tier "$_tier" --argjson io "$_io" --argjson ts "$_sg_now" \
+      '{kind:"step_log", turn_id:$t, event:$ev, n:$n, step:$id, status:$st, tier:$tier, in:$io.in, out:$io.out, ts:$ts}' 2>/dev/null)"
+    [ -n "$_row" ] || continue
+    printf '%s\n' "$_row" >> "$_sg_f" 2>/dev/null
+    printf '  %s %-10s %-8s in: %s | out: %s\n' "${_n:-0}" "$_id" "$_status" "$(printf '%s' "$_io" | jq -r .in)" "$(printf '%s' "$_io" | jq -r .out)"
+  done
+  return 0
+}
+
+# sutra_steplog_render <steplog.jsonl> -> the rows as the founder reads them.
+sutra_steplog_render() {
+  [ -f "$1" ] || { printf 'sutra: no step log for this turn\n'; return 0; }
+  # DeepSeek P1-4: a blank or half-written line is skipped, never rendered blank
+  jq -R -r 'fromjson? // empty | select(.kind == "step_log")
+    | "  \(.n) \(.step + (" " * (10 - (.step | length)))) \(.status + (" " * (8 - (.status | length)))) \(.tier + (" " * (6 - (.tier | length)))) in: \(.in) | out: \(.out)"' "$1" 2>/dev/null
+}

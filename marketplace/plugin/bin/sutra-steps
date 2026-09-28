@@ -34,7 +34,7 @@ while [ $# -gt 0 ]; do
     --proj) PROJ="${2:-}"; shift 2 ;;
     --json) AS_JSON=1; shift ;;
     --all) ALL=1; shift ;;
-    pretty|statusline|truthdiff) MODE="$1"; shift ;;
+    pretty|statusline|truthdiff|log) MODE="$1"; shift ;;
     -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
     *) WHICH="$1"; shift ;;
   esac
@@ -100,6 +100,10 @@ printf '%s\n' "$FILES" | while IFS= read -r f; do   # one path per line: spaces 
     cat "$f"
   elif [ "$MODE" = "pretty" ]; then
     sutra_steps_render_pretty "$f"
+  elif [ "$MODE" = "log" ]; then
+    # C1-C5: the rows the code wrote as each step ran, with input and output
+    echo "STEP LOG turn $(basename "$f" .steps.json | head -c 8): one row per step execution (code-written)"
+    sutra_steplog_render "${f%.steps.json}.steplog.jsonl"
   elif [ "$MODE" = "truthdiff" ]; then
     _td="${f%.steps.json}.truthdiff.jsonl"
     if [ -f "$_td" ]; then

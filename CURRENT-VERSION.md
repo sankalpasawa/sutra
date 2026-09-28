@@ -1,8 +1,12 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-09-25
+**status**: active · **updated**: 2026-09-28
 
-## v2.306.2 (2026-09-28, HEAD)
+## v2.306.3 (2026-09-28, HEAD)
+
+**Every step prints its own row** (founder 2026-09-28: "whenever one particular step is executed, we print the log of it ... input and output deterministically controlled by the code inside"). One code-written row per step with its input and output, printed live and readable with `sutra-steps log`; `runtime/rules/tiers.json` carries the code-versus-agent direction as data. Conditions C1-C5 and C10 of RUNTIME-ACCEPTANCE-CONDITIONS.md. DeepSeek review folded; codex SKIPPED until 2026-10-16.
+
+## v2.306.2 (2026-09-28)
 
 See marketplace/plugin/CHANGELOG.md for this release's entry.
 
