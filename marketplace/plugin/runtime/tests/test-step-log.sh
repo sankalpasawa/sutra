@@ -53,7 +53,11 @@ is "C10: every step named" "$(jq -r '.steps | length' "$T")" 11
 is "C10: the four code steps" "$(jq -r '[.steps[] | select(.tier == "code")] | length' "$T")" 7
 is "C10: the three model steps" "$(jq -r '[.steps[] | select(.tier == "model")] | length' "$T")" 3
 is "C10: the review step is the agent" "$(jq -r '.steps[] | select(.id == "codex") | .tier' "$T")" agent
-is "C10: no threshold is guessed" "$(jq -r '[.steps[] | select(.threshold != null)] | length' "$T")" 0
+# Only placement carries a number, and the file must say how it was measured;
+# every other step stays null until 200 turns of confidence are logged.
+is "C10: one measured threshold, no guessed ones" "$(jq -r '[.steps[] | select(.threshold != null)] | length' "$T")" 1
+is "C10: the measured one is placement" "$(jq -r '[.steps[] | select(.threshold != null) | .id] | join(",")' "$T")" placement
+jq -e '(.thresholds_note // "") | test("[Rr]eversal trigger")' "$T" >/dev/null 2>&1 && pass "C10: the threshold carries its measurement and a reversal trigger" || fail "C10: a threshold without a recorded measurement"
 jq -e '.rules.raise_only and .rules.unreachable and .rules.recorded' "$T" >/dev/null 2>&1 && pass "C10: the three standing rules are recorded" || fail "C10: a standing rule is missing"
 . "$PLUGIN_MAIN/runtime/lib/steps.sh"
 is "C10: the tier lookup reads the file" "$(sutra_steps_tier "$PLUGIN_MAIN" lens)" model
@@ -90,6 +94,22 @@ is "C4: the closing state logs all eleven again" "$(rows "$L" '.event=="Stop"')"
 NOTRUN="$(jq -r 'select(.event=="Stop" and (.status=="pending" or .status=="missing" or .status=="gated")) | .step' "$L" | wc -l | tr -d ' ')"
 [ "$NOTRUN" -ge 1 ] && pass "C4: $NOTRUN step(s) that did not run are logged with their status" || fail "C4: no did-not-run row"
 is "C4: the tests step says why" "$(jq -r 'select(.step=="tests") | .in' "$L" | tail -1)" "no test command declared"
+# C2, the defect the live check found: with no diff staged, the review row used
+# to read " bytes of diff" - a unit with no number in front of it.
+jq -r 'select(.step=="codex") | .in' "$L" | grep -qE '^ *bytes' && fail "C2: the review row prints an empty byte count" || pass "C2: the review row never prints a bare unit"
+jq -r 'select(.step=="codex") | .in' "$L" | tail -1 | grep -qE '[0-9]+ bytes of diff|nothing staged|sealed' && pass "C2: the review row says what it read" || fail "C2: the review input is meaningless: [$(jq -r 'select(.step=="codex") | .in' "$L" | tail -1)]"
+
+# A killed step: the native step is made unrunnable for one turn, and the row
+# must still appear, with a status that is not "done" and an output that says
+# something - never a silently dropped step.
+echo "== C4: a killed step still logs, with its reason =="
+KSTEPS='[{"n":8,"id":"codex","status":"killed","detail":"native step killed at 2565 ms of a 2500 ms budget"}]'
+KPRINT="$(sutra_step_log "$PLUGIN_MAIN" "$PJ" sid-c1 "$TID" PostToolUse "$KSTEPS" 1)"
+is "C4: the killed step has its own row" "$(rows "$L" '.status=="killed"')" 1
+is "C4: the killed row carries the reason, not a bare status" \
+  "$(jq -r 'select(.status=="killed") | .out' "$L" | tail -1)" \
+  "native step killed at 2565 ms of a 2500 ms budget"
+printf '%s' "$KPRINT" | grep -q 'killed' && pass "C4: the killed row is printed like any other" || fail "C4: the killed row was not printed"
 
 # ================================================================== reader ===
 echo "== the reader prints what the code wrote =="

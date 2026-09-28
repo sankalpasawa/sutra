@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-09-28
 
-## v2.306.3 (2026-09-28, HEAD)
+## v2.306.4 (2026-09-28, HEAD)
+
+**A step that is unsure asks an agent; a turn replays through its own code** (founder 2026-09-28: "if there is a program that has a low degree of confidence in it, then an agent works on it to figure that out"). Conditions C6-C9 of RUNTIME-ACCEPTANCE-CONDITIONS.md: the ask is detached, the answer may only raise stringency, an address the register does not hold is refused, an unreachable agent leaves the code's answer standing marked unresolved, and every decision carries source, confidence and a reason. `sutra-steps replay` reproduces the code steps from the turn's own inputs.
+
+## v2.306.3 (2026-09-28)
 
 **Every step prints its own row** (founder 2026-09-28: "whenever one particular step is executed, we print the log of it ... input and output deterministically controlled by the code inside"). One code-written row per step with its input and output, printed live and readable with `sutra-steps log`; `runtime/rules/tiers.json` carries the code-versus-agent direction as data. Conditions C1-C5 and C10 of RUNTIME-ACCEPTANCE-CONDITIONS.md. DeepSeek review folded; codex SKIPPED until 2026-10-16.
 

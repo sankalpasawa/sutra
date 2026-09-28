@@ -29,6 +29,13 @@ if [ -z "${SUTRA_SEAL_LOADED:-}" ] && [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "$(di
   . "$(dirname "${BASH_SOURCE[0]}")/seal.sh" 2>/dev/null && SUTRA_SEAL_LOADED=1
 fi
 
+# C7-C9: the tier library rides with this one too, so every caller of the step
+# log can fold in an agent answer that has arrived. Absent -> no ask is ever
+# made and every row reads source=code, which is the safe direction.
+if [ -z "${SUTRA_TIER_LOADED:-}" ] && [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "$(dirname "${BASH_SOURCE[0]}")/tier.sh" ]; then
+  . "$(dirname "${BASH_SOURCE[0]}")/tier.sh" 2>/dev/null && SUTRA_TIER_LOADED=1
+fi
+
 # sutra_steps_write <path> <json>: atomic replace.
 sutra_steps_write() {
   _sw_tmp="$1.tmp.$$"
@@ -189,7 +196,7 @@ sutra_steps_runtime_owned() {
 # write shape; the ledger and lane files join them for command text and for
 # file_path targets, never for a document's payload (workflow P2-3)
 _SUTRA_RO_RE_CORE='\.sutra-overrides|\.sutra-runtime-(adherence|markers|disabled)|\.sutra-runtime/|\.sutra-connectors/|\.config/deepseek/|\.sutra/turn/[^/[:space:]]+/opened([^A-Za-z0-9_-]|$)'
-_SUTRA_RO_RE="$_SUTRA_RO_RE_CORE"'|\.sutra/turn/[^/[:space:]]+/[^/[:space:]]+\.(facts|steps|review|tests|verifies|truthdiff|progress)\.json|\.sutra/turn/[^/[:space:]]+/[^/[:space:]]+\.jsonl|\.sutra/turn/[^/[:space:]]+/lane-logs/'
+_SUTRA_RO_RE="$_SUTRA_RO_RE_CORE"'|\.sutra/turn/[^/[:space:]]+/[^/[:space:]]+\.(facts|steps|review|tests|verifies|truthdiff|progress|replay)\.json|\.sutra/turn/[^/[:space:]]+/[^/[:space:]]+\.jsonl|\.sutra/turn/[^/[:space:]]+/lane-logs/'
 
 # sutra_steps_runtime_owned_write <text> -> 0 when some LINE of the text names
 # a runtime-owned file in a WRITE shape (workflow wf_1dc20d5c P1-5: a doc, a
@@ -608,6 +615,28 @@ sutra_steps_prompts() {
 # returns, so the founder sees the row as it is written (C5).
 # ===========================================================================
 
+# sutra_steps_depth_rubric <is_company> <verb> <ff_degraded> <steps_est> <mutation_verbs>
+#   -> "<n> <rubric>". The depth rule (D9) lives here so the step that decides
+#   it and the replay that re-decides it (C6) run the same code, never two
+#   copies that can drift.
+sutra_steps_depth_rubric() {
+  _dr_co="${1:-0}"; _dr_vb="${2:-}"; _dr_dg="${3:-0}"; _dr_st="${4:-0}"; _dr_mv="${5:-0}"
+  case "$_dr_st" in ''|*[!0-9]*) _dr_st=0 ;; esac
+  case "$_dr_mv" in ''|*[!0-9]*) _dr_mv=0 ;; esac
+  if [ "$_dr_co" = "1" ]; then printf '5 profile-company'; return 0; fi
+  case "$_dr_vb" in
+    QUERY)  printf '1 verb-query'; return 0 ;;
+    ASSERT) printf '2 verb-assert'; return 0 ;;
+    DIRECT)
+      if [ "$_dr_dg" = "1" ]; then printf '3 direct-degraded'
+      elif [ "$_dr_st" -ge 3 ] || [ "$_dr_mv" -ge 2 ]; then printf '4 direct-steps'
+      elif [ "$_dr_mv" -ge 1 ]; then printf '3 direct-mutation'
+      else printf '2 default'; fi
+      return 0 ;;
+  esac
+  printf '2 default'
+}
+
 sutra_steplog_path() {  # <proj> <sid> <turn>
   printf '%s/.sutra/turn/%s/%s.steplog.jsonl' "$1" "$2" "$3"
 }
@@ -647,7 +676,21 @@ sutra_steps_io() {
       _io_in="the $_io_id prompt, injected while pending"
       [ "$_io_st" = "done" ] && _io_out="$(sutra_artifact_rel "$_io_s" "$_io_t" "$_io_id")" ;;
     codex)
-      _io_in="$(wc -c < "$_io_dir/lane-logs/$_io_t.diff" 2>/dev/null | tr -d ' ') bytes of diff"
+      # C2: never a bare unit. When no diff was staged this turn the row says
+      # what the step actually read instead of printing an empty byte count.
+      _io_diff="$_io_dir/lane-logs/$_io_t.diff"
+      if [ -s "$_io_diff" ]; then
+        _io_in="$(wc -c < "$_io_diff" 2>/dev/null | tr -d ' ') bytes of diff"
+      elif [ -f "$_io_dir/$_io_t.review.json" ]; then
+        _io_src="$(jq -r '.turn // ""' "$_io_dir/$_io_t.review.json" 2>/dev/null)"
+        if [ -n "$_io_src" ] && [ "$_io_src" != "$_io_t" ]; then
+          _io_in="the verdict already sealed for turn $(printf '%s' "$_io_src" | cut -c1-8)"
+        else
+          _io_in="this turn's own sealed verdict"
+        fi
+      else
+        _io_in="nothing staged to review this turn"
+      fi
       [ -f "$_io_dir/$_io_t.review.json" ] && _io_out="$(jq -r '"\(.status // "?")\(if .verdict != null then ":" + .verdict else "" end)"' "$_io_dir/$_io_t.review.json" 2>/dev/null)" ;;
     tests)
       _io_in="no test command declared"
@@ -681,6 +724,17 @@ sutra_step_log() {
   # grep and a jq per step on every tool call.
   _sg_last_map=""
   [ -f "$_sg_f" ] && _sg_last_map="$(jq -R -r 'fromjson? // empty | select(.kind == "step_log") | "\(.step)=\(.status)"' "$_sg_f" 2>/dev/null | awk -F= '{m[$1]=$2} END {for (k in m) printf "%s=%s\n", k, m[k]}')"
+  # C7-C9: settle the code steps that landed below their threshold - apply an
+  # agent answer only if it raises, record the source either way. One file test
+  # on the common path; no network call ever happens here.
+  if command -v sutra_tier_settle >/dev/null 2>&1; then
+    _sg_plm="$_sg_p/.claude/sessions/$_sg_s/placement-registered"
+    if [ -f "$_sg_plm" ]; then
+      sutra_tier_settle "$_sg_root" "$_sg_p" "$_sg_s" "$_sg_t" placement \
+        "$(awk -F= '$1 == "DOMAIN_REF" { print $2; exit }' "$_sg_plm" 2>/dev/null)" \
+        "$(awk -F= '$1 == "CONFIDENCE" { print $2; exit }' "$_sg_plm" 2>/dev/null)"
+    fi
+  fi
   _sg_rows="$(printf '%s' "$_sg_json" | jq -r '.[] | [(.n // 0), (.id // "?"), (.status // "?"), ((.detail // "") | tostring | gsub("[\t\n\r]"; " ") | .[0:70])] | @tsv' 2>/dev/null)"
   printf '%s\n' "$_sg_rows" | while IFS="$(printf '\t')" read -r _n _id _status _detail; do
     [ -n "${_id:-}" ] || continue
@@ -689,12 +743,24 @@ sutra_step_log() {
     _tier="$(sutra_steps_tier "$_sg_root" "$_id")"
     _io="$(sutra_steps_io "$_sg_p" "$_sg_s" "$_sg_t" "$_id" "$_status" "$_detail")"
     [ -n "$_io" ] || _io='{"in":"-","out":"-"}'
+    # C7: the tier that answered is in the row. A settled decision names its
+    # own source (code when the agent was refused or unreachable, agent when
+    # its answer raised); everything else is answered by its own tier.
+    _src=""; _conf=""
+    if command -v sutra_tier_last >/dev/null 2>&1; then
+      _src="$(sutra_tier_last "$_sg_p" "$_sg_s" "$_sg_t" "$_id" source)"
+      _conf="$(sutra_tier_last "$_sg_p" "$_sg_s" "$_sg_t" "$_id" confidence)"
+    fi
+    [ -n "$_src" ] || _src="$_tier"
     _row="$(jq -nc --arg t "$_sg_t" --arg ev "$_sg_ev" --argjson n "${_n:-0}" --arg id "$_id" \
-      --arg st "$_status" --arg tier "$_tier" --argjson io "$_io" --argjson ts "$_sg_now" \
-      '{kind:"step_log", turn_id:$t, event:$ev, n:$n, step:$id, status:$st, tier:$tier, in:$io.in, out:$io.out, ts:$ts}' 2>/dev/null)"
+      --arg st "$_status" --arg tier "$_tier" --arg src "$_src" --arg cf "$_conf" \
+      --argjson io "$_io" --argjson ts "$_sg_now" \
+      '{kind:"step_log", turn_id:$t, event:$ev, n:$n, step:$id, status:$st, tier:$tier,
+        source:$src, confidence:$cf, in:$io.in, out:$io.out, ts:$ts}' 2>/dev/null)"
     [ -n "$_row" ] || continue
     printf '%s\n' "$_row" >> "$_sg_f" 2>/dev/null
-    printf '  %s %-10s %-8s in: %s | out: %s\n' "${_n:-0}" "$_id" "$_status" "$(printf '%s' "$_io" | jq -r .in)" "$(printf '%s' "$_io" | jq -r .out)"
+    _who="$_tier"; [ "$_src" = "$_tier" ] || _who="$_tier<$_src"
+    printf '  %s %-10s %-8s %-10s in: %s | out: %s\n' "${_n:-0}" "$_id" "$_status" "$_who" "$(printf '%s' "$_io" | jq -r .in)" "$(printf '%s' "$_io" | jq -r .out)"
   done
   return 0
 }
@@ -704,5 +770,6 @@ sutra_steplog_render() {
   [ -f "$1" ] || { printf 'sutra: no step log for this turn\n'; return 0; }
   # DeepSeek P1-4: a blank or half-written line is skipped, never rendered blank
   jq -R -r 'fromjson? // empty | select(.kind == "step_log")
-    | "  \(.n) \(.step + (" " * (10 - (.step | length)))) \(.status + (" " * (8 - (.status | length)))) \(.tier + (" " * (6 - (.tier | length)))) in: \(.in) | out: \(.out)"' "$1" 2>/dev/null
+    | ((.source // .tier) as $s | (if $s == .tier then .tier else .tier + "<" + $s end)) as $who
+    | "  \(.n) \(.step + (" " * (10 - (.step | length)))) \(.status + (" " * (8 - (.status | length)))) \($who + (" " * (if (10 - ($who | length)) > 0 then 10 - ($who | length) else 1 end))) in: \(.in) | out: \(.out)"' "$1" 2>/dev/null
 }
