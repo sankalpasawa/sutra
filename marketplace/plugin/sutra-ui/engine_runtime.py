@@ -580,6 +580,8 @@ def post(ref, src, dst, msg_type, payload=None, thread=None, about=None, by=None
             th["state"] = _state_after(th, dst, msg_type)
         elif OWNER in dst and msg_type == "request":
             th["state"] = "input-required"
+        elif OWNER in dst and msg_type == "inform":
+            th["state"] = "completed"                  # a statement to the person on a thread of its own: nothing waits on it
         if th["state"] in CLOSED:
             th.update({"closed": W.now(), "outcome": {"by": msg_type, "n": row["n"]}})
         _append(ref, "board.jsonl", row)
@@ -1083,6 +1085,16 @@ def run_engine(ref, name, inp, slot):
             ok = bool(filed["check"].get("ok"))
             row.update({"status": "ok" if ok else "failed", "wrote": {"art": e["writes"], "v": out["v"]},
                         "what": "%s from %s, check %s" % (e["writes"], e["reads"], "passed" if ok else "failed")})
+            # the last artifact of the kind went out: the person is told in the chat, with the way to it (found live
+            # 2026-09-28: after the publish stamp the chat said nothing)
+            if ok and e["writes"] == W.artifacts_of(ctx["dept"])[-1] and ctx["dept"].get("kind") != "root":   # Root's last artifact is a spawn, said by Setup
+                try:
+                    host = (ctx["dept"].get("host") or "").strip()
+                    _tell(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER}, "inform",
+                          {"word": "live", "done": "%s v%d is live%s." % (e["writes"], out["v"], (" at " + host) if host and host != W.HOST_DEFAULT else ""),
+                           "link": e["writes"], "v": out["v"]})
+                except Exception:  # noqa: BLE001 -- telling never fails the version that went out
+                    pass
         else:
             said = next((ctx["bag"][s["id"]].get("said") for s in reversed(steps)
                          if isinstance(ctx["bag"].get(s["id"]), dict) and ctx["bag"][s["id"]].get("said")), None)
@@ -1782,7 +1794,7 @@ def _own_turns(dref, name):
             continue
         out.append({"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
                     "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""),
-                    "dept": dref, "name": name, "own": True})
+                    "dept": dref, "name": name, "own": True, "link": pl.get("link")})
     return out
 
 
@@ -1808,7 +1820,7 @@ def chat_view(ref, about=None):
                 continue
             turns.append({"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
                           "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""),
-                          "dept": dref, "name": ab.get("name") or pl.get("from")})
+                          "dept": dref, "name": ab.get("name") or pl.get("from"), "link": pl.get("link")})
     kids = _children(root) if root else []
     if root:
         for c in ([W.dept(about)] if about else kids):
@@ -1913,17 +1925,34 @@ def _finding_lines(ref, findings, claim):
 
 def identity_finding(ctx, step, item):
     ref, pl = ctx["ref"], ctx["post"]["payload"]
-    if pl.get("severity") == "high":
-        found = "; ".join(_finding_lines(ref, pl.get("findings"), pl.get("claim")))
+    finds = [f for f in pl.get("findings") or [] if isinstance(f, dict) and f.get("claim")]
+    holes = [f for f in finds if f.get("kind") == "hole"]
+    rest = [f for f in finds if f.get("kind") != "hole"]
+    said = []
+    if holes:
+        # the facts only the owner knows: a question in the chat, not a stamp (found live 2026-09-28: a site of
+        # "to be confirmed"); the owner's reply is a request like any other, and the line puts the facts in
+        lines = _finding_lines(ref, holes, None)
+        text = ("The site says it does not know %d thing%s: %s. Tell me here and I will put them in."
+                % (len(holes), "" if len(holes) == 1 else "s", "; ".join(lines) + (" ..." if len(holes) > len(lines) else "")))
+        _tell(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER}, "inform",
+              {"word": "facts", "done": text, "holes": len(holes), "about_version": pl.get("about_version")})
+        said.append("asked the owner for %d fact%s the site lacks" % (len(holes), "" if len(holes) == 1 else "s"))
+    high = [f for f in rest if str(f.get("severity") or "").lower() == "high"]
+    if high:
+        claim = str(high[0]["claim"])
+        found = "; ".join(_finding_lines(ref, rest, claim))
         text = "Audit found: %s. Stamp to have it put right." % found
         p = post(ref, "Identity", OWNER, "request", {"word": "finding", "objective": text,
                                                      "output": "a stamp or a refusal", "may_read": ["Live site"],
-                                                     "boundaries": str(pl.get("claim")), "claim": pl.get("claim")})
+                                                     "boundaries": claim, "claim": claim})
         W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "finding", "engine": "Audit", "slot": ctx["slot"],
-                         "text": text, "claim": pl.get("claim"), "found": found, "findings": pl.get("findings"),
+                         "text": text, "claim": claim, "found": found, "findings": rest,
                          "status": "pending", "created": W.now(), "thread": p["thread"] if p else None})
-        return {"said": "put a finding to the owner: " + found}
-    return {"said": "noted a finding: " + str(pl.get("claim"))}
+        said.append("put a finding to the owner: " + found)
+    elif rest:
+        said.append("noted a finding: " + str(rest[0]["claim"]))
+    return {"said": "; ".join(said) or "noted a finding: " + str(pl.get("claim"))}
 
 
 def identity_idea(ctx, step, item):
@@ -2110,13 +2139,39 @@ def audit_mechanical(ctx, step, item):
                 notes.append("%s has a version with no run or no check" % a)
     if not any(c.get("kind") == "ask" for c in W.trace(ref, "Live site", ctx["inp"]["v"])):
         notes.append("the live site does not trace back to the owner's words")
-    return {"ok": not notes, "notes": notes or ["every version has its run and its check; the trace reaches the owner's words"]}
+    # a page that says "to be confirmed" published what nobody knew (found live 2026-09-28: twelve such places on
+    # four pages); Audit names each hole, Identity asks the owner for the facts instead of a stamp
+    holes = placeholders(W.read_files(ref, "Live site", ctx["inp"]["v"]))
+    said = notes + (["the site says it does not know %d thing%s" % (len(holes), "" if len(holes) == 1 else "s")] if holes else [])
+    return {"ok": not said, "notes": said or ["every version has its run and its check; the trace reaches the owner's words"],
+            "faults": notes, "holes": holes}
+
+
+PLACEHOLDER = re.compile(r"to be confirmed|to be announced|\bTBD\b|\bTBA\b|lorem ipsum|\[insert[^\]]*\]|coming soon|will be added here", re.I)
+
+
+def placeholders(files):
+    """Where a site admits it does not know: each placeholder phrase with the words before it, one finding per hole."""
+    out = []
+    for name in sorted(files):
+        if not name.endswith(".html"):
+            continue
+        text = re.sub(r"<[^>]+>", " ", str(files[name]))
+        for m in PLACEHOLDER.finditer(text):
+            before = text[max(0, m.start() - 60):m.start()]              # the sentence the phrase sits in, not a cut word
+            cut = max(before.rfind(". "), before.rfind("! "), before.rfind("? "), before.rfind("\n"))
+            before = before[cut + 1:] if cut >= 0 else before
+            around = re.sub(r"\s+", " ", before + m.group(0)).strip()
+            out.append({"page": name, "claim": "the page says '%s'" % around[-90:], "severity": "high", "kind": "hole"})
+    return out
 
 
 def audit_file(ctx, step, item):
     ref = ctx["ref"]
     mech, judged = ctx["bag"]["audit.mechanical"], ctx["bag"]["audit.judge"]
-    found = [{"page": None, "claim": n, "severity": "high"} for n in (mech.get("notes") if not mech.get("ok") else [])]
+    faults = mech.get("faults") if "faults" in mech else (mech.get("notes") if not mech.get("ok") else [])
+    found = [{"page": None, "claim": n, "severity": "high"} for n in faults or []]
+    found += list(mech.get("holes") or [])
     found += [f for f in judged.get("findings") or [] if isinstance(f, dict) and f.get("claim")]
     if not found:
         return {"said": "checked what went live; found nothing", "filed": 0}

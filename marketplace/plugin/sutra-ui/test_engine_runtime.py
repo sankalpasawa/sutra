@@ -32,6 +32,7 @@ class Model:
         self.away, self.bad, self.findings, self.verdicts, self.slow = set(), set(), [], {}, 0.0
         self.journeys, self.future = {}, None
         self.tie, self.kind = None, None
+        self.holes = False                               # a page that admits what nobody told it (test_69)
 
     def __call__(self, prompt, step):
         sid = step["id"]
@@ -63,7 +64,8 @@ class Model:
             return {"site_name": "City Care Hospital", "tagline": "Care, every day", "palette": {"primary": "#0f5e7a", "accent": "#c4956a"},
                     "pages": pages}, 0.02, "model"
         if sid == "write.page":
-            return {"title": page["title"], "body_html": "<section><h1>%s</h1><p>%s</p></section>" % (page["title"], "What a patient needs to know. " * 3)}, 0.03, "model"
+            hole = "<p>Phone: to be confirmed.</p>" if self.holes else ""
+            return {"title": page["title"], "body_html": "<section><h1>%s</h1><p>%s</p>%s</section>" % (page["title"], "What a patient needs to know. " * 3, hole)}, 0.03, "model"
         if sid == "identity.recognise":
             words = prompt.split("THE WORDS: ", 1)[1].split("\n", 1)[0]
             low = words.lower()
@@ -580,6 +582,31 @@ class TestAuditAndAlarm(Base):
         brief = W.read_files(REF, "Brief", W.latest(REF, "Brief")["v"])["brief.md"]
         self.assertIn("- Correct this: " + found, brief)
         self.assertEqual(len(W.versions(REF, "Live site")), 2, "and the line ran again, to a second live version")
+
+    def test_69_a_site_that_says_to_be_confirmed_makes_identity_ask_the_owner_for_the_facts_not_a_stamp(self):
+        """Found live 2026-09-28 (Human Simulation run 1): twelve 'to be confirmed' on four pages went live and nobody
+        asked. Audit names each hole; Identity asks the person for the facts in the chat; a stamp puts nothing right."""
+        W, R = self.W, self.R
+        self.M.holes = True
+        self.M.findings = [{"page": "index.html", "claim": "the page names a founding year", "severity": "high"}]
+        self.live()
+        facts = [p for p in R.board(REF) if p["src"] == "Identity" and (p.get("payload") or {}).get("word") == "facts"]
+        self.assertEqual(len(facts), 1, [(p["src"], (p.get("payload") or {}).get("word")) for p in R.board(REF)])
+        line = facts[0]["payload"]["done"]
+        self.assertTrue(line.startswith("The site says it does not know 5 things: on "), line)
+        self.assertIn("the page says 'Phone: to be confirmed'", line)
+        self.assertTrue(line.endswith("Tell me here and I will put them in."), line)
+        self.assertEqual(facts[0]["payload"]["holes"], 5, "one hole a page")
+        turn = next(t for t in R.chat_view(REF)["turns"] if t["word"] == "facts")
+        self.assertEqual(turn["line"], line, "the question is a turn of the chat, whole")
+        a = next(a for a in W.asks(REF) if a["kind"] == "finding")
+        self.assertIn("names a founding year", a["text"], "what Audit judged still asks for a stamp")
+        self.assertNotIn("to be confirmed", a["text"], "a hole is a question, never a stamp")
+        self.assertEqual(len([a for a in W.asks(REF) if a["kind"] == "finding"]), 1)
+        self.assertIn("asked the owner for 5 facts the site lacks; put a finding to the owner: on Index, the page names a founding year",
+                      [r["what"] for r in W.runs(REF)])
+        holes = R.placeholders({"a.html": "<p>Opening hours: TBD</p>", "b.html": "<p>Fine.</p>", "c.md": "TBA"})
+        self.assertEqual([h["page"] for h in holes], ["a.html"], "every phrase a page uses to say it does not know; not a .md")
 
     def test_30_a_low_finding_is_noted_and_asks_nobody(self):
         self.M.findings = [{"page": "about.html", "claim": "the page says the hospital is friendly", "severity": "low"}]
@@ -1255,6 +1282,24 @@ class TestTheFrontDoor(Base):
         fs = R.front_state(child)
         self.assertEqual(fs["lost"], [], "said back, so not lost")
         self.assertEqual(next(c for c in W.health(child)["checks"] if c["name"] == "Front door")["line"], "Every request answered")
+
+    def test_70_when_the_site_goes_live_the_chat_says_so_with_the_way_to_it_inside_and_on_root(self):
+        """Found live 2026-09-28 (Human Simulation run 1): after the publish stamp the chat said nothing, and the person
+        did not know the site was up. The last artifact of the kind going out is a turn with the way to it."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        a = next(x for x in W.asks(child) if x["kind"] == "publish" and x["status"] == "pending")
+        self.assertEqual([t for t in R.chat_view(child)["turns"] if t["word"] == "live"], [], "nothing is live before the stamp")
+        W.decide_ask(child, a["id"], True)
+        W.run_until_idle(child, limit=200)
+        W.run_until_idle(root, limit=200)
+        inside = [t for t in R.chat_view(child)["turns"] if t["word"] == "live"]
+        self.assertEqual(len(inside), 1, "said once inside")
+        self.assertEqual((inside[0]["line"], inside[0]["link"], inside[0]["dept"]), ("Live site v1 is live.", "Live site", child))
+        on_root = [t for t in R.chat_view(root)["turns"] if t["word"] == "live"]
+        self.assertEqual(len(on_root), 1, self.said(root)[-4:])
+        self.assertEqual((on_root[0]["link"], on_root[0]["dept"]), ("Live site", child), "on Root the turn carries the department and the way")
+        self.assertTrue(all(t.get("link") is None for t in R.chat_view(root)["turns"] if t["word"] != "live"), "no other turn carries a link")
 
     def test_64_each_function_has_its_own_ladder_numbers_from_its_settings(self):
         """Founder, 2026-09-28: each of the five functions has a Settings tab with its own updates; an engine too."""

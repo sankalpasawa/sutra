@@ -51,6 +51,10 @@
      W28 the department chip in Root's chat opens the department; the tree
          learns of a Root-born department without a reload (Human Simulation
          run 1, findings 1 and 2)
+     W29 while a function runs the chat says so; when the site goes live the
+         turn carries "Open the live site", which previews it, and from Root's
+         chat opens that department on it (Human Simulation run 1, findings 5
+         and 6)
 
    Harness: test_dept.js's fresh(), with 22-website.js loaded after 20-dept.js
    (panel.html's order). Run: node test_website.js */
@@ -804,6 +808,32 @@ test("W28: the department chip in Root's chat opens the department, and the tree
   assert.strictEqual(vm.runInContext("globalThis.__org", r), 1, "a department Root made since the tree was read re-reads the tree");
   await r.wbLoadChat("r3", true); await sleep();
   assert.strictEqual(vm.runInContext("globalThis.__org", r), 1, "once, not on every read");
+});
+
+test("W29: while a function runs the chat says so; the live turn carries Open the live site, which previews it, and from Root opens that department on it", async () => {
+  const m = rtMap(); m.root = "r2";
+  m.status.running = [{ engine: "Write", since: AT, what: "Pages from Site plan" }];
+  const chat = JSON.parse(JSON.stringify(CHAT));
+  chat.turns.push({ n: 9, src: "Identity", dst: ["Owner"], msg_type: "inform", at: AT, thread: null, word: "live", line: "Live site v1 is live.", dept: "r3", name: DEPT, own: true, link: "Live site" });
+  const c = await opened({ map: m, chat });
+  view(c); await sleep(); await sleep();
+  let html = view(c);
+  assert.ok(/<div class="o2quiet dpq">Write is working: Pages from Site plan<\/div><\/div>/.test(html), "the running function is a quiet line under the last turn");
+  assert.ok(/<div class="a">Live site v1 is live\. <button type="button" class="wbchip on wbto wb" data-wblive="r3">Open the live site<\/button>/.test(html), "the live turn carries the one button");
+  assert.ok(click(c, { wblive: "r3" }));
+  assert.strictEqual(vm.runInContext("[wbS().tab.r3, wbS().sel.r3, wbS().pane['r3:live-site']].join('|')", c), "art|live-site|preview", "inside, the button previews the Live site");
+  const rm = rtMap(); rm.kind = "root"; rm.root = "r3"; rm.say = "Ask Root for a department: what it is for"; rm.live = false;
+  const rchat = JSON.parse(JSON.stringify(ROOT_CHAT));
+  rchat.turns.push({ n: 9, src: "Identity", dst: ["Owner"], msg_type: "inform", at: AT, thread: null, word: "live", line: "Live site v1 is live.", dept: "r5", name: DEPT, link: "Live site" });
+  const r = await opened({ map: rm, chat: rchat });
+  vm.runInContext("globalThis.__opened = null; o2Select = function(ref){ globalThis.__opened = ref; };", r);
+  view(r); await sleep(); await sleep();
+  html = view(r);
+  assert.ok(!/is working/.test(html), "Root's chat says nothing of a run it does not have");
+  assert.ok(/data-wbopen="r5">City Care Hospital Website<\/button><\/div><div class="a">Live site v1 is live\. <button type="button" class="wbchip on wbto wb" data-wblive="r5">Open the live site<\/button>/.test(html), "on Root the live turn carries the department and the button");
+  assert.ok(click(r, { wblive: "r5" }));
+  assert.strictEqual(vm.runInContext("globalThis.__opened", r), "r5", "from Root the button opens that department");
+  assert.strictEqual(vm.runInContext("[wbS().tab.r5, wbS().sel.r5, wbS().pane['r5:live-site']].join('|')", r), "art|live-site|preview", "on its Live site");
 });
 
 test("W26: each function's card has its own Settings tab: its template, its own limit, its ladder numbers, how it starts; Identity's carries where the site is served from", async () => {

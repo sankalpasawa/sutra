@@ -609,7 +609,10 @@ function wbChatTurn(t, scoped){
   /* a stamp or a refusal carries no words of its own: the act is the line */
   const line = t.line || (t.msg_type === "accept-proposal" ? "Stamped" : t.msg_type === "reject-proposal" ? "Refused" : wbCap(t.word || ""));
   if (t.src === "Owner") return `<div class="turn wbturn"><div class="who who-you">${dept}You</div><div class="u md">${wbEsc(line)}</div></div>`;
-  return `<div class="turn wbturn"><div class="who who-ai">Root${dept}</div><div class="a">${wbEsc(line)}` +
+  /* a turn that carries a way to the thing (the site that went live) shows it as the one button a person clicks
+     (found live 2026-09-28: after the publish stamp the chat said nothing, and the person did not know it was live) */
+  const link = t.link ? ` <button type="button" class="wbchip on wbto wb" data-wblive="${wbEsc(t.dept || "")}">Open the live site</button>` : "";
+  return `<div class="turn wbturn"><div class="who who-ai">Root${dept}</div><div class="a">${wbEsc(line)}${link}` +
     `<span class="dpchk">${wbEsc(WB_ACTS[t.msg_type] || t.msg_type)} · ${wbEsc(wbWhen(t.at))}</span></div></div>`;
 }
 /* An ask is a line with its buttons, and it says where it lives: the stamp goes
@@ -640,7 +643,11 @@ function wbChatHtml(n, m){
   const turns = (c.turns || []).map(t => wbChatTurn(t, scoped)).join("");
   const empty = m.kind === "root" && !depts.length ? "No department yet. Say what the first one is for." : "Nothing has been said yet";
   const names = !scoped && depts.length ? `<div class="wbstep"><span class="dpk">Departments</span>${depts.map(d => wbDeptChip(d.ref, d.name)).join("")}</div>` : "";
-  return `<div class="wbchat wb">${turns || dpQuiet(empty)}</div>` + wbChatAsksHtml(c) + wbChatBoxHtml(n, m) + names;
+  /* while an engine runs, the chat says so under the last turn (founder, 2026-09-28: "I give a message to the chat,
+     and it seems something is happening, but I don't know") */
+  const running = (m.status && m.status.running) || [];
+  const working = running.map(r => dpQuiet(`${r.engine} is working${r.what ? ": " + r.what : ""}`)).join("");
+  return `<div class="wbchat wb">${turns || (running.length ? "" : dpQuiet(empty))}${working}</div>` + wbChatAsksHtml(c) + wbChatBoxHtml(n, m) + names;
 }
 
 /* Priority's card: the limits, born from Priority's template, set here by the
@@ -937,7 +944,7 @@ async function wbPost(ref, tail, body, key, at){
 if (typeof document !== "undefined" && document.addEventListener){
   const WB_SEL = "[data-wbtab],[data-wbengine],[data-wbart],[data-wbpane],[data-wbdecide],[data-wbstop],[data-wbresume]," +
     "[data-wbgoal],[data-wbask],[data-wbputback],[data-wbfn],[data-wbfound],[data-wbhold],[data-wbenv]," +
-    "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost],[data-wbopen]";
+    "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost],[data-wbopen],[data-wblive]";
   /* capture phase: a click on one of 20-dept.js's own rows hands the viewer
      back to it BEFORE that file's handler paints */
   document.addEventListener("click", (ev) => {
@@ -993,6 +1000,13 @@ if (typeof document !== "undefined" && document.addEventListener){
     }
     if (ds.wbchip !== undefined){ st.chip[ref] = ds.wbchip === "on"; dpRender(); return; }
     if (ds.wbopen !== undefined){ if (typeof o2Select === "function") o2Select(ds.wbopen); return; }
+    /* the live site of the department a turn is about: its Live site, previewed; from Root's chat, that department opens on it */
+    if (ds.wblive !== undefined){
+      const dref = ds.wblive || ref;
+      st.tab[dref] = "art"; st.sel[dref] = "live-site"; st.pane[dref + ":live-site"] = "preview"; st.sel[dref + ":live-site:v"] = "";
+      if (dref !== ref && typeof o2Select === "function") o2Select(dref); else dpRender();
+      return;
+    }
     if (ds.wbthread !== undefined){ st.thread[ref] = ds.wbthread; dpRender(); return; }
     if (ds.wbdecide !== undefined){ wbPost(ref, "asks/" + encodeURIComponent(ds.wbdecide), { approve: ds.wbok === "1" }, null, ds.wbref || ref); return; }
     if (ds.wbstop !== undefined){ wbPost(ref, "stop"); return; }
