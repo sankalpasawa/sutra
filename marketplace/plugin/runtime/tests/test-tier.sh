@@ -107,6 +107,9 @@ STUB3="$WORK/agent-dead.sh"
 { echo '#!/usr/bin/env bash'; echo 'exit 3'; } > "$STUB3"; chmod +x "$STUB3"
 SUTRA_TIER_AGENT_CMD="$STUB3" sutra_tier_ask_detach "$PLUGIN_MAIN" "$PJ3" sid-t "$TID" placement "who owns this?"
 sleep 0.5
+# age the ask past its own timeout, so this is the timed-out case and not an
+# ask still in flight (the two are settled differently)
+perl -e 'utime time-600, time-600, $ARGV[0]' "$PJ3/.sutra/turn/sid-t/$TID.placement.ask.txt" 2>/dev/null
 sutra_tier_settle "$PLUGIN_MAIN" "$PJ3" sid-t "$TID" placement unresolved 0.28
 TF3="$PJ3/.sutra/turn/sid-t/$TID.tier.jsonl"
 is "C9: the code's own value is kept" "$(jq -r '.value' "$TF3" | tail -1)" unresolved
@@ -114,6 +117,17 @@ is "C9: the source is the code" "$(jq -r '.source' "$TF3" | tail -1)" code
 is "C9: the field is marked unresolved" "$(jq -r '.unresolved' "$TF3" | tail -1)" true
 is "C9: the code's own confidence is unchanged" "$(jq -r '.confidence' "$TF3" | tail -1)" 0.28
 is "C9: nothing was guessed" "$(jq -r 'select(.value | test("^dref-")) | .value' "$TF3" | wc -l | tr -d ' ')" 0
+# An ask still in flight is not unreachable: the settle that runs in the same
+# event that started it must leave the field open, or a slower agent can never
+# be heard (found live on 2026-09-28).
+PJ3b="$WORK/p3b"; mkdir -p "$PJ3b/.sutra/turn/sid-t"
+SLOW="$WORK/agent-slow.sh"
+{ echo '#!/usr/bin/env bash'; echo 'sleep 20'; echo 'printf "%s\n" "{\"value\":\"dref-abc123\",\"confidence\":\"0.9\",\"reason\":\"late but right\"}" > "$2"'; } > "$SLOW"; chmod +x "$SLOW"
+SUTRA_TIER_AGENT_CMD="$SLOW" sutra_tier_ask_detach "$PLUGIN_MAIN" "$PJ3b" sid-t "$TID" placement "q"
+SUTRA_TIER_AGENT_CMD="$SLOW" sutra_tier_settle "$PLUGIN_MAIN" "$PJ3b" sid-t "$TID" placement unresolved 0.28
+is "C9: an ask in flight is left unsettled, not called unreachable" \
+  "$( [ -f "$PJ3b/.sutra/turn/sid-t/$TID.tier.jsonl" ] && echo settled || echo open)" open
+pkill -f agent-slow.sh 2>/dev/null
 
 # ================================================================ C7 in row ==
 echo "== C7: the tier that answered is in the step log row =="

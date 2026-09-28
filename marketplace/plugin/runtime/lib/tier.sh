@@ -165,8 +165,22 @@ sutra_tier_settle() {
         "the agent answered $_ts_av, which does not raise stringency; refused by the raise-only rule" false
     fi
   else
-    sutra_tier_record "$_ts_p" "$_ts_s" "$_ts_t" "$_ts_id" "$_ts_v" code "$_ts_c" \
-      "below threshold and the agent did not answer in time; the code's own value stands" true
+    # An ask that is still in flight is NOT unreachable: the settle that runs in
+    # the same event that started it would otherwise always write "unreachable"
+    # milliseconds later, and the real answer would arrive too late to count
+    # (found live on 2026-09-28, 2.306.5). Leave it unsettled until the ask has
+    # had its own timeout, then record the code's value as the one that stands.
+    _ts_qf="$_ts_p/.sutra/turn/$_ts_s/$_ts_t.$_ts_id.ask.txt"
+    if [ -f "$_ts_qf" ]; then
+      _ts_mt="$(stat -f %m "$_ts_qf" 2>/dev/null || stat -c %Y "$_ts_qf" 2>/dev/null)"
+      case "$_ts_mt" in ''|*[!0-9]*) _ts_mt=0 ;; esac
+      _ts_now="$(date +%s 2>/dev/null)"; case "$_ts_now" in ''|*[!0-9]*) _ts_now=0 ;; esac
+      [ "$((_ts_now - _ts_mt))" -lt "$(( ${SUTRA_TIER_TIMEOUT:-25} + 5 ))" ] && return 0
+      _ts_why="below threshold and the agent did not answer within its timeout; the code's own value stands"
+    else
+      _ts_why="below threshold but no ask could be made on this box; the code's own value stands"
+    fi
+    sutra_tier_record "$_ts_p" "$_ts_s" "$_ts_t" "$_ts_id" "$_ts_v" code "$_ts_c" "$_ts_why" true
   fi
   return 0
 }

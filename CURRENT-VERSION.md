@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-09-28
 
-## v2.306.5 (2026-09-28, HEAD)
+## v2.306.6 (2026-09-28, HEAD)
+
+**An agent answer that arrives is heard** (found by running v2.306.5 live): the settle ran in the same event that started the ask and always wrote "unreachable" before the answer could land. An ask inside its own timeout is now left open for a later event to settle.
+
+## v2.306.5 (2026-09-28)
 
 **The standby agent actually answers** (RT-21, found by running v2.306.4 live on a Mac): the ask was bounded by `timeout`, a binary macOS does not ship, so every ask exited 127 and looked unreachable. The runtime's own watchdog bounds it now, and the suite runs the built-in caller instead of only an injected stub.
 

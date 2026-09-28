@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-28
+## 2.306.6 (2026-09-28)
+
+- **An agent answer that arrives is now heard**: the settle ran in the same event that started the ask, milliseconds later, so it always recorded "unreachable" and a real answer arriving seconds afterwards was ignored. An ask still inside its own timeout is now left unsettled and settled by a later event; only an ask past its timeout, or one that could not be made at all, records the code's value as the one that stands, and the two say which they were. Found by running 2.306.5 live. Tests: test-tier 44.
+
 ## 2.306.5 (2026-09-28)
 
 - **The standby agent now actually answers**: the ask wrapped its call in `timeout`, which macOS does not ship, so on a Mac every ask exited 127 and took the unreachable path while the suite stayed green. The call is bounded by the runtime's own watchdog instead (`kill -0` poll, `pkill -P` on expiry), and three suite cases now run the built-in caller itself - an answer parsed out of the caller's text, a slow caller cut off by the watchdog, and an unreadable answer refused rather than invented. Found by running the release live, not by the tests. Tests: test-tier 42.
