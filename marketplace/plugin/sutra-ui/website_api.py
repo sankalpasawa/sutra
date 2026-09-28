@@ -227,7 +227,8 @@ def artifact(ref: str, slug: str):
     name = next((a for a in W.artifacts_of(W.dept(ref)) if W.slug(a) == slug), None)
     if not name:
         raise HTTPException(404, detail="no such artifact")
-    return {"name": name, "slug": slug, "versions": list(reversed(W.versions(ref, name)))}
+    import artifacts
+    return {"name": name, "slug": slug, "versions": list(reversed(W.versions(ref, name))), "template": artifacts.view(name)}
 
 
 @router.get("/{ref}/trace/{slug}/{v}")

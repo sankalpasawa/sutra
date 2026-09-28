@@ -1,0 +1,24 @@
+{
+ "id": "artifact/site-plan",
+ "name": "Site plan",
+ "kind": "plan",
+ "use_case": "the pages a site will have, from the Brief",
+ "files": [
+  "site-plan.json"
+ ],
+ "checks": [
+  "plan_has_pages"
+ ],
+ "written_by": [
+  "Plan"
+ ],
+ "counts_after": "filing",
+ "put_back": true,
+ "operations": [
+  "Write"
+ ],
+ "made_from": [
+  "artifact/brief"
+ ],
+ "version": 1
+}

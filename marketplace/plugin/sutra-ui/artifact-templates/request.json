@@ -1,0 +1,22 @@
+{
+ "id": "artifact/request",
+ "name": "Request",
+ "kind": "text",
+ "use_case": "the owner's words to a Root: a department to set up",
+ "files": [
+  "request.md"
+ ],
+ "checks": [
+  "is_text"
+ ],
+ "written_by": [
+  "Identity"
+ ],
+ "counts_after": "filing",
+ "put_back": false,
+ "operations": [
+  "Setup"
+ ],
+ "made_from": [],
+ "version": 1
+}

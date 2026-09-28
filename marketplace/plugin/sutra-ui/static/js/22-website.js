@@ -571,11 +571,17 @@ function wbArtHtml(n){
   const cur = vs.filter(v => String(v.v) === String(st.sel[k + ":v"]))[0] || vs[0];
   const chk = v => (v.check && v.check.ok) ? "ok" : "block";
   if (pane === "item"){
+    /* the artifact's template from the Library: what it holds, its checks, who writes it, what runs on a new version */
+    const t = a.template;
+    const tpl = t ? dpCard("Template", `<div class="dpengines">` + dpKV("Holds", (t.files || []).join(", "), "A screen") +
+      dpKV("Checks", (t.checks || []).join(", "), "None") + dpKV("Written by", (t.written_by || []).join(", "), "Nobody") +
+      dpKV("Counts", t.counts_after === "stamp" ? "After your stamp" : "When filed", "") +
+      dpKV("Runs on a new one", (t.operations || []).join(", "), "Nothing") + `</div>`) : "";
     return tabs + dpCard("The work item", `<div class="dpengines">` +
       dpKV("Made by", cur.run === "owner" ? "The owner" : (wbMakerOf(a.name)), "Not named") +
       dpKV("Read by", wbReaderOf(a.name), "Nobody yet") +
       dpCell("Check", `<div class="dpbig">${wbDot(chk(cur))} ${cur.check && cur.check.ok ? "Passed" : "Failed"}</div>`) + `</div>` +
-      ((cur.check && cur.check.notes) || []).map(x => dpRunRow(x, "", chk(cur))).join(""));
+      ((cur.check && cur.check.notes) || []).map(x => dpRunRow(x, "", chk(cur))).join("")) + tpl;
   }
   if (pane === "versions"){
     return tabs + dpCard("Versions", vs.map((v, i) => `<div class="wbver${i === 0 ? " on" : ""}">` +

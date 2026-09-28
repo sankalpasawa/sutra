@@ -997,6 +997,47 @@ class TestOrganicRootAndShape(Base):
             shutil.rmtree(reg, ignore_errors=True)
 
 
+class TestOperableArtifacts(Base):
+    """Founder, 2026-09-28: artifacts are operable: a template in the Library with its own checks, its writer, when it
+    counts, and its operations; a version filed runs the artifact's own check; apps are templates too."""
+
+    def test_62_every_artifact_has_a_template_the_check_runs_at_filing_and_a_stranger_is_refused(self):
+        W, R = self.W, self.R
+        import artifacts as A
+        d = R.defs()
+        named = {a for k in d["kinds"].values() for a in k["artifacts"]} | {e[key] for e in d["engines"].values() for key in ("reads", "writes") if e.get(key)}
+        self.assertEqual(named - set(A.templates()), set(), "every artifact the definitions name has a template")
+        self.assertEqual({t["kind"] for t in A.apps()}, {"app"})
+        self.assertEqual([t["name"] for t in A.apps()], ["Human Sutra"], "an app is a template too")
+        for t in A.templates().values():
+            self.assertTrue(t.get("checks") or t["kind"] == "app", t["name"])
+            for op in t.get("operations") or []:
+                self.assertIn(op, d["engines"], "%s names an engine that exists" % t["name"])
+        self.assertEqual(A.get("Live site")["counts_after"], "stamp")
+        self.assertEqual(A.get("Live site")["operations"], ["Adaptation", "Audit"], "the artifact's own actions are engines it names")
+        # a definition naming an artifact the Library lacks is refused
+        bad = json.loads(json.dumps(d))
+        bad["engines"]["Plan"]["writes"] = "Sitemap"
+        self.assertTrue(any("Plan: writes Sitemap" in f for f in R.validate(bad)), R.validate(bad))
+        bad = json.loads(json.dumps(d))
+        bad["engines"]["Audit"]["start"]["on"] = [{"kind": "version", "of": "Pages", "checked": True}]
+        self.assertTrue(any("Audit: runs on a new Pages" in f for f in R.validate(bad)))
+        # the artifact's own check at filing: a good version passes, a bad one is filed and never read as passed
+        good = W.add_version(REF, "Site plan", {"site-plan.json": json.dumps({"pages": [{"slug": "index"}]})}, [], "r-t", {"ok": True, "notes": ["by the engine"]})
+        self.assertTrue(good["check"]["ok"])
+        self.assertIn("every page has a slug", good["check"]["notes"])
+        badv = W.add_version(REF, "Site plan", {"site-plan.json": json.dumps({"pages": []})}, [], "r-t", {"ok": True, "notes": ["by the engine"]})
+        self.assertFalse(badv["check"]["ok"], "the artifact refused what the engine passed")
+        self.assertEqual(W.latest(REF, "Site plan", passed=True)["v"], good["v"], "the failed version is never read as passed")
+        self.assertEqual(len(W.versions(REF, "Site plan")), 2, "but it is filed")
+        self.assertIsNone(A.check("Table: identity.take", {"table.json": "{}"}), "a thing with no template has no artifact check")
+        self.live()
+        for art in ("Brief", "Site plan", "Pages", "Build", "Live site"):
+            self.assertTrue(W.latest(REF, art)["check"]["ok"], art + " passes its own check in a real run")
+        v = A.view("Site plan")
+        self.assertEqual((v["written_by"], v["operations"], v["counts_after"]), (["Plan"], ["Write"], "filing"))
+
+
 class TestActivation(Base):
     """Founder, 2026-09-28: every engine has its own start, a trigger and blockers; Start is a signal to all; "the rest
     is in coordination"; once started each has its own agency. One rule for the five internal systems and the four

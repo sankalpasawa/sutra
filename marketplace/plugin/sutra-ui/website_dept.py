@@ -209,6 +209,14 @@ def read_files(ref, art, v):
 
 
 def add_version(ref, art, files, made_from, run, check, note=""):
+    """A version, with the artifact's own check beside the engine's: the template in the Library says what a good one
+    is, and a version that fails it is filed and never read as passed (founder, 2026-09-28: operable artifacts)."""
+    import artifacts
+    own = artifacts.check(art, files)
+    if own is not None:
+        check = dict(check or {})
+        check["ok"] = bool(check.get("ok")) and own["ok"]
+        check["notes"] = list(check.get("notes") or []) + own["notes"]
     return VERS.add(_abase(ref, art), files, made_from, run, check, now(), note=note, lock=_lock(ref))
 
 

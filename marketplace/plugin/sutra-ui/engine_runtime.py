@@ -151,6 +151,8 @@ def validate(d):
             if act not in ACTS:
                 faults.append("edges, %s: %s is not an act" % (src, act))
     faults += table_faults(d.get("coordination"), d.get("engines") or {})
+    import artifacts
+    faults += artifacts.faults(d)                     # every artifact an engine reads or writes has a template in the Library
     if not d.get("kinds"):
         faults.append("kinds: the definitions name no kind of department")
     for kind, k in (d.get("kinds") or {}).items():

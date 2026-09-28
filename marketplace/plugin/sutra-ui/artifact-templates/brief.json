@@ -1,0 +1,23 @@
+{
+ "id": "artifact/brief",
+ "name": "Brief",
+ "kind": "text",
+ "use_case": "the owner's words for a department: its goal and every ask since",
+ "files": [
+  "brief.md"
+ ],
+ "checks": [
+  "is_text"
+ ],
+ "written_by": [
+  "the owner",
+  "Identity"
+ ],
+ "counts_after": "filing",
+ "put_back": false,
+ "operations": [
+  "Plan"
+ ],
+ "made_from": [],
+ "version": 1
+}

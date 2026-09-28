@@ -157,7 +157,9 @@ function fresh(opts){
       if (/\/api\/native\/r3\/steps\//.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(stepsOf(decodeURIComponent(p.split("/steps/")[1]), opts.steps))));
       if (/\/api\/native\/r3\/board$/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(opts.board || BOARD)));
       if (/\/api\/native\/r3\/engine\//.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(Object.assign({ runs: [] }, map.engines[1]))));
-      if (/\/artifact\//.test(p)) return Promise.resolve({ name: "Live site", slug: "live-site", versions: [
+      if (/\/artifact\//.test(p)) return Promise.resolve({ name: "Live site", slug: "live-site",
+        template: { id: "artifact/live-site", name: "Live site", kind: "site", files: ["index.html", "*.html"], checks: ["has_index_html"],
+                    written_by: ["Publish"], counts_after: "stamp", put_back: true, operations: ["Adaptation", "Audit"] }, versions: [
         { v: 2, at: "2026-09-27T11:20:00+05:30", made_from: [{ art: "Build", v: 6 }], run: "r-2", check: { ok: true, notes: ["live"] }, note: "" },
         { v: 1, at: "2026-09-27T11:10:00+05:30", made_from: [{ art: "Build", v: 5 }], run: "r-1", check: { ok: true, notes: ["live"] }, note: "" }] });
       if (/^\/api\/dept\//.test(p)) return Promise.resolve({});   /* 20-dept.js's own reads: an empty record */
@@ -640,6 +642,16 @@ test("W23: a Root that has not been asked for anything says so, and what to say;
   const w = await opened({ map: rtMap() });
   view(w); await sleep(); await sleep();
   assert.ok(!/No department yet/.test(view(w)), "a website department never says it");
+});
+
+test("W24: a filed artifact shows its template: what it holds, its checks, who writes it, when it counts, what runs on a new one", async () => {
+  const c = await opened({ map: rtMap() });
+  click(c, { wbart: "live-site", wbpane: "item" }); view(c); await sleep(); await sleep();
+  const html = view(c);
+  assert.ok(/<h3>Template<\/h3>/.test(html), "the template card");
+  assert.ok(/index\.html, \*\.html/.test(html) && /has_index_html/.test(html) && /Publish/.test(html), "holds, checks, written by");
+  assert.ok(/After your stamp/.test(html), "when it counts");
+  assert.ok(/Adaptation, Audit/.test(html), "its operations: the engines that run on a new one");
 });
 
 Promise.all(pending).then(() => {
