@@ -1,6 +1,14 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-28
+## 2.306.20 (2026-09-29)
+
+## Sutra Desktop: the organisation is its chat
+
+- the organisation's row on the Org structure screen is the chat with Root and nothing else; Root is not a row of the tree nor a tile of the chart; the departments Root makes sit under the organisation
+- Root settings behind one button: what Root does, On or Off, its rules, the departments it made
+- founding lands on the organisation; a department born from the chat slides into the tree
+
 ## 2.306.19 (2026-09-29)
 
 ## Sutra Desktop: ask the department about its own work
