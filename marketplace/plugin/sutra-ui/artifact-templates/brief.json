@@ -16,7 +16,8 @@
  "counts_after": "filing",
  "put_back": false,
  "operations": [
-  "Plan"
+  "Plan",
+  "Do"
  ],
  "made_from": [],
  "version": 1

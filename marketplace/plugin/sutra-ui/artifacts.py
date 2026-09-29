@@ -47,6 +47,13 @@ def get(name):
     return templates().get(name)
 
 
+def default_template():
+    """The Default: text checked as text, for an artifact a department names that the Library has no template of its
+    own for (TPL-1, founder 2026-09-29: "there is a default one for artifacts also"). Never for a department's internal
+    records (a table, a ladder), which are no artifact."""
+    return templates().get("Default")
+
+
 def apps():
     return [t for t in templates().values() if t["kind"] == "app"]
 
@@ -93,9 +100,10 @@ CHECKS = {"is_text": c_is_text, "plan_has_pages": c_plan_has_pages, "pages_have_
           "has_index_html": c_has_index_html, "names_a_ref": c_names_a_ref}
 
 
-def check(name, files):
-    """The artifact's own verdict on one version's files, or None when the Library has no template for the name."""
-    t = get(name)
+def check(name, files, default=False):
+    """The artifact's own verdict on one version's files; with `default`, the Default's when the Library has no template
+    of its own for the name (an artifact the department names); None when there is no template to check by."""
+    t = get(name) or (default_template() if default else None)
     if not t or not t.get("checks"):
         return None
     notes, ok = [], True
@@ -119,14 +127,15 @@ def faults(defs):
         for c in t.get("checks") or []:
             if c not in CHECKS:
                 out.append("artifact %s: no check named %s ships with the app" % (t["name"], c))
+    default = "Default" in names                          # with a Default on the shelf an unnamed artifact is text, not a fault
     for kind, k in (defs.get("kinds") or {}).items():
         for a in k.get("artifacts") or []:
-            if a not in names:
+            if a not in names and not default:
                 out.append("kinds, %s: the Library has no artifact template named %s" % (kind, a))
     for name, e in (defs.get("engines") or {}).items():
         for key in ("reads", "writes"):
             a = e.get(key)
-            if a and a not in names:
+            if a and a not in names and not default:
                 out.append("%s: %s %s, which the Library has no template for" % (name, key, a))
         for trig in (e.get("start") or {}).get("on") or []:
             if trig.get("kind") == "version" and trig.get("of") in names:
@@ -136,8 +145,8 @@ def faults(defs):
 
 
 def view(name):
-    """What a screen shows of a template."""
-    t = get(name)
+    """What a screen shows of a template: the artifact's own, or the Default an unnamed artifact is filed under."""
+    t = get(name) or default_template()
     if not t:
         return None
     return {"id": t["id"], "name": t["name"], "kind": t["kind"], "use_case": t.get("use_case") or "", "files": t.get("files") or [],

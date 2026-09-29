@@ -102,9 +102,12 @@ def spawn(root_ref, name, kind, goal, owner="the owner"):
         k = W.KINDS[kind]
         charter(ref, goal, [k["done"]], k["rules"], "Write %s's charter" % name)
         picks = {}
+        tpl = k.get("functions_template") or TEMPLATE      # the kind says which Library template its functions run (TPL-1)
+        import function_templates as FT
         for fn in FUNCTIONS:
-            tid = "%s/%s" % (fn, TEMPLATE)
-            _apply("org.template", {"ref": ref, "function": fn, "template": tid}, "%s runs the %s template" % (fn.title(), TEMPLATE))
+            tid = "%s/%s" % (fn, tpl)
+            if FT.picked(ref).get(fn) != tid:              # the Default needs no ask: a department runs it until picked
+                _apply("org.template", {"ref": ref, "function": fn, "template": tid}, "%s runs the %s template" % (fn.title(), tpl))
             picks[fn] = tid
         d, _ = W.create(ref, name, None, owner=owner, parent=root_ref, kind=kind)
         d["templates"] = picks

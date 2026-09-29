@@ -203,6 +203,20 @@ def test_found_gives_an_org_its_one_root_and_root_sets_up_the_website_department
     assert any(x["kind"] == "publish" for x in W.asks(child["ref"])), "the child ran its goal and asks before its first publish"
 
 
+def test_a_departments_line_and_artifacts_are_read_from_its_record(W, monkeypatch):
+    """TPL-1 (founder, 2026-09-29): what a department runs is on its record, from the Library at its birth; engines_of
+    and artifacts_of read the record, and the kind's line only for a record born before it carried one."""
+    monkeypatch.setenv("SUTRA_ENGINE_RUNTIME", "2")
+    W = importlib.reload(W)
+    d, _ = W.create(REF, "Fees Desk", None, kind="default")
+    assert (d["engines"], d["artifacts"]) == (["Do"], ["Brief", "Result"])
+    assert [e[0] for e in W.engines_of(d)] == ["Do"] and W.artifacts_of(d) == ("Brief", "Result")
+    d["engines"] = ["Plan", "Write"]
+    assert [e[0] for e in W.engines_of(d)] == ["Plan", "Write"], "the record, not the kind"
+    old = {k: v for k, v in d.items() if k not in ("engines", "artifacts")}
+    assert [e[0] for e in W.engines_of(old)] == ["Do"] and W.artifacts_of(old) == ("Brief", "Result"), "born before the record carried them: the kind's"
+
+
 if __name__ == "__main__":
     import sys
     sys.exit(pytest.main([__file__, "-q"]))

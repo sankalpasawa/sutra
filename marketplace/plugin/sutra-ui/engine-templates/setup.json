@@ -1,0 +1,68 @@
+{
+ "id": "engine/setup",
+ "name": "Setup",
+ "version": 1,
+ "use_case": "a root: a department set up for the owner's words, from the Library",
+ "kind": "work",
+ "description": "sets up a department the owner asked for, from the Library's templates",
+ "skills": [
+  "set up a department from the owner's words"
+ ],
+ "reads": "Request",
+ "writes": "Department",
+ "start": {
+  "on": [
+   {
+    "kind": "version",
+    "of": "Request"
+   }
+  ],
+  "unless": [
+   "identity.gate",
+   "priority.envelope",
+   "coord.chain"
+  ]
+ },
+ "steps": [
+  {
+   "id": "setup.read",
+   "name": "Read the request",
+   "nature": "transform",
+   "born": "C2",
+   "code": "setup_read",
+   "check": "facts_are_closed"
+  },
+  {
+   "id": "setup.shape",
+   "name": "Shape the department",
+   "nature": "make",
+   "born": "C0",
+   "ceiling": "C2",
+   "prompt": "setup_shape",
+   "draft": "setup_shape_draft",
+   "out": {
+    "name": "str",
+    "kind": "str",
+    "goal": "str"
+   },
+   "check": "department_is_shaped"
+  },
+  {
+   "id": "setup.make",
+   "name": "Make it",
+   "nature": "make",
+   "born": "C2",
+   "code": "setup_make",
+   "check": "department_is_made"
+  },
+  {
+   "id": "setup.file",
+   "name": "File it",
+   "nature": "transform",
+   "born": "C2",
+   "code": "setup_file",
+   "files": true,
+   "check": "filed_has_files"
+  }
+ ]
+}

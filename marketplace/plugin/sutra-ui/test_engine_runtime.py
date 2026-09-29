@@ -104,7 +104,11 @@ class Model:
         if sid == "setup.shape":
             words = prompt.split("THE OWNER'S WORDS: ", 1)[1].split("\n", 1)[0]
             org = prompt.split("The owner of ", 1)[1].split(" asks Root", 1)[0]
-            return {"name": org + " Website", "kind": self.kind or "website", "goal": words}, 0.02, "model"
+            kind = self.kind or "website"
+            return {"name": org + (" Website" if kind == "website" else " Desk"), "kind": kind, "goal": words}, 0.02, "model"
+        if sid == "do.make":
+            brief = prompt.split("(the Brief):\n", 1)[1].split("\n\nDo it", 1)[0]
+            return {"text": "Done, in words: " + " ".join(brief.split())[:160]}, 0.01, "model"
         if sid == "audit.judge":
             return {"ok": not self.findings, "findings": list(self.findings)}, 0.02, "model"
         if sid == "check.rules":
@@ -184,6 +188,38 @@ class TestTheDefinitions(Base):
         bad["engines"]["Plan"]["steps"][0]["code"] = "rm_rf"
         self.assertTrue(any("no function named rm_rf ships with the app" in f for f in R.validate(bad)),
                         "a definition can name code; it cannot bring any")
+
+    def test_83_the_work_engines_are_library_templates_and_a_bad_one_is_refused(self):
+        """TPL-1 (founder, 2026-09-29): engines come from templates in the Library, one file each with a use case; the
+        definitions are assembled from them; a kind names its use case and its functions' template; a template without
+        a use case, or a kind naming a template a function lacks, is a fault; a file that is no template refuses the load."""
+        R = self.R
+        self.assertEqual(sorted(p.name for p in R.TEMPLATES_DIR.glob("*.json")), ["check.json", "do.json", "plan.json", "publish.json", "setup.json", "write.json"])
+        e = R.defs()["engines"]
+        self.assertEqual(e["Plan"]["from_template"], "engine/plan")
+        self.assertTrue(all(e[n].get("use_case") for n in ("Plan", "Write", "Check", "Publish", "Setup", "Do")))
+        raw = json.loads((R.Path(R.__file__).parent / "engine_defs" / "website.json").read_text(encoding="utf-8"))
+        self.assertNotIn("Plan", raw["engines"], "the file holds the functions, the kinds, the edges and the table; the work engines are the Library's")
+        self.assertEqual({k: v["functions_template"] for k, v in raw["kinds"].items()}, {"website": "product-build", "root": "default", "default": "default"})
+        bad = copy.deepcopy(R.defs())
+        del bad["engines"]["Plan"]["use_case"]
+        self.assertIn("Plan: an engine template names its use case", R.validate(bad))
+        bad = copy.deepcopy(R.defs())
+        bad["kinds"]["website"]["functions_template"] = "nowhere"
+        self.assertIn("kinds, website: functions_template names a Library template every function has", R.validate(bad))
+        tmp = R.Path(tempfile.mkdtemp(prefix="engine-templates-"))
+        (tmp / "plan.json").write_text(json.dumps({"id": "engine/plan", "name": "Plan"}), encoding="utf-8")
+        prior = R.TEMPLATES_DIR
+        R.TEMPLATES_DIR, R._DEFS["d"] = tmp, None
+        R._DEFS.clear()
+        try:
+            with self.assertRaises(ValueError) as cm:
+                R.defs()
+            self.assertIn("names an id, a name and a use case", str(cm.exception))
+        finally:
+            R.TEMPLATES_DIR = prior
+            R._DEFS.clear()
+            shutil.rmtree(tmp, ignore_errors=True)
 
     def test_02_a_check_fails_what_it_should_fail(self):
         C = self.R.CHECK
@@ -715,6 +751,29 @@ class TestWhatTheOwnerSees(Base):
         with self.assertRaises(ValueError):
             W.owner_ask(REF, "words", about="fn:board")
 
+    def test_85_the_agents_brief_carries_the_template_the_settings_tab_picked(self):
+        """SIM-2 finding 20: a pick on a function's Settings tab reached the screen and never the agent, which read the
+        birth copy on the record. The brief reads the pick on the registry, so the next step runs the template picked."""
+        W, R = self.W, self.R
+        reg = tempfile.mkdtemp(prefix="engine-runtime-picks-")
+        prior = os.environ.get("SUTRA_NATIVE_HOME")
+        os.environ["SUTRA_NATIVE_HOME"] = reg
+        import placement_engine as E
+        importlib.reload(E)
+        import function_templates as FT
+        try:
+            ctx = {"ref": REF, "dept": W.dept(REF), "engine": "Priority", "def": R.engine_def("Priority")}
+            self.assertNotIn("customer and bank items", R.card(ctx), "born on the Default")
+            FT.write_pick(REF, "priority", "priority/money-movement")
+            self.assertIn("customer and bank items", R.card(ctx), "the brief follows the pick, not the birth copy")
+        finally:
+            if prior is None:
+                os.environ.pop("SUTRA_NATIVE_HOME", None)
+            else:
+                os.environ["SUTRA_NATIVE_HOME"] = prior
+            importlib.reload(E)
+            shutil.rmtree(reg, ignore_errors=True)
+
 
 class TestTheFiveJourneys(Base):
     """Canon's five journeys (the Native site, products/cos/design-journeys.html). One way in; Identity recognises which."""
@@ -1079,10 +1138,14 @@ class TestOperableArtifacts(Base):
                 self.assertIn(op, d["engines"], "%s names an engine that exists" % t["name"])
         self.assertEqual(A.get("Live site")["counts_after"], "stamp")
         self.assertEqual(A.get("Live site")["operations"], ["Adaptation", "Audit"], "the artifact's own actions are engines it names")
-        # a definition naming an artifact the Library lacks is refused
+        # an artifact the Library has no template of its own for gets the Default, text checked as text (TPL-1, founder
+        # 2026-09-29: "there is a default one for artifacts also"); it used to be refused
         bad = json.loads(json.dumps(d))
         bad["engines"]["Plan"]["writes"] = "Sitemap"
-        self.assertTrue(any("Plan: writes Sitemap" in f for f in R.validate(bad)), R.validate(bad))
+        self.assertFalse(any("Sitemap" in f for f in R.validate(bad)), R.validate(bad))
+        self.assertIsNone(A.get("Sitemap"), "no template of its own")
+        self.assertEqual(A.check("Sitemap", {"sitemap.xml": "<urlset/>"}, default=True)["ok"], True, "an artifact the department names: the Default")
+        self.assertEqual(A.check("Sitemap", {"sitemap.xml": " "}, default=True)["ok"], False, "the Default still checks: text")
         bad = json.loads(json.dumps(d))
         bad["engines"]["Audit"]["start"]["on"] = [{"kind": "version", "of": "Pages", "checked": True}]
         self.assertTrue(any("Audit: runs on a new Pages" in f for f in R.validate(bad)))
@@ -1105,6 +1168,36 @@ class TestOperableArtifacts(Base):
 class TestTheFrontDoor(Base):
     """The person speaks with Root (founder, 2026-09-28): Root's Identity hands his words to the department they are about,
     the department's answers come back onto Root's board, and a stamp, Stop and Start go the same way."""
+
+    def test_84_root_sets_up_a_department_for_any_goal_the_default_line_when_no_kind_fits(self):
+        """TPL-1 (founder, 2026-09-29): the words to Root pick the kind whose use case fits; words that fit no kind get
+        the default kind: one Do engine that files a Result for each ask, the default function templates; the record
+        carries the line and the artifacts, and everything reads the record."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        import function_templates as FT
+        self.assertEqual(W.dept(child)["engines"], ["Plan", "Write", "Check", "Publish"], "a website goal: the website line, on the record")
+        self.assertEqual(FT.picked(child)["priority"], "priority/product-build")
+        self.assertEqual(R.kind_for("A website for our clinic"), "website")
+        self.assertEqual(R.kind_for("Answer the letters patients send about our fees"), "default")
+        self.M.kind = "default"
+        W.owner_ask(root, "Start a new department: answer the letters patients send about our fees, in plain words, every day.")
+        W.run_until_idle(root, limit=200)
+        a = next(x for x in W.asks(root) if x["kind"] == "setup" and x["status"] == "pending")
+        W.decide_ask(root, a["id"], True)                  # Root's rule: a new department is stamped by the owner
+        W.run_until_idle(root, limit=200)
+        kids = [d for d in W.list_depts() if d.get("parent") == root]
+        self.assertEqual(len(kids), 2, "a second department under the same Root")
+        other = [d for d in kids if d["ref"] != child][0]
+        self.assertEqual((other["kind"], other["engines"], other["artifacts"]), ("default", ["Do"], ["Brief", "Result"]))
+        self.assertEqual(FT.picked(other["ref"])["priority"], "priority/default", "the default kind runs the default function templates")
+        self.assertEqual([e[0] for e in W.engines_of(other)], ["Do"], "the line is read from the record")
+        self.assertEqual(R.coordination(other["ref"])["line"], ["Do"], "and so is Coordination's table")
+        W.run_until_idle(other["ref"], limit=200)
+        self.assertTrue(W.versions(other["ref"], "Result"), "Do answered the Brief and filed the Result")
+        lines = [t["line"] for t in R.chat_view(other["ref"])["turns"]]
+        self.assertTrue(any(line.startswith("Result v1 is filed") for line in lines), lines)
+        self.assertFalse(any("live" in line for line in lines), "nothing went live: a Result is filed")
 
     def structure(self, org="Meadow Clinic"):
         reg = tempfile.mkdtemp(prefix="engine-runtime-front-")
@@ -1536,7 +1629,7 @@ class TestActivation(Base):
     is in coordination"; once started each has its own agency. One rule for the five internal systems and the four
     work engines, declared as data, refused if missing, read by one piece of code."""
 
-    ALL = ("Plan", "Write", "Check", "Publish", "Setup", "Identity", "Adaptation", "Priority", "Coordination", "Audit")    # ten: Setup is a Root's
+    ALL = ("Plan", "Write", "Check", "Publish", "Setup", "Do", "Identity", "Adaptation", "Priority", "Coordination", "Audit")    # eleven: Setup is a Root's, Do the default line's (TPL-1)
 
     def ctx(self, **more):
         c = self.R._coord_ctx(REF)

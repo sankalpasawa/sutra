@@ -155,12 +155,23 @@ def validate(d):
     faults += artifacts.faults(d)                     # every artifact an engine reads or writes has a template in the Library
     if not d.get("kinds"):
         faults.append("kinds: the definitions name no kind of department")
+    import function_templates
     for kind, k in (d.get("kinds") or {}).items():
         for n in k.get("line") or []:
             if ((d.get("engines") or {}).get(n) or {}).get("kind") != "work":
                 faults.append("kinds, %s: %s is not a work engine" % (kind, n))
         if not k.get("artifacts") or not k.get("goal") or not k.get("rules"):
             faults.append("kinds, %s: a kind names its artifacts, its goal and its rules" % kind)
+        # a kind is a department template (TPL-1): it says which use case it fits and which Library template its five
+        # functions run, and that template exists for every function
+        if not k.get("use_case"):
+            faults.append("kinds, %s: a kind names its use case" % kind)
+        ft = k.get("functions_template")
+        if not ft or any(not function_templates.get("%s/%s" % (fn, ft)) for fn in function_templates.FUNCTIONS):
+            faults.append("kinds, %s: functions_template names a Library template every function has" % kind)
+    for name, e in (d.get("engines") or {}).items():
+        if e.get("from_template") and not e.get("use_case"):
+            faults.append("%s: an engine template names its use case" % name)
     return faults
 
 
@@ -206,9 +217,39 @@ def table_faults(t, engines):
     return faults
 
 
+TEMPLATES_DIR = Path(__file__).parent / "engine-templates"
+
+
+def engine_templates():
+    """The Library's engine templates: one file per engine, each with its id, its name and its use case (TPL-1, founder
+    2026-09-29: engines come from templates, matched to the use case). A file that is not a template refuses the load,
+    as a bad step does."""
+    out = {}
+    for p in sorted(TEMPLATES_DIR.glob("*.json")):
+        try:
+            t = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ValueError("the engine template %s is refused: not JSON (%s)" % (p.name, exc))
+        if not isinstance(t, dict) or not t.get("id") or not t.get("name") or not t.get("use_case"):
+            raise ValueError("the engine template %s is refused: a template names an id, a name and a use case" % p.name)
+        if t["name"] in out:
+            raise ValueError("the engine template %s is refused: %s is already a template" % (p.name, t["name"]))
+        out[t["name"]] = t
+    return out
+
+
 def defs():
+    """The definitions: the file (the functions, the kinds, the edges, Coordination's table) with the Library's engine
+    templates assembled in as engines, validated as one."""
     if "d" not in _DEFS:
         d = json.loads((Path(__file__).parent / "engine_defs" / "website.json").read_text(encoding="utf-8"))
+        d["engines"] = dict(d.get("engines") or {})
+        for name, t in engine_templates().items():
+            if name in d["engines"]:
+                raise ValueError("the engine template %s is refused: the definitions already hold an engine of that name" % name)
+            e = {k: v for k, v in t.items() if k not in ("id", "version")}
+            e["from_template"] = t["id"]
+            d["engines"][name] = e
         faults = validate(d)
         if faults:
             raise ValueError("the engine definitions are refused: " + "; ".join(faults[:6]))
@@ -253,10 +294,15 @@ def card(ctx):
     lines = ["You are the agent of %s, one engine of the department \"%s\"." % (name, d.get("name")),
              "What %s does: it %s." % (name, e.get("description") or ""),
              "Its skills: %s." % "; ".join(e.get("skills") or [])]
-    tid = (d.get("templates") or {}).get(name.lower())
+    # the template this function runs is the pick on the registry, as the Settings tab left it (found 2026-09-29: a
+    # later pick reached the screen and never the agent, which read the birth copy on the record)
+    try:
+        import function_templates
+        tid = function_templates.picked(ctx["ref"]).get(name.lower())
+    except Exception:  # noqa: BLE001 -- no registry: the birth copy
+        tid = (d.get("templates") or {}).get(name.lower())
     if tid:
         try:
-            import function_templates
             t = function_templates.get(tid) or {}
             if t.get("floor"):
                 lines.append("It always: " + " ".join(str(x) for x in t["floor"][:3]))
@@ -335,12 +381,12 @@ def set_numbers(ref, engine, nums, by="the owner"):
 
 
 # ---- Coordination's table ------------------------------------------------------------------------------------------
-def born_table(kind="website"):
-    """What Coordination is born with: the order of service, the line of the department's kind, and who may post what
-    to whom, from the definitions."""
+def born_table(kind="website", line=None):
+    """What Coordination is born with: the order of service, the department's line (the engines on its record; the
+    kind's line for one born before the record carried it), and who may post what to whom, from the definitions."""
     d = defs()
     t = json.loads(json.dumps(d["coordination"]))
-    t["line"] = list((d.get("kinds") or {}).get(kind, {}).get("line") or t["line"])
+    t["line"] = list(line or (d.get("kinds") or {}).get(kind, {}).get("line") or t["line"])
     t["edges"] = json.loads(json.dumps(d["edges"]))
     return t
 
@@ -349,10 +395,11 @@ def coordination(ref):
     """Coordination's table for this department. It is Coordination's state, kept on the department's record, and it
     is the only copy that is read: a department made before the table was kept reads what Coordination is born with."""
     t = W._read(W.ddir(ref) / "coordination.json", None) if ref else None
-    kind = (W.dept(ref) or {}).get("kind") or "website"
+    dept = W.dept(ref) or {}
+    kind, line = dept.get("kind") or "website", dept.get("engines")
     if not isinstance(t, dict) or table_faults(t, defs()["engines"]):
-        return born_table(kind)
-    born_edges = born_table(kind)["edges"]
+        return born_table(kind, line)
+    born_edges = born_table(kind, line)["edges"]
     t.setdefault("edges", born_edges)
     if "Root" in born_edges:                         # a department born before Root spoke learns of it: Root carries the owner's words
         t["edges"].setdefault("Root", born_edges["Root"])
@@ -361,7 +408,8 @@ def coordination(ref):
 
 def born(ref):
     """At the department's birth, Coordination writes its table. From then on the order of work is a record."""
-    t = born_table((W.dept(ref) or {}).get("kind") or "website")
+    dept = W.dept(ref) or {}
+    t = born_table(dept.get("kind") or "website", dept.get("engines"))
     t.update({"since": W.now(), "by": "born"})
     with W._lock(ref):
         W._write(W.ddir(ref) / "coordination.json", t)
@@ -1121,9 +1169,13 @@ def run_engine(ref, name, inp, slot):
             # 2026-09-28: after the publish stamp the chat said nothing)
             if ok and e["writes"] == W.artifacts_of(ctx["dept"])[-1] and ctx["dept"].get("kind") != "root":   # Root's last artifact is a spawn, said by Setup
                 try:
+                    import artifacts
                     host = (ctx["dept"].get("host") or "").strip()
+                    site = (artifacts.get(e["writes"]) or {}).get("kind") == "site"      # a Result is filed; a site goes live
                     _tell(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER}, "inform",
-                          {"word": "live", "done": "%s v%d is live%s." % (e["writes"], out["v"], (" at " + host) if host and host != W.HOST_DEFAULT else ""),
+                          {"word": "live" if site else "filed",
+                           "done": "%s v%d is %s%s." % (e["writes"], out["v"], "live" if site else "filed",
+                                                        (" at " + host) if site and host and host != W.HOST_DEFAULT else ""),
                            "link": e["writes"], "v": out["v"]})
                 except Exception:  # noqa: BLE001 -- telling never fails the version that went out
                     pass
@@ -1995,9 +2047,10 @@ def fn_chat_view(ref, fn):
         at = r.get("ended") or r.get("started") or r.get("at") or ""
         # within one second the clock cannot tell; a row that read post n comes after post n (found live 2026-09-29:
         # Identity's reading of the words stood above the words)
-        read = next((x.get("post") for x in (r.get("read") or []) if isinstance(x, dict) and x.get("post")), 0)
+        read = next((x.get("post") for x in (r.get("read") or []) if isinstance(x, dict) and x.get("post")), None)
+        # a row that read no post (a gate on the way to a start) follows whatever was said in its second
         turns.append({"n": None, "src": name, "dst": [], "msg_type": "step", "at": at, "thread": r.get("run"), "word": r.get("step"),
-                      "line": line, "think": True, "_k": (str(at), read, 1)})
+                      "line": line, "think": True, "_k": (str(at), read if read is not None else 10 ** 9, 1)})
     turns.sort(key=lambda t: t["_k"])
     for t in turns:
         del t["_k"]
@@ -2458,24 +2511,43 @@ def _tie(ctx, ready_now):
     return pick if pick in ready_now else None
 
 
+def library_kinds():
+    """The Library's department kinds a Root may set up, each with the use case it fits: name: use case."""
+    return {k: str(v.get("use_case") or "") for k, v in W.KINDS.items() if k != "root"}
+
+
+def kind_for(words):
+    """The kind whose use case fits the words, by their plainest cue; default when none does (TPL-1: "if they match the
+    use case, then great. Otherwise ... there is a default one")."""
+    low = " ".join(str(words or "").lower().split())
+    if any(w in low for w in ("website", "web site", "site ", "web page", "webpage", "landing page", "homepage", "home page")) or low.endswith("site"):
+        return "website" if "website" in W.KINDS else "default"
+    return "default" if "default" in W.KINDS else "website"
+
+
 def setup_read(ctx, step, item):
     words = W.read_files(ctx["ref"], "Request", ctx["inp"]["v"]).get("request.md", "").strip()
-    return {"words": words, "facts": {"asked": bool(words), "kinds": ", ".join(k for k in W.KINDS if k != "root")}}
+    kinds = library_kinds()
+    return {"words": words, "facts": {"asked": bool(words), "kinds": ", ".join(kinds),
+                                      "use_cases": "; ".join("%s: %s" % (k, u) for k, u in kinds.items())}}
 
 
 def p_setup_shape(ctx, step, item):
     got = ctx["bag"]["setup.read"]
     org = (ctx["dept"].get("org") or {}).get("name") or ctx["dept"].get("name")
     return ("The owner of %s asks Root for a department. Shape it: a short name (the organisation's name and what it is, like "
-            "\"%s Website\"), its kind from the Library, and its goal in one or two sentences in the owner's own words.\n"
-            "THE OWNER'S WORDS: %s\nKINDS IN THE LIBRARY: %s\n\nReturn ONLY a JSON object: {\"name\": str, \"kind\": str, \"goal\": str}."
-            % (org, org, got["words"], got["facts"]["kinds"]))
+            "\"%s Website\"), its kind from the Library (the kind whose use case fits the words; default when none does), and its "
+            "goal in one or two sentences in the owner's own words.\n"
+            "THE OWNER'S WORDS: %s\nKINDS IN THE LIBRARY: %s\nEACH KIND'S USE CASE: %s\n\n"
+            "Return ONLY a JSON object: {\"name\": str, \"kind\": str, \"goal\": str}."
+            % (org, org, got["words"], got["facts"]["kinds"], got["facts"].get("use_cases") or ""))
 
 
 def d_setup_shape(ctx, step, item):
     got = ctx["bag"]["setup.read"]
     org = (ctx["dept"].get("org") or {}).get("name") or ctx["dept"].get("name")
-    return {"name": "%s Website" % org, "kind": "website", "goal": got["words"]}
+    kind = kind_for(got["words"])
+    return {"name": "%s %s" % (org, "Website" if kind == "website" else "Department"), "kind": kind, "goal": got["words"]}
 
 
 def setup_make(ctx, step, item):
@@ -2506,7 +2578,34 @@ def c_department_is_made(ctx, step, item, out):
     return _verdict(ok, "the department exists under Root, on the runtime, and has its goal", "the department was not made under Root")
 
 
+# ---- Do: the default line, one answer filed (TPL-1, founder 2026-09-29: "otherwise ... there is a default one") -----------
+def do_read(ctx, step, item):
+    return {"brief": W.read_files(ctx["ref"], "Brief", ctx["inp"]["v"]).get("brief.md", "")}
+
+
+def p_do_make(ctx, step, item):
+    return ("The department \"%s\" was asked for this, in its owner's words (the Brief):\n%s\n\nDo it as one written answer: what was "
+            "asked for, done as far as words can do it, in the owner's own language, nothing invented; where a fact is missing, say "
+            "so. Return ONLY a JSON object: {\"text\": str}." % (ctx["dept"].get("name"), ctx["bag"]["do.read"]["brief"][:6000]))
+
+
+def d_do_make(ctx, step, item):
+    brief = " ".join(str(ctx["bag"]["do.read"]["brief"]).split())
+    return {"text": "Noted, to be done by hand: " + brief[:600]}
+
+
+def do_file(ctx, step, item):
+    text = str(ctx["bag"]["do.make"].get("text") or "").strip()
+    return {"files": {"result.md": text + "\n"}, "check": {"ok": len(text) >= 3, "notes": ["%d characters" % len(text)]}}
+
+
+def c_result_is_text(ctx, step, item, out):
+    ok = isinstance(out, dict) and isinstance(out.get("text"), str) and len(out["text"].strip()) >= 3
+    return _verdict(ok, "an answer in words", "no answer")
+
+
 CODE = {"plan_read": plan_read, "plan_fit": plan_fit, "plan_file": plan_file, "write_list": write_list, "write_file": write_file,
+        "do_read": do_read, "do_file": do_file,
         "check_rules_of": check_rules_of,
         "hear": hear, "coord_ready": coord_ready, "coord_record": coord_record,
         "setup_read": setup_read, "setup_make": setup_make, "setup_file": setup_file,
@@ -2743,12 +2842,13 @@ def d_adapt_shape(ctx, step, item):
 PROMPT = {"identity_recognise": p_identity_recognise, "identity_answer": p_identity_answer, "identity_rule": p_identity_rule,
           "identity_weigh": p_identity_weigh, "adapt_shape": p_adapt_shape, "plan_pages": p_plan_pages, "write_page": p_write_page, "identity_take": p_identity_take,
           "identity_gate_soft": p_identity_gate, "priority_bargain": p_priority_bargain, "audit_judge": p_audit_judge,
-          "coord_tie": p_coord_tie, "setup_shape": p_setup_shape, "check_rules": p_check_rules}
+          "coord_tie": p_coord_tie, "setup_shape": p_setup_shape, "check_rules": p_check_rules, "do_make": p_do_make}
 DRAFT = {"identity_recognise_draft": d_identity_recognise, "identity_answer_draft": d_identity_answer,
          "coord_tie_draft": d_coord_tie, "setup_shape_draft": d_setup_shape, "check_rules_draft": d_check_rules,
          "identity_rule_draft": d_identity_rule, "identity_weigh_draft": d_identity_weigh, "adapt_shape_draft": d_adapt_shape,
          "plan_pages_draft": d_plan_pages, "write_page_draft": d_write_page, "identity_take_draft": d_identity_take,
-         "identity_gate_draft": d_identity_gate, "priority_bargain_draft": d_priority_bargain, "audit_judge_draft": d_audit_judge}
+         "identity_gate_draft": d_identity_gate, "priority_bargain_draft": d_priority_bargain, "audit_judge_draft": d_audit_judge,
+         "do_make_draft": d_do_make}
 
 
 # ---- the registry: checks. Every step names one; each is code, and each says what it looked at. ---------------------
@@ -2920,7 +3020,7 @@ def c_idea_has_shapes(ctx, step, item, out):
     return _verdict(ok, "reflected back, in %d shapes" % len(shapes), "the idea was not reflected back in two or three shapes")
 
 
-CHECK = {"journey_is_known": c_journey_is_known, "answer_names_its_source": c_answer_names_its_source,
+CHECK = {"journey_is_known": c_journey_is_known, "answer_names_its_source": c_answer_names_its_source, "result_is_text": c_result_is_text,
          "rule_is_tagged": c_rule_is_tagged, "feedback_says_what_changes": c_feedback_says_what_changes,
          "idea_has_shapes": c_idea_has_shapes, "brief_is_text": c_brief_is_text, "plan_has_pages": c_plan_has_pages, "plan_is_fit": c_plan_is_fit,
          "filed_has_files": c_filed_has_files, "list_has_pages": c_list_has_pages, "page_has_body": c_page_has_body,

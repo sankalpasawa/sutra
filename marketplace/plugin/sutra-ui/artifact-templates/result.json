@@ -1,0 +1,22 @@
+{
+ "id": "artifact/result",
+ "name": "Result",
+ "kind": "text",
+ "use_case": "what a department answered, filed",
+ "files": [
+  "result.md"
+ ],
+ "checks": [
+  "is_text"
+ ],
+ "written_by": [
+  "Do"
+ ],
+ "counts_after": "filing",
+ "put_back": true,
+ "operations": [],
+ "made_from": [
+  "artifact/brief"
+ ],
+ "version": 1
+}

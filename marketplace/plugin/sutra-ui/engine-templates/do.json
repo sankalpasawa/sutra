@@ -1,0 +1,58 @@
+{
+ "id": "engine/do",
+ "name": "Do",
+ "version": 1,
+ "use_case": "any goal the Library has no line for: what was asked, done as one written answer and filed as the Result",
+ "kind": "work",
+ "description": "reads the brief and does what it asks, as one written answer",
+ "skills": [
+  "answer a brief in words"
+ ],
+ "reads": "Brief",
+ "writes": "Result",
+ "start": {
+  "on": [
+   {
+    "kind": "version",
+    "of": "Brief"
+   }
+  ],
+  "unless": [
+   "identity.gate",
+   "priority.envelope",
+   "coord.chain"
+  ]
+ },
+ "steps": [
+  {
+   "id": "do.read",
+   "name": "Read the brief",
+   "nature": "transform",
+   "born": "C2",
+   "code": "do_read",
+   "check": "brief_is_text"
+  },
+  {
+   "id": "do.make",
+   "name": "Do what it asks",
+   "nature": "make",
+   "born": "C0",
+   "ceiling": "C1",
+   "prompt": "do_make",
+   "draft": "do_make_draft",
+   "out": {
+    "text": "str"
+   },
+   "check": "result_is_text"
+  },
+  {
+   "id": "do.file",
+   "name": "File the result",
+   "nature": "transform",
+   "born": "C2",
+   "code": "do_file",
+   "files": true,
+   "check": "filed_has_files"
+  }
+ ]
+}

@@ -1,0 +1,67 @@
+{
+ "id": "engine/plan",
+ "name": "Plan",
+ "version": 1,
+ "use_case": "a website: the pages a site will have, from the brief",
+ "kind": "work",
+ "description": "reads the brief and every ask in it, and plans the site's pages",
+ "skills": [
+  "plan a site from a brief"
+ ],
+ "reads": "Brief",
+ "writes": "Site plan",
+ "start": {
+  "on": [
+   {
+    "kind": "version",
+    "of": "Brief"
+   }
+  ],
+  "unless": [
+   "identity.gate",
+   "priority.envelope",
+   "coord.chain"
+  ]
+ },
+ "steps": [
+  {
+   "id": "plan.read",
+   "name": "Read the brief",
+   "nature": "transform",
+   "born": "C2",
+   "code": "plan_read",
+   "check": "brief_is_text"
+  },
+  {
+   "id": "plan.pages",
+   "name": "Propose the pages",
+   "nature": "make",
+   "born": "C0",
+   "ceiling": "C1",
+   "prompt": "plan_pages",
+   "draft": "plan_pages_draft",
+   "out": {
+    "site_name": "str",
+    "pages": "list"
+   },
+   "check": "plan_has_pages"
+  },
+  {
+   "id": "plan.fit",
+   "name": "Fit the page list",
+   "nature": "transform",
+   "born": "C2",
+   "code": "plan_fit",
+   "check": "plan_is_fit"
+  },
+  {
+   "id": "plan.file",
+   "name": "File the plan",
+   "nature": "transform",
+   "born": "C2",
+   "code": "plan_file",
+   "files": true,
+   "check": "filed_has_files"
+  }
+ ]
+}

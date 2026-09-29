@@ -66,13 +66,16 @@ RULES = [dict(r) for r in KINDS.get("website", {}).get("rules") or []]
 
 
 def engines_of(d):
-    """The work engines of a department, in its line: (name, reads, writes, runs as). A department born the old way
-    keeps the first build's four."""
+    """The work engines of a department, in its line: the engines on its record (TPL-1: what it was born with, from the
+    Library), the kind's line for one born before the record carried them; (name, reads, writes, runs as). A department
+    born the old way keeps the first build's four."""
     if (d or {}).get("runtime") != 2:
         return ENGINES
+    import engine_runtime                      # the Library's engines, templates and all; lazy, as it imports this module
+    engines = engine_runtime.defs()["engines"]
     out = []
-    for n in KINDS.get((d or {}).get("kind") or "website", KINDS["website"])["line"]:
-        e = (_DEFS.get("engines") or {}).get(n) or {}
+    for n in (d or {}).get("engines") or KINDS.get((d or {}).get("kind") or "website", KINDS["website"])["line"]:
+        e = engines.get(n) or {}
         soft = any(s.get("prompt") for s in e.get("steps") or [])
         out.append((n, e.get("reads"), e.get("writes"), "model" if soft else "code"))
     return tuple(out)
@@ -82,7 +85,7 @@ def artifacts_of(d):
     """What a department files, first to last: its kind's artifacts; the first build's five for one born the old way."""
     if (d or {}).get("runtime") != 2:
         return ARTIFACTS
-    return tuple(KINDS.get((d or {}).get("kind") or "website", KINDS["website"])["artifacts"])
+    return tuple((d or {}).get("artifacts") or KINDS.get((d or {}).get("kind") or "website", KINDS["website"])["artifacts"])
 
 
 def kind_of(d):
@@ -212,7 +215,7 @@ def add_version(ref, art, files, made_from, run, check, note=""):
     """A version, with the artifact's own check beside the engine's: the template in the Library says what a good one
     is, and a version that fails it is filed and never read as passed (founder, 2026-09-28: operable artifacts)."""
     import artifacts
-    own = artifacts.check(art, files)
+    own = artifacts.check(art, files, default=art in artifacts_of(dept(ref)))   # an artifact the department names: the Default when the Library has no template of its own
     if own is not None:
         check = dict(check or {})
         check["ok"] = bool(check.get("ok")) and own["ok"]
@@ -295,7 +298,9 @@ def create(ref, name, brief, owner="the owner", parent=None, kind="website"):
          "runtime": 1 if os.environ.get("SUTRA_ENGINE_RUNTIME") == "1" else 2,
          "rules": [dict(r) for r in k["rules"]], "control": "granted", "stopped": False,
          "envelopes": {e[0]: dict(ENVELOPE) for e in ENGINES},
-         "windows": {"Plan": 15, "Write": 30, "Check": 5, "Publish": 10}}
+         "windows": {"Plan": 15, "Write": 30, "Check": 5, "Publish": 10},
+         # what it was born with, from the Library (TPL-1): its line and its artifacts, read from here from now on
+         "engines": list(k["line"]), "artifacts": list(k["artifacts"])}
     if d["runtime"] == 1 and kind != "website":
         raise ValueError("only a website department is born the old way")
     if d["runtime"] == 2:
