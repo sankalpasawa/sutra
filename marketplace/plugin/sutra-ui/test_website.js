@@ -65,6 +65,13 @@
      W34 a function's chat is its existing turns and thinking from the record,
          with a box to say more; never a Start button, never a new chat
          (founder 2026-09-29)
+     W42 the organisation row is Root's chat and nothing else; Root is not a
+         row of the tree nor a tile of the chart; its departments sit under
+         the organisation (founder 2026-09-29: "at the organization level,
+         only a chat is shown, and root is not shown")
+     W43 Root settings is a pane, never a chat: what Root does, On or Off with
+         its one switch, its rules, the departments it made, a way back
+     W44 founding lands on the organisation, whose row is Root's chat
 
    Harness: test_dept.js's fresh(), with 22-website.js loaded after 20-dept.js
    (panel.html's order). Run: node test_website.js */
@@ -201,8 +208,11 @@ function fresh(opts){
     setInterval: () => 1, clearInterval: () => {},
     apiGet: (p) => {
       calls.apiGet.push(p);
-      if (p === "/api/native/depts") return Promise.resolve({ depts: opts.none ? [] : [{ ref: "r3", name: "Website", stopped: false }] });
+      if (p === "/api/native/depts") return Promise.resolve({ depts: opts.none ? [] : (opts.depts || [{ ref: "r3", name: "Website", stopped: false }]) });
       if (/\/api\/native\/r3\/map$/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(map)));
+      /* Root (r2), for the organisation's row (W42-W44) */
+      if (/\/api\/native\/r2\/map$/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(opts.rootMap || rtMap())));
+      if (/\/api\/native\/r2\/chat$/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(opts.rootChat || ROOT_CHAT)));
       if (/\/api\/native\/r3\/steps\//.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(stepsOf(decodeURIComponent(p.split("/steps/")[1]), opts.steps))));
       if (/\/api\/native\/r3\/board$/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(opts.board || BOARD)));
       if (/\/api\/native\/r3\/chat\?fn=/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(opts.fnchat || FNCHAT)));
@@ -1100,6 +1110,67 @@ test("W41: the New organisation sheet asks what the first department is for, nam
   const html = c.wbFoundHtml();
   assert.ok(/placeholder="What should Root set up first\? Say what it is for, in your words"/.test(html), html.slice(0, 600));
   assert.ok(!/placeholder="[^"]*[Ww]ebsite/.test(html), "a tool, a desk or a list is set up here as well as a site");
+});
+
+/* ── W42-W44: the organisation row ─────────────────────────────────────── */
+const ORG_DEPTS = [{ ref: "r2", name: "City Care Hospital Root", stopped: false, kind: "root", parent: "r1", working: [] },
+                   { ref: "r3", name: "Website", stopped: false, kind: "website", parent: "r2", working: [] }];
+async function orgOpened(opts){
+  const rm = rtMap(); rm.ref = "r2"; rm.name = "City Care Hospital Root"; rm.kind = "root"; rm.root = "r2"; rm.live = false;
+  rm.goal = "Makes, changes and ends City Care Hospital's departments from the Library's templates";
+  const c = fresh(Object.assign({ depts: ORG_DEPTS, rootMap: rm, rootChat: Object.assign({}, ROOT_CHAT, { root: "r2" }) }, opts || {}));
+  vm.runInContext("wbS().v2 = true; o2S().loaded = true;", c);
+  c.o2Select("r1");
+  for (let k = 0; k < 4; k++){ c.o2ScreenHtml(); await sleep(); await sleep(); }   /* the list of departments, Root's map, then its chat land */
+  return c;
+}
+
+test("W42: the organisation row is Root's chat and nothing else; Root is not a row of the tree nor a tile of the chart; its departments sit under the organisation", async () => {
+  const c = await orgOpened();
+  const html = c.o2ScreenHtml(), d = c.o2Data();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify((d.kids.get("r1") || []).map(x => x.ref))), ["r3", "r4"], "the departments sit under the organisation");
+  assert.ok(!d.kids.has("r2") && d.hidden.has("r2") && d.lifted.get("r1").ref === "r2", "Root is lifted, not drawn");
+  assert.ok(!/data-o2ref="r2"/.test(html), "no Root row anywhere on the screen");
+  assert.ok(/data-o2ref="r3"[^>]*style="--d:2"/.test(html), "a department one level under the organisation");
+  assert.ok(/<div class="o2vh"><b>Chat<\/b>/.test(html) && /<div class="wbchat wb">/.test(html) && /<textarea id="wbd-ask"/.test(html), "Root's chat");
+  assert.ok(/<div class="wb2head"><b>City Care Hospital<\/b>/.test(html) && />Root settings<\/button>/.test(html), "headed by the organisation, with one button");
+  assert.ok(/<div class="o2body wide">/.test(html) && !/data-dptab=/.test(html) && !/class="o2list/.test(html), "no list column");
+  assert.strictEqual(vm.runInContext("dpS().sel", c), "r2", "the clicks and the box speak for Root");
+  const chart = c.o2ChartHtml(ORG, d);
+  assert.ok(/data-o2ref="r1"/.test(chart) && /data-o2ref="r3"/.test(chart) && /data-o2ref="r4"/.test(chart) && !/data-o2ref="r2"/.test(chart), "the chart: the organisation over its departments, no Root tile");
+  assert.ok(/<span class="o2parent">City Care Hospital<\/span>/.test(c.o2StripHtml(WEB, d, null)), "a department's parent reads the organisation");
+  const m3 = rtMap(); m3.root = "r2";
+  assert.ok(/data-wb2go="r1">City Care Hospital<\/button> &rsaquo; City Care Hospital Website/.test(c.wb2Head(WEB, m3)), "a department's crumb names the organisation, and goes there");
+  /* an organisation without a Root paints as before */
+  const plain = await orgOpened({ depts: [{ ref: "r3", name: "Website", stopped: false, kind: "website", parent: "r2", working: [] }] });
+  const ph = plain.o2ScreenHtml(), pd = plain.o2Data();
+  assert.ok(/data-o2ref="r2"/.test(ph) && pd.kids.has("r2") && /data-dptab=/.test(ph), "Root drawn, the list column back");
+});
+
+test("W43: Root settings is a pane, never a chat: what Root does, On or Off with its one switch, its rules, the departments it made, a way back", async () => {
+  const c = await orgOpened();
+  assert.ok(click(c, { wbtab: "root" }), "the button is this file's");
+  let html = c.o2ScreenHtml();
+  assert.ok(/<div class="o2vh"><b>Root<\/b>/.test(html) && /<h3>Root<\/h3>/.test(html), "the pane");
+  assert.ok(/Makes, changes and ends City Care Hospital's departments/.test(html), "what it does, from its record");
+  assert.ok(/data-wbstop="1"/.test(html) && /<div class="dpchk">none yet<\/div>/.test(html), "the switch; no rules yet");
+  assert.ok(/data-wbopen="r5">City Care Hospital Website<\/button>/.test(html), "the departments it made open");
+  assert.ok(!/<textarea/.test(html) && !/wbchat/.test(html) && !/Root settings/.test(html), "never a chat; the button gone while open");
+  assert.ok(click(c, { wbtab: "chat" }));
+  html = c.o2ScreenHtml();
+  assert.ok(/<div class="wbchat wb">/.test(html) && !/<h3>Root<\/h3>/.test(html), "back to the chat");
+});
+
+test("W44: founding lands on the organisation, whose row is Root's chat", async () => {
+  const c = await orgOpened();
+  vm.runInContext("o2S().sel = 'r0'; wbS().found = { org: 'City Care Hospital', goal: 'A website', busy: false, error: null };", c);
+  await c.wbFoundGo();
+  for (let i = 0; i < 6; i++) await sleep();
+  const post = c.calls.apiPost.filter(x => x.p === "/api/native/found")[0];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(post.body)), { org: "City Care Hospital", first: "A website" });
+  assert.strictEqual(vm.runInContext("o2S().sel", c), "r1", "the organisation is selected");
+  assert.strictEqual(vm.runInContext("S.wb.tab['r2']", c), "chat", "its row is Root's chat");
+  assert.ok(/<div class="wbchat wb">/.test(c.o2ScreenHtml()));
 });
 
 test("V2 navigation: with the switch on the list, Chat, a function card and an engine card are the first design's, unchanged", async () => {

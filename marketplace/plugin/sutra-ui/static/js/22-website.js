@@ -42,7 +42,7 @@ const WB_ACTS = { "request": "asks", "agree": "agrees", "refuse": "refuses", "pr
 function wbS(){
   if (!S.wb) S.wb = { refs: null, refsBusy: false, refsMissed: {}, map: {}, sig: {}, tab: {}, pane: {}, sel: {}, draft: {},
                       busy: {}, err: {}, engine: {}, art: {}, trace: {}, steps: {}, board: {}, chat: {}, chatSig: {},
-                      fnchat: {}, fnchatSig: {}, chip: {}, thread: {}, turns: {}, scroll: {}, found: null, timer: null };
+                      fnchat: {}, fnchatSig: {}, chip: {}, thread: {}, turns: {}, scroll: {}, found: null, timer: null, born: {} };
   return S.wb;
 }
 function wbRt(m){ return !!(m && m.runtime === 2); }
@@ -95,6 +95,30 @@ async function wbLoadRefs(again){
   if (again && !moved) return;
   if (!again) wbTick();
   dpRender();
+}
+/* ── the organisation and its Root ────────────────────────────────────────
+   Founder, 2026-09-29: "at the organization level, only a chat is shown, and
+   root is not shown." Root stays a department of the registry under its
+   organisation; the screen does not draw it. 19-org2.js asks wbHidden when it
+   builds the tree and lifts Root's departments under the organisation; the
+   organisation row is then Root's chat (wbOrgHtml). */
+function wbHidden(ref){
+  const st = wbS();
+  if (st.refs === null){ wbLoadRefs(); return false; }
+  const r = st.refs[ref];
+  return !!(r && r.kind === "root");
+}
+function wbRootOf(orgRef){
+  const d = (typeof o2Data === "function") ? o2Data() : null;
+  const r = d && d.lifted && d.lifted.get(orgRef);
+  return r ? r.ref : null;
+}
+/* a department Root just made slides into the tree once: marked when the chat learns of it, timed from its first paint */
+function wbBorn(ref){
+  const st = wbS(), t = st.born && st.born[ref];
+  if (!t) return false;
+  if (t === true){ st.born[ref] = Date.now(); return true; }
+  return (Date.now() - t) < 1200;
 }
 /* A department on the engine runtime opens on its chat: the one point of entry
    (founder, 2026-09-28). One of the first build opens on its Map, as before. */
@@ -439,10 +463,12 @@ async function wbLoadChat(ref, again){
     const moved = sig !== st.chatSig[ref] || !st.chat[ref];
     /* a department Root made since the tree was read: the tree learns of it here, without a reload (found live
        2026-09-28: the person could not open the department he had just stamped) */
-    const known = ((st.chat[ref] || {}).departments || []).length, now = (v.departments || []).length;
+    const had = ((st.chat[ref] || {}).departments || []).map(x => x.ref);
+    const known = had.length, now = (v.departments || []).length;
     st.chat[ref] = v; st.chatSig[ref] = sig;
     delete st.busy["c:" + ref];
     if (st.chatSig[ref + ":depts"] !== undefined && now > known && typeof loadOrg2 === "function"){
+      (v.departments || []).forEach(x => { if (had.indexOf(x.ref) < 0) st.born[x.ref] = true; });
       if (typeof o2S === "function" && o2S().expanded) o2S().expanded.add(ref);
       loadOrg2(true);
       wbLoadRefs();                              /* and the list of departments on the runtime, so the new one opens on its own view */
@@ -978,6 +1004,44 @@ function wbViewer(n){
   return null;
 }
 
+/* ── the organisation: Root's chat, and nothing else ──────────────────────
+   Founder, 2026-09-29: "The UI wherein a particular person chats with root,
+   and it creates a department, but at the organization level, only a chat is
+   shown, and root is not shown." The organisation row is the chat with Root,
+   headed by the organisation's name; Root's own settings sit behind one
+   button and are a pane, never a chat (the design of record:
+   holding/website/native/preview/org.html). Null for an organisation without
+   a Root on the runtime: 19-org2.js paints it as before. The clicks and the
+   box speak for Root, so Root is the department the screen holds selected. */
+function wbOrgHtml(n, d){
+  const root = d && d.lifted && d.lifted.get(n.ref);
+  if (!root || !wbIs(root.ref)) return null;
+  const st = wbS(), m = st.map[root.ref];
+  wbTick();
+  if (typeof dpSelect === "function" && dpS().sel !== root.ref) dpSelect(root.ref);
+  if (!m){ wbLoadMap(root.ref); return dpViewerShell(n.name, st.err[root.ref] ? dpQuiet("Could not read") : dpSkel(), "wb"); }
+  const rn = { ref: root.ref, name: n.name };
+  const pane = st.tab[root.ref] === "root";
+  const head = `<div class="wb2head"><b>${wbEsc(n.name)}</b>${m.stopped ? `<span class="dpst paused">Off</span>` : ""}` +
+    (pane ? "" : wbBtn("Root settings", `data-wbtab="root"`)) + `</div>`;
+  return dpViewerShell(pane ? "Root" : "Chat", head + (pane ? wbRootPaneHtml(rn, m) : wbChatHtml(rn, m)), "wb");
+}
+/* Root's pane: what its record holds, in rows; the one switch; a way back */
+function wbRootPaneHtml(n, m){
+  const st = wbS(), c = st.chat[n.ref] || {};
+  if (!st.chat[n.ref]) wbLoadChat(n.ref);
+  const row = (label, body, cls) => `<div class="dprow"><span class="dpdot${cls ? " " + cls : ""}"></span><span>${wbEsc(label)}<div class="dpchk">${body}</div></span></div>`;
+  const rules = (m.rules || []).map(r => wbEsc(typeof r === "string" ? r : (r.line || r.text || ""))).filter(Boolean);
+  const made = (c.departments || []).map(x => wbDeptChip(x.ref, x.name)).join("");
+  const sw = m.stopped ? wbBtn("Start", `data-wbresume="1"`, "dpstamp") : wbBtn("Stop", `data-wbstop="1"`);
+  return dpCard("Root",
+    row("What it does", wbEsc(m.goal || ""), "ok") +
+    row(m.stopped ? "Off" : "On", (m.stopped ? "makes no department until started " : "makes departments when asked ") + sw, m.stopped ? "off" : "ok") +
+    row("Rules", rules.length ? rules.join("; ") : "none yet", rules.length ? "ok" : "") +
+    row("Departments it has made", made || "none yet", made ? "ok" : "")) +
+    `<div>${wbBtn("Back to the chat", `data-wbtab="chat"`)}</div>`;
+}
+
 /* ── the organisation's chart: a website department's tile is live ────────── */
 function wbTileMark(ref){
   if (!wbIs(ref)) return "";
@@ -1032,9 +1096,10 @@ async function wbFoundGo(){
       const o = o2S();
       if (o.expanded){ [out.org].forEach(r => o.expanded.add(r)); }
     }
-    /* Root is where the person goes on: its chat, where its ask for the first department is */
+    /* the organisation is where the person goes on: its row is Root's chat, where the ask for the first department is
+       (founder, 2026-09-29: at the organisation level only a chat is shown); Root itself when the tree has not learnt yet */
     st.tab[out.root] = "chat";
-    if (typeof o2Select === "function") o2Select(out.root);
+    if (typeof o2Select === "function") o2Select(wbRootOf(out.org) ? out.org : out.root);
     wbLoadMap(out.root, true);
   } catch (e) {
     f.busy = false; f.error = (e && e.message) || String(e); wbFoundPaint();

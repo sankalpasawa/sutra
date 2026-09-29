@@ -4714,6 +4714,10 @@ button.nychip:focus-visible{ outline:none; box-shadow:0 0 0 1.5px var(--acc); }
 .o2row.o2k-root .o2name,.o2row.o2k-org .o2name{font:600 12.5px/1.3 var(--serif)}
 .o2row.o2k-machine .o2name{color:var(--faint)}
 .o2row.dim{opacity:.35}
+/* a department Root just made slides into the tree once (22-website.js wbBorn) */
+.o2row.o2grow{animation:o2grow .5s ease-out}
+@keyframes o2grow{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.o2row.o2grow{animation:none}}
 .o2row:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
 .o2name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .o2chev{width:14px;height:14px;flex:none;background:none;border:0;padding:0;color:var(--faint);

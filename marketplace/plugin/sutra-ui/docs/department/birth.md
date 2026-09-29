@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **status** | v1, 2026-09-29, RECORD of the code (Sutra Desktop v2.306.19-desktop) |
+| **status** | v1, 2026-09-29, RECORD of the code (Sutra Desktop v2.306.19-desktop; the organisation row from v2.306.20) |
 | Code | `website_api.py` (`/found`, `/{ref}/ask`, `/{ref}/asks/{aid}`), `founding.py` (`found_structure`, the spawn), `engine_runtime.py` (`request`, `FRONT`, `identity_gate`, `setup_read`, `p_setup_shape`, `d_setup_shape`, `setup_make`, `identity_file`), `engine_defs/website.json` (`kinds`) |
 
 ## The organisation and its Root
@@ -10,6 +10,7 @@
 - `POST /api/native/found {org, first}` (the New organisation sheet's Found button, `wbFoundGo` in `22-website.js`) calls `founding.found_structure(org_name, owner)`: one organisation node and one department of kind `root`, On. If `first` words came with it, they go to Root as its first request (`W.owner_ask(root, first)`).
 - Root's goal on its record: "{name}: makes, changes and ends this organisation's departments from the Library's templates; its authority ends at the owner" (`kinds.root.goal`). Root's line is one engine, `Setup`; its artifacts are `Request` and `Department`.
 - Root's rules at birth: "A new department is stamped by the owner"; "A child's rules can only tighten this one's"; "Set up what the owner asked for, from the Library's templates".
+- On the screen the organisation's row is Root's chat and Root is not drawn; founding lands on that row; the departments Root makes sit under the organisation in the tree and on the chart (`chat.md`, "The organisation row").
 
 ## The front door
 

@@ -2,12 +2,21 @@
 
 | Field | Value |
 |---|---|
-| **status** | v1, 2026-09-29, RECORD of the code (Sutra Desktop v2.306.19-desktop) |
-| Code | `engine_runtime.py` (`request`, `_tell`, `chat_view`, `_own_turns`, `fn_chat_view`, `_line`, `tell_switch`), `website_api.py` (`/{ref}/chat`, `?fn=`), `static/js/22-website.js` (`wbChatHtml`, `wbChatTurn`, `wbChatAsksHtml`, `wbFnChatHtml`, `wbLoadFnChat`, the click handlers) |
+| **status** | v1, 2026-09-29, RECORD of the code (Sutra Desktop v2.306.19-desktop; the organisation row from v2.306.20) |
+| Code | `engine_runtime.py` (`request`, `_tell`, `chat_view`, `_own_turns`, `fn_chat_view`, `_line`, `tell_switch`), `website_api.py` (`/{ref}/chat`, `?fn=`), `static/js/22-website.js` (`wbChatHtml`, `wbChatTurn`, `wbChatAsksHtml`, `wbFnChatHtml`, `wbLoadFnChat`, `wbOrgHtml`, `wbRootPaneHtml`, `wbHidden`, `wbBorn`, the click handlers), `static/js/19-org2.js` (`o2Data`, `o2ScreenHtml`, `o2StripHtml`, `o2TreeHtml`) |
 
 ## One point of entry
 
 The person speaks to Root from anywhere: the box on Root's chat, or a department's chat with the department as a chip (`data-wbask`; the words go to Root with `about = <dept ref>` unless the chip is taken off). Root's Identity hears (`request`, word `front`), hands the words on to the department they are about (a post from Root to the department's Identity), and the department's answers come back onto Root's board with the department they are about (`_tell`: a tell to a department born of a Root is posted on Root's board too, marked `via: Root` on the department's own copy so it is never counted twice).
+
+## The organisation row (founder, 2026-09-29: "at the organization level, only a chat is shown, and root is not shown")
+
+- On the Org structure screen an organisation with a Root opens Root's chat and nothing else: `o2ScreenHtml` hands the row to `wbOrgHtml`, which paints no list column; the chat is headed by the organisation's name and one button, Root settings.
+- Root is not a row of the tree nor a tile of the chart: `o2Data` lifts a hidden Root's departments under the organisation (`wbHidden`: the ref's kind on `/api/native/depts` is `root`; `d.lifted` maps the organisation to its Root, `d.hidden` holds the rows not drawn). The registry is untouched: Root stays a department under the organisation. A department's parent on the strip reads the organisation (`o2StripHtml`).
+- Root settings is a pane, never a chat (`wbRootPaneHtml`): what Root does (its goal), On or Off with its one switch (`data-wbstop` / `data-wbresume`), its rules, the departments it has made (chips that open them), Back to the chat.
+- The clicks and the box speak for Root: the organisation's row holds Root as the selected department (`dpSelect(root)` in `wbOrgHtml`), so a stamp, Stop, Start and Send post to Root's routes.
+- Founding lands on the organisation's row (`wbFoundGo`: `o2Select(org)` once the tree knows its Root, `wbRootOf`); a department Root just made slides into the tree once (`wbBorn`, marked by `wbLoadChat` when the chat learns of it; `.o2row.o2grow`).
+- An organisation without a Root on the runtime paints as before (`wbOrgHtml` answers null).
 
 ## What the chat shows (`chat_view`)
 
