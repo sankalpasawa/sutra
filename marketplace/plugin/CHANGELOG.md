@@ -1,6 +1,15 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-28
+## 2.306.15 (2026-09-29)
+
+## Sutra Desktop: your words get the engine they need
+
+- when your words need the internet and no engine of the department reaches it, the ask says so and a stamp has the department's own Adaptation shape an engine for it; you stamp the engine, it runs at once and files what it found with the page each fact came from
+- Priority is shown the engine it prices: what it does, what it needs, what it costs a day; when it refuses, you are told why and what you can do
+- a second department under the same Root gets a new name; a name that already exists is said back and your words go to that department
+- the tree marks a department at work
+
 ## 2.306.14 (2026-09-29)
 
 ## Sutra Desktop: what you are not sure of stays out until you say
