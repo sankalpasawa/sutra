@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-28
+## 2.306.16 (2026-09-28)
+
+- **A correct agent answer at classify is applied instead of refused for its rank**: the three acts were on a stringency ladder, so an ASSERT ranked below a QUERY and a right answer lost. They sit on ONE rung now - an assertion is not below a question - and the more confident answer wins, in either direction, with an answer that is not an act still refused. Found live: the classifier read \"as expexted\" as a QUERY with no evidence at 0.2, the agent answered ASSERT at 0.8 with its reason, and the ladder threw it away. Tests: test-tier 62.
+
 ## 2.306.15 (2026-09-29)
 
 ## Sutra Desktop: your words get the engine they need

@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-09-28
 
-## v2.306.15 (2026-09-29, HEAD)
+## v2.306.16 (2026-09-28, HEAD)
+
+**An act is not more or less than another act** (found live 2026-09-29): classify's three acts sat on a stringency ladder, so a correct ASSERT was refused for ranking below QUERY. They sit on one rung now and the more confident answer wins.
+
+## v2.306.15 (2026-09-29)
 
 See marketplace/plugin/CHANGELOG.md for this release's entry.
 

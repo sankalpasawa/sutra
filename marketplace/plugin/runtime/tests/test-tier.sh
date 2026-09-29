@@ -46,9 +46,13 @@ sutra_tier_due "$PLUGIN_MAIN" classify 0.3 && fail "classify asked on a stage-1 
 sutra_tier_due "$PLUGIN_MAIN" classify 0.9 && fail "classify asked on a clean match" || pass "classify does not ask at 0.9"
 # the verb ladder is ASSERT < QUERY < DIRECT, so an agent may move the act up
 # (more is being asked of the runtime) and never down, whatever its confidence
-is "classify: the agent may raise the act" "$(sutra_tier_apply "$PLUGIN_MAIN" classify QUERY DIRECT 0.2 0.8)" DIRECT
-is "classify: the agent may not lower it, however confident" "$(sutra_tier_apply "$PLUGIN_MAIN" classify DIRECT ASSERT 0.2 0.99)" DIRECT
-is "classify: an answer off the ladder is refused" "$(sutra_tier_apply "$PLUGIN_MAIN" classify QUERY SHOUT 0.2 0.9)" QUERY
+# the three acts sit on one rung: an assertion is not below a question, so the
+# more confident answer wins and nothing is refused for its rank alone
+is "classify: a more confident agent corrects the act" "$(sutra_tier_apply "$PLUGIN_MAIN" classify QUERY ASSERT 0.2 0.8)" ASSERT
+is "classify: and in the other direction too" "$(sutra_tier_apply "$PLUGIN_MAIN" classify ASSERT DIRECT 0.2 0.8)" DIRECT
+is "classify: a less confident agent does not" "$(sutra_tier_apply "$PLUGIN_MAIN" classify QUERY ASSERT 0.9 0.4)" QUERY
+is "classify: equal confidence leaves the code standing" "$(sutra_tier_apply "$PLUGIN_MAIN" classify QUERY ASSERT 0.5 0.5)" QUERY
+is "classify: an answer that is not an act is refused" "$(sutra_tier_apply "$PLUGIN_MAIN" classify QUERY SHOUT 0.2 0.9)" QUERY
 sutra_tier_due "$PLUGIN_MAIN" placement 0.28 && pass "ask is due below the threshold" || fail "no ask below the threshold"
 sutra_tier_due "$PLUGIN_MAIN" placement 0.80 && fail "an ask was due above the threshold" || pass "no ask above the threshold"
 sutra_tier_due "$PLUGIN_MAIN" depth 0.01 && fail "a null threshold still asked" || pass "a null threshold never asks"
@@ -110,8 +114,8 @@ is "normalize: a name the register does not hold is left alone" "$(sutra_tier_no
 is "normalize: a name held twice is ambiguous and left alone" "$(sutra_tier_normalize placement "Website")" Website
 is "normalize: unresolved stays unresolved" "$(sutra_tier_normalize placement unresolved)" unresolved
 is "normalize: another step is untouched" "$(sutra_tier_normalize depth "Session Lifecycle")" "Session Lifecycle"
-is "classify: the act may go up the ladder" "$(sutra_tier_apply "$PLUGIN_MAIN" classify ASSERT DIRECT)" DIRECT
-is "classify: the act may not go down" "$(sutra_tier_apply "$PLUGIN_MAIN" classify DIRECT ASSERT)" DIRECT
+is "classify: without confidences nothing is corrected" "$(sutra_tier_apply "$PLUGIN_MAIN" classify ASSERT DIRECT)" ASSERT
+is "classify: and the code still stands the other way" "$(sutra_tier_apply "$PLUGIN_MAIN" classify DIRECT ASSERT)" DIRECT
 
 # ====================================================================== C7 ===
 echo "== C7: below the threshold an agent is called and its answer is recorded =="
