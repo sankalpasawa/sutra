@@ -418,6 +418,50 @@ def decide_ask(ref, aid, approve, by="the owner"):
     raise ValueError("no such ask")
 
 
+def add_engine(ref, name, shape=None, by="the owner"):
+    """An engine added to a live department on the owner's stamp (TPL-1 slice 2, founder 2026-09-29: "the engines are
+    supposed to be created by the five functions of the department"): a Library engine template by name, or one shaped
+    on the fly (name, use case, instruction, what it writes), born into the Library from Do with made_by. The record
+    gains the engine and its artifact, an envelope and a window; Coordination's line grows; the engine then starts on
+    its own trigger, like every other."""
+    import engine_runtime as R
+    d = dept(ref)
+    if not d or d.get("runtime") != 2:
+        raise ValueError("no department on the engine runtime at %s" % ref)
+    name = " ".join(str(name or "").split())[:40]
+    if not name:
+        raise ValueError("name the engine")
+    engines = R.defs()["engines"]
+    born = None
+    if name not in engines:
+        if not shape:
+            raise ValueError("the Library has no engine named %s" % name)
+        born = R.born_template(name, shape, ref)
+        engines = R.defs()["engines"]
+    e = engines[name]
+    if e.get("kind") != "work":
+        raise ValueError("%s is a function, not an engine of the line" % name)
+    with _lock(ref):
+        d = dept(ref)
+        line = [x[0] for x in engines_of(d)]
+        if name in line:
+            raise ValueError("%s already runs %s" % (d.get("name"), name))
+        line.append(name)
+        d["engines"] = line
+        arts = list(artifacts_of(d))
+        if e.get("writes") and e["writes"] not in arts:
+            arts.append(e["writes"])
+        d["artifacts"] = arts
+        t = R.priority_template()
+        base = {"calls": int(t.get("calls", ENVELOPE["calls"])), "usd": float(t.get("usd", ENVELOPE["usd"]))}
+        d.setdefault("envelopes", {})[name] = {"calls": int(t.get("work_calls", 8)) * base["calls"], "usd": base["usd"]}
+        d.setdefault("windows", {})[name] = 15
+        save_dept(ref, d)
+    R.grow_line(ref, name)
+    system_run(ref, "Identity", "added the engine %s on %s's stamp%s" % (name, by, " (born into the Library)" if born else ""))
+    return {"ref": ref, "engine": name, "engines": line, "born": str(born) if born else None}
+
+
 def set_envelope(ref, name, calls=None, usd=None, by="the owner"):
     """The owner's own limits for one engine, set on Priority's card. The defaults came from Priority's template
     at birth (founder, 2026-09-28: "These limits can be configured in the relevant priority")."""

@@ -88,8 +88,12 @@ class Model:
             return {"about": "contact" if "contact" in words.lower() else None, "what": "format", "now": "Cut the page to half its length",
                     "future": self.future}, 0.01, "model"
         if sid == "adapt.shape":
+            hint = {"name": "Talks List", "does": "keeps the list of my talks up to date"} if "talks" in prompt.lower() else None
             return {"reflected": "Let a patient book a visit on the site", "question": "Who confirms the booking?",
-                    "shapes": ["a page with the phone number to book", "a form that sends a request", "a live calendar"]}, 0.02, "model"
+                    "shapes": ["a page with the phone number to book", "a form that sends a request", "a live calendar"], "engine": hint}, 0.02, "model"
+        if sid.endswith(".make") and sid != "write.page":
+            brief = prompt.split("(the Brief):\n", 1)[1].split("\n\nDo it", 1)[0]
+            return {"text": "Done, in words: " + " ".join(brief.split())[:160]}, 0.01, "model"
         if sid == "identity.take":
             words = prompt.split("THE REQUEST: ", 1)[1].split("\n", 1)[0]
             v = self.verdicts.get(words) or ("ask" if "email" in words.lower() else "go")
@@ -106,9 +110,6 @@ class Model:
             org = prompt.split("The owner of ", 1)[1].split(" asks Root", 1)[0]
             kind = self.kind or "website"
             return {"name": org + (" Website" if kind == "website" else " Desk"), "kind": kind, "goal": words}, 0.02, "model"
-        if sid == "do.make":
-            brief = prompt.split("(the Brief):\n", 1)[1].split("\n\nDo it", 1)[0]
-            return {"text": "Done, in words: " + " ".join(brief.split())[:160]}, 0.01, "model"
         if sid == "audit.judge":
             return {"ok": not self.findings, "findings": list(self.findings)}, 0.02, "model"
         if sid == "check.rules":
@@ -773,6 +774,88 @@ class TestWhatTheOwnerSees(Base):
                 os.environ["SUTRA_NATIVE_HOME"] = prior
             importlib.reload(E)
             shutil.rmtree(reg, ignore_errors=True)
+
+    def test_86_an_engine_added_to_a_live_department_runs_on_its_own_trigger(self):
+        """TPL-1 slice 2: add_engine, the one write behind the owner's stamp (Identity) and the org.engine ask: a Library
+        engine by name on the record, its artifact with it, an envelope, a window, Coordination's line grown; a function
+        or an unknown name refused; twice refused; the engine then runs on the next version it reads."""
+        W, R = self.W, self.R
+        self.live()
+        with self.assertRaises(ValueError):
+            W.add_engine(REF, "Priority")
+        with self.assertRaises(ValueError):
+            W.add_engine(REF, "Nowhere")
+        out = W.add_engine(REF, "Do")
+        d = W.dept(REF)
+        self.assertEqual((out["engines"], d["engines"]), (["Plan", "Write", "Check", "Publish", "Do"],) * 2)
+        self.assertIn("Result", d["artifacts"])
+        self.assertIn("Do", d["envelopes"])
+        self.assertEqual(R.coordination(REF)["line"][-1], "Do", "Coordination's line, on the record, grew")
+        with self.assertRaises(ValueError):
+            W.add_engine(REF, "Do")
+        self.ask("Add a careers page")
+        self.assertTrue(W.versions(REF, "Result"), "Do ran on the next Brief and filed a Result")
+        self.assertIn("added the engine Do", " ".join(r["what"] for r in W.runs(REF) if r["engine"] == "Identity"))
+
+    def test_87_an_idea_that_fits_a_library_template_becomes_that_engine_on_the_owners_stamp(self):
+        """TPL-1 slice 2 (founder, 2026-09-29: "the engines are supposed to be created by the five functions"): an idea is
+        shaped and parked by Adaptation, which offers the Library engine whose use case fits to Priority; Priority prices
+        it; Identity puts it to the owner in the owner's words; nothing is added before the stamp; on it the engine is on
+        the record and runs."""
+        W, R = self.W, self.R
+        self.live()
+        self.ask("What if each ask were answered in one written answer, filed as a result.")
+        a = next(x for x in W.asks(REF) if x["kind"] == "engine" and x["status"] == "pending")
+        self.assertEqual(a["engine"], "Do")
+        self.assertTrue(a["text"].startswith("Add the engine Do to City Care Hospital Website? What it does: reads the brief"), a["text"])
+        board = R.board(REF)
+        self.assertTrue([p for p in board if p["src"] == "Adaptation" and "Priority" in p["dst"] and p["payload"].get("word") == "engine"], "offered to Priority first")
+        self.assertTrue([p for p in board if p["src"] == "Priority" and p["msg_type"] == "accept-proposal" and p["payload"].get("word") == "engine"], "Priority priced it")
+        self.assertNotIn("Do", W.dept(REF)["engines"], "nothing is added before the stamp")
+        self.stamp("engine")
+        self.idle()
+        self.assertIn("Do", W.dept(REF)["engines"])
+        idea = R.ideas(REF)[-1]
+        self.assertEqual((idea.get("engine"), idea.get("state")), ("Do", "built"))
+        self.ask("Add a careers page")
+        self.assertTrue(W.versions(REF, "Result"), "the added engine runs on the next Brief")
+
+    def test_88_an_idea_that_fits_no_template_is_shaped_from_do_and_born_into_the_library_on_the_stamp(self):
+        """TPL-1 slice 2, "created on the fly": no Library engine fits the idea, so Adaptation shapes one from Do with the
+        idea as its instruction (the model names it); nothing is born before the stamp; on it the template is in the
+        Library with made_by, the definitions still validate, and the engine runs, filing under the Default template."""
+        W, R = self.W, self.R
+        lib = R.Path(tempfile.mkdtemp(prefix="engine-templates-"))
+        shutil.rmtree(lib)
+        shutil.copytree(R.TEMPLATES_DIR, lib)
+        prior = R.TEMPLATES_DIR
+        R.TEMPLATES_DIR = lib
+        R._DEFS.clear()
+        try:
+            self.live()
+            self.ask("What if the department kept a list of my talks, updated whenever I give one.")
+            a = next(x for x in W.asks(REF) if x["kind"] == "engine" and x["status"] == "pending")
+            self.assertEqual(a["engine"], "Talks List", "named by the model")
+            self.assertIn("What it does: keeps the list of my talks up to date.", a["text"])
+            self.assertFalse((lib / "talks-list.json").exists(), "nothing born before the stamp")
+            self.stamp("engine")
+            self.idle()
+            t = json.loads((lib / "talks-list.json").read_text(encoding="utf-8"))
+            self.assertEqual((t["name"], t["reads"], t["writes"], t["made_by"]["dept"]), ("Talks List", "Brief", "Talks List", REF))
+            self.assertEqual([s["id"] for s in t["steps"]], ["talks-list.read", "talks-list.make", "talks-list.file"])
+            self.assertIn("Talks List", R.defs()["engines"])
+            self.assertEqual(R.validate(R.defs()), [])
+            d = W.dept(REF)
+            self.assertIn("Talks List", d["engines"])
+            self.assertIn("Talks List", d["artifacts"])
+            self.ask("Add a careers page")
+            v = W.versions(REF, "Talks List")
+            self.assertTrue(v and v[-1]["check"]["ok"], "the shaped engine ran on the next Brief and filed under the Default template")
+            self.assertIn("THIS ENGINE'S INSTRUCTION", [p for s, p in self.M.prompts if s == "talks-list.make"][-1])
+        finally:
+            R.TEMPLATES_DIR = prior
+            R._DEFS.clear()
+            shutil.rmtree(lib, ignore_errors=True)
 
 
 class TestTheFiveJourneys(Base):

@@ -139,7 +139,9 @@ def faults(defs):
                 out.append("%s: %s %s, which the Library has no template for" % (name, key, a))
         for trig in (e.get("start") or {}).get("on") or []:
             if trig.get("kind") == "version" and trig.get("of") in names:
-                if name not in (get(trig["of"]).get("operations") or []):
+                # an engine born from an idea on the owner's stamp (made_by) runs on the Brief by that stamp; the
+                # Library's operations list is the Library's word for its own engines
+                if name not in (get(trig["of"]).get("operations") or []) and not e.get("made_by"):
                     out.append("%s: runs on a new %s, but that template does not name it as an operation" % (name, trig["of"]))
     return out
 

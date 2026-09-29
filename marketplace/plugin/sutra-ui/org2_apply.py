@@ -105,6 +105,14 @@ def apply_request(kind, args):
         out = FT.write_pick(args["ref"], fn, str(args.get("template") or "").strip())
         return {"applied": True, "ref": args["ref"], "function": fn,
                 "template_before": out["before"], "template_after": out["after"]}
+    if kind == "org.engine":
+        # TPL-1 slice 2 (2026-09-29): an engine added to a live department on the owner's stamp, the same write
+        # Identity makes when the owner stamps the ask its Adaptation raised (website_dept.add_engine)
+        import website_dept as W
+        domains = E.load_domains()
+        _live(args.get("ref"), domains)
+        out = W.add_engine(args["ref"], str(args.get("engine") or "").strip(), shape=args.get("shape"))
+        return {"applied": True, "ref": args["ref"], "engine": out["engine"], "engines": out["engines"], "born": out.get("born")}
     raise ValueError("no way to apply %r" % kind)
 
 

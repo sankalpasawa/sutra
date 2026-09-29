@@ -2139,6 +2139,13 @@ def identity_apply(ctx, step, item):
     a = next((x for x in W.asks(ref) if x["id"] == pl.get("ask")), None)
     if not a:
         return {"said": "took a stamp"}
+    if a.get("kind") == "engine":
+        # TPL-1 slice 2: the engine Adaptation offered, priced by Priority, now stamped: on the record, in the line, and
+        # a shaped one born into the Library; it starts on its own trigger like every other engine
+        offer = a.get("offer") or {}
+        W.add_engine(ref, a.get("engine"), shape=offer.get("shape"), by="the owner")
+        _note_idea(ref, a.get("idea"), {"engine": a.get("engine"), "state": "built"})
+        return {"said": "added the engine %s on the owner's stamp; it starts on its own trigger" % a.get("engine")}
     if a.get("kind") == "rung":
         _, s = step_def(a["step"])
         move(ref, s, a["to"], "stamp " + a["id"], evidence=a.get("evidence"), form=a.get("form"))
@@ -2578,24 +2585,173 @@ def c_department_is_made(ctx, step, item, out):
     return _verdict(ok, "the department exists under Root, on the runtime, and has its goal", "the department was not made under Root")
 
 
-# ---- Do: the default line, one answer filed (TPL-1, founder 2026-09-29: "otherwise ... there is a default one") -----------
+# ---- an engine from an idea (TPL-1 slice 2, founder 2026-09-29: "the engines are supposed to be created by the five
+# functions of the department ... created on the fly, or there is a default one") ---------------------------------------
+_STOP = set("what if the a an and or of to for in on with my our we it its this that could would should be is are was do does "
+            "have has each every when then also just there here from into as by at one department site".split())
+
+
+def _content(words):
+    return {w for w in re.findall(r"[a-z0-9]+", str(words or "").lower()) if len(w) >= 4 and w not in _STOP}
+
+
+def engine_for_idea(ref, words, hint=None):
+    """Which engine an idea asks for: the Library engine template whose use case shares the most words with the idea
+    (two at least) and is not on the record yet, as a pick; else a shape from the idea (its name from the model's hint,
+    or the idea's first words), to be born from Do on the stamp; None when the idea holds no words an engine could do."""
+    d = W.dept(ref) or {}
+    have = set(d.get("engines") or [x[0] for x in W.engines_of(d)])
+    hint = hint if isinstance(hint, dict) else {}
+    idea = _content(words) | _content(hint.get("does"))
+    if not idea:
+        return None
+    best, score = None, 0
+    for name, e in defs()["engines"].items():
+        if e.get("kind") != "work" or not e.get("from_template") or name in have or name == "Setup":
+            continue
+        s = len(idea & _content(e.get("use_case")))
+        if s > score:
+            best, score = name, s
+    if best and score >= 2:
+        e = defs()["engines"][best]
+        return {"pick": best, "use_case": e.get("use_case"), "does": e.get("description")}
+    name = " ".join(str(hint.get("name") or "").split())
+    if not name:
+        name = " ".join(w.title() for w in [w for w in re.findall(r"[a-z0-9]+", str(words or "").lower()) if w in idea][:2]) or "Helper"
+    does = str(hint.get("does") or words or "")
+    return {"shape": {"name": name[:40], "use_case": does[:300], "does": does[:200], "instruction": str(words or "")[:2000],
+                      "reads": "Brief", "writes": name[:40]}}
+
+
+def born_template(name, shape, ref):
+    """An engine shaped on the fly, born into the Library from Do: the same three steps (read, do, file) under its own
+    ids, its use case and instruction from the idea, what it writes filed under the Default artifact template; made_by
+    says which department's owner stamped it. Validated with the rest; refused, it leaves no file."""
+    slug = re.sub(r"[^a-z0-9]+", "-", str(name or "").lower()).strip("-")
+    if not slug:
+        raise ValueError("name the engine")
+    p = TEMPLATES_DIR / (slug + ".json")
+    if p.exists():
+        raise ValueError("the Library already has a template at %s" % p.name)
+    do = json.loads((TEMPLATES_DIR / "do.json").read_text(encoding="utf-8"))
+    t = dict(do)
+    does = str(shape.get("does") or shape.get("use_case") or "")
+    t.update({"id": "engine/" + slug, "name": name, "version": 1, "use_case": str(shape.get("use_case") or does)[:300],
+              "description": does[:200] or ("does what the idea asked: " + name), "instruction": str(shape.get("instruction") or "")[:2000],
+              "reads": str(shape.get("reads") or "Brief"), "writes": str(shape.get("writes") or name)[:40],
+              "made_by": {"dept": ref, "at": W.now(), "idea": str(shape.get("instruction") or "")[:300]}})
+    t["start"] = {"on": [{"kind": "version", "of": t["reads"]}], "unless": list((do.get("start") or {}).get("unless") or [])}
+    t["steps"] = [dict(s, id=slug + "." + s["id"].split(".", 1)[1]) for s in do["steps"]]
+    if not t["use_case"]:
+        raise ValueError("an engine names its use case")
+    p.write_text(json.dumps(t, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    _DEFS.clear()
+    try:
+        defs()
+    except ValueError:
+        p.unlink()
+        _DEFS.clear()
+        raise
+    return p
+
+
+def grow_line(ref, name):
+    """Coordination's line, on the record, gains the engine; the born copy is written first for a department that had none."""
+    t = coordination(ref)
+    if name not in (t.get("line") or []):
+        t["line"] = list(t.get("line") or []) + [name]
+    t.update({"since": W.now(), "by": "stamp"})
+    with W._lock(ref):
+        W._write(W.ddir(ref) / "coordination.json", t)
+    return t
+
+
+def _note_idea(ref, idea_id, note):
+    if not idea_id:
+        return
+    with W._lock(ref):
+        rows = ideas(ref)
+        for r in rows:
+            if r.get("id") == idea_id:
+                r.update(note)
+        W._write(W.ddir(ref) / "ideas.json", rows)
+
+
+def adapt_offer(ctx, step, item):
+    """After an idea is parked, Adaptation offers the engine it asks for, if any: to Priority first, which prices it against
+    the envelope; Identity puts it to the owner once Priority answers (adapt.priced). Nothing is added without the stamp."""
+    ref, pl, got = ctx["ref"], ctx["post"]["payload"], ctx["bag"]["adapt.shape"]
+    offer = engine_for_idea(ref, pl.get("words"), got.get("engine"))
+    if not offer:
+        return {"said": "the idea asks for no engine", "offer": None}
+    name = offer.get("pick") or offer["shape"]["name"]
+    # a thread of its own, as every proposal of Adaptation's: the idea's thread closed when the idea was parked
+    post(ref, "Adaptation", "Priority", "propose", {"word": "engine", "engine": name, "offer": offer, "idea": ctx["bag"]["adapt.park"].get("idea"),
+                                                   "for": pl.get("for"), "why": "the idea asks for it"})
+    return {"said": "offered an engine to Priority: %s%s" % (name, " (from the Library)" if offer.get("pick") else " (shaped from the idea)"),
+            "offer": offer}
+
+
+def adapt_priced(ctx, step, item):
+    """Priority priced the engine: with room, Adaptation proposes it to Identity, who asks the owner; without, the idea
+    stays parked, and says so."""
+    ref, p = ctx["ref"], ctx["post"]
+    mine = [x for x in board(ref) if x["thread"] == p["thread"] and x["src"] == "Adaptation" and x["msg_type"] == "propose"
+            and (x.get("payload") or {}).get("word") == "engine"]
+    if not mine:
+        return {"said": "heard Priority on an engine nobody offered"}
+    offer = mine[-1]["payload"]
+    if p["msg_type"] != "accept-proposal":
+        _note_idea(ref, offer.get("idea"), {"engine": offer.get("engine"), "priced": "refused", "why": (p.get("payload") or {}).get("why")})
+        return {"said": "Priority has no room for %s; the idea stays parked" % offer.get("engine")}
+    post(ref, "Adaptation", "Identity", "propose", {"word": "engine", "engine": offer.get("engine"), "offer": offer.get("offer"),
+                                                   "idea": offer.get("idea"), "for": offer.get("for"), "why": "the idea asks for it; Priority has room"})
+    return {"said": "put the engine %s to Identity for the owner" % offer.get("engine")}
+
+
+def identity_engine(ctx, step, item):
+    """The engine Adaptation proposed, put to the owner as an ask in the owner's words: what it would do, and what a stamp does."""
+    ref, p = ctx["ref"], ctx["post"]
+    pl = p["payload"]
+    offer, name = pl.get("offer") or {}, str(pl.get("engine") or "")
+    does = str(offer.get("does") or (offer.get("shape") or {}).get("does") or offer.get("use_case") or "").strip().rstrip(".")
+    text = "Add the engine %s to %s?%s Stamp to add it, Refuse to leave the idea parked." % (
+        name, ctx["dept"].get("name"), (" What it does: " + does[:1].lower() + does[1:] + ".") if does else "")
+    W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "engine", "engine": name, "offer": offer, "idea": pl.get("idea"),
+                     "text": text, "status": "pending", "created": W.now(), "thread": p["thread"]})
+    post(ref, "Identity", OWNER, "request", {"word": "engine", "objective": text, "output": "a stamp or a refusal", "may_read": [],
+                                             "boundaries": "this one engine"}, thread=p["thread"])
+    return {"said": "put an engine to the owner: " + name}
+
+
+# ---- Do: the default line, one answer filed (TPL-1, founder 2026-09-29: "otherwise ... there is a default one"); an engine
+# born from an idea runs these same three steps under its own ids, with its instruction ------------------------------------
+def _pre(step):
+    return str(step["id"]).rsplit(".", 1)[0]
+
+
 def do_read(ctx, step, item):
-    return {"brief": W.read_files(ctx["ref"], "Brief", ctx["inp"]["v"]).get("brief.md", "")}
+    art = ctx["def"].get("reads") or "Brief"
+    files = W.read_files(ctx["ref"], art, ctx["inp"]["v"])
+    return {"brief": files.get("brief.md") or "\n".join(str(v) for v in files.values())}
 
 
 def p_do_make(ctx, step, item):
-    return ("The department \"%s\" was asked for this, in its owner's words (the Brief):\n%s\n\nDo it as one written answer: what was "
+    ins = str(ctx["def"].get("instruction") or "").strip()
+    return ("The department \"%s\" was asked for this, in its owner's words (the Brief):\n%s\n\n%sDo it as one written answer: what was "
             "asked for, done as far as words can do it, in the owner's own language, nothing invented; where a fact is missing, say "
-            "so. Return ONLY a JSON object: {\"text\": str}." % (ctx["dept"].get("name"), ctx["bag"]["do.read"]["brief"][:6000]))
+            "so. Return ONLY a JSON object: {\"text\": str}."
+            % (ctx["dept"].get("name"), ctx["bag"][_pre(step) + ".read"]["brief"][:6000],
+               ("THIS ENGINE'S INSTRUCTION, FROM THE OWNER'S IDEA: %s\n\n" % ins) if ins else ""))
 
 
 def d_do_make(ctx, step, item):
-    brief = " ".join(str(ctx["bag"]["do.read"]["brief"]).split())
+    brief = " ".join(str(ctx["bag"][_pre(step) + ".read"]["brief"]).split())
     return {"text": "Noted, to be done by hand: " + brief[:600]}
 
 
 def do_file(ctx, step, item):
-    text = str(ctx["bag"]["do.make"].get("text") or "").strip()
+    text = str(ctx["bag"][_pre(step) + ".make"].get("text") or "").strip()
     return {"files": {"result.md": text + "\n"}, "check": {"ok": len(text) >= 3, "notes": ["%d characters" % len(text)]}}
 
 
@@ -2605,7 +2761,7 @@ def c_result_is_text(ctx, step, item, out):
 
 
 CODE = {"plan_read": plan_read, "plan_fit": plan_fit, "plan_file": plan_file, "write_list": write_list, "write_file": write_file,
-        "do_read": do_read, "do_file": do_file,
+        "do_read": do_read, "do_file": do_file, "adapt_offer": adapt_offer, "adapt_priced": adapt_priced, "identity_engine": identity_engine,
         "check_rules_of": check_rules_of,
         "hear": hear, "coord_ready": coord_ready, "coord_record": coord_record,
         "setup_read": setup_read, "setup_make": setup_make, "setup_file": setup_file,
@@ -2828,15 +2984,17 @@ def d_identity_weigh(ctx, step, item):
 def p_adapt_shape(ctx, step, item):
     pl = ctx["post"]["payload"]
     return ("The owner floats an idea the department cannot do today. Do not plan a build. Reflect the idea back in sharper words, "
-            "name the question underneath it, and give two or three shapes it could take, smallest first.\nTHE GOAL: %s\n"
-            "THE IDEA: %s\n\nReturn ONLY a JSON object: {\"reflected\": str, \"question\": str, \"shapes\": [str, str, str]}."
+            "name the question underneath it, and give two or three shapes it could take, smallest first. If the idea is something "
+            "the department could do each time on its own, name that engine: one or two words, and what it does in one line; else null."
+            "\nTHE GOAL: %s\nTHE IDEA: %s\n\nReturn ONLY a JSON object: {\"reflected\": str, \"question\": str, \"shapes\": [str, str, str], "
+            "\"engine\": {\"name\": str, \"does\": str} or null}."
             % (ctx["dept"].get("goal"), pl.get("words")))
 
 
 def d_adapt_shape(ctx, step, item):
     words = str(ctx["post"]["payload"].get("words") or "")
     return {"reflected": words, "question": "What would this let a visitor do that they cannot do today?",
-            "shapes": ["a page that says it", "a link to where it is already done", "an engine that does it"]}
+            "shapes": ["a page that says it", "a link to where it is already done", "an engine that does it"], "engine": None}
 
 
 PROMPT = {"identity_recognise": p_identity_recognise, "identity_answer": p_identity_answer, "identity_rule": p_identity_rule,
