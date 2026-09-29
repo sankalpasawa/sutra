@@ -638,7 +638,14 @@ def request(ref, text, about=None):
         W._write(W.ddir(ref) / "requests.json", reqs)
     front = d.get("kind") == "root"
     ab = None
-    if about:
+    if about and str(about).startswith("fn:"):
+        # said in one function's own chat (founder, 2026-09-29): the words still reach Identity, the one door, and
+        # carry the function they were said to, so that function's chat shows them and what came of them
+        fn = str(about)[3:].strip().lower()
+        if fn.title() not in FUNCTIONS:
+            raise ValueError("no function named %s" % fn)
+        ab = {"fn": fn}
+    elif about:
         ad = W.dept(about)
         ab = {"dept": about, "name": (ad or {}).get("name")}
     p = post(ref, OWNER, "Identity", "request",
@@ -1946,6 +1953,48 @@ def _own_turns(dref, name):
                     "dept": dref, "name": name, "own": True, "link": pl.get("link"),
                     "birth": p["n"] == 1 and p["src"] == OWNER and born_of_root})   # the words Root handed at the birth
     return out
+
+
+def fn_chat_view(ref, fn):
+    """One function's chat, which exists from the department's birth and is never started: what the function said and
+    was told on the board, the person's words said to it (about fn) and every owner-facing turn of those threads, and
+    its thinking, its own step rows, as quiet lines between, all in time order (founder, 2026-09-29: a click on a
+    function's Chat "should not start a new chat. It should just show the existing chat there"; SIM-3 c: each
+    function's thinking in its own chat)."""
+    name = str(fn or "").strip().title()
+    if name not in FUNCTIONS:
+        raise ValueError("no function named %s" % fn)
+    d = W.dept(ref) or {}
+    posts = board(ref)
+
+    def to_fn(p):
+        ab = p.get("about") if isinstance(p.get("about"), dict) else {}
+        pl = p.get("payload") or {}
+        pab = pl.get("about") if isinstance(pl.get("about"), dict) else {}
+        return (ab.get("fn") or pab.get("fn") or "").lower() == name.lower()
+
+    mine = {p["thread"] for p in posts if to_fn(p)}
+    turns = []
+    for p in posts:
+        pl = p.get("payload") or {}
+        own = p["src"] == name or name in p["dst"] or to_fn(p)
+        in_thread = p["thread"] in mine and (p["src"] == OWNER or OWNER in p["dst"])
+        if not own and not in_thread:
+            continue
+        turns.append({"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
+                      "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""), "think": False})
+    for r in step_rows(ref):
+        if r.get("engine") != name:
+            continue
+        sname = (step_def(str(r.get("step")))[1] or {}).get("name") or str(r.get("step"))
+        if r.get("mode") == "gate":
+            line = "%s: %s" % (sname, r.get("answer") or "")
+        else:
+            line = "%s, %s" % (sname, RUNG_NAME.get(str(r.get("rung")), str(r.get("rung") or "")).lower())
+        turns.append({"n": None, "src": name, "dst": [], "msg_type": "step", "at": r.get("ended") or r.get("started") or r.get("at") or "",
+                      "thread": r.get("run"), "word": r.get("step"), "line": line, "think": True})
+    turns.sort(key=lambda t: (str(t["at"]), t["n"] or 0))
+    return {"fn": name, "dept": ref, "name": d.get("name"), "turns": turns, "any": bool(turns)}
 
 
 def chat_view(ref, about=None):

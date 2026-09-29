@@ -42,7 +42,7 @@ const WB_ACTS = { "request": "asks", "agree": "agrees", "refuse": "refuses", "pr
 function wbS(){
   if (!S.wb) S.wb = { refs: null, refsBusy: false, refsMissed: {}, map: {}, sig: {}, tab: {}, pane: {}, sel: {}, draft: {},
                       busy: {}, err: {}, engine: {}, art: {}, trace: {}, steps: {}, board: {}, chat: {}, chatSig: {},
-                      chip: {}, thread: {}, turns: {}, scroll: {}, found: null, timer: null };
+                      fnchat: {}, fnchatSig: {}, chip: {}, thread: {}, turns: {}, scroll: {}, found: null, timer: null };
   return S.wb;
 }
 function wbRt(m){ return !!(m && m.runtime === 2); }
@@ -137,6 +137,9 @@ function wbTick(){
     wbLoadMap(S.dp.sel);
     /* a department's answer lands on Root's board without a run of Root's own, so the open chat is read on its own clock */
     if (wbTab(S.dp.sel) === "chat" && st.chat[S.dp.sel]) wbLoadChat(S.dp.sel, true);
+    /* a function's open chat is read on the same clock */
+    const ftab = (typeof dpS === "function" && dpS().tab[S.dp.sel]) || "", fk = S.dp.sel + ":" + ftab;
+    if (ftab && st.fnchat[fk] && dpS().pane[fk] === "chat") wbLoadFnChat(S.dp.sel, ftab, true);
   }, WB_POLL_MS);
 }
 function wbMotorState(m){
@@ -450,6 +453,7 @@ function wbAgain(ref){
   Object.keys(st.steps).forEach(k => { if (k.indexOf(ref + ":") === 0) wbLoadSteps(ref, k.slice(ref.length + 1), true); });
   if (st.board[ref]) wbLoadBoard(ref, true);
   if (st.chat[ref]) wbLoadChat(ref, true);
+  Object.keys(st.fnchat).forEach(k => { if (k.indexOf(ref + ":") === 0) wbLoadFnChat(ref, k.slice(ref.length + 1), true); });
 }
 function wbRungHtml(s){
   const at = WB_RUNGS.map(r => r[0]).indexOf(s.rung);
@@ -687,6 +691,52 @@ function wbChatHtml(n, m){
   st.turns[n.ref] = count;
   wbKeepPlace(n.ref, seen !== undefined && count > seen);
   return `<div class="wbchat wb">${turns || (running.length ? "" : dpQuiet(empty))}${working}</div>` + wbChatAsksHtml(c) + wbChatBoxHtml(n, m) + names;
+}
+
+/* ── a function's chat ────────────────────────────────────────────────────
+   Founder, 2026-09-29: a click on a function's Chat "should not start a new
+   chat. It should just show the existing chat there." On the engine runtime a
+   function is an engine on the board, so its chat is read from the record and
+   exists from birth: what it said and was told, the person's words to it, its
+   thinking as quiet lines (SIM-3 c). 20-dept.js's dpLiveChatHtml asks here
+   first; null keeps the first build's chat for a department not on the runtime. */
+async function wbLoadFnChat(ref, fn, again){
+  const st = wbS(), k = ref + ":" + fn;
+  if ((st.fnchat[k] && !again) || st.busy["f:" + k]) return;
+  st.busy["f:" + k] = true;
+  try {
+    const v = await apiGet(wbUrl(ref, "chat?fn=" + encodeURIComponent(fn)));
+    const sig = JSON.stringify(v), moved = sig !== st.fnchatSig[k] || !st.fnchat[k];
+    st.fnchat[k] = v; st.fnchatSig[k] = sig;
+    delete st.busy["f:" + k];
+    if (moved && (!again || !wbTyping())) dpRender();
+  } catch (e) {
+    if (!st.fnchat[k]) st.fnchat[k] = { failed: true };
+    delete st.busy["f:" + k];
+    if (!again) dpRender();
+  }
+}
+function wbFnTurn(t){
+  if (t.think) return `<div class="o2quiet dpq wbthink">${wbEsc(t.line)} · ${wbEsc(wbWhen(t.at))}</div>`;
+  const line = t.line || (t.msg_type === "accept-proposal" ? "Stamped" : t.msg_type === "reject-proposal" ? "Refused" : wbCap(t.word || ""));
+  if (t.src === "Owner") return `<div class="turn wbturn"><div class="who who-you">You</div><div class="u md">${wbEsc(line)}</div></div>`;
+  return `<div class="turn wbturn"><div class="who who-ai">${wbEsc(t.src)}</div><div class="a">${wbEsc(line)}` +
+    `<span class="dpchk">${wbEsc(WB_ACTS[t.msg_type] || t.msg_type)} · ${wbEsc(wbWhen(t.at))}</span></div></div>`;
+}
+function wbFnChatHtml(ref, fn, label){
+  if (!wbIs(ref)) return null;
+  const st = wbS(), m = st.map[ref];
+  if (!m){ wbLoadMap(ref); return dpSkel(); }
+  if (!wbRt(m)) return null;
+  const k = ref + ":" + fn, c = st.fnchat[k];
+  if (!c){ wbLoadFnChat(ref, fn); return dpSkel(); }
+  if (c.failed) return dpQuiet("Could not read");
+  const name = c.fn || label || wbCap(fn), dk = ref + ":fn:" + fn;
+  const turns = (c.turns || []).map(t => wbFnTurn(t)).join("");
+  const err = st.err[dk] ? `<div class="o2quiet dpq">${wbEsc(st.err[dk])}</div>` : "";
+  return `<div class="wbchat wbfn wb">${turns || dpQuiet("Nothing yet between you and " + name)}</div>` +
+    `<div class="wbbox wb"><textarea data-wbdraft="${wbEsc(dk)}" rows="2" placeholder="${wbEsc("Say it to " + name)}">${wbEsc(st.draft[dk] || "")}</textarea>` +
+    wbBtn("Send", `data-wbask="fn:${wbEsc(fn)}"`, "dpstamp") + err + `</div>`;
 }
 
 /* Priority's card: the limits, born from Priority's template, set here by the
@@ -1052,6 +1102,11 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (ds.wbresume !== undefined){ wbPost(ref, "resume"); return; }
     if (ds.wbgoal !== undefined){ const k = ref + ":goal"; wbPost(ref, "goal", { text: st.draft[k] || "" }, k); return; }
     if (ds.wbask !== undefined){
+      if (String(ds.wbask).indexOf("fn:") === 0){
+        /* said in one function's own chat: to this department, carrying the function (founder, 2026-09-29) */
+        const fk = ref + ":" + ds.wbask;
+        wbPost(ref, "ask", { text: st.draft[fk] || "", about: ds.wbask }, fk).then(() => wbAgain(ref)); return;
+      }
       /* the words go to Root, the front door; said inside a department they carry it, unless the person took the chip off */
       const k = ref + ":ask", m = st.map[ref], body = { text: st.draft[k] || "" };
       let at = ref;

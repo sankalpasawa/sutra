@@ -5669,6 +5669,9 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .wbbox textarea{flex:1;min-width:220px;box-sizing:border-box;background:var(--inset);border:1px solid var(--line);border-radius:6px;color:var(--ink);font:400 13px/1.45 var(--sans);padding:7px 9px;resize:vertical}
 .wbbox textarea:focus{border-color:var(--acc);outline:0}
 .wbto{cursor:pointer;background:var(--surface);align-self:center}
+/* a function's own chat: its turns, its thinking as quiet lines between them */
+.wbchat.wbfn .who-ai{opacity:.85}
+.wbchat .wbthink{margin:2px 0 2px 8px}
 /* the Board as chats: the threads down the side, the open one as turns */
 .wbboard{display:grid;grid-template-columns:minmax(0,240px) minmax(0,1fr);gap:12px}
 .wbthreads{display:flex;flex-direction:column;gap:4px}

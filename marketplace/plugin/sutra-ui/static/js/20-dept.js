@@ -1122,6 +1122,10 @@ function dpFnChatUrl(ref, fn, name, start){
 }
 function dpLiveChatHtml(fn, label){
   const st = dpS(), key = (st.sel || "") + ":" + fn;
+  /* 22-website.js: on the engine runtime a function's chat is read from the
+     record and never started (founder, 2026-09-29); null hands back here */
+  const own = (typeof wbFnChatHtml === "function") ? wbFnChatHtml(st.sel, fn, label) : null;
+  if (own !== null) return own;
   if (dpFnChatMap()[key] || st.chatStart[key]) return `<div class="dpframe" data-dpframe="${dpEsc(key)}"></div>`;
   return dpCard("Chat", dpQuiet("No chat with " + label + " yet") +
     `<button type="button" class="btn" data-dpchatstart="${dpEsc(fn)}">Start the chat with ${dpEsc(label)}</button>`);

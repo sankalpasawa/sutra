@@ -62,6 +62,9 @@
      W32 Root's box, once departments exist, invites words for one of them
      W33 the working line says how far along (page n of m) and is gone when
          the department is Off (run 2, finding 15)
+     W34 a function's chat is its existing turns and thinking from the record,
+         with a box to say more; never a Start button, never a new chat
+         (founder 2026-09-29)
 
    Harness: test_dept.js's fresh(), with 22-website.js loaded after 20-dept.js
    (panel.html's order). Run: node test_website.js */
@@ -156,6 +159,10 @@ function stepsOf(name, o){
     stepOf({ id: name.toLowerCase() + ".pick", name: "Say who goes first, when several are ready", nature: "decide", mode: "rule", under: table ? "What engines share" : "Nowhere", check: "names_who_goes_first" }),
     stepOf({ id: name.toLowerCase() + ".read", name: "Read the request", under: "Take a request", check: "brief_is_text" })] };
 }
+const FNCHAT = { fn: "Identity", dept: "r3", name: "City Care Hospital Website", any: true, turns: [
+  { n: 1, src: "Owner", dst: ["Identity"], msg_type: "request", at: "2026-09-27T11:00:00+05:30", thread: "t1", word: "request", line: "A website for the hospital", think: false },
+  { n: null, src: "Identity", dst: [], msg_type: "step", at: "2026-09-27T11:00:05+05:30", thread: "r-1", word: "identity.read", line: "Read the words, code", think: true },
+  { n: 2, src: "Identity", dst: ["Owner"], msg_type: "agree", at: "2026-09-27T11:00:20+05:30", thread: "t1", word: "request", line: "Filed in the Brief.", think: false }] };
 const BOARD = { any: true,
   ideas: [{ id: "i-1", words: "what about a patient portal", reflected: "A place where patients sign in", question: "Who signs in first?",
             shapes: ["A page that links out", "A sign-in of its own"], state: "parked", at: AT }],
@@ -198,6 +205,7 @@ function fresh(opts){
       if (/\/api\/native\/r3\/map$/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(map)));
       if (/\/api\/native\/r3\/steps\//.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(stepsOf(decodeURIComponent(p.split("/steps/")[1]), opts.steps))));
       if (/\/api\/native\/r3\/board$/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(opts.board || BOARD)));
+      if (/\/api\/native\/r3\/chat\?fn=/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(opts.fnchat || FNCHAT)));
       if (/\/api\/native\/r3\/chat$/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(opts.chat || CHAT)));
       if (/\/api\/native\/r3\/engine\//.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(Object.assign({ runs: [] }, map.engines[1]))));
       if (/\/artifact\//.test(p)) return Promise.resolve({ name: "Live site", slug: "live-site",
@@ -960,6 +968,34 @@ async function paint(c, n){
   for (let k = 0; k < (n || 3); k++){ c.dpViewerHtml(WEB, {}, null, null); for (let i = 0; i < 6; i++) await sleep(); }
   return c.dpViewerHtml(WEB, {}, null, null);
 }
+
+test("W34: a function's chat is its existing turns and thinking from the record, with a box to say more; never a Start button, never a new chat", async () => {
+  const c = await opened({ map: rtMap() });
+  await fnCard(c, "identity");
+  vm.runInContext("dpS().pane['r3:identity'] = 'chat';", c);
+  for (let k = 0; k < 3; k++){ c.dpViewerHtml(WEB, {}, null, null); for (let i = 0; i < 6; i++) await sleep(); }
+  let html = c.dpViewerHtml(WEB, {}, null, null);
+  assert.deepStrictEqual(readsOf(c, /\/chat\?fn=/), ["/api/native/r3/chat?fn=identity"], "read from the record, once");
+  assert.ok(/<div class="wbchat wbfn wb">/.test(html), "the function's own chat");
+  assert.ok(/<div class="who who-you">You<\/div><div class="u md">A website for the hospital<\/div>/.test(html), "the person's words to it");
+  assert.ok(/<div class="o2quiet dpq wbthink">Read the words, code · /.test(html), "its thinking as a quiet line between the turns");
+  assert.ok(/<div class="who who-ai">Identity<\/div><div class="a">Filed in the Brief\.<span class="dpchk">agrees · /.test(html), "what it said, with the act");
+  assert.ok(/placeholder="Say it to Identity"/.test(html) && /data-wbask="fn:identity"/.test(html), "a box to say more");
+  assert.ok(!/Start the chat|data-dpchatstart|data-dpframe|No chat with/.test(html), "never a Start button, never a frame, never a new chat");
+  vm.runInContext("wbS().draft['r3:fn:identity'] = 'Could the careers page come first?';", c);
+  assert.ok(click(c, { wbask: "fn:identity" }));
+  for (let i = 0; i < 4; i++) await sleep();
+  const post = JSON.parse(JSON.stringify(c.calls.apiPost.filter(x => /\/ask$/.test(x.p))[0]));
+  assert.deepStrictEqual(post, { p: "/api/native/r3/ask", body: { text: "Could the careers page come first?", about: "fn:identity" } }, "the words go to this department, said to Identity");
+  assert.ok(readsOf(c, /\/chat\?fn=/).length >= 2, "and the chat is read again once they are sent");
+  const old = await opened();
+  await fnCard(old, "identity");
+  vm.runInContext("dpS().pane['r3:identity'] = 'chat';", old);
+  for (let k = 0; k < 2; k++){ old.dpViewerHtml(WEB, {}, null, null); for (let i = 0; i < 4; i++) await sleep(); }
+  html = old.dpViewerHtml(WEB, {}, null, null);
+  assert.ok(/Start the chat with Identity/.test(html), "a department of the first build keeps the chat it had");
+  assert.deepStrictEqual(readsOf(old, /\/chat\?fn=/), [], "and reads no function chat");
+});
 
 test("V2 navigation: with the switch on the list, Chat, a function card and an engine card are the first design's, unchanged", async () => {
   const c = await v2({ map: rtMap({ ask: true }) });

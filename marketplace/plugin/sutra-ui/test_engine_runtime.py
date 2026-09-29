@@ -684,6 +684,36 @@ class TestWhatTheOwnerSees(Base):
                                     "Put them on the site as said? Stamp to go ahead, Refuse to leave them out. Email the new site to every patient",
                          "in the person's words: what reaches outside, and what a stamp does (finding 13)")
 
+    def test_82_a_functions_chat_exists_from_birth_and_is_its_turns_and_thinking(self):
+        """Founder, 2026-09-29: a click on a function's Chat "should not start a new chat. It should just show the
+        existing chat there." The chat is read from the record: the function's posts, the person's words to it, its
+        step rows as thinking. Nothing starts it; a name that is not a function is refused."""
+        W, R = self.W, self.R
+        self.live()
+        ident = R.fn_chat_view(REF, "identity")
+        self.assertEqual(ident["fn"], "Identity")
+        said = [t for t in ident["turns"] if not t["think"]]
+        self.assertEqual(said[0]["src"], "Owner", "the person's goal opens Identity's chat")
+        self.assertEqual(said[0]["line"], GOAL)
+        self.assertTrue([t for t in said if t["src"] == "Identity" and "Owner" in t["dst"]], "and Identity answered in it")
+        self.assertTrue([t for t in said if t["msg_type"] == "accept-proposal"], "the publish stamp is a turn of it")
+        thought = [t for t in ident["turns"] if t["think"]]
+        self.assertTrue(thought and all(t["src"] == "Identity" for t in thought), "its own steps are its thinking, nobody else's")
+        self.assertEqual([t["at"] for t in ident["turns"]], sorted(t["at"] for t in ident["turns"]), "in time order")
+        pr = R.fn_chat_view(REF, "priority")
+        self.assertTrue(pr["any"] and all(t["think"] for t in pr["turns"]), "Priority has said nothing to the person: its chat is its thinking")
+        W.owner_ask(REF, "Could the careers page come first?", about="fn:priority")
+        self.idle()
+        pr = R.fn_chat_view(REF, "priority")
+        mine = [t for t in pr["turns"] if not t["think"]]
+        self.assertEqual((mine[0]["src"], mine[0]["line"]), ("Owner", "Could the careers page come first?"), "words said in Priority's chat are in it")
+        self.assertTrue([t for t in mine if t["src"] != "Owner"], "and what came of them, in the same thread")
+        self.assertIn("Could the careers page come first?", [t["line"] for t in R.chat_view(REF)["turns"]], "one record: the department's chat has them too")
+        with self.assertRaises(ValueError):
+            R.fn_chat_view(REF, "board")
+        with self.assertRaises(ValueError):
+            W.owner_ask(REF, "words", about="fn:board")
+
 
 class TestTheFiveJourneys(Base):
     """Canon's five journeys (the Native site, products/cos/design-journeys.html). One way in; Identity recognises which."""
