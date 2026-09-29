@@ -734,6 +734,21 @@ sutra_step_log() {
         "$(awk -F= '$1 == "DOMAIN_REF" { print $2; exit }' "$_sg_plm" 2>/dev/null)" \
         "$(awk -F= '$1 == "CONFIDENCE" { print $2; exit }' "$_sg_plm" 2>/dev/null)"
     fi
+    # RT-25: classify settles the same way, from the verb and confidence it
+    # wrote into the facts. NOTE the name: _sg_f is the step-log path, and
+    # reusing it here appended every row to the facts file (2026-09-29).
+    _sg_facts="$_sg_p/.sutra/turn/$_sg_s/$_sg_t.facts.json"
+    if [ -f "$_sg_facts" ]; then
+      _sg_cv="$(jq -r '.classify.verb // empty' "$_sg_facts" 2>/dev/null)"
+      _sg_cc="$(jq -r '.classify.confidence // empty' "$_sg_facts" 2>/dev/null)"
+      if [ -n "$_sg_cv" ] && [ -n "$_sg_cc" ]; then
+        sutra_tier_settle "$_sg_root" "$_sg_p" "$_sg_s" "$_sg_t" classify "$_sg_cv" "$_sg_cc" || true
+      fi
+    fi
+    # a settle's exit status must never decide whether the rows get written:
+    # on a turn with no facts yet it returns non-zero and, as the last statement
+    # of this block, took the whole row writer with it (seen live 2026-09-29)
+    :
   fi
   _sg_rows="$(printf '%s' "$_sg_json" | jq -r '.[] | [(.n // 0), (.id // "?"), (.status // "?"), ((.detail // "") | tostring | gsub("[\t\n\r]"; " ") | .[0:70])] | @tsv' 2>/dev/null)"
   printf '%s\n' "$_sg_rows" | while IFS="$(printf '\t')" read -r _n _id _status _detail; do
@@ -751,6 +766,17 @@ sutra_step_log() {
       _src="$(sutra_tier_last "$_sg_p" "$_sg_s" "$_sg_t" "$_id" source)"
       _conf="$(sutra_tier_last "$_sg_p" "$_sg_s" "$_sg_t" "$_id" confidence)"
     fi
+    # RT-25: a code step that has said how sure it is carries that number in its
+    # own row, whether or not a tier decision was ever recorded for it. Without
+    # this the confidence exists in the facts and is invisible in the log.
+    if [ -z "$_conf" ]; then
+      case "$_id" in
+        classify|resolve|depth)
+          _conf="$(jq -r --arg k "$_id" '.[$k].confidence // empty' "$_sg_p/.sutra/turn/$_sg_s/$_sg_t.facts.json" 2>/dev/null)" ;;
+        placement)
+          _conf="$(awk -F= '$1 == "CONFIDENCE" { print $2; exit }' "$_sg_p/.claude/sessions/$_sg_s/placement-registered" 2>/dev/null)" ;;
+      esac
+    fi
     [ -n "$_src" ] || _src="$_tier"
     _row="$(jq -nc --arg t "$_sg_t" --arg ev "$_sg_ev" --argjson n "${_n:-0}" --arg id "$_id" \
       --arg st "$_status" --arg tier "$_tier" --arg src "$_src" --arg cf "$_conf" \
@@ -760,7 +786,8 @@ sutra_step_log() {
     [ -n "$_row" ] || continue
     printf '%s\n' "$_row" >> "$_sg_f" 2>/dev/null
     _who="$_tier"; [ "$_src" = "$_tier" ] || _who="$_tier<$_src"
-    printf '  %s %-10s %-8s %-10s in: %s | out: %s\n' "${_n:-0}" "$_id" "$_status" "$_who" "$(printf '%s' "$_io" | jq -r .in)" "$(printf '%s' "$_io" | jq -r .out)"
+    [ -n "$_conf" ] && _who="$_who@$_conf"
+    printf '  %s %-10s %-8s %-14s in: %s | out: %s\n' "${_n:-0}" "$_id" "$_status" "$_who" "$(printf '%s' "$_io" | jq -r .in)" "$(printf '%s' "$_io" | jq -r .out)"
   done
   return 0
 }
@@ -770,6 +797,8 @@ sutra_steplog_render() {
   [ -f "$1" ] || { printf 'sutra: no step log for this turn\n'; return 0; }
   # DeepSeek P1-4: a blank or half-written line is skipped, never rendered blank
   jq -R -r 'fromjson? // empty | select(.kind == "step_log")
-    | ((.source // .tier) as $s | (if $s == .tier then .tier else .tier + "<" + $s end)) as $who
-    | "  \(.n) \(.step + (" " * (10 - (.step | length)))) \(.status + (" " * (8 - (.status | length)))) \($who + (" " * (if (10 - ($who | length)) > 0 then 10 - ($who | length) else 1 end))) in: \(.in) | out: \(.out)"' "$1" 2>/dev/null
+    | ((.confidence // "") | tostring) as $cf
+    | ((.source // .tier) as $s | (if $s == .tier then .tier else .tier + "<" + $s end)) as $base
+    | ($base + (if $cf == "" then "" else "@" + $cf end)) as $who
+    | "  \(.n) \(.step + (" " * (10 - (.step | length)))) \(.status + (" " * (8 - (.status | length)))) \($who + (" " * (if (14 - ($who | length)) > 0 then 14 - ($who | length) else 1 end))) in: \(.in) | out: \(.out)"' "$1" 2>/dev/null
 }

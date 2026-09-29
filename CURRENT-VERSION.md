@@ -2,7 +2,11 @@
 
 **status**: active · **updated**: 2026-09-28
 
-## v2.306.12 (2026-09-29, HEAD)
+## v2.306.13 (2026-09-28, HEAD)
+
+**Every code step says how sure it is** (RT-25, founder 2026-09-29: wherever the code leans on a confidence, an agent should be available). classify, resolve and depth each emit a confidence derived from branches they already had; the rows print it; classify asks the agent when nothing matched at all and records the answer.
+
+## v2.306.12 (2026-09-29)
 
 See marketplace/plugin/CHANGELOG.md for this release's entry.
 

@@ -1,6 +1,10 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-28
+## 2.306.13 (2026-09-28)
+
+- **Every code step now says how sure it is, and classify asks when it had nothing to go on** (RT-25). classify derives a confidence from its own branches (no signal 0.2 - the default fires - stage-1 0.3, mixed 0.6, one clean signal 0.9, corroborated 0.95); resolve turns the matcher score it already computed into one; depth reports whether its inputs were live or degraded. Each number carries the sentence that produced it, and the step-log row prints it beside the tier as `code@0.2`. classify carries the first threshold, 0.25, which fires only on the no-evidence case: the agent is asked which act the message performs and the answer is RECORDED, never applied backwards to labels already emitted. resolve and depth stay unset until the log shows where an ask would pay. Tests: test-tier 60, test-step-log 36.
+
 ## 2.306.12 (2026-09-29)
 
 ## Sutra Desktop: a function's chat is the one you already have

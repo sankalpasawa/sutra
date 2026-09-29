@@ -39,10 +39,19 @@ export SUTRA_NATIVE_HOME="$WORK/reg"
 # ================================================================== C10/C7 ===
 echo "== the direction is data, and the threshold decides whether to ask =="
 is "threshold: placement carries its measured number" "$(sutra_tier_threshold "$PLUGIN_MAIN" placement)" 0.5
-is "threshold: an unmeasured step has none" "$(sutra_tier_threshold "$PLUGIN_MAIN" classify)" ""
+is "threshold: classify asks only below its no-evidence bucket" "$(sutra_tier_threshold "$PLUGIN_MAIN" classify)" 0.25
+is "threshold: an unmeasured step still has none" "$(sutra_tier_threshold "$PLUGIN_MAIN" depth)" ""
+sutra_tier_due "$PLUGIN_MAIN" classify 0.2 && pass "classify asks when nothing matched (0.2)" || fail "classify did not ask at 0.2"
+sutra_tier_due "$PLUGIN_MAIN" classify 0.3 && fail "classify asked on a stage-1 case (0.3)" || pass "classify does not ask at 0.3"
+sutra_tier_due "$PLUGIN_MAIN" classify 0.9 && fail "classify asked on a clean match" || pass "classify does not ask at 0.9"
+# the verb ladder is ASSERT < QUERY < DIRECT, so an agent may move the act up
+# (more is being asked of the runtime) and never down, whatever its confidence
+is "classify: the agent may raise the act" "$(sutra_tier_apply "$PLUGIN_MAIN" classify QUERY DIRECT 0.2 0.8)" DIRECT
+is "classify: the agent may not lower it, however confident" "$(sutra_tier_apply "$PLUGIN_MAIN" classify DIRECT ASSERT 0.2 0.99)" DIRECT
+is "classify: an answer off the ladder is refused" "$(sutra_tier_apply "$PLUGIN_MAIN" classify QUERY SHOUT 0.2 0.9)" QUERY
 sutra_tier_due "$PLUGIN_MAIN" placement 0.28 && pass "ask is due below the threshold" || fail "no ask below the threshold"
 sutra_tier_due "$PLUGIN_MAIN" placement 0.80 && fail "an ask was due above the threshold" || pass "no ask above the threshold"
-sutra_tier_due "$PLUGIN_MAIN" classify 0.01 && fail "a null threshold still asked" || pass "a null threshold never asks"
+sutra_tier_due "$PLUGIN_MAIN" depth 0.01 && fail "a null threshold still asked" || pass "a null threshold never asks"
 
 # ====================================================================== C8 ===
 echo "== C8: an agent answer may raise stringency and never lower it =="
@@ -101,8 +110,8 @@ is "normalize: a name the register does not hold is left alone" "$(sutra_tier_no
 is "normalize: a name held twice is ambiguous and left alone" "$(sutra_tier_normalize placement "Website")" Website
 is "normalize: unresolved stays unresolved" "$(sutra_tier_normalize placement unresolved)" unresolved
 is "normalize: another step is untouched" "$(sutra_tier_normalize depth "Session Lifecycle")" "Session Lifecycle"
-is "classify: risk may go up" "$(sutra_tier_apply "$PLUGIN_MAIN" classify low high)" high
-is "classify: risk may not go down" "$(sutra_tier_apply "$PLUGIN_MAIN" classify high low)" high
+is "classify: the act may go up the ladder" "$(sutra_tier_apply "$PLUGIN_MAIN" classify ASSERT DIRECT)" DIRECT
+is "classify: the act may not go down" "$(sutra_tier_apply "$PLUGIN_MAIN" classify DIRECT ASSERT)" DIRECT
 
 # ====================================================================== C7 ===
 echo "== C7: below the threshold an agent is called and its answer is recorded =="
