@@ -5672,6 +5672,16 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 /* a function's own chat: its turns, its thinking as quiet lines between them */
 .wbchat.wbfn .who-ai{opacity:.85}
 .wbchat .wbthink{margin:2px 0 2px 8px}
+/* motion marks what just happened and nothing else (SIM-3 a, f): a landed turn slides in once; a working mark breathes,
+   in the chat and on the department's row; a folded hand-over is one quiet line */
+.wbbreath{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--acc);margin-right:6px;vertical-align:middle;animation:wbBreathe 1.6s ease-in-out infinite}
+.wbtm .wbbreath{margin-right:3px}
+.wbchat .wbworking{display:flex;align-items:center}
+.wbchat .wbturn.wbnew{animation:wbSlide .28s ease-out 1}
+.wbchat .wbfold{opacity:.7}
+@keyframes wbBreathe{0%,100%{transform:scale(.7);opacity:.45}50%{transform:scale(1.1);opacity:1}}
+@keyframes wbSlide{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.wbbreath,.wbchat .wbturn.wbnew{animation:none}}
 /* the Board as chats: the threads down the side, the open one as turns */
 .wbboard{display:grid;grid-template-columns:minmax(0,240px) minmax(0,1fr);gap:12px}
 .wbthreads{display:flex;flex-direction:column;gap:4px}

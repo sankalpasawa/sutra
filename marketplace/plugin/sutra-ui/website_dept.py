@@ -227,6 +227,22 @@ def runs(ref):
     return _read(ddir(ref) / "runs.json", [])
 
 
+def working_now(ref):
+    """The engines running now, the same rows the working line reads: run rows still open, but not one a dead process
+    left open past the model's timeout twice over."""
+    out = []
+    for r in runs(ref):
+        if r.get("status") != "running":
+            continue
+        try:
+            age = (datetime.now(timezone.utc) - datetime.fromisoformat(str(r.get("started"))).astimezone(timezone.utc)).total_seconds()
+        except (TypeError, ValueError):
+            age = 0
+        if age < MODEL_TIMEOUT_S * 2:
+            out.append(r["engine"])
+    return out
+
+
 def _put_run(ref, row):
     with _lock(ref):
         rows = runs(ref)

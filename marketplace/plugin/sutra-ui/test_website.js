@@ -833,7 +833,7 @@ test("W29: while a function runs the chat says so; the live turn carries Open th
   const c = await opened({ map: m, chat });
   view(c); await sleep(); await sleep();
   let html = view(c);
-  assert.ok(/<div class="o2quiet dpq">Write is working: Pages from Site plan<\/div><\/div>/.test(html), "the running function is a quiet line under the last turn");
+  assert.ok(/<div class="o2quiet dpq wbworking"><i class="wbbreath"><\/i>Write is working: Pages from Site plan<\/div><\/div>/.test(html), "the running function is a quiet line under the last turn, its mark breathing");
   assert.ok(/<div class="a">Live site v1 is live\. <button type="button" class="wbchip on wbto wb" data-wblive="r3">Open the live site<\/button>/.test(html), "the live turn carries the one button");
   assert.ok(click(c, { wblive: "r3" }));
   assert.strictEqual(vm.runInContext("[wbS().tab.r3, wbS().sel.r3, wbS().pane['r3:live-site']].join('|')", c), "art|live-site|preview", "inside, the button previews the Live site");
@@ -995,6 +995,68 @@ test("W34: a function's chat is its existing turns and thinking from the record,
   html = old.dpViewerHtml(WEB, {}, null, null);
   assert.ok(/Start the chat with Identity/.test(html), "a department of the first build keeps the chat it had");
   assert.deepStrictEqual(readsOf(old, /\/chat\?fn=/), [], "and reads no function chat");
+});
+
+test("W35: a turn that lands slides in once; the working mark breathes; nothing else moves", async () => {
+  const chat = JSON.parse(JSON.stringify(CHAT));
+  chat.turns.push({ n: 9, src: "Identity", dst: ["Owner"], msg_type: "inform", at: AT, thread: null, word: "plan", line: "Planned 5 pages.", dept: "r3", name: DEPT, own: true });
+  const c = await opened({ map: rtMap(), chat });
+  view(c); await sleep(); await sleep();
+  let html = view(c);
+  assert.ok(/Planned 5 pages\./.test(html) && !/wbnew/.test(html), "a paint of what was already there moves nothing");
+  /* the paint after a turn lands (W31 covers the read that lands it): the count the last paint saw is one short */
+  vm.runInContext("wbS().turns.r3 = wbS().chat.r3.turns.length - 1;", c);
+  html = view(c);
+  assert.strictEqual((html.match(/class="turn wbturn wbnew"/g) || []).length, 1, "the one turn that landed slides in");
+  assert.ok(/wbnew"><div class="who who-ai">Root<\/div><div class="a">Planned 5 pages\./.test(html), "and it is the last one");
+  html = view(c);
+  assert.ok(!/wbnew/.test(html), "the next paint moves nothing: it slides in once");
+  const m = rtMap(); m.status.running = [{ engine: "Write", since: AT, what: "page 2 of 5" }];
+  const w = await opened({ map: m, chat });
+  view(w); await sleep(); await sleep();
+  assert.ok(/<div class="o2quiet dpq wbworking"><i class="wbbreath"><\/i>Write is working: page 2 of 5<\/div>/.test(view(w)), "the working line carries the breathing mark");
+  assert.ok(/@keyframes wbBreathe/.test(css) && /@keyframes wbSlide/.test(css), "the motions are in the stylesheet");
+  assert.ok(/prefers-reduced-motion:reduce\)\{\.wbbreath,\.wbchat \.wbturn\.wbnew\{animation:none\}/.test(css), "reduced motion: the same marks, no motion");
+});
+
+test("W36: a department at work carries a breathing mark on its row; the list is read again on the clock and painted only when it changed", async () => {
+  const c = await opened({ map: rtMap() });
+  assert.ok(!/wbbreath/.test(c.wbTileMark("r3")), "at rest, no breathing mark");
+  let listed = [{ ref: "r3", name: "Website", stopped: false, working: ["Write"] }];
+  c.apiGet = (p) => { c.calls.apiGet.push(p); if (p === "/api/native/depts") return Promise.resolve({ depts: JSON.parse(JSON.stringify(listed)) }); return new Promise(() => {}); };
+  const painted = () => c.calls.render;
+  const before = painted();
+  vm.runInContext("wbLoadRefs(true);", c);
+  await sleep(); await sleep();
+  assert.ok(/<span class="wbtm"><i class="wbbreath" title="Write working"><\/i>/.test(c.wbTileMark("r3")), "the row breathes while Write works, and says who");
+  assert.strictEqual(painted(), before + 1, "one paint: the list changed");
+  vm.runInContext("wbLoadRefs(true);", c);
+  await sleep(); await sleep();
+  assert.strictEqual(painted(), before + 1, "no paint: the list did not change");
+  listed = [{ ref: "r3", name: "Website", stopped: false, working: [] }];
+  vm.runInContext("wbLoadRefs(true);", c);
+  await sleep(); await sleep();
+  assert.ok(!/wbbreath/.test(c.wbTileMark("r3")), "the mark is gone when the work is done");
+  assert.strictEqual(painted(), before + 2);
+  assert.ok(/st\.ticks % 4 === 0/.test(wbSrc), "read on every fourth tick of the clock");
+});
+
+test("W37: on Root, the hand-over line folds to one quiet line once that department has answered", async () => {
+  const rm = rtMap(); rm.kind = "root"; rm.root = "r3"; rm.live = false;
+  const chat = JSON.parse(JSON.stringify(ROOT_CHAT));
+  chat.turns = [
+    { n: 1, src: "Owner", dst: ["Identity"], msg_type: "request", at: AT, thread: "t1", word: "front", line: "A careers page", dept: "r5", name: DEPT },
+    { n: 2, src: "Identity", dst: ["Owner"], msg_type: "inform", at: AT, thread: "t1", word: "request", line: "handed to " + DEPT, dept: "r5", name: DEPT }];
+  let c = await opened({ map: rm, chat });
+  view(c); await sleep(); await sleep();
+  let html = view(c);
+  assert.ok(/<div class="a">handed to City Care Hospital Website/.test(html) && !/wbfold/.test(html), "before the answer, the hand-over is a turn of Root's");
+  chat.turns.push({ n: 3, src: "Identity", dst: ["Owner"], msg_type: "inform", at: AT, thread: "t1", word: "request", line: "Filed in the Brief.", dept: "r5", name: DEPT });
+  c = await opened({ map: rm, chat });
+  view(c); await sleep(); await sleep();
+  html = view(c);
+  assert.ok(/<div class="o2quiet dpq wbfold">handed to City Care Hospital Website<\/div>/.test(html), "once the department answered, the hand-over is one quiet line");
+  assert.ok(/Filed in the Brief\./.test(html), "and the answer stands");
 });
 
 test("V2 navigation: with the switch on the list, Chat, a function card and an engine card are the first design's, unchanged", async () => {

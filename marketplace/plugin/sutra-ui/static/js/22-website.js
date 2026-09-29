@@ -77,17 +77,23 @@ function wbIs(ref){
   }
   return !!st.refs[ref];
 }
-async function wbLoadRefs(){
+async function wbLoadRefs(again){
   const st = wbS();
   if (st.refsBusy) return;
   st.refsBusy = true;
+  let sig = null;
   try {
     const r = await apiGet("/api/native/depts");
     st.refs = {};
     ((r && r.depts) || []).forEach(d => { st.refs[d.ref] = d; });
-  } catch (e) { st.refs = {}; }
+    sig = JSON.stringify(st.refs);
+  } catch (e) { if (!again) st.refs = {}; }
   st.refsBusy = false;
-  wbTick();
+  /* on the clock (again) the list is read for what is working now (SIM-3 a): a paint only when something changed */
+  const moved = sig !== null && sig !== st.refsSig;
+  if (sig !== null) st.refsSig = sig;
+  if (again && !moved) return;
+  if (!again) wbTick();
   dpRender();
 }
 /* A department on the engine runtime opens on its chat: the one point of entry
@@ -133,6 +139,9 @@ function wbTick(){
   if (st.timer) return;
   st.timer = setInterval(() => {
     if (S.screen !== "org2" || !S.dp || !S.dp.sel) return;
+    /* every fourth tick the list of departments is read again, for the working marks on the tree (SIM-3 a) */
+    st.ticks = (st.ticks || 0) + 1;
+    if (st.ticks % 4 === 0 && st.refs) wbLoadRefs(true);
     if (!wbIs(S.dp.sel)) return;
     wbLoadMap(S.dp.sel);
     /* a department's answer lands on Root's board without a run of Root's own, so the open chat is read on its own clock */
@@ -680,16 +689,23 @@ function wbChatHtml(n, m){
   if (!c){ wbLoadChat(n.ref); return dpSkel(); }
   if (c.failed) return dpQuiet("Could not read");
   const scoped = !!c.about, depts = c.departments || [];
-  const turns = (c.turns || []).map(t => wbChatTurn(t, scoped)).join("");
+  const all = c.turns || [];
+  /* fewer words (SIM-3 f): Root's hand-over line folds to one quiet line once that department has answered */
+  const folded = t => !scoped && t.src !== "Owner" && /^handed to /.test(t.line || "") && t.dept &&
+    all.some(u => u.n > t.n && u.dept === t.dept && u.src !== "Owner" && !/^handed to /.test(u.line || ""));
+  const count = all.length, seen = st.turns[n.ref];
+  const landed = seen !== undefined && count > seen;
+  /* motion marks what just happened and nothing else: the turn that landed slides in once */
+  const turns = all.map((t, i) => folded(t) ? `<div class="o2quiet dpq wbfold">${wbEsc(t.line)}</div>`
+    : wbChatTurn(t, scoped).replace('class="turn wbturn"', (landed && i === all.length - 1) ? 'class="turn wbturn wbnew"' : 'class="turn wbturn"')).join("");
   const empty = m.kind === "root" && !depts.length ? "No department yet. Say what the first one is for." : "Nothing has been said yet";
   const names = !scoped && depts.length ? `<div class="wbstep"><span class="dpk">Departments</span>${depts.map(d => wbDeptChip(d.ref, d.name)).join("")}</div>` : "";
-  /* while an engine runs, the chat says so under the last turn (founder, 2026-09-28: "I give a message to the chat,
-     and it seems something is happening, but I don't know"); a department that is Off works on nothing */
+  /* while an engine runs, the chat says so under the last turn, and the mark breathes (founder, 2026-09-28: "I give a
+     message to the chat, and it seems something is happening, but I don't know"); a department that is Off works on nothing */
   const running = m.stopped ? [] : ((m.status && m.status.running) || []);
-  const working = running.map(r => dpQuiet(`${r.engine} is working${r.what ? ": " + r.what : ""}`)).join("");
-  const count = (c.turns || []).length, seen = st.turns[n.ref];
+  const working = running.map(r => `<div class="o2quiet dpq wbworking"><i class="wbbreath"></i>${wbEsc(`${r.engine} is working${r.what ? ": " + r.what : ""}`)}</div>`).join("");
   st.turns[n.ref] = count;
-  wbKeepPlace(n.ref, seen !== undefined && count > seen);
+  wbKeepPlace(n.ref, landed);
   return `<div class="wbchat wb">${turns || (running.length ? "" : dpQuiet(empty))}${working}</div>` + wbChatAsksHtml(c) + wbChatBoxHtml(n, m) + names;
 }
 
@@ -962,7 +978,10 @@ function wbTileMark(ref){
   const m = wbS().map[ref];
   if (!m){ wbLoadMap(ref); return ""; }
   const asks = ((m.status && m.status.asks) || []).length;
-  return `<span class="wbtm">` + m.systems.map(s => wbDot(s.state === "running" ? "ok" : "off")).join("") +
+  /* a department at work carries a breathing mark on its row (SIM-3 a; the list says which are working) */
+  const working = ((wbS().refs || {})[ref] || {}).working;
+  const breath = (working && working.length) ? `<i class="wbbreath" title="${wbEsc(working.join(", ") + " working")}"></i>` : "";
+  return `<span class="wbtm">` + breath + m.systems.map(s => wbDot(s.state === "running" ? "ok" : "off")).join("") +
     (asks ? wbDot("") : "") + `</span>`;
 }
 
