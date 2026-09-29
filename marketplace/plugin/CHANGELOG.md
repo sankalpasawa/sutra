@@ -1,6 +1,14 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-28
+## 2.306.18 (2026-09-29)
+
+## Sutra Desktop: the internet is a given
+
+- every function and engine can search the web and open pages on its own; no ask, no stamp and no shaped engine for reading a page
+- words that name a page or a subject are filed at once and the department reads what it needs; an idea for a new capability still becomes an engine you stamp
+- the prompts the department's functions work from are shorter and plainer
+
 ## 2.306.17 (2026-09-29)
 
 ## Sutra Desktop: an engine you added survives the update
