@@ -34,6 +34,8 @@ class Model:
         self.tie, self.kind = None, None
         self.holes = False                               # a page that admits what nobody told it (test_69)
         self.broken = []                                 # what Check's rules step reports broken (test_72)
+        self.refuse_engines = set()                      # engines Priority's agent refuses when offered (test_94)
+        self.same_name = False                           # Setup's agent names a department that already exists (test_95)
 
     def __call__(self, prompt, step):
         sid = step["id"]
@@ -109,6 +111,8 @@ class Model:
         if sid == "identity.judge":
             return {"verdict": "admit", "why": "the rules allow it"}, 0.01, "model"
         if sid == "priority.bargain":
+            if any(("THE ENGINE: %s\n" % n) in prompt for n in self.refuse_engines):
+                return {"answer": "reject", "why": "no room for another engine today"}, 0.01, "model"
             return {"answer": "accept", "why": "the envelope has room"}, 0.01, "model"
         if sid == "coord.tie":
             ready = prompt.split("READY NOW: ", 1)[1].split("\n", 1)[0].split(", ")
@@ -117,7 +121,11 @@ class Model:
             words = prompt.split("THE OWNER'S WORDS: ", 1)[1].split("\n", 1)[0]
             org = prompt.split("The owner of ", 1)[1].split(" asks Root", 1)[0]
             kind = self.kind or "website"
-            return {"name": org + (" Website" if kind == "website" else " Desk"), "kind": kind, "goal": words}, 0.02, "model"
+            name = org + (" Website" if kind == "website" else " Desk")
+            existing = prompt.split("DEPARTMENTS THIS ROOT ALREADY HAS: ", 1)[1].split("\n", 1)[0] if "ALREADY HAS: " in prompt else ""
+            if name in existing and not self.same_name:
+                name += " 2"                                  # a new department takes a name none of the existing ones has
+            return {"name": name, "kind": kind, "goal": words}, 0.02, "model"
         if sid == "audit.judge":
             return {"ok": not self.findings, "findings": list(self.findings)}, 0.02, "model"
         if sid == "check.rules":
@@ -940,6 +948,48 @@ class TestWhatTheOwnerSees(Base):
         raw = [r for r in R.step_rows(REF) if r["engine"] == "Identity" and r.get("mode") == "gate" and r.get("answer") == "admit"]
         self.assertGreater(len(raw), len([x for x in thinks if x == "Gate the effect by rule: admit"]), "the record keeps every row; the chat folds")
 
+    def test_93_a_stamp_on_an_ask_that_needs_the_internet_shapes_the_engine_and_files_no_brief_ask(self):
+        """Run 2 finding 29 (2026-09-29): Identity's agent said the words reach outside the site and asked for a stamp;
+        the stamp filed them as a Brief ask and the site came back 'to be confirmed'. What the ask needs rides on the
+        ask row, the ask says what a stamp does here, and the stamp hands the words to Adaptation."""
+        W, R = self.W, self.R
+        self.live()
+        words = "Find on the internet what the hospital does and who its doctors are, and build only from that."
+        self.M.verdicts[words] = "ask"
+        briefs = len(W.versions(REF, "Brief"))
+        self.ask(words)
+        a = next(x for x in W.asks(REF) if x["kind"] == "request" and x["status"] == "pending")
+        self.assertEqual(a["needs"], ["internet"], "what the ask needs is on its row")
+        self.assertTrue(a["text"].startswith("Your words need internet, which no engine of mine reaches"), a["text"])
+        self.assertIn("Stamp to have one shaped and put to you", a["text"])
+        self.assertNotIn("Put them on the site as said", a["text"], "not the email wording (finding 30)")
+        self.stamp("request")
+        self.idle()
+        self.assertEqual(len(W.versions(REF, "Brief")), briefs, "the stamp filed no Brief ask")
+        lines = [t["line"] for t in R.chat_view(REF)["turns"]]
+        self.assertTrue(any("no engine of mine reaches internet yet; Adaptation is shaping one" in line for line in lines), lines[-3:])
+        e = next(x for x in W.asks(REF) if x["kind"] == "engine" and x["status"] == "pending")
+        self.assertEqual(e["engine"], "Web Facts", "and the engine ask followed")
+
+    def test_94_priority_is_shown_the_engine_offer_and_its_refusal_is_told(self):
+        """Run 2 findings 32 and 33: Priority's agent was shown an engine offer as a rung proposal's empty fields and
+        refused it; the refusal stayed on the board. The bargain prompt carries the offer; a refusal is a turn of the chat."""
+        W, R = self.W, self.R
+        self.live()
+        self.ask("What if the department kept a list of my talks, updated whenever I give one.")
+        prompt = [p for s, p in self.M.prompts if s == "priority.bargain"][-1]
+        for line in ("THE ENGINE: Talks List\n", "WHAT IT DOES: keeps the list of my talks up to date", "WHAT IT NEEDS: nothing beyond the model", "WHAT IT COSTS: "):
+            self.assertIn(line, prompt)
+        self.assertTrue([x for x in W.asks(REF) if x["kind"] == "engine"], "shown the offer, Priority granted it and the ask followed")
+        self.M.refuse_engines = {"Web Facts"}
+        self.ask("What if you found on the internet what the hospital does and who its doctors are.")
+        prompt = [p for s, p in self.M.prompts if s == "priority.bargain"][-1]
+        self.assertIn("WHAT IT NEEDS: internet", prompt)
+        lines = [t["line"] for t in R.chat_view(REF)["turns"]]
+        self.assertTrue(any(line.startswith("Priority refused the engine Web Facts: no room for another engine today. The idea stays parked") for line in lines), lines[-3:])
+        self.assertFalse([x for x in W.asks(REF) if x["kind"] == "engine" and x["engine"] == "Web Facts"], "nothing put to the owner")
+        self.assertEqual(R.ideas(REF)[-1].get("priced"), "refused")
+
     def test_90_a_step_with_tools_hands_them_to_the_model_and_nothing_else(self):
         """The model reaches the internet through its own web tools and nothing else: a step names them, model_json passes
         exactly those, and a name outside the closed list is dropped; a step naming an unknown tool refuses the load."""
@@ -1390,6 +1440,34 @@ class TestTheFrontDoor(Base):
         lines = [t["line"] for t in R.chat_view(other["ref"])["turns"]]
         self.assertTrue(any(line.startswith("Result v1 is filed") for line in lines), lines)
         self.assertFalse(any("live" in line for line in lines), "nothing went live: a Result is filed")
+
+    def test_95_a_second_department_takes_a_new_name_and_an_existing_name_is_said_back_with_the_words_handed_on(self):
+        """Run 2 finding 28 (2026-09-29): a second department was stamped, Setup shaped the name of the one that existed,
+        made nothing and said nothing. Setup's agent is told which names this Root has; when it names one anyway, the
+        person is told and the words go to that department."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        W.owner_ask(root, "Start a new department: a second website for Meadow Clinic, for its pharmacy.")
+        W.run_until_idle(root, limit=200)
+        a = next(x for x in W.asks(root) if x["kind"] == "setup" and x["status"] == "pending")
+        self.assertTrue(a["text"].startswith("Set up a department for: Start a new department: a second website for Meadow Clinic, for its pharmacy."), a["text"])
+        W.decide_ask(root, a["id"], True)
+        W.run_until_idle(root, limit=200)
+        kids = [d for d in W.list_depts() if d.get("parent") == root]
+        self.assertEqual(sorted(d["name"] for d in kids), ["Meadow Clinic Website", "Meadow Clinic Website 2"], "told the names it has, the agent gave a new one")
+        self.assertIn("Meadow Clinic Website", [p for s, p in self.M.prompts if s == "setup.shape"][-1].split("ALREADY HAS: ", 1)[1])
+        self.M.same_name = True
+        before = len(R.board(child))
+        W.owner_ask(root, "Start a new department: a third website for Meadow Clinic.")
+        W.run_until_idle(root, limit=200)
+        a = next(x for x in W.asks(root) if x["kind"] == "setup" and x["status"] == "pending")
+        W.decide_ask(root, a["id"], True)
+        W.run_until_idle(root, limit=200)
+        self.assertEqual(len([d for d in W.list_depts() if d.get("parent") == root]), 2, "no third department: the name exists")
+        lines = [t["line"] for t in R.chat_view(root)["turns"]]
+        self.assertTrue(any(line.startswith("Meadow Clinic Website already exists; your words were handed to it") for line in lines), lines[-3:])
+        handed = [p for p in R.board(child)[before:] if p["src"] == "Root" and "Identity" in p["dst"]]
+        self.assertTrue(handed and "a third website" in (handed[-1]["payload"].get("words") or ""), "and the words reached that department")
 
     def structure(self, org="Meadow Clinic"):
         reg = tempfile.mkdtemp(prefix="engine-runtime-front-")

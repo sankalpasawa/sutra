@@ -1913,12 +1913,18 @@ def identity_file(ctx, step, item):
         return {"said": "took the owner's words: " + words, "filed": row["v"]}
     if verdict == "ask":
         # in the person's words: what reaches outside, and what a stamp does (found live 2026-09-28: the person's own
-        # address came back as "This reaches outside the site")
+        # address came back as "This reaches outside the site"); an ask that needs something no engine has says what a
+        # stamp does here: the department gets an engine for it (found live 2026-09-29: the email wording on a search)
         reach = _reaches(words, why)
-        lead = "Your words reach outside the site%s. Put them on the site as said? Stamp to go ahead, Refuse to leave them out." % (
-            (": " + reach) if reach else "")
+        wanting = [n for n in needs if n in NEEDS and (n != "internet" or not _has_web(d))]
+        if wanting:
+            lead = "Your words need %s, which no engine of mine reaches%s. Stamp to have one shaped and put to you, Refuse to leave it." % (
+                " and ".join(wanting), (": " + why.rstrip(".")) if why else "")
+        else:
+            lead = "Your words reach outside the site%s. Put them on the site as said? Stamp to go ahead, Refuse to leave them out." % (
+                (": " + reach) if reach else "")
         W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "request", "engine": "Identity", "slot": ctx["slot"],
-                         "text": lead + " " + words, "why": why, "words": words, "status": "pending",
+                         "text": lead + " " + words, "why": why, "words": words, "needs": wanting, "status": "pending",
                          "created": W.now(), "thread": p["thread"]})
         _tell(ref, d, p, "request", {"word": "request", "objective": lead,
                                      "output": "a stamp or a refusal", "may_read": ["Brief"], "boundaries": words,
@@ -2196,6 +2202,18 @@ def identity_apply(ctx, step, item):
         post(ref, "Identity", "Adaptation", "inform", {"word": "rung", "step": a["step"], "to": a["to"], "stamped": True})
         return {"said": "moved a step, on the owner's stamp: " + a["text"]}
     if a.get("kind") == "request":
+        wanting = [n for n in (a.get("needs") or []) if n in NEEDS and (n != "internet" or not _has_web(ctx["dept"]))]
+        if wanting:
+            # the stamp on an ask that needs what no engine reaches: the words go to Adaptation, which shapes the engine
+            # (found live 2026-09-29: the stamp filed them as a Brief ask and the site came back "to be confirmed")
+            words = a.get("words") or ""
+            post(ref, "Identity", "Adaptation", "request", {"word": "idea", "words": words, "objective": "shape the engine these words ask for and park it",
+                                                            "output": "the idea reflected back, in two or three shapes",
+                                                            "may_read": ["Brief"], "boundaries": "nothing is built before the owner commits",
+                                                            "for": a.get("thread")})
+            _tell(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER}, "inform",
+                  {"word": "request", "done": "no engine of mine reaches %s yet; Adaptation is shaping one, and an ask to add it follows" % " and ".join(wanting)})
+            return {"said": "took the owner's stamp: the words need %s, so Adaptation shapes the engine" % " and ".join(wanting)}
         row = _file_brief(ref, ctx["dept"], a.get("words") or "", "the owner's ask, stamped")
         return {"said": "took the owner's words, stamped", "filed": row["v"]}
     if a.get("kind") == "rule":
@@ -2570,19 +2588,24 @@ def library_kinds():
 def setup_read(ctx, step, item):
     words = W.read_files(ctx["ref"], "Request", ctx["inp"]["v"]).get("request.md", "").strip()
     kinds = library_kinds()
+    # the departments this Root already has: a new one needs a name none of them has (found live 2026-09-29: Setup shaped
+    # the same name as the one that existed, made nothing and said nothing)
+    existing = [c.get("name") for c in _children(ctx["ref"]) if c.get("name")]
     return {"words": words, "facts": {"asked": bool(words), "kinds": ", ".join(kinds),
-                                      "use_cases": "; ".join("%s: %s" % (k, u) for k, u in kinds.items())}}
+                                      "use_cases": "; ".join("%s: %s" % (k, u) for k, u in kinds.items()),
+                                      "existing": ", ".join(existing) or "none"}}
 
 
 def p_setup_shape(ctx, step, item):
     got = ctx["bag"]["setup.read"]
     org = (ctx["dept"].get("org") or {}).get("name") or ctx["dept"].get("name")
     return ("The owner of %s asks Root for a department. Shape it: a short name (the organisation's name and what it is, like "
-            "\"%s Website\"), its kind from the Library (the kind whose use case fits the words; default when none does), and its "
-            "goal in one or two sentences in the owner's own words.\n"
-            "THE OWNER'S WORDS: %s\nKINDS IN THE LIBRARY: %s\nEACH KIND'S USE CASE: %s\n\n"
+            "\"%s Website\"; a NEW department takes a name none of the existing ones has, say \"%s Website 2\" or what sets it apart), "
+            "its kind from the Library (the kind whose use case fits the words; default when none does), and its goal in one or two "
+            "sentences in the owner's own words.\n"
+            "THE OWNER'S WORDS: %s\nKINDS IN THE LIBRARY: %s\nEACH KIND'S USE CASE: %s\nDEPARTMENTS THIS ROOT ALREADY HAS: %s\n\n"
             "Return ONLY a JSON object: {\"name\": str, \"kind\": str, \"goal\": str}."
-            % (org, org, got["words"], got["facts"]["kinds"], got["facts"].get("use_cases") or ""))
+            % (org, org, org, got["words"], got["facts"]["kinds"], got["facts"].get("use_cases") or "", got["facts"].get("existing") or "none"))
 
 
 def d_setup_shape(ctx, step, item):
@@ -2596,7 +2619,16 @@ def setup_make(ctx, step, item):
     """Root makes the department: under itself, with its charter, its functions' templates, its record and its goal."""
     shape = ctx["bag"]["setup.shape"]
     import founding
-    return founding.spawn(ctx["ref"], shape["name"], shape["kind"], shape["goal"], owner=ctx["dept"].get("owner") or "the owner")
+    made = founding.spawn(ctx["ref"], shape["name"], shape["kind"], shape["goal"], owner=ctx["dept"].get("owner") or "the owner")
+    if not made.get("created"):
+        # the agent named a department this Root already has: the person is told, and the words go to that department
+        # as Root hands words on (found live 2026-09-29: a stamp that ended in silence)
+        ref, target, name, words = ctx["ref"], made["ref"], made["name"], shape["goal"]
+        post(target, "Root", "Identity", "request", {"word": "request", "words": words, "objective": words, "output": "the Brief's next version",
+                                                     "may_read": ["Brief"], "boundaries": "inside the department's goal and rules", "front": ref})
+        post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "%s already exists; your words were handed to it" % name,
+                                                "dept": target, "from": name}, about={"dept": target, "name": name})
+    return made
 
 
 def setup_file(ctx, step, item):
@@ -2736,8 +2768,17 @@ def adapt_priced(ctx, step, item):
         return {"said": "heard Priority on an engine nobody offered"}
     offer = mine[-1]["payload"]
     if p["msg_type"] != "accept-proposal":
-        _note_idea(ref, offer.get("idea"), {"engine": offer.get("engine"), "priced": "refused", "why": (p.get("payload") or {}).get("why")})
-        return {"said": "Priority has no room for %s; the idea stays parked" % offer.get("engine")}
+        why = str((p.get("payload") or {}).get("why") or "no room in the envelope today").strip().rstrip(".")
+        _note_idea(ref, offer.get("idea"), {"engine": offer.get("engine"), "priced": "refused", "why": why})
+        # the person floated the idea and waits: a refusal is a turn of the chat, in their words, with what they can do
+        # (found live 2026-09-29: the refusal stayed on the board and the ideas row)
+        try:
+            _tell(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER}, "inform",
+                  {"word": "idea", "done": "Priority refused the engine %s: %s. The idea stays parked; raise Priority's limit on its card and say the idea again to have it priced again."
+                   % (offer.get("engine"), why[:1].lower() + why[1:])})
+        except Exception:  # noqa: BLE001 -- the refusal is on the record whether or not the word reached the person
+            pass
+        return {"said": "Priority refused %s: %s; the idea stays parked, and the owner is told" % (offer.get("engine"), why)}
     post(ref, "Adaptation", "Identity", "propose", {"word": "engine", "engine": offer.get("engine"), "offer": offer.get("offer"),
                                                    "idea": offer.get("idea"), "for": offer.get("for"), "why": "the idea asks for it; Priority has room"})
     return {"said": "put the engine %s to Identity for the owner" % offer.get("engine")}
@@ -2953,8 +2994,25 @@ def d_identity_gate(ctx, step, item):
     return {"verdict": "admit", "why": "the rules allow it"}
 
 
+def _offer_lines(pl):
+    """An engine offer, in the words Priority's agent judges: which engine, what it does, what it needs, what it costs a
+    day (found live 2026-09-29: shown a rung proposal's fields, the agent refused an engine offer as empty)."""
+    offer = pl.get("offer") if isinstance(pl.get("offer"), dict) else {}
+    shape = offer.get("shape") if isinstance(offer.get("shape"), dict) else {}
+    name = pl.get("engine") or shape.get("name") or offer.get("pick") or "?"
+    does = shape.get("does") or offer.get("does") or offer.get("use_case") or ""
+    needs = ", ".join(shape.get("needs") or []) or "nothing beyond the model"
+    t = priority_template()
+    cost = "%d calls and %.2f USD a day, the envelope of one more work engine" % (int(t.get("work_calls", 8)) * int(t.get("calls", 30)), float(t.get("usd", 6.0)))
+    return "THE ENGINE: %s\nWHAT IT DOES: %s\nWHAT IT NEEDS: %s\nWHAT IT COSTS: %s" % (name, does, needs, cost)
+
+
 def p_priority_bargain(ctx, step, item):
     got, pl = ctx["bag"]["priority.read"], ctx["post"]["payload"]
+    if pl.get("word") == "engine":
+        return ("Adaptation proposes an engine for this department, from an idea the owner floated.\n%s\nROOM IN THE ENVELOPE TODAY: %s\n\n"
+                "Return ONLY a JSON object: {\"answer\": \"accept\" | \"reject\", \"why\": \"one line\"}."
+                % (_offer_lines(pl), "yes" if got["facts"]["room"] else "no"))
     return ("Adaptation proposes something that costs.\nTHE PROPOSAL: %s, for the step %s\nWHAT IT COSTS: %s\n"
             "ROOM IN THE ENVELOPE TODAY: %s\n\nReturn ONLY a JSON object: {\"answer\": \"accept\" | \"reject\", \"why\": \"one line\"}."
             % (pl.get("word"), pl.get("step"), pl.get("cost"), "yes" if got["facts"]["room"] else "no"))

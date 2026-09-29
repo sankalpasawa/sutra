@@ -35,8 +35,9 @@ def ping():
 
 @router.get("/depts")
 def depts():
+    # `working`: the engines running now, as the working line says it, so the tree can mark a department at work (SIM-3 a)
     return {"depts": [{"ref": d["ref"], "name": d["name"], "stopped": d.get("stopped"), "kind": d.get("kind") or "website",
-                       "parent": d.get("parent")} for d in W.list_depts()]}
+                       "parent": d.get("parent"), "working": W.working_now(d["ref"])} for d in W.list_depts()]}
 
 
 @router.post("/found")
