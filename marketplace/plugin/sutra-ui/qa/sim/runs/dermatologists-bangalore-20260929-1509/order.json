@@ -1,0 +1,55 @@
+{
+ "goal": "dermatologists-bangalore",
+ "person": "founder",
+ "seed": 1790674798,
+ "drawn": [
+  "stop-mid-run",
+  "drop-one",
+  "source-rule",
+  "other-chats-kept",
+  "say-to-priority"
+ ],
+ "plan": [
+  {
+   "n": 1,
+   "id": "stop-mid-run",
+   "at": "right after the publish ask",
+   "say": null,
+   "do": "press Stop while Write runs; Start again",
+   "expect": "Stopped and Started are turns; the run resumes; one version"
+  },
+  {
+   "n": 2,
+   "id": "drop-one",
+   "at": "while Write runs",
+   "say": null,
+   "do": "after the list is filed, name one and say: Take <that one> out everywhere.",
+   "expect": "the next live version has no trace of it"
+  },
+  {
+   "n": 3,
+   "id": "source-rule",
+   "at": "while Write runs",
+   "say": null,
+   "do": "say a rule: Nothing goes on the site without a source line under it. Stamp it.",
+   "expect": "the rule is a check the line runs"
+  },
+  {
+   "n": 4,
+   "id": "other-chats-kept",
+   "at": "while Write runs",
+   "say": null,
+   "do": "open Identity's Chat, then Adaptation's, then Identity's again",
+   "expect": "each its own existing chat; nothing starts, nothing lost"
+  },
+  {
+   "n": 5,
+   "id": "say-to-priority",
+   "at": "right after the site is live",
+   "say": null,
+   "do": "say: Put the top three first.",
+   "expect": "the words in Priority's chat at once and in the department's chat; what came of them lands in the same chat"
+  }
+ ],
+ "made": "2026-09-29T15:09:58+0530"
+}
