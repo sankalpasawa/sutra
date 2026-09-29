@@ -3214,11 +3214,28 @@ def d_identity_recognise(ctx, step, item):
 
 
 def _record_lines(ref):
-    live = W.latest(ref, "Live site")
-    out = ["pages in the plan: " + ", ".join(str(p.get("title")) for p in _pages(ref)) if _pages(ref) else "no plan yet",
-           "the site is live, at its version %d" % live["v"] if live else "the site is not live yet"]
-    out += ["%s has %d versions" % (a, len(W.versions(ref, a))) for a in W.artifacts_of(W.dept(ref))]
+    """What the answer step may read: the record in the kind's own words, and the latest text of what the department filed
+    (found live 2026-09-29: 'Which of your changes matters most?' got 'It holds no changes' because the answer saw a
+    website's lines and never the Result that held the changes)."""
+    d = W.dept(ref) or {}
+    arts = list(W.artifacts_of(d))
+    out = []
+    if "Live site" in arts:
+        live = W.latest(ref, "Live site")
+        out += ["pages in the plan: " + ", ".join(str(p.get("title")) for p in _pages(ref)) if _pages(ref) else "no plan yet",
+                "the site is live, at its version %d" % live["v"] if live else "the site is not live yet"]
+    out += ["%s has %d versions" % (a, len(W.versions(ref, a))) for a in arts]
     out += ["waiting for the owner: " + a["text"] for a in W.asks(ref) if a["status"] == "pending"]
+    # the latest text the department filed, last artifact first: the work itself, not only its counts
+    for a in reversed(arts):
+        cur = W.latest(ref, a)
+        if not cur:
+            continue
+        files = W.read_files(ref, a, cur["v"])
+        text = "\n".join(str(v) for k, v in sorted(files.items()) if str(k).endswith((".md", ".txt", ".json", ".html"))).strip()
+        if text:
+            out.append("what was filed last, %s v%d:\n%s" % (a, cur["v"], text[:4000]))
+            break
     return out
 
 

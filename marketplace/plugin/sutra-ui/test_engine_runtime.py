@@ -2314,6 +2314,31 @@ class TestRunThree(Base):
         self.assertEqual(len(W.versions(REF, "Brief")), 1, "the answer is the goal")
         self.assertTrue(W.versions(REF, "Site plan"), "and the line starts on it")
 
+    def test_108_a_question_is_answered_from_what_the_department_filed_not_only_from_its_counts(self):
+        """Run 4 finding 51 (the SEO tool): 'Which of your changes matters most?' got 'It holds no changes' because the
+        answer step saw a website's record lines and never the Result. The record it reads carries the latest text filed."""
+        W, R = self.W, self.R
+        self.live()
+        self.ask("Which page says what a patient needs to know?")
+        prompt = [p for s, p in self.M.prompts if s == "identity.answer"][-1]
+        self.assertIn("what was filed last, Live site v1:", prompt)
+        self.assertIn("What a patient needs to know", prompt, "the pages' own text is in the record the answer reads")
+        d = W.dept(REF)
+        d["kind"], d["artifacts"], d["engines"] = "default", ["Brief", "Result"], ["Do"]
+        W.save_dept(REF, d)
+        lines = R._record_lines(REF)
+        self.assertFalse(any("plan" in x or "site is" in x for x in lines), "a tool's record speaks no website lines: %s" % lines)
+
+    def test_109_the_owners_words_appear_once_in_the_chat_of_a_department_reached_directly(self):
+        """Run 4 finding 52, withdrawn: a watch loop printed the question twice; the board and the chat hold it once. Pinned."""
+        W, R = self.W, self.R
+        self.live()
+        W.owner_ask(REF, "Which page says what a patient needs to know?")
+        self.idle()
+        turns = [t for t in R.chat_view(REF)["turns"] if t["line"] == "Which page says what a patient needs to know?"]
+        self.assertEqual(len(turns), 1, turns)
+        self.assertEqual(len([p for p in R.board(REF) if "Which page says" in json.dumps(p.get("payload"))]), 1)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

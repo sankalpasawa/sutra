@@ -1005,7 +1005,7 @@ function wbFoundHtml(){
   return `<div class="wbscrim wb" data-wbfound="close"></div><div class="o2sheet wbsheet wb" role="dialog" aria-label="New organisation">` +
     `<h4>New organisation</h4>` +
     `<label for="wbforg">Organisation</label><input id="wbforg" data-wbfield="org" value="${wbEsc(f.org)}" placeholder="City Care Hospital" autocomplete="off">` +
-    `<label for="wbfgoal">The first department</label><textarea id="wbfgoal" data-wbfield="goal" rows="3" placeholder="What should Root set up first? A website: what it is for">${wbEsc(f.goal)}</textarea>` +
+    `<label for="wbfgoal">The first department</label><textarea id="wbfgoal" data-wbfield="goal" rows="3" placeholder="What should Root set up first? Say what it is for, in your words">${wbEsc(f.goal)}</textarea>` +
     `<div class="o2acts2">${wbBtn(f.busy ? "Founding" : "Found", `data-wbfound="go"${f.busy ? " disabled" : ""}`, "dpstamp")}` +
     wbBtn("Cancel", `data-wbfound="close"`) + (f.error ? `<span class="o2err">${wbEsc(f.error)}</span>` : "") + `</div></div>`;
 }

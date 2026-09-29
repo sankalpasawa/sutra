@@ -41,7 +41,7 @@ At 17:48, watching the first try (a stamp, then Adaptation shaping "Page Read", 
 | 49 | the New organisation sheet's placeholder assumes a website | fix | `22-website.js` wbFoundHtml |
 | 50 | nothing ran after the engine stamp on the ask path (no Brief) | superseded by the ruling (sutra 58b39cc0) | - |
 | 51 | the answer step reads website-shaped record lines and never the filed Result | fix | `engine_runtime._record_lines`: the latest text of the kind's last artifact, in the kind's words |
-| 52 | the owner's words shown twice in a department reached directly | fix | `chat_view` / `request()` for a department without Root in between |
+| 52 | the owner's words shown twice | withdrawn: the driver's print, not the app (the board and the chat hold them once; test_109 pins it) | - |
 
 ## What the person got
 

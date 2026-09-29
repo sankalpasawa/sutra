@@ -1094,6 +1094,14 @@ test("W40: Send in a function's chat keeps the person in that chat and reads it 
   assert.ok(c.calls.apiGet.slice(reads).some(p => /chat\?fn=priority/.test(p)), "the function's chat is read again after the words");
 });
 
+test("W41: the New organisation sheet asks what the first department is for, naming no website", async () => {
+  const c = await opened({});
+  vm.runInContext("wbS().found = { org: '', goal: '', busy: false, error: null };", c);
+  const html = c.wbFoundHtml();
+  assert.ok(/placeholder="What should Root set up first\? Say what it is for, in your words"/.test(html), html.slice(0, 600));
+  assert.ok(!/placeholder="[^"]*[Ww]ebsite/.test(html), "a tool, a desk or a list is set up here as well as a site");
+});
+
 test("V2 navigation: with the switch on the list, Chat, a function card and an engine card are the first design's, unchanged", async () => {
   const c = await v2({ map: rtMap({ ask: true }) });
   const html = c.dpListHtml(WEB, {}, null, null);
