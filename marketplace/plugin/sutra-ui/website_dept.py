@@ -1096,6 +1096,14 @@ def health(ref):
         if calls >= int(env.get("calls", ENVELOPE["calls"])) or usd >= float(env.get("usd", ENVELOPE["usd"])):
             over.append(e)
     checks.append(("Budget", "warn" if over else "ok", "Inside every envelope" if not over else "Over: " + ", ".join(over)))
+    if d.get("runtime") == 2:
+        # an engine the record names that this app's Library does not define (born in an older bundle, or its file gone):
+        # said here, and its card says Missing; the rest of the line runs (found live 2026-09-29, Beta 2.306.16)
+        import engine_runtime
+        lost = engine_runtime.missing_engines(d)
+        checks.append(("Library", "block" if lost else "ok",
+                       "Every engine on the record has its template" if not lost
+                       else "; ".join("%s has no template in this app's Library; say its idea again to shape it anew" % n for n in lost)))
     live = latest(ref, arts[-1])
     dw = kind_of(d).get("done_words") or ["The site is live", "Not live yet"]
     checks.append(("Done", "ok" if live and (live.get("check") or {}).get("ok") else "warn", dw[0] if live else dw[1]))
@@ -1114,11 +1122,16 @@ def health(ref):
 def engine_view(ref, name):
     d = dept(ref) or {}
     reads, writes, how = next(((e[1], e[2], e[3]) for e in engines_of(d) if e[0] == name), (None, None, None))
-    if not reads:
-        return None
     rs = [r for r in runs(ref) if r["engine"] == name]
     calls, usd = _today_spend(ref, name)
     env = (d.get("envelopes") or {}).get(name) or ENVELOPE
+    if not reads:
+        if name not in (d.get("engines") or []):
+            return None
+        # on the record, but no template in this app's Library (born in an older bundle): a card that says so, never a crash
+        return {"name": name, "reads": None, "writes": None, "runs_as": None, "slot": None, "state": "Missing", "missing": True,
+                "envelope": {"calls": env["calls"], "usd": env["usd"], "used_calls": calls, "used_usd": round(usd, 3)},
+                "window_min": (d.get("windows") or {}).get(name), "runs": list(reversed(rs[-20:]))}
     state = "Running" if any(r["status"] == "running" for r in rs) else ("Stopped" if d.get("stopped") else "Idle")
     return {"name": name, "reads": reads, "writes": writes, "runs_as": how, "slot": "after a new " + reads,
             "state": state, "envelope": {"calls": env["calls"], "usd": env["usd"], "used_calls": calls, "used_usd": round(usd, 3)},
@@ -1157,7 +1170,7 @@ def map_view(ref):
         paused = s in PAUSED_SYSTEMS and d.get("runtime") != 2
         last = next((r for r in reversed(rs) if r["engine"] == s), None)
         systems.append({"name": s, "state": "paused" if paused else "running", "last": last and last.get("what")})
-    engines = [engine_view(ref, e[0]) for e in engines_of(d)]
+    engines = [x for x in (engine_view(ref, e[0]) for e in engines_of(d)) if x]
     for e in engines:
         e.pop("runs", None)
         last = next((r for r in reversed(rs) if r["engine"] == e["name"]), None)

@@ -222,28 +222,56 @@ def table_faults(t, engines):
 TEMPLATES_DIR = Path(__file__).parent / "engine-templates"
 
 
+def user_templates_dir():
+    """The Library's other half: the engines born in this app's records, under the record home, which an update keeps
+    (found live 2026-09-29: a born template written beside the code was gone after the update, and every map read of
+    the organisation broke on it)."""
+    return W.home() / "_library"
+
+
 def engine_templates():
     """The Library's engine templates: one file per engine, each with its id, its name and its use case (TPL-1, founder
-    2026-09-29: engines come from templates, matched to the use case). A file that is not a template refuses the load,
-    as a bad step does."""
+    2026-09-29: engines come from templates, matched to the use case); the shipped ones beside the code first, then the
+    ones born into the record home. A file that is not a template refuses the load, as a bad step does."""
     out = {}
-    for p in sorted(TEMPLATES_DIR.glob("*.json")):
-        try:
-            t = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as exc:
-            raise ValueError("the engine template %s is refused: not JSON (%s)" % (p.name, exc))
-        if not isinstance(t, dict) or not t.get("id") or not t.get("name") or not t.get("use_case"):
-            raise ValueError("the engine template %s is refused: a template names an id, a name and a use case" % p.name)
-        if t["name"] in out:
-            raise ValueError("the engine template %s is refused: %s is already a template" % (p.name, t["name"]))
-        out[t["name"]] = t
+    dirs = [TEMPLATES_DIR]
+    try:
+        dirs.append(user_templates_dir())
+    except Exception:  # noqa: BLE001 -- no record home yet (a load with no home set): the shipped Library alone
+        pass
+    for d in dirs:
+        if not d.exists():
+            continue
+        for p in sorted(d.glob("*.json")):
+            try:
+                t = json.loads(p.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                raise ValueError("the engine template %s is refused: not JSON (%s)" % (p.name, exc))
+            if not isinstance(t, dict) or not t.get("id") or not t.get("name") or not t.get("use_case"):
+                raise ValueError("the engine template %s is refused: a template names an id, a name and a use case" % p.name)
+            if t["name"] in out:
+                raise ValueError("the engine template %s is refused: %s is already a template" % (p.name, t["name"]))
+            out[t["name"]] = t
     return out
+
+
+def missing_engines(d):
+    """The engines a record names that no template in the Library defines (one born in an older bundle, or a file gone)."""
+    have = defs()["engines"]
+    return [n for n in (d or {}).get("engines") or [] if n not in have]
 
 
 def defs():
     """The definitions: the file (the functions, the kinds, the edges, Coordination's table) with the Library's engine
     templates assembled in as engines, validated as one."""
+    try:
+        key = str(user_templates_dir())
+    except Exception:  # noqa: BLE001 -- no record home set
+        key = "d"
+    if key not in _DEFS and "d" in _DEFS:
+        _DEFS.clear()                                          # another record home: its own born engines
     if "d" not in _DEFS:
+        _DEFS[key] = True
         d = json.loads((Path(__file__).parent / "engine_defs" / "website.json").read_text(encoding="utf-8"))
         d["engines"] = dict(d.get("engines") or {})
         for name, t in engine_templates().items():
@@ -824,6 +852,8 @@ def ready(ctx, name, kinds=None):
          (None, None, why)    a trigger is live and something holds it
          None                 no trigger of its own is live"""
     e = engine_def(name)
+    if not e or not isinstance(e.get("start"), dict):
+        return None                                            # an engine the Library no longer defines: no trigger of its own; the map says so
     why = None
     for trig in e["start"]["on"]:
         if kinds and trig["kind"] not in kinds:
@@ -850,7 +880,7 @@ def blocked(ctx, name, e, inp, slot):
     ref = ctx["ref"]
     gctx = {"ref": ref, "dept": ctx["dept"], "engine": name, "def": e, "slot": slot, "inp": inp, "post": None, "bag": {}, "how": {}}
     gctx["peek"] = bool(ctx.get("peek"))
-    for gid in e["start"]["unless"]:
+    for gid in ((e or {}).get("start") or {}).get("unless") or []:
         fn, g = step_def(gid)
         rung = rung_of(ref, g)
         answer, why = CODE[g["code"]](gctx, g, None)
@@ -1949,6 +1979,14 @@ def identity_file(ctx, step, item):
                                         "done": "You said you are not sure of: %s. Say which are right and I will put them in; until then they stay out."
                                         % "; ".join(unsure)})
 
+    # the first words that name nothing to build from get one question, not a site of eight generic pages and twelve
+    # holes (found live 2026-09-29: the founder's own "New website" went live on a stamp and then asked for the facts)
+    if first and out.get("thin") is True and d.get("kind") != "root":
+        _tell(ref, d, p, "inform", {"word": "question",
+                                    "done": "Say what the site is for and about whom or what, and I will start: your words name nothing to build from yet."},
+              thread=p["thread"])
+        return {"said": "asked the owner what the department is for: the words name nothing to build from"}
+
     # words the agent reads as a standing rule are put back as a rule, never filed as an ask of the line (found live
     # 2026-09-29: "Nothing goes on the site without a source line under it" was asked for with "Put them on the site as
     # said?" and, stamped, went into the Brief under Asked since; the map's rules never changed and nothing checked it)
@@ -2781,8 +2819,10 @@ def born_template(name, shape, ref):
     slug = re.sub(r"[^a-z0-9]+", "-", str(name or "").lower()).strip("-")
     if not slug:
         raise ValueError("name the engine")
-    p = TEMPLATES_DIR / (slug + ".json")
-    if p.exists():
+    user = user_templates_dir()
+    user.mkdir(parents=True, exist_ok=True)
+    p = user / (slug + ".json")
+    if p.exists() or (TEMPLATES_DIR / (slug + ".json")).exists():
         raise ValueError("the Library already has a template at %s" % p.name)
     do = json.loads((TEMPLATES_DIR / "do.json").read_text(encoding="utf-8"))
     t = dict(do)
@@ -3115,7 +3155,9 @@ def p_identity_take(ctx, step, item):
             "rule. needs: what doing it takes that a department may not have, from this list: %s; [] when nothing. unsure: the facts "
             "the request itself says the owner is not sure of, each in a few words; [] when none. rule: when the request states a "
             "standing rule for the site or the department (what must always or never hold from now on, not one piece of work), the "
-            "rule in one line and its tag (always: do this; refuse: never do that; ask: ask the owner before); null otherwise."
+            "rule in one line and its tag (always: do this; refuse: never do that; ask: ask the owner before); null otherwise. "
+            "thin: true when the request names no subject and no purpose to build from (nothing about whom or what it is for), so "
+            "nothing true could be made from it; false otherwise. Add \"thin\": bool to the object."
             % (d.get("goal"), "; ".join(r["line"] for r in d.get("rules") or []), got["words"], json.dumps(got["facts"]), ", ".join(NEEDS)))
 
 

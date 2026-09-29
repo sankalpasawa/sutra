@@ -38,6 +38,7 @@ class Model:
         self.same_name = False                           # Setup's agent names a department that already exists (test_95)
         self.rules = {}                                  # words Identity's take reads as a standing rule (test_102)
         self.need = True                                 # whether a born engine's need step says the words ask for its work (test_103)
+        self.thin = set()                                # words Identity's take reads as naming nothing to build from (test_107)
 
     def __call__(self, prompt, step):
         sid = step["id"]
@@ -111,7 +112,8 @@ class Model:
             unsure = [u.strip() for u in words.split("not sure of:", 1)[1].split(".", 1)[0].split(";")] if "not sure of:" in words else []
             low = words.lower()
             needs = ["internet"] if "internet" in low and any(w in low for w in ("find", "look", "search")) else []
-            return {"verdict": v, "why": "judged", "needs": needs, "unsure": unsure, "rule": self.rules.get(words)}, 0.01, "model"
+            return {"verdict": v, "why": "judged", "needs": needs, "unsure": unsure, "rule": self.rules.get(words),
+                    "thin": words in self.thin}, 0.01, "model"
         if sid == "identity.judge":
             return {"verdict": "admit", "why": "the rules allow it"}, 0.01, "model"
         if sid == "priority.bargain":
@@ -860,7 +862,7 @@ class TestWhatTheOwnerSees(Base):
             self.assertFalse((lib / "talks-list.json").exists(), "nothing born before the stamp")
             self.stamp("engine")
             self.idle()
-            t = json.loads((lib / "talks-list.json").read_text(encoding="utf-8"))
+            t = json.loads((R.user_templates_dir() / "talks-list.json").read_text(encoding="utf-8"))
             self.assertEqual((t["name"], t["reads"], t["writes"], t["made_by"]["dept"]), ("Talks List", "Brief", "Talks List", REF))
             self.assertEqual([s["id"] for s in t["steps"]], ["talks-list.read", "talks-list.need", "talks-list.make", "talks-list.file"])
             need = next(s for s in t["steps"] if s["id"] == "talks-list.need")
@@ -903,7 +905,7 @@ class TestWhatTheOwnerSees(Base):
             self.assertEqual(a["engine"], "Web Facts")
             self.stamp("engine")
             self.idle()
-            t = json.loads((lib / "web-facts.json").read_text(encoding="utf-8"))
+            t = json.loads((R.user_templates_dir() / "web-facts.json").read_text(encoding="utf-8"))
             make = next(s for s in t["steps"] if s.get("prompt"))
             self.assertEqual((make["tools"], make["timeout_s"]), (["WebSearch", "WebFetch"], 600), "the idea asks for the internet: the engine reaches it")
             self.assertEqual(W.dept(REF)["engines"][0], "Web Facts", "it reads the Brief, so it goes first")
@@ -2249,6 +2251,57 @@ class TestRunThree(Base):
         self.assertIn("under a line 'Dropped'", make)
         first = [p for s, p in self.M.prompts if s == "web-facts.make"][0]
         self.assertNotIn("WHAT YOU FILED LAST TIME", first)
+
+    def test_105_an_engine_on_the_record_whose_template_the_library_lacks_never_breaks_a_read_and_is_said(self):
+        """Finding 47 (2026-09-29, Beta 2.306.16): a born engine's template lived in the old bundle's Library and was gone
+        after the update; the map of every department of the organisation answered 500 (ready() read e['start'] of None).
+        A missing template is a card that says so and a health line, never a crash; the rest of the line runs."""
+        W, R = self.W, self.R
+        self.live()
+        d = W.dept(REF)
+        d["engines"] = ["Ghost Reader"] + list(d["engines"])
+        W.save_dept(REF, d)
+        name, _, why = R.next_due(REF, peek=True)
+        self.assertEqual(name, None)
+        m = W.map_view(REF)
+        ghost = next(e for e in m["engines"] if e["name"] == "Ghost Reader")
+        self.assertEqual((ghost["state"], ghost.get("missing")), ("Missing", True))
+        lib = next(c for c in m["health"]["checks"] if c["name"] == "Library")
+        self.assertEqual(lib["state"], "block")
+        self.assertIn("Ghost Reader has no template in this app's Library", lib["line"])
+        plans = len(W.versions(REF, "Site plan"))
+        self.ask("Add a page for careers.")
+        self.assertGreater(len(W.versions(REF, "Site plan")), plans, "the rest of the line still runs")
+
+    def test_106_a_born_engine_lives_in_the_record_homes_library_not_in_the_apps_bundle(self):
+        """Finding 47, the cause: born_template wrote into the shipped Library beside the code, which an update replaces.
+        It writes under the record home, which an update keeps; the definitions read both, the shipped first."""
+        W, R = self.W, self.R
+        self.live()
+        self.web_engine()
+        user = R.user_templates_dir()
+        self.assertEqual(user, R.Path(self.home) / "_library")
+        self.assertTrue((user / "web-facts.json").exists(), "born into the record home's Library")
+        self.assertFalse((R.TEMPLATES_DIR / "web-facts.json").exists(), "nothing written beside the code")
+        R._DEFS.clear()
+        self.assertIn("Web Facts", R.defs()["engines"], "read back with the shipped templates")
+        self.assertEqual(R.defs()["engines"]["Web Facts"]["from_template"], "engine/web-facts")
+
+    def test_107_words_that_name_nothing_to_build_from_get_a_question_not_a_site(self):
+        """Finding 48 (the founder's own department, 2026-09-29 16:40, stable 2.306.15): the words 'New website' bore a
+        department that planned eight generic pages, went live on a stamp and then asked for twelve facts. Words that
+        name no subject get one question first; the line starts on the answer."""
+        W, R = self.W, self.R
+        self.M.thin.add("New website")
+        W.give_goal(REF, "New website")
+        self.idle()
+        self.assertEqual(W.versions(REF, "Brief"), [], "nothing filed from words that name nothing")
+        self.assertEqual(W.versions(REF, "Site plan"), [], "nothing planned")
+        lines = [t["line"] for t in R.chat_view(REF)["turns"]]
+        self.assertTrue(any(x.startswith("Say what the site is for and about whom or what") for x in lines), lines[-3:])
+        self.ask("A site for Sharma Tailors: stitching and alterations in Jaipur, and how to reach the shop.")
+        self.assertEqual(len(W.versions(REF, "Brief")), 1, "the answer is the goal")
+        self.assertTrue(W.versions(REF, "Site plan"), "and the line starts on it")
 
 
 if __name__ == "__main__":

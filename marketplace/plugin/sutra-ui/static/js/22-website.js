@@ -185,7 +185,7 @@ function wbList(n){
     (wbRt(m) ? dpRow("Board", `data-wbtab="board"`, tab === "board") : "") + `</div>`;
   const engines = dpGroup("Engines", ((m && m.engines) || []).map(e => {
     const on = tab === "engine" && st.sel[n.ref] === e.name;
-    const word = e.state === "Running" ? "running" : (e.state === "Waits" ? "paused" : "idle");
+    const word = e.state === "Running" ? "running" : (e.state === "Waits" ? "paused" : (e.state === "Missing" ? "fault" : "idle"));
     return `<button type="button" class="o2li dpli dpeng wb${on ? " on" : ""}" data-wbengine="${wbEsc(e.name)}">` +
       `<span>${wbEsc(e.name)}</span><span class="dpst ${word}">${wbEsc(e.state)}</span></button>`;
   }), null, m ? "No engines here" : "Not read yet");
