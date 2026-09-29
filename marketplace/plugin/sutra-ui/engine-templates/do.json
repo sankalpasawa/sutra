@@ -18,6 +18,7 @@
    }
   ],
   "unless": [
+   "identity.wait_engine",
    "identity.gate",
    "priority.envelope",
    "coord.chain"
@@ -31,6 +32,22 @@
    "born": "C2",
    "code": "do_read",
    "check": "brief_is_text"
+  },
+  {
+   "id": "do.need",
+   "name": "Weigh the words against what was filed",
+   "nature": "decide",
+   "born": "C0",
+   "ceiling": "C1",
+   "only_if": "do.read.previous",
+   "may_end": true,
+   "prompt": "do_need",
+   "draft": "do_need_draft",
+   "out": {
+    "run": "bool",
+    "why": "str"
+   },
+   "check": "need_is_answer"
   },
   {
    "id": "do.make",

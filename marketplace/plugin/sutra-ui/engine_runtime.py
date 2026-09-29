@@ -849,6 +849,7 @@ def blocked(ctx, name, e, inp, slot):
     through."""
     ref = ctx["ref"]
     gctx = {"ref": ref, "dept": ctx["dept"], "engine": name, "def": e, "slot": slot, "inp": inp, "post": None, "bag": {}, "how": {}}
+    gctx["peek"] = bool(ctx.get("peek"))
     for gid in e["start"]["unless"]:
         fn, g = step_def(gid)
         rung = rung_of(ref, g)
@@ -1124,6 +1125,12 @@ def run_engine(ref, name, inp, slot):
             counted, guard = [0], threading.Lock()
 
             def one(i, s=s, items=items):
+                if not (s.get("each") and len(items) > 1):
+                    # the working line follows the step (found live 2026-09-29: "reading Brief" for the whole 90 s of a web search)
+                    try:
+                        W._put_run(ref, dict(row, what=s["name"]))
+                    except Exception:  # noqa: BLE001 -- the line never fails the step
+                        pass
                 got1 = run_step(ctx, s, items[i])
                 if s.get("each") and len(items) > 1:
                     # how far along: the run row says "page 3 of 8", and the chat's working line reads it (found live
@@ -1153,6 +1160,11 @@ def run_engine(ref, name, inp, slot):
                 raise _Stop()
             outs = [kept[i] for i in range(len(items))]
             ctx["bag"][s["id"]] = outs if s.get("each") else outs[0]
+            # a step that may end the run said the words ask for no work of this engine: the run ends ok, files nothing,
+            # and the line reads what was filed last (found live 2026-09-29: four web searches in one run, one asked for)
+            if s.get("may_end") and isinstance(ctx["bag"][s["id"]], dict) and ctx["bag"][s["id"]].get("run") is False:
+                ctx["bag"][s["id"]]["said"] = "not needed: " + str(ctx["bag"][s["id"]].get("why") or "the words ask for none of this")
+                break
     except _Stop:
         pass
     except Exception as exc:  # noqa: BLE001 -- a failed run is a row, never a crash of the motor
@@ -1180,7 +1192,7 @@ def run_engine(ref, name, inp, slot):
                           {"word": "live" if site else "filed",
                            "done": "%s v%d is %s%s." % (e["writes"], out["v"], "live" if site else "filed",
                                                         (" at " + host) if site and host and host != W.HOST_DEFAULT else ""),
-                           "link": e["writes"], "v": out["v"]})
+                           "link": e["writes"], "v": out["v"], "chain": row.get("chain")})
                 except Exception:  # noqa: BLE001 -- telling never fails the version that went out
                     pass
             if not ok and filed["check"].get("broken"):
@@ -1479,7 +1491,8 @@ def _tell_plan(ctx, plan):
             if [str(p.get("title") or p.get("slug")) for p in before] == titles:
                 return
         _tell(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER}, "inform",
-              {"word": "plan", "done": "Planned %d pages: %s. Say which to drop or add." % (len(titles), ", ".join(titles))})
+              {"word": "plan", "done": "Planned %d pages: %s. Say which to drop or add." % (len(titles), ", ".join(titles)),
+               "chain": W._chain_of(ref, ctx["def"].get("reads") or "Brief", ctx["inp"]["v"])})
     except Exception:  # noqa: BLE001 -- the plan is filed whether or not the word reached the person
         pass
 
@@ -1532,13 +1545,28 @@ def write_list(ctx, step, item):
     return {"plan": plan, "pages": [p["slug"] for p in plan.get("pages") or []]}
 
 
+_ADDRESS = re.compile(r"(?<![\"'=>/\w])(https?://[^\s<>\"']+?)(?=[.,;:!?)\]]*(?:\s|<|$))")
+
+
+def _link_addresses(html):
+    """A bare address in a page's text becomes a link; one already inside a tag or a link is left alone (found live
+    2026-09-29: 'Address as read: https://...' as text on every page, for a reader to copy)."""
+    out, pos = [], 0
+    for m in re.finditer(r"<a\b[^>]*>.*?</a>|<[^>]+>", html, flags=re.I | re.S):
+        out.append(_ADDRESS.sub(lambda a: '<a href="%s">%s</a>' % (a.group(1), a.group(1)), html[pos:m.start()]))
+        out.append(m.group(0))
+        pos = m.end()
+    out.append(_ADDRESS.sub(lambda a: '<a href="%s">%s</a>' % (a.group(1), a.group(1)), html[pos:]))
+    return "".join(out)
+
+
 def write_file(ctx, step, item):
     plan = ctx["bag"]["write.list"]["plan"]
     slugs = ctx["bag"]["write.list"]["pages"]
     files = {}
     for s, page in zip(slugs, ctx["bag"]["write.page"]):
         title = next((p.get("title") for p in plan["pages"] if p["slug"] == s), s)
-        files[s + ".html"] = json.dumps({"title": str(page.get("title") or title), "body_html": str(page["body_html"])})
+        files[s + ".html"] = json.dumps({"title": str(page.get("title") or title), "body_html": _link_addresses(str(page["body_html"]))})
     files["_plan.json"] = json.dumps(plan)
     return {"files": files, "check": {"ok": bool(slugs), "notes": ["%d pages" % len(slugs), str(ctx["how"].get("write.page") or "")]}}
 
@@ -1557,6 +1585,38 @@ def check_build(ctx, step, item):
 def publish_copy(ctx, step, item):
     files, check, _ = W.engine_publish(ctx["ref"], ctx["dept"], ctx["inp"])
     return {"files": files, "check": check}
+
+
+def _web_engine(d):
+    """The first engine on the record that reaches the internet, by name; None when none does."""
+    for name in d.get("engines") or [x[0] for x in W.engines_of(d)]:
+        if any(s.get("tools") for s in all_steps(name)):
+            return name
+    return None
+
+
+def identity_wait_engine(ctx, step, item):
+    """A blocker on every work engine: while an ask to add an engine the owner's words need is pending, the line waits
+    for the stamp, and the owner is told once (found live 2026-09-29: the goal was filed and Plan and Write built a site
+    of "to be confirmed" while the engine ask waited; its publish ask came the second the engine filed). A refused ask
+    holds nothing: the owner chose."""
+    ref, d = ctx["ref"], ctx["dept"]
+    pending = [a for a in W.asks(ref) if a.get("kind") == "engine" and a.get("status") == "pending"]
+    if not pending or d.get("kind") == "root":
+        return "admit", None
+    a = pending[0]
+    if not a.get("told") and not ctx.get("peek"):
+        with W._lock(ref):
+            rows = W.asks(ref)
+            for x in rows:
+                if x.get("id") == a["id"]:
+                    x["told"] = W.now()
+            W._write(W.ddir(ref) / "asks.json", rows)
+        _tell(ref, d, {"src": "Root" if d.get("root") else OWNER}, "inform",
+              {"word": "waits", "engine": a.get("engine"),
+               "done": "The line waits for your stamp on %s: nothing is built until the engine your words need is in place, or you refuse it."
+               % a.get("engine")})
+    return "wait", "waits for the stamp on %s" % a.get("engine")
 
 
 def identity_gate(ctx, step, item):
@@ -1889,6 +1949,20 @@ def identity_file(ctx, step, item):
                                         "done": "You said you are not sure of: %s. Say which are right and I will put them in; until then they stay out."
                                         % "; ".join(unsure)})
 
+    # words the agent reads as a standing rule are put back as a rule, never filed as an ask of the line (found live
+    # 2026-09-29: "Nothing goes on the site without a source line under it" was asked for with "Put them on the site as
+    # said?" and, stamped, went into the Brief under Asked since; the map's rules never changed and nothing checked it)
+    rule = out.get("rule") if isinstance(out.get("rule"), dict) else None
+    line = " ".join(str((rule or {}).get("line") or "").split()).rstrip(".")
+    if rule and line and str(rule.get("tag")) in ("always", "refuse", "ask") and verdict != "refuse" and not first:
+        if any(str(x.get("line") or "").lower() == line.lower() for x in d.get("rules") or []):
+            _tell(ref, d, p, "inform", {"word": "request", "done": "the department already has this rule"}, thread=p["thread"])
+            return {"said": "the department already has this rule: " + line}
+        text = _rule_ask(ref, ctx["slot"], line, str(rule["tag"]), words, p["thread"], "A rule, as understood")
+        _tell(ref, d, p, "request", {"word": "rule", "objective": text, "output": "a stamp or a refusal", "may_read": [],
+                                     "boundaries": "this department, until the owner says otherwise"}, thread=p["thread"])
+        return {"said": "restated the owner's words as a rule and put them back: " + line}
+
     if verdict == "go" and "internet" in needs and not _has_web(d):
         # Identity's agent says the words need the internet and no engine of the department reaches it: the product's
         # answer is an engine (its own Adaptation shapes one, the owner stamps it), never a page that says "to be
@@ -2070,12 +2144,18 @@ def fn_chat_view(ref, fn):
         return (ab.get("fn") or pab.get("fn") or "").lower() == name.lower()
 
     mine = {p["thread"] for p in posts if to_fn(p)}
+    # what came of the words said here: the tells of the line on the Brief versions those words made (found live
+    # 2026-09-29: "Put the top three first." said to Priority; the plan and the live tells landed only in the department chat)
+    chains = {"brief.v%d" % int(p["payload"]["v"]) for p in posts
+              if p["thread"] in mine and isinstance(p.get("payload"), dict) and p["payload"].get("word") == "request"
+              and str(p["payload"].get("v") or "").isdigit()}
     turns = []
     for p in posts:
         pl = p.get("payload") or {}
         own = p["src"] == name or name in p["dst"] or to_fn(p)
         in_thread = p["thread"] in mine and (p["src"] == OWNER or OWNER in p["dst"])
-        if not own and not in_thread:
+        of_chain = OWNER in p["dst"] and pl.get("chain") in chains
+        if not own and not in_thread and not of_chain:
             continue
         turns.append({"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
                       "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""), "think": False,
@@ -2270,13 +2350,29 @@ def identity_finding(ctx, step, item):
     said = []
     if holes:
         # the facts only the owner knows: a question in the chat, not a stamp (found live 2026-09-28: a site of
-        # "to be confirmed"); the owner's reply is a request like any other, and the line puts the facts in
+        # "to be confirmed"); the owner's reply is a request like any other, and the line puts the facts in.
+        # A department with an engine that reaches the internet asks that engine first, once per hole; what it cannot
+        # find comes back to the owner (found live 2026-09-29: fees and timings asked of the person)
         lines = _finding_lines(ref, holes, None)
-        text = ("The site says it does not know %d thing%s: %s. Tell me here and I will put them in."
-                % (len(holes), "" if len(holes) == 1 else "s", "; ".join(lines) + (" ..." if len(holes) > len(lines) else "")))
+        d = ctx["dept"]
+        engine = _web_engine(d)
+        looked = set(d.get("looked_up") or [])
+        fresh = [f for f in holes if str(f.get("claim")) not in looked]
+        count = "%d thing%s" % (len(holes), "" if len(holes) == 1 else "s")
+        if engine and fresh:
+            text = ("The site says it does not know %s: %s. I have asked %s to look them up; what it cannot find stays to be confirmed."
+                    % (count, "; ".join(lines) + (" ..." if len(holes) > len(lines) else ""), engine))
+            with W._lock(ref):
+                d = W.dept(ref)
+                d["looked_up"] = sorted(looked | {str(f.get("claim")) for f in fresh})
+                W.save_dept(ref, d)
+            _file_words(ref, d, "Look up: " + "; ".join(_finding_lines(ref, fresh, None)), "the holes Audit found, for " + engine)
+        else:
+            text = ("The site says it does not know %s: %s. Tell me here and I will put them in."
+                    % (count, "; ".join(lines) + (" ..." if len(holes) > len(lines) else "")))
         _tell(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER}, "inform",
               {"word": "facts", "done": text, "holes": len(holes), "about_version": pl.get("about_version")})
-        said.append("asked the owner for %d fact%s the site lacks" % (len(holes), "" if len(holes) == 1 else "s"))
+        said.append("asked %s for %d fact%s the site lacks" % (engine if engine and fresh else "the owner", len(holes), "" if len(holes) == 1 else "s"))
     high = [f for f in rest if str(f.get("severity") or "").lower() == "high"]
     if high:
         claim = str(high[0]["claim"])
@@ -2495,7 +2591,11 @@ def placeholders(files):
     for name in sorted(files):
         if not name.endswith(".html"):
             continue
-        text = re.sub(r"<[^>]+>", " ", str(files[name]))
+        # the page's own sentences, not its navigation or its links (found live 2026-09-29: the nav's "Still To Be
+        # Confirmed" read as twelve gaps)
+        html = re.sub(r"<(nav|header|footer)\b[^>]*>.*?</\1>", " ", str(files[name]), flags=re.I | re.S)
+        html = re.sub(r"<a\b[^>]*>.*?</a>", " ", html, flags=re.I | re.S)
+        text = re.sub(r"<[^>]+>", " ", html)
         for m in PLACEHOLDER.finditer(text):
             before = text[max(0, m.start() - 60):m.start()]              # the sentence the phrase sits in, not a cut word
             cut = max(before.rfind(". "), before.rfind("! "), before.rfind("? "), before.rfind("\n"))
@@ -2693,6 +2793,9 @@ def born_template(name, shape, ref):
               "made_by": {"dept": ref, "at": W.now(), "idea": str(shape.get("instruction") or "")[:300]}})
     t["start"] = {"on": [{"kind": "version", "of": t["reads"]}], "unless": list((do.get("start") or {}).get("unless") or [])}
     t["steps"] = [dict(s, id=slug + "." + s["id"].split(".", 1)[1]) for s in do["steps"]]
+    for s in t["steps"]:
+        if s.get("only_if"):                                   # a condition on Do's own bag follows the ids
+            s["only_if"] = re.sub(r"^do\.", slug + ".", str(s["only_if"]))
     needs = [n for n in (shape.get("needs") or []) if isinstance(n, str) and n in NEEDS]
     tools = list(dict.fromkeys(tool for n in needs for tool in NEEDS[n]))
     t["needs"] = needs
@@ -2844,19 +2947,56 @@ def _pre(step):
 def do_read(ctx, step, item):
     art = ctx["def"].get("reads") or "Brief"
     files = W.read_files(ctx["ref"], art, ctx["inp"]["v"])
-    return {"brief": files.get("brief.md") or "\n".join(str(v) for v in files.values())}
+    # what this engine filed last time, for the need step to weigh the new words against and the make step to build on
+    previous, pv = None, None
+    try:
+        cur = W.latest(ctx["ref"], ctx["def"].get("writes") or "Result")
+        if cur:
+            pv = cur["v"]
+            previous = "\n".join(str(v) for k, v in sorted(W.read_files(ctx["ref"], ctx["def"]["writes"], pv).items())).strip() or None
+    except Exception:  # noqa: BLE001 -- nothing filed yet
+        previous = None
+    return {"brief": files.get("brief.md") or "\n".join(str(v) for v in files.values()), "previous": previous, "previous_v": pv}
+
+
+def p_do_need(ctx, step, item):
+    """Whether the new words ask for this engine's work again, judged by the engine's own agent against what it filed last
+    (found live 2026-09-29: 'Put the top three first' and 'Take X out' each paid for a fresh web search)."""
+    got = ctx["bag"][_pre(step) + ".read"]
+    ins = str(ctx["def"].get("instruction") or ctx["def"].get("use_case") or "").strip()
+    return ("The engine \"%s\" of the department \"%s\" does this: %s\nIt filed this last time (v%s):\n%s\n\nThe Brief now reads:\n%s\n\n"
+            "Do the newest words of the Brief ask for this engine's work again (new facts to find, a search to repeat, something "
+            "to add to what it filed), or only for what the department makes from what it already filed (order, wording, dropping "
+            "a line, a rule)? Return ONLY a JSON object: {\"run\": bool, \"why\": \"one line\"}."
+            % (ctx["def"].get("name"), ctx["dept"].get("name"), ins[:600], got.get("previous_v"), str(got.get("previous") or "")[:3000],
+               str(got.get("brief") or "")[:4000]))
+
+
+def d_do_need(ctx, step, item):
+    return {"run": True, "why": "no judgement offline: the engine runs"}
+
+
+def c_need_is_answer(ctx, step, item, out):
+    ok = isinstance(out, dict) and isinstance(out.get("run"), bool) and isinstance(out.get("why"), str)
+    return _verdict(ok, "run or not, with why", "no answer")
 
 
 def p_do_make(ctx, step, item):
     ins = str(ctx["def"].get("instruction") or "").strip()
+    got = ctx["bag"][_pre(step) + ".read"]
     web = ("You have web search and web fetch: search several times in different words, open the pages that matter and read them; "
            "keep only what a page actually says, and write each fact with the page's URL after it; what you could not confirm goes "
            "under a line 'Not sure', with why. " if step.get("tools") else "")
-    return ("The department \"%s\" was asked for this, in its owner's words (the Brief):\n%s\n\n%s%sDo it as one written answer: what was "
+    # what was filed last time rides along: a run that runs again adds, or says what it dropped (found live 2026-09-29: each
+    # re-run replaced the record; v4 of the site drew on three sources where v1 had four)
+    last = ("WHAT YOU FILED LAST TIME (v%s):\n%s\n\nKeep what still holds, add what is new, and list under a line 'Dropped' what you "
+            "removed and why; nothing the owner did not ask to drop goes silently.\n\n" % (got.get("previous_v"), str(got.get("previous"))[:6000])
+            if got.get("previous") else "")
+    return ("The department \"%s\" was asked for this, in its owner's words (the Brief):\n%s\n\n%s%s%sDo it as one written answer: what was "
             "asked for, done as far as words can do it, in the owner's own language, nothing invented; where a fact is missing, say "
             "so. Return ONLY a JSON object: {\"text\": str}."
-            % (ctx["dept"].get("name"), ctx["bag"][_pre(step) + ".read"]["brief"][:6000],
-               ("THIS ENGINE'S INSTRUCTION, FROM THE OWNER'S IDEA: %s\n\n" % ins) if ins else "", web))
+            % (ctx["dept"].get("name"), got["brief"][:6000],
+               ("THIS ENGINE'S INSTRUCTION, FROM THE OWNER'S IDEA: %s\n\n" % ins) if ins else "", last, web))
 
 
 def d_do_make(ctx, step, item):
@@ -2879,7 +3019,7 @@ CODE = {"plan_read": plan_read, "plan_fit": plan_fit, "plan_file": plan_file, "w
         "check_rules_of": check_rules_of,
         "hear": hear, "coord_ready": coord_ready, "coord_record": coord_record,
         "setup_read": setup_read, "setup_make": setup_make, "setup_file": setup_file,
-        "check_build": check_build, "publish_copy": publish_copy, "identity_gate": identity_gate,
+        "check_build": check_build, "publish_copy": publish_copy, "identity_gate": identity_gate, "identity_wait_engine": identity_wait_engine,
         "priority_envelope": priority_envelope, "coord_chain": coord_chain, "coord_heard": coord_heard,
         "coord_busy": coord_busy, "coord_pick": coord_pick, "coord_edge": coord_edge, "coord_verdict": coord_verdict,
         "coord_bounds": coord_bounds, "coord_alarm": coord_alarm,
@@ -2970,10 +3110,12 @@ def p_identity_take(ctx, step, item):
     d, got = ctx["dept"], ctx["bag"]["identity.read"]
     return ("Judge one request from the owner.\nTHE GOAL: %s\nTHE RULES: %s\nTHE REQUEST: %s\nREAD BY CODE: %s\n\n"
             "Return ONLY a JSON object, no prose: {\"verdict\": \"go\" | \"ask\" | \"refuse\", \"why\": \"one line\", \"needs\": [str], "
-            "\"unsure\": [str]}. go: it is inside the goal and stays inside the site. ask: it would reach outside the site, or the "
-            "goal does not cover it. refuse: it breaks a rule. needs: what doing it takes that a department may not have, from this "
-            "list: %s; [] when nothing. unsure: the facts the request itself says the owner is not sure of, each in a few words; "
-            "[] when none."
+            "\"unsure\": [str], \"rule\": {\"line\": str, \"tag\": \"always\" | \"refuse\" | \"ask\"} | null}. go: it is inside the "
+            "goal and stays inside the site. ask: it would reach outside the site, or the goal does not cover it. refuse: it breaks a "
+            "rule. needs: what doing it takes that a department may not have, from this list: %s; [] when nothing. unsure: the facts "
+            "the request itself says the owner is not sure of, each in a few words; [] when none. rule: when the request states a "
+            "standing rule for the site or the department (what must always or never hold from now on, not one piece of work), the "
+            "rule in one line and its tag (always: do this; refuse: never do that; ask: ask the owner before); null otherwise."
             % (d.get("goal"), "; ".join(r["line"] for r in d.get("rules") or []), got["words"], json.dumps(got["facts"]), ", ".join(NEEDS)))
 
 
@@ -3030,11 +3172,14 @@ def p_audit_judge(ctx, step, item):
     for name in ctx["bag"]["audit.pick"]["pages"][:12]:
         text = re.sub(r"<[^>]+>", " ", files.get(name, ""))
         pages.append({"page": name, "text": " ".join(text.split())[:1500]})
-    return ("Check what the department made against what it was asked. Read the brief, then the pages. Find any statement of fact "
-            "on a page that the brief does not give: a phone number, an address, a date, a count, a name, a claim of history. "
-            "Return ONLY a JSON object: {\"ok\": bool, \"findings\": [{\"page\": str, \"claim\": str, \"severity\": \"high\" | "
-            "\"low\"}]}. high: a reader could be harmed or misled by it. At most eight findings.\n\n"
-            "THE BRIEF:\n%s\n\nTHE PAGES:\n%s" % (_brief_text(ref), json.dumps(pages)))
+    # what the department's own engines filed backs a page as the brief does (found live 2026-09-29: facts Source Reader
+    # filed with their URLs were asked to be "put right" because the brief did not give them)
+    return ("Check what the department made against what it was asked. Read the brief and what the department's own engines "
+            "filed, then the pages. Find any statement of fact on a page that neither the brief nor a filed artifact gives: a "
+            "phone number, an address, a date, a count, a name, a claim of history. A fact a filed artifact gives, with its "
+            "source, is backed: do not report it. Return ONLY a JSON object: {\"ok\": bool, \"findings\": [{\"page\": str, "
+            "\"claim\": str, \"severity\": \"high\" | \"low\"}]}. high: a reader could be harmed or misled by it. At most eight "
+            "findings.\n\nTHE BRIEF:\n%s%s\n\nTHE PAGES:\n%s" % (_brief_text(ref), _context_block(ref), json.dumps(pages)))
 
 
 def d_audit_judge(ctx, step, item):
@@ -3139,13 +3284,13 @@ def d_adapt_shape(ctx, step, item):
 PROMPT = {"identity_recognise": p_identity_recognise, "identity_answer": p_identity_answer, "identity_rule": p_identity_rule,
           "identity_weigh": p_identity_weigh, "adapt_shape": p_adapt_shape, "plan_pages": p_plan_pages, "write_page": p_write_page, "identity_take": p_identity_take,
           "identity_gate_soft": p_identity_gate, "priority_bargain": p_priority_bargain, "audit_judge": p_audit_judge,
-          "coord_tie": p_coord_tie, "setup_shape": p_setup_shape, "check_rules": p_check_rules, "do_make": p_do_make}
+          "coord_tie": p_coord_tie, "setup_shape": p_setup_shape, "check_rules": p_check_rules, "do_make": p_do_make, "do_need": p_do_need}
 DRAFT = {"identity_recognise_draft": d_identity_recognise, "identity_answer_draft": d_identity_answer,
          "coord_tie_draft": d_coord_tie, "setup_shape_draft": d_setup_shape, "check_rules_draft": d_check_rules,
          "identity_rule_draft": d_identity_rule, "identity_weigh_draft": d_identity_weigh, "adapt_shape_draft": d_adapt_shape,
          "plan_pages_draft": d_plan_pages, "write_page_draft": d_write_page, "identity_take_draft": d_identity_take,
          "identity_gate_draft": d_identity_gate, "priority_bargain_draft": d_priority_bargain, "audit_judge_draft": d_audit_judge,
-         "do_make_draft": d_do_make}
+         "do_make_draft": d_do_make, "do_need_draft": d_do_need}
 
 
 # ---- the registry: checks. Every step names one; each is code, and each says what it looked at. ---------------------
@@ -3318,6 +3463,7 @@ def c_idea_has_shapes(ctx, step, item, out):
 
 
 CHECK = {"journey_is_known": c_journey_is_known, "answer_names_its_source": c_answer_names_its_source, "result_is_text": c_result_is_text,
+         "need_is_answer": c_need_is_answer,
          "rule_is_tagged": c_rule_is_tagged, "feedback_says_what_changes": c_feedback_says_what_changes,
          "idea_has_shapes": c_idea_has_shapes, "brief_is_text": c_brief_is_text, "plan_has_pages": c_plan_has_pages, "plan_is_fit": c_plan_is_fit,
          "filed_has_files": c_filed_has_files, "list_has_pages": c_list_has_pages, "page_has_body": c_page_has_body,

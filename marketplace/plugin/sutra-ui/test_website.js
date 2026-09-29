@@ -1059,6 +1059,41 @@ test("W37: on Root, the hand-over line folds to one quiet line once that departm
   assert.ok(/Filed in the Brief\./.test(html), "and the answer stands");
 });
 
+test("W38: a filed turn's button is named for what was filed and opens it; a live turn's opens the live site", async () => {
+  const c = await opened({});
+  const filed = c.wbChatTurn({ src: "Identity", msg_type: "inform", at: AT, word: "filed", line: "Source Reader v1 is filed.", link: "Source Reader", v: 1, dept: "r5", name: DEPT }, false);
+  assert.ok(/data-wbopenart="source-reader"/.test(filed) && /data-wbdept="r5"/.test(filed), filed);
+  assert.ok(/>Open Source Reader</.test(filed) && !/Open the live site/.test(filed), filed);
+  const live = c.wbChatTurn({ src: "Identity", msg_type: "inform", at: AT, word: "live", line: "Live site v1 is live.", link: "Live site", v: 1, dept: "r5", name: DEPT }, false);
+  assert.ok(/data-wblive="r5"/.test(live) && />Open the live site</.test(live), live);
+});
+
+test("W39: opening from a chat button selects the row and the department's own tab, so the next repaint keeps the preview", async () => {
+  const c = await opened({});
+  vm.runInContext("dpS().tab['r5'] = 'conversation';", c);
+  click(c, { wblive: "r5" });
+  let st = c.wbS();
+  assert.strictEqual(st.tab.r5, "art"); assert.strictEqual(st.sel.r5, "live-site"); assert.strictEqual(st.pane["r5:live-site"], "preview");
+  assert.strictEqual(c.dpS().tab.r5, "now", "the department opens on its own rows, not on the app it showed last");
+  vm.runInContext("dpS().tab['r5'] = 'conversation';", c);
+  click(c, { wbopenart: "source-reader", wbdept: "r5" });
+  st = c.wbS();
+  assert.strictEqual(st.tab.r5, "art"); assert.strictEqual(st.sel.r5, "source-reader"); assert.strictEqual(st.pane["r5:source-reader"], "preview");
+  assert.strictEqual(c.dpS().tab.r5, "now");
+});
+
+test("W40: Send in a function's chat keeps the person in that chat and reads it again", async () => {
+  const c = await opened({});
+  vm.runInContext("dpS().tab['r3'] = 'priority'; wbS().draft['r3:fn:priority'] = 'Put the top three first.'; wbS().fnchat['r3:priority'] = { fn: 'Priority', turns: [] };", c);
+  const reads = c.calls.apiGet.length;
+  click(c, { wbask: "fn:priority" });
+  await sleep(); await sleep(); await sleep();
+  assert.strictEqual(c.dpS().tab.r3, "priority", "the person stays in Priority's chat");
+  const post = c.calls.apiPost[c.calls.apiPost.length - 1];
+  assert.strictEqual(JSON.stringify(post.body), JSON.stringify({ text: "Put the top three first.", about: "fn:priority" }));
+  assert.ok(c.calls.apiGet.slice(reads).some(p => /chat\?fn=priority/.test(p)), "the function's chat is read again after the words");
+});
+
 test("V2 navigation: with the switch on the list, Chat, a function card and an engine card are the first design's, unchanged", async () => {
   const c = await v2({ map: rtMap({ ask: true }) });
   const html = c.dpListHtml(WEB, {}, null, null);

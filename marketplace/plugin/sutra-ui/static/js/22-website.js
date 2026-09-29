@@ -471,6 +471,8 @@ function wbRungHtml(s){
 }
 function wbRungName(id){ return (WB_RUNGS.filter(r => r[0] === id)[0] || ["", ""])[1]; }
 function wbChip(word, cls){ return `<span class="wbchip${cls ? " " + cls : ""}">${wbEsc(word)}</span>`; }
+/* an artifact's slug, as the map gives it: its name in lower case, joined by dashes */
+function wbSlug(name){ return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
 function wbStepHtml(s, need){
   const last = s.last || {};
   const dot = !s.ran ? "off" : (last.ok === false || last.status === "failed" ? "block" : (last.miss ? "warn" : "ok"));
@@ -630,8 +632,12 @@ function wbChatTurn(t, scoped){
   const line = t.line || (t.msg_type === "accept-proposal" ? "Stamped" : t.msg_type === "reject-proposal" ? "Refused" : wbCap(t.word || ""));
   if (t.src === "Owner") return `<div class="turn wbturn"><div class="who who-you">${dept}You</div><div class="u md">${wbEsc(line)}</div></div>`;
   /* a turn that carries a way to the thing (the site that went live) shows it as the one button a person clicks
-     (found live 2026-09-28: after the publish stamp the chat said nothing, and the person did not know it was live) */
-  const link = t.link ? ` <button type="button" class="wbchip on wbto wb" data-wblive="${wbEsc(t.dept || "")}">Open the live site</button>` : "";
+     (found live 2026-09-28: after the publish stamp the chat said nothing, and the person did not know it was live);
+     a turn about something else filed (an engine the person added) opens that filed work under its own name
+     (found live 2026-09-29: "Source Reader v1 is filed." wore "Open the live site") */
+  const link = !t.link ? "" : t.word === "live" || t.link === "Live site"
+    ? ` <button type="button" class="wbchip on wbto wb" data-wblive="${wbEsc(t.dept || "")}">Open the live site</button>`
+    : ` <button type="button" class="wbchip on wbto wb" data-wbopenart="${wbEsc(wbSlug(t.link))}" data-wbdept="${wbEsc(t.dept || "")}">Open ${wbEsc(t.link)}</button>`;
   return `<div class="turn wbturn"><div class="who who-ai">Root${dept}</div><div class="a">${wbEsc(line)}${link}` +
     `<span class="dpchk">${wbEsc(WB_ACTS[t.msg_type] || t.msg_type)} · ${wbEsc(wbWhen(t.at))}</span></div></div>`;
 }
@@ -1052,7 +1058,7 @@ async function wbPost(ref, tail, body, key, at){
 if (typeof document !== "undefined" && document.addEventListener){
   const WB_SEL = "[data-wbtab],[data-wbengine],[data-wbart],[data-wbpane],[data-wbdecide],[data-wbstop],[data-wbresume]," +
     "[data-wbgoal],[data-wbask],[data-wbputback],[data-wbfn],[data-wbfound],[data-wbhold],[data-wbenv]," +
-    "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost],[data-wbopen],[data-wblive]";
+    "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost],[data-wbopen],[data-wblive],[data-wbopenart]";
   /* capture phase: a click on one of 20-dept.js's own rows hands the viewer
      back to it BEFORE that file's handler paints */
   document.addEventListener("click", (ev) => {
@@ -1093,8 +1099,10 @@ if (typeof document !== "undefined" && document.addEventListener){
       return;
     }
     if (ds.wbhost !== undefined){ const k = ref + ":host"; wbPost(ref, "host", { host: st.draft[k] || "" }, k); return; }
-    /* one of this file's entries is opening: none of 20-dept.js's rows stays lit */
-    if (ds.wbfn === undefined && dpS().tab[ref] !== "now") dpS().tab[ref] = "now";
+    /* one of this file's entries is opening: none of 20-dept.js's rows stays lit; words said inside a function's chat
+       keep the person there (found live 2026-09-29: Send in Priority's chat landed on the department's Chat) */
+    const inFn = ds.wbask !== undefined && String(ds.wbask).indexOf("fn:") === 0;
+    if (ds.wbfn === undefined && !inFn && dpS().tab[ref] !== "now") dpS().tab[ref] = "now";
     if (ds.wbtab !== undefined){ st.tab[ref] = ds.wbtab; dpRender(); return; }
     if (ds.wbfn !== undefined){ st.tab[ref] = ""; dpS().tab[ref] = ds.wbfn; dpRender(); return; }
     if (ds.wbpane !== undefined && ds.wbpanekey !== undefined){ st.pane[ds.wbpanekey] = ds.wbpane; dpRender(); return; }
@@ -1108,10 +1116,13 @@ if (typeof document !== "undefined" && document.addEventListener){
     }
     if (ds.wbchip !== undefined){ st.chip[ref] = ds.wbchip === "on"; dpRender(); return; }
     if (ds.wbopen !== undefined){ if (typeof o2Select === "function") o2Select(ds.wbopen); return; }
-    /* the live site of the department a turn is about: its Live site, previewed; from Root's chat, that department opens on it */
-    if (ds.wblive !== undefined){
-      const dref = ds.wblive || ref;
-      st.tab[dref] = "art"; st.sel[dref] = "live-site"; st.pane[dref + ":live-site"] = "preview"; st.sel[dref + ":live-site:v"] = "";
+    /* the live site of the department a turn is about: its Live site, previewed; from Root's chat, that department opens on it;
+       the department's own tab is set too, so the next repaint keeps the preview (found live 2026-09-29: the preview gave
+       way to the Human Sutra page on the next tick, the row lit was Brief) */
+    if (ds.wblive !== undefined || ds.wbopenart !== undefined){
+      const dref = (ds.wblive !== undefined ? ds.wblive : ds.wbdept) || ref, slug = ds.wblive !== undefined ? "live-site" : ds.wbopenart;
+      st.tab[dref] = "art"; st.sel[dref] = slug; st.pane[dref + ":" + slug] = "preview"; st.sel[dref + ":" + slug + ":v"] = "";
+      if (typeof dpS === "function") dpS().tab[dref] = "now";
       if (dref !== ref && typeof o2Select === "function") o2Select(dref); else dpRender();
       return;
     }

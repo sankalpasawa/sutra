@@ -18,6 +18,7 @@
    }
   ],
   "unless": [
+   "identity.wait_engine",
    "identity.gate",
    "priority.envelope",
    "coord.chain"

@@ -36,6 +36,8 @@ class Model:
         self.broken = []                                 # what Check's rules step reports broken (test_72)
         self.refuse_engines = set()                      # engines Priority's agent refuses when offered (test_94)
         self.same_name = False                           # Setup's agent names a department that already exists (test_95)
+        self.rules = {}                                  # words Identity's take reads as a standing rule (test_102)
+        self.need = True                                 # whether a born engine's need step says the words ask for its work (test_103)
 
     def __call__(self, prompt, step):
         sid = step["id"]
@@ -101,13 +103,15 @@ class Model:
         if sid.endswith(".make") and sid != "write.page":
             brief = prompt.split("(the Brief):\n", 1)[1].split("\n\nDo it", 1)[0]
             return {"text": "Done, in words: " + " ".join(brief.split())[:160]}, 0.01, "model"
+        if sid.endswith(".need"):
+            return {"run": bool(self.need), "why": "the words ask for it" if self.need else "the words ask for no new search"}, 0.01, "model"
         if sid == "identity.take":
             words = prompt.split("THE REQUEST: ", 1)[1].split("\n", 1)[0]
             v = self.verdicts.get(words) or ("ask" if "email" in words.lower() else "go")
             unsure = [u.strip() for u in words.split("not sure of:", 1)[1].split(".", 1)[0].split(";")] if "not sure of:" in words else []
             low = words.lower()
             needs = ["internet"] if "internet" in low and any(w in low for w in ("find", "look", "search")) else []
-            return {"verdict": v, "why": "judged", "needs": needs, "unsure": unsure}, 0.01, "model"
+            return {"verdict": v, "why": "judged", "needs": needs, "unsure": unsure, "rule": self.rules.get(words)}, 0.01, "model"
         if sid == "identity.judge":
             return {"verdict": "admit", "why": "the rules allow it"}, 0.01, "model"
         if sid == "priority.bargain":
@@ -696,7 +700,7 @@ class TestWhatTheOwnerSees(Base):
         self.assertEqual(page["evidence"]["runs"], 5)
         f = self.R.steps_view(REF, "Identity")
         self.assertEqual(f["kind"], "function")
-        self.assertEqual([s["mode"] for s in f["steps"]][:2], ["gate", "slot"])
+        self.assertEqual([s["mode"] for s in f["steps"]][:3], ["gate", "gate", "slot"])
         self.assertIn("Take a request", f["hears"])
         by = {s["name"]: s["under"] for s in f["steps"]}
         self.assertEqual((by["Read the request"], by["Post the verdict"]), ("Take a request", "Give a verdict"),
@@ -858,7 +862,9 @@ class TestWhatTheOwnerSees(Base):
             self.idle()
             t = json.loads((lib / "talks-list.json").read_text(encoding="utf-8"))
             self.assertEqual((t["name"], t["reads"], t["writes"], t["made_by"]["dept"]), ("Talks List", "Brief", "Talks List", REF))
-            self.assertEqual([s["id"] for s in t["steps"]], ["talks-list.read", "talks-list.make", "talks-list.file"])
+            self.assertEqual([s["id"] for s in t["steps"]], ["talks-list.read", "talks-list.need", "talks-list.make", "talks-list.file"])
+            need = next(s for s in t["steps"] if s["id"] == "talks-list.need")
+            self.assertEqual((need["only_if"], need["may_end"]), ("talks-list.read.previous", True), "the condition follows the ids")
             self.assertIn("Talks List", R.defs()["engines"])
             self.assertEqual(R.validate(R.defs()), [])
             d = W.dept(REF)
@@ -2039,8 +2045,8 @@ class TestActivation(Base):
         w = R.steps_view(REF, "Write")["start"]
         self.assertEqual(w["on"], ["a new Site plan"])
         self.assertEqual([(b["by"], b["name"]) for b in w["unless"]],
-                         [("Identity", R.step_def("identity.gate")[1]["name"]), ("Priority", R.step_def("priority.envelope")[1]["name"]),
-                          ("Coordination", "Stop a chain at its limit")])
+                         [("Identity", R.step_def("identity.wait_engine")[1]["name"]), ("Identity", R.step_def("identity.gate")[1]["name"]),
+                          ("Priority", R.step_def("priority.envelope")[1]["name"]), ("Coordination", "Stop a chain at its limit")])
         self.assertEqual(R.steps_view(REF, "Publish")["start"]["on"], ["a new Build that passed its check"])
         self.assertEqual(R.steps_view(REF, "Adaptation")["start"]["on"], ["a post addressed to it", "a new Live site that passed its check"])
         c = R.steps_view(REF, "Coordination")
@@ -2066,6 +2072,183 @@ class TestActivation(Base):
             self.assertNotIn("internal system", json.dumps(view).lower(), "the inside word reached the screen, in " + what)
         self.assertEqual(read["Coordination"]["table"]["first"][2], "A function woken by new work")
         self.assertEqual([k for k in self.ALL if read[k]["kind"] == "function"], ["Identity", "Adaptation", "Priority", "Coordination", "Audit"])
+
+
+class TestRunThree(Base):
+    """Human Simulation run 3 (2026-09-29, Beta 2.306.15, the founder as the user, 'Best dermatologists in Bangalore'):
+    findings 34-46, each a test before its fix (qa/sim/TEST-STRATEGY.md)."""
+
+    WEB = "Find on the internet what the hospital does and who its doctors are, and build only from that."
+
+    def lib_copy(self):
+        lib = self.R.Path(tempfile.mkdtemp(prefix="engine-templates-"))
+        shutil.rmtree(lib)
+        shutil.copytree(self.R.TEMPLATES_DIR, lib)
+        self._prior_lib = self.R.TEMPLATES_DIR
+        self.R.TEMPLATES_DIR = lib
+        self.R._DEFS.clear()
+        return lib
+
+    def tearDown(self):
+        if getattr(self, "_prior_lib", None):
+            self.R.TEMPLATES_DIR = self._prior_lib
+            self.R._DEFS.clear()
+        super().tearDown()
+
+    def web_engine(self):
+        """As the user: the words ask for the internet, the engine is stamped, it files on the Brief at once."""
+        self.ask(self.WEB)
+        self.stamp("engine")
+        self.idle()
+        self.assertEqual(len(self.W.versions(REF, "Web Facts")), 1)
+
+    def test_96_the_line_waits_while_an_engine_ask_the_goal_needs_is_pending_and_says_so(self):
+        """Finding 34: the goal was filed and Plan and Write built a site of 'to be confirmed' while the engine ask waited;
+        its publish ask came the second the engine filed. The line waits for the stamp, and the person is told once."""
+        W, R = self.W, self.R
+        self.lib_copy()
+        W.give_goal(REF, self.WEB)
+        self.idle()
+        self.assertTrue([x for x in W.asks(REF) if x["kind"] == "engine" and x["status"] == "pending"], "the engine ask is up")
+        self.assertEqual(W.versions(REF, "Site plan"), [], "nothing planned from a Brief whose need is unmet")
+        name, _, why = R.next_due(REF, peek=True)
+        self.assertEqual((name, why), (None, "waits for the stamp on Web Facts"))
+        lines = [t["line"] for t in R.chat_view(REF)["turns"]]
+        waits = [x for x in lines if x.startswith("The line waits for your stamp on Web Facts")]
+        self.assertEqual(len(waits), 1, lines[-4:])
+        self.stamp("engine")
+        self.idle()
+        self.assertTrue(W.versions(REF, "Web Facts"), "after the stamp the engine ran")
+        self.assertTrue(W.versions(REF, "Site plan"), "and the line followed")
+
+    def test_97_the_working_line_follows_the_engines_step(self):
+        """Finding 35: 'Source Reader is working: reading Brief' for the whole 90 s search. The run row's what is the step's name."""
+        W, R = self.W, self.R
+        self.lib_copy()
+        seen, real = {}, R.run_step
+
+        def spy(ctx, step, item):
+            row = next((r for r in W.runs(REF) if r["id"] == ctx["run"]), {})
+            seen.setdefault(step["id"], row.get("what"))
+            return real(ctx, step, item)
+
+        R.run_step = spy
+        try:
+            self.live()
+            self.web_engine()
+        finally:
+            R.run_step = real
+        self.assertEqual(seen.get("web-facts.make"), "Do what it asks", seen)
+        self.assertEqual(seen.get("plan.pages"), "Propose the pages", seen)
+
+    def test_98_an_address_on_a_page_is_a_link(self):
+        """Finding 40: 'Address as read: https://...' as text. write_file links a bare address and leaves a link alone."""
+        R = self.R
+        body = '<p>Read more at https://example.com/x/y?z=1. <a href="https://kept.org/">kept</a> and (https://paren.org).</p>'
+        ctx = {"bag": {"write.list": {"plan": {"pages": [{"slug": "about", "title": "About"}]}, "pages": ["about"]},
+                       "write.page": [{"title": "About", "body_html": body}]}, "how": {}}
+        out = R.write_file(ctx, {"id": "write.file"}, None)
+        html = json.loads(out["files"]["about.html"])["body_html"]
+        self.assertIn('<a href="https://example.com/x/y?z=1">https://example.com/x/y?z=1</a>.', html)
+        self.assertIn('<a href="https://paren.org">https://paren.org</a>)', html)
+        self.assertEqual(html.count('href="https://kept.org/"'), 1, html)
+        self.assertNotIn('<a href="<a', html)
+
+    def test_99_audit_reads_what_the_engines_filed_and_the_holes_go_to_the_engine_that_reaches_the_internet(self):
+        """Finding 41: Audit read the Brief only and asked to 'put right' sourced facts; the facts question asked the person for
+        fees an engine could find. The judge reads the filed artifacts; the holes are put to the web engine, once."""
+        W, R = self.W, self.R
+        self.lib_copy()
+        self.live()
+        self.web_engine()
+        self.M.holes = True
+        self.ask("Build the site from what you found.")
+        judge = [p for s, p in self.M.prompts if s == "audit.judge"][-1]
+        self.assertIn("WHAT THE DEPARTMENT'S OWN ENGINES FILED", judge)
+        self.assertIn("Web Facts (v", judge)
+        lines = [t["line"] for t in R.chat_view(REF)["turns"]]
+        facts = [x for x in lines if x.startswith("The site says it does not know")]
+        self.assertTrue(facts, lines[-4:])
+        self.assertTrue(any("I have asked Web Facts to look them up" in x for x in facts), facts)
+        self.assertFalse(any("Tell me here" in x for x in facts[:1]), facts[0])
+        look = [v for v in W.versions(REF, "Brief") if "Look up:" in W.read_files(REF, "Brief", v["v"]).get("brief.md", "")]
+        self.assertEqual(len(look), 1, "the holes are put to the engine once, not on every audit")
+
+    def test_100_what_came_of_words_said_to_a_function_lands_in_its_chat(self):
+        """Finding 43: 'Put the top three first.' said to Priority; the plan and the live tells landed only in the department
+        chat. A tell of the line carries its chain, and the function's chat shows the tells of the chains its words started."""
+        W, R = self.W, self.R
+        self.live()
+        W.owner_ask(REF, "Put the top three first.", about="fn:priority")
+        self.idle()
+        turns = R.fn_chat_view(REF, "priority")["turns"]
+        words = [t["word"] for t in turns if not t["think"]]
+        self.assertIn("request", words, "the words and 'filed in the Brief'")
+        self.assertIn("live", words, [t["line"] for t in turns][-6:])
+        other = R.fn_chat_view(REF, "audit")["turns"]
+        self.assertNotIn("live", [t["word"] for t in other if not t["think"]], "a chain another function's words started stays out")
+
+    def test_101_the_hole_reader_skips_the_navigation_and_the_links(self):
+        """Finding 44 (27 again): 'the page says Top 5 List How the Order Was Chosen Sources Still To Be Confirmed': the nav's
+        link text read as a gap."""
+        R = self.R
+        nav = '<nav><a href="a.html">Sources</a> <a href="b.html">Still To Be Confirmed</a></nav><header><h1>Doctors</h1></header>'
+        self.assertEqual(R.placeholders({"a.html": nav + "<main><p>All good here.</p></main>"}), [])
+        holes = R.placeholders({"a.html": nav + "<main><p>Fees and timings are to be confirmed.</p></main>"})
+        self.assertEqual(len(holes), 1, holes)
+        self.assertIn("Fees and timings are to be confirmed", holes[0]["claim"])
+
+    def test_102_words_identitys_take_calls_a_rule_are_filed_as_a_rule_not_as_a_request(self):
+        """Finding 45: 'Nothing goes on the site without a source line under it.' was asked for with 'Put them on the site as
+        said?' and, stamped, went into the Brief under Asked since; the map's rules never changed."""
+        W, R = self.W, self.R
+        self.live()
+        words = "Nothing goes on the site without a source line under it."
+        line = "Nothing goes on the site without a source line under it"
+        self.M.rules[words] = {"line": line, "tag": "always"}
+        briefs = len(W.versions(REF, "Brief"))
+        self.ask(words)
+        a = next(x for x in W.asks(REF) if x["kind"] == "rule" and x["status"] == "pending")
+        self.assertEqual(a["text"], "A rule, as understood: " + line)
+        self.assertFalse([x for x in W.asks(REF) if x["kind"] == "request" and x["status"] == "pending"], "no request ask on a rule")
+        self.assertEqual(len(W.versions(REF, "Brief")), briefs, "a rule is not an ask of the line")
+        self.stamp("rule")
+        self.idle()
+        self.assertIn(line, [r["line"] for r in W.dept(REF)["rules"]])
+
+    def test_103_an_engine_that_reads_the_brief_runs_again_only_when_the_words_ask_for_its_work(self):
+        """Finding 38: four web searches in one run, one asked for. A born engine's need step reads whether the new words ask
+        for its work; the first run asks nothing, having nothing filed yet."""
+        W, R = self.W, self.R
+        self.lib_copy()
+        self.live()
+        self.web_engine()
+        self.assertEqual([s for s, _ in self.M.prompts if s == "web-facts.need"], [], "the first run had nothing to weigh the words against")
+        self.M.need = False
+        plans = len(W.versions(REF, "Site plan"))
+        self.ask("Put the top three first.")
+        self.assertEqual(len(W.versions(REF, "Web Facts")), 1, "no second search for words about order")
+        row = [r for r in W.runs(REF) if r["engine"] == "Web Facts"][-1]
+        self.assertEqual(row["status"], "ok", row)
+        self.assertTrue(str(row.get("what")).startswith("not needed: "), row)
+        self.assertGreater(len(W.versions(REF, "Site plan")), plans, "the line went on and Plan read the last filing")
+        self.assertEqual(len([s for s, _ in self.M.prompts if s == "web-facts.need"]), 1)
+
+    def test_104_a_search_that_runs_again_reads_what_it_filed_last_time(self):
+        """Finding 46: each re-run replaced the record; v4 of the site drew on three sources where v1 had four. The make step
+        is shown the last result and told to keep what holds, add what is new and name what it dropped."""
+        W, R = self.W, self.R
+        self.lib_copy()
+        self.live()
+        self.web_engine()
+        self.ask("Find their fees too.")
+        self.assertEqual(len(W.versions(REF, "Web Facts")), 2)
+        make = [p for s, p in self.M.prompts if s == "web-facts.make"][-1]
+        self.assertIn("WHAT YOU FILED LAST TIME (v1):", make)
+        self.assertIn("Done, in words:", make, "the last result's text is in the prompt")
+        self.assertIn("under a line 'Dropped'", make)
+        first = [p for s, p in self.M.prompts if s == "web-facts.make"][0]
+        self.assertNotIn("WHAT YOU FILED LAST TIME", first)
 
 
 if __name__ == "__main__":
