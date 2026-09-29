@@ -1579,8 +1579,11 @@ def identity_gate(ctx, step, item):
     elif name == "Setup":
         words = W.read_files(ref, "Request", inp["v"]).get("request.md", "").strip()
         kind = "setup"
-        objective = "say whether Root may set up this department: " + words[:300]
-        text = "Set up a department: " + words[:200]
+        # one line, not the whole goal back (found live 2026-09-29: a five-line ask, stamped blind)
+        head = re.split(r"(?<=[.!?])\s", words.strip(), maxsplit=1)[0]
+        head = head if len(head) <= 120 else head[:117].rsplit(" ", 1)[0] + "..."
+        objective = "say whether Root may set up a department for this: " + head
+        text = "Set up a department for: " + head
         may_read, about = ["Request"], {"art": "Request", "v": inp["v"]}
     else:
         return "admit", None
@@ -1875,6 +1878,17 @@ def identity_file(ctx, step, item):
     verdict, why = out.get("verdict"), str(out.get("why") or "")
     first = ctx["bag"]["identity.read"]["facts"]["first"]
     needs = [n for n in (out.get("needs") or []) if isinstance(n, str)]
+    # what the person said they are not sure of stays out until they say (found live 2026-09-29: two unsure facts became
+    # a page and went live; the question came after): the Brief says so, and the person is asked now
+    unsure = [" ".join(str(u).split()) for u in (out.get("unsure") or []) if isinstance(u, str) and str(u).strip()] if d.get("kind") != "root" else []
+    filed = words + (("\n\nNot confirmed (the owner is not sure; leave these out until the owner confirms them): " + "; ".join(unsure) + ".") if unsure else "")
+
+    def ask_unsure():
+        if unsure:
+            _tell(ref, d, p, "inform", {"word": "facts", "holes": len(unsure),
+                                        "done": "You said you are not sure of: %s. Say which are right and I will put them in; until then they stay out."
+                                        % "; ".join(unsure)})
+
     if verdict == "go" and "internet" in needs and not _has_web(d):
         # Identity's agent says the words need the internet and no engine of the department reaches it: the product's
         # answer is an engine (its own Adaptation shapes one, the owner stamps it), never a page that says "to be
@@ -1884,14 +1898,18 @@ def identity_file(ctx, step, item):
                                                         "may_read": ["Brief"], "boundaries": "nothing is built before the owner commits",
                                                         "for": p["thread"]})
         if first:
-            row = _file_words(ref, d, words, "the owner's goal")
+            row = _file_words(ref, d, filed, "the owner's goal")
             _tell(ref, d, p, "inform", {"word": "request", "done": "filed in the %s; no engine of mine reaches the internet yet, so Adaptation is shaping one, and an ask to add it follows" % W.artifacts_of(d)[0], "v": row["v"]}, thread=p["thread"])
+            ask_unsure()
             return {"said": "took the owner's goal, and passed its ask for the internet to Adaptation", "filed": row["v"]}
         _tell(ref, d, p, "inform", {"word": "request", "done": "no engine of mine reaches the internet yet; Adaptation is shaping one, and an ask to add it follows"}, thread=p["thread"])
         return {"said": "passed the words to Adaptation: they ask for the internet, which no engine reaches", "journey": journey}
     if verdict == "go":
-        row = _file_words(ref, d, words, "the owner's goal" if first else "the owner's ask")
+        row = _file_words(ref, d, filed, "the owner's goal" if first else "the owner's ask")
         _tell(ref, d, p, "inform", {"word": "request", "done": "filed in the %s" % W.artifacts_of(d)[0], "v": row["v"]}, thread=p["thread"])
+        ask_unsure()
+        if unsure:
+            return {"said": "took the owner's words, leaving out what they are not sure of, and asked: " + "; ".join(unsure), "filed": row["v"]}
         return {"said": "took the owner's words: " + words, "filed": row["v"]}
     if verdict == "ask":
         # in the person's words: what reaches outside, and what a stamp does (found live 2026-09-28: the person's own
@@ -2072,9 +2090,15 @@ def fn_chat_view(ref, fn):
         turns.append({"n": None, "src": name, "dst": [], "msg_type": "step", "at": at, "thread": r.get("run"), "word": r.get("step"),
                       "line": line, "think": True, "_k": (str(at), read if read is not None else 10 ** 9, 1)})
     turns.sort(key=lambda t: t["_k"])
+    folded = []
     for t in turns:
         del t["_k"]
-    return {"fn": name, "dept": ref, "name": d.get("name"), "turns": turns, "any": bool(turns)}
+        # the same thought twice in a row is one line (found live 2026-09-29: "Gate the effect by rule: admit" three times)
+        if t["think"] and folded and folded[-1]["think"] and folded[-1]["line"] == t["line"]:
+            folded[-1]["at"] = t["at"]
+            continue
+        folded.append(t)
+    return {"fn": name, "dept": ref, "name": d.get("name"), "turns": folded, "any": bool(folded)}
 
 
 def chat_view(ref, about=None):
@@ -2904,17 +2928,18 @@ def d_check_rules(ctx, step, item):
 def p_identity_take(ctx, step, item):
     d, got = ctx["dept"], ctx["bag"]["identity.read"]
     return ("Judge one request from the owner.\nTHE GOAL: %s\nTHE RULES: %s\nTHE REQUEST: %s\nREAD BY CODE: %s\n\n"
-            "Return ONLY a JSON object, no prose: {\"verdict\": \"go\" | \"ask\" | \"refuse\", \"why\": \"one line\", \"needs\": [str]}. "
-            "go: it is inside the goal and stays inside the site. ask: it would reach outside the site, or the goal does not "
-            "cover it. refuse: it breaks a rule. needs: what doing it takes that a department may not have, from this list: %s; "
-            "[] when nothing."
+            "Return ONLY a JSON object, no prose: {\"verdict\": \"go\" | \"ask\" | \"refuse\", \"why\": \"one line\", \"needs\": [str], "
+            "\"unsure\": [str]}. go: it is inside the goal and stays inside the site. ask: it would reach outside the site, or the "
+            "goal does not cover it. refuse: it breaks a rule. needs: what doing it takes that a department may not have, from this "
+            "list: %s; [] when nothing. unsure: the facts the request itself says the owner is not sure of, each in a few words; "
+            "[] when none."
             % (d.get("goal"), "; ".join(r["line"] for r in d.get("rules") or []), got["words"], json.dumps(got["facts"]), ", ".join(NEEDS)))
 
 
 def d_identity_take(ctx, step, item):
     f = ctx["bag"]["identity.read"]["facts"]
     return {"verdict": "ask" if f["leaves_site"] else "go", "why": "it reaches outside the site" if f["leaves_site"] else "inside the goal",
-            "needs": []}
+            "needs": [], "unsure": []}
 
 
 def p_identity_gate(ctx, step, item):

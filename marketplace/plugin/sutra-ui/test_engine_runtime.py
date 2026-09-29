@@ -102,7 +102,10 @@ class Model:
         if sid == "identity.take":
             words = prompt.split("THE REQUEST: ", 1)[1].split("\n", 1)[0]
             v = self.verdicts.get(words) or ("ask" if "email" in words.lower() else "go")
-            return {"verdict": v, "why": "judged", "needs": ["internet"] if "internet" in words.lower() else []}, 0.01, "model"
+            unsure = [u.strip() for u in words.split("not sure of:", 1)[1].split(".", 1)[0].split(";")] if "not sure of:" in words else []
+            low = words.lower()
+            needs = ["internet"] if "internet" in low and any(w in low for w in ("find", "look", "search")) else []
+            return {"verdict": v, "why": "judged", "needs": needs, "unsure": unsure}, 0.01, "model"
         if sid == "identity.judge":
             return {"verdict": "admit", "why": "the rules allow it"}, 0.01, "model"
         if sid == "priority.bargain":
@@ -906,6 +909,36 @@ class TestWhatTheOwnerSees(Base):
             R.TEMPLATES_DIR = prior
             R._DEFS.clear()
             shutil.rmtree(lib, ignore_errors=True)
+
+    def test_91_what_the_person_is_not_sure_of_stays_out_and_is_asked_about_before_anything_is_built_from_it(self):
+        """Run 1 finding 22 (2026-09-29): two facts the person said they were not sure of became a page and went live; the
+        question came after. Identity's own take step names them; the Brief carries them as not confirmed; the person is
+        asked in the chat at once; their answer is the facts (finding 16's flow) and the line builds with them."""
+        W, R = self.W, self.R
+        W.give_goal(REF, GOAL + " The internet also says two things I am not sure of: Angel One; a University of Tokyo profile.")
+        self.idle()
+        brief = W.read_files(REF, "Brief", 1).get("brief.md", "")
+        self.assertIn("Not confirmed (the owner is not sure; leave these out until the owner confirms them): Angel One; a University of Tokyo profile.", brief)
+        turns = R.chat_view(REF)["turns"]
+        asked = [t for t in turns if t.get("word") == "facts"]
+        self.assertTrue(asked and asked[0]["line"].startswith("You said you are not sure of: Angel One; a University of Tokyo profile. Say which are right"), [t["line"] for t in turns])
+        self.assertLess([i for i, t in enumerate(turns) if t.get("word") == "facts"][0], len(turns), "asked before the first publish ask, not after the site is live")
+        self.assertIn("Not confirmed", [p for s, p in self.M.prompts if s == "plan.pages"][-1], "Plan is told what stays out")
+        self.assertFalse([t for t in turns if t.get("word") == "publish" and t["n"] < asked[0]["n"]], "the question came before the publish ask")
+
+    def test_92_the_same_thought_twice_in_a_row_is_one_line_of_a_functions_chat(self):
+        """Run 1 finding 26: 'Gate the effect by rule: admit' three times in a row in Identity's chat. Identical neighbouring
+        thinking lines fold into one, the last one's time; different ones, and the person's words, are untouched."""
+        W, R = self.W, self.R
+        self.live()
+        self.ask("Add a careers page")
+        turns = R.fn_chat_view(REF, "identity")["turns"]
+        thinks = [t["line"] for t in turns if t["think"]]
+        self.assertTrue(any("Gate the effect by rule" in x for x in thinks), "the gate rows are there")
+        for a, b in zip(turns, turns[1:]):
+            self.assertFalse(a["think"] and b["think"] and a["line"] == b["line"], "twice in a row: " + a["line"])
+        raw = [r for r in R.step_rows(REF) if r["engine"] == "Identity" and r.get("mode") == "gate" and r.get("answer") == "admit"]
+        self.assertGreater(len(raw), len([x for x in thinks if x == "Gate the effect by rule: admit"]), "the record keeps every row; the chat folds")
 
     def test_90_a_step_with_tools_hands_them_to_the_model_and_nothing_else(self):
         """The model reaches the internet through its own web tools and nothing else: a step names them, model_json passes
