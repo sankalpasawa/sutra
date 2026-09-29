@@ -1,6 +1,14 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-28
+## 2.306.17 (2026-09-29)
+
+## Sutra Desktop: an engine you added survives the update
+
+- an engine born from your idea now lives with your records, not inside the app, so an update keeps it; a department whose engine the app can no longer find says so on its card and in Health instead of failing to open
+- first words that name nothing to build from ("New website") get one question back, what the site is for and about whom, before anything is planned
+- with 2.306.16: the line waits for the engine your words need; an added engine weighs new words before searching again; Audit reads what your engines filed; a function's chat keeps you there
+
 ## 2.306.16 (2026-09-28)
 
 - **A correct agent answer at classify is applied instead of refused for its rank**: the three acts were on a stringency ladder, so an ASSERT ranked below a QUERY and a right answer lost. They sit on ONE rung now - an assertion is not below a question - and the more confident answer wins, in either direction, with an answer that is not an act still refused. Found live: the classifier read \"as expexted\" as a QUERY with no evidence at 0.2, the agent answered ASSERT at 0.8 with its reason, and the ladder threw it away. Tests: test-tier 62.
