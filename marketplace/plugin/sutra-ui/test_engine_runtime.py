@@ -898,11 +898,11 @@ class TestWhatTheOwnerSees(Base):
             self.live()
             briefs = len(W.versions(REF, "Brief"))
             self.ask("Find on the internet what the hospital does and who its doctors are, and build only from that.")
-            self.assertEqual(len(W.versions(REF, "Brief")), briefs, "words no engine can meet are not filed as an ask")
-            lines = [t["line"] for t in R.chat_view(REF)["turns"]]
-            self.assertTrue(any("no engine of mine reaches the internet yet" in line for line in lines), lines[-3:])
+            self.assertEqual(len(W.versions(REF, "Brief")), briefs + 1, "the internet is a given: words that ask for it are filed like any other")
+            self.assertFalse([x for x in W.asks(REF) if x["status"] == "pending"], "no ask and no engine ceremony for reading the web")
+            self.ask("What if you found on the internet what the hospital does and who its doctors are.")
             a = next(x for x in W.asks(REF) if x["kind"] == "engine" and x["status"] == "pending")
-            self.assertEqual(a["engine"], "Web Facts")
+            self.assertEqual(a["engine"], "Web Facts", "an idea still shapes an engine")
             self.stamp("engine")
             self.idle()
             t = json.loads((R.user_templates_dir() / "web-facts.json").read_text(encoding="utf-8"))
@@ -911,7 +911,7 @@ class TestWhatTheOwnerSees(Base):
             self.assertEqual(W.dept(REF)["engines"][0], "Web Facts", "it reads the Brief, so it goes first")
             v = W.versions(REF, "Web Facts")
             self.assertTrue(v, "it ran on the Brief at once, without new words")
-            self.assertIn("You have web search and web fetch", [p for s, p in self.M.prompts if s == "web-facts.make"][-1])
+            self.assertIn("You can search the web and open pages", [p for s, p in self.M.prompts if s == "web-facts.make"][-1])
             lines = [t["line"] for t in R.chat_view(REF)["turns"]]
             self.assertIn("Web Facts v1 is filed.", lines, "the person is told what their engine filed")
             self.ask("Build the site from what you found.")
@@ -956,10 +956,10 @@ class TestWhatTheOwnerSees(Base):
         raw = [r for r in R.step_rows(REF) if r["engine"] == "Identity" and r.get("mode") == "gate" and r.get("answer") == "admit"]
         self.assertGreater(len(raw), len([x for x in thinks if x == "Gate the effect by rule: admit"]), "the record keeps every row; the chat folds")
 
-    def test_93_a_stamp_on_an_ask_that_needs_the_internet_shapes_the_engine_and_files_no_brief_ask(self):
-        """Run 2 finding 29 (2026-09-29): Identity's agent said the words reach outside the site and asked for a stamp;
-        the stamp filed them as a Brief ask and the site came back 'to be confirmed'. What the ask needs rides on the
-        ask row, the ask says what a stamp does here, and the stamp hands the words to Adaptation."""
+    def test_93_an_ask_never_says_the_words_need_the_internet_and_the_stamp_files_them(self):
+        """Run 2 finding 29 and the founder's word of 2026-09-29 ('Internet is given ... I don't want to lose all the basic
+        features of agents'): an ask carries no needs and never says the words need the internet; the stamp files the
+        words for the line, whose agents read the web themselves; no engine ceremony for reading."""
         W, R = self.W, self.R
         self.live()
         words = "Find on the internet what the hospital does and who its doctors are, and build only from that."
@@ -967,17 +967,23 @@ class TestWhatTheOwnerSees(Base):
         briefs = len(W.versions(REF, "Brief"))
         self.ask(words)
         a = next(x for x in W.asks(REF) if x["kind"] == "request" and x["status"] == "pending")
-        self.assertEqual(a["needs"], ["internet"], "what the ask needs is on its row")
-        self.assertTrue(a["text"].startswith("Your words need internet, which no engine of mine reaches"), a["text"])
-        self.assertIn("Stamp to have one shaped and put to you", a["text"])
-        self.assertNotIn("Put them on the site as said", a["text"], "not the email wording (finding 30)")
+        self.assertEqual(a["needs"], [])
+        self.assertTrue(a["text"].startswith("Your words reach outside the site"), a["text"])
+        self.assertNotIn("need internet", a["text"])
         self.stamp("request")
         self.idle()
-        self.assertEqual(len(W.versions(REF, "Brief")), briefs, "the stamp filed no Brief ask")
-        lines = [t["line"] for t in R.chat_view(REF)["turns"]]
-        self.assertTrue(any("no engine of mine reaches internet yet; Adaptation is shaping one" in line for line in lines), lines[-3:])
-        e = next(x for x in W.asks(REF) if x["kind"] == "engine" and x["status"] == "pending")
-        self.assertEqual(e["engine"], "Web Facts", "and the engine ask followed")
+        self.assertEqual(len(W.versions(REF, "Brief")), briefs + 1, "the stamp files the words")
+        self.assertFalse([x for x in W.asks(REF) if x["kind"] == "engine"], "no engine ask for reading the web")
+        seen = {}
+        real = W.model_json
+        W.model_json = lambda prompt, timeout=0, tools=None: seen.setdefault("tools", tools) or ({"text": "ok"}, 0.0, "model")
+        R.MODEL = None
+        try:
+            R.call_model("say ok", {"id": "plan.pages"})
+        finally:
+            W.model_json = real
+            R.MODEL = self.M
+        self.assertEqual(seen["tools"], ["WebSearch", "WebFetch"], "every agent step is handed the web tools")
 
     def test_94_priority_is_shown_the_engine_offer_and_its_refusal_is_told(self):
         """Run 2 findings 32 and 33: Priority's agent was shown an engine offer as a rung proposal's empty fields and
@@ -2097,9 +2103,12 @@ class TestRunThree(Base):
             self.R._DEFS.clear()
         super().tearDown()
 
+    IDEA = "What if you found on the internet what the hospital does and who its doctors are."
+
     def web_engine(self):
-        """As the user: the words ask for the internet, the engine is stamped, it files on the Brief at once."""
-        self.ask(self.WEB)
+        """As the user: an idea floated in the chat; Adaptation shapes the engine, Priority prices it, the owner stamps it;
+        it files on the Brief at once (the internet itself is a given: this path is for a new capability, not for reading)."""
+        self.ask(self.IDEA)
         self.stamp("engine")
         self.idle()
         self.assertEqual(len(self.W.versions(REF, "Web Facts")), 1)
@@ -2109,10 +2118,12 @@ class TestRunThree(Base):
         its publish ask came the second the engine filed. The line waits for the stamp, and the person is told once."""
         W, R = self.W, self.R
         self.lib_copy()
-        W.give_goal(REF, self.WEB)
-        self.idle()
+        self.live()
+        self.ask(self.IDEA)
         self.assertTrue([x for x in W.asks(REF) if x["kind"] == "engine" and x["status"] == "pending"], "the engine ask is up")
-        self.assertEqual(W.versions(REF, "Site plan"), [], "nothing planned from a Brief whose need is unmet")
+        plans = len(W.versions(REF, "Site plan"))
+        self.ask("Add a page for careers.")
+        self.assertEqual(len(W.versions(REF, "Site plan")), plans, "nothing planned while the engine ask waits")
         name, _, why = R.next_due(REF, peek=True)
         self.assertEqual((name, why), (None, "waits for the stamp on Web Facts"))
         lines = [t["line"] for t in R.chat_view(REF)["turns"]]
@@ -2121,7 +2132,7 @@ class TestRunThree(Base):
         self.stamp("engine")
         self.idle()
         self.assertTrue(W.versions(REF, "Web Facts"), "after the stamp the engine ran")
-        self.assertTrue(W.versions(REF, "Site plan"), "and the line followed")
+        self.assertGreater(len(W.versions(REF, "Site plan")), plans, "and the line followed")
 
     def test_97_the_working_line_follows_the_engines_step(self):
         """Finding 35: 'Source Reader is working: reading Brief' for the whole 90 s search. The run row's what is the step's name."""

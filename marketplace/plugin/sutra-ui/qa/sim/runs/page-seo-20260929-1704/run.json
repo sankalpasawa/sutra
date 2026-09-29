@@ -1,0 +1,11 @@
+{
+ "goal": "page-seo",
+ "person": "founder",
+ "panel": "http://127.0.0.1:8331",
+ "app_version": "2.306.17",
+ "note": "started on the app from source (8341) at 17:04; the browser extension lost its permission for 127.0.0.1 when its tab group died, so the run moved to the Beta on 2.306.17 at 17:40 and the person's acts go through the app's own front door (the calls the buttons make: found, asks/<id>, ask) until the browser is allowed again; screen findings are not observed in that stretch",
+ "started": "2026-09-29T17:04:02+0530",
+ "ledger": "ledger.jsonl",
+ "findings": "findings.jsonl",
+ "report": "report.md"
+}

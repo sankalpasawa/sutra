@@ -1346,7 +1346,9 @@ def call_model(prompt, step):
         return MODEL(prompt, step)
     if os.environ.get("SUTRA_WEBSITE_OFFLINE") == "1":
         return None, 0.0, "offline"
-    return W.model_json(prompt, timeout=int(step.get("timeout_s") or W.MODEL_TIMEOUT_S), tools=step.get("tools"))
+    # the internet is a given: every agent step may search and fetch (founder, 2026-09-29: "Internet is given ... I don't
+    # want to lose all the basic features of agents"); a step's own list narrows it, never widens it
+    return W.model_json(prompt, timeout=int(step.get("timeout_s") or W.MODEL_TIMEOUT_S), tools=step.get("tools") or list(W.MODEL_TOOLS))
 
 
 def _fits(out, step):
@@ -2001,21 +2003,8 @@ def identity_file(ctx, step, item):
                                      "boundaries": "this department, until the owner says otherwise"}, thread=p["thread"])
         return {"said": "restated the owner's words as a rule and put them back: " + line}
 
-    if verdict == "go" and "internet" in needs and not _has_web(d):
-        # Identity's agent says the words need the internet and no engine of the department reaches it: the product's
-        # answer is an engine (its own Adaptation shapes one, the owner stamps it), never a page that says "to be
-        # confirmed" (founder, 2026-09-29: "I want the data to be fetched from the internet by the department")
-        post(ref, "Identity", "Adaptation", "request", {"word": "idea", "words": words, "objective": "shape the engine these words ask for and park it",
-                                                        "output": "the idea reflected back, in two or three shapes",
-                                                        "may_read": ["Brief"], "boundaries": "nothing is built before the owner commits",
-                                                        "for": p["thread"]})
-        if first:
-            row = _file_words(ref, d, filed, "the owner's goal")
-            _tell(ref, d, p, "inform", {"word": "request", "done": "filed in the %s; no engine of mine reaches the internet yet, so Adaptation is shaping one, and an ask to add it follows" % W.artifacts_of(d)[0], "v": row["v"]}, thread=p["thread"])
-            ask_unsure()
-            return {"said": "took the owner's goal, and passed its ask for the internet to Adaptation", "filed": row["v"]}
-        _tell(ref, d, p, "inform", {"word": "request", "done": "no engine of mine reaches the internet yet; Adaptation is shaping one, and an ask to add it follows"}, thread=p["thread"])
-        return {"said": "passed the words to Adaptation: they ask for the internet, which no engine reaches", "journey": journey}
+    # the internet is a given (founder, 2026-09-29): words that ask for it are filed like any other, and every agent step
+    # can search and open pages; an engine is shaped only from an idea (the new-idea journey), never for reading the web
     if verdict == "go":
         row = _file_words(ref, d, filed, "the owner's goal" if first else "the owner's ask")
         _tell(ref, d, p, "inform", {"word": "request", "done": "filed in the %s" % W.artifacts_of(d)[0], "v": row["v"]}, thread=p["thread"])
@@ -2028,15 +2017,10 @@ def identity_file(ctx, step, item):
         # address came back as "This reaches outside the site"); an ask that needs something no engine has says what a
         # stamp does here: the department gets an engine for it (found live 2026-09-29: the email wording on a search)
         reach = _reaches(words, why)
-        wanting = [n for n in needs if n in NEEDS and (n != "internet" or not _has_web(d))]
-        if wanting:
-            lead = "Your words need %s, which no engine of mine reaches%s. Stamp to have one shaped and put to you, Refuse to leave it." % (
-                " and ".join(wanting), (": " + why.rstrip(".")) if why else "")
-        else:
-            lead = "Your words reach outside the site%s. Put them on the site as said? Stamp to go ahead, Refuse to leave them out." % (
-                (": " + reach) if reach else "")
+        lead = "Your words reach outside the site%s. Put them on the site as said? Stamp to go ahead, Refuse to leave them out." % (
+            (": " + reach) if reach else "")
         W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "request", "engine": "Identity", "slot": ctx["slot"],
-                         "text": lead + " " + words, "why": why, "words": words, "needs": wanting, "status": "pending",
+                         "text": lead + " " + words, "why": why, "words": words, "needs": [], "status": "pending",
                          "created": W.now(), "thread": p["thread"]})
         _tell(ref, d, p, "request", {"word": "request", "objective": lead,
                                      "output": "a stamp or a refusal", "may_read": ["Brief"], "boundaries": words,
@@ -2320,18 +2304,6 @@ def identity_apply(ctx, step, item):
         post(ref, "Identity", "Adaptation", "inform", {"word": "rung", "step": a["step"], "to": a["to"], "stamped": True})
         return {"said": "moved a step, on the owner's stamp: " + a["text"]}
     if a.get("kind") == "request":
-        wanting = [n for n in (a.get("needs") or []) if n in NEEDS and (n != "internet" or not _has_web(ctx["dept"]))]
-        if wanting:
-            # the stamp on an ask that needs what no engine reaches: the words go to Adaptation, which shapes the engine
-            # (found live 2026-09-29: the stamp filed them as a Brief ask and the site came back "to be confirmed")
-            words = a.get("words") or ""
-            post(ref, "Identity", "Adaptation", "request", {"word": "idea", "words": words, "objective": "shape the engine these words ask for and park it",
-                                                            "output": "the idea reflected back, in two or three shapes",
-                                                            "may_read": ["Brief"], "boundaries": "nothing is built before the owner commits",
-                                                            "for": a.get("thread")})
-            _tell(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER}, "inform",
-                  {"word": "request", "done": "no engine of mine reaches %s yet; Adaptation is shaping one, and an ask to add it follows" % " and ".join(wanting)})
-            return {"said": "took the owner's stamp: the words need %s, so Adaptation shapes the engine" % " and ".join(wanting)}
         row = _file_brief(ref, ctx["dept"], a.get("words") or "", "the owner's ask, stamped")
         return {"said": "took the owner's words, stamped", "filed": row["v"]}
     if a.get("kind") == "rule":
@@ -2952,12 +2924,9 @@ NEEDS = {"internet": ("WebSearch", "WebFetch")}    # what an ask or an idea may 
 
 
 def _has_web(d):
-    """Whether any engine on the record reaches the internet (a step with tools)."""
-    for name in d.get("engines") or [x[0] for x in W.engines_of(d)]:
-        for s in all_steps(name):
-            if s.get("tools"):
-                return True
-    return False
+    """Every engine reaches the internet: the model's web tools go to every agent step (founder, 2026-09-29: "Internet is
+    given"). Kept as a name for the places that once asked."""
+    return True
 
 
 def _context_block(ref):
@@ -3024,9 +2993,8 @@ def c_need_is_answer(ctx, step, item, out):
 def p_do_make(ctx, step, item):
     ins = str(ctx["def"].get("instruction") or "").strip()
     got = ctx["bag"][_pre(step) + ".read"]
-    web = ("You have web search and web fetch: search several times in different words, open the pages that matter and read them; "
-           "keep only what a page actually says, and write each fact with the page's URL after it; what you could not confirm goes "
-           "under a line 'Not sure', with why. " if step.get("tools") else "")
+    web = ("You can search the web and open pages. When a page or a subject is named, read it and use what it says, with the "
+           "page's URL after each fact; what you could not confirm goes under a line 'Not sure'. ")
     # what was filed last time rides along: a run that runs again adds, or says what it dropped (found live 2026-09-29: each
     # re-run replaced the record; v4 of the site drew on three sources where v1 had four)
     last = ("WHAT YOU FILED LAST TIME (v%s):\n%s\n\nKeep what still holds, add what is new, and list under a line 'Dropped' what you "
@@ -3149,16 +3117,14 @@ def d_check_rules(ctx, step, item):
 def p_identity_take(ctx, step, item):
     d, got = ctx["dept"], ctx["bag"]["identity.read"]
     return ("Judge one request from the owner.\nTHE GOAL: %s\nTHE RULES: %s\nTHE REQUEST: %s\nREAD BY CODE: %s\n\n"
-            "Return ONLY a JSON object, no prose: {\"verdict\": \"go\" | \"ask\" | \"refuse\", \"why\": \"one line\", \"needs\": [str], "
-            "\"unsure\": [str], \"rule\": {\"line\": str, \"tag\": \"always\" | \"refuse\" | \"ask\"} | null}. go: it is inside the "
-            "goal and stays inside the site. ask: it would reach outside the site, or the goal does not cover it. refuse: it breaks a "
-            "rule. needs: what doing it takes that a department may not have, from this list: %s; [] when nothing. unsure: the facts "
-            "the request itself says the owner is not sure of, each in a few words; [] when none. rule: when the request states a "
-            "standing rule for the site or the department (what must always or never hold from now on, not one piece of work), the "
-            "rule in one line and its tag (always: do this; refuse: never do that; ask: ask the owner before); null otherwise. "
-            "thin: true when the request names no subject and no purpose to build from (nothing about whom or what it is for), so "
-            "nothing true could be made from it; false otherwise. Add \"thin\": bool to the object."
-            % (d.get("goal"), "; ".join(r["line"] for r in d.get("rules") or []), got["words"], json.dumps(got["facts"]), ", ".join(NEEDS)))
+            "Return ONLY a JSON object: {\"verdict\": \"go\" | \"ask\" | \"refuse\", \"why\": \"one line\", \"unsure\": [str], "
+            "\"rule\": {\"line\": str, \"tag\": \"always\" | \"refuse\" | \"ask\"} | null, \"thin\": bool}.\n"
+            "go: do it. ask: it reaches outside what the department makes (money, a message to someone, a change to the goal), so "
+            "the owner stamps first. refuse: it breaks a rule. Reading the web is not outside: the department can read any page.\n"
+            "unsure: facts the request says the owner is not sure of, in a few words each; [] when none.\n"
+            "rule: a standing rule the request states (always or never, from now on) with its tag; null when it is one piece of work.\n"
+            "thin: true when the request names nothing to build from (no subject, no purpose)."
+            % (d.get("goal"), "; ".join(r["line"] for r in d.get("rules") or []), got["words"], json.dumps(got["facts"])))
 
 
 def d_identity_take(ctx, step, item):
