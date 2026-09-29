@@ -144,6 +144,8 @@ def validate(d):
                     faults.append("%s: a soft step names the shape of its answer" % where)
             if not s.get("code") and not s.get("prompt"):
                 faults.append("%s: the step names neither code nor a prompt" % where)
+            if s.get("tools") is not None and (not isinstance(s["tools"], list) or any(t not in W.MODEL_TOOLS for t in s["tools"])):
+                faults.append("%s: tools are a list of %s" % (where, ", ".join(W.MODEL_TOOLS)))
             if mode in ("gate", "rule") and not s.get("code"):
                 faults.append("%s: a %s has its rule in code" % (where, mode))
     for src, acts in (d.get("edges") or {}).items():
@@ -1167,7 +1169,9 @@ def run_engine(ref, name, inp, slot):
                         "what": "%s from %s, check %s" % (e["writes"], e["reads"], "passed" if ok else "failed")})
             # the last artifact of the kind went out: the person is told in the chat, with the way to it (found live
             # 2026-09-28: after the publish stamp the chat said nothing)
-            if ok and e["writes"] == W.artifacts_of(ctx["dept"])[-1] and ctx["dept"].get("kind") != "root":   # Root's last artifact is a spawn, said by Setup
+            own = set((W.KINDS.get(ctx["dept"].get("kind") or "website") or {}).get("artifacts") or [])
+            # ... and so is what an engine the person added filed (its facts, its list): they asked for it, they hear of it
+            if ok and (e["writes"] == W.artifacts_of(ctx["dept"])[-1] or e["writes"] not in own) and ctx["dept"].get("kind") != "root":   # Root's last artifact is a spawn, said by Setup
                 try:
                     import artifacts
                     host = (ctx["dept"].get("host") or "").strip()
@@ -1300,7 +1304,7 @@ def call_model(prompt, step):
         return MODEL(prompt, step)
     if os.environ.get("SUTRA_WEBSITE_OFFLINE") == "1":
         return None, 0.0, "offline"
-    return W.model_json(prompt, timeout=int(step.get("timeout_s") or W.MODEL_TIMEOUT_S))
+    return W.model_json(prompt, timeout=int(step.get("timeout_s") or W.MODEL_TIMEOUT_S), tools=step.get("tools"))
 
 
 def _fits(out, step):
@@ -1869,8 +1873,24 @@ def identity_file(ctx, step, item):
         return {"said": "passed an idea to Adaptation: " + words, "journey": journey}
     out = ctx["bag"]["identity.take"]
     verdict, why = out.get("verdict"), str(out.get("why") or "")
+    first = ctx["bag"]["identity.read"]["facts"]["first"]
+    needs = [n for n in (out.get("needs") or []) if isinstance(n, str)]
+    if verdict == "go" and "internet" in needs and not _has_web(d):
+        # Identity's agent says the words need the internet and no engine of the department reaches it: the product's
+        # answer is an engine (its own Adaptation shapes one, the owner stamps it), never a page that says "to be
+        # confirmed" (founder, 2026-09-29: "I want the data to be fetched from the internet by the department")
+        post(ref, "Identity", "Adaptation", "request", {"word": "idea", "words": words, "objective": "shape the engine these words ask for and park it",
+                                                        "output": "the idea reflected back, in two or three shapes",
+                                                        "may_read": ["Brief"], "boundaries": "nothing is built before the owner commits",
+                                                        "for": p["thread"]})
+        if first:
+            row = _file_words(ref, d, words, "the owner's goal")
+            _tell(ref, d, p, "inform", {"word": "request", "done": "filed in the %s; no engine of mine reaches the internet yet, so Adaptation is shaping one, and an ask to add it follows" % W.artifacts_of(d)[0], "v": row["v"]}, thread=p["thread"])
+            return {"said": "took the owner's goal, and passed its ask for the internet to Adaptation", "filed": row["v"]}
+        _tell(ref, d, p, "inform", {"word": "request", "done": "no engine of mine reaches the internet yet; Adaptation is shaping one, and an ask to add it follows"}, thread=p["thread"])
+        return {"said": "passed the words to Adaptation: they ask for the internet, which no engine reaches", "journey": journey}
     if verdict == "go":
-        row = _file_words(ref, d, words, "the owner's goal" if ctx["bag"]["identity.read"]["facts"]["first"] else "the owner's ask")
+        row = _file_words(ref, d, words, "the owner's goal" if first else "the owner's ask")
         _tell(ref, d, p, "inform", {"word": "request", "done": "filed in the %s" % W.artifacts_of(d)[0], "v": row["v"]}, thread=p["thread"])
         return {"said": "took the owner's words: " + words, "filed": row["v"]}
     if verdict == "ask":
@@ -2523,15 +2543,6 @@ def library_kinds():
     return {k: str(v.get("use_case") or "") for k, v in W.KINDS.items() if k != "root"}
 
 
-def kind_for(words):
-    """The kind whose use case fits the words, by their plainest cue; default when none does (TPL-1: "if they match the
-    use case, then great. Otherwise ... there is a default one")."""
-    low = " ".join(str(words or "").lower().split())
-    if any(w in low for w in ("website", "web site", "site ", "web page", "webpage", "landing page", "homepage", "home page")) or low.endswith("site"):
-        return "website" if "website" in W.KINDS else "default"
-    return "default" if "default" in W.KINDS else "website"
-
-
 def setup_read(ctx, step, item):
     words = W.read_files(ctx["ref"], "Request", ctx["inp"]["v"]).get("request.md", "").strip()
     kinds = library_kinds()
@@ -2551,10 +2562,10 @@ def p_setup_shape(ctx, step, item):
 
 
 def d_setup_shape(ctx, step, item):
+    # the draft, when no agent is there to judge: the first build's kind; the agent's own step picks the kind by use case
     got = ctx["bag"]["setup.read"]
     org = (ctx["dept"].get("org") or {}).get("name") or ctx["dept"].get("name")
-    kind = kind_for(got["words"])
-    return {"name": "%s %s" % (org, "Website" if kind == "website" else "Department"), "kind": kind, "goal": got["words"]}
+    return {"name": "%s Website" % org, "kind": "website", "goal": got["words"]}
 
 
 def setup_make(ctx, step, item):
@@ -2587,40 +2598,24 @@ def c_department_is_made(ctx, step, item, out):
 
 # ---- an engine from an idea (TPL-1 slice 2, founder 2026-09-29: "the engines are supposed to be created by the five
 # functions of the department ... created on the fly, or there is a default one") ---------------------------------------
-_STOP = set("what if the a an and or of to for in on with my our we it its this that could would should be is are was do does "
-            "have has each every when then also just there here from into as by at one department site".split())
-
-
-def _content(words):
-    return {w for w in re.findall(r"[a-z0-9]+", str(words or "").lower()) if len(w) >= 4 and w not in _STOP}
-
-
-def engine_for_idea(ref, words, hint=None):
-    """Which engine an idea asks for: the Library engine template whose use case shares the most words with the idea
-    (two at least) and is not on the record yet, as a pick; else a shape from the idea (its name from the model's hint,
-    or the idea's first words), to be born from Do on the stamp; None when the idea holds no words an engine could do."""
+def engine_from_shape(ref, got, words):
+    """The engine Adaptation's agent named for an idea, checked by code and nothing more: a Library pick that exists, is
+    a work engine and is not on the record; else a shape (a name, what it does, what it needs, each need one the runtime
+    knows), to be born from Do on the stamp with the idea as its instruction; None when the agent named none."""
     d = W.dept(ref) or {}
     have = set(d.get("engines") or [x[0] for x in W.engines_of(d)])
-    hint = hint if isinstance(hint, dict) else {}
-    idea = _content(words) | _content(hint.get("does"))
-    if not idea:
+    pick = " ".join(str(got.get("pick") or "").split())
+    e = defs()["engines"].get(pick)
+    if pick and e and e.get("kind") == "work" and e.get("from_template") and pick not in have and pick != "Setup":
+        return {"pick": pick, "use_case": e.get("use_case"), "does": e.get("description")}
+    shape = got.get("engine") if isinstance(got.get("engine"), dict) else None
+    name = " ".join(str((shape or {}).get("name") or "").split())[:40]
+    if not shape or not name or name in have:
         return None
-    best, score = None, 0
-    for name, e in defs()["engines"].items():
-        if e.get("kind") != "work" or not e.get("from_template") or name in have or name == "Setup":
-            continue
-        s = len(idea & _content(e.get("use_case")))
-        if s > score:
-            best, score = name, s
-    if best and score >= 2:
-        e = defs()["engines"][best]
-        return {"pick": best, "use_case": e.get("use_case"), "does": e.get("description")}
-    name = " ".join(str(hint.get("name") or "").split())
-    if not name:
-        name = " ".join(w.title() for w in [w for w in re.findall(r"[a-z0-9]+", str(words or "").lower()) if w in idea][:2]) or "Helper"
-    does = str(hint.get("does") or words or "")
-    return {"shape": {"name": name[:40], "use_case": does[:300], "does": does[:200], "instruction": str(words or "")[:2000],
-                      "reads": "Brief", "writes": name[:40]}}
+    does = " ".join(str(shape.get("does") or "").split())
+    needs = [n for n in (shape.get("needs") or []) if isinstance(n, str) and n in NEEDS]
+    return {"shape": {"name": name, "use_case": (does or str(words or ""))[:300], "does": does[:200], "instruction": str(words or "")[:2000],
+                      "needs": needs, "reads": "Brief", "writes": name}}
 
 
 def born_template(name, shape, ref):
@@ -2642,6 +2637,15 @@ def born_template(name, shape, ref):
               "made_by": {"dept": ref, "at": W.now(), "idea": str(shape.get("instruction") or "")[:300]}})
     t["start"] = {"on": [{"kind": "version", "of": t["reads"]}], "unless": list((do.get("start") or {}).get("unless") or [])}
     t["steps"] = [dict(s, id=slug + "." + s["id"].split(".", 1)[1]) for s in do["steps"]]
+    needs = [n for n in (shape.get("needs") or []) if isinstance(n, str) and n in NEEDS]
+    tools = list(dict.fromkeys(tool for n in needs for tool in NEEDS[n]))
+    t["needs"] = needs
+    if tools:
+        # what the agent said the idea needs, met by the model's own tools: the make step gets them and the time they take
+        for s in t["steps"]:
+            if s.get("prompt"):
+                s["tools"] = tools
+                s["timeout_s"] = 600
     if not t["use_case"]:
         raise ValueError("an engine names its use case")
     p.write_text(json.dumps(t, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -2655,11 +2659,17 @@ def born_template(name, shape, ref):
     return p
 
 
-def grow_line(ref, name):
-    """Coordination's line, on the record, gains the engine; the born copy is written first for a department that had none."""
+def grow_line(ref, name, before=None):
+    """Coordination's line, on the record, gains the engine (before another when said, as Research goes before Plan); the
+    born copy is written first for a department that had none."""
     t = coordination(ref)
-    if name not in (t.get("line") or []):
-        t["line"] = list(t.get("line") or []) + [name]
+    line = list(t.get("line") or [])
+    if name not in line:
+        if before in line:
+            line.insert(line.index(before), name)
+        else:
+            line.append(name)
+        t["line"] = line
     t.update({"since": W.now(), "by": "stamp"})
     with W._lock(ref):
         W._write(W.ddir(ref) / "coordination.json", t)
@@ -2681,7 +2691,7 @@ def adapt_offer(ctx, step, item):
     """After an idea is parked, Adaptation offers the engine it asks for, if any: to Priority first, which prices it against
     the envelope; Identity puts it to the owner once Priority answers (adapt.priced). Nothing is added without the stamp."""
     ref, pl, got = ctx["ref"], ctx["post"]["payload"], ctx["bag"]["adapt.shape"]
-    offer = engine_for_idea(ref, pl.get("words"), got.get("engine"))
+    offer = engine_from_shape(ref, got, pl.get("words"))
     if not offer:
         return {"said": "the idea asks for no engine", "offer": None}
     name = offer.get("pick") or offer["shape"]["name"]
@@ -2726,6 +2736,42 @@ def identity_engine(ctx, step, item):
 
 # ---- Do: the default line, one answer filed (TPL-1, founder 2026-09-29: "otherwise ... there is a default one"); an engine
 # born from an idea runs these same three steps under its own ids, with its instruction ------------------------------------
+# ---- what the department's own engines filed, read by the line (founder, 2026-09-29: "I want the data to be fetched from
+# the internet by the department, not that we give it" and "obey the prompts so it builds everything as a user, as a
+# product"): nothing is hand-made for one case; an engine the person's idea brought in files under its own name, and Plan
+# and Write read the latest of every such artifact with the Brief --------------------------------------------------------
+NEEDS = {"internet": ("WebSearch", "WebFetch")}    # what an ask or an idea may need, and the model tools that meet it; closed
+
+
+def _has_web(d):
+    """Whether any engine on the record reaches the internet (a step with tools)."""
+    for name in d.get("engines") or [x[0] for x in W.engines_of(d)]:
+        for s in all_steps(name):
+            if s.get("tools"):
+                return True
+    return False
+
+
+def _context_block(ref):
+    """The latest text of every artifact on the record that the kind's own line did not name: what the engines the
+    person added have filed (their facts, their lists), for Plan and Write to build from and cite."""
+    d = W.dept(ref) or {}
+    own = set((W.KINDS.get(d.get("kind") or "website") or {}).get("artifacts") or [])
+    out = []
+    for a in W.artifacts_of(d):
+        if a in own:
+            continue
+        try:
+            cur = W.latest(ref, a)
+            files = W.read_files(ref, a, cur["v"]) if cur else {}
+        except Exception:  # noqa: BLE001 -- an artifact with no version yet
+            files = {}
+        text = "\n".join(str(v) for k, v in sorted(files.items()) if str(k).endswith((".md", ".txt", ".json"))).strip()
+        if text:
+            out.append("%s (v%d):\n%s" % (a, cur["v"], text[:8000]))
+    return ("\n\nWHAT THE DEPARTMENT'S OWN ENGINES FILED (build from it; say on the page where each fact came from):\n\n" + "\n\n".join(out)) if out else ""
+
+
 def _pre(step):
     return str(step["id"]).rsplit(".", 1)[0]
 
@@ -2738,11 +2784,14 @@ def do_read(ctx, step, item):
 
 def p_do_make(ctx, step, item):
     ins = str(ctx["def"].get("instruction") or "").strip()
-    return ("The department \"%s\" was asked for this, in its owner's words (the Brief):\n%s\n\n%sDo it as one written answer: what was "
+    web = ("You have web search and web fetch: search several times in different words, open the pages that matter and read them; "
+           "keep only what a page actually says, and write each fact with the page's URL after it; what you could not confirm goes "
+           "under a line 'Not sure', with why. " if step.get("tools") else "")
+    return ("The department \"%s\" was asked for this, in its owner's words (the Brief):\n%s\n\n%s%sDo it as one written answer: what was "
             "asked for, done as far as words can do it, in the owner's own language, nothing invented; where a fact is missing, say "
             "so. Return ONLY a JSON object: {\"text\": str}."
             % (ctx["dept"].get("name"), ctx["bag"][_pre(step) + ".read"]["brief"][:6000],
-               ("THIS ENGINE'S INSTRUCTION, FROM THE OWNER'S IDEA: %s\n\n" % ins) if ins else ""))
+               ("THIS ENGINE'S INSTRUCTION, FROM THE OWNER'S IDEA: %s\n\n" % ins) if ins else "", web))
 
 
 def d_do_make(ctx, step, item):
@@ -2793,7 +2842,7 @@ def p_plan_pages(ctx, step, item):
             "\"tagline\": str, \"palette\": {\"primary\": \"#hex\", \"accent\": \"#hex\"}, \"pages\": [{\"slug\": \"lowercase-hyphen\", "
             "\"title\": str, \"purpose\": str, \"sections\": [str]}]}. The first page's slug is index. Include every page "
             "the brief or an ask names. Six to ten pages. " + NOTHING_INVENTED +
-            "\n\nBRIEF:\n" + ctx["bag"]["plan.read"]["brief"])
+            "\n\nBRIEF:\n" + ctx["bag"]["plan.read"]["brief"] + _context_block(ctx["ref"]))
 
 
 def d_plan_pages(ctx, step, item):
@@ -2815,7 +2864,7 @@ def p_write_page(ctx, step, item):
             "<style>, no external images or links. Link to other pages as '<slug>.html' and only to slugs of this site. "
             + NOTHING_INVENTED +
             (("\n\nTHE OWNER'S RULES, EACH ONE MET HERE:\n- " + "\n- ".join(rules)) if rules else "") +
-            "\n\nTHE BRIEF, AND WHAT WAS ASKED SINCE:\n" + _brief_text(ctx["ref"]) +
+            "\n\nTHE BRIEF, AND WHAT WAS ASKED SINCE:\n" + _brief_text(ctx["ref"]) + _context_block(ctx["ref"]) +
             "\n\nTHE SITE:\n" + json.dumps(site) + "\n\nTHIS PAGE:\n" + json.dumps(page))
 
 
@@ -2855,15 +2904,17 @@ def d_check_rules(ctx, step, item):
 def p_identity_take(ctx, step, item):
     d, got = ctx["dept"], ctx["bag"]["identity.read"]
     return ("Judge one request from the owner.\nTHE GOAL: %s\nTHE RULES: %s\nTHE REQUEST: %s\nREAD BY CODE: %s\n\n"
-            "Return ONLY a JSON object, no prose: {\"verdict\": \"go\" | \"ask\" | \"refuse\", \"why\": \"one line\"}. "
+            "Return ONLY a JSON object, no prose: {\"verdict\": \"go\" | \"ask\" | \"refuse\", \"why\": \"one line\", \"needs\": [str]}. "
             "go: it is inside the goal and stays inside the site. ask: it would reach outside the site, or the goal does not "
-            "cover it. refuse: it breaks a rule."
-            % (d.get("goal"), "; ".join(r["line"] for r in d.get("rules") or []), got["words"], json.dumps(got["facts"])))
+            "cover it. refuse: it breaks a rule. needs: what doing it takes that a department may not have, from this list: %s; "
+            "[] when nothing."
+            % (d.get("goal"), "; ".join(r["line"] for r in d.get("rules") or []), got["words"], json.dumps(got["facts"]), ", ".join(NEEDS)))
 
 
 def d_identity_take(ctx, step, item):
     f = ctx["bag"]["identity.read"]["facts"]
-    return {"verdict": "ask" if f["leaves_site"] else "go", "why": "it reaches outside the site" if f["leaves_site"] else "inside the goal"}
+    return {"verdict": "ask" if f["leaves_site"] else "go", "why": "it reaches outside the site" if f["leaves_site"] else "inside the goal",
+            "needs": []}
 
 
 def p_identity_gate(ctx, step, item):
@@ -2982,19 +3033,24 @@ def d_identity_weigh(ctx, step, item):
 
 
 def p_adapt_shape(ctx, step, item):
-    pl = ctx["post"]["payload"]
+    pl, d = ctx["post"]["payload"], ctx["dept"]
+    have = set(d.get("engines") or [x[0] for x in W.engines_of(d)])
+    lib = "; ".join("%s: %s" % (n, e.get("use_case")) for n, e in defs()["engines"].items()
+                    if e.get("kind") == "work" and e.get("from_template") and n not in have and n != "Setup")
     return ("The owner floats an idea the department cannot do today. Do not plan a build. Reflect the idea back in sharper words, "
-            "name the question underneath it, and give two or three shapes it could take, smallest first. If the idea is something "
-            "the department could do each time on its own, name that engine: one or two words, and what it does in one line; else null."
-            "\nTHE GOAL: %s\nTHE IDEA: %s\n\nReturn ONLY a JSON object: {\"reflected\": str, \"question\": str, \"shapes\": [str, str, str], "
-            "\"engine\": {\"name\": str, \"does\": str} or null}."
-            % (ctx["dept"].get("goal"), pl.get("words")))
+            "name the question underneath it, and give two or three shapes it could take, smallest first. Then say what engine would "
+            "do it each time on its own: pick one from the Library below when its use case fits (pick), else shape one (engine: a name "
+            "of one or two words, what it does in one line, and what it needs from this list: %s); both null when the idea asks for "
+            "no engine.\nTHE GOAL: %s\nTHE IDEA: %s\nENGINES IN THE LIBRARY, NOT YET IN THIS DEPARTMENT: %s\n\n"
+            "Return ONLY a JSON object: {\"reflected\": str, \"question\": str, \"shapes\": [str, str, str], \"pick\": str or null, "
+            "\"engine\": {\"name\": str, \"does\": str, \"needs\": [str]} or null}."
+            % (", ".join(NEEDS), d.get("goal"), pl.get("words"), lib or "none"))
 
 
 def d_adapt_shape(ctx, step, item):
     words = str(ctx["post"]["payload"].get("words") or "")
     return {"reflected": words, "question": "What would this let a visitor do that they cannot do today?",
-            "shapes": ["a page that says it", "a link to where it is already done", "an engine that does it"], "engine": None}
+            "shapes": ["a page that says it", "a link to where it is already done", "an engine that does it"], "pick": None, "engine": None}
 
 
 PROMPT = {"identity_recognise": p_identity_recognise, "identity_answer": p_identity_answer, "identity_rule": p_identity_rule,

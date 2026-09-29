@@ -434,7 +434,7 @@ def decide_ask(ref, aid, approve, by="the owner"):
     raise ValueError("no such ask")
 
 
-def add_engine(ref, name, shape=None, by="the owner"):
+def add_engine(ref, name, shape=None, by="the owner", before=None):
     """An engine added to a live department on the owner's stamp (TPL-1 slice 2, founder 2026-09-29: "the engines are
     supposed to be created by the five functions of the department"): a Library engine template by name, or one shaped
     on the fly (name, use case, instruction, what it writes), born into the Library from Do with made_by. The record
@@ -462,18 +462,25 @@ def add_engine(ref, name, shape=None, by="the owner"):
         line = [x[0] for x in engines_of(d)]
         if name in line:
             raise ValueError("%s already runs %s" % (d.get("name"), name))
-        line.append(name)
+        arts0 = list(artifacts_of(d))
+        if before is None and line and arts0 and e.get("reads") == arts0[0]:
+            before = line[0]                             # an engine that reads the Brief goes first: what it files, the line reads
+        if before in line:
+            line.insert(line.index(before), name)
+        else:
+            line.append(name)
         d["engines"] = line
         arts = list(artifacts_of(d))
         if e.get("writes") and e["writes"] not in arts:
-            arts.append(e["writes"])
+            # right after what it reads, so the kind's last artifact (the one that goes out) stays last
+            arts.insert(arts.index(e["reads"]) + 1 if e.get("reads") in arts else len(arts), e["writes"])
         d["artifacts"] = arts
         t = R.priority_template()
         base = {"calls": int(t.get("calls", ENVELOPE["calls"])), "usd": float(t.get("usd", ENVELOPE["usd"]))}
         d.setdefault("envelopes", {})[name] = {"calls": int(t.get("work_calls", 8)) * base["calls"], "usd": base["usd"]}
         d.setdefault("windows", {})[name] = 15
         save_dept(ref, d)
-    R.grow_line(ref, name)
+    R.grow_line(ref, name, before)
     system_run(ref, "Identity", "added the engine %s on %s's stamp%s" % (name, by, " (born into the Library)" if born else ""))
     return {"ref": ref, "engine": name, "engines": line, "born": str(born) if born else None}
 
@@ -540,9 +547,15 @@ def _login_path():
         return os.environ.get("PATH", "")
 
 
-def model_json(prompt, timeout=MODEL_TIMEOUT_S):
+MODEL_TOOLS = ("WebSearch", "WebFetch")       # the tools a step may name: the model reaches the internet, nothing else
+
+
+def model_json(prompt, timeout=MODEL_TIMEOUT_S, tools=None):
     """(object or None, usd, why). One headless model call, as routines.py makes
-    them: plan billing, quiet hooks, JSON back. Never raises."""
+    them: plan billing, quiet hooks, JSON back. Never raises. With `tools`, the
+    step's own tools (MODEL_TOOLS only) are the ones the model may use: a
+    Research step searches the web through them (founder, 2026-09-29: "I want
+    the data to be fetched from the internet by the department")."""
     if os.environ.get("SUTRA_WEBSITE_OFFLINE") == "1":
         return None, 0.0, "offline"
     env = dict(os.environ)
@@ -553,6 +566,9 @@ def model_json(prompt, timeout=MODEL_TIMEOUT_S):
     claude = shutil.which("claude", path=env["PATH"]) or "claude"
     args = [claude, "-p", prompt, "--output-format", "json", "--permission-mode", "dontAsk",
             "--setting-sources", "user", "--model", os.environ.get("SUTRA_WEBSITE_MODEL", "sonnet")]
+    use = [t for t in (tools or []) if t in MODEL_TOOLS]
+    if use:
+        args += ["--tools"] + use + ["--allowedTools"] + use
     # The model runs in a folder of its own: whatever a headless session leaves
     # behind (its hooks write ledgers into the working folder) stays out of the
     # departments' records.

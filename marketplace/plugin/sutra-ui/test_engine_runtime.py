@@ -88,16 +88,21 @@ class Model:
             return {"about": "contact" if "contact" in words.lower() else None, "what": "format", "now": "Cut the page to half its length",
                     "future": self.future}, 0.01, "model"
         if sid == "adapt.shape":
-            hint = {"name": "Talks List", "does": "keeps the list of my talks up to date"} if "talks" in prompt.lower() else None
+            idea = prompt.split("THE IDEA: ", 1)[1].split("\n", 1)[0].lower()
+            pick = "Do" if "written answer" in idea else None
+            hint = ({"name": "Talks List", "does": "keeps the list of my talks up to date", "needs": []} if "talks" in idea else
+                    {"name": "Web Facts", "does": "finds on the internet what the hospital does and who its doctors are", "needs": ["internet"]}
+                    if "internet" in idea else None)
             return {"reflected": "Let a patient book a visit on the site", "question": "Who confirms the booking?",
-                    "shapes": ["a page with the phone number to book", "a form that sends a request", "a live calendar"], "engine": hint}, 0.02, "model"
+                    "shapes": ["a page with the phone number to book", "a form that sends a request", "a live calendar"],
+                    "pick": pick, "engine": None if pick else hint}, 0.02, "model"
         if sid.endswith(".make") and sid != "write.page":
             brief = prompt.split("(the Brief):\n", 1)[1].split("\n\nDo it", 1)[0]
             return {"text": "Done, in words: " + " ".join(brief.split())[:160]}, 0.01, "model"
         if sid == "identity.take":
             words = prompt.split("THE REQUEST: ", 1)[1].split("\n", 1)[0]
             v = self.verdicts.get(words) or ("ask" if "email" in words.lower() else "go")
-            return {"verdict": v, "why": "judged"}, 0.01, "model"
+            return {"verdict": v, "why": "judged", "needs": ["internet"] if "internet" in words.lower() else []}, 0.01, "model"
         if sid == "identity.judge":
             return {"verdict": "admit", "why": "the rules allow it"}, 0.01, "model"
         if sid == "priority.bargain":
@@ -787,10 +792,10 @@ class TestWhatTheOwnerSees(Base):
             W.add_engine(REF, "Nowhere")
         out = W.add_engine(REF, "Do")
         d = W.dept(REF)
-        self.assertEqual((out["engines"], d["engines"]), (["Plan", "Write", "Check", "Publish", "Do"],) * 2)
-        self.assertIn("Result", d["artifacts"])
+        self.assertEqual((out["engines"], d["engines"]), (["Do", "Plan", "Write", "Check", "Publish"],) * 2, "it reads the Brief, so it goes first: what it files, the line reads")
+        self.assertEqual(d["artifacts"][:2], ["Brief", "Result"], "its artifact right after what it reads; the Live site stays last")
         self.assertIn("Do", d["envelopes"])
-        self.assertEqual(R.coordination(REF)["line"][-1], "Do", "Coordination's line, on the record, grew")
+        self.assertEqual(R.coordination(REF)["line"][0], "Do", "Coordination's line, on the record, grew")
         with self.assertRaises(ValueError):
             W.add_engine(REF, "Do")
         self.ask("Add a careers page")
@@ -856,6 +861,79 @@ class TestWhatTheOwnerSees(Base):
             R.TEMPLATES_DIR = prior
             R._DEFS.clear()
             shutil.rmtree(lib, ignore_errors=True)
+
+    def test_89_words_that_ask_for_the_internet_get_an_engine_that_reaches_it_and_the_line_builds_from_what_it_filed(self):
+        """Founder, 2026-09-29: "I want the data to be fetched from the internet by the department, not that we give it";
+        "obey the prompts so it builds everything as a user, as a product". As a user: the words ask for the internet;
+        no engine reaches it, so Identity hands them to Adaptation instead of filing an ask that Write cannot meet; the
+        engine shaped from the idea carries the model's web tools; on the stamp it runs on the Brief at once, files under
+        its own name, and the person is told; the next words make Plan and Write build from what it filed."""
+        W, R = self.W, self.R
+        lib = R.Path(tempfile.mkdtemp(prefix="engine-templates-"))
+        shutil.rmtree(lib)
+        shutil.copytree(R.TEMPLATES_DIR, lib)
+        prior = R.TEMPLATES_DIR
+        R.TEMPLATES_DIR = lib
+        R._DEFS.clear()
+        try:
+            self.live()
+            briefs = len(W.versions(REF, "Brief"))
+            self.ask("Find on the internet what the hospital does and who its doctors are, and build only from that.")
+            self.assertEqual(len(W.versions(REF, "Brief")), briefs, "words no engine can meet are not filed as an ask")
+            lines = [t["line"] for t in R.chat_view(REF)["turns"]]
+            self.assertTrue(any("no engine of mine reaches the internet yet" in line for line in lines), lines[-3:])
+            a = next(x for x in W.asks(REF) if x["kind"] == "engine" and x["status"] == "pending")
+            self.assertEqual(a["engine"], "Web Facts")
+            self.stamp("engine")
+            self.idle()
+            t = json.loads((lib / "web-facts.json").read_text(encoding="utf-8"))
+            make = next(s for s in t["steps"] if s.get("prompt"))
+            self.assertEqual((make["tools"], make["timeout_s"]), (["WebSearch", "WebFetch"], 600), "the idea asks for the internet: the engine reaches it")
+            self.assertEqual(W.dept(REF)["engines"][0], "Web Facts", "it reads the Brief, so it goes first")
+            v = W.versions(REF, "Web Facts")
+            self.assertTrue(v, "it ran on the Brief at once, without new words")
+            self.assertIn("You have web search and web fetch", [p for s, p in self.M.prompts if s == "web-facts.make"][-1])
+            lines = [t["line"] for t in R.chat_view(REF)["turns"]]
+            self.assertIn("Web Facts v1 is filed.", lines, "the person is told what their engine filed")
+            self.ask("Build the site from what you found.")
+            plan = [p for s, p in self.M.prompts if s == "plan.pages"][-1]
+            self.assertIn("WHAT THE DEPARTMENT'S OWN ENGINES FILED", plan)
+            self.assertIn("Web Facts (v", plan)
+            page = [p for s, p in self.M.prompts if s == "write.page"][-1]
+            self.assertIn("WHAT THE DEPARTMENT'S OWN ENGINES FILED", page)
+            self.assertEqual(t["needs"], ["internet"], "what the agent said it needs is on the template; code mapped it to tools")
+        finally:
+            R.TEMPLATES_DIR = prior
+            R._DEFS.clear()
+            shutil.rmtree(lib, ignore_errors=True)
+
+    def test_90_a_step_with_tools_hands_them_to_the_model_and_nothing_else(self):
+        """The model reaches the internet through its own web tools and nothing else: a step names them, model_json passes
+        exactly those, and a name outside the closed list is dropped; a step naming an unknown tool refuses the load."""
+        W, R = self.W, self.R
+        import types
+        seen = {}
+
+        def fake(args, **kw):
+            seen["args"] = list(args)
+            return types.SimpleNamespace(stdout=json.dumps({"result": "{\"text\": \"ok\"}", "total_cost_usd": 0.01}), returncode=0)
+
+        real = W.subprocess.run
+        W.subprocess.run = fake
+        try:
+            out, usd, how = W.model_json("say ok", timeout=5, tools=["WebSearch", "WebFetch", "Bash"])
+            self.assertEqual((out, how), ({"text": "ok"}, "model"))
+            a = seen["args"]
+            self.assertEqual(a[a.index("--tools") + 1:a.index("--tools") + 3], ["WebSearch", "WebFetch"])
+            self.assertEqual(a[a.index("--allowedTools") + 1:a.index("--allowedTools") + 3], ["WebSearch", "WebFetch"])
+            self.assertNotIn("Bash", a)
+            W.model_json("say ok", timeout=5)
+            self.assertNotIn("--tools", seen["args"], "a step with no tools hands the model none")
+        finally:
+            W.subprocess.run = real
+        bad = copy.deepcopy(R.defs())
+        bad["engines"]["Do"]["steps"][1]["tools"] = ["Bash"]
+        self.assertTrue(any("tools are a list of WebSearch, WebFetch" in f for f in R.validate(bad)))
 
 
 class TestTheFiveJourneys(Base):
@@ -1261,9 +1339,7 @@ class TestTheFrontDoor(Base):
         import function_templates as FT
         self.assertEqual(W.dept(child)["engines"], ["Plan", "Write", "Check", "Publish"], "a website goal: the website line, on the record")
         self.assertEqual(FT.picked(child)["priority"], "priority/product-build")
-        self.assertEqual(R.kind_for("A website for our clinic"), "website")
-        self.assertEqual(R.kind_for("Answer the letters patients send about our fees"), "default")
-        self.M.kind = "default"
+        self.M.kind = "default"                              # Setup's agent picks the kind by use case; the harness stands in for it
         W.owner_ask(root, "Start a new department: answer the letters patients send about our fees, in plain words, every day.")
         W.run_until_idle(root, limit=200)
         a = next(x for x in W.asks(root) if x["kind"] == "setup" and x["status"] == "pending")
