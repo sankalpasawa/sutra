@@ -1292,6 +1292,7 @@ async function resolvePendingUpdate() {
     return false;
   }
   if (r.applied) { console.log(`[sutra] update to ${r.applied} applied`); return false; }
+  if (r.dropped) { console.log(`[sutra] dropped a staged ${r.dropped}: ${r.why || "not newer than this app"}`); return false; }
   if (r.gave_up) {
     console.error(`[sutra] gave up on ${r.version}: ${r.error}`);
     return false;

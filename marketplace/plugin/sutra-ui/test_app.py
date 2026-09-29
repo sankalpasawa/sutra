@@ -3413,6 +3413,50 @@ class TestAutoUpdateStaging(unittest.TestCase):
         self.assertEqual(r["applied"], "2.70.0")
         self.assertIsNone(self.U.read_pending())
 
+    def test_a_staged_version_not_newer_than_the_bundle_is_dropped_even_after_a_failed_apply(self):
+        """Found live 2026-09-29: a 2.306.11 Beta found the stable app's staged 2.306.10 with a failed apply behind it
+        (the helper had refused it by bundle id), re-armed it, and quit at every launch to apply an older app. A failed
+        apply of a version the running bundle is past is nothing to retry; the failure counter never re-arms it."""
+        self._stage(version="2.306.10", state="staged")
+        self._result(False, version="2.306.10", error="bundle id 'os.sutra.ui', expected 'os.sutra.ui.beta'")
+        r = self.U.resolve_pending(installed_version="2.306.11")
+        self.assertEqual((r["pending"], r["dropped"]), (False, "2.306.10"))
+        self.assertIn("newer than the staged 2.306.10", r["why"])
+        self.assertIsNone(self.U.read_pending(), "the stale manifest is cleared, so the next launch does nothing")
+        self._stage(version="2.306.11", state="staged")
+        self._result(False, version="2.306.11", error="mount failed")
+        r = self.U.resolve_pending(installed_version="2.306.11")
+        self.assertEqual(r, {"pending": False, "applied": "2.306.11"}, "the bundle is that version: done, whatever the helper said")
+        self._stage(version="2.306.12", state="staged")
+        self._result(False, version="2.306.12", error="mount failed")
+        self.assertEqual(self.U.resolve_pending(installed_version="2.306.11")["action"], "arm", "a newer one that failed once is still retried")
+
+    def test_each_app_has_its_own_updates_folder(self):
+        """Found live 2026-09-29: on the Mac Sutra and Sutra Beta shared one updates folder, so the Beta picked up what
+        the stable app had staged. The folder is named by the bundle the backend runs out of, as Windows names it by
+        the exe; the stable app's folder is where it always was."""
+        if self.U._IS_WIN:
+            self.skipTest("the Windows folder is per exe already")
+        prev = os.environ.get("SUTRA_UI_APP_BUNDLE")
+        try:
+            for name, bid, want in (("Sutra Beta", "os.sutra.ui.beta", "Sutra Beta"), ("Sutra", "os.sutra.ui", "Sutra"),
+                                    ("Other", "os.sutra.ui.beta", "Sutra Beta")):
+                bundle = self.Path(self.tmp) / (name.replace(" ", "") + ".app")
+                (bundle / "Contents").mkdir(parents=True, exist_ok=True)
+                import plistlib
+                with open(bundle / "Contents" / "Info.plist", "wb") as fh:
+                    plistlib.dump({"CFBundleName": name, "CFBundleIdentifier": bid}, fh)
+                os.environ["SUTRA_UI_APP_BUNDLE"] = str(bundle)
+                self.assertEqual(self.U.default_stage_dir(), "~/Library/Application Support/%s/updates" % want, name)
+            os.environ.pop("SUTRA_UI_APP_BUNDLE", None)
+            self.assertEqual(self.U.default_stage_dir(), "~/Library/Application Support/Sutra/updates", "a checkout counts as the stable app")
+        finally:
+            if prev is None:
+                os.environ.pop("SUTRA_UI_APP_BUNDLE", None)
+            else:
+                os.environ["SUTRA_UI_APP_BUNDLE"] = prev
+        self.assertTrue(str(self.U.stage_dir()).endswith("updates"), "SUTRA_UPDATE_DIR, when set, still wins")
+
     def test_nothing_staged_is_not_an_error(self):
         self.assertEqual(self.U.resolve_pending("2.69.1"), {"pending": False})
 
