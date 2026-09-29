@@ -694,6 +694,7 @@ class TestWhatTheOwnerSees(Base):
         self.assertEqual(ident["fn"], "Identity")
         said = [t for t in ident["turns"] if not t["think"]]
         self.assertEqual(said[0]["src"], "Owner", "the person's goal opens Identity's chat")
+        self.assertFalse(ident["turns"][0]["think"], "the words come first, then the thinking they set off, even within one second")
         self.assertEqual(said[0]["line"], GOAL)
         self.assertTrue([t for t in said if t["src"] == "Identity" and "Owner" in t["dst"]], "and Identity answered in it")
         self.assertTrue([t for t in said if t["msg_type"] == "accept-proposal"], "the publish stamp is a turn of it")

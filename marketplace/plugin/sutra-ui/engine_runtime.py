@@ -1982,7 +1982,8 @@ def fn_chat_view(ref, fn):
         if not own and not in_thread:
             continue
         turns.append({"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
-                      "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""), "think": False})
+                      "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""), "think": False,
+                      "_k": (str(p["at"]), p["n"], 0)})
     for r in step_rows(ref):
         if r.get("engine") != name:
             continue
@@ -1991,9 +1992,15 @@ def fn_chat_view(ref, fn):
             line = "%s: %s" % (sname, r.get("answer") or "")
         else:
             line = "%s, %s" % (sname, RUNG_NAME.get(str(r.get("rung")), str(r.get("rung") or "")).lower())
-        turns.append({"n": None, "src": name, "dst": [], "msg_type": "step", "at": r.get("ended") or r.get("started") or r.get("at") or "",
-                      "thread": r.get("run"), "word": r.get("step"), "line": line, "think": True})
-    turns.sort(key=lambda t: (str(t["at"]), t["n"] or 0))
+        at = r.get("ended") or r.get("started") or r.get("at") or ""
+        # within one second the clock cannot tell; a row that read post n comes after post n (found live 2026-09-29:
+        # Identity's reading of the words stood above the words)
+        read = next((x.get("post") for x in (r.get("read") or []) if isinstance(x, dict) and x.get("post")), 0)
+        turns.append({"n": None, "src": name, "dst": [], "msg_type": "step", "at": at, "thread": r.get("run"), "word": r.get("step"),
+                      "line": line, "think": True, "_k": (str(at), read, 1)})
+    turns.sort(key=lambda t: t["_k"])
+    for t in turns:
+        del t["_k"]
     return {"fn": name, "dept": ref, "name": d.get("name"), "turns": turns, "any": bool(turns)}
 
 
