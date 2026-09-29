@@ -1,6 +1,14 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-28
+## 2.306.12 (2026-09-29)
+
+## Sutra Desktop: a function's chat is the one you already have
+
+- a click on any of the five functions' Chat shows that function's existing chat from the record: what you said to it, what it answered, its own thinking as quiet lines between, and a box to say more; it never starts a new chat and never asks you to
+- words said in a function's chat still go through Identity, the one door, and come back into that same chat
+- a department not on the engine runtime keeps the chat it had
+
 ## 2.306.11 (2026-09-29)
 
 ## Sutra Desktop: what the person found on 2.306.10, fixed
