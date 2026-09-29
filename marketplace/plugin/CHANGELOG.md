@@ -1,6 +1,13 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-28
+## 2.306.19 (2026-09-29)
+
+## Sutra Desktop: ask the department about its own work
+
+- a question in the chat is answered from what the department filed last (its report, its pages), not only from counts; a tool's department speaks no website lines
+- the New organisation sheet asks what the first department is for, in your words; a tool, a desk or a list is set up here as well as a site
+
 ## 2.306.18 (2026-09-29)
 
 ## Sutra Desktop: the internet is a given
