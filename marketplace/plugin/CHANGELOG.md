@@ -1,6 +1,14 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-28
+## 2.306.21 (2026-09-30)
+
+## Sutra Desktop: a line made on the fly
+
+- a department can be born with no engines (the organic kind): from your words Adaptation shapes the engines the goal needs, puts the line to you once, and your stamp adds them; the first starts on your words, each next on what the one before it filed; every engine reads the internet
+- what goes out (a site) asks you first, whichever engine makes it; a site made this way is served at the department's address
+- the Human Simulation goal "a website from words, engines on the fly" (qa/sim/goals/website-on-the-fly.json) and its runs
+
 ## 2.306.20 (2026-09-29)
 
 ## Sutra Desktop: the organisation is its chat
