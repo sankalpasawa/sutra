@@ -32,6 +32,14 @@ class Model:
         self.away, self.bad, self.findings, self.verdicts, self.slow = set(), set(), [], {}, 0.0
         self.journeys, self.future = {}, None
         self.tie, self.kind = None, None
+        self.holes = False                               # a page that admits what nobody told it (test_69)
+        self.broken = []                                 # what Check's rules step reports broken (test_72)
+        self.refuse_engines = set()                      # engines Priority's agent refuses when offered (test_94)
+        self.same_name = False                           # Setup's agent names a department that already exists (test_95)
+        self.rules = {}                                  # words Identity's take reads as a standing rule (test_102)
+        self.need = True                                 # whether a born engine's need step says the words ask for its work (test_103)
+        self.thin = set()                                # words Identity's take reads as naming nothing to build from (test_107)
+        self.line = None                                 # the line Adaptation shapes for a department born with none (test_110)
 
     def __call__(self, prompt, step):
         sid = step["id"]
@@ -63,7 +71,8 @@ class Model:
             return {"site_name": "City Care Hospital", "tagline": "Care, every day", "palette": {"primary": "#0f5e7a", "accent": "#c4956a"},
                     "pages": pages}, 0.02, "model"
         if sid == "write.page":
-            return {"title": page["title"], "body_html": "<section><h1>%s</h1><p>%s</p></section>" % (page["title"], "What a patient needs to know. " * 3)}, 0.03, "model"
+            hole = "<p>Phone: to be confirmed.</p>" if self.holes else ""
+            return {"title": page["title"], "body_html": "<section><h1>%s</h1><p>%s</p>%s</section>" % (page["title"], "What a patient needs to know. " * 3, hole)}, 0.03, "model"
         if sid == "identity.recognise":
             words = prompt.split("THE WORDS: ", 1)[1].split("\n", 1)[0]
             low = words.lower()
@@ -85,15 +94,48 @@ class Model:
             return {"about": "contact" if "contact" in words.lower() else None, "what": "format", "now": "Cut the page to half its length",
                     "future": self.future}, 0.01, "model"
         if sid == "adapt.shape":
+            idea = prompt.split("THE IDEA: ", 1)[1].split("\n", 1)[0].lower()
+            pick = "Do" if "written answer" in idea else None
+            hint = ({"name": "Talks List", "does": "keeps the list of my talks up to date", "needs": []} if "talks" in idea else
+                    {"name": "Web Facts", "does": "finds on the internet what the hospital does and who its doctors are", "needs": ["internet"]}
+                    if "internet" in idea else None)
             return {"reflected": "Let a patient book a visit on the site", "question": "Who confirms the booking?",
-                    "shapes": ["a page with the phone number to book", "a form that sends a request", "a live calendar"]}, 0.02, "model"
+                    "shapes": ["a page with the phone number to book", "a form that sends a request", "a live calendar"],
+                    "pick": pick, "engine": None if pick else hint}, 0.02, "model"
+        if sid.endswith(".make") and sid != "write.page":
+            brief = prompt.split("):\n", 1)[1].split("\n\nDo it", 1)[0]
+            if '{"files"' in prompt:                                  # an engine whose artifact is a site files pages (test_110)
+                head = " ".join(brief.split())[:80]
+                return {"files": {"index.html": "<html><head><title>Hampi</title></head><body><h1>Hampi</h1><p>From: %s</p><a href=\"see.html\">What to see</a></body></html>" % head,
+                                  "see.html": "<html><head><title>See</title></head><body><h1>What to see</h1><p>Virupaksha temple (https://example.org/hampi)</p><a href=\"index.html\">Home</a></body></html>"}}, 0.03, "model"
+            return {"text": "Done, in words: " + " ".join(brief.split())[:160]}, 0.01, "model"
+        if sid.endswith(".plan") and "index.html" in prompt:                # a pages engine plans its pages (test_110)
+            return {"pages": [{"file": "index.html", "title": "Hampi", "purpose": "the home page"},
+                              {"file": "see.html", "title": "What to see", "purpose": "the sights"}]}, 0.01, "model"
+        if sid.endswith(".page") and "THIS PAGE: " in prompt:                # and writes one page per call
+            page = json.loads(prompt.split("THIS PAGE: ", 1)[1].split("\n", 1)[0])
+            body = "Virupaksha temple stands by the river and is open every day (https://example.org/hampi). " * 4
+            return {"file": page["file"], "html": "<html><head><title>%s</title></head><body><nav><a href=\"index.html\">Home</a> <a href=\"see.html\">See</a></nav><h1>%s</h1><p>%s</p></body></html>"
+                    % (page["title"], page["title"], body)}, 0.02, "model"
+        if sid == "adapt.line":
+            return {"engines": self.line or [
+                {"name": "Facts", "does": "finds on the internet what to see, when to go and how to reach Hampi, each fact with its source", "reads": "Brief", "writes": "Facts", "internet": True},
+                {"name": "Site", "does": "writes the site's pages from the facts, each with its source", "reads": "Facts", "writes": "Live site", "internet": False}]}, 0.02, "model"
+        if sid.endswith(".need"):
+            return {"run": bool(self.need), "why": "the words ask for it" if self.need else "the words ask for no new search"}, 0.01, "model"
         if sid == "identity.take":
             words = prompt.split("THE REQUEST: ", 1)[1].split("\n", 1)[0]
             v = self.verdicts.get(words) or ("ask" if "email" in words.lower() else "go")
-            return {"verdict": v, "why": "judged"}, 0.01, "model"
+            unsure = [u.strip() for u in words.split("not sure of:", 1)[1].split(".", 1)[0].split(";")] if "not sure of:" in words else []
+            low = words.lower()
+            needs = ["internet"] if "internet" in low and any(w in low for w in ("find", "look", "search")) else []
+            return {"verdict": v, "why": "judged", "needs": needs, "unsure": unsure, "rule": self.rules.get(words),
+                    "thin": words in self.thin}, 0.01, "model"
         if sid == "identity.judge":
             return {"verdict": "admit", "why": "the rules allow it"}, 0.01, "model"
         if sid == "priority.bargain":
+            if any(("THE ENGINE: %s\n" % n) in prompt for n in self.refuse_engines):
+                return {"answer": "reject", "why": "no room for another engine today"}, 0.01, "model"
             return {"answer": "accept", "why": "the envelope has room"}, 0.01, "model"
         if sid == "coord.tie":
             ready = prompt.split("READY NOW: ", 1)[1].split("\n", 1)[0].split(", ")
@@ -101,9 +143,16 @@ class Model:
         if sid == "setup.shape":
             words = prompt.split("THE OWNER'S WORDS: ", 1)[1].split("\n", 1)[0]
             org = prompt.split("The owner of ", 1)[1].split(" asks Root", 1)[0]
-            return {"name": org + " Website", "kind": self.kind or "website", "goal": words}, 0.02, "model"
+            kind = self.kind or "website"
+            name = org + (" Website" if kind == "website" else " Desk")
+            existing = prompt.split("DEPARTMENTS THIS ROOT ALREADY HAS: ", 1)[1].split("\n", 1)[0] if "ALREADY HAS: " in prompt else ""
+            if name in existing and not self.same_name:
+                name += " 2"                                  # a new department takes a name none of the existing ones has
+            return {"name": name, "kind": kind, "goal": words}, 0.02, "model"
         if sid == "audit.judge":
             return {"ok": not self.findings, "findings": list(self.findings)}, 0.02, "model"
+        if sid == "check.rules":
+            return {"broken": [dict(b) for b in self.broken]}, 0.02, "model"
         raise AssertionError("the model was asked for a step no test expects: " + sid)
 
 
@@ -179,6 +228,40 @@ class TestTheDefinitions(Base):
         bad["engines"]["Plan"]["steps"][0]["code"] = "rm_rf"
         self.assertTrue(any("no function named rm_rf ships with the app" in f for f in R.validate(bad)),
                         "a definition can name code; it cannot bring any")
+
+    def test_83_the_work_engines_are_library_templates_and_a_bad_one_is_refused(self):
+        """TPL-1 (founder, 2026-09-29): engines come from templates in the Library, one file each with a use case; the
+        definitions are assembled from them; a kind names its use case and its functions' template; a template without
+        a use case, or a kind naming a template a function lacks, is a fault; a file that is no template refuses the load."""
+        R = self.R
+        self.assertEqual(sorted(p.name for p in R.TEMPLATES_DIR.glob("*.json")), ["check.json", "do.json", "plan.json", "publish.json", "setup.json", "write.json"])
+        e = R.defs()["engines"]
+        self.assertEqual(e["Plan"]["from_template"], "engine/plan")
+        self.assertTrue(all(e[n].get("use_case") for n in ("Plan", "Write", "Check", "Publish", "Setup", "Do")))
+        raw = json.loads((R.Path(R.__file__).parent / "engine_defs" / "website.json").read_text(encoding="utf-8"))
+        self.assertNotIn("Plan", raw["engines"], "the file holds the functions, the kinds, the edges and the table; the work engines are the Library's")
+        self.assertEqual({k: v["functions_template"] for k, v in raw["kinds"].items()},
+                         {"website": "product-build", "root": "default", "default": "default", "organic": "product-build"})
+        self.assertEqual(raw["kinds"]["organic"]["line"], [], "the organic kind is born with no engines: Adaptation shapes its line")
+        bad = copy.deepcopy(R.defs())
+        del bad["engines"]["Plan"]["use_case"]
+        self.assertIn("Plan: an engine template names its use case", R.validate(bad))
+        bad = copy.deepcopy(R.defs())
+        bad["kinds"]["website"]["functions_template"] = "nowhere"
+        self.assertIn("kinds, website: functions_template names a Library template every function has", R.validate(bad))
+        tmp = R.Path(tempfile.mkdtemp(prefix="engine-templates-"))
+        (tmp / "plan.json").write_text(json.dumps({"id": "engine/plan", "name": "Plan"}), encoding="utf-8")
+        prior = R.TEMPLATES_DIR
+        R.TEMPLATES_DIR, R._DEFS["d"] = tmp, None
+        R._DEFS.clear()
+        try:
+            with self.assertRaises(ValueError) as cm:
+                R.defs()
+            self.assertIn("names an id, a name and a use case", str(cm.exception))
+        finally:
+            R.TEMPLATES_DIR = prior
+            R._DEFS.clear()
+            shutil.rmtree(tmp, ignore_errors=True)
 
     def test_02_a_check_fails_what_it_should_fail(self):
         C = self.R.CHECK
@@ -581,6 +664,31 @@ class TestAuditAndAlarm(Base):
         self.assertIn("- Correct this: " + found, brief)
         self.assertEqual(len(W.versions(REF, "Live site")), 2, "and the line ran again, to a second live version")
 
+    def test_69_a_site_that_says_to_be_confirmed_makes_identity_ask_the_owner_for_the_facts_not_a_stamp(self):
+        """Found live 2026-09-28 (Human Simulation run 1): twelve 'to be confirmed' on four pages went live and nobody
+        asked. Audit names each hole; Identity asks the person for the facts in the chat; a stamp puts nothing right."""
+        W, R = self.W, self.R
+        self.M.holes = True
+        self.M.findings = [{"page": "index.html", "claim": "the page names a founding year", "severity": "high"}]
+        self.live()
+        facts = [p for p in R.board(REF) if p["src"] == "Identity" and (p.get("payload") or {}).get("word") == "facts"]
+        self.assertEqual(len(facts), 1, [(p["src"], (p.get("payload") or {}).get("word")) for p in R.board(REF)])
+        line = facts[0]["payload"]["done"]
+        self.assertTrue(line.startswith("The site says it does not know 5 things: on "), line)
+        self.assertIn("the page says 'Phone: to be confirmed'", line)
+        self.assertTrue(line.endswith("Tell me here and I will put them in."), line)
+        self.assertEqual(facts[0]["payload"]["holes"], 5, "one hole a page")
+        turn = next(t for t in R.chat_view(REF)["turns"] if t["word"] == "facts")
+        self.assertEqual(turn["line"], line, "the question is a turn of the chat, whole")
+        a = next(a for a in W.asks(REF) if a["kind"] == "finding")
+        self.assertIn("names a founding year", a["text"], "what Audit judged still asks for a stamp")
+        self.assertNotIn("to be confirmed", a["text"], "a hole is a question, never a stamp")
+        self.assertEqual(len([a for a in W.asks(REF) if a["kind"] == "finding"]), 1)
+        self.assertIn("asked the owner for 5 facts the site lacks; put a finding to the owner: on Index, the page names a founding year",
+                      [r["what"] for r in W.runs(REF)])
+        holes = R.placeholders({"a.html": "<p>Opening hours: TBD</p>", "b.html": "<p>Fine.</p>", "c.md": "TBA"})
+        self.assertEqual([h["page"] for h in holes], ["a.html"], "every phrase a page uses to say it does not know; not a .md")
+
     def test_30_a_low_finding_is_noted_and_asks_nobody(self):
         self.M.findings = [{"page": "about.html", "claim": "the page says the hospital is friendly", "severity": "low"}]
         self.live()
@@ -613,7 +721,7 @@ class TestWhatTheOwnerSees(Base):
         self.assertEqual(page["evidence"]["runs"], 5)
         f = self.R.steps_view(REF, "Identity")
         self.assertEqual(f["kind"], "function")
-        self.assertEqual([s["mode"] for s in f["steps"]][:2], ["gate", "slot"])
+        self.assertEqual([s["mode"] for s in f["steps"]][:3], ["gate", "gate", "slot"])
         self.assertIn("Take a request", f["hears"])
         by = {s["name"]: s["under"] for s in f["steps"]}
         self.assertEqual((by["Read the request"], by["Post the verdict"]), ("Take a request", "Give a verdict"),
@@ -650,7 +758,298 @@ class TestWhatTheOwnerSees(Base):
         self.stamp("request", approve=False)
         self.idle()
         self.assertEqual(len(W.versions(REF, "Brief")), n, "refused: the Brief did not change")
-        self.assertEqual(a["text"], "This reaches outside the site: Email the new site to every patient")
+        self.assertEqual(a["text"], "Your words reach outside the site: an email address, so people will write, call or come. "
+                                    "Put them on the site as said? Stamp to go ahead, Refuse to leave them out. Email the new site to every patient",
+                         "in the person's words: what reaches outside, and what a stamp does (finding 13)")
+
+    def test_82_a_functions_chat_exists_from_birth_and_is_its_turns_and_thinking(self):
+        """Founder, 2026-09-29: a click on a function's Chat "should not start a new chat. It should just show the
+        existing chat there." The chat is read from the record: the function's posts, the person's words to it, its
+        step rows as thinking. Nothing starts it; a name that is not a function is refused."""
+        W, R = self.W, self.R
+        self.live()
+        ident = R.fn_chat_view(REF, "identity")
+        self.assertEqual(ident["fn"], "Identity")
+        said = [t for t in ident["turns"] if not t["think"]]
+        self.assertEqual(said[0]["src"], "Owner", "the person's goal opens Identity's chat")
+        self.assertFalse(ident["turns"][0]["think"], "the words come first, then the thinking they set off, even within one second")
+        self.assertEqual(said[0]["line"], GOAL)
+        self.assertTrue([t for t in said if t["src"] == "Identity" and "Owner" in t["dst"]], "and Identity answered in it")
+        self.assertTrue([t for t in said if t["msg_type"] == "accept-proposal"], "the publish stamp is a turn of it")
+        thought = [t for t in ident["turns"] if t["think"]]
+        self.assertTrue(thought and all(t["src"] == "Identity" for t in thought), "its own steps are its thinking, nobody else's")
+        self.assertEqual([t["at"] for t in ident["turns"]], sorted(t["at"] for t in ident["turns"]), "in time order")
+        pr = R.fn_chat_view(REF, "priority")
+        self.assertTrue(pr["any"] and all(t["think"] for t in pr["turns"]), "Priority has said nothing to the person: its chat is its thinking")
+        W.owner_ask(REF, "Could the careers page come first?", about="fn:priority")
+        self.idle()
+        pr = R.fn_chat_view(REF, "priority")
+        mine = [t for t in pr["turns"] if not t["think"]]
+        self.assertEqual((mine[0]["src"], mine[0]["line"]), ("Owner", "Could the careers page come first?"), "words said in Priority's chat are in it")
+        self.assertTrue([t for t in mine if t["src"] != "Owner"], "and what came of them, in the same thread")
+        self.assertIn("Could the careers page come first?", [t["line"] for t in R.chat_view(REF)["turns"]], "one record: the department's chat has them too")
+        with self.assertRaises(ValueError):
+            R.fn_chat_view(REF, "board")
+        with self.assertRaises(ValueError):
+            W.owner_ask(REF, "words", about="fn:board")
+
+    def test_85_the_agents_brief_carries_the_template_the_settings_tab_picked(self):
+        """SIM-2 finding 20: a pick on a function's Settings tab reached the screen and never the agent, which read the
+        birth copy on the record. The brief reads the pick on the registry, so the next step runs the template picked."""
+        W, R = self.W, self.R
+        reg = tempfile.mkdtemp(prefix="engine-runtime-picks-")
+        prior = os.environ.get("SUTRA_NATIVE_HOME")
+        os.environ["SUTRA_NATIVE_HOME"] = reg
+        import placement_engine as E
+        importlib.reload(E)
+        import function_templates as FT
+        try:
+            ctx = {"ref": REF, "dept": W.dept(REF), "engine": "Priority", "def": R.engine_def("Priority")}
+            self.assertNotIn("customer and bank items", R.card(ctx), "born on the Default")
+            FT.write_pick(REF, "priority", "priority/money-movement")
+            self.assertIn("customer and bank items", R.card(ctx), "the brief follows the pick, not the birth copy")
+        finally:
+            if prior is None:
+                os.environ.pop("SUTRA_NATIVE_HOME", None)
+            else:
+                os.environ["SUTRA_NATIVE_HOME"] = prior
+            importlib.reload(E)
+            shutil.rmtree(reg, ignore_errors=True)
+
+    def test_86_an_engine_added_to_a_live_department_runs_on_its_own_trigger(self):
+        """TPL-1 slice 2: add_engine, the one write behind the owner's stamp (Identity) and the org.engine ask: a Library
+        engine by name on the record, its artifact with it, an envelope, a window, Coordination's line grown; a function
+        or an unknown name refused; twice refused; the engine then runs on the next version it reads."""
+        W, R = self.W, self.R
+        self.live()
+        with self.assertRaises(ValueError):
+            W.add_engine(REF, "Priority")
+        with self.assertRaises(ValueError):
+            W.add_engine(REF, "Nowhere")
+        out = W.add_engine(REF, "Do")
+        d = W.dept(REF)
+        self.assertEqual((out["engines"], d["engines"]), (["Do", "Plan", "Write", "Check", "Publish"],) * 2, "it reads the Brief, so it goes first: what it files, the line reads")
+        self.assertEqual(d["artifacts"][:2], ["Brief", "Result"], "its artifact right after what it reads; the Live site stays last")
+        self.assertIn("Do", d["envelopes"])
+        self.assertEqual(R.coordination(REF)["line"][0], "Do", "Coordination's line, on the record, grew")
+        with self.assertRaises(ValueError):
+            W.add_engine(REF, "Do")
+        self.ask("Add a careers page")
+        self.assertTrue(W.versions(REF, "Result"), "Do ran on the next Brief and filed a Result")
+        self.assertIn("added the engine Do", " ".join(r["what"] for r in W.runs(REF) if r["engine"] == "Identity"))
+
+    def test_87_an_idea_that_fits_a_library_template_becomes_that_engine_on_the_owners_stamp(self):
+        """TPL-1 slice 2 (founder, 2026-09-29: "the engines are supposed to be created by the five functions"): an idea is
+        shaped and parked by Adaptation, which offers the Library engine whose use case fits to Priority; Priority prices
+        it; Identity puts it to the owner in the owner's words; nothing is added before the stamp; on it the engine is on
+        the record and runs."""
+        W, R = self.W, self.R
+        self.live()
+        self.ask("What if each ask were answered in one written answer, filed as a result.")
+        a = next(x for x in W.asks(REF) if x["kind"] == "engine" and x["status"] == "pending")
+        self.assertEqual(a["engine"], "Do")
+        self.assertTrue(a["text"].startswith("Add the engine Do to City Care Hospital Website? What it does: reads the brief"), a["text"])
+        board = R.board(REF)
+        self.assertTrue([p for p in board if p["src"] == "Adaptation" and "Priority" in p["dst"] and p["payload"].get("word") == "engine"], "offered to Priority first")
+        self.assertTrue([p for p in board if p["src"] == "Priority" and p["msg_type"] == "accept-proposal" and p["payload"].get("word") == "engine"], "Priority priced it")
+        self.assertNotIn("Do", W.dept(REF)["engines"], "nothing is added before the stamp")
+        self.stamp("engine")
+        self.idle()
+        self.assertIn("Do", W.dept(REF)["engines"])
+        idea = R.ideas(REF)[-1]
+        self.assertEqual((idea.get("engine"), idea.get("state")), ("Do", "built"))
+        self.ask("Add a careers page")
+        self.assertTrue(W.versions(REF, "Result"), "the added engine runs on the next Brief")
+
+    def test_88_an_idea_that_fits_no_template_is_shaped_from_do_and_born_into_the_library_on_the_stamp(self):
+        """TPL-1 slice 2, "created on the fly": no Library engine fits the idea, so Adaptation shapes one from Do with the
+        idea as its instruction (the model names it); nothing is born before the stamp; on it the template is in the
+        Library with made_by, the definitions still validate, and the engine runs, filing under the Default template."""
+        W, R = self.W, self.R
+        lib = R.Path(tempfile.mkdtemp(prefix="engine-templates-"))
+        shutil.rmtree(lib)
+        shutil.copytree(R.TEMPLATES_DIR, lib)
+        prior = R.TEMPLATES_DIR
+        R.TEMPLATES_DIR = lib
+        R._DEFS.clear()
+        try:
+            self.live()
+            self.ask("What if the department kept a list of my talks, updated whenever I give one.")
+            a = next(x for x in W.asks(REF) if x["kind"] == "engine" and x["status"] == "pending")
+            self.assertEqual(a["engine"], "Talks List", "named by the model")
+            self.assertIn("What it does: keeps the list of my talks up to date.", a["text"])
+            self.assertFalse((lib / "talks-list.json").exists(), "nothing born before the stamp")
+            self.stamp("engine")
+            self.idle()
+            t = json.loads((R.user_templates_dir() / "talks-list.json").read_text(encoding="utf-8"))
+            self.assertEqual((t["name"], t["reads"], t["writes"], t["made_by"]["dept"]), ("Talks List", "Brief", "Talks List", REF))
+            self.assertEqual([s["id"] for s in t["steps"]], ["talks-list.read", "talks-list.need", "talks-list.make", "talks-list.file"])
+            need = next(s for s in t["steps"] if s["id"] == "talks-list.need")
+            self.assertEqual((need["only_if"], need["may_end"]), ("talks-list.read.previous", True), "the condition follows the ids")
+            self.assertIn("Talks List", R.defs()["engines"])
+            self.assertEqual(R.validate(R.defs()), [])
+            d = W.dept(REF)
+            self.assertIn("Talks List", d["engines"])
+            self.assertIn("Talks List", d["artifacts"])
+            self.ask("Add a careers page")
+            v = W.versions(REF, "Talks List")
+            self.assertTrue(v and v[-1]["check"]["ok"], "the shaped engine ran on the next Brief and filed under the Default template")
+            self.assertIn("THIS ENGINE'S INSTRUCTION", [p for s, p in self.M.prompts if s == "talks-list.make"][-1])
+        finally:
+            R.TEMPLATES_DIR = prior
+            R._DEFS.clear()
+            shutil.rmtree(lib, ignore_errors=True)
+
+    def test_89_words_that_ask_for_the_internet_get_an_engine_that_reaches_it_and_the_line_builds_from_what_it_filed(self):
+        """Founder, 2026-09-29: "I want the data to be fetched from the internet by the department, not that we give it";
+        "obey the prompts so it builds everything as a user, as a product". As a user: the words ask for the internet;
+        no engine reaches it, so Identity hands them to Adaptation instead of filing an ask that Write cannot meet; the
+        engine shaped from the idea carries the model's web tools; on the stamp it runs on the Brief at once, files under
+        its own name, and the person is told; the next words make Plan and Write build from what it filed."""
+        W, R = self.W, self.R
+        lib = R.Path(tempfile.mkdtemp(prefix="engine-templates-"))
+        shutil.rmtree(lib)
+        shutil.copytree(R.TEMPLATES_DIR, lib)
+        prior = R.TEMPLATES_DIR
+        R.TEMPLATES_DIR = lib
+        R._DEFS.clear()
+        try:
+            self.live()
+            briefs = len(W.versions(REF, "Brief"))
+            self.ask("Find on the internet what the hospital does and who its doctors are, and build only from that.")
+            self.assertEqual(len(W.versions(REF, "Brief")), briefs + 1, "the internet is a given: words that ask for it are filed like any other")
+            self.assertFalse([x for x in W.asks(REF) if x["status"] == "pending"], "no ask and no engine ceremony for reading the web")
+            self.ask("What if you found on the internet what the hospital does and who its doctors are.")
+            a = next(x for x in W.asks(REF) if x["kind"] == "engine" and x["status"] == "pending")
+            self.assertEqual(a["engine"], "Web Facts", "an idea still shapes an engine")
+            self.stamp("engine")
+            self.idle()
+            t = json.loads((R.user_templates_dir() / "web-facts.json").read_text(encoding="utf-8"))
+            make = next(s for s in t["steps"] if s.get("prompt"))
+            self.assertEqual((make["tools"], make["timeout_s"]), (["WebSearch", "WebFetch"], 600), "the idea asks for the internet: the engine reaches it")
+            self.assertEqual(W.dept(REF)["engines"][0], "Web Facts", "it reads the Brief, so it goes first")
+            v = W.versions(REF, "Web Facts")
+            self.assertTrue(v, "it ran on the Brief at once, without new words")
+            self.assertIn("You can search the web and open pages", [p for s, p in self.M.prompts if s == "web-facts.make"][-1])
+            lines = [t["line"] for t in R.chat_view(REF)["turns"]]
+            self.assertIn("Web Facts v1 is filed.", lines, "the person is told what their engine filed")
+            self.ask("Build the site from what you found.")
+            plan = [p for s, p in self.M.prompts if s == "plan.pages"][-1]
+            self.assertIn("WHAT THE DEPARTMENT'S OWN ENGINES FILED", plan)
+            self.assertIn("Web Facts (v", plan)
+            page = [p for s, p in self.M.prompts if s == "write.page"][-1]
+            self.assertIn("WHAT THE DEPARTMENT'S OWN ENGINES FILED", page)
+            self.assertEqual(t["needs"], ["internet"], "what the agent said it needs is on the template; code mapped it to tools")
+        finally:
+            R.TEMPLATES_DIR = prior
+            R._DEFS.clear()
+            shutil.rmtree(lib, ignore_errors=True)
+
+    def test_91_what_the_person_is_not_sure_of_stays_out_and_is_asked_about_before_anything_is_built_from_it(self):
+        """Run 1 finding 22 (2026-09-29): two facts the person said they were not sure of became a page and went live; the
+        question came after. Identity's own take step names them; the Brief carries them as not confirmed; the person is
+        asked in the chat at once; their answer is the facts (finding 16's flow) and the line builds with them."""
+        W, R = self.W, self.R
+        W.give_goal(REF, GOAL + " The internet also says two things I am not sure of: Angel One; a University of Tokyo profile.")
+        self.idle()
+        brief = W.read_files(REF, "Brief", 1).get("brief.md", "")
+        self.assertIn("Not confirmed (the owner is not sure; leave these out until the owner confirms them): Angel One; a University of Tokyo profile.", brief)
+        turns = R.chat_view(REF)["turns"]
+        asked = [t for t in turns if t.get("word") == "facts"]
+        self.assertTrue(asked and asked[0]["line"].startswith("You said you are not sure of: Angel One; a University of Tokyo profile. Say which are right"), [t["line"] for t in turns])
+        self.assertLess([i for i, t in enumerate(turns) if t.get("word") == "facts"][0], len(turns), "asked before the first publish ask, not after the site is live")
+        self.assertIn("Not confirmed", [p for s, p in self.M.prompts if s == "plan.pages"][-1], "Plan is told what stays out")
+        self.assertFalse([t for t in turns if t.get("word") == "publish" and t["n"] < asked[0]["n"]], "the question came before the publish ask")
+
+    def test_92_the_same_thought_twice_in_a_row_is_one_line_of_a_functions_chat(self):
+        """Run 1 finding 26: 'Gate the effect by rule: admit' three times in a row in Identity's chat. Identical neighbouring
+        thinking lines fold into one, the last one's time; different ones, and the person's words, are untouched."""
+        W, R = self.W, self.R
+        self.live()
+        self.ask("Add a careers page")
+        turns = R.fn_chat_view(REF, "identity")["turns"]
+        thinks = [t["line"] for t in turns if t["think"]]
+        self.assertTrue(any("Gate the effect by rule" in x for x in thinks), "the gate rows are there")
+        for a, b in zip(turns, turns[1:]):
+            self.assertFalse(a["think"] and b["think"] and a["line"] == b["line"], "twice in a row: " + a["line"])
+        raw = [r for r in R.step_rows(REF) if r["engine"] == "Identity" and r.get("mode") == "gate" and r.get("answer") == "admit"]
+        self.assertGreater(len(raw), len([x for x in thinks if x == "Gate the effect by rule: admit"]), "the record keeps every row; the chat folds")
+
+    def test_93_an_ask_never_says_the_words_need_the_internet_and_the_stamp_files_them(self):
+        """Run 2 finding 29 and the founder's word of 2026-09-29 ('Internet is given ... I don't want to lose all the basic
+        features of agents'): an ask carries no needs and never says the words need the internet; the stamp files the
+        words for the line, whose agents read the web themselves; no engine ceremony for reading."""
+        W, R = self.W, self.R
+        self.live()
+        words = "Find on the internet what the hospital does and who its doctors are, and build only from that."
+        self.M.verdicts[words] = "ask"
+        briefs = len(W.versions(REF, "Brief"))
+        self.ask(words)
+        a = next(x for x in W.asks(REF) if x["kind"] == "request" and x["status"] == "pending")
+        self.assertEqual(a["needs"], [])
+        self.assertTrue(a["text"].startswith("Your words reach outside the site"), a["text"])
+        self.assertNotIn("need internet", a["text"])
+        self.stamp("request")
+        self.idle()
+        self.assertEqual(len(W.versions(REF, "Brief")), briefs + 1, "the stamp files the words")
+        self.assertFalse([x for x in W.asks(REF) if x["kind"] == "engine"], "no engine ask for reading the web")
+        seen = {}
+        real = W.model_json
+        W.model_json = lambda prompt, timeout=0, tools=None: seen.setdefault("tools", tools) or ({"text": "ok"}, 0.0, "model")
+        R.MODEL = None
+        try:
+            R.call_model("say ok", {"id": "plan.pages"})
+        finally:
+            W.model_json = real
+            R.MODEL = self.M
+        self.assertEqual(seen["tools"], ["WebSearch", "WebFetch"], "every agent step is handed the web tools")
+
+    def test_94_priority_is_shown_the_engine_offer_and_its_refusal_is_told(self):
+        """Run 2 findings 32 and 33: Priority's agent was shown an engine offer as a rung proposal's empty fields and
+        refused it; the refusal stayed on the board. The bargain prompt carries the offer; a refusal is a turn of the chat."""
+        W, R = self.W, self.R
+        self.live()
+        self.ask("What if the department kept a list of my talks, updated whenever I give one.")
+        prompt = [p for s, p in self.M.prompts if s == "priority.bargain"][-1]
+        for line in ("THE ENGINE: Talks List\n", "WHAT IT DOES: keeps the list of my talks up to date", "WHAT IT NEEDS: nothing beyond the model", "WHAT IT COSTS: "):
+            self.assertIn(line, prompt)
+        self.assertTrue([x for x in W.asks(REF) if x["kind"] == "engine"], "shown the offer, Priority granted it and the ask followed")
+        self.M.refuse_engines = {"Web Facts"}
+        self.ask("What if you found on the internet what the hospital does and who its doctors are.")
+        prompt = [p for s, p in self.M.prompts if s == "priority.bargain"][-1]
+        self.assertIn("WHAT IT NEEDS: internet", prompt)
+        lines = [t["line"] for t in R.chat_view(REF)["turns"]]
+        self.assertTrue(any(line.startswith("Priority refused the engine Web Facts: no room for another engine today. The idea stays parked") for line in lines), lines[-3:])
+        self.assertFalse([x for x in W.asks(REF) if x["kind"] == "engine" and x["engine"] == "Web Facts"], "nothing put to the owner")
+        self.assertEqual(R.ideas(REF)[-1].get("priced"), "refused")
+
+    def test_90_a_step_with_tools_hands_them_to_the_model_and_nothing_else(self):
+        """The model reaches the internet through its own web tools and nothing else: a step names them, model_json passes
+        exactly those, and a name outside the closed list is dropped; a step naming an unknown tool refuses the load."""
+        W, R = self.W, self.R
+        import types
+        seen = {}
+
+        def fake(args, **kw):
+            seen["args"] = list(args)
+            return types.SimpleNamespace(stdout=json.dumps({"result": "{\"text\": \"ok\"}", "total_cost_usd": 0.01}), returncode=0)
+
+        real = W.subprocess.run
+        W.subprocess.run = fake
+        try:
+            out, usd, how = W.model_json("say ok", timeout=5, tools=["WebSearch", "WebFetch", "Bash"])
+            self.assertEqual((out, how), ({"text": "ok"}, "model"))
+            a = seen["args"]
+            self.assertEqual(a[a.index("--tools") + 1:a.index("--tools") + 3], ["WebSearch", "WebFetch"])
+            self.assertEqual(a[a.index("--allowedTools") + 1:a.index("--allowedTools") + 3], ["WebSearch", "WebFetch"])
+            self.assertNotIn("Bash", a)
+            W.model_json("say ok", timeout=5)
+            self.assertNotIn("--tools", seen["args"], "a step with no tools hands the model none")
+        finally:
+            W.subprocess.run = real
+        bad = copy.deepcopy(R.defs())
+        bad["engines"]["Do"]["steps"][1]["tools"] = ["Bash"]
+        self.assertTrue(any("tools are a list of WebSearch, WebFetch" in f for f in R.validate(bad)))
 
 
 class TestTheFiveJourneys(Base):
@@ -894,7 +1293,8 @@ class TestOrganicRootAndShape(Base):
         self.assertIsNotNone(W._runtime(ref))
         self.assertTrue((W.ddir(ref) / "coordination.json").is_file(), "born with Coordination's table")
         self.assertEqual(W.engines_of(d), (("Plan", "Brief", "Site plan", "model"), ("Write", "Site plan", "Pages", "model"),
-                                           ("Check", "Pages", "Build", "code"), ("Publish", "Build", "Live site", "code")))
+                                           ("Check", "Pages", "Build", "model"), ("Publish", "Build", "Live site", "code")),
+                         "Check is code around one model step, which runs only when the person has stamped a rule (finding 12)")
         os.environ["SUTRA_ENGINE_RUNTIME"] = "1"
         with self.assertRaises(ValueError):
             W.create("dref-organic002", "Old Root", None, kind="root")       # only a website department is born the old way
@@ -1015,10 +1415,14 @@ class TestOperableArtifacts(Base):
                 self.assertIn(op, d["engines"], "%s names an engine that exists" % t["name"])
         self.assertEqual(A.get("Live site")["counts_after"], "stamp")
         self.assertEqual(A.get("Live site")["operations"], ["Adaptation", "Audit"], "the artifact's own actions are engines it names")
-        # a definition naming an artifact the Library lacks is refused
+        # an artifact the Library has no template of its own for gets the Default, text checked as text (TPL-1, founder
+        # 2026-09-29: "there is a default one for artifacts also"); it used to be refused
         bad = json.loads(json.dumps(d))
         bad["engines"]["Plan"]["writes"] = "Sitemap"
-        self.assertTrue(any("Plan: writes Sitemap" in f for f in R.validate(bad)), R.validate(bad))
+        self.assertFalse(any("Sitemap" in f for f in R.validate(bad)), R.validate(bad))
+        self.assertIsNone(A.get("Sitemap"), "no template of its own")
+        self.assertEqual(A.check("Sitemap", {"sitemap.xml": "<urlset/>"}, default=True)["ok"], True, "an artifact the department names: the Default")
+        self.assertEqual(A.check("Sitemap", {"sitemap.xml": " "}, default=True)["ok"], False, "the Default still checks: text")
         bad = json.loads(json.dumps(d))
         bad["engines"]["Audit"]["start"]["on"] = [{"kind": "version", "of": "Pages", "checked": True}]
         self.assertTrue(any("Audit: runs on a new Pages" in f for f in R.validate(bad)))
@@ -1041,6 +1445,62 @@ class TestOperableArtifacts(Base):
 class TestTheFrontDoor(Base):
     """The person speaks with Root (founder, 2026-09-28): Root's Identity hands his words to the department they are about,
     the department's answers come back onto Root's board, and a stamp, Stop and Start go the same way."""
+
+    def test_84_root_sets_up_a_department_for_any_goal_the_default_line_when_no_kind_fits(self):
+        """TPL-1 (founder, 2026-09-29): the words to Root pick the kind whose use case fits; words that fit no kind get
+        the default kind: one Do engine that files a Result for each ask, the default function templates; the record
+        carries the line and the artifacts, and everything reads the record."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        import function_templates as FT
+        self.assertEqual(W.dept(child)["engines"], ["Plan", "Write", "Check", "Publish"], "a website goal: the website line, on the record")
+        self.assertEqual(FT.picked(child)["priority"], "priority/product-build")
+        self.M.kind = "default"                              # Setup's agent picks the kind by use case; the harness stands in for it
+        W.owner_ask(root, "Start a new department: answer the letters patients send about our fees, in plain words, every day.")
+        W.run_until_idle(root, limit=200)
+        a = next(x for x in W.asks(root) if x["kind"] == "setup" and x["status"] == "pending")
+        W.decide_ask(root, a["id"], True)                  # Root's rule: a new department is stamped by the owner
+        W.run_until_idle(root, limit=200)
+        kids = [d for d in W.list_depts() if d.get("parent") == root]
+        self.assertEqual(len(kids), 2, "a second department under the same Root")
+        other = [d for d in kids if d["ref"] != child][0]
+        self.assertEqual((other["kind"], other["engines"], other["artifacts"]), ("default", ["Do"], ["Brief", "Result"]))
+        self.assertEqual(FT.picked(other["ref"])["priority"], "priority/default", "the default kind runs the default function templates")
+        self.assertEqual([e[0] for e in W.engines_of(other)], ["Do"], "the line is read from the record")
+        self.assertEqual(R.coordination(other["ref"])["line"], ["Do"], "and so is Coordination's table")
+        W.run_until_idle(other["ref"], limit=200)
+        self.assertTrue(W.versions(other["ref"], "Result"), "Do answered the Brief and filed the Result")
+        lines = [t["line"] for t in R.chat_view(other["ref"])["turns"]]
+        self.assertTrue(any(line.startswith("Result v1 is filed") for line in lines), lines)
+        self.assertFalse(any("live" in line for line in lines), "nothing went live: a Result is filed")
+
+    def test_95_a_second_department_takes_a_new_name_and_an_existing_name_is_said_back_with_the_words_handed_on(self):
+        """Run 2 finding 28 (2026-09-29): a second department was stamped, Setup shaped the name of the one that existed,
+        made nothing and said nothing. Setup's agent is told which names this Root has; when it names one anyway, the
+        person is told and the words go to that department."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        W.owner_ask(root, "Start a new department: a second website for Meadow Clinic, for its pharmacy.")
+        W.run_until_idle(root, limit=200)
+        a = next(x for x in W.asks(root) if x["kind"] == "setup" and x["status"] == "pending")
+        self.assertTrue(a["text"].startswith("Set up a department for: Start a new department: a second website for Meadow Clinic, for its pharmacy."), a["text"])
+        W.decide_ask(root, a["id"], True)
+        W.run_until_idle(root, limit=200)
+        kids = [d for d in W.list_depts() if d.get("parent") == root]
+        self.assertEqual(sorted(d["name"] for d in kids), ["Meadow Clinic Website", "Meadow Clinic Website 2"], "told the names it has, the agent gave a new one")
+        self.assertIn("Meadow Clinic Website", [p for s, p in self.M.prompts if s == "setup.shape"][-1].split("ALREADY HAS: ", 1)[1])
+        self.M.same_name = True
+        before = len(R.board(child))
+        W.owner_ask(root, "Start a new department: a third website for Meadow Clinic.")
+        W.run_until_idle(root, limit=200)
+        a = next(x for x in W.asks(root) if x["kind"] == "setup" and x["status"] == "pending")
+        W.decide_ask(root, a["id"], True)
+        W.run_until_idle(root, limit=200)
+        self.assertEqual(len([d for d in W.list_depts() if d.get("parent") == root]), 2, "no third department: the name exists")
+        lines = [t["line"] for t in R.chat_view(root)["turns"]]
+        self.assertTrue(any(line.startswith("Meadow Clinic Website already exists; your words were handed to it") for line in lines), lines[-3:])
+        handed = [p for p in R.board(child)[before:] if p["src"] == "Root" and "Identity" in p["dst"]]
+        self.assertTrue(handed and "a third website" in (handed[-1]["payload"].get("words") or ""), "and the words reached that department")
 
     def structure(self, org="Meadow Clinic"):
         reg = tempfile.mkdtemp(prefix="engine-runtime-front-")
@@ -1256,6 +1716,201 @@ class TestTheFrontDoor(Base):
         self.assertEqual(fs["lost"], [], "said back, so not lost")
         self.assertEqual(next(c for c in W.health(child)["checks"] if c["name"] == "Front door")["line"], "Every request answered")
 
+    def test_70_when_the_site_goes_live_the_chat_says_so_with_the_way_to_it_inside_and_on_root(self):
+        """Found live 2026-09-28 (Human Simulation run 1): after the publish stamp the chat said nothing, and the person
+        did not know the site was up. The last artifact of the kind going out is a turn with the way to it."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        a = next(x for x in W.asks(child) if x["kind"] == "publish" and x["status"] == "pending")
+        self.assertEqual([t for t in R.chat_view(child)["turns"] if t["word"] == "live"], [], "nothing is live before the stamp")
+        W.decide_ask(child, a["id"], True)
+        W.run_until_idle(child, limit=200)
+        W.run_until_idle(root, limit=200)
+        inside = [t for t in R.chat_view(child)["turns"] if t["word"] == "live"]
+        self.assertEqual(len(inside), 1, "said once inside")
+        self.assertEqual((inside[0]["line"], inside[0]["link"], inside[0]["dept"]), ("Live site v1 is live.", "Live site", child))
+        on_root = [t for t in R.chat_view(root)["turns"] if t["word"] == "live"]
+        self.assertEqual(len(on_root), 1, self.said(root)[-4:])
+        self.assertEqual((on_root[0]["link"], on_root[0]["dept"]), ("Live site", child), "on Root the turn carries the department and the way")
+        self.assertTrue(all(t.get("link") is None for t in R.chat_view(root)["turns"] if t["word"] != "live"), "no other turn carries a link")
+
+    # ---- what the person found on Sutra Beta 2.306.10 (Human Simulation run 2, 2026-09-28), fixed ----------------
+    def test_71_a_panel_read_writes_nothing_and_never_asks_the_model(self):
+        """Finding 11: the panel stood still for 25 s at a publish, waiting on Coordination's tie inside a read. A read
+        peeks: no row, no ask, no post, no model call, while the motor still runs the line between the reads."""
+        W, R = self.W, self.R
+        self.live()
+        W.owner_ask(REF, "Add a page on parking.")
+        for _ in range(60):
+            before = (len(self.M.calls), len(R.step_rows(REF)), len(W.asks(REF)), len(R.board(REF)), len(W.runs(REF)))
+            W.status(REF)
+            W.map_view(REF)
+            after = (len(self.M.calls), len(R.step_rows(REF)), len(W.asks(REF)), len(R.board(REF)), len(W.runs(REF)))
+            self.assertEqual(before, after, "a read left the record and the model alone")
+            if not W.run_until_idle(REF, limit=1):
+                break
+        self.assertGreaterEqual(len(W.versions(REF, "Live site")), 2, "the line still ran to a second live version between the reads")
+        self.assertIn("coord.tie", self.M.calls, "the tie was asked by the motor, never by a read")
+
+    def test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live(self):
+        """Finding 12: with 'every page ends with 108' stamped, two versions went live with four pages breaking it.
+        Check holds every page to the person's rules; a build that breaks one is filed failed, sent back to be
+        rewritten with the finding, twice at most, and the person is told each time."""
+        W, R = self.W, self.R
+        self.live()
+        self.ask("From now on, every page ends with: Call 108.")
+        self.stamp("rule")
+        self.idle()
+        live = len(W.versions(REF, "Live site"))
+        self.assertEqual(live, 2, "the rule's own rerun went live: the harness meets every rule")
+        self.assertIn("check.rules", self.M.calls, "Check asked its agent to hold the pages to the rule")
+        self.M.broken = [{"rule": "Every page ends with: Call 108.", "pages": ["about", "contact"], "why": "no 108"}]
+        self.ask("Add a page on parking.")
+        self.idle()
+        self.assertEqual(len(W.versions(REF, "Live site")), live, "nothing went live while the rule was broken")
+        failed = [v for v in W.versions(REF, "Build") if not v["check"]["ok"]]
+        self.assertEqual(len(failed), 3, "three builds filed failed: the one, and two rewrites")
+        self.assertIn("breaks the rule 'Every page ends with: Call 108.' on about, contact", failed[-1]["check"]["notes"])
+        said = [t["line"] for t in R.chat_view(REF)["turns"] if t["word"] == "broken"]
+        self.assertEqual(len(said), 3, said)
+        self.assertTrue(said[0].startswith("Build v") and said[0].endswith("Sent back to be rewritten."), said[0])
+        self.assertIn("two rewrites did not mend it. Say the rule another way, or drop it.", said[-1])
+        brief = W.read_files(REF, "Brief", W.latest(REF, "Brief")["v"])["brief.md"]
+        self.assertEqual(brief.count(R.SEND_BACK), 2, "the finding went to the line twice, as a correction")
+        self.M.broken = []
+        self.ask("Add a page on visiting hours.")
+        self.idle()
+        self.assertEqual(len(W.versions(REF, "Live site")), live + 1, "with the rule met, the line goes live again")
+        drafted = R.d_check_rules({"bag": {"check.rules_of": {"rules": ["Every page ends with: Call 108."],
+                                                                "pages": [{"slug": "a", "text": "In doubt, call 108."}, {"slug": "b", "text": "Nothing here"}]}}}, None, None)
+        self.assertEqual(drafted, {"broken": [{"rule": "Every page ends with: Call 108.", "pages": ["b"], "why": "the page does not carry 'call 108'"}]},
+                         "and code's own reading of an every-page rule is the floor under the agent")
+
+    def test_73_a_stamp_on_an_ask_inside_the_department_is_a_turn_of_the_chat_inside_and_on_root(self):
+        """Finding 14: a stamp on a go-ahead ask inside the department left no turn (the publish stamp did). The person's
+        own act in a thread Root opened lives on the department's board alone, so the chat shows it once, and Root's
+        chat shows it with the department."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        child_name = W.dept(child)["name"]
+        W.owner_ask(root, "On %s, email the new site to every patient." % child_name)
+        W.run_until_idle(root, limit=200)
+        W.run_until_idle(child, limit=200)
+        a = next(x for x in W.asks(child) if x["kind"] == "request" and x["status"] == "pending")
+        self.assertTrue(a["text"].startswith("Your words reach outside the site: an email address, so people will write, call or come. Put them on the site as said?"), a["text"])
+        W.decide_ask(child, a["id"], True)
+        W.run_until_idle(child, limit=200)
+        W.run_until_idle(root, limit=200)
+        inside = [t for t in R.chat_view(child)["turns"] if t["src"] == "Owner" and t["msg_type"] == "accept-proposal"]
+        self.assertEqual(len(inside), 1, "the stamp is a turn inside the department")
+        on_root = [t for t in R.chat_view(root)["turns"] if t["src"] == "Owner" and t["msg_type"] == "accept-proposal" and t.get("dept") == child]
+        self.assertEqual(len(on_root), 1, "and on Root's chat, about the department")
+
+    def test_74_stop_and_start_are_turns_of_the_chat(self):
+        """Finding 15: the person stopped the department from the Map and the chat said nothing. Stop and Start are
+        the person's own acts: a turn inside, and on Root about the department."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        W.set_stopped(child, True)
+        W.set_stopped(child, False)
+        words = [t["line"] for t in R.chat_view(child)["turns"] if t["word"] in ("stopped", "started")]
+        self.assertEqual(words, ["Stopped by you: every engine stops where it is.", "Started by you: every engine looks to its own triggers."])
+        on_root = [(t["word"], t.get("dept")) for t in R.chat_view(root)["turns"] if t["word"] in ("stopped", "started")]
+        self.assertEqual(on_root, [("stopped", child), ("started", child)])
+        W.set_stopped(REF, True)
+        self.assertEqual([t["word"] for t in R.chat_view(REF)["turns"] if t["word"] == "stopped"], ["stopped"], "a department with no Root: its own chat")
+
+    def test_75_an_answer_to_the_departments_facts_question_is_the_facts_not_a_rule(self):
+        """Finding 16: the hours, said in answer to 'Tell me here and I will put them in', came back as a rule to stamp.
+        When the department's last word was its facts question and the answer carries no rule cue, it is a task."""
+        W, R = self.W, self.R
+        self.M.holes = True
+        root, child = self.structure()
+        child_name = W.dept(child)["name"]
+        a = next(x for x in W.asks(child) if x["kind"] == "publish" and x["status"] == "pending")
+        W.decide_ask(child, a["id"], True)
+        W.run_until_idle(child, limit=200)
+        W.run_until_idle(root, limit=200)
+        self.assertTrue([t for t in R.chat_view(child)["turns"] if t["word"] == "facts"], "the department asked for the facts")
+        answer = "Appointments are Monday to Saturday, 9 am to 6 pm."
+        for key in (answer, "On %s, %s" % (child_name, answer), "on %s, %s" % (child_name, answer)):
+            self.M.journeys[key] = "directive"                 # the agent misreads the answer as a rule
+        before = len(W.versions(child, "Brief"))
+        W.owner_ask(root, "On %s, %s" % (child_name, answer))
+        W.run_until_idle(root, limit=200)
+        W.run_until_idle(child, limit=200)
+        self.assertEqual([x for x in W.asks(child) if x["kind"] == "rule"], [], "no rule was put to the person")
+        self.assertEqual(len(W.versions(child, "Brief")), before + 1, "the answer was filed as the facts")
+        self.assertIn(answer, W.read_files(child, "Brief", W.latest(child, "Brief")["v"])["brief.md"])
+
+    def test_76_what_reaches_outside_is_named_in_the_persons_words(self):
+        """Finding 13: the person's own address, phone and email came back as 'This reaches outside the site'."""
+        R = self.R
+        self.assertEqual(R._reaches("Our address is 14 Lake Road, Nashik 422001. Phone 0253-2571108, email care@parasthi.in"),
+                         "an email address, a phone number, an address, so people will write, call or come")
+        self.assertEqual(R._reaches("Post it to our Instagram", "it names another site"), "it names another site")
+        self.assertEqual(R._reaches("Post it to our Instagram", "it reaches outside the site"), "", "the judge's stock reason adds nothing")
+
+    def test_77_the_goal_is_said_once_on_the_whole_chat_and_opens_the_departments_own(self):
+        """Finding 3: the goal was echoed on Root's chat as the person's turn again at the department's birth."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        words = R.board(child)[0]["payload"]["words"]          # what Root handed at the birth: the person's words
+        self.assertTrue(words.startswith("Start a website department for"), words)
+        whole = [t for t in R.chat_view(root)["turns"] if t["src"] == "Owner" and t["line"] == words]
+        self.assertEqual(len(whole), 1, "the person's words stand once on the whole chat: the front turn")
+        scoped = R.chat_view(child)["turns"]
+        self.assertEqual((scoped[0]["src"], scoped[0]["line"], scoped[0].get("birth")), ("Owner", words, True), "and open the department's own chat")
+
+    def test_78_plan_tells_the_person_which_pages_it_planned_whenever_they_change(self):
+        """Finding 8: three pages the goal never named went live unasked. Plan says its pages, once per change."""
+        W, R = self.W, self.R
+        self.live()
+        plans = [t["line"] for t in R.chat_view(REF)["turns"] if t["word"] == "plan"]
+        self.assertEqual(plans, ["Planned 5 pages: Index, About, Doctors, Contact, Book. Say which to drop or add."])
+        self.ask("Change the tagline to something warmer.")
+        self.idle()
+        self.assertEqual(len([t for t in R.chat_view(REF)["turns"] if t["word"] == "plan"]), 1, "the same pages: not said again")
+        self.ask("Add a parking page.")
+        self.idle()
+        plans = [t["line"] for t in R.chat_view(REF)["turns"] if t["word"] == "plan"]
+        self.assertEqual(len(plans), 2, plans)
+        self.assertIn("Parking", plans[-1])
+
+    def test_80_the_run_row_says_how_far_along_a_step_of_many_is(self):
+        """The chat's working line reads the run row's what: 'page 3 of 5' while Write writes the pages."""
+        W = self.W
+        whats = []
+        real = W._put_run
+
+        def spy(ref, row):
+            whats.append(row.get("what"))
+            return real(ref, row)
+        W._put_run = spy
+        try:
+            self.live()
+        finally:
+            W._put_run = real
+        self.assertEqual([w for w in whats if w and w.startswith("page ")], ["page %d of 5" % i for i in range(1, 6)])
+
+    def test_81_the_persons_front_turn_carries_the_department_it_reached(self):
+        """The person names the department in their words and no chip is on the box: Root's hand-over says where the
+        words went, and the person's own turn carries it too (run 2: a turn without the chip)."""
+        W, R = self.W, self.R
+        root, child = self.structure()
+        W.owner_ask(root, "On %s, add a parking page." % W.dept(child)["name"])
+        W.run_until_idle(root, limit=200)
+        mine = [t for t in R.chat_view(root)["turns"] if t["src"] == "Owner" and t["word"] == "front" and "parking" in t["line"]]
+        self.assertEqual([(t.get("dept"), t.get("name")) for t in mine], [(child, W.dept(child)["name"])])
+
+    def test_79_a_quoted_hole_never_starts_mid_word(self):
+        R = self.R
+        holes = R.placeholders({"book.html": "<p>Write to care@parasthihospital.in or call. Appointment Availability: appointment availability is to be confirmed</p>"})
+        self.assertEqual(len(holes), 1)
+        self.assertTrue(re.match(r"the page says '[A-Za-z]", holes[0]["claim"]), holes[0]["claim"])
+        self.assertNotIn("l.in", holes[0]["claim"])
+        self.assertTrue(holes[0]["claim"].endswith("is to be confirmed'"), holes[0]["claim"])
+
     def test_64_each_function_has_its_own_ladder_numbers_from_its_settings(self):
         """Founder, 2026-09-28: each of the five functions has a Settings tab with its own updates; an engine too."""
         W, R = self.W, self.R
@@ -1277,7 +1932,7 @@ class TestActivation(Base):
     is in coordination"; once started each has its own agency. One rule for the five internal systems and the four
     work engines, declared as data, refused if missing, read by one piece of code."""
 
-    ALL = ("Plan", "Write", "Check", "Publish", "Setup", "Identity", "Adaptation", "Priority", "Coordination", "Audit")    # ten: Setup is a Root's
+    ALL = ("Plan", "Write", "Check", "Publish", "Setup", "Do", "Identity", "Adaptation", "Priority", "Coordination", "Audit")    # eleven: Setup is a Root's, Do the default line's (TPL-1)
 
     def ctx(self, **more):
         c = self.R._coord_ctx(REF)
@@ -1417,8 +2072,8 @@ class TestActivation(Base):
         w = R.steps_view(REF, "Write")["start"]
         self.assertEqual(w["on"], ["a new Site plan"])
         self.assertEqual([(b["by"], b["name"]) for b in w["unless"]],
-                         [("Identity", R.step_def("identity.gate")[1]["name"]), ("Priority", R.step_def("priority.envelope")[1]["name"]),
-                          ("Coordination", "Stop a chain at its limit")])
+                         [("Identity", R.step_def("identity.wait_engine")[1]["name"]), ("Identity", R.step_def("identity.gate")[1]["name"]),
+                          ("Priority", R.step_def("priority.envelope")[1]["name"]), ("Coordination", "Stop a chain at its limit")])
         self.assertEqual(R.steps_view(REF, "Publish")["start"]["on"], ["a new Build that passed its check"])
         self.assertEqual(R.steps_view(REF, "Adaptation")["start"]["on"], ["a post addressed to it", "a new Live site that passed its check"])
         c = R.steps_view(REF, "Coordination")
@@ -1444,6 +2099,335 @@ class TestActivation(Base):
             self.assertNotIn("internal system", json.dumps(view).lower(), "the inside word reached the screen, in " + what)
         self.assertEqual(read["Coordination"]["table"]["first"][2], "A function woken by new work")
         self.assertEqual([k for k in self.ALL if read[k]["kind"] == "function"], ["Identity", "Adaptation", "Priority", "Coordination", "Audit"])
+
+
+class TestRunThree(Base):
+    """Human Simulation run 3 (2026-09-29, Beta 2.306.15, the founder as the user, 'Best dermatologists in Bangalore'):
+    findings 34-46, each a test before its fix (qa/sim/TEST-STRATEGY.md)."""
+
+    WEB = "Find on the internet what the hospital does and who its doctors are, and build only from that."
+
+    def lib_copy(self):
+        lib = self.R.Path(tempfile.mkdtemp(prefix="engine-templates-"))
+        shutil.rmtree(lib)
+        shutil.copytree(self.R.TEMPLATES_DIR, lib)
+        self._prior_lib = self.R.TEMPLATES_DIR
+        self.R.TEMPLATES_DIR = lib
+        self.R._DEFS.clear()
+        return lib
+
+    def tearDown(self):
+        if getattr(self, "_prior_lib", None):
+            self.R.TEMPLATES_DIR = self._prior_lib
+            self.R._DEFS.clear()
+        super().tearDown()
+
+    IDEA = "What if you found on the internet what the hospital does and who its doctors are."
+
+    def web_engine(self):
+        """As the user: an idea floated in the chat; Adaptation shapes the engine, Priority prices it, the owner stamps it;
+        it files on the Brief at once (the internet itself is a given: this path is for a new capability, not for reading)."""
+        self.ask(self.IDEA)
+        self.stamp("engine")
+        self.idle()
+        self.assertEqual(len(self.W.versions(REF, "Web Facts")), 1)
+
+    def test_96_the_line_waits_while_an_engine_ask_the_goal_needs_is_pending_and_says_so(self):
+        """Finding 34: the goal was filed and Plan and Write built a site of 'to be confirmed' while the engine ask waited;
+        its publish ask came the second the engine filed. The line waits for the stamp, and the person is told once."""
+        W, R = self.W, self.R
+        self.lib_copy()
+        self.live()
+        self.ask(self.IDEA)
+        self.assertTrue([x for x in W.asks(REF) if x["kind"] == "engine" and x["status"] == "pending"], "the engine ask is up")
+        plans = len(W.versions(REF, "Site plan"))
+        self.ask("Add a page for careers.")
+        self.assertEqual(len(W.versions(REF, "Site plan")), plans, "nothing planned while the engine ask waits")
+        name, _, why = R.next_due(REF, peek=True)
+        self.assertEqual((name, why), (None, "waits for the stamp on Web Facts"))
+        lines = [t["line"] for t in R.chat_view(REF)["turns"]]
+        waits = [x for x in lines if x.startswith("The line waits for your stamp on Web Facts")]
+        self.assertEqual(len(waits), 1, lines[-4:])
+        self.stamp("engine")
+        self.idle()
+        self.assertTrue(W.versions(REF, "Web Facts"), "after the stamp the engine ran")
+        self.assertGreater(len(W.versions(REF, "Site plan")), plans, "and the line followed")
+
+    def test_97_the_working_line_follows_the_engines_step(self):
+        """Finding 35: 'Source Reader is working: reading Brief' for the whole 90 s search. The run row's what is the step's name."""
+        W, R = self.W, self.R
+        self.lib_copy()
+        seen, real = {}, R.run_step
+
+        def spy(ctx, step, item):
+            row = next((r for r in W.runs(REF) if r["id"] == ctx["run"]), {})
+            seen.setdefault(step["id"], row.get("what"))
+            return real(ctx, step, item)
+
+        R.run_step = spy
+        try:
+            self.live()
+            self.web_engine()
+        finally:
+            R.run_step = real
+        self.assertEqual(seen.get("web-facts.make"), "Do what it asks", seen)
+        self.assertEqual(seen.get("plan.pages"), "Propose the pages", seen)
+
+    def test_98_an_address_on_a_page_is_a_link(self):
+        """Finding 40: 'Address as read: https://...' as text. write_file links a bare address and leaves a link alone."""
+        R = self.R
+        body = '<p>Read more at https://example.com/x/y?z=1. <a href="https://kept.org/">kept</a> and (https://paren.org).</p>'
+        ctx = {"bag": {"write.list": {"plan": {"pages": [{"slug": "about", "title": "About"}]}, "pages": ["about"]},
+                       "write.page": [{"title": "About", "body_html": body}]}, "how": {}}
+        out = R.write_file(ctx, {"id": "write.file"}, None)
+        html = json.loads(out["files"]["about.html"])["body_html"]
+        self.assertIn('<a href="https://example.com/x/y?z=1">https://example.com/x/y?z=1</a>.', html)
+        self.assertIn('<a href="https://paren.org">https://paren.org</a>)', html)
+        self.assertEqual(html.count('href="https://kept.org/"'), 1, html)
+        self.assertNotIn('<a href="<a', html)
+
+    def test_99_audit_reads_what_the_engines_filed_and_the_holes_go_to_the_engine_that_reaches_the_internet(self):
+        """Finding 41: Audit read the Brief only and asked to 'put right' sourced facts; the facts question asked the person for
+        fees an engine could find. The judge reads the filed artifacts; the holes are put to the web engine, once."""
+        W, R = self.W, self.R
+        self.lib_copy()
+        self.live()
+        self.web_engine()
+        self.M.holes = True
+        self.ask("Build the site from what you found.")
+        judge = [p for s, p in self.M.prompts if s == "audit.judge"][-1]
+        self.assertIn("WHAT THE DEPARTMENT'S OWN ENGINES FILED", judge)
+        self.assertIn("Web Facts (v", judge)
+        lines = [t["line"] for t in R.chat_view(REF)["turns"]]
+        facts = [x for x in lines if x.startswith("The site says it does not know")]
+        self.assertTrue(facts, lines[-4:])
+        self.assertTrue(any("I have asked Web Facts to look them up" in x for x in facts), facts)
+        self.assertFalse(any("Tell me here" in x for x in facts[:1]), facts[0])
+        look = [v for v in W.versions(REF, "Brief") if "Look up:" in W.read_files(REF, "Brief", v["v"]).get("brief.md", "")]
+        self.assertEqual(len(look), 1, "the holes are put to the engine once, not on every audit")
+
+    def test_100_what_came_of_words_said_to_a_function_lands_in_its_chat(self):
+        """Finding 43: 'Put the top three first.' said to Priority; the plan and the live tells landed only in the department
+        chat. A tell of the line carries its chain, and the function's chat shows the tells of the chains its words started."""
+        W, R = self.W, self.R
+        self.live()
+        W.owner_ask(REF, "Put the top three first.", about="fn:priority")
+        self.idle()
+        turns = R.fn_chat_view(REF, "priority")["turns"]
+        words = [t["word"] for t in turns if not t["think"]]
+        self.assertIn("request", words, "the words and 'filed in the Brief'")
+        self.assertIn("live", words, [t["line"] for t in turns][-6:])
+        other = R.fn_chat_view(REF, "audit")["turns"]
+        self.assertNotIn("live", [t["word"] for t in other if not t["think"]], "a chain another function's words started stays out")
+
+    def test_101_the_hole_reader_skips_the_navigation_and_the_links(self):
+        """Finding 44 (27 again): 'the page says Top 5 List How the Order Was Chosen Sources Still To Be Confirmed': the nav's
+        link text read as a gap."""
+        R = self.R
+        nav = '<nav><a href="a.html">Sources</a> <a href="b.html">Still To Be Confirmed</a></nav><header><h1>Doctors</h1></header>'
+        self.assertEqual(R.placeholders({"a.html": nav + "<main><p>All good here.</p></main>"}), [])
+        holes = R.placeholders({"a.html": nav + "<main><p>Fees and timings are to be confirmed.</p></main>"})
+        self.assertEqual(len(holes), 1, holes)
+        self.assertIn("Fees and timings are to be confirmed", holes[0]["claim"])
+
+    def test_102_words_identitys_take_calls_a_rule_are_filed_as_a_rule_not_as_a_request(self):
+        """Finding 45: 'Nothing goes on the site without a source line under it.' was asked for with 'Put them on the site as
+        said?' and, stamped, went into the Brief under Asked since; the map's rules never changed."""
+        W, R = self.W, self.R
+        self.live()
+        words = "Nothing goes on the site without a source line under it."
+        line = "Nothing goes on the site without a source line under it"
+        self.M.rules[words] = {"line": line, "tag": "always"}
+        briefs = len(W.versions(REF, "Brief"))
+        self.ask(words)
+        a = next(x for x in W.asks(REF) if x["kind"] == "rule" and x["status"] == "pending")
+        self.assertEqual(a["text"], "A rule, as understood: " + line)
+        self.assertFalse([x for x in W.asks(REF) if x["kind"] == "request" and x["status"] == "pending"], "no request ask on a rule")
+        self.assertEqual(len(W.versions(REF, "Brief")), briefs, "a rule is not an ask of the line")
+        self.stamp("rule")
+        self.idle()
+        self.assertIn(line, [r["line"] for r in W.dept(REF)["rules"]])
+
+    def test_103_an_engine_that_reads_the_brief_runs_again_only_when_the_words_ask_for_its_work(self):
+        """Finding 38: four web searches in one run, one asked for. A born engine's need step reads whether the new words ask
+        for its work; the first run asks nothing, having nothing filed yet."""
+        W, R = self.W, self.R
+        self.lib_copy()
+        self.live()
+        self.web_engine()
+        self.assertEqual([s for s, _ in self.M.prompts if s == "web-facts.need"], [], "the first run had nothing to weigh the words against")
+        self.M.need = False
+        plans = len(W.versions(REF, "Site plan"))
+        self.ask("Put the top three first.")
+        self.assertEqual(len(W.versions(REF, "Web Facts")), 1, "no second search for words about order")
+        row = [r for r in W.runs(REF) if r["engine"] == "Web Facts"][-1]
+        self.assertEqual(row["status"], "ok", row)
+        self.assertTrue(str(row.get("what")).startswith("not needed: "), row)
+        self.assertGreater(len(W.versions(REF, "Site plan")), plans, "the line went on and Plan read the last filing")
+        self.assertEqual(len([s for s, _ in self.M.prompts if s == "web-facts.need"]), 1)
+
+    def test_104_a_search_that_runs_again_reads_what_it_filed_last_time(self):
+        """Finding 46: each re-run replaced the record; v4 of the site drew on three sources where v1 had four. The make step
+        is shown the last result and told to keep what holds, add what is new and name what it dropped."""
+        W, R = self.W, self.R
+        self.lib_copy()
+        self.live()
+        self.web_engine()
+        self.ask("Find their fees too.")
+        self.assertEqual(len(W.versions(REF, "Web Facts")), 2)
+        make = [p for s, p in self.M.prompts if s == "web-facts.make"][-1]
+        self.assertIn("WHAT YOU FILED LAST TIME (v1):", make)
+        self.assertIn("Done, in words:", make, "the last result's text is in the prompt")
+        self.assertIn("under a line 'Dropped'", make)
+        first = [p for s, p in self.M.prompts if s == "web-facts.make"][0]
+        self.assertNotIn("WHAT YOU FILED LAST TIME", first)
+
+    def test_105_an_engine_on_the_record_whose_template_the_library_lacks_never_breaks_a_read_and_is_said(self):
+        """Finding 47 (2026-09-29, Beta 2.306.16): a born engine's template lived in the old bundle's Library and was gone
+        after the update; the map of every department of the organisation answered 500 (ready() read e['start'] of None).
+        A missing template is a card that says so and a health line, never a crash; the rest of the line runs."""
+        W, R = self.W, self.R
+        self.live()
+        d = W.dept(REF)
+        d["engines"] = ["Ghost Reader"] + list(d["engines"])
+        W.save_dept(REF, d)
+        name, _, why = R.next_due(REF, peek=True)
+        self.assertEqual(name, None)
+        m = W.map_view(REF)
+        ghost = next(e for e in m["engines"] if e["name"] == "Ghost Reader")
+        self.assertEqual((ghost["state"], ghost.get("missing")), ("Missing", True))
+        lib = next(c for c in m["health"]["checks"] if c["name"] == "Library")
+        self.assertEqual(lib["state"], "block")
+        self.assertIn("Ghost Reader has no template in this app's Library", lib["line"])
+        plans = len(W.versions(REF, "Site plan"))
+        self.ask("Add a page for careers.")
+        self.assertGreater(len(W.versions(REF, "Site plan")), plans, "the rest of the line still runs")
+
+    def test_106_a_born_engine_lives_in_the_record_homes_library_not_in_the_apps_bundle(self):
+        """Finding 47, the cause: born_template wrote into the shipped Library beside the code, which an update replaces.
+        It writes under the record home, which an update keeps; the definitions read both, the shipped first."""
+        W, R = self.W, self.R
+        self.live()
+        self.web_engine()
+        user = R.user_templates_dir()
+        self.assertEqual(user, R.Path(self.home) / "_library")
+        self.assertTrue((user / "web-facts.json").exists(), "born into the record home's Library")
+        self.assertFalse((R.TEMPLATES_DIR / "web-facts.json").exists(), "nothing written beside the code")
+        R._DEFS.clear()
+        self.assertIn("Web Facts", R.defs()["engines"], "read back with the shipped templates")
+        self.assertEqual(R.defs()["engines"]["Web Facts"]["from_template"], "engine/web-facts")
+
+    def test_107_words_that_name_nothing_to_build_from_get_a_question_not_a_site(self):
+        """Finding 48 (the founder's own department, 2026-09-29 16:40, stable 2.306.15): the words 'New website' bore a
+        department that planned eight generic pages, went live on a stamp and then asked for twelve facts. Words that
+        name no subject get one question first; the line starts on the answer."""
+        W, R = self.W, self.R
+        self.M.thin.add("New website")
+        W.give_goal(REF, "New website")
+        self.idle()
+        self.assertEqual(W.versions(REF, "Brief"), [], "nothing filed from words that name nothing")
+        self.assertEqual(W.versions(REF, "Site plan"), [], "nothing planned")
+        lines = [t["line"] for t in R.chat_view(REF)["turns"]]
+        self.assertTrue(any(x.startswith("Say what the site is for and about whom or what") for x in lines), lines[-3:])
+        self.ask("A site for Sharma Tailors: stitching and alterations in Jaipur, and how to reach the shop.")
+        self.assertEqual(len(W.versions(REF, "Brief")), 1, "the answer is the goal")
+        self.assertTrue(W.versions(REF, "Site plan"), "and the line starts on it")
+
+    def test_108_a_question_is_answered_from_what_the_department_filed_not_only_from_its_counts(self):
+        """Run 4 finding 51 (the SEO tool): 'Which of your changes matters most?' got 'It holds no changes' because the
+        answer step saw a website's record lines and never the Result. The record it reads carries the latest text filed."""
+        W, R = self.W, self.R
+        self.live()
+        self.ask("Which page says what a patient needs to know?")
+        prompt = [p for s, p in self.M.prompts if s == "identity.answer"][-1]
+        self.assertIn("what was filed last, Live site v1:", prompt)
+        self.assertIn("What a patient needs to know", prompt, "the pages' own text is in the record the answer reads")
+        d = W.dept(REF)
+        d["kind"], d["artifacts"], d["engines"] = "default", ["Brief", "Result"], ["Do"]
+        W.save_dept(REF, d)
+        lines = R._record_lines(REF)
+        self.assertFalse(any("plan" in x or "site is" in x for x in lines), "a tool's record speaks no website lines: %s" % lines)
+
+    def test_109_the_owners_words_appear_once_in_the_chat_of_a_department_reached_directly(self):
+        """Run 4 finding 52, withdrawn: a watch loop printed the question twice; the board and the chat hold it once. Pinned."""
+        W, R = self.W, self.R
+        self.live()
+        W.owner_ask(REF, "Which page says what a patient needs to know?")
+        self.idle()
+        turns = [t for t in R.chat_view(REF)["turns"] if t["line"] == "Which page says what a patient needs to know?"]
+        self.assertEqual(len(turns), 1, turns)
+        self.assertEqual(len([p for p in R.board(REF) if "Which page says" in json.dumps(p.get("payload"))]), 1)
+
+
+class TestRunFive(Base):
+    """Human Simulation run 5 (2026-09-30, the founder: 'someone wants to create a website from the Mac app ... each of the
+    adaptations doesn't do any kind of template. It creates engines on the fly. It creates a website, and data is taken
+    from the internet'): a department born with no engines gets its line from Adaptation on the owner's stamp."""
+
+    REF2 = "dref-runtime0002"
+    WORDS = ("A website for people visiting Hampi: what to see, when to go, how to reach it, from the internet with the source "
+             "under each fact. Work out yourself what has to be done; no fixed way of working.")
+
+    def born(self):
+        W = self.W
+        W.create(self.REF2, "Hampi Guide Site", None, kind="organic")
+        self.assertEqual([x[0] for x in W.engines_of(W.dept(self.REF2))], [], "no engine at birth")
+        self.assertEqual(list(W.artifacts_of(W.dept(self.REF2))), ["Brief"])
+        W.give_goal(self.REF2, self.WORDS)
+        W.run_until_idle(self.REF2, limit=200)
+
+    def test_110_a_department_born_with_no_line_gets_one_from_adaptation_on_the_owners_stamp_and_the_site_goes_live(self):
+        W, R = self.W, self.R
+        self.born()
+        ref = self.REF2
+        a = next(a for a in W.asks(ref) if a["kind"] == "line" and a["status"] == "pending")
+        self.assertEqual([e["name"] for e in a["engines"]], ["Facts", "Site"])
+        self.assertIn("Set up the line Facts -> Site?", a["text"])
+        self.assertEqual([r for r in W.runs(ref) if not r.get("system")], [], "nothing of the line ran before the stamp")
+        lines = [t["line"] for t in R.chat_view(ref)["turns"]]
+        self.assertTrue(any(x.startswith("Adaptation is shaping the engines") for x in lines), lines)
+        self.assertEqual(len(W.versions(ref, "Brief")), 1)
+        W.decide_ask(ref, a["id"], True)
+        W.run_until_idle(ref, limit=300)
+        d = W.dept(ref)
+        self.assertEqual([x[0] for x in W.engines_of(d)], ["Facts", "Site"])
+        self.assertEqual(list(W.artifacts_of(d)), ["Brief", "Facts", "Live site"])
+        self.assertTrue((R.user_templates_dir() / "facts.json").is_file(), "born into the record home's Library")
+        facts = R.engine_def("Facts")
+        self.assertEqual((facts["reads"], facts["writes"]), ("Brief", "Facts"))
+        self.assertIn("WebSearch", next(s for s in facts["steps"] if s["id"] == "facts.make").get("tools") or [], "the internet, from the shape")
+        self.assertEqual(len(W.versions(ref, "Facts")), 1, "the first engine ran on the words")
+        pub = next(a for a in W.asks(ref) if a["kind"] == "publish" and a["status"] == "pending")
+        self.assertTrue(pub["text"].startswith("Site: go live for the first time"), pub["text"])
+        self.assertEqual(len(W.versions(ref, "Live site")), 0, "nothing goes out before the stamp")
+        lines = [t["line"] for t in R.chat_view(ref)["turns"]]
+        self.assertTrue(any(x.startswith("Added the line Facts -> Site") for x in lines), lines[-5:])
+        W.decide_ask(ref, pub["id"], True)
+        W.run_until_idle(ref, limit=300)
+        self.assertEqual(len(W.versions(ref, "Live site")), 1)
+        self.assertTrue((W.live_dir(ref) / "index.html").is_file() and (W.live_dir(ref) / "see.html").is_file(), "served")
+        self.assertTrue(W.map_view(ref)["live"])
+        lines = [t["line"] for t in R.chat_view(ref)["turns"]]
+        self.assertIn("Live site v1 is live.", lines)
+        self.assertEqual([s for s, p in self.M.prompts if s.startswith("site.")], ["site.plan", "site.page", "site.page"],
+                         "the site engine plans its pages, then one call per page (findings 60, 63)")
+        self.assertTrue(any('{"text"' in p for s, p in self.M.prompts if s == "facts.make"), "the facts engine for one answer")
+        self.assertNotIn("site.need", [s["id"] for s in R.engine_def("Site")["steps"]], "an engine that reads another's filing runs on every new version (62)")
+
+    def test_111_the_line_check_refuses_a_broken_line_and_a_library_name(self):
+        R = self.R
+
+        def ok(engs):
+            return R.c_line_is_engines(None, None, None, {"engines": engs})
+        good = [{"name": "Facts", "reads": "Brief", "writes": "Facts"}, {"name": "Site", "reads": "Facts", "writes": "Live site"}]
+        self.assertTrue(ok(good)["ok"], ok(good))
+        self.assertFalse(ok([{"name": "Write", "reads": "Brief", "writes": "Pages"}])["ok"], "a name the Library uses")
+        self.assertFalse(ok([{"name": "plan", "reads": "Brief", "writes": "X"}])["ok"], "a slug a template file on disk takes (DeepSeek P2)")
+        self.assertEqual(R._line_faults([{"name": "Do it", "reads": "Brief", "writes": "X"}]), [], "a two-word name, its own slug")
+        self.assertFalse(ok([{"name": "Facts", "reads": "Pages", "writes": "Facts"}])["ok"], "reads what nothing wrote")
+        self.assertFalse(ok([{"name": "A", "reads": "Brief", "writes": "X"}, {"name": "B", "reads": "X", "writes": "X"}])["ok"], "writes what is written")
+        self.assertFalse(ok([{"name": "A", "reads": "Brief", "writes": "A"}, {"name": "A", "reads": "A", "writes": "B"}])["ok"], "named twice")
+        self.assertFalse(ok([])["ok"])
 
 
 if __name__ == "__main__":

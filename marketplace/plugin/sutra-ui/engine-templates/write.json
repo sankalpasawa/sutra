@@ -1,0 +1,62 @@
+{
+ "id": "engine/write",
+ "name": "Write",
+ "version": 1,
+ "use_case": "a website: every page written from the plan",
+ "kind": "work",
+ "description": "writes the body of every page in the plan",
+ "skills": [
+  "write a page from its plan"
+ ],
+ "reads": "Site plan",
+ "writes": "Pages",
+ "start": {
+  "on": [
+   {
+    "kind": "version",
+    "of": "Site plan"
+   }
+  ],
+  "unless": [
+   "identity.wait_engine",
+   "identity.gate",
+   "priority.envelope",
+   "coord.chain"
+  ]
+ },
+ "steps": [
+  {
+   "id": "write.list",
+   "name": "List the pages",
+   "nature": "transform",
+   "born": "C2",
+   "code": "write_list",
+   "check": "list_has_pages"
+  },
+  {
+   "id": "write.page",
+   "name": "Write a page",
+   "nature": "make",
+   "born": "C0",
+   "ceiling": "C1",
+   "each": "write.list.pages",
+   "side_by_side": 4,
+   "prompt": "write_page",
+   "draft": "write_page_draft",
+   "out": {
+    "title": "str",
+    "body_html": "str"
+   },
+   "check": "page_has_body"
+  },
+  {
+   "id": "write.file",
+   "name": "Put the pages together",
+   "nature": "transform",
+   "born": "C2",
+   "code": "write_file",
+   "files": true,
+   "check": "filed_has_files"
+  }
+ ]
+}

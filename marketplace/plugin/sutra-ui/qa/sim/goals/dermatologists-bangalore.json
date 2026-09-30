@@ -1,0 +1,23 @@
+{
+  "id": "dermatologists-bangalore",
+  "person": "founder",
+  "app": "http://127.0.0.1:8331/",
+  "organisation": "Bangalore Skin Guide",
+  "goal": "Best dermatologists in Bangalore: a website that lists them, from what the internet says, each with where it came from.",
+  "why": "founder 2026-09-29 ~14:55: 'Can you start from scratch? Best dermatists in Bangalore as an example of a department.' A fresh organisation, founded from the app's own sheet; the department's job is the founder's words; the person gives no facts. The product must get to the internet itself (the ask that says what it needs, the stamp, the engine its Adaptation shapes, the search, the filed list with pages) and build the site from that on the person's word. Runs on Beta 2.306.15 (run 2's fixes: sutra 86100e73).",
+  "outcomes": [
+    { "id": "founded", "expect": "Bangalore Skin Guide in the tree with its Root, On, from the New organisation sheet", "verify": { "kind": "route", "get": "/api/native/depts", "check": "'Bangalore Skin Guide Root', kind root" } },
+    { "id": "child-born", "expect": "one department under Root after one Stamp, with a name of its own", "verify": { "kind": "route", "get": "/api/native/depts", "check": "a website department under the Root" } },
+    { "id": "needs-internet", "expect": "the department says its words need the internet, which no engine of its own reaches, and what a stamp does; after the stamp it says Adaptation is shaping an engine and the engine ask follows in the chat; nothing is built from invented facts meanwhile", "verify": { "kind": "route", "get": "/api/native/{child}/chat", "check": "an ask 'Your words need internet ...'; then 'no engine of mine reaches internet yet'; then an ask of kind engine" } },
+    { "id": "engine-added", "expect": "after the Stamp the engine is on the Map, first in the line, and runs at once; its list is filed and the chat says '<name> v1 is filed.'", "verify": { "kind": "route", "get": "/api/native/{child}/map", "check": "engines[0] is the new one; an artifact of its name with v1" } },
+    { "id": "list-has-sources", "expect": "what the engine filed is dermatologists in Bangalore, each with the page it came from (a URL); what it could not confirm under Not sure", "verify": { "kind": "route", "get": "/api/native/{child}/artifact/<slug>", "check": "names with https:// after each" } },
+    { "id": "live", "expect": "after 'Build the site from what you found': the live site lists them, each with where it came from", "verify": { "kind": "site", "get": "/api/native/{child}/site/index.html", "check": "200; names and sources on the pages" } }
+  ],
+  "variances": [
+    { "id": "say-to-priority", "where": "Priority's Chat", "do": "say: Put the top three first.", "expect": "the words in Priority's chat at once and in the department's chat; what came of them lands in the same chat", "verify": { "kind": "route", "get": "/api/native/{child}/chat?fn=priority", "check": "a turn src Owner with the words" } },
+    { "id": "drop-one", "where": "the department's chat", "do": "after the list is filed, name one and say: Take <that one> out everywhere.", "expect": "the next live version has no trace of it", "verify": { "kind": "site", "get": "/api/native/{child}/site/index.html", "check": "the name is gone" } },
+    { "id": "source-rule", "where": "the department's chat", "do": "say a rule: Nothing goes on the site without a source line under it. Stamp it.", "expect": "the rule is a check the line runs", "verify": { "kind": "route", "get": "/api/native/{child}/map", "check": "rules[] has it" } },
+    { "id": "other-chats-kept", "where": "the function cards", "do": "open Identity's Chat, then Adaptation's, then Identity's again", "expect": "each its own existing chat; nothing starts, nothing lost", "verify": { "kind": "screen", "check": "the same turns on the second open" } },
+    { "id": "stop-mid-run", "where": "the Map", "do": "press Stop while Write runs; Start again", "expect": "Stopped and Started are turns; the run resumes; one version", "verify": { "kind": "route", "get": "/api/native/{child}/health", "check": "Slots: each slot ran once" } }
+  ]
+}

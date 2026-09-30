@@ -42,7 +42,11 @@ function wb2DotCls(cls){ return cls === "run" ? "" : (cls === "ask" ? "warn" : c
 function wb2Head(n, m){
   const st = wbS();
   const root = m.root && m.root !== n.ref && st.refs && st.refs[m.root];
-  const crumb = root ? `<div class="wb2crumb"><button type="button" class="o2more wb" data-wb2go="${wbEsc(m.root)}">${wbEsc(root.name)}</button> &rsaquo; ${wbEsc(m.name)}</div>` : "";
+  /* the crumb names the organisation, whose row is Root's chat: Root itself is not drawn (22-website.js wbHidden) */
+  const od = root && typeof o2Data === "function" ? o2Data() : null;
+  const rr = od && od.byRef.get(m.root);
+  const org = rr && od.hidden && od.hidden.has(rr.ref) && rr.parent_ref ? od.byRef.get(rr.parent_ref) : null;
+  const crumb = root ? `<div class="wb2crumb"><button type="button" class="o2more wb" data-wb2go="${wbEsc(org ? org.ref : m.root)}">${wbEsc(org ? org.name : root.name)}</button> &rsaquo; ${wbEsc(m.name)}</div>` : "";
   const sw = `<button type="button" role="switch" aria-checked="${m.stopped ? "false" : "true"}" class="wb2switch${m.stopped ? "" : " on"}" ` +
     (m.stopped ? `data-wbresume="1" title="Off. Start every engine."` : `data-wbstop="1" title="On. Stop every engine."`) + `></button>`;
   const live = m.live ? `<a class="o2more wb2live" href="${wbEsc(wbUrl(n.ref, "site/index.html"))}" target="_blank" rel="noopener">Live site</a>` : "";
@@ -208,6 +212,7 @@ if (typeof document !== "undefined" && document.addEventListener){
     ev.preventDefault(); ev.stopPropagation();
     st.tab[ds.wb2go] = "map";
     if (typeof o2Select === "function") o2Select(ds.wb2go);
-    wbLoadMap(ds.wb2go, true); dpRender();
+    if (wbIs(ds.wb2go)) wbLoadMap(ds.wb2go, true);   /* the organisation has no map of its own: its row is Root's chat */
+    dpRender();
   }, true);
 }

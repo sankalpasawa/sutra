@@ -50,6 +50,13 @@ _sutra_tier_rank() {
       case "$3" in ''|*[!0-9]*) printf '%s' -1 ;; *) printf '%s' "$3" ;; esac ;;
     placement)
       case "$3" in dref-*) printf '%s' 1 ;; ''|unresolved|none) printf '%s' 0 ;; *) printf '%s' -1 ;; esac ;;
+    classify)
+      # An act is not more or less stringent than another act: a message that
+      # asserts is not "below" one that asks. All three sit on ONE rung, so an
+      # agent answer is judged by confidence alone (correct_on_confidence),
+      # never by a ladder. Before this a correct ASSERT was refused for ranking
+      # below QUERY (seen live 2026-09-29: "as expexted").
+      case "$3" in DIRECT|QUERY|ASSERT) printf '%s' 1 ;; *) printf '%s' -1 ;; esac ;;
     *)
       _tr_l="$(sutra_tier_cfg "$1" "$2" ladder)"
       [ -n "$_tr_l" ] || { printf '%s' -1; return 0; }

@@ -68,6 +68,7 @@ KINDS = (
     "org.create",
     "org.charter",      # write or amend a charter by succession (D-O3, 2026-09-15)
     "org.template",     # run one of a department's five functions on a picked template (slice I, DS-9)
+    "org.engine",       # add an engine to a live department: a Library template by name, or one shaped from an idea (TPL-1 slice 2)
 )
 
 

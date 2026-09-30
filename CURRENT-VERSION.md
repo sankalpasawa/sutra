@@ -2,7 +2,55 @@
 
 **status**: active · **updated**: 2026-09-28
 
-## v2.306.9 (2026-09-28, HEAD)
+## v2.306.21 (2026-09-30, HEAD)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.20 (2026-09-29)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.19 (2026-09-29)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.18 (2026-09-29)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.17 (2026-09-29)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.16 (2026-09-28)
+
+**An act is not more or less than another act** (found live 2026-09-29): classify's three acts sat on a stringency ladder, so a correct ASSERT was refused for ranking below QUERY. They sit on one rung now and the more confident answer wins.
+
+## v2.306.15 (2026-09-29)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.14 (2026-09-29)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.13 (2026-09-28)
+
+**Every code step says how sure it is** (RT-25, founder 2026-09-29: wherever the code leans on a confidence, an agent should be available). classify, resolve and depth each emit a confidence derived from branches they already had; the rows print it; classify asks the agent when nothing matched at all and records the answer.
+
+## v2.306.12 (2026-09-29)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.11 (2026-09-29)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.10 (2026-09-28)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.9 (2026-09-28)
 
 **A message typed during a reply goes to Claude at once, and Stop is Esc** (Claude chat panes). The message is folded into the running reply or runs right after it; Stop ends the reply and keeps the process, falling back to the old kill after 15s. Echoes are matched by order, so an attachment or an expanded slash command can no longer leave the chat waiting, and a Stop no longer raises a Shadow "hit an error" item.
 

@@ -32,10 +32,37 @@ A screen that says nothing when the person expects something; a wait that runs o
 
 Reads a log, a record file or a route to decide the next action (routes are for verifying only); presses anything twice because it was slow; fixes anything; changes the goal to make it pass.
 
-## Productionizing
+## The tools (2026-09-29)
 
-`sim-agent.sh <goal.json>` starts a headless Claude session with this runbook, the person, the goal and a browser tool, and ends with the run folder; until that launcher exists (SIM-2), the agent is the session that reads this file.
+| Tool | When | What it gives |
+|---|---|---|
+| `sim-agent.sh <goal> [person]` | before the first click | the run folder, the app up on 8331, the person, the goal and this runbook printed for the agent |
+| `variance-order.py <goal> <run-dir> [seed]` | right after | `order.json`: the goal's variances in a random order, each with the moment it fires (after the goal is filed, while Plan or Write runs, after the publish ask, after the site is live, after Audit's question); the agent takes them at those moments, so no two runs walk the same path |
+| `probe-map.py <dept-ref> ... <run-dir>/probe.jsonl` | while a line runs, detached | how long the panel takes to answer, every 2 s: the numbers behind "the app went quiet" |
+| `reply-speed.py <record-dir>` | after the run | per request, the seconds from the person's words to the first answer, and where they went |
+
+The agent is still the session that reads this file, with a browser tool; a headless session started by the launcher is the next step (TODO SIM-4).
+
+## The skills map (2026-09-29)
+
+The run is one phase of a loop: find, claim, fix, prove, review, release, rerun, record. Each phase is owned by one plugin skill (`core:<name>`, the `core@sutra` plugin), and the session running that phase invokes it. The map is the same shape as `core:native-builder` section 4: a map for the session to follow, not a call graph.
+
+| Phase | Skill | What it gives this program |
+|---|---|---|
+| Find (the run) | this runbook + `core:lens` + `core:cynefin` | the loop above; the variance axes (who clicks, what outcome, when in the line); the domain is complex, so each variance is a small probe read from the record afterwards |
+| Stage (each finding) | `core:native` | the Steward reads the finding as evidence: a fix with no claim behind it (a typo, a wrong word) goes straight to fix; anything that argues a design (finding 23's shape-before-ask, finding 34's wait-for-the-engine) is an idea and goes through the claim |
+| Claim | `core:native-method` | one Lab card per design-shaped finding: `If <fix>, then <what the person sees> moves from <seen> to <expected> within the rerun`, the kill line being the rerun's outcome row |
+| Fix | `core:native-builder` | the seven phases Understand, Place, Design, Build, Prove, Document, Record; skill set 4 (engine work) for `engine_runtime.py` findings, set 5 (screen work) for `static/js` findings; one unit per finding group, never one unit for all |
+| Prove | `core:test-strategy` + `core:deterministic-testing` | the named test per finding before the fix (`test_engine_runtime.py`, `test_website.js`), golden output where the finding is a wording; the suite is the atom's verify |
+| Review | `core:codex-sutra` / `core:deepseek` | the second lane's sealed verdict on the fix diff; when the lane is down (usage-limited, no key) the run says so in the report and does not forge the marker |
+| Release | `scripts/release-desktop.sh` from a shared clone (not a skill) | Beta first, then stable, Mac and Windows; never while a run is live on the Beta (finding 31) |
+| Rerun | this runbook + `variance-order.py` | the same goal, a new random variance order, on the released build; a finding that recurs keeps its number |
+| Record | `core:writing-style` + `core:writing-adr` | `report.md` and the TODO SIM rows in the standard's shape; a design call the founder rules gets an ADR row with what would reverse it |
+| Third of a shape | `core:system-engineering` | when three findings share a shape (findings 36 and 39 both open the wrong thing from a chat button), design the component that makes them right, not the third patch |
+| Where it sits | `core:domains` | the department and charter a fix unit belongs to, for its placement line |
+
+The map is applied per unit, by whoever runs the phase: the agent for Find and Rerun, the fixing session for the rest. A phase whose skill was not invoked says so in the unit's report.
 
 ## Provenance
 
-provenance: {author: claude, session: 17842ce0, date: 2026-09-28, inputs: [the founder's words of 2026-09-28 quoted in the header, PROGRAM.md v1 and v2], review: none by a second model, confidence: high on the loop and the miss rule; moderate on the waits, which the first run sets}
+provenance: {author: claude, session: 17842ce0, date: 2026-09-29, inputs: [the founder's words of 2026-09-28 quoted in the header, PROGRAM.md v1 and v2, the founder 2026-09-29: "Use relevant skills from a map to make this happen as well. For the human simulation program", the plugin's skill list at core 2.306.16, core:native-builder section 4], review: none by a second model, confidence: high on the loop, the miss rule and the map's skill names, which are the plugin's; moderate on the waits, which the first run sets}

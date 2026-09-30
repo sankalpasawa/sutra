@@ -1,0 +1,55 @@
+{
+ "goal": "sankalp-asawa",
+ "person": "founder",
+ "seed": 1790671873,
+ "drawn": [
+  "stop-mid-run",
+  "source-rule",
+  "drop-an-unsure-fact",
+  "say-to-priority",
+  "other-chats-kept"
+ ],
+ "plan": [
+  {
+   "n": 1,
+   "id": "stop-mid-run",
+   "at": "right after the site is live",
+   "say": null,
+   "do": "press Stop while Write runs; Start again",
+   "expect": "Stopped and Started are turns; the run resumes; one version"
+  },
+  {
+   "n": 2,
+   "id": "source-rule",
+   "at": "right after the publish ask",
+   "say": null,
+   "do": "say a rule: Nothing goes on the site without a source line under it. Stamp it.",
+   "expect": "the rule is a check the line runs; a build with a line without a source is sent back"
+  },
+  {
+   "n": 3,
+   "id": "drop-an-unsure-fact",
+   "at": "right after the goal is filed",
+   "say": null,
+   "do": "after the facts are filed, name one the internet got wrong and say: Take <that> out everywhere.",
+   "expect": "the next live version has no trace of it"
+  },
+  {
+   "n": 4,
+   "id": "say-to-priority",
+   "at": "right after the site is live",
+   "say": null,
+   "do": "say: Put the Work page first in the order.",
+   "expect": "the words are in Priority's chat at once and in the department's chat; what came of them lands in the same chat"
+  },
+  {
+   "n": 5,
+   "id": "other-chats-kept",
+   "at": "right after the publish ask",
+   "say": null,
+   "do": "open Identity's Chat, then Adaptation's, then Identity's again",
+   "expect": "each shows its own existing chat on the click; nothing starts, nothing is lost"
+  }
+ ],
+ "made": "2026-09-29T14:21:13+0530"
+}

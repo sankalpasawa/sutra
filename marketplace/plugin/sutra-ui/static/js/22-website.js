@@ -40,9 +40,9 @@ const WB_ACTS = { "request": "asks", "agree": "agrees", "refuse": "refuses", "pr
                   "reject-proposal": "rejects", "inform": "tells", "failure": "could not", "not-understood": "did not follow", "cancel": "lets go" };
 
 function wbS(){
-  if (!S.wb) S.wb = { refs: null, refsBusy: false, map: {}, sig: {}, tab: {}, pane: {}, sel: {}, draft: {},
+  if (!S.wb) S.wb = { refs: null, refsBusy: false, refsMissed: {}, map: {}, sig: {}, tab: {}, pane: {}, sel: {}, draft: {},
                       busy: {}, err: {}, engine: {}, art: {}, trace: {}, steps: {}, board: {}, chat: {}, chatSig: {},
-                      chip: {}, thread: {}, found: null, timer: null };
+                      fnchat: {}, fnchatSig: {}, chip: {}, thread: {}, turns: {}, scroll: {}, found: null, timer: null, born: {} };
   return S.wb;
 }
 function wbRt(m){ return !!(m && m.runtime === 2); }
@@ -69,20 +69,56 @@ function wbUrl(ref, tail){ return "/api/native/" + encodeURIComponent(ref) + "/"
 function wbIs(ref){
   const st = wbS();
   if (st.refs === null){ wbLoadRefs(); return false; }
+  if (!st.refs[ref] && ref && !st.refsMissed[ref]){
+    /* a department born since the list was read (Root made it): the list is read again, once for that name, and the
+       department wears its own view when the read lands (found live 2026-09-28: the first build's card until a reload) */
+    st.refsMissed[ref] = true;
+    wbLoadRefs();
+  }
   return !!st.refs[ref];
 }
-async function wbLoadRefs(){
+async function wbLoadRefs(again){
   const st = wbS();
   if (st.refsBusy) return;
   st.refsBusy = true;
+  let sig = null;
   try {
     const r = await apiGet("/api/native/depts");
     st.refs = {};
     ((r && r.depts) || []).forEach(d => { st.refs[d.ref] = d; });
-  } catch (e) { st.refs = {}; }
+    sig = JSON.stringify(st.refs);
+  } catch (e) { if (!again) st.refs = {}; }
   st.refsBusy = false;
-  wbTick();
+  /* on the clock (again) the list is read for what is working now (SIM-3 a): a paint only when something changed */
+  const moved = sig !== null && sig !== st.refsSig;
+  if (sig !== null) st.refsSig = sig;
+  if (again && !moved) return;
+  if (!again) wbTick();
   dpRender();
+}
+/* ── the organisation and its Root ────────────────────────────────────────
+   Founder, 2026-09-29: "at the organization level, only a chat is shown, and
+   root is not shown." Root stays a department of the registry under its
+   organisation; the screen does not draw it. 19-org2.js asks wbHidden when it
+   builds the tree and lifts Root's departments under the organisation; the
+   organisation row is then Root's chat (wbOrgHtml). */
+function wbHidden(ref){
+  const st = wbS();
+  if (st.refs === null){ wbLoadRefs(); return false; }
+  const r = st.refs[ref];
+  return !!(r && r.kind === "root");
+}
+function wbRootOf(orgRef){
+  const d = (typeof o2Data === "function") ? o2Data() : null;
+  const r = d && d.lifted && d.lifted.get(orgRef);
+  return r ? r.ref : null;
+}
+/* a department Root just made slides into the tree once: marked when the chat learns of it, timed from its first paint */
+function wbBorn(ref){
+  const st = wbS(), t = st.born && st.born[ref];
+  if (!t) return false;
+  if (t === true){ st.born[ref] = Date.now(); return true; }
+  return (Date.now() - t) < 1200;
 }
 /* A department on the engine runtime opens on its chat: the one point of entry
    (founder, 2026-09-28). One of the first build opens on its Map, as before. */
@@ -127,10 +163,16 @@ function wbTick(){
   if (st.timer) return;
   st.timer = setInterval(() => {
     if (S.screen !== "org2" || !S.dp || !S.dp.sel) return;
+    /* every fourth tick the list of departments is read again, for the working marks on the tree (SIM-3 a) */
+    st.ticks = (st.ticks || 0) + 1;
+    if (st.ticks % 4 === 0 && st.refs) wbLoadRefs(true);
     if (!wbIs(S.dp.sel)) return;
     wbLoadMap(S.dp.sel);
     /* a department's answer lands on Root's board without a run of Root's own, so the open chat is read on its own clock */
     if (wbTab(S.dp.sel) === "chat" && st.chat[S.dp.sel]) wbLoadChat(S.dp.sel, true);
+    /* a function's open chat is read on the same clock */
+    const ftab = (typeof dpS === "function" && dpS().tab[S.dp.sel]) || "", fk = S.dp.sel + ":" + ftab;
+    if (ftab && st.fnchat[fk] && dpS().pane[fk] === "chat") wbLoadFnChat(S.dp.sel, ftab, true);
   }, WB_POLL_MS);
 }
 function wbMotorState(m){
@@ -167,7 +209,7 @@ function wbList(n){
     (wbRt(m) ? dpRow("Board", `data-wbtab="board"`, tab === "board") : "") + `</div>`;
   const engines = dpGroup("Engines", ((m && m.engines) || []).map(e => {
     const on = tab === "engine" && st.sel[n.ref] === e.name;
-    const word = e.state === "Running" ? "running" : (e.state === "Waits" ? "paused" : "idle");
+    const word = e.state === "Running" ? "running" : (e.state === "Waits" ? "paused" : (e.state === "Missing" ? "fault" : "idle"));
     return `<button type="button" class="o2li dpli dpeng wb${on ? " on" : ""}" data-wbengine="${wbEsc(e.name)}">` +
       `<span>${wbEsc(e.name)}</span><span class="dpst ${word}">${wbEsc(e.state)}</span></button>`;
   }), null, m ? "No engines here" : "Not read yet");
@@ -421,12 +463,15 @@ async function wbLoadChat(ref, again){
     const moved = sig !== st.chatSig[ref] || !st.chat[ref];
     /* a department Root made since the tree was read: the tree learns of it here, without a reload (found live
        2026-09-28: the person could not open the department he had just stamped) */
-    const known = ((st.chat[ref] || {}).departments || []).length, now = (v.departments || []).length;
+    const had = ((st.chat[ref] || {}).departments || []).map(x => x.ref);
+    const known = had.length, now = (v.departments || []).length;
     st.chat[ref] = v; st.chatSig[ref] = sig;
     delete st.busy["c:" + ref];
     if (st.chatSig[ref + ":depts"] !== undefined && now > known && typeof loadOrg2 === "function"){
+      (v.departments || []).forEach(x => { if (had.indexOf(x.ref) < 0) st.born[x.ref] = true; });
       if (typeof o2S === "function" && o2S().expanded) o2S().expanded.add(ref);
       loadOrg2(true);
+      wbLoadRefs();                              /* and the list of departments on the runtime, so the new one opens on its own view */
     }
     st.chatSig[ref + ":depts"] = now;
     if (moved && (!again || !wbTyping())) dpRender();
@@ -443,6 +488,7 @@ function wbAgain(ref){
   Object.keys(st.steps).forEach(k => { if (k.indexOf(ref + ":") === 0) wbLoadSteps(ref, k.slice(ref.length + 1), true); });
   if (st.board[ref]) wbLoadBoard(ref, true);
   if (st.chat[ref]) wbLoadChat(ref, true);
+  Object.keys(st.fnchat).forEach(k => { if (k.indexOf(ref + ":") === 0) wbLoadFnChat(ref, k.slice(ref.length + 1), true); });
 }
 function wbRungHtml(s){
   const at = WB_RUNGS.map(r => r[0]).indexOf(s.rung);
@@ -451,6 +497,8 @@ function wbRungHtml(s){
 }
 function wbRungName(id){ return (WB_RUNGS.filter(r => r[0] === id)[0] || ["", ""])[1]; }
 function wbChip(word, cls){ return `<span class="wbchip${cls ? " " + cls : ""}">${wbEsc(word)}</span>`; }
+/* an artifact's slug, as the map gives it: its name in lower case, joined by dashes */
+function wbSlug(name){ return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
 function wbStepHtml(s, need){
   const last = s.last || {};
   const dot = !s.ran ? "off" : (last.ok === false || last.status === "failed" ? "block" : (last.miss ? "warn" : "ok"));
@@ -609,7 +657,14 @@ function wbChatTurn(t, scoped){
   /* a stamp or a refusal carries no words of its own: the act is the line */
   const line = t.line || (t.msg_type === "accept-proposal" ? "Stamped" : t.msg_type === "reject-proposal" ? "Refused" : wbCap(t.word || ""));
   if (t.src === "Owner") return `<div class="turn wbturn"><div class="who who-you">${dept}You</div><div class="u md">${wbEsc(line)}</div></div>`;
-  return `<div class="turn wbturn"><div class="who who-ai">Root${dept}</div><div class="a">${wbEsc(line)}` +
+  /* a turn that carries a way to the thing (the site that went live) shows it as the one button a person clicks
+     (found live 2026-09-28: after the publish stamp the chat said nothing, and the person did not know it was live);
+     a turn about something else filed (an engine the person added) opens that filed work under its own name
+     (found live 2026-09-29: "Source Reader v1 is filed." wore "Open the live site") */
+  const link = !t.link ? "" : t.word === "live" || t.link === "Live site"
+    ? ` <button type="button" class="wbchip on wbto wb" data-wblive="${wbEsc(t.dept || "")}">Open the live site</button>`
+    : ` <button type="button" class="wbchip on wbto wb" data-wbopenart="${wbEsc(wbSlug(t.link))}" data-wbdept="${wbEsc(t.dept || "")}">Open ${wbEsc(t.link)}</button>`;
+  return `<div class="turn wbturn"><div class="who who-ai">Root${dept}</div><div class="a">${wbEsc(line)}${link}` +
     `<span class="dpchk">${wbEsc(WB_ACTS[t.msg_type] || t.msg_type)} · ${wbEsc(wbWhen(t.at))}</span></div></div>`;
 }
 /* An ask is a line with its buttons, and it says where it lives: the stamp goes
@@ -629,18 +684,107 @@ function wbChatBoxHtml(n, m){
     ? `<button type="button" class="wbchip on wbto wb" data-wbchip="off">to ${wbEsc(m.name)} &times;</button>`
     : `<button type="button" class="wbchip wbto wb" data-wbchip="on">to Root</button>`;
   const err = st.err[k] ? `<div class="o2quiet dpq">${wbEsc(st.err[k])}</div>` : "";
-  return `<div class="wbbox wb">${chip}<textarea id="wbd-ask" data-wbdraft="${wbEsc(k)}" rows="2" placeholder="${wbEsc(on ? "Say it to " + m.name : (m.say || "Say it to Root"))}">${wbEsc(st.draft[k] || "")}</textarea>` +
+  /* Root's box: once departments exist, words for one of them are the usual thing to say (found live 2026-09-28:
+     "Ask Root for a department" invited a new one when the person meant the one they had) */
+  const depts = ((st.chat[n.ref] || {}).departments || []);
+  const rootSay = m.kind === "root" && depts.length ? "Say it to Root, or name a department: " + depts.map(d => d.name).join(", ") : (m.say || "Say it to Root");
+  return `<div class="wbbox wb">${chip}<textarea id="wbd-ask" data-wbdraft="${wbEsc(k)}" rows="2" placeholder="${wbEsc(on ? "Say it to " + m.name : rootSay)}">${wbEsc(st.draft[k] || "")}</textarea>` +
     wbBtn("Send", `data-wbask="ask"`, "dpstamp") + err + `</div>`;
+}
+/* The panel is painted whole, so a paint drops the chat to its top (found live 2026-09-28: after Send the person's
+   words and the answer sat out of view). After each paint the chat goes back where it was; when a turn has landed it
+   moves to that turn. The box that scrolls is found from the chat itself, so no other screen is touched. */
+function wbKeepPlace(ref, landed){
+  if (typeof document === "undefined" || !document.querySelector || typeof setTimeout !== "function") return;
+  const st = wbS();
+  setTimeout(() => {
+    try {
+      const chat = document.querySelector(".wbchat");
+      if (!chat) return;
+      let box = chat.parentElement;
+      while (box && !(box.scrollHeight > box.clientHeight + 4)) box = box.parentElement;
+      if (landed){
+        const last = chat.querySelector(".wbturn:last-of-type");
+        if (last && last.scrollIntoView) last.scrollIntoView({ block: "nearest" });
+        else if (box) box.scrollTop = box.scrollHeight;
+        if (box) st.scroll[ref] = box.scrollTop;
+      } else if (box && st.scroll[ref] !== undefined) box.scrollTop = st.scroll[ref];
+      if (box && !box.__wbKeep){
+        box.__wbKeep = true;
+        box.addEventListener("scroll", () => { const r = S.dp && S.dp.sel; if (r) st.scroll[r] = box.scrollTop; }, { passive: true });
+      }
+    } catch (e) {}
+  }, 0);
 }
 function wbChatHtml(n, m){
   const st = wbS(), c = st.chat[n.ref];
   if (!c){ wbLoadChat(n.ref); return dpSkel(); }
   if (c.failed) return dpQuiet("Could not read");
   const scoped = !!c.about, depts = c.departments || [];
-  const turns = (c.turns || []).map(t => wbChatTurn(t, scoped)).join("");
+  const all = c.turns || [];
+  /* fewer words (SIM-3 f): Root's hand-over line folds to one quiet line once that department has answered */
+  const folded = t => !scoped && t.src !== "Owner" && /^handed to /.test(t.line || "") && t.dept &&
+    all.some(u => u.n > t.n && u.dept === t.dept && u.src !== "Owner" && !/^handed to /.test(u.line || ""));
+  const count = all.length, seen = st.turns[n.ref];
+  const landed = seen !== undefined && count > seen;
+  /* motion marks what just happened and nothing else: the turn that landed slides in once */
+  const turns = all.map((t, i) => folded(t) ? `<div class="o2quiet dpq wbfold">${wbEsc(t.line)}</div>`
+    : wbChatTurn(t, scoped).replace('class="turn wbturn"', (landed && i === all.length - 1) ? 'class="turn wbturn wbnew"' : 'class="turn wbturn"')).join("");
   const empty = m.kind === "root" && !depts.length ? "No department yet. Say what the first one is for." : "Nothing has been said yet";
   const names = !scoped && depts.length ? `<div class="wbstep"><span class="dpk">Departments</span>${depts.map(d => wbDeptChip(d.ref, d.name)).join("")}</div>` : "";
-  return `<div class="wbchat wb">${turns || dpQuiet(empty)}</div>` + wbChatAsksHtml(c) + wbChatBoxHtml(n, m) + names;
+  /* while an engine runs, the chat says so under the last turn, and the mark breathes (founder, 2026-09-28: "I give a
+     message to the chat, and it seems something is happening, but I don't know"); a department that is Off works on nothing */
+  const running = m.stopped ? [] : ((m.status && m.status.running) || []);
+  const working = running.map(r => `<div class="o2quiet dpq wbworking"><i class="wbbreath"></i>${wbEsc(`${r.engine} is working${r.what ? ": " + r.what : ""}`)}</div>`).join("");
+  st.turns[n.ref] = count;
+  wbKeepPlace(n.ref, landed);
+  return `<div class="wbchat wb">${turns || (running.length ? "" : dpQuiet(empty))}${working}</div>` + wbChatAsksHtml(c) + wbChatBoxHtml(n, m) + names;
+}
+
+/* ── a function's chat ────────────────────────────────────────────────────
+   Founder, 2026-09-29: a click on a function's Chat "should not start a new
+   chat. It should just show the existing chat there." On the engine runtime a
+   function is an engine on the board, so its chat is read from the record and
+   exists from birth: what it said and was told, the person's words to it, its
+   thinking as quiet lines (SIM-3 c). 20-dept.js's dpLiveChatHtml asks here
+   first; null keeps the first build's chat for a department not on the runtime. */
+async function wbLoadFnChat(ref, fn, again){
+  const st = wbS(), k = ref + ":" + fn;
+  if ((st.fnchat[k] && !again) || st.busy["f:" + k]) return;
+  st.busy["f:" + k] = true;
+  try {
+    const v = await apiGet(wbUrl(ref, "chat?fn=" + encodeURIComponent(fn)));
+    const sig = JSON.stringify(v), moved = sig !== st.fnchatSig[k] || !st.fnchat[k];
+    st.fnchat[k] = v; st.fnchatSig[k] = sig;
+    delete st.busy["f:" + k];
+    if (moved && (!again || !wbTyping())) dpRender();
+  } catch (e) {
+    if (!st.fnchat[k]) st.fnchat[k] = { failed: true };
+    delete st.busy["f:" + k];
+    if (!again) dpRender();
+  }
+}
+function wbFnTurn(t){
+  if (t.think) return `<div class="o2quiet dpq wbthink">${wbEsc(t.line)} · ${wbEsc(wbWhen(t.at))}</div>`;
+  const line = t.line || (t.msg_type === "accept-proposal" ? "Stamped" : t.msg_type === "reject-proposal" ? "Refused" : wbCap(t.word || ""));
+  if (t.src === "Owner") return `<div class="turn wbturn"><div class="who who-you">You</div><div class="u md">${wbEsc(line)}</div></div>`;
+  return `<div class="turn wbturn"><div class="who who-ai">${wbEsc(t.src)}</div><div class="a">${wbEsc(line)}` +
+    `<span class="dpchk">${wbEsc(WB_ACTS[t.msg_type] || t.msg_type)} · ${wbEsc(wbWhen(t.at))}</span></div></div>`;
+}
+function wbFnChatHtml(ref, fn, label){
+  if (!wbIs(ref)) return null;
+  const st = wbS(), m = st.map[ref];
+  if (!m){ wbLoadMap(ref); return dpSkel(); }
+  if (!wbRt(m)) return null;
+  const k = ref + ":" + fn, c = st.fnchat[k];
+  if (!c){ wbLoadFnChat(ref, fn); return dpSkel(); }
+  if (c.failed) return dpQuiet("Could not read");
+  const name = c.fn || label || wbCap(fn), dk = ref + ":fn:" + fn;
+  const turns = (c.turns || []).map(t => wbFnTurn(t)).join("");
+  const err = st.err[dk] ? `<div class="o2quiet dpq">${wbEsc(st.err[dk])}</div>` : "";
+  return `<div class="wbchat wbfn wb">${turns || dpQuiet("Nothing yet between you and " + name)}</div>` +
+    `<div class="wbbox wb"><textarea data-wbdraft="${wbEsc(dk)}" rows="2" placeholder="${wbEsc("Say it to " + name)}">${wbEsc(st.draft[dk] || "")}</textarea>` +
+    wbBtn("Send", `data-wbask="fn:${wbEsc(fn)}"`, "dpstamp") + err + `</div>`;
 }
 
 /* Priority's card: the limits, born from Priority's template, set here by the
@@ -860,13 +1004,54 @@ function wbViewer(n){
   return null;
 }
 
+/* ── the organisation: Root's chat, and nothing else ──────────────────────
+   Founder, 2026-09-29: "The UI wherein a particular person chats with root,
+   and it creates a department, but at the organization level, only a chat is
+   shown, and root is not shown." The organisation row is the chat with Root,
+   headed by the organisation's name; Root's own settings sit behind one
+   button and are a pane, never a chat (the design of record:
+   holding/website/native/preview/org.html). Null for an organisation without
+   a Root on the runtime: 19-org2.js paints it as before. The clicks and the
+   box speak for Root, so Root is the department the screen holds selected. */
+function wbOrgHtml(n, d){
+  const root = d && d.lifted && d.lifted.get(n.ref);
+  if (!root || !wbIs(root.ref)) return null;
+  const st = wbS(), m = st.map[root.ref];
+  wbTick();
+  if (typeof dpSelect === "function" && dpS().sel !== root.ref) dpSelect(root.ref);
+  if (!m){ wbLoadMap(root.ref); return dpViewerShell(n.name, st.err[root.ref] ? dpQuiet("Could not read") : dpSkel(), "wb"); }
+  const rn = { ref: root.ref, name: n.name };
+  const pane = st.tab[root.ref] === "root";
+  const head = `<div class="wb2head"><b>${wbEsc(n.name)}</b>${m.stopped ? `<span class="dpst paused">Off</span>` : ""}` +
+    (pane ? "" : wbBtn("Root settings", `data-wbtab="root"`)) + `</div>`;
+  return dpViewerShell(pane ? "Root" : "Chat", head + (pane ? wbRootPaneHtml(rn, m) : wbChatHtml(rn, m)), "wb");
+}
+/* Root's pane: what its record holds, in rows; the one switch; a way back */
+function wbRootPaneHtml(n, m){
+  const st = wbS(), c = st.chat[n.ref] || {};
+  if (!st.chat[n.ref]) wbLoadChat(n.ref);
+  const row = (label, body, cls) => `<div class="dprow"><span class="dpdot${cls ? " " + cls : ""}"></span><span>${wbEsc(label)}<div class="dpchk">${body}</div></span></div>`;
+  const rules = (m.rules || []).map(r => wbEsc(typeof r === "string" ? r : (r.line || r.text || ""))).filter(Boolean);
+  const made = (c.departments || []).map(x => wbDeptChip(x.ref, x.name)).join("");
+  const sw = m.stopped ? wbBtn("Start", `data-wbresume="1"`, "dpstamp") : wbBtn("Stop", `data-wbstop="1"`);
+  return dpCard("Root",
+    row("What it does", wbEsc(m.goal || ""), "ok") +
+    row(m.stopped ? "Off" : "On", (m.stopped ? "makes no department until started " : "makes departments when asked ") + sw, m.stopped ? "off" : "ok") +
+    row("Rules", rules.length ? rules.join("; ") : "none yet", rules.length ? "ok" : "") +
+    row("Departments it has made", made || "none yet", made ? "ok" : "")) +
+    `<div>${wbBtn("Back to the chat", `data-wbtab="chat"`)}</div>`;
+}
+
 /* ── the organisation's chart: a website department's tile is live ────────── */
 function wbTileMark(ref){
   if (!wbIs(ref)) return "";
   const m = wbS().map[ref];
   if (!m){ wbLoadMap(ref); return ""; }
   const asks = ((m.status && m.status.asks) || []).length;
-  return `<span class="wbtm">` + m.systems.map(s => wbDot(s.state === "running" ? "ok" : "off")).join("") +
+  /* a department at work carries a breathing mark on its row (SIM-3 a; the list says which are working) */
+  const working = ((wbS().refs || {})[ref] || {}).working;
+  const breath = (working && working.length) ? `<i class="wbbreath" title="${wbEsc(working.join(", ") + " working")}"></i>` : "";
+  return `<span class="wbtm">` + breath + m.systems.map(s => wbDot(s.state === "running" ? "ok" : "off")).join("") +
     (asks ? wbDot("") : "") + `</span>`;
 }
 
@@ -884,7 +1069,7 @@ function wbFoundHtml(){
   return `<div class="wbscrim wb" data-wbfound="close"></div><div class="o2sheet wbsheet wb" role="dialog" aria-label="New organisation">` +
     `<h4>New organisation</h4>` +
     `<label for="wbforg">Organisation</label><input id="wbforg" data-wbfield="org" value="${wbEsc(f.org)}" placeholder="City Care Hospital" autocomplete="off">` +
-    `<label for="wbfgoal">The first department</label><textarea id="wbfgoal" data-wbfield="goal" rows="3" placeholder="What should Root set up first? A website: what it is for">${wbEsc(f.goal)}</textarea>` +
+    `<label for="wbfgoal">The first department</label><textarea id="wbfgoal" data-wbfield="goal" rows="3" placeholder="What should Root set up first? Say what it is for, in your words">${wbEsc(f.goal)}</textarea>` +
     `<div class="o2acts2">${wbBtn(f.busy ? "Founding" : "Found", `data-wbfound="go"${f.busy ? " disabled" : ""}`, "dpstamp")}` +
     wbBtn("Cancel", `data-wbfound="close"`) + (f.error ? `<span class="o2err">${wbEsc(f.error)}</span>` : "") + `</div></div>`;
 }
@@ -911,9 +1096,10 @@ async function wbFoundGo(){
       const o = o2S();
       if (o.expanded){ [out.org].forEach(r => o.expanded.add(r)); }
     }
-    /* Root is where the person goes on: its chat, where its ask for the first department is */
+    /* the organisation is where the person goes on: its row is Root's chat, where the ask for the first department is
+       (founder, 2026-09-29: at the organisation level only a chat is shown); Root itself when the tree has not learnt yet */
     st.tab[out.root] = "chat";
-    if (typeof o2Select === "function") o2Select(out.root);
+    if (typeof o2Select === "function") o2Select(wbRootOf(out.org) ? out.org : out.root);
     wbLoadMap(out.root, true);
   } catch (e) {
     f.busy = false; f.error = (e && e.message) || String(e); wbFoundPaint();
@@ -937,7 +1123,7 @@ async function wbPost(ref, tail, body, key, at){
 if (typeof document !== "undefined" && document.addEventListener){
   const WB_SEL = "[data-wbtab],[data-wbengine],[data-wbart],[data-wbpane],[data-wbdecide],[data-wbstop],[data-wbresume]," +
     "[data-wbgoal],[data-wbask],[data-wbputback],[data-wbfn],[data-wbfound],[data-wbhold],[data-wbenv]," +
-    "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost],[data-wbopen]";
+    "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost],[data-wbopen],[data-wblive],[data-wbopenart]";
   /* capture phase: a click on one of 20-dept.js's own rows hands the viewer
      back to it BEFORE that file's handler paints */
   document.addEventListener("click", (ev) => {
@@ -978,8 +1164,10 @@ if (typeof document !== "undefined" && document.addEventListener){
       return;
     }
     if (ds.wbhost !== undefined){ const k = ref + ":host"; wbPost(ref, "host", { host: st.draft[k] || "" }, k); return; }
-    /* one of this file's entries is opening: none of 20-dept.js's rows stays lit */
-    if (ds.wbfn === undefined && dpS().tab[ref] !== "now") dpS().tab[ref] = "now";
+    /* one of this file's entries is opening: none of 20-dept.js's rows stays lit; words said inside a function's chat
+       keep the person there (found live 2026-09-29: Send in Priority's chat landed on the department's Chat) */
+    const inFn = ds.wbask !== undefined && String(ds.wbask).indexOf("fn:") === 0;
+    if (ds.wbfn === undefined && !inFn && dpS().tab[ref] !== "now") dpS().tab[ref] = "now";
     if (ds.wbtab !== undefined){ st.tab[ref] = ds.wbtab; dpRender(); return; }
     if (ds.wbfn !== undefined){ st.tab[ref] = ""; dpS().tab[ref] = ds.wbfn; dpRender(); return; }
     if (ds.wbpane !== undefined && ds.wbpanekey !== undefined){ st.pane[ds.wbpanekey] = ds.wbpane; dpRender(); return; }
@@ -993,12 +1181,27 @@ if (typeof document !== "undefined" && document.addEventListener){
     }
     if (ds.wbchip !== undefined){ st.chip[ref] = ds.wbchip === "on"; dpRender(); return; }
     if (ds.wbopen !== undefined){ if (typeof o2Select === "function") o2Select(ds.wbopen); return; }
+    /* the live site of the department a turn is about: its Live site, previewed; from Root's chat, that department opens on it;
+       the department's own tab is set too, so the next repaint keeps the preview (found live 2026-09-29: the preview gave
+       way to the Human Sutra page on the next tick, the row lit was Brief) */
+    if (ds.wblive !== undefined || ds.wbopenart !== undefined){
+      const dref = (ds.wblive !== undefined ? ds.wblive : ds.wbdept) || ref, slug = ds.wblive !== undefined ? "live-site" : ds.wbopenart;
+      st.tab[dref] = "art"; st.sel[dref] = slug; st.pane[dref + ":" + slug] = "preview"; st.sel[dref + ":" + slug + ":v"] = "";
+      if (typeof dpS === "function") dpS().tab[dref] = "now";
+      if (dref !== ref && typeof o2Select === "function") o2Select(dref); else dpRender();
+      return;
+    }
     if (ds.wbthread !== undefined){ st.thread[ref] = ds.wbthread; dpRender(); return; }
     if (ds.wbdecide !== undefined){ wbPost(ref, "asks/" + encodeURIComponent(ds.wbdecide), { approve: ds.wbok === "1" }, null, ds.wbref || ref); return; }
     if (ds.wbstop !== undefined){ wbPost(ref, "stop"); return; }
     if (ds.wbresume !== undefined){ wbPost(ref, "resume"); return; }
     if (ds.wbgoal !== undefined){ const k = ref + ":goal"; wbPost(ref, "goal", { text: st.draft[k] || "" }, k); return; }
     if (ds.wbask !== undefined){
+      if (String(ds.wbask).indexOf("fn:") === 0){
+        /* said in one function's own chat: to this department, carrying the function (founder, 2026-09-29) */
+        const fk = ref + ":" + ds.wbask;
+        wbPost(ref, "ask", { text: st.draft[fk] || "", about: ds.wbask }, fk).then(() => wbAgain(ref)); return;
+      }
       /* the words go to Root, the front door; said inside a department they carry it, unless the person took the chip off */
       const k = ref + ":ask", m = st.map[ref], body = { text: st.draft[k] || "" };
       let at = ref;

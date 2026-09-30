@@ -445,7 +445,7 @@ def set_memory_active(mem_id, active):
 # because a Supabase workspace is one company's team. With one company both files are the same
 # file, and nothing below behaves any differently from before.
 PERSON_KEYS = ("dataforseo_login", "dataforseo_password", "voyage_key",
-               "anthropic_key", "openai_key")
+               "anthropic_key", "openai_key", "semrush_key")
 
 
 def model_choice():

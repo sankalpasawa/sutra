@@ -1157,7 +1157,7 @@ def api_toggle_memory(mem_id: str, body: dict = Body(default={})):
     return {"ok": True}
 
 
-_CONN_KEYS = ("dataforseo_login", "dataforseo_password", "voyage_key")
+_CONN_KEYS = ("dataforseo_login", "dataforseo_password", "voyage_key", "semrush_key")
 
 
 # ---- the DataForSEO console ---------------------------------------------------------------
@@ -1367,6 +1367,196 @@ def api_save_connections(body: dict = Body(...)):
 @router.get("/tools")
 def api_tools():
     return registry.for_screen()
+
+
+# ---- blog performance (Semrush) -----------------------------------------------------------
+# Scheduled ingestion writes into seo_agent/semrush/db.py; every route below only reads it or
+# starts a sync on a thread, same "no business logic in a handler" rule the rest of this file
+# follows. See seo_agent/semrush/ for the client, the store, and the three pulls.
+
+def _blog_row(b):
+    """A blog row plus its latest snapshot per source, for the list and detail views."""
+    from seo_agent.semrush import db as sdb
+    out = dict(b)
+    out["classification"] = "SEO_WRITER" if b.get("generated_by_seo_writer") else "NON_SEO_WRITER"
+    latest = {}
+    for source in ("position_tracking", "url_organic", "backlinks"):
+        snap = sdb.latest_snapshot(b["id"], source=source)
+        if snap:
+            latest[source] = snap
+    out["latest"] = latest
+    return out
+
+
+@router.get("/blogs")
+def api_blogs(classification: str = "", q: str = ""):
+    from seo_agent.semrush import db as sdb
+    sdb.init_db()
+    cls = classification.strip().upper() or None
+    if cls not in (None, "SEO_WRITER", "NON_SEO_WRITER"):
+        return _bad("classification must be SEO_WRITER or NON_SEO_WRITER")
+    rows = sdb.list_blogs(classification=cls, limit=5000)
+    if q:
+        ql = q.strip().lower()
+        rows = [r for r in rows if ql in (r.get("title") or "").lower() or ql in (r.get("url") or "").lower()]
+    return {"total": len(rows), "rows": [_blog_row(r) for r in rows]}
+
+
+@router.get("/blogs/overview")
+def api_blogs_overview():
+    """Scorecards for both cohorts, plus age-normalized comparisons at the five ages the
+    design settled on -- never a raw average across mixed ages (see db.cohort_at_age)."""
+    from seo_agent.semrush import db as sdb
+    sdb.init_db()
+    ages = (7, 30, 60, 90, 180)
+    return {
+        "seo_writer": sdb.overview("SEO_WRITER"),
+        "non_seo_writer": sdb.overview("NON_SEO_WRITER"),
+        "cohorts": {
+            "seo_writer": [sdb.cohort_at_age("SEO_WRITER", a) for a in ages],
+            "non_seo_writer": [sdb.cohort_at_age("NON_SEO_WRITER", a) for a in ages],
+        },
+    }
+
+
+@router.get("/blogs/timeseries")
+def api_blogs_timeseries(metric: str = "estimated_traffic", source: str = "", since: str = ""):
+    from seo_agent.semrush import db as sdb
+    sdb.init_db()
+    allowed = set(sdb.SNAPSHOT_FIELDS)
+    if metric not in allowed:
+        return _bad("metric must be one of: %s" % ", ".join(sorted(allowed)))
+    return {
+        "seo_writer": sdb.timeseries("SEO_WRITER", metric=metric, source=source or None, since=since or None),
+        "non_seo_writer": sdb.timeseries("NON_SEO_WRITER", metric=metric, source=source or None, since=since or None),
+    }
+
+
+@router.post("/blogs")
+def api_add_blog(body: dict = Body(...)):
+    """Add or reclassify one blog by hand -- the door for a NON_SEO_WRITER control post
+    discover_blogs() did not catch, or for correcting its slug-match heuristic."""
+    from seo_agent.semrush import db as sdb
+    sdb.init_db()
+    url = (body.get("url") or "").strip()
+    if not url:
+        return _bad("url is required")
+    fields = {"url": url}
+    for k in ("title", "published_at", "author", "target_keyword", "category",
+             "seo_writer_version", "library_item_id", "status"):
+        if k in body:
+            fields[k] = body[k]
+    if "word_count" in body:
+        fields["word_count"] = int(body["word_count"] or 0)
+    if "target_keyword_volume" in body:
+        fields["target_keyword_volume"] = int(body["target_keyword_volume"] or 0)
+    if "target_keyword_difficulty" in body:
+        fields["target_keyword_difficulty"] = float(body["target_keyword_difficulty"] or 0)
+    if "generated_by_seo_writer" in body:
+        fields["generated_by_seo_writer"] = 1 if body["generated_by_seo_writer"] else 0
+    blog_id = sdb.upsert_blog(fields)
+    return _blog_row(sdb.get_blog(blog_id))
+
+
+# ---- sync: discover + the three pulls, on a thread, same shape as _kn_worker above --------
+
+_BLOG_SYNC_KEY = "blog-perf-sync"
+_bp_job = None
+_bp_job_lock = threading.Lock()
+
+
+def _bp_worker(mode):
+    global _bp_job
+    from seo_agent.semrush import sync as bsync
+    started = time.time()
+    try:
+        result = bsync.run(mode)
+        with _bp_job_lock:
+            _bp_job = {"mode": mode, "phase": "done", "result": result,
+                      "started_at": started, "finished_at": time.time()}
+    except Exception as e:  # noqa: BLE001 -- a crash on the thread must land on the screen, not vanish
+        with _bp_job_lock:
+            _bp_job = {"mode": mode, "phase": "failed", "error": str(e)[:400],
+                      "started_at": started, "finished_at": time.time()}
+
+
+@router.post("/blogs/sync")
+def api_blogs_sync(body: dict = Body(default={})):
+    """Start one sync mode now, on a thread, and return at once. GET this same path for
+    where it stands. discover_blogs (populate blog rows from the site catalogue) and the
+    three Semrush pulls (daily/weekly/monthly) share this one door."""
+    from seo_agent.semrush.sync import MODES
+    mode = (body.get("mode") or "discover").strip()
+    if mode not in MODES:
+        return _bad("mode must be one of: %s" % ", ".join(MODES))
+    with _lock:
+        t = _workers.get(_BLOG_SYNC_KEY)
+        if t and t.is_alive():
+            return _bad("A sync is already running. Wait for it to finish.", 409)
+        th = threading.Thread(target=_bp_worker, args=(mode,), daemon=True,
+                              name="seo-agent:" + _BLOG_SYNC_KEY)
+        _workers[_BLOG_SYNC_KEY] = th
+        th.start()
+    with _bp_job_lock:
+        global _bp_job
+        _bp_job = {"mode": mode, "phase": "running", "started_at": time.time()}
+    return {"started": True, "mode": mode}
+
+
+@router.get("/blogs/sync")
+def api_blogs_sync_state():
+    with _bp_job_lock:
+        return {"job": dict(_bp_job) if _bp_job else None}
+
+
+# ---- the launchd schedule (daily/weekly/monthly), separate from Routines -----------------
+# See seo_agent/semrush/schedule.py's docstring for why: Routines run a Claude agent per
+# fire and bill accordingly; this schedules a plain script with no LLM in the loop.
+
+@router.get("/blogs/schedule")
+def api_blogs_schedule():
+    from seo_agent.semrush import schedule as bsched
+    return bsched.status()
+
+
+@router.post("/blogs/schedule/install")
+def api_blogs_schedule_install():
+    from seo_agent.semrush import schedule as bsched
+    return {"jobs": bsched.install_all()}
+
+
+@router.post("/blogs/schedule/uninstall")
+def api_blogs_schedule_uninstall():
+    from seo_agent.semrush import schedule as bsched
+    return {"jobs": bsched.uninstall_all()}
+
+
+@router.post("/blogs/schedule/run-now")
+def api_blogs_schedule_run_now(body: dict = Body(...)):
+    from seo_agent.semrush import schedule as bsched
+    mode = (body.get("mode") or "").strip()
+    if mode not in bsched.MODES:
+        return _bad("mode must be one of: %s" % ", ".join(bsched.MODES))
+    return bsched.run_now(mode)
+
+
+# ROUTE ORDER: this catch-all must be the LAST /blogs GET registered. FastAPI/Starlette
+# match routes in registration order and this file's typed path params are not compiled
+# into the route regex (no {blog_id:int} in the path string), so a GET /blogs/{blog_id}
+# registered any earlier would shadow /blogs/overview, /blogs/timeseries, /blogs/sync and
+# /blogs/schedule -- each would come back as a 422 "not a valid integer" instead of
+# reaching its own handler.
+@router.get("/blogs/{blog_id}")
+def api_blog_detail(blog_id: int):
+    from seo_agent.semrush import db as sdb
+    sdb.init_db()
+    b = sdb.get_blog(blog_id)
+    if not b:
+        return _bad("no such blog", 404)
+    row = _blog_row(b)
+    row["history"] = {source: sdb.blog_history(blog_id, source=source)
+                      for source in ("position_tracking", "url_organic", "backlinks")}
+    return row
 
 
 # ---- the team workspace --------------------------------------------------------------------

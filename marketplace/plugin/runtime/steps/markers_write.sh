@@ -186,6 +186,35 @@ main() {
     [ "$_mw_prof_val" = "company" ] && IS_COMPANY=1
   fi
 
+  # -- confidence per code step (RT-25, 2026-09-29) -----------------------
+  # Each code step says how sure it is, from its own signals. Until now only
+  # placement carried a number, so only placement could ever escalate.
+  # classify brings its own; resolve turns the score it already computes into
+  # one; depth reports whether its inputs agreed or were degraded.
+  # every input is read defensively: an unbound variable here aborts the whole
+  # step under set -u and the turn gets no facts file at all (seen 2026-09-29)
+  CLASSIFY_CONF="$(printf '%s' "${CLASSIFY_JSON:-}" | jq -r '.confidence // empty' 2>/dev/null)"
+  case "$CLASSIFY_CONF" in ''|null) CLASSIFY_CONF=0.2 ;; esac
+  _mw_score="${WTM_SCORE:-0}"; case "$_mw_score" in ''|*[!0-9-]*) _mw_score=0 ;; esac
+  if [ "${WTM_DEGRADED:-0}" = "1" ]; then
+    RESOLVE_CONF=0.2; RESOLVE_CONF_WHY="the matcher was unavailable; CONSTRUCT is the fallback"
+  elif [ "${WTM_RESOLUTION:-CONSTRUCT}" = "CONSTRUCT" ]; then
+    RESOLVE_CONF=0.35; RESOLVE_CONF_WHY="no workflow scored above zero"
+  elif [ "$_mw_score" -ge 3 ]; then
+    RESOLVE_CONF=0.9; RESOLVE_CONF_WHY="a workflow matched strongly (score $_mw_score)"
+  else
+    RESOLVE_CONF=0.6; RESOLVE_CONF_WHY="a workflow matched weakly (score $_mw_score)"
+  fi
+  if [ "${IS_COMPANY:-0}" = "1" ]; then
+    DEPTH_CONF=1.0; DEPTH_CONF_WHY="the company profile fixes depth at 5"
+  elif [ "${FF_DEGRADED:-0}" = "1" ]; then
+    DEPTH_CONF=0.3; DEPTH_CONF_WHY="the factors step degraded; depth fell back"
+  elif [ "${CLASSIFY_FAILED:-0}" = "1" ]; then
+    DEPTH_CONF=0.3; DEPTH_CONF_WHY="depth rests on a verb the classifier could not produce"
+  else
+    DEPTH_CONF=0.8; DEPTH_CONF_WHY="the rubric read live factors and a verb"
+  fi
+
   # the rule itself lives in runtime/lib/steps.sh, so the replay check (C6)
   # re-decides depth with this exact code rather than a second copy of it
   if command -v sutra_steps_depth_rubric >/dev/null 2>&1; then
@@ -296,11 +325,15 @@ DEGRADED=python3"
     --argjson depth_n "$DEPTH" --arg rubric "$RUBRIC" \
     --argjson classify "$CLASSIFY_JSON" --argjson factors "$FACTORS_JSON" \
     --argjson markers "$MARKERS_JSON" --argjson degraded "$DEGRADED_JSON" \
+    --arg resolve_conf "$RESOLVE_CONF" --arg resolve_conf_why "$RESOLVE_CONF_WHY" \
+    --arg depth_conf "$DEPTH_CONF" --arg depth_conf_why "$DEPTH_CONF_WHY" \
     '{turn_id:$turn_id, session_id:$session_id, mode:$mode, prompt_sha256:$prompt_sha256,
       classify:$classify,
-      resolve:{resolution:$resolution, scope:$scope, score:$score, degraded:$resolve_degraded},
+      resolve:{resolution:$resolution, scope:$scope, score:$score, degraded:$resolve_degraded,
+               confidence:($resolve_conf | tonumber), confidence_why:$resolve_conf_why},
       factors:$factors,
-      depth:{n:$depth_n, rubric:$rubric},
+      depth:{n:$depth_n, rubric:$rubric,
+             confidence:($depth_conf | tonumber), confidence_why:$depth_conf_why},
       type:$type, slug:$slug, markers:$markers, degraded:$degraded}' 2>/dev/null)"
 
   if [ -n "$FACTS_JSON" ]; then
@@ -351,6 +384,29 @@ _mw_replay_record() {
 # waits on a model. A step whose threshold is null never reaches the ask.
 _mw_ask_when_unsure() {
   command -v sutra_tier_due >/dev/null 2>&1 || return 0
+
+  # classify (RT-25): when the classifier had no signal at all, its own verb is
+  # the line-82 default. Ask the agent what act this message performs. The
+  # answer is RECORDED, not applied backwards - this turn's labels are already
+  # out - so the disagreement can be counted before anything is rewired.
+  if sutra_tier_due "$_mw_root" classify "$CLASSIFY_CONF"; then
+    _mwc_unit="$(printf '%s' "$PROMPT" | tr '\n' ' ' | cut -c1-400)"
+    sutra_tier_ask_detach "$_mw_root" "$_MW_PROJ" "$_MW_SID" "$_MW_TURN" classify "$(printf '%s\n' \
+      "A governance runtime classified this message by falling through to its default, because none of its patterns matched. Its own confidence is $CLASSIFY_CONF and it recorded $VERB." \
+      "" \
+      "Message: $_mwc_unit" \
+      "" \
+      "Which act does the message perform?" \
+      "  DIRECT - it tells someone to do something" \
+      "  QUERY  - it asks for something" \
+      "  ASSERT - it states that something is so" \
+      "" \
+      "Answer with ONE json object and nothing else:" \
+      '{"value":"<DIRECT|QUERY|ASSERT>","confidence":"<0..1>","reason":"<one line>"}' \
+      "" \
+      "VERDICT: ANSWERED")"
+  fi
+
   _mwa_pl="$_MW_MDIR/placement-registered"
   [ -f "$_mwa_pl" ] || return 0
   _mwa_conf="$(awk -F= '$1 == "CONFIDENCE" { print $2; exit }' "$_mwa_pl" 2>/dev/null)"

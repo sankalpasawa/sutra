@@ -55,8 +55,8 @@ is "C10: the three model steps" "$(jq -r '[.steps[] | select(.tier == "model")] 
 is "C10: the review step is the agent" "$(jq -r '.steps[] | select(.id == "codex") | .tier' "$T")" agent
 # Only placement carries a number, and the file must say how it was measured;
 # every other step stays null until 200 turns of confidence are logged.
-is "C10: one measured threshold, no guessed ones" "$(jq -r '[.steps[] | select(.threshold != null)] | length' "$T")" 1
-is "C10: the measured one is placement" "$(jq -r '[.steps[] | select(.threshold != null) | .id] | join(",")' "$T")" placement
+is "C10: two measured thresholds, no guessed ones" "$(jq -r '[.steps[] | select(.threshold != null)] | length' "$T")" 2
+is "C10: the measured ones are classify and placement" "$(jq -r '[.steps[] | select(.threshold != null) | .id] | join(",")' "$T")" classify,placement
 jq -e '(.thresholds_note // "") | test("[Rr]eversal trigger")' "$T" >/dev/null 2>&1 && pass "C10: the threshold carries its measurement and a reversal trigger" || fail "C10: a threshold without a recorded measurement"
 jq -e '.rules.raise_only and .rules.unreachable and .rules.recorded' "$T" >/dev/null 2>&1 && pass "C10: the three standing rules are recorded" || fail "C10: a standing rule is missing"
 . "$PLUGIN_MAIN/runtime/lib/steps.sh"
@@ -75,6 +75,18 @@ is "C2: every row carries an output" "$(rows "$L" '.out == null or .out == ""')"
 is "C2: classify logged its four labels" "$(jq -r 'select(.step=="classify") | .out' "$L" | tail -1 | awk '{print NF}')" 6
 jq -r 'select(.step=="depth") | .out' "$L" | tail -1 | grep -q '/5' && pass "C2: depth logged its number" || fail "C2: depth output is not a number: $(jq -r 'select(.step=="depth") | .out' "$L" | tail -1)"
 is "C2: every row names its tier" "$(rows "$L" '.tier == null or .tier == ""')" 0
+# RT-25: a code step that leans on a confidence must say how sure it is, in the
+# facts and in its own row, or it can never escalate and never be measured.
+F="$D/$TID.facts.json"
+jq -e '.classify.confidence and .resolve.confidence and .depth.confidence' "$F" >/dev/null 2>&1 \
+  && pass "RT-25: classify, resolve and depth each recorded a confidence" \
+  || fail "RT-25: a code step recorded no confidence: classify=$(jq -r '.classify.confidence // "none"' "$F") resolve=$(jq -r '.resolve.confidence // "none"' "$F") depth=$(jq -r '.depth.confidence // "none"' "$F")"
+jq -e '(.classify.confidence_why | length) > 0 and (.resolve.confidence_why | length) > 0 and (.depth.confidence_why | length) > 0' "$F" >/dev/null 2>&1 \
+  && pass "RT-25: each confidence says what it was derived from" || fail "RT-25: a confidence has no reason"
+is "RT-25: the rows carry the confidence too" \
+  "$(rows "$L" '(.step == "classify" or .step == "resolve" or .step == "depth") and ((.confidence // "") | tostring) == ""')" 0
+printf '%s' "$(env -u CLAUDE_CODE_SESSION_ID CLAUDE_PLUGIN_ROOT="$PLUGIN_MAIN" CLAUDE_PROJECT_DIR="$PJ" "$PLUGIN_MAIN/bin/sutra-steps" --sid sid-c1 log 2>&1)" \
+  | grep -qE 'classify .*code@0' && pass "RT-25: the reader prints the confidence beside the tier" || fail "RT-25: the reader hides the confidence"
 msg_of "$WORK/c1u.out" | grep -q 'step log, turn opened' && pass "C5: the rows are printed at the prompt" || fail "C5: nothing printed: $(msg_of "$WORK/c1u.out" | head -2)"
 msg_of "$WORK/c1u.out" | grep -q 'classify' && pass "C5: the printed lines name the steps" || fail "C5: the printed lines lack the steps"
 

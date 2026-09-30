@@ -7,13 +7,16 @@ cd "$UI" || exit 1
 RC=0
 PY=.venv/bin/python
 [ -x "$PY" ] || PY=python3
-$PY -c "import engine_runtime as R; f=R.validate(R.defs()); assert not f, f; print('definitions: clean, version', R.defs()['def_version'])" || RC=1
-$PY -m unittest test_engine_runtime 2>&1 | tail -3 | tr '\n' ' '; echo
-$PY -m unittest test_engine_runtime >/dev/null 2>&1 || RC=1
-$PY test_website_motor.py 2>&1 | tail -1
-$PY test_website_motor.py >/dev/null 2>&1 || RC=1
-$PY -m pytest -q test_website_dept.py test_channel_isolation.py 2>&1 | tail -1
-$PY -m pytest -q test_website_dept.py test_channel_isolation.py >/dev/null 2>&1 || RC=1
+# every Python lane on a registry of its own: a lane that mints a root finds one root, never the last lane's
+# (2026-09-28: the founding test spawned no child on a shared registry, and this runner said exit 1 under green lanes)
+lane(){ SUTRA_NATIVE_HOME="$(mktemp -d "${TMPDIR:-/tmp}/sutra-suite-XXXXXX")" "$@"; }
+lane $PY -c "import engine_runtime as R; f=R.validate(R.defs()); assert not f, f; print('definitions: clean, version', R.defs()['def_version'])" || RC=1
+lane $PY -m unittest test_engine_runtime > /tmp/sutra-suite-runtime.txt 2>&1 || RC=1
+tail -3 /tmp/sutra-suite-runtime.txt | tr '\n' ' '; echo
+lane $PY test_website_motor.py > /tmp/sutra-suite-motor.txt 2>&1 || RC=1
+tail -1 /tmp/sutra-suite-motor.txt
+lane $PY -m pytest -q test_website_dept.py test_channel_isolation.py > /tmp/sutra-suite-pytest.txt 2>&1 || RC=1
+tail -1 /tmp/sutra-suite-pytest.txt
 for t in test_website.js test_dept.js test_org2.js; do
   node "$t" 2>&1 | tail -1 | sed "s/^/$t: /"
   node "$t" >/dev/null 2>&1 || RC=1

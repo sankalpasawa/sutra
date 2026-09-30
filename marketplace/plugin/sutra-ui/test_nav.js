@@ -82,7 +82,7 @@ sandbox.render = () => {};
    leave the binding the code actually reads untouched. Same reason test_panel.js
    gives for SETTINGS. */
 const T = vm.runInContext(`({ DESTS, DEST_PLANES, DEST_DEFAULT_SCREEN, S, SCREENS, TITLES,
-  loadLayout, planeRows, goDest, renderRail, paintTelemetry, applyAccent, onAccFor,
+  loadLayout, planeRows, goDest, bootScreen, renderRail, paintTelemetry, applyAccent, onAccFor,
   destInline, destNoPlane, destOneRow,
   buildAccentRow, ACCENTS, document,
   /* 2.294.0: the rail's hidden set and the label map, so a test can say which
@@ -758,6 +758,29 @@ test("switching: a one-row destination opens its row -- Org lands on Org structu
   assert.strictEqual(T.destOneRow("org"), true, "Org is one row while org2 is on");
   assert.strictEqual(T.S.screen, "org2", "the button is the row, so it opens Org structure");
   assert.strictEqual(T.S.ui.destSel.org, "org2", "and the saved pick is repaired for the next launch");
+  T.goDest("now");
+});
+
+test("boot: the first screen is Org structure whatever old row this Mac remembered as Org's pick (Human Simulation run 2, finding 4)", () => {
+  /* 2026-09-28: the app opened on the Departments chart with ids every time,
+     because the boot took the saved pick before the one-screen Org registered. */
+  T.S.ui = T.loadLayout();
+  T.SETTINGS = null;                            /* org2 on, not yet answered: fails open */
+  T.S.ui.dest = "org";
+  T.S.ui.destSel.org = "departments";           /* what this Mac had saved from before the one-screen Org */
+  T.S.screen = "departments";
+  assert.strictEqual(T.bootScreen(), "org2", "the boot lands on the one-screen Org, not the old chart");
+  T.S.ui.destSel.org = "charters";
+  assert.strictEqual(T.bootScreen(), "org2", "any old row: the one row wins, as on a click");
+  T.S.ui.dest = "now";
+  assert.strictEqual(T.bootScreen(), "now", "another destination: its own default");
+  T.S.ui.dest = "chats";
+  assert.strictEqual(T.bootScreen(), null, "chats keeps the browse pane shut");
+  T.S.ui.dest = "org";
+  T.SETTINGS = { flags: { org2: false } };
+  T.S.ui.destSel.org = "charters";
+  assert.strictEqual(T.bootScreen(), "charters", "opted out of the one-screen Org, the remembered pick still restores");
+  T.SETTINGS = null;
   T.goDest("now");
 });
 

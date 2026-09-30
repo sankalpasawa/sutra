@@ -1,0 +1,23 @@
+{
+  "id": "sharma-tailors",
+  "person": "local-owner",
+  "app": "http://127.0.0.1:8331/",
+  "organisation": "Sharma Tailors",
+  "goal": "A website for Sharma Tailors, Nashik: what we stitch, the price list, our number 98220 12345, where the shop is, and a WhatsApp button to send us a photo of the design.",
+  "why": "the fourth instance, in a local non-tech owner's words (founder, 2026-09-28: 'a very, very native, very, very local, trivial user'); the person judges by what she sees in ten seconds and never scrolls up",
+  "outcomes": [
+    { "id": "found-in-three-clicks", "expect": "from opening the app to the shop's Root chat in three clicks or fewer, with no screen she has to read", "verify": { "kind": "ledger", "check": "rows from open to Root chat <= 3 clicks" } },
+    { "id": "one-line-asks", "expect": "every question the app puts to her is one plain line with a button", "verify": { "kind": "route", "get": "/api/native/{child}/chat", "check": "each ask's text under 160 characters, no word from the never-list" } },
+    { "id": "her-words-on-the-site", "expect": "98220 12345 on every page, the price list as she typed it, the shop's name spelled her way", "verify": { "kind": "site", "get": "/api/native/{child}/site/index.html", "check": "98220 12345 on every page; 'Sharma Tailors' in the title" } },
+    { "id": "nothing-out-unseen", "expect": "the site goes live only after her stamp, and she is told it is live with one button to see it", "verify": { "kind": "route", "get": "/api/native/{child}/chat", "check": "a publish ask before Live site v1; a live turn with a link after" } },
+    { "id": "within-a-minute", "expect": "every message of hers gets a reply or a working line within 60 s", "verify": { "kind": "ledger", "check": "no row waits over 60 s without a turn or a working line" } },
+    { "id": "in-view", "expect": "after she sends, her words and the reply are in view without scrolling", "verify": { "kind": "screen", "check": "the last turn is on screen after Send" } }
+  ],
+  "variances": [
+    { "id": "price-list", "say": "Blouse stitching 350, saree fall 80, kurta 450, alteration 100. Put the price list.", "where": "Root's chat", "expect": "a Prices page or section with those four lines, exactly", "verify": { "kind": "site", "get": "/api/native/{child}/site/", "check": "the four prices on one page" } },
+    { "id": "photo-on-whatsapp", "say": "People should send the design photo on WhatsApp.", "where": "Root's chat", "expect": "the app asks in plain words whether a WhatsApp link to 98220 12345 goes on the site; after her stamp, a wa.me link on every page", "verify": { "kind": "site", "check": "wa.me/919822012345 on every page" } },
+    { "id": "spelling", "say": "It is Sharma Tailors, not Sharma Tailor.", "where": "Root's chat", "expect": "the correction reaches every page", "verify": { "kind": "site", "check": "'Sharma Tailor ' appears nowhere" } },
+    { "id": "walks-away", "do": "close the app for five minutes while the line runs; reopen", "expect": "the chat shows what happened while she was away, newest in view", "verify": { "kind": "screen", "check": "the newest turn in view on reopen" } },
+    { "id": "wrong-button", "do": "click Map, then the switch, by mistake; click Chat", "expect": "the chat says Stopped by you and Started by you when she flips it back; nothing lost", "verify": { "kind": "route", "get": "/api/native/{child}/chat", "check": "stopped and started turns" } }
+  ]
+}

@@ -1327,14 +1327,7 @@ def stage_dir():
     a file someone can swap, so the directory is locked down and every read out
     of it is re-verified rather than trusted.
     """
-    if _IS_WIN:
-        # Per app (Sutra / Sutra Beta): a shared manifest would let a beta
-        # launch arm stable's staged installer.
-        default = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"),
-                               Path(_win_exe_name()).stem, "updates")
-    else:
-        default = "~/Library/Application Support/Sutra/updates"
-    d = Path(os.path.expanduser(os.environ.get("SUTRA_UPDATE_DIR", default)))
+    d = Path(os.path.expanduser(os.environ.get("SUTRA_UPDATE_DIR") or default_stage_dir()))
     if d.is_symlink():
         raise RuntimeError("%s is a symlink; refusing to stage there" % d)
     d.mkdir(parents=True, exist_ok=True)
@@ -1355,6 +1348,35 @@ def stage_dir():
         raise RuntimeError("%s is accessible to other users and could not be "
                            "locked down" % d)
     return d
+
+
+def _mac_app_name():
+    """Which app this backend serves, by the bundle it runs out of: "Sutra" or "Sutra Beta"; "Sutra" in a checkout.
+    The name comes from the bundle's own Info.plist, the same file the helper trusts for the bundle id."""
+    try:
+        app = app_bundle()
+        if app:
+            with open(Path(app) / "Contents" / "Info.plist", "rb") as fh:
+                pl = plistlib.load(fh)
+            name = str(pl.get("CFBundleName") or "").strip()
+            if name in ("Sutra", "Sutra Beta"):
+                return name
+            if str(pl.get("CFBundleIdentifier") or "").endswith(".beta"):
+                return "Sutra Beta"
+    except (OSError, ValueError):
+        pass
+    return "Sutra"
+
+
+def default_stage_dir():
+    """Where updates are staged when SUTRA_UPDATE_DIR says nothing: PER APP on every platform. A folder shared by
+    Sutra and Sutra Beta lets a beta launch arm the stable app's staged image (found live 2026-09-29: the Beta quit at
+    every launch to apply the stable's 2.306.10, and the helper refused it by bundle id each time). The stable app's
+    folder is where it always was, so nothing of its own is lost."""
+    if _IS_WIN:
+        return os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"),
+                            Path(_win_exe_name()).stem, "updates")
+    return "~/Library/Application Support/%s/updates" % _mac_app_name()
 
 
 def _pending_path():
@@ -1800,6 +1822,17 @@ def _resolve_pending_unlocked(installed_version=None):
 
     if res and res.get("version") == version:
         if res.get("ok"):
+            clear_pending()
+            return {"pending": False, "applied": version}
+        # A failed apply of a version the running bundle already is, or is past, is nothing to retry: the bundle
+        # is what it is. installed_version is read from THIS bundle by the shell, never through the API, so the
+        # attach-path trap above does not reach here. (Found live 2026-09-29: a 2.306.11 Beta re-armed the stable
+        # app's failed 2.306.10 at every launch and quit to apply it.)
+        if installed_version and _ver_tuple(installed_version) > _ver_tuple(version):
+            clear_pending()
+            return {"pending": False, "dropped": version,
+                    "why": "the app that runs is %s, newer than the staged %s" % (installed_version, version)}
+        if installed_version and _ver_tuple(installed_version) == _ver_tuple(version):
             clear_pending()
             return {"pending": False, "applied": version}
         man["install_failures"] = int(man.get("install_failures", 0)) + 1

@@ -35,8 +35,9 @@ def ping():
 
 @router.get("/depts")
 def depts():
+    # `working`: the engines running now, as the working line says it, so the tree can mark a department at work (SIM-3 a)
     return {"depts": [{"ref": d["ref"], "name": d["name"], "stopped": d.get("stopped"), "kind": d.get("kind") or "website",
-                       "parent": d.get("parent")} for d in W.list_depts()]}
+                       "parent": d.get("parent"), "working": W.working_now(d["ref"])} for d in W.list_depts()]}
 
 
 @router.post("/found")
@@ -117,12 +118,18 @@ async def ask(ref: str, request: Request):
 
 
 @router.get("/{ref}/chat")
-def chat(ref: str, about: str = ""):
-    """The one chat with Root: whole on a Root, scoped on a department (or to `about`)."""
+def chat(ref: str, about: str = "", fn: str = ""):
+    """The one chat with Root: whole on a Root, scoped on a department (or to `about`); with `fn`, one function's own
+    chat from the record, which exists from birth and is never started (founder, 2026-09-29)."""
     _need(ref)
     rt = W._runtime(ref)
     if not rt:
         return {"root": None, "about": None, "turns": [], "asks": [], "departments": []}
+    if fn:
+        try:
+            return rt.fn_chat_view(ref, fn)
+        except ValueError as exc:
+            raise HTTPException(400, detail=str(exc))
     return rt.chat_view(ref, about=about or None)
 
 

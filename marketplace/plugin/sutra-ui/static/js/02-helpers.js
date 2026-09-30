@@ -1332,6 +1332,24 @@ function goDest(d){
   saveLayout(); render();
 }
 
+/* The first screen at boot, from the restored destination and its remembered
+   pick: the rule goDest applies on a click. A one-row destination opens its
+   row, so Org lands on the one-screen Org whatever old row this Mac had saved
+   as Org's pick (found live 2026-09-28, Human Simulation run 2: the app opened
+   on the Departments chart with ids, every time). The one-screen Org registers
+   behind a flag SETTINGS may not have answered yet; it is asked to register
+   here and fails open, as on a click. null: chats keeps the browse pane shut. */
+function bootScreen(){
+  const d = S.ui.dest;
+  if (d === "chats") return null;
+  if (d === "org" && typeof o2EnsureRegistered === "function") o2EnsureRegistered();
+  const sel = (typeof destFullBleed === "function" && destFullBleed(d)) ? null : S.ui.destSel[d];
+  const one = (typeof destOneRow === "function" && destOneRow(d)) ? planeRows(d).flatMap(g => g.rows)[0] : null;
+  if (one && SCREENS[one.screen]) return one.screen;
+  const dflt = DEST_DEFAULT_SCREEN[d];
+  return (sel && SCREENS[sel]) ? sel : ((dflt && SCREENS[dflt]) ? dflt : S.screen);
+}
+
 /* A row can be feature-flagged (FLAG.md). With the flag off the row must not
    render at all -- the byId fallback would otherwise show a bare id. Any flag
    but workspace is opt-OUT: it renders unless settings.json carries an explicit

@@ -1,6 +1,6 @@
 {
- "comment": "The nine engines of a website department, as data (engine_runtime.py): four work engines and five internal systems. EVERY engine names its start: the triggers that make it want to run (a new version of something, a post addressed to it, a time) and the blockers that hold it (gates of the internal systems, by id). An engine with no start is refused when the definitions are loaded, so every engine starts by the same rule. A step names its code, its prompt and its check; a name resolves only in the registry that ships with the app. born is the rung a step starts on; the rung it runs on is read from the department's ladder. EVERY step names a check: a definition with a step that has none is refused. coordination is the table Coordination is born with: who goes first when several engines are ready; a department keeps its own copy on its record, and only that copy is read. The journeys are canon's five (holding/website/native/products/cos/design-journeys.html): task, query, directive, feedback, new idea. WORDS: a step's name and an engine's description are shown on the screen, so they say function, the users' word; internal system is the word inside, for this comment, the documents and the code. KINDS: a department has a kind; its kind names its line, its artifacts, its born goal, done line and rules; Coordination's table is born with the kind's line. Root is a department of the kind root: its one engine, Setup, sets up a department the owner asked for, from the Library's templates, and the owner's stamp is its rule; there is one Root for one organisational structure. SHAPE: every unit, the steps of a work engine or of a handler, starts with a step by code and ends with a step by code; agents come between, so the input, the output and the least steps of any unit are known (founder, 2026-09-28). FRONT DOOR: the person speaks with Root; on a Root the owner's words arrive with the word front, and Root's Identity hears them, finds the department they are about (the chip, a name in the words, or the only child) and hands them on as a post from Root to that department's Identity, whose answers come back onto Root's board; a stamp, a refusal, Stop and Start go the same way (founder, 2026-09-28: one point of entry; the user always speaks with the root). LOST: a request of the owner's, or one Root handed on, that nobody answered inside its bound is closed by Coordination, which tells Identity (word lost); Identity says it back to the person and asks for the words again, so nothing said at the front door dies unseen (ER-9, found live 2026-09-28).",
- "def_version": 5,
+ "comment": "The nine engines of a website department, as data (engine_runtime.py): four work engines and five internal systems. EVERY engine names its start: the triggers that make it want to run (a new version of something, a post addressed to it, a time) and the blockers that hold it (gates of the internal systems, by id). An engine with no start is refused when the definitions are loaded, so every engine starts by the same rule. A step names its code, its prompt and its check; a name resolves only in the registry that ships with the app. born is the rung a step starts on; the rung it runs on is read from the department's ladder. EVERY step names a check: a definition with a step that has none is refused. coordination is the table Coordination is born with: who goes first when several engines are ready; a department keeps its own copy on its record, and only that copy is read. The journeys are canon's five (holding/website/native/products/cos/design-journeys.html): task, query, directive, feedback, new idea. WORDS: a step's name and an engine's description are shown on the screen, so they say function, the users' word; internal system is the word inside, for this comment, the documents and the code. KINDS: a department has a kind; its kind names its line, its artifacts, its born goal, done line and rules; Coordination's table is born with the kind's line. Root is a department of the kind root: its one engine, Setup, sets up a department the owner asked for, from the Library's templates, and the owner's stamp is its rule; there is one Root for one organisational structure. SHAPE: every unit, the steps of a work engine or of a handler, starts with a step by code and ends with a step by code; agents come between, so the input, the output and the least steps of any unit are known (founder, 2026-09-28). FRONT DOOR: the person speaks with Root; on a Root the owner's words arrive with the word front, and Root's Identity hears them, finds the department they are about (the chip, a name in the words, or the only child) and hands them on as a post from Root to that department's Identity, whose answers come back onto Root's board; a stamp, a refusal, Stop and Start go the same way (founder, 2026-09-28: one point of entry; the user always speaks with the root). LOST: a request of the owner's, or one Root handed on, that nobody answered inside its bound is closed by Coordination, which tells Identity (word lost); Identity says it back to the person and asks for the words again, so nothing said at the front door dies unseen (ER-9, found live 2026-09-28). TEMPLATES (TPL-1, founder 2026-09-29: a department is a skeleton; its functions, engines and artifacts come from Library templates matched to the use case, else the default): the work engines are not in this file; they are the Library's engine templates (engine-templates/<slug>.json, one per engine, each with a use case) and the runtime assembles the definitions from them. A kind is a department template: its use case, its line of engines, its artifacts, its functions' template (function-templates/<function>/<functions_template>.json), its born goal, done line and rules. Root's Setup picks the kind whose use case fits the owner's words, else default; the department's record carries the engines and artifacts it was born with, and everything reads the record. ENGINES FROM IDEAS (TPL-1 slice 2, founder 2026-09-29: the engines are created by the department's own functions): an idea the owner floats is shaped and parked by Adaptation, which then offers the engine it asks for (a Library template whose use case fits, else one shaped from Do with the idea as its instruction) to Priority; Priority prices it; Identity puts it to the owner; on the stamp Identity adds it to the record and Coordination's line, and a shaped engine is born into the Library with made_by; it then starts on its own trigger.",
+ "def_version": 11,
  "kinds": {
   "website": {
    "line": [
@@ -36,7 +36,9 @@
      "line": "Never publish a build whose check failed"
     }
    ],
-   "say": "A task, a question, a rule, feedback or an idea"
+   "say": "A task, a question, a rule, feedback or an idea",
+   "use_case": "a live website: pages planned, written, checked and published",
+   "functions_template": "product-build"
   },
   "root": {
    "line": [
@@ -66,7 +68,62 @@
      "line": "Set up what the owner asked for, from the Library's templates"
     }
    ],
-   "say": "Ask Root for a department: what it is for"
+   "say": "Ask Root for a department: what it is for",
+   "use_case": "the one root of an organisation: sets up its departments from the Library",
+   "functions_template": "default"
+  },
+  "default": {
+   "use_case": "any goal the Library has no kind for: one Do engine answers each ask and files the Result",
+   "functions_template": "default",
+   "line": [
+    "Do"
+   ],
+   "artifacts": [
+    "Brief",
+    "Result"
+   ],
+   "goal": "Work for {name}",
+   "done": "Every ask answered in the Result",
+   "done_words": [
+    "Answered",
+    "Not answered yet"
+   ],
+   "rules": [
+    {
+     "tag": "go",
+     "line": "Work inside the record"
+    },
+    {
+     "tag": "ask",
+     "line": "Ask the owner before anything reaches outside"
+    }
+   ],
+   "say": "A task, a question, a rule, feedback or an idea"
+  },
+  "organic": {
+   "use_case": "a goal done its own way, a website included: no engines at birth; Adaptation shapes from the owner's words the line the goal needs, each engine reading the internet and what the ones before it filed, and the owner stamps the line once",
+   "functions_template": "product-build",
+   "line": [],
+   "artifacts": [
+    "Brief"
+   ],
+   "goal": "Work for {name}, done its own way",
+   "done": "What the words asked for is filed, and what goes out is live",
+   "done_words": [
+    "Done",
+    "Not done yet"
+   ],
+   "rules": [
+    {
+     "tag": "go",
+     "line": "Work inside the record"
+    },
+    {
+     "tag": "ask",
+     "line": "Ask the owner before anything reaches outside"
+    }
+   ],
+   "say": "A task, a question, a rule, feedback or an idea"
   }
  },
  "edges": {
@@ -180,257 +237,6 @@
   ]
  },
  "engines": {
-  "Plan": {
-   "kind": "work",
-   "description": "reads the brief and every ask in it, and plans the site's pages",
-   "skills": [
-    "plan a site from a brief"
-   ],
-   "reads": "Brief",
-   "writes": "Site plan",
-   "start": {
-    "on": [
-     {
-      "kind": "version",
-      "of": "Brief"
-     }
-    ],
-    "unless": [
-     "identity.gate",
-     "priority.envelope",
-     "coord.chain"
-    ]
-   },
-   "steps": [
-    {
-     "id": "plan.read",
-     "name": "Read the brief",
-     "nature": "transform",
-     "born": "C2",
-     "code": "plan_read",
-     "check": "brief_is_text"
-    },
-    {
-     "id": "plan.pages",
-     "name": "Propose the pages",
-     "nature": "make",
-     "born": "C0",
-     "ceiling": "C1",
-     "prompt": "plan_pages",
-     "draft": "plan_pages_draft",
-     "out": {
-      "site_name": "str",
-      "pages": "list"
-     },
-     "check": "plan_has_pages"
-    },
-    {
-     "id": "plan.fit",
-     "name": "Fit the page list",
-     "nature": "transform",
-     "born": "C2",
-     "code": "plan_fit",
-     "check": "plan_is_fit"
-    },
-    {
-     "id": "plan.file",
-     "name": "File the plan",
-     "nature": "transform",
-     "born": "C2",
-     "code": "plan_file",
-     "files": true,
-     "check": "filed_has_files"
-    }
-   ]
-  },
-  "Write": {
-   "kind": "work",
-   "description": "writes the body of every page in the plan",
-   "skills": [
-    "write a page from its plan"
-   ],
-   "reads": "Site plan",
-   "writes": "Pages",
-   "start": {
-    "on": [
-     {
-      "kind": "version",
-      "of": "Site plan"
-     }
-    ],
-    "unless": [
-     "identity.gate",
-     "priority.envelope",
-     "coord.chain"
-    ]
-   },
-   "steps": [
-    {
-     "id": "write.list",
-     "name": "List the pages",
-     "nature": "transform",
-     "born": "C2",
-     "code": "write_list",
-     "check": "list_has_pages"
-    },
-    {
-     "id": "write.page",
-     "name": "Write a page",
-     "nature": "make",
-     "born": "C0",
-     "ceiling": "C1",
-     "each": "write.list.pages",
-     "side_by_side": 4,
-     "prompt": "write_page",
-     "draft": "write_page_draft",
-     "out": {
-      "title": "str",
-      "body_html": "str"
-     },
-     "check": "page_has_body"
-    },
-    {
-     "id": "write.file",
-     "name": "Put the pages together",
-     "nature": "transform",
-     "born": "C2",
-     "code": "write_file",
-     "files": true,
-     "check": "filed_has_files"
-    }
-   ]
-  },
-  "Check": {
-   "kind": "work",
-   "description": "assembles each page in one layout and checks it",
-   "skills": [
-    "check that every page renders and every link resolves"
-   ],
-   "reads": "Pages",
-   "writes": "Build",
-   "start": {
-    "on": [
-     {
-      "kind": "version",
-      "of": "Pages"
-     }
-    ],
-    "unless": [
-     "identity.gate",
-     "priority.envelope",
-     "coord.chain"
-    ]
-   },
-   "steps": [
-    {
-     "id": "check.build",
-     "name": "Build and check",
-     "nature": "check",
-     "born": "C2",
-     "code": "check_build",
-     "files": true,
-     "check": "filed_has_files"
-    }
-   ]
-  },
-  "Publish": {
-   "kind": "work",
-   "description": "puts a checked build live",
-   "skills": [
-    "publish a checked build"
-   ],
-   "reads": "Build",
-   "writes": "Live site",
-   "start": {
-    "on": [
-     {
-      "kind": "version",
-      "of": "Build",
-      "checked": true
-     }
-    ],
-    "unless": [
-     "identity.gate",
-     "priority.envelope",
-     "coord.chain"
-    ]
-   },
-   "steps": [
-    {
-     "id": "publish.copy",
-     "name": "Copy the build live",
-     "nature": "transform",
-     "born": "C2",
-     "code": "publish_copy",
-     "files": true,
-     "check": "filed_has_files"
-    }
-   ]
-  },
-  "Setup": {
-   "kind": "work",
-   "description": "sets up a department the owner asked for, from the Library's templates",
-   "skills": [
-    "set up a department from the owner's words"
-   ],
-   "reads": "Request",
-   "writes": "Department",
-   "start": {
-    "on": [
-     {
-      "kind": "version",
-      "of": "Request"
-     }
-    ],
-    "unless": [
-     "identity.gate",
-     "priority.envelope",
-     "coord.chain"
-    ]
-   },
-   "steps": [
-    {
-     "id": "setup.read",
-     "name": "Read the request",
-     "nature": "transform",
-     "born": "C2",
-     "code": "setup_read",
-     "check": "facts_are_closed"
-    },
-    {
-     "id": "setup.shape",
-     "name": "Shape the department",
-     "nature": "make",
-     "born": "C0",
-     "ceiling": "C2",
-     "prompt": "setup_shape",
-     "draft": "setup_shape_draft",
-     "out": {
-      "name": "str",
-      "kind": "str",
-      "goal": "str"
-     },
-     "check": "department_is_shaped"
-    },
-    {
-     "id": "setup.make",
-     "name": "Make it",
-     "nature": "make",
-     "born": "C2",
-     "code": "setup_make",
-     "check": "department_is_made"
-    },
-    {
-     "id": "setup.file",
-     "name": "File it",
-     "nature": "transform",
-     "born": "C2",
-     "code": "setup_file",
-     "files": true,
-     "check": "filed_has_files"
-    }
-   ]
-  },
   "Identity": {
    "kind": "function",
    "description": "holds the goal and the rules, judges every effect, and is the one the owner speaks with",
@@ -455,6 +261,23 @@
      "nature": "decide",
      "born": "C2",
      "code": "identity_gate",
+     "prompt": "identity_gate_soft",
+     "draft": "identity_gate_draft",
+     "out": {
+      "verdict": [
+       "admit",
+       "wait",
+       "refuse"
+      ]
+     },
+     "check": "gate_answer_is_known"
+    },
+    {
+     "id": "identity.wait_engine",
+     "name": "Wait for the engine the words need",
+     "nature": "decide",
+     "born": "C2",
+     "code": "identity_wait_engine",
      "prompt": "identity_gate_soft",
      "draft": "identity_gate_draft",
      "out": {
@@ -799,6 +622,40 @@
        "nature": "transform",
        "born": "C2",
        "code": "identity_lost",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "an engine proposed",
+     "when": {
+      "msg_type": "propose",
+      "word": "engine"
+     },
+     "steps": [
+      {
+       "id": "identity.engine",
+       "name": "Put the engine to the owner",
+       "nature": "transform",
+       "born": "C2",
+       "code": "identity_engine",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "a line proposed",
+     "when": {
+      "msg_type": "propose",
+      "word": "line"
+     },
+     "steps": [
+      {
+       "id": "identity.line",
+       "name": "Put the line to the owner",
+       "nature": "transform",
+       "born": "C2",
+       "code": "identity_line",
        "check": "said_what_it_did"
       }
      ]
@@ -1173,6 +1030,86 @@
        "nature": "transform",
        "born": "C2",
        "code": "adapt_park",
+       "check": "said_what_it_did"
+      },
+      {
+       "id": "adapt.offer",
+       "name": "Offer the engine the idea asks for",
+       "nature": "transform",
+       "born": "C2",
+       "code": "adapt_offer",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "Priority priced an engine: room",
+     "when": {
+      "msg_type": "accept-proposal",
+      "word": "engine"
+     },
+     "steps": [
+      {
+       "id": "adapt.priced",
+       "name": "Put the priced engine to Identity",
+       "nature": "transform",
+       "born": "C2",
+       "code": "adapt_priced",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "Priority priced an engine: no room",
+     "when": {
+      "msg_type": "reject-proposal",
+      "word": "engine"
+     },
+     "steps": [
+      {
+       "id": "adapt.unpriced",
+       "name": "Leave the idea parked, priced",
+       "nature": "transform",
+       "born": "C2",
+       "code": "adapt_priced",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "Shape the line",
+     "when": {
+      "msg_type": "request",
+      "word": "line"
+     },
+     "steps": [
+      {
+       "id": "adapt.hearline",
+       "name": "Hear the words",
+       "nature": "transform",
+       "born": "C2",
+       "code": "hear",
+       "check": "facts_are_closed"
+      },
+      {
+       "id": "adapt.line",
+       "name": "Shape the line the words need",
+       "nature": "make",
+       "born": "C0",
+       "ceiling": "C1",
+       "prompt": "adapt_line",
+       "draft": "adapt_line_draft",
+       "out": {
+        "engines": "list"
+       },
+       "check": "line_is_engines"
+      },
+      {
+       "id": "adapt.lineoffer",
+       "name": "Put the line to Identity",
+       "nature": "transform",
+       "born": "C2",
+       "code": "adapt_line_offer",
        "check": "said_what_it_did"
       }
      ]

@@ -1,6 +1,104 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-28
+## 2.306.21 (2026-09-30)
+
+## Sutra Desktop: a line made on the fly
+
+- a department can be born with no engines (the organic kind): from your words Adaptation shapes the engines the goal needs, puts the line to you once, and your stamp adds them; the first starts on your words, each next on what the one before it filed; every engine reads the internet
+- what goes out (a site) asks you first, whichever engine makes it; a site made this way is served at the department's address
+- the Human Simulation goal "a website from words, engines on the fly" (qa/sim/goals/website-on-the-fly.json) and its runs
+
+## 2.306.20 (2026-09-29)
+
+## Sutra Desktop: the organisation is its chat
+
+- the organisation's row on the Org structure screen is the chat with Root and nothing else; Root is not a row of the tree nor a tile of the chart; the departments Root makes sit under the organisation
+- Root settings behind one button: what Root does, On or Off, its rules, the departments it made
+- founding lands on the organisation; a department born from the chat slides into the tree
+
+## 2.306.19 (2026-09-29)
+
+## Sutra Desktop: ask the department about its own work
+
+- a question in the chat is answered from what the department filed last (its report, its pages), not only from counts; a tool's department speaks no website lines
+- the New organisation sheet asks what the first department is for, in your words; a tool, a desk or a list is set up here as well as a site
+
+## 2.306.18 (2026-09-29)
+
+## Sutra Desktop: the internet is a given
+
+- every function and engine can search the web and open pages on its own; no ask, no stamp and no shaped engine for reading a page
+- words that name a page or a subject are filed at once and the department reads what it needs; an idea for a new capability still becomes an engine you stamp
+- the prompts the department's functions work from are shorter and plainer
+
+## 2.306.17 (2026-09-29)
+
+## Sutra Desktop: an engine you added survives the update
+
+- an engine born from your idea now lives with your records, not inside the app, so an update keeps it; a department whose engine the app can no longer find says so on its card and in Health instead of failing to open
+- first words that name nothing to build from ("New website") get one question back, what the site is for and about whom, before anything is planned
+- with 2.306.16: the line waits for the engine your words need; an added engine weighs new words before searching again; Audit reads what your engines filed; a function's chat keeps you there
+
+## 2.306.16 (2026-09-28)
+
+- **A correct agent answer at classify is applied instead of refused for its rank**: the three acts were on a stringency ladder, so an ASSERT ranked below a QUERY and a right answer lost. They sit on ONE rung now - an assertion is not below a question - and the more confident answer wins, in either direction, with an answer that is not an act still refused. Found live: the classifier read \"as expexted\" as a QUERY with no evidence at 0.2, the agent answered ASSERT at 0.8 with its reason, and the ladder threw it away. Tests: test-tier 62.
+
+## 2.306.15 (2026-09-29)
+
+## Sutra Desktop: your words get the engine they need
+
+- when your words need the internet and no engine of the department reaches it, the ask says so and a stamp has the department's own Adaptation shape an engine for it; you stamp the engine, it runs at once and files what it found with the page each fact came from
+- Priority is shown the engine it prices: what it does, what it needs, what it costs a day; when it refuses, you are told why and what you can do
+- a second department under the same Root gets a new name; a name that already exists is said back and your words go to that department
+- the tree marks a department at work
+
+## 2.306.14 (2026-09-29)
+
+## Sutra Desktop: what you are not sure of stays out until you say
+
+- a fact you say you are not sure of is left out of the site and you are asked at once which are right; before, it could become a page and go live
+- the ask to set up a department is one line, your goal's first sentence, not the whole goal back
+- in a function's chat the same thought twice in a row is one line
+
+## 2.306.13 (2026-09-28)
+
+- **Every code step now says how sure it is, and classify asks when it had nothing to go on** (RT-25). classify derives a confidence from its own branches (no signal 0.2 - the default fires - stage-1 0.3, mixed 0.6, one clean signal 0.9, corroborated 0.95); resolve turns the matcher score it already computed into one; depth reports whether its inputs were live or degraded. Each number carries the sentence that produced it, and the step-log row prints it beside the tier as `code@0.2`. classify carries the first threshold, 0.25, which fires only on the no-evidence case: the agent is asked which act the message performs and the answer is RECORDED, never applied backwards to labels already emitted. resolve and depth stay unset until the log shows where an ask would pay. Tests: test-tier 60, test-step-log 36.
+
+## 2.306.12 (2026-09-29)
+
+## Sutra Desktop: a function's chat is the one you already have
+
+- a click on any of the five functions' Chat shows that function's existing chat from the record: what you said to it, what it answered, its own thinking as quiet lines between, and a box to say more; it never starts a new chat and never asks you to
+- words said in a function's chat still go through Identity, the one door, and come back into that same chat
+- a department not on the engine runtime keeps the chat it had
+
+## 2.306.11 (2026-09-29)
+
+## Sutra Desktop: what the person found on 2.306.10, fixed
+
+Three sites were walked end to end on the Beta by clicks alone (Parasthi Hospital, Namrati, Kriti Organics) and every miss became a fix with a test:
+
+- a rule the person stamped is a check the line runs: a build that breaks it never goes live, is sent back with the finding (twice at most), and the person is told
+- the panel never waits on the model inside a read: no more 25-second stalls around a publish
+- the app opens on Org, the one-screen Org, whatever old row this Mac remembered
+- a department Root has just made wears its own view at once, without a reload
+- a stamp inside a department, a Stop and a Start are turns of the chat; the working line says "page 3 of 8" and is gone when the department is Off
+- the department asks for what it lacks in the person's words; an answer to its own question is taken as the facts, never as a rule; what reaches outside the site is named (an email, a phone, an address)
+- Plan says which pages it planned; the goal is said once on the whole chat; the chat keeps its place across a paint and moves only when a turn lands; Root's box invites words for a department that exists
+
+## 2.306.10 (2026-09-28)
+
+## Sutra Desktop: what the first Human Simulation run found, fixed
+
+The app was walked as a person (Parasthi Hospital, from Org to a live site in 3 minutes) and the facts the person then gave in the chat vanished in a failed handling nobody saw. This release:
+
+- a step a request does not need never fails the request (the skipped step's check is no judgement)
+- a request whose handling failed is said back in the chat: "I could not act on this: ... Say it again, or say it differently."; Health's Front door counts it
+- the person's own words are shown whole in the chat, never cut at 220 characters
+- the department chip in Root's chat opens the department; the tree learns of a department Root has just made, without a reload
+- the Human Simulation program itself ships in `qa/sim/` (person, goals with verifiable outcomes, the agent's runbook, run 1's ledger, findings and report)
+
 ## 2.306.9 (2026-09-28)
 
 - **A message typed while a Claude reply runs is handed to Claude at once**: it is folded into the running turn at its next step, or runs right after; the pane says "handed", or "queued" with the reason (Shadow driving, other model or options, provider switch, an earlier message waiting). Echoes (`--replay-user-messages`) are matched by order, not text, so an attachment or an expanded slash command cannot leave the pane waiting for a turn that never comes. Only a turn the chat opened takes a handed message; Shadow, mission and helper turns never do.

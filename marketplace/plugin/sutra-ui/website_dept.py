@@ -66,13 +66,16 @@ RULES = [dict(r) for r in KINDS.get("website", {}).get("rules") or []]
 
 
 def engines_of(d):
-    """The work engines of a department, in its line: (name, reads, writes, runs as). A department born the old way
-    keeps the first build's four."""
+    """The work engines of a department, in its line: the engines on its record (TPL-1: what it was born with, from the
+    Library), the kind's line for one born before the record carried them; (name, reads, writes, runs as). A department
+    born the old way keeps the first build's four."""
     if (d or {}).get("runtime") != 2:
         return ENGINES
+    import engine_runtime                      # the Library's engines, templates and all; lazy, as it imports this module
+    engines = engine_runtime.defs()["engines"]
     out = []
-    for n in KINDS.get((d or {}).get("kind") or "website", KINDS["website"])["line"]:
-        e = (_DEFS.get("engines") or {}).get(n) or {}
+    for n in (d or {}).get("engines") or KINDS.get((d or {}).get("kind") or "website", KINDS["website"])["line"]:
+        e = engines.get(n) or {}
         soft = any(s.get("prompt") for s in e.get("steps") or [])
         out.append((n, e.get("reads"), e.get("writes"), "model" if soft else "code"))
     return tuple(out)
@@ -82,7 +85,7 @@ def artifacts_of(d):
     """What a department files, first to last: its kind's artifacts; the first build's five for one born the old way."""
     if (d or {}).get("runtime") != 2:
         return ARTIFACTS
-    return tuple(KINDS.get((d or {}).get("kind") or "website", KINDS["website"])["artifacts"])
+    return tuple((d or {}).get("artifacts") or KINDS.get((d or {}).get("kind") or "website", KINDS["website"])["artifacts"])
 
 
 def kind_of(d):
@@ -212,7 +215,7 @@ def add_version(ref, art, files, made_from, run, check, note=""):
     """A version, with the artifact's own check beside the engine's: the template in the Library says what a good one
     is, and a version that fails it is filed and never read as passed (founder, 2026-09-28: operable artifacts)."""
     import artifacts
-    own = artifacts.check(art, files)
+    own = artifacts.check(art, files, default=art in artifacts_of(dept(ref)))   # an artifact the department names: the Default when the Library has no template of its own
     if own is not None:
         check = dict(check or {})
         check["ok"] = bool(check.get("ok")) and own["ok"]
@@ -222,6 +225,22 @@ def add_version(ref, art, files, made_from, run, check, note=""):
 
 def runs(ref):
     return _read(ddir(ref) / "runs.json", [])
+
+
+def working_now(ref):
+    """The engines running now, the same rows the working line reads: run rows still open, but not one a dead process
+    left open past the model's timeout twice over."""
+    out = []
+    for r in runs(ref):
+        if r.get("status") != "running":
+            continue
+        try:
+            age = (datetime.now(timezone.utc) - datetime.fromisoformat(str(r.get("started"))).astimezone(timezone.utc)).total_seconds()
+        except (TypeError, ValueError):
+            age = 0
+        if age < MODEL_TIMEOUT_S * 2:
+            out.append(r["engine"])
+    return out
 
 
 def _put_run(ref, row):
@@ -295,7 +314,9 @@ def create(ref, name, brief, owner="the owner", parent=None, kind="website"):
          "runtime": 1 if os.environ.get("SUTRA_ENGINE_RUNTIME") == "1" else 2,
          "rules": [dict(r) for r in k["rules"]], "control": "granted", "stopped": False,
          "envelopes": {e[0]: dict(ENVELOPE) for e in ENGINES},
-         "windows": {"Plan": 15, "Write": 30, "Check": 5, "Publish": 10}}
+         "windows": {"Plan": 15, "Write": 30, "Check": 5, "Publish": 10},
+         # what it was born with, from the Library (TPL-1): its line and its artifacts, read from here from now on
+         "engines": list(k["line"]), "artifacts": list(k["artifacts"])}
     if d["runtime"] == 1 and kind != "website":
         raise ValueError("only a website department is born the old way")
     if d["runtime"] == 2:
@@ -379,6 +400,9 @@ def set_stopped(ref, stopped):
         # Start and Stop are one button, and a signal to every engine of the department (founder, 2026-09-28).
         system_run(ref, "Identity", "stopped by the owner: every engine stops" if stopped
                    else "started by the owner: every engine looks to its own triggers")
+        rt = _runtime(ref)
+        if rt:
+            rt.tell_switch(ref, d, bool(stopped))       # a turn of the chat: the person's own act, said back
         signal()
     else:
         system_run(ref, "Identity", "stopped by the owner" if stopped else "resumed by the owner")
@@ -408,6 +432,57 @@ def decide_ask(ref, aid, approve, by="the owner"):
                 system_run(ref, "Identity", ("stamped: " if approve else "refused: ") + a["text"])
             return a
     raise ValueError("no such ask")
+
+
+def add_engine(ref, name, shape=None, by="the owner", before=None):
+    """An engine added to a live department on the owner's stamp (TPL-1 slice 2, founder 2026-09-29: "the engines are
+    supposed to be created by the five functions of the department"): a Library engine template by name, or one shaped
+    on the fly (name, use case, instruction, what it writes), born into the Library from Do with made_by. The record
+    gains the engine and its artifact, an envelope and a window; Coordination's line grows; the engine then starts on
+    its own trigger, like every other."""
+    import engine_runtime as R
+    d = dept(ref)
+    if not d or d.get("runtime") != 2:
+        raise ValueError("no department on the engine runtime at %s" % ref)
+    name = " ".join(str(name or "").split())[:40]
+    if not name:
+        raise ValueError("name the engine")
+    engines = R.defs()["engines"]
+    born = None
+    if name not in engines:
+        if not shape:
+            raise ValueError("the Library has no engine named %s" % name)
+        born = R.born_template(name, shape, ref)
+        engines = R.defs()["engines"]
+    e = engines[name]
+    if e.get("kind") != "work":
+        raise ValueError("%s is a function, not an engine of the line" % name)
+    with _lock(ref):
+        d = dept(ref)
+        line = [x[0] for x in engines_of(d)]
+        if name in line:
+            raise ValueError("%s already runs %s" % (d.get("name"), name))
+        arts0 = list(artifacts_of(d))
+        if before is None and line and arts0 and e.get("reads") == arts0[0]:
+            before = line[0]                             # an engine that reads the Brief goes first: what it files, the line reads
+        if before in line:
+            line.insert(line.index(before), name)
+        else:
+            line.append(name)
+        d["engines"] = line
+        arts = list(artifacts_of(d))
+        if e.get("writes") and e["writes"] not in arts:
+            # right after what it reads, so the kind's last artifact (the one that goes out) stays last
+            arts.insert(arts.index(e["reads"]) + 1 if e.get("reads") in arts else len(arts), e["writes"])
+        d["artifacts"] = arts
+        t = R.priority_template()
+        base = {"calls": int(t.get("calls", ENVELOPE["calls"])), "usd": float(t.get("usd", ENVELOPE["usd"]))}
+        d.setdefault("envelopes", {})[name] = {"calls": int(t.get("work_calls", 8)) * base["calls"], "usd": base["usd"]}
+        d.setdefault("windows", {})[name] = 15
+        save_dept(ref, d)
+    R.grow_line(ref, name, before)
+    system_run(ref, "Identity", "added the engine %s on %s's stamp%s" % (name, by, " (born into the Library)" if born else ""))
+    return {"ref": ref, "engine": name, "engines": line, "born": str(born) if born else None}
 
 
 def set_envelope(ref, name, calls=None, usd=None, by="the owner"):
@@ -472,9 +547,15 @@ def _login_path():
         return os.environ.get("PATH", "")
 
 
-def model_json(prompt, timeout=MODEL_TIMEOUT_S):
+MODEL_TOOLS = ("WebSearch", "WebFetch")       # the tools a step may name: the model reaches the internet, nothing else
+
+
+def model_json(prompt, timeout=MODEL_TIMEOUT_S, tools=None):
     """(object or None, usd, why). One headless model call, as routines.py makes
-    them: plan billing, quiet hooks, JSON back. Never raises."""
+    them: plan billing, quiet hooks, JSON back. Never raises. With `tools`, the
+    step's own tools (MODEL_TOOLS only) are the ones the model may use: a
+    Research step searches the web through them (founder, 2026-09-29: "I want
+    the data to be fetched from the internet by the department")."""
     if os.environ.get("SUTRA_WEBSITE_OFFLINE") == "1":
         return None, 0.0, "offline"
     env = dict(os.environ)
@@ -485,6 +566,9 @@ def model_json(prompt, timeout=MODEL_TIMEOUT_S):
     claude = shutil.which("claude", path=env["PATH"]) or "claude"
     args = [claude, "-p", prompt, "--output-format", "json", "--permission-mode", "dontAsk",
             "--setting-sources", "user", "--model", os.environ.get("SUTRA_WEBSITE_MODEL", "sonnet")]
+    use = [t for t in (tools or []) if t in MODEL_TOOLS]
+    if use:
+        args += ["--tools"] + use + ["--allowedTools"] + use
     # The model runs in a folder of its own: whatever a headless session leaves
     # behind (its hooks write ledgers into the working folder) stays out of the
     # departments' records.
@@ -734,12 +818,12 @@ def _chain_of(ref, art, v):
     return "brief.v%d" % v if art == "Brief" else None
 
 
-def due(ref):
+def due(ref, peek=False):
     """The first slot the motor may start now, or a reason it may not. Returns
-    (engine, input_row, slot) or (None, None, why)."""
+    (engine, input_row, slot) or (None, None, why). peek: a panel read asking; it writes nothing and never waits on the model."""
     rt = _runtime(ref)
     if rt:
-        return rt.next_due(ref)
+        return rt.next_due(ref, peek=peek)
     d = dept(ref)
     if not d:
         return None, None, "no department"
@@ -968,7 +1052,7 @@ def start_motor():
 def status(ref):
     rs, ak = runs(ref), asks(ref)
     pend = [a for a in ak if a["status"] == "pending"]
-    name, inp, why = due(ref) if not any(r["status"] == "running" for r in rs) else (None, None, "running")
+    name, inp, why = due(ref, peek=True) if not any(r["status"] == "running" for r in rs) else (None, None, "running")
     waits = [{"what": a["engine"], "why": "for the stamp" if a["kind"] == "publish" else a["text"], "since": a["created"]} for a in pend]
     rt = _runtime(ref)
     if rt:                                     # the owner's own words nobody has answered yet (ER-9)
@@ -1012,6 +1096,14 @@ def health(ref):
         if calls >= int(env.get("calls", ENVELOPE["calls"])) or usd >= float(env.get("usd", ENVELOPE["usd"])):
             over.append(e)
     checks.append(("Budget", "warn" if over else "ok", "Inside every envelope" if not over else "Over: " + ", ".join(over)))
+    if d.get("runtime") == 2:
+        # an engine the record names that this app's Library does not define (born in an older bundle, or its file gone):
+        # said here, and its card says Missing; the rest of the line runs (found live 2026-09-29, Beta 2.306.16)
+        import engine_runtime
+        lost = engine_runtime.missing_engines(d)
+        checks.append(("Library", "block" if lost else "ok",
+                       "Every engine on the record has its template" if not lost
+                       else "; ".join("%s has no template in this app's Library; say its idea again to shape it anew" % n for n in lost)))
     live = latest(ref, arts[-1])
     dw = kind_of(d).get("done_words") or ["The site is live", "Not live yet"]
     checks.append(("Done", "ok" if live and (live.get("check") or {}).get("ok") else "warn", dw[0] if live else dw[1]))
@@ -1030,11 +1122,16 @@ def health(ref):
 def engine_view(ref, name):
     d = dept(ref) or {}
     reads, writes, how = next(((e[1], e[2], e[3]) for e in engines_of(d) if e[0] == name), (None, None, None))
-    if not reads:
-        return None
     rs = [r for r in runs(ref) if r["engine"] == name]
     calls, usd = _today_spend(ref, name)
     env = (d.get("envelopes") or {}).get(name) or ENVELOPE
+    if not reads:
+        if name not in (d.get("engines") or []):
+            return None
+        # on the record, but no template in this app's Library (born in an older bundle): a card that says so, never a crash
+        return {"name": name, "reads": None, "writes": None, "runs_as": None, "slot": None, "state": "Missing", "missing": True,
+                "envelope": {"calls": env["calls"], "usd": env["usd"], "used_calls": calls, "used_usd": round(usd, 3)},
+                "window_min": (d.get("windows") or {}).get(name), "runs": list(reversed(rs[-20:]))}
     state = "Running" if any(r["status"] == "running" for r in rs) else ("Stopped" if d.get("stopped") else "Idle")
     return {"name": name, "reads": reads, "writes": writes, "runs_as": how, "slot": "after a new " + reads,
             "state": state, "envelope": {"calls": env["calls"], "usd": env["usd"], "used_calls": calls, "used_usd": round(usd, 3)},
@@ -1073,7 +1170,7 @@ def map_view(ref):
         paused = s in PAUSED_SYSTEMS and d.get("runtime") != 2
         last = next((r for r in reversed(rs) if r["engine"] == s), None)
         systems.append({"name": s, "state": "paused" if paused else "running", "last": last and last.get("what")})
-    engines = [engine_view(ref, e[0]) for e in engines_of(d)]
+    engines = [x for x in (engine_view(ref, e[0]) for e in engines_of(d)) if x]
     for e in engines:
         e.pop("runs", None)
         last = next((r for r in reversed(rs) if r["engine"] == e["name"]), None)
@@ -1091,7 +1188,7 @@ def map_view(ref):
     return {"ref": ref, "name": d["name"], "goal": d["goal"], "done": d["done"], "rules": d["rules"], "owner": d["owner"],
             "control": d["control"], "stopped": d.get("stopped"), "systems": systems, "engines": engines, "artifacts": arts,
             "status": st, "health": health(ref), "recent": recent,
-            "live": kind == "website" and bool(latest(ref, "Live site")), "requests": requests(ref)[-10:],
+            "live": "Live site" in names and bool(latest(ref, "Live site")), "requests": requests(ref)[-10:],
             # a Root is born with its goal: it makes departments; every other kind takes its goal from the owner's words
             "has_goal": kind == "root" or bool(versions(ref, names[0])) or bool(requests(ref)), "templates": d.get("templates") or {},
             "runtime": d.get("runtime") or 1, "kind": kind, "say": kind_of(d).get("say") or "",

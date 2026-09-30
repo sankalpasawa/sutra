@@ -409,7 +409,14 @@ test("open path: openScreen redirects org2 to Old Org while the flag is off and 
   assert.ok(redirectAt !== -1 && checkAt !== -1 && redirectAt < checkAt, "the redirect runs before the SCREENS check");
 });
 test("boot restore falls back when the destination's default screen is not registered", () => {
-  assert.ok(/SCREENS\[DEST_DEFAULT_SCREEN\[S\.ui\.dest\]\]/.test(tailSrc) || /dflt && SCREENS\[dflt\]/.test(tailSrc));
+  /* 2026-09-29: the first screen is bootScreen() in 02-helpers.js, the one rule
+     for the boot and a click (Human Simulation run 2, finding 4); the fallback
+     lives there and the boot calls it. */
+  const helpersSrc = fs.readFileSync(path.join(JS, "02-helpers.js"), "utf8");
+  const pick = helpersSrc.slice(helpersSrc.indexOf("function bootScreen"), helpersSrc.indexOf("function bootScreen") + 900);
+  assert.ok(/dflt && SCREENS\[dflt\]/.test(pick), "bootScreen falls back to the default only when it is registered");
+  assert.ok(/: S\.screen\)?;?\s*\}/.test(pick), "and to whatever S.screen holds when the default is absent");
+  assert.ok(/bootScreen\(\)/.test(tailSrc), "the boot calls bootScreen");
 });
 test("panel.html loads 19-org2.js before 09-tail.js", () => {
   const a = panelHtml.indexOf('<script src="/static/js/19-org2.js'), b = panelHtml.indexOf('<script src="/static/js/09-tail.js');

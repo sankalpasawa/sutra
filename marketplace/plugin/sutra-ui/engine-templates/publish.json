@@ -1,0 +1,39 @@
+{
+ "id": "engine/publish",
+ "name": "Publish",
+ "version": 1,
+ "use_case": "a website: a checked build put live where the owner said",
+ "kind": "work",
+ "description": "puts a checked build live",
+ "skills": [
+  "publish a checked build"
+ ],
+ "reads": "Build",
+ "writes": "Live site",
+ "start": {
+  "on": [
+   {
+    "kind": "version",
+    "of": "Build",
+    "checked": true
+   }
+  ],
+  "unless": [
+   "identity.wait_engine",
+   "identity.gate",
+   "priority.envelope",
+   "coord.chain"
+  ]
+ },
+ "steps": [
+  {
+   "id": "publish.copy",
+   "name": "Copy the build live",
+   "nature": "transform",
+   "born": "C2",
+   "code": "publish_copy",
+   "files": true,
+   "check": "filed_has_files"
+  }
+ ]
+}

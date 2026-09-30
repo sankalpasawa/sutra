@@ -94,7 +94,7 @@ function o2Rows(){
 }
 function o2Data(){
   const rows = o2Rows();
-  if (!rows.length) return { live: [], byRef: new Map(), kids: new Map(), root: null };
+  if (!rows.length) return { live: [], byRef: new Map(), kids: new Map(), root: null, lifted: new Map(), hidden: new Set() };
   const live = rows.filter(d => d && (d.status || "active") !== "retired");
   const byRef = new Map(live.map(d => [d.ref, d]));
   const kids = new Map();
@@ -102,12 +102,22 @@ function o2Data(){
     const pr = d.parent_ref;
     if (pr && byRef.has(pr)){ if (!kids.has(pr)) kids.set(pr, []); kids.get(pr).push(d); }
   });
+  /* 22-website.js: an organisation's Root is not drawn (founder, 2026-09-29: "at the organization level, only a chat
+     is shown, and root is not shown"): its departments sit under the organisation, whose row opens Root's chat. The
+     registry is untouched; `lifted` says which organisation hides which Root, `hidden` which rows are not drawn. */
+  const lifted = new Map(), hidden = new Set();
+  if (typeof wbHidden === "function") live.forEach(r => {
+    if (!r.parent_ref || !byRef.has(r.parent_ref) || !wbHidden(r.ref)) return;
+    kids.set(r.parent_ref, (kids.get(r.parent_ref) || []).filter(k => k.ref !== r.ref).concat(kids.get(r.ref) || []));
+    kids.delete(r.ref);
+    lifted.set(r.parent_ref, r); hidden.add(r.ref);
+  });
   kids.forEach(v => v.sort((a, b) => String(a.path || "").localeCompare(String(b.path || ""), undefined, { numeric: true })));
   const tops = live.filter(d => !d.parent_ref || !byRef.has(d.parent_ref));
   const size = (ref) => { let n = 0; const stack = [ref], seen = new Set(); while (stack.length){ const r = stack.pop(); if (seen.has(r)) continue; seen.add(r); n++; (kids.get(r) || []).forEach(k => stack.push(k.ref)); } return n; };
   let root = null, best = -1;
   tops.forEach(t => { const s = size(t.ref); if (s > best){ best = s; root = t; } });
-  return { live, byRef, kids, root };
+  return { live, byRef, kids, root, lifted, hidden };
 }
 /* Node kind: the engine's stored `node_kind` (plan S94) when the row carries
    one; otherwise the interim rule (S27) for rows not yet backfilled: the root
@@ -621,11 +631,12 @@ function o2TreeHtml(){
     const open = narrowing ? true : ex.has(n.ref);
     const dim = narrowing && !subtreeHit(n);
     const title = chain.concat([n.name]).join(" › ");
+    const born = (typeof wbBorn === "function" && wbBorn(n.ref)) ? " o2grow" : "";   /* 22-website.js: a department Root just made slides in once */
     const chev = ks.length
       ? `<button type="button" class="o2chev" data-o2tog="${o2Esc(n.ref)}" aria-label="${open ? "Collapse" : "Expand"} ${o2Esc(n.name)}">${O2_CHEV}</button>`
       : `<span class="o2chev"></span>`;
     const exp = ks.length ? ` aria-expanded="${open}"` : "";
-    const self = `<div role="treeitem" tabindex="0" class="o2row o2k-${kind}${dim ? " dim" : ""}" data-o2ref="${o2Esc(n.ref)}" aria-selected="${st.sel === n.ref}"${exp} style="--d:${depth}" title="${o2Esc(title)}">${chev}<span class="o2name">${o2Esc(n.name)}</span></div>`;
+    const self = `<div role="treeitem" tabindex="0" class="o2row o2k-${kind}${dim ? " dim" : ""}${born}" data-o2ref="${o2Esc(n.ref)}" aria-selected="${st.sel === n.ref}"${exp} style="--d:${depth}" title="${o2Esc(title)}">${chev}<span class="o2name">${o2Esc(n.name)}</span></div>`;
     return self + (open ? ks.map(c => row(c, depth + 1, chain.concat([n.name]))).join("") : "");
   };
   if (!d.root) return `<div class="o2tree" role="tree"></div>`;
@@ -700,7 +711,8 @@ function o2LibPanelHtml(){
 
 function o2StripHtml(n, d, dept){
   const st = o2S();
-  const parent = n.parent_ref ? d.byRef.get(n.parent_ref) : null;
+  let parent = n.parent_ref ? d.byRef.get(n.parent_ref) : null;
+  if (parent && d.hidden && d.hidden.has(parent.ref)) parent = parent.parent_ref ? d.byRef.get(parent.parent_ref) : null;   /* a hidden Root: its organisation stands in */
   const retired = dept && dept.status === "retired";
   const succ = retired && dept.successors && dept.successors.length ? dept.successors[0] : null;
   const pill = retired ? `<span class="pill p-mut">retired</span>${succ ? `<span class="o2parent">merged into ${o2Esc(succ.name || "")}</span>` : ""}` : "";
@@ -999,10 +1011,14 @@ function o2ScreenHtml(){
        false and the charter view below is exactly what it always was. */
     const dp = !st.sheet && st.view === "charter" && typeof dpListHtml === "function"
       && (o2Kind(n, d) === "dept" || o2Kind(n, d) === "org");
-    const body = dp
+    /* 22-website.js: an organisation with a Root is Root's chat and nothing else (founder, 2026-09-29: "at the
+       organization level, only a chat is shown, and root is not shown"): no list column; the strip, its chart, its
+       pencil and its sheets are the organisation's as before. Null hands the organisation back to the lines below. */
+    const org = dp && o2Kind(n, d) === "org" && typeof wbOrgHtml === "function" ? wbOrgHtml(n, d) : null;
+    const body = org ? org : dp
       ? dpListHtml(n, d, dept, err) + dpViewerHtml(n, d, dept, err)
       : (wide ? "" : o2ListHtml(n, d, dept, err)) + o2ViewerHtml(n, d, dept, err);
-    content = `${o2StripHtml(n, d, dept)}<div class="o2body${wide ? " wide" : ""}">${body}${st.panel ? o2PanelHtml(n, d) : ""}</div>`;
+    content = `${o2StripHtml(n, d, dept)}<div class="o2body${wide || org ? " wide" : ""}">${body}${st.panel ? o2PanelHtml(n, d) : ""}</div>`;
   }
   return `<div class="o2${st.error ? " off" : ""}">${left}<div class="o2main">${banner}${content}</div></div>`;
 }

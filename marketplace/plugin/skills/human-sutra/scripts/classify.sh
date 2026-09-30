@@ -131,6 +131,32 @@ if [ "$STAGE_1_FAIL" = "true" ] && [ "$RETRY_COUNT" -ge 1 ]; then
   fi
 fi
 
+# ── Confidence (2026-09-29) ───────────────────────────────────────────────────
+# How sure this classification is, derived from the branches above and nothing
+# else. Until today the script reported a fallback default exactly like a clean
+# match, so nothing downstream could tell a guess from evidence and the step
+# could never escalate (tiers.json: agent_when=confidence_below_threshold).
+#   no signal fired  -> the verb is the line-82 default, a guess
+#   stage-1 fail     -> known ambiguous: short, unanchored, no verb signal
+#   2 or 3 signals   -> a genuinely mixed message; precedence dropped the rest
+#   exactly 1 signal -> clean evidence
+# Only the numbers are chosen; the cases are the script's own, and only their
+# ORDER matters for a threshold.
+SIGNAL_COUNT=$((has_direct + has_query + has_assert))
+if [ "$STAGE_1_FAIL" = "true" ]; then
+  CONFIDENCE=0.3; CONFIDENCE_WHY="short and unanchored, no verb signal"
+elif [ "$SIGNAL_COUNT" = "0" ]; then
+  CONFIDENCE=0.2; CONFIDENCE_WHY="no signal matched; the verb is the default"
+elif [ "$SIGNAL_COUNT" = "1" ]; then
+  CONFIDENCE=0.9; CONFIDENCE_WHY="one signal matched"
+else
+  CONFIDENCE=0.6; CONFIDENCE_WHY="$SIGNAL_COUNT signals matched; precedence chose one"
+fi
+# a routing type from the caller that agrees with the content is corroboration
+if [ -n "$IR_TYPE" ] && [ "$SIGNAL_COUNT" -ge 1 ]; then
+  CONFIDENCE=0.95; CONFIDENCE_WHY="$CONFIDENCE_WHY, and the routing type agrees"
+fi
+
 # ── Emission stage (always Stage 3) ───────────────────────────────────────────
 EMISSION_STAGE=STAGE_3
 
@@ -168,6 +194,9 @@ cat <<EOF
   "channel": "$CHANNEL",
   "reversibility": "$REVERSIBILITY",
   "decision_risk": "$RISK",
+  "confidence": $CONFIDENCE,
+  "confidence_why": "$CONFIDENCE_WHY",
+  "signal_count": $SIGNAL_COUNT,
   "stage_1_fail": $STAGE_1_FAIL,
   "retry_counter": $RETRY_COUNT,
   "retry_saturated": $RETRY_SATURATED,
