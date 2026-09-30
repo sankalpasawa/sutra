@@ -1,0 +1,155 @@
+{
+ "root": "dref-04cfbc3d88b20678",
+ "child": {
+  "ref": "dref-7360b25a46ff51a8",
+  "name": "Hampi Guide Website",
+  "stopped": false,
+  "kind": "organic",
+  "parent": "dref-04cfbc3d88b20678",
+  "working": [
+   "Identity"
+  ]
+ },
+ "kind": "organic",
+ "variances": {
+  "a-question": {
+   "pass": true,
+   "answer": "No source was used for opening hours. The record says they were not found. The 'Not sure' section of the live site says: 'Not found: opening hours of the sights, the current train timetable, and the current ticket price for Indian nationals",
+   "new_versions": 0
+  },
+  "a-rule": {
+   "pass": true,
+   "rules": [
+    "Work inside the record",
+    "Ask the owner before anything reaches outside",
+    "Never quote a price without its date."
+   ]
+  },
+  "add-a-page": {
+   "pass": true,
+   "ran": [
+    [
+     "Launch",
+     "ok"
+    ],
+    [
+     "Compose",
+     "ok"
+    ]
+   ],
+   "live_versions": 2,
+   "asks": [
+    [
+     "finding",
+     "Audit found: Monsoon is given as June to August, and the page says the coracle f"
+    ]
+   ]
+  },
+  "stop-mid-run": {
+   "pass": true,
+   "words": [
+    "request",
+    "filed",
+    "filed",
+    "filed",
+    "live",
+    "request",
+    "stopped",
+    "started"
+   ]
+  }
+ },
+ "engines": [
+  [
+   "Scout",
+   "Brief",
+   "Sources",
+   "model"
+  ],
+  [
+   "Extract",
+   "Sources",
+   "Facts",
+   "model"
+  ],
+  [
+   "Compose",
+   "Facts",
+   "Pages",
+   "model"
+  ],
+  [
+   "Launch",
+   "Pages",
+   "Live site",
+   "model"
+  ]
+ ],
+ "artifacts": {
+  "Brief": 3,
+  "Sources": 2,
+  "Facts": 2,
+  "Pages": 2,
+  "Live site": 2
+ },
+ "live": true,
+ "recent": [
+  [
+   "Identity",
+   "ok",
+   "started by the owner: every engine looks to its own triggers"
+  ],
+  [
+   "Identity",
+   "ok",
+   "stopped by the owner: every engine stops"
+  ],
+  [
+   "Identity",
+   "running",
+   "Judge it against the goal"
+  ],
+  [
+   "Adaptation",
+   "ok",
+   "read the rows; nothing to move"
+  ],
+  [
+   "Launch",
+   "ok",
+   "Live site from Pages, check passed"
+  ],
+  [
+   "Compose",
+   "ok",
+   "Pages from Facts, check passed"
+  ],
+  [
+   "Extract",
+   "ok",
+   "Facts from Sources, check passed"
+  ],
+  [
+   "Scout",
+   "ok",
+   "Sources from Brief, check passed"
+  ],
+  [
+   "Identity",
+   "ok",
+   "took the owner's words: Add a page on the food to try there."
+  ],
+  [
+   "Scout",
+   "ok",
+   "not needed: The newest words are only a rule (never quote a price without its da"
+  ]
+ ],
+ "asks": [
+  [
+   "finding",
+   "pending"
+  ]
+ ],
+ "minutes": 13.3
+}
