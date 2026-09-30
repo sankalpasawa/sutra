@@ -416,7 +416,10 @@ def born_table(kind="website", line=None):
     kind's line for one born before the record carried it), and who may post what to whom, from the definitions."""
     d = defs()
     t = json.loads(json.dumps(d["coordination"]))
-    t["line"] = list(line or (d.get("kinds") or {}).get(kind, {}).get("line") or t["line"])
+    kinds = d.get("kinds") or {}
+    # the engines on the record, an empty line included (a department born with none, the organic kind: Adaptation shapes
+    # its line); the kind's line for one born before the record carried it; the defaults' for one born before kinds
+    t["line"] = list(line) if line is not None else list((kinds.get(kind) or {}).get("line") or [] if kind in kinds else t["line"])
     t["edges"] = json.loads(json.dumps(d["edges"]))
     return t
 
@@ -1619,6 +1622,27 @@ def publish_copy(ctx, step, item):
     return {"files": files, "check": check}
 
 
+def _goes_out(e):
+    """The artifact an engine writes that goes out into the world, by name: the Library's template counts it after a
+    stamp (the Live site); None for one that stays in the record."""
+    import artifacts
+    w = (e or {}).get("writes")
+    return w if w and (artifacts.get(w) or {}).get("counts_after") == "stamp" else None
+
+
+def _writes_site(e):
+    """Whether what the engine writes is a site the app serves (the Library's template says kind site)."""
+    import artifacts
+    return (artifacts.get((e or {}).get("writes")) or {}).get("kind") == "site"
+
+
+def _writes_pages(e):
+    """Whether what the engine writes is pages, not one text: the Library's template says kind site, pages or build
+    (found live 2026-09-30: a line shaped on the fly named Pages, whose template wants html files, and Do filed one text)."""
+    import artifacts
+    return (artifacts.get((e or {}).get("writes")) or {}).get("kind") in ("site", "pages", "build")
+
+
 def _web_engine(d):
     """The first engine on the record that reaches the internet, by name; None when none does."""
     for name in d.get("engines") or [x[0] for x in W.engines_of(d)]:
@@ -1655,8 +1679,11 @@ def identity_gate(ctx, step, item):
     """The rule, as built: the first publish asks the owner, and so does every department a Root sets up ("A new
     department is stamped by the owner"); a refused one is skipped, never done."""
     ref, name, slot, inp = ctx["ref"], ctx["engine"], ctx["slot"], ctx["inp"]
-    if name == "Publish":
-        if len(W.versions(ref, "Live site")) > int(ctx["dept"].get("publish_asks_from") or 0):
+    # what goes out into the world asks first: Publish's Live site, and any engine shaped on the fly whose artifact the
+    # Library counts after a stamp (the organic line's last engine)
+    out_art = "Live site" if name == "Publish" else _goes_out(ctx["def"])
+    if out_art:
+        if len(W.versions(ref, out_art)) > int(ctx["dept"].get("publish_asks_from") or 0):
             return "admit", None
         # the ask carries the question where the site is served from (founder, 2026-09-28: "more of a question
         # to the user and should be asked to the user"); the answer, or the default on a plain stamp, stays on
@@ -1666,8 +1693,9 @@ def identity_gate(ctx, step, item):
         objective = ("say whether the site may go live for the first time"
                      + (" under its new goal" if ctx["dept"].get("publish_asks_from") else "")
                      + ", and where it is served from: %s unless you say another" % host)
-        text = "Publish: go live for the first time, served from %s unless you say where else" % host
-        may_read, about = ["Build"], {"art": "Build", "v": inp["v"]}
+        text = "%s: go live for the first time, served from %s unless you say where else" % (name, host)
+        reads = ctx["def"].get("reads") or "Build"
+        may_read, about = [reads], {"art": reads, "v": inp["v"]}
     elif name == "Setup":
         words = W.read_files(ref, "Request", inp["v"]).get("request.md", "").strip()
         kind = "setup"
@@ -2009,6 +2037,15 @@ def identity_file(ctx, step, item):
         row = _file_words(ref, d, filed, "the owner's goal" if first else "the owner's ask")
         _tell(ref, d, p, "inform", {"word": "request", "done": "filed in the %s" % W.artifacts_of(d)[0], "v": row["v"]}, thread=p["thread"])
         ask_unsure()
+        # a department born with no engines (the organic kind): Adaptation shapes the line the words need, and the owner
+        # hears the line will be put to them before anything runs (founder, 2026-09-30: "each of the adaptations doesn't
+        # do any kind of template. It creates engines on the fly")
+        if first and not (d.get("engines") or (W.KINDS.get(d.get("kind") or "website") or {}).get("line")):
+            post(ref, "Identity", "Adaptation", "request", {"word": "line", "words": filed, "objective": "shape the line the words need",
+                                                            "output": "the engines, each with what it does, reads and writes", "may_read": ["Brief"],
+                                                            "boundaries": "nothing runs before the owner stamps the line", "for": p["thread"]})
+            # a thread of its own: the request's thread closed with "filed in the Brief", and a post into a closed thread is dropped
+            _tell(ref, d, p, "inform", {"word": "line", "done": "Adaptation is shaping the engines your words need; you will be asked to stamp the line before anything runs."})
         if unsure:
             return {"said": "took the owner's words, leaving out what they are not sure of, and asked: " + "; ".join(unsure), "filed": row["v"]}
         return {"said": "took the owner's words: " + words, "filed": row["v"]}
@@ -2298,6 +2335,25 @@ def identity_apply(ctx, step, item):
         W.add_engine(ref, a.get("engine"), shape=offer.get("shape"), by="the owner")
         _note_idea(ref, a.get("idea"), {"engine": a.get("engine"), "state": "built"})
         return {"said": "added the engine %s on the owner's stamp; it starts on its own trigger" % a.get("engine")}
+    if a.get("kind") == "line":
+        # the line Adaptation shaped from the words, stamped: each engine born into the Library from Do with its instruction,
+        # on the record in order; the first starts on the words now (founder, 2026-09-30: engines on the fly, no template)
+        added, faults = [], []
+        for e in a.get("engines") or []:
+            try:
+                does = str(e.get("does") or "").strip()
+                W.add_engine(ref, e["name"], shape={"name": e["name"], "use_case": does or e["name"], "does": does,
+                                                     "instruction": ("%s\n\nThe goal, in the owner's words: %s" % (does, a.get("words") or "")).strip(),
+                                                     "needs": ["internet"] if e.get("internet") else [], "reads": e.get("reads") or "Brief",
+                                                     "writes": e.get("writes") or e["name"]}, by="the owner")
+                added.append(e["name"])
+            except Exception as exc:  # noqa: BLE001 -- one engine that cannot be born does not lose the rest; the owner hears which
+                faults.append("%s (%s)" % (e.get("name"), exc))
+        # a thread of its own: the ask's thread closed on the stamp, and a post into a closed thread is dropped
+        _tell(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER}, "inform",
+              {"word": "line", "engines": added,
+               "done": "Added the line %s; the first starts on your words now.%s" % (" -> ".join(added), (" Not added: " + "; ".join(faults)) if faults else "")})
+        return {"said": "added the line on the owner's stamp: " + " -> ".join(added) + (("; not added: " + "; ".join(faults)) if faults else "")}
     if a.get("kind") == "rung":
         _, s = step_def(a["step"])
         move(ref, s, a["to"], "stamp " + a["id"], evidence=a.get("evidence"), form=a.get("form"))
@@ -2808,6 +2864,8 @@ def born_template(name, shape, ref):
     for s in t["steps"]:
         if s.get("only_if"):                                   # a condition on Do's own bag follows the ids
             s["only_if"] = re.sub(r"^do\.", slug + ".", str(s["only_if"]))
+        if s.get("prompt") == "do_make" and _writes_pages(t):  # an engine whose artifact is pages answers with files, not one text
+            s["out"] = {"files": "dict"}
     needs = [n for n in (shape.get("needs") or []) if isinstance(n, str) and n in NEEDS]
     tools = list(dict.fromkeys(tool for n in needs for tool in NEEDS[n]))
     t["needs"] = needs
@@ -2914,6 +2972,35 @@ def identity_engine(ctx, step, item):
     return {"said": "put an engine to the owner: " + name}
 
 
+# ---- the line shaped on the fly (founder, 2026-09-30: "each of the adaptations doesn't do any kind of template. It creates
+# engines on the fly. It creates a website, and data is taken from the internet"): a department born with no engines (the
+# organic kind) has Adaptation shape its line from the owner's words, Identity puts the whole line to the owner once, and
+# the stamp births every engine from Do into the Library; the first starts on the words -----------------------------------
+def adapt_line_offer(ctx, step, item):
+    ref, pl, got = ctx["ref"], ctx["post"]["payload"], ctx["bag"]["adapt.line"]
+    engines = [{"name": " ".join(str(e["name"]).split())[:40], "does": " ".join(str(e.get("does") or "").split())[:200],
+                "reads": " ".join(str(e.get("reads") or "Brief").split())[:40], "writes": " ".join(str(e.get("writes") or e["name"]).split())[:40],
+                "internet": bool(e.get("internet"))} for e in got["engines"]]
+    post(ref, "Adaptation", "Identity", "propose", {"word": "line", "engines": engines, "words": pl.get("words"), "for": pl.get("for"),
+                                                   "why": "the goal needs a line and the department was born with none"})
+    return {"said": "shaped the line from the words: " + " -> ".join(e["name"] for e in engines), "engines": engines}
+
+
+def identity_line(ctx, step, item):
+    """The line Adaptation shaped, put to the owner as one ask in the owner's words: each engine and what it does."""
+    ref, p = ctx["ref"], ctx["post"]
+    pl = p["payload"]
+    engines = [e for e in (pl.get("engines") or []) if isinstance(e, dict) and e.get("name")]
+    names = " -> ".join(e["name"] for e in engines)
+    what = "; ".join("%s %s" % (e["name"], str(e.get("does") or "").rstrip(".")) for e in engines)
+    text = "Set up the line %s? %s. Stamp to add them and start, Refuse to say what to change." % (names, what)
+    W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "line", "engine": "Adaptation", "engines": engines, "words": pl.get("words"),
+                     "text": text, "status": "pending", "created": W.now(), "thread": p["thread"]})
+    post(ref, "Identity", OWNER, "request", {"word": "line", "objective": text, "output": "a stamp or a refusal", "may_read": ["Brief"],
+                                             "boundaries": "these engines, in this order"}, thread=p["thread"])
+    return {"said": "put the line to the owner: " + names}
+
+
 # ---- Do: the default line, one answer filed (TPL-1, founder 2026-09-29: "otherwise ... there is a default one"); an engine
 # born from an idea runs these same three steps under its own ids, with its instruction ------------------------------------
 # ---- what the department's own engines filed, read by the line (founder, 2026-09-29: "I want the data to be fetched from
@@ -2993,6 +3080,7 @@ def c_need_is_answer(ctx, step, item, out):
 def p_do_make(ctx, step, item):
     ins = str(ctx["def"].get("instruction") or "").strip()
     got = ctx["bag"][_pre(step) + ".read"]
+    reads = ctx["def"].get("reads") or "Brief"
     web = ("You can search the web and open pages. When a page or a subject is named, read it and use what it says, with the "
            "page's URL after each fact; what you could not confirm goes under a line 'Not sure'. ")
     # what was filed last time rides along: a run that runs again adds, or says what it dropped (found live 2026-09-29: each
@@ -3000,11 +3088,16 @@ def p_do_make(ctx, step, item):
     last = ("WHAT YOU FILED LAST TIME (v%s):\n%s\n\nKeep what still holds, add what is new, and list under a line 'Dropped' what you "
             "removed and why; nothing the owner did not ask to drop goes silently.\n\n" % (got.get("previous_v"), str(got.get("previous"))[:6000])
             if got.get("previous") else "")
-    return ("The department \"%s\" was asked for this, in its owner's words (the Brief):\n%s\n\n%s%s%sDo it as one written answer: what was "
-            "asked for, done as far as words can do it, in the owner's own language, nothing invented; where a fact is missing, say "
-            "so. Return ONLY a JSON object: {\"text\": str}."
-            % (ctx["dept"].get("name"), got["brief"][:6000],
-               ("THIS ENGINE'S INSTRUCTION, FROM THE OWNER'S IDEA: %s\n\n" % ins) if ins else "", last, web))
+    # an engine whose artifact is a site files pages, not one answer: the Library's template for what it writes says so
+    shape = ("Do it as the site's pages, in the owner's own language, nothing invented; where a fact is missing, say so on the page. "
+             "Return ONLY a JSON object: {\"files\": {\"index.html\": str, \"<page>.html\": str}}: whole HTML pages, each with a title and a "
+             "body, index.html first, every other page linked from it and linking back, each fact with its source as a link."
+             if _writes_pages(ctx["def"]) else
+             "Do it as one written answer: what was asked for, done as far as words can do it, in the owner's own language, nothing "
+             "invented; where a fact is missing, say so. Return ONLY a JSON object: {\"text\": str}.")
+    return ("The department \"%s\" was asked for this, in its owner's words (the %s):\n%s\n\n%s%s%s%s"
+            % (ctx["dept"].get("name"), reads, got["brief"][:6000],
+               ("THIS ENGINE'S INSTRUCTION, FROM THE OWNER'S IDEA: %s\n\n" % ins) if ins else "", last, web, shape))
 
 
 def d_do_make(ctx, step, item):
@@ -3013,17 +3106,39 @@ def d_do_make(ctx, step, item):
 
 
 def do_file(ctx, step, item):
-    text = str(ctx["bag"][_pre(step) + ".make"].get("text") or "").strip()
-    return {"files": {"result.md": text + "\n"}, "check": {"ok": len(text) >= 3, "notes": ["%d characters" % len(text)]}}
+    """What the engine made, filed under what it writes: files when it answered with files, else one text. The artifact's
+    own checks from the Library apply to whoever writes it (found live 2026-09-30: a text filed as Pages and as the Live
+    site passed as text, and the site had no page to serve); a site with its home page goes on the host, as Publish puts
+    a Build there, the gate having asked the owner before this run."""
+    import artifacts
+    made = ctx["bag"][_pre(step) + ".make"]
+    files = made.get("files") if isinstance(made.get("files"), dict) else None
+    if files:
+        files = {str(k).strip(): str(v) for k, v in files.items() if str(k).strip()}
+        ok, notes = True, ["%d files" % len(files)]
+    else:
+        text = str(made.get("text") or "").strip()
+        files, ok, notes = {"result.md": text + "\n"}, len(text) >= 3, ["%d characters" % len(text)]
+    own = artifacts.check(ctx["def"].get("writes"), files, default=True)
+    if own:
+        ok, notes = ok and own["ok"], notes + list(own["notes"])
+    if ok and _writes_site(ctx["def"]):
+        W._publish_files(ctx["ref"], files)
+        notes.append("live at the department's site address")
+    return {"files": files, "check": {"ok": ok, "notes": notes}}
 
 
 def c_result_is_text(ctx, step, item, out):
+    files = out.get("files") if isinstance(out, dict) else None
+    if isinstance(files, dict) and files and all(isinstance(v, str) and v.strip() for v in files.values()):
+        return _verdict(True, "%d files, each with text" % len(files), "")
     ok = isinstance(out, dict) and isinstance(out.get("text"), str) and len(out["text"].strip()) >= 3
     return _verdict(ok, "an answer in words", "no answer")
 
 
 CODE = {"plan_read": plan_read, "plan_fit": plan_fit, "plan_file": plan_file, "write_list": write_list, "write_file": write_file,
         "do_read": do_read, "do_file": do_file, "adapt_offer": adapt_offer, "adapt_priced": adapt_priced, "identity_engine": identity_engine,
+        "adapt_line_offer": adapt_line_offer, "identity_line": identity_line,
         "check_rules_of": check_rules_of,
         "hear": hear, "coord_ready": coord_ready, "coord_record": coord_record,
         "setup_read": setup_read, "setup_make": setup_make, "setup_file": setup_file,
@@ -3306,11 +3421,40 @@ def d_adapt_shape(ctx, step, item):
             "shapes": ["a page that says it", "a link to where it is already done", "an engine that does it"], "pick": None, "engine": None}
 
 
-PROMPT = {"identity_recognise": p_identity_recognise, "identity_answer": p_identity_answer, "identity_rule": p_identity_rule,
+def _out_artifacts():
+    """The Library's artifacts that go out into the world (counted after a stamp), for a line's last engine to write under
+    the name the app serves: 'Live site: the site as served, at its address'."""
+    import artifacts
+    return "; ".join("%s: %s" % (t["name"], t.get("use_case") or "") for t in artifacts.templates().values() if t.get("counts_after") == "stamp")
+
+
+def p_adapt_line(ctx, step, item):
+    d, pl = ctx["dept"], ctx["post"]["payload"]
+    rules = "; ".join(str(r.get("line")) for r in d.get("rules") or [] if r.get("line"))
+    taken = ", ".join(sorted(defs()["engines"]))
+    return ("The department \"%s\" was just given its goal, in its owner's words:\n%s\n\nIt has no engines yet. Shape the line of engines "
+            "that gets this done: two to five, in the order they run, each reading one thing and writing one thing. The first reads the "
+            "Brief (the owner's words); each later one reads what an earlier one wrote. An engine can search the web and open pages: say "
+            "in what it does what it looks up, and mark internet true. Name each engine in one or two words none of these already use (%s), "
+            "and name what it writes in one or two words (Facts, Pages, ...). When the goal is something that goes out into the world, the "
+            "last engine writes it under the Library's own name for it: %s.\nTHE DEPARTMENT'S RULES: %s\n\n"
+            "Return ONLY a JSON object: {\"engines\": [{\"name\": str, \"does\": str, \"reads\": str, \"writes\": str, \"internet\": bool}]}."
+            % (d.get("name"), pl.get("words") or d.get("goal"), taken, _out_artifacts() or "none", rules or "none"))
+
+
+def d_adapt_line(ctx, step, item):
+    # the draft, when no agent is there to judge: two engines, the facts from the internet and the site from the facts
+    return {"engines": [{"name": "Facts", "does": "finds on the internet what the goal names, each fact with its source", "reads": "Brief",
+                         "writes": "Facts", "internet": True},
+                        {"name": "Site", "does": "writes the site's pages from the facts, each with its source", "reads": "Facts",
+                         "writes": "Live site", "internet": False}]}
+
+
+PROMPT = {"identity_recognise": p_identity_recognise, "adapt_line": p_adapt_line,"identity_answer": p_identity_answer, "identity_rule": p_identity_rule,
           "identity_weigh": p_identity_weigh, "adapt_shape": p_adapt_shape, "plan_pages": p_plan_pages, "write_page": p_write_page, "identity_take": p_identity_take,
           "identity_gate_soft": p_identity_gate, "priority_bargain": p_priority_bargain, "audit_judge": p_audit_judge,
           "coord_tie": p_coord_tie, "setup_shape": p_setup_shape, "check_rules": p_check_rules, "do_make": p_do_make, "do_need": p_do_need}
-DRAFT = {"identity_recognise_draft": d_identity_recognise, "identity_answer_draft": d_identity_answer,
+DRAFT = {"identity_recognise_draft": d_identity_recognise, "adapt_line_draft": d_adapt_line,"identity_answer_draft": d_identity_answer,
          "coord_tie_draft": d_coord_tie, "setup_shape_draft": d_setup_shape, "check_rules_draft": d_check_rules,
          "identity_rule_draft": d_identity_rule, "identity_weigh_draft": d_identity_weigh, "adapt_shape_draft": d_adapt_shape,
          "plan_pages_draft": d_plan_pages, "write_page_draft": d_write_page, "identity_take_draft": d_identity_take,
@@ -3481,13 +3625,41 @@ def c_feedback_says_what_changes(ctx, step, item, out):
     return {"ok": not notes, "notes": notes or ["what changes now, and what kind of change it is"]}
 
 
+def c_line_is_engines(ctx, step, item, out):
+    """One to six engines, each named once and not as the Library names one, the first reading the Brief and each reading
+    what one before it wrote (or the Brief), each writing something not yet written: the shape is the agent's, the check is code."""
+    engs = out.get("engines") if isinstance(out, dict) else None
+    if not isinstance(engs, list) or not 1 <= len(engs) <= 6:
+        return _verdict(False, "", "one to six engines")
+    notes, names, written, lib = [], [], {"Brief"}, defs()["engines"]
+    for i, e in enumerate(engs):
+        n = " ".join(str(e.get("name") or "").split())[:40] if isinstance(e, dict) else ""
+        if not n:
+            notes.append("engine %d has no name" % (i + 1))
+            continue
+        if n in names:
+            notes.append("%s is named twice" % n)
+        if n in lib:
+            notes.append("the Library already has an engine named %s" % n)
+        r, w = " ".join(str(e.get("reads") or "Brief").split()), " ".join(str(e.get("writes") or n).split())[:40]
+        if i == 0 and r != "Brief":
+            notes.append("the first engine reads the Brief")
+        if r not in written:
+            notes.append("%s reads %s, which nothing before it writes" % (n, r))
+        if w in written:
+            notes.append("%s writes %s, which is already written" % (n, w))
+        names.append(n)
+        written.add(w)
+    return {"ok": not notes, "notes": notes or ["%d engines, each reading what one before it wrote" % len(engs)]}
+
+
 def c_idea_has_shapes(ctx, step, item, out):
     shapes = [x for x in out.get("shapes") or [] if str(x).strip()]
     ok = bool(str(out.get("reflected") or "").strip()) and 2 <= len(shapes) <= 3
     return _verdict(ok, "reflected back, in %d shapes" % len(shapes), "the idea was not reflected back in two or three shapes")
 
 
-CHECK = {"journey_is_known": c_journey_is_known, "answer_names_its_source": c_answer_names_its_source, "result_is_text": c_result_is_text,
+CHECK = {"line_is_engines": c_line_is_engines, "journey_is_known": c_journey_is_known,"answer_names_its_source": c_answer_names_its_source, "result_is_text": c_result_is_text,
          "need_is_answer": c_need_is_answer,
          "rule_is_tagged": c_rule_is_tagged, "feedback_says_what_changes": c_feedback_says_what_changes,
          "idea_has_shapes": c_idea_has_shapes, "brief_is_text": c_brief_is_text, "plan_has_pages": c_plan_has_pages, "plan_is_fit": c_plan_is_fit,

@@ -2,8 +2,8 @@
 
 | Field | Value |
 |---|---|
-| **status** | v1, 2026-09-29, RECORD of the code (Sutra Desktop v2.306.19-desktop) |
-| Code | `engine-templates/*.json`, `engine_runtime.py` (`engine_templates`, `user_templates_dir`, `defs`, `validate`, `engine_def`, `missing_engines`, `born_template`, `engine_from_shape`, `add_engine` in `website_dept.py`, `call_model`, `do_read`, `p_do_need`, `p_do_make`, `do_file`), `website_dept.py` (`MODEL_TOOLS`, `model_json`, `engines_of`) |
+| **status** | v1, 2026-09-29, RECORD of the code (Sutra Desktop v2.306.19-desktop; the line shaped on the fly from v2.306.21) |
+| Code | `engine-templates/*.json`, `engine_runtime.py` (`engine_templates`, `user_templates_dir`, `defs`, `validate`, `engine_def`, `missing_engines`, `born_template`, `engine_from_shape`, `add_engine` in `website_dept.py`, `call_model`, `do_read`, `p_do_need`, `p_do_make`, `do_file`, `born_table`, `p_adapt_line`, `c_line_is_engines`, `adapt_line_offer`, `identity_line`, `identity_apply`, `identity_gate`, `_goes_out`, `_writes_site`), `website_dept.py` (`MODEL_TOOLS`, `model_json`, `engines_of`, `map_view`) |
 
 ## The shipped templates
 
@@ -25,6 +25,18 @@
 ## Born engines
 
 An idea the owner floats becomes an engine when the owner stamps it (functions.md, Adaptation): `identity_apply` (kind `engine`) calls `W.add_engine(ref, name, shape, by, before)`, which writes the engine and its artifact onto the record with an envelope and a window, grows Coordination's line (`grow_line`: before Plan when it reads the Brief), and for an engine shaped on the fly writes a template into the record home's Library (`born_template`): Do's steps under the engine's own ids (`<slug>.read`, `<slug>.need`, `<slug>.make`, `<slug>.file`; a step's `only_if` follows the ids), its use case and instruction from the idea, `reads` Brief, `writes` its own name, `made_by` (the department and the idea), and tools on its prompt steps when the shape named a need (`NEEDS`: internet → WebSearch, WebFetch; `timeout_s` 600). A template that fails validation is unlinked.
+
+## The line shaped on the fly (the organic kind; founder 2026-09-30: "each of the adaptations doesn't do any kind of template. It creates engines on the fly")
+
+- A department of the kind `organic` (`engine_defs/website.json` kinds: `line: []`, artifacts Brief only, functions template product-build, rules "Work inside the record" and "Ask the owner before anything reaches outside") is born with no work engines; `born_table` keeps its Coordination line empty (an empty record line is a line, not "no line given").
+- On its first words (`identity_file`, verdict go, first): Identity posts a request with the word `line` to Adaptation and tells the owner "Adaptation is shaping the engines your words need; you will be asked to stamp the line before anything runs" (a thread of its own: the request's thread closed on "filed in the Brief").
+- Adaptation's handler "Shape the line" runs `adapt.hearline` (code), `adapt.line` (prompt `p_adapt_line`: the words, the names the Library already uses, the artifacts that go out (`_out_artifacts`: the templates with `counts_after: stamp`), the department's rules; it returns two to five engines {name, does, reads, writes, internet}; the check `c_line_is_engines`: one to six, each named once and not as the Library names one, the first reads the Brief, each reads the Brief or what one before it wrote, each writes something not yet written; the offline draft `d_adapt_line` is Facts → Site) and `adapt.lineoffer` (a propose post to Identity with the word `line`).
+- Identity's handler "a line proposed" (`identity_line`) puts the whole line to the owner as one ask of kind `line`: "Set up the line A -> B? A does …; B does …. Stamp to add them and start, Refuse to say what to change."
+- The stamp (`identity_apply`, kind line) calls `W.add_engine` per engine in order with its shape (use case and instruction from `does` and the words, `needs: ["internet"]` when the agent marked it, reads, writes); each is born into the record home's Library from Do (Born engines above); the owner is told "Added the line A -> B; the first starts on your words now" (an engine that could not be born is named under "Not added"). The first engine starts on the Brief version that exists; each next one on what the one before it writes. Priority prices nothing here (one stamp for the line); the idea → engine path keeps its pricing.
+
+## What goes out
+
+`identity_gate` asks the owner before the first version of any artifact the Library counts after a stamp (`_goes_out`: the template's `counts_after == "stamp"`, the Live site), Publish's included: the ask reads "<engine>: go live for the first time, served from <host> unless you say where else" and may read the engine's input. A born engine whose artifact is a site (`_writes_site`: the template's kind `site`) is asked by `p_do_make` for whole pages ({"files": {"index.html": …, "<page>.html": …}}, index.html first, the others linked from it, each fact with its source as a link) instead of one answer; `do_file` writes the files and, when index.html is among them, puts them on the host (`W._publish_files`) as Publish puts a Build; `c_result_is_text` accepts a files dict. `map_view.live` is true for any department whose artifacts hold a Live site version, whatever its kind.
 
 ## The need step (Do and every born engine)
 

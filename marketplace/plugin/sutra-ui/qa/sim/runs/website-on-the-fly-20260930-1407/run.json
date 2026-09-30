@@ -1,0 +1,97 @@
+{
+ "root": "dref-699e2470ebfd1850",
+ "child": {
+  "ref": "dref-0d8523e29aa319cd",
+  "name": "Hampi Guide Website",
+  "stopped": false,
+  "kind": "website",
+  "parent": "dref-699e2470ebfd1850",
+  "working": [
+   "Identity"
+  ]
+ },
+ "kind": "website",
+ "engines": [
+  [
+   "Plan",
+   "Brief",
+   "Site plan",
+   "model"
+  ],
+  [
+   "Write",
+   "Site plan",
+   "Pages",
+   "model"
+  ],
+  [
+   "Check",
+   "Pages",
+   "Build",
+   "model"
+  ],
+  [
+   "Publish",
+   "Build",
+   "Live site",
+   "code"
+  ]
+ ],
+ "artifacts": {
+  "Brief": 1,
+  "Site plan": 1,
+  "Pages": 1,
+  "Build": 1,
+  "Live site": 1
+ },
+ "live": true,
+ "recent": [
+  [
+   "Publish",
+   "ok",
+   "Live site from Build, check passed"
+  ],
+  [
+   "Identity",
+   "ok",
+   "took the owner's stamp: Publish: go live for the first time, served from this ap"
+  ],
+  [
+   "Check",
+   "ok",
+   "Build from Pages, check passed"
+  ],
+  [
+   "Write",
+   "ok",
+   "Pages from Site plan, check passed"
+  ],
+  [
+   "Plan",
+   "ok",
+   "Site plan from Brief, check passed"
+  ],
+  [
+   "Identity",
+   "ok",
+   "took the owner's words: A website for people visiting Hampi: what to see, when t"
+  ],
+  [
+   "Coordination",
+   "ok",
+   "timetabled each engine after its input's new version"
+  ],
+  [
+   "Priority",
+   "ok",
+   "granted an envelope to each engine"
+  ],
+  [
+   "Identity",
+   "ok",
+   "set its rules within the parent's"
+  ]
+ ],
+ "asks": [],
+ "minutes": 5.1
+}

@@ -39,6 +39,7 @@ class Model:
         self.rules = {}                                  # words Identity's take reads as a standing rule (test_102)
         self.need = True                                 # whether a born engine's need step says the words ask for its work (test_103)
         self.thin = set()                                # words Identity's take reads as naming nothing to build from (test_107)
+        self.line = None                                 # the line Adaptation shapes for a department born with none (test_110)
 
     def __call__(self, prompt, step):
         sid = step["id"]
@@ -102,8 +103,16 @@ class Model:
                     "shapes": ["a page with the phone number to book", "a form that sends a request", "a live calendar"],
                     "pick": pick, "engine": None if pick else hint}, 0.02, "model"
         if sid.endswith(".make") and sid != "write.page":
-            brief = prompt.split("(the Brief):\n", 1)[1].split("\n\nDo it", 1)[0]
+            brief = prompt.split("):\n", 1)[1].split("\n\nDo it", 1)[0]
+            if '{"files"' in prompt:                                  # an engine whose artifact is a site files pages (test_110)
+                head = " ".join(brief.split())[:80]
+                return {"files": {"index.html": "<html><head><title>Hampi</title></head><body><h1>Hampi</h1><p>From: %s</p><a href=\"see.html\">What to see</a></body></html>" % head,
+                                  "see.html": "<html><head><title>See</title></head><body><h1>What to see</h1><p>Virupaksha temple (https://example.org/hampi)</p><a href=\"index.html\">Home</a></body></html>"}}, 0.03, "model"
             return {"text": "Done, in words: " + " ".join(brief.split())[:160]}, 0.01, "model"
+        if sid == "adapt.line":
+            return {"engines": self.line or [
+                {"name": "Facts", "does": "finds on the internet what to see, when to go and how to reach Hampi, each fact with its source", "reads": "Brief", "writes": "Facts", "internet": True},
+                {"name": "Site", "does": "writes the site's pages from the facts, each with its source", "reads": "Facts", "writes": "Live site", "internet": False}]}, 0.02, "model"
         if sid.endswith(".need"):
             return {"run": bool(self.need), "why": "the words ask for it" if self.need else "the words ask for no new search"}, 0.01, "model"
         if sid == "identity.take":
@@ -223,7 +232,9 @@ class TestTheDefinitions(Base):
         self.assertTrue(all(e[n].get("use_case") for n in ("Plan", "Write", "Check", "Publish", "Setup", "Do")))
         raw = json.loads((R.Path(R.__file__).parent / "engine_defs" / "website.json").read_text(encoding="utf-8"))
         self.assertNotIn("Plan", raw["engines"], "the file holds the functions, the kinds, the edges and the table; the work engines are the Library's")
-        self.assertEqual({k: v["functions_template"] for k, v in raw["kinds"].items()}, {"website": "product-build", "root": "default", "default": "default"})
+        self.assertEqual({k: v["functions_template"] for k, v in raw["kinds"].items()},
+                         {"website": "product-build", "root": "default", "default": "default", "organic": "product-build"})
+        self.assertEqual(raw["kinds"]["organic"]["line"], [], "the organic kind is born with no engines: Adaptation shapes its line")
         bad = copy.deepcopy(R.defs())
         del bad["engines"]["Plan"]["use_case"]
         self.assertIn("Plan: an engine template names its use case", R.validate(bad))
@@ -2338,6 +2349,73 @@ class TestRunThree(Base):
         turns = [t for t in R.chat_view(REF)["turns"] if t["line"] == "Which page says what a patient needs to know?"]
         self.assertEqual(len(turns), 1, turns)
         self.assertEqual(len([p for p in R.board(REF) if "Which page says" in json.dumps(p.get("payload"))]), 1)
+
+
+class TestRunFive(Base):
+    """Human Simulation run 5 (2026-09-30, the founder: 'someone wants to create a website from the Mac app ... each of the
+    adaptations doesn't do any kind of template. It creates engines on the fly. It creates a website, and data is taken
+    from the internet'): a department born with no engines gets its line from Adaptation on the owner's stamp."""
+
+    REF2 = "dref-runtime0002"
+    WORDS = ("A website for people visiting Hampi: what to see, when to go, how to reach it, from the internet with the source "
+             "under each fact. Work out yourself what has to be done; no fixed way of working.")
+
+    def born(self):
+        W = self.W
+        W.create(self.REF2, "Hampi Guide Site", None, kind="organic")
+        self.assertEqual([x[0] for x in W.engines_of(W.dept(self.REF2))], [], "no engine at birth")
+        self.assertEqual(list(W.artifacts_of(W.dept(self.REF2))), ["Brief"])
+        W.give_goal(self.REF2, self.WORDS)
+        W.run_until_idle(self.REF2, limit=200)
+
+    def test_110_a_department_born_with_no_line_gets_one_from_adaptation_on_the_owners_stamp_and_the_site_goes_live(self):
+        W, R = self.W, self.R
+        self.born()
+        ref = self.REF2
+        a = next(a for a in W.asks(ref) if a["kind"] == "line" and a["status"] == "pending")
+        self.assertEqual([e["name"] for e in a["engines"]], ["Facts", "Site"])
+        self.assertIn("Set up the line Facts -> Site?", a["text"])
+        self.assertEqual([r for r in W.runs(ref) if not r.get("system")], [], "nothing of the line ran before the stamp")
+        lines = [t["line"] for t in R.chat_view(ref)["turns"]]
+        self.assertTrue(any(x.startswith("Adaptation is shaping the engines") for x in lines), lines)
+        self.assertEqual(len(W.versions(ref, "Brief")), 1)
+        W.decide_ask(ref, a["id"], True)
+        W.run_until_idle(ref, limit=300)
+        d = W.dept(ref)
+        self.assertEqual([x[0] for x in W.engines_of(d)], ["Facts", "Site"])
+        self.assertEqual(list(W.artifacts_of(d)), ["Brief", "Facts", "Live site"])
+        self.assertTrue((R.user_templates_dir() / "facts.json").is_file(), "born into the record home's Library")
+        facts = R.engine_def("Facts")
+        self.assertEqual((facts["reads"], facts["writes"]), ("Brief", "Facts"))
+        self.assertIn("WebSearch", next(s for s in facts["steps"] if s["id"] == "facts.make").get("tools") or [], "the internet, from the shape")
+        self.assertEqual(len(W.versions(ref, "Facts")), 1, "the first engine ran on the words")
+        pub = next(a for a in W.asks(ref) if a["kind"] == "publish" and a["status"] == "pending")
+        self.assertTrue(pub["text"].startswith("Site: go live for the first time"), pub["text"])
+        self.assertEqual(len(W.versions(ref, "Live site")), 0, "nothing goes out before the stamp")
+        lines = [t["line"] for t in R.chat_view(ref)["turns"]]
+        self.assertTrue(any(x.startswith("Added the line Facts -> Site") for x in lines), lines[-5:])
+        W.decide_ask(ref, pub["id"], True)
+        W.run_until_idle(ref, limit=300)
+        self.assertEqual(len(W.versions(ref, "Live site")), 1)
+        self.assertTrue((W.live_dir(ref) / "index.html").is_file() and (W.live_dir(ref) / "see.html").is_file(), "served")
+        self.assertTrue(W.map_view(ref)["live"])
+        lines = [t["line"] for t in R.chat_view(ref)["turns"]]
+        self.assertIn("Live site v1 is live.", lines)
+        self.assertTrue(any('{"files"' in p for s, p in self.M.prompts if s == "site.make"), "the site engine was asked for pages")
+        self.assertTrue(any('{"text"' in p for s, p in self.M.prompts if s == "facts.make"), "the facts engine for one answer")
+
+    def test_111_the_line_check_refuses_a_broken_line_and_a_library_name(self):
+        R = self.R
+
+        def ok(engs):
+            return R.c_line_is_engines(None, None, None, {"engines": engs})
+        good = [{"name": "Facts", "reads": "Brief", "writes": "Facts"}, {"name": "Site", "reads": "Facts", "writes": "Live site"}]
+        self.assertTrue(ok(good)["ok"], ok(good))
+        self.assertFalse(ok([{"name": "Write", "reads": "Brief", "writes": "Pages"}])["ok"], "a name the Library uses")
+        self.assertFalse(ok([{"name": "Facts", "reads": "Pages", "writes": "Facts"}])["ok"], "reads what nothing wrote")
+        self.assertFalse(ok([{"name": "A", "reads": "Brief", "writes": "X"}, {"name": "B", "reads": "X", "writes": "X"}])["ok"], "writes what is written")
+        self.assertFalse(ok([{"name": "A", "reads": "Brief", "writes": "A"}, {"name": "A", "reads": "A", "writes": "B"}])["ok"], "named twice")
+        self.assertFalse(ok([])["ok"])
 
 
 if __name__ == "__main__":

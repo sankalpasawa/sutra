@@ -1188,7 +1188,7 @@ def map_view(ref):
     return {"ref": ref, "name": d["name"], "goal": d["goal"], "done": d["done"], "rules": d["rules"], "owner": d["owner"],
             "control": d["control"], "stopped": d.get("stopped"), "systems": systems, "engines": engines, "artifacts": arts,
             "status": st, "health": health(ref), "recent": recent,
-            "live": kind == "website" and bool(latest(ref, "Live site")), "requests": requests(ref)[-10:],
+            "live": "Live site" in names and bool(latest(ref, "Live site")), "requests": requests(ref)[-10:],
             # a Root is born with its goal: it makes departments; every other kind takes its goal from the owner's words
             "has_goal": kind == "root" or bool(versions(ref, names[0])) or bool(requests(ref)), "templates": d.get("templates") or {},
             "runtime": d.get("runtime") or 1, "kind": kind, "say": kind_of(d).get("say") or "",

@@ -36,6 +36,7 @@ The child's functions are born from the kind's `functions_template` (`founding`:
 | website | a live website: pages planned, written, checked and published | Plan, Write, Check, Publish | Brief, Site plan, Pages, Build, Live site | plan, write and check inside the record; ask the owner before the first publish; never publish a build whose check failed |
 | root | the one root of an organisation: sets up its departments from the Library | Setup | Request, Department | as above |
 | default | any goal the Library has no kind for: one Do engine answers each ask as a written Result | Do | Brief, Result | work inside the record; ask the owner before anything reaches outside |
+| organic | a goal done its own way, a website included: no engines at birth; Adaptation shapes from the owner's words the line the goal needs (engines-and-library.md, "The line shaped on the fly"; from v2.306.21) | none at birth | Brief | work inside the record; ask the owner before anything reaches outside |
 
 `library_kinds()` reads them from `engine_defs/website.json`; the record carries the kind, its `engines` and its `artifacts` at birth (`website_dept.create`), and `engines_of` / `artifacts_of` read the record, never the kind again.
 
@@ -43,6 +44,6 @@ The child's functions are born from the kind's `functions_template` (`founding`:
 
 - The child's Identity takes the first words (`identity_file`, `first = facts.first`: no Brief yet).
 - If the take says `thin` (the words name no subject and no purpose to build from), Identity says "Say what the site is for and about whom or what, and I will start: your words name nothing to build from yet." and files nothing; the next words are taken as the goal (`identity_file`, the `thin` branch).
-- Otherwise the words are filed as the Brief's first version ("the owner's goal", `_file_words`) and the line starts on it. What the owner said they were not sure of (`unsure`) is written into the Brief as "Not confirmed (…)" and asked about at once (`ask_unsure`).
+- Otherwise the words are filed as the Brief's first version ("the owner's goal", `_file_words`) and the line starts on it. In a department born with no engines (the organic kind) the filed words go to Adaptation to shape the line (`identity_file`, the word `line`), and nothing runs before the owner stamps it. What the owner said they were not sure of (`unsure`) is written into the Brief as "Not confirmed (…)" and asked about at once (`ask_unsure`).
 
 provenance: {author: claude, session: 17842ce0, date: 2026-09-29, inputs: [engine_runtime.py: request, FRONT, identity_gate, setup_read, p_setup_shape, d_setup_shape, setup_make, identity_file; founding.py; website_api.py; engine_defs/website.json kinds], review: none by a second model, confidence: high}
