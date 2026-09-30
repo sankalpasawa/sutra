@@ -1,6 +1,12 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-28
+## 2.306.23 (2026-09-30)
+
+- Released from v2.306.22-beta.1-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - sutra-ui: a message typed while Claude only writes switches the reply by itself; no Send now button
+- Changed: 6 file(s), +109/-44
+
 ## 2.306.22 (2026-09-30)
 
 ## Sutra Desktop: the line made on the fly, after review
