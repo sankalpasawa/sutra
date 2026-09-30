@@ -1,0 +1,145 @@
+{
+ "root": "dref-b3f0f94351f25825",
+ "child": {
+  "ref": "dref-35d132206634bbf5",
+  "name": "Hampi Trip Planner Website",
+  "stopped": false,
+  "kind": "organic",
+  "parent": "dref-b3f0f94351f25825",
+  "working": [
+   "Identity"
+  ]
+ },
+ "kind": "organic",
+ "variances": {
+  "a-question": {
+   "pass": true,
+   "answer": "The record does not say which source was used for opening hours. The filed Live site v1 text I was given shows only Holidify as the source on the 'How to reach' page, plus Karnataka Tourism and Wikipedia on the 'What to see' page, and Yatra",
+   "new_versions": 0
+  },
+  "a-rule": {
+   "pass": true,
+   "rules": [
+    "Work inside the record",
+    "Ask the owner before anything reaches outside",
+    "Never quote a price without stating the date it was current."
+   ]
+  },
+  "add-a-page": {
+   "pass": false,
+   "ran": [
+    [
+     "Launch",
+     "ok"
+    ],
+    [
+     "Layout",
+     "ok"
+    ]
+   ],
+   "live_versions": 1,
+   "asks": []
+  },
+  "stop-mid-run": {
+   "pass": true,
+   "words": [
+    "request",
+    "request",
+    "filed",
+    "filed",
+    "filed",
+    "request",
+    "stopped",
+    "started"
+   ]
+  }
+ },
+ "engines": [
+  [
+   "Scout",
+   "Brief",
+   "Facts",
+   "model"
+  ],
+  [
+   "Vetting",
+   "Facts",
+   "Vetted Facts",
+   "model"
+  ],
+  [
+   "Layout",
+   "Vetted Facts",
+   "Pages",
+   "model"
+  ],
+  [
+   "Launch",
+   "Pages",
+   "Live site",
+   "model"
+  ]
+ ],
+ "artifacts": {
+  "Brief": 3,
+  "Facts": 2,
+  "Vetted Facts": 2,
+  "Pages": 2,
+  "Live site": 1
+ },
+ "live": true,
+ "recent": [
+  [
+   "Identity",
+   "ok",
+   "started by the owner: every engine looks to its own triggers"
+  ],
+  [
+   "Identity",
+   "ok",
+   "stopped by the owner: every engine stops"
+  ],
+  [
+   "Identity",
+   "running",
+   "Judge it against the goal"
+  ],
+  [
+   "Coordination",
+   "ok",
+   "closed a thread at its bound; what holds: failure"
+  ],
+  [
+   "Launch",
+   "ok",
+   "not needed: The newest Brief only drops the undated bus and auto fares, adds 'No"
+  ],
+  [
+   "Layout",
+   "ok",
+   "Pages from Vetted Facts, check passed"
+  ],
+  [
+   "Vetting",
+   "ok",
+   "Vetted Facts from Facts, check passed"
+  ],
+  [
+   "Scout",
+   "ok",
+   "Facts from Brief, check passed"
+  ],
+  [
+   "Identity",
+   "ok",
+   "took the owner's words: Add a page on the food to try there."
+  ],
+  [
+   "Scout",
+   "ok",
+   "not needed: The newest Brief line is a rule about dating prices, which the depar"
+  ]
+ ],
+ "asks": [],
+ "minutes": 16.3
+}

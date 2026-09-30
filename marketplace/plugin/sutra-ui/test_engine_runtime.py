@@ -109,6 +109,14 @@ class Model:
                 return {"files": {"index.html": "<html><head><title>Hampi</title></head><body><h1>Hampi</h1><p>From: %s</p><a href=\"see.html\">What to see</a></body></html>" % head,
                                   "see.html": "<html><head><title>See</title></head><body><h1>What to see</h1><p>Virupaksha temple (https://example.org/hampi)</p><a href=\"index.html\">Home</a></body></html>"}}, 0.03, "model"
             return {"text": "Done, in words: " + " ".join(brief.split())[:160]}, 0.01, "model"
+        if sid.endswith(".plan") and "index.html" in prompt:                # a pages engine plans its pages (test_110)
+            return {"pages": [{"file": "index.html", "title": "Hampi", "purpose": "the home page"},
+                              {"file": "see.html", "title": "What to see", "purpose": "the sights"}]}, 0.01, "model"
+        if sid.endswith(".page") and "THIS PAGE: " in prompt:                # and writes one page per call
+            page = json.loads(prompt.split("THIS PAGE: ", 1)[1].split("\n", 1)[0])
+            body = "Virupaksha temple stands by the river and is open every day (https://example.org/hampi). " * 4
+            return {"file": page["file"], "html": "<html><head><title>%s</title></head><body><nav><a href=\"index.html\">Home</a> <a href=\"see.html\">See</a></nav><h1>%s</h1><p>%s</p></body></html>"
+                    % (page["title"], page["title"], body)}, 0.02, "model"
         if sid == "adapt.line":
             return {"engines": self.line or [
                 {"name": "Facts", "does": "finds on the internet what to see, when to go and how to reach Hampi, each fact with its source", "reads": "Brief", "writes": "Facts", "internet": True},
@@ -2401,8 +2409,10 @@ class TestRunFive(Base):
         self.assertTrue(W.map_view(ref)["live"])
         lines = [t["line"] for t in R.chat_view(ref)["turns"]]
         self.assertIn("Live site v1 is live.", lines)
-        self.assertTrue(any('{"files"' in p for s, p in self.M.prompts if s == "site.make"), "the site engine was asked for pages")
+        self.assertEqual([s for s, p in self.M.prompts if s.startswith("site.")], ["site.plan", "site.page", "site.page"],
+                         "the site engine plans its pages, then one call per page (findings 60, 63)")
         self.assertTrue(any('{"text"' in p for s, p in self.M.prompts if s == "facts.make"), "the facts engine for one answer")
+        self.assertNotIn("site.need", [s["id"] for s in R.engine_def("Site")["steps"]], "an engine that reads another's filing runs on every new version (62)")
 
     def test_111_the_line_check_refuses_a_broken_line_and_a_library_name(self):
         R = self.R

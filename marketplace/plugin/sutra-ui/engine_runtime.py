@@ -2875,8 +2875,25 @@ def born_template(name, shape, ref):
     for s in t["steps"]:
         if s.get("only_if"):                                   # a condition on Do's own bag follows the ids
             s["only_if"] = re.sub(r"^do\.", slug + ".", str(s["only_if"]))
-        if s.get("prompt") == "do_make" and _writes_pages(t):  # an engine whose artifact is pages answers with files, not one text
-            s["out"] = {"files": "dict"}
+    if _writes_pages(t):
+        # an engine whose artifact is pages plans them in one small call and writes one page per call, four side by side, as
+        # the website kind's Write does; one answer for every page trimmed a growing site (findings 60, 63)
+        steps = []
+        for s in t["steps"]:
+            if s.get("prompt") == "do_make":
+                steps.append({"id": slug + ".plan", "name": "Plan the pages", "nature": "make", "born": "C0", "ceiling": "C1",
+                              "prompt": "do_pages", "draft": "do_pages_draft", "out": {"pages": "list"}, "check": "pages_are_named"})
+                steps.append({"id": slug + ".page", "name": "Write a page", "nature": "make", "born": "C0", "ceiling": "C1",
+                              "each": slug + ".plan.pages", "side_by_side": 4, "prompt": "do_page", "draft": "do_page_draft",
+                              "out": {"file": "str", "html": "str"}, "check": "page_is_html"})
+            else:
+                steps.append(s)
+        t["steps"] = steps
+    # the need step weighs the OWNER'S words against what was filed (finding 38: a search re-run on every Brief version); an
+    # engine that reads another engine's filing runs on every new version of it, which is its trigger (found on the Beta
+    # 2026-09-30: Launch read Pages v2 and judged the new pages 'not needed', so the site never took them)
+    if t["reads"] != "Brief":
+        t["steps"] = [s for s in t["steps"] if not s["id"].endswith(".need")]
     needs = [n for n in (shape.get("needs") or []) if isinstance(n, str) and n in NEEDS]
     tools = list(dict.fromkeys(tool for n in needs for tool in NEEDS[n]))
     t["needs"] = needs
@@ -3054,16 +3071,29 @@ def _pre(step):
 def do_read(ctx, step, item):
     art = ctx["def"].get("reads") or "Brief"
     files = W.read_files(ctx["ref"], art, ctx["inp"]["v"])
+    text = files.get("brief.md") or "\n".join(str(v) for v in files.values())
+    # what is new in the input since its last version (the lines that were not there), so an engine carries a new section
+    # through instead of re-doing the old (found on the Beta 2026-09-30: Vetting read Facts v2 and dropped its new food section)
+    changed = None
+    if int(ctx["inp"]["v"]) > 1:
+        try:
+            old = W.read_files(ctx["ref"], art, int(ctx["inp"]["v"]) - 1)
+            seen = set(l.strip() for v in old.values() for l in str(v).splitlines() if l.strip())
+            changed = "\n".join(l for l in text.splitlines() if l.strip() and l.strip() not in seen)[:3000] or None
+        except Exception:  # noqa: BLE001 -- no earlier version to read
+            changed = None
     # what this engine filed last time, for the need step to weigh the new words against and the make step to build on
-    previous, pv = None, None
+    previous, pv, previous_files = None, None, []
     try:
         cur = W.latest(ctx["ref"], ctx["def"].get("writes") or "Result")
         if cur:
             pv = cur["v"]
-            previous = "\n".join(str(v) for k, v in sorted(W.read_files(ctx["ref"], ctx["def"]["writes"], pv).items())).strip() or None
+            old_out = W.read_files(ctx["ref"], ctx["def"]["writes"], pv)
+            previous_files = sorted(old_out)
+            previous = "\n".join(str(v) for k, v in sorted(old_out.items())).strip() or None
     except Exception:  # noqa: BLE001 -- nothing filed yet
         previous = None
-    return {"brief": files.get("brief.md") or "\n".join(str(v) for v in files.values()), "previous": previous, "previous_v": pv}
+    return {"brief": text, "previous": previous, "previous_v": pv, "previous_files": previous_files, "changed": changed}
 
 
 def p_do_need(ctx, step, item):
@@ -3071,12 +3101,13 @@ def p_do_need(ctx, step, item):
     (found live 2026-09-29: 'Put the top three first' and 'Take X out' each paid for a fresh web search)."""
     got = ctx["bag"][_pre(step) + ".read"]
     ins = str(ctx["def"].get("instruction") or ctx["def"].get("use_case") or "").strip()
-    return ("The engine \"%s\" of the department \"%s\" does this: %s\nIt filed this last time (v%s):\n%s\n\nThe Brief now reads:\n%s\n\n"
-            "Do the newest words of the Brief ask for this engine's work again (new facts to find, a search to repeat, something "
+    reads = ctx["def"].get("reads") or "Brief"
+    return ("The engine \"%s\" of the department \"%s\" does this: %s\nIt filed this last time (v%s):\n%s\n\nThe %s now reads:\n%s\n\n"
+            "Do the newest words of the %s ask for this engine's work again (new facts to find, a search to repeat, something "
             "to add to what it filed), or only for what the department makes from what it already filed (order, wording, dropping "
             "a line, a rule)? Return ONLY a JSON object: {\"run\": bool, \"why\": \"one line\"}."
             % (ctx["def"].get("name"), ctx["dept"].get("name"), ins[:600], got.get("previous_v"), str(got.get("previous") or "")[:3000],
-               str(got.get("brief") or "")[:4000]))
+               reads, str(got.get("brief") or "")[:4000], reads))
 
 
 def d_do_need(ctx, step, item):
@@ -3099,6 +3130,7 @@ def p_do_make(ctx, step, item):
     last = ("WHAT YOU FILED LAST TIME (v%s):\n%s\n\nKeep what still holds, add what is new, and list under a line 'Dropped' what you "
             "removed and why; nothing the owner did not ask to drop goes silently.\n\n" % (got.get("previous_v"), str(got.get("previous"))[:6000])
             if got.get("previous") else "")
+    last += _new_block(got, reads)
     # an engine whose artifact is a site files pages, not one answer: the Library's template for what it writes says so
     shape = ("Do it as the site's pages, in the owner's own language, nothing invented; where a fact is missing, say so on the page. "
              "Return ONLY a JSON object: {\"files\": {\"index.html\": str, \"<page>.html\": str}}: whole HTML pages, each with a title and a "
@@ -3116,15 +3148,94 @@ def d_do_make(ctx, step, item):
     return {"text": "Noted, to be done by hand: " + brief[:600]}
 
 
+def _new_block(got, reads):
+    """What is new in the input since the engine last ran, as a block of the prompt: the thing that asks for the work now."""
+    if got.get("changed") and got.get("previous"):
+        return ("NEW IN THE %s SINCE YOUR LAST RUN (this is what asks for your work now; carry every line of it through):\n%s\n\n"
+                % (str(reads).upper(), str(got["changed"])[:3000]))
+    return ""
+
+
+# ---- a born engine whose artifact is pages: the pages planned in one small call, then one call per page, as the website
+# kind's Write does; every page in one answer trimmed a growing site (found live 2026-09-30, findings 60 and 63) ----------
+def p_do_pages(ctx, step, item):
+    got = ctx["bag"][_pre(step) + ".read"]
+    ins = str(ctx["def"].get("instruction") or "").strip()
+    reads = ctx["def"].get("reads") or "Brief"
+    kept = ", ".join(got.get("previous_files") or []) or "none yet"
+    return ("The department \"%s\" makes the pages of a site from the %s below. Plan the pages as the site should be now: index.html "
+            "first, then one entry per page, two to twelve in all, each {\"file\": a lowercase name ending .html, \"title\": str, "
+            "\"purpose\": one line}. Keep the pages that still hold from last time (%s), add what the %s now asks for, drop only what "
+            "it dropped.\n%sTHE %s:\n%s\n\n%sReturn ONLY a JSON object: {\"pages\": [{\"file\": str, \"title\": str, \"purpose\": str}]}."
+            % (ctx["dept"].get("name"), reads, kept, reads, ("THIS ENGINE'S INSTRUCTION: %s\n" % ins) if ins else "",
+               str(reads).upper(), got["brief"][:8000], _new_block(got, reads)))
+
+
+def d_do_pages(ctx, step, item):
+    return {"pages": [{"file": "index.html", "title": ctx["dept"].get("name"), "purpose": "the home page"}]}
+
+
+def p_do_page(ctx, step, item):
+    got = ctx["bag"][_pre(step) + ".read"]
+    reads = ctx["def"].get("reads") or "Brief"
+    plan = ctx["bag"][_pre(step) + ".plan"]["pages"]
+    rules = _owner_rules(ctx["dept"])
+    return ("Write ONE whole page of this site, in the owner's own language, nothing invented; each fact with its source as a link; "
+            "where a fact is missing, say so on the page under 'Not sure'. A complete HTML document (html, head with a title, body), "
+            "a nav linking every page of the site by its file name, no script and no external images. You can search the web and "
+            "open pages when a fact needs its source.%s\nTHE %s (what the page draws on):\n%s\n\nTHE SITE'S PAGES: %s\nTHIS PAGE: %s\n\n"
+            "Return ONLY a JSON object: {\"file\": str, \"html\": str}."
+            % (("\nTHE OWNER'S RULES, EACH ONE MET HERE:\n- " + "\n- ".join(rules)) if rules else "", str(reads).upper(),
+               got["brief"][:8000], json.dumps(plan), json.dumps(item)))
+
+
+def d_do_page(ctx, step, item):
+    p = item if isinstance(item, dict) else {}
+    title = str(p.get("title") or ctx["dept"].get("name") or "Page")
+    return {"file": str(p.get("file") or "index.html"),
+            "html": "<!doctype html><html><head><title>%s</title></head><body><h1>%s</h1><p>%s</p><p>To be written: no agent was there to write this page from the record.</p></body></html>"
+                    % (title, title, str(p.get("purpose") or ""))}
+
+
+def c_pages_are_named(ctx, step, item, out):
+    pages = out.get("pages") if isinstance(out, dict) else None
+    if not isinstance(pages, list) or not 1 <= len(pages) <= 12:
+        return _verdict(False, "", "one to twelve pages")
+    files = [str((p or {}).get("file") or "") for p in pages if isinstance(p, dict)]
+    notes = []
+    if len(files) != len(pages):
+        notes.append("a page is not an object")
+    if not files or files[0] != "index.html":
+        notes.append("the first page is not index.html")
+    if any(not re.fullmatch(r"[a-z0-9-]+\.html", f) for f in files):
+        notes.append("a file name is not plain lowercase .html")
+    if len(set(files)) != len(files):
+        notes.append("two pages share a file")
+    return {"ok": not notes, "notes": notes or ["%d pages, index.html first" % len(files)]}
+
+
+def c_page_is_html(ctx, step, item, out):
+    f, h = (out.get("file"), out.get("html")) if isinstance(out, dict) else (None, None)
+    want = (item or {}).get("file") if isinstance(item, dict) else None
+    ok = (isinstance(f, str) and f.endswith(".html") and (want is None or f == want) and isinstance(h, str) and "<body" in h.lower()
+          and len(re.sub(r"<[^>]+>", " ", h).split()) >= 20)
+    return _verdict(ok, "a whole page with a body, under its planned name", "not a whole page under its planned name")
+
+
 def do_file(ctx, step, item):
     """What the engine made, filed under what it writes: files when it answered with files, else one text. The artifact's
     own checks from the Library apply to whoever writes it (found live 2026-09-30: a text filed as Pages and as the Live
     site passed as text, and the site had no page to serve); a site with its home page goes on the host, as Publish puts
     a Build there, the gate having asked the owner before this run."""
     import artifacts
-    made = ctx["bag"][_pre(step) + ".make"]
+    made = ctx["bag"].get(_pre(step) + ".make") or {}
+    pages = ctx["bag"].get(_pre(step) + ".page")
     files = made.get("files") if isinstance(made.get("files"), dict) else None
-    if files:
+    if isinstance(pages, list) and pages:
+        # a pages engine: one page per call, gathered here
+        files = {str(p.get("file")).strip(): str(p.get("html")) for p in pages if isinstance(p, dict) and p.get("file")}
+        ok, notes = bool(files), ["%d pages" % len(files)]
+    elif files:
         files = {str(k).strip(): str(v) for k, v in files.items() if str(k).strip()}
         ok, notes = True, ["%d files" % len(files)]
     else:
@@ -3462,11 +3573,11 @@ def d_adapt_line(ctx, step, item):
                          "writes": "Live site", "internet": False}]}
 
 
-PROMPT = {"identity_recognise": p_identity_recognise, "adapt_line": p_adapt_line,"identity_answer": p_identity_answer, "identity_rule": p_identity_rule,
+PROMPT = {"identity_recognise": p_identity_recognise, "adapt_line": p_adapt_line, "do_pages": p_do_pages, "do_page": p_do_page, "identity_answer": p_identity_answer, "identity_rule": p_identity_rule,
           "identity_weigh": p_identity_weigh, "adapt_shape": p_adapt_shape, "plan_pages": p_plan_pages, "write_page": p_write_page, "identity_take": p_identity_take,
           "identity_gate_soft": p_identity_gate, "priority_bargain": p_priority_bargain, "audit_judge": p_audit_judge,
           "coord_tie": p_coord_tie, "setup_shape": p_setup_shape, "check_rules": p_check_rules, "do_make": p_do_make, "do_need": p_do_need}
-DRAFT = {"identity_recognise_draft": d_identity_recognise, "adapt_line_draft": d_adapt_line,"identity_answer_draft": d_identity_answer,
+DRAFT = {"identity_recognise_draft": d_identity_recognise, "adapt_line_draft": d_adapt_line, "do_pages_draft": d_do_pages, "do_page_draft": d_do_page, "identity_answer_draft": d_identity_answer,
          "coord_tie_draft": d_coord_tie, "setup_shape_draft": d_setup_shape, "check_rules_draft": d_check_rules,
          "identity_rule_draft": d_identity_rule, "identity_weigh_draft": d_identity_weigh, "adapt_shape_draft": d_adapt_shape,
          "plan_pages_draft": d_plan_pages, "write_page_draft": d_write_page, "identity_take_draft": d_identity_take,
@@ -3680,7 +3791,7 @@ def c_idea_has_shapes(ctx, step, item, out):
     return _verdict(ok, "reflected back, in %d shapes" % len(shapes), "the idea was not reflected back in two or three shapes")
 
 
-CHECK = {"line_is_engines": c_line_is_engines, "journey_is_known": c_journey_is_known,"answer_names_its_source": c_answer_names_its_source, "result_is_text": c_result_is_text,
+CHECK = {"line_is_engines": c_line_is_engines, "pages_are_named": c_pages_are_named, "page_is_html": c_page_is_html, "journey_is_known": c_journey_is_known, "answer_names_its_source": c_answer_names_its_source, "result_is_text": c_result_is_text,
          "need_is_answer": c_need_is_answer,
          "rule_is_tagged": c_rule_is_tagged, "feedback_says_what_changes": c_feedback_says_what_changes,
          "idea_has_shapes": c_idea_has_shapes, "brief_is_text": c_brief_is_text, "plan_has_pages": c_plan_has_pages, "plan_is_fit": c_plan_is_fit,
