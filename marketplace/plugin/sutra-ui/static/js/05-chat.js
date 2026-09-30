@@ -2730,15 +2730,13 @@ function turnResponse(t){
   const m = gvPillMotion(t, p);
   const pill = p.show ? gvPillHtml(t, p, m) : "";
   /* HANDED is not queued: claude already has the message and takes it in at its
-     next step, the way Claude Code does. "Send now" is the same soft stop as
-     Esc, placed on the message: the reply ends, the process stays, this runs
-     at once (founder 2026-09-28: without it the wait read as a queue). */
+     next step, the way Claude Code does. NO BUTTON on it (founder 2026-09-30,
+     as in 2.306.2 and Claude Code): not waiting is Esc/Stop, which ends the
+     reply, keeps the process, and runs this message at once. */
   const stateBottom = !q ? ""
     : q.handed
       ? `<div class="gv-waiting gv-handed">
            <span class="gv-wdot" aria-hidden="true"></span><span>Sent to Claude — it reads this at its next step</span>
-           <button class="btn gv-sendnow" type="button" data-sendnow="${esc(q.key)}"
-                   title="Stop the current reply and answer this now (same as Esc). The conversation is kept.">Send now</button>
          </div>`
       : `<div class="gv-waiting${q.behind ? " gv-queued" : ""}">
            <span class="gv-wdot" aria-hidden="true"></span><span>${

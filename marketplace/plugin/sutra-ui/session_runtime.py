@@ -169,6 +169,16 @@ def _is_replay(ev):
     return isinstance(content, str)
 
 
+def _replay_count(ev):
+    """How many sent messages one replayed echo covers: its text blocks
+    (at least 1). See the `user` branch of _demux_turn_inner."""
+    content = (ev.get("message") or {}).get("content")
+    if not isinstance(content, list):
+        return 1
+    return max(1, sum(1 for b in content
+                      if isinstance(b, dict) and b.get("type") == "text"))
+
+
 class SessionRuntime(ProcRuntime):
     """Owns exactly one agent subprocess for one chat channel.
 
@@ -478,12 +488,20 @@ class SessionRuntime(ProcRuntime):
                 # echo after it is the oldest one written mid-turn -- folded
                 # into THIS turn, so the client moves the rest of the reply
                 # under it.
+                # ONE ECHO CAN CARRY SEVERAL MESSAGES: messages queued behind an
+                # interrupt are taken in together and echoed as one user event,
+                # one text block each (measured, claude 2.1.283). Sutra writes
+                # every message as exactly one text block, so the block count
+                # is the message count. Counting the echo as one left the later
+                # messages in sent_ahead and the socket waited for a turn
+                # claude never ran -- a reply stuck on "working".
                 if _is_replay(ev):
-                    if self.turn_own is not None:
-                        self.turn_own = None
-                    elif self._joining and self.sent_ahead:
-                        self.absorbed.append(self.sent_ahead.pop(0))
-                        await emit({"type": "joined"})
+                    for _ in range(_replay_count(ev)):
+                        if self.turn_own is not None:
+                            self.turn_own = None
+                        elif self._joining and self.sent_ahead:
+                            self.absorbed.append(self.sent_ahead.pop(0))
+                            await emit({"type": "joined"})
                     continue
                 # tool_result lives on USER messages, not assistant ones. This branch
                 # did not exist, so every tool result was dropped and completion was

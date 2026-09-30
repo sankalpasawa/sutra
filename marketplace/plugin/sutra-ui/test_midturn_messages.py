@@ -45,6 +45,23 @@ class TestJoin(unittest.TestCase):
         self.assertEqual(rt.sent_ahead, [])
         self.assertEqual([p["message"] for p in rt.absorbed], ["second"])
 
+    def test_one_echo_carrying_two_messages_absorbs_both(self):
+        # measured, claude 2.1.283: messages queued behind an interrupt come
+        # back as ONE echo, one text block each ("dog" + "Paris")
+        rt = SessionRuntime()
+        rt.turn_own = "Make it about a dog"
+        rt.sent_ahead = [{"message": "And set it in Paris"}]
+        batched = {"type": "user", "isReplay": True, "session_id": "s-1",
+                   "message": {"role": "user", "content": [
+                       {"type": "text", "text": "Make it about a dog"},
+                       {"type": "text", "text": "And set it in Paris"}]}}
+        frames = []
+        async def prim(f):
+            frames.append(f["type"])
+        run_turn(rt, prim, events=[BASE[0], batched, BASE[2]])
+        self.assertEqual(rt.sent_ahead, [], "Paris left behind = a turn that never comes")
+        self.assertEqual(frames.count("joined"), 1)
+
     def test_own_echo_is_not_a_join(self):
         rt = SessionRuntime()
         rt.turn_own = "first"
@@ -166,10 +183,26 @@ class TestStopIsEsc(unittest.TestCase):
         src = (HERE / "app.py").read_text(encoding="utf-8")
         stop = src.index('if payload.get("type") == "stop":')
         body = src[stop:src.index("why = _why_not_join(payload)", stop)]
-        self.assertLess(body.index("await rt.send_interrupt()"), body.index("rt.stop()"))
-        self.assertIn("_kill_if_unheard(live_turn)", body)
+        self.assertLess(body.index("await _soft_stop()"), body.index("rt.stop()"))
+        helper = src[src.index("async def _soft_stop():"):src.index("async def _reader():")]
+        self.assertLess(helper.index("await rt.send_interrupt()"),
+                        helper.index("_kill_if_unheard(live_turn)"))
         self.assertNotIn('"interrupt"', src[stop:stop + 4000],
                          "no separate Send-now frame: Stop is the one control")
+
+    def test_a_message_while_only_writing_ends_the_reply_itself(self):
+        # founder 2026-09-30: nothing to press. No tool open -> soft stop at
+        # once; a tool open -> claude takes it in when the tool ends.
+        src = (HERE / "app.py").read_text(encoding="utf-8")
+        handed = src.index('await ws.send_json({"type": "handed"})')
+        tail = src[handed:handed + 900]
+        self.assertIn("if not rt.open_tools", tail)
+        # debounced: each message restarts the window, so quick follow-ups
+        # reach claude together before the cut
+        self.assertIn('_cut["task"].cancel()', tail)
+        self.assertIn("_cut_after(1.0)", tail)
+        cut = src[src.index("async def _cut_after(delay):"):][:300]
+        self.assertIn("await _soft_stop()", cut)
 
     def test_esc_key_sends_stop(self):
         boot = (HERE / "static/js/08-boot.js").read_text(encoding="utf-8")
@@ -179,15 +212,16 @@ class TestStopIsEsc(unittest.TestCase):
 
 class TestPaneFrames(unittest.TestCase):
     """The pane says where a mid-reply message went instead of 'Queued'."""
-    def test_client_handles_handed_and_queued_and_send_now_is_a_stop(self):
+    def test_client_handles_handed_and_queued_with_no_button(self):
         js = (HERE / "static/js/01-state.js").read_text(encoding="utf-8")
         self.assertIn('f.type === "handed" || f.type === "queued"', js)
         chat = (HERE / "static/js/05-chat.js").read_text(encoding="utf-8")
         self.assertIn("Sent to Claude", chat)
-        self.assertIn("data-sendnow", chat)
-        # Send now is the SAME soft stop as Esc, not a second server path
-        click = js[js.index('closest("[data-sendnow]")'):][:600]
-        self.assertIn('type: "stop"', click)
+        # founder 2026-09-30: no "Send now" -- nothing to press, as in Claude Code
+        for f in ("static/js/01-state.js", "static/js/05-chat.js", "static/panel.css"):
+            src = (HERE / f).read_text(encoding="utf-8")
+            self.assertNotIn("data-sendnow", src, f)
+            self.assertNotIn("gv-sendnow", src, f)
 
     def test_server_says_why_a_message_waits(self):
         src = (HERE / "app.py").read_text(encoding="utf-8")

@@ -1604,7 +1604,7 @@ function queueState(turn){
     const i = ch.pending.indexOf(turn);
     if (i === -1) continue;
     return { pos: i + 1, behind: !!ch.turn || i > 0,
-             handed: !!turn.handed, why: turn.queuedWhy || "", key: ch.key };
+             handed: !!turn.handed, why: turn.queuedWhy || "" };
   }
   /* held in the browser behind a mid-reply provider switch (drainHeldTurns) */
   for (const held of Object.values(S.heldTurns || {})){
@@ -1613,19 +1613,6 @@ function queueState(turn){
   }
   return null;
 }
-
-/* "Send now" on a message waiting for the running reply: the same soft stop
-   as Esc/Stop (the reply ends, the process stays, this message runs at once),
-   put where the waiting message is. DELEGATED, once: the button lives in a
-   turn block patchTurn() rewrites without a full render. */
-document.addEventListener("click", ev => {
-  const b = ev.target && ev.target.closest && ev.target.closest("[data-sendnow]");
-  if (!b || b.disabled) return;
-  const ch = CLAUDE_SOCKETS.get(b.dataset.sendnow);
-  if (!ch || !ch.open) return;
-  b.disabled = true; b.textContent = "Sending…";
-  ch.ws.send(JSON.stringify({ type: "stop" }));
-});
 
 function claudeChannel(s, side){
   const key = chanKey(s.id, side);

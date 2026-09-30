@@ -6593,6 +6593,33 @@ async def ws_chat(ws: WebSocket):
         if rt.soft_stop and live_turn is turn and rt.alive:
             rt.stop()
 
+    async def _soft_stop():
+        """End the running Claude reply, keep the process (send_interrupt).
+        False when there is no such reply or the interrupt could not be
+        written -- the caller decides what that means."""
+        if not (_joins and live_turn is not None and rt.alive
+                and not rt.stopped and not rt.soft_stop):
+            return False
+        rt.soft_stop = True
+        try:
+            await rt.send_interrupt()
+        except Exception:   # noqa: BLE001 -- process gone
+            rt.soft_stop = False
+            return False
+        asyncio.create_task(_kill_if_unheard(live_turn))
+        return True
+
+    # One pending cut per socket. A message typed while claude only writes
+    # ends the reply 1s later, and each further message restarts the 1s, so
+    # quick follow-ups ("make it a dog" / "set it in Paris") all reach claude
+    # before the cut and are answered together (founder 2026-09-30).
+    _cut = {"task": None}
+
+    async def _cut_after(delay):
+        await asyncio.sleep(delay)
+        if not rt.open_tools:        # a tool began meanwhile: it folds instead
+            await _soft_stop()
+
     async def _reader():
         try:
             while True:
@@ -6609,16 +6636,8 @@ async def ws_chat(ws: WebSocket):
                     # Code: no cold start, and a message typed during the reply
                     # (already on stdin) runs straight after. Measured on claude
                     # 2.1.283: the reply closes within ~2-4s.
-                    if (_joins and live_turn is not None and rt.alive
-                            and not rt.stopped and not rt.soft_stop):
-                        rt.soft_stop = True
-                        try:
-                            await rt.send_interrupt()
-                        except Exception:   # noqa: BLE001 -- process gone
-                            rt.soft_stop = False
-                        else:
-                            asyncio.create_task(_kill_if_unheard(live_turn))
-                            continue
+                    if await _soft_stop():
+                        continue
                     # Everything else -- another provider, no reply running,
                     # the interrupt unwritable -- ends the process. Set the
                     # flag BEFORE killing: the stdout loop can end between the
@@ -6648,6 +6667,17 @@ async def ws_chat(ws: WebSocket):
                         # right after this reply. The pane stops saying
                         # "queued" about a message that is not in a queue.
                         await ws.send_json({"type": "handed"})
+                        # NOTHING TO PRESS (founder 2026-09-30). With a tool
+                        # running, claude takes this in when the tool ends.
+                        # Only writing (or thinking), it has no next step to
+                        # read it at -- so the reply is ended (after the 1s
+                        # window above) and this message answered, the partial
+                        # reply kept in the thread. "Not USA, do Canada"
+                        # switches mid-answer.
+                        if _cut["task"] is not None:
+                            _cut["task"].cancel()
+                        _cut["task"] = (asyncio.create_task(_cut_after(1.0))
+                                        if not rt.open_tools else None)
                         continue
                 if why:
                     await ws.send_json({"type": "queued", "reason": why})

@@ -1828,9 +1828,7 @@
   /* HANDED: claude already has it -- accent, not warning, and filled, because
      nothing is stuck. */
   .gv-handed{color:var(--ink)}
-  .gv-handed .gv-wdot{border-color:var(--acc,var(--ok));background:var(--acc,var(--ok))}
-  .gv-sendnow{padding:2px 9px;font-size:11px;line-height:1.5;margin-left:2px}
-  @keyframes gvBeat{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.6);opacity:.45}}
+  .gv-handed .gv-wdot{border-color:var(--acc,var(--ok));background:var(--acc,var(--ok))}  @keyframes gvBeat{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.6);opacity:.45}}
   .gv-sep{color:var(--faint)}
   .gv-chev{transition:transform .22s;font-size:9px;color:var(--faint)}
   .gv-leaf{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
