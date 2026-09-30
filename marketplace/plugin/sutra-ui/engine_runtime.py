@@ -1210,6 +1210,10 @@ def run_engine(ref, name, inp, slot):
         if not system and filed:
             out = W.add_version(ref, e["writes"], filed["files"], [{"art": e["reads"], "v": inp["v"]}], row["id"], filed["check"])
             ok = bool(filed["check"].get("ok"))
+            if ok and filed.get("publish"):
+                # a site made by an engine shaped on the fly goes on the host only once its version row is written, so the
+                # record and the host never disagree (DeepSeek P1, 2026-09-30); Publish's own step puts a Build there itself
+                W._publish_files(ref, filed["files"])
             row.update({"status": "ok" if ok else "failed", "wrote": {"art": e["writes"], "v": out["v"]},
                         "what": "%s from %s, check %s" % (e["writes"], e["reads"], "passed" if ok else "failed")})
             # the last artifact of the kind went out: the person is told in the chat, with the way to it (found live
@@ -2337,9 +2341,16 @@ def identity_apply(ctx, step, item):
         return {"said": "added the engine %s on the owner's stamp; it starts on its own trigger" % a.get("engine")}
     if a.get("kind") == "line":
         # the line Adaptation shaped from the words, stamped: each engine born into the Library from Do with its instruction,
-        # on the record in order; the first starts on the words now (founder, 2026-09-30: engines on the fly, no template)
+        # on the record in order; the first starts on the words now (founder, 2026-09-30: engines on the fly, no template).
+        # A line with a fault (a name or slug the Library has, a name twice) is refused whole, never added in part (DeepSeek P2)
+        engines = [e for e in (a.get("engines") or []) if isinstance(e, dict) and e.get("name")]
+        bad = _line_faults(engines)
+        if bad:
+            _tell(ref, ctx["dept"], {"src": "Root" if ctx["dept"].get("root") else OWNER}, "inform",
+                  {"word": "line", "done": "The line could not be set up: %s. Say the words again and I will shape it afresh." % "; ".join(bad)})
+            return {"said": "refused the line: " + "; ".join(bad)}
         added, faults = [], []
-        for e in a.get("engines") or []:
+        for e in engines:
             try:
                 does = str(e.get("does") or "").strip()
                 W.add_engine(ref, e["name"], shape={"name": e["name"], "use_case": does or e["name"], "does": does,
@@ -3122,10 +3133,11 @@ def do_file(ctx, step, item):
     own = artifacts.check(ctx["def"].get("writes"), files, default=True)
     if own:
         ok, notes = ok and own["ok"], notes + list(own["notes"])
+    out = {"files": files, "check": {"ok": ok, "notes": notes}}
     if ok and _writes_site(ctx["def"]):
-        W._publish_files(ctx["ref"], files)
+        out["publish"] = True                     # on the host after the version row is written (run_engine)
         notes.append("live at the department's site address")
-    return {"files": files, "check": {"ok": ok, "notes": notes}}
+    return out
 
 
 def c_result_is_text(ctx, step, item, out):
@@ -3625,12 +3637,11 @@ def c_feedback_says_what_changes(ctx, step, item, out):
     return {"ok": not notes, "notes": notes or ["what changes now, and what kind of change it is"]}
 
 
-def c_line_is_engines(ctx, step, item, out):
-    """One to six engines, each named once and not as the Library names one, the first reading the Brief and each reading
-    what one before it wrote (or the Brief), each writing something not yet written: the shape is the agent's, the check is code."""
-    engs = out.get("engines") if isinstance(out, dict) else None
-    if not isinstance(engs, list) or not 1 <= len(engs) <= 6:
-        return _verdict(False, "", "one to six engines")
+def _line_faults(engs):
+    """What is wrong with a shaped line, as code sees it: each engine named once and not as the Library names one (by name,
+    and by the slug its template file would take, against the shipped and the record home's templates), the first reading
+    the Brief, each reading the Brief or what one before it wrote, each writing something not yet written. Empty when the
+    line is sound. Shared by the shape step's check and the stamp, so a line refused by one is refused by the other."""
     notes, names, written, lib = [], [], {"Brief"}, defs()["engines"]
     for i, e in enumerate(engs):
         n = " ".join(str(e.get("name") or "").split())[:40] if isinstance(e, dict) else ""
@@ -3639,7 +3650,8 @@ def c_line_is_engines(ctx, step, item, out):
             continue
         if n in names:
             notes.append("%s is named twice" % n)
-        if n in lib:
+        slug = re.sub(r"[^a-z0-9]+", "-", n.lower()).strip("-")
+        if n in lib or not slug or (TEMPLATES_DIR / (slug + ".json")).exists() or (user_templates_dir() / (slug + ".json")).exists():
             notes.append("the Library already has an engine named %s" % n)
         r, w = " ".join(str(e.get("reads") or "Brief").split()), " ".join(str(e.get("writes") or n).split())[:40]
         if i == 0 and r != "Brief":
@@ -3650,6 +3662,15 @@ def c_line_is_engines(ctx, step, item, out):
             notes.append("%s writes %s, which is already written" % (n, w))
         names.append(n)
         written.add(w)
+    return notes
+
+
+def c_line_is_engines(ctx, step, item, out):
+    """One to six engines that _line_faults finds nothing wrong with: the shape is the agent's, the check is code."""
+    engs = out.get("engines") if isinstance(out, dict) else None
+    if not isinstance(engs, list) or not 1 <= len(engs) <= 6:
+        return _verdict(False, "", "one to six engines")
+    notes = _line_faults(engs)
     return {"ok": not notes, "notes": notes or ["%d engines, each reading what one before it wrote" % len(engs)]}
 
 

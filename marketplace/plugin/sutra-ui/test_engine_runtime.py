@@ -2412,6 +2412,8 @@ class TestRunFive(Base):
         good = [{"name": "Facts", "reads": "Brief", "writes": "Facts"}, {"name": "Site", "reads": "Facts", "writes": "Live site"}]
         self.assertTrue(ok(good)["ok"], ok(good))
         self.assertFalse(ok([{"name": "Write", "reads": "Brief", "writes": "Pages"}])["ok"], "a name the Library uses")
+        self.assertFalse(ok([{"name": "plan", "reads": "Brief", "writes": "X"}])["ok"], "a slug a template file on disk takes (DeepSeek P2)")
+        self.assertEqual(R._line_faults([{"name": "Do it", "reads": "Brief", "writes": "X"}]), [], "a two-word name, its own slug")
         self.assertFalse(ok([{"name": "Facts", "reads": "Pages", "writes": "Facts"}])["ok"], "reads what nothing wrote")
         self.assertFalse(ok([{"name": "A", "reads": "Brief", "writes": "X"}, {"name": "B", "reads": "X", "writes": "X"}])["ok"], "writes what is written")
         self.assertFalse(ok([{"name": "A", "reads": "Brief", "writes": "A"}, {"name": "A", "reads": "A", "writes": "B"}])["ok"], "named twice")
