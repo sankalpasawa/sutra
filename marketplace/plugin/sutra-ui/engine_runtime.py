@@ -1096,6 +1096,8 @@ def _handler(e, p):
 
 def _out_path(ref, slot, step_id, item):
     safe = re.sub(r"[^A-Za-z0-9_.@-]+", "-", "%s--%s%s" % (slot, step_id, ("--" + str(item)) if item is not None else ""))
+    if len(safe) > 120:                                    # a long item is named by its head and its hash (found live 2026-09-30: Errno 63)
+        safe = safe[:80] + "-" + _sha(safe)[:16]
     return W.ddir(ref) / "steps" / (safe + ".json")
 
 
@@ -2883,8 +2885,10 @@ def born_template(name, shape, ref):
             if s.get("prompt") == "do_make":
                 steps.append({"id": slug + ".plan", "name": "Plan the pages", "nature": "make", "born": "C0", "ceiling": "C1",
                               "prompt": "do_pages", "draft": "do_pages_draft", "out": {"pages": "list"}, "check": "pages_are_named"})
+                steps.append({"id": slug + ".list", "name": "List the pages", "nature": "transform", "born": "C2",
+                              "code": "do_pages_list", "check": "list_has_pages"})
                 steps.append({"id": slug + ".page", "name": "Write a page", "nature": "make", "born": "C0", "ceiling": "C1",
-                              "each": slug + ".plan.pages", "side_by_side": 4, "prompt": "do_page", "draft": "do_page_draft",
+                              "each": slug + ".list.pages", "side_by_side": 4, "prompt": "do_page", "draft": "do_page_draft",
                               "out": {"file": "str", "html": "str"}, "check": "page_is_html"})
             else:
                 steps.append(s)
@@ -3175,10 +3179,23 @@ def d_do_pages(ctx, step, item):
     return {"pages": [{"file": "index.html", "title": ctx["dept"].get("name"), "purpose": "the home page"}]}
 
 
+def do_pages_list(ctx, step, item):
+    """The planned pages as their file names, for the page step to run over (an item names a step's row file, so it is a
+    name, never the page's whole entry; found live 2026-09-30: Errno 63)."""
+    plan = ctx["bag"][_pre(step) + ".plan"]
+    return {"pages": [str(p.get("file")) for p in plan.get("pages") or [] if isinstance(p, dict) and p.get("file")], "plan": plan}
+
+
+def _page_entry(ctx, step, item):
+    plan = (ctx["bag"].get(_pre(step) + ".plan") or {}).get("pages") or []
+    return next((p for p in plan if isinstance(p, dict) and p.get("file") == item), {"file": str(item or "index.html")})
+
+
 def p_do_page(ctx, step, item):
     got = ctx["bag"][_pre(step) + ".read"]
     reads = ctx["def"].get("reads") or "Brief"
     plan = ctx["bag"][_pre(step) + ".plan"]["pages"]
+    item = _page_entry(ctx, step, item)
     rules = _owner_rules(ctx["dept"])
     return ("Write ONE whole page of this site, in the owner's own language, nothing invented; each fact with its source as a link; "
             "where a fact is missing, say so on the page under 'Not sure'. A complete HTML document (html, head with a title, body), "
@@ -3190,7 +3207,7 @@ def p_do_page(ctx, step, item):
 
 
 def d_do_page(ctx, step, item):
-    p = item if isinstance(item, dict) else {}
+    p = _page_entry(ctx, step, item)
     title = str(p.get("title") or ctx["dept"].get("name") or "Page")
     return {"file": str(p.get("file") or "index.html"),
             "html": "<!doctype html><html><head><title>%s</title></head><body><h1>%s</h1><p>%s</p><p>To be written: no agent was there to write this page from the record.</p></body></html>"
@@ -3207,8 +3224,8 @@ def c_pages_are_named(ctx, step, item, out):
         notes.append("a page is not an object")
     if not files or files[0] != "index.html":
         notes.append("the first page is not index.html")
-    if any(not re.fullmatch(r"[a-z0-9-]+\.html", f) for f in files):
-        notes.append("a file name is not plain lowercase .html")
+    if any(not re.fullmatch(r"[a-z0-9-]+\.html", f) or len(f) > 60 for f in files):
+        notes.append("a file name is not plain lowercase .html of at most 60 characters")
     if len(set(files)) != len(files):
         notes.append("two pages share a file")
     return {"ok": not notes, "notes": notes or ["%d pages, index.html first" % len(files)]}
@@ -3216,7 +3233,7 @@ def c_pages_are_named(ctx, step, item, out):
 
 def c_page_is_html(ctx, step, item, out):
     f, h = (out.get("file"), out.get("html")) if isinstance(out, dict) else (None, None)
-    want = (item or {}).get("file") if isinstance(item, dict) else None
+    want = item if isinstance(item, str) else ((item or {}).get("file") if isinstance(item, dict) else None)
     ok = (isinstance(f, str) and f.endswith(".html") and (want is None or f == want) and isinstance(h, str) and "<body" in h.lower()
           and len(re.sub(r"<[^>]+>", " ", h).split()) >= 20)
     return _verdict(ok, "a whole page with a body, under its planned name", "not a whole page under its planned name")
@@ -3261,7 +3278,7 @@ def c_result_is_text(ctx, step, item, out):
 
 CODE = {"plan_read": plan_read, "plan_fit": plan_fit, "plan_file": plan_file, "write_list": write_list, "write_file": write_file,
         "do_read": do_read, "do_file": do_file, "adapt_offer": adapt_offer, "adapt_priced": adapt_priced, "identity_engine": identity_engine,
-        "adapt_line_offer": adapt_line_offer, "identity_line": identity_line,
+        "adapt_line_offer": adapt_line_offer, "identity_line": identity_line, "do_pages_list": do_pages_list,
         "check_rules_of": check_rules_of,
         "hear": hear, "coord_ready": coord_ready, "coord_record": coord_record,
         "setup_read": setup_read, "setup_make": setup_make, "setup_file": setup_file,
