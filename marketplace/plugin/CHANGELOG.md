@@ -1,6 +1,13 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-28
+## 2.306.22 (2026-09-30)
+
+## Sutra Desktop: the line made on the fly, after review
+
+- a site made by an engine shaped on the fly goes on the host only once its version is on the record, so the record and the site never disagree
+- a shaped line with a fault (a name the Library already uses, a name twice, a step that reads what nothing before it wrote) is refused whole and you are told; nothing is added in part
+
 ## 2.306.21 (2026-09-30)
 
 ## Sutra Desktop: a line made on the fly
