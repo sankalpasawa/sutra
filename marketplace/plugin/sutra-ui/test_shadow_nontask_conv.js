@@ -288,7 +288,11 @@ console.log("test_shadow_nontask_conv.js");
   t("7. an unbound conversation is drawn once, as a conversation", () => {
     const rows = ctx.shadowTasks().filter(r => r.id === "shc-eee555");
     assert.strictEqual(rows.length, 1);
-    assert.strictEqual(rows[0].state, "queued");
+    /* CHAT, not QUEUED (founder, 2026-10-07): it is not work waiting to
+       run, and drawing it as QUEUED under RUNNING made it look stuck */
+    assert.strictEqual(rows[0].state, "chat");
+    assert.strictEqual(ctx.shadowTaskFaceFor(rows[0]).label, "CHAT");
+    assert.strictEqual(ctx.shadowTaskSection(rows[0]), "chat");
   });
 }
 

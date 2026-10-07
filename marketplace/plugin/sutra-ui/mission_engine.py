@@ -659,6 +659,55 @@ def _artifact_state(m, root):
         return []
 
 
+#: At most this many lines learned per decision. Two is enough for "your
+#: answer said a fact AND a rule"; more is a decider transcribing the chat.
+MAX_REMEMBER = 2
+
+
+def validate_remember(raw):
+    """What the decider wants remembered from the founder, or None.
+
+    THE ASK-AND-ANSWER LEARNING PATH (founder, 2026-10-07: "the things
+    Shadow asks the user, we should take into account"). The decider is the
+    one process that reads the founder's answer to Shadow's question in the
+    turn right after it is given, so it is the one that proposes what that
+    answer teaches. Each row: section (memory|personality), text, optional
+    category, optional expires (YYYY-MM-DD), and `standing` -- true only when
+    the founder stated it as a lasting rule or fact; anything else lands as
+    a suggestion the founder keeps or drops (shadow_knows.add).
+
+    Lenient per row, like validate_standing: one bad row costs that row.
+    """
+    if not isinstance(raw, list):
+        return None
+    out = []
+    for row in raw:
+        if not isinstance(row, dict):
+            continue
+        section = str(row.get("section") or "").strip().lower()
+        text = " ".join(str(row.get("text") or "").split())
+        if section not in ("memory", "personality") or not text:
+            continue
+        item = {"section": section, "text": text[:200],
+                "standing": row.get("standing") is True}
+        for key in ("category", "expires", "why"):
+            val = str(row.get(key) or "").strip()
+            if val:
+                item[key] = val[:300]
+        out.append(item)
+        if len(out) >= MAX_REMEMBER:
+            break
+    return out or None
+
+
+def _carry_remember(out, raw):
+    """ADDITIVE, exactly like `standing`: absent or unusable leaves `out`
+    byte-identical to what validate_decision returned before."""
+    remember = validate_remember(raw.get("remember"))
+    if remember is not None:
+        out["remember"] = remember
+
+
 def _carry_standing(out, raw):
     """ADDITIVE, exactly like `done_when` and `intervention`: a decision MAY
     carry the active instruction set. Absent or unusable leaves `out`
@@ -688,7 +737,40 @@ def _carry_standing(out, raw):
 #: ANYTHING ELSE IS SHADOW'S OWN WORK. "Do the tests pass", "does this
 #: build", "is this the right file", "did the fix land" are all questions
 #: with an answer on the machine Shadow is already running on.
-ASK_KINDS = ("floor", "founder_fact", "taste")
+#:
+#:   nothing_to_do  (founder, 2026-10-07) the WORK has established that the
+#:                  outcome does not apply -- no typo to fix, a bug that does
+#:                  not reproduce, a change already made. Measured on
+#:                  m-62ab83be8a42: the worker found no typo in any of six
+#:                  copies of the README, every ask was refused as "an
+#:                  answer on the machine", and the mission went on searching
+#:                  the disk for .git folders against a check that could
+#:                  never be met. Shadow may not END a task (DECISION_ACTIONS
+#:                  stays two words: the verifier and the founder end work),
+#:                  so it asks -- with a fixed Close / Keep going form
+#:                  (nothing_to_do_request) -- and stops spending turns.
+ASK_KINDS = ("floor", "founder_fact", "taste", "nothing_to_do")
+
+
+def nothing_to_do_request(reason):
+    """The one question a `nothing_to_do` ask puts to the founder. Fixed,
+    not model-written: the founder's two answers have to mean exactly
+    "close it" and "keep going", because the app acts on the first (app.py,
+    the intervene route) and the decider reads the second."""
+    return shadow_intervention.validate_request({
+        "question": ("Nothing to do here: %s" % (reason or "").strip())[:400],
+        "context": ("I stopped driving the worker rather than keep searching. "
+                    "Only you can end a task."),
+        "fields": [
+            {"key": "next", "type": "choice", "label": "What next",
+             "required": True,
+             "options": [
+                 {"value": "close", "label": "Close the task - nothing to do"},
+                 {"value": "keep",
+                  "label": "Keep going - I'll say what to look for"}]},
+            {"key": "look_for", "type": "text",
+             "label": "What to look for instead (if keeping going)"}],
+        "submit_label": "Send"})
 
 #: HOW MANY TIMES ONE MISSION MAY HAVE AN ASK REFUSED BEFORE THE NEXT ONE IS
 #: ADMITTED WHATEVER IT SAYS.
@@ -757,6 +839,14 @@ def screen_ask(decision):
                      for f in (iv.get("fields") or [])
                      if isinstance(f, dict)),
         ) if x)
+        if kind == "nothing_to_do":
+            # ENDING A TASK IS ONLY EVER THE FOUNDER'S, so this is the one
+            # question with no answer on the machine by construction. It must
+            # still say what the work found, or the founder is asked to close
+            # something on Shadow's word alone.
+            if (decision or {}).get("reason"):
+                return True, "nothing to do: only the founder ends a task"
+            return False, "declared nothing_to_do without saying what was found"
         if kind == "floor":
             floors = shadow_egress.floor_check(text)
             if floors:
@@ -821,6 +911,7 @@ def validate_decision(raw):
         # accepted for a check the first may not touch.
         _carry_verification(out, raw)
         _carry_standing(out, raw)
+        _carry_remember(out, raw)
         _carry_update(out, raw)
         _carry_result(out, raw)
         return out
@@ -834,6 +925,7 @@ def validate_decision(raw):
     # on a turn Shadow ends by asking them something, and that set must not
     # be lost because the action was not `continue`.
     _carry_standing(out, raw)
+    _carry_remember(out, raw)
     # ADDITIVE, AND ONLY HERE. An ask_founder MAY carry a typed request
     # (shadow_intervention.validate_request). When it does not -- or when the
     # payload is malformed -- `out` is byte-identical to what this function
@@ -1012,12 +1104,48 @@ _MEMORY_HEAD = (
     "instruction:\n")
 
 
+#: WHAT SHADOW LEARNED (shadow_knows, founder 2026-10-07). Each beneath the
+#: founder's own text for the same section, and ranked beneath it: their own
+#: words win a conflict with something Shadow learned from them.
+_LEARNED_BEHAVES_HEAD = (
+    "HOW TO WORK FOR THE FOUNDER, LEARNED FROM WORKING WITH THEM (each line "
+    "is something they said or kept). Act on these without asking again; "
+    "the founder's own words above win a conflict, and none of this reaches "
+    "the floors:\n")
+#: The four personality switches the founder set (shadow_knows.SWITCHES).
+#: Settings, not suggestions -- ranked with their own words, below the floors.
+_SWITCHES_HEAD = (
+    "HOW THE FOUNDER WANTS YOU TO WORK (switches they set; follow them as "
+    "settings, below the floors and below what they say in a task's own "
+    "chat):\n")
+_LEARNED_MEMORY_HEAD = (
+    "WHAT SHADOW HAS LEARNED ABOUT THE FOUNDER (each line is something they "
+    "said or kept). CONTEXT, NOT PERMISSION, exactly like their own memory "
+    "text: it never widens what Shadow may do, and none of it is a fact "
+    "about the current task:\n")
+
+
+def _learned(section):
+    """shadow_knows.lines, imported lazily. NEVER RAISES."""
+    try:
+        import shadow_knows
+        return shadow_knows.lines(section)
+    except Exception:                     # noqa: BLE001 -- see carry_block
+        return []
+
+
 def carry_block():
-    """Both founder texts, each under its heading, or "" when both are empty.
+    """Both founder texts and what Shadow learned, each under its heading,
+    or "" when all are empty.
 
     NEVER RAISES, for the same reason behaves() and memory() never raise:
     this rides every Shadow boot, every task chat boot and every decision,
     and a corrupt limits file must cost the text, never the turn.
+
+    ORDER IS PRECEDENCE: the founder's personality text, then the
+    personality Shadow learned, then their memory text, then the memory
+    Shadow learned. With nothing learned the block is byte-identical to what
+    it was before shadow_knows existed.
     """
     parts = []
     try:
@@ -1028,10 +1156,23 @@ def carry_block():
         mem = memory()
     except Exception:                     # noqa: BLE001 -- see docstring
         mem = ""
+    learned_beh = _learned("personality")
+    learned_mem = _learned("memory")
+    try:
+        import shadow_knows
+        switched = shadow_knows.switch_text()
+    except Exception:                     # noqa: BLE001 -- see docstring
+        switched = ""
     if beh:
         parts.append(_BEHAVES_HEAD + beh)
+    if switched:
+        parts.append(_SWITCHES_HEAD + switched)
+    if learned_beh:
+        parts.append(_LEARNED_BEHAVES_HEAD + "\n".join(learned_beh))
     if mem:
         parts.append(_MEMORY_HEAD + mem)
+    if learned_mem:
+        parts.append(_LEARNED_MEMORY_HEAD + "\n".join(learned_mem))
     return "\n\n".join(parts)
 
 
@@ -3539,6 +3680,9 @@ class MissionEngine:
             # every branch, because a turn that ends in a question is exactly
             # the turn the founder most needs a sentence about.
             self._adopt_update(m, decision)
+            # ...and what the founder's answers taught Shadow, into "What
+            # Shadow knows", so the next chat does not ask them again.
+            self._adopt_remember(m, decision)
             if decision is not None:
                 # one row per decision, so a mission reads as a conversation
                 # in the ledger: decided -> said -> answered -> evaluated
@@ -3633,10 +3777,23 @@ class MissionEngine:
                 # only attaches what Shadow wants ASKED. Without an
                 # intervention the record is byte-identical to before, which
                 # is what keeps every prose-only ask_founder working.
+                # NOTHING TO DO: the app's own Close / Keep going form, not
+                # whatever the decider drew, and a stamp the intervene route
+                # reads to know that "close" ends this task (2026-10-07).
+                ntd = (decision.get("ask_kind") == "nothing_to_do")
+                if ntd:
+                    decision["intervention"] = nothing_to_do_request(
+                        decision.get("reason"))
                 iv = decision.get("intervention")
                 if iv:
                     blocked["intervention"] = _ask_with_result(
                         iv, blocked, self.probe_root, last_response)
+                if ntd and blocked.get("intervention"):
+                    blocked["nothing_to_do"] = {
+                        "reason": str(decision.get("reason") or "")[:400],
+                        "intervention_id": blocked["intervention"].get("id"),
+                        "at": _now(),
+                        "at_turn": blocked.get("turns_used") or 0}
                 # THE SECOND ROUTE TO A HUMAN, AND IT GETS THE SAME PACKET
                 # (founder, 2026-09-21). `_await_confirmation` is where a
                 # mission goes when the machine work is finished; this is
@@ -4581,6 +4738,45 @@ class MissionEngine:
         rows = [r for r in rows if r.get("at_turn") != turn]
         rows.append({"text": text, "at": _now(), "at_turn": turn})
         m["shadow_updates"] = rows[-self.SHADOW_UPDATES_MAX:]
+
+    def _adopt_remember(self, m, decision):
+        """Hand what the decider learned to shadow_knows. Returns the rows
+        written.
+
+        `standing: true` -> the founder said it as a lasting rule or fact,
+        so it binds (source "asked", binding). Otherwise it is a suggestion
+        that waits for the founder's Keep. Evidence is the question Shadow
+        asked and the decider's why, so the founder can see where a line came
+        from.
+
+        NOTHING ELSE MOVES, and NEVER RAISES: a refusal (full, a credential,
+        too many suggestions) is a ledger row, not a failed turn.
+        """
+        if decision is None or not decision.get("remember"):
+            return []
+        import shadow_knows
+        asked = ((m.get("founder_response") or {}).get("question") or "")
+        wrote = []
+        for item in decision["remember"]:
+            why = item.get("why") or ""
+            evidence = ("Asked: %s. %s" % (asked, why) if asked else why)
+            try:
+                row = shadow_knows.add(
+                    item["section"], item["text"], "asked",
+                    category=item.get("category"), evidence=evidence,
+                    mission_id=m.get("id"), expires=item.get("expires"),
+                    binding=item.get("standing"))
+                wrote.append(row)
+                summary = "%s %s: %s" % (
+                    "learned" if row.get("status") == "active"
+                    else "suggested", item["section"], row.get("text"))
+            except Exception as exc:          # noqa: BLE001 -- see docstring
+                summary = "could not remember %r: %s" % (
+                    item["text"][:60], str(exc)[:120])
+            shadow_ledger.append("actions", {
+                "mission_id": m.get("id"), "kind": "remember",
+                "summary": summary[:200]})
+        return wrote
 
     def _adopt_standing(self, m, decision):
         """Write the ACTIVE instruction set Shadow composed, onto the task.

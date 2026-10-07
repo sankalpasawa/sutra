@@ -4,13 +4,6 @@
 
 ## Unreleased
 
-### Root Setup — published J1 journey
-
-- Root keeps one versioned Request conversation, asks one question per turn, and resumes it after restart; `just do it` applies disclosed Library defaults.
-- A clear request creates automatically unless an effective inherited `ask` rule matches. Setup records a versioned department template or the explicit organic route.
-- Founding reconciles one child, the five functions, goal context, born engines, one `j2_ready` event, and Root's final tell without running J2 work.
-- The founding path now imports and locks correctly on Windows as well as POSIX release hosts.
-
 ### J1 and J2 as the department page describes them
 
 Build record: `docs/superpowers/plans/2026-10-07-j1-j2-published-design-prd.md`.
@@ -25,6 +18,30 @@ Build record: `docs/superpowers/plans/2026-10-07-j1-j2-published-design-prd.md`.
 - **The J2 ledger is written where the work happens**: the bargain's posts, each run's slot, start, filed version and end, Audit's reading, and `goal.reached` when done-when holds.
 - **The organic kind's line is no longer stamped by the owner**; Priority and Root's check pass it (S-18).
 - `J2_FLOW_V1` is on unless set to `0`, `false` or `off`; off, a department runs as it did before. Stop and the department's own Start agree. `/api/departments/{ref}/j2…` answers beside `/api/dept/{ref}/j2…`, with `/j2/answer` and `/j2/resume`.
+
+## 2.306.24 (2026-10-07)
+
+### Shadow learns its memory and personality
+
+- Shadow records what it learns about you and how to work with you, and re-uses it on later tasks (`sutra-ui/shadow_knows.py`).
+- A task whose outcome does not apply (no typo to fix, a change already made) now asks to be closed with a one-tap Close / Keep going, instead of running until its turn budget fails it. Shadow still cannot end work by itself.
+- Text fields Shadow creates (its typed questions, the task chat line, settings and memory boxes) keep focus, caret and draft across background refreshes.
+
+### Settings > Updates no longer fails with "/api/updates -> 500"
+
+- A GitHub connection that dropped part-way through a reply (`http.client.IncompleteRead`, not an `OSError`) escaped the update check and blanked the screen with a 500, seen on Windows. It now reads "could not reach GitHub" on that row, and the same drop during a download is resumed instead of failing the stage.
+- The check can no longer 500 for any reason: a component that fails shows "check failed" on its own row and the other rows still render. Pinned by `sutra-ui/test_update_check_network.py`.
+
+### Root Setup — published J1 journey
+
+- Root keeps one versioned Request conversation, asks one question per turn, and resumes it after restart; `just do it` applies disclosed Library defaults.
+- A clear request creates automatically unless an effective inherited `ask` rule matches. Setup records a versioned department template or the explicit organic route.
+- Founding reconciles one child, the five functions, goal context, born engines, one `j2_ready` event, and Root's final tell without running J2 work.
+- The founding path now imports and locks correctly on Windows as well as POSIX release hosts.
+
+### SEO agent
+
+- Candidate-respecting language rule, faster write phase, and the author's word limit enforced for written and edited articles.
 
 ## 2.306.23 (2026-09-30)
 

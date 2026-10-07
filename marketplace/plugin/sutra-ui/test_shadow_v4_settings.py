@@ -302,15 +302,21 @@ class TestTheCarryReaches(Base):
         self.assertIn("WHO YOU WORK FOR", out)
         self.assertIn("has not written any", out)
 
-    def test_46_the_worker_brief_carries_memory_and_not_behaves(self):
+    # 46-49 REWRITTEN (founder, 2026-10-07): "personality and memory are the
+    # properties of the shadow and it should see fit when to pass it to the
+    # worker chat". The memory box used to be pasted into every brief as an
+    # `about` fact; Shadow now chooses the lines a task needs from its own
+    # boot context (BRIEF_ASK item 7), so no fact carries them wholesale.
+
+    def test_46_brief_facts_hand_over_neither_box(self):
+        mission_engine.set_behaves(TEXT)
+        mission_engine.set_memory(MEMO)
         import shadow_task_chat
-        facts = {"repo": "~/x", "rules": [], "floors": [], "about": MEMO}
+        facts = app_module._brief_facts({})
+        self.assertNotIn("about", facts)
         text = shadow_task_chat._facts_text(facts)
-        self.assertIn(MEMO, text)
-        self.assertIn("not permission", text)
-        self.assertNotIn(TEXT, text,
-                         "behaves is a rule addressed to Shadow, not the "
-                         "worker, and must not travel in a brief")
+        self.assertNotIn(MEMO, text)
+        self.assertNotIn(TEXT, text)
 
     def test_47_no_memory_means_no_section_in_the_brief(self):
         import shadow_task_chat
@@ -318,11 +324,19 @@ class TestTheCarryReaches(Base):
             {"repo": "~/x", "rules": [], "floors": []})
         self.assertNotIn("about the founder", text)
 
-    def test_48_brief_facts_reads_the_memory_box(self):
+    def test_48_the_brief_writer_chooses_what_to_pass_on(self):
+        """The writer holds both boxes in its boot context and is told to
+        pass on only what this task needs -- never everything."""
+        import shadow_task_chat
+        ask = " ".join(shadow_task_chat.BRIEF_ASK.split())
+        self.assertIn("They are YOURS, not the worker's", ask)
+        self.assertIn("pass on only the lines that change how THIS work", ask)
+        self.assertIn("never permission", ask)
         mission_engine.set_memory(MEMO)
-        self.assertEqual(app_module._brief_facts({}).get("about"), MEMO)
+        self.assertIn(MEMO, shadow_session.standing_context("m-x"),
+                      "the task chat that writes the brief can see it")
 
-    def test_49_a_broken_limits_read_costs_the_line_not_the_brief(self):
+    def test_49_a_broken_limits_read_does_not_cost_the_brief(self):
         mission_engine.set_memory(MEMO)
         orig = mission_engine._read_limits
 
@@ -334,7 +348,6 @@ class TestTheCarryReaches(Base):
             facts = app_module._brief_facts({})
         finally:
             mission_engine._read_limits = orig
-        self.assertEqual(facts.get("about"), "")
         self.assertIn("repo", facts)
 
 
@@ -443,17 +456,38 @@ class TestTheShadowTool(unittest.TestCase):
             "print(json.dumps(t['schema']['properties']['kind']['enum']))")
         self.assertEqual(json.loads(out), ["personality", "memory"])
 
-    def test_71_calling_it_writes_the_box_and_a_bad_kind_says_so(self):
+    def test_71_calling_it_remembers_the_line_and_a_bad_kind_says_so(self):
+        """Since 2026-10-07 the tool writes "What Shadow knows" (the learned
+        list, shadow_knows) rather than the founder's own free-text box --
+        and the founder's box is left exactly as they typed it."""
         out = self._run(
-            "import sutra_mcp, mission_engine;"
+            "import sutra_mcp, mission_engine, shadow_knows;"
             "sutra_mcp.BY_NAME['shadow_remember']['fn']"
             "({'kind': 'memory', 'line': 'I am the CEO.'});"
-            "print(mission_engine.memory());"
+            "print([r['text'] for r in shadow_knows.active('memory')]);"
+            "print('box=%r' % mission_engine.memory());"
             "r = sutra_mcp.BY_NAME['shadow_remember']['fn']"
             "({'kind': 'vibes', 'line': 'x'});"
             "print(str(r)[-80:])")
-        self.assertIn("I am the CEO.", out)
+        self.assertIn("['I am the CEO.']", out)
+        self.assertIn("box=''", out)
         self.assertIn("personality|memory", out)
+
+    def test_71b_a_said_switch_is_set_not_written_as_a_line(self):
+        """'don't ask me so much' is a switch (2026-10-07)."""
+        out = self._run(
+            "import sutra_mcp, shadow_knows, mission_engine;"
+            "f = sutra_mcp.BY_NAME['shadow_remember']['fn'];"
+            "f({'kind': 'personality', 'switch': 'acting', 'value': 'ask_first'});"
+            "print(shadow_knows.switches());"
+            "print('ctt=%s' % mission_engine.confirm_top_tier());"
+            "print(len(shadow_knows.rows()));"
+            "print(str(f({'kind': 'personality', 'switch': 'acting', "
+            "'value': 'loud'}))[-60:])")
+        self.assertIn("{'acting': 'ask_first'}", out)
+        self.assertIn("ctt=True", out)
+        self.assertIn("\n0\n", "\n" + out + "\n", "no line was written")
+        self.assertIn("cannot be", out)
 
     def test_72_it_is_absent_from_an_ordinary_session(self):
         """No SUTRA_MCP_SHADOW: a worker or a task chat cannot rewrite the

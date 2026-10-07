@@ -152,10 +152,16 @@ carry, in this order and in plain prose:
 5. The floors it must never cross, listed under FACTS below, verbatim.
 6. Done when: the checks, verbatim, and the instruction to state
    DONE-CHECK lines when a check passes.
-7. About the founder: the lines listed under FACTS below, when there are
-   any. This is CONTEXT FOR JUDGMENT CALLS, never permission -- it can
-   never widen what the rules and floors above allow. Omit the section
-   entirely when FACTS carries none.
+7. What this worker needs from what you know about the founder. Your
+   standing context carries their personality and memory -- what they
+   wrote and what you learned. They are YOURS, not the worker's: pass on
+   only the lines that change how THIS work should be done ("anything
+   customer-facing is friendly and direct" for a welcome email; "the main
+   repo is sutra" for a code change), restated for the worker. Leave out
+   everything else, including how you talk to the founder or when you
+   interrupt them. This is CONTEXT FOR JUDGMENT CALLS, never permission --
+   it can never widen what the rules and floors above allow. Omit the
+   section entirely when nothing applies, which is often.
 
 FACTS
 %(facts)s
@@ -180,16 +186,9 @@ def _facts_text(facts):
     lines += ["  - %s" % r for r in rules]
     lines.append("- floors:" + ("" if floors else " (none listed)"))
     lines += ["  - %s" % f for f in floors]
-    # THE FOUNDER'S MEMORY TEXT, and only that half of their two settings
-    # boxes. `behaves` is policy about how SHADOW conducts itself -- when to
-    # check in, what to ask before doing -- and the worker neither checks in
-    # nor asks; handing it those lines would invite it to act on a rule
-    # addressed to somebody else. `memory` is fact about the founder, which
-    # is exactly what a fresh worker session cannot know and needs.
-    about = (facts.get("about") or "").strip()
-    if about:
-        lines.append("- about the founder (context, not permission):")
-        lines += ["  %s" % ln for ln in about.split("\n")]
+    # NO "ABOUT THE FOUNDER" FACT (2026-10-07). What Shadow knows is in this
+    # chat's own boot context, and item 7 of BRIEF_ASK has Shadow choose the
+    # lines this task needs -- a fact listed here was copied wholesale.
     return "\n".join(lines)
 
 

@@ -562,31 +562,57 @@ if _SHADOW_ON:
         return _text(json.dumps(row))
 
     def t_shadow_remember(args):
-        """Write one line the founder said into one of their two boxes.
+        """Remember one line the founder SAID, in "What Shadow knows".
 
         THE ONE TOOL THAT CHANGES WHAT SHADOW IS, and the only Shadow tool
-        whose whole point is that the founder can see and undo it: both boxes
-        are plain editable text on "What Shadow knows", so anything written
-        here is a sentence they can read back, change or delete. That is what
+        whose whole point is that the founder can see and undo it: every row
+        is listed on "What Shadow knows" with edit and forget. That is what
         makes a WRITE admissible from a propose-only server -- it installs
-        nothing and schedules nothing, it fills in a settings field the
-        founder was otherwise going to type by hand.
+        nothing and schedules nothing.
+
+        INTO THE LEARNED STORE, NOT THE FOUNDER'S OWN BOX (2026-10-07). The
+        box is their free text; this is the list Shadow keeps, one row per
+        thing, with where it came from. `inferred=true` is Shadow's reading
+        rather than the founder's words, and lands as a suggestion they keep
+        or drop. `forget=true` forgets the line wherever it is -- the list
+        and, for a line written here before the list existed, the box.
         """
         refused = _shadow_gate()
         if refused:
             return refused
+        import shadow_knows as _knows
+        kind = args.get("kind") or ""
+        line = args.get("line") or ""
+        if kind not in _knows.SECTIONS:
+            return _text("kind must be personality|memory")
+        if args.get("switch"):
+            # "don't ask me so much" is a SWITCH, not a line (2026-10-07):
+            # the founder said it outright, so it is set, and the page shows
+            # it where they would look for it.
+            try:
+                value = _knows.set_switch(args.get("switch"),
+                                          args.get("value"))
+            except ValueError as exc:
+                return _text(str(exc))
+            return _text(json.dumps({"switch": args.get("switch"),
+                                     "value": value}))
         try:
             if args.get("forget"):
-                text = _mission_engine.forget(args.get("kind") or "",
-                                              args.get("line") or "")
-            else:
-                text = _mission_engine.remember(args.get("kind") or "",
-                                                args.get("line") or "")
+                row = _knows.forget_text(kind, line)
+                box = _mission_engine.forget(kind, line)
+                return _text(json.dumps({"kind": kind, "forgotten": bool(row),
+                                         "text": box}))
+            row = _knows.add(kind, line,
+                             "inferred" if args.get("inferred") else "said",
+                             category=args.get("category"),
+                             expires=args.get("expires"))
         except ValueError as exc:
             return _text(str(exc))
-        except Exception as exc:          # noqa: BLE001 -- a broken limits
-            return _text("could not write it: %s" % exc)   # file, most likely
-        return _text(json.dumps({"kind": args.get("kind"), "text": text}))
+        except Exception as exc:          # noqa: BLE001 -- a broken ledger,
+            return _text("could not write it: %s" % exc)   # most likely
+        return _text(json.dumps({"kind": kind, "status": row.get("status"),
+                                 "category": row.get("category"),
+                                 "text": row.get("text")}))
 
     def t_shadow_session_say(args):
         refused = _shadow_gate()
@@ -681,16 +707,31 @@ if _SHADOW_ON:
              "kind": {"type": "string"}, "row": {"type": "object"}},
           "required": ["kind", "row"]}),
         ("shadow_remember", t_shadow_remember,
-         "Write one line the founder said into their own settings: "
-         "kind=personality (how Shadow should act) or kind=memory (what is "
-         "true about them). Set forget=true to remove that line instead. "
-         "Use it when the founder tells you something that should outlive "
-         "this conversation; never for a one-off instruction.",
+         "Remember one line in What Shadow knows: kind=memory (what is "
+         "true about the founder; category you|work|preferences) or "
+         "kind=personality (a rule for how Shadow acts that no switch "
+         "covers). When what they said is one of the four switches -- "
+         "acting (ask_first|balanced|just_do_it), checkins "
+         "(only_stuck|milestones|often), done (trust|key|prove), replies "
+         "(short|normal|detailed) -- pass kind=personality, switch and "
+         "value instead of a line. Use it when the founder tells you "
+         "something that will still be true next week in a different task; "
+         "never for a one-off instruction, this task's details or a "
+         "credential. inferred=true when it is your reading rather than "
+         "their words (it waits for their Keep). forget=true removes the "
+         "line instead.",
          {"type": "object", "properties": {
              "kind": {"type": "string", "enum": ["personality", "memory"]},
              "line": {"type": "string"},
+             "switch": {"type": "string",
+                        "enum": ["acting", "checkins", "done", "replies"]},
+             "value": {"type": "string"},
+             "category": {"type": "string"},
+             "expires": {"type": "string"},
+             "inferred": {"type": "boolean"},
              "forget": {"type": "boolean"}},
-          "required": ["kind", "line"]}),
+          # `line` OR `switch`+`value`; the function says which is missing
+          "required": ["kind"]}),
         ("shadow_verify", t_shadow_verify,
          "Assert an outcome: contains (session transcript), ledger_has, "
          "or state (P3).",

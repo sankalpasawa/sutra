@@ -1935,7 +1935,10 @@ These are standing answers. Where they settle a question, they have already
 answered it -- decide on them and move, rather than asking the founder
 something they have told you once. They never reach the floors, they never
 satisfy a founder_confirm check, and they never override what the founder
-says in this task's own chat.
+says in this task's own chat. They are YOURS, not the worker's: carry a line
+into your instruction, in your own words, only when it changes what the
+worker should do next -- never all of them, never the ones about how you
+talk to the founder.
 
 OUTCOME
 %(outcome)s
@@ -1998,7 +2001,7 @@ Creating or changing the set is not itself a reason to send the worker a
 turn, and an active instruction is a constraint on what you instruct, not
 something to forward.
 
-Decide. Reply with ONE fenced json block and nothing else:
+%(remember_ask)sDecide. Reply with ONE fenced json block and nothing else:
 
 ```json
 {"action": "continue", "instruction": "<what to send into the chat next>",
@@ -2104,12 +2107,13 @@ blocks above do not give you, and nothing invented. If the work has produced
 nothing you can honestly describe, OMIT IT -- a completion with no line says
 "Done." and that is the correct, grounded answer.
 
-`ask_kind` is one of exactly three strings: "floor", "founder_fact", "taste".
+`ask_kind` is one of exactly four strings: "floor", "founder_fact", "taste",
+"nothing_to_do".
 
-THE FOUNDER IS ASKED FOR THREE THINGS AND NOTHING ELSE, AND THIS IS ENFORCED
-RATHER THAN REQUESTED. `ask_kind` declares which of the three this is, and
+THE FOUNDER IS ASKED FOR FOUR THINGS AND NOTHING ELSE, AND THIS IS ENFORCED
+RATHER THAN REQUESTED. `ask_kind` declares which of the four this is, and
 the engine CHECKS THE QUESTION AGAINST THE LABEL -- writing "taste" over a
-mechanical question does not get it through. An ask that is none of the three
+mechanical question does not get it through. An ask that is none of the four
 is REFUSED: the mission keeps running and you are told to go and establish it
 yourself, which costs a turn you did not need to spend.
 
@@ -2122,6 +2126,16 @@ yourself, which costs a turn you did not need to spend.
                 disk, and not a fact you could find out by running something.
   taste         a question with no correct answer, only theirs: whether the
                 wording reads well, whether a design is the one they meant.
+  nothing_to_do THE WORK HAS SHOWN THERE IS NOTHING TO DO: what the outcome
+                asks to change does not exist or is already true -- no typo
+                to fix, the bug does not reproduce, the file already says
+                it. Do NOT keep searching and do NOT widen the hunt (other
+                folders, other repos, the whole disk). Ask with this kind,
+                and put in `reason` what the worker found and where it
+                looked, in one or two sentences. The app shows the founder
+                Close / Keep going; you never close a task yourself. Only
+                when the worker's own output shows it -- work that is merely
+                hard is not this.
 
 EVERYTHING ELSE IS YOUR OWN WORK AND YOU HAVE FULL ACCESS TO DO IT. "Do the
 tests pass", "did the fix land", "is this the right file", "does it build",
@@ -2323,6 +2337,47 @@ def _founder_says_text(says):
     return "\n".join(lines) or "(none)"
 
 
+#: Asked only when the founder has just told Shadow something -- an answer to
+#: its question, or a line in the task's chat -- so every other decide prompt
+#: is byte-identical to what it was (founder, 2026-10-07: what Shadow asks the
+#: founder is taken into account, so it is not asked again next time).
+_REMEMBER_ASK = """WHAT THIS TEACHES YOU FOR NEXT TIME. The founder has just told you
+something. If it will still be true and useful NEXT WEEK, IN A DIFFERENT
+TASK, add an optional `remember` key to your json (at most two rows) and it
+goes into "What Shadow knows" for every later chat:
+
+  "remember": [{"section": "memory", "category": "preferences",
+                "text": "Customer-facing writing is friendly and direct",
+                "standing": true, "why": "<one short line>"}]
+
+  section   "memory" = what is true, in one of three groups: "you" (who
+            they are, the people they name), "work" (projects, where repos
+            live, current focus, tools), "preferences" (how they like
+            output, words to use or avoid). "personality" = a rule for how
+            you act that is NOT one of the founder's four switches (acting
+            on its own, checking in, before done, reply length) -- those
+            they set themselves
+  text      one line, phrased for any future task, never this task's details
+  standing  true ONLY when they said it as a lasting rule or fact ("always",
+            "never", "from now on", "I am ..."). Otherwise false: it becomes a
+            suggestion they keep or drop with one tap
+  expires   "YYYY-MM-DD", only for a fact with a date in it
+
+NEVER remember: this task's files, results or choices; anything for this
+turn only; a guess from one answer passed off as standing; a credential. Omit
+the key when nothing here outlives the task -- that is the usual case.
+
+"""
+
+
+def _remember_ask(context):
+    """_REMEMBER_ASK when the founder has said something this decision can
+    learn from, else "" -- DERIVED from keys the context already carries."""
+    if context.get("founder_response") or context.get("founder_says"):
+        return _REMEMBER_ASK
+    return ""
+
+
 def _founder_answer_text(answer):
     """The founder's answer, as lines the decider can read.
 
@@ -2397,6 +2452,7 @@ def render_decide_prompt(context):
         "founder_response": _founder_answer_text(
             context.get("founder_response")),
         "founder_says": _founder_says_text(context.get("founder_says")),
+        "remember_ask": _remember_ask(context),
         # DERIVED, NOT A NEW CONTEXT KEY: the mission either has checks or
         # it does not, and _decision_context already carries them. Empty
         # -> Shadow is asked to write them; otherwise this renders to the

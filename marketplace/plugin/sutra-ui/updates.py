@@ -66,6 +66,7 @@ INSTALLING THE DESKTOP UPDATE, and why it looks the way it does:
 import contextlib
 import fcntl
 import hashlib
+import http.client
 import json
 import os
 import platform
@@ -91,6 +92,12 @@ higher desktop release, or users still on the old feed would be trapped on it
 DESKTOP_REPO = os.environ.get("SUTRA_UI_DESKTOP_REPO", "sankalpasawa/sutra")
 PLUGIN_REPO = os.environ.get("SUTRA_UI_PLUGIN_REPO", "sankalpasawa/sutra")
 NET_TIMEOUT = 15
+# Everything a GitHub read can throw when the network misbehaves. http.client's
+# HTTPException is NOT an OSError: a connection that drops part-way through a
+# body raises IncompleteRead, and before 2026-10-07 that escaped every handler
+# here and reached the panel as a bare "/api/updates -> 500" (seen on Windows,
+# on a flaky link). Pinned by test_update_check_network.py.
+NET_ERRORS = (urllib.error.URLError, http.client.HTTPException, ValueError, OSError)
 # Where the release API and the deterministic per-tag download URLs live. The
 # defaults are GitHub; a test harness points both at a local server so the
 # whole lane -- check, stage, arm, helper swap -- runs against fixture releases
@@ -215,7 +222,9 @@ def _latest_desktop():
     """The newest desktop release, or an {'error': ...}. Never raises."""
     try:
         rel = _get_json("%s/repos/%s/releases/latest" % (RELEASE_API, DESKTOP_REPO))
-    except (urllib.error.URLError, ValueError, OSError) as exc:
+        if not isinstance(rel, dict):
+            raise ValueError("unexpected release payload")
+    except NET_ERRORS as exc:
         return {"error": "could not reach GitHub: %s" % exc}
     tag = rel.get("tag_name") or ""
     version = _TAG_RE.match(tag).group(1) if _TAG_RE.match(tag) else None
@@ -319,8 +328,11 @@ def _latest_plugin():
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "sutra-ui-updater"})
         with urllib.request.urlopen(req, timeout=NET_TIMEOUT) as r:
-            return json.loads(r.read().decode("utf-8")).get("version"), None
-    except (urllib.error.URLError, ValueError, OSError) as exc:
+            got = json.loads(r.read().decode("utf-8"))
+        if not isinstance(got, dict):
+            raise ValueError("unexpected plugin.json payload")
+        return got.get("version"), None
+    except NET_ERRORS as exc:
         return None, "could not reach GitHub: %s" % exc
 
 
@@ -519,7 +531,9 @@ def _fetch_dmg(url, dmg, want_bytes=0):
                 last = "the part-file on disk did not match the release; starting again"
             else:
                 last = "the server refused the download: %s" % exc
-        except (urllib.error.URLError, OSError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:
+            # IncompleteRead included: a body cut mid-read is a dropped
+            # connection, so it is resumed like one rather than failing the stage.
             last = "the connection dropped: %s" % exc
         else:
             got = dmg.stat().st_size
@@ -551,7 +565,7 @@ def _published_sha256(url):
         req = urllib.request.Request(url, headers={"User-Agent": "sutra-ui-updater"})
         with urllib.request.urlopen(req, timeout=NET_TIMEOUT) as r:
             return r.read(4096).decode("utf-8").split()[0].strip()
-    except (urllib.error.URLError, OSError, IndexError, UnicodeDecodeError):
+    except NET_ERRORS + (IndexError,):
         return None
 
 
@@ -1898,6 +1912,22 @@ def pending_state():
     return out
 
 
+def _guarded(component, fn, **fallback):
+    """fn(), or a row that says the check failed. Never raises."""
+    try:
+        return fn()
+    except Exception as exc:  # noqa: BLE001 -- the whole point
+        return dict(fallback, component=component,
+                    error="the check failed: %s: %s" % (type(exc).__name__, exc))
+
+
 def all_state():
-    return {"desktop": desktop_state(), "plugin": plugin_state(),
-            "staged": pending_state()}
+    """What GET /api/updates returns. NEVER RAISES: one component failing is
+    that component's row saying "check failed", not a 500 that blanks the
+    whole Updates screen (2026-10-07, Windows). NET_ERRORS handles the causes
+    known today; this is the floor under the ones nobody has met yet."""
+    return {
+        "desktop": _guarded("desktop", desktop_state, managed=True, installed=None),
+        "plugin": _guarded("plugin", plugin_state, managed=True, installed=None),
+        "staged": _guarded("staged", pending_state, pending=False),
+    }

@@ -289,7 +289,73 @@ def check_citations_unchanged(new_text, original):
     return True
 
 
-def propose_article(item_id, draft, instruction, model=None):
+LENGTH_DEFAULT_RULE = ('Keep the article\'s length in the same range it came in. Cutting real '
+                       'explanation to "tidy up" is not this job.')
+
+# Same discipline as readable.py's cut-round loop (seo_agent/write/readable.py), for the same
+# reason: a REWRITE TOLD TO HIT A NUMBER IS NOT THE SAME AS A REWRITE THAT DID. The default prompt
+# above explicitly tells the model NOT to change length -- correct when the feedback is about tone,
+# wrong and actively counterproductive when the feedback IS a length request. Before this, the one
+# lever a person had for "make this 1,000 words" on a finished article was typing the same request
+# into chat again and again, each time getting a fresh style pass that was told, in the prompt
+# itself, to leave the length alone. ONE extra round, bounded, because this editor is cheaper than
+# readable's whole-article rewrite was never the question -- not recomputing the gap off the LAST
+# round's own output was.
+LENGTH_CEILING_PCT = 1.10
+LENGTH_FLOOR_PCT = 0.85
+LENGTH_MAX_ROUNDS = 2
+LENGTH_MIN_PROGRESS = 20
+
+
+# A NUMBER IN THE INSTRUCTION IS A LENGTH REQUEST, NOT STYLE FEEDBACK (owner, 2026-10-07: "even
+# when I explicitly ask for a 1,000-word blog, it continues to generate 1,800+ words despite
+# repeated feedback"). Shared by both doors onto propose_article -- the chat's edit_article tool
+# and the Library screen's own "AI article" box (agents_api.py api_library_ai_article) -- because a
+# person typing "make this 1,000 words" means the same thing through either one.
+# (?<!\d) stops the engine re-trying from a digit it already consumed: without it, "1000 words"
+# (no comma -- completely normal phrasing) matched the SUBSTRING "000" and silently parsed as 0,
+# because \d{1,3} is free to start mid-number once the full-length attempt at position 0 fails.
+# Caught by this file's own test suite, not by eye -- that is exactly the class of bug a "the
+# number looked right" review misses.
+_WORD_TARGET = re.compile(r"(?<!\d)(\d{1,3}(?:,\d{3})*|\d+)\s*[- ]?words?\b", re.I)
+
+
+def parse_word_target(instruction):
+    """The LAST number-of-words mentioned, so "it's 1,800 now, make it 1,000 words" takes the
+    1,000, not the 1,800 it is describing the problem with. None when no number is named."""
+    matches = _WORD_TARGET.findall(instruction or "")
+    if not matches:
+        return None
+    try:
+        return int(matches[-1].replace(",", ""))
+    except ValueError:
+        return None
+
+
+def _length_rule(now_words, target_words):
+    """What the prompt's length section says this round. None of the three outcomes contradict
+    each other across rounds, because each is computed fresh off `now_words` -- the article THIS
+    round is actually starting from, not the one the person opened with."""
+    if not target_words:
+        return LENGTH_DEFAULT_RULE
+    gap = now_words - target_words
+    tol = max(40, round(target_words * 0.05))
+    if abs(gap) <= tol:
+        return ('The reader wants this at about %s words. It already is (%s words) -- do not pad '
+                'or cut for the sake of hitting a round number.'
+                % ("{:,}".format(target_words), "{:,}".format(now_words)))
+    if gap > 0:
+        return ('THE READER WANTS THIS SHORTER: about %s words, and it is %s now -- cut roughly %s '
+                'words. This REPLACES "keep the same range": a real length change is the job this '
+                'time, not a tidy-up.'
+                % ("{:,}".format(target_words), "{:,}".format(now_words), "{:,}".format(gap)))
+    return ('THE READER WANTS THIS LONGER: about %s words, and it is %s now -- add roughly %s words '
+            'of real explanation, never padding. This REPLACES "keep the same range": a real length '
+            'change is the job this time, not a tidy-up.'
+            % ("{:,}".format(target_words), "{:,}".format(now_words), "{:,}".format(-gap)))
+
+
+def propose_article(item_id, draft, instruction, model=None, target_words=None):
     """Ask the model to rewrite the WHOLE article for style against the reader's feedback, and
     return the proposal. WRITES NOTHING.
 
@@ -297,9 +363,13 @@ def propose_article(item_id, draft, instruction, model=None):
     plus a diff, and the buffer only changes when the screen presses "Use this" -- but over the
     whole article instead of one section, so there is no splice: `proposed` IS the new draft.
 
-    Returns {"was", "proposed", "draft", "diff", "checks"}. Raises ValueError (bad id, empty
-    instruction, a heading or a source-tag drift) or InventedFigure (a new number that is in
-    neither the article nor its evidence).
+    `target_words`, when given (edit_article.py parses it off an explicit number in the person's
+    own instruction), turns on the bounded cut/expand loop described above the constants. None
+    (the default) reproduces the exact prior behaviour: one pass, told to keep the length as it is.
+
+    Returns {"was", "proposed", "draft", "diff", "checks", "length_rounds"}. Raises ValueError (bad
+    id, empty instruction, a heading or a source-tag drift) or InventedFigure (a new number that is
+    in neither the article nor its evidence).
     """
     meta = store.library_get(item_id)
     if not meta:
@@ -310,20 +380,39 @@ def propose_article(item_id, draft, instruction, model=None):
     draft = draft if isinstance(draft, str) and draft.strip() else (meta.get("draft") or "")
     if not draft.strip():
         raise ValueError("There is no article here to rewrite.")
-    prompt = sh.fill(
-        sh.load_prompt("write/edit-article"),
-        title=meta.get("title") or eb._title(draft),
-        article=draft.strip(),
-        instruction=instruction,
-        voice=sh.voice_block(),
-    )
-    raw = (model or llm.text)(prompt, ARTICLE_SYSTEM)
-    new_text = clean_section(raw, draft)
-    check_headings_unchanged(new_text, draft)
-    check_citations_unchanged(new_text, draft)
+    title = meta.get("title") or eb._title(draft)
+    voice = sh.voice_block()
+
+    def _pass(current):
+        prompt = sh.fill(sh.load_prompt("write/edit-article"), title=title, article=current.strip(),
+                         instruction=instruction, voice=voice,
+                         length_rule=_length_rule(len(current.split()), target_words))
+        raw = (model or llm.text)(prompt, ARTICLE_SYSTEM)
+        new_text = clean_section(raw, current)
+        check_headings_unchanged(new_text, current)
+        check_citations_unchanged(new_text, current)
+        return new_text
+
+    new_text = _pass(draft)
+    length_rounds = 0
+    if target_words:
+        ceiling, floor = target_words * LENGTH_CEILING_PCT, target_words * LENGTH_FLOOR_PCT
+        while length_rounds < LENGTH_MAX_ROUNDS:
+            n = len(new_text.split())
+            if floor <= n <= ceiling:
+                break
+            before = n
+            try:
+                again = _pass(new_text)
+            except Exception:  # noqa: BLE001 -- a round that fails its own guards keeps the last good text
+                break
+            length_rounds += 1
+            new_text = again
+            if abs(before - len(again.split())) < LENGTH_MIN_PROGRESS:
+                break
     checks = [check_figures(new_text, draft, meta)]
     return {"was": draft, "proposed": new_text, "draft": new_text,
-            "diff": make_diff(draft, new_text), "checks": checks}
+            "diff": make_diff(draft, new_text), "checks": checks, "length_rounds": length_rounds}
 
 
 # ---- the team ------------------------------------------------------------------------------------------

@@ -49,17 +49,21 @@ const ok = (m) => console.log("ok " + (++n) + " " + m);
   /* the real function, lifted whole -- this runs it, it does not grep it */
   const m = /function _focusedInputSelector\(\)\{[\s\S]*?\n\}/.exec(src);
   assert(m, "_focusedInputSelector must still exist in 06-render.js");
+  /* ...and the fallback it ends on (2026-10-07), lifted the same way */
+  const k = /function _inputKeySelector\(el\)\{[\s\S]*?\n\}/.exec(src);
+  assert(k, "_inputKeySelector must exist in 06-render.js");
 
   const focused = (el) => {
-    const ctx = { document: { activeElement: el } };
+    const ctx = { document: { activeElement: el }, Array };
     vm.createContext(ctx);
-    vm.runInContext(m[0] + "\n_r = _focusedInputSelector();", ctx);
+    vm.runInContext(k[0] + "\n" + m[0] + "\n_r = _focusedInputSelector();", ctx);
     return ctx._r;
   };
   const stub = (tag, attrs) => ({
     tagName: tag, id: "",
     hasAttribute: (k) => Object.prototype.hasOwnProperty.call(attrs, k),
     getAttribute: (k) => attrs[k],
+    attributes: Object.keys(attrs).map(n => ({ name: n, value: attrs[n] })),
   });
 
   assert.strictEqual(
@@ -76,8 +80,12 @@ const ok = (m) => console.log("ok " + (++n) + " " + m);
   /* unrelated fields must not have been swept up by the change */
   assert.strictEqual(focused(stub("DIV", { "data-shhomecompose": "1" })), null,
     "only inputs are tracked");
-  assert.strictEqual(focused(stub("TEXTAREA", { "data-nothing": "1" })), null,
-    "an untracked field still returns null");
+  /* EVERY FIELD WITH A HOOK IS TRACKED NOW (founder, 2026-10-07: Shadow's
+     own fields lost focus because they were not on the allow-list) */
+  assert.strictEqual(focused(stub("TEXTAREA", { "data-nothing": "1" })),
+    'textarea[data-nothing="1"]', "a field is found again by its own hooks");
+  assert.strictEqual(focused(stub("TEXTAREA", { "class": "x" })), null,
+    "a field with no id and no data-* hook still returns null");
   ok("workspace composer survives a #panes rebuild");
 }
 
