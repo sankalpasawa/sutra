@@ -653,6 +653,9 @@ function wbConversationHtml(n, m){
 function wbDeptChip(ref, name){
   return `<button type="button" class="wbchip wbto wb" data-wbopen="${wbEsc(ref)}">${wbEsc(name)}</button>`;
 }
+/* The name the organisation's helper wears on the screen, in one place. The department page (S-20) says the screen
+   will say Sutra; the J1 contract of 2026-10-05 keeps Root, and test W45 pins it. Changing this word is the whole change. */
+const WB_HELPER = "Root";
 function wbChatTurn(t, scoped){
   const dept = !scoped && t.name ? (t.dept ? wbDeptChip(t.dept, t.name) : wbChip(t.name)) : "";
   /* a stamp or a refusal carries no words of its own: the act is the line */
@@ -665,7 +668,10 @@ function wbChatTurn(t, scoped){
   const link = !t.link ? "" : t.word === "live" || t.link === "Live site"
     ? ` <button type="button" class="wbchip on wbto wb" data-wblive="${wbEsc(t.dept || "")}">Open the live site</button>`
     : ` <button type="button" class="wbchip on wbto wb" data-wbopenart="${wbEsc(wbSlug(t.link))}" data-wbdept="${wbEsc(t.dept || "")}">Open ${wbEsc(t.link)}</button>`;
-  return `<div class="turn wbturn"><div class="who who-ai">Root${dept}</div><div class="a">${wbEsc(line)}${link}` +
+  /* J1.5: the second department the owner's words named is offered, never made unasked: one chip sends the words for it */
+  const offer = t.offer && t.offer.words
+    ? ` <button type="button" class="wbchip wbto wb" data-wbsay="${wbEsc(t.offer.words)}">Set up: ${wbEsc(t.offer.label || t.offer.words)}</button>` : "";
+  return `<div class="turn wbturn"><div class="who who-ai">${WB_HELPER}${dept}</div><div class="a">${wbEsc(line)}${link}${offer}` +
     `<span class="dpchk">${wbEsc(WB_ACTS[t.msg_type] || t.msg_type)} · ${wbEsc(wbWhen(t.at))}</span></div></div>`;
 }
 /* An ask is a line with its buttons, and it says where it lives: the stamp goes
@@ -683,12 +689,12 @@ function wbChatBoxHtml(n, m){
   const inside = m.kind !== "root" && !!m.root, on = inside && st.chip[n.ref] !== false;
   const chip = !inside ? "" : on
     ? `<button type="button" class="wbchip on wbto wb" data-wbchip="off">to ${wbEsc(m.name)} &times;</button>`
-    : `<button type="button" class="wbchip wbto wb" data-wbchip="on">to Root</button>`;
+    : `<button type="button" class="wbchip wbto wb" data-wbchip="on">to ${WB_HELPER}</button>`;
   const err = st.err[k] ? `<div class="o2quiet dpq">${wbEsc(st.err[k])}</div>` : "";
   /* Root's box: once departments exist, words for one of them are the usual thing to say (found live 2026-09-28:
      "Ask Root for a department" invited a new one when the person meant the one they had) */
   const depts = ((st.chat[n.ref] || {}).departments || []);
-  const rootSay = m.kind === "root" && depts.length ? "Say it to Root, or name a department: " + depts.map(d => d.name).join(", ") : (m.say || "Say it to Root");
+  const rootSay = m.kind === "root" && depts.length ? "Say it to " + WB_HELPER + ", or name a department: " + depts.map(d => d.name).join(", ") : (m.say || "Say it to " + WB_HELPER);
   return `<div class="wbbox wb">${chip}<textarea id="wbd-ask" data-wbdraft="${wbEsc(k)}" rows="2" placeholder="${wbEsc(on ? "Say it to " + m.name : rootSay)}">${wbEsc(st.draft[k] || "")}</textarea>` +
     wbBtn("Send", `data-wbask="ask"`, "dpstamp") + err + `</div>`;
 }
@@ -1029,8 +1035,8 @@ function wbOrgHtml(n, d){
   const rn = { ref: root.ref, name: n.name };
   const pane = st.tab[root.ref] === "root";
   const head = `<div class="wb2head"><b>${wbEsc(n.name)}</b>${m.stopped ? `<span class="dpst paused">Off</span>` : ""}` +
-    (pane ? "" : wbBtn("Root settings", `data-wbtab="root"`)) + `</div>`;
-  return dpViewerShell(pane ? "Root" : "Chat", head + (pane ? wbRootPaneHtml(rn, m) : wbChatHtml(rn, m)), "wb");
+    (pane ? "" : wbBtn(WB_HELPER + " settings", `data-wbtab="root"`)) + `</div>`;
+  return dpViewerShell(pane ? WB_HELPER : "Chat", head + (pane ? wbRootPaneHtml(rn, m) : wbChatHtml(rn, m)), "wb");
 }
 /* Root's pane: what its record holds, in rows; the one switch; a way back */
 function wbRootPaneHtml(n, m){
@@ -1129,7 +1135,7 @@ async function wbPost(ref, tail, body, key, at){
 if (typeof document !== "undefined" && document.addEventListener){
   const WB_SEL = "[data-wbtab],[data-wbengine],[data-wbart],[data-wbpane],[data-wbdecide],[data-wbstop],[data-wbresume]," +
     "[data-wbgoal],[data-wbask],[data-wbputback],[data-wbfn],[data-wbfound],[data-wbhold],[data-wbenv]," +
-    "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost],[data-wbopen],[data-wblive],[data-wbopenart]";
+    "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost],[data-wbopen],[data-wblive],[data-wbopenart],[data-wbsay]";
   /* capture phase: a click on one of 20-dept.js's own rows hands the viewer
      back to it BEFORE that file's handler paints */
   document.addEventListener("click", (ev) => {
@@ -1202,6 +1208,11 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (ds.wbstop !== undefined){ wbPost(ref, "stop"); return; }
     if (ds.wbresume !== undefined){ wbPost(ref, "resume"); return; }
     if (ds.wbgoal !== undefined){ const k = ref + ":goal"; wbPost(ref, "goal", { text: st.draft[k] || "" }, k); return; }
+    if (ds.wbsay !== undefined){
+      /* an offer's chip: its words go to the front door as the person's own, about no department */
+      const m = st.map[ref];
+      wbPost(ref, "ask", { text: ds.wbsay }, null, (wbRt(m) && m.root && m.root !== ref) ? m.root : ref).then(() => wbAgain(ref)); return;
+    }
     if (ds.wbask !== undefined){
       if (String(ds.wbask).indexOf("fn:") === 0){
         /* said in one function's own chat: to this department, carrying the function (founder, 2026-09-29) */

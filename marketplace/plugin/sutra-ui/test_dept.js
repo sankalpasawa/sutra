@@ -2768,6 +2768,23 @@ test("J2: Agent activity shows function exchanges and not hidden reasoning", () 
   assert.ok(html.indexOf('data-dpj2stop="1"') !== -1, "ready work can be stopped");
 });
 
+test("J2: the card says the state in plain words, shows done-when, and offers Start again after a Stop", () => {
+  const c = fresh(), st = c.dpS();
+  st.sel = "r4";
+  st.activity = { ref:"r4", events:[] };
+  st.j2 = { ref:"r4", state:"bargaining", step:3, journey:"J2.c", enabled:true, done_when:"Every page <checked> and live" };
+  let html = c.dpActivityHtml();
+  assert.ok(html.indexOf("Priority is answering the proposal") !== -1, "the state in a person's words");
+  assert.ok(html.indexOf("Done when: Every page &lt;checked") !== -1, "done-when, escaped");
+  assert.ok(html.indexOf('data-dpj2stop="1"') !== -1 && html.indexOf("data-dpj2start") === -1, "running work can be stopped");
+  st.j2 = { ref:"r4", state:"stopped", step:3, journey:"J2.c", enabled:true };
+  html = c.dpActivityHtml();
+  assert.ok(/data-dpj2start="1">Start again</.test(html) && html.indexOf("data-dpj2stop") === -1, "a stopped cycle can be started again");
+  st.j2 = { ref:"r4", state:"done", step:8, journey:"J2.h", enabled:true, goal_reached:true };
+  html = c.dpActivityHtml();
+  assert.ok(html.indexOf("Goal reached") !== -1 && html.indexOf("data-dpj2") === -1, "a reached goal has nothing to press");
+});
+
 test("J2: Agent activity has start and stop controls wired to its scoped API", async () => {
   const c = fresh();
   c.S.screen = "org2";

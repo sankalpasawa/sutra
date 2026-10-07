@@ -4,6 +4,21 @@
 
 ## Unreleased
 
+### J1 and J2 as the department page describes them
+
+Build record: `docs/superpowers/plans/2026-10-07-j1-j2-published-design-prd.md`.
+
+- **A department is born on a real model again.** Setup's Shape step failed every live founding: the model named its template as `{"id": "website", "version": "1"}` and the check wanted `{"id": "department/website", "version": 1}`. The route and the template reference now follow from the kind, in code.
+- **Root's questions are the AI's.** The converse step is a model step with an instruction in `engine-templates/setup.json`; the keyword test and the three fixed questions remain only as its offline draft. `just do it` still ends the questions.
+- **An answer reaches the open question** when the organisation already has a department, and when the answer starts with "yes" or "no".
+- **Two departments asked for:** the first is made with its own goal; the second is offered as a chip in Root's tell.
+- **A Setup that cannot finish says so** and closes the Request, as does a refused preview. The birth is told once (the tell was written twice in 2 of 13 foundings).
+- **A CLI error reply counts as the model being away**, so the 30, 120 and 600 second waits apply.
+- **J2 is the department's own life, on its board.** At the hand-over the cycle starts by itself: Identity finds the identity good enough or asks; Adaptation proposes the workflows (the Library's line, or its own); Priority grants, refuses or counters inside the board's bounds; a refusal or a bound goes to Identity, and what Identity cannot settle is one ask; Root's check registers the workflow on the department's record. No workflow runs before that.
+- **The J2 ledger is written where the work happens**: the bargain's posts, each run's slot, start, filed version and end, Audit's reading, and `goal.reached` when done-when holds.
+- **The organic kind's line is no longer stamped by the owner**; Priority and Root's check pass it (S-18).
+- `J2_FLOW_V1` is on unless set to `0`, `false` or `off`; off, a department runs as it did before. Stop and the department's own Start agree. `/api/departments/{ref}/j2…` answers beside `/api/dept/{ref}/j2…`, with `/j2/answer` and `/j2/resume`.
+
 ## 2.306.24 (2026-10-07)
 
 ### Shadow learns its memory and personality
