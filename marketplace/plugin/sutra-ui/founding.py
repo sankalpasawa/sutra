@@ -85,7 +85,7 @@ def found_structure(org_name, owner="the owner"):
     return {"org": org, "root": root, "created": created}
 
 
-def spawn(root_ref, name, kind, goal, owner="the owner"):
+def spawn(root_ref, name, kind, goal, owner="the owner", goal_context=None, template_ref=None, route="template"):
     """Root sets up a department: the child under Root, its charter, its functions' templates from the Library, its record,
     and its goal, which makes it run. Asking for the same name again finds it and makes nothing."""
     rd = W.dept(root_ref)
@@ -98,22 +98,52 @@ def spawn(root_ref, name, kind, goal, owner="the owner"):
     if not name or not goal:
         raise ValueError("a department has a name and a goal")
     ref, new = ensure(root_ref, name, "Root sets up %s" % name)
-    if new or not W.dept(ref):
-        k = W.KINDS[kind]
+    existing = W.dept(ref)
+    had_record = bool(existing)
+    had_goal = bool(W.requests(ref)) if had_record else False
+    context = goal_context or {"messages": [{"actor": "user", "text": goal}]}
+    operation = "found:%s:%s" % (context.get("id") or ref, context.get("selected_revision") or "latest")
+    if not new and not had_record:
+        raise ValueError("the registry and department record disagree for %s" % name)
+    if had_record:
+        if existing.get("kind") != kind:
+            raise ValueError("an incompatible department already has the name %s" % name)
+        if existing.get("template_ref") and existing.get("template_ref") != template_ref:
+            raise ValueError("the existing department uses another template")
+        if had_goal:
+            prior_operation = (existing.get("founding") or {}).get("operation_id")
+            same_operation = prior_operation == operation
+            return {"ref": ref, "name": name, "kind": kind, "goal": goal, "created": False,
+                    "operation_id": prior_operation, "existing": not same_operation}
+    k = W.KINDS[kind]
+    if new:
         charter(ref, goal, [k["done"]], k["rules"], "Write %s's charter" % name)
-        picks = {}
-        tpl = k.get("functions_template") or TEMPLATE      # the kind says which Library template its functions run (TPL-1)
-        import function_templates as FT
-        for fn in FUNCTIONS:
-            tid = "%s/%s" % (fn, tpl)
-            if FT.picked(ref).get(fn) != tid:              # the Default needs no ask: a department runs it until picked
-                _apply("org.template", {"ref": ref, "function": fn, "template": tid}, "%s runs the %s template" % (fn.title(), tpl))
-            picks[fn] = tid
+    picks = {}
+    tpl = k.get("functions_template") or TEMPLATE
+    import function_templates as FT
+    for fn in FUNCTIONS:
+        tid = "%s/%s" % (fn, tpl)
+        if FT.picked(ref).get(fn) != tid:
+            _apply("org.template", {"ref": ref, "function": fn, "template": tid}, "%s runs the %s template" % (fn.title(), tpl))
+        picks[fn] = tid
+    if not had_record:
         d, _ = W.create(ref, name, None, owner=owner, parent=root_ref, kind=kind)
-        d["templates"] = picks
-        d["org"] = rd.get("org") or {}
-        d["root"] = root_ref
-        W.save_dept(ref, d)
+    else:
+        d = existing
+    checkpoints = ["root", "child", "functions", "rules_limits", "goal_context", "born_engines"]
+    d.update({"templates": picks, "org": rd.get("org") or {}, "root": root_ref, "template_ref": template_ref,
+              "initial_goal_context": context,
+              "founding": {"operation_id": operation, "checkpoints": checkpoints}})
+    W.save_dept(ref, d)
+    if not had_goal:
         W.give_goal(ref, goal)
-        new = True
-    return {"ref": ref, "name": name, "kind": kind, "goal": goal, "created": bool(new)}
+    d = W.dept(ref)
+    events = list(d.get("events") or [])
+    if not any(e.get("kind") == "j2_ready" for e in events):
+        events.append({"kind": "j2_ready", "route": route or ("organic" if kind == "organic" else "template")})
+    d["events"] = events
+    d["founding"] = {"operation_id": operation,
+                     "checkpoints": checkpoints + ["j2_ready"]}
+    W.save_dept(ref, d)
+    return {"ref": ref, "name": name, "kind": kind, "goal": goal, "created": bool(new or not had_record or not had_goal),
+            "existing": False, "operation_id": operation}

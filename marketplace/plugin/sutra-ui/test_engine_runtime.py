@@ -148,7 +148,9 @@ class Model:
             existing = prompt.split("DEPARTMENTS THIS ROOT ALREADY HAS: ", 1)[1].split("\n", 1)[0] if "ALREADY HAS: " in prompt else ""
             if name in existing and not self.same_name:
                 name += " 2"                                  # a new department takes a name none of the existing ones has
-            return {"name": name, "kind": kind, "goal": words}, 0.02, "model"
+            route = "organic" if kind == "organic" else "template"
+            return {"name": name, "kind": kind, "goal": words, "purpose": words, "route": route,
+                    "template_ref": {} if route == "organic" else {"id": "department/" + kind, "version": 1}}, 0.02, "model"
         if sid == "audit.judge":
             return {"ok": not self.findings, "findings": list(self.findings)}, 0.02, "model"
         if sid == "check.rules":
@@ -1338,7 +1340,7 @@ class TestOrganicRootAndShape(Base):
         tie = next(s for s in v["steps"] if s["id"] == "coord.tie")
         self.assertEqual((tie["rung"], tie["soft"], tie["last"]["by"]), ("C0", True, "model"))
 
-    def test_61_root_spawns_a_department_from_the_owners_words_an_ask_and_a_stamp(self):
+    def test_61_root_spawns_a_department_from_clear_owner_words_without_a_default_stamp(self):
         W, R = self.W, self.R
         reg = tempfile.mkdtemp(prefix="engine-runtime-registry-")
         prior = {k: os.environ.get(k) for k in ("SUTRA_NATIVE_HOME", "SUTRA_UI_PROPOSALS")}
@@ -1368,11 +1370,7 @@ class TestOrganicRootAndShape(Base):
             W.owner_ask(root, words)
             W.run_until_idle(root, limit=200)
             self.assertEqual(len(W.versions(root, "Request")), 1, "Identity filed the request")
-            a = next(x for x in W.asks(root) if x["kind"] == "setup" and x["status"] == "pending")
-            self.assertIn("Set up a department", a["text"])
-            self.assertEqual(W.versions(root, "Department"), [], "nothing is set up before the stamp: Root's rule")
-            W.decide_ask(root, a["id"], True)
-            W.run_until_idle(root, limit=200)
+            self.assertFalse([x for x in W.asks(root) if x["kind"] == "setup" and x["status"] == "pending"])
             dep = W.latest(root, "Department")
             self.assertIsNotNone(dep, "Root's engine filed the department")
             child = next(d for d in W.list_depts() if d.get("parent") == root)
@@ -1383,11 +1381,11 @@ class TestOrganicRootAndShape(Base):
             self.assertTrue(W.versions(child["ref"], "Site plan"), "the child ran its goal")
             self.assertTrue(any(x["kind"] == "publish" for x in W.asks(child["ref"])), "and asks before its first publish")
             rows = {r["step"]: r["by"] for r in R.step_rows(root) if r["engine"] == "Setup"}
-            self.assertEqual(rows, {"setup.read": "code", "setup.shape": "model", "setup.make": "code", "setup.file": "code"})
+            self.assertEqual(rows, {"setup.read": "code", "setup.converse": "code", "setup.shape": "model",
+                                    "setup.make": "code", "setup.file": "code"})
             acts = [(p["src"], p["dst"][0], p["msg_type"]) for p in R.board(root)]
-            self.assertEqual(acts[:4], [("Owner", "Identity", "request"), ("Identity", "Owner", "inform"),
-                                        ("Identity", "Owner", "request"), ("Owner", "Identity", "accept-proposal")])
-            self.assertEqual(R.steps_view(root, "Setup")["steps"][1]["last"]["by"], "model")
+            self.assertEqual(acts[:2], [("Owner", "Identity", "request"), ("Identity", "Owner", "inform")])
+            self.assertEqual(R.steps_view(root, "Setup")["steps"][2]["last"]["by"], "model")
         finally:
             for k, v in prior.items():
                 if v is None:
@@ -1446,33 +1444,22 @@ class TestTheFrontDoor(Base):
     """The person speaks with Root (founder, 2026-09-28): Root's Identity hands his words to the department they are about,
     the department's answers come back onto Root's board, and a stamp, Stop and Start go the same way."""
 
-    def test_84_root_sets_up_a_department_for_any_goal_the_default_line_when_no_kind_fits(self):
-        """TPL-1 (founder, 2026-09-29): the words to Root pick the kind whose use case fits; words that fit no kind get
-        the default kind: one Do engine that files a Result for each ask, the default function templates; the record
-        carries the line and the artifacts, and everything reads the record."""
+    def test_84_root_uses_the_explicit_organic_route_when_no_template_fits(self):
+        """J1.4: no fitting Library template produces an organic child with no born work engines."""
         W, R = self.W, self.R
         root, child = self.structure()
         import function_templates as FT
         self.assertEqual(W.dept(child)["engines"], ["Plan", "Write", "Check", "Publish"], "a website goal: the website line, on the record")
         self.assertEqual(FT.picked(child)["priority"], "priority/product-build")
-        self.M.kind = "default"                              # Setup's agent picks the kind by use case; the harness stands in for it
+        self.M.kind = "organic"
         W.owner_ask(root, "Start a new department: answer the letters patients send about our fees, in plain words, every day.")
-        W.run_until_idle(root, limit=200)
-        a = next(x for x in W.asks(root) if x["kind"] == "setup" and x["status"] == "pending")
-        W.decide_ask(root, a["id"], True)                  # Root's rule: a new department is stamped by the owner
         W.run_until_idle(root, limit=200)
         kids = [d for d in W.list_depts() if d.get("parent") == root]
         self.assertEqual(len(kids), 2, "a second department under the same Root")
         other = [d for d in kids if d["ref"] != child][0]
-        self.assertEqual((other["kind"], other["engines"], other["artifacts"]), ("default", ["Do"], ["Brief", "Result"]))
-        self.assertEqual(FT.picked(other["ref"])["priority"], "priority/default", "the default kind runs the default function templates")
-        self.assertEqual([e[0] for e in W.engines_of(other)], ["Do"], "the line is read from the record")
-        self.assertEqual(R.coordination(other["ref"])["line"], ["Do"], "and so is Coordination's table")
-        W.run_until_idle(other["ref"], limit=200)
-        self.assertTrue(W.versions(other["ref"], "Result"), "Do answered the Brief and filed the Result")
-        lines = [t["line"] for t in R.chat_view(other["ref"])["turns"]]
-        self.assertTrue(any(line.startswith("Result v1 is filed") for line in lines), lines)
-        self.assertFalse(any("live" in line for line in lines), "nothing went live: a Result is filed")
+        self.assertEqual((other["kind"], other["engines"], other["artifacts"]), ("organic", [], ["Brief"]))
+        self.assertEqual(FT.picked(other["ref"])["priority"], "priority/product-build")
+        self.assertEqual(R.coordination(other["ref"])["line"], [])
 
     def test_95_a_second_department_takes_a_new_name_and_an_existing_name_is_said_back_with_the_words_handed_on(self):
         """Run 2 finding 28 (2026-09-29): a second department was stamped, Setup shaped the name of the one that existed,
@@ -1482,19 +1469,12 @@ class TestTheFrontDoor(Base):
         root, child = self.structure()
         W.owner_ask(root, "Start a new department: a second website for Meadow Clinic, for its pharmacy.")
         W.run_until_idle(root, limit=200)
-        a = next(x for x in W.asks(root) if x["kind"] == "setup" and x["status"] == "pending")
-        self.assertTrue(a["text"].startswith("Set up a department for: Start a new department: a second website for Meadow Clinic, for its pharmacy."), a["text"])
-        W.decide_ask(root, a["id"], True)
-        W.run_until_idle(root, limit=200)
         kids = [d for d in W.list_depts() if d.get("parent") == root]
         self.assertEqual(sorted(d["name"] for d in kids), ["Meadow Clinic Website", "Meadow Clinic Website 2"], "told the names it has, the agent gave a new one")
         self.assertIn("Meadow Clinic Website", [p for s, p in self.M.prompts if s == "setup.shape"][-1].split("ALREADY HAS: ", 1)[1])
         self.M.same_name = True
         before = len(R.board(child))
         W.owner_ask(root, "Start a new department: a third website for Meadow Clinic.")
-        W.run_until_idle(root, limit=200)
-        a = next(x for x in W.asks(root) if x["kind"] == "setup" and x["status"] == "pending")
-        W.decide_ask(root, a["id"], True)
         W.run_until_idle(root, limit=200)
         self.assertEqual(len([d for d in W.list_depts() if d.get("parent") == root]), 2, "no third department: the name exists")
         lines = [t["line"] for t in R.chat_view(root)["turns"]]
@@ -1518,9 +1498,6 @@ class TestTheFrontDoor(Base):
             E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
         root = founding.found_structure(org)["root"]
         self.W.owner_ask(root, "Start a website department for %s: what we treat, our doctors, how to book." % org)
-        self.W.run_until_idle(root, limit=200)
-        a = next(x for x in self.W.asks(root) if x["kind"] == "setup" and x["status"] == "pending")
-        self.W.decide_ask(root, a["id"], True)
         self.W.run_until_idle(root, limit=200)
         child = next(d for d in self.W.list_depts() if d.get("parent") == root)
         self.W.run_until_idle(child["ref"], limit=200)

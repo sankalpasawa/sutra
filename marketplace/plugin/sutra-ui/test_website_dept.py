@@ -157,7 +157,8 @@ def test_the_trace_of_the_live_site_reaches_the_owners_words(W):
 
 def test_found_gives_an_org_its_one_root_and_root_sets_up_the_website_department_the_owner_asks_for(W, tmp_path, monkeypatch):
     """Founding is organic (founder, 2026-09-28): the organisation and its one Root, On; Root sets up the department the
-    owner asks for, after the owner's stamp, with the Library's templates picked. Offline: every soft step runs its draft."""
+    owner asks for, automatically unless an inherited ask rule matches, with the Library's templates picked. Offline:
+    every soft step runs its draft."""
     monkeypatch.setenv("SUTRA_UI_PROPOSALS", str(tmp_path / "proposals"))
     monkeypatch.delenv("SUTRA_ENGINE_RUNTIME", raising=False)          # founding is never the old way
     import founding
@@ -189,10 +190,7 @@ def test_found_gives_an_org_its_one_root_and_root_sets_up_the_website_department
     again = c.post("/api/native/found", json={"org": "City Care Hospital"}).json()
     assert again["root"] == root and again["created"] is False, "one Root for one structure"
     W.run_until_idle(root, limit=200)
-    a = next(x for x in W.asks(root) if x["kind"] == "setup" and x["status"] == "pending")
-    assert "Set up a department" in a["text"], "Root's rule: a new department is stamped by the owner"
-    assert c.post("/api/native/%s/asks/%s" % (root, a["id"]), json={"approve": True}).json()["status"] == "stamped"
-    W.run_until_idle(root, limit=200)
+    assert not [x for x in W.asks(root) if x["kind"] == "setup" and x["status"] == "pending"]
     child = next(d for d in W.list_depts() if d.get("parent") == root)
     assert child["kind"] == "website" and child["runtime"] == 2 and domains[child["ref"]]["parent_ref"] == root if child["ref"] in domains else True
     import function_templates as FT

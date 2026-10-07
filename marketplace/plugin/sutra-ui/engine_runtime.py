@@ -696,13 +696,15 @@ def sweep(ref):
     d = W.dept(ref)
     if not d or d.get("stopped"):
         return []
+    if d.get("kind") == "root":
+        _reconcile_j1_tells(ref)
     ctx = _coord_ctx(ref, d)
     closed = _ask_rule(ref, "coord.bounds", key="bounds@%s" % W.now(), ctx=ctx)["closed"]
     _ask_rule(ref, "coord.alarm", key="alarm@%s" % W.now(), ctx=ctx)
     return closed
 
 
-def request(ref, text, about=None):
+def request(ref, text, about=None, message_id=None):
     """The owner's words reach the department as a request to Identity, on the board. On a Root they arrive at the front
     door (the word front), with the department they are about when the person said them from inside one (the chip)."""
     text = " ".join(str(text or "").split())
@@ -714,7 +716,11 @@ def request(ref, text, about=None):
     first = W.artifacts_of(d)[0]              # the Brief; on a Root, a Request
     with W._lock(ref):
         reqs = W.requests(ref)
-        rq = {"id": "q-" + uuid.uuid4().hex[:8], "text": text, "at": W.now()}
+        rid = str(message_id or ("q-" + uuid.uuid4().hex[:8]))
+        prior = next((q for q in reqs if q.get("id") == rid), None)
+        if prior:
+            return prior, None
+        rq = {"id": rid, "text": text, "at": W.now()}
         reqs.append(rq)
         W._write(W.ddir(ref) / "requests.json", reqs)
     front = d.get("kind") == "root"
@@ -798,6 +804,8 @@ def next_due(ref, peek=False):
     d = W.dept(ref)
     if not d:
         return None, None, "no department"
+    if not peek and d.get("kind") == "root":
+        _reconcile_j1_tells(ref)
     if d.get("stopped"):
         return None, None, "stopped"
     ctx = _coord_ctx(ref, d)
@@ -1703,6 +1711,10 @@ def identity_gate(ctx, step, item):
         reads = ctx["def"].get("reads") or "Build"
         may_read, about = [reads], {"art": reads, "v": inp["v"]}
     elif name == "Setup":
+        matching = ({"id": "legacy-setup-stamp", "version": 1} if not _j1_enabled() else
+                    next((r for r in _effective_rules(ref, ctx["dept"]) if _rule_applies_to_birth(r)), None))
+        if matching is None:
+            return "admit", None
         words = W.read_files(ref, "Request", inp["v"]).get("request.md", "").strip()
         kind = "setup"
         # one line, not the whole goal back (found live 2026-09-29: a five-line ask, stamped blind)
@@ -1719,8 +1731,12 @@ def identity_gate(ctx, step, item):
             p = post(ref, "Identity", OWNER, "request",
                      {"word": kind, "objective": objective, "output": "a stamp or a refusal", "may_read": may_read,
                       "boundaries": "this one %s" % kind}, about=about)
-            W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": kind, "engine": name, "slot": slot, "text": text,
-                             "status": "pending", "created": W.now(), "thread": p["thread"] if p else None})
+            ask = {"id": "a-" + uuid.uuid4().hex[:8], "kind": kind, "engine": name, "slot": slot, "text": text,
+                   "status": "pending", "created": W.now(), "thread": p["thread"] if p else None}
+            if name == "Setup":
+                ask["rule"] = {"id": matching.get("id"), "version": matching.get("version")}
+                ask["request_v"] = inp["v"]
+            W._put_ask(ref, ask)
             return "wait", "waits for the stamp"
     if a["status"] == "pending":
         return "wait", "waits for the stamp"
@@ -1730,6 +1746,43 @@ def identity_gate(ctx, step, item):
                                      chain=W._chain_of(ref, ctx["def"]["reads"], inp["v"])))
         return "refuse", "refused by the owner"
     return "admit", None
+
+
+def _effective_rules(ref, dept):
+    """Local rules followed by rules on the registry ancestors, with stable provenance."""
+    rules = [dict(r) for r in dept.get("rules") or []]
+    try:
+        import placement_engine as E
+        domains = E.load_domains()
+        cur, seen = ref, set()
+        while cur and cur not in seen:
+            seen.add(cur)
+            for charter in E.charters_for(cur):
+                view = E.charter_view(charter) or {}
+                for i, rule in enumerate(view.get("rules") or []):
+                    if not isinstance(rule, dict):
+                        continue
+                    inherited = dict(rule)
+                    inherited.setdefault("id", "%s:rule:%d" % (charter.get("id"), i + 1))
+                    inherited.setdefault("version", view.get("schema") or 1)
+                    if not any(r.get("id") == inherited["id"] for r in rules):
+                        rules.append(inherited)
+            cur = (domains.get(cur) or {}).get("parent_ref")
+    except Exception:  # local materialized rules remain authoritative if the registry cannot be read
+        pass
+    return rules
+
+
+def _rule_applies_to_birth(rule):
+    if rule.get("tag") != "ask":
+        return False
+    scope = rule.get("applies_to")
+    if isinstance(scope, str):
+        scope = [scope]
+    if isinstance(scope, list):
+        return bool({"department_birth", "setup", "*"} & {str(x) for x in scope})
+    line = str(rule.get("line") or "")
+    return bool(re.search(r"\b(new department|make|create|set up|anything|approval first|approve first)\b", line, re.I))
 
 
 def priority_envelope(ctx, step, item):
@@ -1858,6 +1911,67 @@ def _file_words(ref, d, words, note):
         return W.add_version(ref, "Request", {"request.md": words + "\n"}, [{"ask": words, "at": W.now()}], "owner",
                              {"ok": True, "notes": [note]})
     return _file_brief(ref, d, words, note)
+
+
+def _j1_enabled():
+    return os.environ.get("J1_FLOW_V1", "1").strip().lower() not in ("0", "false", "off")
+
+
+def _j1_record(ref):
+    state = W._read(W.ddir(ref) / "j1-state.json", None)
+    if isinstance(state, dict):
+        return state
+    cur = W.latest(ref, "Request")
+    if not cur:
+        return None
+    try:
+        row = json.loads(W.read_files(ref, "Request", cur["v"]).get("request.json") or "null")
+    except (TypeError, ValueError):
+        row = None
+    return row if isinstance(row, dict) else None
+
+
+def _j1_clear(messages):
+    user = [m["text"] for m in messages if m.get("actor") == "user"]
+    if user and re.fullmatch(r"\s*just do it[.!]?\s*", user[-1], re.I):
+        if not " ".join(user[:-1]).strip():
+            return False, False
+        user, defaults = user[:-1], True
+    else:
+        defaults = False
+    useful = " ".join(user)
+    named = bool(re.search(r"\b(department|website|site|app|software|system|service|plan|chart|report|laboratory|game|tool)\b", useful, re.I))
+    outcome = bool(re.search(r"\b(for|that|to|so that|which|about)\b", useful, re.I)) or len(useful.split()) >= 10
+    return (bool(named) if defaults else bool(named and outcome and len(useful.split()) >= 7)), defaults
+
+
+def _j1_file_words(ref, d, words, note, message_id=None):
+    """Append one user message to the active J1 Request and file its next version."""
+    prior = _j1_record(ref)
+    if not prior or prior.get("status") in ("completed", "refused", "failed"):
+        prior = {"id": "j1-" + uuid.uuid4().hex[:12], "messages": [], "status": "collecting",
+                 "outstanding_question": None, "defaults_applied": []}
+    messages = list(prior.get("messages") or [])
+    mid = str(message_id or ("m-" + uuid.uuid4().hex[:12]))
+    if not any(m.get("id") == mid for m in messages):
+        messages.append({"id": mid, "actor": "user", "text": words, "at": W.now()})
+    clear, defaults = _j1_clear(messages)
+    questions = list((engine_def("Setup") or {}).get("clarification_questions") or [])
+    asked = sum(1 for m in messages if m.get("actor") == "root")
+    question = None if clear else (questions[min(asked, len(questions) - 1)] if questions else "What should this department achieve?")
+    if question:
+        messages.append({"id": "m-" + uuid.uuid4().hex[:12], "actor": "root", "text": question, "at": W.now()})
+    record = dict(prior, messages=messages, status="clear" if clear else "waiting",
+                  outstanding_question=question,
+                  defaults_applied=["department name from the organisation", "Priority limits from the selected Library template"] if defaults else [])
+    if re.search(r"\b(?:and|plus)\s+(?:a\s+)?(?:separate|another|second)\b", " ".join(m["text"] for m in messages if m.get("actor") == "user"), re.I):
+        record["suggested_next"] = "Start the second department as a separate request"
+    body = "\n".join("%s: %s" % (m["actor"].title(), m["text"]) for m in messages) + "\n"
+    row = W.add_version(ref, "Request", {"request.md": body, "request.json": json.dumps(record, indent=2)},
+                        [{"ask": words, "at": W.now(), "message": mid}], "owner",
+                        {"ok": True, "notes": [note]})
+    W._write(W.ddir(ref) / "j1-state.json", record)
+    return row, record
 
 
 def _rule_ask(ref, slot, line, tag, words, thread, lead):
@@ -2133,8 +2247,15 @@ def identity_hand(ctx, step, item):
     wants, target, name, words, th = r["wants"], r["target"], r["name"], r["words"], p["thread"]
     ab = {"dept": target, "name": name} if target else None
     if wants == "setup":
-        row = _file_words(ref, d, words, "the owner's ask")
-        post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "filed as a request; a new department is stamped by you, so an ask follows",
+        if _j1_enabled():
+            row, conversation = _j1_file_words(ref, d, words, "the owner's ask", (p.get("payload") or {}).get("request"))
+            question = conversation.get("outstanding_question")
+            done = question or "The request is clear. Root Setup is shaping the department."
+        else:
+            row = _file_words(ref, d, words, "the owner's ask")
+            question = None
+            done = "filed as a request; a new department is stamped by you, so an ask follows"
+        post(ref, "Identity", OWNER, "inform", {"word": "question" if question else "request", "done": done,
                                                 "v": row["v"]}, thread=th)
         return {"said": "filed a request for a department: " + words, "filed": row["v"]}
     if wants in ("stamp", "refuse"):
@@ -2765,14 +2886,39 @@ def library_kinds():
 
 
 def setup_read(ctx, step, item):
-    words = W.read_files(ctx["ref"], "Request", ctx["inp"]["v"]).get("request.md", "").strip()
+    files = W.read_files(ctx["ref"], "Request", ctx["inp"]["v"])
+    words = files.get("request.md", "").strip()
+    try:
+        conversation = json.loads(files.get("request.json") or "null")
+    except (TypeError, ValueError):
+        conversation = None
+    if isinstance(conversation, dict):
+        conversation = dict(conversation, selected_revision=ctx["inp"]["v"])
+        # request.md is the readable J1 transcript ("User: ...", "Root: ...").
+        # Setup shapes the department from the person's words, not from those
+        # presentation labels or Root's clarification questions.
+        user_words = [str(m.get("text") or "").strip() for m in conversation.get("messages") or []
+                      if isinstance(m, dict) and m.get("actor") == "user"]
+        words = " ".join(w for w in user_words if w).strip() or words
     kinds = library_kinds()
     # the departments this Root already has: a new one needs a name none of them has (found live 2026-09-29: Setup shaped
     # the same name as the one that existed, made nothing and said nothing)
     existing = [c.get("name") for c in _children(ctx["ref"]) if c.get("name")]
-    return {"words": words, "facts": {"asked": bool(words), "kinds": ", ".join(kinds),
+    return {"words": words, "conversation": conversation, "facts": {"asked": bool(words), "kinds": ", ".join(kinds),
                                       "use_cases": "; ".join("%s: %s" % (k, u) for k, u in kinds.items()),
                                       "existing": ", ".join(existing) or "none"}}
+
+
+def setup_converse(ctx, step, item):
+    conversation = (ctx["bag"].get("setup.read") or {}).get("conversation") or {}
+    question = str(conversation.get("outstanding_question") or "")
+    return {"verdict": "ask" if question else "clear", "question": question, "run": not bool(question)}
+
+
+def c_setup_converse_is_valid(ctx, step, item, out):
+    ok = out.get("verdict") == "clear" and out.get("run") is True and out.get("question") == ""
+    ok = ok or (out.get("verdict") == "ask" and out.get("run") is False and bool(str(out.get("question") or "").strip()))
+    return _verdict(ok, "one question or clear", "converse must return one question or clear")
 
 
 def p_setup_shape(ctx, step, item):
@@ -2783,23 +2929,63 @@ def p_setup_shape(ctx, step, item):
             "its kind from the Library (the kind whose use case fits the words; default when none does), and its goal in one or two "
             "sentences in the owner's own words.\n"
             "THE OWNER'S WORDS: %s\nKINDS IN THE LIBRARY: %s\nEACH KIND'S USE CASE: %s\nDEPARTMENTS THIS ROOT ALREADY HAS: %s\n\n"
-            "Return ONLY a JSON object: {\"name\": str, \"kind\": str, \"goal\": str}."
+            "Return ONLY a JSON object with name, kind, goal, purpose, route, and template_ref. route is template or organic; "
+            "template_ref is {id, version} for a Library kind and {} for organic."
             % (org, org, org, got["words"], got["facts"]["kinds"], got["facts"].get("use_cases") or "", got["facts"].get("existing") or "none"))
 
 
 def d_setup_shape(ctx, step, item):
-    # the draft, when no agent is there to judge: the first build's kind; the agent's own step picks the kind by use case
     got = ctx["bag"]["setup.read"]
     org = (ctx["dept"].get("org") or {}).get("name") or ctx["dept"].get("name")
-    return {"name": "%s Website" % org, "kind": "website", "goal": got["words"]}
+    conversation = got.get("conversation") or {}
+    user = [m.get("text", "") for m in conversation.get("messages") or [] if m.get("actor") == "user"]
+    useful = " ".join(x for x in user if not re.fullmatch(r"\s*just do it[.!]?\s*", x, re.I)).strip() or got["words"]
+    website = bool(re.search(r"\b(website|web site|landing page|blog)\b", useful, re.I))
+    kind, route = ("website", "template") if website else ("organic", "organic")
+    return {"name": "%s %s" % (org.replace(" Root", ""), "Website" if website else "Department"),
+            "kind": kind, "goal": useful, "purpose": useful, "route": route,
+            "template_ref": {"id": "department/%s" % kind, "version": 1} if route == "template" else {}}
+
+
+def _reconcile_j1_tells(root_ref):
+    """Project each persisted birth summary to Root's board exactly once."""
+    for child in _children(root_ref):
+        pending = child.get("pending_final_tell")
+        if not isinstance(pending, dict) or not pending.get("operation"):
+            continue
+        operation = pending["operation"]
+        if not any((p.get("payload") or {}).get("operation") == operation for p in board(root_ref)):
+            try:
+                post(root_ref, "Identity", OWNER, "inform", pending,
+                     about={"dept": child["ref"], "name": child["name"]})
+            except Exception:  # the durable pending projection is retried by the next sweep
+                continue
+        fresh = W.dept(child["ref"]) or child
+        founding_state = dict(fresh.get("founding") or {})
+        checkpoints = list(founding_state.get("checkpoints") or [])
+        if "final_tell" not in checkpoints:
+            checkpoints.append("final_tell")
+        founding_state["checkpoints"] = checkpoints
+        fresh["founding"] = founding_state
+        fresh.pop("pending_final_tell", None)
+        W.save_dept(child["ref"], fresh)
 
 
 def setup_make(ctx, step, item):
     """Root makes the department: under itself, with its charter, its functions' templates, its record and its goal."""
     shape = ctx["bag"]["setup.shape"]
     import founding
-    made = founding.spawn(ctx["ref"], shape["name"], shape["kind"], shape["goal"], owner=ctx["dept"].get("owner") or "the owner")
-    if not made.get("created"):
+    conversation = (ctx["bag"].get("setup.read") or {}).get("conversation") or {}
+    same = next((d for d in _children(ctx["ref"]) if str(d.get("name") or "").lower() == str(shape["name"]).lower()), None)
+    if same and (same.get("kind") != shape["kind"] or (same.get("template_ref") or None) != (shape.get("template_ref") or None)):
+        base, n = shape["name"], 2
+        occupied = {str(d.get("name") or "").lower() for d in _children(ctx["ref"])}
+        while ("%s %d" % (base, n)).lower() in occupied:
+            n += 1
+        shape = dict(shape, name="%s %d" % (base, n))
+    made = founding.spawn(ctx["ref"], shape["name"], shape["kind"], shape["goal"], owner=ctx["dept"].get("owner") or "the owner",
+                          goal_context=conversation, template_ref=shape.get("template_ref") or None, route=shape.get("route"))
+    if made.get("existing"):
         # the agent named a department this Root already has: the person is told, and the words go to that department
         # as Root hands words on (found live 2026-09-29: a stamp that ended in silence)
         ref, target, name, words = ctx["ref"], made["ref"], made["name"], shape["goal"]
@@ -2807,6 +2993,21 @@ def setup_make(ctx, step, item):
                                                      "may_read": ["Brief"], "boundaries": "inside the department's goal and rules", "front": ref})
         post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "%s already exists; your words were handed to it" % name,
                                                 "dept": target, "from": name}, about={"dept": target, "name": name})
+    if not made.get("existing"):
+        child = W.dept(made["ref"]) or {}
+        engines = child.get("engines") or []
+        first = engines[0] if engines else "Adaptation will shape the first engine"
+        operation = made["operation_id"]
+        line = "%s is set up with %s. First: %s." % (made["name"], ", ".join(engines) if engines else "no born work engines", first)
+        defaults = conversation.get("defaults_applied") or []
+        if defaults:
+            line += " Defaults used: %s." % "; ".join(defaults)
+        child["pending_final_tell"] = {"word": "department", "done": line, "dept": made["ref"],
+                                       "from": made["name"], "operation": operation}
+        W.save_dept(made["ref"], child)
+        _reconcile_j1_tells(ctx["ref"])
+    state = dict(conversation, status="completed", outstanding_question=None, department=made["ref"])
+    W._write(W.ddir(ctx["ref"]) / "j1-state.json", state)
     return made
 
 
@@ -2819,7 +3020,12 @@ def setup_file(ctx, step, item):
 
 def c_department_is_shaped(ctx, step, item, out):
     ok = (isinstance(out.get("name"), str) and out["name"].strip() and out.get("kind") in W.KINDS and out.get("kind") != "root"
-          and isinstance(out.get("goal"), str) and out["goal"].strip())
+          and isinstance(out.get("goal"), str) and out["goal"].strip()
+          and out.get("route") in ("template", "organic") and isinstance(out.get("template_ref"), dict))
+    if ok and out["route"] == "template":
+        ok = out["template_ref"] == {"id": "department/%s" % out["kind"], "version": 1}
+    if ok and out["route"] == "organic":
+        ok = out["kind"] == "organic" and not out["template_ref"]
     return _verdict(ok, "a name, a kind the Library has, and a goal", "no name, a kind the Library lacks, or no goal")
 
 
@@ -3281,7 +3487,7 @@ CODE = {"plan_read": plan_read, "plan_fit": plan_fit, "plan_file": plan_file, "w
         "adapt_line_offer": adapt_line_offer, "identity_line": identity_line, "do_pages_list": do_pages_list,
         "check_rules_of": check_rules_of,
         "hear": hear, "coord_ready": coord_ready, "coord_record": coord_record,
-        "setup_read": setup_read, "setup_make": setup_make, "setup_file": setup_file,
+        "setup_read": setup_read, "setup_converse": setup_converse, "setup_make": setup_make, "setup_file": setup_file,
         "check_build": check_build, "publish_copy": publish_copy, "identity_gate": identity_gate, "identity_wait_engine": identity_wait_engine,
         "priority_envelope": priority_envelope, "coord_chain": coord_chain, "coord_heard": coord_heard,
         "coord_busy": coord_busy, "coord_pick": coord_pick, "coord_edge": coord_edge, "coord_verdict": coord_verdict,
@@ -3820,7 +4026,8 @@ CHECK = {"line_is_engines": c_line_is_engines, "pages_are_named": c_pages_are_na
          "facts_are_closed": c_facts_are_closed, "said_what_it_did": c_said_what_it_did, "counted_the_rows": c_counted_the_rows,
          "moves_are_known": c_moves_are_known, "picked_a_sample": c_picked_a_sample, "has_a_verdict": c_has_a_verdict,
          "findings_are_rows": c_findings_are_rows,
-         "department_is_shaped": c_department_is_shaped, "department_is_made": c_department_is_made}
+         "department_is_shaped": c_department_is_shaped, "department_is_made": c_department_is_made,
+         "setup_converse_is_valid": c_setup_converse_is_valid}
 
 
 # ---- what the screens read -----------------------------------------------------------------------------------------
