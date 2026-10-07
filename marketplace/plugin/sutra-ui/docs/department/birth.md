@@ -24,13 +24,21 @@
 | Step | Id | Rung at birth | Does |
 |---|---|---|---|
 | Read the request | `setup.read` | code | the words, the Library's kinds with each one's use case, the names this Root already has (`setup_read`) |
-| Converse | `setup.converse` | code | returns one outstanding question or `clear`; an unanswered question ends this run without creating anything |
-| Shape the department | `setup.shape` | improvised call (a model call) | returns `{name, purpose, route, template_ref, kind, goal}`; a template reference has a stable id and version, while organic has no template |
+| Ask until clear | `setup.converse` | improvised call (a model call) | the instruction is `converse_instruction` in `engine-templates/setup.json`, with `clarification_questions` as its examples; returns `{verdict: ask or clear, question}`. Its draft, with no model, is a plain test of the words and the examples asked in turn |
+| Ask, or hand on | `setup.say` | code | the converse step's covering: posts Root's one question to the owner and ends the run, or hands the words to Shape; `just do it` ends the questions when anything was said to build from, and the defaults taken are kept to be told |
+| Shape the department | `setup.shape` | improvised call (a model call) | returns `{name, kind, goal, purpose, second}`; the route and the template reference follow from the kind, in code (`_shape_norm`); `second` is what a second department in the words is for, offered as a chip in Root's tell and never made unasked |
 | Make it | `setup.make` | code | `founding` reconciles one child, its five function templates, rules and limits, complete goal context, born engines and one `j2_ready` event |
 | File | `setup.file` | code | the `Department` artifact names the child's ref |
 
-Root then tells the department name, born engines and first action. J1 stops at
-`j2_ready`: it does not run a child engine or create a business artifact.
+Root then tells the department name, born engines and first action, once. J1 stops at
+`j2_ready`: it does not run a child engine or create a business artifact. At that
+hand-over the department's J2 cycle starts by itself (`j2_runtime.begin`); nothing of
+its line runs until Adaptation has proposed it, Priority has granted it and Root's
+check has registered it on the department's record (see the J2 PRD, and
+`docs/superpowers/plans/2026-10-07-j1-j2-published-design-prd.md`).
+
+A Setup that cannot finish closes the Request as `failed` and says so in the chat;
+a refused preview closes it as `refused`. The next words start a new Request.
 
 The child's functions are born from the kind's `functions_template` (`founding`: `product-build` for a website, `default` otherwise); a template picked later on a function's Settings tab is what `card()` reads (`function_templates.picked(ref)`).
 

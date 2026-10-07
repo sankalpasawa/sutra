@@ -145,5 +145,9 @@ def spawn(root_ref, name, kind, goal, owner="the owner", goal_context=None, temp
     d["founding"] = {"operation_id": operation,
                      "checkpoints": checkpoints + ["j2_ready"]}
     W.save_dept(ref, d)
+    # J1 ends here and J2 is the department's own life: its cycle starts with the hand-over, and nobody presses Start
+    import j2_runtime
+    if j2_runtime.enabled():
+        j2_runtime.begin(ref)
     return {"ref": ref, "name": name, "kind": kind, "goal": goal, "created": bool(new or not had_record or not had_goal),
             "existing": False, "operation_id": operation}
