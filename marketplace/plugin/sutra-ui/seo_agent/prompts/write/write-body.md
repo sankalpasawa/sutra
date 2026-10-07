@@ -344,6 +344,13 @@ MECHANICS:
 - Spell out an acronym on first use, then use the short form: "Applicant Tracking System (ATS)".
 - Bold sparingly and only for genuine emphasis. Italics for terms. Never underline, never ALL CAPS.
 - Gender-neutral, people-first language. Avoid idioms that do not translate.
+- CANDIDATES ARE PEOPLE A PROCESS MOVES THROUGH, NOT UNITS IT DISCARDS. Never describe what
+  happens to a candidate with language built for inventory or waste: remove, eliminate, weed
+  out, cut, drop, kill, discard, filter out. Name what the PROCESS does, not an act performed on
+  a person. Not "screening out is when you want to remove any candidates" — "screening out
+  narrows the pool to the candidates who meet the bar" or "moves candidates who don't meet the
+  bar out of the process." Same rule for the other direction: not "keep" or "let through" —
+  "advance" or "move forward."
 
 ════════════════════════════════════════════════════════════════════════
 WHEN A LIST IS RIGHT, AND WHEN IT IS NOT

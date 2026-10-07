@@ -45,8 +45,7 @@ used too often, a flourish that says nothing, a claim that leans on one source t
 alone anything the feedback does not touch. A clean article is a normal outcome. You do not owe
 it a rewrite of every sentence to prove you did something.
 
-Keep the article's length in the same range it came in. Cutting real explanation to "tidy up" is
-not this job.
+{{LENGTH_RULE}}
 
 ════════════════════════════════════════════════════════════════════════
 Return the whole article, rewritten, and nothing else: no preamble, no sign-off, no notes about
