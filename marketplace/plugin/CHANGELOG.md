@@ -4,6 +4,14 @@
 
 ## Unreleased
 
+## 2.306.24 (2026-10-07)
+
+### Shadow learns its memory and personality
+
+- Shadow records what it learns about you and how to work with you, and re-uses it on later tasks (`sutra-ui/shadow_knows.py`).
+- A task whose outcome does not apply (no typo to fix, a change already made) now asks to be closed with a one-tap Close / Keep going, instead of running until its turn budget fails it. Shadow still cannot end work by itself.
+- Text fields Shadow creates (its typed questions, the task chat line, settings and memory boxes) keep focus, caret and draft across background refreshes.
+
 ### Settings > Updates no longer fails with "/api/updates -> 500"
 
 - A GitHub connection that dropped part-way through a reply (`http.client.IncompleteRead`, not an `OSError`) escaped the update check and blanked the screen with a 500, seen on Windows. It now reads "could not reach GitHub" on that row, and the same drop during a download is resumed instead of failing the stage.
@@ -15,6 +23,10 @@
 - A clear request creates automatically unless an effective inherited `ask` rule matches. Setup records a versioned department template or the explicit organic route.
 - Founding reconciles one child, the five functions, goal context, born engines, one `j2_ready` event, and Root's final tell without running J2 work.
 - The founding path now imports and locks correctly on Windows as well as POSIX release hosts.
+
+### SEO agent
+
+- Candidate-respecting language rule, faster write phase, and the author's word limit enforced for written and edited articles.
 
 ## 2.306.23 (2026-09-30)
 
