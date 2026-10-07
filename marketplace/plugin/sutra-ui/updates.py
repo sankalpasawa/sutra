@@ -9,6 +9,13 @@ Conflating them is the mistake this module exists to prevent:
                 ships it; it is still not wired up. The auto-updater is the
                 staging machinery below, driven by the Electron shell.
 
+                On Windows the app is the per-user NSIS install (Sutra.exe),
+                released as Sutra-Setup-x64.exe. Same staging machinery; the
+                swap is that installer, run silently by a detached PowerShell
+                helper once the app has exited. Before 2026-09-25 this module
+                knew only the .app, so a Windows install reported itself
+                unmanaged and the Settings row said "up to date" forever.
+
   PLUGIN        core@sutra under ~/.claude/plugins. Already updates itself once
                 a day via hooks/sessionstart-auto-update.sh, applying to the
                 NEXT session. This module exposes the same operation on demand
@@ -52,12 +59,16 @@ INSTALLING THE DESKTOP UPDATE, and why it looks the way it does:
     4. only then: swap, and keep the old bundle until the new one is in place
 
   A failure at any gate leaves /Applications untouched and reports why.
+
+  On Windows gates 2 and 3 do not exist yet (the installer is not
+  Authenticode-signed), so gate 1 is REQUIRED there rather than best-effort.
 """
 import contextlib
 import fcntl
 import hashlib
 import json
 import os
+import platform
 import plistlib
 import re
 import shutil
@@ -80,6 +91,21 @@ higher desktop release, or users still on the old feed would be trapped on it
 DESKTOP_REPO = os.environ.get("SUTRA_UI_DESKTOP_REPO", "sankalpasawa/sutra")
 PLUGIN_REPO = os.environ.get("SUTRA_UI_PLUGIN_REPO", "sankalpasawa/sutra")
 NET_TIMEOUT = 15
+# Where the release API and the deterministic per-tag download URLs live. The
+# defaults are GitHub; a test harness points both at a local server so the
+# whole lane -- check, stage, arm, helper swap -- runs against fixture releases
+# without a network. Production never sets these.
+RELEASE_API = os.environ.get("SUTRA_UI_RELEASE_API", "https://api.github.com").rstrip("/")
+RELEASE_DOWNLOAD = os.environ.get("SUTRA_UI_RELEASE_DOWNLOAD", "https://github.com").rstrip("/")
+# The delta lane (updates_delta.py) is on by default and can only ever fall
+# back to the full image; SUTRA_UPDATE_DELTA=0 forces the full image.
+DELTA_ENABLED = os.environ.get("SUTRA_UPDATE_DELTA", "1") != "0"
+
+_IS_WIN = sys.platform == "win32"
+_HERE = Path(os.path.abspath(__file__))
+# electron-builder-win.yml nsis.artifactName. x64 only; the portable
+# Sutra-x64.exe is never an update target (it cannot replace itself).
+WIN_SETUP_ASSET = "Sutra-Setup-x64.exe"
 
 # The desktop release tag is `v<version>-desktop`; the asset is per-arch.
 _TAG_RE = re.compile(r"^v?(\d+(?:\.\d+)*)")
@@ -110,9 +136,14 @@ def _get_json(url):
 
 def _arch():
     """The DMG asset suffix for this machine. Matches make-dmg.sh's spelling:
-    uname says arm64/x86_64 and that is what the filenames use."""
-    m = (os.uname().machine or "").lower()
+    uname says arm64/x86_64 and that is what the filenames use. Read through
+    platform.machine(): os.uname does not exist on Windows."""
+    m = (platform.machine() or "").lower()
     return "arm64" if m in ("arm64", "aarch64") else "x86_64"
+
+
+def _desktop_asset():
+    return WIN_SETUP_ASSET if _IS_WIN else "Sutra-%s.dmg" % _arch()
 
 
 # ------------------------------------------------------------- desktop ------
@@ -126,6 +157,14 @@ def app_bundle():
     number of parents, because a fixed count silently returns the wrong
     directory the moment the payload layout changes.
     """
+    # Test seam: the end-to-end harness runs this module from a checkout but
+    # needs it to believe it lives inside a fixture bundle. Never set in
+    # production; a bundled app ignores it because the walk below wins when
+    # the override is absent.
+    forced = os.environ.get("SUTRA_UI_APP_BUNDLE")
+    if forced:
+        p = Path(forced)
+        return p if p.suffix == ".app" and (p / "Contents" / "Info.plist").is_file() else None
     here = Path(__file__).resolve()
     for p in here.parents:
         if p.suffix == ".app" and (p / "Contents" / "Info.plist").is_file():
@@ -133,7 +172,35 @@ def app_bundle():
     return None
 
 
+def win_install():
+    """Windows: the folder of the installed app this backend belongs to, or None.
+
+    There is no Info.plist to walk up to, so the shell names its own exe
+    (SUTRA_DESKTOP_EXE, main.js winPythonEnv) and the answer is that exe's
+    folder -- but only if this file really lives under it. A source checkout
+    that inherited the variable must not look installed.
+    """
+    exe = os.environ.get("SUTRA_DESKTOP_EXE") or ""
+    if not exe or not os.path.isfile(exe):
+        return None
+    root = Path(exe).parent
+    try:
+        if root.resolve() in _HERE.resolve().parents:
+            return root
+    except OSError:
+        pass
+    return None
+
+
+def _installed_app():
+    return win_install() if _IS_WIN else app_bundle()
+
+
 def _installed_desktop_version():
+    if _IS_WIN:
+        # The shell knows its own version for certain and names it; believed
+        # only from inside an install.
+        return (os.environ.get("SUTRA_DESKTOP_VERSION") or None) if win_install() else None
     app = app_bundle()
     if not app:
         return None
@@ -147,14 +214,20 @@ def _installed_desktop_version():
 def _latest_desktop():
     """The newest desktop release, or an {'error': ...}. Never raises."""
     try:
-        rel = _get_json("https://api.github.com/repos/%s/releases/latest" % DESKTOP_REPO)
+        rel = _get_json("%s/repos/%s/releases/latest" % (RELEASE_API, DESKTOP_REPO))
     except (urllib.error.URLError, ValueError, OSError) as exc:
         return {"error": "could not reach GitHub: %s" % exc}
     tag = rel.get("tag_name") or ""
     version = _TAG_RE.match(tag).group(1) if _TAG_RE.match(tag) else None
-    want = "Sutra-%s.dmg" % _arch()
+    want = _desktop_asset()
     assets = {a.get("name"): a for a in (rel.get("assets") or [])}
     dmg = assets.get(want)
+    # The delta lane's two assets. Both optional: a release without them is
+    # simply a full-image release, which is what every release was before.
+    # macOS bundles only: the x86_64 pack is a Mac's, never a Windows install's.
+    man_name = "Sutra-%s.manifest.json" % _arch()
+    pack_name = "Sutra-%s.delta.tar.xz" % _arch()
+    man, pack = (None, None) if _IS_WIN else (assets.get(man_name), assets.get(pack_name))
     return {
         "version": version,
         "tag": tag,
@@ -163,6 +236,13 @@ def _latest_desktop():
         "download_url": (dmg or {}).get("browser_download_url"),
         "size": (dmg or {}).get("size"),
         "sha256_url": (assets.get(want + ".sha256") or {}).get("browser_download_url"),
+        "delta": bool(man and pack),
+        "manifest_asset": man_name,
+        "manifest_url": (man or {}).get("browser_download_url"),
+        "manifest_sha256_url": (assets.get(man_name + ".sha256") or {}).get("browser_download_url"),
+        "pack_url": (pack or {}).get("browser_download_url"),
+        "pack_sha256_url": (assets.get(pack_name + ".sha256") or {}).get("browser_download_url"),
+        "pack_size": (pack or {}).get("size"),
         # Stated rather than assumed: a release without an asset for THIS arch
         # is not an update this machine can take.
         "error": None if dmg else "release %s has no %s asset" % (tag or "?", want),
@@ -186,13 +266,17 @@ def desktop_state():
         "component": "desktop",
         "managed": True,
         "installed": installed,
-        "app_path": str(app_bundle()),
+        "app_path": str(_installed_app()),
         "arch": _arch(),
         "latest": latest.get("version"),
         "release_url": latest.get("url"),
         "asset": latest.get("asset"),
         "size": latest.get("size"),
         "update_available": _newer(latest.get("version"), installed),
+        # Whether the release carries a delta pack for this arch, and how big it
+        # is: the number the Updates screen should show instead of the DMG size.
+        "delta": bool(latest.get("delta")) and DELTA_ENABLED,
+        "pack_size": latest.get("pack_size"),
         "error": latest.get("error"),
         # What the updater actually does, in the place an operator reads to
         # find out. It used to say there was no background updater at all;
@@ -262,12 +346,17 @@ def plugin_state():
 
 def install_plugin():
     """Run the same two commands the daily hook runs, and report the move."""
-    if not shutil.which("claude"):
+    claude = shutil.which("claude")
+    if not claude:
         raise RuntimeError("the `claude` CLI is not on PATH")
     before = _installed_plugin_version()
     out = []
-    for cmd in (["claude", "plugin", "marketplace", "update", "sutra"],
-                ["claude", "plugin", "update", "core@sutra"]):
+    # By the path which() found, not the bare name: on Windows npm installs
+    # `claude` as a .cmd shim, which which() finds through PATHEXT and
+    # CreateProcess cannot find from the bare name -- both steps failed and
+    # the result still read "Already current."
+    for cmd in ([claude, "plugin", "marketplace", "update", "sutra"],
+                [claude, "plugin", "update", "core@sutra"]):
         try:
             p = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
             out.append({"cmd": " ".join(cmd), "code": p.returncode,
@@ -311,6 +400,53 @@ def _run(cmd, timeout=120):
 DOWNLOAD_TRIES = 4
 
 
+# DOWNLOAD PROGRESS (founder 2026-09-26: "some bar showing how much MB and
+# time"). Only the download knows those numbers, and it runs in whichever
+# process staged it -- the backend or the sidecar CLI -- so it writes them to a
+# small file in the staging dir that the panel's local-only route reads.
+PROGRESS_EVERY_S = 0.5          # file refresh while bytes arrive
+PROGRESS_STALE_S = 60           # silent this long = a download that died
+DOWNLOAD_CHUNK = 1 << 14
+_progress_version = None        # set by stage_desktop for the run
+_downloaded_bytes = 0           # bytes fetched this run (delta packs + image)
+
+
+def _progress_path():
+    return stage_dir() / "download-progress.json"
+
+
+def _progress_write(**fields):
+    """Best effort: a progress file that cannot be written must never fail
+    the download it describes."""
+    try:
+        p = _progress_path()
+        rec = dict(fields, version=_progress_version, ts=time.time())
+        tmp = p.with_name(p.name + ".tmp")
+        tmp.write_text(json.dumps(rec))
+        os.replace(tmp, p)
+    except Exception:
+        pass
+
+
+def download_progress():
+    """The live download, or None. A file that stopped refreshing is a download
+    that died, and is not shown as one still running."""
+    try:
+        d = json.loads(_progress_path().read_text())
+    except Exception:
+        return None
+    if not isinstance(d, dict) or time.time() - float(d.get("ts") or 0) > PROGRESS_STALE_S:
+        return None
+    return d
+
+
+def progress_clear():
+    try:
+        _progress_path().unlink()
+    except Exception:
+        pass
+
+
 def _fetch_dmg(url, dmg, want_bytes=0):
     """Download the release image to `dmg`, whole, or raise saying what happened.
 
@@ -332,6 +468,7 @@ def _fetch_dmg(url, dmg, want_bytes=0):
     ever fires for what it is actually for -- a file that arrived complete and
     wrong.
     """
+    global _downloaded_bytes
     last = ""
     for attempt in range(1, DOWNLOAD_TRIES + 1):
         have = dmg.stat().st_size if dmg.exists() else 0
@@ -350,8 +487,26 @@ def _fetch_dmg(url, dmg, want_bytes=0):
                 mode = "ab" if (have and resumed) else "wb"
                 length = r.headers.get("Content-Length")
                 expect = (int(length) + (have if resumed else 0)) if length else want_bytes
+                # Chunked rather than copyfileobj so the panel can show MB, speed
+                # and time left. start_done is what a resumed attempt already had,
+                # so the speed is this attempt's, not inflated by the part-file.
+                base = have if (have and resumed) else 0
+                done, started, last_w = base, time.time(), 0.0
+                _progress_write(phase="downloading", done=done, total=expect or 0,
+                                start_done=base, started=started)
                 with open(dmg, mode) as fh:
-                    shutil.copyfileobj(r, fh)
+                    while True:
+                        chunk = r.read(DOWNLOAD_CHUNK)
+                        if not chunk:
+                            break
+                        fh.write(chunk)
+                        done += len(chunk)
+                        _downloaded_bytes += len(chunk)
+                        now = time.time()
+                        if now - last_w >= PROGRESS_EVERY_S:
+                            last_w = now
+                            _progress_write(phase="downloading", done=done, total=expect or 0,
+                                            start_done=base, started=started)
         except urllib.error.HTTPError as exc:
             # 416 is the server saying "you already have at least all of it", which
             # means the part-file on disk is stale, not resumable. Bin it and start
@@ -369,6 +524,8 @@ def _fetch_dmg(url, dmg, want_bytes=0):
         else:
             got = dmg.stat().st_size
             if not expect or got >= expect:
+                _progress_write(phase="verifying", done=got, total=expect or got,
+                                start_done=base, started=started)
                 return
             last = ("the download was cut short at %s of %s bytes"
                     % ("{:,}".format(got), "{:,}".format(expect)))
@@ -385,51 +542,209 @@ def _fetch_dmg(url, dmg, want_bytes=0):
         "by hand." % (DOWNLOAD_TRIES, last))
 
 
-def download_and_verify(dest_dir=None):
-    """Fetch the DMG for this arch and prove it before anything is replaced.
+def _published_sha256(url):
+    """First token of a published .sha256 file, or None when it cannot be read.
+    The caller decides what None means; here it never means 'fine'."""
+    if not url:
+        return None
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "sutra-ui-updater"})
+        with urllib.request.urlopen(req, timeout=NET_TIMEOUT) as r:
+            return r.read(4096).decode("utf-8").split()[0].strip()
+    except (urllib.error.URLError, OSError, IndexError, UnicodeDecodeError):
+        return None
 
-    Returns {"dmg": path, "version": ...}. Raises RuntimeError naming the gate
-    that failed -- an update that cannot be verified is not installed, and the
-    reason is not swallowed.
+
+def _fetch_bytes(url, limit):
+    """A small asset (manifest, checksum) read whole, refused past `limit`."""
+    req = urllib.request.Request(url, headers={"User-Agent": "sutra-ui-updater"})
+    with urllib.request.urlopen(req, timeout=NET_TIMEOUT * 4) as r:
+        data = r.read(limit + 1)
+    if len(data) > limit:
+        raise RuntimeError("asset at %s is larger than %d bytes" % (url, limit))
+    return data
+
+
+def _staged_app_name(version):
+    safe = re.sub(r"[^0-9.]", "", str(version or "")).strip(".") or "unknown"
+    return "Sutra-%s-%s.app" % (_arch(), safe)
+
+
+def _delta_reconstruct(latest, installed_version, work, app):
+    """THE DELTA LANE. Rebuild the released bundle beside the staging dir from
+    the installed one plus the release's delta pack(s), then run the same
+    bundle-level gates the DMG lane runs. Raises (DeltaMiss or RuntimeError)
+    for anything short of a byte-exact, Gatekeeper-accepted bundle; the caller
+    then downloads the full image. See updates_delta.py for the format.
+
+    Returns {"app": path, "manifest_path": path, "sha256": <manifest sha256>,
+             "sha256_url": ..., "tree_sha256": ..., "asset": ..., "delta": stats}.
+    """
+    import updates_delta as ud
+    arch = _arch()
+    team, bundle_id = _bundle_identity(app)
+    chain = []          # newest first: {version, manifest, manifest_sha256, pack_url, pack_sha256_url, pack_size}
+    url = latest.get("manifest_url")
+    sha_url = latest.get("manifest_sha256_url")
+    pack_url, pack_sha_url, pack_size = latest.get("pack_url"), latest.get("pack_sha256_url"), latest.get("pack_size")
+    version = latest.get("version")
+    for _depth in range(ud.MAX_CHAIN):
+        if not url or not pack_url:
+            raise ud.DeltaMiss("release %s has no delta assets for %s" % (version, arch))
+        raw = _fetch_bytes(url, ud.MAX_MANIFEST_BYTES)
+        published = _published_sha256(sha_url)
+        if not published:
+            raise RuntimeError("the manifest for %s has no published checksum" % version)
+        if _sha256_bytes(raw) != published:
+            raise RuntimeError("the manifest for %s does not match its published checksum" % version)
+        man = ud.validate_manifest(json.loads(raw.decode("utf-8")))
+        if man.get("version") != version or man.get("arch") != arch:
+            raise RuntimeError("the manifest for %s describes %s/%s" % (version, man.get("version"), man.get("arch")))
+        if man.get("bundle_id") != bundle_id:
+            raise ud.DeltaMiss("the release is for bundle %s, this app is %s" % (man.get("bundle_id"), bundle_id))
+        chain.append({"version": version, "manifest": man, "manifest_raw": raw,
+                      "manifest_sha256": published, "manifest_sha256_url": sha_url,
+                      "pack_url": pack_url, "pack_sha256_url": pack_sha_url,
+                      "pack_size": int(pack_size or 0)})
+        prev = man.get("previous_version")
+        if prev == installed_version:
+            break
+        if not prev or not _newer(prev, installed_version):
+            raise ud.DeltaMiss("no delta chain from %s reaches the installed %s"
+                               % (latest.get("version"), installed_version))
+        # The previous release's assets have deterministic names under its tag.
+        version = prev
+        base = "%s/%s/releases/download/v%s-desktop/Sutra-%s" % (RELEASE_DOWNLOAD, DESKTOP_REPO, prev, arch)
+        url, sha_url = base + ".manifest.json", base + ".manifest.json.sha256"
+        pack_url, pack_sha_url, pack_size = base + ".delta.tar.xz", base + ".delta.tar.xz.sha256", 0
+    else:
+        raise ud.DeltaMiss("the installed %s is more than %d releases behind"
+                           % (installed_version, ud.MAX_CHAIN))
+
+    pack_dirs = []
+    for hop in chain:
+        p = work / ("pack-%s.tar.xz" % re.sub(r"[^0-9.]", "", hop["version"]))
+        _fetch_dmg(hop["pack_url"], p, hop["pack_size"])
+        published = _published_sha256(hop["pack_sha256_url"])
+        if not published or _sha256(p) != published:
+            raise RuntimeError("the delta pack for %s does not match its published checksum" % hop["version"])
+        d = work / ("pack-%s" % re.sub(r"[^0-9.]", "", hop["version"]))
+        ud.unpack_to_dir(p, d)
+        p.unlink()
+        pack_dirs.append(d)
+
+    dest = work / _staged_app_name(latest.get("version"))
+    stats = ud.reconstruct(app, chain[0]["manifest"], pack_dirs, dest)
+    for d in pack_dirs:
+        shutil.rmtree(d, ignore_errors=True)
+
+    # The bundle-level gates, BEFORE staging: a rebuilt tree that codesign or
+    # Gatekeeper will not accept is a miss, not something to hand the helper.
+    p = _run(["codesign", "--verify", "--deep", "--strict", str(dest)], timeout=300)
+    if p.returncode != 0:
+        raise RuntimeError("the rebuilt bundle failed codesign: %s"
+                           % (p.stderr or p.stdout or "").strip()[:300])
+    p = _run(["spctl", "-a", "-t", "execute", "-v", str(dest)])
+    if p.returncode != 0:
+        raise RuntimeError("the rebuilt bundle is not accepted by Gatekeeper: %s"
+                           % (p.stderr or p.stdout or "").strip()[:300])
+    man_path = work / (latest.get("manifest_asset") or "Sutra-%s.manifest.json" % arch)
+    man_path.write_bytes(chain[0]["manifest_raw"])
+    return {"app": str(dest), "manifest_path": str(man_path),
+            "sha256": chain[0]["manifest_sha256"], "sha256_url": chain[0]["manifest_sha256_url"],
+            "tree_sha256": chain[0]["manifest"].get("tree_sha256"),
+            "asset": latest.get("manifest_asset"), "delta": dict(stats, hops=len(chain))}
+
+
+DELTA_MISS_KEEP = 50
+
+
+def _log_delta_miss(installed, version, exc):
+    """Append why the delta lane fell back to delta-misses.jsonl in the stage
+    dir. The staged record's note dies with the install (2026-09-27: a 377 KB
+    delta became a 257 MB download on the founder's Mac and no trace was left),
+    so this file is never cleared, only trimmed to the last DELTA_MISS_KEEP.
+    Best effort: logging must never stop the full-image fallback."""
+    try:
+        p = stage_dir() / "delta-misses.jsonl"
+        row = json.dumps({"ts": int(time.time()), "from": installed, "to": version,
+                          "error": type(exc).__name__, "reason": str(exc)[:1000]})
+        lines = p.read_text(encoding="utf-8").splitlines() if p.is_file() else []
+        lines = (lines + [row])[-DELTA_MISS_KEEP:]
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        os.replace(tmp, p)
+    except (OSError, RuntimeError, ValueError):
+        pass
+
+
+def download_and_verify(dest_dir=None):
+    """Fetch the release for this arch and prove it before anything is replaced.
+
+    Returns {"kind": "dmg", "dmg": path, "version": ...} for a full image or
+    {"kind": "app", "app": path, ...} for a bundle rebuilt by the delta lane.
+    Raises RuntimeError naming the gate that failed -- an update that cannot
+    be verified is not installed, and the reason is not swallowed.
     """
     latest = _latest_desktop()
     if latest.get("error"):
         raise RuntimeError(latest["error"])
     url = latest.get("download_url")
     if not url:
-        raise RuntimeError("the latest release has no downloadable asset for this Mac")
+        raise RuntimeError("the latest release has no downloadable asset for this machine")
 
     d = Path(dest_dir or tempfile.mkdtemp(prefix="sutra-update-"))
     d.mkdir(parents=True, exist_ok=True)
-    dmg = d / latest["asset"]
 
+    # THE DELTA LANE FIRST. It can only fail towards the full image, and it
+    # says why, so a support log shows "delta update not possible (...)"
+    # rather than a silent 300 MB download.
+    delta_note = None
+    app = app_bundle()
+    if DELTA_ENABLED and latest.get("delta") and app:
+        try:
+            got = _delta_reconstruct(latest, _installed_desktop_version(), d, app)
+            got.update({"kind": "app", "dmg": None, "version": latest.get("version"), "dir": str(d)})
+            return got
+        except (RuntimeError, OSError, ValueError, KeyError, TypeError) as exc:
+            delta_note = "delta update not possible (%s); downloading the full image" % exc
+            _log_delta_miss(_installed_desktop_version(), latest.get("version"), exc)
+            for p in list(d.iterdir()):
+                shutil.rmtree(p, ignore_errors=True) if p.is_dir() and not p.is_symlink() else p.unlink(missing_ok=True)
+
+    dmg = d / latest["asset"]
     _fetch_dmg(url, dmg, int(latest.get("size") or 0))
 
     # GATE 1 -- checksum, against the file published beside the DMG.
+    want = None
     if latest.get("sha256_url"):
-        try:
-            req = urllib.request.Request(latest["sha256_url"],
-                                         headers={"User-Agent": "sutra-ui-updater"})
-            with urllib.request.urlopen(req, timeout=NET_TIMEOUT) as r:
-                want = r.read().decode("utf-8").split()[0].strip()
-        except (urllib.error.URLError, OSError, IndexError):
-            want = None
-        if want:
-            got = _sha256(dmg)
-            if got != want:
-                # THE BAD FILE GOES, and that is not tidying. Staging keeps the
-                # image on disk between attempts so a download can be resumed, and
-                # a complete-but-wrong file left lying there is the one thing that
-                # rule cannot cope with: every later attempt would see the full
-                # byte count, ask for nothing, and fail the same way forever.
-                try:
-                    Path(dmg).unlink()
-                except OSError:
-                    pass
-                raise RuntimeError(
-                    "the downloaded image does not match the one published "
-                    "(published %s, downloaded %s). The copy here has been "
-                    "deleted; try the update again." % (want[:16], got[:16]))
+        want = _published_sha256(latest["sha256_url"])
+    if want:
+        got = _sha256(dmg)
+        if got != want:
+            # THE BAD FILE GOES, and that is not tidying. Staging keeps the
+            # image on disk between attempts so a download can be resumed, and
+            # a complete-but-wrong file left lying there is the one thing that
+            # rule cannot cope with: every later attempt would see the full
+            # byte count, ask for nothing, and fail the same way forever.
+            try:
+                Path(dmg).unlink()
+            except OSError:
+                pass
+            raise RuntimeError(
+                "the downloaded image does not match the one published "
+                "(published %s, downloaded %s). The copy here has been "
+                "deleted; try the update again." % (want[:16], got[:16]))
+    elif _IS_WIN:
+        # On a Mac this is one gate of three. The Windows installer is unsigned,
+        # so here it is the only one, and an unchecked installer is not run.
+        raise RuntimeError(
+            "could not read the published checksum for %s. On Windows it is the "
+            "only check the installer gets, so it was not installed; try the "
+            "update again later." % latest["asset"])
+
+    if _IS_WIN:
+        return {"dmg": str(dmg), "version": latest.get("version"), "dir": str(d)}
 
     # GATE 2 -- Gatekeeper. Signed is not enough; this must be NOTARIZED, which
     # is what `spctl` reports and what a stranger's Mac will demand.
@@ -439,7 +754,13 @@ def download_and_verify(dest_dir=None):
         raise RuntimeError("the downloaded image is not accepted by Gatekeeper: %s"
                            % (p.stderr or p.stdout or "").strip()[:300])
 
-    return {"dmg": str(dmg), "version": latest.get("version"), "dir": str(d)}
+    return {"kind": "dmg", "dmg": str(dmg), "version": latest.get("version"),
+            "dir": str(d), "sha256_url": latest.get("sha256_url"),
+            "asset": latest.get("asset"), "note": delta_note}
+
+
+def _sha256_bytes(data):
+    return hashlib.sha256(data).hexdigest()
 
 
 _INSTALLER = r"""#!/bin/bash
@@ -506,13 +827,23 @@ done
 pgrep -f "$APP/Contents/MacOS/" >/dev/null 2>&1 \
   && die procs-alive "processes are still running from $APP"
 
-MNT="$(mktemp -d /tmp/sutra-mnt.XXXXXX)"
-hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MNT" >/dev/null \
-  || die mount "could not mount $DMG"
-NEW="$MNT/Sutra.app"
-cleanup() { hdiutil detach "$MNT" -quiet 2>/dev/null || true; rmdir "$MNT" 2>/dev/null || true; }
+if [ "${ARTIFACT_KIND:-dmg}" = "app" ]; then
+  # A bundle the delta lane rebuilt in the staging directory. It was already
+  # verified file-by-file against the release manifest and passed codesign
+  # and Gatekeeper there; every gate below runs on it again regardless,
+  # because from here on there is no one to ask.
+  NEW="$DMG"
+  cleanup() { :; }
+  [ -d "$NEW" ] && [ ! -L "$NEW" ] || die contents "the staged bundle is gone"
+else
+  MNT="$(mktemp -d /tmp/sutra-mnt.XXXXXX)"
+  hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MNT" >/dev/null \
+    || die mount "could not mount $DMG"
+  NEW="$MNT/Sutra.app"
+  cleanup() { hdiutil detach "$MNT" -quiet 2>/dev/null || true; rmdir "$MNT" 2>/dev/null || true; }
+  [ -d "$NEW" ] || die contents "the disk image does not contain Sutra.app"
+fi
 trap cleanup EXIT
-[ -d "$NEW" ] || die contents "the disk image does not contain Sutra.app"
 
 # 3. the bundle inside must verify too -- the DMG passing Gatekeeper is not
 #    proof of what is inside it.
@@ -541,7 +872,14 @@ NEW_VER="$(plutil -extract CFBundleShortVersionString raw -o - "$NEW/Contents/In
 STAGE="${APP}.new-$$"
 BAK="${APP}.old-$$"
 rm -rf "$STAGE"
-ditto "$NEW" "$STAGE" || { rm -rf "$STAGE"; die copy "could not copy the new bundle into place"; }
+if [ "${ARTIFACT_KIND:-dmg}" = "app" ]; then
+  # Same volume, so this is an APFS clone: instant and costs no space. ditto
+  # remains the fallback for a staging dir on some other filesystem.
+  cp -c -R -p "$NEW" "$STAGE" 2>/dev/null \
+    || { rm -rf "$STAGE"; ditto "$NEW" "$STAGE" || { rm -rf "$STAGE"; die copy "could not copy the new bundle into place"; }; }
+else
+  ditto "$NEW" "$STAGE" || { rm -rf "$STAGE"; die copy "could not copy the new bundle into place"; }
+fi
 codesign --verify --deep --strict "$STAGE" 2>/dev/null \
   || { rm -rf "$STAGE"; die copy-verify "the copied bundle does not verify"; }
 
@@ -550,9 +888,33 @@ printf '{"app":"%s","backup":"%s","staged":"%s","ts":%s}\n' \
 if ! mv "$APP" "$BAK"; then
   rm -f "$RECOVER"; rm -rf "$STAGE"; die swap "could not move the old bundle aside"
 fi
+# `mv src dst` NESTS INSTEAD OF REPLACING WHEN dst IS AN EXISTING DIRECTORY, and
+# it exits 0 doing it. That broke a real install on 2026-09-24: the user was left
+# with Sutra.app/Sutra.app.new-<pid> sitting inside a Sutra.app whose
+# Contents/MacOS was gone, while every gate above had passed and the swap below
+# reported success. The mv is only a rename while $APP does not exist, so that is
+# checked rather than assumed -- the line above can report success and still
+# leave $APP standing, and from here exit 0 means the opposite of what it reads as.
+if [ -e "$APP" ]; then
+  mv "$BAK" "$APP" 2>/dev/null
+  rm -f "$RECOVER"; rm -rf "$STAGE"
+  die swap "$APP still exists after being moved aside; refusing to move the new bundle into it"
+fi
 if ! mv "$STAGE" "$APP"; then
   mv "$BAK" "$APP" 2>/dev/null
   rm -f "$RECOVER"; rm -rf "$STAGE"; die swap "could not move the new bundle into place"
+fi
+# A SWAP THAT EXITED 0 IS NOT A SWAP THAT LANDED. The executable is what macOS
+# needs to launch at all, so its absence is the whole difference between an
+# installed app and one that opens into nothing, which is the state the nesting
+# bug shipped. Checked while $BAK is still here, so there is something to go back
+# to; after the rm below there would not be.
+APP_EXE="$(plutil -extract CFBundleExecutable raw -o - "$APP/Contents/Info.plist" 2>/dev/null)"
+if [ -z "$APP_EXE" ] || [ ! -x "$APP/Contents/MacOS/$APP_EXE" ]; then
+  rm -rf "$APP"
+  mv "$BAK" "$APP" 2>/dev/null
+  rm -f "$RECOVER"
+  die swap "the installed bundle has no runnable executable; the old one was put back"
 fi
 rm -f "$RECOVER"
 rm -rf "$BAK"
@@ -608,6 +970,47 @@ ON_IMAGE = (
     "open it from Applications. Updates work by themselves from then on."
 )
 
+PORTABLE = (
+    "This is the portable Sutra-x64.exe. It runs from a temporary copy, so it "
+    "cannot replace itself and no update can ever land.\n\n"
+    "Download Sutra-Setup-x64.exe from the release page and run it once. Sutra "
+    "then installs for your user account, and updates work by themselves from "
+    "then on."
+)
+
+
+def _win_exe_name():
+    return Path(os.environ.get("SUTRA_DESKTOP_EXE") or "Sutra.exe").name
+
+
+def _win_blocker(root):
+    """install_blocker() for Windows. The portable exe sets
+    PORTABLE_EXECUTABLE_FILE for its children; an NSIS install also leaves its
+    uninstaller beside the exe, which an unpacked portable copy never has."""
+    if os.environ.get("PORTABLE_EXECUTABLE_FILE") or not any(root.glob("Uninstall*.exe")):
+        return PORTABLE
+    # The feed (releases/latest) carries the stable installer only. macOS
+    # refuses a different app by bundle id; unsigned, the exe name is all
+    # Windows has, and running stable's installer into a beta's folder would
+    # replace one app with another.
+    if _win_exe_name().lower() != "sutra.exe":
+        return ("This is %s. Updates carry the stable Sutra installer only, which "
+                "would replace this app with a different one. Install the stable "
+                "release separately instead." % Path(_win_exe_name()).stem)
+    # A real write, not os.access: on Windows that checks only the read-only
+    # attribute and says yes to Program Files. The installer offers an
+    # all-users install there, and a silent update of it needs an admin.
+    try:
+        fd, probe = tempfile.mkstemp(prefix=".sutra-write-probe-", dir=str(root))
+        os.close(fd)
+        os.unlink(probe)
+    except OSError:
+        return ("Sutra is installed in %s for everyone on this PC, which this user "
+                "account cannot change without an administrator, so it cannot "
+                "update itself. Run Sutra-Setup-x64.exe by hand, or reinstall it "
+                "choosing \"Only for me\"." % root)
+    return None
+
 
 def install_blocker(app_path=None):
     """A plain-English reason this machine cannot install an update, or None.
@@ -619,10 +1022,12 @@ def install_blocker(app_path=None):
     ever tells them they never installed it. Name that, rather than naming a
     path and a permission bit.
     """
-    target = app_path or app_bundle()
+    target = app_path or _installed_app()
     if not target:
         return None                      # a source checkout updates by git
     app = Path(target)
+    if _IS_WIN:
+        return _win_blocker(app)
     if str(app).startswith("/Volumes/"):
         return ON_IMAGE
     if not os.access(app.parent, os.W_OK):
@@ -648,6 +1053,10 @@ def install_desktop(dmg, app_path=None, wait_pid=None, wait_start=None,
     getppid() is then a shell -- whose exit would release the helper while Sutra
     is still running. The shell passes its own pid, with its start time.
     """
+    if _IS_WIN:
+        return _install_desktop_windows(dmg, app_path=app_path, wait_pid=wait_pid,
+                                        relaunch=relaunch, version=version,
+                                        result_path=result_path)
     # The emptiness check is separate and comes FIRST because Path("") is
     # PosixPath("."), which is a real directory and passes every test below it.
     # In a source checkout app_bundle() is None, so the old `Path(x or "")`
@@ -662,7 +1071,14 @@ def install_desktop(dmg, app_path=None, wait_pid=None, wait_start=None,
     blocked = install_blocker(app)
     if blocked:
         raise RuntimeError(blocked)
-    if not Path(dmg).is_file():
+    artifact = Path(dmg)
+    if artifact.is_symlink():
+        raise RuntimeError("the staged artifact is a symlink: %s" % dmg)
+    if artifact.is_dir() and artifact.suffix == ".app":
+        kind = "app"
+    elif artifact.is_file():
+        kind = "dmg"
+    else:
         raise RuntimeError("no such disk image: %s" % dmg)
 
     pid = int(wait_pid) if wait_pid else os.getppid()
@@ -677,7 +1093,7 @@ def install_desktop(dmg, app_path=None, wait_pid=None, wait_start=None,
 
     env = dict(os.environ)
     env.update({
-        "DMG": str(dmg), "APP": str(app), "LOG": str(log),
+        "DMG": str(dmg), "ARTIFACT_KIND": kind, "APP": str(app), "LOG": str(log),
         "WAIT_PID": str(pid), "WAIT_START": start or "",
         "RELAUNCH": "1" if relaunch else "0",
         "EXPECT_VERSION": str(version or ""),
@@ -696,6 +1112,198 @@ def install_desktop(dmg, app_path=None, wait_pid=None, wait_start=None,
                     + (" It reopens itself." if relaunch else "")}
 
 
+_WIN_INSTALLER = r"""# Written by sutra-ui updates.py. The Windows leg of the desktop updater: waits
+# for the app to be GONE, then runs the verified NSIS installer silently over
+# the existing install. The checksum was checked before this ran; from here on
+# there is no one to ask. Inputs arrive as environment variables, as on macOS:
+# SETUP APP_DIR APP_EXE LOG WAIT_PID RELAUNCH EXPECT_VERSION RESULT.
+$ErrorActionPreference = 'Stop'
+
+function Log([string]$m) {
+  try { Add-Content -LiteralPath $env:LOG -Value ('[' + (Get-Date -Format s) + '] ' + $m) } catch {}
+}
+
+# Terminal status, in the shape the macOS helper writes and resolve_pending()
+# reads. UTF-8 without a BOM: Windows PowerShell's own UTF8 writes one, and
+# json.load refuses it.
+function Result([bool]$ok, [string]$stage, [string]$err) {
+  if ($err.Length -gt 300) { $err = $err.Substring(0, 300) }
+  $o = [ordered]@{
+    ok = $ok
+    stage = $stage
+    version = [string]$env:EXPECT_VERSION
+    error = $err
+    ts = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+  }
+  $tmp = $env:RESULT + '.tmp'
+  [System.IO.File]::WriteAllText($tmp, ($o | ConvertTo-Json -Compress), (New-Object System.Text.UTF8Encoding($false)))
+  Move-Item -LiteralPath $tmp -Destination $env:RESULT -Force
+}
+
+function Die([string]$stage, [string]$msg) {
+  Log ('FAIL(' + $stage + '): ' + $msg)
+  Result $false $stage $msg
+  exit 1
+}
+
+Log ('installer start setup=' + $env:SETUP + ' app=' + $env:APP_DIR + ' wait_pid=' + $env:WAIT_PID + ' relaunch=' + $env:RELAUNCH)
+
+# 1. wait for THAT process to end. Its start time is taken now, while it is
+#    still the shell that armed us: a pid reused later has a different start
+#    time, which means ours is already gone.
+$waitPid = [int]$env:WAIT_PID
+$t0 = $null
+try { $t0 = (Get-Process -Id $waitPid -ErrorAction Stop).StartTime } catch {}
+function Shell-Alive {
+  try {
+    $p = Get-Process -Id $waitPid -ErrorAction Stop
+    if ($t0 -and $p.StartTime -ne $t0) { return $false }
+    return $true
+  } catch { return $false }
+}
+for ($i = 0; $i -lt 120; $i++) {
+  if (-not (Shell-Alive)) { break }
+  Start-Sleep -Seconds 1
+}
+if (Shell-Alive) { Die 'app-alive' ('app still running after 120s; ' + $env:APP_DIR + ' untouched') }
+
+# 2. the shell exiting is not the folder being free. Electron helpers, the
+#    bundled python backend and anything it started run out of the same folder,
+#    and the installer cannot replace a file in use. What the app that quit
+#    left behind is orphaned: stop it after a grace period. A Sutra.exe started
+#    AFTER this helper is the user opening Sutra again: touch nothing, and the
+#    next quit applies the update.
+$helperStart = (Get-Process -Id $PID).StartTime
+$prefix = $env:APP_DIR.TrimEnd('\') + '\'
+function From-App {
+  @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+    try { $_.Path -and $_.Path.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase) } catch { $false }
+  })
+}
+function Reopened {
+  @(From-App | Where-Object {
+    try { ($_.Path -ieq $env:APP_EXE) -and ($_.StartTime -gt $helperStart) } catch { $false }
+  })
+}
+for ($i = 0; $i -lt 30; $i++) {
+  if ((Reopened).Count -gt 0) { break }
+  if ((From-App).Count -eq 0) { break }
+  Start-Sleep -Seconds 1
+}
+if ((Reopened).Count -gt 0) {
+  Die 'app-reopened' ('Sutra was opened again before the update could apply; ' + $env:APP_DIR + ' untouched')
+}
+$left = From-App
+if ($left.Count -gt 0) {
+  Log ('stopping leftovers: ' + (($left | ForEach-Object { $_.ProcessName + ':' + $_.Id }) -join ', '))
+  $left | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop } catch {} }
+  Start-Sleep -Seconds 2
+}
+$left = From-App
+if ($left.Count -gt 0) {
+  Die 'procs-alive' ('processes are still running from ' + $env:APP_DIR + ': ' + (($left | ForEach-Object { $_.ProcessName }) -join ', '))
+}
+
+# 3. run the installer silently, as an update, into the SAME folder. These are
+#    the arguments electron-updater gives an electron-builder NSIS installer:
+#    --updated keeps user data, /S is silent, --force-run reopens the app, and
+#    /D= must come LAST, unquoted (NSIS reads the rest of the line as the path).
+$argList = @('--updated', '/S')
+if ($env:RELAUNCH -eq '1') { $argList += '--force-run' }
+$argList += ('/D=' + $env:APP_DIR)
+Log ('running ' + $env:SETUP + ' ' + ($argList -join ' '))
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = $env:SETUP
+$psi.Arguments = ($argList -join ' ')
+$psi.UseShellExecute = $false
+$psi.WorkingDirectory = Split-Path -Parent $env:SETUP
+try {
+  $proc = [System.Diagnostics.Process]::Start($psi)
+} catch {
+  Die 'spawn' ('could not start the installer: ' + $_.Exception.Message)
+}
+# The installer alone, not its tree: --force-run starts the app as its child,
+# and waiting on that would wait for the user to quit Sutra again.
+if (-not $proc.WaitForExit(600000)) { Die 'install-timeout' 'the installer did not finish within 10 minutes' }
+if ($proc.ExitCode -ne 0) { Die 'install' ('the installer exited with code ' + $proc.ExitCode) }
+
+# 4. exit code 0 is not proof the new version landed. electron-builder stamps
+#    the exe's FileVersion with the app version; read it back.
+if (-not (Test-Path -LiteralPath $env:APP_EXE)) { Die 'verify' ('no ' + $env:APP_EXE + ' after the installer finished') }
+$fv = [string](Get-Item -LiteralPath $env:APP_EXE).VersionInfo.FileVersion
+$want = [string]$env:EXPECT_VERSION
+if ($want -and $fv -and $fv -ne $want -and -not $fv.StartsWith($want + '.')) {
+  Die 'version' ('installed ' + $fv + ', but ' + $want + ' was staged and verified')
+}
+Result $true 'installed' ''
+Log ('installed ' + $want + ' (file version ' + $fv + ')')
+"""
+
+# Win32 process-creation flags (winbase.h), spelled out so this module imports
+# the same on every OS.
+_DETACHED_PROCESS = 0x00000008
+_CREATE_NEW_PROCESS_GROUP = 0x00000200
+_CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+
+
+def _install_desktop_windows(setup, app_path=None, wait_pid=None, relaunch=False,
+                             version=None, result_path=None):
+    """Spawn the detached helper that runs the verified installer once the app
+    has exited. Returns immediately, like the macOS leg. The installer does the
+    swap itself, so there is no two-rename window and no recover record."""
+    target = app_path or win_install()
+    if not target or not str(target).strip():
+        raise RuntimeError("no installed Sutra to replace")
+    root = Path(target)
+    if not root.is_dir():
+        raise RuntimeError("%s is not an installed Sutra folder" % root)
+    blocked = install_blocker(root)
+    if blocked:
+        raise RuntimeError(blocked)
+    setup = Path(setup)
+    if not setup.is_file() or setup.suffix.lower() != ".exe":
+        raise RuntimeError("no such installer: %s" % setup)
+
+    pid = int(wait_pid) if wait_pid else os.getppid()
+    d = Path(tempfile.mkdtemp(prefix="sutra-installer-"))
+    script = d / "install.ps1"
+    log = d / "install.log"
+    script.write_text(_WIN_INSTALLER, encoding="utf-8")
+
+    env = dict(os.environ)
+    env.update({
+        "SETUP": str(setup), "APP_DIR": str(root),
+        "APP_EXE": str(root / _win_exe_name()), "LOG": str(log),
+        "WAIT_PID": str(pid), "RELAUNCH": "1" if relaunch else "0",
+        "EXPECT_VERSION": str(version or ""),
+        "RESULT": str(result_path or (d / "install-result.json")),
+    })
+    # By absolute path: a powershell.exe earlier on PATH is not ours to run.
+    ps = os.path.join(os.environ.get("SystemRoot") or r"C:\Windows",
+                      "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+    argv = [ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+            "-WindowStyle", "Hidden", "-File", str(script)]
+    # Detached and out of the shell's job: Electron runs the backend in a
+    # kill-on-close job, and the helper has to outlive the app it waits for.
+    # A job that forbids breakaway refuses that flag; start without it then.
+    base = _DETACHED_PROCESS | _CREATE_NEW_PROCESS_GROUP
+    for flags in (base | _CREATE_BREAKAWAY_FROM_JOB, base):
+        try:
+            # cwd out of the install folder: the backend runs inside it, and a
+            # process's cwd pins that directory while the old version is removed.
+            subprocess.Popen(argv, env=env, cwd=str(d), creationflags=flags,
+                             close_fds=True, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            break
+        except OSError:
+            if flags == base:
+                raise
+    return {"scheduled": True, "log": str(log), "app": str(root),
+            "wait_pid": pid, "relaunch": bool(relaunch),
+            "note": "Quit Sutra to let the update apply."
+                    + (" It reopens itself." if relaunch else "")}
+
+
 # ----------------------------------------------------- staging / pending ----
 # Everything below exists so that an update can be downloaded NOW and applied
 # LATER -- possibly days later, across a reboot, by a process that has not been
@@ -704,6 +1312,9 @@ def install_desktop(dmg, app_path=None, wait_pid=None, wait_start=None,
 
 MAX_APPLY_ATTEMPTS = 2      # after this many tries at one version, stop trying
 ARM_LEASE_SECONDS = 300     # how long a spawned helper is presumed to be alive
+# The Windows helper can wait 120 s for the shell, 32 s for leftovers and 600 s
+# for the installer; a shorter lease lets a launch arm a second helper.
+WIN_ARM_LEASE_SECONDS = 900
 
 
 def stage_dir():
@@ -716,11 +1327,15 @@ def stage_dir():
     a file someone can swap, so the directory is locked down and every read out
     of it is re-verified rather than trusted.
     """
-    d = Path(os.path.expanduser(os.environ.get(
-        "SUTRA_UPDATE_DIR", "~/Library/Application Support/Sutra/updates")))
+    d = Path(os.path.expanduser(os.environ.get("SUTRA_UPDATE_DIR") or default_stage_dir()))
     if d.is_symlink():
         raise RuntimeError("%s is a symlink; refusing to stage there" % d)
     d.mkdir(parents=True, exist_ok=True)
+    if _IS_WIN:
+        # No POSIX owner or mode bits here (st_uid is always 0; os.getuid does
+        # not exist). %LOCALAPPDATA% is private to the user by its default ACL,
+        # which is the property the checks below prove on a Mac.
+        return d
     # Ownership before permissions: chmod on a directory belonging to somebody
     # else either fails or, worse, succeeds and tells us nothing.
     if d.stat().st_uid != os.getuid():
@@ -733,6 +1348,35 @@ def stage_dir():
         raise RuntimeError("%s is accessible to other users and could not be "
                            "locked down" % d)
     return d
+
+
+def _mac_app_name():
+    """Which app this backend serves, by the bundle it runs out of: "Sutra" or "Sutra Beta"; "Sutra" in a checkout.
+    The name comes from the bundle's own Info.plist, the same file the helper trusts for the bundle id."""
+    try:
+        app = app_bundle()
+        if app:
+            with open(Path(app) / "Contents" / "Info.plist", "rb") as fh:
+                pl = plistlib.load(fh)
+            name = str(pl.get("CFBundleName") or "").strip()
+            if name in ("Sutra", "Sutra Beta"):
+                return name
+            if str(pl.get("CFBundleIdentifier") or "").endswith(".beta"):
+                return "Sutra Beta"
+    except (OSError, ValueError):
+        pass
+    return "Sutra"
+
+
+def default_stage_dir():
+    """Where updates are staged when SUTRA_UPDATE_DIR says nothing: PER APP on every platform. A folder shared by
+    Sutra and Sutra Beta lets a beta launch arm the stable app's staged image (found live 2026-09-29: the Beta quit at
+    every launch to apply the stable's 2.306.10, and the helper refused it by bundle id each time). The stable app's
+    folder is where it always was, so nothing of its own is lost."""
+    if _IS_WIN:
+        return os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"),
+                            Path(_win_exe_name()).stem, "updates")
+    return "~/Library/Application Support/%s/updates" % _mac_app_name()
 
 
 def _pending_path():
@@ -832,8 +1476,17 @@ def clear_pending(also_remove_dmg=True):
     if also_remove_dmg and man and man.get("dmg"):
         try:
             p = Path(man["dmg"])
-            if p.is_file() and not p.is_symlink():
+            if p.is_symlink():
+                pass
+            elif p.is_file():
                 p.unlink()
+            elif p.is_dir() and p.suffix == ".app" and stage_dir().resolve() in p.resolve().parents:
+                shutil.rmtree(p, ignore_errors=True)
+        except (OSError, RuntimeError):
+            pass
+    if also_remove_dmg and man and man.get("manifest_path"):
+        try:
+            Path(man["manifest_path"]).unlink()
         except OSError:
             pass
     for p in (_pending_path(), _result_path()):
@@ -854,24 +1507,41 @@ def _verify_staged(man, recheck_online=True):
     than silently downgraded.
     """
     dmg = Path(man.get("dmg") or "")
-    if not dmg.is_file() or dmg.is_symlink():
-        raise RuntimeError("the staged disk image is gone")
     root = stage_dir().resolve()
-    if root not in dmg.resolve().parents:
-        raise RuntimeError("the staged image is not inside the staging directory")
-    got = _sha256(dmg)
-    if man.get("sha256") and got != man["sha256"]:
-        raise RuntimeError("the staged image changed on disk since it was verified")
+    if man.get("artifact_kind") == "app":
+        # A rebuilt bundle: its identity is the release manifest. Every file is
+        # re-hashed against it (a few seconds), and the manifest's own digest
+        # is what the online re-check compares with the published one.
+        import updates_delta as ud
+        if not dmg.is_dir() or dmg.is_symlink():
+            raise RuntimeError("the staged bundle is gone")
+        if root not in dmg.resolve().parents:
+            raise RuntimeError("the staged bundle is not inside the staging directory")
+        mp = Path(man.get("manifest_path") or "")
+        if not mp.is_file() or mp.is_symlink() or root not in mp.resolve().parents:
+            raise RuntimeError("the staged bundle's manifest is gone")
+        got = _sha256(mp)
+        if man.get("sha256") and got != man["sha256"]:
+            raise RuntimeError("the staged manifest changed on disk since it was verified")
+        manifest = ud.load_manifest(mp)
+        problems = ud.verify_tree(dmg, manifest)
+        if problems:
+            raise RuntimeError("the staged bundle changed on disk since it was verified: %s"
+                               % "; ".join(problems[:3]))
+    else:
+        if not dmg.is_file() or dmg.is_symlink():
+            raise RuntimeError("the staged disk image is gone")
+        if root not in dmg.resolve().parents:
+            raise RuntimeError("the staged image is not inside the staging directory")
+        if dmg.suffix.lower() != (".exe" if _IS_WIN else ".dmg"):
+            raise RuntimeError("the staged installer is not for this platform")
+        got = _sha256(dmg)
+        if man.get("sha256") and got != man["sha256"]:
+            raise RuntimeError("the staged image changed on disk since it was verified")
 
     published = None
     if recheck_online and man.get("sha256_url"):
-        try:
-            req = urllib.request.Request(man["sha256_url"],
-                                         headers={"User-Agent": "sutra-ui-updater"})
-            with urllib.request.urlopen(req, timeout=NET_TIMEOUT) as r:
-                published = r.read().decode("utf-8").split()[0].strip()
-        except (urllib.error.URLError, OSError, IndexError, ValueError):
-            published = None
+        published = _published_sha256(man["sha256_url"])
     if published and published != got:
         raise RuntimeError("the staged image no longer matches the published "
                            "checksum for this release")
@@ -930,6 +1600,12 @@ def stage_desktop():
     if not state.get("update_available"):
         return {"staged": False, "reason": "already up to date",
                 "installed": state.get("installed")}
+    # Asked here and not only by the HTTP route: the sidecar (updates_cli stage)
+    # calls straight in, and a portable Windows copy downloaded the installer
+    # on every release only to be refused at every arm.
+    blocked = install_blocker()
+    if blocked:
+        raise RuntimeError(blocked)
 
     version = state.get("latest")
     existing = read_pending()
@@ -937,26 +1613,37 @@ def stage_desktop():
         return {"staged": False, "version": existing.get("version"),
                 "reason": "an installer for %s is already waiting"
                           % existing.get("version")}
-    if existing and existing.get("version") == version and existing.get("dmg"):
+    replaceable = None
+    if existing and existing.get("dmg"):
         try:
             _verify_staged(existing, recheck_online=False)
-            return {"staged": True, "already": True, "version": version,
-                    "state": existing.get("state")}
+            if existing.get("version") == version:
+                return {"staged": True, "already": True, "version": version,
+                        "state": existing.get("state")}
         except RuntimeError:
-            pass     # unusable; fetch it again -- the commit replaces this record
+            # Unusable at ANY version; the commit replaces this record. A bad
+            # record claiming a newer version used to discard every real
+            # download as "already staged" (2026-09-26, a leaked test fixture).
+            replaceable = existing
 
     root = stage_dir()
     _sweep_stale_downloads(root)
     latest = _latest_desktop()
     work = Path(tempfile.mkdtemp(prefix=".download-", dir=str(root)))
+    global _progress_version, _downloaded_bytes
+    _progress_version, _downloaded_bytes = version, 0
     try:
         got = download_and_verify(dest_dir=str(work))
-        digest = _sha256(got["dmg"])
+        got["downloaded_bytes"] = _downloaded_bytes
+        # A rebuilt bundle's identity is its manifest's digest; an image's is
+        # its own. Either way it is what arm re-checks against the release.
+        digest = got["sha256"] if got.get("kind") == "app" else _sha256(got["dmg"])
         with _state_lock():
             return _commit_stage(got, got.get("version") or version, digest,
-                                 latest, replaceable=existing)
+                                 latest, replaceable=replaceable)
     finally:
         shutil.rmtree(work, ignore_errors=True)
+        progress_clear()
 
 
 def _commit_stage(got, version, digest, latest, replaceable):
@@ -965,7 +1652,7 @@ def _commit_stage(got, version, digest, latest, replaceable):
     Re-reads the manifest, because the world moved during the download:
       - a live install  -> discard; its DMG is never deleted or overwritten
       - same or newer already staged by someone else -> discard
-      - the broken same-version record we set out to replace -> replace it
+      - the broken record we set out to replace, any version -> replace it
     """
     cur = read_pending()
     if _install_live(cur):
@@ -974,23 +1661,37 @@ def _commit_stage(got, version, digest, latest, replaceable):
                 "reason": "an installer for %s is already waiting"
                           % cur.get("version")}
     if cur and cur.get("dmg") and _ver_tuple(cur.get("version")) >= _ver_tuple(version):
-        broken_same = cur == replaceable and cur.get("version") == version
-        if not broken_same:
+        if cur != replaceable:
             return {"staged": True, "already": True, "discarded": version,
                     "version": cur.get("version"), "state": cur.get("state")}
 
-    src = Path(got["dmg"])
-    if src.is_symlink() or not src.is_file():
+    kind = got.get("kind") or "dmg"
+    src = Path(got["app"] if kind == "app" else got["dmg"])
+    if src.is_symlink() or not (src.is_dir() if kind == "app" else src.is_file()):
         raise RuntimeError("the verified download disappeared before it was staged")
-    final = _staged_dmg_path(latest.get("asset") or src.name, version)
+    manifest_final = None
+    if kind == "app":
+        final = stage_dir() / _staged_app_name(version)
+        if final.exists() and not final.is_symlink():
+            shutil.rmtree(final, ignore_errors=True)
+        manifest_final = stage_dir() / (final.name[:-4] + ".manifest.json")
+        os.replace(got["manifest_path"], manifest_final)
+    else:
+        final = _staged_dmg_path(latest.get("asset") or src.name, version)
     os.replace(src, final)
     _write_json(_pending_path(), {
         "state": "staged",
         "version": version,
         "dmg": str(final),
+        "artifact_kind": kind,
+        "manifest_path": str(manifest_final) if manifest_final else None,
+        "tree_sha256": got.get("tree_sha256"),
+        "delta": got.get("delta"),
+        "note": got.get("note"),
+        "downloaded_bytes": got.get("downloaded_bytes"),
         "sha256": digest,
-        "sha256_url": latest.get("sha256_url"),
-        "asset": latest.get("asset"),
+        "sha256_url": got.get("sha256_url") if kind == "app" else latest.get("sha256_url"),
+        "asset": got.get("asset") if kind == "app" else latest.get("asset"),
         "staged_at": int(time.time()),
         "armed_at": None,
         "lease_until": None,
@@ -1004,18 +1705,25 @@ def _commit_stage(got, version, digest, latest, replaceable):
     })
     # Every other image here is now unreferenced: the only other holder of a
     # DMG path is a live install, refused above. This also retires the old
-    # unversioned Sutra-<arch>.dmg name.
-    for p in stage_dir().glob("*.dmg"):
+    # unversioned Sutra-<arch>.dmg name. (.exe on Windows.) The other platform's
+    # installer is swept too: it can only be junk here, never armable.
+    for p in list(stage_dir().glob("*.dmg")) + list(stage_dir().glob("*.exe")) \
+            + list(stage_dir().glob("*.app")) + list(stage_dir().glob("*.manifest.json")):
         try:
-            if p != final and p.is_file() and not p.is_symlink():
+            if p in (final, manifest_final) or p.is_symlink():
+                continue
+            if p.is_file():
                 p.unlink()
+            elif p.is_dir() and p.suffix == ".app":
+                shutil.rmtree(p, ignore_errors=True)
         except OSError:
             pass
     try:
         _result_path().unlink()
     except OSError:
         pass
-    return {"staged": True, "version": version, "dmg": str(final)}
+    return {"staged": True, "version": version, "dmg": str(final), "artifact_kind": kind,
+            "delta": got.get("delta"), "note": got.get("note")}
 
 
 ARM_RECORD_RETRIES = 3      # manifest changed between verify and commit
@@ -1067,7 +1775,7 @@ def _arm_locked(man, proof, wait_pid, wait_start, relaunch):
     # Stamped BEFORE the spawn, so a crash between here and the helper starting
     # is still visible as an attempt at the next launch.
     man.update({"state": "installing", "armed_at": now,
-                "lease_until": now + ARM_LEASE_SECONDS,
+                "lease_until": now + (WIN_ARM_LEASE_SECONDS if _IS_WIN else ARM_LEASE_SECONDS),
                 "arm_attempts": int(man.get("arm_attempts", 0)) + 1,
                 "relaunch": bool(relaunch)})
     _write_json(_pending_path(), man)
@@ -1114,6 +1822,17 @@ def _resolve_pending_unlocked(installed_version=None):
 
     if res and res.get("version") == version:
         if res.get("ok"):
+            clear_pending()
+            return {"pending": False, "applied": version}
+        # A failed apply of a version the running bundle already is, or is past, is nothing to retry: the bundle
+        # is what it is. installed_version is read from THIS bundle by the shell, never through the API, so the
+        # attach-path trap above does not reach here. (Found live 2026-09-29: a 2.306.11 Beta re-armed the stable
+        # app's failed 2.306.10 at every launch and quit to apply it.)
+        if installed_version and _ver_tuple(installed_version) > _ver_tuple(version):
+            clear_pending()
+            return {"pending": False, "dropped": version,
+                    "why": "the app that runs is %s, newer than the staged %s" % (installed_version, version)}
+        if installed_version and _ver_tuple(installed_version) == _ver_tuple(version):
             clear_pending()
             return {"pending": False, "applied": version}
         man["install_failures"] = int(man.get("install_failures", 0)) + 1
@@ -1168,6 +1887,8 @@ def pending_state():
     out = {"pending": True, "version": man.get("version"),
            "state": man.get("state"), "staged_at": man.get("staged_at"),
            "install_failures": man.get("install_failures", 0),
+           "downloaded_bytes": man.get("downloaded_bytes"),
+           "delta": bool(man.get("artifact_kind") == "app"),
            "error": man.get("last_error")}
     rec = _read_json(_recover_path())
     if rec:

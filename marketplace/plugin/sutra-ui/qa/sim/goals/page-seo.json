@@ -1,0 +1,22 @@
+{
+  "id": "page-seo",
+  "person": "founder",
+  "app": "http://127.0.0.1:8331/",
+  "organisation": "Page SEO",
+  "goal": "A tool that improves the SEO of any web page I give it: read the page from the internet, tell me what holds it back in search, and give me the better title, description, headings and opening text, each change with its reason. Start with https://sankalpasawa.github.io/sutra/",
+  "why": "founder 2026-09-29 ~17:05: 'I want to build out a tool which improves the SEO of pages. Use the Human Simulation program to do it.' A fresh organisation from the app's own sheet; the tool is whatever the department's own functions shape from these words (an engine that reads a page, judges it, files the changes), never a thing the session builds by hand. The person gives a page, not facts. Runs on Beta 2.306.16-desktop (run 3's fixes 34-46: sutra 5c0b518a).",
+  "outcomes": [
+    { "id": "founded", "expect": "Page SEO in the tree with its Root, On, from the New organisation sheet", "verify": { "kind": "route", "get": "/api/native/depts", "check": "'Page SEO Root', kind root" } },
+    { "id": "child-born", "expect": "one department under Root after one Stamp, named for the tool, of a kind that fits words that are not a website", "verify": { "kind": "route", "get": "/api/native/depts", "check": "a department under the Root; its kind" } },
+    { "id": "reads-at-once", "expect": "the words are filed at once and the department reads the page itself (founder 2026-09-29 17:48: the internet is a given); no ask, no stamp and no shaped engine for reading; the working line names the step", "verify": { "kind": "route", "get": "/api/native/{child}/chat", "check": "'filed in the Brief' then '<artifact> v1 is filed.' with no ask of kind engine or request in between" } },
+    { "id": "report-filed", "expect": "what the department files for the page is what holds it back in search and the better title, description, headings and opening text, each with its reason; nothing invented about the page", "verify": { "kind": "route", "get": "/api/native/{child}/artifact/<slug>", "check": "a title, a description, headings, opening text, reasons; the page's own words quoted" } },
+    { "id": "second-page", "expect": "a second page given in the chat gets its own reading and its own report; the first page's report is not lost", "verify": { "kind": "route", "get": "/api/native/{child}/map", "check": "the engine's artifact v2 and the Result v2; v1 still readable" } }
+  ],
+  "variances": [
+    { "id": "meaning-rule", "where": "the department's chat", "do": "say a rule: Never change what a page claims, only how it says it. Stamp it.", "expect": "the rule is asked for as a rule ('A rule, as understood: ...'), and stamped it is on the record's rules; no search runs for it", "verify": { "kind": "route", "get": "/api/native/{child}/map", "check": "rules[] has it; the engine's versions unchanged" } },
+    { "id": "which-matters", "where": "the department's chat", "do": "ask: Which of your changes matters most?", "expect": "an answer from the record in the chat, not a new run", "verify": { "kind": "route", "get": "/api/native/{child}/chat", "check": "a turn word answer; no new Result version" } },
+    { "id": "say-to-priority", "where": "Priority's Chat", "do": "say: Do the second page first from now on.", "expect": "the words in Priority's chat at once and the person stays there; what came of them lands in that chat too", "verify": { "kind": "route", "get": "/api/native/{child}/chat?fn=priority", "check": "a turn src Owner with the words; the tells of its chain" } },
+    { "id": "other-chats-kept", "where": "the function cards", "do": "open Identity's Chat, then Adaptation's, then Identity's again", "expect": "each its own existing chat; nothing starts, nothing lost", "verify": { "kind": "screen", "check": "the same turns on the second open" } },
+    { "id": "stop-mid-run", "where": "System status", "do": "press Stop while the engine reads a page; Start again", "expect": "Stopped and Started are turns; the run resumes; one version", "verify": { "kind": "route", "get": "/api/native/{child}/health", "check": "Slots: each slot ran once" } }
+  ]
+}

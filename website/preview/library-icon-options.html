@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where the Library icon lives &mdash; six options</title>
+<!-- Six homes for one icon (2026-09-24, founder: "the icon doesn't need to be in the
+     search bar. It can just be at the top somewhere. Help me find this place or give me
+     many options for it."). Each option is drawn at the real scale of the surface it
+     would live on, with what it displaces and what it costs. Markup and css are the
+     app's own (library-assets/). Nothing is built. -->
+<link rel="stylesheet" href="library-assets/panel.css">
+<link rel="stylesheet" href="library-assets/workspace.css">
+<link rel="stylesheet" href="library-assets/agents.css">
+<style>
+html,body{height:auto;overflow:auto}
+body{background:#ECEAE6;padding:26px 18px 70px}
+.wrap{height:auto;overflow:visible;max-width:1280px;margin:0 auto}
+.cap{font:12.5px/1.6 var(--sans);color:var(--muted);margin:0 0 9px;max-width:86ch}
+.cap b{color:var(--ink);font-weight:600}
+h2.mh{font:600 15px/1.3 var(--serif);color:var(--ink);margin:26px 0 6px}
+.mtbl{width:100%;border-collapse:collapse;font:12px/1.5 var(--sans);margin:0 0 24px;background:var(--card);
+  border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.mtbl th,.mtbl td{padding:7px 11px;text-align:left;border-bottom:1px solid var(--line-soft);vertical-align:top}
+.mtbl th{font:600 10px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+.mtbl tr:last-child td{border-bottom:0}
+.mtbl td b{color:var(--ink)}
+
+/* each option: a slice of the app at real scale, with its verdict beside it */
+.opt{display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start;
+  margin:0 0 18px;background:var(--card);border:1px solid var(--line);border-radius:11px;
+  padding:14px;box-shadow:var(--row-shadow)}
+.opt h3{font:600 13.5px/1.3 var(--sans);color:var(--ink);margin:0 0 3px}
+.opt h3 em{font-style:normal;color:var(--faint);font-weight:400;font-size:11.5px;margin-left:6px}
+.optnote{font:12px/1.6 var(--sans);color:var(--muted);margin:6px 0 0}
+.optnote b{color:var(--ink);font-weight:600}
+.optv{font:11.5px/1.6 var(--sans);color:var(--muted)}
+.optv div{margin:0 0 5px;display:flex;gap:7px}
+.optv i{font-style:normal;width:56px;flex:none;font:600 9px/1.7 var(--mono);letter-spacing:.09em;
+  text-transform:uppercase;color:var(--faint)}
+.optrank{display:inline-block;font:600 9.5px/1 var(--mono);letter-spacing:.07em;padding:4px 7px;
+  border-radius:999px;border:1px solid var(--line);color:var(--faint);margin-left:8px}
+.optrank.best{color:var(--acc);border-color:var(--acc);background:var(--acc-bg)}
+.optrank.no{color:var(--block);border-color:var(--block-line);background:var(--block-bg)}
+
+/* the slice: a fragment of the app shell, not a whole window */
+.slice{border:1px solid var(--line-soft);border-radius:9px;overflow:hidden;background:var(--card)}
+.slice .bar{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid var(--line-soft)}
+.slice .bar .ttl{font:600 14px/1.2 var(--serif);color:var(--ink)}
+.slice .bar .sub{font:11px/1 var(--mono);color:var(--faint)}
+.slice .cols{display:flex;min-height:132px}
+.slice .lft{width:186px;flex:none;border-right:1px solid var(--line-soft);padding:8px 0}
+.slice .rgt{flex:1;padding:10px 14px;color:var(--muted);font:12px/1.6 var(--sans)}
+.srow{display:flex;align-items:center;gap:6px;margin:0 6px;padding:4px 8px;border-radius:6px;
+  font:12px/1.4 var(--sans);color:var(--ink)}
+.srow.on{background:var(--acc-bg);color:var(--acc)}
+.srow .d{width:11px;flex:none;color:var(--faint)}
+.ssearch{display:flex;align-items:center;gap:7px;padding:0 12px 8px;color:var(--faint)}
+.ssearch input{flex:1;min-width:0;font-size:11.5px}
+.libbtn{width:26px;height:26px;flex:none;display:inline-flex;align-items:center;justify-content:center;
+  border:1px solid transparent;border-radius:7px;background:none;color:var(--faint);cursor:pointer}
+.libbtn.on{color:var(--acc);border-color:var(--acc);background:var(--acc-bg)}
+.libbtn svg{width:15px;height:15px}
+.libtab{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:7px;
+  font:600 11.5px/1 var(--sans);color:var(--faint);border:1px solid transparent;cursor:pointer}
+.libtab.on{color:var(--acc);border-color:var(--acc);background:var(--acc-bg)}
+.libtab svg{width:14px;height:14px}
+.railstrip{width:58px;flex:none;border-right:1px solid var(--line-soft);padding:10px 0;
+  display:flex;flex-direction:column;align-items:center;gap:12px;color:var(--faint)}
+.railstrip .ri{display:flex;flex-direction:column;align-items:center;gap:3px;font:9px/1 var(--sans)}
+.railstrip .ri.on{color:var(--acc)}
+.railstrip svg{width:17px;height:17px}
+.winbar{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--line-soft);
+  background:var(--soft)}
+.winbar .dots{display:flex;gap:5px}
+.winbar .dots i{width:9px;height:9px;border-radius:50%;background:var(--line);display:block}
+.winbar .wt{font:11.5px/1 var(--sans);color:var(--faint);margin:0 auto}
+.corner{position:relative}
+.corner .fab{position:absolute;right:12px;bottom:10px;width:34px;height:34px;border-radius:50%;
+  background:var(--acc);color:var(--on-acc);display:flex;align-items:center;justify-content:center;
+  box-shadow:var(--shadow)}
+.corner .fab svg{width:16px;height:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<p class="cap"><b>Where the Library icon lives &mdash; six options, 2026-09-24.</b> Each one is
+drawn at the real scale of the surface it would sit on. The question is not decoration: every
+top row in this app already has something in it, so the icon either joins a row that is about
+<i>what this panel shows</i>, or it joins one that is about <i>the thing you selected</i>, and
+those read very differently.</p>
+
+<div class="opt" id="opt-1">
+  <div class="slice">
+    <div class="bar"><span class="ttl">Experience</span><span class="sub">department</span>
+      <span style="margin-left:auto"></span>
+      <button class="libbtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M11 4h3.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11z"/><path d="M18.4 6.2l2.1 12"/></svg></button>
+    </div>
+    <div class="cols"><div class="lft">
+      <div class="srow"><span class="d">&rsaquo;</span>Sutra</div>
+      <div class="srow on"><span class="d"></span>Experience</div>
+      <div class="srow"><span class="d"></span>Research</div>
+      <div class="srow"><span class="d"></span>Deckem</div>
+    </div><div class="rgt">The department's own screen</div></div>
+  </div>
+  <div>
+    <h3>1. In the title strip, far right <span class="optrank">third</span></h3>
+    <p class="optnote">Beside the name of whatever is selected, where a screen's own tools sit.</p>
+    <div class="optv">
+      <div><i>reads as</i><span>a tool belonging to <b>this department</b>, which it is not</span></div>
+      <div><i>displaces</i><span>nothing; that corner is empty today</span></div>
+      <div><i>cost</i><span>1 h, 2 files</span></div>
+      <div><i>risk</i><span>the commonest misread: people expect it to act on Experience</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="opt" id="opt-2">
+  <div class="slice">
+    <div class="bar"><span class="ttl">Org</span>
+      <span style="margin-left:auto;display:flex;gap:6px">
+        <span class="libtab on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="8.5" y="14" width="7" height="7"/></svg>Structure</span>
+        <span class="libtab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M11 4h3.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11z"/><path d="M18.4 6.2l2.1 12"/></svg>Library</span>
+      </span>
+    </div>
+    <div class="cols"><div class="lft">
+      <div class="srow"><span class="d">&rsaquo;</span>Sutra</div>
+      <div class="srow on"><span class="d"></span>Experience</div>
+      <div class="srow"><span class="d"></span>Research</div>
+      <div class="srow"><span class="d"></span>Deckem</div>
+    </div><div class="rgt">The department's own screen</div></div>
+  </div>
+  <div>
+    <h3>2. A pair at the head of the screen <em>Structure | Library</em> <span class="optrank best">recommended</span></h3>
+    <p class="optnote">Two named places at the top of the Org screen, the way the app's tab pairs
+      already work. The icon is there, and so is the word.</p>
+    <div class="optv">
+      <div><i>reads as</i><span>two things this screen can show, which is exactly true</span></div>
+      <div><i>displaces</i><span>nothing; the strip carries only the screen's name</span></div>
+      <div><i>cost</i><span>1 h, 3 files</span></div>
+      <div><i>risk</i><span>one more control in the strip, but it is the app's own tab pair, not a new idea</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="opt" id="opt-3">
+  <div class="slice">
+    <div class="bar"><span class="ttl">Org</span></div>
+    <div class="cols"><div class="lft">
+      <div style="display:flex;gap:4px;padding:0 8px 8px">
+        <span class="libtab on" style="flex:1;justify-content:center;font-size:10.5px">Departments</span>
+        <span class="libtab" style="flex:1;justify-content:center;font-size:10.5px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M11 4h3.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11z"/><path d="M18.4 6.2l2.1 12"/></svg>Library</span>
+      </div>
+      <div class="srow"><span class="d">&rsaquo;</span>Sutra</div>
+      <div class="srow on"><span class="d"></span>Experience</div>
+      <div class="srow"><span class="d"></span>Deckem</div>
+    </div><div class="rgt">The department's own screen</div></div>
+  </div>
+  <div>
+    <h3>3. A pair above the tree <em>inside the panel</em> <span class="optrank">second</span></h3>
+    <p class="optnote">The same pair, but living in the panel it switches rather than in the screen's
+      title strip.</p>
+    <div class="optv">
+      <div><i>reads as</i><span>a switch for <b>this list</b>, which is precisely what it is</span></div>
+      <div><i>displaces</i><span>a row of tree height, every time, on every screen width</span></div>
+      <div><i>cost</i><span>1 h, 3 files</span></div>
+      <div><i>risk</i><span>the panel is narrow; two words plus an icon crowd it</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="opt" id="opt-4">
+  <div class="slice">
+    <div class="cols">
+      <div class="railstrip">
+        <span class="ri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>Now</span>
+        <span class="ri on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="8.5" y="14" width="7" height="7"/></svg>Org</span>
+        <span class="ri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M11 4h3.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11z"/><path d="M18.4 6.2l2.1 12"/></svg>Library</span>
+      </div>
+      <div class="lft">
+        <div class="srow"><span class="d">&rsaquo;</span>Sutra</div>
+        <div class="srow on"><span class="d"></span>Experience</div>
+        <div class="srow"><span class="d"></span>Deckem</div>
+      </div><div class="rgt">The department's own screen</div></div>
+  </div>
+  <div>
+    <h3>3b. Back in the rail, under Org <span class="optrank no">reverts you</span></h3>
+    <p class="optnote">Where it lived this morning. You moved it out an hour ago, so this is here
+      only so the set is complete.</p>
+    <div class="optv">
+      <div><i>reads as</i><span>a place of its own, beside the company</span></div>
+      <div><i>displaces</i><span>a rail slot; the rail goes back to six buttons</span></div>
+      <div><i>cost</i><span>nothing, it is a revert</span></div>
+      <div><i>risk</i><span>it is the thing you asked to change</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="opt" id="opt-5">
+  <div class="slice">
+    <div class="winbar"><span class="dots"><i></i><i></i><i></i></span><span class="wt">Sutra</span>
+      <button class="libbtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M11 4h3.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11z"/><path d="M18.4 6.2l2.1 12"/></svg></button>
+    </div>
+    <div class="cols"><div class="lft">
+      <div class="srow"><span class="d">&rsaquo;</span>Sutra</div>
+      <div class="srow on"><span class="d"></span>Experience</div>
+      <div class="srow"><span class="d"></span>Deckem</div>
+    </div><div class="rgt">The department's own screen</div></div>
+  </div>
+  <div>
+    <h3>4. In the window bar, top right <span class="optrank">fourth</span></h3>
+    <p class="optnote">The app's own chrome, above every screen. Always in the same place, whatever
+      you are looking at.</p>
+    <div class="optv">
+      <div><i>reads as</i><span>an app-wide thing, like settings, rather than part of the org</span></div>
+      <div><i>displaces</i><span>nothing, but it sets a precedent: the next feature wants a seat there too</span></div>
+      <div><i>cost</i><span>1.5 h, 4 files, and it touches the window chrome</span></div>
+      <div><i>risk</i><span>far from the work; on a Mac that strip is where people expect the system's controls</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="opt" id="opt-6">
+  <div class="slice corner">
+    <div class="bar"><span class="ttl">Org</span></div>
+    <div class="cols"><div class="lft">
+      <div class="srow"><span class="d">&rsaquo;</span>Sutra</div>
+      <div class="srow on"><span class="d"></span>Experience</div>
+      <div class="srow"><span class="d"></span>Deckem</div>
+    </div><div class="rgt">The department's own screen</div></div>
+    <span class="fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M11 4h3.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11z"/><path d="M18.4 6.2l2.1 12"/></svg></span>
+  </div>
+  <div>
+    <h3>5. A floating button, bottom right <span class="optrank no">against the app</span></h3>
+    <p class="optnote">Drawn so you can see why not. Nothing else in Sutra floats over content.</p>
+    <div class="optv">
+      <div><i>reads as</i><span>a phone app's compose button</span></div>
+      <div><i>displaces</i><span>it covers content, permanently</span></div>
+      <div><i>cost</i><span>1 h, 2 files</span></div>
+      <div><i>risk</i><span>it is the one pattern this app has never used</span></div>
+    </div>
+  </div>
+</div>
+
+<h2 class="mh">Side by side</h2>
+<table class="mtbl">
+  <tr><th>#</th><th>Place</th><th>What it says it is</th><th>What it costs you</th><th>Rank</th></tr>
+  <tr><td>2</td><td><b>A pair at the head of the Org screen</b></td><td>two things this screen can show</td><td>one control in an otherwise empty strip</td><td><b>first</b></td></tr>
+  <tr><td>3</td><td>A pair above the tree</td><td>a switch for this list</td><td>a row of panel height, always</td><td>second</td></tr>
+  <tr><td>1</td><td>The title strip, far right</td><td>a tool for the selected thing</td><td>the misread, every time</td><td>third</td></tr>
+  <tr><td>4</td><td>The window bar</td><td>an app-wide thing</td><td>chrome changes, and a precedent</td><td>fourth</td></tr>
+  <tr><td>3b</td><td>Back in the rail</td><td>a place of its own</td><td>it is what you just changed</td><td>revert</td></tr>
+  <tr><td>5</td><td>A floating button</td><td>a phone app</td><td>covers content, alien to the app</td><td>no</td></tr>
+</table>
+
+<p class="cap"><b>My pick is 2</b>, the pair at the head of the Org screen. It puts the icon at the
+top, as you asked, and it carries the word beside it, so nobody has to learn what the mark means.
+It is the app's own tab pair, so it introduces no new idea, and the strip it sits in is empty
+today. Say a number and I build that one.</p>
+
+</div>
+</body>
+</html>

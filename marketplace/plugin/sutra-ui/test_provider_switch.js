@@ -862,6 +862,7 @@ const REFRESH = (() => {
   vm.createContext(box);
   new vm.Script([
     grab(state, "adoptRealSessions"),
+    grab(state, "realSessionFromRow"),   /* the row converter, shared with chat search since 2026-09-24 */
     grab(state, "sessProviderRequest"),
     grab(render, "paneProvider"),
   ].join("\n") + "\n;globalThis.__R={adoptRealSessions,paneProvider};",

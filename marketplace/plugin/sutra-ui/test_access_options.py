@@ -667,5 +667,68 @@ class PlanToFullMigrationClamped(ClampedPosture):
             providers.PERMISSION_MODE_FLOOR)
 
 
+class FullAccessEveryLaunch(TempSettings):
+    """Founder ruling 2026-09-27: Sutra opens in Full access, every launch.
+
+    Supersedes PlanToFullMigration's "a Read only picked afterwards sticks":
+    that promise is what let a stored `plan` of unknown origin come back after
+    four fixes. The reset runs after the migration, so both classes hold for
+    their own function; the launch as a whole ends on Full access.
+    """
+
+    def _write(self, raw):
+        providers.SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        providers.SETTINGS_PATH.write_text(json.dumps(raw))
+
+    def test_a_chosen_read_only_is_reset_after_the_migration_ran(self):
+        """The exact shape that kept coming back: migrated, then `plan` stamped."""
+        self._write({"permission_mode": "plan", "provider": "claude",
+                     providers.ACCESS_CHOSEN_KEY: True,
+                     providers.FULL_ACCESS_MIGRATION_KEY: True})
+        self.assertIsNone(providers.migrate_plan_to_full())
+        self.assertEqual(providers.reset_access_to_full_on_launch(), "plan")
+        raw = self.raw()
+        self.assertEqual(raw["permission_mode"], providers.DEFAULT_PERMISSION_MODE)
+        self.assertNotIn(providers.ACCESS_CHOSEN_KEY, raw)
+        self.assertEqual(raw["provider"], "claude")
+        self.assertEqual(providers.load_settings()["access_effective"], "full")
+
+    def test_any_non_default_mode_is_reset(self):
+        for mode in ("acceptEdits", "dontAsk", "manual"):
+            self._write({"permission_mode": mode})
+            self.assertEqual(providers.reset_access_to_full_on_launch(), mode)
+            self.assertEqual(self.raw()["permission_mode"],
+                             providers.DEFAULT_PERMISSION_MODE)
+
+    def test_already_full_access_is_not_rewritten(self):
+        self._write({"permission_mode": providers.DEFAULT_PERMISSION_MODE})
+        self.assertIsNone(providers.reset_access_to_full_on_launch())
+
+    def test_a_fresh_install_gets_no_settings_file(self):
+        self.assertIsNone(providers.reset_access_to_full_on_launch())
+        self.assertFalse(providers.SETTINGS_PATH.exists())
+
+    def test_an_unreadable_file_is_not_rewritten(self):
+        providers.SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        providers.SETTINGS_PATH.write_text("{not json")
+        self.assertIsNone(providers.reset_access_to_full_on_launch())
+        self.assertEqual(providers.SETTINGS_PATH.read_text(), "{not json")
+
+    def test_the_out_of_band_opt_outs_still_win(self):
+        self._write({"permission_mode": "plan"})
+        os.environ[providers.CLAMP_MODES_ENV] = "1"
+        self.assertIsNone(providers.reset_access_to_full_on_launch())
+        os.environ.pop(providers.CLAMP_MODES_ENV, None)
+        old = os.environ.pop("SUTRA_UI_PERMISSION_MODE", None)
+        os.environ["SUTRA_UI_PERMISSION_MODE"] = "plan"
+        try:
+            self.assertIsNone(providers.reset_access_to_full_on_launch())
+        finally:
+            os.environ.pop("SUTRA_UI_PERMISSION_MODE", None)
+            if old is not None:
+                os.environ["SUTRA_UI_PERMISSION_MODE"] = old
+        self.assertEqual(self.raw()["permission_mode"], "plan")
+
+
 if __name__ == "__main__":
     unittest.main()

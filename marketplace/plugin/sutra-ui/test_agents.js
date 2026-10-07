@@ -667,6 +667,16 @@ test("connections shows Voyage as its own section and never the key", () => {
   assert.ok(/data-ag="clearvoy"/.test(html), "a set key can be disconnected");
   assert.ok(!/pa-[A-Za-z0-9]{10}/.test(html));
 });
+test("connections shows Semrush as its own section and never the key", () => {
+  const disconnected = A.agConnectionsHtml({ dataforseo_login: true, dataforseo_password: true, voyage_key: true, semrush_key: false }, { model_provider: "claude-cli" }, null);
+  assert.ok(/Semrush/.test(disconnected) && /data-agsemrush="key"/.test(disconnected));
+  assert.ok(!/data-ag="clearsemrush"/.test(disconnected), "no key set, so no disconnect button yet");
+  const connected = A.agConnectionsHtml({ dataforseo_login: true, dataforseo_password: true, voyage_key: true, semrush_key: true }, { model_provider: "claude-cli" }, null);
+  assert.ok(/data-ag="clearsemrush"/.test(connected), "a set key can be disconnected");
+  assert.ok(/connected/.test(connected.slice(connected.indexOf("Semrush"), connected.indexOf("Semrush") + 200)));
+  assert.ok(!/[A-Za-z0-9]{20,}/.test(connected.replace(/data-ag(?:semrush)?="[a-z]+"/g, "")),
+            "no key-shaped string leaks into the markup itself");
+});
 test("the tools screen is plain English: what, when, needs, how long", () => {
   const html = A.agToolsHtml([{ name: "index_site", label: "Reading the website", does: "Reads the whole website.", when: "Once, at setup.", needs: "The website address.", takes: "A few minutes." }]);
   assert.ok(/What it does/.test(html) && /When it runs/.test(html) && /What it needs/.test(html) && /How long/.test(html));
@@ -2820,7 +2830,7 @@ test("the guide draws all six parts of the copy: title, line, four steps, how to
             "the four section headings");
   const steps = html.slice(html.indexOf("<ol"), html.indexOf("</ol>"));
   assert.strictEqual((steps.match(/<li>/g) || []).length, 4, "four numbered steps");
-  assert.strictEqual((html.match(/<dt>/g) || []).length, 7, "seven tab rows");
+  assert.strictEqual((html.match(/<dt>/g) || []).length, 8, "eight tab rows");
   assert.strictEqual((html.match(/data-ag="dive"/g) || []).length, 5, "five doors, no more and no fewer");
   assert.ok(/Type what you want in the box below/.test(html));
 });
@@ -2853,7 +2863,7 @@ test("the tab table's left column is the sidebar's own names, exactly", () => {
   const nav = side.slice(side.indexOf('<ul class="nav">'));
   const fromSidebar = (nav.match(/<\/svg>([^<]+)/g) || []).map(m => m.replace("</svg>", "").trim());
   const fromTable = A.agGuideTabNames();
-  assert.strictEqual(fromSidebar.length, 7, "found the sidebar's seven tabs, got " + fromSidebar.join(", "));
+  assert.strictEqual(fromSidebar.length, 8, "found the sidebar's eight tabs, got " + fromSidebar.join(", "));
   /* joined rather than deep-compared: the table's array is built inside the vm realm and a
      cross-realm deepStrictEqual fails on the prototype, not on the names */
   assert.strictEqual(fromTable.slice().sort().join(" | "), fromSidebar.slice().sort().join(" | "),
@@ -3441,7 +3451,10 @@ test("the reader's CSS gives the app's own serif font, a real measure, and three
   const h2 = Number((/\.ag-doc h2\.md-h\{font-size:([\d.]+)em/.exec(doc) || [])[1]);
   const h3 = Number((/\.ag-doc h3\.md-h\{font-size:([\d.]+)em/.exec(doc) || [])[1]);
   assert.ok(h1 > h2 && h2 > h3 && h3 > 1, "three real, distinct sizes, largest first: h1=" + h1 + " h2=" + h2 + " h3=" + h3);
-  assert.ok(!/text-transform:\s*uppercase/.test(doc), "nothing in the article's own reading rules shouts");
+  /* The DECISION callout's kicker (.md-callout-k, 5a89db43) is a legend label, not reading
+     text: it may be small caps. Everything else in the reader's rules must not shout. */
+  const reading = doc.replace(/\.ag-doc \.md-callout-k\{[^}]*\}/g, "");
+  assert.ok(!/text-transform:\s*uppercase/.test(reading), "nothing in the article's own reading rules shouts");
   assert.ok(/\.ag-doc \.md-t\{/.test(doc) && /border:1px solid var\(--line-soft\)/.test(doc), "tables get real borders");
   assert.ok(/\.ag-doc \.md-l\{/.test(doc), "lists get their own spacing");
 });
@@ -4827,6 +4840,61 @@ async function atest(name, fn){
                          "the same send route a typed message uses -- the server carries r1 on, per api_send's own stopped-run rule");
       assert.strictEqual(posts[0][1].text, "Continue");
     } finally { A.apiPost = prevPost; A.agLoadChat = prevLoad; }
+  });
+
+  /* Semrush key save/clear -- same shape as savevoy/clearvoy just above: the key is read
+     straight off the input (never kept on a.connForm across a redraw, same as every other
+     secret on this screen), posted once, and the confirmation message is section-scoped
+     (smsg) so it never bleeds into the DataForSEO or Voyage rows next to it. */
+  function keyDoc(value){
+    const box = { value, getAttribute: () => "", matches: () => true };
+    return { querySelector: sel => (sel === '[data-agsemrush="key"]' ? box : null),
+             querySelectorAll: () => [], getElementById: () => null, activeElement: null };
+  }
+
+  await atest("savesemrush posts the key exactly once and confirms in its own message slot", async () => {
+    const a = agReset();
+    const doc = keyDoc("st-verysecretsemrushkey");
+    const prevDoc = A.document, prevPost = A.apiPost, prevGet = A.apiGet;
+    A.document = doc;
+    const posts = [];
+    A.apiPost = async (path, body) => { posts.push([path, body]); return { ok: true }; };
+    A.apiGet = async path => (/\/health/.test(path) ? {} : { semrush_key: true });
+    try {
+      await A.agAction("savesemrush", { getAttribute: () => "" });
+      assert.strictEqual(posts.length, 1, "one save, not two: " + JSON.stringify(posts));
+      assert.ok(/\/connections$/.test(posts[0][0]), posts[0][0]);
+      assert.strictEqual(posts[0][1].semrush_key, "st-verysecretsemrushkey", "the typed key went with it");
+      assert.ok(/Saved/.test(a.connForm.smsg), "confirms in smsg, not msg/vmsg -- those belong to the other two rows");
+    } finally { A.document = prevDoc; A.apiPost = prevPost; A.apiGet = prevGet; }
+  });
+
+  await atest("savesemrush refuses an empty key without ever calling the server", async () => {
+    const a = agReset();
+    const doc = keyDoc("");
+    const prevDoc = A.document, prevPost = A.apiPost;
+    A.document = doc;
+    let called = false;
+    A.apiPost = async () => { called = true; return {}; };
+    try {
+      await A.agAction("savesemrush", { getAttribute: () => "" });
+      assert.strictEqual(called, false, "no request for a blank key");
+      assert.ok(/Paste the key first/.test(a.connForm.smsg));
+    } finally { A.document = prevDoc; A.apiPost = prevPost; }
+  });
+
+  await atest("clearsemrush posts an empty key and disconnects", async () => {
+    const a = agReset();
+    const prevPost = A.apiPost, prevGet = A.apiGet;
+    const posts = [];
+    A.apiPost = async (path, body) => { posts.push([path, body]); return { ok: true }; };
+    A.apiGet = async path => (/\/health/.test(path) ? {} : { semrush_key: false });
+    try {
+      await A.agAction("clearsemrush", { getAttribute: () => "" });
+      assert.strictEqual(posts.length, 1);
+      assert.strictEqual(posts[0][1].semrush_key, "", "an explicit blank clears it, never omitted (save_connections only blanks a PERSON_KEY sent blank)");
+      assert.ok(/Disconnected/.test(a.connForm.smsg));
+    } finally { A.apiPost = prevPost; A.apiGet = prevGet; }
   });
 
   console.log("\n" + "-".repeat(60));

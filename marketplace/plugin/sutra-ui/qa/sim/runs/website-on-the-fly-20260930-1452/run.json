@@ -1,0 +1,102 @@
+{
+ "root": "dref-b5bb5511093e1466",
+ "child": {
+  "ref": "dref-a7fa8b5b58fc5021",
+  "name": "Hampi Guide Website",
+  "stopped": false,
+  "kind": "organic",
+  "parent": "dref-b5bb5511093e1466",
+  "working": [
+   "Identity"
+  ]
+ },
+ "kind": "organic",
+ "engines": [
+  [
+   "Scout",
+   "Brief",
+   "Sources",
+   "model"
+  ],
+  [
+   "Gather",
+   "Sources",
+   "Facts",
+   "model"
+  ],
+  [
+   "Layout",
+   "Facts",
+   "Pages",
+   "model"
+  ],
+  [
+   "Launch",
+   "Pages",
+   "Live site",
+   "model"
+  ]
+ ],
+ "artifacts": {
+  "Brief": 1,
+  "Sources": 1,
+  "Facts": 1,
+  "Pages": 1,
+  "Live site": 1
+ },
+ "live": true,
+ "recent": [
+  [
+   "Launch",
+   "ok",
+   "Live site from Pages, check passed"
+  ],
+  [
+   "Identity",
+   "ok",
+   "took the owner's stamp: Launch: go live for the first time, served from this app"
+  ],
+  [
+   "Layout",
+   "ok",
+   "Pages from Facts, check passed"
+  ],
+  [
+   "Gather",
+   "ok",
+   "Facts from Sources, check passed"
+  ],
+  [
+   "Scout",
+   "ok",
+   "Sources from Brief, check passed"
+  ],
+  [
+   "Identity",
+   "ok",
+   "added the engine Launch on the owner's stamp (born into the Library)"
+  ],
+  [
+   "Identity",
+   "ok",
+   "added the engine Layout on the owner's stamp (born into the Library)"
+  ],
+  [
+   "Identity",
+   "ok",
+   "added the engine Gather on the owner's stamp (born into the Library)"
+  ],
+  [
+   "Identity",
+   "ok",
+   "added the engine Scout on the owner's stamp (born into the Library)"
+  ],
+  [
+   "Identity",
+   "ok",
+   "added the line on the owner's stamp: Scout -> Gather -> Layout -> Launch"
+  ]
+ ],
+ "asks": [],
+ "minutes": 4.3
+}

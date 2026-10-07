@@ -12,6 +12,10 @@
 #                                   steps as a glyph bar (# done, ~ gated,
 #                                   ! missing, . pending); reads the host's
 #                                   status-line JSON on stdin when no --sid
+#   sutra-steps log                 one row per step execution, with the input
+#                                   it read and the output it produced
+#   sutra-steps replay              re-run the code steps on their own recorded
+#                                   inputs and compare byte for byte
 #   sutra-steps truthdiff           legacy vs rules decisions for the turn
 #   options: --sid <sid>  --proj <dir>  --json
 #
@@ -34,7 +38,7 @@ while [ $# -gt 0 ]; do
     --proj) PROJ="${2:-}"; shift 2 ;;
     --json) AS_JSON=1; shift ;;
     --all) ALL=1; shift ;;
-    pretty|statusline|truthdiff) MODE="$1"; shift ;;
+    pretty|statusline|truthdiff|log|replay) MODE="$1"; shift ;;
     -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
     *) WHICH="$1"; shift ;;
   esac
@@ -100,6 +104,50 @@ printf '%s\n' "$FILES" | while IFS= read -r f; do   # one path per line: spaces 
     cat "$f"
   elif [ "$MODE" = "pretty" ]; then
     sutra_steps_render_pretty "$f"
+  elif [ "$MODE" = "log" ]; then
+    # C1-C5: the rows the code wrote as each step ran, with input and output
+    echo "STEP LOG turn $(basename "$f" .steps.json | head -c 8): one row per step execution (code-written)"
+    sutra_steplog_render "${f%.steps.json}.steplog.jsonl"
+  elif [ "$MODE" = "replay" ]; then
+    # C6: run the same code on the same recorded inputs and compare byte for
+    # byte. Only the code-decided steps are replayable; a model step is not,
+    # and says so rather than being silently counted as reproduced.
+    _rp="${f%.steps.json}.replay.json"
+    _rp_t="$(basename "$f" .steps.json | head -c 8)"
+    if [ ! -f "$_rp" ]; then
+      echo "REPLAY turn $_rp_t: no replay record (turn ran before the record shipped)"
+    else
+      echo "REPLAY turn $_rp_t: the code steps re-run on their own recorded inputs"
+      _rp_prompt="$(jq -r '.prompt // ""' "$_rp" 2>/dev/null)"
+      _rp_fail=0
+      # the clock is not a decision: the stamp is dropped from both sides, and
+      # every other field must match exactly
+      _rp_norm() { jq -Sc 'del(.ts)' 2>/dev/null <<< "$1" || printf '%s' "$1"; }
+      _rp_was="$(_rp_norm "$(jq -r '.recorded.classify // ""' "$_rp" 2>/dev/null)")"
+      _rp_now="$(_rp_norm "$(bash "$ROOT/skills/human-sutra/scripts/classify.sh" "$_rp_prompt" 2>/dev/null)")"
+      if [ "$_rp_now" = "$_rp_was" ]; then echo "  1 classify   SAME"; else echo "  1 classify   DIFF (recorded [$_rp_was], now [$_rp_now])"; _rp_fail=1; fi
+      _rp_was="$(jq -r '.recorded.resolve // ""' "$_rp" 2>/dev/null)"
+      if [ "$(jq -r '.degraded.resolve // false' "$_rp" 2>/dev/null)" = "true" ]; then
+        echo "  2 resolve    NOT REPLAYED (the matcher was unavailable that turn; the row says degraded)"
+      else
+        _rp_now="$(CLAUDE_PROJECT_DIR="$PROJ" CLAUDE_PLUGIN_ROOT="$ROOT" \
+          bash "$ROOT/bin/workflow-type-match.sh" "$_rp_prompt" 2>/dev/null | head -1)"
+        if [ "$_rp_now" = "$_rp_was" ]; then echo "  2 resolve    SAME"; else echo "  2 resolve    DIFF (recorded [$_rp_was], now [$_rp_now])"; _rp_fail=1; fi
+      fi
+      _rp_was="$(jq -r '.recorded.depth // ""' "$_rp" 2>/dev/null)"
+      _rp_now="$(sutra_steps_depth_rubric \
+        "$(jq -r '.depth_inputs.is_company // "0"' "$_rp" 2>/dev/null)" \
+        "$(jq -r '.depth_inputs.verb // ""' "$_rp" 2>/dev/null)" \
+        "$(jq -r '.depth_inputs.ff_degraded // "0"' "$_rp" 2>/dev/null)" \
+        "$(jq -r '.depth_inputs.steps_est // "0"' "$_rp" 2>/dev/null)" \
+        "$(jq -r '.depth_inputs.mutation_verbs // "0"' "$_rp" 2>/dev/null)")"
+      if [ "$_rp_now" = "$_rp_was" ]; then echo "  3 depth      SAME"; else echo "  3 depth      DIFF (recorded [$_rp_was], now [$_rp_now])"; _rp_fail=1; fi
+      echo "  4 placement  NOT REPLAYED (the register changes between runs; its answer is recorded, not reproduced)"
+      echo "  5-7          NOT REPLAYABLE (the session model answers these)"
+      echo "  8-11         NOT REPLAYED (they read this turn's own lanes and ledger)"
+      [ "$_rp_fail" = "0" ] && echo "  REPLAY: every replayable step reproduced byte for byte" \
+                            || echo "  REPLAY: a step did not reproduce - the code is not deterministic on this input"
+    fi
   elif [ "$MODE" = "truthdiff" ]; then
     _td="${f%.steps.json}.truthdiff.jsonl"
     if [ -f "$_td" ]; then

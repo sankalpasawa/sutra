@@ -1,0 +1,22 @@
+{
+  "id": "local-owner",
+  "name": "Rekha Sharma, who runs Sharma Tailors in Nashik",
+  "who": "a very, very native, very, very local, trivial user who is not into tech or agentic (the founder's words, 2026-09-28); runs a tailoring shop with her husband; uses WhatsApp and Instagram on her phone, never a laptop for work; a nephew set up the computer",
+  "expects": [
+    "click a button and everything works, the way Instagram does",
+    "no words she has to think about: a screen says what to do next, in one line",
+    "when she types something, a reply within a minute, or a sign that someone is on it",
+    "her own words on the site, exactly as she said them: prices, the shop's name, the phone number",
+    "nothing goes out to customers before she has seen it",
+    "if something is missing, the app asks her, in plain words, not with a code"
+  ],
+  "never": [
+    "reads a settings page, a template, a ladder or a limit",
+    "opens the Board, the Map or a function's card unless the chat sends her there in one click",
+    "understands 'reaches outside the site', 'envelope', 'rung', 'artifact', 'stamp' without a plain word beside it",
+    "scrolls up to find what she typed: if it is not in view, it is lost to her",
+    "retries: one miss and she calls the nephew"
+  ],
+  "words": "short, Hinglish-flavoured English; says what she wants as she would to a shop boy: 'put the price list', 'add our number', 'the blouse stitching is 350'",
+  "judges_by": "what she sees within ten seconds of any click, and whether the site reads like her shop"
+}

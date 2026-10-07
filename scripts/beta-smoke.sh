@@ -59,7 +59,7 @@ smoke_install_dir() {                # smoke_install_dir <applications-writable:
   if [ "${1:-no}" = yes ]; then printf '/Applications'; else printf '%s/Applications' "${2:-$HOME}"; fi
 }
 # the walk: every route the smoke must see answer 200
-SMOKE_ROUTES="/ /api/state /api/shadow/status /api/shadow/settings /api/shadow/missions /api/shadow/feed /api/sessions"
+SMOKE_ROUTES="/ /api/state /api/shadow/status /api/shadow/settings /api/shadow/missions /api/shadow/feed /api/sessions /api/native/ping /api/native/depts"
 
 if [ "${BETA_SMOKE_LIB:-0}" = 1 ]; then return 0 2>/dev/null || exit 0; fi
 

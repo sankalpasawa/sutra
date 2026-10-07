@@ -165,7 +165,14 @@ PYEOF
 # Byte-code is compiled here too: the bundle is read-only once signed, so a
 # first launch that tried to write .pyc would silently fall back to recompiling
 # every import, every time.
-"$PY" -m compileall -q "$SITE" >/dev/null 2>&1 || true
+#
+# unchecked-hash, not the default timestamp mode (2026-09-25): a timestamp pyc
+# embeds the source mtime pip gave it at THIS build, so all 1,221 pycs differed
+# between every pair of releases and each one cost a delta-pack entry (see
+# ../DELTA-UPDATES-DESIGN.md). A hash-based pyc is a pure function of the
+# source, and "unchecked" means the interpreter never re-stats the source --
+# correct for a bundle that cannot change after signing.
+"$PY" -m compileall -q --invalidation-mode unchecked-hash "$SITE" >/dev/null 2>&1 || true
 # pip's own caches and the test suites are dead weight in a shipped bundle.
 find "$PAYLOAD/python" -type d -name '__pycache__' -path '*/pip/*' -prune -exec rm -rf {} + 2>/dev/null || true
 find "$PAYLOAD/python" -type d -name 'test' -o -type d -name 'tests' 2>/dev/null | grep -E 'lib/python3\.[0-9]+/(test|.*/tests?)$' | xargs rm -rf 2>/dev/null || true
@@ -185,10 +192,17 @@ rsync -a --delete \
   --exclude 'sutra-ui/electron/node_modules/' \
   --exclude 'sutra-ui/electron/node_modules' \
   --exclude 'sutra-ui/electron/dist/' \
+  --exclude 'sutra-ui/electron/dist-delta/' \
   --exclude 'sutra-ui/electron/payload/' \
   --exclude '__pycache__/' --exclude '*.pyc' \
   --exclude '.git/' --exclude '.DS_Store' \
+  --exclude 'hooks/tests/' \
+  --exclude 'sutra-ui/qa/runs/' \
   "$PLUGIN"/ "$PAYLOAD/plugin"/ || die "staging the plugin failed"
+# hooks/tests/ (36 MB of golden fixtures) and sutra-ui/qa/runs/ (49 MB of QA run
+# output) shipped in every DMG until 2026-09-25: 85 MB nothing at runtime reads,
+# sealed into every signature and churned in every delta pack. The runtime
+# suites CI runs come from the repo, not from the bundle.
 [ -f "$PAYLOAD/plugin/sutra-ui/app.py" ] || die "payload has no sutra-ui/app.py"
 [ -f "$PAYLOAD/plugin/lib/placement_engine.py" ] || die "payload has no lib/placement_engine.py"
 [ -f "$PAYLOAD/plugin/.claude-plugin/plugin.json" ] || die "payload has no plugin manifest"

@@ -36,4 +36,6 @@ if [ "$HOST" != "127.0.0.1" ] && [ "$HOST" != "localhost" ] && [ "${SUTRA_UI_ALL
   exit 2
 fi
 
+# The launcher's word that this is the app: the motor starts on it, and on nothing else.
+export SUTRA_MOTOR=1
 exec "$PY" -m uvicorn app:app --host "$HOST" --port "$PORT"

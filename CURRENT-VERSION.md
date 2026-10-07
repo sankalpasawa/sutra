@@ -1,8 +1,148 @@
 # Sutra — Current Version
 
-**status**: active · **updated**: 2026-09-21
+**status**: active · **updated**: 2026-09-28
 
-## v2.299.1 (2026-09-24, HEAD)
+## v2.306.23 (2026-09-30, HEAD)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.22 (2026-09-30)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.21 (2026-09-30)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.20 (2026-09-29)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.19 (2026-09-29)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.18 (2026-09-29)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.17 (2026-09-29)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.16 (2026-09-28)
+
+**An act is not more or less than another act** (found live 2026-09-29): classify's three acts sat on a stringency ladder, so a correct ASSERT was refused for ranking below QUERY. They sit on one rung now and the more confident answer wins.
+
+## v2.306.15 (2026-09-29)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.14 (2026-09-29)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.13 (2026-09-28)
+
+**Every code step says how sure it is** (RT-25, founder 2026-09-29: wherever the code leans on a confidence, an agent should be available). classify, resolve and depth each emit a confidence derived from branches they already had; the rows print it; classify asks the agent when nothing matched at all and records the answer.
+
+## v2.306.12 (2026-09-29)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.11 (2026-09-29)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.10 (2026-09-28)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.9 (2026-09-28)
+
+**A message typed during a reply goes to Claude at once, and Stop is Esc** (Claude chat panes). The message is folded into the running reply or runs right after it; Stop ends the reply and keeps the process, falling back to the old kill after 15s. Echoes are matched by order, so an attachment or an expanded slash command can no longer leave the chat waiting, and a Stop no longer raises a Shadow "hit an error" item.
+
+## v2.306.8 (2026-09-28)
+
+**A named department is resolved to its address** (from the 34-example run of 2026-09-28): the agent often answers with a department name rather than its address, and those correct answers were being refused on spelling. The match is exact, register-backed and refuses anything ambiguous.
+
+## v2.306.7 (2026-09-28)
+
+**An agent may correct the code, not only fill a blank** (RT-22, ruled 2026-09-28 after watching the agent answer every turn and change nothing). On the same rung, a different answer from a more confident agent replaces the code's when the register holds it; minting stays impossible, depth keeps the strict ladder, and the row names the outcome.
+
+## v2.306.6 (2026-09-28)
+
+**An agent answer that arrives is heard** (found by running v2.306.5 live): the settle ran in the same event that started the ask and always wrote "unreachable" before the answer could land. An ask inside its own timeout is now left open for a later event to settle.
+
+## v2.306.5 (2026-09-28)
+
+**The standby agent actually answers** (RT-21, found by running v2.306.4 live on a Mac): the ask was bounded by `timeout`, a binary macOS does not ship, so every ask exited 127 and looked unreachable. The runtime's own watchdog bounds it now, and the suite runs the built-in caller instead of only an injected stub.
+
+## v2.306.4 (2026-09-28)
+
+**A step that is unsure asks an agent; a turn replays through its own code** (founder 2026-09-28: "if there is a program that has a low degree of confidence in it, then an agent works on it to figure that out"). Conditions C6-C9 of RUNTIME-ACCEPTANCE-CONDITIONS.md: the ask is detached, the answer may only raise stringency, an address the register does not hold is refused, an unreachable agent leaves the code's answer standing marked unresolved, and every decision carries source, confidence and a reason. `sutra-steps replay` reproduces the code steps from the turn's own inputs.
+
+## v2.306.3 (2026-09-28)
+
+**Every step prints its own row** (founder 2026-09-28: "whenever one particular step is executed, we print the log of it ... input and output deterministically controlled by the code inside"). One code-written row per step with its input and output, printed live and readable with `sutra-steps log`; `runtime/rules/tiers.json` carries the code-versus-agent direction as data. Conditions C1-C5 and C10 of RUNTIME-ACCEPTANCE-CONDITIONS.md. DeepSeek review folded; codex SKIPPED until 2026-10-16.
+
+## v2.306.2 (2026-09-28)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.1 (2026-09-28)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.306.0 (2026-09-27)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.305.0 (2026-09-27)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.304.5 (2026-09-27)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.304.4 (2026-09-27)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.304.3 (2026-09-26)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.304.2 (2026-09-26)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.304.1 (2026-09-25)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.304.0 (2026-09-25)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.303.0 (2026-09-25)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.302.0 (2026-09-25)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.301.0 (2026-09-24)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.300.0 (2026-09-24)
+
+See marketplace/plugin/CHANGELOG.md for this release's entry.
+
+## v2.299.1 (2026-09-24)
 
 See marketplace/plugin/CHANGELOG.md for this release's entry.
 

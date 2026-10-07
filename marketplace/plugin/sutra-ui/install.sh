@@ -697,7 +697,7 @@ for attempt in 1 2 3; do
     continue                      # auto-assigned: just roll another port
   fi
 
-  "$PY" -m uvicorn app:app --host "$HOST" --port "$PORT" --log-level warning &
+  SUTRA_MOTOR=1 "$PY" -m uvicorn app:app --host "$HOST" --port "$PORT" --log-level warning &
   SRV_PID=$!
   PIDFILE="$RUN_DIR/sutra-ui-$PORT.pid"
   printf '%s\n' "$SRV_PID" > "$PIDFILE" 2>/dev/null || PIDFILE=""

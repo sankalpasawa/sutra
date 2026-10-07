@@ -2298,8 +2298,25 @@ document.getElementById("app").addEventListener("click", e=>{
   }
   const sg = e.target.closest("[data-sgroup]");
   if (sg){ S.sgroup = sg.dataset.sgroup; render(); return; }
+  const cs = e.target.closest("[data-chatsearch]");
+  if (cs){ if (cs.dataset.chatsearch === "open") chatSearchOpen(); else chatSearchClose(); return; }
+  const ca = e.target.closest("[data-chatarchive]");
+  if (ca){ chatArchive(ca.dataset.chatarchive); return; }
+  if (e.target.closest("[data-archtoggle]")){ S.ui.archOpen = !S.ui.archOpen; S.ui.archShow = 0; renderRail(); return; }
+  if (e.target.closest("[data-archmore]")){ S.ui.archShow = (S.ui.archShow || 50) + 100; renderRail(); return; }
   const op = e.target.closest("[data-open]");
   if (op){ const id=op.dataset.open;
+    /* CLICKING AN ARCHIVED CHAT REOPENS IT (founder, 2026-09-25: "when I click
+       on it, it can just get started"): it leaves Archived and opens. */
+    { const was = S.sessions.find(s=>s.id===id); if (was && chatArchived(was)) chatUnarchive(id); }
+    /* A search result older than the loaded page: adopt it into the list
+       before opening, so the pane, the transcript read and every later lookup
+       find it. fromSearch keeps it through list refreshes while its pane is
+       open (adoptRealSessions). */
+    if (!S.sessions.some(s=>s.id===id) && S.chatSearch){
+      const hit = (S.chatSearch.rows || []).find(s=>s.id===id);
+      if (hit){ hit.fromSearch = true; S.sessions.push(hit); }
+    }
     markRead(id); S.sessMenu = null; S.sessRename = null;
     pushPane(id);
     /* opening a REAL session is what triggers the transcript read -- the list
@@ -2314,6 +2331,14 @@ document.getElementById("app").addEventListener("keydown", e=>{
   const ri = e.target.closest("[data-renameinput]");
   if (ri && e.key === "Enter"){ e.preventDefault(); renameSession(ri.dataset.sid, ri.value); }
   if (ri && e.key === "Escape"){ S.sessRename = null; renderRail(); }
+  if (e.key === "Escape" && e.target.closest("[data-chatq]")){ e.preventDefault(); chatSearchClose(); }
+});
+/* Chat search typing: loaded rows filter at once, the server answer follows. */
+document.getElementById("app").addEventListener("input", e=>{
+  if (!e.target.closest("[data-chatq]")) return;
+  S.chatQ = e.target.value;
+  chatSearchRemote();
+  renderRail();
 });
 /* One global closer: any click not on a ⋮ trigger or inside an open menu dismisses
    it. The ⋮/menu-item branches stopPropagation(), so this never fires for the
@@ -2403,9 +2428,9 @@ function chatUntouched(s){
   if ((S.model || {})[s.id]) return false;
   if ((S.chatProvider || {})[s.id]) return false;
   if (Object.keys((S.turnOpts || {})[s.id] || {}).length) return false;
-  /* Marked in the rail. Pinned/unread/group persist to localStorage, so they
+  /* Marked in the rail. Pinned/unread persist to localStorage, so they
      outlive the chat object -- the plainest statement of intent there is. */
-  if (isPinned(s.id) || isUnread(s.id) || groupMap()[s.id]) return false;
+  if (isPinned(s.id) || isUnread(s.id)) return false;
   return true;
 }
 /* The chat a New chat gesture should reuse, or null to mint one.
@@ -2744,14 +2769,13 @@ function sessAction(action, sid, group){
   switch(action){
     case "pin": togglePin(sid); S.sessMenu=null; break;
     case "unread": markUnread(sid); S.sessMenu=null; break;
-    case "group": setGroup(sid, group||""); S.sessMenu=null; break;
-    case "group-new": { const n=(prompt("Group name")||"").trim(); if(n) setGroup(sid,n); S.sessMenu=null; break; }
     case "rename": S.sessRename=sid; renderRail();
       { const i=document.querySelector('[data-renameinput][data-sid="'+sid+'"]'); if(i){ i.focus(); i.select(); } } return;
     case "rename-save": { const i=document.querySelector('[data-renameinput][data-sid="'+sid+'"]');
       renameSession(sid, i?i.value:""); return; }
     case "fork": forkSession(sid); return;
-    case "archive": archiveSession(sid); return;
+    case "archive": chatArchive(sid); return;
+    case "unarchive": chatUnarchive(sid); S.sessMenu=null; break;
     case "delete": deleteSession(sid); return;
     case "open-terminal": { const cwd=sessCwd(sid); if(cwd) sendToTerminal("cd "+shq(cwd)+"\n"); S.sessMenu=null; break; }
     case "open-editor": S.sessMenu=null; S.screen="editor"; loadFs(true); render(); return;
@@ -2781,14 +2805,6 @@ function forkSession(sid){
   S.turnOpts[s.id]=Object.assign({}, S.turnOpts[s.id], {fork_session:true});
   S.sessMenu=null; render();
 }
-async function archiveSession(sid){
-  if(!confirm("Archive this session? The transcript moves out of Claude's project folder to ~/.sutra-ui/archive — it stops listing here and in Claude, and is recoverable.")) return;
-  try{ await apiPost("/api/sessions/"+encodeURIComponent(sid)+"/archive", {});
-    S.sessions=S.sessions.filter(x=>x.id!==sid); S.openPanes=S.openPanes.filter(x=>x!==sid);
-    S.sessMenu=null; S.toast="archived — recoverable in ~/.sutra-ui/archive";
-  }catch(e){ S.toast="archive failed: "+e.message; }
-  render();
-}
 async function deleteSession(sid){
   if(!confirm("Delete this session? History is NOT destroyed — the transcript moves to ~/.sutra-ui/trash and can be restored.")) return;
   try{ await apiPost("/api/sessions/"+encodeURIComponent(sid)+"/delete", {});
@@ -2810,6 +2826,7 @@ function backendError(e){
       <p>${esc(e.message)}</p>
       <p style="color:var(--faint)">Is the server running? <code>uvicorn app:app</code> from
       <code>sutra-ui/</code>.</p></div></div></section>`;
+  if (typeof snackError === "function") snackError(e, "Could not reach the backend");
   console.error(e);
 }
 

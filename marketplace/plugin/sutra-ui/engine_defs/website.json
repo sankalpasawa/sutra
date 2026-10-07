@@ -1,0 +1,1190 @@
+{
+ "comment": "The nine engines of a website department, as data (engine_runtime.py): four work engines and five internal systems. EVERY engine names its start: the triggers that make it want to run (a new version of something, a post addressed to it, a time) and the blockers that hold it (gates of the internal systems, by id). An engine with no start is refused when the definitions are loaded, so every engine starts by the same rule. A step names its code, its prompt and its check; a name resolves only in the registry that ships with the app. born is the rung a step starts on; the rung it runs on is read from the department's ladder. EVERY step names a check: a definition with a step that has none is refused. coordination is the table Coordination is born with: who goes first when several engines are ready; a department keeps its own copy on its record, and only that copy is read. The journeys are canon's five (holding/website/native/products/cos/design-journeys.html): task, query, directive, feedback, new idea. WORDS: a step's name and an engine's description are shown on the screen, so they say function, the users' word; internal system is the word inside, for this comment, the documents and the code. KINDS: a department has a kind; its kind names its line, its artifacts, its born goal, done line and rules; Coordination's table is born with the kind's line. Root is a department of the kind root: its one engine, Setup, sets up a department the owner asked for, from the Library's templates, and the owner's stamp is its rule; there is one Root for one organisational structure. SHAPE: every unit, the steps of a work engine or of a handler, starts with a step by code and ends with a step by code; agents come between, so the input, the output and the least steps of any unit are known (founder, 2026-09-28). FRONT DOOR: the person speaks with Root; on a Root the owner's words arrive with the word front, and Root's Identity hears them, finds the department they are about (the chip, a name in the words, or the only child) and hands them on as a post from Root to that department's Identity, whose answers come back onto Root's board; a stamp, a refusal, Stop and Start go the same way (founder, 2026-09-28: one point of entry; the user always speaks with the root). LOST: a request of the owner's, or one Root handed on, that nobody answered inside its bound is closed by Coordination, which tells Identity (word lost); Identity says it back to the person and asks for the words again, so nothing said at the front door dies unseen (ER-9, found live 2026-09-28). TEMPLATES (TPL-1, founder 2026-09-29: a department is a skeleton; its functions, engines and artifacts come from Library templates matched to the use case, else the default): the work engines are not in this file; they are the Library's engine templates (engine-templates/<slug>.json, one per engine, each with a use case) and the runtime assembles the definitions from them. A kind is a department template: its use case, its line of engines, its artifacts, its functions' template (function-templates/<function>/<functions_template>.json), its born goal, done line and rules. Root's Setup picks the kind whose use case fits the owner's words, else default; the department's record carries the engines and artifacts it was born with, and everything reads the record. ENGINES FROM IDEAS (TPL-1 slice 2, founder 2026-09-29: the engines are created by the department's own functions): an idea the owner floats is shaped and parked by Adaptation, which then offers the engine it asks for (a Library template whose use case fits, else one shaped from Do with the idea as its instruction) to Priority; Priority prices it; Identity puts it to the owner; on the stamp Identity adds it to the record and Coordination's line, and a shaped engine is born into the Library with made_by; it then starts on its own trigger.",
+ "def_version": 11,
+ "kinds": {
+  "website": {
+   "line": [
+    "Plan",
+    "Write",
+    "Check",
+    "Publish"
+   ],
+   "artifacts": [
+    "Brief",
+    "Site plan",
+    "Pages",
+    "Build",
+    "Live site"
+   ],
+   "goal": "A live website for {name}",
+   "done": "Every page checked and live",
+   "done_words": [
+    "The site is live",
+    "Not live yet"
+   ],
+   "rules": [
+    {
+     "tag": "go",
+     "line": "Plan, write and check inside the record"
+    },
+    {
+     "tag": "ask",
+     "line": "Ask the owner before the first publish"
+    },
+    {
+     "tag": "refuse",
+     "line": "Never publish a build whose check failed"
+    }
+   ],
+   "say": "A task, a question, a rule, feedback or an idea",
+   "use_case": "a live website: pages planned, written, checked and published",
+   "functions_template": "product-build"
+  },
+  "root": {
+   "line": [
+    "Setup"
+   ],
+   "artifacts": [
+    "Request",
+    "Department"
+   ],
+   "goal": "{name}: makes, changes and ends this organisation's departments from the Library's templates; its authority ends at the owner",
+   "done": "Every department the owner asked for is set up and On",
+   "done_words": [
+    "A department is set up",
+    "No department set up yet"
+   ],
+   "rules": [
+    {
+     "tag": "ask",
+     "line": "A new department is stamped by the owner"
+    },
+    {
+     "tag": "always",
+     "line": "A child's rules can only tighten this one's"
+    },
+    {
+     "tag": "go",
+     "line": "Set up what the owner asked for, from the Library's templates"
+    }
+   ],
+   "say": "Ask Root for a department: what it is for",
+   "use_case": "the one root of an organisation: sets up its departments from the Library",
+   "functions_template": "default"
+  },
+  "default": {
+   "use_case": "any goal the Library has no kind for: one Do engine answers each ask and files the Result",
+   "functions_template": "default",
+   "line": [
+    "Do"
+   ],
+   "artifacts": [
+    "Brief",
+    "Result"
+   ],
+   "goal": "Work for {name}",
+   "done": "Every ask answered in the Result",
+   "done_words": [
+    "Answered",
+    "Not answered yet"
+   ],
+   "rules": [
+    {
+     "tag": "go",
+     "line": "Work inside the record"
+    },
+    {
+     "tag": "ask",
+     "line": "Ask the owner before anything reaches outside"
+    }
+   ],
+   "say": "A task, a question, a rule, feedback or an idea"
+  },
+  "organic": {
+   "use_case": "a goal done its own way, a website included: no engines at birth; Adaptation shapes from the owner's words the line the goal needs, each engine reading the internet and what the ones before it filed, and the owner stamps the line once",
+   "functions_template": "product-build",
+   "line": [],
+   "artifacts": [
+    "Brief"
+   ],
+   "goal": "Work for {name}, done its own way",
+   "done": "What the words asked for is filed, and what goes out is live",
+   "done_words": [
+    "Done",
+    "Not done yet"
+   ],
+   "rules": [
+    {
+     "tag": "go",
+     "line": "Work inside the record"
+    },
+    {
+     "tag": "ask",
+     "line": "Ask the owner before anything reaches outside"
+    }
+   ],
+   "say": "A task, a question, a rule, feedback or an idea"
+  }
+ },
+ "edges": {
+  "Owner": {
+   "request": [
+    "Identity"
+   ],
+   "accept-proposal": [
+    "Identity"
+   ],
+   "reject-proposal": [
+    "Identity"
+   ],
+   "cancel": [
+    "Identity"
+   ]
+  },
+  "Identity": {
+   "agree": [
+    "Owner",
+    "Adaptation",
+    "Coordination"
+   ],
+   "refuse": [
+    "Owner",
+    "Adaptation",
+    "Coordination"
+   ],
+   "request": [
+    "Owner",
+    "Adaptation"
+   ],
+   "inform": [
+    "Owner",
+    "Adaptation",
+    "Priority",
+    "Audit",
+    "Coordination"
+   ],
+   "failure": [
+    "Owner"
+   ]
+  },
+  "Adaptation": {
+   "propose": [
+    "Priority",
+    "Identity"
+   ],
+   "inform": [
+    "Identity"
+   ]
+  },
+  "Priority": {
+   "accept-proposal": [
+    "Adaptation"
+   ],
+   "reject-proposal": [
+    "Adaptation"
+   ],
+   "propose": [
+    "Adaptation"
+   ]
+  },
+  "Audit": {
+   "inform": [
+    "Identity"
+   ]
+  },
+  "Coordination": {
+   "request": [
+    "Identity",
+    "Priority"
+   ],
+   "inform": [
+    "Identity"
+   ]
+  },
+  "Root": {
+   "request": [
+    "Identity"
+   ],
+   "accept-proposal": [
+    "Identity"
+   ],
+   "reject-proposal": [
+    "Identity"
+   ],
+   "cancel": [
+    "Identity"
+   ]
+  }
+ },
+ "coordination": {
+  "order": [
+   "posts",
+   "line",
+   "functions"
+  ],
+  "line": [
+   "Plan",
+   "Write",
+   "Check",
+   "Publish"
+  ],
+  "functions": [
+   "Identity",
+   "Adaptation",
+   "Priority",
+   "Coordination",
+   "Audit"
+  ]
+ },
+ "engines": {
+  "Identity": {
+   "kind": "function",
+   "description": "holds the goal and the rules, judges every effect, and is the one the owner speaks with",
+   "skills": [
+    "recognise a task, a query, a directive, feedback or a new idea",
+    "judge a request against the goal",
+    "gate an effect by rule",
+    "put a question to the owner"
+   ],
+   "start": {
+    "on": [
+     {
+      "kind": "post"
+     }
+    ],
+    "unless": []
+   },
+   "gates": [
+    {
+     "id": "identity.gate",
+     "name": "Gate the effect by rule",
+     "nature": "decide",
+     "born": "C2",
+     "code": "identity_gate",
+     "prompt": "identity_gate_soft",
+     "draft": "identity_gate_draft",
+     "out": {
+      "verdict": [
+       "admit",
+       "wait",
+       "refuse"
+      ]
+     },
+     "check": "gate_answer_is_known"
+    },
+    {
+     "id": "identity.wait_engine",
+     "name": "Wait for the engine the words need",
+     "nature": "decide",
+     "born": "C2",
+     "code": "identity_wait_engine",
+     "prompt": "identity_gate_soft",
+     "draft": "identity_gate_draft",
+     "out": {
+      "verdict": [
+       "admit",
+       "wait",
+       "refuse"
+      ]
+     },
+     "check": "gate_answer_is_known"
+    }
+   ],
+   "on": [
+    {
+     "name": "Hear the owner at the front door",
+     "when": {
+      "msg_type": "request",
+      "word": "front"
+     },
+     "steps": [
+      {
+       "id": "identity.front",
+       "name": "Read what was said",
+       "nature": "transform",
+       "born": "C2",
+       "code": "hear",
+       "check": "facts_are_closed"
+      },
+      {
+       "id": "identity.route",
+       "name": "Find who it is for",
+       "nature": "decide",
+       "born": "C2",
+       "code": "identity_route",
+       "check": "facts_are_closed"
+      },
+      {
+       "id": "identity.hand",
+       "name": "Hand it on, or do it",
+       "nature": "transform",
+       "born": "C2",
+       "code": "identity_hand",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "Take a request",
+     "when": {
+      "msg_type": "request",
+      "word": "request"
+     },
+     "steps": [
+      {
+       "id": "identity.read",
+       "name": "Read the request",
+       "nature": "transform",
+       "born": "C2",
+       "code": "identity_read",
+       "check": "facts_are_closed"
+      },
+      {
+       "id": "identity.recognise",
+       "name": "Recognise what kind of words these are",
+       "nature": "decide",
+       "born": "C0",
+       "ceiling": "C2",
+       "stringency": "high",
+       "facts": [
+        "cue",
+        "names_work",
+        "first"
+       ],
+       "answer": "journey",
+       "prompt": "identity_recognise",
+       "draft": "identity_recognise_draft",
+       "out": {
+        "journey": [
+         "task",
+         "query",
+         "directive",
+         "feedback",
+         "new-idea"
+        ]
+       },
+       "check": "journey_is_known",
+       "only_if": "identity.read.later"
+      },
+      {
+       "id": "identity.take",
+       "name": "Judge it against the goal",
+       "nature": "decide",
+       "born": "C0",
+       "ceiling": "C2",
+       "stringency": "high",
+       "facts": [
+        "kind",
+        "leaves_site",
+        "first"
+       ],
+       "answer": "verdict",
+       "prompt": "identity_take",
+       "draft": "identity_take_draft",
+       "out": {
+        "verdict": [
+         "go",
+         "ask",
+         "refuse"
+        ]
+       },
+       "check": "verdict_is_known",
+       "only_if": "identity.recognise.journey=task"
+      },
+      {
+       "id": "identity.answer",
+       "name": "Answer from the record",
+       "nature": "make",
+       "born": "C0",
+       "ceiling": "C1",
+       "only_if": "identity.recognise.journey=query",
+       "prompt": "identity_answer",
+       "draft": "identity_answer_draft",
+       "out": {
+        "answer": "str",
+        "source": "str",
+        "confidence": [
+         "high",
+         "moderate",
+         "low",
+         "unknown"
+        ]
+       },
+       "check": "answer_names_its_source"
+      },
+      {
+       "id": "identity.rule",
+       "name": "Restate it as a rule",
+       "nature": "make",
+       "born": "C0",
+       "ceiling": "C1",
+       "only_if": "identity.recognise.journey=directive",
+       "prompt": "identity_rule",
+       "draft": "identity_rule_draft",
+       "out": {
+        "tag": [
+         "always",
+         "ask",
+         "refuse",
+         "goal"
+        ],
+        "line": "str",
+        "scope": [
+         "standing",
+         "one-time"
+        ]
+       },
+       "check": "rule_is_tagged"
+      },
+      {
+       "id": "identity.weigh",
+       "name": "Read what the feedback changes",
+       "nature": "make",
+       "born": "C0",
+       "ceiling": "C1",
+       "only_if": "identity.recognise.journey=feedback",
+       "prompt": "identity_weigh",
+       "draft": "identity_weigh_draft",
+       "out": {
+        "now": "str",
+        "what": [
+         "format",
+         "content",
+         "tone",
+         "scope",
+         "accuracy"
+        ]
+       },
+       "check": "feedback_says_what_changes"
+      },
+      {
+       "id": "identity.file",
+       "name": "File what was decided",
+       "nature": "transform",
+       "born": "C2",
+       "code": "identity_file",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "Give a verdict",
+     "when": {
+      "msg_type": "request",
+      "word": "verdict"
+     },
+     "steps": [
+      {
+       "id": "identity.hear",
+       "name": "Read what was asked",
+       "nature": "transform",
+       "born": "C2",
+       "code": "hear",
+       "check": "facts_are_closed"
+      },
+      {
+       "id": "identity.judge",
+       "name": "Judge whether it may start",
+       "nature": "decide",
+       "born": "C0",
+       "ceiling": "C1",
+       "prompt": "identity_gate_soft",
+       "draft": "identity_gate_draft",
+       "out": {
+        "verdict": [
+         "admit",
+         "wait",
+         "refuse"
+        ]
+       },
+       "check": "gate_verdict_is_known"
+      },
+      {
+       "id": "identity.verdict",
+       "name": "Post the verdict",
+       "nature": "transform",
+       "born": "C2",
+       "code": "identity_verdict",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "Rule on a rung",
+     "when": {
+      "msg_type": "propose",
+      "word": "rung"
+     },
+     "steps": [
+      {
+       "id": "identity.rung",
+       "name": "Put the move to the owner",
+       "nature": "decide",
+       "born": "C2",
+       "code": "identity_rung",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "Take a stamp",
+     "when": {
+      "msg_type": "accept-proposal"
+     },
+     "steps": [
+      {
+       "id": "identity.apply",
+       "name": "Apply what was stamped",
+       "nature": "transform",
+       "born": "C2",
+       "code": "identity_apply",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "Take a refusal",
+     "when": {
+      "msg_type": "reject-proposal"
+     },
+     "steps": [
+      {
+       "id": "identity.drop",
+       "name": "Drop what was refused",
+       "nature": "transform",
+       "born": "C2",
+       "code": "identity_drop",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "Hear a finding",
+     "when": {
+      "msg_type": "inform",
+      "word": "finding"
+     },
+     "steps": [
+      {
+       "id": "identity.finding",
+       "name": "Weigh the finding",
+       "nature": "decide",
+       "born": "C2",
+       "code": "identity_finding",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "Hear an alarm",
+     "when": {
+      "msg_type": "inform",
+      "word": "alarm"
+     },
+     "steps": [
+      {
+       "id": "identity.alarm",
+       "name": "Put the alarm to the owner",
+       "nature": "decide",
+       "born": "C2",
+       "code": "identity_alarm",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "Hear where an idea went",
+     "when": {
+      "msg_type": "inform",
+      "word": "idea"
+     },
+     "steps": [
+      {
+       "id": "identity.idea",
+       "name": "Tell the owner where the idea went",
+       "nature": "transform",
+       "born": "C2",
+       "code": "identity_idea",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "Hear a lost request",
+     "when": {
+      "msg_type": "inform",
+      "word": "lost"
+     },
+     "steps": [
+      {
+       "id": "identity.lost",
+       "name": "Say it back",
+       "nature": "transform",
+       "born": "C2",
+       "code": "identity_lost",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "an engine proposed",
+     "when": {
+      "msg_type": "propose",
+      "word": "engine"
+     },
+     "steps": [
+      {
+       "id": "identity.engine",
+       "name": "Put the engine to the owner",
+       "nature": "transform",
+       "born": "C2",
+       "code": "identity_engine",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "a line proposed",
+     "when": {
+      "msg_type": "propose",
+      "word": "line"
+     },
+     "steps": [
+      {
+       "id": "identity.line",
+       "name": "Put the line to the owner",
+       "nature": "transform",
+       "born": "C2",
+       "code": "identity_line",
+       "check": "said_what_it_did"
+      }
+     ]
+    }
+   ]
+  },
+  "Priority": {
+   "kind": "function",
+   "description": "grants each engine its envelope and answers proposals that cost something",
+   "skills": [
+    "hold an engine to its envelope",
+    "answer a proposal that costs something"
+   ],
+   "template": {
+    "envelope": {
+     "calls": 30,
+     "usd": 6.0,
+     "work_calls": 8
+    }
+   },
+   "start": {
+    "on": [
+     {
+      "kind": "post"
+     }
+    ],
+    "unless": []
+   },
+   "gates": [
+    {
+     "id": "priority.envelope",
+     "name": "Hold the envelope",
+     "nature": "decide",
+     "born": "C2",
+     "code": "priority_envelope",
+     "check": "gate_answer_is_known"
+    }
+   ],
+   "on": [
+    {
+     "name": "Answer a proposal",
+     "when": {
+      "msg_type": "propose"
+     },
+     "steps": [
+      {
+       "id": "priority.read",
+       "name": "Read what it would cost",
+       "nature": "transform",
+       "born": "C2",
+       "code": "priority_read",
+       "check": "facts_are_closed"
+      },
+      {
+       "id": "priority.bargain",
+       "name": "Grant, refuse or counter",
+       "nature": "decide",
+       "born": "C0",
+       "ceiling": "C2",
+       "stringency": "low",
+       "facts": [
+        "word",
+        "room"
+       ],
+       "answer": "answer",
+       "prompt": "priority_bargain",
+       "draft": "priority_bargain_draft",
+       "out": {
+        "answer": [
+         "accept",
+         "reject"
+        ]
+       },
+       "check": "answer_is_known"
+      },
+      {
+       "id": "priority.post",
+       "name": "Post the answer",
+       "nature": "transform",
+       "born": "C2",
+       "code": "priority_post",
+       "check": "said_what_it_did"
+      }
+     ]
+    }
+   ]
+  },
+  "Coordination": {
+   "kind": "function",
+   "description": "keeps what engines share: one run at a time, who goes first when several are ready, who may post to whom, the chain's limit, a thread's bounds, and the alarm. Its own agent says who goes first when several functions are ready at once",
+   "skills": [
+    "keep one run at a time",
+    "say who goes first",
+    "check who may post what to whom",
+    "stop a chain at its limit",
+    "close a thread at its bound",
+    "raise an alarm",
+    "say who goes first among equals"
+   ],
+   "start": {
+    "on": [
+     {
+      "kind": "post"
+     }
+    ],
+    "unless": []
+   },
+   "rules": [
+    {
+     "id": "coord.busy",
+     "name": "Keep one run at a time",
+     "nature": "decide",
+     "born": "C2",
+     "code": "coord_busy",
+     "check": "gate_answer_is_known"
+    },
+    {
+     "id": "coord.pick",
+     "name": "Say who goes first, when several are ready",
+     "nature": "decide",
+     "born": "C2",
+     "code": "coord_pick",
+     "check": "names_who_goes_first"
+    },
+    {
+     "id": "coord.edge",
+     "name": "Say who may post what to whom",
+     "nature": "check",
+     "born": "C2",
+     "code": "coord_edge",
+     "check": "gate_answer_is_known"
+    },
+    {
+     "id": "coord.verdict",
+     "name": "Ask a function for its verdict",
+     "nature": "transform",
+     "born": "C2",
+     "code": "coord_verdict",
+     "check": "said_what_it_did"
+    },
+    {
+     "id": "coord.bounds",
+     "name": "Close a thread at its bound",
+     "nature": "decide",
+     "born": "C2",
+     "code": "coord_bounds",
+     "check": "said_what_it_did"
+    },
+    {
+     "id": "coord.alarm",
+     "name": "Raise an alarm for a run past its window",
+     "nature": "check",
+     "born": "C2",
+     "code": "coord_alarm",
+     "check": "said_what_it_did"
+    }
+   ],
+   "gates": [
+    {
+     "id": "coord.chain",
+     "name": "Stop a chain at its limit",
+     "nature": "decide",
+     "born": "C2",
+     "code": "coord_chain",
+     "check": "gate_answer_is_known"
+    }
+   ],
+   "on": [
+    {
+     "name": "Hear a verdict",
+     "when": {
+      "msg_type": "agree",
+      "word": "verdict"
+     },
+     "steps": [
+      {
+       "id": "coord.heard",
+       "name": "Note the verdict",
+       "nature": "transform",
+       "born": "C2",
+       "code": "coord_heard",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "Hear a refusal",
+     "when": {
+      "msg_type": "refuse",
+      "word": "verdict"
+     },
+     "steps": [
+      {
+       "id": "coord.refused",
+       "name": "Note the refusal",
+       "nature": "transform",
+       "born": "C2",
+       "code": "coord_heard",
+       "check": "said_what_it_did"
+      }
+     ]
+    }
+   ],
+   "steps": [
+    {
+     "id": "coord.ready",
+     "name": "List who is ready",
+     "nature": "transform",
+     "born": "C2",
+     "code": "coord_ready",
+     "check": "facts_are_closed"
+    },
+    {
+     "id": "coord.tie",
+     "name": "Say who goes first among equals",
+     "nature": "decide",
+     "born": "C0",
+     "ceiling": "C2",
+     "prompt": "coord_tie",
+     "draft": "coord_tie_draft",
+     "out": {
+      "answer": "str",
+      "why": "str"
+     },
+     "answer": "answer",
+     "check": "names_who_goes_first"
+    },
+    {
+     "id": "coord.record",
+     "name": "Record the pick",
+     "nature": "transform",
+     "born": "C2",
+     "code": "coord_record",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  "Adaptation": {
+   "kind": "function",
+   "description": "reads the department's own rows and proposes one rung up, or steps one down",
+   "skills": [
+    "count from the rows",
+    "keep the ladder",
+    "propose a change",
+    "shape a new idea and park it"
+   ],
+   "reads": "Live site",
+   "start": {
+    "on": [
+     {
+      "kind": "post"
+     },
+     {
+      "kind": "version",
+      "of": "Live site",
+      "checked": true
+     }
+    ],
+    "unless": []
+   },
+   "gates": [],
+   "steps": [
+    {
+     "id": "adapt.sense",
+     "name": "Count from the rows",
+     "nature": "transform",
+     "born": "C2",
+     "code": "adapt_sense",
+     "check": "counted_the_rows"
+    },
+    {
+     "id": "adapt.ladder",
+     "name": "Keep the ladder",
+     "nature": "decide",
+     "born": "C2",
+     "code": "adapt_ladder",
+     "check": "moves_are_known"
+    },
+    {
+     "id": "adapt.act",
+     "name": "Post what it proposes",
+     "nature": "transform",
+     "born": "C2",
+     "code": "adapt_act",
+     "check": "said_what_it_did"
+    }
+   ],
+   "on": [
+    {
+     "name": "Start a trial",
+     "when": {
+      "msg_type": "accept-proposal",
+      "word": "trial"
+     },
+     "steps": [
+      {
+       "id": "adapt.trial",
+       "name": "Start the trial",
+       "nature": "transform",
+       "born": "C2",
+       "code": "adapt_trial",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "Drop a trial",
+     "when": {
+      "msg_type": "reject-proposal",
+      "word": "trial"
+     },
+     "steps": [
+      {
+       "id": "adapt.notrial",
+       "name": "Drop the trial",
+       "nature": "transform",
+       "born": "C2",
+       "code": "adapt_notrial",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "Hear the ruling",
+     "when": {
+      "msg_type": "inform",
+      "word": "rung"
+     },
+     "steps": [
+      {
+       "id": "adapt.heard",
+       "name": "Note the ruling",
+       "nature": "transform",
+       "born": "C2",
+       "code": "adapt_heard",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "Hear an idea",
+     "when": {
+      "msg_type": "request",
+      "word": "idea"
+     },
+     "steps": [
+      {
+       "id": "adapt.hear",
+       "name": "Read the idea",
+       "nature": "transform",
+       "born": "C2",
+       "code": "hear",
+       "check": "facts_are_closed"
+      },
+      {
+       "id": "adapt.shape",
+       "name": "Reflect the idea back, in shapes",
+       "nature": "make",
+       "born": "C0",
+       "ceiling": "C1",
+       "prompt": "adapt_shape",
+       "draft": "adapt_shape_draft",
+       "out": {
+        "reflected": "str",
+        "shapes": "list"
+       },
+       "check": "idea_has_shapes"
+      },
+      {
+       "id": "adapt.park",
+       "name": "Park the idea",
+       "nature": "transform",
+       "born": "C2",
+       "code": "adapt_park",
+       "check": "said_what_it_did"
+      },
+      {
+       "id": "adapt.offer",
+       "name": "Offer the engine the idea asks for",
+       "nature": "transform",
+       "born": "C2",
+       "code": "adapt_offer",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "Priority priced an engine: room",
+     "when": {
+      "msg_type": "accept-proposal",
+      "word": "engine"
+     },
+     "steps": [
+      {
+       "id": "adapt.priced",
+       "name": "Put the priced engine to Identity",
+       "nature": "transform",
+       "born": "C2",
+       "code": "adapt_priced",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "Priority priced an engine: no room",
+     "when": {
+      "msg_type": "reject-proposal",
+      "word": "engine"
+     },
+     "steps": [
+      {
+       "id": "adapt.unpriced",
+       "name": "Leave the idea parked, priced",
+       "nature": "transform",
+       "born": "C2",
+       "code": "adapt_priced",
+       "check": "said_what_it_did"
+      }
+     ]
+    },
+    {
+     "name": "Shape the line",
+     "when": {
+      "msg_type": "request",
+      "word": "line"
+     },
+     "steps": [
+      {
+       "id": "adapt.hearline",
+       "name": "Hear the words",
+       "nature": "transform",
+       "born": "C2",
+       "code": "hear",
+       "check": "facts_are_closed"
+      },
+      {
+       "id": "adapt.line",
+       "name": "Shape the line the words need",
+       "nature": "make",
+       "born": "C0",
+       "ceiling": "C1",
+       "prompt": "adapt_line",
+       "draft": "adapt_line_draft",
+       "out": {
+        "engines": "list"
+       },
+       "check": "line_is_engines"
+      },
+      {
+       "id": "adapt.lineoffer",
+       "name": "Put the line to Identity",
+       "nature": "transform",
+       "born": "C2",
+       "code": "adapt_line_offer",
+       "check": "said_what_it_did"
+      }
+     ]
+    }
+   ]
+  },
+  "Audit": {
+   "kind": "function",
+   "description": "drops in on what went live and checks claims against the record",
+   "skills": [
+    "pick what to check",
+    "check the record mechanically",
+    "judge a page against the brief"
+   ],
+   "reads": "Live site",
+   "start": {
+    "on": [
+     {
+      "kind": "version",
+      "of": "Live site",
+      "checked": true
+     }
+    ],
+    "unless": []
+   },
+   "gates": [],
+   "steps": [
+    {
+     "id": "audit.pick",
+     "name": "Pick what to check",
+     "nature": "decide",
+     "born": "C2",
+     "code": "audit_pick",
+     "check": "picked_a_sample"
+    },
+    {
+     "id": "audit.mechanical",
+     "name": "Check the record",
+     "nature": "check",
+     "born": "C2",
+     "code": "audit_mechanical",
+     "check": "has_a_verdict"
+    },
+    {
+     "id": "audit.judge",
+     "name": "Judge the pages against the brief",
+     "nature": "check",
+     "born": "C0",
+     "ceiling": "C1",
+     "only_if": "audit.pick.sample",
+     "prompt": "audit_judge",
+     "draft": "audit_judge_draft",
+     "out": {
+      "ok": "bool",
+      "findings": "list"
+     },
+     "check": "findings_are_rows"
+    },
+    {
+     "id": "audit.file",
+     "name": "File what it found",
+     "nature": "transform",
+     "born": "C2",
+     "code": "audit_file",
+     "check": "said_what_it_did"
+    }
+   ],
+   "on": []
+  }
+ },
+ "journeys": {
+  "task": "do X for me",
+  "query": "tell me Y",
+  "directive": "from now on, do Z",
+  "feedback": "that was wrong, try again",
+  "new-idea": "I want a new capability"
+ }
+}

@@ -1,0 +1,22 @@
+{
+ "id": "artifact/department",
+ "name": "Department",
+ "kind": "record",
+ "use_case": "a department a Root set up: its ref, kind and goal",
+ "files": [
+  "department.md"
+ ],
+ "checks": [
+  "names_a_ref"
+ ],
+ "written_by": [
+  "Setup"
+ ],
+ "counts_after": "filing",
+ "put_back": false,
+ "operations": [],
+ "made_from": [
+  "artifact/request"
+ ],
+ "version": 1
+}

@@ -1,0 +1,60 @@
+{
+ "id": "engine/check",
+ "name": "Check",
+ "version": 1,
+ "use_case": "a website: the pages checked against the owner's rules and put together as a build",
+ "kind": "work",
+ "description": "assembles each page in one layout and checks it",
+ "skills": [
+  "check that every page renders and every link resolves"
+ ],
+ "reads": "Pages",
+ "writes": "Build",
+ "start": {
+  "on": [
+   {
+    "kind": "version",
+    "of": "Pages"
+   }
+  ],
+  "unless": [
+   "identity.wait_engine",
+   "identity.gate",
+   "priority.envelope",
+   "coord.chain"
+  ]
+ },
+ "steps": [
+  {
+   "id": "check.rules_of",
+   "name": "List the owner's rules and the pages",
+   "nature": "transform",
+   "born": "C2",
+   "code": "check_rules_of",
+   "check": "rules_are_listed"
+  },
+  {
+   "id": "check.rules",
+   "name": "Hold every page to the owner's rules",
+   "nature": "check",
+   "born": "C0",
+   "ceiling": "C1",
+   "only_if": "check.rules_of.any",
+   "prompt": "check_rules",
+   "draft": "check_rules_draft",
+   "out": {
+    "broken": "list"
+   },
+   "check": "broken_is_listed"
+  },
+  {
+   "id": "check.build",
+   "name": "Build and check",
+   "nature": "check",
+   "born": "C2",
+   "code": "check_build",
+   "files": true,
+   "check": "filed_has_files"
+  }
+ ]
+}

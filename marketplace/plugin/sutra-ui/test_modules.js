@@ -125,6 +125,10 @@ test("SCREENS.modules + TITLES.modules registered; the word is App everywhere a 
   assert.strictEqual(typeof T.SCREENS.modules, "function");
   assert.strictEqual(T.TITLES.modules[0], "Apps");
   assert(/screen:"modules",\s*label:"Apps",\s*flag:"modules"/.test(state), "01-state.js row label is Apps");
+  /* 2026-09-25 (founder): Apps left the Org menu for the Library panel's
+     Archive, under the same word and the same opt-out flag. */
+  const org2 = require("fs").readFileSync(require("path").join(__dirname, "static", "js", "19-org2.js"), "utf8");
+  assert(/\["modules",\s*"Apps",\s*"modules"\]/.test(org2), "the Archive row reads Apps and carries the modules flag");
   const strings = src.replace(/\/\*[^]*?\*\//g, "").match(/(["'`])(?:(?!\1)[^\\]|\\.)*\1/g) || [];
   /* code inside ${...} is not text a person reads; strip it before the check */
   const leaks = strings.map(q => q.replace(/\$\{[^}]*\}/g, ""))

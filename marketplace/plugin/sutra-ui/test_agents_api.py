@@ -584,7 +584,8 @@ class TestAgentsApi(unittest.TestCase):
                                                           "anthropic_key": "sk-should-never-stick"}, headers=HDR)
         self.assertEqual(r.status_code, 200)
         j = self.client.get(BASE + "/connections").json()
-        self.assertEqual(j, {"dataforseo_login": True, "dataforseo_password": True, "voyage_key": False})
+        self.assertEqual(j, {"dataforseo_login": True, "dataforseo_password": True, "voyage_key": False,
+                             "semrush_key": False})
         self.assertNotIn("sk-should", json.dumps(j))
         on_disk = store.connections()
         self.assertNotIn("anthropic_key", on_disk, "an API key is dropped, the panel bills the subscription")
@@ -594,7 +595,8 @@ class TestAgentsApi(unittest.TestCase):
         # clearing
         self.client.post(BASE + "/connections", json={"dataforseo_login": "", "dataforseo_password": ""}, headers=HDR)
         self.assertEqual(self.client.get(BASE + "/connections").json(),
-                         {"dataforseo_login": False, "dataforseo_password": False, "voyage_key": False})
+                         {"dataforseo_login": False, "dataforseo_password": False, "voyage_key": False,
+                          "semrush_key": False})
         # the Voyage key: saved, reported as a boolean, cleared
         self.client.post(BASE + "/connections", json={"voyage_key": "pa-secretsecretsecretsecret"}, headers=HDR)
         j = self.client.get(BASE + "/connections").json()
@@ -603,6 +605,13 @@ class TestAgentsApi(unittest.TestCase):
         self.assertTrue(self.client.get(BASE + "/health").json()["voyage"])
         self.client.post(BASE + "/connections", json={"voyage_key": ""}, headers=HDR)
         self.assertFalse(self.client.get(BASE + "/connections").json()["voyage_key"])
+        # the Semrush key: same shape as Voyage -- saved, reported as a boolean, never echoed, cleared
+        self.client.post(BASE + "/connections", json={"semrush_key": "st-secretsecretsecretsecret"}, headers=HDR)
+        j = self.client.get(BASE + "/connections").json()
+        self.assertTrue(j["semrush_key"])
+        self.assertNotIn("st-secret", json.dumps(j))
+        self.client.post(BASE + "/connections", json={"semrush_key": ""}, headers=HDR)
+        self.assertFalse(self.client.get(BASE + "/connections").json()["semrush_key"])
 
     def test_21_memory_add_toggle_and_list(self):
         r = self.client.post(BASE + "/memory", json={"text": "Never open with a question", "kind": "rule"}, headers=HDR)

@@ -67,11 +67,14 @@ function applySessionChange(rows){
             /* The GET is in flight for hundreds of ms and a send can start inside
                that window, so the guard above is necessary but not sufficient. */
             if (sessionBusy(s.id)){ if (s.loadState === "loading") s.loadState = "ok"; return; }
-            s.turns = transcriptTurns(d && d.messages);
+            /* the open pill and folds keep their turn's uid, and a write that
+               changed nothing on screen draws nothing (reconcileTurns) */
+            const was = s.turns, wasHead = s.cwd + "\u0001" + s.branch + "\u0001" + s.loadState;
+            s.turns = reconcileTurns(s.turns, transcriptTurns(d && d.messages));
             s.cwd = (d && d.cwd) || s.cwd;
             s.branch = (d && d.branch) || s.branch;
             s.loadState = s.turns.length ? "ok" : "empty";
-            scheduleRender();
+            if (s.turns !== was || s.cwd + "\u0001" + s.branch + "\u0001" + s.loadState !== wasHead) scheduleRender();
           })
           .catch(e=>{ s._reloading = false;
             if (s.loadState === "loading"){ s.loadState = "error"; s.loadError = e.message; }
@@ -193,13 +196,10 @@ async function boot(){
      and the browse pane showing another. */
   if (S.ui.dest === "chats"){ S.ui.browseClosed = true; }
   else {
-    const sel = (typeof destFullBleed === "function" && destFullBleed(S.ui.dest))
-      ? null : S.ui.destSel[S.ui.dest];
-    /* A destination whose default screen registers only behind a flag (org2)
-       must not restore onto an absent screen: render() would throw on
-       TITLES[S.screen]. Fall through to whatever S.screen already holds. */
-    const dflt = DEST_DEFAULT_SCREEN[S.ui.dest];
-    S.screen = (sel && SCREENS[sel]) ? sel : ((dflt && SCREENS[dflt]) ? dflt : S.screen);
+    /* one rule for the first screen and for a click (bootScreen, 02-helpers.js): a one-row destination opens its
+       row, a remembered pick otherwise, the default when the pick's screen is absent, and never a screen that is
+       not registered -- render() would throw on TITLES[S.screen] */
+    S.screen = (typeof bootScreen === "function" ? bootScreen() : null) || S.screen;
   }
   /* One registry holds one org. This used to read /api/tenants first and gate
      the whole boot on the answer -- including a silent `if (!S.tenant) return`

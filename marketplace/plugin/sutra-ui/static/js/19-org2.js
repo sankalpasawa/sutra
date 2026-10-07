@@ -42,7 +42,13 @@ function o2S(){
                       hits:null, filter:{ open:false, kind:[], state:[], refs:null, busy:false },
                       sheet:null, flash:null, health:{}, edHandle:null, recent:{}, appOk:{}, focusRef:null,
                       expanded:null, more:{}, loading:false, error:null, loaded:false,
-                      dept:{}, deptErr:{}, apps:{}, menu:false, panel:null };
+                      dept:{}, deptErr:{}, apps:{}, menu:false, panel:null,
+                      /* 2.299.0 (founder 2026-09-24: "you can keep it on the top
+                         right corner"): the left panel has a second mode. Off it
+                         lists the company's departments; on it lists the seven
+                         Library shelves -- the kinds a department is built from.
+                         A view, not a record, so it lives in memory only. */
+                      lib:false };
   return S.o2;
 }
 function o2Icon(k){ return (typeof ICON !== "undefined" && ICON && ICON[k]) ? ICON[k] : ""; }
@@ -88,7 +94,7 @@ function o2Rows(){
 }
 function o2Data(){
   const rows = o2Rows();
-  if (!rows.length) return { live: [], byRef: new Map(), kids: new Map(), root: null };
+  if (!rows.length) return { live: [], byRef: new Map(), kids: new Map(), root: null, lifted: new Map(), hidden: new Set() };
   const live = rows.filter(d => d && (d.status || "active") !== "retired");
   const byRef = new Map(live.map(d => [d.ref, d]));
   const kids = new Map();
@@ -96,12 +102,22 @@ function o2Data(){
     const pr = d.parent_ref;
     if (pr && byRef.has(pr)){ if (!kids.has(pr)) kids.set(pr, []); kids.get(pr).push(d); }
   });
+  /* 22-website.js: an organisation's Root is not drawn (founder, 2026-09-29: "at the organization level, only a chat
+     is shown, and root is not shown"): its departments sit under the organisation, whose row opens Root's chat. The
+     registry is untouched; `lifted` says which organisation hides which Root, `hidden` which rows are not drawn. */
+  const lifted = new Map(), hidden = new Set();
+  if (typeof wbHidden === "function") live.forEach(r => {
+    if (!r.parent_ref || !byRef.has(r.parent_ref) || !wbHidden(r.ref)) return;
+    kids.set(r.parent_ref, (kids.get(r.parent_ref) || []).filter(k => k.ref !== r.ref).concat(kids.get(r.ref) || []));
+    kids.delete(r.ref);
+    lifted.set(r.parent_ref, r); hidden.add(r.ref);
+  });
   kids.forEach(v => v.sort((a, b) => String(a.path || "").localeCompare(String(b.path || ""), undefined, { numeric: true })));
   const tops = live.filter(d => !d.parent_ref || !byRef.has(d.parent_ref));
   const size = (ref) => { let n = 0; const stack = [ref], seen = new Set(); while (stack.length){ const r = stack.pop(); if (seen.has(r)) continue; seen.add(r); n++; (kids.get(r) || []).forEach(k => stack.push(k.ref)); } return n; };
   let root = null, best = -1;
   tops.forEach(t => { const s = size(t.ref); if (s > best){ best = s; root = t; } });
-  return { live, byRef, kids, root };
+  return { live, byRef, kids, root, lifted, hidden };
 }
 /* Node kind: the engine's stored `node_kind` (plan S94) when the row carries
    one; otherwise the interim rule (S27) for rows not yet backfilled: the root
@@ -615,11 +631,12 @@ function o2TreeHtml(){
     const open = narrowing ? true : ex.has(n.ref);
     const dim = narrowing && !subtreeHit(n);
     const title = chain.concat([n.name]).join(" › ");
+    const born = (typeof wbBorn === "function" && wbBorn(n.ref)) ? " o2grow" : "";   /* 22-website.js: a department Root just made slides in once */
     const chev = ks.length
       ? `<button type="button" class="o2chev" data-o2tog="${o2Esc(n.ref)}" aria-label="${open ? "Collapse" : "Expand"} ${o2Esc(n.name)}">${O2_CHEV}</button>`
       : `<span class="o2chev"></span>`;
     const exp = ks.length ? ` aria-expanded="${open}"` : "";
-    const self = `<div role="treeitem" tabindex="0" class="o2row o2k-${kind}${dim ? " dim" : ""}" data-o2ref="${o2Esc(n.ref)}" aria-selected="${st.sel === n.ref}"${exp} style="--d:${depth}" title="${o2Esc(title)}">${chev}<span class="o2name">${o2Esc(n.name)}</span></div>`;
+    const self = `<div role="treeitem" tabindex="0" class="o2row o2k-${kind}${dim ? " dim" : ""}${born}" data-o2ref="${o2Esc(n.ref)}" aria-selected="${st.sel === n.ref}"${exp} style="--d:${depth}" title="${o2Esc(title)}">${chev}<span class="o2name">${o2Esc(n.name)}</span></div>`;
     return self + (open ? ks.map(c => row(c, depth + 1, chain.concat([n.name]))).join("") : "");
   };
   if (!d.root) return `<div class="o2tree" role="tree"></div>`;
@@ -638,16 +655,70 @@ function o2MenuHtml(n, d){
   if (kind !== "root") acts += item("rename", "Rename…");
   if (kind !== "root" && kind !== "machine") acts += item("move", "Move…");
   acts += item("create", "New sub-department…");
+  if (typeof wbMenuItem === "function") acts += wbMenuItem();   /* 22-website.js: found an organisation with a website department */
   return `<div class="smenu o2menu" role="menu">${acts}<div class="o2msep"></div>${item("changes", "Changes")}${item("approvals", "Approvals")}${item("health", "Health")}</div>`;
 }
+/* ── THE LIBRARY, TOP RIGHT (2.299.0) ───────────────────────────────────────
+   Founder, 2026-09-24, choosing from six drawn options: "you can keep it on
+   the top right corner." It sits at the end of the strip's own action row --
+   the top right of this screen -- and it carries the WORD beside the mark.
+   That word is not decoration: in that corner, beside the selected
+   department's name, a lone book icon reads as a tool that acts on THAT
+   department, which is the one misread the options page named.
+
+   Pressed, the left panel stops listing the company's departments and lists
+   the seven shelves instead. Pressed again, the departments come back and the
+   tree reopens where it was, because nothing about the tree was touched. */
+const O2_LIB_SHELVES = [
+  ["Functions", [["lib-identity", "Identity"], ["lib-adaptation", "Adaptation"],
+                 ["lib-priority", "Priority"], ["lib-coordination", "Coordination"],
+                 ["lib-audit", "Audit"]]],
+  ["Parts", [["lib-engines", "Engines"], ["lib-artifacts", "Artifacts"], ["lib-work-atom", "Work atom"]]],
+  /* Archive (founder, 2026-09-25: "in the library itself we can just have
+     Archive for those particular sections"). The sections that left the Org
+     menu, and Reorg plans with them. Same screens, same ids; the third field
+     is the row's flag, so Workspace and Apps keep their on/off settings. */
+  ["Archive", [["workspace", "Workspace", "workspace"], ["departments", "Departments"],
+               ["charters", "Charters"], ["placements", "Placements"],
+               ["modules", "Apps", "modules"], ["reorg", "Reorg plans"]]],
+];
+const O2_LIB_MARK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M11 4h3.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11z"/><path d="M18.4 6.2l2.1 12"/></svg>`;
+
+function o2LibBtnHtml(){
+  const on = !!o2S().lib;
+  return `<button type="button" class="o2libbtn${on ? " on" : ""}" data-o2act="lib"
+    aria-pressed="${on}" title="${on ? "Back to the departments"
+      : "The Library: the kinds a department is built from"}">${O2_LIB_MARK}<span>Library</span></button>`;
+}
+
+/* The panel in its other mode. Same width, same row height, same selection
+   behaviour as the tree: only the content differs, so the swap reads as one
+   place showing two things. A row opens its screen by its own id -- the one
+   screen the rail opened before these rows left it (2026-09-25), never a
+   second one. A flagged row answers to the rail's own test (destRowHidden). */
+function o2LibPanelHtml(){
+  const cur = (typeof S !== "undefined" && S.screen) ? String(S.screen) : "";
+  const on = flag => !flag || typeof destRowHidden !== "function" || !destRowHidden({ flag: flag });
+  const rows = O2_LIB_SHELVES.map(([group, shelves]) => `
+    <div class="o2libgrp">${o2Esc(group)}</div>` + shelves.filter(r => on(r[2])).map(([screen, label]) => `
+    <button type="button" class="o2librow" data-screen="${o2Esc(screen)}"
+      aria-selected="${cur === screen}">${O2_LIB_MARK}<span>${o2Esc(label)}</span></button>`).join("")).join("");
+  return `<div class="o2libpanel">
+    <div class="o2libhead"><b>Library</b><span>the kinds, not the departments</span></div>
+    ${rows}</div>`;
+}
+
 function o2StripHtml(n, d, dept){
   const st = o2S();
-  const parent = n.parent_ref ? d.byRef.get(n.parent_ref) : null;
+  let parent = n.parent_ref ? d.byRef.get(n.parent_ref) : null;
+  if (parent && d.hidden && d.hidden.has(parent.ref)) parent = parent.parent_ref ? d.byRef.get(parent.parent_ref) : null;   /* a hidden Root: its organisation stands in */
   const retired = dept && dept.status === "retired";
   const succ = retired && dept.successors && dept.successors.length ? dept.successors[0] : null;
   const pill = retired ? `<span class="pill p-mut">retired</span>${succ ? `<span class="o2parent">merged into ${o2Esc(succ.name || "")}</span>` : ""}` : "";
   return `<div class="o2strip"><h2>${o2Esc(n.name)}</h2>${parent ? `<span class="o2parent">${o2Esc(parent.name)}</span>` : ""}${pill}
     <span class="o2acts">
+      ${o2LibBtnHtml()}
       <button type="button" class="o2ib" data-o2act="chart" aria-label="Chart" aria-pressed="${st.view === "chart"}">${o2Svg("dept")}</button>
       <button type="button" class="o2ib" data-o2act="pencil" aria-label="Edit" aria-haspopup="menu" aria-expanded="${!!st.menu}">${o2Svg("edit")}</button>
       ${st.menu ? o2MenuHtml(n, d) : ""}
@@ -691,7 +762,9 @@ function o2ListHtml(n, d, dept, err){
     groups += o2Group("Departments", (dept.children || []).filter(x => keep(x.name)).map(x => o2Row(x.name, o2Svg("dept"), `data-o2ref="${o2Esc(x.ref)}"`, false)), "departments");
     groups += o2Group("Filed work", (dept.filed || []).filter(x => keep(x.label)).map(x => o2Row(x.label, o2IsPage(x.id) ? O2_PAGE : o2Svg("plc"), `data-o2filed="${o2Esc(x.id || "")}" data-o2title="${o2Esc(x.label)}"`, st.view === "page" && st.page && st.page.path === x.id)), "filed");
     groups += o2Group("Other charters", (dept.charters || []).filter(x => keep(x.title)).map(x => o2Row(x.title, O2_SHIELD, `data-o2charter="${o2Esc(x.id)}"`, st.view === "other" && st.other && st.other.id === x.id)), "charters");
-    groups += o2Group("Documents", (dept.docs || []).filter(x => keep(x.title)).map(x => o2Row(x.title, O2_DOC, `data-o2doc="${o2Esc(x.path)}" data-o2title="${o2Esc(x.title)}"`, st.view === "doc" && st.doc && st.doc.path === x.path)), "docs");
+    /* No Documents group (founder, 2026-09-28): a department's structure holds
+       Filed work; markdown placed under it stays on the Workspace tree and in
+       Recent once opened, through the same reader. */
     const apps = st.apps[n.ref];
     if (apps === undefined) o2LoadApps(n.ref);
     groups += o2Group("Apps", (apps || []).filter(m => keep(m.name)).map(m => o2Row(m.name, O2_APP, `data-o2app="${o2Esc(m.id)}"`, st.view === "app" && st.app && st.app.id === m.id)), "apps");
@@ -805,7 +878,9 @@ function o2AppHtml(m){
 /* The chart from any level: this department, its sub-departments, and theirs,
    names only; a leaf shows one tile and a quiet line (design BareChart, StateLeafChart). */
 function o2ChartHtml(n, d){
-  const tile = (x, cls) => `<button type="button" class="o2tile${cls ? " " + cls : ""}" data-o2ref="${o2Esc(x.ref)}" title="${o2Esc(x.name)}">${o2Esc(x.name)}</button>`;
+  /* 22-website.js: a website department's tile carries its five systems' dots */
+  const mark = (x) => (typeof wbTileMark === "function") ? wbTileMark(x.ref) : "";
+  const tile = (x, cls) => `<button type="button" class="o2tile${cls ? " " + cls : ""}" data-o2ref="${o2Esc(x.ref)}" title="${o2Esc(x.name)}">${o2Esc(x.name)}${mark(x)}</button>`;
   const ks = d.kids.get(n.ref) || [];
   const head = `<div class="o2crow">${tile(n, "on")}</div>`;
   if (!ks.length) return `<div class="o2viewer wide"><div class="o2vb o2chart">${head}<div class="o2quiet">Nothing below ${o2Esc(n.name)}</div></div></div>`;
@@ -914,7 +989,12 @@ function o2ScreenHtml(){
     ? `<div class="o2line warn"><span>Sutra is not reachable</span><button type="button" class="btn" data-o2act="retry">Retry</button></div>` : "";
   if (st.stale && !st.error) banner += `<div class="o2line acc"><span>The registry changed</span><button type="button" class="btn" data-o2act="retry">Refresh</button></div>`;
   if (st.flash) banner += `<div class="o2line acc"><span>${o2Esc(st.flash)}</span><button type="button" class="o2ib o2x" data-o2act="flashclose" aria-label="Dismiss">${O2_X}</button></div>`;
-  const left = `<div class="o2left">${o2SearchHtml()}${(st.loading && !d.root) ? o2SkelTree() : o2TreeHtml()}</div>`;
+  /* the panel's two modes (2.299.0). The search stays in both: in the Library
+     it is the same box, and the shelves are few enough that it simply does
+     nothing yet -- better than a control that appears and disappears. */
+  const left = `<div class="o2left">${o2SearchHtml()}${
+    st.lib ? o2LibPanelHtml()
+           : ((st.loading && !d.root) ? o2SkelTree() : o2TreeHtml())}</div>`;
   let content;
   if (!d.root && !st.loading){
     content = `<div class="o2strip"><h2>Sutra</h2></div><div class="o2body">${o2ViewerShell("Sutra", o2Svg("dept"), `<div class="o2vb"><div class="o2empty">${o2Svg("dept")}<h1>No departments yet</h1></div></div>`)}</div>`;
@@ -931,10 +1011,14 @@ function o2ScreenHtml(){
        false and the charter view below is exactly what it always was. */
     const dp = !st.sheet && st.view === "charter" && typeof dpListHtml === "function"
       && (o2Kind(n, d) === "dept" || o2Kind(n, d) === "org");
-    const body = dp
+    /* 22-website.js: an organisation with a Root is Root's chat and nothing else (founder, 2026-09-29: "at the
+       organization level, only a chat is shown, and root is not shown"): no list column; the strip, its chart, its
+       pencil and its sheets are the organisation's as before. Null hands the organisation back to the lines below. */
+    const org = dp && o2Kind(n, d) === "org" && typeof wbOrgHtml === "function" ? wbOrgHtml(n, d) : null;
+    const body = org ? org : dp
       ? dpListHtml(n, d, dept, err) + dpViewerHtml(n, d, dept, err)
       : (wide ? "" : o2ListHtml(n, d, dept, err)) + o2ViewerHtml(n, d, dept, err);
-    content = `${o2StripHtml(n, d, dept)}<div class="o2body${wide ? " wide" : ""}">${body}${st.panel ? o2PanelHtml(n, d) : ""}</div>`;
+    content = `${o2StripHtml(n, d, dept)}<div class="o2body${wide || org ? " wide" : ""}">${body}${st.panel ? o2PanelHtml(n, d) : ""}</div>`;
   }
   return `<div class="o2${st.error ? " off" : ""}">${left}<div class="o2main">${banner}${content}</div></div>`;
 }
@@ -967,6 +1051,9 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (act === "retrydept"){ if (st.sel){ delete st.deptErr[st.sel]; o2Render(); o2LoadDept(st.sel, true); } return; }
     if (act === "chart"){ o2UnmountEditor(); st.view = st.view === "chart" ? "charter" : "chart"; st.doc = null; st.app = null; st.other = null; st.page = null; st.sheet = null; st.menu = false; o2Render(); return; }
     if (act === "pencil"){ st.menu = !st.menu; o2Render(); return; }
+    /* 2.299.0: the top-right Library toggle. Nothing about the tree changes,
+       so pressing it twice returns to exactly what was there. */
+    if (act === "lib"){ st.lib = !st.lib; st.menu = false; o2Render(); return; }
     if (act === "charter"){ o2CloseViewer(); return; }
     if (act === "close"){ o2CloseViewer(); return; }
     if (act === "clearlq"){ st.lq = ""; o2Render(); return; }

@@ -208,6 +208,10 @@ function lsSet(key, value){
    are a GROUP inside the Org accordion, below the org's own rows, and their
    screen ids are unchanged -- so every route, every stored selection and every
    test that names lib-identity keeps working. Seven destinations again. */
+/* 2026-09-25 (founder): the Org accordion is ONE row, Org structure. The
+   shelves and the old sections moved into the Library panel inside Org
+   structure (19-org2.js O2_LIB_SHELVES); see DEST_PLANES.org. Identity is
+   reached there, as Library > Identity (lib-identity), not from the menu. */
 const DESTS = ["now","focus","chats","agents","org","team","settings"];
 const DEST_PLANES = {
   /* focus: Balance today; the rest of the companion arrives later — the rows
@@ -228,32 +232,38 @@ const DEST_PLANES = {
                 2.287.2. Opt-OUT flag like modules: flags.org2 false hides the row
                 and o2EnsureRegistered never registers the screen. */
              {screen:"org2", label:"Org structure", flag:"org2"},
+             /* An Identity row sat here for part of 2026-09-25; the founder removed
+                it the same day ("we already have it in the library section"). */
+             /* The rows that left the menu stay here, shown ONLY while org2 is
+                opted out (offFlag), because the Library panel that now holds them
+                (19-org2.js O2_LIB_SHELVES, Archive and the seven shelves) lives
+                inside org2. Staying in this list also keeps openScreen's owner
+                lookup pointing every one of them at Org. No screen was deleted. */
              /* workspace row is flag-gated at render: with the flag off,
                 SCREENS.workspace never registers and the row is dropped by the
                 same SCREENS[sel] validation every stale selection goes through. */
-             {screen:"workspace", flag:"workspace"},
-             {screen:"departments"},{screen:"charters"},{screen:"placements"},
              /* knowledge + files rows DELETED (r5): the S92 fold's one-release
-                clock expired — openScreen's redirect remains the only trace */
-             /* Modules (2.247.0, design 2026-09-08-modules-design.md D-M7): the
-                finished products the operator builds inside the app. Label is
-                explicit because railSpec() has no modules entry for planeRows()
-                to fall back on; flag is opt-OUT (absent = on) like workspace. */
-             /* User-facing word is App (Apps program D-M22, 2026-09-11); the
+                clock expired -- openScreen's redirect remains the only trace */
+             /* Modules (2.247.0, design 2026-09-08-modules-design.md D-M7): label
+                is explicit because railSpec() has no modules entry for planeRows()
+                to fall back on; flag is opt-OUT (absent = on) like workspace.
+                User-facing word is App (Apps program D-M22, 2026-09-11); the
                 screen id, flag and API keep the internal name `modules`. */
-             {screen:"modules", label:"Apps", flag:"modules"},
-             {screen:"reorg"},
-             /* the Library's seven shelves, inside Org (2.297.0, founder). The
-                kinds a department is built from belong with the departments,
-                not beside them. planeRows() takes a {group, rows} entry in the
-                same list as bare rows, so this needs no new shape. */
-             {group:"Library", rows:[{screen:"lib-identity", label:"Identity"},
-                                     {screen:"lib-adaptation", label:"Adaptation"},
-                                     {screen:"lib-priority", label:"Priority"},
-                                     {screen:"lib-coordination", label:"Coordination"},
-                                     {screen:"lib-audit", label:"Audit"},
-                                     {screen:"lib-engines", label:"Engines"},
-                                     {screen:"lib-work-atom", label:"Work atom"}]}],
+             {group:"Archive", offFlag:"org2",
+              rows:[{screen:"workspace", flag:"workspace"},
+                    {screen:"departments"},{screen:"charters"},{screen:"placements"},
+                    {screen:"modules", label:"Apps", flag:"modules"},
+                    {screen:"reorg"}]},
+             /* the Library's seven shelves (2.297.0, founder); their screen ids
+                are unchanged since they left the menu. */
+             {group:"Library", offFlag:"org2",
+              rows:[{screen:"lib-identity", label:"Identity"},
+                    {screen:"lib-adaptation", label:"Adaptation"},
+                    {screen:"lib-priority", label:"Priority"},
+                    {screen:"lib-coordination", label:"Coordination"},
+                    {screen:"lib-audit", label:"Audit"},
+                    {screen:"lib-engines", label:"Engines"},
+                    {screen:"lib-work-atom", label:"Work atom"}]}],
   team:     [],   /* Help opens directly — a one-row plane earns no plane (2026-08-24) */
   settings: [{group:"Tools",       rows:[{screen:"terminal"},{screen:"git"},{screen:"editor"}]},
              /* routines came BACK to this group on 2026-09-04, in the position it
@@ -805,9 +815,26 @@ function adoptRealSessions(rows){
       /* turn progress moves on every Shadow turn, so the strip has to be
          refreshed on the on-screen branch too, not only minted with the row */
       if (r.shadow_task !== undefined) k.shadow_task = r.shadow_task;
+      if (r.archived !== undefined){ k.archived = !!r.archived; k.archived_by = r.archived_by || null; }
       return k;
     }
-    return {
+    return realSessionFromRow(r);
+  });
+  /* A CHAT OPENED FROM SEARCH can be older than the page a refresh loads
+     (founder, 2026-09-24). Keep an open pane's session that the new rows no
+     longer carry, or the pane would lose its chat on the next list refresh. */
+  const rowIds = new Set(real.map(s => s.id));
+  const keepOpen = S.sessions.filter(s => s.real && !s.local && s.fromSearch
+    && S.openPanes.includes(s.id) && !rowIds.has(s.id) && !owned.has(s.id));
+  S.sessions = local.concat(real, keepOpen)
+    .sort((a,b)=>(b.updated_ms||b.created_ms)-(a.updated_ms||a.created_ms));
+}
+
+/* One /api/sessions row -> the rail's session object. Shared by
+   adoptRealSessions and the chat search (chatSearchRemote), whose rows can be
+   older than the loaded page. */
+function realSessionFromRow(r){
+  return {
       id: r.id,
       title: r.title || "(no prompt)",
       real: true, local: false,
@@ -831,6 +858,9 @@ function adoptRealSessions(rows){
       /* what it is driving -- objective, turn budget, done-when -- for the
          pane's status strip. null unless Shadow actually owns this session. */
       shadow_task: r.shadow_task || null,
+      /* Archived in Sutra's own store (chat_archive.py); server-resolved, and a
+         chat written to since its archive comes back by itself. */
+      archived: !!r.archived, archived_by: r.archived_by || null,
       /* mtime is seconds since epoch; the rail's date buckets are in ms. This is
          the file's last write — genuinely "updated", not a fabricated "created". */
       created_ms: (r.mtime || 0) * 1000, updated_ms: (r.mtime || 0) * 1000,
@@ -851,9 +881,6 @@ function adoptRealSessions(rows){
          from the composer resumes the real thread rather than starting a cold one */
       claude_session: r.id
     };
-  });
-  S.sessions = local.concat(real)
-    .sort((a,b)=>(b.updated_ms||b.created_ms)-(a.updated_ms||a.created_ms));
 }
 
 /* Fold a transcript's message list into the panel's turn shape.
@@ -890,6 +917,29 @@ function transcriptTurns(messages){
   return out;
 }
 
+/* A re-read builds NEW turn objects, but the open pill, the folds and the
+   one-shot motion memory are keyed by turn uid (turnUid). A fresh object had
+   no uid, so the pill closed on the next write to the transcript (founder
+   2026-09-24: "it closes after 34 seconds"). Each new turn takes the uid of
+   the old turn with the same prompt -- matched by its nth occurrence, so
+   "continue" twice stays two turns. When nothing a reader sees has changed the
+   OLD array comes back, so the caller can skip the render and nothing flickers. */
+function reconcileTurns(prev, next){
+  if (!Array.isArray(prev) || !prev.length || !Array.isArray(next)) return next;
+  const same = (a, b, last) => (a.text || "") === (b.text || "") && !!a.orphan === !!b.orphan
+    && (a.response || "") === (b.response || "")
+    && (a.tools || []).length === (b.tools || []).length
+    && (a.calls || []).length === (b.calls || []).length
+    /* earlier turns are settled; only the last one can have a call's result land */
+    && (!last || JSON.stringify(a.calls || []) === JSON.stringify(b.calls || []));
+  if (prev.length === next.length && prev.every((t, i) => same(t, next[i], i === prev.length - 1))) return prev;
+  const key = (t, seen) => { const k = (t.orphan ? "\u0002" : "") + (t.text || ""); seen[k] = (seen[k] || 0) + 1; return k + "\u0001" + seen[k]; };
+  const uids = {}, a = {}, b = {};
+  prev.forEach(t => { const k = key(t, a); if (t.uid) uids[k] = t.uid; });
+  next.forEach(t => { const k = key(t, b); if (!t.uid && uids[k]) t.uid = uids[k]; });
+  return next;
+}
+
 /* Read one transcript, once, on demand. Opening a pane is the trigger; the list
    endpoint never reads message bodies. Every terminal state is explicit so the
    pane can say which one it is in — "empty" and "error" are different facts and
@@ -899,7 +949,7 @@ function ensureTranscript(s){
   s.loadState = "loading";
   apiGet("/api/sessions/" + encodeURIComponent(s.id))
     .then(d => {
-      s.turns = transcriptTurns(d && d.messages);
+      s.turns = reconcileTurns(s.turns, transcriptTurns(d && d.messages));
       s.cwd = (d && d.cwd) || s.cwd;
       s.branch = (d && d.branch) || s.branch;
       s.loadState = s.turns.length ? "ok" : "empty";
@@ -1553,7 +1603,13 @@ function queueState(turn){
   for (const ch of CLAUDE_SOCKETS.values()){
     const i = ch.pending.indexOf(turn);
     if (i === -1) continue;
-    return { pos: i + 1, behind: !!ch.turn || i > 0 };
+    return { pos: i + 1, behind: !!ch.turn || i > 0,
+             handed: !!turn.handed, why: turn.queuedWhy || "" };
+  }
+  /* held in the browser behind a mid-reply provider switch (drainHeldTurns) */
+  for (const held of Object.values(S.heldTurns || {})){
+    const i = held.findIndex(h => h.turn === turn);
+    if (i !== -1) return { pos: i + 1, behind: true };
   }
   return null;
 }
@@ -1814,6 +1870,35 @@ function claudeChannel(s, side){
          bar's branch / ahead / diff numbers are stale the moment it ends. */
       loadRepo(ch.sid, true);
       if (S.prsOpen === ch.sid) loadPrs(ch.sid, true);
+    } else if (f.type === "joined"){
+      /* Claude took the next message typed during this reply INTO the reply,
+         the way the Claude Code CLI does. This turn's part ends here and the
+         rest streams under that message -- the same binding `start` does, with
+         no second `done`: the turn-level numbers arrive once, on the last. */
+      const next = ch.pending.shift();
+      if (next){
+        const prev = ch.turn;
+        if (prev){
+          prev.streaming = false; prev.thinking = false; prev.joinedNext = true;
+          (prev.toolRuns || []).forEach(r=>{ if (r.running){ r.running = false; r.ok = null; } });
+        }
+        ch.turn = next; ch.last = next;
+        next.streaming = true; next._lastTok = Date.now(); next._shown = 0;
+        if (prev && prev.claude_session) next.claude_session = prev.claude_session;
+        renderNow();
+        return;
+      }
+    } else if (f.type === "handed" || f.type === "queued"){
+      /* WHERE A MESSAGE TYPED MID-REPLY WENT, in send order (the server answers
+         each in the order it read them). `handed`: claude has it and reads it at
+         its next step -- not a queue. `queued`: it waits, and the reason says why. */
+      const t = ch.pending.find(p => !p.handed && !p.queuedWhy);
+      if (t){
+        if (f.type === "handed") t.handed = true;
+        else t.queuedWhy = f.reason || "the running reply has to finish first";
+        scheduleRender();
+      }
+      return;
     } else if (f.type === "stopped"){
       /* The operator's own interrupt is NOT an error. It gets its own state so the
          turn is not painted red and blamed on the tool. */

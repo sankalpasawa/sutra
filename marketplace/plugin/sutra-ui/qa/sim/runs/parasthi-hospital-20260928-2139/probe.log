@@ -1,0 +1,3 @@
+ 296.8s  took 18.27s  running=[]  
+readings 292, slow (>3 s or failed) 1, slowest 18.27s at 296.8s (running=[])
+west 25.21s at 200.5s (running=[])

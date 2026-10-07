@@ -1,0 +1,26 @@
+{
+ "id": "artifact/live-site",
+ "name": "Live site",
+ "kind": "site",
+ "use_case": "the site as served, at its address",
+ "files": [
+  "index.html",
+  "*.html"
+ ],
+ "checks": [
+  "has_index_html"
+ ],
+ "written_by": [
+  "Publish"
+ ],
+ "counts_after": "stamp",
+ "put_back": true,
+ "operations": [
+  "Adaptation",
+  "Audit"
+ ],
+ "made_from": [
+  "artifact/build"
+ ],
+ "version": 1
+}

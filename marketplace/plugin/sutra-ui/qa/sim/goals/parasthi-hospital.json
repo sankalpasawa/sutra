@@ -1,0 +1,39 @@
+{
+  "id": "parasthi-hospital",
+  "person": "founder",
+  "app": "http://127.0.0.1:8331/",
+  "organisation": "Parasthi Hospital",
+  "goal": "A live website for Parasthi Hospital: what we treat, our doctors, how to book an appointment, the emergency number on every page.",
+  "why": "the first instance: a hospital, the kind of site the walks already proved on the source server; on the Beta it proves the installed app",
+  "outcomes": [
+    { "id": "founded", "expect": "Parasthi Hospital in the tree with its Root, On, and Root's chat open with my words as the first turn",
+      "verify": { "kind": "route", "get": "/api/native/depts", "check": "a department named 'Parasthi Hospital Root' with kind root and stopped false" } },
+    { "id": "root-asks", "expect": "within two minutes Root asks: Set up a department: ... with Stamp and Refuse",
+      "verify": { "kind": "route", "get": "/api/native/{root}/status", "check": "asks[].kind == setup, status pending" } },
+    { "id": "child-born", "expect": "after Stamp, Parasthi Hospital Website under Root, On; Root says it made it",
+      "verify": { "kind": "route", "get": "/api/native/depts", "check": "a department whose parent is the Root, kind website, stopped false" } },
+    { "id": "line-ran", "expect": "within six minutes the department's Map shows Plan, Write, Check ran and an ask: Publish: go live for the first time...",
+      "verify": { "kind": "route", "get": "/api/native/{child}/map", "check": "artifacts Brief, Site plan, Pages, Build at v1; status.asks[].kind == publish" } },
+    { "id": "live", "expect": "after Stamp: Open the live site; the pages the goal named exist",
+      "verify": { "kind": "site", "get": "/api/native/{child}/site/index.html", "check": "200; index names What we treat, Our doctors, Book, Emergency" } },
+    { "id": "emergency-on-every-page", "expect": "the emergency number is on every page, as the goal said",
+      "verify": { "kind": "site", "get": "/api/native/{child}/site/{every page}", "check": "each page's text contains the emergency number" } }
+  ],
+  "variances": [
+    { "id": "careers", "say": "task", "with": { "page": "Careers, for nurses who want to join" }, "where": "Root's chat, about the department",
+      "expect": "the line runs again with no stamp; the live site has a Careers page",
+      "verify": { "kind": "site", "get": "/api/native/{child}/site/careers.html", "check": "200; Live site at v2" } },
+    { "id": "question", "say": "question", "with": { "who": "patient", "act": "book an appointment" }, "where": "inside the department's chat, chip on",
+      "expect": "Root answers with the page and its source; nothing is filed",
+      "verify": { "kind": "route", "get": "/api/native/{root}/chat", "check": "a turn with word answer about the department; Brief unchanged" } },
+    { "id": "rule", "say": "rule", "with": { "rule": "end with the line: In an emergency call 108" }, "where": "Root's chat, about the department",
+      "expect": "an ask: A rule, as understood: ...; after Stamp the rule is the department's and the next live version ends every page with it",
+      "verify": { "kind": "route", "get": "/api/native/{child}/map", "check": "rules[] contains 'call 108'" } },
+    { "id": "feedback", "say": "feedback", "with": { "page": "doctors" }, "where": "Root's chat, about the department",
+      "expect": "a correction goes to the line; a new live version; the doctors page is shorter",
+      "verify": { "kind": "site", "get": "/api/native/{child}/site/doctors.html", "check": "shorter than before; Live site at a new version" } },
+    { "id": "stop-start", "say": "stop", "where": "Root's chat", "then": "task Add a page on parking.", "then2": "start",
+      "expect": "Off: the request waits, nothing runs; On: it runs and the site gains the page",
+      "verify": { "kind": "route", "get": "/api/native/{child}/status", "check": "next == stopped while off; a new Live site after start" } }
+  ]
+}

@@ -1257,16 +1257,22 @@ function sessionPane(s){
       ${composerModelMenuHtml(s)}
       ${composerAccessMenuHtml(s)}
       ${S.usagePop === s.id ? usagePopHtml() : ""}
+      <!-- Stop sits BESIDE Send while a reply runs, never in its place (founder
+           2026-09-28): swapping Send for Stop left no way to send a second
+           message, and a click aimed at Send killed the reply instead. A message
+           sent now goes to Claude at once and is read at its next step
+           (the "handed" frame). Stop is Esc: it ends the reply, keeps the
+           process, and a message typed meanwhile runs right after. -->
       ${streamingFor(s.id)
         ? `<button class="send stop${stopFresh?" fresh":""}" data-sstop="${s.id}" type="button" aria-label="Stop this turn"
-                   title="Stop — kills the running process">
+                   title="Stop this reply (Esc) — the conversation carries on, and anything you typed runs next">
              <svg width="10" height="10" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
-           </button>`
-        : `<button class="send" data-ssend="${s.id}" type="button"${
+           </button>` : ""}
+      <button class="send" data-ssend="${s.id}" type="button"${
              shadowDriving ? " disabled" : ""} aria-label="${shadowDriving
                ? "Shadow is driving this chat — sending is unavailable" : "Send"}">
              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-           </button>`}
+           </button>
     </div>
     <!-- Nothing under the box (founder 2026-09-21). Access is a row in the ⋯
          menu now; its popover still renders inside .pc above, so it opens
@@ -1685,7 +1691,10 @@ let _updTicker = null;
 
 function updDesktop(){ return !!(window.sutra && window.sutra.desktop); }
 
+let _updProgStarted = false;
 async function pollStagedUpdate(){
+  /* The progress poll rides the same boot as this one; it reschedules itself. */
+  if (!_updProgStarted){ _updProgStarted = true; setTimeout(pollUpdProgress, 0); }
   try {
     /* Attach mode on a sidecar-capable shell: the SHELL's manifest is the
        truth -- the backend serving this page cannot know about shell-side
@@ -1706,6 +1715,55 @@ async function pollStagedUpdate(){
     S.updStaged = await apiGet("/api/updates/staged");
   } catch (e) { S.updStaged = null; }
   renderUpdateBanner();
+}
+
+/* DOWNLOAD PROGRESS (founder 2026-09-26). The download writes bytes done/total
+   to a local file; this reads it through a local-only route. Fast while bytes
+   are arriving, slow otherwise -- an idle panel costs one loopback read every
+   few seconds. When a download ends, the staged record is the next thing to
+   show, so it is fetched straight away rather than on the minute poll. */
+const UPD_PROG_FAST_MS = 1000;
+const UPD_PROG_IDLE_MS = 5000;
+
+async function pollUpdProgress(){
+  let p = null;
+  try { p = await apiGet("/api/updates/progress"); } catch (e) { p = null; }
+  const was = !!S.updProgress;
+  S.updProgress = (p && p.active) ? p : null;
+  const now = !!S.updProgress;
+  if (was && !now) pollStagedUpdate();
+  else if (now) renderUpdateBanner();
+  setTimeout(pollUpdProgress, now ? UPD_PROG_FAST_MS : UPD_PROG_IDLE_MS);
+}
+
+function updMB(b){
+  const m = (b || 0) / 1048576;
+  return m >= 100 ? String(Math.round(m)) : m.toFixed(1);
+}
+
+function updDur(s){
+  s = Math.max(1, Math.round(s));
+  if (s < 60) return s + " s";
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + " min" + (m < 10 && s % 60 ? " " + (s % 60) + " s" : "");
+  return Math.floor(m / 60) + " h " + (m % 60) + " min";
+}
+
+function updDownloadingHtml(p){
+  const ver = esc(p.version || "the update");
+  const total = p.total || 0, done = p.done || 0;
+  const pct = total ? Math.min(100, done * 100 / total) : 0;
+  const elapsed = (p.ts || 0) - (p.started || 0);
+  const rate = elapsed > 0 ? (done - (p.start_done || 0)) / elapsed : 0;
+  const checking = p.phase === "verifying";
+  let line;
+  if (checking) line = "Downloaded. Checking it is the published build…";
+  else if (total && rate > 0 && elapsed >= 1)
+    line = `${updMB(done)} of ${updMB(total)} MB · ${updMB(rate)} MB/s · about ${updDur((total - done) / rate)} left`;
+  else line = total ? `${updMB(done)} of ${updMB(total)} MB` : `${updMB(done)} MB so far`;
+  return `<div class="updmsg"><b>Downloading Sutra ${ver}</b>
+    <div class="updprog${checking ? " updbusy" : ""}"><i style="width:${checking ? 100 : pct.toFixed(1)}%"></i></div>
+    <span class="updwhy updn">${line}</span></div>`;
 }
 
 function updTick(){
@@ -1772,17 +1830,35 @@ function renderUpdateBanner(){
      are not states the operator asked to stop hearing about. */
   const dismissed = !!(u && u.version && S.updDismissed === u.version
                        && !S.updApplyError && u.state !== "installing");
-  const show = !!(u && u.pending) && !dismissed;
-  if (!show){ stopUpdCountdown(); if (host) host.remove(); return; }
+  /* The x closes ANY state, errors included (founder 2026-09-25: the error
+     card sat over the chat with no way out). Keyed to the version like the
+     dismissal, so a newer build still announces itself. */
+  const closed = !!(u && u.version && S.updClosed === u.version);
+  const show = !!(u && u.pending) && !dismissed && !closed;
+  /* Before anything is staged, a download in flight gets the card: MB, speed,
+     time left. Its x hides this download only ("dl:" key), not the ready card
+     that follows it. */
+  const dl = S.updProgress;
+  const dlKey = dl ? "dl:" + (dl.version || "") : null;
+  const downloading = !show && !!dl && !(u && u.pending) && S.updClosed !== dlKey;
+  if (!show && !downloading){
+    stopUpdCountdown(); if (host) host.remove();
+    if (typeof snackReflow === "function") snackReflow();   /* snacks drop back to the corner */
+    return;
+  }
   if (!host){
     host = document.createElement("div");
     host.id = "updHost";
     document.body.appendChild(host);
   }
 
-  const ver = esc(u.version || "a new version");
-  const armed = u.state === "installing";
-  const counting = updDesktop() && !armed && !S.updDeferred && u.state === "staged";
+  const ver = esc((u && u.version) || "a new version");
+  const armed = !downloading && u.state === "installing";
+  const counting = !downloading && updDesktop() && !armed && !S.updDeferred && u.state === "staged";
+  /* The ready states lead with a check mark and say what was fetched. */
+  const ok = `<span class="updok" aria-hidden="true"><svg viewBox="0 0 16 16" width="16" height="16"><circle cx="8" cy="8" r="8" fill="currentColor"/><path d="M4.5 8.2l2.3 2.3 4.7-4.9" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
+  const got = (u && u.downloaded_bytes)
+    ? `<span class="updwhy">Downloaded ${updMB(u.downloaded_bytes)} MB${u.delta ? " (only what changed)" : ""}.</span>` : "";
 
   /* Start the clock the first time we see a staged build this load. */
   if (counting && S.updLeft === null && !_updTicker && !S.updApplyError && !S.updFiring){
@@ -1792,21 +1868,23 @@ function renderUpdateBanner(){
 
   /* Founder decision 2026-08-06: a live terminal WARNS, it does not stop the
      clock. Said plainly, because the restart will take the session with it. */
-  const termWarn = S.termOpen
+  const termWarn = S.termOpen && !downloading
     ? `<div class="updwarn">A terminal session is open. Restarting Sutra ends it.</div>` : "";
 
   let body;
-  if (S.updApplyError){
+  if (downloading){
+    body = updDownloadingHtml(dl);
+  } else if (S.updApplyError){
     body = `<div class="updmsg"><b>Sutra ${ver} could not be applied.</b>
       <span class="updwhy">${esc(S.updApplyError)}</span>
       <span class="updwhy">It will be retried when you quit.</span></div>
       <div class="updacts"><button class="btn" type="button" data-upd2="retry">Try again</button></div>`;
   } else if (armed){
-    body = `<div class="updmsg"><b>Sutra ${ver} is ready to install.</b>
+    body = `<div class="updmsg"><b>${ok}Sutra ${ver} is ready to install.</b>
       <span class="updwhy">It is applied as soon as the app closes.</span></div>`;
   } else if (!updDesktop()){
     /* Browser / CLI: state the fact, promise nothing this page can't keep. */
-    body = `<div class="updmsg"><b>Sutra ${ver} has been downloaded.</b>
+    body = `<div class="updmsg"><b>${ok}Sutra ${ver} has been downloaded.</b>${got}
       <span class="updwhy">It installs the next time the desktop app quits.</span></div>`;
   } else if (u.state === "failed"){
     /* Given up on automatically. Reached via resolve_pending's "manual"
@@ -1816,7 +1894,7 @@ function renderUpdateBanner(){
       <span class="updwhy">${esc(u.error || "the installer did not report why")}</span>
       <span class="updwhy">Settings → Updates has the manual install.</span></div>`;
   } else if (S.updDeferred){
-    body = `<div class="updmsg"><b>Sutra ${ver} will finish installing when you quit.</b>
+    body = `<div class="updmsg"><b>${ok}Sutra ${ver} will finish installing when you quit.</b>
       <span class="updwhy">Nothing to download again — it is already verified.</span></div>`;
   } else if (S.updFiring){
     /* The countdown fired applyUpdate: the clock is stopped (S.updLeft === null) and
@@ -1833,7 +1911,7 @@ function renderUpdateBanner(){
       : (S.updLeft != null
           ? `Restarting in <span class="updn">${S.updLeft}s</span>.`
           : "Restarting shortly…");
-    body = `<div class="updmsg"><b>Sutra ${ver} is ready.</b>
+    body = `<div class="updmsg"><b>${ok}Sutra ${ver} is ready.</b>${got}
       <span class="updwhy">${when}</span></div>
       <div class="updacts">
         <button class="btn pri" type="button" data-upd2="now">Restart now</button>
@@ -1842,8 +1920,13 @@ function renderUpdateBanner(){
   }
 
   host.innerHTML = `<style>
-    #updHost{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:9000;
-      max-width:min(720px,calc(100vw - 32px));}
+    #updHost{position:fixed;bottom:16px;right:16px;z-index:9000;
+      max-width:min(440px,calc(100vw - 32px));}
+    #updHost .updbar{position:relative;padding-right:34px !important;}
+    #updHost .updx{position:absolute;top:6px;right:6px;width:22px;height:22px;
+      border:0;background:none;color:var(--muted,#9b938a);font-size:16px;line-height:1;
+      cursor:pointer;border-radius:5px;}
+    #updHost .updx:hover{background:rgba(127,127,127,.18);color:inherit;}
     #updHost .updbar{display:flex;gap:14px;align-items:center;flex-wrap:wrap;
       background:var(--panel,#1b1917);border:1px solid var(--line,#332f2a);
       border-radius:10px;padding:11px 14px;box-shadow:0 8px 28px rgba(0,0,0,.45);}
@@ -1852,11 +1935,27 @@ function renderUpdateBanner(){
     #updHost .updn{font-variant-numeric:tabular-nums;}
     #updHost .updacts{display:flex;gap:8px;flex:0 0 auto;}
     #updHost .updwarn{flex:1 1 100%;font-size:11.5px;color:var(--warn,#d9a441);}
-  </style><div class="updbar">${body}${termWarn}</div>`;
+    #updHost .updok{display:inline-flex;vertical-align:-3px;margin-right:7px;color:var(--ok,#3fa66b);}
+    #updHost .updprog{height:6px;margin:7px 0 5px;border-radius:3px;overflow:hidden;
+      background:rgba(127,127,127,.22);}
+    #updHost .updprog i{display:block;height:100%;border-radius:3px;
+      background:var(--accent,#c96f4a);transition:width .8s linear;}
+    #updHost .updbusy i{animation:updpulse 1.2s ease-in-out infinite;}
+    @keyframes updpulse{50%{opacity:.45}}
+  </style><div class="updbar">${body}${termWarn}<button class="updx" type="button" data-upd2="close" title="Close" aria-label="Close">&times;</button></div>`;
+
+  if (typeof snackReflow === "function") snackReflow();     /* snacks sit above this card */
 
   host.querySelectorAll("[data-upd2]").forEach(b=>b.onclick=()=>{
     const a = b.dataset.upd2;
     if (a === "now" || a === "retry") return applyUpdateNow();
+    if (a === "close" && downloading){ S.updClosed = dlKey; return renderUpdateBanner(); }
+    /* The x (data-upd2="close"). Closing a live countdown is a "Not now": hiding it alone would let the
+       app restart with nothing on screen. Every other state just hides. */
+    if (a === "close" && !(counting && !S.updApplyError && !S.updFiring)){
+      S.updClosed = (S.updStaged && S.updStaged.version) || null;
+      return renderUpdateBanner();
+    }
     /* "Not now" is a DEFER: the staged build is kept and the shell applies it
        on the way out. It is also a DISMISSAL -- the banner goes away. Saying
        "not now" and being answered with a permanent notice is not a defer, it

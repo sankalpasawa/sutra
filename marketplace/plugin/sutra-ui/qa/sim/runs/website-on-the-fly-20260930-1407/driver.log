@@ -1,0 +1,13 @@
+ledger 1 Found Hampi Guide with my words | {'org': 'dref-6ea91229d6c3a058', 'root': 'dref-699e2470ebfd1850', 'created': True, 'asked': 'q-9ea98405'}
+ledger 2 waited for Root | {'turns': ['A website for people visiting Hampi: what to see, when to go, how to reach it, where to stay, all taken from the interne', 'filed as a request; a ne
+ledger 3 Stamp | setup
+ledger 4 looked at the tree | {'child': 'Hampi Guide Website', 'kind': 'website', 'engines': ['Plan', 'Write', 'Check', 'Publish'], 'artifacts': ['Brief', 'Site plan', 'Pages', 'Build', 'Liv
+ledger 5 read a turn | {'src': 'Identity', 'word': 'request', 'line': 'filed in the Brief'}
+ledger 6 read a turn | {'src': 'Identity', 'word': 'plan', 'line': 'Planned 7 pages: Hampi Guide, What to See, When to Go, How to Reach Hampi, Where to Stay, Plan Your Visit, Sources.
+read failed: timed out
+ledger 7 read a turn | {'src': 'Identity', 'word': 'publish', 'line': "say whether the site may go live for the first time, and where it is served from: this app's own server unless y
+ledger 8 Stamp | {'kind': 'publish', 'engine': 'Publish', 'text': "Publish: go live for the first time, served from this app's own server unless you say where else"}
+ledger 9 read a turn | {'src': 'Identity', 'word': 'live', 'line': 'Live site v1 is live.'}
+ledger 10 looked for the live site | {'live': True, 'engines': ['Plan', 'Write', 'Check', 'Publish'], 'versions': {'Brief': 1, 'Site plan': 1, 'Pages': 1, 'Build': 1, 'Live site': 1}}
+SUMMARY {"root": "dref-699e2470ebfd1850", "child": {"ref": "dref-0d8523e29aa319cd", "name": "Hampi Guide Website", "stopped": false, "kind": "website", "parent": "dref-699e2470ebfd1850", "working": ["Identity"]}, "kind": "website", "engines": [["Plan", "Brief", "Site plan", "model"], ["Write", "Site plan", "Pages", "model"], ["Check", "Pages", "Build", "model"], ["Publish", "Build", "Live site", "code"]], "artifacts": {"Brief": 1, "Site plan": 1, "Pages": 1, "Build": 1, "Live site": 1}, "live": true, "recent": [["Publish", "ok", "Live site from Build, check passed"], ["Identity", "ok", "took the owner's stamp: Publish: go live for the first time, served from this ap"], ["Check", "ok", "Build from Pages, check passed"], ["Write", "ok", "Pages from Site plan, check passed"], ["Plan", "ok", "Site plan from Brief, check passed"], ["Identity", "ok", "took the owner's words: A website for people visiting Hampi: what to see, when t"], ["Coordination", "ok", "timetabled each engine after its input's new version"], ["Priority", "ok", "granted an envelope to each engine"], ["Identity", "ok", "set its rules within the parent's"]], "asks": [], "minutes": 5.1}
+exit 0

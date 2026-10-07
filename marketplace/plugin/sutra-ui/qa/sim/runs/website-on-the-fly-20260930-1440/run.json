@@ -1,0 +1,102 @@
+{
+ "root": "dref-0a996ba0ff97139c",
+ "child": {
+  "ref": "dref-edf899fe57d222a8",
+  "name": "Hampi Guide Website",
+  "stopped": false,
+  "kind": "organic",
+  "parent": "dref-0a996ba0ff97139c",
+  "working": [
+   "Identity"
+  ]
+ },
+ "kind": "organic",
+ "engines": [
+  [
+   "Gather",
+   "Brief",
+   "Facts",
+   "model"
+  ],
+  [
+   "Vet",
+   "Facts",
+   "Vetted Facts",
+   "model"
+  ],
+  [
+   "Compose",
+   "Vetted Facts",
+   "Pages",
+   "model"
+  ],
+  [
+   "Launch",
+   "Pages",
+   "Live site",
+   "model"
+  ]
+ ],
+ "artifacts": {
+  "Brief": 1,
+  "Facts": 1,
+  "Vetted Facts": 1,
+  "Pages": 1,
+  "Live site": 1
+ },
+ "live": true,
+ "recent": [
+  [
+   "Launch",
+   "ok",
+   "Live site from Pages, check passed"
+  ],
+  [
+   "Identity",
+   "ok",
+   "stamped: Do what it asks: by hand"
+  ],
+  [
+   "Launch",
+   "asked",
+   "waits for the owner"
+  ],
+  [
+   "Identity",
+   "ok",
+   "took the owner's stamp: Launch: go live for the first time, served from this app"
+  ],
+  [
+   "Compose",
+   "ok",
+   "Pages from Vetted Facts, check passed"
+  ],
+  [
+   "Vet",
+   "ok",
+   "Vetted Facts from Facts, check passed"
+  ],
+  [
+   "Gather",
+   "ok",
+   "Facts from Brief, check passed"
+  ],
+  [
+   "Identity",
+   "ok",
+   "added the engine Launch on the owner's stamp (born into the Library)"
+  ],
+  [
+   "Identity",
+   "ok",
+   "added the engine Compose on the owner's stamp (born into the Library)"
+  ],
+  [
+   "Identity",
+   "ok",
+   "added the engine Vet on the owner's stamp (born into the Library)"
+  ]
+ ],
+ "asks": [],
+ "minutes": 8.2
+}

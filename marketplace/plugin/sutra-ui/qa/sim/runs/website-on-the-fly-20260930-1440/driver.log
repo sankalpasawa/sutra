@@ -1,0 +1,19 @@
+ledger 1 Found Hampi Guide with my words | {'org': 'dref-402246a70ed78d57', 'root': 'dref-0a996ba0ff97139c', 'created': True, 'asked': 'q-ac4b4f5f'}
+ledger 2 waited for Root | {'turns': ['A website for people visiting Hampi: what to see, when to go, how to reach it, where to stay, all taken from the interne', 'filed as a request; a ne
+ledger 3 Stamp | setup
+ledger 4 looked at the tree | {'child': 'Hampi Guide Website', 'kind': 'organic', 'engines': [], 'artifacts': ['Brief']}
+ledger 5 read a turn | {'src': 'Identity', 'word': 'request', 'line': 'filed in the Brief'}
+ledger 6 read a turn | {'src': 'Identity', 'word': 'line', 'line': 'Adaptation is shaping the engines your words need; you will be asked to stamp the line before anything runs.'}
+ledger 7 read a turn | {'src': 'Identity', 'word': 'line', 'line': 'Set up the line Gather -> Vet -> Compose -> Launch? Gather Reads the Brief and searches the web for Hampi facts und
+ledger 8 Stamp | {'kind': 'line', 'engine': 'Adaptation', 'text': 'Set up the line Gather -> Vet -> Compose -> Launch? Gather Reads the Brief and searches the web for Hampi fact
+ledger 9 read a turn | {'src': 'Identity', 'word': 'line', 'line': 'Added the line Gather -> Vet -> Compose -> Launch; the first starts on your words now.'}
+ledger 10 read a turn | {'src': 'Identity', 'word': 'filed', 'line': 'Facts v1 is filed.'}
+ledger 11 read a turn | {'src': 'Identity', 'word': 'filed', 'line': 'Vetted Facts v1 is filed.'}
+ledger 12 read a turn | {'src': 'Identity', 'word': 'filed', 'line': 'Pages v1 is filed.'}
+ledger 13 read a turn | {'src': 'Identity', 'word': 'publish', 'line': "say whether the site may go live for the first time, and where it is served from: this app's own server unless y
+ledger 14 Stamp | {'kind': 'publish', 'engine': 'Launch', 'text': "Launch: go live for the first time, served from this app's own server unless you say where else"}
+ledger 15 Stamp | {'kind': 'step', 'engine': 'Launch', 'text': 'Do what it asks: by hand'}
+ledger 16 read a turn | {'src': 'Identity', 'word': 'live', 'line': 'Live site v1 is live.'}
+ledger 17 looked for the live site | {'live': True, 'engines': ['Gather', 'Vet', 'Compose', 'Launch'], 'versions': {'Brief': 1, 'Facts': 1, 'Vetted Facts': 1, 'Pages': 1, 'Live site': 1}}
+SUMMARY {"root": "dref-0a996ba0ff97139c", "child": {"ref": "dref-edf899fe57d222a8", "name": "Hampi Guide Website", "stopped": false, "kind": "organic", "parent": "dref-0a996ba0ff97139c", "working": ["Identity"]}, "kind": "organic", "engines": [["Gather", "Brief", "Facts", "model"], ["Vet", "Facts", "Vetted Facts", "model"], ["Compose", "Vetted Facts", "Pages", "model"], ["Launch", "Pages", "Live site", "model"]], "artifacts": {"Brief": 1, "Facts": 1, "Vetted Facts": 1, "Pages": 1, "Live site": 1}, "live": true, "recent": [["Launch", "ok", "Live site from Pages, check passed"], ["Identity", "ok", "stamped: Do what it asks: by hand"], ["Launch", "asked", "waits for the owner"], ["Identity", "ok", "took the owner's stamp: Launch: go live for the first time, served from this app"], ["Compose", "ok", "Pages from Vetted Facts, check passed"], ["Vet", "ok", "Vetted Facts from Facts, check passed"], ["Gather", "ok", "Facts from Brief, check passed"], ["Identity", "ok", "added the engine Launch on the owner's stamp (born into the Library)"], ["Identity", "ok", "added the engine Compose on the owner's stamp (born into the Library)"], ["Identity", "ok", "added the engine Vet on the owner's stamp (born into the Library)"]], "asks": [], "minutes": 8.2}
+exit 0

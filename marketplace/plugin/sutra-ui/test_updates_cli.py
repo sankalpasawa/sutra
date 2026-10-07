@@ -340,6 +340,35 @@ class StageDoesNotHoldTheLock(unittest.TestCase):
         # And the staged record is armable: _verify_staged accepts it.
         self.assertTrue(updates.arm_desktop(os.getpid())["scheduled"])
 
+    def test_an_unusable_record_newer_than_the_release_is_replaced(self):
+        """THE BUG (2026-09-26). A Windows test fixture leaked into the real Mac
+        staging dir: version 2.305.0, a 3-byte .exe, sha256 "d"*64. Every arm
+        failed "the staged image changed on disk since it was verified", and
+        every real download was discarded because 2.305.0 was "already staged"."""
+        junk = self.root / "Sutra-Setup-x64-2.305.0.exe"
+        junk.write_bytes(b"new")
+        updates._write_json(updates._pending_path(), {
+            "state": "staged", "version": "2.305.0", "dmg": str(junk),
+            "sha256": "d" * 64, "sha256_url": "u", "asset": "Sutra-Setup-x64.exe",
+            "staged_at": 1, "armed_at": None, "lease_until": None})
+        self.release.set()
+        res = updates.stage_desktop()
+        self.assertEqual((res["staged"], res["version"]), (True, NEW))
+        self.assertFalse(res.get("already"))
+        man = updates.read_pending()
+        self.assertEqual((man["version"], man["state"]), (NEW, "staged"))
+        self.assertFalse(junk.exists(), "the unusable installer was left behind")
+        self.assertTrue(updates.arm_desktop(os.getpid())["scheduled"])
+
+    def test_another_platforms_installer_is_never_verified(self):
+        """Even with a matching digest, a Mac never arms a .exe (nor Windows a .dmg)."""
+        exe = self.root / "Sutra-Setup-x64-2.271.5.exe"
+        exe.write_bytes(b"MZ")
+        with self.assertRaisesRegex(RuntimeError, "not for this platform"):
+            updates._verify_staged({"dmg": str(exe), "version": NEW,
+                                    "sha256": hashlib.sha256(b"MZ").hexdigest()},
+                                   recheck_online=False)
+
     def test_a_live_install_is_not_downloaded_over(self):
         old_dmg, old_sha = self._stage_old(state="installing",
                                            lease_until=int(time.time()) + 300)

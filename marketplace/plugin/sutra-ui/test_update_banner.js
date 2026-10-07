@@ -71,6 +71,55 @@ test("no banner branch renders without a way out", () => {
     "the dismissal gate is not keyed on the staged version");
 });
 
+/* Founder 2026-09-25: the error card sat top-centre over the chat with no
+   way to close it. It now lives bottom-right and every state has a close button. */
+test("the banner sits bottom-right, not over the top of the chat", () => {
+  const css = render.slice(render.indexOf("#updHost{"), render.indexOf("#updHost .updbar"));
+  assert(/bottom:\s*\d+px/.test(css) && /right:\s*\d+px/.test(css), "banner is not anchored bottom-right");
+  assert(!/top:\s*\d+px/.test(css), "banner is still anchored to the top");
+});
+
+test("every state has a close button", () => {
+  const bar = render.slice(render.indexOf('<div class="updbar">'), render.indexOf("</div>`;", render.indexOf('<div class="updbar">')));
+  assert(/data-upd2="close"/.test(bar), "the close button is not in the shared bar, so some states lack it");
+});
+
+test("close is keyed to a version and gates the show", () => {
+  assert(/updClosed\s*:/.test(state), "S.updClosed is not declared");
+  assert(/S\.updClosed\s*=\s*\(S\.updStaged/.test(render), "close must record the version, not a boolean");
+  assert(/const\s+show\s*=[^;]*!closed/.test(render), "the show gate ignores the close");
+});
+
+test("closing a running countdown also defers the restart", () => {
+  /* Hiding a live countdown would let the app restart with nothing on screen. */
+  const h = render.slice(render.indexOf('a === "close"'), render.indexOf('a === "close"') + 300);
+  assert(/counting/.test(h), "the close handler does not treat a running countdown as Not now");
+});
+
+/* Founder 2026-09-26: while it downloads, show MB, speed and time left; when it
+   is done, a proper ready state. */
+test("a download in flight renders a progress bar with MB and time left", () => {
+  assert(/updProgress\s*:/.test(state), "S.updProgress is not declared");
+  assert(/\/api\/updates\/progress/.test(render), "the panel never reads download progress");
+  const dl = render.slice(render.indexOf("function updDownloadingHtml"));
+  assert(dl.length > 30, "no downloading card");
+  const fn = dl.slice(0, dl.indexOf("\n}\n"));
+  assert(/class="updprog/.test(fn), "no progress bar element");
+  assert(/MB/.test(fn), "sizes are not shown in MB");
+  assert(/left/.test(fn), "no time-left estimate");
+});
+
+test("progress polls fast only while a download runs", () => {
+  const p = render.slice(render.indexOf("async function pollUpdProgress"));
+  const fn = p.slice(0, p.indexOf("\n}\n"));
+  assert(/setTimeout\(pollUpdProgress,\s*[^)]*\?\s*UPD_PROG_FAST_MS\s*:\s*UPD_PROG_IDLE_MS/.test(fn),
+    "progress poll is not adaptive (fast while downloading, idle otherwise)");
+});
+
+test("the ready state carries a check mark", () => {
+  assert(/class="updok"/.test(render), "the ready state has no check mark");
+});
+
 /* Behavioural, not textual: run the real applyUpdateNow against a stub shell.
    The banner once said "Sutra 2.271.4 could not be applied. the update state
    is in use by another process" -- a busy lock presented as a failed install. */

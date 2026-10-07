@@ -47,6 +47,11 @@ NEEDS_YOU_PAUSES = ("founder_confirm", "floor_confirm", "autonomy_suggest",
 #: with its retry (codex P1 fold: hiding failed outright removed a real
 #: recovery path). A legacy row without ts expires on first read.
 FAILED_GRACE_SECS = 24 * 3600
+#: an update (kind info) is FYI, not a decision: it stays on Now this long
+#: from its ts, then goes (Now layout A, founder 2026-09-27: "things which
+#: need my decision and some basic updates, like FYI"). Before this every
+#: update expired on first read, so Now could never show one.
+FYI_GRACE_SECS = 24 * 3600
 #: a rescue row (a session hit an error) lives while a task in one of these
 #: states still targets that session -- active ownership, not "any mission
 #: ever" (codex P2).
@@ -90,9 +95,14 @@ def relevant(item, store, now=None):
     mission, no session) cannot be judged and is kept."""
     if item.get("state") in ("handled", "expired"):
         return False
+    now = time.time() if now is None else now
+    if item.get("kind") == "info":
+        # FYI: judged by age alone; a legacy row without ts expires on
+        # first read, the same as a failed card's
+        ts = item.get("ts")
+        return isinstance(ts, (int, float)) and (now - ts) < FYI_GRACE_SECS
     if item.get("kind") != "needs_decision":
         return False
-    now = time.time() if now is None else now
     sid = session_of(item)
     if sid:
         return any(m.get("target_session") == sid

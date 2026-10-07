@@ -86,6 +86,35 @@ def _is_tool_result(content) -> bool:
     )
 
 
+# A SKILL LOADED BY SLASH COMMAND IS NOT SOMETHING THE FOUNDER SAID EITHER
+# (founder, 2026-09-25). The Skill-TOOL shape is caught by the
+# isMeta+sourceToolUseID pair at the use sites below. But `/workflow-authoring`
+# (and the CLI's own auto-load of a skill reference) writes a DIFFERENT pair:
+#
+#   1. a user record whose text is "<command-message>X</command-message>
+#      <command-name>X</command-name>..." -- already dropped by the "<" rule
+#   2. the skill body as a COMPANION user record: isMeta=True,
+#      turnCompanion=True, and NO sourceToolUseID, because no tool call
+#      injected it
+#
+# So record 2 reads exactly like an "[Image: ...]" placeholder, which a reader
+# DOES want, and the flag alone cannot tell them apart. The neighbour can: the
+# body is the isMeta companion that IMMEDIATELY follows a <command-*> record;
+# an image placeholder follows the typed prompt. Verified on the local corpus
+# (session 0ad2b900, 2026-09-25): 1 of 1 slash bodies matched, 0 of 2 image
+# placeholders did. The flag is armed by record 1 and cleared by the next user
+# record whatever it is, so it can never eat anything further down.
+_COMMAND_PREFIXES = ("<command-message>", "<command-name>")
+
+
+def _is_command_record(text: str) -> bool:
+    return (text or "").lstrip().startswith(_COMMAND_PREFIXES)
+
+
+def _is_slash_skill_body(d: Dict, pending: bool) -> bool:
+    return bool(pending and d.get("isMeta") and not d.get("sourceToolUseID"))
+
+
 # Sutra PREPENDS a routing preamble to the operator's message before sending it
 # (panel.html builds it and joins with "\n\n" before the real text). The title of
 # a session is taken from its first user message, so every conversation started
@@ -1034,6 +1063,13 @@ def _parse_records(raw: bytes, state: Dict) -> None:
             if d.get("isMeta") and d.get("sourceToolUseID"):
                 continue
             text = _text_of(content).strip()
+            # Slash-loaded skill body: see _is_slash_skill_body. The flag lives
+            # in state because the command record and the body can arrive in
+            # different appends.
+            pending_skill_body = state.get("pending_skill_body", False)
+            state["pending_skill_body"] = _is_command_record(text)
+            if _is_slash_skill_body(d, pending_skill_body):
+                continue
             if text and not text.startswith("<"):
                 messages.append({"role": "user", "text": text, "ts": d.get("timestamp", "")})
         else:
@@ -1141,6 +1177,7 @@ def _parse_transcript(f) -> Dict:
     # of on the flag alone, which is why it is a closed vocabulary and not a
     # prefix rule.
     pending_resume_noop = False
+    pending_skill_body = False
     with f.open(encoding="utf-8", errors="replace") as fh:
         for line in fh:
             try:
@@ -1198,6 +1235,13 @@ def _parse_transcript(f) -> Dict:
                 if d.get("isMeta") and d.get("sourceToolUseID"):
                     continue
                 text = _text_of(content).strip()
+                # Slash-loaded skill body (no sourceToolUseID): the isMeta
+                # companion right after a <command-*> record. See
+                # _is_slash_skill_body for the corpus evidence.
+                was_pending_skill_body = pending_skill_body
+                pending_skill_body = _is_command_record(text)
+                if _is_slash_skill_body(d, was_pending_skill_body):
+                    continue
                 if d.get("isMeta") and _norm_injected(text) in _RESUME_PROMPTS:
                     # ...and ARM the reply guard: the model's answer to a
                     # prompt nobody sent is not a turn either.

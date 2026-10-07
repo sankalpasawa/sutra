@@ -167,13 +167,14 @@ test("selecting a department fetches its read once and paints the strip", () => 
   assert.ok(/<h2>Experience<\/h2>/.test(strip) && /Holding Departments/.test(strip));
   assert.ok(/aria-label="Chart"/.test(strip) && /aria-label="Edit"/.test(strip), "two icons: Chart and the pencil");
 });
-test("list column: Charter, Departments, Filed work, Other charters, Documents, in that order, names only", () => {
+test("list column: Charter, Departments, Filed work, Other charters, in that order, names only; no Documents group", () => {
   const c = fresh(); c.o2S().sel = "r4"; c.o2S().dept.r4 = DEPT_EXP; c.o2S().apps.r4 = [];
   const d = c.o2Data();
   const html = c.o2ListHtml(d.byRef.get("r4"), d, DEPT_EXP, null);
-  const order = ["Charter", "Departments", "Filed work", "Other charters", "Documents"].map(l => html.indexOf(">" + l + "<"));
+  const order = ["Charter", "Departments", "Filed work", "Other charters"].map(l => html.indexOf(">" + l + "<"));
   assert.ok(order.every(i => i !== -1) && order.every((v, i, a) => i === 0 || v > a[i - 1]), "group order " + order.join(","));
-  assert.ok(html.indexOf("Experience Charter") !== -1 && html.indexOf(">HLD<") !== -1 && html.indexOf("Org HLD") !== -1);
+  assert.ok(html.indexOf(">Documents<") === -1 && html.indexOf("data-o2doc") === -1, "no Documents group (founder, 2026-09-28)");
+  assert.ok(html.indexOf("Experience Charter") !== -1 && html.indexOf(">HLD<") !== -1 && html.indexOf("Org HLD") === -1);
   assert.ok(!/experience\/org\/HLD\.md</.test(html), "no path shows as a name");
 });
 test("list column: more… appears past four names and expands", () => {
@@ -408,7 +409,14 @@ test("open path: openScreen redirects org2 to Old Org while the flag is off and 
   assert.ok(redirectAt !== -1 && checkAt !== -1 && redirectAt < checkAt, "the redirect runs before the SCREENS check");
 });
 test("boot restore falls back when the destination's default screen is not registered", () => {
-  assert.ok(/SCREENS\[DEST_DEFAULT_SCREEN\[S\.ui\.dest\]\]/.test(tailSrc) || /dflt && SCREENS\[dflt\]/.test(tailSrc));
+  /* 2026-09-29: the first screen is bootScreen() in 02-helpers.js, the one rule
+     for the boot and a click (Human Simulation run 2, finding 4); the fallback
+     lives there and the boot calls it. */
+  const helpersSrc = fs.readFileSync(path.join(JS, "02-helpers.js"), "utf8");
+  const pick = helpersSrc.slice(helpersSrc.indexOf("function bootScreen"), helpersSrc.indexOf("function bootScreen") + 900);
+  assert.ok(/dflt && SCREENS\[dflt\]/.test(pick), "bootScreen falls back to the default only when it is registered");
+  assert.ok(/: S\.screen\)?;?\s*\}/.test(pick), "and to whatever S.screen holds when the default is absent");
+  assert.ok(/bootScreen\(\)/.test(tailSrc), "the boot calls bootScreen");
 });
 test("panel.html loads 19-org2.js before 09-tail.js", () => {
   const a = panelHtml.indexOf('<script src="/static/js/19-org2.js'), b = panelHtml.indexOf('<script src="/static/js/09-tail.js');
@@ -706,6 +714,101 @@ test("panel.css carries a scoped .o2 block with tokens only", () => {
   const block = css.slice(start);
   assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(block.replace(/var\(--[a-z-]+\)/g, "")), "no literal colours in the .o2 block");
   assert.ok(/data-o2q/.test(fs.readFileSync(path.join(JS, "06-render.js"), "utf8")), "the search input keeps focus across a re-render");
+});
+
+/* ── the Library, top right (2.299.0, founder) ───────────────────────────── */
+
+test("the Library button sits in the strip's action row, carrying the word", () => {
+  const c = fresh();
+  const html = c.o2LibBtnHtml();
+  assert.ok(/data-o2act="lib"/.test(html), "it is an action of this screen");
+  assert.ok(/aria-pressed="false"/.test(html), "off by default");
+  assert.ok(/<span>Library<\/span>/.test(html),
+    "the WORD rides with the mark: alone in that corner it reads as a tool for the selected department");
+  assert.ok(/<svg/.test(html), "and the mark is there too");
+});
+
+test("pressed, the button reads as pressed and offers the way back", () => {
+  const c = fresh();
+  c.o2S().lib = true;
+  const html = c.o2LibBtnHtml();
+  assert.ok(/aria-pressed="true"/.test(html));
+  assert.ok(/class="o2libbtn on"/.test(html));
+  assert.ok(/Back to the departments/.test(html), "the title says how to return");
+});
+
+test("the panel's second mode lists the eight shelves, then the Archive", () => {
+  const c = fresh();
+  const html = c.o2LibPanelHtml();
+  /* Artifacts joined the Parts on 2026-09-28 (founder: "I don't see artifacts in the library") */
+  for (const label of ["Identity", "Adaptation", "Priority", "Coordination", "Audit",
+                       "Engines", "Artifacts", "Work atom"])
+    assert.ok(new RegExp(">" + label + "<").test(html), label + " is a row");
+  assert.ok(/o2libgrp">Functions</.test(html) && /o2libgrp">Parts</.test(html),
+    "the shelves keep their two groups");
+  /* 2026-09-25 (founder): "in the library itself we can just have Archive for
+     those particular sections" -- the rows that left the Org menu, plus Reorg
+     plans. This file loads without 02-helpers.js, so no flag hides a row. */
+  assert.ok(/o2libgrp">Archive</.test(html), "a third group, Archive");
+  const arch = html.split('o2libgrp">Archive<')[1];
+  assert.deepStrictEqual([...arch.matchAll(/data-screen="([^"]+)"/g)].map(m => m[1]),
+    ["workspace", "departments", "charters", "placements", "modules", "reorg"],
+    "each opens its old screen by its own id");
+  assert.ok(/>Apps</.test(arch) && />Reorg plans</.test(arch), "the words the menu used");
+  assert.strictEqual((html.match(/class="o2librow"|class="o2librow /g) || []).length, 14);
+});
+
+test("the Archive honours Workspace's and Apps' on/off settings", () => {
+  const c = fresh();
+  /* the rail's own test, as 02-helpers.js defines it: workspace is opt-in,
+     every other flag opt-out */
+  c.destRowHidden = e => e.flag === "workspace" ? !c.wsOn : !!(e.flag && c.SETTINGS.flags[e.flag] === false);
+  c.wsOn = false;
+  c.SETTINGS.flags.modules = false;
+  let arch = c.o2LibPanelHtml().split('o2libgrp">Archive<')[1];
+  assert.ok(!/data-screen="workspace"/.test(arch), "Workspace off: no row");
+  assert.ok(!/data-screen="modules"/.test(arch), "Apps off: no row");
+  assert.ok(/data-screen="departments"/.test(arch), "unflagged rows stay");
+  c.wsOn = true;
+  c.SETTINGS.flags.modules = true;
+  arch = c.o2LibPanelHtml().split('o2libgrp">Archive<')[1];
+  assert.ok(/data-screen="workspace"/.test(arch) && /data-screen="modules"/.test(arch), "both on: both rows");
+});
+
+test("a shelf row opens the screen the rail already opens, never a second one", () => {
+  const c = fresh();
+  const html = c.o2LibPanelHtml();
+  for (const screen of ["lib-identity", "lib-engines", "lib-work-atom"])
+    assert.ok(html.indexOf('data-screen="' + screen + '"') !== -1,
+      screen + " is opened by its own id");
+  assert.strictEqual(html.indexOf("data-o2ref"), -1,
+    "a shelf is not a domain: it never carries a tree ref");
+});
+
+test("the open shelf is marked in the panel", () => {
+  const c = fresh();
+  c.S.screen = "lib-engines";
+  const html = c.o2LibPanelHtml();
+  assert.ok(/data-screen="lib-engines"[^>]*aria-selected="true"/.test(html));
+  assert.ok(/data-screen="lib-identity"[^>]*aria-selected="false"/.test(html));
+});
+
+test("the toggle changes nothing about the tree, so pressing twice returns", () => {
+  const c = fresh();
+  const before = c.o2TreeHtml();
+  c.o2S().lib = true;
+  c.o2S().lib = false;
+  assert.strictEqual(c.o2TreeHtml(), before, "byte for byte, the same tree");
+});
+
+test("panel.css carries the button and the panel, in tokens only", () => {
+  const start = css.indexOf("THE LIBRARY, TOP RIGHT");
+  assert.ok(start !== -1, "the block is there");
+  const block = css.slice(start);
+  assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(block.replace(/var\(--[a-z-]+\)/g, "")),
+    "no literal colours");
+  assert.ok(/\.o2libbtn\.on\{/.test(block), "a pressed state");
+  assert.ok(/\.o2librow\[aria-selected="true"\]/.test(block), "a selected row");
 });
 
 Promise.all(pending).then(() => {

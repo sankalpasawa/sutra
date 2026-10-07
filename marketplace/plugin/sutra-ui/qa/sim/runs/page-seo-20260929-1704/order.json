@@ -1,0 +1,55 @@
+{
+ "goal": "page-seo",
+ "person": "founder",
+ "seed": 1790681642,
+ "drawn": [
+  "which-matters",
+  "other-chats-kept",
+  "stop-mid-run",
+  "meaning-rule",
+  "say-to-priority"
+ ],
+ "plan": [
+  {
+   "n": 1,
+   "id": "which-matters",
+   "at": "right after the site is live",
+   "say": null,
+   "do": "ask: Which of your changes matters most?",
+   "expect": "an answer from the record in the chat, not a new run"
+  },
+  {
+   "n": 2,
+   "id": "other-chats-kept",
+   "at": "after Audit's question",
+   "say": null,
+   "do": "open Identity's Chat, then Adaptation's, then Identity's again",
+   "expect": "each its own existing chat; nothing starts, nothing lost"
+  },
+  {
+   "n": 3,
+   "id": "stop-mid-run",
+   "at": "right after the publish ask",
+   "say": null,
+   "do": "press Stop while the engine reads a page; Start again",
+   "expect": "Stopped and Started are turns; the run resumes; one version"
+  },
+  {
+   "n": 4,
+   "id": "meaning-rule",
+   "at": "right after the publish ask",
+   "say": null,
+   "do": "say a rule: Never change what a page claims, only how it says it. Stamp it.",
+   "expect": "the rule is asked for as a rule ('A rule, as understood: ...'), and stamped it is on the record's rules; no search runs for it"
+  },
+  {
+   "n": 5,
+   "id": "say-to-priority",
+   "at": "right after the goal is filed",
+   "say": null,
+   "do": "say: Do the second page first from now on.",
+   "expect": "the words in Priority's chat at once and the person stays there; what came of them lands in that chat too"
+  }
+ ],
+ "made": "2026-09-29T17:04:02+0530"
+}

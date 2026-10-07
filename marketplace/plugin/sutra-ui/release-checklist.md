@@ -111,6 +111,13 @@ Sutra-arm64.dmg     Sutra-arm64.dmg.sha256
 Sutra-x86_64.dmg    Sutra-x86_64.dmg.sha256
 ```
 
+Since the delta lane (2026-09-25) a **stable** release also requires, per arch, `Sutra-<arch>.manifest.json`
+and its `.sha256`; `verify` checks those too. `Sutra-<arch>.delta.tar.xz` is optional: the `dmg` leg
+withholds it when there is no previous stable release or when the pack would be over half the DMG, and
+it only uploads a pack it has already rebuilt the new app from and passed through `codesign`. Look for
+`reconstructed <arch> from <version>: OK` in the leg's log. Betas carry none of these (a beta never
+auto-updates). The design is in `DELTA-UPDATES-DESIGN.md`.
+
 A one-architecture release is not shippable. Confirm `fail-fast: false` is still on the `dmg` matrix
 before tagging — without it an Intel failure deletes the arm64 build instead of preserving it. If a
 leg is missing, check whether it failed or was never assigned a runner; a retired runner label queues

@@ -1,0 +1,10 @@
+{
+ "goal": "sankalp-asawa",
+ "person": "founder",
+ "panel": "http://127.0.0.1:8331",
+ "app_version": "2.306.12",
+ "started": "2026-09-29T13:28:36+0530",
+ "ledger": "ledger.jsonl",
+ "findings": "findings.jsonl",
+ "report": "report.md"
+}

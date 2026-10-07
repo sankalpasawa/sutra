@@ -764,6 +764,15 @@
   .md .md-pre{background:var(--code-bg,rgba(0,0,0,.22));border:1px solid var(--line-soft);
     border-radius:7px;padding:9px 11px;margin:0 0 8px;overflow-x:auto}
   .md .md-pre code{font-family:var(--mono);font-size:.92em;background:none;border:0;padding:0;white-space:pre}
+  /* A DECISION callout. The readability gate boxes a decision in box-drawing
+     characters inside a fence; mdHtml lifts that into this frame so it reads
+     in the app's own tokens instead of as mono code. A fieldset: thin accent
+     border, the label sits ON the border as the legend, no fill. */
+  .md .md-callout{border:1px solid var(--acc);border-radius:var(--r);padding:6px 12px 10px;
+    margin:6px 0 12px;min-width:0;background:none;color:var(--ink)}
+  .md .md-callout-k{font:650 10px/1.4 var(--sans);letter-spacing:.1em;text-transform:uppercase;
+    color:var(--acc);padding:0 6px;margin-left:4px}
+  .md .md-callout-b{line-height:1.5}
   .md .md-a{color:var(--acc);text-decoration:underline;text-underline-offset:2px}
   .md .md-a:hover{text-decoration-thickness:2px}
   /* A wide table scrolls INSIDE its own box; the pane never scrolls sideways. */
@@ -910,6 +919,57 @@
   .rtoggle button{flex:1;background:none;border:1px solid var(--line);border-radius:5px;
     padding:4px 6px;font:500 9.5px/1 var(--sans);color:var(--muted);cursor:pointer}
   .rtoggle button[aria-pressed="true"]{background:var(--acc-bg);border-color:var(--acc);color:var(--acc)}
+  .rtoggle[hidden],.rsearch[hidden]{display:none}
+  .rtoggle .rsbtn{flex:none;width:26px;padding:0;display:grid;place-items:center;color:var(--acc)}
+  .rtoggle .rsbtn:hover{background:var(--acc-bg)}
+  .rsearch{padding:4px 8px 6px}
+  .rsbox{display:flex;align-items:center;gap:6px;height:26px;box-sizing:border-box;padding:0 3px 0 8px;
+    background:var(--bg);border:1px solid var(--acc);border-radius:5px;color:var(--acc)}
+  .rsbox:focus-within{box-shadow:0 0 0 3px var(--acc-bg)}
+  .rsbox input{flex:1;min-width:0;background:none;border:0;outline:none;color:var(--ink);
+    font:500 11.5px/1 var(--sans)}
+  .rsbox input::placeholder{color:var(--faint)}
+  .rsbox input::-webkit-search-cancel-button{display:none}
+  .rsbox button{flex:none;width:20px;height:20px;border:0;border-radius:4px;background:none;
+    color:var(--muted);display:grid;place-items:center;cursor:pointer;padding:0}
+  .rsbox button:hover{color:var(--ink);background:var(--acc-bg)}
+  .rscount{padding:5px 2px 0;font:500 9px/1.4 var(--mono);color:var(--muted)}
+  .rscount:empty{display:none}
+  mark.qhit{background:color-mix(in srgb,var(--acc) 22%,transparent);color:var(--acc);
+    border-radius:3px;padding:0 1px}
+  /* chat states (2026-09-25): Live, Pinned, Active, Archived */
+  .rsec{display:flex;align-items:center;gap:6px}
+  .rsecn{font:600 9px/1 var(--mono);color:var(--faint);letter-spacing:0;border-radius:4px;padding:1px 3px;
+    transition:background .3s,color .3s}
+  .rsecn.tick{background:var(--acc-bg);color:var(--acc)}
+  .rsec.rlive{color:var(--ok)}
+  .rlivedot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--ok-bg)}
+  .rsec.rpin svg{color:var(--acc)}
+  .rlist .srow .rowopen{position:relative}
+  .rlist .srow .rowopen .t{padding-right:64px}
+  .rlist .srow .rago{position:absolute;right:8px;top:7px;font:500 9px/1.4 var(--mono);color:var(--faint);
+    white-space:nowrap}
+  .rlist .m .rdept{color:var(--muted);flex:none;white-space:nowrap}
+  .rlist .m .rdept + span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rlist .srow .rowarch{flex:none;width:22px;display:grid;place-items:center;background:none;border:0;
+    border-radius:5px;color:var(--muted);cursor:pointer;opacity:0}
+  .rlist .srow:hover .rowarch,.rlist .srow .rowarch:focus-visible{opacity:1}
+  .rlist .srow .rowarch:hover{background:var(--acc-bg);color:var(--ink)}
+  .rlist .srow.arch-out{animation:archOut .2s ease forwards;overflow:hidden}
+  @keyframes archOut{to{opacity:0;transform:translateY(6px) scale(.98);max-height:0;padding:0;margin:0}}
+  .rarch{border-top:1px solid var(--line-soft);margin-top:8px;padding:4px 0 6px}
+  .rarchtog{width:calc(100% - 12px);margin:0 6px;display:flex;align-items:center;gap:7px;background:none;border:0;
+    border-radius:6px;padding:8px 6px;font:600 9.5px/1 var(--sans);letter-spacing:.09em;text-transform:uppercase;
+    color:var(--muted);cursor:pointer}
+  .rarchtog:hover{background:var(--acc-bg);color:var(--ink)}
+  .rarchtog .rsecn{margin-left:auto}
+  .rarchtog .rgchev{transition:transform .15s}
+  .rarch.open .rarchtog{color:var(--ink)}
+  .rarch.open .rarchtog .rgchev{transform:rotate(90deg)}
+  .rarch .rlist .t{color:var(--muted)}
+  .rarchmore{margin:2px 14px 0;background:none;border:0;padding:6px 0;font:500 11px/1 var(--sans);
+    color:var(--acc);cursor:pointer}
+  @media (prefers-reduced-motion: reduce){.rlist .srow.arch-out{animation:none;opacity:0}}
   .newBtn{margin:0 10px 10px;padding:8px 11px;border-radius:7px;border:0;width:calc(100% - 20px);
     background:var(--ink);color:var(--bg);font:600 12px/1 var(--sans);display:flex;
     align-items:center;justify-content:center;gap:7px;cursor:pointer}
@@ -1765,7 +1825,10 @@
     border:1.5px solid var(--faint);background:transparent}
   .gv-queued .gv-wdot{border-color:var(--warn,#A67B0A)}
   .gv-queued{color:var(--warn,#A67B0A)}
-  @keyframes gvBeat{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.6);opacity:.45}}
+  /* HANDED: claude already has it -- accent, not warning, and filled, because
+     nothing is stuck. */
+  .gv-handed{color:var(--ink)}
+  .gv-handed .gv-wdot{border-color:var(--acc,var(--ok));background:var(--acc,var(--ok))}  @keyframes gvBeat{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.6);opacity:.45}}
   .gv-sep{color:var(--faint)}
   .gv-chev{transition:transform .22s;font-size:9px;color:var(--faint)}
   .gv-leaf{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
@@ -2371,16 +2434,119 @@
   box-shadow:var(--shadow);
   max-width:340px;
   pointer-events:none; }
-.nyfeed{ display:flex; flex-direction:column; gap:10px; max-width:560px; }
-.nycard{ border:1px solid var(--line); border-radius:10px; padding:10px 12px;
-  background:var(--card); cursor:pointer; transition:opacity .16s; }
-/* opened but not answered (founder 2026-09-16): the card stays, lighter */
-.nycard.seen{ opacity:.72; }
-.nyhead{ display:flex; gap:8px; font-size:10px; color:var(--faint);
-  text-transform:uppercase; letter-spacing:.04em; }
-.nytitle{ font-size:13px; margin:4px 0; }
-.nywhy{ font-size:11px; color:var(--faint); }
-.nyact{ margin-top:6px; }
+/* Now (founder 2026-09-27): a home, not a dashboard -- Codex-style greeting
+   "what can we do for you?" over the bar, centred when nothing is under the
+   bar, on top when rows are; Linear-style rows (icon, task, reason, time;
+   no borders, bars or buttons; the whole row is the click and names its
+   action on hover); one status mark inside the bar instead of any subtext.
+   Motion answers a change and is short: rows rise in, the greeting and bar
+   glide between the middle and the top (FLIP, in 14-needs-you.js), the
+   mark cross-fades, the All clear panel pops open. Reduced motion: none. */
+.nynow{ width:100%; max-width:680px; margin:0 auto; min-height:100%;
+  display:flex; flex-direction:column; padding:6vh 0 24px; box-sizing:border-box; }
+.nynow.center{ justify-content:center; padding:0 0 12vh; }
+.nytop{ will-change:transform; }
+.nyhero{ font-family:var(--serif); font-size:28px; font-weight:500; line-height:1.25;
+  letter-spacing:-.01em; color:var(--ink); text-align:center; margin:0 0 22px; }
+.nyask{ position:relative; }
+.nynow .shcompwrap{ position:relative; }
+.nynow .shcompose{ box-sizing:border-box; min-height:108px; resize:none;
+  padding:14px 62px 46px 16px; border-radius:16px; font-size:14px; line-height:1.5;
+  border:1px solid var(--line);
+  box-shadow:0 1px 2px rgba(0,0,0,.06),0 12px 32px -18px rgba(0,0,0,.35);
+  transition:border-color .18s ease, box-shadow .22s ease; }
+.nynow .shcompose:focus{ outline:none; border-color:var(--acc);
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--acc) 16%, transparent),
+             0 12px 32px -18px rgba(0,0,0,.35); }
+.nynow .shsend{ right:11px; bottom:11px; width:36px; height:36px;
+  transition:transform .12s ease, background .16s ease, opacity .16s ease; }
+.nynow .shsend:active{ transform:scale(.93); }
+.nynow .shsend[disabled]{ opacity:.45; cursor:default; }
+.nyasked{ display:flex; flex-direction:column; gap:8px; margin:18px 0 0; }
+
+/* the status mark: bottom-left inside the bar, where Codex keeps its chips */
+.nychip{ position:absolute; left:15px; bottom:15px; display:flex; align-items:center;
+  gap:6px; font:inherit; font-size:12px; color:var(--muted); }
+button.nychip{ margin:-4px -7px; padding:4px 7px; border:0; border-radius:7px;
+  background:none; cursor:pointer; transition:background-color .14s ease, color .14s ease; }
+button.nychip:hover,button.nychip[aria-expanded="true"]{ color:var(--ink);
+  background:color-mix(in srgb, var(--ink) 7%, transparent); }
+button.nychip:focus-visible{ outline:none; box-shadow:0 0 0 1.5px var(--acc); }
+.nychip .nyico{ width:13px; height:13px; }
+.nyretry{ color:var(--acc); text-decoration:underline; text-underline-offset:2px; }
+
+/* the All clear panel: what is running, what finished today */
+.nypanel{ position:absolute; z-index:6; top:calc(100% + 8px); left:0; width:340px;
+  padding:8px; border:1px solid var(--line); border-radius:12px; background:var(--card);
+  box-shadow:0 18px 40px -16px rgba(0,0,0,.45); transform-origin:12px -8px; }
+/* in the centred home the panel sits in the flow under the bar, so the
+   greeting and bar rise to make room (a glide) instead of it hanging off
+   the bottom of the window */
+.nynow.center .nypanel{ position:relative; top:auto; margin-top:10px; }
+.nyph{ padding:6px 8px 4px; font-size:11.5px; font-weight:600; color:var(--muted); }
+.nyprow{ display:flex; align-items:center; gap:9px; min-height:32px; padding:0 8px;
+  border-radius:7px; font-size:13px; color:var(--ink); cursor:pointer; outline:none;
+  transition:background-color .14s ease; }
+.nyprow span{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.nyprow:hover,.nyprow:focus-visible{ background:color-mix(in srgb, var(--ink) 6%, transparent); }
+.nypempty{ padding:10px 8px; font-size:13px; color:var(--muted); }
+.nypfoot{ margin:6px 8px 2px; padding-top:8px; border-top:1px solid var(--line-soft);
+  font-size:11.5px; color:var(--faint); }
+
+/* rows */
+.nylane{ margin:30px 0 0; }
+.nylaneh{ margin:0 0 4px; padding:0 10px; font-size:12px; font-weight:600; color:var(--muted); }
+.nyfeed,.nyfyis{ display:flex; flex-direction:column; }
+.nycard,.nyfyi{ position:relative; display:flex; align-items:center; gap:10px; min-height:38px;
+  padding:0 10px; border-radius:8px; cursor:pointer; outline:none;
+  font-size:13.5px; color:var(--ink); transition:background-color .14s ease; }
+.nycard:hover,.nyfyi:hover,.nycard:focus-visible,.nyfyi:focus-visible{
+  background:color-mix(in srgb, var(--ink) 6%, transparent); }
+.nycard:focus-visible,.nyfyi:focus-visible{ box-shadow:inset 0 0 0 1.5px var(--acc); }
+.nyico{ flex:none; width:15px; height:15px; color:var(--faint); }
+.tone-ask .nyico{ color:var(--acc); }
+.tone-warn .nyico{ color:var(--warn); }
+.tone-err .nyico{ color:#e5484d; }
+.tone-ok .nyico{ color:var(--ok); }
+.tone-wait .nyico{ color:var(--faint); animation:nyspin 1.8s linear infinite; }
+.nytitle{ flex:0 1 auto; max-width:62%; min-width:0; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
+.nywhy{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; font-size:13px; color:var(--muted); }
+.seen .nytitle{ font-weight:400; color:var(--muted); }
+.nyprod{ flex:none; font-size:11px; color:var(--faint); }
+/* the time gives way to the row's action on hover or focus, cross-faded */
+.nytime{ flex:none; min-width:56px; text-align:right; font-size:12px; color:var(--faint);
+  font-variant-numeric:tabular-nums; transition:opacity .14s ease; }
+.nygo{ position:absolute; right:10px; top:50%; font-size:12px; font-weight:500;
+  color:var(--acc); opacity:0; transform:translate(-4px,-50%); pointer-events:none;
+  transition:opacity .14s ease, transform .18s cubic-bezier(.2,.8,.2,1); }
+.nygo::after{ content:"\203A"; margin-left:4px; }
+.nycard:hover .nytime,.nyfyi:hover .nytime,
+.nycard:focus-visible .nytime,.nyfyi:focus-visible .nytime{ opacity:0; }
+.nycard:hover .nygo,.nyfyi:hover .nygo,
+.nycard:focus-visible .nygo,.nyfyi:focus-visible .nygo{ opacity:1; transform:translate(0,-50%); }
+.nymore,.nylink{ background:none; border:0; padding:0; font:inherit; cursor:pointer; }
+.nymore{ margin:4px 0 0 35px; font-size:12.5px; color:var(--muted); transition:color .14s ease; }
+.nymore:hover{ color:var(--ink); }
+.nylink{ margin-left:4px; color:var(--acc); text-decoration:underline; text-underline-offset:2px; }
+
+/* motion */
+@keyframes nyspin{ to{ transform:rotate(360deg); } }
+@keyframes nyrise{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:none; } }
+@keyframes nyfade{ from{ opacity:0; } to{ opacity:1; } }
+@keyframes nypop{ from{ opacity:0; transform:translateY(-4px) scale(.97); } to{ opacity:1; transform:none; } }
+.nynow.nyenter .nytop{ animation:nyrise .42s cubic-bezier(.2,.8,.2,1) both; }
+.nynow.nyenter .nylane{ animation:nyrise .42s .08s cubic-bezier(.2,.8,.2,1) both; }
+.nyin{ animation:nyrise .32s cubic-bezier(.2,.8,.2,1) both; }
+.nyswap{ animation:nyfade .26s ease both; }
+.nypanel.nyopen{ animation:nypop .18s cubic-bezier(.2,.8,.2,1) both; }
+@media (prefers-reduced-motion: reduce){
+  .nynow.nyenter .nytop,.nynow.nyenter .nylane,.nyin,.nyswap,.nypanel.nyopen{ animation:none; }
+  .tone-wait .nyico{ animation:none; }
+  .nytop{ transition:none !important; transform:none !important; }
+  .nygo,.nytime{ transition:none; }
+}
 
 /* Shadow home (P6) */
 .shhome{ max-width:640px; display:flex; flex-direction:column; gap:12px; }
@@ -2421,9 +2587,7 @@
 .shbadge{ position:absolute; top:-5px; right:-5px; background:#B8945F;
   color:#fff; font-size:9px; font-weight:700; border-radius:99px;
   padding:1px 5px; line-height:1.3; }
-.nygreet{ font-family:Georgia,'Times New Roman',serif; font-size:22px;
-  font-weight:600; margin:6px 2px 0; }
-.nysub{ color:var(--faint,#8a8681); font-size:12.5px; margin:2px 2px 12px; }
+/* .nygreet / .nysub moved to the Now block above (2026-09-27) */
 
 /* finish-list: two-column shadow home + deep-link focus highlight */
 /* THE SHADOW SCREEN TAKES THE ROW (founder, 2026-09-15). The 720px here
@@ -4548,6 +4712,10 @@
 .o2row.o2k-root .o2name,.o2row.o2k-org .o2name{font:600 12.5px/1.3 var(--serif)}
 .o2row.o2k-machine .o2name{color:var(--faint)}
 .o2row.dim{opacity:.35}
+/* a department Root just made slides into the tree once (22-website.js wbBorn) */
+.o2row.o2grow{animation:o2grow .5s ease-out}
+@keyframes o2grow{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.o2row.o2grow{animation:none}}
 .o2row:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
 .o2name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .o2chev{width:14px;height:14px;flex:none;background:none;border:0;padding:0;color:var(--faint);
@@ -4682,8 +4850,14 @@
    subsection you happened to leave open. Six cards, each stating what it is and
    what it is set to; a click opens one, a back control returns. Nothing here
    collapses, because a collapsed card is the state this replaced. */
-.sxov{display:grid;grid-template-columns:1fr;gap:8px}
-@media (min-width:720px){.sxov{grid-template-columns:1fr 1fr}}
+.sxov{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+/* THE PANE'S WIDTH DECIDES THE COLUMNS, NOT THE WINDOW'S (founder, 2026-09-28:
+   Settings beside an open chat "doesn't show me the entire thing, no
+   scrollbar"). A window query put two columns in a 510px pane, and a bare 1fr
+   column refuses to shrink below its content, so the grid ran 145px past the
+   pane -- which #scBody hides sideways. .pane.browse is the container (line
+   534), as every other pane-width rule in this file already uses. */
+@container (min-width:720px){.sxov{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
 .sxcard{display:flex;align-items:center;gap:12px;width:100%;text-align:left;cursor:pointer;
   color:inherit;font:inherit;background:var(--card);border:1px solid var(--line);
   border-radius:10px;padding:13px 14px;transition:border-color .12s,background .12s}
@@ -5353,3 +5527,241 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
   color:var(--faint);margin-right:3px}
 .skcatcell{white-space:nowrap}
 .skmoment{font:10px/1.4 var(--mono);color:var(--faint);margin-top:3px}
+
+/* ═══ THE LIBRARY, TOP RIGHT OF THE ORG SCREEN (2.299.0) ═════════════════════
+   Founder, 2026-09-24: "you can keep it on the top right corner." The button
+   sits at the end of the strip's action row and carries the word beside the
+   mark, because in that corner an icon alone reads as a tool for the selected
+   department. Layout only; the panel's second mode reuses the tree's own row
+   metrics so the swap does not move anything. */
+.o2libbtn{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px;
+  border:1px solid transparent;border-radius:7px;background:none;color:var(--faint);
+  font:600 11.5px/1 var(--sans);cursor:pointer}
+.o2libbtn:hover{color:var(--ink);background:var(--acc-bg)}
+.o2libbtn.on{color:var(--acc);border-color:var(--acc);background:var(--acc-bg)}
+.o2libbtn svg{width:15px;height:15px;flex:none}
+.o2libbtn:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+/* the panel in its other mode */
+.o2libpanel{padding:2px 0 8px}
+.o2libhead{display:flex;align-items:baseline;gap:7px;padding:4px 12px 8px}
+.o2libhead b{font:600 11.5px/1.3 var(--sans);color:var(--ink)}
+.o2libhead span{font:10px/1.3 var(--mono);color:var(--faint);margin-left:auto}
+.o2libgrp{margin:8px 0 2px;padding:0 12px;font:600 9px/1.4 var(--mono);
+  letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.o2librow{display:flex;align-items:center;gap:8px;width:calc(100% - 12px);margin:0 6px;
+  padding:6px 8px;border:0;border-radius:6px;background:none;cursor:pointer;
+  font:12.5px/1.45 var(--sans);color:var(--ink);text-align:left}
+.o2librow:hover{background:var(--acc-bg)}
+.o2librow[aria-selected="true"]{background:var(--acc-bg);color:var(--acc)}
+.o2librow svg{width:15px;height:15px;flex:none;color:var(--faint)}
+.o2librow[aria-selected="true"] svg{color:var(--acc)}
+.o2librow:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+
+/* Snack bar: errors and short notices, bottom-right (founder 2026-09-26).
+   snackReflow() lifts `bottom` above the update card when that is showing. */
+#snackHost{position:fixed;right:16px;bottom:16px;z-index:9500;display:flex;flex-direction:column;
+  align-items:flex-end;gap:8px;max-width:min(440px,calc(100vw - 32px));pointer-events:none}
+#snackHost>*{pointer-events:auto}
+.snack{display:flex;align-items:flex-start;gap:10px;min-width:240px;max-width:100%;
+  padding:10px 8px 10px 12px;border-radius:10px;background:var(--card);color:var(--ink);
+  border:1px solid var(--line);border-left:3px solid var(--muted);
+  box-shadow:0 8px 28px rgba(0,0,0,.28);font-size:12.5px;line-height:1.45;animation:snackin .18s ease-out}
+.snack-error{border-left-color:var(--block)}
+.snack-ok{border-left-color:var(--ok)}
+.snack-t{flex:1;white-space:pre-wrap;word-break:break-word;padding-top:1px}
+.snack-n{font-size:11px;color:var(--muted);padding-top:2px;font-variant-numeric:tabular-nums}
+.snack-n:empty{display:none}
+.snack-a{border:0;background:none;color:var(--acc);font-weight:600;cursor:pointer;padding:1px 4px;font:inherit}
+.snack-x{flex:none;width:22px;height:22px;border:0;border-radius:5px;background:none;color:var(--muted);
+  font-size:16px;line-height:1;cursor:pointer}
+.snack-x:hover{background:rgba(127,127,127,.18);color:var(--ink)}
+@keyframes snackin{from{opacity:0;transform:translateY(6px)}}
+@media (prefers-reduced-motion:reduce){.snack{animation:none}}
+
+/* ── the website department (22-website.js) ─────────────────────────────
+   The first build of the Native design, drawn inside the department screen.
+   Every colour is a token above; nothing here styles another screen: each
+   class is prefixed `wb`, and `.dpdot.off` is the one state 20-dept.js's dot
+   did not carry (a slot that exists and is not awake). */
+.wbgrid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:0 0 12px}
+.wbtile{border:1px solid var(--line-soft);border-radius:10px;background:var(--card);padding:9px 11px;text-align:left;color:var(--ink);cursor:pointer;font:400 12.5px/1.4 var(--sans);display:flex;flex-direction:column;gap:7px;min-width:0}
+.wbtile:hover,.wbdoc:hover,.wbeng:hover{border-color:var(--acc)}
+.wbtile.off{color:var(--muted)}
+.wbtile b{display:flex;align-items:center;gap:7px;font-weight:600}
+.wbtile .dpdot,.wbeng .dpdot,.wbhealth .dpdot,.wbmotor .dpdot,.wbverh .dpdot,.wbprevh .dpdot,.wbtv .dpdot,.wblane .dpdot,.wbtm .dpdot,.dpbig .dpdot{margin-top:0;display:inline-block;flex:none}
+.dpdot.off{background:var(--line)}
+.wbflow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 8px}
+.wbdoc{border:1px solid var(--line);border-radius:6px;background:var(--card);padding:7px 12px;min-width:84px;color:var(--ink);cursor:pointer;font:500 12.5px/1.4 var(--sans);display:flex;flex-direction:column;align-items:center;gap:5px}
+.wbdoc.none{color:var(--faint);border-style:dashed;cursor:default}
+.wbeng{border:1px solid var(--acc);border-radius:16px;background:var(--surface);padding:6px 14px;color:var(--ink);cursor:pointer;font:500 12.5px/1.4 var(--sans);display:flex;align-items:center;gap:7px}
+.wbarrow{color:var(--muted);font:400 13px/1 var(--sans)}
+.wbmotor{display:flex;align-items:center;gap:8px;margin:0 0 10px;font:500 12.5px/1.4 var(--sans);color:var(--ink)}
+.wbmotor .btn{margin-left:auto}
+.wblanes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 10px}
+.wblane{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.wblane .dpk{width:100%}
+.wbctl{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
+.wbhealth{display:flex;flex-wrap:wrap;gap:6px 18px;font:400 12px/1.4 var(--sans);color:var(--muted)}
+.wbhealth span{display:flex;align-items:center;gap:6px}
+.wbask{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;margin-top:8px}
+.wbask textarea{flex:1;min-width:220px;box-sizing:border-box;background:var(--inset);border:1px solid var(--line);border-radius:6px;color:var(--ink);font:400 13px/1.45 var(--sans);padding:7px 9px;resize:vertical}
+.wbask textarea:focus{border-color:var(--acc);outline:0}
+.wbver{border:1px solid var(--line-soft);border-radius:8px;padding:9px 11px;margin:0 0 8px}
+.wbver.on{background:var(--card)}
+.wbverh,.wbverf,.wbprevh,.wbtv,.wbtr{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.wbverf{margin-top:7px}
+.wbchip{border:1px solid var(--line);border-radius:10px;padding:1px 9px;font:500 11.5px/1.6 var(--sans);color:var(--ink);display:inline-flex;align-items:center;gap:5px;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.wbchip.ask{border-color:var(--warn-line);color:var(--warn)}
+.wbchip.on{border-color:var(--acc);background:var(--acc-bg)}
+.wbcando{display:flex;gap:8px}
+.wbtrace{display:flex;flex-direction:column;align-items:flex-start}
+.wbtl1{width:1px;height:14px;background:var(--line);margin:3px 0 3px 3px}
+.wbprev{display:flex;flex-direction:column;gap:8px;flex:1;min-height:420px}
+.wbprevh{font:500 12px/1.4 var(--sans);color:var(--muted)}
+.wbprevh .o2more{margin-left:auto}
+.wbframe{flex:1;min-height:460px;width:100%;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.wbtl{display:flex;flex-direction:column;gap:6px}
+.wbtlr{display:grid;grid-template-columns:110px minmax(0,1fr);gap:10px;align-items:center;font:400 12px/1.4 var(--sans);color:var(--muted)}
+.wbtlb{position:relative;height:11px;border-radius:3px;background:var(--inset)}
+.wbtlb i{position:absolute;top:0;height:11px;border-radius:3px;background:var(--acc);min-width:3px}
+.wbtlb i.ok{background:var(--ok)}.wbtlb i.warn{background:var(--warn)}.wbtlb i.block{background:var(--block)}
+.wbtlx{display:flex;justify-content:space-between;font:400 10.5px/1.4 var(--sans);color:var(--faint);margin-left:120px}
+.wbtm{display:inline-flex;gap:3px;margin-left:8px;vertical-align:middle}
+.wbscrim{position:fixed;inset:0;background:var(--scrim);z-index:80}
+.wbsheet{position:fixed;z-index:81;top:18vh;left:50%;transform:translateX(-50%);width:min(520px,92vw);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 20px;box-shadow:var(--shadow)}
+.wbsheet h4{margin:0;font:600 15px/1.3 var(--serif);color:var(--ink)}
+/* a department on the engine runtime: every step on its rung (four pips, the
+   lit ones are how far up the ladder it runs), and the board the engines
+   speak on, one block to a thread */
+.wbstep{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}
+.wbstep .o2more{margin-left:auto}
+.wbrung{display:inline-flex;align-items:flex-end;gap:2px;flex:none}
+.wbrung i{display:block;width:4px;height:5px;border-radius:1px;background:var(--line)}
+.wbrung i:nth-child(2){height:8px}.wbrung i:nth-child(3){height:11px}.wbrung i:nth-child(4){height:14px}
+.wbrung i.on{background:var(--acc)}
+.wbev{display:grid;grid-template-columns:118px minmax(0,1fr);gap:4px 10px;align-items:center;margin-top:7px}
+.wbev .dpbar{margin:0}
+.wbth{border:1px solid var(--line-soft);border-radius:10px;background:var(--surface);padding:11px 13px;margin:0 0 10px}
+.wbthh{display:flex;align-items:center;gap:8px;font:500 13px/1.4 var(--sans);color:var(--ink);margin:0 0 8px}
+.wbthh b{font-weight:600;flex:1;min-width:0}
+.wbthh .dpdot{margin-top:0;flex:none}
+.wbpost{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:5px 0;border-top:1px solid var(--line-soft)}
+.wbsaid{width:100%;font:400 12.5px/1.45 var(--sans);color:var(--muted)}
+/* the department's one button: beside its state, not pushed to the far edge */
+.wbmotor .wbonoff{margin-left:4px}
+.wbstep .dpk{margin-right:2px}
+/* the conversation (Human Sutra, an app): one stream, the owner's own lines in
+   ink, the functions' exchanges folded under the line that started them */
+.wbconv .wbline{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:7px 0;border-top:1px solid var(--line-soft)}
+.wbconv .wbline:first-child{border-top:0}
+.wbconv .wbline.me .wbsaid{color:var(--ink)}
+.wbfold{border:1px solid var(--line-soft);border-radius:10px;background:var(--surface);padding:6px 12px;margin:6px 0}
+.wbfold summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px;cursor:pointer;font:500 12.5px/1.4 var(--sans);color:var(--muted)}
+.wbfold summary .dpst{margin-left:auto}
+/* Priority's limits: two numbers an engine, set by the owner */
+.wblim input{width:72px;margin:0 2px 0 6px}
+/* the chat, the one point of entry: the Sutra chat's own turns, the department
+   a chip on the turn, the box with where the words go as a chip */
+.wbchat{padding:4px 0 2px}
+.wbchat .wbturn .who{display:flex;align-items:center;gap:6px}
+.wbchat .wbturn .who-you{justify-content:flex-end}
+.wbchat .wbturn .u,.wbchat .wbturn .a{white-space:pre-wrap}
+.wbchat .wbturn .dpchk{margin-left:8px}
+.wbbox{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;margin-top:8px}
+.wbbox textarea{flex:1;min-width:220px;box-sizing:border-box;background:var(--inset);border:1px solid var(--line);border-radius:6px;color:var(--ink);font:400 13px/1.45 var(--sans);padding:7px 9px;resize:vertical}
+.wbbox textarea:focus{border-color:var(--acc);outline:0}
+.wbto{cursor:pointer;background:var(--surface);align-self:center}
+/* a function's own chat: its turns, its thinking as quiet lines between them */
+.wbchat.wbfn .who-ai{opacity:.85}
+.wbchat .wbthink{margin:2px 0 2px 8px}
+/* motion marks what just happened and nothing else (SIM-3 a, f): a landed turn slides in once; a working mark breathes,
+   in the chat and on the department's row; a folded hand-over is one quiet line */
+.wbbreath{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--acc);margin-right:6px;vertical-align:middle;animation:wbBreathe 1.6s ease-in-out infinite}
+.wbtm .wbbreath{margin-right:3px}
+.wbchat .wbworking{display:flex;align-items:center}
+.wbchat .wbturn.wbnew{animation:wbSlide .28s ease-out 1}
+.wbchat .wbfold{opacity:.7}
+@keyframes wbBreathe{0%,100%{transform:scale(.7);opacity:.45}50%{transform:scale(1.1);opacity:1}}
+@keyframes wbSlide{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.wbbreath,.wbchat .wbturn.wbnew{animation:none}}
+/* the Board as chats: the threads down the side, the open one as turns */
+.wbboard{display:grid;grid-template-columns:minmax(0,240px) minmax(0,1fr);gap:12px}
+.wbthreads{display:flex;flex-direction:column;gap:4px}
+.wbthr{display:flex;flex-wrap:wrap;align-items:center;gap:6px;border:1px solid var(--line-soft);border-radius:8px;background:var(--surface);padding:7px 9px;text-align:left;color:var(--ink);cursor:pointer;font:400 12px/1.4 var(--sans)}
+.wbthr.on{border-color:var(--acc);background:var(--acc-bg)}
+.wbthr b{font-weight:600;width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wbthr .dpst{margin-left:auto}
+.wbwho{display:inline-flex;flex-wrap:wrap;gap:4px}
+.wbthread{min-width:0}
+/* Settings: a function's own numbers, one row each */
+.wbset input{width:90px;margin-left:auto}
+.wbset input[type=text]{width:auto;flex:1;min-width:200px;margin-left:0}
+
+/* ── the second design (23-screens.js): the Map and the Board ──────────────
+   State is colour and motion, never a word: a lit node on the map, a pill on
+   the NOW line. Tokens only; every class prefixed `wb2` (test_website.js V12). */
+.wb2crumb{font:400 12px/1.4 var(--sans);color:var(--muted);margin:0 0 6px}
+.wb2crumb .o2more{padding:0;margin:0}
+.wb2head{display:flex;align-items:center;gap:10px;margin:0 0 12px;flex-wrap:wrap}
+.wb2head b{font:500 20px/1.15 var(--serif);color:var(--ink)}
+.wb2head .dpchk{margin-right:auto}
+.wb2switch{width:36px;height:20px;border-radius:999px;border:0;background:var(--line);position:relative;cursor:pointer;transition:background .2s ease;flex:none;padding:0}
+.wb2switch::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--knob);box-shadow:var(--row-shadow);transition:left .18s ease}
+.wb2switch.on{background:var(--ok)}
+.wb2switch.on::after{left:18px}
+.wb2live{flex:none}
+.wb2now{display:flex;flex-wrap:wrap;gap:8px;min-height:22px;margin:0 0 8px}
+.wb2pill{padding:2px 10px;border-radius:999px;font:600 12px/1.5 var(--sans)}
+.wb2pill.run{background:var(--acc-bg);color:var(--acc)}
+.wb2pill.ask{background:var(--warn-bg);color:var(--warn)}
+.wb2pill.block{background:var(--block-bg);color:var(--block)}
+.wb2pill.off{background:var(--inset);color:var(--muted)}
+.wb2map svg{width:100%;height:auto;display:block}
+.wb2map .lbl{font:600 10px var(--sans);letter-spacing:.08em;fill:var(--faint);text-transform:uppercase}
+.wb2map .e{stroke:var(--line);stroke-width:1.5;fill:none}
+.wb2map marker path{fill:var(--line)}
+.wb2map .e.soft{stroke-dasharray:3 4}
+.wb2map .e.flow{stroke:var(--acc);stroke-width:2;stroke-dasharray:6 6;animation:wb2march 1s linear infinite}
+@keyframes wb2march{to{stroke-dashoffset:-12}}
+.wb2map .n{cursor:pointer}
+.wb2map .n .bx{fill:var(--card);stroke:var(--line);stroke-width:1.4;transition:stroke .2s,fill .2s}
+.wb2map .n:hover .bx{stroke:var(--acc)}
+.wb2map .n.fn .bx{stroke:var(--acc);fill:var(--sepia)}
+.wb2map .n.run .bx{stroke:var(--acc);stroke-width:2.4}
+.wb2map .n .halo{fill:none;stroke:var(--acc);stroke-width:2;animation:wb2halo 1.4s ease-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes wb2halo{0%{opacity:.7;transform:scale(1)}100%{opacity:0;transform:scale(1.45)}}
+.wb2map .n.ask .bx{stroke:var(--warn);stroke-width:2.4;fill:var(--warn-bg)}
+.wb2map .n.block .bx{stroke:var(--block);stroke-width:2.4;fill:var(--block-bg)}
+.wb2map .n.off .bx{stroke:var(--line-soft)}
+.wb2map .n.off text{fill:var(--faint)}
+.wb2map .n.done .bx{fill:var(--ok-bg);stroke:var(--ok-line)}
+.wb2map .n text{font:12px var(--sans);fill:var(--ink);pointer-events:none}
+.wb2map .n text.v{font:10px var(--mono);fill:var(--muted)}
+.wb2map .n .ic{fill:none;stroke:var(--ink);stroke-width:1.6}
+.wb2legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin:6px 0 0;font:400 11.5px/1.4 var(--sans);color:var(--muted)}
+.wb2legend span{display:inline-flex;align-items:center;gap:6px}
+.wb2lg{display:inline-block;width:14px;height:12px;border:1.5px solid var(--line);border-radius:3px;background:var(--card)}
+.wb2lg.fn{border-color:var(--acc);background:var(--sepia)}
+.wb2lg.eng{border-radius:50%}
+.wb2lg.done{border-color:var(--ok-line);background:var(--ok-bg)}
+.wb2lg.run{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-bg)}
+.wb2lg.ask{border-color:var(--warn);background:var(--warn-bg)}
+.wb2lg.block{border-color:var(--block);background:var(--block-bg)}
+.wb2lg.edge{width:22px;height:0;border:0;border-top:1.5px solid var(--line);border-radius:0;background:transparent}
+.wb2lg.edge.soft{border-top-style:dashed}
+.wb2pill.ok{background:var(--ok-bg);color:var(--ok)}
+.wb2map .n.fn .ic{stroke:var(--ink)}
+.wb2map .n.fn.ask .ic,.wb2map .n.fn.run .ic{stroke:var(--acc)}
+.wb2map .n.fn.off .ic{stroke:var(--faint)}
+.wb2org{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.wb2dept{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--card);cursor:pointer;text-align:left;color:var(--ink);font:400 13px/1.4 var(--sans);display:flex;flex-direction:column;gap:6px;transition:transform .18s ease,box-shadow .18s ease}
+.wb2dept:hover{transform:translateY(-1px);box-shadow:var(--shadow)}
+.wb2dept b{display:flex;align-items:center;gap:7px;font-weight:600}
+.wb2dept b .dpdot{margin-top:0}
+.wb2new{border-style:dashed;color:var(--muted)}
+.wb2new b{font-weight:500}
+.wb2spark{display:flex;gap:3px}
+.wb2spark i{width:9px;height:9px;border-radius:2px;border:1px solid var(--line);background:transparent}
+.wb2spark i.on{background:var(--ok);border-color:var(--ok);opacity:.6}
+.wb2spark i.run{background:var(--acc);border-color:var(--acc)}
+@media (prefers-reduced-motion:reduce){.wb2map .e.flow,.wb2map .n .halo{animation:none}}

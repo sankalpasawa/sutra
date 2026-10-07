@@ -27,6 +27,12 @@ main() {
   [ -n "$_mw_root" ] && [ -f "$_mw_root/runtime/ledger.sh" ] && . "$_mw_root/runtime/ledger.sh"
   [ -n "$_mw_root" ] && [ -f "$_mw_root/runtime/flags.sh" ] && . "$_mw_root/runtime/flags.sh"
   [ -n "$_mw_root" ] && [ -f "$_mw_root/runtime/lib/prompt.sh" ] && . "$_mw_root/runtime/lib/prompt.sh"
+  # C7: the tier library, so a code step that lands below its threshold can ask
+  # the standby agent. Absent -> no ask is made and the code always stands.
+  [ -n "$_mw_root" ] && [ -f "$_mw_root/runtime/lib/tier.sh" ] && . "$_mw_root/runtime/lib/tier.sh"
+  # C6: the depth rule and the replay record live in the step library, so the
+  # rule this step applies is the same code the replay check re-applies.
+  [ -n "$_mw_root" ] && [ -f "$_mw_root/runtime/lib/steps.sh" ] && . "$_mw_root/runtime/lib/steps.sh"
   set -u
 
   # Own tools missing -> nothing this step can safely do. Never crash, never
@@ -180,7 +186,41 @@ main() {
     [ "$_mw_prof_val" = "company" ] && IS_COMPANY=1
   fi
 
-  if [ "$IS_COMPANY" = "1" ]; then
+  # -- confidence per code step (RT-25, 2026-09-29) -----------------------
+  # Each code step says how sure it is, from its own signals. Until now only
+  # placement carried a number, so only placement could ever escalate.
+  # classify brings its own; resolve turns the score it already computes into
+  # one; depth reports whether its inputs agreed or were degraded.
+  # every input is read defensively: an unbound variable here aborts the whole
+  # step under set -u and the turn gets no facts file at all (seen 2026-09-29)
+  CLASSIFY_CONF="$(printf '%s' "${CLASSIFY_JSON:-}" | jq -r '.confidence // empty' 2>/dev/null)"
+  case "$CLASSIFY_CONF" in ''|null) CLASSIFY_CONF=0.2 ;; esac
+  _mw_score="${WTM_SCORE:-0}"; case "$_mw_score" in ''|*[!0-9-]*) _mw_score=0 ;; esac
+  if [ "${WTM_DEGRADED:-0}" = "1" ]; then
+    RESOLVE_CONF=0.2; RESOLVE_CONF_WHY="the matcher was unavailable; CONSTRUCT is the fallback"
+  elif [ "${WTM_RESOLUTION:-CONSTRUCT}" = "CONSTRUCT" ]; then
+    RESOLVE_CONF=0.35; RESOLVE_CONF_WHY="no workflow scored above zero"
+  elif [ "$_mw_score" -ge 3 ]; then
+    RESOLVE_CONF=0.9; RESOLVE_CONF_WHY="a workflow matched strongly (score $_mw_score)"
+  else
+    RESOLVE_CONF=0.6; RESOLVE_CONF_WHY="a workflow matched weakly (score $_mw_score)"
+  fi
+  if [ "${IS_COMPANY:-0}" = "1" ]; then
+    DEPTH_CONF=1.0; DEPTH_CONF_WHY="the company profile fixes depth at 5"
+  elif [ "${FF_DEGRADED:-0}" = "1" ]; then
+    DEPTH_CONF=0.3; DEPTH_CONF_WHY="the factors step degraded; depth fell back"
+  elif [ "${CLASSIFY_FAILED:-0}" = "1" ]; then
+    DEPTH_CONF=0.3; DEPTH_CONF_WHY="depth rests on a verb the classifier could not produce"
+  else
+    DEPTH_CONF=0.8; DEPTH_CONF_WHY="the rubric read live factors and a verb"
+  fi
+
+  # the rule itself lives in runtime/lib/steps.sh, so the replay check (C6)
+  # re-decides depth with this exact code rather than a second copy of it
+  if command -v sutra_steps_depth_rubric >/dev/null 2>&1; then
+    _mw_dr="$(sutra_steps_depth_rubric "$IS_COMPANY" "$VERB" "$FF_DEGRADED" "$STEPS_EST" "$MUTATION_VERBS")"
+    DEPTH="${_mw_dr%% *}"; RUBRIC="${_mw_dr##* }"
+  elif [ "$IS_COMPANY" = "1" ]; then
     DEPTH=5; RUBRIC=profile-company
   elif [ "$VERB" = "QUERY" ]; then
     DEPTH=1; RUBRIC=verb-query
@@ -285,11 +325,15 @@ DEGRADED=python3"
     --argjson depth_n "$DEPTH" --arg rubric "$RUBRIC" \
     --argjson classify "$CLASSIFY_JSON" --argjson factors "$FACTORS_JSON" \
     --argjson markers "$MARKERS_JSON" --argjson degraded "$DEGRADED_JSON" \
+    --arg resolve_conf "$RESOLVE_CONF" --arg resolve_conf_why "$RESOLVE_CONF_WHY" \
+    --arg depth_conf "$DEPTH_CONF" --arg depth_conf_why "$DEPTH_CONF_WHY" \
     '{turn_id:$turn_id, session_id:$session_id, mode:$mode, prompt_sha256:$prompt_sha256,
       classify:$classify,
-      resolve:{resolution:$resolution, scope:$scope, score:$score, degraded:$resolve_degraded},
+      resolve:{resolution:$resolution, scope:$scope, score:$score, degraded:$resolve_degraded,
+               confidence:($resolve_conf | tonumber), confidence_why:$resolve_conf_why},
       factors:$factors,
-      depth:{n:$depth_n, rubric:$rubric},
+      depth:{n:$depth_n, rubric:$rubric,
+             confidence:($depth_conf | tonumber), confidence_why:$depth_conf_why},
       type:$type, slug:$slug, markers:$markers, degraded:$degraded}' 2>/dev/null)"
 
   if [ -n "$FACTS_JSON" ]; then
@@ -302,6 +346,94 @@ DEGRADED=python3"
     fi
   fi
 
+  _mw_replay_record
+  _mw_ask_when_unsure
+
+  return 0
+}
+
+# _mw_replay_record - C6: the inputs each code step consumed, written beside the
+# turn so `sutra-steps replay` can run the same code on the same inputs and
+# compare byte for byte. It stays out of git (the .replay.json rule in
+# .gitignore) because it holds the prompt verbatim.
+_mw_replay_record() {
+  command -v jq >/dev/null 2>&1 || return 0
+  _mwr_dir="$_MW_PROJ/.sutra/turn/$_MW_SID"
+  [ -d "$_mwr_dir" ] || return 0
+  _mwr_tmp="$_mwr_dir/.$_MW_TURN.replay.json.tmp.$$"
+  jq -n --arg turn_id "$_MW_TURN" --arg session_id "$_MW_SID" --arg prompt "$PROMPT" \
+    --arg classify_out "$CLASSIFY_OUT" --arg wtm_line "$WTM_LINE1" \
+    --arg wtm_degraded "$WTM_DEGRADED" --arg is_company "$IS_COMPANY" --arg verb "$VERB" \
+    --arg ff_degraded "$FF_DEGRADED" --arg steps_est "$STEPS_EST" \
+    --arg mutation_verbs "$MUTATION_VERBS" --arg depth "$DEPTH" --arg rubric "$RUBRIC" \
+    --arg slug "$SLUG" \
+    '{turn_id:$turn_id, session_id:$session_id, prompt:$prompt,
+      recorded:{classify:$classify_out, resolve:$wtm_line,
+                depth:($depth + " " + $rubric), slug:$slug},
+      degraded:{resolve:($wtm_degraded == "1")},
+      depth_inputs:{is_company:$is_company, verb:$verb, ff_degraded:$ff_degraded,
+                    steps_est:$steps_est, mutation_verbs:$mutation_verbs}}' \
+    > "$_mwr_tmp" 2>/dev/null && mv -f "$_mwr_tmp" "$_mwr_dir/$_MW_TURN.replay.json" 2>/dev/null
+  rm -f "$_mwr_tmp" 2>/dev/null
+  return 0
+}
+
+# _mw_ask_when_unsure - C7 of the acceptance conditions: when a code step lands
+# below its threshold, the runtime asks the standby agent. The ask is detached
+# and its answer is read later by whoever needs the field, so nothing here
+# waits on a model. A step whose threshold is null never reaches the ask.
+_mw_ask_when_unsure() {
+  command -v sutra_tier_due >/dev/null 2>&1 || return 0
+
+  # classify (RT-25): when the classifier had no signal at all, its own verb is
+  # the line-82 default. Ask the agent what act this message performs. The
+  # answer is RECORDED, not applied backwards - this turn's labels are already
+  # out - so the disagreement can be counted before anything is rewired.
+  if sutra_tier_due "$_mw_root" classify "$CLASSIFY_CONF"; then
+    _mwc_unit="$(printf '%s' "$PROMPT" | tr '\n' ' ' | cut -c1-400)"
+    sutra_tier_ask_detach "$_mw_root" "$_MW_PROJ" "$_MW_SID" "$_MW_TURN" classify "$(printf '%s\n' \
+      "A governance runtime classified this message by falling through to its default, because none of its patterns matched. Its own confidence is $CLASSIFY_CONF and it recorded $VERB." \
+      "" \
+      "Message: $_mwc_unit" \
+      "" \
+      "Which act does the message perform?" \
+      "  DIRECT - it tells someone to do something" \
+      "  QUERY  - it asks for something" \
+      "  ASSERT - it states that something is so" \
+      "" \
+      "Answer with ONE json object and nothing else:" \
+      '{"value":"<DIRECT|QUERY|ASSERT>","confidence":"<0..1>","reason":"<one line>"}' \
+      "" \
+      "VERDICT: ANSWERED")"
+  fi
+
+  _mwa_pl="$_MW_MDIR/placement-registered"
+  [ -f "$_mwa_pl" ] || return 0
+  _mwa_conf="$(awk -F= '$1 == "CONFIDENCE" { print $2; exit }' "$_mwa_pl" 2>/dev/null)"
+  sutra_tier_due "$_mw_root" placement "$_mwa_conf" || return 0
+  _mwa_unit="$(printf '%s' "$PROMPT" | tr '\n' ' ' | cut -c1-400)"
+  # The register the engine itself reads, as name = address pairs. The agent may
+  # only pick one of these; anything else is refused by the rank rule, so it can
+  # never mint a department (tiers.json never_agent).
+  _mwa_dir="${SUTRA_NATIVE_HOME:-$HOME/.sutra-native/user-kit}/domains"
+  [ -d "$_mwa_dir" ] || return 0
+  # one jq over the whole register, not one per entry: this runs inside a 2.5 s step
+  _mwa_reg="$(jq -r 'select((.status // "active") != "retired") | "\(.name // "?") = \(.ref // "?")"' \
+    "$_mwa_dir"/*.json 2>/dev/null | head -200 | tr '\n' ';')"
+  [ -n "$_mwa_reg" ] || return 0
+  sutra_tier_ask_detach "$_mw_root" "$_MW_PROJ" "$_MW_SID" "$_MW_TURN" placement "$(printf '%s\n' \
+    "A governance runtime could not place this unit of work in a department; its own confidence is $_mwa_conf." \
+    "" \
+    "Unit: $_mwa_unit" \
+    "" \
+    "The departments that exist, as name = address: $_mwa_reg" \
+    "" \
+    "Answer with ONE json object and nothing else:" \
+    '{"value":"<the address of the department that owns this work, exactly as listed, or the word unresolved>","confidence":"<0..1>","reason":"<one line>"}' \
+    "" \
+    "Rules: the address must be copied from the list; answer unresolved when none of them owns it; never invent one." \
+    "" \
+    "VERDICT: ANSWERED")"
   return 0
 }
 

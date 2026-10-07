@@ -148,6 +148,37 @@ async def _drain_to_newline(reader):
             return False
 
 
+def _is_replay(ev):
+    """True for a user message claude echoed back as it took it in
+    (--replay-user-messages, isReplay true); False for every other user event,
+    tool results included.
+
+    DELIBERATELY NOT A TEXT MATCH. The echo is only the sent frame byte for
+    byte when the frame was plain text; an attachment, an expanded slash
+    command or claude's own normalising changes it. A text match that missed
+    left a message claude had ALREADY folded in sitting in sent_ahead, and the
+    socket then waited for a turn of its own that never came -- a stuck reply.
+    Which message an echo belongs to is decided by ORDER instead (see the
+    `user` branch of _demux_turn_inner)."""
+    if not ev.get("isReplay"):
+        return False
+    content = (ev.get("message") or {}).get("content")
+    if isinstance(content, list):
+        return not any(isinstance(b, dict) and b.get("type") == "tool_result"
+                       for b in content)
+    return isinstance(content, str)
+
+
+def _replay_count(ev):
+    """How many sent messages one replayed echo covers: its text blocks
+    (at least 1). See the `user` branch of _demux_turn_inner."""
+    content = (ev.get("message") or {}).get("content")
+    if not isinstance(content, list):
+        return 1
+    return max(1, sum(1 for b in content
+                      if isinstance(b, dict) and b.get("type") == "text"))
+
+
 class SessionRuntime(ProcRuntime):
     """Owns exactly one agent subprocess for one chat channel.
 
@@ -191,6 +222,27 @@ class SessionRuntime(ProcRuntime):
         # the handler's loop-top queue-length check is the authoritative wake
         # condition (a coalesced Event cannot stall a non-empty queue).
         self.queue_event = asyncio.Event()
+        # A MESSAGE TYPED WHILE A REPLY RUNS goes straight onto stdin, the way
+        # the Claude Code CLI takes a second prompt: claude folds it into the
+        # running turn at its next tool boundary, or runs it as its own turn
+        # right after. Spawned with --replay-user-messages, claude echoes each
+        # message as it takes it in, which is how the two are told apart (see
+        # the `user` branch of _demux_turn_inner). Written by ws_chat.
+        #   sent_ahead  payloads written mid-turn, not echoed yet, oldest first
+        #   absorbed    payloads the running turn took in
+        #   turn_own    set (to the turn's text) by whoever opens a joining
+        #               turn; its echo is not read as a join
+        #   _joining    this turn was opened that way; only then is a later
+        #               echo matched to sent_ahead
+        self.sent_ahead = []
+        self.absorbed = []
+        self.turn_own = None
+        self._joining = False
+        # "Send now": the running turn was cut short by send_interrupt() so a
+        # message in sent_ahead runs at once. Unlike `stopped` the process
+        # lives on, and the error result that closes the cut turn is expected.
+        self.soft_stop = False
+        self._ctl_seq = 0
 
     # stop / _observe / _notify_subscribers / subscribe / unsubscribe /
     # _fanout / alive / kill_group all come from ProcRuntime. Claude INFERS its
@@ -236,20 +288,50 @@ class SessionRuntime(ProcRuntime):
         }) + "\n").encode("utf-8"))
         await self.proc.stdin.drain()
 
+    async def send_interrupt(self):
+        """End the running turn WITHOUT ending the process: the stream-json
+        control request the Agent SDK's interrupt() sends. Measured against
+        claude 2.1.283: the turn closes with an error_during_execution result
+        within ~2s, the process stays up, and a user frame already on stdin
+        runs straight after. Raises what the write raises, like
+        send_user_frame."""
+        self._ctl_seq += 1
+        self.proc.stdin.write((json.dumps({
+            "type": "control_request",
+            "request_id": "sutra_int_%d" % self._ctl_seq,
+            "request": {"subtype": "interrupt"},
+        }) + "\n").encode("utf-8"))
+        await self.proc.stdin.drain()
+
     async def demux_turn(self, emit, session_id):
         """S20 wrapper: run the turn, then hand a boundary event to the
         OBSERVERS only. The underscore type marks it internal -- it is never
         sent to the primary, so the client protocol is byte-identical."""
         if not self.stopped:
             self.state = "active"
-        out = await self._demux_turn_inner(emit, session_id)
+        # Per turn, never stale: a caller that sets no turn_own (Shadow, the
+        # helpers) must not inherit the last chat turn's joining state.
+        self._joining = self.turn_own is not None
+        try:
+            out = await self._demux_turn_inner(emit, session_id)
+        finally:
+            self._joining = False
+            self.turn_own = None
         session_id, got_text, got_result, result_error, eof = out
+        # STOP (Esc) IS NOT AN ERROR. The interrupt closes the turn with an
+        # error_during_execution result, which ws_chat needs back (its
+        # soft_stop branch reads it) -- but observers only see an errored
+        # boundary, and Shadow's watcher turns that into a "hit an error"
+        # rescue item for the founder's own Stop. They get it as stopped.
+        # An eof is a real death and keeps its error.
+        soft = self.soft_stop and not eof and result_error is not None
         await self._notify_subscribers({
             "type": "_turn_boundary",
             "session": session_id,
             "got_result": got_result,
-            "error": result_error,
+            "error": None if soft else result_error,
             "eof": eof,
+            "stopped": soft,
         })
         return out
 
@@ -400,6 +482,27 @@ class SessionRuntime(ProcRuntime):
                             "meta": _k["meta"],
                         })
             elif t == "user":
+                # A REPLAYED MESSAGE: claude just took one in. Matched by ORDER,
+                # not text (see _is_replay): claude reads stdin first in, first
+                # out, so this turn's first echo is its own message, and every
+                # echo after it is the oldest one written mid-turn -- folded
+                # into THIS turn, so the client moves the rest of the reply
+                # under it.
+                # ONE ECHO CAN CARRY SEVERAL MESSAGES: messages queued behind an
+                # interrupt are taken in together and echoed as one user event,
+                # one text block each (measured, claude 2.1.283). Sutra writes
+                # every message as exactly one text block, so the block count
+                # is the message count. Counting the echo as one left the later
+                # messages in sent_ahead and the socket waited for a turn
+                # claude never ran -- a reply stuck on "working".
+                if _is_replay(ev):
+                    for _ in range(_replay_count(ev)):
+                        if self.turn_own is not None:
+                            self.turn_own = None
+                        elif self._joining and self.sent_ahead:
+                            self.absorbed.append(self.sent_ahead.pop(0))
+                            await emit({"type": "joined"})
+                    continue
                 # tool_result lives on USER messages, not assistant ones. This branch
                 # did not exist, so every tool result was dropped and completion was
                 # unknowable by construction.

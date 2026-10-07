@@ -31,7 +31,7 @@
    picked, which row is open (LIB-12). A view is not a record, so none of it
    is written to the browser's storage. */
 const LIB_SHELVES = ["identity", "adaptation", "priority", "coordination", "audit",
-                     "engines", "work-atom"];
+                     "engines", "artifacts", "work-atom"];
 const LIB_STATE = { shelf: {}, tab: {}, tag: {}, open: {}, busy: {}, err: {} };
 
 function libEsc(x){
@@ -87,10 +87,28 @@ function libTab(shelf){ return LIB_STATE.tab[shelf] || "about"; }
 function libTag(shelf){ return LIB_STATE.tag[shelf] || ""; }
 
 /* ── the head ────────────────────────────────────────────────────────────*/
+/* THE WAY BACK (founder, 2026-09-28: "when I click on the Adaptation function
+   it just shows the Adaptation function in the Library sections. I'm not able
+   to go back"). A shelf opens over the whole pane, and since 2026-09-25 the
+   rail has no row for it, so the page itself carries the return: the app's own
+   back control (.sxback, the one every Settings section uses), landing on Org
+   structure with the Library list still open -- the place the click came from. */
+function libBackHtml(){
+  return `<button type="button" class="sxback" data-libback="org2"
+    aria-label="Back to Org structure"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2.2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>Org</button>`;
+}
+function libBack(){
+  if (typeof o2S === "function"){ const st = o2S(); if (st) st.lib = true; }
+  if (typeof openScreen === "function") openScreen("org2");
+  libRender();
+}
+
 function libHeadHtml(head, shelf){
   const tabs = (head.tabs && head.tabs.length === 2) ? head.tabs : ["About", "Templates"];
   const on = libTab(shelf);
   return `
+  ${libBackHtml()}
   <div class="lbhead"><h2>${libEsc(head.name || shelf)}</h2>
     ${head.kind ? `<span class="dptag">${libEsc(head.kind)}</span>` : ""}</div>
   ${head.line ? `<p class="lbsub">${libEsc(head.line)}</p>` : ""}
@@ -184,15 +202,16 @@ function libOpenHtml(shelf, row){
   const d = LIB_STATE.open[shelf];
   if (!d || d.id !== row.id) return "";
   if (d.loading) return `<div class="lbopen"><h5>Opening</h5></div>`;
-  const keeps = d.keeps || [], adds = d.adds || [], where = d.where || [];
+  const keeps = d.keeps || [], adds = d.adds || [], where = d.where || [], lines = d.lines || [];
   return `<div class="lbopen">
+    ${lines.length ? `<h5>The template</h5><ul>${lines.map(l => `<li>${libEsc(l)}</li>`).join("")}</ul>` : ""}
     ${(keeps.length || adds.length) ? `<h5>What it always does</h5><ul>
       ${keeps.length ? `<li>The ${keeps.length} it keeps from ${libEsc(d.parent || "the one above")}, unchanged.</li>` : ""}
       ${adds.map(a => `<li><b>adds</b> ${libEsc(a)}</li>`).join("")}
     </ul>` : ""}
     ${where.length ? `<h5>Where it is in use</h5><ul>${
       where.map(w => `<li>${libEsc(w)}</li>`).join("")}</ul>` : ""}
-    ${(!keeps.length && !adds.length && !where.length)
+    ${(!keeps.length && !adds.length && !where.length && !lines.length)
       ? `<h5>Nothing more on record</h5>` : ""}
   </div>`;
 }
@@ -265,6 +284,7 @@ function libUse(shelf, id){
   if (LIB_SHELVES.indexOf(shelf) < 0) return;
   const isFunction = ["identity", "adaptation", "priority", "coordination", "audit"]
     .indexOf(shelf) >= 0;
+  if (shelf === "artifacts"){ libOpenRow(shelf, id); return; }   /* a template opens; a department files it */
   if (!isFunction){
     if (typeof toast === "function") toast("Open it from the department that runs it.");
     return;
@@ -298,6 +318,8 @@ function libWire(){
   document.addEventListener("click", function(e){
     const t = e.target && e.target.closest ? e.target : null;
     if (!t) return;
+    const back = t.closest("[data-libback]");
+    if (back){ libBack(); return; }
     const tab = t.closest("[data-libtab]");
     if (tab){
       LIB_STATE.tab[tab.getAttribute("data-libshelf")] = tab.getAttribute("data-libtab");
@@ -328,5 +350,6 @@ libWire();
 
 if (typeof module !== "undefined" && module.exports){
   module.exports = { LIB_SHELVES, LIB_STATE, libShelfOf, libScreenOf, libHeadHtml,
-                     libAboutHtml, libListHtml, libScreenHtml, libRowsOf, libTab };
+                     libAboutHtml, libListHtml, libScreenHtml, libRowsOf, libTab,
+                     libBackHtml, libBack };
 }

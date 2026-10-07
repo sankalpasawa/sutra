@@ -423,7 +423,7 @@ async function wsOpenCharter(id, matched){
   } catch (e){
     if (!(S.ws.sel && S.ws.sel.type === "charter" && S.ws.sel.id === id)) return;
     if ((e.kind || "") === "engine_down") S.ws.treeError = { kind:"engine_down", message: e.message };
-    else S.ws.notice = e.message;
+    else snackError(e);
   }
   render();
 }
@@ -592,7 +592,7 @@ async function wsFileIt(){
     const r = await apiPost("/api/classify", { text: path });
     if (r && r.blocked){ S.ws.notice = r.blocked; }
     else await loadWorkspace(true);              /* the next projection files it (06→01) */
-  } catch (e){ S.ws.notice = e.message; }
+  } catch (e){ snackError(e); }
   S.ws.busy = null; render();
 }
 
@@ -611,7 +611,7 @@ async function wsNewDoc(){
     await loadWorkspace(true);
     await wsOpenDoc(path, {});
     wsEdit();
-  } catch (e){ S.ws.notice = e.message; }
+  } catch (e){ snackError(e); }
   S.ws.busy = null; render();
 }
 
@@ -630,7 +630,7 @@ async function wsSaveCopy(){
     S.ws.docGone = false;
     await loadWorkspace(true);
     await wsOpenDoc(to, {});
-  } catch (e){ S.ws.notice = e.message; }
+  } catch (e){ snackError(e); }
   S.ws.busy = null; render();
 }
 
@@ -677,7 +677,7 @@ async function wsHandleRoute(route){
     else render();
   } catch (e){
     /* Typed reject → resting + notice (DEEPLINKS §1 invalid-values rule). */
-    S.ws.notice = e.message; render();
+    snackError(e); render();
   }
 }
 function wsCursorForDept(ref){
@@ -1312,8 +1312,8 @@ async function wsMountEditor(el){
   try { await wsLoadEditorScript(); }
   catch (e){
     /* fall back to READ view (deepseek): editing with no editor is state 07
-       showing an empty column — a lie. The notice says why. */
-    w.notice = String(e.message || e); w.editing = false; render(); return;
+       showing an empty column — a lie. The snack bar says why. */
+    snackError(e, "The editor did not load"); w.editing = false; render(); return;
   }
   if (!S.ws.editing || S.ws.edHandle) return;      /* state moved on while loading */
   /* STATE re-check after the await, mirroring the entry predicate (dual

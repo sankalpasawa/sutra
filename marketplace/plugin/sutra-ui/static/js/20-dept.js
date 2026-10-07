@@ -225,22 +225,29 @@ function dpAppOn(m){
   const st = (typeof o2S === "function") ? o2S() : null;
   return !!(st && st.view === "app" && st.app && st.app.id === m.id);
 }
-const DP_GROUPS = ["Now", "Functions", "Engines", "Filed work", "People", "Documents", "Apps"];
+/* No Documents group (founder, 2026-09-28: "we can remove documents altogether,
+   from the structure of the department"): everything a department files is an
+   artifact under Filed work, with its template. Markdown placed under a
+   department stays on the Workspace tree, which is where it is written. */
+const DP_GROUPS = ["Now", "Functions", "Engines", "Filed work", "People", "Apps"];
 function dpListHtml(n, d, dept, err){
   const st = dpS();
   if (st.sel !== n.ref) dpSelect(n.ref);   /* the first paint opens it, as o2ListHtml does for Apps */
   const tab = st.tab[n.ref] || "now";
   const filed = (dept && dept.filed) || [];
-  const docs = (dept && dept.docs) || [];
   let groups = "";
-  groups += dpGroup("Now", [dpRow("Now", `data-dptab="now"`, tab === "now")], null, "");
+  /* 22-website.js: a website department brings its own first group (Map,
+     System status, Motor), Engines and Filed work; every other department
+     answers null here and paints exactly as before. */
+  const wb = (typeof wbList === "function") ? wbList(n) : null;
+  groups += wb ? wb.top : dpGroup("Now", [dpRow("Now", `data-dptab="now"`, tab === "now")], null, "");
   groups += dpGroup("Functions", DP_FUNCS.map(([v, label]) =>
     dpRow(label, `data-dptab="${dpEsc(v)}"`, tab === v)), null, "");
   /* People and Apps read routes that land in a later slice; until then the
      group is on screen and says so in one line rather than showing nothing. */
   dpLoadEngines(n.ref);                    /* call-on-render, as o2LoadApps does */
   const eng = (st.engines && st.engines.ref === n.ref) ? st.engines : null;
-  groups += dpGroup("Engines", ((eng && eng.engines) || []).map(dpEngRow), "engines",
+  groups += wb ? wb.engines : dpGroup("Engines", ((eng && eng.engines) || []).map(dpEngRow), "engines",
     eng ? "No engines here" : (st.error.engines ? "Could not read" : "Not read yet"));
   /* Filed work reads its own route for the version count (A24); until that
      answer lands the rows the Org screen already loaded are shown, so the
@@ -248,16 +255,17 @@ function dpListHtml(n, d, dept, err){
   dpLoadFiled(n.ref);
   const fread = (st.filed && st.filed.ref === n.ref) ? st.filed : null;
   const rows = (fread && fread.filed) || filed;
-  groups += dpGroup("Filed work", rows.map(dpFiledRow), "filed",
+  groups += wb ? wb.filed : dpGroup("Filed work", rows.map(dpFiledRow), "filed",
     st.error.filed ? "Could not read" : "Nothing filed yet");
   dpLoadPeople(n.ref);
   const ppl = (st.people && st.people.ref === n.ref) ? st.people : null;
   groups += dpGroup("People", dpPeople(ppl).map(dpPersonRow), "people",
     ppl ? "No people yet" : (st.error.people ? "Could not read" : "Not read yet"));
-  groups += dpGroup("Documents", docs.map(x =>
-    dpRow(x.title, `data-dpdoc="${dpEsc(x.path)}" data-dptitle="${dpEsc(x.title)}"`, false)), "docs", "No documents yet");
-  groups += dpGroup("Apps", dpApps(n.ref).map(m =>
-    dpRow(m.name, `data-dpapp="${dpEsc(m.id)}"`, dpAppOn(m))), "apps", dpAppsQuiet(n.ref));
+  /* 22-website.js brings its own app rows (Human Sutra, on the engine runtime)
+     before the Library's; the quiet line stays for a department with neither */
+  const wapps = (wb && wb.apps) || [];
+  groups += dpGroup("Apps", wapps.concat(dpApps(n.ref).map(m =>
+    dpRow(m.name, `data-dpapp="${dpEsc(m.id)}"`, dpAppOn(m)))), "apps", wapps.length ? "" : dpAppsQuiet(n.ref));
   if (err) groups = `<div class="o2quiet dpq">Sutra did not answer for ${dpEsc(n.name)}</div>` + groups;
   /* `.dp` on the column itself: the delegated handlers below gate on
      closest(".dp"), the way 19-org2.js gates on closest(".o2"), and the two
@@ -487,15 +495,25 @@ function dpIdentityHtml(){
   /* DS-13 (the founder's structure, 2026-09-22): two tabs. The card, and the
      chat -- the exact Sutra chat, which is also where a department is started.
      The owner's turns and Adaptation's turns are the card's Recent section. */
-  const tabs = dpTabsHtml(pane, [["identity", "Identity"], ["chat", "Chat"]], "data-dppane");
+  /* 22-website.js: on the engine runtime each function has its own Settings tab
+     (founder, 2026-09-28), and its template line lives there */
+  const settings = dpFnSettings("identity");
+  const tabs = dpTabsHtml(pane, [["identity", "Identity"], ["chat", "Chat"]].concat(settings === null ? [] : [["settings", "Settings"]]), "data-dppane");
   /* Slice I (DS-10): the owner's tab is the live Sutra chat with Identity; the
      With Adaptation tab keeps the record's turns, unchanged. */
   if (pane === "chat") return tabs + dpLiveChatHtml("identity", "Identity");
+  if (pane === "settings" && settings !== null) return tabs + settings;
   const recent = (chats.owner || []).concat(chats.adaptation || [])
     .sort((a, b) => String(a.at || "").localeCompare(String(b.at || "")));
-  return tabs + dpTemplateLine("identity") + dpIdentityCardHtml(id) +
+  return tabs + (settings === null ? dpTemplateLine("identity") : "") + dpOwnState("identity") + dpIdentityCardHtml(id) +
          dpFrameworkHtml("identity") + dpRecentHtml(recent, "Recent");
 }
+/* 22-website.js: a function's own Settings on the engine runtime; null for every other department */
+function dpFnSettings(tab){ return (typeof wbFnSettings === "function") ? wbFnSettings(dpS().sel, tab) : null; }
+/* 22-website.js: what THIS department's function holds right now (its rules and
+   windows, its envelopes, its timetable), drawn first so it is never under the
+   template's framework. Every department without a website record answers "". */
+function dpOwnState(tab){ return (typeof wbFnOwn === "function") ? wbFnOwn(dpS().sel, tab) : ""; }
 
 /* ── the other four functions ──────────────────────────────────────────────
    Adaptation, Priority, Coordination and Audit are one shape with four sets of
@@ -518,8 +536,10 @@ function dpFnHtml(tab, label, card, panes, chat){
      function, and the record's turns move to a Log tab beside it. An engine
      card passes its own panes and keeps its record chat exactly as before. */
   const isFn = !panes && DP_FUNCS.some(f => f[0] === tab);
-  const tabs = dpTabsHtml(pane, panes || [[tab, label], ["chat", "Chat"]], "data-dppane");
+  const settings = isFn ? dpFnSettings(tab) : null;
+  const tabs = dpTabsHtml(pane, panes || [[tab, label], ["chat", "Chat"]].concat(settings === null ? [] : [["settings", "Settings"]]), "data-dppane");
   if (isFn && pane === "chat") return tabs + dpLiveChatHtml(tab, label);
+  if (isFn && pane === "settings" && settings !== null) return tabs + settings;
   if (pane === "chat"){                                  /* an engine card keeps its record chat */
     const rows = (typeof chat === "function") ? chat(data) : (chat || data.chat);
     return tabs + dpChatCard("Chat", rows, ref + ":" + tab + ":chat");
@@ -530,7 +550,7 @@ function dpFnHtml(tab, label, card, panes, chat){
   const extra = tab === "adaptation" ? dpGraphHtml() + dpEngineStepsHtml()
               : tab === "priority" ? dpNextRunsHtml()
               : tab === "coordination" ? dpMakesReadsHtml() : "";
-  return tabs + dpTemplateLine(tab) + card(data, pane) + extra +
+  return tabs + (settings === null ? dpTemplateLine(tab) : "") + dpOwnState(tab) + card(data, pane) + extra +
          dpFrameworkHtml(tab) + dpRecentHtml((typeof chat === "function") ? chat(data) : (chat || data.chat), "Recent");
 }
 
@@ -880,6 +900,9 @@ function dpViewerHtml(n, d, dept, err){
   const st = dpS();
   const tab = st.tab[n.ref] || "now";
   st.selName = n.name || "";                             /* the chat's title and its seed read it */
+  /* 22-website.js draws a website department's own entries (and adds its
+     state under the function cards); null hands the viewer back to this file */
+  if (typeof wbViewer === "function"){ const own = wbViewer(n); if (own) return own; }
   if (tab === "now"){
     dpLoadMeters(n.ref);                                 /* read on open, as o2LoadApps does */
     return dpViewerShell("Now", dpNowHtml());
@@ -1099,6 +1122,10 @@ function dpFnChatUrl(ref, fn, name, start){
 }
 function dpLiveChatHtml(fn, label){
   const st = dpS(), key = (st.sel || "") + ":" + fn;
+  /* 22-website.js: on the engine runtime a function's chat is read from the
+     record and never started (founder, 2026-09-29); null hands back here */
+  const own = (typeof wbFnChatHtml === "function") ? wbFnChatHtml(st.sel, fn, label) : null;
+  if (own !== null) return own;
   if (dpFnChatMap()[key] || st.chatStart[key]) return `<div class="dpframe" data-dpframe="${dpEsc(key)}"></div>`;
   return dpCard("Chat", dpQuiet("No chat with " + label + " yet") +
     `<button type="button" class="btn" data-dpchatstart="${dpEsc(fn)}">Start the chat with ${dpEsc(label)}</button>`);
@@ -1234,20 +1261,35 @@ async function dpEmbedOpen(){
   const s = newSession((brief && brief.cwd) || "", { ref: ref, name: name });
   s.title = label + " · " + (name || "department");
   s.fnKey = key;
-  /* DS-15: a function chat may build inside its own department's folder, so it
-     opens on Accept edits (edits here, asks for anything else) rather than the
-     operator's global mode, which is read-only by default. The native id comes
-     from the provider's own map, never a literal. */
+  /* DS-15 (2026-09-22), amended 2026-09-25: a function chat builds inside its
+     own department's folder. It used to open on Approve for me whatever the
+     operator's setting, because the global default was Read only at the time.
+     The shipped default has been Full access since 2026-09-18, so the chat
+     now INHERITS the global mode whenever that mode already writes files: no
+     per-chat override is armed and claudeWsUrl sends no ?perm=. Only a global
+     mode that cannot write -- the original DS-15 case, where a read-only
+     default left the department chat unable to list its own folder -- still
+     seeds Approve for me. The native id comes from the provider's own map,
+     never a literal. Read off the EFFECTIVE mode, as sessPermEffective does:
+     the server clamps at the point of use. */
   try {
-    const opts = (typeof accessOptionsFor === "function")
-      ? accessOptionsFor(typeof providerId === "function" ? providerId() : "claude") : [];
-    /* "Approve for me" before "Accept edits": in Accept edits a department chat
-       could not even list its own folder -- every command waited for a click
-       nobody makes inside a card (found 2026-09-22 running Deckem's Identity
-       chat). The department works in its own folder; anything outside it still
-       asks. */
-    const opt = opts.find(o => o.id === "auto") || opts.find(o => o.id === "edits") || null;
-    if (opt && opt.mode){ S.perm = S.perm || {}; S.perm[s.id] = opt.mode; }
+    const st = (typeof _settingsGlobal === "function") ? (_settingsGlobal() || {})
+      : ((typeof SETTINGS !== "undefined" && SETTINGS) || {});
+    const running = st.permission_mode_effective || st.permission_mode || "";
+    const known = ((typeof PERM_MODES !== "undefined" && PERM_MODES) || []).find(m => m && m.id === running) || null;
+    const globalWrites = known ? !!known.writes_files
+      : (running === "acceptEdits" || running === "bypassPermissions");
+    if (!globalWrites){
+      const opts = (typeof accessOptionsFor === "function")
+        ? accessOptionsFor(typeof providerId === "function" ? providerId() : "claude") : [];
+      /* "Approve for me" before "Accept edits": in Accept edits a department
+         chat could not even list its own folder -- every command waited for a
+         click nobody makes inside a card (found 2026-09-22 running Deckem's
+         Identity chat). The department works in its own folder; anything
+         outside it still asks. */
+      const opt = opts.find(o => o.id === "auto") || opts.find(o => o.id === "edits") || null;
+      if (opt && opt.mode){ S.perm = S.perm || {}; S.perm[s.id] = opt.mode; }
+    }
   } catch (e) {}
   S.openPanes = [s.id];
   submitTurn(seed, s.id, { pin: { department_ref: ref } });
@@ -1325,7 +1367,7 @@ async function dpDecide(pid, ok){
    landed inside a `.dp` element. That is 19-org2.js:875-880's own guard with
    this screen's class, so nothing here can fire on another screen. */
 if (typeof document !== "undefined" && document.addEventListener){
-  const DP_SEL = "[data-dptab],[data-dpdecide],[data-dpmore],[data-dpfiled],[data-dpperson],[data-dpdoc],[data-dpapp],[data-dpengine],[data-dppause],[data-dpchatmode],[data-dppane],[data-dpgoal],[data-dprule],[data-dpchatstart],[data-dptplopen],[data-dptpluse]";
+  const DP_SEL = "[data-dptab],[data-dpdecide],[data-dpmore],[data-dpfiled],[data-dpperson],[data-dpapp],[data-dpengine],[data-dppause],[data-dpchatmode],[data-dppane],[data-dpgoal],[data-dprule],[data-dpchatstart],[data-dptplopen],[data-dptpluse]";
   document.addEventListener("click", (ev) => {
     if (!S.dp || S.screen !== "org2") return;
     const t = ev.target && ev.target.closest ? ev.target.closest(DP_SEL) : null;
@@ -1389,11 +1431,6 @@ if (typeof document !== "undefined" && document.addEventListener){
       ev.preventDefault();
       if (st.sel){ st.personSel = ds.dpperson; st.tab[st.sel] = "people"; }
       dpRender(); return;
-    }
-    if (ds.dpdoc !== undefined){
-      ev.preventDefault();
-      if (typeof o2OpenDoc === "function") o2OpenDoc(ds.dpdoc, ds.dptitle);   /* the Org screen's own reader */
-      return;
     }
     /* An app opens the way the Org screen opens it (A26): its own o2OpenApp,
        over the module o2LoadApps already put in that screen's cache. The

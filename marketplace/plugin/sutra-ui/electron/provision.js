@@ -251,14 +251,30 @@ function alreadyProvisioned(home) {
 /* Every module the app cannot run without, and the plain sentence for a person when it is
    missing. Kept here, beside the runtime, because this is the only place that knows which
    Python is about to be used. */
+/* [import name, plain sentence, pinned pip spec]. The spec MUST match a line of
+   ../requirements.txt exactly (test_provision.js checks), so a repair installs
+   the versions the app is built against, never whatever is latest. */
 const REQUIRED = [
-  ["fastapi", "the web server the panel talks to"],
-  ["uvicorn", "the web server the panel talks to"],
-  ["httpx", "fetching web pages"],
-  ["bs4", "reading the HTML of a page (beautifulsoup4)"],
-  ["numpy", "the page index that finds your own pages to link to"],
-  ["trafilatura", "reading the article out of a page full of navigation"],
+  ["fastapi", "the web server the panel talks to", "fastapi==0.128.8"],
+  ["uvicorn", "the web server the panel talks to", "uvicorn==0.39.0"],
+  ["httpx", "fetching web pages", "httpx==0.28.1"],
+  ["bs4", "reading the HTML of a page (beautifulsoup4)", "beautifulsoup4==4.15.0"],
+  ["numpy", "the page index that finds your own pages to link to", "numpy==2.0.2"],
+  ["trafilatura", "reading the article out of a page full of navigation", "trafilatura==2.2.0"],
 ];
+
+/* requirements.txt's SUPPORTED PYTHON: 3.11-3.12. Below it trafilatura 2.2.0 will
+   not install; above it numpy 2.0.2 has no wheel. */
+const PY_SUPPORTED = ["3.11", "3.12"];
+
+/* "3.11"-style version of a python, or null when it cannot be asked. */
+function pythonVersion(python, run) {
+  try {
+    const v = String(run(python, ["-c", "import sys;print('%d.%d' % sys.version_info[:2])"],
+                         { encoding: "utf8", timeout: 30000 })).trim();
+    return /^\d+\.\d+$/.test(v) ? v : null;
+  } catch (e) { return null; }
+}
 
 /* Which REQUIRED modules the given python cannot import. [] means it is fine. */
 function missingDeps(python, execFileSync) {
@@ -289,10 +305,28 @@ function repairDeps(runtime, opts) {
   }
   const req = path.join(runtime.appDir, "requirements.txt");
   if (!fs.existsSync(req)) return { ok: false, why: "no requirements.txt beside app.py" };
+  /* A venv on the wrong Python cannot be repaired by pip, only rebuilt; say so
+     instead of running an install that is certain to fail (a Mac's own python3
+     is 3.9). Refused only when the version is KNOWN to be out of range. */
+  const ver = pythonVersion(runtime.python, run);
+  if (ver && !PY_SUPPORTED.includes(ver)) {
+    return { ok: false, why: `the staged runtime is Python ${ver}; Sutra needs ` +
+             `${PY_SUPPORTED.join(" or ")}. Re-run install.sh to rebuild it.` };
+  }
   try {
     run(runtime.python, ["-m", "pip", "install", "--quiet", "--no-input", "-r", req],
         { encoding: "utf8", timeout: 300000 });
-    const still = missingDeps(runtime.python, o.execFileSync);
+    let still = missingDeps(runtime.python, o.execFileSync);
+    /* A staged runtime is copied ONCE, so its requirements.txt can predate a module
+       REQUIRED now -- observed 2026-09-25: the file named none of httpx, bs4, numpy,
+       trafilatura, so the repair above installed nothing and the launch failed.
+       Install whatever is still missing at its pinned version. */
+    if (still.length) {
+      run(runtime.python, ["-m", "pip", "install", "--quiet", "--no-input",
+                           ...still.map((r) => r[2])],
+          { encoding: "utf8", timeout: 300000 });
+      still = missingDeps(runtime.python, o.execFileSync);
+    }
     return still.length ? { ok: false, why: "still missing: " + still.map(r => r[0]).join(", ") }
                         : { ok: true, why: "" };
   } catch (e) {

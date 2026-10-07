@@ -176,6 +176,97 @@ class TestSkillBodyIsNotATurn(Base):
         self.assertNotIn(SKILL_HEAD, json.dumps(msgs))
 
 
+#: A skill loaded by SLASH COMMAND (`/workflow-authoring`, or the CLI's own
+#: auto-load of a skill reference) writes a DIFFERENT pair of records from the
+#: Skill-tool shape above: a `<command-message>` record and then the body as a
+#: companion record. The body carries isMeta + turnCompanion but NO
+#: sourceToolUseID, so the pair rule above does not see it, and the Mac app
+#: rendered the whole "Workflow authoring reference" under "You" (founder,
+#: 2026-09-25, session 0ad2b900). Verified across the local corpus: the only
+#: isMeta companion records without a source tool are this shape (preceded by a
+#: <command-*> record) and "[Image: ...]" placeholders (never preceded by one).
+SLASH_HEAD = "# Workflow authoring reference"
+SLASH_BODY = SLASH_HEAD + "\n\nA workflow structures work across many agents" \
+             + ("y" * 9000)
+SLASH_SEQUENCE = [
+    _user([{"type": "text", "text": "<command-message>workflow-authoring"
+                                    "</command-message>\n<command-name>"
+                                    "workflow-authoring</command-name>\n"
+                                    "<skill-format>true</skill-format>"}],
+          isMeta=True, turnCompanion=True, promptId="p-1"),
+    _user([{"type": "text", "text": SLASH_BODY}],
+          isMeta=True, turnCompanion=True, promptId="p-1"),
+]
+
+
+class TestSlashCommandSkillBodyIsNotATurn(Base):
+
+    def parse_incremental(self, rows):
+        """read_session goes through _parse_transcript_incremental, which is a
+        separate parser (_parse_records). Both must agree."""
+        f = self.write(rows)
+        session_reader._PARSE_CACHE.pop(str(f), None)
+        return session_reader._parse_transcript_incremental(f)["messages"]
+
+    def test_12_slash_loaded_skill_body_is_dropped_by_the_full_parser(self):
+        rows = [_user("Use relevant skills to figure this out")] + SLASH_SEQUENCE \
+               + [_assistant([{"type": "text", "text": "Here is the plan"}])]
+        msgs = self.parse(rows)
+        self.assertEqual([m["role"] for m in msgs], ["user", "assistant"])
+        self.assertEqual(msgs[0]["text"], "Use relevant skills to figure this out")
+        self.assertNotIn(SLASH_HEAD, json.dumps(msgs),
+                         "a slash-loaded skill body still renders as a 'You' turn")
+
+    def test_13_slash_loaded_skill_body_is_dropped_by_the_incremental_parser(self):
+        rows = [_user("Use relevant skills to figure this out")] + SLASH_SEQUENCE \
+               + [_assistant([{"type": "text", "text": "Here is the plan"}])]
+        msgs = self.parse_incremental(rows)
+        self.assertEqual([m["role"] for m in msgs], ["user", "assistant"])
+        self.assertNotIn(SLASH_HEAD, json.dumps(msgs),
+                         "read_session's parser still shows the skill body")
+
+    def test_14_the_body_is_dropped_even_when_split_across_appends(self):
+        """The incremental parser sees the command record in one append and
+        the body in the next; the pending flag must survive in state."""
+        f = self.write([_user("first")] + SLASH_SEQUENCE[:1])
+        session_reader._PARSE_CACHE.pop(str(f), None)
+        session_reader._parse_transcript_incremental(f)
+        with f.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(SLASH_SEQUENCE[1]) + "\n")
+        st = os.stat(f)
+        os.utime(f, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
+        msgs = session_reader._parse_transcript_incremental(f)["messages"]
+        self.assertEqual([m["text"] for m in msgs], ["first"])
+
+    def test_15_an_image_placeholder_companion_is_still_kept(self):
+        """Same flags, different neighbour: an "[Image: ...]" companion follows
+        the typed prompt, not a <command-*> record, and a reader wants it."""
+        rows = [_user("[Image #1] look at this"),
+                _user([{"type": "text", "text": "[Image: source: /tmp/x.png]"}],
+                      isMeta=True, turnCompanion=True)]
+        for msgs in (self.parse(rows), self.parse_incremental(rows)):
+            self.assertEqual([m["text"] for m in msgs],
+                             ["[Image #1] look at this", "[Image: source: /tmp/x.png]"])
+
+    def test_16_a_typed_prompt_right_after_a_command_record_is_kept(self):
+        """Only an isMeta companion is the body. A real prompt after a slash
+        command (no isMeta) is the founder talking."""
+        rows = SLASH_SEQUENCE[:1] + [_user("now do it")]
+        for msgs in (self.parse(rows), self.parse_incremental(rows)):
+            self.assertEqual([m["text"] for m in msgs], ["now do it"])
+
+    def test_17_the_pending_flag_does_not_leak_past_one_record(self):
+        """Command, then body, then a LATER isMeta companion (an image) must
+        not be eaten by a flag that was never cleared."""
+        rows = SLASH_SEQUENCE + [
+            _user("[Image #2] and this"),
+            _user([{"type": "text", "text": "[Image: source: /tmp/y.png]"}],
+                  isMeta=True, turnCompanion=True)]
+        for msgs in (self.parse(rows), self.parse_incremental(rows)):
+            self.assertEqual([m["text"] for m in msgs],
+                             ["[Image #2] and this", "[Image: source: /tmp/y.png]"])
+
+
 class TestEvidenceIsClean(Base):
     """evidence_text reads this parser, so the body reached Shadow too."""
 

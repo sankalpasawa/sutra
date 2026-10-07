@@ -19,6 +19,29 @@ Live-panel determinism: boot freezes background `render()` (QA page only; origin
 tokens/contrast are pinned to an offscreen `#qa-probe` rig of the same app-rendered markup.
 Output: `runs/<runId>/` — 8 PNGs + `report.md`/`report.json`; exit 0 pass, 1 findings, 2 tool error.
 
+## Walks (2026-09-28): the app from source, a person at the front door, the screens captured
+
+`walks/` holds the tools that drive the engine runtime end to end on a record of its own: `devserver.sh`
+(the app from source, runtime and motor on), `devserver-detach.sh`, `devserver-stop.sh`, `kill-stale.sh`,
+`walk-front.sh` (words at the front door, the turns as they land), `shot-chat.js` (four headless captures)
+and `suites.sh`. Each takes its paths as arguments; `walks/README.md` has the usage and a walk end to end.
+The 73 checks the record quotes run from `holding/plans/engine-runtime/adherence-run.sh`.
+
+## Human Simulation (2026-09-28): a goal and a person, an agent at the installed app's own buttons
+
+Program: `holding/plans/human-simulation/PROGRAM.md` (asawa-holding). Component here, under `qa/sim/`.
+
+| Tool | What it does | Usage |
+|---|---|---|
+| `person/<name>.json` | who is at the keyboard: what they know, expect and would never do | read by the agent |
+| `goals/<name>.json` | the goal in the person's words; `outcomes[]` each with a read-only verify; `variances[]`, the non-linear turns | read by the agent |
+| `AGENT.md` | the runbook: look, decide, act through the panel's own buttons only, log the click and its why, wait, check read-only, note, report | the agent follows it |
+| `sim-agent.sh` | starts a run: the folder under `runs/`, Sutra Beta up on 8331, the person, the goal and the runbook printed for the agent | `qa/sim/sim-agent.sh <goal> [person] [base-url]` |
+| `probe-map.py` | reads a department's map every 2 s and logs how long the panel took: the numbers behind "the app went quiet" | `python3 qa/sim/probe-map.py <dept-ref> [base-url] [seconds] [out.jsonl]` |
+| `runs/<goal>-<stamp>/` | `run.json`, `ledger.jsonl` (every click, its why, what was seen), `findings.jsonl`, `report.md` (N of M outcomes) | written by the agent |
+
+A miss becomes a `SIM-n` row in `holding/TODO.md`; the fix ships; the same goal is walked again. Run 1: `runs/parasthi-hospital-20260928-2020/report.md`.
+
 ## Known gaps (completeness critic, 2026-08-19)
 
 The 8 states all mount the same pre-opened, full-bodied, governance-free turn,

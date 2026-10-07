@@ -494,6 +494,7 @@ const AG_ICON = {
   plus: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
   spark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/></svg>',
   link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1.5 1.5"/><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1.5-1.5"/></svg>',
+  chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 20V10M11 20V4M18 20v-7"/></svg>',
 };
 
 /* A STEP FOLDS ITSELF WHEN IT IS DONE (owner, 2026-09-10: "let's say all these steps are
@@ -1279,6 +1280,7 @@ const AG_GUIDE_TABS = [
   ["Prompts", "The instructions it actually writes by. Change the wording and the next article uses your version."],
   ["Memory", "Rules you have told it to remember for every article."],
   ["Tools", null],
+  ["Blog performance", "How blogs live on your website are actually doing -- keywords, rankings, traffic, backlinks -- and how the ones it wrote compare to the rest."],
   ["Connections", "Your keys, and the workspace your team joins."],
 ];
 function agGuideTabNames(){ return AG_GUIDE_TABS.map(t => t[0]); }
@@ -1438,6 +1440,7 @@ function agSideHtml(a){
                 ["prompts", "Prompts", AG_ICON.pencil, ownPrompts || null],
                 ["assets", "Asset ideas", AG_ICON.spark, openIdeas || null],
                 ["library", "Library", AG_ICON.check, a.library ? a.library.length : null], ["tools", "Tools", AG_ICON.spark, null],
+                ["performance", "Blog performance", AG_ICON.chart, null],
                 ["connections", "Connections", AG_ICON.link, null]];
   const connWarn = h && (!h.dataforseo || !h.voyage);
   /* THE WAY BACK OUT. The agent is now somewhere you navigate INTO, so it has to be somewhere you
@@ -2598,6 +2601,207 @@ function agDrawMap(){
   }
 }
 
+/* ── Blog performance (Semrush) ──────────────────────────────────────────────────────────
+   Reads seo_agent/semrush/db.py's aggregates through /blogs/*; never calls Semrush itself --
+   the scheduled sync (routines.py's launchd sibling, seo_agent/semrush/schedule.py) is the only
+   thing that does. Same screen conventions as Knowledge next door: a canvas after the frame
+   (agDrawMap's own pattern), a cold-load message the first time the tab is opened, and every
+   number rendered with agNum so it reads the same way the rest of the app's numbers do. */
+
+const AG_PERF_AGES = [7, 30, 60, 90, 180];
+const AG_PERF_METRICS = [["estimated_traffic", "Traffic"], ["organic_keywords", "Keywords"],
+                         ["top10_keywords", "Top 10 keywords"], ["average_position", "Avg. position"]];
+
+async function agPerfLoad(a){
+  a.perf = a.perf || { cls: "", metric: "estimated_traffic" };
+  const qs = a.perf.cls ? "?classification=" + a.perf.cls : "";
+  const [overview, blogs, schedule, ts] = await Promise.all([
+    agApi("/blogs/overview").catch(() => null),
+    agApi("/blogs" + qs).catch(() => null),
+    agApi("/blogs/schedule").catch(() => null),
+    agApi("/blogs/timeseries?metric=" + a.perf.metric).catch(() => null),
+  ]);
+  a.perf = Object.assign({}, a.perf, { overview, blogs, schedule, timeseries: ts });
+}
+
+async function agPerfReloadBlogs(a){
+  const qs = a.perf.cls ? "?classification=" + a.perf.cls : "";
+  a.perf.blogs = await agApi("/blogs" + qs).catch(() => a.perf.blogs);
+}
+
+async function agPerfReloadTimeseries(a){
+  a.perf.timeseries = await agApi("/blogs/timeseries?metric=" + a.perf.metric).catch(() => a.perf.timeseries);
+}
+
+/* Polls /blogs/sync until the background thread lands, then reloads everything the sync could
+   have changed. A local loop rather than the app's own poll timer, deliberately: this only runs
+   for the ~seconds a manually-triggered sync takes, and nothing else on the page needs the same
+   cadence while it does. Leaving the Performance tab mid-poll is harmless -- it keeps writing
+   into a.perf and simply stops mattering to what is on screen. */
+async function agPerfWaitSync(a){
+  for (let i = 0; i < 60; i++){
+    const st = await agApi("/blogs/sync").catch(() => null);
+    const job = st && st.job;
+    if (!job || job.phase !== "running"){
+      a.perf.syncBusy = false;
+      a.perf.syncMsg = !job ? "" : job.phase === "failed" ? ("Sync failed: " + (job.error || ""))
+        : "Done (" + job.mode + ").";
+      await agPerfLoad(a);
+      agDraw(); agDrawPerfChart();
+      return;
+    }
+    await new Promise(r => setTimeout(r, 1500));
+  }
+  a.perf.syncBusy = false;
+  a.perf.syncMsg = "Still running in the background -- check back shortly.";
+  agDraw();
+}
+
+function agPerfScorecard(label, ov){
+  if (!ov || !ov.with_data) return `<div class="ag-row"><div class="ri"><div class="rn">${agEsc(label)}</div>
+    <div class="rd">${ov ? "No Semrush data yet for these blogs." : "Loading…"}</div>
+    <div class="rm"><span>${ov ? agNum(ov.count) + " blogs tracked" : ""}</span></div></div></div>`;
+  return `<div class="ag-row"><div class="ri"><div class="rn">${agEsc(label)} <span class="pill p-ok">${agNum(ov.count)} blogs</span></div>
+    <div class="rm">
+      <span>${agNum(ov.avg_organic_keywords)} avg keywords</span>
+      <span>${ov.avg_position != null ? ov.avg_position + " avg position" : "no position data"}</span>
+      <span>${agNum(ov.avg_estimated_traffic)} avg est. traffic/mo</span>
+      <span>${ov.top3_pct}% top 3 · ${ov.top10_pct}% top 10 · ${ov.top20_pct}% top 20</span>
+    </div></div></div>`;
+}
+
+function agPerfCohortTableHtml(cohorts){
+  if (!cohorts) return "";
+  const sw = cohorts.seo_writer || [], nsw = cohorts.non_seo_writer || [];
+  return `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">
+      <thead><tr><th style="text-align:left;padding:6px 8px">Age</th>
+        <th style="text-align:right;padding:6px 8px">SEO Writer · avg keywords</th>
+        <th style="text-align:right;padding:6px 8px">SEO Writer · top 10%</th>
+        <th style="text-align:right;padding:6px 8px">Non-SEO · avg keywords</th>
+        <th style="text-align:right;padding:6px 8px">Non-SEO · top 10%</th></tr></thead>
+      <tbody>${AG_PERF_AGES.map((age, i) => {
+        const s = sw[i] || {}, n = nsw[i] || {};
+        return `<tr><td style="padding:6px 8px">${age} days</td>
+          <td style="text-align:right;padding:6px 8px">${s.n ? agNum(s.avg_organic_keywords) : "—"}</td>
+          <td style="text-align:right;padding:6px 8px">${s.n ? s.top10_pct + "%" : "—"}</td>
+          <td style="text-align:right;padding:6px 8px">${n.n ? agNum(n.avg_organic_keywords) : "—"}</td>
+          <td style="text-align:right;padding:6px 8px">${n.n ? n.top10_pct + "%" : "—"}</td></tr>`;
+      }).join("")}</tbody></table></div>
+    <p class="ag-sub">"—" means no blog in that cohort has a snapshot within ±3 days of that age yet.</p>`;
+}
+
+function agPerfBlogRowHtml(b){
+  const cls = b.classification === "SEO_WRITER" ? "p-ok" : "p-mut";
+  const latest = b.latest || {};
+  const pt = latest.position_tracking || latest.url_organic || {};
+  const bl = latest.backlinks || {};
+  return `<div class="ag-row" data-ag="perfopen" data-arg="${b.id}" style="cursor:pointer">
+    <div class="ri">
+      <div class="rn">${agEsc(b.title || b.url)} <span class="pill ${cls}">${b.classification === "SEO_WRITER" ? "SEO Writer" : "Non-SEO"}</span></div>
+      <div class="rd">${agEsc(b.url)}</div>
+      <div class="rm">
+        <span>${pt.organic_keywords != null ? agNum(pt.organic_keywords) + " keywords" : "no data yet"}</span>
+        ${pt.average_position != null ? `<span>pos ${pt.average_position}</span>` : ""}
+        ${pt.estimated_traffic != null ? `<span>${agNum(pt.estimated_traffic)} est. traffic</span>` : ""}
+        ${bl.backlinks != null ? `<span>${agNum(bl.backlinks)} backlinks</span>` : ""}
+        ${b.published_at ? `<span>${agEsc(b.published_at)}</span>` : ""}
+      </div>
+    </div></div>`;
+}
+
+function agPerfDetailHtml(detail){
+  if (!detail) return "";
+  const hist = detail.history || {};
+  const line = (label, rows, key) => {
+    const vals = (rows || []).slice(-10).map(r => `${r.date}: ${r[key] != null ? r[key] : "—"}`);
+    return `<div class="ag-row"><div class="ri"><div class="rn">${label}</div>
+      <div class="rd">${vals.length ? vals.join(" · ") : "no data yet"}</div></div></div>`;
+  };
+  return `<div class="ag-sechead"><h3 class="sec">${agEsc(detail.title || detail.url)}</h3>
+      <button class="btn" type="button" data-ag="perfclose">Close</button></div>
+    <p class="ag-sub" style="margin:0 0 8px">${agEsc(detail.url)}</p>
+    ${line("Organic keywords (position tracking)", hist.position_tracking, "organic_keywords")}
+    ${line("Organic keywords (url sweep)", hist.url_organic, "organic_keywords")}
+    ${line("Backlinks", hist.backlinks, "backlinks")}`;
+}
+
+function agPerfScheduleHtml(schedule){
+  const jobs = (schedule && schedule.jobs) || [];
+  return `<div class="ag-row"><div class="ri"><div class="rn">Scheduled sync</div>
+    <div class="rd">Daily position tracking, weekly keyword sweep, monthly backlinks -- runs on this Mac via launchd, never a live Semrush call when this tab opens.</div>
+    <div class="rm">${jobs.map(j => `<span>${agEsc(j.mode)}: ${j.loaded ? "installed" : "not installed"}</span>`).join("")}</div></div>
+    <div class="ra"><button class="btn" type="button" data-ag="perfscheduleinstall">Install schedule</button></div></div>`;
+}
+
+function agPerfHtml(perf, a){
+  if (!perf) return agViewLoadingHtml("performance");
+  const cls = perf.cls || "";
+  const tabs = [["", "All"], ["SEO_WRITER", "SEO Writer"], ["NON_SEO_WRITER", "Non-SEO"]];
+  const metric = perf.metric || "estimated_traffic";
+  const rows = (perf.blogs && perf.blogs.rows) || [];
+  return `<div class="ag-sechead"><h3 class="sec">Blog performance</h3>
+      <div class="ag-secctl">
+        <button class="btn" type="button" data-ag="perfdiscover" ${perf.syncBusy ? "disabled" : ""}>Discover blogs</button>
+        <button class="btn" type="button" data-ag="perfsync" data-arg="weekly" ${perf.syncBusy ? "disabled" : ""}>${perf.syncBusy ? "Syncing…" : "Sync now"}</button>
+      </div></div>
+    ${perf.syncMsg ? `<p class="ag-sub">${agEsc(perf.syncMsg)}</p>` : ""}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      ${agPerfScorecard("SEO Writer blogs", perf.overview ? perf.overview.seo_writer : null)}
+      ${agPerfScorecard("Non-SEO Writer blogs", perf.overview ? perf.overview.non_seo_writer : null)}
+    </div>
+    <h3 class="sec">Performance by age (age-normalized, ±3 days)</h3>
+    ${agPerfCohortTableHtml(perf.overview ? perf.overview.cohorts : null)}
+    <h3 class="sec">Performance over time</h3>
+    <div class="ag-secctl" style="margin:6px 0">${AG_PERF_METRICS.map(([k, label]) =>
+      `<button class="btn ${metric === k ? "pri" : ""}" type="button" data-ag="perfmetric" data-arg="${k}">${label}</button>`).join("")}</div>
+    <div class="ag-map"><canvas id="agPerfChart" width="900" height="260" aria-label="Performance over time, SEO Writer vs Non-SEO Writer"></canvas>
+      <div class="ag-mapcap">solid = SEO Writer &nbsp;·&nbsp; dashed = Non-SEO Writer</div></div>
+    <h3 class="sec">Blogs</h3>
+    <div class="ag-secctl" style="margin:6px 0">${tabs.map(([k, label]) =>
+      `<button class="btn ${cls === k ? "pri" : ""}" type="button" data-ag="perfclass" data-arg="${k}">${label}</button>`).join("")}</div>
+    ${rows.length ? rows.map(agPerfBlogRowHtml).join("") : `<div class="ag-empty">No blogs tracked yet. Press "Discover blogs" to pull them from the site catalogue.</div>`}
+    ${agPerfScheduleHtml(perf.schedule)}
+    ${perf.detail ? `<div style="margin-top:12px;border-top:1px solid var(--bd,#333);padding-top:10px">${agPerfDetailHtml(perf.detail)}</div>` : ""}`;
+}
+
+function agDrawPerfChart(){
+  if (typeof document === "undefined") return;
+  const a = agS(); const cv = document.getElementById("agPerfChart");
+  const ts = a && a.perf && a.perf.timeseries;
+  if (!a || !cv) return;
+  const ctx = cv.getContext("2d"); if (!ctx) return;
+  const W = cv.width, H = cv.height, pad = 30;
+  const css = getComputedStyle(document.documentElement);
+  const resolve = (v, fallback) => (css.getPropertyValue(v).trim() || fallback);
+  ctx.clearRect(0, 0, W, H);
+  if (!ts) return;
+  const sw = ts.seo_writer || [], nsw = ts.non_seo_writer || [];
+  const all = sw.concat(nsw);
+  if (!all.length){
+    ctx.fillStyle = resolve("--fg-muted", "#888"); ctx.font = "12px sans-serif";
+    ctx.fillText("No data yet -- run a sync first.", pad, H / 2);
+    return;
+  }
+  const maxV = Math.max(1, ...all.map(p => p.value || 0));
+  const dates = Array.from(new Set(all.map(p => p.date))).sort();
+  const x = i => pad + (dates.length > 1 ? i / (dates.length - 1) : 0) * (W - 2 * pad);
+  const y = v => H - pad - (v / maxV) * (H - 2 * pad);
+  const drawLine = (series, dashed) => {
+    const byDate = {}; series.forEach(p => { byDate[p.date] = p.value; });
+    ctx.beginPath(); ctx.setLineDash(dashed ? [5, 4] : []);
+    ctx.strokeStyle = resolve("--accent", "#4a9eff"); ctx.lineWidth = 2;
+    let started = false;
+    dates.forEach((d, i) => {
+      if (byDate[d] == null) return;
+      const px = x(i), py = y(byDate[d]);
+      if (!started){ ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
+    });
+    ctx.stroke(); ctx.setLineDash([]);
+  };
+  drawLine(sw, false);
+  drawLine(nsw, true);
+}
+
 /* What is worth writing about, and what has been written. One table, every idea on the sheet,
    and a "Write this" button on every row that WRITES THE MESSAGE into a fresh chat. The button
    carries the idea's id in a data attribute, never in the prose, so nothing downstream has to
@@ -3566,6 +3770,7 @@ function agWsHtml(ws, f){
 function agConnectionsHtml(c, h, form, ws, wsForm){
   const dfs = !!(c && c.dataforseo_login && c.dataforseo_password);
   const voy = !!(c && c.voyage_key);
+  const smr = !!(c && c.semrush_key);
   const prov = h ? h.model_provider : null;
   form = form || {};
   /* The workspace goes first because it is the one section that is about the TEAM rather than
@@ -3599,6 +3804,13 @@ function agConnectionsHtml(c, h, form, ws, wsForm){
       <div class="ag-form" style="margin-top:10px">
         <label><b>API key</b><input type="password" data-agvoy="key" autocomplete="off" placeholder="${voy ? "•••••• (set)" : "pa-… from dash.voyageai.com"}" value="${agEsc(form.voyage || "")}"></label>
         <div class="row"><button class="btn pri" type="button" data-ag="savevoy">Save</button>${voy ? `<button class="btn" type="button" data-ag="clearvoy">Disconnect</button>` : ""}<span class="sp">${form.vmsg ? agEsc(form.vmsg) : ""}</span></div>
+      </div></div></div>
+    <h3 class="sec">Semrush · blog performance</h3>
+    <div class="ag-row"><div class="ri"><div class="rn">Semrush <span class="ag-status"><i class="dot ${smr ? "ok" : "warn"}"></i>${smr ? "connected" : "not connected"}</span></div>
+      <div class="rd">Tracks organic keywords, rankings, traffic and backlinks for blogs live on your website. Used by the Blog performance tab.</div>
+      <div class="ag-form" style="margin-top:10px">
+        <label><b>API key</b><input type="password" data-agsemrush="key" autocomplete="off" placeholder="${smr ? "•••••• (set)" : "from semrush.com → Profile → API"}" value="${agEsc(form.semrush || "")}"></label>
+        <div class="row"><button class="btn pri" type="button" data-ag="savesemrush">Save</button>${smr ? `<button class="btn" type="button" data-ag="clearsemrush">Disconnect</button>` : ""}<span class="sp">${form.smsg ? agEsc(form.smsg) : ""}</span></div>
       </div></div></div>
   </div>`;
 }
@@ -3640,12 +3852,11 @@ function agWhy(e){
   return m.replace(/\s*\([^()]*->\s*\d{3}\)\s*$/, "") || "That did not work.";
 }
 
+/* One snack bar for the whole app now (founder 2026-09-26); this screen's own
+   centred toast is retired. Kept as a name so every caller here is unchanged. */
 function agToast(msg){
   if (typeof document === "undefined") return;
-  let t = document.getElementById("agToast");
-  if (!t){ t = document.createElement("div"); t.id = "agToast"; t.className = "ag-toast"; t.setAttribute("role", "status"); document.body.appendChild(t); }
-  t.textContent = msg; t.classList.add("on");
-  clearTimeout(agToastTimer); agToastTimer = setTimeout(() => t.classList.remove("on"), 2600);
+  if (typeof toast === "function") return toast(msg);
 }
 
 function agRoot(){ return typeof document === "undefined" ? null : document.getElementById("agRoot"); }
@@ -4105,7 +4316,7 @@ function agDraw(force){
        flickers into the truth. Only a tab holding NOTHING shows this; a second visit keeps last
        time's rows on screen and refreshes them in place, with no flicker at all. */
     const held = { knowledge: a.knowledge, assets: a.assets, memory: a.memory, prompts: a.prompts,
-                   library: a.library, tools: a.tools, connections: a.conns };
+                   library: a.library, tools: a.tools, connections: a.conns, performance: a.perf };
     const cold = a.viewBusy === a.view && (held[a.view] === null || held[a.view] === undefined);
     const html = cold ? agViewLoadingHtml(a.view)
       : a.view === "knowledge" ? agKnowledgeHtml(a.knowledge, a)
@@ -4114,6 +4325,7 @@ function agDraw(force){
       : a.view === "prompts" ? agPromptsHtml(a.prompts, a)
       : a.view === "library" ? agLibraryHtml(a.library, a)
       : a.view === "tools" ? agToolsHtml(a.tools)
+      : a.view === "performance" ? agPerfHtml(a.perf, a)
       : agConnectionsHtml(a.conns, a.health, a.connForm, a.ws, a.wsForm);
     const caret = agCaretGrab("agScroll");
     /* Every other field on this screen survives the four-second poll because the input handler
@@ -4123,6 +4335,7 @@ function agDraw(force){
        so the redraw that follows is never blocked by it. */
     if (!agTokenTyped() && agSetHtml("agScroll", html)) agCaretPut(caret);
     if (a.view === "knowledge" && a.mapOn) agDrawMap();
+    if (a.view === "performance") agDrawPerfChart();
     const comp = document.getElementById("agComposer"); if (comp){ comp.hidden = true; }
   }
   /* the Library editor, the section editor and the prompt editor all redraw while someone types
@@ -5004,6 +5217,7 @@ async function agAction(act, el){
       if (arg === "library") a.library = await agApi("/library").catch(() => []);
       if (arg === "tools") a.tools = await agApi("/tools").catch(() => []);
       if (arg === "connections"){ a.conns = await agApi("/connections").catch(() => null); a.health = await agApi("/health").catch(() => a.health); a.ws = await agApi("/workspace?check=1").catch(() => a.ws); }
+      if (arg === "performance") await agPerfLoad(a);
       /* A LATE ANSWER FOR A TAB YOU HAVE LEFT REDRAWS NOTHING. Click Library then Tools quickly
          and Library's response lands second; without this guard it would paint Library back
          over the tab you are actually looking at. */
@@ -5288,6 +5502,48 @@ async function agAction(act, el){
       a.mapOn = !a.mapOn; agDraw();
       if (a.mapOn && !a.map){ a.map = await agApi("/knowledge/embedding-map").catch(e => { agToast(String(e.message || e)); return null; }); agDraw(); }
       break;
+    }
+
+    /* ── blog performance (Semrush) ──────────────────────────────────────────── */
+    case "perfdiscover": {
+      a.perf = a.perf || {}; a.perf.syncBusy = true; a.perf.syncMsg = "Discovering blogs from the site catalogue…"; agDraw();
+      try { await agPostApi("/blogs/sync", { mode: "discover" }); await agPerfWaitSync(a); }
+      catch (e) { a.perf.syncBusy = false; a.perf.syncMsg = "Could not start: " + (e.message || e); agDraw(); }
+      break;
+    }
+    case "perfsync": {
+      const mode = arg || "weekly";
+      a.perf = a.perf || {}; a.perf.syncBusy = true; a.perf.syncMsg = "Syncing (" + mode + ")…"; agDraw();
+      try { await agPostApi("/blogs/sync", { mode }); await agPerfWaitSync(a); }
+      catch (e) { a.perf.syncBusy = false; a.perf.syncMsg = "Could not start: " + (e.message || e); agDraw(); }
+      break;
+    }
+    case "perfmetric": {
+      if (!a.perf) break;
+      a.perf.metric = arg; agDraw();
+      await agPerfReloadTimeseries(a); agDraw(); agDrawPerfChart();
+      break;
+    }
+    case "perfclass": {
+      if (!a.perf) break;
+      a.perf.cls = arg; agDraw();
+      await agPerfReloadBlogs(a); agDraw();
+      break;
+    }
+    case "perfopen": {
+      if (!a.perf) break;
+      a.perf.detail = null; agDraw();
+      a.perf.detail = await agApi("/blogs/" + arg).catch(() => null);
+      agDraw();
+      break;
+    }
+    case "perfclose": { if (a.perf) a.perf.detail = null; agDraw(); break; }
+    case "perfscheduleinstall": {
+      if (!a.perf) break;
+      a.perf.syncMsg = "Installing the scheduled sync…"; agDraw();
+      try { await agPostApi("/blogs/schedule/install", {}); a.perf.schedule = await agApi("/blogs/schedule").catch(() => a.perf.schedule); a.perf.syncMsg = "Schedule installed."; }
+      catch (e) { a.perf.syncMsg = "Could not install: " + (e.message || e); }
+      agDraw(); break;
     }
 
     /* ── keeping the catalogue current ────────────────────────────────────────
@@ -5671,6 +5927,20 @@ async function agAction(act, el){
       try { await agPostApi("/connections", { voyage_key: "" });
         a.conns = await agApi("/connections"); a.health = await agApi("/health"); a.connForm = { vmsg: "Disconnected" }; }
       catch (e) { a.connForm = { vmsg: "Could not disconnect: " + (e.message || e) }; }
+      agDraw(); break;
+    }
+    case "savesemrush": {
+      const key = (document.querySelector('[data-agsemrush="key"]') || {}).value || "";
+      if (!key.trim()){ a.connForm = Object.assign({}, a.connForm, { smsg: "Paste the key first" }); agDraw(); break; }
+      try { await agPostApi("/connections", { semrush_key: key.trim() });
+        a.conns = await agApi("/connections"); a.health = await agApi("/health"); a.connForm = { smsg: "Saved." }; }
+      catch (e) { a.connForm = { semrush: key, smsg: "Could not save: " + (e.message || e) }; }
+      agDraw(); break;
+    }
+    case "clearsemrush": {
+      try { await agPostApi("/connections", { semrush_key: "" });
+        a.conns = await agApi("/connections"); a.health = await agApi("/health"); a.connForm = { smsg: "Disconnected" }; }
+      catch (e) { a.connForm = { smsg: "Could not disconnect: " + (e.message || e) }; }
       agDraw(); break;
     }
 
@@ -6133,6 +6403,7 @@ if (typeof document !== "undefined" && typeof window !== "undefined" && !window.
       const f = a.connForm || {}; f[t.getAttribute("data-agdfs")] = t.value; f.msg = ""; a.connForm = f;
     }
     else if (t.matches("[data-agvoy]")){ const f = a.connForm || {}; f.voyage = t.value; f.vmsg = ""; a.connForm = f; }
+    else if (t.matches("[data-agsemrush]")){ const f = a.connForm || {}; f.semrush = t.value; f.smsg = ""; a.connForm = f; }
     /* THE ONE FIELD THAT IS NEVER KEPT. Everything typed on this screen lands on S.ag so a
        redraw can print it back; the personal access token must not, so it is dropped here and
        lives only in the input until agTakeToken empties it. */

@@ -1,6 +1,259 @@
 # Changelog
 
-**status**: active · **updated**: 2026-09-21
+**status**: active · **updated**: 2026-09-28
+## 2.306.23 (2026-09-30)
+
+- Released from v2.306.22-beta.1-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - sutra-ui: a message typed while Claude only writes switches the reply by itself; no Send now button
+- Changed: 6 file(s), +109/-44
+
+## 2.306.22 (2026-09-30)
+
+## Sutra Desktop: the line made on the fly, after review
+
+- a site made by an engine shaped on the fly goes on the host only once its version is on the record, so the record and the site never disagree
+- a shaped line with a fault (a name the Library already uses, a name twice, a step that reads what nothing before it wrote) is refused whole and you are told; nothing is added in part
+
+## 2.306.21 (2026-09-30)
+
+## Sutra Desktop: a line made on the fly
+
+- a department can be born with no engines (the organic kind): from your words Adaptation shapes the engines the goal needs, puts the line to you once, and your stamp adds them; the first starts on your words, each next on what the one before it filed; every engine reads the internet
+- what goes out (a site) asks you first, whichever engine makes it; a site made this way is served at the department's address
+- the Human Simulation goal "a website from words, engines on the fly" (qa/sim/goals/website-on-the-fly.json) and its runs
+
+## 2.306.20 (2026-09-29)
+
+## Sutra Desktop: the organisation is its chat
+
+- the organisation's row on the Org structure screen is the chat with Root and nothing else; Root is not a row of the tree nor a tile of the chart; the departments Root makes sit under the organisation
+- Root settings behind one button: what Root does, On or Off, its rules, the departments it made
+- founding lands on the organisation; a department born from the chat slides into the tree
+
+## 2.306.19 (2026-09-29)
+
+## Sutra Desktop: ask the department about its own work
+
+- a question in the chat is answered from what the department filed last (its report, its pages), not only from counts; a tool's department speaks no website lines
+- the New organisation sheet asks what the first department is for, in your words; a tool, a desk or a list is set up here as well as a site
+
+## 2.306.18 (2026-09-29)
+
+## Sutra Desktop: the internet is a given
+
+- every function and engine can search the web and open pages on its own; no ask, no stamp and no shaped engine for reading a page
+- words that name a page or a subject are filed at once and the department reads what it needs; an idea for a new capability still becomes an engine you stamp
+- the prompts the department's functions work from are shorter and plainer
+
+## 2.306.17 (2026-09-29)
+
+## Sutra Desktop: an engine you added survives the update
+
+- an engine born from your idea now lives with your records, not inside the app, so an update keeps it; a department whose engine the app can no longer find says so on its card and in Health instead of failing to open
+- first words that name nothing to build from ("New website") get one question back, what the site is for and about whom, before anything is planned
+- with 2.306.16: the line waits for the engine your words need; an added engine weighs new words before searching again; Audit reads what your engines filed; a function's chat keeps you there
+
+## 2.306.16 (2026-09-28)
+
+- **A correct agent answer at classify is applied instead of refused for its rank**: the three acts were on a stringency ladder, so an ASSERT ranked below a QUERY and a right answer lost. They sit on ONE rung now - an assertion is not below a question - and the more confident answer wins, in either direction, with an answer that is not an act still refused. Found live: the classifier read \"as expexted\" as a QUERY with no evidence at 0.2, the agent answered ASSERT at 0.8 with its reason, and the ladder threw it away. Tests: test-tier 62.
+
+## 2.306.15 (2026-09-29)
+
+## Sutra Desktop: your words get the engine they need
+
+- when your words need the internet and no engine of the department reaches it, the ask says so and a stamp has the department's own Adaptation shape an engine for it; you stamp the engine, it runs at once and files what it found with the page each fact came from
+- Priority is shown the engine it prices: what it does, what it needs, what it costs a day; when it refuses, you are told why and what you can do
+- a second department under the same Root gets a new name; a name that already exists is said back and your words go to that department
+- the tree marks a department at work
+
+## 2.306.14 (2026-09-29)
+
+## Sutra Desktop: what you are not sure of stays out until you say
+
+- a fact you say you are not sure of is left out of the site and you are asked at once which are right; before, it could become a page and go live
+- the ask to set up a department is one line, your goal's first sentence, not the whole goal back
+- in a function's chat the same thought twice in a row is one line
+
+## 2.306.13 (2026-09-28)
+
+- **Every code step now says how sure it is, and classify asks when it had nothing to go on** (RT-25). classify derives a confidence from its own branches (no signal 0.2 - the default fires - stage-1 0.3, mixed 0.6, one clean signal 0.9, corroborated 0.95); resolve turns the matcher score it already computed into one; depth reports whether its inputs were live or degraded. Each number carries the sentence that produced it, and the step-log row prints it beside the tier as `code@0.2`. classify carries the first threshold, 0.25, which fires only on the no-evidence case: the agent is asked which act the message performs and the answer is RECORDED, never applied backwards to labels already emitted. resolve and depth stay unset until the log shows where an ask would pay. Tests: test-tier 60, test-step-log 36.
+
+## 2.306.12 (2026-09-29)
+
+## Sutra Desktop: a function's chat is the one you already have
+
+- a click on any of the five functions' Chat shows that function's existing chat from the record: what you said to it, what it answered, its own thinking as quiet lines between, and a box to say more; it never starts a new chat and never asks you to
+- words said in a function's chat still go through Identity, the one door, and come back into that same chat
+- a department not on the engine runtime keeps the chat it had
+
+## 2.306.11 (2026-09-29)
+
+## Sutra Desktop: what the person found on 2.306.10, fixed
+
+Three sites were walked end to end on the Beta by clicks alone (Parasthi Hospital, Namrati, Kriti Organics) and every miss became a fix with a test:
+
+- a rule the person stamped is a check the line runs: a build that breaks it never goes live, is sent back with the finding (twice at most), and the person is told
+- the panel never waits on the model inside a read: no more 25-second stalls around a publish
+- the app opens on Org, the one-screen Org, whatever old row this Mac remembered
+- a department Root has just made wears its own view at once, without a reload
+- a stamp inside a department, a Stop and a Start are turns of the chat; the working line says "page 3 of 8" and is gone when the department is Off
+- the department asks for what it lacks in the person's words; an answer to its own question is taken as the facts, never as a rule; what reaches outside the site is named (an email, a phone, an address)
+- Plan says which pages it planned; the goal is said once on the whole chat; the chat keeps its place across a paint and moves only when a turn lands; Root's box invites words for a department that exists
+
+## 2.306.10 (2026-09-28)
+
+## Sutra Desktop: what the first Human Simulation run found, fixed
+
+The app was walked as a person (Parasthi Hospital, from Org to a live site in 3 minutes) and the facts the person then gave in the chat vanished in a failed handling nobody saw. This release:
+
+- a step a request does not need never fails the request (the skipped step's check is no judgement)
+- a request whose handling failed is said back in the chat: "I could not act on this: ... Say it again, or say it differently."; Health's Front door counts it
+- the person's own words are shown whole in the chat, never cut at 220 characters
+- the department chip in Root's chat opens the department; the tree learns of a department Root has just made, without a reload
+- the Human Simulation program itself ships in `qa/sim/` (person, goals with verifiable outcomes, the agent's runbook, run 1's ledger, findings and report)
+
+## 2.306.9 (2026-09-28)
+
+- **A message typed while a Claude reply runs is handed to Claude at once**: it is folded into the running turn at its next step, or runs right after; the pane says "handed", or "queued" with the reason (Shadow driving, other model or options, provider switch, an earlier message waiting). Echoes (`--replay-user-messages`) are matched by order, not text, so an attachment or an expanded slash command cannot leave the pane waiting for a turn that never comes. Only a turn the chat opened takes a handed message; Shadow, mission and helper turns never do.
+- **Stop is Esc**: an interrupt control request ends the reply and keeps the process, so the next message has no cold start; an interrupt unheard for 15s falls back to the old kill. A stopped turn reaches observers as `stopped`, not as an error, so Shadow no longer raises a "hit an error" rescue for the founder's own Stop. Tests: test_midturn_messages 15.
+
+## 2.306.8 (2026-09-28)
+
+- **An agent answer that names a department is resolved against the register instead of being thrown away on spelling**: across 34 live examples the agent answered with the name ("Website") or the whole listed line ("Learning & Onboarding = dref-ccf...") in 8 of 17 refusals. Resolution is exact and register-backed - an address inside the text wins, otherwise an exact case-insensitive name match on one and only one department; anything ambiguous or unknown is left untouched and still refused, so an agent still cannot mint a department. Tests: test-tier 60.
+
+## 2.306.7 (2026-09-28)
+
+- **An agent may now correct the code, not only fill a blank**: on the same rung of a step marked `correct_on_confidence`, a DIFFERENT answer from a MORE confident agent replaces the code's, provided the register already holds it. Minting stays impossible and depth keeps the strict ladder, where a lower number is refused whatever the confidence. Every decision row now says which it was: the agent agreed, the agent corrected the code with both confidences named, the answer was refused, or the agent could not be reached. Only placement carries the mark. Ruling and reversal trigger: RUNTIME-ACCEPTANCE-CONDITIONS.md section 4a. Tests: test-tier 52.
+
+## 2.306.6 (2026-09-28)
+
+- **An agent answer that arrives is now heard**: the settle ran in the same event that started the ask, milliseconds later, so it always recorded "unreachable" and a real answer arriving seconds afterwards was ignored. An ask still inside its own timeout is now left unsettled and settled by a later event; only an ask past its timeout, or one that could not be made at all, records the code's value as the one that stands, and the two say which they were. Found by running 2.306.5 live. Tests: test-tier 44.
+
+## 2.306.5 (2026-09-28)
+
+- **The standby agent now actually answers**: the ask wrapped its call in `timeout`, which macOS does not ship, so on a Mac every ask exited 127 and took the unreachable path while the suite stayed green. The call is bounded by the runtime's own watchdog instead (`kill -0` poll, `pkill -P` on expiry), and three suite cases now run the built-in caller itself - an answer parsed out of the caller's text, a slow caller cut off by the watchdog, and an unreadable answer refused rather than invented. Found by running the release live, not by the tests. Tests: test-tier 42.
+
+## 2.306.4 (2026-09-28)
+
+- **A step that is unsure now asks an agent, and a turn can be replayed through its own code** (founder conditions C6-C9, 2026-09-28). `runtime/rules/tiers.json` gains each step's field, its stringency ladder and one measured threshold (placement 0.5, with the measurement and a reversal trigger recorded); `runtime/lib/tier.sh` asks the standby agent when a code step lands below its threshold - detached, so no model call sits on the turn's hot path - applies the answer only when it RAISES stringency, refuses an address the register does not hold, and keeps the code's own answer marked unresolved when the agent cannot be reached. Every decision is recorded with source, confidence and one line of reason, and the step-log row prints `code<agent` when the agent answered. `sutra-steps replay` re-runs classify, resolve and depth on the turn's own recorded inputs and reports SAME or DIFF per step; a step that cannot be replayed says so instead of being counted. Also: the review row no longer prints an empty byte count, and a killed step logs its reason. Tests: test-tier 35, test-step-log 31.
+
+## 2.306.3 (2026-09-28)
+
+- **Every step now prints its own log row, with the input it read and the output it produced** (founder conditions C1-C5 and C10, 2026-09-28). The runtime writes one row per step to `<turn>.steplog.jsonl` when the turn opens, when a step's status changes at a tool call, and again at Stop, so a step that never ran says so with its own status instead of being dropped. Every field is derived from files the runtime itself wrote, the file is runtime-owned so no tool call can forge a row, and the rows print to the terminal as they are written. `sutra-steps log` reads them back. `runtime/rules/tiers.json` declares as data which step is decided by code, which by the session model and which by an agent, plus the three standing rules (an agent may only raise stringency, the code's answer stands when the agent is unreachable, every answer records its source); thresholds stay null until measured over 200 turns. Tests: test-step-log 26. DeepSeek review folded (4 of 6 P1 fixed, 2 refuted by the suite).
+
+## 2.306.2 (2026-09-28)
+
+- Released from v2.306.1-desktop..HEAD: 5 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - sutra-ui: every Library shelf page carries the way back to Org structure
+  - sutra-ui: the Org button opens Org structure whatever the saved pick; Settings columns follow the pane
+  - sutra-ui: on the screen the five are functions; "internal system" stays inside
+  - sutra-ui: every engine starts by its own activation; Start is one button
+  - sutra-ui: the engine runtime, behind a switch, with its screen
+- Changed: 13 file(s), +4898/-32
+- New test suites: test_engine_runtime.py
+
+## 2.306.1 (2026-09-28)
+
+- The website department's motor starts only in the app itself, and it stops the moment the app closes.
+- Sutra Beta keeps its website departments in its own folder, apart from Sutra's.
+
+## 2.306.0 (2026-09-27)
+
+- A website department that runs itself. In Org, the Edit menu's "New website organisation…" founds a new organisation with its Root and a Website department from one line.
+- Give the department a goal and it plans, writes, checks and publishes the site with nobody driving. The first publish waits for your stamp; after that an ask goes live by itself.
+- The department's screen shows its map, System status, the motor, each engine, every version with its trace, the live site, and Put back.
+
+## 2.305.0 (2026-09-27)
+
+- Now is redesigned: with nothing waiting, a greeting and one bar sit in the middle of the screen; when something needs you, it appears under the bar as a single clickable row, with updates below.
+- One small mark in the bar says the state (All clear, Checking, Offline, Paused, Sending); clicking All clear shows what is running and what finished today, and Offline retries.
+
+## 2.304.5 (2026-09-27)
+
+- Released from v2.304.4-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - sutra-ui: the updater logs why a delta update fell back to the full image
+- Changed: 2 file(s), +32/-0
+
+## 2.304.4 (2026-09-27)
+
+- Released from v2.304.3-desktop..HEAD: 3 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - sutra-ui: Org in the rail opens Org structure directly, no one-row accordion
+  - sutra-ui: download-resume test no longer writes the real update folder
+  - sutra-ui: an unusable staged update never blocks a real one
+- Changed: 6 file(s), +100/-34
+
+## 2.304.3 (2026-09-26)
+
+- Released from v2.304.2-desktop..HEAD: 2 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - sutra-ui: one bottom-right snack bar for the app's errors
+  - sutra-ui: update card shows download progress, then a ready state
+- Changed: 11 file(s), +590/-23
+- New test suites: test_snackbar.js
+
+## 2.304.2 (2026-09-26)
+
+- Released from v2.304.1-desktop..HEAD: 3 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - sutra-ui: force-stop test waits for the helper before stopping
+  - sutra-ui: Windows desktop app updates itself
+  - sutra-ui: update banner moves bottom-right and every state gets a close button
+- Changed: 9 file(s), +917/-50
+- New test suites: test_updates_windows.py
+
+## 2.304.1 (2026-09-25)
+
+Chat archive is driven only by the app, for every provider's rows.
+
+- Changed: `POST /api/sessions/{id}/archive` and `/unarchive` resolve the row through the read-only resolver that spans Claude, DeepSeek and Codex trees; Codex rows no longer answer 404 (the mark never touches a transcript).
+- Changed: `/core:start` writes no `os/` scaffold and no `.githooks` shim in a holding-tier repo (one with `holding/TODO.md`); the founder ruled them out after they reappeared on every start.
+- Tests: test_chat_archive.py 12 passed.
+
+## 2.304.0 (2026-09-25)
+
+The Native builder gets a ladder for the how it does not know.
+
+- Added: skill `finding-the-how`, rung 1. Before any how is invented it is looked for in four places, child custody first: the company's own skills and playbooks, the core catalog, the Native page that owns the subject, and the record or the science note. It ends on a HOW card: found with its check, or GAP.
+- Added: skill `deriving-a-methodology`, rung 2, the runnable form of Mode 3 (how-of-how). It names a method whose output is a how, runs it inside a budget, and writes the produced how back as a workflow type so the next instance stops at rung 1. It ends on a METHOD card, or GAP.
+- Added: skill `synthesizing-a-methodology`, rung 3. When Native has no method, it scans the eleven fields the 2026-06-12 science note names, tests for convergence, assembles a method with a named result behind each step, and places it through the bootstrap's class-B rule; a new altitude waits for the founder's stamp. It halts by reflexivity and escalates with the field scan.
+- Changed: `native-builder` routes Understand and Design through the ladder (section 4b, three routing rows, the Design phase in build-loop.md); `native` lists the three as ladder members the Builder invokes; `native-method` hands to rung 1 when a test needs a how nobody knows.
+- Added: three eval cases, `finding-the-how-fires`, `deriving-a-methodology-fires`, `synthesizing-a-methodology-fires`.
+- Tested: three baseline and three with-skill subagent runs on 2026-09-25; results are in each skill's provenance line.
+
+## 2.303.0 (2026-09-25)
+
+The Native family gets a front door, a coach and a method.
+
+- Added: skill `native`, the front door. It reads the stage from evidence (fix, idea, unverified, claim, testing, supported, untested by choice, refuted, built, canon, status), routes to the member for that stage, and keeps one ideas ledger at `holding/plans/native-ideas/LEDGER.md`.
+- Added: skill `native-coach`, a sparring partner for design work: mirror, verdict, steelman, one counter with its evidence rung, Lab card, one question, and what would change its mind.
+- Added: skill `native-method`, the scientific method for Native: a falsifiable claim, rivals, a principle check against 16 Native rules and 8 general laws, the cheapest test that could fail, and a kill line set before the run.
+- Added: five eval cases: `native-routes`, `native-status`, `native-coach-fires`, `native-coach-agrees` (the coach must agree when evidence earns it), `native-method-fires`.
+- Tested: baseline and with-skill subagent runs on 2026-09-25 (11 coach and method runs, 4 routing runs); results are in each skill's provenance line.
+
+## 2.302.0 (2026-09-25)
+
+Browser mode: open Sutra in your own browser, or let an agent drive it.
+
+- Mac: right-click the Dock icon > Open in Browser. Windows: click the tray icon.
+- `--browser` starts with no window; `--no-open` writes a one-time link for an agent.
+- Each link works once, for two minutes, and pairs the tab with a private cookie.
+- `SUTRA_DEBUG_PORT=9229` opens a debug port on this Mac only; off by default.
+
+## 2.301.0 (2026-09-24)
+
+- Chat search in the Chats rail: a search icon beside Recent / Dept / Routines opens a box that finds any chat by title, folder name, or department and routine name, across all history. Matches are highlighted; Esc closes.
+
+## 2.300.0 (2026-09-24)
+
+- Released from v2.299.0-beta.1-desktop..HEAD: 7 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.
+  - org: the Library sits at the top right, and swaps the panel
+  - The new Shadow suite runs in CI, like the other thirty-three
+  - A Shadow conversation outlives not being a task
+  - design: six places the Library icon could live, drawn
+  - design: the Library by one icon, the lighter option
+  - design: the Library as a section inside the Org structure tree
+  - windows: make Claude OAuth interactive
+- Changed: 16 file(s), +1379/-18
+- New test suites: test_shadow_nontask_conv.js
+
 ## 2.299.1 (2026-09-24)
 
 - Fixed: Windows Claude sign-in now runs in a visible interactive console, allowing the OAuth fallback code to be pasted instead of exiting immediately on closed stdin.

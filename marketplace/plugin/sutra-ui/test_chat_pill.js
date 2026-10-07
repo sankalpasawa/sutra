@@ -496,6 +496,76 @@ test("7b. one live turn among 60: exactly one loop on screen", () => {
   eq(count(all, /gv-pbtn is-live/g), 1); eq(count(all, /gv-pulse gv-run/g), 1);
 });
 
+/* ── 9. a background re-read keeps the pill (founder 2026-09-24: "it closes
+   after 34 seconds", "no flicker") ─────────────────────────────────────────
+   09-tail.js re-reads a changed transcript into NEW turn objects. The open
+   pill, its motion memory and the folds are keyed by turn uid, so the re-read
+   must hand each new turn the uid of the old one, and must hand back the old
+   array untouched when nothing a reader sees has changed. */
+function reBox() {
+  const b = box();
+  b.Date.parse = Date.parse;                                  /* transcriptTurns reads the ts */
+  vm.runInContext([grab(state, "transcriptTurns"), grab(state, "reconcileTurns")].join("\n"),
+                  b, { filename: "reread#extract" });
+  return b;
+}
+const MSGS = [
+  { role: "user", text: "continue", ts: "2026-09-24T10:00:00Z" },
+  { role: "assistant", text: GOV, ts: "2026-09-24T10:00:05Z", calls: [{ name: "Read", summary: "a.md" }] },
+  { role: "user", text: "fix the pill", ts: "2026-09-24T10:01:00Z" },
+  { role: "assistant", text: GOV, ts: "2026-09-24T10:01:09Z" },
+];
+test("9a. an unchanged re-read hands back the SAME array: nothing to draw", () => {
+  const b = reBox();
+  const turns = b.transcriptTurns(MSGS);
+  turns.forEach(t => b.turnUid(t));
+  b.S.govOpen[turns[1].uid] = true;
+  const again = b.reconcileTurns(turns, b.transcriptTurns(MSGS));
+  assert(again === turns, "an unchanged transcript must keep the array, so the caller skips the render");
+  assert(/gv gv-pill gv-open/.test(b.turnResponse(again[1])), "the pill is still open");
+});
+test("9b. a transcript that grew keeps every open pill open, with no motion replayed", () => {
+  const b = reBox();
+  const turns = b.transcriptTurns(MSGS);
+  turns.forEach(t => b.turnUid(t));
+  const uid = turns[1].uid;
+  b.S.govOpen[uid] = true;
+  b.turnResponse(turns[1]);                                   /* the first draw spends any one-shot flag */
+  const grown = MSGS.concat([{ role: "user", text: "and the folds", ts: "2026-09-24T10:02:00Z" },
+                             { role: "assistant", text: "done", ts: "2026-09-24T10:02:03Z" }]);
+  const next = b.reconcileTurns(turns, b.transcriptTurns(grown));
+  assert(next !== turns, "a changed transcript is a new array");
+  eq(next.length, 3);
+  eq(next[1].uid, uid, "the open turn keeps its uid");
+  eq(next[0].uid, turns[0].uid);
+  assert(!next[2].uid || [turns[0].uid, uid].indexOf(next[2].uid) === -1, "a new turn never borrows an old uid");
+  const h = b.turnResponse(next[1]);
+  assert(/gv gv-pill gv-open/.test(h), "the pill is still open after the re-read");
+  eq(count(h, /gv-opening|gv-closing|gv-in-l|gv-enter/g), 0, "no animation replays on the re-read");
+});
+test("9c. the same prompt twice: each turn keeps its own uid", () => {
+  const b = reBox();
+  const two = MSGS.concat([{ role: "user", text: "continue", ts: "2026-09-24T10:03:00Z" },
+                           { role: "assistant", text: "more", ts: "2026-09-24T10:03:02Z" }]);
+  const turns = b.transcriptTurns(two);
+  turns.forEach(t => b.turnUid(t));
+  const next = b.reconcileTurns(turns, b.transcriptTurns(two.concat([{ role: "assistant", text: "tail", ts: "2026-09-24T10:03:04Z" }])));
+  eq(next[0].uid, turns[0].uid); eq(next[2].uid, turns[2].uid);
+  assert(next[0].uid !== next[2].uid, "two turns with one prompt must not share a uid");
+});
+test("9d. no previous turns (first open): the parse is used as is", () => {
+  const b = reBox();
+  const fresh = b.transcriptTurns(MSGS);
+  assert(b.reconcileTurns([], fresh) === fresh);
+  assert(b.reconcileTurns(undefined, fresh) === fresh);
+});
+test("9e. both re-read sites go through reconcileTurns; the tail skips the render when unchanged", () => {
+  const tail = J("09-tail.js");
+  assert(/reconcileTurns\(s\.turns,\s*transcriptTurns\(d && d\.messages\)\)/.test(tail), "09-tail.js background re-read");
+  assert(/reconcileTurns\(s\.turns,\s*transcriptTurns\(d && d\.messages\)\)/.test(grab(state, "ensureTranscript")), "ensureTranscript");
+  assert(!/s\.turns = transcriptTurns\(/.test(tail + state), "no bare re-read replaces the turns any more");
+});
+
 (async () => {
   for (const [n, f] of queue) {
     try { await f(); console.log("ok   - " + n); pass++; }

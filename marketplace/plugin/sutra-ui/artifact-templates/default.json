@@ -1,0 +1,18 @@
+{
+ "id": "artifact/default",
+ "name": "Default",
+ "kind": "text",
+ "use_case": "an artifact the Library has no template of its own for: text, checked as text",
+ "files": [
+  "*"
+ ],
+ "checks": [
+  "is_text"
+ ],
+ "written_by": [],
+ "counts_after": "filing",
+ "put_back": true,
+ "operations": [],
+ "made_from": [],
+ "version": 1
+}

@@ -126,6 +126,13 @@ main() {
   DONE_N="$(printf '%s' "$STEPS_JSON" | jq -r '[.[] | select(.status == "done" or .status == "open")] | length' 2>/dev/null)"
   _sl_row open "$(jq -nc --arg d "${DONE_N:-0}" --arg p "$_SL_PATH" '{done:($d|tonumber), path:$p}')"
 
+  # C1-C5 (founder 2026-09-28): every step is logged the moment the turn opens,
+  # with the input it read and the output it produced; the four the code
+  # answered carry their real values, the rest carry their pending state.
+  STEPLOG=""
+  command -v sutra_step_log >/dev/null 2>&1 && \
+    STEPLOG="$(sutra_step_log "$_sl_root" "$_SL_PROJ" "$_SL_SID" "$_SL_TURN" "$_SL_EVENT" "$STEPS_JSON" 1 2>/dev/null)"
+
   TRACE="$(sutra_steps_render "$_SL_PATH")"
   LENS_REL="$(sutra_artifact_rel "$_SL_SID" "$_SL_TURN" lens)"
   CYN_REL="$(sutra_artifact_rel "$_SL_SID" "$_SL_TURN" cynefin)"
@@ -169,7 +176,15 @@ $TAIL"
     CTX="$TRACE
 $TAIL"
   fi
-  jq -nc --arg ev "$_SL_EVENT" --arg ctx "$CTX" '{hookSpecificOutput:{hookEventName:$ev, additionalContext:$ctx}}' 2>/dev/null
+  # the log rows go to the founder's screen as they are written (C5); the
+  # trace and the prompts go to the model as before.
+  if [ -n "$STEPLOG" ]; then
+    _sl_t8="$(printf '%s' "$_SL_TURN" | head -c 8)"
+    jq -nc --arg ev "$_SL_EVENT" --arg ctx "$CTX" --arg sm "[sutra $_sl_t8] step log, turn opened
+$STEPLOG" '{hookSpecificOutput:{hookEventName:$ev, additionalContext:$ctx}, systemMessage:$sm}' 2>/dev/null
+  else
+    jq -nc --arg ev "$_SL_EVENT" --arg ctx "$CTX" '{hookSpecificOutput:{hookEventName:$ev, additionalContext:$ctx}}' 2>/dev/null
+  fi
   return 0
 }
 

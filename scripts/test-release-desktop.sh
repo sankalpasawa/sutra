@@ -129,6 +129,7 @@ is "smoke installs into /Applications when writable" "$(smoke_install_dir yes /U
 is "smoke falls back to ~/Applications"              "$(smoke_install_dir no /Users/x)" "/Users/x/Applications"
 is "smoke walks the Shadow surfaces" "$(printf '%s\n' $SMOKE_ROUTES | grep -c '/api/shadow/')" "4"
 is "smoke opens the panel itself"    "$(printf '%s\n' $SMOKE_ROUTES | grep -cx '/')" "1"
+is "smoke asks the website department and its motor" "$(printf '%s\n' $SMOKE_ROUTES | grep -c '/api/native/')" "2"
 
 # ---- 3. the bump, which is asked for and never assumed ---------------------
 is "patch"          "$(bump_version 2.282.3 patch)" "2.282.4"

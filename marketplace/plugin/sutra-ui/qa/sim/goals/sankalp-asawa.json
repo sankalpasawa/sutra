@@ -1,0 +1,37 @@
+{
+  "id": "sankalp-asawa",
+  "person": "founder",
+  "app": "http://127.0.0.1:8331/",
+  "organisation": "Sankalp Asawa",
+  "goal": "A personal website for Sankalp Asawa. Find what the internet says about me and build only from that; every line says where it came from. Pages: About, Work, IIT Roorkee, Talks, Contact.",
+  "why": "founder 2026-09-29: 'Next simulation which I want to do is to create a personal website for Sankalp. Take all the data from the internet.' Then: 'I want the data to be fetched from the internet by the department, not that we give it.' And: 'I don't want you to build anything. I want you to obey the prompts so it builds everything as a user, as a product.' So the person says only what they want; the department must get to the internet itself, through its own functions and the person's stamps. Run 1 (2026-09-29 13:28, Beta 2.306.12) gave the facts in the goal; it is kept as the control. Run 2 is this goal.",
+  "expected_from_internet": [
+    { "fact": "IIT Roorkee B.Tech and M.Tech; semester exchange at KTH Royal Institute of Technology; General Secretary Academics; Goldman Sachs; Slice, chief of staff to the COO then the CEO, Koramangala", "from": "zoominfo and the LinkedIn search snippet, read by the agent 2026-09-29; the department must find its own" },
+    { "fact": "Founder, Student Mentorship Program, IIT Roorkee", "from": "easyleadz; in.linkedin.com/company/smpiitr" },
+    { "fact": "onRec IITR, Offbeat EP04: 'Leading with a social cause'", "from": "youtube qzOVqjnvYA8" },
+    { "fact": "X @SankalpAsawa", "from": "x.com/SankalpAsawa" },
+    { "fact": "Angel One (a search snippet only) and a University of Tokyo research profile (403): unsure, maybe a namesake", "from": "the agent's own search; a good department marks these unsure or leaves them out" },
+    { "fact": "NOT on the internet, must not appear: Asawa Inc., Sutra, Testlify, the email", "from": "this repo only" }
+  ],
+  "outcomes": [
+    { "id": "founded", "expect": "Sankalp Asawa in the tree with its Root, On", "verify": { "kind": "route", "get": "/api/native/depts", "check": "'Sankalp Asawa Root', kind root" } },
+    { "id": "child-born", "expect": "Sankalp Asawa Website under Root after one Stamp", "verify": { "kind": "route", "get": "/api/native/depts", "check": "a website department under the Root" } },
+    { "id": "needs-internet", "expect": "the department says no engine of its own reaches the internet yet and that an ask to add one follows; the ask arrives in the chat: Add the engine <name> to Sankalp Asawa Website? What it does: ...; nothing is built from invented facts meanwhile", "verify": { "kind": "route", "get": "/api/native/{child}/chat", "check": "a turn 'no engine of mine reaches the internet yet'; an ask of kind engine pending; no Site plan version before the stamp" } },
+    { "id": "engine-added", "expect": "after the Stamp the engine is on the Map, first in the line, and runs at once; its artifact is filed and the chat says '<name> v1 is filed.'", "verify": { "kind": "route", "get": "/api/native/{child}/map", "check": "engines[0] is the new one; an artifact of its name with v1" } },
+    { "id": "facts-have-sources", "expect": "what the engine filed is facts about me, each with the page it came from (a URL), and what it could not confirm under Not sure; nothing from this repo (Asawa Inc., Sutra, Testlify)", "verify": { "kind": "route", "get": "/api/native/{child}/artifact/<slug>", "check": "the text has https:// after each fact; no Asawa Inc., Sutra or Testlify" } },
+    { "id": "live", "expect": "after 'Build the site from what you found': the live site with About, Work, IIT Roorkee, Talks, Contact; every line with where it came from", "verify": { "kind": "site", "get": "/api/native/{child}/site/index.html", "check": "200; the five page names; sources on the pages" } },
+    { "id": "fn-chat-exists", "expect": "a click on Identity's Chat shows what I said and what Identity answered, with its thinking between, and a box; no 'Start the chat'", "verify": { "kind": "screen", "check": "wbchat wbfn with a You turn and an Identity turn; no data-dpchatstart" } }
+  ],
+  "variances": [
+    { "id": "say-to-priority", "where": "Priority's Chat", "do": "say: Put the Work page first in the order.",
+      "expect": "the words are in Priority's chat at once and in the department's chat; what came of them lands in the same chat", "verify": { "kind": "route", "get": "/api/native/{child}/chat?fn=priority", "check": "a turn src Owner with the words; a later turn not think in the same thread" } },
+    { "id": "drop-an-unsure-fact", "where": "the department's chat", "do": "after the facts are filed, name one the internet got wrong and say: Take <that> out everywhere.",
+      "expect": "the next live version has no trace of it", "verify": { "kind": "site", "get": "/api/native/{child}/site/{index,work}.html", "check": "the fact is gone" } },
+    { "id": "source-rule", "where": "the department's chat", "do": "say a rule: Nothing goes on the site without a source line under it. Stamp it.",
+      "expect": "the rule is a check the line runs; a build with a line without a source is sent back", "verify": { "kind": "route", "get": "/api/native/{child}/map", "check": "rules[] has it; the next Build's check names it" } },
+    { "id": "other-chats-kept", "where": "the function cards", "do": "open Identity's Chat, then Adaptation's, then Identity's again",
+      "expect": "each shows its own existing chat on the click; nothing starts, nothing is lost", "verify": { "kind": "screen", "check": "the same turns on the second open" } },
+    { "id": "stop-mid-run", "where": "the Map", "do": "press Stop while Write runs; Start again",
+      "expect": "Stopped and Started are turns; the run resumes; one version", "verify": { "kind": "route", "get": "/api/native/{child}/health", "check": "Slots: each slot ran once" } }
+  ]
+}

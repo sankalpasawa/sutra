@@ -93,6 +93,24 @@ jobs:
       - name: Bundle the Windows runtime (python + node + plugin)
         run: bash bundle-runtime-win.sh
 
+      # The only real-Windows check the updater gets before it ships: the
+      # bundled python with the wincompat shims, and PowerShell parsing the
+      # install helper (test_26 runs only on Windows).
+      - name: Windows updater tests (bundled python)
+        run: |
+          set -euo pipefail
+          cd ..
+          PYTHONPATH=electron/wincompat electron/payload/python/python.exe \
+            -m unittest -v test_updates_windows
+          # The website department's motor holds its record by an operating
+          # system lock, and on Windows that is msvcrt, a path no Mac runs.
+          PYTHONPATH=electron/wincompat electron/payload/python/python.exe \
+            -m unittest -v test_website_motor
+          # The engine runtime (every department born since 2026-09-28 runs on
+          # it): its record, Root, the operable artifacts, on Windows paths.
+          PYTHONPATH=electron/wincompat electron/payload/python/python.exe \
+            -m unittest test_engine_runtime
+
       - name: Package the unsigned installer + portable exe
         run: |
           set -euo pipefail

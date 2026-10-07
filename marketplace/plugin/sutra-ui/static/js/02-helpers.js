@@ -499,23 +499,61 @@ function applyProviderRequest(s, text){
   return switchChatProvider(s, want.target) === "busy";
 }
 
+/* A PROVIDER SWITCH ASKED FOR MID-REPLY WAITS; THE MESSAGE IS NEVER DROPPED
+   (founder 2026-09-28). The switch closes the socket, so it cannot happen until
+   the running reply ends -- but the message stays in the chat, marked queued
+   (queueState), and goes on its own the moment the pane is idle. Anything typed
+   after it waits behind it, so what runs is the order the operator typed. */
+function drainHeldTurns(sid){
+  const held = S.heldTurns[sid] || [];
+  const s = S.sessions.find(x => x.id === sid);
+  while (s && held.length){
+    if (applyProviderRequest(s, held[0].text)) break;   /* still mid-reply */
+    askClaude(s, held.shift().turn);
+  }
+  if (s && held.length){
+    S.chatProviderNote[sid] = "Queued — the switch happens and your message "
+      + "sends as soon as the current reply ends.";
+    setTimeout(() => drainHeldTurns(sid), 500);
+  } else delete S.heldTurns[sid];
+  render();
+}
+
 async function submitTurn(text, sessionId, opts){
   /* opts is optional: {pin:{department_ref}} from the Apps seeded chats */
-  const { session, result } = await runTask(text, sessionId, opts);
-  /* BEFORE askClaude, because the socket it would otherwise reuse is the one
-     bound to the OLD provider. After runTask, because the turn has to exist to
-     be rendered against and the classify round-trip is unrelated to this. */
-  if (applyProviderRequest(session, text)){
-    /* Refused for now (a reply is streaming). The turn was created by runTask
-       and would sit forever with no answer, so it is taken back out rather
-       than left as a ghost the operator has to wonder about. */
-    const i = session.turns.indexOf(result);
-    if (i !== -1) session.turns.splice(i, 1);
+  /* IN THE ORDER TYPED. Each message first waits on its own /api/classify
+     round-trip, and those can come back in any order, so a message typed
+     quickly after another could overtake it. Each one waits for the one before
+     it in the same chat to be HANDED OVER -- not answered: askClaude only sends. */
+  const order = S.submitOrder || (S.submitOrder = {}), key = sessionId || "";
+  const before = order[key] || Promise.resolve();
+  let handed;
+  order[key] = new Promise(r => { handed = r; });
+  await before;
+  try {
+    const { session, result } = await runTask(text, sessionId, opts);
+    const held = S.heldTurns && S.heldTurns[session.id];
+    if (held && held.length){ held.push({ text, turn: result }); render(); return; }
+    /* BEFORE askClaude, because the socket it would otherwise reuse is the one
+       bound to the OLD provider. After runTask, because the turn has to exist to
+       be rendered against and the classify round-trip is unrelated to this. */
+    if (applyProviderRequest(session, text)){
+      if (streamingFor(session.id) || sideStreamingFor(session.id)){
+        (S.heldTurns || (S.heldTurns = {}))[session.id] = [{ text, turn: result }];
+        drainHeldTurns(session.id);
+        return;
+      }
+      /* Refused for now (the provider table has not loaded). The turn was created
+         by runTask and would sit forever with no answer, so it is taken back out
+         rather than left as a ghost the operator has to wonder about. */
+      const i = session.turns.indexOf(result);
+      if (i !== -1) session.turns.splice(i, 1);
+      render();
+      return;
+    }
     render();
-    return;
-  }
-  render();
-  askClaude(session, result);
+    askClaude(session, result);
+  } finally { handed(); }
 }
 
 /* ══════════════════════ state ══════════════════════ */
@@ -633,7 +671,7 @@ const S = {
      persisted: deferring is not declining, and the update still applies on quit. */
   /* updDismissed holds the VERSION the operator waved away, not a boolean:
      dismissing 2.115.0 must not silence 2.116.0. */
-  updStaged:null, updLeft:null, updDeferred:false, updDismissed:null, updApplyError:null,
+  updStaged:null, updLeft:null, updDeferred:false, updDismissed:null, updClosed:null, updProgress:null, updApplyError:null,
   updFiring:false,
   /* A session is a run of turns. Each turn resolves to exactly ONE department (ADR-028);
      successive turns may land in different ones, which is how a session traces a path
@@ -854,8 +892,35 @@ function mdHtml(src){
     if (open) t += "\n```";
   }
 
+  const inline = x => x
+    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*\w])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+    .replace(/(^|[^_\w])_([^_\n]+)_/g, "$1<em>$2</em>")
+    .replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
+
+  /* DECISION CALLOUT. The readability gate writes a decision as a box of
+     box-drawing (or +---) characters, usually inside a fence. Rendered as
+     code that is mono text with literal borders in a dark well -- nothing
+     else in the pane looks like it. Lift it into a .md-callout: a thin
+     accent frame with the label sitting on the border (a fieldset legend),
+     no fill -- the founder's pick from six token-only variants, 2026-09-25.
+     Only a DECISION: box is lifted; any other fence or box is left exactly
+     as before. `lines` are already esc()'d. */
+  const BOX_ROW = /^[\s]*[|+│╭╰┌└]/;
+  const unboxRow = l => BOX_ROW.test(l)
+    ? l.replace(/^[\s|+\-=│╭╰┌└─]+/, "").replace(/[\s|+\-=│╭╰╮╯┐┘─]+$/, "")
+    : l.trim();
+  const decisionCallout = lines => {
+    const body = lines.map(unboxRow).filter(Boolean);
+    if (!body.length || !/^DECISION:\s*/.test(body[0])) return null;
+    body[0] = body[0].replace(/^DECISION:\s*/, "");
+    return '<fieldset class="md-callout md-callout-decision"><legend class="md-callout-k">Decision</legend>'
+      + '<div class="md-callout-b">' + inline(body.filter(Boolean).join(" ")) + "</div></fieldset>";
+  };
+
   t = t.replace(/```[ \t]*([A-Za-z0-9_+.#-]*)\n([\s\S]*?)```/g,
-    (m, lang, code) => park('<pre class="md-pre"><code>' + code.replace(/\n+$/, "") + "</code></pre>"));
+    (m, lang, code) => park(decisionCallout(code.split("\n"))
+      || '<pre class="md-pre"><code>' + code.replace(/\n+$/, "") + "</code></pre>"));
   t = t.replace(/`([^`\n]+)`/g, (m, c) => park('<code class="md-code">' + c + "</code>"));
   t = t.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (m, label, url) =>
     MD_URL_OK.test(url)
@@ -863,12 +928,6 @@ function mdHtml(src){
       : m);
   t = t.replace(/(^|[\s(])(https?:\/\/[^\s<>()\[\]]+)/g, (m, pre, url) =>
     pre + park('<a class="md-a" href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + "</a>"));
-
-  const inline = x => x
-    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/(^|[^*\w])\*([^*\n]+)\*/g, "$1<em>$2</em>")
-    .replace(/(^|[^_\w])_([^_\n]+)_/g, "$1<em>$2</em>")
-    .replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
 
   const rows = t.split("\n");
   const out = [];
@@ -903,6 +962,14 @@ function mdHtml(src){
       while (i < rows.length && /^\s*&gt;\s?/.test(rows[i])){ buf.push(rows[i].replace(/^\s*&gt;\s?/, "")); i++; }
       out.push('<blockquote class="md-q">' + inline(buf.join(" ")) + "</blockquote>");
       continue;
+    }
+
+    /* an UNFENCED decision box: a run of box rows whose content is DECISION: */
+    if (BOX_ROW.test(line)){
+      let j = i;
+      while (j < rows.length && BOX_ROW.test(rows[j])) j++;
+      const callout = decisionCallout(rows.slice(i, j));
+      if (callout){ out.push(callout); i = j; continue; }
     }
 
     const ul = /^(\s*)[-*+]\s+(.*)$/, ol = /^(\s*)\d+[.)]\s+(.*)$/;
@@ -1152,8 +1219,7 @@ function sessMenuHtml(s){
         <button type="button" data-act="rename-save" data-sid="${sid}">Save</button>
       </div></div>`;
   }
-  const real=!!s.real, grp=groupMap()[sid]||"";
-  const groups=[...new Set(Object.values(groupMap()))].filter(Boolean);
+  const real=!!s.real, arch=chatArchived(s);
   const mi=(act,label,extra="")=>`<button type="button" role="menuitem" data-act="${act}" data-sid="${sid}" ${extra}>${label}</button>`;
   /* Which assistant wrote this transcript. It used to be a tag on every row of
      the list; it is a fact about the file, wanted rarely, so it lives here. */
@@ -1166,15 +1232,11 @@ function sessMenuHtml(s){
     ${mi("open-finder","Finder")}
     ${mi("open-repo","Repository bar")}
     <div class="smdiv"></div>
-    ${mi("pin", isPinned(sid)?"Unpin":"Pin")}
-    ${mi("unread","Mark as unread")}
+    ${arch?"":mi("pin", isPinned(sid)?"Unpin":"Pin")}
+    ${arch?"":mi("unread","Mark as unread")}
     ${real?mi("rename","Rename…"):""}
     ${real?mi("fork","Fork"):""}
-    <div class="smsec">Move to group</div>
-    ${groups.map(g=>mi("group",(g===grp?"✓ ":"")+esc(g),`data-group="${esc(g)}"`)).join("")}
-    ${mi("group-new","New group…")}
-    ${grp?mi("group","Remove from group",'data-group=""'):""}
-    ${real?`<div class="smdiv"></div>${mi("archive","Archive")}
+    ${real?`<div class="smdiv"></div>${arch?mi("unarchive","Unarchive"):chatIsLive(s)?"":mi("archive","Archive")}
       <button type="button" role="menuitem" class="danger" data-act="delete" data-sid="${sid}">Delete</button>`:""}
   </div>`;
 }
@@ -1210,11 +1272,20 @@ function destFullBleed(d){
 }
 /* An INLINE destination keeps its rows (so destSel still means something) but
    shows them in the rail accordion instead of a second plane (2.226.0). */
-function destInline(d){ return DEST_INLINE.has(d); }
+/* 2026-09-27 (founder): "remove the org structure from the org ... in the
+   left-hand plane". An inline destination showing ONE row is a plain button:
+   no chevron, no sub-list, it opens that screen (the Help rule, 2026-08-24).
+   Org is one row, Org structure, while org2 is on; opted out, its Archive and
+   Library rows return and so does the accordion. */
+function destOneRow(d){
+  return DEST_INLINE.has(d) && planeRows(d).reduce((n, g) => n + g.rows.length, 0) <= 1;
+}
+function destInline(d){ return DEST_INLINE.has(d) && !destOneRow(d); }
 /* The ONE predicate for "no 240px plane column" (codex P1, 2026-08-25):
-   full-bleed (no rows) or inline (rows live in the rail). renderPlane and the
-   terminal clamp key off this; destSel routing keys off destFullBleed alone. */
-function destNoPlane(d){ return destFullBleed(d) || destInline(d); }
+   full-bleed (no rows) or inline (rows live in the rail, or the one row is the
+   button itself). renderPlane and the terminal clamp key off this; destSel
+   routing keys off destFullBleed alone. */
+function destNoPlane(d){ return destFullBleed(d) || DEST_INLINE.has(d); }
 
 function goDest(d){
   if (!DESTS.includes(d)) return;
@@ -1244,11 +1315,56 @@ function goDest(d){
       if (typeof o2EnsureRegistered === "function") o2EnsureRegistered();
       if (SCREENS.org2) fallback = "org2";
     }
-    const target = (sel && SCREENS[sel]) ? sel : fallback;
+    /* A ONE-ROW DESTINATION IS ITS OWN ROW (founder, 2026-09-28: "when I click
+       on Org the Adaptation screen is the only thing that comes"). Org has been
+       one row, Org structure, since 2026-09-25; the Library's shelves open by
+       their own screen id and openScreen records that shelf as Org's remembered
+       pick -- and with the accordion gone, nothing in the menu led back to the
+       tree: every Org click restored the shelf. When the button IS the row, the
+       button opens the row. Opted out, Org is an accordion again and the
+       remembered pick still restores, as every other accordion's does. */
+    const one = destOneRow(d) ? planeRows(d).flatMap(g => g.rows)[0] : null;
+    const target = (one && SCREENS[one.screen]) ? one.screen
+      : (sel && SCREENS[sel]) ? sel : fallback;
     if (typeof openScreen === "function" && SCREENS[target]) openScreen(target);
     else { S.ui.browseClosed = false; S.screen = target; }
   }
   saveLayout(); render();
+}
+
+/* The first screen at boot, from the restored destination and its remembered
+   pick: the rule goDest applies on a click. A one-row destination opens its
+   row, so Org lands on the one-screen Org whatever old row this Mac had saved
+   as Org's pick (found live 2026-09-28, Human Simulation run 2: the app opened
+   on the Departments chart with ids, every time). The one-screen Org registers
+   behind a flag SETTINGS may not have answered yet; it is asked to register
+   here and fails open, as on a click. null: chats keeps the browse pane shut. */
+function bootScreen(){
+  const d = S.ui.dest;
+  if (d === "chats") return null;
+  if (d === "org" && typeof o2EnsureRegistered === "function") o2EnsureRegistered();
+  const sel = (typeof destFullBleed === "function" && destFullBleed(d)) ? null : S.ui.destSel[d];
+  const one = (typeof destOneRow === "function" && destOneRow(d)) ? planeRows(d).flatMap(g => g.rows)[0] : null;
+  if (one && SCREENS[one.screen]) return one.screen;
+  const dflt = DEST_DEFAULT_SCREEN[d];
+  return (sel && SCREENS[sel]) ? sel : ((dflt && SCREENS[dflt]) ? dflt : S.screen);
+}
+
+/* A row can be feature-flagged (FLAG.md). With the flag off the row must not
+   render at all -- the byId fallback would otherwise show a bare id. Any flag
+   but workspace is opt-OUT: it renders unless settings.json carries an explicit
+   false. SETTINGS is null until /api/settings answers (and stays null if it
+   never does), so the guard must fail OPEN (codex fold 2026-09-08). offFlag is
+   the inverse (2026-09-25): the entry renders ONLY while that flag is opted out
+   -- Org's old rows, whose new home lives inside org2. One test for the rail's
+   rows, their group rows, and the Library panel's Archive (19-org2.js). */
+function destOptedOut(f){
+  return typeof SETTINGS !== "undefined" && !!SETTINGS && !!SETTINGS.flags && SETTINGS.flags[f] === false;
+}
+function destRowHidden(e){
+  return (e.flag === "workspace" && !(typeof wsFlagOn === "function" && wsFlagOn()))
+    || (!!e.flag && e.flag !== "workspace" && destOptedOut(e.flag))
+    || (!!e.offFlag && !destOptedOut(e.offFlag));
 }
 
 /* One destination's plane rows, decorated with railSpec()'s live counts. */
@@ -1264,17 +1380,9 @@ function planeRows(dest){
   };
   const groups = [];
   for (const entry of (DEST_PLANES[dest] || [])){
-    /* A row can be feature-flagged (FLAG.md). With the flag off the row must
-       not render at all — the byId fallback would otherwise show a bare id. */
-    if (entry.flag === "workspace" && !(typeof wsFlagOn === "function" && wsFlagOn())) continue;
-    /* Any other flagged row is opt-OUT: it renders unless settings.json carries
-       an explicit false. SETTINGS is null until /api/settings answers (and stays
-       null if it never does), so the guard must fail OPEN (codex fold 2026-09-08). */
-    if (entry.flag && entry.flag !== "workspace"
-        && typeof SETTINGS !== "undefined" && SETTINGS && SETTINGS.flags
-        && SETTINGS.flags[entry.flag] === false) continue;
+    if (destRowHidden(entry)) continue;
     /* (r5) the S92 foldsInto rows are gone from DEST_PLANES; no filter needed. */
-    if (entry.group) groups.push({ label: entry.group, rows: entry.rows.map(row) });
+    if (entry.group) groups.push({ label: entry.group, rows: entry.rows.filter(r => !destRowHidden(r)).map(row) });
     else {
       if (!groups.length || groups[groups.length-1].label) groups.push({ label:null, rows:[] });
       groups[groups.length-1].rows.push(row(entry));
@@ -1668,6 +1776,152 @@ function setHtmlIfChanged(el, html){
 }
 function invalidateHtmlCache(el){ if (el) el.__lastHtml = null; }
 
+/* ── chat search (founder, 2026-09-24: "titles, folders, headers. That's it.") ──
+   The box filters the rail by a chat's title, its folder, and the header it is
+   grouped under by name (department, routine). Transcript text is NOT searched.
+   Loaded rows filter on every keystroke; S.chatSearch holds the server's answer
+   for the same query (/api/sessions?q=), which reaches chats older than the
+   loaded page. Nothing here is persisted: a search is a moment, not a setting. */
+function chatSearchNorm(q){ return String(q == null ? "" : q).trim().toLowerCase(); }
+function chatMatches(s, q){
+  if (!q) return true;
+  if (!s) return false;
+  /* DEPARTMENTS, NOT FOLDERS (founder, 2026-09-25): the row shows its
+     department, so that is what matches; a folder match would light up a row
+     with nothing on it to say why. */
+  const d = s.department, r = s.routine;
+  return [s.title, d && d.name, r && r.routine]
+    .some(h => h && String(h).toLowerCase().includes(q));
+}
+/* Loaded rows first, then server rows not already listed; newest first. */
+function chatSearchList(q){
+  const seen = new Set(), out = [];
+  const take = s => { if (s && !seen.has(s.id) && chatMatches(s, q)){ seen.add(s.id); out.push(s); } };
+  (S.sessions || []).forEach(take);
+  const cs = S.chatSearch;
+  if (cs && cs.q === q) (cs.rows || []).forEach(take);
+  return out.sort((a,b)=>(b.updated_ms||b.created_ms||0)-(a.updated_ms||a.created_ms||0));
+}
+/* Escaped text with every case-insensitive hit of q wrapped in <mark>. */
+function hlq(text, q){
+  const t = String(text == null ? "" : text);
+  if (!q) return esc(t);
+  const low = t.toLowerCase();
+  if (low.length !== t.length) return esc(t);   /* a case fold changed length: no offsets to trust */
+  let i = 0, j, out = "";
+  while ((j = low.indexOf(q, i)) !== -1){
+    out += esc(t.slice(i, j)) + '<mark class="qhit">' + esc(t.slice(j, j + q.length)) + "</mark>";
+    i = j + q.length;
+  }
+  return out + esc(t.slice(i));
+}
+let _chatSearchTimer = null;
+/* Debounced server search. Only the answer to the CURRENT query is kept, so a
+   slow reply to an earlier keystroke can never overwrite a newer one. */
+function chatSearchRemote(){
+  clearTimeout(_chatSearchTimer);
+  const q = chatSearchNorm(S.chatQ);
+  if (!q){ S.chatSearch = null; return; }
+  S.chatSearch = { q, rows: [], pending: true };
+  _chatSearchTimer = setTimeout(() => {
+    apiGet("/api/sessions?limit=200&q=" + encodeURIComponent(q))
+      .then(rows => {
+        if (chatSearchNorm(S.chatQ) !== q) return;
+        S.chatSearch = { q, rows: (rows || []).map(realSessionFromRow), pending: false };
+        renderRail();
+      })
+      .catch(() => {
+        if (chatSearchNorm(S.chatQ) !== q) return;
+        S.chatSearch = { q, rows: [], pending: false, error: true };
+        renderRail();
+      });
+  }, 250);
+}
+function chatSearchOpen(){
+  S.chatSearchOpen = true;
+  renderRail();
+  const el = document.querySelector("[data-chatq]");
+  if (el){ el.focus(); el.select(); }
+}
+function chatSearchClose(){
+  clearTimeout(_chatSearchTimer);
+  S.chatSearchOpen = false; S.chatQ = ""; S.chatSearch = null;
+  const el = document.querySelector("[data-chatq]");
+  if (el) el.value = "";
+  renderRail();
+  const b = document.querySelector("[data-chatsearch=open]");
+  if (b) b.focus();
+}
+
+/* ── chat states (founder, 2026-09-25): Live, Pinned, Active, Archived ──────
+   LIVE is a chat running in this panel or being written right now. ARCHIVED is
+   a mark in Sutra's own store (chat_archive.py), set by the x on a row, the row
+   menu, or an agent; the server clears it by itself once a chat is written to
+   again, and a live chat never reads as archived here either. Every row reads
+   department · touched <when> · <how long ago>. */
+function chatIsLive(s){
+  return !!(s && (sessionBusy(s.id) || (s.real && liveHeld(s))));
+}
+function chatArchived(s){
+  return !!(s && s.real && s.archived && !chatIsLive(s));
+}
+function chatAgo(ms, now){
+  if (!ms) return "";
+  const s = Math.max(0, Math.floor(((now || Date.now()) - ms) / 1000));
+  if (s < 60) return "now";
+  if (s < 3600) return Math.floor(s / 60) + " min ago";
+  if (s < 86400) return Math.floor(s / 3600) + " h ago";
+  const d = Math.floor(s / 86400);
+  if (d < 14) return d + (d === 1 ? " day ago" : " days ago");
+  if (d < 60) return Math.floor(d / 7) + " weeks ago";
+  return Math.floor(d / 30) + " months ago";
+}
+function chatTouched(ms){
+  if (!ms) return "";
+  const t = new Date(ms);
+  const mon = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][t.getMonth()];
+  const hh = String(t.getHours()).padStart(2, "0"), mm = String(t.getMinutes()).padStart(2, "0");
+  return t.getDate() + " " + mon + ", " + hh + ":" + mm;
+}
+/* The second line of every row. Badges (running / live / agents) stay first,
+   as rowMeta drew them; a transcript that cannot be read still says so. */
+function chatLine(s, q, now){
+  const meta = rowMeta(s);
+  const badge = meta.replace(/<span>(not opened yet|opening…|\d+ turns?)<\/span>$/, "");
+  const dept = (s.department && s.department.name) || "No department";
+  const ms = s.updated_ms || s.created_ms;
+  const by = s.archived && s.archived_by && s.archived_by !== "you"
+    ? ` · archived by ${esc(s.archived_by)}` : "";
+  /* One line in a 300 px rail: department, then when it was last touched.
+     How long ago sits at the right of the title line (chatAgo, sessRow),
+     because on this line it was the part the ellipsis cut. */
+  return badge + `<span class="rdept">${hlq(dept, q)}</span>`
+    + (ms ? `<span title="Last touched ${esc(chatTouched(ms))}">· ${esc(chatTouched(ms))}${by}</span>` : "");
+}
+/* Archive with the fold motion: the row closes up (panel.css .arch-out),
+   then the list re-renders with the chat under Archived. */
+function chatArchive(sid){
+  const s = S.sessions.find(x => x.id === sid);
+  if (!s || !s.real) return;
+  S.sessMenu = null;
+  const li = document.querySelector('.srow[data-sid="' + sid + '"]');
+  if (li) li.classList.add("arch-out");
+  S.archTick = Date.now();
+  setTimeout(() => {
+    s.archived = true; s.archived_by = "you";
+    renderRail();
+    apiPost("/api/sessions/" + encodeURIComponent(sid) + "/archive", {})
+      .catch(e => { s.archived = false; S.toast = "archive failed: " + e.message; render(); });
+  }, 200);
+}
+function chatUnarchive(sid){
+  const s = S.sessions.find(x => x.id === sid);
+  if (!s) return;
+  s.archived = false; s.archived_by = null;
+  apiPost("/api/sessions/" + encodeURIComponent(sid) + "/unarchive", {})
+    .catch(e => { S.toast = "could not bring the chat back: " + e.message; render(); });
+}
+
 function renderRail(){
   const nav = document.getElementById("railnav");
   /* The one-screen Org (19-org2.js) registers its screen here, on the first paint
@@ -1712,6 +1966,22 @@ function renderRail(){
      accountable department, so the session list and the org chart are the same tree. */
   document.querySelectorAll("[data-sgroup]").forEach(b=>
     b.setAttribute("aria-pressed", String(S.sgroup===b.dataset.sgroup)));
+  /* The rows every grouping below draws: the whole list, or the search's
+     matches while the box holds a query. */
+  const q = S.chatSearchOpen ? chatSearchNorm(S.chatQ) : "";
+  const LIST = q ? chatSearchList(q) : S.sessions;
+  const rtog = document.querySelector(".rtoggle"), rsrch = document.querySelector(".rsearch");
+  if (rtog && rsrch){
+    rtog.hidden = !!S.chatSearchOpen;
+    rsrch.hidden = !S.chatSearchOpen;
+    const cnt = rsrch.querySelector(".rscount");
+    const pend = !!(S.chatSearch && S.chatSearch.q === q && S.chatSearch.pending);
+    const n = LIST.length;
+    if (cnt) cnt.textContent = !q ? ""
+      : n ? n + " chat" + (n === 1 ? "" : "s") + " match" + (n === 1 ? "es" : "")
+            + (pend ? ", searching older chats…" : "")
+      : pend ? "Searching all chats…" : "No chat matches";
+  }
   const bucket = ms => {
     const d = Math.floor((NOW - ms)/DAY);
     return d<=0 ? "Today" : d===1 ? "Yesterday" : d<=7 ? "Previous 7 days"
@@ -1726,9 +1996,14 @@ function renderRail(){
       <button type="button" class="rowopen" data-open="${sid}"
           aria-current="${open}"
           title="${esc(s.real ? (s.cwd || s.project || "") : "started in this panel")}">
-        <span class="t">${isUnread(sid)?'<span class="udot" aria-label="unread"></span>':""}${esc(s.title)}</span>
-        <span class="m">${sessMeta(s)}${trail||""}</span>
+        <span class="t">${isUnread(sid)?'<span class="udot" aria-label="unread"></span>':""}${hlq(s.title, q)}</span>${
+          (s.updated_ms || s.created_ms) ? `<span class="rago">${esc(chatAgo(s.updated_ms || s.created_ms))}</span>` : ""}
+        <span class="m">${chatLine(s, q)}${trail||""}</span>
       </button>
+      ${s.real && !chatArchived(s) && !chatIsLive(s) ? `<button type="button" class="rowarch"
+          data-chatarchive="${sid}" aria-label="Archive this chat" title="Archive">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>` : ""}
       <button type="button" class="rowmenu" data-sessmenu="${sid}"
           aria-haspopup="true" aria-expanded="${S.sessMenu===sid}"
           aria-label="Actions for ${esc(s.title)}">
@@ -1806,21 +2081,46 @@ function renderRail(){
 
   let html = "";
   if (S.sgroup === "recent"){
+    /* LIVE, PINNED, ACTIVE, ARCHIVED (founder, 2026-09-25). Each chat shows
+       once, first match wins: a running chat sits in Live even when pinned or
+       archived; an archived chat sits in Archived even when pinned. Active is
+       grouped by day of last touch, as Recent always was. */
+    const live = [], pinned = [], active = [], arch = [];
+    LIST.forEach(s => {
+      if (chatIsLive(s)) live.push(s);
+      else if (chatArchived(s)) arch.push(s);
+      else if (isPinned(s.id)) pinned.push(s);
+      else active.push(s);
+    });
+    const held = s => s.turns.some(t=>t.mode==="floor")
+      ? '<span style="color:var(--warn)">held</span>' : "";
+    const rows = list => `<ul class="rlist">${list.map(s=>sessRow(s, held(s))).join("")}</ul>`;
+    const PIN_SVG = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M9 4h6l-1 6 4 4H6l4-4z M12 14v6"/></svg>`;
+    const head = (cls, icon, label, n) =>
+      `<div class="rgrp rsec ${cls}">${icon}${label}<span class="rsecn">${n}</span></div>`;
+    if (live.length) html += head("rlive", '<span class="rlivedot" aria-hidden="true"></span>', "Live", live.length) + rows(live);
+    if (pinned.length) html += head("rpin", PIN_SVG, "Pinned", pinned.length) + rows(pinned);
     const order = ["Today","Yesterday","Previous 7 days","Previous 30 days","Older"];
     const g = {};
-    S.sessions.forEach(s=>{ const k=bucket(s.updated_ms||s.created_ms); (g[k]=g[k]||[]).push(s); });
-    const wsDiffer = workspacesDiffer(S.sessions);   /* once per render, see workspaceLabel */
-    html = order.filter(k=>g[k]).map(k=>`
-      <div class="rgrp">${k}</div>
-      <ul class="rlist">${pinFirst(g[k]).map(s=>{
-        const ds = deptsOf(s);
-        const held = s.turns.some(t=>t.mode==="floor");
-        const ws = s.real ? workspaceLabel(s, S.sessions, wsDiffer) : "";
-        const trailTxt = s.real ? ws : (ds.length?ds.join(" → "):"—");
-        const trail = (trailTxt ? `<span>${esc(trailTxt)}</span>` : "")
-          + (held?'<span style="color:var(--warn)">held</span>':"");
-        return sessRow(s, trail);}).join("")}</ul>`).join("");
-    if (!S.sessions.length) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
+    active.forEach(s=>{ const k=bucket(s.updated_ms||s.created_ms); (g[k]=g[k]||[]).push(s); });
+    html += order.filter(k=>g[k]).map(k=>`<div class="rgrp">${k}</div>${rows(g[k])}`).join("");
+    /* ARCHIVED, folded at the bottom. Open while a search is running, so a
+       matching archived chat is never hidden behind a fold. */
+    if (arch.length){
+      const open = !!(S.ui.archOpen || q);
+      const shown = S.ui.archShow || 50;
+      const tick = S.archTick && Date.now() - S.archTick < 1200 ? " tick" : "";
+      html += `<div class="rarch${open ? " open" : ""}">
+        <button type="button" class="rarchtog" data-archtoggle aria-expanded="${open}">
+          <svg class="rgchev" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16v3H4z M5 10v9h14v-9 M10 14h4"/></svg>
+          Archived<span class="rsecn${tick}">${arch.length}</span></button>
+        ${open ? rows(arch.slice(0, shown)) + (arch.length > shown
+          ? `<button type="button" class="rarchmore" data-archmore>Show ${arch.length - shown} more</button>` : "") : ""}
+      </div>`;
+    }
+    if (q && !LIST.length) html = "";
+    else if (!S.sessions.length) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
       ${S.sessionsError
         ? `Could not read <code>~/.claude/projects</code> — ${esc(S.sessionsError)}.
            Nothing is claimed here about what is or is not on disk.`
@@ -1840,7 +2140,7 @@ function renderRail(){
        the fold state and the chevron come from the same code rather than a
        second implementation that drifts. */
     const g = {};
-    S.sessions.forEach(s=>{
+    LIST.forEach(s=>{
       const r = s.routine; if (!r || !r.routine) return;
       (g[r.routine] = g[r.routine] || {id:r.routine, items:[], ok:0, failed:0}).items.push(s);
     });
@@ -1859,7 +2159,7 @@ function renderRail(){
         ? `<span class="rgfail${bad?" all":""}">${gr.failed} failed${
              bad ? ", never succeeded" : ""}</span>`
         : "";
-      return deptGroup("rtn:" + gr.id, esc(gr.id) + health, uniq, "",
+      return deptGroup("rtn:" + gr.id, hlq(gr.id, q) + health, uniq, "",
                        s => { const oc=(s.routine||{}).outcome;
                               return `<span>${esc(oc || "—")}</span>`; });
     }).join("");
@@ -1867,7 +2167,7 @@ function renderRail(){
        produced are left out of this view entirely rather than collected in a
        "Not from a routine" group -- they already live in Recent and Dept, and
        repeating them here buried the routines under ~200 unrelated rows. */
-    if (!html) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
+    if (!html && !q) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
       No routine has recorded a run yet. A routine writes its chat here the first
       time it fires.</p>`;
   } else {
@@ -1924,7 +2224,7 @@ function renderRail(){
       if (dropped) saveLayout();
     }
     const g = {};
-    S.sessions.forEach(s=>{
+    LIST.forEach(s=>{
       const d = s.department; if (!d || !d.ref) return;
       (g[d.ref] = g[d.ref] || {dept:d, items:[]}).items.push(s);
     });
@@ -1941,7 +2241,8 @@ function renderRail(){
 
        GUARDED ON DOMAINS: with the tree unloaded this adds nothing and the
        view degrades to exactly its old behaviour rather than emptying. */
-    const imported = (Array.isArray(DOMAINS) ? DOMAINS : []).filter(d => d && d.cwd);
+    /* Not while searching: an empty department heading is not a match. */
+    const imported = q ? [] : (Array.isArray(DOMAINS) ? DOMAINS : []).filter(d => d && d.cwd);
     imported.forEach(d => {
       const slot = g[d.ref] || (g[d.ref] = {dept:{ref:d.ref, name:d.name, cwd:d.cwd},
                                             items:[]});
@@ -1979,7 +2280,7 @@ function renderRail(){
                      aria-label="New chat in ${esc(dept.name)}">+</button>`
           : "";
         return deptGroup("dept:" + dept.ref,
-                         `${path?esc(path)+" ":""}${esc(dept.name)}`,
+                         `${path?esc(path)+" ":""}${hlq(dept.name, q)}`,
                          uniq, plus, undefined, total);
       }).join("");
     /* One reason per chat, stated rather than guessed -- the 2026-09-02 rule,
@@ -1997,7 +2298,7 @@ function renderRail(){
       : SCRATCH.some(p => s.cwd === p || s.cwd.startsWith(p + "/"))
               ? "scratch folder, not imported"
       :         "folder is not an imported project";
-    const unfiled = S.sessions.filter(s => !filed.has(s.id));
+    const unfiled = LIST.filter(s => !filed.has(s.id));
     /* The catch-all collapses like any other group -- on a machine with a lot
        of scratch work it is the longest one on the list, and it is the one
        whose contents you least often need open. Its key is a constant rather
@@ -2009,7 +2310,7 @@ function renderRail(){
     /* Empty now means EMPTY -- with the partition in place the only way to
        render nothing is to have no sessions at all, so this says that and
        stops claiming anything about where the missing ones went. */
-    if (!html) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
+    if (!html && !q) html = `<p style="padding:10px 12px;font-size:11px;color:var(--faint)">
       ${S.sessionsError
         ? `Could not read <code>~/.claude/projects</code> — ${esc(S.sessionsError)}.
            Nothing is claimed here about what is or is not on disk.`
@@ -2305,3 +2606,131 @@ function toolKindFor(call){
   if (c.kind && TOOL_KINDS.includes(c.kind)) return c.kind;
   return toolKindOf(c.name, c.meta);
 }
+
+/* SNACK BAR -- founder 2026-09-26: "any kind of error messaging: a snack bar
+   should come in the bottom right." One place for an action that failed, an
+   uncaught error, or the backend going away. Screen-load errors stay inside
+   the screen that failed (a snack over an empty pane explains nothing) and
+   field validation stays beside its field.
+
+   snack(msg, {kind:"error"|"info"|"ok", action, onAction})
+   snackError(e, prefix)  -- an Error or string, as an error
+   toast(msg)             -- the name 03-org.js and 21-library.js already call
+                             (it was never defined, so their messages were lost)
+
+   Text goes in as textContent, never HTML. The same message twice counts up
+   instead of stacking; at most SNACK_MAX are on screen; errors stay longer
+   than notices and hovering holds them. The stack sits above the update card.
+
+   No module-level constants: if anything earlier in this file throws at load,
+   a `const` here would never initialise and the error net would fail with it.
+   Function declarations hoist, so the snack bar still works. */
+function snackHost(){
+  if (typeof document === "undefined" || !document.body) return null;
+  let h = document.getElementById("snackHost");
+  if (!h){
+    h = document.createElement("div");
+    h.id = "snackHost";
+    h.setAttribute("aria-live", "polite");
+    document.body.appendChild(h);
+  }
+  return h;
+}
+
+/* Lift the stack clear of the update card, which owns the corner below it. */
+function snackReflow(){
+  if (typeof document === "undefined") return;
+  const h = document.getElementById("snackHost");
+  if (!h || !h.style) return;
+  const upd = document.getElementById("updHost");
+  const tall = upd && upd.offsetHeight ? upd.offsetHeight : 0;
+  h.style.bottom = (tall ? 16 + tall + 10 : 16) + "px";
+}
+
+function snackArm(el, kind){
+  clearTimeout(el.__snackTimer);
+  const ms = kind === "info" ? 4500 : kind === "ok" ? 3500 : 9000;   /* errors stay to be read */
+  el.__snackTimer = setTimeout(() => snackClose(el), ms);
+}
+
+function snackClose(el){
+  if (!el) return;
+  clearTimeout(el.__snackTimer);
+  if (el.parentNode) el.parentNode.removeChild(el);
+}
+
+function snack(msg, opts){
+  const o = opts || {};
+  const kind = (o.kind === "info" || o.kind === "ok") ? o.kind : "error";
+  const text = String(msg == null ? "" : msg).trim() || "Something went wrong.";
+  const host = snackHost();
+  if (!host) return null;
+  snackReflow();
+  const live = () => Array.from(host.children).filter(c => c.__snackText != null);
+  for (const old of live()){
+    if (old.__snackText === text && old.__snackKind === kind){
+      old.__snackCount += 1;
+      const n = old.querySelector(".snack-n");
+      if (n) n.textContent = "x" + old.__snackCount;
+      snackArm(old, kind);
+      return old;
+    }
+  }
+  const el = document.createElement("div");
+  el.className = "snack snack-" + kind;
+  el.setAttribute("role", kind === "error" ? "alert" : "status");
+  el.__snackText = text; el.__snackKind = kind; el.__snackCount = 1;
+  const t = document.createElement("span"); t.className = "snack-t"; t.textContent = text;
+  const n = document.createElement("span"); n.className = "snack-n";
+  el.appendChild(t); el.appendChild(n);
+  if (o.action && typeof o.onAction === "function"){
+    const a = document.createElement("button");
+    a.type = "button"; a.className = "snack-a"; a.textContent = o.action;
+    a.onclick = () => { snackClose(el); o.onAction(); };
+    el.appendChild(a);
+  }
+  const x = document.createElement("button");
+  x.type = "button"; x.className = "snack-x"; x.textContent = "×";
+  x.setAttribute("aria-label", "Close");
+  x.onclick = () => snackClose(el);
+  el.appendChild(x);
+  el.onmouseenter = () => clearTimeout(el.__snackTimer);
+  el.onmouseleave = () => snackArm(el, kind);
+  host.appendChild(el);
+  const all = live();
+  while (all.length > 3) snackClose(all.shift());            /* at most three on screen */
+  snackArm(el, kind);
+  return el;
+}
+
+function snackError(e, prefix){
+  const m = String((e && e.message) || e || "").trim();
+  return snack(prefix ? prefix + (m ? ": " + m : "") : m, { kind: "error" });
+}
+
+/* The legacy callers pass HTML-escaped text; show it as the words it was. */
+function toast(msg){
+  const t = String(msg == null ? "" : msg)
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+  const bad = /\b(could not|couldn't|cannot|can't|failed|fail|error|refused|denied)\b/i.test(t);
+  return snack(t, { kind: bad ? "error" : "info" });
+}
+
+/* The net under everything else: an error nothing caught still reaches the
+   founder. Browser noise that is not a failure is left out. */
+function snackIgnorable(m){
+  return !m || /ResizeObserver loop|^Script error\.?$/i.test(m);
+}
+if (typeof window !== "undefined" && window.addEventListener){
+  window.addEventListener("error", (ev) => {
+    const m = String((ev && (ev.message || (ev.error && ev.error.message))) || "");
+    if (!snackIgnorable(m)) snack("Something went wrong: " + m, { kind: "error" });
+  });
+  window.addEventListener("unhandledrejection", (ev) => {
+    const r = ev && ev.reason;
+    const m = String((r && r.message) || r || "");
+    if (!snackIgnorable(m)) snack("Something went wrong: " + m, { kind: "error" });
+  });
+}
+/* /SNACK BAR */

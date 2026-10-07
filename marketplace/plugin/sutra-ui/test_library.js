@@ -50,7 +50,8 @@ const L = Object.assign({}, sandbox.module.exports,
                         { SCREENS: sandbox.SCREENS, TITLES: sandbox.TITLES });
 
 /* ── 1. registration ───────────────────────────────────────────────────── */
-check("seven shelves are named", L.LIB_SHELVES.length === 7, String(L.LIB_SHELVES.length));
+check("eight shelves are named", L.LIB_SHELVES.length === 8, String(L.LIB_SHELVES.length));
+check("artifacts is one of them", L.LIB_SHELVES.indexOf("artifacts") >= 0);
 for (const sh of L.LIB_SHELVES){
   check("screen registered: " + sh, typeof L.SCREENS["lib-" + sh] === "function");
   check("title registered: " + sh, Array.isArray(L.TITLES["lib-" + sh]));
@@ -183,6 +184,22 @@ html = L.libListHtml(NASTY, "identity");
 check("a name is escaped", !html.includes("<script>bad"));
 check("a tag is escaped", !html.includes("<img src=x>"));
 check("a quote is escaped", html.includes("&quot;quoted&quot;"));
+
+/* ── 8. the way back (founder, 2026-09-28: "I'm not able to go back") ─── */
+html = L.libHeadHtml(HEAD, "identity");
+check("the head carries the app's back control", /class="sxback"[^>]*data-libback="org2"/.test(html));
+check("the back control reads Org", />Org<\/button>/.test(html));
+check("no second control is invented for it", !/class="lb[a-z]*back/.test(html));
+const opened = [], o2st = { lib: false };
+sandbox.openScreen = id => opened.push(id);
+sandbox.o2S = () => o2st;
+const click = sel => listeners[0][1]({ target: { closest: s => (s === sel ? { getAttribute: () => "org2" } : null) } });
+click("[data-libback]");
+check("back opens Org structure", opened.length === 1 && opened[0] === "org2", JSON.stringify(opened));
+check("back lands with the Library list open", o2st.lib === true);
+L.libBack();
+check("libBack is the one path", opened.length === 2 && opened[1] === "org2");
+delete sandbox.openScreen; delete sandbox.o2S;
 
 console.log(N + " checks, " + FAIL.length + " failed");
 FAIL.forEach(f => console.log("  FAIL " + f));

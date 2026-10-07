@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Library by one icon &mdash; design v2</title>
+<!-- Library by ONE ICON (2026-09-24, founder: "you can just have it as an icon on the
+     top somewhere and just do it that way"). The lighter answer to the same ask: the
+     Org tree is untouched, and one button in the panel's own top row swaps that panel
+     between the departments and the Library's seven shelves.
+     Markup and css are the app's own (library-assets/). The .o2lib block is the only
+     addition. Nothing is built. -->
+<link rel="stylesheet" href="library-assets/panel.css">
+<link rel="stylesheet" href="library-assets/workspace.css">
+<link rel="stylesheet" href="library-assets/agents.css">
+<style>
+html,body{height:auto;overflow:auto}
+body{background:#ECEAE6;padding:26px 18px 70px}
+.wrap{height:auto;overflow:visible;max-width:1320px;margin:0 auto}
+.cap{font:12.5px/1.6 var(--sans);color:var(--muted);margin:0 0 9px}
+.cap b{color:var(--ink);font-weight:600}
+.app{display:block !important;height:700px;position:relative;margin:0 0 30px;
+  border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;
+  background:var(--card)}
+.mtbl{width:100%;border-collapse:collapse;font:12px/1.5 var(--sans);margin:0 0 28px;background:var(--card);
+  border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.mtbl th,.mtbl td{padding:7px 11px;text-align:left;border-bottom:1px solid var(--line-soft);vertical-align:top}
+.mtbl th{font:600 10px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+.mtbl tr:last-child td{border-bottom:0}
+.mtbl td b{color:var(--ink)}
+h2.mh{font:600 15px/1.3 var(--serif);color:var(--ink);margin:28px 0 8px}
+
+/* ═══ ONE ICON, TWO PANELS ═══════════════════════════════════════════════════
+   What a builder ports. The whole feature is one button and one swapped list;
+   the tree, its search and its filter are untouched. */
+
+/* ── 1. THE BUTTON ───────────────────────────────────────────────────────
+   It sits in the panel's own top row, to the right of the search, beside the
+   filter funnel -- the row that already holds the controls for what this
+   panel shows. Pressed it reads as pressed, the way every toggle in the app
+   does, so nothing new has to be learned. */
+.o2libbtn{width:26px;height:26px;flex:none;display:inline-flex;align-items:center;
+  justify-content:center;border:1px solid transparent;border-radius:7px;background:none;
+  color:var(--faint);cursor:pointer}
+.o2libbtn:hover{color:var(--ink);background:var(--acc-bg)}
+.o2libbtn[aria-pressed="true"]{color:var(--acc);border-color:var(--acc);background:var(--acc-bg)}
+.o2libbtn svg{width:15px;height:15px}
+
+/* ── 2. THE PANEL, IN ITS OTHER STATE ────────────────────────────────────
+   Same panel, same width, same row height: only the CONTENT changes, so the
+   swap reads as one place showing two things rather than two places. */
+.o2libhead{display:flex;align-items:center;gap:7px;padding:8px 12px 6px}
+.o2libhead b{font:600 11.5px/1.3 var(--sans);color:var(--ink)}
+.o2libhead span{font:10.5px/1.3 var(--mono);color:var(--faint);margin-left:auto}
+.o2libgrp{margin:8px 0 2px;padding:0 12px;font:600 9px/1.4 var(--mono);
+  letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.o2librow{display:flex;align-items:center;gap:8px;margin:0 6px;padding:6px 8px;
+  border-radius:6px;font:12.5px/1.45 var(--sans);color:var(--ink);cursor:pointer}
+.o2librow:hover{background:var(--acc-bg)}
+.o2librow[aria-selected="true"]{background:var(--acc-bg);color:var(--acc)}
+.o2librow svg{width:15px;height:15px;flex:none;color:var(--faint)}
+.o2librow[aria-selected="true"] svg{color:var(--acc)}
+.o2librow .ct{margin-left:auto;font:10px/1 var(--mono);color:var(--faint)}
+.o2librow[aria-selected="true"] .ct{color:var(--acc)}
+
+/* mock-only scaffolding: the org screen alone, outside the app's three-track grid */
+.o2{display:flex !important;height:100%;background:var(--card)}
+.o2left{height:100%;width:268px;flex:none;border-right:1px solid var(--line-soft);
+  overflow:auto;padding:10px 0 20px;background:var(--card)}
+.o2main{display:block !important;flex:1 1 auto;min-width:0;height:100%;overflow:auto;
+  background:var(--card)}
+.o2tree{padding:4px 0}
+.o2row{display:flex;align-items:center;gap:6px;padding:5px 10px 5px calc(10px + var(--d,0) * 13px);
+  font:12.5px/1.45 var(--sans);color:var(--ink);cursor:pointer;border-radius:6px;margin:0 6px}
+.o2row:hover{background:var(--acc-bg)}
+.o2row[aria-selected="true"]{background:var(--acc-bg);color:var(--acc)}
+.o2chev{width:13px;height:13px;flex:none;color:var(--faint);display:flex;align-items:center}
+.o2search{display:flex;align-items:center;gap:7px;padding:0 12px 8px;color:var(--faint)}
+.o2search input{flex:1;min-width:0}
+.o2strip{padding:12px 18px 0;border-bottom:1px solid var(--line-soft)}
+.o2strip h2{font:600 16px/1.3 var(--serif);color:var(--ink);margin:0 0 10px}
+.lbpage{padding:16px 20px 30px;max-width:900px}
+.lbhead{margin:0 0 4px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.lbhead h2{font:600 19px/1.25 var(--serif);color:var(--ink);margin:0}
+.lbsub{font:13px/1.65 var(--sans);color:var(--muted);margin:0 0 4px;max-width:70ch}
+.lbtabrow{display:flex;align-items:center;gap:12px;margin:14px 0 0;
+  border-bottom:1px solid var(--line);padding-bottom:9px}
+.lbtabrow .tabs{margin-left:0}
+.lbtabcount{font:11.5px/1 var(--mono);color:var(--faint);margin-left:auto}
+.lbpane{padding:18px 0 0}
+.lbfilter{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+.lbfilter .dptag{cursor:pointer;font-size:10.5px;padding:3px 8px}
+.lbfilter .dptag.on{color:var(--acc);border-color:var(--acc);background:var(--acc-bg)}
+.lbfl{font:600 9.5px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin-right:3px}
+.lbmade{border:1px solid var(--line);border-radius:9px;background:var(--card);overflow:hidden}
+.lbrow{display:flex;flex-wrap:wrap;align-items:center;gap:7px 12px;padding:10px 12px;
+  border-bottom:1px solid var(--line-soft)}
+.lbmade .lbrow:last-child{border-bottom:0}
+.lbrow>b{flex:1 1 150px;min-width:0;font:600 13px/1.35 var(--sans);color:var(--ink)}
+.lbrow>b span{display:block;font:10px/1.4 var(--mono);color:var(--faint);font-weight:400}
+.lbrow .lbuse{flex:2 1 220px;min-width:0;font:12px/1.5 var(--sans);color:var(--muted)}
+.lbtags{display:flex;gap:5px;flex-wrap:wrap}
+.lbrow>.btn{margin-left:auto;flex:none}
+.lbnote{border-left:2px solid var(--line);padding:2px 0 2px 11px;margin:14px 0 0;
+  font:12px/1.65 var(--sans);color:var(--muted);max-width:66ch}
+.lbnote b{color:var(--ink);font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<p class="cap"><b>Library by one icon &mdash; design v2, 2026-09-24.</b> The lighter answer to
+the same ask. The Org tree is <b>untouched</b>; one button in the panel's own top row swaps
+that panel between the departments and the seven shelves. Two screens: off, and on.</p>
+
+<h2 class="mh">The three decisions</h2>
+<table class="mtbl">
+  <tr><th>Question</th><th>What this draws</th><th>The other way</th></tr>
+  <tr><td>Where the icon sits</td>
+      <td>In the <b>left panel's own top row</b>, beside the search and the filter, the row that already decides what this panel shows</td>
+      <td>In the main pane's title strip, which is about the thing selected, not about the list</td></tr>
+  <tr><td>What pressing it does</td>
+      <td><b>Swaps the panel</b>: same width, same rows, different content. Pressed reads as pressed</td>
+      <td>Opens a shelf on the right and leaves the tree, which puts two lists on screen competing</td></tr>
+  <tr><td>How you get back</td>
+      <td>Press it again. Nothing is lost: the tree reopens where it was</td>
+      <td>A back arrow, which is a second idea for one toggle</td></tr>
+</table>
+
+<h2 class="mh">Screen 1 &mdash; the icon, not pressed</h2>
+<p class="cap">The Org screen exactly as it is today, plus one quiet button at the end of the
+search row. Nothing else moves.</p>
+
+<div class="app" style="height:420px">
+  <div class="o2">
+    <div class="o2left">
+      <div class="o2search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input type="search" placeholder="Search" value="">
+        <button class="o2libbtn" type="button" aria-pressed="false" title="The Library: the kinds a department is built from">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M11 4h3.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11z"/><path d="M18.4 6.2l2.1 12"/></svg>
+        </button>
+      </div>
+      <div class="o2tree" role="tree">
+        <div role="treeitem" class="o2row o2k-org" style="--d:0"><span class="o2chev"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></span><span class="o2name">Sutra</span></div>
+        <div role="treeitem" class="o2row o2k-org" style="--d:1"><span class="o2chev"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></span><span class="o2name">Asawa Holding</span></div>
+        <div role="treeitem" class="o2row o2k-dept" aria-selected="true" style="--d:2"><span class="o2chev"></span><span class="o2name">Experience</span></div>
+        <div role="treeitem" class="o2row o2k-dept" style="--d:2"><span class="o2chev"></span><span class="o2name">Research</span></div>
+        <div role="treeitem" class="o2row o2k-dept" style="--d:2"><span class="o2chev"></span><span class="o2name">Observability</span></div>
+        <div role="treeitem" class="o2row o2k-dept" style="--d:2"><span class="o2chev"></span><span class="o2name">Deckem</span></div>
+        <div role="treeitem" class="o2row o2k-dept" style="--d:2"><span class="o2chev"></span><span class="o2name">Paisa</span></div>
+      </div>
+    </div>
+    <div class="o2main">
+      <div class="o2strip"><h2>Experience</h2></div>
+      <div class="lbpage"><p class="lbsub">The department's own screen, unchanged.</p></div>
+    </div>
+  </div>
+</div>
+
+<h2 class="mh">Screen 2 &mdash; the icon, pressed</h2>
+<p class="cap">The same panel, same width, same row height. Only the content changed: the seven
+shelves in their two groups, each with its mark and its count. <b>Work atom</b> is open on the
+right with its Skills tab.</p>
+
+<div class="app">
+  <div class="o2">
+    <div class="o2left">
+      <div class="o2search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input type="search" placeholder="Search the Library" value="">
+        <button class="o2libbtn" type="button" aria-pressed="true" title="Back to the departments">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H9v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M11 4h3.5A1.5 1.5 0 0 1 16 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11z"/><path d="M18.4 6.2l2.1 12"/></svg>
+        </button>
+      </div>
+
+      <div class="o2libhead"><b>Library</b><span>press again for departments</span></div>
+
+      <div class="o2libgrp">Functions</div>
+      <div class="o2librow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg>Identity<span class="ct">3</span></div>
+      <div class="o2librow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 16a8 8 0 0 1 16-8"/><path d="M20 8v4h-4"/><path d="M20 12a8 8 0 0 1-16 4"/></svg>Adaptation<span class="ct">3</span></div>
+      <div class="o2librow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 6h14M5 12h9M5 18h5"/></svg>Priority<span class="ct">3</span></div>
+      <div class="o2librow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="7" cy="8" r="2.6"/><circle cx="17" cy="16" r="2.6"/><path d="M9.4 9.6l5.2 4.8"/></svg>Coordination<span class="ct">3</span></div>
+      <div class="o2librow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 12.5l4 4 10-10"/></svg>Audit<span class="ct">3</span></div>
+
+      <div class="o2libgrp">Parts</div>
+      <div class="o2librow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>Engines<span class="ct">6</span></div>
+      <div class="o2librow" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 10h8M8 14h5"/></svg>Work atom<span class="ct">204</span></div>
+    </div>
+
+    <div class="o2main">
+      <div class="o2strip"><h2>Library &rsaquo; Work atom</h2></div>
+      <div class="lbpage">
+        <div class="lbhead"><h2>Work atom</h2><span class="dptag">Part</span></div>
+        <p class="lbsub">One goal with one check that flips. Everything a department does is one of
+          these, whether you wrote it, a function proposed it, or an engine opened it on a run.</p>
+        <div class="lbtabrow">
+          <div class="tabs dptabs">
+            <button type="button" aria-pressed="false">About</button>
+            <button type="button" aria-pressed="true">Skills</button>
+          </div>
+          <span class="lbtabcount">7 parts &middot; 204 skills to draw on</span>
+        </div>
+        <div class="lbpane">
+          <div class="lbfilter"><span class="lbfl">Does</span>
+            <span class="dptag">All 204</span><span class="dptag">Judge</span>
+            <span class="dptag">Know</span><span class="dptag">Make</span>
+            <span class="dptag on">Mend</span><span class="dptag">Run</span>
+            <span class="dptag">Say</span><span class="dptag">Shape</span></div>
+          <div class="lbmade">
+            <div class="lbrow"><b>/engineering:incident-response<span>plugin:engineering</span></b>
+              <span class="lbuse">Runs an incident end to end: severity triage, comms, then the postmortem.</span>
+              <span class="lbtags"><span class="dptag">Mend</span><span class="dptag">at-resolve</span></span>
+              <button class="btn" type="button">Open</button></div>
+            <div class="lbrow"><b>/operations:change-request<span>plugin:operations</span></b>
+              <span class="lbuse">Writes the rollback on paper before the deployment, not after it fails.</span>
+              <span class="lbtags"><span class="dptag">Mend</span><span class="dptag">at-resolve</span></span>
+              <button class="btn" type="button">Open</button></div>
+            <div class="lbrow"><b>/operations:runbook<span>plugin:operations</span></b>
+              <span class="lbuse">Turns tribal knowledge into an exact operating procedure.</span>
+              <span class="lbtags"><span class="dptag">Mend</span><span class="dptag">at-resolve</span></span>
+              <button class="btn" type="button">Open</button></div>
+            <div class="lbrow"><b>/superpowers:systematic-debugging<span>plugin:superpowers</span></b>
+              <span class="lbuse">Use when encountering any bug or unexpected behaviour, before proposing fixes.</span>
+              <span class="lbtags"><span class="dptag">Mend</span><span class="dptag">at-resolve</span></span>
+              <button class="btn" type="button">Open</button></div>
+          </div>
+          <p class="lbnote">A work atom names what must be true when it is finished. These are the ways
+            of working it may draw on: the ones it <b>declares</b> when it opens, and the ones it
+            <b>used</b> when it closes. A declared skill never refuses anything, because refusing is a
+            rule's job.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2 class="mh">Against the tree version</h2>
+<table class="mtbl">
+  <tr><th>&nbsp;</th><th>One icon (this page)</th><th>A section in the tree (v1)</th></tr>
+  <tr><td>The tree</td><td>untouched</td><td>gains a second root and a new node kind</td></tr>
+  <tr><td>What is on screen at once</td><td>departments <b>or</b> shelves</td><td>both, always</td></tr>
+  <tr><td>New things to learn</td><td>one toggle</td><td>a caption, a node kind, an icon set</td></tr>
+  <tr><td>Cost</td><td><b>1 h, 3 files</b></td><td>2.5 h, 5 files</td></tr>
+  <tr><td>Risk</td><td>a shelf is one press away, never in sight</td><td>a shelf can be mistaken for a department</td></tr>
+</table>
+
+<p class="cap"><b>My recommendation: this one.</b> It is a quarter of the work, teaches one toggle,
+and leaves the structure reading as your company's. Design of record: this file. Nothing is
+wired.</p>
+
+</div>
+</body>
+</html>

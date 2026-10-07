@@ -8,7 +8,7 @@ Seven phases. Each one ends on a check a machine can run, not on a feeling. A ph
 |---|---|---|---|
 | 1 | **Understand** | say what must be true when this is done, in the model's own words, in one sentence | the sentence names only words the model has, and a person who was not here could tell whether it is true |
 | 2 | **Place** | decide which of the ten skill sets this is, and where the work lands: registry, app store, site or plans | the path exists, or its parent does, and the set's own check is written down as this unit's verify |
-| 3 | **Design** | the smallest shape that satisfies it, and what it would break | a table of what changes, and one line naming what this design makes harder |
+| 3 | **Design** | the smallest shape that satisfies it, and what it would break. If the how is not already written, the ladder in the skill's section 4b runs first: `core:finding-the-how`, then `core:deriving-a-methodology`, then `core:synthesizing-a-methodology`, one rung at a time | a table of what changes, and one line naming what this design makes harder; when the ladder ran, its last card sits above the table |
 | 4 | **Build** | write it, one file per step where the steps are separable | each file exists and the thing it claims is readable back out of it |
 | 5 | **Prove** | run the strongest lane available: a test, a walk, a second model | named output, quoted, not described |
 | 6 | **Document** | put it where someone who was not here will find it: the page that owns the subject | both site guards pass, and the page renders |

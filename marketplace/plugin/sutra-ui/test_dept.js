@@ -308,26 +308,26 @@ test("S14: re-selecting the same department keeps its card and re-reads nothing"
   assert.strictEqual(c.calls.apiGet.length, 3, "nothing is read twice");
 });
 
-/* ── S16 / A1: the seven groups, in order ── */
-const GROUPS = ["Now", "Functions", "Engines", "Filed work", "People", "Documents", "Apps"];
+/* ── S16 / A1: the six groups, in order (no Documents: founder, 2026-09-28) ── */
+const GROUPS = ["Now", "Functions", "Engines", "Filed work", "People", "Apps"];
 function groupLabels(html){
   return (html.match(/class="o2gl dpgl">([^<]*)</g) || []).map(m => /">([^<]*)<$/.exec(m)[1]);
 }
-test("S16/A1: the list column shows the seven groups in order", () => {
+test("S16/A1: the list column shows the six groups in order", () => {
   const c = fresh();
   const d = c.o2Data(), n = d.byRef.get("r4");
   const html = c.dpListHtml(n, d, DEPT_EXP, null);
   assert.deepStrictEqual(groupLabels(html), GROUPS);
 });
 
-test("S16/A33: an empty department still shows all seven groups, one quiet line each", () => {
+test("S16/A33: an empty department still shows all six groups, one quiet line each", () => {
   const c = fresh();
   const d = c.o2Data(), n = d.byRef.get("r4");
   const bare = Object.assign({}, DEPT_EXP, { filed: [], docs: [], charter: null, charters: [] });
   const html = c.dpListHtml(n, d, bare, null);
   assert.deepStrictEqual(groupLabels(html), GROUPS);
   const quiet = (html.match(/class="o2quiet dpq">([^<]*)</g) || []).length;
-  assert.strictEqual(quiet, 5, "Engines, Filed work, People, Documents, Apps each say one line");
+  assert.strictEqual(quiet, 4, "Engines, Filed work, People, Apps each say one line");
   assert.ok(!/help|Help/.test(html), "A28: no help text");
   assert.ok(html.indexOf("/Users/") === -1, "A28: no path on screen");
 });
@@ -340,13 +340,14 @@ test("S16: Functions carries the five function rows in the PRD's order", () => {
   assert.deepStrictEqual(rows, ["now", "identity", "adaptation", "priority", "coordination", "audit"]);
 });
 
-test("S16: Filed work and Documents read the department the Org screen already loaded", () => {
+test("S16: Filed work reads the department the Org screen already loaded; documents are not a group", () => {
   const c = fresh();
   const d = c.o2Data(), n = d.byRef.get("r4");
   const html = c.dpListHtml(n, d, DEPT_EXP, null);
   assert.ok(html.indexOf(">HLD<") !== -1, "the filed row is a name");
-  assert.ok(html.indexOf(">Org HLD<") !== -1, "the document row is a title");
-  assert.ok(html.indexOf("holding/departments") === -1 || /data-dp(filed|doc)="holding/.test(html),
+  assert.ok(html.indexOf(">Org HLD<") === -1 && html.indexOf("data-dpdoc") === -1,
+    "the markdown placed under the department is not a row here (founder, 2026-09-28)");
+  assert.ok(html.indexOf("holding/departments") === -1 || /data-dpfiled="holding/.test(html),
     "a path may ride an attribute, never the label");
 });
 
@@ -824,7 +825,7 @@ test("S32/A29: every word on these screens is from the D78 list", () => {
   /* "work item" is slice D's, on the engine card; every other word the PRD's
      D78 list names is on screen by the end of slice B. */
   for (const w of ["department", "Now", "Identity", "Adaptation", "Priority", "Coordination",
-                   "Audit", "Engines", "Filed work", "People", "Documents", "Apps",
+                   "Audit", "Engines", "Filed work", "People", "Apps",
                    "Rules", "Budget", "Owner"]) {
     assert.ok(all.indexOf(w) !== -1, "missing screen word: " + w);
   }
@@ -1748,26 +1749,24 @@ test("S67/A29: the person card does not say charter, and shows no path", () => {
   assert.ok(c);
 });
 
-/* ── S68 / A26: Documents is what the Org screen lists ── */
-test("S68/A26: Documents carries the same rows the Org screen's own column carries", () => {
+/* ── S68 / A26: no Documents group on either column (founder, 2026-09-28) ── */
+test("S68/A26: neither the department screen nor the Org screen's column lists documents", () => {
   const c = fresh();
   const d = c.o2Data(), n = d.byRef.get("r4");
   const org = c.o2ListHtml(n, d, DEPT_EXP, null);
   const dp = c.dpListHtml(n, d, DEPT_EXP, null);
-  const pick = (html, a, t) => (html.match(new RegExp("data-" + a + '="([^"]*)" data-' + t + '="([^"]*)"', "g")) || []);
-  const orgDocs = pick(org, "o2doc", "o2title").map(s => s.replace(/o2/g, ""));
-  const dpDocs = pick(dp, "dpdoc", "dptitle").map(s => s.replace(/dp/g, ""));
-  assert.ok(orgDocs.length === 1, "the fixture has one document");
-  assert.deepStrictEqual(dpDocs, orgDocs, "same path, same title, same order");
+  assert.ok(DEPT_EXP.docs.length === 1, "the fixture still carries one document");
+  assert.ok(org.indexOf("data-o2doc") === -1 && org.indexOf(">Documents<") === -1, "the Org column has no Documents group");
+  assert.ok(dp.indexOf("data-dpdoc") === -1 && dp.indexOf(">Documents<") === -1, "the department column has no Documents group");
 });
 
-test("S68/A26: a document opens through the Org screen's own reader", () => {
+test("S68/A26: a document row is no longer a click the department screen handles", () => {
   const c = fresh();
   open(c, "r4");
   const opened = [];
   c.o2OpenDoc = (p, t) => opened.push([p, t]);
-  assert.ok(click(c, elem({ dpdoc: "holding/x.md", dptitle: "X" })), "handled");
-  assert.deepStrictEqual(opened, [["holding/x.md", "X"]], "o2OpenDoc, not a second reader");
+  assert.ok(!click(c, elem({ dpdoc: "holding/x.md", dptitle: "X" })), "not handled");
+  assert.deepStrictEqual(opened, [], "nothing opened");
 });
 
 /* ── S69 / A26: Apps is the Org screen's own read ── */
@@ -1982,14 +1981,13 @@ function emptyDept(c, tab){
            card: c.dpViewerHtml(n, d, BARE_DEPT, null) };
 }
 
-test("S76/A33: an empty department still shows all seven groups, one quiet line each", () => {
+test("S76/A33: an empty department still shows all six groups, one quiet line each", () => {
   const c = fresh();
   const { list } = emptyDept(c);
   assert.deepStrictEqual(groupLabels(list), GROUPS, "nothing is hidden because it is empty");
   const quiet = (list.match(/class="o2quiet dpq">([^<]*)</g) || []).map(m => /">([^<]*)<$/.exec(m)[1]);
-  assert.deepStrictEqual(quiet, ["No engines here", "Nothing filed yet", "No people yet",
-                                 "No documents yet", "No apps yet"],
-    "five empty groups, five lines; Now and Functions carry their fixed rows");
+  assert.deepStrictEqual(quiet, ["No engines here", "Nothing filed yet", "No people yet", "No apps yet"],
+    "four empty groups, four lines; Now and Functions carry their fixed rows");
   assert.strictEqual((list.match(/data-dptab=/g) || []).length, 6, "Now and the five functions");
 });
 
@@ -2233,7 +2231,7 @@ test("S79/A29: every screen word is from the D78 list, on every card", () => {
   const all = sweep().map(x => x[1]).join("\n");
   for (const w of ["department", "Now", "Identity", "Adaptation", "Priority", "Coordination",
                    "Audit", "Engines", "Engine", "work item", "Filed work", "People",
-                   "Documents", "Apps", "Rules", "Budget", "Owner", "Meters"]) {
+                   "Apps", "Rules", "Budget", "Owner", "Meters"]) {
     assert.ok(all.indexOf(w) !== -1, "missing screen word: " + w);
   }
   for (const w of ["cut", "seam", "overlay", "cascade", "score"]) {
@@ -2579,6 +2577,62 @@ test("slice I: the chat-only frame starts the chat from the brief, filed under t
     opts: { pin: { department_ref: "r4" } } });
   assert.strictEqual(c.S.ui.dest, "chats");
   assert.deepStrictEqual(Array.from(c.S.openPanes), ["s-9"], "one chat and nothing else");
+});
+
+/* ── the access a department chat opens on (DS-15, amended 2026-09-25) ────
+   The global default has been Full access since 2026-09-18. A department
+   chat must not narrow it: when the mode the server says will RUN already
+   writes files, no per-chat override is armed, so claudeWsUrl sends no
+   ?perm= and the chat runs exactly as every other chat does. Only a global
+   mode that cannot write still seeds Approve for me -- the case DS-15 was
+   written for, when the default was Read only. */
+function fnChatStart(c){
+  c.URLSearchParams = URLSearchParams;
+  c.location = { search: "?embed=chat&dept=r4&fn=audit&name=Experience&start=1" };
+  c.S.ui = { dest: "org2" }; c.S.sessions = [];
+  c.apiGet = (p) => {
+    if (/brief$/.test(p)) return Promise.resolve({ brief: "Audit for {department}: {goal}", cwd: "/work/exp", template: {} });
+    if (/identity$/.test(p)) return Promise.resolve({ goal: "Own the experience", done: null, rules: [], owner: { name: "Sankalp" } });
+    return new Promise(() => {});
+  };
+  c.newSession = () => ({ id: "s-9" });
+  c.submitTurn = () => {};
+  c.providerId = () => "claude";
+  c.accessOptionsFor = () => [
+    { id: "read", mode: "plan" }, { id: "edits", mode: "acceptEdits" },
+    { id: "auto", mode: "auto" }, { id: "full", mode: "bypassPermissions" },
+  ];
+  c.PERM_MODES = [
+    { id: "plan", writes_files: false }, { id: "acceptEdits", writes_files: true },
+    { id: "auto", writes_files: false }, { id: "bypassPermissions", writes_files: true },
+  ];
+}
+
+test("access: a department chat inherits a global mode that writes -- no per-chat override", async () => {
+  const c = fresh();
+  fnChatStart(c);
+  c._settingsGlobal = () => ({ permission_mode: "bypassPermissions", permission_mode_effective: "bypassPermissions" });
+  const s = await c.dpEmbedOpen();
+  assert.strictEqual(s.id, "s-9");
+  assert.ok(!(c.S.perm && c.S.perm["s-9"]), "Full access on file: the chat runs as the global mode, nothing is armed");
+});
+
+test("access: the EFFECTIVE mode decides, not the stored one", async () => {
+  const c = fresh();
+  fnChatStart(c);
+  /* Full access on file but clamped by the server to Read only: the chat
+     must not trust the stored value, exactly as sessPermEffective does not. */
+  c._settingsGlobal = () => ({ permission_mode: "bypassPermissions", permission_mode_effective: "plan" });
+  await c.dpEmbedOpen();
+  assert.strictEqual(c.S.perm["s-9"], "auto", "a clamped-to-read-only global still gets Approve for me");
+});
+
+test("access: a read-only global mode still opens the department chat on Approve for me (DS-15)", async () => {
+  const c = fresh();
+  fnChatStart(c);
+  c._settingsGlobal = () => ({ permission_mode: "plan", permission_mode_effective: "plan" });
+  await c.dpEmbedOpen();
+  assert.strictEqual(c.S.perm["s-9"], "auto");
 });
 
 test("slice I: the chat-only frame reopens the chat it started, and makes no new one", async () => {
