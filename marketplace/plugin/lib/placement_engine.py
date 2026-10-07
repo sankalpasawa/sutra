@@ -54,7 +54,6 @@ Peer-review folds (deepseek consult 2026-07-29, CHANGES-REQUIRED):
 """
 
 import copy
-import fcntl
 import hashlib
 import json
 import os
@@ -62,6 +61,31 @@ import re
 import sys
 import time
 from contextlib import contextmanager
+
+try:  # POSIX release hosts
+    import fcntl as _file_lock
+except ModuleNotFoundError:  # Windows desktop and its local test environment
+    import msvcrt as _file_lock
+
+
+def _lock_fd(fd):
+    if hasattr(_file_lock, "flock"):
+        _file_lock.flock(fd, _file_lock.LOCK_EX)
+        return
+    os.lseek(fd, 0, os.SEEK_SET)
+    if os.fstat(fd).st_size == 0:
+        os.write(fd, b"\0")
+        os.fsync(fd)
+    os.lseek(fd, 0, os.SEEK_SET)
+    _file_lock.locking(fd, _file_lock.LK_LOCK, 1)
+
+
+def _unlock_fd(fd):
+    if hasattr(_file_lock, "flock"):
+        _file_lock.flock(fd, _file_lock.LOCK_UN)
+        return
+    os.lseek(fd, 0, os.SEEK_SET)
+    _file_lock.locking(fd, _file_lock.LK_UNLCK, 1)
 
 # ---------------------------------------------------------------- config ----
 
@@ -227,13 +251,13 @@ def _lock(name):
     path = os.path.join(DOMAINS, "%s.lock" % key)
     fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        _lock_fd(fd)
         _HELD[key] = 1
         yield
     finally:
         _HELD.pop(key, None)
         try:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            _unlock_fd(fd)
         finally:
             os.close(fd)
 

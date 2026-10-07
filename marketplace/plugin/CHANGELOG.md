@@ -1,6 +1,16 @@
 # Changelog
 
 **status**: active · **updated**: 2026-09-28
+
+## Unreleased
+
+### Root Setup — published J1 journey
+
+- Root keeps one versioned Request conversation, asks one question per turn, and resumes it after restart; `just do it` applies disclosed Library defaults.
+- A clear request creates automatically unless an effective inherited `ask` rule matches. Setup records a versioned department template or the explicit organic route.
+- Founding reconciles one child, the five functions, goal context, born engines, one `j2_ready` event, and Root's final tell without running J2 work.
+- The founding path now imports and locks correctly on Windows as well as POSIX release hosts.
+
 ## 2.306.23 (2026-09-30)
 
 - Released from v2.306.22-beta.1-desktop..HEAD: 1 commit(s). Each line below is a commit subject from that range, quoted, not a summary of the code.

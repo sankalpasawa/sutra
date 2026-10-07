@@ -206,7 +206,8 @@ function wbList(n){
     dpRow("Map", `data-wbtab="map"`, tab === "map") +
     dpRow("System status", `data-wbtab="status"`, tab === "status") +
     dpRow("Motor", `data-wbtab="motor"`, tab === "motor") +
-    (wbRt(m) ? dpRow("Board", `data-wbtab="board"`, tab === "board") : "") + `</div>`;
+    (wbRt(m) ? dpRow("Board", `data-wbtab="board"`, tab === "board") +
+      dpRow("Agent activity", `data-wbtab="activity"`, tab === "activity") : "") + `</div>`;
   const engines = dpGroup("Engines", ((m && m.engines) || []).map(e => {
     const on = tab === "engine" && st.sel[n.ref] === e.name;
     const word = e.state === "Running" ? "running" : (e.state === "Waits" ? "paused" : (e.state === "Missing" ? "fault" : "idle"));
@@ -983,6 +984,11 @@ function wbViewer(n){
   if (tab === "status") return dpViewerShell("System status", wbStatusHtml(n, m), "wb");
   if (tab === "motor") return dpViewerShell("Motor", wbMotorHtml(n, m), "wb");
   if (tab === "board" && wbRt(m)) return dpViewerShell("Board", wbBoardHtml(n), "wb");
+  if (tab === "activity" && wbRt(m)){
+    dpLoadJ2(n.ref);
+    dpLoadActivity(n.ref);
+    return dpViewerShell("Agent activity", dpActivityHtml(), "wb");
+  }
   if (tab === "conversation" && wbRt(m)) return dpViewerShell("Human Sutra", wbConversationHtml(n, m), "wb");
   if (tab === "engine") return dpViewerShell(st.sel[n.ref] || "Engine", wbEngineHtml(n), "wb");
   if (tab === "art"){

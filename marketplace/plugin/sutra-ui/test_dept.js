@@ -2747,6 +2747,40 @@ test("slice J: a department with no engines still draws its graph and adds no em
   assert.ok(pri.indexOf("Next runs") === -1);
 });
 
+/* ── J2: visible, operational agent activity ─────────────────────────────── */
+test("J2: Agent activity shows function exchanges and not hidden reasoning", () => {
+  const c = fresh();
+  const st = c.dpS();
+  st.sel = "r4";
+  st.j2 = { ref:"r4", state:"ready", step:6, journey:"J2.f", enabled:true };
+  st.activity = { ref:"r4", events:[
+    { id:"e1", actor:"Adaptation", recipient:"Priority", action:"proposal.created",
+      state:"pending", summary:"Propose a two-source finance workflow", journey:"J2.b", step:2,
+      payload:{ source:"library" } },
+    { id:"e2", actor:"Priority", recipient:"Root", action:"proposal.granted",
+      state:"granted", summary:"Granted within the envelope", journey:"J2.c", step:3,
+      payload:{} },
+  ]};
+  const html = c.dpActivityHtml();
+  for (const word of ["Agent activity", "Adaptation", "Priority", "Root", "J2.b", "Granted within the envelope"])
+    assert.ok(html.indexOf(word) !== -1, "missing " + word);
+  assert.ok(html.indexOf("chain-of-thought") === -1 && html.indexOf("private_reasoning") === -1);
+  assert.ok(html.indexOf('data-dpj2stop="1"') !== -1, "ready work can be stopped");
+});
+
+test("J2: Agent activity has start and stop controls wired to its scoped API", async () => {
+  const c = fresh();
+  c.S.screen = "org2";
+  c.dpS().sel = "r4";
+  c.dpS().j2 = { ref:"r4", state:"not_started", enabled:true };
+  assert.strictEqual(click(c, elem({ dpj2start:"1" })), true);
+  await sleep();
+  assert.strictEqual(c.calls.apiPost[0].p, "/api/dept/r4/j2/start");
+  assert.strictEqual(click(c, elem({ dpj2stop:"1" })), true);
+  await sleep();
+  assert.strictEqual(c.calls.apiPost[1].p, "/api/dept/r4/j2/stop");
+});
+
 Promise.all(pending).then(() => {
   console.log("\n" + (failed ? failed + " failed" : "all passed") + " (" + ran + " tests)");
   process.exit(failed ? 1 : 0);
