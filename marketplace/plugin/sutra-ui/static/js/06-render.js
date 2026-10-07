@@ -1490,7 +1490,36 @@ function _focusedInputSelector(){
                       "data-shhomecompose"]) {
     if (el.hasAttribute(attr)) return "[" + attr + '="' + el.getAttribute(attr) + '"]';
   }
-  return null;
+  /* ...AND EVERY OTHER FIELD, by its own hooks (see _inputKeySelector). */
+  return _inputKeySelector(el);
+}
+
+/* ANY FIELD, FOUND AGAIN BY ITS OWN HOOKS (founder, 2026-10-07: "some
+   textfields go out of focus even after I put the cursor there and type ...
+   happening with custom textfields shadow produces").
+
+   THE LIST ABOVE IS AN ALLOW-LIST, and every field not on it lost focus,
+   caret and draft on any background render: the typed questions Shadow asks
+   (data-shivtext / data-shivmid / data-shivkey), the task chat line, the
+   settings boxes, the memory add and edit lines. Adding them one by one is
+   how the list got this long and still missed these. So the fallback names
+   the field by ALL of its data-* attributes -- the same hooks its own input
+   handler already uses to find its draft -- which picks out exactly one
+   field (a form's three keys together name one answer box) and needs no
+   entry here for the next field anyone adds. A field with neither an id nor
+   a data-* hook is not restored, exactly as before. */
+function _inputKeySelector(el){
+  if (!el || !(el.tagName === "INPUT" || el.tagName === "SELECT"
+               || el.tagName === "TEXTAREA")) return null;
+  const q = (v) => String(v).replace(/["\\]/g, "\\$&");
+  if (el.id) return "#" + ((typeof CSS !== "undefined" && CSS.escape)
+                            ? CSS.escape(el.id) : el.id);
+  const parts = [];
+  for (const a of Array.from(el.attributes || [])){
+    if (a.name.indexOf("data-") === 0)
+      parts.push("[" + a.name + '="' + q(a.value) + '"]');
+  }
+  return parts.length ? el.tagName.toLowerCase() + parts.join("") : null;
 }
 /* ── "/" palette: real slash commands in the composer ──────────────────────
    Typing "/" used to insert a character and offer nothing. The list is the same
@@ -2183,7 +2212,10 @@ function render(){
         ? { sel: act.dataset && act.dataset.shhomecompose
               ? "[data-shhomecompose]"
               : (act.dataset && act.dataset.shcompose
-                 ? "[data-shcompose]" : null),
+                 ? "[data-shcompose]"
+                 /* any other field on this screen, by its own hooks: Shadow's
+                    typed questions, the memory lines (2026-10-07) */
+                 : _inputKeySelector(act)),
             value: act.value,
             start: act.selectionStart, end: act.selectionEnd }
         : null;

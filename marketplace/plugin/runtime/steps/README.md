@@ -2,7 +2,7 @@
 
 Every script here is spawned by `bin/sutra-turn` through `sutra_shim_run`,
 exactly like a `shim:` step (own stdin copy, own watchdog, own rc file), but
-registered as `impl":"native:<name>"` with `"phase":"post"` — it runs once,
+registered as `"impl":"native:<name>"` with `"phase":"post"` — it runs once,
 serially, after the pass-1 `wait` (BRIEF.md D3, D4).
 
 **Inputs**: stdin = the same JSON the host gave the event (UserPromptSubmit

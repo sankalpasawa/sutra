@@ -2239,26 +2239,21 @@ def _rules_in_scope(target_session=None):
     return lines
 
 
-def _founder_memory():
-    """The founder's memory text for a worker brief, or "". Never raises."""
-    try:
-        return _mission_engine.memory()
-    except Exception:                   # noqa: BLE001 -- see _brief_facts
-        return ""
-
-
 def _brief_facts(mission):
     """What the task's Shadow chat needs to write a brief and cannot know
-    on its own: where the worker runs, the rules in scope, the floors."""
+    on its own: where the worker runs, the rules in scope, the floors.
+
+    NOT WHAT SHADOW KNOWS ABOUT THE FOUNDER (founder, 2026-10-07: "personality
+    and memory are the properties of the shadow and it should see fit when to
+    pass it to the worker chat"). This used to hand the whole memory box over
+    as an `about` fact, and the brief writer copied every line into every
+    brief. The task's Shadow chat already holds both sections in its boot
+    context (shadow_session.standing_context -> carry_block); BRIEF_ASK tells
+    it to pass on only the lines this task needs."""
     return {
         "repo": _shadow_workdir_for_delegates(),
         "why_now": mission.get("why_now") or "",
         "rules": _rules_in_scope(mission.get("target_session")),
-        # THE MEMORY BOX, for the worker. Best-effort like everything else
-        # here: a brief must not fail because the limits file is unreadable,
-        # so a bad read costs this line and nothing more. Only `memory`
-        # travels -- see _facts_text on why `behaves` does not.
-        "about": _founder_memory(),
         "floors": list(SHADOW_FLOORS),
     }
 
@@ -3086,12 +3081,62 @@ async def api_shadow_status():
 
 #: What the Now box says before the founder's line (v4, V4-3). ONE writer:
 #: the route reads it, the eval runner sends the same words.
+#:
+#: SHADOW DECIDES WHAT THE LINE NEEDS BEFORE ANYTHING STARTS (founder,
+#: 2026-10-07: "it should also do that at the start (1st prompt) and not start
+#: a worker chat unnecessarily"). This used to say "treat it as work to
+#: delegate, not as a question to answer", so "remember this: I'm the CEO" and
+#: "who has final say on Shadow?" each became a queued task with a worker
+#: behind it. A worker is started by a mission block and by nothing else, so
+#: the triage is the whole fix: only work gets a block.
 SHADOW_INTAKE_PREFIX = (
-    "[Intake] The founder typed this in the box that opens tasks (Now: "
-    "\"What do you have in mind?\"). Treat it as work to delegate, not as a "
-    "question to answer: one mission block per distinct ask, target_mode "
-    "\"new\", the founder's words as each objective, one short line of reply. "
-    "If it is genuinely not work, say so in one line and emit no block.\n\n")
+    "[Intake] The founder typed this in the box on Shadow's home (Now: "
+    "\"What do you have in mind?\"). Decide what it needs BEFORE anything "
+    "starts. Only a mission block starts a worker, so emit one only for work:\n"
+    "- WORK (something to make, change, research, fix, run or check -- "
+    "anything that needs files, tools or time): one mission block per "
+    "distinct ask, target_mode \"new\", the founder's words as each "
+    "objective, one short line of reply. You never do the work yourself.\n"
+    "- A QUESTION you can answer from what you already know (what the "
+    "founder told you, What Shadow knows, their tasks): answer it directly. "
+    "No block.\n"
+    "- SOMETHING TO REMEMBER (\"remember...\", \"from now on...\", "
+    "\"I'm...\"): call shadow_remember and say so in one line. No block.\n"
+    "- A SETTING (\"run 8 at once\", \"no turn limit\"): the limits block.\n"
+    "- A GREETING or a remark: one line back. No block.\n"
+    "One message can carry several of these; handle each one.\n\n")
+
+
+def _carry_stamp():
+    """A fingerprint of what Shadow knows (mission_engine.carry_block)."""
+    return hash(_mission_engine.carry_block())
+
+
+def _carry_refresh(sess):
+    """WHAT SHADOW KNOWS, KEPT CURRENT IN THE ONE LONG-LIVED CHAT (founder,
+    2026-10-07: personality and memory are re-used in later chats).
+
+    The Now chat is one persistent session that read its knowledge ONCE, at
+    boot. A line learned after that -- by a task's decider, or kept on the
+    settings page -- was invisible to it until a restart, so it could
+    delegate a question it now has the answer to. Sent once per change, the
+    same way the scoped preamble below is: "" when nothing changed.
+    """
+    try:
+        stamp = _carry_stamp()
+        was = getattr(sess, "carry_stamp", None)
+        sess.carry_stamp = stamp
+        # NO STAMP = nothing to compare against (a session this route did
+        # not boot): take the fingerprint quietly rather than resend a
+        # context the session may already hold.
+        if was is None or was == stamp:
+            return ""
+        carry = _mission_engine.carry_block()
+    except Exception:                    # noqa: BLE001 -- never fail a turn
+        return ""
+    return ("[Context] What you know about the founder has changed since you "
+            "started. This replaces it:\n"
+            + (carry or "(nothing is remembered any more)") + "\n\n")
 
 
 @app.post("/api/shadow/chat")
@@ -3122,6 +3167,8 @@ async def api_shadow_chat(request: Request):
             if booted is None:
                 raise HTTPException(503, "shadow could not boot")
             _SHADOW["session"] = sess
+            # the boot context already carried what Shadow knew at boot
+            sess.carry_stamp = _carry_stamp()
         tokens = []
 
         async def collect(frame):
@@ -3143,6 +3190,7 @@ async def api_shadow_chat(request: Request):
             sess.scope_stamp = None
             pre = ("[Context] Back to general talk -- no single chat is "
                    "in focus.\n\n")
+        pre = _carry_refresh(sess) + pre
         if intake:
             pre += SHADOW_INTAKE_PREFIX
         await sess.rt.send_user_frame(pre + msg)
@@ -3302,6 +3350,7 @@ async def api_shadow_chat(request: Request):
 # (archive-never-delete), and a watch toggle is an auditable act.
 import mission_engine as _mission_engine
 import shadow_intervention as _shadow_intervention
+import shadow_knows as _shadow_knows
 import goal_lifecycle as _goal_lifecycle
 import goal_store as _goal_store
 import shadow_precedence
@@ -3470,6 +3519,9 @@ async def api_shadow_settings():
         # questions (see mission_engine.MEMORY_MAX_CHARS).
         "memory": _mission_engine.memory(),
         "memory_max": _mission_engine.MEMORY_MAX_CHARS,
+        # WHAT SHADOW LEARNED (shadow_knows): the list each section draws
+        # beneath the founder's own text. listing() never raises.
+        "knows": _shadow_knows.listing(),
         "tasks": {
             "running_at_once": _mission_engine.max_running(),
             "running_at_once_min": _mission_engine.MIN_RUNNING,
@@ -3659,6 +3711,63 @@ async def api_shadow_settings_memory(request: Request):
         "kind": "setting", "mission_id": None,
         "summary": "memory set (%d chars)" % len(value)})
     return {"memory": value, "max": _mission_engine.MEMORY_MAX_CHARS}
+
+
+@app.get("/api/shadow/knows")
+async def api_shadow_knows():
+    """What Shadow learned, per section, newest first (shadow_knows)."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    return _shadow_knows.listing()
+
+
+@app.post("/api/shadow/knows")
+async def api_shadow_knows_write(request: Request):
+    """The founder's hand on what Shadow learned. One route, `action` decides:
+
+      keep    a suggestion binds from the next boot
+      forget  a suggestion is dropped / a remembered line is forgotten
+      edit    the founder rewrites a line (it binds as theirs)
+      add     the founder adds a line themselves
+
+    Ideally the founder never comes here -- the system fills the list. This is
+    the correction surface, not the authoring one. Every action is one more
+    ledger row; a refusal is a 409 in the store's own sentence.
+    """
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    body = await request.json()
+    action = body.get("action")
+    rid = str(body.get("id") or "").strip()
+    try:
+        if action == "keep":
+            row = _shadow_knows.keep(rid)
+        elif action == "forget":
+            row = _shadow_knows.forget(rid)
+        elif action == "edit":
+            row = _shadow_knows.edit(rid, body.get("text"),
+                                     body.get("category"))
+        elif action == "add":
+            row = _shadow_knows.add(body.get("section"), body.get("text"),
+                                    "typed", category=body.get("category"),
+                                    expires=body.get("expires"))
+        elif action == "switch":
+            # one of the four personality switches; two of them also move
+            # an engine setting (shadow_knows.set_switch)
+            value = _shadow_knows.set_switch(body.get("name"),
+                                             body.get("value"))
+            row = {"section": "personality",
+                   "text": "%s = %s" % (body.get("name"), value)}
+        else:
+            raise HTTPException(400,
+                                "action must be keep|forget|edit|add|switch")
+    except _shadow_knows.Refused as exc:
+        raise HTTPException(409, str(exc))
+    _shadow_ledger_safe({
+        "kind": "setting", "mission_id": None,
+        "summary": "knows %s %s: %s" % (action, row.get("section"),
+                                        (row.get("text") or "")[:120])})
+    return {"row": row, "knows": _shadow_knows.listing()}
 
 
 @app.post("/api/shadow/settings/budget")
@@ -5046,6 +5155,27 @@ async def api_shadow_conversation_create(request: Request):
         raise HTTPException(400, str(exc))
 
 
+@app.post("/api/shadow/conversations/{cid}/delete")
+async def api_shadow_conversation_delete(cid: str):
+    """The x on a conversation row (founder, 2026-10-07: "not able to
+    delete"). A conversation that opened no task had no delete at all -- its x
+    went to the MISSION action and was refused as "no mission". A bound one
+    is drawn as its task and is removed by deleting that, so it is refused
+    here rather than orphaning the task's history."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    import shadow_conversations as _shadow_conversations
+    try:
+        rec = _shadow_conversations.load(cid)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    if not rec:
+        raise HTTPException(404, "no such conversation")
+    if rec.get("mission_id"):
+        raise HTTPException(409, "this chat opened a task; delete the task")
+    return {"deleted": _shadow_conversations.delete(cid), "id": cid}
+
+
 @app.post("/api/shadow/conversations/{cid}/messages")
 async def api_shadow_conversation_append(cid: str, request: Request):
     """Append one turn, or bind the mission this conversation opened.
@@ -5854,6 +5984,31 @@ async def api_shadow_mission_act(mid: str, request: Request):
             }
             m.pop("intervention", None)     # retired: it has been answered
             store.save(m)
+            # NOTHING TO DO, AND THE FOUNDER SAYS CLOSE IT (2026-10-07).
+            # Shadow asked rather than ended (mission_engine ASK_KINDS); the
+            # founder's "close" ends the task through the SAME founder stop
+            # the Stop button uses -- loop cancelled, worker reaped, slot
+            # freed -- and the record says why. "Keep going" falls through to
+            # the ordinary continuation below, with their words in
+            # founder_response for the decider.
+            ntd = m.get("nothing_to_do") or {}
+            if ntd.get("intervention_id") == iv.get("id") \
+                    and clean.get("next") == "close":
+                stopped = shadow_runner.founder_force_stop(
+                    mid, "founder closed: nothing to do")
+                fresh = store.load(mid) or stopped
+                fresh["end_reason"] = "nothing_to_do"
+                fresh["shadow_result"] = {
+                    "text": "Nothing to do: %s" % ntd.get("reason", ""),
+                    "at": _mission_engine._now(),
+                    "at_turn": fresh.get("turns_used") or 0}
+                store.save(fresh)
+                _shadow_ledger_safe({
+                    "mission_id": mid, "kind": "intervention",
+                    "summary": "founder closed the task: nothing to do"})
+                _sync_goal_after_founder_end(fresh)
+                _drain_queue_after("task %s closed: nothing to do" % mid)
+                return store.load(mid) or fresh
             # AN ANSWER TO A TARGETED QUESTION CLOSES ITS CHECK (founder,
             # 2026-09-15, mission m-cd009367d41a). Shadow asked "do you
             # accept the test evidence as passing?", the founder said yes,

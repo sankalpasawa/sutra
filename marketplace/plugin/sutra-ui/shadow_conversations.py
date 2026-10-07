@@ -200,8 +200,15 @@ def list_all():
 
 
 def delete(cid):
+    """Remove one conversation record (and its lock). Raises ValueError on a
+    bad id, like every other entry point here."""
+    path = _path(cid)
     try:
-        os.remove(_path(cid))
-        return True
+        os.remove(path)
     except OSError:
         return False
+    try:
+        os.remove(path + ".lock")
+    except OSError:
+        pass
+    return True

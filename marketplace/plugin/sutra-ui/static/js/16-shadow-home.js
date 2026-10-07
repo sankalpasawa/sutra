@@ -278,6 +278,13 @@ const SH_TASK = {
   failed:        { label: "FAILED",   cls: "failed"  },
   stopped:       { label: "STOPPED",  cls: "stopped" },
   draft:         { label: "DRAFT",    cls: ""        },
+  /* A CONVERSATION, NOT WORK (founder, 2026-10-07). Shadow answered it in
+     the chat and started no worker, so it is neither queued nor running --
+     it read "QUEUED" under RUNNING and looked like a stuck task. */
+  chat:          { label: "CHAT",     cls: ""        },
+  /* the founder closed it after Shadow showed there was nothing to change
+     (2026-10-07): an ending, and not a failure -- never the red STOPPED */
+  nothing:       { label: "NOTHING TO DO", cls: "done" },
 };
 function shadowTaskFace(state){
   return SH_TASK[String(state || "")] || { label: String(state || ""), cls: "" };
@@ -331,6 +338,8 @@ function shadowMissionNeedsFounder(m){
             && SH_FOUNDER_PAUSES.indexOf(m.pause_reason) !== -1);
 }
 function shadowTaskFaceFor(m){
+  if (m && m.state === "stopped" && m.end_reason === "nothing_to_do")
+    return SH_TASK.nothing;
   if (shadowMissionNeedsFounder(m)) return SH_TASK.blocked;
   /* the second state that is not the whole face: a start that has already
      been accepted. shadowMissionStarting() explains why brief_confirm alone
@@ -487,7 +496,7 @@ function shadowConvRows(){
   const S_ = (typeof S !== "undefined") ? S : {};
   return (S_.shadowConversations || [])
     .filter(c => c && c.id && !c.mission_id)
-    .map(c => ({ id: c.id, objective: c.title || "", state: "queued",
+    .map(c => ({ id: c.id, objective: c.title || "", state: "chat",
                  conversation: true, created_at: c.created_at,
                  done_when: [], turns_used: 0 }));
 }
@@ -677,6 +686,8 @@ const SH_SECTIONS = [
   ["wait", "WAITING ON YOU"],
   ["run",  "RUNNING"],
   ["done", "DONE TODAY"],
+  /* what Shadow answered without starting a worker (2026-10-07) */
+  ["chat", "CHATS"],
   /* LAST, AND THE ONLY SECTION THE FOUNDER PUTS THINGS IN THEMSELVES. The
      three above are states the work arrives in; this one is a decision --
      the x said "I am done looking at this" (founder, 2026-09-19). */
@@ -692,6 +703,8 @@ const SH_TASK_SECTION = {
   "PAUSED":    "run",
   "DONE":      "done",
   "STOPPED":   "done",
+  "CHAT":      "chat",
+  "NOTHING TO DO": "done",
 };
 /* an unmapped label is a state that is not terminal -- shadowTaskIsActive
    admits every terminal one by name -- so it belongs with the work in
@@ -792,11 +805,13 @@ function shadowTaskListHtml(){
     </button>
       <button class="shtaskdel" type="button"
         data-shtaskdel="${escAttr(m.id)}"
-        title="${m.archived_at ? "Delete this task permanently"
+        title="${m.conversation ? "Delete this chat"
+                : m.archived_at ? "Delete this task permanently"
                 : shadowTaskIsLive(m) ? "Stop &amp; archive this task"
                                       : "Archive this task"}"
-        aria-label="${m.archived_at ? "Delete task permanently"
-                                    : "Archive task"}">\u00d7</button>
+        aria-label="${m.conversation ? "Delete chat"
+                : m.archived_at ? "Delete task permanently"
+                                : "Archive task"}">\u00d7</button>
     </div>`;
   };
   /* a section with nothing in it draws nothing -- not an empty heading */
@@ -6339,6 +6354,7 @@ function shadowHomeHtml(){
            bottom is how a conversation has always worked. */""}
       ${newOpen || !sel ? "" : shadowInterventionHtml(sel)}
       ${newOpen ? "" : shadowPendingMemoryHtml()}
+      ${newOpen ? "" : shadowPendingKnowsHtml(sel)}
       </div>
       ${/* ── THE QUESTION IS PINNED, THE CONVERSATION SCROLLS (founder,
            2026-09-18) ───────────────────────────────────────
@@ -6832,6 +6848,226 @@ async function shadowMemorySave(text){
   }
   if (typeof scheduleRender === "function") scheduleRender();
   return body;
+}
+
+/* ── WHAT SHADOW KNOWS: SWITCHES + THREE GROUPS (founder, 2026-10-07) ──────
+   "We don't want to give loads of stuff for the user to see if he opens the
+   What Shadow knows section." After the research pass (ChatGPT: personality
+   as a base style plus a few sliders; Claude: memory filed under five topics;
+   Mem0: three to five groups sort best), the page is:
+
+     Personality   four switches, each with a default, plus "Other rules"
+     Memory        About you · Your work · Your preferences, each collapsed to
+                   a one-line preview, ten lines at most (shadow_knows)
+     a single "N suggestions waiting" line instead of a pile of cards
+     the founder's own two texts, folded away unless they wrote something
+
+   The system fills it in; this is the correction surface, not the authoring
+   one. Every write goes through POST /api/shadow/knows and the page redraws
+   from the listing it answers with. What is open is S.shadowKnowOpen, so a
+   background repaint never folds a group the founder just opened. */
+const SH_KNOW_SOURCE = { said: "you said", typed: "you wrote",
+                         asked: "from your answer", inferred: "Shadow noticed" };
+const SH_KNOW_GROUPS = { you: "About you", work: "Your work",
+                         preferences: "Your preferences", rules: "Other rules" };
+
+function shadowKnowOpen(key){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  return !!(S_.shadowKnowOpen && S_.shadowKnowOpen[key]);
+}
+
+function shadowKnowsRowHtml(r){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const id = escAttr(r.id || "");
+  if (r.status === "pending"){
+    return `<div class="ssknow pending">
+      <span class="ssknowk">${esc(SH_KNOW_GROUPS[r.category] || "suggested")}</span>
+      <span class="ssknowt">${esc(r.text || "")}${r.evidence
+        ? `<span class="ssknowe">${esc(r.evidence)}</span>` : ""}</span>
+      <button class="btn pri" type="button" data-shknow="keep" data-shkid="${id}">Keep</button>
+      <button class="btn" type="button" data-shknow="forget" data-shkid="${id}">Drop</button>
+    </div>`;
+  }
+  if (S_.shadowKnowEdit === r.id){
+    const val = (S_.shadowKnowEditDraft != null) ? S_.shadowKnowEditDraft : (r.text || "");
+    return `<div class="ssknow">
+      <input class="ssknowin" type="text" maxlength="200" data-shknowedit="${id}"
+        value="${escAttr(val)}" aria-label="Edit this line">
+    </div>`;
+  }
+  return `<div class="ssknow${r.expired ? " expired" : ""}">
+    <span class="ssknowt" data-shknow="open" data-shkid="${id}"
+      title="Edit this line">${esc(r.text || "")}</span>
+    <span class="ssknows">${r.expired ? "out of date — drop it?"
+      : esc(SH_KNOW_SOURCE[r.source] || r.source || "")}</span>
+    <button class="rx" type="button" data-shknow="forget" data-shkid="${id}"
+      title="Forget this" aria-label="Forget this">×</button>
+  </div>`;
+}
+
+/* THE FOUR SWITCHES. Segmented, default marked, one click sets it. Two move
+   an engine setting (acting -> ask before the first instruction; checking in
+   -> nudges per hour); all four reach Shadow's context as one sentence. */
+function shadowSwitchesHtml(d){
+  const sw = (d && d.knows && d.knows.switches) || [];
+  if (!sw.length) return "";
+  return `<div class="ssswitches">${sw.map(s => `<div class="ssswitch">
+      <span class="k">${esc(s.label)}</span>
+      <span class="sssegs" role="group" aria-label="${escAttr(s.label)}">${
+        s.options.map(o => `<button type="button"
+          class="ssseg${o.value === s.value ? " on" : ""}"
+          aria-pressed="${o.value === s.value ? "true" : "false"}"
+          data-shswitch="${escAttr(s.name)}" data-shval="${escAttr(o.value)}"
+          >${esc(o.label)}</button>`).join("")}</span>
+    </div>`).join("")}</div>`;
+}
+
+/* ONE GROUP: a header with the count and a one-line preview, the lines and
+   an add line only when opened. Pending suggestions are not here -- they
+   have their single line at the top of the page. */
+function shadowKnowsGroupHtml(d, section, group){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const key = section + ":" + group;
+  const rows = ((d && d.knows && d.knows[section]) || [])
+    .filter(r => r && r.status !== "pending" && r.category === group);
+  const open = shadowKnowOpen(key);
+  const preview = rows.slice(0, 2).map(r => r.text || "").join(" · ");
+  const head = `<button class="ssgrouph" type="button" data-shkgroup="${escAttr(key)}"
+      aria-expanded="${open ? "true" : "false"}">
+      <span class="k">${esc(SH_KNOW_GROUPS[group] || group)} (${rows.length})</span>
+      <span class="v">${esc(open ? "" : (preview || "nothing yet"))}</span>
+      <span class="ssgroupx" aria-hidden="true">${open ? "▾" : "▸"}</span>
+    </button>`;
+  if (!open) return `<div class="ssgroup">${head}</div>`;
+  const draft = (S_.shadowKnowAdd && S_.shadowKnowAdd[key]) || "";
+  const err = (S_.shadowKnowErr && S_.shadowKnowErr[key]) || "";
+  return `<div class="ssgroup open">${head}
+    <div class="ssknows-list">${rows.map(shadowKnowsRowHtml).join("")}</div>
+    <input class="ssknowin ssknowadd" type="text" maxlength="200"
+      data-shknowadd="${escAttr(key)}" value="${escAttr(draft)}"
+      placeholder="+ Add a line yourself (Enter)" aria-label="Add a line">
+    ${err ? `<div class="ssnote">${esc(err)}</div>` : ""}
+  </div>`;
+}
+
+/* EVERY SUGGESTION, AS ONE LINE until opened. */
+function shadowKnowsSuggestionsHtml(d){
+  const k = (d && d.knows) || {};
+  const rows = [].concat(k.personality || [], k.memory || [])
+    .filter(r => r && r.status === "pending");
+  if (!rows.length) return "";
+  const open = shadowKnowOpen("pending");
+  return `<div class="sssuggest${open ? " open" : ""}">
+    <button class="ssgrouph" type="button" data-shkgroup="pending"
+      aria-expanded="${open ? "true" : "false"}">
+      <span class="k">${esc(rows.length === 1 ? "1 suggestion waiting"
+                                                : rows.length + " suggestions waiting")}</span>
+      <span class="v"></span>
+      <span class="ssgroupx" aria-hidden="true">${open ? "▾" : "▸"}</span>
+    </button>
+    ${open ? `<div class="ssknows-list">${rows.map(shadowKnowsRowHtml).join("")}</div>` : ""}
+  </div>`;
+}
+
+/* THE FOUNDER'S OWN TWO TEXTS, folded away unless they wrote something.
+   Always in the document (hidden when folded) so a half-typed draft and the
+   save-on-change handler survive the fold. */
+function shadowOwnWordsHtml(d){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const wrote = !!((d && (d.behaves || d.memory))
+    || S_.shadowBehavesDraft || S_.shadowMemoryDraft);
+  const open = shadowKnowOpen("own") || wrote;
+  return `<div class="ssown${open ? " open" : ""}">
+    <button class="ssgrouph" type="button" data-shkgroup="own"
+      aria-expanded="${open ? "true" : "false"}">
+      <span class="k">In your own words</span>
+      <span class="v">${esc(open ? "" : "optional")}</span>
+      <span class="ssgroupx" aria-hidden="true">${open ? "▾" : "▸"}</span>
+    </button>
+    <div class="ssownbody"${open ? "" : " hidden"}>
+      <div class="ssknowown">How Shadow should behave</div>
+      ${shadowSetBehavesHtml(d)}
+      <div class="ssknowown">What Shadow should remember</div>
+      ${shadowSetMemoryTextHtml(d)}
+    </div>
+  </div>`;
+}
+
+async function shadowKnowAct(action, body, section){
+  if (typeof fetch === "undefined" || typeof S === "undefined") return null;
+  let r = null, out = null;
+  try { r = await shadowPost("/api/shadow/knows", Object.assign({ action }, body)); }
+  catch (e){ r = null; }
+  try { out = r ? await r.json() : null; } catch (e){ out = null; }
+  S.shadowKnowErr = S.shadowKnowErr || {};
+  if (r && r.ok && out && out.knows){
+    if (S.shadowSettings) S.shadowSettings.knows = out.knows;
+    if (section) S.shadowKnowErr[section] = "";
+    if (typeof showNudge === "function" && action === "keep")
+      showNudge("Kept — Shadow uses it from its next chat.");
+  } else {
+    const why = (out && out.detail) ? String(out.detail) : "That did not stick — try again.";
+    if (section) S.shadowKnowErr[section] = why;
+    else if (typeof showNudge === "function") showNudge(why);
+  }
+  if (typeof scheduleRender === "function") scheduleRender();
+  return out;
+}
+
+function shadowKnowAdd(input){
+  /* "memory:work" -- the group the line was typed under */
+  const key = input.dataset.shknowadd;
+  const [section, group] = String(key || "").split(":");
+  const text = String(input.value || "").trim();
+  if (!text || typeof S === "undefined") return;
+  S.shadowKnowAdd = S.shadowKnowAdd || {};
+  S.shadowKnowAdd[key] = "";
+  input.value = "";
+  return shadowKnowAct("add", Object.assign({ section, text },
+                       group ? { category: group } : {}), key);
+}
+
+function shadowKnowToggle(key){
+  if (typeof S === "undefined") return;
+  S.shadowKnowOpen = S.shadowKnowOpen || {};
+  S.shadowKnowOpen[key] = !S.shadowKnowOpen[key];
+  if (typeof scheduleRender === "function") scheduleRender();
+}
+
+function shadowKnowEditSave(input){
+  if (typeof S === "undefined" || S.shadowKnowEdit !== input.dataset.shknowedit) return;
+  const text = String(input.value || "").trim();
+  const id = S.shadowKnowEdit;
+  S.shadowKnowEdit = null; S.shadowKnowEditDraft = null;
+  if (!text) return shadowKnowAct("forget", { id });
+  return shadowKnowAct("edit", { id, text });
+}
+
+/* Suggestions where the founder already is: the same capsule the rule
+   ledger's "I'll remember" uses, beneath the conversation. Keep / Drop write
+   through the same route the settings page uses.
+
+   ONLY ON THE TASK IT CAME FROM (founder, 2026-10-07: "card overflows to
+   other chats, should only appear until the only relevant task"). A
+   suggestion carries the mission whose answer taught it; it is drawn on that
+   task alone, and one with no mission (Shadow's own reading in a chat) only
+   where no task is in focus. Every suggestion is still on "What Shadow
+   knows", so nothing is lost by not repeating it everywhere. */
+function shadowPendingKnowsHtml(sel){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const k = (S_.shadowSettings && S_.shadowSettings.knows) || {};
+  const here = (sel && sel.id && !sel.conversation) ? sel.id : null;
+  const rows = [].concat(k.personality || [], k.memory || [])
+    .filter(r => r && r.status === "pending"
+                 && (r.mission_id || null) === here);
+  return rows.map(r => `<div class="shremember" data-shkmem="${escAttr(r.id)}">
+    <span class="shrememberk">${esc(r.section === "personality" ? "how I work" : "about you")}</span>
+    <span class="shremembertext">Remember for next time: ${esc(r.text || "")}</span>
+    <button class="btn pri shrememberok" type="button"
+      data-shknow="keep" data-shkid="${escAttr(r.id)}">Keep</button>
+    <button class="btn shrememberok" type="button"
+      data-shknow="forget" data-shkid="${escAttr(r.id)}">Drop</button>
+  </div>`).join("");
 }
 
 function shadowSetMemoryHtml(d){
@@ -7427,8 +7663,16 @@ function shadowSettingsHtml(){
 
            The two that stay are the two that are genuinely the founder's
            own words, and they are the same shape: a text box. */""}
-      ${shadowSettingsSecHtml("Personality", shadowSetBehavesHtml(d))}
-      ${shadowSettingsSecHtml("Memory", shadowSetMemoryTextHtml(d))}
+      ${/* SWITCHES + THREE GROUPS (2026-10-07): suggestions as one line,
+           four switches and "Other rules", three memory groups each folded
+           to a preview, and the founder's own words folded at the end. */""}
+      ${shadowKnowsSuggestionsHtml(d)}
+      ${shadowSettingsSecHtml("Personality",
+          shadowSwitchesHtml(d) + shadowKnowsGroupHtml(d, "personality", "rules"))}
+      ${shadowSettingsSecHtml("Memory",
+          ["you", "work", "preferences"]
+            .map(g => shadowKnowsGroupHtml(d, "memory", g)).join(""))}
+      ${shadowOwnWordsHtml(d)}
       ${/* NAMED, NOT INFERRED. This section carried no class of its own and
             the stylesheet reached it with :has(.chips) -- which happened to
             be correct, and was still the wrong way to write it: the rule
@@ -7994,6 +8238,23 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (d.shunwatch) return shadowWatchSet(d.shunwatch, false);
     if (d.shconfirm) return shadowInstructionAct(d.shconfirm, "confirm");
     if (d.shrevoke) return shadowInstructionAct(d.shrevoke, "revoke");
+    /* What Shadow knows: a group header folds or opens (the header's text
+       spans have no hooks, so read the button through closest) */
+    const grp = (ev.target && ev.target.closest)
+      ? ev.target.closest("[data-shkgroup]") : null;
+    if (grp) return shadowKnowToggle(grp.dataset.shkgroup);
+    /* ...a switch is set in one click */
+    if (d.shswitch && d.shval)
+      return shadowKnowAct("switch", { name: d.shswitch, value: d.shval });
+    /* What Shadow learned: keep / drop-or-forget a row, or open it to edit */
+    if (d.shknow && d.shkid && typeof S !== "undefined"){
+      if (d.shknow === "open"){
+        S.shadowKnowEdit = d.shkid; S.shadowKnowEditDraft = null;
+        if (typeof scheduleRender === "function") scheduleRender();
+        return;
+      }
+      return shadowKnowAct(d.shknow, { id: d.shkid });
+    }
   });
   /* WHO HAS THE CARET IS STATE TOO (founder, 2026-09-18). render() restores
      focus from a snapshot of document.activeElement taken at the top of the
@@ -8227,6 +8488,22 @@ if (typeof document !== "undefined" && document.addEventListener){
     /* the offer box submits on Enter and abandons on Escape -- the two keys
        every one-field inline input in this app already answers to */
     const od = (ev.target && ev.target.dataset) || {};
+    /* What Shadow learned: the add and edit lines answer the same two keys */
+    if (od.shknowadd && ev.key === "Enter"){
+      ev.preventDefault && ev.preventDefault();
+      shadowKnowAdd(ev.target);
+      return;
+    }
+    if (od.shknowedit){
+      if (ev.key === "Enter"){
+        ev.preventDefault && ev.preventDefault();
+        shadowKnowEditSave(ev.target);
+      } else if (ev.key === "Escape" && typeof S !== "undefined"){
+        S.shadowKnowEdit = null; S.shadowKnowEditDraft = null;
+        if (typeof scheduleRender === "function") scheduleRender();
+      }
+      return;
+    }
     if (!od.shoffername) return;
     if (ev.key === "Enter"){
       ev.preventDefault && ev.preventDefault();
@@ -8248,6 +8525,8 @@ if (typeof document !== "undefined" && document.addEventListener){
     const d = (ev.target && ev.target.dataset) || {};
     if (d.shbehaves) shadowBehavesSave(ev.target.value);
     if (d.shmemory) shadowMemorySave(ev.target.value);
+    /* an edit that loses focus saves, like the two boxes beside it */
+    if (d.shknowedit) shadowKnowEditSave(ev.target);
   });
   document.addEventListener("input", (ev) => {
     const t = ev.target, d = (t && t.dataset) || {};
@@ -8278,6 +8557,18 @@ if (typeof document !== "undefined" && document.addEventListener){
     }
     if (d.shmemory){
       if (typeof S !== "undefined"){ S.shadowMemoryDraft = t.value; S.shadowMemorySaved = false; }
+      return;
+    }
+    /* What Shadow learned: the add line and an open edit, kept the same way */
+    if (d.shknowadd){
+      if (typeof S !== "undefined"){
+        S.shadowKnowAdd = S.shadowKnowAdd || {};
+        S.shadowKnowAdd[d.shknowadd] = t.value;
+      }
+      return;
+    }
+    if (d.shknowedit){
+      if (typeof S !== "undefined") S.shadowKnowEditDraft = t.value;
       return;
     }
     /* the intervention form's typed fields, on the SAME listener the
@@ -8543,6 +8834,15 @@ async function shadowCreateTask(){
    Everything below this line is unchanged. */
 async function shadowDeleteTask(mid){
   if (!mid) return null;
+  /* A CONVERSATION ROW HAS NO MISSION TO DELETE (founder, 2026-10-07: "Tasks
+     in queue - we're not able to delete"). Its x went to the mission action,
+     which answered "no mission shc-..." and changed nothing, so the row could
+     never leave. It has its own delete: the record goes on the server, and
+     the row, its thread and the focus go here. */
+  const S_ = (typeof S !== "undefined") ? S : null;
+  if (S_ && (S_.shadowConversations || []).some(c => c && c.id === mid
+                                                  && !c.mission_id))
+    return shadowDeleteConversation(mid);
   if (typeof shadowMissionAct !== "function") return null;
   const doc = await shadowMissionAct(mid, "delete");
   /* the focus must not keep pointing at a record that no longer exists.
@@ -8558,6 +8858,27 @@ async function shadowDeleteTask(mid){
     S.shadowTaskSel = null;
   if (typeof scheduleRender === "function") scheduleRender();
   return doc;
+}
+
+async function shadowDeleteConversation(cid){
+  if (typeof fetch === "undefined" || typeof S === "undefined") return null;
+  let r = null;
+  try {
+    r = await shadowPost("/api/shadow/conversations/"
+                         + encodeURIComponent(cid) + "/delete", {});
+  } catch (e){ r = null; }
+  if (!r || !r.ok){
+    if (typeof showNudge === "function")
+      showNudge("That chat did not delete — try again.");
+    return null;
+  }
+  S.shadowConversations = (S.shadowConversations || [])
+    .filter(c => !c || c.id !== cid);
+  if (S.shadowThreads) delete S.shadowThreads[cid];
+  if (S.shadowTaskSel === cid) S.shadowTaskSel = null;
+  if (S.shadowChat === cid) S.shadowChat = "global";
+  if (typeof scheduleRender === "function") scheduleRender();
+  return { deleted: true, conversation: cid };
 }
 
 async function shadowWatchSet(sid, watch){

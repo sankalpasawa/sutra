@@ -205,9 +205,12 @@ class TheBlockerPathIsUntouched(unittest.TestCase):
     screen is unchanged by this pass; these assert it still admits the three
     kinds and nothing else."""
 
-    def test_the_three_kinds_are_still_the_only_ones(self):
+    def test_the_four_kinds_are_still_the_only_ones(self):
+        # nothing_to_do joined 2026-10-07 (test_shadow_nothing_to_do.py): a
+        # task the work showed has nothing to do asks to be CLOSED, because
+        # Shadow may not end one itself. Still a closed list.
         self.assertEqual(set(mission_engine.ASK_KINDS),
-                         {"floor", "founder_fact", "taste"})
+                         {"floor", "founder_fact", "taste", "nothing_to_do"})
 
     def test_an_ask_founder_still_validates(self):
         d = mission_engine.validate_decision(

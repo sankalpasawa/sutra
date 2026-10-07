@@ -14,7 +14,9 @@ import sys
 import time
 import uuid
 
-KINDS = ("instructions", "missions", "actions")
+#: `knows` is the learned memory and personality (shadow_knows.py): append-only
+#: like the rest, folded to the last row per id by read_latest.
+KINDS = ("instructions", "missions", "actions", "knows")
 
 #: One row is memory, not storage. A row larger than this is a bug or an
 #: exfiltration attempt; either way it is refused, not truncated.

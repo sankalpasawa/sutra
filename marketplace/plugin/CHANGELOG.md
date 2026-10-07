@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+### Settings > Updates no longer fails with "/api/updates -> 500"
+
+- A GitHub connection that dropped part-way through a reply (`http.client.IncompleteRead`, not an `OSError`) escaped the update check and blanked the screen with a 500, seen on Windows. It now reads "could not reach GitHub" on that row, and the same drop during a download is resumed instead of failing the stage.
+- The check can no longer 500 for any reason: a component that fails shows "check failed" on its own row and the other rows still render. Pinned by `sutra-ui/test_update_check_network.py`.
+
 ### Root Setup — published J1 journey
 
 - Root keeps one versioned Request conversation, asks one question per turn, and resumes it after restart; `just do it` applies disclosed Library defaults.
