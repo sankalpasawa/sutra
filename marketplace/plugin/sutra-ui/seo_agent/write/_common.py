@@ -63,6 +63,13 @@ MAX_HEADING_CHARS = 60              # a soft target: over-length is RECORDED, ne
 # ---- the writer -----------------------------------------------------------------------------------
 BODY_CARD_CHARS = 10000000          # per-card verbatim shown to the writer (uncapped)
 BODY_MAX_STATS = 3                  # statistics per SECTION (prompt + flag)
+# The body writer's feature allowlist (QA report, 2026-10-07: "mention only these Testlify
+# features, never name one not on the list"). Reads the SAME brand/features.md wrapper.py already
+# reads for the intro/CTA, so the list is the company's own real catalogue, never hand-maintained
+# here -- a feature the company adds later is covered the next time features.md is rebuilt, with
+# no prompt edit. Same cap as wrapper.py's WRAP_FEATURES_CHARS for the same reason: read once per
+# article, shared across every section's call, so the size cost is paid once, not per section.
+BODY_FEATURES_CHARS = 8000
 BLEND_SENTENCE_WORDS = 25           # flag a sentence longer
 BLEND_PARA_SENTENCES = 4            # flag a paragraph longer
 BLEND_FLAG_SAMPLE = 6               # flagged lines shown per section
@@ -92,7 +99,10 @@ READABLE_EASE_MAX = 72.0            # above this the prose went clipped, not cle
 # back at 2,430 -- it tried, it did not land). Nothing after readable enforces the author's number
 # at all (clean.py and assemble.py only ever REPORT the final length), so a single rewrite that
 # undershoots its own cut quietly ships an article over the length the author asked for.
-WORD_BAND_CEILING_PCT = 1.10        # over this fraction of target is "too long" (check()'s own ceiling)
+WORD_BAND_CEILING_PCT = 1.05        # over this fraction of target is "too long" (check()'s own ceiling).
+# Tightened from 1.10 on the QA report's own ask (2026-10-07): "Never deliver over N+5%." The retry
+# loop this feeds (readable.run's cut rounds) is the enforcement; a prompt line saying the same
+# number would be the thing that already failed once (see library_edit.py's identical constant).
 WORD_BAND_MAX_ROUNDS = 2            # further cut-only rounds after the first rewrite, cost-bounded
 WORD_BAND_MIN_PROGRESS = 20         # a round that cuts fewer words than this is the model declining further
 # ONE belief, held by two steps. About this many words around a fact is what it takes for the fact
