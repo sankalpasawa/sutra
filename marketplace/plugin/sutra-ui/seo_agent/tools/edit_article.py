@@ -60,21 +60,26 @@ def run(ctx, instruction="", item_id=None, **_ignored):
                 "error": ("There is no finished article in the Library yet. Write one first, or "
                           "name the article you mean.")}
     title = (meta.get("title") or "this article").strip()
-    say("Rewriting %s" % title, "no new research: the article is rewritten as it stands")
+    target_words = library_edit.parse_word_target(instruction)
+    say("Rewriting %s" % title, "no new research: the article is rewritten as it stands"
+        + (" -- aiming for about %s words" % "{:,}".format(target_words) if target_words else ""))
 
     try:
-        out = library_edit.propose_article(wanted, None, instruction)
+        out = library_edit.propose_article(wanted, None, instruction, target_words=target_words)
     except Exception as e:      # noqa: BLE001 -- a drifted heading, a lost tag and an invented
         return {"summary": "The rewrite was refused.",   # figure all read the same to a person
                 "error": str(e)[:400]}
 
     was, now = out.get("was") or "", out.get("proposed") or ""
-    say("Rewrite ready", "%s words before, %s after" % (len(was.split()), len(now.split())))
+    rounds = out.get("length_rounds") or 0
+    say("Rewrite ready", "%s words before, %s after" % (len(was.split()), len(now.split()))
+        + ("; %d extra length round(s)" % rounds if rounds else ""))
     return {
         "summary": ("Rewrote %s to your instruction. Nothing is saved yet: open it in the Library "
                     "and press Use this to keep it." % title),
         "item_id": wanted, "title": title,
         "words_before": len(was.split()), "words_after": len(now.split()),
+        "target_words": target_words, "length_rounds": rounds,
         "instruction": instruction,
         "hint": ("Tell them the rewrite is waiting in the Library and needs Use this. Do NOT run "
                  "research or write_article for an edit to an article that already exists."),
