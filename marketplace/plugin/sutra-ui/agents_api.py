@@ -2824,7 +2824,8 @@ def api_library_ai_article(item_id: str, body: dict = Body(...)):
     draft = body.get("draft") if isinstance(body.get("draft"), str) else None
     _sync_claude_bin()
     try:
-        return library_edit.propose_article(item_id, draft, instruction)
+        return library_edit.propose_article(item_id, draft, instruction,
+                                            target_words=library_edit.parse_word_target(instruction))
     except Exception as e:  # noqa: BLE001 -- BlockDrift, InventedFigure, ValueError all read the same to a person
         return _bad(str(e)[:400])
 

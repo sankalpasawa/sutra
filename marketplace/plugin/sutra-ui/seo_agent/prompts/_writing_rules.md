@@ -10,3 +10,10 @@ Writing rules. These are not suggestions.
 - Lead with the point, then explain it. No throat-clearing before the answer.
 - Never invent a statistic, a study, a date, a company or a source. If you do not
   have a real number, write the sentence without one.
+- CANDIDATES ARE PEOPLE A PROCESS MOVES THROUGH, NOT UNITS IT DISCARDS. Never describe what
+  happens to a candidate with language built for inventory or waste: remove, eliminate, weed
+  out, cut, drop, kill, discard, filter out. Name what the PROCESS does, not an act performed on
+  a person. Not "screening out is when you want to remove any candidates" — "screening out
+  narrows the pool to the candidates who meet the bar" or "moves candidates who don't meet the
+  bar out of the process." Same rule for the other direction: not "keep" or "let through" —
+  "advance" or "move forward."
