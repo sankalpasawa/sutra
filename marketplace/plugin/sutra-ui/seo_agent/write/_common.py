@@ -88,6 +88,13 @@ QUICK_MIN = 60
 QUICK_MAX = 110
 READABLE_EASE = 45.0                # Flesch band floor; the human articles score 28-35, so no chasing 60
 READABLE_EASE_MAX = 72.0            # above this the prose went clipped, not clear
+# ONE SHOT AT THE CUT WAS NOT ENOUGH (found live: a 2,600-word draft told "cut 600 words" came
+# back at 2,430 -- it tried, it did not land). Nothing after readable enforces the author's number
+# at all (clean.py and assemble.py only ever REPORT the final length), so a single rewrite that
+# undershoots its own cut quietly ships an article over the length the author asked for.
+WORD_BAND_CEILING_PCT = 1.10        # over this fraction of target is "too long" (check()'s own ceiling)
+WORD_BAND_MAX_ROUNDS = 2            # further cut-only rounds after the first rewrite, cost-bounded
+WORD_BAND_MIN_PROGRESS = 20         # a round that cuts fewer words than this is the model declining further
 # ONE belief, held by two steps. About this many words around a fact is what it takes for the fact
 # to mean something: stated, sourced, and told why it matters. Fewer and it is trivia on a page.
 # write_body uses it to decide how many facts a section can carry; readable uses it to decide how
