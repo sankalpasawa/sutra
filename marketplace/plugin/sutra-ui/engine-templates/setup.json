@@ -8,6 +8,11 @@
  "skills": [
   "set up a department from the owner's words"
  ],
+ "clarification_questions": [
+  "What should this department make or achieve, and who is it for?",
+  "What result must this department deliver first?",
+  "What important constraint should it follow?"
+ ],
  "reads": "Request",
  "writes": "Department",
  "start": {
@@ -33,6 +38,16 @@
    "check": "facts_are_closed"
   },
   {
+   "id": "setup.converse",
+   "name": "Ask one question if the request is not clear",
+   "nature": "decide",
+   "born": "C2",
+   "code": "setup_converse",
+   "out": {"verdict": ["ask", "clear"], "question": "str", "run": "bool"},
+   "check": "setup_converse_is_valid",
+   "may_end": true
+  },
+  {
    "id": "setup.shape",
    "name": "Shape the department",
    "nature": "make",
@@ -43,7 +58,10 @@
    "out": {
     "name": "str",
     "kind": "str",
-    "goal": "str"
+    "goal": "str",
+    "purpose": "str",
+    "route": ["template", "organic"],
+    "template_ref": "dict"
    },
    "check": "department_is_shaped"
   },

@@ -2,20 +2,21 @@
 
 | Field | Value |
 |---|---|
-| **status** | v1, 2026-09-29, RECORD of the code (Sutra Desktop v2.306.19-desktop; the organisation row from v2.306.20) |
+| **status** | v2, 2026-10-05, RECORD of the J1 implementation |
 | Code | `website_api.py` (`/found`, `/{ref}/ask`, `/{ref}/asks/{aid}`), `founding.py` (`found_structure`, the spawn), `engine_runtime.py` (`request`, `FRONT`, `identity_gate`, `setup_read`, `p_setup_shape`, `d_setup_shape`, `setup_make`, `identity_file`), `engine_defs/website.json` (`kinds`) |
 
 ## The organisation and its Root
 
 - `POST /api/native/found {org, first}` (the New organisation sheet's Found button, `wbFoundGo` in `22-website.js`) calls `founding.found_structure(org_name, owner)`: one organisation node and one department of kind `root`, On. If `first` words came with it, they go to Root as its first request (`W.owner_ask(root, first)`).
 - Root's goal on its record: "{name}: makes, changes and ends this organisation's departments from the Library's templates; its authority ends at the owner" (`kinds.root.goal`). Root's line is one engine, `Setup`; its artifacts are `Request` and `Department`.
-- Root's rules at birth: "A new department is stamped by the owner"; "A child's rules can only tighten this one's"; "Set up what the owner asked for, from the Library's templates".
+- Root's rules at birth let Setup proceed. A later inherited `ask` rule such as "Ask me before you make anything" creates a durable approval before birth.
 - On the screen the organisation's row is Root's chat and Root is not drawn; founding lands on that row; the departments Root makes sit under the organisation in the tree and on the chart (`chat.md`, "The organisation row").
 
 ## The front door
 
 - Words said to Root arrive as a board post from `Owner` to `Identity` with the word `front` (`request`: `front = d.get("kind") == "root"`). Words said inside a department arrive with the word `request`; said in a function's chat they carry `about = {"fn": <name>}`; said from a department's chat to Root they carry `about = {"dept": <ref>}` (the chip).
-- Root's Identity files the words as a `Request` version and asks the owner (`identity_gate`, engine `Setup`): the ask's text is "Set up a department for: " + the first sentence of the words, cut at 120 characters; kind `setup`.
+- Root's Identity appends the words to the active versioned `Request` conversation. Each message has an id, actor, text and time. A retry with the same message id is append-once.
+- Setup asks one question at a time while the Request is unclear. The outstanding question and full history survive reload. `just do it` stops clarification and records the Library defaults that were applied.
 - Short front words are read by code first (`FRONT`): a line starting with stamp / yes / approve / ok is a stamp, refuse / no / reject a refusal, stop a Stop, start / resume a Start, and "start | set up | create | make | found … department" a setup request.
 
 ## Setup
@@ -23,9 +24,13 @@
 | Step | Id | Rung at birth | Does |
 |---|---|---|---|
 | Read the request | `setup.read` | code | the words, the Library's kinds with each one's use case, the names this Root already has (`setup_read`) |
-| Shape the department | `setup.shape` | improvised call (a model call) | returns `{name, kind, goal}`; the prompt lists each kind's use case and the existing names (`p_setup_shape`); the offline draft picks `website` and names "<org> Website" (`d_setup_shape`) |
-| Make it | `setup.make` | code | `founding` spawns the department of that kind with that goal; a name that already exists is not made again: the words are handed to the existing department and the owner is told (`setup_make`) |
+| Converse | `setup.converse` | code | returns one outstanding question or `clear`; an unanswered question ends this run without creating anything |
+| Shape the department | `setup.shape` | improvised call (a model call) | returns `{name, purpose, route, template_ref, kind, goal}`; a template reference has a stable id and version, while organic has no template |
+| Make it | `setup.make` | code | `founding` reconciles one child, its five function templates, rules and limits, complete goal context, born engines and one `j2_ready` event |
 | File | `setup.file` | code | the `Department` artifact names the child's ref |
+
+Root then tells the department name, born engines and first action. J1 stops at
+`j2_ready`: it does not run a child engine or create a business artifact.
 
 The child's functions are born from the kind's `functions_template` (`founding`: `product-build` for a website, `default` otherwise); a template picked later on a function's Settings tab is what `card()` reads (`function_templates.picked(ref)`).
 

@@ -359,7 +359,7 @@ def give_goal(ref, text):
                        [{"ask": text, "at": now()}], "owner", {"ok": True, "notes": ["the owner's goal"]})
 
 
-def owner_ask(ref, text, about=None):
+def owner_ask(ref, text, about=None, message_id=None):
     """A person asks for something extra (the Ask control). Identity takes it,
     Priority admits it, and it becomes the next Brief version, so the line runs
     again from Plan. On a Root, the words arrive at the front door; `about` is
@@ -372,7 +372,7 @@ def owner_ask(ref, text, about=None):
         raise ValueError("no website department at %s" % ref)
     rt = _runtime(ref)
     if rt:
-        return rt.request(ref, text, about=about)[0], None
+        return rt.request(ref, text, about=about, message_id=message_id)[0], None
     with _lock(ref):
         reqs = requests(ref)
         rq = {"id": "q-" + uuid.uuid4().hex[:8], "text": text, "at": now()}
@@ -413,6 +413,8 @@ def decide_ask(ref, aid, approve, by="the owner"):
     for a in asks(ref):
         if a["id"] == aid:
             if a["status"] != "pending":
+                if a["status"] == ("stamped" if approve else "refused"):
+                    return a
                 raise ValueError("that ask is already %s" % a["status"])
             a["status"] = "stamped" if approve else "refused"
             a["decided"] = now()

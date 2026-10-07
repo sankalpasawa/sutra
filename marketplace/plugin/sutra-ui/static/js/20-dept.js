@@ -32,6 +32,7 @@ function dpS(){
                       loading:{}, error:{}, busy:{}, more:{}, confirm:null,
                       identity:null, now:null, running:null, waits:null,
                       adaptation:null, priority:null, coordination:null, audit:null,
+                      j2:null, activity:null,
                       engines:null, engineRuns:{}, engineData:{}, filed:null,
                       people:null, meters:null,
                       /* slice I: the template each function runs, the picker, the
@@ -82,6 +83,8 @@ function dpLoadAdaptation(ref, force){ return dpLoad("adaptation", ref, dpUrl(re
 function dpLoadPriority(ref, force){ return dpLoad("priority", ref, dpUrl(ref, "priority"), force); }
 function dpLoadCoordination(ref, force){ return dpLoad("coordination", ref, dpUrl(ref, "coordination"), force); }
 function dpLoadAudit(ref, force){ return dpLoad("audit", ref, dpUrl(ref, "audit"), force); }
+function dpLoadJ2(ref, force){ return dpLoad("j2", ref, dpUrl(ref, "j2"), force); }
+function dpLoadActivity(ref, force){ return dpLoad("activity", ref, dpUrl(ref, "j2/events"), force); }
 /* Engines is read when the LIST COLUMN paints, not when a card opens: the
    group carries a state word per row (A18), so the column itself needs it. */
 function dpLoadEngines(ref, force){ return dpLoad("engines", ref, dpUrl(ref, "engines"), force); }
@@ -135,6 +138,7 @@ function dpSelect(ref){
     st.sel = ref;
     st.now = null; st.running = null; st.waits = null; st.identity = null;
     st.adaptation = null; st.priority = null; st.coordination = null; st.audit = null;
+    st.j2 = null; st.activity = null;
     st.engines = null; st.filed = null; st.people = null; st.meters = null;
     st.engineRuns = {}; st.engineData = {};
     st.engineSel = null; st.filedSel = null; st.personSel = null; st.confirm = null;
@@ -366,14 +370,59 @@ function dpNowHtml(){
   const waits = (waitR && waitR.waits) || [];
   const running = (runR && runR.running) || [];
   const meters = dpMetersHtml();
+  const activity = `<div class="dpoffer"><button type="button" class="btn" data-dptab="activity">Agent activity</button></div>`;
   if (!asks.length && !waits.length && !running.length){
-    return failed ? dpQuiet("Could not read") : dpQuiet("Nothing waiting on you") + meters;
+    return (failed ? dpQuiet("Could not read") : dpQuiet("Nothing waiting on you")) + meters + activity;
   }
   let body = "";
   if (asks.length) body += dpCard("Asks", asks.map(dpAskHtml).join(""));
   if (waits.length) body += dpCard("Waits", waits.map(w => dpRunRow(w.objective, w.state)).join(""));
   if (running.length) body += dpCard("Running", running.map(r => dpRunRow(r.goal, "")).join(""));
-  return body + meters;
+  return body + meters + activity;
+}
+
+/* J2's operational view. It is deliberately not a sixth function: the five
+   functions remain the product model, while this card is the transparent view
+   over their durable exchanges. It shows decisions and evidence, never model
+   scratchpads or hidden reasoning. */
+function dpActivityHtml(){
+  const st = dpS(), ref = st.sel;
+  const status = (st.j2 && st.j2.ref === ref) ? st.j2 : null;
+  const read = (st.activity && st.activity.ref === ref) ? st.activity : null;
+  if (!status || !read) return (st.error.j2 || st.error.activity) ? dpQuiet("Could not read") : dpSkel();
+  const state = status.state || "not_started";
+  const phase = status.journey ? status.journey + (status.step ? " · step " + status.step : "") : "Not started";
+  let control = "";
+  if (status.enabled && state === "not_started")
+    control = `<button type="button" class="btn" data-dpj2start="1">Start J2</button>`;
+  else if (state !== "stopped" && state !== "not_ready")
+    control = `<button type="button" class="btn" data-dpj2stop="1">Stop</button>`;
+  const head = dpCard("J2", `<div class="dprow"><span class="dpdot ${dpEsc(state)}"></span>` +
+    `<span><b>${dpEsc(state.replace(/_/g, " "))}</b><div class="dpchk">${dpEsc(phase)}</div></span></div>` +
+    (control ? `<div class="dpoffer">${control}</div>` : ""));
+  const rows = (read.events || []).map(e => `<div class="dpmsg"><span>` +
+    `<div class="dpwho">${dpEsc(e.actor || "")} to ${dpEsc(e.recipient || "")}</div>` +
+    `${dpEsc(e.summary || e.action || "")}` +
+    `<div class="dpchk">${dpEsc(e.journey || "")}${e.action ? " · " + dpEsc(e.action) : ""} · ${dpEsc(e.state || "")}</div>` +
+    `</span><span class="dpat">${dpEsc(dpWhen(e.at))}</span></div>`).join("");
+  return `<h2>Agent activity</h2>` + head + dpCard("Exchanges", rows || dpQuiet("Nothing yet."));
+}
+
+async function dpJ2(action){
+  const st = dpS(), ref = st.sel;
+  if (!ref || (action !== "start" && action !== "stop")) return;
+  const lock = "j2-" + action + ":" + ref;
+  if (st.busy[lock]) return;
+  st.busy[lock] = true;
+  try {
+    await apiPost(dpUrl(ref, "j2/" + action), {});
+    await Promise.all([dpLoadJ2(ref, true), dpLoadActivity(ref, true)]);
+    delete st.error.j2;
+  } catch (e) {
+    st.error.j2 = (e && e.message) || String(e);
+  }
+  delete st.busy[lock];
+  dpRender();
 }
 
 /* ── the chat every card keeps ─────────────────────────────────────────────
@@ -911,6 +960,11 @@ function dpViewerHtml(n, d, dept, err){
     dpLoadIdentity(n.ref);                               /* read on open, as o2LoadApps does */
     return dpViewerShell("Identity", dpIdentityHtml());
   }
+  if (tab === "activity"){
+    dpLoadJ2(n.ref);
+    dpLoadActivity(n.ref);
+    return dpViewerShell("Agent activity", dpActivityHtml());
+  }
   if (tab === "engines"){
     dpLoadEngines(n.ref);
     const e = dpEngine();
@@ -1367,7 +1421,7 @@ async function dpDecide(pid, ok){
    landed inside a `.dp` element. That is 19-org2.js:875-880's own guard with
    this screen's class, so nothing here can fire on another screen. */
 if (typeof document !== "undefined" && document.addEventListener){
-  const DP_SEL = "[data-dptab],[data-dpdecide],[data-dpmore],[data-dpfiled],[data-dpperson],[data-dpapp],[data-dpengine],[data-dppause],[data-dpchatmode],[data-dppane],[data-dpgoal],[data-dprule],[data-dpchatstart],[data-dptplopen],[data-dptpluse]";
+  const DP_SEL = "[data-dptab],[data-dpdecide],[data-dpmore],[data-dpfiled],[data-dpperson],[data-dpapp],[data-dpengine],[data-dppause],[data-dpchatmode],[data-dppane],[data-dpgoal],[data-dprule],[data-dpchatstart],[data-dptplopen],[data-dptpluse],[data-dpj2start],[data-dpj2stop]";
   document.addEventListener("click", (ev) => {
     if (!S.dp || S.screen !== "org2") return;
     const t = ev.target && ev.target.closest ? ev.target.closest(DP_SEL) : null;
@@ -1378,6 +1432,8 @@ if (typeof document !== "undefined" && document.addEventListener){
       if (st.sel){ st.tab[st.sel] = ds.dptab; st.confirm = null; }
       dpRender(); return;
     }
+    if (ds.dpj2start !== undefined){ ev.preventDefault(); dpJ2("start"); return; }
+    if (ds.dpj2stop !== undefined){ ev.preventDefault(); dpJ2("stop"); return; }
     if (ds.dppane !== undefined){
       ev.preventDefault();
       if (st.sel) st.pane[st.sel + ":" + (st.tab[st.sel] || "now")] = ds.dppane;

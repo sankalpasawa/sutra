@@ -56,10 +56,6 @@
    ],
    "rules": [
     {
-     "tag": "ask",
-     "line": "A new department is stamped by the owner"
-    },
-    {
      "tag": "always",
      "line": "A child's rules can only tighten this one's"
     },

@@ -111,7 +111,7 @@ async def ask(ref: str, request: Request):
     text, body = await _text(request)
     about = str(body.get("about") or "").strip() or None
     try:
-        rq, row = W.owner_ask(ref, text, about=about)
+        rq, row = W.owner_ask(ref, text, about=about, message_id=str(body.get("message_id") or "") or None)
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
     return {"ok": True, "request": rq, "brief": row}

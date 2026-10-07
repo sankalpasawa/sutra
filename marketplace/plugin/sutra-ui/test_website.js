@@ -1254,6 +1254,20 @@ test("V12: the second design's stylesheet block is tokens only and covers every 
   assert.ok(a > 0 && b > a && t > b, "loaded after 22, before the tail");
 });
 
+test("W45: J1 shows Root's one question and final department tell without renaming Root", () => {
+  const c = fresh();
+  const q = c.wbChatTurn({ src: "Identity", msg_type: "inform", at: AT, word: "question",
+    line: "What should this department achieve?" }, true);
+  const done = c.wbChatTurn({ src: "Identity", msg_type: "inform", at: AT, word: "department",
+    line: "Acme <Learning> Website is set up with Plan, Write, Check, Publish. First: Plan.",
+    dept: "r5", name: "Acme <Learning> Website" }, false);
+  assert.ok(/<div class="who who-ai">Root<\/div>/.test(q), "the helper is Root");
+  assert.strictEqual((q.match(/\?/g) || []).length, 1, "one question in the turn");
+  assert.ok(/Acme/.test(done) && /Website is set up/.test(done) && !/Acme <Learning>/.test(done), "the final tell is escaped");
+  assert.ok(/data-wbopen="r5">[^<]*Acme[^<]*Website<\/button>/.test(done), "the child opens once from its chip");
+  assert.ok(!/Sutra<\/div>/.test(q + done), "J1 does not alias Root as Sutra");
+});
+
 Promise.all(pending).then(() => {
   console.log("-".repeat(60));
   console.log(failed ? " " + failed + " failed (" + ran + " tests)" : " all passed (" + ran + " tests)");
