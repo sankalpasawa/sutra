@@ -628,8 +628,15 @@ from concurrent.futures import ThreadPoolExecutor as _Pool
 from contextlib import contextmanager as _contextmanager
 from datetime import datetime as _dt, timedelta as _td
 
-PARALLEL = int(os.environ.get("SEO_AGENT_PARALLEL", "3"))          # slots PER RUN, and the fallback
-PARALLEL_MAX = int(os.environ.get("SEO_AGENT_PARALLEL_MAX", "9"))  # the ceiling for the whole app
+# 3 -> 5 PER RUN (2026-10-06, the docstring's own measurement said so first). A single article's
+# fan-out stages (write_body's sections, headings, source_check, sentence_pass, slop_pass) were
+# capped at 3 concurrent calls while the measured overhead of running a DOZEN at once was 3.7s
+# against 3.0s for one -- the slot count was the bottleneck, not anything it was protecting. Still
+# bounded, still overridable per-process (SEO_AGENT_PARALLEL) and per-person at runtime (the Slots
+# setting, store.slot_settings -- no code change needed to go higher or lower than this default).
+# PARALLEL_MAX follows at roughly the same ratio to the new default as it held to the old one.
+PARALLEL = int(os.environ.get("SEO_AGENT_PARALLEL", "5"))           # slots PER RUN, and the fallback
+PARALLEL_MAX = int(os.environ.get("SEO_AGENT_PARALLEL_MAX", "12"))  # the ceiling for the whole app
 
 _local = _threading.local()      # .run = the key of the run this thread works for, or None
 

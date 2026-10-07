@@ -542,7 +542,7 @@ def check(before, after, primary, target=None, stakes=None, judged=None):
         "the wrapper caps an answer at what a snippet shows")
     if target:
         floor = target * 0.85 if b > target else 0
-        add("Landed in the word band", floor <= a <= target * 1.1,
+        add("Landed in the word band", floor <= a <= target * C.WORD_BAND_CEILING_PCT,
             "%d -> %d, asked for %d (%+.0f%%)" % (b, a, target, (a - b) / b * 100 if b else 0)
             + (" — %d words UNDER the floor of %.0f" % (target - a, floor) if floor and a < floor else ""),
             "too long loses the reader; too short throws away what the research bought")
@@ -685,6 +685,33 @@ def _examples():
                                                         "above: the plain thing first, then the concrete case, then what it means)")
 
 
+def _cut_pass(article, target, archetype, rule, stakes, prim, var, h2, unused, brand):
+    """One call of the 'readable' prompt, told the gap off THIS article (not the original). Pulled
+    out of run() so the bounded extra rounds below can call it again against whatever the last
+    round produced, each time with a freshly measured over_by. None when the model's reply was
+    empty, so the caller can stop rather than apply nothing."""
+    now = words(article)
+    facts = len(fact_ids(article))
+    keep = max(6, round(target / max(C.WORDS_PER_FACT, 1)))
+    over_by = max(0, now - target)
+    prompt = C.prompt("readable", brand=brand["brand"], facts_now="{:,}".format(facts), words_now="{:,}".format(now),
+                      words_per_fact_now="%.0f" % words_per_fact(article), target_words="{:,}".format(target),
+                      facts_keep="{:,}".format(keep), facts_drop="{:,}".format(max(0, facts - keep)),
+                      archetype=archetype or "general article", format_rule=rule,
+                      table_stakes="\n".join("   - %s" % x for x in stakes) or "   (none recorded)",
+                      over_by=("You are %s words OVER the length asked for. Cut that many." % "{:,}".format(over_by))
+                              if over_by > 40 else "You are within the length asked for. Do not pad to fill it.",
+                      primary_keyword=prim, variations=var, heading_keywords=h2, unused_keywords=unused,
+                      ease_now="%.0f" % reading_ease(article), ease_target="%.0f" % C.READABLE_EASE,
+                      hard_words=render_hard_words(article), long_sentences=render_long_sentences(article),
+                      writing_examples=_examples(), article=render(article), memory=C.sh.memory_block())
+    with C.long_call():
+        reply = llm.json_call(prompt) or {}
+    if not reply.get("sections") and not reply.get("intro"):
+        return None
+    return apply_reply(article, reply)
+
+
 def run(w, plan, st, say=lambda *a: None):
     brand = C.company()
     ks = st.get("keywords") or {}
@@ -708,29 +735,35 @@ def run(w, plan, st, say=lambda *a: None):
     # article keeps more facts and a shorter one keeps fewer, instead of the count being fixed by a
     # cap that ignored the article.
     keep = max(6, round(target / max(C.WORDS_PER_FACT, 1)))
-    # THE REWRITE IS TOLD THE GAP, not just the target. It is the last step that rewrites the
-    # article whole, so it is the only one that can honestly cut 400 words; before today it was
-    # handed the target and left to notice.
-    over_by = max(0, now - target)
     say("Rewriting the article to be read", "%d facts in %d words; aiming for about %d words carrying about %d facts"
         % (facts, now, target, min(keep, facts) if facts else keep))
-    prompt = C.prompt("readable", brand=brand["brand"], facts_now="{:,}".format(facts), words_now="{:,}".format(now),
-                      words_per_fact_now="%.0f" % words_per_fact(w), target_words="{:,}".format(target),
-                      facts_keep="{:,}".format(keep), facts_drop="{:,}".format(max(0, facts - keep)),
-                      archetype=archetype or "general article", format_rule=rule,
-                      table_stakes="\n".join("   - %s" % x for x in stakes) or "   (none recorded)",
-                      over_by=("You are %s words OVER the length asked for. Cut that many." % "{:,}".format(over_by))
-                              if over_by > 40 else "You are within the length asked for. Do not pad to fill it.",
-                      primary_keyword=prim, variations=var, heading_keywords=h2, unused_keywords=unused,
-                      ease_now="%.0f" % reading_ease(w), ease_target="%.0f" % C.READABLE_EASE,
-                      hard_words=render_hard_words(w), long_sentences=render_long_sentences(w),
-                      writing_examples=_examples(), article=render(w), memory=C.sh.memory_block())
-    with C.long_call():
-        reply = llm.json_call(prompt) or {}
-    if not reply.get("sections") and not reply.get("intro"):
+    new = _cut_pass(w, target, archetype, rule, stakes, prim, var, h2, unused, brand)
+    if new is None:
         say("The rewrite came back empty", "keeping the text as it is")
         return {"article": w, "report": {"applied": False, "checks": []}}
-    new = apply_reply(w, reply)
+
+    # EXTRA CUT ROUNDS, BOUNDED (the author's number stops being a suggestion all the way to the
+    # end, not just at this step's first try). One call told "cut 400 words" regularly cuts half of
+    # that and stops -- the model did real work, it just did not finish -- and nothing downstream of
+    # this step enforces the number: clean.py and assemble.py only ever REPORT the final length. So
+    # up to WORD_BAND_MAX_ROUNDS further cut-only calls run here, each one told the GAP MEASURED OFF
+    # THE LAST ROUND'S OWN OUTPUT, not the original draft. A round that fails to answer, or that
+    # cuts fewer than WORD_BAND_MIN_PROGRESS words, ends the loop immediately: that is the model
+    # declining to cut further, and asking a fourth time would not change its mind, only the bill.
+    ceiling = target * C.WORD_BAND_CEILING_PCT
+    cut_rounds = 0
+    while words(new) > ceiling and cut_rounds < C.WORD_BAND_MAX_ROUNDS:
+        before_n = words(new)
+        say("Still over length — cutting further (round %d)" % (cut_rounds + 1),
+            "%d words, asked for about %d" % (before_n, target))
+        again = _cut_pass(new, target, archetype, rule, stakes, prim, var, h2, unused, brand)
+        cut_rounds += 1
+        if again is None:
+            break
+        new = again
+        if before_n - words(new) < C.WORD_BAND_MIN_PROGRESS:
+            break
+
     new, fat_report = fix_fat(new, say)
     new, plain_report = fix_plain(new, say=say)
     judged = judge_coverage(new, stakes, ai_overview, say, st.get("coverage_note") or "")
@@ -744,11 +777,12 @@ def run(w, plan, st, say=lambda *a: None):
             "; ".join("%s — %s" % (d["topic"], d["why"]) for d in cover["dropped"])
             or "nothing every ranking page covers was left out")
     say("Readable rewrite done", "%d -> %d words (asked for %d); reading ease %s -> %s; %d of %d checks clean"
-        % (words(w), words(new), target, reading_ease(w), reading_ease(new), len(checks) - len(failed), len(checks)))
+        % (words(w), words(new), target, reading_ease(w), reading_ease(new), len(checks) - len(failed), len(checks))
+        + ("; %d extra cut round(s)" % cut_rounds if cut_rounds else ""))
     return {"article": new, "report": {"applied": True, "checks": checks, "archetype": archetype,
                                        "format_rule_used": bool(rule), "fat_paragraphs": fat_report,
                                        "plain_english": plain_report, "coverage": judged,
-                                       "coverage_report": cover,
+                                       "coverage_report": cover, "cut_rounds": cut_rounds,
                                        "h1_before": w.get("h1"), "h1_after": new.get("h1"),
                                        "words_before": words(w), "words_after": words(new),
                                        "ease_before": reading_ease(w), "ease_after": reading_ease(new)}}
