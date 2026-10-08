@@ -231,7 +231,7 @@ sutra_tier_settle() {
     # had its own timeout, then record the code's value as the one that stands.
     _ts_qf="$_ts_p/.sutra/turn/$_ts_s/$_ts_t.$_ts_id.ask.txt"
     if [ -f "$_ts_qf" ]; then
-      _ts_mt="$(stat -f %m "$_ts_qf" 2>/dev/null || stat -c %Y "$_ts_qf" 2>/dev/null)"
+      _ts_mt="$(stat -c %Y "$_ts_qf" 2>/dev/null || stat -f %m "$_ts_qf" 2>/dev/null)"
       case "$_ts_mt" in ''|*[!0-9]*) _ts_mt=0 ;; esac
       _ts_now="$(date +%s 2>/dev/null)"; case "$_ts_now" in ''|*[!0-9]*) _ts_now=0 ;; esac
       [ "$((_ts_now - _ts_mt))" -lt "$(( ${SUTRA_TIER_TIMEOUT:-25} + 5 ))" ] && return 0
@@ -271,8 +271,11 @@ if [ "${1:-}" = "--ask" ] && [ "$(basename -- "${0:-}")" = "tier.sh" ]; then
     sleep 1; _ask_n=$((_ask_n + 1))
   done
   if kill -0 "$_ask_pid" 2>/dev/null; then
-    pkill -P "$_ask_pid" 2>/dev/null
+    # parent first: killing the child first lets the caller run its next line
+    # (and write an answer) before its own kill lands -- seen on Linux CI
+    _ask_kids="$(pgrep -P "$_ask_pid" 2>/dev/null)"
     kill "$_ask_pid" 2>/dev/null
+    [ -n "$_ask_kids" ] && kill $_ask_kids 2>/dev/null
   fi
   wait "$_ask_pid" 2>/dev/null
   # the caller's own exit code only reports its verdict contract; what decides

@@ -109,7 +109,7 @@ fi
 # Time-boxed exemption: .enforcement/policy-exempt.active younger than 10 min
 EXEMPT_FILE="$LOG_DIR/policy-exempt.active"
 if [ -f "$EXEMPT_FILE" ]; then
-  AGE=$(( $(date +%s) - $(stat -f %m "$EXEMPT_FILE" 2>/dev/null || stat -c %Y "$EXEMPT_FILE" 2>/dev/null || echo 0) ))
+  AGE=$(( $(date +%s) - $(stat -c %Y "$EXEMPT_FILE" 2>/dev/null || stat -f %m "$EXEMPT_FILE" 2>/dev/null || echo 0) ))
   if [ "$AGE" -lt 600 ]; then
     echo "$TS TIME_EXEMPT age=${AGE}s file=$FILE_PATH" >> "$LOG_DIR/policy-acks.log"
     exit 0

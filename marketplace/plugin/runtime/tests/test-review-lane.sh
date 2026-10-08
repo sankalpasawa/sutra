@@ -208,7 +208,7 @@ grep -q 'never.txt' "$PJ9/.sutra/turn/sid-c9/lane-logs/$T9.verifies.log" 2>/dev/
 do_run c9n "$PJ9" "$HM9" UserPromptSubmit "$(stdin_ups sid-c9 "next")"
 jq -r '.hookSpecificOutput.additionalContext // ""' "$WORK/c9n.out" | grep -q 'verifies=1 pass/1 fail/0 manual' && pass "case9: Last turn line carries the verify results" || fail "case9: Last turn lacks verifies: $(jq -r '.hookSpecificOutput.additionalContext // ""' "$WORK/c9n.out" | grep 'Last turn')"
 is "case9: verifies ledger row" "$(rows "$PJ9/.sutra/turn/sid-c9/$T9.jsonl" '.kind=="lane_verifies"')" 1
-[ "$(stat -f %Lp "$WORK/c8-sealed/home/.sutra-runtime/seal.key" 2>/dev/null || stat -c %a "$WORK/c8-sealed/home/.sutra-runtime/seal.key")" = "600" ] && pass "case8: key mode 600" || fail "case8: key mode not 600"
+[ "$(stat -c %a "$WORK/c8-sealed/home/.sutra-runtime/seal.key" 2>/dev/null || stat -f %Lp "$WORK/c8-sealed/home/.sutra-runtime/seal.key" 2>/dev/null)" = "600" ] && pass "case8: key mode 600" || fail "case8: key mode not 600"
 
 echo "failed=$failed"
 [ "$failed" -eq 0 ]

@@ -89,7 +89,7 @@ if [ ! -f "$DECISIONS_FILE" ]; then
 else
   # Check if modified after depth registration
   if [ -n "$REG_TIMESTAMP" ]; then
-    FILE_MOD=$(stat -f '%m' "$DECISIONS_FILE" 2>/dev/null || stat -c '%Y' "$DECISIONS_FILE" 2>/dev/null)
+    FILE_MOD=$(stat -c '%Y' "$DECISIONS_FILE" 2>/dev/null || stat -f '%m' "$DECISIONS_FILE" 2>/dev/null)
     REG_EPOCH=$(date -j -f '%Y-%m-%dT%H:%M:%S' "$REG_TIMESTAMP" '+%s' 2>/dev/null || date -d "$REG_TIMESTAMP" '+%s' 2>/dev/null)
     if [ -n "$FILE_MOD" ] && [ -n "$REG_EPOCH" ] && [ "$FILE_MOD" -lt "$REG_EPOCH" ]; then
       MISSING="$MISSING\n  - context/DECISIONS.md (not updated since depth registration)"
@@ -112,7 +112,7 @@ if [ "$DEPTH_LEVEL" -ge 5 ]; then
     MISSING="$MISSING\n  - project/RETROSPECTIVE.md (does not exist — create it with learnings)"
   else
     if [ -n "$REG_TIMESTAMP" ]; then
-      FILE_MOD=$(stat -f '%m' "$RETRO_FILE" 2>/dev/null || stat -c '%Y' "$RETRO_FILE" 2>/dev/null)
+      FILE_MOD=$(stat -c '%Y' "$RETRO_FILE" 2>/dev/null || stat -f '%m' "$RETRO_FILE" 2>/dev/null)
       REG_EPOCH=$(date -j -f '%Y-%m-%dT%H:%M:%S' "$REG_TIMESTAMP" '+%s' 2>/dev/null || date -d "$REG_TIMESTAMP" '+%s' 2>/dev/null)
       if [ -n "$FILE_MOD" ] && [ -n "$REG_EPOCH" ] && [ "$FILE_MOD" -lt "$REG_EPOCH" ]; then
         MISSING="$MISSING\n  - project/RETROSPECTIVE.md (not updated since depth registration)"

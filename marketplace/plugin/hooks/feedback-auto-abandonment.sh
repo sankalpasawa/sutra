@@ -37,7 +37,7 @@ DEPTH_MARKER="$(_b2_marker_path depth-registered)"
 [ -f "$DEPTH_MARKER" ] || exit 0
 
 NOW=$(date +%s)
-MTIME=$(stat -f %m "$DEPTH_MARKER" 2>/dev/null || stat -c %Y "$DEPTH_MARKER" 2>/dev/null)
+MTIME=$(stat -c %Y "$DEPTH_MARKER" 2>/dev/null || stat -f %m "$DEPTH_MARKER" 2>/dev/null)
 [ -z "$MTIME" ] && exit 0
 AGE=$((NOW - MTIME))
 [ "$AGE" -gt 3600 ] && exit 0

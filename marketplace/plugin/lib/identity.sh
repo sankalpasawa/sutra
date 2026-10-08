@@ -303,7 +303,7 @@ identity_is_stale() {
   local now mtime age
   now=$(date +%s 2>/dev/null)
   # GNU stat (linux) uses -c %Y; BSD stat (macOS) uses -f %m
-  mtime=$(stat -f %m "$path" 2>/dev/null || stat -c %Y "$path" 2>/dev/null)
+  mtime=$(stat -c %Y "$path" 2>/dev/null || stat -f %m "$path" 2>/dev/null)
   [ -z "$mtime" ] && return 0
   age=$((now - mtime))
   [ "$age" -gt "$max_age" ]

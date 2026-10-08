@@ -35,7 +35,7 @@ mkdir -p "$SUTRA_HOME" 2>/dev/null || exit 0
 # whoever loses skips. Locks older than an hour are treated as stale.
 if ! mkdir "$LOCK" 2>/dev/null; then
   if [ -d "$LOCK" ]; then
-    _age=$(( $(date +%s) - $(stat -f %m "$LOCK" 2>/dev/null || echo 0) ))
+    _age=$(( $(date +%s) - $(stat -c %Y "$LOCK" 2>/dev/null || stat -f %m "$LOCK" 2>/dev/null || echo 0) ))
     [ "$_age" -lt 3600 ] && exit 0
     rmdir "$LOCK" 2>/dev/null || exit 0
     mkdir "$LOCK" 2>/dev/null || exit 0

@@ -170,7 +170,7 @@ elif [ -f "$MARKER" ]; then
   _SMC_MARKER_PRESENT=1
 fi
 if [ "$_SMC_MARKER_PRESENT" = "1" ]; then
-  MARKER_AGE=$(( TS - $(stat -f %m "$_SMC_MARKER_FILE" 2>/dev/null || stat -c %Y "$_SMC_MARKER_FILE" 2>/dev/null || echo $TS) ))
+  MARKER_AGE=$(( TS - $(stat -c %Y "$_SMC_MARKER_FILE" 2>/dev/null || stat -f %m "$_SMC_MARKER_FILE" 2>/dev/null || echo $TS) ))
   echo "{\"ts\":$TS,\"event\":\"structural-allow-marker\",\"command\":\"$SAFE_CMD\",\"hard_path\":\"$SAFE_HIT\",\"marker_age_sec\":$MARKER_AGE}" >> "$LEDGER"
   exit 0
 fi

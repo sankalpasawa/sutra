@@ -57,7 +57,7 @@ fire() {
   local log="$PROJECT_DIR/os/coverage-log.jsonl"
   if [ -f "$log" ] && [ -f "$MARKER" ]; then
     local marker_mtime turn_start
-    marker_mtime=$(stat -f %m "$MARKER" 2>/dev/null || stat -c %Y "$MARKER" 2>/dev/null || echo 0)
+    marker_mtime=$(stat -c %Y "$MARKER" 2>/dev/null || stat -f %m "$MARKER" 2>/dev/null || echo 0)
     turn_start=$(date -u -r "$marker_mtime" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "1970-01-01T00:00:00Z")
     local last_hit
     last_hit=$(grep "\"task\":\"$TASK\".*\"method\":\"$method\"" "$log" 2>/dev/null | tail -1 | grep -oE '"ts":"[^"]+"' | sed 's/"ts":"//;s/"$//')

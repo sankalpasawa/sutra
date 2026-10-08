@@ -13,8 +13,8 @@ SEEN="$ROOT/.claude/sessions/$SID/creation-guard-seen"
 NEW=$(cd "$ROOT" && $GIT status --porcelain --untracked-files=all 2>/dev/null | sed -n -e 's/^?? //p' -e 's/^A  //p' -e 's/^AM //p')
 # session baseline: only files touched since this session's dir was created count as this session's creations
 SDIR="$ROOT/.claude/sessions/$SID"; START=0
-if [ -d "$SDIR" ]; then START=$(stat -f %B "$SDIR" 2>/dev/null || stat -c %Y "$SDIR" 2>/dev/null || echo 0); fi
-mt(){ stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
+if [ -d "$SDIR" ]; then START=$(stat -c %Y "$SDIR" 2>/dev/null || stat -f %B "$SDIR" 2>/dev/null || echo 0); fi
+mt(){ stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0; }
 [ -z "$NEW" ] && exit 0
 BAD=""; N=0
 while IFS= read -r p; do

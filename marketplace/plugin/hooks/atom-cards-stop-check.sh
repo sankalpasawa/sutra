@@ -47,10 +47,10 @@ STATE="$ROOT/.sutra/atoms/$SID"
 TURN_START="${ATOM_CARDS_TURN_START:-}"
 if [ -z "$TURN_START" ]; then
   if [ -d "$ROOT/.claude/sessions/$SID" ]; then
-    TURN_START=$(stat -f %m "$ROOT/.claude/sessions/$SID" 2>/dev/null || stat -c %Y "$ROOT/.claude/sessions/$SID" 2>/dev/null)
+    TURN_START=$(stat -c %Y "$ROOT/.claude/sessions/$SID" 2>/dev/null || stat -f %m "$ROOT/.claude/sessions/$SID" 2>/dev/null)
   fi
   if [ -z "$TURN_START" ] && [ -f "$ROOT/.claude/input-routed" ]; then
-    TURN_START=$(stat -f %m "$ROOT/.claude/input-routed" 2>/dev/null || stat -c %Y "$ROOT/.claude/input-routed" 2>/dev/null)
+    TURN_START=$(stat -c %Y "$ROOT/.claude/input-routed" 2>/dev/null || stat -f %m "$ROOT/.claude/input-routed" 2>/dev/null)
   fi
   [ -z "$TURN_START" ] && exit 0
 fi

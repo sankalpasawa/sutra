@@ -8,7 +8,7 @@ for p in "$@"; do
   # evidence on STDOUT (stderr + exit codes unchanged): bytes, lines, age
   bytes=$(wc -c < "$p" | tr -d ' ')
   lines=$(wc -l < "$p" | tr -d ' ')
-  mt=$(stat -f %m "$p" 2>/dev/null || stat -c %Y "$p" 2>/dev/null || echo 0)
+  mt=$(stat -c %Y "$p" 2>/dev/null || stat -f %m "$p" 2>/dev/null || echo 0)
   age=$(( $(date +%s) - mt ))
   EVIDENCE="${EVIDENCE:+$EVIDENCE; }present: $p (${bytes}B, ${lines} lines, ${age}s old)"
 done

@@ -73,7 +73,7 @@ SETUP
 fi
 
 # Enforce chmod 600 on whichever path resolved
-PERM=$(stat -f '%Lp' "$KEY_FILE" 2>/dev/null || stat -c '%a' "$KEY_FILE")
+PERM=$(stat -c '%a' "$KEY_FILE" 2>/dev/null || stat -f '%Lp' "$KEY_FILE" 2>/dev/null)
 if [ "$PERM" != "600" ]; then
   echo "deepseek-claude: $KEY_FILE perms $PERM — chmod 600 required" >&2
   echo "Fix: chmod 600 \"$KEY_FILE\"" >&2
@@ -96,7 +96,7 @@ if [ -z "$DEEPSEEK_TOKEN" ] || [ "$DEEPSEEK_TOKEN" = "null" ]; then
   exit 1
 fi
 
-KEY_AGE_DAYS=$(( ( $(date +%s) - $(stat -f '%m' "$KEY_FILE" 2>/dev/null || stat -c '%Y' "$KEY_FILE") ) / 86400 ))
+KEY_AGE_DAYS=$(( ( $(date +%s) - $(stat -c '%Y' "$KEY_FILE" 2>/dev/null || stat -f '%m' "$KEY_FILE" 2>/dev/null) ) / 86400 ))
 
 # --- Config dir isolation (r2-P1.3 fold) -------------------------------------
 

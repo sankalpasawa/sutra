@@ -24,7 +24,7 @@ if [ -d "/tmp" ]; then
   done < <(find /tmp -maxdepth 2 -name "*.output" -o -name "*agent*" -o -name "*task-output*" 2>/dev/null | while read f; do
     if [ -f "$f" ]; then
       # Check if modified in last 60 seconds
-      MOD_TIME=$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null)
+      MOD_TIME=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null)
       NOW=$(date +%s)
       if [ -n "$MOD_TIME" ] && [ $((NOW - MOD_TIME)) -lt 60 ]; then
         printf '%s\0' "$f"

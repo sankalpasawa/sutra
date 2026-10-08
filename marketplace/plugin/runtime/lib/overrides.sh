@@ -59,7 +59,7 @@ sutra_overrides_apply() {
       { printf '%s\n' "$_so_open" > "$_so_stamp"; } 2>/dev/null
       _so_mt=$((_so_open + 1))
     else
-      _so_mt="$(stat -f %m "$_so_file" 2>/dev/null || stat -c %Y "$_so_file" 2>/dev/null)"; case "$_so_mt" in ''|*[!0-9]*) _so_mt=$((_so_open + 1)) ;; esac
+      _so_mt="$(stat -c %Y "$_so_file" 2>/dev/null || stat -f %m "$_so_file" 2>/dev/null)"; case "$_so_mt" in ''|*[!0-9]*) _so_mt=$((_so_open + 1)) ;; esac
     fi
     if [ "$_so_mt" -gt "$_so_open" ]; then
       command -v sutra_ledger_note >/dev/null 2>&1 && sutra_ledger_note override_ignored "written inside the session (mtime $_so_mt > opened $_so_open): $_so_file"
