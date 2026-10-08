@@ -171,8 +171,40 @@ jobs:
       # other step still runs on BOTH runners - the ubuntu leg keeps proving the
       # hooks, the spec and the suites, and nothing here is skipped by identity
       # (the normaliser is word-bound, so the recording user does not matter).
-      - name: golden parity (sutra-charcap, both runners)
+      # The replay is ~27 of the macOS leg's ~45 minutes. A change confined to
+      # the desktop app (sutra-ui/), docs/ or top-level .md/.txt cannot move a
+      # hook byte (no hook reads them; the corpus never touches them), so it
+      # skips the replay. Anything else - or no base to diff, or a manual run -
+      # replays. Skip-list, not run-list: a forgotten folder costs time, not proof.
+      - name: does the change reach what the corpus replays?
+        id: parity_scope
         if: runner.os == 'macOS'
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_PUSH: ${{ github.event.before }}
+          BASE_PR: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -uo pipefail
+          base="$BASE_PR"; [ "$EVENT" = push ] && base="$BASE_PUSH"
+          case "$EVENT:$base" in
+            workflow_dispatch:*|*:|*:0000000000000000000000000000000000000000)
+              echo "run=true" >> "$GITHUB_OUTPUT"; echo "replay: no base to diff against ($EVENT)"; exit 0 ;;
+          esac
+          if ! git fetch --quiet --depth=1 origin "$base" || ! changed="$(git diff --name-only "$base" HEAD)"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "replay: base $base not diffable"; exit 0
+          fi
+          reach="$(printf '%s\n' "$changed" | grep -v '^$' \
+            | grep -vE '^marketplace/plugin/(sutra-ui/|docs/|[^/]+\.(md|txt)$)' || true)"
+          if [ -n "$reach" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "replay: these can change hook behaviour:"
+            printf '%s\n' "$reach" | head -20 | sed 's/^/  /'
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "skip replay: every change is in sutra-ui/, docs/ or a top-level .md/.txt"
+          fi
+
+      - name: golden parity (sutra-charcap, both runners)
+        if: runner.os == 'macOS' && steps.parity_scope.outputs.run == 'true'
         env:
           CLAUDE_PLUGIN_ROOT: ${{ github.workspace }}/marketplace/plugin
           # The replayer runs several CASES at once and each case fans its
