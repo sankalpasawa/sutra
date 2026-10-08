@@ -651,6 +651,15 @@ s%(^|[^0-9A-Za-z._/])v?[0-9]+\.[0-9]+\.[0-9]+([^0-9.]|\.([^0-9]|$)|$)%\1<VERSION
 s%[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}(:[0-9]{2})?([.,][0-9]{1,6})?(Z|[+-][0-9]{2}:?[0-9]{2})?%<TS>%g
 s%[0-9]{4}-[0-9]{2}-[0-9]{2}%<TS>%g
 s%<TS>[T ][0-9]{2}:[0-9]{2}(:[0-9]{2})?([.,][0-9]{1,6})?(Z|[+-][0-9]{2}:?[0-9]{2})?%<TS>%g
+# Full dates are gone by this line (the rule above already ate every YYYY-MM-DD), so a bare
+# YYYY-MM left on the line is a MONTH-STAMPED PATH, not a truncated date: capture-prompt.sh
+# writes holding/state/prompts/YYYY-MM.jsonl from the real wall clock (date -u +%Y-%m), and the
+# corpus's own month rolls over on every real-world 1st regardless of when it was recorded.
+# Confirmed live (2026-10-08): the file's CONTENT hash matched byte for byte across a September
+# recording and an October replay -- capture-prompt.sh's own write is already deterministic --
+# only this path component varied, so this is a tooling-environment gap of the exact kind the
+# <TS>/<VERSION>/<HOST> rules above already exist to collapse, not a parity finding.
+s%[0-9]{4}-[0-9]{2}%<TS>%g
 s%[0-9]{2}:[0-9]{2}:[0-9]{2}%<TS>%g
 s%[0-9]{13}%<TS>%g
 s%[0-9]{10}%<TS>%g
