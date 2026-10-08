@@ -541,7 +541,7 @@ def check(before, after, primary, target=None, stakes=None, judged=None):
     add("FAQ answers short", not over, "%d answers, %d over %d words" % (len(after.get("faq") or []), len(over), C.WRAP_FAQ_WORDS),
         "the wrapper caps an answer at what a snippet shows")
     if target:
-        floor = target * 0.85 if b > target else 0
+        floor = target * C.WORD_BAND_FLOOR_PCT if b > target else 0
         add("Landed in the word band", floor <= a <= target * C.WORD_BAND_CEILING_PCT,
             "%d -> %d, asked for %d (%+.0f%%)" % (b, a, target, (a - b) / b * 100 if b else 0)
             + (" — %d words UNDER the floor of %.0f" % (target - a, floor) if floor and a < floor else ""),
