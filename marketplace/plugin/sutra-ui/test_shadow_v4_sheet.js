@@ -49,8 +49,8 @@ const settle = () => new Promise(r => setImmediate(() => setImmediate(r)));
        this page entirely -- with six other sections -- so the ordering this
        asserted is now Personality before Memory. The FIELD is unchanged:
        same `behaves` value, same textarea, same save-on-change. */
-    const iBehaves = h.indexOf(">Personality<");
-    const iMemory = h.indexOf(">Memory<");
+    const iBehaves = h.indexOf(">How Shadow works for you<");
+    const iMemory = h.indexOf(">What Shadow remembers about you<");
     assert(iBehaves !== -1 && iMemory !== -1 && iBehaves < iMemory,
       "Personality is the first section, Memory the second");
     assert(h.indexOf(">Autonomy<") === -1, "Autonomy has left the page");

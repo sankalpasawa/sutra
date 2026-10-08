@@ -275,7 +275,7 @@ class TestTheCarryReaches(Base):
         # included (maximum power), so "nothing set" is the switches alone.
         eng = mission_engine.MissionEngine(None, None, None, lambda m: "x")
         ctx = eng._decision_context({"objective": "o", "done_when": []}, "")
-        self.assertIn("Acting on its own: Just do it.", ctx["carry"])
+        self.assertIn("Should Shadow check with you before it starts? Just do it.", ctx["carry"])
         self.assertNotIn("HOW SHADOW BEHAVES", ctx["carry"])
 
     def test_44_the_decide_prompt_renders_it(self):

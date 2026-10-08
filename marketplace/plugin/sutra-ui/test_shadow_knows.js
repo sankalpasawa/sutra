@@ -91,20 +91,25 @@ const target = (dataset, extra) => Object.assign(
     ctx.S.shadowSettings = d;
     const h = ctx.shadowSettingsHtml();
     const at = (x) => h.indexOf(x);
-    assert(at("1 suggestion waiting") !== -1 && at("1 suggestion waiting") < at(">Personality<"),
+    assert(at("1 suggestion waiting") !== -1 && at("1 suggestion waiting") < at(">How Shadow works for you<"),
       "suggestions are one line, above everything");
     assert(at("Pick regions yourself") === -1, "and folded until opened");
     assert(/data-shswitch="replies" data-shval="normal"/.test(h), "switches carry their hooks");
     assert(/class="ssseg on"[^>]*data-shswitch="replies" data-shval="normal"/.test(h),
       "the set value is the one drawn on");
-    assert(at("Other rules (1)") > at(">Personality<") && at("Other rules (1)") < at(">Memory<"),
-      "Other rules sits under Personality, counting only lines that bind");
+    const rules = at("Other things Shadow should always do");
+    assert(rules > at(">How Shadow works for you<")
+           && rules < at(">What Shadow remembers about you<"),
+      "the rules list sits under How Shadow works for you");
+    assert(/Other things Shadow should always do<span class="sscount"\s+aria-label="1 saved">1</.test(h),
+      "counting only lines that bind");
     for (const [label, n] of [["About you", 1], ["Your work", 1], ["Your preferences", 0]])
-      assert(at(label + " (" + n + ")") > at(">Memory<"), label + " has its count");
+      assert(new RegExp(label + '<span class="sscount"\\s+aria-label="' + n + ' saved">' + n + "<").test(h)
+             && at(label) > at(">What Shadow remembers about you<"), label + " has its count");
     assert(/CEO of Sutra/.test(h), "a folded group shows a preview");
-    assert(/nothing yet/.test(h), "an empty group says so in one line");
+    assert(/Shadow will fill this in/.test(h), "an empty group says so in one line");
     assert(!/data-shknowadd=/.test(h), "no add lines until a group is opened");
-    assert(at("In your own words") > at(">Memory<"), "the founder's own words come last");
+    assert(at("Tell Shadow in your own words") > at(">What Shadow remembers about you<"), "the founder's own words come last");
     assert(/class="ssownbody" hidden/.test(h), "folded when they have written nothing");
     assert(/data-shbehaves="1"/.test(h) && /data-shmemory="1"/.test(h),
       "but the two boxes stay in the page");
@@ -243,7 +248,14 @@ const target = (dataset, extra) => Object.assign(
     assert.strictEqual(ctx.shadowTaskFaceFor(rows[0]).label, "CHAT");
     assert.strictEqual(ctx.shadowTaskSection(rows[0]), "chat");
     const list = ctx.shadowTaskListHtml();
-    assert(/CHATS/.test(list) && !/QUEUED/.test(list), "drawn under CHATS, never QUEUED");
+    assert(/QUESTIONS/.test(list) && !/QUEUED/.test(list), "drawn under QUESTIONS, never QUEUED");
+    /* founder order, 2026-10-08: Waiting on you, Running, Questions, Done, Archived */
+    ctx.S.shadowMissions = [{ id: "m-done", objective: "Done one.", state: "done",
+                              max_turns: 25, turns_used: 9 }];
+    const both = ctx.shadowTaskListHtml();
+    assert(both.indexOf("QUESTIONS") > -1 && both.indexOf(">DONE<") > -1
+      && both.indexOf("QUESTIONS") < both.indexOf(">DONE<"),
+      "QUESTIONS sits above DONE");
     assert(/Delete this chat/.test(list), "its x says what it does");
 
     const urls = [];
@@ -288,7 +300,7 @@ const target = (dataset, extra) => Object.assign(
   }
 
   /* 9. a task the founder closed because there was nothing to do reads
-     NOTHING TO DO under DONE TODAY -- never the red STOPPED (2026-10-07) */
+     NOTHING TO DO under DONE -- never the red STOPPED (2026-10-07) */
   {
     const ctx = fresh();
     const m = { id: "m-ntd", state: "stopped", ended_by: "founder",
@@ -316,11 +328,11 @@ const target = (dataset, extra) => Object.assign(
       "it joins the one suggestions line");
     ctx.S.shadowKnowOpen = { pending: true };
     const h = ctx.shadowSettingsHtml();
-    assert(/Switch to Just do it\?/.test(h) && /approved 3 held/.test(h));
+    assert(/Change to \u201cJust do it\u201d\?/.test(h) && /approved 3 held/.test(h));
     assert(/data-shswsug="acting"\s+data-shans="yes"/.test(h));
-    assert(/Switch to Just do it/.test(ctx.shadowPendingKnowsHtml(null)),
+    assert(/Change to \u201cJust do it\u201d/.test(ctx.shadowPendingKnowsHtml(null)),
       "shown where no task is in focus");
-    assert(!/Switch to/.test(ctx.shadowPendingKnowsHtml({ id: "m-1" })),
+    assert(!/Change to/.test(ctx.shadowPendingKnowsHtml({ id: "m-1" })),
       "never on a task");
     ctx.listeners.click({ target: target({ shswsug: "acting", shans: "no" }) });
     await settle();

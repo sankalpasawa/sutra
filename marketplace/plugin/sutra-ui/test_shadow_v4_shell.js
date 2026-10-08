@@ -85,9 +85,9 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
   const h = ctx.shadowSettingsHtml();
   assert.strictEqual((h.match(/class="ssh"/g) || []).length, 2,
     "exactly two sections");
-  assert(h.indexOf(">Personality<") !== -1, "Personality");
-  assert(h.indexOf(">Memory<") !== -1, "Memory");
-  assert(h.indexOf(">Personality<") < h.indexOf(">Memory<"),
+  assert(h.indexOf(">How Shadow works for you<") !== -1, "Personality");
+  assert(h.indexOf(">What Shadow remembers about you<") !== -1, "Memory");
+  assert(h.indexOf(">How Shadow works for you<") < h.indexOf(">What Shadow remembers about you<"),
     "Personality leads");
   /* both are TEXT BOXES, same shape, same save-on-change, no Save button */
   assert.strictEqual((h.match(/<textarea/g) || []).length, 2,

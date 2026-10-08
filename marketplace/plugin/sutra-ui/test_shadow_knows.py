@@ -226,8 +226,8 @@ class TestGroupsAndSwitches(Base):
                           "done": "prove", "replies": "short"})
         self.assertFalse(any(v["set"] for v in listed.values()))
         block = mission_engine.carry_block()
-        self.assertIn("Acting on its own: Just do it.", block)
-        self.assertIn('Before "done": Prove everything.', block)
+        self.assertIn("Should Shadow check with you before it starts? Just do it.", block)
+        self.assertIn('How carefully should Shadow check the work? Check everything.', block)
         self.assertFalse(mission_engine.confirm_top_tier(),
                          "maximum power asks nothing before it starts")
 
@@ -256,8 +256,8 @@ class TestGroupsAndSwitches(Base):
         shadow_knows.set_switch("replies", "detailed")
         block = mission_engine.carry_block()
         self.assertIn("HOW THE FOUNDER WANTS YOU TO WORK", block)
-        self.assertIn("Replies: Detailed.", block)
-        self.assertIn("Checking in: Often.", block)
+        self.assertIn("How long should Shadow's messages be? Detailed.", block)
+        self.assertIn("How often should Shadow update you? Often.", block)
         with self.assertRaises(shadow_knows.Refused):
             shadow_knows.set_switch("replies", "loud")
         with self.assertRaises(shadow_knows.Refused):
@@ -455,7 +455,7 @@ class TestTaskChatsHearChangesToo(Base):
         shadow_knows.set_switch("replies", "detailed")
         talk("and now")
         self.assertTrue(sent[-1].startswith(mission_engine.CARRY_CHANGED_HEAD))
-        self.assertIn("Replies: Detailed.", sent[-1])
+        self.assertIn("How long should Shadow's messages be? Detailed.", sent[-1])
         self.assertTrue(sent[-1].endswith("and now"))
         talk("again")
         self.assertEqual(sent[-1], "again", "said once per change")
@@ -463,7 +463,7 @@ class TestTaskChatsHearChangesToo(Base):
     def test_56_a_resumed_chat_is_told_the_current_settings(self):
         c, sent, talk = self.chat(mission_engine.CARRY_UNKNOWN)
         talk("back again")
-        self.assertIn("Acting on its own:", sent[-1])
+        self.assertIn("Should Shadow check with you before it starts?", sent[-1])
         talk("next")
         self.assertEqual(sent[-1], "next")
 

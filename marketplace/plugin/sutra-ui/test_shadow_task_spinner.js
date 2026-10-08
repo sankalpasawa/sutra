@@ -79,9 +79,13 @@ function surfaces(state, extra){
    where the state of every OTHER task is read ("let's not remove showing
    status on the LHS ... bring back the LHS list status"). So the ring has
    two places to be and must be on both; the card is asserted to carry no
-   pill at all rather than a still one. */
-const SURFACES = ["list", "header"];
-const NO_PILL = ["card"];
+   pill at all rather than a still one.
+
+   ONE SURFACE SINCE 2026-10-08: the founder took the pill off the list row
+   too ("their categories are more than enough"). The header is the one
+   place the state is printed, and the one place the ring turns. */
+const SURFACES = ["header"];
+const NO_PILL = ["card", "list"];
 
 /* 1. the ask itself, on every surface that shows a status */
 {
@@ -91,8 +95,8 @@ const NO_PILL = ["card"];
   for (const k of NO_PILL)
     assert(!/shtpill/.test(r[k]), k + " must no longer print a pill at all");
   assert(/shtaskdot d-running/.test(r.list),
-    "…and the list row carries the running dot beside its pill");
-  console.log("ok 1 running spins on both surfaces that still have a pill");
+    "…and the list row still carries the running dot");
+  console.log("ok 1 running spins on the header, the one surface with a pill");
 }
 
 /* 2. inside the pill and BEFORE the word -- the ring is part of the status,

@@ -440,7 +440,7 @@ console.log("ok 6 controls wired");
     "two columns missing");
   /* + Delegate is visible, prominent and in the left column */
   assert(/data-shdelegate="1"/.test(h), "+ Delegate is not rendered");
-  assert(/\+ Delegate</.test(h), "+ Delegate is not labelled");
+  assert(/\+ New task</.test(h), "+ New task is not labelled");
   /* the one generic label was replaced by the design's three section
      headings ("Shadow Design - Final", founder 2026-09-15) */
   assert(/class="shwsec/.test(h), "the list lost its section headings");
@@ -618,13 +618,11 @@ console.log("ok 6 controls wired");
     { id: "m-e", objective: "failed one",  state: "failed" },
   ];
   const h = ctx.shadowHomeHtml();
-  /* the LIST keeps its pill (founder, 2026-09-20): the duplication that was
-     worth removing is the RIGHT pane's -- card and header saying the same
-     word about the same task -- not the list, which is where the founder
-     reads the state of every OTHER task. So every state is still named in words on its row, and the dot
-     carries the same face class beside it. */
+  /* the LIST row has no pill (founder, 2026-10-08: "their categories are
+     more than enough"); each state is still named in the dot's tooltip. */
   ["READY", "RUNNING", "QUEUED", "NEEDS YOU", "FAILED"].forEach(p =>
-    assert(new RegExp(">" + p + "<").test(h), "status pill missing: " + p));
+    assert(new RegExp('shtaskdot [^"]*" title="' + p + '"').test(h),
+      "state missing from the row's dot: " + p));
   /* the dot carries the states that HAVE a face colour; queued, paused and
      draft take the default grey and are named by the pill beside them. */
   ["ready", "running", "blocked", "failed"].forEach(c =>
@@ -634,7 +632,9 @@ console.log("ok 6 controls wired");
   /* the empty state says what to do, rather than nothing */
   const ctx2 = fresh();
   ctx2.S.shadowHomeDark = false; ctx2.S.shadowMissions = [];
-  assert(/Delegate a task/.test(ctx2.shadowHomeHtml()), "no empty-state copy");
+  assert(/press New task/.test(ctx2.shadowHomeHtml()), "no empty-state copy");
+  assert(/>\+ New task</.test(ctx2.shadowHomeHtml()),
+    "the new-task button says New task, not Delegate (founder, 2026-10-08)");
   console.log("ok 15 task list reachable, all states named");
 }
 
@@ -1302,12 +1302,11 @@ const AWAITING = {
   const h = ctx.shadowHomeHtml();
   assert(!/>PAUSED</.test(h),
     "waiting on the founder must not read as a stalled task");
-  /* TWICE, NOT THREE TIMES (founder, 2026-09-20). The list row and the
-     header both say it -- they speak for different things, the row for this
-     task among all the others and the header for the one in focus. The
-     BRIEF CARD's third copy is the one that went. */
-  assert.strictEqual((h.match(/>NEEDS YOU</g) || []).length, 2,
-    "NEEDS YOU on the list row and the task header");
+  /* ONCE (founder, 2026-10-08). The header says it; the list row sits
+     under WAITING ON YOU and its dot's tooltip names it. The brief card's
+     copy went on 2026-09-20, the row's pill on 2026-10-08. */
+  assert.strictEqual((h.match(/>NEEDS YOU</g) || []).length, 1,
+    "NEEDS YOU on the task header only");
   assert(/shtaskdot d-blocked/.test(h),
     "…and the row carries the blocked dot beside it");
   assert(/shtpill-blocked/.test(h), "it wears the needs-you pill family");
@@ -3106,8 +3105,8 @@ const SET = { engage: ["outcome first"],
   });
   /* the selector button is untouched: same hook, same three spans */
   assert(/data-shtask="m-1"/.test(h), "the row selector hook was lost");
-  assert(/shtaskdot/.test(h) && /shtaskname/.test(h) && /shtpill/.test(h),
-    "the row lost one of its three spans");
+  assert(/shtaskdot/.test(h) && /shtaskname/.test(h),
+    "the row lost its dot or its name");
   /* a button may not contain a button: the delete control must be a SIBLING
      of the selector, not inside it */
   const rowStart = h.indexOf('data-shtask="m-1"');
@@ -3255,7 +3254,7 @@ const SET = { engage: ["outcome first"],
   /* the LIST agrees with the card -- one predicate, both surfaces */
   const list = ctx.shadowTaskListHtml();
   /* the LIST agrees with the card -- one predicate, both surfaces */
-  assert(/shtpill-ready[^>]*>READY/.test(list), "the READY row lost its pill");
+  assert(/shtaskdot d-ready" title="READY"/.test(list), "the READY row lost its state");
   assert(/QUEUED/.test(list), "the started row still reads READY in the list");
   /* and the compact in-thread card, which draws Start too */
   assert(!/data-shstart="m-s"/.test(ctx.missionCardHtml(started)),
@@ -4152,7 +4151,7 @@ function listWith(missions){
   ];
   const { ctx, html } = listWith(rows);
   /* THE SECTION STILL OUTRANKS RECENCY, and that is the existing design:
-     SH_SECTIONS draws WAITING ON YOU, then RUNNING, then DONE TODAY, and this
+     SH_SECTIONS draws WAITING ON YOU, then RUNNING, then DONE, and this
      change orders rows WITHIN a section. A blocked task stamped first still
      precedes a running task stamped later, because it is in the section drawn
      first -- untouched by this slice. */
@@ -4196,24 +4195,24 @@ function listWith(missions){
   assert(html.indexOf("WAITING ON YOU") < at("m-wait")
     && at("m-wait") < html.indexOf("RUNNING")
     && html.indexOf("RUNNING") < at("m-run")
-    && at("m-run") < html.indexOf("DONE TODAY")
-    && html.indexOf("DONE TODAY") < at("m-done"),
+    && at("m-run") < html.indexOf(">DONE<")
+    && html.indexOf(">DONE<") < at("m-done"),
     "each row must sit under its own heading");
   console.log("ok 38i recency never moves a row between sections");
 }
 
-/* 38j. a DONE row stays in DONE TODAY, newest first among its own. */
+/* 38j. a DONE row stays in DONE, newest first among its own. */
 {
   const { html } = listWith([
     { id: "m-d1", objective: "older done", state: "done", created_ns: 1 },
     { id: "m-d2", objective: "newer done", state: "done", created_ns: 2 },
   ]);
-  assert(/DONE TODAY/.test(html), "the DONE TODAY heading is drawn");
+  assert(/>DONE</.test(html), "the DONE heading is drawn");
   assert(!/WAITING ON YOU|shwsec-run/.test(html),
     "an empty section draws nothing, exactly as before");
   assert.deepStrictEqual(ORDER_IDS(html), ["m-d2", "m-d1"],
-    "newest first inside DONE TODAY too");
-  console.log("ok 38j done rows stay in DONE TODAY, newest first");
+    "newest first inside DONE too");
+  console.log("ok 38j done rows stay in DONE, newest first");
 }
 
 /* ── 39. EVERY SURFACE NAMES THE SAME TURN ────────────────────────────────
@@ -4386,18 +4385,19 @@ const CARD_TURN = (ctx, m) =>
 
   const row = ctx.shadowTaskListHtml();
   assert(/shtaskrow/.test(row), "the row still renders");
-  assert(/shtpill/.test(row), "the list row keeps its status pill");
+  assert(!/shtpill/.test(row),
+    "the list row carries no pill -- its section says it (founder, 2026-10-08)");
   assert(/shtaskdot d-running/.test(row), "…and its dot");
 
   assert(!/shtpill/.test(ctx.shadowTaskCardHtml(run)),
     "the brief card may not print a status pill");
 
   const home = ctx.shadowHomeHtml();
-  assert.strictEqual((home.match(/shtpill /g) || []).length, 2,
-    "one pill per list row, plus the header's -- and none on the brief");
+  assert.strictEqual((home.match(/shtpill /g) || []).length, 1,
+    "the header's pill only -- none on the list rows or the brief");
   assert(/shwhead[\s\S]*shtpill/.test(home),
     "…and one of them is the header's");
-  console.log("ok 40 the brief lost its pill; the list and the header keep theirs");
+  console.log("ok 40 only the header keeps a pill");
 }
 
 {
@@ -4412,13 +4412,13 @@ const CARD_TURN = (ctx, m) =>
 
   assert.strictEqual(ctx.shadowTaskSection(done), "done");
   assert.strictEqual(ctx.shadowTaskSection(filed), "arch",
-    "an archived task leaves DONE TODAY for its own section");
+    "an archived task leaves DONE for its own section");
   assert(ctx.shadowTaskIsActive(filed, []),
     "an archived task stays in the list -- that is the point of filing it");
 
   const list = ctx.shadowTaskListHtml();
   assert(/ARCHIVED/.test(list), "the ARCHIVED heading renders");
-  assert(list.indexOf("DONE TODAY") < list.indexOf("ARCHIVED"),
+  assert(list.indexOf(">DONE<") < list.indexOf("ARCHIVED"),
     "ARCHIVED is last -- it is the only section the founder fills");
   assert(/Delete this task permanently/.test(list),
     "the x on an archived row is the eraser, and says so");

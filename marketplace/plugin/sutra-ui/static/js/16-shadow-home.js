@@ -682,12 +682,16 @@ function shadowTaskIsLive(m){
    design has no FAILED under DONE TODAY, and calling a failure DONE or
    STOPPED would be a lie about what happened; its own FAILED pill is
    untouched, and so is every failure behaviour behind it. */
+/* ORDER (founder, 2026-10-08): Waiting on you, Running, Questions, Done,
+   Archived. Questions sits above Done because a question is still a live
+   conversation; "CHATS" was renamed because the app's own Chats tab already
+   means something else. */
 const SH_SECTIONS = [
   ["wait", "WAITING ON YOU"],
   ["run",  "RUNNING"],
-  ["done", "DONE TODAY"],
   /* what Shadow answered without starting a worker (2026-10-07) */
-  ["chat", "CHATS"],
+  ["chat", "QUESTIONS"],
+  ["done", "DONE"],
   /* LAST, AND THE ONLY SECTION THE FOUNDER PUTS THINGS IN THEMSELVES. The
      three above are states the work arrives in; this one is a decision --
      the x said "I am done looking at this" (founder, 2026-09-19). */
@@ -766,8 +770,8 @@ function shadowTaskListHtml(){
   const sel = shadowSelectedTask();
   const S_ = (typeof S !== "undefined") ? S : {};
   if (!rows.length)
-    return `<div class="shtaskempty">Nothing yet — Delegate a task and
-      Shadow will run it in its own chat.</div>`;
+    return `<div class="shtaskempty">Nothing yet — press New task and
+      tell Shadow what you need.</div>`;
   /* THE ROW IS NOW A ROW, NOT A BUTTON. The selector button is byte-identical
      to what it was -- same class, same hook, same three spans -- and it is
      simply no longer the outermost element, because a <button> may not
@@ -784,24 +788,14 @@ function shadowTaskListHtml(){
     return `<div class="shtaskrow${on ? " on" : ""}">
       <button class="shtask${on ? " on" : ""}"
       type="button" data-shtask="${escAttr(m.id)}">
-      <span class="shtaskdot d-${esc(f.cls)}" aria-hidden="true"></span>
+      <span class="shtaskdot d-${esc(f.cls)}" title="${escAttr(f.label)}"
+        aria-hidden="true"></span>
       <span class="shtaskname">${esc(m.objective || "(no objective)")}</span>
-      ${/* THE ROW KEEPS ITS PILL (founder, 2026-09-20, correcting the
-           2026-09-19 pass: "let's not remove showing status on the LHS ...
-           bring back the LHS list status like we had before").
-
-           WHAT THE TWO DIRECTIONS TOGETHER SAY. The duplication worth
-           removing was the RIGHT pane's -- the brief card printed the same
-           word the header printed, about the same task, forty pixels apart.
-           The LIST is not that: it is the one place a founder reads the
-           state of every OTHER task, the ones the header can never speak
-           for. So the card's pill is gone and this one is back.
-
-           The dot beside it keeps the face classes added on 2026-09-19 --
-           queued, paused and draft had none -- which costs nothing and
-           leaves the row readable at a glance even where the name is long
-           enough to crowd the word. */""}
-      ${shadowTaskPillHtml(f)}
+      ${/* NO PILL ON THE ROW (founder, 2026-10-08: "too much info, their
+           categories are more than enough"). This reverses the 2026-09-20
+           ruling that brought the pill back. The section heading says whose
+           move it is; the coloured dot still separates FAILED from READY, or
+           QUEUED from RUNNING, inside one section, and its tooltip names it. */""}
     </button>
       <button class="shtaskdel" type="button"
         data-shtaskdel="${escAttr(m.id)}"
@@ -6133,7 +6127,7 @@ function shadowHomeHtml(){
   return `<div class="shwork">
     <aside class="shwleft">
       <button class="shdelegate${newOpen ? " on" : ""}" type="button"
-        data-shdelegate="1">+ Delegate</button>
+        data-shdelegate="1">+ New task</button>
       <div class="shtasks">${shadowTaskListHtml()}</div>
       <div class="shwfoot">${shadowNavHtml()}</div>
     </aside>
@@ -6869,7 +6863,8 @@ async function shadowMemorySave(text){
 const SH_KNOW_SOURCE = { said: "you said", typed: "you wrote",
                          asked: "from your answer", inferred: "Shadow noticed" };
 const SH_KNOW_GROUPS = { you: "About you", work: "Your work",
-                         preferences: "Your preferences", rules: "Other rules" };
+                         preferences: "Your preferences",
+                         rules: "Other things Shadow should always do" };
 
 function shadowKnowOpen(key){
   const S_ = (typeof S !== "undefined") ? S : {};
@@ -6911,8 +6906,11 @@ function shadowKnowsRowHtml(r){
 function shadowSwitchesHtml(d){
   const sw = (d && d.knows && d.knows.switches) || [];
   if (!sw.length) return "";
+  /* PLAIN WORDS FOR ANYONE (founder, 2026-10-08: "even a non-tech person
+     can use it"): each switch is a question and its three answers side by
+     side at full width. No hint lines: the question says it. */
   return `<div class="ssswitches">${sw.map(s => `<div class="ssswitch">
-      <span class="k">${esc(s.label)}</span>
+      <div class="ssq"><span class="k">${esc(s.label)}</span></div>
       <span class="sssegs" role="group" aria-label="${escAttr(s.label)}">${
         s.options.map(o => `<button type="button"
           class="ssseg${o.value === s.value ? " on" : ""}"
@@ -6934,8 +6932,9 @@ function shadowKnowsGroupHtml(d, section, group){
   const preview = rows.slice(0, 2).map(r => r.text || "").join(" · ");
   const head = `<button class="ssgrouph" type="button" data-shkgroup="${escAttr(key)}"
       aria-expanded="${open ? "true" : "false"}">
-      <span class="k">${esc(SH_KNOW_GROUPS[group] || group)} (${rows.length})</span>
-      <span class="v">${esc(open ? "" : (preview || "nothing yet"))}</span>
+      <span class="k">${esc(SH_KNOW_GROUPS[group] || group)}<span class="sscount"
+        aria-label="${rows.length} saved">${rows.length}</span></span>
+      <span class="v">${esc(open ? "" : (preview || "Shadow will fill this in"))}</span>
       <span class="ssgroupx" aria-hidden="true">${open ? "▾" : "▸"}</span>
     </button>`;
   if (!open) return `<div class="ssgroup">${head}</div>`;
@@ -6945,7 +6944,7 @@ function shadowKnowsGroupHtml(d, section, group){
     <div class="ssknows-list">${rows.map(shadowKnowsRowHtml).join("")}</div>
     <input class="ssknowin ssknowadd" type="text" maxlength="200"
       data-shknowadd="${escAttr(key)}" value="${escAttr(draft)}"
-      placeholder="+ Add a line yourself (Enter)" aria-label="Add a line">
+      placeholder="+ Add something" aria-label="Add something">
     ${err ? `<div class="ssnote">${esc(err)}</div>` : ""}
   </div>`;
 }
@@ -6957,8 +6956,8 @@ function shadowKnowsGroupHtml(d, section, group){
 function shadowSwitchSuggestionHtml(s){
   return `<div class="ssknow pending">
     <span class="ssknowk">${esc(s.label)}</span>
-    <span class="ssknowt">Switch to ${esc(s.to_label)}?<span class="ssknowe">${
-      esc(s.why)} Now: ${esc(s.from_label || s.from || "")}.</span></span>
+    <span class="ssknowt">Change to \u201c${esc(s.to_label)}\u201d?<span class="ssknowe">${
+      esc(s.why)} Right now: ${esc(s.from_label || s.from || "")}.</span></span>
     <button class="btn pri" type="button" data-shswsug="${escAttr(s.name)}"
       data-shans="yes">Yes</button>
     <button class="btn" type="button" data-shswsug="${escAttr(s.name)}"
@@ -6998,8 +6997,8 @@ function shadowOwnWordsHtml(d){
   return `<div class="ssown${open ? " open" : ""}">
     <button class="ssgrouph" type="button" data-shkgroup="own"
       aria-expanded="${open ? "true" : "false"}">
-      <span class="k">In your own words</span>
-      <span class="v">${esc(open ? "" : "optional")}</span>
+      <span class="k">Anything else? Tell Shadow in your own words</span>
+      <span class="v"></span>
       <span class="ssgroupx" aria-hidden="true">${open ? "▾" : "▸"}</span>
     </button>
     <div class="ssownbody"${open ? "" : " hidden"}>
@@ -7082,8 +7081,9 @@ function shadowPendingKnowsHtml(sel){
      one task's, so it shows only where no task is in focus */
   const sws = here ? [] : (k.switch_suggestions || []);
   return sws.map(s => `<div class="shremember" data-shkswitch="${escAttr(s.name)}">
-    <span class="shrememberk">${esc(s.label)}</span>
-    <span class="shremembertext">Switch to ${esc(s.to_label)}? ${esc(s.why)}</span>
+    <span class="shrememberk">suggestion</span>
+    <span class="shremembertext">${esc(s.label)} Change to \u201c${
+      esc(s.to_label)}\u201d? ${esc(s.why)}</span>
     <button class="btn pri shrememberok" type="button"
       data-shswsug="${escAttr(s.name)}" data-shans="yes">Yes</button>
     <button class="btn shrememberok" type="button"
@@ -7695,9 +7695,9 @@ function shadowSettingsHtml(){
            four switches and "Other rules", three memory groups each folded
            to a preview, and the founder's own words folded at the end. */""}
       ${shadowKnowsSuggestionsHtml(d)}
-      ${shadowSettingsSecHtml("Personality",
+      ${shadowSettingsSecHtml("How Shadow works for you",
           shadowSwitchesHtml(d) + shadowKnowsGroupHtml(d, "personality", "rules"))}
-      ${shadowSettingsSecHtml("Memory",
+      ${shadowSettingsSecHtml("What Shadow remembers about you",
           ["you", "work", "preferences"]
             .map(g => shadowKnowsGroupHtml(d, "memory", g)).join(""))}
       ${shadowOwnWordsHtml(d)}
@@ -7722,7 +7722,7 @@ if (typeof SCREENS !== "undefined"){
 }
 if (typeof TITLES !== "undefined"){
   TITLES.shadowsettings = ["What Shadow knows",
-    "how it behaves \u00b7 the rules it lives by \u00b7 what it remembers"];
+    "how Shadow works for you \u00b7 what it remembers"];
 }
 
 /* The existing Watching experience, on its own screen so Home never renders

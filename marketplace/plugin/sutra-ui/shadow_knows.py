@@ -359,35 +359,35 @@ def lines(section):
 #: information for the founder, not more power for Shadow.
 #:   name: (label, default, [(value, label, sentence for Shadow)])
 SWITCHES = {
-    "acting": ("Acting on its own", "just_do_it", [
-        ("ask_first", "Ask first",
+    "acting": ("Should Shadow check with you before it starts?", "just_do_it", [
+        ("ask_first", "Always ask me",
          "Ask before the first instruction of each task and before any "
          "consequential choice."),
-        ("balanced", "Balanced",
+        ("balanced", "Only for big decisions",
          "Decide routine things yourself; ask only on consequential choices."),
         ("just_do_it", "Just do it",
          "Decide everything you reasonably can yourself; ask only when a "
          "floor or a fact only the founder holds requires it.")]),
-    "checkins": ("Checking in", "milestones", [
-        ("only_stuck", "Only when stuck",
+    "checkins": ("How often should Shadow update you?", "milestones", [
+        ("only_stuck", "Only when it needs me",
          "Speak up only when you need them or the task is finished; no "
          "progress updates."),
-        ("milestones", "At milestones",
+        ("milestones", "At key steps",
          "Give a one-line update when a meaningful step is done."),
         ("often", "Often",
          "Keep them posted: a short update on every turn that moved.")]),
-    "done": ("Before \"done\"", "prove", [
-        ("trust", "Trust the worker",
+    "done": ("How carefully should Shadow check the work?", "prove", [
+        ("trust", "Quick look",
          "Accept the worker's report when the checks pass; do not re-verify "
          "beyond them."),
-        ("key", "Check the key things",
+        ("key", "Check the important parts",
          "Verify the checks that matter with real evidence; do not gold-plate."),
-        ("prove", "Prove everything",
+        ("prove", "Check everything",
          "Back every check with a probe or evidence you looked at; never "
          "accept a claim alone.")]),
-    "replies": ("Replies", "short", [
+    "replies": ("How long should Shadow's messages be?", "short", [
         ("short", "Short", "Reply in one or two lines, outcome first."),
-        ("normal", "Normal", "Reply in a short paragraph when it helps."),
+        ("normal", "Medium", "Reply in a short paragraph when it helps."),
         ("detailed", "Detailed",
          "Explain what you did and why, with the key details.")]),
 }
@@ -487,5 +487,5 @@ def switch_text():
     for name, (label, _default, opts) in SWITCHES.items():
         for v, l, sentence in opts:
             if now.get(name) == v:
-                out.append("- %s: %s. %s" % (label, l, sentence))
+                out.append("- %s %s. %s" % (label, l, sentence))
     return "\n".join(out)
