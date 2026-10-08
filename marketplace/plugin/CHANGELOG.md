@@ -14,6 +14,7 @@ Build record: `docs/superpowers/plans/2026-10-07-j1-j2-published-design-prd.md`.
 - **Two departments asked for:** the first is made with its own goal; the second is offered as a chip in Root's tell.
 - **A Setup that cannot finish says so** and closes the Request, as does a refused preview. The birth is told once (the tell was written twice in 2 of 13 foundings).
 - **A CLI error reply counts as the model being away**, so the 30, 120 and 600 second waits apply.
+- **Agent activity follows the department as it works.** The tab was read once when it opened and stopped at "Write started" while the engines went on; it is now read on the screen's clock and painted again only when the record moved. The ledger no longer says Audit "found nothing" straight after Audit files findings.
 - **J2 is the department's own life, on its board.** At the hand-over the cycle starts by itself: Identity finds the identity good enough or asks; Adaptation proposes the workflows (the Library's line, or its own); Priority grants, refuses or counters inside the board's bounds; a refusal or a bound goes to Identity, and what Identity cannot settle is one ask; Root's check registers the workflow on the department's record. No workflow runs before that.
 - **The J2 ledger is written where the work happens**: the bargain's posts, each run's slot, start, filed version and end, Audit's reading, and `goal.reached` when done-when holds.
 - **The organic kind's line is no longer stamped by the owner**; Priority and Root's check pass it (S-18).
