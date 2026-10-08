@@ -792,7 +792,18 @@ setup_case() {
   fi
   mkdir -p "$RUN_PROJ/.claude" "$RUN_PROJ/.sutra" "$RUN_PROJ/.enforcement" "$RUN_HOME/.sutra" 2>/dev/null
 
-  for _s in claude gh; do printf '#!/bin/sh\nexit 1\n' > "$RUN_STUB/$_s"; chmod 0755 "$RUN_STUB/$_s"; done
+  # rtk joins the stub roster for PRESENCE, not behaviour. hooks/rtk-auto-rewrite.sh gates its
+  # whole blocking decision on one `command -v rtk` check and never actually execs the binary
+  # (sankalpasawa/sutra#7, closed: rtk is an opt-in external dependency, never bundled with the
+  # plugin, and the hook correctly no-ops when it is absent). The golden corpus's gate-rtk-rewrite
+  # case was recorded on a box that had the real rtk installed, so its "exit 2, BLOCKED"
+  # expectation is a true recording of that box, not a claim about the hook's logic everywhere.
+  # Without a stub here, every replay on a box without rtk (which is most boxes, by design -- see
+  # sutra#7) silently stops exercising that gate at all: not a parity finding, a tooling-presence
+  # gap of exactly the kind the corpus's OWN "WRONG PLATFORM" guard exists to name rather than
+  # hide. Same exit-1-if-ever-actually-run contract as claude/gh above: nothing here should do
+  # anything real inside the sandbox.
+  for _s in claude gh rtk; do printf '#!/bin/sh\nexit 1\n' > "$RUN_STUB/$_s"; chmod 0755 "$RUN_STUB/$_s"; done
 
   # A real repo with a frozen identity, so `git rev-parse --show-toplevel`
   # resolves inside the sandbox instead of walking up to the developer's repo.
