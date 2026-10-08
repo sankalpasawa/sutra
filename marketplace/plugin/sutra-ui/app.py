@@ -2695,6 +2695,17 @@ async def _delegate_spawn(mission):
     if not mission.get("manifest"):
         mission = await _compose_brief(mission)
     mid = mission.get("id")
+    # "ASK FIRST" HOLDS THE BRIEF, NOT ONLY LATER INSTRUCTIONS (founder,
+    # 2026-10-08). The brief is written; the worker is not started until the
+    # founder says yes (mission_engine.hold_before_spawn shows it to them).
+    try:
+        current = (_mission_engine.MissionStore().load(mid) if mid else None)
+    except Exception:                   # noqa: BLE001 -- never fail a spawn
+        current = None
+    if _mission_engine.held_before_spawn_needed(current or mission):
+        raise _mission_engine.HeldBeforeSpawn(
+            mission.get("manifest") or _delegate_manifest(mission),
+            manifest=mission.get("manifest"))
 
     def _name_the_first_turn():
         """Fired from the spawner's adoption hook -- the first frame that
@@ -2917,9 +2928,17 @@ async def _shadow_recover():
             shadow_runner.recover_on_boot()
         except Exception:
             pass
+        # a start the last process accepted but never finished: remember
+        # which, clear the stamp as before, and START THEM AGAIN below once
+        # the spawner is set (founder, 2026-10-08: "Start the task" should
+        # never appear for work Shadow already took on)
+        restart = []
         try:
-            # a start the last process accepted but never finished is not a
-            # pending start -- give those tasks their Start button back
+            restart = [m["id"] for m in _mission_engine.MissionStore().list(
+                states=("brief_confirm",)) if m.get("start_requested_at")]
+        except Exception:
+            restart = []
+        try:
             _clear_stale_start_requests()
         except Exception:
             pass
@@ -2931,6 +2950,16 @@ async def _shadow_recover():
             shadow_runner.set_default_provisioner(_default_delegate_spawner)
         except Exception:
             pass
+        # ...the interrupted starts, started again now the spawner exists.
+        # A failure here leaves the row READY, exactly as before this change.
+        for _mid in restart:
+            try:
+                _store = _mission_engine.MissionStore()
+                _mark_start_requested(_store, _mid)
+                shadow_runner.start_mission_async(
+                    _mid, _validated_say, verifier=_shadow_verifier)
+            except Exception:
+                pass
         try:
             # SHADOW DRIVES from turn 1, FROM THE TASK'S OWN CHAT AND NOWHERE
             # ELSE (founder D81, 2026-09-21: "I don't want anything to be in
@@ -3122,21 +3151,8 @@ def _carry_refresh(sess):
     delegate a question it now has the answer to. Sent once per change, the
     same way the scoped preamble below is: "" when nothing changed.
     """
-    try:
-        stamp = _carry_stamp()
-        was = getattr(sess, "carry_stamp", None)
-        sess.carry_stamp = stamp
-        # NO STAMP = nothing to compare against (a session this route did
-        # not boot): take the fingerprint quietly rather than resend a
-        # context the session may already hold.
-        if was is None or was == stamp:
-            return ""
-        carry = _mission_engine.carry_block()
-    except Exception:                    # noqa: BLE001 -- never fail a turn
-        return ""
-    return ("[Context] What you know about the founder has changed since you "
-            "started. This replaces it:\n"
-            + (carry or "(nothing is remembered any more)") + "\n\n")
+    # ONE HELPER for the Now chat and every task chat (2026-10-08)
+    return _mission_engine.carry_note(sess)
 
 
 @app.post("/api/shadow/chat")
@@ -3758,9 +3774,19 @@ async def api_shadow_knows_write(request: Request):
                                              body.get("value"))
             row = {"section": "personality",
                    "text": "%s = %s" % (body.get("name"), value)}
+        elif action == "switch_suggestion":
+            # Shadow noticed a pattern and asked (shadow_switch_learning);
+            # yes sets the switch, either answer rests it
+            import shadow_switch_learning
+            got = shadow_switch_learning.answer(body.get("name"),
+                                                body.get("answer"))
+            row = {"section": "personality",
+                   "text": "%s suggestion: %s" % (body.get("name"),
+                                                  got["answer"])}
         else:
             raise HTTPException(400,
-                                "action must be keep|forget|edit|add|switch")
+                                "action must be keep|forget|edit|add|switch"
+                                "|switch_suggestion")
     except _shadow_knows.Refused as exc:
         raise HTTPException(409, str(exc))
     _shadow_ledger_safe({
@@ -4451,6 +4477,32 @@ def _apply_limits_fence(blocks, mid=None):
     return {"applied": done, "refused": refused}
 
 
+def _release_spawn_hold(store, mid):
+    """The founder said yes to a task "Ask first" held BEFORE its worker
+    existed (mission_engine.hold_before_spawn). There is no loop to resume:
+    the yes LAUNCHES the worker with the brief they saw, through the one
+    start path, and the hold is spent so it does not ask again. The brief is
+    delivered at spawn, so the approved say is dropped rather than sent a
+    second time."""
+    m = store.load(mid)
+    m["top_tier_confirmed"] = True
+    m.pop("held_before_spawn", None)
+    for k in ("approved_say", "pending_say", "approval",
+              "pending_autonomy_say"):
+        m.pop(k, None)
+    store.save(m)
+    _shadow_ledger_safe({"mission_id": mid, "kind": "approval",
+                         "summary": "founder approved the brief; worker "
+                                    "starting"})
+
+    async def _spawner(mission):
+        return await _delegate_spawn(mission)
+    shadow_runner.start_mission_async(mid, _validated_say,
+                                      provisioner=_spawner,
+                                      verifier=_shadow_verifier)
+    return store.load(mid)
+
+
 def _continue_after_answer(store, mid, outcome):
     """Shadow v4.2: what the routes do after mission_engine.apply_answer.
 
@@ -4474,6 +4526,8 @@ def _continue_after_answer(store, mid, outcome):
                              % (running_n, cap))
         if m.get("pause_reason") == "autonomy_top_tier" \
                 and outcome.get("kind") == "approve":
+            if m.get("held_before_spawn"):
+                return _release_spawn_hold(store, mid)
             m["top_tier_confirmed"] = True
             store.save(m)
         m = store.transition(mid, "running", "%s from the chat"
@@ -5271,6 +5325,9 @@ def _mark_start_requested(store, mid):
         # nothing to claim. Only the gap needs covering.
         return m
     m["start_requested_at"] = _mission_engine._now()
+    # a fresh start gets fresh automatic retries (shadow_runner
+    # START_RETRY_DELAYS); the founder's own press of Start included
+    m["start_attempts"] = 0
     try:
         store.save(m)
     except ValueError:
@@ -5770,6 +5827,8 @@ async def api_shadow_mission_act(mid: str, request: Request):
             except ValueError as exc:
                 raise HTTPException(409, str(exc))
             if m.get("pause_reason") == "autonomy_top_tier":
+                if m.get("held_before_spawn"):
+                    return _release_spawn_hold(store, mid)
                 m["top_tier_confirmed"] = True
                 store.save(m)
             m = store.transition(mid, "running",
@@ -5819,6 +5878,8 @@ async def api_shadow_mission_act(mid: str, request: Request):
             # stamped: L1 means "ask every turn", so its yes covers one turn
             # and the next say asks again, which is the setting working.
             prior = store.load(mid)
+            if prior is not None and prior.get("held_before_spawn"):
+                return _release_spawn_hold(store, mid)
             if prior is not None \
                     and prior.get("pause_reason") == "autonomy_top_tier":
                 prior["top_tier_confirmed"] = True

@@ -215,15 +215,35 @@ class TestGroupsAndSwitches(Base):
         shadow_knows.add("memory", "Main repo is sutra", "said",
                          category="work")
 
-    def test_18_unset_switches_change_nothing(self):
-        self.assertEqual(shadow_knows.switches(), {})
-        self.assertEqual(shadow_knows.switch_text(), "")
-        self.assertEqual(mission_engine.carry_block(), "")
+    def test_18_the_defaults_are_maximum_power_and_reach_shadow(self):
+        """founder, 2026-10-08: "default of maximum power to shadow"."""
+        self.assertEqual(shadow_knows.switches(), {}, "nothing was set")
         listed = {s["name"]: s for s in shadow_knows.switch_listing()}
         self.assertEqual(set(listed), {"acting", "checkins", "done",
                                        "replies"})
-        self.assertEqual(listed["replies"]["value"], "short")
-        self.assertFalse(listed["replies"]["set"])
+        self.assertEqual({k: v["value"] for k, v in listed.items()},
+                         {"acting": "just_do_it", "checkins": "milestones",
+                          "done": "prove", "replies": "short"})
+        self.assertFalse(any(v["set"] for v in listed.values()))
+        block = mission_engine.carry_block()
+        self.assertIn("Acting on its own: Just do it.", block)
+        self.assertIn('Before "done": Prove everything.', block)
+        self.assertFalse(mission_engine.confirm_top_tier(),
+                         "maximum power asks nothing before it starts")
+
+    def test_18b_the_wired_switches_show_what_the_engine_enforces(self):
+        """Set through their own routes, the page still tells the truth."""
+        import shadow_presence
+        mission_engine.set_confirm_top_tier(True)
+        shadow_presence.set_nudges_per_hour(0)
+        now = shadow_knows.effective()
+        self.assertEqual((now["acting"], now["checkins"]),
+                         ("ask_first", "only_stuck"))
+        mission_engine.set_confirm_top_tier(False)
+        shadow_presence.set_nudges_per_hour(8)
+        now = shadow_knows.effective()
+        self.assertEqual((now["acting"], now["checkins"]),
+                         ("just_do_it", "often"))
 
     def test_19_a_switch_reaches_shadow_and_two_move_engine_settings(self):
         import shadow_presence
@@ -246,10 +266,12 @@ class TestGroupsAndSwitches(Base):
 
 class TestReuse(Base):
 
-    def test_20_nothing_learned_is_byte_identical(self):
+    def test_20_nothing_learned_adds_no_learned_heading(self):
         mission_engine.set_behaves("Check in rarely.")
-        before = mission_engine._BEHAVES_HEAD + "Check in rarely."
-        self.assertEqual(mission_engine.carry_block(), before)
+        block = mission_engine.carry_block()
+        self.assertTrue(block.startswith(mission_engine._BEHAVES_HEAD
+                                         + "Check in rarely."))
+        self.assertNotIn("LEARNED", block)
 
     def test_21_learned_lines_sit_beneath_the_founders_own(self):
         mission_engine.set_behaves("Check in rarely.")
@@ -403,8 +425,47 @@ class TestTheFirstMessage(Base):
         row = shadow_knows.add("memory", "Temporary", "said")
         sess.carry_stamp = app_module._carry_stamp()
         shadow_knows.forget(row["id"])
-        self.assertIn("nothing is remembered any more",
-                      app_module._carry_refresh(sess))
+        pre = app_module._carry_refresh(sess)
+        self.assertIn("has changed since you started", pre)
+        self.assertNotIn("Temporary", pre, "the forgotten line is gone")
+
+
+class TestTaskChatsHearChangesToo(Base):
+    """founder, 2026-10-08: a personality change reaches the task chats
+    already open, not only the next task."""
+
+    def chat(self, stamp):
+        import asyncio
+        import shadow_task_chat
+        c = shadow_task_chat.TaskChat("m-x")
+        c.carry_stamp = stamp
+        sent = []
+
+        async def turn(text, timeout):
+            sent.append(text)
+            return "ok"
+        c._turn = turn
+        return c, sent, (lambda line: asyncio.run(c.talk(line)))
+
+    def test_55_a_switch_changed_mid_task_reaches_its_chat_once(self):
+        import shadow_task_chat
+        c, sent, talk = self.chat(shadow_task_chat._carry_stamp())
+        talk("how is it going")
+        self.assertEqual(sent[-1], "how is it going", "nothing changed yet")
+        shadow_knows.set_switch("replies", "detailed")
+        talk("and now")
+        self.assertTrue(sent[-1].startswith(mission_engine.CARRY_CHANGED_HEAD))
+        self.assertIn("Replies: Detailed.", sent[-1])
+        self.assertTrue(sent[-1].endswith("and now"))
+        talk("again")
+        self.assertEqual(sent[-1], "again", "said once per change")
+
+    def test_56_a_resumed_chat_is_told_the_current_settings(self):
+        c, sent, talk = self.chat(mission_engine.CARRY_UNKNOWN)
+        talk("back again")
+        self.assertIn("Acting on its own:", sent[-1])
+        talk("next")
+        self.assertEqual(sent[-1], "next")
 
 
 class TestRoutes(Base):

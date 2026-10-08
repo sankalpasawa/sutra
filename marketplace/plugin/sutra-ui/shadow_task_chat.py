@@ -174,6 +174,33 @@ Reply with ONE fenced block and nothing else:
 """
 
 
+def _carry_stamp():
+    """mission_engine.carry_block's fingerprint, imported lazily. Never
+    raises: a fingerprint that cannot be taken is no fingerprint (None)."""
+    try:
+        import mission_engine
+        return hash(mission_engine.carry_block())
+    except Exception:                    # noqa: BLE001
+        return None
+
+
+def _carry_unknown():
+    try:
+        import mission_engine
+        return mission_engine.CARRY_UNKNOWN
+    except Exception:                    # noqa: BLE001
+        return None
+
+
+def _carry_note(chat):
+    """mission_engine.carry_note for this chat, or "". Never raises."""
+    try:
+        import mission_engine
+        return mission_engine.carry_note(chat)
+    except Exception:                    # noqa: BLE001
+        return ""
+
+
 def _facts_text(facts):
     facts = facts or {}
     rules = facts.get("rules") or []
@@ -205,6 +232,9 @@ class TaskChat:
         self._register = None
         self._publish = None
         self._lock = asyncio.Lock()
+        #: what this chat knows about the founder, as a fingerprint
+        #: (mission_engine.carry_note); None until it boots
+        self.carry_stamp = None
 
     @property
     def alive(self):
@@ -282,6 +312,8 @@ class TaskChat:
         except Exception:
             self.stop()
             raise
+        # what this chat booted knowing (the standing context carries it)
+        self.carry_stamp = _carry_stamp()
         shadow_ledger.append("actions", {
             "mission_id": self.mission_id, "kind": "spawn",
             "summary": "task chat %s spawned for %s"
@@ -313,6 +345,9 @@ class TaskChat:
                                % self.mission_id)
         self.rt = rt
         TASK_CHATS[self.mission_id] = self
+        # a resumed chat cannot know which settings it last saw: tell it the
+        # current ones with the founder's next line (mission_engine.carry_note)
+        self.carry_stamp = _carry_unknown()
         if self._register is not None:
             try:
                 self._register(self.session_id, rt)
@@ -361,7 +396,11 @@ class TaskChat:
         """The founder talks to this task's Shadow. Returns (display, blocks)
         exactly as the Now chat route does; a `mission` block amends the
         draft (the caller applies it)."""
-        raw = await self._turn(text, TURN_TIMEOUT_S)
+        # PERSONALITY AND MEMORY CHANGED MID-TASK reach this chat too
+        # (founder, 2026-10-08): its replies to the founder used the switches
+        # it booted with until the task ended. The same once-per-change note
+        # the Now chat gets; decisions already read them fresh every turn.
+        raw = await self._turn(_carry_note(self) + text, TURN_TIMEOUT_S)
         return shadow_protocol.parse_reply(raw)
 
     async def brief(self, mission, facts=None):

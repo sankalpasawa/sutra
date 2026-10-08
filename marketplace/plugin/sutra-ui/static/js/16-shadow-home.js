@@ -6951,21 +6951,39 @@ function shadowKnowsGroupHtml(d, section, group){
 }
 
 /* EVERY SUGGESTION, AS ONE LINE until opened. */
+/* A SWITCH SUGGESTION (rule 2, 2026-10-08): Shadow saw the same signal in
+   three different tasks and asks to move one switch. Yes sets it, No rests it
+   for 30 days; it never changes a switch on its own. */
+function shadowSwitchSuggestionHtml(s){
+  return `<div class="ssknow pending">
+    <span class="ssknowk">${esc(s.label)}</span>
+    <span class="ssknowt">Switch to ${esc(s.to_label)}?<span class="ssknowe">${
+      esc(s.why)} Now: ${esc(s.from_label || s.from || "")}.</span></span>
+    <button class="btn pri" type="button" data-shswsug="${escAttr(s.name)}"
+      data-shans="yes">Yes</button>
+    <button class="btn" type="button" data-shswsug="${escAttr(s.name)}"
+      data-shans="no">No</button>
+  </div>`;
+}
+
 function shadowKnowsSuggestionsHtml(d){
   const k = (d && d.knows) || {};
   const rows = [].concat(k.personality || [], k.memory || [])
     .filter(r => r && r.status === "pending");
-  if (!rows.length) return "";
+  const sws = k.switch_suggestions || [];
+  const n = rows.length + sws.length;
+  if (!n) return "";
   const open = shadowKnowOpen("pending");
   return `<div class="sssuggest${open ? " open" : ""}">
     <button class="ssgrouph" type="button" data-shkgroup="pending"
       aria-expanded="${open ? "true" : "false"}">
-      <span class="k">${esc(rows.length === 1 ? "1 suggestion waiting"
-                                                : rows.length + " suggestions waiting")}</span>
+      <span class="k">${esc(n === 1 ? "1 suggestion waiting"
+                                      : n + " suggestions waiting")}</span>
       <span class="v"></span>
       <span class="ssgroupx" aria-hidden="true">${open ? "▾" : "▸"}</span>
     </button>
-    ${open ? `<div class="ssknows-list">${rows.map(shadowKnowsRowHtml).join("")}</div>` : ""}
+    ${open ? `<div class="ssknows-list">${sws.map(shadowSwitchSuggestionHtml).join("")
+      }${rows.map(shadowKnowsRowHtml).join("")}</div>` : ""}
   </div>`;
 }
 
@@ -7060,7 +7078,17 @@ function shadowPendingKnowsHtml(sel){
   const rows = [].concat(k.personality || [], k.memory || [])
     .filter(r => r && r.status === "pending"
                  && (r.mission_id || null) === here);
-  return rows.map(r => `<div class="shremember" data-shkmem="${escAttr(r.id)}">
+  /* a switch suggestion is about the founder's habits across tasks, never
+     one task's, so it shows only where no task is in focus */
+  const sws = here ? [] : (k.switch_suggestions || []);
+  return sws.map(s => `<div class="shremember" data-shkswitch="${escAttr(s.name)}">
+    <span class="shrememberk">${esc(s.label)}</span>
+    <span class="shremembertext">Switch to ${esc(s.to_label)}? ${esc(s.why)}</span>
+    <button class="btn pri shrememberok" type="button"
+      data-shswsug="${escAttr(s.name)}" data-shans="yes">Yes</button>
+    <button class="btn shrememberok" type="button"
+      data-shswsug="${escAttr(s.name)}" data-shans="no">No</button>
+  </div>`).join("") + rows.map(r => `<div class="shremember" data-shkmem="${escAttr(r.id)}">
     <span class="shrememberk">${esc(r.section === "personality" ? "how I work" : "about you")}</span>
     <span class="shremembertext">Remember for next time: ${esc(r.text || "")}</span>
     <button class="btn pri shrememberok" type="button"
@@ -8246,6 +8274,10 @@ if (typeof document !== "undefined" && document.addEventListener){
     /* ...a switch is set in one click */
     if (d.shswitch && d.shval)
       return shadowKnowAct("switch", { name: d.shswitch, value: d.shval });
+    /* ...and a suggested switch is answered Yes or No (rule 2) */
+    if (d.shswsug && d.shans)
+      return shadowKnowAct("switch_suggestion",
+                           { name: d.shswsug, answer: d.shans });
     /* What Shadow learned: keep / drop-or-forget a row, or open it to edit */
     if (d.shknow && d.shkid && typeof S !== "undefined"){
       if (d.shknow === "open"){
