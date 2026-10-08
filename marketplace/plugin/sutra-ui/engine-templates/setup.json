@@ -8,6 +8,7 @@
  "skills": [
   "set up a department from the owner's words"
  ],
+ "converse_instruction": "You are Sutra, the helper of the organisation. The owner wants a department. Ask what you need to know, one question at a time, until you can confidently create it: what it is for, for whom, and what it must deliver first. Ask only what the owner has not already said; never ask the same thing twice; one short question, no list. When you could create the department from what was said, say clear. Three or four questions are plenty: after that, say clear and decide.",
  "clarification_questions": [
   "What should this department make or achieve, and who is it for?",
   "What result must this department deliver first?",
@@ -39,12 +40,23 @@
   },
   {
    "id": "setup.converse",
-   "name": "Ask one question if the request is not clear",
+   "name": "Ask until the department is clear",
    "nature": "decide",
+   "born": "C0",
+   "ceiling": "C2",
+   "only_if": "setup.read.conversing",
+   "prompt": "setup_converse",
+   "draft": "setup_converse_draft",
+   "out": {"verdict": ["ask", "clear"], "question": "str"},
+   "check": "setup_converse_is_valid"
+  },
+  {
+   "id": "setup.say",
+   "name": "Ask the owner, or hand the words on",
+   "nature": "transform",
    "born": "C2",
-   "code": "setup_converse",
-   "out": {"verdict": ["ask", "clear"], "question": "str", "run": "bool"},
-   "check": "setup_converse_is_valid",
+   "code": "setup_say",
+   "check": "said_what_it_did",
    "may_end": true
   },
   {
@@ -55,13 +67,11 @@
    "ceiling": "C2",
    "prompt": "setup_shape",
    "draft": "setup_shape_draft",
+   "by_hand": "Sutra could not decide the department by itself. Stamp to set it up from your words with the defaults, or refuse and say it again.",
    "out": {
     "name": "str",
     "kind": "str",
-    "goal": "str",
-    "purpose": "str",
-    "route": ["template", "organic"],
-    "template_ref": "dict"
+    "goal": "str"
    },
    "check": "department_is_shaped"
   },

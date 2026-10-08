@@ -385,6 +385,14 @@ function dpNowHtml(){
    functions remain the product model, while this card is the transparent view
    over their durable exchanges. It shows decisions and evidence, never model
    scratchpads or hidden reasoning. */
+/* The cycle's state, in the words a person reads (the state itself stays on the dot's class). */
+const DP_J2_SAYS = {
+  not_started: "Not started", not_ready: "Not ready", assessing: "Identity is reading the goal",
+  waiting: "Waiting for you", adapting: "Adaptation is proposing what to do", bargaining: "Priority is answering the proposal",
+  closing: "Identity is closing a conflict", checking: "Root is checking the plan", reshaping: "Adaptation is reshaping the plan",
+  running: "The work is running", pursuing: "Working on what Audit found", blocked: "Blocked: the plan was not granted",
+  stopped: "Stopped", done: "Goal reached"
+};
 function dpActivityHtml(){
   const st = dpS(), ref = st.sel;
   const status = (st.j2 && st.j2.ref === ref) ? st.j2 : null;
@@ -393,12 +401,15 @@ function dpActivityHtml(){
   const state = status.state || "not_started";
   const phase = status.journey ? status.journey + (status.step ? " · step " + status.step : "") : "Not started";
   let control = "";
-  if (status.enabled && state === "not_started")
-    control = `<button type="button" class="btn" data-dpj2start="1">Start J2</button>`;
-  else if (state !== "stopped" && state !== "not_ready")
+  /* the cycle starts by itself at the department's birth; Start is for one born before that, and for after a Stop */
+  if (status.enabled && (state === "not_started" || state === "stopped"))
+    control = `<button type="button" class="btn" data-dpj2start="1">${state === "stopped" ? "Start again" : "Start J2"}</button>`;
+  else if (state !== "stopped" && state !== "not_ready" && state !== "done")
     control = `<button type="button" class="btn" data-dpj2stop="1">Stop</button>`;
+  const says = DP_J2_SAYS[state] || state.replace(/_/g, " ");
+  const done = status.done_when ? `<div class="dpchk">Done when: ${dpEsc(status.done_when)}</div>` : "";
   const head = dpCard("J2", `<div class="dprow"><span class="dpdot ${dpEsc(state)}"></span>` +
-    `<span><b>${dpEsc(state.replace(/_/g, " "))}</b><div class="dpchk">${dpEsc(phase)}</div></span></div>` +
+    `<span><b>${dpEsc(says)}</b><div class="dpchk">${dpEsc(phase)}</div>${done}</span></div>` +
     (control ? `<div class="dpoffer">${control}</div>` : ""));
   const rows = (read.events || []).map(e => `<div class="dpmsg"><span>` +
     `<div class="dpwho">${dpEsc(e.actor || "")} to ${dpEsc(e.recipient || "")}</div>` +

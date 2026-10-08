@@ -1268,6 +1268,19 @@ test("W45: J1 shows Root's one question and final department tell without renami
   assert.ok(!/Sutra<\/div>/.test(q + done), "J1 does not alias Root as Sutra");
 });
 
+test("W46: J1.5 the second department is offered as one chip that carries its own words; a turn with no offer has none", () => {
+  const c = fresh();
+  const plain = c.wbChatTurn({ src: "Identity", msg_type: "inform", at: AT, word: "department",
+    line: "Acme Website is set up with Plan, Write, Check, Publish. First: Plan.", dept: "r5", name: "Acme Website" }, false);
+  const offered = c.wbChatTurn({ src: "Identity", msg_type: "inform", at: AT, word: "department",
+    line: "Acme Website is set up. You also asked for a second department.", dept: "r5", name: "Acme Website",
+    offer: { label: "sales <CRM> for the team", words: "Set up another department: sales \"CRM\" for the team" } }, false);
+  assert.ok(!/data-wbsay/.test(plain), "no offer, no chip");
+  assert.strictEqual((offered.match(/data-wbsay=/g) || []).length, 1, "one chip");
+  assert.ok(/data-wbsay="Set up another department: sales &quot;CRM&quot; for the team"/.test(offered), "the chip carries the words, escaped");
+  assert.ok(/>Set up: sales &lt;CRM/.test(offered) && !/<CRM/.test(offered), "the chip reads what it sets up, escaped");
+});
+
 Promise.all(pending).then(() => {
   console.log("-".repeat(60));
   console.log(failed ? " " + failed + " failed (" + ran + " tests)" : " all passed (" + ran + " tests)");

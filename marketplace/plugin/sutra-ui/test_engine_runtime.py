@@ -20,7 +20,8 @@ from pathlib import Path
 
 REF = "dref-runtime0001"
 GOAL = "A website for City Care Hospital: departments, doctors, how to book."
-KEYS = ("SUTRA_NATIVE_DEPT_HOME", "SUTRA_WEBSITE_OFFLINE", "SUTRA_ENGINE_RUNTIME", "SUTRA_MOTOR", "SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS")
+KEYS = ("SUTRA_NATIVE_DEPT_HOME", "SUTRA_WEBSITE_OFFLINE", "SUTRA_ENGINE_RUNTIME", "SUTRA_MOTOR", "SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS",
+        "J2_FLOW_V1")
 
 
 class Model:
@@ -151,6 +152,10 @@ class Model:
             route = "organic" if kind == "organic" else "template"
             return {"name": name, "kind": kind, "goal": words, "purpose": words, "route": route,
                     "template_ref": {} if route == "organic" else {"id": "department/" + kind, "version": 1}}, 0.02, "model"
+        if sid == "setup.converse":
+            return {"verdict": "clear", "question": ""}, 0.01, "model"      # the words these tests say are clear
+        if sid == "identity.close":
+            return {"ruling": "ask", "why": "the goal and the rules do not settle it"}, 0.01, "model"
         if sid == "audit.judge":
             return {"ok": not self.findings, "findings": list(self.findings)}, 0.02, "model"
         if sid == "check.rules":
@@ -167,6 +172,10 @@ class Base(unittest.TestCase):
         for k in KEYS:
             os.environ.pop(k, None)
         os.environ["SUTRA_NATIVE_DEPT_HOME"] = self.home
+        # This suite is the engine runtime's own floor: what an engine, a step, a gate and the board do. A department
+        # here runs as it did before J2 (the switch off: nothing held, the owner stamps an organic line). The J2
+        # lifecycle on top of this floor has its own suite, test_j2.py.
+        os.environ["J2_FLOW_V1"] = "0"
         if self.runtime:
             os.environ["SUTRA_ENGINE_RUNTIME"] = self.runtime
         import website_dept
@@ -1381,11 +1390,11 @@ class TestOrganicRootAndShape(Base):
             self.assertTrue(W.versions(child["ref"], "Site plan"), "the child ran its goal")
             self.assertTrue(any(x["kind"] == "publish" for x in W.asks(child["ref"])), "and asks before its first publish")
             rows = {r["step"]: r["by"] for r in R.step_rows(root) if r["engine"] == "Setup"}
-            self.assertEqual(rows, {"setup.read": "code", "setup.converse": "code", "setup.shape": "model",
+            self.assertEqual(rows, {"setup.read": "code", "setup.converse": "model", "setup.say": "code", "setup.shape": "model",
                                     "setup.make": "code", "setup.file": "code"})
             acts = [(p["src"], p["dst"][0], p["msg_type"]) for p in R.board(root)]
             self.assertEqual(acts[:2], [("Owner", "Identity", "request"), ("Identity", "Owner", "inform")])
-            self.assertEqual(R.steps_view(root, "Setup")["steps"][2]["last"]["by"], "model")
+            self.assertEqual(R.steps_view(root, "Setup")["steps"][3]["last"]["by"], "model")
         finally:
             for k, v in prior.items():
                 if v is None:

@@ -396,6 +396,14 @@ def set_stopped(ref, stopped):
             raise ValueError("no website department at %s" % ref)
         d["stopped"] = bool(stopped)
         save_dept(ref, d)
+    if not stopped:
+        # Start after Stop: the department's J2 cycle goes on from the step it stood on (the two never disagree)
+        try:
+            import j2_runtime
+            if (j2_runtime._state(ref) or {}).get("state") == "stopped":
+                j2_runtime.resume(ref)
+        except Exception:  # noqa: BLE001 -- the switch is thrown whether or not the lifecycle record follows
+            pass
     if d.get("runtime") == 2:
         # Start and Stop are one button, and a signal to every engine of the department (founder, 2026-09-28).
         system_run(ref, "Identity", "stopped by the owner: every engine stops" if stopped
@@ -584,7 +592,14 @@ def model_json(prompt, timeout=MODEL_TIMEOUT_S, tools=None):
         out = json.loads(p.stdout or "{}")
     except Exception:  # noqa: BLE001
         return None, 0.0, "model answered no JSON (exit %s)" % p.returncode
+    if not isinstance(out, dict):
+        return None, 0.0, "model answered no JSON (exit %s)" % p.returncode
     usd = float(out.get("total_cost_usd") or 0.0)
+    if out.get("is_error"):
+        # the CLI answered, with exit 0, that the call itself failed (no such model, not signed in, over the limit): that is
+        # the model being away, not an answer of the wrong shape (found live 2026-10-07: it was read as a bad answer and the
+        # step went to the person by hand after ten seconds, never waiting the 30, 120 and 600 s)
+        return None, usd, "model call failed: %s" % str(out.get("result") or out.get("subtype") or "the CLI reported an error")[:200]
     text = str(out.get("result") or "")
     m = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.S) or re.search(r"(\{.*\})", text, re.S)
     if not m:

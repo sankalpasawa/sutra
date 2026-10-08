@@ -4,6 +4,29 @@
 
 ## Unreleased
 
+### J1 and J2 as the department page describes them
+
+Build record: `docs/superpowers/plans/2026-10-07-j1-j2-published-design-prd.md`.
+
+- **A department is born on a real model again.** Setup's Shape step failed every live founding: the model named its template as `{"id": "website", "version": "1"}` and the check wanted `{"id": "department/website", "version": 1}`. The route and the template reference now follow from the kind, in code.
+- **Root's questions are the AI's.** The converse step is a model step with an instruction in `engine-templates/setup.json`; the keyword test and the three fixed questions remain only as its offline draft. `just do it` still ends the questions.
+- **An answer reaches the open question** when the organisation already has a department, and when the answer starts with "yes" or "no".
+- **Two departments asked for:** the first is made with its own goal; the second is offered as a chip in Root's tell.
+- **A Setup that cannot finish says so** and closes the Request, as does a refused preview. The birth is told once (the tell was written twice in 2 of 13 foundings).
+- **A CLI error reply counts as the model being away**, so the 30, 120 and 600 second waits apply.
+- **J2 is the department's own life, on its board.** At the hand-over the cycle starts by itself: Identity finds the identity good enough or asks; Adaptation proposes the workflows (the Library's line, or its own); Priority grants, refuses or counters inside the board's bounds; a refusal or a bound goes to Identity, and what Identity cannot settle is one ask; Root's check registers the workflow on the department's record. No workflow runs before that.
+- **The J2 ledger is written where the work happens**: the bargain's posts, each run's slot, start, filed version and end, Audit's reading, and `goal.reached` when done-when holds.
+- **The organic kind's line is no longer stamped by the owner**; Priority and Root's check pass it (S-18).
+- `J2_FLOW_V1` is on unless set to `0`, `false` or `off`; off, a department runs as it did before. Stop and the department's own Start agree. `/api/departments/{ref}/j2…` answers beside `/api/dept/{ref}/j2…`, with `/j2/answer` and `/j2/resume`.
+
+## 2.306.24 (2026-10-07)
+
+### Shadow learns its memory and personality
+
+- Shadow records what it learns about you and how to work with you, and re-uses it on later tasks (`sutra-ui/shadow_knows.py`).
+- A task whose outcome does not apply (no typo to fix, a change already made) now asks to be closed with a one-tap Close / Keep going, instead of running until its turn budget fails it. Shadow still cannot end work by itself.
+- Text fields Shadow creates (its typed questions, the task chat line, settings and memory boxes) keep focus, caret and draft across background refreshes.
+
 ### Settings > Updates no longer fails with "/api/updates -> 500"
 
 - A GitHub connection that dropped part-way through a reply (`http.client.IncompleteRead`, not an `OSError`) escaped the update check and blanked the screen with a 500, seen on Windows. It now reads "could not reach GitHub" on that row, and the same drop during a download is resumed instead of failing the stage.
@@ -15,6 +38,10 @@
 - A clear request creates automatically unless an effective inherited `ask` rule matches. Setup records a versioned department template or the explicit organic route.
 - Founding reconciles one child, the five functions, goal context, born engines, one `j2_ready` event, and Root's final tell without running J2 work.
 - The founding path now imports and locks correctly on Windows as well as POSIX release hosts.
+
+### SEO agent
+
+- Candidate-respecting language rule, faster write phase, and the author's word limit enforced for written and edited articles.
 
 ## 2.306.23 (2026-09-30)
 

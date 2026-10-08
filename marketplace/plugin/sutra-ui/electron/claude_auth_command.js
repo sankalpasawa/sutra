@@ -12,7 +12,10 @@
 function claudeAuthCommand(platform, env) {
   if (platform === "win32") {
     const command = (env && (env.ComSpec || env.COMSPEC)) || "cmd.exe";
-    const login = 'start "" /wait "%ComSpec%" /d /s /c "claude auth login"' +
+    /* Use cmd.exe by its executable name inside `start`. Expanding a quoted
+       %ComSpec% path here adds nested quote layers that Windows `start` can
+       misparse as the target to open (seen as a `\\` dialog). */
+    const login = 'start "" /wait cmd.exe /d /s /c "claude auth login"' +
       ' & claude auth status >nul 2>&1';
     return { command, args: ["/d", "/s", "/c", login] };
   }
