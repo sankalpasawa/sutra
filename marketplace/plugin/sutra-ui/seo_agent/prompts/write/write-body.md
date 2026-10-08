@@ -320,6 +320,12 @@ leans on a conclusion the reader has not reached yet.
   company size or one year describes exactly that, not "employers" or "the industry" in general. If
   the card's own scope is narrower than the sentence you are about to write, narrow the sentence to
   match it, or drop the claim.
+- NEVER SET TWO FIGURES SIDE BY SIDE UNLESS THEY ANSWER THE SAME QUESTION. "Turnover fell 12% at
+  companies using structured interviews" next to "candidates rated unstructured interviews 30% more
+  favorably" is two different surveys, two different populations, two different questions, dressed up
+  as a before/after. Before you compare two numbers, check the cards behind them ask the same
+  question of the same kind of population — if they don't, report each on its own, or drop the one
+  that cannot stand next to the other.
 - ONE IDEA PER SENTENCE. A sentence carries a subject, a verb and one point. When you catch yourself
   joining two points with "which", "while", "and thereby" or a second comma-clause, split it in two.
 - SAY IT AS A VERB, NOT A NOUN. "Evaluate candidates", not "conduct an evaluation of candidates".

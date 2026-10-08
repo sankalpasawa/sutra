@@ -103,6 +103,16 @@ WORD_BAND_CEILING_PCT = 1.05        # over this fraction of target is "too long"
 # Tightened from 1.10 on the QA report's own ask (2026-10-07): "Never deliver over N+5%." The retry
 # loop this feeds (readable.run's cut rounds) is the enforcement; a prompt line saying the same
 # number would be the thing that already failed once (see library_edit.py's identical constant).
+#
+# THE FLOOR MATCHES THE CEILING (2026-10-08, same report, restated plainly: "within the requested
+# word count (+/-5%)"). It read 0.85 before -- a band of -15%/+5%, not the symmetric one asked for
+# -- because the floor only ever existed to stop a PADDED-OUT rewrite from reporting false success,
+# never to demand a short, honest article be lengthened (write-body.md's own rule: "If the facts do
+# not justify the length, write less. Never pad to reach it."). That reason does not conflict with
+# a tighter number: check() only applies it when the draft STARTED over target (b > target, below),
+# so it never forces a naturally short article up to 95% -- it only means a rewrite that was asked
+# to cut may not overshoot the cut past 95% either, not just up to the old 85%.
+WORD_BAND_FLOOR_PCT = 0.95
 WORD_BAND_MAX_ROUNDS = 2            # further cut-only rounds after the first rewrite, cost-bounded
 WORD_BAND_MIN_PROGRESS = 20         # a round that cuts fewer words than this is the model declining further
 # ONE belief, held by two steps. About this many words around a fact is what it takes for the fact
