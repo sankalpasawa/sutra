@@ -341,8 +341,11 @@ BEFORE YOU RETURN ANYTHING, CHECK YOUR OWN REBUILD AGAINST THESE, IN ORDER:
      advice addressed to a candidate.
   5. FEATURES. Every {{BRAND}} capability you kept or added is one FILE 3 (in the body writer's
      own brief, carried into this draft) actually named — nothing invented.
+  6. STRUCTURE. Does the body still deliver what the headline promises? Does every table still
+     carry the column headers a reader needs to read its rows, not just the values? Does every
+     "below" or "next" a section points at actually arrive, and say what it was pointed at saying?
 
-Fix anything that fails one of these five before you answer. This is a check you run on
+Fix anything that fails one of these six before you answer. This is a check you run on
 yourself; nothing you write about having run it belongs in the reply.
 
 Return the rebuilt article as JSON, nothing else:

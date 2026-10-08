@@ -18,7 +18,10 @@ from . import _common as C
 from . import shape
 
 
-DEFAULT_WORDS = 2500        # only when a plan reaches here with no band at all (never a real run)
+# "If none is given, target 1,000 words" (SEO Writer: Writing Rules, 2026-10-08). Only when a plan
+# reaches here with no band at all (never a real run -- the person is always asked, see
+# research/assemble.py's own question); this is the silent floor under a malformed or legacy plan.
+DEFAULT_WORDS = 1000
 
 
 def target_words(plan):
