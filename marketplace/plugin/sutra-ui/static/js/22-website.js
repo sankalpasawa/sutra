@@ -173,6 +173,8 @@ function wbTick(){
     /* a function's open chat is read on the same clock */
     const ftab = (typeof dpS === "function" && dpS().tab[S.dp.sel]) || "", fk = S.dp.sel + ":" + ftab;
     if (ftab && st.fnchat[fk] && dpS().pane[fk] === "chat") wbLoadFnChat(S.dp.sel, ftab, true);
+    /* and so is the open Agent activity: the lifecycle's events land while the person watches */
+    if (ftab === "activity" && typeof dpActivityAgain === "function") dpActivityAgain(S.dp.sel);
   }, WB_POLL_MS);
 }
 function wbMotorState(m){
