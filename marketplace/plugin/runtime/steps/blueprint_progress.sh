@@ -152,14 +152,18 @@ main() {
 # 120 s budget, this is the same command with a 1.5 s one.
 _bp_run() {
   ( cd "$1" 2>/dev/null || { echo "127 0"; exit 0; }
+    _t0=$SECONDS
     sh -c "$2" >/dev/null 2>&1 & _p=$!
-    _j=0; while kill -0 "$_p" 2>/dev/null && [ "$_j" -lt "$3" ]; do sleep 0.1; _j=$((_j + 1)); done
-    if kill -0 "$_p" 2>/dev/null; then
-      pkill -P "$_p" 2>/dev/null; kill "$_p" 2>/dev/null; wait "$_p" 2>/dev/null
-      echo "124 $_j"; exit 0
+    # ONE timer for the cap: a sleep-0.1 poll paid a process per tick and ran
+    # ~2.5 s for a "1.5 s" cap on a slow box, past the 4500 ms pipeline kill
+    ( sleep "$(($3 / 10)).$(($3 % 10))"; pkill -P "$_p" 2>/dev/null; kill "$_p" 2>/dev/null ) >/dev/null 2>&1 & _w=$!
+    wait "$_p" 2>/dev/null; _r=$?
+    if [ "$_r" -lt 128 ] && kill -0 "$_w" 2>/dev/null; then
+      pkill -P "$_w" 2>/dev/null; kill "$_w" 2>/dev/null
+      echo "$_r $(( (SECONDS - _t0) * 10 ))"; exit 0
     fi
-    wait "$_p"; _r=$?
-    echo "$_r $_j"; exit 0 )
+    pkill -P "$_w" 2>/dev/null; kill "$_w" 2>/dev/null; wait "$_w" 2>/dev/null
+    echo "124 $3"; exit 0 )
 }
 
 _bp_row() {  # <kind-suffix> <extra-json-object>
