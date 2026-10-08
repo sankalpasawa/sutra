@@ -68,7 +68,10 @@ def budget_maths(word_band):
     paras/sec   = WORDS_PER_SECTION / w_para;  paras/subhead = MIN_WORDS_PER_SUBHEAD / w_para
     """
     band = word_band or {}
-    budget = int(((band.get("min") or 0) + (band.get("max") or 0)) / 2) or 1500
+    # "If none is given, target 1,000 words" (SEO Writer: Writing Rules, 2026-10-08) -- the same
+    # no-band fallback allocate_words.DEFAULT_WORDS names, since this is the one budget both steps
+    # size from (see the docstring above).
+    budget = int(((band.get("min") or 0) + (band.get("max") or 0)) / 2) or 1000
     budget = max(1, round(budget * (1 - C.ARCH_BAND_SHRINK)))
     sec_target = max(4, round(budget / C.WORDS_PER_SECTION))
     w_para = C.WORDS_PER_SENTENCE * C.SENTENCES_PER_PARAGRAPH

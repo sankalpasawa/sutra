@@ -18,6 +18,6 @@ Writing rules. These are not suggestions.
   bar out of the process." Screening IN is advancing a candidate on the evidence, never "keeping"
   or "letting through" them — "advance" or "move forward."
 - Use "they" for a candidate whose gender is not known. No sarcasm, and no word that presumes
-  guilt — not "cheat", not "crime", not "a guess dressed up as" something, unless reporting an
-  actual named finding of that. Describe the behaviour plainly; a loaded word has already judged
-  it for the reader.
+  guilt or a character flaw — not "cheat", not "crime", not "dishonest", not "lazy", not "a guess
+  dressed up as" something, unless reporting an actual named finding of that. Describe the
+  behaviour plainly; a loaded word has already judged it for the reader.

@@ -66,6 +66,13 @@ ONLY YOU CAN SEE THE FIRST FOUR. No earlier step could, and no later step will.
 
 4. A REFERENCE TO SOMETHING THAT IS NOT THERE. A writer working alone may say "as we saw above"
    about something that is not above it, or set up something the reader already has. Fix it.
+   THIS RUNS BOTH WAYS. A writer can also promise something still to come — "the example below
+   shows", "as the next section explains", "we cover this in detail further down" — and the thing
+   promised never actually arrives, because the section that was meant to deliver it was cut,
+   reordered, or never said what the promise claims it says. Check every forward promise the same
+   way you check a backward one: find what it points to, and if it is not there, or does not do
+   what the promise says, fix the promise or cut it. A promise nothing pays off reads as broken
+   just as surely as a reference to something that was never said.
 
 5. THE KEYWORDS. These are what real people type into search for this topic, and the writers never
    saw them, so this is the only chance the article gets.

@@ -94,7 +94,10 @@ HOW TO WRITE IT
 - A dashed list is the default. Tight prose is allowed when the article settles one single
   question and a list would pad it.
 - If the article settles a question, settle it here too, in the first item.
-- At most ONE number across the whole block, and only the figure the article turns on.
+- At most ONE number across the whole block, and only the figure the article turns on — THE SAME
+  figure the intro's agitate beat already used, not a second number of its own. One statistic gets
+  this repeated treatment, on purpose, because it is the article's spine; a different number
+  restated here as well is the redundancy the rest of this prompt works to avoid everywhere else.
 - It must not repeat the intro's wording. The intro makes them want to read; this is what they
   keep if they do not.
 - No source tags. It carries nothing the body has not already proved.

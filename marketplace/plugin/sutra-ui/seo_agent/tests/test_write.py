@@ -214,7 +214,8 @@ ok("section ceiling = max(4, round(1440/300)) = 5", m["section_target"] == 5, m)
 ok("words per paragraph = 25 x 5 = 125", m["words_per_paragraph"] == 125)
 ok("paragraphs per section = round(300/125) = 2", m["paragraphs_per_section"] == 2)
 ok("paragraphs per sub-heading = round(200/125) = 2", m["paragraphs_per_subhead"] == 2)
-ok("no band falls back to 1500 x 0.9 = 1350", shape.budget_maths({})["budget"] == 1350)
+ok("no band falls back to 1000 x 0.9 = 900 (SEO Writer: Writing Rules, 'target 1,000 if none given')",
+   shape.budget_maths({})["budget"] == 900)
 lb = shape.listicle_budget(1440, 8)
 ok("listicle: reserve 3 x 300 = 900, item budget 540, fits 2, expected drops 3",
    lb == {"reserve": 900, "item_budget": 540, "fits": 2, "expected_drops": 3}, lb)

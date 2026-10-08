@@ -316,6 +316,10 @@ leans on a conclusion the reader has not reached yet.
   "a Pew Research survey found" beats "a blog post about workplace trends found" when the card shows
   you the Pew survey is where the number originated. If a card gives no sign of an upstream source,
   use the name the card actually gives you; do not invent an original study you cannot see.
+- THE NAME YOU WRITE IS THE NAME THE TAG POINTS TO. If the sentence says "according to SHRM", the
+  [c...] tag it carries must be a card whose own source actually is SHRM — never a different
+  organization's card wearing SHRM's name because the finding is similar. One name, one source,
+  every time; if you are not sure which card a name belongs to, name only what the card itself says.
 - NEVER WIDEN WHAT A FIGURE ACTUALLY MEASURED. A number measured on one country, one job family, one
   company size or one year describes exactly that, not "employers" or "the industry" in general. If
   the card's own scope is narrower than the sentence you are about to write, narrow the sentence to
@@ -370,10 +374,11 @@ MECHANICS:
   or "letting through" them — "advance" or "move forward."
 - USE "THEY" FOR A CANDIDATE WHOSE GENDER YOU DO NOT KNOW. Singular they, not "he or she", not a
   coin-flip pronoun, not rewriting around it every time at the cost of the sentence.
-- NO SARCASM, AND NO WORD THAT PRESUMES GUILT. A candidate who misrepresents something did not
-  "cheat" or commit a "crime" unless you are reporting an actual, named finding of that; a tactic
-  you are explaining is not "a guess dressed up as" anything. Describe the behaviour plainly and
-  let the reader judge it; a loaded word has already judged it for them.
+- NO SARCASM, AND NO WORD THAT PRESUMES GUILT OR A CHARACTER FLAW. A candidate who misrepresents
+  something did not "cheat" or commit a "crime", and one who answered quickly was not "lazy" or
+  "dishonest", unless you are reporting an actual, named finding of that; a tactic you are
+  explaining is not "a guess dressed up as" anything. Describe the behaviour plainly and let the
+  reader judge it; a loaded word has already judged it for them.
 
 ════════════════════════════════════════════════════════════════════════
 WHEN A LIST IS RIGHT, AND WHEN IT IS NOT
