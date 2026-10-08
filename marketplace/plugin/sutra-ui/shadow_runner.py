@@ -901,6 +901,11 @@ async def _promote_after_slot_freed(store, mid, validated_say, verifier):
         try:
             await eng2.provision_target(promoted["id"], prov)
             remember_delegate_pid(store, promoted["id"])
+        except mission_engine.HeldBeforeSpawn as held:
+            # "Ask first" on a promoted task: the brief waits, the slot frees
+            mission_engine.hold_before_spawn(store, promoted["id"],
+                                             held.brief, held.manifest)
+            return None
         except Exception as exc2:
             store.transition(promoted["id"], "failed",
                              "provision on promote failed: %s"
@@ -3050,6 +3055,23 @@ def set_default_judge(fn):
     DEFAULT_JUDGE["fn"] = fn
 
 
+#: Waits before each automatic retry of a start that failed before any worker
+#: existed. Three tries over about two minutes, then the founder decides.
+START_RETRY_DELAYS = (10, 30, 90)
+
+
+def _retry_start_later(delay, mid, validated_say, provisioner, verifier):
+    """Try the start again after `delay` seconds -- unless, by then, the
+    founder stopped or deleted it or it started some other way."""
+    async def later():
+        await asyncio.sleep(delay)
+        m = mission_engine.MissionStore().load(mid)
+        if m is None or m["state"] not in ("brief_confirm", "queued"):
+            return
+        start_mission_async(mid, validated_say, provisioner, verifier)
+    asyncio.get_event_loop().create_task(later())
+
+
 def start_mission_async(mid, validated_say, provisioner=None, verifier=None):
     """Second-flight fix: provisioning a delegate takes minutes; holding the
     HTTP request open let client timeouts CANCEL it mid-spawn. Admission and
@@ -3081,7 +3103,15 @@ def start_mission_async(mid, validated_say, provisioner=None, verifier=None):
                         # same reason as the promote path: the criteria are
                         # decided before the spawner says the first word
                         decider=DEFAULT_DECIDER["fn"])
-                    await eng.provision_target(mid, prov)
+                    try:
+                        await eng.provision_target(mid, prov)
+                    except mission_engine.HeldBeforeSpawn as held:
+                        # "Ask first": the brief waits for the founder's
+                        # yes and no worker exists (2026-10-08). Not a
+                        # failure, so not the handler below.
+                        mission_engine.hold_before_spawn(
+                            store, mid, held.brief, held.manifest)
+                        return
                     remember_delegate_pid(store, mid)
                 # ...and the founder may have ended it while that ran
                 if _ended_during_provision(store, mid):
@@ -3152,19 +3182,56 @@ def start_mission_async(mid, validated_say, provisioner=None, verifier=None):
                                      "provision/admit failed: %s"
                                      % str(exc)[:200])
                 elif mm and mm["state"] in ("brief_confirm", "queued"):
+                    # ...AND SHADOW TRIES AGAIN ITSELF (founder, 2026-10-08:
+                    # "Start the task should never appear, shadow should start
+                    # that kind of task on its own"). Measured on
+                    # m-d98864130150: "Connection lost" while spawning the
+                    # worker, and the task sat at READY waiting for a click.
+                    # A fault before any worker exists is almost always
+                    # transient, so the start is retried START_RETRY_DELAYS
+                    # times with a growing wait; only when every retry has
+                    # failed does the row go back to READY for the founder.
+                    attempts = None
                     try:
                         fresh = store.load(mm["id"])
-                        if fresh is not None \
-                                and fresh.get("start_requested_at"):
-                            fresh["start_requested_at"] = None
+                        if fresh is not None:
+                            attempts = int(fresh.get("start_attempts") or 0) + 1
+                            fresh["start_attempts"] = attempts
+                            if attempts > len(START_RETRY_DELAYS):
+                                fresh["start_requested_at"] = None
                             store.save(fresh)
                     except Exception:   # noqa: BLE001 -- ledger it regardless
                         pass
+                    retry = attempts is not None \
+                        and attempts <= len(START_RETRY_DELAYS)
+                    # WHERE it failed, not only what (2026-10-08): a bare
+                    # "Connection lost" on m-d98864130150 could not be traced
+                    # to a line. The last few frames say which step died.
+                    try:
+                        import traceback
+                        where = " <- ".join(
+                            "%s:%s %s" % (os.path.basename(f.filename),
+                                          f.lineno, f.name)
+                            for f in reversed(
+                                traceback.extract_tb(exc.__traceback__)[-4:]))
+                    except Exception:   # noqa: BLE001
+                        where = ""
                     shadow_ledger.append("missions", {
                         "mission_id": mm["id"], "state": mm["state"],
-                        "note": "provision/admit failed BEFORE any worker "
-                                "existed, so the task is startable again, not "
-                                "failed: %s" % str(exc)[:200]})
+                        "note": ("provision/admit failed BEFORE any worker "
+                                 "existed (attempt %s); %s: %s%s" % (
+                                     attempts,
+                                     ("retrying in %ds" %
+                                      START_RETRY_DELAYS[attempts - 1])
+                                     if retry else
+                                     "the task is startable again, not "
+                                     "failed", str(exc)[:200],
+                                     (" [at %s]" % where)[:280]
+                                     if where else ""))})
+                    if retry:
+                        _retry_start_later(
+                            START_RETRY_DELAYS[attempts - 1], mid,
+                            validated_say, provisioner, verifier)
             except Exception:
                 pass
 

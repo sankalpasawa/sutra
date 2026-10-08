@@ -26,6 +26,8 @@ Build record: `docs/superpowers/plans/2026-10-07-j1-j2-published-design-prd.md`.
 - Shadow records what it learns about you and how to work with you, and re-uses it on later tasks (`sutra-ui/shadow_knows.py`).
 - A task whose outcome does not apply (no typo to fix, a change already made) now asks to be closed with a one-tap Close / Keep going, instead of running until its turn budget fails it. Shadow still cannot end work by itself.
 - Text fields Shadow creates (its typed questions, the task chat line, settings and memory boxes) keep focus, caret and draft across background refreshes.
+- Shadow suggests a switch change (Acting, Before "done", Replies, Checking in) when it sees the same signal in three tasks or chats within 30 days; you answer Yes or No on a card, and a pattern never changes a switch by itself.
+- "Ask first" now holds the opening brief before any worker starts, so a new task asks before it acts.
 
 ### Settings > Updates no longer fails with "/api/updates -> 500"
 

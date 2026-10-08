@@ -1134,6 +1134,41 @@ def _learned(section):
         return []
 
 
+#: Said once, in front of the founder's next line, when what Shadow knows
+#: changed after a long-lived chat booted (carry_note).
+CARRY_CHANGED_HEAD = ("[Context] What you know about the founder has changed "
+                      "since you started. This replaces it:\n")
+
+#: A chat that came back with --resume cannot know which settings it last
+#: saw, so it is told the current ones on its first line (carry_note).
+CARRY_UNKNOWN = "resumed"
+
+
+def carry_note(holder):
+    """WHAT SHADOW KNOWS, KEPT CURRENT IN A LONG-LIVED CHAT (founder,
+    2026-10-08: a personality change should reach the chats already open).
+
+    A chat reads carry_block() ONCE, at boot. `holder` is that chat (the Now
+    session, or a task's Shadow chat) and carries `carry_stamp`, the
+    fingerprint of what it booted with. Returns the note to put in front of
+    the founder's next line when that changed -- once per change -- else "".
+
+    NO STAMP = nothing to compare against: the fingerprint is taken quietly.
+    CARRY_UNKNOWN = resumed: the current block is sent once. NEVER RAISES.
+    """
+    try:
+        carry = carry_block()
+        stamp = hash(carry)
+        was = getattr(holder, "carry_stamp", None)
+        holder.carry_stamp = stamp
+        if was is None or was == stamp:
+            return ""
+    except Exception:                     # noqa: BLE001 -- never fail a turn
+        return ""
+    return (CARRY_CHANGED_HEAD
+            + (carry or "(nothing is remembered any more)") + "\n\n")
+
+
 def carry_block():
     """Both founder texts and what Shadow learned, each under its heading,
     or "" when all are empty.
@@ -5403,6 +5438,67 @@ class MissionScheduler:
                             "reason": m["pause_reason"],
                             "version": m["version"]})
         return out
+
+
+class HeldBeforeSpawn(Exception):
+    """The worker must not start yet: "Ask first" holds its opening brief.
+    Raised by the spawner with the brief it would have sent."""
+
+    def __init__(self, brief, manifest=None):
+        super().__init__("held before spawn for the founder's yes")
+        self.brief = brief or ""
+        #: the composed brief to keep on the record, or None when `brief` is
+        #: only the template preview (the spawn rebuilds that itself)
+        self.manifest = manifest
+
+
+def held_before_spawn_needed(m):
+    """Does "Acting on its own: Ask first" hold this task's FIRST step?
+
+    THE GAP THIS CLOSES (founder, 2026-10-08, manual test 9). The top-tier
+    hold lived in the turn loop (_autonomy_hold), but a task with a NEW
+    worker hands that worker its opening brief AT SPAWN, before the loop's
+    first turn -- so a one-turn task (hello.txt) finished without ever
+    asking, and a longer one asked at its SECOND instruction. Ask first
+    means ask before anything happens, so the brief itself is held.
+    NEVER RAISES."""
+    try:
+        return (autonomy() == "L3" and confirm_top_tier()
+                and not (m or {}).get("top_tier_confirmed"))
+    except Exception:                       # noqa: BLE001
+        return False
+
+
+def hold_before_spawn(store, mid, brief, manifest=None):
+    """Park a not-yet-spawned task for the founder's yes, showing the brief.
+
+    The SAME hold shape _hold_say uses (paused, autonomy_top_tier, a one-use
+    approval bound to the exact brief), so every surface that already draws
+    and answers that hold -- the card, Approve, a typed yes -- works on it.
+    `held_before_spawn` tells the approval paths that no worker exists yet:
+    a yes LAUNCHES the worker with this brief instead of resuming a loop.
+    """
+    m = store.load(mid)
+    if m is None:
+        return None
+    if m["state"] in ("brief_confirm", "queued"):
+        m = store.transition(mid, "running",
+                             "admitted to show the founder the brief")
+    held = store.transition(mid, "paused",
+                            "Ask first: the brief waits for your yes")
+    held["pause_reason"] = "autonomy_top_tier"
+    held["pending_autonomy_say"] = brief[:1000]
+    held["pending_say"] = brief
+    held["approval"] = mint_approval(held, "autonomy_top_tier", brief)
+    held["held_before_spawn"] = True
+    if manifest:
+        held["manifest"] = manifest
+    held["start_requested_at"] = None
+    store.save(held)
+    shadow_ledger.append("actions", {
+        "mission_id": mid, "kind": "approval",
+        "summary": "held before the worker started: Ask first"})
+    return held
 
 
 def mint_approval(m, reason, say_text):

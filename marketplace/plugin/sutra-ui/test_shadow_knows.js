@@ -300,5 +300,33 @@ const target = (dataset, extra) => Object.assign(
       "an ordinary stop is unchanged");
   }
 
+  /* 10. rule 2: a switch suggestion is a Yes/No card -- in the suggestions
+     line, and where no task is in focus; never on a task */
+  {
+    const ctx = fresh();
+    const sug = { name: "acting", label: "Acting on its own", from: "balanced",
+                  from_label: "Balanced", to: "just_do_it", to_label: "Just do it",
+                  why: "You approved 3 held instructions without changing them.",
+                  count: 3 };
+    const d = JSON.parse(JSON.stringify(FIXTURE));
+    d.knows = Object.assign(JSON.parse(JSON.stringify(KNOWS)),
+                            { switch_suggestions: [sug] });
+    ctx.S.shadowSettings = d;
+    assert(/2 suggestions waiting/.test(ctx.shadowSettingsHtml()),
+      "it joins the one suggestions line");
+    ctx.S.shadowKnowOpen = { pending: true };
+    const h = ctx.shadowSettingsHtml();
+    assert(/Switch to Just do it\?/.test(h) && /approved 3 held/.test(h));
+    assert(/data-shswsug="acting"\s+data-shans="yes"/.test(h));
+    assert(/Switch to Just do it/.test(ctx.shadowPendingKnowsHtml(null)),
+      "shown where no task is in focus");
+    assert(!/Switch to/.test(ctx.shadowPendingKnowsHtml({ id: "m-1" })),
+      "never on a task");
+    ctx.listeners.click({ target: target({ shswsug: "acting", shans: "no" }) });
+    await settle();
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.posts[0].body)),
+      { action: "switch_suggestion", name: "acting", answer: "no" });
+  }
+
   console.log("test_shadow_knows.js: all passed");
 })().catch((e) => { console.error(e); process.exit(1); });

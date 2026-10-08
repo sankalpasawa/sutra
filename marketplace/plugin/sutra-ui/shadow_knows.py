@@ -324,7 +324,17 @@ def listing():
             "max_active": MAX_ACTIVE,
             "groups": {s: [{"id": g, "label": GROUP_LABELS[g]}
                            for g in GROUPS[s]] for s in SECTIONS},
-            "switches": switch_listing()}
+            "switches": switch_listing(),
+            "switch_suggestions": _switch_suggestions()}
+
+
+def _switch_suggestions():
+    """shadow_switch_learning.suggestions, imported lazily. NEVER RAISES."""
+    try:
+        import shadow_switch_learning
+        return shadow_switch_learning.suggestions()
+    except Exception:                        # noqa: BLE001
+        return []
 
 
 def lines(section):
@@ -337,13 +347,19 @@ def lines(section):
 
 # ------------------------------------------------------------ switches ----
 #: PERSONALITY AS SWITCHES (founder, 2026-10-07; ChatGPT's "base style" +
-#: characteristics is the model). Four, each with a default that is what
-#: Shadow already does, so an unset switch changes nothing. Two are WIRED to
-#: an existing engine setting -- a switch, not a suggestion -- and every one
-#: also reaches Shadow's context as one sentence (switch_text).
+#: characteristics is the model). Two are WIRED to an existing engine setting
+#: -- a switch, not a suggestion -- and every one reaches Shadow's context as
+#: one sentence (switch_text), set or not.
+#:
+#: DEFAULTS ARE MAXIMUM POWER (founder, 2026-10-08: "let's give default of
+#: maximum power to shadow"): Shadow decides what it can (Just do it) and
+#: proves its own work (Prove everything). "Checking in" has no default of
+#: its own: it shows the nudge rate actually set, because cutting the
+#: overlay's alerts to zero would hide stalled and errored chats -- less
+#: information for the founder, not more power for Shadow.
 #:   name: (label, default, [(value, label, sentence for Shadow)])
 SWITCHES = {
-    "acting": ("Acting on its own", "balanced", [
+    "acting": ("Acting on its own", "just_do_it", [
         ("ask_first", "Ask first",
          "Ask before the first instruction of each task and before any "
          "consequential choice."),
@@ -352,7 +368,7 @@ SWITCHES = {
         ("just_do_it", "Just do it",
          "Decide everything you reasonably can yourself; ask only when a "
          "floor or a fact only the founder holds requires it.")]),
-    "checkins": ("Checking in", "only_stuck", [
+    "checkins": ("Checking in", "milestones", [
         ("only_stuck", "Only when stuck",
          "Speak up only when you need them or the task is finished; no "
          "progress updates."),
@@ -360,7 +376,7 @@ SWITCHES = {
          "Give a one-line update when a meaningful step is done."),
         ("often", "Often",
          "Keep them posted: a short update on every turn that moved.")]),
-    "done": ("Before \"done\"", "key", [
+    "done": ("Before \"done\"", "prove", [
         ("trust", "Trust the worker",
          "Accept the worker's report when the checks pass; do not re-verify "
          "beyond them."),
@@ -418,24 +434,58 @@ def set_switch(name, value):
     return value
 
 
+def effective():
+    """{name: value} for EVERY switch -- what Shadow is actually held to.
+
+    THE WIRED TWO READ THE ENGINE, so the page can never show a value the
+    engine does not enforce (both settings also have routes of their own):
+      acting    confirm_top_tier on -> ask_first; otherwise the founder's
+                choice between balanced and just_do_it, else the default
+      checkins  the nudge rate: 0 -> only_stuck, up to 3 -> milestones,
+                more -> often
+    NEVER RAISES: a setting that cannot be read costs its own value.
+    """
+    have = switches()
+    out = {name: have.get(name, default)
+           for name, (_l, default, _o) in SWITCHES.items()}
+    try:
+        import mission_engine
+        if mission_engine.confirm_top_tier():
+            out["acting"] = "ask_first"
+        elif out["acting"] == "ask_first":
+            out["acting"] = SWITCHES["acting"][1]
+    except Exception:                       # noqa: BLE001 -- see docstring
+        pass
+    try:
+        import shadow_presence
+        n = shadow_presence.nudges_per_hour()
+        out["checkins"] = ("only_stuck" if n <= 0
+                           else "milestones" if n <= 3 else "often")
+    except Exception:                       # noqa: BLE001 -- see docstring
+        pass
+    return out
+
+
 def switch_listing():
     """What the page draws: every switch, its options, and where it stands."""
     have = switches()
+    now = effective()
     out = []
     for name, (label, default, opts) in SWITCHES.items():
         out.append({"name": name, "label": label, "default": default,
-                    "value": have.get(name, default), "set": name in have,
+                    "value": now[name], "set": name in have,
                     "options": [{"value": v, "label": l} for v, l, _ in opts]})
     return out
 
 
 def switch_text():
-    """One sentence per switch the founder SET, for Shadow's context; "" when
-    none is set, so an unconfigured install's context is unchanged."""
-    have = switches()
+    """One sentence per switch, set or default, for Shadow's context. The
+    defaults are real settings (maximum power), so they are stated rather
+    than left for Shadow to assume."""
+    now = effective()
     out = []
     for name, (label, _default, opts) in SWITCHES.items():
         for v, l, sentence in opts:
-            if have.get(name) == v:
+            if now.get(name) == v:
                 out.append("- %s: %s. %s" % (label, l, sentence))
     return "\n".join(out)

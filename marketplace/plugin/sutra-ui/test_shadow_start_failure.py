@@ -90,6 +90,11 @@ class _Store:
         return (self.store.load(self.mid) or {}).get("state")
 
 
+class _StopHere(Exception):
+    """Ends the test spawner's second call (the start path itself is covered
+    elsewhere); raised past the first, it is simply the next attempt."""
+
+
 class AStartThatDies(unittest.IsolatedAsyncioTestCase):
     """The real start_mission_async, with a provisioner that raises."""
 
@@ -174,10 +179,68 @@ class AStartThatDies(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             any("provision" in (r.get("note") or "") for r in rows),
             "the ledger must carry why the start failed: %r" % (rows,))
+        # 2026-10-08: the first fault is retried automatically, so its note
+        # says "retrying"; "startable again" is the note once retries run out
         self.assertTrue(
-            any("startable again, not" in (r.get("note") or "")
+            any("retrying in" in (r.get("note") or "")
+                or "startable again, not" in (r.get("note") or "")
                 for r in rows),
             "and must say it was NOT a mission failure")
+
+    async def test_shadow_retries_a_failed_start_on_its_own(self):
+        """founder, 2026-10-08: "Start the task" should never appear for
+        work Shadow took on. Three automatic retries, then READY."""
+        s = _Store("retried")
+        m = s.store.load(s.mid)
+        m["start_requested_at"] = mission_engine._now()
+        s.store.save(m)
+        calls = []
+
+        async def flaky(mission):
+            calls.append(1)
+            raise RuntimeError("Connection lost")
+
+        orig = shadow_runner.START_RETRY_DELAYS
+        shadow_runner.START_RETRY_DELAYS = (0, 0, 0)
+        try:
+            shadow_runner.start_mission_async(
+                s.mid, lambda *a, **k: None, provisioner=flaky)
+            for _ in range(400):
+                await asyncio.sleep(0.01)
+                if len(calls) >= 4 and not (s.store.load(s.mid) or {}).get(
+                        "start_requested_at"):
+                    break
+        finally:
+            shadow_runner.START_RETRY_DELAYS = orig
+        m = s.store.load(s.mid)
+        self.assertEqual(len(calls), 4, "the start, then three retries")
+        self.assertEqual(m["state"], "brief_confirm", "never `failed`")
+        self.assertIsNone(m.get("start_requested_at"),
+                          "only after the retries does the founder see Start")
+
+    async def test_a_retry_that_works_starts_the_task(self):
+        s = _Store("second time lucky")
+        calls = []
+
+        async def once_then_fine(mission):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError("Connection lost")
+            raise _StopHere()
+
+        orig = shadow_runner.START_RETRY_DELAYS
+        shadow_runner.START_RETRY_DELAYS = (0, 0, 0)
+        try:
+            shadow_runner.start_mission_async(
+                s.mid, lambda *a, **k: None, provisioner=once_then_fine)
+            for _ in range(200):
+                await asyncio.sleep(0.01)
+                if len(calls) >= 2:
+                    break
+        finally:
+            shadow_runner.START_RETRY_DELAYS = orig
+        self.assertEqual(len(calls), 2, "the retry reached the spawner again")
+
 
     async def test_the_exact_stale_write_race_cannot_fail_a_mission(self):
         """THE LIVE REPRODUCTION, as a test.

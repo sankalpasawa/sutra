@@ -44,6 +44,7 @@ import mission_engine                          # noqa: E402
 import providers                               # noqa: E402
 import shadow_ledger                           # noqa: E402
 import shadow_session                          # noqa: E402
+import shadow_knows                            # noqa: E402
 
 HDR = {"X-Sutra-Panel": app_module.PANEL_TOKEN,
        "Origin": "http://127.0.0.1:8330"}
@@ -190,8 +191,13 @@ MEMO = ("I am the CEO of Sutra. Meraki Labs is the holding company. "
 class TestTheCarryBlock(Base):
     """mission_engine.carry_block(): one renderer for both texts."""
 
-    def test_30_both_unset_is_empty(self):
-        self.assertEqual(mission_engine.carry_block(), "")
+    def test_30_both_unset_is_only_the_switches(self):
+        # 2026-10-08: the personality switches always reach Shadow, defaults
+        # included (maximum power), so "nothing set" is the switches alone.
+        self.assertEqual(mission_engine.carry_block(),
+                         mission_engine._SWITCHES_HEAD
+                         + shadow_knows.switch_text())
+        self.assertNotIn("HOW SHADOW BEHAVES", mission_engine.carry_block())
 
     def test_31_behaves_alone_renders_only_its_heading(self):
         mission_engine.set_behaves(TEXT)
@@ -233,9 +239,11 @@ class TestTheCarryBlock(Base):
 
         mission_engine._read_limits = boom
         try:
-            self.assertEqual(mission_engine.carry_block(), "")
+            block = mission_engine.carry_block()
         finally:
             mission_engine._read_limits = orig
+        self.assertNotIn(MEMO, block, "the unreadable text is lost, nothing "
+                         "else, and nothing raised")
 
 
 class TestTheCarryReaches(Base):
@@ -262,11 +270,13 @@ class TestTheCarryReaches(Base):
         self.assertIn(TEXT, ctx["carry"])
         self.assertIn(MEMO, ctx["carry"])
 
-    def test_43_an_unconfigured_install_omits_the_key_entirely(self):
+    def test_43_an_unconfigured_install_carries_only_the_switches(self):
+        # 2026-10-08: the personality switches always reach Shadow, defaults
+        # included (maximum power), so "nothing set" is the switches alone.
         eng = mission_engine.MissionEngine(None, None, None, lambda m: "x")
         ctx = eng._decision_context({"objective": "o", "done_when": []}, "")
-        self.assertNotIn("carry", ctx,
-                         "the decider prompt must be what it was before")
+        self.assertIn("Acting on its own: Just do it.", ctx["carry"])
+        self.assertNotIn("HOW SHADOW BEHAVES", ctx["carry"])
 
     def test_44_the_decide_prompt_renders_it(self):
         import shadow_runner
