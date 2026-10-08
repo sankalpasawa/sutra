@@ -329,6 +329,22 @@ THE USER'S STANDING RULES. They were set by the person publishing this and they 
 rule above that they contradict. "(none)" means there are none.
 {{MEMORY}}
 
+════════════════════════════════════════════════════════════════════════
+BEFORE YOU RETURN ANYTHING, CHECK YOUR OWN REBUILD AGAINST THESE, IN ORDER:
+
+  1. LENGTH. Does it land at the target words this prompt gave you, not just somewhere near it?
+  2. SOURCES. Is every figure credited to the ORIGINAL study or survey, never to a blog merely
+     repeating it, and does every claim stay within the scope the source actually measured?
+  3. TONE. No word that treats a candidate as inventory (remove, eliminate, weed out, cut,
+     discard, filter out), no sarcasm, no word that presumes guilt. Singular "they" throughout.
+  4. AUDIENCE. Every sentence still reads as written for a recruiter or a TA lead, never as
+     advice addressed to a candidate.
+  5. FEATURES. Every {{BRAND}} capability you kept or added is one FILE 3 (in the body writer's
+     own brief, carried into this draft) actually named — nothing invented.
+
+Fix anything that fails one of these five before you answer. This is a check you run on
+yourself; nothing you write about having run it belongs in the reply.
+
 Return the rebuilt article as JSON, nothing else:
 
 {"h1": "<the headline: corrected if your rebuild made it false, otherwise exactly as you got it>",

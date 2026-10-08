@@ -219,6 +219,7 @@ def run(st, idx, ctx, say=lambda *a: None):
     sections = st["sections"]
     brand = C.company()
     brief, persona, memory = _brief(), ctx["persona"], C.sh.memory_block()
+    features = C.sh.brand_file("features.md").strip()[:C.BODY_FEATURES_CHARS] or "(no features file on record)"
     rivals = _rivals_block()
     fields = [str(f).strip() for f in (st.get("item_fields") or []) if str(f).strip()]
     contract = ("\nTHIS ARTICLE'S PER-ITEM CONTRACT — your section IS one of the list's items, so it MUST end\n"
@@ -260,7 +261,7 @@ def run(st, idx, ctx, say=lambda *a: None):
                      table=_table_instruction(sec), list=_list_instruction(sec),
                      thin=_thin_note(sec, failures), shape=render_shape(sec, idx),
                      product_rule=rule, brief=brief, field=st.get("field_block") or "", memory=memory,
-                     rivals=rivals)
+                     rivals=rivals, features=features)
         prose = _strip_h2(llm.text(p, SYSTEM), head)
         prose, prov, dropped = provenance(prose, sec, idx)
         return {"headline": head, "job": sec.get("job", ""), "word_target": sec.get("word_target"),

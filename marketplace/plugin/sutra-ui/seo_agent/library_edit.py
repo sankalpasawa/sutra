@@ -301,7 +301,8 @@ LENGTH_DEFAULT_RULE = ('Keep the article\'s length in the same range it came in.
 # itself, to leave the length alone. ONE extra round, bounded, because this editor is cheaper than
 # readable's whole-article rewrite was never the question -- not recomputing the gap off the LAST
 # round's own output was.
-LENGTH_CEILING_PCT = 1.10
+LENGTH_CEILING_PCT = 1.05   # "Never deliver over N+5%" (QA report, 2026-10-07) -- see write/_common.py's
+                            # matching WORD_BAND_CEILING_PCT, tightened from 1.10 for the same reason
 LENGTH_FLOOR_PCT = 0.85
 LENGTH_MAX_ROUNDS = 2
 LENGTH_MIN_PROGRESS = 20
