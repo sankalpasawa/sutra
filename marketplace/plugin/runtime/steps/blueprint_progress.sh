@@ -92,6 +92,9 @@ main() {
   _t8="$(printf '%s' "$_BP_TURN" | head -c 8)"
   _i=1
   while [ "$_i" -le "$N_TOTAL" ]; do
+    # budget spent: the rest wait for the next call (their reads alone pushed a
+    # slow box past the 4500 ms pipeline kill, losing the whole progress file)
+    [ "$SPENT" -ge "$BUDGET" ] && break
     _st="$(printf '%s' "$NEW" | jq -r --argjson i "$_i" '.steps[] | select(.n == $i) | .status' 2>/dev/null)"
     _kind="$(jq -r --argjson i "$_i" '.steps[$i-1].verify.kind // "manual"' "$_BP_FILE" 2>/dev/null)"
     _cmd="$(jq -r --argjson i "$_i" '.steps[$i-1].verify.cmd // ""' "$_BP_FILE" 2>/dev/null)"
@@ -118,6 +121,8 @@ main() {
         '.steps = (.steps | map(if .n == $i then .status = $s
              | (if $rc != "" then .attempts = ((.attempts // 0) + 1) | .last_exit = ($rc | tonumber) else . end)
              | (if $s != "pending" then .ts = $ts else . end) else . end))' 2>/dev/null)"
+      # saved per run, so a pipeline kill cannot erase what already ran
+      [ -n "$_rc" ] && [ -n "$NEW" ] && sutra_steps_write "$PROG" "$NEW"
     fi
     if [ "$_next" != "$_st" ]; then
       case "$_next" in
