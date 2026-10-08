@@ -794,7 +794,8 @@ setup_case() {
   fi
   mkdir -p "$RUN_PROJ/.claude" "$RUN_PROJ/.sutra" "$RUN_PROJ/.enforcement" "$RUN_HOME/.sutra" 2>/dev/null
 
-  for _s in claude gh; do printf '#!/bin/sh\nexit 1\n' > "$RUN_STUB/$_s"; chmod 0755 "$RUN_STUB/$_s"; done
+  # rtk is stubbed for PRESENCE only: rtk-auto-rewrite.sh gates on `command -v rtk` and never runs it (PR #173)
+  for _s in claude gh rtk; do printf '#!/bin/sh\nexit 1\n' > "$RUN_STUB/$_s"; chmod 0755 "$RUN_STUB/$_s"; done
 
   # A real repo with a frozen identity, so `git rev-parse --show-toplevel`
   # resolves inside the sandbox instead of walking up to the developer's repo.
