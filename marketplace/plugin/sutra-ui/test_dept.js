@@ -2785,6 +2785,30 @@ test("J2: the card says the state in plain words, shows done-when, and offers St
   assert.ok(html.indexOf("Goal reached") !== -1 && html.indexOf("data-dpj2") === -1, "a reached goal has nothing to press");
 });
 
+test("J2: the open Agent activity is read again, and painted again only when the record moved", async () => {
+  const c = fresh(), st = c.dpS();
+  st.sel = "r4";
+  st.j2 = { ref:"r4", state:"running", step:6, journey:"J2.f", enabled:true, event_count:1 };
+  st.activity = { ref:"r4", cursor:1, events:[{ id:"e1", actor:"Write", recipient:"Coordination", action:"run.started", state:"running", summary:"Write started.", at:"2026-10-08T10:00:00+05:30" }] };
+  const later = { j2: { state:"running", step:6, journey:"J2.f", enabled:true, event_count:2 },
+                  events: { cursor:2, events: st.activity.events.concat([{ id:"e2", actor:"Write", recipient:"Coordination", action:"run.completed",
+                            state:"complete", summary:"Pages from Site plan, check passed", at:"2026-10-08T10:00:00+05:30" }]) } };
+  let reads = 0, paints = 0;
+  c.apiGet = async (path) => { reads++; return /events$/.test(path) ? later.events : later.j2; };
+  const paint = c.dpRender; c.dpRender = () => { paints++; return paint && paint(); };
+  await c.dpActivityAgain("r4");
+  assert.strictEqual(reads, 2, "the status and the events are both read again");
+  assert.strictEqual(paints, 1, "the record moved: painted once");
+  assert.ok(c.dpActivityHtml().indexOf("Pages from Site plan, check passed") !== -1, "the later event is on the screen");
+  await c.dpActivityAgain("r4");
+  assert.strictEqual(paints, 1, "nothing moved: not painted again");
+  st.sel = "r9";
+  await c.dpActivityAgain("r4");
+  assert.strictEqual(reads, 4, "another department is open: this one is not read");
+  const src = require("fs").readFileSync(require("path").join(__dirname, "static/js/22-website.js"), "utf8");
+  assert.ok(/ftab === "activity"[^\n]*dpActivityAgain\(S\.dp\.sel\)/.test(src), "the screen's clock reads the open Agent activity");
+});
+
 test("J2: Agent activity has start and stop controls wired to its scoped API", async () => {
   const c = fresh();
   c.S.screen = "org2";

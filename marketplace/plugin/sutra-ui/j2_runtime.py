@@ -445,14 +445,14 @@ def questioned(ref, question, key):
 def audited(ref, version, findings):
     """Audit read what went out and found nothing to put right: done-when is read from that (step 8). Returns True when
     the goal is reached now, so Identity says so once."""
-    if not active(ref):
+    if not active(ref) or findings:
+        # with findings, Audit's own post to Identity is the event; "found nothing" is said only when that is true
+        # (found live 2026-10-08: twelve findings filed, and the next line of the ledger said nothing was found)
         return False
     dept = W.dept(ref) or {}
     ev = [{"artifact": "Live site", "version": version}]
     note(ref, 7, "Audit", "Identity", "audit.finding_filed", "recorded", "Audit read Live site v%s and found nothing to put right." % version,
-         "audit-clean-v%s" % version, {"severity": "none", "findings": int(findings or 0)}, evidence_refs=ev)
-    if findings:
-        return False
+         "audit-clean-v%s" % version, {"severity": "none", "findings": 0}, evidence_refs=ev)
     note(ref, 8, "Identity", "User", "goal.reached", "done", "Done-when holds: %s." % str(dept.get("done") or "").rstrip("."),
          "goal-reached-v%s" % version, {"done_when": dept.get("done")}, evidence_refs=ev)
     _set(ref, step=8, state="done")

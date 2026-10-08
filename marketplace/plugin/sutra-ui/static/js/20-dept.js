@@ -419,6 +419,30 @@ function dpActivityHtml(){
   return `<h2>Agent activity</h2>` + head + dpCard("Exchanges", rows || dpQuiet("Nothing yet."));
 }
 
+/* The open Agent activity is read again on the screen's clock (22-website.js, wbTick): the tab was read once when it
+   opened, so a department at work showed "Write started" and nothing after it while its engines went on (found live
+   2026-10-08). The card is painted again only when the record moved, so a quiet department never flickers. */
+function dpActivitySig(st){
+  const j = st.j2 || {}, a = st.activity || {};
+  return [j.ref, j.state, j.step, j.event_count, a.ref, a.cursor, (a.events || []).length].join("|");
+}
+async function dpActivityAgain(ref){
+  const st = dpS(), lock = "activity-again:" + ref;
+  if (!ref || st.sel !== ref || st.busy[lock]) return;
+  st.busy[lock] = true;
+  try {
+    const got = await Promise.all([apiGet(dpUrl(ref, "j2")), apiGet(dpUrl(ref, "j2/events"))]);
+    if (dpS().sel === ref){
+      const was = dpActivitySig(st);
+      st.j2 = Object.assign({ ref: ref }, got[0] || {});
+      st.activity = Object.assign({ ref: ref }, got[1] || {});
+      delete st.error.j2; delete st.error.activity;
+      if (dpActivitySig(st) !== was) dpRender();
+    }
+  } catch (e) { /* a read that failed is read again on the next tick; what is on the screen stays */ }
+  delete st.busy[lock];
+}
+
 async function dpJ2(action){
   const st = dpS(), ref = st.sel;
   if (!ref || (action !== "start" && action !== "stop")) return;

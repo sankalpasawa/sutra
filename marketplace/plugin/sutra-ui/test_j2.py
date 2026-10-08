@@ -188,6 +188,9 @@ def test_step_7_a_finding_keeps_the_loop_open(j2, monkeypatch):
     _stamp_all(W, ref, kind="publish")
     acts = _actions(J, ref)
     assert "audit.finding_filed" in acts and "goal.reached" not in acts
+    # one event for the one reading, and it says what Audit found, never that it found nothing
+    filed = [e for e in J.events(ref) if e["action"] == "audit.finding_filed"]
+    assert [e["summary"] for e in filed] == ["The fees are invented"]
     st = J.status(ref)
     assert (st["state"], st["step"], st["goal_reached"]) == ("pursuing", 8, False)
     assert [a["kind"] for a in W.asks(ref) if a["status"] == "pending"] == ["finding"]
