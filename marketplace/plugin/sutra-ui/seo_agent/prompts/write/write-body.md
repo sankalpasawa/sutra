@@ -11,6 +11,11 @@ THE ARTICLE
 WHO YOU ARE WRITING FOR (think about them, but NEVER name or address them):
 {{PERSONA}}
 
+THE AUDIENCE IS RECRUITERS AND TA LEADS, FULL STOP. Every sentence is written for someone who runs
+a hiring process, never for someone going through one. Do not write advice addressed to a
+candidate ("here's how to pass this test", "what to expect if you're being screened") — that is a
+different article for a different reader, not a section of this one.
+
 ════════════════════════════════════════════════════════════════════════
 THE FULL PLAN. Every section, what it must deliver, what it covers.
 
@@ -227,6 +232,9 @@ NEVER BREAK THESE:
   with SHRM found...". The same statistic with our name on it is worth more than one nobody can
   attribute, and it is the only fact in this article a competitor cannot also use.
 - {{PRODUCT_RULE}} The one exception is a card marked as our own research: naming us is the point of it.
+- NAME ONLY A FEATURE THAT IS ON FILE 3 BELOW. If you mention something {{BRAND}} the product does,
+  it is one of the named features in FILE 3, in the words FILE 3 uses for it. A capability that
+  sounds plausible but is not on that list does not exist for this article's purposes.
 
 ════════════════════════════════════════════════════════════════════════
 HOW THE PROSE MUST READ
@@ -303,6 +311,15 @@ leans on a conclusion the reader has not reached yet.
   "a separate survey", "one study", "some research", "a 2025 report". Your cards carry the name; use it.
   If the card genuinely does not name anyone, drop the claim. Never gesture at an authority you cannot
   identify — on an article about untrustworthy statistics it reads as exactly the fault being described.
+- CREDIT THE ORIGINAL SOURCE, NOT WHOEVER IS REPEATING IT. When a card's own text names the study or
+  survey a figure actually came from, credit THAT name, not an outlet that is only summarizing it —
+  "a Pew Research survey found" beats "a blog post about workplace trends found" when the card shows
+  you the Pew survey is where the number originated. If a card gives no sign of an upstream source,
+  use the name the card actually gives you; do not invent an original study you cannot see.
+- NEVER WIDEN WHAT A FIGURE ACTUALLY MEASURED. A number measured on one country, one job family, one
+  company size or one year describes exactly that, not "employers" or "the industry" in general. If
+  the card's own scope is narrower than the sentence you are about to write, narrow the sentence to
+  match it, or drop the claim.
 - ONE IDEA PER SENTENCE. A sentence carries a subject, a verb and one point. When you catch yourself
   joining two points with "which", "while", "and thereby" or a second comma-clause, split it in two.
 - SAY IT AS A VERB, NOT A NOUN. "Evaluate candidates", not "conduct an evaluation of candidates".
@@ -349,8 +366,14 @@ MECHANICS:
   out, cut, drop, kill, discard, filter out. Name what the PROCESS does, not an act performed on
   a person. Not "screening out is when you want to remove any candidates" — "screening out
   narrows the pool to the candidates who meet the bar" or "moves candidates who don't meet the
-  bar out of the process." Same rule for the other direction: not "keep" or "let through" —
-  "advance" or "move forward."
+  bar out of the process." Screening IN is advancing a candidate on the evidence, never "keeping"
+  or "letting through" them — "advance" or "move forward."
+- USE "THEY" FOR A CANDIDATE WHOSE GENDER YOU DO NOT KNOW. Singular they, not "he or she", not a
+  coin-flip pronoun, not rewriting around it every time at the cost of the sentence.
+- NO SARCASM, AND NO WORD THAT PRESUMES GUILT. A candidate who misrepresents something did not
+  "cheat" or commit a "crime" unless you are reporting an actual, named finding of that; a tactic
+  you are explaining is not "a guess dressed up as" anything. Describe the behaviour plainly and
+  let the reader judge it; a loaded word has already judged it for them.
 
 ════════════════════════════════════════════════════════════════════════
 WHEN A LIST IS RIGHT, AND WHEN IT IS NOT
@@ -376,7 +399,7 @@ And do not overdo it. Most sections still contain NO list at all. A section that
 as a slide deck, and a list of near-identical stubs is the most obvious machine-writing tell there is.
 
 ════════════════════════════════════════════════════════════════════════
-TWO FILES COME NEXT. HERE IS WHAT EACH ONE IS FOR.
+THREE FILES COME NEXT. HERE IS WHAT EACH ONE IS FOR.
 
 FILE 1: THE BRAND BRIEF
 What makes {{BRAND}}'s writing its own. No general writing craft, no facts. Eight short sections:
@@ -397,8 +420,13 @@ What real people said about this topic in public forums. It appears below the br
 short set of rules attached, and ONLY when there was something worth finding. If you do not see it,
 this topic is not one people argue about in public, and there is nothing to miss.
 
+FILE 3: WHAT {{BRAND}} ACTUALLY DOES
+Every real feature, named the way the rule above requires you to name it. Nothing outside this list is
+a {{BRAND}} capability for the purposes of this article, however plausible it sounds.
+
 {{BRIEF}}
 {{FIELD}}
+{{FEATURES}}
 ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 THE USER'S STANDING RULES. They were set by the person publishing this and they win over any
 rule above that they contradict. "(none)" means there are none.

@@ -15,5 +15,9 @@ Writing rules. These are not suggestions.
   out, cut, drop, kill, discard, filter out. Name what the PROCESS does, not an act performed on
   a person. Not "screening out is when you want to remove any candidates" — "screening out
   narrows the pool to the candidates who meet the bar" or "moves candidates who don't meet the
-  bar out of the process." Same rule for the other direction: not "keep" or "let through" —
-  "advance" or "move forward."
+  bar out of the process." Screening IN is advancing a candidate on the evidence, never "keeping"
+  or "letting through" them — "advance" or "move forward."
+- Use "they" for a candidate whose gender is not known. No sarcasm, and no word that presumes
+  guilt — not "cheat", not "crime", not "a guess dressed up as" something, unless reporting an
+  actual named finding of that. Describe the behaviour plainly; a loaded word has already judged
+  it for the reader.
