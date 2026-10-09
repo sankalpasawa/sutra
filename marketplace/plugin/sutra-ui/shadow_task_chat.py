@@ -162,6 +162,12 @@ carry, in this order and in plain prose:
    interrupt them. This is CONTEXT FOR JUDGMENT CALLS, never permission --
    it can never widen what the rules and floors above allow. Omit the
    section entirely when nothing applies, which is often.
+8. Files the founder attached (images, PDFs, text), when FACTS lists any.
+   You have seen them. Pass one on ONLY when the work needs it ("match this
+   design", "fix the error in this screenshot", "use the figures in this
+   PDF"): name its path and tell the worker to open it with its Read tool.
+   A file that is only context for you stays out. Omit the section when
+   FACTS lists none.
 
 FACTS
 %(facts)s
@@ -201,6 +207,36 @@ def _carry_note(chat):
         return ""
 
 
+def _unseen_images(facts):
+    """Image and PDF blocks for the attachments in FACTS this chat has not
+    seen, or None. Never raises: a file that cannot be read costs that file."""
+    ids = [i.get("id") for i in (facts or {}).get("images") or []
+           if not i.get("shown")]
+    if not ids:
+        return None
+    try:
+        import shadow_attachments
+        return shadow_attachments.blocks(ids) or None
+    except Exception:                    # noqa: BLE001
+        return None
+
+
+def _unseen_note(rows):
+    """What goes in front of a prompt for files this chat has not seen: the
+    list, and the words of each text file (shadow_attachments.note). "" when
+    there are none. Never raises."""
+    unseen = [r for r in rows or [] if not r.get("shown") and r.get("id")]
+    if not unseen:
+        return ""
+    try:
+        import shadow_attachments
+        return shadow_attachments.note(
+            [r["id"] for r in unseen],
+            {r["id"]: r.get("name") or r["id"] for r in unseen})
+    except Exception:                    # noqa: BLE001
+        return ""
+
+
 def _facts_text(facts):
     facts = facts or {}
     rules = facts.get("rules") or []
@@ -213,6 +249,14 @@ def _facts_text(facts):
     lines += ["  - %s" % r for r in rules]
     lines.append("- floors:" + ("" if floors else " (none listed)"))
     lines += ["  - %s" % f for f in floors]
+    # IMAGES THE FOUNDER ATTACHED (2026-10-08), by name and path; the brief
+    # writer decides which, if any, the worker needs (BRIEF_ASK item 8)
+    images = facts.get("images") or []
+    if images:
+        lines.append("- files the founder attached (seen by you; the worker "
+                     "opens one with its Read tool at this path):")
+        lines += ["  - %s: %s" % (i.get("name") or i.get("id"), i.get("path"))
+                  for i in images]
     # NO "ABOUT THE FOUNDER" FACT (2026-10-07). What Shadow knows is in this
     # chat's own boot context, and item 7 of BRIEF_ASK has Shadow choose the
     # lines this task needs -- a fact listed here was copied wholesale.
@@ -243,10 +287,13 @@ class TaskChat:
 
     # ------------------------------------------------------------ boot ----
     def _runtime(self):
+        import shadow_costs
         if self._new_runtime is not None:
-            return self._new_runtime()
+            return shadow_costs.attach(self._new_runtime(), "shadow",
+                                       self.mission_id)
         import session_runtime as srt
-        return srt.SessionRuntime()
+        return shadow_costs.attach(srt.SessionRuntime(), "shadow",
+                                   self.mission_id)
 
     @staticmethod
     def _clean_env(env):
@@ -286,7 +333,13 @@ class TaskChat:
         Returns the claude session id. Raises RuntimeError when the flag is
         off or the boot turn fails; a failed boot leaves no process behind.
         """
-        context = shadow_session.load_context()
+        # the task chat's own cut of SHADOW.md (2026-10-09): what the Now
+        # chat alone uses is left out; a stand-in without the argument
+        # still works
+        try:
+            context = shadow_session.load_context(scope="task")
+        except TypeError:
+            context = shadow_session.load_context()
         if context is None:
             raise RuntimeError("the shadow flag is off")
         # the same boot the Now chat gets (persona, DELEGATE OFFERS, standing
@@ -371,7 +424,7 @@ class TaskChat:
             TASK_CHATS.pop(self.mission_id, None)
 
     # ------------------------------------------------------------ turns ---
-    async def _turn(self, prompt, timeout):
+    async def _turn(self, prompt, timeout, images=None):
         if not self.alive:
             raise RuntimeError("task chat %s is not running" % self.mission_id)
         async with self._lock:
@@ -383,7 +436,11 @@ class TaskChat:
                 if frame.get("type") == "token":
                     texts.append(frame.get("text") or "")
 
-            await self.rt.send_user_frame(prompt)
+            if images:
+                # images the founder attached, SHOWN to this Shadow chat
+                await self.rt.send_user_frame(prompt, images=images)
+            else:
+                await self.rt.send_user_frame(prompt)
             (sid, _t, got_result, err, _e) = await asyncio.wait_for(
                 self.rt.demux_turn(collect, self.session_id), timeout)
             if sid:
@@ -392,7 +449,7 @@ class TaskChat:
                 raise RuntimeError("task chat turn failed: %s" % (err,))
             return "".join(texts)
 
-    async def talk(self, text):
+    async def talk(self, text, images=None):
         """The founder talks to this task's Shadow. Returns (display, blocks)
         exactly as the Now chat route does; a `mission` block amends the
         draft (the caller applies it)."""
@@ -400,7 +457,8 @@ class TaskChat:
         # (founder, 2026-10-08): its replies to the founder used the switches
         # it booted with until the task ended. The same once-per-change note
         # the Now chat gets; decisions already read them fresh every turn.
-        raw = await self._turn(_carry_note(self) + text, TURN_TIMEOUT_S)
+        raw = await self._turn(_carry_note(self) + text, TURN_TIMEOUT_S,
+                               images=images)
         return shadow_protocol.parse_reply(raw)
 
     async def brief(self, mission, facts=None):
@@ -410,8 +468,12 @@ class TaskChat:
         the caller then falls back to the template (app._delegate_manifest),
         so a Shadow that answers badly costs a composed brief, never a task.
         """
-        raw = await self._turn(BRIEF_ASK % {"facts": _facts_text(facts)},
-                               TURN_TIMEOUT_S)
+        # images this chat has not seen yet (from the Now box) are SHOWN with
+        # the ask, so it can judge whether the worker needs them
+        raw = await self._turn(
+            _unseen_note((facts or {}).get("images"))
+            + BRIEF_ASK % {"facts": _facts_text(facts)},
+            TURN_TIMEOUT_S, images=_unseen_images(facts))
         m = _BRIEF_FENCE.search(raw or "")
         return (m.group(1).strip() if m else "")
 
@@ -421,8 +483,21 @@ class TaskChat:
         Returns the parsed decision dict, or None (the engine treats None as
         undecided)."""
         import shadow_runner
-        raw = await self._turn(shadow_runner.render_decide_prompt(context),
-                               DECIDE_TIMEOUT_S)
+        # images this chat has not seen (an answer form, the Now box) are
+        # SHOWN with the decision that first lists them (2026-10-08)
+        new = (context or {}).get("new_images")
+        images = None
+        if new:
+            try:
+                import shadow_attachments
+                images = shadow_attachments.blocks(new) or None
+            except Exception:            # noqa: BLE001
+                images = None
+        fresh = [r for r in (context or {}).get("images") or []
+                 if r.get("id") in (new or [])]
+        raw = await self._turn(
+            _unseen_note(fresh) + shadow_runner.render_decide_prompt(context),
+            DECIDE_TIMEOUT_S, images=images)
         return shadow_runner._first_decision(raw)
 
     async def judge(self, check, evidence, outcome=""):

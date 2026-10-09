@@ -404,8 +404,13 @@ const IV = {
   assert(/PR #212/.test(h) && /14\/14/.test(h), "the evidence renders");
   assert(/data-shivmid="m-1" data-shivkey="approve"/.test(h),
     "the field hooks carry the mission id and the field key, unchanged");
-  assert(/data-shivsend="m-1"/.test(h), "the submit hook is unchanged");
-  assert(/Send to Shadow/.test(h), "the server's submit label is used as sent");
+  /* one-tap (2026-10-08): a single yes/no or pick-one sends on its tap, so
+     it has no Send button; the tap hooks below ARE how it is sent */
+  assert(/data-shivsend="m-1"|data-shivopt=/.test(h), "the submit hook is unchanged");
+  /* ...so the label is checked where there IS a Send: a form of two */
+  const two = pane(ctx, M({ state: "blocked", intervention: Object.assign({}, IV,
+    { fields: IV.fields.concat([{ key: "note", type: "text", label: "Note" }]) }) }));
+  assert(/Send to Shadow/.test(two), "the server's submit label is used as sent");
   /* it is a SIBLING of the brief now, not nested inside it */
   assert(h.indexOf('class="shiv"') > h.indexOf('data-shtaskcard'),
     "the ask is drawn after the brief, as its own card");
@@ -781,7 +786,9 @@ const CTX_README = "The delegate added a ## Shadow: the task pane section to "
   assert(/data-shivkey="readme_ok"/.test(h), "the field hook is unchanged");
   assert(/data-shivopt="yes"/.test(h) && /data-shivopt="no"/.test(h),
     "Yes and No still carry their values");
-  assert(/data-shivsend="m-1"/.test(h), "the submit hook is unchanged");
+  /* one-tap (2026-10-08): a single yes/no or pick-one sends on its tap, so
+     it has no Send button; the tap hooks below ARE how it is sent */
+  assert(/data-shivsend="m-1"|data-shivopt=/.test(h), "the submit hook is unchanged");
   console.log("ok 8g a sign-off shows question + control + criterion, once each");
 }
 
@@ -1567,7 +1574,8 @@ function stream(msgs, says, turns){
       submit_label: "Send to Shadow",
       fields: [{ key: "ok", type: "boolean", label: "Ship it" }] } }));
   assert(/data-shivform="iv-1"/.test(h), "the ask still renders");
-  assert(/data-shivsend="m-1"/.test(h), "with its submit hook");
+  /* one-tap (2026-10-08): a single yes/no is sent by its Yes tap */
+  assert(/data-shivsend="m-1"|data-shivopt="yes"/.test(h), "with its submit hook");
   assert(/shtpill-blocked[^>]*>NEEDS YOU</.test(h), "and still reads NEEDS YOU");
   assert(/class="shsaidtext">context for you</.test(h),
     "the aside renders beside it, not instead of it");

@@ -395,7 +395,11 @@ class TestNothingElseMoved(Base):
         # arity, same no-argument call -- `_worker_args` is a thin wrapper that
         # adds the founder's project permissions and nothing else. Shadow's own
         # two processes still take _shadow_args, which is the whole split.
-        self.assertIn("_worker_args, _shadow_workdir_for_delegates()", src)
+        # THE TASK'S OWN COPY FIRST (founder, 2026-10-08, option B): a worker
+        # starts in mission["workdir"] -- its own copy of the project -- and
+        # falls back to the SAME shared workdir as before. Still _worker_args.
+        self.assertIn('_worker_args, mission.get("workdir") or '
+                      "_shadow_workdir_for_delegates()", src)
         self.assertNotIn("_shadow_args, _shadow_workdir_for_delegates()", src)
         # v4 (2.281.0) hands make_decider more arguments after the workdir
         # (the task-chat router); what this pins is the first two: Shadow's

@@ -197,9 +197,12 @@ class TestWorkerInheritsProjectPermissions(Base):
         self.assertEqual(app._shadow_workdir_for_delegates(),
                          str(self.worker_cwd))
         src = Path(app.__file__).read_text()
+        # THE TASK'S OWN COPY FIRST (2026-10-08, option B): the one spawn
+        # passes mission["workdir"], else the same shared workdir as before
         self.assertEqual(
-            src.count("_worker_args, _shadow_workdir_for_delegates(),"), 1,
-            "the one delegate spawn passes the unchanged workdir")
+            src.count('_worker_args, mission.get("workdir") or '
+                      "_shadow_workdir_for_delegates(),"), 1,
+            "the one delegate spawn passes the task's folder")
         self.assertEqual(
             src.count("shadow_runner.spawn_delegate_session("), 1,
             "no spawn may bypass _delegate_spawn and its stamp")

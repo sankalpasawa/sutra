@@ -149,7 +149,19 @@ def create(cid, prompt):
     return _write(rec)
 
 
-def append(cid, who, text):
+def _images(images):
+    """What a message keeps of its attachments: id, name and kind, so the
+    thumbnails come back after a reload (2026-10-09: "where's the SS")."""
+    out = []
+    for i in (images or [])[:6]:
+        if isinstance(i, dict) and i.get("id"):
+            out.append({"id": str(i["id"])[:40],
+                        "name": str(i.get("name") or "")[:120],
+                        "kind": str(i.get("kind") or "image")[:10]})
+    return out
+
+
+def append(cid, who, text, images=None):
     """Add one turn. `who` is the founder or Shadow -- there is no third
     speaker in this conversation, which is the same rule the pane draws by."""
     if who not in ("founder", "shadow"):
@@ -157,11 +169,42 @@ def append(cid, who, text):
     rec = _read(cid)
     if not rec:
         raise KeyError(cid)
-    rec["messages"].append({"who": who, "text": _clip(text), "ts": _now()})
+    row = {"who": who, "text": _clip(text), "ts": _now()}
+    if _images(images):
+        row["images"] = _images(images)
+    rec["messages"].append(row)
     if len(rec["messages"]) > MAX_MESSAGES:
         # the opening line is what names the conversation, so it is pinned;
         # the oldest turns after it are what a cap has to give up
         rec["messages"] = rec["messages"][:1] + rec["messages"][-(MAX_MESSAGES - 1):]
+    return _write(rec)
+
+
+def add_images_to_opening(cid, images):
+    """The opening line is saved at Enter, before its attachments are known
+    to have uploaded; this puts them on it. Never on a later line."""
+    rec = _read(cid)
+    if not rec or not _images(images):
+        return rec
+    first = next((m for m in rec["messages"] if m.get("who") == "founder"),
+                 None)
+    if first is None or first.get("images"):
+        return rec
+    first["images"] = _images(images)
+    return _write(rec)
+
+
+def set_pending(cid, on):
+    """Shadow is answering this conversation (on) or has answered (off).
+    The SERVER says so, so a reload mid-answer still shows that a reply is
+    coming -- and the server writes the reply itself when it lands."""
+    rec = _read(cid)
+    if not rec:
+        return None
+    if on:
+        rec["pending_since"] = _now()
+    else:
+        rec.pop("pending_since", None)
     return _write(rec)
 
 

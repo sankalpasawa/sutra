@@ -243,6 +243,11 @@ class SessionRuntime(ProcRuntime):
         # lives on, and the error result that closes the cut turn is expected.
         self.soft_stop = False
         self._ctl_seq = 0
+        # WHAT A TURN COST (Shadow, 2026-10-08): called with each result's
+        # cumulative total_cost_usd and the session id. None -- every chat
+        # pane -- calls nothing; Shadow sets it on its own runtimes only
+        # (shadow_costs.attach).
+        self.on_cost = None
 
     # stop / _observe / _notify_subscribers / subscribe / unsubscribe /
     # _fanout / alive / kill_group all come from ProcRuntime. Claude INFERS its
@@ -274,17 +279,28 @@ class SessionRuntime(ProcRuntime):
         """
         return await self._spawn_process(args, cwd, key, env=env)
 
-    async def send_user_frame(self, msg):
+    async def send_user_frame(self, msg, images=None):
         """One turn: one stream-json user frame on stdin.
+
+        `images` (2026-10-08, Shadow attachments): optional
+        [(media_type, base64)] put in front of the text -- an image block
+        for an image, a document block for a PDF -- so the model SEES them.
+        None or empty -> the frame is byte-identical to what it always was.
 
         Raises what the write raises (BrokenPipeError/ConnectionResetError when
         the process died under us, AttributeError when there is no process) --
         the recovery policy lives at the socket layer.
         """
+        content = [{"type": ("document" if media == "application/pdf"
+                             else "image"),
+                    "source": {"type": "base64", "media_type": media,
+                               "data": data}}
+                   for media, data in (images or [])]
+        content.append({"type": "text", "text": msg})
         self.proc.stdin.write((json.dumps({
             "type": "user",
             "message": {"role": "user",
-                        "content": [{"type": "text", "text": msg}]},
+                        "content": content},
         }) + "\n").encode("utf-8"))
         await self.proc.stdin.drain()
 
@@ -599,6 +615,13 @@ class SessionRuntime(ProcRuntime):
                         })
             elif t == "result":
                 got_result = True
+                cb = getattr(self, "on_cost", None)
+                if cb is not None:
+                    try:
+                        cb(ev.get("total_cost_usd"),
+                           ev.get("session_id") or session_id)
+                    except Exception:   # noqa: BLE001 -- a figure, never a turn
+                        pass
                 # A `result` event is NOT proof of success: a failed run (stale
                 # --resume, permission abort, API error) emits one with
                 # is_error/subtype set and THEN exits non-zero. Sending "done"

@@ -154,7 +154,8 @@ class TheRequestSchema(unittest.TestCase):
 
     def test_the_type_vocabulary_is_the_extension_point(self):
         self.assertEqual(set(siv.FIELD_TYPES), set(siv.ACTIVE_FIELD_TYPES))
-        self.assertEqual(len(siv.ACTIVE_FIELD_TYPES), 13)
+        # 14 since `verdicts` (2026-10-08, approve/reject/later per item)
+        self.assertEqual(len(siv.ACTIVE_FIELD_TYPES), 14)
 
 
 # =======================================================  3. FIELD TYPES  ==

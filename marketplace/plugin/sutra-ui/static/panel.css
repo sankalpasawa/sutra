@@ -5836,3 +5836,110 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .wb2spark i.on{background:var(--ok);border-color:var(--ok);opacity:.6}
 .wb2spark i.run{background:var(--acc);border-color:var(--acc)}
 @media (prefers-reduced-motion:reduce){.wb2map .e.flow,.wb2map .n .halo{animation:none}}
+
+/* ── Images for Shadow (2026-10-08) ─────────────────────────────────────
+   The attach bar sits above every box that talks to Shadow: thumbnails of
+   what is about to be sent (x to drop one) and a quiet paperclip. Sent
+   images show as small thumbnails in the conversation, and a task keeps a
+   strip of the images it holds. */
+.shattbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+  margin:0 0 6px}
+.shatt{position:relative;width:52px;height:52px;border-radius:9px;
+  overflow:hidden;border:1px solid var(--line);background:var(--card);
+  flex:none}
+.shatt img{width:100%;height:100%;object-fit:cover;display:block}
+.shatt.busy img{opacity:.45}
+.shatt.busy::after{content:"";position:absolute;inset:0;margin:auto;
+  width:16px;height:16px;border-radius:50%;border:2px solid var(--line);
+  border-top-color:var(--acc);animation:shattspin .8s linear infinite}
+@keyframes shattspin{to{transform:rotate(360deg)}}
+.shatt.bad{width:auto;min-width:52px;max-width:220px;padding:6px 26px 6px 8px;
+  border-color:var(--block-line);display:flex;align-items:center}
+.shatterr{font-size:11px;line-height:1.3;color:var(--muted)}
+.shattx{position:absolute;top:2px;right:2px;width:18px;height:18px;
+  border:0;border-radius:50%;background:var(--ink);color:var(--card);
+  font-size:12px;line-height:18px;padding:0;cursor:pointer;opacity:0;
+  transition:opacity .15s ease}
+.shatt:hover .shattx,.shatt.bad .shattx,.shattx:focus-visible{opacity:1}
+.shattbtn{display:inline-flex;align-items:center;justify-content:center;
+  width:30px;height:30px;border:1px solid transparent;border-radius:8px;
+  background:none;color:var(--faint);cursor:pointer;padding:0}
+.shattbtn:hover{color:var(--ink);background:var(--line-soft)}
+.shattbtn:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.shattbtn svg{width:17px;height:17px}
+.shimgs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.shimg{display:block;width:120px;height:90px;border-radius:9px;
+  overflow:hidden;border:1px solid var(--line);background:var(--card)}
+.shimg img{width:100%;height:100%;object-fit:cover;display:block}
+.shimg:hover{border-color:var(--acc)}
+.shtaskimgs{display:flex;flex-direction:column;gap:2px;margin:0 0 14px}
+.shtaskimgsk{font:600 9.5px/1 var(--mono);letter-spacing:.11em;
+  text-transform:uppercase;color:var(--faint)}
+.shtaskimgs .shimgs{margin-top:6px}
+.shtaskimgs .shimg{width:84px;height:64px}
+/* a PDF or a text file: a chip with its name, not a thumbnail (2026-10-08) */
+.shatt.doc{width:auto;max-width:180px;padding:0 24px 0 8px;display:flex;
+  align-items:center}
+.shattdoc{display:flex;align-items:center;gap:6px;font-size:11.5px;
+  color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.shattdoc b,.shfilek{flex:none;font:600 9.5px/1 var(--mono);letter-spacing:.06em;
+  color:var(--acc);background:var(--acc-bg);border-radius:4px;padding:3px 4px}
+.shfile{display:inline-flex;align-items:center;gap:7px;max-width:240px;
+  height:32px;padding:0 10px;border:1px solid var(--line);border-radius:9px;
+  background:var(--card);color:var(--ink);text-decoration:none;font-size:12.5px}
+.shfile:hover{border-color:var(--acc)}
+.shfilen{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* a task Shadow could not start: the reason and one action (2026-10-08) */
+.shcant{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;
+  margin:12px 0;padding:12px 14px;border:1px solid var(--line);
+  border-left:3px solid var(--acc);border-radius:10px;background:var(--card)}
+.shcantk{font-weight:600;color:var(--ink)}
+.shcantv{flex:1 1 240px;color:var(--ink);line-height:1.45}
+/* a worker quiet mid-turn, said before the stall end (2026-10-08) */
+.shquiet{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;
+  margin:12px 0;padding:10px 14px;border:1px solid var(--line);
+  border-left:3px solid var(--acc);border-radius:10px;background:var(--card)}
+.shquietk{font-weight:600;color:var(--ink)}
+.shquietv{flex:1 1 240px;color:var(--ink);line-height:1.45}
+/* a verdict on each item: approve / reject / later (2026-10-08) */
+.shverd{display:flex;flex-direction:column;gap:6px}
+.shverdrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;
+  padding:8px 10px;border:1px solid var(--line);border-radius:9px;
+  background:var(--card)}
+.shverditem{flex:1 1 220px;color:var(--ink);line-height:1.4}
+.shverdbtns{display:flex;gap:6px}
+/* what a task cost, and the month's spending limit (2026-10-08) */
+.shwcost{font:500 12px/1 var(--mono);color:var(--ink);opacity:.7}
+.shbudget{margin:0 0 10px;padding:9px 12px;border:1px solid var(--line);
+  border-left:3px solid var(--acc);border-radius:9px;background:var(--card);
+  color:var(--ink);font-size:12.5px;line-height:1.45}
+.shbudgetin{width:90px}
+/* a task's own copy of the project: what happened to it (2026-10-08) */
+.shws{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;
+  margin:12px 0;padding:12px 14px;border:1px solid var(--line);
+  border-left:3px solid var(--acc);border-radius:10px;background:var(--card)}
+.shwsacts{display:flex;gap:8px}
+/* A CONVERSATION IS NOT A SIDE PANEL (founder, 2026-10-09: "why's the print
+   cut off like this"). `.shwright .shthread` caps the thread at 280px with
+   its own scrollbar -- a rule from when the thread was a small panel. A
+   Shadow conversation (the QUESTIONS rows) draws ALL of its messages in one
+   .shthread inside the pane's scroller, so a long reply sat in a 280px box
+   above an empty band. Inside the scroller it is neither capped nor
+   scrolling: one scroller, as ruled 2026-09-23. */
+.shwright .shwscroll>.shthread{max-height:none;overflow:visible}
+/* what a task made: its files, each with Open (2026-10-09) */
+.shres{margin:12px 0;padding:12px 14px;border:1px solid var(--line);
+  border-radius:10px;background:var(--card)}
+.shreshead{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+.shreshead .shcantv{flex:1 1 200px;color:var(--ink)}
+.shresrow{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,2fr) auto auto;
+  gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--line);
+  font-size:12.5px}
+.shresrow:first-of-type{margin-top:8px}
+.shresname{color:var(--ink);font-weight:600;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.shresdir,.shressize{color:var(--ink);opacity:.65;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.shresopen{color:var(--acc);text-decoration:none;font-weight:600}
+@media (max-width:640px){.shresrow{grid-template-columns:minmax(0,1fr) auto}
+  .shresdir,.shresrow .shressize{display:none}}

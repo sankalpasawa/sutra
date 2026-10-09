@@ -91,7 +91,13 @@ const card = (ctx, m) =>
   assert(/Which region\?/.test(h), "the question renders");
   assert(/two configs disagree/.test(h), "the context renders");
   assert(/cfg\.yaml:14/.test(h), "the evidence renders");
-  assert(/Send to Shadow/.test(h), "the submit label renders");
+  /* ONE TAP ANSWERS A SINGLE PICK-ONE (founder, 2026-10-08): its tap sends,
+     so it draws no Send button. A form with more than one field keeps its
+     submit label, which is what this line pinned before. */
+  assert(!/Send to Shadow/.test(h), "a single pick-one sends on the tap");
+  assert(/Send to Shadow/.test(card(ctx,
+    mission([F("region", "choice"), F("note", "text")]))),
+    "the submit label renders on a form");
   console.log("ok 2 NEEDS YOU + question + context + evidence");
 }
 

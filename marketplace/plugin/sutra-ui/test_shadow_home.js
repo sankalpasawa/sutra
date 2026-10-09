@@ -1708,7 +1708,10 @@ const SET = { engage: ["outcome first"],
                      writing, these four lines go with it. */
                   "shofferdel",                    // a chip's x
                   "shofferopen", "shofferadd",     // "+ add", then submit
-                  "shoffername"];                  // the name box
+                  "shoffername",                   // the name box
+                  /* the monthly spending limit (2026-10-08), written by
+                     POST /api/shadow/budget */
+                  "shmonthbudget", "shmonthbudgetsave"];
   const hooks = (sec.match(/data-sh[a-z]+=/g) || [])
     .map(m => m.slice(5, -1));
   const stray = hooks.filter(h => BACKED.indexOf(h) === -1);

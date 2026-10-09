@@ -285,6 +285,14 @@ const SH_TASK = {
   /* the founder closed it after Shadow showed there was nothing to change
      (2026-10-07): an ending, and not a failure -- never the red STOPPED */
   nothing:       { label: "NOTHING TO DO", cls: "done" },
+  /* the task ended and its own copy waits for Keep / Throw away
+     (2026-10-08): the founder's move, so it sits under WAITING ON YOU */
+  yourcall:      { label: "KEEP?", cls: "blocked" },
+  /* SHADOW COULD NOT START IT, and says why (2026-10-08, Paperclip's
+     "blocked with one action"): every automatic retry failed, or the start
+     was certain to fail (Claude not selected, the folder gone). The founder
+     reads the reason and has one move -- Try again. */
+  cantstart:     { label: "CAN'T START", cls: "blocked" },
 };
 function shadowTaskFace(state){
   return SH_TASK[String(state || "")] || { label: String(state || ""), cls: "" };
@@ -332,7 +340,198 @@ function shadowRunLimit(){
    is to change the setting, not to say yes. Listing it would put a "needs
    you" badge on a row whose only honest action is somewhere else. */
 const SH_FOUNDER_PAUSES = ["founder_confirm", "floor_confirm",
-                           "autonomy_suggest", "autonomy_top_tier"];
+                           "autonomy_suggest", "autonomy_top_tier",
+                           /* the month's spending limit is used up
+                              (2026-10-08): raise it, then Continue */
+                           "budget_spent"];
+/* a task Shadow could not start: still READY underneath (no start stamp),
+   with the reason beside it. A fresh start clears the reason server-side. */
+function shadowWorkspaceWaits(m){
+  const st = m && m.workspace && m.workspace.state;
+  return !!(m && SH_TERMINAL.indexOf(m.state) !== -1
+            && (st === "pending" || st === "clash"));
+}
+function shadowMissionCantStart(m){
+  return !!(m && m.state === "brief_confirm" && !m.start_requested_at
+            && m.start_blocked && m.start_blocked.reason);
+}
+/* A WORKER GONE QUIET MID-TURN (founder, 2026-10-08): the server sends
+   `quiet` once it has said nothing for 2 minutes; at 4 Shadow ends the step
+   as it always has. This only says so ahead of time -- it changes nothing. */
+function shadowQuietHtml(m){
+  const q = m && m.state === "running" && m.quiet;
+  if (!q || typeof q.secs !== "number") return "";
+  const mins = Math.max(1, Math.floor(q.secs / 60));
+  const left = Math.max(0, Math.ceil((q.ends_in || 0) / 60));
+  return `<div class="shquiet" role="status"><span class="shquietk">No new output for ${
+    mins} min</span><span class="shquietv">${left > 0
+      ? `It may be running something long, or it may be stuck. If it stays quiet, Shadow ends this step in about ${left} min.`
+      : "If it stays quiet, Shadow ends this step now."}</span></div>`;
+}
+/* WHAT IT COST (2026-10-08): the server adds cost_usd per task from
+   shadow_costs; "about", because a turn that ends in an error is not counted. */
+function shadowMoney(v){
+  const n = Number(v) || 0;
+  return "$" + (n < 10 ? n.toFixed(2) : n.toFixed(0));
+}
+function shadowTaskCostHtml(m){
+  const v = m && Number(m.cost_usd);
+  if (!v || v < 0.005) return "";
+  return `<span class="shwcost" title="What this task has cost so far (about)">${
+    esc(shadowMoney(v))}</span>`;
+}
+function shadowBudgetPauseHtml(m){
+  if (!m || m.state !== "paused" || m.pause_reason !== "budget_spent") return "";
+  return `<div class="shcant" role="status"><span class="shcantk">Paused</span>
+    <span class="shcantv">This month's spending limit is used up. Raise it in Shadow's settings, then continue.</span>
+    <button class="btn pri" type="button" data-shact="resume" data-shmid="${
+      escAttr(m.id)}">Continue</button></div>`;
+}
+/* 80% AND 100% OF THE MONTH (2026-10-08): one line above the task list. */
+function shadowBudgetBannerHtml(){
+  const b = (typeof S !== "undefined" && S.shadowBudget) || null;
+  if (!b || !b.budget_usd || (b.level !== "warn" && b.level !== "over")) return "";
+  const said = `${shadowMoney(b.spent_usd)} of your ${shadowMoney(b.budget_usd)} monthly limit`;
+  return `<div class="shbudget shbudget-${esc(b.level)}" role="status">${
+    b.level === "over"
+      ? `Spending limit reached: ${esc(said)}. New tasks won't start and running ones pause until you raise it.`
+      : `You've used ${esc(said)}.`}</div>`;
+}
+async function shadowSaveMonthBudget(){
+  if (typeof document === "undefined" || typeof S === "undefined") return;
+  const el = document.querySelector("[data-shmonthbudget]");
+  const raw = el ? String(el.value || "").trim() : "";
+  /* junk is said here, never sent: Number("abc") is NaN, which JSON writes
+     as null -- and null CLEARS the limit */
+  if (raw !== "" && !isFinite(Number(raw))){
+    S.shadowBudget = Object.assign({}, S.shadowBudget || {},
+      { err: "Enter an amount in dollars, or leave it empty for no limit" });
+    if (typeof scheduleRender === "function") scheduleRender();
+    return;
+  }
+  try {
+    /* shadowPost: every POST carries the panel token */
+    const r = await shadowPost("/api/shadow/budget",
+      { monthly_usd: raw === "" ? null : Number(raw) });
+    const body = await r.json().catch(() => ({}));
+    if (r.ok) S.shadowBudget = body;
+    else S.shadowBudget = Object.assign({}, S.shadowBudget || {},
+      { err: (body && body.detail) || "Couldn't save the limit" });
+  } catch (e){
+    S.shadowBudget = Object.assign({}, S.shadowBudget || {},
+      { err: "Couldn't save the limit" });
+  }
+  if (typeof scheduleRender === "function") scheduleRender();
+}
+/* ITS OWN COPY OF THE PROJECT (2026-10-08, option B): what happened to
+   the task's changes, in plain words, and -- only when the founder has to
+   decide -- Keep and Throw away. */
+function shadowWorkspaceHtml(m){
+  const ws = m && m.workspace;
+  if (!ws || !ws.state) return "";
+  const files = Array.isArray(ws.files) ? ws.files : [];
+  const n = files.length;
+  const count = `${n} file${n === 1 ? "" : "s"}`;
+  const list = n ? ` title="${escAttr(files.slice(0, 30).join("\n"))}"` : "";
+  const busy = (typeof S !== "undefined" && S.shadowWsBusy === m.id);
+  const acts = (keepLabel) => `<span class="shwsacts">
+      <button class="btn pri" type="button" data-shws="keep" data-shmid="${
+        escAttr(m.id)}"${busy ? " disabled" : ""}>${busy ? "Working\u2026" : keepLabel}</button>
+      <button class="btn" type="button" data-shws="discard" data-shmid="${
+        escAttr(m.id)}"${busy ? " disabled" : ""}>Throw away</button></span>`;
+  const box = (k, v, extra) => `<div class="shws" role="status"><span class="shcantk">${
+    k}</span><span class="shcantv"${list}>${v}</span>${extra || ""}</div>`;
+  switch (ws.state){
+    case "active":
+      return SH_TERMINAL.indexOf(m.state) === -1
+        ? box("Own copy", "This task works in its own copy of your project. Your project changes only when it finishes.")
+        : "";
+    case "kept":
+      return n ? box("Added", `${esc(count)} added to your project${
+        ws.kept_by === "auto" ? " — the checks passed" : ""}.`) : "";
+    case "pending":
+      return box("Your call", `This task changed ${esc(count)} in its copy but didn't finish. Keep them in your project?`, acts("Keep"));
+    case "clash":
+      return box("Couldn't add", `${esc(count)} changed here, and some of the same lines changed in your project too. Sort those out, then try again — or throw this away.`, acts("Try again"));
+    case "discarded":
+      return box("Thrown away", "Your project wasn't changed.");
+    default:
+      return "";
+  }
+}
+/* WHAT IT MADE (2026-10-09, from Paperclip's results tab): the task's
+   files, loaded when the founder asks -- listing a copy's changes runs git,
+   so it is not on every refresh. Each opens in a new tab. */
+function shadowResultsHtml(m){
+  if (!m || ["draft", "brief_confirm"].indexOf(m.state) !== -1) return "";
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const got = (S_.shadowResults || {})[m.id];
+  const btn = (label) => `<button class="btn" type="button" data-shresults="${
+    escAttr(m.id)}"${got && got.busy ? " disabled" : ""}>${
+    got && got.busy ? "Looking\u2026" : label}</button>`;
+  if (!got || got.busy || (!got.files && !got.err))
+    return `<div class="shres"><div class="shreshead"><span class="shcantk">What it made</span>${
+      btn("Show")}</div></div>`;
+  if (got.err)
+    return `<div class="shres"><div class="shreshead"><span class="shcantk">What it made</span>${
+      btn("Try again")}</div><div class="shnewerr">${esc(got.err)}</div></div>`;
+  const size = (b) => b == null ? "" : b < 1024 ? b + " B"
+    : b < 1048576 ? Math.round(b / 1024) + " KB" : (b / 1048576).toFixed(1) + " MB";
+  const where = got.where === "copy" ? "in its own copy, not in your project yet"
+    : got.where === "project" ? "in your project" : "";
+  const rows = (got.files || []).map(f => `<div class="shresrow">
+      <span class="shresname" title="${escAttr(f.path)}">${esc(f.name)}</span>
+      <span class="shresdir">${esc(f.folder || "")}</span>
+      <span class="shressize">${esc(size(f.bytes))}</span>
+      ${f.exists
+        ? `<a class="shresopen" target="_blank" rel="noopener" href="/api/shadow/tasks/${
+            encodeURIComponent(m.id)}/results/file?path=${encodeURIComponent(f.path)}">Open</a>`
+        : `<span class="shressize">not there</span>`}
+    </div>`).join("");
+  return `<div class="shres"><div class="shreshead"><span class="shcantk">What it made</span>
+      <span class="shcantv">${(got.files || []).length
+        ? esc((got.files.length === 1 ? "1 file" : got.files.length + " files")
+              + (where ? ", " + where : ""))
+        : esc(got.note || "No files yet.")}</span>${btn("Refresh")}</div>${rows}</div>`;
+}
+async function shadowLoadResults(mid){
+  if (!mid || typeof S === "undefined") return;
+  if (!S.shadowResults) S.shadowResults = {};
+  S.shadowResults[mid] = Object.assign({}, S.shadowResults[mid] || {}, { busy: true });
+  if (typeof scheduleRender === "function") scheduleRender();
+  try {
+    const r = await fetch("/api/shadow/tasks/" + encodeURIComponent(mid) + "/results");
+    const body = await r.json().catch(() => ({}));
+    S.shadowResults[mid] = r.ok ? Object.assign({ files: [] }, body)
+      : { err: (body && body.detail) || "Couldn't read the files" };
+  } catch (e){
+    S.shadowResults[mid] = { err: "Couldn't read the files" };
+  }
+  if (typeof scheduleRender === "function") scheduleRender();
+}
+async function shadowWorkspaceAct(mid, action){
+  if (!mid || typeof S === "undefined") return;
+  S.shadowWsBusy = mid;
+  if (typeof scheduleRender === "function") scheduleRender();
+  try {
+    /* shadowPost: every POST carries the panel token */
+    const r = await shadowPost("/api/shadow/tasks/" + encodeURIComponent(mid)
+                               + "/workspace", { action });
+    const body = await r.json().catch(() => ({}));
+    if (r.ok && body.workspace){
+      S.shadowMissions = (S.shadowMissions || []).map(x =>
+        (x && x.id === mid) ? Object.assign({}, x, { workspace: body.workspace }) : x);
+    }
+  } catch (e) {}
+  S.shadowWsBusy = null;
+  if (typeof scheduleRender === "function") scheduleRender();
+}
+function shadowCantStartHtml(m){
+  if (!shadowMissionCantStart(m)) return "";
+  return `<div class="shcant" role="status"><span class="shcantk">Couldn't start</span>
+    <span class="shcantv">${esc(m.start_blocked.reason)}</span>
+    <button class="btn pri" type="button" data-shstart="${escAttr(m.id)}">Try again</button></div>`;
+}
 function shadowMissionNeedsFounder(m){
   return !!(m && m.state === "paused"
             && SH_FOUNDER_PAUSES.indexOf(m.pause_reason) !== -1);
@@ -341,6 +540,8 @@ function shadowTaskFaceFor(m){
   if (m && m.state === "stopped" && m.end_reason === "nothing_to_do")
     return SH_TASK.nothing;
   if (shadowMissionNeedsFounder(m)) return SH_TASK.blocked;
+  if (shadowMissionCantStart(m)) return SH_TASK.cantstart;
+  if (shadowWorkspaceWaits(m)) return SH_TASK.yourcall;
   /* the second state that is not the whole face: a start that has already
      been accepted. shadowMissionStarting() explains why brief_confirm alone
      stopped being enough; the label is the EXISTING queued one, because
@@ -432,6 +633,8 @@ function shadowTaskIsActive(m, goals){
     if (g && SH_GOAL_OVER.includes(g.state)) return false;   // (1)
   }
   if (!SH_TERMINAL.includes(m.state)) return true;           // (2)
+  /* its copy waits for the founder's Keep / Throw away (2026-10-08) */
+  if (shadowWorkspaceWaits(m)) return true;
   if (m.state === "failed" && !m.retried_to) return true;    // (3)
   /* A STOP THE FOUNDER PRESSED IS NOT HISTORY YET (founder, 2026-09-14).
      Stop left the record on disk and reaped the delegate correctly, but the
@@ -709,6 +912,8 @@ const SH_TASK_SECTION = {
   "STOPPED":   "done",
   "CHAT":      "chat",
   "NOTHING TO DO": "done",
+  "CAN'T START": "wait",   // Try again is the founder's move
+  "KEEP?":       "wait",   // Keep / Throw away is the founder's move
 };
 /* an unmapped label is a state that is not terminal -- shadowTaskIsActive
    admits every terminal one by name -- so it belongs with the work in
@@ -813,7 +1018,7 @@ function shadowTaskListHtml(){
      by construction the row shadowSelectedTask opens on (pass 10). The
      rules are unchanged; they simply live in one place now. */
   const ordered = shadowTaskRowsInOrder();
-  return SH_SECTIONS.map(([key, head]) => {
+  return shadowBudgetBannerHtml() + SH_SECTIONS.map(([key, head]) => {
     const mine = ordered.filter(m => shadowTaskSection(m) === key);
     if (!mine.length) return "";
     return `<div class="shwsec shwsec-${key}">${head}</div>`
@@ -1948,6 +2153,13 @@ function shadowIvSetWhy(mid, key, text){
   return d.why[key];
 }
 
+/* ONE TAP ANSWERS IT (2026-10-08, from Paperclip): a question with a
+   single yes/no or pick-one field is sent the moment the founder taps --
+   except No, which opens "What should I change?" and waits for Send. */
+function shadowIvOneTap(iv){
+  const fs = (iv && Array.isArray(iv.fields)) ? iv.fields : [];
+  return fs.length === 1 && (fs[0].type === "choice" || fs[0].type === "boolean");
+}
 function shadowIvValue(mid, f){
   const d = shadowIvDraft(mid);
   if (Object.prototype.hasOwnProperty.call(d.values, f.key))
@@ -2203,6 +2415,21 @@ function shadowIvFieldHtml(mid, f, signs, said){
         return opt(o, at !== -1, at === -1 ? "" : ` <b>${at + 1}</b>`);
       }).join("")}</div>`;
       break;
+    case "verdicts": {
+      /* A VERDICT ON EACH ITEM (2026-10-08): one row per item, three taps.
+         Tapping the chosen verdict again clears it. */
+      const cur = (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+      const VERD = [["approve", "Approve", "shkindyes"],
+                    ["reject", "Reject", "shkindno"], ["later", "Later", ""]];
+      body = `<div class="shverd">${(f.options || []).map(o => `
+        <div class="shverdrow"><span class="shverditem">${esc(o.label)}</span>
+          <span class="shverdbtns">${VERD.map(([val, label, tone]) =>
+            `<button class="shkind${cur[o.value] === val ? " on" : ""}${
+              tone ? " " + tone : ""}" type="button" ${hook}
+              data-shivopt="${escAttr(o.value)}" data-shivverdict="${val}"
+              >${label}</button>`).join("")}</span></div>`).join("")}</div>`;
+      break;
+    }
     case "long_text":
       body = `<textarea rows="4" ${hook} data-shivtext="1"
         ${longAsk ? `aria-label="${escAttr(f.label)}"` : ""}
@@ -2267,7 +2494,8 @@ function shadowInterventionHtml(m){
     || iv.fields.some(f => shadowIvSignsIndex(m, f) !== -1));
   const ctx = String(iv.context || "").trim();
   const showCtx = !!ctx && !signing && !shadowAlreadySaid(ctx, said);
-  return `<div class="shiv" data-shivform="${escAttr(iv.id || "")}">
+  return `<div class="shiv" data-shivform="${escAttr(iv.id || "")}"
+    data-shivmid="${escAttr(m.id)}">
     ${/* ── WHAT IS BEING JUDGED COMES FIRST (founder, 2026-09-23) ───────
          "the 10 lines being evaluated need to be shown in the Shadow UI
          BEFORE the question." A question about ten lines, printed above
@@ -2287,11 +2515,14 @@ function shadowInterventionHtml(m){
       title="${escAttr(ctx)}">${esc(ctx)}</p>` : ""}
     ${iv.fields.map(f => shadowIvFieldHtml(m.id, f,
       shadowIvSignsHtml(m, f), said)).join("")}
-    <div class="shnewacts">
+    ${shadowAttachBarHtml("iv:" + m.id)}
+    ${shadowIvOneTap(iv) && !d.err && d.values[iv.fields[0].key] !== false
+      ? (d.busy ? `<div class="shnewacts"><span class="shcard2hint">Sending…</span></div>` : "")
+      : `<div class="shnewacts">
       <button class="btn pri" type="button"
         data-shivsend="${escAttr(m.id)}"${d.busy ? " disabled" : ""}
         >${d.busy ? "Sending…" : esc(iv.submit_label || "Send to Shadow")}</button>
-    </div>
+    </div>`}
     ${d.err ? `<div class="shnewerr">${esc(d.err)}</div>` : ""}
   </div>`;
 }
@@ -2332,7 +2563,10 @@ async function shadowSendIntervention(mid){
   let r = null;
   try {
     r = await shadowPost("/api/shadow/missions/" + mid + "/act", {
-      action: "intervene", intervention_id: iv.id, values: d.values });
+      action: "intervene", intervention_id: iv.id, values: d.values,
+      /* images with the answer go to Shadow's next decision (2026-10-08) */
+      attachments: shadowAttachTake("iv:" + mid)
+        .map(a => ({ id: a.id, name: a.name })) });
   } catch (e){ r = null; }
 
   /* ── THE REASON IS SENT AFTER THE ANSWER, AND THAT ORDER IS THE POINT
@@ -3656,10 +3890,160 @@ function shadowTalkTurns(m){
 
 /* One line to this task's Shadow. The reply is Shadow's own prose, returned
    by the route; nothing here writes to the mission record. */
+/* ── IMAGES FOR SHADOW (founder, 2026-10-08: "we should be able to add a
+   photo to the question/task ... so Shadow can understand it, and decide
+   whether to pass it on to the worker chat") ─────────────────────────────
+   One attach bar for every box that talks to Shadow, keyed by the box:
+     "home"     the composer at the foot of Shadow (a task's chat, or Shadow)
+     "new"      the + Delegate box
+     "iv:<mid>" the form answering one of Shadow's questions
+   An image is uploaded the moment it is chosen, pasted or dropped
+   (POST /api/shadow/attachments), shown as a thumbnail with x, and sent by
+   id with the next message. Shadow is shown the image itself and decides
+   whether the worker needs it -- nothing here passes anything on. */
+const SH_ATT_MAX = 6;
+/* what may be attached (shadow_attachments decides for real): images, PDFs,
+   and text files by extension */
+const SH_ATT_TEXT = /\.(txt|md|markdown|csv|tsv|json|log|ya?ml|toml|ini|xml|html?|css|jsx?|tsx?|py|sql|sh|rb|go|java|rs)$/i;
+const SH_ATT_ACCEPT = "image/*,application/pdf,.txt,.md,.markdown,.csv,.tsv,"
+  + ".json,.log,.yaml,.yml,.toml,.ini,.xml,.html,.htm,.css,.js,.jsx,.ts,.tsx,"
+  + ".py,.sql,.sh,.rb,.go,.java,.rs";
+function shadowAttachKind(f){
+  const type = String((f && f.type) || "");
+  if (/^image\//.test(type)) return "image";
+  if (type === "application/pdf" || /\.pdf$/i.test(String((f && f.name) || "")))
+    return "pdf";
+  if (SH_ATT_TEXT.test(String((f && f.name) || ""))) return "text";
+  return null;
+}
+
+function shadowAttachList(key){
+  if (typeof S === "undefined") return [];
+  S.shadowAttach = S.shadowAttach || {};
+  return (S.shadowAttach[key] = S.shadowAttach[key] || []);
+}
+
+function shadowAttachBarHtml(key){
+  const S_ = (typeof S !== "undefined") ? S : {};
+  const list = (S_.shadowAttach && S_.shadowAttach[key]) || [];
+  const thumbs = list.map((a, i) => `<span class="shatt${a.error ? " bad" : ""}${
+      a.pending ? " busy" : ""}${a.kind && a.kind !== "image" && !a.error ? " doc" : ""
+      }" title="${escAttr(a.error || a.name || "file")}">${
+      a.error ? `<span class="shatterr">${esc(a.error)}</span>`
+      : (a.kind && a.kind !== "image")
+        ? `<span class="shattdoc"><b>${a.kind === "pdf" ? "PDF" : "TXT"}</b>${
+            esc(a.name || "file")}</span>`
+      : (a.preview || a.url)
+        ? `<img src="${escAttr(a.preview || a.url)}" alt="${escAttr(a.name || "image")}">`
+        : ""}
+      <button type="button" class="shattx" data-shattrm="${escAttr(key)}"
+        data-shatti="${i}" aria-label="Remove file">×</button></span>`).join("");
+  return `<div class="shattbar" data-shattbar="${escAttr(key)}">${thumbs}
+    <button type="button" class="shattbtn" data-shattach="${escAttr(key)}"
+      title="Attach an image, PDF or text file (or paste one)"
+      aria-label="Attach a file"
+      ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+      aria-hidden="true"><path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3
+      0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/></svg></button></div>`;
+}
+
+function shadowAttachFiles(key, files){
+  const list = shadowAttachList(key);
+  const rerender = () => { if (typeof scheduleRender === "function") scheduleRender(); };
+  for (const f of Array.from(files || [])){
+    if (!f) continue;
+    const kind = shadowAttachKind(f);
+    if (!kind){
+      list.push({ name: f.name, error: "Images, PDFs and text files only" });
+      continue;
+    }
+    if (list.filter(a => !a.error).length >= SH_ATT_MAX){
+      list.push({ name: f.name, error: "Up to " + SH_ATT_MAX + " files" });
+      break;
+    }
+    const a = { name: f.name || "file", kind: kind, pending: true, id: null,
+                url: null, preview: null, error: null };
+    try {
+      if (kind === "image" && typeof URL !== "undefined" && URL.createObjectURL)
+        a.preview = URL.createObjectURL(f);
+    } catch (e){ a.preview = null; }
+    list.push(a);
+    const fr = new FileReader();
+    fr.onerror = () => { a.pending = false; a.error = "Could not read this file"; rerender(); };
+    fr.onload = async () => {
+      /* strip the data: prefix; the server checks strict base64 */
+      const b64 = String(fr.result || "").split(",")[1] || "";
+      let r = null, body = null;
+      try {
+        r = await shadowPost("/api/shadow/attachments", { name: a.name, content_b64: b64 });
+        body = r ? await r.json() : null;
+      } catch (e){ body = null; }
+      a.pending = false;
+      if (r && r.ok && body && body.id){
+        a.id = body.id; a.url = body.url; a.kind = body.kind || a.kind;
+      }
+      else a.error = (body && body.detail) ? String(body.detail)
+                                           : "Could not attach this file";
+      rerender();
+    };
+    fr.readAsDataURL(f);
+  }
+  rerender();
+}
+
+/* What goes with the next message: the uploaded images, as {id, name, url}.
+   Taken images leave the bar; one still uploading stays for the next send. */
+function shadowAttachTake(key){
+  const list = shadowAttachList(key);
+  const ready = list.filter(a => a.id && !a.error && !a.pending)
+    .map(a => ({ id: a.id, name: a.name, url: a.url, kind: a.kind || "image" }));
+  if (typeof S !== "undefined" && S.shadowAttach)
+    S.shadowAttach[key] = list.filter(a => a.pending);
+  return ready;
+}
+
+function shadowAttachReady(key){
+  return shadowAttachList(key).some(a => a.id && !a.error && !a.pending);
+}
+
+function shadowAttachPick(key){
+  if (typeof document === "undefined") return;
+  /* a hidden input made per click and thrown away, as pickAttachment does */
+  const el = document.createElement("input");
+  el.type = "file"; el.accept = SH_ATT_ACCEPT; el.multiple = true;
+  el.style.display = "none";
+  el.onchange = () => { shadowAttachFiles(key, el.files); el.remove(); };
+  document.body.appendChild(el);
+  el.click();
+}
+
+/* Which bar a paste or a drop belongs to, from the box it landed on. */
+function shadowAttachKeyFor(el){
+  if (!el) return null;
+  const d = el.dataset || {};
+  if (d.shhomecompose) return "home";
+  if (d.shnewtalk) return "new";
+  const form = el.closest ? el.closest("[data-shivmid]") : null;
+  if (form) return "iv:" + form.dataset.shivmid;
+  return null;
+}
+
+/* The images on a task, kept for good: a strip above its conversation, so
+   what the founder showed Shadow is still there after a reload. */
+function shadowTaskImagesHtml(m){
+  const rows = ((m && m.attachments) || []).filter(a => a && a.id);
+  if (!rows.length || typeof shadowImagesHtml !== "function") return "";
+  return `<div class="shtaskimgs"><span class="shtaskimgsk">Files you shared</span>${
+    shadowImagesHtml(rows)}</div>`;
+}
+
 async function shadowTalkSend(mid, el){
   const T = shadowTalk();
   const text = String(T.text || "").trim();
-  if (!mid || !text || T.busy) return null;
+  /* images the founder attached (2026-10-08) ride with the line */
+  const att = Array.isArray(T.attachments) ? T.attachments : [];
+  if (!mid || (!text && !att.length) || T.busy) return null;
+  T.attachments = null;
   const live = shadowTalkLive(mid);
   /* STAMPED AT THE MOMENT IT HAPPENS (founder, 2026-09-17). A live row used
      to carry no clock at all, and shadowTimelineEvents pushed it as ts: NaN.
@@ -3673,7 +4057,9 @@ async function shadowTalkSend(mid, el){
      pressed send. It is never inherited from a neighbour -- a borrowed stamp
      would be invented chronology, which is the one thing this stream must
      not report. */
-  live.push({ who: "founder", text: text, ts: Date.now() });
+  live.push(att.length
+    ? { who: "founder", text: text || "(image)", ts: Date.now(), images: att }
+    : { who: "founder", text: text, ts: Date.now() });
   /* THE MISSION ID, NOT `true` (founder, 2026-09-17). The thinking row is
      drawn from this flag, and a bare boolean would put one task's spinner on
      every other task's pane. Truthy either way, so `if (T.busy) return` above
@@ -3684,7 +4070,9 @@ async function shadowTalkSend(mid, el){
   try {
     r = await shadowPost(
       "/api/shadow/tasks/" + encodeURIComponent(mid) + "/chat",
-      { message: text });
+      att.length ? { message: text,
+                     attachments: att.map(a => ({ id: a.id, name: a.name })) }
+                 : { message: text });
     body = (r && r.ok) ? await r.json() : null;
   } catch (e){ body = null; }
   T.busy = false;
@@ -4104,6 +4492,7 @@ function shadowTimelineEvents(m){
        text to mutate it. */
     out.push({ kind: "talk", who: t.who, text: text,
                limits: (t && t.limits) || null,
+               images: (t && t.images) || null,
                ts: Number(t && t.ts) });
   }
   /* v4.2: WHAT WAS ASKED AND ANSWERED stays in the scrollback, in its place.
@@ -4465,7 +4854,7 @@ function shadowTimelineHtml(m){
       if (!mine && shadowNotSpeech(
             (typeof shadowProseText === "function")
               ? shadowProseText(e.text) : e.text)) return "";
-      const body = mine ? esc(e.text)
+      const body = mine ? esc(e.text) + shadowImagesHtml(e.images)
         : (typeof shadowProseHtml === "function") ? shadowProseHtml(e.text)
         : (typeof shadowProseText === "function") ? esc(shadowProseText(e.text))
         : esc(e.text);
@@ -5010,7 +5399,7 @@ function shadowTaskCardHtml(m){
          second way in, which is what kept it a report rather than a chat. */""}
     <div class="shcard2acts">
       ${startable ? `<button class="btn pri" type="button"
-        data-shstart="${escAttr(m.id)}">Start the task</button>
+        data-shstart="${escAttr(m.id)}">${shadowMissionCantStart(m) ? "Try again" : "Start the task"}</button>
         <span class="shcard2hint">…or keep telling me</span>` : ""}
       ${/* STOP COMES BACK TO THIS CARD, BECAUSE ITS REPLACEMENT WAS ON
            ANOTHER SCREEN (founder, 2026-09-16).
@@ -5390,6 +5779,7 @@ function shadowNewTaskChatHtml(){
   return `<div class="shnewchat" data-shnewchat="1">
     ${rows ? `<div class="shthread">${rows}</div>` : ""}
     <div class="shwcomp"><div class="shcompwrap">
+      ${shadowAttachBarHtml("new")}
       <textarea class="shcompose" data-shnewtalk="1" rows="2"
         placeholder="What do you have in mind?"${c.busy ? " disabled" : ""}>${esc(c.text || "")}</textarea>
       <button class="btn shsend" type="button" data-shnewsend="1"
@@ -5468,8 +5858,11 @@ async function shadowNewTalk(){
   if (typeof fetch === "undefined" || typeof S === "undefined") return null;
   const c = shadowNewChat();
   const text = String(c.text || "").trim();
-  if (!text || c.busy) return null;
-  c.thread.push({ who: "founder", ts: Date.now(), text });
+  if ((!text && !shadowAttachReady("new")) || c.busy) return null;
+  /* images the founder attached to the opening line (2026-10-08) */
+  const att = shadowAttachTake("new");
+  c.thread.push(att.length ? { who: "founder", ts: Date.now(), text, images: att }
+                           : { who: "founder", ts: Date.now(), text });
   c.text = ""; c.busy = true; c.err = null;
 
   /* ── THE SCREEN CHANGES ON ENTER, NOT ON THE ANSWER (founder, 2026-09-23)
@@ -5548,7 +5941,9 @@ async function shadowNewTalk(){
     if (!S.shadowThreads[scopeKey]) S.shadowThreads[scopeKey] = [];
     return S.shadowThreads[scopeKey];
   };
-  const saidRow = { who: "founder", ts: Date.now(), text: text, newtalk: true };
+  const saidRow = att.length
+    ? { who: "founder", ts: Date.now(), text: text, newtalk: true, images: att }
+    : { who: "founder", ts: Date.now(), text: text, newtalk: true };
   const waitRow = { who: "shadow", ts: Date.now(), busy: true, newtalk: true,
                     text: "thinking\u2026" };
   mine().push(saidRow, waitRow);
@@ -5613,9 +6008,21 @@ async function shadowNewTalk(){
      must stay that way. */
   let m = null;
   let reply = "";
+  let serverSaved = false;
   try {
+    /* conversation_id: the server writes the reply into this
+       conversation itself (2026-10-09), so a reload mid-answer loses
+       nothing; `saved` in the answer says it did */
     const r = await shadowPost("/api/shadow/chat",
-                               { message: text, intake: true });
+                               att.length
+                                 ? { message: text, intake: true,
+                                     conversation_id: scopeKey,
+                                     conversation_new: true,
+                                     attachments: att.map(a => ({ id: a.id,
+                                       name: a.name, kind: a.kind })) }
+                                 : { message: text, intake: true,
+                                     conversation_id: scopeKey,
+                                     conversation_new: true });
     /* the status is in the sentence the founder reads: a 503 is a Shadow
        that has not booted and a 403 is a stale token, and those are two
        different things to do about it */
@@ -5624,6 +6031,7 @@ async function shadowNewTalk(){
                       + ((r && r.status) || "no reply") + ").");
     const doc = await r.json();
     if (doc && doc.reply) reply = String(doc.reply);
+    serverSaved = !!(doc && doc.saved);
     m = (doc && (doc.mission || (doc.missions || [])[0])) || null;
   } catch (e){
     m = null;
@@ -5643,9 +6051,12 @@ async function shadowNewTalk(){
        conversation and not a message into some task in the rail. */
     const said = c.err || reply;
     if (said){
-      mine().push({ who: "shadow", ts: Date.now(), text: String(said),
-                    newtalk: true });
-      shadowConvSay(scopeKey, text, "shadow", said);
+      /* a reload while it waited may already have drawn the saved reply */
+      const last = mine()[mine().length - 1];
+      if (!(last && last.who === "shadow" && last.text === String(said)))
+        mine().push({ who: "shadow", ts: Date.now(), text: String(said),
+                      newtalk: true });
+      if (!serverSaved) shadowConvSay(scopeKey, text, "shadow", said);
     }
   } else {
     /* ACTIONABLE. The task's own conversation is the screen now, so the two
@@ -5655,8 +6066,10 @@ async function shadowNewTalk(){
        what the founder now reads: the conversation is what they typed into,
        the mission is what it opened, and after a reload the second is found
        through the first. */
-    if (reply) shadowConvSay(scopeKey, text, "shadow", reply);
-    shadowConvBind(scopeKey, text, m.id);
+    if (!serverSaved){
+      if (reply) shadowConvSay(scopeKey, text, "shadow", reply);
+      shadowConvBind(scopeKey, text, m.id);
+    }
     /* THE ROW BECOMES THE TASK'S. A bound conversation is drawn as its
        mission, so marking it here is what stops the same submission
        appearing twice in the rail for the length of the next read. */
@@ -5877,6 +6290,7 @@ function shadowStageHtml(compact){
            empty it. Stored on input, NEVER re-rendered on keystroke -- a
            render per character would fight the caret, which is the bug those
            other text stores exist to avoid. */""}
+      ${shadowAttachBarHtml("home")}
       <textarea class="shcompose" data-shhomecompose="1"
         data-shscope="${escAttr(S_.shadowChat || "global")}"
         placeholder="${escAttr(shadowComposePlaceholder(compact))}">${
@@ -6084,7 +6498,7 @@ function shadowHomeHtml(){
     if (typeof shadowSaidRowHtml === "function"){
       const mine = t && t.who === "founder";
       const body = mine
-        ? esc((t && t.text) || "")
+        ? esc((t && t.text) || "") + shadowImagesHtml(t && t.images)
         : (typeof shadowProseHtml === "function"
             ? shadowProseHtml((t && t.text) || "")
             : esc((t && t.text) || ""));
@@ -6169,6 +6583,7 @@ function shadowHomeHtml(){
              the task is alive, and the activity row in the stream still
              says how long the current turn has been going. */""}
           ${!newOpen && face ? shadowTaskPillHtml(face) : ""}
+          ${!newOpen && sel ? shadowTaskCostHtml(sel) : ""}
           ${/* THE WORKER CHAT LIVES BEHIND THIS BUTTON AND NOWHERE ELSE.
                Same data-shtakeover hook and same target_session it has
                always carried -- it simply sits where the reference puts
@@ -6225,7 +6640,8 @@ function shadowHomeHtml(){
                surface, and these are controls rather than things Shadow
                says, so the header is where they belong. Same hooks, same
                predicates, same handlers -- only the site moved. */""}
-          ${!newOpen && sel && (typeof shadowMissionStartable === "function"
+          ${!newOpen && sel && !shadowMissionCantStart(sel)
+              && (typeof shadowMissionStartable === "function"
               ? shadowMissionStartable(sel) : sel.state === "brief_confirm")
             ? `<button class="btn pri" type="button"
                 data-shstart="${escAttr(sel.id)}">Start the task</button>
@@ -6334,6 +6750,7 @@ function shadowHomeHtml(){
            shadowTaskCardHtml; the predicates are unchanged. */""}
       ${/* the founder's answer is INSIDE the timeline now, at the point it
            happened -- drawing it here as well would be the same card twice */""}
+      ${newOpen || !sel ? "" : shadowTaskImagesHtml(sel)}
       ${thread ? `<div class="shthread">${thread}</div>` : ""}
       ${/* ── THE ASK FLOWS WITH THE CONVERSATION (founder, 2026-09-23) ───
            It used to be pinned BELOW this scroller, in a capped box with a
@@ -6346,6 +6763,11 @@ function shadowHomeHtml(){
            turns that earned it on screen together. That is what is traded
            for a result the founder can actually read; scrolling to the
            bottom is how a conversation has always worked. */""}
+      ${newOpen || !sel ? "" : shadowCantStartHtml(sel)}
+      ${newOpen || !sel ? "" : shadowQuietHtml(sel)}
+      ${newOpen || !sel ? "" : shadowBudgetPauseHtml(sel)}
+      ${newOpen || !sel ? "" : shadowWorkspaceHtml(sel)}
+      ${newOpen || !sel ? "" : shadowResultsHtml(sel)}
       ${newOpen || !sel ? "" : shadowInterventionHtml(sel)}
       ${newOpen ? "" : shadowPendingMemoryHtml()}
       ${newOpen ? "" : shadowPendingKnowsHtml(sel)}
@@ -6484,10 +6906,22 @@ function shadowRestoreConversations(rows){
   let put = 0;
   (rows || []).forEach(rec => {
     if (!rec || !rec.id) return;
-    const msgs = (rec.messages || []).map(msg => ({
+    const msgs = (rec.messages || []).map(msg => Object.assign({
       who: msg.who === "founder" ? "founder" : "shadow",
       text: String(msg.text == null ? "" : msg.text),
-      ts: msg.ts, newtalk: true }));
+      ts: msg.ts, newtalk: true },
+      /* the screenshots come back with the line (2026-10-09) */
+      (msg.who === "founder" && Array.isArray(msg.images) && msg.images.length)
+        ? { images: msg.images } : {}));
+    /* SHADOW IS STILL ANSWERING (2026-10-09): the server marks it, so a
+       reload says so instead of showing a line with no reply; the reply
+       replaces this row when it lands. Past 20 minutes it did not land. */
+    const waitedMs = rec.pending_since ? (Date.now() - Date.parse(rec.pending_since)) : 0;
+    if (rec.pending_since && msgs.length && msgs[msgs.length - 1].who === "founder")
+      msgs.push({ who: "shadow", ts: Date.now(), newtalk: true, pending: true,
+        text: waitedMs < 20 * 60 * 1000
+          ? "Still working on this \u2014 the answer will appear here."
+          : "I didn't finish answering this one. Send it again." });
     /* A BOUND CONVERSATION IS DRAWN AS ITS TASK, NOT TWICE. Once a
        conversation names a mission, the task's own pane is what the founder
        reads -- it renders the objective as their opening line and the
@@ -6575,6 +7009,11 @@ async function _loadShadowHome(lazy){
       fetch("/api/shadow/conversations").then(r => r.ok ? r.json() : null)
         .catch(() => null),
     ]);
+    /* the month's spend, for the banner; a miss costs the banner only */
+    fetch("/api/shadow/budget").then(r => r.ok ? r.json() : null)
+      .then(b => { if (b) { S.shadowBudget = b;
+        if (typeof scheduleRender === "function") scheduleRender(); } })
+      .catch(() => null);
     if (cv && typeof shadowRestoreConversations === "function")
       shadowRestoreConversations(cv.conversations || []);
     if (s) S.shadowSettings = s;
@@ -7298,8 +7737,19 @@ function shadowSetTasksHtml(d){
     ? `<div class="srow ssnote">${esc(String(t.running_now))} already running
         keep the budget they started with — this sets the next one.</div>`
     : "";
+  const mb = (typeof S !== "undefined" && S.shadowBudget) || {};
+  const limit = `<div class="srow"><span class="k">Monthly spending limit</span>
+      <span class="step"><span class="kdim">$</span><input type="number" min="0"
+        step="1" class="shbudgetin" data-shmonthbudget="1"
+        aria-label="Monthly spending limit in dollars" placeholder="No limit"
+        value="${escAttr(mb.budget_usd ? String(mb.budget_usd) : "")}"><button
+        type="button" class="btn" data-shmonthbudgetsave="1">Save</button></span></div>
+    <div class="srow ssnote">${esc(shadowMoney(mb.spent_usd || 0))} spent this month (about).
+      Empty means no limit. At 80% you get a warning; at the limit, new tasks
+      don't start and running ones pause.${mb.err ? ` <b>${esc(mb.err)}</b>` : ""}</div>`;
   return `<div class="srow"><span class="k">Running at once</span>${stepper}</div>
     ${note}
+    ${limit}
     <div class="srow"><span class="k">${blabel}</span>${budget}</div>
     ${readout}
     ${bnote}`;
@@ -8158,7 +8608,13 @@ if (typeof document !== "undefined" && document.addEventListener){
       if (fld){
         const draft = shadowIvDraft(d.shivmid);
         const cur = draft.values[d.shivkey];
-        if (fld.type === "boolean"){
+        if (fld.type === "verdicts" && d.shivverdict){
+          const map = (cur && typeof cur === "object" && !Array.isArray(cur))
+            ? Object.assign({}, cur) : {};
+          if (map[d.shivopt] === d.shivverdict) delete map[d.shivopt];
+          else map[d.shivopt] = d.shivverdict;
+          draft.values[d.shivkey] = map;
+        } else if (fld.type === "boolean"){
           draft.values[d.shivkey] = (d.shivopt === "yes");
         } else if (fld.type === "multi_choice"){
           const list = Array.isArray(cur) ? cur.slice() : [];
@@ -8174,6 +8630,12 @@ if (typeof document !== "undefined" && document.addEventListener){
           draft.values[d.shivkey] = d.shivopt;
         }
         delete draft.errors[d.shivkey];
+        if (shadowIvOneTap(mm.intervention) && !draft.busy
+            && draft.values[d.shivkey] !== false
+            && typeof shadowSendIntervention === "function"){
+          shadowSendIntervention(d.shivmid);
+          return;
+        }
       }
       if (typeof scheduleRender === "function") scheduleRender();
       return;
@@ -8185,6 +8647,9 @@ if (typeof document !== "undefined" && document.addEventListener){
        cannot compound into a value nobody asked for while an earlier write is
        in flight. */
     if (d.shrunlimit !== undefined) return shadowSetRunLimit(d.shrunlimit);
+    if (d.shmonthbudgetsave) return shadowSaveMonthBudget();
+    if (d.shws && d.shmid) return shadowWorkspaceAct(d.shmid, d.shws);
+    if (d.shresults) return shadowLoadResults(d.shresults);
     /* AUTONOMY. Same rule as the two steppers: the button carries the value
        it would MOVE TO, so a repeated click cannot compound, and the toggle
        carries its DESTINATION ("0"/"1") rather than its current state. */
@@ -8266,6 +8731,24 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (d.shunwatch) return shadowWatchSet(d.shunwatch, false);
     if (d.shconfirm) return shadowInstructionAct(d.shconfirm, "confirm");
     if (d.shrevoke) return shadowInstructionAct(d.shrevoke, "revoke");
+    /* IMAGES FOR SHADOW (2026-10-08): the paperclip opens the picker, the
+       x on a thumbnail drops it. Read through closest(): the icon is an SVG
+       child with no dataset of its own. */
+    const attBtn = (ev.target && ev.target.closest)
+      ? ev.target.closest("[data-shattach]") : null;
+    if (attBtn) return shadowAttachPick(attBtn.dataset.shattach);
+    const attRm = (ev.target && ev.target.closest)
+      ? ev.target.closest("[data-shattrm]") : null;
+    if (attRm && typeof S !== "undefined"){
+      const list = shadowAttachList(attRm.dataset.shattrm);
+      const gone = list.splice(Number(attRm.dataset.shatti), 1)[0];
+      try {
+        if (gone && gone.preview && typeof URL !== "undefined" && URL.revokeObjectURL)
+          URL.revokeObjectURL(gone.preview);
+      } catch (e){}
+      if (typeof scheduleRender === "function") scheduleRender();
+      return;
+    }
     /* What Shadow knows: a group header folds or opens (the header's text
        spans have no hooks, so read the button through closest) */
     const grp = (ev.target && ev.target.closest)
@@ -8358,7 +8841,7 @@ if (typeof document !== "undefined" && document.addEventListener){
     const text = String(el.value || "");
     /* empty: send nothing AND clear nothing. The box used to empty itself
        on any Enter, so a stray keypress silently ate a half-written brief. */
-    if (!text.trim()) return;
+    if (!text.trim() && !shadowAttachReady("home")) return;
     /* The existing-chat scope guard that stood here went with its flow
        (founder, 2026-09-15): shadowExistingOpen can no longer be set, so the
        branch was unreachable. The delegation composer it deliberately
@@ -8417,6 +8900,8 @@ if (typeof document !== "undefined" && document.addEventListener){
          what standing_instructions are composed from. The say endpoint is
          untouched and still serves anything that calls it. */
       shadowTalk().text = text.trim();
+      /* images go with the line, to this task's Shadow chat (2026-10-08) */
+      shadowTalk().attachments = shadowAttachTake("home");
       shadowComposeSet(el, "");
       shadowTalkSend(sel.id, el);
       if (typeof scheduleRender === "function") scheduleRender();
@@ -8445,8 +8930,11 @@ if (typeof document !== "undefined" && document.addEventListener){
        the server already did, and doc.mission is that answer. */
     const convId = (sel && shadowIsConvRow(sel)) ? sel.id : null;
     const line = text.trim();
-    sendToShadow(line).then((doc) => {
-      if (convId && typeof shadowConvSay === "function"){
+    sendToShadow(line, { attachments: shadowAttachTake("home"),
+                         conversation_id: convId }).then((doc) => {
+      /* the server wrote both lines itself when it was told the
+         conversation (2026-10-09) */
+      if (convId && !(doc && doc.saved) && typeof shadowConvSay === "function"){
         const said = shadowConvSay(convId, null, "founder", line);
         const after = () => {
           if (doc && doc.reply)
@@ -8498,6 +8986,32 @@ if (typeof document !== "undefined" && document.addEventListener){
     });
     if (typeof scheduleRender === "function") scheduleRender();
   }
+  /* IMAGES FOR SHADOW: paste a screenshot, or drop an image, onto a box
+     that talks to Shadow (2026-10-08). Only images are taken; pasted text
+     and anything else behave exactly as before. */
+  const shadowImageFiles = (dt) => Array.from((dt && dt.files) || [])
+    .filter(f => shadowAttachKind(f) !== null);
+  document.addEventListener("paste", (ev) => {
+    const key = shadowAttachKeyFor(ev.target);
+    if (!key) return;
+    const files = shadowImageFiles(ev.clipboardData);
+    if (!files.length) return;
+    ev.preventDefault && ev.preventDefault();
+    shadowAttachFiles(key, files);
+  });
+  document.addEventListener("dragover", (ev) => {
+    if (shadowAttachKeyFor(ev.target) && ev.dataTransfer
+        && Array.from(ev.dataTransfer.types || []).indexOf("Files") !== -1)
+      ev.preventDefault && ev.preventDefault();
+  });
+  document.addEventListener("drop", (ev) => {
+    const key = shadowAttachKeyFor(ev.target);
+    if (!key) return;
+    const files = shadowImageFiles(ev.dataTransfer);
+    if (!files.length) return;
+    ev.preventDefault && ev.preventDefault();
+    shadowAttachFiles(key, files);
+  });
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter" && !ev.shiftKey && ev.target && ev.target.dataset
         && ev.target.dataset.shhomecompose){

@@ -88,7 +88,8 @@ const pane = (m) => { const c = fresh();
   assert(/Are these the ten stories you wanted\?/.test(h), "the question is on screen");
   assert(h.indexOf("Fed holds rates steady") !== -1,
     "and so is what it is asking about -- no worker chat needed");
-  assert(/data-shivsend/.test(h), "with a way to answer it");
+  /* one-tap (2026-10-08): a single yes/no sends on its tap */
+  assert(/data-shivsend|data-shivopt="yes"/.test(h), "with a way to answer it");
   pass("the ask shows the question AND the result it is about");
 }
 

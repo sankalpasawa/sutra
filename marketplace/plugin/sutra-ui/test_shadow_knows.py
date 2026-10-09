@@ -441,7 +441,7 @@ class TestTaskChatsHearChangesToo(Base):
         c.carry_stamp = stamp
         sent = []
 
-        async def turn(text, timeout):
+        async def turn(text, timeout, images=None):
             sent.append(text)
             return "ok"
         c._turn = turn

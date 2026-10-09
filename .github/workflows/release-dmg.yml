@@ -188,10 +188,15 @@ jobs:
           node test_website.js
           python3 test_website_motor.py
           python3 test_engine_runtime.py
+          node test_shadow_attachments.js
+          node test_shadow_cant_start.js
           node test_shadow_completion_ui.js
           node test_shadow_compose_focus.js
           node test_shadow_conversation.js
           node test_shadow_conversation_model.js
+          node test_shadow_conversation_saved.js
+          node test_shadow_conversation_scroll.js
+          node test_shadow_costs.js
           node test_shadow_decision_ui.js
           node test_shadow_done_history.js
           node test_shadow_delegate_focus.js
@@ -206,7 +211,10 @@ jobs:
           node test_shadow_order.js
           node test_shadow_overlay.js
           node test_shadow_presence.js
+          node test_shadow_quiet.js
+          node test_shadow_results.js
           node test_shadow_rhs.js
+          node test_shadow_tap.js
           node test_shadow_task_chat.js
           node test_shadow_task_spinner.js
           node test_shadow_task_status.js
@@ -223,6 +231,7 @@ jobs:
           node test_shadow_v4_summary.js
           node test_shadow_v4_talk.js
           node test_shadow_v4_taskchat.js
+          node test_shadow_workspace.js
 
       # The importer and the engine are what the shipped payload runs.
       # A DMG that fails these is not worth uploading.

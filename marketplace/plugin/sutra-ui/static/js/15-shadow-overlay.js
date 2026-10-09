@@ -762,7 +762,29 @@ function shadowMsgHtml(t){
   const mine = t && t.who === "founder";
   return `
     <div class="shmsg ${mine ? "shmine" : "shshadow"}">
-      ${mine ? esc((t && t.text) || "") : shadowProseHtml((t && t.text) || "")}</div>`;
+      ${mine ? esc((t && t.text) || "") + shadowImagesHtml(t && t.images)
+             : shadowProseHtml((t && t.text) || "")}</div>`;
+}
+
+/* FILES THE FOUNDER GAVE SHADOW (2026-10-08): an image as a small
+   thumbnail, a PDF or a text file as a chip with its name; each opens in a
+   new tab. One renderer for every place a founder line is drawn; "" when
+   there are none, so those lines are byte-identical to before. */
+function shadowImagesHtml(list){
+  const items = (Array.isArray(list) ? list : []).filter(i => i && (i.url || i.id));
+  if (!items.length) return "";
+  return `<span class="shimgs">${items.map(i => {
+    const url = i.url || ("/api/shadow/attachments/" + encodeURIComponent(i.id));
+    const name = i.name || (i.kind === "image" || !i.kind ? "image" : "file");
+    if (i.kind && i.kind !== "image")
+      return `<a class="shfile" href="${escAttr(url)}" target="_blank" rel="noopener"
+        title="${escAttr(name)}"><span class="shfilek">${
+          i.kind === "pdf" ? "PDF" : "TXT"}</span><span class="shfilen">${
+          esc(name)}</span></a>`;
+    return `<a class="shimg" href="${escAttr(url)}" target="_blank" rel="noopener"
+      title="${escAttr(name)}"><img src="${escAttr(url)}"
+      alt="${escAttr(name)}" loading="lazy"></a>`;
+  }).join("")}</span>`;
 }
 
 /* the card: compact view of the ONE thread + chips + free text always */
@@ -806,8 +828,10 @@ function shadowCardHtml(){
    id -- see the note inside sendToShadow. Minted in shadowNewTalk. */
 const SH_LOCAL_SCOPE = /^(shc|new)-[a-z0-9-]+$/;
 
-async function sendToShadow(text){
+async function sendToShadow(text, extra){
   if (typeof S === "undefined" || typeof fetch === "undefined") return null;
+  /* images the founder attached (2026-10-08): [{id, name, url}] */
+  const att = (extra && Array.isArray(extra.attachments)) ? extra.attachments : [];
   if (isOwnTurn(text)) return null;               /* S75 self-loop guard */
   if (S.shadowBusy){
     S.shadowThread.push({ who: "shadow", ts: Date.now(),
@@ -815,7 +839,9 @@ async function sendToShadow(text){
     return null;
   }
   S.shadowBusy = true;
-  S.shadowThread.push({ who: "founder", text, ts: Date.now() });
+  S.shadowThread.push(att.length ? { who: "founder", text, ts: Date.now(),
+                                      images: att }
+                                  : { who: "founder", text, ts: Date.now() });
   S.shadowThread.push({ who: "shadow", ts: Date.now(), busy: true,
     text: S.shadowBooted ? "thinking\u2026"
                          : "waking up (first message boots my session -- up "
@@ -840,8 +866,17 @@ async function sendToShadow(text){
        it. SH_LOCAL_SCOPE matches only what this client minted. */
     const scope = (S.shadowChat && S.shadowChat !== "global"
                    && !SH_LOCAL_SCOPE.test(S.shadowChat)) ? S.shadowChat : null;
-    const r = await shadowPost("/api/shadow/chat",
-      scope ? { message: text, scope_id: scope } : { message: text });
+    const payload = scope ? { message: text, scope_id: scope } : { message: text };
+    if (att.length)
+      payload.attachments = att.map(a => ({ id: a.id, name: a.name, kind: a.kind }));
+    /* THE SERVER KEEPS THE CONVERSATION (2026-10-09): naming it lets the
+       server write this line and the reply itself, so a reload mid-answer
+       loses neither */
+    if (extra && extra.conversation_id){
+      payload.conversation_id = extra.conversation_id;
+      if (extra.conversation_new) payload.conversation_new = true;
+    }
+    const r = await shadowPost("/api/shadow/chat", payload);
     S.shadowBusy = false;
     S.shadowThread = S.shadowThread.filter(t => !t.busy);
     if (!r.ok){

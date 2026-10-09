@@ -728,7 +728,9 @@ const pass = (s) => console.log("ok " + (++ok) + " " + s);
 
   /* the form is still drawn, with the hook the submit handler reads */
   assert(/data-shivform="iv-10"/.test(h), "the question still renders");
-  assert(/data-shivsend="m-10"/.test(h), "and it can still be sent");
+  /* one-tap (2026-10-08): a single yes/no or pick-one sends on its tap, so
+     it has no Send button; the tap hooks below ARE how it is sent */
+  assert(/data-shivsend="m-10"|data-shivopt="yes"/.test(h), "and it can still be sent");
 
   /* ...and it is OUTSIDE the scroller: after the timeline that is inside it,
      and after the element that closes it, but before the composer */

@@ -158,7 +158,7 @@ class ShadowWritesTheMissingCriteria(CriteriaBase):
             "verify_ask": "",
             # 2026-10-07: the learning ask, empty when the founder has not
             # just spoken -- listed for the same reason as the keys above.
-            "remember_ask": ""}
+            "remember_ask": "", "images_ask": ""}
         self.assertIn("THIS MISSION HAS NO COMPLETION CHECKS", rendered)
         self.assertIn('"done_when"', rendered)
 
@@ -174,7 +174,7 @@ class ShadowWritesTheMissingCriteria(CriteriaBase):
             # this one from shadow_decision.state_for.
             "artifact_state": "(none recorded)",
             "carry": "(none)",
-            "criteria_ask": "", "verify_ask": "", "remember_ask": ""}
+            "criteria_ask": "", "verify_ask": "", "remember_ask": "", "images_ask": ""}
         self.assertNotIn("THIS MISSION HAS NO COMPLETION CHECKS", rendered)
 
     def test_a_decision_may_carry_the_checks_shadow_wrote(self):

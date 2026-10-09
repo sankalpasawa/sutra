@@ -24,6 +24,7 @@ import shadow_egress
 import shadow_feed
 import shadow_home_lock
 import shadow_judge
+import shadow_costs
 import shadow_ledger
 import shadow_forward
 
@@ -289,6 +290,32 @@ OUTCOME_CHARS = 6000
 #: session_id -> unix ts of the LAST frame of any kind (stall detection)
 _LAST_FRAME_TS = {}
 STALL_SECS = 240
+
+#: session_id -> when Shadow began waiting on that worker's current turn.
+#: Set and cleared by the waiter, so it holds exactly the turns the stall end
+#: is timing -- never the stretch where Shadow itself is deciding.
+_WAITING_ON = {}
+#: How long a worker may be quiet mid-turn before the task says so (founder,
+#: 2026-10-08: keep the 4-minute end, add a warning before it).
+QUIET_WARN_SECS = 120
+
+
+def quiet_report(mission, now=None):
+    """{"secs", "ends_in"} when this running task's worker has been quiet
+    mid-turn for QUIET_WARN_SECS or more, else None. Read-only: it changes
+    nothing and ends nothing -- the stall end (STALL_SECS) is untouched."""
+    if not mission or mission.get("state") != "running":
+        return None
+    sid = mission.get("target_session")
+    began = _WAITING_ON.get(sid) if sid else None
+    if began is None:
+        return None
+    now = time.time() if now is None else now
+    last = max(_LAST_FRAME_TS.get(sid) or 0, began)
+    quiet = now - last
+    if quiet < QUIET_WARN_SECS:
+        return None
+    return {"secs": int(quiet), "ends_in": max(0, int(STALL_SECS - quiet))}
 
 #: a reasoning call is one short turn, not a work turn -- it must not be
 #: allowed to stall the mission loop the way a real turn may
@@ -811,33 +838,73 @@ def make_bindings(validated_say):
             # isinstance(arrived, str) arm). True/False are untouched.
             return "no_boundary_queue"
         deadline = clock() + max_turn_secs
-        while True:
-            try:
-                await asyncio.wait_for(q.get(), poll_secs)
-                return True
-            except asyncio.TimeoutError:
-                # a boundary that lands while this poll is being cancelled
-                # stays in the queue -- asyncio.Queue.get() never consumes an
-                # item it does not return -- so the next poll picks it up.
-                pass
-            now = clock()
-            if now >= deadline:
-                return False
-            last = _LAST_FRAME_TS.get(sid)
-            if last is None:
-                # never-heard-from target: start its clock HERE, the same
-                # grace check_stalls gives a freshly resumed mission, so a
-                # stuck-from-birth turn still fails one stall_secs later
-                # instead of being treated as infinitely fresh.
-                _LAST_FRAME_TS[sid] = now
-                continue
-            if now - last >= stall_secs:
-                return False
+        # the turn is OPEN from here: what quiet_report measures, and the
+        # same window the stall end below counts (2026-10-08)
+        _WAITING_ON[sid] = clock()
+        try:
+            while True:
+                try:
+                    await asyncio.wait_for(q.get(), poll_secs)
+                    return True
+                except asyncio.TimeoutError:
+                    # a boundary that lands while this poll is being cancelled
+                    # stays in the queue -- asyncio.Queue.get() never consumes an
+                    # item it does not return -- so the next poll picks it up.
+                    pass
+                now = clock()
+                if now >= deadline:
+                    return False
+                last = _LAST_FRAME_TS.get(sid)
+                if last is None:
+                    # never-heard-from target: start its clock HERE, the same
+                    # grace check_stalls gives a freshly resumed mission, so a
+                    # stuck-from-birth turn still fails one stall_secs later
+                    # instead of being treated as infinitely fresh.
+                    _LAST_FRAME_TS[sid] = now
+                    continue
+                if now - last >= stall_secs:
+                    return False
+        finally:
+            _WAITING_ON.pop(sid, None)
 
     def reader(mission):
         return evidence_text(mission["target_session"])
 
     return sayer, waiter, reader
+
+
+async def _workspace_end(m):
+    """A task that ENDED and ran in its own copy: kept into the founder's
+    folder when it finished, else left for the founder (shadow_workspace).
+    Git work, so off the event loop. Never raises."""
+    if not m or m.get("state") not in mission_engine.TERMINAL \
+            or ((m.get("workspace") or {}).get("state")) != "active":
+        return None
+    try:
+        import shadow_workspace
+        return await asyncio.get_event_loop().run_in_executor(
+            None, shadow_workspace.finish, m["id"])
+    except Exception:                     # noqa: BLE001
+        return None
+
+
+def _workspace_end_soon(m):
+    """_workspace_end from a plain function (settle_confirmation): run it on
+    the loop when there is one, else in place. Never raises."""
+    if not m or ((m.get("workspace") or {}).get("state")) != "active":
+        return
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(_workspace_end(m))
+            return
+    except Exception:                     # noqa: BLE001
+        pass
+    try:
+        import shadow_workspace
+        shadow_workspace.finish(m["id"])
+    except Exception:                     # noqa: BLE001
+        pass
 
 
 def _goal_hook(fn_name, mission, *extra):
@@ -1083,6 +1150,7 @@ def _launch(mid, validated_say, verifier):
         # or paused all land here, so the goal can never be left claiming
         # work that stopped.
         _goal_hook("on_attempt_end", m)
+        await _workspace_end(m)
         shadow_ledger.append("actions", {
             "mission_id": mid, "kind": "stop" if not m else m["state"],
             "summary": "runner finished (%s)"
@@ -1672,6 +1740,7 @@ async def ensure_runtime(session_id, build_args, register):
         raise session_runtime.NoLiveRuntime(session_id)
 
     rt = session_runtime.SessionRuntime()
+    shadow_costs.attach(rt, "worker")
     args = build_args(session_id)      # carries --resume <session_id>
     await rt.spawn(args, cwd, tuple(args))
     if not rt.alive:
@@ -2006,7 +2075,7 @@ Creating or changing the set is not itself a reason to send the worker a
 turn, and an active instruction is a constraint on what you instruct, not
 something to forward.
 
-%(remember_ask)sDecide. Reply with ONE fenced json block and nothing else:
+%(images_ask)s%(remember_ask)sDecide. Reply with ONE fenced json block and nothing else:
 
 ```json
 {"action": "continue", "instruction": "<what to send into the chat next>",
@@ -2227,9 +2296,33 @@ interventions carry no marker at all. Never attach one to make a mission
 finish sooner: it is a description of what you are asking, not a lever.
 
 `type` is one of: boolean, choice, multi_choice, text, long_text, number,
-currency, percent, date, datetime, url, email, ranking. choice, multi_choice
-and ranking need at least two `options`. Use SEVERAL fields when you need
-several things at once -- the founder answers them as one form.
+currency, percent, date, datetime, url, email, ranking, verdicts. choice,
+multi_choice and ranking need at least two `options`. Use SEVERAL fields when
+you need several things at once -- the founder answers them as one form.
+
+THE FOUNDER TAPS; THEY DO NOT TYPE WHAT THEY COULD TAP. Whenever the answer
+is yes/no or one of a few things you can name, ALWAYS send an `intervention`
+with a `boolean`, `choice` or `multi_choice` field -- never a bare reason
+that leaves them to type it, and never "reply yes to continue". A question
+with ONE such field is sent the moment they tap, so put everything they need
+in `question` and `evidence`. Keep `text`/`long_text` for answers that truly
+need words: a name, a figure, what to change.
+
+`verdicts` judges SEVERAL ITEMS AT ONCE: list them as `options` (one is
+enough) and the founder marks each approve, reject or later. Use it instead
+of asking "which of these do you want" in prose:
+
+```json
+{"action": "ask_founder", "reason": "<one short line>",
+ "intervention": {
+   "question": "Which headlines go in?",
+   "fields": [{"key": "headlines", "type": "verdicts",
+               "label": "Headlines", "required": true,
+               "options": [{"value": "h1",
+                            "label": "Rivers run deeper than you think"},
+                           {"value": "h2",
+                            "label": "Ten facts about rivers"}]}]}}
+```
 
 Rules for `instruction`: address the target chat directly, build on what it
 actually said, and name the specific next thing you want. If it asked you a
@@ -2375,6 +2468,23 @@ the key when nothing here outlives the task -- that is the usual case.
 """
 
 
+def _images_ask(context):
+    """The images the founder attached to this task, or "" when there are
+    none -- so every other decide prompt is byte-identical (2026-10-08)."""
+    rows = context.get("images") or []
+    if not rows:
+        return ""
+    lines = ["  - %s (%s): %s" % (r.get("name") or "file",
+                                   r.get("kind") or "file", r.get("path"))
+             for r in rows]
+    return ("FILES THE FOUNDER ATTACHED TO THIS TASK (any you have not seen "
+            "are given to you with this message)\n" + "\n".join(lines) + "\n"
+            "They are yours to judge. When the worker needs one for its NEXT "
+            "step, name the path in your instruction and tell it to open the "
+            "file with its Read tool. Never pass one on that the work does "
+            "not need.\n\n")
+
+
 def _remember_ask(context):
     """_REMEMBER_ASK when the founder has said something this decision can
     learn from, else "" -- DERIVED from keys the context already carries."""
@@ -2402,6 +2512,11 @@ def _founder_answer_text(answer):
         return "(none)"
     asked = answer.get("question") or ""
     head = "You asked: %s" % asked if asked else "You asked for input."
+    pics = answer.get("attachments") or []
+    if pics:
+        # the images themselves are listed under IMAGES THE FOUNDER ATTACHED
+        lines.append("- and %d file%s with the answer (see FILES below)"
+                     % (len(pics), "" if len(pics) == 1 else "s"))
     return "\n".join([head] + lines)
 
 
@@ -2458,6 +2573,7 @@ def render_decide_prompt(context):
             context.get("founder_response")),
         "founder_says": _founder_says_text(context.get("founder_says")),
         "remember_ask": _remember_ask(context),
+        "images_ask": _images_ask(context),
         # DERIVED, NOT A NEW CONTEXT KEY: the mission either has checks or
         # it does not, and _decision_context already carries them. Empty
         # -> Shadow is asked to write them; otherwise this renders to the
@@ -2526,6 +2642,7 @@ def make_decider(build_args, cwd, timeout_s=DECIDE_TIMEOUT_S, new_runtime=None):
         # shares Sutra's runtime layer and deliberately not its conversation
         # layer.
         rt = new_runtime() if new_runtime is not None else srt.SessionRuntime()
+        shadow_costs.attach(rt, "shadow", (context or {}).get("mission_id"))
         texts = []
 
         async def collect(frame):
@@ -2584,6 +2701,7 @@ def make_judge(build_args, cwd, timeout_s=DECIDE_TIMEOUT_S, new_runtime=None):
         import session_runtime as srt
         prompt = shadow_judge.render_prompt(check, evidence, outcome)
         rt = new_runtime() if new_runtime is not None else srt.SessionRuntime()
+        shadow_costs.attach(rt, "shadow")
         texts = []
 
         async def collect(frame):
@@ -2652,6 +2770,7 @@ def settle_confirmation(mid, verifier=None):
     # the same funnel the runner uses: the goal can never be left claiming
     # work that has stopped
     _goal_hook("on_attempt_end", m)
+    _workspace_end_soon(m)
     return m
 
 
@@ -2921,6 +3040,7 @@ async def spawn_delegate_session(build_args, cwd, manifest, register, env=None,
     """
     import session_runtime as srt
     rt = srt.SessionRuntime()
+    shadow_costs.attach(rt, "worker")
     args = build_args()
     await rt.spawn(args, cwd, tuple(args), env=env)
     texts = []
@@ -3043,8 +3163,20 @@ DEFAULT_DECIDER = {"fn": None}
 DEFAULT_JUDGE = {"fn": None}
 
 
+#: (mission) -> a sentence saying why this task CANNOT start right now, or
+#: None. Injected from app at startup, like the three above. It asks only
+#: what is certain to sink a start -- Claude not the AI in use, Claude not
+#: found, the work folder gone -- so a task fails fast with the reason
+#: instead of burning START_RETRY_DELAYS on something no retry can fix.
+DEFAULT_PRECHECK = {"fn": None}
+
+
 def set_default_provisioner(fn):
     DEFAULT_PROVISIONER["fn"] = fn
+
+
+def set_default_precheck(fn):
+    DEFAULT_PRECHECK["fn"] = fn
 
 
 def set_default_decider(fn):
@@ -3058,6 +3190,48 @@ def set_default_judge(fn):
 #: Waits before each automatic retry of a start that failed before any worker
 #: existed. Three tries over about two minutes, then the founder decides.
 START_RETRY_DELAYS = (10, 30, 90)
+
+
+def plain_start_error(exc):
+    """What a failed start says to the founder: the cause in words, never a
+    stack. The raw text stays in the ledger note beside it."""
+    raw = str(exc or "").strip()
+    low = raw.lower()
+    if "connection lost" in low or "connection reset" in low \
+            or "broken pipe" in low:
+        cause = "the connection to Claude dropped while the worker was starting"
+    elif "timed out" in low or "timeout" in low:
+        cause = "Claude took too long to start the worker"
+    elif "no usable provider" in low or "not found" in low:
+        cause = "Claude could not be found on this computer"
+    else:
+        cause = "the worker could not be started"
+    return cause
+
+
+def block_start(store, mid, reason, detail="", attempts=None):
+    """The task CANNOT START, and the founder is told why (Paperclip pattern,
+    founder 2026-10-08: "one automatic recovery, then a clear blocked state
+    with one action").
+
+    NOT A NEW STATE. The task stays brief_confirm -- the transition table is
+    untouched -- with no start stamp, which is what makes it startable, and
+    `start_blocked` beside it, which is what makes the screen say "Couldn't
+    start: <reason>" with Try again instead of a bare Start button. Pressing
+    Try again (app._mark_start_requested) clears it."""
+    m = store.load(mid)
+    if m is None or m.get("state") != "brief_confirm":
+        return m
+    m["start_requested_at"] = None
+    m["start_blocked"] = {"reason": str(reason)[:300],
+                          "detail": str(detail or "")[:300],
+                          "attempts": attempts,
+                          "at": mission_engine._now()}
+    try:
+        store.save(m)
+    except ValueError:
+        return store.load(mid)
+    return m
 
 
 def _retry_start_later(delay, mid, validated_say, provisioner, verifier):
@@ -3088,6 +3262,22 @@ def start_mission_async(mid, validated_say, provisioner=None, verifier=None):
                 return                    # a second click provisions NOTHING
             _STARTING.add(mid)
             try:
+                # CERTAIN NOT TO START: say so now, without retrying. Only a
+                # task that still needs its worker is asked about.
+                pre = DEFAULT_PRECHECK["fn"]
+                if pre and m and m.get("target_mode") == "new" \
+                        and not m.get("target_session"):
+                    problem = None
+                    try:
+                        problem = pre(m)
+                    except Exception:   # noqa: BLE001 -- a check never blocks
+                        problem = None
+                    if problem:
+                        block_start(store, mid, problem)
+                        shadow_ledger.append("missions", {
+                            "mission_id": mid, "state": m["state"],
+                            "note": "not started: %s" % str(problem)[:240]})
+                        return
                 # cap BEFORE any spawn (codex P1): a full scheduler must
                 # queue cheaply, never leak a live delegate for a queued row
                 if len(store.list(states=("running",))) \
@@ -3199,6 +3389,14 @@ def start_mission_async(mid, validated_say, provisioner=None, verifier=None):
                             fresh["start_attempts"] = attempts
                             if attempts > len(START_RETRY_DELAYS):
                                 fresh["start_requested_at"] = None
+                                # every retry spent: the founder is told
+                                # why, with one action (Try again)
+                                fresh["start_blocked"] = {
+                                    "reason": "Shadow tried %d times and %s."
+                                              % (attempts, plain_start_error(exc)),
+                                    "detail": str(exc)[:300],
+                                    "attempts": attempts,
+                                    "at": mission_engine._now()}
                             store.save(fresh)
                     except Exception:   # noqa: BLE001 -- ledger it regardless
                         pass

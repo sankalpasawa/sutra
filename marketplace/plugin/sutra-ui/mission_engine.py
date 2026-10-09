@@ -648,6 +648,23 @@ def _carry_update(out, raw):
         out["update"] = update
 
 
+def _images_context(m):
+    """{"images": [...], "new_images": [ids]} for a task with attachments,
+    else {}. NEVER RAISES."""
+    try:
+        rows = [a for a in (m.get("attachments") or [])
+                if isinstance(a, dict) and a.get("path")]
+    except Exception:                    # noqa: BLE001
+        return {}
+    if not rows:
+        return {}
+    new = [a.get("id") for a in rows if not a.get("shown")]
+    return {"images": [{"id": a.get("id"), "name": a.get("name"),
+                        "path": a.get("path"), "kind": a.get("kind"),
+                        "source": a.get("source")} for a in rows],
+            **({"new_images": new} if new else {})}
+
+
 def _artifact_state(m, root):
     """shadow_decision.state_for, and NEVER a raised exception: a decide turn
     must not fail because a path was unreadable. An error is no state, which
@@ -996,6 +1013,16 @@ def limits_path():
 def _read_limits():
     import json_store
     return json_store.read_json(limits_path(), {})
+
+
+def _budget_spent_up():
+    """shadow_costs.spent_up, imported late (it reads this module's limits
+    store). Never raises: a budget that cannot be read stops nothing."""
+    try:
+        import shadow_costs
+        return shadow_costs.spent_up()
+    except Exception:                     # noqa: BLE001
+        return False
 
 
 def clamp_running(n):
@@ -2953,6 +2980,17 @@ def _call_verifier(verifier, check_text, evidence):
     return bool(verifier(check_text))
 
 
+def _task_root(mission):
+    """Where this task's files are: its own copy when it has one
+    (shadow_workspace stamps mission["workdir"]), else the shared folder.
+    shadow_paths.mission_artifact_root owns the order. Never raises."""
+    try:
+        import shadow_paths
+        return shadow_paths.mission_artifact_root(mission)
+    except Exception:                     # noqa: BLE001
+        return shadow_probe.default_root()
+
+
 def evaluate_done_when(mission, transcript_text, verifier=None,
                        probe_root=None):
     """Tiered evaluation. founder_confirm NEVER auto-passes: it is met only
@@ -2979,6 +3017,10 @@ def evaluate_done_when(mission, transcript_text, verifier=None,
     a vague clause is never reported as verified because a countable one
     beside it was.
     """
+    if probe_root is None:
+        # THE TASK'S OWN FOLDER (2026-10-08): a task that runs in its own
+        # copy of the project is checked there, not in the shared folder.
+        probe_root = _task_root(mission)
     results = []
     for check in mission.get("done_when", []):
         tier = check.get("tier")
@@ -3283,7 +3325,7 @@ def completion_artifacts(mission, root=None):
     """
     try:
         if root is None:
-            root = shadow_probe.default_root()
+            root = _task_root(mission)
         named = []
         for c in (mission.get("done_when") or []):
             if not isinstance(c, dict):
@@ -3901,6 +3943,15 @@ class MissionEngine:
                 hold = None if approved else self._autonomy_hold(m, say_text)
                 if hold is not None:
                     return hold
+                # THE MONTH'S BUDGET IS USED UP (2026-10-08): the task pauses
+                # before its next step, says why, and Continue resumes it.
+                # No budget set -- the default -- never reaches this.
+                if not approved and _budget_spent_up():
+                    held = self.store.transition(
+                        m["id"], "paused", "this month's Shadow budget is used up")
+                    held["pause_reason"] = "budget_spent"
+                    self.store.save(held)
+                    return held
                 # THE LAST LOOK BEFORE SPEAKING, and the takeover window it
                 # closes (founder, 2026-09-14: "clicked Take Over on a
                 # running task at turn 3, the task went FAILED").
@@ -4725,6 +4776,11 @@ class MissionEngine:
             # OMITTED WHEN THE MISSION OWNS NOTHING, so a prompt for a task
             # with no artifacts is byte-identical to what it was.
             **({"artifact_state": files} if files else {}),
+            # IMAGES THE FOUNDER ATTACHED (2026-10-08): every one by name and
+            # path, so Shadow can pass one on in an instruction; the ones it
+            # has not seen yet are SHOWN with this decision (TaskChat.decide).
+            # Omitted when the task has none, so the prompt is unchanged.
+            **_images_context(m),
         }
 
     #: How many of Shadow's founder-facing lines a mission keeps. One per
@@ -5151,6 +5207,18 @@ class MissionEngine:
                     self.store.save(m)
                 except Exception:   # noqa: BLE001 -- re-read, never fail
                     pass
+            # ...and the images this decision SHOWED Shadow (2026-10-08) are
+            # not shown again; written onto the fresh record like the above
+            if ctx.get("new_images"):
+                shown = set(ctx["new_images"])
+                rows = [dict(a, shown=True) if isinstance(a, dict)
+                        and a.get("id") in shown else a
+                        for a in (m.get("attachments") or [])]
+                m["attachments"] = rows
+                try:
+                    self._save_field(m, "attachments", rows)
+                except Exception:   # noqa: BLE001 -- shown again, never fail
+                    pass
         except Exception as exc:      # noqa: BLE001 -- reported, not hidden
             return None, {"action": "undecided",
                           "reason": "decider failed: %s" % str(exc)[:160]}
@@ -5275,7 +5343,7 @@ class MissionEngine:
         """
         root = self.probe_root
         if root is None:
-            root = shadow_probe.default_root()
+            root = _task_root(m)
         lines, paths = [], []
         for c in (m.get("done_when") or []):
             if not isinstance(c, dict):

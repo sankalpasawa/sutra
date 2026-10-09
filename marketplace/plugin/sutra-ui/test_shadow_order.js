@@ -420,7 +420,9 @@ function assertOrder(got, why){
   assert(h.indexOf("Day 1 Sydney: harbour walk") !== -1,
     "the plan being decided about is in Shadow, not only in the worker chat");
   assert(h.indexOf("australia-3-day.md") !== -1, "with where it came from");
-  assert(/data-shivopt="yes"/.test(h) && /data-shivsend/.test(h),
+  /* a single yes/no is answered by its tap (one-tap, 2026-10-08), so the
+     Yes button IS the way to answer it -- there is no separate Send */
+  assert(/data-shivopt="yes"/.test(h),
     "and it can be answered from here");
   /* and it is not a transcript dump: the worker's own REPORT lines stay out */
   assert(h.indexOf("REPORT:") === -1,

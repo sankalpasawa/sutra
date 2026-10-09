@@ -421,8 +421,9 @@ def packet_for(mission, root=None):
         return None
     if root is None:
         try:
-            import shadow_probe
-            root = shadow_probe.default_root()
+            import shadow_paths
+            # the task's own copy when it has one (2026-10-08)
+            root = shadow_paths.mission_artifact_root(mission)
         except Exception:                # noqa: BLE001
             root = ""
     try:

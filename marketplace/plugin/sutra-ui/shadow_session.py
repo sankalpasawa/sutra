@@ -10,6 +10,7 @@ app imports session_runtime, and a shadow_session -> app import would close a
 cycle the moment app wires Shadow routes in P6.
 """
 import os
+import re
 
 from session_runtime import SessionRuntime
 
@@ -19,19 +20,34 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CONTEXT_PATH = os.path.join(HERE, "SHADOW.md")
 
 
-def load_context():
+_NOW_ONLY = re.compile(r"<!-- now-only -->\n.*?\n<!-- /now-only -->\n?", re.S)
+#: the markers themselves, and the note at the top of SHADOW.md explaining
+#: them -- words for whoever edits the file, never for Shadow
+_MARKERS = re.compile(r"<!-- /?now-only -->\n?"
+                      r"|\n?<!-- Text between now-only markers.*?-->\n?", re.S)
+
+
+def load_context(scope="now"):
     """SHADOW.md content, ONLY when the flag is on (S11/S30 contract).
 
     Returns None with the flag off -- callers treat None as "Shadow does not
     exist", never as an empty persona.
+
+    `scope="task"` (2026-10-09): a task's own Shadow chat boots WITHOUT the
+    parts marked now-only -- delegation, goals, apps, chips, settings it
+    never acts on -- because every task chat paid for reading them. The Now
+    chat gets the whole file, markers removed.
     """
     if not providers.shadow_enabled():
         return None
     try:
         with open(CONTEXT_PATH, encoding="utf-8") as handle:
-            return handle.read()
+            text = handle.read()
     except OSError:
         return None
+    if scope == "task":
+        text = _NOW_ONLY.sub("", text)
+    return _MARKERS.sub("", text)
 
 
 def offers_context():
@@ -149,6 +165,11 @@ class ShadowSession:
 
     def __init__(self):
         self.rt = SessionRuntime()
+        try:                            # what the Now chat costs (2026-10-08)
+            import shadow_costs
+            shadow_costs.attach(self.rt, "now")
+        except Exception:               # noqa: BLE001
+            pass
         self.session_id = None
         self.started = False
 

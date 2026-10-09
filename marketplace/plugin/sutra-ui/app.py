@@ -1765,6 +1765,41 @@ SHADOW_DECIDER_SYSTEM_PROMPT = (
 )
 
 
+#: The model a TASK's own Shadow chat runs on (founder, 2026-10-09: "0.47
+#: dollars for the simplest of simple tasks"). Measured on m-d0246c95379c:
+#: the task chat was $0.33 of $0.47, all on the top model. The worker keeps
+#: the CLI default; the Now chat is untouched. Task-limits key `shadow_model`
+#: ("default" = the CLI default) or SUTRA_SHADOW_MODEL overrides it.
+SHADOW_TASK_MODEL = "sonnet"
+
+
+def shadow_task_model():
+    env = os.environ.get("SUTRA_SHADOW_MODEL", "").strip()
+    if env:
+        return None if env == "default" else env
+    try:
+        v = _mission_engine._read_limits().get("shadow_model")
+    except Exception:                   # noqa: BLE001
+        v = None
+    if v == "default":
+        return None
+    return str(v) if v else SHADOW_TASK_MODEL
+
+
+def _task_shadow_args(session_id=None):
+    """argv for a TASK's own Shadow chat: _shadow_args, on
+    shadow_task_model(), and without the skills catalog (it never uses a
+    skill; measured ~900 tokens a turn). The Now chat and every worker keep
+    exactly the argv they had."""
+    args = list(_shadow_args(session_id=session_id))
+    model = shadow_task_model()
+    if model and "--model" not in args:
+        args += ["--model", model]
+    if "--disable-slash-commands" not in args:
+        args.append("--disable-slash-commands")
+    return args
+
+
 def _decide_args():
     """argv for Shadow's one-shot DECIDER -- the reasoning lane.
 
@@ -2251,10 +2286,14 @@ def _brief_facts(mission):
     context (shadow_session.standing_context -> carry_block); BRIEF_ASK tells
     it to pass on only the lines this task needs."""
     return {
-        "repo": _shadow_workdir_for_delegates(),
+        "repo": mission.get("workdir") or _shadow_workdir_for_delegates(),
         "why_now": mission.get("why_now") or "",
         "rules": _rules_in_scope(mission.get("target_session")),
         "floors": list(SHADOW_FLOORS),
+        # the images the founder attached to this task (2026-10-08); the
+        # brief writer is shown the unseen ones and passes on what is needed
+        "images": [a for a in (mission.get("attachments") or [])
+                   if isinstance(a, dict) and a.get("path")],
     }
 
 
@@ -2289,6 +2328,10 @@ async def _compose_brief(mission):
         # re-asks for a yes; the founder already pressed Start.
         m["manifest"] = text
         m["brief_by"] = "task_chat"
+        # the brief turn showed the task chat its images: do not show again
+        for a in m.get("attachments") or []:
+            if isinstance(a, dict):
+                a["shown"] = True
         store.save(m)
         _shadow_ledger_safe({
             "kind": "brief", "mission_id": mission["id"],
@@ -2564,8 +2607,9 @@ def _publish_delegate_chat(mission):
         except Exception:           # noqa: BLE001
             pass
         # 3. on disk, invisible
-        rec = chat_store.create(cwd=_shadow_workdir_for_delegates(),
-                                branch="", title=title)
+        rec = chat_store.create(
+            cwd=(mission.get("workdir") or _shadow_workdir_for_delegates()),
+            branch="", title=title)
         # 4. visible
         chat_store.begin_segment(rec, "claude", sid)
         # 5. the durable link
@@ -2649,12 +2693,12 @@ async def _ensure_task_chat(mission):
         chat.session_id = mission["task_chat_session"]
     if chat.session_id:
         try:
-            await chat.resume(lambda sid: _shadow_args(session_id=sid),
+            await chat.resume(lambda sid: _task_shadow_args(session_id=sid),
                               _shadow_workdir(), register=register_runtime)
             return chat
         except Exception:               # noqa: BLE001 -- start fresh below
             chat.session_id = None
-    await chat.start(_shadow_args, _shadow_workdir(), mission,
+    await chat.start(_task_shadow_args, _shadow_workdir(), mission,
                      register=register_runtime,
                      publish=_publish_task_chat(mission))
     return chat
@@ -2689,6 +2733,9 @@ async def _delegate_spawn(mission):
             store.save(m)
     except Exception:                   # noqa: BLE001 -- never fail a spawn
         pass
+    # ITS OWN COPY OF THE PROJECT (2026-10-08), made BEFORE the brief: the
+    # brief names the folder to work in, and it must name the copy.
+    mission = await _prepare_task_copy(mission)
     # Shadow v4 (C2): the task's Shadow chat writes the brief when the
     # record has none; a record that already carries one (Retry, a founder
     # or Now-chat manifest) is sent as it is.
@@ -2717,11 +2764,39 @@ async def _delegate_spawn(mission):
             _mission_engine.open_first_turn(
                 _mission_engine.MissionStore(), mid)
 
+    import shadow_workspace as _shadow_workspace
     return await shadow_runner.spawn_delegate_session(
-        _worker_args, _shadow_workdir_for_delegates(),
-        _delegate_manifest(mission), register_runtime,
+        _worker_args, mission.get("workdir") or _shadow_workdir_for_delegates(),
+        _shadow_workspace.note_for_worker(mission.get("workspace"))
+        + _delegate_manifest(mission), register_runtime,
         publish=_publish_delegate_chat(mission),
         on_first_turn=_name_the_first_turn)
+
+
+async def _prepare_task_copy(mission):
+    """Give a task Shadow starts its own copy of the project
+    (shadow_workspace). Returns the mission with `workspace` and `workdir`
+    stamped -- or unchanged, and the task runs in the shared folder as
+    before, when the project is not a git repo, copies are off, or making
+    one failed. The copy takes a while (measured ~100s on the Sutra repo),
+    so it runs off the event loop."""
+    if (mission or {}).get("target_mode") != "new" or not mission.get("id"):
+        return mission
+    import shadow_workspace as _shadow_workspace
+    try:
+        ws = await asyncio.get_event_loop().run_in_executor(
+            None, _shadow_workspace.prepare, mission,
+            _shadow_workdir_for_delegates())
+    except Exception:                   # noqa: BLE001 -- never fail a spawn
+        ws = None
+    if not ws:
+        return mission
+
+    def stamp(m):
+        m["workspace"] = ws
+        m["workdir"] = ws["cwd"]
+    _shadow_workspace._update(mission["id"], stamp)
+    return dict(mission, workspace=ws, workdir=ws["cwd"])
 
 
 async def _default_delegate_spawner(mission):
@@ -2928,6 +3003,14 @@ async def _shadow_recover():
             shadow_runner.recover_on_boot()
         except Exception:
             pass
+        # a task that ended while the app was down still gets its end:
+        # kept, or left for the founder (shadow_workspace, 2026-10-08)
+        try:
+            import shadow_workspace as _shadow_workspace
+            asyncio.get_event_loop().run_in_executor(
+                None, _shadow_workspace.sweep)
+        except Exception:
+            pass
         # a start the last process accepted but never finished: remember
         # which, clear the stamp as before, and START THEM AGAIN below once
         # the spawner is set (founder, 2026-10-08: "Start the task" should
@@ -2948,6 +3031,10 @@ async def _shadow_recover():
             pass
         try:
             shadow_runner.set_default_provisioner(_default_delegate_spawner)
+        except Exception:
+            pass
+        try:
+            shadow_runner.set_default_precheck(_shadow_start_precheck)
         except Exception:
             pass
         # ...the interrupted starts, started again now the spawner exists.
@@ -3155,6 +3242,122 @@ def _carry_refresh(sess):
     return _mission_engine.carry_note(sess)
 
 
+def _attachment_ids(body):
+    """(ids, {id: name}) for the images a request carries as
+    `attachments`: [{"id", "name"}] or ["img-..."]. Unknown ids are dropped;
+    more than shadow_attachments.MAX_PER_MESSAGE is refused."""
+    raw = body.get("attachments") or []
+    ids, names = [], {}
+    for a in raw if isinstance(raw, list) else []:
+        aid = a.get("id") if isinstance(a, dict) else a
+        if isinstance(aid, str):
+            ids.append(aid)
+            if isinstance(a, dict) and a.get("name"):
+                names[aid] = str(a["name"])[:80]
+    return _shadow_attachments.valid_ids(ids), names
+
+
+def _link_attachments(mid, ids, source, names=None):
+    """Keep images on a task (shadow_attachments.link) and save. Returns the
+    task as it now reads, or None. Never raises: an image that cannot be
+    linked must not cost the founder's message."""
+    try:
+        store = _mission_engine.MissionStore()
+        m = store.load(mid)
+        if m is None:
+            return None
+        _shadow_attachments.link(m, ids, source, names)
+        store.save(m)
+        return store.load(mid)
+    except Exception:                    # noqa: BLE001
+        return None
+
+
+@app.post("/api/shadow/attachments")
+async def api_shadow_attachment_upload(request: Request):
+    """Store one file the founder attached in a Shadow box: an image, a PDF
+    or a text file, checked by its content. Returns {id, name, media_type,
+    kind, bytes, url}."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    body = await request.json()
+    try:
+        got = _shadow_attachments.save(body.get("name"),
+                                       body.get("content_b64"))
+    except _shadow_attachments.Refused as exc:
+        raise HTTPException(400, str(exc))
+    return {"id": got["id"], "name": got["name"],
+            "media_type": got["media_type"], "kind": got["kind"],
+            "bytes": got["bytes"],
+            "url": "/api/shadow/attachments/%s" % got["id"]}
+
+
+@app.get("/api/shadow/attachments/{aid}")
+async def api_shadow_attachment(aid: str):
+    """The file itself: thumbnails and "open" in the conversation.
+
+    A TEXT FILE IS ALWAYS SERVED AS PLAIN TEXT. An attached .html or .js is
+    words for Shadow to read, and serving it as a page from this origin would
+    let a script in it run inside the app. nosniff stops the browser
+    guessing otherwise."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    got = _shadow_attachments.read(aid)
+    if not got or not got[0]:
+        raise HTTPException(404, "no such file")
+    media = got[0]
+    if _shadow_attachments.kind_of(media) == "text":
+        media = "text/plain; charset=utf-8"
+    from starlette.responses import Response
+    return Response(content=got[1], media_type=media,
+                    headers={"Cache-Control": "private, max-age=86400",
+                             "X-Content-Type-Options": "nosniff"})
+
+
+def _conv_retry(fn, *args):
+    """A conversation write, retried over a concurrent write; never raises
+    (a record that cannot be saved must never cost the turn)."""
+    import shadow_conversations as _shadow_conversations
+    for _ in range(4):
+        try:
+            return getattr(_shadow_conversations, fn)(*args)
+        except ValueError:
+            continue
+        except Exception:               # noqa: BLE001
+            return None
+    return None
+
+
+def _conv_turn_begin(cid, body):
+    """THE SERVER KEEPS THE CONVERSATION (founder, 2026-10-09: a reply that
+    took minutes was lost when the page was refreshed, and the screenshot
+    with it). The founder's line -- with its attachments -- and a "Shadow is
+    answering" mark are written BEFORE the turn, so a reload shows both."""
+    msg = (body.get("message") or "").strip()
+    imgs = body.get("attachments") or []
+    _conv_retry("create", cid, msg or "(attached files)")
+    if body.get("conversation_new"):
+        _conv_retry("add_images_to_opening", cid, imgs)
+    else:
+        _conv_retry("append", cid, "founder", msg or "(attached files)", imgs)
+    _conv_retry("set_pending", cid, True)
+
+
+def _conv_turn_end(cid, out, err):
+    """...and the reply is written by the server when it lands, whether or
+    not the page that asked is still open."""
+    out = out or {}
+    if out.get("reply"):
+        _conv_retry("append", cid, "shadow", out["reply"])
+    elif err is not None:
+        _conv_retry("append", cid, "shadow",
+                    "I couldn't answer that (%s). Send it again." % err)
+    m = out.get("mission") or ((out.get("missions") or [None])[0])
+    if isinstance(m, dict) and m.get("id"):
+        _conv_retry("bind_mission", cid, m["id"])
+    _conv_retry("set_pending", cid, False)
+
+
 @app.post("/api/shadow/chat")
 async def api_shadow_chat(request: Request):
     if not providers.shadow_enabled():
@@ -3163,9 +3366,40 @@ async def api_shadow_chat(request: Request):
         body = await request.json()
     except Exception:
         raise HTTPException(400, "body must be json")
+    import shadow_conversations as _shadow_conversations
+    cid = str(body.get("conversation_id") or "")
+    if not _shadow_conversations.ID_RE.match(cid):
+        cid = ""
+    if cid:
+        _conv_turn_begin(cid, body)
+    out, err = None, None
+    try:
+        out = await _shadow_chat_turn(body)
+    except HTTPException as exc:
+        err = str(exc.detail)
+        raise
+    except BaseException as exc:        # noqa: BLE001 -- cancel included
+        err = str(exc) or type(exc).__name__
+        raise
+    finally:
+        if cid:
+            _conv_turn_end(cid, out, err)
+    if cid:
+        out = dict(out, saved=True)
+    return out
+
+
+async def _shadow_chat_turn(body):
     msg = (body.get("message") or "").strip()
-    if not msg:
+    # IMAGES THE FOUNDER ATTACHED (2026-10-08): shown to Shadow with the line;
+    # an image alone is a message too.
+    try:
+        img_ids, img_names = _attachment_ids(body)
+    except _shadow_attachments.Refused as exc:
+        raise HTTPException(400, str(exc))
+    if not msg and not img_ids:
         raise HTTPException(400, "message required")
+    msg = msg or "(see the attached file)"
     # v10: the tab the founder is typing in. Scope rides the TURN, not the
     # process -- one Shadow session serves every tab.
     scope_id = (body.get("scope_id") or "").strip() or None
@@ -3209,7 +3443,12 @@ async def api_shadow_chat(request: Request):
         pre = _carry_refresh(sess) + pre
         if intake:
             pre += SHADOW_INTAKE_PREFIX
-        await sess.rt.send_user_frame(pre + msg)
+        if img_ids:
+            await sess.rt.send_user_frame(
+                pre + _shadow_attachments.note(img_ids, img_names) + msg,
+                images=_shadow_attachments.blocks(img_ids))
+        else:
+            await sess.rt.send_user_frame(pre + msg)
         (sess.session_id, _t, got_result,
          err, _e) = await sess.rt.demux_turn(collect, sess.session_id)
     if err:
@@ -3334,6 +3573,11 @@ async def api_shadow_chat(request: Request):
                     pass
             created = [_mission_engine.MissionStore().load(c["id"]) or c
                        for c in created]
+        if img_ids:
+            # each task this line opened keeps the images, so its own Shadow
+            # chat can show them to the brief writer and the decider
+            created = [_link_attachments(c["id"], img_ids, "intake",
+                                         img_names) or c for c in created]
         out["missions"] = created
         out["mission"] = created[0]
     if "remember" in blocks:
@@ -3367,6 +3611,7 @@ async def api_shadow_chat(request: Request):
 import mission_engine as _mission_engine
 import shadow_intervention as _shadow_intervention
 import shadow_knows as _shadow_knows
+import shadow_attachments as _shadow_attachments
 import goal_lifecycle as _goal_lifecycle
 import goal_store as _goal_store
 import shadow_precedence
@@ -3450,6 +3695,96 @@ async def api_shadow_instruction_write(request: Request):
             row["revoked_at"] = row.pop("ts", None)
         return shadow_ledger.append("instructions", row)
     raise HTTPException(400, "action must be capture|confirm|revoke")
+
+
+@app.get("/api/shadow/tasks/{mid}/results")
+async def api_shadow_task_results(mid: str):
+    """What this task made (2026-10-09, from Paperclip): its files and where
+    they are (shadow_results). On demand -- a copy's list runs git."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    import shadow_results as _shadow_results
+    m = _mission_engine.MissionStore().load(mid)
+    if m is None:
+        raise HTTPException(404, "no such task")
+    return await asyncio.get_event_loop().run_in_executor(
+        None, _shadow_results.results, m)
+
+
+@app.get("/api/shadow/tasks/{mid}/results/file")
+async def api_shadow_task_result_file(mid: str, path: str = ""):
+    """Open one file the task made: text as plain text (never a page that
+    runs in the app), an image or a PDF as itself, anything else as a
+    download. Only a listed file, only inside the task's folder."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    import shadow_results as _shadow_results
+    m = _mission_engine.MissionStore().load(mid)
+    if m is None:
+        raise HTTPException(404, "no such task")
+    try:
+        media, blob, download = await asyncio.get_event_loop().run_in_executor(
+            None, _shadow_results.open_file, m, path)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    except ValueError as exc:
+        raise HTTPException(413, str(exc))
+    from starlette.responses import Response
+    headers = {"X-Content-Type-Options": "nosniff",
+               "Cache-Control": "no-store"}
+    if download:
+        headers["Content-Disposition"] = 'attachment; filename="%s"' % (
+            download.replace('"', "")[:120])
+    return Response(content=blob, media_type=media, headers=headers)
+
+
+@app.post("/api/shadow/tasks/{mid}/workspace")
+async def api_shadow_task_workspace(mid: str, request: Request):
+    """The founder's Keep / Throw away on a task's own copy (2026-10-08):
+    a task that ended without finishing, or whose changes clashed with the
+    founder's own. {"action": "keep" | "discard"}."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    import shadow_workspace as _shadow_workspace
+    body = await request.json()
+    action = str((body or {}).get("action") or "")
+    try:
+        out = await asyncio.get_event_loop().run_in_executor(
+            None, _shadow_workspace.decide, mid, action)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return {"workspace": out}
+
+
+@app.get("/api/shadow/budget")
+async def api_shadow_budget():
+    """This month's spend and the budget (2026-10-08)."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    import shadow_costs as _shadow_costs
+    return _shadow_costs.status()
+
+
+@app.post("/api/shadow/budget")
+async def api_shadow_budget_set(request: Request):
+    """Set the monthly budget in dollars; 0 or empty clears it. Raising it
+    past what is spent lets tasks paused on the budget continue (Continue);
+    nothing is resumed on its own."""
+    if not providers.shadow_enabled():
+        raise HTTPException(403, "the shadow flag is off")
+    import shadow_costs as _shadow_costs
+    body = await request.json()
+    try:
+        _shadow_costs.set_budget((body or {}).get("monthly_usd"))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    st = _shadow_costs.status()
+    _shadow_ledger_safe({
+        "kind": "setting", "mission_id": None,
+        "summary": "monthly budget set to %s (spent $%.2f this month)"
+                   % (("$%.2f" % st["budget_usd"]) if st["budget_usd"]
+                      else "none", st["spent_usd"])})
+    return st
 
 
 @app.get("/api/shadow/settings")
@@ -5017,12 +5352,27 @@ async def api_shadow_task_chat(mid: str, request: Request):
         raise HTTPException(403, "the shadow flag is off")
     body = await request.json()
     message = (body.get("message") or "").strip()
-    if not message:
+    # IMAGES (2026-10-08): shown to this task's Shadow chat with the line and
+    # kept on the task, so its decisions can pass one on to the worker
+    try:
+        img_ids, img_names = _attachment_ids(body)
+    except _shadow_attachments.Refused as exc:
+        raise HTTPException(400, str(exc))
+    if not message and not img_ids:
         raise HTTPException(400, "message required")
+    message = message or "(see the attached file)"
     store = _mission_engine.MissionStore()
     mission = store.load(mid)
     if mission is None:
         raise HTTPException(404, "no task %s" % mid)
+    if img_ids:
+        try:
+            _shadow_attachments.link(mission, img_ids, "talk", img_names,
+                                     shown=True)
+        except _shadow_attachments.Refused as exc:
+            raise HTTPException(400, str(exc))
+        store.save(mission)
+        mission = store.load(mid)
     # v4.1 (V4-9, founder 2026-09-21): DONE IS NOT A DEAD END. This used to
     # answer 409 "this task has finished" -- the founder gave a finished task
     # more to do and was told no. The words now REOPEN the task (same record,
@@ -5061,9 +5411,14 @@ async def api_shadow_task_chat(mid: str, request: Request):
     pending = _mission_engine.pending_asks_text(mission)
     try:
         chat = await _ensure_task_chat(mission)
-        reply, blocks = await chat.talk(
-            (pending + "[The founder says:] " + message) if pending
-            else message)
+        said = ((pending + "[The founder says:] " + message) if pending
+                else message)
+        if img_ids:
+            reply, blocks = await chat.talk(
+                _shadow_attachments.note(img_ids, img_names) + said,
+                images=_shadow_attachments.blocks(img_ids))
+        else:
+            reply, blocks = await chat.talk(said)
     except Exception as exc:            # noqa: BLE001
         if not was_terminal:
             raise HTTPException(
@@ -5157,7 +5512,26 @@ async def api_shadow_missions():
     if not providers.shadow_enabled():
         raise HTTPException(403, "the shadow flag is off")
     store = _mission_engine.MissionStore()
-    return {"missions": store.list()}
+    missions = store.list()
+    # WHAT EACH TASK HAS COST so far (2026-10-08), from shadow_costs.
+    try:
+        import shadow_costs as _shadow_costs
+        _cost = _shadow_costs.by_mission()
+    except Exception:                   # noqa: BLE001 -- a figure, never a 500
+        _cost = {}
+    for m in missions:
+        if m.get("id") in _cost:
+            m["cost_usd"] = round(_cost[m["id"]], 4)
+    # A WORKER GONE QUIET MID-TURN is said on its task before the 4-minute
+    # stall end (founder, 2026-10-08). Computed per read, never stored.
+    for m in missions:
+        try:
+            quiet = shadow_runner.quiet_report(m)
+        except Exception:               # noqa: BLE001 -- a hint, never a 500
+            quiet = None
+        if quiet:
+            m["quiet"] = quiet
+    return {"missions": missions}
 
 
 # ----------------------------------------------- shadow conversations ----
@@ -5328,6 +5702,8 @@ def _mark_start_requested(store, mid):
     # a fresh start gets fresh automatic retries (shadow_runner
     # START_RETRY_DELAYS); the founder's own press of Start included
     m["start_attempts"] = 0
+    # ...and Try again on a task that could not start clears the reason
+    m.pop("start_blocked", None)
     try:
         store.save(m)
     except ValueError:
@@ -5335,6 +5711,48 @@ def _mark_start_requested(store, mid):
         # truthful face and the stamp is not needed
         return store.load(mid)
     return m
+
+
+def _shadow_start_precheck(mission):
+    """Why this task's worker CANNOT start right now, in the founder's words
+    -- or None. Only what is certain to sink the start: the same refusals the
+    spawn itself would hit (_shadow_args), a Claude that is not on disk, a
+    work folder that is gone. Anything uncertain returns None and the start
+    goes ahead with its retries, so this can only make a doomed start fail
+    sooner and say why, never stop one that could have worked."""
+    try:
+        import shadow_costs as _shadow_costs
+        if _shadow_costs.spent_up():
+            return _shadow_costs.spent_up_reason()
+    except Exception:                   # noqa: BLE001
+        pass
+    try:
+        _shadow_args()
+    except HTTPException as exc:
+        detail = str(exc.detail or "")
+        if "run on Claude only" in detail:
+            return ("Shadow's tasks run on Claude, and a different AI is "
+                    "selected in Settings. Switch to Claude, then try again.")
+        return "Claude isn't set up on this computer yet."
+    except Exception:                   # noqa: BLE001 -- uncertain: go ahead
+        return None
+    try:
+        prov = providers.provider_by_id(
+            providers.active_provider_detail()["id"])
+        binp = (prov or {}).get("bin_path")
+        if binp and os.path.isabs(binp) and not os.path.exists(binp):
+            return ("Claude can't be found at %s any more. Reinstall it or "
+                    "pick it again in Settings, then try again." % binp)
+    except Exception:                   # noqa: BLE001
+        pass
+    try:
+        wd = _shadow_workdir_for_delegates()
+        if wd and not os.path.isdir(os.path.expanduser(wd)):
+            return ("The work folder %s doesn't exist any more. Pick a "
+                    "folder in Settings, then try again." % wd)
+    except Exception:                   # noqa: BLE001
+        pass
+    return None
 
 
 def _clear_stale_start_requests():
@@ -6024,12 +6442,22 @@ async def api_shadow_mission_act(mid: str, request: Request):
                 raise HTTPException(422, {"detail": "some answers need a fix",
                                           "intervention_id": iv.get("id"),
                                           "errors": errors})
+            # IMAGES WITH THE ANSWER (2026-10-08): kept on the task and shown
+            # to Shadow with its next decision, which decides whether the
+            # worker needs one
+            try:
+                img_ids, img_names = _attachment_ids(body)
+                _shadow_attachments.link(m, img_ids, "answer", img_names)
+            except _shadow_attachments.Refused as exc:
+                raise HTTPException(400, str(exc))
             m["founder_response"] = {
                 "intervention_id": iv.get("id"),
                 "question": iv.get("question") or "",
                 "answered_at": _mission_engine._now(),
                 "values": clean,
                 "summary": _shadow_intervention.summarise(iv, clean),
+                **({"attachments": [{"id": i, "name": img_names.get(i) or i}
+                                    for i in img_ids]} if img_ids else {}),
                 # WHAT THEY WERE LOOKING AT WHEN THEY ANSWERED (founder,
                 # 2026-09-23). `intervention` is popped on the line below --
                 # it has been answered and must not draw a live form again --
@@ -6212,6 +6640,13 @@ async def api_shadow_mission_act(mid: str, request: Request):
             # the chat Shadow MADE for this task goes with it; a founder-owned
             # chat Shadow only visited never does (see _delete_delegate_chat)
             chat = _delete_delegate_chat(m)
+            try:                        # its own copy goes with it
+                import shadow_workspace as _shadow_workspace
+                if (m.get("workspace") or {}).get("state") in (
+                        "active", "pending", "clash"):
+                    _shadow_workspace.discard(m["workspace"])
+            except Exception:           # noqa: BLE001
+                pass
             # LAST. The mission record is the only thing that still names the
             # session and the chat, so removing it first would strand both
             # with nothing left to find them by.

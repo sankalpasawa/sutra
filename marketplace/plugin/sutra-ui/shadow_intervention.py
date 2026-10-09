@@ -43,7 +43,14 @@ SCHEMA_VERSION = 1
 ACTIVE_FIELD_TYPES = (
     "boolean", "choice", "multi_choice", "text", "long_text", "number",
     "currency", "percent", "date", "datetime", "url", "email", "ranking",
+    "verdicts",
 )
+
+#: A VERDICT ON EACH ITEM (2026-10-08, from Paperclip's per-item verdicts):
+#: Shadow lists things -- five headlines, three proposed changes -- and the
+#: founder taps one of these on each, instead of describing in prose which
+#: ones they want. `options` are the items; the value maps item -> verdict.
+VERDICTS = ("approve", "reject", "later")
 
 #: RESERVED, AND DELIBERATELY NOT ANSWERABLE YET. The vocabulary is declared
 #: here so the protocol is the extension point rather than the schema, but a
@@ -122,15 +129,16 @@ def _field(raw):
         "options": [],
         "constraints": {},
     }
-    if ftype in ("choice", "multi_choice", "ranking"):
+    if ftype in ("choice", "multi_choice", "ranking", "verdicts"):
         seen = set()
         for o in (raw.get("options") or [])[:MAX_OPTIONS]:
             opt = _option(o)
             if opt and opt["value"] not in seen:
                 seen.add(opt["value"])
                 out["options"].append(opt)
-        if len(out["options"]) < 2:
-            return None             # a choice of one is not a choice
+        # a choice of one is not a choice -- but ONE item can be judged
+        if len(out["options"]) < (1 if ftype == "verdicts" else 2):
+            return None
     c = raw.get("constraints")
     if isinstance(c, dict):
         for k in ("min", "max", "min_len", "max_len", "pattern",
@@ -291,6 +299,26 @@ def _v_choice(v, f):
     return s
 
 
+def _v_verdicts(v, f):
+    """{item: approve|reject|later}. Required means every item has one;
+    otherwise at least one is enough (the caller already refused empty)."""
+    if not isinstance(v, dict):
+        raise ValueError("expected a verdict for each item")
+    allowed = [o["value"] for o in f["options"]]
+    out = {}
+    for item, verdict in v.items():
+        s = str(item).strip()
+        if s not in allowed:
+            raise ValueError("%r is not one of the listed items" % s)
+        vv = str(verdict).strip().lower()
+        if vv not in VERDICTS:
+            raise ValueError("a verdict is approve, reject or later")
+        out[s] = vv
+    if f.get("required") and len(out) < len(allowed):
+        raise ValueError("give every item a verdict")
+    return {k: out[k] for k in allowed if k in out}
+
+
 def _v_multi(v, f):
     if isinstance(v, str):
         v = [v]
@@ -409,12 +437,13 @@ FIELD_TYPES = {
     "url": _v_url,
     "email": _v_email,
     "ranking": _v_ranking,
+    "verdicts": _v_verdicts,
 }
 
 
 def _empty(v):
     return v is None or (isinstance(v, str) and not v.strip()) \
-        or (isinstance(v, (list, tuple)) and len(v) == 0)
+        or (isinstance(v, (list, tuple, dict)) and len(v) == 0)
 
 
 def validate_values(request, values):
@@ -457,7 +486,14 @@ def summarise(request, clean):
     by_key = {f["key"]: f for f in (request or {}).get("fields") or []}
     for key, value in (clean or {}).items():
         f = by_key.get(key) or {"label": key}
-        if isinstance(value, (list, tuple)):
+        if isinstance(value, dict):
+            # verdicts: each item by its label, so Shadow reads what was
+            # judged and not an opaque key
+            names = {o["value"]: o.get("label") or o["value"]
+                     for o in f.get("options") or []}
+            shown = "; ".join("%s: %s" % (names.get(k, k), v)
+                              for k, v in value.items())
+        elif isinstance(value, (list, tuple)):
             shown = ", ".join(str(x) for x in value)
         else:
             shown = str(value)
