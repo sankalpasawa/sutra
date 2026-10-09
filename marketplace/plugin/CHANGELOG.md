@@ -2,6 +2,14 @@
 
 **status**: active · **updated**: 2026-09-28
 
+## 2.306.25 (2026-10-09)
+
+- Mac: Settings > Download & install now installs the incremental update (about 3 MB) instead of returning an error and falling back to the full 259 MB DMG.
+- Windows: incremental updates. Each release publishes Sutra-win-x64.manifest.json and .delta.tar.xz; the app rebuilds its install folder from them, checks every file, and swaps it in with rollback. Any miss downloads the full installer as before.
+- Windows: the update helper starts with CREATE_NO_WINDOW instead of DETACHED_PROCESS.
+- New tests: test_update_manual_button.py, test_update_e2e_windows.py; test_update_delta.py now passes on Windows.
+- Released from Windows without the local release-script gates or the Mac beta smoke (23 Python gate files fail on Windows on main); CI's guard, panel and engine checks ran.
+
 ## Unreleased
 
 ### J1 and J2 as the department page describes them
