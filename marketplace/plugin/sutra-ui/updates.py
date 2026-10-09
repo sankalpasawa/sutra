@@ -153,6 +153,25 @@ def _desktop_asset():
     return WIN_SETUP_ASSET if _IS_WIN else "Sutra-%s.dmg" % _arch()
 
 
+def _delta_arch():
+    """The delta lane's asset suffix: Sutra-<this>.manifest.json and
+    .delta.tar.xz. A Windows install is never the Mac's x86_64, so it has its
+    own name, which release-windows.yml publishes (WIN_DELTA_ARCH there)."""
+    return "win-x64" if _IS_WIN else _arch()
+
+
+def _win_bundle_id(root):
+    """The app id a Windows install was built with, for the same continuity
+    check the Mac makes against CFBundleIdentifier. electron-builder writes no
+    Info.plist; the channel marker CI ships in resources/ decides the id, with
+    the same mapping release-windows.yml passes to -c.appId."""
+    try:
+        ch = (Path(root) / "resources" / "channel").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+    return {"stable": "os.sutra.ui", "beta": "os.sutra.ui.beta"}.get(ch, "")
+
+
 # ------------------------------------------------------------- desktop ------
 
 def app_bundle():
@@ -187,6 +206,13 @@ def win_install():
     folder -- but only if this file really lives under it. A source checkout
     that inherited the variable must not look installed.
     """
+    # Test seam, the Windows twin of SUTRA_UI_APP_BUNDLE: the end-to-end
+    # harness runs this module from a checkout against a fixture install
+    # folder. Never set in production.
+    forced = os.environ.get("SUTRA_UI_WIN_INSTALL")
+    if forced:
+        p = Path(forced)
+        return p if (p / _win_exe_name()).is_file() else None
     exe = os.environ.get("SUTRA_DESKTOP_EXE") or ""
     if not exe or not os.path.isfile(exe):
         return None
@@ -233,10 +259,11 @@ def _latest_desktop():
     dmg = assets.get(want)
     # The delta lane's two assets. Both optional: a release without them is
     # simply a full-image release, which is what every release was before.
-    # macOS bundles only: the x86_64 pack is a Mac's, never a Windows install's.
-    man_name = "Sutra-%s.manifest.json" % _arch()
-    pack_name = "Sutra-%s.delta.tar.xz" % _arch()
-    man, pack = (None, None) if _IS_WIN else (assets.get(man_name), assets.get(pack_name))
+    # Named per platform (_delta_arch): the x86_64 pack is a Mac's, never a
+    # Windows install's.
+    man_name = "Sutra-%s.manifest.json" % _delta_arch()
+    pack_name = "Sutra-%s.delta.tar.xz" % _delta_arch()
+    man, pack = assets.get(man_name), assets.get(pack_name)
     return {
         "version": version,
         "tag": tag,
@@ -580,8 +607,11 @@ def _fetch_bytes(url, limit):
 
 
 def _staged_app_name(version):
+    """A rebuilt install's folder in the staging dir. The .app suffix marks a
+    rebuilt tree on Windows too: staging, sweeping and clear_pending all key
+    on it, and the helper renames the folder into place whatever it is called."""
     safe = re.sub(r"[^0-9.]", "", str(version or "")).strip(".") or "unknown"
-    return "Sutra-%s-%s.app" % (_arch(), safe)
+    return "Sutra-%s-%s.app" % (_delta_arch(), safe)
 
 
 def _delta_reconstruct(latest, installed_version, work, app):
@@ -595,8 +625,10 @@ def _delta_reconstruct(latest, installed_version, work, app):
              "sha256_url": ..., "tree_sha256": ..., "asset": ..., "delta": stats}.
     """
     import updates_delta as ud
-    arch = _arch()
-    team, bundle_id = _bundle_identity(app)
+    arch = _delta_arch()
+    bundle_id = _win_bundle_id(app) if _IS_WIN else _bundle_identity(app)[1]
+    if not bundle_id:
+        raise ud.DeltaMiss("cannot tell which app is installed at %s" % app)
     chain = []          # newest first: {version, manifest, manifest_sha256, pack_url, pack_sha256_url, pack_size}
     url = latest.get("manifest_url")
     sha_url = latest.get("manifest_sha256_url")
@@ -654,14 +686,19 @@ def _delta_reconstruct(latest, installed_version, work, app):
 
     # The bundle-level gates, BEFORE staging: a rebuilt tree that codesign or
     # Gatekeeper will not accept is a miss, not something to hand the helper.
-    p = _run(["codesign", "--verify", "--deep", "--strict", str(dest)], timeout=300)
-    if p.returncode != 0:
-        raise RuntimeError("the rebuilt bundle failed codesign: %s"
-                           % (p.stderr or p.stdout or "").strip()[:300])
-    p = _run(["spctl", "-a", "-t", "execute", "-v", str(dest)])
-    if p.returncode != 0:
-        raise RuntimeError("the rebuilt bundle is not accepted by Gatekeeper: %s"
-                           % (p.stderr or p.stdout or "").strip()[:300])
+    # Windows has no signature to check (the installer is unsigned too): there
+    # the gate is the one the full installer gets, the PUBLISHED checksum --
+    # of the manifest, required above -- plus every rebuilt file re-hashed
+    # against it inside reconstruct().
+    if not _IS_WIN:
+        p = _run(["codesign", "--verify", "--deep", "--strict", str(dest)], timeout=300)
+        if p.returncode != 0:
+            raise RuntimeError("the rebuilt bundle failed codesign: %s"
+                               % (p.stderr or p.stdout or "").strip()[:300])
+        p = _run(["spctl", "-a", "-t", "execute", "-v", str(dest)])
+        if p.returncode != 0:
+            raise RuntimeError("the rebuilt bundle is not accepted by Gatekeeper: %s"
+                               % (p.stderr or p.stdout or "").strip()[:300])
     man_path = work / (latest.get("manifest_asset") or "Sutra-%s.manifest.json" % arch)
     man_path.write_bytes(chain[0]["manifest_raw"])
     return {"app": str(dest), "manifest_path": str(man_path),
@@ -714,7 +751,7 @@ def download_and_verify(dest_dir=None):
     # says why, so a support log shows "delta update not possible (...)"
     # rather than a silent 300 MB download.
     delta_note = None
-    app = app_bundle()
+    app = _installed_app()
     if DELTA_ENABLED and latest.get("delta") and app:
         try:
             got = _delta_reconstruct(latest, _installed_desktop_version(), d, app)
@@ -1085,6 +1122,9 @@ def install_desktop(dmg, app_path=None, wait_pid=None, wait_start=None,
     blocked = install_blocker(app)
     if blocked:
         raise RuntimeError(blocked)
+    if not dmg or not str(dmg).strip():
+        # Path(None) is a TypeError that no caller catches; Path("") is ".".
+        raise RuntimeError("no downloaded update to install")
     artifact = Path(dmg)
     if artifact.is_symlink():
         raise RuntimeError("the staged artifact is a symlink: %s" % dmg)
@@ -1127,10 +1167,12 @@ def install_desktop(dmg, app_path=None, wait_pid=None, wait_start=None,
 
 
 _WIN_INSTALLER = r"""# Written by sutra-ui updates.py. The Windows leg of the desktop updater: waits
-# for the app to be GONE, then runs the verified NSIS installer silently over
-# the existing install. The checksum was checked before this ran; from here on
-# there is no one to ask. Inputs arrive as environment variables, as on macOS:
-# SETUP APP_DIR APP_EXE LOG WAIT_PID RELAUNCH EXPECT_VERSION RESULT.
+# for the app to be GONE, then either runs the verified NSIS installer silently
+# over the existing install (ARTIFACT_KIND=setup) or renames the install folder
+# the delta lane rebuilt and verified into place (ARTIFACT_KIND=app). The
+# checksum was checked before this ran; from here on there is no one to ask.
+# Inputs arrive as environment variables, as on macOS:
+# SETUP ARTIFACT_KIND APP_DIR APP_EXE LOG WAIT_PID RELAUNCH EXPECT_VERSION RESULT.
 $ErrorActionPreference = 'Stop'
 
 function Log([string]$m) {
@@ -1218,6 +1260,105 @@ if ($left.Count -gt 0) {
   Die 'procs-alive' ('processes are still running from ' + $env:APP_DIR + ': ' + (($left | ForEach-Object { $_.ProcessName }) -join ', '))
 }
 
+# 3a. A FOLDER the delta lane rebuilt and verified file by file: no installer
+#     runs. It goes beside the install, the install is renamed aside, the new
+#     folder renamed into its place, and the old one deleted only once the new
+#     exe reports the staged version. Every failure before that puts the old
+#     folder back. The uninstaller is not part of a release tree (NSIS writes it
+#     at install time), so the current one is carried across; the Apps list
+#     entry is keyed by it and gets the new version.
+if ($env:ARTIFACT_KIND -eq 'app') {
+  $app = $env:APP_DIR.TrimEnd('\')
+  $new = $app + '.sutra-new'
+  $old = $app + '.sutra-old'
+  # A folder can be locked for a moment by a scanner or the indexer after the
+  # app quits; a rename that fails is retried before it counts.
+  function Try-Move([string]$from, [string]$to) {
+    for ($i = 0; $i -lt 20; $i++) {
+      try { [System.IO.Directory]::Move($from, $to); return $true } catch { Start-Sleep -Milliseconds 500 }
+    }
+    return $false
+  }
+  # A previous attempt that died between the two renames left the install
+  # aside and nothing in its place: put it back before anything else.
+  if (-not (Test-Path -LiteralPath $app) -and (Test-Path -LiteralPath $old)) {
+    Log ('restoring ' + $old + ', left aside by an earlier attempt')
+    if (-not (Try-Move $old $app)) { Die 'swap-recover' ('the install is at ' + $old + ' and could not be put back') }
+  }
+  foreach ($p in @($new, $old)) {
+    if (Test-Path -LiteralPath $p) {
+      try { Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction Stop }
+      catch { Die 'swap-prepare' ('could not clear ' + $p + ': ' + $_.Exception.Message) }
+    }
+  }
+  # Beside the install, so the swap is two renames on one volume. The staging
+  # folder normally is on that volume and moves instantly; an install on
+  # another drive gets a copy, and the staged folder stays for a retry.
+  $moved = $false
+  try { [System.IO.Directory]::Move($env:SETUP, $new); $moved = $true } catch {}
+  if (-not $moved) {
+    Log ('copying ' + $env:SETUP + ' to ' + $new)
+    $rc = Join-Path $env:SystemRoot 'System32\robocopy.exe'
+    & $rc $env:SETUP $new /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -ge 8) { Die 'swap-copy' ('robocopy exited ' + $LASTEXITCODE + ' copying the new install') }
+  }
+  function Unstage {
+    # The new folder back where staging expects it, so a retry needs no download.
+    if ($moved -and (Test-Path -LiteralPath $new)) { [void](Try-Move $new $env:SETUP) }
+    elseif (Test-Path -LiteralPath $new) { try { Remove-Item -LiteralPath $new -Recurse -Force } catch {} }
+  }
+  try {
+    Get-ChildItem -LiteralPath $app -Filter 'Uninstall*.exe' -File -ErrorAction Stop |
+      ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $new -Force -ErrorAction Stop }
+  } catch { Unstage; Die 'swap-prepare' ('could not carry the uninstaller across: ' + $_.Exception.Message) }
+
+  if (-not (Try-Move $app $old)) { Unstage; Die 'swap' ('could not move ' + $app + ' aside; it is untouched') }
+  if (-not (Try-Move $new $app)) {
+    if (-not (Try-Move $old $app)) { Die 'swap-rollback' ('the old install is at ' + $old + ' and could not be put back') }
+    Unstage; Die 'swap' ('could not move the new install into ' + $app + '; the old one is back')
+  }
+  $fv = ''
+  try { $fv = [string](Get-Item -LiteralPath $env:APP_EXE).VersionInfo.FileVersion } catch {}
+  $want = [string]$env:EXPECT_VERSION
+  if (-not $fv -or ($want -and $fv -ne $want -and -not $fv.StartsWith($want + '.'))) {
+    $bad = $app + '.sutra-bad'
+    if ((Try-Move $app $bad) -and (Try-Move $old $app)) {
+      try { Remove-Item -LiteralPath $bad -Recurse -Force } catch {}
+      Die 'version' ('the new install reports "' + $fv + '", not ' + $want + '; the old one is back')
+    }
+    Die 'swap-rollback' ('the new install reports "' + $fv + '" and the old one at ' + $old + ' could not be put back')
+  }
+
+  # The Apps list: per-user electron-builder installs leave InstallLocation
+  # empty, so the entry is found by its uninstaller's path.
+  try {
+    $needle = ($app + '\Uninstall').ToLowerInvariant()
+    # SUTRA_TEST_UNINSTALL_KEY: a test seam, so a test never edits the real list.
+    $uninstallRoot = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
+    if ($env:SUTRA_TEST_UNINSTALL_KEY) { $uninstallRoot = $env:SUTRA_TEST_UNINSTALL_KEY }
+    Get-ChildItem $uninstallRoot -ErrorAction Stop | ForEach-Object {
+      $k = Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue
+      if ($k -and ([string]$k.UninstallString).ToLowerInvariant().Contains($needle)) {
+        $prev = [string]$k.DisplayVersion
+        Set-ItemProperty -LiteralPath $_.PSPath -Name DisplayVersion -Value $want
+        $name = [string]$k.DisplayName
+        if ($prev -and $name.EndsWith(' ' + $prev)) {
+          Set-ItemProperty -LiteralPath $_.PSPath -Name DisplayName -Value ($name.Substring(0, $name.Length - $prev.Length) + $want)
+        }
+      }
+    }
+  } catch { Log ('could not update the Apps list entry: ' + $_.Exception.Message) }
+
+  try { Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction Stop }
+  catch { Log ('left ' + $old + ' behind; the next update clears it: ' + $_.Exception.Message) }
+  if ($env:RELAUNCH -eq '1') {
+    try { Start-Process -FilePath $env:APP_EXE -WorkingDirectory $app } catch { Log ('relaunch failed: ' + $_.Exception.Message) }
+  }
+  Result $true 'installed' ''
+  Log ('installed ' + $want + ' from the rebuilt folder (file version ' + $fv + ')')
+  exit 0
+}
+
 # 3. run the installer silently, as an update, into the SAME folder. These are
 #    the arguments electron-updater gives an electron-builder NSIS installer:
 #    --updated keeps user data, /S is silent, --force-run reopens the app, and
@@ -1254,17 +1395,25 @@ Log ('installed ' + $want + ' (file version ' + $fv + ')')
 """
 
 # Win32 process-creation flags (winbase.h), spelled out so this module imports
-# the same on every OS.
-_DETACHED_PROCESS = 0x00000008
+# the same on every OS. CREATE_NO_WINDOW, not DETACHED_PROCESS: powershell.exe
+# started detached (no console at all) was seen to exit before running a line
+# (2026-10-09, Windows 11 26200, under a sandboxed job), and the helper's
+# survival never depended on it -- breakaway and its own group do that. A
+# hidden console of its own is what a console program expects.
+_CREATE_NO_WINDOW = 0x08000000
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
 _CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 
 
 def _install_desktop_windows(setup, app_path=None, wait_pid=None, relaunch=False,
                              version=None, result_path=None):
-    """Spawn the detached helper that runs the verified installer once the app
-    has exited. Returns immediately, like the macOS leg. The installer does the
-    swap itself, so there is no two-rename window and no recover record."""
+    """Spawn the detached helper that applies the verified update once the app
+    has exited. Returns immediately, like the macOS leg.
+
+    `setup` is either the verified Sutra-Setup-x64.exe, which does the swap
+    itself, or a staged install folder the delta lane rebuilt (a directory
+    named *.app, see _staged_app_name), which the helper renames into place
+    beside the old one and rolls back on any failure."""
     target = app_path or win_install()
     if not target or not str(target).strip():
         raise RuntimeError("no installed Sutra to replace")
@@ -1275,7 +1424,15 @@ def _install_desktop_windows(setup, app_path=None, wait_pid=None, relaunch=False
     if blocked:
         raise RuntimeError(blocked)
     setup = Path(setup)
-    if not setup.is_file() or setup.suffix.lower() != ".exe":
+    if setup.is_symlink():
+        raise RuntimeError("the staged update is a link: %s" % setup)
+    if setup.is_dir() and setup.suffix == ".app":
+        kind = "app"
+        if not (setup / _win_exe_name()).is_file():
+            raise RuntimeError("the rebuilt install has no %s: %s" % (_win_exe_name(), setup))
+    elif setup.is_file() and setup.suffix.lower() == ".exe":
+        kind = "setup"
+    else:
         raise RuntimeError("no such installer: %s" % setup)
 
     pid = int(wait_pid) if wait_pid else os.getppid()
@@ -1286,7 +1443,7 @@ def _install_desktop_windows(setup, app_path=None, wait_pid=None, relaunch=False
 
     env = dict(os.environ)
     env.update({
-        "SETUP": str(setup), "APP_DIR": str(root),
+        "SETUP": str(setup), "ARTIFACT_KIND": kind, "APP_DIR": str(root),
         "APP_EXE": str(root / _win_exe_name()), "LOG": str(log),
         "WAIT_PID": str(pid), "RELAUNCH": "1" if relaunch else "0",
         "EXPECT_VERSION": str(version or ""),
@@ -1300,7 +1457,7 @@ def _install_desktop_windows(setup, app_path=None, wait_pid=None, relaunch=False
     # Detached and out of the shell's job: Electron runs the backend in a
     # kill-on-close job, and the helper has to outlive the app it waits for.
     # A job that forbids breakaway refuses that flag; start without it then.
-    base = _DETACHED_PROCESS | _CREATE_NEW_PROCESS_GROUP
+    base = _CREATE_NO_WINDOW | _CREATE_NEW_PROCESS_GROUP
     for flags in (base | _CREATE_BREAKAWAY_FROM_JOB, base):
         try:
             # cwd out of the install folder: the backend runs inside it, and a
@@ -1538,7 +1695,12 @@ def _verify_staged(man, recheck_online=True):
         if man.get("sha256") and got != man["sha256"]:
             raise RuntimeError("the staged manifest changed on disk since it was verified")
         manifest = ud.load_manifest(mp)
-        problems = ud.verify_tree(dmg, manifest)
+        # Windows re-checks shape and sizes, not every byte: the tree was hashed
+        # in full when it was rebuilt, a full re-hash of ~750 MB of small files
+        # takes about a minute there (measured 72 s, 28,826 files), and the
+        # shell gives arm 60 s at quit. The online digest re-check below is
+        # the security check either way; this one only catches a damaged stage.
+        problems = ud.verify_tree(dmg, manifest, deep=not _IS_WIN)
         if problems:
             raise RuntimeError("the staged bundle changed on disk since it was verified: %s"
                                % "; ".join(problems[:3]))

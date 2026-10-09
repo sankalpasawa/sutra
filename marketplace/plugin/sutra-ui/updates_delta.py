@@ -30,6 +30,12 @@ THE THREE ARTIFACTS, per release and per arch, published beside the DMG:
                                  release's file with the same path.
   *.sha256                       transport checksums, same rule as the DMG.
 
+WINDOWS (2026-10-09) uses the same three artifacts, named Sutra-win-x64.*,
+built from a silent install of the release's own installer (release-windows.yml).
+There is no signature to re-check there; the published manifest checksum and
+the per-file hashes are the gate, as the published checksum is for the full
+installer. The tree is the install folder minus the uninstaller NSIS writes.
+
 A client N releases behind walks previous_version back through the manifests
 and applies the packs in order (cap MAX_CHAIN, else full DMG). Nothing here
 runs on import, and nothing here touches /Applications: the caller reconstructs
@@ -93,6 +99,13 @@ def sha256_bytes(data):
 
 # ----------------------------------------------------------- manifest -------
 
+def _rel(path, root):
+    """A manifest path: relative to `root`, always with forward slashes. str()
+    of a relative path is backslashed on Windows, which _safe_rel (rightly)
+    refuses, so every Windows manifest and reconstruction used to fail."""
+    return path.relative_to(root).as_posix()
+
+
 def _safe_rel(rel):
     """A manifest path is relative, non-empty, and never climbs."""
     if not rel or rel.startswith("/") or "\x00" in rel or "\\" in rel:
@@ -121,16 +134,16 @@ def build_manifest(app_dir, version, arch, channel, bundle_id, tag=None,
             p = d / name
             if p.is_symlink():
                 dns.remove(name)
-                entries.append({"p": str(p.relative_to(app_dir)), "t": "l",
+                entries.append({"p": _rel(p, app_dir), "t": "l",
                                 "l": os.readlink(p)})
                 continue
             if not any(True for _ in p.iterdir()):
-                entries.append({"p": str(p.relative_to(app_dir)), "t": "d",
+                entries.append({"p": _rel(p, app_dir), "t": "d",
                                 "m": p.lstat().st_mode & 0o7777})
         for name in fns:
             p = d / name
             st = p.lstat()
-            rel = str(p.relative_to(app_dir))
+            rel = _rel(p, app_dir)
             if stat.S_ISLNK(st.st_mode):
                 entries.append({"p": rel, "t": "l", "l": os.readlink(p)})
             elif stat.S_ISREG(st.st_mode):
@@ -443,7 +456,7 @@ def index_bundle(app_dir):
             if p.is_symlink():
                 continue
             if stat.S_ISREG(p.lstat().st_mode):
-                out[str(p.relative_to(app_dir))] = sha256_file(p)
+                out[_rel(p, app_dir)] = sha256_file(p)
     return out
 
 
@@ -594,7 +607,12 @@ class _Packs:
 
 
 def _clone_tree(src, dst):
-    """APFS clone (instant, copy-on-write); plain copy elsewhere."""
+    """APFS clone (instant, copy-on-write); plain copy elsewhere. Windows goes
+    straight to the copy: a `cp` there is Git Bash's GNU cp, where -c means
+    something else entirely."""
+    if sys.platform == "win32":
+        shutil.copytree(src, dst, symlinks=True)
+        return "copy"
     p = subprocess.run(["cp", "-c", "-R", "-p", str(src), str(dst)],
                        capture_output=True, text=True)
     if p.returncode == 0:
@@ -668,13 +686,13 @@ def reconstruct(base_app, manifest, pack_dirs, dest, progress=None):
         for dp, dns, fns in os.walk(dest, topdown=False, followlinks=False):
             d = Path(dp)
             for n in fns:
-                rel = str((d / n).relative_to(dest))
+                rel = _rel(d / n, dest)
                 if rel not in wanted:
                     (d / n).unlink()
                     stats["removed"] += 1
             for n in dns:
                 p = d / n
-                rel = str(p.relative_to(dest))
+                rel = _rel(p, dest)
                 if p.is_symlink():
                     if rel not in wanted:
                         p.unlink()
@@ -748,9 +766,11 @@ def reconstruct(base_app, manifest, pack_dirs, dest, progress=None):
     return stats
 
 
-def verify_tree(app_dir, manifest):
+def verify_tree(app_dir, manifest, deep=True):
     """Every manifest entry present and exact, nothing extra. Returns a list of
-    problems (empty means the tree IS the manifest)."""
+    problems (empty means the tree IS the manifest). deep=False compares sizes
+    instead of hashing contents: for re-checking a tree this process already
+    hashed in full, where re-reading ~750 MB would cost a minute."""
     app_dir = Path(app_dir)
     problems = []
     wanted = {e["p"]: e for e in manifest["entries"]}
@@ -764,7 +784,7 @@ def verify_tree(app_dir, manifest):
         d = Path(dp)
         for n in list(dns):
             p = d / n
-            rel = str(p.relative_to(app_dir))
+            rel = _rel(p, app_dir)
             if p.is_symlink():
                 dns.remove(n)
                 seen.add(rel)
@@ -779,7 +799,7 @@ def verify_tree(app_dir, manifest):
                     problems.append("extra directory %s" % rel)
         for n in fns:
             p = d / n
-            rel = str(p.relative_to(app_dir))
+            rel = _rel(p, app_dir)
             seen.add(rel)
             e = wanted.get(rel)
             if e is None:
@@ -794,6 +814,9 @@ def verify_tree(app_dir, manifest):
                     problems.append("not a regular file %s" % rel)
                 elif (st.st_mode & 0o7777) != e["m"]:
                     problems.append("mode of %s" % rel)
+                elif not deep and "s" in e:
+                    if st.st_size != e["s"]:
+                        problems.append("size of %s" % rel)
                 elif sha256_file(p) != e["h"]:
                     problems.append("content of %s" % rel)
             else:

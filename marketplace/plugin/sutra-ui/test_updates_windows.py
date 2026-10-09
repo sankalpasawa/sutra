@@ -332,7 +332,10 @@ class Install(_WinCase):
         self.assertEqual(env["EXPECT_VERSION"], "2.305.0")
         self.assertTrue(env["SETUP"].endswith("Sutra-Setup-x64-2.305.0.exe"))
         self.assertEqual(env["RESULT"], str(self.local / "install-result.json"))
-        self.assertTrue(kw["creationflags"] & 0x00000008, "DETACHED_PROCESS")
+        # A hidden console of its own, never DETACHED_PROCESS: powershell.exe
+        # without any console was seen to exit before its first line.
+        self.assertTrue(kw["creationflags"] & 0x08000000, "CREATE_NO_WINDOW")
+        self.assertFalse(kw["creationflags"] & 0x00000008, "DETACHED_PROCESS")
         # Never inside the install folder: a process's cwd pins that directory
         # while the installer removes the old version.
         self.assertEqual(Path(kw["cwd"]), script.parent)

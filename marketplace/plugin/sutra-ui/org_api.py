@@ -2754,7 +2754,11 @@ def api_updates_desktop():
         raise HTTPException(status_code=400, detail=blocked)
     try:
         got = updates.download_and_verify()
-        sched = updates.install_desktop(got["dmg"], relaunch=True,
+        # The delta lane hands back a rebuilt bundle, not an image: "dmg" is
+        # None then, and passing it on turned every successful delta into a
+        # 500 -- so this button only ever finished by downloading the whole DMG.
+        artifact = got.get("app") if got.get("kind") == "app" else got.get("dmg")
+        sched = updates.install_desktop(artifact, relaunch=True,
                                         version=got.get("version"))
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

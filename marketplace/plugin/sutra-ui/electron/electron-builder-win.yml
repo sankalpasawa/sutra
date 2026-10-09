@@ -62,9 +62,12 @@ nsis:
   perMachine: false                       # per-user install -> no admin prompt
   allowToChangeInstallationDirectory: true
   artifactName: Sutra-Setup-x64.${ext}
-  # Auto-update is not electron-updater: updates.py stages this installer and
-  # runs it with --updated /S /D=<install dir> after the app exits. Keep
-  # artifactName and perMachine in step with updates.py WIN_SETUP_ASSET.
+  # Auto-update is not electron-updater. updates.py first tries the delta lane
+  # (Sutra-win-x64.manifest.json + .delta.tar.xz, built by release-windows.yml
+  # from a silent install of this installer) and renames the rebuilt folder
+  # into place; otherwise it stages this installer and runs it with
+  # --updated /S /D=<install dir> after the app exits. Keep artifactName and
+  # perMachine in step with updates.py WIN_SETUP_ASSET.
 
 portable:
   artifactName: Sutra-x64.${ext}

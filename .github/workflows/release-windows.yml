@@ -102,6 +102,11 @@ jobs:
           cd ..
           PYTHONPATH=electron/wincompat electron/payload/python/python.exe \
             -m unittest -v test_updates_windows
+          # The delta lane on Windows paths (test_update_delta), and end to end:
+          # stage from a local release server, the detached PowerShell helper's
+          # folder swap, rollback, and a crashed swap restored.
+          PYTHONPATH=electron/wincompat electron/payload/python/python.exe \
+            -m unittest -v test_update_delta test_update_e2e_windows
           # The website department's motor holds its record by an operating
           # system lock, and on Windows that is msvcrt, a path no Mac runs.
           PYTHONPATH=electron/wincompat electron/payload/python/python.exe \
@@ -141,3 +146,106 @@ jobs:
             marketplace/plugin/sutra-ui/electron/dist-win/Sutra-Setup-x64.exe.sha256
             marketplace/plugin/sutra-ui/electron/dist-win/Sutra-x64.exe
             marketplace/plugin/sutra-ui/electron/dist-win/Sutra-x64.exe.sha256
+
+      # THE DELTA LANE (2026-10-09), the Windows twin of release-dmg.yml's. Beside
+      # the installer this leg publishes
+      #   Sutra-win-x64.manifest.json   every file of the INSTALLED folder: sha256, size, mode
+      #   Sutra-win-x64.delta.tar.xz    per-file deltas from the previous STABLE release
+      # plus their .sha256. updates.py rebuilds the new install folder from the
+      # installed one and the pack, checks every file against the manifest, and
+      # the helper renames it into place; any miss downloads the full installer.
+      # WIN_DELTA_ARCH ("win-x64") must match updates.py _delta_arch().
+      #
+      # The trees are what a user's machine actually holds: each installer is RUN,
+      # silently, into a scratch folder, and the uninstaller NSIS writes there is
+      # dropped (it is not part of a release; the helper carries the user's own
+      # across). The previous release goes first and is copied away, because the
+      # new installer removes an older install of the same app when it runs.
+      #
+      # PROOF BEFORE UPLOAD: the previous tree plus the pack is rebuilt with the
+      # client's own code (updates_delta, run by the python this app ships) and
+      # diffed against the new tree. A pack that cannot do that is not uploaded,
+      # and the leg fails so nobody ships it by hand.
+      - name: Build and prove the delta manifest and pack
+        id: delta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          CH: ${{ steps.chan.outputs.channel }}
+          APPID: ${{ steps.chan.outputs.appid }}
+          VER: ${{ steps.chan.outputs.version }}
+        run: |
+          set -euo pipefail
+          A=win-x64                                   # WIN_DELTA_ARCH
+          OUT="$PWD/dist-delta"; mkdir -p "$OUT"
+          NEW_SETUP="$PWD/dist-win/Sutra-Setup-x64.exe"
+          PY="$PWD/payload/python/python.exe"
+          export PYTHONPATH="$(cd .. && pwd)"         # sutra-ui: updates_delta.py
+          W="$RUNNER_TEMP/delta"; rm -rf "$W"; mkdir -p "$W"
+          # Previous stable by SEMVER over tag names, never by list order or
+          # date, and never /releases/latest (which may already be this tag).
+          prev="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-pre-releases --exclude-drafts \
+                    --limit 100 --json tagName --jq '.[].tagName' \
+                  | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-desktop$' | grep -vx "$TAG" \
+                  | sed 's/^v//; s/-desktop$//' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1 || true)"
+          echo "this=$VER channel=$CH previous_stable=${prev:-none}"
+
+          # Run an installer silently into $2 and drop its uninstaller. /D= is
+          # last and unquoted: NSIS reads the rest of the line as the path.
+          # MSYS2_ARG_CONV_EXCL: Git Bash would otherwise rewrite /S and /D=
+          # as POSIX paths before NSIS sees them.
+          install_tree() {
+            local setup="$1" dest="$2"
+            MSYS2_ARG_CONV_EXCL='*' "$setup" /S "/D=$(cygpath -w "$dest")"
+            [ -f "$dest/Sutra.exe" ] || [ -f "$dest/Sutra Beta.exe" ] \
+              || { echo "::error::$setup installed nothing into $dest"; ls -la "$dest" || true; exit 1; }
+            rm -f "$dest"/Uninstall*.exe
+          }
+
+          if [ -n "$prev" ] && gh release download "v$prev-desktop" --repo "$GITHUB_REPOSITORY" \
+                 -p Sutra-Setup-x64.exe -D "$W/prev" --clobber; then
+            install_tree "$W/prev/Sutra-Setup-x64.exe" "$W/inst-old"
+            cp -R "$W/inst-old" "$W/old"
+          else
+            echo "::notice::no previous stable installer; manifest only (first delta-capable release)"
+            prev=""
+          fi
+          install_tree "$NEW_SETUP" "$W/new"
+
+          prev_args=(); [ -n "$prev" ] && prev_args=(--previous "$prev")
+          "$PY" -m updates_delta manifest "$W/new" --version "$VER" --arch "$A" --channel "$CH" \
+            --bundle-id "$APPID" --tag "$TAG" "${prev_args[@]}" --out "$OUT/Sutra-$A.manifest.json"
+
+          if [ -n "$prev" ]; then
+            "$PY" -m updates_delta pack "$W/old" "$W/new" --manifest "$OUT/Sutra-$A.manifest.json" \
+              --from-version "$prev" --out "$OUT/Sutra-$A.delta.tar.xz"
+            pack_bytes=$(stat -c%s "$OUT/Sutra-$A.delta.tar.xz"); setup_bytes=$(stat -c%s "$NEW_SETUP")
+            echo "pack=$pack_bytes bytes, installer=$setup_bytes bytes"
+            if [ "$pack_bytes" -gt $(( setup_bytes / 2 )) ]; then
+              echo "::warning::delta pack is $pack_bytes bytes, over half the installer; publishing the manifest only"
+              rm -f "$OUT/Sutra-$A.delta.tar.xz"
+            else
+              # THE PROOF. Same code the client runs, from the previous tree.
+              "$PY" -m updates_delta reconstruct "$W/old" --manifest "$OUT/Sutra-$A.manifest.json" \
+                --pack "$OUT/Sutra-$A.delta.tar.xz" --dest "$W/rebuilt"
+              diff -rq "$W/rebuilt" "$W/new"
+              echo "reconstructed $VER from $prev: OK"
+            fi
+          fi
+          cd "$OUT"
+          for f in "Sutra-$A.manifest.json" "Sutra-$A.delta.tar.xz"; do
+            [ -f "$f" ] && sha256sum "$f" > "$f.sha256"
+          done
+          ls -la
+
+      # Its own checksums, its own upload. A pack withheld above simply is not here.
+      - uses: softprops/action-gh-release@v2
+        if: ${{ steps.delta.outcome == 'success' }}
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          prerelease: ${{ contains(github.event.inputs.tag || github.ref_name, '-beta.') }}
+          files: |
+            marketplace/plugin/sutra-ui/electron/dist-delta/Sutra-win-x64.manifest.json
+            marketplace/plugin/sutra-ui/electron/dist-delta/Sutra-win-x64.manifest.json.sha256
+            marketplace/plugin/sutra-ui/electron/dist-delta/Sutra-win-x64.delta.tar.xz
+            marketplace/plugin/sutra-ui/electron/dist-delta/Sutra-win-x64.delta.tar.xz.sha256

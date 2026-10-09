@@ -44,7 +44,7 @@ The rebuilt 2.302.0 bundle was byte-identical to the installed one (`diff -rq`),
 | CI proof | stapler validate, four assets present | pack rebuilt and codesigned before upload; manifests required by verify | feed published after verify |
 | Website Mac links | /releases/latest | unchanged | protocol handoff |
 | Website Windows link | pinned to beta v2.291.8-beta.6 | /releases/latest/download/Sutra-Setup-x64.exe | unchanged |
-| Windows in-app update | none | none (design only, section 7) | electron-updater with NSIS blockmap |
+| Windows in-app update | full installer only | delta lane, same format (section 7, shipped 2026-10-09) | unchanged |
 | Rollout, kill switch, minimum version | none | none (design only, section 8) | feed-driven |
 | End-to-end tests of the pipeline | none | 8 scenarios, real helper, real hdiutil and codesign | Windows job on windows-latest |
 
@@ -96,6 +96,23 @@ A browser cannot apply a delta, read the installed version, or write to Applicat
 Known first-install gaps to close: the page shows no version, size or checksum; Firefox on Apple Silicon usually lands on the chooser; a translated (Rosetta) install is never offered the native build; the page claims "signed and notarized" even for an ad-hoc build; nothing checks the page's link constants against the workflow's asset names before deploy.
 
 ## 7. Windows
+
+**Update 2026-10-09: shipped as a port of the Mac lane, not electron-updater.** The port was chosen over blockmaps: blockmap savings on a compressed 240 MB NSIS installer were unmeasured, the first electron-updater update is always full, and the Mac format already proved about 99% savings. What shipped:
+
+| Piece | Where |
+|---|---|
+| Assets `Sutra-win-x64.manifest.json`, `.delta.tar.xz`, both `.sha256` | `release-windows.yml`, "Build and prove the delta manifest and pack" |
+| Trees = a silent install of each release's own installer, minus `Uninstall*.exe` | same step; previous stable installed first and copied away |
+| Proof before upload: previous tree + pack rebuilt by `updates_delta`, `diff -rq` against the new tree | same step |
+| Client: `_delta_arch()` = `win-x64`, app id from `resources/channel`, no codesign gates | `updates.py` |
+| Swap: rebuilt folder moved beside the install, two renames, uninstaller carried over, FileVersion gate, rollback, Apps-list entry rewritten | `_WIN_INSTALLER` step 3a |
+| Re-check at arm: shape and sizes (`verify_tree(deep=False)`); full hash at rebuild | `_verify_staged` |
+| Helper spawned with `CREATE_NO_WINDOW`, not `DETACHED_PROCESS` (PowerShell started detached exited before its first line here) | `_install_desktop_windows` |
+| Tests: `test_update_e2e_windows.py` (4 scenarios), `test_update_delta.py` now runs on Windows | CI Windows leg |
+
+Measured on a real 2.306.2 install: 28,826 files, 739 MB, 72 s to hash. A delta update costs about 3 to 4 minutes of background disk work instead of a 240 MB download. Beta installs still take no updates (`_win_blocker`). Any file edited in the install folder forces the full installer, as on Mac.
+
+The original plan follows, kept for the record.
 
 There is no updater on Windows today, the installer is unsigned, and providers do not yet work there. The right lane is electron-updater with NSIS differential (blockmap) downloads, which needs: a `publish` block so `app-update.yml` is generated; `latest.yml` and `Sutra-Setup-x64.exe.blockmap` published beside the installer; `allowPrerelease: false` and `allowDowngrade: false`; the beta build excluded exactly as on Mac; the portable exe detecting itself and disabling updates; per-user, elevation-free installs kept; the backend's whole process tree terminated before `quitAndInstall`; a per-version attempt counter mirroring `MAX_APPLY_ATTEMPTS`; a file logger. The first in-app update is a full download because nothing seeds electron-updater's cache; differential applies from the second. Code signing (Authenticode) should precede shipping an updater that silently replaces the app. This cannot be exercised from a Mac; it needs a windows-latest job that installs v1 silently and updates to v2 from a local static server.
 

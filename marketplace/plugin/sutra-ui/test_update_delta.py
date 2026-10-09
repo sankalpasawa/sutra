@@ -142,6 +142,11 @@ class Codec(unittest.TestCase):
 
 # ---------------------------------------------------------------- bundles ---
 
+# What the filesystem reports for a file chmod-ed 0o755. NTFS keeps only the
+# read-only bit, so on Windows that is 0o666 -- on both sides of a manifest,
+# which is all the round trip needs.
+EXEC_MODE = 0o666 if os.name == "nt" else 0o755
+
 def write_bundle(root, spec):
     """spec: {rel: bytes | ("link", target) | ("dir",) | (bytes, mode)}"""
     root = Path(root)
@@ -250,7 +255,7 @@ class Manifest(Fixture):
         kinds = {e["t"] for e in self.m2["entries"]}
         self.assertEqual(kinds, {"f", "l", "d"})
         by = {e["p"]: e for e in self.m2["entries"]}
-        self.assertEqual(by["Contents/Resources/tool"]["m"], 0o755)
+        self.assertEqual(by["Contents/Resources/tool"]["m"], EXEC_MODE)
         self.assertEqual(by["Contents/Resources/link"]["l"], "lib.so")
         self.assertEqual(by["Contents/Resources/empty-v2"]["t"], "d")
         self.assertNotIn("Contents/Resources/empty-v1", by)
@@ -262,6 +267,23 @@ class Manifest(Fixture):
         self.assertTrue(ud.verify_tree(self.v1, self.m2))
         (self.v2 / "Contents/Resources/extra").write_bytes(b"x")
         self.assertIn("extra file Contents/Resources/extra", ud.verify_tree(self.v2, self.m2))
+
+    def test_shallow_verify_checks_shape_and_size_not_bytes(self):
+        """deep=False is the arm-time re-check on Windows: it must still catch a
+        missing, extra or resized file, and it knowingly passes a same-size
+        rewrite -- the full hash ran at reconstruction, and the security check
+        is the online manifest digest, not this."""
+        self.assertEqual(ud.verify_tree(self.v2, self.m2, deep=False), [])
+        self.assertTrue(ud.verify_tree(self.v1, self.m2, deep=False))
+        f = next(e for e in self.m2["entries"] if e["t"] == "f" and e["s"] > 0)
+        p = self.v2 / f["p"]
+        p.write_bytes(bytes(b ^ 0xFF for b in p.read_bytes()))
+        self.assertEqual(ud.verify_tree(self.v2, self.m2, deep=False), [])
+        self.assertIn("content of %s" % f["p"], ud.verify_tree(self.v2, self.m2))
+        p.write_bytes(p.read_bytes() + b"!")
+        self.assertIn("size of %s" % f["p"], ud.verify_tree(self.v2, self.m2, deep=False))
+        p.unlink()
+        self.assertIn("missing %s" % f["p"], ud.verify_tree(self.v2, self.m2, deep=False))
 
     def test_tampered_manifest_is_refused(self):
         man = json.loads(json.dumps(self.m2))
@@ -363,7 +385,7 @@ class Reconstruct(Fixture):
         self.assertFalse((dest / "Contents/Resources/old-tree").exists())
         self.assertTrue((dest / "Contents/Resources/empty-v2").is_dir())
         self.assertEqual(os.readlink(dest / "Contents/Resources/link"), "lib.so")
-        self.assertEqual((dest / "Contents/Resources/tool").stat().st_mode & 0o777, 0o755)
+        self.assertEqual((dest / "Contents/Resources/tool").stat().st_mode & 0o777, EXEC_MODE)
         self.assertEqual((dest / "Contents/Resources/renamed.txt").read_bytes(), b"same content, new name\n")
 
     def test_base_junk_is_removed_and_user_modified_base_is_a_miss(self):
