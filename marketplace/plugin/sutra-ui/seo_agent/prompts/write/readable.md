@@ -332,9 +332,11 @@ rule above that they contradict. "(none)" means there are none.
 ════════════════════════════════════════════════════════════════════════
 BEFORE YOU RETURN ANYTHING, CHECK YOUR OWN REBUILD AGAINST THESE, IN ORDER:
 
-  1. LENGTH. Does it land at the target words this prompt gave you, not just somewhere near it?
+  1. LENGTH. Does it land within +/-5% of the target words this prompt gave you, not just
+     somewhere near it?
   2. SOURCES. Is every figure credited to the ORIGINAL study or survey, never to a blog merely
-     repeating it, and does every claim stay within the scope the source actually measured?
+     repeating it, does every claim stay within the scope the source actually measured, and does
+     every side-by-side comparison of two figures actually answer the same question?
   3. TONE. No word that treats a candidate as inventory (remove, eliminate, weed out, cut,
      discard, filter out), no sarcasm, no word that presumes guilt. Singular "they" throughout.
   4. AUDIENCE. Every sentence still reads as written for a recruiter or a TA lead, never as

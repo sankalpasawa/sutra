@@ -61,6 +61,21 @@ ok("library_edit.py's matching ceiling is 1.05 too, not left at the old number",
 ok("the round budget and progress guard are untouched by the tightening",
    C.WORD_BAND_MAX_ROUNDS == 2 and le.LENGTH_MAX_ROUNDS == 2)
 
+# "+/-5%" IS SYMMETRIC, NOT JUST A TIGHTER CEILING (2026-10-08, same report restated plainly). The
+# floor used to be 0.85 -- a band of -15%/+5% -- left over from before the ceiling itself was
+# tightened. Proven functionally, not just as a constant value: a 940-word result against a
+# 1,000-word target passed under the old 0.85 floor (940 > 850) and must now FAIL under 0.95
+# (940 < 950), or the number changed without the check that reads it actually changing behaviour.
+from seo_agent.write import readable as rd
+ok("readable.py's floor is 0.95, symmetric with its 1.05 ceiling", C.WORD_BAND_FLOOR_PCT == 0.95, C.WORD_BAND_FLOOR_PCT)
+ok("library_edit.py's matching floor is 0.95 too", le.LENGTH_FLOOR_PCT == 0.95, le.LENGTH_FLOOR_PCT)
+_before_art = {"sections": [{"heading": "A", "prose": ("word " * 1300).strip()}]}   # started over target
+_after_art = {"sections": [{"heading": "A", "prose": ("word " * 940).strip()}]}      # landed at 940/1,000
+_checks = rd.check(_before_art, _after_art, "", target=1000)
+_band_check = next(c for c in _checks if c["check"] == "Landed in the word band")
+ok("940 of 1,000 (-6%) now FAILS the band check -- it passed under the old 15%-under floor",
+   _band_check["ok"] is False, _band_check)
+
 
 # ======================================================================================
 # 2. Cite the original source, not whoever is repeating it; never widen a figure's scope
@@ -74,6 +89,17 @@ ok("it also guards against widening a narrow finding into a general claim",
    "NEVER WIDEN WHAT A FIGURE ACTUALLY MEASURED" in WRITE_BODY)
 ok("the existing attribution rule it sits beside is untouched",
    "NAME WHOEVER YOU ARE ATTRIBUTING TO" in WRITE_BODY)
+
+# "Never compare numbers that answer different questions" (2026-10-08, same report) -- a DIFFERENT
+# failure mode from the single-figure scope rule above it: that one guards ONE number against being
+# generalised past what it measured; this one guards against setting TWO numbers from different
+# surveys, different populations or different questions side by side as if they were comparable.
+ok("a distinct rule bans comparing two figures that answer different questions",
+   "NEVER SET TWO FIGURES SIDE BY SIDE" in WRITE_BODY)
+ok("and gives a concrete example of exactly that failure",
+   "two different surveys, two different populations" in WRITE_BODY)
+ok("the final self-check (readable.md) was extended to ask about comparisons too, not just single figures",
+   "side-by-side comparison of two figures actually answer the same question" in " ".join(READABLE.split()))
 
 
 # ======================================================================================
