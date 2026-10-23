@@ -252,7 +252,10 @@ function wbAskBox(ref, key, placeholder, action, label){
 function wbAsksHtml(m){
   const asks = (m.status && m.status.asks) || [];
   if (!asks.length) return dpQuiet("Nothing is waiting for you");
-  return asks.map(a => `<div class="dpask wb"><div class="dpasks">${wbEsc(a.text)}</div>` +
+  /* Identity's question takes words, never a stamp: it is answered on its card in the Chat (M0.6) */
+  return asks.map(a => a.kind === "j2_identity" ? `<div class="dpask wb"><div class="dpasks">${wbEsc(a.text)}</div>` +
+    `<div class="dpaskd">Identity · ${wbEsc(wbWhen(a.created))}</div>` + wbBtn("Identity asks you in Chat ›", `data-wbtab="chat"`) + `</div>`
+    : `<div class="dpask wb"><div class="dpasks">${wbEsc(a.text)}</div>` +
     `<div class="dpaskd">${wbEsc(a.engine)} · ${wbEsc(wbWhen(a.created))}</div>` +
     wbBtn("Stamp", `data-wbdecide="${wbEsc(a.id)}" data-wbok="1"`, "dpstamp") +
     wbBtn("Refuse", `data-wbdecide="${wbEsc(a.id)}" data-wbok="0"`) + `</div>`).join("");

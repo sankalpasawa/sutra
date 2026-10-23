@@ -420,6 +420,9 @@ def set_stopped(ref, stopped):
 def decide_ask(ref, aid, approve, by="the owner"):
     for a in asks(ref):
         if a["id"] == aid:
+            if a.get("kind") == "j2_identity":
+                # Identity's question takes words (j2_runtime.answer); a stamp would close it with nothing said (M0.6)
+                raise ValueError("Identity's question takes words: answer it in the chat")
             if a["status"] != "pending":
                 if a["status"] == ("stamped" if approve else "refused"):
                     return a

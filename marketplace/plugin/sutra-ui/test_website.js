@@ -1401,6 +1401,15 @@ test("W47: a waiting department shows Identity's question as a card in Chat, wit
   assert.ok(/\.wbq\{max-width:640px/.test(css), "at most 640px wide");
 });
 
+test("W47: where the asks are listed outside the chat, Identity's question points to its card and is never stamped", () => {
+  const c = fresh();
+  const m = rtMap({ ask: true });
+  m.status.asks.push(Object.assign({}, QUESTION));
+  const html = c.wbAsksHtml(m);
+  assert.ok(/<div class="dpasks">What is the site for, and about whom or what\?<\/div><div class="dpaskd">Identity · \d\d:\d\d<\/div><button type="button" class="btn wb" data-wbtab="chat">Identity asks you in Chat ›<\/button>/.test(html), "a pointer to the Chat");
+  assert.ok(!/data-wbdecide="a-j2-1"/.test(html) && /data-wbdecide="a-1" data-wbok="1"/.test(html), "no stamp on the question; the publish ask keeps its own");
+});
+
 test("W47: Send posts {text}, says Sending... while it goes, and the answered card keeps 'You: ...'", async () => {
   const c = await chatOpen();
   let release;

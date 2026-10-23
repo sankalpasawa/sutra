@@ -530,6 +530,18 @@ def test_m0_5_still_too_little_is_asked_again_and_a_stopped_department_uses_the_
     assert next(e for e in J.events(ref) if e["action"] == "proposal.requested")["step"] == 2
 
 
+def test_m0_6_identitys_question_is_never_closed_by_a_stamp(j2, monkeypatch):
+    """A stamp that closes a question with nothing said (the cycle then waits on an answer no one can give) must fail."""
+    W, R, J, _ = j2
+    _thin(monkeypatch, R)
+    ref = _born(j2, "a website", "Bakery Co")
+    aid = J.status(ref)["open_question"]["id"]
+    for approve in (True, False):
+        with pytest.raises(ValueError, match="takes words"):
+            W.decide_ask(ref, aid, approve)
+    assert J.status(ref)["open_question"]["id"] == aid
+
+
 def test_m0_6_the_chat_carries_identitys_question_and_keeps_its_answer(j2, monkeypatch):
     """The card in Chat reads the chat: an open question there, and once answered, its answer kept, on the department's
     chat and on Root's."""
