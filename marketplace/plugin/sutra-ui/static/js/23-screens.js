@@ -241,10 +241,22 @@ function wb2MapHtml(n, m){
   return wb2NowHtml(m, fv) + `<div class="wb2frame wb"><div class="wb2map wb">${svg}</div>` + wb2CardsHtml(m, fv, line, arts, knows, bud) + `</div>` + empty +
     wb2UnderHtml(fv);
 }
-/* a function's line under its state word, cut to the box; a line that carries a count stays on the hover */
+/* A line of the record at rest (no counts at rest; a name such as v1, Round 2, D2 or F1 is a name, not a count): the
+   line as it is when it holds no count; else the part before its first colon, the act without its detail, when that
+   part holds none; else nothing. What is not at rest stays on the hover (a title), never lost. One rule for the Map's
+   boxes and 24-functions.js's cards and Between them, so a fault's why, a run's line or the owner's own words that
+   carry a number never print it at rest. */
+const WB2_NAMED = /\b(?:v|D|F|Round )\d+\b/g;
+function wb2Rest(line){
+  const s = String(line || ""), counts = x => /\d/.test(x.replace(WB2_NAMED, ""));
+  if (!counts(s)) return s;
+  const head = s.split(/:\s/)[0];
+  return head !== s && !counts(head) ? head : "";
+}
+/* a function's line under its state word, at rest and cut to the box; the whole line is the box's hover */
 function wb2BoxLine(node){
-  const line = String((node && (node.why || node.line)) || "");
-  if (!line || /\d/.test(line)) return "";
+  const line = wb2Rest((node && (node.why || node.line)) || "");
+  if (!line) return "";
   return line.length > 20 ? line.slice(0, 19).replace(/\s+\S*$/, "") + "…" : line;
 }
 /* Under the picture, three closed dropdowns (the prototype's "Not recorded" pattern, 8b24f54): every message between the

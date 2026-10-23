@@ -1547,6 +1547,35 @@ test("M1.8: All five is five cards in order, each with its mark, a state word an
   click(c, { wbtab: "board", wbthread: "x-9" });
   assert.strictEqual(vm.runInContext("S.wb.tab['r3'] + ':' + S.wb.thread['r3']", c), "board:x-9");
 });
+/* M1.8 (round 1, gap 7): the record's own lines carry counts (a fault's why, a run's line, the owner's words), and All
+   five prints them at rest through the Map's own rule (23-screens.js wb2Rest): a line with a count gives its act before
+   the colon, or nothing, and the whole line is the hover. Names (v1) stay. */
+test("M1.8: a fault, a last act and a line between them that carry a count keep it on the hover, never at rest", async () => {
+  const fv = fvOf({ states: { Identity: "waiting_on_you", Priority: "fault", Coordination: "working", Audit: "fault" },
+                    lines: { Identity: "May the reviews show the 12 doctors' first names?", Priority: "Answer a proposal: page 3 of 8 failed its check",
+                             Coordination: "Write is on page 3 of 8", Audit: "Audit has not read Live site v1" },
+                    last: { Adaptation: { what: "took Priority's ask for less: keep 2 of 4 engines", at: AT },
+                            Identity: { what: "took the owner's words", detail: "A site for Class 8", at: AT }, Priority: { what: "said no 3 times", at: AT } } });
+  const board = JSON.parse(JSON.stringify(FV_BOARD));
+  board.threads[0].posts[1].line = "the envelope has room for 3 of them";
+  const [, html] = await allFive({ fv, board });
+  const card = fn => (html.match(new RegExp('<button type="button" class="fvcard fn-' + fn + ' wb[^"]*"[^>]*>[\\s\\S]*?</button>')) || [""])[0];
+  assert.ok(/<span class="fvnow" title="May the reviews show the 12 doctors(&#39;|')s? first names\?"><span class="wbchip ask" data-wbtab="chat">waits on you<\/span> <\/span>/.test(card("identity")),
+    "the owner's ask with a count: the chip at rest, the words on the hover: " + card("identity"));
+  assert.ok(/<span class="fvnow" title="Answer a proposal: page 3 of 8 failed its check"><b>fault<\/b>: Answer a proposal<\/span>/.test(card("priority")), "the act before the colon");
+  assert.ok(/<span class="fvnow" title="Write is on page 3 of 8"><b>working<\/b><\/span>/.test(card("coordination")), "a line that is all count: the word alone");
+  assert.ok(/<b>fault<\/b>: Audit has not read Live site v1<\/span>/.test(card("audit")), "a name stays");
+  assert.ok(/title="took Priority(&#39;|')s ask for less: keep 2 of 4 engines">last: took Priority(&#39;|')s ask for less · \d\d:\d\d<\/div>/.test(card("adaptation")), card("adaptation"));
+  assert.ok(/title="took the owner(&#39;|')s words: A site for Class 8">last: took the owner(&#39;|')s words · /.test(card("identity")), "the owner's words are the hover");
+  assert.ok(/title="said no 3 times">last: \d\d:\d\d<\/div>/.test(card("priority")), "an act that is all count: its time alone");
+  assert.ok(/<span class="dpchk" title="the envelope has room for 3 of them"><\/span><\/button>/.test(html), "between them: the line on the hover");
+  const t = words(html.replace(/ title="[^"]*"/g, "").replace(/ aria-label="[^"]*"/g, "")).replace(/\bv\d+\b/g, "");
+  assert.ok(!/\d/.test(t), "a digit at rest: " + (t.match(/.{0,30}\d.{0,30}/) || [""])[0]);
+  /* the Map's boxes keep the same rule: the act before the colon, the whole line on the hover */
+  const [, map] = await mapWith({ fv });
+  assert.ok(/<text class="ln" x="42" y="55">Answer a proposal<\/text>/.test(fnBox(map, "priority")[2]), "the Map's box: " + fnBox(map, "priority")[2]);
+  assert.ok(!/class="ln"/.test(fnBox(map, "coordination")[2]) && /<title>Coordination · working · Write is on page 3 of 8<\/title>/.test(map), "all count: the hover");
+});
 test("M1.8: the list carries All five first; loading, error, not started and stopped read as the screen names them", async () => {
   let [c, html] = await allFive({ fv: () => new Promise(() => {}) });
   assert.strictEqual((html.match(/<div class="fvcard fvskel">/g) || []).length, 5, "five skeleton cards");
@@ -1624,7 +1653,7 @@ test("M1: the Map, the list, All five and each pane print the same word for each
       assert.strictEqual(row && row[1], want, state + ": the list's " + fn);
       const card = (fiveHtml.match(new RegExp('<button type="button" class="fvcard fn-' + fn + ' wb[^"]*"[^>]*>[\\s\\S]*?</button>')) || [""])[0];
       assert.ok(card.indexOf('aria-label="' + name + " · " + want + '"') >= 0, state + ": All five's " + fn + " names it");
-      const shown = /<span class="fvnow">(?:<b>([^<]+)<\/b>|<span class="wbchip[^"]*"[^>]*>([^<]+)<\/span>)/.exec(card);
+      const shown = /<span class="fvnow"[^>]*>(?:<b>([^<]+)<\/b>|<span class="wbchip[^"]*"[^>]*>([^<]+)<\/span>)/.exec(card);
       assert.ok(shown, state + ": All five's " + fn + " shows a word");
       if (shown[1] !== undefined) assert.strictEqual(shown[1], want, state + ": All five's " + fn);
       else assert.strictEqual(shown[2], want === "waiting" ? "waits on " + node.waits_on : want, state + ": All five's " + fn + " chip");

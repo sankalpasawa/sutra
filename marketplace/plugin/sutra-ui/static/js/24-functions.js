@@ -26,6 +26,8 @@ const FV_DOT = { working: "breath", waiting: "wait", waiting_on_you: "warn", fau
 const FV_PILL = { done: "done", now: "now", next: "next", skipped: "skip" };
 
 function fvName(fn){ return fn.charAt(0).toUpperCase() + fn.slice(1); }
+/* a line of the record at rest, by the Map's own rule (23-screens.js wb2Rest): no count; the whole line is the hover */
+function fvRest(line){ return typeof wb2Rest === "function" ? wb2Rest(line) : String(line || ""); }
 /* the cycle in words, in full (S4): the words, eight step pills, and the rounds once there are any */
 function fvProgressHtml(cyc){
   if (!cyc) return "";
@@ -62,20 +64,22 @@ function fvCardHtml(node, m, stopped){
   const word = stopped ? "stopped" : (node.word || node.state);
   const dot = stopped ? "off" : (FV_DOT[node.state] || "off");
   const badge = node.state === "waiting_on_you" ? "?" : (node.state === "fault" ? "!" : "");
+  const said = node.why || node.line || "";
   let now;
-  if (node.state === "waiting_on_you") now = `<span class="wbchip ask" data-wbtab="chat">waits on you</span> ${wbEsc(node.line || "")}`;
+  if (node.state === "waiting_on_you") now = `<span class="wbchip ask" data-wbtab="chat">waits on you</span> ${wbEsc(fvRest(node.line))}`;
   else if (node.state === "waiting" && node.waits_on) now = `<span class="wbchip" ${node.waits_on === "Root" ? "" : `data-wbfn="${wbEsc(String(node.waits_on).toLowerCase())}"`}>waits on ${wbEsc(node.waits_on)}</span>`;
-  else now = `<b>${wbEsc(word)}</b>${node.line || node.why ? ": " + wbEsc(node.why || node.line) : ""}`;
+  else now = `<b>${wbEsc(word)}</b>${fvRest(said) ? ": " + wbEsc(fvRest(said)) : ""}`;
   /* the last act, as the read says it (functions_view.py _last_act): what the function did; what it acted on is the hover */
   const ltip = node.last ? [node.last.what, node.last.detail].filter(Boolean).join(": ") : "";
-  const last = node.last ? `<div class="dpchk" title="${wbEsc(ltip)}">last: ${wbEsc(node.last.what || "")}${node.last.at ? " · " + wbEsc(wbWhen(node.last.at)) : ""}</div>` : "";
+  const lnow = node.last ? [fvRest(node.last.what), node.last.at ? wbWhen(node.last.at) : ""].filter(Boolean).join(" · ") : "";
+  const last = node.last ? `<div class="dpchk" title="${wbEsc(ltip)}">last: ${wbEsc(lnow)}</div>` : "";
   const spend = node.spend || {};
   return `<button type="button" class="fvcard fn-${wbEsc(fn)} wb${stopped ? " still" : ""}" data-wbfn="${wbEsc(fn)}" data-fvcard="${wbEsc(fn)}" ` +
     `aria-label="${wbEsc(name + " · " + word)}">` +
     `<span class="fvhead">${typeof wb2Mark === "function" ? wb2Mark(fn) : ""}<b>${wbEsc(name)}</b>` +
     (badge ? `<b class="dpfnb ${dot}" aria-hidden="true">${badge}</b>` : "") + `<i class="dpdot ${dot}" aria-hidden="true"></i></span>` +
     `<span class="fvpurpose">${wbEsc(FV_PURPOSE[fn] || "")}</span>` +
-    `<span class="fvnow">${now}</span>` +
+    `<span class="fvnow"${said ? ` title="${wbEsc(said)}"` : ""}>${now}</span>` +
     `<span class="fvtoday"><span class="dpk">Today</span>${dpBar(Math.max(0, Math.min(1, Number(spend.share) || 0)))}</span>` +
     last + fvStrip(fn, m) + `</button>`;
 }
@@ -90,7 +94,7 @@ function fvBetweenHtml(ref){
   posts.sort((a, c) => c.n - a.n);
   const rows = posts.slice(0, 3).map(p => `<button type="button" class="fvmsg wb" data-wbtab="board" data-wbthread="${wbEsc(p.thread)}">` +
     `<i class="fvbar fn-${wbEsc(String(p.src).toLowerCase())}"></i>${wbChip(p.src)}<span class="wbarrow">&rarr;</span>${wbChip((p.dst || []).join(", "))}` +
-    `<span class="dpchk">${wbEsc(p.line || p.word || "")}</span></button>`).join("");
+    `<span class="dpchk"${p.line ? ` title="${wbEsc(p.line)}"` : ""}>${wbEsc(p.line ? fvRest(p.line) : (p.word || ""))}</span></button>`).join("");
   return `<div class="fvcard fvbetween wb"><span class="fvhead"><b>Between them</b></span>` +
     (b ? (rows || dpQuiet("Nothing between them yet")) : dpSkel()) +
     `<button type="button" class="o2more wb" data-wbtab="board">All messages &rsaquo;</button></div>`;
