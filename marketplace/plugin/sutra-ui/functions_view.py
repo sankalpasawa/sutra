@@ -363,6 +363,25 @@ def _last_act(fn, rs, posts):
     return best
 
 
+BETWEEN = 3                                      # All five's Between them: the last three messages between the five (S2)
+
+
+def _between(posts):
+    """The last messages between the five, newest first, each as the act its function did, in the owner's words (the
+    last act's own rule, _did): 'proposed the plan to Priority', 'said yes to the plan'. What a post carried (the owner's
+    goal that Identity hands on, Priority's why) is its detail, for the hover, never the act."""
+    out = []
+    for p in reversed(posts):
+        to = [x for x in p.get("dst") or [] if x in FUNCS and x != p.get("src")]
+        if p.get("src") not in FUNCS or not to:
+            continue
+        out.append({"n": p.get("n"), "thread": p.get("thread"), "from": p.get("src"), "to": to, "act": _did(p),
+                    "detail": _short(_plain(R._line(p))) or None, "at": p.get("at")})
+        if len(out) == BETWEEN:
+            break
+    return out
+
+
 def _steps(cur, events, state):
     """The eight step pills: done, now, next, or skipped (Settle, when no conflict was raised)."""
     step = int(cur.get("step") or 0)
@@ -469,7 +488,7 @@ def functions(ref):
              "running": [r["engine"] for r in work_running],
              "ceiling": ((d.get("envelopes") or {}).get("_goal") or None), "round": cur.get("round")}
     return _clean({"ref": ref, "name": d.get("name"), "kind": d.get("kind"), "stopped": stopped,
-                   "functions": nodes, "cycle": cycle, "speaks": pairs, "made": mades,
+                   "functions": nodes, "cycle": cycle, "speaks": pairs, "made": mades, "between": _between(posts),
                    "budget": _budget(ref, d), "not_recorded": nr})
 
 

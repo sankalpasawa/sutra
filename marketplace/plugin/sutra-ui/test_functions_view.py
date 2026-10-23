@@ -11,7 +11,8 @@ Named claims:
   F5  the read carries no private key and no path, and it writes nothing
   F6  the route answers for a department on the engine runtime and 404s for any other ref
   F7  the cycle says where the department is in the owner's words, with its eight steps, and needs_you only when it does;
-      each function's last act is the act and to whom, in the owner's words, never the words a post carried
+      each function's last act is the act and to whom, in the owner's words, never the words a post carried, and so is
+      each of the last messages between the five that All five's Between them shows (M1.8)
   F8  every word of the read is the owner's in every state: said yes, asked for less, said no and sent back, never grant,
       counter or refuse (the bargain on the record, a dropped plan, a department Root set up, a running function, and
       every state a real department passes through when Priority says no, Identity asks, the owner says no, Identity
@@ -421,6 +422,36 @@ def test_f7_on_a_born_department_the_last_act_is_the_functions_own(mods, born):
         assert last[fn] and WEBSITE not in last[fn]["what"], (fn, last[fn])
     assert last["Priority"]["what"].startswith("said yes"), last["Priority"]
     assert last["Adaptation"]["what"].split()[0] in ("proposed", "registered"), last["Adaptation"]
+
+
+def test_m18_between_them_is_what_each_function_did_never_the_words_it_carried(mods, born, monkeypatch):
+    """All five's Between them (round 2, gap 5): the last three messages between the five, newest first, each as the act
+    its function did, in the owner's words; the words a message carried (the owner's goal that Identity hands on and
+    Adaptation proposes from, Priority's why) are its detail, for the hover, and never the row."""
+    W, R, J, F = mods
+    ref = born(WEBSITE, "Acme Learning")
+    rows = F.functions(ref)["between"]
+    assert 1 <= len(rows) <= 3, rows
+    posts = [p for p in R.board(ref) if p["src"] in FUNCS and any(x in FUNCS and x != p["src"] for x in p.get("dst") or [])]
+    assert [r["n"] for r in rows] == [p["n"] for p in reversed(posts)][:len(rows)], "newest first, between the five only"
+    for r in rows:
+        assert r["from"] in FUNCS and r["to"] and all(x in FUNCS for x in r["to"]), r
+        assert WEBSITE not in r["act"] and "Class 8" not in r["act"], r
+        assert r["act"].split()[0] in ("asked", "proposed", "said", "told", "answered", "agreed", "let", "did", "posted"), r
+    # the whole bargain, as the rows say it
+    acts = [F._did(p) for p in posts]
+    assert "asked Adaptation for the plan" in acts and "proposed the plan to Priority" in acts and "said yes to the plan" in acts, acts
+    asked = next(p for p in posts if p["src"] == "Identity" and p["dst"] == ["Adaptation"])
+    assert WEBSITE in (R._line(asked) or ""), "the owner's words were what Identity's message carried"
+    # Priority says no: Adaptation takes the disagreement to Identity, said as the act
+    monkeypatch.delenv("SUTRA_WEBSITE_OFFLINE", raising=False)
+    monkeypatch.setattr(R, "MODEL", lambda prompt, step: ({"answer": "reject", "why": "the envelope has no room today"}, 0.01, "model")
+                        if step["id"] == "priority.bargain" else (None, 0.0, "offline"))
+    ref = born(WEBSITE, "No Room Co")
+    rows = F.functions(ref)["between"]
+    assert rows[0]["from"] == "Adaptation" and rows[0]["act"] == "told Identity about a disagreement", rows[0]
+    assert rows[1]["from"] == "Priority" and rows[1]["act"] == "said no to the plan" and rows[1]["detail"] == "the envelope has no room today", rows[1]
+    assert all(WEBSITE not in r["act"] for r in rows)
 
 
 # ---- M1.2: speaks-to and made-by from the record ---------------------------------------------------------------------
