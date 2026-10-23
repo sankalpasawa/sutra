@@ -421,10 +421,11 @@ def functions(ref):
             node.update(state="working", line=("%s's turn" % work_running[0]["engine"]) if work_running else "keeping the timetable")
         elif state == "checking" and fn == "Adaptation":
             node.update(state="waiting", waits_on="Root", line="waits on Root's review")
-        # a run of the function's own
+        # a run of the function's own: while it runs, its line is the handler's name, which carries the inside word
+        # ('Priority granted the line'), so it is said in the owner's words like every other line of this read
         mine = [r for r in running if r.get("engine") == fn]
         if mine and node["state"] != "working":
-            node.update(state="working", line=_short(mine[0].get("what") or "working"))
+            node.update(state="working", line=_short(_plain(mine[0].get("what")) or "working"))
         # the thread rule
         if node["state"] == "quiet" and fn in waits:
             node.update(state="waiting", waits_on=waits[fn]["on"], line="waits on %s" % waits[fn]["on"])

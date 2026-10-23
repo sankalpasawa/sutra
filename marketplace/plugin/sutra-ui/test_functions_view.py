@@ -627,6 +627,20 @@ def test_m17_the_bargain_and_a_dropped_plan_read_in_the_owners_words(mods):
     assert "Says no to you, Adaptation, Coordination" in fields["writes"] and "Take a no" in fields["hears"]
     assert any("Drop what was turned down" == s["name"] for s in idn["recipe"])
     assert {j["id"]: j["last"]["summary"] for j in idn["journeys"] if j["last"]}["FI1"] == "The owner said no."
+    # while a function's run goes, its line is the handler's name, which carries the inside word (round 2, gap 2): the
+    # Map's box, its hover, the All five card and the list's title read it in the owner's words too
+    _cycle(W, "unread", 7)
+    for i, (fn, what, said) in enumerate((("Adaptation", "Priority granted the line", "Priority said yes to the line"),
+                                          ("Adaptation", "Priority refused the line", "Priority said no to the line"),
+                                          ("Adaptation", "Priority countered the line", "Priority asked for less on the line"),
+                                          ("Identity", "Take a refusal", "Take a no"), ("Coordination", "Hear a refusal", "Hear a no"))):
+        W._write(W.ddir(REF) / "runs.json", [r for r in W.runs(REF) if r.get("status") != "running"])
+        _run(W, fn, system=True, what=what, id="r-running-%d" % i)
+        got = F.functions(REF)
+        node = next(n for n in got["functions"] if n["name"] == fn)
+        assert node["state"] == "working" and node["line"] == said, (what, node)
+        assert not _banned(got), (what, _banned(got))
+        assert not _banned(F.function(REF, fn.lower())["node"]), what
 
 
 def test_m17_a_born_department_reads_in_the_owners_words(mods, born):
