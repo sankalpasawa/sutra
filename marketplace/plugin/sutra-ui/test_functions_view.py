@@ -10,7 +10,8 @@ Named claims:
       starts on; Coordination idle while two engines are ready); inside the grace window neither is
   F5  the read carries no private key and no path, and it writes nothing
   F6  the route answers for a department on the engine runtime and 404s for any other ref
-  F7  the cycle says where the department is in the owner's words, with its eight steps, and needs_you only when it does
+  F7  the cycle says where the department is in the owner's words, with its eight steps, and needs_you only when it does;
+      each function's last act is the act and to whom, in the owner's words, never the words a post carried
   F8  every word of the read is the owner's in every state: said yes, asked for less, said no and sent back, never grant,
       counter or refuse (the bargain on the record, a dropped plan, a department Root set up); a rule's tag (go, ask,
       refuse, always) is the owner's own word and stays
@@ -373,6 +374,39 @@ def test_f7_every_node_carries_its_last_act_and_spend(mods):
     assert nodes["Priority"]["last"]["what"] == "gave each engine its limit", "the record's words, in the owner's"
     assert 0 <= nodes["Priority"]["spend"]["share"] <= 1 and nodes["Priority"]["spend"]["calls_limit"] > 0
     assert "what Adaptation did" in got["not_recorded"]
+
+
+def test_f7_the_last_act_is_what_the_function_did_never_the_words_it_carried(mods):
+    """A post names its act and to whom, in the owner's words; the words it carried (the owner's goal, Priority's why)
+    are its detail, never the act (round 1, gap 6)."""
+    W, R, J, F = mods
+    words = "A website for the hospital, with a page for each of the 12 doctors"
+
+    def said(src, dst, act, word, **pl):
+        n = len(R.board(REF)) + 1
+        R._append(REF, "board.jsonl", {"n": n, "src": src, "dst": [dst], "msg_type": act, "thread": "x-b", "hop": 1, "about": None,
+                                       "payload": dict(pl, word=word), "ack_id": None, "by": None, "at": _ago(-n)})
+        return {x["name"]: x["last"] for x in F.functions(REF)["functions"]}
+    last = said("Identity", "Adaptation", "request", "line", words=words)
+    assert last["Identity"] == {"what": "asked Adaptation for the plan", "detail": words, "at": last["Identity"]["at"]}
+    last = said("Adaptation", "Priority", "propose", "line", words=words)
+    assert last["Adaptation"]["what"] == "proposed the plan to Priority" and last["Adaptation"]["detail"] == words
+    assert said("Priority", "Adaptation", "accept-proposal", "line", why="the envelope has room")["Priority"]["what"] == "said yes to the plan"
+    assert said("Priority", "Adaptation", "propose", "line", why="keep Plan only")["Priority"]["what"] == "asked Adaptation for less"
+    last = said("Priority", "Adaptation", "reject-proposal", "line", why="the envelope has no room today")
+    assert last["Priority"] == {"what": "said no to the plan", "detail": "the envelope has no room today", "at": last["Priority"]["at"]}
+    assert said("Audit", "Identity", "inform", "finding", claim="Home has no phone line")["Audit"]["what"] == "told Identity what it found"
+    assert said("Identity", R.OWNER, "request", "publish", objective="say whether the site may go live")["Identity"]["what"] == "asked you about going live"
+
+
+def test_f7_on_a_born_department_the_last_act_is_the_functions_own(mods, born):
+    W, R, J, F = mods
+    ref = born(WEBSITE, "Acme Learning")
+    last = {n["name"]: n["last"] for n in F.functions(ref)["functions"]}
+    for fn in ("Identity", "Adaptation", "Priority"):
+        assert last[fn] and WEBSITE not in last[fn]["what"], (fn, last[fn])
+    assert last["Priority"]["what"].startswith("said yes"), last["Priority"]
+    assert last["Adaptation"]["what"].split()[0] in ("proposed", "registered"), last["Adaptation"]
 
 
 # ---- M1.2: speaks-to and made-by from the record ---------------------------------------------------------------------

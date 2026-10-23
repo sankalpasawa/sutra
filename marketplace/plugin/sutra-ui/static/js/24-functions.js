@@ -66,7 +66,9 @@ function fvCardHtml(node, m, stopped){
   if (node.state === "waiting_on_you") now = `<span class="wbchip ask" data-wbtab="chat">waits on you</span> ${wbEsc(node.line || "")}`;
   else if (node.state === "waiting" && node.waits_on) now = `<span class="wbchip" ${node.waits_on === "Root" ? "" : `data-wbfn="${wbEsc(String(node.waits_on).toLowerCase())}"`}>waits on ${wbEsc(node.waits_on)}</span>`;
   else now = `<b>${wbEsc(word)}</b>${node.line || node.why ? ": " + wbEsc(node.why || node.line) : ""}`;
-  const last = node.last ? `<div class="dpchk">last: ${wbEsc(node.last.what || "")}${node.last.at ? " · " + wbEsc(wbWhen(node.last.at)) : ""}</div>` : "";
+  /* the last act, as the read says it (functions_view.py _last_act): what the function did; what it acted on is the hover */
+  const ltip = node.last ? [node.last.what, node.last.detail].filter(Boolean).join(": ") : "";
+  const last = node.last ? `<div class="dpchk" title="${wbEsc(ltip)}">last: ${wbEsc(node.last.what || "")}${node.last.at ? " · " + wbEsc(wbWhen(node.last.at)) : ""}</div>` : "";
   const spend = node.spend || {};
   return `<button type="button" class="fvcard fn-${wbEsc(fn)} wb${stopped ? " still" : ""}" data-wbfn="${wbEsc(fn)}" data-fvcard="${wbEsc(fn)}" ` +
     `aria-label="${wbEsc(name + " · " + word)}">` +

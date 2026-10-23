@@ -318,14 +318,47 @@ def _faults(ref, d, rs, rows, now_s):
     return out
 
 
+# What a post was about, by its topic word, as the last act names it
+ABOUT = {"line": "the plan", "plan": "the plan", "verdict": "a verdict", "conflict": "a disagreement", "alarm": "an alarm",
+         "rung": "a step's rung", "idea": "where an idea went", "lost": "a lost request", "engine": "an engine",
+         "publish": "going live", "rule": "a rule", "answer": "an answer"}
+
+
+def _did(p):
+    """A post as the act its function did, in the owner's words: the act and to whom (Priority's answers are said yes,
+    asked for less and said no). What the post carried is never the act: the owner's words that Identity hands on, or
+    that Adaptation proposes from, are the owner's, not the function's."""
+    act, word = p.get("msg_type"), (p.get("payload") or {}).get("word")
+    to = ", ".join("you" if x == R.OWNER else x for x in p.get("dst") or []) or "the board"
+    about = ABOUT.get(word)
+    if act == "propose":
+        return "asked %s for less" % to if p.get("src") == "Priority" else "proposed %s to %s" % (about or "a change", to)
+    if act in ("accept-proposal", "reject-proposal"):
+        return ("said yes to %s" if act == "accept-proposal" else "said no to %s") % (about or to)
+    if act == "request":
+        return "asked %s for the plan" % to if word == "line" else "asked %s%s" % (to, " about " + about if about else "")
+    if act == "inform":
+        if word == "finding":
+            return "told %s what it found" % to
+        if word == "request":
+            return "answered %s" % to
+        return "told %s%s" % (to, " about " + about if about else "")
+    return {"agree": "agreed with %s", "refuse": "said no to %s", "failure": "told %s it could not", "cancel": "let %s go",
+            "not-understood": "did not follow %s"}.get(act, "posted to %s") % to
+
+
 def _last_act(fn, rs, posts):
+    """What the function did last: its last finished run, as the run says it, or a post of its own when that came later;
+    the act is 'what', and what it acted on (the plan's names, the owner's words, a run's own detail) is 'detail'."""
     run = next((r for r in reversed(rs) if r.get("engine") == fn and r.get("status") != "running" and r.get("what")), None)
-    post = next((p for p in reversed(posts) if p.get("src") == fn and R._line(p)), None)
+    post = next((p for p in reversed(posts) if p.get("src") == fn), None)
     best = None
     if run:
-        best = {"what": _short(_plain(run.get("what"))), "at": run.get("ended") or run.get("started")}
-    if post and (not best or W._ts(post.get("at") or "") >= W._ts(best["at"] or "")):
-        best = {"what": _short(_plain(R._line(post))), "at": post.get("at")}
+        what, _, detail = _plain(run.get("what")).partition(": ")
+        best = {"what": _short(what), "detail": _short(detail) or None, "at": run.get("ended") or run.get("started")}
+    # a post inside a run is stamped before the run ends: on the same second the run, which says the act, is the one
+    if post and (not best or W._ts(post.get("at") or "") > W._ts(best["at"] or "")):
+        best = {"what": _did(post), "detail": _short(_plain(R._line(post))) or None, "at": post.get("at")}
     return best
 
 

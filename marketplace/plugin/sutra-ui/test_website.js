@@ -1510,7 +1510,8 @@ async function allFive(o){
 test("M1.8: All five is five cards in order, each with its mark, a state word and a bar, then Between them", async () => {
   const fv = fvOf({ states: { Identity: "waiting_on_you", Adaptation: "waiting", Priority: "quiet", Coordination: "working", Audit: "fault" },
                     lines: { Identity: "May the reviews show first names?", Coordination: "Write's turn", Audit: "Audit has not read Live site v1" },
-                    waits: { Adaptation: "Priority" }, last: { Priority: { what: "said yes to round two", at: AT } },
+                    waits: { Adaptation: "Priority" }, last: { Priority: { what: "said yes to round two", at: AT },
+                                                               Coordination: { what: "gave Write the turn", detail: "after Site plan v2", at: AT } },
                     cycle: { says: "Write is working", needs_you: true, asks: 1 } });
   const [c, html] = await allFive({ fv });
   assert.ok(/<div class="o2vh"><b>All five<\/b>/.test(html) && /class="o2viewer dpviewer dp wb fv"/.test(html), "the viewer, a size container");
@@ -1527,6 +1528,8 @@ test("M1.8: All five is five cards in order, each with its mark, a state word an
   assert.ok(/<span class="wbchip" data-wbfn="priority">waits on Priority<\/span>/.test(cards[1]), "a wait opens the function it waits on");
   assert.ok(/<b class="dpfnb block" aria-hidden="true">!<\/b>/.test(cards[4]) && /fault<\/b>: Audit has not read Live site v1/.test(cards[4]), "a fault with '!' and the reason");
   assert.ok(/last: said yes to round two · \d\d:\d\d/.test(cards[2]), "the last act and its time");
+  assert.ok(/<div class="dpchk" title="gave Write the turn: after Site plan v2">last: gave Write the turn · \d\d:\d\d<\/div>/.test(cards[3]),
+    "the act at rest, what it acted on in the hover: " + cards[3]);
   assert.ok(/<div class="fvprog wb"><div class="fvsays"><i class="dpdot breath"[^>]*><\/i><b aria-live="polite">Write is working<\/b><span class="wbchip ask">needs you<\/span>/.test(html), "the progress words, full form");
   assert.strictEqual((html.match(/<span class="fvpill /g) || []).length, 8, "eight step pills");
   assert.ok(/<span class="fvpill now" title="Run · Run happened · \d\d:\d\d"><i class="dpdot breath"/.test(html) && /<span class="fvpill skip" title="[^"]*">- Settle<\/span>/.test(html), "now breathes; Settle skipped");
