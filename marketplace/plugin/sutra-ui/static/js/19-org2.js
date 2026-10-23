@@ -508,6 +508,15 @@ function o2OrgOfRoot(rootRef, d){
   for (const [org, r] of (d.lifted || new Map())) if (r.ref === rootRef) return org;
   return null;
 }
+/* Where Root puts the department it sets up, said on the sheet (round 1, M1.4): Root makes every department of its
+   organisation directly under itself (founding.spawn; its front door, chat and Map read its children so), so the sheet
+   never promises a place under the department it was opened on. It names the organisation and, opened on a department,
+   that the new one goes next to it. */
+function o2RootPlace(n, sh, d){
+  const org = o2OrgOfRoot(sh.root, d), on = org ? d.byRef.get(org) : null;
+  const beside = n && n.ref !== org && n.ref !== sh.root ? ", next to " + n.name + "," : "";
+  return "to Root · it sets the department up in " + (on ? on.name : "the organisation") + beside + " with its five functions";
+}
 /* One more empty rule row, so a tag is always CHOSEN from the four words and
    never typed. The tag defaults to the one that holds at all times. */
 function o2AddRule(){
@@ -603,7 +612,7 @@ function o2RulesHtml(sh){
 }
 function o2SheetHtml(n, d){
   const st = o2S(), sh = st.sheet;
-  const title = sh.kind === "rename" ? "Rename" : sh.kind === "move" ? "Move" : sh.kind === "charter" ? (sh.charterId ? "Edit charter" : "Write the charter") : "New sub-department";
+  const title = sh.kind === "rename" ? "Rename" : sh.kind === "move" ? "Move" : sh.kind === "charter" ? (sh.charterId ? "Edit charter" : "Write the charter") : (sh.root ? "New department" : "New sub-department");
   let fields;
   if (sh.kind === "charter"){
     fields = `<label for="o2sname">Title</label><input id="o2sname" type="text" data-o2sname value="${o2Esc(sh.name)}" maxlength="60" autocomplete="off">
@@ -617,7 +626,7 @@ function o2SheetHtml(n, d){
     fields = `<label for="o2sname">Name</label><input id="o2sname" type="text" data-o2sname value="${o2Esc(sh.name)}" maxlength="80" autocomplete="off">` +
       (sh.root ? `<label for="o2swords">What it is for</label><textarea id="o2swords" data-o2swords rows="3" maxlength="2000" placeholder="In your words">${o2Esc(sh.words || "")}</textarea>` : "");
   }
-  const lead = sh.root && sh.kind === "create" ? "to Root · it sets the department up with its five functions" : "request · waits for approval";
+  const lead = sh.root && sh.kind === "create" ? o2RootPlace(n, sh, d) : "request · waits for approval";
   const body = `<div class="o2vb"><div class="o2sheet"><div class="o2mono">${o2Esc(lead)}</div><h1>${o2Esc(title)}</h1>${fields}
     <div class="o2acts2"><button type="button" class="btn primary" data-o2act="request" ${sh.busy ? "disabled" : ""}>${sh.root && sh.kind === "create" ? "Send to Root" : "Request"}</button>
     <button type="button" class="btn" data-o2act="sheetclose">Cancel</button>${sh.error ? `<span class="o2err">${o2Esc(sh.error)}</span>` : ""}</div></div></div>`;
@@ -695,7 +704,8 @@ function o2MenuHtml(n, d){
   let acts = item("editcharter", dept && dept.charter ? "Edit charter…" : "Write the charter…");
   if (kind !== "root") acts += item("rename", "Rename…");
   if (kind !== "root" && kind !== "machine") acts += item("move", "Move…");
-  acts += item("create", "New sub-department…");
+  /* under an organisation with a Root the department goes to Root, which sets it up in the organisation (o2RootPlace) */
+  acts += item("create", n && o2RootOf(n, d) ? "New department…" : "New sub-department…");
   if (typeof wbMenuItem === "function") acts += wbMenuItem();   /* 22-website.js: found an organisation with a website department */
   return `<div class="smenu o2menu" role="menu">${acts}<div class="o2msep"></div>${item("changes", "Changes")}${item("approvals", "Approvals")}${item("health", "Health")}</div>`;
 }

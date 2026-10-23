@@ -24,23 +24,26 @@ function wb2Asks(m){ return (m.status && m.status.asks) || []; }
 function wb2Running(m){ return ((m.status && m.status.running) || []).map(r => r.engine); }
 function wb2Faults(m){ return ((m.health && m.health.checks) || []).filter(c => c.state === "block"); }
 /* A function's class on the Map, from the five functions' read (functions_view.py, PRD M1.5): working is lit, waits on
-   you is amber, a fault is block, waiting on another function is dashed, quiet is plain; a stopped department is off.
+   you is amber, a fault is block, waiting on another function is dashed, quiet is plain; a stopped department is off,
+   by its switch or by the read.
    Until the read lands, or when it failed, the boxes fall back to today's rule: an ask is Identity's (it is the one that
    asks), a run of its own lights it, and a paused function is off. */
 const WB2_FN_CLS = { working: "run", waiting_on_you: "ask", fault: "block", waiting: "wait", quiet: "" };
 function wb2FnNode(fv, name){ return ((fv && !fv.failed && fv.functions) || []).filter(x => x.name === name)[0] || null; }
 function wb2FnCls(m, name, fv){
   const node = wb2FnNode(fv, name);
-  if (node) return m.stopped ? "off" : (WB2_FN_CLS[node.state] || "");
+  if (node) return m.stopped || fv.stopped ? "off" : (WB2_FN_CLS[node.state] || "");
   if (wb2Asks(m).some(a => a.engine === name || name === "Identity")) return "ask";
   if (wb2Running(m).indexOf(name) >= 0) return "run";
   const s = (m.systems || []).filter(x => x.name === name)[0];
   return s && s.state === "running" ? "" : "off";
 }
-/* the state word under a function's name: the read's own word, or today's rule said in the same words */
+/* the state word under a function's name: the read's own word, the one the list, All five and the pane print too (a
+   stopped department's is 'stopped' on every function; functions_view.py), or today's rule said in the same words */
 function wb2FnWord(m, name, fv){
   const node = wb2FnNode(fv, name);
-  if (node) return m.stopped ? "off" : node.word;
+  if (node) return m.stopped || fv.stopped ? "stopped" : node.word;
+  if (m.stopped) return "stopped";
   return ({ run: "working", ask: "waits on you", off: "off" })[wb2FnCls(m, name, fv)] || "quiet";
 }
 function wb2EngCls(m, e){
@@ -125,6 +128,10 @@ function wb2MapHtml(n, m){
   else if ((m.artifacts || []).length) line.push({ kind: "work", name: m.artifacts[0].name });   /* no plan yet: the Brief alone */
   engs.forEach(e => { line.push({ kind: "eng", e }); line.push({ kind: "work", name: e.writes }); });
   const last = (m.artifacts || []).length ? m.artifacts[m.artifacts.length - 1].name : "";
+  /* the deliverable, the last thing the line makes, takes the ok tint once it is delivered, for every kind: a website's
+     Live site (the map's live), the cycle's goal reached, or a version of it that passed its check (S1, Done) */
+  const lastA = arts[last] || {}, lastChk = (lastA.latest && lastA.latest.check) || {};
+  const delivered = !!(m.live || (fv && !fv.failed && fv.cycle && fv.cycle.state === "done") || (lastA.versions && lastChk.ok));
   const gap = line.length > 1 ? (W - 170) / (line.length - 1) : 0;
   const lx = i => 105 + i * gap;
   const fns = (m.systems || []).map(s => s.name);
@@ -203,7 +210,7 @@ function wb2MapHtml(n, m){
       if (j >= 0) svg += `<path class="e made" d="M${fx(at(x)).toFixed(0)} ${FB} L${lx(j).toFixed(0)} 232">${wb2Title(x + " made " + a.art)}</path>`;
     }));
   }
-  /* the line of work: an engine opens its card, a filed thing opens itself; the deliverable is lit once it is live */
+  /* the line of work: an engine opens its card, a filed thing opens itself; the deliverable is lit once it is delivered */
   line.forEach((node, i) => {
     if (node.kind === "eng"){
       const cls = wb2EngCls(m, node.e);
@@ -213,10 +220,10 @@ function wb2MapHtml(n, m){
     } else {
       const a = arts[node.name] || { versions: 0, slug: "" };
       const v = a.versions ? "v" + a.versions : "";
-      const live = node.name === last && m.live ? " live" : "";
+      const live = node.name === last && delivered ? " live" : "";
       svg += `<g class="n work${a.versions ? " done" : ""}${live}" ${a.versions ? `data-wbart="${esc(a.slug)}"` : `data-wbtab="motor"`} transform="translate(${(lx(i) - 34).toFixed(0)},232)">` +
         `<rect class="bx" width="68" height="36" rx="4"/><text x="8" y="17">${esc(node.name)}</text><text class="v" x="8" y="30">${esc(v)}</text>` +
-        wb2Title(node.name + (a.versions ? " · filed, " + v : " · not made yet") + (live ? " · live" : "")) + `</g>`;
+        wb2Title(node.name + (a.versions ? " · filed, " + v : " · not made yet") + (live ? (m.live ? " · live" : " · delivered") : "")) + `</g>`;
     }
   });
   /* what the department knows */
@@ -238,10 +245,22 @@ function wb2MapHtml(n, m){
   return wb2NowHtml(m, fv) + `<div class="wb2frame wb"><div class="wb2map wb">${svg}</div>` + wb2CardsHtml(m, fv, line, arts, knows, bud) + `</div>` + empty +
     wb2UnderHtml(fv);
 }
-/* a function's line under its state word, cut to the box; a line that carries a count stays on the hover */
+/* A line of the record at rest (no counts at rest; a name such as v1, Round 2, D2 or F1 is a name, not a count): the
+   line as it is when it holds no count; else the part before its first colon, the act without its detail, when that
+   part holds none; else nothing. What is not at rest stays on the hover (a title), never lost. One rule for the Map's
+   boxes and 24-functions.js's cards and Between them, so a fault's why, a run's line or the owner's own words that
+   carry a number never print it at rest. */
+const WB2_NAMED = /\b(?:v|D|F|Round )\d+\b/g;
+function wb2Rest(line){
+  const s = String(line || ""), counts = x => /\d/.test(x.replace(WB2_NAMED, ""));
+  if (!counts(s)) return s;
+  const head = s.split(/:\s/)[0];
+  return head !== s && !counts(head) ? head : "";
+}
+/* a function's line under its state word, at rest and cut to the box; the whole line is the box's hover */
 function wb2BoxLine(node){
-  const line = String((node && (node.why || node.line)) || "");
-  if (!line || /\d/.test(line)) return "";
+  const line = wb2Rest((node && (node.why || node.line)) || "");
+  if (!line) return "";
   return line.length > 20 ? line.slice(0, 19).replace(/\s+\S*$/, "") + "…" : line;
 }
 /* Under the picture, three closed dropdowns (the prototype's "Not recorded" pattern, 8b24f54): every message between the

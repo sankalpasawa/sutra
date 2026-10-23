@@ -571,11 +571,19 @@ test("M1.4: under an organisation with a Root the sheet asks Root and files no o
   const c = fresh({ DOMAINS: TREE.concat([ROOTX, SITE]) }); c.loadProposals = () => {};
   vm.runInContext("function wbHidden(ref){ return ref === 'r7'; }", c);
   assert.strictEqual(c.o2Data().lifted.get("r2").ref, "r7", "the organisation lifts its Root");
+  /* Root sets every department up in its organisation, directly under itself (founding.spawn), so the sheet says where
+     the department goes and never offers a place under the department it was opened on (round 1, gap 9) */
+  const where = { r2: "to Root · it sets the department up in Asawa Inc. with its five functions",
+                  r8: "to Root · it sets the department up in Asawa Inc., next to Website, with its five functions" };
   for (const at of ["r2", "r8"]){                       /* the organisation's own row, and a department inside it */
     c.calls.apiPost.length = 0;
-    c.o2Select(at); c.o2OpenSheet("create");
+    c.o2Select(at);
+    const menu = c.o2MenuHtml(c.o2Data().byRef.get(at), c.o2Data());
+    assert.ok(/data-o2act="create">New department…</.test(menu) && !/New sub-department/.test(menu), "the menu names what Root makes, from " + at);
+    c.o2OpenSheet("create");
     const html = c.o2SheetHtml(c.o2Data().byRef.get(at), c.o2Data());
-    assert.ok(/data-o2swords/.test(html) && />Send to Root</.test(html) && /to Root · it sets the department up with its five functions/.test(html), "the sheet says where it goes");
+    assert.ok(/data-o2swords/.test(html) && />Send to Root</.test(html) && html.indexOf(where[at]) >= 0, "the sheet says where it goes: " + html);
+    assert.ok(/<h1>New department<\/h1>/.test(html) && !/sub-department/.test(html), "never a sub-department of the row it was opened on");
     assert.ok(!/charter/i.test(html.replace(/<[^>]+>/g, " ")), "no charter on the sheet");
     c.o2S().sheet.name = "  Billing  ";
     c.o2S().sheet.words = " Invoices for every patient, sent by email ";
@@ -595,8 +603,11 @@ test("M1.4: under an organisation with a Root the sheet asks Root and files no o
   assert.strictEqual(c.calls.apiPost.length, 0);
   /* an organisation without a Root files org.create, exactly as before */
   const plain = fresh(); plain.loadProposals = () => {};
-  plain.o2Select("r4"); plain.o2OpenSheet("create");
+  plain.o2Select("r4");
+  assert.ok(/data-o2act="create">New sub-department…</.test(plain.o2MenuHtml(plain.o2Data().byRef.get("r4"), plain.o2Data())), "without a Root: a sub-department");
+  plain.o2OpenSheet("create");
   assert.strictEqual(plain.o2S().sheet.root, null);
+  assert.ok(/<h1>New sub-department<\/h1>/.test(plain.o2SheetHtml(plain.o2Data().byRef.get("r4"), plain.o2Data())));
   assert.ok(!/data-o2swords/.test(plain.o2SheetHtml(plain.o2Data().byRef.get("r4"), plain.o2Data())));
   plain.o2S().sheet.name = "Design";
   await plain.o2SendRequest();

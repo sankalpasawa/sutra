@@ -235,7 +235,8 @@ function fvOf(o){
     ref: "r3", name: DEPT, kind: "website", stopped: !!o.stopped,
     functions: FV_NAMES.map(n => {
       const s = states[n] || "quiet";
-      return { id: "fn:" + n.toLowerCase(), fn: n.toLowerCase(), name: n, state: s, word: FV_WORDS[s],
+      /* a stopped department's word is 'stopped' on every function (functions_view.py functions) */
+      return { id: "fn:" + n.toLowerCase(), fn: n.toLowerCase(), name: n, state: s, word: o.stopped ? "stopped" : FV_WORDS[s],
         waits_on: s === "waiting_on_you" ? "you" : (s === "waiting" ? ((o.waits || {})[n] || "Priority") : null),
         line: lines[n] !== undefined ? lines[n] : (s === "working" ? "working" : (s === "waiting" ? "waits on " + ((o.waits || {})[n] || "Priority") : "")),
         why: s === "fault" ? (lines[n] || "a step failed its check") : null,
@@ -1362,6 +1363,25 @@ test("M1.5: the NOW line counts only what is not zero, folds in System status, a
   assert.ok(/<span class="wb2pill ok" aria-live="polite">Goal reached<\/span>/.test(html), "Goal reached");
   assert.ok(/<g class="n work done live" data-wbart="live-site"/.test(html), "the deliverable takes the ok tint once it is live");
 });
+/* M1.5 (round 1, gap 8): S1's Done holds for every runtime department, not the website alone. An organic department has
+   no Live site, so its deliverable (the last thing its line makes) is lit when the cycle's goal is reached or a version
+   of it passed its check; before either it is filed, not lit. */
+test("M1.5: an organic department's deliverable takes the ok tint once the goal is reached or it passed its check", async () => {
+  const organic = o => {
+    const m = rtMap({ versions: { "Brief": 1, "Facts": 1, "Inventory": 1 } });
+    m.kind = "organic"; m.live = false;
+    m.engines = [["Facts", "Brief", "Facts"], ["Track", "Facts", "Inventory"]].map(([name, reads, writes]) => Object.assign({}, m.engines[0], { name, reads, writes }));
+    m.artifacts.forEach(a => { a.latest = { v: 1, at: AT, check: { ok: a.name !== "Inventory" || !!o.passed, notes: [] } }; });
+    return m;
+  };
+  let [, html] = await mapWith({ map: organic({}), fv: fvOf({ cycle: { state: "running", says: "Track is working" } }) });
+  assert.ok(/<g class="n work done" data-wbart="inventory"/.test(html), "filed, not yet delivered: not lit");
+  [, html] = await mapWith({ map: organic({}), fv: fvOf({ cycle: { state: "done", says: "Goal reached" } }) });
+  assert.ok(/<g class="n work done live" data-wbart="inventory"[\s\S]*?<title>Inventory · filed, v1 · delivered<\/title>/.test(html), "the goal reached: lit");
+  [, html] = await mapWith({ map: organic({ passed: true }), fv: fvOf({ cycle: { state: "pursuing", step: 8, says: "Working on what Audit found" } }) });
+  assert.ok(/<g class="n work done live" data-wbart="inventory"/.test(html), "a version that passed its check: lit");
+  assert.ok(!/<g class="n work done live" data-wbart="facts"/.test(html), "only the deliverable");
+});
 test("M1.5: Budget joins Knows as a bar with its numbers on hover; a failed read falls back and can be read again; the narrow list", async () => {
   let [c, html] = await mapWith({ fv: fvOf({ budget: 0.25 }) });
   assert.ok(/<g class="n" data-wbfn="priority" transform="[^"]*"><rect class="bx" width="150" height="32" rx="8"\/><text x="10" y="20">Budget<\/text><rect class="bar0" x="66" y="13" width="72" height="6" rx="3"\/><rect class="bar1" x="66" y="13" width="18.0" height="6" rx="3"\/><title>Budget · 30 of 120 calls/.test(html), "a bar, the numbers on hover");
@@ -1509,7 +1529,8 @@ async function allFive(o){
 test("M1.8: All five is five cards in order, each with its mark, a state word and a bar, then Between them", async () => {
   const fv = fvOf({ states: { Identity: "waiting_on_you", Adaptation: "waiting", Priority: "quiet", Coordination: "working", Audit: "fault" },
                     lines: { Identity: "May the reviews show first names?", Coordination: "Write's turn", Audit: "Audit has not read Live site v1" },
-                    waits: { Adaptation: "Priority" }, last: { Priority: { what: "said yes to round two", at: AT } },
+                    waits: { Adaptation: "Priority" }, last: { Priority: { what: "said yes to round two", at: AT },
+                                                               Coordination: { what: "gave Write the turn", detail: "after Site plan v2", at: AT } },
                     cycle: { says: "Write is working", needs_you: true, asks: 1 } });
   const [c, html] = await allFive({ fv });
   assert.ok(/<div class="o2vh"><b>All five<\/b>/.test(html) && /class="o2viewer dpviewer dp wb fv"/.test(html), "the viewer, a size container");
@@ -1526,6 +1547,8 @@ test("M1.8: All five is five cards in order, each with its mark, a state word an
   assert.ok(/<span class="wbchip" data-wbfn="priority">waits on Priority<\/span>/.test(cards[1]), "a wait opens the function it waits on");
   assert.ok(/<b class="dpfnb block" aria-hidden="true">!<\/b>/.test(cards[4]) && /fault<\/b>: Audit has not read Live site v1/.test(cards[4]), "a fault with '!' and the reason");
   assert.ok(/last: said yes to round two · \d\d:\d\d/.test(cards[2]), "the last act and its time");
+  assert.ok(/<div class="dpchk" title="gave Write the turn: after Site plan v2">last: gave Write the turn · \d\d:\d\d<\/div>/.test(cards[3]),
+    "the act at rest, what it acted on in the hover: " + cards[3]);
   assert.ok(/<div class="fvprog wb"><div class="fvsays"><i class="dpdot breath"[^>]*><\/i><b aria-live="polite">Write is working<\/b><span class="wbchip ask">needs you<\/span>/.test(html), "the progress words, full form");
   assert.strictEqual((html.match(/<span class="fvpill /g) || []).length, 8, "eight step pills");
   assert.ok(/<span class="fvpill now" title="Run · Run happened · \d\d:\d\d"><i class="dpdot breath"/.test(html) && /<span class="fvpill skip" title="[^"]*">- Settle<\/span>/.test(html), "now breathes; Settle skipped");
@@ -1542,6 +1565,35 @@ test("M1.8: All five is five cards in order, each with its mark, a state word an
   assert.strictEqual(vm.runInContext("dpS().tab['r3']", c), "coordination");
   click(c, { wbtab: "board", wbthread: "x-9" });
   assert.strictEqual(vm.runInContext("S.wb.tab['r3'] + ':' + S.wb.thread['r3']", c), "board:x-9");
+});
+/* M1.8 (round 1, gap 7): the record's own lines carry counts (a fault's why, a run's line, the owner's words), and All
+   five prints them at rest through the Map's own rule (23-screens.js wb2Rest): a line with a count gives its act before
+   the colon, or nothing, and the whole line is the hover. Names (v1) stay. */
+test("M1.8: a fault, a last act and a line between them that carry a count keep it on the hover, never at rest", async () => {
+  const fv = fvOf({ states: { Identity: "waiting_on_you", Priority: "fault", Coordination: "working", Audit: "fault" },
+                    lines: { Identity: "May the reviews show the 12 doctors' first names?", Priority: "Answer a proposal: page 3 of 8 failed its check",
+                             Coordination: "Write is on page 3 of 8", Audit: "Audit has not read Live site v1" },
+                    last: { Adaptation: { what: "took Priority's ask for less: keep 2 of 4 engines", at: AT },
+                            Identity: { what: "took the owner's words", detail: "A site for Class 8", at: AT }, Priority: { what: "said no 3 times", at: AT } } });
+  const board = JSON.parse(JSON.stringify(FV_BOARD));
+  board.threads[0].posts[1].line = "the envelope has room for 3 of them";
+  const [, html] = await allFive({ fv, board });
+  const card = fn => (html.match(new RegExp('<button type="button" class="fvcard fn-' + fn + ' wb[^"]*"[^>]*>[\\s\\S]*?</button>')) || [""])[0];
+  assert.ok(/<span class="fvnow" title="May the reviews show the 12 doctors(&#39;|')s? first names\?"><span class="wbchip ask" data-wbtab="chat">waits on you<\/span> <\/span>/.test(card("identity")),
+    "the owner's ask with a count: the chip at rest, the words on the hover: " + card("identity"));
+  assert.ok(/<span class="fvnow" title="Answer a proposal: page 3 of 8 failed its check"><b>fault<\/b>: Answer a proposal<\/span>/.test(card("priority")), "the act before the colon");
+  assert.ok(/<span class="fvnow" title="Write is on page 3 of 8"><b>working<\/b><\/span>/.test(card("coordination")), "a line that is all count: the word alone");
+  assert.ok(/<b>fault<\/b>: Audit has not read Live site v1<\/span>/.test(card("audit")), "a name stays");
+  assert.ok(/title="took Priority(&#39;|')s ask for less: keep 2 of 4 engines">last: took Priority(&#39;|')s ask for less · \d\d:\d\d<\/div>/.test(card("adaptation")), card("adaptation"));
+  assert.ok(/title="took the owner(&#39;|')s words: A site for Class 8">last: took the owner(&#39;|')s words · /.test(card("identity")), "the owner's words are the hover");
+  assert.ok(/title="said no 3 times">last: \d\d:\d\d<\/div>/.test(card("priority")), "an act that is all count: its time alone");
+  assert.ok(/<span class="dpchk" title="the envelope has room for 3 of them"><\/span><\/button>/.test(html), "between them: the line on the hover");
+  const t = words(html.replace(/ title="[^"]*"/g, "").replace(/ aria-label="[^"]*"/g, "")).replace(/\bv\d+\b/g, "");
+  assert.ok(!/\d/.test(t), "a digit at rest: " + (t.match(/.{0,30}\d.{0,30}/) || [""])[0]);
+  /* the Map's boxes keep the same rule: the act before the colon, the whole line on the hover */
+  const [, map] = await mapWith({ fv });
+  assert.ok(/<text class="ln" x="42" y="55">Answer a proposal<\/text>/.test(fnBox(map, "priority")[2]), "the Map's box: " + fnBox(map, "priority")[2]);
+  assert.ok(!/class="ln"/.test(fnBox(map, "coordination")[2]) && /<title>Coordination · working · Write is on page 3 of 8<\/title>/.test(map), "all count: the hover");
 });
 test("M1.8: the list carries All five first; loading, error, not started and stopped read as the screen names them", async () => {
   let [c, html] = await allFive({ fv: () => new Promise(() => {}) });
@@ -1588,6 +1640,49 @@ test("M1.8: the arrow keys move between the cards, and the stylesheet block is t
   assert.ok(a > 0 && b > a && t > b, "loaded after 23, before the tail");
 });
 const FV_ORDER_T = ["identity", "adaptation", "priority", "coordination", "audit"];
+/* M1 acceptance, line 1 (round 1, gap 2): the Map, the list, All five and each pane agree with each other in every J2
+   state. One functions read per state, as functions_view.py gives it (test_functions_view.py F1 pins the states), feeds
+   all four surfaces; each prints the read's own word for each function, stopped and done included. A wait on another
+   function is its 'waits on' chip on the card, the word's own long form. */
+const FV_BY_STATE = {
+  assessing: { states: { Identity: "working" } }, waiting: { states: { Identity: "waiting_on_you" } },
+  adapting: { states: { Adaptation: "working" } }, bargaining: { states: { Priority: "working", Adaptation: "waiting" } },
+  closing: { states: { Identity: "working", Adaptation: "waiting" }, waits: { Adaptation: "Identity" } },
+  checking: { states: { Adaptation: "waiting" }, waits: { Adaptation: "Root" } }, running: { states: { Coordination: "working" } },
+  pursuing: { states: { Identity: "waiting_on_you" } }, blocked: { states: { Identity: "waiting_on_you" } },
+  stopped: { stopped: true }, done: {} };
+test("M1: the Map, the list, All five and each pane print the same word for each function in every J2 state", async () => {
+  for (const state of Object.keys(FV_BY_STATE)){
+    const o = FV_BY_STATE[state];
+    const fv = fvOf(Object.assign({ cycle: { state, says: state } }, o));
+    const page = fn => Object.assign(fnPageOf(fn), { node: fv.functions.filter(x => x.fn === fn)[0] });
+    const map = rtMap({ stopped: !!o.stopped });
+    const c = await v2({ map, fv, fnpage: page, board: FV_BOARD });
+    click(c, { wbtab: "map" }); await sleep();
+    const mapHtml = await paint(c);
+    for (let k = 0; k < 2; k++){ c.dpListHtml(WEB, {}, null, null); await sleep(); await sleep(); }
+    const listHtml = c.dpListHtml(WEB, {}, null, null);
+    click(c, { wbtab: "five" }); await sleep();
+    const fiveHtml = await paint(c);
+    for (const node of fv.functions){
+      const fn = node.fn, name = node.name, want = node.word;
+      const box = /<text class="st" x="\d+" y="40">([^<]+)<\/text>/.exec(fnBox(mapHtml, fn)[2] || "");
+      assert.strictEqual(box && box[1], want, state + ": the Map's " + fn);
+      const row = new RegExp('data-dptab="' + fn + '" aria-label="' + name + ' · ([^"]+)"').exec(listHtml);
+      assert.strictEqual(row && row[1], want, state + ": the list's " + fn);
+      const card = (fiveHtml.match(new RegExp('<button type="button" class="fvcard fn-' + fn + ' wb[^"]*"[^>]*>[\\s\\S]*?</button>')) || [""])[0];
+      assert.ok(card.indexOf('aria-label="' + name + " · " + want + '"') >= 0, state + ": All five's " + fn + " names it");
+      const shown = /<span class="fvnow"[^>]*>(?:<b>([^<]+)<\/b>|<span class="wbchip[^"]*"[^>]*>([^<]+)<\/span>)/.exec(card);
+      assert.ok(shown, state + ": All five's " + fn + " shows a word");
+      if (shown[1] !== undefined) assert.strictEqual(shown[1], want, state + ": All five's " + fn);
+      else assert.strictEqual(shown[2], want === "waiting" ? "waits on " + node.waits_on : want, state + ": All five's " + fn + " chip");
+      const pane = await fnCard(c, fn);
+      const now = /<h3>The function<\/h3><div class="dpbig">[^<]*<\/div><div class="dprow"><span class="dpdot[^"]*"><\/span><span>([^<]+)/.exec(pane);
+      assert.strictEqual(now && now[1].toLowerCase(), want, state + ": " + fn + "'s pane");
+    }
+    if (o.stopped) assert.ok(fv.functions.every(x => x.word === "stopped"), "stopped is one word");
+  }
+});
 test("V2 root: Root's Map is its departments as boxes, each with a state dot and its line of work as a strip, and a way to a new one", async () => {
   const rm = rtMap(); rm.kind = "root"; rm.root = "r3"; rm.live = false;
   const c = await v2({ map: rm, chat: ROOT_CHAT });
