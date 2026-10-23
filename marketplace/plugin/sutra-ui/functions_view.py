@@ -46,7 +46,7 @@ SAYS = {"not_started": "Not started", "not_ready": "Not started", "assessing": "
 STEPS = ((1, "Enough to work"), (2, "Propose"), (3, "Price"), (4, "Settle"), (5, "Root's review"), (6, "Run"), (7, "Read"),
          (8, "Next or done"))
 # an act on the board, in the words a person reads (the owner's words: said yes, asked for less, said no)
-ACT_WORDS = {"request": "asks", "agree": "agrees with", "refuse": "refuses", "propose": "proposes to",
+ACT_WORDS = {"request": "asks", "agree": "agrees with", "refuse": "says no to", "propose": "proposes to",
              "accept-proposal": "says yes to", "reject-proposal": "says no to", "inform": "tells", "failure": "says it could not to",
              "cancel": "lets go of", "not-understood": "did not follow"}
 RUNG_BY = {"C2": "code", "C1": "AI", "C0": "AI", "P": "person"}
@@ -290,11 +290,11 @@ def _faults(ref, d, rs, rows, now_s):
     for fn in FUNCS:
         mine = [r for r in rows if r.get("engine") == fn]
         if mine and mine[-1].get("status") == "failed":
-            out[fn] = _short(mine[-1].get("why") or "a step of %s failed its check" % fn)
+            out[fn] = _short(_plain(mine[-1].get("why")) or "a step of %s failed its check" % fn)
             continue
         runs_fn = [r for r in rs if r.get("engine") == fn and r.get("status") != "running"]
         if runs_fn and runs_fn[-1].get("status") == "failed":
-            out[fn] = _short(runs_fn[-1].get("what") or "%s's last run failed" % fn)
+            out[fn] = _short(_plain(runs_fn[-1].get("what")) or "%s's last run failed" % fn)
     if d.get("stopped") or any(r.get("status") == "running" for r in rs):
         return out
     # should have fired: Audit by its own start (a checked version of what it reads), past the grace window
@@ -346,7 +346,7 @@ def _steps(cur, events, state):
         else:
             word = "next"
         out.append({"step": n, "name": name, "state": word,
-                    "last": last and {"summary": _short(last.get("summary")), "at": last.get("occurred_at")}})
+                    "last": last and {"summary": _short(_plain(last.get("summary"))), "at": last.get("occurred_at")}})
     return out
 
 
@@ -397,8 +397,8 @@ def functions(ref):
         # Identity asks: a pending ask, the cycle's open question, a blocked cycle; pursuing waits while a finding is asked
         if fn == "Identity":
             ask = question or finding or (pending[0] if pending else None)
-            if state == "blocked":
-                node.update(state="waiting_on_you", waits_on="you", line="the plan was not granted; it needs your words")
+            if state == "blocked":                  # Identity closed a conflict by dropping the plan (J.ruled 'drop')
+                node.update(state="waiting_on_you", waits_on="you", line="the plan was dropped; it needs your words")
             elif state == "waiting" or ask:
                 node.update(state="waiting_on_you", waits_on="you",
                             line=_short((ask or {}).get("text") or "waits for your answer"))
@@ -476,16 +476,35 @@ def _writes(ref, fn):
     return out
 
 
-# The bargain in the owner's words wherever a definition's name carries the inside word (the screen says said yes, asked
-# for less and said no; never grant, counter or refuse for Priority's answer). Phrases first, then the plain verbs.
+# The bargain in the owner's words wherever a definition's name, a run's line or a ledger row's summary carries the inside
+# word (the screen says said yes, asked for less and said no; never grant, counter or refuse for an answer). A step's
+# name, the default summaries j2_runtime writes (J.on_post, J.refused, the owner's answer) and the lines the functions'
+# runs say (engine_runtime's priority_answer, adapt_*, identity_*) all pass through here before they leave this read.
+# Phrases first, longest first, then the plain verbs. A rule's tag (go, ask, refuse, always) is the owner's own word
+# for a rule and is left as it is.
 BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priority said yes to, to Root's check"),
                  ("Take the refusal to Identity", "Take Priority's no to Identity"),
                  ("Take the counter, or take it to Identity", "Take Priority's ask for less, or take it to Identity"),
                  ("Grant, refuse or counter", "Say yes, ask for less, or say no"),
                  ("grants each engine its envelope", "gives each engine its limit"),
                  ("granted an envelope to each engine", "gave each engine its limit"),
+                 ("Granted within the envelope.", "Said yes within the limit."),
+                 ("Root's check refused the workflow", "Root's check sent the plan back"),
+                 ("waits for the workflow to be granted and registered", "waits for Priority's yes and Root's check"),
+                 ("passed, asked or refused", "passed, asked or stopped"),
+                 ("Take a refusal", "Take a no"), ("Drop what was refused", "Drop what was turned down"),
+                 ("Hear a refusal", "Hear a no"), ("Note the refusal", "Note the no"),
+                 ("The owner refused it.", "The owner said no."), ("refused by the owner", "turned down by the owner"),
+                 ("the owner's refusal", "the owner's no"),
+                 ("took Priority's counter", "took Priority's ask for less"), ("take Priority's counter", "take Priority's ask for less"),
+                 ("Priority's counter", "Priority's ask for less"), ("Priority's refusal", "Priority's no"),
+                 ("Priority's grant's stamp", "Priority's yes"), ("Priority's grant", "Priority's yes"),
                  ("Priority granted", "Priority said yes to"), ("Priority refused", "Priority said no to"),
-                 ("Priority countered", "Priority asked for less on"))
+                 ("Priority countered", "Priority asked for less on"),
+                 ("countered the line", "asked for less on the line"), ("granted the line", "said yes to the line"),
+                 ("refused the line", "said no to the line"), ("granted a trial", "said yes to a trial"),
+                 ("refused a trial", "said no to a trial"), ("refused the ask", "said no to the ask"), ("refused: ", "said no: "),
+                 ("Countered.", "Asked for less."), ("Refused.", "Said no."))
 
 
 def _plain(line):
@@ -523,8 +542,10 @@ def _journey_rows(ref, fn, events, rows, rs, posts):
         hits = []
         for e in events:
             if e.get("action") in actions:
+                # Root's check that did not hold sent the plan back; every other refusal is a 'said no'
+                back = e["action"] == "workflow.blocked" and e.get("state") == "refused"
                 hits.append({"action": e["action"], "summary": e.get("summary"), "at": e.get("occurred_at"),
-                             "word": LIVE.get(str(e.get("state")), str(e.get("state") or ""))})
+                             "word": "sent back" if back else LIVE.get(str(e.get("state")), str(e.get("state") or ""))})
             elif extra == "answered" and e.get("action") == "ask.answered" and e.get("step") == 1:
                 hits.append({"action": e["action"], "summary": e.get("summary"), "at": e.get("occurred_at"), "word": "done"})
         if extra == "owner_words":
@@ -563,7 +584,7 @@ def _journey_rows(ref, fn, events, rows, rs, posts):
         last = hits[-1] if hits else None
         out.append({"id": jid, "name": name, "built": built,
                     "status": last["word"] if last else NOT_RUN.get(built, "not run yet"),
-                    "last": last and {"summary": _short(last.get("summary")), "at": last.get("at"), "action": last.get("action")}})
+                    "last": last and {"summary": _short(_plain(last.get("summary"))), "at": last.get("at"), "action": last.get("action")}})
     return out
 
 
@@ -573,26 +594,26 @@ def _j2_part(ref, d, fn, events, ak):
         return {"standard": {"met": not J._identity_gaps(d), "missing": J._identity_gaps(d)},
                 "goal": d.get("goal"), "done": d.get("done"),
                 "rules": [{"tag": r.get("tag"), "line": r.get("line")} for r in d.get("rules") or [] if r.get("line")],
-                "conflicts": [{"summary": e.get("summary"), "at": e.get("occurred_at"), "action": e.get("action")}
+                "conflicts": [{"summary": _plain(e.get("summary")), "at": e.get("occurred_at"), "action": e.get("action")}
                               for e in events if e.get("action") in ("conflict.raised", "identity.ruled")][-6:]}
     if fn == "Adaptation":
         prop = next((e for e in reversed(events) if e.get("action") == "proposal.created"), None)
         return {"proposal": prop and {"workflow": (prop.get("payload") or {}).get("workflow") or [],
                                       "source": (prop.get("payload") or {}).get("source"), "at": prop.get("occurred_at")},
-                "root_checks": [{"summary": e.get("summary"), "at": e.get("occurred_at"), "passed": e.get("action") == "workflow.validated"}
+                "root_checks": [{"summary": _plain(e.get("summary")), "at": e.get("occurred_at"), "passed": e.get("action") == "workflow.validated"}
                                 for e in events if e.get("action") in ("workflow.validated", "workflow.blocked")][-4:],
                 "rounds": []}
     if fn == "Priority":
         said = {"proposal.granted": "said yes", "proposal.countered": "asked for less", "proposal.refused": "said no"}
-        return {"bargains": [{"said": said[e["action"]], "summary": e.get("summary"), "at": e.get("occurred_at")}
+        return {"bargains": [{"said": said[e["action"]], "summary": _plain(e.get("summary")), "at": e.get("occurred_at")}
                              for e in events if e.get("action") in said][-6:],
                 "envelopes": [dict(_spend(ref, d, n), engine=n) for n in [x[0] for x in W.engines_of(d)] + list(FUNCS)]}
     if fn == "Coordination":
         t = R.coordination(ref)
         return {"line": list(t.get("line") or []), "timetable": None,
-                "holds": [{"summary": e.get("summary"), "at": e.get("occurred_at")} for e in events if e.get("action") == "envelope.held"][-4:],
+                "holds": [{"summary": _plain(e.get("summary")), "at": e.get("occurred_at")} for e in events if e.get("action") == "envelope.held"][-4:],
                 "alarms": [{"text": a.get("text"), "at": a.get("created")} for a in ak if a.get("kind") == "alarm" and a.get("status") == "pending"]}
-    return {"readings": [{"summary": e.get("summary"), "at": e.get("occurred_at")} for e in events if e.get("action") == "audit.finding_filed"][-6:],
+    return {"readings": [{"summary": _plain(e.get("summary")), "at": e.get("occurred_at")} for e in events if e.get("action") == "audit.finding_filed"][-6:],
             "findings": [{"text": a.get("text"), "at": a.get("created")} for a in ak if a.get("kind") == "finding" and a.get("status") == "pending"],
             "spot_checks": []}
 
@@ -621,7 +642,7 @@ def function(ref, fn):
               {"key": "done", "label": "Done when", "value": None},
               {"key": "hears", "label": "Hears", "value": hears or None},
               {"key": "writes", "label": "Writes", "value": _writes(ref, name) or None},
-              {"key": "checks", "label": "Checks", "value": list(t.get("checks") or []) or None},
+              {"key": "checks", "label": "Checks", "value": [_plain(c) for c in t.get("checks") or []] or None},
               {"key": "envelope", "label": "Limit", "value": {"share": spend["share"]}},
               {"key": "settings", "label": "Settings", "value": _settings(name)}]
     for f in fields:

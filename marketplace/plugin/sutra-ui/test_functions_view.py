@@ -10,6 +10,9 @@ Named claims:
   F5  the read carries no private key and no path, and it writes nothing
   F6  the route answers for a department on the engine runtime and 404s for any other ref
   F7  the cycle says where the department is in the owner's words, with its eight steps, and needs_you only when it does
+  F8  every word of the read is the owner's in every state: said yes, asked for less, said no and sent back, never grant,
+      counter or refuse (the bargain on the record, a dropped plan, a department Root set up); a rule's tag (go, ask,
+      refuse, always) is the owner's own word and stays
 
 Each department is born the way the app makes one (website_dept.create), then its record is set to the state under
 test, so what is read is the record a real department keeps.
@@ -17,6 +20,7 @@ test, so what is read is the record a real department keeps.
 import importlib
 import json
 import os
+import re
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -505,6 +509,25 @@ def test_m17_each_journey_shows_its_live_status_and_last_move_from_the_record(mo
     assert [b["said"] for b in j2["bargains"]] == ["asked for less"], "the owner's words: said yes, asked for less, said no"
 
 
+# What the screen prints of a read: ids and ledger actions are names it never prints as words, and a rule's tag (go, ask,
+# refuse, always) is the owner's own word for a rule (PRD S5: "Tags go, ask, refuse and always"), so neither is scanned.
+RULE_TAGS = re.compile(r"\bgo, ask, refuse,? (?:or |and )?always\b|\ba refuse rule\b")
+BANNED = ("grant", "counter", "refus", "orders")
+
+
+def _shown(v):
+    def drop(x):
+        if isinstance(x, dict):
+            return {k: drop(y) for k, y in x.items() if k not in ("id", "action", "tag")}
+        return [drop(y) for y in x] if isinstance(x, list) else x
+    return RULE_TAGS.sub(" ", json.dumps(drop(v)).lower())
+
+
+def _banned(v):
+    text = _shown(v)
+    return [(w, text[max(0, text.index(w) - 60):text.index(w) + 40]) for w in BANNED if w in text]
+
+
 def test_m17_no_charter_no_internal_system_no_path_and_the_route(mods):
     W, R, J, F = mods
     import website_api
@@ -514,18 +537,66 @@ def test_m17_no_charter_no_internal_system_no_path_and_the_route(mods):
     app = FastAPI()
     app.include_router(website_api.router)
     c = TestClient(app)
-    for fn in JOURNEYS:
-        got = c.get("/api/native/%s/functions/%s" % (REF, fn))
-        assert got.status_code == 200, fn
-        shown = json.loads(json.dumps(got.json()))
-        def drop_ids(v):                                    # ids are names the screen never prints as words
-            if isinstance(v, dict):
-                return {k: drop_ids(x) for k, x in v.items() if k not in ("id", "action")}
-            return [drop_ids(x) for x in v] if isinstance(v, list) else v
-        text = json.dumps(drop_ids(shown)).lower()
-        assert "charter" not in text and "internal system" not in text, fn
-        assert "/users/" not in text and str(W.ddir(REF)).lower() not in text and ".json" not in text, fn
-        for word in ("granted", "countered", "orders"):
-            assert word not in text, (fn, word)
+
+    def scan(state):
+        for fn in JOURNEYS:
+            got = c.get("/api/native/%s/functions/%s" % (REF, fn))
+            assert got.status_code == 200, fn
+            text = _shown(got.json())
+            assert "charter" not in text and "internal system" not in text, (state, fn)
+            assert "/users/" not in text and str(W.ddir(REF)).lower() not in text and ".json" not in text, (state, fn)
+            assert not _banned(got.json()), (state, fn, _banned(got.json()))
+        assert not _banned(c.get("/api/native/%s/functions" % REF).json()), state
+    scan("a fresh department")
+    # the bargain on the record and the plan dropped: every word the screen prints is still the owner's (gap 1, round 1)
+    _cycle(W, "blocked", 4)
+    J.note(REF, 3, "Priority", "Adaptation", "proposal.refused", "refused", "Refused.", "r1")
+    scan("blocked")
     assert c.get("/api/native/%s/functions/marketing" % REF).status_code == 404
     assert c.get("/api/native/dref-nothing/functions/identity").status_code == 404
+
+
+def test_m17_the_bargain_and_a_dropped_plan_read_in_the_owners_words(mods):
+    """The ledger's default summaries (J.on_post), Root's check that did not hold, the owner's no and a blocked cycle:
+    the five's read and each function's page carry said yes, asked for less and said no, never grant, counter or refuse;
+    Identity's own acts and recipe read the same way."""
+    W, R, J, F = mods
+    _cycle(W, "blocked", 4)
+    J.note(REF, 3, "Priority", "Adaptation", "proposal.granted", "granted", "Granted within the envelope.", "g1")
+    J.note(REF, 3, "Priority", "Adaptation", "proposal.countered", "waiting", "Countered.", "c1")
+    J.note(REF, 3, "Priority", "Adaptation", "proposal.refused", "refused", "Refused.", "r1")
+    J.note(REF, 5, "Root", "Adaptation", "workflow.blocked", "refused", "Root's check refused the workflow: the plan has no Check.", "w1")
+    J.note(REF, 1, "User", "Identity", "ask.answered", "complete", "The owner refused it.", "o1")
+    _run(W, "Priority", status="ok", system=True, what="granted the line Plan -> Write -> Check -> Publish")
+    got = F.functions(REF)
+    assert not _banned(got), _banned(got)
+    nodes = {n["name"]: n for n in got["functions"]}
+    assert nodes["Identity"]["state"] == "waiting_on_you" and nodes["Identity"]["line"] == "the plan was dropped; it needs your words"
+    steps = {s["name"]: s for s in got["cycle"]["steps"]}
+    assert steps["Price"]["last"]["summary"] == "Said no." and steps["Root's review"]["last"]["summary"].startswith("Root's check sent the plan back")
+    for fn in JOURNEYS:
+        page = F.function(REF, fn)
+        assert not _banned(page), (fn, _banned(page))
+    pr = F.function(REF, "priority")
+    assert [(b["said"], b["summary"]) for b in pr["j2"]["bargains"]] == [
+        ("said yes", "Said yes within the limit."), ("asked for less", "Asked for less."), ("said no", "Said no.")]
+    assert {j["id"]: j["status"] for j in pr["journeys"]}["FP2"] == "said no"
+    fa1 = {j["id"]: j for j in F.function(REF, "adaptation")["journeys"]}["FA1"]
+    assert fa1["status"] == "sent back" and fa1["last"]["summary"].startswith("Root's check sent the plan back")
+    idn = F.function(REF, "identity")
+    fields = {f["key"]: f["value"] for f in idn["fields"]}
+    assert "Says no to you, Adaptation, Coordination" in fields["writes"] and "Take a no" in fields["hears"]
+    assert any("Drop what was turned down" == s["name"] for s in idn["recipe"])
+    assert {j["id"]: j["last"]["summary"] for j in idn["journeys"] if j["last"]}["FI1"] == "The owner said no."
+
+
+def test_m17_a_born_department_reads_in_the_owners_words(mods, born):
+    """What a department's own runs say (granted the line, Priority's grant, the envelope given to each engine) reaches
+    the screen in the owner's words too, on a department Root set up."""
+    W, R, J, F = mods
+    ref = born(WEBSITE, "Acme Learning")
+    assert any("grant" in str(r.get("what") or "") for r in W.runs(ref)), "the record's own runs say granted"
+    assert not _banned(F.functions(ref)), _banned(F.functions(ref))
+    for fn in JOURNEYS:
+        page = F.function(ref, fn)
+        assert not _banned(page), (fn, _banned(page))
