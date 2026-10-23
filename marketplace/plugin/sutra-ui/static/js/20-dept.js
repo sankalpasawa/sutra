@@ -420,7 +420,8 @@ const DP_J2_SAYS = {
   not_started: "Not started", not_ready: "Not ready", assessing: "Identity is reading the goal",
   waiting: "Waiting for you", adapting: "Adaptation is proposing what to do", bargaining: "Priority is answering the proposal",
   closing: "Identity is closing a conflict", checking: "Root is checking the plan", reshaping: "Adaptation is reshaping the plan",
-  running: "The work is running", pursuing: "Working on what Audit found", blocked: "Blocked: the plan was not granted",
+  running: "The work is running", unread: "Audit has not read the result", pursuing: "Working on what Audit found",
+  blocked: "Blocked: the plan was not granted",
   stopped: "Stopped", done: "Goal reached"
 };
 function dpActivityHtml(){
@@ -438,8 +439,11 @@ function dpActivityHtml(){
     control = `<button type="button" class="btn" data-dpj2stop="1">Stop</button>`;
   const says = DP_J2_SAYS[state] || state.replace(/_/g, " ");
   const done = status.done_when ? `<div class="dpchk">Done when: ${dpEsc(status.done_when)}</div>` : "";
+  /* Identity's open question is answered in the department's Chat, where its card is (M0.6): the activity points there */
+  const asks = status.open_question
+    ? `<div class="dpoffer"><button type="button" class="btn" data-wbtab="chat">Identity asks you in Chat ›</button></div>` : "";
   const head = dpCard("J2", `<div class="dprow"><span class="dpdot ${dpEsc(state)}"></span>` +
-    `<span><b>${dpEsc(says)}</b><div class="dpchk">${dpEsc(phase)}</div>${done}</span></div>` +
+    `<span><b>${dpEsc(says)}</b><div class="dpchk">${dpEsc(phase)}</div>${done}</span></div>` + asks +
     (control ? `<div class="dpoffer">${control}</div>` : ""));
   const rows = (read.events || []).map(e => `<div class="dpmsg"><span>` +
     `<div class="dpwho">${dpEsc(e.actor || "")} to ${dpEsc(e.recipient || "")}</div>` +
@@ -454,7 +458,7 @@ function dpActivityHtml(){
    2026-10-08). The card is painted again only when the record moved, so a quiet department never flickers. */
 function dpActivitySig(st){
   const j = st.j2 || {}, a = st.activity || {};
-  return [j.ref, j.state, j.step, j.event_count, a.ref, a.cursor, (a.events || []).length].join("|");
+  return [j.ref, j.state, j.step, j.event_count, (j.open_question || {}).id, a.ref, a.cursor, (a.events || []).length].join("|");
 }
 async function dpActivityAgain(ref){
   const st = dpS(), lock = "activity-again:" + ref;

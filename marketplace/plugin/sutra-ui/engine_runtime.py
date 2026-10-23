@@ -1302,7 +1302,11 @@ def run_engine(ref, name, inp, slot):
     if J:
         J.on_run(ref, row, "ended")
         if name == "Audit" and row.get("status") == "ok" and not p and isinstance(ctx["bag"].get("audit.file"), dict):
-            _j2_audit_read(ref, d, inp.get("v"), ctx["bag"]["audit.file"].get("filed"))
+            filed = ctx["bag"]["audit.file"]
+            if filed.get("read") is False and not filed.get("filed"):
+                J.not_read(ref, inp.get("v"), filed.get("why_not_read"))      # never 'clean': the cycle stays at step 7
+            else:
+                _j2_audit_read(ref, d, inp.get("v"), filed.get("filed"))
     return row
 
 
@@ -1831,6 +1835,12 @@ def priority_envelope(ctx, step, item):
         if not any(x.get("kind") == "envelope" and x.get("engine") == name and x["status"] == "pending" for x in W.asks(ref)):
             W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "envelope", "engine": name, "slot": slot,
                              "text": "%s is out of today's envelope" % name, "status": "pending", "created": W.now(), "escalated": True})
+        if not ctx.get("peek"):
+            # the hold is on the ledger once for its slot, however often the motor asks again (M0.4); a panel read
+            # asking the same question writes nothing; Coordination's other waits stay in the status's 'next'
+            J = _j2()
+            if J:
+                J.on_held(ref, name, slot, "%s is out of today's envelope" % name)
         return "wait", "%s is out of its envelope" % name
     return "admit", None
 
@@ -2127,6 +2137,10 @@ def identity_file(ctx, step, item):
     got = ctx["bag"]["identity.read"]
     words, first = got["words"], got["facts"]["first"]
     J = _j2()
+    if J and first:
+        # Identity asked what the department is for (thin first words, M0.5): words said in the chat answer it, and are
+        # read below as the first words, against the same standard
+        J.took_words(ref, words)
     if J and not first and J.waiting_on_owner(ref):
         # Identity's own question is open (J2.1): these words answer it. They are written to the identity, the standard
         # is read again, and the department starts once it is met
@@ -2203,7 +2217,7 @@ def identity_file(ctx, step, item):
         J = _j2()
         if J and J.active(ref):
             # J2.1: not good enough to start on; Identity asks, and the next words are read against the same standard
-            J.questioned(ref, "The words name nothing to build from yet.", p.get("n"))
+            J.questioned(ref, J.THIN, p.get("n"))
         _tell(ref, d, p, "inform", {"word": "question",
                                     "done": "Say what the site is for and about whom or what, and I will start: your words name nothing to build from yet."},
               thread=p["thread"])
@@ -2502,11 +2516,14 @@ def chat_view(ref, about=None):
         turns = [t for t in turns if not t.get("birth")]
     turns.sort(key=lambda t: (str(t["at"]), t["n"]))
     refs = [about] if about else ([root] + [c["ref"] for c in kids] if root else [ref])
-    asks = []
+    asks, answered = [], []
     for r in refs:
         dn = (W.dept(r) or {}).get("name")
-        asks += [dict(a, ref=r, dept=dn) for a in W.asks(r) if a["status"] == "pending"]
-    return {"root": root, "about": about, "turns": turns, "asks": asks,
+        rows = W.asks(r)
+        asks += [dict(a, ref=r, dept=dn) for a in rows if a["status"] == "pending"]
+        # Identity's questions the owner answered in words: the card stays in the chat with the answer under it (M0.6)
+        answered += [dict(a, ref=r, dept=dn) for a in rows if a.get("kind") == "j2_identity" and a["status"] == "stamped" and a.get("answered")]
+    return {"root": root, "about": about, "turns": turns, "asks": asks, "answered": answered,
             "departments": [{"ref": c["ref"], "name": c["name"], "stopped": bool(c.get("stopped"))} for c in kids]}
 
 
@@ -2888,7 +2905,10 @@ def adapt_heard(ctx, step, item):
 def audit_pick(ctx, step, item):
     v = int(ctx["inp"]["v"])
     files = W.read_files(ctx["ref"], "Live site", v)
-    return {"sample": v <= 3 or v % 3 == 0, "v": v, "pages": sorted(k for k in files if k.endswith(".html"))}
+    # while the department lives its J2 cycle, done-when is read off Audit's reading, so every version is read (M0.3,
+    # interim until M8 reads each done-when item); outside a cycle Audit drops in on a sample, as it always has
+    sample = _j2_live(ctx["ref"]) or v <= 3 or v % 3 == 0
+    return {"sample": sample, "v": v, "pages": sorted(k for k in files if k.endswith(".html"))}
 
 
 def audit_mechanical(ctx, step, item):
@@ -2936,6 +2956,10 @@ def placeholders(files):
     return out
 
 
+#: how a judge step was answered, when someone actually read the pages: its agent, its checklist, or a person by hand
+READ_BY = ("model", "checklist", "stamped by the owner")
+
+
 def audit_file(ctx, step, item):
     ref = ctx["ref"]
     mech, judged = ctx["bag"]["audit.mechanical"], ctx["bag"]["audit.judge"]
@@ -2943,14 +2967,25 @@ def audit_file(ctx, step, item):
     found = [{"page": None, "claim": n, "severity": "high"} for n in faults or []]
     found += list(mech.get("holes") or [])
     found += [f for f in judged.get("findings") or [] if isinstance(f, dict) and f.get("claim")]
+    # 'found nothing' is a reading only when the judge read the version: a judge skipped (not sampled) or answered by
+    # its offline draft read nothing, and its empty list is no evidence (M0.3; found 2026-10-23: an offline department
+    # reached its goal on a version no one read)
+    how = ctx["how"].get("audit.judge")
+    read = how in READ_BY
+    why_not = None if read else {SKIPPED: "it was not sampled", "offline draft": "no model was there to read it"}.get(
+        how, "how it was read is not on the record")
     if not found:
-        return {"said": "checked what went live; found nothing", "filed": 0}
+        if not read:
+            return {"said": "did not read what went live (%s); nothing is said of it" % why_not, "filed": 0, "read": False,
+                    "why_not_read": why_not}
+        return {"said": "checked what went live; found nothing", "filed": 0, "read": True}
     high = [f for f in found if str(f.get("severity") or "").lower() == "high"]
     claim = str((high or found)[0]["claim"])
     post(ref, "Audit", "Identity", "inform", {"word": "finding", "claim": claim, "severity": "high" if high else "low",
                                               "findings": found[:12], "about_version": ctx["inp"]["v"]},
          about={"art": "Live site", "v": ctx["inp"]["v"]})
-    return {"said": "found %s: %s" % ("something to put right" if high else "something to note", claim), "filed": len(found)}
+    return {"said": "found %s: %s" % ("something to put right" if high else "something to note", claim), "filed": len(found),
+            "read": read, "why_not_read": why_not}
 
 
 # ---- the rulings of 2026-09-28: every unit starts and ends with code; Coordination's own agent; Root spawns ---------
@@ -3786,19 +3821,37 @@ def _line_conflict(ref, thread, why, bound=None, src="Adaptation"):
                                                  "words": offer.get("words"), "why": why, "bound": bound, "for": thread})
 
 
-def _root_check(ref, d, engines, source):
-    """Root's standards, as code reads them (J2.e): a Library line names engines the Library has; a shaped line is one to
-    six engines, each named once, each reading the Brief or what one before it wrote."""
+def _root_run(engines, source):
+    """Root's standards on one workflow: the checks that ran, in order, and each fault with the check it breaks."""
     if not engines:
-        return ["the workflow names no engine"]
+        return ["names an engine"], [("names an engine", "the workflow names no engine")]
     if source == "library":
         known = defs()["engines"]
-        return ["the Library has no engine named %s" % e.get("name") for e in engines
-                if (known.get(e.get("name")) or {}).get("kind") != "work"]
-    faults = list(_line_faults(engines))
-    if len(engines) > 6:
-        faults.append("more than six engines")
-    return faults
+        return ["names an engine", "engines known"], [("engines known", "the Library has no engine named %s" % e.get("name"))
+                                                      for e in engines if (known.get(e.get("name")) or {}).get("kind") != "work"]
+    notes = _line_notes(engines) + ([("one to six engines", "more than six engines")] if len(engines) > 6 else [])
+    return ["names an engine", "one to six engines"] + [c for c, _ in LINE_CHECKS], notes
+
+
+#: what Root's own checks say when they hold; a shaped line's checks say it in LINE_CHECKS
+ROOT_HOLDS = {"names an engine": "the workflow names its engines", "engines known": "each engine is one the Library has",
+              "one to six engines": "the workflow is one to six engines long"}
+
+
+def _root_checks(ref, d, engines, source):
+    """Root's standards, as code reads them (J2.e), one row for each check that ran: [{check, passed, why}]. A Library line
+    is checked for engines the Library has; a shaped line for one to six engines, each named once and new to the Library,
+    the first reading the Brief, each reading what one before it wrote and writing something new (M0.7: the event lists
+    these rows, not a fixed set of names)."""
+    ran, notes = _root_run(engines, source)
+    holds = dict(LINE_CHECKS, **ROOT_HOLDS)
+    return [{"check": c, "passed": not [n for k, n in notes if k == c],
+             "why": "; ".join(n for k, n in notes if k == c) or holds[c]} for c in ran]
+
+
+def _root_check(ref, d, engines, source):
+    """Root's standards as the fault list its callers use: empty when the workflow meets them."""
+    return [n for _, n in _root_run(engines, source)[1]]
 
 
 def _j2_settle(ref, d, engines, source, words, by):
@@ -3808,8 +3861,14 @@ def _j2_settle(ref, d, engines, source, words, by):
     who = {"src": "Root" if d.get("root") else OWNER}
     names = [e.get("name") for e in engines]
     faults = _root_check(ref, d, engines, source)
+    checks = _root_checks(ref, d, engines, source)
+    named = {n for _, n in _root_run(engines, source)[1]}
+    other = [f for f in faults if f not in named]
+    if other:
+        # a fault no itemised standard names (a check put in Root's place): the event lists it as the check that ran
+        checks.append({"check": "Root's check", "passed": False, "why": "; ".join(other)})
     if faults:
-        n = J.refused(ref, engines, faults) if J else 1
+        n = J.refused(ref, engines, faults, checks=checks) if J else 1
         if n <= (J.REPAIRS if J else 2):
             _line_request(ref, d, words, faults=faults)
             _tell(ref, d, who, "inform", {"word": "line", "done": "Root's check refused the plan (%s). Adaptation is reshaping it." % "; ".join(faults)})
@@ -3835,12 +3894,12 @@ def _j2_settle(ref, d, engines, source, words, by):
                 lost.append("%s (%s)" % (e.get("name"), exc))
     if not added:
         if J:
-            J.refused(ref, engines, lost or ["no engine could be added"])
+            J.refused(ref, engines, lost or ["no engine could be added"], checks=checks)
             J._set(ref, state="blocked")
         _tell(ref, d, who, "inform", {"word": "line", "done": "The plan could not be set up: %s." % "; ".join(lost or ["no engine could be added"])})
         return {"said": "no engine of the workflow could be added"}
     if J:
-        J.registered(ref, added, source)
+        J.registered(ref, added, source, checks=checks)
     _tell(ref, d, who, "inform", {"word": "line", "engines": added,
                                   "done": "The plan is set: %s (%s). Priority granted it and it passed Root's check; the first starts now.%s"
                                   % (" -> ".join(added), "from the Library" if source == "library" else "shaped for this goal",
@@ -4649,32 +4708,46 @@ def c_feedback_says_what_changes(ctx, step, item, out):
     return {"ok": not notes, "notes": notes or ["what changes now, and what kind of change it is"]}
 
 
+#: the checks a shaped line is held to, in the order they are read, each with what it says when it holds (M0.7)
+LINE_CHECKS = (("each engine named", "every engine has a name"),
+               ("names unique", "no name is used twice"),
+               ("names new to the Library", "no name is one the Library already has"),
+               ("first reads the Brief", "the first engine reads the Brief"),
+               ("each reads what one before it wrote", "each engine reads the Brief or what one before it wrote"),
+               ("each writes something new", "each engine writes something not yet written"))
+
+
+def _line_notes(engs):
+    """_line_faults, each fault with the check it breaks: [(check, note)], in the order the line is read."""
+    notes, names, written, lib = [], [], {"Brief"}, defs()["engines"]
+    for i, e in enumerate(engs):
+        n = " ".join(str(e.get("name") or "").split())[:40] if isinstance(e, dict) else ""
+        if not n:
+            notes.append(("each engine named", "engine %d has no name" % (i + 1)))
+            continue
+        if n in names:
+            notes.append(("names unique", "%s is named twice" % n))
+        slug = re.sub(r"[^a-z0-9]+", "-", n.lower()).strip("-")
+        if n in lib or not slug or (TEMPLATES_DIR / (slug + ".json")).exists() or (user_templates_dir() / (slug + ".json")).exists():
+            notes.append(("names new to the Library", "the Library already has an engine named %s" % n))
+        r, w = " ".join(str(e.get("reads") or "Brief").split()), " ".join(str(e.get("writes") or n).split())[:40]
+        if i == 0 and r != "Brief":
+            notes.append(("first reads the Brief", "the first engine reads the Brief"))
+        if r not in written:
+            notes.append(("each reads what one before it wrote", "%s reads %s, which nothing before it writes" % (n, r)))
+        if w in written:
+            notes.append(("each writes something new", "%s writes %s, which is already written" % (n, w)))
+        names.append(n)
+        written.add(w)
+    return notes
+
+
 def _line_faults(engs):
     """What is wrong with a shaped line, as code sees it: each engine named once and not as the Library names one (by name,
     and by the slug its template file would take, against the shipped and the record home's templates), the first reading
     the Brief, each reading the Brief or what one before it wrote, each writing something not yet written. Empty when the
     line is sound. Shared by the shape step's check and the stamp, so a line refused by one is refused by the other."""
-    notes, names, written, lib = [], [], {"Brief"}, defs()["engines"]
-    for i, e in enumerate(engs):
-        n = " ".join(str(e.get("name") or "").split())[:40] if isinstance(e, dict) else ""
-        if not n:
-            notes.append("engine %d has no name" % (i + 1))
-            continue
-        if n in names:
-            notes.append("%s is named twice" % n)
-        slug = re.sub(r"[^a-z0-9]+", "-", n.lower()).strip("-")
-        if n in lib or not slug or (TEMPLATES_DIR / (slug + ".json")).exists() or (user_templates_dir() / (slug + ".json")).exists():
-            notes.append("the Library already has an engine named %s" % n)
-        r, w = " ".join(str(e.get("reads") or "Brief").split()), " ".join(str(e.get("writes") or n).split())[:40]
-        if i == 0 and r != "Brief":
-            notes.append("the first engine reads the Brief")
-        if r not in written:
-            notes.append("%s reads %s, which nothing before it writes" % (n, r))
-        if w in written:
-            notes.append("%s writes %s, which is already written" % (n, w))
-        names.append(n)
-        written.add(w)
-    return notes
+    return [note for _, note in _line_notes(engs)]
 
 
 def c_line_is_engines(ctx, step, item, out):

@@ -24,12 +24,13 @@ def read(p, default):
         return default
 
 
-def write(p, obj):
-    """A document, whole: written beside itself and moved into place, so a reader never sees half of it."""
+def write(p, obj, indent=1):
+    """A document, whole: written beside itself and moved into place, so a reader never sees half of it. indent=None
+    writes it on one line, for a document rewritten often (a journal's index)."""
     p = Path(p)
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(p.suffix + ".tmp")
-    tmp.write_text(json.dumps(obj, indent=1, ensure_ascii=False), encoding="utf-8")
+    tmp.write_text(json.dumps(obj, indent=indent, ensure_ascii=False), encoding="utf-8")
     os.replace(tmp, p)
 
 

@@ -43,7 +43,7 @@ function wbS(){
   if (!S.wb) S.wb = { refs: null, refsBusy: false, refsMissed: {}, map: {}, sig: {}, tab: {}, pane: {}, sel: {}, draft: {},
                       busy: {}, err: {}, engine: {}, art: {}, trace: {}, steps: {}, board: {}, chat: {}, chatSig: {},
                       fnchat: {}, fnchatSig: {}, chip: {}, thread: {}, turns: {}, scroll: {}, found: null, timer: null, born: {},
-                      fv: {}, fvSig: {}, fnpage: {}, fnpageSig: {} };
+                      fv: {}, fvSig: {}, fnpage: {}, fnpageSig: {}, said: {} };
   return S.wb;
 }
 function wbRt(m){ return !!(m && m.runtime === 2); }
@@ -306,7 +306,10 @@ function wbAskBox(ref, key, placeholder, action, label){
 function wbAsksHtml(m){
   const asks = (m.status && m.status.asks) || [];
   if (!asks.length) return dpQuiet("Nothing is waiting for you");
-  return asks.map(a => `<div class="dpask wb"><div class="dpasks">${wbEsc(a.text)}</div>` +
+  /* Identity's question takes words, never a stamp: it is answered on its card in the Chat (M0.6) */
+  return asks.map(a => a.kind === "j2_identity" ? `<div class="dpask wb"><div class="dpasks">${wbEsc(a.text)}</div>` +
+    `<div class="dpaskd">Identity · ${wbEsc(wbWhen(a.created))}</div>` + wbBtn("Identity asks you in Chat ›", `data-wbtab="chat"`) + `</div>`
+    : `<div class="dpask wb"><div class="dpasks">${wbEsc(a.text)}</div>` +
     `<div class="dpaskd">${wbEsc(a.engine)} · ${wbEsc(wbWhen(a.created))}</div>` +
     wbBtn("Stamp", `data-wbdecide="${wbEsc(a.id)}" data-wbok="1"`, "dpstamp") +
     wbBtn("Refuse", `data-wbdecide="${wbEsc(a.id)}" data-wbok="0"`) + `</div>`).join("");
@@ -732,10 +735,54 @@ function wbChatTurn(t, scoped){
   return `<div class="turn wbturn"><div class="who who-ai">${WB_HELPER}${dept}</div><div class="a">${wbEsc(line)}${link}${offer}` +
     `<span class="dpchk">${wbEsc(WB_ACTS[t.msg_type] || t.msg_type)} · ${wbEsc(wbWhen(t.at))}</span></div></div>`;
 }
+/* Identity's question (S6, M0.6): a card in the chat that takes words, never a stamp. Its Send answers where the
+   question lives (/api/dept/{ref}/j2/answer); answered, the card goes quiet and keeps the answer under it. Options and
+   'Just do it' come with the questions that offer them (M3); a question on thin words has neither. */
+const WB_ANSWER_SAYS = { EMPTY_ANSWER: "Write your answer first, then Send.", NO_OPEN_QUESTION: "That question is no longer open.",
+                         ALREADY_HANDLED: "That question is already answered." };
+function wbQuestionHtml(q, ref, named){
+  const st = wbS(), at = q.ref || ref, k = at + ":q:" + q.id, said = q.answered ? { text: q.answered, at: q.decided } : st.said[k];
+  /* on Root's whole chat the card says which department asks */
+  const whose = named && q.dept ? " · " + wbEsc(q.dept) : "";
+  if (said) return `<div class="dpask gone wbq wb"><div class="dpk">Identity asked${whose}</div><div class="dpasks">${wbEsc(q.text)}</div>` +
+    `<div class="dpaskd">You: ${wbEsc(said.text)}${said.at ? " · " + wbEsc(wbWhen(said.at)) : ""}</div></div>`;
+  const busy = !!st.busy["q:" + k];
+  return `<div class="dpask wbq wb"><div class="dpk">Identity asks${whose}</div><div class="dpasks">${wbEsc(q.text)}</div>` +
+    (q.why ? `<div class="dpaskd">${wbEsc(q.why)}</div>` : "") +
+    `<div class="wbbox wb"><textarea id="wbd-q-${wbEsc(q.id)}" data-wbdraft="${wbEsc(k)}" data-wbqid="${wbEsc(q.id)}" data-wbqref="${wbEsc(at)}" rows="2" ` +
+    `placeholder="Type your answer...">${wbEsc(st.draft[k] || "")}</textarea>` +
+    wbBtn(busy ? "Sending..." : "Send", `data-wbanswer="${wbEsc(q.id)}" data-wbref="${wbEsc(at)}"${busy ? " disabled" : ""}`, "dpstamp") + `</div></div>`;
+}
+/* The open questions and the answered ones, each at its time among the turns: a card goes before the first turn said
+   after it was asked, so Identity's own line about the question stands above its card. */
+function wbQuestions(c){
+  const open = (c.asks || []).filter(a => a.kind === "j2_identity");
+  return open.concat(c.answered || []).sort((a, b) => String(a.created || "") < String(b.created || "") ? -1 : 1);
+}
+async function wbAnswer(ref, id, at){
+  const st = wbS(), k = at + ":q:" + id, text = st.draft[k] || "";
+  if (st.busy["q:" + k]) return;
+  st.busy["q:" + k] = true;
+  dpRender();
+  try {
+    await apiPost(dpUrl(at, "j2/answer"), { text: text });
+    st.said[k] = { text: text.split(/\s+/).filter(Boolean).join(" "), at: new Date().toISOString() };
+    delete st.draft[k];
+  } catch (e) {
+    /* the typed words stay in the box; the snack says why in a person's words */
+    const code = (/"code":\s*"([A-Z_]+)"/.exec(String((e && e.message) || "")) || [])[1];
+    if (typeof snack === "function") snack(WB_ANSWER_SAYS[code] || "Could not send your answer. Try again.", { kind: "error" });
+  }
+  delete st.busy["q:" + k];
+  wbAgain(ref);
+  await wbLoadMap(ref, true);
+  dpRender();
+}
 /* An ask is a line with its buttons, and it says where it lives: the stamp goes
-   to that department, never to the one the chat is read from. */
+   to that department, never to the one the chat is read from. Identity's
+   question takes words, so it is a card of its own in the chat (above). */
 function wbChatAsksHtml(c){
-  const asks = c.asks || [];
+  const asks = (c.asks || []).filter(a => a.kind !== "j2_identity");
   if (!asks.length) return "";
   return dpCard("Waiting for you", asks.map(a => `<div class="dpask wb"><div class="dpasks">${wbEsc(a.text)}</div>` +
     `<div class="dpaskd">${wbEsc([a.dept, a.engine].filter(Boolean).join(" · "))} · ${wbEsc(wbWhen(a.created))}</div>` +
@@ -793,8 +840,10 @@ function wbChatHtml(n, m){
   const count = all.length, seen = st.turns[n.ref];
   const landed = seen !== undefined && count > seen;
   /* motion marks what just happened and nothing else: the turn that landed slides in once */
-  const turns = all.map((t, i) => folded(t) ? `<div class="o2quiet dpq wbfold">${wbEsc(t.line)}</div>`
-    : wbChatTurn(t, scoped).replace('class="turn wbturn"', (landed && i === all.length - 1) ? 'class="turn wbturn wbnew"' : 'class="turn wbturn"')).join("");
+  const qs = wbQuestions(c);
+  const card = t => { let out = ""; while (qs.length && (!t || String(qs[0].created || "") < String(t.at || ""))) out += wbQuestionHtml(qs.shift(), n.ref, !scoped); return out; };
+  const turns = all.map((t, i) => card(t) + (folded(t) ? `<div class="o2quiet dpq wbfold">${wbEsc(t.line)}</div>`
+    : wbChatTurn(t, scoped).replace('class="turn wbturn"', (landed && i === all.length - 1) ? 'class="turn wbturn wbnew"' : 'class="turn wbturn"'))).join("") + card(null);
   const empty = m.kind === "root" && !depts.length ? "No department yet. Say what the first one is for." : "Nothing has been said yet";
   const names = !scoped && depts.length ? `<div class="wbstep"><span class="dpk">Departments</span>${depts.map(d => wbDeptChip(d.ref, d.name)).join("")}</div>` : "";
   /* while an engine runs, the chat says so under the last turn, and the mark breathes (founder, 2026-09-28: "I give a
@@ -1337,7 +1386,8 @@ async function wbPost(ref, tail, body, key, at){
 if (typeof document !== "undefined" && document.addEventListener){
   const WB_SEL = "[data-wbtab],[data-wbengine],[data-wbart],[data-wbpane],[data-wbdecide],[data-wbstop],[data-wbresume]," +
     "[data-wbgoal],[data-wbask],[data-wbputback],[data-wbfn],[data-wbfound],[data-wbhold],[data-wbenv]," +
-    "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost],[data-wbopen],[data-wblive],[data-wbopenart],[data-wbsay],[data-wbins],[data-wbfvretry]";
+    "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost],[data-wbopen],[data-wblive],[data-wbopenart],[data-wbsay],[data-wbins],[data-wbfvretry]," +
+    "[data-wbanswer]";
   /* capture phase: a click on one of 20-dept.js's own rows hands the viewer
      back to it BEFORE that file's handler paints */
   document.addEventListener("click", (ev) => {
@@ -1417,6 +1467,7 @@ if (typeof document !== "undefined" && document.addEventListener){
     /* the five functions' read failed: Try again reads it once more (a read, never a write) */
     if (ds.wbfvretry !== undefined){ delete st.fv[ref]; wbLoadFv(ref); dpRender(); return; }
     if (ds.wbdecide !== undefined){ wbPost(ref, "asks/" + encodeURIComponent(ds.wbdecide), { approve: ds.wbok === "1" }, null, ds.wbref || ref); return; }
+    if (ds.wbanswer !== undefined){ wbAnswer(ref, ds.wbanswer, ds.wbref || ref); return; }
     if (ds.wbstop !== undefined){ wbPost(ref, "stop"); return; }
     if (ds.wbresume !== undefined){ wbPost(ref, "resume"); return; }
     if (ds.wbgoal !== undefined){ const k = ref + ":goal"; wbPost(ref, "goal", { text: st.draft[k] || "" }, k); return; }
@@ -1444,5 +1495,15 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (ds.wbdraft !== undefined) wbS().draft[ds.wbdraft] = t.value;
     if (ds.wbfield !== undefined && wbS().found) wbS().found[ds.wbfield] = t.value;
     if (ds.wbinstext !== undefined && wbS().ins) wbS().ins.text = t.value;
+  });
+  /* Cmd+Enter (Ctrl+Enter) in the box of Identity's question sends the answer */
+  document.addEventListener("keydown", (ev) => {
+    const t = ev.target, ds = (t && t.dataset) || {};
+    if (S.screen !== "org2" || ds.wbqid === undefined || ev.key !== "Enter" || !(ev.metaKey || ev.ctrlKey)) return;
+    const ref = S.dp && S.dp.sel;
+    if (!ref || !wbIs(ref)) return;
+    ev.preventDefault();
+    if (t.value !== undefined && ds.wbdraft !== undefined) wbS().draft[ds.wbdraft] = t.value;
+    wbAnswer(ref, ds.wbqid, ds.wbqref || ref);
   });
 }

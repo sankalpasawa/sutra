@@ -11,10 +11,13 @@ ledger is written where the thing happens (a post on the board, a run row, a fil
 cannot say something the department did not do.
 """
 import copy
+import hashlib
+import json
 import os
 import uuid
 
 import engine_runtime as R
+import record
 import website_dept as W
 
 
@@ -24,6 +27,8 @@ RULE_TAGS = {"go", "ask", "refuse", "always"}
 PRIVATE_KEYS = {"private_reasoning", "reasoning", "chain_of_thought", "scratchpad", "secret", "token", "password"}
 JOURNEY = {1: "J2.a", 2: "J2.b", 3: "J2.c", 4: "J2.d", 5: "J2.e", 6: "J2.f", 7: "J2.g", 8: "J2.h"}
 REPAIRS = 2                     # how often Root's check may send a workflow back before Identity tells the owner (J2.4)
+LEDGER, INDEX, OLD_LEDGER = "j2-events.jsonl", "j2-index.json", "j2-events.json"
+MARK = 256                      # the index keeps where every 256th event starts, so a page is read from near its cursor
 
 
 class J2Error(ValueError):
@@ -39,8 +44,152 @@ def _path(ref, name):
     return W.ddir(ref) / name
 
 
+# ---- the ledger: a journal, one event a line, and its index beside it (M0.2) ---------------------------------------
+# The ledger was one JSON document, read whole and written whole on every event, and the screen counted it by reading
+# it whole every 2.5 s. Now an event is one line appended under the department's lock, and j2-index.json carries what
+# an append needs to know without reading the journal: the idempotency keys seen (as digests), each cycle's last
+# event, the count, how many bytes it has read, and where every MARK-th event starts. A row's seq is its place in the
+# journal, so the index's marks are a row's address.
+_IDX = {}                       # each journal's index, as this process last read it: {path: (inode, index)}
+
+
+def _digest(key):
+    return hashlib.sha1(str(key).encode("utf-8")).hexdigest()[:16]
+
+
+def _convert(ref):
+    """A ledger written before M0.2 is one JSON document. It becomes the journal once, row for row and in its order,
+    and the document is kept beside it as j2-events.json.bak."""
+    old = _path(ref, OLD_LEDGER)
+    if not old.exists():
+        return
+    with W._lock(ref):
+        if not old.exists():
+            return
+        new = _path(ref, LEDGER)
+        if not new.exists():
+            tmp = _path(ref, LEDGER + ".tmp")
+            if tmp.exists():
+                tmp.unlink()
+            for row in W._read(old, []):
+                if isinstance(row, dict):
+                    record.append(tmp, row)
+            tmp.touch()
+            os.replace(tmp, new)                            # whole or not at all: a conversion cut short starts again
+        os.replace(old, _path(ref, OLD_LEDGER + ".bak"))
+        _IDX.pop(str(new), None)
+        if _path(ref, INDEX).exists():
+            _path(ref, INDEX).unlink()
+
+
+def _blank():
+    return {"keys": {}, "last_event_by_cycle": {}, "count": 0, "bytes": 0, "marks": []}
+
+
+def _scan(p, idx):
+    """Read the journal from the byte the index last read to its end. A last line with no newline is one being written
+    or one torn by a closed app: it is left unread."""
+    with open(p, "rb") as f:
+        f.seek(int(idx["bytes"]))
+        data = f.read()
+    pos = int(idx["bytes"])
+    pieces = data.split(b"\n")
+    pieces.pop()                                            # b"" after the last newline, or the unfinished line
+    for raw in pieces:
+        at, pos = pos, pos + len(raw) + 1
+        try:
+            row = json.loads(raw.decode("utf-8")) if raw.strip() else None
+        except Exception:  # noqa: BLE001 -- a torn line is skipped, as record.lines skips it
+            row = None
+        if not isinstance(row, dict):
+            continue
+        idx["count"] += 1
+        if (idx["count"] - 1) % MARK == 0:
+            idx["marks"].append(at)
+        if row.get("idempotency_key"):
+            idx["keys"][_digest(row["idempotency_key"])] = idx["count"]
+        if row.get("cycle_id") and row.get("event_id"):
+            idx["last_event_by_cycle"][row["cycle_id"]] = row["event_id"]
+    idx["bytes"] = pos
+
+
+def _index(ref):
+    """The index, current with the journal: this process's copy when the journal has not grown since; else
+    j2-index.json, read forward from the byte it last read (an app closed between the line and the index); else built
+    from the journal. Called under the department's lock."""
+    _convert(ref)
+    p = _path(ref, LEDGER)
+    try:
+        st = p.stat()
+        ino, size = st.st_ino, st.st_size
+    except FileNotFoundError:
+        ino, size = None, 0
+    held = _IDX.get(str(p))
+    idx = held[1] if held and held[0] == ino else None
+    if idx is None:
+        idx = W._read(_path(ref, INDEX), None)
+    if not isinstance(idx, dict) or not all(k in idx for k in _blank()) or int(idx.get("bytes") or 0) > size:
+        idx = _blank()
+    if int(idx["bytes"]) < size:
+        _scan(p, idx)
+    _IDX[str(p)] = (ino, idx)
+    return idx
+
+
+def _rows_from(ref, start, first_seq):
+    """The journal's rows from byte `start`, each with its seq (a row written before seq existed takes its place)."""
+    out = []
+    try:
+        with open(_path(ref, LEDGER), "rb") as f:
+            f.seek(start)
+            data = f.read()
+    except FileNotFoundError:
+        return out
+    pieces = data.split(b"\n")
+    pieces.pop()
+    n = first_seq
+    for raw in pieces:
+        try:
+            row = json.loads(raw.decode("utf-8")) if raw.strip() else None
+        except Exception:  # noqa: BLE001
+            row = None
+        if isinstance(row, dict):
+            out.append((int(row.get("seq") or n), row))
+            n += 1
+    return out
+
+
+def _at_seq(ref, idx, seq):
+    k = (int(seq) - 1) // MARK
+    if k >= len(idx["marks"]):
+        return None
+    return next((row for s, row in _rows_from(ref, idx["marks"][k], k * MARK + 1) if s == int(seq)), None)
+
+
 def events(ref):
-    return W._read(_path(ref, "j2-events.json"), [])
+    """The whole ledger, oldest first."""
+    _convert(ref)
+    return record.lines(_path(ref, LEDGER))
+
+
+def _after(ref, after_seq):
+    after = max(0, int(after_seq or 0))
+    with W._lock(ref):
+        marks = list(_index(ref)["marks"])
+    if not marks:
+        return []
+    k = min(after // MARK, len(marks) - 1)
+    return [(s, row) for s, row in _rows_from(ref, marks[k], k * MARK + 1) if s > after]
+
+
+def events_after(ref, after_seq=0):
+    """The ledger after a cursor, read from the index's nearest mark rather than from the top."""
+    return [row for _, row in _after(ref, after_seq)]
+
+
+def event_count(ref):
+    with W._lock(ref):
+        return int(_index(ref)["count"])
 
 
 def _state(ref):
@@ -85,10 +234,13 @@ def append_event(ref, event):
     if missing:
         raise J2Error("INVALID_EVENT: " + ", ".join(missing))
     with W._lock(ref):
-        latest = events(ref)
-        previous = next((item for item in latest if item.get("idempotency_key") == row["idempotency_key"]), None)
-        if previous:
-            return previous
+        # once, from the index: the journal itself is not read to append to it (M0.2)
+        idx = _index(ref)
+        digest = _digest(row["idempotency_key"])
+        if digest in idx["keys"]:
+            previous = _at_seq(ref, idx, idx["keys"][digest])
+            if previous and previous.get("idempotency_key") == row["idempotency_key"]:
+                return previous
         row.setdefault("schema_version", SCHEMA_VERSION)
         row.setdefault("event_id", "evt-" + uuid.uuid4().hex[:12])
         row.setdefault("identity_revision", int((W.dept(ref) or {}).get("identity_revision") or 1))
@@ -96,11 +248,28 @@ def append_event(ref, event):
         row.setdefault("visibility", ["agent_activity"])
         row.setdefault("evidence_refs", [])
         row.setdefault("correlation_id", row["cycle_id"])
-        same = [item for item in latest if item.get("cycle_id") == row["cycle_id"]]
-        row.setdefault("causation_id", same[-1]["event_id"] if same else None)
-        row["seq"] = len(latest) + 1                    # the ledger's own order: clocks tick in seconds, events do not
-        latest.append(row)
-        W._write(_path(ref, "j2-events.json"), latest)
+        row.setdefault("causation_id", idx["last_event_by_cycle"].get(row["cycle_id"]))
+        row["seq"] = idx["count"] + 1                   # the ledger's own order: clocks tick in seconds, events do not
+        p = _path(ref, LEDGER)
+        size = p.stat().st_size if p.exists() else 0
+        if size > idx["bytes"]:
+            with open(p, "ab") as f:                    # a line torn by a closed app is ended, so this one is a line of its own
+                f.write(b"\n")
+            size += 1
+        record.append(p, row)
+        idx["count"] += 1
+        if (idx["count"] - 1) % MARK == 0:
+            idx["marks"].append(size)
+        idx["keys"][digest] = row["seq"]
+        idx["last_event_by_cycle"][row["cycle_id"]] = row["event_id"]
+        st = p.stat()
+        idx["bytes"] = st.st_size
+        _IDX[str(p)] = (st.st_ino, idx)
+        record.write(_path(ref, INDEX), idx, indent=None)
+        state = _state(ref)
+        if isinstance(state, dict):
+            state["event_count"] = idx["count"]         # the screen's poll reads the count here, not off the ledger
+            W._write(_path(ref, "j2-state.json"), state)
     return row
 
 
@@ -163,7 +332,18 @@ def _identity_gaps(dept):
 QUESTION = {"goal": "What goal must this department achieve?",
             "done-when": "What evidence will prove this department is done?",
             "rules": "What may this department do, ask about, or refuse?",
-            "record": "Where should this department file its work and evidence?"}
+            "record": "Where should this department file its work and evidence?",
+            "words": "What is the %s for, and about whom or what?"}
+THIN = "Your words name nothing to build from yet."
+
+
+def _move(ref, state, **more):
+    """Move the cycle's state, except that a cycle the owner stopped stays stopped: the move waits in `was`, and Start
+    goes on from it (an answer given to a stopped department is used on Start)."""
+    cur = _state(ref) or {}
+    if cur.get("state") == "stopped":
+        return _set(ref, was=state, **more)
+    return _set(ref, state=state, **more)
 
 
 def _ask_gap(ref, dept, cur):
@@ -179,7 +359,7 @@ def _ask_gap(ref, dept, cur):
         R.post(ref, "Identity", R.OWNER, "inform", {"word": "question", "done": question})
     except Exception:  # noqa: BLE001 -- the ask is on the record whether or not the chat carries it
         pass
-    return _set(ref, step=1, state="waiting", open_ask=aid)
+    return _move(ref, "waiting", step=1, open_ask=aid)
 
 
 def begin(ref):
@@ -227,6 +407,12 @@ def answer(ref, text, ask_id=None):
         if ask["status"] != "pending":
             raise J2Error("ALREADY_HANDLED")
         missing = ask.get("missing")
+        if missing == "words":
+            # the first words named nothing to build from (M0.5): the answer is the owner's words to Identity, on the board,
+            # and Identity reads them as the first words, against the same standard; the identity itself is not edited here
+            _took(ref, ask, text)
+            R.request(ref, text)
+            return _state(ref)
         if missing == "goal":
             dept["goal"] = text
         elif missing == "done-when":
@@ -240,8 +426,56 @@ def answer(ref, text, ask_id=None):
         W._put_ask(ref, ask)
         note(ref, 1, "User", "Identity", "ask.answered", "complete", "The owner answered: %s" % text[:200], "answer-" + aid,
              {"missing": missing})
-        cur = _set(ref, state="assessing", open_ask=None)
+        cur = _move(ref, "assessing", open_ask=None)
         return _ask_gap(ref, W.dept(ref), cur) or cur
+
+
+def _took(ref, ask, text, by="the owner"):
+    """Close Identity's question with the owner's words: the ask is answered once, and the ledger says so once,
+    whichever way the words came (the answer box, or the chat)."""
+    ask.update({"status": "stamped", "decided": W.now(), "by": by, "answered": text})
+    W._put_ask(ref, ask)
+    note(ref, 1, "User", "Identity", "ask.answered", "complete", "The owner answered: %s" % text[:200], "answer-" + ask["id"],
+         {"missing": ask.get("missing")})
+    return _move(ref, "assessing", open_ask=None)
+
+
+def open_question(ref):
+    """Identity's open question to the owner, as every screen shows it: {id, text, why, missing, asked}, or None. A
+    stopped department keeps its question; the answer is used on Start."""
+    cur = _state(ref) if enabled() else None
+    if not cur or not cur.get("open_ask"):
+        return None
+    ask = next((a for a in W.asks(ref) if a["id"] == cur["open_ask"] and a.get("kind") == "j2_identity" and a["status"] == "pending"), None)
+    if not ask:
+        return None
+    return {"id": ask["id"], "text": ask.get("text"), "why": ask.get("why"), "missing": ask.get("missing"), "asked": ask.get("created")}
+
+
+def answered_question(ref):
+    """The last of Identity's questions the owner answered in this cycle, kept under its card: {id, text, answer, at}."""
+    cur = _state(ref) if enabled() else None
+    if not cur or not cur.get("cycle_id"):
+        return None
+    done = [a for a in W.asks(ref) if a.get("kind") == "j2_identity" and a.get("cycle_id") == cur["cycle_id"]
+            and a["status"] == "stamped" and a.get("answered")]
+    if not done:
+        return None
+    a = done[-1]
+    return {"id": a["id"], "text": a.get("text"), "answer": a.get("answered"), "at": a.get("decided")}
+
+
+def took_words(ref, words):
+    """The owner's words reached Identity in the chat while its question on thin words is open: they answer it (M0.5).
+    Returns True when they did."""
+    with W._lock(ref):
+        cur = _state(ref)
+        ask = next((a for a in W.asks(ref) if cur and a["id"] == cur.get("open_ask") and a.get("kind") == "j2_identity"
+                    and a.get("missing") == "words" and a["status"] == "pending"), None)
+        if not ask:
+            return False
+        _took(ref, ask, " ".join(str(words or "").split())[:2000])
+        return True
 
 
 def waiting_on_owner(ref):
@@ -256,8 +490,10 @@ def status(ref):
         raise J2Error("NO_DEPARTMENT")
     state = _state(ref) or {"cycle_id": None, "step": None, "journey": None,
                             "state": "not_started" if _ready(dept) else "not_ready", "updated_at": None}
-    return dict(state, department_ref=ref, enabled=enabled(), event_count=len(events(ref)),
-                done_when=dept.get("done"), goal_reached=state.get("state") == "done")
+    count = state.get("event_count")
+    return dict(state, department_ref=ref, enabled=enabled(), event_count=int(count) if count is not None else event_count(ref),
+                done_when=dept.get("done"), goal_reached=state.get("state") == "done",
+                open_question=open_question(ref), answered_question=answered_question(ref))
 
 
 def stop(ref):
@@ -387,8 +623,9 @@ def on_held(ref, engine, slot, why):
         return
 
 
-def registered(ref, engines, source, by="Root"):
-    """Root's check passed: the workflow is on the department's record, and the work may run (step 5 to step 6)."""
+def registered(ref, engines, source, by="Root", checks=None):
+    """Root's check passed: the workflow is on the department's record, and the work may run (step 5 to step 6). The
+    validated event lists the checks that ran, each with whether it held and why (M0.7)."""
     names = [e if isinstance(e, str) else e.get("name") for e in engines]
     with W._lock(ref):
         dept = W.dept(ref)
@@ -399,25 +636,25 @@ def registered(ref, engines, source, by="Root"):
         W.save_dept(ref, dept)
     key = "workflow-v%d" % version
     note(ref, 5, "Root", "Adaptation", "workflow.validated", "complete", "The workflow meets Sutra's standards.", key + "-validated",
-         {"workflow": names, "checks": ["engines known", "each reads what one before it wrote", "names unique"]},
-         workflow_ref="workflow/%d" % version)
+         {"workflow": names, "checks": list(checks or [])}, workflow_ref="workflow/%d" % version)
     note(ref, 5, "Root", "Coordination", "workflow.registered", "complete", "Registered %s on the department's record, version %d."
          % (" -> ".join(names), version), key + "-registered", {"workflow": names, "source": source, "version": version},
          workflow_ref="workflow/%d" % version)
     return _set(ref, step=6, state="running", workflow=names, repairs=0)
 
 
-def refused(ref, engines, faults):
-    """Root's check failed (J2.4): nothing is registered; the reasons go back. Returns how often that has now happened."""
+def refused(ref, engines, faults, checks=None):
+    """Root's check failed (J2.4): nothing is registered; the reasons go back, with the checks that ran (none, when the
+    line failed Adaptation's own check before it reached Root). Returns how often that has now happened."""
     names = [e if isinstance(e, str) else e.get("name") for e in engines]
     cur = _state(ref) or {}
     n = int(cur.get("repairs") or 0) + 1
     if names:
         note(ref, 5, "Root", "Adaptation", "workflow.blocked", "refused", "Root's check refused the workflow: %s." % "; ".join(faults)[:300],
-             "workflow-refused-%d" % n, {"workflow": names, "faults": list(faults)}, reason_codes=["standards"])
+             "workflow-refused-%d" % n, {"workflow": names, "faults": list(faults), "checks": list(checks or [])}, reason_codes=["standards"])
     else:
         note(ref, 2, "Adaptation", "Identity", "workflow.blocked", "refused", "The shaped line did not pass its check: %s." % "; ".join(faults)[:300],
-             "workflow-refused-%d" % n, {"workflow": [], "faults": list(faults)}, reason_codes=["check.failed"])
+             "workflow-refused-%d" % n, {"workflow": [], "faults": list(faults), "checks": list(checks or [])}, reason_codes=["check.failed"])
     _set(ref, step=5, state="reshaping", repairs=n)
     return n
 
@@ -438,8 +675,36 @@ def assessed(ref, dept, key="first"):
 
 
 def questioned(ref, question, key):
-    note(ref, 1, "Identity", "User", "identity.questioned", "waiting", question, "identity-question-" + str(key), {})
-    _set(ref, step=1, state="waiting")
+    """The first words name nothing to build from (J2.1): Identity's question is a real ask, answerable in the chat or
+    through /j2/answer, and nothing starts until it is answered (M0.5). One open ask, however often it is asked."""
+    with W._lock(ref):
+        cur = _state(ref)
+        if not cur or not cur.get("cycle_id"):
+            return None
+        d = W.dept(ref) or {}
+        text = QUESTION["words"] % ("site" if d.get("kind") == "website" else "department")
+        ask = next((a for a in W.asks(ref) if a.get("kind") == "j2_identity" and a.get("missing") == "words"
+                    and a["status"] == "pending" and a.get("cycle_id") == cur["cycle_id"]), None)
+        if ask is None:
+            ask = W._put_ask(ref, {"id": "a-j2-" + uuid.uuid4().hex[:8], "kind": "j2_identity", "text": text, "why": str(question or THIN),
+                                   "status": "pending", "created": W.now(), "cycle_id": cur["cycle_id"], "missing": "words", "answer": "words"})
+        note(ref, 1, "Identity", "User", "identity.questioned", "waiting", text, "identity-question-" + str(key),
+             {"missing": ["words"], "why": str(question or THIN)})
+        return _move(ref, "waiting", step=1, open_ask=ask["id"])
+
+
+def not_read(ref, version, why):
+    """Audit's judge did not read the version (not sampled, or no model to read it): nothing is found and nothing is
+    cleared. The ledger says so, and the cycle stays at step 7 until a version is read (M0.3). Never raises."""
+    try:
+        if not active(ref):
+            return
+        why = str(why or "it was not read").rstrip(".")
+        note(ref, 7, "Audit", "Identity", "audit.not_read", "not_read", "Audit did not read Live site v%s: %s." % (version, why),
+             "audit-not-read-v%s" % version, {"why_not_read": why}, evidence_refs=[{"artifact": "Live site", "version": version}])
+        _set(ref, step=7, state="unread")
+    except Exception:  # noqa: BLE001 -- the ledger never fails the run it records
+        return
 
 
 def audited(ref, version, findings):
@@ -476,18 +741,22 @@ def _board_action(row):
     return "board." + str(msg or "message")
 
 
-def activity(ref):
-    """Safe chronological activity derived from canonical J2 events and the real board."""
+def activity(ref, after_seq=0, after_board=0):
+    """Safe chronological activity derived from canonical J2 events and the real board: after the two cursors, the
+    ledger's seq and the board's n, each read in its own order, so no row is shown twice or never."""
     rows = []
-    for event in events(ref):
+    after_board = max(0, int(after_board or 0))
+    for seq, event in _after(ref, after_seq):
         rows.append({
             "id": event["event_id"], "at": event.get("occurred_at"), "actor": event["actor"],
             "recipient": event["recipient"], "action": event["action"], "state": event["state"],
             "summary": event["summary"], "step": event.get("step"), "journey": event.get("journey"),
             "evidence_refs": event.get("evidence_refs") or [], "payload": _clean(event.get("payload") or {}),
-            "seq": int(event.get("seq") or 0),
+            "seq": seq,
         })
     for row in R.board(ref):
+        if after_board and int(row.get("n") or 0) <= after_board:
+            continue
         payload = _clean(row.get("payload") or {})
         summary = str(payload.get("why") or payload.get("done") or payload.get("objective") or payload.get("word") or row.get("msg_type") or "Message")
         rows.append({
@@ -499,3 +768,12 @@ def activity(ref):
     # by the second, then each source in its own order: two rows of one second keep the order they were written in
     rows.sort(key=lambda item: (str(item.get("at") or ""), 0 if str(item.get("id")).startswith("board-") else 1, item.get("seq") or 0))
     return rows
+
+
+def activity_page(ref, after_seq=0, after_board=0):
+    """One page of the activity, and the two cursors to read the next one from."""
+    after_seq, after_board = max(0, int(after_seq or 0)), max(0, int(after_board or 0))
+    rows = activity(ref, after_seq, after_board)
+    seqs = [r["seq"] for r in rows if not str(r["id"]).startswith("board-")]
+    ns = [r["seq"] for r in rows if str(r["id"]).startswith("board-")]
+    return {"events": rows, "after_seq": max([after_seq] + seqs), "after_board": max([after_board] + ns)}

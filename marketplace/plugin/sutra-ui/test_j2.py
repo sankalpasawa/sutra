@@ -159,9 +159,11 @@ def test_step_2_with_no_template_adaptation_shapes_the_line_and_the_owner_stamps
     assert _work(W, ref)[:1] == ["Facts"]
 
 
-def test_steps_6_to_8_the_runs_the_audit_and_the_goal_are_on_the_ledger(j2):
-    """A ledger that stops at registration, or a goal reached twice, must fail."""
+def test_steps_6_to_8_the_runs_the_audit_and_the_goal_are_on_the_ledger(j2, monkeypatch):
+    """A ledger that stops at registration, or a goal reached twice, must fail. Audit's judge reads with a model here:
+    only a version the model read can clear done-when (M0.3)."""
     W, R, J, _ = j2
+    _model(monkeypatch, R, {"audit.judge": {"ok": True, "findings": []}})
     ref = _born(j2)
     _stamp_all(W, ref)                                           # the first publish: a born rule says ask
     acts = _actions(J, ref)
@@ -194,6 +196,71 @@ def test_step_7_a_finding_keeps_the_loop_open(j2, monkeypatch):
     st = J.status(ref)
     assert (st["state"], st["step"], st["goal_reached"]) == ("pursuing", 8, False)
     assert [a["kind"] for a in W.asks(ref) if a["status"] == "pending"] == ["finding"]
+
+
+def test_m0_3_an_offline_department_never_reaches_its_goal(j2):
+    """An offline draft's empty list read as 'found nothing' must fail: no model read the version (M0.3)."""
+    W, R, J, _ = j2
+    ref = _born(j2)
+    _stamp_all(W, ref)
+    acts = _actions(J, ref)
+    assert "goal.reached" not in acts and "audit.finding_filed" not in acts
+    unread = next(e for e in J.events(ref) if e["action"] == "audit.not_read")
+    assert (unread["step"], unread["actor"], unread["state"]) == (7, "Audit", "not_read")
+    assert unread["evidence_refs"] == [{"artifact": "Live site", "version": 1}] and "no model" in unread["summary"]
+    st = J.status(ref)
+    assert (st["state"], st["step"], st["goal_reached"]) == ("unread", 7, False)
+    assert not [s for s in _said(R, ref) if s.startswith("The goal is reached")]
+    filed = [r for r in R.step_rows(ref) if r["step"] == "audit.judge"]
+    assert filed and filed[-1]["by"] == "offline draft"
+    W.run_until_idle(ref, limit=100)
+    assert "goal.reached" not in _actions(J, ref) and _actions(J, ref).count("audit.not_read") == 1
+
+
+def test_m0_3_every_version_is_read_in_a_cycle_and_an_unsampled_v4_is_never_clean(j2, monkeypatch):
+    """Audit's old sample skipped v4; a skipped judge's empty list read as 'found nothing' must fail."""
+    W, R, J, _ = j2
+    ref = _born(j2)
+    _stamp_all(W, ref)
+    assert R.audit_pick({"ref": ref, "inp": {"v": 4}}, None, None)["sample"] is True      # interim: every version, in a cycle
+    _model(monkeypatch, R, {"audit.judge": {"ok": True, "findings": []}})                  # a model there to read, unasked
+    old = lambda ctx, step, item: {"sample": int(ctx["inp"]["v"]) <= 3 or int(ctx["inp"]["v"]) % 3 == 0, "v": int(ctx["inp"]["v"]), "pages": []}
+    monkeypatch.setitem(R.CODE, "audit_pick", old)
+    row = R.run_engine(ref, "Audit", {"v": 4}, "Audit@live-site.v4")
+    assert row["status"] == "ok" and "not sampled" in row["what"]
+    unread = [e for e in J.events(ref) if e["action"] == "audit.not_read"]
+    assert [e["evidence_refs"][0]["version"] for e in unread] == [1, 4]
+    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["step"] == 7
+
+
+def test_m0_4_an_envelope_hold_is_one_event_and_one_ask_however_often_it_is_asked(j2, monkeypatch):
+    """A hold the ledger never sees, or one written on every tick or on a panel read, must fail."""
+    W, R, J, _ = j2
+    ref = _born(j2, settle=False)
+    W.set_envelope(ref, "Plan", calls=0)
+    W.run_until_idle(ref, limit=300)
+    assert J.status(ref)["step"] == 6 and _work(W, ref) == []
+    asked = {"n": 0}
+    real = J.on_held
+
+    def counted(*a, **k):
+        asked["n"] += 1
+        return real(*a, **k)
+    monkeypatch.setattr(J, "on_held", counted)
+    for _ in range(20):
+        W.status(ref)                                                # a panel read: a peek
+    assert asked["n"] == 0
+    for _ in range(20):
+        W.run_until_idle(ref, limit=1)                               # a motor tick
+    assert asked["n"] >= 20 and _work(W, ref) == []
+    held = [e for e in J.events(ref) if e["action"] == "envelope.held"]
+    assert len(held) == 1
+    assert (held[0]["actor"], held[0]["recipient"], held[0]["step"]) == ("Priority", "Plan", 6)
+    assert held[0]["payload"]["slot"].startswith("Plan@") and held[0]["summary"] == "Plan is out of today's envelope"
+    envelope = [a for a in W.asks(ref) if a["kind"] == "envelope"]
+    assert len(envelope) == 1 and envelope[0]["escalated"] is True and envelope[0]["status"] == "pending"
+    shown = [r for r in J.activity(ref) if r["action"] == "envelope.held"]
+    assert len(shown) == 1                                           # once in Agent activity
 
 
 # ---- the edges ------------------------------------------------------------------------------------------------------
@@ -378,6 +445,170 @@ def test_j2_b_a_line_that_cannot_be_shaped_is_tried_again_then_said(j2, monkeypa
     assert acts.count("workflow.blocked") == J.REPAIRS + 1 and acts.count("proposal.requested") == J.REPAIRS + 1
     assert J.status(ref)["state"] == "blocked" and _work(W, ref) == []
     assert any("could not shape a plan that passes its check" in s for s in _said(R, ref))
+
+
+def _thin(monkeypatch, R):
+    """Root takes 'a website' as clear (J1 asked nothing), and Identity reads it as naming nothing to build from."""
+    _model(monkeypatch, R, {"setup.converse": {"verdict": "clear", "question": ""},
+                            "identity.take": lambda prompt: {"verdict": "go", "why": "", "needs": [], "unsure": [],
+                                                             "thin": "bakery" not in prompt.split("THE REQUEST: ", 1)[1].split("\n", 1)[0]}})
+
+
+def _client(J):
+    import j2_api
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    importlib.reload(j2_api)
+    app = FastAPI()
+    app.include_router(j2_api.router)
+    return TestClient(app)
+
+
+BAKERY = "a site for my bakery in Pune"
+
+
+def test_m0_5_thin_words_are_an_open_question_and_the_answer_box_starts_step_2(j2, monkeypatch):
+    """Thin words that file no ask (so /j2/answer said 409), or an answer that starts nothing, must fail."""
+    W, R, J, _ = j2
+    _thin(monkeypatch, R)
+    ref = _born(j2, "a website", "Bakery Co")
+    client = _client(J)
+    st = client.get("/api/dept/%s/j2" % ref).json()
+    q = st["open_question"]
+    assert (st["state"], st["step"]) == ("waiting", 1)
+    assert q["missing"] == "words" and q["text"] == "What is the site for, and about whom or what?"
+    assert q["why"] == "Your words name nothing to build from yet." and q["id"] == st["open_ask"]
+    assert [a["id"] for a in W.asks(ref) if a["kind"] == "j2_identity" and a["status"] == "pending"] == [q["id"]]
+    assert _work(W, ref) == [] and "proposal.requested" not in _actions(J, ref)
+
+    got = client.post("/api/dept/%s/j2/answer" % ref, json={"text": BAKERY})
+    assert got.status_code == 200 and got.json()["open_question"] is None
+    W.run_until_idle(ref, limit=300)
+    requested = next(e for e in J.events(ref) if e["action"] == "proposal.requested")
+    assert requested["step"] == 2
+    assert _actions(J, ref)[:4] == ["identity.questioned", "ask.answered", "identity.assessed", "proposal.requested"]
+    assert BAKERY in W.read_files(ref, "Brief", 1)["brief.md"]
+    after = client.get("/api/dept/%s/j2" % ref).json()
+    assert after["open_question"] is None and after["answered_question"]["answer"] == BAKERY
+    again = client.post("/api/dept/%s/j2/answer" % ref, json={"text": BAKERY})
+    assert (again.status_code, again.json()["detail"]) == (409, {"code": "NO_OPEN_QUESTION"})
+
+
+def test_m0_5_the_same_question_is_answered_in_chat_once(j2, monkeypatch):
+    """Words said in the chat that leave the question open, or that are taken twice, must fail."""
+    W, R, J, _ = j2
+    _thin(monkeypatch, R)
+    ref = _born(j2, "a website", "Bakery Co")
+    aid = J.status(ref)["open_question"]["id"]
+    W.owner_ask(ref, BAKERY)
+    W.run_until_idle(ref, limit=300)
+    ask = next(a for a in W.asks(ref) if a["id"] == aid)
+    assert (ask["status"], ask["answered"]) == ("stamped", BAKERY)
+    assert _actions(J, ref).count("ask.answered") == 1
+    assert next(e for e in J.events(ref) if e["action"] == "proposal.requested")["step"] == 2
+    assert J.status(ref)["open_question"] is None and "workflow.registered" in _actions(J, ref)
+
+
+def test_m0_5_still_too_little_is_asked_again_and_a_stopped_department_uses_the_answer_on_start(j2, monkeypatch):
+    W, R, J, _ = j2
+    _thin(monkeypatch, R)
+    ref = _born(j2, "a website", "Bakery Co")
+    first = J.status(ref)["open_question"]["id"]
+    J.answer(ref, "a nice one")                                        # still names nothing: FI1.1, asked again
+    W.run_until_idle(ref, limit=300)
+    second = J.status(ref)["open_question"]
+    assert second and second["id"] != first and second["missing"] == "words"
+    assert _actions(J, ref).count("identity.questioned") == 2 and "proposal.requested" not in _actions(J, ref)
+
+    J.stop(ref)
+    assert J.status(ref)["open_question"]["id"] == second["id"]          # a stopped department can still be answered
+    J.answer(ref, BAKERY)
+    W.run_until_idle(ref, limit=300)
+    assert J.status(ref)["state"] == "stopped" and "proposal.requested" not in _actions(J, ref)
+    J.start(ref)
+    W.run_until_idle(ref, limit=300)
+    assert next(e for e in J.events(ref) if e["action"] == "proposal.requested")["step"] == 2
+
+
+def test_m0_6_identitys_question_is_never_closed_by_a_stamp(j2, monkeypatch):
+    """A stamp that closes a question with nothing said (the cycle then waits on an answer no one can give) must fail."""
+    W, R, J, _ = j2
+    _thin(monkeypatch, R)
+    ref = _born(j2, "a website", "Bakery Co")
+    aid = J.status(ref)["open_question"]["id"]
+    for approve in (True, False):
+        with pytest.raises(ValueError, match="takes words"):
+            W.decide_ask(ref, aid, approve)
+    assert J.status(ref)["open_question"]["id"] == aid
+
+
+def test_m0_6_the_chat_carries_identitys_question_and_keeps_its_answer(j2, monkeypatch):
+    """The card in Chat reads the chat: an open question there, and once answered, its answer kept, on the department's
+    chat and on Root's."""
+    W, R, J, _ = j2
+    _thin(monkeypatch, R)
+    ref = _born(j2, "a website", "Bakery Co")
+    chat = R.chat_view(ref)
+    q = [a for a in chat["asks"] if a["kind"] == "j2_identity"]
+    assert len(q) == 1 and (q[0]["ref"], q[0]["missing"]) == (ref, "words") and q[0]["why"] == J.THIN
+    assert chat["answered"] == []
+    J.answer(ref, BAKERY)
+    W.run_until_idle(ref, limit=300)
+    chat = R.chat_view(ref)
+    assert not [a for a in chat["asks"] if a["kind"] == "j2_identity"]
+    assert [(a["id"], a["answered"], a["ref"]) for a in chat["answered"]] == [(q[0]["id"], BAKERY, ref)]
+    assert [a["id"] for a in R.chat_view(W.dept(ref)["root"])["answered"]] == [q[0]["id"]]
+
+
+SHAPED_CHECKS = ["names an engine", "one to six engines", "each engine named", "names unique", "names new to the Library",
+                 "first reads the Brief", "each reads what one before it wrote", "each writes something new"]
+
+
+def test_m0_7_the_validated_event_lists_the_checks_that_ran_for_a_library_and_a_shaped_line(j2, monkeypatch):
+    """A fixed list of check names, written whatever ran (a Library line was said to pass checks only a shaped line
+    runs), must fail."""
+    W, R, J, _ = j2
+    ran, real = [], R._root_checks
+
+    def spy(*a):
+        out = real(*a)
+        ran.append(out)
+        return out
+    monkeypatch.setattr(R, "_root_checks", spy)
+    lib = _born(j2)
+    checks = next(e for e in J.events(lib) if e["action"] == "workflow.validated")["payload"]["checks"]
+    assert checks == ran[-1]
+    assert [(c["check"], c["passed"]) for c in checks] == [("names an engine", True), ("engines known", True)]
+    shaped = _born(j2, ORGANIC, "Lab Co")
+    checks = next(e for e in J.events(shaped) if e["action"] == "workflow.validated")["payload"]["checks"]
+    assert checks == ran[-1]
+    assert [c["check"] for c in checks] == SHAPED_CHECKS and all(c["passed"] and c["why"] for c in checks)
+
+
+def test_m0_7_a_refusal_lists_the_checks_that_ran_and_the_one_that_failed(j2, monkeypatch):
+    W, R, J, _ = j2
+    ref = _born(j2)
+    d = W.dept(ref)
+    R._j2_settle(ref, d, [{"name": "Plan"}, {"name": "Nobody Knows"}], "library", d.get("goal"), "a test")
+    blocked = [e for e in J.events(ref) if e["action"] == "workflow.blocked"][-1]
+    assert blocked["payload"]["faults"] == ["the Library has no engine named Nobody Knows"]
+    assert blocked["payload"]["checks"] == [{"check": "names an engine", "passed": True, "why": "the workflow names its engines"},
+                                            {"check": "engines known", "passed": False, "why": "the Library has no engine named Nobody Knows"}]
+    # a check put in Root's place is listed as it ran, beside the standards
+    monkeypatch.setattr(R, "_root_check", lambda ref, d, engines, source: ["the line reaches outside without a rule"])
+    lab = _born(j2, ORGANIC, "Lab Co")
+    first = next(e for e in J.events(lab) if e["action"] == "workflow.blocked")
+    assert [c["check"] for c in first["payload"]["checks"]] == SHAPED_CHECKS + ["Root's check"]
+    assert first["payload"]["checks"][-1] == {"check": "Root's check", "passed": False, "why": "the line reaches outside without a rule"}
+
+
+def test_m0_7_a_line_that_failed_adaptations_own_check_ran_none_of_roots(j2, monkeypatch):
+    W, R, J, _ = j2
+    bad = {"engines": [{"name": "Plan", "does": "plans", "reads": "Brief", "writes": "Notes", "internet": False}]}
+    _model(monkeypatch, R, {"adapt.line": bad})
+    ref = _born(j2, ORGANIC, "Lab Co")
+    blocked = [e for e in J.events(ref) if e["action"] == "workflow.blocked"]
+    assert blocked and all(e["actor"] == "Adaptation" and e["payload"]["checks"] == [] for e in blocked)
 
 
 # ---- the owner's switch --------------------------------------------------------------------------------------------

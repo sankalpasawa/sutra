@@ -1,4 +1,6 @@
 """Department-scoped HTTP boundary for the J2 lifecycle."""
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException, Request
 
 import j2_runtime as J
@@ -32,11 +34,17 @@ def j2_status(ref: str):
 
 
 @_routes("get", "/j2/events")
-def j2_events(ref: str, after: int = 0):
+def j2_events(ref: str, after: int = 0, after_seq: Optional[int] = None, after_board: Optional[int] = None):
+    """The ledger and the board, merged in time. Paged by two cursors, one per source (after_seq for the ledger,
+    after_board for the board), so a row written between two reads is never repeated or skipped. `after` is the old
+    single cursor, a place in the merged list; it is kept for a screen that still sends it."""
     _call(J.status, ref)
-    rows = J.activity(ref)
-    cursor = max(0, int(after or 0))
-    return {"events": rows[cursor:], "cursor": len(rows)}
+    if after_seq is None and after_board is None:
+        page = J.activity_page(ref)
+        cursor = max(0, int(after or 0))
+        return dict(page, events=page["events"][cursor:], cursor=len(page["events"]))
+    page = J.activity_page(ref, after_seq or 0, after_board or 0)
+    return dict(page, cursor=None)
 
 
 @_routes("post", "/j2/start")
@@ -65,10 +73,13 @@ async def _text(request):
 
 @_routes("post", "/j2/answer")
 async def j2_answer(ref: str, request: Request):
-    """The owner's words for Identity's open question; accepted once."""
-    return _call(J.answer, ref, await _text(request))
+    """The owner's words for Identity's open question; accepted once. Answers with the cycle as /j2 reads it, so the
+    card that sent the words shows what came of them (the next question, or none)."""
+    _call(J.answer, ref, await _text(request))
+    return _call(J.status, ref)
 
 
 @_routes("post", "/asks/{ask_id}/answer")
 async def j2_answer_ask(ref: str, ask_id: str, request: Request):
-    return _call(J.answer, ref, await _text(request), ask_id)
+    _call(J.answer, ref, await _text(request), ask_id)
+    return _call(J.status, ref)

@@ -5882,6 +5882,35 @@ codexSerial("W3-4f. a 404 on either new route is recorded, not treated as an emp
               T.S.provTools = null; T.S.provToolsError = null; }
 });
 
+/* PRD-FIVE-FUNCTIONS M0.7: the department graph's engine boxes read var(--soft), which no theme defined, so the
+   fill fell back to nothing in both themes. Every token the sheet reads must be defined: in the sheet, by a script
+   that sets it on an element, or by a fallback in the var() itself. */
+test("57a. every var(--x) the stylesheet reads is defined: in the sheet, set by a script, or with a fallback", () => {
+  const fs = require("fs"), path = require("path");
+  const css = fs.readFileSync(path.join(__dirname, "static", "panel.css"), "utf8");
+  const dir = path.join(__dirname, "static", "js");
+  const scripts = fs.readdirSync(dir).filter(f => /\.js$/.test(f)).map(f => fs.readFileSync(path.join(dir, f), "utf8"))
+    .concat([fs.readFileSync(path.join(__dirname, "static", "panel.html"), "utf8")]).join("\n");
+  const undefinedVars = sheet => {
+    const text = sheet.replace(/\/\*[\s\S]*?\*\//g, "");
+    const defined = new Set();
+    let m;
+    const decl = /(--[A-Za-z0-9_-]+)\s*:/g;
+    while ((m = decl.exec(text))) defined.add(m[1]);
+    const set = /(--[A-Za-z0-9_-]+)\s*:|setProperty\(\s*["'](--[A-Za-z0-9_-]+)/g;
+    while ((m = set.exec(scripts))) defined.add(m[1] || m[2]);
+    const out = new Set();
+    const use = /var\(\s*(--[A-Za-z0-9_-]+)\s*([,)])/g;
+    while ((m = use.exec(text))) if (m[2] === ")" && !defined.has(m[1])) out.add(m[1]);
+    return [...out].sort();
+  };
+  assert.deepStrictEqual(undefinedVars(css), [], "a token the sheet reads and nothing defines");
+  assert.deepStrictEqual(undefinedVars(css + "\n.x{color:var(--never-defined)}"), ["--never-defined"], "an undefined one is found");
+  assert.deepStrictEqual(undefinedVars(css + "\n.x{color:var(--never-defined, red)}"), [], "a fallback is a definition");
+  const soft = css.match(/--soft:[^;}]+/g) || [];
+  assert.deepStrictEqual(soft, ["--soft:#221F1C", "--soft:#f5f4f2", "--soft:#f5f4f2"], "--soft in the dark theme and in both light ones");
+});
+
 updateStagingChecks()
   .then(() => Promise.allSettled(typeof ASYNC_CHECKS !== "undefined" ? ASYNC_CHECKS : []))
   .then(results => {

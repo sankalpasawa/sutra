@@ -55,13 +55,32 @@ else
   for f in "$HERE"/test_*.py; do LANES+=("$(basename "$f")"); done
 fi
 
+# How a lane runs. A file with a __main__ block runs itself and says "Ran N tests". A file with none would run as a
+# script that defines its tests and calls nothing, and the lane said PASS over 0 tests (found 2026-10-23: eleven such
+# files, test_j2.py among them, PASS with nothing run); so pytest runs it, and says "N passed". A plain script of
+# checks (top-level check() calls, no test function, no __main__) still runs itself and says "N checks". A lane
+# that runs nothing is a FAIL: pytest's exit 5 (no tests collected), or a count of 0.
+mode_of() {
+  # the block itself, at the start of a line: "__main__" inside a string or a comment is not one
+  if grep -qE "^if __name__ *== *['\"]__main__['\"]" "$1"; then echo script
+  elif grep -qE '^[[:space:]]*(async[[:space:]]+)?def test_' "$1"; then echo pytest
+  else echo script; fi
+}
+
 rc=0
 for lane in "${LANES[@]}"; do
   printf '%-34s ' "$lane"
-  if out=$("$PY" "$HERE/$lane" 2>&1); then
-    echo "PASS  $(printf '%s' "$out" | grep -oE 'Ran [0-9]+ tests?' | tail -1)"
+  if [ "$(mode_of "$HERE/$lane")" = pytest ]; then
+    out=$("$PY" -m pytest -q -p no:cacheprovider "$HERE/$lane" 2>&1); code=$?
+    count=$(printf '%s' "$out" | tail -1 | grep -oE '[0-9]+ (passed|xfailed|skipped)' | paste -sd, - | sed 's/,/, /g')
   else
-    echo "FAIL"
+    out=$("$PY" "$HERE/$lane" 2>&1); code=$?
+    count=$(printf '%s' "$out" | grep -oE 'Ran [0-9]+ tests?|[0-9]+ checks' | tail -1)
+  fi
+  if [ "$code" -eq 0 ] && ! printf '%s' "$count" | grep -qE '^(Ran )?0 '; then
+    echo "PASS  $count"
+  else
+    [ "$code" -eq 5 ] && echo "FAIL  no tests collected" || echo "FAIL"
     printf '%s\n' "$out" | tail -18 | sed 's/^/    /'
     rc=1
   fi

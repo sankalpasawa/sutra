@@ -42,6 +42,10 @@
     --shadow:0 1px 2px rgba(28,25,23,.05),0 18px 44px -20px rgba(28,25,23,.16);
     --rail-shadow:0 1px 2px rgba(28,25,23,.06),0 18px 44px -18px rgba(28,25,23,.22);
     --row-shadow:0 1px 2px rgba(28,25,23,.08),inset 0 0 0 1px rgba(138,93,46,.16)}
+  /* --soft, a quiet fill (the department graph's engine boxes), in each theme: it was read and never defined (M0.7) */
+  :root,[data-theme="dark"]{--soft:#221F1C}
+  @media (prefers-color-scheme:light){:root:not([data-theme]){--soft:#f5f4f2}}
+  [data-theme="light"]{--soft:#f5f4f2}
 
   /* ── the five functions' colours (PRD M1.3; Q10: both themes) ────────────
      A function's colour says WHO; a state colour (--ok, --warn, --block, the
@@ -2333,8 +2337,8 @@
    Visually distinct from an owned provider tile on purpose: the operator must
    be able to tell at a glance which connections Sutra can actually act on. */
 .ptile.mediated{border-style:dashed}
-.ptile.mediated .ct.via{background:transparent;border:1px solid var(--bd);
-  color:var(--mut);font-weight:400;letter-spacing:.02em}
+.ptile.mediated .ct.via{background:transparent;border:1px solid var(--line);
+  color:var(--muted);font-weight:400;letter-spacing:.02em}
 .ptile.mediated .medobs{margin:2px 0 0 18px;font-size:12px;line-height:1.45}
 .ptile.mediated .medobs code{font-size:11px;opacity:.85}
 .ptile.mediated .mediatedacct{margin:6px 0 0;font-size:12px}
@@ -2347,7 +2351,7 @@
 
 /* An avatar with no known identity. Neutral dot rather than a letter: any
    letter here would be a guess at who the operator is. */
-.av.av-unknown{background:var(--bd);color:transparent}
+.av.av-unknown{background:var(--line);color:transparent}
 
 /* Plane group headers collapse individually. Reuses the session-group idiom
    (.rgrph/.rgtog/.rgchev) rather than inventing a second one, so the two
@@ -5267,7 +5271,7 @@ button.nychip:focus-visible{ outline:none; box-shadow:0 0 0 1.5px var(--acc); }
    .shnewkinds/.shkind, .shnewacts -- so the form is the same visual
    language as + Delegate and nothing existing was restyled. */
 .shiv{margin-top:10px;padding:10px 12px;border:1px solid var(--line);
-  border-radius:8px;background:var(--bg2)}
+  border-radius:8px;background:var(--inset)}
 .shivq{font-size:13px;font-weight:600;color:var(--ink);margin-bottom:2px}
 .shivfield{margin-top:10px}
 .shivfield input,.shivfield textarea{width:100%;box-sizing:border-box;
@@ -5780,6 +5784,12 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .wbbox textarea{flex:1;min-width:220px;box-sizing:border-box;background:var(--inset);border:1px solid var(--line);border-radius:6px;color:var(--ink);font:400 13px/1.45 var(--sans);padding:7px 9px;resize:vertical}
 .wbbox textarea:focus{border-color:var(--acc);outline:0}
 .wbto{cursor:pointer;background:var(--surface);align-self:center}
+/* Identity's question in the chat (S6): an ask card at most 640px wide; answered, it goes quiet with the answer under it */
+.wbq{max-width:640px;box-sizing:border-box}
+.wbq .dpk{margin:0 0 3px}
+.wbq.gone .dpaskd{margin-bottom:0;color:var(--ink)}
+.wbq .wbbox{margin-top:0}
+.wbq .btn[disabled]{opacity:.6;cursor:default}
 /* a function's own chat: its turns, its thinking as quiet lines between them */
 .wbchat.wbfn .who-ai{opacity:.85}
 .wbchat .wbthink{margin:2px 0 2px 8px}
