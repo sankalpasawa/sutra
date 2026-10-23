@@ -1182,7 +1182,12 @@ def run_engine(ref, name, inp, slot):
             kept = {i: _finished(ref, slot, s, it, before) for i, it in enumerate(items)}
             todo = [i for i in kept if kept[i] is None]
             if any(v is not None for v in kept.values()):
-                ctx["how"].setdefault(s["id"], "kept from before the app closed")
+                # a kept step keeps how it was answered, as its finished row says: a judge the model read before the app
+                # closed is still a reading (M0.3; found 2026-10-23: a department waited at step 7 on a version the model read)
+                was = [items[i] for i in kept if kept[i] is not None]
+                by = next((r.get("by") for r in reversed(before) if r.get("slot") == slot and r.get("step") == s["id"]
+                           and r.get("item") in was and r.get("status") == "ok" and r.get("mode") != "gate" and r.get("by")), None)
+                ctx["how"].setdefault(s["id"], by or "kept from before the app closed")
 
             import threading
             counted, guard = [0], threading.Lock()

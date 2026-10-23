@@ -233,6 +233,39 @@ def test_m0_3_every_version_is_read_in_a_cycle_and_an_unsampled_v4_is_never_clea
     assert "goal.reached" not in _actions(J, ref) and J.status(ref)["step"] == 7
 
 
+class _Closed(BaseException):
+    """The app closes mid-step: nothing in the runtime catches it, so the run is left running, as a closed app leaves it."""
+
+
+def test_m0_3_a_judge_the_model_read_before_the_app_closed_still_counts_as_read(j2, monkeypatch):
+    """A kept judge step read as 'how it was read is not on the record' (the department then waits at step 7 on a version
+    the model did read) must fail: the kept step's how is the one its finished row says."""
+    W, R, J, _ = j2
+    asked = []
+    _model(monkeypatch, R, {"audit.judge": lambda prompt: asked.append(1) or {"ok": True, "findings": []}})
+    ref = _born(j2)
+    filing = R.CODE["audit_file"]
+    closes = [True]
+
+    def audit_file(ctx, step, item):
+        if closes.pop() if closes else False:
+            raise _Closed()                              # after the judge's row, before Audit files what it read
+        return filing(ctx, step, item)
+    monkeypatch.setitem(R.CODE, "audit_file", audit_file)
+    with pytest.raises(_Closed):
+        _stamp_all(W, ref)
+    assert "goal.reached" not in _actions(J, ref) and len(asked) == 1
+    W.recover()
+    W.run_until_idle(ref, limit=300)
+    acts = _actions(J, ref)
+    assert "audit.not_read" not in acts and acts.count("goal.reached") == 1
+    assert len(asked) == 1                               # the reading was kept, not asked for again
+    judged = [r for r in R.step_rows(ref) if r["step"] == "audit.judge"]
+    assert [r["by"] for r in judged] == ["model"]
+    st = J.status(ref)
+    assert (st["state"], st["step"], st["goal_reached"]) == ("done", 8, True)
+
+
 def test_m0_4_an_envelope_hold_is_one_event_and_one_ask_however_often_it_is_asked(j2, monkeypatch):
     """A hold the ledger never sees, or one written on every tick or on a panel read, must fail."""
     W, R, J, _ = j2
