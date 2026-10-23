@@ -105,7 +105,7 @@ const WB2_ICONS = {
 /* a function's mark at list size, in its own colour (20-dept.js's function rows, S3; 24-functions.js's cards) */
 function wb2Mark(fn){
   const ic = WB2_ICONS[String(fn || "").toLowerCase()];
-  return ic ? `<svg class="dpfnmk ${wbEsc(String(fn).toLowerCase())}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ic}</svg>` : "";
+  return ic ? `<svg class="dpfnmk fn-${wbEsc(String(fn).toLowerCase())}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ic}</svg>` : "";
 }
 /* ── Map: the whole topology, fixed, the active parts lit ─────────────────── */
 /* PRD M1.5 (the ruled Map, rows 2.1 to 2.4): the topology is kept; the NOW line sits above it; each function's box takes
@@ -129,7 +129,7 @@ function wb2MapHtml(n, m){
   const lx = i => 105 + i * gap;
   const fns = (m.systems || []).map(s => s.name);
   const fgap = fns.length > 1 ? (W - 260) / (fns.length - 1) : 0;
-  const fx = i => 130 + i * fgap;
+  const fx = i => 165 + i * fgap;                          /* clear of the row's label, the last box inside the frame */
   const FY = 104, FB = FY + WB2_FN_H;
   /* what the department knows: the template it runs (the functions read, 20-dept.js), its rules, its record, its host,
      and its budget: the spend of the whole goal against its ceiling, a bar whose numbers are its hover */
@@ -182,7 +182,7 @@ function wb2MapHtml(n, m){
     const tip = [f, word, node && (node.why || node.line)].filter(Boolean).join(" · ");
     svg += `<g class="n fn${cls ? " " + cls : ""}" data-wbfn="${esc(k)}" transform="translate(${(fx(i) - WB2_FN_W / 2).toFixed(0)},${FY})"><rect class="bx" width="${WB2_FN_W}" height="${WB2_FN_H}" rx="8"/>` +
       (ic ? `<g class="ic" transform="translate(14,12) scale(0.85)">${ic}</g>` : "") +
-      `<rect class="fnbar ${esc(k)}" width="4" height="${WB2_FN_H}" rx="2"/>` +
+      `<rect class="fnbar fn-${esc(k)}" width="4" height="${WB2_FN_H}" rx="2"/>` +
       (cls === "run" ? `<rect class="halo" width="${WB2_FN_W}" height="${WB2_FN_H}" rx="8"/>` : "") +
       `<text x="${ic ? 42 : 14}" y="28">${esc(f)}</text><text class="st" x="${ic ? 42 : 14}" y="47">${esc(word)}</text>${wb2Title(tip)}</g>`;
   });
@@ -227,7 +227,7 @@ function wb2CardsHtml(m, fv, line, arts, knows, bud){
   const people = row(`data-wbtab="chat"`, wbDot(wb2Asks(m).length ? "warn" : "off"), "You", wb2Asks(m).length ? "an ask waits for you" : "the owner");
   const five = (m.systems || []).map(s => {
     const cls = wb2FnCls(m, s.name, fv);
-    return row(`data-wbfn="${wbEsc(s.name.toLowerCase())}"`, `<i class="wb2mk ${wbEsc(s.name.toLowerCase())}"></i>` + wbDot(fnDot[cls] === undefined ? "ok" : fnDot[cls]),
+    return row(`data-wbfn="${wbEsc(s.name.toLowerCase())}"`, `<i class="wb2mk fn-${wbEsc(s.name.toLowerCase())}"></i>` + wbDot(fnDot[cls] === undefined ? "ok" : fnDot[cls]),
       s.name, wb2FnWord(m, s.name, fv));
   }).join("");
   const work = line.map(node => {

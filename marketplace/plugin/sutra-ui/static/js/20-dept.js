@@ -248,7 +248,9 @@ function dpListHtml(n, d, dept, err){
   /* 22-website.js: on the engine runtime the five functions' read gives each row its mark and its state (S3);
      undefined for every other department, whose rows stay bare labels */
   const fv = (typeof wbFnView === "function") ? wbFnView(n.ref) : undefined;
-  groups += dpGroup("Functions", DP_FUNCS.map(([v, label]) => dpFnRow(v, label, tab === v, fv)), null, "");
+  /* All five (PRD M1.8): the five as one system, first in the group, on the engine runtime only */
+  const five = fv === undefined ? [] : [dpRow("All five", `data-wbtab="five"`, typeof wbTab === "function" && wbTab(n.ref) === "five" && tab === "now")];
+  groups += dpGroup("Functions", five.concat(DP_FUNCS.map(([v, label]) => dpFnRow(v, label, tab === v, fv))), null, "");
   /* People and Apps read routes that land in a later slice; until then the
      group is on screen and says so in one line rather than showing nothing. */
   dpLoadEngines(n.ref);                    /* call-on-render, as o2LoadApps does */

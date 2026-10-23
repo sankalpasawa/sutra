@@ -757,7 +757,9 @@ function o2StripHtml(n, d, dept){
   const retired = dept && dept.status === "retired";
   const succ = retired && dept.successors && dept.successors.length ? dept.successors[0] : null;
   const pill = retired ? `<span class="pill p-mut">retired</span>${succ ? `<span class="o2parent">merged into ${o2Esc(succ.name || "")}</span>` : ""}` : "";
-  return `<div class="o2strip"><h2>${o2Esc(n.name)}</h2>${parent ? `<span class="o2parent">${o2Esc(parent.name)}</span>` : ""}${pill}
+  /* 24-functions.js: on the engine runtime, the department's progress in words, after the parent's name (S4) */
+  const prog = (typeof fvStripHtml === "function") ? fvStripHtml(n.ref) : "";
+  return `<div class="o2strip"><h2>${o2Esc(n.name)}</h2>${parent ? `<span class="o2parent">${o2Esc(parent.name)}</span>` : ""}${prog}${pill}
     <span class="o2acts">
       ${o2LibBtnHtml()}
       <button type="button" class="o2ib" data-o2act="chart" aria-label="Chart" aria-pressed="${st.view === "chart"}">${o2Svg("dept")}</button>

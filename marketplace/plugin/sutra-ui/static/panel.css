@@ -5861,16 +5861,19 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
    once it is live; Budget is a bar. Below 600px of viewer the picture is a list of cards, in the same order. */
 .wb2map .n.fn .bx{stroke:var(--line);fill:var(--card)}
 .wb2map .n.fn.run .bx{stroke:var(--acc)}
+.wb2map .n.fn.ask .bx{stroke:var(--warn);stroke-width:2.4;fill:var(--warn-bg)}
+.wb2map .n.fn.block .bx{stroke:var(--block);stroke-width:2.4;fill:var(--block-bg)}
+.wb2map .n.fn.off .bx{stroke:var(--line-soft)}
 .wb2map .n.wait .bx{stroke:var(--muted);stroke-dasharray:4 3}
 .wb2map .n text.st{font:500 11px var(--sans);fill:var(--muted)}
 .wb2map .n.run text.st{fill:var(--acc)}
 .wb2map .n.ask text.st{fill:var(--warn)}
 .wb2map .n.block text.st{fill:var(--block)}
-.wb2map .fnbar.identity{fill:var(--fn-identity)}
-.wb2map .fnbar.adaptation{fill:var(--fn-adaptation)}
-.wb2map .fnbar.priority{fill:var(--fn-priority)}
-.wb2map .fnbar.coordination{fill:var(--fn-coordination)}
-.wb2map .fnbar.audit{fill:var(--fn-audit)}
+.wb2map .fnbar.fn-identity{fill:var(--fn-identity)}
+.wb2map .fnbar.fn-adaptation{fill:var(--fn-adaptation)}
+.wb2map .fnbar.fn-priority{fill:var(--fn-priority)}
+.wb2map .fnbar.fn-coordination{fill:var(--fn-coordination)}
+.wb2map .fnbar.fn-audit{fill:var(--fn-audit)}
 .wb2map .n.work.live .bx{fill:var(--ok-bg);stroke:var(--ok);stroke-width:2}
 .wb2map .bar0{fill:var(--line-soft)}
 .wb2map .bar1{fill:var(--acc)}
@@ -5886,17 +5889,17 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .wb2card .dpdot{margin-top:0;flex:none}
 .wb2card .dpbar{flex:1}
 .dpfnmk{width:13px;height:13px;flex:none}
-.o2li .dpfnmk.identity,.dpfnmk.identity{color:var(--fn-identity)}
-.o2li .dpfnmk.adaptation,.dpfnmk.adaptation{color:var(--fn-adaptation)}
-.o2li .dpfnmk.priority,.dpfnmk.priority{color:var(--fn-priority)}
-.o2li .dpfnmk.coordination,.dpfnmk.coordination{color:var(--fn-coordination)}
-.o2li .dpfnmk.audit,.dpfnmk.audit{color:var(--fn-audit)}
+.o2li .dpfnmk.fn-identity,.dpfnmk.fn-identity{color:var(--fn-identity)}
+.o2li .dpfnmk.fn-adaptation,.dpfnmk.fn-adaptation{color:var(--fn-adaptation)}
+.o2li .dpfnmk.fn-priority,.dpfnmk.fn-priority{color:var(--fn-priority)}
+.o2li .dpfnmk.fn-coordination,.dpfnmk.fn-coordination{color:var(--fn-coordination)}
+.o2li .dpfnmk.fn-audit,.dpfnmk.fn-audit{color:var(--fn-audit)}
 .wb2mk{width:3px;height:14px;border-radius:2px;flex:none}
-.wb2mk.identity{background:var(--fn-identity)}
-.wb2mk.adaptation{background:var(--fn-adaptation)}
-.wb2mk.priority{background:var(--fn-priority)}
-.wb2mk.coordination{background:var(--fn-coordination)}
-.wb2mk.audit{background:var(--fn-audit)}
+.wb2mk.fn-identity{background:var(--fn-identity)}
+.wb2mk.fn-adaptation{background:var(--fn-adaptation)}
+.wb2mk.fn-priority{background:var(--fn-priority)}
+.wb2mk.fn-coordination{background:var(--fn-coordination)}
+.wb2mk.fn-audit{background:var(--fn-audit)}
 .wb2pill.ok{background:var(--ok-bg);color:var(--ok)}
 .wb2map .n.fn .ic{stroke:var(--ink)}
 .wb2map .n.fn.ask .ic,.wb2map .n.fn.run .ic{stroke:var(--acc)}
@@ -5913,6 +5916,63 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .wb2spark i.on{background:var(--ok);border-color:var(--ok);opacity:.6}
 .wb2spark i.run{background:var(--acc);border-color:var(--acc)}
 @media (prefers-reduced-motion:reduce){.wb2map .e.flow,.wb2map .n .halo{animation:none}}
+
+/* ── All five (24-functions.js; PRD M1.8, S2) ───────────────────────────────
+   The five as one system. The viewer body is a size container: six cells in
+   three columns from 720px, two from 460px, one below. Each card has a 3px top
+   rule in its function's colour (who); its dot and word say how. Stopped: the
+   cards at 70 percent. Tokens only; every class prefixed `fv`. */
+.dpviewer.fv .o2vb{container-type:inline-size}
+.fvprog{display:flex;flex-direction:column;gap:8px;padding:11px 13px;border:1px solid var(--line-soft);border-radius:var(--r);background:var(--surface)}
+.fvsays{display:flex;align-items:center;gap:8px}
+.fvsays b{font:400 15px/1.35 var(--serif);color:var(--ink)}
+.fvsays .dpdot{margin-top:0;flex:none}
+.fvsays .wbchip{margin-left:auto}
+.fvpills{display:flex;flex-wrap:wrap;gap:6px}
+.fvpill{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:99px;font:500 11px/1.5 var(--sans);border:1px solid var(--line);color:var(--muted)}
+.fvpill.done{background:var(--ok-bg);border-color:var(--ok-line);color:var(--ok)}
+.fvpill.now{border-color:var(--acc);color:var(--acc)}
+.fvpill.now .dpdot{margin-top:0}
+.fvpill.skip{border-style:dashed;color:var(--faint)}
+.fvrounds{display:flex;gap:4px}
+.fvrounds i{width:7px;height:7px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--line)}
+.fvrounds i.on{background:var(--ok);box-shadow:none}
+.fvrounds i.now{background:var(--acc);box-shadow:none}
+.fvgrid{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+@container (min-width:460px){.fvgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container (min-width:720px){.fvgrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.fvcard{display:flex;flex-direction:column;align-items:stretch;gap:6px;text-align:left;padding:11px 13px;border-radius:var(--r);border:1px solid var(--line-soft);border-top:3px solid var(--line);background:var(--card);color:var(--ink);font:400 12.5px/1.4 var(--sans);cursor:pointer;min-width:0}
+.fvcard:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.fvcard.fn-identity{border-top-color:var(--fn-identity)}
+.fvcard.fn-adaptation{border-top-color:var(--fn-adaptation)}
+.fvcard.fn-priority{border-top-color:var(--fn-priority)}
+.fvcard.fn-coordination{border-top-color:var(--fn-coordination)}
+.fvcard.fn-audit{border-top-color:var(--fn-audit)}
+.fvcard.still{opacity:.7}
+.fvcard.fvbetween{cursor:default}
+.fvcard.fvskel{min-height:120px;cursor:default}
+.fvhead{display:flex;align-items:center;gap:8px}
+.fvhead b{font:400 15px/1.3 var(--serif)}
+.fvhead .dpdot{margin:0 0 0 auto;flex:none}
+.fvhead .dpfnb+.dpdot{margin-left:4px}
+.fvhead .dpfnmk{width:16px;height:16px}
+.fvpurpose{font:400 11.5px/1.4 var(--sans);color:var(--muted)}
+.fvnow{overflow:hidden;text-overflow:ellipsis}
+.fvtoday{display:flex;align-items:center;gap:8px}
+.fvtoday .dpbar{flex:1}
+.fvstripe{margin:0}
+.fvmsg{display:flex;align-items:center;gap:6px;padding:4px 0;border:0;background:none;text-align:left;cursor:pointer;color:var(--ink);min-width:0}
+.fvmsg .dpchk{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fvbar{width:3px;height:14px;border-radius:2px;flex:none;background:var(--line)}
+.fvbar.fn-identity{background:var(--fn-identity)}
+.fvbar.fn-adaptation{background:var(--fn-adaptation)}
+.fvbar.fn-priority{background:var(--fn-priority)}
+.fvbar.fn-coordination{background:var(--fn-coordination)}
+.fvbar.fn-audit{background:var(--fn-audit)}
+.fverr{grid-template-columns:minmax(0,1fr)}
+.fvline{display:inline-flex;align-items:center;gap:7px;margin-left:10px;padding:2px 10px;border-radius:99px;border:1px solid var(--line-soft);background:var(--surface);color:var(--ink);font:400 12px/1.5 var(--sans);cursor:pointer}
+.fvline .dpdot{margin-top:0}
+@media (prefers-reduced-motion:reduce){.fvpill .dpdot,.fvsays .dpdot,.fvline .dpdot{animation:none}}
 
 /* ── Images for Shadow (2026-10-08) ─────────────────────────────────────
    The attach bar sits above every box that talks to Shadow: thumbnails of

@@ -1109,6 +1109,8 @@ function wbViewer(n){
   if (!m){ wbLoadMap(n.ref); return dpViewerShell(n.name, st.err[n.ref] ? dpQuiet("Could not read") : dpSkel(), "wb"); }
   /* the Map and the Board of the second design, when the switch is on; null hands the rest back to this file */
   if (wbV2() && wbRt(m) && typeof wb2Viewer === "function"){ const own = wb2Viewer(n); if (own) return own; }
+  /* All five (PRD M1.8, S2): 24-functions.js draws the five as one system */
+  if (tab === "five" && wbRt(m) && typeof fvAllHtml === "function") return dpViewerShell("All five", fvAllHtml(n, m), "wb fv");
   if (tab === "chat" && wbRt(m)) return dpViewerShell("Chat", wbChatHtml(n, m), "wb");
   if (tab === "map") return dpViewerShell("Map", wbMapHtml(n, m), "wb");
   if (tab === "status") return dpViewerShell("System status", wbStatusHtml(n, m), "wb");
@@ -1304,7 +1306,7 @@ if (typeof document !== "undefined" && document.addEventListener){
        keep the person there (found live 2026-09-29: Send in Priority's chat landed on the department's Chat) */
     const inFn = ds.wbask !== undefined && String(ds.wbask).indexOf("fn:") === 0;
     if (ds.wbfn === undefined && !inFn && dpS().tab[ref] !== "now") dpS().tab[ref] = "now";
-    if (ds.wbtab !== undefined){ st.tab[ref] = ds.wbtab; dpRender(); return; }
+    if (ds.wbtab !== undefined){ st.tab[ref] = ds.wbtab; if (ds.wbthread !== undefined) st.thread[ref] = ds.wbthread; dpRender(); return; }
     if (ds.wbfn !== undefined){ st.tab[ref] = ""; dpS().tab[ref] = ds.wbfn; dpRender(); return; }
     if (ds.wbpane !== undefined && ds.wbpanekey !== undefined){ st.pane[ds.wbpanekey] = ds.wbpane; dpRender(); return; }
     if (ds.wbengine !== undefined){ st.tab[ref] = "engine"; st.sel[ref] = ds.wbengine; dpRender(); return; }
