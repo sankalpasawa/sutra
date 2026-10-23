@@ -237,7 +237,8 @@ function wbList(n){
   const top = `<div class="o2g dpg wb">` +
     (wbRt(m) ? dpRow("Chat", `data-wbtab="chat"`, tab === "chat") : "") +
     dpRow("Map", `data-wbtab="map"`, tab === "map") +
-    dpRow("System status", `data-wbtab="status"`, tab === "status") +
+    /* the ruled Map (PRD M1.5): System status folds into the Map's NOW line for a department on the runtime */
+    (wbRt(m) && wbV2() ? "" : dpRow("System status", `data-wbtab="status"`, tab === "status")) +
     dpRow("Motor", `data-wbtab="motor"`, tab === "motor") +
     (wbRt(m) ? dpRow("Board", `data-wbtab="board"`, tab === "board") +
       dpRow("Agent activity", `data-wbtab="activity"`, tab === "activity") : "") + `</div>`;
@@ -1182,7 +1183,7 @@ async function wbPost(ref, tail, body, key, at){
 if (typeof document !== "undefined" && document.addEventListener){
   const WB_SEL = "[data-wbtab],[data-wbengine],[data-wbart],[data-wbpane],[data-wbdecide],[data-wbstop],[data-wbresume]," +
     "[data-wbgoal],[data-wbask],[data-wbputback],[data-wbfn],[data-wbfound],[data-wbhold],[data-wbenv]," +
-    "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost],[data-wbopen],[data-wblive],[data-wbopenart],[data-wbsay]";
+    "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost],[data-wbopen],[data-wblive],[data-wbopenart],[data-wbsay],[data-wbfvretry]";
   /* capture phase: a click on one of 20-dept.js's own rows hands the viewer
      back to it BEFORE that file's handler paints */
   document.addEventListener("click", (ev) => {
@@ -1251,6 +1252,8 @@ if (typeof document !== "undefined" && document.addEventListener){
       return;
     }
     if (ds.wbthread !== undefined){ st.thread[ref] = ds.wbthread; dpRender(); return; }
+    /* the five functions' read failed: Try again reads it once more (a read, never a write) */
+    if (ds.wbfvretry !== undefined){ delete st.fv[ref]; wbLoadFv(ref); dpRender(); return; }
     if (ds.wbdecide !== undefined){ wbPost(ref, "asks/" + encodeURIComponent(ds.wbdecide), { approve: ds.wbok === "1" }, null, ds.wbref || ref); return; }
     if (ds.wbstop !== undefined){ wbPost(ref, "stop"); return; }
     if (ds.wbresume !== undefined){ wbPost(ref, "resume"); return; }

@@ -5837,17 +5837,42 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .wb2map .n text{font:12px var(--sans);fill:var(--ink);pointer-events:none}
 .wb2map .n text.v{font:10px var(--mono);fill:var(--muted)}
 .wb2map .n .ic{fill:none;stroke:var(--ink);stroke-width:1.6}
-.wb2legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin:6px 0 0;font:400 11.5px/1.4 var(--sans);color:var(--muted)}
-.wb2legend span{display:inline-flex;align-items:center;gap:6px}
-.wb2lg{display:inline-block;width:14px;height:12px;border:1.5px solid var(--line);border-radius:3px;background:var(--card)}
-.wb2lg.fn{border-color:var(--acc);background:var(--sepia)}
-.wb2lg.eng{border-radius:50%}
-.wb2lg.done{border-color:var(--ok-line);background:var(--ok-bg)}
-.wb2lg.run{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-bg)}
-.wb2lg.ask{border-color:var(--warn);background:var(--warn-bg)}
-.wb2lg.block{border-color:var(--block);background:var(--block-bg)}
-.wb2lg.edge{width:22px;height:0;border:0;border-top:1.5px solid var(--line);border-radius:0;background:transparent}
-.wb2lg.edge.soft{border-top-style:dashed}
+/* PRD M1.5, the ruled Map: no legend (every node names itself on hover); each function a 154x64 box with a bar in
+   its function's colour, its mark, its name and its state word. Outline by state: working is the accent with its halo,
+   waits on you is amber, a fault is block, waiting on another function is dashed and muted. The deliverable is lit
+   once it is live; Budget is a bar. Below 600px of viewer the picture is a list of cards, in the same order. */
+.wb2map .n.fn .bx{stroke:var(--line);fill:var(--card)}
+.wb2map .n.fn.run .bx{stroke:var(--acc)}
+.wb2map .n.wait .bx{stroke:var(--muted);stroke-dasharray:4 3}
+.wb2map .n text.st{font:500 11px var(--sans);fill:var(--muted)}
+.wb2map .n.run text.st{fill:var(--acc)}
+.wb2map .n.ask text.st{fill:var(--warn)}
+.wb2map .n.block text.st{fill:var(--block)}
+.wb2map .fnbar.identity{fill:var(--fn-identity)}
+.wb2map .fnbar.adaptation{fill:var(--fn-adaptation)}
+.wb2map .fnbar.priority{fill:var(--fn-priority)}
+.wb2map .fnbar.coordination{fill:var(--fn-coordination)}
+.wb2map .fnbar.audit{fill:var(--fn-audit)}
+.wb2map .n.work.live .bx{fill:var(--ok-bg);stroke:var(--ok);stroke-width:2}
+.wb2map .bar0{fill:var(--line-soft)}
+.wb2map .bar1{fill:var(--acc)}
+.wb2pill.say{background:var(--inset);color:var(--ink)}
+.wb2skel{display:inline-block;width:140px;min-height:20px;background:var(--line-soft)}
+.wb2frame{container-type:inline-size}
+.wb2cards{display:none;flex-direction:column;gap:10px}
+@container (max-width:599px){.wb2map{display:none}.wb2cards{display:flex}}
+.wb2cardg{display:flex;flex-direction:column;gap:4px}
+.wb2card{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;border:1px solid var(--line-soft);background:var(--card);color:var(--ink);font:400 12.5px/1.4 var(--sans);text-align:left;cursor:pointer}
+.wb2card b{font-weight:600}
+.wb2card .dpchk{margin-left:auto}
+.wb2card .dpdot{margin-top:0;flex:none}
+.wb2card .dpbar{flex:1}
+.wb2mk{width:3px;height:14px;border-radius:2px;flex:none}
+.wb2mk.identity{background:var(--fn-identity)}
+.wb2mk.adaptation{background:var(--fn-adaptation)}
+.wb2mk.priority{background:var(--fn-priority)}
+.wb2mk.coordination{background:var(--fn-coordination)}
+.wb2mk.audit{background:var(--fn-audit)}
 .wb2pill.ok{background:var(--ok-bg);color:var(--ok)}
 .wb2map .n.fn .ic{stroke:var(--ink)}
 .wb2map .n.fn.ask .ic,.wb2map .n.fn.run .ic{stroke:var(--acc)}

@@ -1234,7 +1234,9 @@ test("W44: founding lands on the organisation, whose row is Root's chat", async 
 test("V2 navigation: with the switch on the list, Chat, a function card and an engine card are the first design's, unchanged", async () => {
   const c = await v2({ map: rtMap({ ask: true }) });
   const html = c.dpListHtml(WEB, {}, null, null);
-  ["Chat", "Map", "System status", "Motor", "Board", "Filed work", "Human Sutra"].forEach(x => assert.ok(html.indexOf(x) >= 0, x));
+  ["Chat", "Map", "Motor", "Board", "Filed work", "Human Sutra"].forEach(x => assert.ok(html.indexOf(x) >= 0, x));
+  /* PRD M1.5 (the ruled Map, 2026-09-29): System status folds into the Map's NOW line, so its row is gone */
+  assert.ok(!/System status/.test(html) && !/data-wbtab="status"/.test(html), "System status folded into the NOW line");
   assert.ok(!/wb2/.test(html), "no second-design piece in the list");
   let v = view(c);
   assert.ok(/<div class="o2vh"><b>Chat<\/b>/.test(v) && !/wb2/.test(v), "Chat is the chat 22-website.js draws");
@@ -1258,7 +1260,9 @@ test("V2 map: the head has one switch and the live site; four fixed rows; the ru
   assert.ok(/<span class="wb2pill run">Write running<\/span><span class="wb2pill ask">1 ask for you<\/span>/.test(html), "the NOW line");
   assert.ok(/<g class="n fn ask" data-wbfn="identity"[^>]*><rect[^>]*><g class="ic"/.test(html), "a function carries its mark");
   assert.ok(/<text x="10" y="20">Rules<\/text><text class="v" x="56" y="20">none yet<\/text>/.test(html) && /<text class="v" x="64" y="20">4 things, 13 versions<\/text>/.test(html), "what the department knows, from the record");
-  assert.ok(/<i class="wb2lg edge"><\/i>hand-off/.test(html) && /<i class="wb2lg edge soft"><\/i>speaks to/.test(html), "the legend names the edges");
+  /* PRD M1.5: the legend is cut; every node names itself on hover instead */
+  assert.ok(!/wb2legend|wb2lg/.test(html), "no legend");
+  assert.ok((html.match(/<g class="n[^"]*"[^>]*>/g) || []).length === (html.match(/<title>[^<]+<\/title><\/g>/g) || []).length, "every node has its hover name");
   assert.ok(/<g class="n fn ask" data-wbfn="identity"/.test(html) && /<g class="n who ask" data-wbtab="chat"/.test(html), "the ask is amber on Identity and on you");
   assert.ok(/<g class="n work done" data-wbart="site-plan"[^>]*><rect[^>]*><text x="8" y="17">Site plan<\/text><text class="v" x="8" y="30">v2<\/text>/.test(html), "work with its version");
   const nodes = html.match(/<g class="n[^"]*"[^>]*>/g) || [];
@@ -1273,6 +1277,94 @@ test("V2 map: the head has one switch and the live site; four fixed rows; the ru
   const old = await opened({ map: m });
   vm.runInContext("S.wb.tab['r3'] = 'map';", old);
   assert.ok(/<h3>The department<\/h3>/.test(old.wbViewer(WEB)) && !/wb2/.test(old.wbViewer(WEB)), "off: the first design's Map");
+});
+
+/* PRD M1.5: the ruled Map. The five boxes take their state from the five functions' read; the NOW line carries the
+   cycle's words and counts only when they are not zero; no legend; no digits at rest outside the NOW line; Budget is a
+   bar in Knows; a failed read falls back to today's classes and says so once; Off and Goal reached read as such. */
+async function mapWith(o){
+  const c = await v2(Object.assign({ map: rtMap() }, o));
+  click(c, { wbtab: "map" }); await sleep();
+  return [c, await paint(c)];
+}
+const fnBox = (html, fn) => (new RegExp('<g class="n fn([^"]*)" data-wbfn="' + fn + '"[^>]*>([\\s\\S]*?)</g>(?=<g|<path|<text|</svg>)').exec(html) || []);
+test("M1.5: each function's box takes its class and its state word from the functions read", async () => {
+  const fv = fvOf({ states: { Identity: "waiting_on_you", Adaptation: "waiting", Priority: "fault", Coordination: "working", Audit: "quiet" },
+                    lines: { Identity: "May the reviews show first names?", Adaptation: "waits on Priority", Priority: "Answer a proposal: page 3 of 8 failed its check",
+                             Coordination: "Write's turn" },
+                    cycle: { says: "Write is working", needs_you: true, asks: 1 } });
+  const [c, html] = await mapWith({ fv });
+  const want = { identity: [" ask", "waits on you"], adaptation: [" wait", "waiting"], priority: [" block", "fault"], coordination: [" run", "working"], audit: ["", "quiet"] };
+  Object.keys(want).forEach(fn => {
+    const g = fnBox(html, fn);
+    assert.ok(g.length, fn + " box");
+    assert.strictEqual(g[1], want[fn][0], fn + " class");
+    assert.ok(new RegExp('<text class="st" x="42" y="47">' + want[fn][1] + '</text>').test(g[2]), fn + " word: " + g[2]);
+    assert.ok(new RegExp('<rect class="fnbar ' + fn + '" width="4" height="64"').test(g[2]), fn + " carries its colour bar");
+    assert.ok(/<rect class="bx" width="154" height="64"/.test(g[2]), fn + " is a 154x64 box");
+  });
+  assert.ok(/<rect class="halo" width="154"/.test(fnBox(html, "coordination")[2]) && !/class="halo"/.test(fnBox(html, "identity")[2]), "only the working one has a halo");
+  assert.ok(/<title>Identity · waits on you · May the reviews show first names\?<\/title>/.test(html), "the hover names it and says what it waits on");
+  assert.ok(!/wb2legend|wb2lg/.test(html), "no legend");
+  /* the NOW line: the cycle's words first */
+  assert.ok(/<div class="wb2now"><span class="wb2pill ask" aria-live="polite">Write is working<\/span>/.test(html), "the cycle's words lead, amber when it needs you");
+  /* no digits at rest outside the NOW line: the line with its count sits in the hover only */
+  const rest = html.replace(/<div class="wb2now">[\s\S]*?<\/div>/, "").replace(/<title>[^<]*<\/title>/g, "").replace(/<text class="v"[^>]*>[^<]*<\/text>/g, "");
+  const t = words(rest.slice(rest.indexOf("<svg"), rest.indexOf("</svg>")));
+  assert.ok(!/\d/.test(t.replace(/\bv\d+\b/g, "")), "a digit at rest: " + (t.match(/.{0,30}\d.{0,30}/) || [""])[0]);
+  assert.ok(readsOf(c, /\/functions$/).length >= 1, "the Map reads the functions read");
+});
+test("M1.5: the NOW line counts only what is not zero, folds in System status, and says Off and Goal reached", async () => {
+  const quiet = rtMap(); quiet.health.timeline = [];
+  let [, html] = await mapWith({ map: quiet, fv: fvOf({ cycle: { says: "Proposing the work", state: "adapting", step: 2 } }) });
+  let now = /<div class="wb2now">([\s\S]*?)<\/div>/.exec(html)[1];
+  assert.strictEqual(now, '<span class="wb2pill say" aria-live="polite">Proposing the work</span>', "nothing to count: the words alone");
+  const busy = rtMap({ ask: true }); busy.status.running = [{ engine: "Write", what: "" }]; busy.engines[1].state = "Running";
+  busy.status.escalated = [{ id: "a-2", kind: "envelope", engine: "Write", text: "Write is out of today's envelope", status: "pending", created: AT, escalated: true }];
+  busy.health.checks[0] = { name: "Motor", state: "block", line: "Not ticking" };
+  [, html] = await mapWith({ map: busy, fv: fvOf({ states: { Identity: "waiting_on_you", Coordination: "working" }, cycle: { says: "Write is working", needs_you: true, asks: 2 } }) });
+  now = /<div class="wb2now">([\s\S]*?)<\/div>/.exec(html)[1];
+  assert.ok(/>Write is working<\/span><span class="wb2pill run">Write running<\/span><span class="wb2pill ask">2 asks for you<\/span><span class="wb2pill block" title="Not ticking">Motor<\/span>$/.test(now), now);
+  /* stopped: the switch is off, NOW reads Off, no halos, the boxes off */
+  const off = rtMap({ stopped: true }); off.status.running = [{ engine: "Write", what: "" }]; off.engines[1].state = "Running";
+  [, html] = await mapWith({ map: off, fv: fvOf({ stopped: true, cycle: { state: "stopped", says: "Stopped by you" } }) });
+  now = /<div class="wb2now">([\s\S]*?)<\/div>/.exec(html)[1];
+  assert.ok(/<span class="wb2pill off">Off<\/span>$/.test(now) && !/Stopped by you|running/.test(now), now);
+  assert.ok(!/class="halo"/.test(html) && /role="switch" aria-checked="false"/.test(html), "no halo, the switch off");
+  ["identity", "adaptation", "priority", "coordination", "audit"].forEach(fn => assert.strictEqual(fnBox(html, fn)[1], " off", fn));
+  /* done: Goal reached, and the deliverable lit */
+  [, html] = await mapWith({ map: rtMap({ versions: { "Brief": 1, "Site plan": 2, "Pages": 5, "Build": 5, "Live site": 1 } }),
+                            fv: fvOf({ cycle: { state: "done", says: "Goal reached" } }) });
+  assert.ok(/<span class="wb2pill ok" aria-live="polite">Goal reached<\/span>/.test(html), "Goal reached");
+  assert.ok(/<g class="n work done live" data-wbart="live-site"/.test(html), "the deliverable takes the ok tint once it is live");
+});
+test("M1.5: Budget joins Knows as a bar with its numbers on hover; a failed read falls back and can be read again; the narrow list", async () => {
+  let [c, html] = await mapWith({ fv: fvOf({ budget: 0.25 }) });
+  assert.ok(/<g class="n" data-wbfn="priority" transform="[^"]*"><rect class="bx" width="150" height="32" rx="8"\/><text x="10" y="20">Budget<\/text><rect class="bar0" x="66" y="13" width="72" height="6" rx="3"\/><rect class="bar1" x="66" y="13" width="18.0" height="6" rx="3"\/><title>Budget · 30 of 120 calls/.test(html), "a bar, the numbers on hover");
+  click(c, { wbfn: "priority" });
+  assert.strictEqual(vm.runInContext("dpS().tab['r3']", c), "priority", "Budget opens Priority");
+  /* the narrow list: the same order, the five with their mark and their word */
+  const cards = /<div class="wb2cards wb">([\s\S]*)$/.exec(html)[1];
+  const order = (cards.match(/data-wbfn="(\w+)"><i class="wb2mk/g) || []).map(x => /"(\w+)"/.exec(x)[1]);
+  assert.deepStrictEqual(order, ["identity", "adaptation", "priority", "coordination", "audit"], "the five in order");
+  assert.ok(/<div class="wb2frame wb"><div class="wb2map wb"><svg/.test(html), "one frame, a size container, holds both");
+  /* a failed read: the line says so once, with Try again; the boxes keep today's classes */
+  let fails = 0;
+  [c, html] = await mapWith({ map: rtMap({ ask: true }), fv: () => (fails++ ? Promise.resolve(fvOf({ states: { Identity: "working" } })) : Promise.reject(new Error("down"))) });
+  assert.ok(/<span class="wb2pill off">Could not read<\/span><button type="button" class="o2more wb" data-wbfvretry="1">Try again<\/button>/.test(html), "said once");
+  assert.strictEqual(fnBox(html, "identity")[1], " ask", "today's class: an ask is Identity's");
+  click(c, { wbfvretry: "1" }); await sleep(); await sleep();
+  html = await paint(c);
+  assert.strictEqual(fnBox(html, "identity")[1], " run", "read again, and the read's state shows");
+  assert.ok(!/Could not read/.test(html));
+  /* while the read is on its way a skeleton holds the words' place */
+  [, html] = await mapWith({ fv: () => new Promise(() => {}) });
+  assert.ok(/<div class="wb2now"><span class="wb2pill wb2skel" aria-hidden="true"><\/span>/.test(html), "a skeleton");
+});
+test("M1.5: a department with no plan yet shows its Brief and one quiet line", async () => {
+  const m = rtMap({ versions: { "Brief": 1 } }); m.engines = []; m.live = false; m.artifacts = [{ name: "Brief", slug: "brief", versions: 1, latest: null }];
+  const [, html] = await mapWith({ map: m, fv: fvOf({ cycle: { state: "adapting", step: 2, says: "Proposing the work" } }) });
+  assert.ok(/<g class="n work done" data-wbart="brief"/.test(html) && /<div class="o2quiet dpq">No plan yet<\/div>/.test(html));
 });
 
 test("V2 root: Root's Map is its departments as boxes, each with a state dot and its line of work as a strip, and a way to a new one", async () => {
