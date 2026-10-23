@@ -165,7 +165,7 @@ function stepsOf(name, o){
   const limits = name !== "Priority" ? undefined : ENGS.map(e => ({ engine: e[0], calls: 240, usd: 6, used_calls: 3, used_usd: 0.4 }))
     .concat(["Identity", "Adaptation", "Priority", "Coordination", "Audit"].map(s => ({ engine: s, calls: 30, usd: 6, used_calls: 0, used_usd: 0 })));
   const fn = name.toLowerCase(), instructions = (INS[fn] || []).map(([file, lead]) => ({ file, lead, text: lead + "\n\n## " + file + "\n\nThe words.\n",
-    as_shipped: o.mine !== fn + ":" + file, waits: o.waits === fn + ":" + file ? { ask: "a-9", at: "2026-10-23T11:02:00+05:30" } : null }));
+    as_shipped: o.mine !== fn + ":" + file, read: fn + ":" + file !== "adaptation:decide", waits: o.waits === fn + ":" + file ? { ask: "a-9", at: "2026-10-23T11:02:00+05:30" } : null }));
   return { name, kind: "function", description: name === "Priority" ? "grants each engine its budget" : "", skills: [], reads: null, writes: null, numbers, table, limits, instructions,
     start: { on: ["a post addressed to it"], unless: [] },
     hears: (table ? ["What engines share"] : []).concat(["Take a request"]), steps: [
@@ -1314,6 +1314,11 @@ test("S16: a function's Settings lists its files by name with their first line a
     });
     assert.strictEqual((html.match(/<div class="wbins">/g) || []).length, INS[fn].length, fn + ": its files and no other");
     assert.strictEqual((html.match(/>as shipped</g) || []).length, INS[fn].length, fn + ": each as shipped");
+    /* a file no run reads says so in words, and still takes the owner's change, as a note */
+    assert.strictEqual((html.match(/>a note: no run reads it yet</g) || []).length, fn === "adaptation" ? 1 : 0, fn + ": only a file no run reads says so");
+    if (fn === "adaptation")
+      assert.ok(/<b>decide<\/b><span class="wbinslead">[^<]*<\/span><span class="wbchip" title="In this version the code makes this choice, so no run reads these words yet">a note: no run reads it yet<\/span><span class="wbchip">as shipped<\/span><button[^>]*data-wbins="decide"/.test(html),
+                "decide: the code makes its choice, so no run reads it, said beside its Change");
     assert.ok(!/function-prompts|\.md\b|\/prompts\/|records home/.test(html), fn + ": a path on the screen");
     const t = words(html);
     assert.ok(!/charter|internal\s+system/i.test(t), fn + ": the screen's words");

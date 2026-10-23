@@ -4108,6 +4108,15 @@ def _goal_of(ref, name, e=None):
 
 
 INSTRUCTIONS_MAX = 20000                               # the most one file may hold, in characters
+#: What the owner is told of a file no step reads (Adaptation's decide): its words are kept, and no run is sent them.
+NOT_READ = "in this version the code makes this choice, so no run reads it yet"
+
+
+def _read_by_a_run(fn, file):
+    """Whether a run is sent any of one instruction file's words: a file that holds no part a step reads (Adaptation's
+    decide, whose choice the code makes in this version) is kept as the owner's note, and the owner is told so, never
+    that the next run uses it."""
+    return bool((INSTRUCTIONS.get(fn) or {}).get(file))
 
 
 def _waiting_change(ref, fn, file):
@@ -4117,15 +4126,15 @@ def _waiting_change(ref, fn, file):
 
 def instructions_view(ref, fn):
     """A function's instruction files as its Settings shows them: each by name, the line that says what it is for, its
-    words as the department reads them now, whether they are the owner's or as shipped, and a change that waits for
-    the stamp. Names only, never where a file lives."""
+    words as the department reads them now, whether they are the owner's or as shipped, whether a run reads them, and
+    a change that waits for the stamp. Names only, never where a file lives."""
     out = []
     for file in INSTRUCTIONS.get(fn) or {}:
         text = _instruction(fn, file, ref)
         shipped = _instruction(fn, file)
         a = _waiting_change(ref, fn, file)
         out.append({"file": file, "lead": _parts(text)[0].split("\n", 1)[0], "text": text, "as_shipped": text == shipped,
-                    "waits": {"ask": a["id"], "at": a.get("created")} if a else None})
+                    "read": _read_by_a_run(fn, file), "waits": {"ask": a["id"], "at": a.get("created")} if a else None})
     return out
 
 
@@ -4156,7 +4165,9 @@ def instructions_ask(ref, fn, file, text):
         if text == _instruction(fn, file, ref):
             raise ValueError("these are the words %s's %s holds now" % (fn.title(), file))
         line = "Change %s's %s instructions to your words" % (fn.title(), file)
-        p = post(ref, "Identity", OWNER, "request", {"word": "instructions", "objective": line + "? Stamp to use them from the next run; "
+        use = ("Stamp to use them from the next run; " if _read_by_a_run(fn, file) else
+               "In this version the code makes this choice, so no run reads these words yet: stamp to keep them as your note; ")
+        p = post(ref, "Identity", OWNER, "request", {"word": "instructions", "objective": line + "? " + use +
                                                      "Refuse to keep them as they are.", "output": "a stamp or a refusal",
                                                      "may_read": [], "boundaries": "this one file"})
         return W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "instructions", "engine": fn.title(), "fn": fn, "file": file,
@@ -4166,7 +4177,8 @@ def instructions_ask(ref, fn, file, text):
 def _apply_instructions(ref, d, a):
     """The owner's stamp on a change to one instruction file: the department's own copy, written whole, and read by the
     next run. Words that no longer serve the function (the bundle changed under them) are not written, and the owner
-    hears why. Words the same as the bundle's take the department's copy away, so a later bundle's words reach it."""
+    hears why. Words the same as the bundle's take the department's copy away, so a later bundle's words reach it. A
+    file no run reads is kept as the owner's note, and the owner is told that, never that the next run uses it."""
     fn, file, text = a.get("fn"), a.get("file"), str(a.get("words") or "")
     who = {"src": "Root" if d.get("root") else OWNER}
     faults = instruction_faults(fn, file, text) if fn in INSTRUCTIONS else ["no function named %s" % fn]
@@ -4184,8 +4196,9 @@ def _apply_instructions(ref, d, a):
             tmp = own.with_name(own.name + ".tmp")
             tmp.write_text(text, encoding="utf-8")
             os.replace(tmp, own)
-    _tell(ref, d, who, "inform", {"word": "instructions", "done": "%s's %s now reads as you changed it; the next run uses it."
-                                  % (str(fn).title(), file)})
+    _tell(ref, d, who, "inform", {"word": "instructions", "done": "%s's %s now reads as you changed it%s."
+                                  % (str(fn).title(), file, "; the next run uses it" if _read_by_a_run(fn, file)
+                                     else ", kept as your note; " + NOT_READ)})
     return {"said": "put the owner's change to %s's %s in place" % (str(fn).title(), file)}
 
 

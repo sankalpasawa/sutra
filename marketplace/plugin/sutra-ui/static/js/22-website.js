@@ -953,12 +953,16 @@ function wbHostHtml(ref, m){
    agent and its files (S-28), listed by the names its page gives them, each
    with the line that says what it is for. Change opens a sheet whose Send
    files an ask; nothing changes until the owner stamps it, and until then the
-   row says so in words beside the amber mark. Names only, never where a file
-   lives. */
+   row says so in words beside the amber mark. A file no run reads (Adaptation's
+   decide: in this version the code makes that choice) says so too, so a change
+   to it is kept as the owner's note and never read as one the next run uses.
+   Names only, never where a file lives. */
+const WB_INS_NOT_READ = "In this version the code makes this choice, so no run reads these words yet";
 function wbInsHtml(fn, v){
   const rows = v.instructions || [];
   if (!rows.length) return "";
   return dpCard("Instructions", rows.map(r => `<div class="wbins"><b>${wbEsc(r.file)}</b><span class="wbinslead">${wbEsc(r.lead)}</span>` +
+    (r.read === false ? `<span class="wbchip" title="${wbEsc(WB_INS_NOT_READ)}">a note: no run reads it yet</span>` : "") +
     (r.waits ? `<span class="wbinsnote"><i class="wbinsq">?</i>your change waits for your stamp${r.waits.at ? " · " + wbEsc(wbWhen(r.waits.at)) : ""}</span>`
              : wbChip(r.as_shipped ? "as shipped" : "your words") + wbBtn("Change", `data-wbins="${wbEsc(r.file)}" data-wbinsfn="${wbEsc(fn)}"`)) +
     `</div>`).join(""));
