@@ -984,3 +984,76 @@ def test_m4_1_an_engine_the_owner_stamped_joins_the_line_by_coordination_and_its
     assert W.dept(ref)["envelopes"]["Do"] == {"calls": 240, "usd": 6.0}
     grown = [e for e in J.events(ref) if e["action"] == "timetable.written" and e["payload"].get("grown") == "Do"]
     assert len(grown) == 1 and grown[0]["actor"] == "Coordination"
+
+
+def _sm3(W, R, ref, j5=()):
+    """SM-3: runs of an engine that is on no registered line and was not stamped through J5, the five functions aside."""
+    d = W.dept(ref)
+    allowed = {n for w in d.get("workflows") or [] for n in w.get("engines") or []} | set(R.FUNCTIONS) | set(j5)
+    allowed |= {a.get("engine") for a in W.asks(ref) if a.get("kind") == "engine" and a["status"] == "stamped"}
+    return [r["engine"] for r in W.runs(ref) if r["engine"] not in allowed]
+
+
+KEEP = ["Plan", "Write", "Check"]
+
+
+def _counter_keeps(monkeypatch, R, keep=KEEP):
+    """Priority asks for less on the first plan (the one that names Publish), and says yes to the plan that keeps `keep`."""
+    def bargain(prompt):
+        if "- Publish:" in prompt:
+            return {"answer": "counter", "why": "room for three today", "keep": list(keep)}
+        return {"answer": "accept", "why": "the envelope has room"}
+    _model(monkeypatch, R, {"priority.bargain": bargain})
+
+
+def test_m4_2_a_website_counter_keeps_a_subset_and_the_engine_it_cut_never_runs(j2, monkeypatch):
+    """The born line running past what Priority granted (Publish ran though the plan left it out) must fail (SM-3)."""
+    W, R, J, _ = j2
+    _counter_keeps(monkeypatch, R)
+    ref = _born(j2)
+    assert "proposal.countered" in _actions(J, ref)
+    assert W.dept(ref)["workflows"][-1]["engines"] == KEEP
+    t = W._read(W.ddir(ref) / "coordination.json", None)
+    assert t["line"] == KEEP and [(r["engine"], r["in_line"]) for r in t["left_out"]] == [("Publish", False)]
+    assert R.coordination(ref)["line"] == KEEP
+    assert W.dept(ref)["engines"] == LINE, "the engine left out stays on the record"
+    _stamp_all(W, ref)
+    W.run_until_idle(ref, limit=100)
+    assert _work(W, ref) == KEEP and "Publish" not in [r["engine"] for r in W.runs(ref)]
+    assert _sm3(W, R, ref) == []
+    assert any("Left out of the plan: Publish." in s for s in _said(R, ref)), "the plan message names what was left out (Q13)"
+    eng = {e["name"]: e for e in W.map_view(ref)["engines"]}
+    assert (eng["Publish"]["in_line"], eng["Publish"]["state"]) == (False, "Left out") and eng["Check"]["in_line"] is True
+
+
+def test_m4_2_a_later_full_registration_sets_the_line_again_and_merges_what_the_owner_added(j2):
+    """A J5 engine lost on the next registration, or a dropped engine kept in the line, must fail."""
+    W, R, J, _ = j2
+    ref = _born(j2)
+    W.add_engine(ref, "Do")                                        # J5: the owner stamped it; it reads the Brief, so it goes first
+    assert R.coordination(ref)["line"] == ["Do"] + LINE
+    d = W.dept(ref)
+    R._j2_settle(ref, d, [{"name": n} for n in KEEP], "library", d.get("goal"), "a test")   # a later plan, the whole line
+    t = W._read(W.ddir(ref) / "coordination.json", None)
+    assert (t["registered"], t["line"]) == (2, ["Do"] + KEEP), t
+    assert [r["engine"] for r in t["left_out"]] == ["Publish"]
+    assert not [e for e in J.events(ref) if e["action"] == "envelope.granted" and e.get("workflow_ref") == "workflow/2"], \
+        "no engine is new to the plans: Priority gives no new limit"
+    R._j2_settle(ref, d, [{"name": n} for n in LINE], "library", d.get("goal"), "a test")    # Publish is back in the plan
+    t = W._read(W.ddir(ref) / "coordination.json", None)
+    assert (t["registered"], t["line"], t["left_out"]) == (3, ["Do"] + LINE, [])
+    W.run_until_idle(ref, limit=200)
+    assert _sm3(W, R, ref, j5=["Do"]) == []
+
+
+def test_m4_2_a_set_line_that_is_not_full_adds_to_the_line_and_a_faulty_table_keeps_what_was_left_out(j2, monkeypatch):
+    W, R, J, _ = j2
+    _counter_keeps(monkeypatch, R)
+    ref = _born(j2)
+    t = R.set_line(ref, ["Plan", "Publish"], 9, full=False)
+    assert t["line"] == KEEP + ["Publish"] and t["left_out"] == []
+    R.set_line(ref, KEEP, 10)
+    t = W._read(W.ddir(ref) / "coordination.json", None)
+    t["line"] = KEEP + ["Nobody"]                                   # a name the Library does not define: the table is not read
+    W._write(W.ddir(ref) / "coordination.json", t)
+    assert R.coordination(ref)["line"] == KEEP, "the born line, without the engine the plan left out"

@@ -1195,12 +1195,20 @@ def map_view(ref):
         last = next((r for r in reversed(rs) if r["engine"] == s), None)
         systems.append({"name": s, "state": "paused" if paused else "running", "last": last and last.get("what")})
     engines = [x for x in (engine_view(ref, e[0]) for e in engines_of(d)) if x]
+    rt = _runtime(ref)
+    table = rt.coordination(ref) if rt else {}
+    line = set(table.get("line") or []) if rt else None
+    left = {r.get("engine") for r in table.get("left_out") or [] if isinstance(r, dict)}
     for e in engines:
         e.pop("runs", None)
         last = next((r for r in reversed(rs) if r["engine"] == e["name"]), None)
         e["last"] = last and {"status": last["status"], "at": last["started"], "what": last.get("what")}
         if any(a["engine"] == e["name"] and a["status"] == "pending" for a in asks(ref)):
             e["state"] = "Waits"
+        # an engine the registered plan left out stays on the record and never runs (PRD M4.2): it says so
+        e["in_line"] = line is None or e["name"] in line
+        if e["name"] in left and e["state"] not in ("Running", "Missing"):
+            e["state"] = "Left out"
     names = artifacts_of(d)
     arts = []
     for a in names:

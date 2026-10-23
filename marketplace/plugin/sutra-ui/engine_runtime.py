@@ -437,7 +437,13 @@ def coordination(ref):
     dept = W.dept(ref) or {}
     kind, line = dept.get("kind") or "website", dept.get("engines")
     if not isinstance(t, dict) or table_faults(t, defs()["engines"]):
-        return born_table(kind, line)
+        born = born_table(kind, line)
+        if isinstance(t, dict):
+            # a table with a fault (an engine the Library no longer defines) is not read; what a registered plan left out
+            # stays out of the born line all the same, so an engine Priority cut never runs (PRD M4.2)
+            out = {r.get("engine") for r in (t.get("left_out") if isinstance(t.get("left_out"), list) else []) if isinstance(r, dict)}
+            born["line"] = [n for n in born["line"] if n not in out]
+        return born
     born_edges = born_table(kind, line)["edges"]
     t.setdefault("edges", born_edges)
     if "Root" in born_edges:                         # a department born before Root spoke learns of it: Root carries the owner's words
@@ -3533,7 +3539,8 @@ def born_template(name, shape, ref):
 # place on the code rung; each decision is a row of the function whose handler it is (_ask_rule).
 def grow_line(ref, name, before=None):
     """Coordination's line, on the record, gains the engine (before another when said, as Research goes before Plan); the
-    born copy is written first for a department that had none. Written by Coordination, on the owner's stamp."""
+    born copy is written first for a department that had none. Written by Coordination, on the owner's stamp; the engine
+    is kept as one the owner added (grown), so a later registration merges it in (PRD M4.2)."""
     t = coordination(ref)
     line = list(t.get("line") or [])
     if name not in line:
@@ -3542,17 +3549,38 @@ def grow_line(ref, name, before=None):
         else:
             line.append(name)
         t["line"] = line
+    t["grown"] = list(t.get("grown") or []) + ([name] if name not in (t.get("grown") or []) else [])
+    t["left_out"] = [r for r in t.get("left_out") or [] if isinstance(r, dict) and r.get("engine") != name]
     t.update({"since": W.now(), "by": "Coordination", "why": "the owner's stamp"})
     with W._lock(ref):
         W._write(W.ddir(ref) / "coordination.json", t)
     return t
 
 
-def set_line(ref, engines, version=None):
-    """Coordination's line, on the record, after Root registered a plan: the line is the plan, in its order. Written by
-    Coordination, with the plan's version, so the table says which registration it follows."""
+def set_line(ref, engines, version=None, full=True):
+    """Coordination's line, on the record, after Root registered a plan (PRD M4.2: the line is what was granted). On the
+    cycle's first registration, and on any later one that names the whole line (full), the line is the plan in its
+    order, and an engine the owner added through J5 (grown) is merged in where it stood. An engine on the department's
+    record that the plan left out stays on the record, in_line false, and never runs. A registration that is not full
+    adds its engines to the line (none is today: a round of Pursue never registers a line). Written by Coordination,
+    with the plan's version, so the table says which registration it follows."""
     t = coordination(ref)
-    t.update({"line": [str(n) for n in engines or [] if n], "registered": version, "since": W.now(), "by": "Coordination",
+    d = W.dept(ref) or {}
+    old, plan = list(t.get("line") or []), [str(n) for n in engines or [] if n]
+    if full or not t.get("registered"):
+        line = list(plan)
+        for g in [g for g in t.get("grown") or [] if g not in line and g in (d.get("engines") or [])]:
+            after = next((n for n in old[old.index(g) + 1:] if n in line), None) if g in old else None
+            if after:
+                line.insert(line.index(after), g)
+            else:
+                line.append(g)
+    else:
+        line = old + [n for n in plan if n not in old]
+    was = {r.get("engine"): r for r in t.get("left_out") or [] if isinstance(r, dict)}
+    left = [{"engine": n, "in_line": False, "since": (was.get(n) or {}).get("since") or W.now()}
+            for n in d.get("engines") or [] if n not in line]
+    t.update({"line": line, "left_out": left, "registered": version, "since": W.now(), "by": "Coordination",
               "why": "the plan Root registered"})
     with W._lock(ref):
         W._write(W.ddir(ref) / "coordination.json", t)
@@ -3567,7 +3595,7 @@ def coord_table(ctx, step, item):
         t = grow_line(ctx["ref"], item["grow"], item.get("before"))
         said = "added %s to the line: %s" % (item["grow"], " -> ".join(t["line"]))
     else:
-        t = set_line(ctx["ref"], item.get("engines") or [], item.get("version"))
+        t = set_line(ctx["ref"], item.get("engines") or [], item.get("version"), full=item.get("full", True) is not False)
         said = "set the line to the plan: " + " -> ".join(t["line"])
     if J:
         J.on_table(ctx["ref"], t, item.get("grow"))
@@ -4107,10 +4135,13 @@ def _j2_settle(ref, d, engines, source, words, by):
     if J:
         J.registered(ref, added, source, checks=checks)
     _registered(ref, added)
+    # Q13: an engine the plan left out needs no stamp, and the message names it (PRD M4.2)
+    left = [r.get("engine") for r in coordination(ref).get("left_out") or [] if isinstance(r, dict)]
     _tell(ref, d, who, "inform", {"word": "line", "engines": added,
-                                  "done": "The plan is set: %s (%s). %s and it passed Root's check; the first starts now.%s"
+                                  "done": "The plan is set: %s (%s). %s and it passed Root's check; the first starts now.%s%s"
                                   % (" -> ".join(added), "from the Library" if source == "library" else "shaped for this goal",
-                                     SETTLED_BY.get(by, "It was agreed"), (" Not added: " + "; ".join(lost)) if lost else "")})
+                                     SETTLED_BY.get(by, "It was agreed"), (" Not added: " + "; ".join(lost)) if lost else "",
+                                     (" Left out of the plan: %s." % _names(left)) if left else "")})
     W.signal()
     return {"said": "registered the workflow %s, %s" % (" -> ".join(added), by)}
 
@@ -4122,7 +4153,7 @@ def _registered(ref, names):
     wf = (W.dept(ref) or {}).get("workflows") or []
     version = int((wf[-1] if wf else {}).get("version") or 0)
     before = {n for w in wf[:-1] for n in w.get("engines") or []}
-    _ask_rule(ref, "coord.table", {"engines": list(names), "version": version}, key="table@workflow.v%d" % version)
+    _ask_rule(ref, "coord.table", {"engines": list(names), "version": version, "full": True}, key="table@workflow.v%d" % version)
     _ask_rule(ref, "priority.grant", {"engines": [n for n in names if n not in before], "version": version},
               key="grant@workflow.v%d" % version)
 
