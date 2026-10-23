@@ -390,7 +390,8 @@ const DP_J2_SAYS = {
   not_started: "Not started", not_ready: "Not ready", assessing: "Identity is reading the goal",
   waiting: "Waiting for you", adapting: "Adaptation is proposing what to do", bargaining: "Priority is answering the proposal",
   closing: "Identity is closing a conflict", checking: "Root is checking the plan", reshaping: "Adaptation is reshaping the plan",
-  running: "The work is running", pursuing: "Working on what Audit found", blocked: "Blocked: the plan was not granted",
+  running: "The work is running", unread: "Audit has not read the result", pursuing: "Working on what Audit found",
+  blocked: "Blocked: the plan was not granted",
   stopped: "Stopped", done: "Goal reached"
 };
 function dpActivityHtml(){

@@ -1302,7 +1302,11 @@ def run_engine(ref, name, inp, slot):
     if J:
         J.on_run(ref, row, "ended")
         if name == "Audit" and row.get("status") == "ok" and not p and isinstance(ctx["bag"].get("audit.file"), dict):
-            _j2_audit_read(ref, d, inp.get("v"), ctx["bag"]["audit.file"].get("filed"))
+            filed = ctx["bag"]["audit.file"]
+            if filed.get("read") is False and not filed.get("filed"):
+                J.not_read(ref, inp.get("v"), filed.get("why_not_read"))      # never 'clean': the cycle stays at step 7
+            else:
+                _j2_audit_read(ref, d, inp.get("v"), filed.get("filed"))
     return row
 
 
@@ -2888,7 +2892,10 @@ def adapt_heard(ctx, step, item):
 def audit_pick(ctx, step, item):
     v = int(ctx["inp"]["v"])
     files = W.read_files(ctx["ref"], "Live site", v)
-    return {"sample": v <= 3 or v % 3 == 0, "v": v, "pages": sorted(k for k in files if k.endswith(".html"))}
+    # while the department lives its J2 cycle, done-when is read off Audit's reading, so every version is read (M0.3,
+    # interim until M8 reads each done-when item); outside a cycle Audit drops in on a sample, as it always has
+    sample = _j2_live(ctx["ref"]) or v <= 3 or v % 3 == 0
+    return {"sample": sample, "v": v, "pages": sorted(k for k in files if k.endswith(".html"))}
 
 
 def audit_mechanical(ctx, step, item):
@@ -2936,6 +2943,10 @@ def placeholders(files):
     return out
 
 
+#: how a judge step was answered, when someone actually read the pages: its agent, its checklist, or a person by hand
+READ_BY = ("model", "checklist", "stamped by the owner")
+
+
 def audit_file(ctx, step, item):
     ref = ctx["ref"]
     mech, judged = ctx["bag"]["audit.mechanical"], ctx["bag"]["audit.judge"]
@@ -2943,14 +2954,25 @@ def audit_file(ctx, step, item):
     found = [{"page": None, "claim": n, "severity": "high"} for n in faults or []]
     found += list(mech.get("holes") or [])
     found += [f for f in judged.get("findings") or [] if isinstance(f, dict) and f.get("claim")]
+    # 'found nothing' is a reading only when the judge read the version: a judge skipped (not sampled) or answered by
+    # its offline draft read nothing, and its empty list is no evidence (M0.3; found 2026-10-23: an offline department
+    # reached its goal on a version no one read)
+    how = ctx["how"].get("audit.judge")
+    read = how in READ_BY
+    why_not = None if read else ("it was not sampled" if how == SKIPPED else "no model was there to read it" if how == "offline draft"
+                                 else "it was answered by %s" % (how or "nothing"))
     if not found:
-        return {"said": "checked what went live; found nothing", "filed": 0}
+        if not read:
+            return {"said": "did not read what went live (%s); nothing is said of it" % why_not, "filed": 0, "read": False,
+                    "why_not_read": why_not}
+        return {"said": "checked what went live; found nothing", "filed": 0, "read": True}
     high = [f for f in found if str(f.get("severity") or "").lower() == "high"]
     claim = str((high or found)[0]["claim"])
     post(ref, "Audit", "Identity", "inform", {"word": "finding", "claim": claim, "severity": "high" if high else "low",
                                               "findings": found[:12], "about_version": ctx["inp"]["v"]},
          about={"art": "Live site", "v": ctx["inp"]["v"]})
-    return {"said": "found %s: %s" % ("something to put right" if high else "something to note", claim), "filed": len(found)}
+    return {"said": "found %s: %s" % ("something to put right" if high else "something to note", claim), "filed": len(found),
+            "read": read, "why_not_read": why_not}
 
 
 # ---- the rulings of 2026-09-28: every unit starts and ends with code; Coordination's own agent; Root spawns ---------

@@ -159,9 +159,11 @@ def test_step_2_with_no_template_adaptation_shapes_the_line_and_the_owner_stamps
     assert _work(W, ref)[:1] == ["Facts"]
 
 
-def test_steps_6_to_8_the_runs_the_audit_and_the_goal_are_on_the_ledger(j2):
-    """A ledger that stops at registration, or a goal reached twice, must fail."""
+def test_steps_6_to_8_the_runs_the_audit_and_the_goal_are_on_the_ledger(j2, monkeypatch):
+    """A ledger that stops at registration, or a goal reached twice, must fail. Audit's judge reads with a model here:
+    only a version the model read can clear done-when (M0.3)."""
     W, R, J, _ = j2
+    _model(monkeypatch, R, {"audit.judge": {"ok": True, "findings": []}})
     ref = _born(j2)
     _stamp_all(W, ref)                                           # the first publish: a born rule says ask
     acts = _actions(J, ref)
@@ -194,6 +196,41 @@ def test_step_7_a_finding_keeps_the_loop_open(j2, monkeypatch):
     st = J.status(ref)
     assert (st["state"], st["step"], st["goal_reached"]) == ("pursuing", 8, False)
     assert [a["kind"] for a in W.asks(ref) if a["status"] == "pending"] == ["finding"]
+
+
+def test_m0_3_an_offline_department_never_reaches_its_goal(j2):
+    """An offline draft's empty list read as 'found nothing' must fail: no model read the version (M0.3)."""
+    W, R, J, _ = j2
+    ref = _born(j2)
+    _stamp_all(W, ref)
+    acts = _actions(J, ref)
+    assert "goal.reached" not in acts and "audit.finding_filed" not in acts
+    unread = next(e for e in J.events(ref) if e["action"] == "audit.not_read")
+    assert (unread["step"], unread["actor"], unread["state"]) == (7, "Audit", "not_read")
+    assert unread["evidence_refs"] == [{"artifact": "Live site", "version": 1}] and "no model" in unread["summary"]
+    st = J.status(ref)
+    assert (st["state"], st["step"], st["goal_reached"]) == ("unread", 7, False)
+    assert not [s for s in _said(R, ref) if s.startswith("The goal is reached")]
+    filed = [r for r in R.step_rows(ref) if r["step"] == "audit.judge"]
+    assert filed and filed[-1]["by"] == "offline draft"
+    W.run_until_idle(ref, limit=100)
+    assert "goal.reached" not in _actions(J, ref) and _actions(J, ref).count("audit.not_read") == 1
+
+
+def test_m0_3_every_version_is_read_in_a_cycle_and_an_unsampled_v4_is_never_clean(j2, monkeypatch):
+    """Audit's old sample skipped v4; a skipped judge's empty list read as 'found nothing' must fail."""
+    W, R, J, _ = j2
+    ref = _born(j2)
+    _stamp_all(W, ref)
+    assert R.audit_pick({"ref": ref, "inp": {"v": 4}}, None, None)["sample"] is True      # interim: every version, in a cycle
+    _model(monkeypatch, R, {"audit.judge": {"ok": True, "findings": []}})                  # a model there to read, unasked
+    old = lambda ctx, step, item: {"sample": int(ctx["inp"]["v"]) <= 3 or int(ctx["inp"]["v"]) % 3 == 0, "v": int(ctx["inp"]["v"]), "pages": []}
+    monkeypatch.setitem(R.CODE, "audit_pick", old)
+    row = R.run_engine(ref, "Audit", {"v": 4}, "Audit@live-site.v4")
+    assert row["status"] == "ok" and "not sampled" in row["what"]
+    unread = [e for e in J.events(ref) if e["action"] == "audit.not_read"]
+    assert [e["evidence_refs"][0]["version"] for e in unread] == [1, 4]
+    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["step"] == 7
 
 
 # ---- the edges ------------------------------------------------------------------------------------------------------

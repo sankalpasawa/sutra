@@ -612,6 +612,20 @@ def questioned(ref, question, key):
     _set(ref, step=1, state="waiting")
 
 
+def not_read(ref, version, why):
+    """Audit's judge did not read the version (not sampled, or no model to read it): nothing is found and nothing is
+    cleared. The ledger says so, and the cycle stays at step 7 until a version is read (M0.3). Never raises."""
+    try:
+        if not active(ref):
+            return
+        why = str(why or "it was not read").rstrip(".")
+        note(ref, 7, "Audit", "Identity", "audit.not_read", "not_read", "Audit did not read Live site v%s: %s." % (version, why),
+             "audit-not-read-v%s" % version, {"why_not_read": why}, evidence_refs=[{"artifact": "Live site", "version": version}])
+        _set(ref, step=7, state="unread")
+    except Exception:  # noqa: BLE001 -- the ledger never fails the run it records
+        return
+
+
 def audited(ref, version, findings):
     """Audit read what went out and found nothing to put right: done-when is read from that (step 8). Returns True when
     the goal is reached now, so Identity says so once."""
