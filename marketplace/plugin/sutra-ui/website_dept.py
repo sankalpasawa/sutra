@@ -63,6 +63,40 @@ STALE_ASK_S = 30 * 60
 _DEFS = json.loads((Path(__file__).parent / "engine_defs" / "website.json").read_text(encoding="utf-8"))
 KINDS = _DEFS.get("kinds") or {}
 RULES = [dict(r) for r in KINDS.get("website", {}).get("rules") or []]
+# Done-when as items (PRD M3.2, MK-2): each item says how it is checked (by a program, by an AI reading what was made,
+# or only by the owner) and what it is (a target the work must have, or an outcome it must achieve). A kind's own done
+# line stands as D1 when Root drafted none, checked as the kind says.
+DONE_HOW = ("code", "model", "person")
+DONE_LEVELS = ("target", "outcome")
+KIND_DONE_HOW = {"website": "code", "root": "code"}
+DONE_ITEMS_MAX = 12
+
+
+def done_items(raw, kind=None):
+    """Done-when items as the record keeps them: [{id, text, how, level}], numbered D1, D2, ... in the order given; a blank
+    item is dropped, and how and level are kept as said (lowercased) for a covering to judge. An item that rests on a
+    fact nobody gave carries `confirm`, why it is to be confirmed. With none given, the kind's own done line is D1."""
+    out = []
+    for x in raw if isinstance(raw, list) else []:
+        if not isinstance(x, dict):
+            continue
+        text = " ".join(str(x.get("text") or "").split())[:300]
+        if not text:
+            continue
+        item = {"id": "D%d" % (len(out) + 1), "text": text, "how": str(x.get("how") or "").strip().lower(),
+                "level": str(x.get("level") or "").strip().lower()}
+        why = " ".join(str(x.get("confirm") or "").split())[:200]
+        if why:
+            item["confirm"] = why
+        out.append(item)
+    if not out and kind in KINDS:
+        out = [{"id": "D1", "text": KINDS[kind]["done"], "how": KIND_DONE_HOW.get(kind, "model"), "level": "outcome"}]
+    return out[:DONE_ITEMS_MAX]
+
+
+def done_line(items):
+    """The done-when items as one line, for the readers that read `done` (done stays as joined text)."""
+    return "; ".join(str(i.get("text") or "").rstrip(".") for i in items or [] if str(i.get("text") or "").strip())
 
 
 def engines_of(d):
@@ -329,6 +363,7 @@ def create(ref, name, brief, owner="the owner", parent=None, kind="website", goa
     k = KINDS[kind]
     d = {"kind": kind, "ref": ref, "name": name, "owner": owner, "parent": parent, "created": now(),
          "goal": " ".join(str(goal or "").split()) or k["goal"].format(name=name), "done": k["done"],
+         "done_items": done_items(None, kind),
          "runtime": 1 if os.environ.get("SUTRA_ENGINE_RUNTIME") == "1" else 2,
          "rules": [dict(r) for r in k["rules"]], "control": "granted", "stopped": False,
          "envelopes": {e[0]: dict(ENVELOPE) for e in ENGINES},

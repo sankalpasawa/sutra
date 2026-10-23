@@ -122,9 +122,14 @@ def found_structure(org_name, owner="the owner"):
     return {"org": org, "root": root, "created": created}
 
 
-def spawn(root_ref, name, kind, goal, owner="the owner", goal_context=None, template_ref=None, route="template"):
+def spawn(root_ref, name, kind, goal, owner="the owner", goal_context=None, template_ref=None, route="template",
+          done_items=None, to_confirm=None):
     """Root sets up a department: the child under Root, its charter, its functions' templates from the Library, its record,
-    and its goal, which makes it run. Asking for the same name again finds it and makes nothing."""
+    and its goal, which makes it run. Asking for the same name again finds it and makes nothing.
+
+    `done_items` are the done-when items Root drafted at birth (PRD M3.2), part of what Root stamps: the record keeps
+    them, `done` stays as their joined text, and the charter carries them as its done-when lines. With none, the kind's
+    own done line is D1. `to_confirm` names the items that rest on a fact nobody gave: [{item, why}]."""
     rd = W.dept(root_ref)
     if not rd or rd.get("kind") != "root":
         raise ValueError("only a Root sets up departments")
@@ -153,8 +158,9 @@ def spawn(root_ref, name, kind, goal, owner="the owner", goal_context=None, temp
             return {"ref": ref, "name": name, "kind": kind, "goal": goal, "created": False,
                     "operation_id": prior_operation, "existing": not same_operation}
     k = W.KINDS[kind]
+    items = W.done_items(done_items, kind)
     if new:
-        charter(ref, goal, [k["done"]], k["rules"], "Write %s's charter" % name)
+        charter(ref, goal, [i["text"] for i in items], k["rules"], "Write %s's charter" % name)
     picks = {}
     tpl = k.get("functions_template") or TEMPLATE
     import function_templates as FT
@@ -171,6 +177,8 @@ def spawn(root_ref, name, kind, goal, owner="the owner", goal_context=None, temp
     checkpoints = ["root", "child", "functions", "rules_limits", "goal_context", "born_engines"]
     d.update({"templates": picks, "org": rd.get("org") or {}, "root": root_ref, "template_ref": template_ref,
               "initial_goal_context": context, "goal": goal,
+              "done_items": [{x: i[x] for x in ("id", "text", "how", "level")} for i in items], "done": W.done_line(items),
+              "to_be_confirmed": [dict(c) for c in to_confirm or [] if isinstance(c, dict) and c.get("item")],
               "founding": {"operation_id": operation, "checkpoints": checkpoints}})
     W.save_dept(ref, d)
     if not had_goal:

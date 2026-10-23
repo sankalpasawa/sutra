@@ -172,3 +172,60 @@ def test_m3_1_a_department_not_in_the_registry_has_no_copy_and_nothing_is_filed(
     d = W.bump_identity("dref-alone", W.dept("dref-alone"))
     assert d["identity_revision"] == 2 and founding.mirror("dref-alone") is None
     assert proposals.listing() == []
+
+
+# ---- M3.2 ------------------------------------------------------------------------------------------------------------
+ITEMS = [{"text": "Shoppers browse every cake by category", "how": "code", "level": "target", "confirm": ""},
+         {"text": "An order reaches the bakery on WhatsApp", "how": "model", "level": "outcome", "confirm": ""},
+         {"text": "Three reviews from customers", "how": "person", "level": "outcome", "confirm": "nobody gave the reviews"}]
+
+
+def _birth_tell(R, root):
+    return [p["payload"]["done"] for p in R.board(root) if (p["payload"] or {}).get("word") == "department"]
+
+
+def test_m3_2_root_drafts_done_when_items_at_birth_each_with_an_id_a_how_and_a_level(j2, monkeypatch):
+    """A department born with one line of done-when and no items, or items with no how, must fail."""
+    W, R, _, founding, _ = j2
+    _model(monkeypatch, R, {"setup.shape": dict(SHAPED, done_items=[dict(i) for i in ITEMS])})
+    root, ref = _found(j2)
+    d = W.dept(ref)
+    assert d["done_items"] == [{"id": "D1", "text": ITEMS[0]["text"], "how": "code", "level": "target"},
+                               {"id": "D2", "text": ITEMS[1]["text"], "how": "model", "level": "outcome"},
+                               {"id": "D3", "text": ITEMS[2]["text"], "how": "person", "level": "outcome"}]
+    assert d["to_be_confirmed"] == [{"item": "D3", "why": "nobody gave the reviews"}]
+    assert d["done"] == "; ".join(i["text"] for i in ITEMS)                         # done stays as the items' joined text
+    tell = _birth_tell(R, root)
+    assert len(tell) == 1
+    for i, item in enumerate(ITEMS):
+        assert "D%d %s" % (i + 1, item["text"]) in tell[0]
+    assert "D3 Three reviews from customers (to confirm)" in tell[0]
+    assert founding._standing(ref)["done_when"] == [i["text"] for i in ITEMS]       # what Root stamped, on the Org screen too
+
+
+def test_m3_2_offline_there_is_exactly_one_item_the_kinds_done_line(j2):
+    W, R, _, _, _ = j2
+    root, ref = _found(j2, WEBSITE, "Acme Learning")
+    d = W.dept(ref)
+    assert d["done_items"] == [{"id": "D1", "text": W.KINDS[d["kind"]]["done"], "how": "code", "level": "outcome"}]
+    assert d["done"] == W.KINDS[d["kind"]]["done"] and d["to_be_confirmed"] == []
+    assert "Done when: D1 %s." % W.KINDS[d["kind"]]["done"] in _birth_tell(R, root)[0]
+
+
+def test_m3_2_an_item_that_does_not_say_how_it_is_checked_fails_roots_shape(j2, monkeypatch):
+    W, R, _, _, _ = j2
+    _model(monkeypatch, R, {"setup.shape": dict(SHAPED, done_items=[{"text": "It looks nice", "how": "vibes", "level": "outcome"}])})
+    root = j2[3].found_structure("Bakery Co", owner="Sankalp")["root"]
+    W.owner_ask(root, BAKERY)
+    W.run_until_idle(root, limit=300)
+    assert not [d for d in W.list_depts() if d.get("parent") == root]                  # nothing was made on a bad item
+    shaped = [r for r in R.step_rows(root) if r["step"] == "setup.shape"]
+    assert shaped[-1]["status"] == "failed" and "D1 says how it is checked as 'vibes'" in shaped[-1]["why"]
+
+
+def test_m3_2_every_department_on_the_runtime_holds_its_items(j2):
+    W = j2[0]
+    W.create("dref-items", "Items Website", None)
+    assert W.dept("dref-items")["done_items"] == [{"id": "D1", "text": W.KINDS["website"]["done"], "how": "code", "level": "outcome"}]
+    assert W.done_items([{"text": " "}, {"text": "A", "how": "Code", "level": "TARGET"}], "website") == \
+        [{"id": "D1", "text": "A", "how": "code", "level": "target"}]

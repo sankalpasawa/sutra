@@ -3217,8 +3217,13 @@ def p_setup_shape(ctx, step, item):
             "THE OWNER'S WORDS: %s\nKINDS IN THE LIBRARY: %s\nEACH KIND'S USE CASE: %s\nDEPARTMENTS THIS ROOT ALREADY HAS: %s\n\n"
             "If the words describe MORE THAN ONE department, shape only the first: its goal covers only that one, and `second` "
             "holds, in the owner's words, what the other department is for. Otherwise `second` is an empty string.\n"
+            "Draft its done-when as items: each one line that must be true when the department is done, from the owner's words "
+            "and nothing else, with how it is checked (code: a program can check it on what was made; model: an AI reads what "
+            "was made; person: only the owner can say) and its level (target: something the work must have; outcome: something "
+            "it must achieve). An item that rests on a fact the owner did not give says why in confirm; else confirm is \"\".\n"
             "Return ONLY a JSON object: {\"name\": \"...\", \"kind\": \"one of the kinds above\", \"goal\": \"...\", "
-            "\"purpose\": \"one line\", \"second\": \"...\"}."
+            "\"purpose\": \"one line\", \"second\": \"...\", \"done_items\": [{\"text\": \"...\", \"how\": \"code\" | \"model\" | "
+            "\"person\", \"level\": \"target\" | \"outcome\", \"confirm\": \"...\"}]}."
             % (org, org, org, got["words"], got["facts"]["kinds"], got["facts"].get("use_cases") or "", got["facts"].get("existing") or "none"))
 
 
@@ -3250,6 +3255,11 @@ def _shape_norm(out):
     organic = kind == "organic"
     out["route"] = "organic" if organic else "template"
     out["template_ref"] = {} if organic else {"id": "department/%s" % kind, "version": 1}
+    # Root's done-when items (PRD M3.2): numbered by the code, how and level as the agent said them for the covering to
+    # judge; none drafted (offline, or a model that gave none), and the kind's done line is D1
+    items = W.done_items(out.get("done_items"), kind)
+    out["to_be_confirmed"] = [{"item": i["id"], "why": i.pop("confirm")} for i in items if i.get("confirm")]
+    out["done_items"] = items
     return out
 
 
@@ -3302,7 +3312,8 @@ def setup_make(ctx, step, item):
             n += 1
         shape = dict(shape, name="%s %d" % (base, n))
     made = founding.spawn(ctx["ref"], shape["name"], shape["kind"], shape["goal"], owner=ctx["dept"].get("owner") or "the owner",
-                          goal_context=conversation, template_ref=shape.get("template_ref") or None, route=shape.get("route"))
+                          goal_context=conversation, template_ref=shape.get("template_ref") or None, route=shape.get("route"),
+                          done_items=shape.get("done_items"), to_confirm=shape.get("to_be_confirmed"))
     if made.get("existing"):
         # the agent named a department this Root already has: the person is told, and the words go to that department
         # as Root hands words on (found live 2026-09-29: a stamp that ended in silence)
@@ -3317,6 +3328,12 @@ def setup_make(ctx, step, item):
         first = engines[0] if engines else "Adaptation will shape the first engine"
         operation = made["operation_id"]
         line = "%s is set up with %s. First: %s." % (made["name"], ", ".join(engines) if engines else "no born work engines", first)
+        # what Root stamped includes the done-when items it drafted, and the birth tell names them (PRD M3.2)
+        items = child.get("done_items") or []
+        if items:
+            line += " Done when: %s." % "; ".join("%s %s%s" % (i["id"], str(i["text"]).rstrip("."),
+                                                                " (to confirm)" if any(c.get("item") == i["id"] for c in child.get("to_be_confirmed") or []) else "")
+                                                   for i in items)
         defaults = conversation.get("defaults_applied") or []
         if defaults:
             line += " Defaults used: %s." % "; ".join(defaults)
@@ -3346,7 +3363,13 @@ def setup_file(ctx, step, item):
 def c_department_is_shaped(ctx, step, item, out):
     shaped = _shape_norm(out)                             # the route and the template reference are the code's, from the kind
     ok = bool(shaped["name"] and shaped["kind"] in W.KINDS and shaped["kind"] != "root" and shaped["goal"])
-    return _verdict(ok, "a name, a kind the Library has, and a goal", "no name, a kind the Library lacks, or no goal")
+    if not ok:
+        return _verdict(False, "", "no name, a kind the Library lacks, or no goal")
+    # each done-when item Root drafted says how it is checked and what it is (PRD M3.2, MK-2)
+    bad = ["%s says how it is checked as %r" % (i["id"], i["how"]) for i in shaped["done_items"] if i["how"] not in W.DONE_HOW]
+    bad += ["%s says its level as %r" % (i["id"], i["level"]) for i in shaped["done_items"] if i["level"] not in W.DONE_LEVELS]
+    return {"ok": not bad, "notes": bad or ["a name, a kind the Library has, a goal, and %d done-when items, each with how and level"
+                                             % len(shaped["done_items"])]}
 
 
 def c_department_is_made(ctx, step, item, out):
