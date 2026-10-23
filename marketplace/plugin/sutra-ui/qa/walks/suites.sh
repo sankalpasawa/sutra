@@ -21,6 +21,10 @@ tail -1 /tmp/sutra-suite-pytest.txt
 # change leaving nothing, a change surviving an update; a lane of its own, since its fixture reloads the runtime
 lane $PY -m pytest -q -p no:cacheprovider test_function_prompts.py > /tmp/sutra-suite-prompts.txt 2>&1 || RC=1
 tail -1 /tmp/sutra-suite-prompts.txt | sed "s/^/function prompts: /"
+# the five functions as one read of the record (PRD M1.1, M1.2, M1.4, M1.7): the state per cycle state, the thread
+# rule, faults, made-by and speaks-to, the Org sheet's words reaching Root, each function's page and its words on screen
+lane $PY -m pytest -q -p no:cacheprovider test_functions_view.py > /tmp/sutra-suite-functions.txt 2>&1 || RC=1
+tail -1 /tmp/sutra-suite-functions.txt | sed "s/^/functions read: /"
 # the department's life (J1 made it, J2 runs it): these files have no __main__ block, so only pytest runs them
 lane $PY -m pytest -q test_j2.py test_j2_api.py test_j1.py > /tmp/sutra-suite-j2.txt 2>&1 || RC=1
 tail -1 /tmp/sutra-suite-j2.txt
