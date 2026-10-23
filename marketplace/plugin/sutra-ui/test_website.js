@@ -1363,6 +1363,25 @@ test("M1.5: the NOW line counts only what is not zero, folds in System status, a
   assert.ok(/<span class="wb2pill ok" aria-live="polite">Goal reached<\/span>/.test(html), "Goal reached");
   assert.ok(/<g class="n work done live" data-wbart="live-site"/.test(html), "the deliverable takes the ok tint once it is live");
 });
+/* M1.5 (round 1, gap 8): S1's Done holds for every runtime department, not the website alone. An organic department has
+   no Live site, so its deliverable (the last thing its line makes) is lit when the cycle's goal is reached or a version
+   of it passed its check; before either it is filed, not lit. */
+test("M1.5: an organic department's deliverable takes the ok tint once the goal is reached or it passed its check", async () => {
+  const organic = o => {
+    const m = rtMap({ versions: { "Brief": 1, "Facts": 1, "Inventory": 1 } });
+    m.kind = "organic"; m.live = false;
+    m.engines = [["Facts", "Brief", "Facts"], ["Track", "Facts", "Inventory"]].map(([name, reads, writes]) => Object.assign({}, m.engines[0], { name, reads, writes }));
+    m.artifacts.forEach(a => { a.latest = { v: 1, at: AT, check: { ok: a.name !== "Inventory" || !!o.passed, notes: [] } }; });
+    return m;
+  };
+  let [, html] = await mapWith({ map: organic({}), fv: fvOf({ cycle: { state: "running", says: "Track is working" } }) });
+  assert.ok(/<g class="n work done" data-wbart="inventory"/.test(html), "filed, not yet delivered: not lit");
+  [, html] = await mapWith({ map: organic({}), fv: fvOf({ cycle: { state: "done", says: "Goal reached" } }) });
+  assert.ok(/<g class="n work done live" data-wbart="inventory"[\s\S]*?<title>Inventory · filed, v1 · delivered<\/title>/.test(html), "the goal reached: lit");
+  [, html] = await mapWith({ map: organic({ passed: true }), fv: fvOf({ cycle: { state: "pursuing", step: 8, says: "Working on what Audit found" } }) });
+  assert.ok(/<g class="n work done live" data-wbart="inventory"/.test(html), "a version that passed its check: lit");
+  assert.ok(!/<g class="n work done live" data-wbart="facts"/.test(html), "only the deliverable");
+});
 test("M1.5: Budget joins Knows as a bar with its numbers on hover; a failed read falls back and can be read again; the narrow list", async () => {
   let [c, html] = await mapWith({ fv: fvOf({ budget: 0.25 }) });
   assert.ok(/<g class="n" data-wbfn="priority" transform="[^"]*"><rect class="bx" width="150" height="32" rx="8"\/><text x="10" y="20">Budget<\/text><rect class="bar0" x="66" y="13" width="72" height="6" rx="3"\/><rect class="bar1" x="66" y="13" width="18.0" height="6" rx="3"\/><title>Budget · 30 of 120 calls/.test(html), "a bar, the numbers on hover");

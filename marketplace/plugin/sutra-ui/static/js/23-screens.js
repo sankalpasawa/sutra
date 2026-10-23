@@ -128,6 +128,10 @@ function wb2MapHtml(n, m){
   else if ((m.artifacts || []).length) line.push({ kind: "work", name: m.artifacts[0].name });   /* no plan yet: the Brief alone */
   engs.forEach(e => { line.push({ kind: "eng", e }); line.push({ kind: "work", name: e.writes }); });
   const last = (m.artifacts || []).length ? m.artifacts[m.artifacts.length - 1].name : "";
+  /* the deliverable, the last thing the line makes, takes the ok tint once it is delivered, for every kind: a website's
+     Live site (the map's live), the cycle's goal reached, or a version of it that passed its check (S1, Done) */
+  const lastA = arts[last] || {}, lastChk = (lastA.latest && lastA.latest.check) || {};
+  const delivered = !!(m.live || (fv && !fv.failed && fv.cycle && fv.cycle.state === "done") || (lastA.versions && lastChk.ok));
   const gap = line.length > 1 ? (W - 170) / (line.length - 1) : 0;
   const lx = i => 105 + i * gap;
   const fns = (m.systems || []).map(s => s.name);
@@ -206,7 +210,7 @@ function wb2MapHtml(n, m){
       if (j >= 0) svg += `<path class="e made" d="M${fx(at(x)).toFixed(0)} ${FB} L${lx(j).toFixed(0)} 232">${wb2Title(x + " made " + a.art)}</path>`;
     }));
   }
-  /* the line of work: an engine opens its card, a filed thing opens itself; the deliverable is lit once it is live */
+  /* the line of work: an engine opens its card, a filed thing opens itself; the deliverable is lit once it is delivered */
   line.forEach((node, i) => {
     if (node.kind === "eng"){
       const cls = wb2EngCls(m, node.e);
@@ -216,10 +220,10 @@ function wb2MapHtml(n, m){
     } else {
       const a = arts[node.name] || { versions: 0, slug: "" };
       const v = a.versions ? "v" + a.versions : "";
-      const live = node.name === last && m.live ? " live" : "";
+      const live = node.name === last && delivered ? " live" : "";
       svg += `<g class="n work${a.versions ? " done" : ""}${live}" ${a.versions ? `data-wbart="${esc(a.slug)}"` : `data-wbtab="motor"`} transform="translate(${(lx(i) - 34).toFixed(0)},232)">` +
         `<rect class="bx" width="68" height="36" rx="4"/><text x="8" y="17">${esc(node.name)}</text><text class="v" x="8" y="30">${esc(v)}</text>` +
-        wb2Title(node.name + (a.versions ? " · filed, " + v : " · not made yet") + (live ? " · live" : "")) + `</g>`;
+        wb2Title(node.name + (a.versions ? " · filed, " + v : " · not made yet") + (live ? (m.live ? " · live" : " · delivered") : "")) + `</g>`;
     }
   });
   /* what the department knows */
