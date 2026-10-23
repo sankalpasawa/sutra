@@ -1,4 +1,6 @@
 """Department-scoped HTTP boundary for the J2 lifecycle."""
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException, Request
 
 import j2_runtime as J
@@ -32,11 +34,17 @@ def j2_status(ref: str):
 
 
 @_routes("get", "/j2/events")
-def j2_events(ref: str, after: int = 0):
+def j2_events(ref: str, after: int = 0, after_seq: Optional[int] = None, after_board: Optional[int] = None):
+    """The ledger and the board, merged in time. Paged by two cursors, one per source (after_seq for the ledger,
+    after_board for the board), so a row written between two reads is never repeated or skipped. `after` is the old
+    single cursor, a place in the merged list; it is kept for a screen that still sends it."""
     _call(J.status, ref)
-    rows = J.activity(ref)
-    cursor = max(0, int(after or 0))
-    return {"events": rows[cursor:], "cursor": len(rows)}
+    if after_seq is None and after_board is None:
+        page = J.activity_page(ref)
+        cursor = max(0, int(after or 0))
+        return dict(page, events=page["events"][cursor:], cursor=len(page["events"]))
+    page = J.activity_page(ref, after_seq or 0, after_board or 0)
+    return dict(page, cursor=None)
 
 
 @_routes("post", "/j2/start")

@@ -11,10 +11,13 @@ ledger is written where the thing happens (a post on the board, a run row, a fil
 cannot say something the department did not do.
 """
 import copy
+import hashlib
+import json
 import os
 import uuid
 
 import engine_runtime as R
+import record
 import website_dept as W
 
 
@@ -24,6 +27,8 @@ RULE_TAGS = {"go", "ask", "refuse", "always"}
 PRIVATE_KEYS = {"private_reasoning", "reasoning", "chain_of_thought", "scratchpad", "secret", "token", "password"}
 JOURNEY = {1: "J2.a", 2: "J2.b", 3: "J2.c", 4: "J2.d", 5: "J2.e", 6: "J2.f", 7: "J2.g", 8: "J2.h"}
 REPAIRS = 2                     # how often Root's check may send a workflow back before Identity tells the owner (J2.4)
+LEDGER, INDEX, OLD_LEDGER = "j2-events.jsonl", "j2-index.json", "j2-events.json"
+MARK = 256                      # the index keeps where every 256th event starts, so a page is read from near its cursor
 
 
 class J2Error(ValueError):
@@ -39,8 +44,152 @@ def _path(ref, name):
     return W.ddir(ref) / name
 
 
+# ---- the ledger: a journal, one event a line, and its index beside it (M0.2) ---------------------------------------
+# The ledger was one JSON document, read whole and written whole on every event, and the screen counted it by reading
+# it whole every 2.5 s. Now an event is one line appended under the department's lock, and j2-index.json carries what
+# an append needs to know without reading the journal: the idempotency keys seen (as digests), each cycle's last
+# event, the count, how many bytes it has read, and where every MARK-th event starts. A row's seq is its place in the
+# journal, so the index's marks are a row's address.
+_IDX = {}                       # each journal's index, as this process last read it: {path: (inode, index)}
+
+
+def _digest(key):
+    return hashlib.sha1(str(key).encode("utf-8")).hexdigest()[:16]
+
+
+def _convert(ref):
+    """A ledger written before M0.2 is one JSON document. It becomes the journal once, row for row and in its order,
+    and the document is kept beside it as j2-events.json.bak."""
+    old = _path(ref, OLD_LEDGER)
+    if not old.exists():
+        return
+    with W._lock(ref):
+        if not old.exists():
+            return
+        new = _path(ref, LEDGER)
+        if not new.exists():
+            tmp = _path(ref, LEDGER + ".tmp")
+            if tmp.exists():
+                tmp.unlink()
+            for row in W._read(old, []):
+                if isinstance(row, dict):
+                    record.append(tmp, row)
+            tmp.touch()
+            os.replace(tmp, new)                            # whole or not at all: a conversion cut short starts again
+        os.replace(old, _path(ref, OLD_LEDGER + ".bak"))
+        _IDX.pop(str(new), None)
+        if _path(ref, INDEX).exists():
+            _path(ref, INDEX).unlink()
+
+
+def _blank():
+    return {"keys": {}, "last_event_by_cycle": {}, "count": 0, "bytes": 0, "marks": []}
+
+
+def _scan(p, idx):
+    """Read the journal from the byte the index last read to its end. A last line with no newline is one being written
+    or one torn by a closed app: it is left unread."""
+    with open(p, "rb") as f:
+        f.seek(int(idx["bytes"]))
+        data = f.read()
+    pos = int(idx["bytes"])
+    pieces = data.split(b"\n")
+    pieces.pop()                                            # b"" after the last newline, or the unfinished line
+    for raw in pieces:
+        at, pos = pos, pos + len(raw) + 1
+        try:
+            row = json.loads(raw.decode("utf-8")) if raw.strip() else None
+        except Exception:  # noqa: BLE001 -- a torn line is skipped, as record.lines skips it
+            row = None
+        if not isinstance(row, dict):
+            continue
+        idx["count"] += 1
+        if (idx["count"] - 1) % MARK == 0:
+            idx["marks"].append(at)
+        if row.get("idempotency_key"):
+            idx["keys"][_digest(row["idempotency_key"])] = idx["count"]
+        if row.get("cycle_id") and row.get("event_id"):
+            idx["last_event_by_cycle"][row["cycle_id"]] = row["event_id"]
+    idx["bytes"] = pos
+
+
+def _index(ref):
+    """The index, current with the journal: this process's copy when the journal has not grown since; else
+    j2-index.json, read forward from the byte it last read (an app closed between the line and the index); else built
+    from the journal. Called under the department's lock."""
+    _convert(ref)
+    p = _path(ref, LEDGER)
+    try:
+        st = p.stat()
+        ino, size = st.st_ino, st.st_size
+    except FileNotFoundError:
+        ino, size = None, 0
+    held = _IDX.get(str(p))
+    idx = held[1] if held and held[0] == ino else None
+    if idx is None:
+        idx = W._read(_path(ref, INDEX), None)
+    if not isinstance(idx, dict) or not all(k in idx for k in _blank()) or int(idx.get("bytes") or 0) > size:
+        idx = _blank()
+    if int(idx["bytes"]) < size:
+        _scan(p, idx)
+    _IDX[str(p)] = (ino, idx)
+    return idx
+
+
+def _rows_from(ref, start, first_seq):
+    """The journal's rows from byte `start`, each with its seq (a row written before seq existed takes its place)."""
+    out = []
+    try:
+        with open(_path(ref, LEDGER), "rb") as f:
+            f.seek(start)
+            data = f.read()
+    except FileNotFoundError:
+        return out
+    pieces = data.split(b"\n")
+    pieces.pop()
+    n = first_seq
+    for raw in pieces:
+        try:
+            row = json.loads(raw.decode("utf-8")) if raw.strip() else None
+        except Exception:  # noqa: BLE001
+            row = None
+        if isinstance(row, dict):
+            out.append((int(row.get("seq") or n), row))
+            n += 1
+    return out
+
+
+def _at_seq(ref, idx, seq):
+    k = (int(seq) - 1) // MARK
+    if k >= len(idx["marks"]):
+        return None
+    return next((row for s, row in _rows_from(ref, idx["marks"][k], k * MARK + 1) if s == int(seq)), None)
+
+
 def events(ref):
-    return W._read(_path(ref, "j2-events.json"), [])
+    """The whole ledger, oldest first."""
+    _convert(ref)
+    return record.lines(_path(ref, LEDGER))
+
+
+def _after(ref, after_seq):
+    after = max(0, int(after_seq or 0))
+    with W._lock(ref):
+        marks = list(_index(ref)["marks"])
+    if not marks:
+        return []
+    k = min(after // MARK, len(marks) - 1)
+    return [(s, row) for s, row in _rows_from(ref, marks[k], k * MARK + 1) if s > after]
+
+
+def events_after(ref, after_seq=0):
+    """The ledger after a cursor, read from the index's nearest mark rather than from the top."""
+    return [row for _, row in _after(ref, after_seq)]
+
+
+def event_count(ref):
+    with W._lock(ref):
+        return int(_index(ref)["count"])
 
 
 def _state(ref):
@@ -85,10 +234,13 @@ def append_event(ref, event):
     if missing:
         raise J2Error("INVALID_EVENT: " + ", ".join(missing))
     with W._lock(ref):
-        latest = events(ref)
-        previous = next((item for item in latest if item.get("idempotency_key") == row["idempotency_key"]), None)
-        if previous:
-            return previous
+        # once, from the index: the journal itself is not read to append to it (M0.2)
+        idx = _index(ref)
+        digest = _digest(row["idempotency_key"])
+        if digest in idx["keys"]:
+            previous = _at_seq(ref, idx, idx["keys"][digest])
+            if previous and previous.get("idempotency_key") == row["idempotency_key"]:
+                return previous
         row.setdefault("schema_version", SCHEMA_VERSION)
         row.setdefault("event_id", "evt-" + uuid.uuid4().hex[:12])
         row.setdefault("identity_revision", int((W.dept(ref) or {}).get("identity_revision") or 1))
@@ -96,11 +248,28 @@ def append_event(ref, event):
         row.setdefault("visibility", ["agent_activity"])
         row.setdefault("evidence_refs", [])
         row.setdefault("correlation_id", row["cycle_id"])
-        same = [item for item in latest if item.get("cycle_id") == row["cycle_id"]]
-        row.setdefault("causation_id", same[-1]["event_id"] if same else None)
-        row["seq"] = len(latest) + 1                    # the ledger's own order: clocks tick in seconds, events do not
-        latest.append(row)
-        W._write(_path(ref, "j2-events.json"), latest)
+        row.setdefault("causation_id", idx["last_event_by_cycle"].get(row["cycle_id"]))
+        row["seq"] = idx["count"] + 1                   # the ledger's own order: clocks tick in seconds, events do not
+        p = _path(ref, LEDGER)
+        size = p.stat().st_size if p.exists() else 0
+        if size > idx["bytes"]:
+            with open(p, "ab") as f:                    # a line torn by a closed app is ended, so this one is a line of its own
+                f.write(b"\n")
+            size += 1
+        record.append(p, row)
+        idx["count"] += 1
+        if (idx["count"] - 1) % MARK == 0:
+            idx["marks"].append(size)
+        idx["keys"][digest] = row["seq"]
+        idx["last_event_by_cycle"][row["cycle_id"]] = row["event_id"]
+        st = p.stat()
+        idx["bytes"] = st.st_size
+        _IDX[str(p)] = (st.st_ino, idx)
+        record.write(_path(ref, INDEX), idx, indent=None)
+        state = _state(ref)
+        if isinstance(state, dict):
+            state["event_count"] = idx["count"]         # the screen's poll reads the count here, not off the ledger
+            W._write(_path(ref, "j2-state.json"), state)
     return row
 
 
@@ -256,7 +425,8 @@ def status(ref):
         raise J2Error("NO_DEPARTMENT")
     state = _state(ref) or {"cycle_id": None, "step": None, "journey": None,
                             "state": "not_started" if _ready(dept) else "not_ready", "updated_at": None}
-    return dict(state, department_ref=ref, enabled=enabled(), event_count=len(events(ref)),
+    count = state.get("event_count")
+    return dict(state, department_ref=ref, enabled=enabled(), event_count=int(count) if count is not None else event_count(ref),
                 done_when=dept.get("done"), goal_reached=state.get("state") == "done")
 
 
@@ -476,18 +646,22 @@ def _board_action(row):
     return "board." + str(msg or "message")
 
 
-def activity(ref):
-    """Safe chronological activity derived from canonical J2 events and the real board."""
+def activity(ref, after_seq=0, after_board=0):
+    """Safe chronological activity derived from canonical J2 events and the real board: after the two cursors, the
+    ledger's seq and the board's n, each read in its own order, so no row is shown twice or never."""
     rows = []
-    for event in events(ref):
+    after_board = max(0, int(after_board or 0))
+    for seq, event in _after(ref, after_seq):
         rows.append({
             "id": event["event_id"], "at": event.get("occurred_at"), "actor": event["actor"],
             "recipient": event["recipient"], "action": event["action"], "state": event["state"],
             "summary": event["summary"], "step": event.get("step"), "journey": event.get("journey"),
             "evidence_refs": event.get("evidence_refs") or [], "payload": _clean(event.get("payload") or {}),
-            "seq": int(event.get("seq") or 0),
+            "seq": seq,
         })
     for row in R.board(ref):
+        if after_board and int(row.get("n") or 0) <= after_board:
+            continue
         payload = _clean(row.get("payload") or {})
         summary = str(payload.get("why") or payload.get("done") or payload.get("objective") or payload.get("word") or row.get("msg_type") or "Message")
         rows.append({
@@ -499,3 +673,12 @@ def activity(ref):
     # by the second, then each source in its own order: two rows of one second keep the order they were written in
     rows.sort(key=lambda item: (str(item.get("at") or ""), 0 if str(item.get("id")).startswith("board-") else 1, item.get("seq") or 0))
     return rows
+
+
+def activity_page(ref, after_seq=0, after_board=0):
+    """One page of the activity, and the two cursors to read the next one from."""
+    after_seq, after_board = max(0, int(after_seq or 0)), max(0, int(after_board or 0))
+    rows = activity(ref, after_seq, after_board)
+    seqs = [r["seq"] for r in rows if not str(r["id"]).startswith("board-")]
+    ns = [r["seq"] for r in rows if str(r["id"]).startswith("board-")]
+    return {"events": rows, "after_seq": max([after_seq] + seqs), "after_board": max([after_board] + ns)}
