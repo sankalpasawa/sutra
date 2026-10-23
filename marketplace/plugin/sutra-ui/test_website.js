@@ -1426,6 +1426,9 @@ test("W47: Send posts {text}, says Sending... while it goes, and the answered ca
   html = view(c);
   assert.ok(/<div class="dpask gone wbq wb"><div class="dpk">Identity asked<\/div><div class="dpasks">What is the site for, and about whom or what\?<\/div><div class="dpaskd">You: a site for my bakery in Pune · \d\d:\d\d<\/div><\/div>/.test(html), "the card goes quiet with the answer under it");
   assert.ok(!/id="wbd-q-a-j2-1"/.test(html), "and no box is left on it");
+  const onRoot = c.wbQuestionHtml(Object.assign({}, QUESTION, { id: "a-j2-9" }), "r2", true);
+  assert.ok(/<div class="dpk">Identity asks · City Care Hospital Website<\/div>/.test(onRoot), "on Root's whole chat the card names the department that asks");
+  assert.ok(/data-wbanswer="a-j2-9" data-wbref="r3"/.test(onRoot), "and answers there, not on Root");
   const back = await chatOpen({ answered: "Initials only" });
   assert.ok(/<div class="dpk">Identity asked<\/div>[^]*?You: Initials only · \d\d:\d\d/.test(view(back)), "an answer on the record keeps its card, read again from the chat");
 });

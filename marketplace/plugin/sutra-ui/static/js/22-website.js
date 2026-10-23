@@ -684,12 +684,14 @@ function wbChatTurn(t, scoped){
    'Just do it' come with the questions that offer them (M3); a question on thin words has neither. */
 const WB_ANSWER_SAYS = { EMPTY_ANSWER: "Write your answer first, then Send.", NO_OPEN_QUESTION: "That question is no longer open.",
                          ALREADY_HANDLED: "That question is already answered." };
-function wbQuestionHtml(q, ref){
+function wbQuestionHtml(q, ref, named){
   const st = wbS(), at = q.ref || ref, k = at + ":q:" + q.id, said = q.answered ? { text: q.answered, at: q.decided } : st.said[k];
-  if (said) return `<div class="dpask gone wbq wb"><div class="dpk">Identity asked</div><div class="dpasks">${wbEsc(q.text)}</div>` +
+  /* on Root's whole chat the card says which department asks */
+  const whose = named && q.dept ? " · " + wbEsc(q.dept) : "";
+  if (said) return `<div class="dpask gone wbq wb"><div class="dpk">Identity asked${whose}</div><div class="dpasks">${wbEsc(q.text)}</div>` +
     `<div class="dpaskd">You: ${wbEsc(said.text)}${said.at ? " · " + wbEsc(wbWhen(said.at)) : ""}</div></div>`;
   const busy = !!st.busy["q:" + k];
-  return `<div class="dpask wbq wb"><div class="dpk">Identity asks</div><div class="dpasks">${wbEsc(q.text)}</div>` +
+  return `<div class="dpask wbq wb"><div class="dpk">Identity asks${whose}</div><div class="dpasks">${wbEsc(q.text)}</div>` +
     (q.why ? `<div class="dpaskd">${wbEsc(q.why)}</div>` : "") +
     `<div class="wbbox wb"><textarea id="wbd-q-${wbEsc(q.id)}" data-wbdraft="${wbEsc(k)}" data-wbqid="${wbEsc(q.id)}" data-wbqref="${wbEsc(at)}" rows="2" ` +
     `placeholder="Type your answer...">${wbEsc(st.draft[k] || "")}</textarea>` +
@@ -783,7 +785,7 @@ function wbChatHtml(n, m){
   const landed = seen !== undefined && count > seen;
   /* motion marks what just happened and nothing else: the turn that landed slides in once */
   const qs = wbQuestions(c);
-  const card = t => { let out = ""; while (qs.length && (!t || String(qs[0].created || "") < String(t.at || ""))) out += wbQuestionHtml(qs.shift(), n.ref); return out; };
+  const card = t => { let out = ""; while (qs.length && (!t || String(qs[0].created || "") < String(t.at || ""))) out += wbQuestionHtml(qs.shift(), n.ref, !scoped); return out; };
   const turns = all.map((t, i) => card(t) + (folded(t) ? `<div class="o2quiet dpq wbfold">${wbEsc(t.line)}</div>`
     : wbChatTurn(t, scoped).replace('class="turn wbturn"', (landed && i === all.length - 1) ? 'class="turn wbturn wbnew"' : 'class="turn wbturn"'))).join("") + card(null);
   const empty = m.kind === "root" && !depts.length ? "No department yet. Say what the first one is for." : "Nothing has been said yet";
