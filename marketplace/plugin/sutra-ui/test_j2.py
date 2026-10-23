@@ -700,9 +700,10 @@ def test_events_carry_the_contract_and_the_activity_keeps_their_order(j2):
 
 
 def test_nothing_private_reaches_the_ledger_or_the_activity(j2):
+    # the token's value holds letters no hex id has: "abc" was found inside a random event id (evt-2abcf99a3c61)
     _, _, J, _ = j2
     ref = _born(j2)
     J.note(ref, 6, "Plan", "Coordination", "run.step_recorded", "recorded", "A step.", "private-1",
-           {"reasoning": "hidden", "token": "abc", "kept": {"password": "x", "shown": 1}})
+           {"reasoning": "hidden", "token": "tok-qzx", "kept": {"password": "x", "shown": 1}})
     blob = str(J.events(ref)[-1]) + str(J.activity(ref))
-    assert "hidden" not in blob and "abc" not in blob and "'shown': 1" in blob
+    assert "hidden" not in blob and "tok-qzx" not in blob and "'shown': 1" in blob
