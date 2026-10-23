@@ -913,3 +913,74 @@ def test_nothing_private_reaches_the_ledger_or_the_activity(j2):
            {"reasoning": "hidden", "token": "tok-qzx", "kept": {"password": "x", "shown": 1}})
     blob = str(J.events(ref)[-1]) + str(J.activity(ref))
     assert "hidden" not in blob and "tok-qzx" not in blob and "'shown': 1" in blob
+
+
+# ---- PRD M4: Coordination's timetable, and the line is what was granted -------------------------------------------------
+def _table_writes(W, monkeypatch):
+    """Every write of coordination.json from here on, as (who it says wrote it, the line it wrote)."""
+    seen, real = [], W._write
+
+    def spy(p, obj):
+        if str(p).endswith("coordination.json"):
+            seen.append((obj.get("by"), list(obj.get("line") or [])))
+        return real(p, obj)
+    monkeypatch.setattr(W, "_write", spy)
+    return seen
+
+
+def test_m4_1_root_records_the_plan_coordination_writes_its_table_and_priority_gives_each_new_engine_its_limit(j2, monkeypatch):
+    """Root writing Coordination's table, a limit nobody gave on the ledger, or an engine Root made must fail."""
+    W, R, J, _ = j2
+    writes = _table_writes(W, monkeypatch)
+    for words, org in ((WEBSITE, "Acme Learning"), (ORGANIC, "Lab Co")):
+        del writes[:]
+        ref = _born(j2, words, org)
+        names = W.dept(ref)["workflows"][-1]["engines"]
+        t = W._read(W.ddir(ref) / "coordination.json", None)
+        assert (t["by"], t["registered"], t["line"]) == ("Coordination", 1, names), org
+        assert [w for w in writes if w[0] != "born"] and all(by in ("born", "Coordination") for by, _ in writes), writes
+        events = J.events(ref)
+        reg = next(e for e in events if e["action"] == "workflow.registered")
+        assert (reg["actor"], reg["recipient"]) == ("Root", "Coordination")
+        table = [e for e in events if e["action"] == "timetable.written"]
+        assert [(e["actor"], e["payload"]["line"]) for e in table] == [("Coordination", names)]
+        granted = [e for e in events if e["action"] == "envelope.granted"]
+        assert [e["recipient"] for e in granted] == names and {e["actor"] for e in granted} == {"Priority"}, granted
+        assert all(e["seq"] > reg["seq"] and e["step"] == 5 and e["workflow_ref"] == "workflow/1" for e in granted)
+        assert all(W.dept(ref)["envelopes"].get(n) for n in names)
+        # each decision is a row of the function whose handler it is, never Root's
+        rows = [(r["engine"], r["step"]) for r in R.step_rows(ref) if r["step"] in ("coord.table", "priority.grant")]
+        assert rows == [("Coordination", "coord.table"), ("Priority", "priority.grant")], rows
+        assert {e["action"] for e in events if e["actor"] == "Root"} == {"workflow.validated", "workflow.registered"}
+    # a shaped engine is Adaptation's: born into the Library with made_by Adaptation, its limit Priority's
+    lab = W.dept(ref)
+    for n in lab["engines"]:
+        assert R.engine_def(n)["made_by"]["by"] == "Adaptation"
+    assert [e["payload"]["kept"] for e in J.events(ref) if e["action"] == "envelope.granted"] == [False] * len(lab["engines"])
+    assert lab["envelopes"][lab["engines"][0]]["calls"] == 8 * 30, "a work engine's limit, from Priority's template"
+
+
+def test_m4_1_an_engine_that_holds_a_limit_keeps_it_and_the_ledger_says_so(j2):
+    """Priority's handler overwriting the owner's own limit must fail."""
+    W, R, J, _ = j2
+    ref = _born(j2, settle=False)
+    W.set_envelope(ref, "Write", calls=12)
+    W.run_until_idle(ref, limit=300)
+    assert W.dept(ref)["envelopes"]["Write"]["calls"] == 12
+    granted = {e["recipient"]: e for e in J.events(ref) if e["action"] == "envelope.granted"}
+    assert sorted(granted) == sorted(LINE) and granted["Write"]["payload"]["kept"] is True and granted["Write"]["payload"]["calls"] == 12
+    assert granted["Write"]["summary"] == "Write keeps the limit it holds."
+
+
+def test_m4_1_an_engine_the_owner_stamped_joins_the_line_by_coordination_and_its_limit_by_priority(j2):
+    """J5: the owner's stamp on an engine an idea asked for: Coordination grows its line, Priority gives the limit."""
+    W, R, J, _ = j2
+    ref = _born(j2)
+    W.add_engine(ref, "Do")
+    t = W._read(W.ddir(ref) / "coordination.json", None)
+    assert (t["by"], t["why"], t["line"][0]) == ("Coordination", "the owner's stamp", "Do")
+    granted = [e for e in J.events(ref) if e["action"] == "envelope.granted" and e["recipient"] == "Do"]
+    assert len(granted) == 1 and granted[0]["actor"] == "Priority" and granted[0]["payload"]["kept"] is False
+    assert W.dept(ref)["envelopes"]["Do"] == {"calls": 240, "usd": 6.0}
+    grown = [e for e in J.events(ref) if e["action"] == "timetable.written" and e["payload"].get("grown") == "Do"]
+    assert len(grown) == 1 and grown[0]["actor"] == "Coordination"

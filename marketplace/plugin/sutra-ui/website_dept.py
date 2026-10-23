@@ -447,12 +447,15 @@ def decide_ask(ref, aid, approve, by="the owner"):
     raise ValueError("no such ask")
 
 
-def add_engine(ref, name, shape=None, by="the owner", before=None):
+def add_engine(ref, name, shape=None, by="the owner", before=None, registered=False):
     """An engine added to a live department on the owner's stamp (TPL-1 slice 2, founder 2026-09-29: "the engines are
     supposed to be created by the five functions of the department"): a Library engine template by name, or one shaped
     on the fly (name, use case, instruction, what it writes), born into the Library from Do with made_by. The record
-    gains the engine and its artifact, an envelope and a window; Coordination's line grows; the engine then starts on
-    its own trigger, like every other."""
+    gains the engine, its artifact and a window; then Coordination's line grows and Priority gives it its limit, each in
+    its handler for an engine born (PRD M4.1); the engine then starts on its own trigger, like every other.
+
+    registered: the engine is one of a plan Root is registering (J2 step 5). The record gains it here, and Coordination's
+    line and Priority's limit follow from the registration itself, not from here."""
     import engine_runtime as R
     d = dept(ref)
     if not d or d.get("runtime") != 2:
@@ -488,13 +491,14 @@ def add_engine(ref, name, shape=None, by="the owner", before=None):
             # right after what it reads, so the kind's last artifact (the one that goes out) stays last
             arts.insert(arts.index(e["reads"]) + 1 if e.get("reads") in arts else len(arts), e["writes"])
         d["artifacts"] = arts
-        t = R.priority_template()
-        base = {"calls": int(t.get("calls", ENVELOPE["calls"])), "usd": float(t.get("usd", ENVELOPE["usd"]))}
-        d.setdefault("envelopes", {})[name] = {"calls": int(t.get("work_calls", 8)) * base["calls"], "usd": base["usd"]}
         d.setdefault("windows", {})[name] = 15
         save_dept(ref, d)
-    R.grow_line(ref, name, before)
-    system_run(ref, "Identity", "added the engine %s on %s's stamp%s" % (name, by, " (born into the Library)" if born else ""))
+    if registered:
+        # the plan's engine is Adaptation's (it shaped it): Root records the plan, and never makes an engine (S-10)
+        system_run(ref, "Adaptation", "brought the engine %s into the plan%s" % (name, " (born into the Library)" if born else ""))
+    else:
+        R.engine_added(ref, name, before)
+        system_run(ref, "Identity", "added the engine %s on %s's stamp%s" % (name, by, " (born into the Library)" if born else ""))
     return {"ref": ref, "engine": name, "engines": line, "born": str(born) if born else None}
 
 
