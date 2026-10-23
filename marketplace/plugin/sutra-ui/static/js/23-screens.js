@@ -102,6 +102,11 @@ const WB2_ICONS = {
   audit: `<rect x="5" y="3" width="11" height="14" rx="1"/><path d="M8 7h6M8 10h6M8 13h4M15 15l4 4"/>`
 };
 
+/* a function's mark at list size, in its own colour (20-dept.js's function rows, S3; 24-functions.js's cards) */
+function wb2Mark(fn){
+  const ic = WB2_ICONS[String(fn || "").toLowerCase()];
+  return ic ? `<svg class="dpfnmk ${wbEsc(String(fn).toLowerCase())}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ic}</svg>` : "";
+}
 /* ── Map: the whole topology, fixed, the active parts lit ─────────────────── */
 /* PRD M1.5 (the ruled Map, rows 2.1 to 2.4): the topology is kept; the NOW line sits above it; each function's box takes
    its state from the five functions' read, with its colour bar, its mark, its name and its state word; the legend is

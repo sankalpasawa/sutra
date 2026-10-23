@@ -1367,6 +1367,19 @@ test("M1.5: a department with no plan yet shows its Brief and one quiet line", a
   assert.ok(/<g class="n work done" data-wbart="brief"/.test(html) && /<div class="o2quiet dpq">No plan yet<\/div>/.test(html));
 });
 
+test("M1.6: on the runtime the list's function rows read the same functions read as the Map; the first build's stay bare", async () => {
+  const fv = fvOf({ states: { Identity: "waiting_on_you", Coordination: "working" } });
+  const c = await v2({ map: rtMap(), fv });
+  for (let k = 0; k < 2; k++){ c.dpListHtml(WEB, {}, null, null); await sleep(); await sleep(); }
+  const html = c.dpListHtml(WEB, {}, null, null);
+  assert.ok(/data-dptab="identity" aria-label="Identity · waits on you"[^>]*><svg class="dpfnmk identity"[\s\S]*?<b class="dpfnb warn" aria-hidden="true">\?<\/b><i class="dpdot warn"/.test(html), "Identity: its mark, '?' and amber");
+  assert.ok(/data-dptab="coordination" aria-label="Coordination · working"[\s\S]*?<i class="dpdot breath"/.test(html), "Coordination breathes");
+  assert.deepStrictEqual(readsOf(c, /\/functions$/), ["/api/native/r3/functions"], "one read serves the list and the Map");
+  const old = await opened();
+  const oh = old.dpListHtml(WEB, {}, null, null);
+  assert.ok(/<button type="button" class="o2li dpli" data-dptab="identity"><span>Identity<\/span><\/button>/.test(oh), "the first build's rows stay bare");
+  assert.deepStrictEqual(readsOf(old, /\/functions$/), [], "and it never asks for the read");
+});
 test("V2 root: Root's Map is its departments as boxes, each with a state dot and its line of work as a strip, and a way to a new one", async () => {
   const rm = rtMap(); rm.kind = "root"; rm.root = "r3"; rm.live = false;
   const c = await v2({ map: rm, chat: ROOT_CHAT });

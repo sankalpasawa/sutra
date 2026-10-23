@@ -5320,6 +5320,16 @@ button.nychip:focus-visible{ outline:none; box-shadow:0 0 0 1.5px var(--acc); }
 /* waits on another function: a hollow muted ring, so amber keeps meaning
    "waits on you" and nothing else (PRD M1.3) */
 .dpdot.wait{background:transparent;box-shadow:inset 0 0 0 1.5px var(--muted)}
+/* working: the accent dot breathes (8px); off under reduced motion */
+.dpdot.breath{width:8px;height:8px;background:var(--acc);animation:dpBreathe 1.6s ease-in-out infinite}
+@keyframes dpBreathe{0%,100%{transform:scale(.7);opacity:.45}50%{transform:scale(1.1);opacity:1}}
+@media (prefers-reduced-motion:reduce){.dpdot.breath{animation:none}}
+/* S3: a function row on the engine runtime: its mark, its name, a badge and its dot at the right (PRD M1.6) */
+.dpfn .dpdot{margin:0 0 0 auto;flex:none}
+.dpfn .dpfnb+.dpdot{margin-left:4px}
+.dpfnb{margin-left:auto;flex:none;min-width:14px;height:14px;border-radius:99px;font:700 9.5px/14px var(--sans);text-align:center}
+.dpfnb.warn{background:var(--warn-bg);color:var(--warn)}
+.dpfnb.block{background:var(--block-bg);color:var(--block)}
 .dpchk{font:400 11.5px/1.4 var(--sans);color:var(--muted)}
 /* a window bar inside a list row, under the line it belongs to */
 .dprow .dpbar{margin:7px 0 1px}
@@ -5867,6 +5877,12 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .wb2card .dpchk{margin-left:auto}
 .wb2card .dpdot{margin-top:0;flex:none}
 .wb2card .dpbar{flex:1}
+.dpfnmk{width:13px;height:13px;flex:none}
+.o2li .dpfnmk.identity,.dpfnmk.identity{color:var(--fn-identity)}
+.o2li .dpfnmk.adaptation,.dpfnmk.adaptation{color:var(--fn-adaptation)}
+.o2li .dpfnmk.priority,.dpfnmk.priority{color:var(--fn-priority)}
+.o2li .dpfnmk.coordination,.dpfnmk.coordination{color:var(--fn-coordination)}
+.o2li .dpfnmk.audit,.dpfnmk.audit{color:var(--fn-audit)}
 .wb2mk{width:3px;height:14px;border-radius:2px;flex:none}
 .wb2mk.identity{background:var(--fn-identity)}
 .wb2mk.adaptation{background:var(--fn-adaptation)}

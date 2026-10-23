@@ -2822,6 +2822,64 @@ test("J2: Agent activity has start and stop controls wired to its scoped API", a
   assert.strictEqual(c.calls.apiPost[1].p, "/api/dept/r4/j2/stop");
 });
 
+/* ── S3 (PRD M1.6): a function row carries its state ──────────────────────────
+   On the engine runtime each function row in the list column gets its mark and a state dot from the five functions'
+   read (22-website.js wbFnView, stubbed here as the hook it is): the dot's class follows the state, the badge says
+   '?' or '!', and the row's accessible name says the state in words, so status is never colour alone. A department
+   with no such read keeps its bare labels. */
+function fnRows(html){
+  const out = {};
+  (html.match(/<button type="button" class="o2li dpli[^"]*" data-dptab="(identity|adaptation|priority|coordination|audit)"[^>]*>[\s\S]*?<\/button>/g) || [])
+    .forEach(b => { out[/data-dptab="(\w+)"/.exec(b)[1]] = b; });
+  return out;
+}
+function withView(c, fv){
+  c.__fv = fv;
+  vm.runInContext("function wbFnView(ref){ return globalThis.__fv; }", c);
+  return c;
+}
+const FV_STATE = (states, extra) => Object.assign({ functions: ["identity", "adaptation", "priority", "coordination", "audit"].map(fn => {
+  const s = states[fn] || "quiet";
+  const word = { working: "working", waiting: "waiting", waiting_on_you: "waits on you", fault: "fault", quiet: "quiet" }[s];
+  return { fn, name: fn.charAt(0).toUpperCase() + fn.slice(1), state: s, word,
+           line: s === "waiting_on_you" ? "may the reviews show first names?" : (s === "working" ? "Write's turn" : (s === "waiting" ? "waits on Priority" : "")),
+           why: s === "fault" ? "a step failed its check" : null };
+}) }, extra || {});
+test("M1.6: each function row's dot follows its state, with a badge for '?' and '!', and its name says the state", () => {
+  const c = withView(fresh(), FV_STATE({ identity: "waiting_on_you", adaptation: "waiting", priority: "fault", coordination: "working" }));
+  open(c);
+  const rows = fnRows(c.dpListHtml(EXP, c.o2Data(), DEPT_EXP, null));
+  const want = { identity: ["warn", "?", "waits on you"], adaptation: ["wait", "", "waiting"], priority: ["block", "!", "fault"],
+                 coordination: ["breath", "", "working"], audit: ["off", "", "quiet"] };
+  Object.keys(want).forEach(fn => {
+    const r = rows[fn], [dot, badge, word] = want[fn];
+    assert.ok(r, fn + " row");
+    assert.ok(new RegExp('<i class="dpdot ' + dot + '" aria-hidden="true"></i></button>$').test(r), fn + " dot " + dot + ": " + r);
+    assert.ok(badge ? r.indexOf(">" + badge + "</b>") >= 0 : !/dpfnb/.test(r), fn + " badge");
+    const label = fn.charAt(0).toUpperCase() + fn.slice(1);
+    assert.ok(r.indexOf('aria-label="' + label + " · " + word + '"') >= 0, fn + " accessible name: " + r);
+  });
+  assert.ok(rows.identity.indexOf('title="Identity · waits on you · may the reviews show first names?"') >= 0, "the title says what it waits on");
+  assert.ok(rows.coordination.indexOf('title="Coordination · working · Write&#39;s turn"') >= 0 || rows.coordination.indexOf("title=\"Coordination · working · Write's turn\"") >= 0, rows.coordination);
+});
+test("M1.6: loading and a failed read draw no dots; stopped turns every dot off; a department with no read keeps bare rows", () => {
+  let c = withView(fresh(), null); open(c);
+  let rows = fnRows(c.dpListHtml(EXP, c.o2Data(), DEPT_EXP, null));
+  assert.strictEqual(Object.keys(rows).length, 5);
+  Object.values(rows).forEach(r => assert.ok(!/dpdot/.test(r) && /class="o2li dpli dpfn/.test(r), "loading: the row, no dot"));
+  c = withView(fresh(), { failed: true }); open(c);
+  rows = fnRows(c.dpListHtml(EXP, c.o2Data(), DEPT_EXP, null));
+  Object.values(rows).forEach(r => assert.ok(!/dpdot/.test(r) && /state not read"/.test(r), "a failed read: no dot, and the title says so"));
+  c = withView(fresh(), FV_STATE({ coordination: "working" }, { stopped: true })); open(c);
+  rows = fnRows(c.dpListHtml(EXP, c.o2Data(), DEPT_EXP, null));
+  Object.values(rows).forEach(r => assert.ok(/<i class="dpdot off"/.test(r) && /· stopped"/.test(r), "stopped: off, and the title says stopped"));
+  c = fresh(); open(c);
+  rows = fnRows(c.dpListHtml(EXP, c.o2Data(), DEPT_EXP, null));
+  Object.values(rows).forEach(r => assert.ok(!/dpdot|aria-label|dpfn/.test(r), "no read: a bare label, as before"));
+  /* the dot's colours are tokens, and a function colour never fills one */
+  assert.ok(/\.dpdot\.breath\{[^}]*background:var\(--acc\)/.test(css) && /prefers-reduced-motion:reduce\)\{\.dpdot\.breath\{animation:none\}/.test(css));
+});
+
 Promise.all(pending).then(() => {
   console.log("\n" + (failed ? failed + " failed" : "all passed") + " (" + ran + " tests)");
   process.exit(failed ? 1 : 0);

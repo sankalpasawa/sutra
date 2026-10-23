@@ -183,6 +183,13 @@ async function wbLoadFv(ref, again){
     if (!again) dpRender();
   }
 }
+/* 20-dept.js asks this for the list column's function rows (S3): undefined for a department with no functions read
+   (not on the engine runtime, or its map not read yet), null while it is read, the read once it lands */
+function wbFnView(ref){
+  if (!wbIs(ref)) return undefined;
+  const m = wbS().map[ref];
+  return m && wbRt(m) ? wbFv(ref) : undefined;
+}
 /* one artifact as the record says it: who made each version, who reads it (M1.2) */
 function wbMadeOf(fv, name){ return ((fv && fv.made) || []).filter(x => x.art === name)[0] || null; }
 function wbTyping(){
