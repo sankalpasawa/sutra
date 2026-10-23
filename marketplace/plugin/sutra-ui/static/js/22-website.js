@@ -35,9 +35,11 @@ const WB_WORDS = { ok: "Done", failed: "Failed", running: "Running", skipped: "S
 const WB_RT_PANES = [["steps", "Steps"], ["engine", "Engine"], ["runs", "Runs"]];
 const WB_RUNGS = [["P", "Person"], ["C0", "Improvised call"], ["C1", "Checklist"], ["C2", "Code"]];
 const WB_THREADS = { "submitted": ["", "Sent"], "working": ["", "Working"], "input-required": ["warn", "Waits for you"],
-                     "completed": ["ok", "Done"], "failed": ["block", "Failed"], "canceled": ["off", "Let go"], "rejected": ["block", "Refused"] };
-const WB_ACTS = { "request": "asks", "agree": "agrees", "refuse": "refuses", "propose": "proposes", "accept-proposal": "accepts",
-                  "reject-proposal": "rejects", "inform": "tells", "failure": "could not", "not-understood": "did not follow", "cancel": "lets go" };
+                     "completed": ["ok", "Done"], "failed": ["block", "Failed"], "canceled": ["off", "Let go"], "rejected": ["block", "Said no"] };
+/* an act on the board in a word, in the owner's words: said yes and said no, never accept, refuse or reject (the
+   owner's ruling); the board, the chat turns and Coordination's who-may-post table print these */
+const WB_ACTS = { "request": "asks", "agree": "agrees", "refuse": "says no", "propose": "proposes", "accept-proposal": "says yes",
+                  "reject-proposal": "says no", "inform": "tells", "failure": "could not", "not-understood": "did not follow", "cancel": "lets go" };
 
 function wbS(){
   if (!S.wb) S.wb = { refs: null, refsBusy: false, refsMissed: {}, map: {}, sig: {}, tab: {}, pane: {}, sel: {}, draft: {},
@@ -167,16 +169,24 @@ function wbFv(ref){
   if (!st.fv[ref]) wbLoadFv(ref);
   return st.fv[ref] || null;
 }
-/* What the screen compares before it paints the five again (PRD M1.9), after dpActivitySig (20-dept.js): per function
-   its state, what it waits on, its line and its spend as the bar draws it; the cycle's own words and step; who made
-   what. A read that says the same thing paints nothing, so a quiet department never flickers on the 2.5 s tick; a
-   change paints on the tick that reads it. The answer is kept either way, so the next paint is the newest one. */
+/* What the screen compares before it paints the five again (PRD M1.9), after dpActivitySig (20-dept.js): everything a
+   surface shows of the read, as it shows it. Per function its state, what it waits on, its line, its spend as the bar
+   draws it, and its last act with its detail and its clock to the minute (All five prints 'last: ... · 10:21'); the
+   cycle's own words and step; who made what; who speaks to whom, as the Map's arcs and its dropdown's bars draw them;
+   what the record does not hold; and the messages Between them. A read that says the same thing paints nothing, so a
+   quiet department never flickers on the 2.5 s tick, and a clock's seconds paint nothing; a change paints on the tick
+   that reads it. The answer is kept either way, so the next paint is the newest one. */
 function wbFvSig(v){
   if (!v || v.failed) return "failed";
-  const c = v.cycle || {}, share = x => Math.round((Number(x) || 0) * 50);
+  const c = v.cycle || {}, share = x => Math.round((Number(x) || 0) * 50), minute = at => String(at || "").slice(0, 16);
+  const five = WB_FUNCS.map(wbCap), talk = (v.speaks || []).filter(p => five.indexOf(p.from) >= 0 && five.indexOf(p.to) >= 0);
+  const most = talk.reduce((x, p) => Math.max(x, p.n || 0), 0) || 1;
   return JSON.stringify([v.stopped, c.state, c.step, c.says, c.needs_you, c.asks, c.round, (c.steps || []).map(p => p.state),
-    (v.functions || []).map(f => [f.name, f.state, f.waits_on, f.line, share((f.spend || {}).share)]),
-    share((v.budget || {}).share), (v.made || []).map(a => [a.art, a.v, a.by])]);
+    (v.functions || []).map(f => [f.name, f.state, f.waits_on, f.line, share((f.spend || {}).share),
+      f.last ? [f.last.what, f.last.detail, minute(f.last.at)] : null]),
+    share((v.budget || {}).share), (v.made || []).map(a => [a.art, a.v, a.by, (a.readers || []).join(",")]),
+    (v.speaks || []).map(p => [p.from, p.to, share((p.n || 0) / most)]), v.not_recorded || [],
+    (v.between || []).map(b => [b.thread, b.from, (b.to || []).join(","), b.act, b.detail])]);
 }
 async function wbLoadFv(ref, again){
   const st = wbS();
@@ -1009,11 +1019,13 @@ function wbReadersOf(m, mk, name){
    status and last move, and its version 1 scope. A field the record leaves
    empty is one quiet line, "not set yet". Read from functions_view.function;
    the first tab keeps its name. */
-/* a function's page paints again when its node, a journey's status or last move, or a step's rung moved (M1.9) */
+/* a function's page paints again when its node (its word too: a department switched off says stopped), a journey's
+   status or last move and its minute, or a step's rung moved (M1.9) */
 function wbFnPageSig(v){
   if (!v || v.failed) return "failed";
   const n = v.node || {};
-  return JSON.stringify([n.state, n.waits_on, n.line, (v.journeys || []).map(j => [j.id, j.status, j.last && j.last.summary]),
+  return JSON.stringify([n.state, n.word, n.waits_on, n.line, n.why,
+    (v.journeys || []).map(j => [j.id, j.status, j.last && j.last.summary, j.last && String(j.last.at || "").slice(0, 16)]),
     (v.recipe || []).map(r => [r.id, r.rung]), (v.fields || []).map(f => [f.key, f.placeholder])]);
 }
 async function wbLoadFnPage(ref, fn, again){
@@ -1084,7 +1096,8 @@ function wbFnExtra(tab, m){
      its rung, under the state the card already shows */
   const steps = wbRt(m) ? wbStepsHtml(m.ref, tab.charAt(0).toUpperCase() + tab.slice(1)) : "";
   if (tab === "identity"){
-    return dpCard("Control", `<div class="dpengines">` + dpKV("Control", m.control === "granted" ? "Granted" : "Held", "") +
+    /* the department's control, in the owner's words: it runs itself within the owner's rules, or the owner holds it */
+    return dpCard("Control", `<div class="dpengines">` + dpKV("Control", m.control === "granted" ? "Runs within your rules" : "Held by you", "") +
         dpKV("Owner", m.owner, "Not named") + dpKV("Stop", m.stopped ? "Stopped" : "Running", "") + `</div>`) +
       dpCard("Autonomy windows", engs.map(e => dpRunRow(e.name, "", "", dpBar(Math.min(1, (e.window_min || 0) / 30)))).join("")) +
       dpCard("Stamped by rule", (m.recent || []).filter(r => r.engine === "Identity").map(r => wbRunRow(r)).join("") || dpQuiet("Nothing yet")) +

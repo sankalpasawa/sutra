@@ -24,6 +24,7 @@ import time
 
 import engine_runtime as R
 import j2_runtime as J
+import owner_words
 import website_dept as W
 
 FUNCS = tuple(R.FUNCTIONS)                      # Identity, Adaptation, Priority, Coordination, Audit: the canonical order
@@ -362,6 +363,25 @@ def _last_act(fn, rs, posts):
     return best
 
 
+BETWEEN = 3                                      # All five's Between them: the last three messages between the five (S2)
+
+
+def _between(posts):
+    """The last messages between the five, newest first, each as the act its function did, in the owner's words (the
+    last act's own rule, _did): 'proposed the plan to Priority', 'said yes to the plan'. What a post carried (the owner's
+    goal that Identity hands on, Priority's why) is its detail, for the hover, never the act."""
+    out = []
+    for p in reversed(posts):
+        to = [x for x in p.get("dst") or [] if x in FUNCS and x != p.get("src")]
+        if p.get("src") not in FUNCS or not to:
+            continue
+        out.append({"n": p.get("n"), "thread": p.get("thread"), "from": p.get("src"), "to": to, "act": _did(p),
+                    "detail": _short(_plain(R._line(p))) or None, "at": p.get("at")})
+        if len(out) == BETWEEN:
+            break
+    return out
+
+
 def _steps(cur, events, state):
     """The eight step pills: done, now, next, or skipped (Settle, when no conflict was raised)."""
     step = int(cur.get("step") or 0)
@@ -396,6 +416,9 @@ def functions(ref):
     state = str(cur.get("state") or "not_started")
     if d.get("stopped") and state not in ("done",):
         state = "stopped"
+    # the department is stopped by its switch or by its cycle; a goal reached and then switched off stays done in the
+    # cycle's words, but it is stopped all the same, and every surface says so in one word
+    stopped = bool(d.get("stopped")) or state == "stopped"
     events = _events(ref, cur.get("cycle_id")) if cur.get("cycle_id") else []
     pending = [a for a in ak if a.get("status") == "pending"]
     running = [r for r in rs if r.get("status") == "running"]
@@ -421,10 +444,11 @@ def functions(ref):
             node.update(state="working", line=("%s's turn" % work_running[0]["engine"]) if work_running else "keeping the timetable")
         elif state == "checking" and fn == "Adaptation":
             node.update(state="waiting", waits_on="Root", line="waits on Root's review")
-        # a run of the function's own
+        # a run of the function's own: while it runs, its line is the handler's name, which carries the inside word
+        # ('Priority granted the line'), so it is said in the owner's words like every other line of this read
         mine = [r for r in running if r.get("engine") == fn]
         if mine and node["state"] != "working":
-            node.update(state="working", line=_short(mine[0].get("what") or "working"))
+            node.update(state="working", line=_short(_plain(mine[0].get("what")) or "working"))
         # the thread rule
         if node["state"] == "quiet" and fn in waits:
             node.update(state="waiting", waits_on=waits[fn]["on"], line="waits on %s" % waits[fn]["on"])
@@ -434,15 +458,18 @@ def functions(ref):
             if state == "blocked":                  # Identity closed a conflict by dropping the plan (J.ruled 'drop')
                 node.update(state="waiting_on_you", waits_on="you", line="the plan was dropped; it needs your words")
             elif state == "waiting" or ask:
+                # the ask's own text is Identity's line, at rest on All five and its pane: a conflict's ask quotes
+                # Priority's no and names the owner's buttons, so it is said in the owner's words too
                 node.update(state="waiting_on_you", waits_on="you",
-                            line=_short((ask or {}).get("text") or "waits for your answer"))
+                            line=_short(_plain((ask or {}).get("text")) or "waits for your answer"))
         if fn in faults:
             node.update(state="fault", why=faults[fn], line=faults[fn])
         # a department that is stopped, or whose goal is reached, is quiet throughout; a stopped one says so in one word,
-        # the word every surface prints (the Map, the list, All five and the pane print node.word and nothing else)
-        if state in ("stopped", "done"):
+        # the word every surface prints (the Map, the list, All five and the pane print node.word and nothing else),
+        # whether its cycle stopped or its switch is off after the goal was reached
+        if state in ("stopped", "done") or stopped:
             node.update(state="quiet", waits_on=None, line="", why=None)
-        node["word"] = "stopped" if state == "stopped" else WORDS[node["state"]]
+        node["word"] = "stopped" if stopped else WORDS[node["state"]]
         node["last"] = _last_act(fn, rs, posts)
         node["spend"] = _spend(ref, d, fn)
         node["speaks_to"] = [{"to": p["to"], "n": p["n"]} for p in pairs if p["from"] == fn]
@@ -460,8 +487,8 @@ def functions(ref):
              "needs_you": needs and state not in ("stopped", "done"), "asks": len(pending),
              "running": [r["engine"] for r in work_running],
              "ceiling": ((d.get("envelopes") or {}).get("_goal") or None), "round": cur.get("round")}
-    return _clean({"ref": ref, "name": d.get("name"), "kind": d.get("kind"), "stopped": bool(d.get("stopped")) or state == "stopped",
-                   "functions": nodes, "cycle": cycle, "speaks": pairs, "made": mades,
+    return _clean({"ref": ref, "name": d.get("name"), "kind": d.get("kind"), "stopped": stopped,
+                   "functions": nodes, "cycle": cycle, "speaks": pairs, "made": mades, "between": _between(posts),
                    "budget": _budget(ref, d), "not_recorded": nr})
 
 
@@ -511,42 +538,11 @@ def _writes(ref, fn):
     return out
 
 
-# The bargain in the owner's words wherever a definition's name, a run's line or a ledger row's summary carries the inside
-# word (the screen says said yes, asked for less and said no; never grant, counter or refuse for an answer). A step's
-# name, the default summaries j2_runtime writes (J.on_post, J.refused, the owner's answer) and the lines the functions'
-# runs say (engine_runtime's priority_answer, adapt_*, identity_*) all pass through here before they leave this read.
-# Phrases first, longest first, then the plain verbs. A rule's tag (go, ask, refuse, always) is the owner's own word
-# for a rule and is left as it is.
-BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priority said yes to, to Root's check"),
-                 ("Take the refusal to Identity", "Take Priority's no to Identity"),
-                 ("Take the counter, or take it to Identity", "Take Priority's ask for less, or take it to Identity"),
-                 ("Grant, refuse or counter", "Say yes, ask for less, or say no"),
-                 ("grants each engine its envelope", "gives each engine its limit"),
-                 ("granted an envelope to each engine", "gave each engine its limit"),
-                 ("Granted within the envelope.", "Said yes within the limit."),
-                 ("Root's check refused the workflow", "Root's check sent the plan back"),
-                 ("waits for the workflow to be granted and registered", "waits for Priority's yes and Root's check"),
-                 ("passed, asked or refused", "passed, asked or stopped"),
-                 ("Take a refusal", "Take a no"), ("Drop what was refused", "Drop what was turned down"),
-                 ("Hear a refusal", "Hear a no"), ("Note the refusal", "Note the no"),
-                 ("The owner refused it.", "The owner said no."), ("refused by the owner", "turned down by the owner"),
-                 ("the owner's refusal", "the owner's no"),
-                 ("took Priority's counter", "took Priority's ask for less"), ("take Priority's counter", "take Priority's ask for less"),
-                 ("Priority's counter", "Priority's ask for less"), ("Priority's refusal", "Priority's no"),
-                 ("Priority's grant's stamp", "Priority's yes"), ("Priority's grant", "Priority's yes"),
-                 ("Priority granted", "Priority said yes to"), ("Priority refused", "Priority said no to"),
-                 ("Priority countered", "Priority asked for less on"),
-                 ("countered the line", "asked for less on the line"), ("granted the line", "said yes to the line"),
-                 ("refused the line", "said no to the line"), ("granted a trial", "said yes to a trial"),
-                 ("refused a trial", "said no to a trial"), ("refused the ask", "said no to the ask"), ("refused: ", "said no: "),
-                 ("Countered.", "Asked for less."), ("Refused.", "Said no."))
-
-
-def _plain(line):
-    line = str(line or "")
-    for inside, said in BARGAIN_WORDS:
-        line = line.replace(inside, said)
-    return line
+# The bargain in the owner's words (owner_words.py): the one word table every read a screen prints passes through, this
+# read's lines (a node's line, its why, its last act and that act's detail, a journey's last move, a step's name) and the
+# older cards' reads in website_api alike. Kept here under its old names for the callers that know them.
+BARGAIN_WORDS = owner_words.BARGAIN_WORDS
+_plain = owner_words.plain
 
 
 def _settings(fn):

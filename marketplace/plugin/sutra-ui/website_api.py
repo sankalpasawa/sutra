@@ -24,6 +24,7 @@ if _LIB_DIR not in sys.path:
 import placement_engine as E  # noqa: E402
 import founding  # noqa: E402
 import functions_view  # noqa: E402
+import owner_words  # noqa: E402
 import website_dept as W  # noqa: E402
 
 router = APIRouter(prefix="/api/native", tags=["native"])
@@ -71,8 +72,9 @@ def _need(ref):
 
 @router.get("/{ref}/map")
 def map_(ref: str):
+    """The department as the Map and the function cards draw it; its run lines in the owner's words (owner_words.py)."""
     _need(ref)
-    return W.map_view(ref)
+    return owner_words.map_view(W.map_view(ref))
 
 
 @router.get("/{ref}/functions")
@@ -103,7 +105,7 @@ def function(ref: str, fn: str):
 @router.get("/{ref}/status")
 def status(ref: str):
     _need(ref)
-    return W.status(ref)
+    return owner_words.status(W.status(ref))
 
 
 @router.get("/{ref}/health")
@@ -252,7 +254,7 @@ def engine(ref: str, name: str):
     e = W.engine_view(ref, name)
     if not e:
         raise HTTPException(404, detail="no such engine")
-    return e
+    return owner_words.engine(e)
 
 
 def _rt(ref):
@@ -266,11 +268,12 @@ def _rt(ref):
 
 @router.get("/{ref}/steps/{name}")
 def steps(ref: str, name: str):
-    """An engine or a function as its steps: the rung each runs on, its check, and what its rows say."""
+    """An engine or a function as its steps: the rung each runs on, its check, and what its rows say; its names and
+    lines in the owner's words (owner_words.py), as the page above its card says them."""
     v = _rt(ref).steps_view(ref, name)
     if not v:
         raise HTTPException(404, detail="no such engine")
-    return v
+    return owner_words.steps(v)
 
 
 @router.get("/{ref}/board")

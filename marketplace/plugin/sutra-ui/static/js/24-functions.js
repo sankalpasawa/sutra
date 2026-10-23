@@ -6,8 +6,8 @@
    20-dept.js's list column carries the All five row; 19-org2.js's strip carries the compact progress line, which
    opens it (S4, compact form).
 
-   It reads the five functions' read (functions_view.py, through 22-website.js wbFv) and the board (wbLoadBoard), and
-   writes nothing: every card is a way into a pane, never a write. Arrow keys move between the cards; Enter opens one.
+   It reads the five functions' read (functions_view.py, through 22-website.js wbFv), the messages between them
+   included, and writes nothing: every card is a way into a pane, never a write. Arrow keys move between the cards; Enter opens one.
 
    Copy discipline is the department screen's: names, never paths; no counts at rest (a bar, never a number); status
    never by colour alone (a word or a badge goes with it); every class prefixed `fv` has a rule in panel.css, tokens
@@ -83,20 +83,15 @@ function fvCardHtml(node, m, stopped){
     `<span class="fvtoday"><span class="dpk">Today</span>${dpBar(Math.max(0, Math.min(1, Number(spend.share) || 0)))}</span>` +
     last + fvStrip(fn, m) + `</button>`;
 }
-/* cell six: the last three messages between the functions, from the board, and the way to all of them */
-function fvBetweenHtml(ref){
-  const st = wbS(), b = st.board[ref];
-  if (!b) wbLoadBoard(ref);
-  const names = FV_ORDER.map(fvName), posts = [];
-  ((b && b.threads) || []).forEach(t => (t.posts || []).forEach(p => {
-    if (names.indexOf(p.src) >= 0 && (p.dst || []).some(d => names.indexOf(d) >= 0)) posts.push(Object.assign({ thread: t.id }, p));
-  }));
-  posts.sort((a, c) => c.n - a.n);
-  const rows = posts.slice(0, 3).map(p => `<button type="button" class="fvmsg wb" data-wbtab="board" data-wbthread="${wbEsc(p.thread)}">` +
-    `<i class="fvbar fn-${wbEsc(String(p.src).toLowerCase())}"></i>${wbChip(p.src)}<span class="wbarrow">&rarr;</span>${wbChip((p.dst || []).join(", "))}` +
-    `<span class="dpchk"${p.line ? ` title="${wbEsc(p.line)}"` : ""}>${wbEsc(p.line ? fvRest(p.line) : (p.word || ""))}</span></button>`).join("");
-  return `<div class="fvcard fvbetween wb"><span class="fvhead"><b>Between them</b></span>` +
-    (b ? (rows || dpQuiet("Nothing between them yet")) : dpSkel()) +
+/* cell six: the last three messages between the functions, and the way to all of them. The read says each as the act
+   its function did, in the owner's words (functions_view.py _between: 'proposed the plan to Priority', 'said yes to the
+   plan'); what the message carried (the owner's goal that Identity handed on, Priority's why) is the hover, never the
+   row, so the owner's own words never stand in for what a function did. */
+function fvBetweenHtml(fv){
+  const rows = ((fv && fv.between) || []).slice(0, 3).map(p => `<button type="button" class="fvmsg wb" data-wbtab="board" data-wbthread="${wbEsc(p.thread)}">` +
+    `<i class="fvbar fn-${wbEsc(String(p.from).toLowerCase())}"></i>${wbChip(p.from)}<span class="wbarrow">&rarr;</span>${wbChip((p.to || []).join(", "))}` +
+    `<span class="dpchk"${p.detail ? ` title="${wbEsc(p.detail)}"` : ""}>${wbEsc(fvRest(p.act))}</span></button>`).join("");
+  return `<div class="fvcard fvbetween wb"><span class="fvhead"><b>Between them</b></span>` + (rows || dpQuiet("Nothing between them yet")) +
     `<button type="button" class="o2more wb" data-wbtab="board">All messages &rsaquo;</button></div>`;
 }
 /* the overview itself: the Map's head, the progress block, then the six cells */
@@ -113,7 +108,7 @@ function fvAllHtml(n, m){
     top = `<div class="fvprog wb"><div class="fvsays">${wbDot("off")}<b>Stopped by you</b></div>` +
       `<div class="dpoffer">${wbBtn("Start", `data-wbresume="1"`, "dpstamp")}</div></div>`;
   const nodes = FV_ORDER.map(fn => (fv.functions || []).filter(x => x.fn === fn)[0] || { fn, name: fvName(fn), state: "quiet", word: "quiet" });
-  return head + top + `<div class="fvgrid" role="list">${nodes.map(x => fvCardHtml(x, m, stopped)).join("")}${fvBetweenHtml(n.ref)}</div>`;
+  return head + top + `<div class="fvgrid" role="list">${nodes.map(x => fvCardHtml(x, m, stopped)).join("")}${fvBetweenHtml(fv)}</div>`;
 }
 /* S4, compact: the progress line in the department's strip, after the parent's name; it opens All five. It hides
    when there is no read, or the read failed. */

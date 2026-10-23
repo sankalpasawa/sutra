@@ -248,7 +248,7 @@ function fvOf(o){
       steps: FV_STEPS.map((name, i) => ({ step: i + 1, name, state: i + 1 < step ? (i === 3 ? "skipped" : "done") : (i + 1 === step ? "now" : "next"),
                                           last: i + 1 <= step ? { summary: name + " happened", at: AT } : null })),
       needs_you: false, asks: 0, running: [], ceiling: null, round: null }, o.cycle || {}),
-    speaks: o.speaks || [], made: o.made || [],
+    speaks: o.speaks || [], made: o.made || [], between: o.between || [],
     budget: { calls: 30, usd: 1.2, calls_limit: 120, usd_limit: 60, share: o.budget === undefined ? 0.25 : o.budget, of: "today's limits" },
     not_recorded: o.not_recorded || [] };
 }
@@ -1521,6 +1521,12 @@ const FV_BOARD = { any: true, ideas: [], threads: [
     { n: 5, src: "Owner", dst: ["Identity"], msg_type: "request", at: AT, word: "request", line: "a careers page" },
     { n: 6, src: "Identity", dst: ["Adaptation"], msg_type: "request", at: AT, word: "line", line: "the next thing to correct" },
     { n: 4, src: "Coordination", dst: ["Identity"], msg_type: "inform", at: AT, word: "alarm", line: "Write ran past its window" }] }] };
+/* the same messages as the read says them (functions_view.py _between): newest first, each the act its function did, in
+   the owner's words, and what it carried as its detail, for the hover */
+const FV_BETWEEN = [
+  { n: 8, thread: "x-9", from: "Priority", to: ["Adaptation"], act: "said yes to the plan", detail: "said yes to the round", at: AT },
+  { n: 7, thread: "x-9", from: "Adaptation", to: ["Priority"], act: "proposed the plan to Priority", detail: "the next round", at: AT },
+  { n: 6, thread: "x-8", from: "Identity", to: ["Adaptation"], act: "asked Adaptation for the plan", detail: "the next thing to correct", at: AT }];
 async function allFive(o){
   const c = await v2(Object.assign({ map: rtMap(), board: FV_BOARD }, o));
   click(c, { wbtab: "five" }); await sleep();
@@ -1531,7 +1537,7 @@ test("M1.8: All five is five cards in order, each with its mark, a state word an
                     lines: { Identity: "May the reviews show first names?", Coordination: "Write's turn", Audit: "Audit has not read Live site v1" },
                     waits: { Adaptation: "Priority" }, last: { Priority: { what: "said yes to round two", at: AT },
                                                                Coordination: { what: "gave Write the turn", detail: "after Site plan v2", at: AT } },
-                    cycle: { says: "Write is working", needs_you: true, asks: 1 } });
+                    cycle: { says: "Write is working", needs_you: true, asks: 1 }, between: FV_BETWEEN });
   const [c, html] = await allFive({ fv });
   assert.ok(/<div class="o2vh"><b>All five<\/b>/.test(html) && /class="o2viewer dpviewer dp wb fv"/.test(html), "the viewer, a size container");
   const cards = html.match(/<button type="button" class="fvcard fn-(\w+) wb[^"]*" data-wbfn="\1"[^>]*>[\s\S]*?<\/button>(?=<button type="button" class="fvcard|<div class="fvcard fvbetween)/g) || [];
@@ -1556,6 +1562,9 @@ test("M1.8: All five is five cards in order, each with its mark, a state word an
   const between = /<div class="fvcard fvbetween wb">([\s\S]*)$/.exec(html)[1];
   const msgs = (between.match(/data-wbthread="[^"]+"><i class="fvbar fn-(\w+)"><\/i><span class="wbchip">(\w+)<\/span>/g) || []).map(x => /class="wbchip">(\w+)</.exec(x)[1]);
   assert.deepStrictEqual(msgs, ["Priority", "Adaptation", "Identity"], "three, newest first, the owner's words not among them");
+  /* each row is what the function did, never the words its message carried (round 2, gap 5): those are its hover */
+  assert.ok(/<span class="dpchk" title="the next round">proposed the plan to Priority<\/span>/.test(between), between);
+  assert.ok(/<span class="dpchk" title="the next thing to correct">asked Adaptation for the plan<\/span>/.test(between), between);
   assert.ok(/data-wbtab="board">All messages &rsaquo;<\/button>/.test(between));
   /* no digits at rest outside titles (times are clocks, not counts; v1 is a name) */
   const t = words(html.replace(/ title="[^"]*"/g, "").replace(/ aria-label="[^"]*"/g, "")).replace(/\bv\d+\b/g, "");
@@ -1575,9 +1584,9 @@ test("M1.8: a fault, a last act and a line between them that carry a count keep 
                              Coordination: "Write is on page 3 of 8", Audit: "Audit has not read Live site v1" },
                     last: { Adaptation: { what: "took Priority's ask for less: keep 2 of 4 engines", at: AT },
                             Identity: { what: "took the owner's words", detail: "A site for Class 8", at: AT }, Priority: { what: "said no 3 times", at: AT } } });
-  const board = JSON.parse(JSON.stringify(FV_BOARD));
-  board.threads[0].posts[1].line = "the envelope has room for 3 of them";
-  const [, html] = await allFive({ fv, board });
+  fv.between = JSON.parse(JSON.stringify(FV_BETWEEN));
+  fv.between[0].detail = "the envelope has room for 3 of them";
+  const [, html] = await allFive({ fv });
   const card = fn => (html.match(new RegExp('<button type="button" class="fvcard fn-' + fn + ' wb[^"]*"[^>]*>[\\s\\S]*?</button>')) || [""])[0];
   assert.ok(/<span class="fvnow" title="May the reviews show the 12 doctors(&#39;|')s? first names\?"><span class="wbchip ask" data-wbtab="chat">waits on you<\/span> <\/span>/.test(card("identity")),
     "the owner's ask with a count: the chip at rest, the words on the hover: " + card("identity"));
@@ -1587,7 +1596,7 @@ test("M1.8: a fault, a last act and a line between them that carry a count keep 
   assert.ok(/title="took Priority(&#39;|')s ask for less: keep 2 of 4 engines">last: took Priority(&#39;|')s ask for less · \d\d:\d\d<\/div>/.test(card("adaptation")), card("adaptation"));
   assert.ok(/title="took the owner(&#39;|')s words: A site for Class 8">last: took the owner(&#39;|')s words · /.test(card("identity")), "the owner's words are the hover");
   assert.ok(/title="said no 3 times">last: \d\d:\d\d<\/div>/.test(card("priority")), "an act that is all count: its time alone");
-  assert.ok(/<span class="dpchk" title="the envelope has room for 3 of them"><\/span><\/button>/.test(html), "between them: the line on the hover");
+  assert.ok(/<span class="dpchk" title="the envelope has room for 3 of them">said yes to the plan<\/span><\/button>/.test(html), "between them: the act at rest, the line on the hover");
   const t = words(html.replace(/ title="[^"]*"/g, "").replace(/ aria-label="[^"]*"/g, "")).replace(/\bv\d+\b/g, "");
   assert.ok(!/\d/.test(t), "a digit at rest: " + (t.match(/.{0,30}\d.{0,30}/) || [""])[0]);
   /* the Map's boxes keep the same rule: the act before the colon, the whole line on the hover */
@@ -1650,11 +1659,13 @@ const FV_BY_STATE = {
   closing: { states: { Identity: "working", Adaptation: "waiting" }, waits: { Adaptation: "Identity" } },
   checking: { states: { Adaptation: "waiting" }, waits: { Adaptation: "Root" } }, running: { states: { Coordination: "working" } },
   pursuing: { states: { Identity: "waiting_on_you" } }, blocked: { states: { Identity: "waiting_on_you" } },
-  stopped: { stopped: true }, done: {} };
+  stopped: { stopped: true }, done: {},
+  /* the goal reached, then switched off on the Map: the cycle stays done, the department is stopped (round 2, gap 7) */
+  done_switched_off: { stopped: true, cycle: "done" } };
 test("M1: the Map, the list, All five and each pane print the same word for each function in every J2 state", async () => {
   for (const state of Object.keys(FV_BY_STATE)){
     const o = FV_BY_STATE[state];
-    const fv = fvOf(Object.assign({ cycle: { state, says: state } }, o));
+    const fv = fvOf(Object.assign({}, o, { cycle: { state: o.cycle || state, says: state } }));
     const page = fn => Object.assign(fnPageOf(fn), { node: fv.functions.filter(x => x.fn === fn)[0] });
     const map = rtMap({ stopped: !!o.stopped });
     const c = await v2({ map, fv, fnpage: page, board: FV_BOARD });
