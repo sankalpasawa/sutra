@@ -101,6 +101,16 @@ NAMED: Dict[str, Tuple[str, str]] = {
     "domains": ("Know", "on-ask"),
     "founder-360-review": ("Know", "on-ask"),
     "sutra-learn": ("Know", "on-ask"),
+    # ours: the Native family in the core plugin -- each finds or shapes the how of a piece of Native work, except the
+    # builder, which leaves the built part behind, and the method, which can refuse a build that rests on an untested belief
+    "native": ("Shape", "at-resolve"),
+    "native-coach": ("Shape", "at-resolve"),
+    "finding-the-how": ("Shape", "at-resolve"),
+    "deriving-a-methodology": ("Shape", "at-resolve"),
+    "synthesizing-a-methodology": ("Shape", "at-resolve"),
+    "system-engineering": ("Shape", "at-resolve"),
+    "native-builder": ("Make", "on-ask"),
+    "native-method": ("Judge", "before-mutation"),
     # third party whose description hides the effect
     "brainstorming": ("Shape", "at-resolve"),
     "writing-plans": ("Shape", "at-resolve"),
