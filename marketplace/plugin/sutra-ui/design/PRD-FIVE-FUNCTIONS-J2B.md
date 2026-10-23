@@ -10,14 +10,16 @@
 ## The answer in short
 
 1. **When.** Make runs when no Library line fits: an organic department, a default department, or a Library line Root's check refused.
-2. **What it reads.** The identity (goal, done-when items, rules) plus two practices in place: the department's rules and the Library's engine and artifact use cases. It does not read the kind's done line, and in version 1 it does not read other departments' workflows.
+2. **What it reads.** The identity (goal, done-when items, rules) plus three practices in place: the department's rules, the Library's engine and artifact use cases, and the kind's required engines. It does not read the kind's done line, and in version 1 it does not read other departments' workflows.
 3. **Levels.** The Make module's level 1 (take a Library engine) and level 2 (shape a new one) are in version 1. Level 3 (probe) is not.
-4. **Shape.** Each engine is `{name, does, reads, writes, covers, confidence}`, plus `doubt` and today's `internet`. A plan has the fewest engines that cover every item, usually two to five.
-5. **Ask.** If any engine is below 0.6, Identity asks one question and nothing is registered. Between 0.6 and 0.8 the doubt is shown and nobody is asked. That is at most one question per request and two per cycle.
+4. **Shape.** Each engine is `{name, does, reads, writes, covers, confidence}`, plus `doubt` and today's `internet`. A plan has the fewest engines that cover every item, usually two to five, and keeps every engine the kind marks required.
+5. **Ask.** If any engine is below 0.6, or a required engine cannot serve the goal, Identity asks one question and nothing is registered. Between 0.6 and 0.8 the doubt is shown and nobody is asked. That is at most one question per request and two per cycle.
 
 ## The proposal, row by row
 
 **J2B-1 · When Make runs.** `adapt_source` sends a line request to Make in three cases: the department's kind has no line (organic); the kind is default, whose Do line is the Library's fallback and not a fit; or Root's check refused the line, whatever its source (the reshape path `adapt_source` already has). A website department whose words ask for work the website line cannot cover falls into the third case. M5.1 names the uncovered items, Root's check refuses the line (M7.2: every item covered), and the reshape goes to Make. In a default department Make may still return Do alone, at level 1 (J2B-5).
+
+On that reshape path, a kind whose template marks engines required (website: Check, Q12 and M4.4) keeps them: Make takes each required engine at level 1 and keeps it in every reshape, and `c_line_is_engines` refuses a plan that drops one, as Root's check does from M4.4 ('no required engine is left out', M7.2). When a required engine cannot serve an item, Make returns no plan. A game needs a script, and the Library's Check fails any page that carries one. Make answers `cannot` (J2B-4), and the covering posts one conflict to Identity naming the engine and the items. Identity has no rule that settles it, so it asks the owner one question (J2B-7, J2B-8). A plan Root would refuse is never returned.
 
 **J2B-2 · The practices in place it reads.** Only names and use cases go into the request, never whole files (M6.3):
 
@@ -25,6 +27,7 @@
 |---|---|---|---|
 | The department's rules | **Yes** | Every stamped rule with its tag (go, ask, refuse, always). `p_adapt_line` already passes the rules | Tap Rush: the owner's rule 'add no features beyond the three screens' lost to a website condition ('a nav reaches every section'), and the second plan added a nav the owner had ruled out. The plan must answer to the owner's rules, not to a template's checks. |
 | The Library's engine use cases | **Yes**, with the artifact use cases | `engines`: each shipped engine template of kind work except Setup (Root's), with its name, use case, reads and writes. `artifacts`: each artifact template a line may write (Brief, Site plan, Pages, Build, Live site, Result), with its name and use case. `taken`: every engine name in use, shipped or born, as names only | Level 1 needs them. Today a shaped line may not use a Library name at all, so a second organic department births 'Facts 2' and 'Site 2' (`d_adapt_line`). The website part of Brew Lab is the Library's own Check and Publish. |
+| The kind's required engines | **Yes** | `required`: each engine the kind marks required (website: Check; none for default or organic), with what its check refuses. For Check that is a page with a script, a link to no page, and a page with almost no text (`engine_check`) | Rule 5 (S-06, S-21) and Q12. Without the names, a reshape drops Check, Root's check refuses the plan again (M4.4), and after `J.REPAIRS` the department ends blocked. Without the refusals, Make shapes a game that Check fails. |
 | The organisation's earlier registered workflows | **No**, until Learn (FA5) | Nothing | The plan follows the done-when list without any memory. Six runs of the Spark 2026 brief gave first plans of seven or eight workflows of the same shape, and both PRD briefs gave one workflow per section. Reading other departments' lines costs tokens and risks copying a line built for another goal. The prototype's memory was polluted (109 mock playbooks). |
 | The kind's done line | **No** | Nothing. The done-when items replace it, and the kind's line survives only as D1 when Root drafted no items (M3.2 offline) | Tap Rush: website checks applied to a game read the score's starting 0 as an invented number, which cost a second round of two fixes. Organic's done line ('what the words asked for is filed, and what goes out is live') says nothing the items do not. |
 
@@ -32,7 +35,7 @@
 
 | Level | Cynefin domain | What Adaptation does | Version 1 |
 |---|---|---|---|
-| 1 · Take | Clear: a known practice fits | Takes a shipped Library engine by name, with its template's reads, writes and start. It does so only when the engine's use case fits the goal, and only when what it reads is the Brief or a Library artifact an earlier engine of the plan writes. That artifact's own check, which `do_file` applies to whoever writes it, holds the format. Born engines are never taken, because their instruction carries another department's words. | **Yes** |
+| 1 · Take | Clear: a known practice fits | Takes a shipped Library engine by name, with its template's reads, writes and start. It does so only when the engine's use case fits the goal, and only when what it reads is the Brief or a Library artifact an earlier engine of the plan writes. That artifact's own check, which `do_file` applies to whoever writes it, holds the format. Born engines are never taken, because their instruction carries another department's words. A required engine of the kind is always taken at this level and kept (J2B-1). | **Yes** |
 | 2 · Shape | Complicated: the parts are known, the arrangement is not | Shapes a new engine from Do with its own instruction, as the organic path does today. After Priority's yes and Root's check it is born into the records-home Library, tagged made_by (Q5). | **Yes** |
 | 3 · Probe | Complex: nobody knows yet what works | Runs a small try whose result decides the next round. | **No.** A probe pays only when a next round reads its result, which is Pursue (M9), and its lessons are Learn (a non-goal). In version 1, a level-3 situation shows up as an engine Adaptation is not sure of, and J2B-7 turns it into one question. |
 
@@ -51,15 +54,19 @@ Cynefin's fourth domain (chaotic: act first) is not Make's. It belongs to Identi
 - confidence is not a number from 0 to 1;
 - confidence is below 0.8 and the doubt is empty;
 - covers names an unknown id;
-- a level-1 engine's reads or writes differ from its template's.
+- a level-1 engine's reads or writes differ from its template's;
+- the plan drops an engine the kind marks required.
+
+In place of engines, Make may answer `{"cannot": {"engine", "items", "why"}}`. The check accepts it only when the engine is one the kind marks required and every item id is known. Anything else is a shape fault.
 
 A refused engine goes back as a shape fault, through today's path (twice at most, then Identity tells the owner). It is never quietly dropped, unlike the prototype's `_atoms_checked`, because dropping an engine would leave items uncovered.
 
-**J2B-5 · Size.** The prompt asks for the fewest engines that cover every item, usually two to five. One engine is right only when it is the Library's Do and every item is part of one written answer. Split only where a rule or an item needs an artifact of its own, which a later engine or Audit reads by name. Code sets no upper cap (Q11), because Priority's room bounds the plan. A plan of more than five says why in its message. Root's check still refuses more than six until M7.2 lifts that cap.
+**J2B-5 · Size.** The prompt asks for the fewest engines that cover every item, usually two to five, with every engine the kind marks required included at level 1. One engine is right only when it is the Library's Do and every item is part of one written answer. Split only where a rule or an item needs an artifact of its own, which a later engine or Audit reads by name. Code sets no upper cap (Q11), because Priority's room bounds the plan. A plan of more than five says why in its message. Root's check still refuses more than six until M7.2 lifts that cap.
 
 **J2B-6 · Covers.** An engine covers an item when it answers for it: either its output is where Audit reads the item, or the item restates a rule the engine holds the build to. Before the proposal leaves Adaptation, code checks the following, in the spirit of the prototype's `_plan_checked` and `_lld_gaps`:
 - the covers together name every done-when item;
-- every engine covers something, or is read by a later engine (a feeder, such as Facts).
+- every engine covers something, or is read by a later engine (a feeder, such as Facts);
+- every engine the kind marks required is in the plan, at level 1.
 
 A gap goes back once as a shape fault. M5.1's ledger warning and M7's refusal remain the backstop.
 
@@ -70,6 +77,7 @@ A gap goes back once as a shape fault. M5.1's ledger warning and M7's refusal re
 | 0.8 or more | The proposal goes to Priority. | Nothing extra |
 | 0.6 to under 0.8 | The proposal goes to Priority. Each doubt travels with it and appears in the plan tell. | 'Fairly sure', with the doubt under the engine |
 | Under 0.6 | Nothing goes to Priority and nothing is registered. Adaptation posts the lowest engine's doubt to Identity, and Identity asks it as one question (an M0.5 ask, `missing: plan`). If the identity already answers it (FI1.2), Identity hands that answer back without asking. | 'Not sure', with 'Asked you' under the engine |
+| A `cannot` answer (J2B-1) | Nothing goes to Priority and nothing is registered. Adaptation posts a conflict to Identity naming the required engine and the items. No rule settles it, so Identity asks one question with options built by code (M3.5): set it up as a department done its own way (a Root request with the same words, for your stamp), leave those items out (a done_items ask), or stop. | 'Cannot with this kind', with 'Asked you' |
 
 How it is bounded:
 - One question per line request, and two per cycle (the same bound as `J.REPAIRS`).
@@ -89,6 +97,8 @@ The rule keeps SM-8 within reach (a median of three or fewer questions and asks 
 - an item Audit reads as not met traces back to a decision that a plan scoring 0.6 or more never asked about.
 
 **J2B-8 · The question, in Identity's words.** The template is: 'Before I set up the work for {department}: {the doubt, as one question} Unless you say, {what the engine does if it is not told}. Answer in your own words, or say "just do it".' For example: 'Before I set up the work for Brew Lab Website: when someone pre-orders, where should the order go, for example an email to the shop? Unless you say, the form shows the order on screen for the customer to bring to the counter, and sends nothing. Answer in your own words, or say "just do it".'
+
+For a `cannot` answer, the question names what the kind's check refuses and offers the options: 'Before I set up the work for Tap Rush: a website department checks that no page runs a script, and the game needs one. Shall Root set Tap Rush up as a department done its own way, or shall I leave the game out? Unless you say, nothing is set up.'
 
 The question follows these rules:
 - It is one question, in plain words.
@@ -124,7 +134,7 @@ Done-when items, each with its 'how':
 
 Together the covers name D1 to D8, and the lowest confidence is 0.85, so the plan goes to Priority with no question. J2.a has already asked for the name, as the run did. Why two engines and not Do alone: both rules concern the requirements list. Filed on its own, that list is fixed for the PRD engine and gives Audit ids to check traceability against. **In the run**, the work was planned as six section workflows. The same brief's sibling run, also six one-section units, stalled: 'only 1 of 6 sections was written' after 25 calls. The two late questions about a double-booking measure came from the prototype's document rubric. Sutra's Audit reads the done-when items, and a missing measure belongs to J2.a's standard (MK-1).
 
-### B · Tap Rush, a browser game (organic; if Setup picks website, Root's check refuses its line and the reshape comes here)
+### B · Tap Rush, a browser game (organic; in a website department Make returns `cannot`, not this plan)
 
 Brief: a 30-second reaction game on one page, with three screens, tap or click only, and the facts 'Tap Rush', 30 seconds, 1 second, 1 point. Rules include: refuse sign-up forms, contact details and prices; no features beyond the three screens; mark to confirm anything not stated.
 
@@ -133,9 +143,9 @@ Brief: a 30-second reaction game on one page, with three screens, tap or click o
 | Play rules | L2 | Writes the rules of play as numbered lines, with the brief's own numbers: a 30-second round, a circle that lasts 1 second, 1 point a circle, a score starting at 0, tap or click only, three screens | Brief > Play rules | D4 round 30 s, D5 circles score 1, D6 circle lasts 1 s, D8 tap or click only | 0.9 |
 | Game | L2 | Builds the three screens and the loop from the rules as one self-contained page: dark background, bright circles, large text, no outside files, nothing beyond the three screens. It goes live after your yes to the first outside step | Play rules > Live site | D1 name, D2 start line and button, D3 score and timer, D7 end screen and Play again, D9 look, D10 no overflow, D11 one file and no forms, contacts or prices, D12 no script errors and links resolve | 0.7. Doubt: 'How often a new circle appears is not given. Unless you say, a new circle appears as soon as the last one goes, marked to confirm.' |
 
-Together the covers name D1 to D12. The lowest confidence is 0.7, so the plan goes to Priority, the doubt is shown ('Fairly sure') and nobody is asked. Check and Publish are not taken, because their use case is a website: Check puts pages into the site's layout, which would add the nav the rules refuse. The plan message names them as left out (Q13). The Play rules artifact is also the source a 'no invented numbers' check needs, since the starting 0 is filed there. **In the run**: a plan of four workflows; a forced nav; all 12 items met; then two fixes for the 0. The run stopped at the account's spend limit.
+Together the covers name D1 to D12. The lowest confidence is 0.7, so the plan goes to Priority, the doubt is shown ('Fairly sure') and nobody is asked. Check and Publish are not taken, because their use case is a website: Check puts pages into the site's layout, which would add the nav the rules refuse. The plan message names them as left out (Q13). That is allowed only because organic marks no engine required. In a website department the game reaches Make only as a refused Library line, and there Check is required (Q12) and fails any page that carries a script, which the game needs. So Make answers `cannot` with Check and D2, D3 and D12, and Identity asks the one question in J2B-8. No plan without Check is returned. The Play rules artifact is also the source a 'no invented numbers' check needs, since the starting 0 is filed there. **In the run**: a plan of four workflows; a forced nav; all 12 items met; then two fixes for the 0. The run stopped at the account's spend limit.
 
-### C · Brew Lab, design documents first, then the site (website words, but the website line covers no documents, so Root refuses it and the reshape comes here; organic goes straight here)
+### C · Brew Lab, design documents first, then the site (website words, but the website line covers no documents, so Root refuses it and the reshape comes here, keeping Check; organic goes straight here)
 
 Brief: 'A one-page website for Brew Lab... Visitors see the menu with prices, the opening hours and where to find the shop, and they can pre-order a coffee for pickup. Write the design docs first.' The brief gives no menu, hours or address. J2.a (MK-1) asks for them, or marks them to confirm, before Adaptation is asked. In the run they were asked at message 177 of 236, after three documents had been written.
 
@@ -156,7 +166,7 @@ Done-when items:
 | PRD | L2 | Writes the product requirements from the words: problem, users, goals, requirements R1 to R7, success and out of scope | Brief > PRD | D1 | 0.85 |
 | Design | L2 | Writes the page's sections, interactive elements and form fields, each naming the requirement it implements | PRD > Design | D2 | 0.85 |
 | Site | L2 | Writes the one page from the design, with the facts exactly as given | Design > Pages | D3, D4, D5, D6, D7, D9 | 0.45. Doubt: the pre-order question in J2B-8 |
-| Check | L1 | The Library's Check: holds the page to your rules and puts it together as a build | Pages > Build | D8 (the no-payment rule) | 0.9 |
+| Check | L1, required in a website department | The Library's Check: holds the page to your rules and puts it together as a build | Pages > Build | D8 (the no-payment rule) | 0.9 |
 | Publish | L1 | The Library's Publish: puts the checked build live, after your yes to the first publish | Build > Live site | D10 | 0.9 |
 
 Together the covers name D1 to D10. The lowest confidence is 0.45, under 0.6, so nothing goes to Priority and Identity asks the one question in J2B-8. The answer ('email it to hello@brewlab.example') returns as words. Site is shaped again at 0.85 and the plan goes to Priority. The first send still passes Identity's gate (J2.6). **In the run**, the plan had 31 workflows, one per section per document plus revisions. It took nine cycles, spent the whole budget and ended 'done with open items', with the PRD shipped while its no-invented-facts check still failed. Sutra does not allow that end (Q6). The order route stayed undecided through the design document until the facts question came.
@@ -165,8 +175,8 @@ Together the covers name D1 to D10. The lowest confidence is 0.45, under 0.6, so
 
 | Step | Builds | Its test |
 |---|---|---|
-| M6.3 | `adapt_source` adds `practices: {rules, engines, artifacts, taken}` (J2B-2) to the line request when the flag is on and the source is shaped | The request carries exactly those four keys: no done line, no other department's workflows, no file text |
-| M6.4 | `function-prompts/adaptation/make.md` and `p_adapt_line`'s no-template branch ask for the J2B-4 shape. `c_line_is_engines` checks J2B-4 and J2B-6. `_line_faults` lets a shipped Library engine stand at level 1 with its template's reads and writes. `adapt_line_offer` applies J2B-7. The plan ask is recorded by `J.answer`, and Identity sends the answer back as words | Organic and default plans cover their items. A stub at 0.45 gives one Identity question and no registration. A stub at 0.7 gives no question, and the doubt appears in the plan. Offline keeps the draft and says so. A test confirms that a shaped engine's Pages pass through the Library's Check |
+| M6.3 | `adapt_source` adds `practices: {rules, engines, artifacts, required, taken}` (J2B-2) to the line request when the flag is on and the source is shaped | The request carries exactly those five keys: no done line, no other department's workflows, no file text. A website department's `required` names Check |
+| M6.4 | `function-prompts/adaptation/make.md` and `p_adapt_line`'s no-template branch ask for the J2B-4 shape, or `cannot`. `c_line_is_engines` checks J2B-4 and J2B-6, including the kind's required engines (from M4.4's `required: true`). `_line_faults` lets a shipped Library engine stand at level 1 with its template's reads and writes. `adapt_line_offer` applies J2B-7 and turns `cannot` into a conflict to Identity, whose ask carries the code-built options. The plan ask is recorded by `J.answer`, and Identity sends the answer back as words | Organic and default plans cover their items. A website reshape keeps Check, and a stub that drops it is a shape fault. A stub `cannot` on a website game gives one Identity question with the options and no registration. A stub at 0.45 gives one Identity question and no registration. A stub at 0.7 gives no question, and the doubt appears in the plan. Offline keeps the draft and says so. A test confirms that a shaped engine's Pages pass through the Library's Check |
 | M6.5 | Scenarios on organic and default: shape, bargain, Root's check, run, read | Both reach step 7 with a covering plan |
 
 ## Attached: the three runs, their plans and costs
@@ -189,13 +199,13 @@ The decision log takes this file as marked. MK-3 reads: 'Take the M6.1 desk spik
 
 | Row | Mark | Opens |
 |---|---|---|
-| J2B-1 When Make runs | keep | M6.3, M6.4 |
-| J2B-2 Practices read: rules, and the Library's engine and artifact use cases; not the done line or other departments' workflows | keep | M6.3 |
+| J2B-1 When Make runs; a reshape keeps the kind's required engines, or asks | keep | M6.3, M6.4 |
+| J2B-2 Practices read: rules, the Library's engine and artifact use cases, and the kind's required engines; not the done line or other departments' workflows | keep | M6.3 |
 | J2B-3 Levels 1 and 2 in version 1; level 3 later | keep | M6.4 |
 | J2B-4 Engine shape | keep | M6.4 |
 | J2B-5 Size: fewest that cover, usually two to five, no code cap | keep | M6.4 |
 | J2B-6 Covers | keep | M6.4 |
-| J2B-7 Confidence rule: under 0.6 asks one question; 0.6 to 0.8 shown, not asked | keep | M6.4, M6.5 |
+| J2B-7 Confidence rule: under 0.6, or `cannot`, asks one question; 0.6 to 0.8 shown, not asked | keep | M6.4, M6.5 |
 | J2B-8 The question's wording | keep | M6.4 |
 | J2B-9 Offline | keep | M6.4 |
 
