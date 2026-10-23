@@ -86,6 +86,20 @@ def functions(ref: str):
     return out
 
 
+@router.get("/{ref}/functions/{fn}")
+def function(ref: str, fn: str):
+    """One function as its site page holds it: its line, its template's fields, its recipe, its journeys with their
+    live status and its version 1 scope, with its node from the read above and what J2 adds. Read only."""
+    _need(ref)
+    try:
+        out = functions_view.function(ref, fn)
+    except ValueError as exc:
+        raise HTTPException(404, detail=str(exc))
+    if out is None:
+        raise HTTPException(404, detail="this department does not run on the engine runtime")
+    return out
+
+
 @router.get("/{ref}/status")
 def status(ref: str):
     _need(ref)

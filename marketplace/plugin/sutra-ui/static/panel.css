@@ -5806,6 +5806,14 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .wbset input{width:90px;margin-left:auto}
 .wbset input[type=text]{width:auto;flex:1;min-width:200px;margin-left:0}
 
+/* a function's page (PRD M1.7): its recipe, a row a step with who runs it and its rung, grouped by what it hears;
+   its journeys, a row each with its id, its live status and its last move */
+.wbrec{display:flex;align-items:center;gap:8px;padding:3px 0;font:400 12.5px/1.4 var(--sans);color:var(--ink)}
+.wbrec>span:first-of-type{flex:1;min-width:0}
+.wbrecg{margin:4px 0}
+.wbrecg summary{cursor:pointer;font:500 11.5px/1.6 var(--sans);color:var(--muted)}
+.wbjid{font:400 11px var(--mono);color:var(--faint);margin-right:6px}
+.wbjrn .wbchip{margin-left:4px}
 /* ── the second design (23-screens.js): the Map and the Board ──────────────
    State is colour and motion, never a word: a lit node on the map, a pill on
    the NOW line. Tokens only; every class prefixed `wb2` (test_website.js V12). */

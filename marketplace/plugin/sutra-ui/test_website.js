@@ -1380,6 +1380,65 @@ test("M1.6: on the runtime the list's function rows read the same functions read
   assert.ok(/<button type="button" class="o2li dpli" data-dptab="identity"><span>Identity<\/span><\/button>/.test(oh), "the first build's rows stay bare");
   assert.deepStrictEqual(readsOf(old, /\/functions$/), [], "and it never asks for the read");
 });
+/* PRD M1.7: each function's pane opens on what its site page holds: its line, its template's fields (a placeholder is
+   one quiet line, "not set yet"), its recipe (each step by code, AI or a person, on its rung), its journeys with their
+   live status and last move, and its version 1 scope. Fixtures for all five, as functions_view.function answers. */
+const FN_JOURNEYS = { identity: [["FI1", "Enough to work?"], ["FI2", "Words after go-live"], ["FI3", "The gates"], ["FI4", "Closes a conflict"]],
+  adaptation: [["FA1", "The first workflows"], ["FA2", "Pursue until done"], ["FA3", "Crystallize a step"], ["FA4", "Grow out"], ["FA5", "Learn"]],
+  priority: [["FP1", "The limit on every start"], ["FP2", "The bargain with Adaptation"]],
+  coordination: [["FC1", "Who goes first"], ["FC2", "A lost request"]], audit: [["FAU1", "Read the result"]] };
+function fnPageOf(fn){
+  const name = fn.charAt(0).toUpperCase() + fn.slice(1);
+  return { ref: "r3", fn, name, vsm: "VSM", line: name + "'s one line, as its page says it.", holds: "What " + name + " holds.",
+    hands_to: "Who " + name + " hands to.", keeps: "The rules " + name + " keeps.", v1: name + "'s version 1, as built.",
+    template: { id: fn + "/product-build", name: "Product build", use_case: "a product" },
+    fields: [{ key: "goal", label: "Goal", value: "Holds the goal", placeholder: false },
+             { key: "done", label: "Done when", value: null, placeholder: true },
+             { key: "hears", label: "Hears", value: ["Take a request"], placeholder: false },
+             { key: "writes", label: "Writes", value: ["Tells Identity"], placeholder: false },
+             { key: "checks", label: "Checks", value: ["Every effect has a verdict."], placeholder: false },
+             { key: "envelope", label: "Limit", value: { share: 0.25 }, placeholder: false },
+             { key: "settings", label: "Settings", value: ["Ladder", "Limit"], placeholder: false }],
+    recipe: [{ id: fn + ".gate", name: "Say whether it may start", by: "code", rung: "C2", rung_name: "Code", mode: "gate", under: null },
+             { id: fn + ".take", name: "Read the words", by: "AI", rung: "C0", rung_name: "Improvised call", mode: "slot", under: "Take a request" },
+             { id: fn + ".ask", name: "Ask the owner", by: "person", rung: "P", rung_name: "Person", mode: "slot", under: "Take a request" }],
+    journeys: FN_JOURNEYS[fn].map(([id, jn], i) => ({ id, name: jn, built: i === 4 ? "later" : "built",
+      status: i === 0 ? "done" : (i === 1 ? "waiting" : (i === 4 ? "later" : "not run yet")),
+      last: i < 2 ? { summary: jn + " moved", at: AT, action: "x" } : null })),
+    node: { name, state: "quiet", word: "quiet", line: "" }, j2: {} };
+}
+test("M1.7: each function's pane opens on its page: line, fields, recipe, journeys with status and last move, version 1", async () => {
+  const c = await opened({ map: rtMap(), fnpage: fnPageOf });
+  for (const fn of ["identity", "adaptation", "priority", "coordination", "audit"]){
+    const name = fn.charAt(0).toUpperCase() + fn.slice(1);
+    const html = await fnCard(c, fn);
+    assert.ok(new RegExp("<div class=\"o2vh\"><b>" + name + "</b>").test(html), fn + ": the first tab keeps its name");
+    assert.ok(html.indexOf("<h3>The function</h3><div class=\"dpbig\">" + name + "&#39;s one line") >= 0 || html.indexOf("<h3>The function</h3><div class=\"dpbig\">" + name + "'s one line") >= 0, fn + " line");
+    assert.ok(html.indexOf("<h3>The Product build template</h3>") >= 0, fn + " template");
+    assert.ok(/<div class="dpk">Done when<\/div><div class="o2quiet dpq">not set yet<\/div>/.test(html), fn + ": a placeholder is one quiet line");
+    assert.ok(/<div class="dpk">Hears<\/div><div class="wbstep"><span class="wbchip">Take a request<\/span>/.test(html), fn + " hears");
+    assert.ok(/<div class="dpk">Limit<\/div><div class="dpbar"><i style="width:25%"><\/i><\/div>/.test(html), fn + ": the limit is a bar");
+    assert.ok(/<div class="wbrec"><span class="wbchip on">Code<\/span><span>Say whether it may start<\/span><span class="wbrung"/.test(html), fn + ": a step by code, on its rung");
+    assert.ok(/<details class="wbrecg wb"><summary>Take a request<\/summary><div class="wbrec"><span class="wbchip">AI<\/span><span>Read the words<\/span>/.test(html), fn + ": the AI inside, grouped by what it hears");
+    assert.ok(/<span class="wbchip">Person<\/span><span>Ask the owner<\/span>/.test(html), fn + ": a person");
+    FN_JOURNEYS[fn].forEach(([id, jn], i) => {
+      const row = new RegExp('<div class="dprow wbjrn"><span class="dpdot[^"]*"></span><span><span class="wbjid">' + id + '</span>' + jn.replace(/[?]/g, "\\?") + ' <span class="wbchip">([^<]+)</span>(<div class="dpchk">([^<]*)</div>)?').exec(html);
+      assert.ok(row, fn + " journey " + id);
+      assert.strictEqual(row[1], i === 0 ? "done" : (i === 1 ? "waiting" : (i === 4 ? "later" : "not run yet")), id + " status");
+      if (i < 2) assert.ok(/ moved · \d\d:\d\d$/.test(row[3]), id + " last move and its time: " + row[3]);
+    });
+    assert.ok(html.indexOf("<h3>Version 1</h3><div class=\"dpfline\">" + name + "&#39;s version 1") >= 0 || html.indexOf("<h3>Version 1</h3><div class=\"dpfline\">" + name + "'s version 1") >= 0, fn + " version 1");
+    const t = words(html);
+    assert.ok(!/charter/i.test(t) && !/internal system/i.test(t), fn + ": no charter, no internal system");
+    assert.ok(!/\/api\/|\.json|\.md\b|\/Users\//.test(t), fn + ": no path");
+  }
+  assert.deepStrictEqual(readsOf(c, /\/functions\//).sort(), ["identity", "adaptation", "priority", "coordination", "audit"].map(f => "/api/native/r3/functions/" + f).sort(),
+    "each page read once, from its own route");
+  /* a department of the first build keeps its card as it was */
+  const old = await opened();
+  const oh = await fnCard(old, "priority");
+  assert.ok(!/<h3>The function<\/h3>|wbjrn/.test(oh) && readsOf(old, /\/functions\//).length === 0);
+});
 test("V2 root: Root's Map is its departments as boxes, each with a state dot and its line of work as a strip, and a way to a new one", async () => {
   const rm = rtMap(); rm.kind = "root"; rm.root = "r3"; rm.live = false;
   const c = await v2({ map: rm, chat: ROOT_CHAT });

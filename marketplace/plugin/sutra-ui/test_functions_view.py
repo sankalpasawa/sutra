@@ -351,7 +351,7 @@ def test_f7_every_node_carries_its_last_act_and_spend(mods):
     W, R, J, F = mods
     got = F.functions(REF)
     nodes = {n["name"]: n for n in got["functions"]}
-    assert nodes["Priority"]["last"]["what"] == "granted an envelope to each engine"
+    assert nodes["Priority"]["last"]["what"] == "gave each engine its limit", "the record's words, in the owner's"
     assert 0 <= nodes["Priority"]["spend"]["share"] <= 1 and nodes["Priority"]["spend"]["calls_limit"] > 0
     assert "what Adaptation did" in got["not_recorded"]
 
@@ -441,3 +441,81 @@ def test_m14_the_sheets_words_set_up_a_runtime_department_with_its_five_function
     assert len(kids) == 1 and kids[0]["runtime"] == 2, kids
     got = F.functions(kids[0]["ref"])
     assert [n["name"] for n in got["functions"]] == FUNCS
+
+
+# ---- M1.7: each function as its site page holds it ------------------------------------------------------------------
+JOURNEYS = {"identity": ["FI1", "FI2", "FI3", "FI4"], "adaptation": ["FA1", "FA2", "FA3", "FA4", "FA5"], "priority": ["FP1", "FP2"],
+            "coordination": ["FC1", "FC2"], "audit": ["FAU1"]}
+
+
+def test_m17_every_function_has_its_page_fields_recipe_journeys_and_version_one(mods):
+    W, R, J, F = mods
+    for fn, ids in JOURNEYS.items():
+        p = F.function(REF, fn)
+        assert p["name"] == fn.capitalize() and p["line"] and p["v1"] and p["holds"] and p["hands_to"]
+        assert [f["key"] for f in p["fields"]] == ["goal", "done", "hears", "writes", "checks", "envelope", "settings"]
+        done = next(f for f in p["fields"] if f["key"] == "done")
+        assert done["placeholder"] is True and done["value"] is None, "a placeholder the screen shows as 'not set yet'"
+        assert p["template"]["name"], fn
+        assert p["recipe"] and all(s["by"] in ("code", "AI", "person") and s["rung"] in ("P", "C0", "C1", "C2") for s in p["recipe"])
+        assert [j["id"] for j in p["journeys"]] == ids
+        assert all(j["status"] for j in p["journeys"]) and p["node"]["name"] == fn.capitalize()
+    later = {j["id"]: j["status"] for j in F.function(REF, "adaptation")["journeys"]}
+    assert later["FA4"] == "later" and later["FA5"] == "later" and later["FA2"] == "not built yet" and later["FA1"] == "not run yet"
+    with pytest.raises(ValueError):
+        F.function(REF, "marketing")
+
+
+def test_m17_each_journey_shows_its_live_status_and_last_move_from_the_record(mods):
+    W, R, J, F = mods
+    _cycle(W, "running", 6)
+    J.note(REF, 1, "Identity", "Adaptation", "identity.assessed", "complete", "The identity is good enough to start on.", "a1")
+    J.note(REF, 4, "Adaptation", "Identity", "conflict.raised", "waiting", "The bargain did not close.", "c1")
+    J.note(REF, 2, "Adaptation", "Priority", "proposal.created", "pending", "Proposed the workflow Plan -> Write.", "p1")
+    J.note(REF, 3, "Priority", "Adaptation", "proposal.countered", "waiting", "Keep Plan only: the room is one engine.", "k1")
+    J.note(REF, 6, "Priority", "Write", "envelope.held", "held", "Write is past its envelope.", "h1")
+    J.note(REF, 6, "Coordination", "Write", "slot.assigned", "assigned", "Write has the next turn.", "s1")
+    J.note(REF, 7, "Audit", "Identity", "audit.finding_filed", "recorded", "Audit read Live site v1 and found nothing to put right.", "f1")
+    _thread(W, R, "Owner", "Identity", "request", "request", tid="x-o")
+    R._append(REF, "board.jsonl", {"n": 99, "src": "Coordination", "dst": ["Identity"], "msg_type": "inform", "thread": "x-l", "hop": 0,
+                                   "about": None, "payload": {"word": "lost", "words": "a page for the doctors"}, "at": W.now()})
+    R._append(REF, "steps.jsonl", {"id": "s-g", "engine": "Identity", "step": "identity.gate", "mode": "gate", "answer": "admit",
+                                   "status": "ok", "started": W.now(), "ended": W.now()})
+    want = {"identity": {"FI1": "done", "FI2": "heard", "FI3": "let through", "FI4": "waiting"},
+            "adaptation": {"FA1": "waiting"}, "priority": {"FP1": "held", "FP2": "waiting"},
+            "coordination": {"FC1": "running", "FC2": "told Identity"}, "audit": {"FAU1": "done"}}
+    for fn, rows in want.items():
+        got = {j["id"]: j for j in F.function(REF, fn)["journeys"]}
+        for jid, status in rows.items():
+            assert got[jid]["status"] == status, (fn, jid, got[jid])
+            assert got[jid]["last"] and got[jid]["last"]["summary"] and got[jid]["last"]["at"], (fn, jid)
+    fp2 = {j["id"]: j for j in F.function(REF, "priority")["journeys"]}["FP2"]
+    assert fp2["last"]["summary"] == "Keep Plan only: the room is one engine."
+    j2 = F.function(REF, "priority")["j2"]
+    assert [b["said"] for b in j2["bargains"]] == ["asked for less"], "the owner's words: said yes, asked for less, said no"
+
+
+def test_m17_no_charter_no_internal_system_no_path_and_the_route(mods):
+    W, R, J, F = mods
+    import website_api
+    importlib.reload(website_api)
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    app = FastAPI()
+    app.include_router(website_api.router)
+    c = TestClient(app)
+    for fn in JOURNEYS:
+        got = c.get("/api/native/%s/functions/%s" % (REF, fn))
+        assert got.status_code == 200, fn
+        shown = json.loads(json.dumps(got.json()))
+        def drop_ids(v):                                    # ids are names the screen never prints as words
+            if isinstance(v, dict):
+                return {k: drop_ids(x) for k, x in v.items() if k not in ("id", "action")}
+            return [drop_ids(x) for x in v] if isinstance(v, list) else v
+        text = json.dumps(drop_ids(shown)).lower()
+        assert "charter" not in text and "internal system" not in text, fn
+        assert "/users/" not in text and str(W.ddir(REF)).lower() not in text and ".json" not in text, fn
+        for word in ("granted", "countered", "orders"):
+            assert word not in text, (fn, word)
+    assert c.get("/api/native/%s/functions/marketing" % REF).status_code == 404
+    assert c.get("/api/native/dref-nothing/functions/identity").status_code == 404

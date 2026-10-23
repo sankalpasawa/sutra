@@ -1,4 +1,4 @@
-"""functions_view.py -- the department's five functions, as one read of the record (PRD M1.1, M1.2).
+"""functions_view.py -- the department's five functions, as one read of the record (PRD M1.1, M1.2, M1.7).
 
 The Map, the list column, each function's pane and the All five overview read the five functions here, and only here,
 so they agree with each other and with the record in every state of the J2 cycle. This module is a projection and
@@ -45,6 +45,94 @@ SAYS = {"not_started": "Not started", "not_ready": "Not started", "assessing": "
         "stopped": "Stopped by you", "done": "Goal reached"}
 STEPS = ((1, "Enough to work"), (2, "Propose"), (3, "Price"), (4, "Settle"), (5, "Root's review"), (6, "Run"), (7, "Read"),
          (8, "Next or done"))
+# an act on the board, in the words a person reads (the owner's words: said yes, asked for less, said no)
+ACT_WORDS = {"request": "asks", "agree": "agrees with", "refuse": "refuses", "propose": "proposes to",
+             "accept-proposal": "says yes to", "reject-proposal": "says no to", "inform": "tells", "failure": "says it could not to",
+             "cancel": "lets go of", "not-understood": "did not follow"}
+RUNG_BY = {"C2": "code", "C1": "AI", "C0": "AI", "P": "person"}
+
+
+# ---- the site's function pages: what each function is, as its page says it ------------------------------------------
+# The one line, what it holds, who it hands to, its version 1 scope and its journeys come from the department's site
+# page for each function (PRD section 6). A journey names the ledger actions and the record rows that are its moves, so
+# its live status is read from the record, never written here. built: built, partly built, not built yet, or later.
+PAGES = {
+    "Identity": {
+        "vsm": "VSM S5: identity and policy",
+        "line": "The department's voice and conscience. It hears you, checks that the identity is good enough, gates every "
+                "effect by rule, closes conflicts, and says when the goal is reached.",
+        "holds": "Goal, done-when, rules (go, ask, refuse, always), budget, owner and parent, and each engine's window.",
+        "hands_to": "Adaptation: a request for a line, and the next thing to correct. Coordination: verdicts on gates. "
+                    "You: it is the only function that speaks to you.",
+        "keeps": "Never makes anything; the maker is an engine. Asks only when a rule says ask. Approvals only tighten. "
+                 "Never invents a goal or a rule, and asks one question at a time.",
+        "v1": "Your words become the Brief, one question when the words are thin, the ask before the first publish, and a tell.",
+        "journeys": [("FI1", "Enough to work?", "built", ("identity.assessed", "identity.questioned"), "answered"),
+                     ("FI2", "Words after go-live", "built", (), "owner_words"),
+                     ("FI3", "The gates", "built", (), "identity_gates"),
+                     ("FI4", "Closes a conflict", "built", ("conflict.raised", "identity.ruled"), None)],
+    },
+    "Adaptation": {
+        "vsm": "VSM S4: outside and future",
+        "line": "Decides how the department gets there. It proposes the workflows the goal needs, from the Library, fitted, "
+                "or made fresh, and after each reading it proposes the next round, until the goal holds.",
+        "holds": "Its proposals on the board, the ideas it parked, the ladder of every step, and its rounds.",
+        "hands_to": "Priority: every proposal and every round. Identity: conflicts, and a round Priority said yes to, to file. "
+                    "Root: the line Priority said yes to, for its check.",
+        "keeps": "Senses and proposes; never applies. Every proposal passes Priority first. May leave out an engine its "
+                 "template does not mark required. Engines come from Adaptation, never from Root.",
+        "v1": "Two to five workflows from the Library or shaped for the goal; no loop and no Make module yet.",
+        "journeys": [("FA1", "The first workflows", "partly built",
+                      ("proposal.requested", "proposal.created", "workflow.validated", "workflow.registered", "workflow.blocked"), None),
+                     ("FA2", "Pursue until done", "not built yet", (), None),
+                     ("FA3", "Crystallize a step", "built", (), "ladder_moves"),
+                     ("FA4", "Grow out", "later", (), None),
+                     ("FA5", "Learn", "later", (), None)],
+    },
+    "Priority": {
+        "vsm": "VSM S3: inside and now",
+        "line": "Prices every proposal against the room actually left and holds the budget. It says yes, asks for less, or "
+                "says no. Who goes first is never its call.",
+        "holds": "One limit per engine (calls and money a day) and the bargain threads.",
+        "hands_to": "Adaptation: said yes, asked for less, or said no. Identity: through Adaptation's conflict, when a limit is hit.",
+        "keeps": "Prices and holds the budget; who goes first is Coordination's call. Never starts a run and never says no "
+                 "over method. Never changes the goal or speaks to you.",
+        "v1": "The limit on every start, as built. Nothing else.",
+        "journeys": [("FP1", "The limit on every start", "built", ("envelope.held",), "priority_gates"),
+                     ("FP2", "The bargain with Adaptation", "partly built",
+                      ("proposal.granted", "proposal.countered", "proposal.refused"), None)],
+    },
+    "Coordination": {
+        "vsm": "VSM S2: timetables and standards",
+        "line": "Keeps the timetable: a slot for each engine, who goes first, one run at a time, hand-offs, a chain that "
+                "stops at its limit, and an alarm past a window. It judges nothing about content.",
+        "holds": "Its table: the order, the line and who may post to whom; the run rows and each thread's bounds.",
+        "hands_to": "Identity: alarms, lost requests and verdict asks. Priority: verdict asks.",
+        "keeps": "No model call inside a tick; a missed slot runs once, and each slot runs once. The engine starts itself in "
+                 "its slot. Never changes limits, scope or quality calls.",
+        "v1": "As built.",
+        "journeys": [("FC1", "Who goes first", "built", ("slot.assigned",), "coord_picks"),
+                     ("FC2", "A lost request", "built", (), "lost")],
+    },
+    "Audit": {
+        "vsm": "VSM S3*: sporadic direct inspection",
+        "line": "The second pair of eyes. It reads what the department actually filed, item by item against done-when, "
+                "with code checks first, and it also drops in unannounced. Its findings go to Identity.",
+        "holds": "Its readings and its findings.",
+        "hands_to": "Identity only: readings and findings.",
+        "keeps": "The checker is never the writer; it never touches a workflow or a version. A check is a check, never a "
+                 "score. It reads what the department did, never only its goal.",
+        "v1": "As built: read the live site against the words.",
+        "journeys": [("FAU1", "Read the result", "partly built", ("audit.finding_filed",), "audit_runs")],
+    },
+}
+NOT_RUN = {"built": "not run yet", "partly built": "not run yet", "not built yet": "not built yet", "later": "later"}
+# a ledger row's state, as the word a journey row carries
+LIVE = {"complete": "done", "filed": "done", "recorded": "done", "done": "done", "granted": "said yes", "assigned": "running",
+        "running": "running", "waiting": "waiting", "pending": "waiting", "held": "held", "refused": "said no",
+        "failed": "failed", "run": "done", "drop": "dropped", "ask": "waiting", "stopped": "stopped"}
+
+
 # ---- small readers -------------------------------------------------------------------------------------------------
 def _clean(value):
     """No private key and no path ever leaves this read: a key in the ledger's private set is dropped, and a string
@@ -234,9 +322,9 @@ def _last_act(fn, rs, posts):
     post = next((p for p in reversed(posts) if p.get("src") == fn and R._line(p)), None)
     best = None
     if run:
-        best = {"what": _short(run.get("what")), "at": run.get("ended") or run.get("started")}
+        best = {"what": _short(_plain(run.get("what"))), "at": run.get("ended") or run.get("started")}
     if post and (not best or W._ts(post.get("at") or "") >= W._ts(best["at"] or "")):
-        best = {"what": _short(R._line(post)), "at": post.get("at")}
+        best = {"what": _short(_plain(R._line(post))), "at": post.get("at")}
     return best
 
 
@@ -360,3 +448,187 @@ def _budget(ref, d):
     share = max(calls / cap_c if cap_c else 0.0, usd / cap_u if cap_u else 0.0)
     return {"calls": calls, "usd": round(usd, 3), "calls_limit": cap_c, "usd_limit": round(cap_u, 3), "share": round(min(1.0, share), 3),
             "of": "the goal" if goal else "today's limits"}
+
+
+# ---- M1.7: one function, as its site page holds it -----------------------------------------------------------------
+def _picked(ref, d, fn):
+    try:
+        import function_templates as T
+        tid = T.picked(ref).get(fn.lower()) or (d.get("templates") or {}).get(fn.lower()) or T.default_id(fn.lower())
+        return T.get(tid) or T.get(T.default_id(fn.lower())) or {}
+    except Exception:  # noqa: BLE001 -- no registry: the page reads without a template
+        return {}
+
+
+def _writes(ref, fn):
+    """What a function writes: the acts it may post, and to whom, from Coordination's table."""
+    try:
+        edges = (R.coordination(ref).get("edges") or {}).get(fn) or {}
+    except Exception:  # noqa: BLE001
+        edges = {}
+    out = []
+    for act, dst in sorted(edges.items()):
+        to = ", ".join("you" if x == R.OWNER else x for x in dst)
+        if fn == "Priority" and act == "propose":
+            out.append("Asks %s for less" % to)          # Priority's counter, in the owner's words
+        else:
+            out.append("%s %s" % (_cap(ACT_WORDS.get(act, act)), to))
+    return out
+
+
+# The bargain in the owner's words wherever a definition's name carries the inside word (the screen says said yes, asked
+# for less and said no; never grant, counter or refuse for Priority's answer). Phrases first, then the plain verbs.
+BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priority said yes to, to Root's check"),
+                 ("Take the refusal to Identity", "Take Priority's no to Identity"),
+                 ("Take the counter, or take it to Identity", "Take Priority's ask for less, or take it to Identity"),
+                 ("Grant, refuse or counter", "Say yes, ask for less, or say no"),
+                 ("grants each engine its envelope", "gives each engine its limit"),
+                 ("granted an envelope to each engine", "gave each engine its limit"),
+                 ("Priority granted", "Priority said yes to"), ("Priority refused", "Priority said no to"),
+                 ("Priority countered", "Priority asked for less on"))
+
+
+def _plain(line):
+    line = str(line or "")
+    for inside, said in BARGAIN_WORDS:
+        line = line.replace(inside, said)
+    return line
+
+
+def _settings(fn):
+    names = ["Ladder", "Limit"]
+    if fn == "Identity":
+        names.append("Served from")
+    if fn == "Coordination":
+        names += ["Who goes first", "Who may post to whom"]
+    return names
+
+
+def _recipe(ref, fn):
+    """The function's steps, in order, each run by code, by the AI inside, or by a person, on the rung it has earned."""
+    view = R.steps_view(ref, fn) or {}
+    out = []
+    for s in view.get("steps") or []:
+        out.append({"id": s["id"], "name": _plain(s["name"]), "by": RUNG_BY.get(s["rung"], "AI"), "rung": s["rung"],
+                    "rung_name": s["rung_name"], "mode": s["mode"], "under": _plain(s.get("under")) or None, "held": s.get("held"),
+                    "last": (s.get("last") or {}).get("status")})
+    return out, [_plain(h) for h in view.get("hears") or []]
+
+
+def _journey_rows(ref, fn, events, rows, rs, posts):
+    """Each journey on the function's page, with its live status: its last move on the ledger or the record."""
+    gates = {g["id"]: g["name"] for g in ((R.engine_def(fn) or {}).get("gates") or [])}
+    out = []
+    for jid, name, built, actions, extra in PAGES[fn]["journeys"]:
+        hits = []
+        for e in events:
+            if e.get("action") in actions:
+                hits.append({"action": e["action"], "summary": e.get("summary"), "at": e.get("occurred_at"),
+                             "word": LIVE.get(str(e.get("state")), str(e.get("state") or ""))})
+            elif extra == "answered" and e.get("action") == "ask.answered" and e.get("step") == 1:
+                hits.append({"action": e["action"], "summary": e.get("summary"), "at": e.get("occurred_at"), "word": "done"})
+        if extra == "owner_words":
+            for p in posts:
+                if p.get("src") == R.OWNER and "Identity" in (p.get("dst") or []) and p.get("msg_type") == "request":
+                    hits.append({"action": "board.request", "summary": R._line(p) or "your words reached Identity", "at": p.get("at"),
+                                 "word": "heard"})
+        elif extra in ("identity_gates", "priority_gates"):
+            for r in rows:
+                if r.get("mode") == "gate" and r.get("step") in gates:
+                    word = {"admit": "let through", "wait": "waiting", "refuse": "stopped"}.get(str(r.get("answer")), "decided")
+                    hits.append({"action": "gate", "summary": "%s: %s" % (gates[r["step"]], word), "at": r.get("ended"), "word": word})
+        elif extra == "ladder_moves":
+            for s in (R.ladder(ref) or {}).values():
+                for h in s.get("history") or []:
+                    if h.get("from"):
+                        step = (R.step_def(s.get("step") or "")[1] or {}).get("name") or "a step"
+                        hits.append({"action": "rung.moved", "summary": "%s: %s to %s" % (step, R.RUNG_NAME.get(h["from"], h["from"]),
+                                                                                         R.RUNG_NAME.get(h["to"], h["to"])),
+                                     "at": h.get("at"), "word": "moved"})
+        elif extra == "coord_picks" and not hits:
+            for r in rows:
+                if r.get("step") == "coord.pick" and r.get("answer"):
+                    hits.append({"action": "coord.pick", "summary": "%s had the next turn" % r["answer"], "at": r.get("ended"), "word": "done"})
+        elif extra == "lost":
+            for p in posts:
+                if p.get("src") == "Coordination" and (p.get("payload") or {}).get("word") == "lost":
+                    hits.append({"action": "board.lost", "summary": R._line(p) or "a request was lost at its bound", "at": p.get("at"),
+                                 "word": "told Identity"})
+        elif extra == "audit_runs" and not hits:
+            for r in rs:
+                if r.get("engine") == "Audit" and r.get("status") != "running":
+                    hits.append({"action": "run", "summary": r.get("what"), "at": r.get("ended") or r.get("started"),
+                                 "word": "done" if r.get("status") == "ok" else str(r.get("status"))})
+        hits.sort(key=lambda h: W._ts(h.get("at") or ""))
+        last = hits[-1] if hits else None
+        out.append({"id": jid, "name": name, "built": built,
+                    "status": last["word"] if last else NOT_RUN.get(built, "not run yet"),
+                    "last": last and {"summary": _short(last.get("summary")), "at": last.get("at"), "action": last.get("action")}})
+    return out
+
+
+def _j2_part(ref, d, fn, events, ak):
+    """What J2 adds to this function's pane, from the record as it stands (later milestones fill more of it)."""
+    if fn == "Identity":
+        return {"standard": {"met": not J._identity_gaps(d), "missing": J._identity_gaps(d)},
+                "goal": d.get("goal"), "done": d.get("done"),
+                "rules": [{"tag": r.get("tag"), "line": r.get("line")} for r in d.get("rules") or [] if r.get("line")],
+                "conflicts": [{"summary": e.get("summary"), "at": e.get("occurred_at"), "action": e.get("action")}
+                              for e in events if e.get("action") in ("conflict.raised", "identity.ruled")][-6:]}
+    if fn == "Adaptation":
+        prop = next((e for e in reversed(events) if e.get("action") == "proposal.created"), None)
+        return {"proposal": prop and {"workflow": (prop.get("payload") or {}).get("workflow") or [],
+                                      "source": (prop.get("payload") or {}).get("source"), "at": prop.get("occurred_at")},
+                "root_checks": [{"summary": e.get("summary"), "at": e.get("occurred_at"), "passed": e.get("action") == "workflow.validated"}
+                                for e in events if e.get("action") in ("workflow.validated", "workflow.blocked")][-4:],
+                "rounds": []}
+    if fn == "Priority":
+        said = {"proposal.granted": "said yes", "proposal.countered": "asked for less", "proposal.refused": "said no"}
+        return {"bargains": [{"said": said[e["action"]], "summary": e.get("summary"), "at": e.get("occurred_at")}
+                             for e in events if e.get("action") in said][-6:],
+                "envelopes": [dict(_spend(ref, d, n), engine=n) for n in [x[0] for x in W.engines_of(d)] + list(FUNCS)]}
+    if fn == "Coordination":
+        t = R.coordination(ref)
+        return {"line": list(t.get("line") or []), "timetable": None,
+                "holds": [{"summary": e.get("summary"), "at": e.get("occurred_at")} for e in events if e.get("action") == "envelope.held"][-4:],
+                "alarms": [{"text": a.get("text"), "at": a.get("created")} for a in ak if a.get("kind") == "alarm" and a.get("status") == "pending"]}
+    return {"readings": [{"summary": e.get("summary"), "at": e.get("occurred_at")} for e in events if e.get("action") == "audit.finding_filed"][-6:],
+            "findings": [{"text": a.get("text"), "at": a.get("created")} for a in ak if a.get("kind") == "finding" and a.get("status") == "pending"],
+            "spot_checks": []}
+
+
+def function(ref, fn):
+    """One function as its site page holds it: its line, the template's fields, its recipe, its journeys with their live
+    status, its version 1 scope, and what J2 adds; with its node from functions(). None for a department not on the
+    engine runtime; ValueError for a name that is not one of the five."""
+    name = _cap(str(fn or "").lower())
+    if name not in FUNCS:
+        raise ValueError("no function named %s" % fn)
+    d = W.dept(ref)
+    if not d or d.get("runtime") != 2:
+        return None
+    all5 = functions(ref) or {}
+    node = next((n for n in all5.get("functions") or [] if n["name"] == name), None)
+    cur = _cycle_state(ref)
+    events = _events(ref, cur.get("cycle_id")) if cur.get("cycle_id") else []
+    rows, rs, posts, ak = _rows(ref), W.runs(ref), R.board(ref), W.asks(ref)
+    t = _picked(ref, d, name)
+    recipe, hears = _recipe(ref, name)
+    e = R.engine_def(name) or {}
+    page = PAGES[name]
+    spend = _spend(ref, d, name)
+    fields = [{"key": "goal", "label": "Goal", "value": _cap(_plain(e.get("description")))},
+              {"key": "done", "label": "Done when", "value": None},
+              {"key": "hears", "label": "Hears", "value": hears or None},
+              {"key": "writes", "label": "Writes", "value": _writes(ref, name) or None},
+              {"key": "checks", "label": "Checks", "value": list(t.get("checks") or []) or None},
+              {"key": "envelope", "label": "Limit", "value": {"share": spend["share"]}},
+              {"key": "settings", "label": "Settings", "value": _settings(name)}]
+    for f in fields:
+        f["placeholder"] = f["value"] in (None, "", [])
+    return _clean({"ref": ref, "fn": name.lower(), "name": name, "vsm": page["vsm"], "line": page["line"],
+                   "holds": page["holds"], "hands_to": page["hands_to"], "keeps": page["keeps"], "v1": page["v1"],
+                   "template": {"id": t.get("id"), "name": t.get("name") or "Default", "use_case": t.get("use_case")},
+                   "fields": fields, "recipe": recipe,
+                   "journeys": _journey_rows(ref, name, _events(ref), rows, rs, posts),
+                   "node": node, "cycle": all5.get("cycle"), "j2": _j2_part(ref, d, name, events, ak)})
