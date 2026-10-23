@@ -1182,7 +1182,12 @@ def run_engine(ref, name, inp, slot):
             kept = {i: _finished(ref, slot, s, it, before) for i, it in enumerate(items)}
             todo = [i for i in kept if kept[i] is None]
             if any(v is not None for v in kept.values()):
-                ctx["how"].setdefault(s["id"], "kept from before the app closed")
+                # a kept step keeps how it was answered, as its finished row says: a judge the model read before the app
+                # closed is still a reading (M0.3; found 2026-10-23: a department waited at step 7 on a version the model read)
+                was = [items[i] for i in kept if kept[i] is not None]
+                by = next((r.get("by") for r in reversed(before) if r.get("slot") == slot and r.get("step") == s["id"]
+                           and r.get("item") in was and r.get("status") == "ok" and r.get("mode") != "gate" and r.get("by")), None)
+                ctx["how"].setdefault(s["id"], by or "kept from before the app closed")
 
             import threading
             counted, guard = [0], threading.Lock()
@@ -2295,6 +2300,23 @@ def _children(root_ref):
     return [d for d in W.list_depts() if d.get("parent") == root_ref]
 
 
+#: the words of a bare yes or no: what the person says beyond them is an answer in words, not a stamp
+ASSENT = {"yes", "ok", "okay", "sure", "stamp", "approve", "approved", "go", "ahead", "do", "it", "please", "thanks", "thank",
+          "you", "no", "refuse", "reject", "rejected"}
+
+
+def _stampable(a):
+    """An ask a yes or a no in the chat decides: pending and not escalated. Identity's question takes words, never a
+    stamp (M0.6), so it is never the ask a yes picks (found 2026-10-23: 'yes, a site for my bakery' failed Root's run)."""
+    return a["status"] == "pending" and not a.get("escalated") and a.get("kind") != "j2_identity"
+
+
+def _question_of(dref):
+    """Identity's open question on a department, as its cycle keeps it ({id, text, why, missing}), or None."""
+    J = _j2()
+    return J.open_question(dref) if J else None
+
+
 def _named(children, words):
     low = words.lower()
     for c in children:
@@ -2322,11 +2344,16 @@ def identity_route(ctx, step, item):
     # a question of Sutra's is open: the next words answer it, whatever departments this Root already has
     open_q = _j1_enabled() and (_j1_record(ref) or {}).get("status") == "waiting"
     if open_q and wants in ("stamp", "refuse") and not any(
-            a["status"] == "pending" and not a.get("escalated") for r in [ref] + [c["ref"] for c in kids] for a in W.asks(r)):
+            _stampable(a) for r in [ref] + [c["ref"] for c in kids] for a in W.asks(r)):
         wants = "words"                              # "yes, free" answers Sutra's question when no stamp is waiting
     answering = open_q and wants == "words" and target is None
     if target is None and wants != "setup" and len(kids) == 1 and not answering:
         target = kids[0]
+    # Identity's question is open on the department the words are for: a yes, ok or no that says more is the answer, in
+    # words (M0.5; the department's Chat box sends here with its chip); a bare yes still looks for an ask to stamp
+    if wants in ("stamp", "refuse") and target and _question_of(target["ref"]) and any(
+            w not in ASSENT for w in re.findall(r"[a-z0-9']+", words.lower())):
+        wants = "words"
     if target is None and wants == "words" and (not kids or answering):
         wants = "setup"                              # a Root with no department yet: the first words are for one
     said = words
@@ -2358,8 +2385,9 @@ def identity_hand(ctx, step, item):
                                                 "v": row["v"]}, thread=th)
         return {"said": "filed a request for a department: " + words, "filed": row["v"]}
     if wants in ("stamp", "refuse"):
-        for tref in ([target] if target else [c["ref"] for c in _children(ref)]) + [ref]:
-            pend = [x for x in W.asks(tref) if x["status"] == "pending" and not x.get("escalated")]
+        kids = [target] if target else [c["ref"] for c in _children(ref)]
+        for tref in kids + [ref]:
+            pend = [x for x in W.asks(tref) if _stampable(x)]
             a = pend[-1] if pend else None             # the latest ask: the one the person just saw
             if a:
                 W.decide_ask(tref, a["id"], wants == "stamp")
@@ -2367,6 +2395,13 @@ def identity_hand(ctx, step, item):
                 post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "%s: %s" % ("stamped" if wants == "stamp" else "refused", a["text"]),
                                                         "dept": tref, "from": dn}, thread=th, about={"dept": tref, "name": dn})
                 return {"said": "%s the ask on %s" % ("stamped" if wants == "stamp" else "refused", dn)}
+        # nothing to stamp, and Identity's question is open: the person hears the question again, and that it takes words
+        qref, q = next(((k, q) for k, q in ((k, _question_of(k)) for k in kids) if q), (None, None))
+        if q:
+            dn = (W.dept(qref) or {}).get("name")
+            post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "Nothing is waiting for a stamp. %s asks you: %s Answer it in your own words."
+                                                    % (dn, q["text"]), "dept": qref, "from": dn}, thread=th, about={"dept": qref, "name": dn})
+            return {"said": "nothing waits for a stamp; %s's question takes words" % dn}
         post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "nothing is waiting for a stamp"}, thread=th)
         return {"said": "nothing waits for a stamp"}
     if wants in ("stop", "start"):
