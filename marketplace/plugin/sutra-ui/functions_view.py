@@ -1,4 +1,4 @@
-"""functions_view.py -- the department's five functions, as one read of the record (PRD M1.1).
+"""functions_view.py -- the department's five functions, as one read of the record (PRD M1.1, M1.2).
 
 The Map, the list column, each function's pane and the All five overview read the five functions here, and only here,
 so they agree with each other and with the record in every state of the J2 cycle. This module is a projection and
@@ -338,7 +338,7 @@ def functions(ref):
              "running": [r["engine"] for r in work_running],
              "ceiling": ((d.get("envelopes") or {}).get("_goal") or None), "round": cur.get("round")}
     return _clean({"ref": ref, "name": d.get("name"), "kind": d.get("kind"), "stopped": bool(d.get("stopped")),
-                   "functions": nodes, "cycle": cycle,
+                   "functions": nodes, "cycle": cycle, "speaks": pairs, "made": mades,
                    "budget": _budget(ref, d), "not_recorded": nr})
 
 

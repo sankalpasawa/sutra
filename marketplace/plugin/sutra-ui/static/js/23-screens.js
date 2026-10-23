@@ -167,7 +167,7 @@ function wb2RootHtml(n, m){
     const dm = st.map[d.ref];
     if (!dm) wbLoadMap(d.ref);
     const cls = !dm ? "" : (wb2Asks(dm).length ? "ask" : (wb2Running(dm).length ? "run" : (dm.stopped ? "off" : "ok")));
-    const strip = dm ? (dm.artifacts || []).map(a => `<i class="${a.versions ? "on" : ""}${wb2Running(dm).indexOf(wbMakerOf(a.name)) >= 0 ? " run" : ""}" title="${wbEsc(a.name)}"></i>`).join("") : "";
+    const strip = dm ? (dm.artifacts || []).map(a => `<i class="${a.versions ? "on" : ""}${wb2Running(dm).indexOf(wbMakerByLine(dm, a.name)) >= 0 ? " run" : ""}" title="${wbEsc(a.name)}"></i>`).join("") : "";
     return `<button type="button" class="wb2dept wb" data-wb2go="${wbEsc(d.ref)}"><b><span class="dpdot ${wb2DotCls(cls)}"></span>${wbEsc(d.name)}</b><span class="wb2spark">${strip}</span></button>`;
   };
   const more = `<button type="button" class="wb2dept wb2new wb" data-wbtab="chat"><b>A new department</b><span class="dpchk">say what it is for, in Chat</span></button>`;

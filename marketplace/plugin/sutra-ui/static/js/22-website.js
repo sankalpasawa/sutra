@@ -42,7 +42,8 @@ const WB_ACTS = { "request": "asks", "agree": "agrees", "refuse": "refuses", "pr
 function wbS(){
   if (!S.wb) S.wb = { refs: null, refsBusy: false, refsMissed: {}, map: {}, sig: {}, tab: {}, pane: {}, sel: {}, draft: {},
                       busy: {}, err: {}, engine: {}, art: {}, trace: {}, steps: {}, board: {}, chat: {}, chatSig: {},
-                      fnchat: {}, fnchatSig: {}, chip: {}, thread: {}, turns: {}, scroll: {}, found: null, timer: null, born: {} };
+                      fnchat: {}, fnchatSig: {}, chip: {}, thread: {}, turns: {}, scroll: {}, found: null, timer: null, born: {},
+                      fv: {}, fvSig: {} };
   return S.wb;
 }
 function wbRt(m){ return !!(m && m.runtime === 2); }
@@ -154,6 +155,36 @@ async function wbLoadMap(ref, force){
   }
   delete st.busy["map:" + ref];
 }
+/* ── the five functions, as one read of the record (functions_view.py) ──────
+   The Map, the list column's function rows, each function's pane and the All
+   five overview read the five here and nowhere else, so they agree with each
+   other and with the record (PRD M1.1). A department not on the engine
+   runtime has no such read: it is never asked. A read that failed keeps
+   what was on the screen, or says so once. */
+function wbFv(ref){
+  const st = wbS(), m = st.map[ref];
+  if (!ref || !wbRt(m)) return null;
+  if (!st.fv[ref]) wbLoadFv(ref);
+  return st.fv[ref] || null;
+}
+async function wbLoadFv(ref, again){
+  const st = wbS();
+  if (!ref || st.busy["fv:" + ref] || (st.fv[ref] && !again)) return;
+  st.busy["fv:" + ref] = true;
+  try {
+    const v = await apiGet(wbUrl(ref, "functions"));
+    const sig = JSON.stringify(v), moved = sig !== st.fvSig[ref];
+    st.fv[ref] = v; st.fvSig[ref] = sig;
+    delete st.busy["fv:" + ref];
+    if (moved && (!again || !wbTyping())) dpRender();
+  } catch (e) {
+    if (!st.fv[ref]) st.fv[ref] = { failed: true };
+    delete st.busy["fv:" + ref];
+    if (!again) dpRender();
+  }
+}
+/* one artifact as the record says it: who made each version, who reads it (M1.2) */
+function wbMadeOf(fv, name){ return ((fv && fv.made) || []).filter(x => x.art === name)[0] || null; }
 function wbTyping(){
   const a = document.activeElement;
   return !!(a && a.closest && a.closest(".wb") && /^(INPUT|TEXTAREA)$/.test(a.tagName));
@@ -492,6 +523,7 @@ function wbAgain(ref){
   if (st.board[ref]) wbLoadBoard(ref, true);
   if (st.chat[ref]) wbLoadChat(ref, true);
   Object.keys(st.fnchat).forEach(k => { if (k.indexOf(ref + ":") === 0) wbLoadFnChat(ref, k.slice(ref.length + 1), true); });
+  if (st.fv[ref]) wbLoadFv(ref, true);
 }
 function wbRungHtml(s){
   const at = WB_RUNGS.map(r => r[0]).indexOf(s.rung);
@@ -851,9 +883,10 @@ function wbArtHtml(n){
       dpKV("Checks", (t.checks || []).join(", "), "None") + dpKV("Written by", (t.written_by || []).join(", "), "Nobody") +
       dpKV("Counts", t.counts_after === "stamp" ? "After your stamp" : "When filed", "") +
       dpKV("Runs on a new one", (t.operations || []).join(", "), "Nothing") + `</div>`) : "";
+    const [by, readers] = wbWhoMade(n.ref, a.name, cur);
     return tabs + dpCard("The work item", `<div class="dpengines">` +
-      dpKV("Made by", cur.run === "owner" ? "The owner" : (wbMakerOf(a.name)), "Not named") +
-      dpKV("Read by", wbReaderOf(a.name), "Nobody yet") +
+      dpKV("Made by", by, "Not recorded") +
+      dpKV("Read by", readers, "Nobody yet") +
       dpCell("Check", `<div class="dpbig">${wbDot(chk(cur))} ${cur.check && cur.check.ok ? "Passed" : "Failed"}</div>`) + `</div>` +
       ((cur.check && cur.check.notes) || []).map(x => dpRunRow(x, "", chk(cur))).join("")) + tpl;
   }
@@ -881,8 +914,20 @@ function wbArtHtml(n){
     `<a class="o2more" href="${wbEsc(src)}" target="_blank" rel="noopener">Open</a></div>` +
     `<iframe class="wbframe" sandbox="" src="${wbEsc(src)}" title="${wbEsc(a.name)}"></iframe></div>`;
 }
-function wbMakerOf(name){ return ({ "Site plan": "Plan", "Pages": "Write", "Build": "Check", "Live site": "Publish" })[name] || ""; }
-function wbReaderOf(name){ return ({ "Brief": "Plan", "Site plan": "Write", "Pages": "Check", "Build": "Publish" })[name] || ""; }
+/* Who made a version and who reads the work, from the record (PRD M1.2): on the engine runtime the functions read says
+   it (runs.json for the maker, each engine's reads in the definitions and born templates for the readers); a department
+   of the first build reads its own engines' reads and writes off its map. Nothing here is a table of names. */
+function wbWhoMade(ref, name, cur){
+  const m = wbS().map[ref] || {}, fv = wbFv(ref), mk = wbMadeOf(fv, name);
+  if (cur && cur.run === "owner") return ["The owner", wbReadersOf(m, mk, name)];
+  const by = mk ? ((mk.by_v || {})[String(cur && cur.v)] || "") : (wbMakerByLine(m, name) || "");
+  return [by === "Owner" ? "The owner" : by, wbReadersOf(m, mk, name)];
+}
+function wbMakerByLine(m, name){ return ((m.engines || []).filter(e => e.writes === name)[0] || {}).name || ""; }
+function wbReadersOf(m, mk, name){
+  const names = mk ? (mk.readers || []) : (m.engines || []).filter(e => e.reads === name).map(e => e.name);
+  return names.join(", ");
+}
 
 /* ── the five systems' own state, under the function cards ────────────────── */
 function wbFnExtra(tab, m){

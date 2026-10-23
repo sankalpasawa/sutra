@@ -354,3 +354,75 @@ def test_f7_every_node_carries_its_last_act_and_spend(mods):
     assert nodes["Priority"]["last"]["what"] == "granted an envelope to each engine"
     assert 0 <= nodes["Priority"]["spend"]["share"] <= 1 and nodes["Priority"]["spend"]["calls_limit"] > 0
     assert "what Adaptation did" in got["not_recorded"]
+
+
+# ---- M1.2: speaks-to and made-by from the record ---------------------------------------------------------------------
+WEBSITE = "Build a website that teaches algebra to Class 8 students"
+ORGANIC = "Set up a laboratory system to track chemical inventory for our school science team"
+
+
+@pytest.fixture
+def born(mods, monkeypatch):
+    """A department as a person makes one: found the organisation, say the words, Root sets it up (test_j2.py's way)."""
+    monkeypatch.setenv("J1_FLOW_V1", "1")
+    W, R, J, F = mods
+    import founding
+    import org2_apply
+    import placement_engine as E
+    for m in (E, org2_apply, founding):
+        importlib.reload(m)
+    if not E.active_roots(E.load_domains()):
+        E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
+
+    def make(words, org):
+        root = founding.found_structure(org, owner="Sankalp")["root"]
+        W.owner_ask(root, words)
+        W.run_until_idle(root, limit=300)
+        child = next(d for d in W.list_depts() if d.get("parent") == root)
+        W.run_until_idle(child["ref"], limit=300)
+        return child["ref"]
+    return make
+
+
+def test_m12_website_plan_made_the_site_plan_and_write_reads_it(mods, born):
+    W, R, J, F = mods
+    ref = born(WEBSITE, "Acme Learning")
+    got = F.functions(ref)
+    made = {m["art"]: m for m in got["made"]}
+    assert made["Site plan"]["by"] == "Plan" and "Write" in made["Site plan"]["readers"]
+    assert made["Pages"]["by"] == "Write" and made["Pages"]["readers"] == ["Check"]
+    assert made["Brief"]["by"] == "Owner" and made["Brief"]["readers"] == ["Plan"], "the Brief is the owner's own words"
+    assert "Audit" in made["Live site"]["readers"], "a function's reads count too"
+    pairs = {(p["from"], p["to"]): p["n"] for p in got["speaks"]}
+    assert pairs.get(("Owner", "Identity"), 0) >= 1, "the owner spoke to Identity"
+    assert any(src == "Identity" and dst == "Owner" for src, dst in pairs), "and Identity back to the owner"
+    assert any(src == "Adaptation" and dst == "Priority" for src, dst in pairs), "the bargain is a pair"
+    nodes = {n["name"]: n for n in got["functions"]}
+    assert any(s["to"] == "Priority" for s in nodes["Adaptation"]["speaks_to"])
+    assert not [x for x in got["not_recorded"] if x.startswith("who made")], got["not_recorded"]
+
+
+def test_m12_an_organic_department_with_shaped_engines_needs_no_map(mods, born):
+    W, R, J, F = mods
+    ref = born(ORGANIC, "Lab Co")
+    d = W.dept(ref)
+    assert d["kind"] == "organic" and d["engines"], "shaped engines on the record"
+    got = F.functions(ref)
+    made = {m["art"]: m for m in got["made"]}
+    defs = R.defs()["engines"]
+    for name in d["engines"]:
+        e = defs[name]
+        if W.versions(ref, e["writes"]):
+            assert made[e["writes"]]["by"] == name, (name, made[e["writes"]])
+        readers = [n for n in d["engines"] if defs[n].get("reads") == e["writes"]]
+        assert all(r in made[e["writes"]]["readers"] for r in readers), (e["writes"], readers)
+    first = d["engines"][0]
+    assert first in made[defs[first]["reads"]]["readers"]
+
+
+def test_m12_a_version_whose_maker_is_not_on_the_record_is_named_not_recorded(mods):
+    W, R, J, F = mods
+    W.add_version(REF, "Site plan", {"site-plan.json": "{}"}, [{"art": "Brief", "v": 1}], "r-gone", {"ok": True, "notes": []})
+    got = F.functions(REF)
+    made = {m["art"]: m for m in got["made"]}
+    assert made["Site plan"]["by"] is None and "who made Site plan v1" in got["not_recorded"]

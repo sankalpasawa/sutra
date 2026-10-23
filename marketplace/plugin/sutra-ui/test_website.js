@@ -199,6 +199,36 @@ const CHAT = { root: "r2", about: "r3", departments: [{ ref: "r3", name: DEPT, s
   turns: ROOT_CHAT.turns.filter(t => t.dept).map(t => Object.assign({}, t, { dept: "r3" })),
   asks: [Object.assign({}, ROOT_CHAT.asks[0], { ref: "r3" })] };
 
+/* What the five functions' read answers (functions_view.py: functions): the five nodes in canonical order, the cycle in
+   the owner's words with its eight steps, who spoke to whom, what was made and who reads it, and what is not recorded. */
+const FV_NAMES = ["Identity", "Adaptation", "Priority", "Coordination", "Audit"];
+const FV_WORDS = { working: "working", waiting: "waiting", waiting_on_you: "waits on you", fault: "fault", quiet: "quiet" };
+const FV_STEPS = ["Enough to work", "Propose", "Price", "Settle", "Root's review", "Run", "Read", "Next or done"];
+function fvOf(o){
+  o = o || {};
+  const states = o.states || {}, lines = o.lines || {};
+  const step = (o.cycle && o.cycle.step) || 6;
+  return {
+    ref: "r3", name: DEPT, kind: "website", stopped: !!o.stopped,
+    functions: FV_NAMES.map(n => {
+      const s = states[n] || "quiet";
+      return { id: "fn:" + n.toLowerCase(), fn: n.toLowerCase(), name: n, state: s, word: FV_WORDS[s],
+        waits_on: s === "waiting_on_you" ? "you" : (s === "waiting" ? ((o.waits || {})[n] || "Priority") : null),
+        line: lines[n] !== undefined ? lines[n] : (s === "working" ? "working" : (s === "waiting" ? "waits on " + ((o.waits || {})[n] || "Priority") : "")),
+        why: s === "fault" ? (lines[n] || "a step failed its check") : null,
+        last: (o.last || {})[n] === undefined ? { what: "did its part", at: AT } : o.last[n],
+        spend: { calls: 3, usd: 0.4, calls_limit: 30, usd_limit: 6, share: (o.share || {})[n] === undefined ? 0.1 : o.share[n] },
+        speaks_to: (o.speaksTo || {})[n] || [], made: [] };
+    }),
+    cycle: Object.assign({ state: "running", step: step, journey: "J2.f", says: "The work is running",
+      steps: FV_STEPS.map((name, i) => ({ step: i + 1, name, state: i + 1 < step ? (i === 3 ? "skipped" : "done") : (i + 1 === step ? "now" : "next"),
+                                          last: i + 1 <= step ? { summary: name + " happened", at: AT } : null })),
+      needs_you: false, asks: 0, running: [], ceiling: null, round: null }, o.cycle || {}),
+    speaks: o.speaks || [], made: o.made || [],
+    budget: { calls: 30, usd: 1.2, calls_limit: 120, usd_limit: 60, share: o.budget === undefined ? 0.25 : o.budget, of: "today's limits" },
+    not_recorded: o.not_recorded || [] };
+}
+
 function fresh(opts){
   opts = opts || {};
   const calls = { apiGet: [], apiPost: [], render: 0 };
@@ -217,6 +247,9 @@ function fresh(opts){
       if (/\/api\/native\/r3\/board$/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(opts.board || BOARD)));
       if (/\/api\/native\/r3\/chat\?fn=/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(opts.fnchat || FNCHAT)));
       if (/\/api\/native\/r3\/chat$/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(opts.chat || CHAT)));
+      /* the five functions' read (functions_view.py), when the test gives one; a function's own page likewise */
+      if (/\/api\/native\/r3\/functions$/.test(p) && opts.fv) return typeof opts.fv === "function" ? opts.fv() : Promise.resolve(JSON.parse(JSON.stringify(opts.fv)));
+      if (/\/api\/native\/r3\/functions\//.test(p) && opts.fnpage) return Promise.resolve(JSON.parse(JSON.stringify(opts.fnpage(decodeURIComponent(p.split("/functions/")[1])))));
       if (/\/api\/native\/r3\/engine\//.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(Object.assign({ runs: [] }, map.engines[1]))));
       if (/\/artifact\//.test(p)) return Promise.resolve({ name: "Live site", slug: "live-site",
         template: { id: "artifact/live-site", name: "Live site", kind: "site", files: ["index.html", "*.html"], checks: ["has_index_html"],
@@ -732,6 +765,31 @@ test("W24: a filed artifact shows its template: what it holds, its checks, who w
   assert.ok(/index\.html, \*\.html/.test(html) && /has_index_html/.test(html) && /Publish/.test(html), "holds, checks, written by");
   assert.ok(/After your stamp/.test(html), "when it counts");
   assert.ok(/Adaptation, Audit/.test(html), "its operations: the engines that run on a new one");
+});
+
+test("M1.2: who made a version and who reads it come from the record, never a table of names", async () => {
+  assert.ok(!/wbMakerOf|wbReaderOf/.test(wbSrc + sxSrc), "the hard-coded maps are gone");
+  const fv = fvOf({ made: [{ art: "Live site", slug: "live-site", v: 2, by: "Launch", makers: ["Launch"], by_v: { "1": "Launch", "2": "Launch" },
+                              readers: ["Audit", "Adaptation"] }] });
+  const c = await opened({ map: rtMap(), fv });
+  click(c, { wbart: "live-site", wbpane: "item" });
+  for (let k = 0; k < 3; k++){ view(c); await sleep(); await sleep(); }
+  const html = view(c);
+  assert.ok(/<div class="dpk">Made by<\/div><div class="dpbig">Launch<\/div>/.test(html), "the maker the run row names");
+  assert.ok(/<div class="dpk">Read by<\/div><div class="dpbig">Audit, Adaptation<\/div>/.test(html), "the readers the definitions name");
+  assert.deepStrictEqual(readsOf(c, /\/functions$/), ["/api/native/r3/functions"], "read once, from the functions read");
+  /* a department of the first build has no functions read: its own engines' reads and writes, off its map */
+  const old = await opened();
+  click(old, { wbart: "live-site", wbpane: "item" });
+  for (let k = 0; k < 3; k++){ view(old); await sleep(); await sleep(); }
+  const oh = view(old);
+  assert.ok(/<div class="dpk">Made by<\/div><div class="dpbig">Publish<\/div>/.test(oh) && /<div class="dpk">Read by<\/div><div class="o2quiet dpq">Nobody yet<\/div>/.test(oh), "the line on its map");
+  assert.deepStrictEqual(readsOf(old, /\/functions$/), [], "never asked");
+  /* a maker the record does not hold is said so, never guessed */
+  const c2 = await opened({ map: rtMap(), fv: fvOf({ made: [{ art: "Live site", slug: "live-site", v: 2, by: null, makers: [], by_v: {}, readers: [] }] }) });
+  click(c2, { wbart: "live-site", wbpane: "item" });
+  for (let k = 0; k < 3; k++){ view(c2); await sleep(); await sleep(); }
+  assert.ok(/<div class="dpk">Made by<\/div><div class="o2quiet dpq">Not recorded<\/div>/.test(view(c2)));
 });
 
 /* W25 (founder, 2026-09-28: "I don't see artifacts in the library"): every artifact a
