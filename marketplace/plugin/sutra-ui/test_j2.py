@@ -623,6 +623,73 @@ def test_m0_6_the_chat_carries_identitys_question_and_keeps_its_answer(j2, monke
     assert [a["id"] for a in R.chat_view(W.dept(ref)["root"])["answered"]] == [q[0]["id"]]
 
 
+def _copies(view, q, words):
+    """What a chat says of Identity's question beside its card: lines that say the question again, and the owner's
+    turns that say the answer again."""
+    turns = view["turns"]
+    return ([t["line"] for t in turns if t["src"] != "Owner" and ("nothing to build from" in t["line"] or q["text"] in t["line"])],
+            [t["line"] for t in turns if t["src"] == "Owner" and t["line"] == words])
+
+
+def test_m0_6_the_chat_says_identitys_question_once_on_its_card_and_the_answer_once_under_it(j2, monkeypatch):
+    """Identity's line about the question standing above its card, or the answer kept under the card and said again as
+    a turn of its own (the chat said each twice), must fail: on the department's chat and on Root's, whether the answer
+    came from the card's box, from the department's Chat box (through Root), or in a department with no Root. The board
+    keeps both posts; only the chat leaves them to the card."""
+    W, R, J, _ = j2
+    _thin(monkeypatch, R)
+    d, _ = W.create("dref-alone", "Alone Website", None, kind="website")       # a department with no Root
+    d["events"] = [{"kind": "j2_ready", "route": "template"}]
+    W.save_dept(d["ref"], d)
+    J.start(d["ref"])
+    W.give_goal(d["ref"], "a website")
+    W.run_until_idle(d["ref"], limit=300)
+    for how, ref in (("card", _born(j2, "a website", "Bakery Co")), ("chat", _born(j2, "a website", "Bakery Two")), ("alone", d["ref"])):
+        root = W.dept(ref).get("root")
+        views = lambda: [R.chat_view(ref)] + ([R.chat_view(root)] if root else [])
+        q = J.status(ref)["open_question"]
+        for view in views():
+            assert [a["id"] for a in view["asks"] if a["kind"] == "j2_identity"] == [q["id"]], how
+            assert _copies(view, q, BAKERY) == ([], []), how
+        if how == "card":
+            J.answer(ref, BAKERY)                                      # the card's Send: /j2/answer
+        elif how == "chat":
+            W.owner_ask(root, BAKERY, about=ref)                       # the department's Chat box: to Root, carrying it
+            W.run_until_idle(root, limit=300)
+        else:
+            W.owner_ask(ref, BAKERY)
+        W.run_until_idle(ref, limit=300)
+        assert next(e for e in J.events(ref) if e["action"] == "proposal.requested")["step"] == 2, how
+        for view in views():
+            assert [(a["id"], a["answered"]) for a in view["answered"]] == [(q["id"], BAKERY)], how
+            assert _copies(view, q, BAKERY) == ([], []), how
+        assert [s for s in _said(R, ref) if "nothing to build from" in s], how          # the board keeps what was said
+        boards = [ref] + ([root] if root else [])
+        assert [p for b in boards for p in R.board(b) if p["src"] == "Owner" and (p["payload"] or {}).get("words") == BAKERY], how
+
+
+def test_m0_6_a_question_on_a_gap_in_the_identity_is_said_once_on_its_card(j2):
+    """A gap in the identity asked as a card and again as Identity's line beside it must fail; the card keeps the
+    answer, and the next question is its own card."""
+    W, R, J, _ = j2
+    d, _ = W.create("dref-gap2", "Finance highlights", "Publish verified finance news", kind="website")
+    d.update({"goal": "", "done": "", "events": [{"kind": "j2_ready", "route": "template"}],
+              "rules": [{"id": "r1", "tag": "go", "line": "Work inside the record"}]})
+    W.save_dept(d["ref"], d)
+    ref = d["ref"]
+    J.start(ref)
+    goal = "Publish five verified finance highlights each morning"
+    asked = J.status(ref)["open_question"]
+    assert asked["text"] in _said(R, ref)                                # on the record
+    lines = lambda: [t["line"] for t in R.chat_view(ref)["turns"]]
+    assert asked["text"] not in lines()
+    J.answer(ref, goal)
+    after = R.chat_view(ref)
+    assert [a["answered"] for a in after["answered"]] == [goal]
+    assert [a["text"] for a in after["asks"] if a["kind"] == "j2_identity"] == ["What evidence will prove this department is done?"]
+    assert not [x for x in lines() if x in (asked["text"], goal, "What evidence will prove this department is done?")]
+
+
 def _failed(W, ref):
     return [r for r in W.runs(ref) if r.get("status") == "failed"]
 

@@ -1875,8 +1875,9 @@ function qChat(o){
   o = o || {};
   return { root: "r2", about: "r3", departments: [{ ref: "r3", name: DEPT, stopped: false }], turns: [
       { n: 1, src: "Owner", dst: ["Identity"], msg_type: "request", at: "2026-10-23T10:19:00+05:30", thread: "x-1", word: "request", line: "a website", dept: "r3", name: DEPT },
-      { n: 2, src: "Identity", dst: ["Owner"], msg_type: "inform", at: QAT, thread: "x-1", word: "question", dept: "r3", name: DEPT,
-        line: "Say what the site is for and about whom or what, and I will start: your words name nothing to build from yet." }],
+      /* the chat read leaves Identity's line about the question to the card (engine_runtime._on_card); the next turn is later */
+      { n: 3, src: "Identity", dst: ["Owner"], msg_type: "inform", at: "2026-10-23T10:21:00+05:30", thread: "x-2", word: "request", dept: "r3", name: DEPT,
+        line: "Filed in the Brief." }],
     asks: o.answered ? [] : [Object.assign({}, QUESTION)].concat(o.publish ? [Object.assign({}, CHAT.asks[0])] : []),
     answered: o.answered ? [Object.assign({}, QUESTION, { status: "stamped", answered: o.answered, decided: "2026-10-23T10:26:00+05:30" })] : [] };
 }
@@ -1897,7 +1898,9 @@ test("W47: a waiting department shows Identity's question as a card in Chat, wit
   assert.ok(/data-wbanswer="a-j2-1" data-wbref="r3">Send</.test(html), "Send answers where the question lives");
   assert.ok(!/data-wbdecide="a-j2-1"/.test(html), "a question that takes words is never stamped");
   assert.ok(/data-wbdecide="a-1"/.test(html), "the other asks keep their stamp");
-  assert.ok(html.indexOf("your words name nothing to build from yet.") < html.indexOf('class="dpask wbq wb"'), "the card stands after Identity's line about it");
+  assert.ok(html.indexOf(">a website<") < html.indexOf('class="dpask wbq wb"'), "the card stands after the words it asks about");
+  assert.ok(html.indexOf('class="dpask wbq wb"') < html.indexOf("Filed in the Brief."), "and before what was said after it was asked");
+  assert.strictEqual(html.split("What is the site for, and about whom or what?").length, 2, "the question is said once, on its card");
   assert.ok(html.indexOf('class="dpask wbq wb"') < html.indexOf('id="wbd-ask"'), "and above the chat's own box");
   const t = words(html);
   assert.ok(!/\d/.test(t), "a number at rest: " + (t.match(/.{0,30}\d.{0,30}/) || [""])[0]);
@@ -1935,6 +1938,7 @@ test("W47: Send posts {text}, says Sending... while it goes, and the answered ca
   assert.ok(/data-wbanswer="a-j2-9" data-wbref="r3"/.test(onRoot), "and answers there, not on Root");
   const back = await chatOpen({ answered: "Initials only" });
   assert.ok(/<div class="dpk">Identity asked<\/div>[^]*?You: Initials only · \d\d:\d\d/.test(view(back)), "an answer on the record keeps its card, read again from the chat");
+  assert.strictEqual(view(back).split("Initials only").length, 2, "the answer is said once, under its card");
 });
 
 test("W47: EMPTY_ANSWER shows its snack and the words stay; Cmd+Enter sends", async () => {

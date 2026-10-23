@@ -356,7 +356,8 @@ def _ask_gap(ref, dept, cur):
                      "cycle_id": cur["cycle_id"], "missing": gaps[0], "answer": "words"})
     note(ref, 1, "Identity", "User", "identity.questioned", "waiting", question, "identity-question-" + aid, {"missing": gaps})
     try:
-        R.post(ref, "Identity", R.OWNER, "inform", {"word": "question", "done": question})
+        # the line names its card: the chat shows the card, which says the question once (M0.6)
+        R.post(ref, "Identity", R.OWNER, "inform", {"word": "question", "done": question, "card": aid})
     except Exception:  # noqa: BLE001 -- the ask is on the record whether or not the chat carries it
         pass
     return _move(ref, "waiting", step=1, open_ask=aid)
@@ -389,9 +390,10 @@ def start(ref):
     return begin(ref)
 
 
-def answer(ref, text, ask_id=None):
+def answer(ref, text, ask_id=None, at=None):
     """The owner's words for Identity's open question: written to the identity, and the standard is read again (J2.1:
-    one question at a time, until it is met). Returns the cycle's state."""
+    one question at a time, until it is met). `at` is where the owner said them in the chat ({board, n}), when they came
+    that way; the card keeps them under it, and the chat does not say them again. Returns the cycle's state."""
     text = " ".join(str(text or "").split())[:2000]
     if not text:
         raise J2Error("EMPTY_ANSWER")
@@ -411,7 +413,12 @@ def answer(ref, text, ask_id=None):
             # the first words named nothing to build from (M0.5): the answer is the owner's words to Identity, on the board,
             # and Identity reads them as the first words, against the same standard; the identity itself is not edited here
             _took(ref, ask, text)
-            R.request(ref, text)
+            _, row = R.request(ref, text)
+            if row:
+                # the words on the board carry the answer, and the card keeps it: the chat leaves that post to the card
+                # (found by a verifier 2026-10-23: the answer stood under the card and again as a turn of its own)
+                ask["words_at"] = {"board": ref, "n": row["n"]}
+                W._put_ask(ref, ask)
             return _state(ref)
         if missing == "goal":
             dept["goal"] = text
@@ -423,6 +430,8 @@ def answer(ref, text, ask_id=None):
         dept["identity_revision"] = int(dept.get("identity_revision") or 1) + 1
         W.save_dept(ref, dept)
         ask.update({"status": "stamped", "decided": W.now(), "by": "the owner", "answered": text})
+        if at:
+            ask["words_at"] = at
         W._put_ask(ref, ask)
         note(ref, 1, "User", "Identity", "ask.answered", "complete", "The owner answered: %s" % text[:200], "answer-" + aid,
              {"missing": missing})
@@ -430,10 +439,12 @@ def answer(ref, text, ask_id=None):
         return _ask_gap(ref, W.dept(ref), cur) or cur
 
 
-def _took(ref, ask, text, by="the owner"):
+def _took(ref, ask, text, by="the owner", at=None):
     """Close Identity's question with the owner's words: the ask is answered once, and the ledger says so once,
-    whichever way the words came (the answer box, or the chat)."""
+    whichever way the words came (the answer box, or the chat; `at` is where they were said there)."""
     ask.update({"status": "stamped", "decided": W.now(), "by": by, "answered": text})
+    if at:
+        ask["words_at"] = at
     W._put_ask(ref, ask)
     note(ref, 1, "User", "Identity", "ask.answered", "complete", "The owner answered: %s" % text[:200], "answer-" + ask["id"],
          {"missing": ask.get("missing")})
@@ -465,16 +476,16 @@ def answered_question(ref):
     return {"id": a["id"], "text": a.get("text"), "answer": a.get("answered"), "at": a.get("decided")}
 
 
-def took_words(ref, words):
+def took_words(ref, words, at=None):
     """The owner's words reached Identity in the chat while its question on thin words is open: they answer it (M0.5).
-    Returns True when they did."""
+    `at` is the owner's post that said them ({board, n}), which the card keeps. Returns True when they did."""
     with W._lock(ref):
         cur = _state(ref)
         ask = next((a for a in W.asks(ref) if cur and a["id"] == cur.get("open_ask") and a.get("kind") == "j2_identity"
                     and a.get("missing") == "words" and a["status"] == "pending"), None)
         if not ask:
             return False
-        _took(ref, ask, " ".join(str(words or "").split())[:2000])
+        _took(ref, ask, " ".join(str(words or "").split())[:2000], at=at)
         return True
 
 
