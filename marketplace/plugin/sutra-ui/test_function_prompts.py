@@ -12,6 +12,8 @@ Named claims:
   M2.2c  replacing the bundle keeps the change: the department's copy wins, a part only the new bundle has is the
          bundle's, and the shipped words again take the department's copy away
   M2.2d  the ask's covering check: words that cannot serve the function are refused at the ask, and again at the stamp
+  M2.2e  a file no run reads (Adaptation's decide: the code makes that choice in this version) is kept as the owner's
+         note on the stamp, and the ask, the tell and the row all say so, never that the next run uses it
 
 No test reaches a model, the live records home or the network: the prompts are rendered, or sent to a model that is a
 function and answers offline, so every step runs its draft.
@@ -302,8 +304,9 @@ class TestTheOwnersChange(Fixture):
         self.assertFalse(row["as_shipped"])
         self.assertIsNone(row["waits"])
         self.assertEqual(row["text"], mine)
-        self.assertTrue(any("Identity's take now reads as you changed it" in str(p["payload"].get("done")) for p in R.board(REF)),
+        self.assertTrue(any("Identity's take now reads as you changed it; the next run uses it." == str(p["payload"].get("done")) for p in R.board(REF)),
                         "Identity says it is in place")
+        self.assertTrue(row["read"], "a run reads take")
         self.M.prompts.clear()
         W.owner_ask(REF, "Which page lists the doctors?")
         W.run_until_idle(REF, limit=200)
@@ -390,6 +393,33 @@ class TestTheOwnersChange(Fixture):
         W.run_until_idle(REF, limit=200)
         self.assertFalse(R._own(REF, "identity", "take").exists())
         self.assertTrue(any("was not put in place: take has no part enough" in str(p["payload"].get("done")) for p in R.board(REF)))
+
+    def test_m2_2e_a_file_no_run_reads_is_kept_as_the_owners_note_and_the_owner_is_told_so(self):
+        R, W = self.R, self.W
+        import inspect
+        # which files a run reads: every one but Adaptation's decide, which holds no part and which no call reads
+        for fn, files in PAGES.items():
+            for f in files:
+                self.assertEqual(self.row(fn, f)["read"], (fn, f) != ("adaptation", "decide"), (fn, f))
+        self.assertEqual(R.INSTRUCTIONS["adaptation"]["decide"], {})
+        self.assertNotIn('_prompt("adaptation", "decide"', inspect.getsource(R))
+        decide = R._instruction("adaptation", "decide")
+        mine = decide + "\nPrefer a checklist to code when both would serve.\n"
+        r = self.change("adaptation", "decide", mine)
+        self.assertEqual(r.status_code, 200, r.text)
+        a = r.json()["ask"]
+        asked = [p for p in R.board(REF) if p["thread"] == a["thread"]]
+        self.assertEqual(len(asked), 1)
+        self.assertEqual(asked[0]["payload"]["objective"], "Change Adaptation's decide instructions to your words? In this version the code "
+                         "makes this choice, so no run reads these words yet: stamp to keep them as your note; Refuse to keep them as they are.")
+        W.decide_ask(REF, a["id"], True)
+        W.run_until_idle(REF, limit=200)
+        self.assertEqual(R._own(REF, "adaptation", "decide").read_text(encoding="utf-8"), mine.rstrip("\n") + "\n", "kept as the owner wrote it")
+        told = [str(p["payload"]["done"]) for p in R.board(REF) if p["payload"].get("word") == "instructions" and p["payload"].get("done")]
+        self.assertEqual(told, ["Adaptation's decide now reads as you changed it, kept as your note; in this version the code makes this "
+                                "choice, so no run reads it yet."], "the owner is told the truth")
+        row = self.row("adaptation", "decide")
+        self.assertEqual((row["as_shipped"], row["read"], row["waits"]), (False, False, None))
 
 
 if __name__ == "__main__":
