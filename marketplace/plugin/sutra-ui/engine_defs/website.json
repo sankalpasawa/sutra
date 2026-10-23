@@ -388,6 +388,21 @@
        "only_if": "identity.recognise.journey=task"
       },
       {
+       "id": "identity.enough",
+       "name": "Read the identity against the standard",
+       "nature": "check",
+       "born": "C0",
+       "ceiling": "C1",
+       "only_if": "identity.read.assess",
+       "prompt": "identity_enough",
+       "draft": "identity_enough_draft",
+       "out": {
+        "enough": "bool",
+        "missing": "list"
+       },
+       "check": "enough_is_shaped"
+      },
+      {
        "id": "identity.answer",
        "name": "Answer from the record",
        "nature": "make",

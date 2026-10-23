@@ -413,6 +413,12 @@ def answer(ref, text, ask_id=None):
             _took(ref, ask, text)
             R.request(ref, text)
             return _state(ref)
+        if ask.get("standard"):
+            # Identity's standard was not met (M3.3): the answer is the owner's words to Identity, which reads them against
+            # the standard again and asks again or starts; nothing is written to the identity here
+            _took(ref, ask, text)
+            R.request(ref, text, answers=ask["id"])
+            return _state(ref)
         if missing == "goal":
             dept["goal"] = text
         elif missing == "done-when":
@@ -440,15 +446,54 @@ def _took(ref, ask, text, by="the owner"):
 
 
 def open_question(ref):
-    """Identity's open question to the owner, as every screen shows it: {id, text, why, missing, asked}, or None. A
-    stopped department keeps its question; the answer is used on Start."""
+    """Identity's open question to the owner, as every screen shows it: {id, text, why, missing, asked, standard,
+    points}, or None. A question on Identity's standard (M3.3) says so, with the points it asks about, and takes
+    'just do it'. A stopped department keeps its question; the answer is used on Start."""
     cur = _state(ref) if enabled() else None
     if not cur or not cur.get("open_ask"):
         return None
     ask = next((a for a in W.asks(ref) if a["id"] == cur["open_ask"] and a.get("kind") == "j2_identity" and a["status"] == "pending"), None)
     if not ask:
         return None
-    return {"id": ask["id"], "text": ask.get("text"), "why": ask.get("why"), "missing": ask.get("missing"), "asked": ask.get("created")}
+    return {"id": ask["id"], "text": ask.get("text"), "why": ask.get("why"), "missing": ask.get("missing"), "asked": ask.get("created"),
+            "standard": bool(ask.get("standard")), "points": list(ask.get("points") or [])}
+
+
+def standard_question(ref):
+    """Identity's open question on its standard, as the ask holds it, or None (M3.3)."""
+    cur = _state(ref) if enabled() else None
+    if not cur or not cur.get("open_ask"):
+        return None
+    return next((a for a in W.asks(ref) if a["id"] == cur["open_ask"] and a.get("kind") == "j2_identity" and a.get("standard")
+                 and a["status"] == "pending"), None)
+
+
+def asked(ref, question, missing, why, key):
+    """Identity's standard is not met (J2.a, PRD M3.3): its one question to the owner is a real ask that takes words, in
+    the chat or through /j2/answer, and nothing starts until the standard is met or the owner says 'just do it'. One
+    open question at a time, with no cap on how many are asked in turn."""
+    with W._lock(ref):
+        cur = _state(ref)
+        if not cur or not cur.get("cycle_id"):
+            return None
+        ask = standard_question(ref)
+        if ask is None:
+            ask = W._put_ask(ref, {"id": "a-j2-" + uuid.uuid4().hex[:8], "kind": "j2_identity", "text": str(question), "why": str(why or ""),
+                                   "status": "pending", "created": W.now(), "cycle_id": cur["cycle_id"], "missing": (missing or ["goal"])[0],
+                                   "points": list(missing or []), "standard": True, "answer": "words"})
+        note(ref, 1, "Identity", "User", "identity.questioned", "waiting", str(question), "identity-question-" + str(key),
+             {"missing": list(missing or []), "why": str(why or ""), "standard": True})
+        return _move(ref, "waiting", step=1, open_ask=ask["id"])
+
+
+def took(ref, aid, words):
+    """Close Identity's question `aid` with the owner's words, said in the chat (M3.3). Returns the ask, closed now or
+    before; None for no such question of Identity's."""
+    with W._lock(ref):
+        ask = next((a for a in W.asks(ref) if a["id"] == aid and a.get("kind") == "j2_identity"), None)
+        if ask and ask["status"] == "pending":
+            _took(ref, ask, " ".join(str(words or "").split())[:2000])
+        return ask
 
 
 def answered_question(ref):

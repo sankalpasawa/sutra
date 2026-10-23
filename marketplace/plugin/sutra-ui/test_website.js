@@ -81,6 +81,9 @@
          Send posts {text} to the department's /j2/answer, reads Sending...
          while it goes, a refused answer is a snack and the words stay, and
          the answered card keeps 'You: ...' (PRD-FIVE-FUNCTIONS M0.6, S6)
+     W48 a question on Identity's standard offers Just do it, which sends
+         'just do it' to the same answer box; a question on thin words offers
+         none (PRD M3.3, S6)
 
    Harness: test_dept.js's fresh(), with 22-website.js loaded after 20-dept.js
    (panel.html's order). Run: node test_website.js */
@@ -1877,7 +1880,7 @@ function qChat(o){
       { n: 1, src: "Owner", dst: ["Identity"], msg_type: "request", at: "2026-10-23T10:19:00+05:30", thread: "x-1", word: "request", line: "a website", dept: "r3", name: DEPT },
       { n: 2, src: "Identity", dst: ["Owner"], msg_type: "inform", at: QAT, thread: "x-1", word: "question", dept: "r3", name: DEPT,
         line: "Say what the site is for and about whom or what, and I will start: your words name nothing to build from yet." }],
-    asks: o.answered ? [] : [Object.assign({}, QUESTION)].concat(o.publish ? [Object.assign({}, CHAT.asks[0])] : []),
+    asks: o.answered ? [] : [Object.assign({}, QUESTION, o.standard ? { standard: true, points: ["goal"] } : {})].concat(o.publish ? [Object.assign({}, CHAT.asks[0])] : []),
     answered: o.answered ? [Object.assign({}, QUESTION, { status: "stamped", answered: o.answered, decided: "2026-10-23T10:26:00+05:30" })] : [] };
 }
 async function chatOpen(o){
@@ -1955,6 +1958,23 @@ test("W47: EMPTY_ANSWER shows its snack and the words stay; Cmd+Enter sends", as
   const plain = Object.assign({}, key, { metaKey: false });
   (c.document.listeners.keydown || []).forEach(fn => fn(plain)); await sleep();
   assert.strictEqual(c.calls.apiPost.length, 3, "Enter alone is a new line, not a send");
+});
+
+/* ── W48: 'Just do it' on a question of Identity's standard (PRD M3.3, screen S6) ── */
+test("W48: a question on Identity's standard offers Just do it, which sends 'just do it'; thin words offer none", async () => {
+  const c = await chatOpen();
+  assert.ok(!/data-wbjust=/.test(view(c)), "a question on thin words has no Just do it: nothing was said to build from");
+  const std = Object.assign({}, QUESTION, { text: "Who are the site's visitors?", why: "The goal names no one the site is for.", missing: "goal",
+                                           points: ["goal"], standard: true });
+  const html = c.wbQuestionHtml(std, "r3", false);
+  assert.ok(/data-wbanswer="a-j2-1" data-wbref="r3">Send<\/button><button type="button" class="btn wb" data-wbjust="a-j2-1" data-wbref="r3">Just do it<\/button>/.test(html),
+            "Just do it stands after Send");
+  const s = await chatOpen({ standard: true });
+  assert.ok(/data-wbjust="a-j2-1"/.test(view(s)), "the card in Chat offers it");
+  typeAnswer(s, "half a thought");
+  assert.ok(click(s, { wbjust: "a-j2-1", wbref: "r3" })); await sleep(); await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(s.calls.apiPost)), [{ p: "/api/dept/r3/j2/answer", body: { text: "just do it" } }],
+                         "one answer, 'just do it', where the question lives");
 });
 
 Promise.all(pending).then(() => {

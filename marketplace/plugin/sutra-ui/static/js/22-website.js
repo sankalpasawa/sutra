@@ -736,8 +736,9 @@ function wbChatTurn(t, scoped){
     `<span class="dpchk">${wbEsc(WB_ACTS[t.msg_type] || t.msg_type)} · ${wbEsc(wbWhen(t.at))}</span></div></div>`;
 }
 /* Identity's question (S6, M0.6): a card in the chat that takes words, never a stamp. Its Send answers where the
-   question lives (/api/dept/{ref}/j2/answer); answered, the card goes quiet and keeps the answer under it. Options and
-   'Just do it' come with the questions that offer them (M3); a question on thin words has neither. */
+   question lives (/api/dept/{ref}/j2/answer); answered, the card goes quiet and keeps the answer under it. A question
+   on Identity's standard (M3.3) also offers 'Just do it', which ends the questions on the kind's defaults; a question
+   on thin words has no such way, since nothing was said to build from. */
 const WB_ANSWER_SAYS = { EMPTY_ANSWER: "Write your answer first, then Send.", NO_OPEN_QUESTION: "That question is no longer open.",
                          ALREADY_HANDLED: "That question is already answered." };
 function wbQuestionHtml(q, ref, named){
@@ -751,7 +752,8 @@ function wbQuestionHtml(q, ref, named){
     (q.why ? `<div class="dpaskd">${wbEsc(q.why)}</div>` : "") +
     `<div class="wbbox wb"><textarea id="wbd-q-${wbEsc(q.id)}" data-wbdraft="${wbEsc(k)}" data-wbqid="${wbEsc(q.id)}" data-wbqref="${wbEsc(at)}" rows="2" ` +
     `placeholder="Type your answer...">${wbEsc(st.draft[k] || "")}</textarea>` +
-    wbBtn(busy ? "Sending..." : "Send", `data-wbanswer="${wbEsc(q.id)}" data-wbref="${wbEsc(at)}"${busy ? " disabled" : ""}`, "dpstamp") + `</div></div>`;
+    wbBtn(busy ? "Sending..." : "Send", `data-wbanswer="${wbEsc(q.id)}" data-wbref="${wbEsc(at)}"${busy ? " disabled" : ""}`, "dpstamp") +
+    (q.standard ? wbBtn("Just do it", `data-wbjust="${wbEsc(q.id)}" data-wbref="${wbEsc(at)}"${busy ? " disabled" : ""}`) : "") + `</div></div>`;
 }
 /* The open questions and the answered ones, each at its time among the turns: a card goes before the first turn said
    after it was asked, so Identity's own line about the question stands above its card. */
@@ -759,15 +761,15 @@ function wbQuestions(c){
   const open = (c.asks || []).filter(a => a.kind === "j2_identity");
   return open.concat(c.answered || []).sort((a, b) => String(a.created || "") < String(b.created || "") ? -1 : 1);
 }
-async function wbAnswer(ref, id, at){
-  const st = wbS(), k = at + ":q:" + id, text = st.draft[k] || "";
+async function wbAnswer(ref, id, at, said){
+  const st = wbS(), k = at + ":q:" + id, text = said !== undefined ? said : (st.draft[k] || "");
   if (st.busy["q:" + k]) return;
   st.busy["q:" + k] = true;
   dpRender();
   try {
     await apiPost(dpUrl(at, "j2/answer"), { text: text });
     st.said[k] = { text: text.split(/\s+/).filter(Boolean).join(" "), at: new Date().toISOString() };
-    delete st.draft[k];
+    if (said === undefined) delete st.draft[k];
   } catch (e) {
     /* the typed words stay in the box; the snack says why in a person's words */
     const code = (/"code":\s*"([A-Z_]+)"/.exec(String((e && e.message) || "")) || [])[1];
@@ -1387,7 +1389,7 @@ if (typeof document !== "undefined" && document.addEventListener){
   const WB_SEL = "[data-wbtab],[data-wbengine],[data-wbart],[data-wbpane],[data-wbdecide],[data-wbstop],[data-wbresume]," +
     "[data-wbgoal],[data-wbask],[data-wbputback],[data-wbfn],[data-wbfound],[data-wbhold],[data-wbenv]," +
     "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost],[data-wbopen],[data-wblive],[data-wbopenart],[data-wbsay],[data-wbins],[data-wbfvretry]," +
-    "[data-wbanswer]";
+    "[data-wbanswer],[data-wbjust]";
   /* capture phase: a click on one of 20-dept.js's own rows hands the viewer
      back to it BEFORE that file's handler paints */
   document.addEventListener("click", (ev) => {
@@ -1468,6 +1470,7 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (ds.wbfvretry !== undefined){ delete st.fv[ref]; wbLoadFv(ref); dpRender(); return; }
     if (ds.wbdecide !== undefined){ wbPost(ref, "asks/" + encodeURIComponent(ds.wbdecide), { approve: ds.wbok === "1" }, null, ds.wbref || ref); return; }
     if (ds.wbanswer !== undefined){ wbAnswer(ref, ds.wbanswer, ds.wbref || ref); return; }
+    if (ds.wbjust !== undefined){ wbAnswer(ref, ds.wbjust, ds.wbref || ref, "just do it"); return; }
     if (ds.wbstop !== undefined){ wbPost(ref, "stop"); return; }
     if (ds.wbresume !== undefined){ wbPost(ref, "resume"); return; }
     if (ds.wbgoal !== undefined){ const k = ref + ":goal"; wbPost(ref, "goal", { text: st.draft[k] || "" }, k); return; }

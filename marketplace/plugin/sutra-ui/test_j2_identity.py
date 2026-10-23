@@ -229,3 +229,156 @@ def test_m3_2_every_department_on_the_runtime_holds_its_items(j2):
     assert W.dept("dref-items")["done_items"] == [{"id": "D1", "text": W.KINDS["website"]["done"], "how": "code", "level": "outcome"}]
     assert W.done_items([{"text": " "}, {"text": "A", "how": "Code", "level": "TARGET"}], "website") == \
         [{"id": "D1", "text": "A", "how": "code", "level": "target"}]
+
+
+# ---- M3.3 ------------------------------------------------------------------------------------------------------------
+WHO = "Who are the site's visitors?"
+FAMILIES = "families in Pune who order birthday cakes"
+
+
+def _work(W, ref):
+    return [r["engine"] for r in W.runs(ref) if not r.get("system")]
+
+
+def _reader(reads, met="families"):
+    """Identity's standard as an AI reads it: the goal names whom the site is for only once the words say families."""
+    def enough(prompt):
+        reads.append(prompt)
+        if met in prompt.split("THE OWNER'S WORDS: ", 1)[1].split("WHAT ROOT ASKED", 1)[0].lower():
+            return {"enough": True, "missing": [], "question": "", "why": "the goal names the bakery and whom it is for"}
+        return {"enough": False, "missing": ["goal"], "question": WHO, "why": "the goal names no one the site is for"}
+    return enough
+
+
+def test_m3_3_words_the_standard_finds_thin_get_a_question_and_the_answer_is_read_again(j2, monkeypatch):
+    """A department that starts on words its standard finds thin, or an answer taken without reading the standard again,
+    must fail."""
+    W, R, J, _, _ = j2
+    reads = []
+    _model(monkeypatch, R, {"identity.enough": _reader(reads)})
+    ref = _born(j2)
+    q = J.status(ref)["open_question"]
+    assert (q["text"], q["standard"], q["points"], q["missing"]) == (WHO, True, ["goal"], "goal")
+    assert q["why"] == "the goal names no one the site is for"
+    assert len(reads) == 1 and BAKERY in reads[0] and "Identity's standard" in reads[0]     # read from its completeness file
+    assert "proposal.requested" not in _actions(J, ref) and _work(W, ref) == []
+    assert J.status(ref)["state"] == "waiting" and J.holding(ref)
+    assert WHO in _said(R, ref)
+
+    W.owner_ask(ref, FAMILIES)                                               # said in the chat: it answers the question
+    W.run_until_idle(ref, limit=300)
+    assert len(reads) == 2 and FAMILIES in reads[1] and BAKERY in reads[1]   # read again, the first words with it
+    ask = next(a for a in W.asks(ref) if a["id"] == q["id"])
+    assert (ask["status"], ask["answered"]) == ("stamped", FAMILIES)
+    assert _actions(J, ref).count("ask.answered") == 1
+    requested = next(e for e in J.events(ref) if e["action"] == "proposal.requested")
+    assert requested["step"] == 2 and J.status(ref)["open_question"] is None
+    assert FAMILIES in W.read_files(ref, "Brief", W.latest(ref, "Brief")["v"])["brief.md"]
+    assert "Thank you. The identity is clear now; the department starts." in _said(R, ref)
+
+
+def test_m3_3_still_too_little_is_asked_again_through_the_answer_box(j2, monkeypatch):
+    """FI1.1: an answer that still leaves the standard unmet, taken as met, must fail."""
+    W, R, J, _, _ = j2
+    reads = []
+    _model(monkeypatch, R, {"identity.enough": _reader(reads)})
+    ref = _born(j2)
+    first = J.status(ref)["open_question"]["id"]
+    client = _client()
+    got = client.post("/api/dept/%s/j2/answer" % ref, json={"text": "nice people"})
+    assert got.status_code == 200 and got.json()["open_question"] is None
+    W.run_until_idle(ref, limit=300)
+    second = J.status(ref)["open_question"]
+    assert second and second["id"] != first and second["standard"] and len(reads) == 2
+    assert _actions(J, ref).count("identity.questioned") == 2 and "proposal.requested" not in _actions(J, ref)
+    client.post("/api/dept/%s/j2/answer" % ref, json={"text": FAMILIES})
+    W.run_until_idle(ref, limit=300)
+    assert len(reads) == 3 and next(e for e in J.events(ref) if e["action"] == "proposal.requested")["step"] == 2
+
+
+def test_m3_3_a_question_j1_already_answered_is_not_asked(j2, monkeypatch):
+    """FI1.2: Identity asking what Root asked and the owner answered in J1 must fail."""
+    W, R, J, _, _ = j2
+    converse = []
+
+    def ask_once(prompt):
+        converse.append(1)
+        return {"verdict": "ask", "question": WHO} if len(converse) == 1 else {"verdict": "clear", "question": ""}
+    _model(monkeypatch, R, {"setup.converse": ask_once,
+                            "identity.enough": {"enough": False, "missing": ["goal"], "question": WHO, "why": "the goal names no one"}})
+    root = j2[3].found_structure("Bakery Co", owner="Sankalp")["root"]
+    W.owner_ask(root, "A bakery site")
+    W.run_until_idle(root, limit=300)
+    W.owner_ask(root, FAMILIES)
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    assert (WHO, FAMILIES) in R._j1_said(W.dept(ref))
+    W.run_until_idle(ref, limit=300)
+    assert not [a for a in W.asks(ref) if a["kind"] == "j2_identity"]
+    assert "identity.questioned" not in _actions(J, ref)
+    assert next(e for e in J.events(ref) if e["action"] == "proposal.requested")["step"] == 2
+
+
+@pytest.mark.parametrize("via", ["chat", "answer box"])
+def test_m3_3_just_do_it_starts_step_2_and_the_tell_names_the_defaults(j2, monkeypatch, via):
+    W, R, J, _, _ = j2
+    _model(monkeypatch, R, {"identity.enough": {"enough": False, "missing": ["goal", "items"], "question": WHO, "why": "the goal names no one"}})
+    ref = _born(j2)
+    assert J.status(ref)["open_question"]["standard"]
+    if via == "chat":
+        W.owner_ask(ref, "just do it")
+    else:
+        assert _client().post("/api/dept/%s/j2/answer" % ref, json={"text": "Just do it."}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    assert next(e for e in J.events(ref) if e["action"] == "proposal.requested")["step"] == 2
+    tell = [s for s in _said(R, ref) if s.startswith("Just doing it.")]
+    assert tell == ["Just doing it. Defaults used: the goal as you said it; the done-when items Root drafted. The department starts."]
+    assert J.status(ref)["open_question"] is None
+    assert "just do it" not in W.read_files(ref, "Brief", W.latest(ref, "Brief")["v"])["brief.md"].lower()
+
+
+def test_m3_3_just_do_it_fills_what_the_record_lacks_from_the_kind(j2):
+    W, R, _, _, _ = j2
+    W.create("dref-hurry", "Hurry Website", None)
+    d = W.dept("dref-hurry")
+    d.update({"goal": "", "done_items": [], "done": "", "rules": [{"tag": "go", "line": "Work inside the record"}, {"line": "untagged"}]})
+    W.save_dept("dref-hurry", d)
+    used = R._standard_defaults("dref-hurry", ["rules", "goal", "items", "invented"])
+    d = W.dept("dref-hurry")
+    assert used == ["the kind's goal: A live website for Hurry Website", "D1, the kind's done line: Every page checked and live",
+                    "the kind's rules", "what nobody gave stays out, to be confirmed"]
+    assert d["goal"] == "A live website for Hurry Website" and [i["id"] for i in d["done_items"]] == ["D1"]
+    assert all(r.get("tag") in ("go", "ask", "refuse", "always") for r in d["rules"]) and len(d["rules"]) == 4    # kept, and the kind's
+    assert d["identity_revision"] == 2 and R._standard_gaps(d) == []
+
+
+def test_m3_3_the_standards_covering_holds_the_shape_and_what_code_can_read(j2):
+    W, R, _, _, _ = j2
+    W.create("dref-std", "Std Website", None)
+    _, s = R.step_def("identity.enough")
+    c = R.CHECK[s["check"]]
+    ctx = {"dept": W.dept("dref-std")}
+    assert c(ctx, s, None, {"enough": True, "missing": [], "question": ""})["ok"]
+    assert c(ctx, s, None, {"enough": False, "missing": ["goal"], "question": WHO})["ok"]
+    assert not c(ctx, s, None, {"enough": False, "missing": ["goal"], "question": ""})["ok"]
+    assert not c(ctx, s, None, {"enough": False, "missing": [], "question": WHO})["ok"]
+    assert not c(ctx, s, None, {"enough": False, "missing": ["vibes"], "question": WHO})["ok"]
+    assert not c(ctx, s, None, {"enough": "yes", "missing": []})["ok"]
+    gap = dict(W.dept("dref-std"), owner="", rules=[{"line": "no tag here"}])
+    got = c({"dept": gap}, s, None, {"enough": True, "missing": [], "question": ""})
+    assert not got["ok"] and got["notes"] == ["read as enough, but the record has a rule with no tag, no owner"]
+    # the draft under the AI is today's presence check, read by code
+    assert R.d_identity_enough({"dept": gap}, s, None)["missing"] == ["rules", "owner"]
+    assert R.d_identity_enough(ctx, s, None) == {"enough": True, "missing": [], "question": "", "why": "read by code: every point is on the record"}
+
+
+def test_m3_3_the_standard_is_read_only_inside_the_cycle(j2, monkeypatch):
+    """Identity's standard read for a department outside its J2 cycle (the AI called for nothing) must fail."""
+    W, R, J, _, _ = j2
+    reads = []
+    _model(monkeypatch, R, {"identity.enough": _reader(reads)})
+    monkeypatch.setenv("J2_FLOW_V1", "0")
+    ref = _born(j2)
+    assert reads == [] and not [a for a in W.asks(ref) if a["kind"] == "j2_identity"]
+    rows = [r for r in R.step_rows(ref) if r["step"] == "identity.enough"]
+    assert rows and all(r["by"] == R.SKIPPED for r in rows)
