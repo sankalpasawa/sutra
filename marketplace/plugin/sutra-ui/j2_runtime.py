@@ -332,7 +332,18 @@ def _identity_gaps(dept):
 QUESTION = {"goal": "What goal must this department achieve?",
             "done-when": "What evidence will prove this department is done?",
             "rules": "What may this department do, ask about, or refuse?",
-            "record": "Where should this department file its work and evidence?"}
+            "record": "Where should this department file its work and evidence?",
+            "words": "What is the %s for, and about whom or what?"}
+THIN = "Your words name nothing to build from yet."
+
+
+def _move(ref, state, **more):
+    """Move the cycle's state, except that a cycle the owner stopped stays stopped: the move waits in `was`, and Start
+    goes on from it (an answer given to a stopped department is used on Start)."""
+    cur = _state(ref) or {}
+    if cur.get("state") == "stopped":
+        return _set(ref, was=state, **more)
+    return _set(ref, state=state, **more)
 
 
 def _ask_gap(ref, dept, cur):
@@ -348,7 +359,7 @@ def _ask_gap(ref, dept, cur):
         R.post(ref, "Identity", R.OWNER, "inform", {"word": "question", "done": question})
     except Exception:  # noqa: BLE001 -- the ask is on the record whether or not the chat carries it
         pass
-    return _set(ref, step=1, state="waiting", open_ask=aid)
+    return _move(ref, "waiting", step=1, open_ask=aid)
 
 
 def begin(ref):
@@ -396,6 +407,12 @@ def answer(ref, text, ask_id=None):
         if ask["status"] != "pending":
             raise J2Error("ALREADY_HANDLED")
         missing = ask.get("missing")
+        if missing == "words":
+            # the first words named nothing to build from (M0.5): the answer is the owner's words to Identity, on the board,
+            # and Identity reads them as the first words, against the same standard; the identity itself is not edited here
+            _took(ref, ask, text)
+            R.request(ref, text)
+            return _state(ref)
         if missing == "goal":
             dept["goal"] = text
         elif missing == "done-when":
@@ -409,8 +426,56 @@ def answer(ref, text, ask_id=None):
         W._put_ask(ref, ask)
         note(ref, 1, "User", "Identity", "ask.answered", "complete", "The owner answered: %s" % text[:200], "answer-" + aid,
              {"missing": missing})
-        cur = _set(ref, state="assessing", open_ask=None)
+        cur = _move(ref, "assessing", open_ask=None)
         return _ask_gap(ref, W.dept(ref), cur) or cur
+
+
+def _took(ref, ask, text, by="the owner"):
+    """Close Identity's question with the owner's words: the ask is answered once, and the ledger says so once,
+    whichever way the words came (the answer box, or the chat)."""
+    ask.update({"status": "stamped", "decided": W.now(), "by": by, "answered": text})
+    W._put_ask(ref, ask)
+    note(ref, 1, "User", "Identity", "ask.answered", "complete", "The owner answered: %s" % text[:200], "answer-" + ask["id"],
+         {"missing": ask.get("missing")})
+    return _move(ref, "assessing", open_ask=None)
+
+
+def open_question(ref):
+    """Identity's open question to the owner, as every screen shows it: {id, text, why, missing, asked}, or None. A
+    stopped department keeps its question; the answer is used on Start."""
+    cur = _state(ref) if enabled() else None
+    if not cur or not cur.get("open_ask"):
+        return None
+    ask = next((a for a in W.asks(ref) if a["id"] == cur["open_ask"] and a.get("kind") == "j2_identity" and a["status"] == "pending"), None)
+    if not ask:
+        return None
+    return {"id": ask["id"], "text": ask.get("text"), "why": ask.get("why"), "missing": ask.get("missing"), "asked": ask.get("created")}
+
+
+def answered_question(ref):
+    """The last of Identity's questions the owner answered in this cycle, kept under its card: {id, text, answer, at}."""
+    cur = _state(ref) if enabled() else None
+    if not cur or not cur.get("cycle_id"):
+        return None
+    done = [a for a in W.asks(ref) if a.get("kind") == "j2_identity" and a.get("cycle_id") == cur["cycle_id"]
+            and a["status"] == "stamped" and a.get("answered")]
+    if not done:
+        return None
+    a = done[-1]
+    return {"id": a["id"], "text": a.get("text"), "answer": a.get("answered"), "at": a.get("decided")}
+
+
+def took_words(ref, words):
+    """The owner's words reached Identity in the chat while its question on thin words is open: they answer it (M0.5).
+    Returns True when they did."""
+    with W._lock(ref):
+        cur = _state(ref)
+        ask = next((a for a in W.asks(ref) if cur and a["id"] == cur.get("open_ask") and a.get("kind") == "j2_identity"
+                    and a.get("missing") == "words" and a["status"] == "pending"), None)
+        if not ask:
+            return False
+        _took(ref, ask, " ".join(str(words or "").split())[:2000])
+        return True
 
 
 def waiting_on_owner(ref):
@@ -427,7 +492,8 @@ def status(ref):
                             "state": "not_started" if _ready(dept) else "not_ready", "updated_at": None}
     count = state.get("event_count")
     return dict(state, department_ref=ref, enabled=enabled(), event_count=int(count) if count is not None else event_count(ref),
-                done_when=dept.get("done"), goal_reached=state.get("state") == "done")
+                done_when=dept.get("done"), goal_reached=state.get("state") == "done",
+                open_question=open_question(ref), answered_question=answered_question(ref))
 
 
 def stop(ref):
@@ -608,8 +674,22 @@ def assessed(ref, dept, key="first"):
 
 
 def questioned(ref, question, key):
-    note(ref, 1, "Identity", "User", "identity.questioned", "waiting", question, "identity-question-" + str(key), {})
-    _set(ref, step=1, state="waiting")
+    """The first words name nothing to build from (J2.1): Identity's question is a real ask, answerable in the chat or
+    through /j2/answer, and nothing starts until it is answered (M0.5). One open ask, however often it is asked."""
+    with W._lock(ref):
+        cur = _state(ref)
+        if not cur or not cur.get("cycle_id"):
+            return None
+        d = W.dept(ref) or {}
+        text = QUESTION["words"] % ("site" if d.get("kind") == "website" else "department")
+        ask = next((a for a in W.asks(ref) if a.get("kind") == "j2_identity" and a.get("missing") == "words"
+                    and a["status"] == "pending" and a.get("cycle_id") == cur["cycle_id"]), None)
+        if ask is None:
+            ask = W._put_ask(ref, {"id": "a-j2-" + uuid.uuid4().hex[:8], "kind": "j2_identity", "text": text, "why": str(question or THIN),
+                                   "status": "pending", "created": W.now(), "cycle_id": cur["cycle_id"], "missing": "words", "answer": "words"})
+        note(ref, 1, "Identity", "User", "identity.questioned", "waiting", text, "identity-question-" + str(key),
+             {"missing": ["words"], "why": str(question or THIN)})
+        return _move(ref, "waiting", step=1, open_ask=ask["id"])
 
 
 def not_read(ref, version, why):

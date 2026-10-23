@@ -2137,6 +2137,10 @@ def identity_file(ctx, step, item):
     got = ctx["bag"]["identity.read"]
     words, first = got["words"], got["facts"]["first"]
     J = _j2()
+    if J and first:
+        # Identity asked what the department is for (thin first words, M0.5): words said in the chat answer it, and are
+        # read below as the first words, against the same standard
+        J.took_words(ref, words)
     if J and not first and J.waiting_on_owner(ref):
         # Identity's own question is open (J2.1): these words answer it. They are written to the identity, the standard
         # is read again, and the department starts once it is met
@@ -2213,7 +2217,7 @@ def identity_file(ctx, step, item):
         J = _j2()
         if J and J.active(ref):
             # J2.1: not good enough to start on; Identity asks, and the next words are read against the same standard
-            J.questioned(ref, "The words name nothing to build from yet.", p.get("n"))
+            J.questioned(ref, J.THIN, p.get("n"))
         _tell(ref, d, p, "inform", {"word": "question",
                                     "done": "Say what the site is for and about whom or what, and I will start: your words name nothing to build from yet."},
               thread=p["thread"])

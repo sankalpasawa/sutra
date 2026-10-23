@@ -73,10 +73,13 @@ async def _text(request):
 
 @_routes("post", "/j2/answer")
 async def j2_answer(ref: str, request: Request):
-    """The owner's words for Identity's open question; accepted once."""
-    return _call(J.answer, ref, await _text(request))
+    """The owner's words for Identity's open question; accepted once. Answers with the cycle as /j2 reads it, so the
+    card that sent the words shows what came of them (the next question, or none)."""
+    _call(J.answer, ref, await _text(request))
+    return _call(J.status, ref)
 
 
 @_routes("post", "/asks/{ask_id}/answer")
 async def j2_answer_ask(ref: str, ask_id: str, request: Request):
-    return _call(J.answer, ref, await _text(request), ask_id)
+    _call(J.answer, ref, await _text(request), ask_id)
+    return _call(J.status, ref)

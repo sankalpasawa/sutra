@@ -447,6 +447,89 @@ def test_j2_b_a_line_that_cannot_be_shaped_is_tried_again_then_said(j2, monkeypa
     assert any("could not shape a plan that passes its check" in s for s in _said(R, ref))
 
 
+def _thin(monkeypatch, R):
+    """Root takes 'a website' as clear (J1 asked nothing), and Identity reads it as naming nothing to build from."""
+    _model(monkeypatch, R, {"setup.converse": {"verdict": "clear", "question": ""},
+                            "identity.take": lambda prompt: {"verdict": "go", "why": "", "needs": [], "unsure": [],
+                                                             "thin": "bakery" not in prompt.split("THE REQUEST: ", 1)[1].split("\n", 1)[0]}})
+
+
+def _client(J):
+    import j2_api
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    importlib.reload(j2_api)
+    app = FastAPI()
+    app.include_router(j2_api.router)
+    return TestClient(app)
+
+
+BAKERY = "a site for my bakery in Pune"
+
+
+def test_m0_5_thin_words_are_an_open_question_and_the_answer_box_starts_step_2(j2, monkeypatch):
+    """Thin words that file no ask (so /j2/answer said 409), or an answer that starts nothing, must fail."""
+    W, R, J, _ = j2
+    _thin(monkeypatch, R)
+    ref = _born(j2, "a website", "Bakery Co")
+    client = _client(J)
+    st = client.get("/api/dept/%s/j2" % ref).json()
+    q = st["open_question"]
+    assert (st["state"], st["step"]) == ("waiting", 1)
+    assert q["missing"] == "words" and q["text"] == "What is the site for, and about whom or what?"
+    assert q["why"] == "Your words name nothing to build from yet." and q["id"] == st["open_ask"]
+    assert [a["id"] for a in W.asks(ref) if a["kind"] == "j2_identity" and a["status"] == "pending"] == [q["id"]]
+    assert _work(W, ref) == [] and "proposal.requested" not in _actions(J, ref)
+
+    got = client.post("/api/dept/%s/j2/answer" % ref, json={"text": BAKERY})
+    assert got.status_code == 200 and got.json()["open_question"] is None
+    W.run_until_idle(ref, limit=300)
+    requested = next(e for e in J.events(ref) if e["action"] == "proposal.requested")
+    assert requested["step"] == 2
+    assert _actions(J, ref)[:4] == ["identity.questioned", "ask.answered", "identity.assessed", "proposal.requested"]
+    assert BAKERY in W.read_files(ref, "Brief", 1)["brief.md"]
+    after = client.get("/api/dept/%s/j2" % ref).json()
+    assert after["open_question"] is None and after["answered_question"]["answer"] == BAKERY
+    again = client.post("/api/dept/%s/j2/answer" % ref, json={"text": BAKERY})
+    assert (again.status_code, again.json()["detail"]) == (409, {"code": "NO_OPEN_QUESTION"})
+
+
+def test_m0_5_the_same_question_is_answered_in_chat_once(j2, monkeypatch):
+    """Words said in the chat that leave the question open, or that are taken twice, must fail."""
+    W, R, J, _ = j2
+    _thin(monkeypatch, R)
+    ref = _born(j2, "a website", "Bakery Co")
+    aid = J.status(ref)["open_question"]["id"]
+    W.owner_ask(ref, BAKERY)
+    W.run_until_idle(ref, limit=300)
+    ask = next(a for a in W.asks(ref) if a["id"] == aid)
+    assert (ask["status"], ask["answered"]) == ("stamped", BAKERY)
+    assert _actions(J, ref).count("ask.answered") == 1
+    assert next(e for e in J.events(ref) if e["action"] == "proposal.requested")["step"] == 2
+    assert J.status(ref)["open_question"] is None and "workflow.registered" in _actions(J, ref)
+
+
+def test_m0_5_still_too_little_is_asked_again_and_a_stopped_department_uses_the_answer_on_start(j2, monkeypatch):
+    W, R, J, _ = j2
+    _thin(monkeypatch, R)
+    ref = _born(j2, "a website", "Bakery Co")
+    first = J.status(ref)["open_question"]["id"]
+    J.answer(ref, "a nice one")                                        # still names nothing: FI1.1, asked again
+    W.run_until_idle(ref, limit=300)
+    second = J.status(ref)["open_question"]
+    assert second and second["id"] != first and second["missing"] == "words"
+    assert _actions(J, ref).count("identity.questioned") == 2 and "proposal.requested" not in _actions(J, ref)
+
+    J.stop(ref)
+    assert J.status(ref)["open_question"]["id"] == second["id"]          # a stopped department can still be answered
+    J.answer(ref, BAKERY)
+    W.run_until_idle(ref, limit=300)
+    assert J.status(ref)["state"] == "stopped" and "proposal.requested" not in _actions(J, ref)
+    J.start(ref)
+    W.run_until_idle(ref, limit=300)
+    assert next(e for e in J.events(ref) if e["action"] == "proposal.requested")["step"] == 2
+
+
 # ---- the owner's switch --------------------------------------------------------------------------------------------
 def test_stop_then_start_goes_on_from_the_same_step_and_the_two_switches_agree(j2):
     """A Stop that starts a cycle first, or a department that is On while its cycle says stopped, must fail."""
