@@ -61,7 +61,8 @@ fi
 # checks (top-level check() calls, no test function, no __main__) still runs itself and says "N checks". A lane
 # that runs nothing is a FAIL: pytest's exit 5 (no tests collected), or a count of 0.
 mode_of() {
-  if grep -q "__main__" "$1"; then echo script
+  # the block itself, at the start of a line: "__main__" inside a string or a comment is not one
+  if grep -qE "^if __name__ *== *['\"]__main__['\"]" "$1"; then echo script
   elif grep -qE '^[[:space:]]*(async[[:space:]]+)?def test_' "$1"; then echo pytest
   else echo script; fi
 }

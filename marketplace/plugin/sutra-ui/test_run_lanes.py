@@ -75,6 +75,13 @@ def test_a_main_block_lane_and_a_plain_script_lane_keep_their_own_counts(lab):
     assert re.search(r"test_plain\.py\s+PASS\s+3 checks$", out, re.M), out
 
 
+def test_main_in_a_string_is_not_a_main_block(lab):
+    """A file that only names __main__ in a string (this one does) ran as a script and said PASS over nothing."""
+    (lab / "test_named.py").write_text('TEXT = "if __name__ == \'__main__\': pass"\n\n\ndef test_one():\n    assert TEXT\n')
+    code, out = _run(lab / "run-tests.sh", "test_named.py")
+    assert code == 0 and re.search(r"test_named\.py\s+PASS\s+1 passed$", out, re.M), out
+
+
 def test_every_file_with_no_main_block_reports_a_count_above_zero():
     """Each of the eleven reports how much it ran, whether it passes or not: a lane that ran nothing must fail."""
     code, out = _run(RUNNER, *NO_MAIN)
