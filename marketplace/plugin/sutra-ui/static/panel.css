@@ -43,6 +43,31 @@
     --rail-shadow:0 1px 2px rgba(28,25,23,.06),0 18px 44px -18px rgba(28,25,23,.22);
     --row-shadow:0 1px 2px rgba(28,25,23,.08),inset 0 0 0 1px rgba(138,93,46,.16)}
 
+  /* ── the five functions' colours (PRD M1.3; Q10: both themes) ────────────
+     A function's colour says WHO; a state colour (--ok, --warn, --block, the
+     accent) says HOW, and neither ever stands in for the other: a function
+     colour never fills a state dot. They do not move with the owner's accent.
+     Each passes 4.5:1 on --card, --surface, --acc-bg and its own -bg in both
+     themes (test_website.js M1.3). Their own block beside each theme block. */
+  :root,[data-theme="dark"]{
+    --fn-identity:#938ED7;--fn-identity-bg:rgba(147,142,215,.14);--fn-identity-line:rgba(147,142,215,.36);
+    --fn-adaptation:#C07DD1;--fn-adaptation-bg:rgba(192,125,209,.14);--fn-adaptation-line:rgba(192,125,209,.36);
+    --fn-priority:#3EA4AF;--fn-priority-bg:rgba(62,164,175,.14);--fn-priority-line:rgba(62,164,175,.36);
+    --fn-coordination:#629CC8;--fn-coordination-bg:rgba(98,156,200,.14);--fn-coordination-line:rgba(98,156,200,.36);
+    --fn-audit:#D17C9E;--fn-audit-bg:rgba(209,124,158,.14);--fn-audit-line:rgba(209,124,158,.36)}
+  @media (prefers-color-scheme:light){:root:not([data-theme]){
+    --fn-identity:#6059C5;--fn-identity-bg:#F1F0FA;--fn-identity-line:#CCCAEC;
+    --fn-adaptation:#9B3FB3;--fn-adaptation-bg:#F6EEF8;--fn-adaptation-line:#DFC2E7;
+    --fn-priority:#2B7179;--fn-priority-bg:#ECF2F3;--fn-priority-line:#BBD2D4;
+    --fn-coordination:#356C97;--fn-coordination-bg:#EDF2F6;--fn-coordination-line:#BED0DE;
+    --fn-audit:#B03E6C;--fn-audit-bg:#F8EEF2;--fn-audit-line:#E6C1D0}}
+  [data-theme="light"]{
+    --fn-identity:#6059C5;--fn-identity-bg:#F1F0FA;--fn-identity-line:#CCCAEC;
+    --fn-adaptation:#9B3FB3;--fn-adaptation-bg:#F6EEF8;--fn-adaptation-line:#DFC2E7;
+    --fn-priority:#2B7179;--fn-priority-bg:#ECF2F3;--fn-priority-line:#BBD2D4;
+    --fn-coordination:#356C97;--fn-coordination-bg:#EDF2F6;--fn-coordination-line:#BED0DE;
+    --fn-audit:#B03E6C;--fn-audit-bg:#F8EEF2;--fn-audit-line:#E6C1D0}
+
   body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.55;
        -webkit-font-smoothing:antialiased;margin:0;overflow:hidden}
   /* Desktop panel: fill the window. A centred 1320px column left ~35% of a
@@ -5292,6 +5317,9 @@ button.nychip:focus-visible{ outline:none; box-shadow:0 0 0 1.5px var(--acc); }
 .dpdot.ok{background:var(--ok)}
 .dpdot.warn{background:var(--warn)}
 .dpdot.block{background:var(--block)}
+/* waits on another function: a hollow muted ring, so amber keeps meaning
+   "waits on you" and nothing else (PRD M1.3) */
+.dpdot.wait{background:transparent;box-shadow:inset 0 0 0 1.5px var(--muted)}
 .dpchk{font:400 11.5px/1.4 var(--sans);color:var(--muted)}
 /* a window bar inside a list row, under the line it belongs to */
 .dprow .dpbar{margin:7px 0 1px}

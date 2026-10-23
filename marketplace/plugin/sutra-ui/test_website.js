@@ -1312,6 +1312,66 @@ test("V12: the second design's stylesheet block is tokens only and covers every 
   assert.ok(a > 0 && b > a && t > b, "loaded after 22, before the tail");
 });
 
+/* M1.3: the five function colours, in both themes, read off panel.css and measured by the accent picker's own rule
+   (07-loaders.js _lum/_contrast, WCAG relative luminance). A colour with alpha is laid over the ground it sits on:
+   the -bg tints and the dark --acc-bg over both --card and --surface, and the worse of the two is the one that counts. */
+const loadersSrc = read("07-loaders.js");
+const ACC_RULE = (() => {
+  const box = {};
+  vm.createContext(box);
+  vm.runInContext(/function _lum\([\s\S]*?\n\}\n/.exec(loadersSrc)[0] + /function _contrast\([\s\S]*?\n\}\n/.exec(loadersSrc)[0], box);
+  return box;
+})();
+function cssBlock(sel){
+  /* every declaration under one theme selector, in file order (a later block adds to an earlier one) */
+  const out = {};
+  let i = 0;
+  while ((i = css.indexOf(sel, i)) >= 0){
+    const open = css.indexOf("{", i + sel.length - 1), close = css.indexOf("}", open);
+    css.slice(open + 1, close).split(";").forEach(d => { const m = /^\s*(--[\w-]+)\s*:\s*([^;]+?)\s*$/.exec(d); if (m) out[m[1]] = m[2]; });
+    i = close;
+  }
+  return out;
+}
+const hex2rgb = h => [1, 3, 5].map(k => parseInt(h.slice(k, k + 2), 16));
+const rgb2hex = c => "#" + c.map(v => Math.round(v).toString(16).padStart(2, "0")).join("");
+function solid(v, ground){
+  const m = /^rgba\((\d+),\s*(\d+),\s*(\d+),\s*([.\d]+)\)$/.exec(v);
+  if (!m) return [v];
+  const a = Number(m[4]), fg = [m[1], m[2], m[3]].map(Number);
+  return ground.map(g => rgb2hex(fg.map((x, k) => x * a + hex2rgb(g)[k] * (1 - a))));
+}
+test("M1.3: the five function colours pass 4.5:1 on --card, --surface, --acc-bg and their own -bg, in both themes", () => {
+  const themes = { dark: cssBlock(':root,[data-theme="dark"]{'), light: cssBlock('[data-theme="light"]{'),
+                   system: cssBlock("@media (prefers-color-scheme:light){:root:not([data-theme]){") };
+  const media = css.slice(css.indexOf("@media (prefers-color-scheme:light){:root:not([data-theme]){"));
+  ["identity", "adaptation", "priority", "coordination", "audit"].forEach(fn => {
+    ["", "-bg", "-line"].forEach(k => {
+      assert.ok(themes.dark["--fn-" + fn + k], "dark --fn-" + fn + k);
+      assert.ok(themes.light["--fn-" + fn + k], "light --fn-" + fn + k);
+    });
+    assert.ok(media.indexOf("--fn-" + fn + ":") >= 0, "the system light block names --fn-" + fn);
+  });
+  let n = 0;
+  Object.keys(themes).filter(t => t !== "system").forEach(theme => {
+    const T = themes[theme], ground = [T["--card"], T["--surface"]];
+    ["identity", "adaptation", "priority", "coordination", "audit"].forEach(fn => {
+      const ink = T["--fn-" + fn];
+      assert.ok(/^#[0-9a-fA-F]{6}$/.test(ink), theme + " " + fn + " is one hex: " + ink);
+      const on = [].concat(solid(T["--card"], ground), solid(T["--surface"], ground), solid(T["--acc-bg"], ground), solid(T["--fn-" + fn + "-bg"], ground));
+      on.forEach(bg => {
+        const r = ACC_RULE._contrast(ink, bg);
+        assert.ok(r >= 4.5, theme + " --fn-" + fn + " on " + bg + " is " + r.toFixed(2) + ":1");
+      });
+      n++;
+    });
+  });
+  assert.strictEqual(n, 10, "all ten colours measured");
+  /* a function colour never fills a state dot; waiting on another function is a hollow muted ring, never amber */
+  assert.ok(/\.dpdot\.wait\{background:transparent;box-shadow:inset 0 0 0 1\.5px var\(--muted\)\}/.test(css), "the waiting ring");
+  assert.ok(!/\.dpdot[^{]*\{[^}]*--fn-/.test(css), "no state dot wears a function colour");
+});
+
 test("W45: J1 shows Root's one question and final department tell without renaming Root", () => {
   const c = fresh();
   const q = c.wbChatTurn({ src: "Identity", msg_type: "inform", at: AT, word: "question",
