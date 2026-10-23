@@ -222,6 +222,13 @@ def test_f1_stopped_and_done_are_quiet_throughout(mods):
     assert got["cycle"]["says"] == "Goal reached" and got["cycle"]["needs_you"] is False
     assert all(s["state"] in ("done", "skipped") for s in got["cycle"]["steps"])
     assert {n["word"] for n in nodes.values()} == {"quiet"} and got["stopped"] is False
+    # the goal reached, then the owner switches the department off on the Map (POST /stop: W.set_stopped only): the cycle
+    # still says Goal reached, and every function says stopped, the word the Map, the list, All five and the pane print
+    W.set_stopped(REF, True)
+    nodes, got = _expect(F)
+    assert got["cycle"]["state"] == "done" and got["cycle"]["says"] == "Goal reached" and got["stopped"] is True
+    assert {n["word"] for n in nodes.values()} == {"stopped"}, {n["name"]: n["word"] for n in nodes.values()}
+    assert F.function(REF, "identity")["node"]["word"] == "stopped"
 
 
 def test_f1_a_department_with_no_cycle_reads_its_runs_and_asks(mods):

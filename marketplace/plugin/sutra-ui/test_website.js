@@ -1650,11 +1650,13 @@ const FV_BY_STATE = {
   closing: { states: { Identity: "working", Adaptation: "waiting" }, waits: { Adaptation: "Identity" } },
   checking: { states: { Adaptation: "waiting" }, waits: { Adaptation: "Root" } }, running: { states: { Coordination: "working" } },
   pursuing: { states: { Identity: "waiting_on_you" } }, blocked: { states: { Identity: "waiting_on_you" } },
-  stopped: { stopped: true }, done: {} };
+  stopped: { stopped: true }, done: {},
+  /* the goal reached, then switched off on the Map: the cycle stays done, the department is stopped (round 2, gap 7) */
+  done_switched_off: { stopped: true, cycle: "done" } };
 test("M1: the Map, the list, All five and each pane print the same word for each function in every J2 state", async () => {
   for (const state of Object.keys(FV_BY_STATE)){
     const o = FV_BY_STATE[state];
-    const fv = fvOf(Object.assign({ cycle: { state, says: state } }, o));
+    const fv = fvOf(Object.assign({}, o, { cycle: { state: o.cycle || state, says: state } }));
     const page = fn => Object.assign(fnPageOf(fn), { node: fv.functions.filter(x => x.fn === fn)[0] });
     const map = rtMap({ stopped: !!o.stopped });
     const c = await v2({ map, fv, fnpage: page, board: FV_BOARD });

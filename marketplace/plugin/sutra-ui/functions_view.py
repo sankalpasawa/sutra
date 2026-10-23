@@ -397,6 +397,9 @@ def functions(ref):
     state = str(cur.get("state") or "not_started")
     if d.get("stopped") and state not in ("done",):
         state = "stopped"
+    # the department is stopped by its switch or by its cycle; a goal reached and then switched off stays done in the
+    # cycle's words, but it is stopped all the same, and every surface says so in one word
+    stopped = bool(d.get("stopped")) or state == "stopped"
     events = _events(ref, cur.get("cycle_id")) if cur.get("cycle_id") else []
     pending = [a for a in ak if a.get("status") == "pending"]
     running = [r for r in rs if r.get("status") == "running"]
@@ -443,10 +446,11 @@ def functions(ref):
         if fn in faults:
             node.update(state="fault", why=faults[fn], line=faults[fn])
         # a department that is stopped, or whose goal is reached, is quiet throughout; a stopped one says so in one word,
-        # the word every surface prints (the Map, the list, All five and the pane print node.word and nothing else)
-        if state in ("stopped", "done"):
+        # the word every surface prints (the Map, the list, All five and the pane print node.word and nothing else),
+        # whether its cycle stopped or its switch is off after the goal was reached
+        if state in ("stopped", "done") or stopped:
             node.update(state="quiet", waits_on=None, line="", why=None)
-        node["word"] = "stopped" if state == "stopped" else WORDS[node["state"]]
+        node["word"] = "stopped" if stopped else WORDS[node["state"]]
         node["last"] = _last_act(fn, rs, posts)
         node["spend"] = _spend(ref, d, fn)
         node["speaks_to"] = [{"to": p["to"], "n": p["n"]} for p in pairs if p["from"] == fn]
@@ -464,7 +468,7 @@ def functions(ref):
              "needs_you": needs and state not in ("stopped", "done"), "asks": len(pending),
              "running": [r["engine"] for r in work_running],
              "ceiling": ((d.get("envelopes") or {}).get("_goal") or None), "round": cur.get("round")}
-    return _clean({"ref": ref, "name": d.get("name"), "kind": d.get("kind"), "stopped": bool(d.get("stopped")) or state == "stopped",
+    return _clean({"ref": ref, "name": d.get("name"), "kind": d.get("kind"), "stopped": stopped,
                    "functions": nodes, "cycle": cycle, "speaks": pairs, "made": mades,
                    "budget": _budget(ref, d), "not_recorded": nr})
 
