@@ -308,7 +308,9 @@ def _artifacts_shelf() -> Dict[str, Any]:
 def _artifact_item(name: str) -> Optional[Dict[str, Any]]:
     try:
         import artifacts
-        v = artifacts.view(name)
+        # a shelf row is a template of its own; artifacts.view falls back to the Default for an artifact a department
+        # files, and the shelf showed a stranger as the Default (found 2026-10-23, when the lane ran again)
+        v = artifacts.view(name) if artifacts.get(name) else None
     except Exception:
         return None
     if not v:
