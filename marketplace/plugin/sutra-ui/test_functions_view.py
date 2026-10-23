@@ -17,6 +17,9 @@ Named claims:
       every state a real department passes through when Priority says no, Identity asks, the owner says no, Identity
       rules it runs, or Root's check sends a plan back); a rule's tag (go, ask, refuse, always) is the owner's own word
       and stays
+  F9  rendered by the panel's own scripts from the real reads of departments Root set up (tests/fixtures/pane_words.js),
+      no function's pane, nor the Map, All five or the list, shows grant, counter or refuse at rest or on a hover: the
+      older cards under each page (steps, gates, Moves, Control, Stamped by rule, the who-may-post table) included
 
 Each department is born the way the app makes one (website_dept.create), then its record is set to the state under
 test, so what is read is the record a real department keeps.
@@ -25,6 +28,8 @@ import importlib
 import json
 import os
 import re
+import shutil
+import subprocess
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -726,3 +731,78 @@ def test_m17_the_real_flow_reads_in_the_owners_words_in_every_state_it_passes(mo
             break
     assert calls["n"] >= 2 and "adapting" in states, states
     assert not seen, seen[:3]
+
+
+# ---- M1.7 (round 2, gap 1): the older cards under each function's page say the owner's words too -----------------------
+PANE_DRIVER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests", "fixtures", "pane_words.js")
+
+
+def _reads(W, ref):
+    """The reads a function's pane, the Map and All five really make, from the real routes, by the tail of their path."""
+    import website_api
+    importlib.reload(website_api)
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    app = FastAPI()
+    app.include_router(website_api.router)
+    c = TestClient(app)
+    tails = ["map", "functions", "board", "status"] + ["functions/" + fn for fn in JOURNEYS] + ["steps/" + fn.capitalize() for fn in JOURNEYS]
+    out = {}
+    for t in tails:
+        got = c.get("/api/native/%s/%s" % (ref, t))
+        assert got.status_code == 200, (t, got.status_code)
+        out[t] = got.json()
+    return {"name": W.dept(ref)["name"], "reads": out}
+
+
+def _panes(tmp_path, reads):
+    """What a person sees on each function's pane, the Map, All five and the list, rendered by the panel's own scripts
+    from those reads (tests/fixtures/pane_words.js): the text at rest, and the hovers apart."""
+    src = tmp_path / ("reads-%d.json" % len(list(tmp_path.glob("reads-*.json"))))
+    src.write_text(json.dumps(reads))
+    p = subprocess.run(["node", PANE_DRIVER, str(src)], capture_output=True, text=True, timeout=60)
+    assert p.returncode == 0, p.stderr
+    return json.loads(p.stdout)
+
+
+def _banned_shown(text):
+    text = RULE_TAGS.sub(" ", text.lower())
+    return [text[max(0, text.index(w) - 60):text.index(w) + 40] for w in BANNED if w in text]
+
+
+def test_m17_every_card_on_a_functions_pane_says_the_owners_words(mods, born, monkeypatch, tmp_path):
+    """The function's page sits on top of the older cards (its steps, gates and Moves, Identity's Control and Stamped by
+    rule, Priority's limits, Coordination's who-may-post table): those cards print the steps, map and status reads, whose
+    names and run lines are the record's inside words (a handler's name, a step's name, a function's goal, a run's line).
+    Rendered from the real reads of departments Root set up, the bargain on the record and Priority saying no, no pane,
+    nor the Map, All five or the list, shows grant, counter or refuse, at rest or on a hover."""
+    W, R, J, F = mods
+    if shutil.which("node") is None:
+        pytest.skip("node is not on PATH")
+    ref = born(WEBSITE, "Acme Learning")
+    panes = _panes(tmp_path, _reads(W, ref))
+    for k, v in panes.items():
+        assert v["rest"], k
+        assert not _banned_shown(v["rest"]) and not _banned_shown(v["hover"]), (k, _banned_shown(v["rest"] + " " + v["hover"]))
+    assert "Runs within your rules" in panes["identity"]["rest"], "Identity's Control, in the owner's words"
+    assert "Gates" in panes["identity"]["rest"] and "Stamped by rule" in panes["identity"]["rest"], "the older cards are there"
+    assert "Say yes, ask for less, or say no" in panes["priority"]["rest"], "Priority's bargain step"
+    assert "says no" in panes["coordination"]["rest"], "the who-may-post table's act words"
+    assert "Priority said yes to the line" in panes["adaptation"]["rest"], "Adaptation's handler, as it hears Priority"
+    # Priority says no, and Identity puts the plan to the owner: the conflict ask is at rest on Identity's line
+    monkeypatch.delenv("SUTRA_WEBSITE_OFFLINE", raising=False)
+    monkeypatch.setattr(R, "MODEL", lambda prompt, step: ({"answer": "reject", "why": "the envelope has no room today"}, 0.01, "model")
+                        if step["id"] == "priority.bargain" else (None, 0.0, "offline"))
+    ref = born(WEBSITE, "No Room Co")
+    assert J.status(ref)["state"] == "waiting"
+    panes = _panes(tmp_path, _reads(W, ref))
+    for k, v in panes.items():
+        assert not _banned_shown(v["rest"]) and not _banned_shown(v["hover"]), (k, _banned_shown(v["rest"] + " " + v["hover"]))
+    assert "Priority said no to the plan" in panes["five"]["rest"], "the ask at rest on All five"
+    # an organic department: Adaptation shapes its engines and Identity adds each on Priority's yes (Stamped by rule)
+    monkeypatch.setattr(R, "MODEL", lambda prompt, step: (None, 0.0, "offline"))
+    ref = born(ORGANIC, "Lab Co")
+    assert W.dept(ref)["engines"]
+    panes = _panes(tmp_path, _reads(W, ref))
+    for k, v in panes.items():
+        assert not _banned_shown(v["rest"]) and not _banned_shown(v["hover"]), (k, _banned_shown(v["rest"] + " " + v["hover"]))

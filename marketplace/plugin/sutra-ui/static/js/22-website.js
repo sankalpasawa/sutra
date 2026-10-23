@@ -35,9 +35,11 @@ const WB_WORDS = { ok: "Done", failed: "Failed", running: "Running", skipped: "S
 const WB_RT_PANES = [["steps", "Steps"], ["engine", "Engine"], ["runs", "Runs"]];
 const WB_RUNGS = [["P", "Person"], ["C0", "Improvised call"], ["C1", "Checklist"], ["C2", "Code"]];
 const WB_THREADS = { "submitted": ["", "Sent"], "working": ["", "Working"], "input-required": ["warn", "Waits for you"],
-                     "completed": ["ok", "Done"], "failed": ["block", "Failed"], "canceled": ["off", "Let go"], "rejected": ["block", "Refused"] };
-const WB_ACTS = { "request": "asks", "agree": "agrees", "refuse": "refuses", "propose": "proposes", "accept-proposal": "accepts",
-                  "reject-proposal": "rejects", "inform": "tells", "failure": "could not", "not-understood": "did not follow", "cancel": "lets go" };
+                     "completed": ["ok", "Done"], "failed": ["block", "Failed"], "canceled": ["off", "Let go"], "rejected": ["block", "Said no"] };
+/* an act on the board in a word, in the owner's words: said yes and said no, never accept, refuse or reject (the
+   owner's ruling); the board, the chat turns and Coordination's who-may-post table print these */
+const WB_ACTS = { "request": "asks", "agree": "agrees", "refuse": "says no", "propose": "proposes", "accept-proposal": "says yes",
+                  "reject-proposal": "says no", "inform": "tells", "failure": "could not", "not-understood": "did not follow", "cancel": "lets go" };
 
 function wbS(){
   if (!S.wb) S.wb = { refs: null, refsBusy: false, refsMissed: {}, map: {}, sig: {}, tab: {}, pane: {}, sel: {}, draft: {},
@@ -1084,7 +1086,8 @@ function wbFnExtra(tab, m){
      its rung, under the state the card already shows */
   const steps = wbRt(m) ? wbStepsHtml(m.ref, tab.charAt(0).toUpperCase() + tab.slice(1)) : "";
   if (tab === "identity"){
-    return dpCard("Control", `<div class="dpengines">` + dpKV("Control", m.control === "granted" ? "Granted" : "Held", "") +
+    /* the department's control, in the owner's words: it runs itself within the owner's rules, or the owner holds it */
+    return dpCard("Control", `<div class="dpengines">` + dpKV("Control", m.control === "granted" ? "Runs within your rules" : "Held by you", "") +
         dpKV("Owner", m.owner, "Not named") + dpKV("Stop", m.stopped ? "Stopped" : "Running", "") + `</div>`) +
       dpCard("Autonomy windows", engs.map(e => dpRunRow(e.name, "", "", dpBar(Math.min(1, (e.window_min || 0) / 30)))).join("")) +
       dpCard("Stamped by rule", (m.recent || []).filter(r => r.engine === "Identity").map(r => wbRunRow(r)).join("") || dpQuiet("Nothing yet")) +

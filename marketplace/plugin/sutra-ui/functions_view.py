@@ -24,6 +24,7 @@ import time
 
 import engine_runtime as R
 import j2_runtime as J
+import owner_words
 import website_dept as W
 
 FUNCS = tuple(R.FUNCTIONS)                      # Identity, Adaptation, Priority, Coordination, Audit: the canonical order
@@ -514,52 +515,11 @@ def _writes(ref, fn):
     return out
 
 
-# The bargain in the owner's words wherever a definition's name, a run's line or a ledger row's summary carries the inside
-# word (the screen says said yes, asked for less and said no; never grant, counter or refuse for an answer). A step's
-# name, the default summaries j2_runtime writes (J.on_post, J.refused, the owner's answer), the lines the functions'
-# runs say (engine_runtime's priority_answer, adapt_*, identity_*), what Identity tells the owner (_j2_settle,
-# identity_closed, identity_drop) and the text of the ask it puts to the owner all pass through here before they leave
-# this read, as a node's line, its why, its last act and that act's detail. Phrases first, longest first, then the
-# plain verbs. A rule's tag (go, ask, refuse, always) is the owner's own word for a rule and is left as it is.
-BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priority said yes to, to Root's check"),
-                 ("Take the refusal to Identity", "Take Priority's no to Identity"),
-                 ("Take the counter, or take it to Identity", "Take Priority's ask for less, or take it to Identity"),
-                 ("Grant, refuse or counter", "Say yes, ask for less, or say no"),
-                 ("grants each engine its envelope", "gives each engine its limit"),
-                 ("granted an envelope to each engine", "gave each engine its limit"),
-                 ("Granted within the envelope.", "Said yes within the limit."),
-                 # Root's check, and what Identity tells the owner of it (round 2, gap 4): a plan sent back, never refused
-                 ("Root's check refused the workflow", "Root's check sent the plan back"),
-                 ("Root's check refused the plan", "Root's check sent the plan back"),
-                 ("Root's check refused it", "Root's check sent it back"),
-                 ("waits for the workflow to be granted and registered", "waits for Priority's yes and Root's check"),
-                 ("passed, asked or refused", "passed, asked or stopped"),
-                 # the conflict Identity puts to the owner, and the owner's no (identity_closed, identity_drop)
-                 (", Refuse to drop it.", ", or say no to drop it."),
-                 ("Priority did not grant", "Priority did not say yes to"), ("did not grant", "did not say yes to"),
-                 ("on your refusal", "because you said no"), ("on the owner's refusal", "because the owner said no"),
-                 ("your refusal", "your no"),
-                 ("Take a refusal", "Take a no"), ("Drop what was refused", "Drop what was turned down"),
-                 ("Hear a refusal", "Hear a no"), ("Note the refusal", "Note the no"),
-                 ("The owner refused it.", "The owner said no."), ("refused by the owner", "turned down by the owner"),
-                 ("the owner's refusal", "the owner's no"),
-                 ("took Priority's counter", "took Priority's ask for less"), ("take Priority's counter", "take Priority's ask for less"),
-                 ("Priority's counter", "Priority's ask for less"), ("Priority's refusal", "Priority's no"),
-                 ("Priority's grant's stamp", "Priority's yes"), ("Priority's grant", "Priority's yes"),
-                 ("Priority granted", "Priority said yes to"), ("Priority refused", "Priority said no to"),
-                 ("Priority countered (", "Priority asked for less ("), ("Priority countered", "Priority asked for less on"),
-                 ("countered the line", "asked for less on the line"), ("granted the line", "said yes to the line"),
-                 ("refused the line", "said no to the line"), ("granted a trial", "said yes to a trial"),
-                 ("refused a trial", "said no to a trial"), ("refused the ask", "said no to the ask"), ("refused: ", "said no: "),
-                 ("a stamp or a refusal", "a stamp or a no"), ("or a refusal", "or a no"),
-                 ("Countered.", "Asked for less."), ("Refused.", "Said no."))
-
-
-def _plain(line):
-    line = str(line or "")
-    for inside, said in BARGAIN_WORDS:
-        line = line.replace(inside, said)
-    return line
+# The bargain in the owner's words (owner_words.py): the one word table every read a screen prints passes through, this
+# read's lines (a node's line, its why, its last act and that act's detail, a journey's last move, a step's name) and the
+# older cards' reads in website_api alike. Kept here under its old names for the callers that know them.
+BARGAIN_WORDS = owner_words.BARGAIN_WORDS
+_plain = owner_words.plain
 
 
 def _settings(fn):
