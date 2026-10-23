@@ -205,10 +205,10 @@ def _ready_now(ref, d):
 
 
 # ---- M1.2: who spoke to whom, who made what and who reads it -------------------------------------------------------
-def speaks(ref):
+def speaks(ref, posts=None):
     """Every pair that spoke on the board, src > dst, the owner and Root included: how often, and when last."""
     pairs = {}
-    for p in R.board(ref):
+    for p in (R.board(ref) if posts is None else posts):
         for dst in p.get("dst") or []:
             k = (p.get("src"), dst)
             row = pairs.setdefault(k, {"from": p.get("src"), "to": dst, "n": 0, "at": None})
@@ -264,11 +264,11 @@ def made(ref, d, nr):
 
 
 # ---- M1.1: the five, and the cycle --------------------------------------------------------------------------------
-def _waits_from_threads(ref):
+def _waits_from_threads(ref, board_rows=None):
     """The thread rule: the src of an open thread that wrote its latest post waits on the decider (dst[0]); between the
     five only, since a wait on the owner is read from the asks."""
     posts = {}
-    for p in R.board(ref):
+    for p in (R.board(ref) if board_rows is None else board_rows):
         posts.setdefault(p.get("thread"), []).append(p)
     out = {}
     for th in R.threads(ref):
@@ -366,11 +366,11 @@ def functions(ref):
     pending = [a for a in ak if a.get("status") == "pending"]
     running = [r for r in rs if r.get("status") == "running"]
     work_running = [r for r in running if not r.get("system")]
-    waits = _waits_from_threads(ref)
+    waits = _waits_from_threads(ref, posts)
     faults = _faults(ref, d, rs, rows, now_s)
     nr = []
     mades = made(ref, d, nr)
-    pairs = speaks(ref)
+    pairs = speaks(ref, posts)
     question = None
     if cur.get("open_ask"):
         question = next((a for a in ak if a.get("id") == cur["open_ask"] and a.get("status") == "pending"), None)
