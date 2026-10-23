@@ -623,8 +623,9 @@ def on_held(ref, engine, slot, why):
         return
 
 
-def registered(ref, engines, source, by="Root"):
-    """Root's check passed: the workflow is on the department's record, and the work may run (step 5 to step 6)."""
+def registered(ref, engines, source, by="Root", checks=None):
+    """Root's check passed: the workflow is on the department's record, and the work may run (step 5 to step 6). The
+    validated event lists the checks that ran, each with whether it held and why (M0.7)."""
     names = [e if isinstance(e, str) else e.get("name") for e in engines]
     with W._lock(ref):
         dept = W.dept(ref)
@@ -635,25 +636,25 @@ def registered(ref, engines, source, by="Root"):
         W.save_dept(ref, dept)
     key = "workflow-v%d" % version
     note(ref, 5, "Root", "Adaptation", "workflow.validated", "complete", "The workflow meets Sutra's standards.", key + "-validated",
-         {"workflow": names, "checks": ["engines known", "each reads what one before it wrote", "names unique"]},
-         workflow_ref="workflow/%d" % version)
+         {"workflow": names, "checks": list(checks or [])}, workflow_ref="workflow/%d" % version)
     note(ref, 5, "Root", "Coordination", "workflow.registered", "complete", "Registered %s on the department's record, version %d."
          % (" -> ".join(names), version), key + "-registered", {"workflow": names, "source": source, "version": version},
          workflow_ref="workflow/%d" % version)
     return _set(ref, step=6, state="running", workflow=names, repairs=0)
 
 
-def refused(ref, engines, faults):
-    """Root's check failed (J2.4): nothing is registered; the reasons go back. Returns how often that has now happened."""
+def refused(ref, engines, faults, checks=None):
+    """Root's check failed (J2.4): nothing is registered; the reasons go back, with the checks that ran (none, when the
+    line failed Adaptation's own check before it reached Root). Returns how often that has now happened."""
     names = [e if isinstance(e, str) else e.get("name") for e in engines]
     cur = _state(ref) or {}
     n = int(cur.get("repairs") or 0) + 1
     if names:
         note(ref, 5, "Root", "Adaptation", "workflow.blocked", "refused", "Root's check refused the workflow: %s." % "; ".join(faults)[:300],
-             "workflow-refused-%d" % n, {"workflow": names, "faults": list(faults)}, reason_codes=["standards"])
+             "workflow-refused-%d" % n, {"workflow": names, "faults": list(faults), "checks": list(checks or [])}, reason_codes=["standards"])
     else:
         note(ref, 2, "Adaptation", "Identity", "workflow.blocked", "refused", "The shaped line did not pass its check: %s." % "; ".join(faults)[:300],
-             "workflow-refused-%d" % n, {"workflow": [], "faults": list(faults)}, reason_codes=["check.failed"])
+             "workflow-refused-%d" % n, {"workflow": [], "faults": list(faults), "checks": list(checks or [])}, reason_codes=["check.failed"])
     _set(ref, step=5, state="reshaping", repairs=n)
     return n
 

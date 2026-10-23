@@ -548,6 +548,57 @@ def test_m0_6_the_chat_carries_identitys_question_and_keeps_its_answer(j2, monke
     assert [a["id"] for a in R.chat_view(W.dept(ref)["root"])["answered"]] == [q[0]["id"]]
 
 
+SHAPED_CHECKS = ["names an engine", "one to six engines", "each engine named", "names unique", "names new to the Library",
+                 "first reads the Brief", "each reads what one before it wrote", "each writes something new"]
+
+
+def test_m0_7_the_validated_event_lists_the_checks_that_ran_for_a_library_and_a_shaped_line(j2, monkeypatch):
+    """A fixed list of check names, written whatever ran (a Library line was said to pass checks only a shaped line
+    runs), must fail."""
+    W, R, J, _ = j2
+    ran, real = [], R._root_checks
+
+    def spy(*a):
+        out = real(*a)
+        ran.append(out)
+        return out
+    monkeypatch.setattr(R, "_root_checks", spy)
+    lib = _born(j2)
+    checks = next(e for e in J.events(lib) if e["action"] == "workflow.validated")["payload"]["checks"]
+    assert checks == ran[-1]
+    assert [(c["check"], c["passed"]) for c in checks] == [("names an engine", True), ("engines known", True)]
+    shaped = _born(j2, ORGANIC, "Lab Co")
+    checks = next(e for e in J.events(shaped) if e["action"] == "workflow.validated")["payload"]["checks"]
+    assert checks == ran[-1]
+    assert [c["check"] for c in checks] == SHAPED_CHECKS and all(c["passed"] and c["why"] for c in checks)
+
+
+def test_m0_7_a_refusal_lists_the_checks_that_ran_and_the_one_that_failed(j2, monkeypatch):
+    W, R, J, _ = j2
+    ref = _born(j2)
+    d = W.dept(ref)
+    R._j2_settle(ref, d, [{"name": "Plan"}, {"name": "Nobody Knows"}], "library", d.get("goal"), "a test")
+    blocked = [e for e in J.events(ref) if e["action"] == "workflow.blocked"][-1]
+    assert blocked["payload"]["faults"] == ["the Library has no engine named Nobody Knows"]
+    assert blocked["payload"]["checks"] == [{"check": "names an engine", "passed": True, "why": "the workflow names its engines"},
+                                            {"check": "engines known", "passed": False, "why": "the Library has no engine named Nobody Knows"}]
+    # a check put in Root's place is listed as it ran, beside the standards
+    monkeypatch.setattr(R, "_root_check", lambda ref, d, engines, source: ["the line reaches outside without a rule"])
+    lab = _born(j2, ORGANIC, "Lab Co")
+    first = next(e for e in J.events(lab) if e["action"] == "workflow.blocked")
+    assert [c["check"] for c in first["payload"]["checks"]] == SHAPED_CHECKS + ["Root's check"]
+    assert first["payload"]["checks"][-1] == {"check": "Root's check", "passed": False, "why": "the line reaches outside without a rule"}
+
+
+def test_m0_7_a_line_that_failed_adaptations_own_check_ran_none_of_roots(j2, monkeypatch):
+    W, R, J, _ = j2
+    bad = {"engines": [{"name": "Plan", "does": "plans", "reads": "Brief", "writes": "Notes", "internet": False}]}
+    _model(monkeypatch, R, {"adapt.line": bad})
+    ref = _born(j2, ORGANIC, "Lab Co")
+    blocked = [e for e in J.events(ref) if e["action"] == "workflow.blocked"]
+    assert blocked and all(e["actor"] == "Adaptation" and e["payload"]["checks"] == [] for e in blocked)
+
+
 # ---- the owner's switch --------------------------------------------------------------------------------------------
 def test_stop_then_start_goes_on_from_the_same_step_and_the_two_switches_agree(j2):
     """A Stop that starts a cycle first, or a department that is On while its cycle says stopped, must fail."""
