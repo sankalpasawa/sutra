@@ -7,7 +7,7 @@
 
 ## In the bundle (replaced by an update)
 
-The code, `engine_defs/website.json` (with its `def_version`), the shipped `engine-templates/`, the `artifact-templates/`, the `function-templates/`, the screens. Nothing a person made is written here.
+The code, `engine_defs/website.json` (with its `def_version`), the shipped `engine-templates/`, the `artifact-templates/`, the `function-templates/`, each function's instruction files in `function-prompts/<function>/<file>.md` (PRD M2.1: the words each function's agent is sent; the definitions refuse to load when one is missing), the screens. Nothing a person made is written here.
 
 ## With the records (kept by an update)
 

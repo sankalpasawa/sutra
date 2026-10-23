@@ -280,7 +280,9 @@ def defs():
             e = {k: v for k, v in t.items() if k not in ("id", "version")}
             e["from_template"] = t["id"]
             d["engines"][name] = e
-        faults = validate(d)
+        # each function's version 1 is one agent and its files (S-28): a file gone from the bundle refuses the load, as
+        # a step with no check does, so no function runs on words that are not there (PRD M2.1)
+        faults = validate(d) + bundle_faults()
         if faults:
             raise ValueError("the engine definitions are refused: " + "; ".join(faults[:6]))
         _DEFS["d"] = d
@@ -321,9 +323,10 @@ def card(ctx):
     """Each engine has its own agent. This is who it is: the engine's card, and for a function the brief of the
     Library template the department picked for it."""
     e, d, name = ctx["def"], ctx["dept"], ctx["engine"]
+    does, skills = _goal_of(ctx.get("ref"), name, e)
     lines = ["You are the agent of %s, one engine of the department \"%s\"." % (name, d.get("name")),
-             "What %s does: it %s." % (name, e.get("description") or ""),
-             "Its skills: %s." % "; ".join(e.get("skills") or [])]
+             "What %s does: it %s." % (name, does),
+             "Its skills: %s." % "; ".join(skills)]
     # the template this function runs is the pick on the registry, as the Settings tab left it (found 2026-09-29: a
     # later pick reached the screen and never the agent, which read the birth copy on the record)
     try:
@@ -2968,12 +2971,10 @@ def coord_record(ctx, step, item):
 
 def p_coord_tie(ctx, step, item):
     ready_now = ctx["bag"]["coord.ready"]["ready"]
-    what = "; ".join("%s: %s" % (n, (engine_def(n) or {}).get("description") or "") for n in ready_now)
+    what = "; ".join("%s: %s" % (n, _goal_of(ctx["ref"], n)[0]) for n in ready_now)
     waiting = "; ".join(a["text"] for a in W.asks(ctx["ref"]) if a["status"] == "pending") or "nothing"
-    return ("Several functions of the department are ready at once, and one runs at a time. Say who goes first.\n"
-            "READY NOW: %s\nWHAT EACH DOES: %s\nCOORDINATION'S TABLE, THE USUAL ORDER: %s\nWAITING FOR THE OWNER: %s\n\n"
-            "Return ONLY a JSON object: {\"answer\": \"one of the ready names\", \"why\": \"one line\"}."
-            % (", ".join(ready_now), what, ", ".join(ctx["table"]["functions"]), waiting))
+    return _prompt("coordination", "tie", "tie", ctx["ref"], ready=", ".join(ready_now), what=what,
+                   order=", ".join(ctx["table"]["functions"]), waiting=waiting)
 
 
 def d_coord_tie(ctx, step, item):
@@ -3907,13 +3908,8 @@ def p_identity_close(ctx, step, item):
     d, pl = ctx["dept"], ctx["post"]["payload"]
     rules = "; ".join("%s: %s" % (r.get("tag"), r.get("line")) for r in d.get("rules") or [] if r.get("line"))
     line = " -> ".join(str(e.get("name")) for e in pl.get("engines") or [])
-    return ("You are Identity of the department \"%s\". Adaptation proposed a plan and it did not close with Priority. Close it "
-            "against the goal and the rules ONLY; do not invent a rule.\nTHE GOAL: %s\nDONE WHEN: %s\nTHE RULES: %s\n"
-            "THE PLAN: %s\nWHAT WAS SAID AGAINST IT: %s\n\n"
-            "run: the goal cannot be met without this plan and no rule forbids it. drop: a rule forbids it, or the goal does not "
-            "need it. ask: the goal and the rules do not settle it, so the owner must.\n"
-            "Return ONLY a JSON object: {\"ruling\": \"run\" | \"drop\" | \"ask\", \"why\": \"one line, naming the rule or the goal\"}."
-            % (d.get("name"), pl.get("words") or d.get("goal"), d.get("done"), rules or "none", line or "none", pl.get("why") or ""))
+    return _prompt("identity", "goal", "close", ctx["ref"], dept=d.get("name"), goal=pl.get("words") or d.get("goal"), done=d.get("done"),
+                   rules=rules or "none", plan=line or "none", against=pl.get("why") or "")
 
 
 def d_identity_close(ctx, step, item):
@@ -3986,6 +3982,112 @@ CODE = {"plan_read": plan_read, "plan_fit": plan_fit, "plan_file": plan_file, "w
         "adapt_sense": adapt_sense, "adapt_ladder": adapt_ladder, "adapt_act": adapt_act, "adapt_trial": adapt_trial,
         "adapt_notrial": adapt_notrial, "adapt_heard": adapt_heard, "audit_pick": audit_pick,
         "audit_mechanical": audit_mechanical, "audit_file": audit_file}
+
+
+# ---- each function's version 1: one agent, its instructions as files (S-28) ----------------------------------------
+#: Version 1 of each function is one agent with .md files inside its covering (PRD M2). The words its agent is sent
+#: are in its files, named as its page names them; the code around them only fills their slots and checks what comes
+#: back. The bundle's copy sits beside the code, and an update of the app replaces it.
+PROMPTS_DIR = Path(__file__).parent / "function-prompts"
+#: Each function's files, in its page's order, and in each the parts its steps read, with the slots the code fills in
+#: each. A file no step reads yet (Adaptation's decide) is the owner's to read, and holds no part.
+INSTRUCTIONS = {
+    "identity": {"goal": {"does": (), "skills": (), "close": ("dept", "goal", "done", "rules", "plan", "against")},
+                 "completeness": {"thin": ()},
+                 "take": {"recognise": ("goal", "words", "facts"), "take": ("goal", "rules", "words", "facts", "completeness"),
+                          "answer": ("question", "record"), "rule": ("goal", "rules", "words"), "weigh": ("pages", "words"),
+                          "gate": ("rules", "engine")}},
+    "adaptation": {"goal": {"does": (), "skills": ()}, "sense": {"shape": ("needs", "goal", "idea", "library")}, "decide": {},
+                   "make": {"line": ("dept", "words", "taken", "out", "rules", "refused"), "refused": ("faults",)}},
+    "priority": {"goal": {"does": (), "skills": ()},
+                 "bargain": {"line": ("source", "engines", "calls", "usd", "room", "limit"),
+                             "engine": ("engine", "does", "needs", "calls", "usd", "room"), "cost": ("word", "step", "cost", "room")}},
+    "coordination": {"goal": {"does": (), "skills": ()}, "tie": {"tie": ("ready", "what", "order", "waiting")}},
+    "audit": {"goal": {"does": (), "skills": ()}, "judge": {"judge": ("brief", "filed", "pages")}},
+}
+_PART = re.compile(r"^## ([a-z][a-z0-9_-]*)[ \t]*$", re.M)
+_SLOT = re.compile(r"\{\{([a-z_]+)\}\}")
+
+
+def _parts(text):
+    """An instruction file, read: its lead, the plain words before the first part that say what the file is for (no
+    agent is sent them), and its parts, each under a heading of its own name, its words exactly as written between
+    the blank lines that set it off."""
+    text = str(text or "").replace("\r\n", "\n")
+    heads = list(_PART.finditer(text))
+    parts = {}
+    for i, m in enumerate(heads):
+        if m.group(1) in parts:
+            raise ValueError("the part %s is written twice" % m.group(1))
+        parts[m.group(1)] = text[m.end():heads[i + 1].start() if i + 1 < len(heads) else len(text)].strip("\n")
+    return (text[:heads[0].start()] if heads else text).strip(), parts
+
+
+def instruction_faults(fn, file, text):
+    """What keeps one instruction file from serving its function: no line that says what it is for, a part a step
+    reads gone, a part no step reads, or a slot the code does not fill. [] when it serves. The covering check of every
+    file an agent's words come from: the bundle's at the definitions load."""
+    want = (INSTRUCTIONS.get(fn) or {}).get(file)
+    if want is None:
+        return ["%s has no instructions named %s" % (str(fn).title(), file)]
+    try:
+        lead, parts = _parts(text)
+    except ValueError as exc:
+        return [str(exc)]
+    faults = [] if lead else ["%s does not say first, in a line, what it is for" % file]
+    for part, slots in want.items():
+        if part not in parts:
+            faults.append("%s has no part %s" % (file, part))
+            continue
+        unknown = sorted(set(_SLOT.findall(parts[part])) - set(slots))
+        if unknown:
+            faults.append("%s, %s: the app fills no %s" % (file, part, ", ".join("{{%s}}" % s for s in unknown)))
+    return faults + ["%s, %s: no step reads this part" % (file, p) for p in parts if p not in want]
+
+
+def bundle_faults():
+    """The bundle's files against the list: each one there, each serving. [] when every function has its files."""
+    out = []
+    for fn, files in INSTRUCTIONS.items():
+        for file in files:
+            p = PROMPTS_DIR / fn / (file + ".md")
+            if not p.is_file():
+                out.append("%s's %s instructions are missing from the bundle" % (fn.title(), file))
+                continue
+            out += ["%s's instructions: %s" % (fn.title(), f) for f in instruction_faults(fn, file, p.read_text(encoding="utf-8"))]
+    return out
+
+
+def _instruction(fn, file, ref=None):
+    """The text of one of a function's instruction files: the bundle's copy."""
+    return (PROMPTS_DIR / fn / (file + ".md")).read_text(encoding="utf-8")
+
+
+def _prompt(fn, file, part, ref=None, **slots):
+    """One part of one of a function's instruction files, its slots filled: the words its agent is sent. Each slot is
+    filled once, with its value as given, so nothing a value holds is read as a slot; a slot the code does not fill is
+    an error, never a blank."""
+    parts = _parts(_instruction(fn, file, ref))[1]
+    if part not in parts:
+        raise ValueError("%s's %s instructions have no part %s" % (fn.title(), file, part))
+
+    def fill(m):
+        if m.group(1) not in slots:
+            raise ValueError("%s's %s instructions, %s: the app fills no {{%s}}" % (fn.title(), file, part, m.group(1)))
+        return str(slots[m.group(1)])
+    return _SLOT.sub(fill, parts[part])
+
+
+def _goal_of(ref, name, e=None):
+    """What an engine does and its skills, as its agent is told them: a function's from its goal file (the owner may
+    change it), any other engine's from its definition."""
+    e = e if e is not None else (engine_def(name) or {})
+    fn = str(name or "").lower()
+    if e.get("kind") != "function" or fn not in INSTRUCTIONS:
+        return e.get("description") or "", list(e.get("skills") or [])
+    skills = [ln.strip()[2:].strip() if ln.strip().startswith("- ") else ln.strip()
+              for ln in _prompt(fn, "goal", "skills", ref).split("\n") if ln.strip()]
+    return _prompt(fn, "goal", "does", ref), skills
 
 
 # ---- the registry: prompts and drafts ------------------------------------------------------------------------------
@@ -4063,15 +4165,9 @@ def d_check_rules(ctx, step, item):
 
 def p_identity_take(ctx, step, item):
     d, got = ctx["dept"], ctx["bag"]["identity.read"]
-    return ("Judge one request from the owner.\nTHE GOAL: %s\nTHE RULES: %s\nTHE REQUEST: %s\nREAD BY CODE: %s\n\n"
-            "Return ONLY a JSON object: {\"verdict\": \"go\" | \"ask\" | \"refuse\", \"why\": \"one line\", \"unsure\": [str], "
-            "\"rule\": {\"line\": str, \"tag\": \"always\" | \"refuse\" | \"ask\"} | null, \"thin\": bool}.\n"
-            "go: do it. ask: it reaches outside what the department makes (money, a message to someone, a change to the goal), so "
-            "the owner stamps first. refuse: it breaks a rule. Reading the web is not outside: the department can read any page.\n"
-            "unsure: facts the request says the owner is not sure of, in a few words each; [] when none.\n"
-            "rule: a standing rule the request states (always or never, from now on) with its tag; null when it is one piece of work.\n"
-            "thin: true when the request names nothing to build from (no subject, no purpose)."
-            % (d.get("goal"), "; ".join(r["line"] for r in d.get("rules") or []), got["words"], json.dumps(got["facts"])))
+    # when words are too thin to work from is Identity's completeness, a file of its own (its page lists it); take reads it
+    return _prompt("identity", "take", "take", ctx["ref"], goal=d.get("goal"), rules="; ".join(r["line"] for r in d.get("rules") or []),
+                   words=got["words"], facts=json.dumps(got["facts"]), completeness=_prompt("identity", "completeness", "thin", ctx["ref"]))
 
 
 def d_identity_take(ctx, step, item):
@@ -4082,9 +4178,8 @@ def d_identity_take(ctx, step, item):
 
 def p_identity_gate(ctx, step, item):
     pl = (ctx.get("post") or {}).get("payload") or {}
-    return ("An engine asks whether it may start.\nTHE RULES: %s\nTHE ENGINE: %s\n\nReturn ONLY a JSON object: "
-            "{\"verdict\": \"admit\" | \"wait\" | \"refuse\", \"why\": \"one line\"}."
-            % ("; ".join(r["line"] for r in ctx["dept"].get("rules") or []), pl.get("engine")))
+    return _prompt("identity", "take", "gate", ctx["ref"], rules="; ".join(r["line"] for r in ctx["dept"].get("rules") or []),
+                   engine=pl.get("engine"))
 
 
 def d_identity_gate(ctx, step, item):
@@ -4093,36 +4188,30 @@ def d_identity_gate(ctx, step, item):
 
 def _offer_lines(pl):
     """An engine offer, in the words Priority's agent judges: which engine, what it does, what it needs, what it costs a
-    day (found live 2026-09-29: shown a rung proposal's fields, the agent refused an engine offer as empty)."""
+    day (found live 2026-09-29: shown a rung proposal's fields, the agent refused an engine offer as empty). The slots
+    of Priority's bargain, part engine."""
     offer = pl.get("offer") if isinstance(pl.get("offer"), dict) else {}
     shape = offer.get("shape") if isinstance(offer.get("shape"), dict) else {}
     name = pl.get("engine") or shape.get("name") or offer.get("pick") or "?"
     does = shape.get("does") or offer.get("does") or offer.get("use_case") or ""
     needs = ", ".join(shape.get("needs") or []) or "nothing beyond the model"
     t = priority_template()
-    cost = "%d calls and %.2f USD a day, the envelope of one more work engine" % (int(t.get("work_calls", 8)) * int(t.get("calls", 30)), float(t.get("usd", 6.0)))
-    return "THE ENGINE: %s\nWHAT IT DOES: %s\nWHAT IT NEEDS: %s\nWHAT IT COSTS: %s" % (name, does, needs, cost)
+    return {"engine": name, "does": does, "needs": needs, "calls": "%d" % (int(t.get("work_calls", 8)) * int(t.get("calls", 30))),
+            "usd": "%.2f" % float(t.get("usd", 6.0))}
 
 
 def p_priority_bargain(ctx, step, item):
     got, pl = ctx["bag"]["priority.read"], ctx["post"]["payload"]
+    room = "yes" if got["facts"]["room"] else "no"
     if pl.get("word") == "line":
         lines = "\n".join("- %s: %s" % (e.get("name"), str(e.get("does") or "")) for e in pl.get("engines") or [] if isinstance(e, dict))
         t = priority_template()
-        return ("Adaptation proposes the workflows this department runs to reach its goal, %s:\n%s\n"
-                "WHAT EACH COSTS: up to %d calls and %.2f USD a day.\nROOM FOR THIS MANY WORKFLOWS: %s (the limit is %s)\n\n"
-                "accept: grant them all. counter: grant only some, and name which to keep, in order. reject: grant none.\n"
-                "Return ONLY a JSON object: {\"answer\": \"accept\" | \"counter\" | \"reject\", \"why\": \"one line\", \"keep\": [names]}."
-                % ("from the Library" if pl.get("source") == "library" else "shaped for the goal", lines,
-                   int(t.get("work_calls", 8)) * int(t.get("calls", 30)), float(t.get("usd", 6.0)),
-                   "yes" if got["facts"]["room"] else "no", got.get("limit")))
+        return _prompt("priority", "bargain", "line", ctx["ref"], source="from the Library" if pl.get("source") == "library" else "shaped for the goal",
+                       engines=lines, calls="%d" % (int(t.get("work_calls", 8)) * int(t.get("calls", 30))), usd="%.2f" % float(t.get("usd", 6.0)),
+                       room=room, limit=got.get("limit"))
     if pl.get("word") == "engine":
-        return ("Adaptation proposes an engine for this department, from an idea the owner floated.\n%s\nROOM IN THE ENVELOPE TODAY: %s\n\n"
-                "Return ONLY a JSON object: {\"answer\": \"accept\" | \"reject\", \"why\": \"one line\"}."
-                % (_offer_lines(pl), "yes" if got["facts"]["room"] else "no"))
-    return ("Adaptation proposes something that costs.\nTHE PROPOSAL: %s, for the step %s\nWHAT IT COSTS: %s\n"
-            "ROOM IN THE ENVELOPE TODAY: %s\n\nReturn ONLY a JSON object: {\"answer\": \"accept\" | \"reject\", \"why\": \"one line\"}."
-            % (pl.get("word"), pl.get("step"), pl.get("cost"), "yes" if got["facts"]["room"] else "no"))
+        return _prompt("priority", "bargain", "engine", ctx["ref"], room=room, **_offer_lines(pl))
+    return _prompt("priority", "bargain", "cost", ctx["ref"], word=pl.get("word"), step=pl.get("step"), cost=pl.get("cost"), room=room)
 
 
 def d_priority_bargain(ctx, step, item):
@@ -4145,12 +4234,7 @@ def p_audit_judge(ctx, step, item):
         pages.append({"page": name, "text": " ".join(text.split())[:1500]})
     # what the department's own engines filed backs a page as the brief does (found live 2026-09-29: facts Source Reader
     # filed with their URLs were asked to be "put right" because the brief did not give them)
-    return ("Check what the department made against what it was asked. Read the brief and what the department's own engines "
-            "filed, then the pages. Find any statement of fact on a page that neither the brief nor a filed artifact gives: a "
-            "phone number, an address, a date, a count, a name, a claim of history. A fact a filed artifact gives, with its "
-            "source, is backed: do not report it. Return ONLY a JSON object: {\"ok\": bool, \"findings\": [{\"page\": str, "
-            "\"claim\": str, \"severity\": \"high\" | \"low\"}]}. high: a reader could be harmed or misled by it. At most eight "
-            "findings.\n\nTHE BRIEF:\n%s%s\n\nTHE PAGES:\n%s" % (_brief_text(ref), _context_block(ref), json.dumps(pages)))
+    return _prompt("audit", "judge", "judge", ref, brief=_brief_text(ref), filed=_context_block(ref), pages=json.dumps(pages))
 
 
 def d_audit_judge(ctx, step, item):
@@ -4163,13 +4247,7 @@ def _words(ctx):
 
 def p_identity_recognise(ctx, step, item):
     got = ctx["bag"]["identity.read"]
-    return ("Recognise what kind of words the owner has given. There are five kinds, and only five:\n"
-            "task: \"do X for me\". query: \"tell me Y\". directive: \"from now on, do Z\", a standing change to how the "
-            "department works or to its goal. feedback: \"that was wrong\", about work already made. new-idea: \"I want a new "
-            "capability\", something the department cannot do today.\n"
-            "THE GOAL: %s\nTHE WORDS: %s\nREAD BY CODE: %s\n\n"
-            "Return ONLY a JSON object: {\"journey\": \"task\" | \"query\" | \"directive\" | \"feedback\" | \"new-idea\", "
-            "\"why\": \"one line\"}." % (ctx["dept"].get("goal"), got["words"], json.dumps(got["facts"])))
+    return _prompt("identity", "take", "recognise", ctx["ref"], goal=ctx["dept"].get("goal"), words=got["words"], facts=json.dumps(got["facts"]))
 
 
 def d_identity_recognise(ctx, step, item):
@@ -4203,10 +4281,7 @@ def _record_lines(ref):
 
 
 def p_identity_answer(ctx, step, item):
-    return ("Answer the owner's question from the record below, and from nothing else. If the record does not hold the answer, say "
-            "so.\nTHE QUESTION: %s\nTHE RECORD:\n- %s\n\nReturn ONLY a JSON object: {\"answer\": str, \"source\": \"which line "
-            "of the record\", \"confidence\": \"high\" | \"moderate\" | \"low\" | \"unknown\"}."
-            % (_words(ctx), "\n- ".join(_record_lines(ctx["ref"]))))
+    return _prompt("identity", "take", "answer", ctx["ref"], question=_words(ctx), record="\n- ".join(_record_lines(ctx["ref"])))
 
 
 def d_identity_answer(ctx, step, item):
@@ -4216,11 +4291,8 @@ def d_identity_answer(ctx, step, item):
 
 def p_identity_rule(ctx, step, item):
     d = ctx["dept"]
-    return ("The owner has given a directive. Restate it as one rule, in one line, in plain words.\nTHE GOAL: %s\n"
-            "THE RULES TODAY: %s\nTHE DIRECTIVE: %s\n\nReturn ONLY a JSON object: {\"tag\": \"always\" | \"ask\" | \"refuse\" | "
-            "\"goal\", \"line\": str, \"scope\": \"standing\" | \"one-time\"}. tag goal: the directive changes what the "
-            "department is for. scope one-time: the owner means this once."
-            % (d.get("goal"), "; ".join(r["line"] for r in d.get("rules") or []), _words(ctx)))
+    return _prompt("identity", "take", "rule", ctx["ref"], goal=d.get("goal"), rules="; ".join(r["line"] for r in d.get("rules") or []),
+                   words=_words(ctx))
 
 
 def d_identity_rule(ctx, step, item):
@@ -4234,11 +4306,8 @@ def d_identity_rule(ctx, step, item):
 
 def p_identity_weigh(ctx, step, item):
     got = ctx["bag"]["identity.read"]
-    return ("The owner has given feedback on work the department made. Read what it changes.\nTHE PAGES: %s\nTHE FEEDBACK: %s\n\n"
-            "Return ONLY a JSON object: {\"about\": \"the page's slug, or null\", \"what\": \"format\" | \"content\" | "
-            "\"tone\" | \"scope\" | \"accuracy\", \"now\": \"the correction to make now, one line\", \"future\": \"a rule to "
-            "carry forward to work like this, one line, or null\"}."
-            % (json.dumps([{"slug": p["slug"], "title": p.get("title")} for p in _pages(ctx["ref"])]), got["words"]))
+    return _prompt("identity", "take", "weigh", ctx["ref"], pages=json.dumps([{"slug": p["slug"], "title": p.get("title")} for p in _pages(ctx["ref"])]),
+                   words=got["words"])
 
 
 def d_identity_weigh(ctx, step, item):
@@ -4253,14 +4322,8 @@ def p_adapt_shape(ctx, step, item):
     have = set(d.get("engines") or [x[0] for x in W.engines_of(d)])
     lib = "; ".join("%s: %s" % (n, e.get("use_case")) for n, e in defs()["engines"].items()
                     if e.get("kind") == "work" and e.get("from_template") and n not in have and n != "Setup")
-    return ("The owner floats an idea the department cannot do today. Do not plan a build. Reflect the idea back in sharper words, "
-            "name the question underneath it, and give two or three shapes it could take, smallest first. Then say what engine would "
-            "do it each time on its own: pick one from the Library below when its use case fits (pick), else shape one (engine: a name "
-            "of one or two words, what it does in one line, and what it needs from this list: %s); both null when the idea asks for "
-            "no engine.\nTHE GOAL: %s\nTHE IDEA: %s\nENGINES IN THE LIBRARY, NOT YET IN THIS DEPARTMENT: %s\n\n"
-            "Return ONLY a JSON object: {\"reflected\": str, \"question\": str, \"shapes\": [str, str, str], \"pick\": str or null, "
-            "\"engine\": {\"name\": str, \"does\": str, \"needs\": [str]} or null}."
-            % (", ".join(NEEDS), d.get("goal"), pl.get("words"), lib or "none"))
+    return _prompt("adaptation", "sense", "shape", ctx["ref"], needs=", ".join(NEEDS), goal=d.get("goal"), idea=pl.get("words"),
+                   library=lib or "none")
 
 
 def d_adapt_shape(ctx, step, item):
@@ -4280,16 +4343,9 @@ def p_adapt_line(ctx, step, item):
     d, pl = ctx["dept"], ctx["post"]["payload"]
     rules = "; ".join(str(r.get("line")) for r in d.get("rules") or [] if r.get("line"))
     taken = ", ".join(sorted(defs()["engines"]))
-    return ("The department \"%s\" was just given its goal, in its owner's words:\n%s\n\nIt has no engines yet. Shape the line of engines "
-            "that gets this done: two to five, in the order they run, each reading one thing and writing one thing. The first reads the "
-            "Brief (the owner's words); each later one reads what an earlier one wrote. An engine can search the web and open pages: say "
-            "in what it does what it looks up, and mark internet true. Name each engine in one or two words none of these already use (%s), "
-            "and name what it writes in one or two words (Facts, Pages, ...). When the goal is something that goes out into the world, the "
-            "last engine writes it under the Library's own name for it: %s.\nTHE DEPARTMENT'S RULES: %s\n\n"
-            "Return ONLY a JSON object: {\"engines\": [{\"name\": str, \"does\": str, \"reads\": str, \"writes\": str, \"internet\": bool}]}.%s"
-            % (d.get("name"), pl.get("words") or d.get("goal"), taken, _out_artifacts() or "none", rules or "none",
-               ("\n\nYOUR LAST LINE WAS REFUSED BY ROOT'S CHECK: %s. Shape it again without these faults." % "; ".join(str(f) for f in pl["faults"]))
-               if pl.get("faults") else ""))
+    refused = ("\n\n" + _prompt("adaptation", "make", "refused", ctx["ref"], faults="; ".join(str(f) for f in pl["faults"]))) if pl.get("faults") else ""
+    return _prompt("adaptation", "make", "line", ctx["ref"], dept=d.get("name"), words=pl.get("words") or d.get("goal"), taken=taken,
+                   out=_out_artifacts() or "none", rules=rules or "none", refused=refused)
 
 
 def d_adapt_line(ctx, step, item):
@@ -4573,7 +4629,8 @@ def steps_view(ref, name):
                     "evidence": (_decided(mine) if decides else evidence(ref, s["id"], rows=rows, since=en.get("since_row")))
                     if mine else None,
                     "history": en.get("history") or []})
-    view = {"name": name, "kind": e["kind"], "description": e.get("description"), "skills": e.get("skills") or [],
+    does, skills = _goal_of(ref, name, e)                     # a function's own words, as its agent is told them
+    view = {"name": name, "kind": e["kind"], "description": does or e.get("description"), "skills": skills,
             "reads": e.get("reads"), "writes": e.get("writes"), "steps": out,
             "hears": ([SHARED] if rules else []) + [h["name"] for h in e.get("on") or []],
             "start": start_view(e), "numbers": numbers(ref, name)}
