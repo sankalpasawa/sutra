@@ -5866,6 +5866,7 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .wb2map .n.fn.off .bx{stroke:var(--line-soft)}
 .wb2map .n.wait .bx{stroke:var(--muted);stroke-dasharray:4 3}
 .wb2map .n text.st{font:500 11px var(--sans);fill:var(--muted)}
+.wb2map .n text.ln{font:400 10px var(--sans);fill:var(--faint)}
 .wb2map .n.run text.st{fill:var(--acc)}
 .wb2map .n.ask text.st{fill:var(--warn)}
 .wb2map .n.block text.st{fill:var(--block)}
@@ -5875,6 +5876,18 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .wb2map .fnbar.fn-coordination{fill:var(--fn-coordination)}
 .wb2map .fnbar.fn-audit{fill:var(--fn-audit)}
 .wb2map .n.work.live .bx{fill:var(--ok-bg);stroke:var(--ok);stroke-width:2}
+.wb2map .bdg circle{stroke-width:1.2}
+.wb2map .bdg.ask circle{fill:var(--warn-bg);stroke:var(--warn)}
+.wb2map .bdg.block circle{fill:var(--block-bg);stroke:var(--block)}
+.wb2map .bdg text{font:700 10px var(--sans);pointer-events:none}
+.wb2map .bdg.ask text{fill:var(--warn)}
+.wb2map .bdg.block text{fill:var(--block)}
+.wb2map .e.talk{stroke:var(--muted);stroke-dasharray:1 3;stroke-linecap:round}
+.wb2map .e.made{stroke:var(--acc);stroke-dasharray:2 3;opacity:.7}
+.wb2dd{margin:6px 0 0;font:400 12px/1.5 var(--sans);color:var(--muted)}
+.wb2dd summary{cursor:pointer}
+.wb2ddrow{display:flex;align-items:center;gap:8px;padding:3px 0;color:var(--ink)}
+.wb2ddrow .dpbar{flex:1;max-width:160px}
 .wb2map .bar0{fill:var(--line-soft)}
 .wb2map .bar1{fill:var(--acc)}
 .wb2pill.say{background:var(--inset);color:var(--ink)}

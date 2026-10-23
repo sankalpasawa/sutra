@@ -184,8 +184,25 @@ function wb2MapHtml(n, m){
       (ic ? `<g class="ic" transform="translate(14,12) scale(0.85)">${ic}</g>` : "") +
       `<rect class="fnbar fn-${esc(k)}" width="4" height="${WB2_FN_H}" rx="2"/>` +
       (cls === "run" ? `<rect class="halo" width="${WB2_FN_W}" height="${WB2_FN_H}" rx="8"/>` : "") +
-      `<text x="${ic ? 42 : 14}" y="28">${esc(f)}</text><text class="st" x="${ic ? 42 : 14}" y="47">${esc(word)}</text>${wb2Title(tip)}</g>`;
+      `<text x="${ic ? 42 : 14}" y="24">${esc(f)}</text><text class="st" x="${ic ? 42 : 14}" y="40">${esc(word)}</text>` +
+      (wb2BoxLine(node) ? `<text class="ln" x="${ic ? 42 : 14}" y="55">${esc(wb2BoxLine(node))}</text>` : "") +
+      (cls === "ask" || cls === "block" ? `<g class="bdg ${cls}"><circle cx="${WB2_FN_W - 14}" cy="14" r="7"/><text x="${WB2_FN_W - 14}" y="18" text-anchor="middle">${cls === "ask" ? "?" : "!"}</text></g>` : "") +
+      `${wb2Title(tip)}</g>`;
   });
+  /* MK-8, the prototype's extras: who speaks to whom among the five, three lines at most (the busiest pairs, drawn as
+     arcs over the row; the rest are in the closed dropdown under the picture), and a line from a function to the work
+     it made, where the record says it made any */
+  if (fv && !fv.failed){
+    const at = f => fns.indexOf(f);
+    (fv.speaks || []).filter(p => at(p.from) >= 0 && at(p.to) >= 0 && p.from !== p.to).slice(0, 3).forEach(p => {
+      const x1 = fx(at(p.from)), x2 = fx(at(p.to)), lift = 18 + Math.abs(at(p.to) - at(p.from)) * 6;
+      svg += `<path class="e talk" marker-end="url(#sxarrow)" d="M${x1.toFixed(0)} ${FY} Q${((x1 + x2) / 2).toFixed(0)} ${FY - lift} ${x2.toFixed(0)} ${FY}">${wb2Title(p.from + " speaks to " + p.to)}</path>`;
+    });
+    (fv.made || []).forEach(a => (a.makers || []).filter(x => at(x) >= 0).forEach(x => {
+      const j = line.findIndex(nd => nd.kind === "work" && nd.name === a.art);
+      if (j >= 0) svg += `<path class="e made" d="M${fx(at(x)).toFixed(0)} ${FB} L${lx(j).toFixed(0)} 232">${wb2Title(x + " made " + a.art)}</path>`;
+    }));
+  }
   /* the line of work: an engine opens its card, a filed thing opens itself; the deliverable is lit once it is live */
   line.forEach((node, i) => {
     if (node.kind === "eng"){
@@ -218,7 +235,28 @@ function wb2MapHtml(n, m){
   });
   svg += `</svg>`;
   const empty = !engs.length ? dpQuiet("No plan yet") : "";
-  return wb2NowHtml(m, fv) + `<div class="wb2frame wb"><div class="wb2map wb">${svg}</div>` + wb2CardsHtml(m, fv, line, arts, knows, bud) + `</div>` + empty;
+  return wb2NowHtml(m, fv) + `<div class="wb2frame wb"><div class="wb2map wb">${svg}</div>` + wb2CardsHtml(m, fv, line, arts, knows, bud) + `</div>` + empty +
+    wb2UnderHtml(fv);
+}
+/* a function's line under its state word, cut to the box; a line that carries a count stays on the hover */
+function wb2BoxLine(node){
+  const line = String((node && (node.why || node.line)) || "");
+  if (!line || /\d/.test(line)) return "";
+  return line.length > 20 ? line.slice(0, 19).replace(/\s+\S*$/, "") + "…" : line;
+}
+/* Under the picture, three closed dropdowns (the prototype's "Not recorded" pattern, 8b24f54): every message between the
+   functions, who made each thing and who reads it, and what the record does not hold. A count is a bar, never a number. */
+function wb2UnderHtml(fv){
+  if (!fv || fv.failed) return "";
+  const five = ["Identity", "Adaptation", "Priority", "Coordination", "Audit"];
+  const talk = (fv.speaks || []).filter(p => five.indexOf(p.from) >= 0 && five.indexOf(p.to) >= 0);
+  const most = talk.reduce((x, p) => Math.max(x, p.n || 0), 0) || 1;
+  const dd = (label, rows) => rows ? `<details class="wb2dd wb"><summary>${wbEsc(label)}</summary>${rows}</details>` : "";
+  const msgs = talk.length ? talk.map(p => `<div class="wb2ddrow">${wbChip(p.from)}<span class="wbarrow">&rarr;</span>${wbChip(p.to)}${dpBar(Math.min(1, (p.n || 0) / most))}</div>`).join("") : "";
+  const made = (fv.made || []).filter(a => a.v).map(a => `<div class="wb2ddrow"><b>${wbEsc(a.art)}</b><span class="dpchk">made by ${wbEsc(a.by === "Owner" ? "you" : (a.by || "not recorded"))}` +
+    `${(a.readers || []).length ? " · read by " + wbEsc(a.readers.join(", ")) : ""}</span></div>`).join("");
+  const nr = (fv.not_recorded || []).length ? fv.not_recorded.map(x => `<div class="wb2ddrow"><span class="dpchk">${wbEsc(x)}</span></div>`).join("") : "";
+  return dd("Messages between functions", msgs) + dd("Who made each thing", made) + dd("Not recorded", nr);
 }
 /* The same map as a list of cards, for a narrow viewer: people, the five, the work in line order, what it knows. */
 function wb2CardsHtml(m, fv, line, arts, knows, bud){

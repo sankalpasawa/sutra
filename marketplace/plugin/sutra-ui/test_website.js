@@ -1301,7 +1301,7 @@ test("M1.5: each function's box takes its class and its state word from the func
     const g = fnBox(html, fn);
     assert.ok(g.length, fn + " box");
     assert.strictEqual(g[1], want[fn][0], fn + " class");
-    assert.ok(new RegExp('<text class="st" x="42" y="47">' + want[fn][1] + '</text>').test(g[2]), fn + " word: " + g[2]);
+    assert.ok(new RegExp('<text class="st" x="42" y="40">' + want[fn][1] + '</text>').test(g[2]), fn + " word: " + g[2]);
     assert.ok(new RegExp('<rect class="fnbar fn-' + fn + '" width="4" height="64"').test(g[2]), fn + " carries its colour bar");
     assert.ok(/<rect class="bx" width="154" height="64"/.test(g[2]), fn + " is a 154x64 box");
   });
@@ -1362,6 +1362,34 @@ test("M1.5: Budget joins Knows as a bar with its numbers on hover; a failed read
   /* while the read is on its way a skeleton holds the words' place */
   [, html] = await mapWith({ fv: () => new Promise(() => {}) });
   assert.ok(/<div class="wb2now"><span class="wb2pill wb2skel" aria-hidden="true"><\/span>/.test(html), "a skeleton");
+});
+/* MK-8 taken (decision log): the prototype's Map extras. The box carries '?' or '!' and its line when it fits and has no
+   count; who speaks to whom among the five is three arcs at most, the rest in a closed dropdown; who made each thing and
+   what is not recorded are closed dropdowns too, counts as bars. */
+test("M1.5 extras (MK-8): badges and the line on a box, three speaks-to arcs at most, the closed dropdowns", async () => {
+  const speaks = [{ from: "Adaptation", to: "Priority", n: 9 }, { from: "Priority", to: "Adaptation", n: 7 }, { from: "Identity", to: "Adaptation", n: 4 },
+                  { from: "Coordination", to: "Identity", n: 2 }, { from: "Owner", to: "Identity", n: 12 }, { from: "Identity", to: "Owner", n: 11 }];
+  const fv = fvOf({ states: { Identity: "waiting_on_you", Coordination: "working", Audit: "fault" },
+                    lines: { Identity: "May the reviews show first names?", Coordination: "Write's turn", Audit: "a step failed" },
+                    speaks, not_recorded: ["what Audit did"],
+                    made: [{ art: "Site plan", slug: "site-plan", v: 2, by: "Plan", makers: ["Plan"], by_v: {}, readers: ["Write"] },
+                           { art: "Brief", slug: "brief", v: 1, by: "Owner", makers: ["Owner"], by_v: {}, readers: ["Plan"] }] });
+  const [, html] = await mapWith({ fv });
+  assert.ok(/<g class="bdg ask"><circle cx="140" cy="14" r="7"\/><text x="140" y="18" text-anchor="middle">\?<\/text><\/g>/.test(fnBox(html, "identity")[2]), "'?' on Identity");
+  assert.ok(/<g class="bdg block">[\s\S]*?>!<\/text><\/g>/.test(fnBox(html, "audit")[2]), "'!' on Audit");
+  assert.ok(!/class="bdg/.test(fnBox(html, "coordination")[2]), "no badge on a working one");
+  assert.ok(/<text class="st" x="42" y="40">working<\/text><text class="ln" x="42" y="55">Write(&#39;|')s turn<\/text>/.test(fnBox(html, "coordination")[2]), "the word, and the line under it");
+  assert.ok(/<text class="st" x="42" y="40">waits on you<\/text><text class="ln" x="42" y="55">May the reviews…<\/text>/.test(fnBox(html, "identity")[2]), "a long line is cut to the box");
+  const [, h2] = await mapWith({ fv: fvOf({ states: { Coordination: "working" }, lines: { Coordination: "page 3 of 8" } }) });
+  assert.ok(!/class="ln"/.test(fnBox(h2, "coordination")[2]) && /<title>Coordination · working · page 3 of 8<\/title>/.test(h2), "a count stays on the hover");
+  const arcs = html.match(/<path class="e talk"[^>]*><title>([^<]+)<\/title><\/path>/g) || [];
+  assert.deepStrictEqual(arcs.map(a => /<title>([^<]+)</.exec(a)[1]), ["Adaptation speaks to Priority", "Priority speaks to Adaptation", "Identity speaks to Adaptation"], "three at most, the busiest, among the five only");
+  const under = html.slice(html.indexOf('<details class="wb2dd wb">'));
+  assert.ok(/^<details class="wb2dd wb"><summary>Messages between functions<\/summary>/.test(under) && !/<details[^>]* open/.test(under), "closed by default");
+  assert.strictEqual((under.split("<summary>Who made each thing</summary>")[0].match(/<div class="wb2ddrow">/g) || []).length, 4, "every pair among the five in the dropdown, the owner's lines not among them");
+  assert.ok(/<b>Site plan<\/b><span class="dpchk">made by Plan · read by Write<\/span>/.test(under) && /<b>Brief<\/b><span class="dpchk">made by you · read by Plan<\/span>/.test(under), "who made each thing");
+  assert.ok(/<summary>Not recorded<\/summary><div class="wb2ddrow"><span class="dpchk">what Audit did<\/span><\/div>/.test(under), "what the record does not hold");
+  assert.ok(!/\d/.test(words(under).replace(/\bv\d+\b/g, "")), "a count in the dropdowns is a bar, never a number");
 });
 test("M1.5: a department with no plan yet shows its Brief and one quiet line", async () => {
   const m = rtMap({ versions: { "Brief": 1 } }); m.engines = []; m.live = false; m.artifacts = [{ name: "Brief", slug: "brief", versions: 1, latest: null }];
