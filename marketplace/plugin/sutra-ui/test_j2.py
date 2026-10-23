@@ -233,6 +233,36 @@ def test_m0_3_every_version_is_read_in_a_cycle_and_an_unsampled_v4_is_never_clea
     assert "goal.reached" not in _actions(J, ref) and J.status(ref)["step"] == 7
 
 
+def test_m0_4_an_envelope_hold_is_one_event_and_one_ask_however_often_it_is_asked(j2, monkeypatch):
+    """A hold the ledger never sees, or one written on every tick or on a panel read, must fail."""
+    W, R, J, _ = j2
+    ref = _born(j2, settle=False)
+    W.set_envelope(ref, "Plan", calls=0)
+    W.run_until_idle(ref, limit=300)
+    assert J.status(ref)["step"] == 6 and _work(W, ref) == []
+    asked = {"n": 0}
+    real = J.on_held
+
+    def counted(*a, **k):
+        asked["n"] += 1
+        return real(*a, **k)
+    monkeypatch.setattr(J, "on_held", counted)
+    for _ in range(20):
+        W.status(ref)                                                # a panel read: a peek
+    assert asked["n"] == 0
+    for _ in range(20):
+        W.run_until_idle(ref, limit=1)                               # a motor tick
+    assert asked["n"] >= 20 and _work(W, ref) == []
+    held = [e for e in J.events(ref) if e["action"] == "envelope.held"]
+    assert len(held) == 1
+    assert (held[0]["actor"], held[0]["recipient"], held[0]["step"]) == ("Priority", "Plan", 6)
+    assert held[0]["payload"]["slot"].startswith("Plan@") and held[0]["summary"] == "Plan is out of today's envelope"
+    envelope = [a for a in W.asks(ref) if a["kind"] == "envelope"]
+    assert len(envelope) == 1 and envelope[0]["escalated"] is True and envelope[0]["status"] == "pending"
+    shown = [r for r in J.activity(ref) if r["action"] == "envelope.held"]
+    assert len(shown) == 1                                           # once in Agent activity
+
+
 # ---- the edges ------------------------------------------------------------------------------------------------------
 def test_j2_1_identitys_question_takes_words_once_and_the_standard_is_read_again(j2):
     """A question that only takes a stamp, or an answer taken twice, must fail."""

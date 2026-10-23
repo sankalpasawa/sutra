@@ -1835,6 +1835,12 @@ def priority_envelope(ctx, step, item):
         if not any(x.get("kind") == "envelope" and x.get("engine") == name and x["status"] == "pending" for x in W.asks(ref)):
             W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "envelope", "engine": name, "slot": slot,
                              "text": "%s is out of today's envelope" % name, "status": "pending", "created": W.now(), "escalated": True})
+        if not ctx.get("peek"):
+            # the hold is on the ledger once for its slot, however often the motor asks again (M0.4); a panel read
+            # asking the same question writes nothing; Coordination's other waits stay in the status's 'next'
+            J = _j2()
+            if J:
+                J.on_held(ref, name, slot, "%s is out of today's envelope" % name)
         return "wait", "%s is out of its envelope" % name
     return "admit", None
 
