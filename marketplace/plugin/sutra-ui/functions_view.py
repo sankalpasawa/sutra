@@ -435,8 +435,10 @@ def functions(ref):
             if state == "blocked":                  # Identity closed a conflict by dropping the plan (J.ruled 'drop')
                 node.update(state="waiting_on_you", waits_on="you", line="the plan was dropped; it needs your words")
             elif state == "waiting" or ask:
+                # the ask's own text is Identity's line, at rest on All five and its pane: a conflict's ask quotes
+                # Priority's no and names the owner's buttons, so it is said in the owner's words too
                 node.update(state="waiting_on_you", waits_on="you",
-                            line=_short((ask or {}).get("text") or "waits for your answer"))
+                            line=_short(_plain((ask or {}).get("text")) or "waits for your answer"))
         if fn in faults:
             node.update(state="fault", why=faults[fn], line=faults[fn])
         # a department that is stopped, or whose goal is reached, is quiet throughout; a stopped one says so in one word,
@@ -514,10 +516,11 @@ def _writes(ref, fn):
 
 # The bargain in the owner's words wherever a definition's name, a run's line or a ledger row's summary carries the inside
 # word (the screen says said yes, asked for less and said no; never grant, counter or refuse for an answer). A step's
-# name, the default summaries j2_runtime writes (J.on_post, J.refused, the owner's answer) and the lines the functions'
-# runs say (engine_runtime's priority_answer, adapt_*, identity_*) all pass through here before they leave this read.
-# Phrases first, longest first, then the plain verbs. A rule's tag (go, ask, refuse, always) is the owner's own word
-# for a rule and is left as it is.
+# name, the default summaries j2_runtime writes (J.on_post, J.refused, the owner's answer), the lines the functions'
+# runs say (engine_runtime's priority_answer, adapt_*, identity_*), what Identity tells the owner (_j2_settle,
+# identity_closed, identity_drop) and the text of the ask it puts to the owner all pass through here before they leave
+# this read, as a node's line, its why, its last act and that act's detail. Phrases first, longest first, then the
+# plain verbs. A rule's tag (go, ask, refuse, always) is the owner's own word for a rule and is left as it is.
 BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priority said yes to, to Root's check"),
                  ("Take the refusal to Identity", "Take Priority's no to Identity"),
                  ("Take the counter, or take it to Identity", "Take Priority's ask for less, or take it to Identity"),
@@ -525,9 +528,17 @@ BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priori
                  ("grants each engine its envelope", "gives each engine its limit"),
                  ("granted an envelope to each engine", "gave each engine its limit"),
                  ("Granted within the envelope.", "Said yes within the limit."),
+                 # Root's check, and what Identity tells the owner of it (round 2, gap 4): a plan sent back, never refused
                  ("Root's check refused the workflow", "Root's check sent the plan back"),
+                 ("Root's check refused the plan", "Root's check sent the plan back"),
+                 ("Root's check refused it", "Root's check sent it back"),
                  ("waits for the workflow to be granted and registered", "waits for Priority's yes and Root's check"),
                  ("passed, asked or refused", "passed, asked or stopped"),
+                 # the conflict Identity puts to the owner, and the owner's no (identity_closed, identity_drop)
+                 (", Refuse to drop it.", ", or say no to drop it."),
+                 ("Priority did not grant", "Priority did not say yes to"), ("did not grant", "did not say yes to"),
+                 ("on your refusal", "because you said no"), ("on the owner's refusal", "because the owner said no"),
+                 ("your refusal", "your no"),
                  ("Take a refusal", "Take a no"), ("Drop what was refused", "Drop what was turned down"),
                  ("Hear a refusal", "Hear a no"), ("Note the refusal", "Note the no"),
                  ("The owner refused it.", "The owner said no."), ("refused by the owner", "turned down by the owner"),
@@ -536,10 +547,11 @@ BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priori
                  ("Priority's counter", "Priority's ask for less"), ("Priority's refusal", "Priority's no"),
                  ("Priority's grant's stamp", "Priority's yes"), ("Priority's grant", "Priority's yes"),
                  ("Priority granted", "Priority said yes to"), ("Priority refused", "Priority said no to"),
-                 ("Priority countered", "Priority asked for less on"),
+                 ("Priority countered (", "Priority asked for less ("), ("Priority countered", "Priority asked for less on"),
                  ("countered the line", "asked for less on the line"), ("granted the line", "said yes to the line"),
                  ("refused the line", "said no to the line"), ("granted a trial", "said yes to a trial"),
                  ("refused a trial", "said no to a trial"), ("refused the ask", "said no to the ask"), ("refused: ", "said no: "),
+                 ("a stamp or a refusal", "a stamp or a no"), ("or a refusal", "or a no"),
                  ("Countered.", "Asked for less."), ("Refused.", "Said no."))
 
 

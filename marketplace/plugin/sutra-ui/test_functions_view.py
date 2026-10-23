@@ -13,8 +13,10 @@ Named claims:
   F7  the cycle says where the department is in the owner's words, with its eight steps, and needs_you only when it does;
       each function's last act is the act and to whom, in the owner's words, never the words a post carried
   F8  every word of the read is the owner's in every state: said yes, asked for less, said no and sent back, never grant,
-      counter or refuse (the bargain on the record, a dropped plan, a department Root set up); a rule's tag (go, ask,
-      refuse, always) is the owner's own word and stays
+      counter or refuse (the bargain on the record, a dropped plan, a department Root set up, a running function, and
+      every state a real department passes through when Priority says no, Identity asks, the owner says no, Identity
+      rules it runs, or Root's check sends a plan back); a rule's tag (go, ask, refuse, always) is the owner's own word
+      and stays
 
 Each department is born the way the app makes one (website_dept.create), then its record is set to the state under
 test, so what is read is the record a real department keeps.
@@ -427,12 +429,13 @@ def born(mods, monkeypatch):
     if not E.active_roots(E.load_domains()):
         E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
 
-    def make(words, org):
+    def make(words, org, settle=True):
         root = founding.found_structure(org, owner="Sankalp")["root"]
         W.owner_ask(root, words)
         W.run_until_idle(root, limit=300)
         child = next(d for d in W.list_depts() if d.get("parent") == root)
-        W.run_until_idle(child["ref"], limit=300)
+        if settle:
+            W.run_until_idle(child["ref"], limit=300)
         return child["ref"]
     return make
 
@@ -653,3 +656,73 @@ def test_m17_a_born_department_reads_in_the_owners_words(mods, born):
     for fn in JOURNEYS:
         page = F.function(ref, fn)
         assert not _banned(page), (fn, _banned(page))
+
+
+def _model(monkeypatch, R, answers):
+    """test_j2.py's model that is a function: a step id maps to what the AI inside says; every other step falls to its
+    draft, as it does offline."""
+    monkeypatch.delenv("SUTRA_WEBSITE_OFFLINE", raising=False)
+
+    def model(prompt, step):
+        if step["id"] not in answers:
+            return None, 0.0, "offline"
+        return answers[step["id"]], 0.01, "model"
+    monkeypatch.setattr(R, "MODEL", model)
+
+
+def _stepped(W, J, F, ref, bad, limit=300):
+    """Run the department one start at a time, as the motor does, and read the five and each function's page after
+    every start, so every state the real flow passes through is read, not only where it comes to rest."""
+    for _ in range(limit):
+        for v in [F.functions(ref)] + [F.function(ref, fn) for fn in JOURNEYS]:
+            if _banned(v):
+                bad.append((J.status(ref).get("state"), v.get("fn") or "five", _banned(v)))
+        if not W.run_until_idle(ref, limit=1):
+            return
+
+
+def test_m17_the_real_flow_reads_in_the_owners_words_in_every_state_it_passes(mods, born, monkeypatch):
+    """Round 2, gap 4: the record's own lines reach the screen in the owner's words in the states a real department
+    passes through, not only on the happy path. Priority's AI says no, Identity's draft puts the plan to the owner (the
+    ask's text is Identity's line, at rest on All five and its pane), the owner says no (Identity's tell is its last
+    act's detail); and Root's check sends a plan back once, so Adaptation reshapes it (FA1's row and the Propose pill)."""
+    W, R, J, F = mods
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "the envelope has no room today"}})
+    ref, bad = born(WEBSITE, "Acme Learning", settle=False), []
+    _stepped(W, J, F, ref, bad)
+    got = F.functions(ref)
+    idn = next(n for n in got["functions"] if n["name"] == "Identity")
+    assert J.status(ref)["state"] == "waiting" and idn["state"] == "waiting_on_you", (J.status(ref), idn)
+    assert "Priority said no to the plan: the envelope has no room today" in idn["line"], idn["line"]
+    for a in [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "conflict"]:
+        W.decide_ask(ref, a["id"], False)
+    _stepped(W, J, F, ref, bad)
+    assert J.status(ref)["state"] == "blocked"
+    last = next(n for n in F.functions(ref)["functions"] if n["name"] == "Identity")["last"]
+    assert last and "said no" in " ".join(filter(None, [last["what"], last["detail"]])), last
+    # Identity rules the plan runs: its tell says Priority did not say yes, never that it did not grant
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "the envelope has no room today"},
+                            "identity.close": {"ruling": "run", "why": "the goal cannot be met without a site"}})
+    ruled = born(WEBSITE, "Run Co", settle=False)
+    _stepped(W, J, F, ruled, bad)
+    assert "workflow.registered" in [e["action"] for e in J.events(ruled)]
+    assert not bad, bad[:3]
+
+    real, calls = R._root_check, {"n": 0}
+
+    def check(ref, d, engines, source):
+        calls["n"] += 1
+        return ["Facts reads Notes, which nothing before it writes"] if calls["n"] == 1 else real(ref, d, engines, source)
+    monkeypatch.setattr(R, "_root_check", check)
+    _model(monkeypatch, R, {})
+    ref, seen = born(ORGANIC, "Lab Co", settle=False), []
+    states = []
+    for _ in range(300):
+        states.append(J.status(ref).get("state"))
+        for v in [F.functions(ref)] + [F.function(ref, fn) for fn in JOURNEYS]:
+            if _banned(v):
+                seen.append((states[-1], v.get("fn") or "five", _banned(v)))
+        if not W.run_until_idle(ref, limit=1):
+            break
+    assert calls["n"] >= 2 and "adapting" in states, states
+    assert not seen, seen[:3]
