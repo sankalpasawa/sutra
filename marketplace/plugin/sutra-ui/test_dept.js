@@ -128,10 +128,12 @@ function elem(attrs, inside){
 
 function fresh(opts){
   opts = opts || {};
-  const calls = { apiGet: [], apiPost: [], render: 0, decide: [] };
+  const calls = { apiGet: [], apiPost: [], render: 0, decide: [], timers: [] };
   const ctx = {
     console, Date, Number, String, Array, Set, Map, JSON, Math, encodeURIComponent, Promise, setTimeout, clearTimeout,
     apiGet: opts.apiGet || ((p) => { calls.apiGet.push(p); return new Promise(() => {}); }),
+    /* the timer stub (PRD M1.9): an interval is kept, never run by the clock; tick(c) runs each one once */
+    setInterval: (fn, ms) => { calls.timers.push({ fn, ms }); return calls.timers.length; }, clearInterval: () => {},
     apiPost: opts.apiPost || ((p, body) => { calls.apiPost.push({ p, body }); return Promise.resolve({}); }),
     window: opts.window || {},
     esc: (x) => String(x == null ? "" : x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"),
@@ -153,7 +155,7 @@ function fresh(opts){
     document: {
       listeners: {},
       addEventListener(type, fn){ (this.listeners[type] = this.listeners[type] || []).push(fn); },
-      querySelector(){ return null; },
+      querySelector(){ return null; }, querySelectorAll(){ return []; },
       getElementById(){ return null; },
     },
   };
@@ -165,6 +167,8 @@ function fresh(opts){
   return ctx;
 }
 const sleep = () => new Promise(r => setTimeout(r, 0));
+/* one beat of the screen's clock: every interval the modules set runs once (the timer stub in fresh) */
+function tick(c){ c.calls.timers.forEach(t => t.fn()); }
 
 /* Dispatch a synthetic click at `target` through every registered listener. */
 function click(c, target){
@@ -2878,6 +2882,99 @@ test("M1.6: loading and a failed read draw no dots; stopped turns every dot off;
   Object.values(rows).forEach(r => assert.ok(!/dpdot|aria-label|dpfn/.test(r), "no read: a bare label, as before"));
   /* the dot's colours are tokens, and a function colour never fills one */
   assert.ok(/\.dpdot\.breath\{[^}]*background:var\(--acc\)/.test(css) && /prefers-reduced-motion:reduce\)\{\.dpdot\.breath\{animation:none\}/.test(css));
+});
+
+/* ── M1.9: refresh without flicker ─────────────────────────────────────────
+   The Map, the dots and the panes are read again on the screen's 2.5 s clock (22-website.js wbTick) and painted again
+   only when what they show moved: a signature per function of its state, what it waits on, its line and its spend
+   (wbFvSig, after dpActivitySig). With the timer stub, an unchanged answer paints nothing, a change paints on the very
+   tick that reads it (SM-5), and a change the screen does not show (a clock in the last act) paints nothing. */
+const wbSrc = fs.readFileSync(path.join(JS, "22-website.js"), "utf8");
+const sxSrc = fs.readFileSync(path.join(JS, "23-screens.js"), "utf8");
+const fvSrc = fs.readFileSync(path.join(JS, "24-functions.js"), "utf8");
+function siteOf(answer){
+  const c = fresh({ apiGet: (p) => {
+    c.calls.apiGet.push(p);
+    const got = answer(p);
+    return got === undefined ? new Promise(() => {}) : Promise.resolve(JSON.parse(JSON.stringify(got)));
+  } });
+  vm.runInContext(wbSrc, c); vm.runInContext(sxSrc, c); vm.runInContext(fvSrc, c);
+  vm.runInContext("wbS().v2 = true;", c);
+  return c;
+}
+const RT_MAP = { ref: "r4", name: "Experience", goal: "", done: "", rules: [], owner: "S", control: "granted", stopped: false, has_goal: true,
+  live: false, runtime: 2, kind: "website", systems: ["Identity", "Adaptation", "Priority", "Coordination", "Audit"].map(n => ({ name: n, state: "running", last: null })),
+  engines: [], artifacts: [], status: { asks: [], escalated: [], waits: [], running: [], stopped: false, next: "nothing due" },
+  health: { motor: { age_s: 1 }, checks: [], never: [], timeline: [] }, recent: [], requests: [], templates: {} };
+test("M1.9: on the clock an unchanged answer paints nothing, and a change paints within one tick", async () => {
+  let fv = FV_STATE({ coordination: "working" }, { cycle: { state: "running", step: 6, says: "The work is running", steps: [], needs_you: false } });
+  const c = siteOf(p => {
+    if (p === "/api/native/depts") return { depts: [{ ref: "r4", name: "Experience", stopped: false, kind: "website" }] };
+    if (p === "/api/native/r4/map") return RT_MAP;
+    if (p === "/api/native/r4/functions") return fv;
+    if (/^\/api\/dept\//.test(p)) return {};
+    return undefined;
+  });
+  open(c);
+  c.dpS().sel = "r4"; c.dpS().tab.r4 = "now";
+  const node = { ref: "r4", name: "Experience" };
+  c.wbList(node); for (let i = 0; i < 4; i++) await sleep();
+  vm.runInContext("S.wb.tab.r4 = 'map';", c);
+  c.wbViewer(node); for (let i = 0; i < 6; i++) await sleep();
+  c.wbViewer(node); for (let i = 0; i < 6; i++) await sleep();
+  assert.strictEqual(c.calls.timers.length, 1, "one clock");
+  assert.strictEqual(c.calls.timers[0].ms, 2500, "the 2.5 s tick");
+  const reads = () => c.calls.apiGet.filter(p => p === "/api/native/r4/functions").length;
+  assert.ok(/<g class="n fn run" data-wbfn="coordination"/.test(c.wbViewer(node)), "the first read is on the Map");
+  /* unchanged: read again, painted never */
+  let paints = c.calls.render, n = reads();
+  for (let k = 0; k < 3; k++){ tick(c); for (let i = 0; i < 6; i++) await sleep(); }
+  assert.strictEqual(reads(), n + 3, "read on every tick");
+  assert.strictEqual(c.calls.render, paints, "the same answer paints nothing");
+  /* a change the screen does not show: the clock of a last act */
+  fv = JSON.parse(JSON.stringify(fv)); fv.functions[3].last = { what: "did its part", at: "2026-10-23T10:59:00+05:30" };
+  tick(c); for (let i = 0; i < 6; i++) await sleep();
+  assert.strictEqual(c.calls.render, paints, "nothing it shows moved");
+  /* a change it shows: Identity waits on you, Coordination goes quiet */
+  fv = FV_STATE({ identity: "waiting_on_you" }, { cycle: { state: "running", step: 6, says: "The work is running", steps: [], needs_you: true } });
+  tick(c); for (let i = 0; i < 6; i++) await sleep();
+  assert.strictEqual(c.calls.render, paints + 1, "one paint, on the tick that read the change");
+  const html = c.wbViewer(node);
+  assert.ok(/<g class="n fn ask" data-wbfn="identity"/.test(html) && /<g class="n fn" data-wbfn="coordination"/.test(html), "the Map shows it");
+  const list = c.dpListHtml(EXP, c.o2Data(), DEPT_EXP, null);
+  assert.ok(/data-dptab="identity" aria-label="Identity · waits on you"/.test(list), "and so do the list's dots, from the same read");
+  /* and once more unchanged: quiet again (the list's own call-on-render reads land first) */
+  for (let i = 0; i < 6; i++) await sleep();
+  paints = c.calls.render;
+  tick(c); for (let i = 0; i < 6; i++) await sleep();
+  assert.strictEqual(c.calls.render, paints);
+});
+test("M1.9: the open function's page is read on the clock and painted only when its node or a journey moved", async () => {
+  let page = { ref: "r4", fn: "priority", name: "Priority", line: "Prices every proposal.", holds: "h", hands_to: "a", keeps: "k", v1: "v",
+    template: { name: "Default" }, fields: [], recipe: [], node: { state: "quiet", word: "quiet", line: "" },
+    journeys: [{ id: "FP2", name: "The bargain with Adaptation", built: "partly built", status: "not run yet", last: null }] };
+  const c = siteOf(p => {
+    if (p === "/api/native/depts") return { depts: [{ ref: "r4", name: "Experience", stopped: false, kind: "website" }] };
+    if (p === "/api/native/r4/map") return RT_MAP;
+    if (p === "/api/native/r4/functions/priority") return page;
+    if (/^\/api\/dept\//.test(p)) return {};
+    return undefined;
+  });
+  open(c);
+  c.dpS().sel = "r4"; c.dpS().tab.r4 = "priority";
+  const node = { ref: "r4", name: "Experience" };
+  c.wbList(node); for (let i = 0; i < 4; i++) await sleep();
+  vm.runInContext("S.wb.tab.r4 = '';", c);                /* a function row was clicked: 20-dept.js draws the card */
+  for (let k = 0; k < 3; k++){ c.dpViewerHtml(EXP, c.o2Data(), DEPT_EXP, null); for (let i = 0; i < 6; i++) await sleep(); }
+  assert.ok(/FP2<\/span>The bargain with Adaptation <span class="wbchip">not run yet/.test(c.dpViewerHtml(EXP, c.o2Data(), DEPT_EXP, null)));
+  let paints = c.calls.render;
+  tick(c); for (let i = 0; i < 6; i++) await sleep();
+  assert.strictEqual(c.calls.render, paints, "unchanged: no paint");
+  page = JSON.parse(JSON.stringify(page));
+  page.journeys[0].status = "waiting"; page.journeys[0].last = { summary: "Keep Plan only", at: "2026-10-23T10:00:00+05:30" };
+  tick(c); for (let i = 0; i < 6; i++) await sleep();
+  assert.strictEqual(c.calls.render, paints + 1, "a journey moved: one paint");
+  assert.ok(/FP2<\/span>The bargain with Adaptation <span class="wbchip">waiting<\/span><div class="dpchk">Keep Plan only · /.test(c.dpViewerHtml(EXP, c.o2Data(), DEPT_EXP, null)));
 });
 
 Promise.all(pending).then(() => {

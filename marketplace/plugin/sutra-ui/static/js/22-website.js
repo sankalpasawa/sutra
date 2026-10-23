@@ -167,13 +167,24 @@ function wbFv(ref){
   if (!st.fv[ref]) wbLoadFv(ref);
   return st.fv[ref] || null;
 }
+/* What the screen compares before it paints the five again (PRD M1.9), after dpActivitySig (20-dept.js): per function
+   its state, what it waits on, its line and its spend as the bar draws it; the cycle's own words and step; who made
+   what. A read that says the same thing paints nothing, so a quiet department never flickers on the 2.5 s tick; a
+   change paints on the tick that reads it. The answer is kept either way, so the next paint is the newest one. */
+function wbFvSig(v){
+  if (!v || v.failed) return "failed";
+  const c = v.cycle || {}, share = x => Math.round((Number(x) || 0) * 50);
+  return JSON.stringify([v.stopped, c.state, c.step, c.says, c.needs_you, c.asks, c.round, (c.steps || []).map(p => p.state),
+    (v.functions || []).map(f => [f.name, f.state, f.waits_on, f.line, share((f.spend || {}).share)]),
+    share((v.budget || {}).share), (v.made || []).map(a => [a.art, a.v, a.by])]);
+}
 async function wbLoadFv(ref, again){
   const st = wbS();
   if (!ref || st.busy["fv:" + ref] || (st.fv[ref] && !again)) return;
   st.busy["fv:" + ref] = true;
   try {
     const v = await apiGet(wbUrl(ref, "functions"));
-    const sig = JSON.stringify(v), moved = sig !== st.fvSig[ref];
+    const sig = wbFvSig(v), moved = sig !== st.fvSig[ref];
     st.fv[ref] = v; st.fvSig[ref] = sig;
     delete st.busy["fv:" + ref];
     if (moved && (!again || !wbTyping())) dpRender();
@@ -206,11 +217,15 @@ function wbTick(){
     if (st.ticks % 4 === 0 && st.refs) wbLoadRefs(true);
     if (!wbIs(S.dp.sel)) return;
     wbLoadMap(S.dp.sel);
+    /* the five functions' read is read on the same clock: the Map's boxes, the list's dots, All five and the open
+       function's page repaint only when what they show moved (PRD M1.9) */
+    if (st.fv[S.dp.sel]) wbLoadFv(S.dp.sel, true);
     /* a department's answer lands on Root's board without a run of Root's own, so the open chat is read on its own clock */
     if (wbTab(S.dp.sel) === "chat" && st.chat[S.dp.sel]) wbLoadChat(S.dp.sel, true);
     /* a function's open chat is read on the same clock */
     const ftab = (typeof dpS === "function" && dpS().tab[S.dp.sel]) || "", fk = S.dp.sel + ":" + ftab;
     if (ftab && st.fnchat[fk] && dpS().pane[fk] === "chat") wbLoadFnChat(S.dp.sel, ftab, true);
+    if (WB_FUNCS.indexOf(ftab) >= 0 && st.fnpage[fk] && (!dpS().pane[fk] || dpS().pane[fk] === ftab)) wbLoadFnPage(S.dp.sel, ftab, true);
     /* and so is the open Agent activity: the lifecycle's events land while the person watches */
     if (ftab === "activity" && typeof dpActivityAgain === "function") dpActivityAgain(S.dp.sel);
   }, WB_POLL_MS);
@@ -945,13 +960,20 @@ function wbReadersOf(m, mk, name){
    status and last move, and its version 1 scope. A field the record leaves
    empty is one quiet line, "not set yet". Read from functions_view.function;
    the first tab keeps its name. */
+/* a function's page paints again when its node, a journey's status or last move, or a step's rung moved (M1.9) */
+function wbFnPageSig(v){
+  if (!v || v.failed) return "failed";
+  const n = v.node || {};
+  return JSON.stringify([n.state, n.waits_on, n.line, (v.journeys || []).map(j => [j.id, j.status, j.last && j.last.summary]),
+    (v.recipe || []).map(r => [r.id, r.rung]), (v.fields || []).map(f => [f.key, f.placeholder])]);
+}
 async function wbLoadFnPage(ref, fn, again){
   const st = wbS(), k = ref + ":" + fn;
   if ((st.fnpage[k] && !again) || st.busy["fp:" + k]) return;
   st.busy["fp:" + k] = true;
   try {
     const v = await apiGet(wbUrl(ref, "functions/" + encodeURIComponent(fn)));
-    const sig = JSON.stringify(v), moved = sig !== st.fnpageSig[k];
+    const sig = wbFnPageSig(v), moved = sig !== st.fnpageSig[k];
     st.fnpage[k] = v; st.fnpageSig[k] = sig;
     delete st.busy["fp:" + k];
     if (moved && (!again || !wbTyping())) dpRender();
