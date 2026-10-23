@@ -2516,11 +2516,14 @@ def chat_view(ref, about=None):
         turns = [t for t in turns if not t.get("birth")]
     turns.sort(key=lambda t: (str(t["at"]), t["n"]))
     refs = [about] if about else ([root] + [c["ref"] for c in kids] if root else [ref])
-    asks = []
+    asks, answered = [], []
     for r in refs:
         dn = (W.dept(r) or {}).get("name")
-        asks += [dict(a, ref=r, dept=dn) for a in W.asks(r) if a["status"] == "pending"]
-    return {"root": root, "about": about, "turns": turns, "asks": asks,
+        rows = W.asks(r)
+        asks += [dict(a, ref=r, dept=dn) for a in rows if a["status"] == "pending"]
+        # Identity's questions the owner answered in words: the card stays in the chat with the answer under it (M0.6)
+        answered += [dict(a, ref=r, dept=dn) for a in rows if a.get("kind") == "j2_identity" and a["status"] == "stamped" and a.get("answered")]
+    return {"root": root, "about": about, "turns": turns, "asks": asks, "answered": answered,
             "departments": [{"ref": c["ref"], "name": c["name"], "stopped": bool(c.get("stopped"))} for c in kids]}
 
 

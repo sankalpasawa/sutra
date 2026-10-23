@@ -77,6 +77,10 @@
          and Change; Change opens a sheet whose Send files the one ask; the
          row then says the change waits for the stamp; no path, no count
          (PRD M2.3)
+     W47 Identity's open question is a card in Chat with its own answer box:
+         Send posts {text} to the department's /j2/answer, reads Sending...
+         while it goes, a refused answer is a snack and the words stay, and
+         the answered card keeps 'You: ...' (PRD-FIVE-FUNCTIONS M0.6, S6)
 
    Harness: test_dept.js's fresh(), with 22-website.js loaded after 20-dept.js
    (panel.html's order). Run: node test_website.js */
@@ -1357,6 +1361,84 @@ test("S16: a function's Settings lists its files by name with their first line a
             "the row says the change waits, in words beside the mark");
   assert.ok(html.indexOf('data-wbins="completeness"') < 0 && html.indexOf('data-wbins="take"') >= 0, "no second change while one waits");
   assert.ok(/<b>goal<\/b><span class="wbinslead">[^<]*<\/span><span class="wbchip">your words<\/span>/.test(html), "a file the owner changed");
+});
+
+/* ── W47: Identity's question as a card in Chat (PRD-FIVE-FUNCTIONS M0.6, screen S6) ── */
+const QAT = "2026-10-23T10:20:00+05:30";
+const QUESTION = { id: "a-j2-1", kind: "j2_identity", text: "What is the site for, and about whom or what?", why: "Your words name nothing to build from yet.",
+                   missing: "words", answer: "words", status: "pending", created: QAT, ref: "r3", dept: DEPT };
+function qChat(o){
+  o = o || {};
+  return { root: "r2", about: "r3", departments: [{ ref: "r3", name: DEPT, stopped: false }], turns: [
+      { n: 1, src: "Owner", dst: ["Identity"], msg_type: "request", at: "2026-10-23T10:19:00+05:30", thread: "x-1", word: "request", line: "a website", dept: "r3", name: DEPT },
+      { n: 2, src: "Identity", dst: ["Owner"], msg_type: "inform", at: QAT, thread: "x-1", word: "question", dept: "r3", name: DEPT,
+        line: "Say what the site is for and about whom or what, and I will start: your words name nothing to build from yet." }],
+    asks: o.answered ? [] : [Object.assign({}, QUESTION)].concat(o.publish ? [Object.assign({}, CHAT.asks[0])] : []),
+    answered: o.answered ? [Object.assign({}, QUESTION, { status: "stamped", answered: o.answered, decided: "2026-10-23T10:26:00+05:30" })] : [] };
+}
+async function chatOpen(o){
+  const m = rtMap(); m.root = "r2";
+  const c = await opened({ map: m, chat: qChat(o) });
+  vm.runInContext("globalThis.__snacks = []; snack = function(m, o){ __snacks.push(m); };", c);
+  view(c); await sleep(); await sleep();
+  return c;
+}
+const typeAnswer = (c, value) => (c.document.listeners.input || []).forEach(fn => fn({ target: { dataset: { wbdraft: "r3:q:a-j2-1" }, value } }));
+
+test("W47: a waiting department shows Identity's question as a card in Chat, with its answer box, never a stamp", async () => {
+  const c = await chatOpen({ publish: true });
+  const html = view(c);
+  assert.ok(/<div class="dpask wbq wb"><div class="dpk">Identity asks<\/div><div class="dpasks">What is the site for, and about whom or what\?<\/div><div class="dpaskd">Your words name nothing to build from yet\.<\/div>/.test(html), "the label, the question and its why");
+  assert.ok(/<textarea id="wbd-q-a-j2-1" data-wbdraft="r3:q:a-j2-1"[^>]*placeholder="Type your answer\.\.\."/.test(html), "an answer box of its own");
+  assert.ok(/data-wbanswer="a-j2-1" data-wbref="r3">Send</.test(html), "Send answers where the question lives");
+  assert.ok(!/data-wbdecide="a-j2-1"/.test(html), "a question that takes words is never stamped");
+  assert.ok(/data-wbdecide="a-1"/.test(html), "the other asks keep their stamp");
+  assert.ok(html.indexOf("your words name nothing to build from yet.") < html.indexOf('class="dpask wbq wb"'), "the card stands after Identity's line about it");
+  assert.ok(html.indexOf('class="dpask wbq wb"') < html.indexOf('id="wbd-ask"'), "and above the chat's own box");
+  const t = words(html);
+  assert.ok(!/\d/.test(t), "a number at rest: " + (t.match(/.{0,30}\d.{0,30}/) || [""])[0]);
+  const css = fs.readFileSync(path.join(__dirname, "static", "panel.css"), "utf8");
+  assert.ok(/\.wbq\{max-width:640px/.test(css), "at most 640px wide");
+});
+
+test("W47: Send posts {text}, says Sending... while it goes, and the answered card keeps 'You: ...'", async () => {
+  const c = await chatOpen();
+  let release;
+  c.apiPost = (p, body) => { c.calls.apiPost.push({ p, body }); return new Promise(r => { release = () => r({ state: "assessing", open_question: null }); }); };
+  typeAnswer(c, "a site for my bakery in Pune");
+  assert.ok(click(c, { wbanswer: "a-j2-1", wbref: "r3" }));
+  await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost)), [{ p: "/api/dept/r3/j2/answer", body: { text: "a site for my bakery in Pune" } }]);
+  let html = view(c);
+  assert.ok(/data-wbanswer="a-j2-1" data-wbref="r3" disabled>Sending\.\.\.</.test(html), "Send is disabled and reads Sending...");
+  click(c, { wbanswer: "a-j2-1", wbref: "r3" }); await sleep();
+  assert.strictEqual(c.calls.apiPost.length, 1, "a second press while it goes sends nothing");
+  release(); await sleep(); await sleep(); await sleep();
+  html = view(c);
+  assert.ok(/<div class="dpask gone wbq wb"><div class="dpk">Identity asked<\/div><div class="dpasks">What is the site for, and about whom or what\?<\/div><div class="dpaskd">You: a site for my bakery in Pune · \d\d:\d\d<\/div><\/div>/.test(html), "the card goes quiet with the answer under it");
+  assert.ok(!/id="wbd-q-a-j2-1"/.test(html), "and no box is left on it");
+  const back = await chatOpen({ answered: "Initials only" });
+  assert.ok(/<div class="dpk">Identity asked<\/div>[^]*?You: Initials only · \d\d:\d\d/.test(view(back)), "an answer on the record keeps its card, read again from the chat");
+});
+
+test("W47: EMPTY_ANSWER shows its snack and the words stay; Cmd+Enter sends", async () => {
+  const c = await chatOpen();
+  c.apiPost = (p, body) => { c.calls.apiPost.push({ p, body }); return Promise.reject(new Error('{"code":"EMPTY_ANSWER"} (/api/dept/r3/j2/answer -> 400)')); };
+  typeAnswer(c, "   ");
+  click(c, { wbanswer: "a-j2-1", wbref: "r3" }); await sleep(); await sleep(); await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(vm.runInContext("__snacks", c))), ["Write your answer first, then Send."], "the snack says what to do");
+  let html = view(c);
+  assert.ok(/id="wbd-q-a-j2-1"[^>]*>   <\/textarea>/.test(html) && />Send</.test(html), "the box keeps what was typed, and Send is back");
+  c.apiPost = (p, body) => { c.calls.apiPost.push({ p, body }); return Promise.reject(new Error('{"code":"NO_OPEN_QUESTION"} (/api/dept/r3/j2/answer -> 409)')); };
+  click(c, { wbanswer: "a-j2-1", wbref: "r3" }); await sleep(); await sleep(); await sleep();
+  assert.strictEqual(vm.runInContext("__snacks", c)[1], "That question is no longer open.");
+  c.apiPost = (p, body) => { c.calls.apiPost.push({ p, body }); return Promise.resolve({}); };
+  const key = { key: "Enter", metaKey: true, target: { value: "Initials only", dataset: { wbqid: "a-j2-1", wbqref: "r3", wbdraft: "r3:q:a-j2-1" } }, preventDefault(){} };
+  (c.document.listeners.keydown || []).forEach(fn => fn(key)); await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost[2])), { p: "/api/dept/r3/j2/answer", body: { text: "Initials only" } }, "Cmd+Enter sends what is in the box");
+  const plain = Object.assign({}, key, { metaKey: false });
+  (c.document.listeners.keydown || []).forEach(fn => fn(plain)); await sleep();
+  assert.strictEqual(c.calls.apiPost.length, 3, "Enter alone is a new line, not a send");
 });
 
 Promise.all(pending).then(() => {

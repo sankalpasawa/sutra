@@ -530,6 +530,24 @@ def test_m0_5_still_too_little_is_asked_again_and_a_stopped_department_uses_the_
     assert next(e for e in J.events(ref) if e["action"] == "proposal.requested")["step"] == 2
 
 
+def test_m0_6_the_chat_carries_identitys_question_and_keeps_its_answer(j2, monkeypatch):
+    """The card in Chat reads the chat: an open question there, and once answered, its answer kept, on the department's
+    chat and on Root's."""
+    W, R, J, _ = j2
+    _thin(monkeypatch, R)
+    ref = _born(j2, "a website", "Bakery Co")
+    chat = R.chat_view(ref)
+    q = [a for a in chat["asks"] if a["kind"] == "j2_identity"]
+    assert len(q) == 1 and (q[0]["ref"], q[0]["missing"]) == (ref, "words") and q[0]["why"] == J.THIN
+    assert chat["answered"] == []
+    J.answer(ref, BAKERY)
+    W.run_until_idle(ref, limit=300)
+    chat = R.chat_view(ref)
+    assert not [a for a in chat["asks"] if a["kind"] == "j2_identity"]
+    assert [(a["id"], a["answered"], a["ref"]) for a in chat["answered"]] == [(q[0]["id"], BAKERY, ref)]
+    assert [a["id"] for a in R.chat_view(W.dept(ref)["root"])["answered"]] == [q[0]["id"]]
+
+
 # ---- the owner's switch --------------------------------------------------------------------------------------------
 def test_stop_then_start_goes_on_from_the_same_step_and_the_two_switches_agree(j2):
     """A Stop that starts a cycle first, or a department that is On while its cycle says stopped, must fail."""

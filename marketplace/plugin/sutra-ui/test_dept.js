@@ -2809,6 +2809,22 @@ test("J2: the open Agent activity is read again, and painted again only when the
   assert.ok(/ftab === "activity"[^\n]*dpActivityAgain\(S\.dp\.sel\)/.test(src), "the screen's clock reads the open Agent activity");
 });
 
+test("J2: an open question of Identity's is pointed to from Agent activity, where its card is: the Chat (M0.6)", () => {
+  const c = fresh(), st = c.dpS();
+  st.sel = "r4";
+  st.activity = { ref:"r4", events:[] };
+  st.j2 = { ref:"r4", state:"waiting", step:1, journey:"J2.a", enabled:true,
+            open_question:{ id:"a-j2-1", text:"What is the site for, and about whom or what?", missing:"words" } };
+  let html = c.dpActivityHtml();
+  assert.ok(/<button type="button" class="btn" data-wbtab="chat">Identity asks you in Chat ›<\/button>/.test(html), "one way to the card");
+  assert.ok(html.indexOf("Waiting for you") !== -1, "and the state says it waits on you, in words");
+  assert.notStrictEqual(c.dpActivitySig(st), c.dpActivitySig({ j2: Object.assign({}, st.j2, { open_question: null }), activity: st.activity }),
+                        "a question asked or answered paints the card again");
+  st.j2 = { ref:"r4", state:"assessing", step:1, journey:"J2.a", enabled:true, open_question:null };
+  html = c.dpActivityHtml();
+  assert.ok(html.indexOf("Identity asks you in Chat") === -1, "no question, no pointer");
+});
+
 test("J2: Agent activity has start and stop controls wired to its scoped API", async () => {
   const c = fresh();
   c.S.screen = "org2";

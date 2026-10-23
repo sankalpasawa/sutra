@@ -5742,6 +5742,12 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .wbbox textarea{flex:1;min-width:220px;box-sizing:border-box;background:var(--inset);border:1px solid var(--line);border-radius:6px;color:var(--ink);font:400 13px/1.45 var(--sans);padding:7px 9px;resize:vertical}
 .wbbox textarea:focus{border-color:var(--acc);outline:0}
 .wbto{cursor:pointer;background:var(--surface);align-self:center}
+/* Identity's question in the chat (S6): an ask card at most 640px wide; answered, it goes quiet with the answer under it */
+.wbq{max-width:640px;box-sizing:border-box}
+.wbq .dpk{margin:0 0 3px}
+.wbq.gone .dpaskd{margin-bottom:0;color:var(--ink)}
+.wbq .wbbox{margin-top:0}
+.wbq .btn[disabled]{opacity:.6;cursor:default}
 /* a function's own chat: its turns, its thinking as quiet lines between them */
 .wbchat.wbfn .who-ai{opacity:.85}
 .wbchat .wbthink{margin:2px 0 2px 8px}
