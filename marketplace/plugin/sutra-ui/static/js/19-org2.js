@@ -485,8 +485,28 @@ function o2OpenSheet(kind){
                   touches the title never silently drops them. */
                done: kind === "charter" && c ? (c.done_when || []).join("\n") : "",
                rules: kind === "charter" && c ? (c.rules || []).map(r => ({ tag: String(r.tag || "always"), line: String(r.line || "") })) : [],
-               target: "", error: null, busy: false };
+               target: "", error: null, busy: false,
+               /* PRD M1.4: under an organisation that has a Root, a new department is Root's to set up, so it is born
+                  with its five functions; the sheet carries what it is for, in the owner's words */
+               root: kind === "create" ? o2RootOf(n, d) : null, words: "" };
   o2Render();
+}
+/* The Root of the organisation a node sits in, or null: the organisation's row lifts its Root (o2Data `lifted`, the
+   rows 22-website.js hides), so walking up to the first lifted organisation finds it. An organisation without a Root
+   has none, and its sheet files org.create as before. */
+function o2RootOf(n, d){
+  let x = n, seen = 0;
+  while (x && seen++ < 64){
+    if (d.lifted && d.lifted.has(x.ref)) return d.lifted.get(x.ref).ref;
+    if (d.hidden && d.hidden.has(x.ref)) return x.ref;
+    x = x.parent_ref ? d.byRef.get(x.parent_ref) : null;
+  }
+  return null;
+}
+/* The organisation a Root belongs to: its row is Root's chat, where the person goes on. */
+function o2OrgOfRoot(rootRef, d){
+  for (const [org, r] of (d.lifted || new Map())) if (r.ref === rootRef) return org;
+  return null;
 }
 /* One more empty rule row, so a tag is always CHOSEN from the four words and
    never typed. The tag defaults to the one that holds at all times. */
@@ -536,6 +556,25 @@ async function o2SendRequest(){
       sh.error = "Nothing changed"; o2Render(); return;
     }
   }
+  else if (sh.root){
+    /* PRD M1.4: the name and the words go to Root as the owner's own (the J6 path: Root's Setup, then founding.spawn);
+       nothing is filed on the registry from here, and Root answers in its chat on the organisation's row */
+    if (!name){ sh.error = "A name is needed"; o2Render(); return; }
+    const words = String(sh.words || "").trim();
+    const text = "Set up a department: " + name + (words ? ". " + words.replace(/^[.\s]+/, "") : "");
+    sh.busy = true; sh.error = null; o2Render();
+    try {
+      await apiPost("/api/native/" + encodeURIComponent(sh.root) + "/ask", { text });
+      st.sheet = null;
+      st.flash = "Sent to Root · " + name;
+      const org = o2OrgOfRoot(sh.root, d);
+      if (org) o2Select(org);
+    } catch (e) {
+      sh.busy = false; sh.error = (e && e.message) || String(e);
+    }
+    o2Render();
+    return;
+  }
   else { kind = "org.create"; args = { parent: n.ref, name }; if (!name){ sh.error = "A name is needed"; o2Render(); return; } }
   sh.busy = true; sh.error = null; o2Render();
   try {
@@ -575,10 +614,12 @@ function o2SheetHtml(n, d){
     const opts = o2MoveTargets(n, d).map(t => `<option value="${o2Esc(t.ref)}"${sh.target === t.ref ? " selected" : ""}>${o2Esc(t.label)}</option>`).join("");
     fields = `<label for="o2starget">Under</label><select id="o2starget" data-o2starget><option value="">Choose…</option>${opts}</select>${o2MovePreviewHtml(n, d)}`;
   } else {
-    fields = `<label for="o2sname">Name</label><input id="o2sname" type="text" data-o2sname value="${o2Esc(sh.name)}" maxlength="80" autocomplete="off">`;
+    fields = `<label for="o2sname">Name</label><input id="o2sname" type="text" data-o2sname value="${o2Esc(sh.name)}" maxlength="80" autocomplete="off">` +
+      (sh.root ? `<label for="o2swords">What it is for</label><textarea id="o2swords" data-o2swords rows="3" maxlength="2000" placeholder="In your words">${o2Esc(sh.words || "")}</textarea>` : "");
   }
-  const body = `<div class="o2vb"><div class="o2sheet"><div class="o2mono">request · waits for approval</div><h1>${o2Esc(title)}</h1>${fields}
-    <div class="o2acts2"><button type="button" class="btn primary" data-o2act="request" ${sh.busy ? "disabled" : ""}>Request</button>
+  const lead = sh.root && sh.kind === "create" ? "to Root · it sets the department up with its five functions" : "request · waits for approval";
+  const body = `<div class="o2vb"><div class="o2sheet"><div class="o2mono">${o2Esc(lead)}</div><h1>${o2Esc(title)}</h1>${fields}
+    <div class="o2acts2"><button type="button" class="btn primary" data-o2act="request" ${sh.busy ? "disabled" : ""}>${sh.root && sh.kind === "create" ? "Send to Root" : "Request"}</button>
     <button type="button" class="btn" data-o2act="sheetclose">Cancel</button>${sh.error ? `<span class="o2err">${o2Esc(sh.error)}</span>` : ""}</div></div></div>`;
   return o2ViewerShell(n.name, o2Svg("edit"), body);
 }
@@ -1080,6 +1121,7 @@ if (typeof document !== "undefined" && document.addEventListener){
     if (el.dataset.o2sname !== undefined){ const sh = o2S().sheet; if (sh){ sh.name = String(el.value || ""); sh.error = null; } return; }
     if (el.dataset.o2spurpose !== undefined){ const sh = o2S().sheet; if (sh){ sh.purpose = String(el.value || ""); sh.error = null; } return; }
     if (el.dataset.o2sdone !== undefined){ const sh = o2S().sheet; if (sh){ sh.done = String(el.value || ""); sh.error = null; } return; }
+    if (el.dataset.o2swords !== undefined){ const sh = o2S().sheet; if (sh){ sh.words = String(el.value || ""); sh.error = null; } return; }
     if (el.dataset.o2srline !== undefined){
       const sh = o2S().sheet, i = Number(el.dataset.o2srline);
       if (sh && sh.rules && sh.rules[i]){ sh.rules[i].line = String(el.value || ""); sh.error = null; }

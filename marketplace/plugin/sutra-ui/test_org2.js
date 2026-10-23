@@ -561,6 +561,47 @@ test("new sub-department: the sheet files org.create under the selected departme
   await c.o2SendRequest();
   assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost[0].body)), { kind: "org.create", args: { parent: "r4", name: "Design" } });
 });
+/* PRD M1.4: every new department is a runtime department. Under an organisation that has a Root (22-website.js hides
+   the Root and lifts its departments under the organisation, wbHidden), "New sub-department" goes to Root as the
+   owner's words, so the department is born with its five functions; no org.create is filed. Without a Root the sheet
+   files org.create as it always has. */
+test("M1.4: under an organisation with a Root the sheet asks Root and files no org.create; without one it files org.create", async () => {
+  const ROOTX = { ref: "r7", path: "D2.D3", name: "Root", parent_ref: "r2", status: "active", ts_minted_ms: 9 };
+  const SITE  = { ref: "r8", path: "D2.D3.D1", name: "Website", parent_ref: "r7", status: "active", ts_minted_ms: 10 };
+  const c = fresh({ DOMAINS: TREE.concat([ROOTX, SITE]) }); c.loadProposals = () => {};
+  vm.runInContext("function wbHidden(ref){ return ref === 'r7'; }", c);
+  assert.strictEqual(c.o2Data().lifted.get("r2").ref, "r7", "the organisation lifts its Root");
+  for (const at of ["r2", "r8"]){                       /* the organisation's own row, and a department inside it */
+    c.calls.apiPost.length = 0;
+    c.o2Select(at); c.o2OpenSheet("create");
+    const html = c.o2SheetHtml(c.o2Data().byRef.get(at), c.o2Data());
+    assert.ok(/data-o2swords/.test(html) && />Send to Root</.test(html) && /to Root · it sets the department up with its five functions/.test(html), "the sheet says where it goes");
+    assert.ok(!/charter/i.test(html.replace(/<[^>]+>/g, " ")), "no charter on the sheet");
+    c.o2S().sheet.name = "  Billing  ";
+    c.o2S().sheet.words = " Invoices for every patient, sent by email ";
+    await c.o2SendRequest();
+    const posts = JSON.parse(JSON.stringify(c.calls.apiPost));
+    assert.deepStrictEqual(posts, [{ p: "/api/native/r7/ask", body: { text: "Set up a department: Billing. Invoices for every patient, sent by email" } }],
+      "one post, to Root's ask, from " + at);
+    assert.ok(!posts.some(x => x.p === "/api/org2/request"), "no org.create");
+    assert.strictEqual(c.o2S().sheet, null, "the sheet closes");
+    assert.strictEqual(c.o2S().sel, "r2", "the organisation's row, which is Root's chat, is where the person goes on");
+  }
+  /* a name is still needed, and nothing is sent without one */
+  c.calls.apiPost.length = 0;
+  c.o2OpenSheet("create"); c.o2S().sheet.name = "  ";
+  await c.o2SendRequest();
+  assert.strictEqual(c.o2S().sheet.error, "A name is needed");
+  assert.strictEqual(c.calls.apiPost.length, 0);
+  /* an organisation without a Root files org.create, exactly as before */
+  const plain = fresh(); plain.loadProposals = () => {};
+  plain.o2Select("r4"); plain.o2OpenSheet("create");
+  assert.strictEqual(plain.o2S().sheet.root, null);
+  assert.ok(!/data-o2swords/.test(plain.o2SheetHtml(plain.o2Data().byRef.get("r4"), plain.o2Data())));
+  plain.o2S().sheet.name = "Design";
+  await plain.o2SendRequest();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(plain.calls.apiPost[0].body)), { kind: "org.create", args: { parent: "r4", name: "Design" } });
+});
 test("a filed .html opens in the sandboxed frame from /api/org2/page", () => {
   const c = fresh(); c.o2S().sel = "r4";
   c.o2OpenPage("holding/website/org.html", "Org page");

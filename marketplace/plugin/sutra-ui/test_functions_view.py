@@ -426,3 +426,18 @@ def test_m12_a_version_whose_maker_is_not_on_the_record_is_named_not_recorded(mo
     got = F.functions(REF)
     made = {m["art"]: m for m in got["made"]}
     assert made["Site plan"]["by"] is None and "who made Site plan v1" in got["not_recorded"]
+
+
+# ---- M1.4: the Org sheet's words reach Root, and the department is born on the runtime ----------------------------------
+def test_m14_the_sheets_words_set_up_a_runtime_department_with_its_five_functions(mods, born, monkeypatch):
+    """What the Org sheet sends under an organisation with a Root (19-org2.js o2SendRequest): Root's front door reads
+    it as a set-up, and the department it makes is on the engine runtime, with the five functions' read."""
+    W, R, J, F = mods
+    import founding
+    root = founding.found_structure("Thread & Loom", owner="Sankalp")["root"]
+    W.owner_ask(root, "Set up a department: Billing. Invoices for every customer, sent by email")
+    W.run_until_idle(root, limit=300)
+    kids = [d for d in W.list_depts() if d.get("parent") == root]
+    assert len(kids) == 1 and kids[0]["runtime"] == 2, kids
+    got = F.functions(kids[0]["ref"])
+    assert [n["name"] for n in got["functions"]] == FUNCS
