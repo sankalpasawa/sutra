@@ -2972,8 +2972,8 @@ def audit_file(ctx, step, item):
     # reached its goal on a version no one read)
     how = ctx["how"].get("audit.judge")
     read = how in READ_BY
-    why_not = None if read else ("it was not sampled" if how == SKIPPED else "no model was there to read it" if how == "offline draft"
-                                 else "it was answered by %s" % (how or "nothing"))
+    why_not = None if read else {SKIPPED: "it was not sampled", "offline draft": "no model was there to read it"}.get(
+        how, "how it was read is not on the record")
     if not found:
         if not read:
             return {"said": "did not read what went live (%s); nothing is said of it" % why_not, "filed": 0, "read": False,
