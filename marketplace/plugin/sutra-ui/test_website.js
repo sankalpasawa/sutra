@@ -89,6 +89,7 @@ const assert = require("assert");
 const JS = path.join(__dirname, "static", "js");
 const read = f => fs.readFileSync(path.join(JS, f), "utf8");
 const orgSrc = read("03-org.js"), o2Src = read("19-org2.js"), dpSrc = read("20-dept.js"), wbSrc = read("22-website.js"), sxSrc = read("23-screens.js");
+const fvSrc = read("24-functions.js");
 const panelHtml = fs.readFileSync(path.join(__dirname, "static", "panel.html"), "utf8");
 const css = fs.readFileSync(path.join(__dirname, "static", "panel.css"), "utf8");
 const RB = "/* rail-helpers:begin */", RE = "/* rail-helpers:end */";
@@ -217,6 +218,36 @@ const CHAT = { root: "r2", about: "r3", departments: [{ ref: "r3", name: DEPT, s
   turns: ROOT_CHAT.turns.filter(t => t.dept).map(t => Object.assign({}, t, { dept: "r3" })),
   asks: [Object.assign({}, ROOT_CHAT.asks[0], { ref: "r3" })] };
 
+/* What the five functions' read answers (functions_view.py: functions): the five nodes in canonical order, the cycle in
+   the owner's words with its eight steps, who spoke to whom, what was made and who reads it, and what is not recorded. */
+const FV_NAMES = ["Identity", "Adaptation", "Priority", "Coordination", "Audit"];
+const FV_WORDS = { working: "working", waiting: "waiting", waiting_on_you: "waits on you", fault: "fault", quiet: "quiet" };
+const FV_STEPS = ["Enough to work", "Propose", "Price", "Settle", "Root's review", "Run", "Read", "Next or done"];
+function fvOf(o){
+  o = o || {};
+  const states = o.states || {}, lines = o.lines || {};
+  const step = (o.cycle && o.cycle.step) || 6;
+  return {
+    ref: "r3", name: DEPT, kind: "website", stopped: !!o.stopped,
+    functions: FV_NAMES.map(n => {
+      const s = states[n] || "quiet";
+      return { id: "fn:" + n.toLowerCase(), fn: n.toLowerCase(), name: n, state: s, word: FV_WORDS[s],
+        waits_on: s === "waiting_on_you" ? "you" : (s === "waiting" ? ((o.waits || {})[n] || "Priority") : null),
+        line: lines[n] !== undefined ? lines[n] : (s === "working" ? "working" : (s === "waiting" ? "waits on " + ((o.waits || {})[n] || "Priority") : "")),
+        why: s === "fault" ? (lines[n] || "a step failed its check") : null,
+        last: (o.last || {})[n] === undefined ? { what: "did its part", at: AT } : o.last[n],
+        spend: { calls: 3, usd: 0.4, calls_limit: 30, usd_limit: 6, share: (o.share || {})[n] === undefined ? 0.1 : o.share[n] },
+        speaks_to: (o.speaksTo || {})[n] || [], made: [] };
+    }),
+    cycle: Object.assign({ state: "running", step: step, journey: "J2.f", says: "The work is running",
+      steps: FV_STEPS.map((name, i) => ({ step: i + 1, name, state: i + 1 < step ? (i === 3 ? "skipped" : "done") : (i + 1 === step ? "now" : "next"),
+                                          last: i + 1 <= step ? { summary: name + " happened", at: AT } : null })),
+      needs_you: false, asks: 0, running: [], ceiling: null, round: null }, o.cycle || {}),
+    speaks: o.speaks || [], made: o.made || [],
+    budget: { calls: 30, usd: 1.2, calls_limit: 120, usd_limit: 60, share: o.budget === undefined ? 0.25 : o.budget, of: "today's limits" },
+    not_recorded: o.not_recorded || [] };
+}
+
 function fresh(opts){
   opts = opts || {};
   const calls = { apiGet: [], apiPost: [], render: 0 };
@@ -235,6 +266,9 @@ function fresh(opts){
       if (/\/api\/native\/r3\/board$/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(opts.board || BOARD)));
       if (/\/api\/native\/r3\/chat\?fn=/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(opts.fnchat || FNCHAT)));
       if (/\/api\/native\/r3\/chat$/.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(opts.chat || CHAT)));
+      /* the five functions' read (functions_view.py), when the test gives one; a function's own page likewise */
+      if (/\/api\/native\/r3\/functions$/.test(p) && opts.fv) return typeof opts.fv === "function" ? opts.fv() : Promise.resolve(JSON.parse(JSON.stringify(opts.fv)));
+      if (/\/api\/native\/r3\/functions\//.test(p) && opts.fnpage) return Promise.resolve(JSON.parse(JSON.stringify(opts.fnpage(decodeURIComponent(p.split("/functions/")[1])))));
       if (/\/api\/native\/r3\/engine\//.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(Object.assign({ runs: [] }, map.engines[1]))));
       if (/\/artifact\//.test(p)) return Promise.resolve({ name: "Live site", slug: "live-site",
         template: { id: "artifact/live-site", name: "Live site", kind: "site", files: ["index.html", "*.html"], checks: ["has_index_html"],
@@ -271,6 +305,7 @@ function fresh(opts){
   vm.runInContext(dpSrc, ctx);
   vm.runInContext(wbSrc, ctx);
   vm.runInContext(sxSrc, ctx);
+  vm.runInContext(fvSrc, ctx);
   /* the second design is the default; the first design's claims are pinned to the switch off, v2() sets it on */
   vm.runInContext("wbS().v2 = false;", ctx);
   return ctx;
@@ -752,6 +787,31 @@ test("W24: a filed artifact shows its template: what it holds, its checks, who w
   assert.ok(/Adaptation, Audit/.test(html), "its operations: the engines that run on a new one");
 });
 
+test("M1.2: who made a version and who reads it come from the record, never a table of names", async () => {
+  assert.ok(!/wbMakerOf|wbReaderOf/.test(wbSrc + sxSrc), "the hard-coded maps are gone");
+  const fv = fvOf({ made: [{ art: "Live site", slug: "live-site", v: 2, by: "Launch", makers: ["Launch"], by_v: { "1": "Launch", "2": "Launch" },
+                              readers: ["Audit", "Adaptation"] }] });
+  const c = await opened({ map: rtMap(), fv });
+  click(c, { wbart: "live-site", wbpane: "item" });
+  for (let k = 0; k < 3; k++){ view(c); await sleep(); await sleep(); }
+  const html = view(c);
+  assert.ok(/<div class="dpk">Made by<\/div><div class="dpbig">Launch<\/div>/.test(html), "the maker the run row names");
+  assert.ok(/<div class="dpk">Read by<\/div><div class="dpbig">Audit, Adaptation<\/div>/.test(html), "the readers the definitions name");
+  assert.deepStrictEqual(readsOf(c, /\/functions$/), ["/api/native/r3/functions"], "read once, from the functions read");
+  /* a department of the first build has no functions read: its own engines' reads and writes, off its map */
+  const old = await opened();
+  click(old, { wbart: "live-site", wbpane: "item" });
+  for (let k = 0; k < 3; k++){ view(old); await sleep(); await sleep(); }
+  const oh = view(old);
+  assert.ok(/<div class="dpk">Made by<\/div><div class="dpbig">Publish<\/div>/.test(oh) && /<div class="dpk">Read by<\/div><div class="o2quiet dpq">Nobody yet<\/div>/.test(oh), "the line on its map");
+  assert.deepStrictEqual(readsOf(old, /\/functions$/), [], "never asked");
+  /* a maker the record does not hold is said so, never guessed */
+  const c2 = await opened({ map: rtMap(), fv: fvOf({ made: [{ art: "Live site", slug: "live-site", v: 2, by: null, makers: [], by_v: {}, readers: [] }] }) });
+  click(c2, { wbart: "live-site", wbpane: "item" });
+  for (let k = 0; k < 3; k++){ view(c2); await sleep(); await sleep(); }
+  assert.ok(/<div class="dpk">Made by<\/div><div class="o2quiet dpq">Not recorded<\/div>/.test(view(c2)));
+});
+
 /* W25 (founder, 2026-09-28: "I don't see artifacts in the library"): every artifact a
    website department files, and the app it runs, is a template on the Library's
    Artifacts shelf, and the shelf is a Library screen the Org rail lists. */
@@ -1194,7 +1254,9 @@ test("W44: founding lands on the organisation, whose row is Root's chat", async 
 test("V2 navigation: with the switch on the list, Chat, a function card and an engine card are the first design's, unchanged", async () => {
   const c = await v2({ map: rtMap({ ask: true }) });
   const html = c.dpListHtml(WEB, {}, null, null);
-  ["Chat", "Map", "System status", "Motor", "Board", "Filed work", "Human Sutra"].forEach(x => assert.ok(html.indexOf(x) >= 0, x));
+  ["Chat", "Map", "Motor", "Board", "Filed work", "Human Sutra"].forEach(x => assert.ok(html.indexOf(x) >= 0, x));
+  /* PRD M1.5 (the ruled Map, 2026-09-29): System status folds into the Map's NOW line, so its row is gone */
+  assert.ok(!/System status/.test(html) && !/data-wbtab="status"/.test(html), "System status folded into the NOW line");
   assert.ok(!/wb2/.test(html), "no second-design piece in the list");
   let v = view(c);
   assert.ok(/<div class="o2vh"><b>Chat<\/b>/.test(v) && !/wb2/.test(v), "Chat is the chat 22-website.js draws");
@@ -1218,7 +1280,9 @@ test("V2 map: the head has one switch and the live site; four fixed rows; the ru
   assert.ok(/<span class="wb2pill run">Write running<\/span><span class="wb2pill ask">1 ask for you<\/span>/.test(html), "the NOW line");
   assert.ok(/<g class="n fn ask" data-wbfn="identity"[^>]*><rect[^>]*><g class="ic"/.test(html), "a function carries its mark");
   assert.ok(/<text x="10" y="20">Rules<\/text><text class="v" x="56" y="20">none yet<\/text>/.test(html) && /<text class="v" x="64" y="20">4 things, 13 versions<\/text>/.test(html), "what the department knows, from the record");
-  assert.ok(/<i class="wb2lg edge"><\/i>hand-off/.test(html) && /<i class="wb2lg edge soft"><\/i>speaks to/.test(html), "the legend names the edges");
+  /* PRD M1.5: the legend is cut; every node names itself on hover instead */
+  assert.ok(!/wb2legend|wb2lg/.test(html), "no legend");
+  assert.ok((html.match(/<g class="n[^"]*"[^>]*>/g) || []).length === (html.match(/<title>[^<]+<\/title><\/g>/g) || []).length, "every node has its hover name");
   assert.ok(/<g class="n fn ask" data-wbfn="identity"/.test(html) && /<g class="n who ask" data-wbtab="chat"/.test(html), "the ask is amber on Identity and on you");
   assert.ok(/<g class="n work done" data-wbart="site-plan"[^>]*><rect[^>]*><text x="8" y="17">Site plan<\/text><text class="v" x="8" y="30">v2<\/text>/.test(html), "work with its version");
   const nodes = html.match(/<g class="n[^"]*"[^>]*>/g) || [];
@@ -1235,6 +1299,291 @@ test("V2 map: the head has one switch and the live site; four fixed rows; the ru
   assert.ok(/<h3>The department<\/h3>/.test(old.wbViewer(WEB)) && !/wb2/.test(old.wbViewer(WEB)), "off: the first design's Map");
 });
 
+/* PRD M1.5: the ruled Map. The five boxes take their state from the five functions' read; the NOW line carries the
+   cycle's words and counts only when they are not zero; no legend; no digits at rest outside the NOW line; Budget is a
+   bar in Knows; a failed read falls back to today's classes and says so once; Off and Goal reached read as such. */
+async function mapWith(o){
+  const c = await v2(Object.assign({ map: rtMap() }, o));
+  click(c, { wbtab: "map" }); await sleep();
+  return [c, await paint(c)];
+}
+const fnBox = (html, fn) => (new RegExp('<g class="n fn([^"]*)" data-wbfn="' + fn + '"[^>]*>([\\s\\S]*?)</g>(?=<g|<path|<text|</svg>)').exec(html) || []);
+test("M1.5: each function's box takes its class and its state word from the functions read", async () => {
+  const fv = fvOf({ states: { Identity: "waiting_on_you", Adaptation: "waiting", Priority: "fault", Coordination: "working", Audit: "quiet" },
+                    lines: { Identity: "May the reviews show first names?", Adaptation: "waits on Priority", Priority: "Answer a proposal: page 3 of 8 failed its check",
+                             Coordination: "Write's turn" },
+                    cycle: { says: "Write is working", needs_you: true, asks: 1 } });
+  const [c, html] = await mapWith({ fv });
+  const want = { identity: [" ask", "waits on you"], adaptation: [" wait", "waiting"], priority: [" block", "fault"], coordination: [" run", "working"], audit: ["", "quiet"] };
+  Object.keys(want).forEach(fn => {
+    const g = fnBox(html, fn);
+    assert.ok(g.length, fn + " box");
+    assert.strictEqual(g[1], want[fn][0], fn + " class");
+    assert.ok(new RegExp('<text class="st" x="42" y="40">' + want[fn][1] + '</text>').test(g[2]), fn + " word: " + g[2]);
+    assert.ok(new RegExp('<rect class="fnbar fn-' + fn + '" width="4" height="64"').test(g[2]), fn + " carries its colour bar");
+    assert.ok(/<rect class="bx" width="154" height="64"/.test(g[2]), fn + " is a 154x64 box");
+  });
+  assert.ok(/<rect class="halo" width="154"/.test(fnBox(html, "coordination")[2]) && !/class="halo"/.test(fnBox(html, "identity")[2]), "only the working one has a halo");
+  assert.ok(/<title>Identity · waits on you · May the reviews show first names\?<\/title>/.test(html), "the hover names it and says what it waits on");
+  assert.ok(!/wb2legend|wb2lg/.test(html), "no legend");
+  /* the NOW line: the cycle's words first */
+  assert.ok(/<div class="wb2now"><span class="wb2pill ask" aria-live="polite">Write is working<\/span>/.test(html), "the cycle's words lead, amber when it needs you");
+  /* no digits at rest outside the NOW line: the line with its count sits in the hover only */
+  const rest = html.replace(/<div class="wb2now">[\s\S]*?<\/div>/, "").replace(/<title>[^<]*<\/title>/g, "").replace(/<text class="v"[^>]*>[^<]*<\/text>/g, "");
+  const t = words(rest.slice(rest.indexOf("<svg"), rest.indexOf("</svg>")));
+  assert.ok(!/\d/.test(t.replace(/\bv\d+\b/g, "")), "a digit at rest: " + (t.match(/.{0,30}\d.{0,30}/) || [""])[0]);
+  assert.ok(readsOf(c, /\/functions$/).length >= 1, "the Map reads the functions read");
+});
+test("M1.5: the NOW line counts only what is not zero, folds in System status, and says Off and Goal reached", async () => {
+  const quiet = rtMap(); quiet.health.timeline = [];
+  let [, html] = await mapWith({ map: quiet, fv: fvOf({ cycle: { says: "Proposing the work", state: "adapting", step: 2 } }) });
+  let now = /<div class="wb2now">([\s\S]*?)<\/div>/.exec(html)[1];
+  assert.strictEqual(now, '<span class="wb2pill say" aria-live="polite">Proposing the work</span>', "nothing to count: the words alone");
+  const busy = rtMap({ ask: true }); busy.status.running = [{ engine: "Write", what: "" }]; busy.engines[1].state = "Running";
+  busy.status.escalated = [{ id: "a-2", kind: "envelope", engine: "Write", text: "Write is out of today's envelope", status: "pending", created: AT, escalated: true }];
+  busy.health.checks[0] = { name: "Motor", state: "block", line: "Not ticking" };
+  [, html] = await mapWith({ map: busy, fv: fvOf({ states: { Identity: "waiting_on_you", Coordination: "working" }, cycle: { says: "Write is working", needs_you: true, asks: 2 } }) });
+  now = /<div class="wb2now">([\s\S]*?)<\/div>/.exec(html)[1];
+  assert.ok(/>Write is working<\/span><span class="wb2pill run">Write running<\/span><span class="wb2pill ask">2 asks for you<\/span><span class="wb2pill block" title="Not ticking">Motor<\/span>$/.test(now), now);
+  /* stopped: the switch is off, NOW reads Off, no halos, the boxes off */
+  const off = rtMap({ stopped: true }); off.status.running = [{ engine: "Write", what: "" }]; off.engines[1].state = "Running";
+  [, html] = await mapWith({ map: off, fv: fvOf({ stopped: true, cycle: { state: "stopped", says: "Stopped by you" } }) });
+  now = /<div class="wb2now">([\s\S]*?)<\/div>/.exec(html)[1];
+  assert.ok(/<span class="wb2pill off">Off<\/span>$/.test(now) && !/Stopped by you|running/.test(now), now);
+  assert.ok(!/class="halo"/.test(html) && /role="switch" aria-checked="false"/.test(html), "no halo, the switch off");
+  ["identity", "adaptation", "priority", "coordination", "audit"].forEach(fn => assert.strictEqual(fnBox(html, fn)[1], " off", fn));
+  /* done: Goal reached, and the deliverable lit */
+  [, html] = await mapWith({ map: rtMap({ versions: { "Brief": 1, "Site plan": 2, "Pages": 5, "Build": 5, "Live site": 1 } }),
+                            fv: fvOf({ cycle: { state: "done", says: "Goal reached" } }) });
+  assert.ok(/<span class="wb2pill ok" aria-live="polite">Goal reached<\/span>/.test(html), "Goal reached");
+  assert.ok(/<g class="n work done live" data-wbart="live-site"/.test(html), "the deliverable takes the ok tint once it is live");
+});
+test("M1.5: Budget joins Knows as a bar with its numbers on hover; a failed read falls back and can be read again; the narrow list", async () => {
+  let [c, html] = await mapWith({ fv: fvOf({ budget: 0.25 }) });
+  assert.ok(/<g class="n" data-wbfn="priority" transform="[^"]*"><rect class="bx" width="150" height="32" rx="8"\/><text x="10" y="20">Budget<\/text><rect class="bar0" x="66" y="13" width="72" height="6" rx="3"\/><rect class="bar1" x="66" y="13" width="18.0" height="6" rx="3"\/><title>Budget · 30 of 120 calls/.test(html), "a bar, the numbers on hover");
+  click(c, { wbfn: "priority" });
+  assert.strictEqual(vm.runInContext("dpS().tab['r3']", c), "priority", "Budget opens Priority");
+  /* the narrow list: the same order, the five with their mark and their word */
+  const cards = /<div class="wb2cards wb">([\s\S]*)$/.exec(html)[1];
+  const order = (cards.match(/data-wbfn="(\w+)"><i class="wb2mk/g) || []).map(x => /"(\w+)"/.exec(x)[1]);
+  assert.deepStrictEqual(order, ["identity", "adaptation", "priority", "coordination", "audit"], "the five in order");
+  assert.ok(/<div class="wb2frame wb"><div class="wb2map wb"><svg/.test(html), "one frame, a size container, holds both");
+  /* a failed read: the line says so once, with Try again; the boxes keep today's classes */
+  let fails = 0;
+  [c, html] = await mapWith({ map: rtMap({ ask: true }), fv: () => (fails++ ? Promise.resolve(fvOf({ states: { Identity: "working" } })) : Promise.reject(new Error("down"))) });
+  assert.ok(/<span class="wb2pill off">Could not read<\/span><button type="button" class="o2more wb" data-wbfvretry="1">Try again<\/button>/.test(html), "said once");
+  assert.strictEqual(fnBox(html, "identity")[1], " ask", "today's class: an ask is Identity's");
+  click(c, { wbfvretry: "1" }); await sleep(); await sleep();
+  html = await paint(c);
+  assert.strictEqual(fnBox(html, "identity")[1], " run", "read again, and the read's state shows");
+  assert.ok(!/Could not read/.test(html));
+  /* while the read is on its way a skeleton holds the words' place */
+  [, html] = await mapWith({ fv: () => new Promise(() => {}) });
+  assert.ok(/<div class="wb2now"><span class="wb2pill wb2skel" aria-hidden="true"><\/span>/.test(html), "a skeleton");
+});
+/* MK-8 taken (decision log): the prototype's Map extras. The box carries '?' or '!' and its line when it fits and has no
+   count; who speaks to whom among the five is three arcs at most, the rest in a closed dropdown; who made each thing and
+   what is not recorded are closed dropdowns too, counts as bars. */
+test("M1.5 extras (MK-8): badges and the line on a box, three speaks-to arcs at most, the closed dropdowns", async () => {
+  const speaks = [{ from: "Adaptation", to: "Priority", n: 9 }, { from: "Priority", to: "Adaptation", n: 7 }, { from: "Identity", to: "Adaptation", n: 4 },
+                  { from: "Coordination", to: "Identity", n: 2 }, { from: "Owner", to: "Identity", n: 12 }, { from: "Identity", to: "Owner", n: 11 }];
+  const fv = fvOf({ states: { Identity: "waiting_on_you", Coordination: "working", Audit: "fault" },
+                    lines: { Identity: "May the reviews show first names?", Coordination: "Write's turn", Audit: "a step failed" },
+                    speaks, not_recorded: ["what Audit did"],
+                    made: [{ art: "Site plan", slug: "site-plan", v: 2, by: "Plan", makers: ["Plan"], by_v: {}, readers: ["Write"] },
+                           { art: "Brief", slug: "brief", v: 1, by: "Owner", makers: ["Owner"], by_v: {}, readers: ["Plan"] }] });
+  const [, html] = await mapWith({ fv });
+  assert.ok(/<g class="bdg ask"><circle cx="140" cy="14" r="7"\/><text x="140" y="18" text-anchor="middle">\?<\/text><\/g>/.test(fnBox(html, "identity")[2]), "'?' on Identity");
+  assert.ok(/<g class="bdg block">[\s\S]*?>!<\/text><\/g>/.test(fnBox(html, "audit")[2]), "'!' on Audit");
+  assert.ok(!/class="bdg/.test(fnBox(html, "coordination")[2]), "no badge on a working one");
+  assert.ok(/<text class="st" x="42" y="40">working<\/text><text class="ln" x="42" y="55">Write(&#39;|')s turn<\/text>/.test(fnBox(html, "coordination")[2]), "the word, and the line under it");
+  assert.ok(/<text class="st" x="42" y="40">waits on you<\/text><text class="ln" x="42" y="55">May the reviews…<\/text>/.test(fnBox(html, "identity")[2]), "a long line is cut to the box");
+  const [, h2] = await mapWith({ fv: fvOf({ states: { Coordination: "working" }, lines: { Coordination: "page 3 of 8" } }) });
+  assert.ok(!/class="ln"/.test(fnBox(h2, "coordination")[2]) && /<title>Coordination · working · page 3 of 8<\/title>/.test(h2), "a count stays on the hover");
+  const arcs = html.match(/<path class="e talk"[^>]*><title>([^<]+)<\/title><\/path>/g) || [];
+  assert.deepStrictEqual(arcs.map(a => /<title>([^<]+)</.exec(a)[1]), ["Adaptation speaks to Priority", "Priority speaks to Adaptation", "Identity speaks to Adaptation"], "three at most, the busiest, among the five only");
+  const under = html.slice(html.indexOf('<details class="wb2dd wb">'));
+  assert.ok(/^<details class="wb2dd wb"><summary>Messages between functions<\/summary>/.test(under) && !/<details[^>]* open/.test(under), "closed by default");
+  assert.strictEqual((under.split("<summary>Who made each thing</summary>")[0].match(/<div class="wb2ddrow">/g) || []).length, 4, "every pair among the five in the dropdown, the owner's lines not among them");
+  assert.ok(/<b>Site plan<\/b><span class="dpchk">made by Plan · read by Write<\/span>/.test(under) && /<b>Brief<\/b><span class="dpchk">made by you · read by Plan<\/span>/.test(under), "who made each thing");
+  assert.ok(/<summary>Not recorded<\/summary><div class="wb2ddrow"><span class="dpchk">what Audit did<\/span><\/div>/.test(under), "what the record does not hold");
+  assert.ok(!/\d/.test(words(under).replace(/\bv\d+\b/g, "")), "a count in the dropdowns is a bar, never a number");
+});
+test("M1.5: a department with no plan yet shows its Brief and one quiet line", async () => {
+  const m = rtMap({ versions: { "Brief": 1 } }); m.engines = []; m.live = false; m.artifacts = [{ name: "Brief", slug: "brief", versions: 1, latest: null }];
+  const [, html] = await mapWith({ map: m, fv: fvOf({ cycle: { state: "adapting", step: 2, says: "Proposing the work" } }) });
+  assert.ok(/<g class="n work done" data-wbart="brief"/.test(html) && /<div class="o2quiet dpq">No plan yet<\/div>/.test(html));
+});
+
+test("M1.6: on the runtime the list's function rows read the same functions read as the Map; the first build's stay bare", async () => {
+  const fv = fvOf({ states: { Identity: "waiting_on_you", Coordination: "working" } });
+  const c = await v2({ map: rtMap(), fv });
+  for (let k = 0; k < 2; k++){ c.dpListHtml(WEB, {}, null, null); await sleep(); await sleep(); }
+  const html = c.dpListHtml(WEB, {}, null, null);
+  assert.ok(/data-dptab="identity" aria-label="Identity · waits on you"[^>]*><svg class="dpfnmk fn-identity"[\s\S]*?<b class="dpfnb warn" aria-hidden="true">\?<\/b><i class="dpdot warn"/.test(html), "Identity: its mark, '?' and amber");
+  assert.ok(/data-dptab="coordination" aria-label="Coordination · working"[\s\S]*?<i class="dpdot breath"/.test(html), "Coordination breathes");
+  assert.deepStrictEqual(readsOf(c, /\/functions$/), ["/api/native/r3/functions"], "one read serves the list and the Map");
+  const old = await opened();
+  const oh = old.dpListHtml(WEB, {}, null, null);
+  assert.ok(/<button type="button" class="o2li dpli" data-dptab="identity"><span>Identity<\/span><\/button>/.test(oh), "the first build's rows stay bare");
+  assert.deepStrictEqual(readsOf(old, /\/functions$/), [], "and it never asks for the read");
+});
+/* PRD M1.7: each function's pane opens on what its site page holds: its line, its template's fields (a placeholder is
+   one quiet line, "not set yet"), its recipe (each step by code, AI or a person, on its rung), its journeys with their
+   live status and last move, and its version 1 scope. Fixtures for all five, as functions_view.function answers. */
+const FN_JOURNEYS = { identity: [["FI1", "Enough to work?"], ["FI2", "Words after go-live"], ["FI3", "The gates"], ["FI4", "Closes a conflict"]],
+  adaptation: [["FA1", "The first workflows"], ["FA2", "Pursue until done"], ["FA3", "Crystallize a step"], ["FA4", "Grow out"], ["FA5", "Learn"]],
+  priority: [["FP1", "The limit on every start"], ["FP2", "The bargain with Adaptation"]],
+  coordination: [["FC1", "Who goes first"], ["FC2", "A lost request"]], audit: [["FAU1", "Read the result"]] };
+function fnPageOf(fn){
+  const name = fn.charAt(0).toUpperCase() + fn.slice(1);
+  return { ref: "r3", fn, name, vsm: "VSM", line: name + "'s one line, as its page says it.", holds: "What " + name + " holds.",
+    hands_to: "Who " + name + " hands to.", keeps: "The rules " + name + " keeps.", v1: name + "'s version 1, as built.",
+    template: { id: fn + "/product-build", name: "Product build", use_case: "a product" },
+    fields: [{ key: "goal", label: "Goal", value: "Holds the goal", placeholder: false },
+             { key: "done", label: "Done when", value: null, placeholder: true },
+             { key: "hears", label: "Hears", value: ["Take a request"], placeholder: false },
+             { key: "writes", label: "Writes", value: ["Tells Identity"], placeholder: false },
+             { key: "checks", label: "Checks", value: ["Every effect has a verdict."], placeholder: false },
+             { key: "envelope", label: "Limit", value: { share: 0.25 }, placeholder: false },
+             { key: "settings", label: "Settings", value: ["Ladder", "Limit"], placeholder: false }],
+    recipe: [{ id: fn + ".gate", name: "Say whether it may start", by: "code", rung: "C2", rung_name: "Code", mode: "gate", under: null },
+             { id: fn + ".take", name: "Read the words", by: "AI", rung: "C0", rung_name: "Improvised call", mode: "slot", under: "Take a request" },
+             { id: fn + ".ask", name: "Ask the owner", by: "person", rung: "P", rung_name: "Person", mode: "slot", under: "Take a request" }],
+    journeys: FN_JOURNEYS[fn].map(([id, jn], i) => ({ id, name: jn, built: i === 4 ? "later" : "built",
+      status: i === 0 ? "done" : (i === 1 ? "waiting" : (i === 4 ? "later" : "not run yet")),
+      last: i < 2 ? { summary: jn + " moved", at: AT, action: "x" } : null })),
+    node: { name, state: "quiet", word: "quiet", line: "" }, j2: {} };
+}
+test("M1.7: each function's pane opens on its page: line, fields, recipe, journeys with status and last move, version 1", async () => {
+  const c = await opened({ map: rtMap(), fnpage: fnPageOf });
+  for (const fn of ["identity", "adaptation", "priority", "coordination", "audit"]){
+    const name = fn.charAt(0).toUpperCase() + fn.slice(1);
+    const html = await fnCard(c, fn);
+    assert.ok(new RegExp("<div class=\"o2vh\"><b>" + name + "</b>").test(html), fn + ": the first tab keeps its name");
+    assert.ok(html.indexOf("<h3>The function</h3><div class=\"dpbig\">" + name + "&#39;s one line") >= 0 || html.indexOf("<h3>The function</h3><div class=\"dpbig\">" + name + "'s one line") >= 0, fn + " line");
+    assert.ok(html.indexOf("<h3>The Product build template</h3>") >= 0, fn + " template");
+    assert.ok(/<div class="dpk">Done when<\/div><div class="o2quiet dpq">not set yet<\/div>/.test(html), fn + ": a placeholder is one quiet line");
+    assert.ok(/<div class="dpk">Hears<\/div><div class="wbstep"><span class="wbchip">Take a request<\/span>/.test(html), fn + " hears");
+    assert.ok(/<div class="dpk">Limit<\/div><div class="dpbar"><i style="width:25%"><\/i><\/div>/.test(html), fn + ": the limit is a bar");
+    assert.ok(/<div class="wbrec"><span class="wbchip on">Code<\/span><span>Say whether it may start<\/span><span class="wbrung"/.test(html), fn + ": a step by code, on its rung");
+    assert.ok(/<details class="wbrecg wb"><summary>Take a request<\/summary><div class="wbrec"><span class="wbchip">AI<\/span><span>Read the words<\/span>/.test(html), fn + ": the AI inside, grouped by what it hears");
+    assert.ok(/<span class="wbchip">Person<\/span><span>Ask the owner<\/span>/.test(html), fn + ": a person");
+    FN_JOURNEYS[fn].forEach(([id, jn], i) => {
+      const row = new RegExp('<div class="dprow wbjrn"><span class="dpdot[^"]*"></span><span><span class="wbjid">' + id + '</span>' + jn.replace(/[?]/g, "\\?") + ' <span class="wbchip">([^<]+)</span>(<div class="dpchk">([^<]*)</div>)?').exec(html);
+      assert.ok(row, fn + " journey " + id);
+      assert.strictEqual(row[1], i === 0 ? "done" : (i === 1 ? "waiting" : (i === 4 ? "later" : "not run yet")), id + " status");
+      if (i < 2) assert.ok(/ moved · \d\d:\d\d$/.test(row[3]), id + " last move and its time: " + row[3]);
+    });
+    assert.ok(html.indexOf("<h3>Version 1</h3><div class=\"dpfline\">" + name + "&#39;s version 1") >= 0 || html.indexOf("<h3>Version 1</h3><div class=\"dpfline\">" + name + "'s version 1") >= 0, fn + " version 1");
+    const t = words(html);
+    assert.ok(!/charter/i.test(t) && !/internal system/i.test(t), fn + ": no charter, no internal system");
+    assert.ok(!/\/api\/|\.json|\.md\b|\/Users\//.test(t), fn + ": no path");
+  }
+  assert.deepStrictEqual(readsOf(c, /\/functions\//).sort(), ["identity", "adaptation", "priority", "coordination", "audit"].map(f => "/api/native/r3/functions/" + f).sort(),
+    "each page read once, from its own route");
+  /* a department of the first build keeps its card as it was */
+  const old = await opened();
+  const oh = await fnCard(old, "priority");
+  assert.ok(!/<h3>The function<\/h3>|wbjrn/.test(oh) && readsOf(old, /\/functions\//).length === 0);
+});
+/* PRD M1.8 (S2, proposal built on MK-8): All five. Five cards in canonical order, each with its mark, a state word and
+   a Today bar, then Between them; no digits at rest outside titles; the states the screen names; the arrow keys. */
+const FV_BOARD = { any: true, ideas: [], threads: [
+  { id: "x-9", topic: "line", protocol: "propose", state: "completed", decider: "Priority", opened: AT, closed: AT, outcome: null, bounds: {}, hops: 2, default: "cancel", posts: [
+    { n: 7, src: "Adaptation", dst: ["Priority"], msg_type: "propose", at: AT, word: "line", line: "the next round" },
+    { n: 8, src: "Priority", dst: ["Adaptation"], msg_type: "accept-proposal", at: AT, word: "line", line: "said yes to the round" }] },
+  { id: "x-8", topic: "request", protocol: "request", state: "completed", decider: "Identity", opened: AT, closed: AT, outcome: null, bounds: {}, hops: 0, default: "failure", posts: [
+    { n: 5, src: "Owner", dst: ["Identity"], msg_type: "request", at: AT, word: "request", line: "a careers page" },
+    { n: 6, src: "Identity", dst: ["Adaptation"], msg_type: "request", at: AT, word: "line", line: "the next thing to correct" },
+    { n: 4, src: "Coordination", dst: ["Identity"], msg_type: "inform", at: AT, word: "alarm", line: "Write ran past its window" }] }] };
+async function allFive(o){
+  const c = await v2(Object.assign({ map: rtMap(), board: FV_BOARD }, o));
+  click(c, { wbtab: "five" }); await sleep();
+  return [c, await paint(c)];
+}
+test("M1.8: All five is five cards in order, each with its mark, a state word and a bar, then Between them", async () => {
+  const fv = fvOf({ states: { Identity: "waiting_on_you", Adaptation: "waiting", Priority: "quiet", Coordination: "working", Audit: "fault" },
+                    lines: { Identity: "May the reviews show first names?", Coordination: "Write's turn", Audit: "Audit has not read Live site v1" },
+                    waits: { Adaptation: "Priority" }, last: { Priority: { what: "said yes to round two", at: AT } },
+                    cycle: { says: "Write is working", needs_you: true, asks: 1 } });
+  const [c, html] = await allFive({ fv });
+  assert.ok(/<div class="o2vh"><b>All five<\/b>/.test(html) && /class="o2viewer dpviewer dp wb fv"/.test(html), "the viewer, a size container");
+  const cards = html.match(/<button type="button" class="fvcard fn-(\w+) wb[^"]*" data-wbfn="\1"[^>]*>[\s\S]*?<\/button>(?=<button type="button" class="fvcard|<div class="fvcard fvbetween)/g) || [];
+  assert.deepStrictEqual(cards.map(x => /class="fvcard fn-(\w+)/.exec(x)[1]), ["identity", "adaptation", "priority", "coordination", "audit"], "five, in order");
+  const want = { identity: "waits on you", adaptation: "waiting", priority: "quiet", coordination: "working", audit: "fault" };
+  cards.forEach(x => {
+    const fn = /class="fvcard fn-(\w+)/.exec(x)[1];
+    assert.ok(new RegExp('<svg class="dpfnmk fn-' + fn + '"').test(x), fn + " mark");
+    assert.ok(x.indexOf('aria-label="' + fn.charAt(0).toUpperCase() + fn.slice(1) + " · " + want[fn] + '"') >= 0, fn + " says its state");
+    assert.ok(/<span class="fvtoday"><span class="dpk">Today<\/span><div class="dpbar"><i style="width:10%"><\/i><\/div><\/span>/.test(x), fn + " Today bar");
+  });
+  assert.ok(/<span class="wbchip ask" data-wbtab="chat">waits on you<\/span> May the reviews show first names\?/.test(cards[0]), "the ask, and the way to it");
+  assert.ok(/<span class="wbchip" data-wbfn="priority">waits on Priority<\/span>/.test(cards[1]), "a wait opens the function it waits on");
+  assert.ok(/<b class="dpfnb block" aria-hidden="true">!<\/b>/.test(cards[4]) && /fault<\/b>: Audit has not read Live site v1/.test(cards[4]), "a fault with '!' and the reason");
+  assert.ok(/last: said yes to round two · \d\d:\d\d/.test(cards[2]), "the last act and its time");
+  assert.ok(/<div class="fvprog wb"><div class="fvsays"><i class="dpdot breath"[^>]*><\/i><b aria-live="polite">Write is working<\/b><span class="wbchip ask">needs you<\/span>/.test(html), "the progress words, full form");
+  assert.strictEqual((html.match(/<span class="fvpill /g) || []).length, 8, "eight step pills");
+  assert.ok(/<span class="fvpill now" title="Run · Run happened · \d\d:\d\d"><i class="dpdot breath"/.test(html) && /<span class="fvpill skip" title="[^"]*">- Settle<\/span>/.test(html), "now breathes; Settle skipped");
+  /* Between them: the last three messages between the functions, newest first, and the way to all of them */
+  const between = /<div class="fvcard fvbetween wb">([\s\S]*)$/.exec(html)[1];
+  const msgs = (between.match(/data-wbthread="[^"]+"><i class="fvbar fn-(\w+)"><\/i><span class="wbchip">(\w+)<\/span>/g) || []).map(x => /class="wbchip">(\w+)</.exec(x)[1]);
+  assert.deepStrictEqual(msgs, ["Priority", "Adaptation", "Identity"], "three, newest first, the owner's words not among them");
+  assert.ok(/data-wbtab="board">All messages &rsaquo;<\/button>/.test(between));
+  /* no digits at rest outside titles (times are clocks, not counts; v1 is a name) */
+  const t = words(html.replace(/ title="[^"]*"/g, "").replace(/ aria-label="[^"]*"/g, "")).replace(/\bv\d+\b/g, "");
+  assert.ok(!/\d/.test(t), "a digit at rest: " + (t.match(/.{0,30}\d.{0,30}/) || [""])[0]);
+  /* a card opens its pane; Between them opens the board at that message */
+  click(c, { wbfn: "coordination" });
+  assert.strictEqual(vm.runInContext("dpS().tab['r3']", c), "coordination");
+  click(c, { wbtab: "board", wbthread: "x-9" });
+  assert.strictEqual(vm.runInContext("S.wb.tab['r3'] + ':' + S.wb.thread['r3']", c), "board:x-9");
+});
+test("M1.8: the list carries All five first; loading, error, not started and stopped read as the screen names them", async () => {
+  let [c, html] = await allFive({ fv: () => new Promise(() => {}) });
+  assert.strictEqual((html.match(/<div class="fvcard fvskel">/g) || []).length, 5, "five skeleton cards");
+  [c, html] = await allFive({ fv: () => Promise.reject(new Error("down")) });
+  assert.ok(/<div class="fvgrid fverr"><div class="o2quiet dpq">Could not read<\/div><button type="button" class="o2more wb" data-wbfvretry="1">Try again<\/button>/.test(html) && !/fvcard/.test(html), "the grid gives way to one line");
+  [c, html] = await allFive({ fv: fvOf({ cycle: { state: "not_started", says: "Not started", steps: [] } }) });
+  assert.ok(/<b>Not started<\/b>/.test(html) && /data-dpj2start="1">Start<\/button>/.test(html), "Start, for a department born before J2");
+  [c, html] = await allFive({ map: rtMap({ stopped: true }), fv: fvOf({ stopped: true, states: { Coordination: "working" }, cycle: { state: "stopped", says: "Stopped by you" } }) });
+  assert.ok(/<b>Stopped by you<\/b>/.test(html) && /data-wbresume="1"[^>]*>Start</.test(html), "Stopped by you, with Start");
+  assert.strictEqual((html.match(/class="fvcard fn-\w+ wb still"/g) || []).length, 5, "the cards at seventy percent");
+  assert.ok(!/dpdot breath/.test(html.slice(html.indexOf("fvgrid"))), "nothing breathes when stopped");
+  [c, html] = await allFive({ fv: fvOf({}) });
+  const list = c.dpListHtml(WEB, {}, null, null);
+  assert.ok(/<div class="o2gl dpgl">Functions<\/div><button type="button" class="o2li dpli on" data-wbtab="five"><span>All five<\/span><\/button><button type="button" class="o2li dpli dpfn" data-dptab="identity"/.test(list), "All five, first, lit while open");
+  /* the compact form, in the strip after the parent's name; it opens All five */
+  const strip = c.fvStripHtml("r3");
+  assert.ok(/^<button type="button" class="fvline wb" data-wbtab="five"><i class="dpdot breath"[^>]*><\/i><span>The work is running<\/span><\/button>$/.test(strip), strip);
+  assert.strictEqual(c.fvStripHtml("r4"), "", "no read, no line");
+  const old = await opened();
+  assert.ok(!/data-wbtab="five"/.test(old.dpListHtml(WEB, {}, null, null)), "the first build has no All five");
+});
+test("M1.8: the arrow keys move between the cards, and the stylesheet block is tokens only and covers every class", async () => {
+  const [c] = await allFive({ fv: fvOf({}) });
+  const focused = [];
+  const cards = FV_ORDER_T.map(fn => ({ dataset: { fvcard: fn }, focus(){ focused.push(fn); } }));
+  const grid = { querySelectorAll(){ return cards; } };
+  cards.forEach(k => { k.closest = sel => sel === ".fvgrid" ? grid : null; });
+  const key = (t, k) => { let stopped = false; (c.document.listeners.keydown || []).forEach(fn => fn({ key: k, target: t, preventDefault(){ stopped = true; } })); return stopped; };
+  assert.ok(key(cards[0], "ArrowRight")); assert.ok(key(cards[4], "ArrowRight")); assert.ok(key(cards[0], "ArrowLeft")); assert.ok(key(cards[2], "ArrowDown"));
+  assert.deepStrictEqual(focused, ["adaptation", "identity", "audit", "coordination"]);
+  assert.ok(!key(cards[1], "Enter"), "Enter is the card's own: it is a button");
+  const i = css.indexOf("/* ── All five (24-functions.js");
+  assert.ok(i > 0, "the block exists");
+  const block = css.slice(i, css.indexOf("/* ── Images for Shadow"));
+  assert.ok(!/#[0-9a-fA-F]{3,8}\b|rgba?\(/.test(block), "a literal colour");
+  const classes = new Set();
+  let m;
+  const re = /\bfv[a-z0-9]+\b/g, emitted = fvSrc.replace(/data-fv[a-z]+/g, "").replace(/\bfv[A-Z]\w*/g, "").replace(/\bds\.fv[a-z]+/g, "");
+  while ((m = re.exec(emitted))) classes.add(m[0]);
+  ["fvcard", "fvgrid", "fvpill", "fvprog"].forEach(k => assert.ok(classes.has(k), "parsed " + k));
+  [...classes].forEach(k => assert.ok(block.indexOf("." + k) >= 0, "no rule for ." + k));
+  const a = panelHtml.indexOf("/static/js/23-screens.js"), b = panelHtml.indexOf("/static/js/24-functions.js"), t = panelHtml.indexOf('<script src="/static/js/09-tail.js');
+  assert.ok(a > 0 && b > a && t > b, "loaded after 23, before the tail");
+});
+const FV_ORDER_T = ["identity", "adaptation", "priority", "coordination", "audit"];
 test("V2 root: Root's Map is its departments as boxes, each with a state dot and its line of work as a strip, and a way to a new one", async () => {
   const rm = rtMap(); rm.kind = "root"; rm.root = "r3"; rm.live = false;
   const c = await v2({ map: rm, chat: ROOT_CHAT });
@@ -1270,6 +1619,66 @@ test("V12: the second design's stylesheet block is tokens only and covers every 
   [...classes].forEach(k => assert.ok(block.indexOf("." + k) >= 0, "no rule for ." + k));
   const a = panelHtml.indexOf("/static/js/22-website.js"), b = panelHtml.indexOf("/static/js/23-screens.js"), t = panelHtml.indexOf("/static/js/09-tail.js");
   assert.ok(a > 0 && b > a && t > b, "loaded after 22, before the tail");
+});
+
+/* M1.3: the five function colours, in both themes, read off panel.css and measured by the accent picker's own rule
+   (07-loaders.js _lum/_contrast, WCAG relative luminance). A colour with alpha is laid over the ground it sits on:
+   the -bg tints and the dark --acc-bg over both --card and --surface, and the worse of the two is the one that counts. */
+const loadersSrc = read("07-loaders.js");
+const ACC_RULE = (() => {
+  const box = {};
+  vm.createContext(box);
+  vm.runInContext(/function _lum\([\s\S]*?\n\}\n/.exec(loadersSrc)[0] + /function _contrast\([\s\S]*?\n\}\n/.exec(loadersSrc)[0], box);
+  return box;
+})();
+function cssBlock(sel){
+  /* every declaration under one theme selector, in file order (a later block adds to an earlier one) */
+  const out = {};
+  let i = 0;
+  while ((i = css.indexOf(sel, i)) >= 0){
+    const open = css.indexOf("{", i + sel.length - 1), close = css.indexOf("}", open);
+    css.slice(open + 1, close).split(";").forEach(d => { const m = /^\s*(--[\w-]+)\s*:\s*([^;]+?)\s*$/.exec(d); if (m) out[m[1]] = m[2]; });
+    i = close;
+  }
+  return out;
+}
+const hex2rgb = h => [1, 3, 5].map(k => parseInt(h.slice(k, k + 2), 16));
+const rgb2hex = c => "#" + c.map(v => Math.round(v).toString(16).padStart(2, "0")).join("");
+function solid(v, ground){
+  const m = /^rgba\((\d+),\s*(\d+),\s*(\d+),\s*([.\d]+)\)$/.exec(v);
+  if (!m) return [v];
+  const a = Number(m[4]), fg = [m[1], m[2], m[3]].map(Number);
+  return ground.map(g => rgb2hex(fg.map((x, k) => x * a + hex2rgb(g)[k] * (1 - a))));
+}
+test("M1.3: the five function colours pass 4.5:1 on --card, --surface, --acc-bg and their own -bg, in both themes", () => {
+  const themes = { dark: cssBlock(':root,[data-theme="dark"]{'), light: cssBlock('[data-theme="light"]{'),
+                   system: cssBlock("@media (prefers-color-scheme:light){:root:not([data-theme]){") };
+  const media = css.slice(css.indexOf("@media (prefers-color-scheme:light){:root:not([data-theme]){"));
+  ["identity", "adaptation", "priority", "coordination", "audit"].forEach(fn => {
+    ["", "-bg", "-line"].forEach(k => {
+      assert.ok(themes.dark["--fn-" + fn + k], "dark --fn-" + fn + k);
+      assert.ok(themes.light["--fn-" + fn + k], "light --fn-" + fn + k);
+    });
+    assert.ok(media.indexOf("--fn-" + fn + ":") >= 0, "the system light block names --fn-" + fn);
+  });
+  let n = 0;
+  Object.keys(themes).filter(t => t !== "system").forEach(theme => {
+    const T = themes[theme], ground = [T["--card"], T["--surface"]];
+    ["identity", "adaptation", "priority", "coordination", "audit"].forEach(fn => {
+      const ink = T["--fn-" + fn];
+      assert.ok(/^#[0-9a-fA-F]{6}$/.test(ink), theme + " " + fn + " is one hex: " + ink);
+      const on = [].concat(solid(T["--card"], ground), solid(T["--surface"], ground), solid(T["--acc-bg"], ground), solid(T["--fn-" + fn + "-bg"], ground));
+      on.forEach(bg => {
+        const r = ACC_RULE._contrast(ink, bg);
+        assert.ok(r >= 4.5, theme + " --fn-" + fn + " on " + bg + " is " + r.toFixed(2) + ":1");
+      });
+      n++;
+    });
+  });
+  assert.strictEqual(n, 10, "all ten colours measured");
+  /* a function colour never fills a state dot; waiting on another function is a hollow muted ring, never amber */
+  assert.ok(/\.dpdot\.wait\{background:transparent;box-shadow:inset 0 0 0 1\.5px var\(--muted\)\}/.test(css), "the waiting ring");
+  assert.ok(!/\.dpdot[^{]*\{[^}]*--fn-/.test(css), "no state dot wears a function colour");
 });
 
 test("W45: J1 shows Root's one question and final department tell without renaming Root", () => {

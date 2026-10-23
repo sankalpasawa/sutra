@@ -23,6 +23,7 @@ if _LIB_DIR not in sys.path:
 
 import placement_engine as E  # noqa: E402
 import founding  # noqa: E402
+import functions_view  # noqa: E402
 import website_dept as W  # noqa: E402
 
 router = APIRouter(prefix="/api/native", tags=["native"])
@@ -72,6 +73,31 @@ def _need(ref):
 def map_(ref: str):
     _need(ref)
     return W.map_view(ref)
+
+
+@router.get("/{ref}/functions")
+def functions(ref: str):
+    """The five functions as one read of the record (functions_view.py): each one's state, what it waits on, its line,
+    its last act and its spend; the cycle in the owner's words; and what the record does not hold. Read only."""
+    _need(ref)
+    out = functions_view.functions(ref)
+    if out is None:
+        raise HTTPException(404, detail="this department does not run on the engine runtime")
+    return out
+
+
+@router.get("/{ref}/functions/{fn}")
+def function(ref: str, fn: str):
+    """One function as its site page holds it: its line, its template's fields, its recipe, its journeys with their
+    live status and its version 1 scope, with its node from the read above and what J2 adds. Read only."""
+    _need(ref)
+    try:
+        out = functions_view.function(ref, fn)
+    except ValueError as exc:
+        raise HTTPException(404, detail=str(exc))
+    if out is None:
+        raise HTTPException(404, detail="this department does not run on the engine runtime")
+    return out
 
 
 @router.get("/{ref}/status")

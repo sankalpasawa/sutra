@@ -245,8 +245,12 @@ function dpListHtml(n, d, dept, err){
      answers null here and paints exactly as before. */
   const wb = (typeof wbList === "function") ? wbList(n) : null;
   groups += wb ? wb.top : dpGroup("Now", [dpRow("Now", `data-dptab="now"`, tab === "now")], null, "");
-  groups += dpGroup("Functions", DP_FUNCS.map(([v, label]) =>
-    dpRow(label, `data-dptab="${dpEsc(v)}"`, tab === v)), null, "");
+  /* 22-website.js: on the engine runtime the five functions' read gives each row its mark and its state (S3);
+     undefined for every other department, whose rows stay bare labels */
+  const fv = (typeof wbFnView === "function") ? wbFnView(n.ref) : undefined;
+  /* All five (PRD M1.8): the five as one system, first in the group, on the engine runtime only */
+  const five = fv === undefined ? [] : [dpRow("All five", `data-wbtab="five"`, typeof wbTab === "function" && wbTab(n.ref) === "five" && tab === "now")];
+  groups += dpGroup("Functions", five.concat(DP_FUNCS.map(([v, label]) => dpFnRow(v, label, tab === v, fv))), null, "");
   /* People and Apps read routes that land in a later slice; until then the
      group is on screen and says so in one line rather than showing nothing. */
   dpLoadEngines(n.ref);                    /* call-on-render, as o2LoadApps does */
@@ -275,6 +279,32 @@ function dpListHtml(n, d, dept, err){
      closest(".dp"), the way 19-org2.js gates on closest(".o2"), and the two
      children of `.o2body` must stay its direct children for the layout. */
   return `<div class="o2list dplist dp">${groups}</div>`;
+}
+
+/* S3 (PRD M1.6): a function row on the engine runtime carries its mark in the function's colour and, at the right, a
+   state dot: a breathing accent dot for working, a hollow ring for waiting on another function, amber with '?' for
+   waits on you, block with '!' for a fault, off for quiet. Status is never colour alone: the state word is in the
+   row's accessible name and its title. `fv` is the five functions' read: undefined for a department that has none
+   (a bare label, as before), null while it is read and {failed} when it could not be (the mark, no dot). */
+const DP_FN_DOT = { working: "breath", waiting: "wait", waiting_on_you: "warn", fault: "block", quiet: "off" };
+const DP_FN_BADGE = { waiting_on_you: "?", fault: "!" };
+function dpFnRow(v, label, on, fv){
+  const attrs = `data-dptab="${dpEsc(v)}"`;
+  if (fv === undefined) return dpRow(label, attrs, on);
+  const mark = (typeof wb2Mark === "function") ? wb2Mark(v) : "";
+  const node = (fv && !fv.failed && fv.functions) ? fv.functions.filter(x => x.fn === v)[0] : null;
+  let word = "", title = label, dot = "", badge = "";
+  if (fv && fv.failed) title = label + " · state not read";
+  else if (fv && fv.stopped){ word = "stopped"; title = label + " · stopped"; dot = "off"; }
+  else if (node){
+    word = node.word || node.state;
+    title = [label, word, node.why || node.line].filter(Boolean).join(" · ");
+    dot = DP_FN_DOT[node.state] || "off";
+    badge = DP_FN_BADGE[node.state] ? `<b class="dpfnb ${dot}" aria-hidden="true">${DP_FN_BADGE[node.state]}</b>` : "";
+  }
+  const name = word ? label + " · " + word : label;
+  return `<button type="button" class="o2li dpli dpfn${on ? " on" : ""}" ${attrs} aria-label="${dpEsc(name)}" title="${dpEsc(title)}">` +
+    mark + `<span>${dpEsc(label)}</span>` + badge + (dot ? `<i class="dpdot ${dot}" aria-hidden="true"></i>` : "") + `</button>`;
 }
 
 /* ── viewer ───────────────────────────────────────────────────────────────── */

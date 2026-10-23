@@ -42,7 +42,8 @@ const WB_ACTS = { "request": "asks", "agree": "agrees", "refuse": "refuses", "pr
 function wbS(){
   if (!S.wb) S.wb = { refs: null, refsBusy: false, refsMissed: {}, map: {}, sig: {}, tab: {}, pane: {}, sel: {}, draft: {},
                       busy: {}, err: {}, engine: {}, art: {}, trace: {}, steps: {}, board: {}, chat: {}, chatSig: {},
-                      fnchat: {}, fnchatSig: {}, chip: {}, thread: {}, turns: {}, scroll: {}, found: null, timer: null, born: {} };
+                      fnchat: {}, fnchatSig: {}, chip: {}, thread: {}, turns: {}, scroll: {}, found: null, timer: null, born: {},
+                      fv: {}, fvSig: {}, fnpage: {}, fnpageSig: {} };
   return S.wb;
 }
 function wbRt(m){ return !!(m && m.runtime === 2); }
@@ -154,6 +155,54 @@ async function wbLoadMap(ref, force){
   }
   delete st.busy["map:" + ref];
 }
+/* ── the five functions, as one read of the record (functions_view.py) ──────
+   The Map, the list column's function rows, each function's pane and the All
+   five overview read the five here and nowhere else, so they agree with each
+   other and with the record (PRD M1.1). A department not on the engine
+   runtime has no such read: it is never asked. A read that failed keeps
+   what was on the screen, or says so once. */
+function wbFv(ref){
+  const st = wbS(), m = st.map[ref];
+  if (!ref || !wbRt(m)) return null;
+  if (!st.fv[ref]) wbLoadFv(ref);
+  return st.fv[ref] || null;
+}
+/* What the screen compares before it paints the five again (PRD M1.9), after dpActivitySig (20-dept.js): per function
+   its state, what it waits on, its line and its spend as the bar draws it; the cycle's own words and step; who made
+   what. A read that says the same thing paints nothing, so a quiet department never flickers on the 2.5 s tick; a
+   change paints on the tick that reads it. The answer is kept either way, so the next paint is the newest one. */
+function wbFvSig(v){
+  if (!v || v.failed) return "failed";
+  const c = v.cycle || {}, share = x => Math.round((Number(x) || 0) * 50);
+  return JSON.stringify([v.stopped, c.state, c.step, c.says, c.needs_you, c.asks, c.round, (c.steps || []).map(p => p.state),
+    (v.functions || []).map(f => [f.name, f.state, f.waits_on, f.line, share((f.spend || {}).share)]),
+    share((v.budget || {}).share), (v.made || []).map(a => [a.art, a.v, a.by])]);
+}
+async function wbLoadFv(ref, again){
+  const st = wbS();
+  if (!ref || st.busy["fv:" + ref] || (st.fv[ref] && !again)) return;
+  st.busy["fv:" + ref] = true;
+  try {
+    const v = await apiGet(wbUrl(ref, "functions"));
+    const sig = wbFvSig(v), moved = sig !== st.fvSig[ref];
+    st.fv[ref] = v; st.fvSig[ref] = sig;
+    delete st.busy["fv:" + ref];
+    if (moved && (!again || !wbTyping())) dpRender();
+  } catch (e) {
+    if (!st.fv[ref]) st.fv[ref] = { failed: true };
+    delete st.busy["fv:" + ref];
+    if (!again) dpRender();
+  }
+}
+/* 20-dept.js asks this for the list column's function rows (S3): undefined for a department with no functions read
+   (not on the engine runtime, or its map not read yet), null while it is read, the read once it lands */
+function wbFnView(ref){
+  if (!wbIs(ref)) return undefined;
+  const m = wbS().map[ref];
+  return m && wbRt(m) ? wbFv(ref) : undefined;
+}
+/* one artifact as the record says it: who made each version, who reads it (M1.2) */
+function wbMadeOf(fv, name){ return ((fv && fv.made) || []).filter(x => x.art === name)[0] || null; }
 function wbTyping(){
   const a = document.activeElement;
   return !!(a && a.closest && a.closest(".wb") && /^(INPUT|TEXTAREA)$/.test(a.tagName));
@@ -168,11 +217,15 @@ function wbTick(){
     if (st.ticks % 4 === 0 && st.refs) wbLoadRefs(true);
     if (!wbIs(S.dp.sel)) return;
     wbLoadMap(S.dp.sel);
+    /* the five functions' read is read on the same clock: the Map's boxes, the list's dots, All five and the open
+       function's page repaint only when what they show moved (PRD M1.9) */
+    if (st.fv[S.dp.sel]) wbLoadFv(S.dp.sel, true);
     /* a department's answer lands on Root's board without a run of Root's own, so the open chat is read on its own clock */
     if (wbTab(S.dp.sel) === "chat" && st.chat[S.dp.sel]) wbLoadChat(S.dp.sel, true);
     /* a function's open chat is read on the same clock */
     const ftab = (typeof dpS === "function" && dpS().tab[S.dp.sel]) || "", fk = S.dp.sel + ":" + ftab;
     if (ftab && st.fnchat[fk] && dpS().pane[fk] === "chat") wbLoadFnChat(S.dp.sel, ftab, true);
+    if (WB_FUNCS.indexOf(ftab) >= 0 && st.fnpage[fk] && (!dpS().pane[fk] || dpS().pane[fk] === ftab)) wbLoadFnPage(S.dp.sel, ftab, true);
     /* and so is the open Agent activity: the lifecycle's events land while the person watches */
     if (ftab === "activity" && typeof dpActivityAgain === "function") dpActivityAgain(S.dp.sel);
   }, WB_POLL_MS);
@@ -206,7 +259,8 @@ function wbList(n){
   const top = `<div class="o2g dpg wb">` +
     (wbRt(m) ? dpRow("Chat", `data-wbtab="chat"`, tab === "chat") : "") +
     dpRow("Map", `data-wbtab="map"`, tab === "map") +
-    dpRow("System status", `data-wbtab="status"`, tab === "status") +
+    /* the ruled Map (PRD M1.5): System status folds into the Map's NOW line for a department on the runtime */
+    (wbRt(m) && wbV2() ? "" : dpRow("System status", `data-wbtab="status"`, tab === "status")) +
     dpRow("Motor", `data-wbtab="motor"`, tab === "motor") +
     (wbRt(m) ? dpRow("Board", `data-wbtab="board"`, tab === "board") +
       dpRow("Agent activity", `data-wbtab="activity"`, tab === "activity") : "") + `</div>`;
@@ -492,6 +546,8 @@ function wbAgain(ref){
   if (st.board[ref]) wbLoadBoard(ref, true);
   if (st.chat[ref]) wbLoadChat(ref, true);
   Object.keys(st.fnchat).forEach(k => { if (k.indexOf(ref + ":") === 0) wbLoadFnChat(ref, k.slice(ref.length + 1), true); });
+  if (st.fv[ref]) wbLoadFv(ref, true);
+  Object.keys(st.fnpage).forEach(k => { if (k.indexOf(ref + ":") === 0) wbLoadFnPage(ref, k.slice(ref.length + 1), true); });
 }
 function wbRungHtml(s){
   const at = WB_RUNGS.map(r => r[0]).indexOf(s.rung);
@@ -851,9 +907,10 @@ function wbArtHtml(n){
       dpKV("Checks", (t.checks || []).join(", "), "None") + dpKV("Written by", (t.written_by || []).join(", "), "Nobody") +
       dpKV("Counts", t.counts_after === "stamp" ? "After your stamp" : "When filed", "") +
       dpKV("Runs on a new one", (t.operations || []).join(", "), "Nothing") + `</div>`) : "";
+    const [by, readers] = wbWhoMade(n.ref, a.name, cur);
     return tabs + dpCard("The work item", `<div class="dpengines">` +
-      dpKV("Made by", cur.run === "owner" ? "The owner" : (wbMakerOf(a.name)), "Not named") +
-      dpKV("Read by", wbReaderOf(a.name), "Nobody yet") +
+      dpKV("Made by", by, "Not recorded") +
+      dpKV("Read by", readers, "Nobody yet") +
       dpCell("Check", `<div class="dpbig">${wbDot(chk(cur))} ${cur.check && cur.check.ok ? "Passed" : "Failed"}</div>`) + `</div>` +
       ((cur.check && cur.check.notes) || []).map(x => dpRunRow(x, "", chk(cur))).join("")) + tpl;
   }
@@ -881,8 +938,94 @@ function wbArtHtml(n){
     `<a class="o2more" href="${wbEsc(src)}" target="_blank" rel="noopener">Open</a></div>` +
     `<iframe class="wbframe" sandbox="" src="${wbEsc(src)}" title="${wbEsc(a.name)}"></iframe></div>`;
 }
-function wbMakerOf(name){ return ({ "Site plan": "Plan", "Pages": "Write", "Build": "Check", "Live site": "Publish" })[name] || ""; }
-function wbReaderOf(name){ return ({ "Brief": "Plan", "Site plan": "Write", "Pages": "Check", "Build": "Publish" })[name] || ""; }
+/* Who made a version and who reads the work, from the record (PRD M1.2): on the engine runtime the functions read says
+   it (runs.json for the maker, each engine's reads in the definitions and born templates for the readers); a department
+   of the first build reads its own engines' reads and writes off its map. Nothing here is a table of names. */
+function wbWhoMade(ref, name, cur){
+  const m = wbS().map[ref] || {}, fv = wbFv(ref), mk = wbMadeOf(fv, name);
+  if (cur && cur.run === "owner") return ["The owner", wbReadersOf(m, mk, name)];
+  const by = mk ? ((mk.by_v || {})[String(cur && cur.v)] || "") : (wbMakerByLine(m, name) || "");
+  return [by === "Owner" ? "The owner" : by, wbReadersOf(m, mk, name)];
+}
+function wbMakerByLine(m, name){ return ((m.engines || []).filter(e => e.writes === name)[0] || {}).name || ""; }
+function wbReadersOf(m, mk, name){
+  const names = mk ? (mk.readers || []) : (m.engines || []).filter(e => e.reads === name).map(e => e.name);
+  return names.join(", ");
+}
+
+/* ── a function's page: what its site page holds (PRD M1.7) ─────────────────
+   The pane each function already has opens on its page: its one line, its
+   template's fields, its recipe (each step run by code, by the AI inside, or
+   by a person, on the rung it has earned), its journeys with their live
+   status and last move, and its version 1 scope. A field the record leaves
+   empty is one quiet line, "not set yet". Read from functions_view.function;
+   the first tab keeps its name. */
+/* a function's page paints again when its node, a journey's status or last move, or a step's rung moved (M1.9) */
+function wbFnPageSig(v){
+  if (!v || v.failed) return "failed";
+  const n = v.node || {};
+  return JSON.stringify([n.state, n.waits_on, n.line, (v.journeys || []).map(j => [j.id, j.status, j.last && j.last.summary]),
+    (v.recipe || []).map(r => [r.id, r.rung]), (v.fields || []).map(f => [f.key, f.placeholder])]);
+}
+async function wbLoadFnPage(ref, fn, again){
+  const st = wbS(), k = ref + ":" + fn;
+  if ((st.fnpage[k] && !again) || st.busy["fp:" + k]) return;
+  st.busy["fp:" + k] = true;
+  try {
+    const v = await apiGet(wbUrl(ref, "functions/" + encodeURIComponent(fn)));
+    const sig = wbFnPageSig(v), moved = sig !== st.fnpageSig[k];
+    st.fnpage[k] = v; st.fnpageSig[k] = sig;
+    delete st.busy["fp:" + k];
+    if (moved && (!again || !wbTyping())) dpRender();
+  } catch (e) {
+    if (!st.fnpage[k]) st.fnpage[k] = { failed: true };
+    delete st.busy["fp:" + k];
+    if (!again) dpRender();
+  }
+}
+const WB_JOURNEY_DOT = { "done": "ok", "said yes": "ok", "heard": "ok", "let through": "ok", "told Identity": "ok", "moved": "ok",
+                         "waiting": "wait", "held": "wait", "running": "", "failed": "block" };
+const WB_BY = { code: "Code", AI: "AI", person: "Person" };
+function wbFieldHtml(f){
+  const v = f.value;
+  if (f.placeholder) return dpCell(f.label, dpQuiet("not set yet"));
+  if (f.key === "envelope") return dpCell(f.label, dpBar(Math.max(0, Math.min(1, Number((v || {}).share) || 0))));
+  if (Array.isArray(v)) return dpCell(f.label, f.key === "checks"
+    ? v.map(x => `<div class="dpfline">${wbEsc(x)}</div>`).join("") : `<div class="wbstep">${v.map(x => wbChip(x)).join("")}</div>`);
+  return dpCell(f.label, `<div class="dpbig">${wbEsc(v)}</div>`);
+}
+function wbRecipeHtml(steps){
+  if (!(steps || []).length) return dpCard("Recipe", dpQuiet("No steps yet"));
+  const row = s => `<div class="wbrec">${wbChip(WB_BY[s.by] || s.by, s.by === "code" ? "on" : "")}<span>${wbEsc(s.name)}</span>` +
+    wbRungHtml({ rung: s.rung, rung_name: s.rung_name }) + `</div>`;
+  /* the steps that run on every start first; each thing the function hears is its own group, closed until opened */
+  const own = steps.filter(s => !s.under), groups = [];
+  steps.filter(s => s.under).forEach(s => { if (groups.indexOf(s.under) < 0) groups.push(s.under); });
+  return dpCard("Recipe", own.map(row).join("") + groups.map(g => `<details class="wbrecg wb"><summary>${wbEsc(g)}</summary>` +
+    steps.filter(s => s.under === g).map(row).join("") + `</details>`).join(""));
+}
+function wbJourneysHtml(js){
+  if (!(js || []).length) return "";
+  return dpCard("Journeys", js.map(j => {
+    const dot = WB_JOURNEY_DOT[j.status] === undefined ? "off" : WB_JOURNEY_DOT[j.status];
+    const last = j.last ? [j.last.summary, wbWhen(j.last.at)].filter(Boolean).join(" · ") : "";
+    return `<div class="dprow wbjrn"><span class="dpdot${dot ? " " + dot : ""}"></span><span><span class="wbjid">${wbEsc(j.id)}</span>` +
+      `${wbEsc(j.name)} ${wbChip(j.status)}${last ? `<div class="dpchk">${wbEsc(last)}</div>` : ""}</span></div>`;
+  }).join(""));
+}
+function wbFnPageHtml(ref, fn){
+  const st = wbS(), k = ref + ":" + fn, p = st.fnpage[k];
+  if (!p){ wbLoadFnPage(ref, fn); return dpSkel(); }
+  if (p.failed) return dpQuiet("Could not read");
+  const node = p.node || {};
+  const now = node.state ? dpRunRow(wbCap(node.word || node.state), node.why || node.line || "",
+                                    ({ working: "", waiting: "wait", waiting_on_you: "warn", fault: "block", quiet: "off" })[node.state]) : "";
+  return dpCard("The function", `<div class="dpbig">${wbEsc(p.line)}</div>` + now +
+      `<div class="dpengines">` + dpKV("Holds", p.holds, "Not named") + dpKV("Hands to", p.hands_to, "Nobody") + dpKV("Keeps", p.keeps, "Not named") + `</div>`) +
+    dpCard("The " + ((p.template && p.template.name) || "Default") + " template", `<div class="dpengines">` + (p.fields || []).map(wbFieldHtml).join("") + `</div>`) +
+    wbRecipeHtml(p.recipe) + wbJourneysHtml(p.journeys) +
+    dpCard("Version 1", `<div class="dpfline">${wbEsc(p.v1)}</div>`);
+}
 
 /* ── the five systems' own state, under the function cards ────────────────── */
 function wbFnExtra(tab, m){
@@ -923,7 +1066,8 @@ function wbFnOwn(ref, tab){
   if (!wbIs(ref)) return "";
   const m = wbS().map[ref];
   if (!m){ wbLoadMap(ref); return ""; }
-  return wbFnExtra(tab, m);
+  /* on the engine runtime the card opens on the function's page (PRD M1.7), its own state under it */
+  return (wbRt(m) && WB_FUNCS.indexOf(tab) >= 0 ? wbFnPageHtml(ref, tab) : "") + wbFnExtra(tab, m);
 }
 
 /* ── Settings: a function's own ────────────────────────────────────────────
@@ -1041,6 +1185,8 @@ function wbViewer(n){
   if (!m){ wbLoadMap(n.ref); return dpViewerShell(n.name, st.err[n.ref] ? dpQuiet("Could not read") : dpSkel(), "wb"); }
   /* the Map and the Board of the second design, when the switch is on; null hands the rest back to this file */
   if (wbV2() && wbRt(m) && typeof wb2Viewer === "function"){ const own = wb2Viewer(n); if (own) return own; }
+  /* All five (PRD M1.8, S2): 24-functions.js draws the five as one system */
+  if (tab === "five" && wbRt(m) && typeof fvAllHtml === "function") return dpViewerShell("All five", fvAllHtml(n, m), "wb fv");
   if (tab === "chat" && wbRt(m)) return dpViewerShell("Chat", wbChatHtml(n, m), "wb");
   if (tab === "map") return dpViewerShell("Map", wbMapHtml(n, m), "wb");
   if (tab === "status") return dpViewerShell("System status", wbStatusHtml(n, m), "wb");
@@ -1191,7 +1337,7 @@ async function wbPost(ref, tail, body, key, at){
 if (typeof document !== "undefined" && document.addEventListener){
   const WB_SEL = "[data-wbtab],[data-wbengine],[data-wbart],[data-wbpane],[data-wbdecide],[data-wbstop],[data-wbresume]," +
     "[data-wbgoal],[data-wbask],[data-wbputback],[data-wbfn],[data-wbfound],[data-wbhold],[data-wbenv]," +
-    "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost],[data-wbopen],[data-wblive],[data-wbopenart],[data-wbsay],[data-wbins]";
+    "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost],[data-wbopen],[data-wblive],[data-wbopenart],[data-wbsay],[data-wbins],[data-wbfvretry]";
   /* capture phase: a click on one of 20-dept.js's own rows hands the viewer
      back to it BEFORE that file's handler paints */
   document.addEventListener("click", (ev) => {
@@ -1244,7 +1390,7 @@ if (typeof document !== "undefined" && document.addEventListener){
        keep the person there (found live 2026-09-29: Send in Priority's chat landed on the department's Chat) */
     const inFn = ds.wbask !== undefined && String(ds.wbask).indexOf("fn:") === 0;
     if (ds.wbfn === undefined && !inFn && dpS().tab[ref] !== "now") dpS().tab[ref] = "now";
-    if (ds.wbtab !== undefined){ st.tab[ref] = ds.wbtab; dpRender(); return; }
+    if (ds.wbtab !== undefined){ st.tab[ref] = ds.wbtab; if (ds.wbthread !== undefined) st.thread[ref] = ds.wbthread; dpRender(); return; }
     if (ds.wbfn !== undefined){ st.tab[ref] = ""; dpS().tab[ref] = ds.wbfn; dpRender(); return; }
     if (ds.wbpane !== undefined && ds.wbpanekey !== undefined){ st.pane[ds.wbpanekey] = ds.wbpane; dpRender(); return; }
     if (ds.wbengine !== undefined){ st.tab[ref] = "engine"; st.sel[ref] = ds.wbengine; dpRender(); return; }
@@ -1268,6 +1414,8 @@ if (typeof document !== "undefined" && document.addEventListener){
       return;
     }
     if (ds.wbthread !== undefined){ st.thread[ref] = ds.wbthread; dpRender(); return; }
+    /* the five functions' read failed: Try again reads it once more (a read, never a write) */
+    if (ds.wbfvretry !== undefined){ delete st.fv[ref]; wbLoadFv(ref); dpRender(); return; }
     if (ds.wbdecide !== undefined){ wbPost(ref, "asks/" + encodeURIComponent(ds.wbdecide), { approve: ds.wbok === "1" }, null, ds.wbref || ref); return; }
     if (ds.wbstop !== undefined){ wbPost(ref, "stop"); return; }
     if (ds.wbresume !== undefined){ wbPost(ref, "resume"); return; }
