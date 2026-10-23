@@ -2015,6 +2015,17 @@ JUST_DO_IT = re.compile(r"\s*just do it[.!]?\s*", re.I)
 J1_DEFAULTS = ["department name from the organisation", "Priority limits from the selected Library template"]
 SECOND = re.compile(r"\b(?:and|plus)\s+(?:also\s+)?(?:an?\s+)?(?:separate|another|second)(?:\s+(?:separate|another|second))*"
                     r"\s+(?:(?:department|team|one)\s+(?:for|to|that|which)\s+)?(.+)$", re.I)
+# the Org screen's sheet (19-org2.js o2SendRequest, PRD M1.4): "Set up a department: <name>. <words>". The name is the
+# owner's own, so it is the department's name, and the words after it are its goal
+SHEET = re.compile(r"^\s*Set up a department:\s*([^.\n]+?)\s*(?:\.\s*(.*))?$", re.S)
+
+
+def _sheet(words):
+    """The name and the words of a sheet's request, or ('', words) for words said any other way."""
+    m = SHEET.match(str(words or ""))
+    if not m or not m.group(1).strip():
+        return "", str(words or "")
+    return " ".join(m.group(1).split())[:80], " ".join(str(m.group(2) or "").split())
 
 
 def _j1_file_words(ref, d, words, note, message_id=None, thread=None):
@@ -3053,6 +3064,7 @@ def setup_read(ctx, step, item):
         conversation = json.loads(files.get("request.json") or "null")
     except (TypeError, ValueError):
         conversation = None
+    user_words = []
     if isinstance(conversation, dict):
         conversation = dict(conversation, selected_revision=ctx["inp"]["v"])
         # request.md is the readable J1 transcript ("User: ...", "Root: ...").
@@ -3065,10 +3077,13 @@ def setup_read(ctx, step, item):
     # the departments this Root already has: a new one needs a name none of them has (found live 2026-09-29: Setup shaped
     # the same name as the one that existed, made nothing and said nothing)
     existing = [c.get("name") for c in _children(ctx["ref"]) if c.get("name")]
-    return {"words": words, "conversation": conversation, "conversing": isinstance(conversation, dict),
+    # a name the owner gave on the Org sheet is the department's name (round 2, gap 6: Root named it itself, and a second
+    # sheet's department took the same draft name and was folded into the first)
+    named, _ = _sheet(user_words[0] if user_words else words)
+    return {"words": words, "conversation": conversation, "conversing": isinstance(conversation, dict), "named": named,
             "facts": {"asked": bool(words), "kinds": ", ".join(kinds),
                                       "use_cases": "; ".join("%s: %s" % (k, u) for k, u in kinds.items()),
-                                      "existing": ", ".join(existing) or "none"}}
+                                      "existing": ", ".join(existing) or "none", "named": named or "none"}}
 
 
 CONVERSE = ("You are Sutra, the helper of the organisation. The owner wants a department. Ask what you need to know, one question at a "
@@ -3165,15 +3180,18 @@ def p_setup_shape(ctx, step, item):
     got = ctx["bag"]["setup.read"]
     org = (ctx["dept"].get("org") or {}).get("name") or ctx["dept"].get("name")
     return ("The owner of %s asks Root for a department. Shape it: a short name (the organisation's name and what it is, like "
-            "\"%s Website\"; a NEW department takes a name none of the existing ones has, say \"%s Website 2\" or what sets it apart), "
+            "\"%s Website\"; a NEW department takes a name none of the existing ones has, say \"%s Website 2\" or what sets it apart; "
+            "when the owner gave the department a name, that name is its name, exactly as given), "
             "its kind from the Library (the kind whose use case fits the words; default when none does), and its goal in one or two "
             "sentences in the owner's own words.\n"
-            "THE OWNER'S WORDS: %s\nKINDS IN THE LIBRARY: %s\nEACH KIND'S USE CASE: %s\nDEPARTMENTS THIS ROOT ALREADY HAS: %s\n\n"
+            "THE OWNER'S WORDS: %s\nTHE NAME THE OWNER GAVE: %s\nKINDS IN THE LIBRARY: %s\nEACH KIND'S USE CASE: %s\n"
+            "DEPARTMENTS THIS ROOT ALREADY HAS: %s\n\n"
             "If the words describe MORE THAN ONE department, shape only the first: its goal covers only that one, and `second` "
             "holds, in the owner's words, what the other department is for. Otherwise `second` is an empty string.\n"
             "Return ONLY a JSON object: {\"name\": \"...\", \"kind\": \"one of the kinds above\", \"goal\": \"...\", "
             "\"purpose\": \"one line\", \"second\": \"...\"}."
-            % (org, org, org, got["words"], got["facts"]["kinds"], got["facts"].get("use_cases") or "", got["facts"].get("existing") or "none"))
+            % (org, org, org, got["words"], got.get("named") or "none", got["facts"]["kinds"], got["facts"].get("use_cases") or "",
+               got["facts"].get("existing") or "none"))
 
 
 def d_setup_shape(ctx, step, item):
@@ -3182,10 +3200,13 @@ def d_setup_shape(ctx, step, item):
     conversation = got.get("conversation") or {}
     user = [m.get("text", "") for m in conversation.get("messages") or [] if m.get("actor") == "user"]
     useful = " ".join(x for x in user if not JUST_DO_IT.fullmatch(x)).strip() or got["words"]
+    named, said = _sheet(useful)
+    if named and said:
+        useful = said                                   # the sheet's words after its name are the goal
     second = SECOND.search(useful)
     first = useful[:second.start()].strip(" ,;.") if second else useful
     website = bool(re.search(r"\b(website|web site|landing page|blog)\b", first, re.I))
-    return _shape_norm({"name": "%s %s" % (org.replace(" Root", ""), "Website" if website else "Department"),
+    return _shape_norm({"name": named or "%s %s" % (org.replace(" Root", ""), "Website" if website else "Department"),
                         "kind": "website" if website else "organic", "goal": first or useful, "purpose": first or useful,
                         "second": second.group(1).strip(" .") if second else ""})
 
@@ -3239,6 +3260,10 @@ def _reconcile_j1_tells(root_ref):
 def setup_make(ctx, step, item):
     """Root makes the department: under itself, with its charter, its functions' templates, its record and its goal."""
     shape = _shape_norm(ctx["bag"]["setup.shape"])
+    named = (ctx["bag"].get("setup.read") or {}).get("named")
+    if named:
+        # the owner named the department on the Org sheet: the covering keeps that name, whatever the agent shaped
+        shape = dict(shape, name=named)
     import founding
     conversation = (ctx["bag"].get("setup.read") or {}).get("conversation") or {}
     live = _j1_record(ctx["ref"]) if conversation else None

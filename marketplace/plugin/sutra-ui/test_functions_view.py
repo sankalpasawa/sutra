@@ -540,6 +540,40 @@ def test_m14_the_sheets_words_set_up_a_runtime_department_with_its_five_function
     assert len(kids) == 1 and kids[0]["runtime"] == 2, kids
     got = F.functions(kids[0]["ref"])
     assert [n["name"] for n in got["functions"]] == FUNCS
+    # the name the owner gave on the sheet is the department's name, and the words after it its goal (round 2, gap 6)
+    assert kids[0]["name"] == "Billing", kids[0]["name"]
+    asked = " ".join(str(r) for r in W.requests(kids[0]["ref"]))
+    assert "Invoices for every customer" in asked and "Set up a department" not in asked, asked
+    # a second sheet's department is a second department, never folded into the first under a draft name
+    W.owner_ask(root, "Set up a department: Design. Logos and brand pages for every product we sell")
+    W.run_until_idle(root, limit=300)
+    kids = sorted((d for d in W.list_depts() if d.get("parent") == root), key=lambda d: d["name"])
+    assert [k["name"] for k in kids] == ["Billing", "Design"], [k["name"] for k in kids]
+    assert all(k["runtime"] == 2 for k in kids)
+    said = [str((p.get("payload") or {}).get("done") or "") for p in R.board(root) if p["src"] == "Identity"]
+    assert not [x for x in said if "already exists" in x], said
+
+
+def test_m14_the_shape_prompt_keeps_the_name_the_owner_gave_and_the_covering_holds_it(mods, born, monkeypatch):
+    """The AI inside Setup is told the name the owner gave; when it shapes another name all the same, the covering keeps
+    the owner's (rules 1 and 6: the owner's own words, and the code's verdict in the covering)."""
+    W, R, J, F = mods
+    import founding
+    prompts = []
+
+    def model(prompt, step):
+        if step["id"] != "setup.shape":
+            return None, 0.0, "offline"
+        prompts.append(prompt)
+        return {"name": "Thread & Loom Department", "kind": "organic", "goal": "Invoices for every customer, sent by email",
+                "purpose": "Invoices", "second": ""}, 0.01, "model"
+    monkeypatch.delenv("SUTRA_WEBSITE_OFFLINE", raising=False)
+    monkeypatch.setattr(R, "MODEL", model)
+    root = founding.found_structure("Thread & Loom", owner="Sankalp")["root"]
+    W.owner_ask(root, "Set up a department: Billing. Invoices for every customer, sent by email")
+    W.run_until_idle(root, limit=300)
+    assert prompts and "THE NAME THE OWNER GAVE: Billing" in prompts[-1], prompts[-1:]
+    assert [d["name"] for d in W.list_depts() if d.get("parent") == root] == ["Billing"]
 
 
 # ---- M1.7: each function as its site page holds it ------------------------------------------------------------------
