@@ -190,6 +190,21 @@ def save_dept(ref, d):
     _write(ddir(ref) / "dept.json", d)
 
 
+def bump_identity(ref, d):
+    """Who the department is changed (its goal, done-when or rules): the revision goes up, the record is saved, and
+    the Org screen's copy follows it as a one-way mirror (PRD M3.1; founding.mirror files and applies it through the
+    proposals path, decision C1). The record is the truth: a copy that cannot be written never fails the change, and a
+    row says so."""
+    d["identity_revision"] = int(d.get("identity_revision") or 1) + 1
+    save_dept(ref, d)
+    try:
+        import founding
+        founding.mirror(ref)
+    except Exception as exc:  # noqa: BLE001 -- the mirror never fails the identity it follows
+        system_run(ref, "Identity", "could not copy the identity to the Org screen: %s" % exc)
+    return d
+
+
 # An artifact deploys the versions product in its own folder; this file names the folder, nothing more.
 def _abase(ref, art):
     return ddir(ref) / "artifacts" / slug(art)
@@ -298,11 +313,14 @@ def _runtime(ref):
 
 
 # ---- the department's birth ----------------------------------------------------------------------------------------
-def create(ref, name, brief, owner="the owner", parent=None, kind="website"):
+def create(ref, name, brief, owner="the owner", parent=None, kind="website", goal=None):
     """A new department of its kind: Identity's rules, Priority's envelopes, Coordination's table, and its first
     artifact from the owner's words. Every department is born on the engine runtime (founder, 2026-09-28: "I don't
     want to create the old way. I want it to be organic only"); SUTRA_ENGINE_RUNTIME=1 keeps the first build's way
-    only for its own suites and for the departments born before that day, which the record says."""
+    only for its own suites and for the departments born before that day, which the record says.
+
+    `goal` is the owner's own words for it, as Root shaped them (PRD M3.1): dept.json is the one record of who the
+    department is, so its goal is those words; with none, the kind's own goal line."""
     if dept(ref):
         raise ValueError("%s already has a department" % ref)
     if kind not in KINDS:
@@ -310,7 +328,7 @@ def create(ref, name, brief, owner="the owner", parent=None, kind="website"):
     brief = " ".join(str(brief or "").split())
     k = KINDS[kind]
     d = {"kind": kind, "ref": ref, "name": name, "owner": owner, "parent": parent, "created": now(),
-         "goal": k["goal"].format(name=name), "done": k["done"],
+         "goal": " ".join(str(goal or "").split()) or k["goal"].format(name=name), "done": k["done"],
          "runtime": 1 if os.environ.get("SUTRA_ENGINE_RUNTIME") == "1" else 2,
          "rules": [dict(r) for r in k["rules"]], "control": "granted", "stopped": False,
          "envelopes": {e[0]: dict(ENVELOPE) for e in ENGINES},

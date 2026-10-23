@@ -26,7 +26,7 @@ tail -1 /tmp/sutra-suite-prompts.txt | sed "s/^/function prompts: /"
 lane $PY -m pytest -q -p no:cacheprovider test_functions_view.py > /tmp/sutra-suite-functions.txt 2>&1 || RC=1
 tail -1 /tmp/sutra-suite-functions.txt | sed "s/^/functions read: /"
 # each function's covering checks fail loudly (PRD M2.4) and Identity's one record, standard and way out (PRD M3)
-lane $PY -m pytest -q -p no:cacheprovider test_covering_checks.py > /tmp/sutra-suite-identity.txt 2>&1 || RC=1
+lane $PY -m pytest -q -p no:cacheprovider test_covering_checks.py test_j2_identity.py > /tmp/sutra-suite-identity.txt 2>&1 || RC=1
 tail -1 /tmp/sutra-suite-identity.txt | sed "s/^/coverings and Identity: /"
 # the department's life (J1 made it, J2 runs it): these files have no __main__ block, so only pytest runs them
 lane $PY -m pytest -q test_j2.py test_j2_api.py test_j1.py > /tmp/sutra-suite-j2.txt 2>&1 || RC=1

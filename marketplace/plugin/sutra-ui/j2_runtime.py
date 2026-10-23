@@ -420,8 +420,7 @@ def answer(ref, text, ask_id=None):
         elif missing == "rules":
             dept["rules"] = [r for r in dept.get("rules") or [] if str(r.get("line") or "").strip() and r.get("tag") in RULE_TAGS]
             dept["rules"].append({"id": "u-" + uuid.uuid4().hex[:6], "tag": "go", "line": text, "since": W.now(), "from": text})
-        dept["identity_revision"] = int(dept.get("identity_revision") or 1) + 1
-        W.save_dept(ref, dept)
+        W.bump_identity(ref, dept)                      # the one record, and the Org screen's copy of it (M3.1)
         ask.update({"status": "stamped", "decided": W.now(), "by": "the owner", "answered": text})
         W._put_ask(ref, ask)
         note(ref, 1, "User", "Identity", "ask.answered", "complete", "The owner answered: %s" % text[:200], "answer-" + aid,
