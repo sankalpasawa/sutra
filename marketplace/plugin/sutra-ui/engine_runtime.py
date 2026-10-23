@@ -921,8 +921,12 @@ def blocked(ctx, name, e, inp, slot):
             if v is None or v.get("answer") is None:
                 return "wait", "%s is judging" % fn
             answer, why = v["answer"], v.get("why")
+        # the gate's covering is code (M2.4): a start it does not hold for is never let through; the row says it failed
+        check = CHECK[g["check"]](gctx, g, None, {"answer": answer, "why": why})
+        if answer == "admit" and not check.get("ok"):
+            answer, why = "wait", "; ".join(str(n) for n in check.get("notes") or []) or "its check failed"
         if not ctx.get("peek"):
-            _gate_row(ref, slot, fn, g, rung, answer, why)
+            _gate_row(ref, slot, fn, g, rung, answer, why, check=check)
         if answer != "admit":
             return answer, why
     return "admit", None
@@ -972,8 +976,10 @@ def coord_pick(ctx, step, item):
     order inside each. The line is kept in order: while an engine of the line is held, the ones after it wait."""
     t = ctx["table"]
     busy, why = _run_rule(ctx, "coord.busy")
-    if busy != "admit":
-        return None, None, why
+    _, rule = step_def("coord.busy")
+    held = CHECK[rule["check"]](ctx, rule, None, {"answer": busy, "why": why})
+    if busy != "admit" or not held.get("ok"):                 # the covering: one run at a time, read again (M2.4)
+        return None, None, why if busy != "admit" else "; ".join(held.get("notes") or [])
     why, posts = None, len(board(ctx["ref"]))
 
     def first_post():
@@ -1090,9 +1096,10 @@ def _verdicts(ref):
     return W._read(W.ddir(ref) / "verdicts.json", {})
 
 
-def _gate_row(ref, slot, fn, g, rung, answer, why, out=None):
+def _gate_row(ref, slot, fn, g, rung, answer, why, out=None, ctx=None, check=None):
     """A decision made on the way to a start, as a row: a blocker's answer, or one of Coordination's rules. Written
-    once for each thing decided, however many times it is asked."""
+    once for each thing decided, however many times it is asked. `check` is the covering's verdict when the caller
+    already read it (a failed one held the start: M2.4); else the covering is read here, on `ctx` when given."""
     key0 = str(W.ddir(ref))
     seen = _GATE_SEEN.get(key0)
     if seen is None:
@@ -1102,7 +1109,7 @@ def _gate_row(ref, slot, fn, g, rung, answer, why, out=None):
     if key in seen:
         return
     seen.add(key)
-    check = CHECK[g["check"]](None, g, None, out or {"answer": answer, "why": why})
+    check = check or CHECK[g["check"]](ctx, g, None, out or {"answer": answer, "why": why})
     _append(ref, "steps.jsonl", {"id": "s-" + uuid.uuid4().hex[:10], "run": None, "engine": fn, "step": g["id"], "item": None,
                                  "mode": "gate", "slot": slot, "asked_rung": rung, "rung": rung, "miss": False, "by": "code",
                                  "in_sig": _sha({"slot": slot}), "out_hash": _sha(answer), "out_shape": "str", "answer": answer,
@@ -1312,6 +1319,10 @@ def run_engine(ref, name, inp, slot):
                 J.not_read(ref, inp.get("v"), filed.get("why_not_read"))      # never 'clean': the cycle stays at step 7
             else:
                 _j2_audit_read(ref, d, inp.get("v"), filed.get("filed"))
+        elif name == "Audit" and row.get("status") == "failed" and not p and inp.get("v") is not None:
+            # a reading whose covering check failed is no reading (M2.4): the version is not read, nothing is cleared,
+            # and the cycle stays at step 7; the failed step is Audit's fault on every screen
+            J.not_read(ref, inp.get("v"), "its reading failed its check (%s)" % str(note or "a step failed").rstrip("."))
     return row
 
 
@@ -4642,8 +4653,12 @@ def c_page_has_body(ctx, step, item, out):
 
 
 def c_verdict_is_known(ctx, step, item, out):
-    return _verdict(out.get("verdict") in ("go", "ask", "refuse"), "the verdict is one of go, ask, refuse",
-                    "not a verdict: %r" % (out.get("verdict"),))
+    """Identity's take, its covering (M2.4): the verdict is go, ask or refuse, and an ask or a refusal says why, since
+    the owner is told it."""
+    if out.get("verdict") not in ("go", "ask", "refuse"):
+        return _verdict(False, "", "not a verdict: %r" % (out.get("verdict"),))
+    return _verdict(out["verdict"] == "go" or str(out.get("why") or "").strip(), "the verdict is one of go, ask, refuse",
+                    "the verdict %s does not say why" % out["verdict"])
 
 
 def c_gate_verdict_is_known(ctx, step, item, out):
@@ -4663,6 +4678,19 @@ def c_names_who_goes_first(ctx, step, item, out):
 
 def c_answer_is_known(ctx, step, item, out):
     return _verdict(out.get("answer") in ("accept", "reject", "counter"), "the answer is accept, reject or counter", "not an answer: %r" % (out.get("answer"),))
+
+
+def c_answer_has_its_price(ctx, step, item, out):
+    """Priority's covering (M2.4): yes, less or no, each with its price: the line that says what it costs against the
+    room left; an ask for less names what it keeps. An answer without them fails the step; nothing is taken in its place."""
+    notes = []
+    if out.get("answer") not in ("accept", "reject", "counter"):
+        notes.append("not an answer: %r" % (out.get("answer"),))
+    if not str(out.get("why") or "").strip():
+        notes.append("the answer names no price: nothing says what it costs against the room left")
+    if out.get("answer") == "counter" and not [k for k in out.get("keep") or [] if str(k).strip()]:
+        notes.append("an ask for less names nothing to keep")
+    return {"ok": not notes, "notes": notes or ["%s, with its price: %s" % (out["answer"], str(out["why"]).strip())]}
 
 
 def c_facts_are_closed(ctx, step, item, out):
@@ -4689,6 +4717,46 @@ def c_moves_are_known(ctx, step, item, out):
     return _verdict(ok, "%d moves, each of a known kind" % len(m or []), "a move of no known kind")
 
 
+def c_moves_name_their_rows(ctx, step, item, out):
+    """Adaptation's covering (M2.4): a proposal names its rows. Each move is of a known kind, on a named step; a move
+    down, a trial and a proposal each name the rows it rests on (its evidence, at least one run); an ended trial says why."""
+    m = out.get("moves")
+    if not isinstance(m, list):
+        return _verdict(False, "", "no list of moves")
+    notes = []
+    for x in m:
+        if not isinstance(x, dict) or x.get("kind") not in ("down", "trial", "propose", "end-trial") or not x.get("step"):
+            notes.append("a move of no known kind")
+        elif x["kind"] == "end-trial":
+            if not str(x.get("why") or "").strip():
+                notes.append("ending the trial of %s says no why" % x["step"])
+        elif not isinstance(x.get("evidence"), dict) or int(x["evidence"].get("runs") or 0) < 1:
+            notes.append("the move on %s names no rows it rests on" % x["step"])
+    return {"ok": not notes, "notes": notes or ["%d moves, each naming the rows it rests on" % len(m)]}
+
+
+def c_one_run_at_a_time(ctx, step, item, out):
+    """Coordination's covering (M2.4): one run at a time. A start is let through only while no run of the department runs."""
+    if out.get("answer") not in ("admit", "wait", "refuse"):
+        return _verdict(False, "", "not a gate's answer: %r" % (out.get("answer"),))
+    running = [r.get("engine") for r in (ctx or {}).get("rs") or [] if r.get("status") == "running"]
+    return _verdict(out["answer"] != "admit" or not running, out.get("why") or "no other run is running",
+                    "a start let through while %s runs" % ", ".join(str(n) for n in running[:2]))
+
+
+def c_chain_under_its_limit(ctx, step, item, out):
+    """Coordination's covering (M2.4): a chain stops under its limit. A start is let through only while the runs one
+    owner's ask caused are fewer than W.CHAIN_LIMIT."""
+    if out.get("answer") not in ("admit", "wait", "refuse"):
+        return _verdict(False, "", "not a gate's answer: %r" % (out.get("answer"),))
+    chain, n = None, 0
+    if ctx and ctx.get("def") and ctx.get("inp"):
+        chain = W._chain_of(ctx["ref"], ctx["def"].get("reads"), ctx["inp"].get("v"))
+        n = sum(1 for r in W.runs(ctx["ref"]) if chain and r.get("chain") == chain)
+    return _verdict(out["answer"] != "admit" or n < W.CHAIN_LIMIT, out.get("why") or "the chain is under its limit",
+                    "a start let through on a chain of %d runs, at its limit of %d" % (n, W.CHAIN_LIMIT))
+
+
 def c_picked_a_sample(ctx, step, item, out):
     ok = isinstance(out.get("sample"), bool) and isinstance(out.get("pages"), list)
     return _verdict(ok, "it says whether it sampled, and which pages", "it does not say whether it sampled")
@@ -4703,6 +4771,26 @@ def c_findings_are_rows(ctx, step, item, out):
     f = out.get("findings")
     ok = isinstance(f, list) and all(isinstance(x, dict) and x.get("claim") for x in f)
     return _verdict(ok, "%d findings, each with its claim" % len(f or []), "a finding with no claim")
+
+
+def c_findings_name_where_and_what(ctx, step, item, out):
+    """Audit's covering (M2.4): a finding names where and what: the page it is on, and its claim. A reading with a
+    finding that does not fails the step, and the version is not read; nothing found is never taken in its place."""
+    f = out.get("findings")
+    if not isinstance(f, list):
+        return _verdict(False, "", "no list of findings")
+    notes = []
+    for i, x in enumerate(f):
+        if not isinstance(x, dict) or not str(x.get("claim") or "").strip():
+            notes.append("finding %d names no what" % (i + 1))
+        elif not str(x.get("page") or x.get("where") or "").strip():
+            notes.append("finding %d names no where: %s" % (i + 1, _clip(str(x["claim"]))))
+    return {"ok": not notes, "notes": notes or ["%d findings, each naming where and what" % len(f)]}
+
+
+def _clip(s, n=80):
+    s = " ".join(str(s or "").split())
+    return s if len(s) <= n else s[:n - 1].rstrip() + "…"
 
 
 def c_journey_is_known(ctx, step, item, out):
@@ -4812,6 +4900,10 @@ CHECK = {"line_is_engines": c_line_is_engines, "pages_are_named": c_pages_are_na
          "facts_are_closed": c_facts_are_closed, "said_what_it_did": c_said_what_it_did, "counted_the_rows": c_counted_the_rows,
          "moves_are_known": c_moves_are_known, "picked_a_sample": c_picked_a_sample, "has_a_verdict": c_has_a_verdict,
          "findings_are_rows": c_findings_are_rows,
+         # each function's covering (M2.4): code, and a step that fails one fails; no draft is taken in its place
+         "findings_name_where_and_what": c_findings_name_where_and_what, "answer_has_its_price": c_answer_has_its_price,
+         "moves_name_their_rows": c_moves_name_their_rows, "one_run_at_a_time": c_one_run_at_a_time,
+         "chain_under_its_limit": c_chain_under_its_limit,
          "department_is_shaped": c_department_is_shaped, "department_is_made": c_department_is_made,
          "setup_converse_is_valid": c_setup_converse_is_valid, "ruling_is_known": c_ruling_is_known}
 

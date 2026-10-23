@@ -770,7 +770,7 @@
          "counter"
         ]
        },
-       "check": "answer_is_known"
+       "check": "answer_has_its_price"
       },
       {
        "id": "priority.post",
@@ -811,7 +811,7 @@
      "nature": "decide",
      "born": "C2",
      "code": "coord_busy",
-     "check": "gate_answer_is_known"
+     "check": "one_run_at_a_time"
     },
     {
      "id": "coord.pick",
@@ -861,7 +861,7 @@
      "nature": "decide",
      "born": "C2",
      "code": "coord_chain",
-     "check": "gate_answer_is_known"
+     "check": "chain_under_its_limit"
     }
    ],
    "on": [
@@ -973,7 +973,7 @@
      "nature": "decide",
      "born": "C2",
      "code": "adapt_ladder",
-     "check": "moves_are_known"
+     "check": "moves_name_their_rows"
     },
     {
      "id": "adapt.act",
@@ -1267,7 +1267,7 @@
       "ok": "bool",
       "findings": "list"
      },
-     "check": "findings_are_rows"
+     "check": "findings_name_where_and_what"
     },
     {
      "id": "audit.file",
