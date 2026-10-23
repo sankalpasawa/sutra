@@ -764,7 +764,8 @@ function wbQuestionHtml(q, ref, named){
     wbBtn(busy ? "Sending..." : "Send", `data-wbanswer="${wbEsc(q.id)}" data-wbref="${wbEsc(at)}"${busy ? " disabled" : ""}`, "dpstamp") + `</div></div>`;
 }
 /* The open questions and the answered ones, each at its time among the turns: a card goes before the first turn said
-   after it was asked, so Identity's own line about the question stands above its card. */
+   after it was asked. The card is the one place the question and its answer are said: the chat read leaves out
+   Identity's line that names the card and the owner's words it keeps (engine_runtime._on_card). */
 function wbQuestions(c){
   const open = (c.asks || []).filter(a => a.kind === "j2_identity");
   return open.concat(c.answered || []).sort((a, b) => String(a.created || "") < String(b.created || "") ? -1 : 1);

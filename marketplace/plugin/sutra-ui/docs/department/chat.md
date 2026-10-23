@@ -24,6 +24,7 @@ The person speaks to Root from anywhere: the box on Root's chat, or a department
 - Inside a department: the same chat scoped to it (`about = ref`).
 - A department with no Root: its own board.
 - Turns are sorted by time then post number; a line is `_line(p)` (the ask's objective, the tell's `done`, the words).
+- Identity's question is a card in the chat (`asks` while open, `answered` once the owner answered it in words; PRD M0.6). The card is the one place it is said: Identity's line that names the card (`payload.card`) and the owner's post that answered it (the ask's `words_at`: {board, n}, set by `j2_runtime.answer` and `took_words`) stay on the board and are left out of the turns (`_cards`, `_on_card`). A function's own chat (`fn_chat_view`) has no card, so it keeps them.
 - Front words nobody answered within `FRONT_WAIT_S` (60 s) are said back and shown as waiting (`front_state`; ER-9).
 
 ## A function's chat (`fn_chat_view`)

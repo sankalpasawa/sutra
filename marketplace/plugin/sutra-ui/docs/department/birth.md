@@ -56,7 +56,7 @@ The child's functions are born from the kind's `functions_template` (`founding`:
 ## The first words in the child
 
 - The child's Identity takes the first words (`identity_file`, `first = facts.first`: no Brief yet).
-- If the take says `thin` (the words name no subject and no purpose to build from), Identity says "Say what the site is for and about whom or what, and I will start: your words name nothing to build from yet." and files nothing; the next words are taken as the goal (`identity_file`, the `thin` branch).
+- If the take says `thin` (the words name no subject and no purpose to build from), Identity says "Say what the site is for and about whom or what, and I will start: your words name nothing to build from yet." (a department that is not a website is called the department, never the site) and files nothing; the next words are taken as the goal (`identity_file`, the `thin` branch).
 - Otherwise the words are filed as the Brief's first version ("the owner's goal", `_file_words`) and the line starts on it. In a department born with no engines (the organic kind) the filed words go to Adaptation to shape the line (`identity_file`, the word `line`), and nothing runs before the owner stamps it. What the owner said they were not sure of (`unsure`) is written into the Brief as "Not confirmed (…)" and asked about at once (`ask_unsure`).
 
 provenance: {author: claude, session: 17842ce0, date: 2026-09-29, inputs: [engine_runtime.py: request, FRONT, identity_gate, setup_read, p_setup_shape, d_setup_shape, setup_make, identity_file; founding.py; website_api.py; engine_defs/website.json kinds], review: none by a second model, confidence: high}
