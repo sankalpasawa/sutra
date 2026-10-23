@@ -5,6 +5,7 @@ person makes them (founded, asked for, set up by Root), so what is tested is the
 on its real board, and not a record written by hand.
 """
 import importlib
+import re
 import threading
 
 import pytest
@@ -561,6 +562,35 @@ def test_m0_5_still_too_little_is_asked_again_and_a_stopped_department_uses_the_
     J.start(ref)
     W.run_until_idle(ref, limit=300)
     assert next(e for e in J.events(ref) if e["action"] == "proposal.requested")["step"] == 2
+
+
+def test_m0_5_a_department_that_is_not_a_website_is_never_called_a_site(j2, monkeypatch):
+    """The card asking what the department is for while the line beside it asks what the site is for (one screen, two
+    names for one thing) must fail: a department is a site only when it is a website, on its birth words and on the
+    second department Root sets up."""
+    W, R, J, _ = j2
+    _model(monkeypatch, R, {"setup.converse": {"verdict": "clear", "question": ""},
+                            "identity.take": lambda prompt: {"verdict": "go", "why": "", "needs": [], "unsure": [], "thin": not any(
+                                w in prompt.split("THE REQUEST: ", 1)[1].split("\n", 1)[0] for w in ("algebra", "bakery"))}})
+    lab = _born(j2, ORGANIC, "Lab Co")
+    site = _born(j2, WEBSITE, "Acme Learning")
+    root = W.dept(site)["root"]
+    W.owner_ask(root, "Set up another department: a sales CRM for the team")      # a second name: another kind
+    W.run_until_idle(root, limit=300)
+    crm = next(d["ref"] for d in W.list_depts() if d.get("parent") == root and d["ref"] != site)
+    W.run_until_idle(crm, limit=300)
+    for ref in (lab, crm):
+        assert W.dept(ref)["kind"] != "website"
+        assert J.status(ref)["open_question"]["text"] == "What is the department for, and about whom or what?"
+        mine = _said(R, ref) + _said(R, W.dept(ref)["root"])
+        asked = [s for s in mine if "nothing to build from" in s]
+        assert asked and all(s.startswith("Say what the department is for and about whom or what") for s in asked), asked
+        told = [t["line"] for t in R.chat_view(ref)["turns"] if t["src"] != "Owner"] + mine
+        assert not [s for s in told if re.search(r"\bsites?\b", s, re.I)], told
+
+    bakery = _born(j2, "a website", "Bakery Co")                       # a website is still a site, on its card and its line
+    assert J.status(bakery)["open_question"]["text"] == "What is the site for, and about whom or what?"
+    assert [s for s in _said(R, bakery) if "nothing to build from" in s][0].startswith("Say what the site is for")
 
 
 def test_m0_6_identitys_question_is_never_closed_by_a_stamp(j2, monkeypatch):

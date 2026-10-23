@@ -2223,9 +2223,11 @@ def identity_file(ctx, step, item):
         if J and J.active(ref):
             # J2.1: not good enough to start on; Identity asks, and the next words are read against the same standard
             J.questioned(ref, J.THIN, p.get("n"))
-        _tell(ref, d, p, "inform", {"word": "question",
-                                    "done": "Say what the site is for and about whom or what, and I will start: your words name nothing to build from yet."},
-              thread=p["thread"])
+        # a department is a site only when it is a website, as the question's card says (found by a verifier 2026-10-23:
+        # an organic department's card asked what the department is for, and the line beside it what the site is for)
+        said = {"word": "question", "done": "Say what the %s is for and about whom or what, and I will start: your words name nothing "
+                "to build from yet." % ("site" if d.get("kind") == "website" else "department")}
+        _tell(ref, d, p, "inform", said, thread=p["thread"])
         return {"said": "asked the owner what the department is for: the words name nothing to build from"}
 
     # words the agent reads as a standing rule are put back as a rule, never filed as an ask of the line (found live
