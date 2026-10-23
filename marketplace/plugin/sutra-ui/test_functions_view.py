@@ -2,7 +2,7 @@
 
 Named claims:
   F1  one fixture per cycle state (assessing, waiting, adapting, bargaining, closing, checking, reshaping, running,
-      pursuing, blocked, stopped, done) gives the expected state for all five
+      unread, pursuing, blocked, stopped, done) gives the expected state for all five
   F2  the thread rule: the src of an open thread that wrote its latest post waits on the decider; the decider does not
   F3  a stopped or a done department never shows a function working, whatever runs or waits
   F4  a failed step check is a fault, and so is a start that should have fired (Audit with no run after the version it
@@ -175,6 +175,16 @@ def test_f1_pursuing_identity_waits_on_you_while_a_finding_is_asked(mods):
     nodes, got = _expect(F, Identity="waiting_on_you")
     assert nodes["Identity"]["line"].startswith("Audit found:")
     assert got["cycle"]["says"] == "Working on what Audit found"
+
+
+def test_f1_unread_says_audit_has_not_read_the_result(mods):
+    """M0.3's state: a version Audit's judge did not read leaves the cycle at step 7, never clean; the functions read
+    says it in the same words as the department screen (DP_J2_SAYS in 20-dept.js), not as a raw state name."""
+    W, R, J, F = mods
+    _cycle(W, "unread", 7)
+    nodes, got = _expect(F)
+    assert got["cycle"]["says"] == "Audit has not read the result" and got["cycle"]["needs_you"] is False
+    assert [s["state"] for s in got["cycle"]["steps"] if s["step"] == 7] == ["now"]
 
 
 def test_f1_blocked_identity_needs_your_words(mods):

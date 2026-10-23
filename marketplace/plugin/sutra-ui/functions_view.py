@@ -41,8 +41,8 @@ TURN = {"assessing": ("Identity", "reading your words"), "closing": ("Identity",
 SAYS = {"not_started": "Not started", "not_ready": "Not started", "assessing": "Reading your words",
         "waiting": "Waiting for your answer", "adapting": "Proposing the work", "bargaining": "Pricing the plan",
         "closing": "Settling a disagreement", "checking": "Root is reviewing the plan", "reshaping": "Reshaping the plan",
-        "running": "The work is running", "pursuing": "Working on what Audit found", "blocked": "Stuck: needs your words",
-        "stopped": "Stopped by you", "done": "Goal reached"}
+        "running": "The work is running", "unread": "Audit has not read the result", "pursuing": "Working on what Audit found",
+        "blocked": "Stuck: needs your words", "stopped": "Stopped by you", "done": "Goal reached"}
 STEPS = ((1, "Enough to work"), (2, "Propose"), (3, "Price"), (4, "Settle"), (5, "Root's review"), (6, "Run"), (7, "Read"),
          (8, "Next or done"))
 # an act on the board, in the words a person reads (the owner's words: said yes, asked for less, said no)
