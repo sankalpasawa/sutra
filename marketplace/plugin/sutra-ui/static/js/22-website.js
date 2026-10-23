@@ -949,6 +949,55 @@ function wbHostHtml(ref, m){
   return dpCard("Served from", `<div class="wbstep wbset"><input type="text" data-wbdraft="${wbEsc(key)}" value="${wbEsc(st.draft[key] !== undefined ? st.draft[key] : (m.host || ""))}"` +
     ` aria-label="where the site is served from" placeholder="Where the site is served from">` + wbBtn("Set", `data-wbhost="1"`) + `</div>`);
 }
+/* Settings > Instructions (PRD M2.3, S16): each function's version 1 is one
+   agent and its files (S-28), listed by the names its page gives them, each
+   with the line that says what it is for. Change opens a sheet whose Send
+   files an ask; nothing changes until the owner stamps it, and until then the
+   row says so in words beside the amber mark. Names only, never where a file
+   lives. */
+function wbInsHtml(fn, v){
+  const rows = v.instructions || [];
+  if (!rows.length) return "";
+  return dpCard("Instructions", rows.map(r => `<div class="wbins"><b>${wbEsc(r.file)}</b><span class="wbinslead">${wbEsc(r.lead)}</span>` +
+    (r.waits ? `<span class="wbinsnote"><i class="wbinsq">?</i>your change waits for your stamp${r.waits.at ? " · " + wbEsc(wbWhen(r.waits.at)) : ""}</span>`
+             : wbChip(r.as_shipped ? "as shipped" : "your words") + wbBtn("Change", `data-wbins="${wbEsc(r.file)}" data-wbinsfn="${wbEsc(fn)}"`)) +
+    `</div>`).join(""));
+}
+function wbInsSheetHtml(){
+  const s = wbS().ins;
+  if (!s) return "";
+  const title = wbCap(s.fn) + " · " + s.file;
+  return `<div class="wbscrim wb" data-wbins="close"></div><div class="o2sheet wbsheet wbinssheet wb" role="dialog" aria-label="${wbEsc("Change " + title)}">` +
+    `<h4>${wbEsc(title)}</h4>` +
+    `<label for="wbins-text">Instructions</label><textarea id="wbins-text" data-wbinstext="1" rows="16" spellcheck="false">${wbEsc(s.text)}</textarea>` +
+    `<div class="o2acts2">${wbBtn(s.busy ? "Sending" : "Send", `data-wbins="send"${s.busy ? " disabled" : ""}`, "dpstamp")}` +
+    wbBtn("Cancel", `data-wbins="close"`) + (s.error ? `<span class="o2err">${wbEsc(s.error)}</span>` : "") + `</div></div>`;
+}
+function wbInsPaint(){
+  let host = document.getElementById("wbins-sheet");
+  if (!host){ host = document.createElement("div"); host.id = "wbins-sheet"; document.body.appendChild(host); }
+  host.innerHTML = wbInsSheetHtml();
+}
+function wbInsOpen(ref, fn, file){
+  const v = wbS().steps[ref + ":" + wbCap(fn)];
+  const r = ((v && v.instructions) || []).filter(x => x.file === file)[0];
+  if (!r) return;
+  wbS().ins = { ref, fn, file, text: r.text || "", busy: false, error: null };
+  wbInsPaint();
+}
+async function wbInsSend(){
+  const st = wbS(), s = st.ins;
+  if (!s || s.busy) return;
+  if (!String(s.text || "").trim()){ s.error = "Say what the instructions should be"; wbInsPaint(); return; }
+  s.busy = true; s.error = null; wbInsPaint();
+  try {
+    await apiPost(wbUrl(s.ref, "instructions"), { fn: s.fn, file: s.file, text: s.text });
+    st.ins = null; wbInsPaint();
+    wbLoadSteps(s.ref, wbCap(s.fn), true);            /* the row reads that the change waits for the stamp */
+  } catch (e) {
+    s.busy = false; s.error = (e && e.message) || String(e); wbInsPaint();
+  }
+}
 function wbSettingsHtml(ref, fn){
   const st = wbS(), m = st.map[ref], name = wbCap(fn), v = st.steps[ref + ":" + name];
   if (!v){ wbLoadSteps(ref, name); return dpSkel(); }
@@ -957,8 +1006,9 @@ function wbSettingsHtml(ref, fn){
   if (!pr) wbLoadSteps(ref, "Priority");
   const lim = ((pr && pr.limits) || []).filter(l => l.engine === name)[0];
   const tpl = (typeof dpTemplateLine === "function") ? dpTemplateLine(fn) : "";
-  return dpCard("Template", tpl || dpQuiet("Not read yet")) +
-    (lim ? dpCard("Limit", wbLimitRow(ref, lim)) : "") +
+  /* S16: the Instructions first, then the Template and today's limit side by side */
+  return wbInsHtml(fn, v) + `<div class="wbpair">` + dpCard("Template", tpl || dpQuiet("Not read yet")) +
+    (lim ? dpCard("Limit", wbLimitRow(ref, lim)) : "") + `</div>` +
     wbLadderHtml(ref, name, v.numbers || {}) +
     (fn === "identity" ? wbHostHtml(ref, m) : "") +
     wbStartHtml(v) +
@@ -1137,7 +1187,7 @@ async function wbPost(ref, tail, body, key, at){
 if (typeof document !== "undefined" && document.addEventListener){
   const WB_SEL = "[data-wbtab],[data-wbengine],[data-wbart],[data-wbpane],[data-wbdecide],[data-wbstop],[data-wbresume]," +
     "[data-wbgoal],[data-wbask],[data-wbputback],[data-wbfn],[data-wbfound],[data-wbhold],[data-wbenv]," +
-    "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost],[data-wbopen],[data-wblive],[data-wbopenart],[data-wbsay]";
+    "[data-wbchip],[data-wbthread],[data-wbladder],[data-wbhost],[data-wbopen],[data-wblive],[data-wbopenart],[data-wbsay],[data-wbins]";
   /* capture phase: a click on one of 20-dept.js's own rows hands the viewer
      back to it BEFORE that file's handler paints */
   document.addEventListener("click", (ev) => {
@@ -1156,6 +1206,14 @@ if (typeof document !== "undefined" && document.addEventListener){
         wbFoundPaint();
       } else if (ds.wbfound === "close"){ st.found = null; wbFoundPaint(); }
       else if (ds.wbfound === "go") wbFoundGo();
+      return;
+    }
+    /* Settings > Instructions: Change opens the sheet, Send files the ask, Cancel closes it; the card stays open */
+    if (ds.wbins !== undefined){
+      ev.preventDefault(); ev.stopPropagation();
+      if (ds.wbins === "close"){ st.ins = null; wbInsPaint(); }
+      else if (ds.wbins === "send") wbInsSend();
+      else if (ref && wbIs(ref)) wbInsOpen(ref, ds.wbinsfn, ds.wbins);
       return;
     }
     if (!ref || !wbIs(ref)) return;
@@ -1233,5 +1291,6 @@ if (typeof document !== "undefined" && document.addEventListener){
     const t = ev.target, ds = (t && t.dataset) || {};
     if (ds.wbdraft !== undefined) wbS().draft[ds.wbdraft] = t.value;
     if (ds.wbfield !== undefined && wbS().found) wbS().found[ds.wbfield] = t.value;
+    if (ds.wbinstext !== undefined && wbS().ins) wbS().ins.text = t.value;
   });
 }
