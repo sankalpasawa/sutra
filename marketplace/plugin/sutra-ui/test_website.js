@@ -72,6 +72,11 @@
      W43 Root settings is a pane, never a chat: what Root does, On or Off with
          its one switch, its rules, the departments it made, a way back
      W44 founding lands on the organisation, whose row is Root's chat
+     S16 a function's Settings lists its instruction files by the names its
+         page gives them, each with its first line, as shipped or your words,
+         and Change; Change opens a sheet whose Send files the one ask; the
+         row then says the change waits for the stamp; no path, no count
+         (PRD M2.3)
 
    Harness: test_dept.js's fresh(), with 22-website.js loaded after 20-dept.js
    (panel.html's order). Run: node test_website.js */
@@ -159,13 +164,26 @@ function stepsOf(name, o){
     line: ["Plan", "Write", "Check", "Publish"], may_post: [{ from: "Audit", act: "inform", to: ["Identity"] }, { from: "Owner", act: "request", to: ["Identity"] }] };
   const limits = name !== "Priority" ? undefined : ENGS.map(e => ({ engine: e[0], calls: 240, usd: 6, used_calls: 3, used_usd: 0.4 }))
     .concat(["Identity", "Adaptation", "Priority", "Coordination", "Audit"].map(s => ({ engine: s, calls: 30, usd: 6, used_calls: 0, used_usd: 0 })));
-  return { name, kind: "function", description: name === "Priority" ? "grants each engine its budget" : "", skills: [], reads: null, writes: null, numbers, table, limits,
+  const fn = name.toLowerCase(), instructions = (INS[fn] || []).map(([file, lead]) => ({ file, lead, text: lead + "\n\n## " + file + "\n\nThe words.\n",
+    as_shipped: o.mine !== fn + ":" + file, waits: o.waits === fn + ":" + file ? { ask: "a-9", at: "2026-10-23T11:02:00+05:30" } : null }));
+  return { name, kind: "function", description: name === "Priority" ? "grants each engine its budget" : "", skills: [], reads: null, writes: null, numbers, table, limits, instructions,
     start: { on: ["a post addressed to it"], unless: [] },
     hears: (table ? ["What engines share"] : []).concat(["Take a request"]), steps: [
     stepOf({ id: name.toLowerCase() + ".gate", name: "Say whether it may start", nature: "decide", mode: "gate", check: "gate_answer_is_known" }),
     stepOf({ id: name.toLowerCase() + ".pick", name: "Say who goes first, when several are ready", nature: "decide", mode: "rule", under: table ? "What engines share" : "Nowhere", check: "names_who_goes_first" }),
     stepOf({ id: name.toLowerCase() + ".read", name: "Read the request", under: "Take a request", check: "brief_is_text" })] };
 }
+/* Each function's instruction files, as its page names them, with the line that says what each is for
+   (engine_runtime.py: INSTRUCTIONS, instructions_view; function-prompts/). */
+const INS = {
+  identity: [["goal", "What Identity is for, and the rules it keeps."], ["completeness", "When the department has enough to work; what to ask if not."],
+             ["take", "How to judge a request: go, ask or refuse."]],
+  adaptation: [["goal", "What Adaptation is for, and the rules it keeps."], ["sense", "How Adaptation reads an idea the owner floats: what it asks, and the shapes it could take."],
+               ["decide", "How Adaptation chooses its next move from what the department's own rows say."],
+               ["make", "How Adaptation shapes the workflows a goal needs when none is in place."]],
+  priority: [["goal", "What Priority is for, and the rules it keeps."], ["bargain", "How Priority answers a proposal: said yes, asked for less, or said no."]],
+  coordination: [["goal", "What Coordination is for, and the rules it keeps."], ["tie", "How Coordination says who goes first when several functions are ready at once."]],
+  audit: [["goal", "What Audit is for, and the rules it keeps."], ["judge", "How Audit reads what went live against what was asked."]] };
 const FNCHAT = { fn: "Identity", dept: "r3", name: "City Care Hospital Website", any: true, turns: [
   { n: 1, src: "Owner", dst: ["Identity"], msg_type: "request", at: "2026-09-27T11:00:00+05:30", thread: "t1", word: "request", line: "A website for the hospital", think: false },
   { n: null, src: "Identity", dst: [], msg_type: "step", at: "2026-09-27T11:00:05+05:30", thread: "r-1", word: "identity.read", line: "Read the words, code", think: true },
@@ -1279,6 +1297,61 @@ test("W46: J1.5 the second department is offered as one chip that carries its ow
   assert.strictEqual((offered.match(/data-wbsay=/g) || []).length, 1, "one chip");
   assert.ok(/data-wbsay="Set up another department: sales &quot;CRM&quot; for the team"/.test(offered), "the chip carries the words, escaped");
   assert.ok(/>Set up: sales &lt;CRM/.test(offered) && !/<CRM/.test(offered), "the chip reads what it sets up, escaped");
+});
+
+/* ── S16: a function's Settings > Instructions (PRD M2.3) ─────────────────── */
+test("S16: a function's Settings lists its files by name with their first line and Change; Send files the one ask; the row then waits for the stamp; no path", async () => {
+  const c = await opened({ map: rtMap() });
+  for (const fn of Object.keys(INS)){
+    vm.runInContext("dpS().pane['r3:" + fn + "'] = 'settings';", c);
+    const html = await fnCard(c, fn);
+    const at = html.indexOf("<h3>Instructions</h3>");
+    assert.ok(at >= 0 && at < html.indexOf("<h3>Template</h3>"), fn + ": the instructions first, then the template");
+    assert.ok(/<div class="wbpair"><div class="dpcard"><h3>Template<\/h3>/.test(html), fn + ": the template and the limit side by side");
+    INS[fn].forEach(([file, lead]) => {
+      assert.ok(html.indexOf('<div class="wbins"><b>' + file + '</b><span class="wbinslead">' + c.wbEsc(lead) + "</span>") >= 0, fn + " lists " + file + " with its first line");
+      assert.ok(html.indexOf('data-wbins="' + file + '" data-wbinsfn="' + fn + '"') >= 0, fn + ": " + file + " has its Change");
+    });
+    assert.strictEqual((html.match(/<div class="wbins">/g) || []).length, INS[fn].length, fn + ": its files and no other");
+    assert.strictEqual((html.match(/>as shipped</g) || []).length, INS[fn].length, fn + ": each as shipped");
+    assert.ok(!/function-prompts|\.md\b|\/prompts\/|records home/.test(html), fn + ": a path on the screen");
+    const t = words(html);
+    assert.ok(!/charter|internal\s+system/i.test(t), fn + ": the screen's words");
+    assert.ok(!/\d/.test(words(html.slice(at, html.indexOf('<div class="wbpair">')))), fn + ": a count in the instructions");
+  }
+  /* Change opens the sheet with the file's words; Send files the one ask; the sheet closes; the card stays open and is read again */
+  vm.runInContext("dpS().pane['r3:identity'] = 'settings';", c);
+  await fnCard(c, "identity");
+  const before = readsOf(c, /\/steps\/Identity$/).length;
+  assert.ok(click(c, { wbins: "take", wbinsfn: "identity" }));
+  let sheet = c.wbInsSheetHtml();
+  assert.ok(/role="dialog" aria-label="Change Identity · take"/.test(sheet) && /<h4>Identity · take<\/h4>/.test(sheet), "the sheet names the function and the file");
+  assert.ok(/<textarea id="wbins-text" data-wbinstext="1"[^>]*>How to judge a request: go, ask or refuse\.\n\n## take\n\nThe words\.\n<\/textarea>/.test(sheet), "the file's words, to change");
+  assert.ok(/data-wbins="send"[^>]*>Send</.test(sheet) && /data-wbins="close"[^>]*>Cancel</.test(sheet));
+  assert.ok(!/function-prompts|\.md\b|\/prompts\//.test(sheet), "no path in the sheet");
+  assert.strictEqual(c.calls.apiPost.length, 0, "opening the sheet changes nothing");
+  const mine = "How to judge a request: go, ask or refuse.\n\n## take\n\nJudge it kindly.\n";
+  (c.document.listeners.input || []).forEach(fn => fn({ target: { dataset: { wbinstext: "1" }, value: mine } }));
+  assert.ok(click(c, { wbins: "send" }));
+  for (let i = 0; i < 6; i++) await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost)), [
+    { p: "/api/native/r3/instructions", body: { fn: "identity", file: "take", text: mine } }], "Send files the one ask, and nothing else");
+  assert.strictEqual(c.wbInsSheetHtml(), "", "the sheet closes");
+  assert.ok(readsOf(c, /\/steps\/Identity$/).length > before, "the card is read again");
+  assert.strictEqual(vm.runInContext("dpS().tab['r3']", c), "identity", "the card stays open");
+  /* Cancel files nothing */
+  click(c, { wbins: "goal", wbinsfn: "identity" });
+  click(c, { wbins: "close" });
+  assert.strictEqual(c.wbInsSheetHtml(), "");
+  assert.strictEqual(c.calls.apiPost.length, 1);
+  /* the row of a change that waits: amber, its ? and its words, its time, and no second Change; one the owner changed reads your words */
+  const w = await opened({ map: rtMap(), steps: { waits: "identity:completeness", mine: "identity:goal" } });
+  vm.runInContext("dpS().pane['r3:identity'] = 'settings';", w);
+  const html = await fnCard(w, "identity");
+  assert.ok(/<b>completeness<\/b><span class="wbinslead">[^<]*<\/span><span class="wbinsnote"><i class="wbinsq">\?<\/i>your change waits for your stamp · \d\d:\d\d<\/span><\/div>/.test(html),
+            "the row says the change waits, in words beside the mark");
+  assert.ok(html.indexOf('data-wbins="completeness"') < 0 && html.indexOf('data-wbins="take"') >= 0, "no second change while one waits");
+  assert.ok(/<b>goal<\/b><span class="wbinslead">[^<]*<\/span><span class="wbchip">your words<\/span>/.test(html), "a file the owner changed");
 });
 
 Promise.all(pending).then(() => {

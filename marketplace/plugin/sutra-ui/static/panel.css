@@ -5767,6 +5767,19 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 /* Settings: a function's own numbers, one row each */
 .wbset input{width:90px;margin-left:auto}
 .wbset input[type=text]{width:auto;flex:1;min-width:200px;margin-left:0}
+/* Settings > Instructions (S16): a function's files, one row each (its name, the line that says what it is for, as
+   shipped or your words, Change); a change that waits for the stamp is amber with its "?" and its words. Then the
+   template and today's limit side by side, one above the other when the viewer is narrow */
+.wbins{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:6px 0;border-top:1px solid var(--line-soft);font:400 12.5px/1.45 var(--sans);color:var(--ink)}
+.wbins:first-of-type{border-top:0}
+.wbins b{flex:none;width:96px;font-weight:600}
+.wbinslead{flex:1 1 160px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+.wbins .btn{flex:none}
+.wbinsnote{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--warn-line);background:var(--warn-bg);border-radius:8px;padding:2px 8px;font:400 11.5px/1.5 var(--sans);color:var(--ink)}
+.wbinsq{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;border:1px solid var(--warn);color:var(--warn);font:600 9px/1 var(--sans);font-style:normal;flex:none}
+.wbinssheet{width:min(640px,92vw);max-width:92vw;top:10vh}
+.wbinssheet textarea{min-height:300px;font:400 12px/1.5 var(--mono);white-space:pre-wrap}
+.wbpair{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;align-items:start}
 
 /* ── the second design (23-screens.js): the Map and the Board ──────────────
    State is colour and motion, never a word: a lit node on the map, a pill on
