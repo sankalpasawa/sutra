@@ -235,7 +235,8 @@ function fvOf(o){
     ref: "r3", name: DEPT, kind: "website", stopped: !!o.stopped,
     functions: FV_NAMES.map(n => {
       const s = states[n] || "quiet";
-      return { id: "fn:" + n.toLowerCase(), fn: n.toLowerCase(), name: n, state: s, word: FV_WORDS[s],
+      /* a stopped department's word is 'stopped' on every function (functions_view.py functions) */
+      return { id: "fn:" + n.toLowerCase(), fn: n.toLowerCase(), name: n, state: s, word: o.stopped ? "stopped" : FV_WORDS[s],
         waits_on: s === "waiting_on_you" ? "you" : (s === "waiting" ? ((o.waits || {})[n] || "Priority") : null),
         line: lines[n] !== undefined ? lines[n] : (s === "working" ? "working" : (s === "waiting" ? "waits on " + ((o.waits || {})[n] || "Priority") : "")),
         why: s === "fault" ? (lines[n] || "a step failed its check") : null,
@@ -1588,6 +1589,49 @@ test("M1.8: the arrow keys move between the cards, and the stylesheet block is t
   assert.ok(a > 0 && b > a && t > b, "loaded after 23, before the tail");
 });
 const FV_ORDER_T = ["identity", "adaptation", "priority", "coordination", "audit"];
+/* M1 acceptance, line 1 (round 1, gap 2): the Map, the list, All five and each pane agree with each other in every J2
+   state. One functions read per state, as functions_view.py gives it (test_functions_view.py F1 pins the states), feeds
+   all four surfaces; each prints the read's own word for each function, stopped and done included. A wait on another
+   function is its 'waits on' chip on the card, the word's own long form. */
+const FV_BY_STATE = {
+  assessing: { states: { Identity: "working" } }, waiting: { states: { Identity: "waiting_on_you" } },
+  adapting: { states: { Adaptation: "working" } }, bargaining: { states: { Priority: "working", Adaptation: "waiting" } },
+  closing: { states: { Identity: "working", Adaptation: "waiting" }, waits: { Adaptation: "Identity" } },
+  checking: { states: { Adaptation: "waiting" }, waits: { Adaptation: "Root" } }, running: { states: { Coordination: "working" } },
+  pursuing: { states: { Identity: "waiting_on_you" } }, blocked: { states: { Identity: "waiting_on_you" } },
+  stopped: { stopped: true }, done: {} };
+test("M1: the Map, the list, All five and each pane print the same word for each function in every J2 state", async () => {
+  for (const state of Object.keys(FV_BY_STATE)){
+    const o = FV_BY_STATE[state];
+    const fv = fvOf(Object.assign({ cycle: { state, says: state } }, o));
+    const page = fn => Object.assign(fnPageOf(fn), { node: fv.functions.filter(x => x.fn === fn)[0] });
+    const map = rtMap({ stopped: !!o.stopped });
+    const c = await v2({ map, fv, fnpage: page, board: FV_BOARD });
+    click(c, { wbtab: "map" }); await sleep();
+    const mapHtml = await paint(c);
+    for (let k = 0; k < 2; k++){ c.dpListHtml(WEB, {}, null, null); await sleep(); await sleep(); }
+    const listHtml = c.dpListHtml(WEB, {}, null, null);
+    click(c, { wbtab: "five" }); await sleep();
+    const fiveHtml = await paint(c);
+    for (const node of fv.functions){
+      const fn = node.fn, name = node.name, want = node.word;
+      const box = /<text class="st" x="\d+" y="40">([^<]+)<\/text>/.exec(fnBox(mapHtml, fn)[2] || "");
+      assert.strictEqual(box && box[1], want, state + ": the Map's " + fn);
+      const row = new RegExp('data-dptab="' + fn + '" aria-label="' + name + ' · ([^"]+)"').exec(listHtml);
+      assert.strictEqual(row && row[1], want, state + ": the list's " + fn);
+      const card = (fiveHtml.match(new RegExp('<button type="button" class="fvcard fn-' + fn + ' wb[^"]*"[^>]*>[\\s\\S]*?</button>')) || [""])[0];
+      assert.ok(card.indexOf('aria-label="' + name + " · " + want + '"') >= 0, state + ": All five's " + fn + " names it");
+      const shown = /<span class="fvnow">(?:<b>([^<]+)<\/b>|<span class="wbchip[^"]*"[^>]*>([^<]+)<\/span>)/.exec(card);
+      assert.ok(shown, state + ": All five's " + fn + " shows a word");
+      if (shown[1] !== undefined) assert.strictEqual(shown[1], want, state + ": All five's " + fn);
+      else assert.strictEqual(shown[2], want === "waiting" ? "waits on " + node.waits_on : want, state + ": All five's " + fn + " chip");
+      const pane = await fnCard(c, fn);
+      const now = /<h3>The function<\/h3><div class="dpbig">[^<]*<\/div><div class="dprow"><span class="dpdot[^"]*"><\/span><span>([^<]+)/.exec(pane);
+      assert.strictEqual(now && now[1].toLowerCase(), want, state + ": " + fn + "'s pane");
+    }
+    if (o.stopped) assert.ok(fv.functions.every(x => x.word === "stopped"), "stopped is one word");
+  }
+});
 test("V2 root: Root's Map is its departments as boxes, each with a state dot and its line of work as a strip, and a way to a new one", async () => {
   const rm = rtMap(); rm.kind = "root"; rm.root = "r3"; rm.live = false;
   const c = await v2({ map: rm, chat: ROOT_CHAT });

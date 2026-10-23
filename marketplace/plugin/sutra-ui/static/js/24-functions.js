@@ -58,16 +58,18 @@ function fvStrip(fn, m){
 }
 function fvCardHtml(node, m, stopped){
   const fn = node.fn, name = node.name || fvName(fn);
+  /* the read's own word, the one the Map, the list and the pane print: 'stopped' on every card of a stopped department */
+  const word = stopped ? "stopped" : (node.word || node.state);
   const dot = stopped ? "off" : (FV_DOT[node.state] || "off");
   const badge = node.state === "waiting_on_you" ? "?" : (node.state === "fault" ? "!" : "");
   let now;
   if (node.state === "waiting_on_you") now = `<span class="wbchip ask" data-wbtab="chat">waits on you</span> ${wbEsc(node.line || "")}`;
   else if (node.state === "waiting" && node.waits_on) now = `<span class="wbchip" ${node.waits_on === "Root" ? "" : `data-wbfn="${wbEsc(String(node.waits_on).toLowerCase())}"`}>waits on ${wbEsc(node.waits_on)}</span>`;
-  else now = `<b>${wbEsc(node.word || node.state)}</b>${node.line || node.why ? ": " + wbEsc(node.why || node.line) : ""}`;
+  else now = `<b>${wbEsc(word)}</b>${node.line || node.why ? ": " + wbEsc(node.why || node.line) : ""}`;
   const last = node.last ? `<div class="dpchk">last: ${wbEsc(node.last.what || "")}${node.last.at ? " · " + wbEsc(wbWhen(node.last.at)) : ""}</div>` : "";
   const spend = node.spend || {};
   return `<button type="button" class="fvcard fn-${wbEsc(fn)} wb${stopped ? " still" : ""}" data-wbfn="${wbEsc(fn)}" data-fvcard="${wbEsc(fn)}" ` +
-    `aria-label="${wbEsc(name + " · " + (stopped ? "stopped" : (node.word || node.state)))}">` +
+    `aria-label="${wbEsc(name + " · " + word)}">` +
     `<span class="fvhead">${typeof wb2Mark === "function" ? wb2Mark(fn) : ""}<b>${wbEsc(name)}</b>` +
     (badge ? `<b class="dpfnb ${dot}" aria-hidden="true">${badge}</b>` : "") + `<i class="dpdot ${dot}" aria-hidden="true"></i></span>` +
     `<span class="fvpurpose">${wbEsc(FV_PURPOSE[fn] || "")}</span>` +

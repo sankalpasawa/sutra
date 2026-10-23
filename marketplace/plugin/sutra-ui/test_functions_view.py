@@ -2,7 +2,8 @@
 
 Named claims:
   F1  one fixture per cycle state (assessing, waiting, adapting, bargaining, closing, checking, reshaping, running,
-      unread, pursuing, blocked, stopped, done) gives the expected state for all five
+      unread, pursuing, blocked, stopped, done) gives the expected state for all five; a stopped department's word is
+      'stopped' on every function, the one word the Map, the list, All five and the pane print (test_website.js)
   F2  the thread rule: the src of an open thread that wrote its latest post waits on the decider; the decider does not
   F3  a stopped or a done department never shows a function working, whatever runs or waits
   F4  a failed step check is a fault, and so is a start that should have fired (Audit with no run after the version it
@@ -203,12 +204,16 @@ def test_f1_stopped_and_done_are_quiet_throughout(mods):
     _cycle(W, "stopped", 6)
     _run(W, "Write")
     _ask(W, "publish")
-    _expect(F)
-    assert F.functions(REF)["cycle"]["says"] == "Stopped by you"
+    nodes, got = _expect(F)
+    assert got["cycle"]["says"] == "Stopped by you"
+    # one word for stopped, on every function, which the Map, the list, All five and the pane all print (round 1, gap 2);
+    # a cycle stopped on its own is the department stopped, whatever its switch says
+    assert {n["word"] for n in nodes.values()} == {"stopped"} and got["stopped"] is True
     _cycle(W, "done", 8)
     nodes, got = _expect(F)
     assert got["cycle"]["says"] == "Goal reached" and got["cycle"]["needs_you"] is False
     assert all(s["state"] in ("done", "skipped") for s in got["cycle"]["steps"])
+    assert {n["word"] for n in nodes.values()} == {"quiet"} and got["stopped"] is False
 
 
 def test_f1_a_department_with_no_cycle_reads_its_runs_and_asks(mods):

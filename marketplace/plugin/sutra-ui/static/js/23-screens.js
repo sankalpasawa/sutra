@@ -24,23 +24,26 @@ function wb2Asks(m){ return (m.status && m.status.asks) || []; }
 function wb2Running(m){ return ((m.status && m.status.running) || []).map(r => r.engine); }
 function wb2Faults(m){ return ((m.health && m.health.checks) || []).filter(c => c.state === "block"); }
 /* A function's class on the Map, from the five functions' read (functions_view.py, PRD M1.5): working is lit, waits on
-   you is amber, a fault is block, waiting on another function is dashed, quiet is plain; a stopped department is off.
+   you is amber, a fault is block, waiting on another function is dashed, quiet is plain; a stopped department is off,
+   by its switch or by the read.
    Until the read lands, or when it failed, the boxes fall back to today's rule: an ask is Identity's (it is the one that
    asks), a run of its own lights it, and a paused function is off. */
 const WB2_FN_CLS = { working: "run", waiting_on_you: "ask", fault: "block", waiting: "wait", quiet: "" };
 function wb2FnNode(fv, name){ return ((fv && !fv.failed && fv.functions) || []).filter(x => x.name === name)[0] || null; }
 function wb2FnCls(m, name, fv){
   const node = wb2FnNode(fv, name);
-  if (node) return m.stopped ? "off" : (WB2_FN_CLS[node.state] || "");
+  if (node) return m.stopped || fv.stopped ? "off" : (WB2_FN_CLS[node.state] || "");
   if (wb2Asks(m).some(a => a.engine === name || name === "Identity")) return "ask";
   if (wb2Running(m).indexOf(name) >= 0) return "run";
   const s = (m.systems || []).filter(x => x.name === name)[0];
   return s && s.state === "running" ? "" : "off";
 }
-/* the state word under a function's name: the read's own word, or today's rule said in the same words */
+/* the state word under a function's name: the read's own word, the one the list, All five and the pane print too (a
+   stopped department's is 'stopped' on every function; functions_view.py), or today's rule said in the same words */
 function wb2FnWord(m, name, fv){
   const node = wb2FnNode(fv, name);
-  if (node) return m.stopped ? "off" : node.word;
+  if (node) return m.stopped || fv.stopped ? "stopped" : node.word;
+  if (m.stopped) return "stopped";
   return ({ run: "working", ask: "waits on you", off: "off" })[wb2FnCls(m, name, fv)] || "quiet";
 }
 function wb2EngCls(m, e){

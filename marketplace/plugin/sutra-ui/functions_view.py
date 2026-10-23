@@ -13,7 +13,8 @@ model. The state rules are the J2 prototype's map/1 function node (j2_map._funct
     waits on you           Identity, the one that asks: a pending ask, the cycle's open question, or a blocked cycle
     fault                  a failed step check, or a start that should have fired and did not (Audit with no run after
                            the version it starts on; Coordination idle while two engines are ready)
-    quiet                  anything else; a department that is stopped or done is quiet throughout, never working
+    quiet                  anything else; a department that is stopped or done is quiet throughout, never working, and a
+                           stopped one's word is 'stopped' on every function
 
 There is no 'asleep' state: the order the five wake in is not ruled (PRD Q9), so only states the record has are shown.
 What the record does not hold is named in not_recorded and never guessed (the prototype's "not recorded" list).
@@ -404,10 +405,11 @@ def functions(ref):
                             line=_short((ask or {}).get("text") or "waits for your answer"))
         if fn in faults:
             node.update(state="fault", why=faults[fn], line=faults[fn])
-        # a department that is stopped, or whose goal is reached, is quiet throughout
+        # a department that is stopped, or whose goal is reached, is quiet throughout; a stopped one says so in one word,
+        # the word every surface prints (the Map, the list, All five and the pane print node.word and nothing else)
         if state in ("stopped", "done"):
             node.update(state="quiet", waits_on=None, line="", why=None)
-        node["word"] = WORDS[node["state"]]
+        node["word"] = "stopped" if state == "stopped" else WORDS[node["state"]]
         node["last"] = _last_act(fn, rs, posts)
         node["spend"] = _spend(ref, d, fn)
         node["speaks_to"] = [{"to": p["to"], "n": p["n"]} for p in pairs if p["from"] == fn]
@@ -425,7 +427,7 @@ def functions(ref):
              "needs_you": needs and state not in ("stopped", "done"), "asks": len(pending),
              "running": [r["engine"] for r in work_running],
              "ceiling": ((d.get("envelopes") or {}).get("_goal") or None), "round": cur.get("round")}
-    return _clean({"ref": ref, "name": d.get("name"), "kind": d.get("kind"), "stopped": bool(d.get("stopped")),
+    return _clean({"ref": ref, "name": d.get("name"), "kind": d.get("kind"), "stopped": bool(d.get("stopped")) or state == "stopped",
                    "functions": nodes, "cycle": cycle, "speaks": pairs, "made": mades,
                    "budget": _budget(ref, d), "not_recorded": nr})
 
