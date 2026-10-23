@@ -169,16 +169,24 @@ function wbFv(ref){
   if (!st.fv[ref]) wbLoadFv(ref);
   return st.fv[ref] || null;
 }
-/* What the screen compares before it paints the five again (PRD M1.9), after dpActivitySig (20-dept.js): per function
-   its state, what it waits on, its line and its spend as the bar draws it; the cycle's own words and step; who made
-   what. A read that says the same thing paints nothing, so a quiet department never flickers on the 2.5 s tick; a
-   change paints on the tick that reads it. The answer is kept either way, so the next paint is the newest one. */
+/* What the screen compares before it paints the five again (PRD M1.9), after dpActivitySig (20-dept.js): everything a
+   surface shows of the read, as it shows it. Per function its state, what it waits on, its line, its spend as the bar
+   draws it, and its last act with its detail and its clock to the minute (All five prints 'last: ... · 10:21'); the
+   cycle's own words and step; who made what; who speaks to whom, as the Map's arcs and its dropdown's bars draw them;
+   what the record does not hold; and the messages Between them. A read that says the same thing paints nothing, so a
+   quiet department never flickers on the 2.5 s tick, and a clock's seconds paint nothing; a change paints on the tick
+   that reads it. The answer is kept either way, so the next paint is the newest one. */
 function wbFvSig(v){
   if (!v || v.failed) return "failed";
-  const c = v.cycle || {}, share = x => Math.round((Number(x) || 0) * 50);
+  const c = v.cycle || {}, share = x => Math.round((Number(x) || 0) * 50), minute = at => String(at || "").slice(0, 16);
+  const five = WB_FUNCS.map(wbCap), talk = (v.speaks || []).filter(p => five.indexOf(p.from) >= 0 && five.indexOf(p.to) >= 0);
+  const most = talk.reduce((x, p) => Math.max(x, p.n || 0), 0) || 1;
   return JSON.stringify([v.stopped, c.state, c.step, c.says, c.needs_you, c.asks, c.round, (c.steps || []).map(p => p.state),
-    (v.functions || []).map(f => [f.name, f.state, f.waits_on, f.line, share((f.spend || {}).share)]),
-    share((v.budget || {}).share), (v.made || []).map(a => [a.art, a.v, a.by])]);
+    (v.functions || []).map(f => [f.name, f.state, f.waits_on, f.line, share((f.spend || {}).share),
+      f.last ? [f.last.what, f.last.detail, minute(f.last.at)] : null]),
+    share((v.budget || {}).share), (v.made || []).map(a => [a.art, a.v, a.by, (a.readers || []).join(",")]),
+    (v.speaks || []).map(p => [p.from, p.to, share((p.n || 0) / most)]), v.not_recorded || [],
+    (v.between || []).map(b => [b.thread, b.from, (b.to || []).join(","), b.act, b.detail])]);
 }
 async function wbLoadFv(ref, again){
   const st = wbS();
@@ -1011,11 +1019,13 @@ function wbReadersOf(m, mk, name){
    status and last move, and its version 1 scope. A field the record leaves
    empty is one quiet line, "not set yet". Read from functions_view.function;
    the first tab keeps its name. */
-/* a function's page paints again when its node, a journey's status or last move, or a step's rung moved (M1.9) */
+/* a function's page paints again when its node (its word too: a department switched off says stopped), a journey's
+   status or last move and its minute, or a step's rung moved (M1.9) */
 function wbFnPageSig(v){
   if (!v || v.failed) return "failed";
   const n = v.node || {};
-  return JSON.stringify([n.state, n.waits_on, n.line, (v.journeys || []).map(j => [j.id, j.status, j.last && j.last.summary]),
+  return JSON.stringify([n.state, n.word, n.waits_on, n.line, n.why,
+    (v.journeys || []).map(j => [j.id, j.status, j.last && j.last.summary, j.last && String(j.last.at || "").slice(0, 16)]),
     (v.recipe || []).map(r => [r.id, r.rung]), (v.fields || []).map(f => [f.key, f.placeholder])]);
 }
 async function wbLoadFnPage(ref, fn, again){

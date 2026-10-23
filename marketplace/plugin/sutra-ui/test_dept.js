@@ -2904,7 +2904,9 @@ test("M1.6: loading and a failed read draw no dots; stopped turns every dot off;
    The Map, the dots and the panes are read again on the screen's 2.5 s clock (22-website.js wbTick) and painted again
    only when what they show moved: a signature per function of its state, what it waits on, its line and its spend
    (wbFvSig, after dpActivitySig). With the timer stub, an unchanged answer paints nothing, a change paints on the very
-   tick that reads it (SM-5), and a change the screen does not show (a clock in the last act) paints nothing. */
+   tick that reads it (SM-5), and a change the screen does not show (the seconds of a last act's clock) paints nothing.
+   Round 2, gap 3: what All five and the Map show beyond the boxes paints too: a moved last act (its words or its
+   minute), a pair that spoke, what the record does not hold, and a message Between them. */
 const wbSrc = fs.readFileSync(path.join(JS, "22-website.js"), "utf8");
 const sxSrc = fs.readFileSync(path.join(JS, "23-screens.js"), "utf8");
 const fvSrc = fs.readFileSync(path.join(JS, "24-functions.js"), "utf8");
@@ -2924,6 +2926,7 @@ const RT_MAP = { ref: "r4", name: "Experience", goal: "", done: "", rules: [], o
   health: { motor: { age_s: 1 }, checks: [], never: [], timeline: [] }, recent: [], requests: [], templates: {} };
 test("M1.9: on the clock an unchanged answer paints nothing, and a change paints within one tick", async () => {
   let fv = FV_STATE({ coordination: "working" }, { cycle: { state: "running", step: 6, says: "The work is running", steps: [], needs_you: false } });
+  fv.functions[3].last = { what: "did its part", at: "2026-10-23T10:59:05+05:30" };
   const c = siteOf(p => {
     if (p === "/api/native/depts") return { depts: [{ ref: "r4", name: "Experience", stopped: false, kind: "website" }] };
     if (p === "/api/native/r4/map") return RT_MAP;
@@ -2947,8 +2950,8 @@ test("M1.9: on the clock an unchanged answer paints nothing, and a change paints
   for (let k = 0; k < 3; k++){ tick(c); for (let i = 0; i < 6; i++) await sleep(); }
   assert.strictEqual(reads(), n + 3, "read on every tick");
   assert.strictEqual(c.calls.render, paints, "the same answer paints nothing");
-  /* a change the screen does not show: the clock of a last act */
-  fv = JSON.parse(JSON.stringify(fv)); fv.functions[3].last = { what: "did its part", at: "2026-10-23T10:59:00+05:30" };
+  /* a change the screen does not show: the seconds of a last act's clock (the screen prints the minute) */
+  fv = JSON.parse(JSON.stringify(fv)); fv.functions[3].last = { what: "did its part", at: "2026-10-23T10:59:40+05:30" };
   tick(c); for (let i = 0; i < 6; i++) await sleep();
   assert.strictEqual(c.calls.render, paints, "nothing it shows moved");
   /* a change it shows: Identity waits on you, Coordination goes quiet */
@@ -2964,6 +2967,45 @@ test("M1.9: on the clock an unchanged answer paints nothing, and a change paints
   paints = c.calls.render;
   tick(c); for (let i = 0; i < 6; i++) await sleep();
   assert.strictEqual(c.calls.render, paints);
+});
+test("M1.9: with All five open, a moved last act paints once on the tick; so do a pair that spoke, what is not recorded and a message between them", async () => {
+  const base = FV_STATE({ coordination: "working" }, { cycle: { state: "running", step: 6, says: "The work is running", steps: [], needs_you: false },
+    speaks: [], not_recorded: [], between: [] });
+  base.functions.forEach(f => { f.last = { what: "did its part", at: "2026-10-23T10:20:00+05:30" }; f.spend = { share: 0.1 }; });
+  base.functions[2].last = { what: "asked Adaptation for less", at: "2026-10-23T10:21:00+05:30" };
+  let fv = base;
+  const c = siteOf(p => {
+    if (p === "/api/native/depts") return { depts: [{ ref: "r4", name: "Experience", stopped: false, kind: "website" }] };
+    if (p === "/api/native/r4/map") return RT_MAP;
+    if (p === "/api/native/r4/functions") return fv;
+    if (/^\/api\/dept\//.test(p)) return {};
+    return undefined;
+  });
+  open(c);
+  c.dpS().sel = "r4"; c.dpS().tab.r4 = "now";
+  const node = { ref: "r4", name: "Experience" };
+  c.wbList(node); for (let i = 0; i < 4; i++) await sleep();
+  vm.runInContext("S.wb.tab.r4 = 'five';", c);
+  for (let k = 0; k < 2; k++){ c.wbViewer(node); for (let i = 0; i < 6; i++) await sleep(); }
+  const card = fn => (c.wbViewer(node).match(new RegExp('<button type="button" class="fvcard fn-' + fn + ' wb[^"]*"[^>]*>[\\s\\S]*?</button>')) || [""])[0];
+  assert.ok(/last: asked Adaptation for less · \d\d:\d\d/.test(card("priority")), "All five shows the last act: " + card("priority"));
+  const step = async (change, why) => {
+    for (let i = 0; i < 6; i++) await sleep();
+    const paints = c.calls.render;
+    fv = JSON.parse(JSON.stringify(fv)); change(fv);
+    tick(c); for (let i = 0; i < 6; i++) await sleep();
+    assert.strictEqual(c.calls.render, paints + 1, why + ": one paint, on the tick that read it");
+    tick(c); for (let i = 0; i < 6; i++) await sleep();
+    assert.strictEqual(c.calls.render, paints + 1, why + ": and nothing more while it holds");
+  };
+  await step(v => { v.functions[2].last = { what: "said yes to the plan", at: "2026-10-23T10:21:30+05:30" }; }, "the last act's words moved");
+  assert.ok(/last: said yes to the plan · /.test(card("priority")), "the card shows the new act: " + card("priority"));
+  await step(v => { v.functions[2].last.at = "2026-10-23T10:24:00+05:30"; }, "the last act's minute moved");
+  await step(v => { v.speaks = [{ from: "Adaptation", to: "Priority", n: 1, at: "2026-10-23T10:24:00+05:30" }]; }, "a pair spoke");
+  await step(v => { v.not_recorded = ["what Audit did"]; }, "what the record does not hold moved");
+  await step(v => { v.between = [{ n: 9, thread: "x-9", from: "Priority", to: ["Adaptation"], act: "said yes to the plan", detail: "the envelope has room", at: "2026-10-23T10:24:00+05:30" }]; },
+    "a message between them");
+  assert.ok(/<span class="dpchk" title="the envelope has room">said yes to the plan<\/span>/.test(c.wbViewer(node)), "Between them shows it");
 });
 test("M1.9: the open function's page is read on the clock and painted only when its node or a journey moved", async () => {
   let page = { ref: "r4", fn: "priority", name: "Priority", line: "Prices every proposal.", holds: "h", hands_to: "a", keeps: "k", v1: "v",
@@ -2991,6 +3033,13 @@ test("M1.9: the open function's page is read on the clock and painted only when 
   tick(c); for (let i = 0; i < 6; i++) await sleep();
   assert.strictEqual(c.calls.render, paints + 1, "a journey moved: one paint");
   assert.ok(/FP2<\/span>The bargain with Adaptation <span class="wbchip">waiting<\/span><div class="dpchk">Keep Plan only · /.test(c.dpViewerHtml(EXP, c.o2Data(), DEPT_EXP, null)));
+  /* the owner switches the department off after its goal: the node stays quiet, and its word says stopped (round 2, gap 7) */
+  for (let i = 0; i < 6; i++) await sleep();
+  paints = c.calls.render;
+  page = JSON.parse(JSON.stringify(page)); page.node.word = "stopped";
+  tick(c); for (let i = 0; i < 6; i++) await sleep();
+  assert.strictEqual(c.calls.render, paints + 1, "the word moved: one paint");
+  assert.ok(/<span>Stopped<\/span>/.test(c.dpViewerHtml(EXP, c.o2Data(), DEPT_EXP, null)), "the pane says stopped");
 });
 
 Promise.all(pending).then(() => {
