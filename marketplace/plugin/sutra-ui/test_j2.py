@@ -560,6 +560,78 @@ def test_m0_6_the_chat_carries_identitys_question_and_keeps_its_answer(j2, monke
     assert [a["id"] for a in R.chat_view(W.dept(ref)["root"])["answered"]] == [q[0]["id"]]
 
 
+def _failed(W, ref):
+    return [r for r in W.runs(ref) if r.get("status") == "failed"]
+
+
+def test_m0_5_an_answer_said_to_root_from_the_departments_chat_takes_the_question(j2, monkeypatch):
+    """The Chat box sends the words to Root with the department's chip. An answer that starts with yes, ok or no read as
+    a stamp on Identity's question (Root's run failed, the question stayed open, and the owner read a raw error) must fail."""
+    W, R, J, _ = j2
+    _thin(monkeypatch, R)
+    for lead, org in (("yes, ", "Bakery Co"), ("OK, ", "Bakery Two"), ("no, it is ", "Bakery Three")):   # a department each
+        ref = _born(j2, "a website", org)
+        root = W.dept(ref)["root"]
+        aid = J.status(ref)["open_question"]["id"]
+        W.owner_ask(root, lead + BAKERY, about=ref)
+        W.run_until_idle(root, limit=300)
+        W.run_until_idle(ref, limit=300)
+        ask = next(a for a in W.asks(ref) if a["id"] == aid)
+        assert (ask["status"], ask["answered"]) == ("stamped", lead + BAKERY), lead
+        assert _actions(J, ref)[:4] == ["identity.questioned", "ask.answered", "identity.assessed", "proposal.requested"], lead
+        assert next(e for e in J.events(ref) if e["action"] == "proposal.requested")["step"] == 2
+        assert _failed(W, root) == [] and not [s for s in _said(R, root) if "could not act" in s], lead
+
+
+def test_m0_6_a_bare_yes_to_root_leaves_identitys_question_open_and_says_so(j2, monkeypatch):
+    """A 'yes' with nothing to stamp, while Identity's question is open, that fails Root's run (or closes the question
+    with nothing said) must fail; Root says, in plain words, that the question still wants words."""
+    W, R, J, _ = j2
+    _thin(monkeypatch, R)
+    ref = _born(j2, "a website", "Bakery Co")
+    root, name = W.dept(ref)["root"], W.dept(ref)["name"]
+    q = J.status(ref)["open_question"]
+    for about in (None, ref):                            # said in Root's chat, then in the department's
+        W.owner_ask(root, "yes", about=about)
+        W.run_until_idle(root, limit=300)
+    assert J.status(ref)["open_question"]["id"] == q["id"] and _failed(W, root) == []
+    assert _said(R, root)[-2:] == ["Nothing is waiting for a stamp. %s asks you: %s Answer it in your own words." % (name, q["text"])] * 2
+    assert "ask.answered" not in _actions(J, ref)
+
+
+def test_m0_6_a_yes_to_root_stamps_another_departments_ask_while_identitys_question_is_open(j2, monkeypatch):
+    """Identity's open question taken as the latest ask to stamp (the stamp fails, and the other department's publish ask
+    stays pending whenever the department with the question is listed first) must fail."""
+    W, R, J, _ = j2
+    _model(monkeypatch, R, {"setup.converse": {"verdict": "clear", "question": ""},
+                            "identity.take": lambda prompt: {"verdict": "go", "why": "", "needs": [], "unsure": [], "thin": not any(
+                                w in prompt.split("THE REQUEST: ", 1)[1].split("\n", 1)[0] for w in ("algebra", "bakery"))}})
+    site = _born(j2)
+    root = W.dept(site)["root"]
+    publish = [a for a in W.asks(site) if a["status"] == "pending"]
+    assert [a["kind"] for a in publish] == ["publish"]
+    W.owner_ask(root, "Set up another department: a sales CRM for the team")      # a second name: another kind
+    W.run_until_idle(root, limit=300)
+    thin = next(d["ref"] for d in W.list_depts() if d.get("parent") == root and d["ref"] != site)
+    W.run_until_idle(thin, limit=300)
+    aid = J.status(thin)["open_question"]["id"]
+    children = R._children
+    monkeypatch.setattr(R, "_children", lambda r: sorted(children(r), key=lambda c: c["ref"] != thin))
+    assert [c["ref"] for c in R._children(root)] == [thin, site]
+
+    W.owner_ask(root, "yes")
+    W.run_until_idle(root, limit=300)
+    assert next(a for a in W.asks(site) if a["id"] == publish[0]["id"])["status"] == "stamped"
+    assert J.status(thin)["open_question"]["id"] == aid and _failed(W, root) == []
+
+    W.owner_ask(root, "OK, " + BAKERY, about=thin)       # the department's Chat box: the answer, not a stamp
+    W.run_until_idle(root, limit=300)
+    W.run_until_idle(thin, limit=300)
+    assert next(a for a in W.asks(thin) if a["id"] == aid)["answered"] == "OK, " + BAKERY
+    assert next(e for e in J.events(thin) if e["action"] == "proposal.requested")["step"] == 2
+    assert _failed(W, root) == []
+
+
 SHAPED_CHECKS = ["names an engine", "one to six engines", "each engine named", "names unique", "names new to the Library",
                  "first reads the Brief", "each reads what one before it wrote", "each writes something new"]
 
