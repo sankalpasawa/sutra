@@ -6,8 +6,15 @@ Named claims:
   M2.1b  each function's files are the ones its page names, each in the bundle with its plain first line and the parts
          its steps read; a prompt is read from the file, so the words on disk are the words sent
   M2.1c  a file gone from the bundle, or one missing a part a step reads, refuses the definitions load
+  M2.2a  the owner's change is filed as an ask Identity puts to the owner, and nothing changes until the stamp; a
+         stamped change is the department's own copy, in its records home, and the next run is sent its words
+  M2.2b  a refused change leaves nothing
+  M2.2c  replacing the bundle keeps the change: the department's copy wins, a part only the new bundle has is the
+         bundle's, and the shipped words again take the department's copy away
+  M2.2d  the ask's covering check: words that cannot serve the function are refused at the ask, and again at the stamp
 
-No test reaches a model, the live records home or the network: the prompts are rendered, never sent.
+No test reaches a model, the live records home or the network: the prompts are rendered, or sent to a model that is a
+function and answers offline, so every step runs its draft.
 
 Run: python test_function_prompts.py   (or pytest). To take a new snapshot after a prompt is changed on purpose:
      FUNCTION_PROMPTS_SNAPSHOT=write python test_function_prompts.py
@@ -226,6 +233,163 @@ class TestTheFiles(Fixture):
         self.assertIn("judge, judge: the app fills no {{findings}}", str(cm.exception))
         self.bundle()
         self.assertEqual(R.validate(R.defs()), [], "the bundle as shipped loads")
+
+
+class Offline:
+    """The model, as a function that is never there: each step runs its draft, and every prompt it was sent is kept."""
+
+    def __init__(self):
+        self.prompts = []
+
+    def __call__(self, prompt, step):
+        self.prompts.append((step["id"], prompt))
+        return None, 0.0, "offline"
+
+
+class TestTheOwnersChange(Fixture):
+    def setUp(self):
+        super().setUp()
+        self.R.WAITS = (0, 0, 0)
+        self.M = self.R.MODEL = Offline()
+        import website_api
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        app = FastAPI()
+        app.include_router(website_api.router)
+        self.c = TestClient(app)
+
+    def tearDown(self):
+        self.R.MODEL = None
+        super().tearDown()
+
+    def change(self, fn, file, text):
+        return self.c.post("/api/native/%s/instructions" % REF, json={"fn": fn, "file": file, "text": text})
+
+    def row(self, fn, file):
+        rows = self.c.get("/api/native/%s/steps/%s" % (REF, fn.title())).json()["instructions"]
+        return next(x for x in rows if x["file"] == file)
+
+    def test_m2_2a_a_stamped_change_is_used_by_the_next_run(self):
+        R, W = self.R, self.W
+        take = R._instruction("identity", "take")
+        mine = take.replace("Recognise what kind of words the owner has given.", "Recognise, in plain words, what kind of words the owner has given.")
+        r = self.change("identity", "take", mine)
+        self.assertEqual(r.status_code, 200, r.text)
+        a = r.json()["ask"]
+        self.assertEqual((a["kind"], a["fn"], a["file"], a["status"]), ("instructions", "identity", "take", "pending"))
+        self.assertEqual(a["text"], "Change Identity's take instructions to your words")
+        # nothing changes until the stamp: no copy of its own, the shipped words read, the row says it waits
+        self.assertFalse(R._own(REF, "identity", "take").exists())
+        self.assertEqual(R._instruction("identity", "take", REF), take)
+        row = self.row("identity", "take")
+        self.assertTrue(row["as_shipped"])
+        self.assertEqual(row["waits"]["ask"], a["id"])
+        self.assertEqual(row["lead"], "How to judge a request: go, ask or refuse.")
+        self.assertIsNone(self.row("identity", "goal")["waits"], "only the file changed waits")
+        # Identity put it to the owner, on the board, in its own thread
+        asked = [p for p in R.board(REF) if p["thread"] == a["thread"]]
+        self.assertEqual([(p["src"], p["dst"], p["msg_type"], p["payload"]["word"]) for p in asked], [("Identity", ["Owner"], "request", "instructions")])
+        # one change waits per file
+        r = self.change("identity", "take", mine.replace("plain words", "few words"))
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("already waits for your stamp", r.json()["detail"])
+        # the stamp: the department's own copy, read by the next run
+        W.decide_ask(REF, a["id"], True)
+        W.run_until_idle(REF, limit=200)
+        self.assertEqual(R._own(REF, "identity", "take").read_text(encoding="utf-8"), mine)
+        self.assertTrue(str(R._own(REF, "identity", "take")).startswith(str(W.ddir(REF))), "kept in the records home")
+        row = self.row("identity", "take")
+        self.assertFalse(row["as_shipped"])
+        self.assertIsNone(row["waits"])
+        self.assertEqual(row["text"], mine)
+        self.assertTrue(any("Identity's take now reads as you changed it" in str(p["payload"].get("done")) for p in R.board(REF)),
+                        "Identity says it is in place")
+        self.M.prompts.clear()
+        W.owner_ask(REF, "Which page lists the doctors?")
+        W.run_until_idle(REF, limit=200)
+        sent = [p for sid, p in self.M.prompts if sid == "identity.recognise"]
+        self.assertTrue(sent, "the next run recognised the words")
+        self.assertIn("\n\nRecognise, in plain words, what kind of words the owner has given. There are five kinds", sent[-1])
+        # another department keeps the shipped words
+        W.create("dref-prompts0002", "Second Website", None)
+        self.assertEqual(R._instruction("identity", "take", "dref-prompts0002"), take)
+
+    def test_m2_2b_a_refused_change_leaves_nothing(self):
+        R, W = self.R, self.W
+        judge = R._instruction("audit", "judge")
+        r = self.change("audit", "judge", judge.replace("At most eight findings.", "At most three findings."))
+        self.assertEqual(r.status_code, 200, r.text)
+        a = r.json()["ask"]
+        W.decide_ask(REF, a["id"], False)
+        W.run_until_idle(REF, limit=200)
+        self.assertEqual(next(x for x in W.asks(REF) if x["id"] == a["id"])["status"], "refused")
+        self.assertFalse((W.ddir(REF) / "prompts").exists(), "nothing is written")
+        self.assertEqual(R._instruction("audit", "judge", REF), judge)
+        row = self.row("audit", "judge")
+        self.assertTrue(row["as_shipped"])
+        self.assertIsNone(row["waits"])
+        self.assertNotIn("At most three findings.", self.render("audit.judge", self.ctx("Audit", inp={"v": 1}), ("audit.pick",)))
+
+    def test_m2_2c_replacing_the_bundle_keeps_the_change(self):
+        R, W = self.R, self.W
+        judge = R._instruction("audit", "judge")
+        mine = judge.replace("At most eight findings.", "At most three findings.")
+        a = self.change("audit", "judge", mine).json()["ask"]
+        W.decide_ask(REF, a["id"], True)
+        W.run_until_idle(REF, limit=200)
+        # an update: a new bundle in the old one's place, its own words for judge and a part the old one did not have
+        tmp = Path(tempfile.mkdtemp(prefix="function-prompts-update-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        shutil.copytree(self.bundled, tmp / "b")
+        p = tmp / "b" / "audit" / "judge.md"
+        p.write_text(p.read_text(encoding="utf-8").replace("At most eight findings.", "At most ten findings.")
+                     + "\n## again\n\nRead it again, slowly.\n", encoding="utf-8")
+        R.PROMPTS_DIR = tmp / "b"
+        R.INSTRUCTIONS["audit"]["judge"]["again"] = ()
+        self.addCleanup(R.INSTRUCTIONS["audit"]["judge"].pop, "again", None)
+        R._DEFS.clear()
+        self.assertEqual(R.validate(R.defs()), [], "the new bundle loads")
+        self.assertEqual(R._own(REF, "audit", "judge").read_text(encoding="utf-8"), mine, "the records home is untouched")
+        sent = self.render("audit.judge", self.ctx("Audit", inp={"v": 1}), ("audit.pick",))
+        self.assertIn("At most three findings.", sent, "the owner's words, not the update's")
+        self.assertNotIn("At most ten findings.", sent)
+        self.assertEqual(R._prompt("audit", "judge", "again", REF), "Read it again, slowly.", "a part only the new bundle has is the bundle's")
+        # the shipped words again take the department's copy away, so the next bundle's words reach it
+        a = self.change("audit", "judge", R._instruction("audit", "judge")).json()["ask"]
+        W.decide_ask(REF, a["id"], True)
+        W.run_until_idle(REF, limit=200)
+        self.assertFalse(R._own(REF, "audit", "judge").exists())
+        self.assertTrue(self.row("audit", "judge")["as_shipped"])
+
+    def test_m2_2d_words_that_cannot_serve_the_function_are_refused_at_the_ask_and_at_the_stamp(self):
+        R, W = self.R, self.W
+        take = R._instruction("identity", "take")
+        for fn, file, text, why in (("marketing", "goal", take, "no function named marketing"),
+                                    ("identity", "voice", take, "Identity has no instructions named voice"),
+                                    ("identity", "take", "   ", "say what the instructions should be"),
+                                    ("identity", "take", take, "the words Identity's take holds now"),
+                                    ("identity", "take", take.replace("## gate", "## gates"), "take has no part gate"),
+                                    ("identity", "take", take.replace("{{engine}}", "{{engine}} {{budget}}"), "the app fills no {{budget}}"),
+                                    ("identity", "take", "## take\n\nJudge it.\n", "take does not say first, in a line, what it is for"),
+                                    ("identity", "take", "x" * (R.INSTRUCTIONS_MAX + 1), "too long")):
+            r = self.change(fn, file, text)
+            self.assertEqual(r.status_code, 400, (fn, file, why))
+            self.assertIn(why, r.json()["detail"])
+        self.assertEqual([a for a in W.asks(REF) if a["kind"] == "instructions"], [], "none of them was filed")
+        os.environ["SUTRA_ENGINE_RUNTIME"] = "1"
+        try:
+            W.create("dref-prompts0003", "Old Website", None)
+        finally:
+            os.environ.pop("SUTRA_ENGINE_RUNTIME", None)
+        self.assertEqual(self.c.post("/api/native/dref-prompts0003/instructions", json={"fn": "identity", "file": "take", "text": take}).status_code, 404)
+        # filed when they served, stamped after the bundle asks for more: not written, and the owner hears why
+        a = self.change("identity", "take", take.replace("Judge one request from the owner.", "Judge one request.")).json()["ask"]
+        R.INSTRUCTIONS["identity"]["take"]["enough"] = ()
+        self.addCleanup(R.INSTRUCTIONS["identity"]["take"].pop, "enough", None)
+        W.decide_ask(REF, a["id"], True)
+        W.run_until_idle(REF, limit=200)
+        self.assertFalse(R._own(REF, "identity", "take").exists())
+        self.assertTrue(any("was not put in place: take has no part enough" in str(p["payload"].get("done")) for p in R.board(REF)))
 
 
 if __name__ == "__main__":

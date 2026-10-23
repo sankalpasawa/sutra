@@ -193,6 +193,22 @@ async def ladder(ref: str, request: Request):
         raise HTTPException(400, detail=str(exc))
 
 
+@router.post("/{ref}/instructions")
+async def instructions(ref: str, request: Request):
+    """The owner's change to one of a function's instruction files, {fn, file, text}: filed as an ask Identity puts
+    to the owner; nothing changes until the stamp (PRD M2.2). The words are kept as written, lines and all."""
+    rt = _rt(ref)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    try:
+        return {"ok": True, "ask": rt.instructions_ask(ref, str(body.get("fn") or ""), str(body.get("file") or ""), body.get("text"))}
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc))
+
+
 @router.post("/{ref}/host")
 async def host(ref: str, request: Request):
     """Where the site is served from: the owner's answer to the question the first publish asks."""

@@ -2607,6 +2607,9 @@ def identity_apply(ctx, step, item):
         row = _file_brief(ref, ctx["dept"], "Correct this: " + str(a.get("found") or a.get("claim") or a["text"]),
                           "a finding the owner stamped")
         return {"said": "sent a finding back to the line", "filed": row["v"]}
+    if a.get("kind") == "instructions":
+        # PRD M2.2: the owner's own words for one of a function's instruction files, used from the next run on
+        return _apply_instructions(ref, ctx["dept"], a)
     return {"said": "took the owner's stamp: " + a["text"]}
 
 
@@ -4058,16 +4061,30 @@ def bundle_faults():
     return out
 
 
+def _own(ref, fn, file):
+    """Where a department keeps its own copy of one instruction file: in its records home, which an update of the app
+    never replaces (PRD M2.2, J7 step 3). Written only on the owner's stamped ask."""
+    return W.ddir(ref) / "prompts" / fn / (file + ".md")
+
+
 def _instruction(fn, file, ref=None):
-    """The text of one of a function's instruction files: the bundle's copy."""
+    """The text of one of a function's instruction files: the department's own copy when the owner stamped one, else
+    the bundle's."""
+    if ref:
+        own = _own(ref, fn, file)
+        if own.is_file():
+            return own.read_text(encoding="utf-8")
     return (PROMPTS_DIR / fn / (file + ".md")).read_text(encoding="utf-8")
 
 
 def _prompt(fn, file, part, ref=None, **slots):
-    """One part of one of a function's instruction files, its slots filled: the words its agent is sent. Each slot is
+    """One part of one of a function's instruction files, its slots filled: the words its agent is sent. The
+    department's own copy wins; a part it does not hold (one a later bundle added) is the bundle's. Each slot is
     filled once, with its value as given, so nothing a value holds is read as a slot; a slot the code does not fill is
     an error, never a blank."""
     parts = _parts(_instruction(fn, file, ref))[1]
+    if part not in parts and ref:
+        parts = _parts(_instruction(fn, file))[1]
     if part not in parts:
         raise ValueError("%s's %s instructions have no part %s" % (fn.title(), file, part))
 
@@ -4088,6 +4105,88 @@ def _goal_of(ref, name, e=None):
     skills = [ln.strip()[2:].strip() if ln.strip().startswith("- ") else ln.strip()
               for ln in _prompt(fn, "goal", "skills", ref).split("\n") if ln.strip()]
     return _prompt(fn, "goal", "does", ref), skills
+
+
+INSTRUCTIONS_MAX = 20000                               # the most one file may hold, in characters
+
+
+def _waiting_change(ref, fn, file):
+    return next((a for a in W.asks(ref) if a.get("kind") == "instructions" and a["status"] == "pending"
+                 and a.get("fn") == fn and a.get("file") == file), None)
+
+
+def instructions_view(ref, fn):
+    """A function's instruction files as its Settings shows them: each by name, the line that says what it is for, its
+    words as the department reads them now, whether they are the owner's or as shipped, and a change that waits for
+    the stamp. Names only, never where a file lives."""
+    out = []
+    for file in INSTRUCTIONS.get(fn) or {}:
+        text = _instruction(fn, file, ref)
+        shipped = _instruction(fn, file)
+        a = _waiting_change(ref, fn, file)
+        out.append({"file": file, "lead": _parts(text)[0].split("\n", 1)[0], "text": text, "as_shipped": text == shipped,
+                    "waits": {"ask": a["id"], "at": a.get("created")} if a else None})
+    return out
+
+
+def instructions_ask(ref, fn, file, text):
+    """The owner's change to one of a function's instruction files, filed as an ask (PRD M2.2): Identity puts it to
+    the owner and nothing changes until the stamp; on the stamp identity_apply writes the department's own copy. The
+    file's covering check runs here, and again at the stamp; one change waits per file."""
+    fn, file = str(fn or "").strip().lower(), str(file or "").strip().lower()
+    if fn.title() not in FUNCTIONS or fn not in INSTRUCTIONS:
+        raise ValueError("no function named %s" % (fn or "nothing"))
+    if file not in INSTRUCTIONS[fn]:
+        raise ValueError("%s has no instructions named %s" % (fn.title(), file or "nothing"))
+    text = str(text if text is not None else "").replace("\r\n", "\n").strip("\n")
+    if not text.strip():
+        raise ValueError("say what the instructions should be")
+    if len(text) > INSTRUCTIONS_MAX:
+        raise ValueError("the instructions are too long to keep")
+    text += "\n"
+    faults = instruction_faults(fn, file, text)
+    if faults:
+        raise ValueError("these words cannot serve %s: %s" % (fn.title(), "; ".join(faults)))
+    d = W.dept(ref)
+    if not d:
+        raise ValueError("no department at %s" % ref)
+    with W._lock(ref):
+        if _waiting_change(ref, fn, file):
+            raise ValueError("a change to %s's %s already waits for your stamp" % (fn.title(), file))
+        if text == _instruction(fn, file, ref):
+            raise ValueError("these are the words %s's %s holds now" % (fn.title(), file))
+        line = "Change %s's %s instructions to your words" % (fn.title(), file)
+        p = post(ref, "Identity", OWNER, "request", {"word": "instructions", "objective": line + "? Stamp to use them from the next run; "
+                                                     "Refuse to keep them as they are.", "output": "a stamp or a refusal",
+                                                     "may_read": [], "boundaries": "this one file"})
+        return W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "instructions", "engine": fn.title(), "fn": fn, "file": file,
+                                "words": text, "text": line, "status": "pending", "created": W.now(), "thread": p["thread"] if p else None})
+
+
+def _apply_instructions(ref, d, a):
+    """The owner's stamp on a change to one instruction file: the department's own copy, written whole, and read by the
+    next run. Words that no longer serve the function (the bundle changed under them) are not written, and the owner
+    hears why. Words the same as the bundle's take the department's copy away, so a later bundle's words reach it."""
+    fn, file, text = a.get("fn"), a.get("file"), str(a.get("words") or "")
+    who = {"src": "Root" if d.get("root") else OWNER}
+    faults = instruction_faults(fn, file, text) if fn in INSTRUCTIONS else ["no function named %s" % fn]
+    if faults:
+        _tell(ref, d, who, "inform", {"word": "instructions", "done": "Your change to %s's %s was not put in place: %s. Change it again."
+                                      % (str(fn).title(), file, "; ".join(faults))})
+        return {"said": "could not put the owner's change to %s's %s in place: %s" % (str(fn).title(), file, "; ".join(faults))}
+    own = _own(ref, fn, file)
+    with W._lock(ref):
+        if text == _instruction(fn, file):
+            if own.is_file():
+                own.unlink()
+        else:
+            own.parent.mkdir(parents=True, exist_ok=True)
+            tmp = own.with_name(own.name + ".tmp")
+            tmp.write_text(text, encoding="utf-8")
+            os.replace(tmp, own)
+    _tell(ref, d, who, "inform", {"word": "instructions", "done": "%s's %s now reads as you changed it; the next run uses it."
+                                  % (str(fn).title(), file)})
+    return {"said": "put the owner's change to %s's %s in place" % (str(fn).title(), file)}
 
 
 # ---- the registry: prompts and drafts ------------------------------------------------------------------------------
@@ -4649,6 +4748,8 @@ def steps_view(ref, name):
             calls, usd = W._today_spend(ref, n)
             view["limits"].append({"engine": n, "calls": int(env.get("calls", 0)), "usd": float(env.get("usd", 0.0)),
                                    "used_calls": calls, "used_usd": round(usd, 3)})
+    if e["kind"] == "function" and name.lower() in INSTRUCTIONS:
+        view["instructions"] = instructions_view(ref, name.lower())      # its version 1 files, for its Settings (S16)
     return view
 
 

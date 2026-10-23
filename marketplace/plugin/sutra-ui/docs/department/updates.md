@@ -11,7 +11,7 @@ The code, `engine_defs/website.json` (with its `def_version`), the shipped `engi
 
 ## With the records (kept by an update)
 
-The records home (`home()`: `~/.sutra-ui/native` stable, `~/.sutra-ui-beta/native` Beta): every department's directory, the boards, the runs, the versions, the served sites, and the Library's other half, `_library/`, where born engines live (`born_template`, `user_templates_dir`).
+The records home (`home()`: `~/.sutra-ui/native` stable, `~/.sutra-ui-beta/native` Beta): every department's directory, the boards, the runs, the versions, the served sites, a department's own copy of a function's instruction file in `{ref}/prompts/<function>/<file>.md` (PRD M2.2: written only on the owner's stamped `instructions` ask; it wins over the bundle's, and a part only a newer bundle has is read from the bundle; `_own`, `_instruction`, `_prompt`), and the Library's other half, `_library/`, where born engines live (`born_template`, `user_templates_dir`).
 
 ## What happens on an update
 
