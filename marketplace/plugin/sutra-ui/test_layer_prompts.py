@@ -12,13 +12,13 @@ C5  the snapshot renders what runs: a stub overriding a prompt through the regis
 A test that meets a fault of the interface fails (conftest.py); a deliberate one is wrapped in S.expect_refused().
 """
 import ast
-import importlib
 import io
-import re
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -351,3 +351,118 @@ def test_c4_the_split_keeps_the_words_the_md_files_had_for_the_fallback_to_read(
     mine = "How to judge.\n\n## gate\n\nA step asks.\nTHE RULES: {{rules}}\nTHE ENGINE: {{engine}}\n\n" + RETURNS + " Go on."
     assert P.parts_of(mine)[1]["gate"].startswith("A step asks.")
     assert P.split("take", "gate", P.parts_of(mine)[1]["gate"])[0] == {"task": "A step asks.", "guidance": "Go on."}
+
+
+# ---- C5 · the snapshot renders what runs; the compiling contract case ---------------------------------------------------
+import test_function_prompts as TFP  # noqa: E402 -- the fixture department the M2.1a snapshot is rendered for
+
+
+class TestTheSnapshotRendersWhatRuns(TFP.Fixture):
+    TAKES = {"identity.take:" + n for n in ("directive", "task", "query", "feedback", "thin")}
+
+    def test_c5_the_snapshot_looks_every_name_up_through_the_registry(self):
+        R = self.R
+        seen, real = [], R._resolve
+
+        def spy(ctx, kind, name, engine=None):
+            seen.append((kind, name, engine))
+            return real(ctx, kind, name, engine)
+        R._resolve = spy
+        self.addCleanup(setattr, R, "_resolve", real)
+        got = self.prompts()
+        assert len(got) >= 25
+        kinds = {k for k, _, _ in seen}
+        assert kinds == {"code", "prompt"}, "a code step to fill the bag, a prompt to send"
+        assert {n for k, n, _ in seen if k == "prompt"} >= {"identity_take", "adapt_line", "priority_bargain", "coord_tie", "audit_judge"}
+        assert all(engine in ("Identity", "Adaptation", "Priority", "Coordination", "Audit") for _, _, engine in seen), \
+            "each name is looked up for the function whose step it is"
+        want = TFP.json.loads(TFP.SNAP.read_text(encoding="utf-8"))
+        assert got == want, "and what the registry gives is still the snapshot"
+
+    def test_c5_a_stub_overriding_identity_takes_prompt_changes_the_rendered_text(self):
+        before = self.prompts()
+        module = layers.load("identity/v1")
+        stub = lambda ctx, step, item: "THE STUB'S TAKE"
+        module.PROMPT["identity_take"] = stub
+        self.addCleanup(module.PROMPT.pop, "identity_take", None)
+        after = self.prompts()
+        changed = {k for k in before if before[k] != after[k]}
+        assert changed == self.TAKES, "the registry is used: the five renders of identity.take, and nothing else"
+        for k in changed:
+            assert after[k].endswith("\n\nTHE STUB'S TAKE") and "THE GOAL:" not in after[k], k
+            assert after[k].startswith(before[k].split("Judge one request")[0]), "the card is still the engine's"
+
+    def test_c5_a_stub_overriding_a_code_step_changes_what_the_prompt_reads(self):
+        before = self.prompts()
+        real = self.R.CODE["priority_read"]
+
+        def room_flipped(ctx, step, item):
+            got = real(ctx, step, item)
+            return dict(got, facts=dict(got["facts"], room=not got["facts"]["room"]))
+        patch = mock.patch.dict(layers.load("priority/v1").CODE, {"priority_read": room_flipped})
+        patch.start()
+        self.addCleanup(patch.stop)
+        after = self.prompts()
+        assert {k for k in before if before[k] != after[k]} == {k for k in before if k.startswith("priority.bargain:")}
+
+    def test_c5_the_stubs_that_hold_the_words_still_pass_the_contract(self):
+        module = layers.load("identity/v1")
+        words, layout, bad = P.extract("identity")
+        assert bad == []
+        stub_take = lambda ctx, step, item: "THE STUB'S TAKE"
+        for patch in (mock.patch.object(module, "WORDS", words), mock.patch.object(module, "LAYOUT", layout),
+                      mock.patch.dict(module.PROMPT, {"identity_take": stub_take})):
+            patch.start()
+            self.addCleanup(patch.stop)
+        ref = C.fixture_department(os.environ["SUTRA_NATIVE_DEPT_HOME"], TFP.REF)
+        got = {n: fn(module, {"ref": ref}) for n, _, fn in C.cases()}
+        assert got == {n: [] for n in range(1, 9)}, got
+        assert C.on_the_md_fallback(module) == [], "every part of Identity is typed in the stub"
+        # and the snapshot, rendered through the registry from the typed words, is the snapshot still
+        del module.PROMPT["identity_take"]
+        assert self.prompts() == TFP.json.loads(TFP.SNAP.read_text(encoding="utf-8")), "a words-migration commit passes the snapshot unchanged"
+
+
+def _stub(layer, words, layout, tmp_path):
+    fake = tmp_path / layer
+    fake.mkdir(exist_ok=True)
+    real = layers.load(S.DEFAULT_PINS[layer])
+    (fake / "v1.json").write_text(Path(real.__file__).with_name("v1.json").read_text(encoding="utf-8"), encoding="utf-8")
+    return type("Stub", (), {"__file__": str(fake / "v1.py"), "LAYER": layer, "VERSION": 1, "IMPLEMENTS": 1, "RECIPE": "v1.json",
+                            "CODE": {}, "PROMPT": {}, "DRAFT": {}, "CHECK": {}, "WORDS": words, "LAYOUT": layout})
+
+
+def test_c5_case_5_compiles_each_part_with_sample_inputs(tmp_path):
+    words, layout, _ = P.extract("priority")
+    assert C.case_5(_stub("priority", words, layout, tmp_path)) == [], "the extracted words serve"
+
+    def broken(edit):
+        w, l = {g: {p: dict(v) for p, v in parts.items()} for g, parts in words.items()}, {g: dict(parts) for g, parts in layout.items()}
+        edit(w, l)
+        return C.case_5(_stub("priority", w, l, tmp_path))
+    assert broken(lambda w, l: l["bargain"].update(line=l["bargain"]["line"].replace("{returns}", ""))) == \
+        ["priority/v1: bargain.line: the layout leaves out the answer contract"]
+    assert broken(lambda w, l: l["bargain"].update(cost=l["bargain"]["cost"].replace("{{room}}", "{{room}} {{budget}}"))) == \
+        ["priority/v1: bargain.cost: the layout holds {{budget}} and the app fills no such input"]
+    assert broken(lambda w, l: l["bargain"].update(engine=l["bargain"]["engine"].replace("{task}\n", ""))) == \
+        ["priority/v1: bargain.engine: the layout never reads the field task"]
+    assert broken(lambda w, l: w["bargain"]["engine"].pop("task")) == \
+        ["priority/v1: bargain.engine: the layout holds {task} and WORDS holds no task"]
+    assert broken(lambda w, l: l["bargain"].update(extra="{task}")) == ["priority/v1: bargain.extra has a LAYOUT and no WORDS"]
+    assert broken(lambda w, l: (w["bargain"].update(extra={"task": "x"}), l["bargain"].update(extra="{task}"))) == \
+        ["priority/v1: bargain.extra.task: Priority has no part bargain.extra", "priority/v1: bargain.extra: Priority has no part bargain.extra"]
+    assert broken(lambda w, l: l["goal"].update(skills="{items}\n{{a}}")) == \
+        ["priority/v1: goal.skills: the layout holds {{a}} and the app fills no such input"]
+
+
+def test_c5_case_5_finds_the_returns_in_the_compiled_part_and_no_marker_left(tmp_path, monkeypatch):
+    words, layout, _ = P.extract("audit")
+    fake = _stub("audit", words, layout, tmp_path)
+    assert C.case_5(fake) == []
+    # a layout that holds {returns} but whose part's contract was changed under it: the compile no longer holds it verbatim
+    monkeypatch.setitem(S.PROMPTS["audit"]["judge"]["judge"], "returns", "Return ONLY a JSON object: {\"x\": 1}.")
+    assert C.case_5(fake) == [], "{returns} is filled with the interface's own, so the contract is in the compiled part by construction"
+    monkeypatch.undo()
+    # a value that carries a marker of its own into the compiled part is found
+    words["goal"]["does"]["text"] = "reads {text} as it stands"
+    assert C.case_5(fake) == ["audit/v1: goal.does: the compiled part still holds {text}"]

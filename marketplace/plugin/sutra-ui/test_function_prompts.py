@@ -18,6 +18,9 @@ Named claims:
 No test reaches a model, the live records home or the network: the prompts are rendered, or sent to a model that is a
 function and answers offline, so every step runs its draft.
 
+The snapshot is rendered through the registry (A1.19, R._resolve), so it tests what really runs; a words-migration commit
+passes it unchanged, and a prompt changed on purpose regenerates it in a commit of its own, 'snapshot: <reason>'.
+
 Run: python test_function_prompts.py   (or pytest). To take a new snapshot after a prompt is changed on purpose:
      FUNCTION_PROMPTS_SNAPSHOT=write python test_function_prompts.py
 """
@@ -100,13 +103,19 @@ class Fixture(unittest.TestCase):
 
     def render(self, step_id, c, fill=()):
         """The prompt a step sends, as _soft builds it: the engine's card, then the step's own prompt. The code steps
-        named in `fill` run first, as they do in the run, to fill the bag the prompt reads."""
+        named in `fill` run first, as they do in the run, to fill the bag the prompt reads.
+
+        THE SNAPSHOT RULE (PRD A1.16). A name is looked up through R._resolve, with the fixture department's pins and the
+        step's own function as the engine, never in R.CODE or R.PROMPT, so what is compared is what a run would send,
+        whichever layer's version holds the words. A commit that moves a layer's words into its module must pass the
+        snapshot unchanged. A prompt changed on purpose regenerates test_fixtures/function-prompts.snapshot.json only in a
+        commit of its own, named 'snapshot: <reason>', whose diff the integrator reviews."""
         R = self.R
         for sid in fill:
-            _, s = R.step_def(sid)
-            c["bag"][sid] = R.CODE[s["code"]](c, s, None)
-        _, step = R.step_def(step_id)
-        return R.card(c) + R.PROMPT[step["prompt"]](c, step, None)
+            fn, s = R.step_def(sid)
+            c["bag"][sid] = R._resolve(c, "code", s["code"], engine=fn)(c, s, None)
+        fn, step = R.step_def(step_id)
+        return R.card(c) + R._resolve(c, "prompt", step["prompt"], engine=fn)(c, step, None)
 
     def prompts(self):
         """Every function prompt, for the fixtures: each journey of Identity, each word Priority bargains on, a line with
