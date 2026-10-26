@@ -1108,6 +1108,17 @@ def trigger_art(d, trig):
     return S.deliverable(d)
 
 
+def reads_art(d, e):
+    """The artifact an engine reads: the one its definition names; an engine that names none reads what it starts on, so
+    Audit, whose start is on the department's deliverable, reads the department's own whatever its kind (trigger_art).
+    None when it reads nothing, or has no deliverable yet."""
+    e = e or {}
+    if e.get("reads"):
+        return e["reads"]
+    trig = next((t for t in (e.get("start") or {}).get("on") or [] if t.get("kind") == "version"), None)
+    return trigger_art(d, trig) if trig else None
+
+
 def _on_version(ctx, name, e, trig):
     """Outside trigger: a version of what it reads that it has not run on yet. A trigger on the deliverable names the
     artifact in the input it yields (`art`), so the run reads the one that started it; with no deliverable, nothing starts."""
@@ -1454,7 +1465,8 @@ def run_engine(ref, name, inp, slot):
     steps = handler["steps"] if handler else list(e.get("steps") or [])
     prior = [r for r in W.runs(ref) if r.get("slot") == slot and r.get("status") in ("interrupted", "waiting", "asked")]
     system = e["kind"] == "function"
-    what = handler["name"] if handler else "reading %s" % ((inp.get("art") if isinstance(inp, dict) else None) or e.get("reads"))
+    what = handler["name"] if handler else "reading %s" % (
+        (inp.get("art") if isinstance(inp, dict) else None) or reads_art(d, e) or "the deliverable")
     row = W._put_run(ref, _run_row(name, system, slot, "running", what,
                                    chain=None if system else W._chain_of(ref, e["reads"], inp["v"]),
                                    retries=len([r for r in prior if r["status"] == "interrupted"])))
@@ -1663,7 +1675,8 @@ def run_step(ctx, step, item):
            "mode": "slot", "slot": ctx["slot"], "impl": _impl(ctx), "asked_rung": asked, "rung": rung, "miss": rung != asked, "by": how,
            "agent": ctx["engine"] if how in ("model", "checklist") else None,
            "applied": [r["id"] for r in ctx["dept"].get("rules") or [] if r.get("id")] if how in ("model", "checklist") else [],
-           "read": [{"post": ctx["post"]["n"]}] if ctx.get("post") else [{"art": ctx["inp"].get("art") or ctx["def"].get("reads"), "v": ctx["inp"]["v"]}],
+           "read": [{"post": ctx["post"]["n"]}] if ctx.get("post") else
+           [{"art": ctx["inp"].get("art") or reads_art(ctx.get("dept"), ctx["def"]), "v": ctx["inp"]["v"]}],
            "facts": facts, "in_sig": _sha(facts if facts is not None else {"step": step["id"], "item": item, "in": ctx["inp"].get("v")}),
            "usd": round(usd, 4), "calls": calls, "def_version": defs()["def_version"], "started": started}
 
@@ -6598,7 +6611,7 @@ def steps_view(ref, name):
                     "history": en.get("history") or []})
     does, skills = _goal_of(ref, name, e)                     # a function's own words, as its agent is told them
     view = {"name": name, "kind": e["kind"], "description": does or e.get("description"), "skills": skills,
-            "reads": e.get("reads"), "writes": e.get("writes"), "steps": out,
+            "reads": reads_art(W.dept(ref), e), "writes": e.get("writes"), "steps": out,
             "hears": ([SHARED] if rules else []) + [h["name"] for h in e.get("on") or []],
             "start": start_view(e, W.dept(ref)), "numbers": numbers(ref, name)}
     if name == "Coordination":

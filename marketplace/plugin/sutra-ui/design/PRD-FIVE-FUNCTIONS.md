@@ -1062,9 +1062,9 @@ flowchart LR
 
 **M8.2 · Audit reads any kind's deliverable (A1, wave 1)**
 - **What:** Audit and Adaptation start on the department's deliverable.
-- **How:** W1-AUDIT changes Audit's start.on to {kind: 'version', of: '$deliverable', checked: true} in audit/v1.json, resolves '$deliverable' in _on_version through S.deliverable, replaces the literals in audit_pick, audit_mechanical, p_audit_judge, audit_file, _j2_audit_read, J.on_post's evidence_refs and J.audited, and reads a deliverable that is not HTML as text. W1-ADAPT changes Adaptation's start key in adaptation/v1.json the same way.
-- **Where:** `layers/audit/v1.json; layers/adaptation/v1.json (start key); engine_runtime (_on_version, the Audit region); j2_runtime (on_post, audited)`
-- **Done check:** A default department (Do, then Result) and an organic shaped one both reach step 7; grep finds no 'Live site' literal on Audit's path; the website scenarios are unchanged.
+- **How:** W1-AUDIT changes Audit's start.on to {kind: 'version', of: '$deliverable', checked: true} in audit/v1.json, resolves '$deliverable' in _on_version through S.deliverable, replaces the literals in audit_pick, audit_mechanical, p_audit_judge, audit_file, _j2_audit_read, J.on_post's evidence_refs and J.audited, and reads a deliverable that is not HTML as text. Audit's recipe names no artifact it reads (its `reads` is dropped): an engine with none reads what it starts on, which `engine_runtime.reads_art` resolves for the Made list, the hand-off cards, the engine card and the run rows' fallbacks. W1-ADAPT changes Adaptation's start key in adaptation/v1.json the same way.
+- **Where:** `layers/audit/v1.json; layers/adaptation/v1.json (start key); engine_runtime (_on_version, reads_art, the Audit region); functions_view (made); j2_runtime (on_post, audited)`
+- **Done check:** A default department (Do, then Result) and an organic shaped one both reach step 7; grep finds no 'Live site' literal on Audit's path, in audit/v1.json or in the run rows' fallbacks; the Made list and the hand-off cards name Audit as a reader of the Result or Report; the website scenarios are unchanged.
 
 **M8.3 · A reading per done-when item, in the S-30 shape (A1, wave 1)**
 - **What:** Each item is judged met, not met or to confirm, with evidence.

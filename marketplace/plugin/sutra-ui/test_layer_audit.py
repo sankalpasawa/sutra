@@ -317,6 +317,56 @@ def test_u4_audit_should_have_fired_names_the_artifact_the_plan_delivers(j2):
     assert (audit()["state"], audit()["why"]) == ("fault", "Audit has not read Result v1")
 
 
+def test_u4_audit_reads_what_it_starts_on_so_the_made_list_and_the_hand_offs_name_audit_as_the_reader_of_the_deliverable(j2, monkeypatch):
+    W, R, J, _, FV = j2
+    audit = R.engine_def("Audit")
+    assert "reads" not in audit and "reads" not in json.loads((S.HERE / "layers" / "audit" / "v1.json").read_text(encoding="utf-8")), \
+        "no kind's artifact is named in Audit's recipe: it reads what it starts on, the department's deliverable"
+    assert audit["start"]["on"][0]["of"] == R.DELIVERABLE and R.validate(R.defs()) == [], "and the definitions are clean without it"
+    web, default, organic = _born(j2), _default(j2), _organic(j2, monkeypatch)
+    for ref, art, readers in ((web, "Live site", ["Adaptation", "Audit"]), (default, "Result", ["Audit"]), (organic, "Report", ["Audit"])):
+        d = W.dept(ref)
+        assert R.reads_art(d, audit) == art and R.steps_view(ref, "Audit")["reads"] == art
+        made = {m["art"]: m for m in FV.made(ref, d, [])}
+        assert sorted(made[art]["readers"]) == readers, "%s is read by Audit, and the Made list says so" % art
+        hand = {h["art"]: h for h in FV._handoffs(ref, d)}
+        assert "Audit" in hand[art]["readers"], "and so does the hand-off card"
+        assert "read by nobody" not in json.dumps(made), art
+    # a work engine's reads are as they were, a function that starts on a post reads nothing, and a department with no
+    # deliverable yet, or Root, has Audit read nothing
+    assert R.reads_art(W.dept(web), R.engine_def("Write")) == R.engine_def("Write")["reads"]
+    assert R.reads_art(W.dept(web), R.engine_def("Identity")) is None and R.reads_art(None, None) is None
+    assert R.reads_art({"kind": "root"}, audit) is None and R.reads_art({"kind": "organic", "workflows": []}, audit) is None
+    unplanned = _born(j2, ORGANIC, "Second Lab Co", settle=False)
+    assert unplanned != organic and S.deliverable(W.dept(unplanned)) is None
+    assert R.steps_view(unplanned, "Audit")["reads"] is None
+    assert not [a for m in FV.made(unplanned, W.dept(unplanned), []) for a in m["readers"] if a == "Audit"]
+
+
+def test_u4_no_live_site_literal_is_left_in_audits_recipe_or_in_the_fallbacks_of_its_run_rows(j2):
+    import inspect
+    W, R, J, _, FV = j2
+    assert "Live site" not in (S.HERE / "layers" / "audit" / "v1.json").read_text(encoding="utf-8")
+    base = json.loads((S.HERE / "test_fixtures" / "function-engines.base.json").read_text(encoding="utf-8"))
+    assert "Live site" not in json.dumps(base["Audit"]) and "reads" not in base["Audit"]
+    assert "Live site" not in json.dumps(R.engine_def("Audit"))
+    on_path = [R.run_engine, R.run_step, R.steps_view, R.reads_art, R.trigger_art, R._on_version, R.slot_of, R.start_view, R.audit_text,
+               R.p_audit_items, FV.made, FV._handoffs]
+    for fn in on_path:
+        assert "Live site" not in inspect.getsource(fn), fn.__name__
+
+
+def test_u4_a_run_that_was_not_told_its_artifact_reads_the_departments_deliverable_in_its_rows(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _default(j2)
+    seen, real = [], W._put_run
+    monkeypatch.setattr(W, "_put_run", lambda r, row: (seen.append(dict(row)), real(r, row))[1])
+    R.run_engine(ref, "Audit", {"v": 1}, "Audit@result.v8")                  # a start with no art in its input
+    assert seen[0]["what"] == "reading Result", "the run row names the department's deliverable, never the Live site"
+    mine = [r for r in _audit_rows(R, ref) if r["slot"] == "Audit@result.v8"]
+    assert mine and all(r["read"] == [{"art": "Result", "v": 1}] for r in mine)
+
+
 # ---- U5 · a reading per done-when item, in the S-30 shape (M8.3, M0.3) ----------------------------------------------
 SIX = {"subject", "claim", "evidence", "method", "verdict", "severity"}      # the S-30 fields of a reading's row
 JUDGE_OK = {"ok": True, "findings": []}
