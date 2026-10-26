@@ -10,6 +10,14 @@ Named claims:
        run failed), running (never in a finished department), waiting_on_you (an ask names the engine), left_open,
        not_made; an engine the plan left out draws one hollow branch box after the trunk
   M3d  what Sutra does not record is listed, never invented: no goal, no Charter and the reason; no chat, no counts
+  M4a  the contract: the top-level keys, every edge ends on a node, edge kinds, the legend, a JSON round trip; the page's own
+       renderMap draws it (node, the pinned page) with no undefined, NaN or null
+  M4b  the steps: a 4-engine line gives the Charter, 5 trunk boxes and 5 step nodes in trunk order; a step's label, detail,
+       status and workflows; made_by None; the engines left out make no step
+  M4c  the edges: step, handoff (only where an engine reads a box that is not the one before it, and the charter's), speaks_to
+       from the chat, wrote the charter, audits from the ledger, asks and uses from the board
+  M4d  the status pill (waiting on you, a function running, Done, Done with open items, Stopped, Running, Waiting, Idle) and
+       the checks; not_recorded names every gap and every workflow is on one box or named
 Shares the department fixtures and the Ctx stand-in of test_j2ui_artifacts.py.
 """
 import json
@@ -17,8 +25,8 @@ import re
 
 import pytest
 
-from test_j2ui_artifacts import (REF, FUNCS, add_ver, ago, make_ctx, mods, msg, proto_consts, put_ask, put_post,  # noqa: F401 -- mods is a fixture
-                                 put_run, put_step, seed_line, set_cycle)
+from test_j2ui_artifacts import (REF, FUNCS, add_ver, ago, make_ctx, mods, msg, page_render, plain_text, proto_consts,  # noqa: F401 -- mods is a fixture
+                                 proto_show, put_ask, put_post, put_run, put_step, seed_line, set_cycle)
 
 WORK = ["work:brief", "work:site-plan", "work:pages", "work:build", "work:live-site"]
 PERSON_KEYS = ["id", "kind", "row", "label", "status", "version", "tag", "color", "file", "detail", "workflows"]
@@ -378,3 +386,327 @@ def test_m3d_the_map_is_memoised_on_the_ctx(line):
     import j2ui_map as M
     ctx = make_ctx(line)
     assert M.build(ctx) is M.build(ctx)
+
+
+# ---- M4a: the contract ---------------------------------------------------------------------------------------------------------------------
+TOP_KEYS = {"schema", "run", "live", "status", "nodes", "edges", "legend", "built_from", "not_recorded"}
+EDGE_KINDS = ("handoff", "step", "speaks_to", "draws_on", "asks", "uses")
+
+
+def captured_map_keys():
+    """The top-level keys of a captured prototype map when j2ui-verify's fixtures exist, else the list in the schema doc."""
+    import pathlib
+    cap = pathlib.Path(__file__).resolve().parent / "test_fixtures" / "j2ui" / "captured"
+    for f in sorted(cap.glob("*map*.json")) if cap.is_dir() else []:
+        got = json.loads(f.read_text(encoding="utf-8"))
+        if isinstance(got, dict) and "nodes" in got:
+            return set(got)
+    return set(TOP_KEYS)
+
+
+def test_m4a_top_level_keys_edges_legend_and_json(line):
+    import j2ui_map as M
+    m = M.build(make_ctx(line))
+    assert set(m) == TOP_KEYS == captured_map_keys()
+    assert m["schema"] == "map/1" and m["built_from"] == ["department record"] and m["run"] == REF
+    json.loads(json.dumps(m))
+    assert json.loads(json.dumps(m)) == m
+    every = set(ids(m))
+    for e in m["edges"]:
+        assert list(e) == ["from", "to", "kind", "label", "n", "basis"]
+        assert e["from"] in every and e["to"] in every, e
+        assert e["kind"] in (proto_consts("j2_map.py", "EDGE_KINDS") or EDGE_KINDS)
+        assert e["basis"] in ("recorded", "declared")
+    pinned = proto_consts("j2_map.py", "LEGEND")
+    if pinned is not None:
+        assert m["legend"] == pinned
+    assert len(m["legend"]) == 14 and [r["key"] for r in m["legend"]][:3] == ["function", "engine", "work"]
+    assert M.EDGE_KINDS == EDGE_KINDS
+
+
+def test_m4a_the_run_is_the_cycle_or_the_ref(line):
+    import j2ui_map as M
+    assert M.build(make_ctx(line))["run"] == REF
+    set_cycle(line[0], "running", 6)
+    assert M.build(make_ctx(line))["run"] == "cycle-test"
+
+
+def test_m4a_the_pages_own_renderMap_draws_it(line):
+    import j2ui_map as M
+    W, R = line[0], line[1]
+    put_run(W, "Plan", "ok", id="r-plan", wrote={"art": "Site plan", "v": 1})
+    first = R.steps_view(REF, "Plan")["steps"][0]
+    put_step(R, W, "Plan", first["id"], ok=True)
+    chat = [msg(1, "user", "Build us a site"), msg(2, "identity", "@Requester Got it", next="user"), msg(3, "adaptation", "Proposed", next="priority")]
+    m = M.build(make_ctx(line, chat=chat))
+    out = page_render(map_=m)
+    if out is None:
+        pytest.skip("the pinned page or node is not here")
+    html, words = out["map"], plain_text(out["map"])
+    assert not re.search(r"\bundefined\b|\bNaN\b|\bnull\b", words), words[:300]
+    assert "Nothing to draw yet" not in html and 'class="mappill idle"' in html
+    for label in ("Charter", "Brief", "Site plan", "Pages", "Build", "Live site"):
+        assert label in words, label
+    assert "1 of 1 checks passed" in words and "Client Lead" in words and "Quality Reviewer" in words
+    assert "You" in words and "1 from you" in words
+
+
+def test_m4a_the_pages_own_renderMap_draws_every_state_and_a_branch(mods):
+    import j2ui_map as M
+    W, R = mods[0], mods[1]
+    seed_line(W, upto=3)
+    add_ver(W, "Build", ok=False)
+    register(W, R, left=("Publish",))
+    put_run(W, "Write", "failed", id="r-write-bad")
+    put_ask(W, "publish", engine="Publish")
+    m = M.build(make_ctx(mods))
+    out = page_render(map_=m)
+    if out is None:
+        pytest.skip("the pinned page or node is not here")
+    words = plain_text(out["map"])
+    assert not re.search(r"\bundefined\b|\bNaN\b|\bnull\b", words) and "Waiting on you" in words
+    assert "done · checks did not pass" in words and "Live site" in words
+
+
+# ---- M4b: the steps ---------------------------------------------------------------------------------------------------------------------------
+TRUNK_STEPS = ["step:charter>brief", "step:brief>site-plan", "step:site-plan>pages", "step:pages>build", "step:build>live-site"]
+
+
+def test_m4b_a_four_engine_line_gives_the_charter_five_boxes_and_five_steps_in_order(line):
+    import j2ui_map as M
+    m = M.build(make_ctx(line))
+    assert ids(m, "engine") == TRUNK_STEPS
+    row = [n["id"] for n in m["nodes"] if n["row"] == "work"]
+    assert row == ["work:charter", "step:charter>brief", "work:brief", "step:brief>site-plan", "work:site-plan", "step:site-plan>pages",
+                   "work:pages", "step:pages>build", "work:build", "step:build>live-site", "work:live-site"]
+    assert len([n for n in nodes_of(m, "work") if n["lane"] == "trunk"]) == 6                  # the Charter and five boxes
+
+
+def test_m4b_without_a_goal_there_is_no_step_before_the_first_box(mods):
+    import j2ui_map as M
+    m = M.build(make_ctx(mods))
+    assert ids(m, "engine") == TRUNK_STEPS[1:] and ids(m, "work")[0] == "work:brief"
+
+
+def test_m4b_a_step_is_labelled_by_its_engine_and_the_first_is_make(line):
+    import j2ui_map as M
+    m = M.build(make_ctx(line))
+    assert [node(m, s)["label"] for s in TRUNK_STEPS] == ["Make", "Plan", "Write", "Check", "Publish"]
+    first = node(m, "step:charter>brief")
+    assert (first["workflows"], first["detail"], first["file"], first["version"]) == ([], "not recorded", None, None)
+    assert [node(m, s)["workflows"] for s in TRUNK_STEPS[1:]] == [["W-1"], ["W-2"], ["W-3"], ["W-4"]]
+
+
+def test_m4b_a_step_node_has_the_prototypes_keys_and_no_made_by(line):
+    import j2ui_map as M
+    m = M.build(make_ctx(line))
+    for n in nodes_of(m, "engine"):
+        assert list(n) == ENGINE_KEYS
+        assert (n["made_by"], n["team"], n["tag"], n["color"], n["unchecked"], n["row"]) == (None, None, None, None, [], "work")
+    assert "made_by" not in json.dumps(m["not_recorded"])
+
+
+def test_m4b_a_step_takes_the_status_and_lane_of_the_box_it_leads_to(mods):
+    import j2ui_map as M
+    W, R = mods[0], mods[1]
+    seed_line(W, upto=3)
+    add_ver(W, "Build", ok=False)
+    register(W, R)
+    m = M.build(make_ctx(mods))
+    assert node(m, "step:site-plan>pages")["status"] == "filed" and node(m, "step:pages>build")["status"] == "done_unchecked"
+    assert node(m, "step:build>live-site")["status"] == "not_made"
+    assert {n["lane"] for n in nodes_of(m, "engine")} == {"trunk"}
+
+
+def test_m4b_the_detail_counts_workflows_and_checks_passed(line):
+    import j2ui_map as M
+    W, R = line[0], line[1]
+    steps = [s for s in R.steps_view(REF, "Write")["steps"] if s["mode"] == "slot"]
+    assert len(steps) >= 2
+    put_step(R, W, "Write", steps[0]["id"], ok=True)
+    put_step(R, W, "Write", steps[1]["id"], ok=False)
+    m = M.build(make_ctx(line))
+    assert node(m, "step:site-plan>pages")["detail"] == "1 workflow · 1 of 2 checks passed"
+    assert node(m, "step:brief>site-plan")["detail"] == "not recorded"                      # Plan has no rows
+    assert m["status"]["checks"] == {"passed": 1, "run": 2}
+
+
+def test_m4b_the_engines_the_plan_left_out_make_no_step(mods):
+    import j2ui_map as M
+    W, R = mods[0], mods[1]
+    seed_line(W, upto=4)
+    register(W, R, left=("Publish",))
+    m = M.build(make_ctx(mods))
+    assert ids(m, "engine") == TRUNK_STEPS[:-1]
+    assert not [e for e in m["edges"] if "live-site" in e["from"] + e["to"]]
+
+
+def test_m4b_before_the_plan_is_registered_no_engine_has_a_workflow(mods):
+    import j2ui_map as M
+    W = mods[0]
+    seed_line(W, upto=3)
+    set_cycle(W, "adapting", 2)                                   # a cycle, and no plan registered yet
+    ctx = make_ctx(mods)
+    assert ctx.planned is False and all(e["wid"] is None for e in ctx.engines)
+    m = M.build(ctx)
+    assert all(n["workflows"] == [] for n in m["nodes"]) and all(node(m, s)["detail"] == "not recorded" for s in TRUNK_STEPS)
+    assert not [s for s in m["not_recorded"] if "not placed" in s]
+
+
+# ---- M4c: the edges -----------------------------------------------------------------------------------------------------------------------------
+def edges_of(m, kind):
+    return [e for e in m["edges"] if e["kind"] == kind]
+
+
+def test_m4c_step_edges_run_box_step_box_with_the_workflow_count(line):
+    import j2ui_map as M
+    m = M.build(make_ctx(line))
+    got = [(e["from"], e["to"], e["n"], e["basis"]) for e in edges_of(m, "step")]
+    assert got[:4] == [("work:charter", "step:charter>brief", 0, "declared"), ("step:charter>brief", "work:brief", 0, "declared"),
+                       ("work:brief", "step:brief>site-plan", 1, "recorded"), ("step:brief>site-plan", "work:site-plan", 1, "recorded")]
+    assert len(got) == 10 and all(e["label"] is None for e in edges_of(m, "step"))
+
+
+def test_m4c_the_only_handoff_of_the_born_line_is_the_charters(line):
+    import j2ui_map as M
+    m = M.build(make_ctx(line))
+    assert edges_of(m, "handoff") == [{"from": "work:charter", "to": "work:brief", "kind": "handoff", "label": "built from the charter",
+                                       "n": 1, "basis": "declared"}]
+
+
+def test_m4c_an_engine_that_reads_a_box_other_than_the_one_before_it_is_given_that_box(line):
+    import j2ui_map as M
+    ctx = make_ctx(line)
+    next(e for e in ctx.engines if e["name"] == "Check")["reads"] = "Site plan"        # Check reads the plan as well as the pages
+    ho = edges_of(M.build(ctx), "handoff")
+    assert {"from": "work:site-plan", "to": "work:build", "kind": "handoff", "label": "given to W-3", "n": 1, "basis": "recorded"} in ho
+    assert len(ho) == 2
+
+
+def test_m4c_speaks_to_counts_come_from_the_chat(line):
+    import j2ui_map as M
+    chat = [msg(1, "user", "a"), msg(2, "user", "b"), msg(3, "identity", "@Requester x", next="user"), msg(4, "identity", "to adaptation", next="adaptation"),
+            msg(5, "adaptation", "p", next="priority"), msg(6, "adaptation", "q", next="priority"), msg(7, "priority", "r", next="adaptation"),
+            msg(8, "priority", "to a workflow", next="W-1"), msg(9, "W-1", "w", next="priority"), msg(10, "audit", "self", next="audit")]
+    m = M.build(make_ctx(line, chat=chat))
+    got = [(e["from"], e["to"], e["n"]) for e in edges_of(m, "speaks_to") if e["label"] is None]
+    assert got == [("person:requester", "fn:identity", 2), ("fn:identity", "person:requester", 1), ("fn:identity", "fn:adaptation", 1),
+                   ("fn:adaptation", "fn:priority", 2), ("fn:priority", "fn:adaptation", 1)]
+    assert all(e["basis"] == "recorded" for e in edges_of(m, "speaks_to"))
+
+
+def test_m4c_no_chat_no_speaks_to_counts(line):
+    import j2ui_map as M
+    assert [e for e in edges_of(M.build(make_ctx(line)), "speaks_to") if e["label"] is None] == []
+
+
+def test_m4c_identity_wrote_the_charter_only_when_there_is_one(line, mods):
+    import j2ui_map as M
+    m = M.build(make_ctx(line))
+    assert {"from": "fn:identity", "to": "work:charter", "kind": "speaks_to", "label": "wrote the charter", "n": None, "basis": "recorded"} in m["edges"]
+
+
+def test_m4c_audit_audited_the_preview_box_as_many_times_as_it_read(line):
+    import j2ui_map as M
+    ctx = make_ctx(line)
+    assert not [e for e in edges_of(M.build(ctx), "speaks_to") if e["label"] == "audits"]
+    ev = lambda i, a: {"seq": i, "action": a, "actor": "Audit", "recipient": "Identity", "occurred_at": "2026-10-26T10:00:0%d+00:00" % i}
+    ctx = make_ctx(line)
+    ctx.events = [ev(1, "audit.finding_filed"), ev(2, "audit.not_read"), ev(3, "audit.finding_filed")]
+    got = [e for e in edges_of(M.build(ctx), "speaks_to") if e["label"] == "audits"]
+    assert got == [{"from": "fn:audit", "to": "work:build", "kind": "speaks_to", "label": "audits", "n": 2, "basis": "recorded"}]
+    assert "which other function worked on Build (only Audit is recorded)" in M.build(ctx)["not_recorded"]
+
+
+def test_m4c_asks_and_uses_lines_join_two_different_boxes(line):
+    import j2ui_mapedges as E
+    owner = {"W-1": "work:site-plan", "W-2": "work:pages", "W-3": "work:build"}
+    entries = [{"id": "Q-1", "asked_by": "W-2", "to": "W-1", "status": "answered", "used_by": ["W-3", "W-1"]},
+               {"id": "Q-2", "asked_by": "W-2", "to": "W-2", "status": "answered", "used_by": []},                  # inside one box
+               {"id": "Q-3", "asked_by": "identity", "to": "W-1", "status": "answered", "used_by": []},             # a function has no box
+               {"id": "Q-4", "asked_by": "W-2", "to": "W-1", "status": "open", "used_by": []}]                       # not answered
+    got = E.board_edges(entries, owner)
+    assert got == [{"from": "work:pages", "to": "work:site-plan", "kind": "asks", "label": "Q-1", "n": None, "basis": "recorded"},
+                   {"from": "work:build", "to": "work:site-plan", "kind": "uses", "label": "Q-1", "n": None, "basis": "recorded"}]
+    assert E.board_edges(None, owner) == [] and E.board_edges([{}], owner) == []
+
+
+# ---- M4d: the pill, the checks and what is not recorded ------------------------------------------------------------------------------------
+def state_of(m):
+    return m["status"]["state"], m["status"]["state_status"]
+
+
+def test_m4d_the_pill_says_what_stands(mods):
+    import j2ui_map as M
+    W, R = mods[0], mods[1]
+    assert state_of(M.build(make_ctx(mods))) == ("Idle", "idle")
+    set_cycle(W, "checking", 5)                                   # Adaptation waits on Root's review: nobody is working
+    assert state_of(M.build(make_ctx(mods))) == ("Waiting", "waiting")
+    set_cycle(W, "running", 6)
+    assert state_of(M.build(make_ctx(mods))) == ("Coordination running", "running")
+    set_cycle(W, "unread", 7)
+    put_run(W, "Write", "running", id="r-write-now")
+    assert state_of(M.build(make_ctx(mods))) == ("Running", "running")
+    set_cycle(W, "adapting", 2)
+    assert state_of(M.build(make_ctx(mods))) == ("Adaptation running", "running")
+    put_ask(W, "publish", engine="Publish")
+    assert state_of(M.build(make_ctx(mods))) == ("Waiting on you", "waiting_on_you")
+
+
+def test_m4d_a_finished_or_stopped_department_never_says_running(mods):
+    import j2ui_map as M
+    W = mods[0]
+    put_run(W, "Write", "running", id="r-write-now")
+    set_cycle(W, "done", 8)
+    assert state_of(M.build(make_ctx(mods))) == ("Done", "idle")
+    W.set_stopped(REF, True)
+    m = M.build(make_ctx(mods))
+    assert state_of(m) == ("Done", "idle") and "running" not in {n["status"] for n in m["nodes"]}
+    set_cycle(W, "assessing", 1)
+    assert state_of(M.build(make_ctx(mods))) == ("Stopped", "idle")
+
+
+def test_m4d_done_with_open_items(mods):
+    import j2ui_map as M
+    W = mods[0]
+    set_cycle(W, "done", 8)
+    assert state_of(M.build(make_ctx(mods)))[0] == "Done"
+    put_ask(W, "finding", engine="Audit", text="The phone number is missing")
+    assert state_of(M.build(make_ctx(mods)))[0] == "Waiting on you"          # an ask that waits on you comes first
+    d = W.dept(REF)
+    d["to_be_confirmed"] = [{"item": "D1", "why": "nobody gave the opening hours"}]
+    W.save_dept(REF, d)
+    W._put_ask(REF, dict(W.asks(REF)[0], status="stamped"))
+    assert state_of(M.build(make_ctx(mods))) == ("Done with open items", "idle")
+
+
+def test_m4d_not_recorded_names_every_gap_and_ends_with_the_two_fixed_lines(line):
+    import j2ui_map as M
+    nr = M.build(make_ctx(line))["not_recorded"]
+    assert len(nr) == len(set(nr)) and all(isinstance(x, str) and x for x in nr)
+    for want in ("version of Charter", "workflows of Brief", "tokens per function (Sutra records calls and cost, not tokens)",
+                 "which function worked on Brief: not recorded", "which function worked on Site plan: not recorded",
+                 "what Identity did (chat)", "chat (messages from the Requester)"):
+        assert want in nr, want
+    assert nr[-2:] == ["messages to and from workflow agents (W-n) are not drawn", "what the work draws on (Knows row, later version)"]
+
+
+def test_m4d_every_workflow_is_on_one_box_or_named(line):
+    import j2ui_map as M
+    ctx = make_ctx(line)
+    m = M.build(ctx)
+    placed = [w for n in nodes_of(m, "work") for w in n["workflows"]]
+    assert sorted(placed) == ["W-1", "W-2", "W-3", "W-4"] and len(placed) == len(set(placed))
+    ctx = make_ctx(line)
+    next(e for e in ctx.engines if e["name"] == "Write")["writes"] = "Ghost"             # an artifact the line does not hold
+    m = M.build(ctx)
+    placed = [w for n in nodes_of(m, "work") for w in n["workflows"]]
+    assert "W-2" not in placed and "workflows not placed on the map: W-2" in m["not_recorded"]
+
+
+def test_m4d_a_box_with_no_version_is_listed_and_a_made_one_names_its_gap(mods):
+    import j2ui_map as M
+    seed_line(mods[0], upto=2)
+    nr = M.build(make_ctx(mods))["not_recorded"]
+    assert "version of Pages" in nr and "version of Live site" in nr and "which function worked on Pages: not recorded" not in nr
+    assert "which function worked on Brief: not recorded" in nr

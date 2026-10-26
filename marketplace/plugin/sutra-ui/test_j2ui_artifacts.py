@@ -99,6 +99,48 @@ def proto_listing_keys():
     return list(ROW_KEYS)
 
 
+#: the 56 keys of api/state with their empty defaults (the page's poll() reads every one), for the page's own render
+STATE = {"chat": [], "total": 0, "status": "idle", "thinking": None, "step": 0, "steps": {}, "goal": None, "stamped": False,
+         "workflows": [], "budget": 0, "spent": 0, "conflicts": [], "audits": [], "versions": 0, "cycle": 0, "calls": 0, "error": None,
+         "done": False, "atoms_v1": {}, "turn": None, "cycle_turns": 0, "max_turns": 30, "paused": None, "outcome": None, "style": None,
+         "rubric": [], "playbooks": [], "playbooks_used": [], "playbook_saved": None, "mock": False, "model": "not recorded", "fixes": 1,
+         "force_audit_fail": None, "test_lessons": False, "force_question": None, "has_board": False, "placeholders": [], "report": None,
+         "sections": [], "write_lock": None, "agents": {}, "lanes": [], "call_log": [], "workable": None, "memory": False, "lessons": [],
+         "lessons_used": [], "lessons_saved": [], "output": "website", "output_label": "Website", "doc": False, "conditions": None,
+         "files": [], "docset": [], "docset_files": [], "saved": None}
+
+
+def page_render(map_=None, artifacts=None, board=None, state=None):
+    """The page's own renderMap, renderArtifacts and renderBoard over the adapter's output, run in node with the prototype's
+    j2_ui_render.js and j2_ui.html at the pin: {'map': html, 'artifacts': html, 'board': html}. j2ui-shell's copies are
+    used when they exist, else the git objects of the pin; None (printed) when node or the page is not here."""
+    if not shutil.which("node"):
+        print("j2ui views: node is not here, so the page's own render is not run")
+        return None
+    page = HERE / "j2ui_assets" / "j2_ui.html"
+    harness = HERE / "test_fixtures" / "j2ui" / "j2_ui_render.js"
+    html = page.read_text(encoding="utf-8") if page.is_file() else proto_show("j2_ui.html")
+    js = harness.read_text(encoding="utf-8") if harness.is_file() else proto_show("j2_ui_render.js")
+    if html is None or js is None:
+        return None
+    html = re.sub(r"""(["'`])/(api|site|file|shot)/""", r"\1\2/", html)        # the page as j2ui-shell serves it (S1)
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        (tmp / "j2_ui.html").write_text(html, encoding="utf-8")
+        (tmp / "j2_ui_render.js").write_text(js, encoding="utf-8")
+        (tmp / "state.json").write_text(json.dumps(dict(STATE, **(state or {}))), encoding="utf-8")
+        (tmp / "d.json").write_text(json.dumps({"map": map_ or {}, "artifacts": artifacts or {}, "board": board or []}), encoding="utf-8")
+        out = subprocess.run(["node", str(tmp / "j2_ui_render.js"), str(tmp / "j2_ui.html"), str(tmp / "state.json"), "", str(tmp / "d.json")],
+                             capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0, out.stderr[-800:]
+    return json.loads(out.stdout)
+
+
+def plain_text(html):
+    """The words of a rendered pane: tags and style blocks taken out."""
+    return " ".join(re.sub(r"<[^>]+>", " ", re.sub(r"<style.*?</style>", " ", html or "", flags=re.S)).split())
+
+
 # ---- a department in a temp home --------------------------------------------------------------------------------------
 @pytest.fixture
 def mods(tmp_path, monkeypatch):
@@ -247,7 +289,7 @@ def make_ctx(mods_, ref=REF, chat=None, paused=None):
 def msg(i, who, text, **more):
     """A chat message in the prototype's shape (id is its 1-based position)."""
     m = {"id": i, "t": "10:00:%02d" % (i % 60), "who": who, "text": text, "step": None}
-    if who == "identity":
+    if who == "identity" and more.get("next", "user") == "user":         # to_user is Identity's alone, on a message to the owner
         m["to_user"] = True
     m.update(more)
     return m

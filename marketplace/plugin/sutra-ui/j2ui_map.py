@@ -20,7 +20,9 @@ call and never raises: a wrong shape blanks the page, so a failure returns the e
 from datetime import datetime
 
 import j2ui_artifacts as A
+import j2ui_mapedges as E
 import website_dept as W
+from j2ui_mapedges import checks_of, plural as _plural
 
 try:                                    # the page's legend, once j2ui-core is merged; the pinned copy below until then
     import j2ui_common as C
@@ -73,10 +75,6 @@ def empty(why="nothing to draw yet", ref=None):
             "nodes": [], "edges": [], "legend": [dict(r) for r in LEGEND], "built_from": [], "not_recorded": [why]}
 
 
-def _plural(n, word):
-    return "%d %s%s" % (n, word, "" if n == 1 else "s")
-
-
 def closed(ctx):
     """The department has ended its work: the goal is reached or it is stopped. A finished department never says running."""
     return bool(getattr(ctx, "stopped", False)) or getattr(ctx, "state", None) in ("done", "stopped")
@@ -107,19 +105,6 @@ def _secs(row):
         return max(0.0, (datetime.fromisoformat(row["ended"]) - datetime.fromisoformat(row["started"])).total_seconds())
     except (KeyError, TypeError, ValueError):
         return 0.0
-
-
-def slot_steps(engine):
-    """The slot steps of an engine that have a latest row: [(step, last)]. A gate or a rule is a decision on the way to a
-    start, not a run of work (engine_runtime.steps_view says which)."""
-    sv = (engine or {}).get("steps_view") or {}
-    return [(s, s["last"]) for s in sv.get("steps") or [] if isinstance(s, dict) and s.get("mode") == "slot" and s.get("last")]
-
-
-def checks_of(engine):
-    """(passed, run) over the slot steps of one engine that have a latest row."""
-    rows = slot_steps(engine)
-    return sum(1 for _, last in rows if last.get("ok") is True), len(rows)
 
 
 # ---- the person and the five functions ---------------------------------------------------------------------------------------
@@ -219,6 +204,32 @@ def boxes(ctx):
     return trunk, branch
 
 
+def outcome(ctx):
+    """Done, or Done with open items: a done-when item that still rests on a fact nobody gave, or a finding still asked
+    (the same rule as the state's outcome); None while the department is not done."""
+    if getattr(ctx, "state", None) != "done":
+        return None
+    items = W.items_of(ctx.d) if isinstance(getattr(ctx, "d", None), dict) else []
+    open_ask = any(isinstance(a, dict) and a.get("kind") == "finding" and a.get("status") == "pending" for a in _list(ctx, "asks"))
+    return "Done with open items" if open_ask or any(i.get("confirm") for i in items) else "Done"
+
+
+def status_line(ctx, fns):
+    """(state, state_status) for the pill at the top: who is running now, or how it stands."""
+    if getattr(ctx, "paused_ask", None):
+        return "Waiting on you", "waiting_on_you"
+    work = [n for n in fns if n["status"] == "running"]
+    if work:
+        return "%s running" % work[0]["label"], "running"
+    if getattr(ctx, "state", None) == "done":
+        return outcome(ctx), "idle"
+    if getattr(ctx, "stopped", False) or getattr(ctx, "state", None) == "stopped":
+        return "Stopped", "idle"
+    if any(isinstance(e, dict) and e.get("state") == "Running" for e in _list(ctx, "engines")):
+        return "Running", "running"
+    return ("Waiting", "waiting") if (getattr(ctx, "cur", None) or {}).get("cycle_id") else ("Idle", "idle")
+
+
 def _build(ctx):
     nr = ["version of Charter"]
     chat = _list(ctx, "chat")
@@ -229,12 +240,49 @@ def _build(ctx):
     goal = has_goal(ctx)
     if not goal:
         nr.append("the Charter: no goal is recorded yet")
-    work = ([charter()] if goal else []) + [b["node"] for b in trunk + branch]
-    nodes = [person(ctx)] + fns + work
+    chain = ([{"slug": "charter", "eng": None, "node": charter(), "status": "filed"}] if goal else []) + trunk
+    steps = E.step_nodes(chain)
+    work = []
+    for i, b in enumerate(chain):
+        work += ([steps[i - 1]] if i else []) + [b["node"]]
+    work += [b["node"] for b in branch]
+    placed = {w for b in trunk + branch for w in b["node"]["workflows"]}
+    wids = [e["wid"] for e in _list(ctx, "engines") if isinstance(e, dict) and e.get("wid")]
+    first = (trunk[0]["art"]["name"] if trunk else "the first artifact")
+    nr += ["workflows of " + first] + ["workflows of " + b["node"]["label"] for b, s in zip(chain[1:], steps) if not s["workflows"]]
+    lost = [w for w in wids if w not in placed]
+    if lost:
+        nr.append("workflows not placed on the map: " + ", ".join(lost))
+    prev = A.previewable(ctx)
+    target = next((b["node"]["id"] for b in trunk if b["art"]["name"] == prev), None)
+    audited = bool(E.audits(ctx) and target)
+    for b in trunk:
+        n = b["node"]
+        if n["version"] is None:
+            nr.append("version of " + n["label"])
+        elif audited and n["id"] == target:
+            nr.append("which other function worked on %s (only Audit is recorded)" % n["label"])
+        else:
+            nr.append("which function worked on %s: not recorded" % n["label"])
+    owner = {w: b["node"]["id"] for b in trunk + branch for w in b["node"]["workflows"]}
+    try:
+        import j2ui_board as B
+        entries = B.build(ctx).get("entries") or []
+    except Exception:  # noqa: BLE001 -- no board yet (W3-BOARD): no asks or uses lines
+        entries = []
+    edges = (E.step_edges(chain, steps) + E.handoffs(chain) + E.speaks(chat) + E.lines(ctx, goal, target) + E.board_edges(entries, owner))
+    nr += ["tokens per function (Sutra records calls and cost, not tokens)", "messages to and from workflow agents (W-n) are not drawn",
+           "what the work draws on (Knows row, later version)"]
+    passed = run = 0
+    for e in _list(ctx, "engines"):
+        p, r = checks_of(e)
+        passed, run = passed + p, run + r
+    state, state_status = status_line(ctx, fns)
     return {"schema": SCHEMA, "run": (getattr(ctx, "cur", None) or {}).get("cycle_id") or ctx.ref,
             "live": any((n.get("state") == "working") for n in (getattr(ctx, "fv", None) or {}).get("functions") or []) or bool(getattr(ctx, "paused_ask", None)),
-            "status": {"state": "Idle", "state_status": "idle", "checks": {"passed": 0, "run": 0}}, "nodes": nodes, "edges": [],
-            "legend": [dict(r) for r in LEGEND], "built_from": ["department record"], "not_recorded": nr}
+            "status": {"state": state, "state_status": state_status, "checks": {"passed": passed, "run": run}},
+            "nodes": [person(ctx)] + fns + work, "edges": edges, "legend": [dict(r) for r in LEGEND], "built_from": ["department record"],
+            "not_recorded": list(dict.fromkeys(nr))}
 
 
 def build(ctx):
