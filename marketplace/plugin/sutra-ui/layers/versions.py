@@ -8,19 +8,22 @@ a version the registry can serve, over the pure law of layers/lineage.py:
     chain                 the version, the one it extends, and so on up to a version with no PARENT
     recipe_of_module      the engine object a version brings: its template, its whole file, its patch over its parent's, or its parent's
     recipe                the same for an implementation id
+    definition_faults     the runtime's own law: engine_runtime.validate with the version's recipe in its layer's place (the second law)
+    unchanged_steps       the steps a version leaves exactly as its parent has them
 
-layers/__init__.py publishes them as thin wrappers (inherit, recipe, chain), so a version module writes
-`from layers import inherit` and a caller writes `layers.recipe(impl_id)`.
+layers/__init__.py publishes five of them as thin wrappers (inherit, recipe, chain, definition_faults, unchanged_steps), so a
+version module writes `from layers import inherit` and a caller writes `layers.recipe(impl_id)`.
 
-A malformed lineage or recipe is a lineage.ModelFault, never a bare exception. Nothing here imports the runtime at import time:
-engine_runtime is reached through the lazy proxy, inside the functions, because tests reload engine_runtime.
+A malformed lineage or recipe is a lineage.ModelFault, never a bare exception; definition_faults and unchanged_steps take it in and
+answer with a fault or with nothing unchanged. Nothing here imports the runtime at import time: engine_runtime and layer_schema are
+reached through the lazy proxies, inside the functions, because tests reload engine_runtime.
 """
 import copy
 import json
 from pathlib import Path
 
 import layers
-from layers import R
+from layers import R, S
 from layers import lineage as L
 
 #: the functions a version publishes beside its tables (A1.18); a child that defines none of its own has its parent's
@@ -129,3 +132,51 @@ def recipe_of_module(module, folder=None):
 def recipe(impl_id, folder=None):
     """recipe_of_module of the implementation an id names; ModelFault when it does not load."""
     return recipe_of_module(_load(impl_id), folder)
+
+
+def definition_faults(impl, provided=None):
+    """The second law over a recipe (A2-R9): [] when the assembled definitions validate -- engine_runtime.validate, the function
+    defs() raises on -- with this version's resolved recipe in its layer's place, else its faults. `impl` is an id or a loaded
+    module; `provided` is {kind: names} a module outside layers/ brings (default: its own CODE, PROMPT, DRAFT and CHECK). Root's
+    recipe is the Library's own: nothing to swap, so []. A recipe that cannot be read is returned as the one fault."""
+    try:
+        module = _load(impl) if isinstance(impl, str) else impl
+        if getattr(module, 'RECIPE_TEMPLATE', None):
+            return []
+        mine = recipe_of_module(module)
+    except L.ModelFault as exc:
+        return [str(exc)]
+    title = S.TITLE.get(getattr(module, 'LAYER', None))
+    if title is None:
+        return ['LAYER %r is not a layer' % (getattr(module, 'LAYER', None),)]
+    try:
+        d = copy.deepcopy(R.defs())
+    except ValueError as exc:
+        return [str(exc)]
+    d['engines'][title] = mine
+    return R.validate(d, provided or {k: set(getattr(module, k.upper(), None) or {}) for k in layers.KINDS})
+
+
+def _same(a, b):
+    """The same registry entry: one object, or two ref_to delegates to the same target (or no entry on either side)."""
+    return a is b or (getattr(a, 'legacy', None) is not None and getattr(a, 'legacy', None) == getattr(b, 'legacy', None))
+
+
+def unchanged_steps(impl_id):
+    """The ids of the steps a version inherits unchanged (A2-D13): the step of its resolved recipe equals the one of its PARENT's
+    resolved recipe, and the code, prompt, draft and check it names are the parent's entries (the same callable, or a ref_to with
+    the same target). set() for a version with no PARENT, and when the lineage or a recipe cannot be read: when in doubt a step is
+    not unchanged, and a learned rung does not carry over to it."""
+    try:
+        module = _load(impl_id)
+        parent_id = getattr(module, 'PARENT', None)
+        if not parent_id:
+            return set()
+        parent = _load(parent_id)
+        theirs = {s['id']: s for s in L.all_steps(recipe_of_module(parent)) if s.get('id')}
+        steps = L.all_steps(recipe_of_module(module))
+    except L.ModelFault:
+        return set()
+    return {s['id'] for s in steps if s.get('id') and theirs.get(s['id']) == s and all(
+        _same((getattr(module, attr, None) or {}).get(s[key]), (getattr(parent, attr, None) or {}).get(s[key]))
+        for attr, key in TABLES if s.get(key))}

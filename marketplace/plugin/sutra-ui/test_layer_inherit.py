@@ -356,3 +356,132 @@ def test_i1_recipes_leaves_the_missing_and_the_not_json_refusals_as_they_were(tm
     (tmp_path / "tree" / "coordination" / "v2.json").write_text("{not json", encoding="utf-8")
     with pytest.raises(ValueError, match="Coordination's recipe .coordination/v2. is not JSON"):
         layers.recipes()
+
+
+# ---- I2 . definition_faults and unchanged_steps ------------------------------------------------------------------------
+def soft_step(sid, **where):
+    """A new step by an agent (born at C0, a prompt and its draft): the kind a unit may hold between its first and its last."""
+    return dict({"id": sid, "name": "A soft step", "nature": "decide", "born": "C0", "ceiling": "C2", "prompt": "coord_tie",
+                 "draft": "coord_tie_draft", "out": {"answer": "str", "why": "str"}, "answer": "answer",
+                 "check": "names_who_goes_first"}, **where)
+
+
+def code_step(sid, **where):
+    return dict({"id": sid, "name": "A step by code", "nature": "transform", "born": "C2", "code": "coord_ready",
+                 "check": "said_what_it_did"}, **where)
+
+
+def passes_the_first_law(child):
+    """The resolved recipe of a patch child, after asserting that lineage.recipe_faults has nothing to say of it."""
+    merged = V.recipe_of_module(child)
+    assert L.recipe_faults(layers.recipe("coordination/v1"), merged, "coordination") == []
+    return merged
+
+
+def test_i2_the_fixture_child_and_each_v1_have_definitions_that_validate(child):
+    assert layers.definition_faults("coordination/v2") == []
+    assert layers.definition_faults(child) == []
+    for layer in S.LAYER_NAMES:
+        assert layers.definition_faults("%s/v1" % layer) == [], layer
+    assert layers.definition_faults(layers.load("root/v1")) == [], "Root's recipe is the Library's: nothing to swap"
+
+
+def test_i2_a_soft_step_first_in_a_unit_passes_the_first_law_and_fails_the_definitions(tmp_path):
+    child = stub(tmp_path, patch=patch_of(soft_step("coord.pre", before="coord.table")))
+    assert [s["id"] for s in born_steps(passes_the_first_law(child))] == ["coord.pre", "coord.table"]
+    got = layers.definition_faults(child)
+    assert len(got) == 1 and "a unit starts with a step by code; agents come between" in got[0], got
+    assert got[0].startswith("Coordination, An engine is born:")
+
+
+def test_i2_a_soft_step_last_in_a_unit_passes_the_first_law_and_fails_the_definitions(tmp_path):
+    child = stub(tmp_path, patch=patch_of(soft_step("coord.post", after="coord.table")))
+    assert [s["id"] for s in born_steps(passes_the_first_law(child))] == ["coord.table", "coord.post"]
+    got = layers.definition_faults(child)
+    assert len(got) == 1 and "a unit ends with a step by code; agents come between" in got[0], got
+
+
+def test_i2_an_id_another_layer_uses_passes_the_first_law_and_fails_the_definitions(tmp_path):
+    taken = L.step_ids(layers.recipe("identity/v1"))[0]
+    child = stub(tmp_path, patch=patch_of(code_step(taken, after="coord.table")))
+    assert taken in L.step_ids(passes_the_first_law(child))
+    assert layers.definition_faults(child) == ["Coordination, %s: the id is used by Identity too" % taken]
+
+
+def test_i2_a_recipe_that_cannot_be_read_is_the_one_fault(tmp_path):
+    assert layers.definition_faults(stub(tmp_path, RECIPE="v2.json")) == ["the recipe is missing: v2.json"]
+    assert layers.definition_faults(stub(tmp_path / "x", patch=patch_of({"id": "coord.table", "check": "facts_are_closed"}))) == [
+        "coord.table: check is the parent's and a version leaves it as it is; changing what a step is for, how it is judged or "
+        "when it runs makes a new step"]
+    assert layers.definition_faults("coordination/v9") == ["coordination/v9 does not load"]
+    assert layers.definition_faults(stub(tmp_path / "y", LAYER="no-such-layer", RECIPE="v2.json", PARENT=None)) != []
+
+
+def test_i2_the_names_a_module_brings_are_provided_and_those_it_does_not_are_not(tmp_path):
+    v1 = layers.load("coordination/v1")
+    own = {"coord_probe": lambda ctx, step, item: {"said": "probe"}}
+    child = stub(tmp_path, patch=patch_of(code_step("coord.probe", code="coord_probe", after="coord.table")),
+                 CODE=dict(v1.CODE, **own))
+    assert layers.definition_faults(child) == [], "its own CODE is provided by default"
+    again = layers.definition_faults(child, {"code": set()})
+    assert again == ["Coordination, coord.probe: no function named coord_probe ships with the app"], "what is given is what counts"
+    assert layers.definition_faults(child, {"code": {"coord_probe"}}) == []
+    d = copy.deepcopy(R.defs())
+    d["engines"]["Coordination"] = V.recipe_of_module(child)
+    assert R.validate(d) == again, "validate(d) with nothing provided is as it always was"
+    assert R.validate(d, {"code": {"coord_probe"}}) == []
+
+
+def test_i2_validate_without_provided_is_unchanged_for_the_definitions_as_they_stand():
+    assert R.validate(R.defs()) == [] and R.validate(R.defs(), None) == [] and R.validate(R.defs(), {}) == []
+    assert R.validate(R.defs(), {"code": None, "prompt": ()}) == []
+
+
+def test_i2_unchanged_steps_of_the_fixture_child_is_every_step_of_its_parent_but_the_one_renamed(child):
+    parent = set(L.step_ids(layers.recipe("coordination/v1")))
+    got = layers.unchanged_steps("coordination/v2")
+    assert got == parent - {"coord.table"}
+    assert "coord.probe" not in got and "coord.table" not in got and len(parent) > 5
+
+
+def test_i2_unchanged_steps_of_a_version_with_no_parent_is_nothing():
+    for layer in S.LAYER_NAMES:
+        assert layers.unchanged_steps("%s/v1" % layer) == set(), layer
+
+
+def test_i2_unchanged_steps_of_a_lineage_that_cannot_be_read_is_nothing(monkeypatch):
+    lineage_of(monkeypatch, {"identity/v2": "identity/v7"})
+    assert layers.unchanged_steps("identity/v2") == set()
+    assert layers.unchanged_steps("identity/v9") == set()
+
+
+def test_i2_a_ref_to_made_again_is_unchanged_and_a_body_replaced_is_not(tmp_path, monkeypatch):
+    v1 = layers.load("coordination/v1")
+    ready_steps = {s["id"] for s in L.all_steps(layers.recipe("coordination/v1")) if s.get("code") == "coord_ready"}
+    assert ready_steps == {"coord.ready"}
+    everything = set(L.step_ids(layers.recipe("coordination/v1")))
+
+    again = stub(tmp_path, CODE=dict(v1.CODE, coord_ready=layers.ref_to("coord_ready")))
+    assert again.CODE["coord_ready"] is not v1.CODE["coord_ready"] and again.CODE["coord_ready"].legacy == v1.CODE["coord_ready"].legacy
+    monkeypatch.setitem(layers._LOADED, "coordination/v2", again)
+    assert layers.unchanged_steps("coordination/v2") == everything, "a new delegate to the same target is the parent's body"
+
+    replaced = stub(tmp_path / "r", CODE=dict(v1.CODE, coord_ready=lambda ctx, step, item: {"said": "another body"}))
+    monkeypatch.setitem(layers._LOADED, "coordination/v2", replaced)
+    assert layers.unchanged_steps("coordination/v2") == everything - {"coord.ready"}
+
+    other_target = stub(tmp_path / "t", CODE=dict(v1.CODE, coord_ready=layers.ref_to("coord_record")))
+    monkeypatch.setitem(layers._LOADED, "coordination/v2", other_target)
+    assert layers.unchanged_steps("coordination/v2") == everything - {"coord.ready"}
+
+
+def test_i2_a_replaced_prompt_draft_or_check_makes_the_step_that_names_it_changed(tmp_path, monkeypatch):
+    v1 = layers.load("coordination/v1")
+    everything = set(L.step_ids(layers.recipe("coordination/v1")))
+    new_check = lambda ctx, step, item, out: {"ok": True, "notes": []}  # noqa: E731
+    cases = (("PROMPT", "coord_tie", {"coord.tie"}), ("DRAFT", "coord_tie_draft", {"coord.tie"}),
+             ("CHECK", "names_who_goes_first", {"coord.pick", "coord.tie"}))
+    for i, (table, name, steps) in enumerate(cases):
+        mine = dict(getattr(v1, table), **{name: new_check})
+        monkeypatch.setitem(layers._LOADED, "coordination/v2", stub(tmp_path / str(i), **{table: mine}))
+        assert layers.unchanged_steps("coordination/v2") == everything - steps, (table, name)
