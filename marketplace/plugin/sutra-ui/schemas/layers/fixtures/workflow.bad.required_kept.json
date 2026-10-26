@@ -1,0 +1,82 @@
+{
+ "about": "A website plan that leaves out Check, which the website kind requires.",
+ "standard": "required_kept",
+ "stage": "registration",
+ "kind": "website",
+ "dept": {
+  "kind": "website",
+  "done_items": [
+   {
+    "id": "D1",
+    "text": "The work is done",
+    "how": "model",
+    "level": "outcome"
+   },
+   {
+    "id": "D2",
+    "text": "Every part is checked",
+    "how": "code",
+    "level": "target"
+   }
+  ],
+  "workflows": [
+   {
+    "version": 1,
+    "engines": [
+     "Plan",
+     "Write",
+     "Publish"
+    ],
+    "source": "library",
+    "registered": "2026-10-27T10:00:00Z",
+    "by": "Root"
+   }
+  ]
+ },
+ "workflow": {
+  "schema_version": 1,
+  "kind": "website",
+  "source": "library",
+  "engines": [
+   {
+    "name": "Plan",
+    "does": "plans the pages",
+    "reads": "Brief",
+    "writes": "Site plan",
+    "covers": [
+     "D1"
+    ]
+   },
+   {
+    "name": "Write",
+    "does": "writes each page",
+    "reads": "Site plan",
+    "writes": "Pages",
+    "covers": [
+     "D1"
+    ]
+   },
+   {
+    "name": "Publish",
+    "does": "puts the pages live",
+    "reads": "Pages",
+    "writes": "Live site",
+    "covers": [
+     "D2"
+    ]
+   }
+  ],
+  "deliverable": "Live site",
+  "covers": {
+   "D1": [
+    "Plan",
+    "Write"
+   ],
+   "D2": [
+    "Publish"
+   ]
+  },
+  "covers_by": "adaptation"
+ },
+ "ctx": {}
+}
