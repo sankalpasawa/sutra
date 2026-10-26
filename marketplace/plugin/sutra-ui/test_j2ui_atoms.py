@@ -160,7 +160,8 @@ def test_w3_an_attempt_is_a_run_of_the_engine_not_a_row(mods):
     step_row(R, "Write", "write.page", ok=False, notes=["no body"], run_id="r-w2", item="index")   # the next run
     atoms, ctx = atoms_of(mods, "Write")
     a = atoms[1]
-    assert a["attempts"] == 2 and [r["attempt"] for r in a["results"]] == [1, 1, 1, 2] and {r["of"] for r in a["results"]} == {2}
+    assert a["attempts"] == 2 and [r["attempt"] for r in a["results"]] == [2, 1, 1, 1] and {r["of"] for r in a["results"]} == {2}
+    assert [r["evidence"] for r in a["results"]][1:] == ["%s: has a title and a body" % i for i in ("index", "about", "doctors")], "the latest run first, each run's rows in order"
     assert a["status"] == "failed", "the latest run decides: it failed"
     assert a["human_output"]["attempt"] == 2
 
@@ -389,3 +390,32 @@ def test_w3_the_prototypes_page_draws_every_card_from_these_atoms(mods, monkeypa
     for text in (plan, check, never, table):
         assert not re.search(r"undefined|NaN|\bnull\b|\[object", text), re.findall(r".{30}(?:undefined|NaN|null|\[object).{30}", text)
     assert "calls 0/" in table and "retries 0/%d" % len(mods[1].WAITS) in table and "%d min" % mods[0].dept(REF)["windows"]["Plan"] in table
+
+
+def test_w3_the_first_result_the_page_shows_is_the_latest_runs(mods):
+    W, R, J, F = mods
+    step_row(R, "Plan", "plan.read", ok=False, notes=["the brief is empty"], run_id="r-1")
+    step_row(R, "Plan", "plan.read", ok=True, notes=["the brief has words"], run_id="r-2")
+    atoms, ctx = atoms_of(mods, "Plan")
+    assert [(r["attempt"], r["pass"]) for r in atoms[0]["results"]] == [(2, True), (1, False)]
+    got = K.build(ctx)
+    state = page_state(got)
+    text = shown(render(state, "atomCards(s, s.workflows[0])"))
+    assert re.search(r"Passed\s*: the brief has words\. Attempt 2 of 2", text), text[:1200]
+
+
+def test_w3_an_atom_carries_the_latest_rows_of_a_step_not_every_row_it_ever_had(mods):
+    W, R, J, F = mods
+    for n in range(100):
+        step_row(R, "Plan", "plan.read", ok=n % 10 != 0, notes=["note %d" % n], run_id="r-%03d" % n)
+    atoms, ctx = atoms_of(mods, "Plan")
+    a = atoms[0]
+    assert a["attempts"] == 100 and len(a["results"]) == A.RESULTS_MAX == 30
+    assert [r["attempt"] for r in a["results"]] == list(range(100, 70, -1)) and {r["of"] for r in a["results"]} == {100}
+    assert a["status"] == "passed" and a["human_output"]["text"] == "note 99" and a["human_output"]["attempt"] == 100
+
+
+def test_w3_runs_are_grouped_in_one_pass(mods):
+    rows = [{"id": "s-%d" % i, "run": "r-%d" % (i // 2)} for i in range(6)] + [{"id": "s-x", "run": None}, {"id": "s-y"}]
+    got = A._by_run(rows)
+    assert list(got) == ["r-0", "r-1", "r-2", "s-x", "s-y"] and [len(v) for v in got.values()] == [2, 2, 2, 1, 1]

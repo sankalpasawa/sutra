@@ -22,7 +22,10 @@ brief has words'). The check's own id (brief_is_text) is an inside word and appe
 does not print.
 
 An attempt is a run of the engine that ran the step: a step that works on each page in turn (Write a page) has one row for each
-page in one run, and that is one attempt with several results, not several attempts.
+page in one run, and that is one attempt with several results, not several attempts. The results are the step's rows, the latest
+run first (the page sets the first result against the check it shows, and that is the one a person wants), each run's rows in
+the order they were made, and no more than RESULTS_MAX of them: a department that has run for months does not send every row it
+ever wrote on every poll. `attempts` is still the number of runs.
 
 The small readers (plain, cut, sentence, epoch, hhmmss, memoised) are shared by j2ui_work.py and j2ui_audit.py, the three modules
 of this package, so that no string they emit says an inside word: a check's id (brief_is_text) is never a sentence.
@@ -41,6 +44,7 @@ ASSET = Path(__file__).resolve().parent / "j2ui_assets" / "j2_schema.py"
 ID_LIKE = re.compile(r"^[a-z]+(_[a-z]+)+$")                  # brief_is_text: a check's id, never a sentence
 ANSWER_MAX = 300                                             # a note on an atom card is a line, not a page
 FILES_MAX = 200
+RESULTS_MAX = 30                                             # the latest rows of a step an atom carries
 _schema = None                                               # the atom/1 module once loaded; a test may set it
 _LOADED = {}                                                 # path -> (mtime_ns, module): a changed file is read again
 
@@ -179,28 +183,26 @@ def _filing(e, steps):
     return marked or ({steps[-1]["id"]} if steps else set())
 
 
-def _runs_of(rows):
-    """The runs the rows belong to, in the order they began: a row with no run is a run of its own."""
-    order = []
+def _by_run(rows):
+    """The rows grouped by the run that made them, the runs in the order they began: a row with no run is a run of its own."""
+    runs = {}
     for r in rows:
-        key = r.get("run") or r.get("id")
-        if key not in order:
-            order.append(key)
-    return order
+        runs.setdefault(r.get("run") or r.get("id"), []).append(r)
+    return runs
 
 
 def _atom(ctx, e, step, j, rows, files):
     aid = "%s.a%d" % (e["wid"], j)
     name = plain(step.get("name"))
-    runs = _runs_of(rows)
+    runs = _by_run(rows)
     ordinal = {k: i for i, k in enumerate(runs, 1)}
     last = rows[-1] if rows else None
-    latest = [r for r in rows if (r.get("run") or r.get("id")) == runs[-1]] if rows else []
+    latest = runs[next(reversed(runs))] if runs else []
     oks = [(r.get("check") or {}).get("ok") for r in latest]
     met = False if False in oks else True if oks and all(o is True for o in oks) else None
     check = sentence(name, (last.get("check") or {}).get("notes") if last else None)
     results = []
-    for r in rows:
+    for r in [r for k in reversed(list(runs)) for r in runs[k]][:RESULTS_MAX]:
         ok = (r.get("check") or {}).get("ok")
         notes = [plain(n) for n in (r.get("check") or {}).get("notes") or [] if plain(n)]
         said = "; ".join(notes) or ("passed its check" if ok else "failed its check" if ok is False else "its check could not run")
