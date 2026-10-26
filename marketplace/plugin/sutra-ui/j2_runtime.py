@@ -730,12 +730,16 @@ def refused(ref, engines, faults, checks=None):
     names = [e if isinstance(e, str) else e.get("name") for e in engines]
     cur = _state(ref) or {}
     n = int(cur.get("repairs") or 0) + 1
+    # each refusal is its own event: the count starts again when the plan is shaped afresh (reopened), so the count alone
+    # would name an earlier refusal of the same cycle and the append would return that row instead (found by a verifier
+    # 2026-10-23: after new words reopened a blocked plan, Root's three refusals never reached the ledger)
+    key = "workflow-refused-%d-%s" % (n, uuid.uuid4().hex[:6])
     if names:
         note(ref, 5, "Root", "Adaptation", "workflow.blocked", "refused", "Root's check refused the workflow: %s." % "; ".join(faults)[:300],
-             "workflow-refused-%d" % n, {"workflow": names, "faults": list(faults), "checks": list(checks or [])}, reason_codes=["standards"])
+             key, {"workflow": names, "faults": list(faults), "checks": list(checks or [])}, reason_codes=["standards"])
     else:
         note(ref, 2, "Adaptation", "Identity", "workflow.blocked", "refused", "The shaped line did not pass its check: %s." % "; ".join(faults)[:300],
-             "workflow-refused-%d" % n, {"workflow": [], "faults": list(faults), "checks": list(checks or [])}, reason_codes=["check.failed"])
+             key, {"workflow": [], "faults": list(faults), "checks": list(checks or [])}, reason_codes=["check.failed"])
     _set(ref, step=5, state="reshaping", repairs=n)
     return n
 

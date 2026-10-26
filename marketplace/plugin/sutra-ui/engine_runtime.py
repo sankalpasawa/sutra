@@ -2667,8 +2667,9 @@ ASSENT = {"yes", "ok", "okay", "sure", "stamp", "approve", "approved", "go", "ah
 
 def _stampable(a):
     """An ask a yes or a no in the chat decides: pending and not escalated. Identity's question takes words, never a
-    stamp (M0.6), so it is never the ask a yes picks (found 2026-10-23: 'yes, a site for my bakery' failed Root's run)."""
-    return a["status"] == "pending" and not a.get("escalated") and a.get("kind") != "j2_identity"
+    stamp (M0.6), and an ask with options takes one of them (M3.5), so neither is the ask a yes picks (found 2026-10-23:
+    'yes, a site for my bakery' failed Root's run; and a bare yes with a blocked plan's card open failed it again)."""
+    return a["status"] == "pending" and not a.get("escalated") and a.get("kind") != "j2_identity" and not a.get("options")
 
 
 def _question_of(dref):
@@ -2762,6 +2763,15 @@ def identity_hand(ctx, step, item):
             post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "Nothing is waiting for a stamp. %s asks you: %s Answer it in your own words."
                                                     % (dn, q["text"]), "dept": qref, "from": dn}, thread=th, about={"dept": qref, "name": dn})
             return {"said": "nothing waits for a stamp; %s's question takes words" % dn}
+        # nothing to stamp, and a card with ways forward is open (a blocked plan, M3.5): it takes one of its options, so the
+        # person hears which card waits and how it is answered, never a fault
+        oref, card = next(((k, a) for k in kids + [ref] for a in W.asks(k) if a.get("options") and a["status"] == "pending"), (None, None))
+        if card:
+            dn = (W.dept(oref) or {}).get("name")
+            post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "Nothing is waiting for a stamp. %s asks you to choose: %s Choose one of "
+                                                    "the ways forward on its card, or say what to change." % (dn, card.get("title") or card["text"]),
+                                                    "dept": oref, "from": dn}, thread=th, about={"dept": oref, "name": dn})
+            return {"said": "nothing waits for a stamp; %s's card takes one of its options" % dn}
         post(ref, "Identity", OWNER, "inform", {"word": "request", "done": "nothing is waiting for a stamp"}, thread=th)
         return {"said": "nothing waits for a stamp"}
     if wants in ("stop", "start"):
@@ -4609,25 +4619,31 @@ def _reopen(ref, d, words, by="your words"):
         J.reopened(ref)
     for a in W.asks(ref):
         if a.get("kind") == "blocked" and a["status"] == "pending":
-            W._put_ask(ref, dict(a, status="chosen", decided=W.now(), by="the owner",
-                                 chosen={"id": W.WORDS_OPTION, "label": "Change the plan in my words", "at": W.now(), "by": "the owner", "words": words}))
+            way = next((o for o in a.get("options") or [] if o.get("id") == W.WORDS_OPTION), None) or \
+                W.option(W.WORDS_OPTION, "Change the plan in my words", "")
+            W._put_ask(ref, dict(a, status="chosen", decided=W.now(), by="the owner", chosen=W.chosen(way, words)))
     _line_request(ref, d, _brief_text(ref).strip() or words)
     _tell(ref, d, {"src": "Root" if d.get("root") else OWNER}, "inform",
           {"word": "line", "done": "Adaptation is shaping the plan afresh from %s; Priority and Root check it before anything runs." % by})
 
 
 def _blocked_chosen(ctx, a, pl):
-    """The owner chose a way out of a blocked plan (M3.5), applied here by code: the words option files the owner's
-    words and reopens step 2; leave an item out writes a done_items ask, stamped by that one click, and reopens step 2;
-    stop stops the department where it is."""
+    """The owner chose a way out of a blocked plan (M3.5), applied here by code: the words option takes the owner's
+    words to Identity, which reads them as words said in the chat (its take: go reopens step 2); leave an item out
+    writes a done_items ask, stamped by that one click, and reopens step 2; stop stops the department where it is. The
+    words and stop leave the plan blocked until something reopens it, so the card waits open again: blocked always
+    offers its ways out, before Start and after it."""
     ref, d = ctx["ref"], ctx["dept"]
     chosen = a.get("chosen") or {}
     oid = str(pl.get("option") or chosen.get("id") or "")
     if oid == W.WORDS_OPTION:
         words = str(chosen.get("words") or "").strip()
-        row = _file_words(ref, d, words, "the owner's words for the plan")
-        _reopen(ref, W.dept(ref), words)
-        return {"said": "took the owner's words for the plan and asked Adaptation afresh: " + words, "filed": row["v"]}
+        # Identity's take reads them against the goal and the rules, as in the chat: a go reopens the plan and the card goes
+        # quiet with them (identity_file, _reopen); words that reach outside are an ask, and the plan stays blocked with
+        # its card open (found by a verifier 2026-10-23: the box filed the words and reopened step 2 with no take)
+        W._put_ask(ref, dict(a, status="pending", decided=None, by=None, chosen=None))
+        request(ref, words, answers=a["id"])
+        return {"said": "took the owner's words for the plan to Identity, to read as said in the chat: " + words}
     if oid.startswith("leave:"):
         iid = oid.split(":", 1)[1]
         items = W.items_of(W.dept(ref))
@@ -4648,7 +4664,11 @@ def _blocked_chosen(ctx, a, pl):
             J.stop(ref)
         else:
             W.set_stopped(ref, True)
-        return {"said": "stopped the department on the owner's choice"}
+        # the plan is still blocked, so its way out stays open: the card waits again, answerable while the department is
+        # stopped and after Start (S10: 'Stopped: the card can still be answered'); the stop is the owner's act, on the
+        # ledger and the board (found by a verifier 2026-10-23: Start went back to blocked with no card to answer)
+        W._put_ask(ref, dict(a, status="pending", decided=None, by=None, chosen=None))
+        return {"said": "stopped the department on the owner's choice; the plan's card stays open"}
     return {"said": "took the owner's choice: %s" % oid}
 
 

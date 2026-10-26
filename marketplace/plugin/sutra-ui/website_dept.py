@@ -202,6 +202,11 @@ def options_ask(kind, text, options, **more):
                  "status": "pending", "created": now()}, **more)
 
 
+def chosen(option, words=None, by="the owner", at=None):
+    """The option the owner chose on an ask, as the ask keeps it: {id, label, at, by, words}. Built here only."""
+    return {"id": option["id"], "label": option["label"], "at": at or now(), "by": by, "words": words or None}
+
+
 def choose_option(ref, aid, oid, text=None, by="the owner"):
     """The owner chose one of an ask's options: the ask is answered once, with the choice and when, and the runtime
     applies it as a step of Identity's (on_stamp, in the ask's own thread). An option the ask does not offer is
@@ -222,8 +227,7 @@ def choose_option(ref, aid, oid, text=None, by="the owner"):
         if oid == WORDS_OPTION and not text:
             raise AskError("EMPTY_ANSWER")
         at = now()
-        a.update({"status": "chosen", "decided": at, "by": by,
-                  "chosen": {"id": oid, "label": offered[oid]["label"], "at": at, "by": by, "words": text or None}})
+        a.update({"status": "chosen", "decided": at, "by": by, "chosen": chosen(offered[oid], text, by, at)})
         _put_ask(ref, a)
     rt = _runtime(ref)
     if rt and a.get("thread"):

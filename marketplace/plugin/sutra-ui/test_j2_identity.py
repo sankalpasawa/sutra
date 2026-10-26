@@ -815,6 +815,103 @@ def test_m3_5_each_option_is_applied_by_code_and_an_unknown_one_is_409(j2, monke
     assert W.dept(ref)["stopped"] is True and J.status(ref)["state"] == "stopped"
 
 
+def test_m3_5_after_a_reopen_roots_refusals_reach_the_ledger_again(j2, monkeypatch):
+    """Root keeps refusing after the plan is reopened, by new words and by leaving an item out: a refusal that never
+    reaches the ledger (its key an earlier refusal's in the same cycle), or a reopen that leaves Root's repairs used up
+    (one request, then blocked), must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)                                 # Root refuses before the reopen and after it
+    for how in ("words", "leave"):
+        seen = len(J.events(ref))
+        if how == "words":
+            W.owner_ask(ref, "Make it a simple one-page site that shows the cakes")
+        else:
+            card = _card(W, ref)
+            W.choose_option(ref, card["id"], next(o["id"] for o in card["options"] if o["id"].startswith("leave:")))
+        W.run_until_idle(ref, limit=300)
+        after = [e["action"] for e in J.events(ref)[seen:]]
+        tail = after[after.index("cycle.reopened"):]
+        assert tail.count("proposal.requested") == J.REPAIRS + 1 and tail.count("workflow.blocked") == J.REPAIRS + 1, (how, tail)
+        assert J.status(ref)["state"] == "blocked" and _card(W, ref)                  # blocked again, with its way out
+    assert len({e["idempotency_key"] for e in J.events(ref) if e["action"] == "workflow.blocked"}) == 3 * (J.REPAIRS + 1)
+
+
+def test_m3_5_a_bare_yes_with_a_blocked_card_open_is_answered_in_words_never_a_fault(j2, monkeypatch):
+    """A yes or a no in the department's Chat (which goes to Root about the department) picking the blocked card and
+    failing Root's run on 'this ask takes one of its options' must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    root, card = W.dept(ref)["root"], _card(W, ref)
+    failed = len([r for r in W.runs(root) if r.get("status") == "failed"])
+    client = _client()
+    for said in ("yes", "no"):
+        assert client.post("/api/native/%s/ask" % root, json={"text": said, "about": ref}).status_code == 200
+        W.run_until_idle(root, limit=300)
+    assert len([r for r in W.runs(root) if r.get("status") == "failed"]) == failed
+    told = [str((p["payload"] or {}).get("done") or "") for p in R.board(root) if p["src"] == "Identity" and "Owner" in p["dst"]]
+    assert len([t for t in told if "asks you to choose: The plan could not be approved. Choose one of the ways forward on its card" in t]) == 2
+    assert not [t for t in told if "could not act on this" in t]
+    assert _card(W, ref)["id"] == card["id"] and R._stampable(card) is False         # the card waits, untouched
+
+
+def test_m3_5_stop_then_start_leaves_exactly_one_card_to_answer(j2, monkeypatch):
+    """Stop chosen on the card, then Start: a department back at blocked with nothing to answer must fail."""
+    W, R, J, _, F = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    card, client = _card(W, ref), _client()
+    assert client.post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "stop"}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    assert J.status(ref)["state"] == "stopped" and W.dept(ref)["stopped"] is True
+    assert "The owner chose: Stop here." in [e["summary"] for e in J.events(ref)]
+    blocked = lambda: [a["id"] for a in W.asks(ref) if a["kind"] == "blocked" and a["status"] == "pending"]
+    assert blocked() == [card["id"]]                                                  # answerable while stopped (S10)
+    assert client.post("/api/dept/%s/j2/start" % ref).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    assert J.status(ref)["state"] == "blocked" and blocked() == [card["id"]]
+    assert [a["id"] for a in R.chat_view(ref)["asks"] if a.get("options")] == [card["id"]]
+    assert next(n for n in F.functions(ref)["functions"] if n["fn"] == "identity")["state"] == "waiting_on_you"
+    # and the way out still works after Start
+    assert client.post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "leave:D3"}).status_code == 200
+
+
+OUTSIDE = "Email every customer a newsletter each morning and post it on Instagram"
+
+
+@pytest.mark.parametrize("via", ["card", "chat"])
+def test_m3_5_words_for_a_blocked_plan_get_identitys_take_either_way(j2, monkeypatch, via):
+    """Words from the card's box that reopen the plan with no take, so words that reach outside skip the rules check
+    the same words said in the Chat get, must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    card = _card(W, ref)
+    seen = len(J.events(ref))
+    if via == "card":
+        assert _client().post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "words", "text": OUTSIDE}).status_code == 200
+    else:
+        W.owner_ask(ref, OUTSIDE)
+    W.run_until_idle(ref, limit=300)
+    assert "cycle.reopened" not in [e["action"] for e in J.events(ref)[seen:]]
+    assert J.status(ref)["state"] == "blocked" and _card(W, ref)["id"] == card["id"]    # the card stays open
+    asked = [a for a in W.asks(ref) if a["kind"] == "request" and a["status"] == "pending"]
+    assert len(asked) == 1 and asked[0]["words"] == OUTSIDE and "reach outside the site" in asked[0]["text"]
+
+
+def test_m3_5_a_choice_is_one_shape(j2, monkeypatch):
+    """The choice a card keeps built two ways (the option's, and the one new words make) must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    shape = {"id", "label", "at", "by", "words"}
+    card = _card(W, ref)
+    W.owner_ask(ref, "Make it a simple one-page site that shows the cakes")             # new words: the card goes quiet
+    W.run_until_idle(ref, limit=300)
+    by_words = next(a for a in W.asks(ref) if a["id"] == card["id"])["chosen"]
+    assert set(by_words) == shape and by_words["id"] == W.WORDS_OPTION and by_words["label"] == "Change the plan in my words"
+    card = _card(W, ref)
+    by_click = W.choose_option(ref, card["id"], "leave:D3")["chosen"]
+    assert set(by_click) == shape and (by_click["id"], by_click["label"], by_click["words"]) == ("leave:D3", "Leave D3 out", None)
+    assert W.chosen(W.option("x", "X", "c"), "", at="t") == {"id": "x", "label": "X", "at": "t", "by": "the owner", "words": None}
+
+
 def test_m3_5_an_options_ask_is_one_shape(j2):
     W = j2[0]
     a = W.options_ask("blocked", "Stuck", [W.option("a", "A", "costs a"), W.option("b", "B", "costs b"), W.option("c", "C", "c"),
