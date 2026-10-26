@@ -17,7 +17,7 @@ IMPLEMENTS = 1
 RECIPE = 'v1.json'
 
 #: what a required engine's check refuses, in the owner's words (J2B-2): Make is told, so it shapes nothing the check fails
-REFUSES = (('Check', 'a page with a script, a link to no page, a page with almost no text, a page that breaks one of your rules'),)
+REFUSES = (('Check', 'a page with a script, a link to no page, a page with almost no text, a page that breaks one of the owner\'s rules'),)
 
 
 def make_on():
