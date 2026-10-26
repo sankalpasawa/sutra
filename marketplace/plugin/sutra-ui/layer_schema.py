@@ -22,6 +22,10 @@ fault outside expect_refused(), so the app warns while the tests are strict.
 Packages import it as `import layer_schema as S` and use exactly A1's names. After wave 0 every change is additive
 ('A1 interface:' commits); the JSON Schema files under schemas/layers/ are generated from here (`python layer_schema.py
 --write`) and never edited by hand.
+
+THE TEMPLATES (amendment A3). A template is an interface is a base class, at seven levels: the user journey, the department
+kind, the function, the engine and workflow, the step, the artifact and the ask. The section "A3: the templates at every
+level" types the ones A1 and A2 left as prose; template_checks.py holds the rules a type cannot say.
 """
 import contextlib
 import copy
@@ -517,7 +521,7 @@ DEFS.update({
 DEFS.update({
     'root.pins': obj({layer: ref('impl') for layer in LAYER_NAMES}, open=False),
     # a born engine template, as R.born_template writes it to the records home's _library/<slug>.json (W1-ROOT checks it
-    # before the file is written)
+    # before the file is written). It is the child of engine.library (A3.5): that template with a required made_by
     'engine.template': obj({'id': word(r'^engine/[a-z0-9][a-z0-9-]*$', 80), 'name': text(40, 1), 'version': integer(1),
                             'use_case': text(300, 1), 'description': text(300), 'instruction': text(4000), 'reads': text(200),
                             'writes': text(40),

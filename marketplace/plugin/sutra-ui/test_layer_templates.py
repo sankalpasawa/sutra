@@ -168,7 +168,7 @@ def test_st1_a_step_with_an_unknown_field_is_refused():
 
 def test_st2_every_property_is_classified():
     props = S.DEFS["step"]["properties"]
-    assert len(props) == 23, "the twenty-three fields of A3.3: a new one is a decision for the law, classified in the same commit"
+    assert len(props) >= 23, "the twenty-three fields of A3.3 stay: a package adds a field, classified in the same commit, and drops none"
     unclassified = [k for k, v in props.items() if v.get("x-law") not in ("fixed", "free")]
     assert not unclassified, "classify %s in layer_schema.py DEFS['step']: fixed (the parent's value holds) or free (a child may change it)" % unclassified
     fixed, free = T.step_law()
@@ -192,6 +192,30 @@ def test_st2_the_classification_equals_the_law():
         pytest.fail("%s is %s in layer_schema.py and %s in layers/lineage.py: make them agree (the definition is the source)"
                     % (field, "free" if field in free else "not free", "free" if field in lineage.STEP_FREE else "not free"))
     assert set(lineage.STEP_FIELDS) == set(S.DEFS["step"]["properties"])
+
+
+def test_st9_ids_are_unique_and_every_name_a_step_uses_is_registered():
+    import engine_runtime as R
+    import layers
+    steps = _all_steps()
+    ids = [s["id"] for _, _, s in steps]
+    assert len(ids) == len(set(ids)), "a step id is used once across the engines: %s" % sorted(i for i in set(ids) if ids.count(i) > 1)
+    have = {k: set(layers.names(k)) for k in layers.KINDS}
+    registry = {"check": R.CHECK, "code": R.CODE, "prompt": R.PROMPT, "draft": R.DRAFT}
+    for path, _, s in steps:
+        for kind, registered in registry.items():
+            name = s.get(kind)
+            assert name is None or name in registered or name in have[kind], "%s: %s names the %s %s, which ships nowhere" % (path, s["id"], kind, name)
+    # the failing example of ST-9, through the definition law: a check that ships nowhere, and an id used by two engines
+    d = copy.deepcopy(R.defs())
+    d["engines"]["Plan"]["steps"][0]["check"] = "reads_well"
+    assert any("no check named reads_well ships with the app" in f for f in R.validate(d))
+    d = copy.deepcopy(R.defs())
+    d["engines"]["Write"]["steps"][0]["id"] = d["engines"]["Plan"]["steps"][0]["id"]
+    assert any("the id is used by Plan too" in f for f in R.validate(d))
+    # and the shape law has no registry in it: the same bad check is a step that fits the definition
+    group, step = _first_of("code")
+    assert T.step_faults(dict(step, check="reads_well"), group) == [], "the shape law reads no registry; the definition law does"
 
 
 def _row_keys_the_runtime_writes():
@@ -240,7 +264,7 @@ def test_constants_equal_the_runtimes():
 
 
 def test_st8_a_row_a_run_wrote_fits_the_row_definition(j2):
-    W, R, J, _ = j2
+    _, R, _, _ = j2
     ref = _born(j2)
     R._mark(ref, None, "the owner did not like this page")           # the owner's mark adds a row of its own
     rows = R.step_rows(ref)
@@ -259,7 +283,7 @@ def test_st8_a_row_a_run_wrote_fits_the_row_definition(j2):
 
 
 def test_ctx_keys_are_closed(j2, monkeypatch):
-    W, R, J, _ = j2
+    _, R, _, _ = j2
     seen, original = collections.Counter(), R._resolve
 
     def recorder(ctx, kind, name, engine=None):
@@ -324,7 +348,7 @@ def _kind_faults_of_the_runtime(R, name, mutate):
 def test_k1_every_kind_fits_and_agrees_with_validate():
     import engine_runtime as R
     kinds = _kinds()
-    assert sorted(kinds) == ["default", "organic", "root", "website"], "the four kinds of engine_defs/website.json"
+    assert {"default", "organic", "root", "website"} <= set(kinds), "the four kinds of engine_defs/website.json"
     for name, kind in kinds.items():
         assert T.kind_faults(name, kind) == [], name
         assert _kind_faults_of_the_runtime(R, name, lambda k: None) == [], "validate says nothing against %s as it ships" % name
@@ -366,7 +390,7 @@ def test_e1_every_shipped_engine_template_fits():
         assert [S.validate("step", s) for s in t["steps"]] == [[]] * len(t["steps"]), path
     assert {t["name"] for _, t in shipped} <= set(R.engine_templates()), "the runtime loads every file the definition fits"
     # the definition refuses what a template must name
-    name, t = shipped[0]
+    _, t = shipped[0]
     for key in ("use_case", "start", "steps", "reads", "writes", "description", "id"):
         assert S.validate("engine.library", {k: v for k, v in t.items() if k != key}) == ["$.%s: is missing" % key], key
     assert S.validate("engine.library", dict(t, kind="function")) == ["$.kind: is not work"]
@@ -388,7 +412,6 @@ def test_e1_engine_template_is_the_born_child(j2):
         assert S.validate("engine.template", t) == ["$.made_by: is missing"], "%s without a made_by does not fit engine.template" % path
         assert S.validate("engine.library", t) == [], "but fits engine.library"
     # a template Adaptation really births is both: the child of the base
-    W, _, _, _ = j2
     R.born_template("Translate", {"does": "translates the pages", "use_case": "Translate the pages into Hindi", "reads": "Brief"}, "dref-acme0001")
     born = _read(R.user_templates_dir() / "translate.json")
     assert born["made_by"]["by"] == "Adaptation"
@@ -762,7 +785,7 @@ def test_as1_every_ask_kind_has_a_form_and_its_options_are_known():
 def test_as1_the_forms_hold_what_the_writers_attach(j2):
     """Widen the table to what a writer attaches, never narrow a writer: the ways out each writer on main builds are in the form
     of the ask it files."""
-    W, R, J, _ = j2
+    W, R, _, _ = j2
     ref = _born(j2)
     d = copy.deepcopy(W.dept(ref))
     d["done_items"] = [{"id": "D1", "text": "Every page is live", "how": "model", "level": "outcome"},
