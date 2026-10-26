@@ -178,19 +178,50 @@ def test_modelfault_is_not_a_valueerror():
     assert issubclass(L.ModelFault, Exception) and not issubclass(L.ModelFault, ValueError)
 
 
+# The step fields A2 named. They are a floor, not the whole list: a package classifies a field it adds to a recipe step by adding
+# it to STEP_FIXED or STEP_FREE (A3-CORE did so for may_end and side_by_side), and this test must not turn red on that one-line
+# edit. A name leaves a list only by an edit of this test, which is the review that matters.
+A2_STEP_FIXED = ("nature", "check", "answer", "out", "or", "only_if", "stringency", "each", "files", "by_hand")
+A2_STEP_FREE = ("name", "born", "code", "prompt", "draft", "ceiling", "facts", "tools", "timeout_s", "below")
+
+
 def test_the_names_the_inheritance_codes_against():
     assert L.PATCH_KEYS == ("parent", "set", "gates", "rules", "steps", "on")
     assert L.TOP_SET == ("description", "skills") and L.POSITION == ("after", "before")
-    # may_end (fixed) and side_by_side (free) are the two fields the recipes use that these lists left out: A3-CORE classified them
-    # in DEFS['step'] (A2.12 rule 6), and test_layer_templates holds the two classifications equal
-    assert L.STEP_FIXED == ("nature", "check", "answer", "out", "or", "only_if", "stringency", "each", "files", "may_end", "by_hand")
-    assert L.STEP_FREE == ("name", "born", "code", "prompt", "draft", "ceiling", "facts", "tools", "timeout_s", "side_by_side", "below")
+    # may_end (fixed) and side_by_side (free) are fields the recipes use that A2 left out: A3-CORE classified them in DEFS['step']
+    # (A2.12 rule 6) and in the two lists, and test_layer_templates holds the two classifications equal. They are not pinned here.
+    assert set(A2_STEP_FIXED) <= set(L.STEP_FIXED), set(A2_STEP_FIXED) - set(L.STEP_FIXED)
+    assert set(A2_STEP_FREE) <= set(L.STEP_FREE), set(A2_STEP_FREE) - set(L.STEP_FREE)
     assert L.STEP_FIELDS == ("id",) + L.STEP_FIXED + L.STEP_FREE
     assert L.GATE_ORDER == ("admit", "wait", "refuse")
     assert L.handler_key({"when": {"msg_type": "inform", "word": "born"}}) == ("inform", "born")
     assert L.handler_key({"when": {"msg_type": "accept-proposal"}}) == ("accept-proposal", S.ANY)
     assert L.only_if_target("adapt.source.source=library") == "adapt.source"
     assert L.only_if_target("identity.read.later") == "identity.read"
+
+
+def classify_in_lineage(monkeypatch, fixed=(), free=(), drop=()):
+    """The lists as a later package leaves them: names added to either, or (to prove the floor holds) one taken out."""
+    new_fixed = tuple(f for f in L.STEP_FIXED if f not in drop) + tuple(fixed)
+    new_free = tuple(f for f in L.STEP_FREE if f not in drop) + tuple(free)
+    monkeypatch.setattr(L, "STEP_FIXED", new_fixed)
+    monkeypatch.setattr(L, "STEP_FREE", new_free)
+    monkeypatch.setattr(L, "STEP_FIELDS", ("id",) + new_fixed + new_free)
+
+
+def test_the_names_test_takes_a_field_a_later_package_classifies(monkeypatch):
+    """The next field to be classified (one fixed, one free, as A3-CORE's were) is one line in lineage.py; the pin above stays
+    green."""
+    classify_in_lineage(monkeypatch, fixed=("next_fixed",), free=("next_free",))
+    test_the_names_the_inheritance_codes_against()
+    assert "next_fixed" in L.STEP_FIXED and "next_free" in L.STEP_FREE and "next_fixed" in L.STEP_FIELDS
+
+
+@pytest.mark.parametrize("name", A2_STEP_FIXED + A2_STEP_FREE)
+def test_the_names_test_still_fails_when_an_a2_field_leaves_a_list(monkeypatch, name):
+    classify_in_lineage(monkeypatch, drop=(name,))
+    with pytest.raises(AssertionError):
+        test_the_names_the_inheritance_codes_against()
 
 
 def test_all_steps_run_gates_rules_steps_then_each_handlers_steps():
