@@ -267,7 +267,7 @@ Every rule has one enforcing case and one example that fails it. The ids are use
 | Id | Rule | Failing example |
 |---|---|---|
 | AS-1 | Every kind in `S.ASK_KINDS` has a form in `S.ASK_FORMS` (who files it: always Identity; the options it may carry; the lead it says first), and every option kind is in `S.OPTION_KINDS` | a kind with no form |
-| AS-2 | Every ask a scenario files fits `identity.ask` and its form | a fourth option |
+| AS-2 | Every ask a scenario files fits `identity.ask` and the kinds of way out its form names (`template_checks.ask_faults`; the lead stays the writer's own words and is not checked) | a fourth option; a `rule` ask that carries a `raise` |
 
 ## A3.2 What was found, and what stays open
 
@@ -2158,7 +2158,7 @@ Five developer packages, each its own branch off main, merged one at a time on a
 | ST-5 to ST-7 | existing | `engine_runtime.validate`, `test_every_ai_step_of_a_function_has_its_part` |
 | ST-8 | A3-CORE C1 | `test_st8_a_row_a_run_wrote_fits_the_row_definition` (runs the J1 fixture, asserts every row of `R.step_rows` fits), `test_ctx_keys_are_closed` |
 | K-1, K-2, E-1 to E-3, AR-1, AR-2 | A3-CORE C2 | `test_k1_*`, `test_e1_*`, `test_e2_*`, `test_ar1_*`, `test_ar2_*` |
-| AS-1, AS-2 | A3-CORE C4 | `test_as1_*` |
+| AS-1, AS-2 | A3-CORE C4 | `test_as1_*` (the forms), `test_as2_*` (`template_checks.ask_faults`: every ask a run files fits `identity.ask` and the options its form names) |
 | FT-1, FT-4 (constants) | A3-CORE C5 | `test_ft1_*`, `test_no_constant_says_a_banned_word`, `test_priority_says_nothing_about_ordering` |
 | FT-2, FT-3, FT-5, FT-6, FT-9, FT-10 | A3-FUNCTIONS F1, F3 | contract case 14; `test_every_function_version_passes_case_14`, `test_a_failing_example_for_each_fault_of_case_14` |
 | FT-7 | existing | `test_function_templates.py::test_narrowing_only` |

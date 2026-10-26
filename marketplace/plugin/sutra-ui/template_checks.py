@@ -105,6 +105,41 @@ def artifact_faults(template):
     return out
 
 
+def _option_kind(option):
+    """The kind of one way out on an ask: the kind it carries, else the part of its id before ':' (website_dept.option derives
+    it so: leave:D2 is a leave). '' for an option that is not a table or names nothing."""
+    if not isinstance(option, dict):
+        return ''
+    return str(option.get('kind') or str(option.get('id') or '').split(':', 1)[0])
+
+
+def ask_faults(ask):
+    """What is wrong with an ask against the ask template (A3.5, rules AS-1 and AS-2): the shape law, S.validate('identity.ask', ask)
+    (a kind and a status from the lists, at most S.OPTIONS_MAX options, each of a known kind), then the form of its kind. S.ASK_FORMS
+    names the kinds of way out its writers attach to each kind of ask; an ask offers no kind its form does not name, and a kind whose
+    form names none is stamped yes or no and offers no way out at all. An ask of a kind with no form, and an option of a kind the
+    interface does not know, are the shape law's faults already, so the form is not asked of them. Pure: it asks nothing of a
+    department."""
+    out = S.validate('identity.ask', ask)
+    if not isinstance(ask, dict) or ask.get('kind') not in S.ASK_FORMS or not isinstance(ask.get('options'), list):
+        return out
+    name, kind = str(ask.get('id') or 'an ask'), ask['kind']
+    allowed = tuple(S.ASK_FORMS[kind]['options'])
+    outside = []
+    for option in ask['options']:
+        got = _option_kind(option)
+        if got in S.OPTION_KINDS and got not in allowed and got not in outside:
+            outside.append(got)
+    if outside:
+        offers = 'offers %s' % ', '.join(outside)
+        the = ('an' if kind[:1] in 'aeiou' else 'a') + ' ' + kind
+        if allowed:
+            out.append('%s: %s ask offers only %s, and this one %s' % (name, the, ', '.join(allowed), offers))
+        else:
+            out.append('%s: %s ask is stamped yes or no and offers no way out, and this one %s' % (name, the, offers))
+    return out
+
+
 _LEVEL_KEYS = ('level', 'name', 'base', 'children', 'keeps', 'rules')
 _RULE_ID = r'^(JC|K|FT|E|ST|AR|AS)-[1-9][0-9]?$'
 

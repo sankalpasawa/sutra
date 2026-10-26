@@ -794,18 +794,22 @@ def test_as1_the_forms_hold_what_the_writers_attach(j2):
     assert ask["kind"] == "blocked" and len(ask["options"]) == 3
     assert [o["kind"] for o in ask["options"]] == ["words", "leave", "stop"], "the plan's card: change it in my words, leave an item out, stop"
     assert {o["kind"] for o in ask["options"]} <= set(S.ASK_FORMS["blocked"]["options"])
+    assert T.ask_faults(ask) == [] and T.ask_faults(next(a for a in W.asks(ref) if a["id"] == ask["id"])) == [], "AS-2: the plan's card fits its form"
     with pytest.raises(ValueError, match="takes one of its options"):
         W.decide_ask(ref, ask["id"], True)                   # an ask with options is answered by choosing one, never stamped
     import layers.adaptation.v1 as A
     cannot = {"engine": "Write", "items": ["D2"], "why": "it has no way to show a phone number"}
     kinds = [o["kind"] for o in A.cannot_options(d, cannot, "a site")]
     assert kinds == ["root_setup", "leave", "stop"] and set(kinds) <= set(S.ASK_FORMS["conflict"]["options"])
+    card = W.options_ask("conflict", "Adaptation and Priority do not agree on the plan.", A.cannot_options(d, cannot, "a site"))
+    assert T.ask_faults(card) == [], "AS-2: the conflict card Adaptation's options make fits its form"
     # every ask a writer builds with options_ask is cut to OPTIONS_MAX, and each option's kind is the part of its id before ':'
     five = [{"id": "words", "label": "a", "cost": "b"}, {"id": "leave:D1", "label": "c", "cost": "d"}, {"id": "stop", "label": "e", "cost": "f"},
             {"id": "raise", "label": "g", "cost": "h"}, {"id": "root_setup", "label": "i", "cost": "j"}]
     built = W.options_ask("conflict", "x", five)
     assert len(built["options"]) == S.OPTIONS_MAX == W.OPTIONS_MAX == 3 and [o["kind"] for o in built["options"]] == ["words", "leave", "stop"]
     assert all(S.validate("option", o) == [] for o in built["options"])
+    assert T.ask_faults(built) == [], "AS-2: the conflict card cut to OPTIONS_MAX fits its form"
 
 
 def test_as1_a_fourth_option_is_refused():
@@ -817,6 +821,70 @@ def test_as1_a_fourth_option_is_refused():
     assert S.validate("identity.ask", dict(ask, options=[dict(option, kind="teleport")])) != [], "an option is of a known kind"
     # no form offers more kinds of way out than there are kinds, and an ask carries three of them at most
     assert all(len(f["options"]) <= len(S.OPTION_KINDS) for f in S.ASK_FORMS.values())
+
+
+def _way(kind):
+    """One way out of an ask, of the given kind, as website_dept.option builds it."""
+    return {"id": kind, "label": "A way out", "cost": "what it costs", "kind": kind}
+
+
+def _ask(kind, *kinds):
+    return {"id": "a-1", "kind": kind, "status": "pending", "text": "An ask the owner answers.", "options": [_way(k) for k in kinds]}
+
+
+def test_as2_an_ask_offers_only_the_ways_out_its_form_names():
+    """AS-2 on the form: ask_faults reads S.ASK_FORMS[kind]['options'], which nothing else checks an ask against. For every kind of
+    ask and every kind of way out the interface names, the ask fits exactly when its form names that way out."""
+    for kind, form in S.ASK_FORMS.items():
+        assert T.ask_faults(_ask(kind)) == [], "%s: an ask with no way out is stamped yes or no, and fits every form" % kind
+        for way in S.OPTION_KINDS:
+            got = T.ask_faults(_ask(kind, way))
+            if way in form["options"]:
+                assert got == [], (kind, way)
+            else:
+                assert len(got) == 1 and ("offers %s" % way) in got[0] and kind in got[0], (kind, way, got)
+    # the failing examples, in the words the owner's side of the code would read
+    assert T.ask_faults(_ask("rule", "raise")) == ["a-1: a rule ask is stamped yes or no and offers no way out, and this one offers raise"]
+    assert T.ask_faults(_ask("blocked", "raise")) == ["a-1: a blocked ask offers only words, leave, stop, and this one offers raise"]
+    assert T.ask_faults(_ask("envelope", "words", "raise", "root_setup")) == [
+        "a-1: an envelope ask offers only raise, leave, stop, and this one offers words, root_setup"]
+    # a way out whose kind is only in its id is read as website_dept.option reads it
+    way = {"id": "raise:more", "label": "A way out", "cost": "what it costs"}
+    assert T.ask_faults(dict(_ask("rule"), options=[way])) != [] and T.ask_faults(dict(_ask("envelope"), options=[way])) == []
+    # a fourth option is the shape law's fault, and the form adds nothing to it
+    assert T.ask_faults(_ask("blocked", "words", "leave", "stop", "stop")) == ["$.options: more than %d items" % S.OPTIONS_MAX]
+    assert T.ask_faults(_ask("conflict", "words", "leave", "stop")) == []
+    # an ask of a kind with no form, an option of a kind nothing names and a row that is no ask are the shape law's, said once
+    assert len(T.ask_faults(_ask("colour", "raise"))) == 1 and T.ask_faults(_ask("colour", "raise"))[0].startswith("$.kind: is not one of")
+    assert len(T.ask_faults(_ask("blocked", "teleport"))) >= 1 and not any("offers" in f for f in T.ask_faults(_ask("blocked", "teleport")))
+    assert T.ask_faults("not an ask") == ["$: is not an object"]
+
+
+def test_as2_every_ask_a_run_files_fits_its_form(j2):
+    """AS-2 on departments that have really run: the offline run files the first publish; the owner's words then file a rule, a
+    request that reaches outside the site, and (with Write's envelope spent) Priority's envelope ask. Every ask any department
+    holds fits identity.ask and the form of its kind, so the table is held against more kinds than the one a plain run files."""
+    W, R, _, _ = j2
+    ref = _born(j2)
+    d = copy.deepcopy(W.dept(ref))
+    d["envelopes"] = dict(d.get("envelopes") or {}, Write={"calls": 0, "usd": 0.0})
+    W.save_dept(ref, d)
+    for words in ("Add a page about fractions for Class 8 students", "Never state a number the brief does not give",
+                  "Email every new student a welcome note"):
+        W.owner_ask(ref, words)
+        W.run_until_idle(ref, limit=300)
+    filed = [a for dept in W.list_depts() for a in W.asks(dept["ref"])]
+    kinds = collections.Counter(a["kind"] for a in filed)
+    print("asks a run filed, by kind:", dict(kinds))
+    assert {"publish", "rule", "request", "envelope"} <= set(kinds), "the run files more than the first publish: %s" % dict(kinds)
+    bad = {"%s (%s)" % (a["id"], a["kind"]): T.ask_faults(a) for a in filed if T.ask_faults(a)}
+    assert not bad, bad
+    # and the same ask, given a way out its kind does not offer, is refused by the same check
+    rule = next(a for a in filed if a["kind"] == "rule")
+    assert T.ask_faults(dict(rule, options=[_way("raise")])) == [
+        "%s: a rule ask is stamped yes or no and offers no way out, and this one offers raise" % rule["id"]]
+    envelope = next(a for a in filed if a["kind"] == "envelope")
+    assert T.ask_faults(dict(envelope, options=[_way("raise"), _way("leave"), _way("stop"), _way("raise")])) == ["$.options: more than 3 items"]
 
 
 def test_the_generated_files_equal_json_schemas():
