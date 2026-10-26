@@ -56,6 +56,43 @@ def charter(ref, purpose, done, rules, summary):
     return _apply("org.charter", {"ref": ref, "purpose": purpose, "done_when": done, "rules": rules}, summary)
 
 
+def _standing(ref):
+    """The registry's charter that speaks for the department, by dept_api's own rule: the first active, unsuperseded
+    charter of kind standing, else the first active one that is not a role. None when it has none."""
+    views = [v for v in (E.charter_view(c) for c in E.charters_for(ref)) if v]
+    sup = E.superseded_ids()
+    live = [v for v in views if v.get("status", "active") != "retired" and v.get("id") not in sup and str(v.get("kind") or "") != "role"]
+    return next((v for v in live if v.get("kind", "standing") == "standing"), live[0] if live else None)
+
+
+def mirror(ref):
+    """The registry's charter as a one-way mirror of the department's one record (PRD M3.1). dept.json holds the goal,
+    the done-when items, the rules, the owner, the budget and the windows; the Org screen still reads the charter, so on
+    every identity revision the goal, the done-when lines and the rules are copied onto it, by succession. Every
+    registry write goes through a filed proposal (decision C1), so the copy is filed and applied in one move, as _apply
+    does: nothing waits for the owner, who stamped the identity itself. Nothing is filed when the charter says the same
+    already, or when the department is not in the registry. Returns the applied result, or None."""
+    d = W.dept(ref)
+    if not d or ref not in E.live_refs(E.load_domains()):
+        return None
+    purpose = " ".join(str(d.get("goal") or "").split())[:org2_apply.PURPOSE_MAX]
+    if not purpose:
+        return None
+    items = [i.get("text") for i in d.get("done_items") or [] if isinstance(i, dict) and str(i.get("text") or "").strip()]
+    done = E.normalize_done_when(items or ([d["done"]] if str(d.get("done") or "").strip() else []))
+    rules = E.normalize_rules([{"tag": r.get("tag"), "line": r.get("line")} for r in d.get("rules") or []
+                               if isinstance(r, dict) and r.get("tag") in E.CHARTER_RULE_TAGS and str(r.get("line") or "").strip()])
+    cur = _standing(ref)
+    if cur and " ".join(str(cur.get("purpose") or "").split()) == purpose and list(cur.get("done_when") or []) == done \
+            and E.normalize_rules(cur.get("rules")) == rules:
+        return None
+    args = {"ref": ref, "purpose": purpose, "done_when": done, "rules": rules}
+    if cur:
+        args["charter_id"] = cur["id"]
+    return _apply("org.charter", args, "Copy %s's identity, revision %d, to the Org screen"
+                  % (d.get("name") or ref, int(d.get("identity_revision") or 1)))
+
+
 def roots():
     """Every Root: one for each organisational structure in this app."""
     return [d for d in W.list_depts() if d.get("kind") == "root"]
@@ -85,9 +122,14 @@ def found_structure(org_name, owner="the owner"):
     return {"org": org, "root": root, "created": created}
 
 
-def spawn(root_ref, name, kind, goal, owner="the owner", goal_context=None, template_ref=None, route="template"):
+def spawn(root_ref, name, kind, goal, owner="the owner", goal_context=None, template_ref=None, route="template",
+          done_items=None, to_confirm=None):
     """Root sets up a department: the child under Root, its charter, its functions' templates from the Library, its record,
-    and its goal, which makes it run. Asking for the same name again finds it and makes nothing."""
+    and its goal, which makes it run. Asking for the same name again finds it and makes nothing.
+
+    `done_items` are the done-when items Root drafted at birth (PRD M3.2), part of what Root stamps: the record keeps
+    them, `done` stays as their joined text, and the charter carries them as its done-when lines. With none, the kind's
+    own done line is D1. `to_confirm` names the items that rest on a fact nobody gave: [{item, why}]."""
     rd = W.dept(root_ref)
     if not rd or rd.get("kind") != "root":
         raise ValueError("only a Root sets up departments")
@@ -116,8 +158,9 @@ def spawn(root_ref, name, kind, goal, owner="the owner", goal_context=None, temp
             return {"ref": ref, "name": name, "kind": kind, "goal": goal, "created": False,
                     "operation_id": prior_operation, "existing": not same_operation}
     k = W.KINDS[kind]
+    items = W.done_items(done_items, kind)
     if new:
-        charter(ref, goal, [k["done"]], k["rules"], "Write %s's charter" % name)
+        charter(ref, goal, [i["text"] for i in items], k["rules"], "Write %s's charter" % name)
     picks = {}
     tpl = k.get("functions_template") or TEMPLATE
     import function_templates as FT
@@ -127,12 +170,15 @@ def spawn(root_ref, name, kind, goal, owner="the owner", goal_context=None, temp
             _apply("org.template", {"ref": ref, "function": fn, "template": tid}, "%s runs the %s template" % (fn.title(), tpl))
         picks[fn] = tid
     if not had_record:
-        d, _ = W.create(ref, name, None, owner=owner, parent=root_ref, kind=kind)
+        # the shaped goal is the owner's words, and it is the record's goal from birth (PRD M3.1)
+        d, _ = W.create(ref, name, None, owner=owner, parent=root_ref, kind=kind, goal=goal)
     else:
         d = existing
     checkpoints = ["root", "child", "functions", "rules_limits", "goal_context", "born_engines"]
     d.update({"templates": picks, "org": rd.get("org") or {}, "root": root_ref, "template_ref": template_ref,
-              "initial_goal_context": context,
+              "initial_goal_context": context, "goal": goal,
+              "done_items": [{x: i[x] for x in ("id", "text", "how", "level")} for i in items], "done": W.done_line(items),
+              "to_be_confirmed": [dict(c) for c in to_confirm or [] if isinstance(c, dict) and c.get("item")],
               "founding": {"operation_id": operation, "checkpoints": checkpoints}})
     W.save_dept(ref, d)
     if not had_goal:

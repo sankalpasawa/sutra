@@ -693,15 +693,61 @@ def _adaptation_chat(props: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return turns[-CHAT_MAX:]
 
 
+def _runtime_record(ref: str) -> Optional[Dict[str, Any]]:
+    """The department's own record (dept.json) when it runs on the engine
+    runtime, else None. PRD M3.1: that record is the one record of who the
+    department is, and the registry's charter is its mirror, so for such a
+    department Identity reads the record. A read, never a write; no records
+    home (a test, a registry-only department) is None."""
+    try:
+        import website_dept as W
+        d = W.dept(ref)
+    except Exception:
+        return None
+    return d if isinstance(d, dict) and d.get("runtime") == 2 else None
+
+
+def _record_rules(d: Dict[str, Any]) -> List[Dict[str, str]]:
+    out = []
+    for r in d.get("rules") or []:
+        text = _text((r or {}).get("line")) if isinstance(r, dict) else ""
+        tag = str((r or {}).get("tag") or "").strip().lower() if isinstance(r, dict) else ""
+        if text and tag in RULE_TAGS:
+            out.append({"tag": tag, "text": text})
+    return out[:RULES_MAX]
+
+
 @router.get("/{ref}/identity")
 def identity(ref: str):
     """R1: the department's goal, when it is done, its rules, its budget, its
-    owner, and the two chats Identity keeps."""
+    owner, and the two chats Identity keeps. A department on the engine
+    runtime is read from its own record (PRD M3.1); every other from its
+    standing charter."""
     domains = _domain(ref)
     cwd = _dept_cwd(ref, domains)
     charter = _standing_charter(ref)
     owner = _owner(charter, cwd)
     props = _dept_proposals(ref, domains, cwd)
+    rec = _runtime_record(ref)
+    if rec is not None:
+        done = _text(rec.get("done") or "")
+        named = _text(rec.get("owner") or "")
+        if named and named != "the owner":
+            owner = {"source": "record", "name": named}
+        return {
+            "goal": _text(rec.get("goal") or "") or None,
+            "done": (done if len(done) <= DONE_MAX else done[:DONE_MAX - 1].rstrip() + "…") or None,
+            "done_items": [{"id": _text(i.get("id")), "text": _text(i.get("text")), "how": _text(i.get("how")),
+                            "level": _text(i.get("level"))} for i in rec.get("done_items") or [] if isinstance(i, dict)],
+            "rules": _record_rules(rec),
+            "budget": _budget(),
+            "owner": owner,
+            "source": "record",
+            "chats": {
+                "owner": _owner_chat(props, owner.get("name") or "", cwd),
+                "adaptation": _adaptation_chat(props),
+            },
+        }
     goal = _text((charter or {}).get("purpose") or "")
     return {
         "goal": goal or None,

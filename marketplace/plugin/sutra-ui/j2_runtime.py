@@ -363,6 +363,31 @@ def _ask_gap(ref, dept, cur):
     return _move(ref, "waiting", step=1, open_ask=aid)
 
 
+def next_gap(ref):
+    """The identity is read again after an ask that answered Identity's question was stamped or refused elsewhere (a
+    rule, M3.4): the next thing missing is asked, one at a time. Returns the cycle when a question is open now, None when
+    the identity has no gap (or a question is open already, or there is no cycle)."""
+    with W._lock(ref):
+        cur = _state(ref)
+        if not cur or not cur.get("cycle_id") or cur.get("state") in ("stopped", "done"):
+            return None
+        if cur.get("open_ask") and any(a["id"] == cur["open_ask"] and a["status"] == "pending" for a in W.asks(ref)):
+            return cur
+        return _ask_gap(ref, W.dept(ref), cur)
+
+
+def reopened(ref):
+    """From blocked, the plan is shaped afresh (M3.5): the cycle goes back to step 2 with Root's repairs at nought. A
+    stopped cycle stays stopped and goes on from there on Start."""
+    with W._lock(ref):
+        cur = _state(ref)
+        if not cur or not cur.get("cycle_id"):
+            return None
+        note(ref, int(cur.get("step") or 5), "User", "Identity", "cycle.reopened", "running", "The plan is shaped afresh from the owner's words.",
+             "reopened-" + uuid.uuid4().hex[:6])
+        return _move(ref, "adapting", step=2, repairs=0)
+
+
 def begin(ref):
     """Start the department's cycle, once. Called when J1 hands over (D1: J2 is the department's own life, and nobody
     presses a button for it), and by Start for a department born before that. A stopped cycle starts again."""
@@ -420,15 +445,21 @@ def answer(ref, text, ask_id=None, at=None):
                 ask["words_at"] = {"board": ref, "n": row["n"]}
                 W._put_ask(ref, ask)
             return _state(ref)
+        if ask.get("standard") or missing == "rules":
+            # Identity's standard was not met (M3.3): the answer is the owner's words to Identity, which reads them against
+            # the standard again and asks again or starts. A rule given as an answer keeps its tag (M3.4): Identity reads
+            # it, restates its tag and scope, and the owner stamps it. Nothing is written to the identity here
+            _took(ref, ask, text)
+            _, row = R.request(ref, text, answers=ask["id"])
+            if row:
+                ask["words_at"] = {"board": ref, "n": row["n"]}      # the card keeps the answer; the chat leaves the post to it
+                W._put_ask(ref, ask)
+            return _state(ref)
         if missing == "goal":
             dept["goal"] = text
         elif missing == "done-when":
             dept["done"] = text
-        elif missing == "rules":
-            dept["rules"] = [r for r in dept.get("rules") or [] if str(r.get("line") or "").strip() and r.get("tag") in RULE_TAGS]
-            dept["rules"].append({"id": "u-" + uuid.uuid4().hex[:6], "tag": "go", "line": text, "since": W.now(), "from": text})
-        dept["identity_revision"] = int(dept.get("identity_revision") or 1) + 1
-        W.save_dept(ref, dept)
+        W.bump_identity(ref, dept)                      # the one record, and the Org screen's copy of it (M3.1)
         ask.update({"status": "stamped", "decided": W.now(), "by": "the owner", "answered": text})
         if at:
             ask["words_at"] = at
@@ -452,15 +483,54 @@ def _took(ref, ask, text, by="the owner", at=None):
 
 
 def open_question(ref):
-    """Identity's open question to the owner, as every screen shows it: {id, text, why, missing, asked}, or None. A
-    stopped department keeps its question; the answer is used on Start."""
+    """Identity's open question to the owner, as every screen shows it: {id, text, why, missing, asked, standard,
+    points}, or None. A question on Identity's standard (M3.3) says so, with the points it asks about, and takes
+    'just do it'. A stopped department keeps its question; the answer is used on Start."""
     cur = _state(ref) if enabled() else None
     if not cur or not cur.get("open_ask"):
         return None
     ask = next((a for a in W.asks(ref) if a["id"] == cur["open_ask"] and a.get("kind") == "j2_identity" and a["status"] == "pending"), None)
     if not ask:
         return None
-    return {"id": ask["id"], "text": ask.get("text"), "why": ask.get("why"), "missing": ask.get("missing"), "asked": ask.get("created")}
+    return {"id": ask["id"], "text": ask.get("text"), "why": ask.get("why"), "missing": ask.get("missing"), "asked": ask.get("created"),
+            "standard": bool(ask.get("standard")), "points": list(ask.get("points") or [])}
+
+
+def standard_question(ref):
+    """Identity's open question on its standard, as the ask holds it, or None (M3.3)."""
+    cur = _state(ref) if enabled() else None
+    if not cur or not cur.get("open_ask"):
+        return None
+    return next((a for a in W.asks(ref) if a["id"] == cur["open_ask"] and a.get("kind") == "j2_identity" and a.get("standard")
+                 and a["status"] == "pending"), None)
+
+
+def asked(ref, question, missing, why, key):
+    """Identity's standard is not met (J2.a, PRD M3.3): its one question to the owner is a real ask that takes words, in
+    the chat or through /j2/answer, and nothing starts until the standard is met or the owner says 'just do it'. One
+    open question at a time, with no cap on how many are asked in turn."""
+    with W._lock(ref):
+        cur = _state(ref)
+        if not cur or not cur.get("cycle_id"):
+            return None
+        ask = standard_question(ref)
+        if ask is None:
+            ask = W._put_ask(ref, {"id": "a-j2-" + uuid.uuid4().hex[:8], "kind": "j2_identity", "text": str(question), "why": str(why or ""),
+                                   "status": "pending", "created": W.now(), "cycle_id": cur["cycle_id"], "missing": (missing or ["goal"])[0],
+                                   "points": list(missing or []), "standard": True, "answer": "words"})
+        note(ref, 1, "Identity", "User", "identity.questioned", "waiting", str(question), "identity-question-" + str(key),
+             {"missing": list(missing or []), "why": str(why or ""), "standard": True})
+        return _move(ref, "waiting", step=1, open_ask=ask["id"])
+
+
+def took(ref, aid, words, at=None):
+    """Close Identity's question `aid` with the owner's words, said in the chat (M3.3); `at` is the owner's post that said
+    them ({board, n}), which the card keeps. Returns the ask, closed now or before; None for no such question of Identity's."""
+    with W._lock(ref):
+        ask = next((a for a in W.asks(ref) if a["id"] == aid and a.get("kind") == "j2_identity"), None)
+        if ask and ask["status"] == "pending":
+            _took(ref, ask, " ".join(str(words or "").split())[:2000], at=at)
+        return ask
 
 
 def answered_question(ref):
@@ -585,8 +655,9 @@ def on_post(ref, row):
             note(ref, int((_state(ref) or {}).get("step") or 1), "Identity", "User", "ask.created", "waiting",
                  str(pl.get("objective") or pl.get("word") or "An ask.")[:300], key, {"word": word})
         elif src == R.OWNER and act in ("accept-proposal", "reject-proposal"):
+            said = ("chose: %s" % pl["chose"]) if pl.get("chose") else ("stamped it" if act == "accept-proposal" else "refused it")
             note(ref, int((_state(ref) or {}).get("step") or 1), "User", "Identity", "ask.answered", "complete",
-                 "The owner %s." % ("stamped it" if act == "accept-proposal" else "refused it"), key, {"word": word})
+                 "The owner %s." % said, key, dict({"word": word}, **({"option": pl["option"]} if pl.get("option") else {})))
     except Exception:  # noqa: BLE001 -- the ledger never fails the post it records
         return
 
