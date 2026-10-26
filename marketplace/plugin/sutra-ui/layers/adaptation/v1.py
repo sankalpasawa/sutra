@@ -127,12 +127,99 @@ def c_line_is_engines(ctx, step, item, out):
     return {'ok': not notes, 'notes': notes or ['%d engines, each reading what one before it wrote' % len(engs)]}
 
 
+def items_of(d):
+    """The department's done-when items as dept.json keeps them: [{id, text, how, level}]."""
+    return [i for i in (d or {}).get('done_items') or [] if isinstance(i, dict) and i.get('id')]
+
+
+def item_lines(d):
+    """The done-when items as a prompt names them, one a line ('D1: the site is live'); 'none' when the record has no items."""
+    return '\n'.join('%s: %s' % (i['id'], ' '.join(str(i.get('text') or '').split())) for i in items_of(d)) or 'none'
+
+
+def covered_engines(engs):
+    """The form above, and the items each engine says it covers when it says (M5.1): a model that was not asked may still
+    name them, and what it names is kept."""
+    rows = norm_engines(engs)
+    for row, e in zip(rows, engs or []):
+        e = e if isinstance(e, dict) else {}
+        row['covers'] = [c for c in e.get('covers') or [] if isinstance(c, str)] if isinstance(e.get('covers'), list) else []
+    return rows
+
+
+def p_adapt_line(ctx, step, item):
+    """The prompt that shapes the line (adapt.line): make.line, with the department's done-when items named (M5.1)."""
+    d, pl = ctx['dept'], ctx['post']['payload']
+    rules = '; '.join(str(r.get('line')) for r in d.get('rules') or [] if r.get('line'))
+    taken = ', '.join(sorted(R.defs()['engines']))
+    refused = ('\n\n' + R._prompt('adaptation', 'make', 'refused', ctx['ref'], faults='; '.join(str(f) for f in pl['faults']))) if pl.get('faults') else ''
+    slots = dict(dept=d.get('name'), words=pl.get('words') or d.get('goal'), items=item_lines(d), taken=taken,
+                 out=R._out_artifacts() or 'none', rules=rules or 'none', refused=refused)
+    return R._prompt('adaptation', 'make', 'line', ctx['ref'], **slots)
+
+
+def d_adapt_line(ctx, step, item):
+    """The draft, when no agent is there to judge: two engines, the facts from the internet and the site from the facts.
+    Their names are ones the Library does not have yet: a second department shaped this way takes Facts 2 and Site 2
+    (found 2026-10-07: it took Facts and Site again, its check refused the line, and nothing was said). The site, the last
+    engine, covers every done-when item (M5.1); the draft carries no confidence and asks no question (J2B-9)."""
+    def line(n):
+        tag = '' if n == 1 else ' %d' % n
+        return [{'name': 'Facts' + tag, 'does': 'finds on the internet what the goal names, each fact with its source', 'reads': 'Brief',
+                 'writes': 'Facts' + tag, 'internet': True},
+                {'name': 'Site' + tag, 'does': "writes the site's pages from the facts, each with its source", 'reads': 'Facts' + tag,
+                 'writes': 'Live site', 'internet': False}]
+    engines = next((line(n) for n in range(1, 50) if not R._line_faults(line(n))), line(1))
+    ids = [i['id'] for i in items_of((ctx or {}).get('dept'))]
+    for e in engines:
+        e['covers'] = []
+    if ids:
+        engines[-1]['covers'] = ids
+    return {'engines': engines}
+
+
+def with_covers(engines, d):
+    """Each engine's covers made known and whole (M5.1), and the map of item to engines the proposal carries. Only items
+    done-when has stay. When no engine names any, code maps every item to the last engine, as it does for a Library line."""
+    ids = [i['id'] for i in items_of(d)]
+    for e in engines:
+        e['covers'] = [c for c in dict.fromkeys(e.get('covers') or []) if c in ids]
+    if ids and engines and not any(e['covers'] for e in engines):
+        engines[-1]['covers'] = list(ids)
+    out = {}
+    for e in engines:
+        for c in e['covers']:
+            out.setdefault(c, []).append(e['name'])
+    return out
+
+
+def adapt_line_offer(ctx, step, item):
+    """The line goes on. Each engine names the items it covers, and the proposal carries the map (M5.1): a Library line, or
+    one whose engines name none, has every item mapped to its last engine."""
+    ref, d, pl = ctx['ref'], ctx['dept'], ctx['post']['payload']
+    src = ctx['bag'].get('adapt.source') or {'shape': True, 'source': 'shaped'}
+    got = ctx['bag']['adapt.line'] if src.get('shape') else src
+    engines = covered_engines(got['engines'])
+    covers = with_covers(engines, d)
+    body = {'word': 'line', 'engines': engines, 'source': src.get('source'), 'words': pl.get('words'), 'for': pl.get('for'), 'covers': covers}
+    names = ' -> '.join(e['name'] for e in engines)
+    if R._j2_live(ref):
+        # J2 step 3: the proposal goes to Priority, on the board, in a thread of its own with the board's bounds
+        body['why'] = 'the goal needs these workflows'
+        R.post(ref, 'Adaptation', 'Priority', 'propose', body)
+        return {'said': 'proposed the line to Priority: ' + names, 'engines': engines}
+    body['why'] = 'the goal needs a line and the department was born with none'
+    R.post(ref, 'Adaptation', 'Identity', 'propose', body)
+    return {'said': 'shaped the line from the words: ' + names, 'engines': engines}
+
+
 CODE = {name: ref_to(name) for name in (
     'hear', 'adapt_sense', 'adapt_ladder', 'adapt_act', 'adapt_trial', 'adapt_notrial', 'adapt_heard', 'adapt_park', 'adapt_offer',
-    'adapt_priced', 'adapt_line_offer', 'adapt_line_granted', 'adapt_line_refused', 'adapt_line_counter')}
+    'adapt_priced', 'adapt_line_granted', 'adapt_line_refused', 'adapt_line_counter')}
 CODE['adapt_source'] = adapt_source
-PROMPT = {'adapt_shape': ref_to('p_adapt_shape'), 'adapt_line': ref_to('p_adapt_line')}
-DRAFT = {'adapt_shape_draft': ref_to('d_adapt_shape'), 'adapt_line_draft': ref_to('d_adapt_line')}
+CODE['adapt_line_offer'] = adapt_line_offer
+PROMPT = {'adapt_shape': ref_to('p_adapt_shape'), 'adapt_line': p_adapt_line}
+DRAFT = {'adapt_shape_draft': ref_to('d_adapt_shape'), 'adapt_line_draft': d_adapt_line}
 CHECK = {name: ref_to('c_' + name) for name in (
     'counted_the_rows', 'moves_name_their_rows', 'said_what_it_did', 'facts_are_closed', 'idea_has_shapes')}
 CHECK['line_is_engines'] = c_line_is_engines

@@ -242,3 +242,100 @@ def test_a4_a_name_or_a_text_that_does_not_fit_the_schema_is_cut_to_fit_before_i
     assert len(row["name"]) == 40 and len(row["does"]) == 200
     got = v1().CHECK["line_is_engines"](ctx, None, None, {"engines": [long, dict(GOOD[1], reads=row["writes"])]})
     assert got["ok"] is True, got
+
+
+# ---- A3 · proposals cover the done-when items (M5.1) ------------------------------------------------------------------
+ITEMS = [{"id": "D1", "text": "The site is live", "how": "code", "level": "outcome"},
+         {"id": "D2", "text": "Every page names the phone line", "how": "model", "level": "target"},
+         {"id": "D3", "text": "A visitor can find the doctors", "how": "person", "level": "outcome"}]
+
+
+def _dept(j2, kind, ref="dref-offer", items=ITEMS, name="Offer Dept", **more):
+    W = j2[0]
+    W.create(ref, name, "A guide to the night clinic", kind=kind, goal="A guide to the night clinic")
+    d = W.dept(ref)
+    d["done_items"] = [dict(i) for i in items]
+    d.update(more)
+    W.save_dept(ref, d)
+    return ref
+
+
+def _offer(j2, monkeypatch, ref, source, got, how="offline draft", live=True, payload=None):
+    """adapt_line_offer as the recipe runs it, and what it posted: [(dst, act, payload)] of the new posts."""
+    W, R, _, _, _ = j2
+    monkeypatch.setattr(R, "_j2_live", lambda r: live)
+    before = len(R.board(ref))
+    pl = dict({"word": "line", "words": "A guide to the night clinic", "for": "x-req"}, **(payload or {}))
+    ctx = {"ref": ref, "dept": W.dept(ref), "engine": "Adaptation", "post": {"n": 1, "thread": "x-req", "src": "Identity", "msg_type": "request", "payload": pl},
+           "bag": {"adapt.source": source, "adapt.line": got}, "how": {"adapt.line": how}}
+    out = v1().CODE["adapt_line_offer"](ctx, None, None)
+    return out, [(p["dst"][0], p["msg_type"], p["payload"]) for p in R.board(ref)[before:]]
+
+
+def _covers_of(posts):
+    return [pl for dst, act, pl in posts if pl.get("word") == "line"][-1]
+
+
+def test_a3_a_library_line_covers_every_item_with_its_last_engine(j2, monkeypatch):
+    ref = _dept(j2, "website")
+    src = {"shape": False, "source": "library", "engines": [{"name": n, "does": "", "reads": "Brief", "writes": n, "internet": False} for n in LINE]}
+    # a library line reads and writes what the Library says: the offer cares only for the names and the covers
+    out, posts = _offer(j2, monkeypatch, ref, src, None, how="code")
+    sent = _covers_of(posts)
+    assert posts[0][:2] == ("Priority", "propose")
+    assert sent["covers"] == {"D1": ["Publish"], "D2": ["Publish"], "D3": ["Publish"]}
+    assert [e["covers"] for e in sent["engines"]] == [[], [], [], ["D1", "D2", "D3"]]
+    assert S.validate_act("Adaptation", ["Priority"], "propose", sent) == []
+
+
+def test_a3_the_offline_draft_covers_every_item_with_its_last_engine_and_a_default_dept_with_do(j2, monkeypatch):
+    ref = _dept(j2, "organic", ref="dref-draft")
+    d = j2[0].dept(ref)
+    ctx = {"ref": ref, "dept": d}
+    draft = v1().DRAFT["adapt_line_draft"](ctx, None, None)
+    assert [(e["name"], e["covers"]) for e in draft["engines"]] == [("Facts", []), ("Site", ["D1", "D2", "D3"])]
+    out, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, draft)
+    assert set(_covers_of(posts)["covers"]) == {"D1", "D2", "D3"} and "confidence" not in _covers_of(posts)
+    ref2 = _dept(j2, "default", ref="dref-do")
+    src = {"shape": False, "source": "library", "engines": [{"name": "Do", "does": "", "reads": "Brief", "writes": "Result", "internet": False}]}
+    _, posts = _offer(j2, monkeypatch, ref2, src, None, how="code")
+    assert _covers_of(posts)["covers"] == {"D1": ["Do"], "D2": ["Do"], "D3": ["Do"]}
+
+
+def test_a3_the_union_of_covers_is_the_set_of_done_items_in_every_kind_and_every_payload_fits_the_interface(j2, monkeypatch):
+    for kind, line in (("website", LINE), ("default", ["Do"]), ("organic", ["Facts 2", "Site 2"])):
+        ref = _dept(j2, kind, ref="dref-%s" % kind)
+        d = j2[0].dept(ref)
+        if kind == "organic":
+            got, src = v1().DRAFT["adapt_line_draft"]({"ref": ref, "dept": d}, None, None), {"shape": True, "source": "shaped"}
+        else:
+            src = {"shape": False, "source": "library", "engines": [{"name": n, "does": "", "reads": "Brief", "writes": n, "internet": False} for n in line]}
+            got = None
+        _, posts = _offer(j2, monkeypatch, ref, src, got, how="code")
+        sent = _covers_of(posts)
+        assert set(sent["covers"]) == {i["id"] for i in ITEMS}, kind
+        assert S.validate_act("Adaptation", ["Priority"], "propose", sent) == [], kind
+        wf = S.as_workflow(sent["engines"], sent["source"], d)
+        assert wf["covers_by"] == "adaptation" and S.validate("workflow", wf) == []
+
+
+def test_a3_covers_a_model_names_are_kept_when_known_and_the_rest_default_to_the_last_engine(j2, monkeypatch):
+    ref = _dept(j2, "organic")
+    named = {"engines": [dict(GOOD[0], covers=["D1", "D9"]), dict(GOOD[1], covers=["D2", "D3", "D2"])]}
+    _, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, named, how="model")
+    assert _covers_of(posts)["covers"] == {"D1": ["Facts 2"], "D2": ["Site 2"], "D3": ["Site 2"]}, "D9 is no item; D2 once"
+    bare = {"engines": GOOD}
+    _, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, bare, how="model")
+    assert _covers_of(posts)["covers"] == {"D1": ["Site 2"], "D2": ["Site 2"], "D3": ["Site 2"]}
+
+
+def test_a3_the_line_goes_to_identity_with_its_covers_when_no_cycle_is_live(j2, monkeypatch):
+    ref = _dept(j2, "organic")
+    out, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, {"engines": GOOD}, how="model", live=False)
+    assert posts[0][:2] == ("Identity", "propose") and set(posts[0][2]["covers"]) == {"D1", "D2", "D3"}
+
+
+def test_a3_a_department_with_no_done_items_proposes_no_covers(j2, monkeypatch):
+    ref = _dept(j2, "organic", items=[])
+    _, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, {"engines": GOOD}, how="model")
+    assert _covers_of(posts)["covers"] == {} and all(e["covers"] == [] for e in _covers_of(posts)["engines"])
