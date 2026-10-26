@@ -165,6 +165,51 @@ def test_m3_1_after_a_j2_answer_the_identity_read_and_the_copy_equal_the_record(
     assert len(proposals.listing()) == filed + 1
 
 
+DONE_Q = "What evidence will prove this department is done?"
+
+
+def test_m3_1_a_done_when_answer_is_an_item_and_every_reader_agrees(j2, monkeypatch):
+    """The answer written over done while the items, the identity read, the Org screen's copy and the pane keep the old
+    item (the record disagreeing with itself) must fail."""
+    W, R, J, founding, F = j2
+    _model(monkeypatch, R, {"setup.shape": dict(SHAPED)})
+    ref = _born(j2, settle=False)
+    d = W.dept(ref)
+    d["done"] = ""                                                    # the identity has no done-when: Identity asks for it
+    W.save_dept(ref, d)
+    J._ask_gap(ref, W.dept(ref), J._state(ref))
+    assert J.status(ref)["open_question"]["text"] == DONE_Q
+    before = int(W.dept(ref).get("identity_revision") or 1)
+    answer = "Customers can order a cake on WhatsApp"
+    J.answer(ref, answer)
+
+    d = W.dept(ref)
+    item = {"id": "D1", "text": answer, "how": "model", "level": "outcome"}
+    assert d["done_items"] == [item] and d["done"] == W.done_line(d["done_items"]) == answer and d["to_be_confirmed"] == []
+    assert d["identity_revision"] == before + 1 and d["goal"] == SHAPED["goal"]          # one revision; the goal as it was
+    got = _client().get("/api/dept/%s/identity" % ref).json()
+    assert (got["done_items"], got["done"]) == ([item], answer)
+    assert founding._standing(ref)["done_when"] == [answer]
+    assert [(i["id"], i["text"], i["how"], i["level"]) for i in F.function(ref, "identity")["j2"]["done_items"]] == \
+        [("D1", answer, "model", "outcome")]
+    # with a done line on record, the items that say how they are checked are kept and the answer is the next item
+    kept = {"done": "A; B", "done_items": [{"id": "D1", "text": "A", "how": "code", "level": "target"},
+                                           {"id": "D2", "text": "B", "how": "vibes", "level": "outcome"}]}
+    assert W.done_items(W.answered_items(kept, " C  now ")) == [{"id": "D1", "text": "A", "how": "code", "level": "target"},
+                                                               {"id": "D2", "text": "C now", "how": "model", "level": "outcome"}]
+
+
+def test_m3_1_done_when_items_are_stored_in_one_shape(j2):
+    """A stored item that keeps its confirm note inline, or a to-confirm row built another way, must fail."""
+    W = j2[0]
+    items = W.done_items([{"text": "A", "how": "code", "level": "target"}, {"text": "B", "how": "person", "level": "outcome", "confirm": "nobody said"}])
+    assert W.stored_done_items(items) == [{"id": "D1", "text": "A", "how": "code", "level": "target"},
+                                          {"id": "D2", "text": "B", "how": "person", "level": "outcome"}]
+    assert W.to_confirm(items) == [{"item": "D2", "why": "nobody said"}]
+    shaped = j2[1]._shape_norm({"kind": "website", "name": "X", "goal": "g", "done_items": [dict(i) for i in items]})
+    assert shaped["done_items"] == W.stored_done_items(items) and shaped["to_be_confirmed"] == W.to_confirm(items)
+
+
 def test_m3_1_a_department_not_in_the_registry_has_no_copy_and_nothing_is_filed(j2):
     W, _, _, founding, _ = j2
     import proposals

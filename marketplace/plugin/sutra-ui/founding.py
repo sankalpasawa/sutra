@@ -177,7 +177,7 @@ def spawn(root_ref, name, kind, goal, owner="the owner", goal_context=None, temp
     checkpoints = ["root", "child", "functions", "rules_limits", "goal_context", "born_engines"]
     d.update({"templates": picks, "org": rd.get("org") or {}, "root": root_ref, "template_ref": template_ref,
               "initial_goal_context": context, "goal": goal,
-              "done_items": [{x: i[x] for x in ("id", "text", "how", "level")} for i in items], "done": W.done_line(items),
+              "done_items": W.stored_done_items(items), "done": W.done_line(items),
               "to_be_confirmed": [dict(c) for c in to_confirm or [] if isinstance(c, dict) and c.get("item")],
               "founding": {"operation_id": operation, "checkpoints": checkpoints}})
     W.save_dept(ref, d)

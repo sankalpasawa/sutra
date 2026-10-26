@@ -3674,8 +3674,8 @@ def _shape_norm(out):
     # Root's done-when items (PRD M3.2): numbered by the code, how and level as the agent said them for the covering to
     # judge; none drafted (offline, or a model that gave none), and the kind's done line is D1
     items = W.done_items(out.get("done_items"), kind)
-    out["to_be_confirmed"] = [{"item": i["id"], "why": i.pop("confirm")} for i in items if i.get("confirm")]
-    out["done_items"] = items
+    out["to_be_confirmed"] = W.to_confirm(items)
+    out["done_items"] = [{k: v for k, v in i.items() if k != "confirm"} for i in items]
     return out
 
 

@@ -107,6 +107,41 @@ def items_of(d):
             if isinstance(i, dict)]
 
 
+#: one done-when item as dept.json keeps it; its confirm note lives in to_be_confirmed, beside it
+DONE_ITEM_FIELDS = ("id", "text", "how", "level")
+
+
+def stored_done_items(items):
+    """Done-when items (numbered by done_items) as dept.json keeps them: {id, text, how, level}, defined here once."""
+    return [{x: i[x] for x in DONE_ITEM_FIELDS} for i in items]
+
+
+def to_confirm(items):
+    """The items that rest on a fact nobody gave, as dept.json's to_be_confirmed keeps them: [{item, why}]."""
+    return [{"item": i["id"], "why": i["confirm"]} for i in items if i.get("confirm")]
+
+
+def answered_items(d, text):
+    """The done-when items an answer to Identity's done-when question makes (PRD M3.1): the owner's words become the next
+    item, read by an AI (an outcome), after the record's items that say how they are checked. A record whose done line
+    is empty has no done-when to keep, so the answer stands alone."""
+    keep = [i for i in items_of(d) if i.get("how") in DONE_HOW] if str(d.get("done") or "").strip() else []
+    return keep + [{"text": " ".join(str(text or "").split()), "how": "model", "level": "outcome"}]
+
+
+def put_done_items(ref, items):
+    """Done-when becomes `items` (numbered again): done is their joined text, and to_be_confirmed holds the notes of the
+    items that carry one; the goal is never touched. A revision of the identity (bump_identity), so the Org screen's
+    copy follows. The one writer of done-when: a stamped done_items ask, and an answer to Identity's question."""
+    with _lock(ref):
+        d = dept(ref)
+        items = done_items(items, d.get("kind"))
+        d["done_items"] = stored_done_items(items)
+        d["done"] = done_line(items)
+        d["to_be_confirmed"] = to_confirm(items)
+        return bump_identity(ref, d)
+
+
 # Rules (PRD M3.4): every rule the record keeps is tagged (go: it may; ask: it asks the owner first; refuse: it never
 # does; always: it always does) and says when and from whose words it came. Built here only, so the record holds one shape.
 RULE_TAGS = ("go", "ask", "refuse", "always")
@@ -186,15 +221,8 @@ def choose_option(ref, aid, oid, text=None, by="the owner"):
 
 
 def apply_done_items(ref, ask):
-    """A stamped done_items ask: done-when becomes its items, done their joined text, and to_be_confirmed holds the
-    notes of the items that carry one; the goal is never touched. A revision of the identity (bump_identity)."""
-    with _lock(ref):
-        d = dept(ref)
-        items = done_items(ask.get("items"), d.get("kind"))
-        d["done_items"] = [{x: i[x] for x in ("id", "text", "how", "level")} for i in items]
-        d["done"] = done_line(items)
-        d["to_be_confirmed"] = [{"item": i["id"], "why": i["confirm"]} for i in items if i.get("confirm")]
-        return bump_identity(ref, d)
+    """A stamped done_items ask: done-when becomes its items (put_done_items); the goal is never touched."""
+    return put_done_items(ref, ask.get("items"))
 
 
 def engines_of(d):

@@ -455,11 +455,15 @@ def answer(ref, text, ask_id=None, at=None):
                 ask["words_at"] = {"board": ref, "n": row["n"]}      # the card keeps the answer; the chat leaves the post to it
                 W._put_ask(ref, ask)
             return _state(ref)
-        if missing == "goal":
-            dept["goal"] = text
-        elif missing == "done-when":
-            dept["done"] = text
-        W.bump_identity(ref, dept)                      # the one record, and the Org screen's copy of it (M3.1)
+        if missing == "done-when":
+            # done-when is its items (M3.1): the answer is an item, written by the one writer of done-when, so done stays
+            # their joined text and the Org screen's copy follows (found by a verifier 2026-10-23: done was the answer
+            # and the items, the API, the copy and the pane all kept the old item)
+            W.put_done_items(ref, W.answered_items(dept, text))
+        else:
+            if missing == "goal":
+                dept["goal"] = text
+            W.bump_identity(ref, dept)                  # the one record, and the Org screen's copy of it (M3.1)
         ask.update({"status": "stamped", "decided": W.now(), "by": "the owner", "answered": text})
         if at:
             ask["words_at"] = at
