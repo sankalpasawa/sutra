@@ -1942,9 +1942,23 @@ def check_rules_of(ctx, step, item):
 SEND_BACK = "Correct this: the rule is broken"
 
 
+def _broken_rule(d, broken):
+    """The owner's own rule (stamped, so its id begins u-) that a build breaks, by its line; with one rule of the owner's and no
+    line that matches, that one; None when none is to be found."""
+    mine = [r for r in d.get("rules") or [] if str(r.get("id") or "").startswith("u-") and r.get("line")]
+    for b in broken:
+        want = " ".join(str(b.get("rule") or "").lower().split())
+        hit = next((r for r in mine if " ".join(str(r["line"]).lower().split()) == want), None)
+        if hit:
+            return hit
+    return mine[0] if len(mine) == 1 else None
+
+
 def _send_back(ref, d, art, v, broken):
     """A build that breaks a stamped rule goes back to the line with the finding, twice at most, and the person is told
-    each time (finding 12: two versions broke a stamped rule and nothing said so)."""
+    each time (finding 12: two versions broke a stamped rule and nothing said so). When two rewrites did not mend it, the
+    person is told so and given the ways out as one ask, never left with a tell only (PRD M9.5, J2.7): say the rule another
+    way, leave it out, or stop."""
     try:
         lines = ["'%s' on %s" % (b.get("rule"), ", ".join(b.get("pages") or [])) for b in broken]
         cur = W.latest(ref, "Brief")
@@ -1953,6 +1967,14 @@ def _send_back(ref, d, art, v, broken):
         if tries >= 2:
             _tell(ref, d, src, "inform", {"word": "broken", "done": "%s v%d breaks your rule %s, and two rewrites did not mend it. Say the rule another way, or drop it."
                                           % (art, v, "; ".join(lines))})
+            rule = _broken_rule(d, broken)
+            ways = [W.option(W.WORDS_OPTION, "Say the rule another way", "your words go to Identity; the line builds again once the rule is stamped")]
+            if rule:
+                ways.append(W.option("leave:" + rule["id"], "Leave this rule out",
+                                     "the rule is dropped (%s); the line builds again without it" % str(rule["line"]).rstrip(".")))
+            ways.append(W.option(W.STOP_OPTION, "Stop here", "the department stops where it is; you can start it again later"))
+            _blocked(ref, d, src, "Nothing goes live while your rule %s is broken. Choose how to go on." % "; ".join(lines),
+                     "Your rule is still broken.", "Check, holding the build to your rule", "; ".join(lines), options=ways)
             return
         _file_words(ref, d, "%s %s" % (SEND_BACK, "; ".join(lines)), "the check's finding")
         _tell(ref, d, src, "inform", {"word": "broken", "done": "%s v%d breaks your rule %s. Sent back to be rewritten." % (art, v, "; ".join(lines))})

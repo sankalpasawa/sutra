@@ -546,12 +546,34 @@ def apply_way(ctx, ask, pl):
     return {'said': "applied the owner's choice (%s) through %s" % (oid, S.TITLE[spec['layer']]), 'applied': True, 'result': got}
 
 
+def leave_rule_out(ctx, rule):
+    """The owner chose to leave a rule out (M9.5, J2.7: a build still breaks it after two rewrites): the rule comes off the
+    department's rules, the identity moves a revision, the Brief says so, and the line builds again without it. A rule the
+    owner stamped is the owner's to drop; no rule of a parent's is offered here."""
+    ref, d = ctx['ref'], ctx['dept']
+    line = str(rule.get('line') or '').rstrip('.')
+    with W._lock(ref):
+        cur = W.dept(ref)
+        cur['rules'] = [r for r in cur.get('rules') or [] if r.get('id') != rule.get('id')]
+        W.bump_identity(ref, cur)
+    cj = R._j2()
+    if cj and cj.active(ref):
+        cj._move(ref, 'running')
+    row = R._file_words(ref, W.dept(ref), 'A rule is left out: %s. Build again without it.' % line, 'a rule the owner left out')
+    R._tell(ref, d, _who(d), 'inform', {'word': 'request', 'done': 'The rule is left out: %s. The line builds again without it.' % line, 'v': row['v']})
+    return {'said': "left the rule out on the owner's choice: %s" % line, 'filed': row['v']}
+
+
 def identity_apply(ctx, step, item):
     """Apply what the owner stamped (the body engine_runtime holds), once the ways out another layer owns have been applied
     by it (apply_way, M5.4); a stamp on the correction a round asked (identity_round) files the round (M9.3)."""
     ref, pl = ctx['ref'], ctx['post']['payload']
     ask = next((x for x in W.asks(ref) if x['id'] == pl.get('ask')), None)
     if ask and ask.get('kind') == 'blocked' and pl.get('option'):
+        oid = str(pl['option'])
+        rule = next((r for r in ctx['dept'].get('rules') or [] if oid.startswith('leave:') and r.get('id') == oid.split(':', 1)[1]), None)
+        if rule:
+            return leave_rule_out(ctx, rule)
         got = apply_way(ctx, ask, pl)
         if got is not None:
             return got
@@ -867,6 +889,8 @@ def identity_weigh_reading(ctx, step, item):
         return {'said': 'the version was not read; nothing is weighed and nothing is cleared', 'routes': routes}
     if not (cj and cj.active(ref)):
         return {'said': 'the department is not in its cycle; the reading is kept and nothing is weighed', 'routes': routes}
+    if row.get('cycle_id') not in (None, (cj._state(ref) or {}).get('cycle_id')):
+        return {'said': 'the reading belongs to an earlier cycle; it is kept and nothing is weighed', 'routes': routes}
     said = []
     if got['to_confirm']:
         ask = _ask_fact(ctx, row, got['to_confirm'])

@@ -1299,6 +1299,14 @@ def test_j2_g_a_high_finding_the_next_round_carries_is_not_also_put_to_the_owner
     assert any("does not know" in s for s in _said_by_identity(R, ref))
 
 
+def test_j2_g_a_reading_of_an_earlier_cycle_is_weighed_by_nobody(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    _adaptation_hears_next(monkeypatch, R)
+    _hear(j2, ref, {"D1": "met", "D2": "not_met"}, cycle="cycle-before", findings=[{"id": "F1", "severity": "low", "claim": "x", "item": "D2"}])
+    assert _next_requests(R, ref) == [] and _asks_of(W, ref, "finding") == []
+
+
 def test_j2_g_nothing_is_weighed_of_a_version_nobody_read_or_a_department_that_is_done(j2, monkeypatch):
     W, R, J, _, _ = j2
     ref = _a_running_department(j2)
@@ -1483,3 +1491,177 @@ def test_j4_a_rule_that_says_ask_and_a_no_ends_the_round_and_leaves_the_ways_out
     assert len(W.versions(ref, "Brief")) == briefs and W.rows(ref, "rounds.jsonl")[-1]["status"] == "refused"
     (card,) = _asks_of(W, ref, "blocked")
     assert [o["id"] for o in card["options"]] == ["words", "leave:D2", "stop"] and J.status(ref)["state"] == "blocked"
+
+
+# ---- J5: no silent ends (M9.5) -----------------------------------------------------------------------------------------------
+RULE = "Every page ends with: Call 108."
+
+
+def _a_rule_the_build_breaks(j2, monkeypatch, org="Rule Co"):
+    """A website whose owner stamped a rule its pages cannot meet, so Check fails every build: after two rewrites the line stops."""
+    W, R, J, _, _ = j2
+    ref = _born(j2, WEBSITE, org)
+    _stamp_the_pending(W, ref, ("publish",))
+    _model(monkeypatch, R, {"identity.recognise": {"journey": "directive", "why": "a standing rule"},
+                            "identity.rule": {"tag": "always", "line": RULE, "scope": "standing"}})
+    W.owner_ask(ref, "From now on, every page ends with: Call 108.")
+    W.run_until_idle(ref, limit=300)
+    _stamp_the_pending(W, ref, ("rule",))
+    W.run_until_idle(ref, limit=600)
+    return ref
+
+
+def test_j2_7_the_second_send_back_files_an_options_ask(j2, monkeypatch):
+    """A build that breaks a stamped rule goes back to the line twice; when two rewrites did not mend it the owner is told so and
+    given the ways out as one ask, never a tell only: say it another way, leave this rule out, stop."""
+    W, R, J, _, _ = j2
+    ref = _a_rule_the_build_breaks(j2, monkeypatch)
+    brief = W.read_files(ref, "Brief", W.latest(ref, "Brief")["v"])["brief.md"]
+    assert brief.count(R.SEND_BACK) == 2, "the finding went to the line twice, and no more"
+    told = [s for s in _said_by_identity(R, ref) if "two rewrites did not mend it" in s]
+    assert len(told) == 1 and "Say the rule another way, or drop it." in told[0], "the tell stays"
+    (card,) = _asks_of(W, ref, "blocked")
+    rule = next(r for r in W.dept(ref)["rules"] if r["line"] == RULE)
+    assert [o["id"] for o in card["options"]] == ["words", "leave:" + rule["id"], "stop"]
+    assert [o["label"] for o in card["options"]] == ["Say the rule another way", "Leave this rule out", "Stop here"]
+    assert S.validate_record("identity", "ask", card) == [] and card["thread"] and RULE.rstrip(".") in card["text"]
+    assert J.status(ref)["state"] == "blocked"
+    assert not re.search(r"\b(?:grant|counter|refus|charter)", " ".join([card["text"], card["title"], card["why"]]), re.I)
+    # the chat says it once on the card: the card's line is not a turn of its own
+    assert len([t for t in R.chat_view(ref)["turns"] if t.get("word") == "blocked"]) == 0
+
+
+def test_j5_leaving_the_rule_out_drops_it_and_the_line_builds_again_without_it(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _a_rule_the_build_breaks(j2, monkeypatch)
+    (card,) = _asks_of(W, ref, "blocked")
+    rule = next(r for r in W.dept(ref)["rules"] if r["line"] == RULE)
+    live, revision = len(W.versions(ref, "Live site")), W.dept(ref)["identity_revision"]
+    monkeypatch.setattr(R, "MODEL", None)                                # the owner's words are still what the line is held to
+    W.choose_option(ref, card["id"], "leave:" + rule["id"])
+    W.run_until_idle(ref, limit=600)
+    d = W.dept(ref)
+    assert RULE not in [r["line"] for r in d["rules"]] and d["identity_revision"] == revision + 1, "the rule is off the record, a revision"
+    assert next(a for a in W.asks(ref) if a["id"] == card["id"])["status"] == "chosen"
+    assert "A rule is left out: %s" % RULE.rstrip(".") in W.read_files(ref, "Brief", W.latest(ref, "Brief")["v"])["brief.md"]
+    assert len(W.versions(ref, "Live site")) > live, "with the rule gone the build passes and goes live"
+    assert not _asks_of(W, ref, "blocked") and J.status(ref)["state"] != "blocked"
+
+
+def test_j5_saying_it_another_way_and_stopping_are_still_applied(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _a_rule_the_build_breaks(j2, monkeypatch)
+    (card,) = _asks_of(W, ref, "blocked")
+    W.choose_option(ref, card["id"], "stop")
+    W.run_until_idle(ref, limit=100)
+    assert W.dept(ref)["stopped"] is True
+    (again,) = _asks_of(W, ref, "blocked")
+    assert again["id"] == card["id"] and [o["id"] for o in again["options"]][0] == "words", "stopped, its way out stays open"
+
+
+def _stalled_department(j2, monkeypatch, rounds=2, org="Stall Co"):
+    """A department whose rounds met nothing new: a reading with D2 not met, then `rounds` rounds filed, each read with D2 still not met."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org=org)
+    _adaptation_hears_next(monkeypatch, R)
+    finding = [{"id": "F1", "severity": "high", "claim": "Every page names its fees", "item": "D2"}]
+    _hear(j2, ref, {"D1": "met", "D2": "not_met"}, findings=finding)
+    for n in range(2, 2 + rounds):
+        W.append_row(ref, "rounds.jsonl", {"schema_version": 1, "round": n, "at": W.now(), "cycle_id": J.status(ref)["cycle_id"], "correction": "Name the fees",
+                                           "fixes": ["F1"], "covers": ["D2"], "status": "filed", "brief_v": n + 1, "reading": "r-0a0a0a0a"})
+        _hear(j2, ref, {"D1": "met", "D2": "not_met"}, v=n, findings=finding)
+    return ref
+
+
+def test_j5_two_rounds_with_no_newly_met_item_give_an_options_ask_and_ask_the_line_for_no_more(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    one = _stalled_department(j2, monkeypatch, rounds=1, org="One Round Co")
+    assert len(_next_requests(R, one)) == 2 and _asks_of(W, one, "blocked") == [], "one round with nothing new met is not yet a stall"
+    ref = _stalled_department(j2, monkeypatch, rounds=2)
+    (card,) = _asks_of(W, ref, "blocked")
+    assert [o["id"] for o in card["options"]] == ["words", "leave:D2", "stop"] and J.status(ref)["state"] == "blocked"
+    assert "D2" in card["text"] and card["reading"] == W.rows(ref, "readings.jsonl")[-1]["id"] and S.validate_record("identity", "ask", card) == []
+    assert len(_next_requests(R, ref)) == 2, "no further round is asked of the line (the reading after round 3 files none)"
+    _tell_reading(j2, ref, W.rows(ref, "readings.jsonl")[-1])
+    assert len(_asks_of(W, ref, "blocked")) == 1, "the same reading, heard again, is the same card"
+
+
+def test_j5_a_round_that_met_something_new_is_progress(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org="Progress Co")
+    _four_items(W, ref)
+    _adaptation_hears_next(monkeypatch, R)
+    cycle = J.status(ref)["cycle_id"]
+    finding = [{"id": "F1", "severity": "high", "claim": "x", "item": "D2"}]
+    _hear(j2, ref, {"D1": "met", "D2": "not_met", "D3": "not_met", "D4": "met"}, findings=finding)
+    for n, verdicts in ((2, {"D1": "met", "D2": "met", "D3": "not_met", "D4": "met"}), (3, {"D1": "met", "D2": "met", "D3": "not_met", "D4": "met"})):
+        W.append_row(ref, "rounds.jsonl", {"schema_version": 1, "round": n, "at": W.now(), "cycle_id": cycle, "correction": "c", "covers": ["D2"],
+                                           "status": "filed", "brief_v": n + 1})
+        _hear(j2, ref, verdicts, v=n, findings=[])
+    assert _asks_of(W, ref, "blocked") == [], "the first round met D2: only the second met nothing new"
+    W.append_row(ref, "rounds.jsonl", {"schema_version": 1, "round": 4, "at": W.now(), "cycle_id": cycle, "correction": "c", "covers": ["D3"],
+                                       "status": "filed", "brief_v": 5})
+    _hear(j2, ref, {"D1": "met", "D2": "met", "D3": "not_met", "D4": "met"}, v=4, findings=[])
+    assert len(_asks_of(W, ref, "blocked")) == 1, "now two rounds in a row met nothing new"
+
+
+#: what the screen never says (the owner's rulings: said yes, asked for less, said no; no charter, no internal system; no orders)
+SCREEN_BANNED = re.compile(r"\b(?:grant|counter|refus|orders\b|charter|internal system)", re.I)
+
+
+def test_j5_the_words_the_owner_reads_in_the_pursuit_keep_the_screen_rules(j2, monkeypatch):
+    """Every line Identity says to the owner in these flows, every card and every way out on it, in the owner's words: no grant,
+    counter, refuse, orders, charter or internal system, no code of the machine, and no function addressing another."""
+    W, R, J, _, _ = j2
+    seen = []
+    for what, ref in _end_states(j2, monkeypatch):
+        for p in R.board(ref):
+            if p["src"] == "Identity" and "Owner" in p["dst"]:
+                seen += [(what, str(p["payload"].get(k))) for k in ("done", "objective") if p["payload"].get(k)]
+        for a in W.asks(ref):
+            seen += [(what, str(a.get(k))) for k in ("text", "title", "why") if a.get(k)]
+            seen += [(what, str(o.get(k))) for o in a.get("options") or [] for k in ("label", "cost")]
+    assert len(seen) > 40
+    from engine_runtime import PLAIN_FAULTS
+    for what, text in seen:
+        assert not SCREEN_BANNED.search(text), (what, text)
+        assert not [name for name, rx in PLAIN_FAULTS if rx.search(text)], (what, text)
+
+
+def _end_states(j2, monkeypatch):
+    """Every end the pursuit can come to that is not done, each in a department of its own: (what it is, the department)."""
+    W, R, J, _, _ = j2
+    out = []
+    ref = _born(j2, WEBSITE, "Conflict Co")
+    _two_items(W, ref)
+    _conflict(R, ref, ENGINES, _ways(W.items_of(W.dept(ref))))
+    W.run_until_idle(ref, limit=300)
+    out.append(("a conflict with ways out", ref))
+    out.append(("a rule the build still breaks after two rewrites", _a_rule_the_build_breaks(j2, monkeypatch, "Send Back Co")))
+    out.append(("two rounds that met nothing new", _stalled_department(j2, monkeypatch, org="No Progress Co")))
+    ref = _a_running_department(j2, org="Fact Co")
+    _hear(j2, ref, {"D1": "met", "D2": "to_confirm"})
+    _owner_says(j2, ref, "chat", "just do it")
+    out.append(("a fact the owner does not give", ref))
+    ref = _a_running_department(j2, org="No Co")
+    _identity_hears(R, ref, _grant_round(R, W, J, monkeypatch, ref, correction="Email every subscriber the new fees"))
+    W.decide_ask(ref, _asks_of(W, ref, "finding")[0]["id"], False)
+    W.run_until_idle(ref, limit=1)
+    out.append(("a correction the owner turned down", ref))
+    return out
+
+
+def test_j5_every_end_that_is_not_done_has_a_pending_ask_with_options(j2, monkeypatch):
+    """SM-6: the scenario suite's ends of the pursuit. None is done, none is silent: a pending ask, and in it ways out the owner
+    can choose, each of a kind the interface names."""
+    W, R, J, _, _ = j2
+    for what, ref in _end_states(j2, monkeypatch):
+        assert J.status(ref)["state"] != "done", what
+        pending = [a for a in W.asks(ref) if a["status"] == "pending" and a.get("options")]
+        assert len(pending) == 1, (what, [(a["kind"], a["status"]) for a in W.asks(ref)])
+        card = pending[0]
+        assert card["kind"] == "blocked" and 2 <= len(card["options"]) <= S.OPTIONS_MAX, what
+        assert all(S.validate("option", o) == [] and o["kind"] in S.OPTION_KINDS for o in card["options"]), what
+        assert "stop" in [o["id"] for o in card["options"]], (what, "a way to stop is always there")
+        assert S.validate_record("identity", "ask", card) == [], what
+        assert card["thread"], "the card is on a thread, so a choice reaches Identity"
