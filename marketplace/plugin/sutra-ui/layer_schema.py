@@ -1593,7 +1593,7 @@ RECOGNITIONS = VERDICTS['identity']['journey']
 # the levels (A3.1) as data, so the generated JSON Schema, describe() and a screen can read them: each level's name, the base
 # class that is its template (a DEFS name, or a table of this module), where its children are, the one sentence a child keeps
 # and the ids of the rules that hold it (A3.1 lists each rule with its case and its failing example). L2's base is the layer
-# interface the function template extends; C5 of A3-CORE names the function template's own table there
+# interface extended by the function template (FUNCTION_TEMPLATE, below)
 TEMPLATE_LEVELS = (
     {'level': 'L0', 'name': 'user journey', 'base': 'journey', 'children': 'journeys/*.json',
      'keeps': 'A journey may add steps, edges, sub-journeys, tests, rulings and quotes. It may not drop, move or re-word a row the '
@@ -1604,7 +1604,7 @@ TEMPLATE_LEVELS = (
      'keeps': 'A kind names its line of work engines, the ones required inside the line, its artifacts, a goal, rules (each tagged), '
               'a use case, and a functions_template that every function has.',
      'rules': ('K-1', 'K-2')},
-    {'level': 'L2', 'name': 'function', 'base': 'LAYERS', 'children': 'layers/<layer>/v<N>.py; function-templates/<function>/*.json',
+    {'level': 'L2', 'name': 'function', 'base': 'FUNCTION_TEMPLATE', 'children': 'layers/<layer>/v<N>.py; function-templates/<function>/*.json',
      'keeps': "A version places the interface's role phrase, its 'is not' and 'never' lines and the working agreement (its layout "
               'holds all eight inputs), supplies every typed word within its limits and uses no banned word. A use-case template adds '
               "floor lines and keeps the Default's checks.",
@@ -1639,6 +1639,183 @@ _ASK_OPTIONS = {'blocked': ('words', 'leave', 'stop'), 'conflict': ('words', 'ro
 _ASK_LEADS = {'publish': 'Publish: go live for the first time', 'rule': 'A rule, as understood',
               'request': 'Your words reach outside the site'}
 ASK_FORMS = {kind: {'by': 'identity', 'options': _ASK_OPTIONS.get(kind, ()), 'lead': _ASK_LEADS.get(kind)} for kind in ASK_KINDS}
+
+# the function template (L2, A3.4.2). Each part of a function is one of three things. A constant is a boundary no field changes:
+# what the function is not, what it never does, who it hands on to, and the working agreement all five keep; a tighter boundary
+# is a rule, never a field, and an owner cannot loosen one (approvals only tighten, S-08). A word is behaviour, typed in the
+# `goal` group of S.PROMPTS (A3-FUNCTIONS adds the parts goal.done and goal.role_*, and the layout of the compiled role block).
+# What is derived is written once, in the tables above, so it cannot drift. These constants are addressed to the agent: the owner
+# is "the owner", never "You", and where a word sits beside an answer shape it is the contract's (accept, counter, reject; go,
+# ask, refuse); the one thing the owner reads, goal.done, keeps the screen's list of banned words
+ROLE_INPUTS = ('agreement', 'is', 'is_not', 'may', 'never', 'procedure', 'patterns', 'hands_on')   # the inputs of goal.role_block
+ROLE_BLOCK_MAX = 3600                              # characters of the compiled block
+TEMPLATE_BANNED = r"\b(charters?|ceo|requesters?|grant(?:s|ed)?|counter(?:s|ed)?|refus\w*|internal systems?)\b"     # re.I; the screen's words
+TEMPLATE_BANNED_AGENT = r"\b(charters?|ceo|requesters?|internal systems?)\b"                                       # re.I; the words only the agent reads
+TEMPLATE_NEVER_SAY = {'priority': r"order|what runs next"}       # re.I; a substring, as test_priority_never_orders has it (S-05)
+
+#: what team.md's working rules say that the interface cannot: the base text every function keeps. Its first line is true of
+#: Identity too, which is the one function that speaks to the owner
+DEPARTMENT_AGREEMENT = (
+    'Only Identity speaks to the owner; any other function that needs something from the owner tells Identity.',
+    "The department's goal and its done-when are the reference for every decision you make.",
+    'Disagree with a reason tied to the goal, the limits or the rules, and move when someone gives a better reason.',
+    'If two functions cannot settle a disagreement in four exchanges, it goes to Identity with both positions.',
+    (
+        "A fact only the owner knows is Identity's question to the owner; until it is answered the item is to be "
+        'confirmed, and it is not met.'
+    ),
+    (
+        'The work is finished only when Audit has read every done-when item and none is unmet or to be confirmed; a limit '
+        'reached ends in an ask to the owner through Identity, never in silence.'
+    ),
+)
+
+#: per layer (the five functions and Root): role (a label), is_not, never (the lines no version drops), hands_on (who it hands
+#: on to, FT-10), in_card (whether the role block is sent in its card; Root's Setup prompts use no card, so its template is
+#: interface-only) and, for Adaptation, reserved (the site's parts that are placeholders: recorded, not built)
+FUNCTION_TEMPLATE = {
+    'identity': {
+        'role': 'keeps the goal, the done-when and the rules, and closes conflicts',
+        'is_not': (
+            'It does not design workflows, give out limits, schedule work, do the work or read results. It rules only '
+            'when a proposal touches a rule, when Priority and Adaptation cannot agree, when Audit reports something that '
+            'matters, or when the department may be done.'
+        ),
+        'never': (
+            'invent a new goal or a new rule',
+            'choose tools or the steps of the work',
+            'raise a limit',
+            'say which workflow runs first',
+            'rewrite a proposal to make it acceptable',
+            'ask the owner only because functions disagree',
+            'make anything itself: the maker is an engine',
+            'loosen a rule: approvals only tighten',
+        ),
+        'hands_on': (
+            'Adaptation: a request for a line, and the next thing to correct. Coordination: verdicts on gates. The owner: '
+            'questions, tells and asks, since Identity is the only function that speaks to the owner.'
+        ),
+        'in_card': True,
+    },
+    'adaptation': {
+        'role': 'senses the gap to the goal and proposes how to close it',
+        'is_not': (
+            'It designs; it does not approve its own proposal. Priority gives the limits, Identity holds the rules, '
+            'Coordination keeps the order and Audit judges the results.'
+        ),
+        'never': (
+            'give itself resources',
+            "say a plan passed Root's check",
+            'schedule a run',
+            'say its own result is right',
+            'ask the owner directly: only Identity does',
+            'hide a capability or a permission a plan depends on',
+            'widen the scope to make a proposal look more valuable',
+            'apply a change itself: every proposal passes Priority first',
+        ),
+        'hands_on': (
+            'Priority: every proposal and every round. Identity: conflicts, and a round Priority accepted, to file. Root: '
+            'the line Priority accepted, for its check.'
+        ),
+        'in_card': True,
+        'reserved': ('crystallize', 'grow', 'learn', 'compass'),     # the site's parts that are placeholders: recorded, not built
+    },
+    'priority': {
+        'role': 'the budget bargain and the limit of each engine',
+        'is_not': (
+            'It does not choose strategy, design workflows, decide who goes first, judge the quality of content or read '
+            'the rules. A proposal can be attractive and still not affordable, or cheap and still beside the goal; '
+            'whether it fits the goal is for Identity and Adaptation.'
+        ),
+        'never': (
+            'say which accepted workflow runs first',
+            'reject a proposal because it dislikes a method that fits the limit',
+            'give a limit that is not declared, or no limit at all',
+            "change the department's goal",
+            'ask the owner directly: only Identity does',
+            'turn a question of money into a question of policy',
+            'start a run',
+        ),
+        'hands_on': (
+            "Adaptation: accept, counter or reject, with the price. Identity: through Adaptation's conflict, when a limit "
+            'is hit.'
+        ),
+        'in_card': True,
+    },
+    'coordination': {
+        'role': 'order, dependencies, hand-offs and keeping work apart',
+        'is_not': 'It does not give limits, decide the goal, design workflows or judge the quality of results.',
+        'never': (
+            'raise a limit',
+            'decide that an expensive workflow is not worth it',
+            'settle a question of rules',
+            'change the steps of a workflow',
+            'say a result is right',
+            'ask the owner directly: only Identity does',
+            'start a run: the engine starts itself in its slot',
+        ),
+        'hands_on': 'Identity: alarms, lost requests and verdict asks. Priority: verdict asks.',
+        'in_card': True,
+    },
+    'audit': {
+        'role': 'an independent check on the evidence',
+        'is_not': (
+            'It does not design the workflow, repair the result, give limits, schedule rework or decide policy. Its job '
+            'is to make a difference visible, with the evidence.'
+        ),
+        'never': (
+            'touch a workflow or a version',
+            "approve a proposed workflow because it can picture auditing its output: Root's check registers it",
+            'turn a check into a score',
+        ),
+        'hands_on': 'Identity only: readings and findings.',
+        'in_card': True,
+    },
+    'root': {
+        'role': 'makes departments and checks plans',
+        'is_not': (
+            "It never creates or starts an engine: engines come from Adaptation. It does not do a department's work or "
+            'speak for its functions.'
+        ),
+        'never': (
+            'create or start an engine: engines come from Adaptation',
+            'register a plan that does not meet the standards',
+            "let a department's rules loosen its own",
+        ),
+        'hands_on': (
+            "Identity: the owner's words for a department, and a plan it could not register. Coordination and Priority: a "
+            'registered plan.'
+        ),
+        'in_card': False,                  # Root's Setup prompts use no card: its template is interface-only
+    },
+}
+
+#: every part of a function the site lists or the prototype's role file has, and its home: (part, the site's field when it
+#: has a literal name, else None; kind, 'word' (behaviour, typed in S.PROMPTS), 'constant' (here), 'derived' (written once in
+#: another table) or 'version' (the layer's recipe); home). A word's home is (group, part) in S.PROMPTS[layer]; a constant's
+#: is (table, key) here; a derived part's is the table of this module, or, in lower case, the folder that holds it
+TEMPLATE_PARTS = (
+    ('goal', 'goal', 'word', ('goal', 'does')),
+    ('skills', None, 'word', ('goal', 'skills')),
+    ('done', 'done', 'word', ('goal', 'done')),
+    ('role', None, 'constant', ('FUNCTION_TEMPLATE', 'role')),
+    ('is', None, 'word', ('goal', 'role_is')),
+    ('is_not', None, 'constant', ('FUNCTION_TEMPLATE', 'is_not')),
+    ('may', 'choices', 'word', ('goal', 'role_may')),
+    ('never', 'keeps', 'constant', ('FUNCTION_TEMPLATE', 'never')),
+    ('procedure', None, 'word', ('goal', 'role_procedure')),
+    ('patterns', None, 'word', ('goal', 'role_patterns')),
+    ('hands_on', 'hands_to', 'constant', ('FUNCTION_TEMPLATE', 'hands_on')),
+    ('agreement', None, 'constant', ('DEPARTMENT_AGREEMENT', None)),
+    ('hears', 'hears', 'derived', ('HEARS', None)),
+    ('writes', 'writes', 'derived', ('SENDS', None)),
+    ('checks', 'checks', 'derived', ('CHECKS', None)),
+    ('envelope', 'envelope', 'derived', ('SETTINGS', 'envelope')),
+    ('settings', 'settings', 'derived', ('SETTINGS', None)),
+    ('formats', None, 'derived', ('RECORDS', None)),
+    ('recipe', None, 'version', ('LAYERS', 'recipe')),
+    ('journeys', None, 'derived', ('journeys', 'functions')),
+)
 
 
 # ---- reading the tables ----------------------------------------------------------------------------------------------
@@ -1990,6 +2167,9 @@ def describe():
         'template_levels': TEMPLATE_LEVELS, 'ask_forms': ASK_FORMS, 'ledger_actions': LEDGER_ACTIONS, 'recognitions': RECOGNITIONS,
         'steps': {'kinds': STEP_KINDS, 'natures': NATURES, 'rungs': RUNGS, 'gate_answers': GATE_ANSWERS, 'model_tools': MODEL_TOOLS,
                   'ctx': STEP_CTX, 'row': STEP_ROW},
+        'function_template': {'by_layer': FUNCTION_TEMPLATE, 'agreement': DEPARTMENT_AGREEMENT, 'parts': TEMPLATE_PARTS,
+                              'role_inputs': ROLE_INPUTS, 'role_block_max': ROLE_BLOCK_MAX, 'banned': TEMPLATE_BANNED,
+                              'banned_agent': TEMPLATE_BANNED_AGENT, 'never_say': TEMPLATE_NEVER_SAY},
     }
     return json.loads(json.dumps(out, ensure_ascii=False))
 

@@ -834,3 +834,202 @@ def test_the_readme_has_the_a3_rows():
         assert "| %s |" % level in readme, level
     for name in ("templates.schema.json", "journeys.schema.json", "TEMPLATE_LEVELS", "ASK_FORMS", "LEDGER_ACTIONS", "template_checks.py"):
         assert name in readme, name
+
+
+# ---- C5: the function template's constants (L2) ----------------------------------------------------------------------------
+import re  # noqa: E402
+
+
+def _strings_of(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for v in value.values():
+            yield from _strings_of(v)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            yield from _strings_of(v)
+
+
+def _agent_words():
+    """Every constant of the function template, as the agent reads it."""
+    out = []
+    for layer, entry in S.FUNCTION_TEMPLATE.items():
+        out += [("%s %s" % (layer, k), x) for k, v in entry.items() if k not in ("in_card",) for x in _strings_of(v)]
+    return out + [("agreement %d" % i, line) for i, line in enumerate(S.DEPARTMENT_AGREEMENT, 1)]
+
+
+def test_ft1_every_function_has_a_sound_template_entry():
+    assert set(S.FUNCTION_TEMPLATE) == set(S.FUNCTION_LAYERS) | {"root"}, "every function layer, and Root"
+    for layer, entry in S.FUNCTION_TEMPLATE.items():
+        assert T.function_template_faults(layer, entry) == [], layer
+        assert len(entry["role"]) <= 80 and len(entry["is_not"]) <= 600 and len(entry["hands_on"]) <= 400, layer
+        assert 3 <= len(entry["never"]) <= 10 and all(0 < len(x) <= 160 for x in entry["never"]), layer
+        assert isinstance(entry["in_card"], bool)
+    assert S.FUNCTION_TEMPLATE["root"]["in_card"] is False, "Root's Setup prompts use no card: its template is interface-only"
+    assert all(S.FUNCTION_TEMPLATE[l]["in_card"] is True for l in S.FUNCTION_LAYERS)
+    assert set(S.FUNCTION_TEMPLATE["root"]) == {"role", "is_not", "never", "hands_on", "in_card"}, "no role words for Root"
+    assert "reserved" in S.FUNCTION_TEMPLATE["adaptation"] and not [l for l in S.FUNCTION_LAYERS if l != "adaptation" and "reserved" in S.FUNCTION_TEMPLATE[l]]
+    # the failing examples of FT-1
+    audit = S.FUNCTION_TEMPLATE["audit"]
+    assert T.function_template_faults("audit", {k: v for k, v in audit.items() if k != "never"}) == ["Audit: the template names no never"]
+    assert T.function_template_faults("audit", dict(audit, never=audit["never"][:2])) == ["Audit: never holds three to ten lines, and this holds 2"]
+    assert T.function_template_faults("audit", dict(audit, never=audit["never"] + ("x",) * 8)) == ["Audit: never holds three to ten lines, and this holds 11"]
+    assert T.function_template_faults("audit", dict(audit, role="x" * 81)) == ["Audit: role is 81 characters, and the limit is 80"]
+    assert T.function_template_faults("audit", dict(audit, is_not="x" * 601)) == ["Audit: is_not is 601 characters, and the limit is 600"]
+    assert T.function_template_faults("audit", dict(audit, hands_on="x" * 401)) == ["Audit: hands_on is 401 characters, and the limit is 400"]
+    assert T.function_template_faults("audit", dict(audit, never=("a b c", "x" * 161, "d e f")))[0].startswith("Audit: never line 2")
+    assert T.function_template_faults("audit", dict(audit, colour="red")) == ["Audit: colour is not a part of the function template"]
+    assert T.function_template_faults("priority", dict(S.FUNCTION_TEMPLATE["priority"], reserved=("learn",))) == [
+        "Priority: reserved is not a part of the function template"]
+    assert T.function_template_faults("audit", None) == ["Audit has no entry in the function template"]
+
+
+def test_the_constants_are_the_text_of_the_a3_document():
+    """The words are A3.4.5's, character for character: a change to a constant is a change to the document, and the reverse."""
+    import ast
+    doc = HERE / "design" / "PRD-FIVE-FUNCTIONS-A3.md"
+    if not doc.exists():
+        pytest.skip("the A3 document is not in this tree")
+    text = doc.read_text(encoding="utf-8")
+    found = {}
+    for block in re.findall(r"```python\n(.*?)```", text, re.S):
+        for m in re.finditer(r"^FUNCTION_TEMPLATE\['(\w+)'\] = (\{.*?^\})", block, re.S | re.M):
+            found[m.group(1)] = ast.literal_eval(re.sub(r"#[^\n]*", "", m.group(2)))
+    assert set(found) == set(S.FUNCTION_LAYERS), sorted(found)
+    for layer, entry in found.items():
+        assert dict(entry, never=tuple(entry["never"])) == S.FUNCTION_TEMPLATE[layer], "%s differs from A3.4.5" % layer
+    agreement = re.search(r"^DEPARTMENT_AGREEMENT = \((.*?)^\)", text, re.S | re.M)
+    assert tuple(ast.literal_eval("(" + re.sub(r"#[^\n]*", "", agreement.group(1)) + ")")) == S.DEPARTMENT_AGREEMENT
+    assert "ROLE_INPUTS = %r" % (S.ROLE_INPUTS,) in text.replace("  # the inputs of goal.role_block", "")
+    assert "ROLE_BLOCK_MAX = %d" % S.ROLE_BLOCK_MAX in text and S.TEMPLATE_BANNED in text and S.TEMPLATE_BANNED_AGENT in text
+
+
+def test_the_agreement_is_sound():
+    assert T.agreement_faults(S.DEPARTMENT_AGREEMENT) == []
+    assert 4 <= len(S.DEPARTMENT_AGREEMENT) <= 8 and all(0 < len(x) <= 200 and "\n" not in x for x in S.DEPARTMENT_AGREEMENT)
+    assert len(S.DEPARTMENT_AGREEMENT) == 6, "team.md's working rules that the interface cannot say, in six lines"
+    # the first line is true of Identity too: the one function that speaks to the owner is not told to tell Identity
+    assert S.DEPARTMENT_AGREEMENT[0].startswith("Only Identity speaks to the owner")
+    assert T.agreement_faults(S.DEPARTMENT_AGREEMENT[:3]) == ["the working agreement holds four to eight lines, and this holds 3"]
+    assert T.agreement_faults(S.DEPARTMENT_AGREEMENT[:5] + ("x" * 201,))[0].startswith("agreement line 6")
+    assert T.agreement_faults(("Be kind.",) + S.DEPARTMENT_AGREEMENT[1:]) == [
+        "the first line of the working agreement says that only Identity speaks to the owner"]
+    assert S.ROLE_INPUTS == ("agreement", "is", "is_not", "may", "never", "procedure", "patterns", "hands_on") and len(S.ROLE_INPUTS) == 8
+    assert S.ROLE_INPUTS[-1] == "hands_on" and S.ROLE_BLOCK_MAX == 3600
+
+
+def test_no_constant_says_a_banned_word():
+    for where, line in _agent_words():
+        assert not re.search(S.TEMPLATE_BANNED_AGENT, line, re.I), "%s says a banned word: %s" % (where, line)
+    # the agent's list is the shorter one: the contract's own words (accept, counter, reject; go, ask, refuse) sit beside an answer
+    # shape, so only the screen, which the owner reads, bans them
+    assert re.search(S.TEMPLATE_BANNED, "Priority will counter or refuse", re.I)
+    assert not re.search(S.TEMPLATE_BANNED_AGENT, "Priority will counter or refuse", re.I)
+    for bad in ("the charter", "Charters", "ask the CEO", "the Requester", "an internal system", "Internal Systems"):
+        assert re.search(S.TEMPLATE_BANNED_AGENT, bad, re.I), bad
+        assert re.search(S.TEMPLATE_BANNED, bad, re.I), bad
+    for fine in ("the owner", "chartered flights", "a ceiling", "the requested page", "an internal clock"):
+        assert not re.search(S.TEMPLATE_BANNED_AGENT, fine, re.I), fine
+    # what the owner may read: the table of levels, and the lead of an ask, keep the screen's list
+    owner_reads = [l["keeps"] for l in S.TEMPLATE_LEVELS] + [f["lead"] for f in S.ASK_FORMS.values() if f["lead"]]
+    for line in owner_reads:
+        assert not re.search(S.TEMPLATE_BANNED, line, re.I), line
+
+
+def test_priority_says_nothing_about_ordering():
+    """S-05: Priority prices and holds the budget; who goes first is Coordination's. No word of Priority's template says it orders."""
+    pattern = S.TEMPLATE_NEVER_SAY["priority"]
+    for where, line in [w for w in _agent_words() if w[0].startswith("priority ")]:
+        assert not re.search(pattern, line, re.I), "%s says Priority orders: %s" % (where, line)
+    assert re.search(pattern, "It decides the order of the queue", re.I) and re.search(pattern, "it says what runs next", re.I)
+    # Coordination's words may say order: it is Coordination's
+    assert any(re.search(pattern, x, re.I) for x in _strings_of(S.FUNCTION_TEMPLATE["coordination"]))
+    assert "say which accepted workflow runs first" in S.FUNCTION_TEMPLATE["priority"]["never"]
+
+
+def test_hands_on_names_only_actors_the_layer_sends_to():
+    for layer, entry in S.FUNCTION_TEMPLATE.items():
+        assert T.hands_on_faults(layer, entry["hands_on"]) == [], layer
+        assert not re.search(r"\bYou\b", entry["hands_on"]), "the owner is 'the owner', never 'You'"
+    assert [a for a, _ in T.hands_on_actors(S.FUNCTION_TEMPLATE["identity"]["hands_on"])] == ["Adaptation", "Coordination", "The owner"]
+    assert [a for a, _ in T.hands_on_actors(S.FUNCTION_TEMPLATE["root"]["hands_on"])] == ["Identity", "Coordination", "Priority"]
+    assert [a for a, _ in T.hands_on_actors(S.FUNCTION_TEMPLATE["audit"]["hands_on"])] == ["Identity"]
+    # Identity is the only function that speaks to the owner: no other hands on to the owner
+    for layer in S.FUNCTION_LAYERS:
+        named = [a for a, _ in T.hands_on_actors(S.FUNCTION_TEMPLATE[layer]["hands_on"])]
+        assert ("The owner" in named) == (layer == "identity"), layer
+    # the failing example of FT-10, and the others
+    assert T.hands_on_faults("audit", "Priority: a finding.") == [
+        "Audit hands on to Priority, and the interface gives Audit no row to Priority (S.SENDS) and no call to it (S.CALLS)"]
+    assert T.hands_on_faults("audit", "Identity only: readings. The owner: findings.") != []
+    assert T.hands_on_faults("identity", "Adaptation: a line. You: questions.")[0].startswith("Identity hands on to the owner, who is 'the owner'")
+    assert T.hands_on_faults("identity", "Identity: itself.") == ["Identity hands on to itself"]
+    assert T.hands_on_faults("identity", "no one in particular") == ["Identity names no one it hands on to"]
+    # an actor reached through another is named as reached through it (Priority, Identity, through Adaptation's conflict)
+    assert T.hands_on_faults("priority", "Identity: through Adaptation's conflict, when a limit is hit.") == []
+    assert T.hands_on_faults("priority", "Identity: when a limit is hit.") != []
+    assert T.hands_on_faults("priority", "Audit: through Adaptation's conflict.") != [], "Adaptation sends nothing to Audit"
+    # the calls that are no post: S.CALLS gives Root its callees, and Adaptation runs Root's standards on the line it shapes
+    assert {c["to"] for c in S.CALLS if c["from"] == "Root"} >= {"Coordination", "Priority", "Identity"}
+    assert "S.validate_workflow(" in (HERE / "layers" / "adaptation" / "v1.py").read_text(encoding="utf-8"), \
+        "Adaptation hands on to Root because it calls Root's check in process: if it stopped, drop Root from its hands_on"
+
+
+def test_reserved_is_the_sites_list():
+    reserved = S.FUNCTION_TEMPLATE["adaptation"]["reserved"]
+    assert reserved == ("crystallize", "grow", "learn", "compass"), "the four hands the site lists as placeholders"
+    # recorded, not built: no prompt group, no step and no recipe of Adaptation is any of them
+    assert not set(reserved) & set(S.PROMPTS["adaptation"])
+    recipe = _read(HERE / "layers" / "adaptation" / "v1.json")
+    assert not [s["id"] for _, s in _steps_of(recipe) if any(r in s["id"] for r in reserved)]
+    assert not set(reserved) & set(S.CHECKS["adaptation"]) and not set(reserved) & set(S.VERDICTS["adaptation"].get("move", ()))
+
+
+#: the parts of the goal group that A3-FUNCTIONS adds (rule FT-2). A3-FUNCTIONS deletes this list in the commit that adds them:
+#: until then a part named here is pending, and the test below fails the day one exists and is still listed
+PENDING = (("goal", "done"), ("goal", "role_is"), ("goal", "role_may"), ("goal", "role_procedure"), ("goal", "role_patterns"))
+
+
+def test_template_parts_homes_exist():
+    parts = S.TEMPLATE_PARTS
+    assert len({p[0] for p in parts}) == len(parts) == 20, "the twenty parts of A3.4.2, once each"
+    assert [p[0] for p in parts][:3] == ["goal", "skills", "done"] and ("is", None, "word", ("goal", "role_is")) in parts
+    assert ("done", "done", "word", ("goal", "done")) in parts
+    assert {p[2] for p in parts} == {"word", "constant", "derived", "version"}
+    for part, site, kind, home in parts:
+        assert site is None or isinstance(site, str), part
+        if kind == "word":
+            group, name = home
+            for layer in S.FUNCTION_LAYERS:
+                exists = name in S.PROMPTS[layer].get(group, {})
+                if home in PENDING:
+                    assert not exists, ("%s.%s exists in %s now: delete it from PENDING in test_layer_templates.py (A3-FUNCTIONS' to delete)"
+                                        % (group, name, layer))
+                else:
+                    assert exists, "%s: the word %s.%s is no part of S.PROMPTS['%s']" % (part, group, name, layer)
+        elif kind == "constant":
+            table, key = home
+            assert hasattr(S, table), part
+            if key:
+                assert all(key in S.FUNCTION_TEMPLATE[layer] for layer in S.FUNCTION_TEMPLATE), "%s: %s is no key of every entry" % (part, key)
+        elif home[0].isupper():
+            assert hasattr(S, home[0]), "%s: the interface has no table %s" % (part, home[0])
+            if home[1]:
+                assert any(home[1] in (getattr(S, home[0]).get(layer) or {}) for layer in S.FUNCTION_LAYERS), "%s: %s" % (part, home)
+        else:
+            assert home[0] in ("journeys",), "%s: a home in lower case is a folder of the repository" % part
+    # every typed word of A3.4.2 is a part of the table, and every constant it names is a key of the function template
+    assert {p[3][1] for p in parts if p[2] == "constant" and p[3][1]} == {"role", "is_not", "never", "hands_on"}
+    assert {p[0] for p in parts if p[2] == "word"} == {"goal", "skills", "done", "is", "may", "procedure", "patterns"}
+    assert {part for part in (p[0] for p in parts) if part in S.ROLE_INPUTS} == {"is", "is_not", "may", "never", "procedure", "patterns", "hands_on", "agreement"}
+
+
+def test_the_function_template_is_carried_by_describe():
+    got = S.describe()["function_template"]
+    assert got["by_layer"] == json.loads(json.dumps(S.FUNCTION_TEMPLATE)) and got["agreement"] == list(S.DEPARTMENT_AGREEMENT)
+    assert got["role_inputs"] == list(S.ROLE_INPUTS) and got["role_block_max"] == 3600
+    assert got["banned"] == S.TEMPLATE_BANNED and got["banned_agent"] == S.TEMPLATE_BANNED_AGENT and got["never_say"] == S.TEMPLATE_NEVER_SAY
+    assert len(got["parts"]) == 20
+    levels = {l["level"]: l for l in S.TEMPLATE_LEVELS}
+    assert levels["L2"]["base"] == "FUNCTION_TEMPLATE" and isinstance(S.FUNCTION_TEMPLATE, dict)

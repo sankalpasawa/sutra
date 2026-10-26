@@ -7898,6 +7898,306 @@
     "Priority": "priority",
     "Setup": "root"
   },
+  "function_template": {
+    "agreement": [
+      "Only Identity speaks to the owner; any other function that needs something from the owner tells Identity.",
+      "The department's goal and its done-when are the reference for every decision you make.",
+      "Disagree with a reason tied to the goal, the limits or the rules, and move when someone gives a better reason.",
+      "If two functions cannot settle a disagreement in four exchanges, it goes to Identity with both positions.",
+      "A fact only the owner knows is Identity's question to the owner; until it is answered the item is to be confirmed, and it is not met.",
+      "The work is finished only when Audit has read every done-when item and none is unmet or to be confirmed; a limit reached ends in an ask to the owner through Identity, never in silence."
+    ],
+    "banned": "\\b(charters?|ceo|requesters?|grant(?:s|ed)?|counter(?:s|ed)?|refus\\w*|internal systems?)\\b",
+    "banned_agent": "\\b(charters?|ceo|requesters?|internal systems?)\\b",
+    "by_layer": {
+      "adaptation": {
+        "hands_on": "Priority: every proposal and every round. Identity: conflicts, and a round Priority accepted, to file. Root: the line Priority accepted, for its check.",
+        "in_card": true,
+        "is_not": "It designs; it does not approve its own proposal. Priority gives the limits, Identity holds the rules, Coordination keeps the order and Audit judges the results.",
+        "never": [
+          "give itself resources",
+          "say a plan passed Root's check",
+          "schedule a run",
+          "say its own result is right",
+          "ask the owner directly: only Identity does",
+          "hide a capability or a permission a plan depends on",
+          "widen the scope to make a proposal look more valuable",
+          "apply a change itself: every proposal passes Priority first"
+        ],
+        "reserved": [
+          "crystallize",
+          "grow",
+          "learn",
+          "compass"
+        ],
+        "role": "senses the gap to the goal and proposes how to close it"
+      },
+      "audit": {
+        "hands_on": "Identity only: readings and findings.",
+        "in_card": true,
+        "is_not": "It does not design the workflow, repair the result, give limits, schedule rework or decide policy. Its job is to make a difference visible, with the evidence.",
+        "never": [
+          "touch a workflow or a version",
+          "approve a proposed workflow because it can picture auditing its output: Root's check registers it",
+          "turn a check into a score"
+        ],
+        "role": "an independent check on the evidence"
+      },
+      "coordination": {
+        "hands_on": "Identity: alarms, lost requests and verdict asks. Priority: verdict asks.",
+        "in_card": true,
+        "is_not": "It does not give limits, decide the goal, design workflows or judge the quality of results.",
+        "never": [
+          "raise a limit",
+          "decide that an expensive workflow is not worth it",
+          "settle a question of rules",
+          "change the steps of a workflow",
+          "say a result is right",
+          "ask the owner directly: only Identity does",
+          "start a run: the engine starts itself in its slot"
+        ],
+        "role": "order, dependencies, hand-offs and keeping work apart"
+      },
+      "identity": {
+        "hands_on": "Adaptation: a request for a line, and the next thing to correct. Coordination: verdicts on gates. The owner: questions, tells and asks, since Identity is the only function that speaks to the owner.",
+        "in_card": true,
+        "is_not": "It does not design workflows, give out limits, schedule work, do the work or read results. It rules only when a proposal touches a rule, when Priority and Adaptation cannot agree, when Audit reports something that matters, or when the department may be done.",
+        "never": [
+          "invent a new goal or a new rule",
+          "choose tools or the steps of the work",
+          "raise a limit",
+          "say which workflow runs first",
+          "rewrite a proposal to make it acceptable",
+          "ask the owner only because functions disagree",
+          "make anything itself: the maker is an engine",
+          "loosen a rule: approvals only tighten"
+        ],
+        "role": "keeps the goal, the done-when and the rules, and closes conflicts"
+      },
+      "priority": {
+        "hands_on": "Adaptation: accept, counter or reject, with the price. Identity: through Adaptation's conflict, when a limit is hit.",
+        "in_card": true,
+        "is_not": "It does not choose strategy, design workflows, decide who goes first, judge the quality of content or read the rules. A proposal can be attractive and still not affordable, or cheap and still beside the goal; whether it fits the goal is for Identity and Adaptation.",
+        "never": [
+          "say which accepted workflow runs first",
+          "reject a proposal because it dislikes a method that fits the limit",
+          "give a limit that is not declared, or no limit at all",
+          "change the department's goal",
+          "ask the owner directly: only Identity does",
+          "turn a question of money into a question of policy",
+          "start a run"
+        ],
+        "role": "the budget bargain and the limit of each engine"
+      },
+      "root": {
+        "hands_on": "Identity: the owner's words for a department, and a plan it could not register. Coordination and Priority: a registered plan.",
+        "in_card": false,
+        "is_not": "It never creates or starts an engine: engines come from Adaptation. It does not do a department's work or speak for its functions.",
+        "never": [
+          "create or start an engine: engines come from Adaptation",
+          "register a plan that does not meet the standards",
+          "let a department's rules loosen its own"
+        ],
+        "role": "makes departments and checks plans"
+      }
+    },
+    "never_say": {
+      "priority": "order|what runs next"
+    },
+    "parts": [
+      [
+        "goal",
+        "goal",
+        "word",
+        [
+          "goal",
+          "does"
+        ]
+      ],
+      [
+        "skills",
+        null,
+        "word",
+        [
+          "goal",
+          "skills"
+        ]
+      ],
+      [
+        "done",
+        "done",
+        "word",
+        [
+          "goal",
+          "done"
+        ]
+      ],
+      [
+        "role",
+        null,
+        "constant",
+        [
+          "FUNCTION_TEMPLATE",
+          "role"
+        ]
+      ],
+      [
+        "is",
+        null,
+        "word",
+        [
+          "goal",
+          "role_is"
+        ]
+      ],
+      [
+        "is_not",
+        null,
+        "constant",
+        [
+          "FUNCTION_TEMPLATE",
+          "is_not"
+        ]
+      ],
+      [
+        "may",
+        "choices",
+        "word",
+        [
+          "goal",
+          "role_may"
+        ]
+      ],
+      [
+        "never",
+        "keeps",
+        "constant",
+        [
+          "FUNCTION_TEMPLATE",
+          "never"
+        ]
+      ],
+      [
+        "procedure",
+        null,
+        "word",
+        [
+          "goal",
+          "role_procedure"
+        ]
+      ],
+      [
+        "patterns",
+        null,
+        "word",
+        [
+          "goal",
+          "role_patterns"
+        ]
+      ],
+      [
+        "hands_on",
+        "hands_to",
+        "constant",
+        [
+          "FUNCTION_TEMPLATE",
+          "hands_on"
+        ]
+      ],
+      [
+        "agreement",
+        null,
+        "constant",
+        [
+          "DEPARTMENT_AGREEMENT",
+          null
+        ]
+      ],
+      [
+        "hears",
+        "hears",
+        "derived",
+        [
+          "HEARS",
+          null
+        ]
+      ],
+      [
+        "writes",
+        "writes",
+        "derived",
+        [
+          "SENDS",
+          null
+        ]
+      ],
+      [
+        "checks",
+        "checks",
+        "derived",
+        [
+          "CHECKS",
+          null
+        ]
+      ],
+      [
+        "envelope",
+        "envelope",
+        "derived",
+        [
+          "SETTINGS",
+          "envelope"
+        ]
+      ],
+      [
+        "settings",
+        "settings",
+        "derived",
+        [
+          "SETTINGS",
+          null
+        ]
+      ],
+      [
+        "formats",
+        null,
+        "derived",
+        [
+          "RECORDS",
+          null
+        ]
+      ],
+      [
+        "recipe",
+        null,
+        "version",
+        [
+          "LAYERS",
+          "recipe"
+        ]
+      ],
+      [
+        "journeys",
+        null,
+        "derived",
+        [
+          "journeys",
+          "functions"
+        ]
+      ]
+    ],
+    "role_block_max": 3600,
+    "role_inputs": [
+      "agreement",
+      "is",
+      "is_not",
+      "may",
+      "never",
+      "procedure",
+      "patterns",
+      "hands_on"
+    ]
+  },
   "groups": {
     "adaptation": {
       "decide": "How Adaptation chooses its next move from what the department's own rows say.",
@@ -9721,7 +10021,7 @@
       ]
     },
     {
-      "base": "LAYERS",
+      "base": "FUNCTION_TEMPLATE",
       "children": "layers/<layer>/v<N>.py; function-templates/<function>/*.json",
       "keeps": "A version places the interface's role phrase, its 'is not' and 'never' lines and the working agreement (its layout holds all eight inputs), supplies every typed word within its limits and uses no banned word. A use-case template adds floor lines and keeps the Default's checks.",
       "level": "L2",

@@ -8,6 +8,8 @@ sentences, one for each thing wrong, that name the thing and what is wrong; [] w
 
 Nothing is imported here but layer_schema, which imports nothing of the app, so this module may be read by anything.
 """
+import re
+
 import layer_schema as S
 
 
@@ -135,4 +137,100 @@ def levels_faults():
                 out.append('level %s names the rule %s, which is not spelled as the rules of A3.1 are' % (label, rule))
             elif owner.setdefault(rule, l.get('level')) != l.get('level'):
                 out.append('the rule %s is held by %s and by %s: a rule belongs to one level' % (rule, owner[rule], l.get('level')))
+    return out
+
+
+_FT_KEYS = ('role', 'is_not', 'never', 'hands_on', 'in_card')
+_FT_LIMITS = {'role': 80, 'is_not': 600, 'hands_on': 400}                # characters; the never lines have their own (160)
+
+
+def function_template_faults(layer, entry):
+    """What is wrong with one function's constants against the function template (A3.4.2, rule FT-1): a role phrase of at most 80
+    characters, an 'is not' of at most 600, a 'hands on to' of at most 400, three to ten 'never' lines of at most 160, and whether
+    the role block is sent in its card. Adaptation may also carry reserved, the site's parts that are placeholders; no other key is
+    the template's. Whether a 'hands on to' names only actors the layer sends to (FT-10) is checked against S.SENDS by its test."""
+    label = S.TITLE.get(layer, layer)
+    if not isinstance(entry, dict):
+        return ['%s has no entry in the function template' % label]
+    out = ['%s: the template names no %s' % (label, key) for key in _FT_KEYS if key not in entry]
+    for key, longest in _FT_LIMITS.items():
+        value = entry.get(key)
+        if key in entry and (not isinstance(value, str) or not value.strip() or '\n' in value):
+            out.append('%s: %s is one line of words, and this is not' % (label, key))
+        elif isinstance(value, str) and len(value) > longest:
+            out.append('%s: %s is %d characters, and the limit is %d' % (label, key, len(value), longest))
+    never = entry.get('never')
+    if 'never' in entry:
+        if not isinstance(never, (list, tuple)) or not 3 <= len(never) <= 10:
+            out.append('%s: never holds three to ten lines, and this holds %s' % (label, len(never) if isinstance(never, (list, tuple)) else 'none'))
+        for i, line in enumerate(never if isinstance(never, (list, tuple)) else (), 1):
+            if not isinstance(line, str) or not line.strip() or len(line) > 160:
+                out.append('%s: never line %d is a line of words of at most 160 characters, and this is not' % (label, i))
+    if 'in_card' in entry and not isinstance(entry['in_card'], bool):
+        out.append('%s: in_card is true or false' % label)
+    extra = sorted(set(entry) - set(_FT_KEYS) - ({'reserved'} if layer == 'adaptation' else set()))
+    out += ['%s: %s is not a part of the function template' % (label, key) for key in extra]
+    if 'reserved' in entry and (not isinstance(entry['reserved'], (list, tuple)) or not all(isinstance(x, str) for x in entry['reserved'])):
+        out.append('%s: reserved is a list of names' % label)
+    return out
+
+
+def agreement_faults(lines):
+    """What is wrong with the working agreement every function keeps (A3.4.2): four to eight lines, each one line of at most 200
+    characters, the first saying that only Identity speaks to the owner."""
+    if not isinstance(lines, (list, tuple)) or not 4 <= len(lines) <= 8:
+        return ['the working agreement holds four to eight lines, and this holds %s' % (len(lines) if isinstance(lines, (list, tuple)) else 'none')]
+    out = ['agreement line %d is one line of words of at most 200 characters, and this is not' % i
+           for i, x in enumerate(lines, 1) if not isinstance(x, str) or not x.strip() or '\n' in x or len(x) > 200]
+    if not out and not lines[0].startswith('Only Identity speaks to the owner'):
+        out.append('the first line of the working agreement says that only Identity speaks to the owner')
+    return out
+
+
+_ACTORS = ('The owner', 'Root', 'Identity', 'Adaptation', 'Priority', 'Coordination', 'Audit')
+#: what a layer calls in process that is no post and no row of S.CALLS: Adaptation runs Root's standards on the line it shapes
+#: before it sends it (adapt_source calls S.validate_workflow, stage 'proposal'); a test reads the source for the call
+_IN_PROCESS = {'adaptation': ('Root',)}
+
+
+def hands_on_actors(text):
+    """The actors a 'hands on to' line names, with what it hands each: [(actor, clause)], read from the clauses that begin
+    'Name: ' or 'Name and Name: ' or 'Name only: ' (a name inside a clause is not named). The owner is 'The owner'."""
+    names = '|'.join(re.escape(a) for a in _ACTORS)
+    head = re.compile(r'(?:^|(?<=\. ))((?:%s)(?: and (?:%s))*)(?: only)?: ' % (names, names))
+    heads = list(head.finditer(str(text or '')))
+    out = []
+    for i, m in enumerate(heads):
+        clause = text[m.end(): heads[i + 1].start() if i + 1 < len(heads) else len(text)]
+        out += [(actor, clause.strip()) for actor in m.group(1).split(' and ')]
+    return out
+
+
+def hands_on_faults(layer, text):
+    """What is wrong with a function's 'hands on to' line (A3.4.2, rule FT-10): it names only layers, Root or the owner; each is
+    a destination of that layer's S.SENDS rows, a callee of its S.CALLS rows or of the calls it makes in process, or is reached
+    through a destination the clause names ('Identity: through Adaptation's conflict'); the owner is 'the owner', never 'You';
+    and a function does not hand on to itself."""
+    title = S.TITLE.get(layer, layer)
+    out = []
+    if re.search(r'\bYou\b', str(text or '')):
+        out.append("%s hands on to the owner, who is 'the owner' in these words and never 'You'" % title)
+    actors = hands_on_actors(text)
+    if not actors:
+        return out + ['%s names no one it hands on to' % title]
+    direct = {('The owner' if d == 'Owner' else d) for row in S.SENDS.get(title, []) for d in row['to']}
+    direct |= {c['to'] for c in S.CALLS if c['from'] == title} | set(_IN_PROCESS.get(layer, ()))
+    for actor, clause in actors:
+        if actor == title:
+            out.append('%s hands on to itself' % title)
+            continue
+        if actor in direct:
+            continue
+        via = re.search(r"\bthrough (\w+)'s\b", clause)
+        relay = via.group(1) if via else None
+        if relay in direct and any(actor == ('The owner' if d == 'Owner' else d)
+                                   for row in S.SENDS.get(relay, []) for d in row['to']):
+            continue
+        out.append('%s hands on to %s, and the interface gives %s no row to %s (S.SENDS) and no call to it (S.CALLS)'
+                   % (title, actor, title, actor))
     return out

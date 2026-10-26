@@ -810,7 +810,7 @@
       ]
     },
     {
-      "base": "LAYERS",
+      "base": "FUNCTION_TEMPLATE",
       "children": "layers/<layer>/v<N>.py; function-templates/<function>/*.json",
       "keeps": "A version places the interface's role phrase, its 'is not' and 'never' lines and the working agreement (its layout holds all eight inputs), supplies every typed word within its limits and uses no banned word. A use-case template adds floor lines and keeps the Default's checks.",
       "level": "L2",
