@@ -1552,3 +1552,87 @@ def test_q3_identity_asks_the_owner_and_the_owners_stamp_runs_the_plan(live, mon
     _stamp(ref, W)
     assert "workflow.registered" in _actions(J, ref) and _work(W, ref)[:1] == [FIRST3[kind]]
     assert {e["cycle_id"] for e in J.events(ref)} == cycle, "one answer resumes the same cycle"
+
+
+# ---- Q4: spend by round (M9.6, Priority's part) ---------------------------------------------------------------------------------
+# view.priority.spend_by_round [{round, calls, usd}]: the spend of the runs the ledger links by run_ref, summed by the round whose
+# Brief version each run descends from (a round files its correction as a Brief version: rounds.jsonl, brief_v).
+def _two_rounds(live):
+    """A department with two rounds on its record. Round 1: Plan, Write and Check on Brief v1, two calls and 0.10 USD each. The
+    owner's correction is filed as Brief v2 (J3's way), and round 2 runs the line again: three calls and 0.25 USD each. Adaptation's
+    row for the round (rounds.jsonl) names Brief v2."""
+    W, R, J, _ = live
+    ref = _settled(live)
+    _spend_runs(W, ref, 2, 0.1)
+    W.owner_ask(ref, "Add a page for the timetable of the algebra classes")
+    W.run_until_idle(ref, limit=300)
+    rows = W.runs(ref)
+    for r in rows:
+        if r.get("chain") == "brief.v2":
+            r["spend"] = {"calls": 3, "usd": 0.25}
+    W._write(W.ddir(ref) / "runs.json", rows)
+    W.append_row(ref, "rounds.jsonl", {"schema_version": 1, "round": 2, "at": W.now(), "cycle_id": J._state(ref)["cycle_id"],
+                                       "correction": "Add a page for the timetable of the algebra classes", "fixes": [], "covers": ["D2"],
+                                       "status": "filed", "brief_v": 2})
+    return ref
+
+
+def test_q4_the_spend_of_each_round_is_the_sum_of_its_runs_in_runs_json(live):
+    """A sum that is not runs.json's, a run counted in the wrong round, or a run counted twice, must fail: in a two-round fixture
+    each round's calls and money are the runs.json rows of the Brief version it filed, added up here independently."""
+    W, R, J, _ = live
+    ref = _two_rounds(live)
+    work = [r for r in W.runs(ref) if not r.get("system")]
+    assert sorted({r["chain"] for r in work}) == ["brief.v1", "brief.v2"] and len(work) == 6
+    want = []
+    for rn, chain in ((1, "brief.v1"), (2, "brief.v2")):
+        mine = [r for r in work if r["chain"] == chain]
+        want.append({"round": rn, "calls": sum(r["spend"]["calls"] for r in mine), "usd": round(sum(r["spend"]["usd"] for r in mine), 4)})
+    assert want == [{"round": 1, "calls": 6, "usd": 0.3}, {"round": 2, "calls": 9, "usd": 0.75}]
+    assert V1.spend_by_round(ref) == want
+    assert V1.spent_of(ref) == {"calls": 15, "usd": 1.05} and sum(x["calls"] for x in want) == V1.spent_of(ref)["calls"]
+    view = _view(W, J, ref)
+    assert view["spend_by_round"] == want and S.validate_view("priority", view) == []
+    assert S.validate("view.priority", {"bargains": [], "envelopes": [], "spend_by_round": [{"round": 1, "calls": 6, "usd": 0.3}]}) == []
+    assert S.validate("view.priority", {"bargains": [], "envelopes": [], "spend_by_round": [{"round": 0, "calls": 6}]}) != []
+
+
+def test_q4_before_a_second_round_every_run_is_the_first_and_with_no_run_there_is_none(live):
+    W, R, J, _ = live
+    empty = _born(live, org="Empty Co", settle=False)
+    assert V1.spend_by_round(empty) == [] and _view(W, J, empty)["spend_by_round"] == []
+    ref = _settled(live)
+    _spend_runs(W, ref, 2, 0.1)
+    assert V1.spend_by_round(ref) == [{"round": 1, "calls": 6, "usd": 0.3}]
+
+
+def test_q4_only_the_runs_the_ledger_links_count_and_a_round_that_has_begun_shows_before_it_has_run(live):
+    """A run the ledger never saw, a function's own run, or a round that disappears until it spends, must fail."""
+    W, R, J, _ = live
+    ref = _two_rounds(live)
+    before = V1.spend_by_round(ref)
+    today = datetime.now().astimezone().isoformat(timespec="seconds")
+    W._write(W.ddir(ref) / "runs.json", W.runs(ref) + [_run_row("Write", "ok", 40, 4.0, today, chain="brief.v2"),
+                                                       _run_row("Priority", "ok", 40, 4.0, today, system=True, chain="brief.v2")])
+    assert V1.spend_by_round(ref) == before, "a run with no event on the ledger is no run of this goal, and a function's run is no work"
+    W.append_row(ref, "rounds.jsonl", {"schema_version": 1, "round": 3, "at": W.now(), "cycle_id": None, "correction": "Fix the timetable page",
+                                       "fixes": [], "covers": ["D2"], "status": "granted"})
+    assert V1.spend_by_round(ref) == before, "a round whose correction is not filed yet names no Brief version, and has not begun to spend"
+    W.append_row(ref, "rounds.jsonl", {"schema_version": 1, "round": 3, "at": W.now(), "cycle_id": None, "correction": "Fix the timetable page",
+                                       "fixes": [], "covers": ["D2"], "status": "filed", "brief_v": 3})
+    assert V1.spend_by_round(ref) == before + [{"round": 3, "calls": 0, "usd": 0.0}]
+
+
+def test_q4_a_run_that_names_no_brief_version_belongs_to_the_round_that_had_begun(live):
+    """A run with no chain that is counted nowhere, or always in the first round, must fail: it is the round that had begun
+    when the run started."""
+    W, R, J, _ = live
+    ref = _two_rounds(live)
+    rows = W.runs(ref)
+    late = next(r for r in rows if r.get("chain") == "brief.v2" and r["engine"] == "Check")
+    early = next(r for r in rows if r.get("chain") == "brief.v1" and r["engine"] == "Plan")
+    late["chain"], early["chain"] = None, None
+    late["started"] = (datetime.now().astimezone() + timedelta(minutes=5)).isoformat(timespec="seconds")
+    early["started"] = (datetime.now().astimezone() - timedelta(days=1)).isoformat(timespec="seconds")
+    W._write(W.ddir(ref) / "runs.json", rows)
+    assert V1.spend_by_round(ref) == [{"round": 1, "calls": 6, "usd": 0.3}, {"round": 2, "calls": 9, "usd": 0.75}]

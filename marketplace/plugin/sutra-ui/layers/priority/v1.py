@@ -21,6 +21,9 @@ What moved with M9.2 (the goal's ceiling): priority_grant, which also writes dep
 and the calls and money of that many runs of the line); a round Adaptation proposes (word round) is read against the ceiling and
 the goal's spend so far, answered offline by round_within_ceiling, and its yes held to the ceiling by the covering; a no carries
 [raise the ceiling, leave, stop]. Priority never orders: it prices, holds, and says yes or no.
+
+What moved with M9.6 (spend by round): view() also carries spend_by_round, the goal's spend summed by the round each run's Brief
+version belongs to, from the runs the ledger links by run_ref.
 """
 import math
 import re
@@ -891,6 +894,35 @@ def _post_round(ctx, read, got):
     return {'said': ('said yes to' if ok else 'said no to') + ' round %d' % read['round'] if row else 'the bargain reached its bound'}
 
 
+def spend_by_round(ref, d=None):
+    """What each round of the goal has spent, [{round, calls, usd}], from the runs the ledger links by run_ref (M9.6). A run
+    belongs to the round whose Brief version it descends from: a round files its correction as a Brief version (rounds.jsonl,
+    brief_v), and the first round is every version before the second's. A run that names no Brief version (its chain is
+    empty) belongs to the round that had begun when it started."""
+    rows = [r for r in W.rows(ref, 'rounds.jsonl') if isinstance(r, dict) and isinstance(r.get('round'), int)]
+    begun = {}
+    for r in rows:
+        if r['round'] > 1 and isinstance(r.get('brief_v'), int):
+            begun[r['round']] = r['brief_v']                       # the newest row of a round names the Brief version it filed
+    at = {}
+    for r in rows:
+        if r['round'] > 1 and r.get('at'):
+            at.setdefault(r['round'], r['at'])
+    sums = {}
+    for run in goal_runs(ref):
+        m = re.fullmatch(r'brief\.v(\d+)', str(run.get('chain') or ''))
+        if m:
+            rn = max([k for k, v in begun.items() if v <= int(m.group(1))] or [1])
+        else:
+            rn = max([k for k, v in at.items() if W._ts(v) <= W._ts(run.get('started') or '')] or [1])
+        s = sums.setdefault(rn, {'calls': 0, 'usd': 0.0})
+        s['calls'] += int((run.get('spend') or {}).get('calls') or 0)
+        s['usd'] += float((run.get('spend') or {}).get('usd') or 0.0)
+    for rn in begun:
+        sums.setdefault(rn, {'calls': 0, 'usd': 0.0})              # a round that has begun shows, though nothing has run in it yet
+    return [{'round': rn, 'calls': s['calls'], 'usd': round(s['usd'], 4)} for rn, s in sorted(sums.items())]
+
+
 CODE = {
     'priority_envelope': priority_envelope,
     'priority_read': priority_read,
@@ -1018,4 +1050,5 @@ def view(ref, d, events, asks):
     part = FV._j2_part(ref, d, 'Priority', events, asks)
     part['prices'] = _prices(ref)
     part['ceiling'] = ceiling_of(d)
+    part['spend_by_round'] = spend_by_round(ref, d)
     return part
