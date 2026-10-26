@@ -2,10 +2,12 @@
 
     I1  identity/v1 provides every code, prompt, draft and check name its recipe uses, by reference, and passes the
         contract cases that do not read words
+    I2  Identity's words: every part of its prompts is served from WORDS and LAYOUT, byte for byte the .md part
     I3  identity/v1.view returns Identity's pane and it validates as view.identity in the four states of a cycle
     I4  Identity's writers say who they are: a save of Identity's keys names Identity, and no row says otherwise
     I5  Hear a doubt: Adaptation's one doubt is put to the owner as one question with no number in it, its answer goes
         back to Adaptation as a line request, and the bounds (one a line request, two a cycle) hold
+    I6  the contract, every case, passes for identity/v1 with no part of its prompts on the .md fallback
 
 The departments are born the way a person makes them, on the real board, as test_j2's are (its fixture and helpers are
 copied here with the pane's module reloaded too). A test that meets a fault of the interface fails through conftest.py;
