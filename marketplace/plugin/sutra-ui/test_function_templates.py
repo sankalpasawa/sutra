@@ -127,3 +127,18 @@ def test_readme_lists_every_template():
         readme = fh.read()
     for rel in _all():
         assert "`%s.json`" % rel.replace(os.sep, "/") in readme, rel + " is not in the README table"
+
+
+def test_priority_never_orders():
+    """PRD M4.6 (S-05): Priority prices and holds the budget; who goes first is Coordination's. No field of any Priority
+    template says it orders the queue or decides what runs next."""
+    found = []
+    for rel, t in _all().items():
+        if t["function"] != "priority":
+            continue
+        for k, s in _strings(t):
+            low = s.lower()
+            if "order" in low or "what runs next" in low:
+                found.append((rel, k, s[:80]))
+    assert not found, found
+    assert sum(1 for t in _all().values() if t["function"] == "priority") == 3, "the default and both narrowings were read"

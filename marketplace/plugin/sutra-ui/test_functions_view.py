@@ -29,6 +29,12 @@ Named claims:
   F11 on a department on the engine runtime each function's pane agrees with the record: the registry's older cards
       (the department card, the framework, Proposals, Queue, the graph, Recent) are not drawn under the page, so the
       owner is named once and no pane says there are no engines or nothing in the queue while the record holds them
+  F12 Coordination's own state from the record (PRD M4.5): one timetable row per engine of the line, each with its slot
+      and where it stands; a waiting engine names what it waits for ('Pages v2 is not filed yet'); who makes and who
+      reads each thing, on a website and an organic line; a tie Coordination's AI broke ('Coordination chose Write
+      first'); the engines the plan left out; every row stopped where it was on a stopped department; and nothing written
+  F13 the engine card's read (PRD M4.7, S17): its place in the timetable, the motor's facts and one row for each of
+      the five, the function that holds it saying so; served with the engine route
 
 Each department is born the way the app makes one (website_dept.create), then its record is set to the state under
 test, so what is read is the record a real department keeps.
@@ -1064,8 +1070,8 @@ def test_m17_a_runtime_departments_panes_agree_with_its_record(mods, born, tmp_p
     """Round 3, gaps 3 and 4: on a department on the engine runtime the registry's older cards are not drawn under a
     function's page, so the pane agrees with the record and with the page above it. Served the real /api/dept/ reads,
     Identity's pane names its owner once, as the record does; Adaptation's never says there are no engines while the
-    record holds four; Priority's never says the queue is empty while its Queue lists the line; and no pane carries the
-    registry's Proposals, the template's framework or Recent."""
+    record holds four; the queue is Coordination's timetable, never Priority's (PRD M4.6), and lists the line; and no
+    pane carries the registry's Proposals, the template's framework or Recent."""
     W, R, J, F = mods
     if shutil.which("node") is None:
         pytest.skip("node is not on PATH")
@@ -1082,7 +1088,10 @@ def test_m17_a_runtime_departments_panes_agree_with_its_record(mods, born, tmp_p
         assert "No engines yet" not in rest and "Nothing in the queue" not in rest and "Nothing held" not in rest, fn
         assert "Proposals" not in rest and "Always does" not in rest and "Recent" not in rest, fn
         assert "The function" in rest and "Journeys" in rest and "Version 1" in rest, (fn, "the page is the pane")
-    assert "Queue" in panes["priority"]["rest"] and "Publish Waits for the stamp" in panes["priority"]["rest"]
+    # PRD M4.6 (S-05): the queue is Coordination's, never Priority's; its timetable lists the line and why Publish waits
+    assert "Queue" not in panes["priority"]["rest"] and "Waits for the stamp" not in panes["priority"]["rest"]
+    assert "Timetable" in panes["coordination"]["rest"] and "Publish after a Build that passed" in panes["coordination"]["rest"]
+    assert "waits for the stamp" in panes["coordination"]["rest"] and "waits: waits" not in panes["coordination"]["rest"]
     assert "Plan" in panes["adaptation"]["rest"] and "Control" in panes["identity"]["rest"]
 
 
@@ -1126,3 +1135,140 @@ def test_m17_a_record_written_before_reads_in_the_owners_words_on_every_chat(mod
     for t in ident + pr:
         if t["src"] != "Owner":
             assert not _banned_shown(t["line"]), t
+
+
+# ---- F12 (PRD M4.5): Coordination's timetable, holds, hand-offs and ties, from the record --------------------------------
+def _brief_again(W, ref, words="Add a page for the timetable of the algebra classes"):
+    """The owner's words filed as the next Brief, as Identity files them: the line has new work at its head."""
+    v = W.latest(ref, "Brief")["v"]
+    W.add_version(ref, "Brief", {"brief.md": words}, [{"art": "Brief", "v": v}], "owner", {"ok": True, "notes": []})
+
+
+def test_f12_a_waiting_engine_names_what_it_waits_for_and_the_one_with_the_turn_has_it(mods, born):
+    """A waiting row with no reason, a reason that is not the record's ('Pages v2 is not filed yet'), or two engines
+    with the turn at once must fail."""
+    W, R, J, F = mods
+    ref = born(WEBSITE, "Acme Learning")
+    c = F.coordination(ref)
+    assert set(c) == set(F.COORDINATION_FIELDS) and [r["engine"] for r in c["timetable"]] == ["Plan", "Write", "Check", "Publish"]
+    assert all(list(r) == list(F.TIMETABLE_ROW) for r in c["timetable"])
+    rows = {r["engine"]: r for r in c["timetable"]}
+    assert [rows[n]["state"] for n in ("Plan", "Write", "Check")] == ["ran", "ran", "ran"]
+    assert (rows["Publish"]["state"], rows["Publish"]["why"]) == ("waits", "waits for the stamp"), "held by Identity's gate"
+    assert rows["Publish"]["starts"] == "after a Build that passed" and rows["Plan"]["starts"] == "after a new Brief"
+    assert rows["Plan"]["last"]["wrote"] == "Site plan v1" and rows["Plan"]["window_min"] == 15
+    assert c["holds"] == [{"engine": "Publish", "why": "waits for the stamp"}]
+    for a in [a for a in W.asks(ref) if a["status"] == "pending"]:
+        W.decide_ask(ref, a["id"], True)
+    W.run_until_idle(ref, limit=300)
+    assert [r["state"] for r in F.coordination(ref)["timetable"]] == ["ran"] * 4 and F.coordination(ref)["holds"] == [], "nothing waiting"
+    _brief_again(W, ref)
+    c = F.coordination(ref)
+    rows = {r["engine"]: r for r in c["timetable"]}
+    assert (rows["Plan"]["state"], rows["Plan"]["word"], rows["Plan"]["on"]) == ("turn", "its turn", "after Brief v2")
+    assert rows["Plan"]["at"] == W.latest(ref, "Brief")["at"], "its turn since the Brief it runs on was filed"
+    assert [(n, rows[n]["why"]) for n in ("Write", "Check", "Publish")] == [
+        ("Write", "Site plan v2 is not filed yet"), ("Check", "Pages v2 is not filed yet"), ("Publish", "Build v2 is not filed yet")]
+    assert {h["engine"]: h["why"] for h in c["holds"]}["Check"] == "Pages v2 is not filed yet"
+    assert [r["state"] for r in c["timetable"]].count("turn") == 1
+    # one run at a time: while Plan runs, the rest wait, and the reason says so
+    W._put_run(ref, R._run_row("Plan", False, "Plan@brief.v2", "running", "plans the pages"))
+    rows = {r["engine"]: r for r in F.coordination(ref)["timetable"]}
+    assert rows["Plan"]["state"] == "running" and rows["Plan"]["word"] == "running"
+    # the read through the route the pane uses: Coordination's part of its page is this read
+    assert F.function(ref, "coordination")["j2"]["timetable"][0]["state"] == "running"
+    # a stopped department: every engine stopped where it was
+    W.set_stopped(ref, True)
+    assert {r["word"] for r in F.coordination(ref)["timetable"]} == {"stopped where it was"}
+
+
+def test_f12_who_makes_and_who_reads_each_thing_on_a_website_and_an_organic_line(mods, born):
+    W, R, J, F = mods
+    web = {h["art"]: h for h in F.coordination(born(WEBSITE, "Acme Learning"))["handoffs"]}
+    assert [(a, web[a]["says"], web[a]["readers"]) for a in ("Brief", "Site plan", "Pages", "Build")] == [
+        ("Brief", "Identity, from your words", ["Plan"]), ("Site plan", "Plan", ["Write"]), ("Pages", "Write", ["Check"]),
+        ("Build", "Check", ["Publish"])]
+    assert sorted(web["Live site"]["readers"]) == ["Adaptation", "Audit"] and web["Live site"]["says"] is None, "not made yet"
+    lab = born(ORGANIC, "Lab Co")
+    first, second = W.dept(lab)["engines"]
+    org = {h["art"]: h for h in F.coordination(lab)["handoffs"]}
+    writes = R.engine_def(first)["writes"]
+    assert org["Brief"]["readers"] == [first] and (org[writes]["says"], org[writes]["readers"]) == (first, [second])
+    assert [r["engine"] for r in F.coordination(lab)["timetable"]] == [first, second]
+
+
+def test_f12_a_tie_coordination_broke_and_what_the_plan_left_out_are_on_its_record(mods, born, monkeypatch):
+    W, R, J, F = mods
+    assert F.coordination(born(WEBSITE, "Acme Learning"))["ties"] == [], "none today"
+    monkeypatch.delenv("SUTRA_WEBSITE_OFFLINE", raising=False)
+    monkeypatch.setattr(R, "MODEL", lambda prompt, step: (
+        ({"answer": "counter", "why": "room for three today", "keep": ["Plan", "Write", "Check"]} if "- Publish:" in prompt
+         else {"answer": "accept", "why": "the envelope has room"}), 0.01, "model") if step["id"] == "priority.bargain" else (None, 0.0, "offline"))
+    ref = born(WEBSITE, "Counter Co")
+    c = F.coordination(ref)
+    assert c["line"] == ["Plan", "Write", "Check"] and [r["engine"] for r in c["left_out"]] == ["Publish"] and c["left_out"][0]["since"]
+    assert "Publish" not in [r["engine"] for r in c["timetable"]]
+    # a tie, as Coordination's own unit records one (engine_runtime._tie): its step row, and the answer it filed
+    slot = "Coordination@tie.7"
+    R._append(ref, "steps.jsonl", {"id": "s-tie1", "run": None, "engine": "Coordination", "step": "coord.tie", "mode": "slot",
+                                   "slot": slot, "status": "ok", "answer": "Write", "started": W.now(), "ended": W.now()})
+    W._write(R._out_path(ref, slot, "coord.tie", None), {"answer": "Write", "why": "the pages wait on it"})
+    tie = F.coordination(ref)["ties"][0]
+    assert (tie["said"], tie["why"], tie["today"]) == ("Coordination chose Write first", "the pages wait on it", True)
+    chain = F.coordination(ref)["chain"]
+    assert chain["of"] == "Brief v1" and chain["limit"] == W.CHAIN_LIMIT and 0 < chain["share"] <= 1
+
+
+def test_f12_the_coordination_read_writes_nothing_and_never_calls_the_model(mods, born, monkeypatch):
+    W, R, J, F = mods
+    ref = born(WEBSITE, "Acme Learning")
+    _brief_again(W, ref)
+    called = []
+    monkeypatch.setattr(R, "MODEL", lambda prompt, step: called.append(step) or (None, 0.0, "offline"))
+    home = str(W.ddir(ref))
+    snap = {p: os.path.getmtime(os.path.join(home, p)) for p in os.listdir(home)}
+    F.coordination(ref)
+    F.function(ref, "coordination")
+    assert {p: os.path.getmtime(os.path.join(home, p)) for p in os.listdir(home)} == snap and called == []
+
+
+# ---- F13 (PRD M4.7): the engine card, the motor folded in and the five beside it --------------------------------------
+def test_f13_the_engine_card_names_its_slot_and_what_each_of_the_five_is_doing(mods, born, monkeypatch):
+    """A card whose holder is not the function that holds it (Identity's stamp, Priority's limit), a motor that says each
+    slot ran once when one ran twice, or a card for a department not on the runtime must fail."""
+    W, R, J, F = mods
+    ref = born(WEBSITE, "Acme Learning")
+    card = F.engine_card(ref, "Publish")
+    assert set(card) == set(F.ENGINE_CARD_FIELDS) and [r["fn"] for r in card["five"]] == FUNCS
+    assert all(list(r) == list(F.ENGINE_FIVE_ROW) for r in card["five"])
+    assert (card["head"]["state"], card["head"]["why"]) == ("waits", "waits for the stamp")
+    assert card["motor"] == {"slot": "after Build v1", "starts": "after a Build that passed", "once": True, "says": "ran once per slot",
+                             "window_min": 10, "today": 0.0}
+    five = {r["fn"]: r for r in card["five"]}
+    assert (five["Identity"]["state"], five["Identity"]["says"]) == ("warn", "holds it until you stamp the first publish")
+    assert (five["Coordination"]["state"], five["Coordination"]["says"]) == ("wait", "keeps its slot while Identity holds it")
+    assert five["Adaptation"]["says"] == "proposed it in the plan Root registered" and five["Priority"]["state"] == "ok"
+    assert five["Audit"]["says"] == "will read the Live site it leads to"
+    write = {r["fn"]: r for r in F.engine_card(ref, "Write")["five"]}
+    assert (write["Coordination"]["says"], write["Identity"]["says"]) == ("gave it its slot; it ran", "lets it start: no rule holds it")
+    # held by budget: Priority's row is block
+    W._put_run(ref, R._run_row("Write", False, None, "ok", "wrote a page", spend={"calls": 3, "usd": 0.1}))
+    W.set_envelope(ref, "Write", calls=2)
+    assert {r["fn"]: r for r in F.engine_card(ref, "Write")["five"]}["Priority"]["state"] == "block"
+    # a slot that ran twice: the motor says so
+    run = next(r for r in W.runs(ref) if r["engine"] == "Plan" and r.get("slot"))
+    W._put_run(ref, dict(run, id="r-twice"))
+    assert F.engine_card(ref, "Plan")["motor"]["says"] == "a slot ran twice"
+    # the route the card reads: the engine read carries it on the runtime
+    import website_api
+    importlib.reload(website_api)
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    app = FastAPI()
+    app.include_router(website_api.router)
+    got = TestClient(app).get("/api/native/%s/engine/Write" % ref).json()
+    assert got["card"]["engine"] == "Write" and got["card"]["motor"]["slot"]
+    assert F.engine_card(REF, "Write") is None or W.dept(REF).get("runtime") == 2
+    old, _ = W.create("dref-old01", "Old", None, kind="website")
+    if W.dept(old["ref"]).get("runtime") != 2:
+        assert F.engine_card(old["ref"], "Write") is None

@@ -6132,3 +6132,48 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .shresopen{color:var(--acc);text-decoration:none;font-weight:600}
 @media (max-width:640px){.shresrow{grid-template-columns:minmax(0,1fr) auto}
   .shresdir,.shresrow .shressize{display:none}}
+/* ── Coordination's pane and the engine card (22-website.js; PRD M4.7, S7 and S17) ──────────────────────────────
+   Tokens only. A function's colour says who (its chip), a state's colour says how (the dot), and a word goes with
+   every dot. The pane follows the viewer's width, not the window's (a size container). */
+.wbs7,.wbs17{container-type:inline-size;display:flex;flex-direction:column;gap:10px}
+.wbs17{margin-bottom:10px}
+.wbcohead,.wbenghead{display:flex;align-items:center;gap:8px;padding:2px 2px 4px;font:400 12.5px/1.4 var(--sans);color:var(--muted);min-width:0}
+.wbcohead b,.wbenghead b{font:400 15px/1.35 var(--serif);color:var(--ink)}
+.wbcohead .dpdot,.wbenghead .dpdot{margin-top:0;flex:none}
+.wbcohead .dpfnb{margin-left:0}
+.wbcohead span:last-child,.wbenghead span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wbenghead{padding-bottom:8px}
+.wbtt,.wbhand{display:grid;grid-template-columns:8px minmax(56px,auto) minmax(0,1.2fr) auto minmax(0,1.6fr);gap:10px;align-items:center;
+  box-sizing:border-box;width:100%;text-align:left;padding:6px 10px;margin:5px 0;border:0;border-radius:8px;background:var(--card);box-shadow:var(--row-shadow);
+  font:400 12.5px/1.4 var(--sans);color:var(--ink)}
+.wbhand{grid-template-columns:minmax(80px,auto) minmax(0,1fr) minmax(0,1.4fr)}
+.wbtt,.wbhand[data-wbart]{cursor:pointer}
+.wbtt:hover,.wbhand[data-wbart]:hover{box-shadow:var(--row-shadow),inset 0 0 0 1px var(--line)}
+.wbtt .dpdot{margin-top:0}
+.wbtt>span,.wbhand>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+.wbtt>span.wbttn,.wbhand>span.wbttn{color:var(--ink)}
+.wbttw{font:400 11px/1.4 var(--mono);color:var(--faint)}
+.wbttl{padding:4px 10px 0}
+.wbtrio{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.wbfive{display:grid;grid-template-columns:minmax(112px,auto) 8px minmax(0,1fr) minmax(56px,96px);gap:10px;align-items:center;padding:4px 0;
+  font:400 12.5px/1.4 var(--sans);color:var(--ink)}
+.wbfive .dpdot{margin-top:0}
+.wbfive .dpk{margin:0}
+.wbfivefn{display:inline-flex;align-items:center;gap:6px;justify-self:start;padding:2px 9px;border-radius:99px;border:1px solid var(--line);
+  background:transparent;font:500 11px/1.5 var(--sans);color:var(--ink);cursor:pointer}
+.wbfivefn.fn-identity{border-color:var(--fn-identity-line);background:var(--fn-identity-bg);color:var(--fn-identity)}
+.wbfivefn.fn-adaptation{border-color:var(--fn-adaptation-line);background:var(--fn-adaptation-bg);color:var(--fn-adaptation)}
+.wbfivefn.fn-priority{border-color:var(--fn-priority-line);background:var(--fn-priority-bg);color:var(--fn-priority)}
+.wbfivefn.fn-coordination{border-color:var(--fn-coordination-line);background:var(--fn-coordination-bg);color:var(--fn-coordination)}
+.wbfivefn.fn-audit{border-color:var(--fn-audit-line);background:var(--fn-audit-bg);color:var(--fn-audit)}
+@container (max-width:600px){
+  .wbtrio{grid-template-columns:minmax(0,1fr)}
+  .wbtt{grid-template-columns:8px auto minmax(0,1fr)}
+  .wbtt>span:not(.wbttn):not(.dpdot){display:none}
+  .wbhand{grid-template-columns:auto minmax(0,1fr)}
+  .wbhand>span:not(.wbttn){display:none}
+  .wbtt>span.wbttn,.wbhand>span.wbttn{white-space:normal}
+  .wbfive{grid-template-columns:8px minmax(0,1fr)}
+  .wbfive>.wbfivefn,.wbfive>.dpk{grid-column:1/-1}
+  .wbfive>span:last-child{grid-column:2}
+}
