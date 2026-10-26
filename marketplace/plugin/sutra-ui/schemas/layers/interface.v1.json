@@ -205,7 +205,8 @@
     },
     "priority": {
       "answer_has_its_price": "said yes, asked for less or said no, each with its price; an ask for less names what it keeps",
-      "price_is_observed": "a yes, or an ask for less, is held to the facts Priority read: what it keeps costs no more than the room left; a no, or a smaller yes, always stands"
+      "price_is_observed": "a yes, or an ask for less, is held to the facts Priority read: what it keeps costs no more than the room left; a no, or a smaller yes, always stands",
+      "round_within_ceiling": "a yes to a round is held to the goal's ceiling: the round, the calls and the money all inside it; a no always stands"
     },
     "root": {
       "department_is_made": "the department exists under Root, on the runtime, and has its goal",
@@ -539,6 +540,32 @@
           "findings": [],
           "items": [],
           "read": false
+        }
+      ]
+    },
+    "round_within_ceiling": {
+      "bad": [
+        {
+          "answer": "counter",
+          "why": "room for two rounds"
+        },
+        {
+          "answer": "accept",
+          "why": ""
+        },
+        {
+          "answer": "grant",
+          "why": "x"
+        }
+      ],
+      "good": [
+        {
+          "answer": "accept",
+          "why": "inside the ceiling: round 3 of 6, about 11 calls and 0.40 USD of the 44 calls and 1.58 USD left"
+        },
+        {
+          "answer": "reject",
+          "why": "no room in the ceiling: round 7 against a ceiling of 6 rounds"
         }
       ]
     },
@@ -7204,6 +7231,16 @@
           "minItems": 0,
           "type": "array"
         },
+        "ceiling": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/priority.ceiling"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "envelopes": {
           "items": {
             "additionalProperties": true,
@@ -7327,6 +7364,33 @@
               "estimate",
               "room",
               "why"
+            ],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "spend_by_round": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "calls": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "round": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "usd": {
+                "minimum": 0,
+                "type": "number"
+              }
+            },
+            "required": [
+              "round",
+              "calls",
+              "usd"
             ],
             "type": "object"
           },
@@ -8724,7 +8788,8 @@
     "priority": {
       "checks": [
         "answer_has_its_price",
-        "price_is_observed"
+        "price_is_observed",
+        "round_within_ceiling"
       ],
       "hands_to": "Adaptation: said yes, asked for less, or said no. Identity: through Adaptation's conflict, when a limit is hit.",
       "holds": "One limit per engine (calls and money a day) and the bargain threads.",
@@ -9253,6 +9318,21 @@
           ],
           "read_by": "priority.bargain",
           "returns": "Return ONLY a JSON object: {\"answer\": \"accept\" | \"counter\" | \"reject\", \"why\": \"one line\", \"keep\": [names]}."
+        },
+        "round": {
+          "fields": {
+            "task": "field.task"
+          },
+          "inputs": [
+            "round",
+            "correction",
+            "estimate",
+            "room",
+            "ceiling",
+            "remaining"
+          ],
+          "read_by": "priority.bargain",
+          "returns": "Return ONLY a JSON object: {\"answer\": \"accept\" | \"reject\", \"why\": \"one line, in money and room only\"}."
         }
       },
       "goal": {

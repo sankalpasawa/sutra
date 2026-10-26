@@ -207,7 +207,10 @@
         "engine": {
           "task": "field.task"
         },
-        "line": {}
+        "line": {},
+        "round": {
+          "task": "field.task"
+        }
       },
       "goal": {
         "does": {

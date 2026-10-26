@@ -750,7 +750,12 @@ DEFS.update({
                              'answer': enum('accept', 'counter', 'reject'), 'said': enum('said yes', 'asked for less', 'said no'),
                              'estimate': obj({'calls': integer(0), 'usd': number(0)}, required=('calls', 'usd')),
                              'room': obj({'calls': integer(), 'usd': number()}, required=('calls', 'usd')), 'why': text(600)},
-                            required=('at', 'proposal', 'answer', 'said', 'estimate', 'room', 'why')))},
+                            required=('at', 'proposal', 'answer', 'said', 'estimate', 'room', 'why'))),
+        # from W2-PRIORITY (M9.2): the goal's ceiling, as the record keeps it, or null before the first registration; not required
+        'ceiling': nullable(ref('priority.ceiling')),
+        # from W2-PRIORITY (M9.6): what each round of the goal has spent, oldest first, from the runs the ledger links by run_ref;
+        # not required
+        'spend_by_round': items(obj({'round': integer(1), 'calls': integer(0), 'usd': number(0)}, required=('round', 'calls', 'usd')))},
         required=('bargains', 'envelopes')),
     'view.coordination': obj({
         'line': items(text(80)), 'registered': nullable(integer(0)),
@@ -1050,7 +1055,9 @@ CHECKS = {
                    'moves_name_their_rows': 'each move is of a known kind and names the rows it rests on'},
     'priority': {'answer_has_its_price': 'said yes, asked for less or said no, each with its price; an ask for less names what it keeps',
                  'price_is_observed': 'a yes, or an ask for less, is held to the facts Priority read: what it keeps costs no more than '
-                                      'the room left; a no, or a smaller yes, always stands'},
+                                      'the room left; a no, or a smaller yes, always stands',
+                 'round_within_ceiling': "a yes to a round is held to the goal's ceiling: the round, the calls and the money all inside "
+                                         'it; a no always stands'},
     'coordination': {'chain_under_its_limit': 'a start is let through only while the chain is under its limit',
                      'names_who_goes_first': 'it names an engine of the department',
                      'one_run_at_a_time': 'a start is let through only while no other run runs'},
@@ -1073,6 +1080,11 @@ CONTRACT_SAMPLES = {
                                    {'answer': 'reject', 'why': 'no room today: the first costs 0.08 USD against 0.00 USD left'}],
                           'bad': [{'answer': 'counter', 'why': 'room for two today', 'keep': []}, {'answer': 'accept', 'why': ''},
                                   {'answer': 'grant', 'why': 'x'}]},
+    'round_within_ceiling': {'good': [{'answer': 'accept', 'why': 'inside the ceiling: round 3 of 6, about 11 calls and 0.40 USD of the 44 '
+                                                                 'calls and 1.58 USD left'},
+                                      {'answer': 'reject', 'why': 'no room in the ceiling: round 7 against a ceiling of 6 rounds'}],
+                             'bad': [{'answer': 'counter', 'why': 'room for two rounds'}, {'answer': 'accept', 'why': ''},
+                                     {'answer': 'grant', 'why': 'x'}]},
     'findings_name_where_and_what': {'good': [{'ok': True, 'findings': []}],
                                      'bad': [{'ok': False, 'findings': [{'claim': 'x'}]}, {'ok': False, 'findings': 'none'}]},
     'reading_is_s30': {'good': [{'items': [{'id': 'D1', 'verdict': 'met', 'claim': 'every page is checked and live',
@@ -1232,6 +1244,10 @@ PROMPTS = {
             'cost': {'fields': {'task': 'field.task'}, 'inputs': ('word', 'step', 'cost', 'room'),
                      'returns': 'Return ONLY a JSON object: {"answer": "accept" | "reject", "why": "one line"}.',
                      'read_by': 'priority.bargain'},
+            # added by W2-PRIORITY (M9.2, A1-ROUND): a round Adaptation proposes on the line, held to the goal's ceiling
+            'round': {'fields': {'task': 'field.task'}, 'inputs': ('round', 'correction', 'estimate', 'room', 'ceiling', 'remaining'),
+                      'returns': 'Return ONLY a JSON object: {"answer": "accept" | "reject", "why": "one line, in money and room only"}.',
+                      'read_by': 'priority.bargain'},
         },
     },
     'coordination': {
@@ -1268,7 +1284,7 @@ PROMPTS = {
 
 #: the prompt parts later steps added to PROMPTS (A1.16, 'Parts added by later steps'): a layer's WORDS and LAYOUT hold
 #: them, and no .md file of the bundle does, so the extractor and the bundle's tests leave them out. A package adds its own.
-ADDED_PARTS = (('adaptation', 'make', 'shape'),)
+ADDED_PARTS = (('adaptation', 'make', 'shape'), ('priority', 'bargain', 'round'))
 
 #: each layer's pane view (A1.17), plus the engine card
 VIEWS = {'identity': 'view.identity', 'adaptation': 'view.adaptation', 'priority': 'view.priority',
