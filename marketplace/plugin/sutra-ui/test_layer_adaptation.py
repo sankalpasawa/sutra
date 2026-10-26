@@ -1369,6 +1369,43 @@ def test_a1_a_ladder_entry_is_a_typed_record_at_every_point_a_step_moves(j2):
     assert [h["by"] for h in R.ladder(ref)[step["id"]]["history"]][:2] == ["born", "stamp a-1"]
 
 
+def test_a1_a_record_that_does_not_fit_is_a_row_in_warn_mode_where_the_idea_or_the_entry_is_written(j2, monkeypatch):
+    monkeypatch.setattr(S, "MODE", "warn")
+    W, R, _, _, _ = j2
+    ref = _dept(j2, "organic", ref="dref-bad-records")
+    engine, step = R.step_def("adapt.line")
+    e = R.entry(ref, step)
+    with S.expect_refused("adaptation.ladder") as met:
+        R._save_entry(ref, dict(e, rung="C9", held="yes"))
+    assert sorted(met) == ["$.held: is not true or false", "$.rung: is not one of P, C0, C1, C2"]
+    assert R.ladder(ref)[step["id"]]["rung"] == "C9", "warn mode: the write lands"
+    ctx = {"ref": ref, "dept": W.dept(ref), "post": {"thread": "x-idea", "payload": {"words": "w"}},
+           "bag": {"adapt.shape": {"reflected": "r" * 8001, "question": 7, "shapes": ["a", "b"]}}}
+    with S.expect_refused("adaptation.idea") as met:
+        R.adapt_park(ctx, None, None)
+    assert len(met) == 2 and any(f.startswith("$.question") for f in met) and any(f.startswith("$.reflected") for f in met), met
+
+
+def test_a1_a_record_that_does_not_fit_is_refused_in_refuse_mode_and_nothing_is_written(j2, monkeypatch):
+    monkeypatch.setattr(S, "MODE", "refuse")
+    W, R, _, _, _ = j2
+    ref = _dept(j2, "organic", ref="dref-refused-records")
+    engine, step = R.step_def("adapt.line")
+    e = R.entry(ref, step)
+    with S.expect_refused("adaptation.ladder"):
+        with pytest.raises(S.SchemaFault):
+            R._save_entry(ref, dict(e, rung="C9"))
+    assert step["id"] not in R.ladder(ref)
+    R._save_entry(ref, e)
+    assert R.ladder(ref)[step["id"]]["rung"] == e["rung"], "an entry that fits is written"
+    ctx = {"ref": ref, "dept": W.dept(ref), "post": {"thread": "x-idea", "payload": {"words": "w"}},
+           "bag": {"adapt.shape": {"reflected": "r", "question": 7, "shapes": ["a", "b"]}}}
+    with S.expect_refused("adaptation.idea"):
+        with pytest.raises(S.SchemaFault):
+            R.adapt_park(ctx, None, None)
+    assert R.ideas(ref) == []
+
+
 def test_a1_the_two_records_are_no_longer_open_and_the_rungs_are_the_runtimes():
     R = importlib.import_module("engine_runtime")
     assert S.RUNGS == R.RUNGS

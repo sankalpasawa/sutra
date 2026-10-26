@@ -617,6 +617,7 @@ def rung_of(ref, step):
 
 
 def _save_entry(ref, e):
+    layer_schema.check_record("adaptation", "ladder", e, ref=ref)      # the entry as the interface types it, before it is written (A1.20)
     with W._lock(ref):
         L = ladder(ref)
         L[e["step"]] = e
@@ -3463,6 +3464,7 @@ def adapt_park(ctx, step, item):
     ref, pl, got = ctx["ref"], ctx["post"]["payload"], ctx["bag"]["adapt.shape"]
     row = {"id": "i-" + uuid.uuid4().hex[:6], "words": pl.get("words"), "reflected": got["reflected"], "question": got.get("question"),
            "shapes": [str(x) for x in got["shapes"]][:3], "state": "parked", "at": W.now()}
+    layer_schema.check_record("adaptation", "idea", row, ref=ref)      # the idea as the interface types it, before it is written (A1.20)
     with W._lock(ref):
         rows = ideas(ref)
         rows.append(row)
@@ -4693,6 +4695,7 @@ def _note_idea(ref, idea_id, note):
         for r in rows:
             if r.get("id") == idea_id:
                 r.update(note)
+                layer_schema.check_record("adaptation", "idea", r, ref=ref)
         W._write(W.ddir(ref) / "ideas.json", rows)
 
 
