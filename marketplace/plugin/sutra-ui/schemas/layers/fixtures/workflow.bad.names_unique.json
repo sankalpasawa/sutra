@@ -1,0 +1,72 @@
+{
+ "about": "A shaped line that names Facts twice.",
+ "standard": "names_unique",
+ "stage": "registration",
+ "kind": "organic",
+ "dept": {
+  "kind": "organic",
+  "done_items": [
+   {
+    "id": "D1",
+    "text": "The work is done",
+    "how": "model",
+    "level": "outcome"
+   },
+   {
+    "id": "D2",
+    "text": "Every part is checked",
+    "how": "code",
+    "level": "target"
+   }
+  ],
+  "workflows": [
+   {
+    "version": 1,
+    "engines": [
+     "Facts",
+     "Facts"
+    ],
+    "source": "shaped",
+    "registered": "2026-10-27T10:00:00Z",
+    "by": "Root"
+   }
+  ]
+ },
+ "workflow": {
+  "schema_version": 1,
+  "kind": "organic",
+  "source": "shaped",
+  "engines": [
+   {
+    "name": "Facts",
+    "does": "finds the facts",
+    "reads": "Brief",
+    "writes": "Notes",
+    "covers": [
+     "D1"
+    ],
+    "internet": true
+   },
+   {
+    "name": "Facts",
+    "does": "writes the site",
+    "reads": "Notes",
+    "writes": "Live site",
+    "covers": [
+     "D2"
+    ]
+   }
+  ],
+  "deliverable": "Live site",
+  "covers": {
+   "D1": [
+    "Facts"
+   ],
+   "D2": [
+    "Facts"
+   ]
+  },
+  "covers_by": "adaptation"
+ },
+ "ctx": {}
+}

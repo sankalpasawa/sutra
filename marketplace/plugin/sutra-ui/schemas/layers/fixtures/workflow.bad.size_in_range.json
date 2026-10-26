@@ -1,0 +1,126 @@
+{
+ "about": "A shaped plan of seven engines that says no why.",
+ "standard": "size_in_range",
+ "stage": "registration",
+ "kind": "organic",
+ "dept": {
+  "kind": "organic",
+  "done_items": [
+   {
+    "id": "D1",
+    "text": "The work is done",
+    "how": "model",
+    "level": "outcome"
+   },
+   {
+    "id": "D2",
+    "text": "Every part is checked",
+    "how": "code",
+    "level": "target"
+   }
+  ],
+  "workflows": [
+   {
+    "version": 1,
+    "engines": [
+     "Step One",
+     "Step Two",
+     "Step Three",
+     "Step Four",
+     "Step Five",
+     "Step Six",
+     "Step Seven"
+    ],
+    "source": "shaped",
+    "registered": "2026-10-27T10:00:00Z",
+    "by": "Root"
+   }
+  ]
+ },
+ "workflow": {
+  "schema_version": 1,
+  "kind": "organic",
+  "source": "shaped",
+  "engines": [
+   {
+    "name": "Step One",
+    "does": "does step 1",
+    "reads": "Brief",
+    "writes": "Out 1",
+    "covers": [
+     "D1"
+    ]
+   },
+   {
+    "name": "Step Two",
+    "does": "does step 2",
+    "reads": "Out 1",
+    "writes": "Out 2",
+    "covers": [
+     "D1"
+    ]
+   },
+   {
+    "name": "Step Three",
+    "does": "does step 3",
+    "reads": "Out 2",
+    "writes": "Out 3",
+    "covers": [
+     "D1"
+    ]
+   },
+   {
+    "name": "Step Four",
+    "does": "does step 4",
+    "reads": "Out 3",
+    "writes": "Out 4",
+    "covers": [
+     "D1"
+    ]
+   },
+   {
+    "name": "Step Five",
+    "does": "does step 5",
+    "reads": "Out 4",
+    "writes": "Out 5",
+    "covers": [
+     "D1"
+    ]
+   },
+   {
+    "name": "Step Six",
+    "does": "does step 6",
+    "reads": "Out 5",
+    "writes": "Out 6",
+    "covers": [
+     "D1"
+    ]
+   },
+   {
+    "name": "Step Seven",
+    "does": "does step 7",
+    "reads": "Out 6",
+    "writes": "Out 7",
+    "covers": [
+     "D2"
+    ]
+   }
+  ],
+  "deliverable": "Out 7",
+  "covers": {
+   "D1": [
+    "Step One",
+    "Step Two",
+    "Step Three",
+    "Step Four",
+    "Step Five",
+    "Step Six"
+   ],
+   "D2": [
+    "Step Seven"
+   ]
+  },
+  "covers_by": "adaptation"
+ },
+ "ctx": {}
+}
