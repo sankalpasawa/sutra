@@ -6,6 +6,9 @@ Named claims (each step of the package adds its own):
   W2  a workflow for each engine of the registered line, in the line's order, W-1 on; none before Root's check registers a plan;
       an engine the plan left out is no workflow; the status is one of the page's six words, read from the engine's state, its
       asks and its latest run; and no string of a workflow is a check's id
+  W4  a lane for each of the five functions, the validator and each workflow, in that order, with a status in idle, working,
+      waiting or blocked; a function waits on you only while the owner holds the turn; the numbers are the record's (Priority's
+      calls limit, the runs' retries), never the prototype's constants
 
 The Ctx the page's adapter hands out (j2ui_common) is written by another package. Until it is merged these tests build a stand-in
 with the same attributes, filled from a department the way the contract names its sources (standin below): the contract is
@@ -283,7 +286,7 @@ def test_w1_build_gives_exactly_the_thirteen_keys_at_their_empty_values(mods):
                                   "rubric", "workable", "call_log", "report"])
     assert list(got) == list(K.KEYS), "in the order the state lists them"
     assert got["workflows"] == [] and got["atoms_v1"] == {} and got["sections"] == [] and got["agents"] == {}
-    assert got["lanes"] == []
+    assert [l["id"] for l in got["lanes"]] == ["identity", "adaptation", "priority", "coordination", "audit", "validator"], "no workflow lane yet"
     assert got["style"] is None and got["report"] is None and got["workable"] is None and got["conditions"] is None
     assert got["conflicts"] == [] and got["audits"] == [] and got["rubric"] == [] and got["call_log"] == []
     assert json.loads(json.dumps(got)) == got, "the page reads it as JSON"
@@ -494,3 +497,178 @@ def test_w2_a_real_departments_line_reads_as_workflows(mods, born):
     assert all(w["status"] in K.STATUSES for w in got)
     assert not BANNED.search(json.dumps(got)) and not [s for s in walk(got) if CHECK_ID.match(s)]
     assert json.loads(json.dumps(got)) == got
+
+
+# ---- W4: lanes ----------------------------------------------------------------------------------------------------------
+def lanes(mods, **kw):
+    ctx = standin(mods, **kw)
+    return K.build(ctx)["lanes"], ctx
+
+
+def by_id(ls):
+    return {l["id"]: l for l in ls}
+
+
+def test_w4_the_lanes_are_the_five_the_validator_then_each_workflow_in_order(mods):
+    ls, ctx = lanes(mods)
+    assert [l["id"] for l in ls] == ["identity", "adaptation", "priority", "coordination", "audit", "validator", "W-1", "W-2", "W-3", "W-4"]
+    assert [l["name"] for l in ls] == FUNCS + ["Validator", "W-1 Plan", "W-2 Write", "W-3 Check", "W-4 Publish"]
+    for l in ls:
+        assert list(l)[:6] == ["id", "name", "status", "on", "doing", "last_msg"], list(l)
+        assert l["status"] in ("idle", "working", "waiting", "blocked")
+    assert [("progress" in l) for l in ls] == [False] * 6 + [True] * 4
+    assert by_id(ls)["validator"]["doing"] == "code: checks and registers workflows" and by_id(ls)["validator"]["status"] == "idle"
+    assert json.loads(json.dumps(ls)) == ls
+
+
+def test_w4_before_a_plan_is_registered_there_are_the_five_and_the_validator_only(mods):
+    ls, ctx = lanes(mods, planned=False)
+    assert [l["id"] for l in ls] == ["identity", "adaptation", "priority", "coordination", "audit", "validator"]
+
+
+@pytest.mark.parametrize("state,step,working", [("assessing", 1, "identity"), ("adapting", 2, "adaptation"), ("bargaining", 3, "priority"),
+                                                  ("running", 6, "coordination"), ("closing", 4, "identity")])
+def test_w4_the_function_that_holds_the_turn_is_working(mods, state, step, working):
+    W, R, J, F = mods
+    cycle(W, state, step)
+    ls, ctx = lanes(mods)
+    got = by_id(ls)
+    assert [i for i in FUNCS if got[i.lower()]["status"] == "working"] == [working.capitalize()], {i: l["status"] for i, l in got.items()}
+    assert got[working]["doing"], "and says what it is doing"
+    assert all(l["on"] is None for l in ls if l["id"] in [f.lower() for f in FUNCS]), "nothing waits on you"
+    assert all(l["status"] in ("idle", "working", "waiting", "blocked") for l in ls)
+
+
+def test_w4_a_blocked_cycle_waits_on_you_and_a_done_one_waits_on_nobody(mods):
+    W, R, J, F = mods
+    cycle(W, "blocked", 4)
+    ls, ctx = lanes(mods)
+    idn = by_id(ls)["identity"]
+    assert (idn["status"], idn["on"]) == ("waiting", "you") and "needs your words" in idn["doing"]
+    cycle(W, "done", 8)
+    ls, ctx = lanes(mods)
+    assert {l["status"] for l in ls if l["id"] in [f.lower() for f in FUNCS]} == {"idle"} and all(l["on"] is None for l in ls)
+
+
+def test_w4_a_function_waits_on_you_only_while_something_waits_on_the_owner(mods):
+    W, R, J, F = mods
+    cycle(W, "running", 6)
+    ls, ctx = lanes(mods)
+    assert [l["id"] for l in ls if l["on"] == "you"] == [], "no ask is pending"
+    ask(W, kind="publish", engine="Publish", text="Publish: go live for the first time")
+    ls, ctx = lanes(mods)
+    waiting = [l["id"] for l in ls if l["on"] == "you"]
+    assert waiting == ["identity", "W-4"], waiting
+    idn = by_id(ls)["identity"]
+    assert idn["status"] == "waiting" and "go live for the first time" in idn["doing"]
+
+
+def test_w4_a_function_that_waits_on_another_says_which(mods):
+    W, R, J, F = mods
+    cycle(W, "checking", 5)
+    ls, ctx = lanes(mods)
+    ada = by_id(ls)["adaptation"]
+    assert (ada["status"], ada["on"], ada["doing"]) == ("waiting", "Root", "waits on Root's review"), ada
+
+
+def test_w4_a_fault_is_blocked(mods):
+    W, R, J, F = mods
+    cycle(W, "running", 6)
+    ctx = standin(mods)
+    node = next(n for n in ctx.fv["functions"] if n["fn"] == "audit")
+    node.update(state="fault", why="Audit has not read Live site v1", line="Audit has not read Live site v1")
+    audit = by_id(K.build(ctx)["lanes"])["audit"]
+    assert (audit["status"], audit["on"]) == ("blocked", None) and audit["doing"].startswith("Audit has not read")
+
+
+def test_w4_the_numbers_are_the_records_not_the_prototypes(mods):
+    W, R, J, F = mods
+    run(W, "Write", status="ok", id="r-write-a", spend={"calls": 4, "usd": 0.1}, retries=2, started=ago(200))
+    W.set_envelope(REF, "Write", calls=17, usd=2.0)
+    ls, ctx = lanes(mods)
+    p = by_id(ls)["W-2"]["progress"]
+    assert p["attempt_limit"] == 17 == W.limit_of(W.dept(REF), "Write")["calls"] != 3, "Priority's calls limit"
+    assert p["attempts"] == 4 and p["retries"] == 2 and p["retry_limit"] == len(R.WAITS)
+    assert p["write_lock"] is False and p["section"] == ""
+    assert by_id(ls)["W-1"]["progress"]["attempt_limit"] == W.limit_of(W.dept(REF), "Plan")["calls"]
+
+
+def test_w4_a_workflow_lane_by_what_the_engine_is_doing(mods):
+    W, R, J, F = mods
+    run(W, "Plan", status="running", what="Planning the pages")
+    ask(W, kind="engine", engine="Write", text="Write: add a page about parking?")
+    ask(W, kind="envelope", engine="Check", text="Check is past its limit")
+    run(W, "Publish", status="failed", what="Publish could not copy the build")
+    step_row(mods[1], "Publish", "publish.copy", ok=False, notes=["no build to copy"], run_id="r-pub")
+    ls, ctx = lanes(mods)
+    got = by_id(ls)
+    assert (got["W-1"]["status"], got["W-1"]["on"], got["W-1"]["doing"]) == ("working", None, "making Site plan")
+    assert (got["W-2"]["status"], got["W-2"]["on"]) == ("waiting", "you") and "add a page about parking" in got["W-2"]["doing"]
+    assert (got["W-3"]["status"], got["W-3"]["on"]) == ("waiting", "you"), "an unfunded workflow waits on the owner's yes"
+    assert got["W-4"]["status"] == "blocked" and got["W-4"]["doing"] == "failed: Copy the build live: no build to copy"
+    assert got["W-4"]["progress"]["last_check"] == "Copy the build live: no build to copy"
+
+
+def test_w4_a_held_workflow_with_no_ask_is_blocked_and_an_idle_one_says_its_last_run(mods):
+    W, R, J, F = mods
+    run(W, "Plan", status="interrupted", what="the app closed")
+    run(W, "Write", status="ok", what="Pages from Site plan, check passed")
+    ls, ctx = lanes(mods)
+    got = by_id(ls)
+    assert got["W-1"]["status"] == "blocked" and got["W-1"]["doing"] == "held: Plan"
+    assert got["W-1"]["progress"]["last_check"] == "not run yet"
+    assert (got["W-2"]["status"], got["W-2"]["doing"]) == ("idle", "Pages from Site plan, check passed")
+    assert (got["W-3"]["status"], got["W-3"]["doing"]) == ("idle", "")
+
+
+def test_w4_what_a_lane_says_is_in_the_owners_words(mods):
+    W, R, J, F = mods
+    run(W, "Plan", status="ok", what="granted the line Plan -> Write; Priority countered")
+    ask(W, kind="engine", engine="Write", text="Priority refused the line; take the refusal to Identity")
+    ls, ctx = lanes(mods)
+    text = json.dumps(ls)
+    assert not BANNED.search(text), text
+    assert "said yes to the line" in by_id(ls)["W-1"]["doing"] and "said no to the line" in by_id(ls)["W-2"]["doing"]
+
+
+def test_w4_the_owners_own_words_in_a_line_are_not_rewritten(mods):
+    W, R, J, F = mods
+    words = "Add a page that says we granted every request"
+    run(W, "Plan", status="ok", what="took the owner's words: " + words, words=words)
+    ls, ctx = lanes(mods)
+    assert by_id(ls)["W-1"]["doing"] == "took the owner's words: " + words
+
+
+def test_w4_last_msg_is_the_id_of_the_agents_last_message(mods):
+    W, R, J, F = mods
+    post(W, R, "Owner", "Identity", "request", {"word": "request", "words": "Build a site"}, thread="x-1")
+    post(W, R, "Adaptation", "Priority", "propose", {"word": "line"}, thread="x-2")
+    post(W, R, "Priority", "Adaptation", "accept-proposal", {"word": "line", "why": "fits"}, thread="x-2", hop=2)
+    post(W, R, "Adaptation", "Priority", "propose", {"word": "line"}, thread="x-3")
+    ls, ctx = lanes(mods)
+    got = by_id(ls)
+    assert (got["adaptation"]["last_msg"], got["priority"]["last_msg"]) == (4, 3)
+    assert got["identity"]["last_msg"] is None and got["validator"]["last_msg"] is None and got["W-1"]["last_msg"] is None
+
+
+def test_w4_a_stopped_department_has_no_lane_working(mods):
+    W, R, J, F = mods
+    run(W, "Plan", status="running")
+    W.set_stopped(REF, True)
+    ls, ctx = lanes(mods)
+    assert "working" not in {l["id"]: l["status"] for l in ls if l["id"] in [f.lower() for f in FUNCS]}.values()
+
+
+def test_w4_the_prototypes_page_draws_the_lanes(mods):
+    W, R, J, F = mods
+    cycle(W, "running", 6)
+    run(W, "Plan", status="running", what="Planning the pages")
+    ask(W, kind="publish", engine="Publish")
+    got = K.build(standin(mods))
+    html = render(page_state(got), "renderLanes(s)")
+    text = shown(html)
+    assert "Agents · live status" in text and "Identity" in text and "Validator" in text and "W-1 Plan" in text
+    assert "waiting on you" in text and "working" in text
+    assert re.search(r"section\s*· attempts 0/240 · retries 0/3", text), text
+    assert "last check: not run yet" in text
+    assert not re.search(r"undefined|NaN|\bnull\b|\[object", text)

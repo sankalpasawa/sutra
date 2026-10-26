@@ -19,6 +19,7 @@ rewritten, and no string says an act's id or a check's id.
 """
 import engine_runtime as R
 import j2ui_atoms as A
+import owner_words
 import website_dept as W
 
 STATUSES = ("registered", "held", "running", "done", "failed", "unfunded")      # the page's six words for a workflow, and no other
@@ -131,8 +132,61 @@ def _atoms(ctx, workflows):
     return {"atoms_v1": A.views(workflows), "sections": [], "agents": {w["id"]: w["agent"] for w in workflows}}
 
 
+# ---- W4: one lane for each agent ---------------------------------------------------------------------------------------
+LANE_STATUS = {"quiet": "idle", "working": "working", "waiting": "waiting", "waiting_on_you": "waiting", "fault": "blocked"}
+LANE_LINE = 140                                              # the page's own cut of what an agent is doing
+
+
+def _last_msg(ctx, who):
+    """The id of the agent's last chat message, or None."""
+    return next((m.get("id") for m in reversed(getattr(ctx, "chat", None) or []) if m.get("who") == who), None)
+
+
+def _line(text, words=None):
+    """What a run or an ask said, in the owner's words up to the words of theirs it ends with, cut to a line."""
+    return A.cut(owner_words.kept(str(text or ""), words), LANE_LINE)
+
+
+def _function_lane(ctx, node):
+    state = node.get("state")
+    on = "you" if state == "waiting_on_you" else node.get("waits_on")
+    return {"id": node["fn"], "name": node["name"], "status": LANE_STATUS.get(state, "idle"), "on": on,
+            "doing": node.get("line") or "", "last_msg": _last_msg(ctx, node["fn"])}
+
+
+def _workflow_lane(ctx, w, e):
+    """A workflow's agent. Working while the engine runs; waiting on you while an ask for it waits (the owner holds the turn,
+    whatever the workflow's own word is); blocked when the workflow is held, unfunded or failed without one; else idle, with
+    the line its last run said. The numbers are the record's: Priority's calls limit and the runs' retries, never the
+    prototype's constants."""
+    name = e["name"]
+    ask = next((a for a in ctx.asks if a.get("engine") == name and a.get("status") == "pending"), None)
+    runs = [r for r in e.get("runs") or [] if isinstance(r, dict)]
+    on = None
+    if e.get("state") == "Running":
+        status, doing = "working", "making %s" % e["writes"] if e.get("writes") else "working"
+    elif ask:
+        status, on, doing = "waiting", "you", _line(ask.get("text"), ask.get("words"))
+    elif w["status"] in ("held", "unfunded", "failed"):
+        status, doing = "blocked", "%s: %s" % (w["status"], w["last_check"] or w["name"])
+    else:
+        last = runs[-1] if runs else None
+        status, doing = "idle", _line(last.get("what"), last.get("words")) if last else ""
+    env = w["envelope"]
+    return {"id": w["id"], "name": w["agent"], "status": status, "on": on, "doing": doing, "last_msg": _last_msg(ctx, w["id"]),
+            "progress": {"section": "", "attempts": w["calls_used"], "attempt_limit": env["model_call_limit"],
+                         "retries": int(runs[-1].get("retries") or 0) if runs else 0, "retry_limit": env["retry_limit"],
+                         "write_lock": False, "last_check": w["last_check"] or "not run yet"}}
+
+
 def _lanes(ctx, workflows):
-    return []
+    """The five functions, the validator (Root's check, which is code), then a lane for each workflow, in that order. A
+    function's status is its node's (functions_view); what it is doing is the node's line."""
+    lanes = [_function_lane(ctx, n) for n in (getattr(ctx, "fv", None) or {}).get("functions") or []]
+    lanes.append({"id": "validator", "name": "Validator", "status": "idle", "on": None, "doing": "code: checks and registers workflows",
+                  "last_msg": _last_msg(ctx, "validator")})
+    by_wid = {e.get("wid"): e for e in ctx.engines}
+    return lanes + [_workflow_lane(ctx, w, by_wid[w["id"]]) for w in workflows]
 
 
 def _audit(ctx):
