@@ -1086,13 +1086,15 @@ def test_m3_6_the_plain_words_check(j2):
 
 DROP_WHY = "Priority would not grant it and the counter was too small"
 GRANT_Q = "Will Priority grant a budget, or counter it first?"
+BARGAIN_WHY = "I will not grant this; I would counter with half"
 
 
 def _scenarios(j2, monkeypatch):
     """The J2 scenarios, each a department: born and run offline; Priority says no and Identity rules it runs; Priority
     says no and Identity puts the plan to the owner; Root's check refuses the plan until it is blocked; Identity's
-    standard asks; a rule given as an answer; and a model whose words carry the bargain's inside words: Identity's ruling
-    to drop the plan quotes a why that says grant and counter, and its reading of the standard asks in those words."""
+    standard asks; a rule given as an answer; and a model whose words carry the bargain's inside words: Priority's no in
+    those words, which the conflict card Identity puts to the owner quotes; Identity's ruling to drop the plan quotes a
+    why that says grant and counter; and its reading of the standard asks in those words."""
     W, R, J, _, _ = j2
     refs = [_born(j2)]
     _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room"},
@@ -1112,6 +1114,8 @@ def _scenarios(j2, monkeypatch):
     W.owner_ask(ref, NEVER)
     W.run_until_idle(ref, limit=300)
     refs.append(ref)
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": BARGAIN_WHY}})
+    refs.append(_born(j2, org="Asked Grant Co"))
     _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room"}, "identity.close": {"ruling": "drop", "why": DROP_WHY}})
     refs.append(_born(j2, org="Dropped Co"))
     _model(monkeypatch, R, {"identity.enough": {"enough": False, "missing": ["budget"], "question": GRANT_Q, "why": "no grant yet"}})
@@ -1172,6 +1176,21 @@ def test_m3_6_a_cards_words_are_plain_as_the_line_it_stands_for(j2, monkeypatch)
     # words the owner's table can say plainly are said again, not replaced; and the templates are plain themselves
     assert R.plain_card(ref, {"text": "Priority granted the line", "title": "Priority's grant", "why": "Priority countered (no room)"}, "blocked") == \
         {"text": "Priority said yes to the line", "title": "Priority's yes", "why": "Priority asked for less (no room)"}
+    # the conflict card Identity puts to the owner quotes Priority's no: in the bargain's words, the card is the template,
+    # its line says the same, and the Chat's 'Waiting for you' never shows grant or counter (found by a verifier 2026-10-26)
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": BARGAIN_WHY}})
+    ref = _born(j2, org="Asked Grant Co")
+    conflict = next(a for a in W.asks(ref) if a["kind"] == "conflict" and a["status"] == "pending")
+    assert conflict["text"] == R.PLAIN_TEMPLATE["conflict"] and R.plain_faults(conflict["text"]) == []
+    line = next(p for p in R.board(ref) if (p["payload"] or {}).get("word") == "conflict" and "Owner" in p["dst"])
+    assert line["payload"]["objective"] == conflict["text"]
+    waiting = [a for a in R.chat_view(ref)["asks"] if a["kind"] == "conflict"]
+    assert waiting and not [a for a in waiting if R.plain_faults(a["text"])]
+    # a why the owner's table can say plainly is said again, the plan's name kept
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "Priority countered (no room)"}})
+    ref = _born(j2, org="Asked Less Co")
+    conflict = next(a for a in W.asks(ref) if a["kind"] == "conflict" and a["status"] == "pending")
+    assert "Priority asked for less (no room)" in conflict["text"] and conflict["text"].startswith("Adaptation proposes the plan ")
     assert not [t for t in R.PLAIN_TEMPLATE.values() if R.plain_faults(t)]
 
 

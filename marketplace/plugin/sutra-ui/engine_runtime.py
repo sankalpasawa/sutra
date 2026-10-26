@@ -774,6 +774,8 @@ PLAIN_TEMPLATE = {"answer": "I could not put that in plain words. Ask me again, 
                   "question": "What should I know before the department starts?",
                   "title": "The plan cannot go on as it is.",
                   "blocked": "The plan cannot go on as it is. Say what to change, or choose a way forward on this card.",
+                  "conflict": "Adaptation proposes a plan Priority did not say yes to, and the goal and the rules do not settle it. "
+                              "Stamp to run it as proposed, or say no to drop it.",
                   "why": "the reason is on the department's record",
                   "": "The department moved on; what changed is on its record."}
 #: the words of an ask its card shows the owner (PRD M3.6, screens S6 and S10), each by the template its kind of line
@@ -836,9 +838,9 @@ def plain_card(ref, fields, text_is=""):
     """The words an ask's card shows the owner pass the check Identity's posts pass on their way to the board (M3.6), on
     their way to the ask, so a card never says what the line it stands for may not (found by a verifier 2026-10-23: a
     blocked plan's card said grant and counter while the chat line it stood for was a template). `fields` is the card's
-    words by CARD_KEYS ({text, title, why}); `text_is` names what its text is, a 'question' or a 'blocked' plan, for its
-    template. The one check for every card: the options ask (_blocked) and Identity's question (J.asked). Returns the
-    fields, checked."""
+    words by CARD_KEYS ({text, title, why}); `text_is` names what its text is, a 'question', a 'blocked' plan or a
+    'conflict' Identity puts to the owner, for its template. The one check for every card: the options ask (_blocked),
+    Identity's question (J.asked) and the conflict card (identity_closed). Returns the fields, checked."""
     owners, out = None, dict(fields)
     for k, v in fields.items():
         if not isinstance(v, str) or not v.strip():
@@ -5018,6 +5020,10 @@ def identity_closed(ctx, step, item):
         return {"said": "dropped the plan: " + (why or "Priority's no stands")}
     text = ("Adaptation proposes the plan %s. %s. The goal and the rules do not settle it. %s"
             % (names, str(pl.get("why") or "Priority did not say yes to it").rstrip("."), _answers("run it as proposed", "to drop it")))
+    # the card quotes Priority's why, which a model may say in the bargain's inside words: it passes the check every card
+    # passes (plain_card, M3.6), so the card says what the line it stands for may (found by a verifier 2026-10-26: the
+    # Chat's 'Waiting for you' card said grant and counter while its line was plain)
+    text = plain_card(ref, {"text": text}, "conflict")["text"]
     if not any(a.get("kind") == "conflict" and a.get("for") == pl.get("for") for a in W.asks(ref)):
         p = post(ref, "Identity", OWNER, "request", {"word": "conflict", "objective": text, "output": "a stamp or a refusal", "may_read": ["Brief"],
                                                      "boundaries": "this one plan"})
