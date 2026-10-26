@@ -674,10 +674,10 @@ An owner value passes only if `S.validate_field` passes: the field's type, no '{
 | coordination | tie | tie | task | ready, what, order, waiting | verbatim | coord.tie |
 | audit | goal | does, skills | text, items | none | none | `card()` |
 | audit | judge | judge | task, guidance as split | brief, filed, pages | verbatim | audit.judge |
-| root | setup | converse | task (default: CONVERSE, or setup.json's converse_instruction), items (the examples) | examples, library, existing, conversation | verbatim from p_setup_converse | setup.converse |
+| root | setup | converse | task (default: CONVERSE, or setup.json's converse_instruction) | examples, library, existing, conversation | verbatim from p_setup_converse | setup.converse |
 | root | setup | shape | task, guidance as split | as p_setup_shape fills them | verbatim from p_setup_shape | setup.shape |
 
-'As split' means the field set is what the split rule finds for that part; W0-SCHEMA records the result literally in `S.PROMPTS`. The interface is written into the code as literals, never read from the .md files at runtime. Every soft step's `out` keys must appear in its part's `returns` (a test).
+'As split' means the field set is what the split rule finds for that part; W0-SCHEMA records the result literally in `S.PROMPTS`. Root's converse part has one owner field, the task: the examples are the questions of the Library's Setup template (`clarification_questions`), which the code joins on one line and fills as the input `examples`, so they are an input and not a field. A list field is printed as lines ('- x') and could not be the same words, and a field the layout never reads would be an owner's change that does nothing (A1-D20). The interface is written into the code as literals, never read from the .md files at runtime. Every soft step's `out` keys must appear in its part's `returns` (a test).
 
 **Parts added by later steps.** Each is added to `S.PROMPTS` by the package that builds the step, with its contract verbatim:
 
@@ -1040,6 +1040,7 @@ The prototype moved 45 commits since `564e3a7`. What the Sutra build takes from 
 | A1-D17 | At a wave's cut-off the integrator merges whole steps; a step not merged becomes the first step of the same layer's package in the next wave | The owner asked for all of it in 3 to 4 hours; an overrun must slide forward, never drop | No step is lost or left to a later session |
 | A1-D18 | Four waves: 0 (one package, the schema core), 1 (eight), 2 (six: M9, M10 and what wave 1 could not hold), 3 (four); about 5 h 15 min in all, with waves 0 and 1 inside 3 h 05 min | The review's schedule, with nothing deferred to a later session | The owner's window holds the direction itself and every built milestone rebound to it; waves 2 and 3 run straight after |
 | A1-D19 | Every write path is closed: the department object is closed with LEGACY_KEYS; save_dept takes by and reports a foreign key (warn until W3-PROOF, then refuse); a grow stage checks J5; engine.template is checked before born_template writes; SchemaFault is not a ValueError | The review: paths bypassed 'every write validates' | The workflow schema holds 'from a coding perspective' on every path |
+| A1-D20 | `root.setup.converse` has one owner field, the task; the examples are the input `examples`, and A1.16's `items (the examples)` is withdrawn | The code joins the examples on one line, so an `items` field (printed as lines) cannot reproduce p_setup_converse byte for byte, and a field the layout never reads is an owner's change that does nothing (layers.prompts.layout_faults, contract case 5) | The one removal of a name A1-D15 allows, recorded here and as A1-15 in the decision log; no consumer reads the field |
 
 ## A1.30 Schema files
 

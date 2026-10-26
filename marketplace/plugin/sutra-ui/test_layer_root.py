@@ -514,6 +514,88 @@ def test_r5_a_plan_root_is_registering_is_not_held_to_the_grow_stage_again(home)
     assert out["engines"] == LINE
 
 
+def _put_and_stamp_engine(home, ref, name, shape):
+    """The faithful J5 flow: Adaptation's offer reaches Identity, who puts it to the owner as an ask; the owner stamps it
+    (W.decide_ask) and Identity applies the stamp. Returns the ask's id and the board rows said after the stamp."""
+    W, R, _, _ = home
+    R.post(ref, "Adaptation", "Identity", "propose", {"word": "engine", "engine": name, "offer": {"shape": shape}, "idea": None,
+                                                      "why": "the idea asks for it; Priority has room"})
+    W.run_until_idle(ref, limit=200)
+    ask = next(a for a in W.asks(ref) if a["kind"] == "engine" and a["engine"] == name and a["status"] == "pending")
+    seen = len(R.board(ref))
+    W.decide_ask(ref, ask["id"], True)
+    W.run_until_idle(ref, limit=200)
+    return ask["id"], R.board(ref)[seen:]
+
+
+def _said_to_owner(rows):
+    return [p["payload"]["done"] for p in rows if p["src"] == "Identity" and "Owner" in p["dst"] and p["msg_type"] == "inform"
+            and p["payload"].get("word") == "engine"]
+
+
+def test_r5_an_engine_the_owner_stamps_and_the_grow_stage_refuses_is_not_added_and_identity_tells_the_owner_why(home):
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    before = W.dept(ref)
+    shape = {"name": "Launch", "use_case": "launches the site", "does": "launches the site", "reads": "Nothing Files This", "writes": "Launch"}
+    aid, after_stamp = _put_and_stamp_engine(home, ref, "Launch", shape)
+    after = W.dept(ref)
+    # the line, its artifacts, the windows and the Library are as they were
+    assert after["engines"] == before["engines"] and after["artifacts"] == before["artifacts"] and "Launch" not in after["windows"]
+    assert not (R.user_templates_dir() / "launch.json").exists() and "Launch" not in R.defs()["engines"]
+    # Identity tells the owner, once, in plain words: the standard's own words and what is wrong, never its id
+    said = _said_to_owner(after_stamp)
+    assert len(said) == 1, said
+    assert said[0].startswith("The engine Launch was not added to Acme, and nothing was changed.")
+    assert ("would break one: %s (Launch reads Nothing Files This, which nothing before it writes)." % WS.SAYS["reads_known"]) in said[0]
+    assert not [sid for sid in WS.STANDARD_CHECKS if sid in said[0]], "no standard's id on the owner's screen"
+    assert "Say the idea again, with what it should read" in said[0]
+    assert any(t["line"] == said[0] for t in R.chat_view(ref)["turns"]), "and the owner's chat carries it"
+    # the ask was stamped, as the owner did, and it does not read as applied: it says it was not, and why
+    ask = next(a for a in W.asks(ref) if a["id"] == aid)
+    assert ask["status"] == "stamped" and ask["applied"] is False and ask["not_added"] == said[0]
+    # the apply step did not fail, and nothing says the engine was added
+    runs = [r for r in W.runs(ref) if r["engine"] == "Identity"]
+    assert not [r for r in runs if r["status"] == "failed"], runs
+    assert not [r for r in runs if "added the engine Launch" in str(r["what"])]
+    assert any("did not add the engine Launch" in r["what"] and "reads_known" not in r["what"] for r in runs)
+
+
+def test_r5_the_same_stamp_adds_an_engine_the_line_can_read_and_says_nothing_of_a_refusal(home):
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    shape = {"name": "Launch", "use_case": "launches the site", "does": "launches the site", "reads": "Pages", "writes": "Launch"}
+    aid, after_stamp = _put_and_stamp_engine(home, ref, "Launch", shape)
+    assert W.dept(ref)["engines"] == LINE + ["Launch"] and not _said_to_owner(after_stamp)
+    ask = next(a for a in W.asks(ref) if a["id"] == aid)
+    assert ask["status"] == "stamped" and "applied" not in ask and "not_added" not in ask
+
+
+def test_r5_an_engine_the_line_already_runs_is_told_to_the_owner_in_the_refusals_own_words(home):
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    aid, after_stamp = _put_and_stamp_engine(home, ref, "Plan", {"name": "Plan", "use_case": "plans", "does": "plans"})
+    said = _said_to_owner(after_stamp)
+    assert said == ["The engine Plan was not added to Acme, and nothing was changed. Acme already runs Plan."], said
+    assert W.dept(ref)["engines"] == LINE
+    assert next(a for a in W.asks(ref) if a["id"] == aid)["applied"] is False
+
+
+def test_r5_the_organisation_sheet_path_reports_the_refusal_through_the_proposal_record(home, monkeypatch):
+    """org.engine is the other stamp that adds an engine: its caller is proposals.decide, which records a refused apply as
+    failed with the reason, never as approved, and the department is as it was."""
+    import org2_apply
+    import proposals
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    monkeypatch.setattr(org2_apply.E, "load_domains", lambda: {ref: {"name": "Acme", "status": "live"}})
+    shape = {"name": "Launch", "use_case": "launches the site", "does": "launches the site", "reads": "Nothing Files This", "writes": "Launch"}
+    rec = proposals.create("org.engine", {"ref": ref, "engine": "Launch", "shape": shape}, "Add the engine Launch")
+    out = proposals.decide(rec["id"], True, apply_fn=org2_apply.apply_request)
+    assert out["status"] == "failed" and "reads_known" in out["result"]["error"] and WS.SAYS["reads_known"] in out["result"]["error"]
+    assert W.dept(ref)["engines"] == LINE
+
+
 def test_r5_a_born_template_is_typed_before_its_file_is_written(home):
     W, R, J, _ = home
     ref = _born_dept(home)

@@ -769,11 +769,20 @@ def _place(d, name, reads, before=None):
     return line, before
 
 
-def grow_faults(d, name, e=None, shape=None, before=None):
+class GrowRefused(ValueError):
+    """add_engine's refusal at the grow stage (PRD A1.14, J5): a ValueError that says the line would break Root's standards,
+    and carries `broken`, [(standard id, the standard's words, what is wrong)], for whoever tells the owner why."""
+
+    def __init__(self, message, broken):
+        super().__init__(message)
+        self.broken = list(broken)
+
+
+def grow_broken(d, name, e=None, shape=None, before=None):
     """The line `name` would make, held to Root's standards at the grow stage (PRD A1.14, J5): what the line would break
-    that it did not break before, one sentence for each, naming the standard, its words and what is wrong; [] when it
-    breaks none. `e` is the engine's definition when the Library has it, else `shape` says what a new one reads and
-    writes. A fault the line already had is not the new engine's, so it never stops one joining."""
+    that it did not break before, as (standard id, the standard's words, what is wrong); [] when it breaks none. `e` is the
+    engine's definition when the Library has it, else `shape` says what a new one reads and writes. A fault the line
+    already had is not the new engine's, so it never stops one joining."""
     reads = (e or {}).get("reads") or str((shape or {}).get("reads") or "Brief")
     writes = (e or {}).get("writes") or str((shape or {}).get("writes") or name)[:40]
     now = [x[0] for x in engines_of(d)]
@@ -787,7 +796,17 @@ def grow_faults(d, name, e=None, shape=None, before=None):
             rows[line.index(name)] = {"name": name, "reads": reads, "writes": writes}
         return [(r["check"], r["why"]) for r in S.validate_workflow(S.as_workflow(rows, source, d), "grow", d, {}) if not r["passed"]]
     was = broken(now)
-    return ["%s (%s): %s" % (c, says[c], why) if c in says else why for c, why in broken(after) if (c, why) not in was]
+    return [(c, says.get(c), why) for c, why in broken(after) if (c, why) not in was]
+
+
+def _broken_lines(broken):
+    """grow_broken's rows, one sentence for each, naming the standard, its words and what is wrong."""
+    return ["%s (%s): %s" % (c, says, why) if says else why for c, says, why in broken]
+
+
+def grow_faults(d, name, e=None, shape=None, before=None):
+    """grow_broken as sentences; [] when the line breaks nothing."""
+    return _broken_lines(grow_broken(d, name, e, shape, before))
 
 
 def add_engine(ref, name, shape=None, by="the owner's stamp", before=None, registered=False):
@@ -822,9 +841,10 @@ def add_engine(ref, name, shape=None, by="the owner's stamp", before=None, regis
     if name in [x[0] for x in engines_of(d)]:
         raise ValueError("%s already runs %s" % (d.get("name"), name))
     if not registered:
-        bad = grow_faults(d, name, engines.get(name), shape, before)
+        bad = grow_broken(d, name, engines.get(name), shape, before)
         if bad:
-            raise ValueError("%s is not added to %s: the line would break Root's standards: %s" % (name, d.get("name"), "; ".join(bad)))
+            raise GrowRefused("%s is not added to %s: the line would break Root's standards: %s" % (
+                name, d.get("name"), "; ".join(_broken_lines(bad))), bad)
     if name not in engines:
         born = R.born_template(name, shape, ref)
         engines = R.defs()["engines"]

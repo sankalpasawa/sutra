@@ -635,6 +635,26 @@ def test_s3_roots_returns_are_its_inline_builders_byte_for_byte():
     assert S.PROMPTS["root"]["setup"]["shape"]["returns"] in R.p_setup_shape(ctx, None, None)
 
 
+def test_s3_roots_converse_part_has_one_owner_field_and_the_examples_are_an_input():
+    """A1-15 (A1-D20): the examples are the Library's Setup template's questions, joined on one line by the code, so they are
+    an input; an 'items' field would print as lines and could not be the same words. The settled shape stands in the
+    interface, the generated files and the field check."""
+    converse = S.PROMPTS["root"]["setup"]["converse"]
+    assert converse["fields"] == {"task": "field.task"} and converse["inputs"] == ("examples", "library", "existing", "conversation")
+    assert S.PROMPTS["root"]["setup"]["shape"]["fields"] == {}
+    assert S.validate_field("root", "setup", "converse", "task", "Ask what you need to know.") == []
+    assert S.validate_field("root", "setup", "converse", "items", ["x"]) != [], "the examples are not the owner's to change"
+    interface = json.loads((S.HERE / "schemas" / "layers" / "interface.v1.json").read_text(encoding="utf-8"))
+    assert interface["prompts"]["root"]["setup"]["converse"]["fields"] == {"task": "field.task"}
+    instructions = json.loads((S.HERE / "schemas" / "layers" / "instructions.schema.json").read_text(encoding="utf-8"))
+    assert instructions["x-fields"]["root"]["setup"]["converse"] == {"task": "field.task"}
+    ctx = {"bag": {"setup.read": {"words": "w", "conversation": {"messages": []}, "named": None,
+                                  "facts": {"kinds": "website", "use_cases": "website: a site", "existing": "none"}}},
+           "dept": {"name": "Acme Root", "org": {"name": "Acme"}}, "ref": None}
+    questions = R._converse_examples()
+    assert questions and " | ".join(questions) in R.p_setup_converse(ctx, None, None), "the examples reach the words as the one input"
+
+
 def _added_checks(layer):
     """The covering checks a layer's default version holds in its own CHECK dict (A1.10: 'added', beyond the ones its recipe's
     steps name, which still serve from the legacy registry): the body is the layer's, not engine_runtime's."""

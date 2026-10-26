@@ -3180,6 +3180,27 @@ def identity_rung(ctx, step, item):
     return {"said": "put a move to the owner: " + text}
 
 
+def _engine_not_added(ref, d, a, exc):
+    """The owner stamped an engine and could not have it added (PRD A1.14, J5: when the grow stage refuses, the engine is
+    not added and the owner is told why). Identity says so in plain words, in a thread of its own (the ask's thread closed
+    on the stamp): for a line that would break Root's standards, each standard's own words and what is wrong, never its id.
+    The line, the artifacts and the Library are as they were; the ask stays what the owner made it, stamped, but is marked
+    not applied, with the words on it; the idea stays parked."""
+    name = a.get("engine")
+    broken = getattr(exc, "broken", None)
+    if broken:
+        lines = ["%s (%s)" % (says, str(why).strip().rstrip(".")) for _, says, why in broken]
+        reason = "Root holds every line to its standards, and this engine would break %s: %s." % (
+            "one" if len(lines) == 1 else "some", "; ".join(lines))
+        advice = " Say the idea again, with what it should read, to have it offered again."
+    else:
+        reason, advice = str(exc).strip().rstrip(".") + ".", ""
+    words = "The engine %s was not added to %s, and nothing was changed. %s%s" % (name, d.get("name"), reason, advice)
+    W._put_ask(ref, dict(a, applied=False, not_added=words))
+    _tell(ref, d, {"src": "Root" if d.get("root") else OWNER}, "inform", {"word": "engine", "engine": name, "done": words})
+    return {"said": "did not add the engine %s on the owner's stamp: %s" % (name, reason), "refused": True}
+
+
 def identity_apply(ctx, step, item):
     ref, pl = ctx["ref"], ctx["post"]["payload"]
     a = next((x for x in W.asks(ref) if x["id"] == pl.get("ask")), None)
@@ -3189,7 +3210,10 @@ def identity_apply(ctx, step, item):
         # TPL-1 slice 2: the engine Adaptation offered, priced by Priority, now stamped: on the record, in the line, and
         # a shaped one born into the Library; it starts on its own trigger like every other engine
         offer = a.get("offer") or {}
-        W.add_engine(ref, a.get("engine"), shape=offer.get("shape"), by="the owner's stamp")
+        try:
+            W.add_engine(ref, a.get("engine"), shape=offer.get("shape"), by="the owner's stamp")
+        except ValueError as exc:
+            return _engine_not_added(ref, ctx["dept"], a, exc)
         _note_idea(ref, a.get("idea"), {"engine": a.get("engine"), "state": "built"})
         return {"said": "added the engine %s on the owner's stamp; it starts on its own trigger" % a.get("engine")}
     if a.get("kind") == "conflict":
