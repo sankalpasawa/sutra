@@ -2027,7 +2027,7 @@ class TestActivation(Base):
         self.table(edges=edges)
         with self.assertRaises(ValueError) as e:
             R.post(REF, "Audit", "Identity", "inform", {"word": "finding", "claim": "a claim", "severity": "low"})
-        self.assertEqual(str(e.exception), "Audit may not post inform to Identity")
+        self.assertEqual(str(e.exception), "Audit may not tell Identity", "the act in the owner's words, never its id (PRD M1.7)")
         rows = [(r["engine"], r["answer"], r["check"]["ok"]) for r in self.rows("coord.edge") if r["slot"] == "Audit>Identity:inform"]
         self.assertEqual(rows, [("Coordination", "admit", True), ("Coordination", "refuse", True)])
 

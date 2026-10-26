@@ -37,7 +37,8 @@ const WB_RUNGS = [["P", "Person"], ["C0", "Improvised call"], ["C1", "Checklist"
 const WB_THREADS = { "submitted": ["", "Sent"], "working": ["", "Working"], "input-required": ["warn", "Waits for you"],
                      "completed": ["ok", "Done"], "failed": ["block", "Failed"], "canceled": ["off", "Let go"], "rejected": ["block", "Said no"] };
 /* an act on the board in a word, in the owner's words: said yes and said no, never accept, refuse or reject (the
-   owner's ruling); the board, the chat turns and Coordination's who-may-post table print these */
+   owner's ruling); the board, the chat turns and Coordination's who-may-post table print these, and the server's
+   engine_runtime.ACT_SAYS says the same words (Coordination's check writes its note in them) */
 const WB_ACTS = { "request": "asks", "agree": "agrees", "refuse": "says no", "propose": "proposes", "accept-proposal": "says yes",
                   "reject-proposal": "says no", "inform": "tells", "failure": "could not", "not-understood": "did not follow", "cancel": "lets go" };
 /* Priority's counter is a proposal on the board, and a function's chat says it as what it is (PRD M1.7) */

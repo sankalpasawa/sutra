@@ -14,8 +14,10 @@ record written before that, and anything a definition still says, in the owner's
 
 Phrases only, longest first, so a sentence keeps its grammar, and never a bare verb: the owner's own words (the goal,
 done-when, the rules, the requests) are never passed through here, and a rule's tag (go, ask, refuse, always) is the
-owner's own word for a rule and is left as it is.
+owner's own word for a rule and is left as it is. One line is read whole: Coordination's who-may-post note, which
+carried the act's own id ('Identity may refuse to Owner'), is said again the way the runtime says it now (MAY_NOTE).
 """
+import re
 
 # The bargain in the owner's words wherever a definition's name, a run's line or a ledger row's summary carries the inside
 # word. A step's name, the default summaries j2_runtime writes (J.on_post, J.refused, the owner's answer), the lines the
@@ -66,9 +68,30 @@ BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priori
                  ("Countered.", "Asked for less."), ("Refused.", "Said no."))
 
 
+# Coordination's who-may-post check as a record written before it said the act in the owner's words kept it, the act's
+# own id on its card: 'Identity may refuse to Owner', 'Owner may reject-proposal to Identity', 'Audit may not post inform
+# to Identity' (engine_runtime.coord_edge). Read again, the note says the act the way coord_edge says it now (ACT_SAYS).
+MAY_NOTE = re.compile(r"^(?P<src>\w+) may (?P<not>not post )?(?P<act>[a-z-]+) to (?P<dst>.+)$")
+
+
+def _may_note(line):
+    """A who-may-post note in the act's own id, said again in the owner's words; None for every other line."""
+    m = MAY_NOTE.match(line)
+    if not m:
+        return None
+    import engine_runtime as R                     # the act's words are the runtime's (ACT_SAYS), said once there
+    if m.group("act") not in R.ACT_SAYS:
+        return None
+    dst = [] if m.group("dst") == "nobody" else [x.strip() for x in m.group("dst").split(",")]
+    return R._may_note(m.group("src"), dst, m.group("act"), "may not" if m.group("not") else "may")
+
+
 def plain(line):
     """One line in the owner's words; '' for nothing."""
     line = str(line or "")
+    said = _may_note(line)
+    if said is not None:
+        return said
     for inside, said in BARGAIN_WORDS:
         line = line.replace(inside, said)
     return line

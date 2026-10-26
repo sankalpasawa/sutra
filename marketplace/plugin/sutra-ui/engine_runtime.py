@@ -64,6 +64,14 @@ BELOW = {"C2": "C1", "C1": "C0", "C0": "P"}
 ABOVE = {"P": "C0", "C0": "C1", "C1": "C2"}
 ACTS = ("request", "agree", "refuse", "propose", "accept-proposal", "reject-proposal", "inform", "failure",
         "not-understood", "cancel")
+# each act as the screen says it (PRD M1.7; the owner's ruling: said yes and said no, never accept, refuse or reject):
+# what a post does, in a word, as the board and the chat turns print it (22-website.js WB_ACTS says the same words), and
+# what a sender may do, as Coordination's who-may-post check says it on its card ('Identity may say no to the owner')
+ACT_SAYS = {"request": ("asks", "ask %s"), "agree": ("agrees", "agree with %s"), "refuse": ("says no", "say no to %s"),
+            "propose": ("proposes", "propose to %s"), "accept-proposal": ("says yes", "say yes to %s"),
+            "reject-proposal": ("says no", "say no to %s"), "inform": ("tells", "tell %s"),
+            "failure": ("could not", "tell %s it could not"), "not-understood": ("did not follow", "tell %s it did not follow"),
+            "cancel": ("lets go", "let %s go")}
 CLOSED = ("completed", "failed", "canceled", "rejected")
 FUNCTIONS = ("Identity", "Adaptation", "Priority", "Coordination", "Audit")
 WORK = ("Plan", "Write", "Check", "Publish")
@@ -645,11 +653,22 @@ def may_post(src, dst, msg_type, ref=None):
 
 
 def coord_edge(ctx, step, item):
-    """Coordination's rule on a post: pass or refuse. `item` is (src, dst, act)."""
+    """Coordination's rule on a post: pass or refuse. `item` is (src, dst, act). Its note says the act in the owner's
+    words (ACT_SAYS), never the act's id, for the note is the line its card prints."""
     src, dst, act = item
     if may_post(src, dst, act, ctx["ref"]):
-        return "admit", "%s may %s to %s" % (src, act, ", ".join(dst))
-    return "refuse", "%s may not post %s to %s" % (src, act, ", ".join(dst) or "nobody")
+        return "admit", _may_note(src, dst, act, "may")
+    return "refuse", _may_note(src, dst, act, "may not")
+
+
+def _may_note(src, dst, act, may):
+    """What a sender may or may not post, to whom, as Coordination's card prints it: 'The owner may say no to Identity',
+    'Adaptation may not tell the owner'. A post with nobody named says so."""
+    who = ["the owner" if x == OWNER else x for x in [src] + list(dst)]
+    head = who[0][:1].upper() + who[0][1:]
+    if not dst:
+        return "%s %s post to nobody" % (head, may)
+    return "%s %s %s" % (head, may, ACT_SAYS.get(act, (act, "post " + str(act) + " to %s"))[1] % _names(who[1:]))
 
 
 def _save_threads(ref, ths):
