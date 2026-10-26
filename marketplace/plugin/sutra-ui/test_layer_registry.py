@@ -145,16 +145,19 @@ def test_c1_resolve_serves_a_stub_the_test_puts_in_the_registry(monkeypatch):
     W, R = modules()
     f = lambda ctx, step, item: {}
     stub = types.SimpleNamespace(LAYER="identity", VERSION=1, IMPLEMENTS=1, CODE={"identity_read": f}, PROMPT={}, DRAFT={}, CHECK={})
+    # the names the other layers' own packages hold already: a layer fills its dicts in its own package
+    others = {n for layer, ids in layers.available().items() if layer != "identity" for i in ids for n in layers.load(i).CODE}
     monkeypatch.setitem(layers._LOADED, "identity/v1", stub)
     assert layers.resolve(None, "Identity", "code", "identity_read", R.CODE) is f
-    assert layers.names("code") == {"identity_read"}
+    assert layers.names("code") == others | {"identity_read"}
 
 
 def test_c1_names_are_what_any_implementation_provides(monkeypatch):
-    assert all(layers.names(kind) == set() for kind in layers.KINDS)
+    held = {kind: {n for ids in layers.available().values() for i in ids for n in getattr(layers.load(i), kind.upper())} for kind in layers.KINDS}
+    assert all(layers.names(kind) == held[kind] for kind in layers.KINDS), "what the layers' own packages hold, and nothing else"
     monkeypatch.setitem(layers.load("priority/v1").CHECK, "answer_has_its_price", lambda *a: {})
     monkeypatch.setitem(layers.load("audit/v1").CHECK, "has_a_verdict", lambda *a: {})
-    assert layers.names("check") == {"answer_has_its_price", "has_a_verdict"} and layers.names("code") == set()
+    assert layers.names("check") == held["check"] | {"answer_has_its_price", "has_a_verdict"} and layers.names("code") == held["code"]
 
 
 def test_c1_call_is_the_pinned_implementations_attribute_else_engine_runtimes(monkeypatch):

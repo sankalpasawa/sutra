@@ -394,7 +394,7 @@ class TestTheSnapshotRendersWhatRuns(TFP.Fixture):
 
     def test_c5_a_stub_overriding_a_code_step_changes_what_the_prompt_reads(self):
         before = self.prompts()
-        real = self.R.CODE["priority_read"]
+        real = layers.resolve(None, "Priority", "code", "priority_read", self.R.CODE)     # the body that runs, wherever it lives
 
         def room_flipped(ctx, step, item):
             got = real(ctx, step, item)
