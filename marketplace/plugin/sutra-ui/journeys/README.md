@@ -171,6 +171,28 @@ to-do.
 ## The API
 
 `GET /api/native/journeys` and `GET /api/native/journeys/{id}` (in `website_api.py`, before the routes that begin with `/{ref}`)
-give the list and one journey as data for a screen: the definition without its code and tests, and for each row its state, the
-tests that proved it by name, the site's word and the drift. A read writes nothing. A journey that is not one is
-404 `UNKNOWN_JOURNEY`. There is no screen for them and none in `static/`.
+give the list and one journey as data for a screen: the definition, and for each row its state, the tests that proved it by name,
+the site's word and the drift. A read writes nothing. A journey that is not one is 404 `UNKNOWN_JOURNEY`. There is no screen for
+them and none in `static/`.
+
+What the read model says, and what a screen may do with it:
+
+1. **Left out: everything that names code or a test.** A row's `binds`, `code`, `tests`, `site_code` and `code_does`, a build row's
+   `where`, a backlog entry's `package` and `smallest`, a direction's `built` and `gap`, and the page's address and switches
+   (`site`, `site_ids`, `helper`, `flag`, `invariants`). The cases and the walk read them from the files; the API does not give them.
+2. **Clean: what the model adds, and the lines an owner may read.** The list, the state of each row, the tests that proved it
+   (`proven_by`, `failing`, by name and never a path), the drift, `outcome.golden` and `reword` hold no path, no name of code, no act
+   id and none of the screen's banned words. The words of the interface's own vocabulary (a state, an outcome `kind` such as
+   `refuse`, a `site` status such as `to_build`) are keys, not text: a screen says its own words for them.
+3. **Passed on as written: the site's and the author's prose.** `goal`, `lead`, `ends_when`, a step's `text`, an edge's `short`,
+   `trigger` and `site.text`, `rulings`, `quotes`, `sub`, `today` and the rows of `was` are the words the site or the author wrote
+   (JC-9 holds the site's rows equal to the site's file). The site says "grant, refuse, counter" where it means it, and some of its
+   sentences name a function (`Built: ... (setup_make)`); JC-11 holds only `golden` and `reword`. **A screen does not render that
+   prose raw**: it is for a builder's page, and the screen says its own words (`{helper}` is already said as Root).
+
+`test_layer_journeys.py` holds this: `test_the_read_model_leaves_out_what_names_code_and_passes_the_sites_words_on` plants code in
+every place a journey has one and reads what comes back, `test_the_scan_reads_a_sentence_not_only_a_token` puts a function or a
+file into the middle of a sentence of each prose field and finds it, and `test_every_shipped_journey_reads_clean` reads every
+string of the read model of the journeys that are in this folder (the content packages add them) and lets through only the
+sentences the saved site file holds. A path is a file name with its extension (`tighten.py`) or a folder of the plugin (`layers/`);
+"no .md files" names a kind of file, and passes.

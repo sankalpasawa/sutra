@@ -1471,11 +1471,118 @@ def _strings(value, path=()):
         yield path, value
 
 
+def _values(value, path=()):
+    """The string values of a document with the keys down to each (a list stands for its items, so the path is the same for each)."""
+    if isinstance(value, dict):
+        for k, v in value.items():
+            yield from _values(v, path + (k,))
+    elif isinstance(value, list):
+        for v in value:
+            yield from _values(v, path)
+    elif isinstance(value, str):
+        yield path, value
+
+
+def _keys(value):
+    """Every key of every object of a document."""
+    if isinstance(value, dict):
+        for k, v in value.items():
+            yield k
+            yield from _keys(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from _keys(v)
+
+
+#: what names a file, and what names a piece of code, in a sentence as well as in a bare token: a file's name (a stem and its
+#: extension: "tighten.py", not "no .md files", which names a kind of file), a folder of the plugin, a pytest or node id; a
+#: snake_case word, a call, a camelCase word, and module.name
+PATH_RX = re.compile(r"(\w\.(?:py|js|json|md|html|sh|css|xml)\b|::|\bjs:|\b(?:layers|static|journeys|qa|engine_defs|engine-templates|test_fixtures)/)")
+NAME_RX = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b|\b[A-Za-z_]\w*\([^)]*\)|\b[a-z]+[A-Z]\w*\b|\b[a-z_][a-z0-9_]{2,}\.[a-z_][a-z0-9_]{2,}\b")
+#: the keys the read model drops, wherever they would be: the places the code and the tests live, and the sentences about them
+CODE_KEYS = {"binds", "code", "tests", "site_code", "code_does", "where", "package", "smallest", "built", "gap", "site_ids", "helper", "flag",
+             "invariants", "sources"}
+#: the keys whose value is a word of the interface's own vocabulary (a state, an outcome kind such as `refuse`, a site status such as
+#: `to_build`, a kind): a key a screen says its own word for, not text
+VOCAB_KEYS = {"kind", "voice", "state", "site", "status", "site_status", "act", "bound_to", "function", "disposition", "mark", "when", "size"}
+VOCAB = (set(S.JOURNEY_KINDS) | set(S.LANE_KINDS) | set(S.OUTCOME_KINDS) | set(S.OUTCOME_VOICES) | set(S.SITE_STATUS) | set(S.READ_STATES)
+         | set(S.JOURNEY_STATES) | set(S.STEP_ACTS) | set(S.DISPOSITIONS) | set(S.FUNCTION_LAYERS) | set(S.RULING_STATUS) | {"v1", "later", "S", "M", "L"})
+#: the keys whose value is the name of a test the row lists: a name, never a path (spec: "the tests that proved it by name")
+TEST_NAME_KEYS = {"proven_by", "failing"}
+
+
+def _as_written(text):
+    """A sentence with the helper's name taken out, so that the site's (Sutra), the data's ({helper}) and the screen's (Root) are one."""
+    return re.sub(r"\{helper\}|Sutra|Root", "~", text)
+
+
+def _site_sentences():
+    """Every sentence of the saved site file as the read model may pass it on: the tags out, the helper one word, the `today`
+    block's text before its sources, and a build row's change without its `v1 ·` or `later ·`. Whole sentences: a function's name
+    alone is not the site's sentence."""
+    from journeys import site
+    out = set()
+
+    def walk(v):
+        if isinstance(v, dict):
+            for x in v.values():
+                walk(x)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x)
+        elif isinstance(v, str):
+            words = site.clean(v)
+            out.add(_as_written(words))
+            out.add(_as_written(words.partition(" Source: ")[0].strip()))
+            out.add(_as_written(re.sub(r"^v1[^·]{0,16}· |^later · ", "", words)))             # a build row's `when` is a field of its own
+    walk(site.load())
+    return out
+
+
+def leaks(doc, as_written=frozenset()):
+    """What a screen must not be given raw, in a document of the read model: [(where, text, why)]. Every string value is read, in
+    a sentence as well as bare. Three kinds are not text: a word of the interface's vocabulary (it must be one), the name of a
+    test (it must be a name), and a sentence the site wrote (it is passed on as it was written: `as_written` holds them, and the
+    site says "refuse" and names a function in some)."""
+    bad = []
+    for key in _keys(doc):
+        if key in CODE_KEYS or key in S.ACTS:
+            bad.append(((key,), key, "a key that names code, or an act"))
+    for where, text in _values(doc):
+        key = where[-1] if where else ""
+        if key in VOCAB_KEYS:
+            if text not in VOCAB:
+                bad.append((where, text, "not a word of the interface's vocabulary"))
+        elif key in TEST_NAME_KEYS:
+            if not re.fullmatch(r"\w+", text):
+                bad.append((where, text, "a test by its name, not a path"))
+        elif _as_written(text) in as_written:
+            continue
+        elif text in S.ACTS:
+            bad.append((where, text, "an act id"))
+        else:
+            why = ["%s (%s)" % (what, found.group(0)) for what, rx in (("a path", PATH_RX), ("a name of code", NAME_RX)) for found in [rx.search(text)] if found]
+            if why:
+                bad.append((where, text, " and ".join(why)))
+    return bad
+
+
+def owner_words(listed, one):
+    """The strings an owner may read from the read model, which hold none of the screen's banned words: what the model itself
+    adds (the list, every state and the drift of a journey) and the lines of an edge (`golden`, `reword`). The site's and the
+    author's prose is not among them: it is passed on as it was written."""
+    own = [t for _, t in _values(listed)]
+    own += [t for w, t in _values(one["status"]) if w[-1] not in TEST_NAME_KEYS]
+    own += [t for w, t in _values(one) if w[-1] in ("golden", "reword")]
+    return own
+
+
 def test_no_screen_word_in_the_read_model(api, folder):
-    """The read model is for a screen: no act id, no name of a file, none of the places the code and the tests live, and none of
-    the words the screen does not say in what the model itself adds (the states, the site's claim, the drift) or in what an
-    owner may read (a golden lead, a reword). The site's and the author's prose is theirs, passed on as it is: JC-11 holds the
-    owner's words, and the journey data may say "refused" where the site does."""
+    """The read model is for a screen: none of the places the code and the tests live, no act id and no path or name of code in any
+    sentence it gives (the scan reads every string whole, not only a token without a space), and none of the screen's banned
+    words in what the model itself adds or in what an owner may read (a golden lead, a reword). The site's and the author's prose is
+    passed on as it was written: JC-11 holds the owner's words, and the journey data may say "refused" where the site does
+    (test_the_read_model_leaves_out_what_names_code_and_passes_the_sites_words_on)."""
     j = proven()
     j["steps"][0].update(tests=[REAL_TEST, "js:test_website.js#W45"], code=["setup_say", "website_dept.create"])
     j["steps"][0]["text"] = "{helper} asks the owner what the department is for."
@@ -1487,26 +1594,119 @@ def test_no_screen_word_in_the_read_model(api, folder):
     put(folder, "status/J9.json", a_status(j, state="partly", counts={"proven": 2, "partly": 1}, drift=[{"row": "edge:J9.1", "site": "built", "state": "partly"}],
                                            rows={"step:1": {"state": "proven", "proven_by": [REAL_TEST, "js:test_website.js#W45"], "site": "none"},
                                                  "step:2": {"state": "proven"}, "edge:J9.1": {"state": "partly", "site": "built", "drift": True}}))
-    banned, path = re.compile(S.TEMPLATE_BANNED, re.I), re.compile(r"(\.(py|js|json|md|html)\b|::|\bjs:|/)")
-    keys_gone = {"binds", "code", "tests", "site_code", "site_ids", "helper", "flag", "invariants", "where", "sources"}
-    one = api.get("/api/native/journeys/J9").json()
-    for url, body in (("/api/native/journeys", api.get("/api/native/journeys").json()), ("/api/native/journeys/J9", one)):
-        for where, text in _strings(body):
-            assert text not in S.ACTS and text not in keys_gone, (url, where, text)
-            assert " " in text or not path.search(text), ("a name, not a path", url, where, text)
-            assert "{helper}" not in text, (url, where, text)
-    own = [t for w, t in _strings(one["status"]) if "proven_by" not in w and "failing" not in w]
-    own += [t for w, t in _strings(one) if w[-1] in ("golden", "reword")]
-    own += [t for w, t in _strings(api.get("/api/native/journeys").json())]
+    banned = re.compile(S.TEMPLATE_BANNED, re.I)
+    listed, one = api.get("/api/native/journeys").json(), api.get("/api/native/journeys/J9").json()
+    for url, body in (("/api/native/journeys", listed), ("/api/native/journeys/J9", one)):
+        assert leaks(body) == [], url
+        assert not [t for _, t in _values(body) if "{helper}" in t], (url, "the helper's token is said as the screen says it")
+    own = owner_words(listed, one)
     assert own and not [t for t in own if banned.search(t)], [t for t in own if banned.search(t)]
     assert one["steps"][0]["text"] == "Root asks the owner what the department is for."
     assert one["today"] == {"text": "How it runs now."} and one["scenarios"] == [{"id": "J9.walk", "lane": "the life", "walks": ["1"], "says": "Found it and watch."}]
     assert one["build_rows"] == [{"id": "B1", "change": "Say it back."}]
     assert one["edges"][0]["reword"] == "Say it back, once." and one["edges"][0]["outcome"]["golden"] == GOLDEN
     assert one["status"]["rows"]["step:1"]["proven_by"] == ["test_j1_4_no_fitting_template_uses_explicit_organic_route", "W45"], "the test by name"
-    assert not (keys_gone & {k for _, k in _strings(one)}), "none of the places the code and the tests live"
+    assert not (CODE_KEYS & set(_keys(one))), "none of the places the code and the tests live"
     # the states a screen reads are the words of the interface
     assert {r["state"] for r in one["status"]["rows"].values()} <= set(S.READ_STATES)
+
+
+SITE_TEXT = "Built: not made again; your answers are handed to the existing department and you are told (setup_make)."
+RULING = "Version 1 of each function is one AI agent with .md files inside the covering; amended by A1: typed fields, no .md files."
+STEP_WORDS = "{helper} answers from the budget and the present work: grant, refuse, or counter."
+
+
+def with_code_everywhere(**change):
+    """The fixture journey with, in every place the read model might pass it on, what the real journeys carry there: what the code
+    does, the backlog's package and smallest behaviour, a direction's built and gap, a build row's place, and the site's and a
+    ruling's own sentences, which name a function, a file and the words grant, refuse and counter."""
+    j = proven(**change)
+    j["steps"][1]["text"] = STEP_WORDS
+    edge = j["edges"][0]
+    edge.update(code_does="Setup's converse step answers ask or clear; the covering (setup_say) keeps it in j1-state.json.")
+    edge["site"]["text"] = SITE_TEXT
+    edge["short"], edge["trigger"] = "Root refuses the workflow", "The take refuses."
+    edge["outcome"] = dict(edge["outcome"], kind="refuse")
+    j["backlog"] = [{"id": "BL-1", "row": "J9.1", "smallest": "On a stamped rule, j2_runtime.reopen(ref) starts a new cycle.", "decision": "Q12",
+                     "package": "A3-J34 P5 (a pure helper in layers/identity/tighten.py)"}]
+    j["directions"] = [{"id": "D-a", "direction": "Ask until it is clear.", "mark": "keep",
+                        "built": "MATCHES: engines come from templates (engine-templates/*.json, add_engine).", "gap": "Open: setup_make does not say."}]
+    j["build_rows"] = [{"id": "B1", "change": "Say it back.", "where": "engine_runtime.py, identity_file", "tests": [REAL_TEST]}]
+    j["rulings"] = [{"id": "S-28", "status": "RULED", "date": None, "text": RULING}]
+    j["was"] = good("good-with-was")["was"]
+    j["was"]["edges"][0]["code_does"] = "identity_file sends it to the query path."
+    j["was"]["steps"][0]["site_code"] = "identity.recognise, _rule_ask"
+    j.update(goal="The smallest journey: the owner refused it and nothing was kept.", ends_when="The rule is on the record, or the owner refused it.")
+    return j
+
+
+def test_the_read_model_leaves_out_what_names_code_and_passes_the_sites_words_on(api, folder):
+    """The real journeys carry code in more places than a row's `code` and `tests`: the sentence on what the code does, the
+    backlog's package and smallest behaviour, a direction's built and gap. The read model leaves those out. What the site or a
+    ruling wrote is passed on as it was written, with its function, its file and its "refuse"; a screen does not render it raw."""
+    j = with_code_everywhere()
+    put(folder, "J9.json", j)
+    one = api.get("/api/native/journeys/J9").json()
+    assert not (CODE_KEYS & set(_keys(one))), sorted(CODE_KEYS & set(_keys(one)))
+    assert one["backlog"] == [{"id": "BL-1", "row": "J9.1", "decision": "Q12"}]
+    assert one["directions"] == [{"id": "D-a", "direction": "Ask until it is clear.", "mark": "keep"}]
+    assert one["build_rows"] == [{"id": "B1", "change": "Say it back."}]
+    assert "code_does" not in one["edges"][0] and "code_does" not in one["was"]["edges"][0] and "site_code" not in one["was"]["steps"][0]
+    # passed on as written, the helper said as the screen says it
+    assert one["edges"][0]["site"] == {"status": "built", "text": SITE_TEXT} and one["rulings"][0]["text"] == RULING
+    assert one["steps"][1]["text"] == STEP_WORDS.replace("{helper}", "Root") and one["edges"][0]["short"] == "Root refuses the workflow"
+    assert one["edges"][0]["outcome"]["kind"] == "refuse", "the interface's word for the outcome, which a screen says its own way"
+    # so the one sentence that names a function is the site's own; the rest is clean (a ruling says "no .md files", a kind of file)
+    assert leaks(one, {_as_written(SITE_TEXT)}) == []
+    assert [t for _, t, _ in leaks(one)] == [SITE_TEXT], "without the allowance the scan sees it, and sees nothing else"
+    # the owner's lines and what the model adds hold no banned word, while the prose says refuse where the site does
+    listed = api.get("/api/native/journeys").json()
+    own = owner_words(listed, one)
+    assert own and not [t for t in own if re.search(S.TEMPLATE_BANNED, t, re.I)]
+    assert re.search(S.TEMPLATE_BANNED, one["goal"], re.I) and re.search(S.TEMPLATE_BANNED, one["steps"][1]["text"], re.I)
+
+
+@pytest.mark.parametrize("where, make", [
+    (("goal",), lambda j: j.update(goal="Root asks until it is clear; the covering (setup_say) posts one question a turn.")),
+    (("lead",), lambda j: j.update(lead="Root keeps the question in j1-state.json and reads it back.")),
+    (("steps", "text"), lambda j: j["steps"][0].update(text="Root does it in layers/identity/tighten.py.")),
+    (("edges", "trigger"), lambda j: j["edges"][0].update(trigger="identity_file runs and finds the rule.")),
+    (("edges", "outcome", "golden"), lambda j: j["edges"][0]["outcome"].update(golden="the department already has this rule (setup_make)")),
+    (("edges", "reword"), lambda j: j["edges"][0].update(reword="Say it back; wbFoundGo does it.")),
+    (("scenarios", "says"), lambda j: j.update(scenarios=[{"id": "J9.walk", "lane": "the life", "test": "test_layer_journey_j9.py::test_walk", "says": "Run js:test_website.js#W45."}])),
+    (("directions", "direction"), lambda j: j.update(directions=[{"id": "D-a", "direction": "Use j2_runtime.reopen(ref) for it."}])),
+    (("backlog", "decision"), lambda j: j.update(backlog=[{"id": "BL-1", "row": "J9.1", "smallest": "s", "decision": "engine_runtime.py", "package": "p"}])),
+    (("was", "steps", "text"), lambda j: j.update(was=dict(good("good-with-was")["was"], steps=[dict(good("good-with-was")["was"]["steps"][0], text="See static/js/10-org.js.")]))),
+])
+def test_the_scan_reads_a_sentence_not_only_a_token(api, folder, where, make):
+    """The check of the first build read a path only in a string with no space, and the banned words only in some fields: a
+    function or a file named in the middle of a sentence passed. Each of these is a place a package may put one."""
+    j = proven()
+    make(j)
+    put(folder, "J9.json", j)
+    one = api.get("/api/native/journeys/J9").json()
+    found = [w for w, _, _ in leaks(one)]
+    assert found == [where], (found, "the one string that was changed, and only it")
+
+
+# ---- the shipped journeys, as the API gives them -------------------------------------------------------------------------
+def test_every_shipped_journey_reads_clean():
+    """The journeys of journeys/ (the content packages add them) as the read model gives them: none of the places the code and the
+    tests live, no path or name of code in any string but the site's own sentences (the saved copy of its file holds them), and none of
+    the screen's banned words in what the model adds or what an owner may read. An empty folder passes too."""
+    js = journeys.load()
+    sentences = _site_sentences()
+    assert len(sentences) > 500, "the saved site file's sentences"
+    listed = journeys.view()
+    assert [x["id"] for x in listed["journeys"]] == sorted(js, key=journeys.natural)
+    assert leaks(listed, sentences) == []
+    banned = re.compile(S.TEMPLATE_BANNED, re.I)
+    for jid in js:
+        one = journeys.view(jid)
+        found = leaks(one, sentences)
+        assert found == [], (jid, found[:5])
+        said = [t for t in owner_words(listed, one) if banned.search(t)]
+        assert said == [], (jid, said[:5])
 
 
 # ---- Q7: the README ----------------------------------------------------------------------------------------------------

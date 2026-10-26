@@ -12,6 +12,20 @@ journeys/status/<id>.json, each with the hash of its own journey, so two package
     definitions_sha(jid=None)    the sha256 of one journey's canonical JSON, or of all of them
     view(jid=None)               the two read models of the API: the list, and one journey with the state of each row
 
+What the read model says, in three parts (the API gives it to a screen as data; there is no screen yet):
+
+  1. It leaves out everything that names code or a test: a row's `binds`, `code`, `tests`, `site_code`, `code_does` and `where`,
+     a backlog entry's `package` and `smallest`, a direction's `built` and `gap`, the page's address and the switches.
+  2. What it adds (the state of each row, the tests that proved it by name, the drift) and the lines an owner may read
+     (`outcome.golden`, `reword`) hold no path, no name of code and none of the screen's banned words. The words that are the
+     interface's own vocabulary (a state, an outcome kind such as `refuse`, a site status such as `to_build`) are keys, not
+     text: a screen says its own words for them.
+  3. The rest is the site's and the author's prose, passed on as it was written (JC-9 holds the site's rows equal to the site's
+     file). The site says "grant, refuse, counter" where it means it (JC-11 holds only the lines an owner may read), and some
+     of its sentences name a function ("Built: ... (setup_make)"). That prose is for a builder's page: a screen does not render
+     it raw, it says its own words. test_every_shipped_journey_reads_clean reads every string of the shipped journeys for a path
+     or a name of code, in a sentence as well as bare, and lets through only the sentences the saved site file holds.
+
 Nothing here imports the runtime at import time: the interface comes through the lazy proxy of `layers`.
 """
 import copy
@@ -25,11 +39,16 @@ from layers import S
 FOLDER = Path(__file__).resolve().parent
 SCHEMA_VERSION = 1
 
-#: what the read model leaves out: the places the code and the tests live (names of acts, symbols, files), the site's Code
-#: column, the page's address and the switches. They are for the cases and the walk; a screen reads the words and the
-#: state of each row. The journey's own keys and a row's are not the same list: an edge's `site` is the site's words
+#: what the read model leaves out: the places the code and the tests live (names of acts, symbols, files), the sentence that
+#: says what the code does (it names the code), the site's Code column, the page's address and the switches. They are for the
+#: cases and the walk; a screen reads the words and the state of each row. The journey's own keys and a row's are not the same
+#: list: an edge's `site` is the site's words
 _DROP_JOURNEY = ('site', 'site_ids', 'helper', 'flag', 'invariants')
-_DROP_ROW = ('binds', 'code', 'tests', 'site_code', 'where')
+_DROP_ROW = ('binds', 'code', 'tests', 'site_code', 'code_does', 'where')
+#: the same, for the entries of `backlog` (the package that builds a row and its smallest behaviour are the builder's notes,
+#: and name files and functions) and of `directions` (what the code does about a direction, and what is left)
+_DROP_BACKLOG = ('package', 'smallest')
+_DROP_DIRECTION = ('built', 'gap')
 
 
 class UnknownJourney(KeyError):
@@ -128,9 +147,15 @@ def _bare(row):
     return {k: v for k, v in row.items() if k not in _DROP_ROW}
 
 
+def _without(entries, gone):
+    """The entries of a list (backlog, directions) without the keys that name code."""
+    return [{k: v for k, v in e.items() if k not in gone} for e in entries or []]
+
+
 def _definition(j):
-    """The journey as the API gives it: everything the site lists, without the code-facing parts, `{helper}` said as the
-    screen says it (the journey's own `helper.screen`, Root for now)."""
+    """The journey as the API gives it: everything the site lists, without the code-facing parts (see the head of this
+    module for what is left out and what is passed on as it was written), `{helper}` said as the screen says it (the
+    journey's own `helper.screen`, Root for now)."""
     out = {k: copy.deepcopy(v) for k, v in j.items() if k not in _DROP_JOURNEY}
     if j.get('today'):
         out['today'] = {'text': j['today']['text']}
@@ -140,6 +165,10 @@ def _definition(j):
         out['was'] = dict(j['was'], steps=[_bare(r) for r in j['was'].get('steps') or []],
                           edges=[_bare(r) for r in j['was'].get('edges') or []])
     out['build_rows'] = [_bare(r) for r in j.get('build_rows') or []]
+    if 'backlog' in j:
+        out['backlog'] = _without(j['backlog'], _DROP_BACKLOG)
+    if 'directions' in j:
+        out['directions'] = _without(j['directions'], _DROP_DIRECTION)
     out['scenarios'] = [{k: v for k, v in sc.items() if k != 'test'} for sc in j.get('scenarios') or []]
     word = (j.get('helper') or {}).get('screen') or 'Root'
     return _walk(out, lambda s: s.replace('{helper}', word))
@@ -203,7 +232,8 @@ def view(jid=None):
     With no id: {schema_version, journeys: [{id, title, kind, inside, bound_to, declared, state, stale, counts}]} in id order.
     With an id: the definition, with `status` {state, stale, rows: {'step:1': {state, proven_by, failing, site, drift}, ...},
     drift}; UnknownJourney for an id that is not a journey. A journey is stale when its status file is missing or carries
-    another hash than the journey's now; then every row that lists tests reads unknown."""
+    another hash than the journey's now; then every row that lists tests reads unknown. What it leaves out, what it adds and what
+    it passes on as the site wrote it are in the head of this module."""
     js = load()
     if jid is not None and jid not in js:
         raise UnknownJourney(jid)
