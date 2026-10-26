@@ -378,11 +378,11 @@ def _last_act(fn, rs, posts):
     post = next((p for p in reversed(posts) if p.get("src") == fn), None)
     best = None
     if run:
-        what, _, detail = _plain(run.get("what")).partition(": ")
+        what, _, detail = _kept(run.get("what") or "", run.get("words")).partition(": ")
         best = {"what": _short(what), "detail": _short(detail) or None, "at": run.get("ended") or run.get("started")}
     # a post inside a run is stamped before the run ends: on the same second the run, which says the act, is the one
     if post and (not best or W._ts(post.get("at") or "") > W._ts(best["at"] or "")):
-        best = {"what": _did(post), "detail": _short(_plain(R._line(post))) or None, "at": post.get("at")}
+        best = {"what": _did(post), "detail": _short(_said(post)) or None, "at": post.get("at")}
     return best
 
 
@@ -399,7 +399,7 @@ def _between(posts):
         if p.get("src") not in FUNCS or not to:
             continue
         out.append({"n": p.get("n"), "thread": p.get("thread"), "from": p.get("src"), "to": to, "act": _did(p),
-                    "detail": _short(_plain(R._line(p))) or None, "at": p.get("at")})
+                    "detail": _short(_said(p)) or None, "at": p.get("at")})
         if len(out) == BETWEEN:
             break
     return out
@@ -484,7 +484,7 @@ def functions(ref):
                 # the ask's own text is Identity's line, at rest on All five and its pane: a conflict's ask quotes
                 # Priority's no and names the owner's buttons, so it is said in the owner's words too
                 node.update(state="waiting_on_you", waits_on="you",
-                            line=_short(_plain((ask or {}).get("text")) or "waits for your answer"))
+                            line=_short(_kept((ask or {}).get("text") or "", (ask or {}).get("words")) or "waits for your answer"))
         if fn in faults:
             node.update(state="fault", why=faults[fn], line=faults[fn])
         # a department that is stopped, or whose goal is reached, is quiet throughout; a stopped one says so in one word,
@@ -566,6 +566,14 @@ def _writes(ref, fn):
 # older cards' reads in website_api alike. Kept here under its old names for the callers that know them.
 BARGAIN_WORDS = owner_words.BARGAIN_WORDS
 _plain = owner_words.plain
+_kept = owner_words.kept
+
+
+def _said(p):
+    """What a post said, as this read prints it: the owner's own words a function carries on (R._quoted) as the owner
+    said them, every other line in the owner's words."""
+    line = R._line(p)
+    return line if R._quoted(p) else _plain(line)
 
 
 def _settings(fn):
@@ -606,7 +614,7 @@ def _journey_rows(ref, fn, events, rows, rs, posts):
             for p in posts:
                 if p.get("src") == R.OWNER and "Identity" in (p.get("dst") or []) and p.get("msg_type") == "request":
                     hits.append({"action": "board.request", "summary": R._line(p) or "your words reached Identity", "at": p.get("at"),
-                                 "word": "heard"})
+                                 "word": "heard", "words": R._line(p) if R._quoted(p) else None})
         elif extra in ("identity_gates", "priority_gates"):
             for r in rows:
                 if r.get("mode") == "gate" and r.get("step") in gates:
@@ -628,17 +636,18 @@ def _journey_rows(ref, fn, events, rows, rs, posts):
             for p in posts:
                 if p.get("src") == "Coordination" and (p.get("payload") or {}).get("word") == "lost":
                     hits.append({"action": "board.lost", "summary": R._line(p) or "a request was lost at its bound", "at": p.get("at"),
-                                 "word": "told Identity"})
+                                 "word": "told Identity", "words": R._line(p) if R._quoted(p) else None})
         elif extra == "audit_runs" and not hits:
             for r in rs:
                 if r.get("engine") == "Audit" and r.get("status") != "running":
-                    hits.append({"action": "run", "summary": r.get("what"), "at": r.get("ended") or r.get("started"),
+                    hits.append({"action": "run", "summary": r.get("what"), "words": r.get("words"), "at": r.get("ended") or r.get("started"),
                                  "word": "done" if r.get("status") == "ok" else str(r.get("status"))})
         hits.sort(key=lambda h: W._ts(h.get("at") or ""))
         last = hits[-1] if hits else None
         out.append({"id": jid, "name": name, "built": built,
                     "status": last["word"] if last else NOT_RUN.get(built, "not run yet"),
-                    "last": last and {"summary": _short(_plain(last.get("summary"))), "at": last.get("at"), "action": last.get("action")}})
+                    "last": last and {"summary": _short(_kept(last.get("summary") or "", last.get("words"))), "at": last.get("at"),
+                                      "action": last.get("action")}})
     return out
 
 

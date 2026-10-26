@@ -37,7 +37,8 @@ const WB_RUNGS = [["P", "Person"], ["C0", "Improvised call"], ["C1", "Checklist"
 const WB_THREADS = { "submitted": ["", "Sent"], "working": ["", "Working"], "input-required": ["warn", "Waits for you"],
                      "completed": ["ok", "Done"], "failed": ["block", "Failed"], "canceled": ["off", "Let go"], "rejected": ["block", "Said no"] };
 /* an act on the board in a word, in the owner's words: said yes and said no, never accept, refuse or reject (the
-   owner's ruling); the board, the chat turns and Coordination's who-may-post table print these */
+   owner's ruling); the board, the chat turns and Coordination's who-may-post table print these, and the server's
+   engine_runtime.ACT_SAYS says the same words (Coordination's check writes its note in them) */
 const WB_ACTS = { "request": "asks", "agree": "agrees", "refuse": "says no", "propose": "proposes", "accept-proposal": "says yes",
                   "reject-proposal": "says no", "inform": "tells", "failure": "could not", "not-understood": "did not follow", "cancel": "lets go" };
 /* Priority's counter is a proposal on the board, and a function's chat says it as what it is (PRD M1.7) */
@@ -135,7 +136,8 @@ function wbTab(ref){
    heartbeat moves every tick and is patched in place, so it is left out: a
    preview frame must not reload because a clock moved. */
 function wbSig(m){
-  return JSON.stringify([m.stopped, m.has_goal, m.status, m.recent, m.live,
+  /* what Identity's pane draws from the record too (its goal, done-when, rules, owner and control), so a change repaints */
+  return JSON.stringify([m.stopped, m.has_goal, m.status, m.recent, m.live, m.goal, m.done, m.rules, m.owner, m.control,
     (m.artifacts || []).map(a => [a.name, a.versions]), (m.engines || []).map(e => [e.name, e.state, e.envelope])]);
 }
 async function wbLoadMap(ref, force){
@@ -1122,6 +1124,17 @@ function wbIdSig(j){
 const WB_STD = { met: ["ok", "met"], not_met: ["warn", "not yet"], to_confirm: ["warn", "to confirm"], reading: ["breath", "reading"] };
 /* a rule's tag as the pane says it: the record keeps refuse; the screen never says refuse, so a refuse rule reads never */
 const WB_TAG_SAYS = { refuse: "never" };
+/* a rule as Identity's pane draws it: its tag as a chip in the pane's word, its line, and where it came from when the
+   read says (S5 does; the department card under a page with no record of its own does not) */
+function wbIdRuleHtml(r, from){
+  return `<div class="wbidrule">${wbChip(WB_TAG_SAYS[r.tag] || r.tag, r.tag === "go" ? "on" : (r.tag === "always" ? "" : "ask"))}<span>${wbEsc(r.line)}</span>` +
+    (from === undefined ? "" : `<span class="dpchk">${wbEsc(from)}</span>`) + `</div>`;
+}
+/* Identity's own record on its page read (S5), or null when the read carries none (an older read, or one that failed) */
+function wbIdRecord(p){
+  const j = (p && p.j2) || {};
+  return j.standard && j.standard.rows ? j : null;
+}
 function wbIdentityHtml(ref, j){
   const q = j.open_question ? wbQuestionHtml(Object.assign({ ref: ref }, j.open_question), ref, false) : "";
   const rows = (j.standard.rows || []).map(r => {
@@ -1132,8 +1145,7 @@ function wbIdentityHtml(ref, j){
   const goal = j.goal ? `<div class="dpbig wbidgoal">${wbEsc(j.goal)}</div>` : dpQuiet("Identity has not read the words yet");
   const items = (j.done_items || []).map(i => `<div class="wbiditem"><button type="button" class="wbjid wb" data-wbfn="audit" title="Audit's reading">${wbEsc(i.id)}</button>` +
     `<span>${wbEsc(i.text)}</span>${i.confirm ? wbChip("to confirm") : ""}<span class="dpchk">${wbEsc([i.level, i.how].filter(Boolean).join(" · "))}</span></div>`).join("");
-  const rules = (j.rules || []).map(r => `<div class="wbidrule">${wbChip(WB_TAG_SAYS[r.tag] || r.tag, r.tag === "go" ? "on" : (r.tag === "always" ? "" : "ask"))}<span>${wbEsc(r.line)}</span>` +
-    `<span class="dpchk">${wbEsc(r.by === "yours" ? "yours" + (r.since ? " · " + wbWhen(r.since) : "") : "the template")}</span></div>`).join("");
+  const rules = (j.rules || []).map(r => wbIdRuleHtml(r, r.by === "yours" ? "yours" + (r.since ? " · " + wbWhen(r.since) : "") : "the template")).join("");
   const closed = (j.conflicts || []).map(c => `<button type="button" class="wbidconf wb" data-wbtab="board"><span class="dpchk">${wbEsc(wbWhen(c.at))}</span>` +
     `<span>${wbEsc(wbCap(c.who))}${c.plan ? " on " + wbEsc(c.plan) : ""}. Ruled: ${wbEsc(c.ruled)}${c.why ? "; " + wbEsc(c.why) : ""}.` +
     `${c.asked_you ? "" : " No ask to you."}</span></button>`).join("");
@@ -1202,8 +1214,8 @@ function wbFnPageHtml(ref, fn){
     wbRecipeHtml(p.recipe) + wbJourneysHtml(p.journeys) +
     dpCard("Version 1", `<div class="dpfline">${wbEsc(p.v1)}</div>`);
   /* Identity's own record on top (S5); its page folds under it */
-  const j = p.j2 || {};
-  if (fn === "identity" && j.standard && j.standard.rows)
+  const j = wbIdRecord(p);
+  if (fn === "identity" && j)
     return wbIdentityHtml(ref, j) + `<details class="wbhow wb"><summary>How Identity works</summary>${page}</details>`;
   return page;
 }
@@ -1295,6 +1307,20 @@ function wbEngFiveHtml(card){
 }
 
 /* ── the five systems' own state, under the function cards ────────────────── */
+/* What Identity holds, from the record (the map read; PRD M1.7, acceptance line 1), on a department on the engine
+   runtime whose registry department card is left out (20-dept.js dpRuntimeFnHtml): the goal and the done-when, and the
+   rules, each with its tag as a chip in the pane's word, as S5 says them (a refuse rule reads never), the lines as the
+   record has them and never rewritten. Identity's page draws these from its own record on top (S5, M3.7), so they are
+   drawn here only once that page is read and carries no record of its own, never twice and never on a department the
+   registry card still draws. The owner is on Control, once. */
+function wbIdHoldsHtml(m){
+  const p = wbS().fnpage[m.ref + ":identity"];
+  if (!wbRt(m) || !p || wbIdRecord(p)) return "";
+  const rules = (m.rules || []).filter(r => r && (r.line || r.text));
+  return dpCard("The department", `<div class="dpid">` + dpCell("Goal", m.goal ? dpBig(m.goal) : dpQuiet("No goal yet")) +
+      dpCell("Done when", m.done ? dpBig(m.done) : dpQuiet("No done line yet")) + `</div>`) +
+    dpCard("Rules", rules.length ? rules.map(r => wbIdRuleHtml({ tag: r.tag, line: r.line || r.text })).join("") : dpQuiet("No rules yet"));
+}
 function wbFnExtra(tab, m){
   if (!m) return "";
   const engs = m.engines || [];
@@ -1302,8 +1328,9 @@ function wbFnExtra(tab, m){
      its rung, under the state the card already shows */
   const steps = wbRt(m) ? wbStepsHtml(m.ref, tab.charAt(0).toUpperCase() + tab.slice(1)) : "";
   if (tab === "identity"){
-    /* the department's control, in the owner's words: it runs itself within the owner's rules, or the owner holds it */
-    return dpCard("Control", `<div class="dpengines">` + dpKV("Control", m.control === "granted" ? "Runs within your rules" : "Held by you", "") +
+    /* what Identity holds, then the department's control, in the owner's words: it runs itself within the owner's
+       rules, or the owner holds it */
+    return wbIdHoldsHtml(m) + dpCard("Control", `<div class="dpengines">` + dpKV("Control", m.control === "granted" ? "Runs within your rules" : "Held by you", "") +
         dpKV("Owner", m.owner, "Not named") + dpKV("Stop", m.stopped ? "Stopped" : "Running", "") + `</div>`) +
       dpCard("Autonomy windows", engs.map(e => dpRunRow(e.name, "", "", dpBar(Math.min(1, (e.window_min || 0) / 30)))).join("")) +
       dpCard("Stamped by rule", (m.recent || []).filter(r => r.engine === "Identity").map(r => wbRunRow(r)).join("") || dpQuiet("Nothing yet")) +

@@ -65,6 +65,14 @@ BELOW = {"C2": "C1", "C1": "C0", "C0": "P"}
 ABOVE = {"P": "C0", "C0": "C1", "C1": "C2"}
 ACTS = ("request", "agree", "refuse", "propose", "accept-proposal", "reject-proposal", "inform", "failure",
         "not-understood", "cancel")
+# each act as the screen says it (PRD M1.7; the owner's ruling: said yes and said no, never accept, refuse or reject):
+# what a post does, in a word, as the board and the chat turns print it (22-website.js WB_ACTS says the same words), and
+# what a sender may do, as Coordination's who-may-post check says it on its card ('Identity may say no to the owner')
+ACT_SAYS = {"request": ("asks", "ask %s"), "agree": ("agrees", "agree with %s"), "refuse": ("says no", "say no to %s"),
+            "propose": ("proposes", "propose to %s"), "accept-proposal": ("says yes", "say yes to %s"),
+            "reject-proposal": ("says no", "say no to %s"), "inform": ("tells", "tell %s"),
+            "failure": ("could not", "tell %s it could not"), "not-understood": ("did not follow", "tell %s it did not follow"),
+            "cancel": ("lets go", "let %s go")}
 CLOSED = ("completed", "failed", "canceled", "rejected")
 FUNCTIONS = ("Identity", "Adaptation", "Priority", "Coordination", "Audit")
 WORK = ("Plan", "Write", "Check", "Publish")
@@ -646,11 +654,22 @@ def may_post(src, dst, msg_type, ref=None):
 
 
 def coord_edge(ctx, step, item):
-    """Coordination's rule on a post: pass or refuse. `item` is (src, dst, act)."""
+    """Coordination's rule on a post: pass or refuse. `item` is (src, dst, act). Its note says the act in the owner's
+    words (ACT_SAYS), never the act's id, for the note is the line its card prints."""
     src, dst, act = item
     if may_post(src, dst, act, ctx["ref"]):
-        return "admit", "%s may %s to %s" % (src, act, ", ".join(dst))
-    return "refuse", "%s may not post %s to %s" % (src, act, ", ".join(dst) or "nobody")
+        return "admit", _may_note(src, dst, act, "may")
+    return "refuse", _may_note(src, dst, act, "may not")
+
+
+def _may_note(src, dst, act, may):
+    """What a sender may or may not post, to whom, as Coordination's card prints it: 'The owner may say no to Identity',
+    'Adaptation may not tell the owner'. A post with nobody named says so."""
+    who = ["the owner" if x == OWNER else x for x in [src] + list(dst)]
+    head = who[0][:1].upper() + who[0][1:]
+    if not dst:
+        return "%s %s post to nobody" % (head, may)
+    return "%s %s %s" % (head, may, ACT_SAYS.get(act, (act, "post " + str(act) + " to %s"))[1] % _names(who[1:]))
 
 
 def _save_threads(ref, ths):
@@ -874,6 +893,9 @@ def on_stamp(ref, ask, approve):
 
 # ---- what may start now --------------------------------------------------------------------------------------------
 def _run_row(engine, system, slot, status, what, **more):
+    """A run as the record keeps it. A run whose line ends with the owner's own words, carried by the post it handled
+    ('took the owner's words: ...'), keeps them as `words` too, so a screen shows them as the owner said them and says
+    only the rest in its own words (owner_words.kept; PRD M1.7)."""
     row = {"id": "r-" + uuid.uuid4().hex[:10], "engine": engine, "system": system, "slot": slot, "status": status,
            "started": W.now(), "ended": W.now() if status != "running" else None, "what": what, "wrote": None, "chain": None,
            "spend": {"calls": 0, "usd": 0.0}, "retries": 0, "runtime": 2}
@@ -1396,6 +1418,9 @@ def run_engine(ref, name, inp, slot):
             said = next((ctx["bag"][s["id"]].get("said") for s in reversed(steps)
                          if isinstance(ctx["bag"].get(s["id"]), dict) and ctx["bag"][s["id"]].get("said")), None)
             row.update({"status": "ok", "what": said or what})
+            words = str(((p or {}).get("payload") or {}).get("words") or "")
+            if words and str(row["what"]).endswith(words):
+                row["words"] = words                     # the owner's words the line ends with, as they said them
         if p:
             th = _thread(ref, p["thread"])
             if th and th["protocol"] == "inform" and th["state"] not in CLOSED:
@@ -2795,6 +2820,28 @@ def _cards(rows):
     return {"ids": ids, "words": words}
 
 
+#: a post as a chat prints it, its shape named once (fn_chat_view, chat_view and a department's own turns each add what
+#: they need): who said it to whom and when, in which thread, its topic word, what it said (_line), and whether that line
+#: is the owner's own words carried on by a function (quoted: Identity handing the owner's request to Adaptation,
+#: Adaptation proposing it to Priority), which a screen shows as the owner said them, never in its own words (PRD M1.7)
+TURN = ("n", "src", "dst", "msg_type", "at", "thread", "word", "line", "quoted")
+
+
+def _quoted(p):
+    """True when what a post says (_line) is the owner's own words, which the post carries whole (payload `words`)."""
+    pl = p.get("payload") or {}
+    return bool(pl.get("words")) and _line(p) == str(pl["words"])
+
+
+def _post_turn(p, **more):
+    """One post as a turn of a chat (TURN), with what the chat adds."""
+    pl = p.get("payload") or {}
+    turn = {"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
+            "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""), "quoted": _quoted(p)}
+    turn.update(more)
+    return turn
+
+
 def _own_turns(dref, name, cards=None):
     """A department's own owner-facing turns (ER-10): what its Identity asked or told its owner in threads Root did not
     start, and the owner's own words and stamps there. A post that went to Root's board as well (via Root) is left to
@@ -2812,10 +2859,8 @@ def _own_turns(dref, name, cards=None):
             continue
         if cards and _on_card(dref, p, cards):
             continue
-        out.append({"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
-                    "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""),
-                    "dept": dref, "name": name, "own": True, "link": pl.get("link"),
-                    "birth": p["n"] == 1 and p["src"] == OWNER and born_of_root})   # the words Root handed at the birth
+        out.append(_post_turn(p, dept=dref, name=name, own=True, link=pl.get("link"),
+                              birth=p["n"] == 1 and p["src"] == OWNER and born_of_root))   # the words Root handed at the birth
     return out
 
 
@@ -2852,9 +2897,7 @@ def fn_chat_view(ref, fn):
         if not own and not in_thread and not of_chain:
             continue
         # Priority's counter is a proposal on the board; the chat says it as what it is, an ask for less (PRD M1.7)
-        turns.append({"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
-                      "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""), "think": False,
-                      "counter": bool(pl.get("counter")), "_k": (str(p["at"]), p["n"], 0)})
+        turns.append(_post_turn(p, think=False, counter=bool(pl.get("counter")), _k=(str(p["at"]), p["n"], 0)))
     for r in step_rows(ref):
         if r.get("engine") != name:
             continue
@@ -2917,10 +2960,8 @@ def chat_view(ref, about=None):
                 continue
             if _on_card(root, p, cards):                 # the question card says it, once
                 continue
-            turns.append({"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
-                          "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""),
-                          "dept": dref, "name": ab.get("name") or pl.get("from"), "link": pl.get("link"),
-                          "offer": pl.get("offer") if isinstance(pl.get("offer"), dict) else None})
+            turns.append(_post_turn(p, dept=dref, name=ab.get("name") or pl.get("from"), link=pl.get("link"),
+                                    offer=pl.get("offer") if isinstance(pl.get("offer"), dict) else None))
         # the person's words at the front door carry the department they reached, as Root's own hand-over says
         # (found live 2026-09-28: a turn that named the department in its words showed no chip)
         for t in turns:
@@ -2978,7 +3019,7 @@ def identity_apply(ctx, step, item):
         # TPL-1 slice 2: the engine Adaptation offered, priced by Priority, now stamped: on the record, in the line, and
         # a shaped one born into the Library; it starts on its own trigger like every other engine
         offer = a.get("offer") or {}
-        W.add_engine(ref, a.get("engine"), shape=offer.get("shape"), by="the owner")
+        W.add_engine(ref, a.get("engine"), shape=offer.get("shape"), by="the owner's stamp")
         _note_idea(ref, a.get("idea"), {"engine": a.get("engine"), "state": "built"})
         return {"said": "added the engine %s on the owner's stamp; it starts on its own trigger" % a.get("engine")}
     if a.get("kind") == "conflict":
@@ -3005,7 +3046,7 @@ def identity_apply(ctx, step, item):
                 W.add_engine(ref, e["name"], shape={"name": e["name"], "use_case": does or e["name"], "does": does,
                                                      "instruction": ("%s\n\nThe goal, in the owner's words: %s" % (does, a.get("words") or "")).strip(),
                                                      "needs": ["internet"] if e.get("internet") else [], "reads": e.get("reads") or "Brief",
-                                                     "writes": e.get("writes") or e["name"]}, by="the owner")
+                                                     "writes": e.get("writes") or e["name"]}, by="the owner's stamp")
                 added.append(e["name"])
             except Exception as exc:  # noqa: BLE001 -- one engine that cannot be born does not lose the rest; the owner hears which
                 faults.append("%s (%s)" % (e.get("name"), exc))
@@ -4547,7 +4588,7 @@ def _j2_settle(ref, d, engines, source, words, by):
                                      SETTLED_BY.get(by, "It was agreed"), (" Not added: " + "; ".join(lost)) if lost else "",
                                      (" Left out of the plan: %s." % _names(left)) if left else "")})
     W.signal()
-    return {"said": "registered the workflow %s, %s" % (" -> ".join(added), by)}
+    return {"said": "registered the workflow %s on %s" % (" -> ".join(added), by)}
 
 
 def _left_out(d, why):

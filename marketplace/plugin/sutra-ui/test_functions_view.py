@@ -23,12 +23,15 @@ Named claims:
       older cards under each page (steps, gates, Moves, Control, Stamped by rule, the who-may-post table) included;
       and every tab of each pane, its page, its Chat and its Settings, and the owner's own chat on the department and on
       Root, read in the owner's words when Priority says yes, asks for less and says no, the owner says no, and Root's
-      check sends a plan back, served the real /chat, /chat?fn= and /api/dept/ reads
+      check sends a plan back, served the real /chat, /chat?fn= and /api/dept/ reads; when Identity says no to a request
+      and the owner says no to an ask too, and no surface prints an act by its id: Coordination's who-may-post check
+      says each act in the board's words ('The owner may say no to Identity'), one table on the server and the screen
   F10 every ask Identity puts to the owner says its answers in the words of its two buttons, Stamp and Say no (the
       conflict, the outside-the-site, the instructions, the engine and the line asks), at rest and on a hover
   F11 on a department on the engine runtime each function's pane agrees with the record: the registry's older cards
       (the department card, the framework, Proposals, Queue, the graph, Recent) are not drawn under the page, so the
-      owner is named once and no pane says there are no engines or nothing in the queue while the record holds them
+      owner is named once and no pane says there are no engines or nothing in the queue while the record holds them;
+      and Identity's pane shows what it holds from the record, once: the goal, the done-when and each rule with its tag
   F12 Coordination's own state from the record (PRD M4.5): one timetable row per engine of the line, each with its slot
       and where it stands; a waiting engine names what it waits for ('Pages v2 is not filed yet'); who makes and who
       reads each thing, on a website and an organic line; a tie Coordination's AI broke ('Coordination chose Write
@@ -647,8 +650,9 @@ def test_m17_each_journey_shows_its_live_status_and_last_move_from_the_record(mo
 
 
 # What the screen prints of a read: ids and ledger actions are names it never prints as words, and a rule's tag (go, ask,
-# refuse, always) is the owner's own word for a rule (PRD S5: "Tags go, ask, refuse and always"), so neither is scanned.
-RULE_TAGS = re.compile(r"\bgo, ask, refuse,? (?:or |and )?always\b|\ba refuse rule\b")
+# refuse, always) is the owner's own word for a rule (PRD S5: "Tags go, ask, refuse and always"), so neither is scanned;
+# on a rendered pane the tag is its badge, which pane_words.js prints as [tag:word].
+RULE_TAGS = re.compile(r"\bgo, ask, refuse,? (?:or |and )?always\b|\ba refuse rule\b|\[tag:(?:go|ask|refuse|always)\]")
 BANNED = ("grant", "counter", "refus", "orders")
 
 
@@ -915,17 +919,28 @@ def test_m17_every_card_on_a_functions_pane_says_the_owners_words(mods, born, mo
     panes = _panes(tmp_path, _reads(W, ref))
     for k, v in panes.items():
         assert not _banned_shown(v["rest"]) and not _banned_shown(v["hover"]), (k, _banned_shown(v["rest"] + " " + v["hover"]))
+        # whose word added an engine is said whole (round 4, gap 2): never a stamp after a yes or a ruling nobody stamped
+        assert not re.search(r"(?:yes|ruling)'s stamp", v["rest"] + " " + v["hover"]), (k, "a stamp nobody gave")
+    assert "registered the workflow Facts -> Site on Priority's yes" in [r["what"] for r in W.runs(ref)], "the plan's own run line"
 
 
 # ---- M1.7 (round 3): every tab of a function's pane, the owner's own chat, and every ask say the owner's words ---------
+# an act's own id, which the screen never prints (round 4, gaps 1 and 4): the board, the chat turns and Coordination's
+# who-may-post check say each act in words (R.ACT_SAYS, 22-website.js WB_ACTS); 'may propose to' is those words
+ACT_IDS = re.compile(r"\b(?:accept|reject)-proposal\b|\bnot-understood\b|\bmay (?:request|inform|agree|failure|cancel|refuse) to\b"
+                     r"|\bmay not post [a-z-]+ to\b")
+
+
 def _scan(panes, flow):
     """Every surface rendered (each function's page, Chat and Settings, the Map, All five, the owner's chat and the list):
-    something is shown, and nothing at rest or on a hover says grant, counter or refuse, charter or internal system."""
+    something is shown, and nothing at rest or on a hover says grant, counter or refuse, charter or internal system, or
+    an act by its id (reject-proposal, accept-proposal, 'may inform to')."""
     for k, v in panes.items():
         assert v["rest"], (flow, k)
         assert not _banned_shown(v["rest"]) and not _banned_shown(v["hover"]), (flow, k, _banned_shown(v["rest"] + " " + v["hover"]))
         text = (v["rest"] + " " + v["hover"]).lower()
         assert "charter" not in text and "internal system" not in text, (flow, k)
+        assert not ACT_IDS.search(text), (flow, k, [text[max(0, m.start() - 60):m.end() + 30] for m in ACT_IDS.finditer(text)])
     for fn in JOURNEYS:
         assert {fn, fn + ":chat", fn + ":settings"} <= set(panes), (flow, fn)
 
@@ -1029,6 +1044,33 @@ def test_m17_every_tab_of_every_functions_pane_says_the_owners_words(mods, born,
     _scan(panes, "sent back")
     assert "Root's check sent the plan back (Facts reads Notes, which nothing before it writes)" in panes["chat"]["rest"]
     assert "sent the plan back" in tells(ref)
+    monkeypatch.setattr(R, "_root_check", real)
+
+    # round 4, gaps 1 and 4: Identity says no to the owner's request, and the owner says no to an ask; Coordination's
+    # who-may-post check says each act in words on its card, never 'Identity may refuse to Owner' or 'reject-proposal'
+    _offline(monkeypatch, R, {})
+    ref = born(WEBSITE, "Words Co")
+    for a in [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "publish"]:
+        W.decide_ask(ref, a["id"], True)
+    W.run_until_idle(ref, limit=300)
+    W.owner_ask(ref, "Email the new site to every patient")
+    W.run_until_idle(ref, limit=300)
+    for a in [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "request"]:
+        W.decide_ask(ref, a["id"], False)
+    W.run_until_idle(ref, limit=300)
+    assert any(p["src"] == "Owner" and p["msg_type"] == "reject-proposal" for p in R.board(ref)), "the owner said no to the ask"
+    panes = _panes(tmp_path, _reads(W, ref))
+    _scan(panes, "the owner said no to an ask")
+    assert "The owner may say no to Identity" in panes["coordination"]["rest"], "the check's note, in the act's words"
+    _offline(monkeypatch, R, {"identity.take": {"verdict": "refuse", "why": "it names every patient", "needs": [], "unsure": []}})
+    W.owner_ask(ref, "Put every patient's full name on the home page")
+    W.run_until_idle(ref, limit=300)
+    assert any(p["src"] == "Identity" and p["msg_type"] == "refuse" and "Owner" in p["dst"] for p in R.board(ref)), "Identity said no"
+    panes = _panes(tmp_path, _reads(W, ref))
+    _scan(panes, "Identity said no to a request")
+    assert "Identity may say no to the owner" in panes["coordination"]["rest"], "the check's note, in the act's words"
+    notes = [n for r in R.step_rows(ref) if r.get("step") == "coord.edge" for n in (r.get("check") or {}).get("notes") or []]
+    assert notes and not any(ACT_IDS.search(n.lower()) or "refuse" in n for n in notes), "at the source, every note in words"
 
 
 def test_m17_every_ask_says_its_answers_in_the_words_of_its_buttons(mods, born, monkeypatch, tmp_path):
@@ -1093,6 +1135,16 @@ def test_m17_a_runtime_departments_panes_agree_with_its_record(mods, born, tmp_p
     assert "Timetable" in panes["coordination"]["rest"] and "Publish after a Build that passed" in panes["coordination"]["rest"]
     assert "waits for the stamp" in panes["coordination"]["rest"] and "waits: waits" not in panes["coordination"]["rest"]
     assert "Plan" in panes["adaptation"]["rest"] and "Control" in panes["identity"]["rest"]
+    # round 4, gap 5: what Identity holds is on its pane, from the record, once: the goal, the done-when (its items, as
+    # Root drafted them) and each rule with its tag as a chip beside it in the pane's word (S5: a refuse rule reads
+    # never), as dept.json has them; Identity's page draws them from its own record (M3.7), and nothing draws them twice
+    d, idn = W.dept(ref), panes["identity"]["rest"]
+    assert d["goal"] and d["goal"] in idn, "the goal"
+    done = [i["text"] for i in d.get("done_items") or []] or [d["done"]]
+    assert d["done"] and all(t and idn.count(t) == 1 for t in done), ("the done-when, once", [(t, idn.count(t)) for t in done])
+    assert d["rules"] and "The department Goal" not in idn, "one set of cards, not a second under the page"
+    for r in d["rules"]:
+        assert idn.count(r["line"]) == 1 and "%s %s" % ({"refuse": "never"}.get(r["tag"], r["tag"]), r["line"]) in idn, (r, "each rule once, its tag beside it")
 
 
 def test_m17_a_record_written_before_reads_in_the_owners_words_on_every_chat(mods):
@@ -1135,6 +1187,75 @@ def test_m17_a_record_written_before_reads_in_the_owners_words_on_every_chat(mod
     for t in ident + pr:
         if t["src"] != "Owner":
             assert not _banned_shown(t["line"]), t
+
+
+def test_m17_the_owners_words_a_function_carries_on_stay_as_they_said_them(mods, born, tmp_path):
+    """Round 4, gap 3: Identity hands the owner's words to Adaptation and Adaptation proposes them to Priority; those
+    turns are the owner's words, quoted. Words that carry ', Refuse to' and 'Priority granted' reach every Chat tab, the
+    owner's chat, Identity's page (its journeys and Stamped by rule) and All five's hover exactly as the owner said
+    them: the record marks the turn quoted and the run's words, and owner_words leaves them alone, while every line a
+    function composed itself is still said in the owner's words."""
+    W, R, J, F = mods
+    if shutil.which("node") is None:
+        pytest.skip("node is not on PATH")
+    said = WEBSITE + ", Refuse to show fees. Priority granted nothing"
+    ref = born(said, "Fee Co")
+    c = _client()
+    for fn, src in (("identity", "Identity"), ("adaptation", "Adaptation"), ("priority", "Adaptation")):
+        turns = c.get("/api/native/%s/chat?fn=%s" % (ref, fn)).json()["turns"]
+        carried = [t for t in turns if t["src"] == src and t.get("quoted")]
+        assert carried and all(t["line"] == said for t in carried), (fn, [(t["src"], t["line"]) for t in turns if not t["think"]])
+    assert any(r.get("words") == said and r["what"].endswith(said) for r in W.runs(ref)), "a run's line that ends with the words keeps them"
+    text = json.dumps([F.functions(ref)] + [F.function(ref, fn) for fn in JOURNEYS])
+    assert said in text and "or say no to show fees" not in text and "said yes to nothing" not in text
+    panes = _panes(tmp_path, _reads(W, ref))
+    for k, v in panes.items():
+        shown = v["rest"] + " " + v["hover"]
+        assert "or say no to show fees" not in shown and "said yes to nothing" not in shown, (k, "the owner's words rewritten")
+    for k in ("identity:chat", "adaptation:chat", "priority:chat", "chat", "identity"):
+        assert said in panes[k]["rest"], (k, "the owner's words, as said")
+    assert said in panes["five"]["hover"], "All five's last act carries the words on its hover"
+    # what a function composed itself is still said in the owner's words beside them
+    assert "Priority said yes to it and it passed Root's check" in panes["chat"]["rest"]
+
+
+def test_m17_each_act_says_the_same_words_on_the_board_and_on_coordinations_check(mods):
+    """Round 4, gaps 1 and 4: an act is said in words, one table on the server (R.ACT_SAYS) and the same words on the
+    board (22-website.js WB_ACTS). Coordination's who-may-post check writes its note in them ('The owner may say no to
+    Identity'), and a note a record kept from before, with the act's id in it, reads in them too on the steps card."""
+    W, R, J, F = mods
+    import owner_words
+    assert set(R.ACT_SAYS) == set(R.ACTS)
+    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "js", "22-website.js")).read()
+    body = re.search(r"const WB_ACTS = \{(.*?)\};", src, re.S).group(1)
+    assert dict(re.findall(r'"([a-z-]+)":\s*"([^"]+)"', body)) == {a: w for a, (w, _) in R.ACT_SAYS.items()}, "one set of words"
+    ctx = {"ref": REF}
+    assert R.coord_edge(ctx, None, ("Owner", ["Identity"], "reject-proposal")) == ("admit", "The owner may say no to Identity")
+    assert R.coord_edge(ctx, None, ("Identity", ["Owner"], "refuse")) == ("admit", "Identity may say no to the owner")
+    assert R.coord_edge(ctx, None, ("Priority", ["Adaptation"], "accept-proposal")) == ("admit", "Priority may say yes to Adaptation")
+    assert R.coord_edge(ctx, None, ("Adaptation", ["Owner"], "reject-proposal")) == ("refuse", "Adaptation may not say no to the owner")
+    assert R.coord_edge(ctx, None, ("Audit", [], "inform"))[1] == "Audit may not post to nobody"
+    for old, said in (("Identity may refuse to Owner", "Identity may say no to the owner"),
+                      ("Owner may reject-proposal to Identity", "The owner may say no to Identity"),
+                      ("Priority may accept-proposal to Adaptation", "Priority may say yes to Adaptation"),
+                      ("Adaptation may inform to Identity", "Adaptation may tell Identity"),
+                      ("Identity may request to Owner", "Identity may ask the owner"),
+                      ("Audit may not post inform to Identity", "Audit may not tell Identity"),
+                      ("Identity may agree to Owner, Adaptation, Coordination", "Identity may agree with the owner, Adaptation and Coordination")):
+        assert owner_words.plain(old) == said, old
+        assert owner_words.plain(said) == said, "a note in words is left as it is"
+    assert owner_words.plain("Identity may not post refuse to nobody") == "Identity may not post to nobody"
+    # only a note that names who posts and to whom is read whole: another line that happens to read 'X may <act> to Y'
+    # keeps its own words (it is not Coordination's, and plain() reads every line a function composed)
+    for line in ("You may request to see the page", "Priority may cancel to save room", "Identity may inform to keep it short",
+                 "Adaptation may propose to Priority a smaller plan", "Owner may refuse to Identityless pages"):
+        assert owner_words.plain(line) == line, line
+    R._append(REF, "steps.jsonl", {"id": "s-old", "engine": "Coordination", "step": "coord.edge", "mode": "gate", "answer": "admit",
+                                   "slot": "Owner>Identity:reject-proposal", "status": "ok", "started": W.now(), "ended": W.now(),
+                                   "check": {"ok": True, "notes": ["Owner may reject-proposal to Identity"]}})
+    view = _client().get("/api/native/%s/steps/Coordination" % REF).json()
+    edge = next(s for s in view["steps"] if s["id"] == "coord.edge")
+    assert edge["last"]["notes"] == ["The owner may say no to Identity"], edge["last"]
 
 
 # ---- F12 (PRD M4.5): Coordination's timetable, holds, hand-offs and ties, from the record --------------------------------

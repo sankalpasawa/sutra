@@ -13,9 +13,12 @@ tells, the asks' answers through engine_runtime._answers, the step names in the 
 record written before that, and anything a definition still says, in the owner's words on the way out.
 
 Phrases only, longest first, so a sentence keeps its grammar, and never a bare verb: the owner's own words (the goal,
-done-when, the rules, the requests) are never passed through here, and a rule's tag (go, ask, refuse, always) is the
-owner's own word for a rule and is left as it is.
+done-when, the rules, the requests) are never passed through here, nor are they where a function carries them on (a
+turn the record marks quoted, the words an ask's or a run's line ends with: kept), and a rule's tag (go, ask, refuse,
+always) is the owner's own word for a rule and is left as it is. One line is read whole: Coordination's who-may-post note, which
+carried the act's own id ('Identity may refuse to Owner'), is said again the way the runtime says it now (MAY_NOTE).
 """
+import re
 
 # The bargain in the owner's words wherever a definition's name, a run's line or a ledger row's summary carries the inside
 # word. A step's name, the default summaries j2_runtime writes (J.on_post, J.refused, the owner's answer), the lines the
@@ -66,9 +69,33 @@ BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priori
                  ("Countered.", "Asked for less."), ("Refused.", "Said no."))
 
 
+# Coordination's who-may-post check as a record written before it said the act in the owner's words kept it, the act's
+# own id on its card: 'Identity may refuse to Owner', 'Owner may reject-proposal to Identity', 'Audit may not post inform
+# to Identity' (engine_runtime.coord_edge). Read again, the note says the act the way coord_edge says it now (ACT_SAYS).
+# Only a note that names who posts and to whom, as Coordination's table names them (the owner, Root and the five), is
+# read whole: a line of any other kind ('You may request to see the page') is never taken for one.
+POSTERS = r"(?:Owner|Root|Identity|Adaptation|Priority|Coordination|Audit)"
+MAY_NOTE = re.compile(r"^(?P<src>%s) may (?P<not>not post )?(?P<act>[a-z-]+) to (?P<dst>%s(?:, %s)*|nobody)$" % (POSTERS, POSTERS, POSTERS))
+
+
+def _may_note(line):
+    """A who-may-post note in the act's own id, said again in the owner's words; None for every other line."""
+    m = MAY_NOTE.match(line)
+    if not m:
+        return None
+    import engine_runtime as R                     # the act's words are the runtime's (ACT_SAYS), said once there
+    if m.group("act") not in R.ACT_SAYS:
+        return None
+    dst = [] if m.group("dst") == "nobody" else [x.strip() for x in m.group("dst").split(",")]
+    return R._may_note(m.group("src"), dst, m.group("act"), "may not" if m.group("not") else "may")
+
+
 def plain(line):
     """One line in the owner's words; '' for nothing."""
     line = str(line or "")
+    said = _may_note(line)
+    if said is not None:
+        return said
     for inside, said in BARGAIN_WORDS:
         line = line.replace(inside, said)
     return line
@@ -79,9 +106,20 @@ def _keep(value):
     return plain(value) if isinstance(value, str) else value
 
 
+def kept(line, words):
+    """A line that ends with the owner's own words (the record says which: an ask's or a run's `words`), said plainly up
+    to them, the words as the owner said them; any other line said plainly. A missing line stays missing."""
+    if not isinstance(line, str):
+        return line
+    if isinstance(words, str) and words and line.endswith(words):
+        return plain(line[:-len(words)]) + words
+    return plain(line)
+
+
 def runs(rows):
-    """Run rows as a screen prints them: each one's line ('what') in the owner's words, the rest as the record keeps it."""
-    return [dict(r, what=_keep(r.get("what"))) if isinstance(r, dict) else r for r in rows or []]
+    """Run rows as a screen prints them: each one's line ('what') in the owner's words, the owner's own words at its end
+    (the run's `words`: 'took the owner's words: ...') as they said them, the rest as the record keeps it."""
+    return [dict(r, what=kept(r.get("what"), r.get("words"))) if isinstance(r, dict) else r for r in rows or []]
 
 
 def steps(view):
@@ -119,9 +157,7 @@ def asks(rows):
         if not isinstance(a, dict) or not isinstance(a.get("text"), str):
             out.append(a)
             continue
-        text, words = a["text"], a.get("words")
-        keep = isinstance(words, str) and words and text.endswith(words)
-        out.append(dict(a, text=plain(text[:-len(words)]) + words if keep else plain(text)))
+        out.append(dict(a, text=kept(a["text"], a.get("words"))))
     return out
 
 
@@ -141,8 +177,9 @@ def status(view):
 
 def _turn(t):
     """One turn of a chat: what a function said, and its thinking, in the owner's words; the owner's own turns stay as
-    they said them."""
-    if not isinstance(t, dict) or t.get("src") == "Owner":
+    they said them, and so does a function's turn whose line is the owner's words it carries on (quoted: Identity
+    handing the request to Adaptation, Adaptation proposing it to Priority; engine_runtime.TURN)."""
+    if not isinstance(t, dict) or t.get("src") == "Owner" or t.get("quoted"):
         return t
     return dict(t, line=_keep(t.get("line")))
 
@@ -175,7 +212,7 @@ def engine(view):
     if "runs" in out:
         out["runs"] = runs(out["runs"])
     if isinstance(out.get("last"), dict):
-        out["last"] = dict(out["last"], what=_keep(out["last"].get("what")))
+        out["last"] = dict(out["last"], what=kept(out["last"].get("what"), out["last"].get("words")))
     return out
 
 
@@ -186,7 +223,7 @@ def map_view(view):
     if not view:
         return view
     out = dict(view)
-    out["systems"] = [dict(s, last=_keep(s.get("last"))) for s in view.get("systems") or []]
+    out["systems"] = [dict(s, last=kept(s.get("last"), s.get("words"))) for s in view.get("systems") or []]
     out["engines"] = [engine(e) for e in view.get("engines") or []]
     out["recent"] = runs(view.get("recent"))
     out["status"] = status(view.get("status"))
