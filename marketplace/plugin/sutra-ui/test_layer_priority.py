@@ -800,6 +800,53 @@ def test_j2_5_the_envelope_ask_names_the_limit_the_use_and_the_options(live):
     assert len([a for a in W.asks(ref) if a["kind"] == "envelope" and a["status"] == "pending"]) == 1
 
 
+def _files_of(home):
+    """Every file under a records home and the hash of its bytes."""
+    import hashlib
+    import os
+    out = {}
+    for root, _dirs, files in os.walk(home):
+        for f in files:
+            path = os.path.join(root, f)
+            with open(path, "rb") as fh:
+                out[os.path.relpath(path, home)] = hashlib.sha256(fh.read()).hexdigest()
+    return out
+
+
+def test_j2_5a_a_panel_read_never_files_the_envelope_card_and_the_tick_files_it_once(live):
+    """Hard rule 4(g): the card an engine held at its limit files is the tick's. The gate is the module's own (it moved in M5.4, and the
+    runtime's old body, which kept the guard, is no longer the one that runs), so a read of the department, which peeks, in every window
+    before the tick files the card must write nothing: no ask, no ledger event, no row (found by a verifier 2026-10-27)."""
+    W, R, J, _ = live
+    ref = _born(live, settle=False)
+    W.put_done_items(ref, ITEMS2)
+    W.set_envelope(ref, "Plan", calls=0)
+    slots, windows = 0, 0
+    while True:
+        before = _files_of(W.ddir(ref))
+        R.next_due(ref, peek=True)
+        W.status(ref)
+        W.map_view(ref)
+        after = _files_of(W.ddir(ref))
+        assert sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k)) == [], "a read before slot %d wrote" % slots
+        assert [a for a in W.asks(ref) if a["kind"] == "envelope"] == []
+        windows += 1
+        if not W.run_until_idle(ref, limit=1):                      # nothing is due: the tick that asked is this one
+            break
+        slots += 1
+        assert slots < 60
+    assert windows >= 2, "the reads met the line before the tick that held Plan"
+    ask = _envelope_ask(W, ref)
+    assert ask["engine"] == "Plan" and [e["action"] for e in J.events(ref)].count("envelope.held") == 1, "the tick filed the card, and the ledger once"
+    after = _files_of(W.ddir(ref))
+    for _ in range(3):
+        R.next_due(ref, peek=True)
+        W.status(ref)
+        W.map_view(ref)
+    assert _files_of(W.ddir(ref)) == after, "and the reads after it write nothing"
+    assert len([a for a in W.asks(ref) if a["kind"] == "envelope"]) == 1
+
+
 def test_q1_raise_adds_the_budget_the_owner_chose_and_the_engine_runs_again(live):
     """A raise that is not applied, or one that lowers a limit, or one applied twice, must fail: the card's raise option sets
     Plan's limit to the one it names, by the owner's choice, and the held engine goes on."""

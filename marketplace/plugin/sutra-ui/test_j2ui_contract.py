@@ -428,6 +428,22 @@ def test_t31_a_read_writes_nothing_at_any_slot_after_the_owner_said_no_to_the_pu
     assert m.W.versions(ref, "Live site") == [], "refused by the owner: never published"
 
 
+def test_t31_a_read_writes_nothing_at_any_slot_while_an_engine_is_held_at_its_limit(client, plant):
+    """Hard rule 4(g) on Priority's gate (the module's own body since M5.4 files the card): Publish has no budget left, the owner stamps
+    the publish question from the page, and the department is run a slot at a time with the whole page read between the slots. The
+    card that says Publish is out of its envelope is the tick's, once."""
+    ref, m = plant("question")
+    m.W.set_envelope(ref, "Publish", calls=0)
+    r = client.post(url(ref, "api/say"), json={"text": "Option 1"})
+    assert (r.status_code, r.json()) == (200, {"ok": True})
+    held = lambda: [a for a in m.W.asks(ref) if a["kind"] == "envelope"]  # noqa: E731
+    assert held() == [], "the window: the owner stamped and no tick has run"
+    slots = read_to_rest(client, m, ref, "while Publish is held at its limit")
+    assert slots >= 1 and [(a["engine"], a["status"]) for a in held()] == [("Publish", "pending")], "the tick filed the card, once"
+    s = client.get(url(ref, "api/state?since=0")).json()
+    assert s["paused"] and "out of today's envelope" in json.dumps(s["paused"]), "and the page asks the owner"
+
+
 def test_t32_every_act_between_functions_is_worded_for_the_owner_and_no_id_is_printed(client, plant):
     ref, m = plant("running")
     for i, act in enumerate(m.R.ACTS):
