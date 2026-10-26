@@ -3142,6 +3142,13 @@ def identity_apply(ctx, step, item):
         return {"said": "moved a step, on the owner's stamp: " + a["text"]}
     if a.get("kind") == "request":
         row = _file_brief(ref, ctx["dept"], a.get("words") or "", "the owner's ask, stamped")
+        J = _j2()
+        if J and J.active(ref) and (J._state(ref) or {}).get("state") == "blocked":
+            # the plan is blocked and the owner stamped the words Identity put back: their go, as a go in the chat is, so
+            # step 2 again with Root's repairs at nought, and the plan's card goes quiet with them (M3.5; found by a
+            # verifier 2026-10-26: the stamp filed the words and left the plan blocked)
+            _reopen(ref, W.dept(ref), a.get("words") or "")
+            return {"said": "took the owner's words, stamped; the plan is shaped afresh", "filed": row["v"]}
         return {"said": "took the owner's words, stamped", "filed": row["v"]}
     if a.get("kind") == "rule":
         with W._lock(ref):

@@ -1013,6 +1013,32 @@ def test_m3_5_words_for_a_blocked_plan_get_identitys_take_either_way(j2, monkeyp
     assert len(asked) == 1 and asked[0]["words"] == OUTSIDE and "reach outside the site" in asked[0]["text"]
 
 
+@pytest.mark.parametrize("via", ["card", "chat"])
+def test_m3_5_stamped_words_that_reach_outside_reopen_the_blocked_plan(j2, monkeypatch, via):
+    """The owner's stamp on the words Identity put back (they reach outside) is their go: a stamp that only files them in
+    the Brief and leaves the plan blocked must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    card = _card(W, ref)
+    if via == "card":
+        assert _client().post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "words", "text": OUTSIDE}).status_code == 200
+    else:
+        W.owner_ask(ref, OUTSIDE)
+    W.run_until_idle(ref, limit=300)
+    asked = next(a for a in W.asks(ref) if a["kind"] == "request" and a["status"] == "pending")
+    seen = len(J.events(ref))
+    W.decide_ask(ref, asked["id"], True)
+    W.run_until_idle(ref, limit=300)
+    after = J.events(ref)[seen:]
+    acts = [e["action"] for e in after]
+    assert acts[:2] == ["ask.answered", "cycle.reopened"], acts
+    requested = [e for e in after if e["action"] == "proposal.requested"]
+    assert requested[0]["step"] == 2 and len(requested) == J.REPAIRS + 1                # Root's repairs at nought again
+    shut = next(a for a in W.asks(ref) if a["id"] == card["id"])
+    assert shut["status"] == "chosen" and (shut["chosen"]["id"], shut["chosen"]["words"]) == ("words", OUTSIDE)
+    assert OUTSIDE in W.read_files(ref, "Brief", W.latest(ref, "Brief")["v"])["brief.md"]
+
+
 def test_m3_5_a_choice_is_one_shape(j2, monkeypatch):
     """The choice a card keeps built two ways (the option's, and the one new words make) must fail."""
     W, R, J, _, _ = j2
