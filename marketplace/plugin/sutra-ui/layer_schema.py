@@ -747,7 +747,10 @@ DEFS.update({
                              'room': obj({'calls': integer(), 'usd': number()}, required=('calls', 'usd')), 'why': text(600)},
                             required=('at', 'proposal', 'answer', 'said', 'estimate', 'room', 'why'))),
         # from W2-PRIORITY (M9.2): the goal's ceiling, as the record keeps it, or null before the first registration; not required
-        'ceiling': nullable(ref('priority.ceiling'))},
+        'ceiling': nullable(ref('priority.ceiling')),
+        # from W2-PRIORITY (M9.6): what each round of the goal has spent, oldest first, from the runs the ledger links by run_ref;
+        # not required
+        'spend_by_round': items(obj({'round': integer(1), 'calls': integer(0), 'usd': number(0)}, required=('round', 'calls', 'usd')))},
         required=('bargains', 'envelopes')),
     'view.coordination': obj({
         'line': items(text(80)), 'registered': nullable(integer(0)),

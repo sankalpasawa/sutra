@@ -1682,6 +1682,33 @@
           },
           "minItems": 0,
           "type": "array"
+        },
+        "spend_by_round": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "calls": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "round": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "usd": {
+                "minimum": 0,
+                "type": "number"
+              }
+            },
+            "required": [
+              "round",
+              "calls",
+              "usd"
+            ],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
         }
       },
       "required": [
