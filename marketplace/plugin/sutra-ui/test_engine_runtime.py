@@ -847,7 +847,11 @@ class TestWhatTheOwnerSees(Base):
             W.add_engine(REF, "Do")
         self.ask("Add a careers page")
         self.assertTrue(W.versions(REF, "Result"), "Do ran on the next Brief and filed a Result")
-        self.assertIn("added the engine Do", " ".join(r["what"] for r in W.runs(REF) if r["engine"] == "Identity"))
+        self.assertIn("added the engine Do on the owner's stamp", [r["what"] for r in W.runs(REF) if r["engine"] == "Identity"])
+        # whose word added it is said whole (PRD M1.7, round 4 gap 2): never 'on Priority's yes's stamp'
+        W.add_engine(REF, "Watch", shape={"name": "Watch", "use_case": "watch the site", "does": "watch the site"}, by="Priority's yes")
+        said = [r["what"] for r in W.runs(REF) if r["engine"] == "Identity" and "Watch" in str(r.get("what"))]
+        self.assertEqual(said, ["added the engine Watch on Priority's yes (born into the Library)"])
 
     def test_87_an_idea_that_fits_a_library_template_becomes_that_engine_on_the_owners_stamp(self):
         """TPL-1 slice 2 (founder, 2026-09-29: "the engines are supposed to be created by the five functions"): an idea is

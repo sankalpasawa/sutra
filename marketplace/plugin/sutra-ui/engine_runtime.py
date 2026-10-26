@@ -2735,7 +2735,7 @@ def identity_apply(ctx, step, item):
         # TPL-1 slice 2: the engine Adaptation offered, priced by Priority, now stamped: on the record, in the line, and
         # a shaped one born into the Library; it starts on its own trigger like every other engine
         offer = a.get("offer") or {}
-        W.add_engine(ref, a.get("engine"), shape=offer.get("shape"), by="the owner")
+        W.add_engine(ref, a.get("engine"), shape=offer.get("shape"), by="the owner's stamp")
         _note_idea(ref, a.get("idea"), {"engine": a.get("engine"), "state": "built"})
         return {"said": "added the engine %s on the owner's stamp; it starts on its own trigger" % a.get("engine")}
     if a.get("kind") == "conflict":
@@ -2762,7 +2762,7 @@ def identity_apply(ctx, step, item):
                 W.add_engine(ref, e["name"], shape={"name": e["name"], "use_case": does or e["name"], "does": does,
                                                      "instruction": ("%s\n\nThe goal, in the owner's words: %s" % (does, a.get("words") or "")).strip(),
                                                      "needs": ["internet"] if e.get("internet") else [], "reads": e.get("reads") or "Brief",
-                                                     "writes": e.get("writes") or e["name"]}, by="the owner")
+                                                     "writes": e.get("writes") or e["name"]}, by="the owner's stamp")
                 added.append(e["name"])
             except Exception as exc:  # noqa: BLE001 -- one engine that cannot be born does not lose the rest; the owner hears which
                 faults.append("%s (%s)" % (e.get("name"), exc))
@@ -4247,7 +4247,7 @@ def _j2_settle(ref, d, engines, source, words, by):
                                      SETTLED_BY.get(by, "It was agreed"), (" Not added: " + "; ".join(lost)) if lost else "",
                                      (" Left out of the plan: %s." % _names(left)) if left else "")})
     W.signal()
-    return {"said": "registered the workflow %s, %s" % (" -> ".join(added), by)}
+    return {"said": "registered the workflow %s on %s" % (" -> ".join(added), by)}
 
 
 def _registered(ref, names):

@@ -447,12 +447,15 @@ def decide_ask(ref, aid, approve, by="the owner"):
     raise ValueError("no such ask")
 
 
-def add_engine(ref, name, shape=None, by="the owner", before=None, registered=False):
+def add_engine(ref, name, shape=None, by="the owner's stamp", before=None, registered=False):
     """An engine added to a live department on the owner's stamp (TPL-1 slice 2, founder 2026-09-29: "the engines are
     supposed to be created by the five functions of the department"): a Library engine template by name, or one shaped
     on the fly (name, use case, instruction, what it writes), born into the Library from Do with made_by. The record
     gains the engine, its artifact and a window; then Coordination's line grows and Priority gives it its limit, each in
     its handler for an engine born (PRD M4.1); the engine then starts on its own trigger, like every other.
+
+    by: whose word added it, whole, as the run line says it after 'on' ("the owner's stamp", "Priority's yes",
+    "Identity's ruling": engine_runtime.SETTLED_BY's keys), so the line never says a stamp nobody gave (PRD M1.7).
 
     registered: the engine is one of a plan Root is registering (J2 step 5). The record gains it here, and Coordination's
     line and Priority's limit follow from the registration itself, not from here."""
@@ -498,7 +501,7 @@ def add_engine(ref, name, shape=None, by="the owner", before=None, registered=Fa
         system_run(ref, "Adaptation", "brought the engine %s into the plan%s" % (name, " (born into the Library)" if born else ""))
     else:
         R.engine_added(ref, name, before)
-        system_run(ref, "Identity", "added the engine %s on %s's stamp%s" % (name, by, " (born into the Library)" if born else ""))
+        system_run(ref, "Identity", "added the engine %s on %s%s" % (name, by, " (born into the Library)" if born else ""))
     return {"ref": ref, "engine": name, "engines": line, "born": str(born) if born else None}
 
 

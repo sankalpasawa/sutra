@@ -917,6 +917,9 @@ def test_m17_every_card_on_a_functions_pane_says_the_owners_words(mods, born, mo
     panes = _panes(tmp_path, _reads(W, ref))
     for k, v in panes.items():
         assert not _banned_shown(v["rest"]) and not _banned_shown(v["hover"]), (k, _banned_shown(v["rest"] + " " + v["hover"]))
+        # whose word added an engine is said whole (round 4, gap 2): never a stamp after a yes or a ruling nobody stamped
+        assert not re.search(r"(?:yes|ruling)'s stamp", v["rest"] + " " + v["hover"]), (k, "a stamp nobody gave")
+    assert "registered the workflow Facts -> Site on Priority's yes" in [r["what"] for r in W.runs(ref)], "the plan's own run line"
 
 
 # ---- M1.7 (round 3): every tab of a function's pane, the owner's own chat, and every ask say the owner's words ---------
