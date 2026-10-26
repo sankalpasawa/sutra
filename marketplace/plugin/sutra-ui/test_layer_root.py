@@ -596,7 +596,8 @@ def test_r5_the_organisation_sheet_path_reports_the_refusal_through_the_proposal
     assert W.dept(ref)["engines"] == LINE
 
 
-def test_r5_a_born_template_is_typed_before_its_file_is_written(home):
+def test_r5_a_born_template_is_typed_before_its_file_is_written(home, monkeypatch):
+    monkeypatch.setattr(S, "MODE", "warn")      # the first half is warn mode (the old refusal stands); the second half sets refuse itself
     W, R, J, _ = home
     ref = _born_dept(home)
     shape = {"name": "Talks List", "use_case": "lists the school's talks", "does": "lists the talks", "instruction": "List the talks.",

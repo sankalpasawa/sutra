@@ -474,13 +474,15 @@ def test_i5_a_line_request_or_an_ask_with_a_wrong_type_in_a_doubts_fields_is_a_f
     W, R, J, _, _ = j2
     ref = _doubting(j2)
     with S.expect_refused() as met:
-        R.post(ref, "Identity", "Adaptation", "request", {"word": "line", "words": "w", "go_on": "not a bool", "answer": 123})
+        with pytest.raises(S.SchemaFault):
+            R.post(ref, "Identity", "Adaptation", "request", {"word": "line", "words": "w", "go_on": "not a bool", "answer": 123})
     assert any("go_on" in f for f in met) and any("answer" in f for f in met), met
     ask = _plan_asks(W, ref)[0]
     with S.expect_refused("identity.ask") as met:
-        W._put_ask(ref, dict(ask, doubt="not an object"))
+        with pytest.raises(S.SchemaFault):
+            W._put_ask(ref, dict(ask, doubt="not an object"))
     assert any("doubt" in f for f in met), met
-    W._put_ask(ref, ask)                                                                         # put back as it was filed
+    assert _plan_asks(W, ref)[0] == ask, "refuse mode: the ask stands as it was filed"
 
 
 def test_i5_a_doubt_is_one_ask_with_no_number_in_it(j2):
