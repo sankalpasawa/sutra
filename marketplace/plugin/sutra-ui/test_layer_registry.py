@@ -43,6 +43,14 @@ def modules():
     return W, R
 
 
+def empty_modules(monkeypatch):
+    """Every layer's default version as an empty module, as wave 0 held them: the registry has nothing of its own to serve,
+    whichever layers hold names by now."""
+    for layer, impl in S.DEFAULT_PINS.items():
+        monkeypatch.setitem(layers._LOADED, impl, types.SimpleNamespace(LAYER=layer, VERSION=1, IMPLEMENTS=S.SCHEMA_VERSION,
+                                                                        CODE={}, PROMPT={}, DRAFT={}, CHECK={}))
+
+
 # ---- C1 · the registry -----------------------------------------------------------------------------------------------
 def test_c1_available_lists_the_versions_on_disk_in_layer_order():
     assert layers.available() == {layer: ["%s/v1" % layer] for layer in S.LAYER_NAMES}
@@ -114,8 +122,9 @@ def test_c1_layer_of_names_the_layer_of_a_function_and_of_setup_and_nothing_else
     assert layers.layer_of("Plan") is None and layers.layer_of("Write") is None and layers.layer_of(None) is None
 
 
-def test_c1_with_empty_modules_resolve_returns_the_legacy_function(home):
+def test_c1_with_empty_modules_resolve_returns_the_legacy_function(home, monkeypatch):
     W, R = modules()
+    empty_modules(monkeypatch)
     for kind, legacy in (("code", R.CODE), ("prompt", R.PROMPT), ("draft", R.DRAFT), ("check", R.CHECK)):
         for engine in ("Identity", "Adaptation", "Priority", "Coordination", "Audit", "Setup", "Plan", None):
             for name in list(legacy)[:6]:
@@ -132,7 +141,7 @@ def test_c1_a_stub_holding_a_name_is_what_resolve_returns_for_that_layers_engine
     assert layers.resolve("dref-x", "Identity", "code", "identity_read", R.CODE) is f
     assert layers.resolve("dref-x", "Priority", "code", "identity_read", R.CODE) is R.CODE["identity_read"], "another layer's engine"
     assert layers.resolve("dref-x", "Plan", "code", "identity_read", R.CODE) is R.CODE["identity_read"], "a work engine has no layer"
-    assert layers.resolve("dref-x", "Identity", "code", "identity_route", R.CODE) is R.CODE["identity_route"], "a name it does not hold"
+    assert layers.resolve("dref-x", "Identity", "code", "plan_read", R.CODE) is R.CODE["plan_read"], "a name it does not hold"
     other = lambda *a: 1
     assert layers.resolve("dref-x", "Identity", "check", "identity_read", {"identity_read": other}) is other, "another kind"
     # each kind is its own dict
@@ -151,6 +160,7 @@ def test_c1_resolve_serves_a_stub_the_test_puts_in_the_registry(monkeypatch):
 
 
 def test_c1_names_are_what_any_implementation_provides(monkeypatch):
+    empty_modules(monkeypatch)
     assert all(layers.names(kind) == set() for kind in layers.KINDS)
     monkeypatch.setitem(layers.load("priority/v1").CHECK, "answer_has_its_price", lambda *a: {})
     monkeypatch.setitem(layers.load("audit/v1").CHECK, "has_a_verdict", lambda *a: {})
