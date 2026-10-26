@@ -639,6 +639,31 @@ def test_a_stamped_done_replaces_the_proposal(j2):
     assert again["value"] is None and again["placeholder"] is True
 
 
+PURSUE_WORDS = (("role_is", None, ", and again after each reading until the done-when holds"),
+                ("role_may", 5, "propose the next round when Audit's reading is not done and the correction advances the goal"),
+                ("role_procedure", 7, "When Audit's reading is not done, propose a correction only if it moves the goal."))
+
+
+def test_adaptations_role_words_promise_pursue_only_when_it_is_built():
+    """Three clauses of Adaptation's role words promise Pursue (W2-ADAPT F3, F5: the handler 'Propose the next round'): a
+    sentence of role_is, the fifth line of role_may and the seventh of role_procedure. They are in the words when the handler is in
+    the recipe and out of them when it is not, so the words never promise what is unbuilt and never leave out what is built.
+    The day W2-ADAPT merges this fails until the clauses are put back (the words of A3.4.5), the snapshot is regenerated with
+    FUNCTION_PROMPTS_SNAPSHOT=write, and AD-P7 of role-rules.json is a word at role_procedure 7 again (and AD-P8 at 8)."""
+    import json
+    recipe = json.loads((HERE / "layers/adaptation/v1.json").read_text(encoding="utf-8"))
+    built = any(h.get("name") == "Propose the next round" for h in recipe.get("on") or [])
+    goal = module_of("adaptation").WORDS["goal"]
+    held = []
+    for part, n, clause in PURSUE_WORDS:
+        text = goal[part]["text"] if n is None else (goal[part]["items"][n - 1] if len(goal[part]["items"]) >= n else "")
+        held.append(clause in text)
+    assert held == [built] * 3, "Pursue is %s, and the clauses that promise it are %s" % (
+        "built" if built else "not built", ["in" if h else "out" for h in held])
+    rules = {r["id"]: r for r in load_rules()}
+    assert (rules["AD-P7"]["home"] == "word") == built and rules["AD-P8"]["line"] == "goal.role_procedure %d" % (8 if built else 7)
+
+
 # ---- F7: every rule of the five official role files has a home --------------------------------------------------------------
 RULES_FILE = HERE / "test_fixtures" / "templates" / "role-rules.json"
 HOMES = ("word", "constant", "derived", "left")
