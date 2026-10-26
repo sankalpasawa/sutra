@@ -19,7 +19,8 @@ Named claims:
   T3-4  the P1 cases: after the owner's follow-up through Root there is one more user message and none is the Validator's; two
         publish asks pending at once are two ask messages, paused names one and there is no third; `Option 1` on an options ask
         chooses it; `Option 2` is the second option the owner was shown even after Stop came back into the list; a stamp is `Option 1`
-  T3-5  the honesty cases: a clean reading is one line, with no per-item PASS, no `Workable (checked by code)` and workable None
+  T3-5  the honesty cases: a clean reading is one line, with no per-item PASS, no `Workable (checked by code)` and workable None; every
+        condition names who recorded it; and, as a strict expected failure (E1, open), none is Root's check of the plan
   T3-6  scope: a department of kind default, a Root, a department of the first build and an unknown ref are 404 on every route
   T3-7  the guard stands: a write with an Origin and without the panel token is 403; with the token it passes; api/artifact refuses
         a path that leaves its folder; a built site, a file and a screenshot carry the SAFE headers
@@ -606,6 +607,24 @@ def test_t35_a_clean_reading_is_one_line_with_no_per_item_pass_and_no_workable_c
     assert "Audit read" in seen and "found nothing to put right" in seen
     assert s["conditions"] and all(c["evidence"].startswith(("Check engine", "Root's check")) for c in s["conditions"]), \
         "every condition says who recorded the check: the Check engine, or Root's check of the plan"
+
+
+E1 = ("E1 of design/PRD-FIVE-FUNCTIONS-J2UI.md section 7, open: j2ui_audit._standards lists the standards Root's check ran on the PLAN (R-1 on) "
+      "among the conditions the Audit tab heads 'Necessary conditions (checked by code, site v1)', so a check of the plan reads as a result "
+      "for the site (D-HONEST: no invented result; a check is never a score). Ends when j2ui-work drops them from the conditions, or the "
+      "owner rules that they belong there and the design record says so as a decision; then this marker is removed")
+
+
+@pytest.mark.parametrize("name", ["filed", pytest.param("ready", marks=pytest.mark.xfail(strict=True, reason=E1)),
+                                  pytest.param("question", marks=pytest.mark.xfail(strict=True, reason=E1))])
+def test_t35_every_condition_is_the_check_engines_recorded_check_and_none_is_roots_check_of_the_plan(client, plant, name):
+    """Mapping rule 14 of the plan: conditions are the Check engine's notes named as such. The claim above names a recorder for each
+    (the Check engine, or Root's check); this is the plan's own, strict: a department whose plan Root checked (the real flow) lists its
+    standards R-1 on as well, under the heading of the site's version. Strict expected failure until E1 is settled."""
+    ref, m = plant(name)
+    s = client.get(url(ref, "api/state?since=0")).json()
+    assert s["conditions"], "the Check engine recorded a check"
+    assert all(c["evidence"].startswith("Check engine") for c in s["conditions"]), [(c["id"], c["evidence"][:40]) for c in s["conditions"]][:4]
 
 
 # ---- T3-6: scope ----------------------------------------------------------------------------------------------------------
