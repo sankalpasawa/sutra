@@ -528,3 +528,99 @@ def test_a8_the_make_shape_part_is_in_the_interface_with_its_contract_verbatim()
                                       '"level": 1 | 2, "confidence": number, "doubt": str, "internet": bool}]}, or {"cannot": {"engine": str')
     assert S.validate_field("adaptation", "make", "shape", "task", "Shape the line.") == []
     assert {"act": "inform", "words": ("doubt",), "to": ("Identity",), "payload": "act.doubt"} in S.SENDS["Adaptation"]
+
+
+# ---- A5 · Adaptation's view -------------------------------------------------------------------------------------------
+def _event(action, summary, payload=None, **more):
+    return dict({"action": action, "summary": summary, "payload": payload or {}, "occurred_at": "2026-10-27T10:00:00+05:30"}, **more)
+
+
+ROWS = [{"check": "names_an_engine", "passed": True, "why": "the workflow names its engines"},
+        {"check": "items_covered", "passed": False, "why": "D3 is covered by no engine"}]
+
+
+def _proposed(j2, monkeypatch, ref, source=None, got=None, how="code"):
+    """A proposal on the board, and the proposal.created event that names its thread."""
+    R = j2[1]
+    src = source or {"shape": False, "source": "library", "engines": [{"name": n, "does": "", "reads": "Brief", "writes": n, "internet": False} for n in LINE]}
+    _, posts = _offer(j2, monkeypatch, ref, src, got, how=how)
+    thread = [p for p in R.board(ref) if p["payload"].get("word") == "line" and p["src"] == "Adaptation"][-1]["thread"]
+    return _event("proposal.created", "Proposed the workflow Plan -> Write -> Check -> Publish.",
+                  {"source": src["source"], "workflow": [e["name"] for e in posts[0][2]["engines"]], "hop": 1}, proposal_ref=thread)
+
+
+def test_a5_the_view_is_todays_part_and_the_coverage_of_the_latest_proposal(j2, monkeypatch):
+    W, R, J, _, FV = j2
+    ref = _dept(j2, "website")
+    d = W.dept(ref)
+    proposing = [_proposed(j2, monkeypatch, ref)]
+    got = v1().view(ref, d, proposing, W.asks(ref))
+    assert S.validate_view("adaptation", got) == []
+    assert got["proposal"]["workflow"] == LINE and got["proposal"]["source"] == "library"
+    assert got["coverage"] == {"items": ["D1", "D2", "D3"], "uncovered": [], "by": "adaptation"}
+    assert got["root_checks"] == [] and got["rounds"] == []
+    today = FV._j2_part(ref, d, "Adaptation", proposing, W.asks(ref))
+    assert {k: got[k] for k in ("proposal", "root_checks", "rounds")} == today, "what it showed before is what it shows"
+
+
+def test_a5_each_root_review_carries_the_checks_that_ran_in_the_owners_words(j2, monkeypatch):
+    W, R, J, _, FV = j2
+    ref = _dept(j2, "website")
+    d = W.dept(ref)
+    events = [_proposed(j2, monkeypatch, ref),
+              _event("workflow.blocked", "Root's check refused the workflow: D3 is covered by no engine.", {"workflow": LINE, "faults": ["x"], "checks": ROWS}),
+              _event("workflow.validated", "The workflow meets Sutra's standards.", {"workflow": LINE, "checks": [ROWS[0]]})]
+    got = v1().view(ref, d, events, W.asks(ref))
+    assert S.validate_view("adaptation", got) == []
+    blocked, validated = got["root_checks"]
+    assert blocked["passed"] is False and validated["passed"] is True
+    assert blocked["summary"] == "Root's check sent the plan back: D3 is covered by no engine."
+    assert blocked["checks"] == [{"check": "names_an_engine", "says": "the workflow names its engines", "passed": True, "why": "the workflow names its engines"},
+                                 {"check": "items_covered", "says": "every done-when item is covered by an engine", "passed": False, "why": "D3 is covered by no engine"}]
+    legacy = _event("workflow.validated", "ok", {"checks": [{"check": "names an engine", "passed": True, "why": "the workflow names its engines"}]})
+    assert v1().view(ref, d, [legacy], [])["root_checks"][0]["checks"][0]["says"] == "names an engine"
+    assert v1().view(ref, d, [_event("workflow.validated", "ok")], [])["root_checks"][0]["checks"] == []
+
+
+def test_a5_an_item_no_engine_covers_is_named_and_the_view_validates_in_every_state(j2, monkeypatch):
+    W, R, J, _, FV = j2
+    ref = _dept(j2, "organic")
+    d = W.dept(ref)
+    partial = {"engines": [dict(GOOD[0], covers=["D1"]), dict(GOOD[1], covers=["D2"])]}
+    prop = _proposed(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, partial, how="model")
+    states = {"proposing": [prop], "reshaping": [prop, _event("workflow.blocked", "Root's check refused the workflow: D3.", {"checks": ROWS})],
+              "blocked": [prop] + [_event("workflow.blocked", "Root's check refused the workflow: D3.", {"checks": ROWS})] * 3,
+              "registered": [prop, _event("workflow.validated", "The workflow meets Sutra's standards.", {"checks": [ROWS[0]]}),
+                             _event("workflow.registered", "Registered it.")]}
+    for state, events in states.items():
+        got = v1().view(ref, d, events, W.asks(ref))
+        assert S.validate_view("adaptation", got) == [], state
+        assert got["coverage"] == {"items": ["D1", "D2", "D3"], "uncovered": ["D3"], "by": "adaptation"}, state
+    assert len(v1().view(ref, d, states["blocked"], [])["root_checks"]) == 3
+
+
+def test_a5_a_proposal_that_names_no_covers_reads_as_the_workflow_schema_reads_it_and_no_proposal_has_no_coverage(j2, monkeypatch):
+    W, R, J, _, FV = j2
+    ref = _dept(j2, "website")
+    d = W.dept(ref)
+    assert v1().view(ref, d, [], [])["coverage"] is None
+    R.post(ref, "Adaptation", "Priority", "propose", {"word": "line", "engines": LINE, "source": "library", "words": "w", "for": "x-1"})
+    thread = [p for p in R.board(ref) if p["src"] == "Adaptation"][-1]["thread"]
+    old = _event("proposal.created", "Proposed.", {"workflow": LINE, "source": "library"}, proposal_ref=thread)
+    assert v1().view(ref, d, [old], [])["coverage"] == {"items": ["D1", "D2", "D3"], "uncovered": [], "by": "default"}
+
+
+def test_a5_the_view_of_a_born_department_validates_and_reads_through_the_functions_pane(j2):
+    W, R, J, founding, FV = j2
+    root = founding.found_structure("Acme Learning", owner="Sankalp")["root"]
+    W.owner_ask(root, WEBSITE)
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    d = W.dept(ref)
+    events = FV._events(ref, FV._cycle_state(ref).get("cycle_id"))
+    got = v1().view(ref, d, events, W.asks(ref))
+    assert S.validate_view("adaptation", got) == []
+    assert got["proposal"]["workflow"] == LINE and got["root_checks"][-1]["passed"] is True
+    assert got["root_checks"][-1]["checks"], "the checks that ran are listed on the review"
+    assert got["coverage"] is not None and got["coverage"]["uncovered"] == []

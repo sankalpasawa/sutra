@@ -429,6 +429,43 @@ CHECK['line_is_engines'] = c_line_is_engines
 WORDS, LAYOUT = {}, {}
 
 
+def proposal_post(ref, prop):
+    """The line Adaptation last proposed in the thread a proposal.created event names, as the board has it (its payload is
+    act.line, with the covers); the latest one Adaptation proposed when the event names none."""
+    mine = [x for x in R.board(ref) if x['src'] == 'Adaptation' and x['msg_type'] == 'propose' and (x.get('payload') or {}).get('word') == 'line']
+    here = [x for x in mine if prop and x['thread'] == prop.get('proposal_ref')]
+    return (here or mine or [None])[-1]
+
+
+def coverage(ref, d, prop):
+    """Which done-when items the latest proposal covers (M5.1): {items, uncovered, by}, or None when nothing was proposed.
+    The covers are the proposal's own, by Adaptation; a proposal that names none (one made before covers) is read the way
+    the workflow schema reads it, every item the last engine's, by default."""
+    post = proposal_post(ref, prop) if prop else None
+    if post is None:
+        return None
+    ids = [i['id'] for i in items_of(d)]
+    covers = (post.get('payload') or {}).get('covers') or {}
+    if not covers:
+        return {'items': ids, 'uncovered': [], 'by': 'default'}
+    return {'items': ids, 'uncovered': [i for i in ids if i not in covers], 'by': 'adaptation'}
+
+
 def view(ref, d, events, asks):
-    """Adaptation's pane (S.VIEWS['adaptation']): functions_view's read model, by reference until this layer holds its own."""
-    return FV._j2_part(ref, d, 'Adaptation', events, asks)
+    """Adaptation's pane (S.VIEWS['adaptation']): what it has always shown (the latest proposal, and the last Root reviews),
+    with the coverage of that proposal (M5.1) and, on each review, the checks that ran, each with what the standard says,
+    whether it held and why (M7.3). The words are the owner's: the bargain's inside words are put right on the way out."""
+    import owner_words
+    plain = owner_words.plain
+    says = {i: text for i, text, _, _ in S.WORKFLOW_STANDARDS}
+    prop = next((e for e in reversed(events or []) if e.get('action') == 'proposal.created'), None)
+    reviews = [e for e in events or [] if e.get('action') in ('workflow.validated', 'workflow.blocked')][-4:]
+    return {'proposal': prop and {'workflow': (prop.get('payload') or {}).get('workflow') or [],
+                                  'source': (prop.get('payload') or {}).get('source'), 'at': prop.get('occurred_at')},
+            'root_checks': [{'summary': plain(e.get('summary')), 'at': e.get('occurred_at'), 'passed': e.get('action') == 'workflow.validated',
+                             'checks': [{'check': str(c.get('check'))[:60], 'says': plain(says.get(c.get('check')) or c.get('check'))[:300],
+                                         'passed': bool(c.get('passed')), 'why': plain(c.get('why'))[:600]}
+                                        for c in (e.get('payload') or {}).get('checks') or [] if isinstance(c, dict) and c.get('check')]}
+                            for e in reviews],
+            'coverage': coverage(ref, d, prop),
+            'rounds': []}
