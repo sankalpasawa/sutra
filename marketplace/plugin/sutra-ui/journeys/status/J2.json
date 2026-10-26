@@ -3,12 +3,12 @@
   "dropped": 0,
   "failing": 0,
   "fault": 0,
-  "partly": 4,
-  "proven": 11,
+  "partly": 3,
+  "proven": 12,
   "unproven": 0,
   "wanted": 1
  },
- "definitions_sha": "bfe17982da4ffc885aa293962c9f66f95590fe6157a9cf774cabc5a231db365f",
+ "definitions_sha": "85786dc78fba05d90676904a36a788650189b74dfc75bd986857733635fc28be",
  "drift": [
   {
    "row": "step:1",
@@ -54,11 +54,6 @@
    "row": "edge:J2.4",
    "site": "wanted",
    "state": "proven"
-  },
-  {
-   "row": "edge:J2.5",
-   "site": "built",
-   "state": "partly"
   },
   {
    "row": "edge:J2.7",
@@ -115,15 +110,16 @@
    "state": "proven"
   },
   "edge:J2.5": {
-   "drift": true,
+   "drift": false,
    "failing": [],
    "proven_by": [
     "test_j2.py::test_m0_4_an_envelope_hold_is_one_event_and_one_ask_however_often_it_is_asked",
     "test_engine_runtime.py::TestTheRulingsOfTheAfternoon::test_55_the_limits_come_from_priorities_template_and_the_owner_sets_a_departments_own",
-    "test_engine_runtime.py::TestActivation::test_47_a_blocker_holds_its_own_engine_and_no_other"
+    "test_engine_runtime.py::TestActivation::test_47_a_blocker_holds_its_own_engine_and_no_other",
+    "test_layer_priority.py::test_j2_5_the_envelope_ask_names_the_limit_the_use_and_the_options"
    ],
    "site": "built",
-   "state": "partly"
+   "state": "proven"
   },
   "edge:J2.6": {
    "drift": false,
@@ -310,6 +306,7 @@
   "test_j2_identity.py::test_m3_5_a_blocked_plan_is_an_ask_with_options": "passed",
   "test_layer_journey_j2.py::test_j2_2_the_clock_and_the_spend_bounds_also_go_to_identity": "passed",
   "test_layer_journey_j2.py::test_j2_7_a_failed_run_is_one_run_failed_event_on_the_ledger": "passed",
-  "test_layer_journey_j2.py::test_j2_walk_from_the_identity_to_the_goal": "passed"
+  "test_layer_journey_j2.py::test_j2_walk_from_the_identity_to_the_goal": "passed",
+  "test_layer_priority.py::test_j2_5_the_envelope_ask_names_the_limit_the_use_and_the_options": "passed"
  }
 }

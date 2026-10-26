@@ -624,11 +624,11 @@
     "status": "built",
     "text": "Built: held; an ask goes up (priority.envelope)."
    },
-   "code_does": "priority_envelope holds the run, files an escalated 'envelope' ask, and the ledger records one event per slot however often it is asked; the ask does not yet name the amounts, the next action and the options (M5.4).",
+   "code_does": "priority_envelope holds the run, files one escalated 'envelope' ask that names the limit, what the engine has used and what happens next, and carries the ways forward as options built by code (hold_options): add budget (never past twice where the limit started), leave out the item only this engine is for, stop; the ledger records one event per slot however often it is asked.",
    "outcome": {
-    "kind": "hold",
+    "kind": "ask",
     "voice": "Identity",
-    "golden": null
+    "golden": "is out of today's envelope: it has used"
    },
    "binds": [
     {
@@ -642,14 +642,17 @@
    ],
    "code": [
     "priority_envelope",
+    "_hold_ask",
+    "hold_options",
+    "envelope_option",
     "j2_runtime.on_held"
    ],
    "tests": [
     "test_j2.py::test_m0_4_an_envelope_hold_is_one_event_and_one_ask_however_often_it_is_asked",
     "test_engine_runtime.py::TestTheRulingsOfTheAfternoon::test_55_the_limits_come_from_priorities_template_and_the_owner_sets_a_departments_own",
-    "test_engine_runtime.py::TestActivation::test_47_a_blocker_holds_its_own_engine_and_no_other"
-   ],
-   "backlog": "BL-6"
+    "test_engine_runtime.py::TestActivation::test_47_a_blocker_holds_its_own_engine_and_no_other",
+    "test_layer_priority.py::test_j2_5_the_envelope_ask_names_the_limit_the_use_and_the_options"
+   ]
   },
   {
    "id": "J2.6",
@@ -971,13 +974,6 @@
    "smallest": "Identity posts request/next; Adaptation proposes a priced correction round; Priority prices it inside the ceiling (default six rounds); Identity files it as Correct this with no stamp unless a rule says ask. A not-done reading never ends silently.",
    "decision": "Q6",
    "package": "W2-IDENTITY J3 and J4, W2-ADAPT F3, W2-PRIORITY (M9.1 to M9.4)"
-  },
-  {
-   "id": "BL-6",
-   "row": "edge:J2.5",
-   "smallest": "The envelope ask names the limit, what was used and what may happen next, and carries the options raise, leave out, stop.",
-   "decision": "M5.4",
-   "package": "W2-PRIORITY (M5.4)"
   },
   {
    "id": "BL-10",
