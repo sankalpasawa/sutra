@@ -1367,3 +1367,137 @@ def test_the_command_line_on_the_journeys_of_the_repository():
         assert (code, out) == (0, ["journeys: 0 rows, 0 proven, 0 wanted, 0 faults"])
     code, out = cli("--no-such-mode")
     assert code == 2
+
+
+# ---- Q6: the data-only API ---------------------------------------------------------------------------------------------
+import re                                                                      # noqa: E402
+
+
+@pytest.fixture
+def api(run, folder):
+    """The website router over a bare app, on the records home of the run, and the journeys folder of the test."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    import website_api
+    app = FastAPI()
+    app.include_router(website_api.router)
+    return TestClient(app)
+
+
+def test_the_list_route_and_the_one_route_answer(api, folder):
+    assert api.get("/api/native/journeys").json() == {"schema_version": 1, "journeys": []}, "no journeys is an empty list, not an error"
+    j = proven()
+    j["steps"][0]["tests"] = [REAL_TEST]
+    put(folder, "J9.json", j)
+    put(folder, "functions/fi.json", {"journeys": [good(id="FI1", kind="function", bound_to="identity", declared=True)]})
+    put(folder, "status/J9.json", a_status(j, state="partly", counts={"proven": 2, "partly": 1}, rows={
+        "step:1": {"state": "proven", "proven_by": [REAL_TEST], "site": "none", "drift": False}, "step:2": {"state": "proven"},
+        "edge:J9.1": {"state": "partly", "site": "built", "drift": True}}, drift=[{"row": "edge:J9.1", "site": "built", "state": "partly"}]))
+    before = sorted(p.name for p in folder.rglob("*"))
+    got = api.get("/api/native/journeys")
+    assert got.status_code == 200
+    assert got.json() == {"schema_version": 1, "journeys": [
+        {"id": "FI1", "title": "A fixture journey", "kind": "function", "inside": None, "bound_to": "identity", "declared": True, "state": "declared",
+         "stale": False, "counts": {}},
+        {"id": "J9", "title": "A fixture journey", "kind": "system", "inside": None, "bound_to": None, "declared": False, "state": "partly",
+         "stale": False, "counts": {"proven": 2, "partly": 1}}]}, "in id order: FI1 before J9"
+    one = api.get("/api/native/journeys/J9")
+    assert one.status_code == 200
+    body = one.json()
+    assert body["id"] == "J9" and [s["n"] for s in body["steps"]] == ["1", "2"] and body["edges"][0]["id"] == "J9.1"
+    assert body["status"]["state"] == "partly" and body["status"]["stale"] is False
+    assert body["status"]["rows"]["step:1"] == {"state": "proven", "proven_by": ["test_j1_4_no_fitting_template_uses_explicit_organic_route"],
+                                                "failing": [], "site": "none", "drift": False}
+    assert body["status"]["rows"]["edge:J9.1"] == {"state": "partly", "proven_by": [], "failing": [], "site": "built", "drift": True}
+    assert set(body["status"]["rows"]) == {"step:1", "step:2", "edge:J9.1"}
+    assert body["status"]["drift"] == [{"row": "edge:J9.1", "site": "built", "state": "partly"}], "the site says built, and a part is not"
+    assert body["status"]["counts"] == {"proven": 2, "partly": 1}
+    # a declared journey is answered too, with every row declared
+    fi = api.get("/api/native/journeys/FI1").json()
+    assert fi["status"]["state"] == "declared" and {r["state"] for r in fi["status"]["rows"].values()} == {"declared"}
+    # a read writes nothing, and the journeys are the same for the next reader
+    assert sorted(p.name for p in folder.rglob("*")) == before
+    assert api.get("/api/native/journeys/J9").json() == body
+
+
+def test_an_unknown_journey_is_404_with_its_code(api, folder):
+    put(folder, "J9.json", proven())
+    for jid in ("J99", "J8", "FI1", "S1", "U2", "FAU3"):
+        got = api.get("/api/native/journeys/" + jid)
+        assert (got.status_code, got.json()) == (404, {"detail": {"code": "UNKNOWN_JOURNEY"}}), jid
+    assert api.get("/api/native/journeys/J9").status_code == 200
+
+
+def test_a_department_ref_named_journeys_is_not_shadowed(api, folder, run):
+    W, R, J, root, child, home = run
+    # the router answers for the departments it always answered for
+    assert api.get("/api/native/depts").status_code == 200
+    assert api.get("/api/native/%s/map" % child).status_code == 200
+    # and for a department whose ref is `journeys`: its own routes keep answering beneath that name
+    W.create("journeys", "Journeys", "A goal", kind="website")
+    for tail in ("map", "status", "health"):
+        got = api.get("/api/native/journeys/" + tail)
+        assert got.status_code == 200, (tail, got.status_code, got.text[:200])
+    assert set(api.get("/api/native/journeys/map").json()) == set(api.get("/api/native/%s/map" % child).json()) != set(), \
+        "it is a department's map, not an answer about journeys"
+    assert api.get("/api/native/journeys/functions").status_code in (200, 404), "a route that exists beneath the ref answers, whatever it says"
+    # the list is still the journeys, and a journey's id is still a journey's
+    put(folder, "J9.json", proven())
+    assert [x["id"] for x in api.get("/api/native/journeys").json()["journeys"]] == ["J9"]
+    assert api.get("/api/native/journeys/J9").json()["id"] == "J9"
+    # the routes are declared before every route that begins with /{ref}
+    import website_api
+    paths = [r.path for r in website_api.router.routes]
+    first_ref = next(i for i, p in enumerate(paths) if p.startswith("/api/native/{ref}"))
+    assert paths.index("/api/native/journeys") < first_ref and paths.index("/api/native/journeys/{jid:journey_id}") < first_ref
+
+
+def _strings(value, path=()):
+    """Every string of a document with where it is: keys and values."""
+    if isinstance(value, dict):
+        for k, v in value.items():
+            yield path + (k,), k
+            yield from _strings(v, path + (k,))
+    elif isinstance(value, list):
+        for i, v in enumerate(value):
+            yield from _strings(v, path + (i,))
+    elif isinstance(value, str):
+        yield path, value
+
+
+def test_no_screen_word_in_the_read_model(api, folder):
+    """The read model is for a screen: no act id, no name of a file, none of the places the code and the tests live, and none of
+    the words the screen does not say in what the model itself adds (the states, the site's claim, the drift) or in what an
+    owner may read (a golden lead, a reword). The site's and the author's prose is theirs, passed on as it is: JC-11 holds the
+    owner's words, and the journey data may say "refused" where the site does."""
+    j = proven()
+    j["steps"][0].update(tests=[REAL_TEST, "js:test_website.js#W45"], code=["setup_say", "website_dept.create"])
+    j["steps"][0]["text"] = "{helper} asks the owner what the department is for."
+    j["edges"][0]["reword"] = "Say it back, once."
+    j["scenarios"] = [{"id": "J9.walk", "lane": "the life", "test": "test_layer_journey_j9.py::test_walk", "walks": ["1"], "says": "Found it and watch."}]
+    j["build_rows"] = [{"id": "B1", "change": "Say it back.", "where": "engine_runtime.py, identity_file", "tests": [REAL_TEST]}]
+    j["today"] = {"text": "How it runs now.", "sources": "birth.md and sutra 50599599."}
+    put(folder, "J9.json", j)
+    put(folder, "status/J9.json", a_status(j, state="partly", counts={"proven": 2, "partly": 1}, drift=[{"row": "edge:J9.1", "site": "built", "state": "partly"}],
+                                           rows={"step:1": {"state": "proven", "proven_by": [REAL_TEST, "js:test_website.js#W45"], "site": "none"},
+                                                 "step:2": {"state": "proven"}, "edge:J9.1": {"state": "partly", "site": "built", "drift": True}}))
+    banned, path = re.compile(S.TEMPLATE_BANNED, re.I), re.compile(r"(\.(py|js|json|md|html)\b|::|\bjs:|/)")
+    keys_gone = {"binds", "code", "tests", "site_code", "site_ids", "helper", "flag", "invariants", "where", "sources"}
+    one = api.get("/api/native/journeys/J9").json()
+    for url, body in (("/api/native/journeys", api.get("/api/native/journeys").json()), ("/api/native/journeys/J9", one)):
+        for where, text in _strings(body):
+            assert text not in S.ACTS and text not in keys_gone, (url, where, text)
+            assert " " in text or not path.search(text), ("a name, not a path", url, where, text)
+            assert "{helper}" not in text, (url, where, text)
+    own = [t for w, t in _strings(one["status"]) if "proven_by" not in w and "failing" not in w]
+    own += [t for w, t in _strings(one) if w[-1] in ("golden", "reword")]
+    own += [t for w, t in _strings(api.get("/api/native/journeys").json())]
+    assert own and not [t for t in own if banned.search(t)], [t for t in own if banned.search(t)]
+    assert one["steps"][0]["text"] == "Root asks the owner what the department is for."
+    assert one["today"] == {"text": "How it runs now."} and one["scenarios"] == [{"id": "J9.walk", "lane": "the life", "walks": ["1"], "says": "Found it and watch."}]
+    assert one["build_rows"] == [{"id": "B1", "change": "Say it back."}]
+    assert one["edges"][0]["reword"] == "Say it back, once." and one["edges"][0]["outcome"]["golden"] == GOLDEN
+    assert one["status"]["rows"]["step:1"]["proven_by"] == ["test_j1_4_no_fitting_template_uses_explicit_organic_route", "W45"], "the test by name"
+    assert not (keys_gone & {k for _, k in _strings(one)}), "none of the places the code and the tests live"
+    # the states a screen reads are the words of the interface
+    assert {r["state"] for r in one["status"]["rows"].values()} <= set(S.READ_STATES)
