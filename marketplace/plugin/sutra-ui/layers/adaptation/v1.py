@@ -8,6 +8,7 @@ fallback for a part no layer holds. view() returns the pane's read model.
 """
 import os
 import re
+import types
 import uuid
 
 from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests reload engine_runtime, so never a module object
@@ -1115,6 +1116,18 @@ def coverage(ref, d, prop):
     return {'items': ids, 'uncovered': [i for i in ids if i not in covers], 'by': 'adaptation'}
 
 
+#: what a round's status is called to the owner (never grant or refuse: the bargain's words are said yes and said no)
+ROUND_SAID = types.MappingProxyType({'proposed': 'asked Priority', 'granted': 'Priority said yes', 'refused': 'Priority said no',
+                                     'filed': 'filed in the Brief', 'read': 'read by Audit'})
+
+
+def round_view(r):
+    """One round as the pane has it (view.adaptation.round): the folded row, with its status in the owner's words."""
+    return {'round': r['round'], 'correction': clip(r.get('correction')), 'covers': list(r.get('covers') or []), 'fixes': list(r.get('fixes') or []),
+            'status': r.get('status'), 'said': ROUND_SAID.get(r.get('status'), ''), 'estimate': r.get('estimate') if isinstance(r.get('estimate'), dict) else None,
+            'at': r.get('at'), 'reading': r.get('reading'), 'brief_v': r.get('brief_v')}
+
+
 def view(ref, d, events, asks):
     """Adaptation's pane (S.VIEWS['adaptation']): what it has always shown (the latest proposal, and the last Root reviews),
     with the coverage of that proposal (M5.1) and, on each review, the checks that ran, each with what the standard says,
@@ -1124,6 +1137,7 @@ def view(ref, d, events, asks):
     says = {i: text for i, text, _, _ in S.WORKFLOW_STANDARDS}
     prop = next((e for e in reversed(events or []) if e.get('action') == 'proposal.created'), None)
     reviews = [e for e in events or [] if e.get('action') in ('workflow.validated', 'workflow.blocked')][-4:]
+    rounds = [round_view(r) for r in rounds_of(ref) if r.get('status') in ROUND_SAID]               # M9.6: rounds.jsonl, folded by round
     return {'proposal': prop and {'workflow': (prop.get('payload') or {}).get('workflow') or [],
                                   'source': (prop.get('payload') or {}).get('source'), 'at': prop.get('occurred_at')},
             'root_checks': [{'summary': plain(e.get('summary')), 'at': e.get('occurred_at'), 'passed': e.get('action') == 'workflow.validated',
@@ -1132,4 +1146,5 @@ def view(ref, d, events, asks):
                                         for c in (e.get('payload') or {}).get('checks') or [] if isinstance(c, dict) and c.get('check')]}
                             for e in reviews],
             'coverage': coverage(ref, d, prop),
-            'rounds': []}
+            'round': rounds[-1] if rounds else None,
+            'rounds': rounds}

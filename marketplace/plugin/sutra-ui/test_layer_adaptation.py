@@ -2078,3 +2078,75 @@ def test_f3_a_department_whose_adaptation_layer_does_not_load_hears_a_request_fo
     assert _round_posts(R, ref) == [] and _rows(W, ref) == []
     ran = [r for r in W.runs(ref) if r.get("engine") == "Adaptation" and "round" in str(r.get("what"))]
     assert ran and ran[-1]["status"] == "ok" and "not loaded" in ran[-1]["what"], [(r.get("what"), r["status"]) for r in W.runs(ref)]
+
+
+# ---- F4 · the rounds in the view (W2-ADAPT, M9.6) --------------------------------------------------------------------
+def _pane(j2, ref):
+    W, R, J, _, FV = j2
+    return v1().view(ref, W.dept(ref), [], W.asks(ref))
+
+
+def test_f4_the_view_validates_in_a_two_round_fixture_and_a_round_is_one_row_the_latest_status_winning(j2):
+    W, R, J, _, FV = j2
+    ref = _pursuing(j2)
+    base = {"schema_version": 1, "cycle_id": None, "fixes": ["F1"], "covers": ["D2"], "estimate": LINE_COST, "reading": RID}
+    W.append_row(ref, "rounds.jsonl", dict(base, round=1, at="2026-10-26T10:00:00+05:30", correction=FIRST_TRY, status="proposed", thread="x-r1"))
+    W.append_row(ref, "rounds.jsonl", dict(base, round=1, at="2026-10-26T10:01:00+05:30", correction=FIRST_TRY, status="granted", thread="x-r1"))
+    W.append_row(ref, "rounds.jsonl", dict(base, round=2, at="2026-10-26T10:30:00+05:30", correction="Add the phone line to every footer", status="proposed",
+                                           thread="x-r2", reading="r-1b2c3d4e"))
+    pane = _pane(j2, ref)
+    assert S.validate_view("adaptation", pane) == [], S.validate_view("adaptation", pane)
+    assert [(r["round"], r["status"], r["said"]) for r in pane["rounds"]] == [(1, "granted", "Priority said yes"), (2, "proposed", "asked Priority")]
+    assert pane["round"] == pane["rounds"][-1] and pane["round"]["correction"] == "Add the phone line to every footer"
+    assert pane["rounds"][0]["at"] == "2026-10-26T10:01:00+05:30" and pane["rounds"][0]["estimate"] == LINE_COST and pane["rounds"][0]["covers"] == ["D2"]
+    # what the pane is read from is the journal as written: three rows, two rounds
+    assert len(_rows(W, ref)) == 3 and len(pane["rounds"]) == 2
+    for r in pane["rounds"]:
+        assert S.validate("view.adaptation.round", r) == []
+
+
+def test_f4_a_department_with_no_round_has_none_and_still_validates(j2):
+    W, R, J, _, FV = j2
+    ref = _pursuing(j2)
+    pane = _pane(j2, ref)
+    assert pane["round"] is None and pane["rounds"] == [] and S.validate_view("adaptation", pane) == []
+
+
+def test_f4_each_status_has_the_owners_words_and_never_the_bargains_inside_ones(j2):
+    for status, says in (("proposed", "asked Priority"), ("granted", "Priority said yes"), ("refused", "Priority said no"),
+                         ("filed", "filed in the Brief"), ("read", "read by Audit")):
+        assert v1().ROUND_SAID[status] == says
+    assert set(v1().ROUND_SAID) == {"proposed", "granted", "refused", "filed", "read"} == set(S.DEFS["adaptation.round"]["properties"]["status"]["enum"])
+    assert not re.search(r"grant|counter|refus", " ".join(v1().ROUND_SAID.values()), re.I)
+
+
+def test_f4_only_the_rounds_of_the_cycle_the_department_is_in_are_shown(j2, monkeypatch):
+    W, R, J, _, FV = j2
+    ref = _pursuing(j2)
+    _granted_round(W, ref, "old way", n=1, cycle="c-one")
+    _granted_round(W, ref, "old way two", n=2, cycle="c-one")
+    _granted_round(W, ref, "new way", n=1, cycle="c-two")
+    monkeypatch.setattr(v1(), "cycle_of", lambda r: "c-two")
+    pane = _pane(j2, ref)
+    assert [(r["round"], r["correction"]) for r in pane["rounds"]] == [(1, "new way")] and pane["round"]["correction"] == "new way"
+    monkeypatch.setattr(v1(), "cycle_of", lambda r: "c-one")
+    assert [r["round"] for r in _pane(j2, ref)["rounds"]] == [1, 2]
+    assert S.validate_view("adaptation", _pane(j2, ref)) == []
+
+
+def test_f4_the_pane_a_function_page_reads_carries_the_rounds_through_the_layer(j2):
+    W, R, J, _, FV = j2
+    ref = _pursuing(j2)
+    _granted_round(W, ref, FIRST_TRY)
+    pane = FV.function(ref, "Adaptation")["j2"]
+    assert [(r["round"], r["status"]) for r in pane["rounds"]] == [(1, "granted")] and pane["round"]["said"] == "Priority said yes"
+    assert "j2_faults" not in pane, "the layer's view passed the interface, so the page did not fall back"
+
+
+def test_f4_a_round_row_written_by_a_later_writer_with_a_status_the_pane_does_not_know_is_not_shown(j2):
+    W, R, J, _, FV = j2
+    ref = _pursuing(j2)
+    path = W.ddir(ref) / "rounds.jsonl"
+    path.write_text(json.dumps({"round": 1, "correction": "x", "covers": ["D2"], "status": "archived", "cycle_id": None}) + "\n", encoding="utf-8")
+    pane = _pane(j2, ref)
+    assert pane["rounds"] == [] and S.validate_view("adaptation", pane) == []
