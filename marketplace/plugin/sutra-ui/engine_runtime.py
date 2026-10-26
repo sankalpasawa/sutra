@@ -165,6 +165,10 @@ def validate(d):
         for n in k.get("line") or []:
             if ((d.get("engines") or {}).get(n) or {}).get("kind") != "work":
                 faults.append("kinds, %s: %s is not a work engine" % (kind, n))
+        # an engine the kind marks required is one of its line (PRD M4.4): no engine is mandatory unless its template says so
+        req = k.get("required")
+        if req is not None and (not isinstance(req, list) or any(n not in (k.get("line") or []) for n in req)):
+            faults.append("kinds, %s: required names engines of its own line" % kind)
         if not k.get("artifacts") or not k.get("goal") or not k.get("rules"):
             faults.append("kinds, %s: a kind names its artifacts, its goal and its rules" % kind)
         # a kind is a department template (TPL-1): it says which use case it fits and which Library template its five
@@ -4114,29 +4118,46 @@ def _line_conflict(ref, thread, why, bound=None, src="Adaptation"):
                                                  "words": offer.get("words"), "why": why, "bound": bound, "for": thread})
 
 
-def _root_run(engines, source):
-    """Root's standards on one workflow: the checks that ran, in order, and each fault with the check it breaks."""
+def required_engines(d):
+    """The engines the department's kind marks required (PRD M4.4; Q12: the website kind's Check, because it enforces the
+    owner's rules). No engine is mandatory unless its template marks it so."""
+    k = (defs().get("kinds") or {}).get((d or {}).get("kind") or "website") or {}
+    return [str(n) for n in k.get("required") or [] if n]
+
+
+def _root_run(engines, source, required=()):
+    """Root's standards on one workflow: the checks that ran, in order, and each fault with the check it breaks. With
+    the engines the kind requires, 'no required engine left out' runs last (PRD M4.4)."""
     if not engines:
         return ["names an engine"], [("names an engine", "the workflow names no engine")]
     if source == "library":
         known = defs()["engines"]
-        return ["names an engine", "engines known"], [("engines known", "the Library has no engine named %s" % e.get("name"))
-                                                      for e in engines if (known.get(e.get("name")) or {}).get("kind") != "work"]
-    notes = _line_notes(engines) + ([("one to six engines", "more than six engines")] if len(engines) > 6 else [])
-    return ["names an engine", "one to six engines"] + [c for c, _ in LINE_CHECKS], notes
+        ran, notes = ["names an engine", "engines known"], [("engines known", "the Library has no engine named %s" % e.get("name"))
+                                                            for e in engines if (known.get(e.get("name")) or {}).get("kind") != "work"]
+    else:
+        notes = _line_notes(engines) + ([("one to six engines", "more than six engines")] if len(engines) > 6 else [])
+        ran = ["names an engine", "one to six engines"] + [c for c, _ in LINE_CHECKS]
+    if required:
+        names = [e.get("name") for e in engines]
+        out = [n for n in required if n not in names]
+        ran.append("no required engine left out")
+        if out:
+            notes.append(("no required engine left out", "the plan leaves out %s, which this kind of department requires" % _names(out)))
+    return ran, notes
 
 
 #: what Root's own checks say when they hold; a shaped line's checks say it in LINE_CHECKS
 ROOT_HOLDS = {"names an engine": "the workflow names its engines", "engines known": "each engine is one the Library has",
-              "one to six engines": "the workflow is one to six engines long"}
+              "one to six engines": "the workflow is one to six engines long",
+              "no required engine left out": "the plan keeps every engine its kind requires"}
 
 
 def _root_checks(ref, d, engines, source):
     """Root's standards, as code reads them (J2.e), one row for each check that ran: [{check, passed, why}]. A Library line
     is checked for engines the Library has; a shaped line for one to six engines, each named once and new to the Library,
     the first reading the Brief, each reading what one before it wrote and writing something new (M0.7: the event lists
-    these rows, not a fixed set of names)."""
-    ran, notes = _root_run(engines, source)
+    these rows, not a fixed set of names), and, when the kind requires engines, that none is left out (PRD M4.4)."""
+    ran, notes = _root_run(engines, source, required_engines(d))
     holds = dict(LINE_CHECKS, **ROOT_HOLDS)
     return [{"check": c, "passed": not [n for k, n in notes if k == c],
              "why": "; ".join(n for k, n in notes if k == c) or holds[c]} for c in ran]
@@ -4144,7 +4165,7 @@ def _root_checks(ref, d, engines, source):
 
 def _root_check(ref, d, engines, source):
     """Root's standards as the fault list its callers use: empty when the workflow meets them."""
-    return [n for _, n in _root_run(engines, source)[1]]
+    return [n for _, n in _root_run(engines, source, required_engines(d))[1]]
 
 
 #: who said yes to a plan that passes Root's check, as Identity tells the owner it is set: the `by` of _j2_settle, in the
@@ -4160,7 +4181,7 @@ def _j2_settle(ref, d, engines, source, words, by):
     names = [e.get("name") for e in engines]
     faults = _root_check(ref, d, engines, source)
     checks = _root_checks(ref, d, engines, source)
-    named = {n for _, n in _root_run(engines, source)[1]}
+    named = {n for _, n in _root_run(engines, source, required_engines(d))[1]}
     other = [f for f in faults if f not in named]
     if other:
         # a fault no itemised standard names (a check put in Root's place): the event lists it as the check that ran
@@ -4268,6 +4289,13 @@ def adapt_line_counter(ctx, step, item):
     keep = [str(k) for k in pl.get("keep") or []]
     engines = [e for e in offer.get("engines") or [] if e.get("name") in keep]
     why = str(pl.get("why") or "the envelope has no room for all of it").strip().rstrip(".")
+    # a counter that drops an engine the kind requires is never taken: Identity closes it (PRD M4.4)
+    proposed = [e.get("name") for e in offer.get("engines") or []]
+    dropped = [n for n in required_engines(ctx["dept"]) if n in proposed and n not in keep]
+    if dropped:
+        _line_conflict(ref, p["thread"], "Priority countered (%s) and the line would leave out %s, which this kind of department requires"
+                       % (why, _names(dropped)))
+        return {"said": "could not take Priority's counter: it leaves out %s, which is required; the conflict goes to Identity" % _names(dropped)}
     if not engines or len(engines) == len(offer.get("engines") or []) or _root_check(ref, ctx["dept"], engines, offer.get("source") or "shaped"):
         _line_conflict(ref, p["thread"], "Priority asked for less (%s) and the line does not work that way" % why)
         return {"said": "could not take Priority's ask for less; the conflict goes to Identity"}

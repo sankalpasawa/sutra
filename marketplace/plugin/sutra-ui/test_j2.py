@@ -784,7 +784,9 @@ def test_m0_7_the_validated_event_lists_the_checks_that_ran_for_a_library_and_a_
     lib = _born(j2)
     checks = next(e for e in J.events(lib) if e["action"] == "workflow.validated")["payload"]["checks"]
     assert checks == ran[-1]
-    assert [(c["check"], c["passed"]) for c in checks] == [("names an engine", True), ("engines known", True)]
+    # the website kind requires Check (PRD M4.4), so Root's check that none is left out runs too
+    assert [(c["check"], c["passed"]) for c in checks] == [("names an engine", True), ("engines known", True),
+                                                           ("no required engine left out", True)]
     shaped = _born(j2, ORGANIC, "Lab Co")
     checks = next(e for e in J.events(shaped) if e["action"] == "workflow.validated")["payload"]["checks"]
     assert checks == ran[-1]
@@ -797,9 +799,13 @@ def test_m0_7_a_refusal_lists_the_checks_that_ran_and_the_one_that_failed(j2, mo
     d = W.dept(ref)
     R._j2_settle(ref, d, [{"name": "Plan"}, {"name": "Nobody Knows"}], "library", d.get("goal"), "a test")
     blocked = [e for e in J.events(ref) if e["action"] == "workflow.blocked"][-1]
-    assert blocked["payload"]["faults"] == ["the Library has no engine named Nobody Knows"]
+    # the plan also leaves out Check, which the website kind requires (PRD M4.4): every check runs, and each fault is listed
+    assert blocked["payload"]["faults"] == ["the Library has no engine named Nobody Knows",
+                                            "the plan leaves out Check, which this kind of department requires"]
     assert blocked["payload"]["checks"] == [{"check": "names an engine", "passed": True, "why": "the workflow names its engines"},
-                                            {"check": "engines known", "passed": False, "why": "the Library has no engine named Nobody Knows"}]
+                                            {"check": "engines known", "passed": False, "why": "the Library has no engine named Nobody Knows"},
+                                            {"check": "no required engine left out", "passed": False,
+                                             "why": "the plan leaves out Check, which this kind of department requires"}]
     # a check put in Root's place is listed as it ran, beside the standards
     monkeypatch.setattr(R, "_root_check", lambda ref, d, engines, source: ["the line reaches outside without a rule"])
     lab = _born(j2, ORGANIC, "Lab Co")
@@ -1134,3 +1140,53 @@ def test_m4_3_the_map_reads_each_engines_slot_off_coordinations_timetable(j2):
     ref = _born(j2)
     eng = {e["name"]: e for e in W.map_view(ref)["engines"]}
     assert [eng[n]["timetable"]["on"] for n in LINE] == [r["on"] for r in _table(W, ref)["timetable"]]
+
+
+# ---- PRD M4.4: required engines (Q12: only Check, on the website kind) -----------------------------------------------
+def test_m4_4_a_plan_without_check_is_refused_by_roots_check(j2):
+    """A website plan that leaves out Check registered, or refused without the check that broke, must fail; a kind that
+    marks nothing required runs no such check."""
+    W, R, J, _ = j2
+    assert R.required_engines({"kind": "website"}) == ["Check"]
+    assert R.required_engines({"kind": "organic"}) == [] and R.required_engines({"kind": "default"}) == []
+    ref = _born(j2)
+    d = W.dept(ref)
+    before = len(d["workflows"])
+    out = R._j2_settle(ref, d, [{"name": n} for n in ("Plan", "Write", "Publish")], "library", d.get("goal"), "a test")
+    assert "refused" in out["said"]
+    assert len(W.dept(ref)["workflows"]) == before, "nothing registered"
+    blocked = [e for e in J.events(ref) if e["action"] == "workflow.blocked"][-1]
+    assert blocked["payload"]["faults"] == ["the plan leaves out Check, which this kind of department requires"]
+    assert blocked["payload"]["checks"][-1] == {"check": "no required engine left out", "passed": False,
+                                                "why": "the plan leaves out Check, which this kind of department requires"}
+    assert R._root_check(ref, d, [{"name": n} for n in LINE], "library") == []
+    assert R.coordination(ref)["line"] == LINE, "the line stays what was registered"
+    # the kind's mark is data, checked when the definitions load: a required engine is one of the kind's own line
+    bad = dict(R.defs())
+    bad["kinds"] = dict(bad["kinds"], website=dict(bad["kinds"]["website"], required=["Nobody"]))
+    assert "kinds, website: required names engines of its own line" in R.validate(bad)
+
+
+def test_m4_4_a_counter_that_drops_check_goes_to_identity_as_a_conflict(j2, monkeypatch):
+    """Adaptation taking a counter that leaves out Check, or the conflict going anywhere but Identity, must fail."""
+    W, R, J, _ = j2
+    _counter_keeps(monkeypatch, R, keep=["Plan", "Write", "Publish"])
+    ref = _born(j2)
+    acts = _actions(J, ref)
+    assert "proposal.countered" in acts and "workflow.registered" not in acts
+    raised = next(e for e in J.events(ref) if e["action"] == "conflict.raised")
+    conflict = next(p for p in R.board(ref) if (p.get("payload") or {}).get("word") == "conflict")
+    assert conflict["src"] == "Adaptation" and conflict["dst"] == ["Identity"]
+    assert "leave out Check, which this kind of department requires" in conflict["payload"]["why"]
+    assert [e["name"] for e in conflict["payload"]["engines"]] == LINE, "the plan put to Identity is the whole one"
+    assert raised["seq"] > next(e for e in J.events(ref) if e["action"] == "proposal.countered")["seq"]
+    # Identity could not settle it from the goal and the rules (offline): one ask, in the owner's words, and nothing ran
+    ask = [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "conflict"]
+    assert len(ask) == 1 and _work(W, ref) == []
+    import owner_words
+    said = owner_words.plain(ask[0]["text"])
+    assert "Priority asked for less" in said and "countered" not in said.lower(), said
+    # the owner stamps it: the plan as proposed, Check in it, is registered and runs
+    _stamp_all(W, ref, kind="conflict")
+    assert W.dept(ref)["workflows"][-1]["engines"] == LINE
+    assert "Check" in R.coordination(ref)["line"]
