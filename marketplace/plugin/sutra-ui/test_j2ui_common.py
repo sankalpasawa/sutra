@@ -339,11 +339,9 @@ def identity_asks(m, ref=REF, question="What evidence will prove this site is do
 
 
 def test_c17_identitys_open_question_does_not_take_the_engines_away(mods):
-    """website_dept.map_view raises KeyError('engine') while an ask with no `engine` key (Identity's question) is pending; the
-    ctx rebuilds the engines from the public readers, so the engines, the plan flag and the W-k numbering are never empty."""
+    """An ask with no `engine` key (Identity's question) is pending; the engines, the plan flag and the W-k numbering are never empty."""
     identity_asks(mods)
-    with pytest.raises(KeyError):
-        mods.W.map_view(REF)                                   # the record's own reader still fails: reported to its owner, not hidden
+    mods.W.map_view(REF)                                       # the record's own reader reads it too (it raised KeyError before views fix 1)
     C.touch(REF)
     c = C.get_ctx(REF)
     assert c.state == "waiting" and c.paused_ask and c.paused_ask["form"] == "words"
@@ -403,7 +401,7 @@ def test_c17_when_the_rebuild_fails_too_the_engines_are_empty_and_the_reason_sta
     monkeypatch.setattr(mods.W, "engine_view", lambda ref, name: (_ for _ in ()).throw(RuntimeError("gone")))
     C.touch(REF)
     c = C.get_ctx(REF)
-    assert c.engines == [] and c.planned is False and c.reasons == ["map: KeyError"], c.reasons
+    assert c.engines == [] and c.planned is False and c.reasons == ["map: RuntimeError"], c.reasons
 
 
 def test_c17_a_ref_with_no_folder_still_gives_a_ctx(mods):
