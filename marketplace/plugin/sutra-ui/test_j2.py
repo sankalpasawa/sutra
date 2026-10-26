@@ -1190,6 +1190,48 @@ def test_m4_4_a_plan_without_check_is_refused_by_roots_check(j2):
     assert "kinds, website: required names engines of its own line" in R.validate(bad)
 
 
+def test_m4_4_a_refused_website_plan_registers_on_the_next_proposal_with_check_in_it(j2, monkeypatch):
+    """Reshaping a website's refused plan (a shaped line is made of names new to the Library, so it can never carry
+    Check, and is refused for the same fault until the cycle blocks) must fail: Adaptation takes the Library's line
+    again, with Check, and it registers."""
+    W, R, J, _ = j2
+    ref = _born(j2)
+    d = W.dept(ref)
+    seen = len(J.events(ref))
+    R._j2_settle(ref, d, [{"name": n} for n in ("Plan", "Write", "Publish")], "library", d.get("goal"), "a test")
+    W.run_until_idle(ref, limit=300)
+    after = J.events(ref)[seen:]
+    assert [e["action"] for e in after].count("workflow.blocked") == 1, "refused once, and once only"
+    assert [e["payload"]["source"] for e in after if e["action"] == "proposal.created"] == ["library"]
+    assert W.dept(ref)["workflows"][-1]["engines"] == LINE and J.status(ref)["state"] == "running"
+    assert R.coordination(ref)["line"] == LINE
+    # Root's check refuses a website's first plan for another reason: the next proposal is the Library's again, and it
+    # registers with Check in it (it was blocked after three shaped tries before)
+    real, calls = R._root_check, {"n": 0}
+
+    def check(ref, d, engines, source):
+        calls["n"] += 1
+        return ["the line reaches outside without a rule"] if calls["n"] == 1 else real(ref, d, engines, source)
+    monkeypatch.setattr(R, "_root_check", check)
+    other = _born(j2, org="Refused Co")
+    acts = _actions(J, other)
+    assert acts.count("workflow.blocked") == 1 and "workflow.registered" in acts and J.status(other)["state"] != "blocked"
+    assert [e["payload"]["source"] for e in J.events(other) if e["action"] == "proposal.created"] == ["library", "library"]
+    assert W.dept(other)["workflows"][-1]["engines"] == LINE
+    # the repair route itself: the Library's line, without a name the Library has no engine for, the required one put
+    # back at its place on the kind's line; none for a kind that requires nothing
+    assert R._library_repair({"kind": "website"}, ["Plan", "Nobody Knows", "Write", "Publish"]) == LINE
+    assert R._library_repair({"kind": "organic"}, ["Facts"]) is None
+    # a record without the required engine: the Library's line brings it back, and Adaptation brings it onto the record
+    third = _born(j2, org="Thin Co", settle=False)
+    rec = W.dept(third)
+    rec["engines"] = ["Plan", "Write", "Publish"]
+    W.save_dept(third, rec)
+    W.run_until_idle(third, limit=300)
+    assert W.dept(third)["workflows"][-1]["engines"] == LINE and W.dept(third)["engines"] == LINE
+    assert any(r["engine"] == "Adaptation" and "Check" in str(r.get("what")) for r in W.runs(third) if r.get("system"))
+
+
 def test_m4_4_a_counter_that_drops_check_goes_to_identity_as_a_conflict(j2, monkeypatch):
     """Adaptation taking a counter that leaves out Check, or the conflict going anywhere but Identity, must fail; the ask
     says it in the owner's words on the record itself."""

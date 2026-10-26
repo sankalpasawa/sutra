@@ -4438,12 +4438,39 @@ def _line_request(ref, d, words, thread=None, faults=None):
                  "boundaries": "nothing runs before Priority grants it and Root registers it", "for": thread, "faults": list(faults or [])})
 
 
+def _library_repair(d, lib):
+    """The line a kind that requires engines goes back to when Root's check sends a plan back (PRD M4.4): the Library's
+    line again, without a name the Library has no engine for, and with each engine the kind requires put in at its
+    place on the kind's line. A shaped line is made of names new to the Library, so it can never carry the engine the
+    kind requires, and reshaping would be refused for the same fault every time. None for a kind that requires no
+    engine, or when the Library itself has no engine the kind requires."""
+    req = required_engines(d)
+    if not req:
+        return None
+    work = {n for n, e in defs()["engines"].items() if (e or {}).get("kind") == "work"}
+    line = [n for n in lib if n in work]
+    kind = list(((defs().get("kinds") or {}).get((d or {}).get("kind") or "website") or {}).get("line") or [])
+    for r in req:
+        if r in line:
+            continue
+        if r not in work:
+            return None
+        after = kind[kind.index(r) + 1:] if r in kind else []
+        nxt = next((n for n in line if n in after), None)
+        line.insert(line.index(nxt) if nxt else len(line), r)
+    return line
+
+
 def adapt_source(ctx, step, item):
     """Where the proposal comes from (J2.b): the Library's template when the department's kind has one, else Adaptation
-    shapes the line itself. A line Root's check refused is shaped again, whatever its first source was."""
+    shapes the line itself. A line Root's check refused is shaped again, whatever its first source was, unless the
+    kind requires engines: then it is the Library's line again, with the engines the kind requires (_library_repair)."""
     d, pl = ctx["dept"], ctx["post"]["payload"]
     lib = list(d.get("engines") or (W.KINDS.get(d.get("kind") or "website") or {}).get("line") or [])
-    shape = bool(pl.get("faults")) or not lib
+    repair = _library_repair(d, lib) if pl.get("faults") else None
+    if repair:
+        lib = repair
+    shape = (bool(pl.get("faults")) and not repair) or not lib
     engines = []
     if not shape:
         known = defs()["engines"]
@@ -4451,8 +4478,9 @@ def adapt_source(ctx, step, item):
             e = known.get(n) or {}
             engines.append({"name": n, "does": str(e.get("description") or e.get("use_case") or ""), "reads": e.get("reads") or "Brief",
                             "writes": e.get("writes") or n, "internet": False})
+    took = "takes the Library's line again, with what its kind requires (%s): " % _names(required_engines(d)) if repair else "takes the Library's line: "
     return {"shape": shape, "source": "shaped" if shape else "library", "engines": engines,
-            "said": "shapes the line from the goal" if shape else "takes the Library's line: " + " -> ".join(lib)}
+            "said": "shapes the line from the goal" if shape else took + " -> ".join(lib)}
 
 
 def _line_proposal(ref, thread):
@@ -4550,7 +4578,17 @@ def _j2_settle(ref, d, engines, source, words, by):
         return {"said": "Root's check sent the workflow back %d times; the owner is told" % n}
     added, lost = [], []
     if source == "library":
-        added = names
+        added = list(names)
+        # an engine the Library's line brought back that is not on the record (a required one, PRD M4.4) is Adaptation's
+        # to bring in, as a shaped one is; Root only records the plan (S-10)
+        mine = list((W.dept(ref) or {}).get("engines") or [])
+        for n in [n for n in names if mine and n not in mine]:
+            try:                                           # at its place in the plan: before the next one the record has
+                W.add_engine(ref, n, by=by, registered=True, before=next((x for x in names[names.index(n) + 1:] if x in mine), None))
+                mine = list((W.dept(ref) or {}).get("engines") or [])
+            except Exception as exc:  # noqa: BLE001 -- the owner hears which engine could not be brought in
+                added.remove(n)
+                lost.append("%s (%s)" % (n, exc))
     else:
         for e in engines:
             try:
