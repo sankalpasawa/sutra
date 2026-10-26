@@ -781,22 +781,45 @@ def walk(value, path=""):
         yield path, None, value
 
 
-@pytest.mark.parametrize("state", STATES)
-def test_m6_every_view_in_every_state_is_clean(mods, state):
+def clean_views(got):
+    """No private key, no machine path, no GRANT, COUNTER or REFUSE, no act id and no traceback in any key or string, and the
+    JSON round trip is the same value."""
     import j2_runtime as J
-    scene(mods, state)
-    ctx = make_ctx(mods, chat=[msg(1, "user", "Build us a site"), msg(2, "identity", "@Requester Got it, working on it"),
-                              msg(3, "adaptation", "Proposed the plan to Priority", next="priority")])
-    got = all_views(ctx)
     blob = json.dumps(got, ensure_ascii=False)
-    assert json.loads(blob) == got                                                           # a JSON round trip
-    assert got["map"]["schema"] == "map/1" and got["board"]["schema"] == "board/1" and set(got["artifacts"]) == {"deliverables", "records"}
+    assert json.loads(blob) == got
     keys = {str(k).lower() for _, k, _ in walk(got) if k is not None}
     assert not keys & set(J.PRIVATE_KEYS), keys & set(J.PRIVATE_KEYS)
     strings = [v for _, k, v in walk(got) if isinstance(v, str)]
     bad = [s for s in strings if ABS_PATH.search(s) or BARGAIN.search(s) or ACT_IDS.search(s)]
     assert not bad, bad[:3]
     assert not [s for s in strings if "Traceback" in s]
+
+
+@pytest.mark.parametrize("state", STATES)
+def test_m6_every_view_in_every_state_is_clean(mods, state):
+    scene(mods, state)
+    ctx = make_ctx(mods, chat=[msg(1, "user", "Build us a site"), msg(2, "identity", "@Requester Got it, working on it"),
+                              msg(3, "adaptation", "Proposed the plan to Priority", next="priority")])
+    got = all_views(ctx)
+    clean_views(got)
+    assert got["map"]["schema"] == "map/1" and got["board"]["schema"] == "board/1" and set(got["artifacts"]) == {"deliverables", "records"}
+
+
+@pytest.mark.parametrize("state", STATES)
+def test_m6_the_real_ctx_gives_the_same_views_once_core_is_merged(mods, state):
+    """j2ui-core's get_ctx in place of the stand-in: the same nodes and box statuses in every state, and the same clean
+    output (skipped until j2ui_common exists). website_dept.map_view raises while Identity's question is open, so in the
+    waiting state the real ctx has no engines and says so in its reasons; the views still answer."""
+    C = pytest.importorskip("j2ui_common", reason="j2ui-core is not merged yet")
+    scene(mods, state)
+    C.reset_caches()
+    real, stand = all_views(C.get_ctx(REF)), all_views(make_ctx(mods))
+    clean_views(real)
+    assert [n["id"] for n in real["map"]["nodes"]] == [n["id"] for n in stand["map"]["nodes"]]
+    work = lambda m: {n["id"]: n["status"] for n in m["nodes"] if n["kind"] == "work"}
+    assert work(real["map"]) == work(stand["map"]) and real["map"]["status"]["state"] == stand["map"]["status"]["state"]
+    files = lambda a: [r["file"] for r in a["deliverables"] + a["records"]]
+    assert files(real["artifacts"]) == files(stand["artifacts"])
 
 
 @pytest.mark.parametrize("state", STATES)
