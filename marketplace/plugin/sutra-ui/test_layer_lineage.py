@@ -755,3 +755,156 @@ def test_l4_the_real_identity_gate_answers_in_the_shape_tightens_reads():
     assert L.tightens(R.identity_gate, R.identity_gate, contexts) == []
     got = L.tightens(says("wait"), R.identity_gate, contexts)                              # a laxer one
     assert len(got) == 1 and "context 0" in got[0]
+
+
+# ---- L5 . the classification test and the hygiene test -----------------------------------------------------------------
+RECIPE_FILE = re.compile(r"^v[1-9][0-9]*\.json$")
+PATCH_FILE = re.compile(r"^v[1-9][0-9]*\.patch\.json$")
+RECIPE_KEYS = ("kind", "description", "skills", "start", "gates", "rules", "on", "steps", "reads", "template")
+HANDLER_FIELDS = ("name", "when", "steps")
+CLASSIFY = ("classify it in layers/lineage.py: fixed (the parent's value holds) or free (a child may change it)")
+
+
+def recipe_files(layers_dir=LAYERS):
+    return sorted(p for p in layers_dir.glob("*/v*.json") if RECIPE_FILE.match(p.name))
+
+
+def patch_files(layers_dir=LAYERS):
+    return sorted(p for p in layers_dir.glob("*/v*.json") if PATCH_FILE.match(p.name))
+
+
+def classification_problems(layers_dir):
+    """Every key of every recipe under layers_dir that the law has not classified, one sentence each."""
+    problems = []
+    for path in recipe_files(layers_dir):
+        where = "%s/%s" % (path.parent.name, path.name)
+        r = json.loads(path.read_text(encoding="utf-8"))
+        for key in r:
+            if key not in RECIPE_KEYS:
+                problems.append("%s: the recipe key %s is none of %s" % (where, key, ", ".join(RECIPE_KEYS)))
+        for h in r.get("on") or []:
+            for key in h:
+                if key not in HANDLER_FIELDS:
+                    problems.append("%s: the handler %s holds %s, and a handler holds %s only"
+                                    % (where, h.get("name") or h.get("when"), key, ", ".join(HANDLER_FIELDS)))
+        for s in L.all_steps(r):
+            for key in s:
+                if key not in L.STEP_FIELDS:
+                    problems.append("%s: the step %s holds %s, which is in neither list: %s" % (where, s.get("id"), key, CLASSIFY))
+    return problems
+
+
+def test_l5_the_two_lists_of_step_fields_do_not_overlap_and_cover_every_field():
+    assert not set(L.STEP_FIXED) & set(L.STEP_FREE)
+    assert "id" not in L.STEP_FIXED and "id" not in L.STEP_FREE
+    assert len(set(L.STEP_FIELDS)) == len(L.STEP_FIELDS) == 1 + len(L.STEP_FIXED) + len(L.STEP_FREE)
+    assert not set(L.POSITION) & set(L.STEP_FIELDS)
+
+
+def test_every_step_field_of_every_recipe_is_classified():
+    files = recipe_files()
+    assert len(files) >= len(FUNCTION_LAYERS), "the five function recipes are on disk; the scan found %s" % [p.name for p in files]
+    problems = classification_problems(LAYERS)
+    assert not problems, "\n".join(problems)
+
+
+def test_l5_every_patch_on_disk_holds_the_patch_grammar():
+    """A patch beside a version (layers/<layer>/v<N>.patch.json, A2-INHERIT's) is held to the same two lists, and to the keys a
+    patch may hold. None is on disk until a child version is written; the scan is then the whole check."""
+    problems = []
+    for path in patch_files():
+        where = "%s/%s" % (path.parent.name, path.name)
+        p = json.loads(path.read_text(encoding="utf-8"))
+        problems += ["%s: the patch key %s is none of %s" % (where, k, ", ".join(L.PATCH_KEYS)) for k in p if k not in L.PATCH_KEYS]
+        lists = [p.get(k) or [] for k in ("gates", "rules", "steps")] + [h.get("steps") or [] for h in p.get("on") or []]
+        for h in p.get("on") or []:
+            problems += ["%s: the handler entry %s holds %s, and a patch holds when and steps only" % (where, h.get("when"), k)
+                         for k in h if k not in ("when", "steps")]
+        for items in lists:
+            for s in items:
+                problems += ["%s: the step %s holds %s, which is in neither list: %s" % (where, s.get("id"), k, CLASSIFY)
+                             for k in s if k not in L.STEP_FIELDS and k not in L.POSITION]
+    assert not problems, "\n".join(problems)
+
+
+def test_the_classification_scan_finds_a_field_in_neither_list(tmp_path):
+    """The scan is not vacuous: a step with a new field, a handler with a new key and a recipe with a new key are each found,
+    and the message says how to classify the field."""
+    fake = tmp_path / "coordination"
+    fake.mkdir()
+    r = recipe("coordination")
+    r["steps"][0]["glow"] = True
+    r["on"][0]["colour"] = "red"
+    r["surprise"] = 1
+    (fake / "v1.json").write_text(json.dumps(r), encoding="utf-8")
+    got = classification_problems(tmp_path)
+    assert len(got) == 3, got
+    assert any("glow" in p and CLASSIFY in p for p in got)
+    assert any("colour" in p for p in got) and any("surprise" in p for p in got)
+    assert classification_problems(LAYERS) == []
+
+
+FORBIDDEN_AT_IMPORT = ("engine_runtime", "website_dept", "j2_runtime", "functions_view", "layer_schema")
+
+
+def imports_at_import_time(tree):
+    """The import statements that run when the module is imported: the module's own, and those under an if, a try, a with or a
+    class body; not those inside a function, which run only when it is called."""
+    found = []
+
+    def walk(node):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                continue
+            if isinstance(child, (ast.Import, ast.ImportFrom)):
+                found.append(child)
+            else:
+                walk(child)
+
+    walk(tree)
+    return found
+
+
+def forbidden_names(node):
+    if isinstance(node, ast.Import):
+        return [a.name for a in node.names if a.name.split(".")[0] in FORBIDDEN_AT_IMPORT]
+    named = [node.module] if node.module and node.module.split(".")[0] in FORBIDDEN_AT_IMPORT else []
+    return named + [a.name for a in node.names if a.name in FORBIDDEN_AT_IMPORT]
+
+
+def test_lineage_imports_nothing_from_the_runtime_at_import_time():
+    tree = ast.parse((LAYERS / "lineage.py").read_text(encoding="utf-8"))
+    top = imports_at_import_time(tree)
+    assert top, "the scan found no import in layers/lineage.py"
+    assert not [n for n in top if forbidden_names(n)], "layers/lineage.py imports the runtime when it is imported"
+    # what it does import is the standard library and the lazy proxies of the layers package
+    assert {a.name for n in top if isinstance(n, ast.ImportFrom) and n.module == "layers" for a in n.names} >= {"R", "S"}
+    assert {a.name for n in top if isinstance(n, ast.Import) for a in n.names} <= {"copy"}
+
+
+def test_the_import_scan_sees_what_it_is_meant_to_see():
+    tree = ast.parse("import json\nimport engine_runtime\nfrom website_dept import x\nfrom layers import j2_runtime\n"
+                     "try:\n    import functions_view\nexcept ImportError:\n    pass\nif True:\n    from layer_schema import SCHEMA\n"
+                     "def f():\n    import engine_runtime as inner\nclass C:\n    import j2_runtime\n"
+                     "    def g(self):\n        import website_dept\n")
+    named = [forbidden_names(n) for n in imports_at_import_time(tree)]
+    assert [x for x in named if x] == [["engine_runtime"], ["website_dept"], ["j2_runtime"], ["functions_view"], ["layer_schema"],
+                                      ["j2_runtime"]]
+    assert len(named) == 7                                                # json too; the two inside functions are not counted
+
+
+def test_lineage_imports_without_the_runtime_present():
+    """The same law, run: import the module in a fresh interpreter in which every runtime module refuses to import, and use the
+    functions that need none. (A new step checked reaches engine_runtime, and handler_key reaches layer_schema: both when called.)"""
+    code = (
+        "import sys; sys.path.insert(0, %r)\n"
+        "for m in %r: sys.modules[m] = None\n"
+        "from layers import lineage as L\n"
+        "assert L.rank('wait') == 1\n"
+        "assert L.merge_words({'a': {'b': {'c': 1}}}, {'a': {'b': {'d': 2}}}) == {'a': {'b': {'c': 1, 'd': 2}}}\n"
+        "assert L.merge_layout(None, {'a': {'b': 'x'}}) == {'a': {'b': 'x'}}\n"
+        "assert L.recipe_faults(None, {'steps': []}, 'identity') == []\n"
+        "assert L.merge_recipe({'description': 'd'}, {'set': {'description': 'e'}}, 'identity') == {'description': 'e'}\n"
+        "print('ok')\n" % (str(HERE), list(FORBIDDEN_AT_IMPORT)))
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=str(HERE), timeout=60)
+    assert done.returncode == 0 and done.stdout.strip() == "ok", done.stderr[-2000:]
