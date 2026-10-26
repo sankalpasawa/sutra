@@ -1252,3 +1252,24 @@ def test_m3_7_an_open_question_on_the_standard_is_on_the_pane(j2, monkeypatch):
     W.save_dept(ref, d)
     row = F.function(ref, "identity")["j2"]["standard"]["rows"][3]
     assert (row["state"], row["note"]) == ("not_met", "the record has no owner")
+
+
+def test_m3_7_a_conflict_closed_is_said_in_plain_words(j2, monkeypatch):
+    """S5's Conflicts closed showing a ruling's why, or the split it closed, as the model wrote it (grant, counter), while
+    every card and line the owner reads is plain, must fail."""
+    W, R, J, _, F = j2
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": BARGAIN_WHY},
+                            "identity.close": {"ruling": "run", "why": DROP_WHY}})
+    ref = _born(j2)
+    ruled = next(e for e in J.events(ref) if e["action"] == "identity.ruled")
+    assert R.plain_faults(ruled["summary"]) == ["grant or counter"]                     # the ledger keeps what was said
+    c = F.function(ref, "identity")["j2"]["conflicts"][0]
+    assert (c["ruling"], c["ruled"]) == ("run", "it runs")
+    assert c["why"] == R.PLAIN_TEMPLATE["why"] and c["split"] == R.PLAIN_TEMPLATE["why"]
+    assert not [v for v in c.values() if isinstance(v, str) and re.search(r"\b(?:grant|counter|refus|orders)", v.lower())]
+    # a why the owner's table can say plainly is said again, never replaced
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "Priority countered (no room)"},
+                            "identity.close": {"ruling": "run", "why": "Priority's counter leaves out the site"}})
+    ref = _born(j2, org="Plain Co")
+    c = F.function(ref, "identity")["j2"]["conflicts"][0]
+    assert "Priority's ask for less leaves out the site" in c["why"] and "Priority asked for less (no room)" in c["split"]
