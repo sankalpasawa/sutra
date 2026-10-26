@@ -174,12 +174,19 @@ def _number(x):
     return isinstance(x, (int, float)) and not isinstance(x, bool)
 
 
+def _said(x):
+    """Whether a field a made engine must give is there: a string with something in it."""
+    return isinstance(x, str) and bool(x.strip())
+
+
 def made_notes(engs, d):
     """What is wrong with a made line beyond what a shaped one may be (J2B-4, J2B-6), one note each, in the owner-neutral
-    words the other checks use: a level 1 or 2 that code agrees with (an engine named after a shipped template is level 1
-    and keeps its reads and writes; any other is level 2), a confidence from 0 to 1 and a doubt below 0.8, covers that
-    are known items, every item covered, every engine covering an item or feeding a later one, and every engine the kind
-    requires there, at level 1."""
+    words the other checks use: every field given (what it does, reads and writes, and whether it goes to the internet:
+    norm_engines fills a missing one for the offline draft, but a made engine that leaves one out is a guess, and a
+    missing reads would wire it to the Brief), a level 1 or 2 that code agrees with (an engine named after a shipped
+    template is level 1 and keeps its reads and writes; any other is level 2), a confidence from 0 to 1 and a doubt
+    below 0.8, covers that are known items, every item covered, every engine covering an item or feeding a later one,
+    and every engine the kind requires there, at level 1."""
     notes, rows = [], [e for e in engs if isinstance(e, dict)]
     items, lib, names = [i['id'] for i in items_of(d)], shipped(), []
     covered = set()
@@ -187,12 +194,19 @@ def made_notes(engs, d):
         n = ' '.join(str(e.get('name') or '').split())[:40]
         names.append(n)
         level, conf = e.get('level'), e.get('confidence')
+        given = {f: _said(e.get(f)) for f in ('does', 'reads', 'writes')}
+        for field, note in (('does', '%s says nothing of what it does'), ('reads', '%s names nothing it reads'),
+                            ('writes', '%s names nothing it writes')):
+            if not given[field]:
+                notes.append(note % n)
+        if not isinstance(e.get('internet'), bool):
+            notes.append('%s does not say whether it goes to the internet' % n)
         if isinstance(level, bool) or level not in (1, 2):
             notes.append('%s names no level, 1 or 2' % n)
         elif n in lib:
             if level != 1:
                 notes.append('%s is an engine of the Library, so it is level 1' % n)
-            elif (e.get('reads') or 'Brief', e.get('writes') or n) != (lib[n].get('reads'), lib[n].get('writes')):
+            elif given['reads'] and given['writes'] and (e['reads'], e['writes']) != (lib[n].get('reads'), lib[n].get('writes')):
                 notes.append('%s is level 1, so it keeps its Library reads (%s) and writes (%s)' % (n, lib[n].get('reads'), lib[n].get('writes')))
         elif level == 1:
             notes.append('%s is level 1, and the Library has no engine of that name' % n)

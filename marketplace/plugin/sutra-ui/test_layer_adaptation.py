@@ -577,6 +577,16 @@ def test_a8_a_made_line_that_covers_every_item_with_a_level_and_a_confidence_pas
     ("an engine that covers nothing and feeds nothing", lambda e: e.append(_made("Extra", "Brief", "Extra", [])),
      "Extra covers no item and feeds no engine after it"),
     ("a level 1 off the Library", lambda e: e[0].update(level=1), "Play rules is level 1, and the Library has no engine of that name"),
+    # J2B-4 refuses a missing field: the offline draft is filled in (norm_engines), a made engine's guess is not
+    ("a missing does", lambda e: e[1].pop("does"), "Game says nothing of what it does"),
+    ("an empty does", lambda e: e[1].update(does="  "), "Game says nothing of what it does"),
+    ("a missing reads", lambda e: e[1].pop("reads"), "Game names nothing it reads"),
+    ("a first engine that leaves its reads out, which would be wired to the Brief", lambda e: e[0].pop("reads"), "Play rules names nothing it reads"),
+    ("a reads that is no string", lambda e: e[1].update(reads=["Play rules"]), "Game names nothing it reads"),
+    ("a missing writes", lambda e: e[1].pop("writes"), "Game names nothing it writes"),
+    ("an empty writes", lambda e: e[0].update(writes=""), "Play rules names nothing it writes"),
+    ("a missing internet", lambda e: e[1].pop("internet"), "Game does not say whether it goes to the internet"),
+    ("an internet that is no bool", lambda e: e[1].update(internet="yes"), "Game does not say whether it goes to the internet"),
 ])
 def test_a8_what_j2b_4_and_j2b_6_refuse(j2, monkeypatch, what, change, note):
     engines = json.loads(json.dumps(PLAY))
@@ -596,6 +606,30 @@ def test_a8_a_shipped_name_is_level_1_on_its_template_and_nowhere_else(j2, monke
     assert "Plan is an engine of the Library, so it is level 1" in low["notes"]
     legacy = _verdict_of(j2, monkeypatch, "organic", {"engines": [write, pages, rest]}, how="offline draft")
     assert legacy["ok"] is False and "names_new: the Library already has an engine named Plan" in legacy["notes"], "a draft is not made: the old rule"
+
+
+def test_a8_a_made_engine_that_leaves_a_field_out_is_not_filled_in_but_a_draft_is(j2, monkeypatch):
+    """norm_engines keeps its tolerant defaults for the offline draft (reads the Brief, writes its name, goes nowhere)."""
+    plan = json.loads(json.dumps(PLAY))
+    for e in plan[1:]:
+        for key in ("does", "reads", "writes", "internet"):
+            e.pop(key)
+    got = _verdict_of(j2, monkeypatch, "organic", {"engines": plan})
+    assert got["ok"] is False and {"Game says nothing of what it does", "Game names nothing it reads", "Game names nothing it writes",
+                                   "Game does not say whether it goes to the internet"} <= set(got["notes"]), got
+    row = v1().norm_engines(plan)[1]
+    assert (row["does"], row["reads"], row["writes"], row["internet"]) == ("", "Brief", "Game", False), "the draft's defaults stay"
+
+
+def test_a8_a_level_1_engine_that_leaves_its_reads_out_is_told_once(j2, monkeypatch):
+    write = _made("Plan", "Brief", "Site plan", ["D1"], level=1, confidence=0.9)
+    pages = _made("Write", "Site plan", "Pages", ["D2"], level=1)
+    rest = _made("Notes", "Pages", "Notes", ["D3"])
+    gap = dict(write)
+    gap.pop("reads")
+    got = _verdict_of(j2, monkeypatch, "organic", {"engines": [gap, pages, rest]})
+    assert got["ok"] is False and "Plan names nothing it reads" in got["notes"]
+    assert not [n for n in got["notes"] if "keeps its Library reads" in n], "a field that is missing is told as missing, once"
 
 
 def test_a8_a_reshape_keeps_the_engines_the_kind_requires_at_level_1(j2, monkeypatch):
