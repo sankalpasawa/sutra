@@ -160,6 +160,27 @@ def test_c43_words_with_identitys_question_open_answer_it(mods, monkeypatch):
     assert [(c[0], c[1]) for c in spies.calls] == [("answer", (REF, "A site for a florist in Jaipur", q["id"])), ("answer", (REF, "Option 1", q["id"]))]
 
 
+def test_c43_identitys_question_is_answered_for_real_by_the_ledgers_own_writer(mods):
+    """No spies: the department lives its J2 cycle, Identity asks, the owner's words close the ask and say so in the chat."""
+    W, J, R = mods.W, mods.J, mods.R
+    d = W.dept(REF)
+    d["events"] = [{"kind": "j2_ready", "route": "template"}]
+    W.save_dept(REF, d)
+    J.begin(REF)
+    cur = J.asked(REF, "What evidence will prove this site is done?", ["done-when"], "Identity's standard is not met yet: done-when", standard=False)
+    R.post(REF, "Identity", R.OWNER, "inform", {"word": "question", "done": "What evidence will prove this site is done?", "card": cur["open_ask"]})
+    C.touch(REF)
+    s = S.build_state(C.get_ctx(REF))
+    assert s["paused"]["kind"] == "info" and s["status"] == "waiting" and s["paused"]["msg"] == 1 and s["chat"][0]["act"] == "ASK_REQUESTER"
+    assert SAY.say(REF, "Every page has the phone number on it") == {"ok": True}
+    ask_row = W.asks(REF)[0]
+    assert ask_row["status"] == "stamped" and ask_row["answered"] == "Every page has the phone number on it"
+    after = S.build_state(C.get_ctx(REF))
+    assert after["paused"] is None and [m["text"] for m in after["chat"] if m["who"] == "user"] == ["Every page has the phone number on it"]
+    assert after["chat"][0]["id"] == 1 and after["chat"][1]["who"] == "user", "the answer follows its question"
+    assert SAY.say_http(REF, "And the opening hours")[0] == 200, "nothing is open now: new words are a request, never a refusal"
+
+
 def test_c43_words_with_a_publish_ask_pending_go_to_roots_front_door(mods, monkeypatch):
     root = with_root(mods)
     stamp_ask(mods, "publish")
