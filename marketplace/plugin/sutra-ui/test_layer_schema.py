@@ -655,6 +655,19 @@ def test_s3_roots_converse_part_has_one_owner_field_and_the_examples_are_an_inpu
     assert questions and " | ".join(questions) in R.p_setup_converse(ctx, None, None), "the examples reach the words as the one input"
 
 
+def _added_checks(layer):
+    """The covering checks a layer's default version holds in its own CHECK dict (A1.10: 'added', beyond the ones its recipe's
+    steps name, which still serve from the legacy registry): the body is the layer's, not engine_runtime's."""
+    return set(importlib.import_module("layers.%s.v1" % layer).CHECK) if layer != "root" else set()
+
+
+def _body_of(check):
+    if check in R.CHECK:
+        return R.CHECK[check]
+    return next(importlib.import_module("layers.%s.v1" % layer).CHECK[check] for layer in S.FUNCTION_LAYERS
+                if check in importlib.import_module("layers.%s.v1" % layer).CHECK)
+
+
 def test_s3_checks_are_every_check_a_function_step_names():
     for name, e in _function_engines().items():
         layer = S.ENGINE_LAYER[name]
@@ -662,16 +675,17 @@ def test_s3_checks_are_every_check_a_function_step_names():
         if name == "Setup":
             named |= {s["check"] for s in _steps(R.engine_def("Setup"))}
         assert named <= set(S.CHECKS[layer]) | set(S.SHARED_CHECKS), "%s: %s" % (name, named - set(S.CHECKS[layer]) - set(S.SHARED_CHECKS))
-        assert set(S.CHECKS[layer]) <= named
-    assert all(c in R.CHECK for layer in S.CHECKS for c in S.CHECKS[layer]) and all(c in R.CHECK for c in S.SHARED_CHECKS)
+        assert set(S.CHECKS[layer]) <= named | _added_checks(layer), "%s: %s" % (name, set(S.CHECKS[layer]) - named)
+    assert all(c in R.CHECK or c in _added_checks(layer) for layer in S.CHECKS for c in S.CHECKS[layer])
+    assert all(c in R.CHECK for c in S.SHARED_CHECKS)
 
 
 def test_s3_contract_samples_hold_against_the_bodies_on_main():
     for check, samples in S.CONTRACT_SAMPLES.items():
         for out in samples["good"]:
-            assert R.CHECK[check](None, None, None, out)["ok"] is True, (check, out)
+            assert _body_of(check)(None, None, None, out)["ok"] is True, (check, out)
         for out in samples["bad"]:
-            assert R.CHECK[check](None, None, None, out)["ok"] is False, (check, out)
+            assert _body_of(check)(None, None, None, out)["ok"] is False, (check, out)
 
 
 def test_s3_outputs_are_the_step_outputs_read_outside_the_layer():
@@ -1007,6 +1021,9 @@ def test_s7_nothing_in_the_layer_package_imports_the_runtime_at_import_time():
     for layer in S.LAYER_NAMES:
         m = importlib.import_module("layers.%s.v1" % layer)
         assert (m.LAYER, m.VERSION, m.IMPLEMENTS) == (layer, 1, S.SCHEMA_VERSION)
-        assert all(isinstance(x, dict) for x in (m.CODE, m.PROMPT, m.DRAFT, m.CHECK, m.WORDS, m.LAYOUT)), "the dicts are all a layer module holds"
+        # wave 0 held empty stubs; from wave 1 a layer's package fills its dicts (a callable each, by reference or a body of
+        # its own) and its words, and the module holds nothing beyond them
+        assert all(isinstance(x, dict) for x in (m.CODE, m.PROMPT, m.DRAFT, m.CHECK, m.WORDS, m.LAYOUT))
+        assert all(callable(v) for x in (m.CODE, m.PROMPT, m.DRAFT, m.CHECK) for v in x.values())
         assert getattr(m, "RECIPE_TEMPLATE" if layer == "root" else "RECIPE") == ("Setup" if layer == "root" else "v1.json")
         assert (S.HERE / "layers" / layer / "__init__.py").read_text(encoding="utf-8") == ""

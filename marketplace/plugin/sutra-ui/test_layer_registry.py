@@ -142,7 +142,7 @@ def test_c1_a_stub_holding_a_name_is_what_resolve_returns_for_that_layers_engine
     assert layers.resolve("dref-x", "Identity", "code", "identity_read", R.CODE) is f
     assert layers.resolve("dref-x", "Priority", "code", "identity_read", R.CODE) is R.CODE["identity_read"], "another layer's engine"
     assert layers.resolve("dref-x", "Plan", "code", "identity_read", R.CODE) is R.CODE["identity_read"], "a work engine has no layer"
-    assert layers.resolve("dref-x", "Identity", "code", "identity_route", R.CODE) is R.CODE["identity_route"], "a name it does not hold"
+    assert layers.resolve("dref-x", "Identity", "code", "plan_read", R.CODE) is R.CODE["plan_read"], "a name it does not hold"
     other = lambda *a: 1
     assert layers.resolve("dref-x", "Identity", "check", "identity_read", {"identity_read": other}) is other, "another kind"
     # each kind is its own dict
@@ -155,14 +155,16 @@ def test_c1_resolve_serves_a_stub_the_test_puts_in_the_registry(monkeypatch, emp
     W, R = modules()
     f = lambda ctx, step, item: {}
     stub = types.SimpleNamespace(LAYER="identity", VERSION=1, IMPLEMENTS=1, CODE={"identity_read": f}, PROMPT={}, DRAFT={}, CHECK={})
+    # the names the other layers' own packages hold already: a layer fills its dicts in its own package
+    others = {n for layer, ids in layers.available().items() if layer != "identity" for i in ids for n in layers.load(i).CODE}
     monkeypatch.setitem(layers._LOADED, "identity/v1", stub)
     assert layers.resolve(None, "Identity", "code", "identity_read", R.CODE) is f
-    assert layers.names("code") == {"identity_read"} | set(layers.load("root/v1").CODE)
+    assert layers.names("code") == others | {"identity_read"}
 
 
 def test_c1_names_are_what_any_implementation_provides(monkeypatch):
-    held = {kind: layers.names(kind) for kind in layers.KINDS}          # whatever the layers hold of their own so far
-    assert held["code"] >= {"setup_read"} and all(isinstance(names, set) for names in held.values())
+    held = {kind: {n for ids in layers.available().values() for i in ids for n in getattr(layers.load(i), kind.upper())} for kind in layers.KINDS}
+    assert all(layers.names(kind) == held[kind] for kind in layers.KINDS), "what the layers' own packages hold, and nothing else"
     monkeypatch.setitem(layers.load("priority/v1").CHECK, "answer_has_its_price", lambda *a: {})
     monkeypatch.setitem(layers.load("audit/v1").CHECK, "has_a_verdict", lambda *a: {})
     assert layers.names("check") == held["check"] | {"answer_has_its_price", "has_a_verdict"} and layers.names("code") == held["code"]

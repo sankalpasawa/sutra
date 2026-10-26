@@ -1217,6 +1217,98 @@
           },
           "minItems": 0,
           "type": "array"
+        },
+        "prices": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "answer": {
+                "enum": [
+                  "accept",
+                  "counter",
+                  "reject"
+                ]
+              },
+              "at": {
+                "anyOf": [
+                  {
+                    "maxLength": 40,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "estimate": {
+                "additionalProperties": true,
+                "properties": {
+                  "calls": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "usd": {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "calls",
+                  "usd"
+                ],
+                "type": "object"
+              },
+              "proposal": {
+                "enum": [
+                  "line",
+                  "round",
+                  "engine",
+                  "cost"
+                ]
+              },
+              "room": {
+                "additionalProperties": true,
+                "properties": {
+                  "calls": {
+                    "type": "integer"
+                  },
+                  "usd": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "calls",
+                  "usd"
+                ],
+                "type": "object"
+              },
+              "said": {
+                "enum": [
+                  "said yes",
+                  "asked for less",
+                  "said no"
+                ]
+              },
+              "why": {
+                "maxLength": 600,
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "required": [
+              "at",
+              "proposal",
+              "answer",
+              "said",
+              "estimate",
+              "room",
+              "why"
+            ],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
         }
       },
       "required": [
