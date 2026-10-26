@@ -1,0 +1,215 @@
+{
+ "schema_version": 1,
+ "id": "J7",
+ "title": "Stop, Start, an update, an end",
+ "kind": "person",
+ "inside": null,
+ "bound_to": null,
+ "serves": [],
+ "declared": true,
+ "goal": "You stop and start a department, an update replaces the app and keeps your records, the definitions are read again, and a department can be ended.",
+ "lead": "",
+ "ends_when": "The department is stopped, started, updated or ended as asked, and the record is kept.",
+ "flag": null,
+ "site": {
+  "page": "native/system/department.html#j7",
+  "data_version": "2.4",
+  "as_of": "2026-10-01"
+ },
+ "helper": {
+  "site": "Sutra",
+  "screen": "Root",
+  "code": "Root"
+ },
+ "lanes": [
+  {
+   "id": "root",
+   "label": "Root",
+   "kind": "root"
+  },
+  {
+   "id": "coordination",
+   "label": "Coordination",
+   "kind": "function",
+   "function": "coordination"
+  }
+ ],
+ "steps": [
+  {
+   "n": "1",
+   "lane": "coordination",
+   "short": "Stop",
+   "text": "Stop: stopped on the record; a running step finishes its call; the chat says \"Stopped by you: every engine stops where it is.\" Stop and Start are also on Root settings on the organisation row, and post to Root's routes (v2.306.20).",
+   "site_function": "Coordination, Identity",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "/{ref}/stop, next_due stopped, tell_switch"
+  },
+  {
+   "n": "2",
+   "lane": "coordination",
+   "short": "Start",
+   "text": "Start: \"Started by you: every engine looks to its own triggers.\"",
+   "site_function": "Coordination, Identity",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "/{ref}/resume"
+  },
+  {
+   "n": "3",
+   "lane": "root",
+   "short": "An update",
+   "text": "An update replaces the bundle (code, definitions, shipped templates, screens) and keeps the records home (departments, boards, runs, versions, served sites, born templates).",
+   "site_function": "—",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "home, user_templates_dir"
+  },
+  {
+   "n": "4",
+   "lane": "root",
+   "short": "The definitions are read again",
+   "text": "The definitions are read again with the born templates merged in; a record's engines list is read as it is.",
+   "site_function": "—",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "engine_templates, defs"
+  },
+  {
+   "n": "5",
+   "lane": "root",
+   "short": "An end",
+   "text": "An end: Root's goal says it ends this organisation's departments. Designed as Root's end verb (Root and the organisation: you or the parent asks, Root ends it and keeps its record); the record's retire verb is built: it re-homes children, rules and filed work onto a successor, refuses while anything would be stranded, writes a recovery manifest, and unretire reverses it (the life cycle s12, state 8). No ask and no door on the screen.",
+   "site_function": "Root (designed), the record (built)",
+   "site_status": "none",
+   "act": "say",
+   "site_says": "none",
+   "site_code": "retire / unretire on the record; no step of Root's Setup"
+  }
+ ],
+ "edges": [
+  {
+   "id": "J7.1",
+   "at": "4",
+   "short": "An engine on a record the bundle does not define",
+   "trigger": "An engine on a record that the new bundle does not define.",
+   "site": {
+    "status": "none",
+    "text": "Missing: card, health line, no trigger; the rest runs."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  },
+  {
+   "id": "J7.2",
+   "at": "4",
+   "short": "A department born before engines on records",
+   "trigger": "A department born before records carried engines.",
+   "site": {
+    "status": "none",
+    "text": "Takes the kind's line (engines_of)."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  },
+  {
+   "id": "J7.3",
+   "at": "4",
+   "short": "A record whose runtime is not 2",
+   "trigger": "A record whose runtime is not 2.",
+   "site": {
+    "status": "none",
+    "text": "Keeps the first build's four engines and five artifacts."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  },
+  {
+   "id": "J7.4",
+   "at": "3",
+   "short": "Stable and Beta",
+   "trigger": "Stable and Beta apps.",
+   "site": {
+    "status": "none",
+    "text": "Separate homes and ports; a record is never shared."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  },
+  {
+   "id": "J7.5",
+   "at": "1",
+   "short": "Stop while an ask is pending",
+   "trigger": "Stop while an ask is pending.",
+   "site": {
+    "status": "none",
+    "text": "The ask stays; nothing runs until Start (next_due)."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  },
+  {
+   "id": "J7.6",
+   "at": "5",
+   "short": "Ending a department",
+   "trigger": "Ending a department.",
+   "site": {
+    "status": "directed",
+    "text": "Built in the record (retire / unretire), no door on the screen; DIRECTED this morning: Root ends a department when asked. The missing door is the parked org.retire build, under Root's end verb."
+   },
+   "code_does": "",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   }
+  }
+ ],
+ "sub": [],
+ "children": [],
+ "directions": [],
+ "build_rows": [],
+ "rulings": [],
+ "decisions": [],
+ "quotes": [],
+ "scenarios": [],
+ "invariants": [],
+ "backlog": [],
+ "site_ids": [
+  "step:1",
+  "step:2",
+  "step:3",
+  "step:4",
+  "step:5",
+  "edge:J7.1",
+  "edge:J7.2",
+  "edge:J7.3",
+  "edge:J7.4",
+  "edge:J7.5",
+  "edge:J7.6"
+ ]
+}
