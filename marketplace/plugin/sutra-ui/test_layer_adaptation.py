@@ -1010,10 +1010,13 @@ def _run_scenario(j2, monkeypatch, kind, words, org, items, plan, answers=None, 
         monkeypatch.setenv("J2_ADAPT_MAKE", "1")
     else:
         monkeypatch.delenv("J2_ADAPT_MAKE", raising=False)
-    seen = _stub(monkeypatch, R, dict({"setup.converse": {"verdict": "clear", "question": ""},
-                                       "setup.shape": {"name": org + " Department", "kind": kind, "goal": words, "done_items": items},
-                                       "adapt.line": plan, "priority.bargain": {"answer": "accept", "why": "the envelope has room"},
-                                       "audit.judge": {"ok": True, "findings": []}}, **(answers or {})))
+    stubs = {"setup.converse": {"verdict": "clear", "question": ""},
+             "setup.shape": {"name": org + " Department", "kind": kind, "goal": words, "done_items": items},
+             "adapt.line": plan, "priority.bargain": {"answer": "accept", "why": "the envelope has room"},
+             "audit.judge": {"ok": True, "findings": []}}
+    if plan is None:
+        del stubs["adapt.line"]                         # no agent answers the shape: the offline draft does
+    seen = _stub(monkeypatch, R, dict(stubs, **(answers or {})))
     root = founding.found_structure(org, owner="Sankalp")["root"]
     W.owner_ask(root, words)
     W.run_until_idle(root, limit=300)
@@ -1203,6 +1206,65 @@ def test_a9_offline_with_the_setting_on_keeps_the_draft_and_asks_nothing(j2, mon
     sent = _board_word(R, ref, "line", "Adaptation")[0]["payload"]
     assert "confidence" not in sent and "doubt" not in sent and sent["covers"] == {"D1": ["Site"]}
     assert not _board_word(R, ref, "doubt")
+
+
+def test_a9_with_the_setting_on_and_no_agent_to_shape_a_default_department_keeps_do(j2, monkeypatch):
+    """J2B-9: the offline draft keeps a default department's Do. It used to be the site draft (Facts -> Site, writing Live
+    site), and Identity asked a document department whether the site may go live."""
+    W, R, J, _, FV = j2
+    ref, seen = _run_scenario(j2, monkeypatch, "default", DOC_WORDS, "Safety Co", DOC, None)
+    assert not [sid for sid, _ in seen if sid == "adapt.line"], "no agent was asked: the draft answered"
+    d = W.dept(ref)
+    assert d["kind"] == "default" and d["workflows"][-1]["engines"] == ["Do"] and d["workflows"][-1]["source"] == "library"
+    assert "Facts" not in d["engines"] and "Site" not in d["engines"]
+    assert d["workflows"][-1]["covers"] == {"D1": ["Do"], "D2": ["Do"]} and d["workflows"][-1]["deliverable"] == "Result"
+    sent = _board_word(R, ref, "line", "Adaptation")[0]["payload"]
+    assert sent["source"] == "library" and "confidence" not in sent and "doubt" not in sent
+    assert S.validate_act("Adaptation", ["Priority"], "propose", sent) == []
+    assert not [a for a in W.asks(ref) if "go live" in str(a.get("text"))], "a document is not a site"
+    assert "workflow.blocked" not in [e["action"] for e in J.events(ref)]
+
+
+def test_a9_with_the_setting_on_and_no_agent_to_shape_a_website_reshape_gets_the_librarys_line_with_its_check(j2, monkeypatch):
+    """A website Root sends back once, the setting on and no agent to shape it: the Library repair it has with the setting off
+    (the line again, with the Check its kind requires). The Facts -> Site draft has no Check, so required_kept failed and the
+    department ended blocked."""
+    W, R, J, _, FV = j2
+    real, calls = R._root_check, {"n": 0}
+
+    def check(ref, d, engines, source):
+        calls["n"] += 1
+        return ["the plan does not cover D3"] if calls["n"] == 1 else real(ref, d, engines, source)
+    monkeypatch.setattr(R, "_root_check", check)
+    ref, _ = _run_scenario(j2, monkeypatch, "website", GAME_WORDS, "Game Co", GAME, None)
+    acts = [e["action"] for e in J.events(ref)]
+    assert acts.count("workflow.blocked") == 1 and "workflow.registered" in acts, acts
+    registered = W.dept(ref)["workflows"][-1]
+    assert registered["engines"] == LINE and registered["source"] == "library"
+    assert not [a for a in W.asks(ref) if a["kind"] == "blocked"] and J.status(ref)["state"] != "blocked"
+
+
+def test_a9_the_librarys_draft_is_judged_as_the_librarys_line_and_only_when_it_is_the_draft(j2, monkeypatch):
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    ref = _dept(j2, "default", ref="dref-do-draft")
+    ctx = {"ref": ref, "dept": j2[0].dept(ref), "post": {"payload": {"word": "line", "words": "x"}}}
+    draft = v1().DRAFT["adapt_line_draft"](ctx, None, None)
+    assert draft["source"] == "library" and [e["name"] for e in draft["engines"]] == ["Do"]
+    judged = dict(ctx, bag={"adapt.source": {"shape": True, "source": "shaped"}}, how={"adapt.line": "offline draft"})
+    assert v1().CHECK["line_is_engines"](judged, None, None, draft)["ok"] is True, v1().CHECK["line_is_engines"](judged, None, None, draft)
+    # an agent that says its line is the Library's is not believed: Do is an engine the Library already has
+    claimed = dict(judged, how={"adapt.line": "model"})
+    assert v1().CHECK["line_is_engines"](claimed, None, None, draft)["ok"] is False
+    # with the setting off, or for a kind with no Library line, the draft is the two engines it has always been
+    monkeypatch.delenv("J2_ADAPT_MAKE")
+    assert [e["name"] for e in v1().DRAFT["adapt_line_draft"](ctx, None, None)["engines"]] == ["Facts", "Site"]
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    organic = _dept(j2, "organic", ref="dref-organic-draft")
+    assert [e["name"] for e in v1().DRAFT["adapt_line_draft"]({"ref": organic, "dept": j2[0].dept(organic)}, None, None)["engines"]] == ["Facts", "Site"]
+    # a default department's line Root sent back needs no Check, so the draft is again the two engines
+    sent_back = dict(ctx, post={"payload": {"word": "line", "words": "x", "faults": ["the plan does not cover D2"]}})
+    assert [e["name"] for e in v1().DRAFT["adapt_line_draft"](sent_back, None, None)["engines"]] == ["Facts", "Site"]
+    assert "practices" not in sent_back["post"]["payload"], "asking what the setting's absence would take sets nothing on the request"
 
 
 def test_a9_a_made_website_reshape_keeps_the_librarys_own_check_and_publish_and_registers_them_with_the_plan(j2, monkeypatch):
