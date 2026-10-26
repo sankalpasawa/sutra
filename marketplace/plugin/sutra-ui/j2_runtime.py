@@ -554,7 +554,7 @@ def status(ref):
                             "state": "not_started" if _ready(dept) else "not_ready", "updated_at": None}
     count = state.get("event_count")
     return dict(state, department_ref=ref, enabled=enabled(), event_count=int(count) if count is not None else event_count(ref),
-                done_when=dept.get("done"), goal_reached=state.get("state") == "done",
+                done_when=dept.get("done"), goal_reached=state.get("state") == "done", round=state.get("round"),
                 open_question=open_question(ref), answered_question=answered_question(ref))
 
 

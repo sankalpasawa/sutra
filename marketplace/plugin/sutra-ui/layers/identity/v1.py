@@ -444,7 +444,6 @@ def doubt_answered(ctx, got):
         "'just do it'" if hurry else "answer", answer[:160]), "filed": row["v"]}
 
 
-
 # ---- The ways out of a conflict (PRD M5.4) ------------------------------------------------------------------------------
 # A conflict Identity cannot settle goes to the owner as one ask. When the one who raised it knew the ways out (Priority at a
 # limit: raise it, leave an item out, stop; Adaptation when no plan can be made: set it up again, leave an item out, stop), the
@@ -549,14 +548,35 @@ def apply_way(ctx, ask, pl):
 
 def identity_apply(ctx, step, item):
     """Apply what the owner stamped (the body engine_runtime holds), once the ways out another layer owns have been applied
-    by it (apply_way, M5.4)."""
+    by it (apply_way, M5.4); a stamp on the correction a round asked (identity_round) files the round (M9.3)."""
     ref, pl = ctx['ref'], ctx['post']['payload']
     ask = next((x for x in W.asks(ref) if x['id'] == pl.get('ask')), None)
     if ask and ask.get('kind') == 'blocked' and pl.get('option'):
         got = apply_way(ctx, ask, pl)
         if got is not None:
             return got
-    return R.identity_apply(ctx, step, item)
+    out = R.identity_apply(ctx, step, item)
+    if ask and ask.get('kind') == 'finding' and ask.get('round') and out.get('filed'):
+        round_filed(ref, ctx['dept'], ask['round'], out['filed'], ask.get('correction') or ask.get('claim'))
+    return out
+
+
+def identity_drop(ctx, step, item):
+    """Take the owner's no (the body engine_runtime holds). A no to the correction a round asked ends that round, and the
+    pursuit does not end with it in silence: the owner is given the ways out (M9.5)."""
+    ref, d, pl = ctx['ref'], ctx['dept'], ctx['post']['payload']
+    ask = next((x for x in W.asks(ref) if x['id'] == pl.get('ask')), None)
+    out = R.identity_drop(ctx, step, item)
+    if ask and ask.get('kind') == 'finding' and ask.get('round'):
+        n, rows = ask['round'], round_rows(ref, ask['round'])
+        base = rows[-1] if rows else None
+        if not base or base.get('status') not in ('refused', 'filed', 'read'):
+            round_row(ref, base or {'round': n, 'correction': ask.get('correction') or ask.get('claim') or '', 'covers': []}, 'refused')
+        covers = list((base or {}).get('covers') or [])
+        R._blocked(ref, d, _who(d), 'You said no to the correction for round %d: %s. Say what to change, leave %s out of done-when, or stop here.'
+                   % (n, str(ask.get('correction') or ask.get('claim') or '').rstrip('.'), (covers or ['an item'])[-1]), 'The correction was turned down.',
+                   'You, on the correction Identity put to you', '%s not met' % ', '.join(covers) if covers else 'an item not met')
+    return out
 
 
 # ---- Hear a reading (PRD M8.4) -------------------------------------------------------------------------------------------
@@ -724,6 +744,17 @@ def stalled(ref, row):
     return bool(mine) and mine[-1].get('id') == row.get('id') and len(filed) >= NO_PROGRESS and n >= NO_PROGRESS
 
 
+def mark_rounds_read(ref, row):
+    """A reading made after a round was filed is that round read (M9.3): its next status, a row appended to rounds.jsonl
+    (granted, filed, read), once, for each round of this cycle that was filed and not yet read."""
+    last = {}
+    for r in W.rows(ref, 'rounds.jsonl'):
+        last[r['round']] = r
+    for r in last.values():
+        if r.get('status') == 'filed' and r.get('cycle_id') in (None, row.get('cycle_id')) and str(r.get('at') or '') <= str(row.get('at') or ''):
+            round_row(ref, r, 'read')
+
+
 def _claims(row, ids):
     """What the reading says of these items, one line each: 'D2 Every page names its fees: the fees are not on the page'."""
     by = {}
@@ -799,16 +830,16 @@ def fact_answered(ctx, got):
     return {'said': "took the owner's answer on %s and filed it in the Brief: %s" % (', '.join(ids), words[:160]), 'filed': row['v']}
 
 
-def _ask_finding(ctx, row, claim, found, findings, rule=None):
+def _ask_finding(ctx, art, claim, found, findings, rule=None, **more):
     """A finding put to the owner for the stamp that puts it right (the shape identity_finding files): the stamp files 'Correct
-    this' in the Brief (identity_apply)."""
+    this' in the Brief (identity_apply). `more` is kept on the ask: the reading it came from, or the round it is."""
     ref = ctx['ref']
     text = 'Audit found: %s. Stamp to have it put right.' % found
     p = R.post(ref, 'Identity', R.OWNER, 'request', {'word': 'finding', 'objective': text, 'output': 'a stamp or a refusal',
-                                                      'may_read': [row['artifact']], 'boundaries': claim, 'claim': claim})
+                                                      'may_read': [art] if art else [], 'boundaries': claim, 'claim': claim})
     return W._put_ask(ref, dict({'id': 'a-' + uuid.uuid4().hex[:8], 'kind': 'finding', 'engine': 'Audit', 'slot': ctx['slot'], 'text': text,
-                                  'claim': claim, 'found': found, 'findings': findings, 'reading': row['id'], 'status': 'pending',
-                                  'created': W.now(), 'thread': p['thread'] if p else None}, **({'rule': rule} if rule else {})))
+                                  'claim': claim, 'found': found, 'findings': findings, 'status': 'pending', 'created': W.now(),
+                                  'thread': p['thread'] if p else None}, **dict(more, **({'rule': rule} if rule else {}))))
 
 
 def _asked_about(ref, claim):
@@ -828,6 +859,8 @@ def identity_weigh_reading(ctx, step, item):
     got = ctx['bag']['identity.done']
     row = reading_of(ref, pl.get('reading'))
     routes = {'question': None, 'asks': [], 'next': None, 'card': None}
+    if row and row.get('read'):
+        mark_rounds_read(ref, row)
     if got['done']:
         return {'said': 'the goal holds on this reading; nothing is left open', 'routes': routes}
     if not row or not row.get('read'):
@@ -864,11 +897,11 @@ def identity_weigh_reading(ctx, step, item):
         if not rule:
             continue
         if not _asked_about(ref, f['claim']):
-            routes['asks'].append(_ask_finding(ctx, row, f['claim'], f['claim'], [f], rule=rule.get('line'))['id'])
+            routes['asks'].append(_ask_finding(ctx, row['artifact'], f['claim'], f['claim'], [f], rule=rule.get('line'), reading=row['id'])['id'])
         covered.add(f.get('item'))
     left = [i for i in left if i not in covered]
     if routes['asks']:
-        said.append('put what needs the owner\'s yes to the owner as an ask')
+        said.append("put what needs the owner's yes to the owner as an ask")
     if left and next_is_heard():
         if not any(q['src'] == 'Identity' and q['dst'] == ['Adaptation'] and (q['payload'] or {}).get('word') == 'next'
                    and q['payload'].get('reading') == row['id'] for q in R.board(ref)):
@@ -886,7 +919,8 @@ def identity_weigh_reading(ctx, step, item):
         # nobody hears a next round yet: the item goes the way it went before rounds, to the owner, to be put right on a stamp
         if not [a for a in W.asks(ref) if a['kind'] == 'finding' and a['status'] == 'pending']:
             lines = _claims(row, left)
-            routes['asks'].append(_ask_finding(ctx, row, '; '.join(lines), '; '.join(lines), [f for f in findings if f.get('item') in set(left)])['id'])
+            routes['asks'].append(_ask_finding(ctx, row['artifact'], '; '.join(lines), '; '.join(lines), [f for f in findings if f.get('item') in set(left)],
+                                                reading=row['id'])['id'])
         said.append('put %s to the owner to be put right: nobody takes a next round yet' % ', '.join(left))
     return {'said': '; '.join(said) or 'weighed the reading; nothing is left to route', 'routes': routes}
 
@@ -910,10 +944,69 @@ def identity_finding(ctx, step, item):
     return {'said': 'left %d high finding%s to the reading\'s next round; %s' % (len(finds) - len(keep), '' if len(finds) - len(keep) == 1 else 's', got['said'])}
 
 
+# ---- File a granted round (PRD M9.3) -------------------------------------------------------------------------------------
+# Adaptation proposed a correction round, Priority priced it inside the goal's ceiling, and Adaptation tells Identity it was
+# granted (inform/round, act.round). Identity files the correction in the Brief as 'Correct this: ...' with no stamp, unless a rule
+# says ask (S-18), and records the round's next status as a row of rounds.jsonl: a status change is a row appended, never one
+# rewritten (W.append_row). The line, which only runs what Root registered (SM-3), runs again on the new Brief.
+
+
+def round_rows(ref, n):
+    """The rows rounds.jsonl holds of round n, oldest first."""
+    return [r for r in W.rows(ref, 'rounds.jsonl') if r.get('round') == n]
+
+
+def round_row(ref, base, status, **more):
+    """Round `base`'s next status, as a row of its own: what the round's last row held, with the new status and its time."""
+    row = {k: v for k, v in base.items() if k not in ('status', 'at')}
+    row.update(more)
+    row.update({'schema_version': 1, 'status': status, 'at': W.now()})
+    return W.append_row(ref, 'rounds.jsonl', row)
+
+
+def round_filed(ref, d, n, v, correction):
+    """The round's correction is in the Brief as version v: the round is filed (with brief_v), the cycle runs the line again at
+    step 6 with the round it stands on, and the owner is told what was sent back."""
+    rows = round_rows(ref, n)
+    cj = R._j2()
+    if not rows or rows[-1].get('status') not in ('filed', 'read'):
+        cycle = (cj._state(ref) or {}).get('cycle_id') if cj else None
+        round_row(ref, rows[-1] if rows else {'round': n, 'cycle_id': cycle, 'correction': correction[:600], 'covers': []}, 'filed', brief_v=v)
+    if cj:
+        cj._move(ref, 'running', step=6, round=n)
+    R._tell(ref, d, _who(d), 'inform', {'word': 'filed', 'link': 'Brief', 'v': v,
+                                        'done': 'Round %d: I sent the line back to put right: %s. It is filed in the Brief as v%d.'
+                                        % (n, str(correction).rstrip('.'), v)})
+
+
+def identity_round(ctx, step, item):
+    """File a round Priority priced and Adaptation tells Identity of: 'Correct this: <correction>' in the Brief, with no stamp
+    unless a rule says ask (S-18: then the correction is an ask the owner stamps, and the stamp files the round)."""
+    ref, d, pl = ctx['ref'], ctx['dept'], ctx['post']['payload']
+    cj = R._j2()
+    n, correction = pl.get('round'), ' '.join(str(pl.get('correction') or '').split())
+    if not n or not correction:
+        return {'said': 'heard a round with nothing to correct; nothing is filed'}
+    rows = round_rows(ref, n)
+    if rows and rows[-1].get('status') in ('filed', 'read', 'refused'):
+        return {'said': 'round %d is %s already; nothing is filed again' % (n, rows[-1]['status']), 'round': n}
+    if not cj or cj.done(ref):
+        return {'said': 'the goal is reached already; round %d is not filed' % n, 'round': n}
+    rule = rule_asking_first(ref, d, correction)
+    if rule:
+        if not [a for a in W.asks(ref) if a.get('kind') == 'finding' and a.get('round') == n and a['status'] == 'pending']:
+            _ask_finding(ctx, S.deliverable(d), correction, correction, [], rule=rule.get('line'), round=n, correction=correction)
+        return {'said': 'put round %d to the owner first, as the rule "%s" says to ask: %s' % (n, rule.get('line'), correction), 'round': n}
+    row = R._file_brief(ref, d, 'Correct this: ' + correction, 'round %d, granted' % n, rnd=n)
+    round_filed(ref, d, n, row['v'], correction)
+    return {'said': 'filed round %d in the Brief as v%d, with no stamp: %s' % (n, row['v'], correction), 'round': n, 'filed': row['v']}
+
+
 #: the bodies of this version's own, in the table beside the references
 CODE.update({'identity_read': identity_read, 'identity_file': identity_file, 'identity_doubt': identity_doubt,
              'identity_closed': identity_closed, 'identity_apply': identity_apply, 'identity_done': identity_done,
-             'identity_weigh_reading': identity_weigh_reading, 'identity_finding': identity_finding})
+             'identity_weigh_reading': identity_weigh_reading, 'identity_finding': identity_finding, 'identity_round': identity_round,
+             'identity_drop': identity_drop})
 CHECK.update({'done_is_read': c_done_is_read})
 
 

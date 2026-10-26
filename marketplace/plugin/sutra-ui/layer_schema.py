@@ -906,6 +906,7 @@ HEARS = {
         {'act': 'inform', 'word': 'conflict', 'from': ('Adaptation', 'Coordination'), 'via': 'board', 'payload': 'act.conflict', 'handler': 'Close a conflict'},
         {'act': 'inform', 'word': 'doubt', 'from': ('Adaptation',), 'via': 'board', 'payload': 'act.doubt', 'handler': 'Hear a doubt'},
         {'act': 'inform', 'word': 'reading', 'from': ('Audit',), 'via': 'board', 'payload': 'act.reading', 'handler': 'Hear a reading'},
+        {'act': 'inform', 'word': 'round', 'from': ('Adaptation',), 'via': 'board', 'payload': 'act.round', 'handler': 'File a granted round'},
     ],
     'adaptation': [
         {'act': 'accept-proposal', 'word': 'trial', 'from': ('Priority',), 'via': 'board', 'payload': 'act.any', 'handler': 'Start a trial'},

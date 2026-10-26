@@ -8619,6 +8619,16 @@
         "payload": "act.reading",
         "via": "board",
         "word": "reading"
+      },
+      {
+        "act": "inform",
+        "from": [
+          "Adaptation"
+        ],
+        "handler": "File a granted round",
+        "payload": "act.round",
+        "via": "board",
+        "word": "round"
       }
     ],
     "priority": [

@@ -2301,15 +2301,24 @@ def identity_read(ctx, step, item):
                       "cue": cue if rule else ("task" if first else cue), "names_work": bool(about)}}
 
 
-def _file_brief(ref, d, words, note):
+def _file_brief(ref, d, words, note, rnd=None):
+    """The owner's words, or a correction, as the Brief's next version. `rnd` is the correction round the words are (PRD M9.3):
+    the version says which round and cycle it answers, and a round already filed in the cycle is that version again, so a
+    handler that runs twice files the round once."""
     cur = W.latest(ref, "Brief")
+    J = _j2()
+    mark = {"ask": words, "at": W.now()}
+    if rnd is not None:
+        mark.update({"round": rnd, "cycle": (J._state(ref) or {}).get("cycle_id") if J else None})
+        again = next((v for v in W.versions(ref, "Brief") for m in v.get("made_from") or []
+                      if isinstance(m, dict) and (m.get("round"), m.get("cycle"), m.get("ask")) == (rnd, mark["cycle"], words)), None)
+        if again:
+            return again
     if not cur:
-        return W.add_version(ref, "Brief", {"brief.md": "# " + d["name"] + "\n\n" + words + "\n"},
-                             [{"ask": words, "at": W.now()}], "owner", {"ok": True, "notes": [note]})
+        return W.add_version(ref, "Brief", {"brief.md": "# " + d["name"] + "\n\n" + words + "\n"}, [mark], "owner", {"ok": True, "notes": [note]})
     base = W.read_files(ref, "Brief", cur["v"]).get("brief.md", "")
     body = base.rstrip() + ("\n\n## Asked since\n" if "## Asked since" not in base else "\n") + "- " + words + "\n"
-    return W.add_version(ref, "Brief", {"brief.md": body}, [{"art": "Brief", "v": cur["v"]}, {"ask": words, "at": W.now()}],
-                         "owner", {"ok": True, "notes": [note]})
+    return W.add_version(ref, "Brief", {"brief.md": body}, [{"art": "Brief", "v": cur["v"]}, mark], "owner", {"ok": True, "notes": [note]})
 
 
 def _file_words(ref, d, words, note):

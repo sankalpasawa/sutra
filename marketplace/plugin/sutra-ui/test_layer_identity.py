@@ -118,7 +118,7 @@ def test_i1_every_name_the_recipe_uses_is_provided_and_nothing_else_is():
 #: the bodies identity/v1 holds of its own: the handler Hear a doubt (I5) and the two steps that tell it the owner's answer, and
 #: the wave 2 additions (J1 to J6)
 OWN_CODE = {"identity_doubt", "identity_read", "identity_file", "identity_closed", "identity_apply", "identity_done",
-            "identity_weigh_reading", "identity_finding"}
+            "identity_weigh_reading", "identity_finding", "identity_round", "identity_drop"}
 OWN_CHECK = {"done_is_read"}
 OWN = OWN_CODE | OWN_CHECK
 
@@ -1326,3 +1326,160 @@ def test_j2_g_a_measured_failure_that_waits_on_facts_the_owner_was_asked_for_is_
     W.add_version(ref, "Live site", {"index.html": "<p>again</p>"}, [], "r-y", {"ok": True, "notes": []})
     _tell_reading(j2, ref, other)
     assert len(_next_requests(R, ref)) == 1, "with no facts asked for, it is the next round's"
+
+
+# ---- J4: File a granted round (M9.3) -----------------------------------------------------------------------------------------
+def _adaptation_may_tell_a_round(monkeypatch):
+    """Adaptation's SENDS row for inform/round is W2-ADAPT's (M9.1); the stub round of these tests brings it when it is not yet in."""
+    if not any(r["act"] == "inform" and "round" in r["words"] and "Identity" in r["to"] for r in S.SENDS["Adaptation"]):
+        monkeypatch.setitem(S.SENDS, "Adaptation", list(S.SENDS["Adaptation"]) +
+                            [{"act": "inform", "words": ("round",), "to": ("Identity",), "payload": "act.round"}])
+
+
+def _grant_round(R, W, J, monkeypatch, ref, n=2, correction="Name the fees on every page", covers=("D2",), **more):
+    """A stub Adaptation: it proposed round n, Priority priced it inside the ceiling, and it tells Identity the round is granted
+    (inform/round). Its rounds.jsonl rows are its own (W2-ADAPT); the stub writes the ones it would."""
+    _adaptation_may_tell_a_round(monkeypatch)
+    base = {"schema_version": 1, "round": n, "at": W.now(), "cycle_id": J.status(ref)["cycle_id"], "correction": correction, "fixes": ["F1"],
+            "covers": list(covers), "estimate": {"calls": 4, "usd": 0.08}, "reading": "r-0a0a0a0a"}
+    W.append_row(ref, "rounds.jsonl", dict(base, status="proposed"))
+    W.append_row(ref, "rounds.jsonl", dict(base, status="granted"))
+    return R.post(ref, "Adaptation", "Identity", "inform",
+                  dict({"word": "round", "round": n, "correction": correction, "fixes": ["F1"], "covers": list(covers),
+                        "estimate": {"calls": 4, "usd": 0.08}, "why": "it fits the room"}, **more))
+
+
+def _identity_hears(R, ref, post):
+    """Only Identity runs, on this post: what its handler files, and nothing the line does after."""
+    return R.run_engine(ref, "Identity", {"post": post, "v": post["n"]}, "Identity@board.n%d" % post["n"])
+
+
+def _versions(W, ref):
+    return {a: len(W.versions(ref, a)) for a in list(W.artifacts_of(W.dept(ref))) + ["Brief"]}
+
+
+def test_j4_identitys_recipe_files_a_granted_round_and_the_interface_says_so(home):
+    import engine_runtime as R
+    row = next(r for r in S.hears("identity") if (r["act"], r["word"]) == ("inform", "round"))
+    assert (row["from"], row["via"], row["payload"], row["handler"]) == (("Adaptation",), "board", "act.round", "File a granted round")
+    handler = next(h for h in layers.recipes()["Identity"]["on"] if h["name"] == "File a granted round")
+    assert handler["when"] == {"msg_type": "inform", "word": "round"}
+    assert [(s["id"], s["code"], s["born"], s["check"]) for s in handler["steps"]] == \
+        [("identity.hear_round", "hear", "C2", "facts_are_closed"), ("identity.round", "identity_round", "C2", "said_what_it_did")]
+    assert R.validate(R.defs()) == []
+
+
+def test_j4_a_stub_granted_round_files_brief_v3_and_nothing_else(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    R._file_words(ref, W.dept(ref), "Make the heading on the home page bigger", "the owner's ask")
+    assert len(W.versions(ref, "Brief")) == 2
+    before, asks = _versions(W, ref), [a["id"] for a in W.asks(ref)]
+    told = len([p for p in R.board(ref) if p["src"] == "Identity" and "Owner" in p["dst"]])
+    post = _grant_round(R, W, J, monkeypatch, ref)
+    row = _identity_hears(R, ref, post)
+    assert row["status"] == "ok", row
+    after = _versions(W, ref)
+    assert after["Brief"] == 3 and {a: n for a, n in after.items() if a != "Brief"} == {a: n for a, n in before.items() if a != "Brief"}, "Brief v3, and no other artifact"
+    brief = W.read_files(ref, "Brief", 3)["brief.md"]
+    assert brief.rstrip().endswith("- Correct this: Name the fees on every page")
+    assert [a["id"] for a in W.asks(ref)] == asks, "no stamp: nothing is asked of the owner"
+    assert [p["payload"]["done"] for p in R.board(ref)[-1:] if p["src"] == "Identity"] and \
+        len([p for p in R.board(ref) if p["src"] == "Identity" and "Owner" in p["dst"]]) == told + 1, "the owner is told once"
+    assert next(p for p in reversed(R.board(ref)) if p["src"] == "Identity")["payload"]["done"] == \
+        "Round 2: I sent the line back to put right: Name the fees on every page. It is filed in the Brief as v3."
+    made = W.versions(ref, "Brief")[-1]["made_from"]
+    assert made[-1]["round"] == 2 and made[-1]["ask"] == "Correct this: Name the fees on every page"
+
+
+def test_j4_a_status_change_is_a_row_appended_never_a_row_rewritten(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    post = _grant_round(R, W, J, monkeypatch, ref)
+    raw = (W.ddir(ref) / "rounds.jsonl").read_text(encoding="utf-8")
+    _identity_hears(R, ref, post)
+    now = (W.ddir(ref) / "rounds.jsonl").read_text(encoding="utf-8")
+    assert now.startswith(raw), "the rows that were there are the same bytes"
+    rows = W.rows(ref, "rounds.jsonl")
+    assert [r["status"] for r in rows] == ["proposed", "granted", "filed"] and rows[-1]["brief_v"] == len(W.versions(ref, "Brief"))
+    assert all(S.validate_record("adaptation", "round", r) == [] for r in rows)
+    assert (rows[-1]["round"], rows[-1]["correction"], rows[-1]["covers"], rows[-1]["reading"]) == (2, "Name the fees on every page", ["D2"], "r-0a0a0a0a")
+
+
+def test_j4_a_round_heard_twice_is_filed_once(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    post = _grant_round(R, W, J, monkeypatch, ref)
+    _identity_hears(R, ref, post)
+    again = R.post(ref, "Adaptation", "Identity", "inform", dict(post["payload"]))
+    _identity_hears(R, ref, again)
+    assert len(W.versions(ref, "Brief")) == 2 and [r["status"] for r in W.rows(ref, "rounds.jsonl")].count("filed") == 1
+    assert W.read_files(ref, "Brief", W.latest(ref, "Brief")["v"])["brief.md"].count("Correct this: Name the fees on every page") == 1
+
+
+def test_j4_the_next_reading_marks_the_filed_round_read_once(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    _identity_hears(R, ref, _grant_round(R, W, J, monkeypatch, ref))
+    assert [r["status"] for r in W.rows(ref, "rounds.jsonl")] == ["proposed", "granted", "filed"]
+    row = _file_reading(j2, ref, {"D1": "met", "D2": "met"})
+    _tell_reading(j2, ref, row)
+    rows = W.rows(ref, "rounds.jsonl")
+    assert [r["status"] for r in rows] == ["proposed", "granted", "filed", "read"] and rows[-1]["brief_v"] == rows[-2]["brief_v"]
+    assert all(S.validate_record("adaptation", "round", r) == [] for r in rows)
+    _tell_reading(j2, ref, row)
+    assert [r["status"] for r in W.rows(ref, "rounds.jsonl")].count("read") == 1, "read once"
+
+
+def test_j4_the_cycle_runs_the_registered_line_again_on_the_round(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    registered = set(W.dept(ref)["workflows"][-1]["engines"])
+    runs = len(W.runs(ref))
+    post = _grant_round(R, W, J, monkeypatch, ref)
+    _identity_hears(R, ref, post)
+    st = J.status(ref)
+    assert (st["state"], st["step"], st["round"]) == ("running", 6, 2)
+    W.run_until_idle(ref, limit=300)
+    ran = [r["engine"] for r in W.runs(ref)[runs:] if not r.get("system")]
+    assert ran and set(ran) <= registered, "only registered engines run (SM-3): %s" % ran
+
+
+def test_j4_after_the_goal_is_reached_no_round_is_filed(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    _hear(j2, ref, {"D1": "met", "D2": "met"})
+    assert J.status(ref)["state"] == "done"
+    briefs = len(W.versions(ref, "Brief"))
+    row = _identity_hears(R, ref, _grant_round(R, W, J, monkeypatch, ref))
+    assert row["status"] == "ok" and len(W.versions(ref, "Brief")) == briefs and J.status(ref)["state"] == "done"
+
+
+def test_j4_a_rule_that_says_ask_makes_the_correction_an_ask_and_the_stamp_files_the_round(j2, monkeypatch):
+    """S-18: no stamp unless a rule says ask. The department's born rule asks before anything reaches outside."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    post = _grant_round(R, W, J, monkeypatch, ref, correction="Email every subscriber the new fees")
+    briefs = len(W.versions(ref, "Brief"))
+    _identity_hears(R, ref, post)
+    (ask,) = _asks_of(W, ref, "finding")
+    assert ask["round"] == 2 and ask["rule"] and len(W.versions(ref, "Brief")) == briefs and W.rows(ref, "rounds.jsonl")[-1]["status"] == "granted"
+    W.decide_ask(ref, ask["id"], True)
+    W.run_until_idle(ref, limit=1)
+    assert len(W.versions(ref, "Brief")) == briefs + 1
+    assert "Correct this: Email every subscriber the new fees" in W.read_files(ref, "Brief", W.latest(ref, "Brief")["v"])["brief.md"]
+    filed = W.rows(ref, "rounds.jsonl")[-1]
+    assert (filed["status"], filed["round"], filed["brief_v"]) == ("filed", 2, briefs + 1) and J.status(ref)["round"] == 2
+
+
+def test_j4_a_rule_that_says_ask_and_a_no_ends_the_round_and_leaves_the_ways_out(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    _identity_hears(R, ref, _grant_round(R, W, J, monkeypatch, ref, correction="Email every subscriber the new fees"))
+    (ask,) = _asks_of(W, ref, "finding")
+    briefs = len(W.versions(ref, "Brief"))
+    W.decide_ask(ref, ask["id"], False)
+    W.run_until_idle(ref, limit=1)
+    assert len(W.versions(ref, "Brief")) == briefs and W.rows(ref, "rounds.jsonl")[-1]["status"] == "refused"
+    (card,) = _asks_of(W, ref, "blocked")
+    assert [o["id"] for o in card["options"]] == ["words", "leave:D2", "stop"] and J.status(ref)["state"] == "blocked"
