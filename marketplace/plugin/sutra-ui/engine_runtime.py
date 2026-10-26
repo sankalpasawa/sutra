@@ -2114,6 +2114,8 @@ def identity_gate(ctx, step, item):
     if a["status"] == "pending":
         return "wait", "waits for the stamp"
     if a["status"] == "refused":
+        if ctx.get("peek"):
+            return "refuse", "refused by the owner"       # a panel read asking: the tick closes Setup's request and files the skipped row, once
         if name == "Setup":
             _j1_close(ref, "refused")
         if not any(r.get("slot") == slot and r.get("status") == "skipped" for r in W.runs(ref)):

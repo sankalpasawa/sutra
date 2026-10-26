@@ -389,6 +389,45 @@ def test_t31_a_read_writes_nothing_at_any_slot_of_a_run_nor_after_the_stamp(clie
     assert seen["slots"] >= 10 and seen["reads"] >= seen["slots"] - 2, seen
 
 
+def read_to_rest(client, m, ref, what, limit=60):
+    """The department run one slot at a time until nothing is due, and read, from a fresh read, in the window before the first slot and
+    after every slot: the records home is hashed before each round of reads and must be what it was after it. Returns the slots run."""
+    def read():
+        m.C.touch(ref)
+        before = files_of(m.home)
+        assert read_everything(client, ref) > 5
+        assert changed(before, m.home) == [], "a read %s wrote" % what
+    read()
+    slots = 0
+    while m.W.run_until_idle(ref, limit=1):
+        slots += 1
+        assert slots < limit, "the line never rests"
+        read()
+    read()                                                    # and once more at rest, after the last tick has filed whatever it files
+    return slots
+
+
+@pytest.mark.parametrize("how", ["decide_ask", "api_say"])
+def test_t31_a_read_writes_nothing_at_any_slot_after_the_owner_said_no_to_the_publish_question(client, plant, how):
+    """Hard rule 4(g) on the refused branch of the publish gate (found by a verifier 2026-10-27: the page's next poll after the owner's
+    no filed the skipped run). The line is taken to the question, the owner says no (the writer, or POST api/say 'Option 2', which
+    is what the page sends), and the department is run a slot at a time with the whole page read between the slots."""
+    ref, m = plant("question")
+    pending = [a for a in m.W.asks(ref) if a["kind"] == "publish" and a["status"] == "pending"]
+    assert len(pending) == 1, "the line ran to its question"
+    if how == "decide_ask":
+        m.W.decide_ask(ref, pending[0]["id"], False)
+    else:
+        r = client.post(url(ref, "api/say"), json={"text": "Option 2"})
+        assert (r.status_code, r.json()) == (200, {"ok": True})
+    assert [a["status"] for a in m.W.asks(ref) if a["kind"] == "publish"] == ["refused"]
+    skipped = lambda: [r for r in m.W.runs(ref) if r.get("status") == "skipped" and r.get("what") == "refused by the owner"]  # noqa: E731
+    assert skipped() == [], "the window: the owner said no and no tick has run"
+    slots = read_to_rest(client, m, ref, "after the owner said no (%s)" % how)
+    assert slots >= 1 and len(skipped()) == 1, "the tick filed the skipped run, once (%d slots)" % slots
+    assert m.W.versions(ref, "Live site") == [], "refused by the owner: never published"
+
+
 def test_t32_every_act_between_functions_is_worded_for_the_owner_and_no_id_is_printed(client, plant):
     ref, m = plant("running")
     for i, act in enumerate(m.R.ACTS):

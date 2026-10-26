@@ -497,6 +497,54 @@ def test_j1_6_a_refused_preview_closes_the_request(j1):
     assert len(fresh) == 1 and fresh[0]["text"].count(words) == 1
 
 
+def _home_hashes(home):
+    """Every file under a records home and the hash of its bytes: what a read must leave as it found it."""
+    import hashlib
+    import os
+    out = {}
+    for root, _dirs, files in os.walk(home):
+        for f in files:
+            p = os.path.join(root, f)
+            with open(p, "rb") as fh:
+                out[os.path.relpath(p, home)] = hashlib.sha256(fh.read()).hexdigest()
+    return out
+
+
+def test_j1_6a_a_panel_read_after_the_owner_said_no_to_a_new_department_closes_and_files_nothing(j1):
+    """The refused branch of Setup's gate (hard rule 4(g), found by a verifier 2026-10-27). The owner said no to the setup stamp;
+    the next tick closes the request ('refused') and files the one skipped row. A panel read, which peeks, in the window before
+    that tick and after every slot, does neither."""
+    W, R, _ = j1
+    _, root = _root(j1)
+    d = W.dept(root)
+    d["rules"].append({"id": "rule-birth", "version": 3, "tag": "ask", "line": "Ask me before you make anything"})
+    W.save_dept(root, d)
+    W.owner_ask(root, "Build a website that teaches algebra to Class 8 students")
+    W.run_until_idle(root, limit=200)
+    ask = [a for a in W.asks(root) if a["kind"] == "setup" and a["status"] == "pending"][0]
+    W.decide_ask(root, ask["id"], False)
+    skipped = lambda: [r for r in W.runs(root) if r.get("status") == "skipped" and r.get("what") == "refused by the owner"]  # noqa: E731
+    state = lambda: W._read(W.ddir(root) / "j1-state.json", {}).get("status")  # noqa: E731
+    assert skipped() == [] and state() != "refused", "the window: the owner said no and no tick has run yet"
+
+    def reads_write():
+        before = _home_hashes(W.ddir(root))
+        R.next_due(root, peek=True)
+        W.status(root)
+        W.map_view(root)
+        after = _home_hashes(W.ddir(root))
+        return sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+    slots = 0
+    assert reads_write() == [], "a read in the window wrote"
+    while W.run_until_idle(root, limit=1):
+        slots += 1
+        assert reads_write() == [], "a read after slot %d wrote" % slots
+        assert slots < 40
+    assert len(skipped()) == 1 and state() == "refused", "the tick closed the request and filed the row, once"
+    assert _children(W, root) == []
+    assert reads_write() == []
+
+
 def test_j1_7_the_birth_is_told_once_when_setup_the_sweep_and_the_next_due_read_race(j1):
     """Looking at the board and posting outside one lock must fail (2 of 13 foundings told the birth twice)."""
     import threading

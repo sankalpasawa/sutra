@@ -710,6 +710,43 @@ class TestTheGates(Base):
         W.run_until_idle(REF, limit=1)
         self.assertEqual([(a["status"], a["escalated"]) for a in W.asks(REF) if a["kind"] == "envelope"], [("pending", True)], "the tick asks, once")
 
+    def read_the_department(self):
+        """What the panel reads on every poll, in the order it does: what is due next (a peek), the status, the map."""
+        R, W = self.R, self.W
+        R.next_due(REF, peek=True)
+        W.status(REF)
+        W.map_view(REF)
+
+    def written_by_the_reads(self):
+        """The files of the records home one round of reads changes (an empty list: a read writes nothing)."""
+        before = self.records()
+        self.read_the_department()
+        after = self.records()
+        return sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+
+    def test_28c_a_panel_read_after_the_owner_said_no_to_the_publish_files_no_skipped_row(self):
+        """The refused branch of the same gate. The owner said no; the motor's next tick files the one skipped row ('refused
+        by the owner'); a panel read in the window before that tick, and every read after each slot, is a peek and files
+        nothing (found by a verifier 2026-10-27: the page's next 700 ms poll after 'Option 2' filed the skipped row)."""
+        W = self.W
+        W.give_goal(REF, GOAL)
+        self.idle()
+        self.assertEqual([a["status"] for a in W.asks(REF) if a["kind"] == "publish"], ["pending"], "the line ran to the publish question")
+        self.stamp("publish", approve=False)
+        skipped = lambda: [r for r in W.runs(REF) if r.get("status") == "skipped" and r.get("what") == "refused by the owner"]  # noqa: E731
+        self.assertEqual(skipped(), [], "the window: the owner said no and no tick has run yet")
+        for _ in range(3):
+            self.assertEqual(self.written_by_the_reads(), [], "a read in the window wrote")
+        self.assertEqual(skipped(), [], "and filed no skipped row")
+        slots = 0
+        while W.run_until_idle(REF, limit=1):
+            slots += 1
+            self.assertEqual(self.written_by_the_reads(), [], "a read after slot %d wrote" % slots)
+            self.assertLess(slots, 40, "the line goes on forever")
+        self.assertEqual(len(skipped()), 1, "the tick filed it, once")
+        self.assertEqual(W.versions(REF, "Live site"), [], "refused by the owner: never published")
+        self.assertEqual(self.written_by_the_reads(), [], "and the reads after the line rests write nothing")
+
 
 class TestAuditAndAlarm(Base):
     def test_29_audit_finds_what_nobody_gave_and_the_owner_sends_it_back_to_the_line(self):
