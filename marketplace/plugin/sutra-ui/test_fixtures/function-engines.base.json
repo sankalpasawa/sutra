@@ -527,6 +527,14 @@
       "born": "C2",
       "code": "identity_done",
       "check": "done_is_read"
+     },
+     {
+      "id": "identity.weigh_reading",
+      "name": "Weigh what the reading leaves open",
+      "nature": "decide",
+      "born": "C2",
+      "code": "identity_weigh_reading",
+      "check": "said_what_it_did"
      }
     ]
    }

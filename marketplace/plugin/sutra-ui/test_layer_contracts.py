@@ -76,7 +76,7 @@ def test_a_ref_to_pointing_at_a_delegate_fails_case_7(tmp_path, monkeypatch):
     assert C.case_7(fake) == ["identity/v1: code identity_read points at engine_runtime._a_delegate_for_the_test, which is itself a delegate"]
     fine = _fake(tmp_path, "identity", layers.recipes()["Identity"],
                  CODE={"identity_read": layers.ref_to("identity_read"), "identity_doubt": layers.ref_to("identity_read"),
-                       "identity_done": layers.ref_to("identity_read")},
+                       "identity_done": layers.ref_to("identity_read"), "identity_weigh_reading": layers.ref_to("identity_read")},
                  CHECK={"done_is_read": layers.ref_to("c_said_what_it_did")})
     assert C.case_7(fine) == [] and C.case_3(fine) == []
     gone = _fake(tmp_path, "identity", layers.recipes()["Identity"], CODE={"identity_read": layers.ref_to("no_such_body")})

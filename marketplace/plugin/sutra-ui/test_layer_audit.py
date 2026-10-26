@@ -507,7 +507,9 @@ def test_u5_a_measure_that_found_the_record_whole_does_not_overrule_a_reader_in_
     assert R.audit_verdicts(row["items"]) == {"D1": "to_confirm"}
     assert [(f["severity"], f["item"]) for f in row["findings"]] == [("medium", "D1")]
     assert not [a for a in W.asks(ref) if a["kind"] == "finding"], "a doubt is noted, never a stamp to ask"
-    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["state"] == "pursuing"
+    (q,) = [a for a in W.asks(ref) if a["kind"] == "j2_identity" and a["status"] == "pending"]
+    assert (q["missing"], q["points"]) == ("fact", ["D1"]), "Identity weighs the doubt (M8.5): one question to the owner, who has the fact"
+    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["state"] == "waiting"
     assert [(i["verdict"], i["method"]) for i in _view(j2, ref)["latest"]["items"]] == [("to_confirm", "model")]
 
 

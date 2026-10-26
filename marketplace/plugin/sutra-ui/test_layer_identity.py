@@ -117,7 +117,8 @@ def test_i1_every_name_the_recipe_uses_is_provided_and_nothing_else_is():
 
 #: the bodies identity/v1 holds of its own: the handler Hear a doubt (I5) and the two steps that tell it the owner's answer, and
 #: the wave 2 additions (J1 to J6)
-OWN_CODE = {"identity_doubt", "identity_read", "identity_file", "identity_closed", "identity_apply", "identity_done"}
+OWN_CODE = {"identity_doubt", "identity_read", "identity_file", "identity_closed", "identity_apply", "identity_done",
+            "identity_weigh_reading", "identity_finding"}
 OWN_CHECK = {"done_is_read"}
 OWN = OWN_CODE | OWN_CHECK
 
@@ -952,14 +953,15 @@ def _a_running_department(j2, org="Acme Learning", words=WEBSITE, items=2):
     return ref
 
 
-def _file_reading(j2, ref, verdicts, findings=(), read=True, v=None, cycle="current", artifact=None):
+def _file_reading(j2, ref, verdicts, findings=(), read=True, v=None, cycle="current", artifact=None, method="model"):
     """What Audit files of one version, as the audit step files it (readings.jsonl, checked as the interface types it)."""
     import hashlib
     W, R, J, _, _ = j2
     art = artifact or S.deliverable(W.dept(ref))
     v = v or W.latest(ref, art)["v"]
     n = len(W.rows(ref, "readings.jsonl"))
-    items = [{"id": i, "subject": "Item %s" % i, "claim": "what is so of %s" % i, "evidence": "what shows it for %s" % i, "method": "model",
+    text = {i["id"]: i["text"] for i in W.items_of(W.dept(ref))}
+    items = [{"id": i, "subject": text.get(i, "an item"), "claim": "what is so of it", "evidence": "what shows it", "method": method,
               "verdict": verdict, "severity": SEVERITY[verdict]} for i, verdict in verdicts.items()] if read else []
     row = {"schema_version": 1, "id": "r-" + hashlib.sha1(("%s%s%s" % (ref, v, n)).encode()).hexdigest()[:8], "v": v, "artifact": art,
            "cycle_id": J.status(ref)["cycle_id"] if cycle == "current" else cycle, "round": None, "read": read,
@@ -1005,7 +1007,8 @@ def test_j2_identitys_recipe_hears_a_reading_and_the_interface_says_so(home):
     handler = next(h for h in layers.recipes()["Identity"]["on"] if h["name"] == "Hear a reading")
     assert handler["when"] == {"msg_type": "inform", "word": "reading"}
     assert [(s["id"], s["code"], s["born"], s["check"]) for s in handler["steps"]] == \
-        [("identity.hear_reading", "hear", "C2", "facts_are_closed"), ("identity.done", "identity_done", "C2", "done_is_read")]
+        [("identity.hear_reading", "hear", "C2", "facts_are_closed"), ("identity.done", "identity_done", "C2", "done_is_read"),
+         ("identity.weigh_reading", "identity_weigh_reading", "C2", "said_what_it_did")]
     assert "done_is_read" in S.CHECKS["identity"] and "done_is_read" in S.CONTRACT_SAMPLES and "done_is_read" in V1.CHECK
     assert R.validate(R.defs()) == []
     assert R._handler(R.engine_def("Identity"), {"msg_type": "inform", "payload": {"word": "reading"}}) is not None
@@ -1132,3 +1135,194 @@ def test_j2_the_goal_is_reached_by_the_real_flow_from_a_reading_and_sm_1_is_zero
     # and SM-1 sees a goal reached on no reading
     J.note(offline, 8, "Identity", "User", "goal.reached", "done", "Done-when holds.", "goal-reached-vX", {}, evidence_refs=[{"artifact": "Live site", "version": 1}])
     assert len(sm1_faults(W, J, offline)) == 1
+
+
+# ---- J3: a reading is weighed three ways (M8.5) ------------------------------------------------------------------------
+def _adaptation_hears_next(monkeypatch, R):
+    """Adaptation's recipe has a handler for request/next once W2-ADAPT is merged (M9.1); until then a stub with no steps stands
+    in, so that what Identity posts has a receiver (A1-14). Returns True when the recipe is the stub."""
+    e = R.engine_def("Adaptation")
+    if R._handler(e, {"msg_type": "request", "payload": {"word": "next"}}) is not None:
+        return False
+    monkeypatch.setitem(e, "on", list(e["on"]) + [{"name": "Propose the next round", "when": {"msg_type": "request", "word": "next"}, "steps": []}])
+    return True
+
+
+def _next_requests(R, ref):
+    return [q for q in R.board(ref) if q["src"] == "Identity" and q["dst"] == ["Adaptation"] and q["msg_type"] == "request"
+            and (q["payload"] or {}).get("word") == "next"]
+
+
+def _asks_of(W, ref, kind, status="pending"):
+    return [a for a in W.asks(ref) if a["kind"] == kind and a["status"] == status]
+
+
+def _four_items(W, ref):
+    """D1 to D4, the last read by an AI, each worth a verdict of its own."""
+    d = W.dept(ref)
+    W.put_done_items(ref, W.items_of(d)[:1] + [{"text": text, "how": "model", "level": "outcome"} for text in (
+        "Prices are on the page", "Every page names its fees", "Subscribers get the offer by email")])
+    return W.items_of(W.dept(ref))
+
+
+def test_j2_g_a_reading_is_weighed_three_ways(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, items=1)
+    assert len(_four_items(W, ref)) == 4
+    _adaptation_hears_next(monkeypatch, R)
+    row = _file_reading(j2, ref, {"D1": "met", "D2": "to_confirm", "D3": "not_met", "D4": "not_met"},
+                        findings=[{"id": "F1", "severity": "high", "claim": "The fees are not on any page", "item": "D3"},
+                                  {"id": "F2", "severity": "medium", "claim": "The offer is not sent to subscribers by email", "item": "D4"}])
+    _tell_reading(j2, ref, row)
+    # a fact only the owner knows: one question, missing 'fact', about the item it could not confirm
+    (q,) = _asks_of(W, ref, "j2_identity")
+    assert (q["missing"], q["points"], q["standard"], q["reading"]) == ("fact", ["D2"], False, row["id"])
+    assert "D2" in q["text"] and "Prices are on the page" in q["text"] and S.validate_record("identity", "ask", q) == []
+    assert J.status(ref)["open_question"]["id"] == q["id"] and J.waiting_on_owner(ref)
+    # a finding the owner must say yes to (a rule says ask: it reaches outside the department): an ask, and its item goes no further
+    (f,) = _asks_of(W, ref, "finding")
+    assert f["claim"] == "The offer is not sent to subscribers by email" and f["reading"] == row["id"] and f["thread"] and "Stamp to have it put right" in f["text"]
+    assert f["rule"] and S.validate_record("identity", "ask", f) == []
+    # every other item not met: the next move, to Adaptation, once
+    (nxt,) = _next_requests(R, ref)
+    assert nxt["payload"]["items"] == ["D3"] and nxt["payload"]["reading"] == row["id"] and nxt["payload"]["findings"] == ["F1"]
+    assert S.validate("act.next", nxt["payload"]) == []
+    # a met item goes nowhere, and nothing is asked twice if the reading is heard again
+    _tell_reading(j2, ref, row)
+    assert len(_asks_of(W, ref, "j2_identity")) == 1 and len(_asks_of(W, ref, "finding")) == 1 and len(_next_requests(R, ref)) == 1
+
+
+def test_j2_g_an_item_to_confirm_is_one_question_whatever_their_number(j2):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, items=1)
+    _four_items(W, ref)
+    _hear(j2, ref, {"D1": "met", "D2": "to_confirm", "D3": "to_confirm", "D4": "met"})
+    (q,) = _asks_of(W, ref, "j2_identity")
+    assert q["points"] == ["D2", "D3"] and q["text"].count("D2") == 1 and q["text"].count("D3") == 1
+    said = [p for p in R.board(ref) if p["src"] == "Identity" and "Owner" in p["dst"] and p["payload"].get("card") == q["id"]]
+    assert len(said) == 1, "the line names its card, so the chat says the question once, on the card"
+    assert not re.search(r"\b(?:grant|counter|refuse|charter|Priority|Coordination)\b", q["text"], re.I)
+
+
+@pytest.mark.parametrize("how", ["chat", "answer box"])
+def test_j2_g_the_owners_answer_to_the_question_on_a_fact_is_filed_and_the_line_builds_again(j2, how):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    items = W.items_of(W.dept(ref))
+    items[1]["confirm"] = "nobody gave the price list"
+    W.put_done_items(ref, items)
+    _hear(j2, ref, {"D1": "met", "D2": "to_confirm"})
+    (q,) = _asks_of(W, ref, "j2_identity")
+    briefs = len(W.versions(ref, "Brief"))
+    _owner_says(j2, ref, how, "The price list is 500 rupees a month")
+    done = next(a for a in W.asks(ref) if a["id"] == q["id"])
+    assert (done["status"], done["answered"]) == ("stamped", "The price list is 500 rupees a month")
+    assert len(W.versions(ref, "Brief")) > briefs and "The price list is 500 rupees a month" in W.read_files(ref, "Brief", W.latest(ref, "Brief")["v"])["brief.md"]
+    assert W.dept(ref)["to_be_confirmed"] == [] and "confirm" not in W.items_of(W.dept(ref))[1]
+    assert J.status(ref)["open_question"] is None and J.status(ref)["state"] != "waiting"
+    assert len(_asks_of(W, ref, "j2_identity")) == 0 and not _reached(W, J, ref)
+    assert not [a for a in _asks_of(W, ref, "blocked")]
+
+
+def test_j2_g_just_do_it_to_a_fact_the_owner_does_not_give_leaves_the_ways_out_never_a_silent_end(j2):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    _hear(j2, ref, {"D1": "met", "D2": "to_confirm"})
+    (q,) = _asks_of(W, ref, "j2_identity")
+    _owner_says(j2, ref, "chat", "just do it")
+    (card,) = _asks_of(W, ref, "blocked")
+    assert [o["id"] for o in card["options"]] == ["words", "leave:D2", "stop"] and J.status(ref)["state"] == "blocked"
+    assert next(a for a in W.asks(ref) if a["id"] == q["id"])["status"] == "stamped"
+
+
+def test_j2_g_a_finding_a_rule_says_ask_about_is_an_ask_and_its_stamp_puts_it_right(j2):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    row = _file_reading(j2, ref, {"D1": "met", "D2": "not_met"}, findings=[{"id": "F1", "severity": "medium", "claim": "Send the offer by email to every subscriber", "item": "D2"}])
+    _tell_reading(j2, ref, row)
+    (ask,) = _asks_of(W, ref, "finding")
+    assert ask["rule"] == "Ask the owner before anything reaches outside" or ask["rule"], "the rule that says to ask is named"
+    briefs = len(W.versions(ref, "Brief"))
+    W.decide_ask(ref, ask["id"], True)
+    W.run_until_idle(ref, limit=300)
+    assert "Correct this: Send the offer by email to every subscriber" in W.read_files(ref, "Brief", W.latest(ref, "Brief")["v"])["brief.md"]
+    assert len(W.versions(ref, "Brief")) == briefs + 1
+
+
+def test_j2_g_every_other_not_met_item_is_the_next_move_and_is_posted_only_when_adaptation_hears_one(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    real = R._handler
+    monkeypatch.setattr(R, "_handler", lambda e, p: None if (p.get("payload") or {}).get("word") == "next" else real(e, p))
+    assert V1.next_is_heard() is False
+    _hear(j2, ref, {"D1": "met", "D2": "not_met"}, findings=[{"id": "F1", "severity": "medium", "claim": "Every page names its fees", "item": "D2"}])
+    assert _next_requests(R, ref) == [], "Adaptation has no handler yet: nothing is posted (A1-14)"
+    monkeypatch.setattr(R, "_handler", real)
+    stub = _adaptation_hears_next(monkeypatch, R)
+    assert V1.next_is_heard() is True
+    _hear(j2, ref, {"D1": "met", "D2": "not_met"}, findings=[{"id": "F1", "severity": "medium", "claim": "Every page names its fees", "item": "D2"}])
+    (nxt,) = _next_requests(R, ref)
+    assert (nxt["payload"]["items"], nxt["payload"]["findings"]) == (["D2"], ["F1"])
+    runs = [r["what"] for r in W.runs(ref) if r["engine"] == "Adaptation"]
+    assert ("Propose the next round" in runs) or not stub
+    assert J.status(ref)["state"] == "pursuing" and J.status(ref)["step"] == 8
+
+
+def test_j2_g_a_not_met_item_always_leaves_a_next_move_even_before_anyone_takes_a_round(j2, monkeypatch):
+    """SM-6 with Pursue off: no handler for request/next, so the item goes the way it went before rounds, to the owner, on a stamp."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    real = R._handler
+    monkeypatch.setattr(R, "_handler", lambda e, p: None if (p.get("payload") or {}).get("word") == "next" else real(e, p))
+    _hear(j2, ref, {"D1": "met", "D2": "not_met"}, findings=[{"id": "F1", "severity": "low", "claim": "Every page names its fees", "item": "D2"}])
+    assert _next_requests(R, ref) == []
+    (ask,) = _asks_of(W, ref, "finding")
+    assert "D2" in ask["found"] and ask["reading"] and S.validate_record("identity", "ask", ask) == []
+
+
+def test_j2_g_a_high_finding_the_next_round_carries_is_not_also_put_to_the_owner(j2, monkeypatch):
+    """Once Adaptation hears a next round the finding ask is swapped for the round (PRD risk P1): a high finding of a reading
+    with an item not met reaches Adaptation as the next move, and the owner is not also asked to stamp the same correction."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    _adaptation_hears_next(monkeypatch, R)
+    row = _file_reading(j2, ref, {"D1": "met", "D2": "not_met"}, findings=[{"id": "F1", "severity": "high", "claim": "Every page names its fees", "item": "D2"}])
+    R.post(ref, "Audit", "Identity", "inform", {"word": "finding", "claim": "Every page names its fees", "severity": "high", "reading": row["id"],
+                                               "findings": [{"page": "index", "claim": "Every page names its fees", "severity": "high", "item": "D2"}]})
+    R.audit_tell(ref, row)
+    W.run_until_idle(ref, limit=300)
+    assert _asks_of(W, ref, "finding") == [] and len(_next_requests(R, ref)) == 1
+    # a hole is the owner's to fill in, rounds or not
+    R.post(ref, "Audit", "Identity", "inform", {"word": "finding", "claim": "opening hours", "severity": "low", "reading": row["id"],
+                                               "findings": [{"kind": "hole", "claim": "opening hours"}]})
+    W.run_until_idle(ref, limit=300)
+    assert any("does not know" in s for s in _said_by_identity(R, ref))
+
+
+def test_j2_g_nothing_is_weighed_of_a_version_nobody_read_or_a_department_that_is_done(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    _adaptation_hears_next(monkeypatch, R)
+    _hear(j2, ref, {}, read=False)
+    assert _next_requests(R, ref) == [] and _asks_of(W, ref, "j2_identity") == []
+    _hear(j2, ref, {"D1": "met", "D2": "met"})
+    assert len(_reached(W, J, ref)) == 1
+    _hear(j2, ref, {"D1": "met", "D2": "not_met"}, findings=[{"id": "F1", "severity": "low", "claim": "x", "item": "D2"}])
+    assert _next_requests(R, ref) == [], "a department that is done takes tasks through the Brief (J3 4a), not rounds"
+
+
+def test_j2_g_a_measured_failure_that_waits_on_facts_the_owner_was_asked_for_is_not_also_a_next_round(j2, monkeypatch):
+    """The site said it does not know some facts and the owner was asked for them: what code measured as not holding waits on
+    those facts, which are never made up, so asking the line to correct it would be asking it to invent them."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    _adaptation_hears_next(monkeypatch, R)
+    row = _file_reading(j2, ref, {"D1": "not_met", "D2": "met"}, method="code", findings=[{"id": "F1", "severity": "high", "claim": "opening hours", "item": None}])
+    R._tell(ref, W.dept(ref), {"src": R.OWNER}, "inform", {"word": "facts", "done": "The site says it does not know opening hours.", "holes": 1, "about_version": row["v"]})
+    _tell_reading(j2, ref, row)
+    assert _next_requests(R, ref) == [] and _asks_of(W, ref, "finding") == [], "the facts question is the next move"
+    other = _file_reading(j2, ref, {"D1": "not_met", "D2": "met"}, method="code", v=row["v"] + 1, artifact="Live site",
+                          findings=[{"id": "F1", "severity": "high", "claim": "a link goes nowhere", "item": None}])
+    W.add_version(ref, "Live site", {"index.html": "<p>again</p>"}, [], "r-y", {"ok": True, "notes": []})
+    _tell_reading(j2, ref, other)
+    assert len(_next_requests(R, ref)) == 1, "with no facts asked for, it is the next round's"

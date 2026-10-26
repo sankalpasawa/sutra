@@ -1542,6 +1542,16 @@
         ]
       },
       {
+        "act": "request",
+        "payload": "act.next",
+        "to": [
+          "Adaptation"
+        ],
+        "words": [
+          "next"
+        ]
+      },
+      {
         "act": "inform",
         "payload": "act.tell",
         "to": [

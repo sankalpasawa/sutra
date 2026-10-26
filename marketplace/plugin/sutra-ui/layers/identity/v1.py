@@ -392,21 +392,28 @@ def _doubt_asked(ctx):
 
 
 def identity_read(ctx, step, item):
-    """Read what was said (the body engine_runtime holds), and mark the words that answer Adaptation's doubt: they are no
-    new request to recognise and no word on the identity's standard, which was met before the plan was shaped."""
+    """Read what was said (the body engine_runtime holds), and mark the words that answer Adaptation's doubt, or Identity's
+    question on a fact only the owner has (fact_answered): they are no new request to recognise and no word on the identity's
+    standard, which was met before the plan was shaped."""
     got = R.identity_read(ctx, step, item)
     ask = _doubt_asked(ctx)
     if ask:
         got.update({"doubt": ask["id"], "answers": None, "assess": False, "later": False, "filled": []})
+        return got
+    ask = _fact_asked(ctx)
+    if ask:
+        got.update({"fact": ask["id"], "answers": None, "assess": False, "later": False, "filled": []})
     return got
 
 
 def identity_file(ctx, step, item):
-    """File what was decided: the answer to a doubt goes back to Adaptation (doubt_answered); any other word, to the body
-    engine_runtime holds."""
+    """File what was decided: the answer to a doubt goes back to Adaptation (doubt_answered), the answer to a question on a
+    fact goes into the Brief (fact_answered); any other word, to the body engine_runtime holds."""
     got = ctx["bag"]["identity.read"]
     if got.get("doubt"):
         return doubt_answered(ctx, got)
+    if got.get("fact"):
+        return fact_answered(ctx, got)
     return R.identity_file(ctx, step, item)
 
 
@@ -664,9 +671,249 @@ def identity_done(ctx, step, item):
     return dict(got, said='declared the goal reached on reading %s: %s' % (got['reading'], got['why']))
 
 
+# ---- Weigh a reading three ways (PRD M8.5) -------------------------------------------------------------------------------
+# What a reading leaves open is routed in code from its verdicts and findings, each piece one way. An item to confirm rests on a
+# fact only the owner has: one question. A finding the owner must say yes to is an ask (S-18: only when a rule says ask, or it
+# reaches outside what the department makes). Every other item not met is the next thing to correct: a request to Adaptation
+# (request/next), posted only once Adaptation's recipe has the handler (A1-14). Until it has, the item goes the way it went before
+# rounds, the finding ask that puts it right on the owner's stamp, so a not-met item always leaves a next move (SM-6).
+#: the words that say nothing of what a rule is about, so a rule that asks first applies to a finding by what it names
+ASK_WORDS = frozenset('about after again ahead always anything before could every first from have into never other outside owner '
+                      'reaches should their there these they this those through under until what when where which will with without '
+                      'would your page pages site'.split())
+#: rounds in a row that meet no new item, after which Identity stops asking the line for another and asks the owner (M9.5)
+NO_PROGRESS = 2
+
+
+def next_is_heard():
+    """Whether Adaptation's recipe has a handler for a request of the next round (A1-14: an act is posted only to a receiver
+    that hears it)."""
+    return R._handler(R.engine_def('Adaptation'), {'msg_type': 'request', 'payload': {'word': 'next'}}) is not None
+
+
+def rule_asking_first(ref, d, text):
+    """The rule that says to ask the owner before this, or None (S-18: Identity asks only when a rule says ask): a rule tagged
+    ask applies to words that reach outside what the department makes (R.LEAVES), or that name what the rule is about."""
+    ruled = [r for r in R._effective_rules(ref, d) if r.get('tag') == 'ask' and str(r.get('line') or '').strip()]
+    if not ruled:
+        return None
+    if R.LEAVES.search(str(text or '')):
+        return ruled[0]
+    named = set(re.findall(r'[a-z]{4,}', str(text or '').lower())) - ASK_WORDS
+    return next((r for r in ruled if named & (set(re.findall(r'[a-z]{4,}', r['line'].lower())) - ASK_WORDS)), None)
+
+
+def _met_in(row):
+    return {i for i, v in R.audit_verdicts((row or {}).get('items')).items() if v == 'met'}
+
+
+def stalled(ref, row):
+    """Whether the last NO_PROGRESS rounds in a row met no item the reading before them had not met (M9.5), this reading being
+    the one after the last of them: counted from the cycle's readings, a version at a time, and the rounds Identity filed."""
+    filed = {r['round'] for r in W.rows(ref, 'rounds.jsonl') if r.get('status') in ('filed', 'read')
+             and r.get('cycle_id') in (None, row.get('cycle_id'))}
+    mine = []
+    for r in W.rows(ref, 'readings.jsonl'):
+        if r.get('read') and r.get('cycle_id') == row.get('cycle_id'):
+            mine = [x for x in mine if (x.get('artifact'), x.get('v')) != (r.get('artifact'), r.get('v'))] + [r]
+    n = 0
+    for before, after in reversed(list(zip(mine, mine[1:]))):
+        if _met_in(after) - _met_in(before):
+            break
+        n += 1
+    return bool(mine) and mine[-1].get('id') == row.get('id') and len(filed) >= NO_PROGRESS and n >= NO_PROGRESS
+
+
+def _claims(row, ids):
+    """What the reading says of these items, one line each: 'D2 Every page names its fees: the fees are not on the page'."""
+    by = {}
+    for r in (row or {}).get('items') or []:
+        if r.get('id') in ids and R.VERDICT_RANK.get(r.get('verdict'), -1) >= R.VERDICT_RANK.get((by.get(r['id']) or {}).get('verdict'), -1):
+            by[r['id']] = r
+    return ['%s %s: %s' % (i, str(by[i].get('subject') or '').rstrip('.'), str(by[i].get('claim') or '').rstrip('.')) for i in ids if i in by]
+
+
+def _who(d):
+    return {'src': 'Root' if d.get('root') else R.OWNER}
+
+
+def _ask_fact(ctx, row, ids):
+    """One question to the owner for the items a reading could not confirm (they rest on a fact only the owner can give): an ask
+    that takes words, missing 'fact', one open at a time. None when the same question is open already, or another is open."""
+    ref, d = ctx['ref'], ctx['dept']
+    cj = R._j2()
+    cur = cj._state(ref) or {}
+    if any(a.get('kind') == 'j2_identity' and a.get('missing') == 'fact' and a['status'] == 'pending' and set(ids) <= set(a.get('points') or [])
+           for a in W.asks(ref)) or cj.waiting_on_owner(ref):
+        return None
+    said = R.plain_card(ref, {'text': 'I cannot confirm yet: %s. Tell me the facts here and I will put them in.' % '; '.join(_claims(row, ids)),
+                              'why': 'it rests on a fact only you can give'}, 'question')
+    step = max(6, int(cur.get('step') or 8))
+    with W._lock(ref):
+        ask = dict(W.j2_identity_ask(said['text'], cur.get('cycle_id'), 'fact', said['why'], list(ids), False), reading=row['id'])
+        W._put_ask(ref, ask)
+        cj.note(ref, step, 'Identity', 'User', 'identity.questioned', 'waiting', said['text'], 'identity-fact-' + ask['id'],
+                {'missing': ['fact'], 'why': said['why'], 'standard': False})
+        cj._move(ref, 'waiting', step=step, open_ask=ask['id'])
+    R._tell(ref, d, _who(d), 'inform', {'word': 'question', 'done': said['text'], 'card': ask['id']})
+    return ask
+
+
+def _fact_asked(ctx):
+    """The question on a fact that the words in this post answer, as the ask holds it: the one a box answer names, else the one
+    the cycle waits on when they were said in the chat. None for any other words."""
+    ref, aid = ctx['ref'], (ctx['post'].get('payload') or {}).get('answers')
+    cj = R._j2()
+    if not cj or not cj.enabled():
+        return None
+    if not aid:
+        q = cj.open_question(ref) or {}
+        aid = q.get('id') if q.get('missing') == 'fact' else None
+    return next((a for a in W.asks(ref) if aid and a['id'] == aid and a.get('kind') == 'j2_identity' and a.get('missing') == 'fact'), None)
+
+
+def fact_answered(ctx, got):
+    """The owner's answer to the question on a fact (M8.5): the question is closed, the answer joins the Brief under it so the
+    line builds again with the fact, and the items it was about no longer wait on it. 'Just do it' gives no fact: those items
+    stay to be confirmed, so the goal cannot be reached as it stands, and the owner is given the ways out."""
+    ref, d, p = ctx['ref'], ctx['dept'], ctx['post']
+    cj = R._j2()
+    words, hurry = got['words'], bool(got.get('hurry'))
+    ask = next(a for a in W.asks(ref) if a['id'] == got['fact'])
+    ids = [i for i in ask.get('points') or []]
+    if ask['status'] == 'pending':
+        with W._lock(ref):
+            W._put_ask(ref, dict(ask, status='stamped', decided=W.now(), by='the owner', answered=words, words_at=R._words_at(ref, p)))
+            cj.note(ref, max(6, int((cj._state(ref) or {}).get('step') or 8)), 'User', 'Identity', 'ask.answered', 'complete',
+                    'The owner answered: %s' % words[:200], 'answer-' + ask['id'], {'missing': 'fact'})
+    cj._move(ref, 'pursuing', step=8, open_ask=None)
+    if hurry:
+        R._blocked(ref, d, _who(d), '%s rests on a fact only you can give, and it stays to be confirmed, so the goal cannot be reached as it stands. '
+                   'Give the fact, leave %s out of done-when, or stop here.' % (', '.join(ids), ', '.join(ids[-1:])),
+                   'A fact is still missing.', 'Identity, reading the work', '%s still to be confirmed' % ', '.join(ids))
+        return {'said': "took 'just do it' for a fact only the owner has; %s stays to be confirmed, and the owner has the ways out" % ', '.join(ids)}
+    items = [dict(i, confirm='') if i['id'] in ids else i for i in W.items_of(W.dept(ref))]
+    W.put_done_items(ref, items)
+    row = R._file_words(ref, d, "To Identity's question (%s): %s" % (str(ask.get('text') or '').rstrip('?.'), words), "the owner's answer")
+    R._tell(ref, d, p, 'inform', {'word': 'request', 'done': 'Thank you. I put it in the Brief, and the line builds again with it.'}, thread=p['thread'])
+    return {'said': "took the owner's answer on %s and filed it in the Brief: %s" % (', '.join(ids), words[:160]), 'filed': row['v']}
+
+
+def _ask_finding(ctx, row, claim, found, findings, rule=None):
+    """A finding put to the owner for the stamp that puts it right (the shape identity_finding files): the stamp files 'Correct
+    this' in the Brief (identity_apply)."""
+    ref = ctx['ref']
+    text = 'Audit found: %s. Stamp to have it put right.' % found
+    p = R.post(ref, 'Identity', R.OWNER, 'request', {'word': 'finding', 'objective': text, 'output': 'a stamp or a refusal',
+                                                      'may_read': [row['artifact']], 'boundaries': claim, 'claim': claim})
+    return W._put_ask(ref, dict({'id': 'a-' + uuid.uuid4().hex[:8], 'kind': 'finding', 'engine': 'Audit', 'slot': ctx['slot'], 'text': text,
+                                  'claim': claim, 'found': found, 'findings': findings, 'reading': row['id'], 'status': 'pending',
+                                  'created': W.now(), 'thread': p['thread'] if p else None}, **({'rule': rule} if rule else {})))
+
+
+def _asked_about(ref, claim):
+    """Whether the owner was asked (or has answered) about a finding with this claim already."""
+    want = ' '.join(str(claim).lower().split())
+    return any(a.get('kind') == 'finding' and (' '.join(str(a.get('claim') or '').lower().split()) == want or
+                                               any(' '.join(str(f.get('claim') or '').lower().split()) == want for f in a.get('findings') or [] if isinstance(f, dict)))
+               for a in W.asks(ref))
+
+
+def identity_weigh_reading(ctx, step, item):
+    """Weigh what a reading leaves open, three ways (M8.5), in code from its verdicts and findings: an item to confirm is one
+    question; a finding that needs the owner's yes is an ask; every other item not met is the next move, to Adaptation, once it
+    hears one. Two rounds with no new item met end in an options ask instead (stalled, M9.5)."""
+    ref, d, pl = ctx['ref'], ctx['dept'], ctx['post']['payload']
+    cj = R._j2()
+    got = ctx['bag']['identity.done']
+    row = reading_of(ref, pl.get('reading'))
+    routes = {'question': None, 'asks': [], 'next': None, 'card': None}
+    if got['done']:
+        return {'said': 'the goal holds on this reading; nothing is left open', 'routes': routes}
+    if not row or not row.get('read'):
+        return {'said': 'the version was not read; nothing is weighed and nothing is cleared', 'routes': routes}
+    if not (cj and cj.active(ref)):
+        return {'said': 'the department is not in its cycle; the reading is kept and nothing is weighed', 'routes': routes}
+    said = []
+    if got['to_confirm']:
+        ask = _ask_fact(ctx, row, got['to_confirm'])
+        routes['question'] = ask and ask['id']
+        said.append(('put %s, which it could not confirm, to the owner as one question' if ask else
+                     'left %s, which it could not confirm, to the question the owner has open') % ', '.join(got['to_confirm']))
+    left = list(got['not_met'])
+    if left and stalled(ref, row):
+        # the line has tried and met nothing new: no further round is asked for, and the owner has the ways out (no silent end)
+        if not any(a.get('kind') == 'blocked' and a['status'] == 'pending' and a.get('reading') == row['id'] for a in W.asks(ref)):
+            card = R._blocked(ref, d, _who(d), 'The last rounds did not get any closer: %s still not met. Say what to change, leave %s out of done-when, '
+                              'or stop here.' % (', '.join(left), left[-1]), 'The next rounds are not getting closer.',
+                              'Identity, reading the work', '%s not met' % ', '.join(left))
+            W._put_ask(ref, dict(card, reading=row['id']))
+            routes['card'] = card['id']
+        said.append('asked the owner what to do: the rounds met nothing new')
+        return {'said': '; '.join(said), 'routes': routes}
+    findings = [f for f in row.get('findings') or [] if isinstance(f, dict) and f.get('claim')]
+    covered = set()
+    if any(q['src'] == 'Identity' and R.OWNER in q['dst'] and (q['payload'] or {}).get('word') == 'facts'
+           and q['payload'].get('about_version') == row.get('v') for q in R.board(ref)):
+        # the site said it does not know some facts and the owner was asked for them (identity_finding): what code measured as
+        # not holding waits on those facts, which are never made up, and the question is its next move
+        covered |= {r['id'] for r in row.get('items') or [] if r.get('method') == 'code' and r.get('verdict') == 'not_met'}
+        left = [i for i in left if i not in covered]
+    for f in findings:
+        rule = rule_asking_first(ref, d, f['claim'])
+        if not rule:
+            continue
+        if not _asked_about(ref, f['claim']):
+            routes['asks'].append(_ask_finding(ctx, row, f['claim'], f['claim'], [f], rule=rule.get('line'))['id'])
+        covered.add(f.get('item'))
+    left = [i for i in left if i not in covered]
+    if routes['asks']:
+        said.append('put what needs the owner\'s yes to the owner as an ask')
+    if left and next_is_heard():
+        if not any(q['src'] == 'Identity' and q['dst'] == ['Adaptation'] and (q['payload'] or {}).get('word') == 'next'
+                   and q['payload'].get('reading') == row['id'] for q in R.board(ref)):
+            ids = set(left)
+            sent = R.post(ref, 'Identity', 'Adaptation', 'request',
+                          {'word': 'next', 'items': left, 'reading': row['id'], 'findings': [f['id'] for f in findings if f.get('item') in ids or not f.get('item')],
+                           'objective': 'propose the next correction for %s' % ', '.join(left), 'output': 'one priced correction on the registered line',
+                           'may_read': ['Brief'], 'boundaries': 'nothing new is registered; only the registered engines run'},
+                          about={'art': row['artifact'], 'v': row['v']})
+            routes['next'] = sent and sent['n']
+        if (cj._state(ref) or {}).get('state') not in ('waiting', 'blocked'):
+            cj._move(ref, 'pursuing', step=8)
+        said.append('asked Adaptation for the next move on %s' % ', '.join(left))
+    elif left:
+        # nobody hears a next round yet: the item goes the way it went before rounds, to the owner, to be put right on a stamp
+        if not [a for a in W.asks(ref) if a['kind'] == 'finding' and a['status'] == 'pending']:
+            lines = _claims(row, left)
+            routes['asks'].append(_ask_finding(ctx, row, '; '.join(lines), '; '.join(lines), [f for f in findings if f.get('item') in set(left)])['id'])
+        said.append('put %s to the owner to be put right: nobody takes a next round yet' % ', '.join(left))
+    return {'said': '; '.join(said) or 'weighed the reading; nothing is left to route', 'routes': routes}
+
+
+def identity_finding(ctx, step, item):
+    """Weigh a finding (the body engine_runtime holds), except the high one a reading's next round carries (M8.5): once Adaptation
+    hears a next round, a finding of a reading that has an item not met is carried by that round, which Identity asks of
+    Adaptation when it weighs the reading, so the owner is not also asked to stamp the same correction. A fact only the owner has,
+    and a finding a rule says to ask about, are put to the owner as before."""
+    ref, pl = ctx['ref'], ctx['post']['payload'] or {}
+    row, cj = reading_of(ref, pl.get('reading')), R._j2()
+    if not (row and row.get('read') and cj and cj.active(ref) and next_is_heard()
+            and 'not_met' in R.audit_verdicts(row.get('items')).values()):
+        return R.identity_finding(ctx, step, item)
+    finds = [f for f in pl.get('findings') or [] if isinstance(f, dict) and f.get('claim')]
+    keep = [f for f in finds if f.get('kind') == 'hole' or str(f.get('severity') or '').lower() != 'high'
+            or rule_asking_first(ref, ctx['dept'], f['claim'])]
+    if len(keep) == len(finds):
+        return R.identity_finding(ctx, step, item)
+    got = R.identity_finding(dict(ctx, post=dict(ctx['post'], payload=dict(pl, findings=keep))), step, item)
+    return {'said': 'left %d high finding%s to the reading\'s next round; %s' % (len(finds) - len(keep), '' if len(finds) - len(keep) == 1 else 's', got['said'])}
+
+
 #: the bodies of this version's own, in the table beside the references
 CODE.update({'identity_read': identity_read, 'identity_file': identity_file, 'identity_doubt': identity_doubt,
-             'identity_closed': identity_closed, 'identity_apply': identity_apply, 'identity_done': identity_done})
+             'identity_closed': identity_closed, 'identity_apply': identity_apply, 'identity_done': identity_done,
+             'identity_weigh_reading': identity_weigh_reading, 'identity_finding': identity_finding})
 CHECK.update({'done_is_read': c_done_is_read})
 
 
