@@ -6,8 +6,11 @@ Write'), the ledger's default summaries ('Refused.') and what Identity tells the
 plan'). The owner's ruling is that the screen says said yes, asked for less and said no, never grant, counter or refuse.
 So every read a function's pane prints passes its words through here on the way out: functions_view's five and each
 function's page, and website_api's /steps, /map, /status and /engine reads, which feed the cards under the page (the
-steps, gates, Moves, Stamped by rule, Runs). Nothing here writes: the record keeps its words, the screen gets the
-owner's.
+steps, gates, Moves, Stamped by rule, Runs), and its /chat read, which feeds each function's Chat tab and the owner's
+own chat (what Identity told the owner, the asks it put, each function's thinking). Nothing here writes: the record
+keeps its words, the screen gets the owner's. The words are put right where they are composed too (engine_runtime's
+tells, the asks' answers through engine_runtime._answers, the step names in the definitions): this table keeps a
+record written before that, and anything a definition still says, in the owner's words on the way out.
 
 Phrases only, longest first, so a sentence keeps its grammar, and never a bare verb: the owner's own words (the goal,
 done-when, the rules, the requests) are never passed through here, and a rule's tag (go, ask, refuse, always) is the
@@ -32,8 +35,12 @@ BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priori
                  ("Root's check refused it", "Root's check sent it back"),
                  ("waits for the workflow to be granted and registered", "waits for Priority's yes and Root's check"),
                  ("passed, asked or refused", "passed, asked or stopped"),
-                 # the conflict Identity puts to the owner, and the owner's no (identity_closed, identity_drop)
-                 (", Refuse to drop it.", ", or say no to drop it."),
+                 # the conflict Identity puts to the owner, and the owner's no (identity_closed, identity_drop); every ask's
+                 # answers, as an ask filed before engine_runtime._answers said them (the line, the engine, the outside-the
+                 # -site, the instructions and the conflict asks, and Root's Setup by hand), so the text and the buttons agree
+                 (", Refuse to drop it.", ", or say no to drop it."), (", Refuse to ", ", or say no to "),
+                 ("; Refuse to ", ", or say no to "), (", or refuse and ", ", or say no and "),
+                 ("or you refuse it", "or you say no to it"),
                  ("Priority did not grant", "Priority did not say yes to"), ("did not grant", "did not say yes to"),
                  ("on your refusal", "because you said no"), ("on the owner's refusal", "because the owner said no"),
                  ("your refusal", "your no"),
@@ -54,6 +61,8 @@ BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priori
                  ("the answer is accept, reject or counter", "the answer is say yes, ask for less or say no"),
                  ("the verdict is one of admit, wait, refuse", "the verdict is let through, wait or stop"),
                  ("the verdict is one of go, ask, refuse", "the verdict is go, ask or stop"),
+                 # what an instruction file is for, as its Settings row says it (identity's take: the verdict on a request)
+                 ("a request: go, ask or refuse", "a request: go, ask or stop"),
                  ("Countered.", "Asked for less."), ("Refused.", "Said no."))
 
 
@@ -77,8 +86,10 @@ def runs(rows):
 
 def steps(view):
     """An engine or a function as its steps (engine_runtime.steps_view), as its card prints it: the description, each
-    step's name, the handler it sits under, its last check notes and who moved its rung, what it hears, and the names
-    of the steps that hold its start, in the owner's words. Ids, rungs, checks and numbers are left as they are."""
+    step's name, the handler it sits under, its last check notes and who moved its rung, what it hears, the names of
+    the steps that hold its start, and the line that says what each of its instruction files is for (its Settings), in
+    the owner's words. Ids, rungs, checks and numbers are left as they are, and so is an instruction file's own text,
+    which is the file the owner changes."""
     if not view:
         return view
     out = dict(view, description=_keep(view.get("description")), hears=[plain(h) for h in view.get("hears") or []])
@@ -90,6 +101,8 @@ def steps(view):
         s["history"] = [dict(h, by=_keep(h.get("by"))) for h in s.get("history") or []]
         rows.append(s)
     out["steps"] = rows
+    if isinstance(view.get("instructions"), list):
+        out["instructions"] = [dict(r, lead=_keep(r.get("lead"))) if isinstance(r, dict) else r for r in view["instructions"]]
     start = view.get("start")
     if isinstance(start, dict):
         out["start"] = dict(start, on=[plain(x) for x in start.get("on") or []],
@@ -97,11 +110,61 @@ def steps(view):
     return out
 
 
+def asks(rows):
+    """Asks as a screen prints them: the text Identity wrote in the owner's words. An ask that carries the owner's own
+    words at the end of its text (an outside-the-site ask: the lead, then the words) keeps those words as they said
+    them; ids, kinds and the rest stay as the record keeps them."""
+    out = []
+    for a in rows or []:
+        if not isinstance(a, dict) or not isinstance(a.get("text"), str):
+            out.append(a)
+            continue
+        text, words = a["text"], a.get("words")
+        keep = isinstance(words, str) and words and text.endswith(words)
+        out.append(dict(a, text=plain(text[:-len(words)]) + words if keep else plain(text)))
+    return out
+
+
 def status(view):
-    """The department's status read (website_dept.status): what runs now, in the owner's words."""
+    """The department's status read (website_dept.status): what runs now, the asks and what waits on them, in the
+    owner's words."""
     if not view:
         return view
-    return dict(view, running=runs(view.get("running")))
+    out = dict(view, running=runs(view.get("running")))
+    for k in ("asks", "escalated"):
+        if k in view:
+            out[k] = asks(view.get(k))
+    if "waits" in view:
+        out["waits"] = [dict(w, why=_keep(w.get("why"))) if isinstance(w, dict) else w for w in view.get("waits") or []]
+    return out
+
+
+def _turn(t):
+    """One turn of a chat: what a function said, and its thinking, in the owner's words; the owner's own turns stay as
+    they said them."""
+    if not isinstance(t, dict) or t.get("src") == "Owner":
+        return t
+    return dict(t, line=_keep(t.get("line")))
+
+
+def fn_chat(view):
+    """One function's chat (engine_runtime.fn_chat_view), as its Chat tab prints it: each line a function said and each
+    line of its thinking (a step's name and its rung, a gate and its verdict) in the owner's words (PRD M1.7)."""
+    if not view:
+        return view
+    return dict(view, turns=[_turn(t) for t in view.get("turns") or []])
+
+
+def chat(view):
+    """The owner's own chat (engine_runtime.chat_view), on a department or on Root: what Identity told the owner, and the
+    asks it put to them and the questions it answered there, in the owner's words (PRD M1.7)."""
+    if not view:
+        return view
+    out = dict(view, turns=[_turn(t) for t in view.get("turns") or []])
+    for k in ("asks", "answered"):
+        if k in view:
+            out[k] = asks(view.get(k))
+    return out
 
 
 def engine(view):

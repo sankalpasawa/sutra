@@ -341,9 +341,10 @@ function dpBar(share, cls){
   return `<div class="dpbar${cls ? " " + cls : ""}"><i style="width:${pct}%"></i></div>`;
 }
 /* One ask. The sentence the asker wrote, what happens if the window closes on
-   it, the window itself as a bar, and the two answers. Stamp and Refuse go
+   it, the window itself as a bar, and the two answers. Stamp and Say no go
    through decideProposal (08-boot.js:145-153) -- the same call the Approvals
-   panel makes, so this screen adds no write path of its own (A5). */
+   panel makes, so this screen adds no write path of its own (A5). The second
+   answer is said in the owner's words: said yes and said no, never refuse. */
 function dpAskHtml(a){
   const st = dpS();
   const share = dpLeft(a);
@@ -356,7 +357,7 @@ function dpAskHtml(a){
   const armed = hard && st.confirm === a.id;
   const acts = gone ? "" :
     `<button type="button" class="btn dpstamp" data-dpdecide="${id}" data-dpok="1">${armed ? "Stamp, it leaves this machine" : "Stamp"}</button>` +
-    `<button type="button" class="btn" data-dpdecide="${id}" data-dpok="0">Refuse</button>`;
+    `<button type="button" class="btn" data-dpdecide="${id}" data-dpok="0">Say no</button>`;
   const line = gone ? `The window closed: ${dpEsc(a.default || "Nothing happens")}`
                     : `If nothing is done: ${dpEsc(a.default || "Nothing happens")}`;
   return `<div class="dpask${hard ? " hard" : ""}${gone ? " gone" : ""}" data-dpask="${id}">` +
@@ -421,7 +422,7 @@ const DP_J2_SAYS = {
   waiting: "Waiting for you", adapting: "Adaptation is proposing what to do", bargaining: "Priority is answering the proposal",
   closing: "Identity is closing a conflict", checking: "Root is checking the plan", reshaping: "Adaptation is reshaping the plan",
   running: "The work is running", unread: "Audit has not read the result", pursuing: "Working on what Audit found",
-  blocked: "Blocked: the plan was not granted",
+  blocked: "Blocked: the plan needs your words",
   stopped: "Stopped", done: "Goal reached"
 };
 function dpActivityHtml(){
@@ -605,6 +606,7 @@ function dpIdentityCardHtml(id){
    Identity keeps -- one with the person who owns it, one with Adaptation. */
 function dpIdentityHtml(){
   const st = dpS(), ref = st.sel;
+  if (dpOnRuntime(ref)) return dpRuntimeFnHtml("identity", "Identity");
   const id = (st.identity && st.identity.ref === ref) ? st.identity : null;
   if (!id) return st.error.identity ? dpQuiet("Could not read") : dpSkel();
   const pane = st.pane[ref + ":identity"] || "identity";
@@ -628,6 +630,22 @@ function dpIdentityHtml(){
 }
 /* 22-website.js: a function's own Settings on the engine runtime; null for every other department */
 function dpFnSettings(tab){ return (typeof wbFnSettings === "function") ? wbFnSettings(dpS().sel, tab) : null; }
+/* 22-website.js: true for a department on the engine runtime, once its map is read; false for every other one */
+function dpOnRuntime(ref){ return (typeof wbFnRuntime === "function") && wbFnRuntime(ref); }
+/* A function's pane on the engine runtime (PRD M1.7): its three tabs, its page and what it holds now (22-website.js),
+   its Chat read from the record, its Settings. The registry's cards are left out -- the department card, the template's
+   framework, the Proposals, the Queue, the graph and Recent -- for the runtime record is the one this department keeps,
+   and they would say what that record does not (no owner, no engines, an empty queue) in words that are not the
+   owner's. A department that is not on the runtime keeps those cards. */
+function dpRuntimeFnHtml(tab, label){
+  const st = dpS(), ref = st.sel;
+  const pane = st.pane[ref + ":" + tab] || tab;
+  const settings = dpFnSettings(tab);
+  const tabs = dpTabsHtml(pane, [[tab, label], ["chat", "Chat"]].concat(settings === null ? [] : [["settings", "Settings"]]), "data-dppane");
+  if (pane === "chat") return tabs + dpLiveChatHtml(tab, label);
+  if (pane === "settings" && settings !== null) return tabs + settings;
+  return tabs + dpOwnState(tab);
+}
 /* 22-website.js: what THIS department's function holds right now (its rules and
    windows, its envelopes, its timetable), drawn first so it is never under the
    template's framework. Every department without a website record answers "". */
@@ -647,6 +665,7 @@ function dpPane(ref, tab){ return dpS().pane[ref + ":" + tab] || tab; }
    (`<ref>:<tab>:chat`) and the same read guard. One frame, not two. */
 function dpFnHtml(tab, label, card, panes, chat){
   const st = dpS(), ref = st.sel;
+  if (!panes && DP_FUNCS.some(f => f[0] === tab) && dpOnRuntime(ref)) return dpRuntimeFnHtml(tab, label);
   const data = (st[tab] && st[tab].ref === ref) ? st[tab] : null;
   if (!data) return st.error[tab] ? dpQuiet("Could not read") : dpSkel();
   const pane = dpPane(ref, tab);

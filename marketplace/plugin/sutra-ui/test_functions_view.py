@@ -20,7 +20,15 @@ Named claims:
       and stays
   F9  rendered by the panel's own scripts from the real reads of departments Root set up (tests/fixtures/pane_words.js),
       no function's pane, nor the Map, All five or the list, shows grant, counter or refuse at rest or on a hover: the
-      older cards under each page (steps, gates, Moves, Control, Stamped by rule, the who-may-post table) included
+      older cards under each page (steps, gates, Moves, Control, Stamped by rule, the who-may-post table) included;
+      and every tab of each pane, its page, its Chat and its Settings, and the owner's own chat on the department and on
+      Root, read in the owner's words when Priority says yes, asks for less and says no, the owner says no, and Root's
+      check sends a plan back, served the real /chat, /chat?fn= and /api/dept/ reads
+  F10 every ask Identity puts to the owner says its answers in the words of its two buttons, Stamp and Say no (the
+      conflict, the outside-the-site, the instructions, the engine and the line asks), at rest and on a hover
+  F11 on a department on the engine runtime each function's pane agrees with the record: the registry's older cards
+      (the department card, the framework, Proposals, Queue, the graph, Recent) are not drawn under the page, so the
+      owner is named once and no pane says there are no engines or nothing in the queue while the record holds them
 
 Each department is born the way the app makes one (website_dept.create), then its record is set to the state under
 test, so what is read is the record a real department keeps.
@@ -44,6 +52,10 @@ FUNCS = ["Identity", "Adaptation", "Priority", "Coordination", "Audit"]
 def mods(tmp_path, monkeypatch):
     monkeypatch.setenv("SUTRA_NATIVE_DEPT_HOME", str(tmp_path / "departments"))
     monkeypatch.setenv("SUTRA_NATIVE_HOME", str(tmp_path / "registry"))
+    # the proposals Root's setup files and the registry's reads (dept_api) keep, in this test's own folder
+    for var, sub in (("SUTRA_UI_PROPOSALS", "proposals"), ("SUTRA_UI_ROUTINES", "routines"), ("SUTRA_UI_RUNS", "runs")):
+        (tmp_path / sub).mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv(var, str(tmp_path / sub))
     monkeypatch.setenv("SUTRA_WEBSITE_OFFLINE", "1")
     monkeypatch.setenv("J2_FLOW_V1", "1")
     monkeypatch.delenv("SUTRA_ENGINE_RUNTIME", raising=False)
@@ -809,22 +821,41 @@ def test_m17_the_real_flow_reads_in_the_owners_words_in_every_state_it_passes(mo
 PANE_DRIVER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests", "fixtures", "pane_words.js")
 
 
-def _reads(W, ref):
-    """The reads a function's pane, the Map and All five really make, from the real routes, by the tail of their path."""
+def _client():
+    """The app's real routes for a department: the runtime's (website_api) and the registry's (dept_api)."""
     import website_api
+    import dept_api
     importlib.reload(website_api)
+    importlib.reload(dept_api)
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     app = FastAPI()
     app.include_router(website_api.router)
-    c = TestClient(app)
-    tails = ["map", "functions", "board", "status"] + ["functions/" + fn for fn in JOURNEYS] + ["steps/" + fn.capitalize() for fn in JOURNEYS]
+    app.include_router(dept_api.router)
+    return TestClient(app)
+
+
+# the registry's reads the older cards under a function's page drew from (20-dept.js), and the Settings tab's template line
+DEPT_READS = ("identity", "adaptation", "priority", "coordination", "audit", "functions", "engines")
+
+
+def _reads(W, ref):
+    """The reads a function's pane on its three tabs, the Map, All five and the owner's chat really make, from the real
+    routes, by the tail of their path: the runtime's under reads, the registry's under dept."""
+    c = _client()
+    tails = (["map", "functions", "board", "status", "chat"] + ["functions/" + fn for fn in JOURNEYS] +
+             ["steps/" + fn.capitalize() for fn in JOURNEYS] + ["chat?fn=" + fn for fn in JOURNEYS])
     out = {}
     for t in tails:
         got = c.get("/api/native/%s/%s" % (ref, t))
         assert got.status_code == 200, (t, got.status_code)
         out[t] = got.json()
-    return {"name": W.dept(ref)["name"], "reads": out}
+    dept = {}
+    for t in DEPT_READS:
+        got = c.get("/api/dept/%s/%s" % (ref, t))
+        assert got.status_code == 200, (t, got.status_code, got.text[:200])
+        dept[t] = got.json()
+    return {"name": W.dept(ref)["name"], "reads": out, "dept": dept}
 
 
 def _panes(tmp_path, reads):
@@ -878,3 +909,220 @@ def test_m17_every_card_on_a_functions_pane_says_the_owners_words(mods, born, mo
     panes = _panes(tmp_path, _reads(W, ref))
     for k, v in panes.items():
         assert not _banned_shown(v["rest"]) and not _banned_shown(v["hover"]), (k, _banned_shown(v["rest"] + " " + v["hover"]))
+
+
+# ---- M1.7 (round 3): every tab of a function's pane, the owner's own chat, and every ask say the owner's words ---------
+def _scan(panes, flow):
+    """Every surface rendered (each function's page, Chat and Settings, the Map, All five, the owner's chat and the list):
+    something is shown, and nothing at rest or on a hover says grant, counter or refuse, charter or internal system."""
+    for k, v in panes.items():
+        assert v["rest"], (flow, k)
+        assert not _banned_shown(v["rest"]) and not _banned_shown(v["hover"]), (flow, k, _banned_shown(v["rest"] + " " + v["hover"]))
+        text = (v["rest"] + " " + v["hover"]).lower()
+        assert "charter" not in text and "internal system" not in text, (flow, k)
+    for fn in JOURNEYS:
+        assert {fn, fn + ":chat", fn + ":settings"} <= set(panes), (flow, fn)
+
+
+def _chat_words(view):
+    """What a chat read gives a person to read: each turn's line, and each ask's and answered question's text."""
+    return " ".join([str(t.get("line") or "") for t in view.get("turns") or []] +
+                    [str(a.get("text") or "") for k in ("asks", "answered") for a in view.get(k) or []])
+
+
+def _offline(monkeypatch, R, answers):
+    """The AI inside answers these steps; every other step falls to its draft, as it does offline."""
+    monkeypatch.delenv("SUTRA_WEBSITE_OFFLINE", raising=False)
+    monkeypatch.setattr(R, "MODEL", lambda prompt, step: (answers[step["id"]], 0.01, "model") if step["id"] in answers
+                        else (None, 0.0, "offline"))
+
+
+def test_m17_every_tab_of_every_functions_pane_says_the_owners_words(mods, born, monkeypatch, tmp_path):
+    """Round 3, gap 1: each function's pane has three tabs, its page, Chat and Settings, and the owner's own chat is
+    beside them. Rendered by the panel's own scripts from the real reads (each Chat tab's /chat?fn=, the owner's /chat
+    and the registry's /api/dept/ reads too), on departments Root set up where Priority says yes, asks for less, and
+    says no; where the owner says no; and where Root's check sends a plan back: no tab shows grant, counter or refuse at
+    rest or on a hover. Identity's tells are written in the owner's words where they are composed, so the department's
+    chat and Root's say them the same way, and each function's thinking names its steps and verdicts in those words."""
+    W, R, J, F = mods
+    if shutil.which("node") is None:
+        pytest.skip("node is not on PATH")
+    c = _client()
+
+    def tells(ref):
+        """Identity's words to the owner, on the department's own board and, through Root, on Root's."""
+        root = W.dept(ref).get("root")
+        mine = _chat_words(c.get("/api/native/%s/chat" % ref).json())
+        assert not _banned_shown(mine), _banned_shown(mine)
+        if root:
+            front = _chat_words(c.get("/api/native/%s/chat" % root).json())
+            assert not _banned_shown(front), _banned_shown(front)
+            mine += " " + front
+        said = " ".join(str((p.get("payload") or {}).get("done") or (p.get("payload") or {}).get("objective") or "")
+                        for p in R.board(ref) + (R.board(root) if root else []) if p["src"] == "Identity" and "Owner" in p["dst"])
+        assert not _banned_shown(said), ("at the source", _banned_shown(said))
+        return mine
+
+    # Priority says yes: the plan is set, and Identity says who said yes in the owner's words
+    ref = born(WEBSITE, "Acme Learning")
+    panes = _panes(tmp_path, _reads(W, ref))
+    _scan(panes, "said yes")
+    assert "Priority said yes to it and it passed Root's check" in panes["chat"]["rest"], "the tell, on the owner's chat"
+    assert "Priority said yes to it" in tells(ref)
+    assert "Send the line Priority said yes to, to Root's check" in panes["adaptation:chat"]["rest"], "Adaptation's thinking"
+    assert "Say yes, ask for less, or say no" in panes["priority:chat"]["rest"], "Priority's thinking"
+    assert "Gate the effect by rule: let through" in panes["identity:chat"]["rest"], "a gate's verdict in the owner's words"
+    assert "Hold the envelope: let through" in panes["priority:chat"]["rest"]
+    assert "Who may post to whom" in panes["coordination:settings"]["rest"] and "says no" in panes["coordination:settings"]["rest"]
+    assert "How to judge a request: go, ask or stop" in panes["identity:settings"]["rest"], "an instruction file's line"
+
+    # Priority asks for less, Adaptation takes it, and Priority says yes to the shorter line
+    _offline(monkeypatch, R, {"priority.bargain": {"answer": "counter", "keep": ["Plan", "Write", "Check"],
+                                                   "why": "the envelope has room for three today"}})
+    ref = born(WEBSITE, "Less Co")
+    assert [e["action"] for e in J.events(ref)].count("proposal.countered") == 1 and "workflow.registered" in [e["action"] for e in J.events(ref)]
+    assert W.dept(ref)["workflows"][-1]["engines"] == ["Plan", "Write", "Check"]
+    panes = _panes(tmp_path, _reads(W, ref))
+    _scan(panes, "asked for less")
+    assert "Take Priority's ask for less, or take it to Identity" in panes["adaptation:chat"]["rest"], "Adaptation's thinking"
+    assert "the envelope has room for three today asks for less" in panes["priority:chat"]["rest"], "Priority's counter, as an ask for less"
+    assert "the envelope has room for three today asks for less" in panes["adaptation:chat"]["rest"]
+    assert "Plan -> Write -> Check (from the Library). Priority said yes to it" in tells(ref)
+
+    # Priority says no: Identity puts the plan to the owner, with the ask's answers in the buttons' words
+    _offline(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "the envelope has no room today"}})
+    ref = born(WEBSITE, "No Room Co")
+    assert J.status(ref)["state"] == "waiting"
+    panes = _panes(tmp_path, _reads(W, ref))
+    _scan(panes, "said no")
+    assert "Priority said no to the plan: the envelope has no room today" in panes["identity:chat"]["rest"]
+    assert "Stamp to run it as proposed, or say no to drop it." in panes["chat"]["rest"]
+    assert "Say no" in panes["chat"]["rest"] and "Take Priority's no to Identity" in panes["adaptation:chat"]["rest"]
+    tells(ref)
+    # the owner says no: the plan is dropped, and Identity says so in the owner's words
+    for a in [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "conflict"]:
+        W.decide_ask(ref, a["id"], False)
+    W.run_until_idle(ref, limit=300)
+    assert J.status(ref)["state"] == "blocked"
+    panes = _panes(tmp_path, _reads(W, ref))
+    _scan(panes, "the owner said no")
+    assert "The plan is dropped because you said no" in panes["chat"]["rest"] and "because you said no" in tells(ref)
+    assert "Drop what was turned down" in panes["identity:chat"]["rest"], "Identity's thinking on the owner's no"
+
+    # Root's check sends a plan back once, and Adaptation reshapes it
+    real, calls = R._root_check, {"n": 0}
+
+    def check(ref, d, engines, source):
+        calls["n"] += 1
+        return ["Facts reads Notes, which nothing before it writes"] if calls["n"] == 1 else real(ref, d, engines, source)
+    monkeypatch.setattr(R, "_root_check", check)
+    _offline(monkeypatch, R, {})
+    ref = born(ORGANIC, "Lab Co")
+    assert calls["n"] >= 2 and "workflow.blocked" in [e["action"] for e in J.events(ref)]
+    panes = _panes(tmp_path, _reads(W, ref))
+    _scan(panes, "sent back")
+    assert "Root's check sent the plan back (Facts reads Notes, which nothing before it writes)" in panes["chat"]["rest"]
+    assert "sent the plan back" in tells(ref)
+
+
+def test_m17_every_ask_says_its_answers_in_the_words_of_its_buttons(mods, born, monkeypatch, tmp_path):
+    """Round 3, gap 2: every ask Identity writes says its two answers as its two buttons do, Stamp and Say no, never
+    'Refuse to ...'. On a department Root set up, with the first publish stamped, the owner's words that reach outside
+    the site and a change to Audit's instructions are each put to the owner: the five's read, Identity's page, the
+    owner's chat and All five, at rest and on a hover, say 'or say no', and so do the engine and the line asks."""
+    W, R, J, F = mods
+    if shutil.which("node") is None:
+        pytest.skip("node is not on PATH")
+    ref = born(WEBSITE, "Acme Learning")
+    for a in [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "publish"]:
+        W.decide_ask(ref, a["id"], True)
+    W.run_until_idle(ref, limit=300)
+    W.owner_ask(ref, "Email the new site to every patient")
+    W.run_until_idle(ref, limit=300)
+    out = next(a for a in W.asks(ref) if a["kind"] == "request" and a["status"] == "pending")
+    assert "Stamp to go ahead, or say no to leave them out." in out["text"] and out["text"].endswith("Email the new site to every patient")
+    ins = R.instructions_ask(ref, "audit", "goal", R._instruction("audit", "goal", ref) + "\nRead every page twice.\n")
+    asked = next(p for p in R.board(ref) if p["thread"] == ins["thread"])
+    assert asked["payload"]["objective"].endswith("Stamp to use them from the next run, or say no to keep them as they are.")
+    for v in [F.functions(ref), F.function(ref, "identity")]:
+        assert not _banned(v), _banned(v)
+    text = json.dumps(F.functions(ref))
+    assert "or say no to" in text, "an ask's words are on the read, said the buttons' way"
+    panes = _panes(tmp_path, _reads(W, ref))
+    _scan(panes, "asks")
+    assert "Stamp to go ahead, or say no to leave them out." in panes["chat"]["rest"], "the ask in the owner's chat"
+    assert ">Refuse<" not in json.dumps(panes) and "Say no" in panes["chat"]["rest"], "the buttons say it too"
+    # the engine and the line asks say their answers through the same builder (engine_runtime._answers)
+    assert R._answers("add it", "to leave the idea parked") == "Stamp to add it, or say no to leave the idea parked."
+    assert R._answers("add them and start", "and say what to change") == "Stamp to add them and start, or say no and say what to change."
+    import inspect
+    for fn in (R.identity_engine, R.identity_line, R.identity_closed, R.instructions_ask):
+        assert "_answers(" in inspect.getsource(fn) and "Refuse to" not in inspect.getsource(fn), fn.__name__
+
+
+def test_m17_a_runtime_departments_panes_agree_with_its_record(mods, born, tmp_path):
+    """Round 3, gaps 3 and 4: on a department on the engine runtime the registry's older cards are not drawn under a
+    function's page, so the pane agrees with the record and with the page above it. Served the real /api/dept/ reads,
+    Identity's pane names its owner once, as the record does; Adaptation's never says there are no engines while the
+    record holds four; Priority's never says the queue is empty while its Queue lists the line; and no pane carries the
+    registry's Proposals, the template's framework or Recent."""
+    W, R, J, F = mods
+    if shutil.which("node") is None:
+        pytest.skip("node is not on PATH")
+    ref = born(WEBSITE, "Acme Learning")
+    assert W.dept(ref)["engines"] == ["Plan", "Write", "Check", "Publish"]
+    reads = _reads(W, ref)
+    assert reads["dept"]["identity"].get("owner") is not None and "engines" in reads["dept"]["engines"], "the registry answered"
+    panes = _panes(tmp_path, reads)
+    owner = W.map_view(ref)["owner"]
+    assert owner and panes["identity"]["rest"].count(owner) == 1, panes["identity"]["rest"].count(owner)
+    assert "No owner yet" not in panes["identity"]["rest"]
+    for fn in JOURNEYS:
+        rest = panes[fn]["rest"]
+        assert "No engines yet" not in rest and "Nothing in the queue" not in rest and "Nothing held" not in rest, fn
+        assert "Proposals" not in rest and "Always does" not in rest and "Recent" not in rest, fn
+        assert "The function" in rest and "Journeys" in rest and "Version 1" in rest, (fn, "the page is the pane")
+    assert "Queue" in panes["priority"]["rest"] and "Publish Waits for the stamp" in panes["priority"]["rest"]
+    assert "Plan" in panes["adaptation"]["rest"] and "Control" in panes["identity"]["rest"]
+
+
+def test_m17_a_record_written_before_reads_in_the_owners_words_on_every_chat(mods):
+    """Round 3, gaps 1 and 2, for a department whose record was written before the words were put right at their
+    source: the /chat read of a function and the owner's own /chat pass what the functions said, their thinking and
+    the asks through owner_words, so an old tell, an old ask and a gate's verdict read in the owner's words; the
+    owner's own words stay exactly as they said them, refusal and all."""
+    W, R, J, F = mods
+    c = _client()
+
+    def said(src, dst, act, payload, tid):
+        R._append(REF, "board.jsonl", {"n": len(R.board(REF)) + 1, "src": src, "dst": [dst], "msg_type": act, "thread": tid,
+                                       "hop": 1, "about": None, "payload": payload, "ack_id": None, "by": None, "at": W.now()})
+    said("Owner", "Identity", "request", {"word": "request", "words": "Do not mind Priority's refusal; ask again"}, "x-o")
+    said("Identity", "Owner", "inform", {"word": "line", "done": "The plan is set: Plan -> Write (from the Library). Priority granted it and "
+                                                                "it passed Root's check; the first starts now."}, "x-o")
+    said("Identity", "Owner", "inform", {"word": "line", "done": "The plan is dropped on your refusal. Say what the department should do."}, "x-o")
+    said("Priority", "Adaptation", "propose", {"word": "line", "counter": True, "keep": ["Plan"], "why": "room for one"}, "x-b")
+    said("Identity", "Coordination", "refuse", {"word": "verdict", "answer": "refuse"}, "x-g")
+    W._put_ask(REF, {"id": "a-old", "kind": "request", "engine": "Identity", "words": "Email every patient, or refuse",
+                     "text": "Your words reach outside the site. Put them on the site as said? Stamp to go ahead, Refuse to leave them out. "
+                             "Email every patient, or refuse", "status": "pending", "created": W.now()})
+    R._append(REF, "steps.jsonl", {"id": "s-g", "engine": "Identity", "step": "identity.gate", "mode": "gate", "answer": "refuse",
+                                   "status": "ok", "started": W.now(), "ended": W.now()})
+    mine = c.get("/api/native/%s/chat" % REF).json()
+    lines = [t["line"] for t in mine["turns"]]
+    assert "Do not mind Priority's refusal; ask again" in lines, "the owner's own words, as said"
+    assert any("Priority said yes to it and it passed Root's check" in x for x in lines), lines
+    assert any(x.startswith("The plan is dropped because you said no") for x in lines), lines
+    ask = next(a for a in mine["asks"] if a["id"] == "a-old")
+    assert ask["text"] == ("Your words reach outside the site. Put them on the site as said? Stamp to go ahead, or say no to leave them out. "
+                           "Email every patient, or refuse"), "the ask's answers said the buttons' way; the owner's words kept"
+    ident = c.get("/api/native/%s/chat?fn=identity" % REF).json()["turns"]
+    thinks = [t["line"] for t in ident if t["think"]]
+    assert "Gate the effect by rule: stopped" in thinks, thinks
+    assert "The verdict: stopped" in [t["line"] for t in ident if not t["think"]], "a verdict on the board, in the owner's words"
+    pr = c.get("/api/native/%s/chat?fn=priority" % REF).json()["turns"]
+    counter = next(t for t in pr if t.get("counter"))
+    assert counter["line"] == "room for one" and counter["src"] == "Priority"
+    for t in ident + pr:
+        if t["src"] != "Owner":
+            assert not _banned_shown(t["line"]), t

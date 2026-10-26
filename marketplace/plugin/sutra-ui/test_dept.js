@@ -440,7 +440,8 @@ test("S18/A4: an ask shows the sentence, the default, the window as a bar and tw
   assert.ok(html.indexOf("If nothing is done: Nothing happens") !== -1, "the default");
   assert.ok(/class="dpbar"><i style="width:9[0-9.]+%"/.test(html), "the window is a bar, not a number");
   assert.ok(html.indexOf('data-dpdecide="p-aa11" data-dpok="1">Stamp<') !== -1, "Stamp");
-  assert.ok(html.indexOf('data-dpdecide="p-aa11" data-dpok="0">Refuse<') !== -1, "Refuse");
+  assert.ok(html.indexOf('data-dpdecide="p-aa11" data-dpok="0">Say no<') !== -1, "Say no, in the owner's words");
+  assert.ok(html.indexOf(">Refuse<") === -1, "never Refuse (the owner's ruling on the screen's words)");
 });
 
 test("S18/A5: Stamp and Refuse go through decideProposal, and nothing else is posted", async () => {

@@ -134,6 +134,9 @@ def test_steps_1_to_5_a_library_kind_is_proposed_granted_checked_and_registered(
     assert W.dept(ref)["workflows"] == [{"version": 1, "engines": LINE, "source": "library", "registered": W.dept(ref)["workflows"][0]["registered"], "by": "Root"}]
     assert J.status(ref)["workflow"] == LINE
     assert any("The plan is set: Plan -> Write -> Check -> Publish" in s for s in _said(R, ref))
+    # the tell says who said yes in the owner's words (PRD M1.7): Priority said yes to it, never that it granted it
+    assert any("Priority said yes to it and it passed Root's check" in s for s in _said(R, ref))
+    assert not [s for s in _said(R, ref) if "grant" in s.lower()]
 
 
 def test_d2_no_workflow_runs_before_root_registers_it(j2):
@@ -356,7 +359,8 @@ def test_step_4_a_refusal_goes_to_identity_and_what_it_cannot_settle_is_one_ask(
     assert _work(W, ref) == []                                     # the disputed work does not run
     asks = [a for a in W.asks(ref) if a["status"] == "pending"]
     assert [a["kind"] for a in asks] == ["conflict"]
-    assert "Priority refused the plan: no room in the envelope today" in asks[0]["text"]
+    assert "Priority said no to the plan: no room in the envelope today" in asks[0]["text"]
+    assert asks[0]["text"].endswith("Stamp to run it as proposed, or say no to drop it."), "the text says the buttons' words"
     assert J.status(ref)["state"] == "waiting"
     W.run_until_idle(ref, limit=100)
     assert len([a for a in W.asks(ref) if a["kind"] == "conflict"]) == 1
@@ -374,7 +378,7 @@ def test_j2_3_the_owner_refuses_the_plan_and_nothing_runs(j2, monkeypatch):
     _stamp_all(W, ref, approve=False, kind="conflict")
     assert J.status(ref)["state"] == "blocked"
     assert _work(W, ref) == [] and "workflow.registered" not in _actions(J, ref)
-    assert any("The plan is dropped on your refusal" in s for s in _said(R, ref))
+    assert any("The plan is dropped because you said no" in s for s in _said(R, ref))
 
 
 def test_step_4_identity_rules_from_the_goal_and_the_rules_without_asking(j2, monkeypatch):
@@ -445,7 +449,7 @@ def test_j2_4_roots_refusal_goes_back_to_adaptation_and_registers_nothing(j2, mo
     blocked = acts.index("workflow.blocked")
     assert acts[blocked + 1] == "proposal.requested" and acts.index("workflow.registered") > blocked
     assert next(e for e in J.events(ref) if e["action"] == "workflow.blocked")["payload"]["faults"] == ["Facts reads Notes, which nothing before it writes"]
-    assert any("Root's check refused the plan" in s and "reshaping" in s for s in _said(R, ref))
+    assert any("Root's check sent the plan back" in s and "reshaping" in s for s in _said(R, ref))
     assert len(W.dept(ref)["workflows"]) == 1
 
 
@@ -456,7 +460,7 @@ def test_j2_4_after_two_repairs_the_owner_is_told_and_nothing_runs(j2, monkeypat
     acts = _actions(J, ref)
     assert acts.count("workflow.blocked") == J.REPAIRS + 1 and "workflow.registered" not in acts
     assert J.status(ref)["state"] == "blocked" and _work(W, ref) == []
-    assert any("refused the plan 3 times" in s for s in _said(R, ref))
+    assert any("sent the plan back 3 times" in s for s in _said(R, ref))
 
 
 def test_j2_b_a_second_shaped_department_takes_names_the_library_does_not_have(j2):
