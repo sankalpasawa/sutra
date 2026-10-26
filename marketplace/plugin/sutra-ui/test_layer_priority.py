@@ -6,6 +6,8 @@ One test per done-check of P1 to P5. The contract's cases are layers/contract.py
 department born the way a person makes one, a model that is a function of the step id, the same board.
 """
 import importlib
+import math
+import statistics
 from datetime import datetime, timedelta
 
 import pytest
@@ -110,11 +112,14 @@ def _stamp(ref, W):
 
 
 #: finished runs of yesterday, by engine, oldest first: (status, calls, usd). Their medians, worked by hand, are the fixture:
-#:   Plan   3 runs: calls 2, 4, 3 -> 3;  usd 0.06, 0.10, 0.08 -> 0.08                          (basis median, 3 runs)
+#:   Plan   3 runs: calls 2, 12, 3 -> 3;  usd 0.06, 0.10, 0.08 -> 0.08                         (basis median, 3 runs)
+#:           the calls are skewed on purpose: their mean is 5.67 (6 whole), their least 2 and their most 12, and only the median is 3,
+#:           so a figure that is the mean, the least or the most of the calls is not the estimate
 #:   Write  4 runs: calls 5, 6, 9, 7 -> 6.5, a call is whole, so 7;  usd 0.20, 0.25, 0.50, 0.30 -> 0.275   (4 runs, the failed one counts)
+#:           the money is skewed too: its mean is 0.3125
 #:   Check  none: the prior, one model step, one call, at 0.04 -> 1 call, 0.04
 #:   Publish none: no model step -> 0 calls, 0.00
-HISTORY = {"Plan": [("ok", 2, 0.06), ("ok", 4, 0.10), ("ok", 3, 0.08)],
+HISTORY = {"Plan": [("ok", 2, 0.06), ("ok", 12, 0.10), ("ok", 3, 0.08)],
            "Write": [("ok", 5, 0.20), ("ok", 6, 0.25), ("ok", 9, 0.50), ("failed", 7, 0.30)]}
 MEDIANS = {"Plan": {"calls": 3, "usd": 0.08, "basis": "median", "runs": 3}, "Write": {"calls": 7, "usd": 0.275, "basis": "median", "runs": 4},
            "Check": {"calls": 1, "usd": 0.04, "basis": "prior", "runs": 0}, "Publish": {"calls": 0, "usd": 0.0, "basis": "prior", "runs": 0}}
@@ -308,6 +313,13 @@ def test_p3_the_estimate_of_an_engine_is_the_median_of_its_finished_runs_or_the_
     W, R, J, _ = j2
     ref = _born(j2, settle=False)
     _history(W, ref)
+    # the fixture can tell a median from a mean, a least and a most (an estimate that is any of those must fail): Plan's calls
+    # for the calls, Write's money for the money; the mean of either, made whole or not, is not the median
+    plan = [r[1] for r in HISTORY["Plan"]]
+    spurious = {min(plan), max(plan), statistics.mean(plan), round(statistics.mean(plan)), math.ceil(statistics.mean(plan)), math.floor(statistics.mean(plan))}
+    assert statistics.median(plan) == 3 and 3 not in spurious, "Plan's calls tell a median from a mean, a least and a most"
+    write = [r[2] for r in HISTORY["Write"]]
+    assert statistics.median(write) not in {min(write), max(write), statistics.mean(write)}, "Write's money does"
     for name, want in MEDIANS.items():
         assert V1.price_of(ref, name) == want, name
     got = V1.estimate_of(ref, LINE, "line")
