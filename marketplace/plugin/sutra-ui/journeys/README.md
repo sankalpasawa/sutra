@@ -131,11 +131,34 @@ test is a failing row. The documents are deterministic: sorted keys, indent 1, a
 
 ### The gate
 
-`qa/walks/suites.sh` has one line for the runner after the `test_layer_*` loop. Its cost: with the 21 journeys of the A3 specs (126
-listed tests, about 40 of them in `test_engine_runtime.py`) one full run took 167 seconds on a machine busy with other builds, and
-the static cases and the staleness check take a few seconds. The budget is three minutes added to the gate on the integrator's
-machine. If the lane goes over it, change the line to `--check --no-run` and run the full `--check` before each merge that touches
-`journeys/`.
+`qa/walks/suites.sh` has one line for the runner after the `test_layer_*` loop. It prints the runner's last line and the seconds the
+lane took (`journeys: 62 rows, 55 proven, 1 wanted, 0 faults (51 s)`), so every run of the gate shows what the lane costs. The budget
+is three minutes added to the gate on the integrator's machine.
+
+**Who codes against what.** The gate has a new lane. The content packages A3-J12 (J1, J2) and A3-J34 (J3 to J7 and the function
+journeys) write their journey files, their status files and their `test_layer_journey_j*.py` scenarios against the names of this
+folder: `load`, `rows`, `row_key`, `definitions_sha` and `view`; `status.resolve_code`, `resolve_test`, `row_state`,
+`journey_state` and `compute`; `contract.cases`; `walk.trace` and `walk.follows`; and the four modes of `qa/journey_status.py`.
+A journey file or a status file that the machinery refuses is a red lane.
+
+**What it costs** (measured 2026-10-27 on one machine with 12 cores that other builds were also using; the figures move with the
+load, which is why the gate line says its own seconds):
+
+| Tree | The lane | The whole gate |
+|---|---|---|
+| main as merged (`journeys/` holds no journey) | `--check` 0 s (`journeys: 0 rows ... (0 s)`) | 442 s without the line (load 5 to 6), 550 s with it (load 7 to 8) |
+| main with A3-J12 and A3-J34 merged (J1 to J7 and the 14 function journeys; 129 listed tests in 12 Python files and one node file) | in the gate 51 s; alone 66 s and 70 s (load 7); `--check --no-run` 2.3 s; `--static` 2.3 s | 558 s (load 3 to 6), the four new `test_layer_journey_j*.py` lanes included |
+
+On the empty folder the lane costs nothing: the 108 s between 442 s and 550 s is the machine's load (the `ledger and lanes`
+lane alone took 92 s in one run and 120 s in the other), not the line. With the data in, the lane is 51 to 70 s, a third of the
+budget. The 167 seconds that an earlier version of this file gave were taken with the specs' own data, before the packages had
+written their scenarios, on a machine under a load of ten and more; the figures above replace it.
+
+**The decision: the full `--check`, or `--check --no-run`.** The line is the full `--check`. The decision has to be measured
+again whenever the data grows (a journey that lists a slow test, a new file), because the lane runs every listed test once more
+and the figure follows the machine: if the `journeys:` line of the gate says more than 180 s, change the line to
+`--check --no-run` and run the full `--check` before each merge that touches `journeys/`. To measure it by hand:
+`SUTRA_NATIVE_HOME=$(mktemp -d) time .venv/bin/python qa/journey_status.py --check`.
 
 ### Who regenerates a status file
 
