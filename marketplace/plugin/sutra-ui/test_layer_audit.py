@@ -571,3 +571,101 @@ def test_u5_audit_tells_identity_a_reading_only_once_its_recipe_hears_one(j2, mo
     assert S.validate("act.reading", pl) == []
     assert (pl["reading"], pl["artifact"], pl["v"], pl["read"], pl["met"], pl["not_met"], pl["to_confirm"], pl["high"]) == \
         (row["id"], "Result", 1, True, ["D1"], [], [], False)
+
+
+# ---- U6 · Audit's view: latest and readings -------------------------------------------------------------------------
+def _view(j2, ref):
+    W, R, J, _, FV = j2
+    got = _audit_module().view(ref, W.dept(ref), J.events(ref), W.asks(ref))
+    assert S.validate_view("audit", got) == [], S.validate_view("audit", got)
+    assert S.validate("view.audit", got) == []
+    return got
+
+
+def test_u6_the_view_validates_empty_and_says_no_reading_yet(j2):
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    got = _view(j2, ref)
+    assert got["latest"] is None and got["readings"] == [] and got["spot_checks"] == [] and set(got) == {"readings", "findings", "spot_checks", "latest"}
+
+
+def test_u6_a_version_not_read_is_a_reading_with_its_reason_and_no_latest(j2):
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    _stamp_all(W, ref)
+    got = _view(j2, ref)
+    (entry,) = got["readings"]
+    assert (entry["artifact"], entry["v"], entry["read"], entry["why_not_read"], entry["verdicts"]) == \
+        ("Live site", 1, False, "no model was there to read it", {})
+    assert entry["summary"] == "did not read Live site v1: no model was there to read it" and entry["at"]
+    assert got["latest"] is None, "no version has been read, so nothing is the latest reading"
+
+
+def test_u6_a_reading_lists_each_item_with_the_row_whose_verdict_stands(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    _model(monkeypatch, R, {"write.page": _page_with_a_hole, "audit.items": _says("met"), "audit.judge": JUDGE_OK})
+    ref = _born(j2)
+    _stamp_all(W, ref, kind="publish")
+    got = _view(j2, ref)
+    (entry,) = got["readings"]
+    assert (entry["read"], entry["why_not_read"], entry["verdicts"]) == (True, None, {"D1": "not_met"})
+    assert entry["summary"] == "read Live site v1: D1 not met"
+    latest = got["latest"]
+    assert (latest["artifact"], latest["v"]) == ("Live site", 1) and latest["at"]
+    (item,) = latest["items"]
+    assert set(item) == {"id", "verdict", "method", "evidence", "claim"}
+    assert (item["id"], item["verdict"], item["method"]) == ("D1", "not_met", "code"), "the measured failure stands over the reader's yes"
+    assert "does not know" in item["claim"]
+    assert got["findings"] == [], "a hole is a question in the chat, not a finding ask: the pane lists asks as it did"
+
+
+def test_u6_when_the_reader_is_the_one_who_says_no_its_row_is_the_one_shown(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    _model(monkeypatch, R, {"audit.items": _says("not_met"), "audit.judge": JUDGE_OK})
+    ref = _default(j2)
+    got = _view(j2, ref)
+    (item,) = got["latest"]["items"]
+    assert (item["id"], item["verdict"], item["method"]) == ("D1", "not_met", "model") and got["latest"]["artifact"] == "Result"
+
+
+def test_u6_a_done_reading_shows_every_item_met(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    _model(monkeypatch, R, {"audit.items": _says("met"), "audit.judge": JUDGE_OK})
+    ref = _born(j2)
+    _stamp_all(W, ref)
+    got = _view(j2, ref)
+    assert [(i["id"], i["verdict"]) for i in got["latest"]["items"]] == [("D1", "met")]
+    (entry,) = got["readings"]
+    assert entry["summary"] == "read Live site v1: every done-when item holds" and entry["verdicts"] == {"D1": "met"}
+    assert J.status(ref)["goal_reached"] is True
+
+
+def test_u6_only_the_last_six_readings_are_listed_newest_last_and_a_reading_from_before_the_journal_is_kept(j2):
+    W, R, J, _, _ = j2
+    ref = _default(j2)
+    before = _view(j2, ref)["readings"]
+    for n in range(2, 10):
+        row = {"schema_version": 1, "id": "r-%08x" % n, "v": n, "artifact": "Result", "cycle_id": None, "round": None, "read": True,
+               "why_not_read": None, "findings": [], "at": W.now(),
+               "items": [{"id": "D1", "subject": "x", "claim": "c", "evidence": "e", "method": "model", "verdict": "met", "severity": "low"}]}
+        W.append_row(ref, "readings.jsonl", row)
+    got = _view(j2, ref)
+    assert [e["v"] for e in got["readings"]] == [4, 5, 6, 7, 8, 9] and got["latest"]["v"] == 9
+    assert before and "v" in before[0], "the version the department read has its row"
+
+
+def test_u6_the_pane_still_lists_the_ledgers_readings_for_a_department_with_no_journal(j2):
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    J.note(ref, 7, "Audit", "Identity", "audit.finding_filed", "recorded", "Audit read Live site v1 and found nothing to put right.", "old-1")
+    got = _view(j2, ref)
+    assert [e["summary"] for e in got["readings"]] == ["Audit read Live site v1 and found nothing to put right."]
+    assert got["latest"] is None
+
+
+def test_u6_the_contract_passes_for_audit_v1_with_no_part_of_it_on_the_md_fallback_beyond_the_unmoved_words(contract_ctx):
+    m = _audit_module()
+    for number, case in enumerate((C.case_1, C.case_2, C.case_3, C.case_4, C.case_5, C.case_6, C.case_7, C.case_8), 1):
+        assert case(m, contract_ctx) == [], "contract case %d" % number
+    counts = C.by_reference(m)
+    assert counts == {"by_reference": 12, "own": 0}, "every name audit/v1 provides is by reference"
