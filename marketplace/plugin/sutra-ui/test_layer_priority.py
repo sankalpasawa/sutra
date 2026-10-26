@@ -1354,3 +1354,201 @@ def test_q2_the_view_carries_the_ceiling_and_the_map_and_the_cycle_read_it(live,
     del d["ceiling"]
     W.save_dept(ref, d)
     assert F.functions(ref)["budget"]["of"] == "today's limits" and F.functions(ref)["cycle"]["ceiling"] is None
+
+
+# ---- Q3: scenario tests for the rare branches of the bargain (M5.5) ----------------------------------------------------------
+# Seven branches, each on a website, a default department (one Do engine) and an organic line (shaped on the fly): Priority asks
+# for less, Priority says no, the bargain reaches its limit by hops, by time and by spend, Identity drops the plan, Identity asks.
+# The model is a function of the step id (test_j2's way); the clock is the system clock, ticked by R.sweep; the limit by time and by
+# spend are reached with a model that is away, so that the bargain stays open while the clock runs.
+KINDS3 = ("website", "default", "organic")
+LAST3 = {"website": "Publish", "default": "Do", "organic": "Summary"}
+KEEP3 = {"website": ["Plan", "Write", "Check"], "default": ["Do"], "organic": ["Facts", "Notes"]}
+FIRST3 = {"website": "Plan", "default": "Do", "organic": "Facts"}
+NO = {"answer": "reject", "why": "no room in the envelope today"}
+
+
+def _work(W, ref):
+    """The work engines that ran, in order (test_j2's reading)."""
+    return [r["engine"] for r in W.runs(ref) if not r.get("system") and r.get("what") != "history"]
+
+
+def _said(R, ref):
+    """What Identity said to the owner on the board (test_j2's reading)."""
+    return [str((p["payload"] or {}).get("done") or (p["payload"] or {}).get("objective") or "") for p in R.board(ref)
+            if p["src"] == "Identity" and "Owner" in p["dst"]]
+
+
+def _scenario(monkeypatch, R, kind, bargain=None, more=None, away=None, cost=0.0, bounds=None):
+    """The model of a scenario, per step id: Adaptation's line for the organic kind, Priority's bargain, and whatever else is
+    named. `away`: Priority's bargain waits for the model (it costs `cost`), so the bargain stays open."""
+    answers = {"adapt.line": THREE} if kind == "organic" else {}
+    if bargain is not None:
+        answers["priority.bargain"] = bargain
+    answers.update(more or {})
+    monkeypatch.delenv("SUTRA_WEBSITE_OFFLINE", raising=False)
+
+    def model(prompt, step):
+        if away and step["id"] == "priority.bargain":
+            return None, cost, "away"
+        if step["id"] not in answers:
+            return None, 0.0, "offline"
+        got = answers[step["id"]]
+        return (got(prompt) if callable(got) else got), 0.01, "model"
+    monkeypatch.setattr(R, "MODEL", model)
+    if bounds:
+        monkeypatch.setattr(R, "BOUNDS", dict({"hops": 4, "seconds": 900, "usd": 0.5}, **bounds))
+
+
+def _scenario_dept(live, kind):
+    """A department of the kind, made the way a person makes one, with two done-when items, and run until it waits."""
+    W, R, J, _ = live
+    if kind == "default":
+        d, _ = W.create("dref-answers", "Answers", None, kind="default")
+        d["events"] = [{"kind": "j2_ready", "route": "template"}]
+        W.save_dept(d["ref"], d)
+        J.start(d["ref"])
+        W.give_goal(d["ref"], "Answer what the science team asks about the lab rota")
+        ref = d["ref"]
+    else:
+        ref = _born(live, ORGANIC if kind == "organic" else WEBSITE, "Lab Co" if kind == "organic" else "Acme Learning", settle=False)
+    W.put_done_items(ref, ITEMS2)
+    W.run_until_idle(ref, limit=300)
+    return ref
+
+
+def _counter3(kind):
+    def bargain(prompt):
+        if "- %s:" % LAST3[kind] in prompt:
+            return {"answer": "counter", "why": "room for some of it today", "keep": KEEP3[kind]}
+        return {"answer": "accept", "why": "the envelope has room"}
+    return bargain
+
+
+def _line_thread(R, ref):
+    return next(p["thread"] for p in R.board(ref) if p["src"] == "Adaptation" and p["msg_type"] == "propose" and (p["payload"] or {}).get("word") == "line")
+
+
+def _one_conflict_ask(W, ref):
+    asks = [a for a in W.asks(ref) if a["status"] == "pending"]
+    assert [a["kind"] for a in asks] == ["conflict"], asks
+    return asks[0]
+
+
+@pytest.mark.parametrize("kind", KINDS3)
+def test_q3_priority_asks_for_less_and_adaptation_takes_it(live, monkeypatch, kind):
+    """A counter treated as a no, a cut engine that runs, or a line that cannot be cut and is cut all the same, must fail: on a
+    website and an organic line the engines Priority kept are registered and run, the one it cut never does; a default
+    department has one engine, so asking to keep all of it is a yes."""
+    W, R, J, _ = live
+    _scenario(monkeypatch, R, kind, _counter3(kind))
+    ref = _scenario_dept(live, kind)
+    acts = _actions(J, ref)
+    assert "conflict.raised" not in acts and "workflow.registered" in acts
+    prices = _prices(W, ref)
+    if kind == "default":
+        assert "proposal.countered" not in acts and [(p["answer"], p["keep"]) for p in prices] == [("accept", ["Do"])]
+        assert W.dept(ref)["workflows"][-1]["engines"] == ["Do"]
+    else:
+        i = acts.index("proposal.countered")
+        assert acts[i:i + 4] == ["proposal.countered", "proposal.created", "proposal.granted", "workflow.validated"]
+        assert [(p["answer"], p["keep"]) for p in prices] == [("counter", KEEP3[kind]), ("accept", KEEP3[kind])]
+        assert W.dept(ref)["workflows"][-1]["engines"] == KEEP3[kind]
+        assert LAST3[kind] not in [r["engine"] for r in W.runs(ref)], "the engine Priority asked to leave out never ran"
+        assert not [o for p in _priority_posts(R, ref, "propose") for o in p["payload"].get("options") or []], "an ask for less is no limit"
+    assert _work(W, ref) == (KEEP3[kind] if kind != "default" else ["Do"])[:len(_work(W, ref))] and _work(W, ref)[0] == FIRST3[kind]
+    assert all(S.validate("priority.price", p) == [] for p in prices)
+
+
+@pytest.mark.parametrize("kind", KINDS3)
+def test_q3_priority_says_no_and_the_conflict_reaches_identity_with_the_ways_forward(live, monkeypatch, kind):
+    """A no that ends in silence, an ask put twice, or a no with no way forward, must fail: Identity is the one that asks, once,
+    nothing runs, and Priority's post carries what the owner may do, priced by code."""
+    W, R, J, _ = live
+    _scenario(monkeypatch, R, kind, NO)
+    ref = _scenario_dept(live, kind)
+    assert _actions(J, ref)[-5:] == ["proposal.created", "proposal.refused", "conflict.raised", "identity.ruled", "ask.created"]
+    ask = _one_conflict_ask(W, ref)
+    assert "Priority said no to the plan: no room in the envelope today" in ask["text"] and _work(W, ref) == []
+    [no] = _priority_posts(R, ref, "reject-proposal")
+    assert [o["id"] for o in no["payload"]["options"]] == ["leave:D2", "stop"], "the room was ample, so no raise would mend it"
+    assert all(S.validate("option", o) == [] for o in no["payload"]["options"])
+    assert not [o for o in no["payload"]["options"] if re.search(r"order|MODEL", o["label"] + o["cost"])]
+    [row] = _prices(W, ref)
+    assert (row["answer"], row["keep"], row["proposal"]) == ("reject", [], "line") and S.validate("priority.price", row) == []
+    W.run_until_idle(ref, limit=100)
+    assert len([a for a in W.asks(ref) if a["kind"] == "conflict"]) == 1
+
+
+def _limit_scenario(live, monkeypatch, kind, bound):
+    """A bargain that reaches its limit: by hops (one hop, so Priority's answer is the second), by time (a bargain open for five
+    seconds, the model away, the clock ticked) and by spend (the model away having cost more than the thread may spend)."""
+    W, R, J, _ = live
+    if bound == "hops":
+        _scenario(monkeypatch, R, kind, bounds={"hops": 1})
+    else:
+        _scenario(monkeypatch, R, kind, away=True, cost=0.6 if bound == "usd" else 0.0, bounds={"seconds": 5} if bound == "seconds" else {})
+    ref = _scenario_dept(live, kind)
+    if bound != "hops":
+        for _ in range(3):
+            R.sweep(ref)
+        W.run_until_idle(ref, limit=100)
+    return ref
+
+
+@pytest.mark.parametrize("kind", KINDS3)
+@pytest.mark.parametrize("bound,label", (("hops", "hops"), ("seconds", "time"), ("usd", "spend")))
+def test_q3_a_bargain_that_reaches_its_limit_goes_to_identity_and_priority_has_the_ways_forward(live, monkeypatch, kind, bound, label):
+    """A limit that stops the bargain in silence, a conflict raised twice, or a limit with no way forward, must fail (J2.2): the
+    bargain stops where it is, Coordination raises the conflict, Identity asks once, nothing runs, and Priority gives the options
+    for the line the bargain was about."""
+    W, R, J, _ = live
+    ref = _limit_scenario(live, monkeypatch, kind, bound)
+    raised = [e for e in J.events(ref) if e["action"] == "conflict.raised"]
+    assert len(raised) == 1 and raised[0]["actor"] == "Coordination" and raised[0]["payload"]["bound"] == bound
+    _one_conflict_ask(W, ref)
+    assert _work(W, ref) == [] and [e for e in J.events(ref) if e["action"] == "workflow.registered"] == []
+    th = next(t for t in R.threads(ref) if t["id"] == _line_thread(R, ref))
+    assert (th["state"], th["outcome"]["which"]) == ("canceled", bound)
+    if bound == "hops":
+        assert _priority_posts(R, ref, "reject-proposal") == [] and _prices(W, ref) == [], "Priority's answer was past the limit"
+    else:
+        [step] = [r for r in R.step_rows(ref) if r["step"] == "priority.bargain"]
+        assert step["status"] == "waiting", "Priority was waiting for the model when the clock ran out"
+    opts = layers.call(ref, "priority", "limit_options", ref, th["id"])
+    assert [o["id"] for o in opts] == ["leave:D2", "stop"] and all(S.validate("option", o) == [] for o in opts)
+    assert opts[0]["cost"].startswith("D2 is dropped from done-when") and opts[1]["cost"].startswith("the department stops")
+
+
+@pytest.mark.parametrize("kind", KINDS3)
+def test_q3_identity_drops_the_plan_and_nothing_runs(live, monkeypatch, kind):
+    """A drop that leaves the cycle running, or leaves the owner with no way out, must fail: Identity rules from the rules, the
+    cycle is blocked, nothing runs, and the blocked card is the owner's way out."""
+    W, R, J, _ = live
+    _scenario(monkeypatch, R, kind, NO, {"identity.close": {"ruling": "drop", "why": "the rules say so"}})
+    ref = _scenario_dept(live, kind)
+    ruled = next(e for e in J.events(ref) if e["action"] == "identity.ruled")
+    assert ruled["state"] == "drop" and J.status(ref)["state"] == "blocked" and _work(W, ref) == []
+    assert any("is dropped: the rules say so" in s for s in _said(R, ref))
+    card = [a for a in W.asks(ref) if a["status"] == "pending"]
+    assert [a["kind"] for a in card] == ["blocked"] and "stop" in [o["id"] for o in card[0]["options"]]
+    assert "workflow.registered" not in _actions(J, ref)
+
+
+@pytest.mark.parametrize("kind", KINDS3)
+def test_q3_identity_asks_the_owner_and_the_owners_stamp_runs_the_plan(live, monkeypatch, kind):
+    """An ask Identity puts twice, or a stamp that does not resume the same cycle, must fail: one ask, in the owner's words, and
+    the stamp registers the plan and the first engine runs."""
+    W, R, J, _ = live
+    _scenario(monkeypatch, R, kind, NO, {"identity.close": {"ruling": "ask", "why": "the goal and the rules do not settle it"}})
+    ref = _scenario_dept(live, kind)
+    ruled = next(e for e in J.events(ref) if e["action"] == "identity.ruled")
+    assert ruled["state"] == "ask" and J.status(ref)["state"] == "waiting" and _work(W, ref) == []
+    ask = _one_conflict_ask(W, ref)
+    assert "Priority said no to the plan: no room in the envelope today" in ask["text"]
+    W.run_until_idle(ref, limit=100)
+    assert len([a for a in W.asks(ref) if a["kind"] == "conflict"]) == 1
+    cycle = {e["cycle_id"] for e in J.events(ref)}
+    _stamp(ref, W)
+    assert "workflow.registered" in _actions(J, ref) and _work(W, ref)[:1] == [FIRST3[kind]]
+    assert {e["cycle_id"] for e in J.events(ref)} == cycle, "one answer resumes the same cycle"
