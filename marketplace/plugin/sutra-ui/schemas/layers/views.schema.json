@@ -88,6 +88,63 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9 &'.-]{0,39}$",
       "type": "string"
     },
+    "priority.estimate": {
+      "additionalProperties": true,
+      "properties": {
+        "basis": {
+          "enum": [
+            "median",
+            "prior",
+            "line"
+          ]
+        },
+        "calls": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "per_engine": {
+          "additionalProperties": {
+            "additionalProperties": true,
+            "properties": {
+              "basis": {
+                "enum": [
+                  "median",
+                  "prior"
+                ]
+              },
+              "calls": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "runs": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "usd": {
+                "minimum": 0,
+                "type": "number"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "type": "object"
+        },
+        "runs": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "usd": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "calls",
+        "usd"
+      ],
+      "type": "object"
+    },
     "view.adaptation": {
       "additionalProperties": true,
       "properties": {
@@ -248,12 +305,19 @@
           "minItems": 0,
           "type": "array"
         },
+        "round": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/view.adaptation.round"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "rounds": {
           "items": {
-            "additionalProperties": true,
-            "properties": {},
-            "required": [],
-            "type": "object"
+            "$ref": "#/$defs/view.adaptation.round"
           },
           "minItems": 0,
           "type": "array"
@@ -263,6 +327,96 @@
         "proposal",
         "root_checks",
         "rounds"
+      ],
+      "type": "object"
+    },
+    "view.adaptation.round": {
+      "additionalProperties": true,
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "brief_v": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "correction": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "covers": {
+          "items": {
+            "$ref": "#/$defs/id.item"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "estimate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/priority.estimate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fixes": {
+          "items": {
+            "$ref": "#/$defs/id.finding"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "reading": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "round": {
+          "maximum": 99,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "proposed",
+            "granted",
+            "refused",
+            "filed",
+            "read"
+          ]
+        }
+      },
+      "required": [
+        "round",
+        "correction",
+        "covers",
+        "status"
       ],
       "type": "object"
     },

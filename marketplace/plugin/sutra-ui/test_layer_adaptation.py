@@ -74,7 +74,7 @@ def test_a1_the_module_provides_every_name_its_recipe_uses():
         for kind in used:
             if s.get(kind):
                 used[kind].add(s[kind])
-    assert {k: len(v) for k, v in used.items()} == {"code": 15, "prompt": 3, "draft": 3, "check": 7}
+    assert {k: len(v) for k, v in used.items()} == {"code": 19, "prompt": 4, "draft": 4, "check": 8}
     for kind, names in used.items():
         assert names <= set(getattr(module, kind.upper())), "%s names the recipe uses that the module leaves to the legacy registry" % kind
 
@@ -88,7 +88,7 @@ def test_a1_the_contract_cases_pass_for_adaptation_v1(case, home):
 def test_a1_what_it_holds_by_reference_is_counted_for_the_hand_in(capsys):
     counts = C.by_reference(v1())
     print("adaptation/v1: %(by_reference)d by reference, %(own)d own" % counts)
-    assert counts["by_reference"] + counts["own"] == 28
+    assert counts["by_reference"] + counts["own"] == 35
 
 
 # ---- A2 · Adaptation's words (M2.5) -----------------------------------------------------------------------------------

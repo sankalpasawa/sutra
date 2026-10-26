@@ -377,7 +377,8 @@ def file_parts(fn, file, ref=None):
     group the interface gives only a note (Adaptation's decide), the words after its lead as the part `note`."""
     text = instruction(fn, file, ref)
     lead, parts = parts_of(text)
-    if not parts and list(((S.PROMPTS.get(fn) or {}).get(file) or {})) == ["note"]:
+    # a part a later step added to the interface (S.ADDED_PARTS) is in no file of the bundle, so it does not make the group more than a note
+    if not parts and [p for p in ((S.PROMPTS.get(fn) or {}).get(file) or {}) if (fn, file, p) not in S.ADDED_PARTS] == ["note"]:
         parts = {"note": lead.split("\n\n", 1)[1].strip("\n") if "\n\n" in lead else ""}
     return parts
 

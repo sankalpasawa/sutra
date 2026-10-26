@@ -99,6 +99,10 @@
   "x-fields": {
     "adaptation": {
       "decide": {
+        "next": {
+          "guidance": "field.guidance",
+          "task": "field.task"
+        },
         "note": {
           "text": "field.note"
         }

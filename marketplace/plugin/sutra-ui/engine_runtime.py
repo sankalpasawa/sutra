@@ -1596,6 +1596,11 @@ def run_engine(ref, name, inp, slot):
         row.update({"status": "failed", "what": note or "failed"})
         if name == "Adaptation" and p and (p.get("payload") or {}).get("word") == "line" and p.get("msg_type") == "request":
             _j2_shape_failed(ref, d, p, note)
+        if name == "Adaptation" and p and (p.get("payload") or {}).get("word") == "next" and p.get("msg_type") == "request":
+            try:                                   # no round that is new (M9.4): Identity is told, with the ways out; never a silent end
+                layers.call(ref, "adaptation", "next_failed", ref, d, p, note)
+            except Exception:  # noqa: BLE001 -- the failed run is a row whether or not the word reached Identity
+                pass
         if name == "Setup":
             _j1_close(ref, "failed", "I could not set the department up: %s. Say what you want again, or say it differently."
                       % str(note or "a step failed").rstrip("."))
@@ -5682,6 +5687,7 @@ INPUT_SAYS = {"dept": "the department", "goal": "the goal", "done": "what done m
               "kinds": "the kinds of department", "use_cases": "the use cases", "practices": "the practices in place",
               "deliverable": "what was made", "measured": "what code measured", "estimate": "what it is likely to cost",
               "remaining": "what remains of today's room"}
+INPUT_SAYS.update({"findings": "what Audit found", "line": "the line that ran", "last": "the last round"})       # adapt.next (W2-ADAPT, M9.1)
 
 
 def _what(fn, group, part, field):
@@ -6713,6 +6719,28 @@ def c_line_is_fitted(ctx, step, item, out):
 
 
 PROMPT["adapt_fit"], DRAFT["adapt_fit_draft"], CHECK["line_is_fitted"] = p_adapt_fit, d_adapt_fit, c_line_is_fitted
+
+
+# adaptation/v1's steps for the next round (W2-ADAPT, M9.1): the copies a department runs when the layer does not load. None of
+# them proposes a round: the request is heard, nothing is asked of Priority and nothing is written, and the run says so
+def _round_inert(ctx, step, item):
+    return {"said": "adaptation/v1 is not loaded, so no round is proposed"}
+
+
+def p_adapt_next(ctx, step, item):
+    return "Say in one line what to correct. Answer with one JSON object only: {\"correction\": str, \"fixes\": [], \"covers\": [], \"why\": str}."
+
+
+def d_adapt_next(ctx, step, item):
+    return {"correction": "Put right what the reading found", "fixes": [], "covers": [], "why": "no agent was there to say it"}
+
+
+def c_round_is_new(ctx, step, item, out):
+    return _verdict(isinstance(out, dict) and bool(str(out.get("correction") or "").strip()), "a round says what to correct", "a round says what to correct")
+
+
+CODE.update({"adapt_hearnext": hear, "adapt_round": _round_inert, "adapt_round_granted": _round_inert, "adapt_round_refused": _round_inert})
+PROMPT["adapt_next"], DRAFT["adapt_next_draft"], CHECK["round_is_new"] = p_adapt_next, d_adapt_next, c_round_is_new
 
 
 # ---- what the screens read -----------------------------------------------------------------------------------------

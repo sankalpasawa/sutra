@@ -1392,6 +1392,26 @@
         "words": [
           "doubt"
         ]
+      },
+      {
+        "act": "propose",
+        "payload": "act.round",
+        "to": [
+          "Priority"
+        ],
+        "words": [
+          "round"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.round",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "round"
+        ]
       }
     ],
     "Audit": [
@@ -1539,6 +1559,16 @@
         ],
         "words": [
           "idea"
+        ]
+      },
+      {
+        "act": "request",
+        "payload": "act.next",
+        "to": [
+          "Adaptation"
+        ],
+        "words": [
+          "next"
         ]
       },
       {

@@ -374,6 +374,10 @@ SAMPLES = {
     "view.adaptation": ({"proposal": {"workflow": ["Plan", "Write"], "source": "shaped", "at": NOW},
                          "root_checks": [{"summary": "met every standard", "at": NOW, "passed": True}], "rounds": []},
                         {"proposal": None, "root_checks": [{"passed": "yes"}], "rounds": []}),
+    # one round of the current cycle (W2-ADAPT, M9.6): rounds.jsonl folded by round number, the latest status winning
+    "view.adaptation.round": ({"round": 2, "correction": "Put right D2: every page names the phone line", "covers": ["D2"], "fixes": ["F1"],
+                               "status": "granted", "estimate": {"calls": 9, "usd": 0.36}, "at": NOW, "reading": "r-0123abcd", "brief_v": None},
+                              {"round": 2, "correction": "Put right D2", "covers": ["D2"], "status": "done"}),
     "view.priority": ({"bargains": [{"said": "asked for less", "summary": "kept three engines of four", "at": NOW}],
                        "envelopes": [{"engine": "Write", "calls": 3, "usd": 0.1, "calls_limit": 40, "usd_limit": 0.5, "share": 0.2}]},
                       {"bargains": [{"said": "COUNTER", "summary": None, "at": None}], "envelopes": []}),
@@ -615,8 +619,9 @@ def test_s3_prompts_are_the_bundles_parts_and_the_returns_byte_for_byte():
             text = (R.PROMPTS_DIR / fn / (file + ".md")).read_text(encoding="utf-8")
             lead, got = R._parts(text)
             assert S.GROUPS[fn][file] == lead.split("\n\n")[0]
-            if not parts:
-                assert list(S.PROMPTS[fn][file]) == ["note"], "a file no step reads is its note (A1.16 rule 7)"
+            if not [p for p in parts if (fn, file, p) not in S.ADDED_PARTS]:
+                assert [p for p in S.PROMPTS[fn][file] if (fn, file, p) not in S.ADDED_PARTS] == ["note"], \
+                    "a file no step reads is its note (A1.16 rule 7)"
                 continue
             # a part a later step added to the interface (A1.16, 'Parts added by later steps') is in no file of the bundle
             assert [p for p in S.PROMPTS[fn][file] if (fn, file, p) not in S.ADDED_PARTS] == [p for p in parts if (fn, file, p) not in S.ADDED_PARTS]

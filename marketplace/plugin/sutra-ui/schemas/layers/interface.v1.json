@@ -65,7 +65,8 @@
       "idea_has_shapes": "an idea is reflected back with the shapes it could take",
       "line_is_engines": "a shaped line is one to six engines that code finds nothing wrong with",
       "line_is_fitted": "a fitted line is the kind's line in its order, less engines the kind does not require, and every note is for an engine of it and at most 300 characters",
-      "moves_name_their_rows": "each move is of a known kind and names the rows it rests on"
+      "moves_name_their_rows": "each move is of a known kind and names the rows it rests on",
+      "round_is_new": "a round says what to correct, and is not the approach that already failed for the same item"
     },
     "audit": {
       "findings_name_where_and_what": "each finding names where it is and what it claims",
@@ -1614,6 +1615,11 @@
             "filed",
             "read"
           ]
+        },
+        "thread": {
+          "maxLength": 80,
+          "minLength": 0,
+          "type": "string"
         }
       },
       "required": [
@@ -3862,12 +3868,19 @@
           "minItems": 0,
           "type": "array"
         },
+        "round": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/view.adaptation.round"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "rounds": {
           "items": {
-            "additionalProperties": true,
-            "properties": {},
-            "required": [],
-            "type": "object"
+            "$ref": "#/$defs/view.adaptation.round"
           },
           "minItems": 0,
           "type": "array"
@@ -3877,6 +3890,96 @@
         "proposal",
         "root_checks",
         "rounds"
+      ],
+      "type": "object"
+    },
+    "view.adaptation.round": {
+      "additionalProperties": true,
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "brief_v": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "correction": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "covers": {
+          "items": {
+            "$ref": "#/$defs/id.item"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "estimate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/priority.estimate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fixes": {
+          "items": {
+            "$ref": "#/$defs/id.finding"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "reading": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "round": {
+          "maximum": 99,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "proposed",
+            "granted",
+            "refused",
+            "filed",
+            "read"
+          ]
+        }
+      },
+      "required": [
+        "round",
+        "correction",
+        "covers",
+        "status"
       ],
       "type": "object"
     },
@@ -5901,6 +6004,36 @@
         "payload": "act.line",
         "via": "board",
         "word": "line"
+      },
+      {
+        "act": "request",
+        "from": [
+          "Identity"
+        ],
+        "handler": "Propose the next round",
+        "payload": "act.next",
+        "via": "board",
+        "word": "next"
+      },
+      {
+        "act": "accept-proposal",
+        "from": [
+          "Priority"
+        ],
+        "handler": "Priority said yes to the round",
+        "payload": "act.round",
+        "via": "board",
+        "word": "round"
+      },
+      {
+        "act": "reject-proposal",
+        "from": [
+          "Priority"
+        ],
+        "handler": "Priority said no to the round",
+        "payload": "act.round",
+        "via": "board",
+        "word": "round"
       }
     ],
     "audit": [],
@@ -6124,7 +6257,8 @@
         "idea_has_shapes",
         "line_is_engines",
         "line_is_fitted",
-        "moves_name_their_rows"
+        "moves_name_their_rows",
+        "round_is_new"
       ],
       "hands_to": "Priority: every proposal and every round. Identity: conflicts, and a round Priority said yes to, to file. Root: the line Priority said yes to, for its check.",
       "holds": "Its proposals on the board, the ideas it parked, the ladder of every step, and its rounds.",
@@ -6445,6 +6579,21 @@
   "prompts": {
     "adaptation": {
       "decide": {
+        "next": {
+          "fields": {
+            "guidance": "field.guidance",
+            "task": "field.task"
+          },
+          "inputs": [
+            "dept",
+            "items",
+            "findings",
+            "line",
+            "last"
+          ],
+          "read_by": "adapt.next",
+          "returns": "Return ONLY a JSON object: {\"correction\": \"one line: what to correct\", \"fixes\": [\"F1\"], \"covers\": [\"D2\"], \"why\": \"one line\"}."
+        },
         "note": {
           "fields": {
             "text": "field.note"
@@ -7042,6 +7191,26 @@
         "words": [
           "doubt"
         ]
+      },
+      {
+        "act": "propose",
+        "payload": "act.round",
+        "to": [
+          "Priority"
+        ],
+        "words": [
+          "round"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.round",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "round"
+        ]
       }
     ],
     "Audit": [
@@ -7189,6 +7358,16 @@
         ],
         "words": [
           "idea"
+        ]
+      },
+      {
+        "act": "request",
+        "payload": "act.next",
+        "to": [
+          "Adaptation"
+        ],
+        "words": [
+          "next"
         ]
       },
       {

@@ -8,6 +8,7 @@ fallback for a part no layer holds. view() returns the pane's read model.
 """
 import os
 import re
+import uuid
 
 from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests reload engine_runtime, so never a module object
 
@@ -439,6 +440,269 @@ def fitted(ctx, src):
     return dict(src, engines=rows, fit=notes, left_out=[e['name'] for e in src.get('engines') or [] if e.get('name') not in keep])
 
 
+# ---- the next round (W2-ADAPT: M9.1 the round, M9.4 never the same twice, M9.6 the rounds) ---------------------------------
+#: a round's statuses, in the order it passes through them (adaptation.round): proposed to Priority, granted or refused by it,
+#: filed in the Brief by Identity, read by Audit. Adaptation writes the first three; the others are Identity's and Audit's to
+#: move on the record they own, and the fold takes whatever the latest row says.
+RAN = ('granted', 'filed', 'read')           # a round that ran: the approach it named was tried
+#: what a round says is at most this long (adaptation.round correction); the model's own words are cut to it, never refused for it
+SAYS = 600
+
+
+def clip(text, n=SAYS):
+    return ' '.join(str(text or '').split())[:n]
+
+
+def words_of(text):
+    """The words of a line as the repeat guard compares them: lower case, letters and digits only, in order."""
+    return ' '.join(re.findall(r'[a-z0-9]+', str(text or '').lower()))
+
+
+def cycle_of(ref):
+    """The cycle the department is in (J2): its id, or None when it has none."""
+    try:
+        return (J._state(ref) or {}).get('cycle_id')
+    except Exception:  # noqa: BLE001 -- no cycle to read: the rounds are the department's own
+        return None
+
+
+def all_rounds(ref):
+    """rounds.jsonl folded by round, the latest row of each round winning (M9.6). Rounds of two cycles are two rounds: the
+    number starts again with the cycle."""
+    folded = {}
+    try:
+        rows = W.rows(ref, 'rounds.jsonl')
+    except (ValueError, OSError):
+        rows = []
+    for r in rows:
+        if isinstance(r, dict) and isinstance(r.get('round'), int) and not isinstance(r.get('round'), bool):
+            key = (r.get('cycle_id'), r['round'])
+            folded[key] = dict(folded.get(key, {}), **r)
+    return list(folded.values())
+
+
+def rounds_of(ref):
+    """The rounds of the cycle the department is in, oldest first; the department's whole record when it has no cycle."""
+    cur = cycle_of(ref)
+    return sorted((r for r in all_rounds(ref) if cur is None or r.get('cycle_id') == cur), key=lambda r: r['round'])
+
+
+def failed_round(ref, ids):
+    """The latest round that ran for any of these items and did not put them right (M9.4): the reading that asked for the next
+    round found them still not met, so the correction it named is the last approach that failed. A round Priority would not pay
+    for never ran, so its approach did not fail."""
+    for r in reversed(rounds_of(ref)):
+        if r.get('status') in RAN and set(r.get('covers') or []) & set(ids):
+            return r
+    return None
+
+
+def next_number(ref, pl):
+    """The number of the round now asked for: one after the latest of this cycle, or the number Identity gave when that is later."""
+    n = max([r['round'] for r in rounds_of(ref)] or [0]) + 1
+    given = pl.get('round')
+    if isinstance(given, int) and not isinstance(given, bool) and 1 <= given <= 99:
+        n = max(n, given)
+    return min(n, 99)
+
+
+def reading_of(ref, rid=None):
+    """The reading a request names (readings.jsonl, by its id); the latest one when it names none; None when Audit has filed none."""
+    try:
+        rows = [r for r in W.rows(ref, 'readings.jsonl') if isinstance(r, dict)]
+    except (ValueError, OSError):
+        rows = []
+    if rid:
+        return next((r for r in reversed(rows) if r.get('id') == rid), None)
+    return rows[-1] if rows else None
+
+
+def line_estimate(ref):
+    """Priority's observed cost of the line (M9.1): the estimate on the latest price row for a line, the cost it read from the
+    runs that finished. Nothing observed is a zero with the basis 'prior': Priority prices the round itself all the same."""
+    try:
+        rows = [r for r in W.rows(ref, 'prices.jsonl') if isinstance(r, dict) and r.get('proposal') == 'line' and isinstance(r.get('estimate'), dict)]
+    except (ValueError, OSError):
+        rows = []
+    return dict(rows[-1]['estimate']) if rows else {'calls': 0, 'usd': 0.0, 'basis': 'prior', 'runs': 0}
+
+
+def adapt_hearnext(ctx, step, item):
+    """Adaptation hears Identity ask for the next round (M9.1): which of the items it names are in done-when and what the reading
+    said of each, what Audit found about them, the line that ran, the number of this round and the last approach that failed
+    for the same items. The unit starts with code: closed facts."""
+    ref, d, p = ctx['ref'], ctx['dept'], ctx['post']
+    pl = p.get('payload') or {}
+    mine = {i['id']: i for i in items_of(d)}
+    ids = [i for i in dict.fromkeys(pl.get('items') or []) if isinstance(i, str) and i in mine]
+    reading = reading_of(ref, pl.get('reading'))
+    said = {r['id']: r for r in (reading or {}).get('items') or [] if isinstance(r, dict) and r.get('id')}
+    items = [{'id': i, 'text': clip(mine[i].get('text'), 300), 'claim': clip((said.get(i) or {}).get('claim'), 300)} for i in ids]
+    asked = set(x for x in pl.get('findings') or [] if isinstance(x, str))
+    findings = [{'id': f['id'], 'severity': f.get('severity'), 'claim': clip(f.get('claim'), 300), 'where': clip(f.get('where'), 120), 'item': f.get('item')}
+                for f in (reading or {}).get('findings') or [] if isinstance(f, dict) and f.get('id') and (f['id'] in asked or f.get('item') in ids)]
+    last = failed_round(ref, ids)
+    n = next_number(ref, pl)
+    out = R.hear(ctx, step, item)
+    out['facts'].update({'items': ' '.join(ids), 'repeat': bool(last)})
+    wf = (d or {}).get('workflows') or []
+    out.update({'items': items, 'findings': findings, 'round': n, 'reading': (reading or {}).get('id') or (str(pl.get('reading'))[:40] if pl.get('reading') else None),
+                'line': list((wf[-1] if wf else {}).get('engines') or (d or {}).get('engines') or []),
+                'last': {'round': last['round'], 'correction': last.get('correction')} if last else None,
+                'said': ('heard that %s does not hold; round %d to propose%s' % (', '.join(ids), n, ' (the last approach failed)' if last else '')) if ids
+                else 'heard a request for a round naming no item that done-when has'})
+    return out
+
+
+def p_adapt_next(ctx, step, item):
+    """The prompt that says what to correct (adapt.next): the typed part decide.next (A1-NEXT), given the items that do not hold
+    with what the reading said of each, what Audit found, the line that ran and, when the same items failed a round already,
+    the approach that failed."""
+    heard = ctx['bag']['adapt.hearnext']
+    items = '\n'.join('%s: %s%s' % (i['id'], i['text'], (' (what the reading says: %s)' % i['claim']) if i['claim'] else '') for i in heard['items']) or 'none'
+    found = '\n'.join('%s (%s)%s: %s' % (f['id'], f.get('severity') or 'medium', (', ' + f['where']) if f.get('where') else '', f['claim'])
+                      for f in heard['findings']) or 'none'
+    last = ('the last approach failed: %s' % heard['last']['correction']) if heard.get('last') else 'none yet; this is the first round for these items'
+    return R._prompt('adaptation', 'decide', 'next', ctx['ref'], dept=ctx['dept'].get('name'), items=items, findings=found,
+                     line=' -> '.join(heard.get('line') or []) or 'none', last=last)
+
+
+def d_adapt_next(ctx, step, item):
+    """The draft, when no agent is there to say what to correct: the items that do not hold and what Audit found of them, put as
+    a correction. When the same items failed a round already it is another try, numbered, so it is never the approach that
+    failed (M9.4)."""
+    heard = ctx['bag']['adapt.hearnext']
+    ids = [i['id'] for i in heard['items']]
+    tried = len([r for r in rounds_of(ctx['ref']) if r.get('status') in RAN and set(r.get('covers') or []) & set(ids)])
+    what = '; '.join('%s: %s' % (i['id'], i['text'].rstrip('.')) for i in heard['items']) or 'what the reading found'
+    found = '; '.join(dict.fromkeys(f['claim'].rstrip('.') for f in heard['findings'] if f['claim']))
+    text = 'Put right %s' % what + ('. Audit found: %s' % found if found else '')
+    if tried:
+        text = 'Try another way, attempt %d. %s. The last approach did not put it right' % (tried + 1, text)
+    return {'correction': clip(text), 'fixes': [f['id'] for f in heard['findings']], 'covers': ids,
+            'why': 'the reading found %s not met' % (', '.join(ids) or 'an item')}
+
+
+def c_round_is_new(ctx, step, item, out):
+    """A round says what to correct, and says something new (M9.4): a correction equal, word for word, to the one that already
+    failed for the same items is refused, naming the round it repeats. What a reading found that no correction answers is
+    Identity's to put to the owner, never a round that does it again."""
+    heard = ((ctx or {}).get('bag') or {}).get('adapt.hearnext') or {}
+    text = out.get('correction') if isinstance(out, dict) else None
+    if not isinstance(text, str) or not words_of(text):
+        return R._verdict(False, '', 'a round says what to correct')
+    last = heard.get('last') or {}
+    if last and words_of(text) == words_of(last.get('correction')):
+        return R._verdict(False, '', 'this is the approach that already failed in round %s (%s); a round says something new'
+                          % (last.get('round'), clip(last.get('correction'), 120)))
+    named = ', '.join(i['id'] for i in heard.get('items') or []) or 'these items'
+    return R._verdict(True, 'a correction that is new for %s' % named, '')
+
+
+def hears_round():
+    """Whether Identity's recipe has a handler for a granted round (A1.14: an act is posted only to a receiver that hears it)."""
+    return R._handler(R.engine_def('Identity'), {'msg_type': 'inform', 'payload': {'word': 'round'}}) is not None
+
+
+def adapt_round(ctx, step, item):
+    """The round goes to Priority (M9.1): one propose/round with the correction, the findings it fixes, the items it covers and
+    the line's observed cost, in a thread of its own with the board's bounds, and a row in rounds.jsonl, proposed. A round is a
+    correction on the line that is registered; it never registers a line. The same reading asked twice is one round."""
+    ref, heard, got = ctx['ref'], ctx['bag']['adapt.hearnext'], ctx['bag']['adapt.next']
+    ids = [i['id'] for i in heard['items']]
+    if not ids:
+        return {'said': 'no item the request names is in done-when, so there is no round to propose'}
+    reading = heard.get('reading')
+    twice = next((r for r in rounds_of(ref) if reading and r.get('reading') == reading and r.get('status') in ('proposed',) + RAN), None)
+    if twice:
+        return {'said': 'round %d is already with Priority for this reading' % twice['round'], 'round': twice['round']}
+    known = {f['id'] for f in heard['findings']}
+    covers = [c for c in dict.fromkeys(got.get('covers') or []) if c in ids] or ids
+    fixes = [f for f in dict.fromkeys(got.get('fixes') or []) if f in known]
+    thread = 'x-' + uuid.uuid4().hex[:8]
+    row = {'schema_version': 1, 'round': heard['round'], 'at': W.now(), 'cycle_id': cycle_of(ref), 'correction': clip(got['correction']),
+           'fixes': fixes, 'covers': covers, 'estimate': line_estimate(ref), 'status': 'proposed', 'thread': thread}
+    if reading:
+        row['reading'] = str(reading)[:40]
+    W.append_row(ref, 'rounds.jsonl', row)
+    body = {'word': 'round', 'round': row['round'], 'correction': row['correction'], 'fixes': fixes, 'covers': covers, 'estimate': row['estimate'],
+            'why': clip(got.get('why')) or 'the reading found %s not met' % ', '.join(covers)}
+    if R.post(ref, 'Adaptation', 'Priority', 'propose', body, thread=thread) is None:
+        W.append_row(ref, 'rounds.jsonl', dict(row, status='refused', at=W.now()))
+        return {'said': 'round %d could not go to Priority: the bargain reached its bound' % row['round'], 'round': row['round']}
+    return {'said': 'proposed round %d to Priority: %s' % (row['round'], row['correction']), 'round': row['round']}
+
+
+def round_of_thread(ref, thread):
+    return next((r for r in reversed(all_rounds(ref)) if r.get('thread') == thread), None)
+
+
+def adapt_round_granted(ctx, step, item):
+    """Priority said yes to the round (M9.1): the row says granted, and Identity is told to file it as a correction to the Brief.
+    A round is never filed by Adaptation, and Identity is told only once its recipe hears a round."""
+    ref, p = ctx['ref'], ctx['post']
+    row = round_of_thread(ref, p['thread'])
+    if not row:
+        return {'said': 'heard Priority on a round nobody proposed'}
+    if row.get('status') != 'proposed':
+        return {'said': 'round %d was already %s' % (row['round'], row.get('status')), 'round': row['round']}
+    row = W.append_row(ref, 'rounds.jsonl', dict(row, status='granted', at=W.now()))
+    if not hears_round():
+        return {'said': 'Priority said yes to round %d; Identity does not take rounds yet, so it stays on the record' % row['round'], 'round': row['round']}
+    why = clip((p.get('payload') or {}).get('why')) or 'Priority said yes'
+    R.post(ref, 'Adaptation', 'Identity', 'inform', {'word': 'round', 'round': row['round'], 'correction': row['correction'], 'fixes': row.get('fixes') or [],
+                                                     'covers': row.get('covers') or [], 'estimate': row.get('estimate') or line_estimate(ref), 'why': why,
+                                                     'for': p['thread']})
+    return {'said': 'Priority said yes to round %d; Identity is told to file it' % row['round'], 'round': row['round']}
+
+
+def adapt_round_refused(ctx, step, item):
+    """Priority said no to the round (M9.1, M5.4): the row says refused, and it does not go quiet. Identity gets the conflict with
+    the ways out Priority priced, once its recipe hears a round, and puts it to the owner."""
+    ref, p = ctx['ref'], ctx['post']
+    pl = p.get('payload') or {}
+    row = round_of_thread(ref, p['thread'])
+    if not row:
+        return {'said': 'heard Priority on a round nobody proposed'}
+    why = clip(pl.get('why'), 300).rstrip('.') or 'no room for it'
+    if row.get('status') == 'proposed':
+        row = W.append_row(ref, 'rounds.jsonl', dict(row, status='refused', at=W.now()))
+    if not hears_round():
+        return {'said': 'Priority said no to round %d (%s); Identity does not take rounds yet, so it stays on the record' % (row['round'], why), 'round': row['round']}
+    line_conflict(ref, p['thread'], 'Priority said no to round %d: %s' % (row['round'], why), options=options_of(pl), engines=[],
+                  extra={'round': row['round'], 'correction': row['correction']})
+    return {'said': 'Priority said no to round %d (%s); the conflict goes to Identity, with the ways out' % (row['round'], why), 'round': row['round']}
+
+
+def next_options(d, ids):
+    """The ways out when no round can be said that is new, built by code: the owner's own words, which go into the Brief; leave the
+    item out, when done-when has another to keep; stop."""
+    opts = [W.option(W.WORDS_OPTION, 'Say how to put it right', 'your words go into the Brief and the line runs again; no round is paid for')]
+    items = items_of(d)
+    named = next((i for i in items if i['id'] in ids), None)
+    if len(items) > 1 and named:
+        opts.append(W.option('leave:' + named['id'], 'Leave %s out' % named['id'],
+                             '%s is dropped from done-when (%s); nothing more is spent' % (named['id'], str(named.get('text') or '').rstrip('.'))))
+    opts.append(W.option(W.STOP_OPTION, 'Stop here', 'the department stops where it is; you can start it again later'))
+    return opts
+
+
+def next_failed(ref, d, p, note):
+    """The step that says what to correct failed (M9.4): its covering refused the correction because it is the approach that
+    already failed, or no answer fitted. Nothing is proposed and nothing goes quiet: one conflict goes to Identity, with the ways
+    out built by code, once its recipe hears a round. engine_runtime calls it when the run of a request for the next round
+    fails. Never raises."""
+    try:
+        if not hears_round():
+            return None
+        pl = p.get('payload') or {}
+        ids = [i for i in pl.get('items') or [] if isinstance(i, str)]
+        why = 'Adaptation has no new way to put %s right: %s' % (', '.join(ids) or 'the items', clip(note, 600).rstrip('.') or 'nothing it could say was new')
+        return line_conflict(ref, p['thread'], why[:2000], options=next_options(d, ids), engines=[], extra={'round': next_number(ref, pl)})
+    except Exception:  # noqa: BLE001 -- the failed run is a row whether or not the word reached Identity
+        return None
+
+
 def with_covers(engines, d, made=False):
     """Each engine's covers made known and whole (M5.1), and the map of item to engines the proposal carries. Only items
     done-when has stay. Every item no engine names goes to the last engine, as code does for a Library line: a line that
@@ -471,7 +735,7 @@ def hears_doubt():
     return R._handler(R.engine_def('Identity'), {'msg_type': 'inform', 'payload': {'word': 'doubt'}}) is not None
 
 
-def line_conflict(ref, thread, why, bound=None, src='Adaptation', options=None, engines=None, source=None, words=None):
+def line_conflict(ref, thread, why, bound=None, src='Adaptation', options=None, engines=None, source=None, words=None, extra=None):
     """The bargain did not close (a refusal, or its bound), or no line can be made: it goes to Identity, never silently to
     nothing (J2.2). _line_conflict as engine_runtime has it, with the ways out Adaptation can build (M6.4) or Priority priced (M5.4)."""
     offer = R._line_proposal(ref, thread) or {}
@@ -482,6 +746,7 @@ def line_conflict(ref, thread, why, bound=None, src='Adaptation', options=None, 
             'why': why, 'bound': bound, 'for': thread}
     if options:
         body['options'] = options
+    body.update(extra or {})
     return R.post(ref, src, 'Identity', 'inform', body)
 
 
@@ -629,12 +894,16 @@ CODE['adapt_source'] = adapt_source
 CODE['adapt_line_offer'] = adapt_line_offer
 CODE['adapt_line_refused'] = adapt_line_refused
 CODE['adapt_line_counter'] = adapt_line_counter
-PROMPT = {'adapt_shape': ref_to('p_adapt_shape'), 'adapt_line': p_adapt_line, 'adapt_fit': p_adapt_fit}
-DRAFT = {'adapt_shape_draft': ref_to('d_adapt_shape'), 'adapt_line_draft': d_adapt_line, 'adapt_fit_draft': d_adapt_fit}
+CODE.update({'adapt_hearnext': adapt_hearnext, 'adapt_round': adapt_round, 'adapt_round_granted': adapt_round_granted,
+             'adapt_round_refused': adapt_round_refused})
+PROMPT = {'adapt_shape': ref_to('p_adapt_shape'), 'adapt_line': p_adapt_line, 'adapt_fit': p_adapt_fit, 'adapt_next': p_adapt_next}
+DRAFT = {'adapt_shape_draft': ref_to('d_adapt_shape'), 'adapt_line_draft': d_adapt_line, 'adapt_fit_draft': d_adapt_fit,
+         'adapt_next_draft': d_adapt_next}
 CHECK = {name: ref_to('c_' + name) for name in (
     'counted_the_rows', 'moves_name_their_rows', 'said_what_it_did', 'facts_are_closed', 'idea_has_shapes')}
 CHECK['line_is_engines'] = c_line_is_engines
 CHECK['line_is_fitted'] = c_line_is_fitted
+CHECK['round_is_new'] = c_round_is_new
 # Adaptation: WORDS and LAYOUT by the split rule of A1.16, from function-prompts/adaptation/*.md
 WORDS = {
     'goal': {
@@ -654,6 +923,21 @@ WORDS = {
         'shape': {},
     },
     'decide': {
+        # M9.1 (A1-NEXT): the words of the part adapt.next reads after a reading that is not done
+        'next': {
+            'task': (
+                'A reading of the work found done-when items that do not hold. Say what to correct, in one line the '
+                'department can act on: the line runs again with your correction in the Brief, so write it as the '
+                'owner would ask for it. Correct only what the items below name, and only when the correction moves '
+                'the department toward its goal.'
+            ),
+            'guidance': (
+                'A correction names the item it puts right and the finding it answers. Name the findings it fixes '
+                '(fixes) and the items it covers (covers), each from the lists above. Never repeat the approach that '
+                'already failed: when the last round failed, say a different thing, and do not ask for more of the '
+                'same. State no fact nobody gave: where a fact is missing, say it is to be confirmed.'
+            ),
+        },
         'note': {
             'text': (
                 'In this version the choice is made by code, not by words its agent reads: a step whose answers '
@@ -732,6 +1016,22 @@ LAYOUT = {
         ),
     },
     'decide': {
+        'next': (
+            '{task}\n'
+            'THE DEPARTMENT: {{dept}}\n'
+            'THE ITEMS THAT DO NOT HOLD:\n'
+            '{{items}}\n'
+            '\n'
+            'WHAT AUDIT FOUND:\n'
+            '{{findings}}\n'
+            '\n'
+            'THE LINE THAT RAN: {{line}}\n'
+            'THE LAST ROUND: {{last}}\n'
+            '\n'
+            '{returns}\n'
+            '\n'
+            '{guidance}'
+        ),
         'note': '{text}',
     },
     'make': {
