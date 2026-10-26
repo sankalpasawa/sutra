@@ -1376,6 +1376,16 @@
         "words": [
           "finding"
         ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.reading",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "reading"
+        ]
       }
     ],
     "Coordination": [

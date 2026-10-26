@@ -5801,6 +5801,21 @@
         }
       },
       "judge": {
+        "items": {
+          "fields": {
+            "guidance": "field.guidance",
+            "task": "field.task"
+          },
+          "inputs": [
+            "brief",
+            "filed",
+            "deliverable",
+            "items",
+            "measured"
+          ],
+          "read_by": "audit.items",
+          "returns": "Return ONLY a JSON object: {\"items\": [{\"id\": \"D1\", \"verdict\": \"met\" | \"not_met\" | \"to_confirm\", \"claim\": \"what is or is not true, one line\", \"evidence\": \"what in the work shows it, one line\"}], \"findings\": [{\"where\": str, \"claim\": str, \"severity\": \"high\" | \"medium\" | \"low\", \"item\": \"D1\" or null}]}."
+        },
         "judge": {
           "fields": {
             "guidance": "field.guidance",
@@ -6265,6 +6280,16 @@
         ],
         "words": [
           "finding"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.reading",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "reading"
         ]
       }
     ],

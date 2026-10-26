@@ -5164,7 +5164,8 @@ INSTRUCTIONS = {
                  "bargain": {"line": ("source", "engines", "calls", "usd", "room", "limit"),
                              "engine": ("engine", "does", "needs", "calls", "usd", "room"), "cost": ("word", "step", "cost", "room")}},
     "coordination": {"goal": {"does": (), "skills": ()}, "tie": {"tie": ("ready", "what", "order", "waiting")}},
-    "audit": {"goal": {"does": (), "skills": ()}, "judge": {"judge": ("brief", "filed", "pages")}},
+    "audit": {"goal": {"does": (), "skills": ()},
+              "judge": {"judge": ("brief", "filed", "pages"), "items": ("brief", "filed", "deliverable", "items", "measured")}},
 }
 _PART = re.compile(r"^## ([a-z][a-z0-9_-]*)[ \t]*$", re.M)
 _SLOT = re.compile(r"\{\{([a-z_]+)\}\}")

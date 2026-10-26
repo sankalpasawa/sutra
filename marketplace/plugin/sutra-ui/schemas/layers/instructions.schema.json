@@ -129,6 +129,10 @@
         }
       },
       "judge": {
+        "items": {
+          "guidance": "field.guidance",
+          "task": "field.task"
+        },
         "judge": {
           "guidance": "field.guidance",
           "task": "field.task"

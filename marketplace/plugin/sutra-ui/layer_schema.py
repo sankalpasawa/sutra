@@ -932,6 +932,8 @@ SENDS = {
     ],
     'Audit': [
         {'act': 'inform', 'words': ('finding',), 'to': ('Identity',), 'payload': 'act.finding'},
+        # a reading (M8.3): posted only once Identity's recipe has a handler for it, which W2-IDENTITY adds (A1-14)
+        {'act': 'inform', 'words': ('reading',), 'to': ('Identity',), 'payload': 'act.reading'},
     ],
     'Coordination': [
         {'act': 'request', 'words': ('verdict',), 'to': ('Identity', 'Priority'), 'payload': 'act.verdict'},
@@ -1174,6 +1176,13 @@ PROMPTS = {
                       'returns': 'Return ONLY a JSON object: {"ok": bool, "findings": [{"page": str, "claim": str, "severity": "high" | '
                                  '"low"}]}.',
                       'read_by': 'audit.judge'},
+            # added by W1-AUDIT (M8.3, A1-ITEMS): one reading per done-when item, in the S-30 shape
+            'items': {'fields': {'task': 'field.task', 'guidance': 'field.guidance'},
+                      'inputs': ('brief', 'filed', 'deliverable', 'items', 'measured'),
+                      'returns': 'Return ONLY a JSON object: {"items": [{"id": "D1", "verdict": "met" | "not_met" | "to_confirm", '
+                                 '"claim": "what is or is not true, one line", "evidence": "what in the work shows it, one line"}], '
+                                 '"findings": [{"where": str, "claim": str, "severity": "high" | "medium" | "low", "item": "D1" or null}]}.',
+                      'read_by': 'audit.items'},
         },
     },
 }
