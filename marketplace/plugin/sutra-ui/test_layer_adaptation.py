@@ -7,6 +7,8 @@
   A9  organic and default kinds end to end, with stubbed models
   F1  the Library's line fitted to the goal (W2-ADAPT, M5.2): the check, the draft, the notes and the prompts that hold them
   F2  a conflict carries the options Priority sent (M5.4)
+  F3  the next round after a reading that is not done: priced, never the same twice, a limit question when none is new (M9.1, M9.4)
+  F4  the rounds in the view (M9.6)
 
 The departments here are born the way a person makes them (found, say the words, Root sets up), on a records home of
 their own, with no model but the ones a test installs; a test that meets a fault of the interface fails through
@@ -1721,3 +1723,358 @@ def test_f2_the_two_handlers_are_the_layers_own_now_and_the_runtimes_copies_stay
     for name in ("adapt_line_refused", "adapt_line_counter"):
         assert not hasattr(v1().CODE[name], "legacy"), "%s is a body of the layer's own" % name
         assert callable(getattr(R, name)), "and engine_runtime's copy is still there for a department whose layer does not load"
+
+
+# ---- F3 · propose the next round (W2-ADAPT, M9.1, M9.4) ---------------------------------------------------------------
+LINE_COST = {"calls": 8, "usd": 0.36, "basis": "median", "runs": 3,
+             "per_engine": {n: {"calls": 2, "usd": 0.09, "basis": "median", "runs": 3} for n in LINE}}
+D2_CLAIM = "the doctors page does not name the phone line"
+RID = "r-0a1b2c3d"
+
+
+def _reading_row(W, rid=RID, v=1, not_met=("D2",), claim=D2_CLAIM):
+    """What Audit files (audit.reading) when D1 holds, D3 is for the owner to confirm and the items named do not."""
+    rows = [{"id": "D1", "subject": "Live site", "claim": "the site is served", "evidence": "the live site passed its check", "method": "code",
+             "verdict": "met", "severity": "low"},
+            {"id": "D3", "subject": "doctors", "claim": "a visitor can find the doctors", "evidence": "the menu names them", "method": "model",
+             "verdict": "met", "severity": "low"}]
+    rows += [{"id": i, "subject": "doctors", "claim": claim, "evidence": "doctors.html has no number", "method": "model", "verdict": "not_met",
+              "severity": "high"} for i in not_met]
+    return {"schema_version": 1, "id": rid, "v": v, "artifact": "Live site", "cycle_id": None, "round": None, "read": True, "why_not_read": None,
+            "items": sorted(rows, key=lambda r: r["id"]),
+            "findings": [{"id": "F%d" % n, "severity": "high", "claim": claim, "where": "doctors", "item": i, "went_to": "Identity"}
+                         for n, i in enumerate(not_met, 1)], "at": W.now()}
+
+
+def _pursuing(j2, ref="dref-pursue", items=ITEMS):
+    """A website department with its line registered, Priority's price for that line on its record, and the reading that found D2
+    not met: everything the next round reads, with no run in the way."""
+    W, R, J, _, _ = j2
+    _dept(j2, "website", ref=ref, items=items, name="Pursue Dept")
+    d = W.dept(ref)
+    d["engines"] = list(LINE)
+    d["workflows"] = [{"version": 1, "engines": LINE, "source": "library", "registered": W.now(), "by": "Root"}]
+    W.save_dept(ref, d)
+    W.append_row(ref, "prices.jsonl", {"schema_version": 1, "id": "pr-0000fix1", "at": W.now(), "cycle_id": None, "round": None, "proposal": "line",
+                                       "engines": LINE, "estimate": LINE_COST, "room": {"calls": 120, "usd": 24.0}, "remaining": {"calls": 112, "usd": 23.64},
+                                       "answer": "accept", "keep": [], "why": "fits today", "indices": {"spend_per_run": {}, "checks": {}}})
+    W.append_row(ref, "readings.jsonl", _reading_row(W))
+    return ref
+
+
+def _ask_next(R, ref, items=("D2",), reading=RID, findings=("F1",), **more):
+    """Identity asks Adaptation for the next round, as W2-IDENTITY will after a reading that is not done (act.next)."""
+    return R.post(ref, "Identity", "Adaptation", "request", dict({"word": "next", "items": list(items), "reading": reading, "findings": list(findings)}, **more))
+
+
+def _round_posts(R, ref):
+    return [p for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Priority"] and p["msg_type"] == "propose" and p["payload"].get("word") == "round"]
+
+
+def _rows(W, ref):
+    return W.rows(ref, "rounds.jsonl")
+
+
+def test_f3_a_reading_with_d2_not_met_gives_one_round_naming_d2_with_the_line_cost_priority_observed(j2):
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+    assert _ask_next(R, ref)
+    W.run_until_idle(ref, limit=100)
+    [sent] = _round_posts(R, ref)
+    pl = sent["payload"]
+    assert pl["round"] == 1 and pl["covers"] == ["D2"] and pl["fixes"] == ["F1"], pl
+    assert "D2" in pl["correction"] and D2_CLAIM in pl["correction"], "it names the item and what Audit found"
+    assert pl["estimate"] == LINE_COST, "the estimate is the cost on Priority's latest price row for the line, as it is"
+    assert S.validate_act("Adaptation", ["Priority"], "propose", pl) == [] and S.validate("act.round", pl) == []
+    first = _rows(W, ref)[0]
+    assert (first["round"], first["status"], first["thread"], first["reading"]) == (1, "proposed", sent["thread"], RID)
+    assert first["covers"] == ["D2"] and first["estimate"] == LINE_COST and S.validate("adaptation.round", first) == []
+    d = W.dept(ref)
+    assert len(d["workflows"]) == 1 and d["engines"] == LINE, "a round never registers a line"
+    assert not [p for p in R.board(ref) if (p["payload"] or {}).get("word") == "line"], "and proposes none"
+
+
+def test_f3_priority_saying_yes_moves_the_round_to_granted_and_the_fold_keeps_the_latest_row(j2):
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+    _ask_next(R, ref)
+    W.run_until_idle(ref, limit=100)
+    rows = _rows(W, ref)
+    assert [r["status"] for r in rows] == ["proposed", "granted"] and rows[0]["thread"] == rows[1]["thread"]
+    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, "granted")], "folded by round, the latest status winning"
+    assert [r for r in R.board(ref) if r["src"] == "Priority" and r["msg_type"] == "accept-proposal" and r["payload"].get("word") == "round"]
+    told = [p for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Identity"] and p["payload"].get("word") == "round"]
+    assert bool(told) == v1().hears_round(), "Identity is told to file it once its recipe hears a round, and not before (A1-14)"
+    for p in told:
+        assert p["payload"]["round"] == 1 and p["payload"]["covers"] == ["D2"] and p["payload"]["estimate"] == LINE_COST
+        assert S.validate_act("Adaptation", ["Identity"], "inform", p["payload"]) == []
+
+
+def _round_in_hand(j2, ref="dref-pursue", **ask):
+    """Round 1 proposed and not yet answered: the three steps run as the recipe runs them, with no motor in between, so a test can
+    answer it as Priority."""
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2, ref)
+    post = _ask_next(R, ref, **ask)
+    ctx = {"ref": ref, "dept": W.dept(ref), "engine": "Adaptation", "post": post, "bag": {}, "how": {}}
+    ctx["bag"]["adapt.hearnext"] = v1().CODE["adapt_hearnext"](ctx, None, None)
+    ctx["bag"]["adapt.next"] = v1().DRAFT["adapt_next_draft"](ctx, None, None)
+    out = v1().CODE["adapt_round"](ctx, None, None)
+    return ref, out, _rows(W, ref)[-1]
+
+
+def _answer(j2, ref, thread, act, payload):
+    W, R, _, _, _ = j2
+    post = {"n": 99, "thread": thread, "src": "Priority", "msg_type": act, "payload": payload}
+    ctx = {"ref": ref, "dept": W.dept(ref), "engine": "Adaptation", "post": post, "bag": {}, "how": {}}
+    code = v1().CODE["adapt_round_granted" if act == "accept-proposal" else "adapt_round_refused"]
+    return code(ctx, None, None)
+
+
+def test_f3_priority_saying_no_moves_the_round_to_refused_and_it_becomes_a_conflict_with_the_ways_out_it_sent(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(v1(), "hears_round", lambda: True)
+    ref, out, row = _round_in_hand(j2)
+    opts = _ways_out(W)
+    got = _answer(j2, ref, row["thread"], "reject-proposal", {"word": "round", "why": "round 7 of 6 is past the ceiling", "options": opts})
+    assert "the conflict goes to Identity" in got["said"]
+    assert [r["status"] for r in _rows(W, ref)] == ["proposed", "refused"]
+    [conflict] = _conflicts(R, ref)
+    assert conflict["options"] == opts and conflict["round"] == 1 and conflict["for"] == row["thread"] and conflict["engines"] == []
+    assert conflict["why"] == "Priority said no to round 1: round 7 of 6 is past the ceiling"
+    assert S.validate("act.conflict", conflict) == []
+    again = _answer(j2, ref, row["thread"], "reject-proposal", {"word": "round", "why": "again", "options": opts})
+    assert len(_conflicts(R, ref)) == 1 and [r["status"] for r in _rows(W, ref)] == ["proposed", "refused"], "a second no is the same no"
+
+
+def test_f3_until_identity_hears_a_round_a_refusal_and_a_grant_stay_on_the_record_and_post_nothing(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(v1(), "hears_round", lambda: False)
+    ref, out, row = _round_in_hand(j2)
+    before = len(R.board(ref))
+    got = _answer(j2, ref, row["thread"], "reject-proposal", {"word": "round", "why": "no room", "options": _ways_out(W)})
+    assert "stays on the record" in got["said"] and len(R.board(ref)) == before and [r["status"] for r in _rows(W, ref)] == ["proposed", "refused"]
+    ref2, _, row2 = _round_in_hand(j2, ref="dref-pursue-two")
+    before = len(R.board(ref2))
+    got = _answer(j2, ref2, row2["thread"], "accept-proposal", {"word": "round", "why": "fits today"})
+    assert "Identity does not take rounds yet" in got["said"] and len(R.board(ref2)) == before and _rows(W, ref2)[-1]["status"] == "granted"
+
+
+def test_f3_a_round_nobody_proposed_is_heard_and_nothing_is_written(j2):
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+    assert "nobody proposed" in _answer(j2, ref, "x-nobody", "accept-proposal", {"word": "round"})["said"]
+    assert "nobody proposed" in _answer(j2, ref, "x-nobody", "reject-proposal", {"word": "round"})["said"]
+    assert _rows(W, ref) == []
+
+
+def test_f3_the_same_reading_asked_twice_is_one_round(j2):
+    W, R, J, _, _ = j2
+    ref, out, row = _round_in_hand(j2)
+    post = _ask_next(R, ref)
+    ctx = {"ref": ref, "dept": W.dept(ref), "engine": "Adaptation", "post": post, "bag": {}, "how": {}}
+    ctx["bag"]["adapt.hearnext"] = v1().CODE["adapt_hearnext"](ctx, None, None)
+    ctx["bag"]["adapt.next"] = v1().DRAFT["adapt_next_draft"](ctx, None, None)
+    again = v1().CODE["adapt_round"](ctx, None, None)
+    assert again["said"] == "round 1 is already with Priority for this reading" and len(_round_posts(R, ref)) == 1 and len(_rows(W, ref)) == 1
+
+
+def test_f3_what_adaptation_hears_is_the_items_that_are_in_done_when_what_audit_found_the_line_and_the_number(j2):
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+    post = {"n": 1, "thread": "x-n", "src": "Identity", "msg_type": "request",
+            "payload": {"word": "next", "items": ["D2", "D9", "D2"], "reading": RID, "findings": ["F1", "F8"]}}
+    ctx = {"ref": ref, "dept": W.dept(ref), "engine": "Adaptation", "post": post, "bag": {}}
+    got = v1().CODE["adapt_hearnext"](ctx, None, None)
+    assert [i["id"] for i in got["items"]] == ["D2"], "D9 is not in done-when, and D2 is named once"
+    assert got["items"][0]["text"] == "Every page names the phone line" and got["items"][0]["claim"] == D2_CLAIM
+    assert [(f["id"], f["item"]) for f in got["findings"]] == [("F1", "D2")] and got["line"] == LINE
+    assert got["round"] == 1 and got["last"] is None and got["reading"] == RID
+    assert got["facts"] == {"from": "Identity", "act": "request", "word": "next", "items": "D2", "repeat": False}
+    assert R.CHECK["facts_are_closed"](ctx, None, None, got)["ok"] is True, "the unit starts with code, and its facts are closed"
+    post["payload"]["round"] = 5
+    assert v1().CODE["adapt_hearnext"](ctx, None, None)["round"] == 5, "the number Identity gives is kept when it is later than the next"
+    post["payload"].update({"items": ["D9"], "reading": "r-ffffffff", "findings": []})
+    none = v1().CODE["adapt_hearnext"](ctx, None, None)
+    assert none["items"] == [] and none["reading"] == "r-ffffffff" and "no item that done-when has" in none["said"]
+
+
+def test_f3_the_numbers_of_the_rounds_follow_each_other_and_start_again_with_a_cycle(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+    base = {"schema_version": 1, "at": W.now(), "correction": "x", "covers": ["D2"], "status": "granted"}
+    W.append_row(ref, "rounds.jsonl", dict(base, round=1, cycle_id="c-one"))
+    W.append_row(ref, "rounds.jsonl", dict(base, round=2, cycle_id="c-one"))
+    monkeypatch.setattr(v1(), "cycle_of", lambda r: "c-one")
+    assert v1().next_number(ref, {}) == 3 and [r["round"] for r in v1().rounds_of(ref)] == [1, 2]
+    monkeypatch.setattr(v1(), "cycle_of", lambda r: "c-two")
+    assert v1().next_number(ref, {}) == 1 and v1().rounds_of(ref) == [], "the goal changed: a new cycle's first round is round 1"
+    assert v1().next_number(ref, {"round": 99}) == 99 and v1().next_number(ref, {"round": 120}) == 1 and v1().next_number(ref, {"round": True}) == 1, \
+        "a number outside 1 to 99 is not one Identity gave"
+
+
+@pytest.mark.parametrize("text, says", [
+    ("Put the phone line on the doctors page", "already failed in round 1"),                      # the one that failed, as it was
+    ("put the phone line on the doctors page.", "already failed in round 1"),                     # in lower case and with a full stop
+    ("  PUT   the phone line, on the doctors page!! ", "already failed in round 1"),            # and with other spaces and marks
+    ("Put the phone line on the doctors page and the contact page", None),
+    ("Add the phone line to the footer of every page", None),
+    ("", "a round says what to correct"), ("   ", "a round says what to correct"), (None, "a round says what to correct"),
+    (7, "a round says what to correct")])
+def test_f3_a_correction_equal_in_its_words_to_the_one_that_failed_is_refused_and_a_new_one_passes(text, says):
+    ctx = {"bag": {"adapt.hearnext": {"items": [{"id": "D2"}], "last": {"round": 1, "correction": "Put the phone line on the doctors page"}}}}
+    got = v1().CHECK["round_is_new"](ctx, None, None, {"correction": text, "fixes": [], "covers": ["D2"], "why": "x"})
+    assert got["ok"] is (says is None), got
+    if says:
+        assert says in got["notes"][0]
+    else:
+        assert got["notes"] == ["a correction that is new for D2"]
+
+
+def test_f3_with_nothing_that_failed_any_correction_with_words_is_new_and_the_check_needs_no_department():
+    for ctx in (None, {}, {"bag": {}}, {"bag": {"adapt.hearnext": {"items": [], "last": None}}}):
+        assert v1().CHECK["round_is_new"](ctx, None, None, {"correction": "Put right D2"})["ok"] is True
+    assert v1().CHECK["round_is_new"](None, None, None, "not an object")["ok"] is False
+
+
+def _granted_round(W, ref, correction, n=1, covers=("D2",), cycle=None):
+    W.append_row(ref, "rounds.jsonl", {"schema_version": 1, "round": n, "at": W.now(), "cycle_id": cycle, "correction": correction, "fixes": ["F1"],
+                                       "covers": list(covers), "estimate": LINE_COST, "status": "granted", "thread": "x-r%d" % n, "reading": RID})
+
+
+FIRST_TRY = "Put the phone line on the doctors page"
+
+
+def test_f3_the_same_failure_twice_gives_a_different_correction_and_the_agent_is_told_the_last_approach_failed(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+    _granted_round(W, ref, FIRST_TRY)                                            # round 1 ran, and the next reading finds D2 not met again
+    W.append_row(ref, "readings.jsonl", _reading_row(W, rid="r-1b2c3d4e", v=2))
+    different = "Add the phone line to the footer of every page, the doctors page included"
+    seen = _stub(monkeypatch, R, {"adapt.next": {"correction": different, "fixes": ["F1"], "covers": ["D2"], "why": "the first fix did not hold"}})
+    _ask_next(R, ref, reading="r-1b2c3d4e")
+    W.run_until_idle(ref, limit=100)
+    [sent] = _round_posts(R, ref)
+    assert sent["payload"]["round"] == 2 and sent["payload"]["correction"] == different
+    prompt = next(p for sid, p in seen if sid == "adapt.next")
+    assert "THE LAST ROUND: the last approach failed: " + FIRST_TRY in prompt and "D2: Every page names the phone line" in prompt
+    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, "granted"), (2, "granted")]
+
+
+def test_f3_offline_the_draft_is_a_numbered_other_try_so_it_is_never_the_approach_that_failed(j2):
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+
+    def draft():
+        post = {"n": 1, "thread": "x-d", "src": "Identity", "msg_type": "request", "payload": {"word": "next", "items": ["D2"], "reading": RID, "findings": ["F1"]}}
+        ctx = {"ref": ref, "dept": W.dept(ref), "engine": "Adaptation", "post": post, "bag": {}}
+        ctx["bag"]["adapt.hearnext"] = v1().CODE["adapt_hearnext"](ctx, None, None)
+        out = v1().DRAFT["adapt_next_draft"](ctx, None, None)
+        assert v1().CHECK["round_is_new"](ctx, None, None, out)["ok"] is True, "the draft passes the check it stands behind"
+        return out["correction"]
+    first = draft()
+    assert first == "Put right D2: Every page names the phone line. Audit found: " + D2_CLAIM
+    _granted_round(W, ref, first, n=1)
+    second = draft()
+    assert second.startswith("Try another way, attempt 2.") and words_differ(second, first)
+    _granted_round(W, ref, second, n=2)
+    third = draft()
+    assert third.startswith("Try another way, attempt 3.") and words_differ(third, second) and words_differ(third, first)
+
+
+def words_differ(a, b):
+    return v1().words_of(a) != v1().words_of(b)
+
+
+def test_f3_a_round_that_priority_would_not_pay_for_did_not_fail_so_its_correction_may_be_said_again(j2):
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+    W.append_row(ref, "rounds.jsonl", {"schema_version": 1, "round": 1, "at": W.now(), "cycle_id": None, "correction": FIRST_TRY, "fixes": [], "covers": ["D2"],
+                                       "status": "refused", "thread": "x-r1"})
+    assert v1().failed_round(ref, ["D2"]) is None
+    _granted_round(W, ref, "Another", n=2)
+    assert v1().failed_round(ref, ["D2"])["correction"] == "Another" and v1().failed_round(ref, ["D3"]) is None, "only for the same items"
+
+
+def test_f3_a_model_that_says_the_failed_correction_again_ends_in_one_question_to_identity_with_three_ways_out(j2, monkeypatch):
+    """The covering refuses the repeat and the step fails; the department does not go quiet: Identity is put one conflict with the
+    owner's own words, leaving the item out, and stopping as the ways out (M9.4's limit question)."""
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(v1(), "hears_round", lambda: True)
+    ref = _pursuing(j2)
+    _granted_round(W, ref, FIRST_TRY)
+    _stub(monkeypatch, R, {"adapt.next": {"correction": FIRST_TRY.lower() + ".", "fixes": ["F1"], "covers": ["D2"], "why": "again"}})
+    _ask_next(R, ref)
+    W.run_until_idle(ref, limit=100)
+    assert _round_posts(R, ref) == [], "no second round for the approach that failed"
+    failed = [r for r in R.step_rows(ref) if r.get("step") == "adapt.next" and r["status"] == "failed"]
+    assert failed and "already failed in round 1" in failed[0]["why"]
+    [conflict] = _conflicts(R, ref)
+    assert [o["id"] for o in conflict["options"]] == ["words", "leave:D2", "stop"] and [o["kind"] for o in conflict["options"]] == ["words", "leave", "stop"]
+    assert conflict["round"] == 2 and "Adaptation has no new way to put D2 right" in conflict["why"] and "already failed in round 1" in conflict["why"]
+    assert S.validate("act.conflict", conflict) == [] and conflict["engines"] == []
+    assert [(r["round"], r["status"]) for r in v1().rounds_of(ref)] == [(1, "granted")], "nothing was written for a round that was not proposed"
+
+
+def test_f3_one_item_left_in_done_when_cannot_be_left_out_so_the_limit_question_has_two_ways_out(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(v1(), "hears_round", lambda: True)
+    ref = _pursuing(j2, items=[dict(ITEMS[1], id="D1")])
+    assert [o["kind"] for o in v1().next_options(W.dept(ref), ["D1"])] == ["words", "stop"]
+    three = _pursuing(j2, "dref-pursue-three")
+    assert [o["kind"] for o in v1().next_options(W.dept(three), ["D2"])] == ["words", "leave", "stop"]
+    assert [o["kind"] for o in v1().next_options(W.dept(three), ["D9"])] == ["words", "stop"], "an item that is not there is not left out"
+
+
+def test_f3_until_identity_hears_a_round_a_failed_next_posts_nothing(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    monkeypatch.setattr(v1(), "hears_round", lambda: False)
+    ref = _pursuing(j2)
+    post = _ask_next(R, ref)
+    before = len(R.board(ref))
+    assert v1().next_failed(ref, W.dept(ref), post, "a step failed") is None and len(R.board(ref)) == before
+
+
+def test_f3_a_round_is_asked_by_identity_alone_and_the_edges_are_the_boards(j2):
+    W, R, J, _, _ = j2
+    ref = _pursuing(j2)
+    assert _ask_next(R, ref)
+    assert R.may_post("Identity", ["Adaptation"], "request", ref) and R.may_post("Adaptation", ["Priority"], "propose", ref)
+    assert R.may_post("Adaptation", ["Identity"], "inform", ref) and not R.may_post("Adaptation", ["Owner"], "inform", ref), "only Identity speaks to the owner"
+    assert S.validate_act("Identity", ["Adaptation"], "request", {"word": "next", "items": []}), "act.next needs at least one item"
+
+
+def test_f3_the_interface_hears_and_sends_the_round_and_the_recipe_has_the_handlers_for_it():
+    hears = {(r["act"], r["word"]): r for r in S.hears("adaptation")}
+    for pair, handler in ((("request", "next"), "Propose the next round"), (("accept-proposal", "round"), "Priority said yes to the round"),
+                          (("reject-proposal", "round"), "Priority said no to the round")):
+        assert hears[pair]["handler"] == handler and hears[pair]["via"] == "board"
+    assert hears[("request", "next")]["from"] == ("Identity",) and hears[("request", "next")]["payload"] == "act.next"
+    assert hears[("accept-proposal", "round")]["from"] == hears[("reject-proposal", "round")]["from"] == ("Priority",)
+    sends = {(r["act"], r["words"]): r for r in S.SENDS["Adaptation"]}
+    assert sends[("propose", ("round",))]["to"] == ("Priority",) and sends[("inform", ("round",))]["to"] == ("Identity",)
+    assert {r["payload"] for r in S.SENDS["Adaptation"] if r["words"] == ("round",)} == {"act.round"}
+    assert any(r["act"] == "request" and r["words"] == ("next",) and r["to"] == ("Adaptation",) for r in S.SENDS["Identity"])
+    part = S.PROMPTS["adaptation"]["decide"]["next"]
+    assert part["read_by"] == "adapt.next" and part["inputs"] == ("dept", "items", "findings", "line", "last") and set(part["fields"]) == {"task", "guidance"}
+    assert part["returns"] == 'Return ONLY a JSON object: {"correction": "one line: what to correct", "fixes": ["F1"], "covers": ["D2"], "why": "one line"}.'
+    assert ("adaptation", "decide", "next") in S.ADDED_PARTS and "round_is_new" in S.CHECKS["adaptation"]
+    handler = next(h for h in layers.recipes()["Adaptation"]["on"] if h["name"] == "Propose the next round")
+    assert [(s["id"], s["born"], s["nature"]) for s in handler["steps"]] == [("adapt.hearnext", "C2", "transform"), ("adapt.next", "C0", "decide"),
+                                                                           ("adapt.round", "C2", "transform")]
+    nxt = handler["steps"][1]
+    assert (nxt["prompt"], nxt["draft"], nxt["check"]) == ("adapt_next", "adapt_next_draft", "round_is_new")
+    assert nxt["out"] == {"correction": "str", "fixes": "list", "covers": "list", "why": "str"}
+
+
+def test_f3_a_department_whose_adaptation_layer_does_not_load_hears_a_request_for_a_round_and_proposes_none(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    real = layers.load
+    monkeypatch.setattr(layers, "load", lambda impl_id: None if str(impl_id).startswith("adaptation/") else real(impl_id))
+    ref = _pursuing(j2)
+    _stub(monkeypatch, R, {"adapt.next": {"correction": "Put right D2", "fixes": [], "covers": ["D2"], "why": "x"}})
+    _ask_next(R, ref)
+    W.run_until_idle(ref, limit=100)
+    assert _round_posts(R, ref) == [] and _rows(W, ref) == []
+    ran = [r for r in W.runs(ref) if r.get("engine") == "Adaptation" and "round" in str(r.get("what"))]
+    assert ran and ran[-1]["status"] == "ok" and "not loaded" in ran[-1]["what"], [(r.get("what"), r["status"]) for r in W.runs(ref)]
