@@ -136,10 +136,11 @@ def _own(c):
 
 
 def _lazy(name, fn, c, default):
-    """A builder of another module of the adapter, imported when it is needed: when it is not there, or fails, `default`."""
+    """A builder of another module of the adapter, imported when it is needed: when the module (or the builder) is not there,
+    or fails, `default`."""
     try:
-        mod = __import__(name)
-        return getattr(mod, fn)(c)
+        build = getattr(__import__(name), fn, None)
+        return default if build is None else build(c)
     except ImportError:
         return default
     except Exception as exc:  # noqa: BLE001 -- a builder never takes the state down with it
