@@ -4,7 +4,9 @@ Named claims:
   C4-1  'Option k' on an options ask chooses the k-th option the owner was SHOWN, even when the live list has changed since (Stop
         dropped on a stopped department); an option no longer offered is 409 UNKNOWN_OPTION; no such option is 400
   C4-2  'Option 1' / 'Option 2' on a stamp ask stamp and say no; 'Option 3' is 400; '1. Option 2' with one ask is an answer and
-        '2. Option 1' is words
+        '2. Option 1' is words; with nothing waiting a bare answer ('Option 1', '2', '1. Option 2') is refused 409 NO_PENDING_ASK and
+        writes nothing (a double click or a click in the poll gap), while free words are still a request; a repeat of the answer just
+        given, inside the rebuild floor, never answers the next ask (409 ALREADY_HANDLED)
   C4-3  words go where the Chat sends them: Identity's open question takes j2_runtime.answer; an options ask that offers the words
         option takes them; anything else is owner_ask on Root about this department (a department with no Root takes them itself);
         end to end on a Root and a department the next state shows exactly one more user message
@@ -104,8 +106,10 @@ def test_c41_choosing_for_real_applies_the_choice_and_the_words_option_needs_wor
     assert SAY.say_http(REF, "Option 1") == (400, {"code": "EMPTY_ANSWER"}), "the words option needs the owner's words"
     assert SAY.say_http(REF, "Option 2")[0] == 200
     assert mods.W.asks(REF)[0]["status"] == "chosen" and mods.W.asks(REF)[0]["chosen"]["id"] == "leave:D2"
-    # nothing waits now, so a later 'Option 3' is only words; the answered ask stays answered
-    assert SAY.say_http(REF, "Option 3")[0] == 200 and mods.W.asks(REF)[0]["chosen"]["id"] == "leave:D2"
+    # nothing waits now, so a later 'Option 3' answers nothing: it is refused, not sent on as the owner's request; the answered ask stays answered
+    before = dir_hash(mods)
+    assert SAY.say_http(REF, "Option 3") == (409, {"code": "NO_PENDING_ASK"}) and mods.W.asks(REF)[0]["chosen"]["id"] == "leave:D2"
+    assert dir_hash(mods) == before, "and nothing was written"
 
 
 def test_c41_the_words_option_takes_typed_words(mods, monkeypatch):
@@ -146,6 +150,96 @@ def test_c42_parse_answer():
         assert SAY.parse_answer(text) == k, text
     for text in ("2. Option 1", "Option 1; Option 2", "1. Option 1; 2. Option 2", "yes", "Option", "Option 1 please", "3 pages", ""):
         assert SAY.parse_answer(text) is None, text
+
+
+# ---- C4-2b: an answer with nothing to answer ------------------------------------------------------------------------------------
+BARE = ("Option 1", "Option 3", "option 2", "2", " 1 ", "1. Option 2", "2. Option 1", "1) 2", "Option 1.", "1. Option 1; 2. Option 2", "Option 1;")
+
+
+@pytest.mark.parametrize("text", BARE)
+def test_c42_a_bare_answer_with_nothing_waiting_is_refused_and_writes_nothing(mods, monkeypatch, text):
+    """The page sends 'Option k' at once on a click, so a double click or a click inside the poll gap arrives after the ask was
+    stamped; it must not become the owner's request."""
+    with_root(mods)
+    spies = Spies(mods, monkeypatch)
+    before = dir_hash(mods)
+    assert SAY.say_http(REF, text) == (409, {"code": "NO_PENDING_ASK"})
+    with pytest.raises(SAY.SayError) as e:
+        SAY.say(REF, text)
+    assert (e.value.status, e.value.body) == (409, {"code": "NO_PENDING_ASK"})
+    assert spies.calls == [] and dir_hash(mods) == before
+
+
+def test_c42_free_words_with_nothing_waiting_are_still_a_request(mods, monkeypatch):
+    root = with_root(mods)
+    spies = Spies(mods, monkeypatch)
+    for text in ("Add a page about pricing", "3 pages please", "Option one", "Option 1 please", "2 pages", "1. Option 1 and 2. Option 2", "Make it 2 columns"):
+        assert SAY.say_http(REF, text) == (200, {"ok": True}), text
+    assert spies.names() == ["owner_ask"] * 7 and spies.calls[0][1] == (root, "Add a page about pricing") and spies.calls[0][2] == {"about": REF}
+
+
+def test_c42_a_number_is_an_answer_to_identitys_open_question_even_when_nothing_else_waits(mods, monkeypatch):
+    """Identity's free-text question takes everything as words: '5' is the owner's answer to 'how many pages', not a stale click."""
+    q = mods.W.j2_identity_ask("How many pages?", "cycle-test", "words", "")
+    mods.W._put_ask(REF, q)
+    cycle(mods, "waiting", 1, open_ask=q["id"])
+    spies = Spies(mods, monkeypatch)
+    assert SAY.say_http(REF, "5") == (200, {"ok": True}) and SAY.say_http(REF, "Option 2") == (200, {"ok": True})
+    assert [(c[0], c[1][1]) for c in spies.calls] == [("answer", "5"), ("answer", "Option 2")]
+
+
+def test_c42_a_double_click_on_stamp_stamps_once_and_the_second_click_changes_nothing(mods, born, tick):
+    ref = born()
+    before = S.build_state(C.get_ctx(ref))
+    assert before["paused"] and before["paused"]["kind"] == "approval", "the first publish waits for a stamp"
+    assert SAY.say_http(ref, "Option 1") == (200, {"ok": True})
+    after_first = S.build_state(C.get_ctx(ref))
+    assert SAY.say_http(ref, "Option 1") == (409, {"code": "NO_PENDING_ASK"}), "the stamp landed: nothing is waiting for a second one"
+    after_second = S.build_state(C.get_ctx(ref))
+    assert [(m["id"], m["who"], m["text"]) for m in after_second["chat"]] == [(m["id"], m["who"], m["text"]) for m in after_first["chat"]]
+    assert [m["text"] for m in after_second["chat"] if m["who"] == "user"].count("Option 1") == 1, "one stamp, one bubble"
+    assert after_second["total"] == after_first["total"] > before["total"]
+    assert [a["status"] for a in mods.W.asks(ref) if a["kind"] == "publish"].count("stamped") == 1
+
+
+def resolving(m, monkeypatch):
+    """decide_ask that settles the ask in the record the way the real one does, and says what it was asked."""
+    calls = []
+
+    def decide(ref, aid, yes):
+        calls.append((aid, yes))
+        a = next(x for x in m.W.asks(ref) if x["id"] == aid)
+        m.W._put_ask(ref, dict(a, status="stamped" if yes else "refused", decided=m.W.now()))
+    monkeypatch.setattr(m.W, "decide_ask", decide)
+    return calls
+
+
+def test_c42_a_repeat_of_the_answer_just_given_never_answers_the_next_ask(mods, monkeypatch):
+    """A double click, or a click in the poll gap, arrives after the first ask is stamped and the next one has appeared: the protocol
+    carries no message id, so the repeat would answer the new ask. It is dropped (ALREADY_HANDLED) inside the rebuild floor."""
+    now = [1_000_000.0]
+    monkeypatch.setattr(C, "_now", lambda: now[0])
+    stamp_ask(mods, "publish")
+    stamp_ask(mods, "rule", tid="x-rule")
+    calls = resolving(mods, monkeypatch)
+    assert SAY.say_http(REF, "Option 1") == (200, {"ok": True}) and calls == [("a-publish", True)]
+    now[0] += C.MIN_REBUILD_S / 2
+    assert SAY.say_http(REF, "option 1") == (409, {"code": "ALREADY_HANDLED"}) and calls == [("a-publish", True)], "the new ask is not answered"
+    assert [a["id"] for a in mods.W.asks(REF) if a["status"] == "pending"] == ["a-rule"]
+    assert SAY.say_http(REF, "Option 2") == (200, {"ok": True}) and calls[-1] == ("a-rule", False), "another answer is the owner's own"
+    now[0] += 5 * C.MIN_REBUILD_S
+    stamp_ask(mods, "envelope", tid="x-env")
+    assert SAY.say_http(REF, "Option 2") == (200, {"ok": True}) and calls[-1] == ("a-envelope", False), "and so is the same answer a moment later"
+
+
+def test_c42_the_same_answer_to_the_same_ask_is_not_a_repeat(mods, monkeypatch):
+    """Only an answer that would land on ANOTHER ask is dropped: while the ask is still there, an answer is the owner's."""
+    now = [1_000_000.0]
+    monkeypatch.setattr(C, "_now", lambda: now[0])
+    stamp_ask(mods, "publish")
+    spies = Spies(mods, monkeypatch)
+    assert SAY.say_http(REF, "Option 2") == (200, {"ok": True}) and SAY.say_http(REF, "Option 2") == (200, {"ok": True})
+    assert spies.names() == ["decide_ask", "decide_ask"]
 
 
 # ---- C4-3: words ---------------------------------------------------------------------------------------------------------------

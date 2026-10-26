@@ -7,6 +7,11 @@ record's own and the adapter speaks as nobody.
     'Option k' (or '1. Option k') with an ask waiting   k is read against the options the owner was shown (the page keeps the
                                                         message it was given, whatever the live list says now): an options
                                                         ask takes website_dept.choose_option, a stamp ask decide_ask
+    'Option k' with nothing waiting                     409 NO_PENDING_ASK and nothing written: the page sends it at once on a
+                                                        click, so a double click or a click in the poll gap arrives after the
+                                                        ask was stamped, and it is not a request. The same answer again, inside
+                                                        the rebuild floor, while another ask is waiting, is 409 ALREADY_HANDLED
+                                                        (the protocol carries no message id: it would answer the new ask)
     words, Identity's question open                     j2_runtime.answer
     words, an options ask that offers 'words'           choose_option(..., 'words', text)
     any other words                                     website_dept.owner_ask on Root, the front door, about this department
@@ -16,6 +21,7 @@ It is never refused because work runs: the owner may speak at any time. The thre
 run, the output type, clearing memory) have no meaning for a long-lived department; each answers 409 and changes nothing.
 """
 import re
+import threading
 
 import j2_runtime as J
 import website_dept as W
@@ -52,6 +58,31 @@ def parse_answer(text):
     return int(m.group(2))
 
 
+def is_answer(text):
+    """True when the whole text is answers and nothing else ('Option 2', '2', '1. Option 2; 2. Option 1'): what the page's buttons
+    send. Words that only start with a number ('3 pages please') are not."""
+    parts = [x for x in str(text).split(";") if x.strip()]
+    return bool(parts) and all(ANSWER.match(x) for x in parts)
+
+
+_LAST = {}                                                    # (home, ref) -> (k, ask id, time) of the latest answer that landed
+_GUARD = threading.Lock()
+
+
+def forget():
+    """Forget the latest answers (j2ui_common.reset_caches calls this): for tests."""
+    with _GUARD:
+        _LAST.clear()
+
+
+def _repeat(ref, k, p):
+    """True when `k` is the answer that has just landed on another ask: a double click on Stamp, or a click inside the poll gap, sent
+    after the first answer closed its ask and the next one appeared. Only inside MIN_REBUILD_S, and only for another ask."""
+    with _GUARD:
+        last = _LAST.get(C._key(ref))
+    return bool(last and p and last[0] == k and last[1] != p["ask"]["id"] and C._now() - last[2] < C.MIN_REBUILD_S)
+
+
 def _answer(c, p, k):
     """'Option k' for the ask the page shows: k is a place in the options the owner was shown."""
     ask = p["ask"]
@@ -85,9 +116,16 @@ def say(ref, text):
     c = C.get_ctx(ref)
     p = c.paused_ask
     try:
-        k = parse_answer(text) if p else None
-        if k is not None and p["form"] != "words":
+        k = parse_answer(text)
+        if is_answer(text):                                   # nothing but an answer: it needs an ask, and one that is not already settled
+            if p is None and J.open_question(ref) is None:
+                raise SayError(409, {"code": "NO_PENDING_ASK"})
+            if k is not None and _repeat(ref, k, p):
+                raise SayError(409, {"code": "ALREADY_HANDLED"})
+        if k is not None and p and p["form"] != "words":
             _answer(c, p, k)
+            with _GUARD:
+                _LAST[C._key(ref)] = (k, p["ask"]["id"], C._now())
         else:
             _words(c, p, text)
     except SayError:

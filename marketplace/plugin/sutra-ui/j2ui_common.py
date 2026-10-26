@@ -300,11 +300,11 @@ def reset_caches():
         for c in (_CTX, _TAILS, _LEDGERS):
             c.clear()
         _DIRTY.clear()
-    try:
-        import j2ui_chat
-        j2ui_chat.reset()
-    except ImportError:
-        pass
+    for name, fn in (("j2ui_chat", "reset"), ("j2ui_say", "forget")):
+        try:
+            getattr(__import__(name), fn)()
+        except ImportError:
+            pass
 
 
 def _now():
