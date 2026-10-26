@@ -754,12 +754,52 @@ def decide_ask(ref, aid, approve, by="the owner"):
     raise ValueError("no such ask")
 
 
+def _place(d, name, reads, before=None):
+    """The line an engine named `name`, reading `reads`, joins on the department's record, and the engine it goes before
+    (None: last): the one said (as Research goes before Plan); an engine that reads the Brief goes first (what it files,
+    the line reads). (line, before)."""
+    line = [x[0] for x in engines_of(d)]
+    arts0 = list(artifacts_of(d))
+    if before is None and line and arts0 and reads == arts0[0]:
+        before = line[0]                             # an engine that reads the Brief goes first: what it files, the line reads
+    if before in line:
+        line.insert(line.index(before), name)
+    else:
+        line.append(name)
+    return line, before
+
+
+def grow_faults(d, name, e=None, shape=None, before=None):
+    """The line `name` would make, held to Root's standards at the grow stage (PRD A1.14, J5): what the line would break
+    that it did not break before, one sentence for each, naming the standard, its words and what is wrong; [] when it
+    breaks none. `e` is the engine's definition when the Library has it, else `shape` says what a new one reads and
+    writes. A fault the line already had is not the new engine's, so it never stops one joining."""
+    reads = (e or {}).get("reads") or str((shape or {}).get("reads") or "Brief")
+    writes = (e or {}).get("writes") or str((shape or {}).get("writes") or name)[:40]
+    now = [x[0] for x in engines_of(d)]
+    after = _place(d, name, reads, before)[0]
+    source = "library" if e else "shaped"
+    says = {sid: text for sid, text, _, _ in S.WORKFLOW_STANDARDS}
+
+    def broken(line):
+        rows = [{"name": n} for n in line]
+        if name in line:
+            rows[line.index(name)] = {"name": name, "reads": reads, "writes": writes}
+        return [(r["check"], r["why"]) for r in S.validate_workflow(S.as_workflow(rows, source, d), "grow", d, {}) if not r["passed"]]
+    was = broken(now)
+    return ["%s (%s): %s" % (c, says[c], why) if c in says else why for c, why in broken(after) if (c, why) not in was]
+
+
 def add_engine(ref, name, shape=None, by="the owner's stamp", before=None, registered=False):
     """An engine added to a live department on the owner's stamp (TPL-1 slice 2, founder 2026-09-29: "the engines are
     supposed to be created by the five functions of the department"): a Library engine template by name, or one shaped
     on the fly (name, use case, instruction, what it writes), born into the Library from Do with made_by. The record
     gains the engine, its artifact and a window; then Coordination's line grows and Priority gives it its limit, each in
     its handler for an engine born (PRD M4.1); the engine then starts on its own trigger, like every other.
+
+    The line it would make is held to Root's standards at the grow stage first (PRD A1.14, J5): an engine that reads
+    what nothing files, or writes what is already written, is not added, nothing is born for it, and the ValueError
+    names the standard. A plan Root is registering has been held to them whole, at registration, so it is not held again.
 
     by: whose word added it, whole, as the run line says it after 'on' ("the owner's stamp", "Priority's yes",
     "Identity's ruling": engine_runtime.SETTLED_BY's keys), so the line never says a stamp nobody gave (PRD M1.7).
@@ -775,9 +815,17 @@ def add_engine(ref, name, shape=None, by="the owner's stamp", before=None, regis
         raise ValueError("name the engine")
     engines = R.defs()["engines"]
     born = None
+    if name not in engines and not shape:
+        raise ValueError("the Library has no engine named %s" % name)
+    if name in engines and engines[name].get("kind") != "work":
+        raise ValueError("%s is a function, not an engine of the line" % name)
+    if name in [x[0] for x in engines_of(d)]:
+        raise ValueError("%s already runs %s" % (d.get("name"), name))
+    if not registered:
+        bad = grow_faults(d, name, engines.get(name), shape, before)
+        if bad:
+            raise ValueError("%s is not added to %s: the line would break Root's standards: %s" % (name, d.get("name"), "; ".join(bad)))
     if name not in engines:
-        if not shape:
-            raise ValueError("the Library has no engine named %s" % name)
         born = R.born_template(name, shape, ref)
         engines = R.defs()["engines"]
     e = engines[name]
@@ -788,21 +836,16 @@ def add_engine(ref, name, shape=None, by="the owner's stamp", before=None, regis
         line = [x[0] for x in engines_of(d)]
         if name in line:
             raise ValueError("%s already runs %s" % (d.get("name"), name))
-        arts0 = list(artifacts_of(d))
-        if before is None and line and arts0 and e.get("reads") == arts0[0]:
-            before = line[0]                             # an engine that reads the Brief goes first: what it files, the line reads
-        if before in line:
-            line.insert(line.index(before), name)
-        else:
-            line.append(name)
+        line, before = _place(d, name, e.get("reads"), before)
         d["engines"] = line
         arts = list(artifacts_of(d))
         if e.get("writes") and e["writes"] not in arts:
             # right after what it reads, so the kind's last artifact (the one that goes out) stays last
             arts.insert(arts.index(e["reads"]) + 1 if e.get("reads") in arts else len(arts), e["writes"])
         d["artifacts"] = arts
+        save_dept(ref, d, by="root")                  # Root records the engine and its artifact; its window is Identity's, below
         d.setdefault("windows", {})[name] = 15
-        save_dept(ref, d)
+        save_dept(ref, d, by="identity")
     if registered:
         # the plan's engine is Adaptation's (it shaped it): Root records the plan, and never makes an engine (S-10)
         system_run(ref, "Adaptation", "brought the engine %s into the plan%s" % (name, " (born into the Library)" if born else ""))

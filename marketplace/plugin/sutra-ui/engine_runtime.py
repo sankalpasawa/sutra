@@ -268,8 +268,27 @@ def engine_templates():
                 raise ValueError("the engine template %s is refused: a template names an id, a name and a use case" % p.name)
             if t["name"] in out:
                 raise ValueError("the engine template %s is refused: %s is already a template" % (p.name, t["name"]))
+            if d != TEMPLATES_DIR:
+                _born_fits(p, t)
             out[t["name"]] = t
     return out
+
+
+_BORN_SEEN = set()                                  # the born templates (file, time) whose fit to the interface was read this run
+
+
+def _born_fits(p, t):
+    """A template born into the record home, read back: if it does not fit the interface's engine.template, that is a row
+    (once for the file as it stands), and today's refusals stand as they were (A1.20). Never raises."""
+    try:
+        key = (str(p), p.stat().st_mtime_ns)
+        if key in _BORN_SEEN:
+            return
+        _BORN_SEEN.add(key)
+        import layer_schema as S
+        S.report("engine.template", S.validate("engine.template", t), owner="root", never_refuse=True)   # a row; loading never fails on it
+    except OSError:
+        return
 
 
 def missing_engines(d):
@@ -4028,6 +4047,8 @@ def born_template(name, shape, ref):
             if s.get("prompt"):
                 s["tools"] = tools
                 s["timeout_s"] = 600
+    import layer_schema as S
+    S.check("engine.template", t, ref=ref, owner="root")          # the template as the interface types it, before the file is written (A1.20)
     if not t["use_case"]:
         raise ValueError("an engine names its use case")
     p.write_text(json.dumps(t, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")

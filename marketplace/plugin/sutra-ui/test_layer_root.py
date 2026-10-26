@@ -443,3 +443,108 @@ def test_r3_a_stub_kind_asked_of_root_makes_no_department_and_the_failed_run_nam
     assert not [d for d in W.list_depts() if d.get("parent") == root], "no department was made"
     text = json.dumps(R.step_rows(root)) + json.dumps(W.runs(root))
     assert "reads_known" in text and "Publish reads Build, which nothing before it writes" in text, text[-1500:]
+
+
+# ---- R5: grow and born templates ---------------------------------------------------------------------------------------------
+def _born_dept(home, kind="website", ref="r5-dept"):
+    W = home[0]
+    d, _ = W.create(ref, "Acme", None, kind=kind)
+    return ref
+
+
+def test_r5_an_engine_that_reads_what_nothing_files_is_refused_naming_reads_known_and_nothing_is_born(home):
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    before = W.dept(ref)
+    shape = {"name": "Launch", "use_case": "launches the site", "does": "launches the site", "reads": "Nothing Files This", "writes": "Launch"}
+    with pytest.raises(ValueError) as e:
+        W.add_engine(ref, "Launch", shape=shape)
+    assert "reads_known" in str(e.value) and "Launch reads Nothing Files This, which nothing before it writes" in str(e.value)
+    assert WS.SAYS["reads_known"] in str(e.value)
+    after = W.dept(ref)
+    assert after["engines"] == before["engines"] and after["artifacts"] == before["artifacts"] and "Launch" not in after["windows"]
+    assert not (R.user_templates_dir() / "launch.json").exists() and "Launch" not in R.defs()["engines"], "nothing was born for it"
+    # the same engine reading an artifact the line files is added, after it, and born
+    out = W.add_engine(ref, "Launch", shape=dict(shape, reads="Pages"))
+    assert out["engines"] == LINE + ["Launch"] and (R.user_templates_dir() / "launch.json").exists()
+    assert W.dept(ref)["windows"]["Launch"] == 15 and S.validate("department", W.dept(ref)) == []
+
+
+def test_r5_an_engine_that_writes_what_is_written_is_refused_naming_one_output(home):
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    with pytest.raises(ValueError, match="one_output"):
+        W.add_engine(ref, "Second Pages", shape={"name": "Second Pages", "use_case": "writes pages again", "reads": "Brief", "writes": "Pages"})
+    assert W.dept(ref)["engines"] == LINE
+
+
+def test_r5_a_library_engine_joins_where_it_always_did_and_a_function_or_a_repeat_is_refused_as_before(home):
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    assert W.add_engine(ref, "Do")["engines"] == ["Do"] + LINE, "it reads the Brief, so it goes first"
+    assert R.coordination(ref)["line"] == ["Do"] + LINE, "and Coordination's line grows at the same place"
+    with pytest.raises(ValueError, match="already runs"):
+        W.add_engine(ref, "Do")
+    with pytest.raises(ValueError, match="is a function, not an engine of the line"):
+        W.add_engine(ref, "Priority")
+    with pytest.raises(ValueError, match="the Library has no engine named Nowhere"):
+        W.add_engine(ref, "Nowhere")
+
+
+def test_r5_a_fault_the_line_already_had_does_not_stop_a_new_engine_joining(home):
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    d = W.dept(ref)
+    d["engines"] = ["Plan", "Write", "Publish"]            # a legacy line: Publish reads the Build nothing before it writes
+    W.save_dept(ref, d)
+    assert W.grow_faults(W.dept(ref), "Do", R.defs()["engines"]["Do"]) == []
+    assert W.add_engine(ref, "Do")["engines"] == ["Do", "Plan", "Write", "Publish"]
+
+
+def test_r5_a_plan_root_is_registering_is_not_held_to_the_grow_stage_again(home):
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    d = W.dept(ref)
+    d["engines"] = ["Plan", "Write", "Publish"]
+    W.save_dept(ref, d)
+    out = W.add_engine(ref, "Check", registered=True, before="Publish")      # Check's place in a plan that was held whole
+    assert out["engines"] == LINE
+
+
+def test_r5_a_born_template_is_typed_before_its_file_is_written(home):
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    shape = {"name": "Talks List", "use_case": "lists the school's talks", "does": "lists the talks", "instruction": "List the talks.",
+             "needs": ["internet"], "reads": "Brief", "writes": "Talks"}
+    p = R.born_template("Talks List", shape, ref)
+    assert S.validate("engine.template", json.loads(p.read_text(encoding="utf-8"))) == []
+    # no use case: the interface catches it before anything is written, and the old refusal stands
+    with S.expect_refused("engine.template") as met:
+        with pytest.raises(ValueError, match="names its use case"):
+            R.born_template("No Use", {"name": "No Use", "use_case": "", "does": "", "instruction": ""}, ref)
+    assert met.rows and "use_case" in "; ".join(met.rows[0]["faults"])
+    assert not (R.user_templates_dir() / "no-use.json").exists(), "the file was never written"
+    # in refuse mode the write is refused with the fault, and still no file
+    import pytest as _p
+    with _p.MonkeyPatch.context() as m:
+        m.setattr(S, "MODE", "refuse")
+        with S.expect_refused("engine.template"):
+            with pytest.raises(S.SchemaFault):
+                R.born_template("Still No Use", {"name": "Still No Use", "use_case": "", "does": "", "instruction": ""}, ref)
+    assert not (R.user_templates_dir() / "still-no-use.json").exists()
+
+
+def test_r5_a_born_template_that_does_not_fit_is_a_row_when_the_library_is_read_and_still_loads(home):
+    W, R, J, _ = home
+    ref = _born_dept(home)
+    R.born_template("Talks List", {"name": "Talks List", "use_case": "lists the talks", "does": "lists", "instruction": "x"}, ref)
+    p = R.user_templates_dir() / "talks-list.json"
+    t = json.loads(p.read_text(encoding="utf-8"))
+    t["made_by"] = {"by": "Root"}                                  # not Adaptation: the interface says only Adaptation shapes an engine
+    p.write_text(json.dumps(t), encoding="utf-8")
+    with S.expect_refused("engine.template") as met:
+        R._DEFS.clear()
+        assert "Talks List" in R.defs()["engines"], "today's refusals stand, and this is not one of them"
+        R._DEFS.clear()
+        R.defs()
+    assert len(met.rows) == 1, "once for the file as it stands"
