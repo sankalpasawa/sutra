@@ -16,7 +16,8 @@ is sent. While a pinned implementation holds no WORDS for a part, prompt() and w
 below applies, so the two ways give one text. faults() is the covering check of both. The bundle is read-only history
 from here on: W3-PROOF deletes it.
 
-THE SPLIT RULE (A1.16), which turns a .md part into WORDS and LAYOUT:
+THE SPLIT RULE (A1.16), which turns a .md part into WORDS and LAYOUT; `python -m layers.prompts --extract <layer>` prints
+the result for a layer:
   1. A file's first paragraph is its group's lead line, S.GROUPS[layer][group] (interface text).
   2. In a part, 'Return ONLY a JSON object: {...}.' is `returns`, wherever it stands in the part.
   3. `task` is the text before the first line that holds an input marker ({{...}}) or before `returns`, whichever comes first.
@@ -27,6 +28,7 @@ THE SPLIT RULE (A1.16), which turns a .md part into WORDS and LAYOUT:
 """
 import copy
 import re
+import sys
 
 from layers import R, W, S  # noqa: F401 -- lazy proxies: tests reload the runtime
 
@@ -262,7 +264,7 @@ def bundle_faults():
     return out
 
 
-# ---- the split rule ----------------------------------------------------------------------------------------------------
+# ---- the split rule, and the extractor ---------------------------------------------------------------------------------
 def returns_span(text):
     """(start, end) of the answer contract in a part: 'Return ONLY a JSON object: ' and its braces, balanced, and the
     full stop that closes the sentence; None when the part has none."""
@@ -314,3 +316,96 @@ def split(group, part, text):
         layout += text[at:start] + marker
         at = stop
     return fields, layout + text[at:]
+
+
+def inputs_of(text):
+    """The names a part's text asks code to fill, in the order they first appear."""
+    return list(dict.fromkeys(SLOT.findall(text)))
+
+
+def extract(layer):
+    """What the split rule makes of one function layer's .md files: (WORDS, LAYOUT, faults). Each part's fields,
+    returns and inputs are checked against the interface (S.PROMPTS), each group's lead against S.GROUPS, and the part
+    compiled back from its words is checked to be the .md part, byte for byte. The faults are [] when the split holds."""
+    out_words, out_layout, bad = {}, {}, []
+    for group, parts in (S.PROMPTS.get(layer) or {}).items():
+        path = R.PROMPTS_DIR / layer / (group + ".md")
+        if not path.is_file():
+            bad.append("%s: the bundle has no file %s" % (S.TITLE[layer], group))
+            continue
+        text = path.read_text(encoding="utf-8")
+        lead, found = parts_of(text)
+        if lead.split("\n\n")[0] != S.GROUPS[layer][group]:
+            bad.append("%s: the lead of %s is not the interface's" % (S.TITLE[layer], group))
+        found = file_parts(layer, group)
+        if list(found) != list(parts):
+            bad.append("%s: %s holds the parts %s, and the interface %s" % (S.TITLE[layer], group, list(found), list(parts)))
+        for part, spec in parts.items():
+            if part not in found:
+                continue
+            fields, layout = split(group, part, found[part])
+            span = returns_span(found[part])
+            returns = found[part][span[0]:span[1]] if span else None
+            name = who(layer, group, part)
+            if set(fields) != set(spec["fields"]):
+                bad.append("%s: the split finds the fields %s, and the interface %s" % (name, sorted(fields), sorted(spec["fields"])))
+            if returns != spec["returns"]:
+                bad.append("%s: the split finds returns %r, and the interface %r" % (name, returns, spec["returns"]))
+            if inputs_of(found[part]) != list(spec["inputs"]):
+                bad.append("%s: the part asks for the inputs %s, and the interface %s" % (name, inputs_of(found[part]), list(spec["inputs"])))
+            sample = {n: "<%s>" % n for n in inputs_of(found[part])}
+            try:
+                if compile_layout(layout, fields, returns, sample, name) != SLOT.sub(lambda m: sample[m.group(1)], found[part]):
+                    bad.append("%s: compiled from its words it is not the .md part" % name)
+            except ValueError as exc:
+                bad.append(str(exc))
+            out_words.setdefault(group, {})[part] = fields
+            out_layout.setdefault(group, {})[part] = layout
+    return out_words, out_layout, bad
+
+
+def _string(s, indent):
+    """A string as source: one literal for a short line, and for a long or many-line one, pieces in parentheses that
+    join to it (a line break ends a piece; so does a space once a piece is long)."""
+    if len(repr(s)) <= 100 and "\n" not in s:
+        return repr(s)
+    pieces = []
+    for line in s.split("\n") if s.count("\n") == 0 else re.findall(r"[^\n]*\n|[^\n]+$", s):
+        buf = ""
+        for word in re.findall(r"\S+\s*|\s+", line):
+            if buf and len(repr(buf + word)) > 100:
+                pieces.append(buf)
+                buf = ""
+            buf += word
+        pieces.append(buf)
+    return "(\n" + "".join("%s    %r\n" % (" " * indent, p) for p in pieces) + " " * indent + ")"
+
+
+def literal(value, indent=0):
+    """A dict, list or string as Python source that evaluates to it (ast.literal_eval reads what this prints)."""
+    pad = " " * indent
+    if isinstance(value, dict):
+        return "{}" if not value else "{\n" + "".join("%s    %r: %s,\n" % (pad, k, literal(v, indent + 4)) for k, v in value.items()) + pad + "}"
+    if isinstance(value, (list, tuple)):
+        return "[]" if not value else "[\n" + "".join("%s    %s,\n" % (pad, literal(v, indent + 4)) for v in value) + pad + "]"
+    return _string(value, indent)
+
+
+def main(argv=None, out=None, err=None):
+    """python -m layers.prompts --extract <layer>: print WORDS and LAYOUT for that layer's .md files, as literals ready
+    to paste into layers/<layer>/v<N>.py. Exit 1 when the split does not hold against the interface, 2 when it cannot run."""
+    argv, out, err = list(sys.argv[1:] if argv is None else argv), out or sys.stdout, err or sys.stderr
+    if len(argv) != 2 or argv[0] != "--extract" or argv[1] not in S.FUNCTION_LAYERS:
+        err.write("usage: python -m layers.prompts --extract <%s>\n" % "|".join(S.FUNCTION_LAYERS))
+        return 2
+    layer = argv[1]
+    words_, layout, bad = extract(layer)
+    out.write("# %s: WORDS and LAYOUT by the split rule of A1.16, from function-prompts/%s/*.md\nWORDS = %s\nLAYOUT = %s\n"
+              % (S.TITLE[layer], layer, literal(words_), literal(layout)))
+    for line in bad:
+        err.write(line + "\n")
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

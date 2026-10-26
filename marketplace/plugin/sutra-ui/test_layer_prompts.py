@@ -222,3 +222,132 @@ def test_c3_a_file_every_part_of_which_is_typed_needs_no_bundle_file(runtime, mo
     assert P.faults() == [], "the words are the module's now"
     (bundle / "audit" / "goal.md").unlink()
     assert P.faults() == ["Audit's goal instructions are missing from the bundle"], "a file with a part still on the fallback is needed"
+
+
+# ---- C4 · the extractor and the split proof -----------------------------------------------------------------------------
+RETURNS = 'Return ONLY a JSON object: {"ok": bool, "rows": [{"a": str}]}.'
+
+
+def test_c4_returns_is_the_json_sentence_wherever_it_stands():
+    text = "before. " + RETURNS + " after."
+    assert text[slice(*P.returns_span(text))] == RETURNS
+    assert P.returns_span("Return ONLY a JSON object: {\"a\": 1}{{refused}}") == (0, len('Return ONLY a JSON object: {"a": 1}')), "no full stop to take"
+    assert P.returns_span("no contract here") is None and P.returns_span("Return ONLY a JSON object: {\"a\": ") is None
+    assert P.returns_span("Return ONLY a list") is None, "only the JSON object sentence is a contract"
+
+
+def test_c4_the_split_rule_on_small_parts():
+    # rule 3 and 5: the task is the text before the first line holding an input; labels and inputs stay in the layout
+    f, l = P.split("g", "p", "Say it.\nTHE GOAL: {{goal}}\nTHE WORDS:\n{{words}}\n\n" + RETURNS)
+    assert f == {"task": "Say it."} and l == "{task}\nTHE GOAL: {{goal}}\nTHE WORDS:\n{{words}}\n\n{returns}"
+    # rule 4: the guidance is the run of lines after returns that hold no input, up to a blank line; the rest stays
+    f, l = P.split("g", "p", "Say it.\nIN: {{x}}\n\n" + RETURNS + "\nfirst.\nsecond.\n\nTHE END:\n{{y}}")
+    assert f == {"task": "Say it.", "guidance": "first.\nsecond."} and l == "{task}\nIN: {{x}}\n\n{returns}\n{guidance}\n\nTHE END:\n{{y}}"
+    f, l = P.split("g", "p", "Say it.\nIN: {{x}}\n\n" + RETURNS + "\nfirst.\n{{completeness}}")
+    assert f == {"task": "Say it.", "guidance": "first."} and l == "{task}\nIN: {{x}}\n\n{returns}\n{guidance}\n{{completeness}}"
+    # the guidance may stand on the line of the returns, and the contract may stand in the middle of a paragraph
+    f, l = P.split("g", "p", "Say it.\nIN: {{x}}\n\n" + RETURNS + " But gently.")
+    assert f == {"task": "Say it.", "guidance": "But gently."} and l == "{task}\nIN: {{x}}\n\n{returns} {guidance}"
+    f, l = P.split("g", "p", "Read it. " + RETURNS + " Be brief.\n\nTHE PAGES:\n{{pages}}")
+    assert f == {"task": "Read it.", "guidance": "Be brief."} and l == "{task} {returns} {guidance}\n\nTHE PAGES:\n{{pages}}"
+    # an input on the first line leaves no task, and an input glued to the returns is not its guidance
+    f, l = P.split("g", "p", "You are {{who}}.\nIN: {{x}}\n" + RETURNS + "{{refused}}")
+    assert f == {} and l == "You are {{who}}.\nIN: {{x}}\n{returns}{{refused}}"
+    # rule 6: a part with no returns is its task, and its input lines
+    assert P.split("g", "thin", "thin: true when nothing is named.") == ({"task": "thin: true when nothing is named."}, "{task}")
+    assert P.split("g", "refused", "REFUSED: {{faults}}. Again.") == ({}, "REFUSED: {{faults}}. Again.")
+    assert P.split("g", "p", "Say it.\nIN: {{x}}") == ({"task": "Say it."}, "{task}\nIN: {{x}}")
+    # rule 6 and 7: does, skills and the note
+    assert P.split("goal", "does", "holds it all") == ({"text": "holds it all"}, "{text}")
+    assert P.split("goal", "skills", "- one\n- two words\n  - three") == ({"items": ["one", "two words", "three"]}, "{items}")
+    assert P.split("decide", "note", "Code makes this choice.") == ({"text": "Code makes this choice."}, "{text}")
+
+
+def test_c4_the_extractor_exits_0_for_all_five_and_prints_literals_that_are_the_split(runtime):
+    for layer in S.FUNCTION_LAYERS:
+        out, err = io.StringIO(), io.StringIO()
+        assert P.main(["--extract", layer], out, err) == 0 and err.getvalue() == "", layer
+        tree = ast.parse(out.getvalue())
+        got = {n.targets[0].id: ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign)}
+        words, layout, bad = P.extract(layer)
+        assert bad == [] and got == {"WORDS": words, "LAYOUT": layout}, layer
+        assert list(got["WORDS"]) == list(S.PROMPTS[layer]), "the interface's groups, in its order"
+        assert out.getvalue().startswith("# %s: WORDS and LAYOUT by the split rule" % S.TITLE[layer])
+
+
+def test_c4_the_command_line_is_python_m_layers_prompts(runtime, tmp_path):
+    env = {"PATH": "/usr/bin:/bin", "SUTRA_NATIVE_HOME": str(tmp_path)}
+    ok = subprocess.run([sys.executable, "-m", "layers.prompts", "--extract", "audit"], cwd=str(HERE), capture_output=True, text=True, env=env)
+    assert ok.returncode == 0 and "LAYOUT = {" in ok.stdout and ok.stderr == "", ok.stderr
+    for argv in (["--extract"], ["--extract", "root"], ["--extract", "marketing"], ["audit"]):
+        bad = subprocess.run([sys.executable, "-m", "layers.prompts"] + argv, cwd=str(HERE), capture_output=True, text=True, env=env)
+        assert bad.returncode == 2 and bad.stdout == "" and "usage: python -m layers.prompts --extract" in bad.stderr, argv
+
+
+def test_c4_the_extractor_exits_1_and_names_the_part_when_the_split_does_not_match_the_interface(runtime, monkeypatch, tmp_path):
+    def run(layer):
+        out, err = io.StringIO(), io.StringIO()
+        return P.main(["--extract", layer], out, err), err.getvalue().strip().split("\n")
+    # returns, inputs and fields are the interface's
+    monkeypatch.setitem(S.PROMPTS["identity"]["take"]["gate"], "returns", 'Return ONLY a JSON object: {"verdict": "yes"}.')
+    code, said = run("identity")
+    assert code == 1 and said == ["Identity's take instructions, gate: the split finds returns "
+                                  "'Return ONLY a JSON object: {\"verdict\": \"admit\" | \"wait\" | \"refuse\", \"why\": \"one line\"}.', and the interface "
+                                  "'Return ONLY a JSON object: {\"verdict\": \"yes\"}.'"]
+    monkeypatch.undo()
+    monkeypatch.setitem(S.PROMPTS["audit"]["judge"]["judge"], "inputs", ("brief", "pages"))
+    code, said = run("audit")
+    assert code == 1 and said == ["Audit's judge instructions, judge: the part asks for the inputs ['brief', 'filed', 'pages'], and the interface ['brief', 'pages']"]
+    monkeypatch.undo()
+    monkeypatch.setitem(S.PROMPTS["priority"]["bargain"]["cost"], "fields", {"task": "field.task", "guidance": "field.guidance"})
+    code, said = run("priority")
+    assert code == 1 and said == ["Priority's bargain instructions, cost: the split finds the fields ['task'], and the interface ['guidance', 'task']"]
+    monkeypatch.undo()
+    # the group's lead and the parts of the file are the interface's
+    bundle = tmp_path / "bundle"
+    shutil.copytree(runtime.PROMPTS_DIR, bundle)
+    monkeypatch.setattr(runtime, "PROMPTS_DIR", bundle)
+    text = (bundle / "coordination" / "tie.md").read_text(encoding="utf-8")
+    (bundle / "coordination" / "tie.md").write_text(text.replace("How Coordination says", "How Coordination might say"), encoding="utf-8")
+    code, said = run("coordination")
+    assert code == 1 and said == ["Coordination: the lead of tie is not the interface's"]
+    (bundle / "coordination" / "tie.md").write_text(text.replace("## tie", "## ties"), encoding="utf-8")
+    code, said = run("coordination")
+    assert code == 1 and "Coordination: tie holds the parts ['ties'], and the interface ['tie']" in said
+    (bundle / "coordination" / "tie.md").unlink()
+    code, said = run("coordination")
+    assert code == 1 and said == ["Coordination: the bundle has no file tie"]
+
+
+def test_c4_compiled_from_its_extracted_words_every_part_is_the_md_part_byte_for_byte(runtime):
+    seen = 0
+    for layer in S.FUNCTION_LAYERS:
+        words, layout, bad = P.extract(layer)
+        assert bad == [], bad
+        for group, parts in S.PROMPTS[layer].items():
+            for part, spec in parts.items():
+                md = P.md_part(layer, group, part)
+                sample = {n: "<<%s>>" % n for n in spec["inputs"]}
+                got = P.compile_layout(layout[group][part], words[group][part], spec["returns"], sample, P.who(layer, group, part))
+                assert got == P.SLOT.sub(lambda m: sample[m.group(1)], md), "%s.%s.%s" % (layer, group, part)
+                assert spec["returns"] is None or spec["returns"] in md, "returns is the part's own, byte for byte"
+                assert set(words[group][part]) == set(spec["fields"]), (layer, group, part)
+                seen += 1
+    assert seen == len(all_parts()) == 28
+
+
+def test_c4_the_extracted_words_pass_the_interface_and_the_layouts_serve(runtime):
+    for layer in S.FUNCTION_LAYERS:
+        words, layout, _ = P.extract(layer)
+        for group, parts in words.items():
+            for part, values in parts.items():
+                assert P.part_faults(layer, group, part, values, layout[group][part]) == [], (layer, group, part)
+                for field, value in values.items():
+                    assert S.validate_field(layer, group, part, field, value) == [], (layer, group, part, field)
+
+
+def test_c4_the_split_keeps_the_words_the_md_files_had_for_the_fallback_to_read(runtime):
+    """Whatever the owner's whole-file M2.2 copy says, the fallback gives the fields the same split gives."""
+    mine = "How to judge.\n\n## gate\n\nA step asks.\nTHE RULES: {{rules}}\nTHE ENGINE: {{engine}}\n\n" + RETURNS + " Go on."
+    assert P.parts_of(mine)[1]["gate"].startswith("A step asks.")
+    assert P.split("take", "gate", P.parts_of(mine)[1]["gate"])[0] == {"task": "A step asks.", "guidance": "Go on."}
