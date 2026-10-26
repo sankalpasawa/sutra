@@ -2323,6 +2323,27 @@ test("X4: the layers are read once for the pane, kept, and a failed read says No
 });
 
 
+test("X5: each function's Settings head says Runs version N, N being the number after /v in its layer's pin; nothing until it is read", async () => {
+  const c = await opened({ map: rtMap(), layers: LAYERS() });
+  for (const fn of ["identity", "adaptation", "priority", "coordination", "audit"]){
+    vm.runInContext("dpS().pane['r3:" + fn + "'] = 'settings';", c);
+    let html = await fnCard(c, fn);
+    for (let i = 0; i < 4 && html.indexOf("Runs version") < 0; i++){ await settle(); html = c.dpViewerHtml(WEB, {}, null, null); }
+    assert.ok(html.indexOf('<div class="o2quiet dpq">Runs version 1</div>') >= 0, fn + ": Runs version 1");
+    assert.strictEqual((html.match(/Runs version/g) || []).length, 1, fn + ": said once");
+    assert.ok(html.indexOf("Runs version 1") < html.indexOf("<h3>Template</h3>"), fn + ": at the head, before the cards");
+  }
+  assert.deepStrictEqual(layersReads(c), ["/api/native/r3/layers"], "read once for the department");
+  const three = LAYERS(); three.pins.identity = "identity/v3";
+  const d = await opened({ map: rtMap(), layers: three });
+  vm.runInContext("dpS().pane['r3:identity'] = 'settings';", d);
+  await fnCard(d, "identity"); await settle();
+  assert.ok(d.dpViewerHtml(WEB, {}, null, null).indexOf("Runs version 3") >= 0, "the pin says v3");
+  const none = await opened({ map: rtMap() });
+  vm.runInContext("dpS().pane['r3:identity'] = 'settings';", none);
+  assert.ok((await fnCard(none, "identity")).indexOf("Runs version") < 0, "no line while the read has not come");
+});
+
 /* ── W47: Identity's question as a card in Chat (PRD-FIVE-FUNCTIONS M0.6, screen S6) ── */
 const QAT = "2026-10-23T10:20:00+05:30";
 const QUESTION = { id: "a-j2-1", kind: "j2_identity", text: "What is the site for, and about whom or what?", why: "Your words name nothing to build from yet.",

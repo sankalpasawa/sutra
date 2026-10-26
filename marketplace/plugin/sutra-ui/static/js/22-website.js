@@ -1647,6 +1647,12 @@ function wbLayers(ref){
 }
 /* Root's settings (S18): the standards every plan meets, read only, in the order the app keeps them, with the line that
    says they are part of how the app is built. There is no Change: they move only with a new version of the app. */
+/* a function's Settings head (A1.23): one quiet line, Runs version N, N being the number after /v in the pin of the
+   function's layer; nothing until the read has come, so the head never says a version it does not know */
+function wbRunsLine(ref, fn){
+  const L = wbLayers(ref), m = /\/v(\d+)$/.exec(String(((L && L.pins) || {})[fn] || ""));
+  return m ? dpQuiet("Runs version " + m[1]) : "";
+}
 const WB_STANDARDS_LINE = "These are part of how the app is built; they change only with a new version of the app.";
 function wbStandardsHtml(ref){
   const L = wbLayers(ref), std = (L && Array.isArray(L.standards)) ? L.standards : [];
@@ -1662,8 +1668,8 @@ function wbSettingsHtml(ref, fn){
   if (!pr) wbLoadSteps(ref, "Priority");
   const lim = ((pr && pr.limits) || []).filter(l => l.engine === name)[0];
   const tpl = (typeof dpTemplateLine === "function") ? dpTemplateLine(fn) : "";
-  /* S16: the Instructions first, then the Template and today's limit side by side */
-  return wbInsHtml(fn, v) + `<div class="wbpair">` + dpCard("Template", tpl || dpQuiet("Not read yet")) +
+  /* the version the function runs, then S16: the Instructions, then the Template and today's limit side by side */
+  return wbRunsLine(ref, fn) + wbInsHtml(fn, v) + `<div class="wbpair">` + dpCard("Template", tpl || dpQuiet("Not read yet")) +
     (lim ? dpCard("Limit", wbLimitRow(ref, lim)) : "") + `</div>` +
     wbLadderHtml(ref, name, v.numbers || {}) +
     (fn === "identity" ? wbHostHtml(ref, m) : "") +
