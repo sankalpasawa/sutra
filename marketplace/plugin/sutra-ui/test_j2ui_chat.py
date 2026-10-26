@@ -69,6 +69,15 @@ def asks_of(c):
     return [x for x in c.chat if x.get("act") == "ASK_REQUESTER"]
 
 
+def test_c20_the_helpers_of_functions_view_that_the_chat_reuses_exist():
+    """The acts and their words come from functions_view, so the chat, the Timeline and Conflicts agree; a package that renames
+    them breaks the chat, and this says so first."""
+    import functions_view as F
+    for name in ("_did", "_said", "_short", "_cap"):
+        assert callable(getattr(F, name, None)), name
+    assert F._cap("said yes to the plan") == "Said yes to the plan" and F._short("x" * 300).endswith("…") and len(F._short("x" * 300)) == 140
+
+
 # ---- C2-1: the owner's side ------------------------------------------------------------------------------------------
 def test_c21_a_follow_up_through_root_is_one_user_message_and_no_validator(mods, born, tick):
     ref = born()
@@ -92,6 +101,23 @@ def test_c21_a_follow_up_through_root_is_one_user_message_and_no_validator(mods,
     assert both, "both boards have posts of the same number"
     n = both[-1]
     assert c.msg_of.get(("r", n)) and c.msg_of.get(("b", n)) and c.msg_of[("r", n)] != c.msg_of[("b", n)]
+
+
+def test_c21_what_identity_says_of_a_stamp_comes_after_the_stamp_even_within_one_second(mods, born):
+    """Records are stamped to the second and Publish is code: the stamp and 'Live site v1 is live' share a second. The reply is on Root's
+    board (read first) and has its twin on the department's, after the stamp, and that is the place it takes."""
+    ref = born()
+    W = mods.W
+    a = next(x for x in W.asks(ref) if x["kind"] == "publish" and x["status"] == "pending")
+    W.decide_ask(ref, a["id"], True)
+    W.run_until_idle(ref, limit=300)
+    C.reset_caches()
+    c = C.get_ctx(ref)
+    live = next(x for x in c.chat if "is live" in x["text"])
+    stamp = [x for x in users(c) if x["text"] == "Option 1"]
+    assert len(stamp) == 1 and stamp[0]["id"] < live["id"], [(x["id"], x["who"], x["text"][:30]) for x in c.chat[-4:]]
+    ask_msg = c.ask_msg[a["id"]]
+    assert ask_msg < stamp[0]["id"], "and the question comes before its answer"
 
 
 def test_c21_ids_are_places_in_the_list_and_never_change(mods, born, tick):

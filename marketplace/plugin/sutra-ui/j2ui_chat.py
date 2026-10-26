@@ -111,8 +111,12 @@ def message(at, who, text, step, **more):
     return m
 
 
-def _entry(key, at, rank, n, msg, opts=None):
-    return {"key": key, "sort": (C.epoch(at), rank, n if isinstance(n, int) else 0), "msg": msg, "opts": opts}
+def _entry(key, at, rank, n, msg, opts=None, sort=None):
+    return {"key": key, "sort": sort or (C.epoch(at), rank, n if isinstance(n, int) else 0), "msg": msg, "opts": opts}
+
+
+def _to_owner(p):
+    return p.get("src") == "Identity" and R.OWNER in (p.get("dst") or []) and p.get("msg_type") == "request"
 
 
 # ---- what one build reads -----------------------------------------------------------------------------------------------
@@ -130,18 +134,51 @@ class _Read:
                       if isinstance(t, dict) and t.get("n") is not None]
         self.raw = {("b", p.get("n")): p for p in c.posts}
         self.raw.update({("r", p.get("n")): p for p in c.root_posts})
+        # the department's posts that tie to an ask: the card that names it, Identity's request relayed to Root, the owner's answer
+        self.card_of, self.relayed, self.answer_of = {}, {}, {}
+        for p in c.posts:
+            pl = p.get("payload") or {}
+            if pl.get("card"):
+                self.card_of.setdefault(pl["card"], ("b", p.get("n")))
+            if pl.get("via") == "Root" and _to_owner(p):
+                self.relayed.setdefault(p.get("thread"), []).append(p)
+            if p.get("src") == R.OWNER and pl.get("ask"):
+                self.answer_of[pl["ask"]] = p
+        self.twin = self._twins(c)
         self.step_of = {}
         for e in c.events:
             m = re.search(r"/post-(\d+)$", str(e.get("idempotency_key") or ""))
             if m:
                 self.step_of[int(m.group(1))] = e.get("step")
 
+    def _twins(self, c):
+        """Identity's words to the owner that reached Root's board are posted twice: on the department's board, marked via Root, and
+        on Root's board about the department (the turn the chat shows). Records are stamped to the second, so within one second the
+        department's own order is the only true one: a turn of Root's takes the place of its twin, so that what Identity says of
+        the owner's stamp comes after the stamp, not before it because Root's board is read first."""
+        queues = {}
+        for p in c.posts:
+            pl = p.get("payload") or {}
+            if pl.get("via") == "Root" and p.get("src") == "Identity" and R.OWNER in (p.get("dst") or []):
+                queues.setdefault((p.get("msg_type"), pl.get("word"), R._line(p)), []).append(p)
+        twin = {}
+        for t in self.turns:
+            if t["_key"][0] != "r" or t.get("src") != "Identity":
+                continue
+            raw = self.raw.get(t["_key"]) or {}
+            q = queues.get((raw.get("msg_type"), (raw.get("payload") or {}).get("word"), R._line(raw)))
+            if q:
+                twin[t["_key"]] = q.pop(0)
+        return twin
+
+    def sort_of(self, key, at, rank, n):
+        """Where a message is placed among the others: by time, then board, then number; a turn of Root's that has its twin on the
+        department's board takes the twin's place."""
+        p = self.twin.get(key)
+        return (C.epoch(p.get("at")), 1, p.get("n")) if p else (C.epoch(at), rank, n if isinstance(n, int) else 0)
+
     def step(self, key, at):
         return self.step_of[key[1]] if key[0] == "b" and key[1] in self.step_of else self.c.step_at(at)
-
-
-def _to_owner(p):
-    return p.get("src") == "Identity" and R.OWNER in (p.get("dst") or []) and p.get("msg_type") == "request"
 
 
 # ---- the asks -----------------------------------------------------------------------------------------------------------
@@ -151,9 +188,8 @@ def _key_of(rd, a, claimed):
     Owner request turn in the ask's thread (by its word when several share the thread); that thread's post as Root relayed
     it to the front door; else ('a', ask)."""
     thread, kind = a.get("thread"), a.get("kind")
-    for k, p in rd.raw.items():
-        if k[0] == "b" and (p.get("payload") or {}).get("card") == a["id"]:
-            return k
+    if a["id"] in rd.card_of:
+        return rd.card_of[a["id"]]
     if not thread:
         return ("a", a["id"])
     turns = [t for t in rd.turns if t.get("thread") == thread and _to_owner(t) and t["_key"] not in claimed]
@@ -161,7 +197,7 @@ def _key_of(rd, a, claimed):
         turns = [t for t in turns if t.get("word") == kind]
     if turns:
         return turns[0]["_key"]
-    own = [p for k, p in rd.raw.items() if k[0] == "b" and p.get("thread") == thread and _to_owner(p) and (p.get("payload") or {}).get("via") == "Root"]
+    own = rd.relayed.get(thread, [])
     if len(own) > 1:
         own = [p for p in own if (p.get("payload") or {}).get("word") == kind]
     for p in own:
@@ -205,7 +241,7 @@ def _answer_entries(c, rd, reg, claimed, a, ids):
     it), that message keeps the answer and the turn is folded into it."""
     status, ch = a.get("status"), a.get("chosen")
     key, said = ("x", a["id"]), None
-    posted = next((p for k, p in rd.raw.items() if k[0] == "b" and p.get("src") == R.OWNER and (p.get("payload") or {}).get("ask") == a["id"]), None)
+    posted = rd.answer_of.get(a["id"])
     if status == "chosen" and isinstance(ch, dict):
         if ch.get("id") == W.WORDS_OPTION:
             text = said = _flat(ch.get("words"))
@@ -249,7 +285,8 @@ def _turn_entries(rd, claimed):
             msg = None                                           # only the owner and Identity speak in the owner's chat
         if msg:
             # the words Root handed at the department's birth are the owner's own, said before anything that answers them
-            out.append(_entry(key, at, -1 if t.get("birth") else RANK[key[0]], key[1], msg))
+            out.append(_entry(key, at, -1 if t.get("birth") else RANK[key[0]], key[1], msg, sort=rd.sort_of(key, at, RANK[key[0]], key[1])
+                              if not t.get("birth") else None))
     return out
 
 
