@@ -547,6 +547,7 @@ def test_r5_an_engine_the_owner_stamps_and_the_grow_stage_refuses_is_not_added_a
     assert ("would break one: %s (Launch reads Nothing Files This, which nothing before it writes)." % WS.SAYS["reads_known"]) in said[0]
     assert not [sid for sid in WS.STANDARD_CHECKS if sid in said[0]], "no standard's id on the owner's screen"
     assert "Say the idea again, with what it should read" in said[0]
+    assert any(t["line"] == said[0] for t in R.chat_view(ref)["turns"]), "and the owner's chat carries it"
     # the ask was stamped, as the owner did, and it does not read as applied: it says it was not, and why
     ask = next(a for a in W.asks(ref) if a["id"] == aid)
     assert ask["status"] == "stamped" and ask["applied"] is False and ask["not_added"] == said[0]
