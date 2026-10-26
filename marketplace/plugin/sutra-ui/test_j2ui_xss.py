@@ -8,7 +8,7 @@ have made. The page is the prototype's, never edited: a breakout through one of 
 through the prototype's own template is reported (design/PRD-FIVE-FUNCTIONS-J2UI.md), and the adapter may then escape the one field.
 
 Named claims:
-  T4-1  the hostile department reaches the page: most of its 77 fields are in the adapter's answers and the greater part of them are
+  T4-1  the hostile department reaches the page: most of its 82 fields (the names of two engines and of what they write among them) are in the adapter's answers and the greater part of them are
         printed in the panes, as text, payload and all (so the test below is not looking at an empty page)
   T4-2  in every pane (the fifteen of the spec and the rest, the Map, Documents, Artifacts, Board, the message dialog of every agent's
         message) there is no script, no on* attribute, no img that is not the page's own, no javascript: link, no unsandboxed frame and no
@@ -30,12 +30,13 @@ from test_fixtures.j2ui import seed as SEED
 
 UI = H.HERE.parents[1]
 COPY = UI / "j2ui_assets" / "j2_ui.html"
-DEPT_FIELDS = 78
+DEPT_FIELDS = 82
 #: fields the page prints as text; each must be in some pane, payload and all
 MUST_SHOW = ("department name", "goal", "Identity message", "rule", "done-when item", "fact to confirm", "owner words", "Identity question", "Identity why",
              "options ask text", "options ask title", "option label", "option cost", "publish ask text", "finding ask text", "finding claim",
              "finding page", "board question", "board answer", "step answer", "step note", "conflict why", "why no", "why the plan",
-             "workflow.validated message", "workflow.registered message", "workflow.blocked message", "clean reading", "Build check note")
+             "workflow.validated message", "workflow.registered message", "workflow.blocked message", "clean reading", "Build check note",
+             "engine name", "second engine name", "artifact name", "second artifact name")
 
 
 @pytest.fixture(scope="module")
@@ -185,6 +186,7 @@ def test_t43_a_department_with_no_goal_and_the_start_screen_break_nothing(client
 @pytest.mark.parametrize("what,old,new,field", [
     ("a goal printed raw", "<dd>${esc(g.statement)}</dd>", "<dd>${g.statement}</dd>", "goal"),
     ("a file name in a single-quoted attribute", 'data-art="${esc(r.file)}"', "data-art='${esc(r.file)}'", "Brief file name"),
+    ("an engine's name printed raw in its lane", "<b>${esc(l.name)}</b>", "<b>${l.name}</b>", "engine name"),
 ])
 def test_t44_a_field_printed_raw_turns_the_check_red(client, hostile, tmp_path, what, old, new, field):
     ref, m = hostile

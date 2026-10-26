@@ -360,7 +360,7 @@ def hostile(m, ref=None):
     question) and then given strings that are all an attacker's: its name, goal, rules and done-when items, the owner's words, Identity's question
     and why, an options ask (title, text, why, labels, costs), stamp asks, a bargain between Adaptation and Priority, a finding Audit
     filed (claims, pages), the Validator's messages, a run's words, a step's answer and notes, a version's check notes and the names of
-    its files, and the questions on the board. Each string is the attack (PAYLOADS in a row, then one of EXTRAS_OF_ATTACK) and a tag ` fNN`; m.payloads maps the tag to
+    its files, the questions on the board, and two engines of the line with the names of what they write (attacker_engines). Each string is the attack (PAYLOADS in a row, then one of EXTRAS_OF_ATTACK) and a tag ` fNN`; m.payloads maps the tag to
     (the field, the payload), so a test can tell which fields reached the page. Returns the ref."""
     from test_fixtures.j2ui import core_fixtures as K
     import versions as VERS
@@ -447,9 +447,36 @@ def hostile(m, ref=None):
              "answer": None, "answered_by": None, "status": "open", "artifact_update": None, "used_by": [], "cycle": "cycle-test",
              "slot": "Check@pages.v1", "attempt": 1, "run": None}]
     m.W._write(m.W.ddir(ref) / "questions.json", {"schema": "board/1", "entries": rows})
+    attacker_engines(m, ref, tags)
     m.payloads, m.ref = tags, ref
     m.C.touch(ref)
     return ref
+
+
+def attacker_engines(m, ref, tags):
+    """Two engines of the line whose names, and the names of what they write, are the attacker's: the quote-breaking payload in an
+    engine's name and the single-quote one in its artifact's, and the other way round for the second (a name is at most 40 characters:
+    one payload and the tag). add_engine and born_template take the name of an engine and of its artifact from the idea, and the
+    interface holds a name to ^[A-Za-z0-9][A-Za-z0-9 &'.-]{0,39}$ only on the writes it guards (the app warns where the tests are
+    strict), so a record from before it, one written by hand, or one the app let through is read all the same: the page must show
+    the name as text. The engines are put in Coordination's line, where the Map, the Workflows pane and the lanes print them; the
+    refused names are expected here (layer_schema.expect_refused), nowhere else."""
+    import layer_schema as S
+
+    def short(field, payload):
+        n = len(tags) + 1
+        tags[(TAG % n).strip()] = (field, payload)
+        return payload + (TAG % n)
+    with S.expect_refused():
+        line = []
+        for which, (en, an) in zip(("", "second "), ((PAYLOADS[0], PAYLOADS[1]), (PAYLOADS[1], PAYLOADS[0]))):
+            name, art = short(which + "engine name", en), short(which + "artifact name", an)
+            m.W.add_engine(ref, name, shape={"name": name, "use_case": "makes " + art, "does": "makes " + art, "instruction": "make " + art,
+                                             "reads": "Pages", "writes": art}, registered=True)
+            line.append(name)
+        t = dict(m.R.coordination(ref))
+        t["line"] = list(t["line"]) + line
+        m.W._write(m.W.ddir(ref) / "coordination.json", t)
 
 
 if __name__ == "__main__":
