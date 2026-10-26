@@ -1024,14 +1024,18 @@ function wbReadersOf(m, mk, name){
    status and last move, and its version 1 scope. A field the record leaves
    empty is one quiet line, "not set yet". Read from functions_view.function;
    the first tab keeps its name. */
-/* a function's page paints again when its node (its word too: a department switched off says stopped), a journey's
-   status or last move and its minute, or a step's rung moved (M1.9) */
+/* a function's page paints again when anything it shows moved (M1.9; round 3, gap 5): its node (its word too: a
+   department switched off says stopped), the template it runs and each field's value as the page draws it (the Limit
+   as its bar, its share to a fiftieth as wbFvSig keeps a spend, so a bar that moves paints and a hair's move does
+   not), a step's name, group, who runs it and its rung, or a journey's status, last move and its minute */
 function wbFnPageSig(v){
   if (!v || v.failed) return "failed";
-  const n = v.node || {};
-  return JSON.stringify([n.state, n.word, n.waits_on, n.line, n.why,
-    (v.journeys || []).map(j => [j.id, j.status, j.last && j.last.summary, j.last && String(j.last.at || "").slice(0, 16)]),
-    (v.recipe || []).map(r => [r.id, r.rung]), (v.fields || []).map(f => [f.key, f.placeholder])]);
+  const n = v.node || {}, share = x => Math.round((Number(x) || 0) * 50);
+  const value = f => f.key === "envelope" ? share((f.value || {}).share) : f.value;
+  return JSON.stringify([n.state, n.word, n.waits_on, n.line, n.why, (v.template || {}).name, v.line, v.holds, v.hands_to, v.keeps, v.v1,
+    (v.journeys || []).map(j => [j.id, j.name, j.status, j.last && j.last.summary, j.last && String(j.last.at || "").slice(0, 16)]),
+    (v.recipe || []).map(r => [r.id, r.name, r.under, r.by, r.rung, r.rung_name]),
+    (v.fields || []).map(f => [f.key, f.label, f.placeholder, value(f)])]);
 }
 async function wbLoadFnPage(ref, fn, again){
   const st = wbS(), k = ref + ":" + fn;
