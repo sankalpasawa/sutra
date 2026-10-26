@@ -2,9 +2,9 @@
 
 Its recipe is v1.json beside it: the Adaptation engine object, moved byte for byte from engine_defs/website.json in wave 0.
 Every code, prompt, draft and check name the recipe uses is provided here (A1 step A1): by reference, to the body
-engine_runtime still holds, until this layer moves one in to change it (move on touch, A1.19). WORDS and LAYOUT stay
-empty until the words move, so the prompts are still read from the .md bundle. view() returns the pane's read model by
-reference.
+engine_runtime still holds, until this layer moves one in to change it (move on touch, A1.19). The layer's words are
+WORDS and LAYOUT below (A1.16), from the extractor and proved byte for byte against the .md bundle, which is now only the
+fallback for a part no layer holds. view() returns the pane's read model.
 """
 import os
 import re
@@ -426,7 +426,126 @@ DRAFT = {'adapt_shape_draft': ref_to('d_adapt_shape'), 'adapt_line_draft': d_ada
 CHECK = {name: ref_to('c_' + name) for name in (
     'counted_the_rows', 'moves_name_their_rows', 'said_what_it_did', 'facts_are_closed', 'idea_has_shapes')}
 CHECK['line_is_engines'] = c_line_is_engines
-WORDS, LAYOUT = {}, {}
+# Adaptation: WORDS and LAYOUT by the split rule of A1.16, from function-prompts/adaptation/*.md
+WORDS = {
+    'goal': {
+        'does': {
+            'text': "reads the department's own rows and proposes one rung up, or steps one down",
+        },
+        'skills': {
+            'items': [
+                'count from the rows',
+                'keep the ladder',
+                'propose a change',
+                'shape a new idea and park it',
+            ],
+        },
+    },
+    'sense': {
+        'shape': {},
+    },
+    'decide': {
+        'note': {
+            'text': (
+                'In this version the choice is made by code, not by words its agent reads: a step whose answers '
+                'agree run after run is proposed one rung up, to a checklist or to code, and is tried beside the '
+                'old way first; a step that keeps missing is proposed one rung down. Every move goes to Priority '
+                'first, and Adaptation never applies one itself.'
+            ),
+        },
+    },
+    'make': {
+        'line': {},
+        'refused': {},
+        # M6.4 (A1-SHAPE): the words of the part adapt.line reads when the make setting is on and no template fits
+        'shape': {
+            'task': (
+                'Shape the workflows this department needs to make every one of its done-when items true. Make '
+                'the fewest engines that cover every item, usually two to five, in the order they run. Each '
+                "engine reads one thing and writes one thing: the first reads the Brief (the owner's words), and "
+                'each later one reads what an earlier one wrote. An engine that covers no item must feed one '
+                'that does.'
+            ),
+            'guidance': (
+                'For each engine give its name and what it does, the items it covers (covers), its level (1 or '
+                '2), how sure you are (confidence, a number from 0 to 1) and, when you are below 0.8 sure, what '
+                'you doubt (doubt).\n'
+                'Level 1 takes an engine of the Library as it is, with the reads and writes shown: use it when '
+                'its use case fits the goal. Level 2 is a new engine: name it in one or two words none of the '
+                'taken names use, and name what it writes in one or two words. Keep every engine this kind of '
+                'department requires, at level 1.\n'
+                'Confidence is how sure you are that this engine, reading what the plan hands it, can make its '
+                'items true without a fact or a decision nobody has given. In doubt write the one question you '
+                'would ask the owner, in one sentence; you may add a second sentence that begins "Unless you '
+                'say," and says what you will do if they do not answer.\n'
+                'An engine can search the web and open pages: say in what it does what it looks up, and mark '
+                'internet true.\n'
+                'Answer cannot, with no engines, only when an engine this kind of department requires cannot '
+                'serve an item: name the engine, the items and why.'
+            ),
+        },
+    },
+}
+LAYOUT = {
+    'goal': {
+        'does': '{text}',
+        'skills': '{items}',
+    },
+    'sense': {
+        'shape': (
+            'The owner floats an idea the department cannot do today. Do not plan a build. Reflect the idea '
+            'back in sharper words, name the question underneath it, and give two or three shapes it could '
+            'take, smallest first. Then say what engine would do it each time on its own: pick one from the '
+            'Library below when its use case fits (pick), else shape one (engine: a name of one or two words, '
+            'what it does in one line, and what it needs from this list: {{needs}}); both null when the idea '
+            'asks for no engine.\n'
+            'THE GOAL: {{goal}}\n'
+            'THE IDEA: {{idea}}\n'
+            'ENGINES IN THE LIBRARY, NOT YET IN THIS DEPARTMENT: {{library}}\n'
+            '\n'
+            '{returns}'
+        ),
+    },
+    'decide': {
+        'note': '{text}',
+    },
+    'make': {
+        'line': (
+            'The department "{{dept}}" was just given its goal, in its owner\'s words:\n'
+            '{{words}}\n'
+            '\n'
+            'It has no engines yet. Shape the line of engines that gets this done: two to five, in the order '
+            "they run, each reading one thing and writing one thing. The first reads the Brief (the owner's "
+            'words); each later one reads what an earlier one wrote. An engine can search the web and open '
+            'pages: say in what it does what it looks up, and mark internet true. Name each engine in one or '
+            'two words none of these already use ({{taken}}), and name what it writes in one or two words '
+            '(Facts, Pages, ...). When the goal is something that goes out into the world, the last engine '
+            "writes it under the Library's own name for it: {{out}}.\n"
+            "THE DEPARTMENT'S RULES: {{rules}}\n"
+            '\n'
+            '{returns}{{refused}}'
+        ),
+        'refused': "YOUR LAST LINE WAS REFUSED BY ROOT'S CHECK: {{faults}}. Shape it again without these faults.",
+        'shape': (
+            '{task}\n'
+            'THE DEPARTMENT: {{dept}}\n'
+            "THE OWNER'S WORDS:\n"
+            '{{words}}\n'
+            '\n'
+            'WHAT DONE MEANS, ITEM BY ITEM:\n'
+            '{{items}}\n'
+            '\n'
+            '{{practices}}\n'
+            "THE DEPARTMENT'S RULES: {{rules}}\n"
+            'NAMES ALREADY TAKEN: {{taken}}\n'
+            "WHAT GOES OUT INTO THE WORLD, written by the last engine under the Library's own name for it: {{out}}\n"
+            '\n'
+            '{returns}\n'
+            '\n'
+            '{guidance}{{refused}}'
+        ),
+    },
+}
 
 
 def proposal_post(ref, prop):

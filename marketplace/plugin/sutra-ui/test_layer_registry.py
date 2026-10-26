@@ -43,6 +43,16 @@ def modules():
     return W, R
 
 
+@pytest.fixture
+def empty(monkeypatch):
+    """Every layer's version 1 as wave 0 held it, with four empty dicts: the registry tests below are about the registry,
+    not about what a layer provides now that its package has filled its module (A1.18)."""
+    stubs = {impl: types.SimpleNamespace(LAYER=impl.split("/")[0], VERSION=1, IMPLEMENTS=S.SCHEMA_VERSION, CODE={}, PROMPT={}, DRAFT={}, CHECK={},
+                                         WORDS={}, LAYOUT={}) for impl in S.DEFAULT_PINS.values()}
+    monkeypatch.setattr(layers, "_LOADED", stubs)
+    return stubs
+
+
 # ---- C1 · the registry -----------------------------------------------------------------------------------------------
 def test_c1_available_lists_the_versions_on_disk_in_layer_order():
     assert layers.available() == {layer: ["%s/v1" % layer] for layer in S.LAYER_NAMES}
@@ -114,7 +124,7 @@ def test_c1_layer_of_names_the_layer_of_a_function_and_of_setup_and_nothing_else
     assert layers.layer_of("Plan") is None and layers.layer_of("Write") is None and layers.layer_of(None) is None
 
 
-def test_c1_with_empty_modules_resolve_returns_the_legacy_function(home):
+def test_c1_with_empty_modules_resolve_returns_the_legacy_function(home, empty):
     W, R = modules()
     for kind, legacy in (("code", R.CODE), ("prompt", R.PROMPT), ("draft", R.DRAFT), ("check", R.CHECK)):
         for engine in ("Identity", "Adaptation", "Priority", "Coordination", "Audit", "Setup", "Plan", None):
@@ -141,7 +151,7 @@ def test_c1_a_stub_holding_a_name_is_what_resolve_returns_for_that_layers_engine
         assert layers.resolve("dref-x", "Identity", kind, "a_name", {"a_name": None}) is f
 
 
-def test_c1_resolve_serves_a_stub_the_test_puts_in_the_registry(monkeypatch):
+def test_c1_resolve_serves_a_stub_the_test_puts_in_the_registry(monkeypatch, empty):
     W, R = modules()
     f = lambda ctx, step, item: {}
     stub = types.SimpleNamespace(LAYER="identity", VERSION=1, IMPLEMENTS=1, CODE={"identity_read": f}, PROMPT={}, DRAFT={}, CHECK={})
@@ -150,7 +160,7 @@ def test_c1_resolve_serves_a_stub_the_test_puts_in_the_registry(monkeypatch):
     assert layers.names("code") == {"identity_read"}
 
 
-def test_c1_names_are_what_any_implementation_provides(monkeypatch):
+def test_c1_names_are_what_any_implementation_provides(monkeypatch, empty):
     assert all(layers.names(kind) == set() for kind in layers.KINDS)
     monkeypatch.setitem(layers.load("priority/v1").CHECK, "answer_has_its_price", lambda *a: {})
     monkeypatch.setitem(layers.load("audit/v1").CHECK, "has_a_verdict", lambda *a: {})

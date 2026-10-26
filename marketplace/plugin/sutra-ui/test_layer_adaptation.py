@@ -88,6 +88,56 @@ def test_a1_what_it_holds_by_reference_is_counted_for_the_hand_in(capsys):
     assert counts["by_reference"] + counts["own"] == 25
 
 
+# ---- A2 · Adaptation's words (M2.5) -----------------------------------------------------------------------------------
+def test_a2_every_part_of_adaptations_interface_is_served_from_its_words_and_none_is_on_the_fallback(home):
+    import layers.prompts as P
+    for group, parts in S.PROMPTS["adaptation"].items():
+        for part in parts:
+            assert P._module(home["ref"], "adaptation", group, part) is v1(), "%s.%s is read from the .md bundle" % (group, part)
+    assert C.on_the_md_fallback(v1()) == []
+    assert P.faults() == [] and sorted(v1().WORDS) == sorted(v1().LAYOUT) == ["decide", "goal", "make", "sense"]
+
+
+@pytest.mark.parametrize("case", C.cases(), ids=lambda c: "case %d" % c[0])
+def test_a2_the_whole_contract_passes_for_adaptation_v1_with_no_part_on_the_fallback(case, home):
+    _, what, fn = case
+    assert fn(v1(), home) == [], what
+
+
+# the block the line prompt gained when it began to name the done-when items (A3, snapshot: M5.1); the rest is the .md part
+ITEMS_BLOCK = "WHAT DONE MEANS, ITEM BY ITEM:\n<<items>>\n\n"
+
+
+def test_a2_each_part_compiles_to_the_md_part_it_came_from_byte_for_byte(home):
+    import layers.prompts as P
+    seen = 0
+    for group, parts in S.PROMPTS["adaptation"].items():
+        for part, spec in parts.items():
+            if ("adaptation", group, part) in S.ADDED_PARTS:
+                continue
+            sample = {n: "<<%s>>" % n for n in spec["inputs"]}
+            got = P.prompt(home["ref"], "adaptation", group, part, **sample).replace(ITEMS_BLOCK, "")
+            assert got == P.SLOT.sub(lambda m: sample[m.group(1)], P.md_part("adaptation", group, part)), "%s.%s" % (group, part)
+            seen += 1
+    assert seen == 6
+
+
+def test_a2_the_goal_card_is_read_from_the_typed_words(home):
+    R = importlib.import_module("engine_runtime")
+    does, skills = R._goal_of(home["ref"], "Adaptation")
+    assert does == v1().WORDS["goal"]["does"]["text"] == "reads the department's own rows and proposes one rung up, or steps one down"
+    assert skills == v1().WORDS["goal"]["skills"]["items"] and len(skills) == 4
+
+
+def test_a2_the_note_no_run_reads_is_still_a_note_and_the_owners_change_is_a_typed_field(home):
+    import layers.prompts as P
+    assert S.PROMPTS["adaptation"]["decide"]["note"]["read_by"] is None
+    assert P.words(home["ref"], "adaptation", "decide", "note")["text"].startswith("In this version the choice is made by code")
+    assert S.validate_field("adaptation", "decide", "note", "text", "Prefer the smaller change.") == []
+    assert S.validate_field("adaptation", "decide", "note", "text", "Return ONLY {}") != [], "the answer's shape is the app's"
+    assert S.validate_field("adaptation", "goal", "does", "text", "uses {{dept}}") != [], "a marker is the app's"
+
+
 # ---- A7 · the practices in place (M6.3) -------------------------------------------------------------------------------
 FIVE = {"rules", "engines", "artifacts", "required", "taken"}
 
