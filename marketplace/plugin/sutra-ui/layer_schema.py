@@ -517,13 +517,15 @@ DEFS.update({
 DEFS.update({
     'root.pins': obj({layer: ref('impl') for layer in LAYER_NAMES}, open=False),
     # a born engine template, as R.born_template writes it to the records home's _library/<slug>.json (W1-ROOT checks it
-    # before the file is written)
+    # before the file is written). form (W2-CHECKS, M7.5): the artifact whose form the engine files what it writes in, when a
+    # level-1 engine reads it (J2B-3); the Library's template for that artifact names the check that holds the form
     'engine.template': obj({'id': word(r'^engine/[a-z0-9][a-z0-9-]*$', 80), 'name': text(40, 1), 'version': integer(1),
                             'use_case': text(300, 1), 'description': text(300), 'instruction': text(4000), 'reads': text(200),
                             'writes': text(40),
                             'made_by': obj({'by': const('Adaptation'), 'dept': text(200), 'at': text(40), 'idea': nullable(text(300))},
                                            required=('by',)),
-                            'start': obj({}), 'steps': items(obj({})), 'needs': items(text(40)), 'kind': const('work')},
+                            'start': obj({}), 'steps': items(obj({})), 'needs': items(text(40)), 'kind': const('work'),
+                            'form': text(60, 1)},
                            required=('id', 'name', 'use_case', 'made_by')),
 })
 

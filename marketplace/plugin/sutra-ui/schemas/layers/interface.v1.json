@@ -2699,6 +2699,11 @@
           "minLength": 0,
           "type": "string"
         },
+        "form": {
+          "maxLength": 60,
+          "minLength": 1,
+          "type": "string"
+        },
         "id": {
           "maxLength": 80,
           "pattern": "^engine/[a-z0-9][a-z0-9-]*$",
