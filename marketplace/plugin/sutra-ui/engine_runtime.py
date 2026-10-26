@@ -438,7 +438,7 @@ def set_numbers(ref, engine, nums, by="the owner"):
             raise ValueError("%s is too small" % k)
         own[k] = v
     d.setdefault("ladders", {})[engine] = own
-    W.save_dept(ref, d)
+    W.save_dept(ref, d, by="identity")
     W.system_run(ref, "Identity", "%s set %s's ladder: %s" % (by, engine, ", ".join("%s %d" % kv for kv in sorted(own.items()))))
     return numbers(ref, engine)
 
@@ -3280,7 +3280,7 @@ def identity_finding(ctx, step, item):
             with W._lock(ref):
                 d = W.dept(ref)
                 d["looked_up"] = sorted(looked | {str(f.get("claim")) for f in fresh})
-                W.save_dept(ref, d)
+                W.save_dept(ref, d, by="identity")
             _file_words(ref, d, "Look up: " + "; ".join(_finding_lines(ref, fresh, None)), "the holes Audit found, for " + engine)
         else:
             text = ("The site says it does not know %s: %s. Tell me here and I will put them in."
@@ -5399,8 +5399,10 @@ def d_identity_take(ctx, step, item):
             "needs": [], "unsure": []}
 
 
-#: Identity's standard (PRD M3.3, MK-1): the five points of its completeness file, each by the word a reading names it
-STANDARD = ("goal", "items", "rules", "owner", "budget", "invented")
+#: Identity's standard (PRD M3.3, MK-1): the five points of its completeness file, each by the word a reading names it;
+#: the interface's own tuple (PRD A1.3), so the covering and the schema read one standard
+import layer_schema as S  # noqa: E402 -- beside the one name that reads it
+STANDARD = S.STANDARD
 #: what each point's gap is called, in the owner's words, when code reads it on the record
 STANDARD_SAYS = {"goal": "no goal", "items": "no done-when item that says how it is checked", "rules": "a rule with no tag",
                  "owner": "no owner", "budget": "no budget"}

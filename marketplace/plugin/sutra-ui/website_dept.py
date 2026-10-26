@@ -146,7 +146,7 @@ def put_done_items(ref, items):
 
 # Rules (PRD M3.4): every rule the record keeps is tagged (go: it may; ask: it asks the owner first; refuse: it never
 # does; always: it always does) and says when and from whose words it came. Built here only, so the record holds one shape.
-RULE_TAGS = ("go", "ask", "refuse", "always")
+RULE_TAGS = S.RULE_TAGS                      # the interface's (PRD A1.3): tagged as the covering reads them
 
 
 def rule_row(tag, line, words=None, scope=None):
@@ -457,7 +457,7 @@ def bump_identity(ref, d):
     proposals path, decision C1). The record is the truth: a copy that cannot be written never fails the change, and a
     row says so."""
     d["identity_revision"] = int(d.get("identity_revision") or 1) + 1
-    save_dept(ref, d)
+    save_dept(ref, d, by="identity")
     try:
         import founding
         founding.mirror(ref)
@@ -723,7 +723,7 @@ def decide_ask(ref, aid, approve, by="the owner"):
                 d = dept(ref)
                 if d is not None and not d.get("host"):
                     d["host"] = HOST_DEFAULT
-                    save_dept(ref, d)
+                    save_dept(ref, d, by="identity")
             rt = _runtime(ref)
             if rt and a.get("thread"):
                 rt.on_stamp(ref, a, approve)       # posted in the ask's thread; Identity applies it as a step
@@ -831,7 +831,7 @@ def set_host(ref, host, by="the owner"):
         raise ValueError("no website department here")
     host = " ".join(str(host or "").split())[:200] or HOST_DEFAULT
     d["host"] = host
-    save_dept(ref, d)
+    save_dept(ref, d, by="identity")
     system_run(ref, "Identity", "%s said where the site is served from: %s" % (by, host))
     return host
 

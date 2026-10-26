@@ -144,20 +144,21 @@ def _pane(j2, ref):
     return V1.view(ref, W.dept(ref), J.events(ref), W.asks(ref))
 
 
-def _in_state(j2, monkeypatch, state):
-    """A department in one state of its cycle, reached the way a person reaches it."""
+def _in_state(j2, monkeypatch, state, org="Acme Learning"):
+    """A department in one state of its cycle, reached the way a person reaches it (an organisation of its own: the
+    same name finds the department already made)."""
     W, R, J, _, FV = j2
     if state == "assessing":
-        ref = _born(j2, settle=False)
+        ref = _born(j2, org=org, settle=False)
     elif state == "waiting":
         _model(monkeypatch, R, {"identity.enough": {"enough": False, "missing": ["goal"], "question": WHO, "why": "the goal names no one"}})
-        ref = _born(j2)
+        ref = _born(j2, org=org)
     elif state == "blocked":
         monkeypatch.setattr(R, "_root_check", lambda ref, d, engines, source: [FAULT])
         _model(monkeypatch, R, {"setup.shape": dict(SHAPED, done_items=[dict(i) for i in ITEMS])})
-        ref = _born(j2)
+        ref = _born(j2, org=org)
     else:
-        ref = _born(j2)
+        ref = _born(j2, org=org)
         assert J.audited(ref, 1, []) is True              # Audit read what went out and found nothing: done-when holds
     assert J.status(ref)["state"] == state, J.status(ref)
     return ref
@@ -193,3 +194,124 @@ def test_i3_a_view_that_does_not_fit_is_found_by_the_interface(ctx, monkeypatch)
     monkeypatch.setattr(V1, "view", lambda ref, d, events, asks: {"goal": 7})
     got = C.case_6(V1, ctx)
     assert got and all(f.startswith("identity/v1: view ") for f in got)
+
+
+# ---- I4: Identity's writers say who they are -------------------------------------------------------------------------
+NEVER = "Never publish a page without asking me first"
+DONE_WORDS = "From now on, the site is done when shoppers can order a cake on WhatsApp"
+#: the functions that save the record on Identity's behalf, by the key they write (A1.6): the revision (every change to
+#: who the department is), the host, the ladder's numbers and what Audit's holes were looked up for
+IDENTITYS_WRITERS = {"bump_identity", "set_host", "decide_ask", "set_numbers", "identity_finding"}
+
+
+def _spy(monkeypatch, W):
+    """W.save_dept with a record of who called it and as whom, for the test to read."""
+    import sys
+    seen, real = [], W.save_dept
+
+    def save_dept(ref, d, by=None):
+        seen.append((sys._getframe(1).f_code.co_name, by))
+        return real(ref, d, by=by)
+
+    monkeypatch.setattr(W, "save_dept", save_dept)
+    return seen
+
+
+def _ownership_rows():
+    return [r for r in S.REFUSED["rows"] if any("wrote it" in f for f in r["faults"])]
+
+
+def _an_instructions_ask(R, ref):
+    """The owner's change to one of Identity's instruction files, filed as an ask for the stamp (PRD M2.2)."""
+    return R.instructions_ask(ref, "identity", "completeness", R._instruction("identity", "completeness", ref) + "\nBe brief.\n")
+
+
+def _stamp_the_pending(W, ref, kinds):
+    for a in [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] in kinds]:
+        W.decide_ask(ref, a["id"], True)
+    W.run_until_idle(ref, limit=300)
+
+
+def test_i4_identitys_standard_and_rule_tags_are_the_interfaces(j2):
+    W, R, _, _, _ = j2
+    assert R.STANDARD is S.STANDARD and W.RULE_TAGS is S.RULE_TAGS
+    assert R.STANDARD == ("goal", "items", "rules", "owner", "budget", "invented") and W.RULE_TAGS == ("go", "ask", "refuse", "always")
+
+
+def test_i4_every_save_of_identitys_keys_names_identity_and_no_row_says_otherwise(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    seen = _spy(monkeypatch, W)
+    _model(monkeypatch, R, {"identity.recognise": {"journey": "directive", "why": "a standing rule"},
+                            "identity.rule": {"tag": "ask", "line": NEVER, "scope": "standing"}})
+    ref = _born(j2)
+    # a rule the owner gives, stamped; a goal the owner changes, stamped; done-when changed, stamped (bump_identity)
+    W.owner_ask(ref, NEVER)
+    W.run_until_idle(ref, limit=300)
+    _stamp_the_pending(W, ref, ("rule",))
+    assert [(r["tag"], r["line"]) for r in W.dept(ref)["rules"]][-1] == ("ask", NEVER)
+    W.put_done_items(ref, W.items_of(W.dept(ref)) + [{"text": "Shoppers can order a cake", "how": "model", "level": "outcome"}])
+    R._standard_defaults(ref, ["goal", "rules", "owner"])                                     # 'just do it' fills from the kind
+    # where the site is served from, asked at the first publish and said by the owner (set_host, decide_ask)
+    W.set_host(ref, "bakery.example.org")
+    d = W.dept(ref)
+    d["host"] = ""
+    W.save_dept(ref, d)
+    W._put_ask(ref, {"id": "a-publish1", "kind": "publish", "engine": "Identity", "text": "Publish?", "status": "pending", "created": W.now()})
+    W.decide_ask(ref, "a-publish1", True)
+    # the owner's ladder numbers, and a hole Audit found that the department's own engine looks up
+    R.set_numbers(ref, "Plan", {"runs": 41})
+    monkeypatch.setattr(R, "_web_engine", lambda d: "Plan")
+    R.post(ref, "Audit", "Identity", "inform", {"word": "finding", "claim": "opening hours", "severity": "low", "where": "Home",
+                                                "findings": [{"kind": "hole", "claim": "opening hours"}]})
+    W.run_until_idle(ref, limit=300)
+    assert W.dept(ref)["looked_up"] == ["opening hours"]
+
+    mine = [(who, by) for who, by in seen if who in IDENTITYS_WRITERS]
+    assert {who for who, _ in mine} == IDENTITYS_WRITERS, "every one of Identity's writers was run"
+    assert all(by == "identity" for _, by in mine), mine
+    assert _ownership_rows() == []                       # no row says a layer wrote what another's key holds
+
+
+def test_i4_a_save_that_does_name_identity_for_a_key_another_owns_is_a_row(j2):
+    """The detection is real: the same save, changing Root's name, is one row, which only this test may meet."""
+    W, _, _, _, _ = j2
+    ref = _born(j2)
+    d = W.dept(ref)
+    d["name"] = "Another name"
+    with S.expect_refused("department") as met:
+        W.save_dept(ref, d, by="identity")
+    assert met == ["$.name: is Root's, and Identity wrote it"]
+
+
+def test_i4_every_ask_identity_files_validates_as_identity_ask(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    kinds = {}
+
+    def take(ref):
+        for a in W.asks(ref):
+            kinds.setdefault(a["kind"], []).append(a)
+
+    _model(monkeypatch, R, {"identity.recognise": {"journey": "directive", "why": "a standing rule"},
+                            "identity.rule": {"tag": "ask", "line": NEVER, "scope": "standing"}})
+    ref = _born(j2)
+    W.owner_ask(ref, NEVER)
+    W.run_until_idle(ref, limit=300)                                                          # a rule ask
+    take(ref)
+    _stamp_the_pending(W, ref, ("rule",))
+    _model(monkeypatch, R, {"identity.recognise": {"journey": "directive", "why": "it says when the site is done"},
+                            "identity.rule": {"tag": "goal", "line": DONE_WORDS[len("From now on, "):], "scope": "standing"}})
+    W.owner_ask(ref, DONE_WORDS)
+    W.run_until_idle(ref, limit=300)                                                          # a done_items ask
+    instructions = _an_instructions_ask(R, ref)
+    take(ref)
+    waiting = _in_state(j2, monkeypatch, "waiting", "Waiting Co")                                # Identity's question: a j2_identity ask
+    take(waiting)
+    blocked = _in_state(j2, monkeypatch, "blocked", "Blocked Co")                                # a blocked plan: an ask with options
+    take(blocked)
+    assert {"rule", "done_items", "instructions", "j2_identity", "blocked"} <= set(kinds)
+    assert instructions["id"] in [a["id"] for a in kinds["instructions"]]
+    for kind in ("rule", "done_items", "instructions", "j2_identity", "blocked"):
+        for a in kinds[kind]:
+            assert S.validate_record("identity", "ask", a) == [], (kind, a)
+    assert all(o["id"] in ("words", "stop") or o["id"].startswith("leave:") for a in kinds["blocked"] for o in a["options"])
+    assert all(S.validate("option", o) == [] for a in kinds["blocked"] for o in a["options"])
