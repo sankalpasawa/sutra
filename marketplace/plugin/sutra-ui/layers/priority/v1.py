@@ -291,8 +291,9 @@ def priority_post(ctx, step, item):
 
 def _fact_notes(ctx, out):
     """What the facts Priority read say against the answer (M5.3): a yes, or an ask for less, never spends what the room
-    does not hold. A no, or a smaller yes, always stands: approvals only tighten (S-08). Empty when the step has no facts
-    to hold the answer to (the contract's samples, a department's older read)."""
+    does not hold, and an ask for less keeps the line from its first workflow on, cut short. A no, or a smaller yes or ask,
+    always stands: approvals only tighten (S-08). Empty when the step has no facts to hold the answer to (the contract's
+    samples, a department's older read)."""
     read = ((ctx or {}).get('bag') or {}).get('priority.read')
     if not isinstance(read, dict) or not isinstance(read.get('estimate'), dict) or not isinstance(read.get('room'), dict):
         return []
@@ -306,6 +307,14 @@ def _fact_notes(ctx, out):
         strange = [k for k in keep if k not in names]
         if strange:
             return ['an ask for less keeps %s, which the proposal does not name' % ', '.join(strange)]
+        # the line works from its first workflow on, each reading what the one before it filed: what an ask for less keeps is
+        # that line cut short, never one with a workflow left out of the middle (the draft keeps the longest prefix that
+        # fits, fits_of; a shorter prefix still stands, a smaller yes being allowed). priority_post puts what is kept in the
+        # line's order, so the order the agent names them in is not held.
+        first = names[:len(keep)]
+        if sorted(keep) != sorted(first):
+            return ['asked to keep %s, which is not the line from its first workflow on (from the start, that is %s)' % (
+                ', '.join(keep), ', '.join(first))]
     else:
         return []
     calls = sum(int((per.get(n) or {}).get('calls') or 0) for n in keep)
@@ -326,7 +335,8 @@ def price_is_observed(ctx, step, item, out):
     """Priority's covering (M2.4, M5.3): yes, less or no, each with its price, and the price held to the facts. The answer
     names its price: the line that says what it costs against the room left; an ask for less names what it keeps. Then the
     facts Priority read stand over it: what a yes or an ask for less keeps costs no more than the room left, and no more
-    workflows than the limit. An answer that fails them fails the step; nothing is taken in its place. The body of
+    workflows than the limit, and an ask for less keeps the line from its first workflow on. An answer that fails them
+    fails the step; nothing is taken in its place. The body of
     engine_runtime's answer_has_its_price, with the facts added."""
     notes = []
     if out.get('answer') not in ANSWERS:

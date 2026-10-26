@@ -412,6 +412,55 @@ def test_p3_room_for_two_engines_gives_a_counter_keeping_two(live, monkeypatch):
     assert S.validate("priority.price", first) == [] and S.validate("priority.price", second) == []
 
 
+def test_p3_an_ask_for_less_that_leaves_out_a_workflow_in_the_middle_of_the_line_fails_its_covering(live, monkeypatch):
+    """A covering that lets through an ask for less that is not the line cut short must fail: Summary reads Notes, so keeping
+    Facts and Summary and not Notes would be a line that does not work, and the department would end in a conflict for the
+    owner over an answer Priority should never have given. The room holds Facts and Summary (5 calls, 0.15 USD of 6 calls,
+    0.18 USD), so only the shape of the ask is wrong: the step fails, Adaptation is answered nothing, no price is written."""
+    W, R, J, _ = live
+    _model(monkeypatch, R, {"adapt.line": THREE, "priority.bargain": {"answer": "counter", "keep": ["Facts", "Summary"], "why": "room for two"}})
+    ref = _priced(live, {"Facts": (3, 0.07), "Notes": (1, 0.03), "Summary": (2, 0.08)}, SHAPED_HISTORY, ORGANIC, "Lab Co", shaped=True)
+    [step] = [r for r in R.step_rows(ref) if r["step"] == "priority.bargain"]
+    assert step["status"] == "failed" and step["by"] == "model"
+    assert "asked to keep Facts, Summary, which is not the line from its first workflow on (from the start, that is Facts, Notes)" in step["why"]
+    acts = _actions(J, ref)
+    assert acts[2:] == ["proposal.created"], "no ask for less was given, so no conflict is raised for the owner"
+    assert _prices(W, ref) == [] and W.dept(ref)["engines"] == [] and not [a for a in W.asks(ref) if a["kind"] == "conflict"]
+
+
+def test_p3_an_ask_for_less_that_is_the_line_cut_short_stands_in_whatever_order_the_agent_names_it(live, monkeypatch):
+    """A covering stricter than the line (a shorter prefix refused, or the same names in another order) would turn a good
+    answer into a stalled bargain: a smaller ask is allowed (approvals only tighten), and what is kept is posted in the
+    line's order."""
+    W, R, J, _ = live
+    _model(monkeypatch, R, {"adapt.line": THREE, "priority.bargain": {"answer": "counter", "keep": ["Notes", "Facts"], "why": "room for two"}})
+    ref = _priced(live, {"Facts": (3, 0.07), "Notes": (2, 0.04), "Summary": (0, 0.0)}, SHAPED_HISTORY, ORGANIC, "Lab Co", shaped=True)
+    first = _prices(W, ref)[0]
+    assert first["answer"] == "counter" and first["keep"] == ["Facts", "Notes"], "the line's order, not the agent's"
+    assert W.dept(ref)["engines"] == ["Facts", "Notes"] and "conflict.raised" not in _actions(J, ref)
+
+
+def test_p3_the_covering_holds_an_ask_for_less_to_the_line_cut_short_and_to_nothing_else(j2):
+    """Every shape of keep against a line of Facts, Notes, Summary with room for all of it (so only the shape is tested)."""
+    W, R, J, _ = j2
+    ref = _born(j2, settle=False)
+    line = {"word": "line", "engines": [{"name": n} for n in ("Facts", "Notes", "Summary")]}
+    c = {"ref": ref, "dept": W.dept(ref), "bag": {}, "post": {"thread": "x-1", "payload": line}}
+    c["bag"]["priority.read"] = V1.priority_read(c, None, None)
+    assert c["bag"]["priority.read"]["fits"] == ["Facts", "Notes", "Summary"]
+    check = lambda *keep: V1.CHECK["price_is_observed"](c, None, None, {"answer": "counter", "keep": list(keep), "why": "room for them"})
+    for stands in (("Facts",), ("Facts", "Notes"), ("Notes", "Facts"), ("Facts", "Notes", "Summary")):
+        assert check(*stands)["ok"], stands
+    for skips in (("Facts", "Summary"), ("Summary", "Facts"), ("Notes",), ("Notes", "Summary"), ("Summary",), ("Facts", "Facts")):
+        got = check(*skips)
+        assert not got["ok"] and "is not the line from its first workflow on" in got["notes"][0], skips
+    assert "which the proposal does not name" in check("Facts", "Booking")["notes"][0]
+    # the offline draft keeps the longest prefix that fits, so it is always one the covering lets through
+    c["bag"]["priority.read"]["fits"] = ["Facts", "Notes"]
+    c["bag"]["priority.read"]["facts"]["room"] = False
+    assert V1.CHECK["price_is_observed"](c, None, None, V1.d_priority_bargain(c, None, None))["ok"]
+
+
 def test_p3_no_room_gives_a_reject_a_conflict_and_step_4(live):
     """A no that ends in silence, or a bargain that never reaches Identity, must fail: with no room Priority says no, Adaptation
     raises the conflict, and Identity (step 4) is the one that asks the owner, once."""
