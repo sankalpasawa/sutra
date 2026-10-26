@@ -626,6 +626,76 @@ def test_i5_the_fallback_never_reaches_outside_and_is_in_plain_words(j2):
     assert "just do it" in ask["text"] and R.plain_faults(ask["text"], R._owners_words(ref, {})) == []
 
 
+#: what a model may write that the owner may not read (J2B-8: no number, no part of the app): the confidence as a figure and as
+#: a word, a part by name, the app's words for its insides
+SHOWS_THE_INSIDE = [
+    ("Adaptation is unsure, at confidence 0.45, whether the Check engine should read the order form; Root may review it.",
+     "Coordination runs Check after the Site engine"),
+    ("I am only 45% sure the shop wants 3 pages, and the charter says Priority must refuse orders over the engine limit (confidence 0.45)",
+     "Priority holds the envelope at 70 percent"),
+    ("Should the page say who the baker is? My confidence is low.", "the workflow goes on without it")]
+INSIDE_WORDS = re.compile(r"confiden|\b0?\.\d+\b|\d+\s*(?:%|per ?cent)|Adaptation|Priority|Coordination|Audit|engine|envelope|workflow|charter|refus", re.I)
+
+
+def _the_card_the_owner_reads(R, ref, ask):
+    """Every word of a doubt's question the owner reads: the card's text and why, and the line that names it in the chat."""
+    said = [p["payload"].get("done") for p in R.board(ref) if p["src"] == "Identity" and "Owner" in p["dst"] and p["payload"].get("card") == ask["id"]]
+    return [ask["text"], ask["why"]] + said
+
+
+@pytest.mark.parametrize("doubt,fallback", SHOWS_THE_INSIDE)
+def test_i5_a_doubt_or_fallback_that_shows_the_confidence_or_a_part_of_the_app_is_put_in_the_stock_words(j2, doubt, fallback):
+    W, R, J, _, _ = j2
+    ref = _born(j2, BAKERY)
+    _doubts(R, ref, doubt=doubt, fallback=fallback)
+    W.run_until_idle(ref, limit=300)
+    ask = _plan_asks(W, ref)[0]
+    name = W.dept(ref)["name"]
+    assert ask["text"] == 'Before I set up the work for %s: %s Unless you say, %s. Answer in your own words, or say "just do it".' % (name, V1.SOMETHING, V1.FALLBACK)
+    seen = _the_card_the_owner_reads(R, ref, ask)
+    assert len(seen) == 3 and all(INSIDE_WORDS.search(s.replace(name, "")) is None for s in seen), seen
+    assert V1.inside(doubt) and V1.inside(fallback), "the guard sees what the test says is in them"
+    # Adaptation's own words stay Adaptation's: the ask holds the doubt as it was posted, and what the owner was shown
+    assert ask["doubt"]["doubt"] == V1._said(doubt, 600) and ask["doubt"]["shown"] == V1.SOMETHING and ask["doubt"]["fallback"] == V1.FALLBACK
+    assert S.validate_record("identity", "ask", ask) == []
+    # the answer is filed in the Brief under the question as the owner read it, and goes to Adaptation with the doubt as it was
+    _owner_says(j2, ref, "answer box", ANSWER)
+    brief = " ".join(W.read_files(ref, "Brief", W.latest(ref, "Brief")["v"]).values())
+    assert "To Identity's question (%s): %s" % (V1.SOMETHING.rstrip("."), ANSWER) in brief and INSIDE_WORDS.search(brief.split("To Identity's question")[1]) is None
+    assert _line_requests(R, ref)[-1]["payload"]["doubt"] == V1._said(doubt, 600)
+
+
+def test_i5_the_doubt_that_is_left_open_is_told_and_blocked_in_the_stock_words_too(j2):
+    W, R, J, _, _ = j2
+    doubt, fallback = SHOWS_THE_INSIDE[1]
+    ref = _doubting(j2)
+    for said in ("A first answer", "A second answer"):
+        _owner_says(j2, ref, "chat", said)
+        _doubts(R, ref, doubt=doubt, fallback=fallback)
+        W.run_until_idle(ref, limit=300)
+    told = [s for s in _said_by_identity(R, ref) if "the plan goes on as it stands" in s]
+    assert len(told) == 1 and V1.SOMETHING in told[0] and "Unless you say otherwise, %s." % V1.FALLBACK in told[0]
+    assert INSIDE_WORDS.search(told[0].replace("Priority and Root check it before anything runs.", "")) is None, told[0]
+    went_on = [q for q in _line_requests(R, ref) if q["payload"].get("go_on")]
+    assert went_on[-1]["payload"]["doubt"] == doubt[:600] and went_on[-1]["payload"]["fallback"] == V1.FALLBACK, "Adaptation is sent the doubt as it was"
+    _doubts(R, ref, doubt=doubt, fallback=fallback)                                    # it comes back: a blocked plan
+    W.run_until_idle(ref, limit=300)
+    card = next(a for a in W.asks(ref) if a["kind"] == "blocked" and a["status"] == "pending")
+    assert V1.SOMETHING in card["text"] and card["why"] == V1.SOMETHING
+    assert all(INSIDE_WORDS.search(s) is None for s in (card["text"].replace("Priority and Root check it before anything runs.", ""), card["why"]))
+
+
+def test_i5_figures_and_words_of_the_owners_own_work_are_not_taken_for_the_inside(j2):
+    W, R, J, _, _ = j2
+    doubt, fallback = "Should the cake page show 3 sizes, and be easy to find on a search engine?", "the page shows one size"
+    ref = _born(j2, BAKERY)
+    _doubts(R, ref, doubt=doubt, fallback=fallback)
+    W.run_until_idle(ref, limit=300)
+    ask = _plan_asks(W, ref)[0]
+    assert doubt in ask["text"] and "Unless you say, %s." % fallback in ask["text"] and ask["doubt"]["shown"] == doubt
+    assert V1.inside("Class 8.5, v2.1, 12 pm, 3 pages, a search engine") == [] and V1.inside("at .45") == [".45"]
+
+
 def test_i5_words_after_the_doubt_is_answered_are_no_answer_to_it(j2):
     W, R, J, _, _ = j2
     ref = _doubting(j2)
