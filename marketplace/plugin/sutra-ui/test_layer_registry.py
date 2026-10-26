@@ -43,6 +43,15 @@ def modules():
     return W, R
 
 
+@pytest.fixture
+def empty_modules(monkeypatch):
+    """Wave 0's state, which these tests describe: every layer's module holds empty dicts. From wave 1 a layer's package fills
+    its own, so the registry serves empty stubs in their place and the real modules are not consulted."""
+    for layer, impl_id in S.DEFAULT_PINS.items():
+        monkeypatch.setitem(layers._LOADED, impl_id, types.SimpleNamespace(
+            LAYER=layer, VERSION=1, IMPLEMENTS=S.SCHEMA_VERSION, CODE={}, PROMPT={}, DRAFT={}, CHECK={}, WORDS={}, LAYOUT={}))
+
+
 # ---- C1 · the registry -----------------------------------------------------------------------------------------------
 def test_c1_available_lists_the_versions_on_disk_in_layer_order():
     assert layers.available() == {layer: ["%s/v1" % layer] for layer in S.LAYER_NAMES}
@@ -114,7 +123,7 @@ def test_c1_layer_of_names_the_layer_of_a_function_and_of_setup_and_nothing_else
     assert layers.layer_of("Plan") is None and layers.layer_of("Write") is None and layers.layer_of(None) is None
 
 
-def test_c1_with_empty_modules_resolve_returns_the_legacy_function(home):
+def test_c1_with_empty_modules_resolve_returns_the_legacy_function(home, empty_modules):
     W, R = modules()
     for kind, legacy in (("code", R.CODE), ("prompt", R.PROMPT), ("draft", R.DRAFT), ("check", R.CHECK)):
         for engine in ("Identity", "Adaptation", "Priority", "Coordination", "Audit", "Setup", "Plan", None):
@@ -141,7 +150,7 @@ def test_c1_a_stub_holding_a_name_is_what_resolve_returns_for_that_layers_engine
         assert layers.resolve("dref-x", "Identity", kind, "a_name", {"a_name": None}) is f
 
 
-def test_c1_resolve_serves_a_stub_the_test_puts_in_the_registry(monkeypatch):
+def test_c1_resolve_serves_a_stub_the_test_puts_in_the_registry(monkeypatch, empty_modules):
     W, R = modules()
     f = lambda ctx, step, item: {}
     stub = types.SimpleNamespace(LAYER="identity", VERSION=1, IMPLEMENTS=1, CODE={"identity_read": f}, PROMPT={}, DRAFT={}, CHECK={})

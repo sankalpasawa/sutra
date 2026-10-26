@@ -182,7 +182,10 @@ def test_m2_4d_a_chain_at_its_limit_is_never_let_through_even_when_its_rule_says
     assert R._j2() and not J.active(ref)
     for i in range(W.CHAIN_LIMIT):
         W._put_run(ref, R._run_row("Plan", False, "Plan@old.%d" % i, "ok", "an earlier run", chain="brief.v%d" % brief["v"]))
-    monkeypatch.setitem(R.CODE, "coord_chain", lambda ctx, step, item: ("admit", None))      # the rule went wrong
+    wrong = lambda ctx, step, item: ("admit", None)                                          # the rule went wrong
+    monkeypatch.setitem(R.CODE, "coord_chain", wrong)
+    import layers
+    monkeypatch.setitem(layers.impl(ref, "coordination").CODE, "coord_chain", wrong)         # the gate resolves through its layer (A1)
     ctx = R._coord_ctx(ref)
     slot = W._slot_id("Plan", "Brief", brief["v"])
     answer, why = R.blocked(ctx, "Plan", R.engine_def("Plan"), {"v": brief["v"]}, slot)
