@@ -608,10 +608,6 @@ def test_s3_every_soft_steps_out_keys_are_named_in_its_parts_returns():
                 assert '"%s"' % key in p["returns"], "%s: %s is not in its part's returns" % (s["id"], key)
 
 
-#: the parts later steps added to S.PROMPTS, with no .md file to hold them (each package adds its own)
-ADDED_PARTS = {("adaptation", "make", "shape")}
-
-
 def test_s3_prompts_are_the_bundles_parts_and_the_returns_byte_for_byte():
     for fn, files in R.INSTRUCTIONS.items():
         assert list(S.PROMPTS[fn]) == list(files) and list(S.GROUPS[fn]) == list(files)
@@ -623,8 +619,10 @@ def test_s3_prompts_are_the_bundles_parts_and_the_returns_byte_for_byte():
                 assert list(S.PROMPTS[fn][file]) == ["note"], "a file no step reads is its note (A1.16 rule 7)"
                 continue
             # a part a later step added to the interface (A1.16, 'Parts added by later steps') is in no file of the bundle
-            assert [p for p in S.PROMPTS[fn][file] if (fn, file, p) not in ADDED_PARTS] == list(parts)
+            assert [p for p in S.PROMPTS[fn][file] if (fn, file, p) not in S.ADDED_PARTS] == [p for p in parts if (fn, file, p) not in S.ADDED_PARTS]
             for part, slots in parts.items():
+                if (fn, file, part) in S.ADDED_PARTS:
+                    continue
                 p = S.PROMPTS[fn][file][part]
                 assert p["inputs"] == tuple(slots)
                 assert p["returns"] is None or p["returns"] in got[part], "%s.%s.%s: returns byte for byte" % (fn, file, part)

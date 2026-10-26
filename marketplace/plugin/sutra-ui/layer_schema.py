@@ -1192,6 +1192,10 @@ PROMPTS = {
     },
 }
 
+#: the prompt parts later steps added to PROMPTS (A1.16, 'Parts added by later steps'): a layer's WORDS and LAYOUT hold
+#: them, and no .md file of the bundle does, so the extractor and the bundle's tests leave them out. A package adds its own.
+ADDED_PARTS = (('adaptation', 'make', 'shape'),)
+
 #: each layer's pane view (A1.17), plus the engine card
 VIEWS = {'identity': 'view.identity', 'adaptation': 'view.adaptation', 'priority': 'view.priority',
          'coordination': 'view.coordination', 'audit': 'view.audit', 'engine_card': 'view.engine_card'}

@@ -63,7 +63,9 @@ def split_of(layer, *groups):
 
 
 def all_parts():
-    return [(layer, group, part) for layer in S.FUNCTION_LAYERS for group, parts in S.PROMPTS[layer].items() for part in parts]
+    """The parts the .md bundle holds: the interface's, less the parts later steps added (S.ADDED_PARTS)."""
+    return [(layer, group, part) for layer in S.FUNCTION_LAYERS for group, parts in S.PROMPTS[layer].items() for part in parts
+            if (layer, group, part) not in S.ADDED_PARTS]
 
 
 GATE = ("identity", "take", "gate")
@@ -161,7 +163,8 @@ def test_c3_the_goal_of_a_function_is_what_its_definition_says_and_a_work_engine
 
 def test_c3_instructions_are_the_interfaces_parts_with_the_inputs_code_fills(runtime):
     R = runtime
-    assert {fn: {g: list(parts) for g, parts in files.items()} for fn, files in R.INSTRUCTIONS.items()} == {
+    assert {fn: {g: [p for p in parts if (fn, g, p) not in S.ADDED_PARTS] for g, parts in files.items()}
+            for fn, files in R.INSTRUCTIONS.items()} == {
         "identity": {"goal": ["does", "skills", "close"], "completeness": ["thin", "enough"],
                      "take": ["recognise", "take", "answer", "rule", "weigh", "gate"]},
         "adaptation": {"goal": ["does", "skills"], "sense": ["shape"], "decide": [], "make": ["line", "refused"]},
@@ -326,6 +329,8 @@ def test_c4_compiled_from_its_extracted_words_every_part_is_the_md_part_byte_for
         assert bad == [], bad
         for group, parts in S.PROMPTS[layer].items():
             for part, spec in parts.items():
+                if (layer, group, part) in S.ADDED_PARTS:
+                    continue                                   # an added part has no .md part to be the same as
                 md = P.md_part(layer, group, part)
                 sample = {n: "<<%s>>" % n for n in spec["inputs"]}
                 got = P.compile_layout(layout[group][part], words[group][part], spec["returns"], sample, P.who(layer, group, part))
