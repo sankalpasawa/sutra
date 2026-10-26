@@ -9,6 +9,7 @@ status, no output).
 
     legacy_atoms(ctx, engine)   the atoms of one engine, one for each slot step, in order (a gate and a rule decide whether a
                                 start may happen: they are decisions, not work, and are no atom). The page's cards read these
+    atom_ids(engines)           which atom a step made: {(engine, step id): 'W-1.a2'}, for the call log's `atom`
     views(workflows)            atoms_v1: the prototype's own atom/1 view of every atom. j2_schema.py is the prototype's file,
                                 copied byte for byte into j2ui_assets/ by the sync script and loaded from there, so a view is
                                 the prototype's code and not a copy of its logic; without the file there are no views and the
@@ -246,13 +247,25 @@ def _atom(ctx, e, step, j, rows, files):
     return atom
 
 
+def slots(e):
+    """The slot steps of an engine, in order: each is an atom (a gate and a rule decide whether a start may happen: they are
+    decisions, not work). The one place that says which step is atom j, for the atoms and for the calls that made them."""
+    return [s for s in (e.get("steps_view") or {}).get("steps") or [] if s.get("mode") == "slot"]
+
+
+def atom_ids(engines):
+    """{(engine name, step id): atom id} for the engines given: the id legacy_atoms gives the atom made of that step ('W-1.a2').
+    An engine with no place in the line (no W-k) has none."""
+    return {(e.get("name"), s.get("id")): "%s.a%d" % (e["wid"], j) for e in engines or [] if e.get("wid") for j, s in enumerate(slots(e), 1)}
+
+
 def legacy_atoms(ctx, engine):
     """The atoms of one engine, one for each slot step in order: W-1.a1, W-1.a2, ... Empty for an engine with no template to read
     its steps from, or no place in the line."""
     e = _engine(ctx, engine)
     if not e or not e.get("wid"):
         return []
-    steps = [s for s in (e.get("steps_view") or {}).get("steps") or [] if s.get("mode") == "slot"]
+    steps = slots(e)
     mine = [r for r in getattr(ctx, "steps", None) or [] if r.get("engine") == e.get("name")]
     files = _files(ctx, e) if mine else []
     filing = _filing(e, steps)

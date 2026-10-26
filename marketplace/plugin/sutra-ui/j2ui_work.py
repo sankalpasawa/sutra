@@ -113,12 +113,17 @@ def _workflow(ctx, e, line):
             "agent": "%s %s" % (wid, name), "last_check": _last_check(ctx, e), "version": _version(ctx, e), "atoms": []}
 
 
-def _workflows(ctx):
-    """One workflow for each engine of the registered line, in the line's order. Nothing before Root's check registers a plan
-    (the page says so); an engine the plan left out is no workflow (the Map draws it as a hollow branch box)."""
+def _inline(ctx):
+    """The engines of the registered line, in the line's order. Nothing before Root's check registers a plan (the page says so);
+    an engine the plan left out is no workflow (the Map draws it as a hollow branch box)."""
     if not getattr(ctx, "planned", False):
         return []
-    line = [e for e in ctx.engines if e.get("in_line") and e.get("wid")]
+    return [e for e in ctx.engines if e.get("in_line") and e.get("wid")]
+
+
+def _workflows(ctx):
+    """One workflow for each engine of the registered line, in the line's order."""
+    line = _inline(ctx)
     return [_workflow(ctx, e, line) for e in line]
 
 
@@ -222,17 +227,23 @@ def _step_name(ctx, row):
         return A.plain(row.get("step"))
 
 
-def _call_row(ctx, i, row):
+def _call_row(ctx, i, row, atoms=None):
     """One call of the log, from the step row that made it. What the model was given and said is not stored, so the prompt is
-    nothing, the tokens and the model are not recorded, and the reply is what the step's own record has, in the owner's words."""
+    nothing, the tokens and the model are not recorded, and the reply is what the step's own record has, in the owner's words.
+    `atom` names the work atom the call made when the step is a slot step of an engine of the line (the page's atom card finds
+    its calls by it, as the prototype's calls carry it); a function's step is no atom's and the key is left off."""
     answer = row.get("answer")
     notes = [A.plain(n) for n in (row.get("check") or {}).get("notes") or [] if A.plain(n)]
     said = A.answer_line(answer, notes)
     stamp = row.get("ended") or row.get("started")
-    return {"id": i, "fn": _fn(ctx, row.get("engine")), "step": ctx.step_at(stamp) if callable(getattr(ctx, "step_at", None)) else None,
-            "cycle": (ctx.cur or {}).get("round") or 1, "t": A.hhmmss(stamp), "seconds": round(int(row.get("ms") or 0) / 1000, 2),
-            "model": None, "tokens": None, "chars": {"prompt": 0, "reply": len(answer) if isinstance(answer, str) else 0},
-            "inputs": [["step", _step_name(ctx, row)]], "reply": {"say": said} if said else None, "reason": ""}
+    out = {"id": i, "fn": _fn(ctx, row.get("engine")), "step": ctx.step_at(stamp) if callable(getattr(ctx, "step_at", None)) else None,
+           "cycle": (ctx.cur or {}).get("round") or 1, "t": A.hhmmss(stamp), "seconds": round(int(row.get("ms") or 0) / 1000, 2),
+           "model": None, "tokens": None, "chars": {"prompt": 0, "reply": len(answer) if isinstance(answer, str) else 0},
+           "inputs": [["step", _step_name(ctx, row)]], "reply": {"say": said} if said else None, "reason": ""}
+    atom = (atoms or {}).get((row.get("engine"), row.get("step")))
+    if atom:
+        out["atom"] = atom
+    return out
 
 
 def _times(ctx):
@@ -275,7 +286,8 @@ def _link(ctx, rows):
 def _calls(ctx):
     """The AI calls of the department, one for each step row that made any, oldest first, and the messages they belong to."""
     made = [r for r in ctx.steps if int(r.get("calls") or 0) > 0]
-    rows = [(_call_row(ctx, i, r), r) for i, r in enumerate(made, 1)]
+    atoms = A.atom_ids(_inline(ctx))
+    rows = [(_call_row(ctx, i, r, atoms), r) for i, r in enumerate(made, 1)]
     _link(ctx, rows)
     return [r for r, _ in rows]
 
