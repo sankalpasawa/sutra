@@ -18,6 +18,10 @@ Named claims:
        from the chat, wrote the charter, audits from the ledger, asks and uses from the board
   M4d  the status pill (waiting on you, a function running, Done, Done with open items, Stopped, Running, Waiting, Idle) and
        the checks; not_recorded names every gap and every workflow is on one box or named
+  M6   all four views end to end in every cycle state (not started, assessing, waiting, adapting, bargaining, blocked,
+       running, pursuing, done, stopped): map, board, artifacts and a site request, as the router serves them; no private key,
+       no machine path, no GRANT, COUNTER or REFUSE and no act id in any string, no None where the page reads a string,
+       the same twice, nothing written, and the page's own render of each draws without undefined, NaN or null
 Shares the department fixtures and the Ctx stand-in of test_j2ui_artifacts.py.
 """
 import json
@@ -27,6 +31,7 @@ import pytest
 
 from test_j2ui_artifacts import (REF, FUNCS, add_ver, ago, make_ctx, mods, msg, page_render, plain_text, proto_consts,  # noqa: F401 -- mods is a fixture
                                  proto_show, put_ask, put_post, put_run, put_step, seed_line, set_cycle)
+from test_j2ui_board import put_questions, q
 
 WORK = ["work:brief", "work:site-plan", "work:pages", "work:build", "work:live-site"]
 PERSON_KEYS = ["id", "kind", "row", "label", "status", "version", "tag", "color", "file", "detail", "workflows"]
@@ -710,3 +715,193 @@ def test_m4d_a_box_with_no_version_is_listed_and_a_made_one_names_its_gap(mods):
     nr = M.build(make_ctx(mods))["not_recorded"]
     assert "version of Pages" in nr and "version of Live site" in nr and "which function worked on Pages: not recorded" not in nr
     assert "which function worked on Brief: not recorded" in nr
+
+
+# ---- M6: all four views, in every cycle state -------------------------------------------------------------------------------------------------
+STATES = ["not_started", "assessing", "waiting", "adapting", "bargaining", "blocked", "running", "pursuing", "done", "stopped"]
+#: an absolute machine path (j2ui_common.ABS_PATH once j2ui-core is merged); a relative file name such as build/v1/index.html is not one
+ABS_PATH = re.compile(r"(?<![\w.@/-])(?:~|[A-Za-z]:)?(?:/[\w.@-]+){2,}")
+BARGAIN = re.compile(r"\b(?:GRANT|COUNTER|REFUSE)\b|\b(?:grant|granted|counter|countered|refuse|refused)\b", re.I)
+ACT_IDS = re.compile(r"accept-proposal|reject-proposal|not-understood|ASK_REQUESTER")
+
+
+def scene(mods, state):
+    """A department in one cycle state, with what that state looks like on the record: the line filed as far as the state
+    goes, an ask where the state waits on the owner, an engine running where one runs."""
+    W, R, J, F = mods
+    if state == "not_started":
+        return
+    seed_line(W, upto={"assessing": 1, "waiting": 1, "adapting": 1, "bargaining": 1}.get(state, 5))
+    step = {"assessing": 1, "waiting": 1, "adapting": 2, "bargaining": 3, "blocked": 8, "running": 6, "pursuing": 8, "done": 8, "stopped": 6}[state]
+    cycle_state = "stopped" if state == "stopped" else state
+    if state in ("running", "pursuing", "done", "stopped", "blocked"):
+        from test_j2ui_map import register
+        register(W, R, left=("Publish",) if state == "pursuing" else ())
+        put_run(W, "Check", "ok", id="r-check")
+    if state == "waiting":
+        ask = W.j2_identity_ask("Which pages does the site need?", "cycle-test", "words", why="The brief names no pages")
+        W._put_ask(REF, ask)
+        set_cycle(W, "waiting", 1, open_ask=ask["id"])
+    else:
+        set_cycle(W, cycle_state, step)
+    if state == "running":
+        put_run(W, "Write", "running", id="r-write-now")
+    if state == "blocked":
+        put_ask(W, "blocked", engine="Identity", text="Priority said no to the plan and you can decide", id="a-blocked")
+    if state == "pursuing":
+        put_ask(W, "finding", engine="Audit", text="The phone number is missing", id="a-finding")
+        put_questions(W, [q("Q-1", status="answered", answer="Home and About", answered_by="Plan", used_by=["Check"])])
+    if state == "stopped":
+        W.set_stopped(REF, True)
+
+
+def all_views(ctx):
+    import j2ui_artifacts as A
+    import j2ui_board as B
+    import j2ui_map as M
+    import j2ui_site as S
+    arts = A.listing(ctx)
+    site = S.site(ctx, "latest")
+    page = S.site(ctx, "latest", "index.html")
+    served = [A.served(ctx, r["file"]) for r in arts["deliverables"] + arts["records"]]
+    return {"map": M.build(ctx), "board": B.build(ctx), "artifacts": arts, "site": [site[0], site[1].decode("utf-8"), site[2], site[3]],
+            "page": [page[0], page[1].decode("utf-8"), page[2], page[3]], "served": [[b.decode("utf-8"), m] for b, m in served if b is not None]}
+
+
+def walk(value, path=""):
+    """Every (path, key-or-None, value) of a JSON value, keys included."""
+    if isinstance(value, dict):
+        for k, v in value.items():
+            yield path, k, v
+            yield from walk(v, path + "/" + str(k))
+    elif isinstance(value, list):
+        for i, v in enumerate(value):
+            yield from walk(v, path + "/%d" % i)
+    else:
+        yield path, None, value
+
+
+@pytest.mark.parametrize("state", STATES)
+def test_m6_every_view_in_every_state_is_clean(mods, state):
+    import j2_runtime as J
+    scene(mods, state)
+    ctx = make_ctx(mods, chat=[msg(1, "user", "Build us a site"), msg(2, "identity", "@Requester Got it, working on it"),
+                              msg(3, "adaptation", "Proposed the plan to Priority", next="priority")])
+    got = all_views(ctx)
+    blob = json.dumps(got, ensure_ascii=False)
+    assert json.loads(blob) == got                                                           # a JSON round trip
+    assert got["map"]["schema"] == "map/1" and got["board"]["schema"] == "board/1" and set(got["artifacts"]) == {"deliverables", "records"}
+    keys = {str(k).lower() for _, k, _ in walk(got) if k is not None}
+    assert not keys & set(J.PRIVATE_KEYS), keys & set(J.PRIVATE_KEYS)
+    strings = [v for _, k, v in walk(got) if isinstance(v, str)]
+    bad = [s for s in strings if ABS_PATH.search(s) or BARGAIN.search(s) or ACT_IDS.search(s)]
+    assert not bad, bad[:3]
+    assert not [s for s in strings if "Traceback" in s]
+
+
+@pytest.mark.parametrize("state", STATES)
+def test_m6_nothing_is_none_where_the_page_reads_a_string(mods, state):
+    scene(mods, state)
+    got = all_views(make_ctx(mods))
+    m = got["map"]
+    for n in m["nodes"]:
+        assert isinstance(n["label"], str) and n["label"] and isinstance(n["detail"], str) and isinstance(n["id"], str), n
+        assert isinstance(n["status"], str) and isinstance(n["workflows"], list), n
+        assert n["file"] is None or isinstance(n["file"], str)
+    for e in m["edges"]:
+        assert all(isinstance(e[k], str) for k in ("from", "to", "kind", "basis")), e
+    assert isinstance(m["status"]["state"], str) and m["status"]["state_status"] in ("running", "waiting", "waiting_on_you", "idle")
+    assert all(isinstance(x, str) for x in m["not_recorded"]) and m["legend"]
+    for r in got["artifacts"]["deliverables"] + got["artifacts"]["records"]:
+        for k in ("name", "type", "kind", "form", "file", "sha256", "time", "label", "tag", "color", "open"):
+            assert isinstance(r[k], str) and r[k], (k, r)
+        assert isinstance(r["workflows"], list) and isinstance(r["depends_on"], list) and isinstance(r["depends_on_labels"], list)
+    for e in got["board"]["entries"]:
+        for k in ("id", "asked_by", "to", "about", "question", "status", "asked_by_role"):
+            assert isinstance(e[k], str), (k, e)
+        assert isinstance(e["used_by"], list) and isinstance(e["attempt"], int)
+    for status, body, mime, headers in (got["site"], got["page"]):
+        assert isinstance(body, str) and isinstance(mime, str) and "script-src 'none'" in headers["Content-Security-Policy"]
+
+
+@pytest.mark.parametrize("state", STATES)
+def test_m6_the_views_are_the_same_twice_and_write_nothing(mods, state):
+    W = mods[0]
+    scene(mods, state)
+    snap = lambda: sorted((str(p.relative_to(W.ddir(REF))), p.stat().st_mtime_ns, p.stat().st_size) for p in W.ddir(REF).rglob("*") if p.is_file())
+    before = snap()
+    a = json.dumps(all_views(make_ctx(mods)), sort_keys=True)
+    b = json.dumps(all_views(make_ctx(mods)), sort_keys=True)
+    assert a == b and snap() == before
+
+
+@pytest.mark.parametrize("state", STATES)
+def test_m6_the_state_is_what_the_pill_and_the_boxes_say(mods, state):
+    scene(mods, state)
+    ctx = make_ctx(mods)
+    assert ctx.state in ({"not_started": ("not_started", "not_ready")}.get(state) or (state,)), (state, ctx.state)       # the scene is the state it names
+    m = all_views(ctx)["map"]
+    said = (m["status"]["state"], m["status"]["state_status"])
+    fn_status = {n["id"]: n["status"] for n in m["nodes"] if n["kind"] == "function"}
+    boxes = {n["id"]: n["status"] for n in m["nodes"] if n["kind"] == "work"}
+    if state in ("done", "stopped"):
+        assert "running" not in set(fn_status.values()) | set(boxes.values()) and said[1] == "idle", (state, said)
+        assert said[0] in ("Done", "Done with open items", "Stopped")
+    if state in ("assessing", "adapting", "bargaining"):
+        assert said[1] == "running" and said[0].endswith(" running"), said
+        assert {"assessing": "fn:identity", "adapting": "fn:adaptation", "bargaining": "fn:priority"}[state] in [k for k, v in fn_status.items() if v == "running"]
+    if state in ("waiting", "blocked", "pursuing"):
+        assert said == ("Waiting on you", "waiting_on_you") and fn_status["fn:identity"] == "waiting_on_you"
+        assert m["live"] is True
+    if state == "not_started":
+        assert said == ("Idle", "idle") and m["live"] is False and "work:charter" not in boxes
+    if state == "running":
+        assert said == ("Coordination running", "running") and boxes["work:pages"] == "running"
+    if state == "pursuing":
+        assert [n["id"] for n in m["nodes"] if n["kind"] == "work" and n["lane"] == "branch"] == ["work:live-site"]
+
+
+@pytest.mark.parametrize("state", STATES)
+def test_m6_the_pages_own_render_draws_every_view(mods, state):
+    scene(mods, state)
+    got = all_views(make_ctx(mods))
+    out = page_render(map_=got["map"], artifacts=got["artifacts"], board=got["board"]["entries"])
+    if out is None:
+        pytest.skip("the pinned page or node is not here")
+    for pane in ("map", "artifacts", "board"):
+        words = plain_text(out[pane])
+        assert words and not re.search(r"\bundefined\b|\bNaN\b|\bnull\b", words), (state, pane, words[:200])
+    assert "Nothing to draw yet" not in out["map"]
+    n = len(got["artifacts"]["deliverables"]) + len(got["artifacts"]["records"])
+    assert out["artifacts"].count('class="artrow"') == n
+
+
+def test_m6_the_four_views_in_the_router_order_for_a_whole_department(line):
+    """The page polls state, then map, artifacts and board on a change, then opens the site: one ctx serves them all."""
+    import j2ui_artifacts as A
+    import j2ui_map as M
+    import j2ui_site as S
+    ctx = make_ctx(line)
+    a, m = A.listing(ctx), M.build(ctx)
+    assert A.listing(ctx) is a and M.build(ctx) is m                                      # one rebuild shared by every endpoint
+    boxes = {n["file"] for n in m["nodes"] if n["kind"] == "work" and n["file"]}
+    assert boxes <= {r["file"] for r in a["deliverables"] + a["records"]}                  # a box opens a file the listing names
+    for f in boxes:
+        assert A.served(ctx, f) is not None
+    assert S.site(ctx, "latest")[0] == 302
+
+
+def test_m6_when_the_engines_could_not_be_read_the_views_still_answer(line):
+    """website_dept.map_view raises while Identity's question is open (reported to the integrator), so j2ui-core's get_ctx may
+    hand over no engines and no plan: every view then answers with what it can read, nothing raised, nothing blank."""
+    import j2ui_artifacts as A
+    import j2ui_map as M
+    ctx = make_ctx(line)
+    ctx.engines, ctx.planned = [], False
+    ctx.reasons.append("the engines could not be read")
+    m = M.build(ctx)
+    assert m["schema"] == "map/1" and "work:build" in ids(m) and node(m, "work:build")["status"] == "filed"
+    assert all(n["workflows"] == [] for n in m["nodes"])
+    rows = A.listing(ctx)
+    assert [r["name"] for r in rows["deliverables"]] == ["Build", "Live site"] and all(r["workflows"] == [] for r in rows["deliverables"] + rows["records"])
+    json.dumps([m, rows])

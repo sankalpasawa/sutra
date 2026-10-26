@@ -246,6 +246,29 @@ def seed_line(W, upto=5, ok=True):
 
 
 # ---- the Ctx contract's stand-in (j2ui_common.get_ctx, built by j2ui-core) --------------------------------------------
+def map_engines(W, R, F, ref):
+    """(engines, planned) as website_dept.map_view gives them. map_view raises KeyError('engine') while Identity's question is
+    open (website_dept.status reads a['engine'] of every pending ask and a j2_identity ask has none; found 2026-10-26 on
+    main 827fe38f, reported to the integrator), so the same parts are read here one by one, as j2ui-core's get_ctx must."""
+    d, rs, ak = W.dept(ref), W.runs(ref), W.asks(ref)
+    engines = [x for x in (W.engine_view(ref, e[0]) for e in W.engines_of(d)) if x]
+    table = R.coordination(ref)
+    line = set(table.get("line") or [])
+    left = {r.get("engine") for r in table.get("left_out") or [] if isinstance(r, dict)}
+    slots = {r.get("engine"): r for r in table.get("timetable") or [] if isinstance(r, dict)}
+    for e in engines:
+        e.pop("runs", None)
+        last = next((r for r in reversed(rs) if r["engine"] == e["name"]), None)
+        e["last"] = last and {"status": last["status"], "at": last["started"], "what": last.get("what"), "words": last.get("words")}
+        if any(a.get("engine") == e["name"] and a["status"] == "pending" for a in ak):
+            e["state"] = "Waits"
+        e["in_line"] = e["name"] in line
+        if e["name"] in left and e["state"] not in ("Running", "Missing"):
+            e["state"] = "Left out"
+        e["timetable"] = slots.get(e["name"])
+    return engines, not F.no_plan(ref, d, table)
+
+
 def make_ctx(mods_, ref=REF, chat=None, paused=None):
     """The Ctx contract's attributes for a department, from public reads only. `chat` is the message list the test wants the
     views to see (the chat builder is j2ui-core's); `paused` forces the ask the state's paused shows."""
@@ -253,7 +276,8 @@ def make_ctx(mods_, ref=REF, chat=None, paused=None):
     d = W.dept(ref)
     fv = F.functions(ref)
     cur = J._state(ref) or {}
-    mv = W.map_view(ref)
+    mv_engines, planned = map_engines(W, R, F, ref)
+    mv = {"engines": mv_engines, "planned": planned}
     runs, asks = W.runs(ref), W.asks(ref)
     line = [e for e in mv["engines"] if e["in_line"]] if mv["planned"] else []
     left = [e for e in mv["engines"] if not e["in_line"]]
