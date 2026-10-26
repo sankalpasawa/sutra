@@ -2,6 +2,9 @@
 
   K1  every code, prompt, draft and check name Coordination's recipe uses is provided by the module itself, by reference
       (nineteen, none of them left to the legacy registries), and contract cases 1 to 4 and 7 pass for coordination/v1
+  K3  set_line checks the line as a write before it puts the table: an engine no registered plan names and the owner did not add
+      is one row in warn mode and a refusal in refuse mode (the line then stands as it was); a grown engine passes; every
+      table written while a department of each kind settles validates
   K4  view() and engine_card() are functions_view's S7 and S17 read models by reference, and validate as view.coordination
       and view.engine_card in every state a department passes through (empty, running, waiting, alarm, stopped, done; an
       engine running, waiting, held, left out and stopped)
@@ -17,6 +20,7 @@ import layers.contract as C
 from layers.coordination import v1 as V1
 
 WEBSITE = "Build a website that teaches algebra to Class 8 students"
+ORGANIC = "Set up a laboratory system to track chemical inventory for our school science team"
 LINE = ["Plan", "Write", "Check", "Publish"]
 
 
@@ -276,3 +280,107 @@ def test_k4_the_reads_write_nothing_and_never_call_the_model(j2, monkeypatch):
     _view(j2, ref)
     V1.engine_card(ref, "Plan")
     assert {p: os.path.getmtime(os.path.join(home, p)) for p in os.listdir(home)} == snap and called == []
+
+
+# ---- K3: the line is checked on write ---------------------------------------------------------------------------------------
+def _table(W, ref):
+    return W._read(W.ddir(ref) / "coordination.json", None)
+
+
+def _coordination_rows(W, ref):
+    return [r for r in W.runs(ref) if r.get("system") and r.get("engine") == "Coordination" and "interface" in str(r.get("what"))]
+
+
+def test_k3_a_hand_made_table_naming_an_unregistered_engine_is_caught_with_one_row(j2):
+    """A line with an engine nobody registered or added, written with no word, must fail: one row, by Coordination, and in
+    warn mode the write goes through."""
+    W, R, _, _, _ = j2
+    ref = _born(j2)
+    with S.expect_refused() as met:
+        t = R.set_line(ref, LINE + ["Ghost"], 2)
+    assert len(met.rows) == 1 and met.rows[0]["name"] == "coordination.table" and met.rows[0]["owner"] == "coordination"
+    assert met.rows[0]["ref"] == ref and met.rows[0]["kept"] is True, "warn mode: a row, and the write goes through"
+    assert any("Ghost" in f or "engines[4]" in f for f in met), met      # a standard names it; the shape row says where
+    assert t["line"] == LINE + ["Ghost"] and _table(W, ref)["line"] == LINE + ["Ghost"]
+    rows = _coordination_rows(W, ref)
+    assert len(rows) == 1 and "kept a record that does not fit the interface: coordination.table" in rows[0]["what"]
+
+
+def test_k3_in_refuse_mode_the_unregistered_line_is_not_written_and_the_handler_says_the_line_stands(j2, monkeypatch):
+    """Refuse mode must raise after the row and leave the table as it was; Coordination's handler keeps the line it had and
+    says so, so the board never meets the exception."""
+    W, R, _, _, _ = j2
+    ref = _born(j2)
+    before = (W.ddir(ref) / "coordination.json").read_bytes()
+    monkeypatch.setattr(S, "MODE", "refuse")
+    with S.expect_refused() as met:
+        with pytest.raises(S.SchemaFault) as caught:
+            R.set_line(ref, LINE + ["Ghost"], 2)
+    assert caught.value.name == "coordination.table" and len(met.rows) == 1 and met.rows[0]["kept"] is False
+    assert (W.ddir(ref) / "coordination.json").read_bytes() == before, "nothing was written"
+    assert _coordination_rows(W, ref)[0]["what"].startswith("refused a write that does not fit the interface")
+    # the handler an engine born is heard by: it keeps the line it had, says why, and does not raise
+    with S.expect_refused() as met:
+        got = R.coord_table(R._coord_ctx(ref), {}, {"engines": LINE + ["Ghost"], "version": 2, "full": True})
+    assert got["line"] == LINE and got["said"].startswith("kept the line it had: ") and ("Ghost" in got["said"] or "engines[4]" in got["said"])
+    assert len(met.rows) == 1 and (W.ddir(ref) / "coordination.json").read_bytes() == before
+
+
+def test_k3_the_line_is_checked_before_the_table_is_put(j2, monkeypatch):
+    """A check that runs after the write (when the table is already on the record) must fail."""
+    W, R, _, _, _ = j2
+    ref = _born(j2)
+    seen, put = [], R._put_table
+    with S.expect_refused() as met:
+        monkeypatch.setattr(R, "_put_table", lambda r, t, why: seen.append(len(met.rows)) or put(r, t, why))
+        R.set_line(ref, LINE + ["Ghost"], 2)
+    assert seen == [1] and len(met.rows) == 1, "the row was there when the table was about to be put"
+
+
+def test_k3_a_grown_engine_passes_and_stays_on_the_line_through_a_later_registration(j2):
+    """An engine the owner added (J5), merged into the line again by the next registration, must not be a fault."""
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    W.add_engine(ref, "Do")
+    assert _table(W, ref)["grown"] == ["Do"] and R.coordination(ref)["line"] == ["Do"] + LINE
+    d = W.dept(ref)
+    with S.expect_refused() as met:
+        R._j2_settle(ref, d, [{"name": n} for n in LINE[:3]], "library", d.get("goal"), "a test")
+    assert met == [], met
+    t = _table(W, ref)
+    assert (t["registered"], t["line"], t["grown"]) == (2, ["Do"] + LINE[:3], ["Do"]) and S.validate("coordination.table", t) == []
+
+
+def test_k3_a_line_of_shaped_engines_is_read_with_its_registrations_source(j2):
+    """An organic department's line (source shaped, engines born from its own templates) is no fault: the check reads the
+    source of the plan Root registered, not the Library's."""
+    W, R, _, _, _ = j2
+    ref = _born(j2, words=ORGANIC, org="Lab Co")
+    d = W.dept(ref)
+    assert d["workflows"][-1]["source"] == "shaped" and _table(W, ref)["line"] == d["workflows"][-1]["engines"]
+    with S.expect_refused() as met:
+        t = R.set_line(ref, d["workflows"][-1]["engines"], 2)
+    assert met == [] and S.validate("coordination.table", t) == []
+
+
+@pytest.mark.parametrize("words,org", [(WEBSITE, "Acme Learning"), (ORGANIC, "Lab Co")])
+def test_k3_every_table_written_as_a_department_settles_validates(words, org, j2):
+    """Every write of the table, born and each line, is read back as coordination.table, and none met a fault."""
+    W, R, _, _, _ = j2
+    start = S.REFUSED["count"]
+    written = []
+    put = W._write
+    import website_dept
+    orig = website_dept._write
+    website_dept._write = lambda p, obj: (written.append(obj) if str(p).endswith("coordination.json") else None) or orig(p, obj)
+    try:
+        ref = _born(j2, words=words, org=org)
+        for a in [a for a in W.asks(ref) if a["status"] == "pending"]:
+            W.decide_ask(ref, a["id"], True)
+        W.run_until_idle(ref, limit=300)
+    finally:
+        website_dept._write = orig
+    assert written, "the table was written"
+    assert [S.validate("coordination.table", t) for t in written] == [[]] * len(written)
+    assert {t["by"] for t in written} <= {"born", "Coordination"}
+    assert S.REFUSED["count"] == start, S.REFUSED["rows"][start:]
