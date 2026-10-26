@@ -1363,10 +1363,12 @@ def test_m3_7_every_functions_page_reads_in_the_owners_words(j2):
     pages, so this reads the real ones (found by a verifier 2026-10-26: Identity's Holds said 'go, ask, refuse, always')."""
     W, R, J, _, F = j2
     W.create("dref-pages", "Pages Website", None)
+    import layer_schema as S
     banned = re.compile(r"\b(?:grant|counter|refus|orders\b|charter|internal system)", re.I)
-    for name, page in F.PAGES.items():
-        shown = [page[k] for k in ("vsm", "line", "holds", "hands_to", "keeps", "v1")] + [j[1] for j in page["journeys"]]
+    for name, journeys in F.JOURNEYS.items():
+        page = S.LAYERS[name.lower()]                     # the page's words are the interface's (A1 C8); its journeys are the view's
+        shown = [page[k] for k in ("vsm", "line", "holds", "hands_to", "keeps", "v1")] + [j[1] for j in journeys]
         assert not [t for t in shown if banned.search(t)], (name, [t for t in shown if banned.search(t)])
         served = F.function("dref-pages", name.lower())
         assert served["holds"] == page["holds"] and not banned.search(served["holds"])
-    assert "rules (go, ask, never, always)" in F.PAGES["Identity"]["holds"]
+    assert "rules (go, ask, never, always)" in S.LAYERS["identity"]["holds"]

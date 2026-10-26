@@ -465,3 +465,64 @@ def test_c7_in_refuse_mode_a_write_the_interface_refuses_comes_back_422(api, hom
         r = post_field(api, ref)
     assert r.status_code == 422 and r.json()["detail"]["code"] == "NOT_IN_SCHEMA"
     assert 1 <= len(r.json()["detail"]["faults"]) <= 3 and r.json()["detail"]["faults"] == met[:3]
+
+
+# ---- C8 · the page fields from the interface --------------------------------------------------------------------------
+PAGE_KEYS = ("vsm", "line", "holds", "hands_to", "keeps", "v1")
+BANNED = re.compile(r"\b(?:grant|counter|refus|orders\b|charter|internal system)", re.I)
+
+
+def test_c8_function_reads_vsm_line_holds_hands_to_keeps_and_v1_from_the_interface(home):
+    import functions_view as F
+    ref = born(home)
+    assert not hasattr(F, "PAGES"), "the pages moved into layer_schema.LAYERS"
+    for layer in S.FUNCTION_LAYERS:
+        got = F.function(ref, layer)
+        for k in PAGE_KEYS:
+            assert got[k] == S.LAYERS[layer][k], (layer, k)
+        assert got["name"] == S.TITLE[layer] and [j["id"] for j in got["journeys"]] == [j[0] for j in F.JOURNEYS[S.TITLE[layer]]]
+
+
+def test_c8_a_pane_changes_with_the_interface_it_reads(home, monkeypatch):
+    import functions_view as F
+    ref = born(home)
+    monkeypatch.setitem(S.LAYERS, "priority", dict(S.LAYERS["priority"], line="Prices every proposal. Nothing else.", v1="Version one."))
+    got = F.function(ref, "priority")
+    assert (got["line"], got["v1"]) == ("Prices every proposal. Nothing else.", "Version one.")
+    assert F.function(ref, "audit")["line"] == S.LAYERS["audit"]["line"]
+
+
+def test_c8_each_panes_hears_row_is_what_the_interface_says_the_layer_hears_in_words(home):
+    import functions_view as F
+    import owner_words
+    ref = born(home)
+    for layer in S.FUNCTION_LAYERS:
+        row = next(f for f in F.function(ref, layer)["fields"] if f["key"] == "hears")
+        want = [owner_words.plain(h["handler"]) for h in S.hears(layer)]
+        assert row["value"] == (want or None) and row["label"] == "Hears" and row["placeholder"] is (not want), layer
+        assert not [t for t in want if BANNED.search(t)], layer
+    assert next(f for f in F.function(ref, "audit")["fields"] if f["key"] == "hears")["value"] is None, "Audit hears nothing"
+    assert "Take a no" in next(f for f in F.function(ref, "identity")["fields"] if f["key"] == "hears")["value"]
+
+
+def test_c8_each_panes_checks_row_lists_the_interfaces_checks_in_plain_words(home):
+    import functions_view as F
+    import owner_words
+    ref = born(home)
+    for layer in S.FUNCTION_LAYERS:
+        row = next(f for f in F.function(ref, layer)["fields"] if f["key"] == "checks")
+        want = [owner_words.plain(says) for says in S.CHECKS[layer].values()]
+        assert row["value"] == want and row["label"] == "Checks" and row["placeholder"] is False, layer
+        assert not [t for t in row["value"] if BANNED.search(t)], (layer, "the screen never says refuse")
+    ident = next(f for f in F.function(ref, "identity")["fields"] if f["key"] == "checks")["value"]
+    assert "a gate's verdict is let through, wait or stop" in ident and "a verdict is go, ask or stop, and an ask or a no says why" in ident
+    assert [f["key"] for f in F.function(ref, "audit")["fields"]] == ["goal", "done", "hears", "writes", "checks", "envelope", "settings"]
+
+
+def test_c8_the_rows_follow_the_interface_when_a_handler_or_a_check_is_added(home, monkeypatch):
+    import functions_view as F
+    ref = born(home)
+    monkeypatch.setitem(S.HEARS, "audit", [dict(act="request", word="spot", via="board", payload="act.ask", handler="Drop in unannounced")])
+    monkeypatch.setitem(S.CHECKS, "audit", dict(S.CHECKS["audit"], looked_twice="it looked at each page twice"))
+    got = {f["key"]: f["value"] for f in F.function(ref, "audit")["fields"]}
+    assert got["hears"] == ["Drop in unannounced"] and got["checks"][-1] == "it looked at each page twice"
