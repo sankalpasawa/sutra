@@ -10,6 +10,10 @@ Each function has one Default. A use-case template derives from its function's D
 
 A department with no pick runs the Default. Adaptation proposes a use-case template, or the owner asks for one from the function's card. Either way the owner stamps the ask before anything changes.
 
+## How these meet the function template
+
+A use-case template is a data line of its own, and it meets the function template (amendment A3, `layer_schema.FUNCTION_TEMPLATE`, the typed template every version of a function fills) in two lines of inheritance: a template derives from its function's Default and only adds or tightens, and the function it belongs to is a version (`layers/<function>/v<N>.py`) that keeps what the interface fixes about every function (what it is not, what it never does, whom it hands on to) and writes its own words for the rest (what it is, may do, how it decides, what it avoids, its own goal and done). The agent of a function reads both when it runs: its card carries the role block compiled from those words and the interface's boundaries, then the picked template's whole floor (every line of the Default, then the lines the use case adds, at most eight) and its first three choices. What a template says in `floor` and `choices` is therefore sent to the agent in full, and the screen words and the rule that Priority never orders (`TEMPLATE_BANNED`, `TEMPLATE_NEVER_SAY`) are the interface's, which `test_function_templates.py` reads.
+
 ## The fields
 
 | Field | What it holds |
