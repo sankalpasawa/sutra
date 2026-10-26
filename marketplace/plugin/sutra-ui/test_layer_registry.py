@@ -142,7 +142,7 @@ def test_c1_a_stub_holding_a_name_is_what_resolve_returns_for_that_layers_engine
     assert layers.resolve("dref-x", "Identity", "code", "identity_read", R.CODE) is f
     assert layers.resolve("dref-x", "Priority", "code", "identity_read", R.CODE) is R.CODE["identity_read"], "another layer's engine"
     assert layers.resolve("dref-x", "Plan", "code", "identity_read", R.CODE) is R.CODE["identity_read"], "a work engine has no layer"
-    assert layers.resolve("dref-x", "Identity", "code", "identity_route", R.CODE) is R.CODE["identity_route"], "a name it does not hold"
+    assert layers.resolve("dref-x", "Identity", "code", "plan_read", R.CODE) is R.CODE["plan_read"], "a name it does not hold"
     other = lambda *a: 1
     assert layers.resolve("dref-x", "Identity", "check", "identity_read", {"identity_read": other}) is other, "another kind"
     # each kind is its own dict

@@ -850,6 +850,7 @@ HEARS = {
         {'act': 'propose', 'word': 'engine', 'from': ('Adaptation',), 'via': 'board', 'payload': 'act.any', 'handler': 'an engine proposed'},
         {'act': 'propose', 'word': 'line', 'from': ('Adaptation',), 'via': 'board', 'payload': 'act.line', 'handler': 'a line proposed'},
         {'act': 'inform', 'word': 'conflict', 'from': ('Adaptation', 'Coordination'), 'via': 'board', 'payload': 'act.conflict', 'handler': 'Close a conflict'},
+        {'act': 'inform', 'word': 'doubt', 'from': ('Adaptation',), 'via': 'board', 'payload': 'act.doubt', 'handler': 'Hear a doubt'},
     ],
     'adaptation': [
         {'act': 'accept-proposal', 'word': 'trial', 'from': ('Priority',), 'via': 'board', 'payload': 'act.any', 'handler': 'Start a trial'},
