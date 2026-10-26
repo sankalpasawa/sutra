@@ -6264,8 +6264,12 @@ def p_adapt_line(ctx, step, item):
     rules = "; ".join(str(r.get("line")) for r in d.get("rules") or [] if r.get("line"))
     taken = ", ".join(sorted(defs()["engines"]))
     refused = ("\n\n" + _prompt("adaptation", "make", "refused", ctx["ref"], faults="; ".join(str(f) for f in pl["faults"]))) if pl.get("faults") else ""
-    return _prompt("adaptation", "make", "line", ctx["ref"], dept=d.get("name"), words=pl.get("words") or d.get("goal"), taken=taken,
-                   out=_out_artifacts() or "none", rules=rules or "none", refused=refused)
+    # the done-when items, one a line ('D1: the site is live'): make.line names them (PRD M5.1), and a layer that does not load
+    # runs this body, which must fill every slot the part has (layers/adaptation/v1.item_lines says it the same way)
+    items = "\n".join("%s: %s" % (i["id"], " ".join(str(i.get("text") or "").split()))
+                      for i in d.get("done_items") or [] if isinstance(i, dict) and i.get("id"))
+    return _prompt("adaptation", "make", "line", ctx["ref"], dept=d.get("name"), words=pl.get("words") or d.get("goal"), items=items or "none",
+                   taken=taken, out=_out_artifacts() or "none", rules=rules or "none", refused=refused)
 
 
 def d_adapt_line(ctx, step, item):

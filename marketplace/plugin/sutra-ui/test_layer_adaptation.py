@@ -889,6 +889,43 @@ def test_a8_the_make_shape_part_is_in_the_interface_with_its_contract_verbatim()
     assert {"act": "inform", "words": ("doubt",), "to": ("Identity",), "payload": "act.doubt"} in S.SENDS["Adaptation"]
 
 
+# ---- A1.18 · a layer that does not load runs engine_runtime's own bodies, and never stops a department -----------------
+def test_a3_the_fallback_prompt_builder_fills_every_slot_the_part_has_and_says_what_the_layers_does(j2):
+    """R.p_adapt_line is the copy a department runs when adaptation/v1 does not load. make.line gained its items slot in
+    M5.1, and the copy passed none, so every shaped line raised: 'the app fills no {{items}}'."""
+    W, R, _, _, _ = j2
+    ref = _dept(j2, "organic", ref="dref-fallback")
+    ctx = {"ref": ref, "dept": W.dept(ref), "post": {"payload": {"word": "line", "words": "A guide to the night clinic", "faults": []}}, "bag": {}}
+    got = R.p_adapt_line(ctx, None, None)
+    for line in ("D1: The site is live", "D2: Every page names the phone line", "D3: A visitor can find the doctors"):
+        assert line in got
+    assert got == v1().PROMPT["adapt_line"](ctx, None, None), "the copy and the layer's body say the same words"
+    ctx["post"]["payload"]["faults"] = ["reads_known: Site 2 reads Interviews"]
+    assert R.p_adapt_line(ctx, None, None) == v1().PROMPT["adapt_line"](ctx, None, None) and "REFUSED BY ROOT'S CHECK" in R.p_adapt_line(ctx, None, None)
+    bare = _dept(j2, "organic", ref="dref-fallback-bare", items=[])
+    ctx = {"ref": bare, "dept": W.dept(bare), "post": {"payload": {"word": "line", "words": "w"}}, "bag": {}}
+    assert R.p_adapt_line(ctx, None, None) == v1().PROMPT["adapt_line"](ctx, None, None) and "none" in R.p_adapt_line(ctx, None, None)
+
+
+def test_a3_a_department_whose_adaptation_layer_does_not_load_still_has_its_line_shaped(j2, monkeypatch):
+    """The fallback end to end: with adaptation/v1 unable to load, the prompt that shapes the line is built (it raised) and the
+    step runs on engine_runtime's own bodies."""
+    import layers
+    W, R, J, founding, FV = j2
+    real = layers.load
+    monkeypatch.setattr(layers, "load", lambda impl_id: None if str(impl_id).startswith("adaptation/") else real(impl_id))
+    asked = []
+    _stub(monkeypatch, R, {"adapt.line": lambda prompt: asked.append(prompt) or {"engines": GOOD},
+                           "priority.bargain": {"answer": "accept", "why": "the envelope has room"}})
+    root = founding.found_structure("Lab Co", owner="Sankalp")["root"]
+    W.owner_ask(root, ORGANIC)
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    assert asked and "WHAT DONE MEANS, ITEM BY ITEM" in asked[0] and "D1: " in asked[0], "the shape step was asked, with the items"
+    assert not [r for r in W.runs(ref) if r.get("engine") == "Adaptation" and r.get("status") == "failed" and "items" in str(r.get("what"))]
+
+
 # ---- A5 · Adaptation's view -------------------------------------------------------------------------------------------
 def _event(action, summary, payload=None, **more):
     return dict({"action": action, "summary": summary, "payload": payload or {}, "occurred_at": "2026-10-27T10:00:00+05:30"}, **more)
