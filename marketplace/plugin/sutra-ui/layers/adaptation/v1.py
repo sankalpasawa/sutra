@@ -386,6 +386,10 @@ def c_line_is_fitted(ctx, step, item, out):
     engs = out.get('engines') if isinstance(out, dict) else None
     if not base:
         return R._verdict(False, '', "there is no line of the kind's to fit")
+    if (((ctx or {}).get('post') or {}).get('payload') or {}).get('faults'):
+        # Root's check sent the last line back (or this step failed once): the Library's line is taken whole (fitted()), so
+        # a fit that is not sound cannot stop the department from getting its line; the repair always converges
+        return {'ok': True, 'notes': ["the last line was sent back, so the Library's line is taken whole and nothing is fitted"]}
     if not isinstance(engs, list) or not engs or any(not isinstance(n, str) or not n.strip() for n in engs):
         return R._verdict(False, '', "the engines to run are named, as a list of names")
     names, notes = [' '.join(n.split()) for n in engs], []

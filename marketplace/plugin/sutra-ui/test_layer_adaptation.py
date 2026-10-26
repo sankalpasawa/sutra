@@ -5,6 +5,8 @@
   A7  the practices in place ride on the line request (J2_ADAPT_MAKE)
   A8  a shape with a confidence: J2B-4 in the covering, J2B-7 in the offer
   A9  organic and default kinds end to end, with stubbed models
+  F1  the Library's line fitted to the goal (W2-ADAPT, M5.2): the check, the draft, the notes and the prompts that hold them
+  F2  a conflict carries the options Priority sent (M5.4)
 
 The departments here are born the way a person makes them (found, say the words, Root sets up), on a records home of
 their own, with no model but the ones a test installs; a test that meets a fault of the interface fails through
@@ -1415,3 +1417,219 @@ def test_a1_the_two_records_are_no_longer_open_and_the_rungs_are_the_runtimes():
     assert S.validate_record("adaptation", "idea", "a page in Hindi") and S.validate_record("adaptation", "ladder", ["C0"])
     assert S.validate_record("adaptation", "ladder", {"engine": "Write", "step": "write.page", "rung": "C0", "held": False, "history": [],
                                                       "something_a_later_writer_adds": 1}) == [], "an unknown key passes and is kept"
+
+
+# ---- F1 · fit a Library line to the use case (W2-ADAPT, M5.2) ---------------------------------------------------------
+def _fit_ctx(j2, ref="dref-fit", payload=None, kind="website"):
+    """The context adapt.fit's check and offer read: a department of `kind` and the source adapt.source took for it."""
+    out, ctx = _source(j2, kind, payload, name="Fit Dept", ref=ref)
+    ctx["bag"]["adapt.source"] = out
+    return ctx
+
+
+def _fitted(ctx, engines, fit=None):
+    return v1().CHECK["line_is_fitted"](ctx, None, None, {"engines": engines, "fit": fit if fit is not None else {}, "why": "x"})
+
+
+@pytest.mark.parametrize("engines, fit", [
+    (LINE, {}),                                                                       # the line whole
+    (LINE, {"Plan": "one page only", "Write": "write that one page"}),                # whole, with notes
+    (["Plan", "Write", "Check"], {"Write": "no gallery"}),                            # a tail left out
+    (["Check"], {"Check": "one page only"}),                                          # 'One page only' keeps Check and leaves the rest
+    (["Write", "Check", "Publish"], {}),                                              # in order, and Check is there
+])
+def test_f1_a_fitted_line_is_an_in_order_subsequence_that_keeps_every_required_engine(j2, engines, fit):
+    got = _fitted(_fit_ctx(j2), engines, fit)
+    assert got["ok"] is True, got
+    assert re.match(r"\d of 4 engines, in the Library's order", got["notes"][0])
+
+
+@pytest.mark.parametrize("engines, fit, note", [
+    (["Plan", "Write", "Check", "Gallery"], {}, "Gallery is not in the kind's line (Plan -> Write -> Check -> Publish)"),
+    (["Plan", "Gallery", "Map"], {}, "Gallery and Map are not in the kind's line"),
+    (["Write", "Plan", "Check"], {}, "the Library's order is changed: it runs Plan -> Write -> Check -> Publish"),
+    (["Check", "Plan"], {}, "the Library's order is changed"),
+    (["Plan", "Write", "Publish"], {}, "the line leaves out Check, which this kind of department requires"),
+    (["Plan", "Plan", "Write", "Check"], {}, "Plan named more than once"),
+    (["Plan", "Write", "Check"], {"Publish": "put it live"}, "fit has a note for Publish, which is no engine of the line"),
+    (["Plan", "Write", "Check"], {"Gallery": "no gallery"}, "fit has a note for Gallery, which is no engine of the line"),
+    (["Plan", "Write", "Check"], {"Plan": "x" * 301}, "the note for Plan is 301 characters; at most 300"),
+    (["Plan", "Write", "Check"], {"Plan": ["not words"]}, "the note for Plan is not words"),
+    (["Plan", "Write", "Check"], "no notes", "fit is a note for each engine that needs one, as an object"),
+    ([], {}, "the engines to run are named, as a list of names"),
+    ("Plan", {}, "the engines to run are named, as a list of names"),
+    ([3], {}, "the engines to run are named, as a list of names"),
+])
+def test_f1_a_fit_that_adds_reorders_drops_a_required_engine_or_notes_wrongly_is_refused_naming_what_is_wrong(j2, engines, fit, note):
+    got = _fitted(_fit_ctx(j2), engines, fit)
+    assert got["ok"] is False and any(note in n for n in got["notes"]), got
+
+
+def test_f1_a_note_of_three_hundred_characters_passes_and_the_check_needs_no_department_to_say_no_line(j2):
+    assert _fitted(_fit_ctx(j2), LINE, {"Write": "x" * 300})["ok"] is True
+    bare = v1().CHECK["line_is_fitted"]({"dept": None, "bag": {}}, None, None, {"engines": LINE, "fit": {}})
+    assert bare == {"ok": False, "notes": ["there is no line of the kind's to fit"]}
+
+
+def test_f1_the_draft_is_the_kinds_line_unchanged_and_a_skipped_step_fits_nothing(j2):
+    ctx = _fit_ctx(j2)
+    draft = v1().DRAFT["adapt_fit_draft"](ctx, None, None)
+    assert draft["engines"] == LINE and draft["fit"] == {} and draft["why"]
+    assert v1().CHECK["line_is_fitted"](ctx, None, None, draft)["ok"] is True, "the draft passes the check it stands behind"
+    assert S.validate_field("adaptation", "make", "fit", "task", "Fit it.") == []
+    shaped = _fit_ctx(j2, ref="dref-fit-shaped", kind="organic")
+    assert v1().DRAFT["adapt_fit_draft"](shaped, None, None)["engines"] == [], "a shaped source has no line of the Library's to fit"
+
+
+def test_f1_the_check_is_held_by_the_interface_and_the_part_is_in_it_with_its_contract_verbatim():
+    assert "line_is_fitted" in S.CHECKS["adaptation"] and ("adaptation", "make", "fit") in S.ADDED_PARTS
+    part = S.PROMPTS["adaptation"]["make"]["fit"]
+    assert part["read_by"] == "adapt.fit" and part["inputs"] == ("dept", "words", "items", "engines", "rules")
+    assert part["returns"] == ('Return ONLY a JSON object: {"engines": ["the Library engines to run, in their order"], "fit": '
+                               '{"<engine>": "one line: what this engine does differently for this goal"}, "why": "one line"}.')
+    assert set(part["fields"]) == {"task", "guidance"}
+    step = next(x for x in C._steps(C.recipe_of(v1())) if x["id"] == "adapt.fit")
+    assert (step["nature"], step["born"], step["prompt"], step["draft"], step["check"], step["only_if"]) == \
+        ("decide", "C0", "adapt_fit", "adapt_fit_draft", "line_is_fitted", "adapt.source.source=library")
+    assert step["out"] == {"engines": "list", "fit": "dict", "why": "str"}
+
+
+def test_f1_the_step_comes_after_the_source_and_before_the_line_it_does_not_replace():
+    handler = next(h for h in layers.recipes()["Adaptation"]["on"] if h["name"] == "Shape the line")
+    assert [s["id"] for s in handler["steps"]] == ["adapt.hearline", "adapt.source", "adapt.fit", "adapt.line", "adapt.lineoffer"]
+
+
+def _fit_offer(j2, monkeypatch, ctx, fit, payload=None):
+    """adapt_line_offer with adapt.fit's answer in the bag, and what it posted."""
+    W, R, _, _, _ = j2
+    monkeypatch.setattr(R, "_j2_live", lambda r: True)
+    ref, before = ctx["ref"], len(R.board(ctx["ref"]))
+    ctx = dict(ctx, post={"n": 1, "thread": "x-req", "src": "Identity", "msg_type": "request",
+                          "payload": dict({"word": "line", "words": "A guide to the night clinic", "for": "x-req"}, **(payload or {}))},
+               how={"adapt.fit": "model"})
+    ctx["bag"] = dict(ctx["bag"], **{"adapt.fit": fit})
+    out = v1().CODE["adapt_line_offer"](ctx, None, None)
+    return out, [(p["dst"][0], p["msg_type"], p["payload"]) for p in R.board(ref)[before:]]
+
+
+def test_f1_the_offer_proposes_the_engines_it_kept_with_their_notes_in_fit_and_on_each_row(j2, monkeypatch):
+    ctx = _fit_ctx(j2)
+    out, posts = _fit_offer(j2, monkeypatch, ctx, {"engines": ["Plan", "Write", "Check"], "fit": {"Write": "one page, no gallery", "Check": "  keep  it\nshort "},
+                                                  "why": "one page"})
+    sent = _covers_of(posts)
+    assert posts[0][:2] == ("Priority", "propose") and [e["name"] for e in sent["engines"]] == ["Plan", "Write", "Check"]
+    assert sent["fit"] == {"Write": "one page, no gallery", "Check": "keep it short"}, "notes ride in act.line fit, in plain words"
+    assert [e.get("fit") for e in sent["engines"]] == [None, "one page, no gallery", "keep it short"], "and on the row of the engine they are for"
+    assert sent["source"] == "library" and "Publish" not in json.dumps(sent["engines"])
+    assert S.validate_act("Adaptation", ["Priority"], "propose", sent) == []
+    assert out["said"] == "proposed the line to Priority: Plan -> Write -> Check (fitted to the goal, leaving out Publish, 2 notes)"
+
+
+def test_f1_a_line_with_no_note_and_nothing_left_out_is_proposed_as_it_always_was(j2, monkeypatch):
+    ctx = _fit_ctx(j2)
+    out, posts = _fit_offer(j2, monkeypatch, ctx, {"engines": LINE, "fit": {}, "why": "nothing to change"})
+    sent = _covers_of(posts)
+    assert "fit" not in sent and not [e for e in sent["engines"] if "fit" in e] and [e["name"] for e in sent["engines"]] == LINE
+    assert out["said"] == "proposed the line to Priority: Plan -> Write -> Check -> Publish"
+
+
+def test_f1_a_line_root_sent_back_is_taken_whole_and_a_fit_that_is_not_sound_cannot_stop_it(j2, monkeypatch):
+    ctx = _fit_ctx(j2, payload={"faults": ["required_kept: the plan leaves out Check"]}, ref="dref-fit-back")
+    bad = {"engines": ["Plan", "Gallery"], "fit": {"Gallery": "x" * 400}, "why": "x"}
+    assert v1().CHECK["line_is_fitted"](ctx, None, None, bad)["ok"] is True, "the line is taken whole, so nothing is held"
+    out, posts = _fit_offer(j2, monkeypatch, ctx, {"engines": ["Check"], "fit": {"Check": "alone"}, "why": "x"}, payload={"faults": ["x"]})
+    sent = _covers_of(posts)
+    assert [e["name"] for e in sent["engines"]] == LINE and "fit" not in sent, "the repair of a refused line has always been the whole line"
+
+
+def test_f1_an_offline_department_proposes_and_registers_the_kinds_line_with_no_note(j2):
+    W, R, J, _, _ = j2
+    ref = _born_site(j2)
+    sent = next(p["payload"] for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Priority"] and p["payload"].get("word") == "line")
+    assert [e["name"] for e in sent["engines"]] == LINE and "fit" not in sent and not [e for e in sent["engines"] if "fit" in e]
+    reg = W.dept(ref)["workflows"][-1]
+    assert reg["engines"] == LINE and "fit" not in reg and reg["left_out"] == [] and reg["source"] == "library"
+    fit_rows = [r for r in R.step_rows(ref) if r.get("step") == "adapt.fit"]
+    assert fit_rows and all(r["status"] == "ok" and r["by"] == "offline draft" for r in fit_rows), fit_rows
+
+
+def _born_site(j2, words=WEBSITE, org="Acme Learning", answers=None, monkeypatch=None):
+    """A website department as a person makes one: found the organisation, say the words, Root sets it up, and the motor
+    runs until idle. With `answers` a model that is a function stands in for each step id they name."""
+    W, R, J, founding, FV = j2
+    seen = _stub(monkeypatch, R, answers) if answers is not None else None
+    root = founding.found_structure(org, owner="Sankalp")["root"]
+    W.owner_ask(root, words)
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    return (ref, seen) if answers is not None else ref
+
+
+ONE_PAGE = WEBSITE + ". One page only."
+ONE_PLAN = {"site_name": "Algebra, Class 8", "tagline": "One page of algebra", "palette": {"primary": "#0f5e7a", "accent": "#c4956a"},
+            "pages": [{"slug": "index", "title": "Algebra", "purpose": "the one page", "sections": ["Algebra"]}]}
+ONE_PAGE_BODY = {"title": "Algebra", "body_html": "<section><h1>Algebra for Class 8</h1><p>One page that teaches the first steps of algebra to students of Class 8.</p></section>"}
+PLAN_NOTE, WRITE_NOTE = "plan that one page and no other", "write the one page; link to no other"
+
+
+def test_j1_b4_adaptation_fits_the_templates_line_before_the_first_run(j2, monkeypatch):
+    """J1 row B4 (A3): between birth and the first run, adapt.fit may only narrow the template's engines; the engines the kind
+    marks required (Check) stay. 'One page only' leaves the last engine out, and Plan and Write are handed their notes."""
+    W, R, J, _, _ = j2
+    fit = {"engines": ["Plan", "Write", "Check"], "fit": {"Plan": PLAN_NOTE, "Write": WRITE_NOTE}, "why": "one page needs no publish step of its own"}
+    ref, seen = _born_site(j2, ONE_PAGE, answers={"adapt.fit": fit, "plan.pages": ONE_PLAN, "write.page": ONE_PAGE_BODY}, monkeypatch=monkeypatch)
+    d = W.dept(ref)
+    reg = d["workflows"][-1]
+    assert reg["engines"] == ["Plan", "Write", "Check"] and set(reg["engines"]) <= set(LINE), "only narrowed, never added to"
+    assert [n for n in LINE if n in reg["engines"]] == reg["engines"], "in the template's order"
+    assert "Check" in reg["engines"] and reg["left_out"] == ["Publish"] and reg["source"] == "library"
+    assert reg["fit"] == {"Plan": PLAN_NOTE, "Write": WRITE_NOTE}, "the registration copies the notes"
+    assert S.validate("workflow.registration", reg) == []
+    acts = [e["action"] for e in J.events(ref)]
+    assert acts.index("workflow.registered") < acts.index("run.started"), "fitted between birth and the first run"
+    ran = [r["engine"] for r in W.runs(ref) if not r.get("system")]
+    assert ran[:3] == ["Plan", "Write", "Check"] and "Publish" not in ran, ran
+    # the prompts of the engines handed a note hold it, once, and Write's holds its own and not Plan's
+    plan_prompt = next(p for sid, p in seen if sid == "plan.pages")
+    write_prompt = next(p for sid, p in seen if sid == "write.page")
+    assert plan_prompt.endswith("\n\nFOR THIS GOAL: " + PLAN_NOTE) and write_prompt.count("FOR THIS GOAL: " + WRITE_NOTE) == 1
+    assert PLAN_NOTE not in write_prompt and WRITE_NOTE not in plan_prompt
+
+
+def test_f1_one_page_only_keeps_check_and_a_fit_naming_an_engine_outside_the_line_is_refused_naming_it(j2):
+    ctx = _fit_ctx(j2)
+    assert _fitted(ctx, ["Check"], {"Check": "one page only"})["ok"] is True
+    got = _fitted(ctx, ["Check"], {"Check": "one page only", "Banner": "a banner"})
+    assert got["ok"] is False and got["notes"] == ["fit has a note for Banner, which is no engine of the line"]
+    assert _fitted(ctx, ["Plan", "Write"], {})["notes"] == ["the line leaves out Check, which this kind of department requires"]
+
+
+def test_f1_an_unsound_fit_from_a_model_never_blocks_the_department_it_gets_the_librarys_line(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    bad = {"engines": ["Plan", "Write", "Gallery"], "fit": {"Gallery": "a photo gallery"}, "why": "x"}
+    ref, seen = _born_site(j2, ONE_PAGE, answers={"adapt.fit": bad}, monkeypatch=monkeypatch)
+    assert [sid for sid, _ in seen].count("adapt.fit") >= 1
+    reg = W.dept(ref)["workflows"][-1]
+    assert reg["engines"] == LINE and "fit" not in reg, "the Library's line, whole"
+    assert not [a for a in W.asks(ref) if a["kind"] == "blocked" and a["status"] == "pending"], "nobody is asked, nothing is blocked"
+    assert [r for r in R.step_rows(ref) if r.get("step") == "adapt.fit" and r["status"] == "failed"], "the refusal is on the record"
+
+
+def test_f1_a_prompt_with_no_note_is_what_it_always_was(j2):
+    W, R, J, _, _ = j2
+    ref = _born_site(j2)
+    for engine in ("Plan", "Write"):
+        assert R._fit_note(ref, engine) == ""
+    assert R._context_block(ref) == R._context_block(ref, "Plan") == R._context_block(ref, "Write")
+
+
+def test_f1_a_note_is_handed_to_the_engine_it_is_for_and_no_other_and_audit_never_reads_it(j2):
+    W, R, J, _, _ = j2
+    ref = _born_site(j2)
+    d = W.dept(ref)
+    d["workflows"][-1]["fit"] = {"Write": "  one   page\nonly "}
+    W.save_dept(ref, d)
+    assert R._fit_note(ref, "Write") == "\n\nFOR THIS GOAL: one page only" and R._fit_note(ref, "Plan") == ""
+    assert R._context_block(ref, "Write").endswith("\n\nFOR THIS GOAL: one page only")
+    assert "FOR THIS GOAL" not in R._context_block(ref), "Audit's reading of what was filed carries no note"

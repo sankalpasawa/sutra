@@ -4807,9 +4807,18 @@ def _has_web(d):
     return True
 
 
-def _context_block(ref):
+def _fit_note(ref, engine):
+    """What the registered line says this engine does differently for this goal (M5.2): the note Adaptation fitted to it,
+    which the registration kept. '' when the line has none for it, so a prompt without a note is as it always was."""
+    wf = (W.dept(ref) or {}).get("workflows") or []
+    note = " ".join(str(((wf[-1] if wf else {}).get("fit") or {}).get(engine) or "").split())
+    return ("\n\nFOR THIS GOAL: " + note) if note else ""
+
+
+def _context_block(ref, engine=None):
     """The latest text of every artifact on the record that the kind's own line did not name: what the engines the
-    person added have filed (their facts, their lists), for Plan and Write to build from and cite."""
+    person added have filed (their facts, their lists), for Plan and Write to build from and cite. With an engine, the
+    note the line was fitted with for it follows (M5.2)."""
     d = W.dept(ref) or {}
     own = set((W.KINDS.get(d.get("kind") or "website") or {}).get("artifacts") or [])
     out = []
@@ -4824,7 +4833,8 @@ def _context_block(ref):
         text = "\n".join(str(v) for k, v in sorted(files.items()) if str(k).endswith((".md", ".txt", ".json"))).strip()
         if text:
             out.append("%s (v%d):\n%s" % (a, cur["v"], text[:8000]))
-    return ("\n\nWHAT THE DEPARTMENT'S OWN ENGINES FILED (build from it; say on the page where each fact came from):\n\n" + "\n\n".join(out)) if out else ""
+    block = ("\n\nWHAT THE DEPARTMENT'S OWN ENGINES FILED (build from it; say on the page where each fact came from):\n\n" + "\n\n".join(out)) if out else ""
+    return (block + _fit_note(ref, engine)) if engine else block
 
 
 def _pre(step):
@@ -5839,7 +5849,7 @@ def p_plan_pages(ctx, step, item):
             "\"tagline\": str, \"palette\": {\"primary\": \"#hex\", \"accent\": \"#hex\"}, \"pages\": [{\"slug\": \"lowercase-hyphen\", "
             "\"title\": str, \"purpose\": str, \"sections\": [str]}]}. The first page's slug is index. Include every page "
             "the brief or an ask names. Six to ten pages. " + NOTHING_INVENTED +
-            "\n\nBRIEF:\n" + ctx["bag"]["plan.read"]["brief"] + _context_block(ctx["ref"]))
+            "\n\nBRIEF:\n" + ctx["bag"]["plan.read"]["brief"] + _context_block(ctx["ref"], ctx.get("engine")))
 
 
 def d_plan_pages(ctx, step, item):
@@ -5861,7 +5871,7 @@ def p_write_page(ctx, step, item):
             "<style>, no external images or links. Link to other pages as '<slug>.html' and only to slugs of this site. "
             + NOTHING_INVENTED +
             (("\n\nTHE OWNER'S RULES, EACH ONE MET HERE:\n- " + "\n- ".join(rules)) if rules else "") +
-            "\n\nTHE BRIEF, AND WHAT WAS ASKED SINCE:\n" + _brief_text(ctx["ref"]) + _context_block(ctx["ref"]) +
+            "\n\nTHE BRIEF, AND WHAT WAS ASKED SINCE:\n" + _brief_text(ctx["ref"]) + _context_block(ctx["ref"], ctx.get("engine")) +
             "\n\nTHE SITE:\n" + json.dumps(site) + "\n\nTHIS PAGE:\n" + json.dumps(page))
 
 
