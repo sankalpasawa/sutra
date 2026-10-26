@@ -12,6 +12,7 @@ copied here with the pane's module reloaded too). A test that meets a fault of t
 a deliberate one is wrapped in S.expect_refused().
 """
 import importlib
+import inspect
 import json
 import re
 
@@ -267,7 +268,10 @@ def _ownership_rows():
 
 
 def _an_instructions_ask(R, ref):
-    """The owner's change to one of Identity's instruction files, filed as an ask for the stamp (PRD M2.2)."""
+    """The owner's change to one of Identity's instruction files, filed as an ask for the stamp: the typed change of A1.16
+    (a field of a part) once the app takes it, else M2.2's whole file."""
+    if "group" in inspect.signature(R.instructions_ask).parameters:
+        return R.instructions_ask(ref, "identity", "completeness", "enough", "task", layers.words(ref, "identity", "completeness", "enough")["task"] + " Be brief.")
     return R.instructions_ask(ref, "identity", "completeness", R._instruction("identity", "completeness", ref) + "\nBe brief.\n")
 
 
@@ -578,3 +582,11 @@ def test_i5_words_after_the_doubt_is_answered_are_no_answer_to_it(j2):
     W.run_until_idle(ref, limit=300)
     assert len(_plan_asks(W, ref)) == asked
     assert not [q for q in _line_requests(R, ref)[sent:] if q["payload"].get("answer")]
+
+
+# ---- I6: the contract, whole ---------------------------------------------------------------------------------------------
+@pytest.mark.parametrize("case", C.cases(), ids=lambda c: "case %d" % c[0])
+def test_i6_the_contract_passes_for_identity_v1_with_no_part_on_the_fallback(case, ctx):
+    _, what, fn = case
+    assert fn(V1, ctx) == [], what
+    assert C.on_the_md_fallback(V1) == []
