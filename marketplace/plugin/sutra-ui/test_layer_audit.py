@@ -1,6 +1,7 @@
 """Audit behind its interface (PRD amendment A1: W1-AUDIT; M8.1 to M8.3, M8.9, M0.3), one section a step.
 
   U1  audit/v1 provides every name its recipe uses, by reference, and passes the contract
+  U2  Audit's words (goal, judge, judge.items) are typed: every part takes the WORDS path, none is on the .md fallback
   U3  the deliverable: every place on Audit's path asks the interface (S.deliverable), one test per kind
   U4  Audit starts on and reads any kind's deliverable; one that is not HTML is read as text
   U5  a reading per done-when item in the S-30 shape; a version not read is a row with read false
@@ -17,6 +18,7 @@ import pytest
 import layer_schema as S
 import layers
 import layers.contract as C
+import layers.prompts as P
 
 WEBSITE = "Build a website that teaches algebra to Class 8 students"
 ORGANIC = "Set up a laboratory system to track chemical inventory for our school science team"
@@ -435,7 +437,7 @@ def test_u5_a_version_not_sampled_is_a_row_with_read_false_and_why(j2, monkeypat
     ref = _born(j2)
     _stamp_all(W, ref)
     _model(monkeypatch, R, {"audit.items": _says("met"), "audit.judge": JUDGE_OK})
-    monkeypatch.setitem(R.CODE, "audit_pick", lambda ctx, step, item: {"sample": False, "v": int(ctx["inp"]["v"]), "pages": []})
+    monkeypatch.setitem(layers.load("audit/v1").CODE, "audit_pick", lambda ctx, step, item: {"sample": False, "v": int(ctx["inp"]["v"]), "pages": []})
     row = R.run_engine(ref, "Audit", {"v": 4}, "Audit@live-site.v4")
     assert row["status"] == "ok" and "not sampled" in row["what"]
     last = _readings(W, ref)[-1]
@@ -669,3 +671,51 @@ def test_u6_the_contract_passes_for_audit_v1_with_no_part_of_it_on_the_md_fallba
         assert case(m, contract_ctx) == [], "contract case %d" % number
     counts = C.by_reference(m)
     assert counts == {"by_reference": 12, "own": 0}, "every name audit/v1 provides is by reference"
+
+
+# ---- U2 · Audit's words (M2.5) --------------------------------------------------------------------------------------
+def test_u2_every_part_of_audit_takes_the_words_path_and_none_is_on_the_md_fallback(contract_ctx):
+    m = _audit_module()
+    parts = [(g, p) for g, ps in S.PROMPTS["audit"].items() for p in ps]
+    assert parts == [("goal", "does"), ("goal", "skills"), ("judge", "judge"), ("judge", "items")]
+    for group, part in parts:
+        assert P._module(None, "audit", group, part) is m, "%s.%s is served from audit/v1's WORDS" % (group, part)
+    assert C.on_the_md_fallback(m) == [] and C.case_5(m, contract_ctx) == []
+    assert set(m.WORDS) == set(m.LAYOUT) == {"goal", "judge"}
+
+
+def test_u2_the_words_compile_to_the_bundles_part_byte_for_byte_and_the_prompts_hold_the_returns(j2):
+    W, R, J, _, _ = j2
+    for group, part in (("goal", "does"), ("goal", "skills"), ("judge", "judge"), ("judge", "items")):
+        spec = S.PROMPTS["audit"][group][part]
+        sample = {n: "<<%s>>" % n for n in spec["inputs"]}
+        want = P.SLOT.sub(lambda mm: sample[mm.group(1)], P.md_part("audit", group, part))
+        assert P.prompt(None, "audit", group, part, **sample) == want, (group, part)
+        assert spec["returns"] is None or spec["returns"] in P.prompt(None, "audit", group, part, **sample)
+    # and what a run sends is those words: the judge's prompt as it was, the reader's as the interface says
+    ref = _default(j2)
+    ctx = {"ref": ref, "dept": W.dept(ref), "inp": {"v": 1}, "bag": {"audit.mechanical": {"ok": True, "notes": ["fine"], "holes": []}}}
+    ctx["bag"]["audit.pick"] = R.audit_pick(ctx, None, None)
+    assert R.p_audit_items(ctx, None, None).startswith("Read the work against what was asked, one done-when item at a time.")
+    assert R.p_audit_judge(ctx, None, None).startswith("Check what the department made against what it was asked.")
+
+
+def test_u2_a_layout_the_app_cannot_fill_refuses_the_definitions_load_and_names_audits_part(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    m = layers.load("audit/v1")
+    monkeypatch.setitem(m.LAYOUT["judge"], "items", m.LAYOUT["judge"]["items"].replace("{{measured}}", "{{measured}} {{findings}}"))
+    R._DEFS.clear()
+    with pytest.raises(ValueError) as got:
+        R.defs()
+    assert "Audit's judge instructions, items: the layout holds {{findings}} and the app fills no such input" in str(got.value)
+    monkeypatch.undo()
+    R._DEFS.clear()
+    assert R.validate(R.defs()) == []
+
+
+def test_u2_the_owners_value_for_the_new_part_is_checked_as_a_field_of_it():
+    assert S.validate_field("audit", "judge", "items", "task", "Read it, item by item.") == []
+    assert S.validate_field("audit", "judge", "items", "guidance", "At most four findings.") == []
+    assert S.validate_field("audit", "judge", "items", "task", "Say {{items}} first.")                  # only the app writes a marker
+    assert S.validate_field("audit", "judge", "items", "task", "Return ONLY a JSON object: {}.")        # the answer's shape is the app's
+    assert S.validate_field("audit", "judge", "items", "returns", "x"), "the answer contract is not a field"
