@@ -5,8 +5,8 @@ Every code, prompt, draft and check name the recipe uses is provided here: by re
 to the body engine_runtime holds today, so the behaviour is exactly what ran before, or as a body of its own where this
 version adds to it (A1.19: a name a layer changes is copied here and changed here): the handler Hear a doubt (identity_doubt,
 PRD M3.9) and the two steps that tell it the owner's answer (identity_read and identity_file, which hand every other
-word on to the body engine_runtime holds). WORDS and LAYOUT are empty until I2, so the prompts are still read from the
-.md bundle. view() returns the pane's read model by reference (I3).
+word on to the body engine_runtime holds). WORDS and LAYOUT hold the words of every part of Identity's prompts (I2), so none
+is read from the .md bundle. view() returns the pane's read model by reference (I3).
 """
 from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests reload engine_runtime, so never a module object
 
@@ -69,7 +69,171 @@ CHECK = {
     'gate_verdict_is_known': ref_to('c_gate_verdict_is_known'),
     'ruling_is_known': ref_to('c_ruling_is_known'),
 }
-WORDS, LAYOUT = {}, {}
+
+# ---- Identity's words (I2, A1.16): the default value of every field of its prompt parts, and the layout that arranges them,
+# as `python -m layers.prompts --extract identity` splits them from the .md files by the rule of A1.16 -- the proof, in
+# test_layer_prompts and test_layer_identity, is that each part compiles back to the .md part byte for byte. The answer
+# contract (S.PROMPTS[...]['returns']) is the interface's and is not here; an owner's change is a typed value over these.
+WORDS = {
+    'goal': {
+        'does': {
+            'text': 'holds the goal and the rules, judges every effect, and is the one the owner speaks with',
+        },
+        'skills': {
+            'items': [
+                'recognise a task, a query, a directive, feedback or a new idea',
+                'judge a request against the goal',
+                'gate an effect by rule',
+                'put a question to the owner',
+            ],
+        },
+        'close': {},
+    },
+    'completeness': {
+        'thin': {
+            'task': 'thin: true when the request names nothing to build from (no subject, no purpose).',
+        },
+        'enough': {
+            'task': (
+                "Read who the department is against Identity's standard, and say whether it is enough to start "
+                'work on. The standard has five points, and only five:\n'
+                'goal: the goal names what the department makes and for whom.\n'
+                'items: done-when is a list of items, and each item says how it is checked.\n'
+                'rules: every rule is tagged go, ask, refuse or always.\n'
+                'owner, budget: the department has an owner and a budget.\n'
+                'invented: nothing is invented; a fact the owner did not give is marked to confirm, never stated.'
+            ),
+        },
+    },
+    'take': {
+        'recognise': {
+            'task': (
+                'Recognise what kind of words the owner has given. There are five kinds, and only five:\n'
+                'task: "do X for me". query: "tell me Y". directive: "from now on, do Z", a standing change to how '
+                'the department works or to its goal. feedback: "that was wrong", about work already made. '
+                'new-idea: "I want a new capability", something the department cannot do today.'
+            ),
+        },
+        'take': {
+            'task': 'Judge one request from the owner.',
+            'guidance': (
+                'go: do it. ask: it reaches outside what the department makes (money, a message to someone, a '
+                'change to the goal), so the owner stamps first. refuse: it breaks a rule. Reading the web is not '
+                'outside: the department can read any page.\n'
+                'unsure: facts the request says the owner is not sure of, in a few words each; [] when none.\n'
+                'rule: a standing rule the request states (always or never, from now on) with its tag; null when '
+                'it is one piece of work.'
+            ),
+        },
+        'answer': {
+            'task': (
+                "Answer the owner's question from the record below, and from nothing else. If the record does not "
+                'hold the answer, say so.'
+            ),
+        },
+        'rule': {
+            'task': 'The owner has given a directive. Restate it as one rule, in one line, in plain words.',
+            'guidance': (
+                'tag goal: the directive changes what the department is for. scope one-time: the owner means this '
+                'once.'
+            ),
+        },
+        'weigh': {
+            'task': 'The owner has given feedback on work the department made. Read what it changes.',
+        },
+        'gate': {
+            'task': 'An engine asks whether it may start.',
+        },
+    },
+}
+LAYOUT = {
+    'goal': {
+        'does': '{text}',
+        'skills': '{items}',
+        'close': (
+            'You are Identity of the department "{{dept}}". Adaptation proposed a plan and it did not close '
+            'with Priority. Close it against the goal and the rules ONLY; do not invent a rule.\n'
+            'THE GOAL: {{goal}}\n'
+            'DONE WHEN: {{done}}\n'
+            'THE RULES: {{rules}}\n'
+            'THE PLAN: {{plan}}\n'
+            'WHAT WAS SAID AGAINST IT: {{against}}\n'
+            '\n'
+            'run: the goal cannot be met without this plan and no rule forbids it. drop: a rule forbids it, or '
+            'the goal does not need it. ask: the goal and the rules do not settle it, so the owner must.\n'
+            '{returns}'
+        ),
+    },
+    'completeness': {
+        'thin': '{task}',
+        'enough': (
+            '{task}\n'
+            "THE OWNER'S WORDS: {{words}}\n"
+            'WHAT ROOT ASKED, AND WHAT THE OWNER SAID: {{asked}}\n'
+            'THE GOAL: {{goal}}\n'
+            'DONE WHEN: {{items}}\n'
+            'THE RULES: {{rules}}\n'
+            'THE OWNER: {{owner}}\n'
+            'THE BUDGET: {{budget}}\n'
+            'TO CONFIRM: {{confirm}}\n'
+            '\n'
+            'Ask only for what is missing, in one plain question to the owner, the most important first. Never '
+            "ask what the owner's words or Root's questions already answered.\n"
+            '{returns}'
+        ),
+    },
+    'take': {
+        'recognise': (
+            '{task}\n'
+            'THE GOAL: {{goal}}\n'
+            'THE WORDS: {{words}}\n'
+            'READ BY CODE: {{facts}}\n'
+            '\n'
+            '{returns}'
+        ),
+        'take': (
+            '{task}\n'
+            'THE GOAL: {{goal}}\n'
+            'THE RULES: {{rules}}\n'
+            'THE REQUEST: {{words}}\n'
+            'READ BY CODE: {{facts}}\n'
+            '\n'
+            '{returns}\n'
+            '{guidance}\n'
+            '{{completeness}}'
+        ),
+        'answer': (
+            '{task}\n'
+            'THE QUESTION: {{question}}\n'
+            'THE RECORD:\n'
+            '- {{record}}\n'
+            '\n'
+            '{returns}'
+        ),
+        'rule': (
+            '{task}\n'
+            'THE GOAL: {{goal}}\n'
+            'THE RULES TODAY: {{rules}}\n'
+            'THE DIRECTIVE: {{words}}\n'
+            '\n'
+            '{returns} {guidance}'
+        ),
+        'weigh': (
+            '{task}\n'
+            'THE PAGES: {{pages}}\n'
+            'THE FEEDBACK: {{words}}\n'
+            '\n'
+            '{returns}'
+        ),
+        'gate': (
+            '{task}\n'
+            'THE RULES: {{rules}}\n'
+            'THE ENGINE: {{engine}}\n'
+            '\n'
+            '{returns}'
+        ),
+    },
+}
 
 # ---- Hear a doubt (PRD M3.9; J2B-7, J2B-8) -----------------------------------------------------------------------------
 # Adaptation shaped a plan it is not sure of and posts inform/doubt, which ends the bargain, nothing registered. Identity

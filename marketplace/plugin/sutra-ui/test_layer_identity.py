@@ -134,6 +134,44 @@ def test_i1_the_contract_cases_that_read_no_words_pass(number, ctx):
     assert fn(V1, ctx) == []
 
 
+# ---- I2: Identity's words --------------------------------------------------------------------------------------------
+def _parts():
+    return [(g, p) for g, parts in S.PROMPTS["identity"].items() for p in parts]
+
+
+def test_i2_every_part_of_identitys_prompts_has_its_words_and_none_is_on_the_md_fallback(home):
+    import layers.prompts as P
+    assert C.on_the_md_fallback(V1) == []
+    assert [(g, p) for g, parts in V1.WORDS.items() for p in parts] == _parts() == [(g, p) for g, parts in V1.LAYOUT.items() for p in parts]
+    assert all(P._module(None, "identity", g, p) is V1 for g, p in _parts()), "the compiler takes the WORDS path for every part"
+    assert C.case_5(V1, {}) == [] and P.faults() == []
+
+
+def test_i2_each_part_compiles_back_to_the_md_part_byte_for_byte(home):
+    import engine_runtime as R
+    import layers.prompts as P
+    for g, p in _parts():
+        inputs = {n: "<%s>" % n for n in S.PROMPTS["identity"][g][p]["inputs"]}
+        md = P.SLOT.sub(lambda m: inputs[m.group(1)], P.md_part("identity", g, p))
+        assert P.prompt(None, "identity", g, p, **inputs) == md, "%s.%s" % (g, p)
+        assert S.PROMPTS["identity"][g][p]["returns"] is None or S.PROMPTS["identity"][g][p]["returns"] in md
+    assert P.words(None, "identity", "goal", "does")["text"] == R._goal_of(None, "Identity")[0]
+
+
+def test_i2_the_prompt_is_what_the_words_say_and_without_them_the_bundle_is_read(home, monkeypatch):
+    """The words are what is served (the M2.1a snapshot, in test_function_prompts, passes unchanged on them): change one,
+    and the prompt changes; set them aside, and the .md part, the same text, is read instead."""
+    inputs = {n: "<%s>" % n for n in S.PROMPTS["identity"]["take"]["take"]["inputs"]}
+    shipped = layers.prompt(None, "identity", "take", "take", **inputs)
+    assert shipped.startswith("Judge one request from the owner.\nTHE GOAL: <goal>\n")
+    monkeypatch.setitem(V1.WORDS["take"]["take"], "task", "Judge one request from the owner, kindly.")
+    assert layers.prompt(None, "identity", "take", "take", **inputs) == shipped.replace("from the owner.", "from the owner, kindly.", 1)
+    monkeypatch.undo()
+    monkeypatch.setattr(V1, "WORDS", {})
+    monkeypatch.setattr(V1, "LAYOUT", {})
+    assert layers.prompt(None, "identity", "take", "take", **inputs) == shipped
+
+
 # ---- I3: Identity's view ---------------------------------------------------------------------------------------------
 #: test_j2_identity's three done-when items, one of them to confirm, and the reason Root's check sends a plan back
 SHAPED = {"name": "Bakery Co Website", "kind": "website", "purpose": "the bakery's site", "second": "",
