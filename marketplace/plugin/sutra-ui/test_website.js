@@ -105,6 +105,12 @@
          is done, each option with its cost; one click posts {option}, the box
          posts {option: words, text}; an unknown option is a snack; chosen,
          the card goes quiet with 'You chose: ...'; never a stamp (PRD M3.5, S10)
+     W52 the cards that wait on the owner stand wherever the department needs
+         them: Identity's question (S6) and a blocked plan's card (S10) at the
+         top of All five; the blocked card at the top of the pane of the
+         function that caused it, and pinned at the top of Chat while it is
+         open; the same card and state everywhere, answered in one place
+         (PRD M3.7)
 
    Harness: test_dept.js's fresh(), with 22-website.js loaded after 20-dept.js
    (panel.html's order). Run: node test_website.js */
@@ -2041,7 +2047,7 @@ const ID_J2 = { goal: "A phone-first website for Thread & Loom, a handloom bouti
   standard: { met: false, missing: [], rows: [
     { id: "goal", says: "The goal names what and for whom", state: "met", note: "as you said it" },
     { id: "items", says: "Done-when items, each with how it is checked", state: "met", note: "each says how it is checked" },
-    { id: "rules", says: "Every rule is tagged", state: "met", note: "each is go, ask, refuse or always" },
+    { id: "rules", says: "Every rule is tagged", state: "met", note: "each says go, ask, never or always" },
     { id: "owner_budget", says: "Owner and budget are set", state: "met", note: "you, and Priority's limits" },
     { id: "invented", says: "Nothing invented", state: "to_confirm", note: "to confirm with you: D6, the reviews' names" }] },
   done_items: [{ id: "D1", text: "Browse all ten products by category", how: "code", level: "target", confirm: null },
@@ -2076,6 +2082,8 @@ test("S5: Identity's pane holds its one record: the question, the standard, the 
   assert.ok(/<details class="wbhow wb"><summary>How Identity works<\/summary><div class="dpcard"><h3>The function<\/h3>/.test(html), "how Identity works, folded under");
   const t = words(html);
   assert.ok(!/charter|internal system/i.test(t), "never charter");
+  assert.ok(!/\b(?:GRANT|COUNTER|REFUSE|orders)\b/i.test(t), "the owner's words only: never grant, counter, refuse or orders: " +
+            (t.match(/.{0,30}\b(?:grant|counter|refuse|orders)\b.{0,30}/i) || [""])[0]);
   assert.ok(!/\/api\/|\.json|\.md\b/.test(t), "no path");
   /* Change the goal opens the Chat with the box begun */
   click(c, { wbtab: "chat", wbfill: "Change the goal to: " });
@@ -2170,6 +2178,69 @@ test("W49: a blocked plan is a card with its ways out, each with its cost, and n
   assert.ok(!/data-wboption=/.test(quiet));
   const t = words(html).replace(/D\d\b/g, " ");
   assert.ok(!/\bGRANT|\bCOUNTER|\bREFUSE\b|charter|internal system/i.test(t), "owner's words only");
+});
+
+/* ── W52: the cards that wait on the owner, wherever the department needs them (PRD M3.7, screens S6 and S10) ── */
+const QSTD = Object.assign({}, QUESTION, { text: "Who are the site's visitors?", why: "The goal names no one the site is for.", missing: "goal",
+                                         points: ["goal"], standard: true });
+const cardsChat = (who) => Object.assign(qChat({}), { asks: [Object.assign({}, QSTD), Object.assign({}, BLOCKED, who ? { who } : {})] });
+test("W52: All five carries Identity's question and the blocked card at its top, the same cards as in Chat, answered in one place", async () => {
+  const [c, html] = await allFive({ fv: fvOf({ states: { Identity: "waiting_on_you" }, cycle: { needs_you: true, asks: 2 } }), chat: cardsChat() });
+  const blocked = html.indexOf('<div class="dpask hard wbq wbopt wb"><div class="dpk">Identity asks</div><div class="dpasks">The plan could not be approved.</div>');
+  const question = html.indexOf('<div class="dpask wbq wb"><div class="dpk">Identity asks</div><div class="dpasks">Who are the site&#39;s visitors?') >= 0
+    ? html.indexOf('<div class="dpask wbq wb"><div class="dpk">Identity asks</div><div class="dpasks">Who are the site&#39;s visitors?')
+    : html.indexOf('<div class="dpask wbq wb"><div class="dpk">Identity asks</div><div class="dpasks">Who are the site\'s visitors?');
+  const prog = html.indexOf('class="fvprog'), grid = html.indexOf('class="fvgrid');
+  assert.ok(blocked > 0 && question > 0, "both cards on All five");
+  assert.ok(blocked < prog && question < prog && prog < grid, "at the top, before the progress and the five");
+  assert.ok(/data-wboption="leave:D3" data-wbopt="a-b-1" data-wbref="r3"/.test(html) && /data-wbanswer="a-j2-1" data-wbref="r3"/.test(html) &&
+            /data-wbjust="a-j2-1"/.test(html), "each answered where it lives, as in Chat");
+  /* the same card and state: a choice on All five posts the Chat card's one route, and a draft typed here is the Chat's */
+  assert.ok(click(c, { wboption: "leave:D3", wbopt: "a-b-1", wbref: "r3" })); await sleep(); await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost.filter(x => /\/asks\//.test(x.p)))), [{ p: "/api/native/r3/asks/a-b-1", body: { option: "leave:D3" } }]);
+  (c.document.listeners.input || []).forEach(fn => fn({ target: { dataset: { wbdraft: "r3:q:a-j2-1" }, value: "Families in Pune" } }));
+  assert.ok(/data-wbdraft="r3:q:a-j2-1"[^>]*>Families in Pune<\/textarea>/.test(await paint(c)), "the box keeps the words on All five");
+  click(c, { wbtab: "chat" });
+  assert.ok(/data-wbdraft="r3:q:a-j2-1"[^>]*>Families in Pune<\/textarea>/.test(await paint(c)), "and the Chat's card shows the same words");
+  /* with nothing waiting, nothing stands there; and a failed read of the five still shows what waits */
+  const [, quiet] = await allFive({ fv: fvOf({}) });
+  assert.ok(quiet.indexOf("dpask") < 0, "nothing waits, no card");
+  const [, down] = await allFive({ fv: () => Promise.reject(new Error("down")), chat: cardsChat() });
+  assert.ok(down.indexOf("The plan could not be approved.") > 0 && down.indexOf("The plan could not be approved.") < down.indexOf("fverr"), "the card, then Could not read");
+  const t = words(html.replace(/ title="[^"]*"/g, ""));
+  assert.ok(!/\b(?:GRANT|COUNTER|REFUSE|orders)\b|charter|internal system/i.test(t), "the owner's words only");
+});
+
+test("W52: a blocked card stands at the top of the pane of the function that caused it, and nowhere else among the five", async () => {
+  const pane = async (who, fn) => fnCard(await opened({ map: rtMap(), chat: cardsChat(who), fnpage: fnPageOf }), fn);
+  const card = h => h.indexOf('<div class="dpask hard wbq wbopt wb">');
+  let html = await pane(null, "adaptation");                       /* Root, at its review: Root's check of Adaptation's plan */
+  assert.ok(card(html) >= 0 && card(html) < html.indexOf("<h3>The function</h3>"), "on Adaptation's pane, above its page");
+  assert.ok(/data-wboption="stop" data-wbopt="a-b-1" data-wbref="r3"/.test(html), "with its ways out");
+  assert.ok(html.indexOf('<div class="dpask wbq wb">') < 0, "Identity's question is Identity's, not Adaptation's");
+  for (const fn of ["identity", "priority", "audit", "coordination"]) assert.ok(card(await pane(null, fn)) < 0, "not on " + fn + "'s pane");
+  html = await pane("Identity, settling Priority's no", "identity");
+  assert.ok(card(html) >= 0, "a card Identity's ruling caused, on Identity's pane");
+  assert.ok(card(await pane("Identity, settling Priority's no", "adaptation")) < 0, "and not on Adaptation's");
+  assert.ok(card(await pane("You, on the plan Identity put to you", "identity")) >= 0, "the owner's own no is Identity's to carry");
+  assert.ok(card(await pane("Adaptation, shaping the plan", "adaptation")) >= 0, "Adaptation's own");
+  assert.strictEqual(vm.runInContext("wbCauseFn({ who: 'Priority, on its limit' })", fresh()), "priority");
+});
+
+test("W52: in Chat an open blocked card is pinned at the top while it waits; chosen, it stands quiet at its time", async () => {
+  const m = rtMap(); m.root = "r2";
+  const c = await opened({ map: m, chat: cardsChat() });
+  view(c); await sleep(); await sleep();
+  let html = view(c);
+  const pin = html.indexOf('<div class="wbchat wb"><div class="wbpin wb"><div class="dpask hard wbq wbopt wb">');
+  assert.ok(pin >= 0 && pin < html.indexOf(">a website<"), "the blocked card is first in the chat, pinned");
+  assert.ok(html.indexOf(">a website<") < html.indexOf('<div class="dpask wbq wb">') && html.indexOf('<div class="dpask wbq wb">') < html.indexOf("Filed in the Brief."),
+            "the question stands at its time in the flow");
+  assert.strictEqual(html.split("The plan could not be approved.").length, 2, "the card is said once");
+  assert.ok(/\.wbpin\{position:sticky;top:0;[^}]*background:var\(--surface\)/.test(css), "pinned as the chat scrolls, on an opaque base");
+  const done = await blockedOpen({ id: "stop", label: "Stop here", at: "2026-10-23T10:26:00+05:30", by: "the owner", words: null });
+  html = view(done);
+  assert.ok(html.indexOf("wbpin") < 0 && /<div class="dpask gone wbq wbopt wb">/.test(html), "chosen, it goes quiet in the flow");
 });
 
 /* ── PRD M4.7: Coordination's pane (S7) and the engine card (S17) ────────────────────────────────────────────── */

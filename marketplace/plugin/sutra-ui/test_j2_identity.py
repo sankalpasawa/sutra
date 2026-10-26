@@ -20,6 +20,7 @@ The departments are born the way a person makes them (founded, asked for, set up
 own; no test reaches a model or the network: the model is a function, and every step it does not answer runs offline.
 """
 import importlib
+import re
 
 import pytest
 
@@ -1065,6 +1066,9 @@ def test_m3_7_identitys_pane_reads_its_one_record(j2, monkeypatch):
     assert (c["who"], c["ruling"], c["ruled"], c["asked_you"]) == ("Adaptation and Priority did not agree", "run", "it runs", False)
     assert c["plan"] and "the goal cannot be met without a site" in c["why"]
     assert "charter" not in json.dumps(j).lower()
+    # the pane never says refuse, grant, counter or orders: a met rules row names the tags the owner reads
+    assert j["standard"]["rows"][2]["note"] == "each says go, ask, never or always"
+    assert not re.search(r"\b(?:grant|counter|refuse|orders)\b", json.dumps(j["standard"]).lower())
     # a rule the owner gave says it is theirs, and when
     d = W.dept(ref)
     d["rules"].append(W.rule_row("refuse", "Never show a price that is not in my list", "never show a price that is not in my list"))

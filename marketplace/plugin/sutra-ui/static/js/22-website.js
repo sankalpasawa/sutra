@@ -822,6 +822,25 @@ function wbOptionsHtml(a, ref, named){
   return `<div class="dpask hard wbq wbopt wb"><div class="dpk">Identity asks${whose}</div><div class="dpasks">${head}</div>` + said +
     kv("Who", a.who) + kv("Why", a.why) + kv("If nothing is done", a.if_nothing) + box + rows + `</div>`;
 }
+/* The cards that wait on the owner (S6, S10) stand wherever the department needs them: Chat first, then All five and
+   the pane of the function that caused a block, Identity's question also on Identity's pane (wbIdentityHtml). Each is
+   the same card with the same state, read from the chat read and drawn by the same code, so answering in one place
+   clears them all (PRD M3.7; found by a verifier 2026-10-23: All five and the causing function's pane showed a 'needs
+   you' chip and no card). A blocked card's `who` names the function that caused it: 'Root, at its review' is Root's
+   check of Adaptation's plan, so that card stands on Adaptation's pane; the owner's own no is Identity's to carry. */
+function wbCauseFn(a){
+  const w = String((a && a.who) || "").split(/[^A-Za-z]+/)[0].toLowerCase();
+  return WB_FUNCS.indexOf(w) >= 0 ? w : (w === "root" ? "adaptation" : "identity");
+}
+/* the open cards of a department: on a function's pane (`fn`) the blocked cards that function caused; on All five every
+   open question and blocked card; nothing while the chat read is on its way */
+function wbOpenCards(ref, fn){
+  const c = wbS().chat[ref];
+  if (!c){ wbLoadChat(ref); return ""; }
+  if (c.failed) return "";
+  return (c.asks || []).filter(a => fn ? (wbOptionAsk(a) && wbCauseFn(a) === fn) : (a.kind === "j2_identity" || wbOptionAsk(a)))
+    .map(a => (wbOptionAsk(a) ? wbOptionsHtml : wbQuestionHtml)(a, ref, false)).join("");
+}
 async function wbChoose(ref, id, at, oid){
   const st = wbS(), k = at + ":o:" + id, body = { option: oid };
   if (st.busy["o:" + k]) return;
@@ -924,7 +943,11 @@ function wbChatHtml(n, m){
   const count = all.length, seen = st.turns[n.ref];
   const landed = seen !== undefined && count > seen;
   /* motion marks what just happened and nothing else: the turn that landed slides in once */
-  const qs = wbQuestions(c);
+  /* an open blocked card (S10) stands at the top of the Chat while it waits, pinned as the chat scrolls (S10: 'Where:
+     top of Chat'); a question (S6) and every answered card stand at their time in the flow */
+  const pinned = wbQuestions(c).filter(q => wbOptionAsk(q) && !q.chosen);
+  const qs = wbQuestions(c).filter(q => pinned.indexOf(q) < 0);
+  const pin = pinned.length ? `<div class="wbpin wb">${pinned.map(q => wbOptionsHtml(q, n.ref, !scoped)).join("")}</div>` : "";
   const card = t => { let out = ""; while (qs.length && (!t || String(qs[0].created || "") < String(t.at || ""))){ const q = qs.shift(); out += (wbOptionAsk(q) ? wbOptionsHtml : wbQuestionHtml)(q, n.ref, !scoped); } return out; };
   const turns = all.map((t, i) => card(t) + (folded(t) ? `<div class="o2quiet dpq wbfold">${wbEsc(t.line)}</div>`
     : wbChatTurn(t, scoped, signer).replace('class="turn wbturn"', (landed && i === all.length - 1) ? 'class="turn wbturn wbnew"' : 'class="turn wbturn"'))).join("") + card(null);
@@ -936,7 +959,7 @@ function wbChatHtml(n, m){
   const working = running.map(r => `<div class="o2quiet dpq wbworking"><i class="wbbreath"></i>${wbEsc(`${r.engine} is working${r.what ? ": " + r.what : ""}`)}</div>`).join("");
   st.turns[n.ref] = count;
   wbKeepPlace(n.ref, landed);
-  return `<div class="wbchat wb">${turns || (running.length ? "" : dpQuiet(empty))}${working}</div>` + wbChatAsksHtml(c) + wbChatBoxHtml(n, m) + names;
+  return `<div class="wbchat wb">${pin}${turns || (running.length ? "" : dpQuiet(empty))}${working}</div>` + wbChatAsksHtml(c) + wbChatBoxHtml(n, m) + names;
 }
 
 /* ── a function's chat ────────────────────────────────────────────────────
@@ -1344,10 +1367,12 @@ function wbFnOwn(ref, tab){
   if (!wbIs(ref)) return "";
   const m = wbS().map[ref];
   if (!m){ wbLoadMap(ref); return ""; }
+  /* a blocked card stands at the top of the pane of the function that caused it (S10, PRD M3.7) */
+  const cards = wbRt(m) && WB_FUNCS.indexOf(tab) >= 0 ? wbOpenCards(ref, tab) : "";
   /* Coordination's pane opens on its timetable (PRD M4.7, S7); its page folds under it */
-  if (wbRt(m) && tab === "coordination") return wbCoordHtml(ref);
+  if (wbRt(m) && tab === "coordination") return cards + wbCoordHtml(ref);
   /* on the engine runtime the card opens on the function's page (PRD M1.7), its own state under it */
-  return (wbRt(m) && WB_FUNCS.indexOf(tab) >= 0 ? wbFnPageHtml(ref, tab) : "") + wbFnExtra(tab, m);
+  return cards + (wbRt(m) && WB_FUNCS.indexOf(tab) >= 0 ? wbFnPageHtml(ref, tab) : "") + wbFnExtra(tab, m);
 }
 
 /* ── Settings: a function's own ────────────────────────────────────────────
