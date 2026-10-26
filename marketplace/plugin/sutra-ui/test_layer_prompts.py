@@ -225,6 +225,47 @@ def test_c3_a_file_every_part_of_which_is_typed_needs_no_bundle_file(runtime, mo
     assert P.faults() == ["Audit's goal instructions are missing from the bundle"], "a file with a part still on the fallback is needed"
 
 
+#: a part of a layer that holds its words (Identity's, Coordination's and Priority's), and the file the owner changes whole
+HELD = [("identity", "take", "take"), ("coordination", "tie", "tie"), ("priority", "bargain", "line")]
+
+
+@pytest.mark.parametrize("layer,group,part", HELD)
+def test_c3_a_file_the_owner_changed_whole_is_read_from_their_copy_and_not_from_the_words(runtime, layer, group, part):
+    """M2.2 until W1-CORE K2's typed values take it over: the department's own copy of a file, written on the owner's stamp,
+    wins over the layer's words for that file, as the owner is told it does (a verifier found the words served and the
+    stamped change never reaching a prompt). Only that file, and only that department."""
+    import website_dept as W
+    ref, other = "dref-ownscopy0001", "dref-ownscopy0002"
+    for r in (ref, other):
+        W.create(r, "Own Copy " + r[-1] + " Website", None)
+    module = layers.load(S.DEFAULT_PINS[layer])
+    inputs = {n: "<%s>" % n for n in S.PROMPTS[layer][group][part]["inputs"]}
+    shipped = P.prompt(ref, layer, group, part, **inputs)
+    assert P._module(ref, layer, group, part) is module and P.words(ref, layer, group, part) == module.WORDS[group][part]
+    mine_part = "The owner's own words.\n" + P.file_parts(layer, group)[part]
+    mine = P.instruction(layer, group).replace(P.file_parts(layer, group)[part], mine_part, 1)
+    path = P.own(ref, layer, group)
+    path.parent.mkdir(parents=True)
+    path.write_text(mine, encoding="utf-8")
+    assert P._module(ref, layer, group, part) is None, "the copy is read in the words' place"
+    got = P.prompt(ref, layer, group, part, **inputs)
+    assert got == P.SLOT.sub(lambda m: inputs[m.group(1)], mine_part) and got.startswith("The owner's own words.\n")
+    assert "The owner's own words." in " ".join(str(v) for v in P.words(ref, layer, group, part).values())
+    assert layers.prompt(ref, layer, group, part, **inputs) == got, "layers.prompt is the compiler's"
+    # no other file of the layer, and no other department, is touched
+    assert P._module(ref, layer, "goal", "does") is module and P._module(other, layer, group, part) is module
+    assert P.prompt(other, layer, group, part, **inputs) == shipped
+    # the copy taken away (the owner stamps the shipped words again), the words are served again
+    path.unlink()
+    assert P._module(ref, layer, group, part) is module and P.prompt(ref, layer, group, part, **inputs) == shipped
+
+
+def test_c3_a_ref_that_is_no_department_has_no_copy_of_the_owners(runtime):
+    assert P._owns(None, "identity", "take") is False and P._owns("../not-a-ref", "identity", "take") is False
+    inputs = {n: "<%s>" % n for n in S.PROMPTS["identity"]["take"]["gate"]["inputs"]}
+    assert P.prompt("../not-a-ref", "identity", "take", "gate", **inputs) == P.prompt(None, "identity", "take", "gate", **inputs)
+
+
 # ---- C4 · the extractor and the split proof -----------------------------------------------------------------------------
 RETURNS = 'Return ONLY a JSON object: {"ok": bool, "rows": [{"a": str}]}.'
 

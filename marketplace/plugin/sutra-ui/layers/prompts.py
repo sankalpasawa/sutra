@@ -68,12 +68,22 @@ def compile_layout(layout, values, returns, inputs, part=None):
     return MARKER.sub(fill, layout)
 
 
+def _owns(ref, layer, group):
+    """Whether the owner stamped a whole-file change of their own to this file (M2.2): the department's own copy."""
+    try:
+        return bool(ref) and own(ref, layer, group).is_file()
+    except (OSError, ValueError):                            # not a department ref: it holds nothing of the owner's
+        return False
+
+
 def _module(ref, layer, group, part):
-    """The pinned implementation of a layer when it holds words and a layout for the part; else None."""
+    """The pinned implementation of a layer when it holds words and a layout for the part; else None. A file the owner
+    changed whole (M2.2) is read from the department's own copy and not from the words: the stamped change wins, as the
+    owner is told it does. W1-CORE K2's typed values lay the owner's change over the words instead, and take this over."""
     import layers
     module = layers.impl(ref, layer)
     if module is not None and part in (getattr(module, "WORDS", None) or {}).get(group, {}) \
-            and part in (getattr(module, "LAYOUT", None) or {}).get(group, {}):
+            and part in (getattr(module, "LAYOUT", None) or {}).get(group, {}) and not _owns(ref, layer, group):
         return module
     return None
 
@@ -89,8 +99,8 @@ def words(ref, layer, group, part):
 
 def prompt(ref, layer, group, part, **inputs):
     """One part of a layer's instructions, compiled: the words its agent is sent. The pinned implementation's WORDS and
-    LAYOUT when it holds the part, else the .md part (the department's own copy wins; a part it does not hold is the
-    bundle's). A marker the code gives no value is an error, never a blank."""
+    LAYOUT when it holds the part and the owner has not changed its file whole, else the .md part (the department's own
+    copy wins; a part it does not hold is the bundle's). A marker the code gives no value is an error, never a blank."""
     module = _module(ref, layer, group, part)
     if module is not None:
         spec = S.PROMPTS[layer][group][part]

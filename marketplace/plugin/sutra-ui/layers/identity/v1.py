@@ -8,6 +8,8 @@ PRD M3.9) and the two steps that tell it the owner's answer (identity_read and i
 word on to the body engine_runtime holds). WORDS and LAYOUT hold the words of every part of Identity's prompts (I2), so none
 is read from the .md bundle. view() returns the pane's read model by reference (I3).
 """
+import re
+
 from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests reload engine_runtime, so never a module object
 
 LAYER = 'identity'
@@ -243,9 +245,12 @@ LAYOUT = {
 # cycle; past either, Identity tells Adaptation to go on to Priority with the doubt named (a line request marked go_on),
 # and a doubt that comes back after that is a blocked plan with a way out, never a loop (rule 8: what Identity cannot
 # settle goes to the owner).
-#: what the plan goes on with when a doubt names no fallback, or one that would reach outside the site or that the owner
-#: cannot be told in plain words; and what the question says of a doubt it cannot put in the owner's words
-FALLBACK = "I go ahead with the plan as it stands, and nothing in it reaches outside the site"
+#: what the plan goes on with when a doubt names no fallback, or one that would reach outside the department or that the owner
+#: cannot be told in plain words; and what the question says of a doubt it cannot put in the owner's words. A website is the
+#: owner's site and any other kind is the department (as engine_runtime.identity_file says them): fallback_default(d) says it for
+#: the department it is put to, and FALLBACK is a website's.
+FALLBACK_OF = "I go ahead with the plan as it stands, and nothing in it reaches outside the %s"
+FALLBACK = FALLBACK_OF % "site"
 SOMETHING = "one thing in the plan rests on something only you can say."
 QUESTION = 'Before I set up the work for %s: %s Unless you say, %s. Answer in your own words, or say "just do it".'
 
@@ -254,18 +259,39 @@ def _said(text, n):
     return " ".join(str(text or "").split())[:n]
 
 
+#: What the owner may not read in a doubt or a fallback a model wrote (J2B-8: it shows no number and names no internal part): the
+#: confidence, as the word or as a figure (0.45, .45, 45%, 45 percent), the parts by name (Adaptation, Priority, Coordination, Audit)
+#: and the app's own words for its insides (engine, envelope, workflow, charter, refuse). A figure of the owner's own work (three
+#: pages, Class 8.5) is theirs, and so is a search engine; neither is matched.
+INSIDE = re.compile(r"(?i:confiden)|(?<![\w.])0?\.\d+(?![\w.])|(?i:\d+\s*(?:%|per\s?cent))|\b(?:Adaptation|Priority|Coordination|Audit)\b|"
+                    r"(?i:\b(?:engines?|envelopes?|workflows?|charter|internal system|refus\w*)\b)")
+SEARCH_ENGINE = re.compile(r"\bsearch engines?\b", re.I)
+
+
+def inside(text):
+    """What in `text` the owner may not read of the app's inside (INSIDE), as the words that match; [] when it is clean."""
+    return [m.group(0) for m in INSIDE.finditer(SEARCH_ENGINE.sub("", str(text or "")))]
+
+
 def _plain_or(ref, text, otherwise):
-    """`text` as the owner may read it (M3.6): as it is, or said again in the owner's words; `otherwise` when it still breaks
-    the plain-words rule (a doubt a model wrote may say 'grant' or 'counter', as a card or a tell may not)."""
+    """`text` as the owner may read it (M3.6, J2B-8): as it is, or said again in the owner's words; `otherwise` when it still
+    breaks the plain-words rule (a doubt a model wrote may say 'grant' or 'counter', as a card or a tell may not) or shows
+    the confidence or a part of the app (inside())."""
     line, _, how = R._plain_one(text, R._owners_words(ref, {}), "")
-    return otherwise if how == "template" else line
+    return otherwise if how == "template" or inside(line) else line
+
+
+def fallback_default(d):
+    """What the plan goes on with when nothing better is said, for the department it is put to: its site when it is a
+    website, the department otherwise."""
+    return FALLBACK_OF % ("site" if (d or {}).get("kind") == "website" else "department")
 
 
 def fallback_of(ref, payload):
     """What the plan does when the owner says nothing more: the doubt's own fallback, unless it says nothing, reaches
-    outside the site (the fallback never does) or cannot be told to the owner in plain words."""
-    f = _said(payload.get("fallback"), 600).rstrip(".")
-    return FALLBACK if not f or R.LEAVES.search(f) else _plain_or(ref, f, FALLBACK)
+    outside the department (the fallback never does) or cannot be told to the owner in plain words."""
+    f, default = _said(payload.get("fallback"), 600).rstrip("."), fallback_default(W.dept(ref))
+    return default if not f or R.LEAVES.search(f) else _plain_or(ref, f, default)
 
 
 def question(name, doubt, fallback):
@@ -313,11 +339,12 @@ def _ask_the_owner(ctx, cycle, doubt, engine, fallback, line):
     """The doubt as one question of Identity's, an ask that takes words and holds the cycle at step 2 until it is answered."""
     ref, d = ctx["ref"], ctx["dept"]
     cj = R._j2()
-    said = R.plain_card(ref, {"text": question(d.get("name"), _plain_or(ref, doubt, SOMETHING), fallback),
+    shown = _plain_or(ref, doubt, SOMETHING)
+    said = R.plain_card(ref, {"text": question(d.get("name"), shown, fallback),
                               "why": "the plan rests on something only you can say"}, "question")
     with W._lock(ref):
         ask = dict(W.j2_identity_ask(said["text"], cycle, "plan", said["why"], ["plan"], False),
-                   doubt={"engine": engine, "doubt": doubt, "fallback": fallback, "line": line["n"] if line else None})
+                   doubt={"engine": engine, "doubt": doubt, "shown": shown, "fallback": fallback, "line": line["n"] if line else None})
         W._put_ask(ref, ask)
         cj.note(ref, 2, "Identity", "User", "identity.questioned", "waiting", said["text"], "identity-doubt-" + ask["id"],
                 {"missing": ["plan"], "why": said["why"], "standard": False})
@@ -387,11 +414,12 @@ def doubt_answered(ctx, got):
     meta = ask.get("doubt") or {}
     if meta.get("answered"):
         return {"said": "took words for a doubt that was answered already"}
-    doubt, fallback = meta.get("doubt") or "", meta.get("fallback") or FALLBACK
+    doubt, fallback = meta.get("doubt") or "", meta.get("fallback") or fallback_default(d)
+    shown = meta.get("shown") or _plain_or(ref, doubt, SOMETHING)             # the Brief says what the owner was asked, as they read it
     answer = ("going with this: " + fallback.rstrip(".")) if hurry else words
-    row = R._file_words(ref, d, "To Identity's question (%s): %s" % (doubt.rstrip("?."), answer), "the owner's answer")
+    row = R._file_words(ref, d, "To Identity's question (%s): %s" % (shown.rstrip("?."), answer), "the owner's answer")
     sent = R.post(ref, "Identity", "Adaptation", "request",
-                  _line(ref, R._brief_text(ref).strip() or d.get("goal") or words, doubt=doubt, answer=answer))
+                  _line(ref, R._brief_text(ref).strip() or d.get("goal") or words, doubt=doubt, answer=answer[:2000]))   # the Brief keeps all
     with W._lock(ref):
         ask = next((a for a in W.asks(ref) if a["id"] == got["doubt"]), ask)
         ask["doubt"] = dict(meta, answered=(sent or {}).get("n") or True)

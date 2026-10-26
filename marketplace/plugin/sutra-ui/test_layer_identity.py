@@ -175,6 +175,25 @@ def test_i2_the_prompt_is_what_the_words_say_and_without_them_the_bundle_is_read
     assert layers.prompt(None, "identity", "take", "take", **inputs) == shipped
 
 
+def test_i2_the_owners_stamped_change_to_identitys_instructions_reaches_the_prompt_it_says_the_next_run_uses(j2):
+    """Identity serves every part of its prompts from its words, and the owner's stamped change wins over them: Identity says
+    'the next run uses it' and it does (a verifier found the words served and the change never sent). The live path, with no
+    part of Identity's words set aside; W1-CORE K2's typed value is the same claim when it lands."""
+    W, R, J, _, _ = j2
+    ref, other = _born(j2), _born(j2, org="Other Co")
+    assert C.on_the_md_fallback(V1) == [], "every part is served from the words"
+    inputs = {n: "<%s>" % n for n in S.PROMPTS["identity"]["completeness"]["enough"]["inputs"]}
+    shipped = layers.prompt(ref, "identity", "completeness", "enough", **inputs)
+    assert "Be brief." not in shipped
+    _an_instructions_ask(R, ref)
+    assert layers.prompt(ref, "identity", "completeness", "enough", **inputs) == shipped, "nothing changes before the stamp"
+    _stamp_the_pending(W, ref, ("instructions",))
+    changed = layers.prompt(ref, "identity", "completeness", "enough", **inputs)
+    assert "Be brief." in changed and S.PROMPTS["identity"]["completeness"]["enough"]["returns"] in changed, "the answer's shape is the app's"
+    assert any("the next run uses it" in s for s in _said_by_identity(R, ref)), "the owner is told so, and it is so"
+    assert layers.prompt(other, "identity", "completeness", "enough", **inputs) == shipped, "another department keeps the words"
+
+
 # ---- I3: Identity's view ---------------------------------------------------------------------------------------------
 #: test_j2_identity's three done-when items, one of them to confirm, and the reason Root's check sends a plan back
 SHAPED = {"name": "Bakery Co Website", "kind": "website", "purpose": "the bakery's site", "second": "",
@@ -190,6 +209,14 @@ def _pane(j2, ref):
     """What the layer's view gives for the department as it stands, with the events of its cycle and its asks."""
     W, _, J, _, _ = j2
     return V1.view(ref, W.dept(ref), J.events(ref), W.asks(ref))
+
+
+def _reading(W, ref, J):
+    """What Audit files of a version it read item by item and found every done-when item met in (M8.3), for J.audited to clear
+    done-when from, once that takes a reading; the keyword arguments to pass it ({} for a J.audited that clears it unread)."""
+    if "reading" not in inspect.signature(J.audited).parameters:
+        return {}
+    return {"reading": {"read": True, "met": [i["id"] for i in W.items_of(W.dept(ref))], "not_met": [], "to_confirm": [], "high": False}}
 
 
 def _in_state(j2, monkeypatch, state, org="Acme Learning"):
@@ -209,7 +236,7 @@ def _in_state(j2, monkeypatch, state, org="Acme Learning"):
         ref = _born(j2, org=org)
         # Audit read what went out, item by item, and found every done-when item met (S-30): done-when holds; "found
         # nothing" without a reading clears nothing (PRD M8.3)
-        assert J.audited(ref, 1, [], reading={"read": True, "met": ["D1"], "not_met": [], "to_confirm": [], "high": False}) is True
+        assert J.audited(ref, 1, [], **_reading(W, ref, J)) is True
     assert J.status(ref)["state"] == state, J.status(ref)
     return ref
 
@@ -423,6 +450,39 @@ def test_i5_identitys_recipe_hears_a_doubt_and_the_interface_says_so(home):
     assert S.validate("act.doubt", {"word": "doubt", "engine": "Site", "doubt": DOUBT, "fallback": FALLBACK_SAYS, "confidence": 0.45}) == []
 
 
+def test_i5_the_interface_declares_the_fields_a_doubt_adds_to_the_line_request_and_the_ask():
+    """The line request Identity posts carries answer, doubt, fallback and go_on; the ask that puts a doubt carries the doubt
+    record. The interface types them (A1.13), so a wrong type is a fault, and Adaptation has a name to read go_on by."""
+    props = S.DEFS["act.line_request"]["properties"]
+    assert (props["go_on"], props["answer"]["maxLength"], props["doubt"]["maxLength"], props["fallback"]["maxLength"]) == ({"type": "boolean"}, 2000, 600, 600)
+    assert set(S.DEFS["identity.ask"]["properties"]["doubt"]["properties"]) == {"engine", "doubt", "shown", "fallback", "line", "answered"}
+    ok = {"word": "line", "words": "w", "answer": "Email it", "doubt": DOUBT, "fallback": FALLBACK_SAYS, "go_on": True}
+    assert S.validate("act.line_request", ok) == [] and S.validate("act.line_request", {"word": "line"}) == [], "all of them are optional"
+    for key, bad in (("go_on", "not a bool"), ("go_on", 1), ("answer", 123), ("answer", "x" * 2001), ("doubt", ["x"]), ("doubt", "x" * 601),
+                     ("fallback", None), ("fallback", "x" * 601)):
+        assert any(key in f for f in S.validate("act.line_request", dict(ok, **{key: bad}))), (key, bad)
+    held = {"id": "a-1", "kind": "j2_identity", "status": "pending", "doubt": {"engine": "Site", "doubt": DOUBT, "shown": DOUBT, "fallback": FALLBACK_SAYS,
+                                                                                  "line": 7, "answered": 9}}
+    assert S.validate_record("identity", "ask", held) == []
+    assert S.validate_record("identity", "ask", dict(held, doubt=dict(held["doubt"], line=None, answered=True))) == []
+    for bad in ("not an object", dict(held["doubt"], line="seven"), dict(held["doubt"], answered="yes"), dict(held["doubt"], doubt=["x"]),
+                dict(held["doubt"], fallback="x" * 601), dict(held["doubt"], engine="x" * 41)):
+        assert S.validate_record("identity", "ask", dict(held, doubt=bad)), bad
+
+
+def test_i5_a_line_request_or_an_ask_with_a_wrong_type_in_a_doubts_fields_is_a_fault_on_write(j2):
+    W, R, J, _, _ = j2
+    ref = _doubting(j2)
+    with S.expect_refused() as met:
+        R.post(ref, "Identity", "Adaptation", "request", {"word": "line", "words": "w", "go_on": "not a bool", "answer": 123})
+    assert any("go_on" in f for f in met) and any("answer" in f for f in met), met
+    ask = _plan_asks(W, ref)[0]
+    with S.expect_refused("identity.ask") as met:
+        W._put_ask(ref, dict(ask, doubt="not an object"))
+    assert any("doubt" in f for f in met), met
+    W._put_ask(ref, ask)                                                                         # put back as it was filed
+
+
 def test_i5_a_doubt_is_one_ask_with_no_number_in_it(j2):
     W, R, J, _, FV = j2
     ref = _doubting(j2)
@@ -566,14 +626,120 @@ def test_i5_the_fallback_never_reaches_outside_and_is_in_plain_words(j2):
     W.run_until_idle(ref, limit=300)
     ask = _plan_asks(W, ref)[0]
     import layers.identity.v1 as v1
-    assert "Unless you say, %s. Answer" % v1.FALLBACK in ask["text"] and "email to the shop?" in ask["text"]
+    assert "Unless you say, %s. Answer" % v1.fallback_default(W.dept(ref)) in ask["text"] and "email to the shop?" in ask["text"]
     # a doubt a model wrote in the bargain's words is put right, or said in the plainest words that still ask it
     ref = _born(j2, BAKERY, "Plain Co")
     _doubts(R, ref, doubt="Should Priority grant the cake counter its own page?", fallback="the cake counter shares the home page")
     W.run_until_idle(ref, limit=300)
     ask = _plan_asks(W, ref)[0]
-    assert not re.search(r"\b(?:grant|counter)", ask["text"], re.I) and v1.SOMETHING in ask["text"] and "Unless you say, %s." % v1.FALLBACK in ask["text"]
+    assert not re.search(r"\b(?:grant|counter)", ask["text"], re.I) and v1.SOMETHING in ask["text"] and "Unless you say, %s." % v1.fallback_default(W.dept(ref)) in ask["text"]
     assert "just do it" in ask["text"] and R.plain_faults(ask["text"], R._owners_words(ref, {})) == []
+
+
+#: what a model may write that the owner may not read (J2B-8: no number, no part of the app): the confidence as a figure and as
+#: a word, a part by name, the app's words for its insides
+SHOWS_THE_INSIDE = [
+    ("Adaptation is unsure, at confidence 0.45, whether the Check engine should read the order form; Root may review it.",
+     "Coordination runs Check after the Site engine"),
+    ("I am only 45% sure the shop wants 3 pages, and the charter says Priority must refuse orders over the engine limit (confidence 0.45)",
+     "Priority holds the envelope at 70 percent"),
+    ("Should the page say who the baker is? My confidence is low.", "the workflow goes on without it")]
+INSIDE_WORDS = re.compile(r"confiden|\b0?\.\d+\b|\d+\s*(?:%|per ?cent)|Adaptation|Priority|Coordination|Audit|engine|envelope|workflow|charter|refus", re.I)
+
+
+def _the_card_the_owner_reads(R, ref, ask):
+    """Every word of a doubt's question the owner reads: the card's text and why, and the line that names it in the chat."""
+    said = [p["payload"].get("done") for p in R.board(ref) if p["src"] == "Identity" and "Owner" in p["dst"] and p["payload"].get("card") == ask["id"]]
+    return [ask["text"], ask["why"]] + said
+
+
+@pytest.mark.parametrize("doubt,fallback", SHOWS_THE_INSIDE)
+def test_i5_a_doubt_or_fallback_that_shows_the_confidence_or_a_part_of_the_app_is_put_in_the_stock_words(j2, doubt, fallback):
+    W, R, J, _, _ = j2
+    ref = _born(j2, BAKERY)
+    _doubts(R, ref, doubt=doubt, fallback=fallback)
+    W.run_until_idle(ref, limit=300)
+    ask = _plan_asks(W, ref)[0]
+    name = W.dept(ref)["name"]
+    assert ask["text"] == 'Before I set up the work for %s: %s Unless you say, %s. Answer in your own words, or say "just do it".' % (name, V1.SOMETHING, V1.fallback_default(W.dept(ref)))
+    seen = _the_card_the_owner_reads(R, ref, ask)
+    assert len(seen) == 3 and all(INSIDE_WORDS.search(s.replace(name, "")) is None for s in seen), seen
+    assert V1.inside(doubt) and V1.inside(fallback), "the guard sees what the test says is in them"
+    # Adaptation's own words stay Adaptation's: the ask holds the doubt as it was posted, and what the owner was shown
+    assert ask["doubt"]["doubt"] == V1._said(doubt, 600) and ask["doubt"]["shown"] == V1.SOMETHING and ask["doubt"]["fallback"] == V1.fallback_default(W.dept(ref))
+    assert S.validate_record("identity", "ask", ask) == []
+    # the answer is filed in the Brief under the question as the owner read it, and goes to Adaptation with the doubt as it was
+    _owner_says(j2, ref, "answer box", ANSWER)
+    brief = " ".join(W.read_files(ref, "Brief", W.latest(ref, "Brief")["v"]).values())
+    assert "To Identity's question (%s): %s" % (V1.SOMETHING.rstrip("."), ANSWER) in brief and INSIDE_WORDS.search(brief.split("To Identity's question")[1]) is None
+    assert _line_requests(R, ref)[-1]["payload"]["doubt"] == V1._said(doubt, 600)
+
+
+def test_i5_the_doubt_that_is_left_open_is_told_and_blocked_in_the_stock_words_too(j2):
+    W, R, J, _, _ = j2
+    doubt, fallback = SHOWS_THE_INSIDE[1]
+    ref = _doubting(j2)
+    for said in ("A first answer", "A second answer"):
+        _owner_says(j2, ref, "chat", said)
+        _doubts(R, ref, doubt=doubt, fallback=fallback)
+        W.run_until_idle(ref, limit=300)
+    told = [s for s in _said_by_identity(R, ref) if "the plan goes on as it stands" in s]
+    assert len(told) == 1 and V1.SOMETHING in told[0] and "Unless you say otherwise, %s." % V1.fallback_default(W.dept(ref)) in told[0]
+    assert INSIDE_WORDS.search(told[0].replace("Priority and Root check it before anything runs.", "")) is None, told[0]
+    went_on = [q for q in _line_requests(R, ref) if q["payload"].get("go_on")]
+    assert went_on[-1]["payload"]["doubt"] == doubt[:600] and went_on[-1]["payload"]["fallback"] == V1.fallback_default(W.dept(ref)), "Adaptation is sent the doubt as it was"
+    _doubts(R, ref, doubt=doubt, fallback=fallback)                                    # it comes back: a blocked plan
+    W.run_until_idle(ref, limit=300)
+    card = next(a for a in W.asks(ref) if a["kind"] == "blocked" and a["status"] == "pending")
+    assert V1.SOMETHING in card["text"] and card["why"] == V1.SOMETHING
+    assert all(INSIDE_WORDS.search(s) is None for s in (card["text"].replace("Priority and Root check it before anything runs.", ""), card["why"]))
+
+
+def test_i5_figures_and_words_of_the_owners_own_work_are_not_taken_for_the_inside(j2):
+    W, R, J, _, _ = j2
+    doubt, fallback = "Should the cake page show 3 sizes, and be easy to find on a search engine?", "the page shows one size"
+    ref = _born(j2, BAKERY)
+    _doubts(R, ref, doubt=doubt, fallback=fallback)
+    W.run_until_idle(ref, limit=300)
+    ask = _plan_asks(W, ref)[0]
+    assert doubt in ask["text"] and "Unless you say, %s." % fallback in ask["text"] and ask["doubt"]["shown"] == doubt
+    assert V1.inside("Class 8.5, v2.1, 12 pm, 3 pages, a search engine") == [] and V1.inside("at .45") == [".45"]
+
+
+def test_i5_the_default_fallback_says_the_department_unless_it_is_a_website(j2):
+    """A website is the owner's site; any other kind of department is the department (engine_runtime.identity_file says it so):
+    the question, the go-on line and 'just do it' never say a site for a laboratory."""
+    W, R, J, _, _ = j2
+    ref = _born(j2, ORGANIC, "Lab Co")
+    d = W.dept(ref)
+    assert d["kind"] != "website"
+    stock = "I go ahead with the plan as it stands, and nothing in it reaches outside the department"
+    assert V1.fallback_default(d) == stock and V1.fallback_default({"kind": "website"}) == V1.FALLBACK == stock.replace("department", "site")
+    site = _born(j2, "a website for my bakery in Pune", "Bakery Web Co")
+    assert W.dept(site)["kind"] == "website"
+    _doubts(R, site, doubt="Which cakes need a note?", fallback="")
+    W.run_until_idle(site, limit=300)
+    assert _plan_asks(W, site)[0]["text"].endswith('Unless you say, %s. Answer in your own words, or say "just do it".' % V1.FALLBACK), "a website is a site"
+    _doubts(R, ref, doubt="Which chemicals need a safety note?", fallback="")
+    W.run_until_idle(ref, limit=300)
+    ask = _plan_asks(W, ref)[0]
+    assert ask["text"] == 'Before I set up the work for %s: Which chemicals need a safety note? Unless you say, %s. Answer in your own words, or say "just do it".' % (d["name"], stock)
+    assert ask["doubt"]["fallback"] == stock and S.validate_record("identity", "ask", ask) == []
+    assert all(not re.search(r"\bsite\b", s, re.I) for s in _the_card_the_owner_reads(R, ref, ask))
+    # 'just do it' takes it, and says it; so does an unplain fallback the doubt came with
+    _owner_says(j2, ref, "chat", "just do it")
+    assert any("Just doing it: %s." % stock in s for s in _said_by_identity(R, ref))
+    assert _line_requests(R, ref)[-1]["payload"]["answer"] == "going with this: " + stock
+    # past the bound, the go-on line says it too
+    _owner_says(j2, ref, "chat", "Only the acids")
+    _doubts(R, ref, doubt="Which shelf holds the acids?", fallback="Coordination moves them to another engine")
+    W.run_until_idle(ref, limit=300)
+    _owner_says(j2, ref, "chat", "The top shelf")
+    _doubts(R, ref, doubt="Who signs the inventory?", fallback="")
+    W.run_until_idle(ref, limit=300)
+    told = [s for s in _said_by_identity(R, ref) if "the plan goes on as it stands" in s]
+    assert len(told) == 1 and "Unless you say otherwise, %s." % stock in told[0] and not re.search(r"\bsite\b", told[0], re.I), told
+    assert [q["payload"]["fallback"] for q in _line_requests(R, ref) if q["payload"].get("go_on")] == [stock]
 
 
 def test_i5_words_after_the_doubt_is_answered_are_no_answer_to_it(j2):

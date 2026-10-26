@@ -1541,6 +1541,55 @@
             }
           ]
         },
+        "doubt": {
+          "additionalProperties": true,
+          "properties": {
+            "answered": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "doubt": {
+              "maxLength": 600,
+              "minLength": 0,
+              "type": "string"
+            },
+            "engine": {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string"
+            },
+            "fallback": {
+              "maxLength": 600,
+              "minLength": 0,
+              "type": "string"
+            },
+            "line": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "shown": {
+              "maxLength": 600,
+              "minLength": 0,
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
         "engine": {
           "anyOf": [
             {
