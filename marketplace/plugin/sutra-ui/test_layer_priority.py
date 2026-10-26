@@ -643,6 +643,31 @@ def test_p4_the_words_are_the_ones_the_pane_already_says_and_the_owners_not_the_
     assert V1.view(ref, W.dept(ref), [], [])["prices"][0]["why"] == "Priority asked for less (no room) and kept plan.md out", "names, never paths"
 
 
+def test_p4_the_view_does_not_come_back_through_the_part_that_reads_the_views(live, ctx, monkeypatch):
+    """A view that builds its pane by calling functions_view._j2_part must fail once _j2_part hands the pane to layers.view
+    (A1.17, K2's C9): the two would call each other without end. _j2_part is made to do exactly that here, with no guard
+    of its own; the view builds its pane from the record and never asks for it."""
+    import functions_view
+    W, R, J, _ = live
+    ref = ctx["ref"]
+    W.append_row(ref, "prices.jsonl", _price_row())
+    asked = []
+
+    def hands_to_the_views(ref_, d_, fn, events, ak):
+        asked.append(fn)
+        return layers.view(ref_, layers.layer_of(fn), d_, events, ak)
+    monkeypatch.setattr(functions_view, "_j2_part", hands_to_the_views)
+    events = [{"action": "proposal.countered", "summary": "Priority countered the line", "occurred_at": "2026-10-26T10:00:00+05:30"}]
+    pane = V1.view(ref, W.dept(ref), events, [])
+    assert asked == [], "the view reads the record, not the part that reads the views"
+    assert S.validate_view("priority", pane) == []
+    assert [(b["said"], b["summary"]) for b in pane["bargains"]] == [("asked for less", "Priority asked for less on the line")]
+    assert [p["said"] for p in pane["prices"]] == ["said yes"] and [e["engine"] for e in pane["envelopes"]][:4] == LINE
+    # and through the registry, which is how the pane is served: the same pane, validated, with the part never asked
+    served = layers.view(ref, "priority", W.dept(ref), events, [])
+    assert served == pane and S.validate_view("priority", served) == [] and asked == []
+
+
 # ---- P5: Priority's writers say who they are --------------------------------------------------------------------------------
 def _saves(monkeypatch, W):
     """Every save_dept call, with the function that made it and the `by` it passed; the real save still runs."""

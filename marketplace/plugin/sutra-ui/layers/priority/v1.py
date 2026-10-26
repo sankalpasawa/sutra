@@ -9,8 +9,9 @@ What moved (M5.3: Priority prices from observed spend). priority_read estimates 
 of what each engine's finished runs spent, with a prior for an engine with no runs, and reads the room actually left
 today; p_priority_bargain tells the agent both; d_priority_bargain, the offline answer, is the same arithmetic;
 priority_post answers and keeps one price row per answer; price_is_observed holds the answer to the facts. WORDS and
-LAYOUT hold its words (goal, bargain), so no part of it is read from the .md bundle. view() is functions_view's pane plus
-the prices.
+LAYOUT hold its words (goal, bargain), so no part of it is read from the .md bundle. view() builds the pane itself, the
+bargains and envelopes from functions_view's small readers and the prices from prices.jsonl; it never asks _j2_part, which
+reads the layers' views.
 """
 import math
 import re
@@ -444,9 +445,19 @@ def _prices(ref):
     return FV._clean(out[:PRICES_SHOWN])
 
 
+#: what a bargain on the record is called on the pane, by the ledger's action: the owner's words, never grant, counter or refuse
+BARGAINS = types.MappingProxyType({'proposal.granted': 'said yes', 'proposal.countered': 'asked for less', 'proposal.refused': 'said no'})
+#: the most bargains the pane carries: the newest few
+BARGAINS_SHOWN = 6
+
+
 def view(ref, d, events, asks):
-    """Priority's pane (S.VIEWS['priority']): the bargains and the envelopes, as functions_view reads them from the record,
-    and the prices, from prices.jsonl (M5.3). Nothing is written."""
-    part = FV._j2_part(ref, d, 'Priority', events, asks)
-    part['prices'] = _prices(ref)
-    return part
+    """Priority's pane (S.VIEWS['priority']): the bargains, newest few, and the envelopes, each engine's and function's
+    spend against its limit, as functions_view reads them from the record; and the prices, from prices.jsonl (M5.3).
+    Nothing is written. The bargains and envelopes are built here, from functions_view's small readers (_spend, _plain) and
+    not through FV._j2_part: that part reads the layers' views (A1.17, K2) and would come back here. Moved from
+    functions_view._j2_part's Priority branch, which stays until W3-PROOF deletes the dead copies."""
+    return {'bargains': [{'said': BARGAINS[e['action']], 'summary': FV._plain(e.get('summary')), 'at': e.get('occurred_at')}
+                         for e in events if e.get('action') in BARGAINS][-BARGAINS_SHOWN:],
+            'envelopes': [dict(FV._spend(ref, d, n), engine=n) for n in [x[0] for x in W.engines_of(d)] + list(FV.FUNCS)],
+            'prices': _prices(ref)}
