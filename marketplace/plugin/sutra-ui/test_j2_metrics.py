@@ -11,6 +11,7 @@ own lanes, and the script runs them again for the proof.
 import importlib
 import importlib.util
 import json
+import types
 from pathlib import Path
 
 import pytest
@@ -621,3 +622,120 @@ def test_the_suite_runs_on_a_kept_home_or_a_temporary_one_that_is_removed_after(
     assert rep["kept"] == str(keep) and len(M.find_departments(keep)) == rep["departments"] > 0, "a kept home stays to be read again"
     again = M.build(M.find_departments(keep), [], ui=HERE)
     assert [(m["id"], m["value"]) for m in again["metrics"] if m["id"] in ("SM-1", "SM-3", "SM-4")] == [("SM-1", 0), ("SM-3", 0), ("SM-4", 0)]
+
+
+# ---- Z2 (M10.5): schema conformance in refuse mode -------------------------------------------------------------------
+OWN = "department: $.goal: is Identity's, and Priority wrote it"
+
+
+def test_z2_a_save_with_by_for_a_key_another_layer_owns_is_listed_as_an_ownership_row(tmp_path):
+    make(tmp_path, runs=[
+        _run("Priority", "r-1", True, what="kept a record that does not fit the interface: " + OWN),
+        _run("Adaptation", "r-2", True, what="refused a write that does not fit the interface: department: $.workflows: is Root's, and Adaptation wrote it"),
+        _run("Priority", "r-3", True, what="refused a write that does not fit the interface: priority.price: $.answer: is not one of accept"),
+        _run("Plan", "r-4", what="its text names $.goal: is Identity's, and Priority wrote it")])             # not a row of the interface's
+    own = M.ownership_rows(_depts(tmp_path))
+    assert [(o["key"], o["owner"], o["writer"], o["kept"]) for o in own] == [("goal", "Identity", "Priority", True),
+                                                                           ("workflows", "Root", "Adaptation", False)]
+    m = M.sm13(_depts(tmp_path), [], "refuse")
+    assert m["status"] == "gap" and len(m["ownership"]) == 2
+    assert any(g.startswith("ownership: Priority wrote goal, which is Identity's") for g in m["gaps"])
+
+
+def test_z2_an_ownership_fault_the_processes_dumped_is_listed_once_even_when_a_row_shows_it_too(tmp_path):
+    make(tmp_path, runs=[_run("Priority", "r-1", True, what="kept a record that does not fit the interface: " + OWN)])
+    dumped = {"test": "test_x.py::t", "ref": "dref-a", "kept": True, "faults": ["$.goal: is Identity's, and Priority wrote it"]}
+    other = {"test": "test_y.py::t", "ref": None, "kept": False, "faults": ["$.rules: is Identity's, and Audit wrote it", "$.x: is not a field"]}
+    own = M.ownership_rows(_depts(tmp_path), [{"lane": "test_x.py", "refused_rows": [dumped, other]}])
+    assert [(o["key"], o["writer"]) for o in own] == [("goal", "Priority"), ("rules", "Audit")]
+    assert own[1]["dept"] == "test_y.py::t (no department)"
+
+
+def test_z2_sm13_is_the_larger_of_the_rows_and_the_entries_so_a_fault_is_counted_once(tmp_path):
+    row = _run("Priority", "r-1", True, what="refused a write that does not fit the interface: asks: $.kind: is wrong")
+    make(tmp_path, runs=[row])
+    one = [{"lane": "test_j2.py", "refused_entries": 1}]
+    assert M.sm13(_depts(tmp_path), one, "refuse")["value"] == 1, "a fault with a department leaves a row and an entry"
+    assert M.sm13(_depts(tmp_path), [{"lane": "x", "refused_entries": 3}], "refuse")["value"] == 3, "one with none leaves an entry only"
+    gone = M.sm13([], [{"lane": "test_j2.py", "refused_entries": 2}], "refuse")
+    assert gone["value"] == 2 and "test_j2.py: 2 entries in S.REFUSED" in gone["gaps"]
+    assert M.sm13([], [{"lane": "test_j2.py", "refused_entries": 0}], "refuse")["status"] == "met"
+
+
+@pytest.fixture
+def plugin(tmp_path, monkeypatch):
+    """The module as the suite's processes load it (-p j2_metrics), with an interface of its own to count on."""
+    fake = types.SimpleNamespace(MODE="warn", REFUSED={"count": 0, "rows": []})
+    monkeypatch.setattr(M, "_schema", lambda: fake)
+    monkeypatch.setattr(M, "_STATE", {"entries": 0, "rows": []})
+    monkeypatch.setenv("J2_METRICS_DUMP", str(tmp_path / "dump.json"))
+    monkeypatch.setenv("J2_METRICS_LANE", "test_x.py")
+    monkeypatch.setenv("J2_METRICS_MODE", "refuse")
+    return fake, types.SimpleNamespace(nodeid="test_x.py::test_one")
+
+
+def _teardown(item):
+    gen = M.pytest_runtest_teardown(item, None)
+    next(gen)
+    with pytest.raises(StopIteration):
+        next(gen)
+
+
+def test_z2_the_plugin_puts_the_interface_in_refuse_mode_for_the_test_and_counts_what_the_test_left_on_refused(plugin, tmp_path):
+    fake, item = plugin
+    M.pytest_runtest_setup(item)
+    M.pytest_runtest_call(item)
+    assert fake.MODE == "refuse"
+    fake.REFUSED["count"] += 2
+    fake.REFUSED["rows"] += [{"name": "asks", "faults": ["$.kind: is wrong"]}, {"name": "department", "faults": ["x"]}]
+    _teardown(item)
+    M.pytest_runtest_setup(item)                                                    # a second test that leaves nothing
+    _teardown(item)
+    M.pytest_sessionfinish(None, 0)
+    dump = json.loads((tmp_path / "dump.json").read_text())
+    assert (dump["lane"], dump["mode"], dump["entries"]) == ("test_x.py", "refuse", 2)
+    assert [r["name"] for r in dump["rows"]] == ["asks", "department"] and dump["rows"][0]["test"] == "test_x.py::test_one"
+
+
+def test_z2_a_fault_taken_off_by_expect_refused_is_not_counted_and_app_mode_leaves_the_constant_alone(plugin, monkeypatch):
+    fake, item = plugin
+    M.pytest_runtest_setup(item)
+    fake.REFUSED["count"] += 1                       # what expect_refused() adds and takes off again before the test ends
+    fake.REFUSED["count"] -= 1
+    _teardown(item)
+    assert M._STATE["entries"] == 0
+    monkeypatch.setenv("J2_METRICS_MODE", "app")
+    M.pytest_runtest_call(item)
+    assert fake.MODE == "warn"
+
+
+def test_z2_without_the_dump_variable_the_plugin_does_nothing(plugin, monkeypatch, tmp_path):
+    fake, item = plugin
+    monkeypatch.delenv("J2_METRICS_DUMP")
+    M.pytest_runtest_call(item)
+    fake.REFUSED["count"] += 1
+    _teardown(item)
+    M.pytest_sessionfinish(None, 0)
+    assert fake.MODE == "warn" and M._STATE["entries"] == 0 and not (tmp_path / "dump.json").exists()
+
+
+def test_z2_the_app_constant_is_read_from_the_source_and_the_report_says_both_modes(tmp_path):
+    _w(tmp_path / "layer_schema.py", "X = 1\nMODE = 'refuse'          # a code constant\nOWNERSHIP_MODE = 'warn'\n")
+    assert M.app_mode(tmp_path) == "refuse" and M.app_mode(tmp_path / "nowhere") == "unknown"
+    assert M.app_mode(HERE) in ("warn", "refuse")
+    rep = M.build([], [], "refuse", ui=HERE)
+    assert rep["mode"] == {"run": "refuse", "app": M.app_mode(HERE)}
+
+
+def test_z2_the_scenario_suite_in_refuse_mode_leaves_no_refused_write_and_no_ownership_row(tmp_path):
+    """The done check of M10.5: SM-13 is 0, counted over the records the suite kept and the entries its processes dumped.
+    The lanes here are the proof scenarios and the API lane; the gate's own line runs the whole suite."""
+    lanes = M.run_suite(["test_j2_api.py", "test_j2_metrics.py::TestProofScenarios"], tmp_path, "refuse", workers=2)
+    assert [(ln["rc"], ln["failed"]) for ln in lanes] == [(0, 0), (0, 0)] and all(ln["tests"] > 0 for ln in lanes), lanes
+    assert [ln["mode"] for ln in lanes] == ["refuse", "refuse"], "the processes ran with the plugin, in refuse mode"
+    rep = M.build(M.find_departments(tmp_path), lanes, "refuse", ui=HERE)
+    by = {m["id"]: m for m in rep["metrics"]}
+    assert by["SM-13"]["value"] == 0 and by["SM-13"]["ownership"] == [] and by["SM-13"]["status"] == "met"
+    assert (by["SM-1"]["value"], by["SM-3"]["value"], by["SM-4"]["value"]) == (0, 0, 0)
+    assert by["SM-1"]["claims"] == 3 and by["SM-7"]["value"] == 3 and by["SM-7"]["status"] == "met", "all three kinds reach a real done"
+    assert rep["ok"] and rep["lane_faults"] == []

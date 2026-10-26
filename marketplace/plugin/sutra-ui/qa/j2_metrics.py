@@ -2,8 +2,8 @@
 """qa/j2_metrics.py -- the proof run of the five functions (PRD M10.4, M10.5; amendment A1, package W2-PROOF).
 
 It runs the scenario suite with its models stubbed (decision C2) on a records home that is kept, then reads the record
-and nothing else, and reports the success metrics of PRD section 5: SM-1 to SM-12, SM-13 (writes the interface refused)
-and SM-14 (journey rows unproven, A3). A metric is `met`, `gap` (it names each gap), `pending` (it needs the nine
+and nothing else, and reports the success metrics of PRD section 5: SM-1 to SM-12, SM-13 (writes the interface refused,
+M10.5) and SM-14 (journey rows unproven, A3). A metric is `met`, `gap` (it names each gap), `pending` (it needs the nine
 live Beta runs or the Human Simulation walk, which stay pending under C2), `recorded` (a figure that gates nothing) or
 `not run` (its input is not there).
 
@@ -12,13 +12,18 @@ live Beta runs or the Human Simulation walk, which stay pending under C2), `reco
                                      line)
     qa/j2_metrics.py --strict        exit 1 on any gap (SM-6, SM-7 and the rest too: W3-PROOF's rerun)
     qa/j2_metrics.py --records DIR   read a records home or a kept tree (a Beta home, a kept run) and run nothing
-    --json | --out FILE | --keep DIR | --files a.py,b.py | --full | --workers N | --ledger
+    --json | --out FILE | --keep DIR | --files a.py,b.py | --full | --workers N | --mode refuse|app | --ledger
 
 THE RECORD. Per department: dept.json, runs.json, asks.json, board.jsonl, readings.jsonl, prices.jsonl, j2-events.jsonl,
 j2-state.json, coordination.json. The files are read as they lie on disk (a torn line is skipped, as record.lines does);
 no app module is imported, so the script reads a home the app is not running on. Three metrics read the repository
 beside it: SM-2 (suites.sh, by name), SM-12 (the decision log) and SM-14 (the journeys' status files, which are the record
 of the last gate; it runs no journey test).
+
+REFUSE MODE (M10.5). The interface's mode is a code constant, never an environment variable. The suite's processes load
+this module as a pytest plugin (`-p j2_metrics`, only when J2_METRICS_DUMP is set): it puts layer_schema.MODE at 'refuse'
+before each test, counts the entries the interface adds to S.REFUSED and dumps them, so SM-13 is counted in refuse mode
+whatever the app's constant says. `--mode app` leaves the constant alone.
 """
 import argparse
 import concurrent.futures as futures
@@ -37,6 +42,13 @@ import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
 from functools import cached_property
 from pathlib import Path
+
+try:
+    import pytest
+    _impl = pytest.hookimpl
+except Exception:  # noqa: BLE001 -- the script reads records without pytest; only the plugin hooks want it
+    def _impl(**_kw):
+        return lambda fn: fn
 
 HERE = Path(__file__).resolve().parent
 UI = HERE.parent                                                    # sutra-ui
@@ -443,15 +455,49 @@ def sm2(lanes, suites_text):
               tests=sum(ln["tests"] for ln in lanes), status=None if (lanes or gaps) else "not run")
 
 
-def sm13(depts):
-    """Writes the interface refused (A1.20): the runs.json rows that begin 'refused a write', and the faults it kept in the
-    paths that never refuse (a row 'kept a record'). The entries in S.REFUSED and refuse mode are M10.5's."""
+OWNERSHIP = re.compile(r"\$\.(\w+): is (\w+)'s, and (\w+) wrote it")
+
+
+def ownership_rows(depts, lanes=()):
+    """Rows written with `by` for a department key another layer owns: {dept, key, owner, writer, kept}. From the rows the
+    interface put on runs.json, and from the entries the suite's processes dumped (a fault with no department leaves only
+    an entry); one that both show is listed once."""
+    out = []
+    for d in depts:
+        for r in d.runs:
+            what = str(r.get("what") or "")
+            m = OWNERSHIP.search(what)
+            if m and what.startswith(("refused a write", "kept a record")):
+                out.append({"dept": d.label, "key": m.group(1), "owner": m.group(2), "writer": m.group(3),
+                            "kept": what.startswith("kept")})
+    seen = {(o["key"], o["owner"], o["writer"]) for o in out}
+    for ln in lanes:
+        for r in ln.get("refused_rows") or []:
+            for f in r.get("faults") or []:
+                m = OWNERSHIP.search(str(f))
+                if m and (m.group(1), m.group(2), m.group(3)) not in seen:
+                    seen.add((m.group(1), m.group(2), m.group(3)))
+                    out.append({"dept": "%s (%s)" % (r.get("test") or ln.get("lane"), r.get("ref") or "no department"), "key": m.group(1),
+                                "owner": m.group(2), "writer": m.group(3), "kept": bool(r.get("kept"))})
+    return out
+
+
+def sm13(depts, lanes=(), mode=None):
+    """Writes the interface refused (M10.5): runs.json rows that begin 'refused a write', the faults it kept in the
+    paths that never refuse (a row 'kept a record'), and the entries the suite's processes added to S.REFUSED. A fault
+    with a department leaves a row and an entry, one without leaves an entry only, so the larger count is the faults."""
     refused = [(d, r) for d in depts for r in d.runs if str(r.get("what") or "").startswith("refused a write")]
     kept = [(d, r) for d in depts for r in d.runs if str(r.get("what") or "").startswith("kept a record")]
-    value = len(refused) + len(kept)
-    return _m("SM-13", "Writes refused by the interface", "0", value, value == 0,
-              ["%s: %s" % (d.label, str(r.get("what"))[:200]) for d, r in (refused + kept)[:20]],
-              "%d refused rows, %d kept rows" % (len(refused), len(kept)), refused_rows=len(refused), kept_rows=len(kept))
+    entries = sum(ln.get("refused_entries", 0) for ln in lanes)
+    own = ownership_rows(depts, lanes)
+    value = max(len(refused) + len(kept), entries)
+    gaps = ["%s: %s" % (d.label, str(r.get("what"))[:200]) for d, r in (refused + kept)[:20]]
+    gaps += ["%s: %d entries in S.REFUSED" % (ln["lane"], ln["refused_entries"]) for ln in lanes if ln.get("refused_entries")]
+    gaps += ["ownership: %s wrote %s, which is %s's (%s)" % (o["writer"], o["key"], o["owner"], o["dept"]) for o in own]
+    return _m("SM-13", "Writes refused by the interface", "0, and no ownership row", value, value == 0 and not own, gaps,
+              "mode: %s; %d refused rows, %d kept rows, %d entries in S.REFUSED, %d ownership rows" % (
+                  mode or "not stated", len(refused), len(kept), entries, len(own)),
+              refused_rows=len(refused), kept_rows=len(kept), entries=entries, ownership=own, mode=mode)
 
 
 def _fresh(ui, jid, sha):
@@ -554,14 +600,16 @@ def parse_junit(path):
     return out
 
 
-def run_lane(node, out, timeout=1500):
-    """One pytest process for one file (or node id): a records home and a base temp folder of its own, kept, and its junit
-    file. Returns the lane's row."""
-    d = Path(out) / _slug(node)
+def run_lane(node, out, mode, timeout=1500):
+    """One pytest process for one file (or node id): a records home and a base temp folder of its own, kept; its junit
+    file; and the dump the plugin writes. Returns the lane's row."""
+    lane = _slug(node)
+    d = Path(out) / lane
     (d / "home").mkdir(parents=True, exist_ok=True)
     env = {k: v for k, v in os.environ.items() if k != "PYTEST_CURRENT_TEST"}
-    env["SUTRA_NATIVE_HOME"] = str(d / "home")
-    cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--basetemp", str(d / "bt"),
+    env.update(SUTRA_NATIVE_HOME=str(d / "home"), J2_METRICS_DUMP=str(d / "dump.json"), J2_METRICS_MODE=mode,
+               J2_METRICS_LANE=node, PYTHONPATH=os.pathsep.join(filter(None, [str(HERE), os.environ.get("PYTHONPATH")])))
+    cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "j2_metrics", "--basetemp", str(d / "bt"),
            "--junitxml", str(d / "junit.xml"), node]
     t0, note = time.time(), None
     try:
@@ -570,19 +618,86 @@ def run_lane(node, out, timeout=1500):
     except subprocess.TimeoutExpired:
         rc, tail, note = -1, "", "timed out after %d s" % timeout
     got = parse_junit(d / "junit.xml")
+    dump = _doc(d / "dump.json", {})
     return {"lane": node, "rc": rc, "tests": got["tests"], "failed": got["failed"], "skipped": got["skipped"],
-            "seconds": round(time.time() - t0, 1), "summary": note or tail, "props": got["props"]}
+            "seconds": round(time.time() - t0, 1), "summary": note or tail, "props": got["props"],
+            "refused_entries": int(dump.get("entries") or 0), "refused_rows": dump.get("rows") or [],
+            "mode": dump.get("mode")}
 
 
-def run_suite(files, out, workers=4):
+def run_suite(files, out, mode="refuse", workers=4):
     """The scenario suite, one pytest process for each file (their fixtures reload modules), up to `workers` at once."""
     with futures.ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        return list(pool.map(lambda f: run_lane(f, out), files))
+        return list(pool.map(lambda f: run_lane(f, out, mode), files))
+
+
+# ---- the plugin: the suite's processes load this module (-p j2_metrics) ---------------------------------------------
+def _on():
+    return bool(os.environ.get("J2_METRICS_DUMP"))
+
+
+_STATE = {"entries": 0, "rows": []}
+
+
+def _schema():
+    return sys.modules.get("layer_schema")
+
+
+@_impl(tryfirst=True)
+def pytest_runtest_call(item):
+    """Refuse mode for the test (M10.5), after its fixtures have loaded the interface and before its body runs."""
+    S = _schema()
+    if _on() and S is not None and os.environ.get("J2_METRICS_MODE", "refuse") == "refuse":
+        S.MODE = "refuse"
+
+
+@_impl(tryfirst=True)
+def pytest_runtest_setup(item):
+    S = _schema()
+    item._j2_seen = (S.REFUSED, S.REFUSED["count"], len(S.REFUSED["rows"])) if (_on() and S is not None) else None
+
+
+@_impl(hookwrapper=True)
+def pytest_runtest_teardown(item, nextitem):
+    """What the test added to S.REFUSED and left there (a fault inside S.expect_refused() is taken off on the way out,
+    so only a fault nobody expected is counted)."""
+    yield
+    S = _schema()
+    if not _on() or S is None:
+        return
+    seen = getattr(item, "_j2_seen", None)
+    base, start = (seen[1], seen[2]) if seen and seen[0] is S.REFUSED else (0, 0)
+    grew = S.REFUSED["count"] - base
+    if grew > 0:
+        _STATE["entries"] += grew
+        _STATE["rows"] += [dict(r, test=item.nodeid) for r in S.REFUSED["rows"][start:]][:20]
+
+
+def pytest_sessionfinish(session, exitstatus):
+    if not _on():
+        return
+    S = _schema()
+    try:
+        Path(os.environ["J2_METRICS_DUMP"]).write_text(json.dumps({
+            "lane": os.environ.get("J2_METRICS_LANE"), "mode": S.MODE if S is not None else None,
+            "entries": _STATE["entries"], "rows": _STATE["rows"][:40]}, indent=1), encoding="utf-8")
+    except OSError:
+        pass
 
 
 # ---- the report ------------------------------------------------------------------------------------------------------
-def build(depts, lanes=(), ui=UI, basis="the scenario suite with stubbed models (C2)"):
+def app_mode(ui=UI):
+    """The interface's own constant, read from the source (this script imports no app module)."""
+    try:
+        m = re.search(r"^MODE\s*=\s*['\"](\w+)['\"]", (Path(ui) / "layer_schema.py").read_text(encoding="utf-8"), re.M)
+    except OSError:
+        m = None
+    return m.group(1) if m else "unknown"
+
+
+def build(depts, lanes=(), mode=None, ui=UI, basis="the scenario suite with stubbed models (C2)"):
     """The report: every metric, what stays pending, and whether the gate's line passes."""
+    mode = mode or app_mode(ui)
     suites = Path(ui) / "qa" / "walks" / "suites.sh"
     try:
         text = suites.read_text(encoding="utf-8")
@@ -590,10 +705,10 @@ def build(depts, lanes=(), ui=UI, basis="the scenario suite with stubbed models 
         text = None
     p95 = next((float(ln["props"]["sm10_append_p95_ms"]) for ln in lanes if "sm10_append_p95_ms" in ln.get("props", {})), None)
     ms = [sm1(depts), sm2(list(lanes), text), sm3(depts), sm4(depts), sm5(), sm6(depts), sm7(depts), sm8(depts), sm9(depts),
-          sm10(p95), sm11(depts), sm12(ui), sm13(depts), sm14(ui)]
+          sm10(p95), sm11(depts), sm12(ui), sm13(depts, lanes, mode), sm14(ui)]
     lane_faults = ["lane %s: %s" % (ln["lane"], ln["summary"] or "exit %s" % ln["rc"]) for ln in lanes if ln["rc"] != 0]
     hard = [m["id"] for m in ms if m["id"] in HARD and m["status"] == "gap"]
-    return {"schema": SCHEMA, "basis": basis, "departments": len(depts),
+    return {"schema": SCHEMA, "basis": basis, "departments": len(depts), "mode": {"run": mode, "app": app_mode(ui)},
             "lanes": [{k: v for k, v in ln.items() if k not in ("refused_rows", "props")} for ln in lanes],
             "metrics": ms, "pending": [{"what": a, "why": b} for a, b in PENDING], "lane_faults": lane_faults,
             "hard_gaps": hard, "gaps": [m["id"] for m in ms if m["status"] == "gap"],
@@ -602,7 +717,8 @@ def build(depts, lanes=(), ui=UI, basis="the scenario suite with stubbed models 
 
 def render(rep, width=8):
     """The report as text: one line a metric, its gaps under it, the pending list, and a last line the gate shows."""
-    out = ["The proof run: %s; %d departments read" % (rep["basis"], rep["departments"]), ""]
+    out = ["The proof run: %s; %d departments read; interface mode %s (the app's constant: %s)" % (
+        rep["basis"], rep["departments"], rep["mode"]["run"], rep["mode"]["app"]), ""]
     for ln in rep["lanes"]:
         out.append("  lane %-44s %4d tests, %d failed, %s s%s" % (ln["lane"], ln["tests"], ln["failed"], ln["seconds"],
                                                               "" if ln["rc"] == 0 else "  (exit %s)" % ln["rc"]))
@@ -638,6 +754,7 @@ def main(argv=None):
     ap.add_argument("--files", help="comma-separated scenario files or node ids, in place of the default suite")
     ap.add_argument("--full", action="store_true", help="add the layers' own files (some build records by hand: a gap there may be a fixture's)")
     ap.add_argument("--workers", type=int, default=min(4, os.cpu_count() or 1))
+    ap.add_argument("--mode", choices=("refuse", "app"), default="refuse", help="the interface's mode for the suite: refuse, or the app's constant")
     ap.add_argument("--ledger", action="store_true", help="also run the ledger benchmark and read SM-10")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--out", help="write the report (JSON) here")
@@ -645,7 +762,7 @@ def main(argv=None):
     tmp = None
     try:
         if a.records:
-            lanes, basis = [], "the records at " + ", ".join(a.records)
+            lanes, mode, basis = [], "as the records were written", "the records at " + ", ".join(a.records)
             depts = [d for r in a.records for d in find_departments(r)]
         else:
             files = a.files.split(",") if a.files else list(SCENARIOS) + (list(FULL) if a.full else [])
@@ -653,10 +770,10 @@ def main(argv=None):
                 files.append("test_j2_ledger.py::test_ten_thousand_appends_each_grow_the_journal_by_one_line_and_p95_is_recorded")
             tmp = Path(a.keep) if a.keep else Path(tempfile.mkdtemp(prefix="sutra-metrics-"))
             tmp.mkdir(parents=True, exist_ok=True)
-            lanes = run_suite(files, tmp, a.workers)
-            basis = "the scenario suite with stubbed models (C2)"
+            lanes = run_suite(files, tmp, a.mode, a.workers)
+            mode, basis = ("refuse" if a.mode == "refuse" else app_mode()), "the scenario suite with stubbed models (C2)"
             depts = find_departments(tmp)
-        rep = build(depts, lanes, basis=basis)
+        rep = build(depts, lanes, mode, basis=basis)
         if a.keep:
             rep["kept"] = str(tmp)
     finally:
