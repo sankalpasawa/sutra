@@ -122,7 +122,8 @@ def _summary(r, verdicts):
     if not r.get('read'):
         return 'did not read %s: %s' % (where, r.get('why_not_read') or 'it was not read')
     left = ['%s %s' % (i, 'not met' if v == 'not_met' else 'to confirm') for i, v in verdicts.items() if v != 'met']
-    return 'read %s: %s' % (where, ', '.join(left) if left else 'every done-when item holds')
+    held = 'every done-when item holds' + (', and something is noted' if r.get('findings') else '')
+    return 'read %s: %s' % (where, ', '.join(left) if left else held)
 
 
 def _entry(r):
@@ -134,7 +135,8 @@ def _entry(r):
 
 def _latest(rows):
     """The newest reading that read its version: one entry for each done-when item, the row whose verdict stands (when code
-    and the reader disagreed, both rows are in the journal and the worse stands); None when no version has been read."""
+    and the reader disagreed, both rows are in the journal and the worse stands), and the findings it filed, a low or a
+    medium one included, which ask the owner nothing and so show nowhere else; None when no version has been read."""
     r = next((x for x in reversed(rows) if x.get('read')), None)
     if r is None:
         return None
@@ -144,13 +146,14 @@ def _latest(rows):
             continue
         seen.add(row['id'])
         items.append({k: row[k] for k in ('id', 'verdict', 'method', 'evidence', 'claim')})
-    return {'artifact': r['artifact'], 'v': r['v'], 'at': r.get('at'), 'items': items}
+    return {'artifact': r['artifact'], 'v': r['v'], 'at': r.get('at'), 'items': items,
+            'findings': [dict(f) for f in r.get('findings') or []]}
 
 
 def view(ref, d, events, asks):
     """Audit's pane (S.VIEWS['audit']): today's part, by reference, with the readings of readings.jsonl in place of the
     ledger's lines once any exists, each with its artifact, version, whether it was read and the verdict of each item, and
-    `latest`: the newest version read, item by item (M8.3)."""
+    `latest`: the newest version read, item by item, with the findings it filed (M8.3)."""
     part = dict(FV._j2_part(ref, d, 'Audit', events, asks))
     rows = W.rows(ref, 'readings.jsonl')
     if rows:

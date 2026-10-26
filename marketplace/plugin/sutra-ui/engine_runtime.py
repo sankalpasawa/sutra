@@ -5520,16 +5520,19 @@ def identity_closed(ctx, step, item):
 
 
 def _j2_audit_read(ref, d, version, filed, art=None, reading=None):
-    """Audit's reading closes the loop (step 8): when it holds done-when, the goal is reached, and Identity says so once."""
+    """Audit's reading closes the loop (step 8): when it holds done-when, the goal is reached, and Identity says so once.
+    What Identity says of the reading is what the reading filed: 'found nothing to put right' only when it filed nothing,
+    else that it noted something that does not block (a low or a medium finding; a high one holds the goal back)."""
     J = _j2()
     if not J or not J.audited(ref, version, filed, artifact=art, reading=reading):
         return
     import layer_schema as S
     art = art or S.deliverable(d)
+    found = "noted something that does not block" if filed else "found nothing to put right"
     try:
         _tell(ref, d, {"src": "Root" if d.get("root") else OWNER}, "inform",
-              {"word": "goal", "done": "The goal is reached: %s. Audit read %s v%s and found nothing to put right."
-               % (str(d.get("done") or "done").rstrip("."), art, version), "link": art, "v": version})
+              {"word": "goal", "done": "The goal is reached: %s. Audit read %s v%s and %s."
+               % (str(d.get("done") or "done").rstrip("."), art, version, found), "link": art, "v": version})
     except Exception:  # noqa: BLE001 -- the goal is reached on the record whether or not the word reached the chat
         pass
 

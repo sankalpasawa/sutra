@@ -594,6 +594,39 @@ def test_u5_low_findings_do_not_block_done_but_a_high_one_does(j2, monkeypatch):
     assert "goal.reached" not in _actions(J, ref2) and J.status(ref2)["state"] == "pursuing"
 
 
+def _goal_says(R, ref):
+    """What Identity told the owner when the goal was reached: the one post of the word goal."""
+    (post,) = [p for p in R.board(ref) if p["src"] == "Identity" and R.OWNER in p["dst"] and (p["payload"] or {}).get("word") == "goal"]
+    return post["payload"]["done"]
+
+
+def test_u5_identity_says_audit_found_nothing_only_when_it_filed_nothing(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    _model(monkeypatch, R, {"audit.items": _says("met"), "audit.judge": JUDGE_OK})
+    ref = _default(j2)
+    said = _goal_says(R, ref)
+    assert said.startswith("The goal is reached: ") and said.endswith("Audit read Result v1 and found nothing to put right.")
+    assert _view(j2, ref)["latest"]["findings"] == [] and _view(j2, ref)["readings"][-1]["summary"] == "read Result v1: every done-when item holds"
+
+
+@pytest.mark.parametrize("severity", ["low", "medium"])
+def test_u5_a_reading_that_noted_something_that_does_not_block_is_not_told_as_found_nothing(j2, monkeypatch, severity):
+    W, R, J, _, _ = j2
+    noted = {"where": "result.md", "claim": "the tone is stiff", "severity": severity, "item": None}
+    _model(monkeypatch, R, {"audit.items": _says("met", findings=[noted]), "audit.judge": JUDGE_OK})
+    ref = _default(j2)
+    assert _actions(J, ref)[-1] == "goal.reached" and not [a for a in W.asks(ref) if a["status"] == "pending"], "it does not block, and asks nothing"
+    said = _goal_says(R, ref)
+    assert said.endswith("Audit read Result v1 and noted something that does not block."), said
+    assert "nothing to put right" not in said and not any(ch.isdigit() for ch in said.replace("v1", "")), "and no count is given"
+    # the owner can see it: the pane lists the findings of the reading it shows
+    got = _view(j2, ref)
+    (f,) = got["latest"]["findings"]
+    assert (f["severity"], f["claim"], f["where"], f["item"], f["went_to"]) == (severity, "the tone is stiff", "result.md", None, "Identity")
+    assert got["readings"][-1]["summary"] == "read Result v1: every done-when item holds, and something is noted"
+    assert got["findings"] == [], "and the asks the owner stamps are as they were: this one needs no stamp"
+
+
 def test_u5_a_department_with_no_done_when_items_is_not_read_against_anything(j2, monkeypatch):
     W, R, J, _, _ = j2
     d, _ = W.create("dref-noitems", "Answers", None, kind="default")
