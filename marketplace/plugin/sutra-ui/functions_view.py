@@ -21,6 +21,7 @@ What the record does not hold is named in not_recorded and never guessed (the pr
 """
 import re
 import time
+from datetime import datetime
 
 import engine_runtime as R
 import j2_runtime as J
@@ -204,6 +205,28 @@ def _ready_now(ref, d):
         return out
     except Exception:  # noqa: BLE001
         return []
+
+
+def slot_clashes(rs):
+    """SM-11's clash in a slot, read off the run rows (PRD M4.3): two runs that finished on one slot id, or a start while
+    another run of the department was open. [{slot, why}]; empty when the timetable held. A run row with no slot is a
+    function's note of what it did, never a start."""
+    out, ended = [], {}
+    starts = [r for r in rs if r.get("slot")]
+    for r in starts:
+        if r.get("status") in ("ok", "failed"):
+            if r["slot"] in ended:
+                out.append({"slot": r["slot"], "why": "the slot ran twice"})
+            ended[r["slot"]] = r
+    spans = sorted(((W._ts(r.get("started") or ""), W._ts(r.get("ended") or "") if r.get("ended") else float("inf"), r)
+                    for r in starts), key=lambda x: x[0])
+    for i, (a0, a1, a) in enumerate(spans):
+        for b0, _, b in spans[i + 1:]:
+            if b0 >= a1:
+                break
+            if b0 > a0:
+                out.append({"slot": b["slot"], "why": "it started while %s was running" % a.get("engine")})
+    return out
 
 
 # ---- M1.2: who spoke to whom, who made what and who reads it -------------------------------------------------------
@@ -619,6 +642,281 @@ def _journey_rows(ref, fn, events, rows, rs, posts):
     return out
 
 
+# ---- M4.5: Coordination, from the record: its timetable, why anything waits, who makes and who reads, its ties ------
+#: what Coordination's pane reads (PRD M4.5, screen S7), its shape named once: the line and the plan it follows; the
+#: timetable, one row per engine of the line (TIMETABLE_ROW); the engines the plan left out; why each waiting engine
+#: waits (holds); who makes and who reads each thing (handoffs); the chain against its limit; alarms past a window; and
+#: the ties Coordination's AI broke
+COORDINATION_FIELDS = ("line", "registered", "timetable", "left_out", "holds", "handoffs", "chain", "alarms", "ties")
+#: one engine in the timetable: its slot as Coordination wrote it (on, window_min, since), what starts it in words
+#: (starts), where it stands now (state, its word, why it waits, and since when), and its last run (last)
+TIMETABLE_ROW = ("engine", "on", "starts", "window_min", "since", "state", "word", "why", "at", "last")
+TT_WORDS = {"running": "running", "turn": "its turn", "waits": "waits", "ran": "ran", "stopped": "stopped where it was"}
+
+
+def _trigger(name):
+    """The start Coordination keeps a slot for: the engine's version or timer trigger (engine_runtime.slot_of's)."""
+    on = ((R.engine_def(name) or {}).get("start") or {}).get("on") or []
+    return next((t for t in on if t.get("kind") in ("version", "timer")), on[0] if on else {})
+
+
+def _starts(trig):
+    """What starts an engine, in words: after a new Brief, after a Build that passed, every 1 h."""
+    if trig.get("kind") == "version":
+        return ("after a %s that passed" if trig.get("checked") else "after a new %s") % trig.get("of")
+    if trig.get("kind") == "timer":
+        return "every " + R._period(trig.get("every_s"))
+    return "on a post to it"
+
+
+def _clock(ts):
+    return datetime.fromtimestamp(ts).astimezone().isoformat(timespec="seconds")
+
+
+def _live(ref, name, trig, done, now_s):
+    """(live, at, why): whether the engine's own trigger is live (a version it has not run on, a period with no start
+    yet), since when, and when it is not, what it waits for, by name: 'Pages v2 is not filed yet'."""
+    if trig.get("kind") == "version":
+        of, checked = trig.get("of"), bool(trig.get("checked"))
+        v = W.latest(ref, of, passed=checked)
+        if v and W._slot_id(name, of, v["v"]) not in done:
+            return True, v.get("at"), None
+        nxt, filed = (v["v"] + 1) if v else 1, W.latest(ref, of)
+        if checked and filed and filed["v"] >= nxt:
+            return False, None, "%s v%d has not passed its check yet" % (of, filed["v"])
+        return False, None, "%s v%d is not filed yet" % (of, nxt)
+    if trig.get("kind") == "timer":
+        every = max(1.0, float(trig.get("every_s") or 1))
+        n = int(now_s // every)
+        if "%s@timer.%d" % (name, n) not in done:
+            return True, _clock(n * every), None
+        return False, None, "its next slot is at %s" % datetime.fromtimestamp((n + 1) * every).strftime("%H:%M")
+    return False, None, "it starts on a post to it"
+
+
+def _peek(ref, d, name):
+    """The engine with the turn, asked the way due(peek=True) asks it: (True, None) when it may start now, (False, why)
+    when something holds it; no row, no ask and no model call is made. Never raises."""
+    try:
+        ctx = R._coord_ctx(ref, d)
+        ctx["peek"] = True
+        got = R.ready(ctx, name, ("version", "timer"))
+    except Exception:  # noqa: BLE001 -- the read never fails on Coordination's internals
+        return False, "not read"
+    if got and got[1]:
+        return True, None
+    return False, (got[2] if got else None) or "nothing starts it yet"
+
+
+def _wrote(r):
+    w = (r or {}).get("wrote") or {}
+    return "%s v%s" % (w["art"], w.get("v")) if w.get("art") else None
+
+
+def _timetable_rows(ref, d, t, rs, stopped, now_s):
+    """One row for each engine of the line, in its order, read the way Coordination picks (engine_runtime.coord_pick):
+    one run at a time; the first engine of the line whose trigger is live has the turn, or says what holds it, and the
+    ones after it wait their turn; an engine whose trigger is not live waits for what it reads, by name, while the work
+    before it is still moving, and has simply run once it is not."""
+    done = {r["slot"] for r in rs if r.get("slot") and r.get("status") in ("ok", "failed", "skipped")}
+    slots = {r.get("engine"): r for r in t.get("timetable") or [] if isinstance(r, dict)}
+    running = [r for r in rs if r.get("status") == "running"]
+    out, ahead, moving = [], None, False
+    for name in t.get("line") or []:
+        slot, trig = slots.get(name) or {}, _trigger(name)
+        mine = [r for r in rs if r.get("engine") == name]
+        last = next((r for r in reversed(mine) if r.get("slot") and r.get("status") in ("ok", "failed", "skipped")), None)
+        run = next((r for r in mine if r.get("status") == "running"), None)
+        live, at, why = _live(ref, name, trig, done, now_s)
+        # the slot it holds now: the timetable's trigger, at the version it runs on next (the record's 'on' names the
+        # version at the time Coordination wrote it); its window and since are the record's
+        row = {"engine": name, "on": R.slot_of(ref, name, rs)["on"] if trig else slot.get("on"), "starts": _starts(trig),
+               "window_min": int(slot.get("window_min") or (d.get("windows") or {}).get(name) or 30), "since": slot.get("since"),
+               "state": None, "word": None, "why": None, "at": None,
+               "last": last and {"at": last.get("ended") or last.get("started"), "status": last.get("status"), "wrote": _wrote(last)}}
+        if stopped:                                    # a stopped department: every engine stopped where it was
+            row.update(state="stopped", at=(run or {}).get("started"))
+        elif run:
+            row.update(state="running", at=run.get("started"))
+        elif live:
+            if running:
+                row.update(state="waits", why="%s is running" % running[0].get("engine"))
+            elif ahead:
+                row.update(state="waits", why="its turn comes after %s" % ahead)
+            else:
+                ok, held = _peek(ref, d, name)
+                row.update(state="turn", at=at) if ok else row.update(state="waits", why=_plain(held))
+        elif moving or not last:
+            row.update(state="waits", why=why)
+        else:
+            row.update(state="ran", at=row["last"]["at"])
+        if live or run:
+            ahead = ahead or name
+        moving = moving or row["state"] in ("running", "turn", "waits")
+        row["word"] = TT_WORDS[row["state"]]
+        out.append({k: row[k] for k in TIMETABLE_ROW})
+    return out
+
+
+def _handoffs(ref, d):
+    """Who makes each thing and who reads it, from the record (made, M1.2): the latest version, its maker in words (the
+    Brief is filed by Identity from the owner's words), and the engines and functions that read it."""
+    out = []
+    for m in made(ref, d, []):
+        by = m.get("by")
+        out.append({"art": m["art"], "v": m.get("v"), "by": by,
+                    "says": "Identity, from your words" if by == "Owner" else (by or None), "readers": list(m.get("readers") or [])})
+    return out
+
+
+def _chain(ref, rs):
+    """The chain the latest Brief started, against its limit: a bar; the numbers stay in the read, for the hover."""
+    b = W.latest(ref, "Brief")
+    used = sum(1 for r in rs if b and r.get("chain") == "brief.v%d" % b["v"])
+    return {"of": "Brief v%d" % b["v"] if b else None, "used": used, "limit": W.CHAIN_LIMIT,
+            "share": round(min(1.0, used / float(W.CHAIN_LIMIT or 1)), 3)}
+
+
+def _ties(ref, rows, today):
+    """Each time several functions were ready at once and Coordination's AI said who went first (coord.tie), newest
+    first: 'Coordination chose Write first', with its why."""
+    out = []
+    for r in reversed(rows):
+        if r.get("step") != "coord.tie" or r.get("status") != "ok" or not r.get("answer"):
+            continue
+        why = None
+        try:
+            why = (W._read(R._out_path(ref, r.get("slot"), "coord.tie", None), {}) or {}).get("why")
+        except Exception:  # noqa: BLE001
+            pass
+        at = r.get("ended") or r.get("started")
+        out.append({"pick": r["answer"], "said": "Coordination chose %s first" % r["answer"], "why": _plain(why) or None,
+                    "at": at, "today": str(at or "")[:10] == today})
+        if len(out) == 6:
+            break
+    return out
+
+
+def coordination(ref, d=None, rs=None, ak=None, rows=None):
+    """Coordination's own state, read off the record (PRD M4.5): its table's line and timetable, each engine's place in
+    it and the exact reason anything waits, the engines the plan left out, who makes and who reads each thing, the
+    chain against its limit, alarms past a window, and the ties its AI broke. Reads only."""
+    d = d or W.dept(ref) or {}
+    rs = W.runs(ref) if rs is None else rs
+    ak = W.asks(ref) if ak is None else ak
+    rows = _rows(ref) if rows is None else rows
+    t = R.coordination(ref)
+    stopped = bool(d.get("stopped")) or _cycle_state(ref).get("state") == "stopped"
+    tt = _timetable_rows(ref, d, t, rs, stopped, time.time())
+    today = datetime.now().astimezone().date().isoformat()
+    out = {"line": list(t.get("line") or []), "registered": t.get("registered"), "timetable": tt,
+           "left_out": [{"engine": r.get("engine"), "since": r.get("since")} for r in t.get("left_out") or [] if isinstance(r, dict)],
+           "holds": [{"engine": r["engine"], "why": r["why"]} for r in tt if r["state"] == "waits" and r["why"]],
+           "handoffs": _handoffs(ref, d), "chain": _chain(ref, rs),
+           "alarms": [{"engine": a.get("engine"), "text": _plain(a.get("text")), "at": a.get("created")}
+                      for a in ak if a.get("kind") == "alarm" and a.get("status") == "pending"],
+           "ties": _ties(ref, rows, today)}
+    return {k: out[k] for k in COORDINATION_FIELDS}
+
+
+# ---- M4.7: the engine card, the motor folded in and the five beside it (screen S17) -----------------------------------
+#: the engine card's read, its shape named once: where the engine stands (head, from Coordination's timetable), the
+#: motor's facts (its slot, whether each slot ran once, its window, today's spend) and one row for each of the five
+#: functions (ENGINE_FIVE_ROW: the function, a state that is a dot class, its sentence, since when, and a share for a bar)
+ENGINE_CARD_FIELDS = ("engine", "head", "motor", "five")
+ENGINE_FIVE_ROW = ("fn", "state", "says", "at", "share")
+#: an ask that holds an engine, by the function that holds it: Identity's stamp, Priority's limit, Coordination's alarm
+ASK_HOLDER = {"publish": "Identity", "setup": "Identity", "engine": "Identity", "envelope": "Priority", "alarm": "Coordination"}
+#: what Identity holding an engine says, by the ask that holds it
+ASK_HOLDS = {"publish": "holds it until you stamp the first publish", "setup": "holds it until you stamp the department",
+             "engine": "holds it until you stamp the engine your words need"}
+
+
+def _five_row(fn, state, says, at=None, share=None):
+    return {"fn": fn, "state": state, "says": says, "at": at, "share": share}
+
+
+def engine_card(ref, name):
+    """One engine as its card shows it (PRD M4.7, S17): its place in Coordination's timetable, the motor's facts, and
+    what each of the five is doing to it now, each a sentence from the record. None for a department not on the engine
+    runtime. Reads only."""
+    d = W.dept(ref)
+    if not d or d.get("runtime") != 2:
+        return None
+    rs, ak = W.runs(ref), W.asks(ref)
+    c = coordination(ref, d, rs, ak)
+    row = next((r for r in c["timetable"] if r["engine"] == name), None)
+    left = next((r for r in c["left_out"] if r["engine"] == name), None)
+    cur, t = _cycle_state(ref), R.coordination(ref)
+    stopped = bool(d.get("stopped")) or cur.get("state") == "stopped"
+    spend, trig = _spend(ref, d, name), _trigger(name)
+    clashes = [x for x in slot_clashes(rs) if str(x.get("slot") or "").startswith(name + "@")]
+    if row:
+        head = {"state": row["state"], "word": row["word"], "why": row["why"], "at": row["at"], "round": cur.get("round")}
+    else:
+        head = {"state": "left_out" if left else "quiet", "word": "left out of the plan" if left else "not in the line", "why": None,
+                "at": (left or {}).get("since"), "round": cur.get("round")}
+    motor = {"slot": (row or {}).get("on") or R.slot_of(ref, name, rs)["on"], "starts": _starts(trig), "once": not clashes,
+             "says": "ran once per slot" if not clashes else "a slot ran twice",
+             "window_min": int((row or {}).get("window_min") or (d.get("windows") or {}).get(name) or 30), "today": spend["share"]}
+    # who holds it, if anyone: an ask that names it, else the reason its row waits
+    why = str((row or {}).get("why") or "")
+    ask = next((a for a in ak if a.get("status") == "pending" and a.get("engine") == name), None)
+    holder = ASK_HOLDER.get((ask or {}).get("kind")) if ask else None
+    if not holder and row and row["state"] == "waits":
+        holder = "Priority" if "envelope" in why or "limit" in why else ("Identity" if "stamp" in why or "owner" in why else None)
+    five = []
+    # Identity: the rules and the owner's stamp
+    if stopped:
+        five.append(_five_row("Identity", "off", "the department is stopped"))
+    elif holder == "Identity":
+        five.append(_five_row("Identity", "warn", ASK_HOLDS.get((ask or {}).get("kind")) or "holds it until you answer"))
+    else:
+        five.append(_five_row("Identity", "ok", "lets it start: no rule holds it"))
+    # Adaptation: how it came into the department's plan
+    plans = [w for w in d.get("workflows") or [] if name in (w.get("engines") or [])]
+    if left:
+        five.append(_five_row("Adaptation", "off", "its plan left it out"))
+    elif name in (t.get("grown") or []):
+        five.append(_five_row("Adaptation", "ok", "offered it for your idea, and you stamped it"))
+    elif plans:
+        five.append(_five_row("Adaptation", "ok", "proposed it in the plan Root registered", plans[-1].get("at")))
+    else:
+        five.append(_five_row("Adaptation", "off", "it is in no plan yet"))
+    # Priority: its limit
+    over = spend["share"] >= 1 or holder == "Priority"
+    ran_today = any(r.get("engine") == name and str(r.get("started") or "")[:10] == W.now()[:10] for r in rs)
+    five.append(_five_row("Priority", "block" if over else "ok",
+                          "holds it: today's limit is spent" if over else
+                          ("let the run start inside today's limit" if ran_today else "keeps its limit, with room today"), share=spend["share"]))
+    # Coordination: its slot and its turn
+    st = (row or {}).get("state")
+    if left:
+        co = _five_row("Coordination", "off", "keeps it out of the line", (left or {}).get("since"))
+    elif st == "stopped":
+        co = _five_row("Coordination", "off", "stopped it where it was")
+    elif st == "running":
+        co = _five_row("Coordination", "breath", "gave it the turn", row["at"])
+    elif st == "turn":
+        co = _five_row("Coordination", "breath", "gives it the turn now")
+    elif st == "waits":
+        co = _five_row("Coordination", "wait", ("keeps its slot while %s holds it" % holder) if holder else "keeps its slot: " + why)
+    elif st == "ran":
+        co = _five_row("Coordination", "ok", "gave it its slot; it ran", row["at"])
+    else:
+        co = _five_row("Coordination", "off", "has no slot for it")
+    co["share"] = c["chain"]["share"]
+    five.append(co)
+    # Audit: the thing the line leads to, read or not yet
+    final = (W.artifacts_of(d) or [None])[-1]
+    v = W.latest(ref, final) if final else None
+    read = v and any(r.get("engine") == "Audit" and r.get("slot") == W._slot_id("Audit", final, v["v"]) and r.get("status") == "ok" for r in rs)
+    five.append(_five_row("Audit", "ok", "read %s v%d" % (final, v["v"])) if read else
+                _five_row("Audit", "off", "will read the %s it leads to" % final if final else "has nothing to read yet"))
+    out = {"engine": name, "head": head, "motor": motor, "five": [{k: r[k] for k in ENGINE_FIVE_ROW} for r in five]}
+    return _clean({k: out[k] for k in ENGINE_CARD_FIELDS})
+
+
 def _j2_part(ref, d, fn, events, ak):
     """What J2 adds to this function's pane, from the record as it stands (later milestones fill more of it)."""
     if fn == "Identity":
@@ -640,10 +938,7 @@ def _j2_part(ref, d, fn, events, ak):
                              for e in events if e.get("action") in said][-6:],
                 "envelopes": [dict(_spend(ref, d, n), engine=n) for n in [x[0] for x in W.engines_of(d)] + list(FUNCS)]}
     if fn == "Coordination":
-        t = R.coordination(ref)
-        return {"line": list(t.get("line") or []), "timetable": None,
-                "holds": [{"summary": _plain(e.get("summary")), "at": e.get("occurred_at")} for e in events if e.get("action") == "envelope.held"][-4:],
-                "alarms": [{"text": a.get("text"), "at": a.get("created")} for a in ak if a.get("kind") == "alarm" and a.get("status") == "pending"]}
+        return coordination(ref, d, ak=ak)                 # its timetable, holds, hand-offs, chain, alarms and ties (PRD M4.5)
     return {"readings": [{"summary": _plain(e.get("summary")), "at": e.get("occurred_at")} for e in events if e.get("action") == "audit.finding_filed"][-6:],
             "findings": [{"text": a.get("text"), "at": a.get("created")} for a in ak if a.get("kind") == "finding" and a.get("status") == "pending"],
             "spot_checks": []}

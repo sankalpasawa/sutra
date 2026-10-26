@@ -634,6 +634,40 @@ def on_held(ref, engine, slot, why):
         return
 
 
+def on_table(ref, table, grown=None):
+    """Coordination wrote its table after a registered plan, or grew its line by an engine the owner stamped (PRD M4.1).
+    Never raises."""
+    try:
+        if not active(ref):
+            return
+        line = list((table or {}).get("line") or [])
+        v = (table or {}).get("registered")
+        # the slots it wrote, in words: one for each engine of the line (PRD M4.3)
+        slots = [{"engine": r.get("engine"), "on": r.get("on")} for r in (table or {}).get("timetable") or [] if isinstance(r, dict)]
+        if grown:
+            note(ref, 6, "Coordination", "Identity", "timetable.written", "complete", "Coordination added %s to the line." % grown,
+                 "table-grow-%s-%s" % (grown, uuid.uuid4().hex[:6]), {"line": line, "grown": grown, "timetable": slots})
+        else:
+            note(ref, 5, "Coordination", "Root", "timetable.written", "complete", "Coordination set its line to the plan: %s."
+                 % " -> ".join(line), "table-v%s" % v, {"line": line, "version": v, "timetable": slots}, workflow_ref="workflow/%s" % v)
+    except Exception:  # noqa: BLE001 -- the ledger never fails the table it records
+        return
+
+
+def on_granted(ref, engine, envelope, kept, version=None):
+    """Priority gave a new engine its limit, or let it keep the one it holds (PRD M4.1). Never raises."""
+    try:
+        if active(ref):
+            env = dict(envelope or {})
+            note(ref, 5 if version else 6, "Priority", engine, "envelope.granted", "granted",
+                 ("%s keeps the limit it holds." if kept else "Priority gave %s its limit.") % engine,
+                 "granted-%s-%s" % (engine, ("v%s" % version) if version else uuid.uuid4().hex[:6]),
+                 {"engine": engine, "calls": env.get("calls"), "usd": env.get("usd"), "kept": bool(kept)},
+                 workflow_ref=("workflow/%s" % version) if version else None)
+    except Exception:  # noqa: BLE001
+        return
+
+
 def registered(ref, engines, source, by="Root", checks=None):
     """Root's check passed: the workflow is on the department's record, and the work may run (step 5 to step 6). The
     validated event lists the checks that ran, each with whether it held and why (M0.7)."""

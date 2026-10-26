@@ -165,6 +165,10 @@ def validate(d):
         for n in k.get("line") or []:
             if ((d.get("engines") or {}).get(n) or {}).get("kind") != "work":
                 faults.append("kinds, %s: %s is not a work engine" % (kind, n))
+        # an engine the kind marks required is one of its line (PRD M4.4): no engine is mandatory unless its template says so
+        req = k.get("required")
+        if req is not None and (not isinstance(req, list) or any(n not in (k.get("line") or []) for n in req)):
+            faults.append("kinds, %s: required names engines of its own line" % kind)
         if not k.get("artifacts") or not k.get("goal") or not k.get("rules"):
             faults.append("kinds, %s: a kind names its artifacts, its goal and its rules" % kind)
         # a kind is a department template (TPL-1): it says which use case it fits and which Library template its five
@@ -417,6 +421,39 @@ def set_numbers(ref, engine, nums, by="the owner"):
 
 
 # ---- Coordination's table ------------------------------------------------------------------------------------------
+#: coordination.json, Coordination's own state, and the one place its shape is named (PRD M4; the layer schema binds it):
+#: what is served first and the order inside each (order, functions, line); who may post what to whom (edges); the
+#: engines the registered plan left out (left_out, LEFT_OUT_FIELDS); the engines the owner added through J5 (grown); the
+#: plan it follows (registered, the workflow's version); one slot for each engine of the line (timetable, SLOT_FIELDS);
+#: who wrote it, when and why (by is born or Coordination, never Root).
+TABLE_FIELDS = ("order", "functions", "line", "edges", "left_out", "grown", "registered", "timetable", "by", "since", "why")
+LEFT_OUT_FIELDS = ("engine", "in_line", "since")
+#: one row of Coordination's timetable (PRD M4.3): the engine, what starts it in words ('after <artifact> vN' or 'every
+#: <period>'), the trigger behind the words (of and checked, or every_s), its window in minutes, and since when it has held a slot
+SLOT_FIELDS = ("engine", "on", "of", "checked", "every_s", "window_min", "since")
+
+
+def left_out_row(engine, since=None):
+    """An engine on the department's record that the registered plan left out: it stays on the record and never runs."""
+    return {"engine": engine, "in_line": False, "since": since or W.now()}
+
+
+def timetable_row(engine, slot, window_min, since=None):
+    """One slot of the timetable, from the engine's slot (slot_of) and its window, in SLOT_FIELDS' order."""
+    row = {"engine": engine, "on": slot.get("on")}
+    row.update({k: slot[k] for k in ("of", "checked", "every_s") if k in slot})
+    row.update({"window_min": int(window_min), "since": since or W.now()})
+    return row
+
+
+def _put_table(ref, t, why):
+    """Coordination writes its table: the one writer of coordination.json once the department is born."""
+    t.update({"since": W.now(), "by": "Coordination", "why": why})
+    with W._lock(ref):
+        W._write(W.ddir(ref) / "coordination.json", t)
+    return t
+
+
 def born_table(kind="website", line=None):
     """What Coordination is born with: the order of service, the department's line (the engines on its record; the
     kind's line for one born before the record carried it), and who may post what to whom, from the definitions."""
@@ -437,7 +474,13 @@ def coordination(ref):
     dept = W.dept(ref) or {}
     kind, line = dept.get("kind") or "website", dept.get("engines")
     if not isinstance(t, dict) or table_faults(t, defs()["engines"]):
-        return born_table(kind, line)
+        born = born_table(kind, line)
+        if isinstance(t, dict):
+            # a table with a fault (an engine the Library no longer defines) is not read; what a registered plan left out
+            # stays out of the born line all the same, so an engine Priority cut never runs (PRD M4.2)
+            out = {r.get("engine") for r in (t.get("left_out") if isinstance(t.get("left_out"), list) else []) if isinstance(r, dict)}
+            born["line"] = [n for n in born["line"] if n not in out]
+        return born
     born_edges = born_table(kind, line)["edges"]
     t.setdefault("edges", born_edges)
     if "Root" in born_edges:                         # a department born before Root spoke learns of it: Root carries the owner's words
@@ -952,13 +995,15 @@ def _run_rule(ctx, sid, item=None):
 
 
 def _ask_rule(ref, sid, item=None, key=None, ctx=None):
-    """Ask one of Coordination's rules and write its decision down, once for each thing decided."""
+    """Ask one of Coordination's rules, or run in place the step of a handler a function keeps on a fixed trigger (an
+    engine is born: Coordination's table, Priority's limit), and write its decision down, once for each thing decided,
+    as a row of the function whose step it is."""
     ctx = ctx or _coord_ctx(ref)
-    _, s = step_def(sid)
+    fn, s = step_def(sid)
     got = CODE[s["code"]](ctx, s, item)
     out = got if isinstance(got, dict) else {"answer": got[0], "why": got[1]}
     if out.get("answer") or out.get("said"):
-        _gate_row(ref, key or sid, "Coordination", s, rung_of(ref, s), out.get("answer") or out.get("said"), out.get("why"), out=out)
+        _gate_row(ref, key or sid, fn or "Coordination", s, rung_of(ref, s), out.get("answer") or out.get("said"), out.get("why"), out=out)
     return out if isinstance(got, dict) else (out["answer"], out["why"])
 
 
@@ -3459,7 +3504,8 @@ def engine_from_shape(ref, got, words):
 def born_template(name, shape, ref):
     """An engine shaped on the fly, born into the Library from Do: the same three steps (read, do, file) under its own
     ids, its use case and instruction from the idea, what it writes filed under the Default artifact template; made_by
-    says which department's owner stamped it. Validated with the rest; refused, it leaves no file."""
+    says which department it was born for and that Adaptation shaped it (PRD M4.1: engines come from Adaptation, never
+    from Root). Validated with the rest; refused, it leaves no file."""
     slug = re.sub(r"[^a-z0-9]+", "-", str(name or "").lower()).strip("-")
     if not slug:
         raise ValueError("name the engine")
@@ -3474,7 +3520,7 @@ def born_template(name, shape, ref):
     t.update({"id": "engine/" + slug, "name": name, "version": 1, "use_case": str(shape.get("use_case") or does)[:300],
               "description": does[:200] or ("does what the idea asked: " + name), "instruction": str(shape.get("instruction") or "")[:2000],
               "reads": str(shape.get("reads") or "Brief"), "writes": str(shape.get("writes") or name)[:40],
-              "made_by": {"dept": ref, "at": W.now(), "idea": str(shape.get("instruction") or "")[:300]}})
+              "made_by": {"by": "Adaptation", "dept": ref, "at": W.now(), "idea": str(shape.get("instruction") or "")[:300]}})
     t["start"] = {"on": [{"kind": "version", "of": t["reads"]}], "unless": list((do.get("start") or {}).get("unless") or [])}
     t["steps"] = [dict(s, id=slug + "." + s["id"].split(".", 1)[1]) for s in do["steps"]]
     for s in t["steps"]:
@@ -3523,9 +3569,50 @@ def born_template(name, shape, ref):
     return p
 
 
+# ---- the line changes: each function does its own part (PRD M4.1) -----------------------------------------------------
+# Root records a plan; it writes neither Coordination's table nor Priority's limits. When an engine joins the department,
+# by a registered plan or by the owner's stamp on an engine an idea asked for (J5), Coordination writes its own table
+# and Priority gives the engine its limit, each in its own handler on the fixed trigger "an engine is born", run in
+# place on the code rung; each decision is a row of the function whose handler it is (_ask_rule).
+def _period(every_s):
+    s = int(every_s or 0)
+    for unit, n in (("day", 86400), ("h", 3600), ("min", 60)):
+        if s >= n and s % n == 0:
+            return "%d %s" % (s // n, unit)
+    return "%d s" % s
+
+
+def slot_of(ref, name, rs=None):
+    """An engine's slot as Coordination keeps it in its timetable (PRD M4.3), from the engine's own start: 'after
+    <artifact> vN', N the version it runs on next (the latest one it has not run on, else the one after the latest), or
+    'every <period>'. With the trigger it reads: of, checked, every_s. next_due keeps reading start.on itself."""
+    e = engine_def(name) or {}
+    trig = next((t for t in (e.get("start") or {}).get("on") or [] if t.get("kind") in ("version", "timer")),
+                ((e.get("start") or {}).get("on") or [{}])[0])
+    if trig.get("kind") == "version":
+        rs = W.runs(ref) if rs is None else rs
+        done = {r.get("slot") for r in rs if r.get("status") in ("ok", "failed", "skipped")}
+        cur = W.latest(ref, trig["of"], passed=bool(trig.get("checked")))
+        v = cur["v"] if cur and W._slot_id(name, trig["of"], cur["v"]) not in done else (cur["v"] + 1 if cur else 1)
+        return {"on": "after %s v%d" % (trig["of"], v), "of": trig["of"], "checked": bool(trig.get("checked")), "v": v}
+    if trig.get("kind") == "timer":
+        return {"on": "every " + _period(trig.get("every_s")), "every_s": trig.get("every_s")}
+    return {"on": "on a post to it"}
+
+
+def _timetable(ref, t):
+    """One slot for each engine of the line, from its own start, with its window; an engine that had a slot keeps the
+    time it has had one since."""
+    d, rs = W.dept(ref) or {}, W.runs(ref)
+    was = {r.get("engine"): r for r in t.get("timetable") or [] if isinstance(r, dict)}
+    return [timetable_row(name, slot_of(ref, name, rs), (d.get("windows") or {}).get(name) or 30, (was.get(name) or {}).get("since"))
+            for name in t.get("line") or []]
+
+
 def grow_line(ref, name, before=None):
     """Coordination's line, on the record, gains the engine (before another when said, as Research goes before Plan); the
-    born copy is written first for a department that had none."""
+    born copy is written first for a department that had none. Written by Coordination, on the owner's stamp; the engine
+    is kept as one the owner added (grown), so a later registration merges it in (PRD M4.2)."""
     t = coordination(ref)
     line = list(t.get("line") or [])
     if name not in line:
@@ -3534,10 +3621,96 @@ def grow_line(ref, name, before=None):
         else:
             line.append(name)
         t["line"] = line
-    t.update({"since": W.now(), "by": "stamp"})
+    t["grown"] = list(t.get("grown") or []) + ([name] if name not in (t.get("grown") or []) else [])
+    t["left_out"] = [r for r in t.get("left_out") or [] if isinstance(r, dict) and r.get("engine") != name]
+    t["timetable"] = _timetable(ref, t)                    # the grown engine gains its slot (PRD M4.3)
+    return _put_table(ref, t, "the owner's stamp")
+
+
+def set_line(ref, engines, version=None, full=True):
+    """Coordination's line, on the record, after Root registered a plan (PRD M4.2: the line is what was granted). On the
+    cycle's first registration, and on any later one that names the whole line (full), the line is the plan in its
+    order, and an engine the owner added through J5 (grown) is merged in where it stood. An engine on the department's
+    record that the plan left out stays on the record, in_line false, and never runs. A registration that is not full
+    adds its engines to the line (none is today: a round of Pursue never registers a line). Written by Coordination,
+    with the plan's version, so the table says which registration it follows, and with its timetable: one slot for
+    each engine of the line (PRD M4.3)."""
+    t = coordination(ref)
+    d = W.dept(ref) or {}
+    old, plan = list(t.get("line") or []), [str(n) for n in engines or [] if n]
+    if full or not t.get("registered"):
+        line = list(plan)
+        for g in [g for g in t.get("grown") or [] if g not in line and g in (d.get("engines") or [])]:
+            after = next((n for n in old[old.index(g) + 1:] if n in line), None) if g in old else None
+            if after:
+                line.insert(line.index(after), g)
+            else:
+                line.append(g)
+    else:
+        line = old + [n for n in plan if n not in old]
+    was = {r.get("engine"): r for r in t.get("left_out") or [] if isinstance(r, dict)}
+    left = [left_out_row(n, (was.get(n) or {}).get("since")) for n in d.get("engines") or [] if n not in line]
+    t.update({"line": line, "left_out": left, "registered": version})
+    t["timetable"] = _timetable(ref, t)                    # one slot for each engine of the line (PRD M4.3)
+    return _put_table(ref, t, "the plan Root registered")
+
+
+def coord_table(ctx, step, item):
+    """Coordination's handler for an engine born: a registered plan sets the line (`item` {engines, version}); an engine
+    the owner stamped grows it (`item` {grow, before}). Its table is written by Coordination and by nobody else."""
+    item, J = item or {}, _j2()
+    if item.get("grow"):
+        t = grow_line(ctx["ref"], item["grow"], item.get("before"))
+        said = "added %s to the line: %s" % (item["grow"], " -> ".join(t["line"]))
+    else:
+        t = set_line(ctx["ref"], item.get("engines") or [], item.get("version"), full=item.get("full", True) is not False)
+        said = "set the line to the plan: " + " -> ".join(t["line"])
+    if J:
+        J.on_table(ctx["ref"], t, item.get("grow"))
+    return {"said": said, "line": list(t["line"])}
+
+
+def priority_grant(ctx, step, item):
+    """Priority's handler for an engine born: each new engine is given its limit, from Priority's template (a
+    work engine work_calls times the calls, as at birth); one that already holds a limit (the one it was born with, or
+    the owner's own) keeps it. Each is on the ledger, by Priority. `item` is {engines, version}."""
+    ref, item = ctx["ref"], item or {}
+    names = [str(n) for n in item.get("engines") or [] if n]
+    if not names:
+        return {"said": "no new engine to give a limit"}
+    t = priority_template()
+    base = {"calls": int(t.get("calls", W.ENVELOPE["calls"])), "usd": float(t.get("usd", W.ENVELOPE["usd"]))}
+    given = []
     with W._lock(ref):
-        W._write(W.ddir(ref) / "coordination.json", t)
-    return t
+        d = W.dept(ref) or {}
+        envs = d.setdefault("envelopes", {})
+        for n in names:
+            if not isinstance(envs.get(n), dict):
+                work = (engine_def(n) or {}).get("kind") == "work"
+                envs[n] = {"calls": int(t.get("work_calls", 8)) * base["calls"] if work else base["calls"], "usd": base["usd"]}
+                given.append(n)
+        if given:
+            W.save_dept(ref, d)
+    J = _j2()
+    if J:
+        for n in names:
+            J.on_granted(ref, n, envs.get(n), n not in given, item.get("version"))
+    kept = [n for n in names if n not in given]
+    said = (["gave a limit to " + _names(given)] if given else []) + (
+        ["%s %s" % (_names(kept), "keeps the limit it holds" if len(kept) == 1 else "keep the limits they hold")] if kept else [])
+    return {"said": "; ".join(said), "given": given, "kept": kept}
+
+
+def _names(xs):
+    xs = list(xs)
+    return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " and " + xs[-1]
+
+
+def engine_added(ref, name, before=None):
+    """An engine the owner stamped is on the record (J5): Coordination's line gains it and Priority gives it its limit,
+    each in its handler for an engine born."""
+    _ask_rule(ref, "coord.table", {"grow": name, "before": before}, key="grow@%s@%s" % (name, W.now()))
+    _ask_rule(ref, "priority.grant", {"engines": [name]}, key="grant@%s@%s" % (name, W.now()))
 
 
 def _note_idea(ref, idea_id, note):
@@ -3945,29 +4118,46 @@ def _line_conflict(ref, thread, why, bound=None, src="Adaptation"):
                                                  "words": offer.get("words"), "why": why, "bound": bound, "for": thread})
 
 
-def _root_run(engines, source):
-    """Root's standards on one workflow: the checks that ran, in order, and each fault with the check it breaks."""
+def required_engines(d):
+    """The engines the department's kind marks required (PRD M4.4; Q12: the website kind's Check, because it enforces the
+    owner's rules). No engine is mandatory unless its template marks it so."""
+    k = (defs().get("kinds") or {}).get((d or {}).get("kind") or "website") or {}
+    return [str(n) for n in k.get("required") or [] if n]
+
+
+def _root_run(engines, source, required=()):
+    """Root's standards on one workflow: the checks that ran, in order, and each fault with the check it breaks. With
+    the engines the kind requires, 'no required engine left out' runs last (PRD M4.4)."""
     if not engines:
         return ["names an engine"], [("names an engine", "the workflow names no engine")]
     if source == "library":
         known = defs()["engines"]
-        return ["names an engine", "engines known"], [("engines known", "the Library has no engine named %s" % e.get("name"))
-                                                      for e in engines if (known.get(e.get("name")) or {}).get("kind") != "work"]
-    notes = _line_notes(engines) + ([("one to six engines", "more than six engines")] if len(engines) > 6 else [])
-    return ["names an engine", "one to six engines"] + [c for c, _ in LINE_CHECKS], notes
+        ran, notes = ["names an engine", "engines known"], [("engines known", "the Library has no engine named %s" % e.get("name"))
+                                                            for e in engines if (known.get(e.get("name")) or {}).get("kind") != "work"]
+    else:
+        notes = _line_notes(engines) + ([("one to six engines", "more than six engines")] if len(engines) > 6 else [])
+        ran = ["names an engine", "one to six engines"] + [c for c, _ in LINE_CHECKS]
+    if required:
+        names = [e.get("name") for e in engines]
+        out = [n for n in required if n not in names]
+        ran.append("no required engine left out")
+        if out:
+            notes.append(("no required engine left out", "the plan leaves out %s, which this kind of department requires" % _names(out)))
+    return ran, notes
 
 
 #: what Root's own checks say when they hold; a shaped line's checks say it in LINE_CHECKS
 ROOT_HOLDS = {"names an engine": "the workflow names its engines", "engines known": "each engine is one the Library has",
-              "one to six engines": "the workflow is one to six engines long"}
+              "one to six engines": "the workflow is one to six engines long",
+              "no required engine left out": "the plan keeps every engine its kind requires"}
 
 
 def _root_checks(ref, d, engines, source):
     """Root's standards, as code reads them (J2.e), one row for each check that ran: [{check, passed, why}]. A Library line
     is checked for engines the Library has; a shaped line for one to six engines, each named once and new to the Library,
     the first reading the Brief, each reading what one before it wrote and writing something new (M0.7: the event lists
-    these rows, not a fixed set of names)."""
-    ran, notes = _root_run(engines, source)
+    these rows, not a fixed set of names), and, when the kind requires engines, that none is left out (PRD M4.4)."""
+    ran, notes = _root_run(engines, source, required_engines(d))
     holds = dict(LINE_CHECKS, **ROOT_HOLDS)
     return [{"check": c, "passed": not [n for k, n in notes if k == c],
              "why": "; ".join(n for k, n in notes if k == c) or holds[c]} for c in ran]
@@ -3975,7 +4165,7 @@ def _root_checks(ref, d, engines, source):
 
 def _root_check(ref, d, engines, source):
     """Root's standards as the fault list its callers use: empty when the workflow meets them."""
-    return [n for _, n in _root_run(engines, source)[1]]
+    return [n for _, n in _root_run(engines, source, required_engines(d))[1]]
 
 
 #: who said yes to a plan that passes Root's check, as Identity tells the owner it is set: the `by` of _j2_settle, in the
@@ -3991,7 +4181,7 @@ def _j2_settle(ref, d, engines, source, words, by):
     names = [e.get("name") for e in engines]
     faults = _root_check(ref, d, engines, source)
     checks = _root_checks(ref, d, engines, source)
-    named = {n for _, n in _root_run(engines, source)[1]}
+    named = {n for _, n in _root_run(engines, source, required_engines(d))[1]}
     other = [f for f in faults if f not in named]
     if other:
         # a fault no itemised standard names (a check put in Root's place): the event lists it as the check that ran
@@ -4017,7 +4207,7 @@ def _j2_settle(ref, d, engines, source, words, by):
                 W.add_engine(ref, e["name"], shape={"name": e["name"], "use_case": does or e["name"], "does": does,
                                                      "instruction": ("%s\n\nThe goal, in the owner's words: %s" % (does, words or "")).strip(),
                                                      "needs": ["internet"] if e.get("internet") else [], "reads": e.get("reads") or "Brief",
-                                                     "writes": e.get("writes") or e["name"]}, by=by)
+                                                     "writes": e.get("writes") or e["name"]}, by=by, registered=True)
                 added.append(e["name"])
             except Exception as exc:  # noqa: BLE001 -- one engine that cannot be born does not lose the rest; the owner hears which
                 lost.append("%s (%s)" % (e.get("name"), exc))
@@ -4029,12 +4219,28 @@ def _j2_settle(ref, d, engines, source, words, by):
         return {"said": "no engine of the workflow could be added"}
     if J:
         J.registered(ref, added, source, checks=checks)
+    _registered(ref, added)
+    # Q13: an engine the plan left out needs no stamp, and the message names it (PRD M4.2)
+    left = [r.get("engine") for r in coordination(ref).get("left_out") or [] if isinstance(r, dict)]
     _tell(ref, d, who, "inform", {"word": "line", "engines": added,
-                                  "done": "The plan is set: %s (%s). %s and it passed Root's check; the first starts now.%s"
+                                  "done": "The plan is set: %s (%s). %s and it passed Root's check; the first starts now.%s%s"
                                   % (" -> ".join(added), "from the Library" if source == "library" else "shaped for this goal",
-                                     SETTLED_BY.get(by, "It was agreed"), (" Not added: " + "; ".join(lost)) if lost else "")})
+                                     SETTLED_BY.get(by, "It was agreed"), (" Not added: " + "; ".join(lost)) if lost else "",
+                                     (" Left out of the plan: %s." % _names(left)) if left else "")})
     W.signal()
     return {"said": "registered the workflow %s, %s" % (" -> ".join(added), by)}
+
+
+def _registered(ref, names):
+    """Root has recorded the plan (workflow.registered, step 5); Coordination and Priority act on that record, each in its
+    handler for an engine born (PRD M4.1): Coordination writes its table, the line and a slot for each engine; Priority gives each engine
+    that is new to the department's plans its limit. Root writes neither."""
+    wf = (W.dept(ref) or {}).get("workflows") or []
+    version = int((wf[-1] if wf else {}).get("version") or 0)
+    before = {n for w in wf[:-1] for n in w.get("engines") or []}
+    _ask_rule(ref, "coord.table", {"engines": list(names), "version": version, "full": True}, key="table@workflow.v%d" % version)
+    _ask_rule(ref, "priority.grant", {"engines": [n for n in names if n not in before], "version": version},
+              key="grant@workflow.v%d" % version)
 
 
 def _j2_shape_failed(ref, d, p, note):
@@ -4083,6 +4289,13 @@ def adapt_line_counter(ctx, step, item):
     keep = [str(k) for k in pl.get("keep") or []]
     engines = [e for e in offer.get("engines") or [] if e.get("name") in keep]
     why = str(pl.get("why") or "the envelope has no room for all of it").strip().rstrip(".")
+    # a counter that drops an engine the kind requires is never taken: Identity closes it (PRD M4.4)
+    proposed = [e.get("name") for e in offer.get("engines") or []]
+    dropped = [n for n in required_engines(ctx["dept"]) if n in proposed and n not in keep]
+    if dropped:
+        _line_conflict(ref, p["thread"], "Priority asked for less (%s) and the line would leave out %s, which this kind of department requires"
+                       % (why, _names(dropped)))
+        return {"said": "could not take Priority's ask for less: it leaves out %s, which is required; the conflict goes to Identity" % _names(dropped)}
     if not engines or len(engines) == len(offer.get("engines") or []) or _root_check(ref, ctx["dept"], engines, offer.get("source") or "shaped"):
         _line_conflict(ref, p["thread"], "Priority asked for less (%s) and the line does not work that way" % why)
         return {"said": "could not take Priority's ask for less; the conflict goes to Identity"}
@@ -4164,7 +4377,7 @@ CODE = {"plan_read": plan_read, "plan_fit": plan_fit, "plan_file": plan_file, "w
         "check_build": check_build, "publish_copy": publish_copy, "identity_gate": identity_gate, "identity_wait_engine": identity_wait_engine,
         "priority_envelope": priority_envelope, "coord_chain": coord_chain, "coord_heard": coord_heard,
         "coord_busy": coord_busy, "coord_pick": coord_pick, "coord_edge": coord_edge, "coord_verdict": coord_verdict,
-        "coord_bounds": coord_bounds, "coord_alarm": coord_alarm,
+        "coord_bounds": coord_bounds, "coord_alarm": coord_alarm, "coord_table": coord_table, "priority_grant": priority_grant,
         "identity_read": identity_read, "identity_route": identity_route, "identity_hand": identity_hand, "identity_lost": identity_lost,
         "identity_file": identity_file, "identity_verdict": identity_verdict, "identity_rung": identity_rung,
         "identity_apply": identity_apply, "identity_drop": identity_drop, "identity_finding": identity_finding,

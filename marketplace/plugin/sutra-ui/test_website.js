@@ -77,6 +77,12 @@
          and Change; Change opens a sheet whose Send files the one ask; the
          row then says the change waits for the stamp; no path, no count
          (PRD M2.3)
+     S7  Coordination's pane on the engine runtime opens on its timetable: one row per engine with what starts it, its
+         window, and its last run or the exact reason it waits; who makes and who reads each thing; the chain, alarms
+         and ties side by side; the function's page folded under it; every state the screen names; no count at rest
+         (PRD M4.7)
+     S17 the engine card on the engine runtime: its head on every tab, the motor folded in (slot, once per slot,
+         window, today), and one row for each of the five; the Motor row leaves the list column (PRD M4.7)
      W47 Identity's open question is a card in Chat with its own answer box:
          Send posts {text} to the department's /j2/answer, reads Sending...
          while it goes, a refused answer is a snack and the words stay, and
@@ -274,7 +280,7 @@ function fresh(opts){
       /* the five functions' read (functions_view.py), when the test gives one; a function's own page likewise */
       if (/\/api\/native\/r3\/functions$/.test(p) && opts.fv) return typeof opts.fv === "function" ? opts.fv() : Promise.resolve(JSON.parse(JSON.stringify(opts.fv)));
       if (/\/api\/native\/r3\/functions\//.test(p) && opts.fnpage) return Promise.resolve(JSON.parse(JSON.stringify(opts.fnpage(decodeURIComponent(p.split("/functions/")[1])))));
-      if (/\/api\/native\/r3\/engine\//.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(Object.assign({ runs: [] }, map.engines[1]))));
+      if (/\/api\/native\/r3\/engine\//.test(p)) return Promise.resolve(JSON.parse(JSON.stringify(Object.assign({ runs: [] }, map.engines[1], opts.engine || {}))));
       if (/\/artifact\//.test(p)) return Promise.resolve({ name: "Live site", slug: "live-site",
         template: { id: "artifact/live-site", name: "Live site", kind: "site", files: ["index.html", "*.html"], checks: ["has_index_html"],
                     written_by: ["Publish"], counts_after: "stamp", put_back: true, operations: ["Adaptation", "Audit"] }, versions: [
@@ -433,9 +439,10 @@ test("W7: a click on one of 20-dept.js's rows hands the viewer back, and its car
   assert.strictEqual(vm.runInContext("S.wb.tab['r3']", c), "");
   assert.strictEqual(vm.runInContext("dpS().tab['r3']", c), "priority");
   assert.strictEqual(c.wbViewer(WEB), null, "20-dept.js draws its own card");
-  assert.ok(/<h3>Envelopes<\/h3>/.test(html) && /<h3>Queue<\/h3>/.test(html), html.slice(0, 400));
+  /* PRD M4.6 (S-05): Priority prices and holds; the queue is Coordination's card */
+  assert.ok(/<h3>Envelopes<\/h3>/.test(html) && !/<h3>Queue<\/h3>/.test(html), html.slice(0, 400));
   html = await card("coordination");
-  ["Timetable", "Hand-offs", "Locks"].forEach(h => assert.ok(html.indexOf("<h3>" + h + "</h3>") >= 0, h));
+  ["Timetable", "Queue", "Hand-offs", "Locks"].forEach(h => assert.ok(html.indexOf("<h3>" + h + "</h3>") >= 0, h));
   html = await card("identity");
   ["Control", "Autonomy windows", "Stamped by rule"].forEach(h => assert.ok(html.indexOf("<h3>" + h + "</h3>") >= 0, h));
   html = await card("audit");
@@ -1275,7 +1282,9 @@ test("W44: founding lands on the organisation, whose row is Root's chat", async 
 test("V2 navigation: with the switch on the list, Chat, a function card and an engine card are the first design's, unchanged", async () => {
   const c = await v2({ map: rtMap({ ask: true }) });
   const html = c.dpListHtml(WEB, {}, null, null);
-  ["Chat", "Map", "Motor", "Board", "Filed work", "Human Sutra"].forEach(x => assert.ok(html.indexOf(x) >= 0, x));
+  ["Chat", "Map", "Board", "Filed work", "Human Sutra"].forEach(x => assert.ok(html.indexOf(x) >= 0, x));
+  /* PRD M4.7 (ruled: the motor folds into the engine card, S17): the Motor row leaves the list column */
+  assert.ok(!/data-wbtab="motor"/.test(html) && html.indexOf("<span>Motor</span>") < 0, "no Motor row");
   /* PRD M1.5 (the ruled Map, 2026-09-29): System status folds into the Map's NOW line, so its row is gone */
   assert.ok(!/System status/.test(html) && !/data-wbtab="status"/.test(html), "System status folded into the NOW line");
   assert.ok(!/wb2/.test(html), "no second-design piece in the list");
@@ -1986,6 +1995,145 @@ test("W47: EMPTY_ANSWER shows its snack and the words stay; Cmd+Enter sends", as
   const plain = Object.assign({}, key, { metaKey: false });
   (c.document.listeners.keydown || []).forEach(fn => fn(plain)); await sleep();
   assert.strictEqual(c.calls.apiPost.length, 3, "Enter alone is a new line, not a send");
+});
+
+/* ── PRD M4.7: Coordination's pane (S7) and the engine card (S17) ────────────────────────────────────────────── */
+const T = h => "2026-10-26T" + h + ":00+05:30";
+/* S7's sample data, as functions_view.coordination answers it */
+function coordOf(o){
+  o = o || {};
+  const row = (engine, starts, win, state, why, at, wrote) => ({ engine, on: "after a new thing", starts, window_min: win, since: T("10:00"),
+    state, word: { running: "running", turn: "its turn", waits: "waits", ran: "ran", stopped: "stopped where it was" }[state], why, at,
+    last: wrote ? { at, status: "ok", wrote } : null });
+  const tt = o.empty ? [] : o.stopped ? ["Plan", "Write", "Check", "Publish"].map(n => row(n, "after a new Brief", 15, "stopped", null, null, null))
+    : o.done ? ["Plan", "Write", "Check", "Publish"].map(n => row(n, "after a new Brief", 15, "ran", null, T("10:40"), n + " made v1"))
+    : [row("Plan", "after a new Brief", 15, "ran", null, T("10:22"), "Site plan v2"),
+       row("Write", "after a new Site plan", 30, "turn", null, T("10:23"), null),
+       row("Check", "after a new Pages", 5, "waits", "Pages v2 is not filed yet", null, null),
+       row("Publish", "after a Build that passed", 10, "waits", "Build v2 is not filed yet", null, null)];
+  return { line: tt.map(r => r.engine), registered: 2, timetable: tt,
+    left_out: o.empty ? [] : [{ engine: "Photo Picker", since: T("10:08") }],
+    holds: tt.filter(r => r.state === "waits").map(r => ({ engine: r.engine, why: r.why })),
+    handoffs: [{ art: "Brief", v: 3, by: "Owner", says: "Identity, from your words", readers: ["Plan"] },
+               { art: "Site plan", v: 2, by: "Plan", says: "Plan", readers: ["Write"] },
+               { art: "Pages", v: 1, by: "Write", says: "Write", readers: ["Check"] },
+               { art: "Live site", v: null, by: null, says: null, readers: ["Audit", "Adaptation"] }],
+    chain: { of: "Brief v3", used: 3, limit: 12, share: 0.25 },
+    alarms: o.alarm ? [{ engine: "Write", text: "Write has run past its window", at: T("10:50") }] : [],
+    ties: o.tie ? [{ pick: "Write", said: "Coordination chose Write first", why: "the pages wait on it", at: T("10:23"), today: true }] : [] };
+}
+function coordPage(o){
+  return fn => {
+    const p = fnPageOf(fn);
+    if (fn === "coordination"){
+      p.j2 = coordOf(o);
+      p.node = o && o.stopped ? { name: "Coordination", state: "quiet", word: "stopped", line: "" }
+        : { name: "Coordination", state: o && o.alarm ? "fault" : "working", word: o && o.alarm ? "fault" : "working", line: "Write's turn" };
+    }
+    return p;
+  };
+}
+/* no count at rest: times, names such as Site plan v2, D2, FC1, Round 2 or Version 1, and a window in minutes are not counts */
+const atRest = h => words(h).replace(/\b(?:v|[A-Z]{1,3}|Round |[Vv]ersion )\d+\b/g, " ").replace(/\b\d+ min\b/g, " ");
+
+test("S7: Coordination's pane opens on its timetable, who makes and who reads, the chain, alarms and ties, its page folded", async () => {
+  const c = await opened({ map: rtMap(), fnpage: coordPage() });
+  const html = await fnCard(c, "coordination");
+  assert.ok(/<div class="wbcohead wb"><svg class="dpfnmk fn-coordination"[^]*?<b>Coordination<\/b><span class="dpdot breath"><\/span><span>working · Write(&#39;|')s turn<\/span><\/div>/.test(html), "the frame: mark, name, a dot and its word");
+  const tt = html.slice(html.indexOf("<h3>Timetable</h3>"), html.indexOf("<h3>Who makes it, who reads it</h3>"));
+  assert.ok(/data-wbengine="Plan"[^>]*><span class="dpdot ok"><\/span><b>Plan<\/b><span>after a new Brief<\/span><span class="wbttw">window 15 min<\/span><span class="wbttn">ran 10:22 · Site plan v2<\/span>/.test(tt), tt.slice(0, 400));
+  assert.ok(/<span class="dpdot breath"><\/span><b>Write<\/b><span>after a new Site plan<\/span><span class="wbttw">window 30 min<\/span><span class="wbttn">its turn since 10:23<\/span>/.test(tt), "Write has the turn");
+  assert.ok(/<span class="dpdot wait"><\/span><b>Check<\/b>[^]*?<span class="wbttn">waits: Pages v2 is not filed yet<\/span>/.test(tt), "a wait on the work before it is the hollow ring, with its reason");
+  assert.ok(/<b>Publish<\/b><span>after a Build that passed<\/span>[^]*?waits: Build v2 is not filed yet/.test(tt));
+  assert.ok(/Left out of the plan: Photo Picker \(10:08\)/.test(tt), "what the plan left out, under it");
+  const who = html.slice(html.indexOf("<h3>Who makes it, who reads it</h3>"), html.indexOf("<h3>The chain</h3>"));
+  assert.ok(/<button type="button" class="wbhand wb" data-wbart="brief"><b>Brief v3<\/b><span>Identity, from your words<\/span><span class="wbttn">read by Plan<\/span><\/button>/.test(who), who.slice(0, 300));
+  assert.ok(/<div class="wbhand wb"><b>Live site<\/b><span>not made yet<\/span><span class="wbttn">read by Audit, Adaptation<\/span><\/div>/.test(who), "a thing not made yet opens nothing");
+  assert.ok(/<div class="wbtrio">[^]*<h3>The chain<\/h3><div title="The chain from Brief v3: 3 of 12"><div class="dpbar"><i style="width:25%"><\/i><\/div><\/div>/.test(html), "the chain is a bar; its numbers the hover");
+  assert.ok(/<h3>Alarms<\/h3><div class="o2quiet dpq">None<\/div>/.test(html) && /<h3>Ties<\/h3><div class="o2quiet dpq">None today<\/div>/.test(html));
+  assert.ok(/<details class="wbfold wb"><summary>The function page<\/summary>[^]*?<h3>The function<\/h3>/.test(html), "the page folds at the bottom");
+  assert.ok(html.indexOf("<h3>Who goes first</h3>") > html.indexOf("<summary>The function page</summary>"), "its table and steps stay under it");
+  assert.ok(!/<h3>Queue<\/h3>|<h3>Locks<\/h3>/.test(html), "the first build's cards give way to the timetable");
+  const t = atRest(html);
+  assert.ok(!/\d/.test(t), "a count at rest: " + (t.match(/.{0,30}\d.{0,30}/) || [""])[0]);
+  assert.ok(!/charter|internal system|\/api\/|\.json/i.test(t), "no charter, no inside word, no path");
+  /* a row opens its engine card; an artifact its filed work */
+  click(c, { wbengine: "Check" }); await sleep();
+  assert.strictEqual(vm.runInContext("S.wb.tab['r3']", c), "engine");
+  assert.strictEqual(vm.runInContext("S.wb.sel['r3']", c), "Check");
+});
+
+test("S7: the states the pane names: no plan yet, a fault in Alarms with '!', a tie, stopped, and nothing waiting", async () => {
+  const pane = async o => fnCard(await opened({ map: rtMap(), fnpage: coordPage(o) }), "coordination");
+  assert.ok(/<h3>Timetable<\/h3><div class="o2quiet dpq">No plan yet<\/div>/.test(await pane({ empty: true })), "empty before Root's check");
+  const fault = await pane({ alarm: true });
+  assert.ok(/<b>Coordination<\/b><b class="dpfnb block" aria-hidden="true">!<\/b><span class="dpdot block"><\/span><span>fault · Write(&#39;|')s turn<\/span>/.test(fault), "the head carries '!' and the word");
+  assert.ok(/<h3>Alarms<\/h3><div class="dprow"><span class="dpdot block"><\/span><span>Write<div class="dpchk">Write has run past its window<\/div>/.test(fault), "a block row in Alarms");
+  const tie = await pane({ tie: true });
+  assert.ok(/<h3>Ties<\/h3><div class="dprow"><span class="dpdot ok"><\/span><span>Coordination chose Write first<div class="dpchk">the pages wait on it · 10:23<\/div>/.test(tie), "a tie it broke");
+  const stopped = await pane({ stopped: true });
+  assert.strictEqual((stopped.match(/stopped where it was/g) || []).length, 4, "every engine stopped where it was");
+  assert.ok(/<span class="dpdot off"><\/span><span>stopped<\/span>/.test(stopped));
+  assert.ok(/<div class="o2quiet dpq">Nothing waiting<\/div>/.test(await pane({ done: true })), "done: nothing waiting");
+  const first = await fnCard(await opened({ map: rtMap() }), "coordination");
+  assert.ok(/class="o2skel"/.test(first) && /<h3>Who goes first<\/h3>/.test(first), "loading: a skeleton, its table under it");
+});
+
+test("S7: the pane paints again when the timetable moves, and not when it says the same thing", () => {
+  const c = fresh();
+  const a = coordPage()("coordination"), b = coordPage()("coordination");
+  assert.strictEqual(c.wbFnPageSig(a), c.wbFnPageSig(b), "the same read paints nothing");
+  b.j2.timetable[2] = Object.assign({}, b.j2.timetable[2], { state: "turn", word: "its turn", why: null, at: T("10:31") });
+  assert.notStrictEqual(c.wbFnPageSig(a), c.wbFnPageSig(b), "Check's turn paints");
+  const t = coordPage({ tie: true })("coordination");
+  assert.notStrictEqual(c.wbFnPageSig(a), c.wbFnPageSig(t), "a tie paints");
+});
+
+/* S17's sample data, as functions_view.engine_card answers it */
+function cardOf(o){
+  o = o || {};
+  const waits = !!o.waits;
+  return { engine: "Write", head: waits ? { state: "waits", word: "waits", why: "Pages v2 is not filed yet", at: null, round: null }
+                                          : { state: "running", word: "running", why: null, at: T("10:23"), round: 2 },
+    motor: { slot: "after Site plan v2", starts: "after a new Site plan", once: true, says: "ran once per slot", window_min: 30, today: 0.1 },
+    five: [{ fn: "Identity", state: "ok", says: "lets it start: no rule holds it", at: null, share: null },
+           { fn: "Adaptation", state: "ok", says: "proposed it in the plan Root registered", at: null, share: null },
+           { fn: "Priority", state: o.held ? "block" : "ok", says: o.held ? "holds it: today's limit is spent" : "let the run start inside today's limit", at: null, share: o.held ? 1 : 0.1 },
+           { fn: "Coordination", state: waits ? "wait" : "breath", says: waits ? "keeps its slot: Pages v2 is not filed yet" : "gave it the turn", at: waits ? null : T("10:23"), share: 0.3 },
+           { fn: "Audit", state: "off", says: "will read the Live site it leads to", at: null, share: null }] };
+}
+
+test("S17: the engine card carries its head on every tab, the motor folded in, and the five beside it; no Motor row", async () => {
+  const c = await opened({ map: rtMap(), engine: { card: cardOf() } });
+  assert.ok(!/data-wbtab="motor"/.test(list(c)), "the Motor row leaves the list column");
+  click(c, { wbengine: "Write" }); view(c); await sleep(); await sleep();
+  let html = view(c);
+  assert.ok(/<div class="wbenghead wb"><b>Write<\/b><span class="dpchk">engine<\/span><span class="dpdot breath"><\/span><span>running · Round 2 · since 10:23<\/span><\/div>/.test(html), "the head, on the Steps tab");
+  assert.ok(/data-wbpane="steps"/.test(html) && /<h3>Starts<\/h3>/.test(html), "the steps are still the first tab");
+  vm.runInContext("S.wb.pane['r3:Write'] = 'engine';", c);
+  html = view(c);
+  const motor = html.slice(html.indexOf("<h3>Motor</h3>"), html.indexOf("<h3>With the five functions</h3>"));
+  assert.ok(/<span class="dpk">Slot<\/span><span class="dpdot ok"><\/span><span>after Site plan v2 · ran once per slot · window 30 min<\/span><span title="Today"><div class="dpbar"><i style="width:10%"><\/i><\/div><\/span>/.test(motor), motor);
+  const five = html.slice(html.indexOf("<h3>With the five functions</h3>"), html.indexOf("<h3>The engine</h3>"));
+  ["identity", "adaptation", "priority", "coordination", "audit"].forEach(fn =>
+    assert.ok(new RegExp('<button type="button" class="wbfivefn fn-' + fn + ' wb" data-dptab="' + fn + '"><svg class="dpfnmk fn-' + fn).test(five), fn + ": its chip opens its pane"));
+  assert.ok(/Identity<\/button><span class="dpdot ok"><\/span><span>lets it start: no rule holds it<\/span>/.test(five));
+  assert.ok(/Coordination<\/button><span class="dpdot breath"><\/span><span>gave it the turn at 10:23<\/span><span><div class="dpbar"><i style="width:30%">/.test(five), "Coordination gave it the turn, with the chain's bar");
+  assert.ok(/Audit<\/button><span class="dpdot off"><\/span><span>will read the Live site it leads to<\/span><span><\/span>/.test(five));
+  assert.ok(!/<h3>In its slot<\/h3>/.test(html), "the motor replaces the old slot card");
+  const t = atRest(html);
+  assert.ok(!/\d/.test(t), "a count at rest: " + (t.match(/.{0,30}\d.{0,30}/) || [""])[0]);
+  /* waiting: the head says why, and the holding function's row says it too */
+  const w = await opened({ map: rtMap(), engine: { card: cardOf({ waits: true, held: true }) } });
+  click(w, { wbengine: "Write" }); view(w); await sleep(); await sleep();
+  vm.runInContext("S.wb.pane['r3:Write'] = 'engine';", w);
+  html = view(w);
+  assert.ok(/<span class="dpdot wait"><\/span><span>Waits: Pages v2 is not filed yet<\/span>/.test(html), "the head reads Waits: and the reason");
+  assert.ok(/Priority<\/button><span class="dpdot block"><\/span><span>holds it: today(&#39;|')s limit is spent<\/span>/.test(html), "held by budget: Priority's row is block");
+  /* a department of the first build keeps its engine card as it was */
+  const old = await opened({ engine: { card: cardOf() } });
+  click(old, { wbengine: "Write" }); view(old); await sleep(); await sleep();
+  assert.ok(/<h3>In its slot<\/h3>/.test(view(old)) && !/wbenghead|With the five functions/.test(view(old)));
 });
 
 Promise.all(pending).then(() => {

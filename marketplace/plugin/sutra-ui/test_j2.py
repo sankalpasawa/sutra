@@ -784,7 +784,9 @@ def test_m0_7_the_validated_event_lists_the_checks_that_ran_for_a_library_and_a_
     lib = _born(j2)
     checks = next(e for e in J.events(lib) if e["action"] == "workflow.validated")["payload"]["checks"]
     assert checks == ran[-1]
-    assert [(c["check"], c["passed"]) for c in checks] == [("names an engine", True), ("engines known", True)]
+    # the website kind requires Check (PRD M4.4), so Root's check that none is left out runs too
+    assert [(c["check"], c["passed"]) for c in checks] == [("names an engine", True), ("engines known", True),
+                                                           ("no required engine left out", True)]
     shaped = _born(j2, ORGANIC, "Lab Co")
     checks = next(e for e in J.events(shaped) if e["action"] == "workflow.validated")["payload"]["checks"]
     assert checks == ran[-1]
@@ -797,9 +799,13 @@ def test_m0_7_a_refusal_lists_the_checks_that_ran_and_the_one_that_failed(j2, mo
     d = W.dept(ref)
     R._j2_settle(ref, d, [{"name": "Plan"}, {"name": "Nobody Knows"}], "library", d.get("goal"), "a test")
     blocked = [e for e in J.events(ref) if e["action"] == "workflow.blocked"][-1]
-    assert blocked["payload"]["faults"] == ["the Library has no engine named Nobody Knows"]
+    # the plan also leaves out Check, which the website kind requires (PRD M4.4): every check runs, and each fault is listed
+    assert blocked["payload"]["faults"] == ["the Library has no engine named Nobody Knows",
+                                            "the plan leaves out Check, which this kind of department requires"]
     assert blocked["payload"]["checks"] == [{"check": "names an engine", "passed": True, "why": "the workflow names its engines"},
-                                            {"check": "engines known", "passed": False, "why": "the Library has no engine named Nobody Knows"}]
+                                            {"check": "engines known", "passed": False, "why": "the Library has no engine named Nobody Knows"},
+                                            {"check": "no required engine left out", "passed": False,
+                                             "why": "the plan leaves out Check, which this kind of department requires"}]
     # a check put in Root's place is listed as it ran, beside the standards
     monkeypatch.setattr(R, "_root_check", lambda ref, d, engines, source: ["the line reaches outside without a rule"])
     lab = _born(j2, ORGANIC, "Lab Co")
@@ -913,3 +919,275 @@ def test_nothing_private_reaches_the_ledger_or_the_activity(j2):
            {"reasoning": "hidden", "token": "tok-qzx", "kept": {"password": "x", "shown": 1}})
     blob = str(J.events(ref)[-1]) + str(J.activity(ref))
     assert "hidden" not in blob and "tok-qzx" not in blob and "'shown': 1" in blob
+
+
+# ---- PRD M4: Coordination's timetable, and the line is what was granted -------------------------------------------------
+def _table_writes(W, monkeypatch):
+    """Every write of coordination.json from here on, as (who it says wrote it, the line it wrote)."""
+    seen, real = [], W._write
+
+    def spy(p, obj):
+        if str(p).endswith("coordination.json"):
+            seen.append((obj.get("by"), list(obj.get("line") or [])))
+        return real(p, obj)
+    monkeypatch.setattr(W, "_write", spy)
+    return seen
+
+
+def test_m4_1_root_records_the_plan_coordination_writes_its_table_and_priority_gives_each_new_engine_its_limit(j2, monkeypatch):
+    """Root writing Coordination's table, a limit nobody gave on the ledger, or an engine Root made must fail."""
+    W, R, J, _ = j2
+    writes = _table_writes(W, monkeypatch)
+    for words, org in ((WEBSITE, "Acme Learning"), (ORGANIC, "Lab Co")):
+        del writes[:]
+        ref = _born(j2, words, org)
+        names = W.dept(ref)["workflows"][-1]["engines"]
+        t = W._read(W.ddir(ref) / "coordination.json", None)
+        assert (t["by"], t["registered"], t["line"]) == ("Coordination", 1, names), org
+        assert [w for w in writes if w[0] != "born"] and all(by in ("born", "Coordination") for by, _ in writes), writes
+        events = J.events(ref)
+        reg = next(e for e in events if e["action"] == "workflow.registered")
+        assert (reg["actor"], reg["recipient"]) == ("Root", "Coordination")
+        table = [e for e in events if e["action"] == "timetable.written"]
+        assert [(e["actor"], e["payload"]["line"]) for e in table] == [("Coordination", names)]
+        granted = [e for e in events if e["action"] == "envelope.granted"]
+        assert [e["recipient"] for e in granted] == names and {e["actor"] for e in granted} == {"Priority"}, granted
+        assert all(e["seq"] > reg["seq"] and e["step"] == 5 and e["workflow_ref"] == "workflow/1" for e in granted)
+        assert all(W.dept(ref)["envelopes"].get(n) for n in names)
+        # each decision is a row of the function whose handler it is, never Root's
+        rows = [(r["engine"], r["step"]) for r in R.step_rows(ref) if r["step"] in ("coord.table", "priority.grant")]
+        assert rows == [("Coordination", "coord.table"), ("Priority", "priority.grant")], rows
+        assert {e["action"] for e in events if e["actor"] == "Root"} == {"workflow.validated", "workflow.registered"}
+    # a shaped engine is Adaptation's: born into the Library with made_by Adaptation, its limit Priority's
+    lab = W.dept(ref)
+    for n in lab["engines"]:
+        assert R.engine_def(n)["made_by"]["by"] == "Adaptation"
+    assert [e["payload"]["kept"] for e in J.events(ref) if e["action"] == "envelope.granted"] == [False] * len(lab["engines"])
+    assert lab["envelopes"][lab["engines"][0]]["calls"] == 8 * 30, "a work engine's limit, from Priority's template"
+
+
+def test_m4_1_an_engine_that_holds_a_limit_keeps_it_and_the_ledger_says_so(j2):
+    """Priority's handler overwriting the owner's own limit must fail."""
+    W, R, J, _ = j2
+    ref = _born(j2, settle=False)
+    W.set_envelope(ref, "Write", calls=12)
+    W.run_until_idle(ref, limit=300)
+    assert W.dept(ref)["envelopes"]["Write"]["calls"] == 12
+    granted = {e["recipient"]: e for e in J.events(ref) if e["action"] == "envelope.granted"}
+    assert sorted(granted) == sorted(LINE) and granted["Write"]["payload"]["kept"] is True and granted["Write"]["payload"]["calls"] == 12
+    assert granted["Write"]["summary"] == "Write keeps the limit it holds."
+
+
+def test_m4_1_an_engine_the_owner_stamped_joins_the_line_by_coordination_and_its_limit_by_priority(j2):
+    """J5: the owner's stamp on an engine an idea asked for: Coordination grows its line, Priority gives the limit."""
+    W, R, J, _ = j2
+    ref = _born(j2)
+    W.add_engine(ref, "Do")
+    t = W._read(W.ddir(ref) / "coordination.json", None)
+    assert (t["by"], t["why"], t["line"][0]) == ("Coordination", "the owner's stamp", "Do")
+    granted = [e for e in J.events(ref) if e["action"] == "envelope.granted" and e["recipient"] == "Do"]
+    assert len(granted) == 1 and granted[0]["actor"] == "Priority" and granted[0]["payload"]["kept"] is False
+    assert W.dept(ref)["envelopes"]["Do"] == {"calls": 240, "usd": 6.0}
+    grown = [e for e in J.events(ref) if e["action"] == "timetable.written" and e["payload"].get("grown") == "Do"]
+    assert len(grown) == 1 and grown[0]["actor"] == "Coordination"
+
+
+def _sm3(W, R, ref, j5=()):
+    """SM-3: runs of an engine that is on no registered line and was not stamped through J5, the five functions aside."""
+    d = W.dept(ref)
+    allowed = {n for w in d.get("workflows") or [] for n in w.get("engines") or []} | set(R.FUNCTIONS) | set(j5)
+    allowed |= {a.get("engine") for a in W.asks(ref) if a.get("kind") == "engine" and a["status"] == "stamped"}
+    return [r["engine"] for r in W.runs(ref) if r["engine"] not in allowed]
+
+
+KEEP = ["Plan", "Write", "Check"]
+
+
+def _counter_keeps(monkeypatch, R, keep=KEEP):
+    """Priority asks for less on the first plan (the one that names Publish), and says yes to the plan that keeps `keep`."""
+    def bargain(prompt):
+        if "- Publish:" in prompt:
+            return {"answer": "counter", "why": "room for three today", "keep": list(keep)}
+        return {"answer": "accept", "why": "the envelope has room"}
+    _model(monkeypatch, R, {"priority.bargain": bargain})
+
+
+def test_m4_2_a_website_counter_keeps_a_subset_and_the_engine_it_cut_never_runs(j2, monkeypatch):
+    """The born line running past what Priority granted (Publish ran though the plan left it out) must fail (SM-3)."""
+    W, R, J, _ = j2
+    _counter_keeps(monkeypatch, R)
+    ref = _born(j2)
+    assert "proposal.countered" in _actions(J, ref)
+    assert W.dept(ref)["workflows"][-1]["engines"] == KEEP
+    t = W._read(W.ddir(ref) / "coordination.json", None)
+    assert t["line"] == KEEP and [(r["engine"], r["in_line"]) for r in t["left_out"]] == [("Publish", False)]
+    assert R.coordination(ref)["line"] == KEEP
+    assert W.dept(ref)["engines"] == LINE, "the engine left out stays on the record"
+    _stamp_all(W, ref)
+    W.run_until_idle(ref, limit=100)
+    assert _work(W, ref) == KEEP and "Publish" not in [r["engine"] for r in W.runs(ref)]
+    assert _sm3(W, R, ref) == []
+    assert any("Left out of the plan: Publish." in s for s in _said(R, ref)), "the plan message names what was left out (Q13)"
+    eng = {e["name"]: e for e in W.map_view(ref)["engines"]}
+    assert (eng["Publish"]["in_line"], eng["Publish"]["state"]) == (False, "Left out") and eng["Check"]["in_line"] is True
+
+
+def test_m4_2_a_later_full_registration_sets_the_line_again_and_merges_what_the_owner_added(j2):
+    """A J5 engine lost on the next registration, or a dropped engine kept in the line, must fail."""
+    W, R, J, _ = j2
+    ref = _born(j2)
+    W.add_engine(ref, "Do")                                        # J5: the owner stamped it; it reads the Brief, so it goes first
+    assert R.coordination(ref)["line"] == ["Do"] + LINE
+    d = W.dept(ref)
+    R._j2_settle(ref, d, [{"name": n} for n in KEEP], "library", d.get("goal"), "a test")   # a later plan, the whole line
+    t = W._read(W.ddir(ref) / "coordination.json", None)
+    assert (t["registered"], t["line"]) == (2, ["Do"] + KEEP), t
+    assert [r["engine"] for r in t["left_out"]] == ["Publish"]
+    assert not [e for e in J.events(ref) if e["action"] == "envelope.granted" and e.get("workflow_ref") == "workflow/2"], \
+        "no engine is new to the plans: Priority gives no new limit"
+    R._j2_settle(ref, d, [{"name": n} for n in LINE], "library", d.get("goal"), "a test")    # Publish is back in the plan
+    t = W._read(W.ddir(ref) / "coordination.json", None)
+    assert (t["registered"], t["line"], t["left_out"]) == (3, ["Do"] + LINE, [])
+    W.run_until_idle(ref, limit=200)
+    assert _sm3(W, R, ref, j5=["Do"]) == []
+
+
+def test_m4_2_a_set_line_that_is_not_full_adds_to_the_line_and_a_faulty_table_keeps_what_was_left_out(j2, monkeypatch):
+    W, R, J, _ = j2
+    _counter_keeps(monkeypatch, R)
+    ref = _born(j2)
+    t = R.set_line(ref, ["Plan", "Publish"], 9, full=False)
+    assert t["line"] == KEEP + ["Publish"] and t["left_out"] == []
+    R.set_line(ref, KEEP, 10)
+    t = W._read(W.ddir(ref) / "coordination.json", None)
+    t["line"] = KEEP + ["Nobody"]                                   # a name the Library does not define: the table is not read
+    W._write(W.ddir(ref) / "coordination.json", t)
+    assert R.coordination(ref)["line"] == KEEP, "the born line, without the engine the plan left out"
+
+
+def _table(W, ref):
+    return W._read(W.ddir(ref) / "coordination.json", None)
+
+
+def test_m4_3_coordinations_timetable_is_one_slot_for_each_engine_and_a_grown_engine_adds_one(j2):
+    """A timetable that is not on the record, an engine with two slots or none, or a grown engine with no slot must fail."""
+    W, R, J, _ = j2
+    ref = _born(j2)
+    t = _table(W, ref)
+    assert [r["engine"] for r in t["timetable"]] == LINE == t["line"]
+    rows = {r["engine"]: r for r in t["timetable"]}
+    assert [rows[n]["on"] for n in LINE] == ["after Brief v1", "after Site plan v1", "after Pages v1", "after Build v1"]
+    assert [rows[n]["of"] for n in LINE] == ["Brief", "Site plan", "Pages", "Build"]
+    assert rows["Publish"]["checked"] is True and rows["Plan"]["checked"] is False
+    assert [rows[n]["window_min"] for n in LINE] == [15, 30, 5, 10], "each engine's window, from the record"
+    assert all(rows[n]["since"] for n in LINE)
+    # the record's shape is named once: the table's fields and a slot's fields, in order
+    assert set(t) <= set(R.TABLE_FIELDS) and all(list(r) == [k for k in R.SLOT_FIELDS if k in r] for r in t["timetable"])
+    written = [e for e in J.events(ref) if e["action"] == "timetable.written"]
+    assert [s["on"] for s in written[-1]["payload"]["timetable"]] == [rows[n]["on"] for n in LINE], "the ledger names the slots"
+    W.add_engine(ref, "Do")
+    t2 = _table(W, ref)
+    assert [r["engine"] for r in t2["timetable"]] == ["Do"] + LINE, "the grown engine adds one slot"
+    grown = {r["engine"]: r for r in t2["timetable"]}
+    assert grown["Do"]["on"] == "after Brief v1" and grown["Do"]["window_min"] == 15, "it has not run on the Brief yet"
+    assert all(grown[n]["since"] == rows[n]["since"] for n in LINE), "a slot keeps the time it has been held since"
+    lab = _born(j2, ORGANIC, "Lab Co")
+    t3 = _table(W, lab)
+    assert [(r["engine"], r["on"]) for r in t3["timetable"]] == [("Facts", "after Brief v1"), ("Site", "after Facts v1")]
+    assert R.slot_of(ref, "Plan")["on"] == "after Brief v2", "the slot moves on once Plan ran on Brief v1"
+
+
+def test_m4_3_no_scenario_clashes_in_a_slot_on_any_kind(j2, monkeypatch):
+    """SM-11's clash in a slot (two runs on one slot id, or a start while another run is open), in any scenario on any
+    kind, must fail; so must an engine run that no registered line or J5 stamp allowed (SM-3)."""
+    import functions_view as F
+    W, R, J, _ = j2
+    refs = [_born(j2)]
+    _stamp_all(W, refs[0])                                            # a website, published
+    refs.append(_born(j2, ORGANIC, "Lab Co"))                          # an organic line, shaped for the goal
+    d, _ = W.create("dref-answers", "Answers", None, kind="default")   # the default kind: one Do engine
+    d["events"] = [{"kind": "j2_ready", "route": "template"}]
+    W.save_dept(d["ref"], d)
+    J.start(d["ref"])
+    W.give_goal(d["ref"], "Answer what the science team asks about the lab rota")
+    W.run_until_idle(d["ref"], limit=300)
+    refs.append(d["ref"])
+    _counter_keeps(monkeypatch, R)
+    refs.append(_born(j2, WEBSITE, "Counter Co"))                      # a website whose plan Priority cut
+    W.add_engine(refs[-1], "Do")                                       # and an engine the owner added through J5
+    W.owner_ask(refs[-1], "Add a page for the timetable of the algebra classes")
+    W.run_until_idle(refs[-1], limit=300)
+    for ref in refs:
+        W.run_until_idle(ref, limit=100)
+        assert "workflow.registered" in _actions(J, ref), ref
+        assert [r for r in W.runs(ref) if not r.get("system")], "work ran: %s" % ref
+        assert F.slot_clashes(W.runs(ref)) == [], ref
+        assert _sm3(W, R, ref, j5=["Do"]) == [], ref
+        t = _table(W, ref)
+        assert sorted(r["engine"] for r in t["timetable"]) == sorted(t["line"]) and len(t["timetable"]) == len(set(t["line"]))
+    assert "Publish" not in [r["engine"] for r in W.runs(refs[-1])]
+    # the reader finds a clash when there is one
+    run = next(r for r in W.runs(refs[0]) if r.get("slot") and not r.get("system"))
+    twice = [run, dict(run, id="r-again")]
+    assert [c["why"] for c in F.slot_clashes(twice)] == ["the slot ran twice"]
+    open_ = [dict(run, started="2026-10-23T10:00:00+05:30", ended="2026-10-23T10:05:00+05:30"),
+             dict(run, id="r-two", slot="Write@site-plan.v9", engine="Write", started="2026-10-23T10:02:00+05:30", ended="2026-10-23T10:03:00+05:30")]
+    assert [c["slot"] for c in F.slot_clashes(open_)] == ["Write@site-plan.v9"]
+
+
+def test_m4_3_the_map_reads_each_engines_slot_off_coordinations_timetable(j2):
+    W, R, J, _ = j2
+    ref = _born(j2)
+    eng = {e["name"]: e for e in W.map_view(ref)["engines"]}
+    assert [eng[n]["timetable"]["on"] for n in LINE] == [r["on"] for r in _table(W, ref)["timetable"]]
+
+
+# ---- PRD M4.4: required engines (Q12: only Check, on the website kind) -----------------------------------------------
+def test_m4_4_a_plan_without_check_is_refused_by_roots_check(j2):
+    """A website plan that leaves out Check registered, or refused without the check that broke, must fail; a kind that
+    marks nothing required runs no such check."""
+    W, R, J, _ = j2
+    assert R.required_engines({"kind": "website"}) == ["Check"]
+    assert R.required_engines({"kind": "organic"}) == [] and R.required_engines({"kind": "default"}) == []
+    ref = _born(j2)
+    d = W.dept(ref)
+    before = len(d["workflows"])
+    out = R._j2_settle(ref, d, [{"name": n} for n in ("Plan", "Write", "Publish")], "library", d.get("goal"), "a test")
+    assert "sent the workflow back" in out["said"]
+    assert len(W.dept(ref)["workflows"]) == before, "nothing registered"
+    blocked = [e for e in J.events(ref) if e["action"] == "workflow.blocked"][-1]
+    assert blocked["payload"]["faults"] == ["the plan leaves out Check, which this kind of department requires"]
+    assert blocked["payload"]["checks"][-1] == {"check": "no required engine left out", "passed": False,
+                                                "why": "the plan leaves out Check, which this kind of department requires"}
+    assert R._root_check(ref, d, [{"name": n} for n in LINE], "library") == []
+    assert R.coordination(ref)["line"] == LINE, "the line stays what was registered"
+    # the kind's mark is data, checked when the definitions load: a required engine is one of the kind's own line
+    bad = dict(R.defs())
+    bad["kinds"] = dict(bad["kinds"], website=dict(bad["kinds"]["website"], required=["Nobody"]))
+    assert "kinds, website: required names engines of its own line" in R.validate(bad)
+
+
+def test_m4_4_a_counter_that_drops_check_goes_to_identity_as_a_conflict(j2, monkeypatch):
+    """Adaptation taking a counter that leaves out Check, or the conflict going anywhere but Identity, must fail; the ask
+    says it in the owner's words on the record itself."""
+    W, R, J, _ = j2
+    _counter_keeps(monkeypatch, R, keep=["Plan", "Write", "Publish"])
+    ref = _born(j2)
+    acts = _actions(J, ref)
+    assert "proposal.countered" in acts and "workflow.registered" not in acts
+    raised = next(e for e in J.events(ref) if e["action"] == "conflict.raised")
+    conflict = next(p for p in R.board(ref) if (p.get("payload") or {}).get("word") == "conflict")
+    assert conflict["src"] == "Adaptation" and conflict["dst"] == ["Identity"]
+    assert "leave out Check, which this kind of department requires" in conflict["payload"]["why"]
+    assert [e["name"] for e in conflict["payload"]["engines"]] == LINE, "the plan put to Identity is the whole one"
+    assert raised["seq"] > next(e for e in J.events(ref) if e["action"] == "proposal.countered")["seq"]
+    # Identity could not settle it from the goal and the rules (offline): one ask, in the owner's words, and nothing ran
+    ask = [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "conflict"]
+    assert len(ask) == 1 and _work(W, ref) == []
+    import owner_words
+    said = owner_words.plain(ask[0]["text"])
+    assert "Priority asked for less" in ask[0]["text"] and "countered" not in said.lower(), said
+    # the owner stamps it: the plan as proposed, Check in it, is registered and runs
+    _stamp_all(W, ref, kind="conflict")
+    assert W.dept(ref)["workflows"][-1]["engines"] == LINE
+    assert "Check" in R.coordination(ref)["line"]

@@ -273,7 +273,8 @@ function wbList(n){
     dpRow("Map", `data-wbtab="map"`, tab === "map") +
     /* the ruled Map (PRD M1.5): System status folds into the Map's NOW line for a department on the runtime */
     (wbRt(m) && wbV2() ? "" : dpRow("System status", `data-wbtab="status"`, tab === "status")) +
-    dpRow("Motor", `data-wbtab="motor"`, tab === "motor") +
+    /* the ruled engine card (PRD M4.7, S17): on the engine runtime the motor folds into each engine's card */
+    (wbRt(m) ? "" : dpRow("Motor", `data-wbtab="motor"`, tab === "motor")) +
     (wbRt(m) ? dpRow("Board", `data-wbtab="board"`, tab === "board") +
       dpRow("Agent activity", `data-wbtab="activity"`, tab === "activity") : "") + `</div>`;
   const engines = dpGroup("Engines", ((m && m.engines) || []).map(e => {
@@ -476,21 +477,28 @@ function wbMotorHtml(n, m){
 }
 
 /* ── an engine ────────────────────────────────────────────────────────────── */
-async function wbLoadEngine(ref, name){
+async function wbLoadEngine(ref, name, again){
   const st = wbS(), k = ref + ":" + name;
-  if (st.engine[k] || st.busy["e:" + k]) return;
+  if ((st.engine[k] && !again) || st.busy["e:" + k]) return;
   st.busy["e:" + k] = true;
-  try { st.engine[k] = await apiGet(wbUrl(ref, "engine/" + encodeURIComponent(name))); } catch (e) { st.err["e:" + k] = String(e); }
+  const was = JSON.stringify(st.engine[k] || null);
+  try { st.engine[k] = await apiGet(wbUrl(ref, "engine/" + encodeURIComponent(name))); } catch (e) { if (!again) st.err["e:" + k] = String(e); }
   delete st.busy["e:" + k];
-  dpRender();
+  /* read again when the record moved: an engine card paints only when what it shows moved */
+  if (!again || (JSON.stringify(st.engine[k] || null) !== was && !wbTyping())) dpRender();
 }
 function wbEngineHtml(n){
   const st = wbS(), name = st.sel[n.ref], k = n.ref + ":" + name;
   const rt = wbRt(st.map[n.ref]);
   const pane = st.pane[k] || (rt ? "steps" : "engine");
-  const tabs = dpTabsHtml(pane, rt ? WB_RT_PANES : WB_ENG_PANES, `data-wbpanekey="${wbEsc(k)}" data-wbpane`);
-  if (rt && pane === "steps") return tabs + wbStepsHtml(n.ref, name);
+  let tabs = dpTabsHtml(pane, rt ? WB_RT_PANES : WB_ENG_PANES, `data-wbpanekey="${wbEsc(k)}" data-wbpane`);
   const e = st.engine[k];
+  if (rt){
+    /* the engine card (PRD M4.7, S17): its head on every tab, from the engine read */
+    if (!e) wbLoadEngine(n.ref, name);
+    tabs = wbEngHeadHtml(name, e && e.card) + tabs;
+  }
+  if (rt && pane === "steps") return tabs + wbStepsHtml(n.ref, name);
   if (!e){ wbLoadEngine(n.ref, name); return (rt ? tabs : "") + dpSkel(); }
   if (pane === "runs"){
     return tabs + dpCard("Runs", (e.runs || []).length ? e.runs.map(r => wbRunRow(r,
@@ -498,8 +506,11 @@ function wbEngineHtml(n){
       : dpQuiet("No runs yet"));
   }
   const env = e.envelope || {};
-  return tabs + dpCard("The engine", `<div class="dpengines">` +
-      dpKV("Runs as", e.runs_as, "Not named") + dpKV("Needs", e.reads, "Not named") + dpKV("Makes", e.writes, "Not named") + `</div>`) +
+  const made = dpCard("The engine", `<div class="dpengines">` +
+      dpKV("Runs as", e.runs_as, "Not named") + dpKV("Needs", e.reads, "Not named") + dpKV("Makes", e.writes, "Not named") + `</div>`);
+  /* on the engine runtime the motor is folded into the card, and the five functions sit beside it (S17) */
+  if (rt && e.card) return tabs + `<div class="wbs17 wb">` + wbEngMotorHtml(e.card) + wbEngFiveHtml(e.card) + `</div>` + made;
+  return tabs + made +
     dpCard("In its slot", `<div class="dpengines">` +
       dpKV("Slot", e.slot, "Not named") +
       dpCell("Envelope", dpBar(Math.min(1, (env.used_calls || 0) / (env.calls || 1)))) +
@@ -563,6 +574,7 @@ function wbAgain(ref){
   Object.keys(st.fnchat).forEach(k => { if (k.indexOf(ref + ":") === 0) wbLoadFnChat(ref, k.slice(ref.length + 1), true); });
   if (st.fv[ref]) wbLoadFv(ref, true);
   Object.keys(st.fnpage).forEach(k => { if (k.indexOf(ref + ":") === 0) wbLoadFnPage(ref, k.slice(ref.length + 1), true); });
+  Object.keys(st.engine).forEach(k => { if (k.indexOf(ref + ":") === 0) wbLoadEngine(ref, k.slice(ref.length + 1), true); });
 }
 function wbRungHtml(s){
   const at = WB_RUNGS.map(r => r[0]).indexOf(s.rung);
@@ -1027,15 +1039,20 @@ function wbReadersOf(m, mk, name){
 /* a function's page paints again when anything it shows moved (M1.9; round 3, gap 5): its node (its word too: a
    department switched off says stopped), the template it runs and each field's value as the page draws it (the Limit
    as its bar, its share to a fiftieth as wbFvSig keeps a spend, so a bar that moves paints and a hair's move does
-   not), a step's name, group, who runs it and its rung, or a journey's status, last move and its minute */
+   not), a step's name, group, who runs it and its rung, or a journey's status, last move and its minute; Coordination's
+   pane also when its timetable, what it left out, who makes and reads, the chain's bar, an alarm or a tie moved (M4.7) */
 function wbFnPageSig(v){
   if (!v || v.failed) return "failed";
   const n = v.node || {}, share = x => Math.round((Number(x) || 0) * 50);
   const value = f => f.key === "envelope" ? share((f.value || {}).share) : f.value;
+  const co = v.fn === "coordination" ? (v.j2 || {}) : {}, minute = at => String(at || "").slice(0, 16);
   return JSON.stringify([n.state, n.word, n.waits_on, n.line, n.why, (v.template || {}).name, v.line, v.holds, v.hands_to, v.keeps, v.v1,
     (v.journeys || []).map(j => [j.id, j.name, j.status, j.last && j.last.summary, j.last && String(j.last.at || "").slice(0, 16)]),
     (v.recipe || []).map(r => [r.id, r.name, r.under, r.by, r.rung, r.rung_name]),
-    (v.fields || []).map(f => [f.key, f.label, f.placeholder, value(f)])]);
+    (v.fields || []).map(f => [f.key, f.label, f.placeholder, value(f)]),
+    (co.timetable || []).map(r => [r.engine, r.on, r.state, r.why, minute(r.at), r.window_min, r.last && r.last.wrote]),
+    (co.left_out || []).map(r => r.engine), (co.handoffs || []).map(h => [h.art, h.v, h.says, (h.readers || []).join(",")]),
+    share((co.chain || {}).share), (co.alarms || []).map(a => a.text), (co.ties || []).map(t => [t.said, minute(t.at)])]);
 }
 async function wbLoadFnPage(ref, fn, again){
   const st = wbS(), k = ref + ":" + fn;
@@ -1097,6 +1114,92 @@ function wbFnPageHtml(ref, fn){
     dpCard("Version 1", `<div class="dpfline">${wbEsc(p.v1)}</div>`);
 }
 
+/* ── Coordination's pane: the timetable (PRD M4.7, screen S7) ───────────────
+   Who goes first and why anything waits, from Coordination's own state (functions_view.coordination, the j2 part of
+   its page read): the timetable, one row per engine with what starts it, its window, and its last run or the exact
+   reason it waits, and the engines the plan left out under it; who makes and who reads each thing; then the chain,
+   alarms and ties side by side, and the function's page folded at the bottom. Coordination judges nothing about
+   content, so nothing here is a verdict. An engine row opens its engine card and an artifact its filed work; the
+   pane writes nothing. No count at rest: the chain is a bar and its numbers are the hover. */
+const WB_TT_DOT = { running: "breath", turn: "breath", waits: "wait", ran: "ok", stopped: "off" };
+const WB_NODE_DOT = { working: "breath", waiting: "wait", waiting_on_you: "warn", fault: "block", quiet: "off" };
+/* amber means it waits on you and nothing else; waiting on another function is the hollow ring */
+function wbTtDot(r){ return r.state === "waits" && /\b(stamp|you|owner)\b/.test(r.why || "") ? "warn" : (WB_TT_DOT[r.state] || "off"); }
+function wbTtSaid(r){
+  if (r.state === "running") return "running since " + wbWhen(r.at);
+  if (r.state === "turn") return "its turn" + (r.at ? " since " + wbWhen(r.at) : "");
+  if (r.state === "waits") return /^waits\b/.test(r.why || "") ? r.why : "waits: " + (r.why || "");
+  if (r.state === "ran") return "ran " + wbWhen(r.at) + (r.last && r.last.wrote ? " · " + r.last.wrote : "");
+  return r.word || "";
+}
+function wbTtRow(r){
+  return `<button type="button" class="wbtt wb" data-wbengine="${wbEsc(r.engine)}" title="${wbEsc(r.on || "")}">${wbDot(wbTtDot(r))}` +
+    `<b>${wbEsc(r.engine)}</b><span>${wbEsc(r.starts || "")}</span><span class="wbttw">window ${wbEsc(r.window_min)} min</span>` +
+    `<span class="wbttn">${wbEsc(wbTtSaid(r))}</span></button>`;
+}
+function wbHandRow(h){
+  const art = h.v ? h.art + " v" + h.v : h.art, by = h.says || "not made yet";
+  const rd = (h.readers || []).length ? "read by " + h.readers.join(", ") : "read by nobody yet";
+  const body = `<b>${wbEsc(art)}</b><span>${wbEsc(by)}</span><span class="wbttn">${wbEsc(rd)}</span>`;
+  return h.v ? `<button type="button" class="wbhand wb" data-wbart="${wbEsc(wbSlug(h.art))}">${body}</button>` : `<div class="wbhand wb">${body}</div>`;
+}
+function wbCoordHtml(ref){
+  const st = wbS(), p = st.fnpage[ref + ":coordination"], steps = wbStepsHtml(ref, "Coordination");
+  if (!p){ wbLoadFnPage(ref, "coordination"); return dpSkel() + steps; }
+  if (p.failed) return dpQuiet("Could not read") + steps;
+  const co = p.j2 || {}, tt = co.timetable || [], node = p.node || {}, alarms = co.alarms || [];
+  const today = (co.ties || []).filter(t => t.today), chain = co.chain || {};
+  const line = [node.word, node.why || node.line].filter(Boolean).join(" · ");
+  const head = `<div class="wbcohead wb">${typeof wb2Mark === "function" ? wb2Mark("coordination") : ""}<b>Coordination</b>` +
+    (alarms.length ? `<b class="dpfnb block" aria-hidden="true">!</b>` : "") + wbDot(WB_NODE_DOT[node.state] || "off") +
+    `<span>${wbEsc(line)}</span></div>`;
+  const left = (co.left_out || []).length ? `<div class="dpchk wbttl">Left out of the plan: ${wbEsc(co.left_out.map(r => r.engine +
+    (r.since ? " (" + wbWhen(r.since) + ")" : "")).join(", "))}</div>` : "";
+  const settled = tt.length && tt.every(r => r.state === "ran") ? dpQuiet("Nothing waiting") : "";
+  const table = tt.length ? tt.map(wbTtRow).join("") + left + settled : dpQuiet("No plan yet");
+  const tip = chain.of ? "The chain from " + chain.of + ": " + (chain.used || 0) + " of " + (chain.limit || 0) : "No chain yet";
+  const trio = `<div class="wbtrio">` +
+    dpCard("The chain", `<div title="${wbEsc(tip)}">${dpBar(Math.max(0, Math.min(1, Number(chain.share) || 0)))}</div>`) +
+    dpCard("Alarms", alarms.length ? alarms.map(a => dpRunRow(a.engine || "Alarm", a.text, "block")).join("") : dpQuiet("None")) +
+    dpCard("Ties", today.length ? today.map(t => dpRunRow(t.said, [t.why, wbWhen(t.at)].filter(Boolean).join(" · "), "ok")).join("") : dpQuiet("None today")) +
+    `</div>`;
+  return `<div class="wbs7 wb">` + head + dpCard("Timetable", table) +
+    dpCard("Who makes it, who reads it", (co.handoffs || []).length ? co.handoffs.map(wbHandRow).join("") : dpQuiet("Nothing filed yet")) + trio +
+    `<details class="wbfold wb"><summary>The function page</summary>${wbFnPageHtml(ref, "coordination")}</details></div>` + steps;
+}
+
+/* ── the engine card: the motor folded in, and the five beside it (PRD M4.7, screen S17) ──
+   The motor's facts are the engine's own: its slot in Coordination's timetable, whether each slot ran once, its window
+   and today's spend as a bar. Then what each of the five is doing to it now, one sentence each, read off the record
+   (functions_view.engine_card); a function's chip opens its pane. Status is a word and a dot, never a colour alone. */
+const WB_ENG_HEAD = { running: "running", turn: "its turn", ran: "ran", stopped: "stopped where it was", left_out: "left out of the plan" };
+function wbEngHeadHtml(name, card){
+  if (!card) return "";
+  const h = card.head || {};
+  let said = WB_ENG_HEAD[h.state] || h.word || "";
+  if (h.state === "waits") said = /^waits\b/.test(h.why || "") ? wbCap(h.why) : "Waits: " + (h.why || "");
+  const bits = [said, h.state === "running" && h.round ? "Round " + h.round : "",
+                (h.state === "running" || h.state === "turn") && h.at ? "since " + wbWhen(h.at) : (h.state === "ran" && h.at ? wbWhen(h.at) : "")];
+  const dot = h.state === "waits" ? wbTtDot(h) : (WB_TT_DOT[h.state] || "off");
+  return `<div class="wbenghead wb"><b>${wbEsc(name)}</b><span class="dpchk">engine</span>${wbDot(dot)}<span>${wbEsc(bits.filter(Boolean).join(" · "))}</span></div>`;
+}
+function wbEngMotorHtml(card){
+  const mo = card.motor || {};
+  return dpCard("Motor", `<div class="wbfive wb"><span class="dpk">Slot</span>${wbDot(mo.once ? "ok" : "block")}` +
+    `<span>${wbEsc([mo.slot, mo.says, "window " + mo.window_min + " min"].filter(Boolean).join(" · "))}</span>` +
+    `<span title="Today">${dpBar(Math.max(0, Math.min(1, Number(mo.today) || 0)))}</span></div>`);
+}
+function wbEngFiveHtml(card){
+  const rows = (card.five || []).map(r => {
+    const fn = String(r.fn || "").toLowerCase();
+    const said = r.says + (r.at ? " at " + wbWhen(r.at) : "");
+    return `<div class="wbfive wb"><button type="button" class="wbfivefn fn-${wbEsc(fn)} wb" data-dptab="${wbEsc(fn)}">` +
+      `${typeof wb2Mark === "function" ? wb2Mark(fn) : ""}${wbEsc(r.fn)}</button>${wbDot(r.state)}<span>${wbEsc(said)}</span>` +
+      `<span>${r.share === null || r.share === undefined ? "" : dpBar(Math.max(0, Math.min(1, Number(r.share) || 0)))}</span></div>`;
+  }).join("");
+  return dpCard("With the five functions", rows || dpQuiet("Not read yet"));
+}
+
 /* ── the five systems' own state, under the function cards ────────────────── */
 function wbFnExtra(tab, m){
   if (!m) return "";
@@ -1112,14 +1215,16 @@ function wbFnExtra(tab, m){
       dpCard("Stamped by rule", (m.recent || []).filter(r => r.engine === "Identity").map(r => wbRunRow(r)).join("") || dpQuiet("Nothing yet")) +
       steps;
   }
+  /* Priority prices and holds the budget; who goes first is Coordination's, so the queue is on Coordination's card
+     (PRD M4.6, S-05) */
   if (tab === "priority"){
     return dpCard("Envelopes", engs.map(e => dpRunRow(e.name, "", "", dpBar(Math.min(1, ((e.envelope || {}).used_calls || 0) / ((e.envelope || {}).calls || 1))))).join("")) +
       (wbRt(m) ? wbLimitsHtml(m.ref) : "") +
-      dpCard("Queue", engs.map(e => dpRunRow(e.name, e.state === "Running" ? "Running" : (e.state === "Waits" ? "Waits for the stamp" : e.slot), wbEngDot(e))).join("")) +
       steps;
   }
   if (tab === "coordination"){
     return dpCard("Timetable", engs.map(e => dpRunRow(e.name, e.slot, "")).join("")) +
+      dpCard("Queue", engs.map(e => dpRunRow(e.name, e.state === "Running" ? "Running" : (e.state === "Waits" ? "Waits for the stamp" : e.slot), wbEngDot(e))).join("")) +
       dpCard("Hand-offs", engs.map(e => dpRunRow(e.reads + " → " + e.name, "", "ok")).join("")) +
       dpCard("Locks", (m.status && m.status.running && m.status.running.length)
         ? m.status.running.map(r => dpRunRow(r.engine, "Holds the line", "warn")).join("") : dpQuiet("Nothing is held")) +
@@ -1137,6 +1242,8 @@ function wbFnOwn(ref, tab){
   if (!wbIs(ref)) return "";
   const m = wbS().map[ref];
   if (!m){ wbLoadMap(ref); return ""; }
+  /* Coordination's pane opens on its timetable (PRD M4.7, S7); its page folds under it */
+  if (wbRt(m) && tab === "coordination") return wbCoordHtml(ref);
   /* on the engine runtime the card opens on the function's page (PRD M1.7), its own state under it */
   return (wbRt(m) && WB_FUNCS.indexOf(tab) >= 0 ? wbFnPageHtml(ref, tab) : "") + wbFnExtra(tab, m);
 }

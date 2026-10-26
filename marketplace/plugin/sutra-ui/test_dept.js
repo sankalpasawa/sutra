@@ -2721,15 +2721,21 @@ test("slice J: Adaptation draws the department and lists every engine's steps", 
   assert.ok(card.indexOf("read the folder") !== -1 && card.indexOf("file what changed") !== -1, "its steps");
 });
 
-test("slice J: Priority shows when each engine runs next, off the engine's own record", () => {
+/* PRD M4.6 (S-05): when each engine runs next is Coordination's timetable; Priority prices and holds, and its card
+   shows no next runs */
+test("slice J: Coordination shows when each engine runs next, off the engine's own record; Priority's card does not", () => {
   const c = withTpl(fresh());
   c.localStorage = memStore();
   const eng = { engines: [Object.assign({}, ENGINES.engines[0], { next_run: "2026-09-23T03:30:00+05:30" }),
                           Object.assign({}, ENGINES.engines[1], { next_run: null })] };
-  const card = fnCard(c, "priority", PRIORITY, null, { engines: Object.assign({ ref: "r4" }, eng) });
+  const card = fnCard(c, "coordination", COORD, null, { engines: Object.assign({ ref: "r4" }, eng) });
   assert.ok(card.indexOf("Next runs") !== -1);
   assert.ok(card.indexOf("next 03:30") !== -1, "the clock the record carries");
   assert.ok(card.indexOf("not scheduled") !== -1, "and the one with no next run says so");
+  const c2 = withTpl(fresh());
+  c2.localStorage = memStore();
+  const pri = fnCard(c2, "priority", PRIORITY, null, { engines: Object.assign({ ref: "r4" }, eng) });
+  assert.ok(pri.indexOf("Next runs") === -1 && pri.indexOf("next 03:30") === -1, "Priority never says what runs next");
 });
 
 test("slice J: Coordination says who makes each engine's work and who reads it", () => {
