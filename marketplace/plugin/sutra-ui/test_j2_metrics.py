@@ -118,7 +118,8 @@ class TestProofScenarios:
         W, R, J, _ = j2
         answers = dict(READER, **({"adapt.line": {"engines": LAB_LINE}} if kind == "organic" else {}))
         _model(monkeypatch, R, answers)
-        ref = _default(j2) if kind == "default" else _born(j2, ORGANIC if kind == "organic" else WEBSITE, "Lab Co" if kind == "organic" else "Acme Learning")
+        words, org = {"website": (WEBSITE, "Acme Learning"), "organic": (ORGANIC, "Lab Co")}.get(kind, (None, None))
+        ref = _default(j2) if kind == "default" else _born(j2, words, org)
         _stamp_all(W, ref)
         assert W.dept(ref)["kind"] == kind
         st = J.status(ref)
