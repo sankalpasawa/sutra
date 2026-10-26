@@ -5312,11 +5312,13 @@ def _left_out(d, why):
     return (named or items)[-1]
 
 
-def _blocked(ref, d, who, said, title, by, why):
+def _blocked(ref, d, who, said, title, by, why, options=None):
     """The plan is blocked, and there is always a way out (PRD M3.5, screen S10): the cycle says blocked, and what
     Identity says is an ask with options, the first the one it recommends, each applied by code when the owner chooses
     it: change the plan in my words; leave an item out (a done_items ask, stamped by that choice); stop. The line names
-    its card, so the chat says it once, on the card; an older card for the same plan goes quiet."""
+    its card, so the chat says it once, on the card; an older card for the same plan goes quiet. `options`, when given,
+    are the ways out the card offers instead of those three (at most OPTIONS_MAX, each built by W.option): a conflict's own
+    (Priority's raise, Adaptation's set-up-again; M5.4), or leaving a rule out (M9.5)."""
     J = _j2()
     if J:
         J._set(ref, state="blocked")
@@ -5329,6 +5331,7 @@ def _blocked(ref, d, who, said, title, by, why):
         opts.append(W.option("leave:" + item["id"], "Leave %s out" % item["id"],
                              "%s is dropped from done-when (%s); nothing more is spent" % (item["id"], str(item["text"]).rstrip("."))))
     opts.append(W.option(W.STOP_OPTION, "Stop here", "the department stops where it is; you can start it again later"))
+    opts = [o for o in options or []][:W.OPTIONS_MAX] or opts
     for old in W.asks(ref):
         if old.get("kind") == "blocked" and old["status"] == "pending":
             W._put_ask(ref, dict(old, status="replaced", decided=W.now()))

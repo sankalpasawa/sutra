@@ -5,11 +5,16 @@ Every code, prompt, draft and check name the recipe uses is provided here: by re
 to the body engine_runtime holds today, so the behaviour is exactly what ran before, or as a body of its own where this
 version adds to it (A1.19: a name a layer changes is copied here and changed here): the handler Hear a doubt (identity_doubt,
 PRD M3.9) and the two steps that tell it the owner's answer (identity_read and identity_file, which hand every other
-word on to the body engine_runtime holds). WORDS and LAYOUT hold the words of every part of Identity's prompts (I2), so none
+word on to the body engine_runtime holds). Wave 2 adds to it (A1 W2-IDENTITY): the conflict's own ways out reach the owner as one
+card, applied by the layer that owns each (identity_closed, identity_apply; M5.4); Hear a reading, where done is read from
+Audit's reading and what it leaves open is weighed three ways (identity_done, identity_weigh_reading; M8.4, M8.5); File a
+granted round (identity_round; M9.3); and no end of the pursuit is silent (M9.5). WORDS and LAYOUT hold the words of every part of Identity's prompts (I2), so none
 is read from the .md bundle. view() returns the pane's read model by reference (I3).
 """
 import re
+import uuid
 
+import layers
 from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests reload engine_runtime, so never a module object
 
 LAYER = 'identity'
@@ -432,8 +437,124 @@ def doubt_answered(ctx, got):
         "'just do it'" if hurry else "answer", answer[:160]), "filed": row["v"]}
 
 
+
+# ---- The ways out of a conflict (PRD M5.4) ------------------------------------------------------------------------------
+# A conflict Identity cannot settle goes to the owner as one ask. When the one who raised it knew the ways out (Priority at a
+# limit: raise it, leave an item out, stop; Adaptation when no plan can be made: set it up again, leave an item out, stop), the
+# conflict carries them as options (act.conflict), and the ask carries those: each checked as the interface types an option, at
+# most three, each applied by the layer OPTION_KINDS names. A conflict that carries none is put to the owner as it was.
+
+
+def conflict_options(payload):
+    """The ways out a conflict carries, as the ask will hold them (W.option): the ones the interface types as an option, and no
+    more than it allows; [] when the conflict carries none."""
+    out = []
+    for o in (payload or {}).get('options') or []:
+        try:
+            built = W.option(o['id'], o['label'], o['cost'], o.get('params'))
+        except (KeyError, TypeError, AttributeError):
+            continue
+        if not S.validate('option', built) and len(out) < S.OPTIONS_MAX:
+            out.append(built)
+    return out
+
+
+def identity_closed(ctx, step, item):
+    """Identity's ruling on a bargain that did not close (step 4): run it, drop it, or one ask to the owner (J2.3). The body
+    engine_runtime held, moved here to carry the conflict's own ways out: whenever the ruling puts the conflict to the owner,
+    what the owner gets is one card with those ways out when the conflict carries them (conflict_options)."""
+    ref, d, pl = ctx['ref'], ctx['dept'], ctx['post']['payload']
+    got = ctx['bag']['identity.close']
+    ruling, why = got.get('ruling'), str(got.get('why') or '').strip().rstrip('.')
+    engines, cj = [e for e in pl.get('engines') or [] if isinstance(e, dict) and e.get('name')], R._j2()
+    names = ' -> '.join(e['name'] for e in engines)
+    who = {'src': 'Root' if d.get('root') else R.OWNER}
+    ways = conflict_options(pl)
+    if not engines:
+        # no plan at all: Adaptation answered that an engine the kind requires cannot serve an item (J2B-4, M6.4), so there is
+        # nothing to run, nothing to drop and no plan to stamp (a stamp would send Root a plan that names no engine, and the
+        # same card would come back). The owner is put the reason in plain words, on the card every blocked plan has, with the
+        # ways out the conflict carries, or the usual three
+        reason = str(pl.get('why') or 'no plan can be made').strip().rstrip('.')
+        if cj:
+            cj.ruled(ref, 'ask', reason, engines)
+        R._blocked(ref, d, who, '%s. Say what the department should do, or choose a way forward on this card.' % reason,
+                   'No plan can be made as it stands.', 'Adaptation, shaping the plan', reason, options=ways)
+        return {'said': 'no plan can be made (%s); put to the owner, with the ways out' % reason}
+    if cj:
+        cj.ruled(ref, ruling, why, engines)
+    if ruling == 'run':
+        R._tell(ref, d, who, 'inform', {'word': 'line', 'done': 'Priority did not say yes to the plan %s; I ruled it runs: %s.' % (names, why)})
+        return R._j2_settle(ref, d, engines, pl.get('source') or 'shaped', pl.get('words'), "Identity's ruling")
+    if ruling == 'drop':
+        R._blocked(ref, d, who, "The plan %s is dropped: %s. Say what to change, or raise Priority's limit on its card."
+                   % (names, why or str(pl.get('why') or '')), 'The plan is dropped.', "Identity, settling Priority's no",
+                   why or str(pl.get('why') or ''), options=ways)
+        return {'said': 'dropped the plan: ' + (why or "Priority's no stands")}
+    if ways:
+        # the conflict says how it can go on, so the owner chooses between those: one card, never a stamp that can only run or drop
+        if not any(a.get('kind') == 'blocked' and a.get('status') == 'pending' and a.get('for') == pl.get('for') for a in W.asks(ref)):
+            text = ('Adaptation proposes the plan %s. %s. The goal and the rules do not settle it. Choose a way forward on this card.'
+                    % (names, str(pl.get('why') or 'Priority did not say yes to it').rstrip('.')))
+            ask = R._blocked(ref, d, who, text, 'The plan needs your word.', 'Identity, settling the bargain',
+                             why or str(pl.get('why') or ''), options=ways)
+            W._put_ask(ref, dict(ask, **{'for': pl.get('for')}))
+        return {'said': 'could not close the conflict from the goal and the rules; put it to the owner, with its ways out'}
+    text = ('Adaptation proposes the plan %s. %s. The goal and the rules do not settle it. %s'
+            % (names, str(pl.get('why') or 'Priority did not say yes to it').rstrip('.'), R._answers('run it as proposed', 'to drop it')))
+    # the card quotes Priority's why, which a model may say in the bargain's inside words: it passes the check every card
+    # passes (plain_card, M3.6), so the card says what the line it stands for may (found by a verifier 2026-10-26: the
+    # Chat's 'Waiting for you' card said grant and counter while its line was plain)
+    text = R.plain_card(ref, {'text': text}, 'conflict')['text']
+    if not any(a.get('kind') == 'conflict' and a.get('for') == pl.get('for') for a in W.asks(ref)):
+        p = R.post(ref, 'Identity', R.OWNER, 'request', {'word': 'conflict', 'objective': text, 'output': 'a stamp or a refusal', 'may_read': ['Brief'],
+                                                          'boundaries': 'this one plan'})
+        W._put_ask(ref, {'id': 'a-' + uuid.uuid4().hex[:8], 'kind': 'conflict', 'engine': 'Identity', 'engines': engines,
+                         'source': pl.get('source') or 'shaped', 'words': pl.get('words'), 'for': pl.get('for'), 'text': text,
+                         'status': 'pending', 'created': W.now(), 'thread': p['thread'] if p else None})
+    return {'said': 'could not close the conflict from the goal and the rules; put it to the owner'}
+
+
+def apply_way(ctx, ask, pl):
+    """The way out the owner chose on a card, when another layer owns it (S.OPTION_KINDS says which, A1.15): that layer's
+    apply_option(ref, ask, option) applies it. Words, leave and stop are Identity's own, applied by the body engine_runtime
+    holds. A layer that cannot apply it yet, or refuses it (raise past its cap, a set-up with no words), leaves the card
+    waiting as it was, and the owner is told why: a choice nothing applied is no choice. None for a way Identity applies."""
+    ref, d = ctx['ref'], ctx['dept']
+    oid = str(pl.get('option') or '')
+    spec = S.OPTION_KINDS.get(oid.split(':', 1)[0])
+    if not spec or spec['layer'] == 'identity':
+        return None
+    option = next((o for o in ask.get('options') or [] if o.get('id') == oid), None) or {'id': oid}
+    module = layers.impl(ref, spec['layer'], d)
+    fn = getattr(module, 'apply_option', None)
+    try:
+        if not callable(fn):
+            raise ValueError('%s cannot do that yet' % S.TITLE[spec['layer']])
+        got = fn(ref, ask, option)
+    except ValueError as exc:
+        R._card_waits(ref, d, ask)
+        R._tell(ref, d, {'src': 'Root' if d.get('root') else R.OWNER}, 'inform',
+                {'word': 'request', 'done': '%s. Nothing changed; choose again on the card.' % str(exc).strip().rstrip('.')})
+        return {'said': "could not apply the owner's choice (%s): %s; the card waits" % (oid, exc), 'applied': False}
+    return {'said': "applied the owner's choice (%s) through %s" % (oid, S.TITLE[spec['layer']]), 'applied': True, 'result': got}
+
+
+def identity_apply(ctx, step, item):
+    """Apply what the owner stamped (the body engine_runtime holds), once the ways out another layer owns have been applied
+    by it (apply_way, M5.4)."""
+    ref, pl = ctx['ref'], ctx['post']['payload']
+    ask = next((x for x in W.asks(ref) if x['id'] == pl.get('ask')), None)
+    if ask and ask.get('kind') == 'blocked' and pl.get('option'):
+        got = apply_way(ctx, ask, pl)
+        if got is not None:
+            return got
+    return R.identity_apply(ctx, step, item)
+
+
 #: the bodies of this version's own, in the table beside the references
-CODE.update({'identity_read': identity_read, 'identity_file': identity_file, 'identity_doubt': identity_doubt})
+CODE.update({'identity_read': identity_read, 'identity_file': identity_file, 'identity_doubt': identity_doubt,
+             'identity_closed': identity_closed, 'identity_apply': identity_apply})
 
 
 def view(ref, d, events, asks):

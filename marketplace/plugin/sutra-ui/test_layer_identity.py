@@ -1,4 +1,5 @@
-"""Identity behind its interface (PRD amendment A1, package W1-IDENTITY: M3.8 and M3.9), one section per step:
+"""Identity behind its interface (PRD amendment A1, packages W1-IDENTITY: M3.8 and M3.9, and W2-IDENTITY: M5.4, M8.4, M8.5,
+M9.3, M9.5 and M9.8), one section per step:
 
     I1  identity/v1 provides every code, prompt, draft and check name its recipe uses, by reference, and passes the
         contract cases that do not read words
@@ -8,6 +9,12 @@
     I5  Hear a doubt: Adaptation's one doubt is put to the owner as one question with no number in it, its answer goes
         back to Adaptation as a line request, and the bounds (one a line request, two a cycle) hold
     I6  the contract, every case, passes for identity/v1 with no part of its prompts on the .md fallback
+    J1  a conflict that carries ways out reaches the owner as one ask with those options, each applied by the layer that owns it
+    J2  Hear a reading: done is read from Audit's reading, by its id, and nothing else declares the goal reached
+    J3  a reading is weighed three ways: a question, an ask, or the next move to Adaptation
+    J4  File a granted round: the correction joins the Brief with no stamp unless a rule says ask
+    J5  no silent ends: every end of the pursuit that is not done leaves a pending ask with options
+    J6  a stamped change to the goal or to done-when starts the cycle again
 
 The departments are born the way a person makes them, on the real board, as test_j2's are (its fixture and helpers are
 copied here with the pane's module reloaded too). A test that meets a fault of the interface fails through conftest.py;
@@ -108,8 +115,9 @@ def test_i1_every_name_the_recipe_uses_is_provided_and_nothing_else_is():
     assert {k: set(d) for k, d in C._dicts(V1).items()} == names
 
 
-#: the bodies identity/v1 holds of its own: the handler Hear a doubt (I5) and the two steps that tell it the owner's answer
-OWN = {"identity_doubt", "identity_read", "identity_file"}
+#: the bodies identity/v1 holds of its own: the handler Hear a doubt (I5) and the two steps that tell it the owner's answer, and
+#: the wave 2 additions (J1 to J6)
+OWN = {"identity_doubt", "identity_read", "identity_file", "identity_closed", "identity_apply"}
 
 
 def test_i1_each_name_the_recipe_uses_is_a_reference_to_the_body_engine_runtime_holds_but_the_versions_own(home):
@@ -762,3 +770,157 @@ def test_i6_the_contract_passes_for_identity_v1_with_no_part_on_the_fallback(cas
     _, what, fn = case
     assert fn(V1, ctx) == [], what
     assert C.on_the_md_fallback(V1) == []
+
+
+# ---- J1: the conflict ask carries the ways out (M5.4) ----------------------------------------------------------------------
+ENGINES = [{"name": "Plan", "reads": "Brief", "writes": "Site plan"}, {"name": "Write", "reads": "Site plan", "writes": "Pages"}]
+
+
+def _ways(items):
+    """Priority's three ways out at a limit: raise it, leave the last item out, stop (act.conflict options)."""
+    last = items[-1]["id"]
+    return [{"id": "raise", "label": "Raise the limit", "cost": "adds budget, up to twice where it started", "kind": "raise",
+             "params": {"what": "ceiling", "rounds": 12}},
+            {"id": "leave:" + last, "label": "Leave %s out" % last, "cost": "%s is dropped from done-when; nothing more is spent" % last, "kind": "leave"},
+            {"id": "stop", "label": "Stop here", "cost": "the department stops where it is; you can start it again later", "kind": "stop"}]
+
+
+def _conflict(R, ref, engines, options, why="Priority said no to the plan: there is no room", **more):
+    """A stub Adaptation (or Coordination): it tells Identity a bargain did not close, with the ways out it knows."""
+    return R.post(ref, "Adaptation", "Identity", "inform",
+                  dict({"word": "conflict", "engines": engines, "source": "library", "words": "w", "why": why, "bound": None, "for": "x-j1",
+                        "options": options}, **more))
+
+
+def _cards(W, ref, kinds=("blocked", "conflict")):
+    return [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] in kinds]
+
+
+def test_j1_a_conflict_with_raise_leave_and_stop_reaches_the_owner_as_one_ask_with_those_options(j2):
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    ways = _ways(W.items_of(W.dept(ref)))
+    assert S.validate("act.conflict", {"word": "conflict", "options": ways}) == []
+    _conflict(R, ref, ENGINES, ways)
+    W.run_until_idle(ref, limit=300)
+    cards = _cards(W, ref)
+    assert len(cards) == 1 and cards[0]["kind"] == "blocked", "one ask, and not the stamp that only runs or drops"
+    ask = cards[0]
+    assert [o["id"] for o in ask["options"]] == [w["id"] for w in ways] and [o["kind"] for o in ask["options"]] == ["raise", "leave", "stop"]
+    assert [o["params"] for o in ask["options"] if "params" in o] == [{"what": "ceiling", "rounds": 12}]
+    assert all(S.validate("option", o) == [] for o in ask["options"]) and S.validate_record("identity", "ask", ask) == []
+    assert ask["for"] == "x-j1" and J.status(ref)["state"] == "blocked"
+    seen = _the_card_the_owner_reads(R, ref, ask)
+    assert not [w for s in seen for w in re.findall(r"\b(?:grant|counter|refuse|charter)\w*", s, re.I)], seen
+    # said again, the same conflict is the same card: one ask however often it is heard
+    _conflict(R, ref, ENGINES, ways, **{"for": "x-j1"})
+    W.run_until_idle(ref, limit=300)
+    assert [a["id"] for a in _cards(W, ref)] == [ask["id"]]
+
+
+def test_j1_a_conflict_with_no_ways_out_is_put_to_the_owner_as_it_was(j2):
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    R.post(ref, "Adaptation", "Identity", "inform", {"word": "conflict", "engines": ENGINES, "source": "library", "words": "w", "why": "no room", "for": "x-j1"})
+    W.run_until_idle(ref, limit=300)
+    cards = _cards(W, ref)
+    assert [a["kind"] for a in cards] == ["conflict"] and "options" not in cards[0]
+
+
+def test_j1_a_conflict_that_cannot_make_a_plan_carries_its_ways_out_on_the_blocked_card(j2):
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    ways = [{"id": "root_setup", "label": "Set it up again, done its own way", "cost": "Root sets this up again for your stamp", "kind": "root_setup",
+             "params": {"words": "A bakery site, done our way"}}] + _ways(W.items_of(W.dept(ref)))[1:]
+    _conflict(R, ref, [], ways, why="Check cannot serve D1: nothing it makes shows it")
+    W.run_until_idle(ref, limit=300)
+    ask = _cards(W, ref)[0]
+    assert ask["kind"] == "blocked" and [o["id"] for o in ask["options"]][0] == "root_setup" and len(ask["options"]) == 3
+    assert ask["options"][0]["params"] == {"words": "A bakery site, done our way"}
+
+
+def test_j1_the_ways_out_are_checked_as_the_interface_types_them_and_are_at_most_three():
+    good = [{"id": "raise", "label": "Raise it", "cost": "more", "kind": "raise", "params": {"what": "ceiling"}},
+            {"id": "leave:D2", "label": "Leave D2 out", "cost": "less"}, {"id": "stop", "label": "Stop", "cost": "nothing"}]
+    bad = [{"id": "Not A Way", "label": "x", "cost": "y"}, {"id": "teleport", "label": "Teleport", "cost": "z"},
+           {"id": "raise", "label": "", "cost": "y"}, {"id": "words", "cost": "y"}, "not an option", None, {"id": "raise", "label": "r", "cost": "c", "params": "no"}]
+    got = V1.conflict_options({"options": bad[:2] + good + bad[2:]})
+    assert [o["id"] for o in got] == ["raise", "leave:D2", "stop"] and all(S.validate("option", o) == [] for o in got)
+    assert [o["kind"] for o in got] == ["raise", "leave", "stop"], "the kind is the part of the id before the colon"
+    assert len(V1.conflict_options({"options": good * 2})) == S.OPTIONS_MAX == 3
+    assert V1.conflict_options({}) == V1.conflict_options({"options": None}) == V1.conflict_options(None) == []
+    assert V1.conflict_options({"options": bad}) == []
+
+
+def test_j1_a_way_out_is_applied_by_the_layer_the_interface_names(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    ways = _ways(W.items_of(W.dept(ref)))
+    _conflict(R, ref, ENGINES, ways)
+    W.run_until_idle(ref, limit=300)
+    ask = _cards(W, ref)[0]
+    assert S.OPTION_KINDS["raise"]["layer"] == "priority"
+    seen = []
+    monkeypatch.setattr(layers.load("priority/v1"), "apply_option", lambda r, a, o: seen.append((r, a["id"], o["id"], o.get("params"))) or {"raised": True}, raising=False)
+    W.choose_option(ref, ask["id"], "raise")
+    W.run_until_idle(ref, limit=300)
+    assert seen == [(ref, ask["id"], "raise", {"what": "ceiling", "rounds": 12})], "Priority applied it, with the option as the card held it"
+    done = next(a for a in W.asks(ref) if a["id"] == ask["id"])
+    assert done["status"] == "chosen" and done["chosen"]["id"] == "raise", "the card is answered, once"
+
+
+def test_j1_a_way_out_no_layer_can_apply_leaves_the_card_waiting_and_says_why(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    _conflict(R, ref, ENGINES, _ways(W.items_of(W.dept(ref))))
+    W.run_until_idle(ref, limit=300)
+    ask = _cards(W, ref)[0]
+    monkeypatch.delattr(layers.load("priority/v1"), "apply_option", raising=False)
+    W.choose_option(ref, ask["id"], "raise")
+    W.run_until_idle(ref, limit=300)
+    again = _cards(W, ref)
+    assert [a["id"] for a in again] == [ask["id"]] and again[0]["chosen"] is None and again[0]["thread"] != ask["thread"], "the same card, waiting again"
+    assert any("Priority cannot do that yet. Nothing changed; choose again on the card." in s for s in _said_by_identity(R, ref))
+    # a layer that refuses it (past its cap, say) leaves the card waiting too, and says what it said
+    def refuse(r, a, o):
+        raise ValueError("That is more than twice where it started")
+    monkeypatch.setattr(layers.load("priority/v1"), "apply_option", refuse, raising=False)
+    W.choose_option(ref, ask["id"], "raise")
+    W.run_until_idle(ref, limit=300)
+    assert _cards(W, ref)[0]["id"] == ask["id"] and any("That is more than twice where it started. Nothing changed" in s for s in _said_by_identity(R, ref))
+
+
+def test_j1_set_it_up_again_is_applied_by_root_as_one_request_for_the_owners_stamp(j2):
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    root = W.dept(ref)["root"]
+    ways = [{"id": "root_setup", "label": "Set it up again, done its own way", "cost": "Root sets this up again for your stamp", "kind": "root_setup",
+             "params": {"words": "A bakery site"}}] + _ways(W.items_of(W.dept(ref)))[1:]
+    _conflict(R, ref, [], ways, why="Check cannot serve D1: nothing it makes shows it")
+    W.run_until_idle(ref, limit=300)
+    ask = _cards(W, ref)[0]
+    before = len([p for p in R.board(root) if p["src"] == "Owner"])
+    W.choose_option(ref, ask["id"], "root_setup")
+    W.run_until_idle(ref, limit=300)
+    asked = [p for p in R.board(root)[before:] if p["src"] == "Owner" and "done its own way" in str(p["payload"].get("words"))]
+    assert len(asked) == 1 and asked[0]["payload"]["words"] == "A bakery site, done its own way"
+    assert next(a for a in W.asks(ref) if a["id"] == ask["id"])["status"] == "chosen"
+
+
+def _two_items(W, ref):
+    """The default website's done-when is one item; a second, read by an AI, so one can be left out."""
+    W.put_done_items(ref, W.items_of(W.dept(ref)) + [{"text": "Shoppers can order a cake on WhatsApp", "how": "model", "level": "outcome"}])
+    return W.items_of(W.dept(ref))
+
+
+def test_j1_leave_and_stop_are_still_applied_by_identity(j2):
+    W, R, J, _, _ = j2
+    ref = _born(j2)
+    items = _two_items(W, ref)
+    assert [i["id"] for i in items] == ["D1", "D2"]
+    _conflict(R, ref, ENGINES, _ways(items))
+    W.run_until_idle(ref, limit=300)
+    ask = _cards(W, ref)[0]
+    W.choose_option(ref, ask["id"], "leave:" + items[-1]["id"])
+    W.run_until_idle(ref, limit=300)
+    assert [i["id"] for i in W.items_of(W.dept(ref))] == [i["id"] for i in items[:-1]], "the item is out of done-when"
