@@ -5,6 +5,7 @@ A test here that meets a fault on purpose does so inside S.expect_refused(); any
 the conftest fixture, which is the rule every test of the app now keeps (A1.20).
 """
 import json
+import re
 
 import pytest
 
@@ -186,6 +187,254 @@ def test_s1_mode_is_a_code_constant_never_an_environment_variable():
     src = (S.HERE / "layer_schema.py").read_text(encoding="utf-8")
     assert S.MODE == "warn" and S.OWNERSHIP_MODE == "warn"
     assert "os.environ" not in src and "getenv" not in src
+
+
+# ---- S2: every definition takes a sample that fits and refuses one that does not (M2.1's done check) ------------------
+# One row per DEFS name: (good, bad), the bad one the good one with one thing wrong, so the fault is the one meant. The
+# department's keys are covered through the department record: DEPARTMENT holds every key, DEPARTMENT_BAD one wrong value
+# for each. A name added to DEFS (an 'A1 interface:' commit) adds its row here, or test_s2_the_samples_name_every_definition
+# fails naming it. The writers' own outputs are test_layer_writers.py's; these are the definitions as A1 types them.
+def _but(d, **changes):
+    out = json.loads(json.dumps(d))
+    out.update(changes)
+    return out
+
+
+NOW = "2026-10-26T10:00:00"
+LINE = ["Plan", "Write", "Check", "Publish"]
+FIVE = ["Identity", "Adaptation", "Priority", "Coordination", "Audit"]
+OPTION = {"id": "leave:D2", "label": "Leave D2 out", "cost": "The site goes live without the booking page."}
+DONE_ITEM = {"id": "D1", "text": "The home page says what the clinic does", "how": "by eye", "level": "outcome", "confirm": ""}
+RULE = {"id": "r-1", "tag": None, "line": "Never publish on a Sunday", "since": NOW, "from": None, "scope": "standing"}
+PINS = dict(S.DEFAULT_PINS)
+CHECK_ROW = {"check": "names_an_engine", "passed": True, "why": "it names four engines"}
+WF_ENGINE = {"name": "Write", "does": "writes the pages", "reads": "Site plan", "writes": "Pages", "covers": ["D1", "D2"],
+             "internet": False, "start": {}, "check": "pages_are_html", "envelope": {"calls": 40, "usd": 0.5}, "made_by": "library",
+             "required": False, "fit": "", "level": 1, "confidence": 0.9, "doubt": ""}
+REGISTRATION = {"version": 1, "engines": LINE, "source": "library", "registered": NOW, "by": "Root", "checks": [CHECK_ROW],
+                "covers": {"D1": ["Write"]}, "fit": {}, "deliverable": "Live site", "left_out": []}
+SLOT = {"engine": "Write", "on": "after Site plan v1", "of": "Site plan", "checked": False, "window_min": 30, "since": NOW}
+LEFT_OUT = {"engine": "Check", "in_line": False, "since": NOW}
+ESTIMATE = {"calls": 12, "usd": 0.3, "basis": "median", "runs": 4,
+            "per_engine": {"Write": {"calls": 8, "usd": 0.2, "basis": "median", "runs": 4}}}
+CEILING = {"rounds": 6, "calls": 200, "usd": 5.0, "start": {"rounds": 6, "calls": 200, "usd": 5.0}, "raised": [], "at": NOW}
+READING_ITEM = {"id": "D2", "subject": "Live site, the booking page", "claim": "a visitor can book a doctor",
+                "evidence": "the form posts to /book", "method": "code", "verdict": "met", "severity": "low"}
+FINDING = {"id": "F1", "severity": "high", "claim": "the booking form has no button", "where": "Live site, the booking page",
+           "item": "D2", "went_to": "Identity", "ask": None, "at": NOW}
+QUESTION = {"schema": "board/1", "id": "Q-1", "asked_by": "Write", "to": "Plan", "about": "the booking page",
+            "question": "Which doctors take bookings?", "answer": None, "answered_by": None, "status": "open", "reason": None,
+            "artifact_update": None, "used_by": [], "cycle": None, "slot": "Plan after Brief v1", "attempt": 1, "run": None}
+INSTRUCTIONS = {"schema_version": 1, "values": {"identity": {"take": {"take": {"task": {"value": "Judge it.", "at": NOW, "ask": "a-1"}}}}}}
+TT_ROW = {"engine": "Write", "on": "after Site plan v1", "starts": "when Site plan v1 lands", "window_min": 30, "since": NOW,
+          "state": "turn", "word": "its turn", "why": None, "at": None, "last": None}
+VIEW_COORDINATION = {"line": LINE, "registered": 1, "timetable": [TT_ROW], "left_out": [{"engine": "Check", "since": NOW}],
+                     "holds": [], "handoffs": [{"art": "Site plan", "v": 1, "by": "Plan", "says": "the plan", "readers": ["Write"]}],
+                     "chain": {"of": None, "used": 0, "limit": 12, "share": 0}, "alarms": [], "ties": []}
+VIEW_ENGINE_CARD = {"engine": "Write", "head": {"state": "quiet", "word": None, "why": None, "at": None, "round": None},
+                    "motor": {"slot": "after Site plan v1", "starts": "when Site plan v1 lands", "once": False,
+                              "says": "waits for Site plan", "window_min": 30, "today": 0},
+                    "five": [{"fn": fn, "state": "ok", "says": "nothing to say", "at": None, "share": None} for fn in FIVE]}
+VIEW_IDENTITY = {"standard": {"met": False, "missing": ["goal"],
+                              "rows": [{"id": "goal", "says": "a goal in your words", "state": "not_met", "note": "no goal yet"}]},
+                 "goal": None, "done": None,
+                 "done_items": [{"id": "D1", "text": "The home page says what the clinic does", "how": "by eye", "level": "outcome",
+                                 "confirm": None}],
+                 "rules": [{"tag": None, "line": "Never publish on a Sunday", "by": "yours", "since": NOW}],
+                 "open_question": None, "conflicts": []}
+
+SAMPLES = {
+    # common (A1.5)
+    "name": ("Site plan", "/etc/site plan"),
+    "id.item": ("D12", "D0"),
+    "id.finding": ("F120", "F0"),
+    "impl": ("identity/v1", "identity/v0"),
+    "envelope": ({"calls": 40, "usd": 0.5}, {"calls": -1, "usd": 0.5}),
+    "option": (OPTION, _but(OPTION, label="")),
+    "check.verdict": ({"ok": True, "notes": []}, {"ok": "yes", "notes": []}),
+    # Identity's records (A1.6, A1.8)
+    "identity.done_item": (DONE_ITEM, _but(DONE_ITEM, colour="red")),
+    "identity.rule": (RULE, {"tag": "ask"}),
+    "identity.ask": ({"id": "a-1", "kind": "blocked", "status": "pending", "text": "Write cannot run: the plan has no pages.",
+                      "created": NOW, "decided": None, "by": None, "engine": "Write", "thread": None, "options": [OPTION],
+                      "chosen": None, "items": [DONE_ITEM], "cycle_id": None},
+                     {"id": "a-1", "kind": "blocked", "status": "maybe"}),
+    # Root's records (A1.6, A1.7)
+    "root.pins": (PINS, _but(PINS, identity="identity/v0")),
+    "engine.template": ({"id": "engine/translate", "name": "Translate", "version": 1, "use_case": "Translate the pages into Hindi",
+                         "description": "translates the pages", "instruction": "Translate every page.", "reads": "Brief",
+                         "writes": "Translate", "made_by": {"by": "Adaptation", "dept": "dref-acme0001", "at": NOW, "idea": ""},
+                         "start": {"on": [{"kind": "version", "of": "Brief"}], "unless": []}, "steps": [{"id": "translate.read"}],
+                         "needs": [], "kind": "work"},
+                        {"id": "engine/translate", "name": "Translate", "use_case": "Translate the pages into Hindi",
+                         "made_by": {"by": "Root"}}),
+    # the workflow schema (A1.14)
+    "workflow.engine": (WF_ENGINE, {"name": "Write", "reads": "Site plan"}),
+    "workflow": ({"schema_version": 1, "version": 1, "kind": "website", "source": "library", "engines": [WF_ENGINE],
+                  "deliverable": "Pages", "covers": {"D1": ["Write"]}, "covers_by": "adaptation", "left_out": [], "checks": [CHECK_ROW],
+                  "why": "", "at": NOW, "by": "Root"},
+                 {"engines": [WF_ENGINE], "source": "copied"}),
+    "workflow.check": (CHECK_ROW, _but(CHECK_ROW, check="looks_nice")),
+    "workflow.registration": (REGISTRATION, _but(REGISTRATION, version=0)),
+    # Coordination's records (A1.11)
+    "coordination.slot": (SLOT, _but(SLOT, window_min=1441)),
+    "coordination.left_out": (LEFT_OUT, _but(LEFT_OUT, in_line=True)),
+    "coordination.table": ({"schema_version": 1, "order": ["posts", "line", "functions"], "functions": FIVE, "line": LINE,
+                            "edges": {}, "left_out": [LEFT_OUT], "grown": [], "registered": 1, "timetable": [SLOT],
+                            "by": "Coordination", "since": NOW, "why": "Root registered the plan"},
+                           {"order": ["posts", "line", "functions"], "line": LINE, "by": "Root"}),
+    # Adaptation's open records (A1.9)
+    "adaptation.idea": ({"id": "i-0a1b2c", "words": "a page in Hindi", "reflected": "the site in Hindi too", "question": None,
+                         "shapes": ["a second language", "a Hindi page"], "state": "parked", "at": NOW}, "a page in Hindi"),
+    "adaptation.ladder": ({"engine": "Write", "step": "write.page", "rung": "C0", "form": None, "since": NOW, "held": False,
+                           "pending": None, "trial": None, "history": []}, ["C0"]),
+    # the records and acts waves 1 to 3 write first (A1.13b)
+    "priority.estimate": (ESTIMATE, _but(ESTIMATE, basis="guess")),
+    "priority.price": ({"schema_version": 1, "id": "p-1", "at": NOW, "cycle_id": None, "round": None, "thread": "t-1",
+                        "proposal": "line", "engines": LINE, "estimate": ESTIMATE, "room": {"calls": 100, "usd": 2.0},
+                        "remaining": {"calls": 88, "usd": 1.7}, "answer": "counter", "keep": ["Plan", "Write", "Publish"],
+                        "why": "three engines fit today's room",
+                        "indices": {"spend_per_run": {"Write": 0.05}, "checks": {"Write": "ok"}}},
+                       {"at": NOW, "proposal": "line", "estimate": ESTIMATE, "room": {"calls": 100, "usd": 2.0}, "answer": "grant",
+                        "why": "it fits"}),
+    "priority.ceiling": (CEILING, _but(CEILING, rounds=100)),
+    "audit.reading_item": (READING_ITEM, _but(READING_ITEM, method="by eye")),
+    "audit.finding": (FINDING, _but(FINDING, severity="critical")),
+    "audit.reading": ({"schema_version": 1, "id": "r-0a1b2c3d", "v": 2, "artifact": "Live site", "cycle_id": None, "round": 1,
+                       "read": True, "why_not_read": None, "items": [READING_ITEM], "findings": [FINDING], "at": NOW},
+                      {"id": "reading-1", "v": 2, "artifact": "Live site", "read": True, "items": [], "at": NOW}),
+    "adaptation.round": ({"schema_version": 1, "round": 2, "at": NOW, "cycle_id": None, "correction": "add the booking button",
+                          "fixes": ["F1"], "covers": ["D2"], "estimate": ESTIMATE, "status": "proposed", "reading": "r-0a1b2c3d",
+                          "brief_v": 1},
+                         {"round": 2, "correction": "add the booking button", "covers": ["D2"], "status": "applied"}),
+    "coordination.question": (QUESTION, _but(QUESTION, schema="board/2")),
+    "audit.spot_check": ({"schema_version": 1, "id": "s-1", "at": NOW, "minute": 600,
+                          "checks": [{"check": "spot_check_reads_only", "ok": True, "why": "it wrote nothing"}], "findings": [FINDING]},
+                         {"id": "s-1", "at": NOW, "minute": 1440, "checks": [], "findings": []}),
+    "option.raise": ({"what": "envelope", "engine": "Write", "calls": 20, "usd": 0.5, "rounds": 0},
+                     {"what": "budget", "engine": "Write"}),
+    "option.words": ({"words": "Make the site in Hindi too"}, {"words": ""}),
+    "option.pin": ({"layer": "audit", "impl": "audit/v2"}, {"layer": "audit", "impl": "audit/2"}),
+    # the board's acts (A1.13, A1.13b)
+    "act.any": ({"word": "alarm"}, {"what": "an alarm"}),
+    "act.words": ({"word": "request", "words": 'Make the site; pasted {"a": {"b": 1}} and a template }}', "may_read": ["Brief"]},
+                  {"word": "hello", "words": "Make the site"}),
+    "act.stamp": ({"word": "engine", "ask": "a-3"}, {"word": "engine", "ask": 3}),
+    "act.tell": ({"word": "department", "done": "Done when:\n\tD1 The home page says what the clinic does", "card": "c-1"},
+                 {"word": "department", "done": "a bell \x07"}),
+    "act.ask": ({"word": "publish", "objective": "Put Live site v2 on the web?", "output": "Live site", "may_read": ["Site plan"],
+                 "boundaries": "the site only"},
+                {"word": "publish", "may_read": ["x" * 61]}),
+    "act.verdict": ({"word": "verdict", "answer": "admit", "why": None}, {"word": "verdict", "answer": "grant"}),
+    "act.line_request": ({"word": "line", "words": "Build a website for the clinic", "objective": "a line for the Brief", "faults": [],
+                          "practices": {"rules": [], "engines": LINE, "artifacts": [], "required": [], "taken": []}},
+                         {"word": "line", "faults": ["x" * 601]}),
+    "act.line": ({"word": "line", "engines": ["Plan", WF_ENGINE], "source": "shaped", "words": "Build a website", "for": "a-1",
+                  "covers": {"D1": ["Write"]}, "doubt": "", "confidence": 0.8, "fit": {"Write": "short pages"}, "keep": ["Plan"],
+                  "why": "two engines cover the Brief"},
+                 {"word": "line", "engines": ["Plan"], "confidence": 1.5}),
+    "act.conflict": ({"word": "conflict", "engines": ["Plan", "Write"], "source": "library", "words": None,
+                      "why": "Priority asked for less", "bound": "hops", "for": None, "options": [OPTION]},
+                     {"word": "conflict", "options": [OPTION] * 4}),
+    "act.finding": ({"word": "finding", "claim": "the booking form has no button", "severity": "high", "where": "Live site",
+                     "page": "book.html", "item": "D2", "v": 2, "findings": [{}]},
+                    {"word": "finding", "severity": "critical"}),
+    "act.born": ({"word": "born", "engines": LINE, "version": 1, "full": True, "grow": "", "before": None},
+                 {"word": "born", "full": "yes"}),
+    "act.doubt": ({"word": "doubt", "engine": "Translate", "doubt": "no engine in the Library translates",
+                   "fallback": "Write writes both languages", "confidence": 0.4,
+                   "cannot": {"engine": "Translate", "items": ["D3"], "why": "no engine can"}},
+                  {"word": "doubt", "engine": "Translate"}),
+    "act.reading": ({"word": "reading", "reading": "r-0a1b2c3d", "artifact": "Live site", "v": 2, "read": True, "met": ["D1"],
+                     "not_met": ["D2"], "to_confirm": [], "findings": ["F1"], "high": True},
+                    {"word": "reading", "reading": "r-0a1b2c3d", "artifact": "Live site", "v": 2, "read": True, "met": ["X1"],
+                     "not_met": [], "to_confirm": []}),
+    "act.next": ({"word": "next", "items": ["D2"], "reading": "r-0a1b2c3d", "findings": ["F1"], "round": 2},
+                 {"word": "next", "items": [], "reading": "r-0a1b2c3d"}),
+    "act.round": ({"word": "round", "round": 2, "correction": "add the booking button", "fixes": ["F1"], "covers": ["D2"],
+                   "estimate": ESTIMATE, "why": "D2 is not met", "ceiling": CEILING},
+                  {"word": "round", "round": 100}),
+    "act.question": ({"word": "question", "entry": QUESTION}, {"word": "question"}),
+    "act.answer": ({"word": "answer", "entry": _but(QUESTION, answer="Dr Rao and Dr Sen", answered_by="Plan", status="answered")},
+                   {"word": "answer", "entry": _but(QUESTION, status="pending")}),
+    # prompt fields and the owner's values (A1.16)
+    "field.task": ("Judge one request from the owner.\nSay what you did.", "Judge {{words}} from the owner."),
+    "field.guidance": ("", "Return ONLY yes or no."),
+    "field.text": ("Judge one request", "two\nlines"),
+    "field.note": ("", "x" * 4001),
+    "field.items": (["judge a request against the goal"], []),
+    "instructions": (INSTRUCTIONS, {"schema_version": 1, "values": {"identity": {"take": {"take": {"task": {"at": NOW}}}}}}),
+    # settings (A1.8 to A1.12)
+    "setting.windows": ({"Plan": 15, "Write": 30}, {"Plan": 1441}),
+    "setting.make": (False, "false"),
+    "setting.order": (["posts", "line", "functions"], ["posts", "posts"]),
+    "setting.spot_every_s": (86400, 60),
+    # the pane views (A1.17)
+    "view.identity": (VIEW_IDENTITY, _but(VIEW_IDENTITY, rules=[{"tag": "ask", "line": "Ask before publishing", "by": "Root"}])),
+    "view.adaptation": ({"proposal": {"workflow": ["Plan", "Write"], "source": "shaped", "at": NOW},
+                         "root_checks": [{"summary": "met every standard", "at": NOW, "passed": True}], "rounds": []},
+                        {"proposal": None, "root_checks": [{"passed": "yes"}], "rounds": []}),
+    "view.priority": ({"bargains": [{"said": "asked for less", "summary": "kept three engines of four", "at": NOW}],
+                       "envelopes": [{"engine": "Write", "calls": 3, "usd": 0.1, "calls_limit": 40, "usd_limit": 0.5, "share": 0.2}]},
+                      {"bargains": [{"said": "COUNTER", "summary": None, "at": None}], "envelopes": []}),
+    "view.coordination": (VIEW_COORDINATION, _but(VIEW_COORDINATION, timetable=[_but(TT_ROW, state="late")])),
+    "view.engine_card": (VIEW_ENGINE_CARD, _but(VIEW_ENGINE_CARD, five=VIEW_ENGINE_CARD["five"][:4])),
+    "view.audit": ({"readings": [{"summary": "read Live site v2", "at": NOW}], "findings": [{"text": "F1: no button", "at": NOW}],
+                    "spot_checks": []},
+                   {"readings": [], "findings": []}),
+}
+
+#: a department record holding every key A1.6 names, and one value per key that the key's definition refuses
+DEPARTMENT = {
+    "schema_version": 1, "kind": "website", "ref": "dref-acme0001", "name": "Acme clinic site", "parent": "dref-root0001",
+    "created": NOW, "runtime": 2, "control": "granted", "stopped": False, "engines": LINE,
+    "artifacts": ["Brief", "Site plan", "Pages", "Check report", "Live site"], "workflows": [REGISTRATION], "layers": PINS,
+    "org": {"name": "Acme"}, "root": "dref-root0001", "template_ref": {"id": "setup", "version": 1},
+    "templates": {"Plan": "engine/plan"}, "founding": {"operation_id": "op-1", "checkpoints": ["made", "told"]},
+    "events": [{"kind": "born", "at": NOW}], "pending_final_tell": {"text": "Your department is ready."},
+    "goal": "A website for City Care clinic", "done": "Done when the site is live", "done_items": [DONE_ITEM],
+    "to_be_confirmed": [{"item": "D1", "why": "a person reads it"}], "rules": [RULE], "owner": "Sankalp",
+    "windows": {"Plan": 15, "Write": 30, "Check": 15, "Publish": 15}, "identity_revision": 1, "initial_goal_context": {},
+    "publish_asks_from": 0, "goals": [{"goal": "A website for City Care clinic", "at": NOW}],
+    "looked_up": ["City Care clinic: three doctors"], "host": "citycare.example", "ladders": {"Write": {"calls": 3}},
+    "ladder": {"Write": 2}, "bounds": {"hops": 4, "seconds": 900, "usd": 0.5}, "envelopes": {"Write": {"calls": 40, "usd": 0.5}},
+    "ceiling": CEILING,
+}
+DEPARTMENT_BAD = {
+    "schema_version": -1, "kind": 5, "ref": "", "name": "", "parent": 3, "created": "yesterday", "runtime": 3, "control": "x" * 41,
+    "stopped": "no", "engines": ["Plan", "Plan"], "artifacts": ["/etc/passwd"], "workflows": [{"version": 1}],
+    "layers": _but(PINS, identity="identity/v0"), "org": [], "root": 5, "template_ref": 5, "templates": {"Plan": 5},
+    "founding": {"operation_id": 5}, "events": [{"kind": 5}], "pending_final_tell": "Your department is ready.",
+    "goal": "x" * 2001, "done": "x" * 4001, "done_items": [_but(DONE_ITEM, id="D0")], "to_be_confirmed": [{"why": "a person reads it"}],
+    "rules": [{"tag": "ask"}], "owner": 5, "windows": {"Plan": -1}, "identity_revision": 0, "initial_goal_context": [],
+    "publish_asks_from": -1, "goals": ["A website"], "looked_up": [5], "host": 5, "ladders": {"Write": 2},
+    "ladder": {"Write": "2"}, "bounds": {"hops": -1}, "envelopes": {"Write": {"calls": 40}}, "ceiling": {"rounds": 6},
+}
+SAMPLES["department"] = (DEPARTMENT, _but(DEPARTMENT, colour="red"))
+
+
+def test_s2_the_samples_name_every_definition():
+    assert set(DEPARTMENT) == set(DEPARTMENT_BAD) == set(S.DEPARTMENT_KEYS), "every department key, and only those"
+    named = set(SAMPLES) | {"department." + k for k in DEPARTMENT}
+    missing, extra = sorted(set(S.DEFS) - named), sorted(named - set(S.DEFS))
+    assert not missing, "DEFS names with no sample: add a (good, bad) row to SAMPLES: %s" % missing
+    assert not extra, "samples of no definition: %s" % extra
+
+
+@pytest.mark.parametrize("name", sorted(SAMPLES))
+def test_s2_every_definition_takes_its_sample_and_refuses_the_bad_one(name):
+    good, bad = SAMPLES[name]
+    assert S.validate(name, good) == []
+    assert S.validate(name, bad) != [], "%s takes %r" % (name, bad)
+
+
+@pytest.mark.parametrize("key", sorted(DEPARTMENT))
+def test_s2_every_department_key_takes_its_sample_and_refuses_the_bad_one_through_the_record(key):
+    name = "department." + key
+    assert S.validate(name, DEPARTMENT[key]) == []
+    assert S.validate(name, DEPARTMENT_BAD[key]) != [], "%s takes %r" % (name, DEPARTMENT_BAD[key])
+    got = S.validate("department", _but(DEPARTMENT, **{key: DEPARTMENT_BAD[key]}))
+    assert got and all(re.match(r"^\$\.%s(?=[.:\[])" % re.escape(key), f) for f in got), got
 
 
 # ---- S3: the tables, against the code they are bound to -------------------------------------------------------------
