@@ -19,6 +19,7 @@ rewritten, and no string says an act's id or a check's id.
 """
 import engine_runtime as R
 import j2ui_atoms as A
+import j2ui_audit as X
 import owner_words
 import website_dept as W
 
@@ -190,7 +191,8 @@ def _lanes(ctx, workflows):
 
 
 def _audit(ctx):
-    return {"audits": [], "conditions": None, "rubric": [], "workable": None}
+    """What Audit read, the check engine's recorded conditions, and no rubric or workable verdict nobody gave (j2ui_audit)."""
+    return {"audits": X.build_audits(ctx), "conditions": X.build_conditions(ctx), "rubric": [], "workable": X.build_workable(ctx)}
 
 
 def _conflicts(ctx):
