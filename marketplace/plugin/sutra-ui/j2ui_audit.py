@@ -13,7 +13,8 @@ the site was workable, and neither was done. So:
                            cleared, and the cycle's own words ('Audit has not read the result') already say so
     build_conditions(ctx)  the check engine's recorded check on the latest version of the previewable artifact, named for what
                            it is (a recorded check, run by code); None when no version has one
-    build_workable(ctx)    None until a reading records a verdict for each item: the page then draws no 'Workable' line and no pass
+    build_workable(ctx)    None until a reading records a verdict for each item and code gave every one: the page then draws no
+                           'Workable' line and no pass
     refs(ctx)              api/refs: the conditions' texts by id, and no rubric (Sutra has none)
     audits_condensed(ctx)  api/audits: earlier stages' audits; Sutra keeps no stage before the current one, so none
     build_conflicts(ctx)   the Conflicts tab: a bargain between Adaptation and Priority in which Priority asked for less or said
@@ -25,7 +26,9 @@ writes, speaks or calls a model, and every string the record wrote passes owner_
 
 Once Audit records a verdict for each done-when item (readings.jsonl, shown in its pane as `latest`), Root's check records
 which standards held, and Priority records its prices, the tab can say more, and says it: the latest reading gets a row for
-each item and `workable` becomes a list (empty when every item is met), the standards Root's check ran become conditions R-1
+each item, `workable` becomes a list (empty when every item is met) when code checked every item of the reading (each item's
+`method` is 'code'; a verdict the reader gave alone is a reading, and the page's heading says 'checked by code', so a reading
+with one such item leaves `workable` None and the tab draws no such line), the standards Root's check ran become conditions R-1
 on, and Priority's own words refine what it said in a conflict. All of it is read with dict.get from each function's pane
 (functions_view.function(ref, fn)['j2']); a pane that has none of those keys leaves everything above as it was, byte for byte.
 
@@ -248,17 +251,26 @@ def build_conditions(ctx):
 
 
 # ---- what nobody has checked item by item ----------------------------------------------------------------------------------
+def _by_code(latest):
+    """Whether code gave every verdict of the reading: each done-when item's row that stands has method 'code' (the row the pane
+    keeps when code and the reader disagreed is the worse one, whoever gave it). One verdict the reader gave alone, or one this tab
+    does not know, and the reading is not 'checked by code'."""
+    items = [i for i in (latest or {}).get("items") or [] if isinstance(i, dict)]
+    return bool(items) and all(i.get("method") == "code" and i.get("verdict") in ITEM for i in items)
+
+
 def _workable(ctx):
     latest, entry = _latest(ctx, build_audits(ctx))
-    if entry is None:
+    if entry is None or not _by_code(latest):
         return None
     return [("to confirm with you: %s" if "needs_requester_fact" in r else "%s") % r["criterion"] for r in _item_rows(latest) if not r["pass"]]
 
 
 def build_workable(ctx):
-    """None until a reading records a verdict for each done-when item (the page draws 'Workable (checked by code)' for [] and
-    'Not workable yet' for a list): a clean reading is not that, so the tab draws neither. Once the latest reading has one,
-    [] when every item is met and none waits on the owner, else the claims not met."""
+    """None until a reading records a verdict for each done-when item and code gave every one of them (the page draws 'Workable
+    (checked by code)' for [] and 'Not workable yet (checked by code)' for a list): a clean reading is not that, and neither is
+    one whose verdicts the reader gave alone (method 'model') or in part, so the tab draws neither. Once the latest reading is
+    one that code checked item by item, [] when every item is met and none waits on the owner, else the claims not met."""
     return A.memoised(ctx, "j2ui_audit.workable", _workable, lambda: None, "workable")
 
 

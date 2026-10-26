@@ -4,8 +4,10 @@ Named claims:
   W7  a real Priority model step (run offline with an answer of ask for less or say no) reaches the page in the owner's words: the
       state's call log, read through the router, has no bare accept, counter, reject, admit, wait or refuse anywhere
   W8  built on fixtures of the panes' new keys (the record's readings item by item, Root's standards, Priority's prices): with them
-      the latest reading has a row for each item and workable becomes a list, the standards are conditions R-1 on, and Priority's
-      own words refine what it said; with none of the keys every output is what W5 and W6 gave, byte for byte
+      the latest reading has a row for each item, the standards are conditions R-1 on, and Priority's own words refine what it
+      said; workable becomes a list only when code checked every item (method 'code'), for the page says 'checked by code': a
+      reading with a verdict the reader gave alone leaves it None and the tab draws no such line; with none of the keys every
+      output is what W5 and W6 gave, byte for byte
   W8b the panes are dear (they read the board, the steps and the ledger whole) and the page polls: a pane is read only when the record
       its key is made of holds something (readings.jsonl, prices.jsonl, a check of Root's that carries its checks), and then once for
       each state of that record, not once for each rebuild; with a registered plan and thousands of rows and nothing to refine, none
@@ -615,6 +617,11 @@ LATEST_READING = {"artifact": "Live site", "v": 2, "at": "2026-10-26T21:20:00+05
      "evidence": "no hours are given in the brief or in anything filed"}]}
 LATEST_DONE = {"artifact": "Live site", "v": 2, "at": "2026-10-26T21:20:00+05:30", "items": [
     {"id": "D1", "verdict": "met", "method": "model", "claim": "every ask is answered in the Result", "evidence": "result.md answers the one ask in full"}]}
+CODE_DONE = {"artifact": "Live site", "v": 2, "at": "2026-10-26T21:20:00+05:30", "items": [        # every verdict is code's: the tab may say so
+    {"id": "D1", "verdict": "met", "method": "code", "claim": "the record holds: every version has its run and its check", "evidence": "every version has its run and its check"},
+    {"id": "D2", "verdict": "met", "method": "code", "claim": "the record holds: the build passed its check", "evidence": "6 pages render"}]}
+CODE_READING = {"artifact": "Live site", "v": 2, "at": "2026-10-26T21:20:00+05:30", "items": [     # code's, with one not met and one that waits on a fact
+    LATEST_READING["items"][0], dict(LATEST_READING["items"][1], method="code"), dict(LATEST_READING["items"][2], method="code")]}
 ROOT_CHECKS = [{"summary": "The workflow meets Sutra's standards.", "at": "2026-10-26T21:00:00+05:30", "passed": True, "checks": [
     {"check": "names_an_engine", "says": "the workflow names its engines", "passed": True, "why": "the workflow names its engines"},
     {"check": "engines_known", "says": "each engine is one the Library has", "passed": True, "why": "Plan, Write, Check and Publish are in the Library"},
@@ -680,7 +687,7 @@ def clean_and_finding(mods, version=2):
 
 def test_w8_the_latest_reading_gets_a_row_for_each_item_and_workable_lists_what_is_not_met(mods, monkeypatch):
     clean_and_finding(mods)
-    panes(monkeypatch, audit={"latest": LATEST_READING})
+    panes(monkeypatch, audit={"latest": CODE_READING})
     got, ctx = audit_of(mods)
     a = got["audits"][-1]
     assert [(r["id"], r["item"], r["verdict"], r["pass"]) for r in a["results"]] == [
@@ -696,7 +703,22 @@ def test_w8_the_latest_reading_gets_a_row_for_each_item_and_workable_lists_what_
     assert "Not workable yet (checked by code)" in text and "D2 2. the fees page names no fee" in text and "NEEDS_REVISION" in text
 
 
-def test_w8_every_item_met_is_all_pass_and_workable_is_empty(mods, monkeypatch):
+def test_w8_a_reading_the_reader_gave_alone_has_its_rows_and_no_checked_by_code_line(mods, monkeypatch):
+    """The page's heading is 'checked by code'. A verdict the reader (the model) gave alone, or a reading in which any item is the
+    reader's, is a reading, and the tab says so item by item and no more: workable stays None, whatever the items say."""
+    clean_and_finding(mods)
+    panes(monkeypatch, audit={"latest": LATEST_READING})                   # D1 is code's, D2 and D3 the reader's
+    got, ctx = audit_of(mods)
+    a = got["audits"][-1]
+    assert [(r["id"], r["verdict"], r["pass"]) for r in a["results"]] == [("D1", "PASS", True), ("D2", "NEEDS_REVISION", False),
+                                                                          ("D3", "NEEDS_REVISION", False)]
+    assert a["all_pass"] is False and got["workable"] is None
+    text = shown(render(page_state(got), "renderAudit(s)"))
+    assert "(checked by code)" not in text and "Workable" not in text and "Not workable yet" not in text
+    assert "D2 2. the fees page names no fee" in text and "NEEDS_REVISION" in text, "the rows stay"
+
+
+def test_w8_every_item_met_by_the_reader_alone_is_all_pass_and_workable_is_none(mods, monkeypatch):
     W, R, J, F = mods
     cycle(W, "running", 6)
     clean_reading(J, 2)
@@ -704,10 +726,41 @@ def test_w8_every_item_met_is_all_pass_and_workable_is_empty(mods, monkeypatch):
     got, ctx = audit_of(mods)
     a = got["audits"][-1]
     assert a["all_pass"] is True and [(r["id"], r["verdict"]) for r in a["results"]] == [("D1", "PASS")]
+    assert got["workable"] is None, "nobody ran code over it: the page may not say 'Workable (checked by code)'"
+    html = render(page_state(got), "renderAudit(s)")
+    text = shown(html)
+    assert "Workable" not in text and "Not workable yet" not in text and re.search(r">\s*PASS\s*<", html), "the PASS row stays"
+
+
+def test_w8_every_item_checked_by_code_and_met_is_all_pass_and_workable_is_empty(mods, monkeypatch):
+    W, R, J, F = mods
+    cycle(W, "running", 6)
+    clean_reading(J, 2)
+    panes(monkeypatch, audit={"latest": CODE_DONE})
+    got, ctx = audit_of(mods)
+    a = got["audits"][-1]
+    assert a["all_pass"] is True and [(r["id"], r["verdict"]) for r in a["results"]] == [("D1", "PASS"), ("D2", "PASS")]
     assert got["workable"] == []
     html = render(page_state(got), "renderAudit(s)")
     text = shown(html)
     assert "Workable (checked by code)" in text and "Not workable yet" not in text and re.search(r">\s*PASS\s*<", html)
+
+
+def test_w8_workable_is_none_unless_every_items_method_is_code(mods, monkeypatch):
+    """One item in any other state takes the line away: the reader's, one with no method, one with a method this tab does not know,
+    one whose verdict it does not know. All code is the only case in which the line is drawn."""
+    W, R, J, F = mods
+    cycle(W, "running", 6)
+    clean_reading(J, 2)
+    ok = dict(CODE_DONE["items"][0])
+    for second in (dict(ok, id="D2", method="model"), {k: v for k, v in dict(ok, id="D2").items() if k != "method"}, dict(ok, id="D2", method="by eye"),
+                   dict(ok, id="D2", method=None), dict(ok, id="D2", verdict="unknown")):
+        panes(monkeypatch, audit={"latest": dict(CODE_DONE, items=[ok, second])})
+        got, ctx = audit_of(mods)
+        assert got["workable"] is None and got["audits"][-1]["results"], second
+        assert "Workable" not in shown(render(page_state(got), "renderAudit(s)")), second
+    panes(monkeypatch, audit={"latest": dict(CODE_DONE, items=[ok, dict(ok, id="D2")])})
+    assert audit_of(mods)[0]["workable"] == []
 
 
 def test_w8_a_clean_event_with_an_item_not_met_is_not_all_pass(mods, monkeypatch):
@@ -933,7 +986,8 @@ def test_w8_the_audit_layers_own_fixture_reads_as_these_stubs_do(mods, monkeypat
     finding(W, R, [("fees.html", "the fees page names no fee", "high")], about_version=states["reading"]["latest"]["v"])
     panes(monkeypatch, audit=states["reading"])
     got, ctx = audit_of(mods)
-    assert [r["id"] for r in got["audits"][-1]["results"]] == ["D1", "D2", "D3"] and len(got["workable"]) == 2
+    assert [r["id"] for r in got["audits"][-1]["results"]] == ["D1", "D2", "D3"]
+    assert got["workable"] is None, "the layer's own reading has two verdicts the reader gave alone"
     for name in ("empty", "not_read"):
         panes(monkeypatch, audit=states[name])
         got, ctx = audit_of(mods)
@@ -1067,14 +1121,21 @@ def test_w8_real_audit_pane_a_reading_item_by_item_gets_its_rows(mods):
     real_pane("audit", "latest")
     finding(W, R, [("fees.html", "the fees page names no fee", "high")], about_version=1)
     item = {"subject": "x", "evidence": "fees.html says to contact the office", "method": "model", "severity": "low"}
-    W.append_row(REF, "readings.jsonl", {"schema_version": 1, "id": "r-%08x" % 1, "v": 1, "artifact": "Live site", "cycle_id": None, "round": None,
-                                         "read": True, "why_not_read": None, "findings": [], "at": W.now(),
-                                         "items": [dict(item, id="D1", claim="the home page names the clinic", verdict="met"),
-                                                   dict(item, id="D2", claim="the fees page names no fee", verdict="not_met")]})
+
+    def read(n, method):
+        W.append_row(REF, "readings.jsonl", {"schema_version": 1, "id": "r-%08x" % n, "v": 1, "artifact": "Live site", "cycle_id": None, "round": None,
+                                             "read": True, "why_not_read": None, "findings": [], "at": W.now(),
+                                             "items": [dict(item, id="D1", claim="the home page names the clinic", verdict="met", method=method),
+                                                       dict(item, id="D2", claim="the fees page names no fee", verdict="not_met", method=method)]})
+    read(1, "model")
     got, ctx = audit_of(mods)
     a = got["audits"][-1]
     assert [(r["id"], r["verdict"], r["pass"]) for r in a["results"]] == [("D1", "PASS", True), ("D2", "NEEDS_REVISION", False)]
-    assert a["all_pass"] is False and got["workable"] == ["the fees page names no fee"]
+    assert a["all_pass"] is False and got["workable"] is None, "the reader gave both verdicts alone: the rows, and no 'checked by code' line"
+    assert "(checked by code)" not in shown(render(page_state(got), "renderAudit(s)"))
+    read(2, "code")                                                            # the next reading is code's, item by item
+    got, ctx = audit_of(mods)
+    assert got["workable"] == ["the fees page names no fee"]
     assert "Not workable yet (checked by code)" in shown(render(page_state(got), "renderAudit(s)"))
 
 
