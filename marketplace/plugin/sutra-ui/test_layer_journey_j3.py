@@ -14,6 +14,7 @@ scripted Model, `live()`, `ask()`, `stamp()`, `idle()` and `rows()`.
 """
 import copy
 import importlib
+import json
 
 import journeys
 import test_engine_runtime as T
@@ -22,8 +23,9 @@ from test_engine_runtime import REF, Base
 
 
 def journey(jid):
-    """The journey as the files hold it now (a fresh load: the journeys folder is data, and tests do not cache it)."""
-    return journeys.load()[jid]
+    """The journey as its file holds it now (read afresh: the journeys folder is data, and a test does not cache it). One file,
+    so a fault in another package's journey is that package's test to report, not this one's."""
+    return json.loads((journeys.FOLDER / (jid + ".json")).read_text(encoding="utf-8"))
 
 
 class Walking(Base):
