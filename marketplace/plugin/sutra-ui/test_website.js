@@ -2140,6 +2140,22 @@ test("X1: the words are escaped, a list reads as its items, and a part with no f
   assert.ok(/<b>close<\/b><\/div>(?:<div class="dpchk">filled by the app: [^<]*<\/div>)(?:<div class="dpchk">answers with: [^<]*<\/div>)<\/div>/.test(html), "the part with no field: its notes only");
 });
 
+test("X1: a row prints the words the read says in the owner's words (shown) and a part its label, while Change opens the words as they are", async () => {
+  const v = TYPED();
+  const tk = v.filter(g => g.group === "take")[0].parts.filter(p => p.part === "take")[0];
+  const guidance = tk.fields.filter(f => f.field === "guidance")[0];
+  guidance.value = "go: do it. refuse: it breaks a rule.";
+  guidance.shown = "go: do it. stop: it breaks a rule.";
+  tk.label = "sent back";
+  const [c, html] = await typedCard({}, v);
+  assert.ok(/<span class="wbinsf">the guidance<\/span><span class="wbinslead">go: do it\. stop: it breaks a rule\.<\/span>/.test(html), "the row prints shown");
+  assert.ok(html.indexOf("refuse: it breaks a rule") < 0, "and not the inside word");
+  assert.ok(html.indexOf("<b>sent back</b>") >= 0 && html.indexOf("<b>take</b>") < 0 && html.indexOf("<b>recognise</b>") >= 0, "a part with a label prints it; one without prints its name");
+  assert.ok(html.indexOf('data-wbinspart="take" data-wbinsfield="guidance"') >= 0, "a change still names the part, not the label");
+  assert.ok(click(c, OPEN("take", "take", "guidance")));
+  assert.ok(c.wbInsSheetHtml().indexOf("go: do it. refuse: it breaks a rule.") >= 0, "the sheet holds the words as the department reads them");
+});
+
 test("X1: before the typed fields arrive the files are listed as the first design had them", async () => {
   const c = await opened({ map: rtMap() });
   vm.runInContext("dpS().pane['r3:identity'] = 'settings';", c);

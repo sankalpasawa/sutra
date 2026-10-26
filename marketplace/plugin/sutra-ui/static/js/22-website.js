@@ -1515,8 +1515,10 @@ function wbInsFilesHtml(fn, rows){
              : wbChip(r.as_shipped ? "as shipped" : "your words") + wbBtn("Change", `data-wbins="${wbEsc(r.file)}" data-wbinsfn="${wbEsc(fn)}"`)) +
     `</div>`).join(""));
 }
-/* the words in use as one line of a row: a list read as its items, a text with its lines run together */
+/* the words in use as one line of a row, as the read says them in the owner's words (`shown`); else a list read as its items,
+   a text with its lines run together */
 function wbInsShown(f){
+  if (typeof f.shown === "string") return f.shown;
   return (Array.isArray(f.value) ? f.value.join("; ") : String(f.value == null ? "" : f.value)).replace(/\s+/g, " ").trim();
 }
 function wbInsFieldHtml(fn, g, p, f){
@@ -1527,7 +1529,7 @@ function wbInsFieldHtml(fn, g, p, f){
 }
 function wbInsPartHtml(fn, g, p){
   const said = (words, list) => (list && list.length) ? `<div class="dpchk">${words}: ${list.map(wbEsc).join(", ")}</div>` : "";
-  return `<div class="wbinsp"><div class="wbinsh"><b>${wbEsc(p.part)}</b>` +
+  return `<div class="wbinsp"><div class="wbinsh"><b>${wbEsc(p.label || p.part)}</b>` +
     (p.read === false ? `<span class="wbchip" title="${wbEsc(WB_INS_NOT_READ)}">a note: no run reads it yet</span>` : "") + `</div>` +
     (p.fields || []).map(f => wbInsFieldHtml(fn, g, p, f)).join("") + said("filled by the app", p.inputs) + said("answers with", p.answers) + `</div>`;
 }

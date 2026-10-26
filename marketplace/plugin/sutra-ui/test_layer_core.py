@@ -531,6 +531,33 @@ def test_c8_the_rows_follow_the_interface_when_a_handler_or_a_check_is_added(hom
     assert got["hears"] == ["Drop in unannounced"] and got["checks"][-1] == "it looked at each page twice"
 
 
+def test_c8_a_settings_row_is_printed_in_the_owners_words_and_the_value_is_kept_as_it_is(home):
+    """A typed value is on a function's Settings at rest (K2), so the row says it the way the screen word rules ask: Identity's
+    verdict words and Adaptation's sent-back line (`shown`, `label`), while the field's `value`, which the owner changes, is
+    left as the words the department reads."""
+    import owner_words
+    ref = born(home)
+    _, R = modules()
+    rows = {}
+    for fn in ("identity", "adaptation", "priority"):
+        for g in owner_words.steps({"instructions": R.instructions_view(ref, fn)})["instructions"]:
+            for p in g["parts"]:
+                rows[(fn, g["group"], p["part"])] = p
+    guidance = rows[("identity", "take", "take")]["fields"][1]
+    assert guidance["field"] == "guidance" and "refuse: it breaks a rule" in guidance["value"], "the value is the words the agent is sent"
+    assert "stop: it breaks a rule" in guidance["shown"] and "refus" not in guidance["shown"].lower() and "\n" not in guidance["shown"]
+    does = rows[("priority", "goal", "does")]["fields"][0]
+    assert "gives each engine its limit" in does["shown"] and "grants each engine" in does["value"]
+    skills = rows[("identity", "goal", "skills")]["fields"][0]
+    assert skills["shown"] == "; ".join(skills["value"]), "a list reads as its items"
+    sent_back = rows[("adaptation", "make", "refused")]
+    assert (sent_back["part"], sent_back["label"]) == ("refused", "sent back"), "the part keeps its name; the row prints the label"
+    assert "label" not in rows[("identity", "take", "take")]
+    # a first-design file row, and a view with no rows, pass as they did
+    assert owner_words.steps({"instructions": [{"file": "take", "lead": "How to judge a request: go, ask or refuse."}]})["instructions"] == \
+        [{"file": "take", "lead": "How to judge a request: go, ask or stop."}]
+
+
 # ---- C9 · views through the layers ------------------------------------------------------------------------------------
 AUDIT_VIEW = {"readings": [{"summary": "Audit read Live site v1.", "at": None}], "findings": [], "spot_checks": []}
 
@@ -561,13 +588,17 @@ def test_c9_with_no_view_the_part_is_todays_body(home, monkeypatch):
 
 
 def test_c9_the_stub_views_of_wave_0_read_todays_body_by_reference_and_the_dispatch_does_not_loop(home):
+    """A layer's view is what the pane returns. Wave 0's stub is today's body by reference; the view a layer's package writes
+    holds every field of today's body as it was and may add its own (Adaptation's coverage, Priority's prices, Audit's latest)."""
     import functions_view as F
     ref = born(home)
     d = modules()[0].dept(ref)
     for layer in S.FUNCTION_LAYERS:
         title = S.TITLE[layer]
         stub = layers.load(S.DEFAULT_PINS[layer]).view
-        assert stub(ref, d, [], []) == F._j2_body(ref, d, title, [], []) == F._j2_part(ref, d, title, [], []), layer
+        view, today = stub(ref, d, [], []), F._j2_body(ref, d, title, [], [])
+        assert view == F._j2_part(ref, d, title, [], []), layer
+        assert {k: view.get(k, "<missing>") for k in today} == today, layer
         j2 = F.function(ref, layer)["j2"]
         assert "j2_faults" not in j2 and S.validate_view(layer, j2) == [], layer
 

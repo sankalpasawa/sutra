@@ -70,6 +70,8 @@ BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priori
                  ("a verdict is go, ask or refuse", "a verdict is go, ask or stop"),
                  # what an instruction file is for, as its Settings row says it (identity's take: the verdict on a request)
                  ("a request: go, ask or refuse", "a request: go, ask or stop"),
+                 # the words in use as a field of Identity's take shows them (K2: a typed value is on its Settings at rest)
+                 ("refuse: it breaks a rule", "stop: it breaks a rule"),
                  ("Countered.", "Asked for less."), ("Refused.", "Said no."))
 
 
@@ -126,12 +128,44 @@ def runs(rows):
     return [dict(r, what=kept(r.get("what"), r.get("words"))) if isinstance(r, dict) else r for r in rows or []]
 
 
+def _shown(value):
+    """The words of a field in use as one line of a Settings row, said in the owner's words: a list as its items, a text with
+    its lines run together. The value itself is the owner's to change and stays as it is (the row's `value`)."""
+    return plain(" ".join(("; ".join(str(x) for x in value) if isinstance(value, list) else str(value or "")).split()))
+
+
+#: A part whose name is an inside word, as its Settings row calls it: Adaptation's 'refused' is the line it is sent when Root's
+#: check sent the plan back. The part keeps its name (the row's `part` is what a change names); the row prints the label.
+PART_SAYS = {"refused": "sent back"}
+
+
+def _instruction_part(p):
+    if not isinstance(p, dict):
+        return p
+    out = dict(p, fields=[dict(f, shown=_shown(f.get("value"))) if isinstance(f, dict) else f for f in p.get("fields") or []])
+    if p.get("part") in PART_SAYS:
+        out["label"] = PART_SAYS[p["part"]]
+    return out
+
+
+def _instruction_row(r):
+    """One row of a function's instructions: a file of the first design (its line said plainly) or a group of the interface's
+    typed fields (its line, each part's label and each field's words in use as `shown`)."""
+    if not isinstance(r, dict):
+        return r
+    out = dict(r, lead=_keep(r.get("lead")))
+    if isinstance(r.get("parts"), list):
+        out["parts"] = [_instruction_part(p) for p in r["parts"]]
+    return out
+
+
 def steps(view):
     """An engine or a function as its steps (engine_runtime.steps_view), as its card prints it: the description, each
     step's name, the handler it sits under, its last check notes and who moved its rung, what it hears, the names of
     the steps that hold its start, and the line that says what each of its instruction files is for (its Settings), in
-    the owner's words. Ids, rungs, checks and numbers are left as they are, and so is an instruction file's own text,
-    which is the file the owner changes."""
+    the owner's words; and each typed field's words in use, said again as `shown` (the row prints that; the field's
+    `value` is the owner's to change and stays). Ids, rungs, checks and numbers are left as they are, and so is an
+    instruction file's own text, which is the file the owner changes."""
     if not view:
         return view
     out = dict(view, description=_keep(view.get("description")), hears=[plain(h) for h in view.get("hears") or []])
@@ -144,7 +178,7 @@ def steps(view):
         rows.append(s)
     out["steps"] = rows
     if isinstance(view.get("instructions"), list):
-        out["instructions"] = [dict(r, lead=_keep(r.get("lead"))) if isinstance(r, dict) else r for r in view["instructions"]]
+        out["instructions"] = [_instruction_row(r) for r in view["instructions"]]
     start = view.get("start")
     if isinstance(start, dict):
         out["start"] = dict(start, on=[plain(x) for x in start.get("on") or []],
