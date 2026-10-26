@@ -6,6 +6,7 @@ One test per done-check of P1 to P5. The contract's cases are layers/contract.py
 department born the way a person makes one, a model that is a function of the step id, the same board.
 """
 import importlib
+import re
 from datetime import datetime, timedelta
 
 import pytest
@@ -253,7 +254,8 @@ def test_p2_priority_holds_every_part_as_words_and_none_is_on_the_md_fallback(ct
     """A part of Priority still read from the .md bundle, or words that do not pass their field's type or compile, must fail
     (contract case 5): goal (does, skills) and bargain (line, engine, cost)."""
     parts = [(g, p) for g, ps in S.PROMPTS["priority"].items() for p in ps]
-    assert parts == [("goal", "does"), ("goal", "skills"), ("bargain", "line"), ("bargain", "engine"), ("bargain", "cost")]
+    assert parts == [("goal", "does"), ("goal", "skills"), ("bargain", "line"), ("bargain", "engine"), ("bargain", "cost"),
+                     ("bargain", "round")], "the round part was added by W2-PRIORITY (M9.2)"
     assert C.on_the_md_fallback(V1) == [] and C.case_5(V1, ctx) == []
     assert all(P._module(None, "priority", g, p) is V1 for g, p in parts), "the registry takes the WORDS path for every part"
     assert V1.WORDS["bargain"]["line"] == {} and set(V1.WORDS["bargain"]["engine"]) == {"task"}, "the line part has no field the owner may change"
@@ -265,6 +267,8 @@ def test_p2_each_part_compiled_from_its_words_is_the_md_part_byte_for_byte(ctx):
     and remaining lines are the bundle's too since the snapshot commit before it.)"""
     for layer_group, ps in S.PROMPTS["priority"].items():
         for part in ps:
+            if ("priority", layer_group, part) in S.ADDED_PARTS:
+                continue                                  # an added part has no .md part to be the same as
             sample = P.sample_inputs("priority", layer_group, part)
             fallback = P.SLOT.sub(lambda m: sample[m.group(1)], P.md_part("priority", layer_group, part))
             assert P.prompt(None, "priority", layer_group, part, **sample) == fallback, "%s.%s" % (layer_group, part)
@@ -707,7 +711,7 @@ def test_p6_the_contract_passes_for_priority_v1_with_no_part_on_the_fallback(ctx
     for number, what, case in C.cases():
         assert case(V1, ctx) == [], "case %d: %s" % (number, what)
     assert C.on_the_md_fallback(V1) == []
-    assert C.by_reference(V1) == {"by_reference": 4, "own": 7}, \
+    assert C.by_reference(V1) == {"by_reference": 4, "own": 8}, \
         "priority_grant and the three shared checks still delegate; the rest are this module's (priority_envelope moved in M5.4)"
 
 
@@ -1008,3 +1012,53 @@ def test_q1_priority_applies_only_the_raise_and_a_raise_names_what_it_raises(liv
     threaded = dict(_envelope_ask(W, ref), thread="x-1")
     assert V1.apply_choice(ref, threaded, W.option("stop", "Stop here", "x")) == {}
     assert W.dept(ref).get("stopped") is not True
+
+
+# ---- Q2: the goal's ceiling (M9.2): what the interface says of it and the measure a round is held to ------------------------
+# Priority holds one ceiling for the whole goal beside its engines' daily limits: dept.ceiling, written once at the first
+# registration, raised only by the owner's choice up to RAISE_CAP times where it started. A round Adaptation proposes is held
+# to it by code: round_within_ceiling is the measure, and the covering of the bargain step holds a model's yes to it.
+
+
+def test_q2_the_interface_names_the_round_part_its_covering_and_the_ceiling_in_the_view():
+    """A round part the interface does not name, a covering it does not list, or a view that cannot carry the ceiling, must fail."""
+    part = S.PROMPTS["priority"]["bargain"]["round"]
+    assert part["inputs"] == ("round", "correction", "estimate", "room", "ceiling", "remaining") and part["read_by"] == "priority.bargain"
+    assert part["returns"] == 'Return ONLY a JSON object: {"answer": "accept" | "reject", "why": "one line, in money and room only"}.'
+    assert ("priority", "bargain", "round") in S.ADDED_PARTS and "round_within_ceiling" in S.CHECKS["priority"]
+    view = S.DEFS["view.priority"]
+    assert "ceiling" in view["properties"] and "ceiling" not in view["required"]
+    assert S.validate("view.priority", {"bargains": [], "envelopes": [], "ceiling": None}) == []
+    assert S.validate("view.priority", {"bargains": [], "envelopes": [], "ceiling": {"rounds": 6, "calls": 66, "usd": 3.0,
+                                                                                    "start": {"rounds": 6, "calls": 66, "usd": 3.0}}}) == []
+    assert S.validate("view.priority", {"bargains": [], "envelopes": [], "ceiling": {"rounds": 6}}) != []
+    import engine_runtime as R
+    assert R.INSTRUCTIONS["priority"]["bargain"]["round"] == part["inputs"], "the owner's screen names the same slots"
+    assert all(n in R.INPUT_SAYS for n in part["inputs"])
+
+
+def test_q2_the_round_is_held_to_the_ceiling_at_its_edges(live):
+    """A boundary read wrong must fail: the last round is held, the one after it is not; the room is exactly enough or one
+    short; a round of nought is no round."""
+    W, R, J, _ = live
+    est = {"calls": 6, "usd": 0.3}
+    c = {"rounds": 6, "calls": 66, "usd": 3.0, "start": {"rounds": 6, "calls": 66, "usd": 3.0}}
+
+    def read(n, spent_calls, spent_usd):
+        room = {"calls": 66 - spent_calls, "usd": round(3.0 - spent_usd, 4)}
+        return {"word": "round", "round": n, "ceiling": c, "estimate": est, "room": room, "spent": {"calls": spent_calls, "usd": spent_usd}}
+    assert V1.round_within_ceiling(read(6, 60, 2.7))["answer"] == "accept", "the room is exactly enough, and so is round 6 of 6"
+    assert V1.round_within_ceiling(read(6, 61, 2.7))["answer"] == "reject"
+    assert V1.round_within_ceiling(read(6, 60, 2.71))["answer"] == "reject"
+    assert V1.round_within_ceiling(read(7, 0, 0.0))["over"] == ["round 7 against a ceiling of 6 rounds"]
+    assert V1.round_within_ceiling(read(0, 0, 0.0))["answer"] == "reject"
+    both = V1.round_within_ceiling(read(7, 66, 3.0))
+    assert both["why"] == "no room in the ceiling: round 7 against a ceiling of 6 rounds; about 6 calls and 0.30 USD against the 0 calls and 0.00 USD left"
+    ok = V1.CHECK["round_within_ceiling"]
+    ctx = {"bag": {"priority.read": read(7, 0, 0.0)}}
+    assert ok(ctx, None, None, {"answer": "reject", "why": "no room"})["ok"] and not ok(ctx, None, None, {"answer": "accept", "why": "fits"})["ok"]
+    assert ok({"bag": {"priority.read": read(2, 0, 0.0)}}, None, None, {"answer": "accept", "why": "fits"})["ok"]
+    for out in S.CONTRACT_SAMPLES["round_within_ceiling"]["good"]:
+        assert ok(None, None, None, out)["ok"] is True, out
+    for out in S.CONTRACT_SAMPLES["round_within_ceiling"]["bad"]:
+        assert ok(None, None, None, out)["ok"] is False, out

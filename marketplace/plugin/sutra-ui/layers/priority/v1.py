@@ -633,6 +633,41 @@ def apply_choice(ref, ask, option):
     return {}
 
 
+# ---- a round, held to the goal's ceiling (M9.2): the measure and the covering ---------------------------------------------
+def round_within_ceiling(read):
+    """The goal's ceiling holds a round or it does not, by code (M9.2): the round, the calls and the money all inside it.
+    {answer: accept or reject, why: in money and room, over: what is past}. The offline answer of the bargain, and the measure
+    its covering holds a model's yes to."""
+    c, n, est, room = read['ceiling'], int(read['round']), read['estimate'], read['room']
+    over = []
+    if n < 1 or n > int(c['rounds']):
+        over.append('round %d against a ceiling of %d rounds' % (n, int(c['rounds'])))
+    if int(est['calls']) > int(room['calls']) or round(float(est['usd']), 4) > round(float(room['usd']), 4):
+        over.append('about %s against the %s left' % (_say_cost(est['calls'], est['usd']), _say_cost(max(0, room['calls']), max(0.0, room['usd']))))
+    if over:
+        return {'answer': 'reject', 'why': 'no room in the ceiling: ' + '; '.join(over), 'over': over}
+    return {'answer': 'accept', 'over': [],
+            'why': 'inside the ceiling: round %d of %d, about %s of the %s left' % (n, int(c['rounds']), _say_cost(est['calls'], est['usd']),
+                                                                                  _say_cost(room['calls'], room['usd']))}
+
+
+def round_is_within(ctx, step, item, out):
+    """Priority's covering for a round (M9.2): yes or no, with its price, and a yes held to the ceiling the facts Priority read
+    put in the answer's way. A round has no ask for less. A no, which is a smaller spend, always stands (approvals only
+    tighten)."""
+    notes, answer = [], out.get('answer')
+    if answer not in ('accept', 'reject'):
+        notes.append('not an answer to a round: %r' % (answer,))
+    if not str(out.get('why') or '').strip():
+        notes.append('the answer names no price: nothing says what it costs against the ceiling')
+    read = ((ctx or {}).get('bag') or {}).get('priority.read')
+    if not notes and answer == 'accept' and isinstance(read, dict) and read.get('word') == 'round' and isinstance(read.get('ceiling'), dict):
+        held = round_within_ceiling(read)
+        if held['answer'] != 'accept':
+            notes.append('said yes to a round the ceiling does not hold: %s' % '; '.join(held['over']))
+    return {'ok': not notes, 'notes': notes or ['%s, with its price: %s' % (SAID.get(answer, answer), str(out['why']).strip())]}
+
+
 CODE = {
     'priority_envelope': priority_envelope,
     'priority_read': priority_read,
@@ -650,6 +685,7 @@ CHECK = {
     'facts_are_closed': ref_to('c_facts_are_closed'),
     'answer_has_its_price': price_is_observed,         # the step keeps its name; its covering holds the answer to its facts
     'price_is_observed': price_is_observed,
+    'round_within_ceiling': round_is_within,
     'said_what_it_did': ref_to('c_said_what_it_did'),
 }
 # Priority's words (A1.16): what `python -m layers.prompts --extract priority` makes of the .md bundle by the split rule,
@@ -674,6 +710,10 @@ WORDS = {
         },
         'cost': {
             'task': 'Adaptation proposes something that costs.',
+        },
+        'round': {
+            'task': "Adaptation proposes another round on the line, to put right what the last reading found. Say whether the goal's "
+                    'ceiling holds it.',
         },
     },
 }
@@ -711,6 +751,18 @@ LAYOUT = {
             'WHAT IT COSTS: {{cost}}\n'
             'ROOM IN THE ENVELOPE TODAY: {{room}}\n'
             '\n'
+            '{returns}'
+        ),
+        'round': (
+            '{task}\n'
+            'THE ROUND: {{round}}\n'
+            'WHAT IT PUTS RIGHT: {{correction}}\n'
+            'WHAT IT IS LIKELY TO COST, from what the line has cost before: {{estimate}}\n'
+            "THE GOAL'S CEILING: {{ceiling}}\n"
+            'ROOM IN THE CEILING: {{room}}\n'
+            'WHAT REMAINS OF THE CEILING AFTER IT: {{remaining}}\n'
+            '\n'
+            'accept: the ceiling holds it. reject: it does not. Give your reason in money and room, from the figures above.\n'
             '{returns}'
         ),
     },

@@ -88,6 +88,86 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9 &'.-]{0,39}$",
       "type": "string"
     },
+    "priority.ceiling": {
+      "additionalProperties": true,
+      "properties": {
+        "at": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "calls": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "raised": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "at": {
+                "maxLength": 40,
+                "minLength": 0,
+                "type": "string"
+              },
+              "by": {
+                "maxLength": 80,
+                "minLength": 0,
+                "type": "string"
+              },
+              "to": {
+                "additionalProperties": true,
+                "properties": {},
+                "required": [],
+                "type": "object"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "rounds": {
+          "maximum": 99,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "start": {
+          "additionalProperties": true,
+          "properties": {
+            "calls": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "rounds": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "usd": {
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "rounds",
+            "calls",
+            "usd"
+          ],
+          "type": "object"
+        },
+        "usd": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "rounds",
+        "calls",
+        "usd",
+        "start"
+      ],
+      "type": "object"
+    },
     "view.adaptation": {
       "additionalProperties": true,
       "properties": {
@@ -1463,6 +1543,16 @@
           },
           "minItems": 0,
           "type": "array"
+        },
+        "ceiling": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/priority.ceiling"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "envelopes": {
           "items": {
