@@ -1310,3 +1310,346 @@ def calls():
 
 def owner_of_key(key):
     return (DEPARTMENT_KEYS.get(key) or (None,))[0]
+
+
+# ---- public functions (A1.4) -----------------------------------------------------------------------------------------
+def _same_json(a, b):
+    return _canon(a) == _canon(b)
+
+
+def _available():
+    """The implementations the registry can find, {layer: [impl id]}: layers.available() once the registry has it
+    (W1-CORE), else every layers/<layer>/v<N>.py on disk."""
+    try:
+        import layers
+        if callable(getattr(layers, 'available', None)):
+            return layers.available()
+    except ImportError:
+        pass
+    out = {}
+    for layer in LAYER_NAMES:
+        for p in sorted((HERE / 'layers' / layer).glob('v[1-9]*.py')):
+            if re.fullmatch(r'v[1-9][0-9]*', p.stem):
+                out.setdefault(layer, []).append('%s/%s' % (layer, p.stem))
+    return out
+
+
+def _kinds():
+    import website_dept as W                       # lazy: website_dept imports this module
+    return W.KINDS
+
+
+def _workflow_schema():
+    """Root's standards in code (workflow_schema.py, W1-ROOT), or None until that module is on main."""
+    try:
+        import workflow_schema
+    except ModuleNotFoundError as exc:
+        if exc.name != 'workflow_schema':
+            raise
+        return None
+    return workflow_schema
+
+
+def _write_ctx(ref):
+    """What the 'write' stage reads beside the record: Coordination's line and the engines the owner added."""
+    if not ref:
+        return {}
+    try:
+        import engine_runtime as R
+        t = R.coordination(ref)
+        return {'line': list(t.get('line') or []), 'grown': list(t.get('grown') or [])}
+    except Exception:  # noqa: BLE001 -- a context it cannot read is an empty one; the standards say what they lack
+        return {}
+
+
+def check_department(d, ref=None, before=None, by=None):
+    """A department record about to be saved, checked against the interface (A1.6, A1.20): only the keys whose value
+    changed against `before` (the stored record), so one legacy fault never blocks a later save; the semantic rules of
+    a key run only when it changed. Stamps schema_version. A fault on a NEVER_REFUSE key (the owner's Stop) is a row
+    only; with `by`, a changed key another layer owns is a row (OWNERSHIP_MODE warn). Returns the record."""
+    if not isinstance(d, dict):
+        report('department', ['$: is not an object'], ref=ref, owner='root')
+        return d
+    before = before if isinstance(before, dict) else {}
+    d['schema_version'] = SCHEMA_VERSION
+    changed = [k for k in d if k not in before or not _same_json(before[k], d[k])]
+    hard, soft = [], []
+    for k in ('kind', 'ref', 'name'):
+        if k not in d:
+            hard.append('$.%s: is missing' % k)
+    for k in changed:
+        sink = soft if k in NEVER_REFUSE else hard
+        if k not in DEPARTMENT_KEYS:
+            if k not in LEGACY_KEYS:
+                sink.append('$.%s: is not a field here' % k)
+            continue
+        if k == 'workflows' and isinstance(d[k], list):
+            continue                                  # entry by entry, below
+        sink.extend(faults(DEFS[DEPARTMENT_KEYS[k][1]], d[k], '$.' + k))
+    if 'workflows' in changed and isinstance(d.get('workflows'), list):
+        old = before.get('workflows') if isinstance(before.get('workflows'), list) else []
+        fresh = [i for i, w in enumerate(d['workflows']) if i >= len(old) or not _same_json(old[i], w)]
+        for i in fresh:
+            hard.extend(faults(DEFS['workflow.registration'], d['workflows'][i], '$.workflows[%d]' % i))
+        last = len(d['workflows']) - 1
+        if last in fresh and isinstance(d['workflows'][last], dict):
+            reg = d['workflows'][last]
+            ctx = _write_ctx(ref) if _workflow_schema() is not None else {}
+            for row in validate_workflow(as_workflow(reg.get('engines') or [], reg.get('source'), d), 'write', d, ctx):
+                if not row.get('passed'):
+                    hard.append('$.workflows[%d]: %s: %s' % (last, row.get('check'), row.get('why')))
+    # the semantic rules, each only when one of its keys changed
+    if 'kind' in changed and d.get('kind') not in _kinds():
+        hard.append('$.kind: %s is no kind in the definitions' % d.get('kind'))
+    if ('done_items' in changed or 'to_be_confirmed' in changed) and isinstance(d.get('done_items'), list):
+        ids = [i.get('id') for i in d['done_items'] if isinstance(i, dict)]
+        if ids != ['D%d' % (n + 1) for n in range(len(ids))]:
+            hard.append('$.done_items: the ids do not run D1 to D%d in order' % len(ids))
+        for c in d.get('to_be_confirmed') or []:
+            if isinstance(c, dict) and c.get('item') not in ids:
+                hard.append('$.to_be_confirmed: %s names no done-when item' % c.get('item'))
+    if 'layers' in changed and isinstance(d.get('layers'), dict):
+        found = _available()
+        for layer, impl in d['layers'].items():
+            if impl not in found.get(layer, []):
+                hard.append('$.layers.%s: %s is no implementation the registry can find' % (layer, impl))
+    own = []
+    who = _layer(by) if by else None
+    if by:
+        for k in changed:
+            owner = owner_of_key(k)
+            if owner and owner != who and k != 'schema_version':     # the stamp is the interface's own, whoever saves
+                own.append("$.%s: is %s's, and %s wrote it" % (k, TITLE[owner], TITLE.get(who, by)))
+    report('department', soft, ref=ref, owner='root', never_refuse=True)
+    report('department', own, ref=ref, owner=who or 'root', never_refuse=OWNERSHIP_MODE != 'refuse')
+    report('department', hard, ref=ref, owner='root')
+    return d
+
+
+def validate_record(layer, kind, value):
+    """`value` as the record `kind` of `layer` (RECORDS); an unknown pair is a fault."""
+    r = (RECORDS.get(layer) or {}).get(kind)
+    if not r:
+        return ['$: %s keeps no record named %s' % (TITLE.get(layer, layer), kind)]
+    return validate(r['def'], value)
+
+
+def check_record(layer, kind, value, ref=None):
+    r = (RECORDS.get(layer) or {}).get(kind)
+    report(r['def'] if r else '%s.%s' % (layer, kind), validate_record(layer, kind, value), ref=ref, owner=layer if layer in LAYER_NAMES else None)
+    return value
+
+
+def _actor(name):
+    """The actor a sender or a receiver is: Owner, Root or a function by its title; any other name is a work engine."""
+    name = str(name or '')
+    return name if name in ACTORS and name != 'Engine' else 'Engine'
+
+
+def validate_act(src, dst, act, payload):
+    """One post against the interface (A1.13): the sender maps to an actor and every destination is in edges(); when
+    the actor's rows for that act list words, the payload's word is one of them (an (any) row takes any); and the
+    payload fits the row's definition. Priority's words never order."""
+    if act not in ACTS:
+        return ['$: %r is not an act' % (act,)]
+    a = _actor(src)
+    dsts = [dst] if isinstance(dst, str) else list(dst or [])
+    out = [] if dsts else ['$: the post names nobody']
+    allowed = (edges().get(a) or {}).get(act)
+    if allowed is None:
+        return out + ['$: %s sends no %s' % (a, act)]
+    for x in dsts:
+        if _actor(x) not in allowed:
+            out.append('$: %s may not %s %s' % (a, act, x))
+    rows = [r for r in SENDS.get(a) or [] if r['act'] == act and all(_actor(x) in r['to'] for x in dsts)]
+    if not rows:
+        return out or ['$: no row says %s may %s %s' % (a, act, ', '.join(map(str, dsts)))]
+    if not isinstance(payload, dict):
+        return out + ['$: the payload is not an object']
+    w = payload.get('word')
+    row = next((r for r in rows if r['words'] != ANY and w in r['words']), None) or next((r for r in rows if r['words'] == ANY), None)
+    if row is None:
+        words = sorted({x for r in rows for x in r['words']})
+        return out + ['$.word: %s does not %s with the word %r; its words are %s' % (a, act, w, ', '.join(words))]
+    if a == 'Priority' and 'order' in str(w or '').lower():
+        out.append('$.word: Priority prices and holds; it never orders')
+    return out + faults(DEFS[row['payload']], payload)
+
+
+def check_act(src, dst, act, payload, ref=None):
+    """validate_act's faults through report(): in warn mode a bad post is a row and goes through; in refuse mode it
+    raises. post() calls it after may_post and before the append."""
+    got = validate_act(src, dst, act, payload)
+    if got:
+        report('act', ['%s %s to %s: %s' % (src, act, ', '.join(dst) if isinstance(dst, (list, tuple)) else dst, f) for f in got],
+               ref=ref, owner=_layer(src) or 'identity')
+    return payload
+
+
+def as_workflow(engines, source, dept=None):
+    """Today's engine lists (names, or the dicts a proposal carries: name, does, reads, writes, internet, covers) as a
+    DEFS['workflow'] value (A1.14): reads and writes looked up in the definitions for a name, the deliverable the last
+    engine's writes, and each engine's covers inverted into covers. When no engine names any covers, every done-when
+    item is the last engine's and covers_by is 'default', so a line made before M5.1 still has its items covered."""
+    import engine_runtime as R                     # lazy: the definitions are the runtime's
+    lib = R.defs()['engines']
+    rows = []
+    for e in engines or []:
+        mine = e if isinstance(e, dict) else {'name': e}
+        name = mine.get('name')
+        base = lib.get(name) or {}
+        row = {'name': name, 'reads': mine.get('reads') or base.get('reads'), 'writes': mine.get('writes') or base.get('writes')}
+        does = mine.get('does') or base.get('description')
+        if does:
+            row['does'] = does
+        if mine.get('internet') is not None:
+            row['internet'] = bool(mine['internet'])
+        if isinstance(mine.get('covers'), list):
+            row['covers'] = list(mine['covers'])
+        if source in SOURCES:
+            row['made_by'] = source
+        rows.append({k: v for k, v in row.items() if v is not None})
+    covers = {}
+    for row in rows:
+        for item in row.get('covers') or []:
+            covers.setdefault(item, []).append(row['name'])
+    by = 'adaptation'
+    if not covers and rows:
+        by = 'default'
+        for i in (dept or {}).get('done_items') or []:
+            if isinstance(i, dict) and i.get('id'):
+                covers[i['id']] = [rows[-1]['name']]
+    wf = {'schema_version': SCHEMA_VERSION, 'source': source, 'engines': rows,
+          'deliverable': rows[-1].get('writes') if rows else None, 'covers': covers, 'covers_by': by}
+    if (dept or {}).get('kind'):
+        wf['kind'] = dept['kind']
+    return wf
+
+
+def validate_workflow(wf, stage='shape', dept=None, ctx=None):
+    """[{check, passed, why}] (A1.14): the shape row first (the workflow fits DEFS['workflow']), then, at a stage, the rows
+    of Root's standards that apply to it, in WORKFLOW_STANDARDS order, from workflow_schema.run (W1-ROOT); until that
+    module is on main, the shape row only."""
+    f = validate('workflow', wf)
+    rows = [{'check': 'workflow_meets_standards', 'passed': not f,
+             'why': '; '.join(f[:3]) if f else 'the workflow fits the workflow schema'}]
+    mod = _workflow_schema()
+    if mod is not None and stage != 'shape':
+        rows += [dict(r) for r in mod.run(wf, stage, dept, ctx or {}) or []]
+    return rows
+
+
+def workflow_faults(wf, stage='shape', dept=None, ctx=None):
+    return ['%s: %s' % (r['check'], r['why']) for r in validate_workflow(wf, stage, dept, ctx) if not r['passed']]
+
+
+def validate_field(layer, group, part, field, value):  # noqa: F811 -- A1.4 names the argument field
+    """An owner's value for one prompt field (A1.16): the field's type, no '{{' or '}}', and no 'Return ONLY'."""
+    p = ((PROMPTS.get(layer) or {}).get(group) or {}).get(part)
+    if p is None:
+        return ['$: %s has no part %s.%s' % (TITLE.get(layer, layer), group, part)]
+    name = p['fields'].get(field)
+    if name is None:
+        return ['$: %s.%s has no field %s the owner may change' % (group, part, field)]
+    return validate(name, value)
+
+
+def validate_instructions(doc):
+    """{ref}/instructions.json (A1.16): its shape, and every value as its field types it."""
+    out = validate('instructions', doc)
+    if out or not isinstance(doc, dict):
+        return out
+    for layer, groups in (doc.get('values') or {}).items():
+        for group, parts in (groups or {}).items():
+            for part, fields in (parts or {}).items():
+                for name, entry in (fields or {}).items():
+                    out += ['$.values.%s.%s.%s.%s%s' % (layer, group, part, name, f[1:] if f.startswith('$') else ': ' + f)
+                            for f in validate_field(layer, group, part, name, (entry or {}).get('value'))]
+    return out
+
+
+def validate_view(layer, view):
+    """A pane's read model against VIEWS[layer] (A1.17); layer may be 'engine_card'."""
+    name = VIEWS.get(layer) or VIEWS.get(_layer(layer) or '')
+    if name is None:
+        return ['$: %s has no view' % layer]
+    return validate(name, view)
+
+
+def first_input(kind):
+    """The kind's first artifact: the Brief, or the Request for Root; None for a kind the definitions lack."""
+    arts = ((_kinds().get(kind) or {}).get('artifacts') or [None])
+    return arts[0]
+
+
+def deliverable(d):
+    """What the department's work leads to: the last engine's writes in its newest registered workflow (names looked
+    up in the definitions); with no registration, the kind's last artifact when its kind has a line (website Live site,
+    default Result); else None."""
+    d = d or {}
+    wf = d.get('workflows') or []
+    names = (wf[-1] or {}).get('engines') if wf and isinstance(wf[-1], dict) else None
+    if names:
+        import engine_runtime as R
+        return (R.defs()['engines'].get(names[-1]) or {}).get('writes')
+    k = _kinds().get(d.get('kind')) or {}
+    return (k.get('artifacts') or [None])[-1] if k.get('line') else None
+
+
+def describe():
+    """The whole interface as JSON: what GET /layers serves and the README points at (schemas/layers/interface.v1.json)."""
+    out = {
+        'schema_version': SCHEMA_VERSION, 'layer_names': LAYER_NAMES, 'title': TITLE, 'engine_layer': ENGINE_LAYER,
+        'actors': ACTORS, 'acts': ACTS, 'default_pins': DEFAULT_PINS, 'per_department': PER_DEPARTMENT,
+        'constants': {'impl_re': IMPL_RE, 'item_re': ITEM_RE, 'finding_re': FINDING_RE, 'name_re': NAME_RE, 'bounds': BOUNDS,
+                      'chain_limit': CHAIN_LIMIT, 'repairs': REPAIRS, 'options_max': OPTIONS_MAX, 'done_items_max': DONE_ITEMS_MAX,
+                      'standard': STANDARD, 'done_how': DONE_HOW, 'done_levels': DONE_LEVELS, 'rule_tags': RULE_TAGS,
+                      'sources': SOURCES, 'severities': SEVERITIES, 'item_verdicts': ITEM_VERDICTS, 'confidence': CONFIDENCE,
+                      'raise_cap': RAISE_CAP, 'rounds_default': ROUNDS_DEFAULT, 'question_statuses': QUESTION_STATUSES,
+                      'never_refuse': NEVER_REFUSE, 'ask_kinds': ASK_KINDS, 'ask_statuses': ASK_STATUSES, 'stages': STAGES,
+                      'table_fields': TABLE_FIELDS, 'slot_fields': SLOT_FIELDS, 'left_out_fields': LEFT_OUT_FIELDS,
+                      'coordination_fields': COORDINATION_FIELDS, 'timetable_row': TIMETABLE_ROW,
+                      'engine_card_fields': ENGINE_CARD_FIELDS, 'engine_five_row': ENGINE_FIVE_ROW, 'born_fields': BORN_FIELDS},
+        'layers': LAYERS, 'records': RECORDS, 'department_keys': DEPARTMENT_KEYS, 'legacy_keys': LEGACY_KEYS,
+        'hears': HEARS, 'sends': SENDS, 'edges': edges(), 'calls': CALLS, 'verdicts': VERDICTS, 'checks': CHECKS,
+        'shared_checks': SHARED_CHECKS, 'contract_samples': CONTRACT_SAMPLES, 'outputs': OUTPUTS, 'settings': SETTINGS,
+        'groups': GROUPS, 'prompts': PROMPTS, 'option_kinds': OPTION_KINDS,
+        'workflow_standards': [{'id': i, 'says': s, 'sources': src, 'stages': st} for i, s, src, st in WORKFLOW_STANDARDS],
+        'views': VIEWS, 'sink': SINK, 'sink_journals': SINK_JOURNALS, 'defs': DEFS,
+    }
+    return json.loads(json.dumps(out, ensure_ascii=False))
+
+
+# ---- migrations (A1.21): read time only; a read never writes, and the next write writes the record back ---------------
+def _m0_to_1(name, doc):
+    """Before A1 to schema version 1. A department gains schema_version and layers (DEFAULT_PINS), and done_items from
+    its done line when it has none (D1, its how from the kind, level outcome, as W.done_items does). Coordination's
+    table takes Coordination as the writer of any table whose `by` is neither born nor Coordination, keeping its why."""
+    doc['schema_version'] = 1
+    if name == 'department':
+        doc.setdefault('layers', dict(DEFAULT_PINS))
+        if 'done_items' not in doc:
+            import website_dept as W
+            kind = doc.get('kind')
+            text = ' '.join(str(doc.get('done') or '').split())[:300] or (W.KINDS.get(kind) or {}).get('done') or ''
+            doc['done_items'] = [{'id': 'D1', 'text': text, 'how': W.KIND_DONE_HOW.get(kind, 'model'), 'level': 'outcome'}] if text else []
+    elif name == 'coordination.table':
+        if 'by' in doc and doc['by'] not in ('born', 'Coordination'):
+            doc['by'] = 'Coordination'
+    return doc
+
+
+MIGRATIONS = {0: _m0_to_1}
+
+
+def migrate(name, doc):
+    """A record read as the current schema version: a copy, migrated step by step; unknown keys are kept; never writes."""
+    if not isinstance(doc, dict):
+        return doc
+    out = copy.deepcopy(doc)
+    v = out.get('schema_version')
+    v = v if isinstance(v, int) and not isinstance(v, bool) else 0
+    while v < SCHEMA_VERSION:
+        out = MIGRATIONS[v](name, out)
+        v += 1
+    return out

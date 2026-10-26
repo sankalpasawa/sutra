@@ -1,0 +1,112 @@
+{
+ "kind": "website",
+ "ref": "dref-acme-site",
+ "name": "Acme Website",
+ "owner": "the owner",
+ "parent": "dref-acme-root",
+ "created": "2026-10-01T09:30:00+05:30",
+ "goal": "A live website for Acme Learning: algebra for Class 8 students",
+ "done": "Every page checked and live",
+ "runtime": 2,
+ "rules": [
+  {
+   "tag": "go",
+   "line": "Plan, write and check inside the record"
+  },
+  {
+   "tag": "ask",
+   "line": "Ask the owner before the first publish"
+  },
+  {
+   "tag": "refuse",
+   "line": "Never publish a build whose check failed"
+  }
+ ],
+ "control": "granted",
+ "stopped": false,
+ "envelopes": {
+  "Plan": {
+   "calls": 240,
+   "usd": 6.0
+  },
+  "Write": {
+   "calls": 240,
+   "usd": 6.0
+  },
+  "Check": {
+   "calls": 240,
+   "usd": 6.0
+  },
+  "Publish": {
+   "calls": 240,
+   "usd": 6.0
+  },
+  "Identity": {
+   "calls": 30,
+   "usd": 6.0
+  },
+  "Adaptation": {
+   "calls": 30,
+   "usd": 6.0
+  },
+  "Priority": {
+   "calls": 30,
+   "usd": 6.0
+  },
+  "Coordination": {
+   "calls": 30,
+   "usd": 6.0
+  },
+  "Audit": {
+   "calls": 30,
+   "usd": 6.0
+  }
+ },
+ "windows": {
+  "Plan": 15,
+  "Write": 30,
+  "Check": 5,
+  "Publish": 10
+ },
+ "engines": [
+  "Plan",
+  "Write",
+  "Check",
+  "Publish"
+ ],
+ "artifacts": [
+  "Brief",
+  "Site plan",
+  "Pages",
+  "Build",
+  "Live site"
+ ],
+ "root": "dref-acme-root",
+ "templates": {
+  "identity": "identity/product-build",
+  "adaptation": "adaptation/product-build",
+  "priority": "priority/product-build",
+  "coordination": "coordination/product-build",
+  "audit": "audit/product-build"
+ },
+ "org": {
+  "ref": "dref-acme",
+  "name": "Acme Learning"
+ },
+ "workflows": [
+  {
+   "version": 1,
+   "engines": [
+    "Plan",
+    "Write",
+    "Check",
+    "Publish"
+   ],
+   "source": "library",
+   "registered": "2026-10-01T09:31:00+05:30",
+   "by": "Root"
+  }
+ ],
+ "identity_revision": 2,
+ "an_older_key": "kept on read"
+}

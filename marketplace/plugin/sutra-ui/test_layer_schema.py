@@ -493,3 +493,145 @@ def test_s3_the_tables_name_only_known_definitions_and_layers():
     assert all(o["layer"] in S.LAYER_NAMES for o in S.OPTION_KINDS.values())
     assert all(set(st) <= set(S.STAGES) and set(src) <= set(S.SOURCES) for _, _, src, st in S.WORKFLOW_STANDARDS)
     assert S.owner_of_key("goal") == "identity" and S.owner_of_key("envelopes") == "priority" and S.owner_of_key("colour") is None
+
+
+# ---- S4: the public functions ----------------------------------------------------------------------------------------
+FIXTURES = S.HERE / "schemas" / "layers" / "fixtures"
+
+
+def test_s4_migrate_reads_a_v0_department_as_v1_and_never_writes():
+    v0 = json.loads((FIXTURES / "department.v0.json").read_text(encoding="utf-8"))
+    v1 = json.loads((FIXTURES / "department.v1.json").read_text(encoding="utf-8"))
+    kept = json.dumps(v0, sort_keys=True)
+    assert S.migrate("department", v0) == v1
+    assert json.dumps(v0, sort_keys=True) == kept, "a read returns a copy and changes nothing"
+    assert v1["schema_version"] == 1 and v1["layers"] == S.DEFAULT_PINS
+    assert v1["done_items"] == [{"id": "D1", "text": v0["done"], "how": "code", "level": "outcome"}]
+    assert v1["an_older_key"] == "kept on read", "unknown keys are kept on read"
+    assert S.validate("department", {k: v for k, v in v1.items() if k != "an_older_key"}) == []
+    assert S.migrate("department", v1) == v1, "a v1 record reads as it is"
+
+
+def test_s4_migrate_maps_an_older_tables_writer_to_coordination_keeping_its_why():
+    t = {"order": ["posts", "line", "functions"], "line": ["Plan"], "by": "Root", "why": "the plan Root registered"}
+    got = S.migrate("coordination.table", t)
+    assert (got["by"], got["why"], got["schema_version"]) == ("Coordination", "the plan Root registered", 1)
+    assert S.migrate("coordination.table", dict(t, by="born"))["by"] == "born"
+    assert S.validate("coordination.table", got) == []
+
+
+def test_s4_as_workflow_gives_the_deliverable_and_default_covers():
+    d = {"kind": "website", "done_items": [{"id": "D1", "text": "Every page checked and live", "how": "code", "level": "outcome"},
+                                           {"id": "D2", "text": "Pages read well", "how": "model", "level": "target"}]}
+    wf = S.as_workflow(["Plan", "Write", "Check", "Publish"], "library", d)
+    assert wf["deliverable"] == "Live site" and wf["covers_by"] == "default"
+    assert wf["covers"] == {"D1": ["Publish"], "D2": ["Publish"]}
+    assert [e["reads"] for e in wf["engines"]] == ["Brief", "Site plan", "Pages", "Build"]
+    assert S.validate("workflow", wf) == []
+    shaped = S.as_workflow([{"name": "Facts", "does": "finds the facts", "reads": "Brief", "writes": "Facts", "internet": True, "covers": ["D1"]},
+                            {"name": "Inventory", "reads": "Facts", "writes": "Inventory", "covers": ["D1", "D2"]}], "shaped", d)
+    assert shaped["covers"] == {"D1": ["Facts", "Inventory"], "D2": ["Inventory"]} and shaped["covers_by"] == "adaptation"
+    assert shaped["deliverable"] == "Inventory" and S.validate("workflow", shaped) == []
+
+
+def test_s4_validate_workflow_returns_the_shape_rows_until_roots_standards_are_code():
+    wf = S.as_workflow(["Plan", "Write", "Check", "Publish"], "library", {"kind": "website"})
+    rows = S.validate_workflow(wf, "registration")
+    assert rows[0] == {"check": "workflow_meets_standards", "passed": True, "why": "the workflow fits the workflow schema"}
+    assert S.workflow_faults(wf) == []
+    bad = S.validate_workflow({"engines": [{"name": "Bad/Name"}], "source": "shaped"})
+    assert bad[0]["passed"] is False and S.workflow_faults({"engines": "x"})[0].startswith("workflow_meets_standards: ")
+    for r in rows:
+        assert S.validate("workflow.check", r) == []
+
+
+def test_s4_first_input_and_deliverable():
+    assert S.first_input("root") == "Request" and S.first_input("website") == "Brief" and S.first_input("organic") == "Brief"
+    assert S.deliverable({"kind": "website"}) == "Live site" and S.deliverable({"kind": "default"}) == "Result"
+    assert S.deliverable({"kind": "organic"}) is None
+    assert S.deliverable({"kind": "website", "workflows": [{"version": 1, "engines": ["Plan", "Write"], "source": "library"}]}) == "Pages"
+
+
+def test_s4_validate_act_holds_the_edges_the_words_and_the_payload():
+    assert S.validate_act("Priority", "Owner", "inform", {"word": "said"}) != [], "only Identity speaks to the owner"
+    assert S.validate_act("Owner", "Identity", "request", {"word": "request", "words": 'my {"a": 1} }}'}) == []
+    assert S.validate_act("Adaptation", ["Priority"], "propose", {"word": "trial", "step": "write.page"}) == []
+    assert S.validate_act("Adaptation", "Priority", "propose", {"word": "grant"})[0].startswith("$.word: Adaptation does not propose")
+    assert S.validate_act("Priority", "Adaptation", "propose", {"word": "order the line"}) == ["$.word: Priority prices and holds; it never orders"]
+    assert S.validate_act("Audit", "Identity", "inform", {"word": "finding", "severity": "dire"}) == ["$.severity: is not one of high, medium, low"]
+    assert S.validate_act("Plan", "Identity", "inform", {"word": "x"}) == ["$: Engine sends no inform"]
+    assert S.validate_act("Identity", "Owner", "inform", {"word": "said", "done": "Line 1."}) == [], "an (any) row takes a stored tell"
+    assert S.validate_act("Identity", ["Coordination"], "inform", {"word": "born"}) == []
+    assert S.validate_act("Identity", "Coordination", "agree", {"word": "verdict", "answer": "maybe"}) == ["$.answer: is not one of admit, wait, refuse"]
+
+
+def test_s4_check_act_is_a_row_in_warn_mode_and_a_refusal_in_refuse_mode(monkeypatch):
+    with S.expect_refused("act") as met:
+        assert S.check_act("Priority", "Owner", "inform", {"word": "said"}) == {"word": "said"}
+    assert met == ["Priority inform to Owner: $: Priority sends no inform"]
+    monkeypatch.setattr(S, "MODE", "refuse")
+    with S.expect_refused("act"):
+        with pytest.raises(S.SchemaFault):
+            S.check_act("Priority", "Owner", "inform", {"word": "said"})
+
+
+def test_s4_check_department_checks_only_the_changed_keys_and_stamps_the_version(monkeypatch):
+    before = {"kind": "website", "ref": "r", "name": "Acme", "colour": "an old key", "windows": {"Plan": "fifteen"}}
+    d = dict(before, goal="A live site")
+    assert S.check_department(dict(d), before=before)["schema_version"] == 1, "a legacy fault never blocks a later save"
+    with S.expect_refused("department") as met:
+        S.check_department(dict(d, colour="red"), before=before)
+    assert met == ["$.colour: is not a field here"]
+    with S.expect_refused("department") as met:
+        S.check_department(dict(d, done_items=[{"id": "D2", "text": "x"}], to_be_confirmed=[{"item": "D9"}]), before=before)
+    assert met == ["$.done_items: the ids do not run D1 to D1 in order", "$.to_be_confirmed: D9 names no done-when item"]
+    with S.expect_refused("department") as met:
+        S.check_department(dict(d, kind="spaceship"), before=before)
+    assert met == ["$.kind: spaceship is no kind in the definitions"]
+    with S.expect_refused("department") as met:
+        S.check_department(dict(d, goal="Mine now"), before=before, by="Priority")
+    assert met == ["$.goal: is Identity's, and Priority wrote it"], "ownership is a row in warn mode"
+    monkeypatch.setattr(S, "MODE", "refuse")
+    with S.expect_refused("department") as met:
+        S.check_department(dict(d, stopped="yes"), before=before)       # the owner's Stop always lands
+    assert met == ["$.stopped: is not true or false"]
+    with S.expect_refused("department"):
+        with pytest.raises(S.SchemaFault):
+            S.check_department(dict(d, colour="red"), before=before)
+
+
+def test_s4_a_new_workflows_entry_is_a_registration_and_meets_the_write_stage():
+    base = {"kind": "website", "ref": "r", "name": "Acme"}
+    reg = {"version": 1, "engines": ["Plan", "Write", "Check", "Publish"], "source": "library", "registered": "2026-10-26", "by": "Root"}
+    S.check_department(dict(base, workflows=[reg]), before=base)
+    with S.expect_refused("department") as met:
+        S.check_department(dict(base, workflows=[reg, {"version": 2, "engines": ["Plan"], "source": "copied"}]),
+                           before=dict(base, workflows=[reg]))
+    assert "$.workflows[1].registered: is missing" in met and "$.workflows[1].source: is not one of library, shaped, fitted, made" in met
+    assert not [f for f in met if f.startswith("$.workflows[0]")], "the entry already on the record is not read again"
+
+
+def test_s4_validate_field_instructions_view_and_record():
+    assert S.validate_field("identity", "take", "take", "task", "Judge one request from the owner.") == []
+    assert S.validate_field("identity", "take", "take", "task", "Judge {{words}}") != []
+    assert S.validate_field("identity", "take", "take", "returns", "x") == ["$: take.take has no field returns the owner may change"]
+    assert S.validate_field("identity", "take", "nowhere", "task", "x") == ["$: Identity has no part take.nowhere"]
+    assert S.validate_field("identity", "goal", "skills", "items", ["judge a request against the goal"]) == []
+    good = {"schema_version": 1, "values": {"identity": {"take": {"take": {"task": {"value": "Judge it.", "at": "2026-10-26", "ask": "a-1"}}}}}}
+    assert S.validate_instructions(good) == []
+    bad = json.loads(json.dumps(good))
+    bad["values"]["identity"]["take"]["take"]["task"]["value"] = "Return ONLY yes"
+    assert S.validate_instructions(bad) == ["$.values.identity.take.take.task: holds 'Return ONLY': the answer's shape belongs to the app"]
+    assert S.validate_view("identity", {}) != [] and S.validate_view("root", {}) == ["$: root has no view"]
+    assert S.validate_record("identity", "rule", {"line": "x"}) == []
+    assert S.validate_record("identity", "colour", {}) == ["$: Identity keeps no record named colour"]
+
+
+def test_s4_describe_is_the_whole_interface_as_json():
+    got = S.describe()
+    assert json.loads(json.dumps(got)) == got
+    for k in ("layers", "records", "department_keys", "hears", "sends", "edges", "calls", "verdicts", "checks", "shared_checks",
+              "contract_samples", "outputs", "settings", "groups", "prompts", "option_kinds", "workflow_standards", "views",
+              "sink", "sink_journals", "defs"):
+        assert got[k], k
+    assert got["edges"] == R.defs()["edges"] and got["schema_version"] == S.SCHEMA_VERSION
