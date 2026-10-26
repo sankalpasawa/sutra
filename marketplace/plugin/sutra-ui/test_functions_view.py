@@ -1070,8 +1070,8 @@ def test_m17_a_runtime_departments_panes_agree_with_its_record(mods, born, tmp_p
     """Round 3, gaps 3 and 4: on a department on the engine runtime the registry's older cards are not drawn under a
     function's page, so the pane agrees with the record and with the page above it. Served the real /api/dept/ reads,
     Identity's pane names its owner once, as the record does; Adaptation's never says there are no engines while the
-    record holds four; Priority's never says the queue is empty while its Queue lists the line; and no pane carries the
-    registry's Proposals, the template's framework or Recent."""
+    record holds four; the queue is Coordination's timetable, never Priority's (PRD M4.6), and lists the line; and no
+    pane carries the registry's Proposals, the template's framework or Recent."""
     W, R, J, F = mods
     if shutil.which("node") is None:
         pytest.skip("node is not on PATH")
@@ -1088,7 +1088,10 @@ def test_m17_a_runtime_departments_panes_agree_with_its_record(mods, born, tmp_p
         assert "No engines yet" not in rest and "Nothing in the queue" not in rest and "Nothing held" not in rest, fn
         assert "Proposals" not in rest and "Always does" not in rest and "Recent" not in rest, fn
         assert "The function" in rest and "Journeys" in rest and "Version 1" in rest, (fn, "the page is the pane")
-    assert "Queue" in panes["priority"]["rest"] and "Publish Waits for the stamp" in panes["priority"]["rest"]
+    # PRD M4.6 (S-05): the queue is Coordination's, never Priority's; its timetable lists the line and why Publish waits
+    assert "Queue" not in panes["priority"]["rest"] and "Waits for the stamp" not in panes["priority"]["rest"]
+    assert "Timetable" in panes["coordination"]["rest"] and "Publish after a Build that passed" in panes["coordination"]["rest"]
+    assert "waits for the stamp" in panes["coordination"]["rest"] and "waits: waits" not in panes["coordination"]["rest"]
     assert "Plan" in panes["adaptation"]["rest"] and "Control" in panes["identity"]["rest"]
 
 
