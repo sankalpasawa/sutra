@@ -548,3 +548,53 @@ def test_r5_a_born_template_that_does_not_fit_is_a_row_when_the_library_is_read_
         R._DEFS.clear()
         R.defs()
     assert len(met.rows) == 1, "once for the file as it stands"
+
+
+# ---- R6: root/v1: the setup words, typed ---------------------------------------------------------------------------------------
+SNAP = S.HERE / "test_fixtures" / "root-prompts.snapshot.json"
+
+
+def _conversation(*turns):
+    return {"id": "c-fixture", "status": "clear",
+            "messages": [{"id": "m-%d" % i, "actor": actor, "text": text, "at": "2026-10-27T10:0%d:00+05:30" % i} for i, (actor, text) in enumerate(turns)]}
+
+
+def _setup_context(R, words, conversation, named, existing):
+    """What setup.read hands the setup prompts, for a fixture, with the Library's own kinds and use cases (library_kinds)."""
+    kinds = R.library_kinds()
+    return {"ref": "dref-root-fixture", "dept": {"name": "Acme Root", "org": {"name": "Acme"}, "kind": "root"}, "bag": {
+        "setup.read": {"words": words, "conversation": conversation, "conversing": isinstance(conversation, dict), "named": named,
+                       "facts": {"asked": bool(words), "kinds": ", ".join(kinds), "use_cases": "; ".join("%s: %s" % (k, u) for k, u in kinds.items()),
+                                 "existing": existing or "none", "named": named or "none"}}}}
+
+
+def root_prompts(R):
+    """Every setup prompt for the fixtures: a website, an organic department, and two departments asked for in one breath
+    with one already made and a name the owner gave."""
+    fixtures = {
+        "website": _setup_context(R, WEBSITE, _conversation(("user", WEBSITE)), None, ""),
+        "organic": _setup_context(R, ORGANIC, _conversation(("user", "A system for the school"), ("root", "Who is it for?"),
+                                                            ("user", ORGANIC)), None, "Acme Website"),
+        "two departments": _setup_context(R, "Set up a website for the school and a laboratory inventory system for the science team",
+                                          _conversation(("user", "Acme Science: a website for the school, and then an inventory system for the lab")),
+                                          "Acme Science", "Acme Website, Acme Lab"),
+        "no conversation": _setup_context(R, "A site for the school", None, None, ""),
+    }
+    out = {}
+    for name, ctx in fixtures.items():
+        out["converse:" + name] = R.p_setup_converse(ctx, None, None)
+        out["shape:" + name] = R.p_setup_shape(ctx, None, None)
+    return out
+
+
+def test_r6_the_root_prompts_render_as_the_inline_builders_did(home):
+    """The snapshot was written from p_setup_converse and p_setup_shape before their words moved into root/v1; a words
+    migration passes it unchanged, and it changes only in a commit of its own ('snapshot: <reason>')."""
+    W, R, J, _ = home
+    got = root_prompts(R)
+    if __import__("os").environ.get("ROOT_PROMPTS_SNAPSHOT") == "write":
+        SNAP.write_text(json.dumps(got, indent=1, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+    want = json.loads(SNAP.read_text(encoding="utf-8"))
+    assert sorted(got) == sorted(want) and len(want) == 8
+    for k in sorted(want):
+        assert got[k] == want[k], "%s renders as it did before the move" % k
