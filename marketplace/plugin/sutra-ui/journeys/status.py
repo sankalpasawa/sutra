@@ -8,8 +8,21 @@ nothing is read from the record, the clock or the disk except the code roots res
     row_states(j, results, states=None)    {'step:1': state, 'edge:J1.5': state} for the rows of one journey
     journey_state(j, row_states)           one journey's state from its rows
     site_claim(row, kind), drifts(...)     what the site says of a row, and whether the state disagrees
+    resolve_code(name), resolve_test(ref)  whether a name a row lists is defined in the code, and a test exists
+    tests_listed(js)                       every test the rows of the (non-declared) journeys list, sorted
+    compute(j, results, states=None)       the journey.status document of one journey
+
+The one thing read from the disk is the code the names are looked up in; each file is read once for as long as it does not change.
 """
-from journeys import row_key, rows
+import ast
+import re
+from pathlib import Path
+
+from journeys import natural, row_key, rows, sha_of
+from layers import S
+
+#: the plugin folder: the code roots and the test files are found beneath it
+ROOT = Path(__file__).resolve().parent.parent
 
 #: a bind of these kinds names code a test can reach; a `person` bind is the owner's own act and names none
 CODE_BINDS = ('act', 'step', 'event', 'api', 'ui')
@@ -92,3 +105,136 @@ def drifts(claim, state):
     """The site says one thing and the state says another: built but not proven, wanted but built. A report, never a fault
     (it is the evidence for re-marking the site, A3.9). The site's words that claim nothing never drift."""
     return claim in CLAIMS and state not in CLAIMS[claim] and state not in NO_VERDICT
+
+
+# ---- do the names a row lists exist ---------------------------------------------------------------------------------
+_PARSED = {}       # path -> (mtime_ns, parsed): a file is parsed again only when it has changed
+_JS_NAME = re.compile(r'(?:\bfunction\s*\*?\s+|\b(?:const|let|var)\s+)([A-Za-z_$][\w$]*)')
+
+
+def _cached(path, parse):
+    """What `parse` made of a file, kept while the file does not change; None for a file that is not there or does not parse."""
+    try:
+        stamp = path.stat().st_mtime_ns
+    except OSError:
+        return None
+    held = _PARSED.get(path)
+    if held and held[0] == stamp:
+        return held[1]
+    try:
+        got = parse(path.read_text(encoding='utf-8'))
+    except (OSError, SyntaxError, ValueError):
+        got = None                                  # not Python (or not text): it defines nothing
+    _PARSED[path] = (stamp, got)
+    return got
+
+
+def _py_names(text):
+    """The names a Python file defines: every def and class (a method counts), and what its module level assigns."""
+    tree = ast.parse(text)
+    names = {n.name for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
+    for n in tree.body:
+        targets = n.targets if isinstance(n, ast.Assign) else [n.target] if isinstance(n, (ast.AnnAssign, ast.AugAssign)) else []
+        for t in targets:
+            names |= {x.id for x in ast.walk(t) if isinstance(x, ast.Name)}
+    return names
+
+
+def code_roots():
+    """The files a name a row lists may be defined in: the Python files of the plugin folder except the tests, those of
+    layers/, and the scripts of static/js. A body that moves from engine_runtime into its layer on touch stays found."""
+    py = [p for p in sorted(ROOT.glob('*.py')) if not p.name.startswith('test_')] + sorted(ROOT.glob('layers/**/*.py'))
+    return py, sorted(ROOT.glob('static/js/*.js'))
+
+
+def resolve_code(name):
+    """Whether `name` (a bare name, or module.name) is defined in the code roots. A bare name is found if any root defines it;
+    module.name if a file whose stem is `module` defines `name`."""
+    module, _, bare = name.rpartition('.')
+    py, js = code_roots()
+    for path in py:
+        if (not module or path.stem == module) and bare in (_cached(path, _py_names) or ()):
+            return True
+    if module:
+        return False
+    return any(bare in (_cached(path, lambda t: set(_JS_NAME.findall(t))) or ()) for path in js)
+
+
+def _py_tests(text):
+    """{(class or None, name)}: the functions at the top of a test file, and the methods of the classes at its top."""
+    out = set()
+    for n in ast.parse(text).body:
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            out.add((None, n.name))
+        elif isinstance(n, ast.ClassDef):
+            out |= {(n.name, m.name) for m in n.body if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    return out
+
+
+def resolve_test(ref):
+    """Whether a listed test exists. `file.py::test` and `file.py::Class::test` by the file's syntax tree (a function at its
+    top, or a method of a class at its top); `js:file.js#W45` when the node file has a test whose name begins `W45:` or
+    `W45 `. A test beside the plugin folder's own files only."""
+    if ref.startswith('js:'):
+        name, _, wid = ref[3:].partition('#')
+        try:
+            text = (ROOT / name).read_text(encoding='utf-8')
+        except OSError:
+            return False
+        return bool(wid) and bool(re.search(r'\btest\(\s*["\'`]%s[: ]' % re.escape(wid), text))
+    parts = ref.split('::')
+    if len(parts) not in (2, 3) or not parts[0].endswith('.py'):
+        return False
+    held = _cached(ROOT / parts[0], _py_tests) or ()
+    return (parts[1] if len(parts) == 3 else None, parts[-1]) in held
+
+
+# ---- the tests a run has to run, and the document it gives -----------------------------------------------------------
+def tests_listed(js):
+    """Every test the rows (steps and edges) of the journeys list, sorted: one journey, or {id: journey}, or a list of them.
+    A declared journey is not run, so it lists none."""
+    if isinstance(js, dict) and 'steps' not in js:
+        js = list(js.values())
+    elif isinstance(js, dict):
+        js = [js]
+    return sorted({t for j in js if not j.get('declared') for _, _, row in rows(j) for t in row.get('tests') or []})
+
+
+def compute(j, results, states=None):
+    """The journey.status document of one journey: the hash of the journey as it is, each row's state with the tests that
+    proved it and the ones that did not, the journey's state, the counts, and the drift. `results` is {test: 'passed' |
+    'failed' | 'missing'}; a listed test it does not hold counts as missing. `states` holds the rows of other journeys (by
+    row_key) a `same_as` row takes its state from. The same journey and the same results give the same document: no clock."""
+    listed = tests_listed(j)
+    held = {t: (results or {}).get(t) if (results or {}).get(t) in ('passed', 'failed') else 'missing' for t in listed}
+    if j.get('declared'):
+        got = {'%s:%s' % (kind, rid): 'declared' for kind, rid, _ in rows(j)}
+    else:
+        got = row_states(j, held, states)
+    docs, drift = {}, []
+    for kind, rid, row in rows(j):
+        key = '%s:%s' % (kind, rid)
+        tests = row.get('tests') or []
+        claim = site_claim(row, kind)
+        gone = drifts(claim, got[key])
+        docs[key] = {'state': got[key], 'proven_by': [t for t in tests if held.get(t) == 'passed'],
+                     'failing': [t for t in tests if held.get(t) in ('failed', 'missing')], 'site': claim, 'drift': gone}
+        if gone:
+            drift.append({'row': key, 'site': claim, 'state': got[key]})
+    counts = {state: 0 for state in S.ROW_STATES}
+    for state in got.values():
+        if state in counts:
+            counts[state] += 1
+    return {'schema_version': 1, 'id': j['id'], 'definitions_sha': sha_of(j), 'state': journey_state(j, got), 'counts': counts,
+            'tests': held, 'rows': docs, 'drift': drift}
+
+
+def compute_all(js, results):
+    """The documents of every journey that is not declared, {id: document}: two passes, so a `same_as` row finds the state of
+    the row of another journey it points at whichever one is read first."""
+    states = {}
+    live = [js[i] for i in sorted(js, key=natural) if not js[i].get('declared')]
+    for j in live:
+        for key, state in row_states(j, {t: (results or {}).get(t) for t in tests_listed(j)}, states).items():
+            states['%s:%s' % (j['id'], key)] = state
+    return {j['id']: compute(j, results, states) for j in live}
