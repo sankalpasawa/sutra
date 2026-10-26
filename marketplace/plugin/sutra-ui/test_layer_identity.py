@@ -117,13 +117,16 @@ def test_i1_every_name_the_recipe_uses_is_provided_and_nothing_else_is():
 
 #: the bodies identity/v1 holds of its own: the handler Hear a doubt (I5) and the two steps that tell it the owner's answer, and
 #: the wave 2 additions (J1 to J6)
-OWN = {"identity_doubt", "identity_read", "identity_file", "identity_closed", "identity_apply"}
+OWN_CODE = {"identity_doubt", "identity_read", "identity_file", "identity_closed", "identity_apply", "identity_done"}
+OWN_CHECK = {"done_is_read"}
+OWN = OWN_CODE | OWN_CHECK
 
 
 def test_i1_each_name_the_recipe_uses_is_a_reference_to_the_body_engine_runtime_holds_but_the_versions_own(home):
     import engine_runtime as R
     legacy = {"code": R.CODE, "prompt": R.PROMPT, "draft": R.DRAFT, "check": R.CHECK}
-    assert {n for n, f in V1.CODE.items() if not hasattr(f, "legacy")} == OWN
+    assert {n for n, f in V1.CODE.items() if not hasattr(f, "legacy")} == OWN_CODE
+    assert {n for n, f in V1.CHECK.items() if not hasattr(f, "legacy")} == OWN_CHECK
     for kind, d in C._dicts(V1).items():
         for name, fn in d.items():
             if name in OWN:
@@ -219,12 +222,10 @@ def _pane(j2, ref):
     return V1.view(ref, W.dept(ref), J.events(ref), W.asks(ref))
 
 
-def _reading(W, ref, J):
-    """What Audit files of a version it read item by item and found every done-when item met in (M8.3), for J.audited to clear
-    done-when from, once that takes a reading; the keyword arguments to pass it ({} for a J.audited that clears it unread)."""
-    if "reading" not in inspect.signature(J.audited).parameters:
-        return {}
-    return {"reading": {"read": True, "met": [i["id"] for i in W.items_of(W.dept(ref))], "not_met": [], "to_confirm": [], "high": False}}
+def _items_met(prompt):
+    """Audit's reader (M8.3), a function: it says every done-when item in the prompt is met, with its evidence."""
+    items = json.loads(prompt.split("THE DONE-WHEN ITEMS:\n", 1)[1].split("\n\nWHAT CODE MEASURED:", 1)[0])
+    return {"items": [{"id": i["id"], "verdict": "met", "claim": "it holds", "evidence": "the work shows it"} for i in items], "findings": []}
 
 
 def _in_state(j2, monkeypatch, state, org="Acme Learning"):
@@ -241,10 +242,11 @@ def _in_state(j2, monkeypatch, state, org="Acme Learning"):
         _model(monkeypatch, R, {"setup.shape": dict(SHAPED, done_items=[dict(i) for i in ITEMS])})
         ref = _born(j2, org=org)
     else:
+        # Audit read what went out, item by item, and found every done-when item met (S-30): Identity reads the reading and
+        # says the goal is reached; "found nothing" without a reading clears nothing (PRD M8.3, M8.4)
+        _model(monkeypatch, R, {"audit.judge": {"ok": True, "findings": []}, "audit.items": _items_met})
         ref = _born(j2, org=org)
-        # Audit read what went out, item by item, and found every done-when item met (S-30): done-when holds; "found
-        # nothing" without a reading clears nothing (PRD M8.3)
-        assert J.audited(ref, 1, [], **_reading(W, ref, J)) is True
+        _stamp_the_pending(W, ref, ("publish",))
     assert J.status(ref)["state"] == state, J.status(ref)
     return ref
 
@@ -924,3 +926,209 @@ def test_j1_leave_and_stop_are_still_applied_by_identity(j2):
     W.choose_option(ref, ask["id"], "leave:" + items[-1]["id"])
     W.run_until_idle(ref, limit=300)
     assert [i["id"] for i in W.items_of(W.dept(ref))] == [i["id"] for i in items[:-1]], "the item is out of done-when"
+
+
+# ---- J2: Hear a reading (M8.4) ---------------------------------------------------------------------------------------------
+#: the severity Audit gives a verdict (engine_runtime.ITEM_SEVERITY)
+SEVERITY = {"met": "low", "to_confirm": "medium", "not_met": "high"}
+
+
+def _actions(J, ref):
+    return [e["action"] for e in J.events(ref)]
+
+
+def _reached(W, J, ref):
+    return [e for e in J.events(ref) if e["action"] == "goal.reached"]
+
+
+def _a_running_department(j2, org="Acme Learning", words=WEBSITE, items=2):
+    """A website with its plan at work and its first version live, and `items` done-when items: what Audit reads."""
+    W, R, J, _, _ = j2
+    ref = _born(j2, words, org)
+    _stamp_the_pending(W, ref, ("publish",))
+    if items > 1:
+        _two_items(W, ref)
+    assert W.latest(ref, "Live site") and J.status(ref)["step"] >= 6
+    return ref
+
+
+def _file_reading(j2, ref, verdicts, findings=(), read=True, v=None, cycle="current", artifact=None):
+    """What Audit files of one version, as the audit step files it (readings.jsonl, checked as the interface types it)."""
+    import hashlib
+    W, R, J, _, _ = j2
+    art = artifact or S.deliverable(W.dept(ref))
+    v = v or W.latest(ref, art)["v"]
+    n = len(W.rows(ref, "readings.jsonl"))
+    items = [{"id": i, "subject": "Item %s" % i, "claim": "what is so of %s" % i, "evidence": "what shows it for %s" % i, "method": "model",
+              "verdict": verdict, "severity": SEVERITY[verdict]} for i, verdict in verdicts.items()] if read else []
+    row = {"schema_version": 1, "id": "r-" + hashlib.sha1(("%s%s%s" % (ref, v, n)).encode()).hexdigest()[:8], "v": v, "artifact": art,
+           "cycle_id": J.status(ref)["cycle_id"] if cycle == "current" else cycle, "round": None, "read": read,
+           "why_not_read": None if read else "no model was there to read it", "items": items,
+           "findings": [dict({"id": "F%d" % (k + 1), "severity": "high", "claim": "A reader could be misled", "where": "Home", "item": None,
+                              "went_to": "Identity", "at": W.now()}, **f) for k, f in enumerate(findings)], "at": W.now()}
+    return W.append_row(ref, "readings.jsonl", row)
+
+
+def _tell_reading(j2, ref, row):
+    """Audit tells Identity the reading it filed (inform/reading), and the department runs until it is idle."""
+    W, R, J, _, _ = j2
+    post = R.audit_tell(ref, row)
+    assert post is not None, "Identity's recipe hears a reading, so Audit posts it"
+    W.run_until_idle(ref, limit=300)
+    return post
+
+
+def _hear(j2, ref, verdicts, **kw):
+    return _tell_reading(j2, ref, _file_reading(j2, ref, verdicts, **kw))
+
+
+def sm1_faults(W, J, ref):
+    """SM-1: every goal.reached of the ledger cites a reading of the version it names, read, with every done-when item met."""
+    rows = {r["id"]: r for r in W.rows(ref, "readings.jsonl")}
+    bad = []
+    for e in J.events(ref):
+        if e["action"] != "goal.reached":
+            continue
+        cited = next((x for x in e["evidence_refs"] if isinstance(x, dict) and x.get("reading")), None)
+        row = rows.get((cited or {}).get("reading"))
+        met = {i["id"] for i in (row or {}).get("items") or [] if i["verdict"] == "met"}
+        if not (row and row["read"] and row["v"] == cited["version"] and row["artifact"] == cited["artifact"]
+                and {i["id"] for i in W.items_of(W.dept(ref))} <= met):
+            bad.append(e["event_id"])
+    return bad
+
+
+def test_j2_identitys_recipe_hears_a_reading_and_the_interface_says_so(home):
+    import engine_runtime as R
+    row = next(r for r in S.hears("identity") if (r["act"], r["word"]) == ("inform", "reading"))
+    assert (row["from"], row["via"], row["payload"], row["handler"]) == (("Audit",), "board", "act.reading", "Hear a reading")
+    handler = next(h for h in layers.recipes()["Identity"]["on"] if h["name"] == "Hear a reading")
+    assert handler["when"] == {"msg_type": "inform", "word": "reading"}
+    assert [(s["id"], s["code"], s["born"], s["check"]) for s in handler["steps"]] == \
+        [("identity.hear_reading", "hear", "C2", "facts_are_closed"), ("identity.done", "identity_done", "C2", "done_is_read")]
+    assert "done_is_read" in S.CHECKS["identity"] and "done_is_read" in S.CONTRACT_SAMPLES and "done_is_read" in V1.CHECK
+    assert R.validate(R.defs()) == []
+    assert R._handler(R.engine_def("Identity"), {"msg_type": "inform", "payload": {"word": "reading"}}) is not None
+    assert any(r["act"] == "inform" and "reading" in r["words"] and r["to"] == ("Identity",) for r in S.SENDS["Audit"])
+
+
+def test_j2_no_findings_but_d2_not_met_is_not_done(j2):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    _hear(j2, ref, {"D1": "met", "D2": "not_met"}, findings=[])
+    assert _reached(W, J, ref) == [] and J.status(ref)["goal_reached"] is False and J.status(ref)["state"] != "done"
+    steps = [r for r in R.step_rows(ref) if r["step"] == "identity.done"]
+    assert steps and steps[-1]["status"] == "ok" and "D2 not met" in steps[-1]["out_hash"] or "D2 not met" in json.dumps(steps[-1]), steps[-1]
+
+
+def test_j2_every_item_met_is_goal_reached_citing_the_reading_id(j2):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    row = _file_reading(j2, ref, {"D1": "met", "D2": "met"})
+    _tell_reading(j2, ref, row)
+    (reached,) = _reached(W, J, ref)
+    assert reached["actor"] == "Identity" and reached["recipient"] == "User" and reached["step"] == 8
+    assert reached["evidence_refs"] == [{"artifact": "Live site", "version": row["v"], "reading": row["id"]}] and reached["payload"]["reading"] == row["id"]
+    st = J.status(ref)
+    assert (st["state"], st["step"], st["goal_reached"]) == ("done", 8, True)
+    acts = _actions(J, ref)
+    assert acts[-2:] == ["audit.finding_filed", "goal.reached"], "the clean reading stands before the goal it led to"
+    said = [s for s in _said_by_identity(R, ref) if s.startswith("The goal is reached:")]
+    assert len(said) == 1 and "Audit read Live site v%d and found nothing to put right." % row["v"] in said[0]
+    assert sm1_faults(W, J, ref) == []
+
+
+def test_j2_an_item_to_confirm_is_not_done(j2):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    _hear(j2, ref, {"D1": "met", "D2": "to_confirm"})
+    assert _reached(W, J, ref) == [] and J.status(ref)["state"] != "done"
+    # a fact still to be confirmed on the record blocks done too, whatever the reader said of the item
+    d = W.dept(ref)
+    items = W.items_of(d)
+    items[1]["confirm"] = "nobody gave the price list"
+    W.put_done_items(ref, items)
+    _hear(j2, ref, {"D1": "met", "D2": "met"})
+    assert _reached(W, J, ref) == [] and J.status(ref)["state"] != "done"
+
+
+def test_j2_a_high_finding_open_is_not_done(j2):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    _hear(j2, ref, {"D1": "met", "D2": "met"}, findings=[{"severity": "high", "claim": "The fees are invented"}])
+    assert _reached(W, J, ref) == [] and J.status(ref)["state"] != "done"
+    # a finding that is not high does not block it, and the owner is told it was noted
+    _hear(j2, ref, {"D1": "met", "D2": "met"}, findings=[{"severity": "low", "claim": "A heading could be shorter"}])
+    assert len(_reached(W, J, ref)) == 1
+    assert any("noted something that does not block" in s for s in _said_by_identity(R, ref))
+
+
+def test_j2_a_version_nobody_read_and_an_item_nobody_read_are_not_done(j2):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    _hear(j2, ref, {}, read=False, findings=[{"severity": "low", "claim": "x"}])
+    _hear(j2, ref, {"D1": "met"})                                                  # D2 has no reading at all
+    assert _reached(W, J, ref) == [] and J.status(ref)["state"] != "done"
+
+
+def test_j2_a_reading_of_an_older_version_or_an_earlier_cycle_is_not_done(j2):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    _hear(j2, ref, {"D1": "met", "D2": "met"}, cycle="cycle-before")
+    assert _reached(W, J, ref) == [], "a reading of an earlier cycle"
+    old = _file_reading(j2, ref, {"D1": "met", "D2": "met"})
+    W.add_version(ref, "Live site", {"index.html": "<p>newer</p>"}, [], "r-x", {"ok": True, "notes": []})
+    _tell_reading(j2, ref, old)
+    assert _reached(W, J, ref) == [] and J.status(ref)["state"] != "done", "a newer version is out: its reading decides"
+
+
+def test_j2_the_goal_is_reached_once_and_said_once_however_often_the_reading_is_heard(j2):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    row = _file_reading(j2, ref, {"D1": "met", "D2": "met"})
+    _tell_reading(j2, ref, row)
+    _tell_reading(j2, ref, row)
+    assert len(_reached(W, J, ref)) == 1
+    assert len([s for s in _said_by_identity(R, ref) if s.startswith("The goal is reached:")]) == 1
+
+
+def test_j2_the_covering_refuses_a_claim_the_reading_does_not_bear(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2)
+    d = W.dept(ref)
+    full = {"done": True, "reading": "r-1a2b3c4d", "read": True, "met": ["D1", "D2"], "not_met": [], "to_confirm": [], "unread": [], "high": False}
+    assert V1.c_done_is_read({"dept": d}, None, None, full)["ok"] is True, "a claim that holds together, off the record"
+    for lie in (dict(full, met=["D1"]), dict(full, not_met=["D2"]), dict(full, to_confirm=["D2"]), dict(full, high=True), dict(full, read=False),
+                dict(full, reading=None), dict(full, unread=["D2"]), dict(full, done="yes")):
+        assert V1.c_done_is_read({"dept": d}, None, None, lie)["ok"] is False, lie
+    # a claim of done the reading does not bear is not written, whatever claims it
+    _file_reading(j2, ref, {"D1": "met", "D2": "not_met"})
+    true, calls = V1.done_claim, []
+
+    def lying(dept, row):                     # the first reading of the reading lies; the covering reads the record again
+        calls.append(1)
+        return dict(full, artifact="Live site", v=row["v"], reading=row["id"], why="every item is met") if len(calls) == 1 else true(dept, row)
+    monkeypatch.setattr(V1, "done_claim", lying)
+    _tell_reading(j2, ref, W.rows(ref, "readings.jsonl")[-1])
+    assert len(calls) >= 2, "the covering read the record again"
+    assert _reached(W, J, ref) == [] and J.status(ref)["state"] != "done"
+
+
+def test_j2_the_goal_is_reached_by_the_real_flow_from_a_reading_and_sm_1_is_zero(j2, monkeypatch):
+    """Audit's reader says every item is met; Identity hears the reading Audit filed and says the goal is reached, citing it:
+    SM-1 (a 'goal reached' with no reading of every item for that version) is 0 here, and 'found nothing' alone reaches none."""
+    W, R, J, _, _ = j2
+    ref = _in_state(j2, monkeypatch, "done")
+    (reading,) = [r for r in W.rows(ref, "readings.jsonl") if r["read"]]
+    (reached,) = _reached(W, J, ref)
+    assert reached["evidence_refs"][0]["reading"] == reading["id"] and sm1_faults(W, J, ref) == []
+    assert [e["actor"] for e in J.events(ref) if e["action"] == "goal.reached"] == ["Identity"]
+    # the offline department: the version was not read, so there is no 'goal reached' to match (M0.3)
+    monkeypatch.setattr(R, "MODEL", None)
+    monkeypatch.setenv("SUTRA_WEBSITE_OFFLINE", "1")
+    offline = _born(j2, org="Offline Co")
+    _stamp_the_pending(W, offline, ("publish",))
+    assert _reached(W, J, offline) == [] and sm1_faults(W, J, offline) == []
+    # and SM-1 sees a goal reached on no reading
+    J.note(offline, 8, "Identity", "User", "goal.reached", "done", "Done-when holds.", "goal-reached-vX", {}, evidence_refs=[{"artifact": "Live site", "version": 1}])
+    assert len(sm1_faults(W, J, offline)) == 1

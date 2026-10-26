@@ -6687,6 +6687,18 @@ CHECK = {"line_is_engines": c_line_is_engines, "pages_are_named": c_pages_are_na
 PROMPT["audit_items"], DRAFT["audit_items_draft"], CHECK["reading_is_s30"] = p_audit_items, d_audit_items, c_reading_is_s30
 
 
+def c_done_is_read(ctx, step, item, out):
+    """The name of identity/v1's covering of the goal reached (A1 W2-IDENTITY, M8.4), registered beside the literals as
+    reading_is_s30 is: the body is the version's, and without the version there is no claim of done to let through."""
+    got = layers.load("identity/v1")
+    if got is None:
+        return {"ok": False, "notes": ["Identity's version is not there to read a claim of done"]}
+    return got.c_done_is_read(ctx, step, item, out)
+
+
+CHECK["done_is_read"] = c_done_is_read
+
+
 # ---- what the screens read -----------------------------------------------------------------------------------------
 def steps_view(ref, name):
     """An engine as the owner sees it: its steps in order, each with the rung it runs on, its check and what its rows say."""

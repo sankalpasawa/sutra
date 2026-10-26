@@ -195,6 +195,7 @@
     },
     "identity": {
       "answer_names_its_source": "an answer, its source, and how sure it is",
+      "done_is_read": "the goal is reached only from a reading: the version was read, every item is met, none is to confirm and no high finding is open",
       "enough_is_shaped": "enough is a yes or a no; what is missing is named by the standard's points; a no asks one question",
       "feedback_says_what_changes": "feedback says what kind of change it is and what to correct now",
       "gate_verdict_is_known": "a gate's verdict is admit, wait or refuse",
@@ -407,6 +408,106 @@
         {
           "answer": "accept",
           "why": "fits today: 9 calls of 30"
+        }
+      ]
+    },
+    "done_is_read": {
+      "bad": [
+        {
+          "done": "yes"
+        },
+        {
+          "done": false,
+          "why": ""
+        },
+        {
+          "done": true,
+          "high": false,
+          "met": [
+            "D1"
+          ],
+          "not_met": [],
+          "read": true,
+          "to_confirm": [],
+          "unread": [],
+          "why": "x"
+        },
+        {
+          "done": true,
+          "high": false,
+          "met": [
+            "D1"
+          ],
+          "not_met": [],
+          "read": false,
+          "reading": "r-1a2b3c4d",
+          "to_confirm": [],
+          "unread": [],
+          "why": "x"
+        },
+        {
+          "done": true,
+          "high": false,
+          "met": [
+            "D1"
+          ],
+          "not_met": [
+            "D2"
+          ],
+          "read": true,
+          "reading": "r-1a2b3c4d",
+          "to_confirm": [],
+          "unread": [],
+          "why": "x"
+        },
+        {
+          "done": true,
+          "high": false,
+          "met": [
+            "D1"
+          ],
+          "not_met": [],
+          "read": true,
+          "reading": "r-1a2b3c4d",
+          "to_confirm": [
+            "D2"
+          ],
+          "unread": [],
+          "why": "x"
+        },
+        {
+          "done": true,
+          "high": true,
+          "met": [
+            "D1",
+            "D2"
+          ],
+          "not_met": [],
+          "read": true,
+          "reading": "r-1a2b3c4d",
+          "to_confirm": [],
+          "unread": [],
+          "why": "x"
+        }
+      ],
+      "good": [
+        {
+          "done": false,
+          "why": "D2 is not met"
+        },
+        {
+          "done": true,
+          "high": false,
+          "met": [
+            "D1",
+            "D2"
+          ],
+          "not_met": [],
+          "read": true,
+          "reading": "r-1a2b3c4d",
+          "to_confirm": [],
+          "unread": [],
+          "why": "every done-when item is met"
         }
       ]
     },
@@ -8508,6 +8609,16 @@
         "payload": "act.doubt",
         "via": "board",
         "word": "doubt"
+      },
+      {
+        "act": "inform",
+        "from": [
+          "Audit"
+        ],
+        "handler": "Hear a reading",
+        "payload": "act.reading",
+        "via": "board",
+        "word": "reading"
       }
     ],
     "priority": [
@@ -8661,6 +8772,7 @@
         "journey_is_known",
         "rule_is_tagged",
         "ruling_is_known",
+        "done_is_read",
         "verdict_is_known"
       ],
       "hands_to": "Adaptation: a request for a line, and the next thing to correct. Coordination: verdicts on gates. You: it is the only function that speaks to you.",

@@ -832,26 +832,44 @@ def not_read(ref, version, why, artifact=None):
         return
 
 
+def _read_clean(ref, version, art):
+    """The ledger's line for a version Audit read and found nothing to put right in (step 7): written once for the version,
+    by whichever of audited and reached comes first, so it always stands before the goal it led to."""
+    note(ref, 7, "Audit", "Identity", "audit.finding_filed", "recorded",
+         "Audit read %s v%s and found nothing to put right." % (art or "what the plan delivers", version),
+         "audit-clean-v%s" % version, {"severity": "none", "findings": 0}, evidence_refs=[{"artifact": art, "version": version}] if art else [])
+
+
 def audited(ref, version, findings, artifact=None, reading=None):
-    """Audit read what went out. Done-when holds only when its reading says so (step 8): the version was read item by item,
-    every done-when item is met, none is to confirm and no high finding is open. 'Found nothing' is no reading: a version
-    nobody read, or one that read no item, clears nothing (PRD M8.3). `reading` is what Audit filed of it: {read, met,
-    not_met, to_confirm, high}. Returns True when the goal is reached now, so Identity says so once. (Interim: from
-    wave 2 Identity's covering declares done from Audit's reading, M8.4, and this only records.)"""
+    """Audit read what went out, and the ledger records that (step 7): a version read item by item, every item met, none to
+    confirm and no high finding open, with nothing to put right, is one event that says so. 'Found nothing' is no reading: a
+    version nobody read, or one that read no item, records nothing here. Whether the goal is reached is not decided here, nor
+    written: this module records and projects and never rules (rule 14). Identity's covering decides it from the reading
+    (identity_done, PRD M8.4) and records it through reached(). Returns False, since nothing is reached by recording."""
     r = reading or {}
     if not active(ref) or not (r.get("read") and r.get("met") and not r.get("not_met") and not r.get("to_confirm") and not r.get("high")):
         return False
-    dept = W.dept(ref) or {}
-    art = _deliverable(ref, artifact)
-    ev = [{"artifact": art, "version": version}] if art else []
     if not findings:
         # with findings, Audit's own post to Identity is the event; "found nothing" is said only when that is true
         # (found live 2026-10-08: twelve findings filed, and the next line of the ledger said nothing was found)
-        note(ref, 7, "Audit", "Identity", "audit.finding_filed", "recorded",
-             "Audit read %s v%s and found nothing to put right." % (art or "what the plan delivers", version),
-             "audit-clean-v%s" % version, {"severity": "none", "findings": 0}, evidence_refs=ev)
+        _read_clean(ref, version, _deliverable(ref, artifact))
+    return False
+
+
+def reached(ref, version, artifact=None, reading=None, findings=0):
+    """Identity says the goal is reached (identity_done, PRD M8.4), and the ledger records it: one goal.reached event, citing
+    the reading it rests on and the version it read, and the cycle is done. The decision is Identity's, made from the reading
+    and held to done_is_read before this is called; this records it, once. A version that was read clean has its line first.
+    Returns True when it was recorded now, False when the cycle is not in step to be done or it was recorded already."""
+    if not active(ref):
+        return False
+    dept = W.dept(ref) or {}
+    art = _deliverable(ref, artifact)
+    if not findings:
+        _read_clean(ref, version, art)
+    ev = [dict({"artifact": art, "version": version}, **({"reading": reading} if reading else {}))] if art else ([{"reading": reading}] if reading else [])
     note(ref, 8, "Identity", "User", "goal.reached", "done", "Done-when holds: %s." % str(dept.get("done") or "").rstrip("."),
-         "goal-reached-v%s" % version, {"done_when": dept.get("done")}, evidence_refs=ev)
+         "goal-reached-v%s" % version, {"done_when": dept.get("done"), "reading": reading}, evidence_refs=ev)
     _set(ref, step=8, state="done")
     return True
 

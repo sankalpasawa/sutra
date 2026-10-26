@@ -692,22 +692,45 @@ def test_u5_a_department_with_no_done_when_items_is_not_read_against_anything(j2
 
 
 def test_u5_audit_tells_identity_a_reading_only_once_its_recipe_hears_one(j2, monkeypatch):
+    """Identity's recipe hears a reading since W2-IDENTITY (Hear a reading, M8.4): Audit tells it each one. A recipe with no
+    handler for one is told nothing (A1-14), so no merge order leaves an act unheard."""
     W, R, J, _, _ = j2
     _model(monkeypatch, R, {"audit.items": _says("met"), "audit.judge": JUDGE_OK})
     ref = _default(j2)
-    assert not [p for p in R.board(ref) if (p["payload"] or {}).get("word") == "reading"], "Identity has no handler yet: nothing is posted"
     (row,) = _readings(W, ref)
-    assert R.audit_tell(ref, row) is None
-    real = R._handler
-    hears = lambda e, p: ({"name": "Hear a reading", "when": {"msg_type": "inform", "word": "reading"}, "steps": []}      # noqa: E731
-                          if (p.get("payload") or {}).get("word") == "reading" else real(e, p))
-    monkeypatch.setattr(R, "_handler", hears)
-    post = R.audit_tell(ref, row)
+    told = [p for p in R.board(ref) if (p["payload"] or {}).get("word") == "reading"]
+    assert len(told) == 1, "Identity has the handler: the reading was posted"
+    post = told[0]
     assert (post["src"], post["dst"], post["msg_type"]) == ("Audit", ["Identity"], "inform")
     pl = post["payload"]
     assert S.validate("act.reading", pl) == []
     assert (pl["reading"], pl["artifact"], pl["v"], pl["read"], pl["met"], pl["not_met"], pl["to_confirm"], pl["high"]) == \
         (row["id"], "Result", 1, True, ["D1"], [], [], False)
+    real = R._handler
+    monkeypatch.setattr(R, "_handler", lambda e, p: None if (p.get("payload") or {}).get("word") == "reading" else real(e, p))
+    assert R.audit_tell(ref, row) is None, "a recipe that does not hear a reading is told nothing"
+
+
+def test_u5_done_is_read_from_a_reading_never_from_no_findings(j2, monkeypatch):
+    """J.audited only records (M8.4): whatever the reading, it never writes goal.reached; a clean reading of a version read item
+    by item is one line of the ledger. The goal is reached only by Identity, from the reading (test_layer_identity J2): the
+    reading cited, every item met."""
+    W, R, J, _, _ = j2
+    ref = _default(j2)
+    assert J.active(ref)
+    held = [None, {}, {"read": False, "met": [], "not_met": [], "to_confirm": [], "high": False},
+            {"read": True, "met": [], "not_met": [], "to_confirm": [], "high": False},                  # read, and no item met
+            {"read": True, "met": ["D1"], "not_met": ["D2"], "to_confirm": [], "high": False},
+            {"read": True, "met": ["D1"], "not_met": [], "to_confirm": ["D2"], "high": False},
+            {"read": True, "met": ["D1", "D2"], "not_met": [], "to_confirm": [], "high": True}]
+    for reading in held:
+        assert J.audited(ref, 1, 0, reading=reading) is False, reading
+    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["state"] != "done" and "audit.finding_filed" not in _actions(J, ref)
+    assert J.audited(ref, 1, 0, reading={"read": True, "met": ["D1", "D2"], "not_met": [], "to_confirm": [], "high": False}) is False
+    acts = _actions(J, ref)
+    assert acts[-1] == "audit.finding_filed" and "goal.reached" not in acts and J.status(ref)["goal_reached"] is False, "it records, and rules nothing"
+    assert J.audited(ref, 1, 0, reading={"read": True, "met": ["D1", "D2"], "not_met": [], "to_confirm": [], "high": False}) is False
+    assert _actions(J, ref).count("audit.finding_filed") == 1, "once for the version"
 
 
 # ---- U6 · Audit's view: latest and readings -------------------------------------------------------------------------
@@ -854,27 +877,6 @@ def test_u2_the_owners_value_for_the_new_part_is_checked_as_a_field_of_it():
     assert S.validate_field("audit", "judge", "items", "task", "Say {{items}} first.")                  # only the app writes a marker
     assert S.validate_field("audit", "judge", "items", "task", "Return ONLY a JSON object: {}.")        # the answer's shape is the app's
     assert S.validate_field("audit", "judge", "items", "returns", "x"), "the answer contract is not a field"
-
-
-def test_u5_done_is_read_from_a_reading_never_from_no_findings(j2):
-    """J.audited writes goal.reached only when the reading was read, every item is met, none is to confirm and no high
-    finding is open; a bare 'found nothing', or a reading that read no item, clears nothing."""
-    W, R, J, _, _ = j2
-    ref = _default(j2)
-    assert J.active(ref)
-    held = [None, {}, {"read": False, "met": [], "not_met": [], "to_confirm": [], "high": False},
-            {"read": True, "met": [], "not_met": [], "to_confirm": [], "high": False},                  # read, and no item met
-            {"read": True, "met": ["D1"], "not_met": ["D2"], "to_confirm": [], "high": False},
-            {"read": True, "met": ["D1"], "not_met": [], "to_confirm": ["D2"], "high": False},
-            {"read": True, "met": ["D1", "D2"], "not_met": [], "to_confirm": [], "high": True}]
-    for reading in held:
-        assert J.audited(ref, 1, 0, reading=reading) is False, reading
-    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["state"] != "done"
-    assert J.audited(ref, 1, 0, reading={"read": True, "met": ["D1", "D2"], "not_met": [], "to_confirm": [], "high": False}) is True
-    acts = _actions(J, ref)
-    assert acts[-2:] == ["audit.finding_filed", "goal.reached"] and J.status(ref)["goal_reached"] is True
-    cited = [e["evidence_refs"] for e in J.events(ref)[-2:]]
-    assert cited == [[{"artifact": "Result", "version": 1}]] * 2
 
 
 def test_u6_the_fixtures_the_screens_draw_from_validate_and_have_the_keys_the_live_pane_has(j2):

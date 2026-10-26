@@ -552,9 +552,122 @@ def identity_apply(ctx, step, item):
     return R.identity_apply(ctx, step, item)
 
 
+# ---- Hear a reading (PRD M8.4) -------------------------------------------------------------------------------------------
+# Audit files a reading of one version (readings.jsonl, audit.reading) and tells Identity (inform/reading, act.reading; Audit posts
+# it once this handler is in Identity's recipe, A1-14). Identity reads the reading by its id: the goal is reached only when the
+# reading says so, which identity_done holds to done_is_read before j2_runtime records it (j2_runtime records and projects and
+# never rules, rule 14). 'Found nothing' is no reading of an item (S-30).
+
+
+def reading_of(ref, rid):
+    """The reading a post names, as readings.jsonl holds it, or None."""
+    return next((r for r in W.rows(ref, 'readings.jsonl') if rid and r.get('id') == rid), None)
+
+
+def done_claim(d, row):
+    """What a reading says of the goal, as Identity reads it: the department's done-when items by their verdict in the reading,
+    and whether the goal holds. Done means the version was read, every item has a verdict and it is met, none is to confirm,
+    none is a fact still to be confirmed on the record, and no finding is high."""
+    ids = [i['id'] for i in W.items_of(d)]
+    verdicts = R.audit_verdicts((row or {}).get('items'))
+    out = {'reading': (row or {}).get('id'), 'artifact': (row or {}).get('artifact'), 'v': (row or {}).get('v'),
+           'read': bool(row) and row.get('read') is True,
+           'met': [i for i in ids if verdicts.get(i) == 'met'], 'not_met': [i for i in ids if verdicts.get(i) == 'not_met'],
+           'to_confirm': [i for i in ids if verdicts.get(i) == 'to_confirm'], 'unread': [i for i in ids if i not in verdicts],
+           'high': any(f.get('severity') == 'high' for f in (row or {}).get('findings') or [])}
+    owed = [c.get('item') for c in d.get('to_be_confirmed') or [] if isinstance(c, dict)]
+    why = None
+    if not row:
+        why = 'no reading by that name is on the record'
+    elif not out['read']:
+        why = 'the version was not read'
+    elif not ids:
+        why = 'the department has no done-when items to read'
+    elif out['not_met']:
+        why = '%s not met' % ', '.join(out['not_met'])
+    elif out['to_confirm'] or owed:
+        why = '%s still to be confirmed' % ', '.join(out['to_confirm'] or owed)
+    elif out['unread']:
+        why = '%s not read' % ', '.join(out['unread'])
+    elif out['high']:
+        why = 'a high finding is open'
+    out.update({'done': why is None, 'why': why or 'every done-when item is met, none is to confirm and no high finding is open'})
+    return out
+
+
+def c_done_is_read(ctx, step, item, out):
+    """Done is read from a reading, never from no findings (PRD M8.4): a claim that the goal is reached cites the reading, says
+    it was read, and has every item met, none to confirm, none unread and no high finding; against the record, the items it
+    meets are all the department's. A claim that it is not reached says why."""
+    notes, done = [], out.get('done')
+    if not isinstance(done, bool):
+        notes.append('it does not say whether the goal is reached')
+    elif done:
+        if not out.get('reading'):
+            notes.append('done, and no reading is cited')
+        if out.get('read') is not True:
+            notes.append('done, on a version that was not read')
+        if not out.get('met'):
+            notes.append('done, with no item met')
+        for key, said in (('not_met', 'an item is not met'), ('to_confirm', 'an item is to be confirmed'), ('unread', 'an item is not read')):
+            if out.get(key):
+                notes.append('done, but %s: %s' % (said, ', '.join(map(str, out[key]))))
+        if out.get('high'):
+            notes.append('done, with a high finding open')
+        if ctx and ctx.get('dept'):
+            # against the record: the claim is read again off the reading it cites, and the items it meets are all the department's
+            owed = {i['id'] for i in W.items_of(ctx['dept'])} - set(out.get('met') or [])
+            if owed:
+                notes.append('done, but %s is not met' % ', '.join(sorted(owed)))
+            again = done_claim(ctx['dept'], reading_of(ctx['ref'], out.get('reading'))) if ctx.get('ref') and out.get('reading') else None
+            if again and not again['done']:
+                notes.append('done, but the reading it cites says otherwise: %s' % again['why'])
+    elif not str(out.get('why') or '').strip():
+        notes.append('not done, and it does not say why')
+    return {'ok': not notes, 'notes': notes or ['done is read from the reading' if done else 'not done: %s' % out.get('why')]}
+
+
+def identity_done(ctx, step, item):
+    """Identity says the goal is reached, from a reading and from nothing else (M8.4): the reading is read by its id, the claim
+    is held to done_is_read before anything is written, then j2_runtime records goal.reached citing the reading and the owner
+    is told, once. Only a cycle with a plan at work (step 6 on) can be done, and only on a reading of its own cycle and of the
+    version now out."""
+    ref, d, pl = ctx['ref'], ctx['dept'], ctx['post']['payload']
+    cj = R._j2()
+    row = reading_of(ref, pl.get('reading'))
+    got = done_claim(d, row)
+    cur = (cj._state(ref) or {}) if cj else {}
+    if cj and cj.done(ref):
+        return dict(got, said='the goal was reached already; nothing more is declared')
+    if got['done']:
+        newer = W.latest(ref, got['artifact'], passed=True) if got['artifact'] else None
+        if not (cj and cj.active(ref) and int(cur.get('step') or 1) >= 6):
+            got.update({'done': False, 'why': 'the department is not in its cycle with a plan at work'})
+        elif row.get('cycle_id') not in (None, cur.get('cycle_id')):
+            got.update({'done': False, 'why': 'the reading belongs to an earlier cycle'})
+        elif newer and int(newer['v']) > int(got['v'] or 0):
+            got.update({'done': False, 'why': 'a newer version is out, and its reading decides'})
+        else:
+            held = c_done_is_read(ctx, step, item, got)
+            if not held['ok']:
+                got.update({'done': False, 'why': '; '.join(held['notes'])})
+    if not got['done']:
+        return dict(got, said='the reading does not say the goal holds: %s' % got['why'])
+    cj.reached(ref, got['v'], artifact=got['artifact'], reading=got['reading'], findings=len(row.get('findings') or []))
+    found = 'noted something that does not block' if row.get('findings') else 'found nothing to put right'
+    try:
+        R._tell(ref, d, {'src': 'Root' if d.get('root') else R.OWNER}, 'inform',
+                {'word': 'goal', 'done': 'The goal is reached: %s. Audit read %s v%s and %s.'
+                 % (str(d.get('done') or 'done').rstrip('.'), got['artifact'], got['v'], found), 'link': got['artifact'], 'v': got['v']})
+    except Exception:  # noqa: BLE001 -- the goal is reached on the record whether or not the word reached the chat
+        pass
+    return dict(got, said='declared the goal reached on reading %s: %s' % (got['reading'], got['why']))
+
+
 #: the bodies of this version's own, in the table beside the references
 CODE.update({'identity_read': identity_read, 'identity_file': identity_file, 'identity_doubt': identity_doubt,
-             'identity_closed': identity_closed, 'identity_apply': identity_apply})
+             'identity_closed': identity_closed, 'identity_apply': identity_apply, 'identity_done': identity_done})
+CHECK.update({'done_is_read': c_done_is_read})
 
 
 def view(ref, d, events, asks):
