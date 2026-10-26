@@ -311,14 +311,18 @@ def d_adapt_line(ctx, step, item):
     return {'engines': engines}
 
 
-def with_covers(engines, d):
+def with_covers(engines, d, made=False):
     """Each engine's covers made known and whole (M5.1), and the map of item to engines the proposal carries. Only items
-    done-when has stay. When no engine names any, code maps every item to the last engine, as it does for a Library line."""
+    done-when has stay. Every item no engine names goes to the last engine, as code does for a Library line: a line that
+    is not made was never asked for covers, so one that names some has not said the rest are uncovered, and Root's check
+    would refuse the line on every reshape. A made line is held to every item by its own check (made_notes), so what its
+    engines name is what the proposal carries."""
     ids = [i['id'] for i in items_of(d)]
     for e in engines:
         e['covers'] = [c for c in dict.fromkeys(e.get('covers') or []) if c in ids]
-    if ids and engines and not any(e['covers'] for e in engines):
-        engines[-1]['covers'] = list(ids)
+    left = [i for i in ids if not any(i in e['covers'] for e in engines)]
+    if left and engines and not made:
+        engines[-1]['covers'] = [i for i in ids if i in engines[-1]['covers'] or i in left]
     out = {}
     for e in engines:
         for c in e['covers']:
@@ -394,7 +398,7 @@ def adapt_line_offer(ctx, step, item):
         return cannot_offer(ctx, got['cannot'])
     made = bool(src.get('shape')) and is_made(ctx)
     engines = (made_engines if made else covered_engines)(got['engines'])
-    covers = with_covers(engines, d)
+    covers = with_covers(engines, d, made)
     body = {'word': 'line', 'engines': engines, 'source': src.get('source'), 'words': pl.get('words'), 'for': pl.get('for'), 'covers': covers}
     names = ' -> '.join(e['name'] for e in engines)
     if R._j2_live(ref):

@@ -506,6 +506,29 @@ def test_a3_covers_a_model_names_are_kept_when_known_and_the_rest_default_to_the
     assert _covers_of(posts)["covers"] == {"D1": ["Site 2"], "D2": ["Site 2"], "D3": ["Site 2"]}
 
 
+def test_a3_a_line_that_is_not_made_defaults_every_item_its_model_left_unnamed_to_the_last_engine(j2, monkeypatch):
+    """A model that was not asked for covers may still name some: what it names is kept and the rest go to the last engine,
+    so Root's check does not refuse the line on every reshape (the setting is off, as it is by default)."""
+    ref = _dept(j2, "organic")
+    partial = {"engines": [dict(GOOD[0], covers=["D1"]), dict(GOOD[1], covers=["D2"])]}
+    _, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, partial, how="model")
+    sent = _covers_of(posts)
+    assert sent["covers"] == {"D1": ["Facts 2"], "D2": ["Site 2"], "D3": ["Site 2"]}
+    assert [e["covers"] for e in sent["engines"]] == [["D1"], ["D2", "D3"]] and S.validate_act("Adaptation", ["Priority"], "propose", sent) == []
+    first = {"engines": [dict(GOOD[0], covers=["D2"]), dict(GOOD[1], covers=["D2"])]}
+    _, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, first, how="model")
+    assert _covers_of(posts)["covers"] == {"D2": ["Facts 2", "Site 2"], "D1": ["Site 2"], "D3": ["Site 2"]}
+
+
+def test_a3_a_made_line_keeps_exactly_the_covers_its_engines_name(j2, monkeypatch):
+    """A made line is held to every item by its own check, so the offer never invents a cover for it."""
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    ref = _dept(j2, "organic")
+    partial = {"engines": [_made("Facts 2", "Brief", "Facts 2", ["D1"]), _made("Site 2", "Facts 2", "Live site", ["D2"])]}
+    _, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, partial, how="model")
+    assert _covers_of(posts)["covers"] == {"D1": ["Facts 2"], "D2": ["Site 2"]}
+
+
 def test_a3_the_line_goes_to_identity_with_its_covers_when_no_cycle_is_live(j2, monkeypatch):
     ref = _dept(j2, "organic")
     out, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, {"engines": GOOD}, how="model", live=False)
@@ -844,7 +867,9 @@ def test_a5_an_item_no_engine_covers_is_named_and_the_view_validates_in_every_st
     W, R, J, _, FV = j2
     ref = _dept(j2, "organic")
     d = W.dept(ref)
-    partial = {"engines": [dict(GOOD[0], covers=["D1"]), dict(GOOD[1], covers=["D2"])]}
+    # a partial cover is a made line's to name (its own check refuses it); a line that is not made has the rest default to its last engine
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    partial = {"engines": [_made("Facts 2", "Brief", "Facts 2", ["D1"]), _made("Site 2", "Facts 2", "Live site", ["D2"])]}
     prop = _proposed(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, partial, how="model")
     states = {"proposing": [prop], "reshaping": [prop, _event("workflow.blocked", "Root's check refused the workflow: D3.", {"checks": ROWS})],
               "blocked": [prop] + [_event("workflow.blocked", "Root's check refused the workflow: D3.", {"checks": ROWS})] * 3,
@@ -898,11 +923,15 @@ DOC_PLAN = {"engines": [_made("Outline", "Brief", "Outline", ["D1"], confidence=
                         _made("Handbook", "Outline", "Result", ["D2"], confidence=0.85)]}
 
 
-def _run_scenario(j2, monkeypatch, kind, words, org, items, plan, answers=None):
-    """A department as a person makes one, with J2_ADAPT_MAKE on and a stub in place of every model Adaptation, Priority,
-    Root and Audit would call; the motor runs until idle, and the owner's one stamp on what goes out is given."""
+def _run_scenario(j2, monkeypatch, kind, words, org, items, plan, answers=None, make=True):
+    """A department as a person makes one, with J2_ADAPT_MAKE on (off with make=False) and a stub in place of every model
+    Adaptation, Priority, Root and Audit would call; the motor runs until idle, and the owner's one stamp on what goes out
+    is given."""
     W, R, J, founding, FV = j2
-    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    if make:
+        monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    else:
+        monkeypatch.delenv("J2_ADAPT_MAKE", raising=False)
     seen = _stub(monkeypatch, R, dict({"setup.converse": {"verdict": "clear", "question": ""},
                                        "setup.shape": {"name": org + " Department", "kind": kind, "goal": words, "done_items": items},
                                        "adapt.line": plan, "priority.bargain": {"answer": "accept", "why": "the envelope has room"},
@@ -992,6 +1021,19 @@ def test_a9_a_stub_cannot_on_a_website_game_gives_one_conflict_with_three_typed_
     assert [(o["id"], o["kind"]) for o in sent["options"]] == [("root_setup", "root_setup"), ("leave:D3", "leave"), ("stop", "stop")]
     assert S.validate_act("Adaptation", ["Identity"], "inform", sent) == []
     assert "workflow.registered" not in [e["action"] for e in J.events(ref)] and W.dept(ref).get("workflows") in (None, [])
+
+
+def test_a3_a_model_that_names_some_covers_with_the_setting_off_still_has_its_line_registered(j2, monkeypatch):
+    """With J2_ADAPT_MAKE off (today's default), a stub that names covers for two of three items used to leave D3 uncovered,
+    and Root's check refused the line on every reshape: 'D3 is covered by no engine of the plan'."""
+    W, R, J, _, FV = j2
+    plan = {"engines": [dict(GOOD[0], covers=["D1"]), dict(GOOD[1], covers=["D2"])]}
+    ref, _ = _run_scenario(j2, monkeypatch, "organic", LAB_WORDS, "Lab Co", LAB, plan, make=False)
+    acts = [e["action"] for e in J.events(ref)]
+    assert "workflow.registered" in acts and "workflow.blocked" not in acts, acts
+    registered = W.dept(ref)["workflows"][-1]
+    assert registered["engines"] == ["Facts 2", "Site 2"] and registered["covers"] == {"D1": ["Facts 2"], "D2": ["Site 2"], "D3": ["Site 2"]}
+    assert next(c for c in registered["checks"] if c["check"] == "items_covered")["passed"] is True
 
 
 def test_a9_a_stub_at_0_7_shows_the_doubt_and_asks_nothing_and_the_department_goes_on(j2, monkeypatch):
