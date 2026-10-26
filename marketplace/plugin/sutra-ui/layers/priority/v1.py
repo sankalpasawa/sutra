@@ -11,6 +11,16 @@ today; p_priority_bargain tells the agent both; d_priority_bargain, the offline 
 priority_post answers and keeps one price row per answer; price_is_observed holds the answer to the facts. WORDS and
 LAYOUT hold its words (goal, bargain), so no part of it is read from the .md bundle. view() is functions_view's pane plus
 the prices.
+
+What moved with M5.4 (priced options): priority_envelope, the gate that holds an engine at its envelope, files its card with the
+limit, the use and the ways forward built by code (raise, leave, stop); a no to a line carries the same on its post;
+apply_option and apply_choice put the owner's choice in place, and check_raise holds a raise to RAISE_CAP times where the limit
+started (AskError OVER_CAP) before the choice is recorded.
+
+What moved with M9.2 (the goal's ceiling): priority_grant, which also writes dept.ceiling once, at the first registration (rounds,
+and the calls and money of that many runs of the line); a round Adaptation proposes (word round) is read against the ceiling and
+the goal's spend so far, answered offline by round_within_ceiling, and its yes held to the ceiling by the covering; a no carries
+[raise the ceiling, leave, stop]. Priority never orders: it prices, holds, and says yes or no.
 """
 import math
 import re
@@ -39,7 +49,7 @@ CALL_USD = 0.04
 #: an engine shaped on the fly is born from Do (R.born_template), so until it has run it is priced as Do is
 PRIOR_ENGINE = 'Do'
 #: which proposal a price row is for; any other word is a cost (a trial)
-PROPOSALS = types.MappingProxyType({'line': 'line', 'engine': 'engine'})
+PROPOSALS = types.MappingProxyType({'line': 'line', 'engine': 'engine', 'round': 'round'})
 
 
 def _calls(n):
@@ -148,6 +158,8 @@ def priority_read(ctx, step, item):
     whole proposal fits. Moved from engine_runtime.priority_read."""
     ref, pl = ctx['ref'], ctx['post']['payload']
     word, limit = pl.get('word'), int(_template().get('line') or 6)
+    if word == 'round':
+        return _read_round(ctx, pl)
     if word == 'line':
         # the department's workflows, proposed together: Priority has room for as many work engines as its template says,
         # and as many as the room left holds
@@ -192,6 +204,10 @@ def p_priority_bargain(ctx, step, item):
         return R._prompt('priority', 'bargain', 'line', ctx['ref'], source='from the Library' if pl.get('source') == 'library' else 'shaped for the goal',
                          engines=lines, calls='%d' % (int(t.get('work_calls', 8)) * int(t.get('calls', 30))), usd='%.2f' % float(t.get('usd', 6.0)),
                          room=room, limit=got.get('limit'), estimate=_say_estimate(got), remaining=_say_remaining(got))
+    if pl.get('word') == 'round':
+        return R._prompt('priority', 'bargain', 'round', ctx['ref'], round='round %d' % got['round'],
+                         correction=" ".join(str(pl.get('correction') or 'the last reading found something to put right').split())[:600],
+                         estimate=_say_estimate(got), room=room, ceiling=_say_ceiling(got), remaining=_say_ceiling_remaining(got))
     if pl.get('word') == 'engine':
         return R._prompt('priority', 'bargain', 'engine', ctx['ref'], room=room, **R._offer_lines(pl))
     return R._prompt('priority', 'bargain', 'cost', ctx['ref'], word=pl.get('word'), step=pl.get('step'), cost=pl.get('cost'), room=room)
@@ -207,6 +223,9 @@ def d_priority_bargain(ctx, step, item):
     an ask for less that keeps the longest prefix that fits when only some of it does; no when none of it fits. The why is
     only about money and room. Moved from engine_runtime.d_priority_bargain."""
     read = ctx['bag']['priority.read']
+    if read['word'] == 'round':
+        got = round_within_ceiling(read)
+        return {'answer': got['answer'], 'why': got['why']}
     names, fits, room = read['names'], read['fits'], read['room']
     left = _say_cost(room['calls'], room['usd'])
     if read['word'] == 'line':
@@ -244,7 +263,7 @@ def _price_row(ctx, read, answer, keep, why):
     names = [n for n in read.get('names') or [] if re.match(S.NAME_RE, n)]
     per = read['estimate'].get('per_engine') or {}
     row = {'schema_version': 1, 'id': 'pr-' + uuid.uuid4().hex[:8], 'at': W.now(), 'cycle_id': (J._state(ref) or {}).get('cycle_id'),
-           'round': None, 'proposal': PROPOSALS.get((p.get('payload') or {}).get('word'), 'cost'), 'engines': names,
+           'round': read.get('round') if read.get('word') == 'round' else None, 'proposal': PROPOSALS.get((p.get('payload') or {}).get('word'), 'cost'), 'engines': names,
            'estimate': read['estimate'], 'room': read['room'], 'remaining': read['remaining'], 'answer': answer,
            'keep': [n for n in keep if n in names], 'why': str(why or '')[:600],
            'indices': {'spend_per_run': {n: per[n]['usd'] for n in names if n in per}, 'checks': {n: _check_of(ref, n) for n in names}}}
@@ -263,6 +282,8 @@ def priority_post(ctx, step, item):
     ref, pl, thread = ctx['ref'], ctx['post']['payload'], ctx['post']['thread']
     read, got = ctx['bag']['priority.read'], ctx['bag']['priority.bargain']
     names, answer, why = list(read.get('names') or []), got.get('answer'), str(got.get('why') or '').strip()
+    if pl.get('word') == 'round':
+        return _post_round(ctx, read, got)
     if pl.get('word') == 'line':
         if answer == 'counter':
             asked = [str(k) for k in got.get('keep') or []]
@@ -332,6 +353,9 @@ def price_is_observed(ctx, step, item, out):
     facts Priority read stand over it: what a yes or an ask for less keeps costs no more than the room left, and no more
     workflows than the limit. An answer that fails them fails the step; nothing is taken in its place. The body of
     engine_runtime's answer_has_its_price, with the facts added."""
+    read = ((ctx or {}).get('bag') or {}).get('priority.read')
+    if isinstance(read, dict) and read.get('word') == 'round':
+        return round_is_within(ctx, step, item, out)                  # a round is held to the goal's ceiling (M9.2)
     notes = []
     if out.get('answer') not in ANSWERS:
         notes.append('not an answer: %r' % (out.get('answer'),))
@@ -568,10 +592,8 @@ def _raise_envelope(ref, p):
 
 def _raise_ceiling(ref, p):
     with W._lock(ref):
+        c, _ = ensure_ceiling(ref)                  # a goal that was registered before ceilings is given its own first
         d = W.dept(ref) or {}
-        c = ceiling_of(d)
-        if not c:
-            raise ValueError('the goal has no ceiling to raise yet')
         over = _ceiling_over(d, p)
         if over:
             raise W.AskError('OVER_CAP', over)
@@ -633,7 +655,139 @@ def apply_choice(ref, ask, option):
     return {}
 
 
-# ---- a round, held to the goal's ceiling (M9.2): the measure and the covering ---------------------------------------------
+# ---- the goal's ceiling (M9.2) --------------------------------------------------------------------------------------------
+# Priority holds one ceiling for the whole goal beside the daily limits of its engines: how many rounds the line may be run,
+# and the calls and the money they may spend in all. dept.ceiling is Priority's key (priority.ceiling), written once, at the
+# first registration, and raised only by the owner's choice (a raise option), up to RAISE_CAP times where it started.
+#: the rounds a raise of the ceiling adds
+ROUND_STEP = 2
+
+
+def line_of(d):
+    """The department's line, in order: the work engines its record holds (what runs), else the plan Root registered last."""
+    names = [str(n) for n in (d or {}).get('engines') or [] if n]
+    if not names:
+        wf = [w for w in (d or {}).get('workflows') or [] if isinstance(w, dict)]
+        names = [str(n) for n in (wf[-1].get('engines') if wf else None) or [] if n]
+    return names
+
+
+def goal_runs(ref):
+    """The work runs of this goal: those the ledger links by run_ref in the current cycle (j2_runtime writes an event with the
+    run's id for every work run). A department with no cycle, born before J2, has every work run of its record."""
+    rs = [r for r in W.runs(ref) if isinstance(r, dict) and not r.get('system')]
+    cycle = (J._state(ref) or {}).get('cycle_id')
+    if not cycle:
+        return rs
+    linked = {e.get('run_ref') for e in J.events(ref) if e.get('cycle_id') == cycle and e.get('run_ref')}
+    return [r for r in rs if r.get('id') in linked]
+
+
+def spent_of(ref):
+    """What this goal has spent so far, {calls, usd}: the spend of its work runs in runs.json."""
+    rs = goal_runs(ref)
+    return {'calls': sum(int((r.get('spend') or {}).get('calls') or 0) for r in rs),
+            'usd': round(sum(float((r.get('spend') or {}).get('usd') or 0.0) for r in rs), 4)}
+
+
+def new_ceiling(ref, names):
+    """A goal's ceiling as it starts (M9.2): ROUNDS_DEFAULT rounds, and for the calls and the money that many runs of the line
+    at what the line is estimated to cost; start is the same, so that a raise is held to RAISE_CAP times it."""
+    est, rounds = estimate_of(ref, list(names), 'line'), S.ROUNDS_DEFAULT
+    c = {'rounds': rounds, 'calls': rounds * int(est['calls']), 'usd': round(rounds * float(est['usd']), 4)}
+    return dict(c, start=dict(c), at=W.now())
+
+
+def ensure_ceiling(ref, plan=None):
+    """The goal's ceiling on the record: (ceiling, written). When there is none it is written now by Priority, from the plan
+    Root registered (its engines' names) or the line the record holds; one that exists is never touched."""
+    with W._lock(ref):
+        d = W.dept(ref) or {}
+        if ceiling_of(d):
+            return ceiling_of(d), False
+        d['ceiling'] = new_ceiling(ref, plan or line_of(d))
+        W.save_dept(ref, d, by='priority')
+        return d['ceiling'], True
+
+
+def priority_grant(ctx, step, item):
+    """Priority's handler for an engine born: each new engine is given its limit, from Priority's template (a work engine
+    work_calls times the calls: engine_limit); one that already holds a limit (the owner's own, or one a department off J2 was
+    born with) keeps it. Each is on the ledger, by Priority. `item` is {engines, version}, run in place, or from the board on
+    what the record already holds (born_item), where only an engine that holds no limit is given one; a born word that names
+    nothing on the record gives nothing. Run in place for the budget Identity's question asked about, `item` may carry
+    `within_usd`, the most the owner said the department may spend a day: the limits given share what the limits held leave of
+    it, each no more than the template's, so together they never exceed it (approvals only tighten; PRD M3.3). A plan
+    registered for a goal that holds no ceiling yet is given one (M9.2). Moved from engine_runtime.priority_grant."""
+    ref, board_ = ctx['ref'], item is None
+    within = item.get('within_usd') if isinstance(item, dict) else None
+    item, why = R.born_item(ctx, item)
+    names = list(item.get('engines') or ([item['grow']] if item.get('grow') else []))
+    if board_ and names:
+        envs0 = (W.dept(ref) or {}).get('envelopes') or {}
+        names = [n for n in names if not isinstance(envs0.get(n), dict)]
+        why = why or 'each engine it names holds its limit'
+    set_ceiling = None
+    if item.get('version') and not item.get('grow'):                  # a registered plan, not an engine the owner added
+        wf = [w for w in (W.dept(ref) or {}).get('workflows') or [] if isinstance(w, dict)]
+        plan = [str(n) for n in (wf[-1].get('engines') if wf else item.get('engines')) or [] if n]
+        if plan:
+            c, written = ensure_ceiling(ref, plan)
+            set_ceiling = c if written else None
+    ceiling_said = ("set the goal's ceiling at %d rounds, %s" % (set_ceiling['rounds'], _say_cost(set_ceiling['calls'], set_ceiling['usd']))
+                    if set_ceiling else None)
+    if not names:
+        if ceiling_said:
+            return {'said': ceiling_said, 'given': [], 'kept': [], 'ceiling': set_ceiling}
+        return {'said': 'nothing to do: ' + why if board_ else 'no new engine to give a limit'}
+    given = []
+    with W._lock(ref):
+        d = W.dept(ref) or {}
+        envs = d.setdefault('envelopes', {})
+        new = [n for n in names if not isinstance(envs.get(n), dict)]
+        share = None
+        if within is not None and new:
+            held = sum(float((v or {}).get('usd') or 0) for k, v in envs.items() if isinstance(v, dict) and k not in new)
+            share = math.floor(max(0.0, float(within) - held) * 100 / len(new)) / 100.0
+        for n in new:
+            envs[n] = R.engine_limit(n)
+            if share is not None:
+                envs[n]['usd'] = min(float(envs[n]['usd']), share)
+            given.append(n)
+        if given:
+            W.save_dept(ref, d, by='priority')
+    try:
+        for n in names:
+            J.on_granted(ref, n, envs.get(n), n not in given, item.get('version'))
+    except ImportError:
+        pass                                                           # a department runs without its lifecycle record rather than not at all
+    kept = [n for n in names if n not in given]
+    said = (['gave a limit to ' + R._names(given) + (' within the %s USD a day the owner said' % R._usd(within) if share is not None else '')]
+            if given else []) + (
+        ['%s %s' % (R._names(kept), 'keeps the limit it holds' if len(kept) == 1 else 'keep the limits they hold')] if kept else []) + (
+        [ceiling_said] if ceiling_said else [])
+    return {'said': '; '.join(said), 'given': given, 'kept': kept}
+
+
+# ---- a proposed round, held to the ceiling (M9.2) ----------------------------------------------------------------------------
+def _read_round(ctx, pl):
+    """Read what a round would cost against the goal's ceiling (M9.2): the line is priced as in any bargain (estimate_of), the
+    room is what the ceiling holds less what the goal has spent so far (runs.json, through the ledger's run_ref), and what
+    remains is the room less the estimate. The facts stay closed: the word, and whether the ceiling holds the round."""
+    ref = ctx['ref']
+    d = ctx.get('dept') or W.dept(ref) or {}
+    names = line_of(d)
+    est = estimate_of(ref, names, 'line')
+    c, spent = ceiling_of(d) or new_ceiling(ref, names), spent_of(ref)
+    n = pl.get('round') if isinstance(pl.get('round'), int) and not isinstance(pl.get('round'), bool) else 0
+    room = {'calls': int(c['calls']) - spent['calls'], 'usd': round(float(c['usd']) - spent['usd'], 4)}
+    read = {'word': 'round', 'engine': None, 'names': names, 'limit': int(_template().get('line') or 6), 'estimate': est, 'room': room,
+            'remaining': {'calls': room['calls'] - int(est['calls']), 'usd': round(room['usd'] - float(est['usd']), 4)},
+            'round': n, 'ceiling': c, 'spent': spent}
+    ok = round_within_ceiling(read)['answer'] == 'accept'
+    return dict(read, fits=list(names) if ok else [], facts={'word': 'round', 'room': ok})
+
+
 def round_within_ceiling(read):
     """The goal's ceiling holds a round or it does not, by code (M9.2): the round, the calls and the money all inside it.
     {answer: accept or reject, why: in money and room, over: what is past}. The offline answer of the bargain, and the measure
@@ -668,11 +822,80 @@ def round_is_within(ctx, step, item, out):
     return {'ok': not notes, 'notes': notes or ['%s, with its price: %s' % (SAID.get(answer, answer), str(out['why']).strip())]}
 
 
+def _say_ceiling(read):
+    c, spent = read['ceiling'], read['spent']
+    return '%d rounds, %s; %s spent so far' % (int(c['rounds']), _say_cost(c['calls'], c['usd']), _say_cost(spent['calls'], spent['usd']))
+
+
+def _say_ceiling_remaining(read):
+    rem = read['remaining']
+    if rem['calls'] >= 0 and rem['usd'] >= 0:
+        return '%s remain of the ceiling after it' % _say_cost(rem['calls'], rem['usd'])
+    return 'short by %s against the ceiling' % _say_cost(max(0, -rem['calls']), max(0.0, -rem['usd']))
+
+
+def ceiling_raise(c, n, est, spent):
+    """The ceiling a raise of ROUND_STEP rounds would make, with the calls and the money of as many runs of the line, held to
+    RAISE_CAP times where the ceiling started; (ceiling, held to the cap), or None when that does not hold round `n` or changes
+    nothing."""
+    start = c['start']
+    cap = {'rounds': int(S.RAISE_CAP * int(start['rounds'])), 'calls': int(S.RAISE_CAP * int(start['calls'])),
+           'usd': round(S.RAISE_CAP * float(start['usd']), 4)}
+    want = {'rounds': max(int(c['rounds']) + ROUND_STEP, int(n)),
+            'calls': max(int(c['calls']) + ROUND_STEP * int(est['calls']), int(spent['calls']) + int(est['calls'])),
+            'usd': round(max(float(c['usd']) + ROUND_STEP * float(est['usd']), float(spent['usd']) + float(est['usd'])), 4)}
+    to = {k: max(min(want[k], cap[k]), c[k]) for k in want}
+    if to['rounds'] < int(n) or to['calls'] < int(spent['calls']) + int(est['calls']) or \
+            to['usd'] < round(float(spent['usd']) + float(est['usd']), 4):
+        return None
+    if to == {'rounds': c['rounds'], 'calls': c['calls'], 'usd': round(float(c['usd']), 4)}:
+        return None
+    return to, to != want
+
+
+def ceiling_option(c, to, held):
+    """The option to raise the goal's ceiling to `to` (option.raise, what 'ceiling'): the params carry what it becomes."""
+    more_rounds = to['rounds'] - int(c['rounds'])
+    more_calls, more_usd = to['calls'] - int(c['calls']), round(to['usd'] - float(c['usd']), 4)
+    return W.option('raise:ceiling', ('Add %d more round%s' % (more_rounds, '' if more_rounds == 1 else 's')) if more_rounds else 'Add budget for the goal',
+                    "about %s more; the goal's ceiling becomes %d rounds, %s%s" % (_more(more_calls, more_usd), to['rounds'], _say_cost(to['calls'], to['usd']),
+                                                                                     ' (the most allowed)' if held else ''),
+                    {'what': 'ceiling', 'rounds': to['rounds'], 'calls': to['calls'], 'usd': to['usd']})
+
+
+def round_options(ref, d, read, pl):
+    """The ways forward for a round the ceiling does not hold (M9.2), at most three: raise the ceiling by ROUND_STEP rounds and the
+    runs they cost (held to RAISE_CAP times where it started, and only when the ceiling is what stands in the round's way), leave
+    out the item the round was for, stop."""
+    opts = []
+    got = ceiling_raise(read['ceiling'], read['round'], read['estimate'], read['spent']) if round_within_ceiling(read)['answer'] == 'reject' else None
+    if got:
+        opts.append(ceiling_option(read['ceiling'], *got))
+    item = _left_out(d, [str(i) for i in (pl or {}).get('covers') or []])
+    if item:
+        opts.append(_leave_option(item))
+    return (opts + [_stop_option()])[:S.OPTIONS_MAX]
+
+
+def _post_round(ctx, read, got):
+    """Answer a round: yes, or no with the ways forward (M9.2). The answer is one price row, proposal 'round'."""
+    ref, pl, thread = ctx['ref'], ctx['post']['payload'], ctx['post']['thread']
+    ok = got.get('answer') == 'accept'
+    why = str(got.get('why') or '').strip() or ('inside the ceiling' if ok else 'no room in the ceiling')
+    body = {'word': 'round', 'round': read['round'], 'why': why}
+    if not ok:
+        body['options'] = round_options(ref, ctx.get('dept') or W.dept(ref) or {}, read, pl)
+    row = R.post(ref, 'Priority', 'Adaptation', 'accept-proposal' if ok else 'reject-proposal', body, thread=thread)
+    if row:
+        _price_row(ctx, read, 'accept' if ok else 'reject', read['names'] if ok else [], why)
+    return {'said': ('said yes to' if ok else 'said no to') + ' round %d' % read['round'] if row else 'the bargain reached its bound'}
+
+
 CODE = {
     'priority_envelope': priority_envelope,
     'priority_read': priority_read,
     'priority_post': priority_post,
-    'priority_grant': ref_to('priority_grant'),
+    'priority_grant': priority_grant,
 }
 PROMPT = {
     'priority_bargain': p_priority_bargain,
@@ -794,4 +1017,5 @@ def view(ref, d, events, asks):
     and the prices, from prices.jsonl (M5.3). Nothing is written."""
     part = FV._j2_part(ref, d, 'Priority', events, asks)
     part['prices'] = _prices(ref)
+    part['ceiling'] = ceiling_of(d)
     return part

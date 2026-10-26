@@ -180,7 +180,8 @@ def test_p1_a_name_still_by_reference_is_a_late_bound_delegate_to_engine_runtime
             assert module == "engine_runtime" and getattr(R, attr) is legacy[kind][name], "%s %s" % (kind, name)
     assert counts["by_reference"] >= 1
     importlib.reload(R)
-    assert V1.CODE["priority_grant"].legacy == ("engine_runtime", "priority_grant")      # priority_envelope moved in M5.4
+    assert not hasattr(V1.CODE["priority_grant"], "legacy") and not hasattr(V1.CODE["priority_envelope"], "legacy"), \
+        "priority_envelope moved in M5.4 and priority_grant in M9.2: their bodies are this module's"
     assert layers.recipes()["Priority"] == C.recipe_of(V1)
 
 
@@ -711,8 +712,8 @@ def test_p6_the_contract_passes_for_priority_v1_with_no_part_on_the_fallback(ctx
     for number, what, case in C.cases():
         assert case(V1, ctx) == [], "case %d: %s" % (number, what)
     assert C.on_the_md_fallback(V1) == []
-    assert C.by_reference(V1) == {"by_reference": 4, "own": 8}, \
-        "priority_grant and the three shared checks still delegate; the rest are this module's (priority_envelope moved in M5.4)"
+    assert C.by_reference(V1) == {"by_reference": 3, "own": 9}, \
+        "the three shared checks still delegate; the rest are this module's (priority_envelope moved in M5.4, priority_grant in M9.2)"
 
 
 def test_p6_the_module_holds_no_state_besides_its_dicts_of_names():
@@ -1014,27 +1015,261 @@ def test_q1_priority_applies_only_the_raise_and_a_raise_names_what_it_raises(liv
     assert W.dept(ref).get("stopped") is not True
 
 
-# ---- Q2: the goal's ceiling (M9.2): what the interface says of it and the measure a round is held to ------------------------
+# ---- Q2: the goal's ceiling (M9.2) --------------------------------------------------------------------------------------------
 # Priority holds one ceiling for the whole goal beside its engines' daily limits: dept.ceiling, written once at the first
-# registration, raised only by the owner's choice up to RAISE_CAP times where it started. A round Adaptation proposes is held
-# to it by code: round_within_ceiling is the measure, and the covering of the bargain step holds a model's yes to it.
+# registration (rounds, and the calls and money of that many runs of the line), raised only by the owner's choice up to RAISE_CAP
+# times where it started. A round Adaptation proposes is answered by code against it: yes with a why in money and room, or no with
+# [raise ceiling (+2 rounds), leave, stop].
+@pytest.fixture
+def rounds_sendable(monkeypatch):
+    """Adaptation's propose/round to Priority is W2-ADAPT's row of the interface; until it is merged a test that posts a round
+    adds it, so the act is judged as the interface will judge it."""
+    if not any(r["act"] == "propose" and "round" in r["words"] for r in S.SENDS["Adaptation"]):
+        monkeypatch.setitem(S.SENDS, "Adaptation", list(S.SENDS["Adaptation"]) +
+                            [{"act": "propose", "words": ("round",), "to": ("Priority",), "payload": "act.round"}])
 
 
-def test_q2_the_interface_names_the_round_part_its_covering_and_the_ceiling_in_the_view():
-    """A round part the interface does not name, a covering it does not list, or a view that cannot carry the ceiling, must fail."""
-    part = S.PROMPTS["priority"]["bargain"]["round"]
-    assert part["inputs"] == ("round", "correction", "estimate", "room", "ceiling", "remaining") and part["read_by"] == "priority.bargain"
-    assert part["returns"] == 'Return ONLY a JSON object: {"answer": "accept" | "reject", "why": "one line, in money and room only"}.'
-    assert ("priority", "bargain", "round") in S.ADDED_PARTS and "round_within_ceiling" in S.CHECKS["priority"]
-    view = S.DEFS["view.priority"]
-    assert "ceiling" in view["properties"] and "ceiling" not in view["required"]
-    assert S.validate("view.priority", {"bargains": [], "envelopes": [], "ceiling": None}) == []
-    assert S.validate("view.priority", {"bargains": [], "envelopes": [], "ceiling": {"rounds": 6, "calls": 66, "usd": 3.0,
-                                                                                    "start": {"rounds": 6, "calls": 66, "usd": 3.0}}}) == []
-    assert S.validate("view.priority", {"bargains": [], "envelopes": [], "ceiling": {"rounds": 6}}) != []
-    import engine_runtime as R
-    assert R.INSTRUCTIONS["priority"]["bargain"]["round"] == part["inputs"], "the owner's screen names the same slots"
-    assert all(n in R.INPUT_SAYS for n in part["inputs"])
+def _propose_round(live, ref, n, correction="put D2 right", covers=("D2",), thread=None):
+    """What Adaptation posts to Priority for a round (act.round), and the department let run until Priority has answered."""
+    W, R, J, _ = live
+    row = R.post(ref, "Adaptation", "Priority", "propose", {"word": "round", "round": n, "correction": correction, "covers": list(covers)},
+                 thread=thread)
+    W.run_until_idle(ref, limit=100)
+    return row
+
+
+def _round_answers(R, ref, n=None):
+    return [p for p in R.board(ref) if p["src"] == "Priority" and (p["payload"] or {}).get("word") == "round"
+            and (n is None or p["payload"].get("round") == n)]
+
+
+def _spend_runs(W, ref, calls, usd):
+    """What each work run of the department spent, written to runs.json: offline a run spends nothing, and a ceiling is of money."""
+    rows = W.runs(ref)
+    for r in rows:
+        if not r.get("system"):
+            r["spend"] = {"calls": calls, "usd": usd}
+    W._write(W.ddir(ref) / "runs.json", rows)
+
+
+def _settled(live, items=True, org="Acme Learning"):
+    """A department as a person makes one, run until it waits on the owner's first publish, with two done-when items."""
+    W, R, J, _ = live
+    ref = _born(live, org=org, settle=False)
+    if items:
+        W.put_done_items(ref, ITEMS2)
+    W.run_until_idle(ref, limit=300)
+    return ref
+
+
+def test_q2_the_ceiling_is_written_once_at_the_first_registration_and_validates(live, monkeypatch):
+    """A goal with no ceiling, one written by anyone but Priority, or one that is rewritten by a second registration, must fail:
+    ROUNDS_DEFAULT rounds, and for the calls and the money that many runs of the line at its estimate, start the same."""
+    W, R, J, _ = live
+    saves, before = _saves(monkeypatch, W), S.REFUSED["count"]
+    ref = _born(live, settle=False)
+    assert "ceiling" not in W.dept(ref)
+    prior = V1.estimate_of(ref, LINE, "line")
+    W.run_until_idle(ref, limit=300)
+    c = W.dept(ref)["ceiling"]
+    assert S.ROUNDS_DEFAULT == 6 and c["rounds"] == 6
+    assert (c["calls"], c["usd"]) == (6 * prior["calls"], round(6 * prior["usd"], 4)) and c["calls"] > 0
+    assert c["start"] == {"rounds": 6, "calls": c["calls"], "usd": c["usd"]} and c["at"] and "raised" not in c
+    assert S.validate("priority.ceiling", c) == [] and S.validate("department", W.dept(ref)) == []
+    assert ("ensure_ceiling", "priority") in saves and S.REFUSED["count"] == before, "Priority's key, written by Priority"
+    ledger = [e for e in J.events(ref) if e["action"] == "envelope.granted"]
+    assert len(ledger) == 4, "and the limits are given as they were"
+    # one that exists is never rewritten: not by the same plan again, not by a born word on the board
+    mine = dict(c, rounds=9, calls=c["calls"] + 5)
+    d = W.dept(ref)
+    d["ceiling"] = mine
+    W.save_dept(ref, d, by="priority")
+    assert V1.ensure_ceiling(ref, LINE) == (mine, False)
+    R.post(ref, "Identity", ["Priority"], "inform", {"word": "born", "version": 1, "engines": LINE})
+    W.run_until_idle(ref, limit=50)
+    assert W.dept(ref)["ceiling"] == mine
+
+
+def test_q2_a_department_of_each_kind_is_given_its_ceiling_at_its_first_registration(live, monkeypatch):
+    """The default kind (one Do engine) and an organic line, as well as a website, are given a ceiling: the same rule for every
+    kind."""
+    W, R, J, _ = live
+    d, _ = W.create("dref-answers", "Answers", None, kind="default")
+    d["events"] = [{"kind": "j2_ready", "route": "template"}]
+    W.save_dept(d["ref"], d)
+    J.start(d["ref"])
+    W.give_goal(d["ref"], "Answer what the science team asks about the lab rota")
+    prior = V1.estimate_of(d["ref"], ["Do"], "line")
+    W.run_until_idle(d["ref"], limit=300)
+    assert W.dept(d["ref"])["ceiling"]["calls"] == 6 * prior["calls"] and W.dept(d["ref"])["ceiling"]["rounds"] == 6
+    _model(monkeypatch, R, {"adapt.line": THREE})
+    organic = _born(live, ORGANIC, "Lab Co")
+    c = W.dept(organic)["ceiling"]
+    names = W.dept(organic)["workflows"][-1]["engines"]
+    assert names == ["Facts", "Notes", "Summary"] and S.validate("priority.ceiling", c) == []
+    assert c["rounds"] == 6 and c["start"]["calls"] == c["calls"]
+
+
+def test_q2_a_round_inside_the_ceiling_is_said_yes_with_its_why_in_money_and_room(live, rounds_sendable):
+    """A round the ceiling holds that is refused, or an answer that names no money, must fail: round 2 of 6 is yes, and the
+    price row says the round."""
+    W, R, J, _ = live
+    ref = _settled(live)
+    _spend_runs(W, ref, 2, 0.1)
+    c = W.dept(ref)["ceiling"]
+    spent, est = V1.spent_of(ref), V1.estimate_of(ref, LINE, "line")
+    assert spent == {"calls": 6, "usd": 0.3} and est["calls"] == 6, "three runs of two calls; Publish has not run"
+    _propose_round(live, ref, 2)
+    [yes] = _round_answers(R, ref)
+    assert yes["msg_type"] == "accept-proposal" and "options" not in yes["payload"] and yes["payload"]["round"] == 2
+    assert yes["payload"]["why"] == "inside the ceiling: round 2 of 6, about %s of the %s left" % (
+        V1._say_cost(est["calls"], est["usd"]), V1._say_cost(c["calls"] - spent["calls"], c["usd"] - spent["usd"]))
+    [row] = [r for r in _prices(W, ref) if r["proposal"] == "round"]
+    assert (row["answer"], row["round"], row["keep"], row["engines"]) == ("accept", 2, LINE, LINE) and row["why"] == yes["payload"]["why"]
+    assert row["room"] == {"calls": c["calls"] - 6, "usd": round(c["usd"] - 0.3, 4)}
+    assert row["remaining"] == {"calls": c["calls"] - 6 - est["calls"], "usd": round(c["usd"] - 0.3 - est["usd"], 4)}
+    assert S.validate("priority.price", row) == [] and row["thread"] == yes["thread"]
+    assert [p["msg_type"] for p in R.board(ref) if p["thread"] == yes["thread"]] == ["propose", "accept-proposal"]
+    assert S.validate("act.any", yes["payload"]) == []
+
+
+def test_q2_a_stub_round_7_of_6_is_refused_with_three_typed_options(live, rounds_sendable):
+    """A round past the ceiling that is funded, or one refused with no way forward, must fail (M9.2): round 7 of 6 is said no
+    to in rounds, and carries [raise the ceiling by two rounds, leave out the item, stop], each typed and priced."""
+    W, R, J, _ = live
+    ref = _settled(live)
+    c = W.dept(ref)["ceiling"]
+    _propose_round(live, ref, 7)
+    [no] = _round_answers(R, ref)
+    assert no["msg_type"] == "reject-proposal" and no["payload"]["round"] == 7
+    assert no["payload"]["why"] == "no room in the ceiling: round 7 against a ceiling of 6 rounds"
+    opts = no["payload"]["options"]
+    assert [o["id"] for o in opts] == ["raise:ceiling", "leave:D2", "stop"] and [o["kind"] for o in opts] == ["raise", "leave", "stop"]
+    assert opts[0]["label"] == "Add 2 more rounds"
+    assert opts[0]["params"] == {"what": "ceiling", "rounds": 8, "calls": c["calls"], "usd": c["usd"]}
+    assert opts[0]["cost"].endswith("the goal's ceiling becomes 8 rounds, %s" % V1._say_cost(c["calls"], c["usd"]))
+    assert opts[1]["cost"] == "D2 is dropped from done-when (The lessons for each topic are there); nothing more is spent"
+    assert all(S.validate("option", o) == [] for o in opts) and S.validate("act.any", no["payload"]) == []
+    [row] = [r for r in _prices(W, ref) if r["proposal"] == "round"]
+    assert (row["answer"], row["round"], row["keep"]) == ("reject", 7, []) and row["why"] == no["payload"]["why"]
+    assert S.validate("priority.price", row) == []
+    assert W.dept(ref)["ceiling"] == c, "a no changes nothing"
+
+
+def test_q2_a_raise_of_the_ceiling_is_applied_by_code_two_rounds_at_a_time_up_to_the_cap(live, rounds_sendable):
+    """A raise that is not applied, one that goes past twice where the ceiling started, or one still offered at the cap, must
+    fail: rounds 8, 10, 12 are the owner's, the money follows (the runs the added rounds cost, held to twice its start), the
+    start never moves, and at twelve there is no raise left to offer."""
+    W, R, J, _ = live
+    ref = _settled(live)
+    _spend_runs(W, ref, 2, 0.1)
+    start = dict(W.dept(ref)["ceiling"]["start"])
+    est = V1.estimate_of(ref, LINE, "line")
+    for n, rounds in ((7, 8), (9, 10), (11, 12)):
+        _propose_round(live, ref, n)
+        no = _round_answers(R, ref, n)[-1]
+        raise_ = no["payload"]["options"][0]
+        assert raise_["id"] == "raise:ceiling" and raise_["params"]["rounds"] == rounds
+        ask = W.options_ask("blocked", "The round is past the ceiling.", no["payload"]["options"], who="Identity")
+        W._put_ask(ref, ask)
+        got = W.choose_option(ref, ask["id"], "raise:ceiling")
+        assert got["status"] == "chosen" and got["chosen"]["id"] == "raise:ceiling"
+        c = W.dept(ref)["ceiling"]
+        assert c["rounds"] == rounds and c["start"] == start and S.validate("priority.ceiling", c) == []
+        assert (c["calls"], c["usd"]) == (raise_["params"]["calls"], raise_["params"]["usd"])
+        assert c["calls"] <= 2 * start["calls"] and c["usd"] <= round(2 * start["usd"], 4)
+        assert c["raised"][-1]["by"] == "the owner" and c["raised"][-1]["to"] == {"rounds": rounds, "calls": c["calls"], "usd": c["usd"]}
+    assert len(c["raised"]) == 3 and c["rounds"] == 2 * start["rounds"] == 12
+    assert any("the owner's choice raised the goal's ceiling: 12 rounds" in r["what"] for r in W.runs(ref) if r.get("engine") == "Priority")
+    _propose_round(live, ref, 13)
+    last = _round_answers(R, ref, 13)[-1]
+    assert [o["id"] for o in last["payload"]["options"]] == ["leave:D2", "stop"], "at the cap there is no raise to offer"
+    again = V1.apply_option(ref, {}, raise_)
+    assert again["raised"] is False and W.dept(ref)["ceiling"]["rounds"] == 12, "a raise already made is not made again"
+
+
+def test_q2_a_raise_past_the_cap_is_409_over_cap_and_the_ceiling_stays(live, rounds_sendable):
+    """A raise of the ceiling past twice where it started that is taken, must fail: through POST /asks/{aid} it is 409 OVER_CAP,
+    the card waits as it was and the ceiling is untouched; in any one of rounds, calls or money."""
+    W, R, J, _ = live
+    ref = _settled(live)
+    c = W.dept(ref)["ceiling"]
+    api = _client()
+    for params in ({"rounds": 13, "calls": c["calls"], "usd": c["usd"]}, {"rounds": 8, "calls": 2 * c["calls"] + 1, "usd": c["usd"]},
+                   {"rounds": 8, "calls": c["calls"], "usd": 2 * c["usd"] + 0.01}):
+        stale = W.option("raise:ceiling", "Add 2 more rounds", "about a lot more", dict(params, what="ceiling"))
+        ask = W.options_ask("blocked", "The round is past the ceiling.", [stale, W.option("stop", "Stop here", "x")])
+        W._put_ask(ref, ask)
+        got = api.post("/api/native/%s/asks/%s" % (ref, ask["id"]), json={"option": "raise:ceiling"})
+        assert (got.status_code, got.json()["detail"]) == (409, {"code": "OVER_CAP"}), params
+        assert next(a for a in W.asks(ref) if a["id"] == ask["id"])["status"] == "pending"
+        assert W.dept(ref)["ceiling"] == c
+    ok = W.option("raise:ceiling", "Add 2 more rounds", "x", {"what": "ceiling", "rounds": 12, "calls": 2 * c["calls"], "usd": round(2 * c["usd"], 4)})
+    ask = W.options_ask("blocked", "The round is past the ceiling.", [ok])
+    W._put_ask(ref, ask)
+    assert api.post("/api/native/%s/asks/%s" % (ref, ask["id"]), json={"option": "raise:ceiling"}).status_code == 200
+    assert W.dept(ref)["ceiling"]["rounds"] == 12
+
+
+def test_q2_a_round_past_the_calls_or_the_money_is_said_no_to_in_money_and_the_raise_is_held_to_the_cap(live, rounds_sendable):
+    """A round funded though the goal has spent what the ceiling holds must fail: with 12 calls and 0.60 USD spent, a line
+    estimated at the same again, and a ceiling of 20 calls, round 2 is over by calls, and the raise offered is the most the cap
+    allows, said so."""
+    W, R, J, _ = live
+    ref = _settled(live)
+    _spend_runs(W, ref, 4, 0.2)
+    d = W.dept(ref)
+    d["ceiling"] = {"rounds": 6, "calls": 20, "usd": 5.0, "start": {"rounds": 6, "calls": 20, "usd": 5.0}, "at": W.now()}
+    W.save_dept(ref, d, by="priority")
+    assert V1.spent_of(ref) == {"calls": 12, "usd": 0.6} and V1.estimate_of(ref, LINE, "line")["calls"] == 12
+    _propose_round(live, ref, 2)
+    [no] = _round_answers(R, ref)
+    assert no["payload"]["why"] == "no room in the ceiling: about 12 calls and 0.60 USD against the 8 calls and 4.40 USD left"
+    raise_ = no["payload"]["options"][0]
+    assert raise_["params"] == {"what": "ceiling", "rounds": 8, "calls": 40, "usd": 5.0 + 2 * 0.6}, "twice the 20 calls it started at, no more"
+    assert raise_["cost"] == "about 20 calls and 1.20 USD more; the goal's ceiling becomes 8 rounds, 40 calls and 6.20 USD (the most allowed)"
+    [row] = [r for r in _prices(W, ref) if r["proposal"] == "round"]
+    assert row["room"] == {"calls": 8, "usd": 4.4} and row["remaining"] == {"calls": -4, "usd": 3.8}
+
+
+def test_q2_a_model_cannot_fund_a_round_the_ceiling_does_not_hold_and_its_no_stands(live, rounds_sendable, monkeypatch):
+    """A covering that lets a model's yes through over a ceiling that is gone must fail, and one that turns the model's no into a
+    failure would make Priority say yes against its judgement: the model is sent the round part, round 7 of 6 said yes to fails
+    the step and posts nothing, and round 2 said no to stands."""
+    W, R, J, _ = live
+    ref = _settled(live)
+    sent = []
+
+    def model(prompt):
+        sent.append(prompt)
+        return {"answer": "accept", "why": "fits"} if len(sent) == 1 else {"answer": "reject", "why": "no room in the ceiling today"}
+    _model(monkeypatch, R, {"priority.bargain": model})
+    _propose_round(live, ref, 7, correction="put D2 right: the lessons for fractions")
+    asked = sent[0]
+    assert "Adaptation proposes another round on the line" in asked and "THE ROUND: round 7\n" in asked
+    assert "WHAT IT PUTS RIGHT: put D2 right: the lessons for fractions\n" in asked and "ROOM IN THE CEILING: no\n" in asked
+    assert "THE GOAL'S CEILING: 6 rounds, " in asked and "WHAT REMAINS OF THE CEILING AFTER IT: " in asked
+    assert asked.rstrip().endswith('Return ONLY a JSON object: {"answer": "accept" | "reject", "why": "one line, in money and room only"}.')
+    [step] = [r for r in R.step_rows(ref) if r["step"] == "priority.bargain" and r["facts"] == {"word": "round", "room": False}]
+    assert step["status"] == "failed" and step["by"] == "model"
+    assert "said yes to a round the ceiling does not hold: round 7 against a ceiling of 6 rounds" in step["why"]
+    assert _round_answers(R, ref) == [] and [r for r in _prices(W, ref) if r["proposal"] == "round"] == []
+    _propose_round(live, ref, 2)
+    [no] = _round_answers(R, ref)
+    assert no["msg_type"] == "reject-proposal" and no["payload"]["why"] == "no room in the ceiling today"
+    assert [o["id"] for o in no["payload"]["options"]] == ["leave:D2", "stop"], "the ceiling holds the round, so no raise would mend a no"
+    assert "ROOM IN THE CEILING: yes\n" in sent[1]
+
+
+def test_q2_a_round_has_no_ask_for_less(live, rounds_sendable, monkeypatch):
+    """A counter to a round that is posted as one must fail: a round is held or it is not."""
+    W, R, J, _ = live
+    ref = _settled(live)
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "counter", "why": "room for two rounds", "keep": ["Plan"]}})
+    _propose_round(live, ref, 2)
+    [step] = [r for r in R.step_rows(ref) if r["step"] == "priority.bargain" and r["facts"] == {"word": "round", "room": True}]
+    assert step["status"] == "failed" and "not an answer to a round: 'counter'" in step["why"]
+    assert _round_answers(R, ref) == []
 
 
 def test_q2_the_round_is_held_to_the_ceiling_at_its_edges(live):
@@ -1058,7 +1293,64 @@ def test_q2_the_round_is_held_to_the_ceiling_at_its_edges(live):
     ctx = {"bag": {"priority.read": read(7, 0, 0.0)}}
     assert ok(ctx, None, None, {"answer": "reject", "why": "no room"})["ok"] and not ok(ctx, None, None, {"answer": "accept", "why": "fits"})["ok"]
     assert ok({"bag": {"priority.read": read(2, 0, 0.0)}}, None, None, {"answer": "accept", "why": "fits"})["ok"]
+    assert V1.CHECK["price_is_observed"](ctx, None, None, {"answer": "accept", "why": "fits"})["ok"] is False, "the step's covering reads a round"
     for out in S.CONTRACT_SAMPLES["round_within_ceiling"]["good"]:
         assert ok(None, None, None, out)["ok"] is True, out
     for out in S.CONTRACT_SAMPLES["round_within_ceiling"]["bad"]:
         assert ok(None, None, None, out)["ok"] is False, out
+
+
+def test_q2_the_interface_names_the_round_part_its_covering_and_the_ceiling_in_the_view():
+    """A round part the interface does not name, a covering it does not list, or a view that cannot carry the ceiling, must fail."""
+    part = S.PROMPTS["priority"]["bargain"]["round"]
+    assert part["inputs"] == ("round", "correction", "estimate", "room", "ceiling", "remaining") and part["read_by"] == "priority.bargain"
+    assert part["returns"] == 'Return ONLY a JSON object: {"answer": "accept" | "reject", "why": "one line, in money and room only"}.'
+    assert ("priority", "bargain", "round") in S.ADDED_PARTS and "round_within_ceiling" in S.CHECKS["priority"]
+    view = S.DEFS["view.priority"]
+    assert "ceiling" in view["properties"] and "ceiling" not in view["required"]
+    assert S.validate("view.priority", {"bargains": [], "envelopes": [], "ceiling": None}) == []
+    assert S.validate("view.priority", {"bargains": [], "envelopes": [], "ceiling": {"rounds": 6, "calls": 66, "usd": 3.0,
+                                                                                    "start": {"rounds": 6, "calls": 66, "usd": 3.0}}}) == []
+    assert S.validate("view.priority", {"bargains": [], "envelopes": [], "ceiling": {"rounds": 6}}) != []
+    import engine_runtime as R
+    assert R.INSTRUCTIONS["priority"]["bargain"]["round"] == part["inputs"], "the owner's screen names the same slots"
+    assert all(n in R.INPUT_SAYS for n in part["inputs"])
+
+
+def test_q2_priority_never_orders_in_the_words_it_sends_or_says(live, rounds_sendable):
+    """A word of ordering in Priority's round part, its answers or its options must fail (S-05): Priority prices and holds."""
+    W, R, J, _ = live
+    forbidden = re.compile(r"order|what runs next", re.I)
+    assert not forbidden.search(json.dumps(V1.WORDS["bargain"]["round"]) + V1.LAYOUT["bargain"]["round"])
+    ref = _settled(live)
+    for n in (2, 7):
+        _propose_round(live, ref, n)
+    said = json.dumps([p["payload"] for p in _round_answers(R, ref)])
+    assert len(_round_answers(R, ref)) == 2 and not forbidden.search(said)
+
+
+def test_q2_the_view_carries_the_ceiling_and_the_map_and_the_cycle_read_it(live, rounds_sendable):
+    """A pane or a Map that still reads the ceiling from envelopes._goal must fail: the view holds dept.ceiling, the cycle's
+    ceiling is the record's, and the budget bar is the goal's spend against it, not the day's."""
+    import functions_view as F
+    W, R, J, _ = live
+    empty = _born(live, org="Empty Co", settle=False)
+    assert _view(W, J, empty)["ceiling"] is None and F.functions(empty)["cycle"]["ceiling"] is None
+    assert F.functions(empty)["budget"]["of"] == "today's limits"
+    ref = _settled(live)
+    _spend_runs(W, ref, 2, 0.1)
+    c = W.dept(ref)["ceiling"]
+    view = _view(W, J, ref)
+    assert view["ceiling"] == c and S.validate_view("priority", view) == []
+    got = F.functions(ref)
+    assert got["cycle"]["ceiling"] == c
+    bar = got["budget"]
+    assert (bar["of"], bar["calls"], bar["usd"], bar["calls_limit"], bar["usd_limit"]) == ("the goal", 6, 0.3, c["calls"], round(c["usd"], 3))
+    assert bar["share"] == round(max(6 / c["calls"], 0.3 / c["usd"]), 3)
+    d = W.dept(ref)
+    d["envelopes"]["_goal"] = {"calls": 1, "usd": 1.0}            # the old, unwritten place is not read
+    W.save_dept(ref, d)
+    assert F.functions(ref)["budget"]["calls_limit"] == c["calls"]
+    del d["ceiling"]
+    W.save_dept(ref, d)
+    assert F.functions(ref)["budget"]["of"] == "today's limits" and F.functions(ref)["cycle"]["ceiling"] is None
