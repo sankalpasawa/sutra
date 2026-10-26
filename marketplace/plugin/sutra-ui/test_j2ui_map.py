@@ -21,7 +21,10 @@ Named claims:
   M6   all four views end to end in every cycle state (not started, assessing, waiting, adapting, bargaining, blocked,
        running, pursuing, done, stopped): map, board, artifacts and a site request, as the router serves them; no private key,
        no machine path, no GRANT, COUNTER or REFUSE and no act id in any string, no None where the page reads a string,
-       the same twice, nothing written, and the page's own render of each draws without undefined, NaN or null
+       the same twice, nothing written, and the page's own render of each draws without undefined, NaN or null; the same
+       holds for text a builder or a function wrote (a question, an answer, a post, an ask, a payload with a private key and a
+       path), as the router sends it: the board and the Map say the protocol's tokens in the owner's words, and the router
+       shortens the paths and drops the private keys
 Shares the department fixtures and the Ctx stand-in of test_j2ui_artifacts.py.
 """
 import json
@@ -30,8 +33,8 @@ import re
 import pytest
 
 from test_j2ui_artifacts import (REF, FUNCS, add_ver, ago, make_ctx, mods, msg, page_render, plain_text, proto_consts,  # noqa: F401 -- mods is a fixture
-                                 put_ask, put_post, put_run, put_step, seed_line, set_cycle)
-from test_j2ui_board import put_questions, q
+                                 put_ask, put_post, put_run, put_step, router_client, seed_line, set_cycle)
+from test_j2ui_board import HOSTILE, hostile, put_questions, q
 
 WORK = ["work:brief", "work:site-plan", "work:pages", "work:build", "work:live-site"]
 PERSON_KEYS = ["id", "kind", "row", "label", "status", "version", "tag", "color", "file", "detail", "workflows"]
@@ -868,6 +871,39 @@ def test_m6_the_real_ctx_keeps_the_engines_while_identitys_question_is_open(mods
     rows = lambda c: [(r["name"], r["workflows"], r["depends_on"], r["depends_on_labels"]) for r in
                       A.listing(c)["deliverables"] + A.listing(c)["records"]]
     assert rows(real) == rows(stand) and ("Site plan", ["W-1"], ["brief"], ["Brief"]) in rows(real)
+
+
+def hostile_scene(mods, state):
+    """The scene of a state with text a builder or a function wrote at its most hostile: a board row whose every field carries
+    HOSTILE, a function's post and an ask of Identity's that carry it too (they reach the Map through the chat)."""
+    W, R = mods[0], mods[1]
+    scene(mods, state)
+    rows = W._read(W.ddir(REF) / "questions.json", None) or {"entries": []}
+    put_questions(W, list(rows["entries"]) + [hostile("Q-9")])
+    put_post(W, R, "Adaptation", "Priority", "propose", HOSTILE, thread="x-hostile")
+    put_ask(W, "finding", engine="Audit", text=HOSTILE, id="a-hostile")
+
+
+@pytest.mark.parametrize("state", STATES)
+def test_m6_text_a_builder_or_a_function_wrote_is_clean_as_the_router_sends_it(mods, state):
+    """Rule 4(e) holds for what the record's own writers put in: through the router, in every state, no string of the Map, the
+    Board or the Artifacts holds a machine path, a private key, GRANT, COUNTER, REFUSE or an act id. (Before, only scenes with
+    no hostile text were checked, and the board passed a question through a phrase table that leaves bare tokens alone.)"""
+    hostile_scene(mods, state)
+    client = router_client()
+    got = {}
+    for name in ("map", "board", "artifacts"):
+        r = client.get("/j2ui/%s/api/%s" % (REF, name))
+        assert r.status_code == 200, (state, name, r.text[:200])
+        got[name] = r.json()
+    clean_views(got)
+    blob = json.dumps(got)
+    assert "/Users/" not in blob and "~/" not in blob and "abc123" not in blob
+    board = got["board"]["entries"]
+    assert board and board[-1]["id"] == "Q-9" and board[-1]["question"].startswith("Where is file.txt and x.md? said yes asked for less said no")
+    assert board[-1]["artifact_update"]["kept"] == {"file": "out.json"} and "token" not in board[-1]["artifact_update"]
+    for n in got["map"]["nodes"]:
+        assert not re.search(r"GRANT|COUNTER|REFUSE|ASK_REQUESTER|-proposal|not-understood", n["detail"] + n["label"]), n
 
 
 @pytest.mark.parametrize("state", STATES)

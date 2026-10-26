@@ -312,6 +312,19 @@ def make_ctx(mods_, ref=REF, chat=None, paused=None):
     return ctx
 
 
+def router_client():
+    """A client for the J2 router (j2ui_api) over the real ctx: what the page is sent, after the router has cleaned it (no
+    private key, no path of this machine). Skips, printing why, until j2ui-core is merged."""
+    API = pytest.importorskip("j2ui_api", reason="j2ui-core is not merged yet")
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    import j2ui_common as C
+    C.reset_caches()
+    app = FastAPI()
+    app.include_router(API.router)
+    return TestClient(app)
+
+
 def msg(i, who, text, **more):
     """A chat message in the prototype's shape (id is its 1-based position)."""
     m = {"id": i, "t": "10:00:%02d" % (i % 60), "who": who, "text": text, "step": None}
