@@ -355,12 +355,13 @@ def recipe_faults(parent, child, layer):
             out.append('the handler for %s is gone: a version hears what its parent hears' % _say(key))
         for key in sorted(ck - pk, key=_say):
             out.append('the handler for %s is new: a version hears what its parent hears and no more' % _say(key))
+        pmap = _by_id(all_steps(parent))
         pgr = [s['id'] for key in ('gates', 'rules') for s in _items(parent.get(key)) if s.get('id')]
-        for sid, ps in _by_id(all_steps(parent)).items():
+        for sid in pmap:
             if sid not in cmap:
                 out.append('%s: a version keeps every %s of its parent, and this one is gone'
                            % (sid, 'gate and rule' if sid in pgr else 'step'))
-        for sid, ps in _by_id(all_steps(parent)).items():
+        for sid, ps in pmap.items():
             cs = cmap.get(sid)
             if cs is None:
                 continue
