@@ -135,8 +135,103 @@ def test_a2_the_note_no_run_reads_is_still_a_note_and_the_owners_change_is_a_typ
     assert S.validate_field("adaptation", "goal", "does", "text", "uses {{dept}}") != [], "a marker is the app's"
 
 
+# ---- A6 · Adaptation starts on the deliverable (M8.2, its part) ---------------------------------------------------------
+def _ready(j2, ref):
+    """Adaptation asked whether its version trigger is live, the way next_due asks every engine: (input, slot) or None."""
+    W, R, _, _, _ = j2
+    ctx = R._coord_ctx(ref, W.dept(ref))
+    ctx["peek"] = True
+    got = R.ready(ctx, "Adaptation", ("version",))
+    return (got[0], got[1]) if got and got[1] else None
+
+
+def _file(j2, ref, art, ok=True):
+    """A version of an artifact filed with the verdict given, past the Library's own check of what it holds."""
+    W = j2[0]
+    return W.VERS.add(W._abase(ref, art), {"file.md": "text of " + art}, [], "Do", {"ok": ok, "notes": []}, W.now(), lock=W._lock(ref))
+
+
+def _slot(j2, art, v):
+    return j2[0]._slot_id("Adaptation", art, v)
+
+
+def test_a6_the_recipe_starts_adaptation_on_a_post_and_on_a_checked_version_of_the_deliverable():
+    start = layers.recipes()["Adaptation"]["start"]
+    assert start["on"] == [{"kind": "post"}, {"kind": "version", "of": "$deliverable", "checked": True}] and start["unless"] == []
+    assert layers.recipes()["Adaptation"]["reads"] == "Live site", "only the start key changed"
+
+
+def test_a6_a_website_departments_adaptation_starts_where_it_always_did_on_a_checked_live_site(j2):
+    W, R, _, _, _ = j2
+    W.create("dref-site", "Site Dept", None, kind="website")
+    assert _ready(j2, "dref-site") is None, "no Live site yet: nothing starts it"
+    _file(j2, "dref-site", "Live site", ok=False)
+    assert _ready(j2, "dref-site") is None, "a version that failed its check is not one that passed"
+    _file(j2, "dref-site", "Live site")
+    inp, slot = _ready(j2, "dref-site")
+    assert slot == _slot(j2, "Live site", 2) and inp["v"] == 2, "the same slot as when the trigger named Live site"
+    assert R.slot_of("dref-site", "Adaptation")["on"] == "after Live site v2" and R.slot_of("dref-site", "Adaptation")["of"] == "Live site"
+    assert R.start_view(R.engine_def("Adaptation"), W.dept("dref-site"))["on"] == ["a post addressed to it", "a new Live site that passed its check"]
+
+
+def test_a6_a_default_departments_adaptation_starts_on_result(j2):
+    W, R, _, _, _ = j2
+    W.create("dref-plain", "Plain Dept", None, kind="default")
+    assert _ready(j2, "dref-plain") is None
+    _file(j2, "dref-plain", "Live site")                          # not what a default department's work leads to
+    assert _ready(j2, "dref-plain") is None
+    _file(j2, "dref-plain", "Result")
+    inp, slot = _ready(j2, "dref-plain")
+    assert slot == _slot(j2, "Result", 1) and inp["v"] == 1 and inp["art"] == "Result"
+    assert R.slot_of("dref-plain", "Adaptation") == {"on": "after Result v1", "of": "Result", "checked": True, "v": 1}
+    assert R.start_view(R.engine_def("Adaptation"), W.dept("dref-plain"))["on"][-1] == "a new Result that passed its check"
+    assert "$" not in " ".join(R.steps_view("dref-plain", "Adaptation")["start"]["on"]), "the screen never shows the token"
+
+
+def test_a6_a_registered_plans_last_output_is_what_adaptation_starts_on_and_a_department_with_none_waits(j2):
+    W, R, _, _, _ = j2
+    W.create("dref-lab", "Lab Dept", None, kind="organic")
+    _file(j2, "dref-lab", "Live site")
+    assert _ready(j2, "dref-lab") is None, "an organic department has no deliverable before its plan is registered"
+    assert [t["of"] for t in R.engine_def("Adaptation")["start"]["on"] if t["kind"] == "version"] == ["$deliverable"]
+    assert R.start_view(R.engine_def("Adaptation"), W.dept("dref-lab"))["on"][-1] == "a new deliverable that passed its check"
+    d = W.dept("dref-lab")
+    d["engines"] = ["Do"]
+    d["workflows"] = [{"version": 1, "engines": ["Do"], "source": "library", "registered": W.now()}]
+    W.save_dept("dref-lab", d)
+    _file(j2, "dref-lab", "Result")
+    assert _ready(j2, "dref-lab")[1] == _slot(j2, "Result", 1), "Do writes Result, so its department's deliverable is Result"
+
+
+def test_a6_the_website_scenarios_run_adaptation_on_the_same_slots(j2):
+    W, R, J, founding, _ = j2
+    root = founding.found_structure("Acme Learning", owner="Sankalp")["root"]
+    W.owner_ask(root, WEBSITE)
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    for a in [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "publish"]:
+        W.decide_ask(ref, a["id"], True)
+    W.run_until_idle(ref, limit=300)
+    slots = [r["slot"] for r in W.runs(ref) if r.get("engine") == "Adaptation" and str(r.get("slot")).startswith("Adaptation@live-site.")]
+    assert slots == [_slot(j2, "Live site", 1)], slots
+    assert J.status(ref)["step"] >= 7
+
+
+def test_a6_a_default_department_that_reached_its_result_has_adaptation_run_on_it(j2, monkeypatch):
+    """End to end: a department no template fits makes its line, its last engine files Result, and Adaptation, which used to
+    wait for a Live site no default department has, now starts on the Result that passed."""
+    W, R, J, _, _ = j2
+    ref, _ = _run_scenario(j2, monkeypatch, "default", DOC_WORDS, "Safety Co", DOC, DOC_PLAN)
+    assert W.latest(ref, "Result", passed=True), "the plan's last engine filed a Result that passed its check"
+    ran = [r for r in W.runs(ref) if r.get("engine") == "Adaptation" and r.get("slot") == _slot(j2, "Result", 1)]
+    assert ran and ran[-1]["status"] == "ok", [(r.get("slot"), r.get("status")) for r in W.runs(ref) if r.get("engine") == "Adaptation"]
+    steps = [r for r in R.step_rows(ref) if r.get("slot") == _slot(j2, "Result", 1) and "read" in r]
+    assert steps and all(r["read"] == [{"art": "Result", "v": 1}] for r in steps), "its rows name the Result that started it, not the Live site its recipe reads"
+
+
 # ---- A7 · the practices in place (M6.3) -------------------------------------------------------------------------------
-FIVE = {"rules", "engines", "artifacts", "required", "taken"}
+FIVE ={"rules", "engines", "artifacts", "required", "taken"}
 
 
 def _source(j2, kind, payload=None, name="Practice Dept", ref="dref-practices"):

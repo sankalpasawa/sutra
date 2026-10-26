@@ -1090,13 +1090,33 @@ def next_due(ref, peek=False):
 # One rule for all nine, the five internal systems and the four work engines alike. An engine's definition names its
 # start: `on`, the triggers that make it want to run, and `unless`, the blockers that hold it. `ready` is the one piece
 # of code that reads a start. No engine has a start of its own in code, so none can differ.
+#: a version trigger that reads the department's own deliverable, whatever its kind (PRD M8.2): the last output of its
+#: registered plan, which the interface says (S.deliverable)
+DELIVERABLE = "$deliverable"
+
+
+def trigger_art(d, trig):
+    """The artifact a version trigger reads: its `of`, or for '$deliverable' the department's own, the last output of its
+    registered plan (the interface's S.deliverable); None when the department has none yet. Root has none to read: what
+    Setup files is a department made, not a deliverable a goal closes on, and Audit never read it (the scenarios of the
+    kinds that have a goal are as they were)."""
+    if (trig or {}).get("of") != DELIVERABLE:
+        return (trig or {}).get("of")
+    if (d or {}).get("kind") == "root":
+        return None
+    import layer_schema as S
+    return S.deliverable(d)
+
+
 def _on_version(ctx, name, e, trig):
-    """Outside trigger: a version of what it reads that it has not run on yet."""
-    v = W.latest(ctx["ref"], trig["of"], passed=bool(trig.get("checked")))
+    """Outside trigger: a version of what it reads that it has not run on yet. A trigger on the deliverable names the
+    artifact in the input it yields (`art`), so the run reads the one that started it; with no deliverable, nothing starts."""
+    of = trigger_art(ctx.get("dept") or W.dept(ctx["ref"]), trig)
+    v = W.latest(ctx["ref"], of, passed=bool(trig.get("checked"))) if of else None
     if v:
-        slot = W._slot_id(name, trig["of"], v["v"])
+        slot = W._slot_id(name, of, v["v"])
         if slot not in ctx["done"]:
-            yield v, slot
+            yield (dict(v, art=of) if trig.get("of") == DELIVERABLE else v), slot
 
 
 def _on_post(ctx, name, e, trig):
@@ -1434,7 +1454,7 @@ def run_engine(ref, name, inp, slot):
     steps = handler["steps"] if handler else list(e.get("steps") or [])
     prior = [r for r in W.runs(ref) if r.get("slot") == slot and r.get("status") in ("interrupted", "waiting", "asked")]
     system = e["kind"] == "function"
-    what = handler["name"] if handler else "reading %s" % e.get("reads")
+    what = handler["name"] if handler else "reading %s" % ((inp.get("art") if isinstance(inp, dict) else None) or e.get("reads"))
     row = W._put_run(ref, _run_row(name, system, slot, "running", what,
                                    chain=None if system else W._chain_of(ref, e["reads"], inp["v"]),
                                    retries=len([r for r in prior if r["status"] == "interrupted"])))
@@ -1639,7 +1659,7 @@ def run_step(ctx, step, item):
            "mode": "slot", "slot": ctx["slot"], "impl": _impl(ctx), "asked_rung": asked, "rung": rung, "miss": rung != asked, "by": how,
            "agent": ctx["engine"] if how in ("model", "checklist") else None,
            "applied": [r["id"] for r in ctx["dept"].get("rules") or [] if r.get("id")] if how in ("model", "checklist") else [],
-           "read": [{"post": ctx["post"]["n"]}] if ctx.get("post") else [{"art": ctx["def"].get("reads"), "v": ctx["inp"]["v"]}],
+           "read": [{"post": ctx["post"]["n"]}] if ctx.get("post") else [{"art": ctx["inp"].get("art") or ctx["def"].get("reads"), "v": ctx["inp"]["v"]}],
            "facts": facts, "in_sig": _sha(facts if facts is not None else {"step": step["id"], "item": item, "in": ctx["inp"].get("v")}),
            "usd": round(usd, 4), "calls": calls, "def_version": defs()["def_version"], "started": started}
 
@@ -4143,9 +4163,10 @@ def slot_of(ref, name, rs=None):
     if trig.get("kind") == "version":
         rs = W.runs(ref) if rs is None else rs
         done = {r.get("slot") for r in rs if r.get("status") in ("ok", "failed", "skipped")}
-        cur = W.latest(ref, trig["of"], passed=bool(trig.get("checked")))
-        v = cur["v"] if cur and W._slot_id(name, trig["of"], cur["v"]) not in done else (cur["v"] + 1 if cur else 1)
-        return {"on": "after %s v%d" % (trig["of"], v), "of": trig["of"], "checked": bool(trig.get("checked")), "v": v}
+        of = trigger_art(W.dept(ref), trig) or "the deliverable"
+        cur = W.latest(ref, of, passed=bool(trig.get("checked")))
+        v = cur["v"] if cur and W._slot_id(name, of, cur["v"]) not in done else (cur["v"] + 1 if cur else 1)
+        return {"on": "after %s v%d" % (of, v), "of": of, "checked": bool(trig.get("checked")), "v": v}
     if trig.get("kind") == "timer":
         return {"on": "every " + _period(trig.get("every_s")), "every_s": trig.get("every_s")}
     return {"on": "on a post to it"}
@@ -6273,7 +6294,7 @@ def steps_view(ref, name):
     view = {"name": name, "kind": e["kind"], "description": does or e.get("description"), "skills": skills,
             "reads": e.get("reads"), "writes": e.get("writes"), "steps": out,
             "hears": ([SHARED] if rules else []) + [h["name"] for h in e.get("on") or []],
-            "start": start_view(e), "numbers": numbers(ref, name)}
+            "start": start_view(e, W.dept(ref)), "numbers": numbers(ref, name)}
     if name == "Coordination":
         t = coordination(ref)
         view["table"] = {"first": [FIRST[k] for k in t["order"]], "line": list(t["line"]),
@@ -6299,12 +6320,14 @@ SHARED = "What engines share"
 FIRST = {"posts": "A post waiting for its reader", "line": "The line, in its order", "functions": "A function woken by new work"}
 
 
-def start_view(e):
-    """An engine's start, in words: what makes it run, and what holds it."""
+def start_view(e, d=None):
+    """An engine's start, in words: what makes it run, and what holds it. A trigger on the deliverable names it by the
+    department's own when `d` is the department, else says 'deliverable'."""
     on = []
     for t in (e.get("start") or {}).get("on") or []:
         if t["kind"] == "version":
-            on.append("a new %s%s" % (t["of"], " that passed its check" if t.get("checked") else ""))
+            on.append("a new %s%s" % ((trigger_art(d, t) or "deliverable") if t["of"] == DELIVERABLE else t["of"],
+                                      " that passed its check" if t.get("checked") else ""))
         elif t["kind"] == "post":
             on.append("a post addressed to it")
         else:
