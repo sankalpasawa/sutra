@@ -67,6 +67,10 @@ STANDARD = ('goal', 'items', 'rules', 'owner', 'budget', 'invented')   # == engi
 DONE_HOW, DONE_LEVELS = ('code', 'model', 'person'), ('target', 'outcome')    # the coverings' enums (MK-2), never the store's
 RULE_TAGS = ('go', 'ask', 'refuse', 'always')                                # the covering's enum, never the store's
 SOURCES = ('library', 'shaped', 'fitted', 'made')     # library and shaped are written today; fitted (M5.2) and made (M6) are reserved
+#: the workflow classes (A2.8): a source is a class, and this is what each extends, {child source: parent source}; None is a source
+#: that extends the workflow interface itself. A child source is held to every standard its parent source is, which
+#: test_layer_inherit.py proves over WORKFLOW_STANDARDS: a standard that lists the parent lists the child.
+WORKFLOW_FAMILY = {'library': None, 'fitted': 'library', 'shaped': None, 'made': 'shaped'}
 SEVERITIES = ('high', 'medium', 'low')
 ITEM_VERDICTS = ('met', 'not_met', 'to_confirm')
 CONFIDENCE = {'ask_below': 0.6, 'show_below': 0.8}                     # J2B-7 (M6.4, wave 1)
@@ -2156,7 +2160,8 @@ def describe():
         'constants': {'impl_re': IMPL_RE, 'item_re': ITEM_RE, 'finding_re': FINDING_RE, 'name_re': NAME_RE, 'bounds': BOUNDS,
                       'chain_limit': CHAIN_LIMIT, 'repairs': REPAIRS, 'options_max': OPTIONS_MAX, 'done_items_max': DONE_ITEMS_MAX,
                       'standard': STANDARD, 'done_how': DONE_HOW, 'done_levels': DONE_LEVELS, 'rule_tags': RULE_TAGS,
-                      'sources': SOURCES, 'severities': SEVERITIES, 'item_verdicts': ITEM_VERDICTS, 'confidence': CONFIDENCE,
+                      'sources': SOURCES, 'workflow_family': WORKFLOW_FAMILY, 'severities': SEVERITIES, 'item_verdicts': ITEM_VERDICTS,
+                      'confidence': CONFIDENCE,
                       'raise_cap': RAISE_CAP, 'rounds_default': ROUNDS_DEFAULT, 'question_statuses': QUESTION_STATUSES,
                       'never_refuse': NEVER_REFUSE, 'ask_kinds': ASK_KINDS, 'ask_statuses': ASK_STATUSES, 'stages': STAGES,
                       'table_fields': TABLE_FIELDS, 'slot_fields': SLOT_FIELDS, 'left_out_fields': LEFT_OUT_FIELDS,
