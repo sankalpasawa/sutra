@@ -841,7 +841,9 @@ PLAIN_FAULTS = (("a function addressing another",
                  re.compile(r"^\s*(?:Adaptation|Priority|Coordination|Audit)\s*[,:]|\b(?:dear|hey|hi|hello)\s+(?:Adaptation|Priority|Coordination|Audit)\b|"
                             r"@(?:Adaptation|Priority|Coordination|Audit)\b", re.I)),
                 ("a J2 code", re.compile(r"\bJ[12](?:\.[a-h1-9])?\b|\b(?:FI|FA|FP|FC|FAU)\d+(?:\.\d+)?\b|\b(?:S|SM|MK|Q)-\d+\b")),
-                ("grant or counter", re.compile(r"\bgrant(?:s|ed|ing)?\b|\bcounter(?:s|ed|ing)?\b|\bcounter-?offers?\b", re.I)))
+                ("grant or counter", re.compile(r"\bgrant(?:s|ed|ing)?\b|\bcounter(?:s|ed|ing)?\b|\bcounter-?offers?\b", re.I)),
+                # a note that names the standard a fault breaks by its id ('reads_known: ...'): owner_words.plain says the fault alone
+                ("a standard's id", owner_words.standard_lead()))
 PLAIN_KEYS = ("done", "objective", "answer", "why")
 PLAIN_TEMPLATE = {"answer": "I could not put that in plain words. Ask me again, in other words.",
                   "question": "What should I know before the department starts?",

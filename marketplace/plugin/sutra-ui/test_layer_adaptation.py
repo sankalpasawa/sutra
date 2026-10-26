@@ -421,6 +421,50 @@ def test_a4_a_shaped_line_whose_second_engine_reads_nothing_filed_fails_naming_r
     assert "workflow.registered" in acts and W.dept(ref)["workflows"][-1]["engines"] == ["Facts 2", "Site 2"]
 
 
+STANDARD_IDS = re.compile(r"\b(?:%s)\b" % "|".join(i for i, _, _, _ in S.WORKFLOW_STANDARDS))
+
+
+def test_a4_the_owner_never_reads_a_standards_id_on_a_card_a_tell_or_the_pane(j2, monkeypatch):
+    """The notes keep the id of the standard a fault breaks (the done-check reads it); every surface the owner reads says the
+    fault in plain words: the blocked card, the line Identity tells, and the Adaptation pane's review."""
+    W, R, J, founding, FV = j2
+    bad = {"engines": [GOOD[0], dict(GOOD[1], reads="Interviews")]}
+    asked = []
+    _stub(monkeypatch, R, {"adapt.line": lambda prompt: asked.append(prompt) or bad,
+                           "priority.bargain": {"answer": "accept", "why": "the envelope has room"}})
+    root = founding.found_structure("Lab Co", owner="Sankalp")["root"]
+    W.owner_ask(root, ORGANIC)
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    assert len(asked) == 3, "shaped, and shaped again twice, with the reason each time"
+    assert "reads_known: Site 2 reads Interviews" in asked[1], "the model is told the standard by its id, as the notes name it"
+    assert "reads_known" in " ".join(" ".join(e["payload"].get("faults") or []) for e in J.events(ref) if e["action"] == "workflow.blocked"), "the record keeps it"
+    card = next(a for a in W.asks(ref) if a["kind"] == "blocked" and a["status"] == "pending")
+    for field in ("text", "title", "why"):
+        assert not STANDARD_IDS.search(card[field]), "%s: %s" % (field, card[field])
+    assert "Site 2 reads Interviews, which nothing before it writes" in card["text"] and "_known" not in card["text"]
+    told = [str(p["payload"].get("done") or p["payload"].get("objective") or "") for p in R.board(ref) if p["src"] == "Identity" and "Owner" in p["dst"]]
+    assert not [t for t in told if STANDARD_IDS.search(t)], told
+    pane = FV.function(ref, "Adaptation")["j2"]
+    assert pane["root_checks"] and not [r["summary"] for r in pane["root_checks"] if STANDARD_IDS.search(r["summary"])], pane["root_checks"]
+    assert any("Site 2 reads Interviews" in r["summary"] for r in pane["root_checks"])
+
+
+def test_a4_owner_words_say_a_fault_without_its_standards_id_and_leave_everything_else_as_it_was():
+    import owner_words
+    assert owner_words.plain("reads_known: Site 2 reads Interviews, which nothing before it writes") == \
+        "Site 2 reads Interviews, which nothing before it writes"
+    assert owner_words.plain("The shaped line did not pass its check: Shape the line the words need: names_new: the Library already has an engine named Plan; "
+                             "required_kept: the plan leaves out Check.") == \
+        "The shaped line did not pass its check: Shape the line the words need: the Library already has an engine named Plan; the plan leaves out Check."
+    for every in S.WORKFLOW_STANDARDS:
+        assert not STANDARD_IDS.search(owner_words.plain("%s: x" % every[0]))
+    # a word that only looks like one, and a standard named without a colon (the pane's check column), stay as they are
+    assert owner_words.plain("reads_known") == "reads_known" and owner_words.plain("Priority said yes to it") == "Priority said yes to it"
+    assert owner_words.plain("fits_room_not: x") == "fits_room_not: x"
+
+
 # ---- A3 · proposals cover the done-when items (M5.1) ------------------------------------------------------------------
 ITEMS = [{"id": "D1", "text": "The site is live", "how": "code", "level": "outcome"},
          {"id": "D2", "text": "Every page names the phone line", "how": "model", "level": "target"},
