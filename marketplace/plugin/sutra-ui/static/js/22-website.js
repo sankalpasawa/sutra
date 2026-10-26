@@ -1113,17 +1113,19 @@ function wbFnPageSig(v){
     (co.left_out || []).map(r => r.engine), (co.handoffs || []).map(h => [h.art, h.v, h.says, (h.readers || []).join(",")]),
     share((co.chain || {}).share), (co.alarms || []).map(a => a.text), (co.ties || []).map(t => [t.said, minute(t.at)]), wbIdSig(v.j2)]);
 }
-/* Identity's pane paints again when its record moves: a point of the standard, an item, a rule, its question, a ruling */
+/* Identity's pane paints again when its record moves: a point of the standard, the done line or an item, a rule, its
+   question, a ruling */
 function wbIdSig(j){
   if (!j || !j.standard || !j.standard.rows) return null;
-  return [j.standard.rows.map(r => [r.id, r.state, r.note]), j.goal, (j.done_items || []).map(i => [i.id, i.text, i.confirm]),
+  return [j.standard.rows.map(r => [r.id, r.state, r.note]), j.goal, j.done, (j.done_items || []).map(i => [i.id, i.text, i.confirm]),
     (j.rules || []).map(r => [r.tag, r.line, r.by]), j.open_question && j.open_question.id, (j.conflicts || []).map(c => [c.at, c.ruling])];
 }
 /* Identity's pane (S5, PRD M3.7), on top of its page: the open question (the same S6 card as in Chat, so answering in
    one place clears them all), Enough to work? (one row per point of the marked standard: a dot, a word and a note),
-   the goal in the owner's words with a way to change it, done-when as items with level and how, the rules with where
-   each came from, and the conflicts Identity closed; how Identity works folds under them. It renders the read and
-   writes nothing: Change the goal opens the Chat with the box begun. */
+   the goal in the owner's words with a way to change it, done-when as items with level and how (a record from before
+   Root drafted items keeps its done line, and that line is drawn as the record has it), the rules with where each came
+   from, and the conflicts Identity closed; how Identity works folds under them. It renders the read and writes
+   nothing: Change the goal opens the Chat with the box begun. */
 const WB_STD = { met: ["ok", "met"], not_met: ["warn", "not yet"], to_confirm: ["warn", "to confirm"], reading: ["breath", "reading"] };
 /* a rule's tag as the pane says it: the record keeps refuse; the screen never says refuse, so a refuse rule reads never */
 const WB_TAG_SAYS = { refuse: "never" };
@@ -1154,7 +1156,7 @@ function wbIdentityHtml(ref, j){
     `${c.asked_you ? "" : " No ask to you."}</span></button>`).join("");
   return q + dpCard("Enough to work?", rows) +
     dpCard("Goal", goal + (j.goal ? `<div class="dpoffer">${wbBtn("Change the goal", `data-wbtab="chat" data-wbfill="Change the goal to: "`)}</div>` : "")) +
-    dpCard("Done when", items ? `<div class="dpchk">Drafted by Root at birth</div>` + items : dpQuiet("No done-when items yet")) +
+    dpCard("Done when", items ? `<div class="dpchk">Drafted by Root at birth</div>` + items : (j.done ? dpBig(j.done) : dpQuiet("No done-when items yet"))) +
     dpCard("Rules", rules || dpQuiet("No rules yet")) +
     dpCard("Conflicts closed", closed || dpQuiet("No conflict yet"));
 }
