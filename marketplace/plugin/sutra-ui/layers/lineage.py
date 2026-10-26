@@ -54,9 +54,13 @@ _HANDLER_KEYS = ('when', 'steps')
 
 # ---- reading a recipe ---------------------------------------------------------------------------------------------------
 def handler_key(h):
-    """(msg_type, word or S.ANY): the pair contract case 2 and S.hears use. A handler's `when` may lack its word."""
-    w = (h or {}).get('when') or {}
-    return (w.get('msg_type'), w.get('word') or S.ANY)
+    """(msg_type, word or S.ANY): the pair contract case 2 and S.hears use. A handler's `when` may lack its word. It never
+    raises: a handler that is not an object, or a `when` that is not one, is (None, S.ANY), and a msg_type or a word that cannot
+    be hashed (a list, an object) is its text, so the pair is always a key; recipe_faults says what is wrong with such a handler."""
+    h = h if isinstance(h, dict) else {}
+    w = h.get('when')
+    w = w if isinstance(w, dict) else {}
+    return (_hashable(w.get('msg_type')), _hashable(w.get('word') or S.ANY))
 
 
 def all_steps(recipe):
@@ -72,8 +76,8 @@ def all_steps(recipe):
 
 
 def step_ids(recipe):
-    """The id of every step of all_steps, in order; a step with no id is left out."""
-    return [s['id'] for s in all_steps(recipe) if s.get('id')]
+    """The id of every step of all_steps, in order; a step with no id, or an id that is not a word, is left out."""
+    return [i for i in map(_sid, all_steps(recipe)) if i]
 
 
 def only_if_target(expr):
@@ -86,8 +90,31 @@ def _items(x):
     return [i for i in x if isinstance(i, dict)] if isinstance(x, list) else []
 
 
+def _hashable(x):
+    """x itself when it can be a key, else its text: a msg_type or a word out of shape must not stop the law from reading."""
+    try:
+        hash(x)
+    except TypeError:
+        return str(x)
+    return x
+
+
+def _sid(step):
+    """The id of a step when it is a word (a non-empty string), else None: an id of another kind names nothing."""
+    i = step.get('id') if isinstance(step, dict) else None
+    return i if isinstance(i, str) and i else None
+
+
+def _sound_handler(h):
+    """A handler that says what it hears: `when` an object whose msg_type is a word and whose word, if any, is one."""
+    w = h.get('when') if isinstance(h, dict) else None
+    return (isinstance(w, dict) and isinstance(w.get('msg_type'), str) and bool(w['msg_type'])
+            and (w.get('word') is None or isinstance(w['word'], str)))
+
+
 def _handler_keys(recipe):
-    return {handler_key(h) for h in _items((recipe or {}).get('on'))}
+    """The keys of the handlers that say what they hear; one that does not is a fault of its own (recipe_faults), not a key."""
+    return {handler_key(h) for h in _items((recipe or {}).get('on')) if _sound_handler(h)}
 
 
 def _say(key):
@@ -95,11 +122,12 @@ def _say(key):
 
 
 def _by_id(steps):
-    """{id: step}, the first step of an id when a recipe uses one twice (recipe_faults names that)."""
+    """{id: step}, the first step of an id when a recipe uses one twice (recipe_faults names that). A step with no id, or an id
+    that is not a word, is not in it."""
     out = {}
     for s in steps:
-        if s.get('id'):
-            out.setdefault(s['id'], s)
+        if _sid(s):
+            out.setdefault(_sid(s), s)
     return out
 
 
@@ -170,9 +198,9 @@ def merge_recipe(parent, patch, layer):
     seen = set()
     for ph in handlers:
         extra = sorted(str(k) for k in ph if k not in _HANDLER_KEYS)
-        when = ph.get('when')
-        if not isinstance(when, dict) or not when.get('msg_type'):
-            raise ModelFault('%s: a handler of the patch names the message it hears, as when with a msg_type and a word' % who)
+        if not _sound_handler(ph):
+            raise ModelFault('%s: a handler of the patch names the message it hears, as when with a msg_type and a word, '
+                             'each a word' % who)
         key = handler_key(ph)
         if extra:
             raise ModelFault('the handler for %s: a patch carries when and steps for a handler, nothing else (it has %s)'
@@ -222,7 +250,7 @@ def _merge_keyed(recipe, items, patch_items, label):
     """One keyed list (gates, rules, steps, or a handler's steps) of `recipe`, changed in place: an item whose id is in `items`
     overlays that step where it stands; an item whose id is new is inserted after or before a step of `items`, or appended.
     The ids of the recipe's other lists are not new: an inherited step is overlaid in its own list, and an id is used once."""
-    elsewhere = {s['id'] for s in all_steps(recipe) if s.get('id') and all(s is not x for x in items)}
+    elsewhere = {_sid(s) for s in all_steps(recipe) if _sid(s) and all(s is not x for x in items)}
     named = set()
     for raw in patch_items:
         sid = raw.get('id')
@@ -333,20 +361,23 @@ def _new_step_faults(step, sid):
 def recipe_faults(parent, child, layer):
     """The first law over a recipe, child against parent (A2-R4, A2-R5, A2-R7): [] when it holds, else one plain sentence for
     each thing that does not, in the order the checks run:
+      0  the shape: a list that is no list, an item that is no object, a handler that does not say what it hears
       1  the handlers are the parent's (a version hears what its parent hears)
       2  every step of the parent is in the child
       3  on each such step every STEP_FIXED field is the parent's (`out` through enums_kept: the child may add keys)
       4  every gate and rule of the parent is still a gate or a rule of the child
       5  ids are used once across gates, rules, steps and handler steps
       6  no only_if points at an id that is no step of the child
-    With parent None only the child's own soundness is judged, 5 and 6. A step that is missing altogether is said once, at 2, and
-    not again at 4. The runtime's own rules (a unit starts and ends with a step by code, an id another layer uses) are not seen
-    here: layers.definition_faults is the second law. `layer` is the layer's name, kept for symmetry with merge_recipe."""
+    With parent None only the child's own soundness is judged, 0, 5 and 6. A step that is missing altogether is said once, at 2,
+    and not again at 4. A recipe out of shape is a fault, never an exception, whatever it holds (a text, nothing, a number or a
+    list where an object or an id belongs): the parts that are out of shape are said at 0 and left out of the checks after it.
+    The runtime's own rules (a unit starts and ends with a step by code, an id another layer uses) are not seen here:
+    layers.definition_faults is the second law. `layer` is the layer's name, kept for symmetry with merge_recipe."""
     if not isinstance(child, dict):
         return ['the recipe is not an object']
     if parent is not None and not isinstance(parent, dict):
         return ["the parent's recipe is not an object"]
-    out = []
+    out = _shape_faults(child)
     steps = all_steps(child)
     cmap = _by_id(steps)
     if parent is not None:
@@ -356,7 +387,7 @@ def recipe_faults(parent, child, layer):
         for key in sorted(ck - pk, key=_say):
             out.append('the handler for %s is new: a version hears what its parent hears and no more' % _say(key))
         pmap = _by_id(all_steps(parent))
-        pgr = [s['id'] for key in ('gates', 'rules') for s in _items(parent.get(key)) if s.get('id')]
+        pgr = [i for key in ('gates', 'rules') for i in map(_sid, _items(parent.get(key))) if i]
         for sid in pmap:
             if sid not in cmap:
                 out.append('%s: a version keeps every %s of its parent, and this one is gone'
@@ -372,15 +403,16 @@ def recipe_faults(parent, child, layer):
                         out.append('%s: %s' % (sid, why))
                 elif ps.get(f) != cs.get(f):
                     out.append("%s: %s is the parent's and a version leaves it as it is" % (sid, f))
-        cgr = {s['id'] for key in ('gates', 'rules') for s in _items(child.get(key)) if s.get('id')}
+        cgr = {i for key in ('gates', 'rules') for i in map(_sid, _items(child.get(key))) if i}
         for sid in pgr:
             if sid in cmap and sid not in cgr:
                 out.append('%s: a gate or a rule of the parent stays a gate or a rule' % sid)
     seen, said = set(), set()
     for s in steps:
-        sid = s.get('id')
+        sid = _sid(s)
         if not sid:
-            out.append('a step has no id: %s' % (s.get('name') or 'it has no name either'))
+            name = s.get('name') if isinstance(s.get('name'), str) and s['name'] else 'it has no name either'
+            out.append('a step has no id%s: %s' % ('' if not s.get('id') else ' that is a word', name))
         elif sid in seen and sid not in said:
             said.add(sid)
             out.append('%s: this id is used by more than one step' % sid)
@@ -389,7 +421,58 @@ def recipe_faults(parent, child, layer):
         if s.get('only_if'):
             target = only_if_target(s['only_if'])
             if target not in cmap:
-                out.append('%s: only_if points at %s, which is no step of this recipe' % (s.get('id') or 'a step', target))
+                out.append('%s: only_if points at %s, which is no step of this recipe' % (_sid(s) or 'a step', target))
+    return out
+
+
+def _kind(x):
+    """What a value is, in plain words, for a fault that says a part is not what it should be."""
+    if x is None:
+        return 'nothing'
+    if isinstance(x, bool):
+        return 'a yes or no'
+    if isinstance(x, (int, float)):
+        return 'a number'
+    if isinstance(x, str):
+        return 'a text'
+    return 'a list' if isinstance(x, list) else 'an object'
+
+
+def _shape_faults(recipe):
+    """Check 0 of recipe_faults, over a recipe that is an object: the parts that are out of shape, one sentence each, so that
+    nothing after it has to read an item it cannot. gates, rules, steps and on are lists (nothing at all is fine); an item of
+    one is an object; a handler says what it hears (`when` an object, its msg_type a word, its word a word if it has one) and its
+    steps are a list of objects."""
+    out = []
+    for key, what, one in (('gates', 'gates', 'step'), ('rules', 'rules', 'step'), ('steps', 'steps', 'step'),
+                           ('on', 'handlers', 'handler')):
+        items = recipe.get(key)
+        if items is not None and not isinstance(items, list):
+            out.append('the %s are not a list (they are %s)' % (what, _kind(items)))
+            continue
+        for item in items or []:
+            if not isinstance(item, dict):
+                out.append('the %s hold an item that is not a %s (it is %s)' % (what, one, _kind(item)))
+    on = recipe.get('on') if isinstance(recipe.get('on'), list) else []
+    for i, h in enumerate(on, 1):
+        if not isinstance(h, dict):
+            continue
+        w = h.get('when')
+        name = h.get('name') if isinstance(h.get('name'), str) and h['name'] else None
+        label = ('the handler for %s' % _say(handler_key(h)) if _sound_handler(h)
+                 else 'the handler %s' % name if name else 'the handler number %d' % i)
+        if not isinstance(w, dict):
+            out.append('%s does not say what it hears: its when is %s, not an object with a msg_type and a word'
+                       % (label, _kind(w)))
+        elif not _sound_handler(h):
+            out.append('%s does not say what it hears: its msg_type and its word are each a word' % label)
+        steps = h.get('steps')
+        if steps is not None and not isinstance(steps, list):
+            out.append('the steps of %s are not a list (they are %s)' % (label, _kind(steps)))
+            continue
+        for item in steps or []:
+            if not isinstance(item, dict):
+                out.append('the steps of %s hold an item that is not a step (it is %s)' % (label, _kind(item)))
     return out
 
 
