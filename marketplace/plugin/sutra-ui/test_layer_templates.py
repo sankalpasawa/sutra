@@ -218,6 +218,50 @@ def test_st9_ids_are_unique_and_every_name_a_step_uses_is_registered():
     assert T.step_faults(dict(step, check="reads_well"), group) == [], "the shape law reads no registry; the definition law does"
 
 
+def _function_steps():
+    """(layer, group, step) for every step of the recipes of the functions: layers/<layer>/v<N>.json, and Root's Setup engine, the
+    one Library template a function owns (S.ENGINE_LAYER). The work engines (Plan, Write, Check, Do) are no function's."""
+    out = []
+    for path, doc in _recipes():
+        layer = path.split("/")[1] if path.startswith("layers/") else S.ENGINE_LAYER.get(doc.get("name"))
+        out += [(layer, g, s) for g, s in _steps_of(doc)] if layer else []
+    return out
+
+
+def test_st6_every_ai_step_of_a_function_has_a_part():
+    """ST-6: a function's AI step takes its words from at least one prompt part of its layer (the part names it in read_by), and every
+    read_by is a step of that layer's recipes. A step may be read by several parts (adapt.line, priority.bargain), never by none."""
+    steps = _function_steps()
+    ai = [(layer, s["id"]) for layer, g, s in steps if S.step_kind(s, g) == "ai"]
+    print("AI steps of the functions:", len(ai), "of", len(steps), "steps")
+    assert len(ai) >= 16 and {layer for layer, _ in ai} == set(S.PROMPTS), "every layer with a prompt has AI steps; a package adds, never drops"
+    assert T.part_faults(S.PROMPTS, steps) == []
+    readers = collections.Counter(sid for groups in S.PROMPTS.values() for parts in groups.values() for spec in parts.values()
+                                  for sid in T.part_readers(spec))
+    print("steps read by several parts:", sorted(sid for sid, n in readers.items() if n > 1))
+    # the failing examples: an AI step with no part, a part read by a name that is no step, and a step of another layer's
+    no_part = copy.deepcopy(S.PROMPTS)
+    no_part["coordination"]["tie"]["tie"]["read_by"] = None
+    assert T.part_faults(no_part, steps) == [
+        "Coordination: the AI step coord.tie is read by no prompt part of Coordination, and a function's AI step takes its words from a part (S.PROMPTS)"]
+    group, ai_step = _first_of("ai")
+    new_step = dict(ai_step, id="coord.invented")
+    assert any("the AI step coord.invented is read by no prompt part of Coordination" in f
+               for f in T.part_faults(S.PROMPTS, steps + [("coordination", group, new_step)])), "a new AI step the interface does not read"
+    no_step = copy.deepcopy(S.PROMPTS)
+    no_step["coordination"]["tie"]["tie"]["read_by"] = ["coord.tie", "coord.nothing"]
+    assert T.part_faults(no_step, steps) == ["Coordination: the part tie.tie is read by coord.nothing, which is no step of Coordination"]
+    elsewhere = copy.deepcopy(S.PROMPTS)
+    elsewhere["priority"]["bargain"]["line"]["read_by"] = "coord.tie"
+    assert any("the part bargain.line is read by coord.tie, which is no step of Priority" in f for f in T.part_faults(elsewhere, steps))
+    # several parts reading one step is allowed, and a step that is not an AI step needs no part
+    twice = copy.deepcopy(S.PROMPTS)
+    twice["coordination"]["tie"]["again"] = dict(twice["coordination"]["tie"]["tie"])
+    assert T.part_faults(twice, steps) == []
+    group, code_step = _first_of("code")
+    assert T.part_faults(S.PROMPTS, steps + [("coordination", group, dict(code_step, id="coord.plain"))]) == []
+
+
 def _row_keys_the_runtime_writes():
     """The keys of every line of steps.jsonl, read from the three writers of engine_runtime (run_step, a gate's decision, the
     owner's mark): the dict literals they write, the keywords of run_step's end(...) and the keys it sets after."""

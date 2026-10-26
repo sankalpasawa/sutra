@@ -250,7 +250,7 @@ Every rule has one enforcing case and one example that fails it. The ids are use
 | ST-3 | A step has exactly one kind (`S.step_kind`): code, ai, person, gate or rule | a step with both `by_hand` and a prompt and a code body |
 | ST-4 | The body matches the kind: a code step has `code`, born `C2`, no prompt; an AI step has `prompt`, `draft` and `out`; a person step is born `P` with `by_hand`, `draft` and `out`; a gate or rule has `code` | an AI step without `draft` |
 | ST-5 | A unit starts and ends with a code step (the SHAPE law, in `engine_runtime.validate`) | a soft step first in a handler |
-| ST-6 | A function's AI step is the `read_by` of one prompt part of its layer, and every `read_by` is a step | an AI step with no part |
+| ST-6 | A function's AI step is the `read_by` of at least one prompt part of its layer (a step may be read by several parts, never by none), and every `read_by` is a step of that layer's recipes | an AI step with no part |
 | ST-7 | A step's `out` keys appear in its part's `returns` | an `out` key the contract does not say |
 | ST-8 | A row of `steps.jsonl` fits `DEFS['step.row']` (mode `slot`, `gate` or `mark`), and the `ctx` handed to a body has only keys of `S.STEP_CTX` | a row with no `engine` |
 | ST-9 | Ids are unique across engines; a name a step uses is registered | a `check` that ships nowhere |
@@ -391,7 +391,7 @@ DEFS['engine.start'] = obj({
 | Child | What it is | Real examples | It keeps (rule ST-4) |
 |---|---|---|---|
 | **Code step** (62) | The covering: reads typed input, does a plain computation or a write, never calls a model | `identity.read`, `coord.ready`, `check.rules_of`, `check.build` (with `files`), `setup.say` (with `may_end`) | Has `code` (registered) and `check`; born `C2`; no `prompt`, `draft` or `out`. A model call in a code step is a fault the runtime already refuses |
-| **AI step** (21) | An inside: a prompt, the plain draft it falls back to, and the shape of the answer | `identity.recognise`, `identity.take`, `priority.bargain`, `adapt.shape`, `adapt.line`, `audit.judge`, `audit.items`, `coord.tie`, `check.rules`, `setup.shape`, `write.page` | Has `prompt`, `draft` and `out`; born `C0` or `C1`; may carry `ceiling`, `facts` and `answer` (to climb to code as a table, only when it names all three), `tools`, `by_hand`. For a function layer the prompt is the `read_by` of one part of `S.PROMPTS[layer]` (ST-6) and every `out` key is in that part's `returns` (ST-7) |
+| **AI step** (21) | An inside: a prompt, the plain draft it falls back to, and the shape of the answer | `identity.recognise`, `identity.take`, `priority.bargain`, `adapt.shape`, `adapt.line`, `audit.judge`, `audit.items`, `coord.tie`, `check.rules`, `setup.shape`, `write.page` | Has `prompt`, `draft` and `out`; born `C0` or `C1`; may carry `ceiling`, `facts` and `answer` (to climb to code as a table, only when it names all three), `tools`, `by_hand`. For a function layer the prompt is the `read_by` of at least one part of `S.PROMPTS[layer]` (ST-6) and every `out` key is in that part's `returns` (ST-7) |
 | **Person step** (none born so; any AI step can fall to it) | The person's rung: the step files a `step` ask and the draft stands once the owner stamps it | a ladder move down (`BELOW`) | Born `P` has `by_hand`, `draft` and `out`. The type exists so a recipe may declare one; none does |
 | **Gate** (4) | A code decision that blocks another engine's start: admit, wait or refuse | `identity.gate`, `identity.wait_engine`, `coord.chain`, `priority.envelope` | Lives in `gates`; has `code` returning an answer of `GATE_ANSWERS`; check `gate_answer_is_known`; every decision is a row with `mode: 'gate'`; A2's `tightens` ranks admit below wait below refuse for a child version |
 | **Rule** (6) | Coordination's own checks, code only | `coord.busy`, `coord.edge`, `coord.verdict`, `coord.bounds`, `coord.alarm`, `coord.pick` | Lives in `rules`; has `code`; never dropped (A2-R6) |
@@ -2155,7 +2155,9 @@ Five developer packages, each its own branch off main, merged one at a time on a
 | Rules | Package, step | Held by |
 |---|---|---|
 | ST-1 to ST-4, ST-9 | A3-CORE C1 | `test_layer_templates.py::test_st1_*`, `test_st3_*`, `test_st4_*`, `test_st2_*` |
-| ST-5 to ST-7 | existing | `engine_runtime.validate`, `test_every_ai_step_of_a_function_has_its_part` |
+| ST-5 | existing | `engine_runtime.validate` (the SHAPE law), `test_engine_runtime.py::TestOrganicRootAndShape::test_59_every_unit_starts_and_ends_with_code_and_one_that_does_not_is_refused` |
+| ST-6 | A3-CORE (fix round 1) | `test_layer_templates.py::test_st6_every_ai_step_of_a_function_has_a_part` (`template_checks.part_faults`), with its failing examples |
+| ST-7 | existing | `test_layer_core.py::test_c6_answer_keys_are_the_contracts_own_keys_and_cover_what_each_step_returns` |
 | ST-8 | A3-CORE C1 | `test_st8_a_row_a_run_wrote_fits_the_row_definition` (runs the J1 fixture, asserts every row of `R.step_rows` fits), `test_ctx_keys_are_closed` |
 | K-1, K-2, E-1 to E-3, AR-1, AR-2 | A3-CORE C2 | `test_k1_*`, `test_e1_*`, `test_e2_*`, `test_ar1_*`, `test_ar2_*` |
 | AS-1, AS-2 | A3-CORE C4 | `test_as1_*` (the forms), `test_as2_*` (`template_checks.ask_faults`: every ask a run files fits `identity.ask` and the options its form names) |
