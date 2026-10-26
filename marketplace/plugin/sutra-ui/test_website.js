@@ -433,9 +433,10 @@ test("W7: a click on one of 20-dept.js's rows hands the viewer back, and its car
   assert.strictEqual(vm.runInContext("S.wb.tab['r3']", c), "");
   assert.strictEqual(vm.runInContext("dpS().tab['r3']", c), "priority");
   assert.strictEqual(c.wbViewer(WEB), null, "20-dept.js draws its own card");
-  assert.ok(/<h3>Envelopes<\/h3>/.test(html) && /<h3>Queue<\/h3>/.test(html), html.slice(0, 400));
+  /* PRD M4.6 (S-05): Priority prices and holds; the queue is Coordination's card */
+  assert.ok(/<h3>Envelopes<\/h3>/.test(html) && !/<h3>Queue<\/h3>/.test(html), html.slice(0, 400));
   html = await card("coordination");
-  ["Timetable", "Hand-offs", "Locks"].forEach(h => assert.ok(html.indexOf("<h3>" + h + "</h3>") >= 0, h));
+  ["Timetable", "Queue", "Hand-offs", "Locks"].forEach(h => assert.ok(html.indexOf("<h3>" + h + "</h3>") >= 0, h));
   html = await card("identity");
   ["Control", "Autonomy windows", "Stamped by rule"].forEach(h => assert.ok(html.indexOf("<h3>" + h + "</h3>") >= 0, h));
   html = await card("audit");

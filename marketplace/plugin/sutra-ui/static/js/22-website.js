@@ -1112,14 +1112,16 @@ function wbFnExtra(tab, m){
       dpCard("Stamped by rule", (m.recent || []).filter(r => r.engine === "Identity").map(r => wbRunRow(r)).join("") || dpQuiet("Nothing yet")) +
       steps;
   }
+  /* Priority prices and holds the budget; who goes first is Coordination's, so the queue is on Coordination's card
+     (PRD M4.6, S-05) */
   if (tab === "priority"){
     return dpCard("Envelopes", engs.map(e => dpRunRow(e.name, "", "", dpBar(Math.min(1, ((e.envelope || {}).used_calls || 0) / ((e.envelope || {}).calls || 1))))).join("")) +
       (wbRt(m) ? wbLimitsHtml(m.ref) : "") +
-      dpCard("Queue", engs.map(e => dpRunRow(e.name, e.state === "Running" ? "Running" : (e.state === "Waits" ? "Waits for the stamp" : e.slot), wbEngDot(e))).join("")) +
       steps;
   }
   if (tab === "coordination"){
     return dpCard("Timetable", engs.map(e => dpRunRow(e.name, e.slot, "")).join("")) +
+      dpCard("Queue", engs.map(e => dpRunRow(e.name, e.state === "Running" ? "Running" : (e.state === "Waits" ? "Waits for the stamp" : e.slot), wbEngDot(e))).join("")) +
       dpCard("Hand-offs", engs.map(e => dpRunRow(e.reads + " → " + e.name, "", "ok")).join("")) +
       dpCard("Locks", (m.status && m.status.running && m.status.running.length)
         ? m.status.running.map(r => dpRunRow(r.engine, "Holds the line", "warn")).join("") : dpQuiet("Nothing is held")) +

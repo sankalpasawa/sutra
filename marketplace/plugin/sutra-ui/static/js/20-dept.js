@@ -684,9 +684,9 @@ function dpFnHtml(tab, label, card, panes, chat){
   if (!isFn) return tabs + card(data, pane);
   /* DS-13 and DS-14: the template line, the card's own rows, its framework, the
      sections this function adds, and the record's turns as Recent. */
+  /* when each engine runs next is Coordination's timetable, never Priority's: Priority prices and holds (PRD M4.6) */
   const extra = tab === "adaptation" ? dpGraphHtml() + dpEngineStepsHtml()
-              : tab === "priority" ? dpNextRunsHtml()
-              : tab === "coordination" ? dpMakesReadsHtml() : "";
+              : tab === "coordination" ? dpNextRunsHtml() + dpMakesReadsHtml() : "";
   return tabs + (settings === null ? dpTemplateLine(tab) : "") + dpOwnState(tab) + card(data, pane) + extra +
          dpFrameworkHtml(tab) + dpRecentHtml((typeof chat === "function") ? chat(data) : (chat || data.chat), "Recent");
 }
@@ -1169,7 +1169,7 @@ function dpEngineStepsHtml(){
   }).join("");
   return dpCard("What each engine does, step by step", `<div class="dpframework">${body}</div>`);
 }
-/* When each engine runs next, off its own record (Priority, DS-14). */
+/* When each engine runs next, off its own record (Coordination, DS-14; moved from Priority's card, PRD M4.6). */
 function dpNextRunsHtml(){
   const st = dpS(), ref = st.sel;
   dpLoadEngines(ref);                                   /* read on open, as the list column does */
