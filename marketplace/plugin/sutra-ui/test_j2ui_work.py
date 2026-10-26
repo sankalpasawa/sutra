@@ -3,6 +3,9 @@
 Named claims (each step of the package adds its own):
   W1  build(ctx) gives exactly the thirteen keys the page reads, each at its empty value when nothing fills it, as JSON; a
       builder that raises empties only its own keys and leaves a reason; the result is the memoised object
+  W2  a workflow for each engine of the registered line, in the line's order, W-1 on; none before Root's check registers a plan;
+      an engine the plan left out is no workflow; the status is one of the page's six words, read from the engine's state, its
+      asks and its latest run; and no string of a workflow is a check's id
 
 The Ctx the page's adapter hands out (j2ui_common) is written by another package. Until it is merged these tests build a stand-in
 with the same attributes, filled from a department the way the contract names its sources (standin below): the contract is
@@ -176,6 +179,30 @@ def walk(v):
             yield from walk(x)
 
 
+@pytest.fixture
+def born(mods, monkeypatch):
+    """A department as a person makes one: found the organisation, say the words, Root sets it up (test_functions_view.py's way);
+    its ctx is the stand-in's, read after the line has run."""
+    monkeypatch.setenv("J1_FLOW_V1", "1")
+    W, R, J, F = mods
+    import founding
+    import org2_apply
+    import placement_engine as E
+    for m in (E, org2_apply, founding):
+        importlib.reload(m)
+    if not E.active_roots(E.load_domains()):
+        E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
+
+    def make(words="Build a website that teaches algebra to Class 8 students", org="Acme Learning"):
+        root = founding.found_structure(org, owner="Sankalp")["root"]
+        W.owner_ask(root, words)
+        W.run_until_idle(root, limit=300)
+        child = next(d for d in W.list_depts() if d.get("parent") == root)
+        W.run_until_idle(child["ref"], limit=300)
+        return child["ref"]
+    return make
+
+
 # ---- W1: the skeleton -----------------------------------------------------------------------------------------------
 def test_w1_build_gives_exactly_the_thirteen_keys_at_their_empty_values(mods):
     ctx = standin(mods, planned=False)
@@ -230,3 +257,168 @@ def test_w1_a_group_never_sets_a_key_that_is_not_one_of_the_thirteen(mods, monke
     ctx = standin(mods, planned=False)
     monkeypatch.setattr(K, "_audit", lambda c: {"audits": [], "conditions": None, "rubric": [], "workable": None, "extra": 1})
     assert "extra" not in K.build(ctx)
+
+
+# ---- W2: a workflow for each engine of the registered line --------------------------------------------------------------
+def workflows(mods, **kw):
+    ctx = standin(mods, **kw)
+    return K.build(ctx)["workflows"], ctx
+
+
+def test_w2_a_four_engine_line_gets_ids_w1_to_w4_and_each_status(mods):
+    W, R, J, F = mods
+    run(W, "Plan", status="running", what="Planning the pages")
+    ask(W, kind="publish", engine="Write", text="Write: wait for a stamp")
+    ask(W, kind="envelope", engine="Check", text="Check is past its limit: raise it?")
+    run(W, "Publish", status="ok", what="Live site from Build, check passed", wrote={"art": "Live site", "v": 1})
+    wfs, ctx = workflows(mods)
+    assert [w["id"] for w in wfs] == ["W-1", "W-2", "W-3", "W-4"]
+    assert [w["name"] for w in wfs] == LINE
+    assert [w["status"] for w in wfs] == ["running", "held", "unfunded", "done"]
+    assert [w["agent"] for w in wfs] == ["W-1 Plan", "W-2 Write", "W-3 Check", "W-4 Publish"]
+    assert [w["proposal_id"] for w in wfs] == ["plan", "write", "check", "publish"]
+
+
+@pytest.mark.parametrize("name,setup,want", [
+    ("not run yet", lambda W: None, "registered"),
+    ("a run that passed", lambda W: run(W, "Plan", status="ok"), "done"),
+    ("a run that failed", lambda W: run(W, "Plan", status="failed", what="Plan could not file the plan"), "failed"),
+    ("a run that was skipped", lambda W: run(W, "Plan", status="skipped", what="not needed"), "held"),
+    ("a run that was interrupted", lambda W: run(W, "Plan", status="interrupted", what="the app closed"), "held"),
+    ("a run that waits on the model", lambda W: run(W, "Plan", status="waiting", what="waits on the model"), "held"),
+    ("a run that is running", lambda W: run(W, "Plan", status="running"), "running"),
+    ("an ask for the engine", lambda W: ask(W, kind="engine", engine="Plan", text="Plan: add a page?"), "held"),
+    ("an envelope ask for the engine", lambda W: ask(W, kind="envelope", engine="Plan", text="raise Plan's limit?"), "unfunded"),
+    ("an answered ask", lambda W: ask(W, kind="envelope", engine="Plan", status="stamped"), "registered"),
+    ("an ask for another engine", lambda W: ask(W, kind="envelope", engine="Write"), "registered"),
+    ("a failed run, then a pending envelope ask", lambda W: (run(W, "Plan", status="failed"), ask(W, kind="envelope", engine="Plan")), "unfunded"),
+])
+def test_w2_the_status_is_read_from_the_engines_state_asks_and_latest_run(mods, name, setup, want):
+    W, R, J, F = mods
+    setup(W)
+    wfs, ctx = workflows(mods)
+    assert wfs[0]["name"] == "Plan" and wfs[0]["status"] == want, (name, wfs[0]["status"])
+    assert wfs[0]["status"] in K.STATUSES
+
+
+def test_w2_a_template_the_library_lacks_is_a_failed_workflow(mods):
+    ctx = standin(mods)
+    ctx.engines[0]["state"] = "Missing"
+    ctx.engines[0]["steps_view"] = None
+    got = K.build(ctx)["workflows"][0]
+    assert got["status"] == "failed" and got["purpose"] == "Reads Brief and writes Site plan", got["purpose"]
+    assert got["completion_check"] == "" and got["last_check"] == ""
+
+
+def test_w2_the_latest_run_decides_not_the_first(mods):
+    W, R, J, F = mods
+    run(W, "Plan", status="failed", id="r-plan-1", started=ago(120))
+    run(W, "Plan", status="ok", id="r-plan-2", started=ago(60))
+    wfs, ctx = workflows(mods)
+    assert wfs[0]["status"] == "done"
+
+
+def test_w2_before_roots_check_registers_a_plan_there_is_no_workflow(mods):
+    W, R, J, F = mods
+    run(W, "Plan", status="ok")
+    wfs, ctx = workflows(mods, planned=False)
+    assert wfs == [] and K.build(ctx)["agents"] == {}
+
+
+def test_w2_an_engine_the_plan_left_out_is_not_a_workflow(mods):
+    ctx = standin(mods)
+    by = {e["name"]: e for e in ctx.engines}
+    by["Write"]["in_line"] = False
+    by["Write"]["state"] = "Left out"
+    by["Write"]["wid"] = "W-4"
+    for k, n in enumerate(["Plan", "Check", "Publish"], 1):
+        by[n]["wid"] = "W-%d" % k
+    got = K.build(ctx)["workflows"]
+    assert [(w["id"], w["name"]) for w in got] == [("W-1", "Plan"), ("W-2", "Check"), ("W-3", "Publish")]
+    assert "Write" not in [w["name"] for w in got]
+
+
+def test_w2_a_workflow_carries_every_key_the_page_reads_in_the_prototypes_order(mods):
+    wfs, ctx = workflows(mods)
+    assert list(wfs[0]) == ["id", "proposal_id", "name", "covers", "fixes", "purpose", "cost", "estimate", "envelope", "charged",
+                            "calls_used", "retries_used", "outputs", "completion_check", "dependencies", "status", "cycle",
+                            "section", "revises", "agent", "last_check", "version", "atoms"]
+    w = wfs[0]
+    assert w["covers"] == [] and w["fixes"] == [] and w["estimate"] is None and w["charged"] is True
+    assert w["section"] == "" and w["revises"] == "" and w["cycle"] == 1
+    assert w["envelope"]["stop_loss"] == "" and set(w["envelope"]) == {"money_limit", "model_call_limit", "time_limit_minutes",
+                                                                      "retry_limit", "stop_loss"}
+
+
+def test_w2_numbers_are_the_records_own(mods):
+    W, R, J, F = mods
+    run(W, "Plan", status="ok", spend={"calls": 3, "usd": 0.2}, retries=1, started=ago(300))
+    run(W, "Plan", status="ok", id="r-plan-again", spend={"calls": 2, "usd": 0.1}, retries=2, started=ago(100))
+    W.set_envelope(REF, "Plan", calls=17, usd=1.5)
+    wfs, ctx = workflows(mods)
+    w = wfs[0]
+    assert w["cost"] == 5, "model calls summed over all of the engine's runs"
+    assert w["retries_used"] == 3
+    assert w["calls_used"] == 5, "today's calls against the limit"
+    assert w["envelope"]["model_call_limit"] == 17 and w["envelope"]["money_limit"] == 1.5
+    assert w["envelope"]["retry_limit"] == len(R.WAITS)
+    assert w["envelope"]["time_limit_minutes"] == W.dept(REF)["windows"]["Plan"]
+
+
+def test_w2_a_window_of_nothing_is_no_time_limit(mods):
+    ctx = standin(mods)
+    ctx.engines[0]["window_min"] = 0
+    assert K.build(ctx)["workflows"][0]["envelope"]["time_limit_minutes"] is None
+
+
+def test_w2_outputs_dependencies_and_version_follow_what_each_engine_reads_and_writes(mods):
+    W, R, J, F = mods
+    W.add_version(REF, "Site plan", {"site-plan.json": "{}"}, [{"art": "Brief", "v": 1}], "r-x", {"ok": True, "notes": []})
+    W.add_version(REF, "Site plan", {"site-plan.json": "{}"}, [{"art": "Brief", "v": 1}], "r-y", {"ok": True, "notes": []})
+    wfs, ctx = workflows(mods)
+    by = {w["name"]: w for w in wfs}
+    assert by["Plan"]["outputs"] == ["site-plan"] and by["Write"]["outputs"] == ["pages"]
+    assert by["Plan"]["dependencies"] == [], "Plan reads the Brief, which no engine of the line writes"
+    assert by["Write"]["dependencies"] == ["plan"] and by["Check"]["dependencies"] == ["write"]
+    assert by["Publish"]["dependencies"] == ["check"]
+    assert by["Plan"]["version"] == 2 and by["Write"]["version"] is None
+
+
+def test_w2_the_checks_are_sentences_never_ids(mods):
+    W, R, J, F = mods
+    step_row(R, "Plan", "plan.read", notes=["the brief has words"])
+    step_row(R, "Plan", "plan.pages", notes=["6 pages proposed"])
+    step_row(R, "Plan", "plan.fit", notes=["the home page is first; every address is its own"])
+    step_row(R, "Plan", "plan.file", notes=["files and their verdict are both there"])
+    wfs, ctx = workflows(mods)
+    plan = wfs[0]
+    assert plan["completion_check"] == "File the plan: files and their verdict are both there"
+    assert plan["last_check"] == "File the plan: files and their verdict are both there"
+    assert wfs[1]["last_check"] == "" and wfs[1]["completion_check"] == "Put the pages together", "not run: the step's name alone"
+    for w in wfs:
+        assert not [s for s in walk(w) if CHECK_ID.match(s)], [s for s in walk(w) if CHECK_ID.match(s)]
+
+
+def test_w2_the_purpose_is_the_templates_description_in_the_owners_words(mods):
+    wfs, ctx = workflows(mods)
+    assert wfs[0]["purpose"] == "reads the brief and every ask in it, and plans the site's pages"
+    assert all(w["purpose"] for w in wfs) and not BANNED.search(json.dumps(wfs))
+
+
+def test_w2_the_cycle_is_the_rounds_number_else_one(mods):
+    ctx = standin(mods)
+    ctx.cur = dict(ctx.cur or {}, round=3)
+    assert K.build(ctx)["workflows"][0]["cycle"] == 3
+
+
+def test_w2_a_real_departments_line_reads_as_workflows(mods, born):
+    W, R, J, F = mods
+    ref = born()
+    ctx = standin(mods, ref=ref)
+    got = K.build(ctx)["workflows"]
+    assert [w["id"] for w in got] == ["W-1", "W-2", "W-3", "W-4"] and [w["name"] for w in got] == LINE
+    assert [w["status"] for w in got] == ["done", "done", "done", "held"], "the first publish waits for the owner's stamp"
+    assert [w["version"] for w in got] == [1, 1, 1, None]
+    assert all(w["status"] in K.STATUSES for w in got)
+    assert not BANNED.search(json.dumps(got)) and not [s for s in walk(got) if CHECK_ID.match(s)]
+    assert json.loads(json.dumps(got)) == got
