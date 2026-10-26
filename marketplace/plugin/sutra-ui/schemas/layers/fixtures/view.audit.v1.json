@@ -1,0 +1,110 @@
+{
+ "comment": "view.audit (S12) as Audit's pane returns it, in the four states its screen draws: nothing read yet, a reading with an item not met and one to confirm, a version not read, and a reading where every item holds. Written by hand; test_layer_audit.py validates each as S.validate('view.audit', ...) and as the live pane's keys.",
+ "view.audit": {
+  "empty": {
+   "readings": [],
+   "findings": [],
+   "spot_checks": [],
+   "latest": null
+  },
+  "reading": {
+   "readings": [
+    {
+     "summary": "read Live site v2: D2 not met",
+     "at": "2026-10-26T21:20:00+05:30",
+     "artifact": "Live site",
+     "v": 2,
+     "read": true,
+     "why_not_read": null,
+     "verdicts": {
+      "D1": "met",
+      "D2": "not_met",
+      "D3": "to_confirm"
+     }
+    }
+   ],
+   "findings": [
+    {
+     "text": "Audit found: the fees page gives no fee. Stamp to have it put right.",
+     "at": "2026-10-26T21:20:00+05:30"
+    }
+   ],
+   "spot_checks": [],
+   "latest": {
+    "artifact": "Live site",
+    "v": 2,
+    "at": "2026-10-26T21:20:00+05:30",
+    "items": [
+     {
+      "id": "D1",
+      "verdict": "met",
+      "method": "code",
+      "claim": "the record holds: every version has its run and its check",
+      "evidence": "every version has its run and its check; the trace reaches the owner's words"
+     },
+     {
+      "id": "D2",
+      "verdict": "not_met",
+      "method": "model",
+      "claim": "the fees page names no fee",
+      "evidence": "fees.html says to contact the office"
+     },
+     {
+      "id": "D3",
+      "verdict": "to_confirm",
+      "method": "model",
+      "claim": "it waits on a fact nobody has given: the clinic's opening hours",
+      "evidence": "no hours are given in the brief or in anything filed"
+     }
+    ]
+   }
+  },
+  "not_read": {
+   "readings": [
+    {
+     "summary": "did not read Live site v1: no model was there to read it",
+     "at": "2026-10-26T21:20:00+05:30",
+     "artifact": "Live site",
+     "v": 1,
+     "read": false,
+     "why_not_read": "no model was there to read it",
+     "verdicts": {}
+    }
+   ],
+   "findings": [],
+   "spot_checks": [],
+   "latest": null
+  },
+  "done": {
+   "readings": [
+    {
+     "summary": "read Result v1: every done-when item holds",
+     "at": "2026-10-26T21:20:00+05:30",
+     "artifact": "Result",
+     "v": 1,
+     "read": true,
+     "why_not_read": null,
+     "verdicts": {
+      "D1": "met"
+     }
+    }
+   ],
+   "findings": [],
+   "spot_checks": [],
+   "latest": {
+    "artifact": "Result",
+    "v": 1,
+    "at": "2026-10-26T21:20:00+05:30",
+    "items": [
+     {
+      "id": "D1",
+      "verdict": "met",
+      "method": "model",
+      "claim": "every ask is answered in the Result",
+      "evidence": "result.md answers the one ask in full"
+     }
+    ]
+   }
+  }
+ }
+}

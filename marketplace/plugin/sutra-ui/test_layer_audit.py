@@ -719,3 +719,42 @@ def test_u2_the_owners_value_for_the_new_part_is_checked_as_a_field_of_it():
     assert S.validate_field("audit", "judge", "items", "task", "Say {{items}} first.")                  # only the app writes a marker
     assert S.validate_field("audit", "judge", "items", "task", "Return ONLY a JSON object: {}.")        # the answer's shape is the app's
     assert S.validate_field("audit", "judge", "items", "returns", "x"), "the answer contract is not a field"
+
+
+def test_u5_done_is_read_from_a_reading_never_from_no_findings(j2):
+    """J.audited writes goal.reached only when the reading was read, every item is met, none is to confirm and no high
+    finding is open; a bare 'found nothing', or a reading that read no item, clears nothing."""
+    W, R, J, _, _ = j2
+    ref = _default(j2)
+    assert J.active(ref)
+    held = [None, {}, {"read": False, "met": [], "not_met": [], "to_confirm": [], "high": False},
+            {"read": True, "met": [], "not_met": [], "to_confirm": [], "high": False},                  # read, and no item met
+            {"read": True, "met": ["D1"], "not_met": ["D2"], "to_confirm": [], "high": False},
+            {"read": True, "met": ["D1"], "not_met": [], "to_confirm": ["D2"], "high": False},
+            {"read": True, "met": ["D1", "D2"], "not_met": [], "to_confirm": [], "high": True}]
+    for reading in held:
+        assert J.audited(ref, 1, 0, reading=reading) is False, reading
+    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["state"] != "done"
+    assert J.audited(ref, 1, 0, reading={"read": True, "met": ["D1", "D2"], "not_met": [], "to_confirm": [], "high": False}) is True
+    acts = _actions(J, ref)
+    assert acts[-2:] == ["audit.finding_filed", "goal.reached"] and J.status(ref)["goal_reached"] is True
+    cited = [e["evidence_refs"] for e in J.events(ref)[-2:]]
+    assert cited == [[{"artifact": "Result", "version": 1}]] * 2
+
+
+def test_u6_the_fixtures_the_screens_draw_from_validate_and_have_the_keys_the_live_pane_has(j2):
+    doc = json.loads((S.HERE / "schemas" / "layers" / "fixtures" / "view.audit.v1.json").read_text(encoding="utf-8"))
+    states = doc["view.audit"]
+    assert list(states) == ["empty", "reading", "not_read", "done"]
+    for name, fixture in states.items():
+        assert S.validate("view.audit", fixture) == [], name
+        assert set(fixture) == {"readings", "findings", "spot_checks", "latest"}, name
+    live = _view(j2, _born(j2))
+    assert set(live) == set(states["empty"]) and live == states["empty"]
+    # the words on a screen: names, never counts, no codes of the machine, nothing the screen rules forbid
+    text = json.dumps(states).lower()
+    for word in ("charter", "internal system", "grant", "counter", "refuse"):
+        assert word not in text, word
+    assert states["reading"]["readings"][0]["verdicts"] == {"D1": "met", "D2": "not_met", "D3": "to_confirm"}
+    assert [i["verdict"] for i in states["reading"]["latest"]["items"]] == ["met", "not_met", "to_confirm"]
+    assert states["not_read"]["latest"] is None and states["not_read"]["readings"][0]["read"] is False
