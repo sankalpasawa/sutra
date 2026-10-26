@@ -130,8 +130,11 @@ function wb2MapHtml(n, m){
   const fv = wbFv(n.ref);
   const W = 960, arts = {}; (m.artifacts || []).forEach(a => { arts[a.name] = a; });
   /* the line of work is the plan's (PRD M4.2): an engine the registered plan left out stays on the record and never
-     runs, so it is not on the line; it sits under it, muted, with the words "left out" (map_view's in_line) */
-  const engs = (m.engines || []).filter(e => e.in_line !== false), out = (m.engines || []).filter(e => e.in_line === false);
+     runs, so it is not on the line; it sits under it, muted, with the words "left out" (map_view's in_line). Before
+     Root's check there is no plan (map_view's planned, the test Coordination's pane takes too): the engines the
+     department was born with are no line of work, and the Brief stands alone with 'No plan yet' (S1, Empty) */
+  const plan = m.planned === false ? [] : (m.engines || []);
+  const engs = plan.filter(e => e.in_line !== false), out = plan.filter(e => e.in_line === false);
   /* the line of work: what the first engine reads, then each engine and what it writes */
   const line = [];
   if (engs.length) line.push({ kind: "work", name: engs[0].reads });

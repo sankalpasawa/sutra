@@ -1375,6 +1375,12 @@ def map_view(ref):
     rt = _runtime(ref)
     table = rt.coordination(ref) if rt else {}
     line = set(table.get("line") or []) if rt else None
+    # before Root's check the line it was born with is not a plan (S1, Empty: Brief v1 and 'No plan yet'): the same test
+    # as Coordination's pane (functions_view.no_plan), so the Map and S7 never disagree on whether a plan exists
+    planned = True
+    if rt:
+        import functions_view
+        planned = not functions_view.no_plan(ref, d, table)
     left = {r.get("engine") for r in table.get("left_out") or [] if isinstance(r, dict)}
     slots = {r.get("engine"): r for r in table.get("timetable") or [] if isinstance(r, dict)}
     for e in engines:
@@ -1402,5 +1408,5 @@ def map_view(ref):
             "live": "Live site" in names and bool(latest(ref, "Live site")), "requests": requests(ref)[-10:],
             # a Root is born with its goal: it makes departments; every other kind takes its goal from the owner's words
             "has_goal": kind == "root" or bool(versions(ref, names[0])) or bool(requests(ref)), "templates": d.get("templates") or {},
-            "runtime": d.get("runtime") or 1, "kind": kind, "say": kind_of(d).get("say") or "",
+            "runtime": d.get("runtime") or 1, "kind": kind, "say": kind_of(d).get("say") or "", "planned": planned,
             "root": ref if kind == "root" else d.get("root"), "host": d.get("host")}
