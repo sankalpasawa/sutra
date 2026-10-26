@@ -1633,3 +1633,91 @@ def test_f1_a_note_is_handed_to_the_engine_it_is_for_and_no_other_and_audit_neve
     assert R._fit_note(ref, "Write") == "\n\nFOR THIS GOAL: one page only" and R._fit_note(ref, "Plan") == ""
     assert R._context_block(ref, "Write").endswith("\n\nFOR THIS GOAL: one page only")
     assert "FOR THIS GOAL" not in R._context_block(ref), "Audit's reading of what was filed carries no note"
+
+
+# ---- F2 · conflicts carry Priority's options (W2-ADAPT, M5.4) ---------------------------------------------------------
+def _ways_out(W):
+    """The three ways out Priority prices for a no (M5.4): raise the envelope, leave an item out, stop. Built as W.option builds them."""
+    raise_ = W.option("raise", "Add 2.00 USD for Plan", "about 2.00 USD more a day, up to twice where it started",
+                      params={"what": "envelope", "engine": "Plan", "calls": 30, "usd": 2.0})
+    return [raise_, W.option("leave:D1", "Leave D1 out", "D1 is dropped from done-when; nothing more is spent"),
+            W.option(W.STOP_OPTION, "Stop here", "the department stops where it is; you can start it again later")]
+
+
+def _priority_sends_options(monkeypatch, R, options, words=("line",)):
+    """Priority as W2-PRIORITY makes it, for a no or an ask for less on a line: the answer carries the ways out it priced."""
+    real = R.post
+
+    def post(ref, src, dst, msg_type, payload=None, *a, **kw):
+        if src == "Priority" and msg_type in ("reject-proposal", "propose") and (payload or {}).get("word") in words:
+            payload = dict(payload, options=options)
+        return real(ref, src, dst, msg_type, payload, *a, **kw)
+    monkeypatch.setattr(R, "post", post)
+
+
+def _conflicts(R, ref):
+    return [p["payload"] for p in R.board(ref) if p["src"] in ("Adaptation", "Coordination") and p["dst"] == ["Identity"] and p["payload"].get("word") == "conflict"]
+
+
+def test_f2_a_no_that_carries_options_reaches_identity_with_them(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    opts = _ways_out(W)
+    _priority_sends_options(monkeypatch, R, opts)
+    ref, _ = _born_site(j2, answers={"priority.bargain": {"answer": "reject", "why": "no room in the envelope today"}}, monkeypatch=monkeypatch)
+    [conflict] = _conflicts(R, ref)
+    assert conflict["options"] == opts and [o["kind"] for o in conflict["options"]] == ["raise", "leave", "stop"]
+    assert conflict["why"] == "Priority said no to the plan: no room in the envelope today"
+    assert S.validate("act.conflict", conflict) == [], "the act fits the interface, three typed options"
+    sent = next(p["payload"] for p in R.board(ref) if p["src"] == "Priority" and p["msg_type"] == "reject-proposal")
+    assert sent["options"] == opts, "what Priority sent is what Adaptation passed on"
+
+
+def test_f2_an_ask_for_less_that_cannot_be_taken_reaches_identity_with_the_options_too(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    opts = _ways_out(W)
+    _priority_sends_options(monkeypatch, R, opts)
+    # Priority asks to keep Plan -> Write -> Publish: it leaves out Check, which a website requires, so Identity closes it
+    counter = {"answer": "counter", "why": "room for three today", "keep": ["Plan", "Write", "Publish"]}
+    ref, _ = _born_site(j2, answers={"priority.bargain": counter}, monkeypatch=monkeypatch)
+    [conflict] = _conflicts(R, ref)
+    assert "leave out Check, which this kind of department requires" in conflict["why"] and conflict["options"] == opts
+    assert S.validate("act.conflict", conflict) == []
+
+
+def test_f2_no_options_from_priority_is_a_conflict_with_none_as_it_always_was(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref, _ = _born_site(j2, answers={"priority.bargain": {"answer": "reject", "why": "no room in the envelope today"}}, monkeypatch=monkeypatch)
+    [conflict] = _conflicts(R, ref)
+    assert "options" not in conflict and conflict["why"].startswith("Priority said no to the plan")
+
+
+def test_f2_only_options_that_fit_the_interface_are_passed_on_and_at_most_three(j2):
+    W = j2[0]
+    good = _ways_out(W)
+    assert v1().options_of({"options": good}) == good
+    assert v1().options_of({"options": good + [W.option("words", "Say it in my words", "free")]}) == good, "at most three"
+    assert v1().options_of({"options": [{"id": "Not An Id", "label": "x", "cost": "y"}, good[1], "stop", None]}) == [good[1]], "what is not an option is not passed on"
+    for nothing in ({}, {"options": []}, {"options": "stop"}, {"options": [{"id": "stop"}]}, None):
+        assert v1().options_of(nothing) is None
+
+
+def test_f2_a_kept_engine_keeps_its_note_when_priority_asks_for_less_and_a_dropped_one_takes_its_note_away(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    notes = {"Write": "one page, no gallery", "Publish": "put the page live at once"}
+    fit = {"engines": LINE, "fit": notes, "why": "one page"}
+    counter = {"answer": "counter", "why": "room for three today", "keep": ["Plan", "Write", "Check"]}
+    ref, seen = _born_site(j2, ONE_PAGE, answers={"adapt.fit": fit, "priority.bargain": counter}, monkeypatch=monkeypatch)
+    again = [p["payload"] for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Priority"] and p["payload"].get("word") == "line"]
+    assert [[e["name"] for e in pl["engines"]] for pl in again] == [LINE, ["Plan", "Write", "Check"]]
+    assert again[0]["fit"] == notes and again[1]["fit"] == {"Write": notes["Write"]}, "the dropped engine's note goes with it"
+    assert [e.get("fit") for e in again[1]["engines"]] == [None, notes["Write"], None]
+    reg = W.dept(ref)["workflows"][-1]
+    assert reg["engines"] == ["Plan", "Write", "Check"] and reg["fit"] == {"Write": notes["Write"]} and reg["left_out"] == ["Publish"]
+    assert S.validate("workflow.registration", reg) == []
+
+
+def test_f2_the_two_handlers_are_the_layers_own_now_and_the_runtimes_copies_stay_the_fallback(j2):
+    R = j2[1]
+    for name in ("adapt_line_refused", "adapt_line_counter"):
+        assert not hasattr(v1().CODE[name], "legacy"), "%s is a body of the layer's own" % name
+        assert callable(getattr(R, name)), "and engine_runtime's copy is still there for a department whose layer does not load"

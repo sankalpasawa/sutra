@@ -473,7 +473,7 @@ def hears_doubt():
 
 def line_conflict(ref, thread, why, bound=None, src='Adaptation', options=None, engines=None, source=None, words=None):
     """The bargain did not close (a refusal, or its bound), or no line can be made: it goes to Identity, never silently to
-    nothing (J2.2). _line_conflict as engine_runtime has it, with the ways out Adaptation can build (M6.4)."""
+    nothing (J2.2). _line_conflict as engine_runtime has it, with the ways out Adaptation can build (M6.4) or Priority priced (M5.4)."""
     offer = R._line_proposal(ref, thread) or {}
     if any((x.get('payload') or {}).get('word') == 'conflict' and (x.get('payload') or {}).get('for') == thread for x in R.board(ref)):
         return None
@@ -483,6 +483,60 @@ def line_conflict(ref, thread, why, bound=None, src='Adaptation', options=None, 
     if options:
         body['options'] = options
     return R.post(ref, src, 'Identity', 'inform', body)
+
+
+def options_of(payload):
+    """The ways out Priority sent with a no or an ask for less (M5.4), as the conflict carries them: at most three, each an
+    option the interface types. None when Priority sent none, or sent what is not an option: a way out that does not fit is
+    never put to the owner."""
+    got = (payload or {}).get('options')
+    if not isinstance(got, list):
+        return None
+    out = [dict(o) for o in got if isinstance(o, dict) and not S.validate('option', o)][:S.OPTIONS_MAX]
+    return out or None
+
+
+def adapt_line_refused(ctx, step, item):
+    """Priority said no to the line: Adaptation does not drop it in silence; Identity closes the conflict (step 4), with the
+    ways out Priority priced when it sent them (M5.4). Moved from engine_runtime.adapt_line_refused."""
+    ref, p = ctx['ref'], ctx['post']
+    pl = p.get('payload') or {}
+    why = str(pl.get('why') or 'no room in the envelope').strip().rstrip('.')
+    line_conflict(ref, p['thread'], 'Priority said no to the plan: %s' % why, options=options_of(pl))
+    return {'said': 'Priority said no to the line (%s); the conflict goes to Identity' % why}
+
+
+def adapt_line_counter(ctx, step, item):
+    """Priority asked for less: Adaptation takes that when it leaves a line that still works, and proposes that line
+    again in the same thread, each kept engine with its note; what it cannot take goes to Identity, with the ways out
+    Priority sent (M5.4). The thread's own bound ends a bargain that will not close. Moved from engine_runtime.adapt_line_counter."""
+    ref, p = ctx['ref'], ctx['post']
+    pl = p.get('payload') or {}
+    offer = R._line_proposal(ref, p['thread']) or {}
+    keep = [str(k) for k in pl.get('keep') or []]
+    engines = [e for e in offer.get('engines') or [] if e.get('name') in keep]
+    why = str(pl.get('why') or 'the envelope has no room for all of it').strip().rstrip('.')
+    options = options_of(pl)
+    # a counter that drops an engine the kind requires is never taken: Identity closes it (PRD M4.4)
+    proposed = [e.get('name') for e in offer.get('engines') or []]
+    dropped = [n for n in R.required_engines(ctx['dept']) if n in proposed and n not in keep]
+    if dropped:
+        line_conflict(ref, p['thread'], 'Priority asked for less (%s) and the line would leave out %s, which this kind of department requires'
+                      % (why, R._names(dropped)), options=options)
+        return {'said': "could not take Priority's ask for less: it leaves out %s, which is required; the conflict goes to Identity" % R._names(dropped)}
+    if not engines or len(engines) == len(offer.get('engines') or []) or R._root_check(ref, ctx['dept'], engines, offer.get('source') or 'shaped'):
+        line_conflict(ref, p['thread'], 'Priority asked for less (%s) and the line does not work that way' % why, options=options)
+        return {'said': "could not take Priority's ask for less; the conflict goes to Identity"}
+    body = {'word': 'line', 'engines': engines, 'source': offer.get('source'), 'words': offer.get('words'), 'for': offer.get('for'),
+            'why': "took Priority's ask for less: " + why}
+    notes = {e['name']: e['fit'] for e in engines if e.get('fit')}          # M5.2: a kept engine keeps its note
+    if notes:
+        body['fit'] = notes
+    row = R.post(ref, 'Adaptation', 'Priority', 'propose', body, thread=p['thread'])
+    if row is None:
+        line_conflict(ref, p['thread'], 'the bargain reached its bound', bound='hops', src='Coordination', options=options)
+        return {'said': 'the bargain reached its bound; it goes to Identity'}
+    return {'said': "took Priority's ask for less and proposed again: " + ' -> '.join(e['name'] for e in engines)}
 
 
 def cannot_options(d, cannot, words=None):
@@ -570,9 +624,11 @@ def adapt_line_offer(ctx, step, item):
 
 CODE = {name: ref_to(name) for name in (
     'hear', 'adapt_sense', 'adapt_ladder', 'adapt_act', 'adapt_trial', 'adapt_notrial', 'adapt_heard', 'adapt_park', 'adapt_offer',
-    'adapt_priced', 'adapt_line_granted', 'adapt_line_refused', 'adapt_line_counter')}
+    'adapt_priced', 'adapt_line_granted')}
 CODE['adapt_source'] = adapt_source
 CODE['adapt_line_offer'] = adapt_line_offer
+CODE['adapt_line_refused'] = adapt_line_refused
+CODE['adapt_line_counter'] = adapt_line_counter
 PROMPT = {'adapt_shape': ref_to('p_adapt_shape'), 'adapt_line': p_adapt_line, 'adapt_fit': p_adapt_fit}
 DRAFT = {'adapt_shape_draft': ref_to('d_adapt_shape'), 'adapt_line_draft': d_adapt_line, 'adapt_fit_draft': d_adapt_fit}
 CHECK = {name: ref_to('c_' + name) for name in (
