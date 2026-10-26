@@ -137,7 +137,8 @@ def test_s1_field_refuses_markers_return_only_and_a_newline_when_not_multiline_w
 
 
 # ---- S1: the modes -----------------------------------------------------------------------------------------------------
-def test_s1_warn_mode_a_fault_is_a_row_and_a_count_and_nothing_raises(home, envelope):
+def test_s1_warn_mode_a_fault_is_a_row_and_a_count_and_nothing_raises(home, envelope, monkeypatch):
+    monkeypatch.setattr(S, "MODE", "warn")      # this test is about warn mode: a fault is a row and the write goes through
     W = home
     W.create("t-warn", "Acme", None)
     runs = len(W.runs("t-warn"))
@@ -185,7 +186,7 @@ def test_s1_refused_never_raises_and_a_ref_with_no_department_writes_no_row(home
 
 def test_s1_mode_is_a_code_constant_never_an_environment_variable():
     src = (S.HERE / "layer_schema.py").read_text(encoding="utf-8")
-    assert S.MODE == "warn" and S.OWNERSHIP_MODE == "warn"
+    assert S.MODE == "refuse" and S.OWNERSHIP_MODE == "warn"        # 'A1 interface: refuse'; ownership refuses at W3-PROOF
     assert "os.environ" not in src and "getenv" not in src
 
 
@@ -858,6 +859,7 @@ def test_s4_validate_act_holds_the_edges_the_words_and_the_payload():
 
 
 def test_s4_check_act_is_a_row_in_warn_mode_and_a_refusal_in_refuse_mode(monkeypatch):
+    monkeypatch.setattr(S, "MODE", "warn")      # this test is about warn mode: a fault is a row and the write goes through
     with S.expect_refused("act") as met:
         assert S.check_act("Priority", "Owner", "inform", {"word": "said"}) == {"word": "said"}
     assert met == ["Priority inform to Owner: $: Priority sends no inform"]
@@ -868,6 +870,7 @@ def test_s4_check_act_is_a_row_in_warn_mode_and_a_refusal_in_refuse_mode(monkeyp
 
 
 def test_s4_check_department_checks_only_the_changed_keys_and_stamps_the_version(monkeypatch):
+    monkeypatch.setattr(S, "MODE", "warn")      # this test is about warn mode: a fault is a row and the write goes through
     before = {"kind": "website", "ref": "r", "name": "Acme", "colour": "an old key", "windows": {"Plan": "fifteen"}}
     d = dict(before, goal="A live site")
     assert S.check_department(dict(d), before=before)["schema_version"] == 1, "a legacy fault never blocks a later save"
@@ -897,8 +900,9 @@ def test_s4_a_new_workflows_entry_is_a_registration_and_meets_the_write_stage():
     reg = {"version": 1, "engines": ["Plan", "Write", "Check", "Publish"], "source": "library", "registered": "2026-10-26", "by": "Root"}
     S.check_department(dict(base, workflows=[reg]), before=base)
     with S.expect_refused("department") as met:
-        S.check_department(dict(base, workflows=[reg, {"version": 2, "engines": ["Plan"], "source": "copied"}]),
-                           before=dict(base, workflows=[reg]))
+        with pytest.raises(S.SchemaFault):
+            S.check_department(dict(base, workflows=[reg, {"version": 2, "engines": ["Plan"], "source": "copied"}]),
+                               before=dict(base, workflows=[reg]))
     assert "$.workflows[1].registered: is missing" in met and "$.workflows[1].source: is not one of library, shaped, fitted, made" in met
     assert not [f for f in met if f.startswith("$.workflows[0]")], "the entry already on the record is not read again"
 

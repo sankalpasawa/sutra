@@ -305,7 +305,8 @@ import sys  # noqa: E402
 import record  # noqa: E402
 
 
-def test_s5_an_unknown_key_saved_on_dept_json_is_one_fault_and_one_row_and_lands_in_warn_mode(j2):
+def test_s5_an_unknown_key_saved_on_dept_json_is_one_fault_and_one_row_and_lands_in_warn_mode(j2, monkeypatch):
+    monkeypatch.setattr(S, "MODE", "warn")      # this test is about warn mode: a fault is a row and the write goes through
     W = j2[0]
     W.create("s-colour", "Acme", None)
     d, runs = W.dept("s-colour"), len(W.runs("s-colour"))
@@ -324,11 +325,13 @@ def test_s5_dept_json_written_past_save_dept_is_a_fault(j2):
     W = j2[0]
     W.create("s-direct", "Acme", None)
     with S.expect_refused("department") as met:
-        W._write(W.ddir("s-direct") / "dept.json", W.dept("s-direct"))
+        with pytest.raises(S.SchemaFault):
+            W._write(W.ddir("s-direct") / "dept.json", W.dept("s-direct"))
     assert met == ["$: dept.json is written only by save_dept"]
 
 
-def test_s5_an_asks_json_write_with_status_maybe_is_caught_whoever_writes_it(j2):
+def test_s5_an_asks_json_write_with_status_maybe_is_caught_whoever_writes_it(j2, monkeypatch):
+    monkeypatch.setattr(S, "MODE", "warn")      # this test is about warn mode: a fault is a row and the write goes through
     W, R, _, _, _ = j2
     W.create("s-asks", "Acme", None)
     with S.expect_refused("identity.ask") as met:
@@ -393,6 +396,7 @@ def test_s5_an_owner_request_holding_braces_posts_and_files(j2):
 
 
 def test_s5_a_post_that_does_not_fit_is_a_row_in_warn_mode_and_refused_in_refuse_mode(j2, monkeypatch):
+    monkeypatch.setattr(S, "MODE", "warn")      # this test is about warn mode: a fault is a row and the write goes through
     W, R, _, _, _ = j2
     W.create("s-post", "Acme", None)
     n = len(R.board("s-post"))
@@ -408,7 +412,8 @@ def test_s5_a_post_that_does_not_fit_is_a_row_in_warn_mode_and_refused_in_refuse
     assert R.post("s-post", "Adaptation", "Priority", "propose", {"word": "trial", "step": "write.page"}), "a post that fits goes"
 
 
-def test_s5_append_row_checks_each_journal_row_and_rows_reads_them_back(j2):
+def test_s5_append_row_checks_each_journal_row_and_rows_reads_them_back(j2, monkeypatch):
+    monkeypatch.setattr(S, "MODE", "warn")      # this test is about warn mode: a fault is a row and the write goes through
     W = j2[0]
     W.create("s-rows", "Acme", None)
     row = {"id": "r-0123abcd", "v": 1, "artifact": "Live site", "read": False, "why_not_read": "it was not sampled",
@@ -429,10 +434,16 @@ def test_s5_a_test_that_meets_a_fault_fails_through_the_conftest_fixture(tmp_pat
     (tmp_path / "test_scratch.py").write_text(
         "import layer_schema as S\n\n"
         "def test_a_bad_write():\n"
-        "    S.check('envelope', {'calls': -1, 'usd': 1.0})\n\n"
+        "    try:\n"
+        "        S.check('envelope', {'calls': -1, 'usd': 1.0})\n"
+        "    except S.SchemaFault:\n"
+        "        pass    # a caller that swallows the exception still leaves the row and the count\n\n"
         "def test_a_fault_it_expects():\n"
         "    with S.expect_refused('envelope') as met:\n"
-        "        S.check('envelope', {'calls': -1, 'usd': 1.0})\n"
+        "        try:\n"
+        "            S.check('envelope', {'calls': -1, 'usd': 1.0})\n"
+        "        except S.SchemaFault:\n"
+        "            pass\n"
         "    assert met == ['$.calls: below 0']\n", encoding="utf-8")
     env = dict(os.environ, PYTHONPATH=str(ui))
     got = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "test_scratch.py"], cwd=str(tmp_path),
