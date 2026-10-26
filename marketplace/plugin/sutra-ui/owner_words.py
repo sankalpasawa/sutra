@@ -15,7 +15,8 @@ record written before that, and anything a definition still says, in the owner's
 Phrases only, longest first, so a sentence keeps its grammar, and never a bare verb: the owner's own words (the goal,
 done-when, the rules, the requests) are never passed through here, nor are they where a function carries them on (a
 turn the record marks quoted, the words an ask's or a run's line ends with: kept), and a rule's tag (go, ask, refuse,
-always) is the owner's own word for a rule and is left as it is. One line is read whole: Coordination's who-may-post note, which
+always), a data value, is left as it is: the badge that prints it says 'never' for refuse, and a sentence that lists the
+tags says 'never' too ('tagged go, ask, never or always'). One line is read whole: Coordination's who-may-post note, which
 carried the act's own id ('Identity may refuse to Owner'), is said again the way the runtime says it now (MAY_NOTE).
 """
 import functools
@@ -73,6 +74,9 @@ BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priori
                  ("a request: go, ask or refuse", "a request: go, ask or stop"),
                  # the words in use as a field of Identity's take shows them (K2: a typed value is on its Settings at rest)
                  ("refuse: it breaks a rule", "stop: it breaks a rule"),
+                 # the five points of Identity's standard as its completeness row shows them: the rule tags in the words the
+                 # badge prints (the pane says 'never' for the refuse tag; the tag itself, a data value, stays 'refuse')
+                 ("go, ask, refuse or always", "go, ask, never or always"),
                  ("Countered.", "Asked for less."), ("Refused.", "Said no."))
 
 

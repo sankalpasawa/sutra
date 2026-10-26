@@ -558,6 +558,44 @@ def test_c8_a_settings_row_is_printed_in_the_owners_words_and_the_value_is_kept_
         [{"file": "take", "lead": "How to judge a request: go, ask or stop."}]
 
 
+def test_c8_no_settings_row_of_any_function_prints_a_banned_word(api, home):
+    """Every word a Settings row prints at rest (`shown`, a group's `lead`, a part's `label`, the `inputs` and `answers` it names)
+    on every function's steps read, which is what the screen draws, in the owner's words: never grant, counter, refuse, orders,
+    charter or internal system (found by a verifier, 2026-10-26: Identity's completeness row said 'every rule is tagged go,
+    ask, refuse or always'). The raw `value` the owner edits stays the words the agent is sent, and a part's id is a name."""
+    ref = born(home)
+    _, R = modules()
+
+    def printed(x):
+        if isinstance(x, str):
+            yield x
+        elif isinstance(x, list):
+            for y in x:
+                yield from printed(y)
+
+    rows = 0
+    for layer in S.FUNCTION_LAYERS:
+        got = api.get("/api/native/%s/steps/%s" % (ref, S.TITLE[layer]))
+        assert got.status_code == 200, layer
+        for g in got.json()["instructions"]:
+            assert not BANNED.search(g["lead"]), (layer, g["group"], g["lead"])
+            for p in g["parts"]:
+                for k in ("label", "inputs", "answers"):
+                    assert not [t for t in printed(p.get(k)) if BANNED.search(t)], (layer, g["group"], p["part"], k)
+                for f in p["fields"]:
+                    rows += 1
+                    assert isinstance(f["shown"], str) and not BANNED.search(f["shown"]), (layer, g["group"], p["part"], f["field"], f["shown"])
+    assert rows >= 20, "the scan reached the fields of all five functions"
+    # the sentence that lists the rule tags says the tag the badge says; the raw value is the words the agent reads
+    enough = next(f for g in R.instructions_view(ref, "identity") if g["group"] == "completeness"
+                  for p in g["parts"] if p["part"] == "enough" for f in p["fields"] if f["field"] == "task")
+    assert "tagged go, ask, refuse or always" in enough["value"]
+    import owner_words
+    shown = owner_words.steps({"instructions": R.instructions_view(ref, "identity")})["instructions"]
+    said = next(f for g in shown if g["group"] == "completeness" for p in g["parts"] if p["part"] == "enough" for f in p["fields"])["shown"]
+    assert "tagged go, ask, never or always" in said and "refus" not in said.lower()
+
+
 # ---- C9 · views through the layers ------------------------------------------------------------------------------------
 AUDIT_VIEW = {"readings": [{"summary": "Audit read Live site v1.", "at": None}], "findings": [], "spot_checks": []}
 
