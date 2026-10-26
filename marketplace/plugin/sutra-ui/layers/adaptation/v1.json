@@ -215,6 +215,9 @@
      "out": {
       "engines": "list"
      },
+     "or": {
+      "cannot": "dict"
+     },
      "check": "line_is_engines",
      "only_if": "adapt.source.shape"
     },

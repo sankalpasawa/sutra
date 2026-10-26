@@ -339,3 +339,192 @@ def test_a3_a_department_with_no_done_items_proposes_no_covers(j2, monkeypatch):
     ref = _dept(j2, "organic", items=[])
     _, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, {"engines": GOOD}, how="model")
     assert _covers_of(posts)["covers"] == {} and all(e["covers"] == [] for e in _covers_of(posts)["engines"])
+
+
+# ---- A8 · shape with a confidence (M6.4) ------------------------------------------------------------------------------
+def _made(name, reads, writes, covers, level=2, confidence=0.9, **more):
+    return dict({"name": name, "does": "does " + name, "reads": reads, "writes": writes, "covers": covers, "level": level,
+                 "confidence": confidence, "internet": False}, **more)
+
+
+PLAY = [_made("Play rules", "Brief", "Play rules", ["D1"]), _made("Game", "Play rules", "Live site", ["D2", "D3"], confidence=0.7,
+                                                              doubt="How often should circles appear?")]
+
+
+def _verdict_of(j2, monkeypatch, kind, out, how="model", faults=None):
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    ref = "dref-check-" + kind
+    if not j2[0].dept(ref):
+        _dept(j2, kind, ref=ref)
+    ctx = {"ref": ref, "dept": j2[0].dept(ref), "bag": {"adapt.source": {"shape": True, "source": "shaped"}}, "how": {"adapt.line": how}}
+    return v1().CHECK["line_is_engines"](ctx, {"id": "adapt.line"}, None, out)
+
+
+def test_a8_a_made_line_that_covers_every_item_with_a_level_and_a_confidence_passes(j2, monkeypatch):
+    got = _verdict_of(j2, monkeypatch, "organic", {"engines": PLAY})
+    assert got["ok"] is True, got
+
+
+@pytest.mark.parametrize("what, change, note", [
+    ("a missing level", lambda e: e[0].pop("level"), "Play rules names no level, 1 or 2"),
+    ("a level outside 1 and 2", lambda e: e[0].update(level=3), "Play rules names no level, 1 or 2"),
+    ("a missing confidence", lambda e: e[1].pop("confidence"), "Game names no confidence from 0 to 1"),
+    ("a confidence above 1", lambda e: e[1].update(confidence=1.4), "Game names no confidence from 0 to 1"),
+    ("a doubt left out below 0.8", lambda e: e[1].pop("doubt"), "Game is not sure (below 0.8) and names no doubt"),
+    ("an unknown item", lambda e: e[1].update(covers=["D2", "D3", "D9"]), "Game covers D9, which done-when does not have"),
+    ("an item nothing covers", lambda e: e[1].update(covers=["D2"]), "D3 is covered by no engine"),
+    ("covers that are no list", lambda e: e[0].update(covers="D1"), "Play rules names the items it covers as a list"),
+    ("an engine that covers nothing and feeds nothing", lambda e: e.append(_made("Extra", "Brief", "Extra", [])),
+     "Extra covers no item and feeds no engine after it"),
+    ("a level 1 off the Library", lambda e: e[0].update(level=1), "Play rules is level 1, and the Library has no engine of that name"),
+])
+def test_a8_what_j2b_4_and_j2b_6_refuse(j2, monkeypatch, what, change, note):
+    engines = json.loads(json.dumps(PLAY))
+    change(engines)
+    got = _verdict_of(j2, monkeypatch, "organic", {"engines": engines})
+    assert got["ok"] is False and note in got["notes"], (what, got)
+
+
+def test_a8_a_shipped_name_is_level_1_on_its_template_and_nowhere_else(j2, monkeypatch):
+    write = _made("Plan", "Brief", "Site plan", ["D1"], level=1, confidence=0.9)
+    pages = _made("Write", "Site plan", "Pages", ["D2"], level=1)
+    rest = _made("Notes", "Pages", "Notes", ["D3"])
+    assert _verdict_of(j2, monkeypatch, "organic", {"engines": [write, pages, rest]})["ok"] is True, "level 1 on its template stands"
+    off = _verdict_of(j2, monkeypatch, "organic", {"engines": [dict(write, writes="Other"), dict(pages, reads="Other"), rest]})
+    assert "Plan is level 1, so it keeps its Library reads (Brief) and writes (Site plan)" in off["notes"]
+    low = _verdict_of(j2, monkeypatch, "organic", {"engines": [dict(write, level=2), pages, rest]})
+    assert "Plan is an engine of the Library, so it is level 1" in low["notes"]
+    legacy = _verdict_of(j2, monkeypatch, "organic", {"engines": [write, pages, rest]}, how="offline draft")
+    assert legacy["ok"] is False and "the Library already has an engine named Plan" in legacy["notes"], "a draft is not made: the old rule"
+
+
+def test_a8_a_reshape_keeps_the_engines_the_kind_requires_at_level_1(j2, monkeypatch):
+    lib = [_made("Pages", "Brief", "Pages", ["D1", "D2"], confidence=0.9)]
+    dropped = _verdict_of(j2, monkeypatch, "website", {"engines": lib})
+    assert dropped["ok"] is False and "the plan leaves out Check, which this kind of department requires" in dropped["notes"]
+    kept = _verdict_of(j2, monkeypatch, "website", {"engines": lib + [_made("Check", "Pages", "Build", ["D3"], level=1)]})
+    assert kept["ok"] is True, kept
+    changed = _verdict_of(j2, monkeypatch, "website", {"engines": lib + [_made("Check", "Pages", "Build", ["D3"], level=2)]})
+    assert "Check is an engine of the Library, so it is level 1" in changed["notes"]
+
+
+def test_a8_cannot_passes_only_for_an_engine_the_kind_requires_and_known_items(j2, monkeypatch):
+    cannot = {"cannot": {"engine": "Check", "items": ["D2"], "why": "the game needs a script and Check refuses a page with one"}}
+    assert _verdict_of(j2, monkeypatch, "website", cannot) == {"ok": True, "notes": ["Check cannot serve D2"]}
+    other = _verdict_of(j2, monkeypatch, "website", {"cannot": dict(cannot["cannot"], engine="Write")})
+    assert other["ok"] is False and "Write is not an engine this kind of department requires" in other["notes"][0]
+    assert _verdict_of(j2, monkeypatch, "organic", cannot)["ok"] is False, "a kind that requires nothing has nothing to say cannot of"
+    assert _verdict_of(j2, monkeypatch, "website", {"cannot": dict(cannot["cannot"], items=["D9"])})["ok"] is False
+    assert _verdict_of(j2, monkeypatch, "website", {"cannot": dict(cannot["cannot"], why="")})["ok"] is False
+    assert _verdict_of(j2, monkeypatch, "website", {"cannot": "Check"})["ok"] is False
+    assert _verdict_of(j2, monkeypatch, "website", cannot, how="offline draft")["ok"] is False, "only a made answer may say cannot"
+
+
+def test_a8_the_recipe_lets_a_step_answer_cannot_alone_and_nothing_else_alone(j2):
+    R = j2[1]
+    step = R.step_def("adapt.line")[1]
+    assert step["out"] == {"engines": "list"} and step["or"] == {"cannot": "dict"}
+    assert R._fits({"cannot": {"engine": "Check"}}, step) is None
+    assert R._fits({"engines": []}, step) is None
+    assert R._fits({"cannot": "Check"}, step) == "cannot is not a dict"
+    assert R._fits({"why": "x"}, step) == "the answer has no engines"
+
+
+def test_a8_a_confident_line_goes_to_priority_with_its_confidence_and_no_doubt(j2, monkeypatch):
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    ref = _dept(j2, "organic")
+    sure = {"engines": [_made("Play rules", "Brief", "Play rules", ["D1"]), _made("Game", "Play rules", "Live site", ["D2", "D3"], confidence=0.85)]}
+    _, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, sure, how="model")
+    assert [p[:2] for p in posts] == [("Priority", "propose")]
+    sent = posts[0][2]
+    assert sent["confidence"] == 0.85 and "doubt" not in sent
+    assert [(e["level"], e["confidence"]) for e in sent["engines"]] == [(2, 0.9), (2, 0.85)]
+    assert S.validate_act("Adaptation", ["Priority"], "propose", sent) == []
+
+
+def test_a8_a_fairly_sure_line_goes_to_priority_with_the_doubt_in_its_payload_and_nobody_is_asked(j2, monkeypatch):
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    monkeypatch.setattr(v1(), "hears_doubt", lambda: True)
+    ref = _dept(j2, "organic")
+    W = j2[0]
+    out, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, {"engines": PLAY}, how="model")
+    assert [p[:2] for p in posts] == [("Priority", "propose")], "0.7 is shown, not asked"
+    assert posts[0][2]["confidence"] == 0.7 and posts[0][2]["doubt"] == "How often should circles appear?"
+    assert [a for a in W.asks(ref) if a["status"] == "pending"] == []
+
+
+def test_a8_a_line_under_0_6_is_a_doubt_to_identity_and_nothing_goes_to_priority(j2, monkeypatch):
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    monkeypatch.setattr(v1(), "hears_doubt", lambda: True)
+    ref = _dept(j2, "organic")
+    unsure = [_made("Play rules", "Brief", "Play rules", ["D1"]),
+              _made("Game", "Play rules", "Live site", ["D2", "D3"], confidence=0.45,
+                    doubt="Where should an order go? Unless you say, the form shows the order on the screen and sends nothing.")]
+    out, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, {"engines": unsure}, how="model")
+    assert [p[:2] for p in posts] == [("Identity", "inform")], "no proposal, so nothing can be registered"
+    sent = posts[0][2]
+    assert sent["word"] == "doubt" and sent["engine"] == "Game" and sent["confidence"] == 0.45 and sent["cannot"] is None
+    assert sent["doubt"] == "Where should an order go?" and sent["fallback"] == "the form shows the order on the screen and sends nothing."
+    assert S.validate_act("Adaptation", ["Identity"], "inform", sent) == []
+    assert "doubt" in out and not [p for p in j2[1].board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Priority"]]
+
+
+def test_a8_until_identity_hears_a_doubt_a_line_under_0_6_is_shown_not_dropped(j2, monkeypatch):
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    monkeypatch.setattr(v1(), "hears_doubt", lambda: False)
+    ref = _dept(j2, "organic")
+    unsure = [_made("Play rules", "Brief", "Play rules", ["D1"]), _made("Game", "Play rules", "Live site", ["D2", "D3"], confidence=0.45, doubt="Where should an order go?")]
+    _, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, {"engines": unsure}, how="model")
+    assert [p[:2] for p in posts] == [("Priority", "propose")] and posts[0][2]["doubt"] == "Where should an order go?"
+
+
+def test_a8_cannot_gives_one_conflict_with_three_typed_options(j2, monkeypatch):
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    ref = _dept(j2, "website")
+    cannot = {"cannot": {"engine": "Check", "items": ["D2"], "why": "the game needs a script and Check refuses a page with one"}}
+    out, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, cannot, how="model")
+    assert [p[:2] for p in posts] == [("Identity", "inform")], "one conflict, and no proposal"
+    sent = posts[0][2]
+    assert sent["word"] == "conflict" and sent["engines"] == [] and "Check cannot serve D2" in sent["why"]
+    assert [(o["id"], o["kind"]) for o in sent["options"]] == [("root_setup", "root_setup"), ("leave:D2", "leave"), ("stop", "stop")]
+    assert sent["options"][0]["params"] == {"words": "A guide to the night clinic"}, "Root sets it up again in the goal's words"
+    assert S.validate_act("Adaptation", ["Identity"], "inform", sent) == []
+    again, more = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, cannot, how="model")
+    assert more == [], "the same request's conflict is posted once"
+
+
+def test_a8_a_department_with_one_item_cannot_leave_it_out_and_gets_two_options(j2, monkeypatch):
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    ref = _dept(j2, "website", items=ITEMS[:1])
+    cannot = {"cannot": {"engine": "Check", "items": ["D1"], "why": "the game needs a script"}}
+    _, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, cannot, how="model")
+    assert [o["kind"] for o in posts[0][2]["options"]] == ["root_setup", "stop"]
+
+
+def test_a8_offline_keeps_the_draft_with_no_confidence_and_no_question(j2, monkeypatch):
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    ref = _dept(j2, "organic")
+    d = j2[0].dept(ref)
+    draft = v1().DRAFT["adapt_line_draft"]({"ref": ref, "dept": d}, None, None)
+    assert all("confidence" not in e and "level" not in e for e in draft["engines"])
+    assert _verdict_of(j2, monkeypatch, "organic", draft, how="offline draft")["ok"] is True
+    _, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, draft, how="offline draft")
+    assert [p[:2] for p in posts] == [("Priority", "propose")] and "confidence" not in posts[0][2] and "doubt" not in posts[0][2]
+
+
+def test_a8_a_doubt_is_split_into_the_question_and_what_happens_unless_the_owner_says():
+    split = v1().split_doubt
+    assert split("When someone pre-orders, where should the order go? Unless you say, the form shows it on the screen.") == \
+        ("When someone pre-orders, where should the order go?", "the form shows it on the screen.")
+    assert split("Where should it go?") == ("Where should it go?", None)
+    assert split("") == ("", None)
+
+
+def test_a8_the_make_shape_part_is_in_the_interface_with_its_contract_verbatim():
+    part = S.PROMPTS["adaptation"]["make"]["shape"]
+    assert part["read_by"] == "adapt.line" and set(part["fields"]) == {"task", "guidance"}
+    assert part["inputs"] == ("dept", "words", "items", "practices", "rules", "taken", "out", "refused")
+    assert part["returns"].startswith('Return ONLY a JSON object: {"engines": [{"name": str, "does": str, "reads": str, "writes": str, "covers": ["D1"], '
+                                      '"level": 1 | 2, "confidence": number, "doubt": str, "internet": bool}]}, or {"cannot": {"engine": str')
+    assert S.validate_field("adaptation", "make", "shape", "task", "Shape the line.") == []
+    assert {"act": "inform", "words": ("doubt",), "to": ("Identity",), "payload": "act.doubt"} in S.SENDS["Adaptation"]

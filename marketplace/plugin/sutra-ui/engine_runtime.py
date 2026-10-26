@@ -1620,6 +1620,9 @@ def _fits(out, step):
     if not isinstance(out, dict):
         return "the answer is not an object"
     kinds = {"str": str, "list": list, "dict": dict, "bool": bool}
+    for k, t in (step.get("or") or {}).items():
+        if k in out:                  # an answer that is one of the alternatives the step names needs none of its `out` (cannot)
+            return None if t not in kinds or isinstance(out[k], kinds[t]) else "%s is not a %s" % (k, t)
     for k, t in (step.get("out") or {}).items():
         if k not in out:
             return "the answer has no %s" % k
