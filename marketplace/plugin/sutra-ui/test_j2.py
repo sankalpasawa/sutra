@@ -966,6 +966,33 @@ def test_m4_1_root_records_the_plan_coordination_writes_its_table_and_priority_g
     assert lab["envelopes"][lab["engines"][0]]["calls"] == 8 * 30, "a work engine's limit, from Priority's template"
 
 
+def test_m4_1_on_every_kind_each_engines_first_limit_is_priority_s_grant_at_registration(j2, monkeypatch):
+    """A website or default department born with its engines' limits already written (so Priority's handler only finds
+    limits that exist, and every envelope.granted says the engine keeps the limit it holds) must fail: a department
+    that lives J2 is born with its functions' limits only, and Priority gives each engine its own when the plan that
+    names it is registered."""
+    W, R, J, _ = j2
+    web = _born(j2, settle=False)
+    assert set(W.dept(web)["envelopes"]) == set(R.FUNCTIONS), "born with the functions' limits only"
+    assert W.limit_of(W.dept(web), "Write") == R.engine_limit("Write") == {"calls": 240, "usd": 6.0}, "read as Priority gives it"
+    W.run_until_idle(web, limit=300)
+    d, _ = W.create("dref-answers", "Answers", None, kind="default")   # the default kind: one Do engine
+    d["events"] = [{"kind": "j2_ready", "route": "template"}]
+    W.save_dept(d["ref"], d)
+    J.start(d["ref"])
+    W.give_goal(d["ref"], "Answer what the science team asks about the lab rota")
+    W.run_until_idle(d["ref"], limit=300)
+    for ref, names in ((web, LINE), (d["ref"], ["Do"])):
+        granted = [e for e in J.events(ref) if e["action"] == "envelope.granted"]
+        assert [(e["recipient"], e["actor"], e["payload"]["kept"]) for e in granted] == [(n, "Priority", False) for n in names], granted
+        assert all(e["summary"] == "Priority gave %s its limit." % e["recipient"] for e in granted)
+        assert all(W.dept(ref)["envelopes"][n] == R.engine_limit(n) for n in names)
+    # a department off J2 runs the way it did before it: its engines are born with their limits
+    monkeypatch.setenv("J2_FLOW_V1", "0")
+    off = W.create("dref-off", "Off", None, kind="website")[0]
+    assert all(W.dept(off["ref"])["envelopes"][n] == R.engine_limit(n) for n in LINE)
+
+
 def test_m4_1_an_engine_that_holds_a_limit_keeps_it_and_the_ledger_says_so(j2):
     """Priority's handler overwriting the owner's own limit must fail."""
     W, R, J, _ = j2
@@ -990,6 +1017,29 @@ def test_m4_1_an_engine_the_owner_stamped_joins_the_line_by_coordination_and_its
     assert W.dept(ref)["envelopes"]["Do"] == {"calls": 240, "usd": 6.0}
     grown = [e for e in J.events(ref) if e["action"] == "timetable.written" and e["payload"].get("grown") == "Do"]
     assert len(grown) == 1 and grown[0]["actor"] == "Coordination"
+
+
+def test_m4_1_a_born_word_on_the_board_that_names_no_engine_changes_nothing(j2):
+    """The fixed trigger 'an engine is born', posted on the board with nothing in it (Identity may inform Coordination
+    and Priority), emptying the line, leaving every engine out or touching a limit must fail. A born post that names
+    engines is read from its payload, and only the department's own engines count (born_item)."""
+    W, R, J, _ = j2
+    ref = _born(j2)
+    path = W.ddir(ref) / "coordination.json"
+    before, envs = W._read(path, None), dict(W.dept(ref)["envelopes"])
+    assert before["line"] == LINE
+    R.post(ref, "Identity", ["Coordination"], "inform", {"word": "born"})
+    R.post(ref, "Identity", ["Priority"], "inform", {"word": "born"})
+    W.run_until_idle(ref, limit=50)
+    heard = [r for r in R.step_rows(ref) if r["step"] in ("coord.table", "priority.grant") and r.get("mode") != "gate"]
+    assert sorted(r["engine"] for r in heard) == ["Coordination", "Priority"], "both handlers ran from the board"
+    assert W._read(path, None) == before, "the table is not written"
+    assert W.dept(ref)["envelopes"] == envs and R.coordination(ref)["line"] == LINE
+    # a born post that names engines is read from its payload; a name that is not the department's is not taken
+    R.post(ref, "Identity", ["Coordination"], "inform", {"word": "born", "engines": ["Plan", "Write", "Check", "Nobody"], "version": 1})
+    W.run_until_idle(ref, limit=50)
+    t = W._read(path, None)
+    assert (t["by"], t["line"], [r["engine"] for r in t["left_out"]]) == ("Coordination", ["Plan", "Write", "Check"], ["Publish"])
 
 
 def _sm3(W, R, ref, j5=()):
@@ -1165,6 +1215,48 @@ def test_m4_4_a_plan_without_check_is_refused_by_roots_check(j2):
     bad = dict(R.defs())
     bad["kinds"] = dict(bad["kinds"], website=dict(bad["kinds"]["website"], required=["Nobody"]))
     assert "kinds, website: required names engines of its own line" in R.validate(bad)
+
+
+def test_m4_4_a_refused_website_plan_registers_on_the_next_proposal_with_check_in_it(j2, monkeypatch):
+    """Reshaping a website's refused plan (a shaped line is made of names new to the Library, so it can never carry
+    Check, and is refused for the same fault until the cycle blocks) must fail: Adaptation takes the Library's line
+    again, with Check, and it registers."""
+    W, R, J, _ = j2
+    ref = _born(j2)
+    d = W.dept(ref)
+    seen = len(J.events(ref))
+    R._j2_settle(ref, d, [{"name": n} for n in ("Plan", "Write", "Publish")], "library", d.get("goal"), "a test")
+    W.run_until_idle(ref, limit=300)
+    after = J.events(ref)[seen:]
+    assert [e["action"] for e in after].count("workflow.blocked") == 1, "refused once, and once only"
+    assert [e["payload"]["source"] for e in after if e["action"] == "proposal.created"] == ["library"]
+    assert W.dept(ref)["workflows"][-1]["engines"] == LINE and J.status(ref)["state"] == "running"
+    assert R.coordination(ref)["line"] == LINE
+    # Root's check refuses a website's first plan for another reason: the next proposal is the Library's again, and it
+    # registers with Check in it (it was blocked after three shaped tries before)
+    real, calls = R._root_check, {"n": 0}
+
+    def check(ref, d, engines, source):
+        calls["n"] += 1
+        return ["the line reaches outside without a rule"] if calls["n"] == 1 else real(ref, d, engines, source)
+    monkeypatch.setattr(R, "_root_check", check)
+    other = _born(j2, org="Refused Co")
+    acts = _actions(J, other)
+    assert acts.count("workflow.blocked") == 1 and "workflow.registered" in acts and J.status(other)["state"] != "blocked"
+    assert [e["payload"]["source"] for e in J.events(other) if e["action"] == "proposal.created"] == ["library", "library"]
+    assert W.dept(other)["workflows"][-1]["engines"] == LINE
+    # the repair route itself: the Library's line, without a name the Library has no engine for, the required one put
+    # back at its place on the kind's line; none for a kind that requires nothing
+    assert R._library_repair({"kind": "website"}, ["Plan", "Nobody Knows", "Write", "Publish"]) == LINE
+    assert R._library_repair({"kind": "organic"}, ["Facts"]) is None
+    # a record without the required engine: the Library's line brings it back, and Adaptation brings it onto the record
+    third = _born(j2, org="Thin Co", settle=False)
+    rec = W.dept(third)
+    rec["engines"] = ["Plan", "Write", "Publish"]
+    W.save_dept(third, rec)
+    W.run_until_idle(third, limit=300)
+    assert W.dept(third)["workflows"][-1]["engines"] == LINE and W.dept(third)["engines"] == LINE
+    assert any(r["engine"] == "Adaptation" and "Check" in str(r.get("what")) for r in W.runs(third) if r.get("system"))
 
 
 def test_m4_4_a_counter_that_drops_check_goes_to_identity_as_a_conflict(j2, monkeypatch):

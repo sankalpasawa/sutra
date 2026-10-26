@@ -35,7 +35,8 @@ Named claims:
   F12 Coordination's own state from the record (PRD M4.5): one timetable row per engine of the line, each with its slot
       and where it stands; a waiting engine names what it waits for ('Pages v2 is not filed yet'); who makes and who
       reads each thing, on a website and an organic line; a tie Coordination's AI broke ('Coordination chose Write
-      first'); the engines the plan left out; every row stopped where it was on a stopped department; and nothing written
+      first'); the engines the plan left out; every row stopped where it was on a stopped department; and nothing written;
+      before Root's check no timetable at all, so the pane says 'No plan yet' (S7, Empty)
   F13 the engine card's read (PRD M4.7, S17): its place in the timetable, the motor's facts and one row for each of
       the five, the function that holds it saying so; served with the engine route
 
@@ -407,7 +408,9 @@ def test_f7_every_node_carries_its_last_act_and_spend(mods):
     W, R, J, F = mods
     got = F.functions(REF)
     nodes = {n["name"]: n for n in got["functions"]}
-    assert nodes["Priority"]["last"]["what"] == "gave each engine its limit", "the record's words, in the owner's"
+    # a department that lives J2 is born with its functions' limits; each engine is given its own when the plan that
+    # names it is registered (PRD M4.1), so the birth run says so
+    assert nodes["Priority"]["last"]["what"] == "gave each function its limit", "the record's words, in the owner's"
     assert 0 <= nodes["Priority"]["spend"]["share"] <= 1 and nodes["Priority"]["spend"]["calls_limit"] > 0
     assert "what Adaptation did" in got["not_recorded"]
 
@@ -1338,6 +1341,25 @@ def test_f12_a_tie_coordination_broke_and_what_the_plan_left_out_are_on_its_reco
     assert (tie["said"], tie["why"], tie["today"]) == ("Coordination chose Write first", "the pages wait on it", True)
     chain = F.coordination(ref)["chain"]
     assert chain["of"] == "Brief v1" and chain["limit"] == W.CHAIN_LIMIT and 0 < chain["share"] <= 1
+
+
+def test_f12_before_roots_check_there_is_no_timetable_and_the_pane_says_no_plan_yet(mods, born, tmp_path):
+    """S7, Empty: a website whose plan nobody registered yet, its born table holding the kind's line, read as a
+    timetable of four waiting engines ('waits: Brief v1 is not filed yet') must fail; the pane says 'No plan yet'."""
+    W, R, J, F = mods
+    ref = born(WEBSITE, "Acme Learning", settle=False)
+    t = W._read(W.ddir(ref) / "coordination.json", None)
+    assert (t["by"], t.get("registered"), t["line"]) == ("born", None, ["Plan", "Write", "Check", "Publish"]), "the born table holds the line"
+    c = F.coordination(ref)
+    assert (c["timetable"], c["holds"], c["left_out"]) == ([], [], []) and set(c) == set(F.COORDINATION_FIELDS)
+    assert F.function(ref, "coordination")["j2"]["timetable"] == []
+    assert F.engine_card(ref, "Plan")["head"]["word"] == "no plan yet"
+    if shutil.which("node") is not None:
+        rest = _panes(tmp_path, _reads(W, ref))["coordination"]["rest"]
+        assert "No plan yet" in rest and "is not filed yet" not in rest, rest[:600]
+    # Root registers the plan: Coordination's timetable is its line again
+    W.run_until_idle(ref, limit=300)
+    assert W.dept(ref)["workflows"] and [r["engine"] for r in F.coordination(ref)["timetable"]] == ["Plan", "Write", "Check", "Publish"]
 
 
 def test_f12_the_coordination_read_writes_nothing_and_never_calls_the_model(mods, born, monkeypatch):

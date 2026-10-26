@@ -1477,6 +1477,40 @@ test("M1.5: a department with no plan yet shows its Brief and one quiet line", a
   const [, html] = await mapWith({ map: m, fv: fvOf({ cycle: { state: "adapting", step: 2, says: "Proposing the work" } }) });
   assert.ok(/<g class="n work done" data-wbart="brief"/.test(html) && /<div class="o2quiet dpq">No plan yet<\/div>/.test(html));
 });
+/* PRD M4.2 (round 1, gap 7): an engine the registered plan left out stays on the record and never runs. The Map drew it
+   on the line of work all the same (Build -> Publish -> Live site), with no word saying so; map_view's in_line and its
+   slot in the timetable were read by no screen. Now the line is the plan's, the left-out engine sits under it, muted,
+   with the words "left out", on the picture and on the narrow list, and an engine's hover names its slot. */
+test("M4.2: the Map leaves an engine the plan left out off the line, says it is left out, and hovers each engine's slot", async () => {
+  const m = rtMap({ versions: { "Brief": 1, "Site plan": 1, "Pages": 1, "Build": 1, "Live site": 0 } }); m.live = false;
+  m.engines.forEach(e => { e.in_line = e.name !== "Publish"; e.timetable = e.in_line ? { engine: e.name, on: "after " + e.reads + " v1", window_min: 15 } : null; });
+  m.engines[3].state = "Left out";
+  const [c, html] = await mapWith({ map: m, fv: fvOf({}) });
+  const svg = html.slice(html.indexOf("<svg"), html.indexOf("</svg>"));
+  const onLine = (svg.match(/<g class="n eng (?!out)[^"]*" data-wbengine="(\w+)"/g) || []).map(x => /"(\w+)"$/.exec(x)[1]);
+  assert.deepStrictEqual(onLine, ["Plan", "Write", "Check"], "the line is the plan's");
+  assert.strictEqual((svg.match(/<path class="e( flow)?" marker-end/g) || []).length, 6, "Brief, three engines and what each writes: six hand-offs");
+  assert.ok(!/<text x="8" y="17">Live site<\/text>/.test(svg), "what only the left-out engine makes is not on the line");
+  assert.ok(/<g class="n eng out" data-wbengine="Publish" transform="translate\(105,304\)"><circle class="bx" r="8"\/><text x="16" y="4">Publish · left out<\/text><title>Publish · left out of the plan<\/title><\/g>/.test(svg),
+    "under the line, muted, with its word");
+  assert.ok(/<title>Plan · engine · after Brief v1<\/title>/.test(svg) && /<title>Check · engine · after Pages v1<\/title>/.test(svg), "the hover names its slot");
+  const cards = /<div class="wb2cards wb">([\s\S]*)$/.exec(html)[1];
+  const work = cards.slice(cards.indexOf('<div class="dpk">Work</div>'), cards.indexOf('<div class="dpk">Knows</div>'));
+  assert.ok(/data-wbengine="Check"[\s\S]*data-wbart="build"[\s\S]*<button type="button" class="wb2card wb" data-wbengine="Publish"><span class="dpdot off"><\/span><b>Publish<\/b><span class="dpchk">left out<\/span><\/button>/.test(work),
+    "the narrow list: after the line, a word with the dot");
+  assert.ok(/\.wb2map \.n\.out \.bx\{[^}]*var\(--line-soft\)/.test(css) && /\.wb2map \.n\.out text\{fill:var\(--faint\)\}/.test(css), "muted, by tokens");
+  click(c, { wbengine: "Publish" });
+  assert.strictEqual(vm.runInContext("S.wb.tab['r3']", c) + ":" + vm.runInContext("S.wb.sel['r3']", c), "engine:Publish", "a click opens its card");
+  /* with no plan registered (or the first build) map_view says nothing of in_line, and every engine is on the line */
+  const [, all] = await mapWith({ fv: fvOf({}) });
+  assert.deepStrictEqual((all.match(/<g class="n eng [^"]*" data-wbengine="(\w+)"/g) || []).map(x => /"(\w+)"$/.exec(x)[1]), ["Plan", "Write", "Check", "Publish"]);
+  assert.ok(!/class="n eng out"|left out/.test(all));
+  /* the first design's flow takes the same line */
+  const old = await opened({ map: m });
+  click(old, { wbtab: "map" });
+  const flow = view(old);
+  assert.ok(/data-wbengine="Check"/.test(flow) && !/class="wbeng wb" data-wbengine="Publish"/.test(flow) && /<div class="dpchk">Left out of the plan: Publish<\/div>/.test(flow), "the first design too");
+});
 
 test("M1.6: on the runtime the list's function rows read the same functions read as the Map; the first build's stay bare", async () => {
   const fv = fvOf({ states: { Identity: "waiting_on_you", Coordination: "working" } });
@@ -2315,6 +2349,35 @@ test("S17: the engine card carries its head on every tab, the motor folded in, a
   const old = await opened({ engine: { card: cardOf() } });
   click(old, { wbengine: "Write" }); view(old); await sleep(); await sleep();
   assert.ok(/<h3>In its slot<\/h3>/.test(view(old)) && !/wbenghead|With the five functions/.test(view(old)));
+});
+
+/* PRD M4.7 (round 1, gap 8): only the list's Motor row had gone; the Map's Record box and every box of a thing not made
+   yet still opened the Motor screen, and the viewer still served it on the runtime. Now no Map target is the Motor: the
+   Record opens the last thing filed (the Chat while nothing is), a thing not made yet the card of the engine that makes
+   it (the Brief, which the owner's words make, the Chat), and the runtime's viewer never draws a Motor screen. */
+test("S17: on the runtime the Map emits no Motor target, and the viewer serves no Motor screen", async () => {
+  let [c, html] = await mapWith({ map: rtMap({ live: false, versions: { "Brief": 1, "Site plan": 1, "Pages": 0, "Build": 0, "Live site": 0 } }), fv: fvOf({}) });
+  assert.ok(!/data-wbtab="motor"/.test(html), "no Motor target on the picture or the narrow list");
+  assert.ok(/<g class="n" data-wbart="site-plan" transform="[^"]*"><rect class="bx"[^>]*\/><text x="10" y="20">Record<\/text>/.test(html), "the Record opens the last thing filed");
+  assert.ok(/<g class="n work" data-wbengine="Write" transform="[^"]*"><rect class="bx"[^>]*\/><text x="8" y="17">Pages<\/text>[\s\S]*?<title>Pages · not made yet · Write makes it<\/title>/.test(html), "not made yet: the engine that makes it");
+  assert.ok(/<g class="n work" data-wbengine="Publish" transform="[^"]*"><rect class="bx"[^>]*\/><text x="8" y="17">Live site<\/text>/.test(html));
+  const cards = /<div class="wb2cards wb">([\s\S]*)$/.exec(html)[1];
+  assert.ok(/<button type="button" class="wb2card wb" data-wbengine="Write"><span class="dpdot off"><\/span><b>Pages<\/b><span class="dpchk">not made yet<\/span><\/button>/.test(cards), "the narrow list goes the same way");
+  click(c, { wbengine: "Write" });
+  assert.strictEqual(vm.runInContext("S.wb.tab['r3']", c) + ":" + vm.runInContext("S.wb.sel['r3']", c), "engine:Write", "a click opens the engine's card");
+  /* nothing filed: the Record and the Brief open the Chat, where the owner's words make it */
+  [, html] = await mapWith({ map: rtMap({ live: false, versions: { "Brief": 0, "Site plan": 0, "Pages": 0, "Build": 0, "Live site": 0 } }), fv: fvOf({}) });
+  assert.ok(!/data-wbtab="motor"/.test(html));
+  assert.ok(/<g class="n" data-wbtab="chat" transform="[^"]*"><rect class="bx"[^>]*\/><text x="10" y="20">Record<\/text>/.test(html), "the Record, with nothing filed");
+  assert.ok(/<g class="n work" data-wbtab="chat" transform="[^"]*"><rect class="bx"[^>]*\/><text x="8" y="17">Brief<\/text>[\s\S]*?<title>Brief · not made yet · your words make it<\/title>/.test(html), "the Brief");
+  /* a Motor tab left from the first build, or set by hand, is not served on the runtime */
+  vm.runInContext("S.wb.tab['r3'] = 'motor'; dpS().tab['r3'] = 'now';", c);
+  const v = view(c);
+  assert.ok(!/<h3>It only reads<\/h3>|<h3>What it does each tick<\/h3>/.test(v) && vm.runInContext("S.wb.tab['r3']", c) !== "motor", "no Motor screen on the runtime");
+  /* the first build keeps its Motor screen (W7) */
+  const old = await opened();
+  click(old, { wbtab: "motor" });
+  assert.ok(/<h3>What it does each tick<\/h3>/.test(view(old)), "the first build's Motor stays");
 });
 
 Promise.all(pending).then(() => {

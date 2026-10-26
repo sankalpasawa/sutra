@@ -316,6 +316,17 @@ def priority_template():
     return dict(((engine_def("Priority") or {}).get("template") or {}).get("envelope") or {})
 
 
+def engine_limit(name):
+    """The limit Priority gives an engine, a day, from its template, and the one place its shape is named (PRD M4.1; the
+    layer schema binds it): {calls, usd}; a work engine is given work_calls times the calls, since its steps are a call
+    each; a function the calls; the money is the same."""
+    t = priority_template()
+    base = {"calls": int(t.get("calls", W.ENVELOPE["calls"])), "usd": float(t.get("usd", W.ENVELOPE["usd"]))}
+    if (engine_def(name) or {}).get("kind") == "work":
+        return {"calls": int(t.get("work_calls", 8)) * base["calls"], "usd": base["usd"]}
+    return base
+
+
 def all_steps(name):
     e = engine_def(name) or {}
     out, seen = [], set()
@@ -1987,7 +1998,7 @@ def _rule_applies_to_birth(rule):
 def priority_envelope(ctx, step, item):
     ref, name, slot = ctx["ref"], ctx["engine"], ctx["slot"]
     calls, usd = W._today_spend(ref, name)
-    env = (ctx["dept"].get("envelopes") or {}).get(name) or W.ENVELOPE
+    env = W.limit_of(ctx["dept"], name)
     if calls >= env.get("calls", 0) or usd >= env.get("usd", 0):
         if not any(x.get("kind") == "envelope" and x.get("engine") == name and x["status"] == "pending" for x in W.asks(ref)):
             W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "envelope", "engine": name, "slot": slot,
@@ -3244,7 +3255,7 @@ def priority_read(ctx, step, item):
                 "facts": {"word": "line", "room": 1 <= len(names) <= limit}}
     eng = pl.get("engine") or "Write"
     calls, _ = W._today_spend(ctx["ref"], eng)
-    env = (ctx["dept"].get("envelopes") or {}).get(eng) or W.ENVELOPE
+    env = W.limit_of(ctx["dept"], eng)
     return {"word": pl.get("word"), "engine": eng, "facts": {"word": pl.get("word"), "room": calls * 2 < int(env.get("calls") or 0)}}
 
 
@@ -4017,10 +4028,41 @@ def set_line(ref, engines, version=None, full=True):
     return _put_table(ref, t, "the plan Root registered")
 
 
+#: what the word born carries to the two handlers that keep it (PRD M4.1; the layer schema binds it, and this is the one
+#: place its shape is named): a plan Root registered, {engines, version, full}, or an engine the owner stamped, {grow,
+#: before}. A born word that names no engine changes nothing.
+BORN_FIELDS = ("engines", "version", "full", "grow", "before")
+
+
+def born_item(ctx, item=None):
+    """What an engine born says to the handler that keeps it, in BORN_FIELDS: the item it was run in place with (Root's
+    registration, the owner's stamp), else the payload of the post that woke it on the board. From the board it names
+    only engines on the department's record. Empty when it names no engine, so a stray born word writes nothing."""
+    post_ = (ctx.get("post") or {}) if item is None else {}
+    src = item if item is not None else (post_.get("payload") or {})
+    if not isinstance(src, dict):
+        return {}
+    out = {k: src[k] for k in BORN_FIELDS if k in src and src[k] is not None}
+    names = [str(n) for n in out.get("engines") or [] if n] if isinstance(out.get("engines"), list) else []
+    grow = str(out.get("grow") or "").strip()
+    if item is None:                                   # a post on the board: the department's own engines, never another's
+        mine = set((ctx.get("dept") or W.dept(ctx["ref"]) or {}).get("engines") or [])
+        names, grow = [n for n in names if n in mine], (grow if grow in mine else "")
+    out.update({"engines": names})
+    if grow:
+        out["grow"] = grow
+    else:
+        out.pop("grow", None)
+    return out if names or grow else {}
+
+
 def coord_table(ctx, step, item):
     """Coordination's handler for an engine born: a registered plan sets the line (`item` {engines, version}); an engine
-    the owner stamped grows it (`item` {grow, before}). Its table is written by Coordination and by nobody else."""
-    item, J = item or {}, _j2()
+    the owner stamped grows it (`item` {grow, before}). Run in place or from the board (born_item); a born word that
+    names no engine writes nothing. Its table is written by Coordination and by nobody else."""
+    item, J = born_item(ctx, item), _j2()
+    if not item:
+        return {"said": "nothing to do: the word born names no engine"}
     if item.get("grow"):
         t = grow_line(ctx["ref"], item["grow"], item.get("before"))
         said = "added %s to the line: %s" % (item["grow"], " -> ".join(t["line"]))
@@ -4034,22 +4076,20 @@ def coord_table(ctx, step, item):
 
 def priority_grant(ctx, step, item):
     """Priority's handler for an engine born: each new engine is given its limit, from Priority's template (a
-    work engine work_calls times the calls, as at birth); one that already holds a limit (the one it was born with, or
-    the owner's own) keeps it. Each is on the ledger, by Priority. `item` is {engines, version}."""
-    ref, item = ctx["ref"], item or {}
-    names = [str(n) for n in item.get("engines") or [] if n]
+    work engine work_calls times the calls: engine_limit); one that already holds a limit (the owner's own, or one a
+    department off J2 was born with) keeps it. Each is on the ledger, by Priority. `item` is {engines, version}, run in place or from the
+    board (born_item); a born word that names no engine gives nothing."""
+    ref, item = ctx["ref"], born_item(ctx, item)
+    names = list(item.get("engines") or [])
     if not names:
         return {"said": "no new engine to give a limit"}
-    t = priority_template()
-    base = {"calls": int(t.get("calls", W.ENVELOPE["calls"])), "usd": float(t.get("usd", W.ENVELOPE["usd"]))}
     given = []
     with W._lock(ref):
         d = W.dept(ref) or {}
         envs = d.setdefault("envelopes", {})
         for n in names:
             if not isinstance(envs.get(n), dict):
-                work = (engine_def(n) or {}).get("kind") == "work"
-                envs[n] = {"calls": int(t.get("work_calls", 8)) * base["calls"] if work else base["calls"], "usd": base["usd"]}
+                envs[n] = engine_limit(n)
                 given.append(n)
         if given:
             W.save_dept(ref, d)
@@ -4447,12 +4487,39 @@ def _line_request(ref, d, words, thread=None, faults=None):
                  "boundaries": "nothing runs before Priority grants it and Root registers it", "for": thread, "faults": list(faults or [])})
 
 
+def _library_repair(d, lib):
+    """The line a kind that requires engines goes back to when Root's check sends a plan back (PRD M4.4): the Library's
+    line again, without a name the Library has no engine for, and with each engine the kind requires put in at its
+    place on the kind's line. A shaped line is made of names new to the Library, so it can never carry the engine the
+    kind requires, and reshaping would be refused for the same fault every time. None for a kind that requires no
+    engine, or when the Library itself has no engine the kind requires."""
+    req = required_engines(d)
+    if not req:
+        return None
+    work = {n for n, e in defs()["engines"].items() if (e or {}).get("kind") == "work"}
+    line = [n for n in lib if n in work]
+    kind = list(((defs().get("kinds") or {}).get((d or {}).get("kind") or "website") or {}).get("line") or [])
+    for r in req:
+        if r in line:
+            continue
+        if r not in work:
+            return None
+        after = kind[kind.index(r) + 1:] if r in kind else []
+        nxt = next((n for n in line if n in after), None)
+        line.insert(line.index(nxt) if nxt else len(line), r)
+    return line
+
+
 def adapt_source(ctx, step, item):
     """Where the proposal comes from (J2.b): the Library's template when the department's kind has one, else Adaptation
-    shapes the line itself. A line Root's check refused is shaped again, whatever its first source was."""
+    shapes the line itself. A line Root's check refused is shaped again, whatever its first source was, unless the
+    kind requires engines: then it is the Library's line again, with the engines the kind requires (_library_repair)."""
     d, pl = ctx["dept"], ctx["post"]["payload"]
     lib = list(d.get("engines") or (W.KINDS.get(d.get("kind") or "website") or {}).get("line") or [])
-    shape = bool(pl.get("faults")) or not lib
+    repair = _library_repair(d, lib) if pl.get("faults") else None
+    if repair:
+        lib = repair
+    shape = (bool(pl.get("faults")) and not repair) or not lib
     engines = []
     if not shape:
         known = defs()["engines"]
@@ -4460,8 +4527,9 @@ def adapt_source(ctx, step, item):
             e = known.get(n) or {}
             engines.append({"name": n, "does": str(e.get("description") or e.get("use_case") or ""), "reads": e.get("reads") or "Brief",
                             "writes": e.get("writes") or n, "internet": False})
+    took = "takes the Library's line again, with what its kind requires (%s): " % _names(required_engines(d)) if repair else "takes the Library's line: "
     return {"shape": shape, "source": "shaped" if shape else "library", "engines": engines,
-            "said": "shapes the line from the goal" if shape else "takes the Library's line: " + " -> ".join(lib)}
+            "said": "shapes the line from the goal" if shape else took + " -> ".join(lib)}
 
 
 def _line_proposal(ref, thread):
@@ -4559,7 +4627,17 @@ def _j2_settle(ref, d, engines, source, words, by):
         return {"said": "Root's check sent the workflow back %d times; the owner is told" % n}
     added, lost = [], []
     if source == "library":
-        added = names
+        added = list(names)
+        # an engine the Library's line brought back that is not on the record (a required one, PRD M4.4) is Adaptation's
+        # to bring in, as a shaped one is; Root only records the plan (S-10)
+        mine = list((W.dept(ref) or {}).get("engines") or [])
+        for n in [n for n in names if mine and n not in mine]:
+            try:                                           # at its place in the plan: before the next one the record has
+                W.add_engine(ref, n, by=by, registered=True, before=next((x for x in names[names.index(n) + 1:] if x in mine), None))
+                mine = list((W.dept(ref) or {}).get("engines") or [])
+            except Exception as exc:  # noqa: BLE001 -- the owner hears which engine could not be brought in
+                added.remove(n)
+                lost.append("%s (%s)" % (n, exc))
     else:
         for e in engines:
             try:
@@ -5815,10 +5893,9 @@ def steps_view(ref, name):
     if name == "Priority":
         # the limits, engine by engine: born from Priority's template, set by the owner on this card
         d = W.dept(ref) or {}
-        envs = d.get("envelopes") or {}
         view["limits"] = []
         for n in [x[0] for x in W.engines_of(d)] + list(W.SYSTEMS):
-            env = envs.get(n) or W.ENVELOPE
+            env = W.limit_of(d, n)
             calls, usd = W._today_spend(ref, n)
             view["limits"].append({"engine": n, "calls": int(env.get("calls", 0)), "usd": float(env.get("usd", 0.0)),
                                    "used_calls": calls, "used_usd": round(usd, 3)})

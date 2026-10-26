@@ -31,6 +31,7 @@ BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priori
                  ("Grant, refuse or counter", "Say yes, ask for less, or say no"),
                  ("grants each engine its envelope", "gives each engine its limit"),
                  ("granted an envelope to each engine", "gave each engine its limit"),
+                 ("granted an envelope to each function", "gave each function its limit"),
                  ("Granted within the envelope.", "Said yes within the limit."),
                  # Root's check, and what Identity tells the owner of it (round 2, gap 4): a plan sent back, never refused
                  ("Root's check refused the workflow", "Root's check sent the plan back"),
