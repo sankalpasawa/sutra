@@ -719,13 +719,14 @@ function dpAdaptationCard(a){
   return body + offer;
 }
 
-/* Priority: what it took on, in the order it took it, under one ceiling. */
+/* Priority: what it admitted, under one ceiling. Priority prices and holds; it never orders (S-05, PRD M4.6), so its
+   card names the rows it said yes to, never a queue or what runs next: who goes first is Coordination's. */
 function dpPriorityCard(p){
   const q = p.queue || [], born = p.births || [];
   const budget = dpBudgetHtml(p.budget);
-  if (!q.length && !born.length && !(p.budget && p.budget.running_at_once != null)) return dpQuiet("Nothing in the queue");
+  if (!q.length && !born.length && !(p.budget && p.budget.running_at_once != null)) return dpQuiet("Nothing admitted yet");
   let body = "";
-  if (q.length) body += dpCard("Queue", q.map(r => dpRunRow(r.next,
+  if (q.length) body += dpCard("Admitted", q.map(r => dpRunRow(r.next,
     [r.runs_as ? "Runs as " + r.runs_as : "", dpWhenMs(r.when_ms)].filter(Boolean).join(" · "),
     "ok")).join(""));
   if (born.length) body += dpCard("Runs", dpBirthRows(born, "First row admitted: "));

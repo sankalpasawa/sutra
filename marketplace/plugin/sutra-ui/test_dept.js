@@ -1018,12 +1018,14 @@ test("S40: the offer opens the Org screen's own write-it sheet and posts nothing
 });
 
 /* ── S41 / A14: Priority ── */
-test("S41/A14: Priority shows the queue — next, what it runs as, when — and one budget bar", () => {
+test("S41/A14: Priority shows what it admitted — each row, what it runs as, when — and one budget bar", () => {
   const c = fresh();
   const html = fnCard(c, "priority", PRIORITY);
   assert.ok(html.indexOf("<b>Priority</b>") !== -1);
-  assert.ok(html.indexOf("Queue") !== -1 && html.indexOf("Budget") !== -1);
-  assert.ok(html.indexOf("Land the department screen") !== -1, "next");
+  assert.ok(html.indexOf("<h3>Admitted</h3>") !== -1 && html.indexOf("Budget") !== -1);
+  /* PRD M4.6 (S-05): Priority prices and holds and never orders, so its card has no queue and no next */
+  assert.ok(html.indexOf("Queue") === -1 && !/\bqueue\b|\bnext\b/i.test(html.replace(/<[^>]*>/g, " ")), "nothing on Priority's card says it orders");
+  assert.ok(html.indexOf("Land the department screen") !== -1, "the row it admitted");
   assert.ok(html.indexOf("Runs as claude-opus-5 · ") !== -1, "what it runs as, and when");
   assert.ok(html.indexOf("Land the list column") !== -1, "the row behind it");
   assert.strictEqual((html.match(/class="dpbar"/g) || []).length, 1, "the budget is ONE bar");
@@ -1033,10 +1035,10 @@ test("S41/A14: Priority shows the queue — next, what it runs as, when — and 
   assert.ok(!/>\s*\d+\s*</.test(html), "A28: no raw count at rest");
 });
 
-test("S41/A11: a department with no queue and no budget reading is one quiet line", () => {
+test("S41/A11: a department with nothing admitted and no budget reading is one quiet line", () => {
   const c = fresh();
   const html = fnCard(c, "priority", EMPTY.priority);
-  assert.ok(html.indexOf("Nothing in the queue") !== -1);
+  assert.ok(html.indexOf("Nothing admitted yet") !== -1 && html.indexOf("queue") === -1, "price-and-hold words (PRD M4.6)");
   assert.strictEqual((html.match(/o2quiet dpq/g) || []).length, 1, "one line, not two");
   assert.ok(html.indexOf("dpbar") === -1, "A11: no reading is not a bar at zero");
 });
@@ -1137,7 +1139,7 @@ test("S44: switching one function's chat mode leaves the others alone", () => {
 
 /* ── S45: the empty states, one quiet line each ── */
 test("S45: a department with nothing anywhere says one quiet line per function", () => {
-  const lines = { adaptation: "Nothing to change yet", priority: "Nothing in the queue",
+  const lines = { adaptation: "Nothing to change yet", priority: "Nothing admitted yet",
                   coordination: "Nothing held", audit: "No check has run here" };
   for (const [tab, label] of FUNCS.slice(1)){
     const c = fresh();
@@ -1512,7 +1514,7 @@ test("S32/A29: the word charter reaches no function card, and every screen word 
     all += fnCard(fresh(), tab, EMPTY[tab]);
   }
   assert.strictEqual(all.toLowerCase().indexOf("charter"), -1, "A29: never on a card");
-  for (const w of ["Adaptation", "Priority", "Coordination", "Audit", "Queue", "Budget",
+  for (const w of ["Adaptation", "Priority", "Coordination", "Audit", "Admitted", "Budget",
                    "Locks", "Checks", "Chat", "Recent"]) {
     assert.ok(all.indexOf(w) !== -1, "missing screen word: " + w);
   }
@@ -1956,7 +1958,7 @@ test("S75/A23: a birth alone is enough to fill a card that is otherwise empty", 
   assert.ok(a.indexOf("Nothing to change yet") === -1);
   const p = fnCard(fresh(), "priority", Object.assign({}, EMPTY.priority, { births: BIRTHS }));
   assert.ok(p.indexOf("First row admitted: Nightly sweep") !== -1);
-  assert.ok(p.indexOf("Nothing in the queue") === -1);
+  assert.ok(p.indexOf("Nothing admitted yet") === -1);
 });
 
 /* ── S76 / A33: the empty department ── */
@@ -1998,7 +2000,7 @@ test("S76/A33: an empty department still shows all six groups, one quiet line ea
 
 test("S76/A33: every card of an empty department is exactly one quiet line", () => {
   const want = { now: "Nothing waiting on you", adaptation: "Nothing to change yet",
-                 priority: "Nothing in the queue", coordination: "Nothing held",
+                 priority: "Nothing admitted yet", coordination: "Nothing held",
                  audit: "No check has run here", engines: "No engines here",
                  filed: "Nothing filed yet", people: "No people yet" };
   for (const tab of Object.keys(want)) {
