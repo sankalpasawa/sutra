@@ -3,9 +3,19 @@
 Its recipe is v1.json beside it: the Priority engine object, moved byte for byte from engine_defs/website.json in wave 0.
 Every code, prompt, draft and check name the recipe uses is registered below. A name is registered by reference to
 engine_runtime's own body until the body moves here (move on touch: the body is copied into this module to be changed,
-and engine_runtime's copy stays until W3-PROOF deletes the dead copies). WORDS and LAYOUT are empty, so its prompts are
-still read from the .md bundle. view() returns the pane's read model by reference.
+and engine_runtime's copy stays until W3-PROOF deletes the dead copies).
+
+What moved (M5.3: Priority prices from observed spend). priority_read estimates what a proposal would cost as the median
+of what each engine's finished runs spent, with a prior for an engine with no runs, and reads the room actually left
+today; p_priority_bargain tells the agent both; d_priority_bargain, the offline answer, is the same arithmetic;
+priority_post answers and keeps one price row per answer; price_is_observed holds the answer to the facts. WORDS and
+LAYOUT are empty, so its prompts are still read from the .md bundle. view() is functions_view's pane plus the prices.
 """
+import math
+import re
+import statistics
+import uuid
+
 from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests reload engine_runtime, so never a module object
 
 LAYER = 'priority'
@@ -18,9 +28,261 @@ SAID = {'accept': 'said yes', 'counter': 'asked for less', 'reject': 'said no'}
 ANSWERS = tuple(SAID)
 
 
+#: a run that finished is one that spent what it spent: its work ended ok or failed. A skipped run did no work, so it
+#: says nothing of what the work costs.
+FINISHED = ('ok', 'failed')
+#: the prior's price of one model call, when Priority's template names none (v1.json: template.call_usd)
+CALL_USD = 0.04
+#: an engine shaped on the fly is born from Do (R.born_template), so until it has run it is priced as Do is
+PRIOR_ENGINE = 'Do'
+#: which proposal a price row is for; any other word is a cost (a trial)
+PROPOSALS = {'line': 'line', 'engine': 'engine'}
+
+
+def _calls(n):
+    return '%d call%s' % (int(n), '' if int(n) == 1 else 's')
+
+
 def _say_cost(calls, usd):
     """An amount as the prompts and the notes say it: '3 calls and 0.12 USD'."""
-    return '%d calls and %.2f USD' % (int(calls), float(usd))
+    return '%s and %.2f USD' % (_calls(calls), float(usd))
+
+
+# ---- what a proposal would cost, and the room left (M5.3) ------------------------------------------------------------
+def _template():
+    return dict(((R.engine_def('Priority') or {}).get('template')) or {})
+
+
+def _call_usd():
+    try:
+        usd = float(_template().get('call_usd', CALL_USD))
+    except (TypeError, ValueError):
+        return CALL_USD
+    return usd if usd >= 0 else CALL_USD
+
+
+def _model_steps(name):
+    """How many steps of an engine call the model: those with a prompt. An engine not in the definitions is priced as Do."""
+    return sum(1 for s in R.all_steps(name if R.engine_def(name) else PRIOR_ENGINE) if s.get('prompt'))
+
+
+def _finished(ref, name):
+    return [r for r in W.runs(ref) if r.get('engine') == name and not r.get('system') and r.get('status') in FINISHED]
+
+
+def price_of(ref, name):
+    """What one run of an engine costs, from what its finished runs spent (runs.json): the median of their calls, rounded
+    up to a whole call, and the median of their money. With no finished run, the prior: its model steps, one call each, at
+    the template's call_usd (0.04 unless the template says). {calls, usd, basis: median or prior, runs}."""
+    runs = _finished(ref, name)
+    if runs:
+        spent = [(r.get('spend') or {}) for r in runs]
+        return {'calls': int(math.ceil(statistics.median(int(x.get('calls') or 0) for x in spent))),
+                'usd': round(statistics.median(float(x.get('usd') or 0.0) for x in spent), 4), 'basis': 'median', 'runs': len(runs)}
+    n = _model_steps(name)
+    return {'calls': n, 'usd': round(n * _call_usd(), 4), 'basis': 'prior', 'runs': 0}
+
+
+def estimate_of(ref, names, basis=None):
+    """priority.estimate for the engines `names`, one run of each: the sum of price_of, with each one's under per_engine."""
+    per = {n: price_of(ref, n) for n in names}
+    return {'calls': sum(x['calls'] for x in per.values()), 'usd': round(sum(x['usd'] for x in per.values()), 4),
+            'basis': basis or (next(iter(per.values()))['basis'] if per else 'prior'), 'runs': sum(x['runs'] for x in per.values()),
+            'per_engine': per}
+
+
+def _limit_of(d, name):
+    """An engine's limit a day: the one on the record. A workflow that is not born yet is a work engine, and will be given
+    a work engine's limit (engine_runtime.engine_limit): that is the room it brings."""
+    env = ((d or {}).get('envelopes') or {}).get(name)
+    if isinstance(env, dict) and env:
+        return env
+    if R.engine_def(name) is None:
+        t = R.priority_template()
+        return {'calls': int(t.get('work_calls', 8)) * int(t.get('calls', W.ENVELOPE['calls'])), 'usd': float(t.get('usd', W.ENVELOPE['usd']))}
+    return W.limit_of(d, name)
+
+
+def room_of(ref, d, names):
+    """The room left today across `names`: the sum over them of each one's limit less what it has spent today."""
+    calls, usd = 0, 0.0
+    for n in names:
+        env, (spent_calls, spent_usd) = _limit_of(d, n), W._today_spend(ref, n)
+        calls += max(0, int(env.get('calls') or 0) - spent_calls)
+        usd += max(0.0, float(env.get('usd') or 0.0) - spent_usd)
+    return {'calls': calls, 'usd': round(usd, 4)}
+
+
+def _within(calls, usd, room):
+    return calls <= int(room.get('calls') or 0) and round(usd, 4) <= round(float(room.get('usd') or 0.0), 4)
+
+
+def fits_of(names, per, room, limit):
+    """The longest prefix of the line that fits the room, no longer than the limit of workflows."""
+    keep, calls, usd = [], 0, 0.0
+    for n in names[:limit]:
+        calls, usd = calls + int((per.get(n) or {}).get('calls') or 0), usd + float((per.get(n) or {}).get('usd') or 0.0)
+        if not _within(calls, usd, room):
+            break
+        keep.append(n)
+    return keep
+
+
+def _cost_estimate(pl, eng):
+    """A cost the proposal names (a trial: 'one more call a run, for N runs') is priced as what it adds, a call at
+    call_usd for each of the N runs it names, and 1 when it names none; not as a whole run of the engine."""
+    m = re.search(r'for (\d+) runs?', str(pl.get('cost') or ''))
+    n = max(1, int(m.group(1))) if m else 1
+    one = {'calls': n, 'usd': round(n * _call_usd(), 4), 'basis': 'prior', 'runs': 0}
+    return {'calls': n, 'usd': one['usd'], 'basis': 'prior', 'runs': 0, 'per_engine': {eng: one}}
+
+
+def priority_read(ctx, step, item):
+    """Read what a proposal would cost against the room left (M5.3). The estimate is each engine's median over its
+    finished runs, or the prior with none; the room is the sum over the proposal of each engine's limit less today's
+    spend; what remains is the room less the estimate; `fits` is the longest prefix of the line that fits the room and the
+    limit of workflows. The facts, which a step on the code rung can be taught from, stay closed: the word, and whether the
+    whole proposal fits. Moved from engine_runtime.priority_read."""
+    ref, pl = ctx['ref'], ctx['post']['payload']
+    word, limit = pl.get('word'), int(_template().get('line') or 6)
+    if word == 'line':
+        # the department's workflows, proposed together: Priority has room for as many work engines as its template says,
+        # and as many as the room left holds
+        eng = None
+        names = list(dict.fromkeys(str(e.get('name')) for e in pl.get('engines') or [] if isinstance(e, dict) and e.get('name')))
+        est = estimate_of(ref, names, 'line')
+    else:
+        eng = pl.get('engine') or 'Write'
+        names = [eng]
+        est = estimate_of(ref, names) if word == 'engine' else _cost_estimate(pl, eng)
+    room = room_of(ref, ctx.get('dept'), names)
+    remaining = {'calls': room['calls'] - est['calls'], 'usd': round(room['usd'] - est['usd'], 4)}
+    fits = fits_of(names, est['per_engine'], room, limit)
+    return {'word': word, 'engine': eng, 'names': names, 'limit': limit, 'estimate': est, 'room': room, 'remaining': remaining,
+            'fits': fits, 'facts': {'word': word, 'room': bool(names) and len(names) <= limit and len(fits) == len(names)}}
+
+
+# ---- the bargain: the words the agent is sent, and the answer offline ---------------------------------------------------
+def _say_estimate(read):
+    est = read['estimate']
+    parts = ['%s: %s, %s' % (n, _say_cost(x['calls'], x['usd']), ('from %d finished runs' % x['runs']) if x['basis'] == 'median' else 'a first guess')
+             for n, x in (est.get('per_engine') or {}).items()]
+    return '%s (%s)' % (_say_cost(est['calls'], est['usd']), '; '.join(parts))
+
+
+def _say_remaining(read):
+    room, rem = read['room'], read['remaining']
+    if rem['calls'] >= 0 and rem['usd'] >= 0:
+        return '%s remain of the %s left today' % (_say_cost(rem['calls'], rem['usd']), _say_cost(room['calls'], room['usd']))
+    return 'short by %s against the %s left today' % (_say_cost(max(0, -rem['calls']), max(0.0, -rem['usd'])), _say_cost(room['calls'], room['usd']))
+
+
+def p_priority_bargain(ctx, step, item):
+    """The words Priority's agent is sent. The line part is told what the line is likely to cost, from what its engines
+    have cost, and what the room left would still hold after it; the engine and cost parts are as they were. Moved from
+    engine_runtime.p_priority_bargain."""
+    got, pl = ctx['bag']['priority.read'], ctx['post']['payload']
+    room = 'yes' if got['facts']['room'] else 'no'
+    if pl.get('word') == 'line':
+        lines = '\n'.join('- %s: %s' % (e.get('name'), str(e.get('does') or '')) for e in pl.get('engines') or [] if isinstance(e, dict))
+        t = R.priority_template()
+        return R._prompt('priority', 'bargain', 'line', ctx['ref'], source='from the Library' if pl.get('source') == 'library' else 'shaped for the goal',
+                         engines=lines, calls='%d' % (int(t.get('work_calls', 8)) * int(t.get('calls', 30))), usd='%.2f' % float(t.get('usd', 6.0)),
+                         room=room, limit=got.get('limit'), estimate=_say_estimate(got), remaining=_say_remaining(got))
+    if pl.get('word') == 'engine':
+        return R._prompt('priority', 'bargain', 'engine', ctx['ref'], room=room, **R._offer_lines(pl))
+    return R._prompt('priority', 'bargain', 'cost', ctx['ref'], word=pl.get('word'), step=pl.get('step'), cost=pl.get('cost'), room=room)
+
+
+def _sum_of(read, names):
+    per = read['estimate'].get('per_engine') or {}
+    return sum(int((per.get(n) or {}).get('calls') or 0) for n in names), sum(float((per.get(n) or {}).get('usd') or 0.0) for n in names)
+
+
+def d_priority_bargain(ctx, step, item):
+    """The answer offline: the same arithmetic the agent is held to. Yes when the whole proposal fits the room; for a line,
+    an ask for less that keeps the longest prefix that fits when only some of it does; no when none of it fits. The why is
+    only about money and room. Moved from engine_runtime.d_priority_bargain."""
+    read = ctx['bag']['priority.read']
+    names, fits, room = read['names'], read['fits'], read['room']
+    left = _say_cost(room['calls'], room['usd'])
+    if read['word'] == 'line':
+        if not names:
+            return {'answer': 'reject', 'why': 'the plan names no workflow'}
+        if read['facts']['room']:
+            return {'answer': 'accept', 'why': 'fits today: about %s of the %s left' % (_say_cost(*_sum_of(read, names)), left)}
+        if fits:
+            why = 'room for %d of %d today: about %s for these of the %s left' % (len(fits), len(names), _say_cost(*_sum_of(read, fits)), left)
+            if len(fits) == read['limit'] < len(names):
+                why += ' (the limit is %d workflows)' % read['limit']
+            return {'answer': 'counter', 'why': why, 'keep': list(fits)}
+        return {'answer': 'reject', 'why': 'no room today: even %s costs about %s against the %s left' % (names[0], _say_cost(*_sum_of(read, names[:1])), left)}
+    cost = _say_cost(read['estimate']['calls'], read['estimate']['usd'])
+    if read['facts']['room']:
+        return {'answer': 'accept', 'why': 'fits today: about %s of the %s left' % (cost, left)}
+    return {'answer': 'reject', 'why': 'no room today: about %s against the %s left' % (cost, left)}
+
+
+# ---- the answer, and the price it leaves ---------------------------------------------------------------------------------
+def _check_of(ref, name):
+    """The check verdict of an engine's latest finished run, an index of Priority's: ok or failed when the run filed a
+    version (its status is that version's check), none when it filed nothing or has not run."""
+    runs = _finished(ref, name)
+    if not runs or not (runs[-1].get('wrote') or {}).get('art'):
+        return 'none'
+    return 'ok' if runs[-1].get('status') == 'ok' else 'failed'
+
+
+def _price_row(ctx, read, answer, keep, why):
+    """One priority.price row for an answer given (prices.jsonl, through the interface's journal): what the proposal was,
+    what it would cost, the room, what remained, the answer and what it keeps, and the indices (per-run spend and the check
+    verdict of each engine)."""
+    ref, p = ctx['ref'], ctx['post']
+    names = [n for n in read.get('names') or [] if re.match(S.NAME_RE, n)]
+    per = read['estimate'].get('per_engine') or {}
+    row = {'schema_version': 1, 'id': 'pr-' + uuid.uuid4().hex[:8], 'at': W.now(), 'cycle_id': (J._state(ref) or {}).get('cycle_id'),
+           'round': None, 'proposal': PROPOSALS.get((p.get('payload') or {}).get('word'), 'cost'), 'engines': names,
+           'estimate': read['estimate'], 'room': read['room'], 'remaining': read['remaining'], 'answer': answer,
+           'keep': [n for n in keep if n in names], 'why': str(why or '')[:600],
+           'indices': {'spend_per_run': {n: per[n]['usd'] for n in names if n in per}, 'checks': {n: _check_of(ref, n) for n in names}}}
+    if p.get('thread'):
+        row['thread'] = str(p['thread'])[:80]
+    try:
+        return W.append_row(ref, 'prices.jsonl', row)
+    except S.SchemaFault:
+        return None                      # the fault is a row and a count already (A1.20); a price never costs Adaptation its answer
+
+
+def priority_post(ctx, step, item):
+    """Post the answer, and keep its price: one priority.price row per answer given. A line is answered as a whole: yes, no,
+    or an ask for less that keeps the workflows the agent named, else the longest prefix that fits. Moved from
+    engine_runtime.priority_post; the answers and the words are the same."""
+    ref, pl, thread = ctx['ref'], ctx['post']['payload'], ctx['post']['thread']
+    read, got = ctx['bag']['priority.read'], ctx['bag']['priority.bargain']
+    names, answer, why = list(read.get('names') or []), got.get('answer'), str(got.get('why') or '').strip()
+    if pl.get('word') == 'line':
+        if answer == 'counter':
+            asked = [str(k) for k in got.get('keep') or []]
+            keep = [n for n in names if n in asked] or list(read.get('fits') or [])
+            if keep and len(keep) < len(names):
+                why = why or 'the envelope has room for %d of them' % len(keep)
+                row = R.post(ref, 'Priority', 'Adaptation', 'propose', {'word': 'line', 'counter': True, 'keep': keep, 'why': why}, thread=thread)
+                if row:
+                    _price_row(ctx, read, 'counter', keep, why)
+                return {'said': 'asked for less on the line: keep ' + ' -> '.join(keep) if row else 'the bargain reached its bound'}
+            answer = 'reject' if not keep else 'accept'
+        ok = answer == 'accept'
+        why = why or ('the envelope has room' if ok else 'the envelope has no room')
+        row = R.post(ref, 'Priority', 'Adaptation', 'accept-proposal' if ok else 'reject-proposal', {'word': 'line', 'why': why}, thread=thread)
+        if row:
+            _price_row(ctx, read, 'accept' if ok else 'reject', names if ok else [], why)
+        return {'said': ('said yes to' if ok else 'said no to') + ' the line ' + ' -> '.join(names) if row else 'the bargain reached its bound'}
+    ok = answer == 'accept'
+    row = R.post(ref, 'Priority', 'Adaptation', 'accept-proposal' if ok else 'reject-proposal',
+                 {'word': pl.get('word'), 'step': pl.get('step'), 'to': pl.get('to'), 'form': pl.get('form'), 'why': got.get('why')}, thread=thread)
+    if row:
+        _price_row(ctx, read, 'accept' if ok else 'reject', names if ok else [], why or ('the envelope has room' if ok else 'the envelope has no room'))
+    return {'said': ('said yes to' if ok else 'said no to') + ' a trial of ' + str(pl.get('step'))}
 
 
 def _fact_notes(ctx, out):
@@ -77,15 +339,15 @@ def price_is_observed(ctx, step, item, out):
 
 CODE = {
     'priority_envelope': ref_to('priority_envelope'),
-    'priority_read': ref_to('priority_read'),
-    'priority_post': ref_to('priority_post'),
+    'priority_read': priority_read,
+    'priority_post': priority_post,
     'priority_grant': ref_to('priority_grant'),
 }
 PROMPT = {
-    'priority_bargain': ref_to('p_priority_bargain'),
+    'priority_bargain': p_priority_bargain,
 }
 DRAFT = {
-    'priority_bargain_draft': ref_to('d_priority_bargain'),
+    'priority_bargain_draft': d_priority_bargain,
 }
 CHECK = {
     'gate_answer_is_known': ref_to('c_gate_answer_is_known'),

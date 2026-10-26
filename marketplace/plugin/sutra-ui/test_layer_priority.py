@@ -6,6 +6,7 @@ One test per done-check of P1 to P5. The contract's cases are layers/contract.py
 department born the way a person makes one, a model that is a function of the step id, the same board.
 """
 import importlib
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -13,6 +14,9 @@ import layer_schema as S
 import layers
 import layers.contract as C
 import layers.priority.v1 as V1
+
+WEBSITE = "Build a website that teaches algebra to Class 8 students"
+LINE = ["Plan", "Write", "Check", "Publish"]
 
 
 @pytest.fixture
@@ -22,6 +26,130 @@ def ctx(tmp_path, monkeypatch):
     monkeypatch.setenv("SUTRA_WEBSITE_OFFLINE", "1")
     monkeypatch.delenv("SUTRA_ENGINE_RUNTIME", raising=False)
     return {"ref": C.fixture_department(tmp_path / "departments")}
+
+
+@pytest.fixture
+def j2(tmp_path, monkeypatch):
+    """test_j2's fixture: a department is born the way a person makes one, on a records home of its own, with no model."""
+    monkeypatch.setenv("SUTRA_NATIVE_DEPT_HOME", str(tmp_path / "departments"))
+    monkeypatch.setenv("SUTRA_NATIVE_HOME", str(tmp_path / "registry"))
+    monkeypatch.setenv("SUTRA_UI_PROPOSALS", str(tmp_path / "proposals"))
+    monkeypatch.setenv("SUTRA_WEBSITE_OFFLINE", "1")
+    monkeypatch.setenv("J1_FLOW_V1", "1")
+    monkeypatch.setenv("J2_FLOW_V1", "1")
+    monkeypatch.delenv("SUTRA_ENGINE_RUNTIME", raising=False)
+    import website_dept as W
+    import founding
+    import placement_engine as E
+    import org2_apply
+    import engine_runtime as R
+    import j2_runtime as J
+    for module in (E, W, org2_apply, founding, R, J):
+        importlib.reload(module)
+    if not E.active_roots(E.load_domains()):
+        E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
+    return W, R, J, founding
+
+
+@pytest.fixture
+def live(j2, monkeypatch):
+    """priority/v1's own bodies, the ones the runtime runs for Priority. Where the registry's seam (W1-CORE) serves a
+    module's bodies, that is the whole fixture; before it, the bodies are put in the runtime's registries for the test."""
+    W, R, J, founding = j2
+    if not hasattr(layers, "resolve"):
+        for registry, mine in ((R.CODE, V1.CODE), (R.PROMPT, V1.PROMPT), (R.DRAFT, V1.DRAFT), (R.CHECK, V1.CHECK)):
+            for name, fn in mine.items():
+                if not hasattr(fn, "legacy"):
+                    monkeypatch.setitem(registry, name, fn)
+    return j2
+
+
+def _born(j2, words=WEBSITE, org="Acme Learning", settle=True):
+    """A department as a person makes one: found the organisation, say the words, Root sets it up."""
+    W, _, _, founding = j2
+    root = founding.found_structure(org, owner="Sankalp")["root"]
+    W.owner_ask(root, words)
+    W.run_until_idle(root, limit=300)
+    child = next(d for d in W.list_depts() if d.get("parent") == root)
+    if settle:
+        W.run_until_idle(child["ref"], limit=300)
+    return child["ref"]
+
+
+def _actions(J, ref):
+    return [e["action"] for e in J.events(ref)]
+
+
+ORGANIC = "Set up a laboratory system to track chemical inventory for our school science team"
+THREE = {"engines": [{"name": "Facts", "does": "finds the facts", "reads": "Brief", "writes": "Facts", "internet": True},
+                     {"name": "Notes", "does": "sorts the facts", "reads": "Facts", "writes": "Notes", "internet": False},
+                     {"name": "Summary", "does": "writes the summary", "reads": "Notes", "writes": "Summary", "internet": False}]}
+#: the engines of a line shaped on the fly are not born when Priority prices it; what they cost is what they cost elsewhere:
+#:   Facts   3 runs: calls 2, 3, 4 -> 3;  usd 0.05, 0.07, 0.09 -> 0.07
+#:   Notes   2 runs: calls 1, 2 -> 1.5, a call is whole, so 2;  usd 0.03, 0.05 -> 0.04
+#:   Summary none: priced as Do is, two model steps -> 2 calls, 0.08
+SHAPED_HISTORY = {"Facts": [("ok", 2, 0.05), ("ok", 3, 0.07), ("ok", 4, 0.09)], "Notes": [("ok", 1, 0.03), ("ok", 2, 0.05)]}
+
+
+def _model(monkeypatch, R, answers):
+    """test_j2's model: a function of the step id. Every step it does not answer falls to its draft, as it does offline."""
+    monkeypatch.delenv("SUTRA_WEBSITE_OFFLINE", raising=False)
+
+    def model(prompt, step):
+        if step["id"] not in answers:
+            return None, 0.0, "offline"
+        got = answers[step["id"]]
+        return (got(prompt) if callable(got) else got), 0.01, "model"
+    monkeypatch.setattr(R, "MODEL", model)
+
+
+def _stamp(ref, W):
+    for a in [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "conflict"]:
+        W.decide_ask(ref, a["id"], True)
+    W.run_until_idle(ref, limit=300)
+
+
+#: finished runs of yesterday, by engine, oldest first: (status, calls, usd). Their medians, worked by hand, are the fixture:
+#:   Plan   3 runs: calls 2, 4, 3 -> 3;  usd 0.06, 0.10, 0.08 -> 0.08                          (basis median, 3 runs)
+#:   Write  4 runs: calls 5, 6, 9, 7 -> 6.5, a call is whole, so 7;  usd 0.20, 0.25, 0.50, 0.30 -> 0.275   (4 runs, the failed one counts)
+#:   Check  none: the prior, one model step, one call, at 0.04 -> 1 call, 0.04
+#:   Publish none: no model step -> 0 calls, 0.00
+HISTORY = {"Plan": [("ok", 2, 0.06), ("ok", 4, 0.10), ("ok", 3, 0.08)],
+           "Write": [("ok", 5, 0.20), ("ok", 6, 0.25), ("ok", 9, 0.50), ("failed", 7, 0.30)]}
+MEDIANS = {"Plan": {"calls": 3, "usd": 0.08, "basis": "median", "runs": 3}, "Write": {"calls": 7, "usd": 0.275, "basis": "median", "runs": 4},
+           "Check": {"calls": 1, "usd": 0.04, "basis": "prior", "runs": 0}, "Publish": {"calls": 0, "usd": 0.0, "basis": "prior", "runs": 0}}
+
+
+def _run_row(engine, status, calls, usd, started, **more):
+    row = {"id": "r-" + engine[:3].lower() + str(abs(hash((engine, status, calls, usd, started))) % 10 ** 6), "engine": engine,
+           "system": False, "slot": None, "status": status, "started": started, "ended": started, "what": "history", "wrote": None,
+           "chain": None, "spend": {"calls": calls, "usd": usd}, "retries": 0, "runtime": 2}
+    row.update(more)
+    return row
+
+
+def _history(W, ref, history=HISTORY, noise=True):
+    """Yesterday's finished runs in runs.json, and rows that are no finished run of an engine: skipped, one that waits for the
+    owner, and a function's own row. They must not move a median. Slots are none, so no real slot looks done, and none is
+    running, since a run that runs holds the motor."""
+    yesterday = (datetime.now().astimezone() - timedelta(days=1)).isoformat(timespec="seconds")
+    rows = list(W.runs(ref))
+    for engine, runs in history.items():
+        for i, (status, calls, usd) in enumerate(runs):
+            rows.append(_run_row(engine, status, calls, usd, yesterday, wrote={"art": "Result", "v": i + 1}))
+    if noise:
+        rows += [_run_row("Plan", "skipped", 0, 0.0, yesterday), _run_row("Write", "asked", 50, 9.0, yesterday),
+                 _run_row("Plan", "ok", 40, 8.0, yesterday, system=True)]
+    W._write(W.ddir(ref) / "runs.json", rows)
+
+
+def _envelopes(W, ref, **limits):
+    for name, (calls, usd) in limits.items():
+        W.set_envelope(ref, name, calls=calls, usd=usd)
+
+
+def _prices(W, ref):
+    return W.rows(ref, "prices.jsonl")
 
 
 # ---- P1: priority/v1 by reference --------------------------------------------------------------------------------------
@@ -109,3 +237,264 @@ def test_a_yes_or_an_ask_for_less_is_held_to_the_room_and_a_no_always_stands():
     assert check(_read(names, PER, roomy), None, None, {"answer": "reject", "why": "no room"})["ok"], "a no stands over ample room"
     assert not check(_read(names, PER, roomy, limit=2), None, None, {"answer": "accept", "why": "fits"})["ok"], "past the limit of workflows"
     assert check(_read(names, PER, roomy), None, None, {"answer": "accept", "why": "fits today"})["notes"] == ["said yes, with its price: fits today"]
+
+
+# ---- P3: observed spend and price rows (M5.3) --------------------------------------------------------------------------
+def test_p3_the_estimate_of_an_engine_is_the_median_of_its_finished_runs_or_the_prior(j2):
+    """An estimate that is a constant, or one a skipped, still-running or function row moves, must fail: it is the median
+    of what the engine's finished runs spent, a call being whole, and with none, its model steps at call_usd."""
+    W, R, J, _ = j2
+    ref = _born(j2, settle=False)
+    _history(W, ref)
+    for name, want in MEDIANS.items():
+        assert V1.price_of(ref, name) == want, name
+    got = V1.estimate_of(ref, LINE, "line")
+    assert (got["calls"], got["usd"], got["basis"], got["runs"]) == (11, 0.395, "line", 7)
+    assert got["per_engine"] == MEDIANS
+    assert S.validate("priority.estimate", got) == []
+    assert V1.price_of(ref, "Facts") == {"calls": 2, "usd": 0.08, "basis": "prior", "runs": 0}, "an engine not born yet is priced as Do is"
+
+
+def test_p3_the_prior_follows_call_usd_in_priority_v1s_template(j2, monkeypatch):
+    """The price of a model call in the prior is the recipe's, not a constant of the code: 0.04 unless the template says."""
+    W, R, J, _ = j2
+    ref = _born(j2, settle=False)
+    assert R.engine_def("Priority")["template"]["call_usd"] == 0.04
+    assert V1.price_of(ref, "Check")["usd"] == 0.04
+    monkeypatch.setitem(R.engine_def("Priority")["template"], "call_usd", 0.10)
+    assert V1.price_of(ref, "Check") == {"calls": 1, "usd": 0.1, "basis": "prior", "runs": 0}
+    monkeypatch.setitem(R.engine_def("Priority")["template"], "call_usd", "cheap")
+    assert V1.price_of(ref, "Check")["usd"] == 0.04, "a template that names no price in numbers keeps the default"
+
+
+def test_p3_room_is_the_sum_over_the_line_of_the_limit_less_todays_spend_and_remaining_is_room_less_the_estimate(j2):
+    """A room that ignores today's spend, counts an engine past its limit as negative, or a remaining that is not the
+    room less the estimate, must fail."""
+    W, R, J, _ = j2
+    ref = _born(j2, settle=False)
+    _envelopes(W, ref, Plan=(10, 1.0), Write=(10, 1.0), Check=(10, 1.0), Publish=(10, 1.0))
+    today = datetime.now().astimezone().isoformat(timespec="seconds")
+    # what ran today has spent already, though a run that waits is no finished run to price from; Write is past its limit
+    rows = W.runs(ref) + [_run_row("Plan", "asked", 4, 0.30, today), _run_row("Write", "asked", 25, 2.50, today)]
+    W._write(W.ddir(ref) / "runs.json", rows)
+    assert V1.room_of(ref, W.dept(ref), LINE) == {"calls": 6 + 0 + 10 + 10, "usd": 0.7 + 0.0 + 1.0 + 1.0}, "past its limit is no room, never less"
+    _history(W, ref)
+    ctx = {"ref": ref, "dept": W.dept(ref), "post": {"payload": {"word": "line", "engines": [{"name": n} for n in LINE]}, "thread": "x-1"}, "bag": {}}
+    got = V1.priority_read(ctx, None, None)
+    assert got["room"] == {"calls": 26, "usd": 2.7} and got["estimate"]["calls"] == 11
+    assert got["remaining"] == {"calls": 26 - 11, "usd": round(2.7 - 0.395, 4)}
+    assert got["fits"] == LINE and got["facts"] == {"word": "line", "room": True}
+
+
+def test_p3_a_workflow_not_born_yet_brings_the_limit_of_a_work_engine(j2):
+    """A line shaped on the fly names engines that hold no limit yet; their room is the one Priority will give each."""
+    W, R, J, _ = j2
+    ref = _born(j2, settle=False)
+    t = R.priority_template()
+    assert V1.room_of(ref, W.dept(ref), ["Facts", "Notes"]) == {"calls": 2 * t["work_calls"] * t["calls"], "usd": 2 * t["usd"]}
+
+
+def test_p3_the_longest_prefix_that_fits_is_what_an_ask_for_less_keeps():
+    """Fewer engines than the line, never a later one in place of an earlier one; and never more than the limit."""
+    per = {n: {"calls": 3, "usd": 0.10} for n in "ABCDEFGH"}
+    names = list("ABCDEFGH")
+    room = lambda c, u: {"calls": c, "usd": u}
+    assert V1.fits_of(names, per, room(9, 0.30), 6) == ["A", "B", "C"]
+    assert V1.fits_of(names, per, room(9, 0.29), 6) == ["A", "B"], "money binds before calls"
+    assert V1.fits_of(names, per, room(8, 9.0), 6) == ["A", "B"], "calls bind before money"
+    assert V1.fits_of(names, per, room(2, 9.0), 6) == []
+    assert V1.fits_of(names, per, room(900, 90.0), 6) == list("ABCDEF"), "the limit of workflows binds last"
+    assert V1.fits_of(["A", "Z"], {"A": {"calls": 0, "usd": 0.0}, "Z": {"calls": 0, "usd": 0.0}}, room(0, 0.0), 6) == ["A", "Z"], "free work always fits"
+
+
+def _priced(j2, limits, history=HISTORY, words=WEBSITE, org="Acme Learning", shaped=False):
+    """A department born, its limits set and its history written before it proposes anything, then let run: the line goes to
+    Priority and Priority prices it (offline, so the answer is the draft's: the arithmetic alone). `shaped`: the limits are
+    written on the record for engines that are not born yet, as the model's line names them."""
+    W, R, J, _ = j2
+    ref = _born(j2, words, org, settle=False)
+    if shaped:
+        d = W.dept(ref)
+        d["envelopes"].update({n: {"calls": c, "usd": u} for n, (c, u) in limits.items()})
+        W.save_dept(ref, d)
+    else:
+        _envelopes(W, ref, **limits)
+    _history(W, ref, history)
+    W.run_until_idle(ref, limit=300)
+    return ref
+
+
+def test_p3_room_for_two_engines_gives_a_counter_keeping_two(live, monkeypatch):
+    """Priority that says yes to what the room cannot hold, or no to what it can partly hold, or keeps a later engine in place
+    of an earlier one, must fail: with room for Facts and Notes and none for Summary, the answer is an ask for less that
+    keeps those two, and Adaptation takes it."""
+    W, R, J, _ = live
+    _model(monkeypatch, R, {"adapt.line": THREE})
+    ref = _priced(live, {"Facts": (3, 0.07), "Notes": (2, 0.04), "Summary": (0, 0.0)}, SHAPED_HISTORY, ORGANIC, "Lab Co", shaped=True)
+    acts = _actions(J, ref)
+    assert acts[2:8] == ["proposal.created", "proposal.countered", "proposal.created", "proposal.granted", "workflow.validated", "workflow.registered"]
+    assert W.dept(ref)["engines"] == ["Facts", "Notes"] and "conflict.raised" not in acts
+    first, second = _prices(W, ref)
+    assert first["answer"] == "counter" and first["keep"] == ["Facts", "Notes"] and first["proposal"] == "line"
+    assert first["engines"] == ["Facts", "Notes", "Summary"]
+    assert (first["estimate"]["calls"], first["estimate"]["usd"], first["estimate"]["basis"], first["estimate"]["runs"]) == (7, 0.19, "line", 5)
+    assert first["estimate"]["per_engine"] == {"Facts": {"calls": 3, "usd": 0.07, "basis": "median", "runs": 3},
+                                               "Notes": {"calls": 2, "usd": 0.04, "basis": "median", "runs": 2},
+                                               "Summary": {"calls": 2, "usd": 0.08, "basis": "prior", "runs": 0}}
+    assert first["room"] == {"calls": 5, "usd": 0.11} and first["remaining"] == {"calls": -2, "usd": -0.08}
+    assert first["why"] == "room for 2 of 3 today: about 5 calls and 0.11 USD for these of the 5 calls and 0.11 USD left"
+    assert first["indices"] == {"spend_per_run": {"Facts": 0.07, "Notes": 0.04, "Summary": 0.08},
+                                "checks": {"Facts": "ok", "Notes": "ok", "Summary": "none"}}
+    assert (second["answer"], second["keep"], second["engines"]) == ("accept", ["Facts", "Notes"], ["Facts", "Notes"]), "the ask is answered once, whole"
+    assert second["remaining"] == {"calls": 0, "usd": 0.0}
+    assert S.validate("priority.price", first) == [] and S.validate("priority.price", second) == []
+
+
+def test_p3_no_room_gives_a_reject_a_conflict_and_step_4(live):
+    """A no that ends in silence, or a bargain that never reaches Identity, must fail: with no room Priority says no, Adaptation
+    raises the conflict, and Identity (step 4) is the one that asks the owner, once."""
+    W, R, J, _ = live
+    ref = _priced(live, {n: (0, 0.0) for n in LINE})
+    acts = _actions(J, ref)
+    assert acts[2:] == ["proposal.created", "proposal.refused", "conflict.raised", "identity.ruled", "ask.created"]
+    assert next(e for e in J.events(ref) if e["action"] == "identity.ruled")["step"] == 4
+    assert [a["kind"] for a in W.asks(ref) if a["status"] == "pending"] == ["conflict"]
+    assert not [r for r in W.runs(ref) if not r.get("system") and r.get("what") != "history"], "the disputed work does not run"
+    [row] = _prices(W, ref)
+    assert row["answer"] == "reject" and row["keep"] == [] and row["room"] == {"calls": 0, "usd": 0.0}
+    assert row["why"] == "no room today: even Plan costs about 3 calls and 0.08 USD against the 0 calls and 0.00 USD left"
+    asked = next(a for a in W.asks(ref) if a["kind"] == "conflict")
+    assert "Priority said no to the plan: no room today" in asked["text"]
+    assert S.validate("priority.price", row) == []
+
+
+def test_p3_enough_room_gives_a_yes(live):
+    """Priority that asks for less, or says no, with room for the whole line, must fail."""
+    W, R, J, _ = live
+    ref = _priced(live, {"Plan": (50, 5.0), "Write": (50, 5.0), "Check": (50, 5.0), "Publish": (50, 5.0)})
+    acts = _actions(J, ref)
+    assert acts[2:5] == ["proposal.created", "proposal.granted", "workflow.validated"] and "conflict.raised" not in acts
+    assert W.dept(ref)["workflows"][-1]["engines"] == LINE
+    [row] = _prices(W, ref)
+    assert row["answer"] == "accept" and row["keep"] == LINE and row["room"] == {"calls": 200, "usd": 20.0}
+    assert row["remaining"] == {"calls": 189, "usd": round(20.0 - 0.395, 4)}
+    assert row["why"].startswith("fits today: about 11 calls and 0.40 USD of the 200 calls and 20.00 USD left")
+    assert S.validate("priority.price", row) == []
+
+
+def test_p3_the_estimate_in_every_price_row_is_the_fixture_medians(live):
+    """A row's estimate that is not what the engines' runs say must fail; each engine's price rides in per_engine."""
+    W, R, J, _ = live
+    ref = _priced(live, {"Plan": (50, 5.0), "Write": (50, 5.0), "Check": (50, 5.0), "Publish": (50, 5.0)})
+    [row] = _prices(W, ref)
+    assert row["estimate"]["per_engine"] == MEDIANS and row["estimate"]["runs"] == 7
+    assert row["cycle_id"] and row["thread"] and row["round"] is None and row["schema_version"] == 1 and row["id"].startswith("pr-")
+
+
+def test_p3_a_yes_the_room_cannot_hold_fails_its_step_and_nothing_is_granted(live, monkeypatch):
+    """The covering that lets a model's yes through over a room that cannot hold the line must fail: the measured facts stand,
+    the step fails, Adaptation is answered nothing, and no price is written for an answer that was never given."""
+    W, R, J, _ = live
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "accept", "why": "fits today"}})
+    ref = _priced(live, {n: (1, 0.01) for n in LINE})
+    [step] = [r for r in R.step_rows(ref) if r["step"] == "priority.bargain"]
+    assert step["status"] == "failed" and step["by"] == "model"
+    assert "said yes to what costs more than the room holds: 11 calls and 0.40 USD go past the 4 calls and 0.04 USD left today" in step["why"]
+    acts = _actions(J, ref)
+    assert "proposal.granted" not in acts and "workflow.registered" not in acts and _prices(W, ref) == []
+
+
+def test_p3_a_no_the_model_gives_over_ample_room_stands_because_approvals_only_tighten(live, monkeypatch):
+    """A covering that turns a model's no into a failure would make Priority say yes against its own judgement."""
+    W, R, J, _ = live
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room in the envelope today"}})
+    ref = _priced(live, {n: (50, 5.0) for n in LINE})
+    assert "proposal.refused" in _actions(J, ref)
+    [row] = _prices(W, ref)
+    assert row["answer"] == "reject" and row["room"]["calls"] == 200 and row["why"] == "no room in the envelope today"
+    assert S.validate("priority.price", row) == []
+
+
+def test_p3_the_agent_is_told_what_the_line_is_likely_to_cost_and_what_remains(j2, monkeypatch):
+    """The bargain line part gains two inputs: the estimate, each engine from what its runs spent, and what remains of the
+    room. The engine and cost parts are sent what they were."""
+    W, R, J, _ = j2
+    ref = _born(j2, settle=False)
+    _history(W, ref)
+    sent = []
+    monkeypatch.setattr(R, "_prompt", lambda fn, file, part, ref=None, **slots: sent.append((fn, file, part, slots)) or part)
+    line = {"word": "line", "source": "library", "engines": [{"name": n, "does": "does " + n} for n in LINE]}
+    c = {"ref": ref, "dept": W.dept(ref), "post": {"payload": line, "thread": "x-1"}, "bag": {}}
+    c["bag"]["priority.read"] = V1.priority_read(c, None, None)
+    assert V1.p_priority_bargain(c, None, None) == "line"
+    (_, _, _, slots), = sent
+    assert slots["estimate"] == ("11 calls and 0.40 USD (Plan: 3 calls and 0.08 USD, from 3 finished runs; Write: 7 calls and 0.28 USD, from 4 finished "
+                                 "runs; Check: 1 call and 0.04 USD, a first guess; Publish: 0 calls and 0.00 USD, a first guess)")
+    assert slots["remaining"] == "949 calls and 23.61 USD remain of the 960 calls and 24.00 USD left today"
+    assert slots["room"] == "yes" and slots["limit"] == 6 and slots["source"] == "from the Library" and slots["calls"] == "240" and slots["usd"] == "6.00"
+    assert set(slots) == {"source", "engines", "calls", "usd", "room", "limit", "estimate", "remaining"}, "the inputs S.PROMPTS names, no more"
+    sent.clear()
+    engine = {"word": "engine", "engine": "Booking", "offer": {"shape": {"name": "Booking", "does": "takes a booking", "needs": []}}}
+    c["post"]["payload"] = engine
+    c["bag"]["priority.read"] = V1.priority_read(c, None, None)
+    V1.p_priority_bargain(c, None, None)
+    assert set(sent[0][3]) == {"engine", "does", "needs", "calls", "usd", "room"}
+    sent.clear()
+    c["post"]["payload"] = {"word": "trial", "step": "write.page", "engine": "Write", "cost": "one more call a run, for 20 runs"}
+    c["bag"]["priority.read"] = V1.priority_read(c, None, None)
+    V1.p_priority_bargain(c, None, None)
+    assert set(sent[0][3]) == {"word", "step", "cost", "room"}
+
+
+def test_p3_an_engine_offer_is_priced_as_one_run_and_a_trial_as_what_it_adds(j2):
+    """A trial priced as a whole run of the engine, or an offer as a constant, must fail: an engine offered is one run of it
+    (Do's, when it is shaped on the fly); a trial is one more call a run for the runs it names, at call_usd."""
+    W, R, J, _ = j2
+    ref = _born(j2, settle=False)
+    _history(W, ref)
+    c = {"ref": ref, "dept": W.dept(ref), "bag": {}, "post": {"thread": "x-1", "payload": {"word": "engine", "engine": "Booking", "offer": {}}}}
+    got = V1.priority_read(c, None, None)
+    assert (got["names"], got["estimate"]["calls"], got["estimate"]["usd"], got["estimate"]["basis"]) == (["Booking"], 2, 0.08, "prior")
+    assert got["room"] == {"calls": 240, "usd": 6.0} and got["facts"] == {"word": "engine", "room": True}
+    c["post"]["payload"] = {"word": "trial", "step": "write.page", "engine": "Write", "cost": "one more call a run, for 20 runs"}
+    got = V1.priority_read(c, None, None)
+    assert (got["names"], got["estimate"]["calls"], got["estimate"]["usd"], got["estimate"]["basis"]) == (["Write"], 20, 0.8, "prior")
+    assert got["estimate"]["per_engine"] == {"Write": {"calls": 20, "usd": 0.8, "basis": "prior", "runs": 0}}
+    c["post"]["payload"] = {"word": "trial", "step": "write.page", "engine": "Write", "cost": "a trial"}
+    assert V1.priority_read(c, None, None)["estimate"]["calls"] == 1, "a cost that names no runs is one call"
+    for payload in ({"word": "engine", "engine": "Booking"}, {"word": "trial", "engine": "Write", "cost": "a call"}):
+        c["post"]["payload"] = payload
+        got = V1.priority_read(c, None, None)
+        c["bag"] = {"priority.read": got}
+        assert S.validate("priority.estimate", got["estimate"]) == []
+        assert V1.d_priority_bargain(c, None, None)["answer"] == "accept"
+
+
+def test_p3_an_offer_the_engines_room_cannot_hold_is_said_no_to_in_money_and_room(j2):
+    """The offline answer to an engine offer when the engine's room is gone: no, and the why is only money and room."""
+    W, R, J, _ = j2
+    ref = _born(j2, settle=False)
+    d = W.dept(ref)
+    d["envelopes"]["Booking"] = {"calls": 1, "usd": 0.01}
+    W.save_dept(ref, d)
+    c = {"ref": ref, "dept": W.dept(ref), "bag": {}, "post": {"thread": "x-1", "payload": {"word": "engine", "engine": "Booking"}}}
+    c["bag"]["priority.read"] = V1.priority_read(c, None, None)
+    assert c["bag"]["priority.read"]["facts"] == {"word": "engine", "room": False}
+    assert V1.d_priority_bargain(c, None, None) == {"answer": "reject", "why": "no room today: about 2 calls and 0.08 USD against the 1 call and 0.01 USD left"}
+
+
+def test_p3_more_workflows_than_the_limit_is_an_ask_for_less_that_says_the_limit(j2):
+    """The count a template allows still binds beside the money: eight workflows with ample room keep the first six."""
+    W, R, J, _ = j2
+    ref = _born(j2, settle=False)
+    names = ["E%d" % i for i in range(8)]
+    c = {"ref": ref, "dept": W.dept(ref), "bag": {}, "post": {"thread": "x-1", "payload": {"word": "line", "engines": [{"name": n} for n in names]}}}
+    c["bag"]["priority.read"] = V1.priority_read(c, None, None)
+    assert c["bag"]["priority.read"]["facts"]["room"] is False and c["bag"]["priority.read"]["fits"] == names[:6]
+    got = V1.d_priority_bargain(c, None, None)
+    assert got["answer"] == "counter" and got["keep"] == names[:6] and got["why"].endswith("(the limit is 6 workflows)")
+    assert V1.CHECK["price_is_observed"](c, None, None, got)["ok"]
+    assert not V1.CHECK["price_is_observed"](c, None, None, {"answer": "accept", "why": "fits"})["ok"]
+    c["post"]["payload"]["engines"] = []
+    c["bag"]["priority.read"] = V1.priority_read(c, None, None)
+    assert V1.d_priority_bargain(c, None, None) == {"answer": "reject", "why": "the plan names no workflow"}
