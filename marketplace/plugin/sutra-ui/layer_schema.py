@@ -1478,6 +1478,118 @@ DEFS['artifact.template'] = obj({
     'screen': text(200), 'reads': items(ref('name')), 'form': text(60),         # an app template brings screen and reads; W2-CHECKS adds form
 }, required=('id', 'name', 'kind', 'use_case', 'files', 'counts_after'))
 
+# the user journey (L0, A3.6): a journey is a JSON file under journeys/ that conforms to DEFS['journey']. It carries everything
+# the site's own data file lists (the tag, today, the earlier rows kept as was, the site's status words and Code column), and
+# no row leaves it but by the owner's mark. A state is never in a definition: ROW_STATES and READ_STATES exist for the status
+# document and the read model only, and the site's claim is kept as site_status and site_says so a drift can be seen, never to
+# decide a state
+JOURNEY_KINDS = ('person', 'system', 'function')
+LANE_KINDS = ('person', 'root', 'function', 'engine')
+STEP_ACTS = ('say', 'ask', 'tell', 'stamp', 'file', 'read', 'run', 'check', 'post', 'decide')
+BIND_KINDS = ('act', 'step', 'event', 'api', 'ui', 'person')
+OUTCOME_KINDS = ('tell', 'ask', 'file', 'hold', 'refuse', 'block', 'retry', 'none')
+OUTCOME_VOICES = ('Identity', 'Root', 'Coordination', 'none')
+SITE_STATUS = ('built', 'wanted', 'today', 'open', 'directed', 'partly', 'not_built', 'to_build', 'none')
+DISPOSITIONS = ('keep', 'change', 'drop')
+ROW_STATES = ('proven', 'partly', 'failing', 'unproven', 'wanted', 'dropped', 'fault')     # derived, never in a definition
+READ_STATES = ROW_STATES + ('unknown',)                                                     # what the read model says before a run
+JOURNEY_STATES = ROW_STATES + ('declared',)                                                 # a declared journey has no computed state
+RULING_STATUS = ('RULED', 'OPEN', 'PARKED')
+JOURNEY_ID = r'^(J[1-9][0-9]?|S[1-9]|U[1-9]|F(?:I|A|P|C|AU)[1-9])$'
+SUB_ID = r'^J[1-9][0-9]?\.[a-z]$'
+STEP_N = r'^([0-9]|[1-9][0-9])[a-e]?$'                       # 0a and 0b are the earlier rows of J2; 4a to 4e are J3's branches
+EDGE_ID = r'^(J[1-9][0-9]?|F(?:I|A|P|C|AU)[1-9])\.[1-9][0-9]?$'
+LANE_ID = r'^[a-z][a-z0-9_]{0,15}$'
+BACKLOG_ID = r'^BL-[1-9][0-9]?[a-z]?$'                       # BL-2b
+SAME_AS = r'^J[1-9][0-9]?/(step/[1-9][0-9]?[a-e]?|edge/J[1-9][0-9]?\.[1-9][0-9]?)$'
+SYMBOL = r'^([A-Za-z_][A-Za-z0-9_]*\.)?[A-Za-z_$][A-Za-z0-9_$]*$'              # a name, or module.name
+TEST_REF = (r'^(js:[A-Za-z0-9_.-]+\.js#[A-Za-z0-9_.-]+|'
+            r'[A-Za-z0-9_.-]+\.py::([A-Za-z_][A-Za-z0-9_]*::)?[A-Za-z_][A-Za-z0-9_]*)$')   # file.py::test, file.py::Class::test, js:file.js#W45
+STEP_REF = r'^J[1-9][0-9]?:[1-9][0-9]?[a-e]?$'                                  # 'J2:6' = step 6 of J2
+RULING_ID = r'^(S|Q|MK|D|A1|A2|A3)-?[A-Za-z0-9]{1,4}$'
+
+DEFS['journey.lane'] = obj({'id': word(LANE_ID, 16), 'label': say(40, 1), 'kind': enum(*LANE_KINDS),
+                            'function': nullable(enum(*FUNCTION_LAYERS))}, required=('id', 'label', 'kind'), open=False)
+DEFS['journey.bind'] = obj({'kind': enum(*BIND_KINDS), 'src': enum(*ACTORS), 'act': enum(*ACTS), 'word': text(40), 'dst': enum(*ACTORS),
+                            'id': text(60), 'action': text(60), 'method': enum('GET', 'POST'), 'path': text(120), 'symbol': text(80),
+                            'what': text(200), 'optional': boolean()}, required=('kind',), open=False)
+DEFS['journey.branch'] = obj({'label': say(40, 1), 'to': text(20, 1)}, required=('label', 'to'), open=False)
+DEFS['journey.step'] = obj({'n': word(STEP_N, 3), 'lane': word(LANE_ID, 16), 'short': say(60, 1), 'text': say(1500, 1),
+                            'site_function': say(200), 'site_status': enum(*SITE_STATUS), 'site_says': say(120), 'site_code': say(600),
+                            'act': enum(*STEP_ACTS), 'binds': items(ref('journey.bind'), 8), 'code': items(word(SYMBOL, 80), 12),
+                            'tests': items(word(TEST_REF, 200), 12), 'branches': items(ref('journey.branch'), 6),
+                            'child': nullable(word(JOURNEY_ID, 6)), 'read': boolean(), 'backlog': nullable(word(BACKLOG_ID, 6)),
+                            'same_as': nullable(word(SAME_AS, 24))},
+                           required=('n', 'lane', 'short', 'text'), open=False)
+DEFS['journey.outcome'] = obj({'kind': enum(*OUTCOME_KINDS), 'voice': enum(*OUTCOME_VOICES), 'golden': nullable(text(200))},
+                              required=('kind',), open=False)
+DEFS['journey.edge'] = obj({'id': word(EDGE_ID, 8), 'at': text(20, 1), 'short': say(60, 1), 'trigger': say(400, 1),
+                            'site': obj({'status': enum(*SITE_STATUS), 'text': say(1500)}, required=('status',), open=False),
+                            'code_does': say(1500), 'outcome': ref('journey.outcome'), 'binds': items(ref('journey.bind'), 8),
+                            'code': items(word(SYMBOL, 80), 12), 'tests': items(word(TEST_REF, 200), 12),
+                            'backlog': nullable(word(BACKLOG_ID, 6)), 'disposition': nullable(enum(*DISPOSITIONS)),
+                            'rulings': items(word(RULING_ID, 8), 8), 'read': boolean(), 'truncated': boolean(),
+                            'reword': nullable(say(700)), 'same_as': nullable(word(SAME_AS, 24))},
+                           required=('id', 'at', 'short', 'trigger', 'site'), open=False)
+DEFS['journey.sub'] = obj({'id': word(SUB_ID, 6), 'title': say(80, 1), 'owner': say(80), 'step': word(STEP_N, 3), 'text': say(800),
+                           'drawn': say(120)}, required=('id', 'title', 'step'), open=False)
+DEFS['journey.ruling'] = obj({'id': word(RULING_ID, 8), 'status': enum(*RULING_STATUS), 'date': nullable(iso()), 'text': say(700)},
+                             required=('id', 'status', 'text'), open=False)
+DEFS['journey.quote'] = obj({'date': nullable(iso()), 'on': text(20), 'text': say(1500, 1)}, required=('text',), open=False)
+DEFS['journey.scenario'] = obj({'id': text(40, 1), 'lane': text(40, 1), 'test': word(TEST_REF, 200), 'walks': items(word(STEP_N, 3), 20),
+                                'says': say(300)}, required=('id', 'lane', 'test'), open=False)
+DEFS['journey.backlog'] = obj({'id': word(BACKLOG_ID, 6), 'row': text(20, 1), 'smallest': say(700, 1), 'decision': text(40),
+                               'package': text(160, 1)}, required=('id', 'row', 'smallest', 'package'), open=False)
+DEFS['journey.direction'] = obj({'id': text(8, 1), 'direction': say(500, 1), 'built': say(800), 'gap': say(500),
+                                 'mark': nullable(enum(*DISPOSITIONS))}, required=('id', 'direction'), open=False)
+DEFS['journey.build_row'] = obj({'id': text(8, 1), 'when': enum('v1', 'later'), 'change': say(800, 1), 'where': say(300),
+                                 'owner': text(40), 'size': enum('S', 'M', 'L'), 'tests': items(word(TEST_REF, 200), 6),
+                                 'backlog': nullable(word(BACKLOG_ID, 6))}, required=('id', 'change'), open=False)
+# the site's earlier rows of a journey (J2's thirteen steps and twenty edges): history, kept in the site's words, with no state
+DEFS['journey.was'] = obj({'title': say(120, 1), 'lanes': items(word(LANE_ID, 16), 10), 'steps': items(ref('journey.step'), 24),
+                           'edges': items(ref('journey.edge'), 30)}, required=('title', 'steps', 'edges'), open=False)
+DEFS['journey'] = obj({'schema_version': integer(1), 'id': word(JOURNEY_ID, 6), 'title': say(120, 1), 'kind': enum(*JOURNEY_KINDS),
+                       'inside': nullable(word(JOURNEY_ID, 6)), 'bound_to': nullable(enum(*FUNCTION_LAYERS)),
+                       'serves': items(word(STEP_REF, 8), 6), 'site_serves': nullable(say(40)), 'declared': boolean(),
+                       'goal': say(300, 1), 'lead': say(1500), 'ends_when': say(400), 'flag': nullable(text(40)), 'tag': say(200),
+                       'today': obj({'text': say(1500, 1), 'sources': text(200)}, required=('text',), open=False), 'was': ref('journey.was'),
+                       'site': obj({'page': text(200), 'data_version': text(8), 'as_of': iso()}, open=False),
+                       'helper': obj({'site': text(20), 'screen': text(20), 'code': text(20)}, open=False),
+                       'lanes': items(ref('journey.lane'), 10), 'steps': items(ref('journey.step'), 24),
+                       'edges': items(ref('journey.edge'), 24), 'sub': items(ref('journey.sub'), 10),
+                       'children': items(word(JOURNEY_ID, 6), 10), 'directions': items(ref('journey.direction'), 12),
+                       'build_rows': items(ref('journey.build_row'), 12), 'rulings': items(ref('journey.ruling'), 24),
+                       'decisions': items(text(12), 24), 'quotes': items(ref('journey.quote'), 12),
+                       'scenarios': items(ref('journey.scenario'), 12), 'invariants': items(text(60), 8),
+                       'backlog': items(ref('journey.backlog'), 24), 'site_ids': items(text(32, 1), 100, unique=True)},
+                      required=('schema_version', 'id', 'title', 'kind', 'goal', 'lanes', 'steps', 'edges', 'site_ids'), open=False)
+DEFS['journey.file'] = obj({'journeys': items(ref('journey'), 8, 1)}, required=('journeys',), open=False)   # a function's file holds a list
+
+# a row's computed state and a journey's, as the status document and the read model say them: one document per journey
+# (journeys/status/<id>.json) with the hash of its own definition, so two packages never conflict on one file
+DEFS['journey.row_status'] = obj({'state': enum(*(READ_STATES + ('declared',))), 'proven_by': items(text(200)), 'failing': items(text(200)),
+                                  'site': nullable(enum(*SITE_STATUS)), 'drift': boolean()}, required=('state',), open=False)
+DEFS['journey.status'] = obj({'schema_version': integer(1), 'id': word(JOURNEY_ID, 6), 'definitions_sha': text(64, 1),
+                              'state': enum(*(JOURNEY_STATES + ('unknown',))), 'counts': map_of(integer(0)),
+                              'tests': map_of(enum('passed', 'failed', 'missing')), 'rows': map_of(ref('journey.row_status')),
+                              'drift': items(obj({'row': text(40, 1), 'site': enum(*SITE_STATUS), 'state': enum(*(READ_STATES + ('declared',)))},
+                                                 required=('row', 'site', 'state'), open=False))},
+                             required=('schema_version', 'id', 'definitions_sha', 'state', 'counts', 'tests', 'rows'), open=False)
+
+#: the ledger's actions: the dotted words j2_runtime writes on a row of the cycle's ledger (an action of note(...) or of the
+#: activity feed, and the reason code check.failed that run.failed and workflow.blocked carry). The interface names them,
+#: j2_runtime owns them (A1.22): a journey's event bind names one of these, and a test keeps the list equal to j2_runtime's
+#: literals, so a package that adds a ledger action adds it here in the same commit
+LEDGER_ACTIONS = ('proposal.requested', 'proposal.created', 'proposal.granted', 'proposal.countered', 'proposal.refused',
+                  'proposal.accepted', 'workflow.validated', 'workflow.registered', 'workflow.blocked', 'timetable.written',
+                  'envelope.granted', 'envelope.held', 'slot.assigned', 'run.started', 'run.completed', 'run.failed',
+                  'artifact.filed', 'audit.finding_filed', 'audit.not_read', 'identity.assessed', 'identity.questioned',
+                  'identity.ruled', 'conflict.raised', 'ask.created', 'ask.answered', 'goal.reached', 'cycle.stopped',
+                  'cycle.resumed', 'cycle.reopened', 'check.failed')
+#: Identity's five recognitions of a request (task, query, directive, feedback, new idea): a verdict of its covering, not the
+#: user journeys. The key `journeys` of engine_defs/website.json and the check journey_is_known name them and are not renamed
+RECOGNITIONS = VERDICTS['identity']['journey']
+
 
 # ---- reading the tables ----------------------------------------------------------------------------------------------
 def _layer(name):

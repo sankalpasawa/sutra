@@ -465,3 +465,235 @@ def test_the_definitions_of_c2_take_their_samples():
     for name in ("kind", "engine.library", "artifact.template"):
         good, bad = samples[name]
         assert S.validate(name, good) == [] and S.validate(name, bad) != [], name
+
+
+# ---- C3: the user journey (L0) --------------------------------------------------------------------------------------
+JOURNEYS = HERE / "test_fixtures" / "journeys"
+
+
+def _journey(name="good", **change):
+    doc = copy.deepcopy(_read(JOURNEYS / ("%s.json" % name)))
+    doc.update(change)
+    return doc
+
+
+def _with_step(**change):
+    doc = _journey()
+    doc["steps"][0].update(change)
+    return doc
+
+
+def _faults_of(doc):
+    return S.validate("journey", doc)
+
+
+def test_journey_definition_accepts_the_good_one_and_refuses_each_bad_one():
+    good, with_was = _journey("good"), _journey("good-with-was")
+    assert len(good["steps"]) == 2 and len(good["edges"]) == 1, "the smallest journey: two steps and one edge"
+    assert _faults_of(good) == [] and _faults_of(with_was) == [], "both fixtures fit"
+    assert with_was["was"]["steps"][0]["n"] == "0a", "the earlier rows of a journey are kept as was, and step 0a is allowed there"
+    # an unknown field: the template is closed, so it cannot grow by accident
+    assert _faults_of(_journey(colour="red")) == ["$.colour: is not a field here"]
+    assert _faults_of(_with_step(colour="red")) == ["$.steps[0].colour: is not a field here"]
+    # a step number x1; and 0a, 4a and 10 are step numbers
+    assert _faults_of(_with_step(n="x1")) == ["$.steps[0].n: does not match %s" % S.STEP_N]
+    for n in ("0", "0a", "0b", "4a", "4e", "9", "10", "99"):
+        assert _faults_of(_with_step(n=n)) == [], n
+    for n in ("", "00", "4f", "100", "a1", "1.5", "0aa"):
+        assert _faults_of(_with_step(n=n)) != [], n
+    # a state word is never in a definition: the row's state is computed, so no field holds one
+    assert _faults_of(_with_step(status="proven")) == ["$.steps[0].status: is not a field here"]
+    assert _faults_of(_with_step(state="proven")) == ["$.steps[0].state: is not a field here"]
+    assert _faults_of(_journey(state="proven")) == ["$.state: is not a field here"]
+    assert _faults_of(_with_step(site_status="proven")) != [], "the site's own word for a row is one of the site's words, not a state"
+    assert _faults_of(_with_step(site_status="wanted")) == []
+    edge = _journey()
+    edge["edges"][0]["state"] = "proven"
+    assert _faults_of(edge) == ["$.edges[0].state: is not a field here"]
+    # a bind kind cron
+    bind = _with_step(binds=[{"kind": "cron"}])
+    assert _faults_of(bind) == ["$.steps[0].binds[0].kind: is not one of act, step, event, api, ui, person"]
+    # a missing lane
+    assert _faults_of(_with_step(lane=None)) != []
+    missing = _journey()
+    del missing["steps"][0]["lane"]
+    assert _faults_of(missing) == ["$.steps[0].lane: is missing"]
+    # BL-2b is a backlog id and BL-b2 is not
+    assert _faults_of(_with_step(backlog="BL-2b")) == [] and _faults_of(_with_step(backlog="BL-2")) == []
+    assert _faults_of(_with_step(backlog="BL-b2")) == ["$.steps[0].backlog: fits none of its shapes (does not match %s)" % S.BACKLOG_ID]
+    assert _faults_of(_with_step(backlog="BL-0")) != []
+    # step 0a is allowed in a step and in the earlier rows
+    assert _faults_of(_with_step(n="0a")) == []
+    bad_was = _journey("good-with-was")
+    bad_was["was"]["steps"][1]["n"] = "0z"
+    assert _faults_of(bad_was) == ["$.was.steps[1].n: does not match %s" % S.STEP_N]
+    # the rest of what a journey must name
+    for key in ("schema_version", "id", "title", "kind", "goal", "lanes", "steps", "edges", "site_ids"):
+        doc = _journey()
+        del doc[key]
+        assert _faults_of(doc) == ["$.%s: is missing" % key], key
+    assert _faults_of(_journey(kind="screen")) != [] and _faults_of(_journey(id="J0")) != [] and _faults_of(_journey(id="J100")) != []
+    edge = _journey()
+    del edge["edges"][0]["trigger"]
+    assert _faults_of(edge) == ["$.edges[0].trigger: is missing"]
+    assert _faults_of(_journey(site_ids=["step:1", "step:1"])) == ["$.site_ids: holds an item twice"]
+    assert _faults_of(_journey(bound_to="marketing")) != [] and _faults_of(_journey(bound_to="audit")) == []
+    outcome = _journey()
+    outcome["edges"][0]["outcome"]["kind"] = "cry"
+    assert _faults_of(outcome) != []
+    assert _faults_of(_with_step(tests=["test_j1.py"])) != [] and _faults_of(_with_step(tests=["js:test_website.js#W45"])) == []
+    assert _faults_of(_with_step(tests=["test_a.py::Klass::test_b"])) == []
+    assert _faults_of(_with_step(same_as="J1/step/3")) == [] and _faults_of(_with_step(same_as="J1/edge/J1.5")) == []
+    assert _faults_of(_with_step(same_as="J1/step")) != []
+
+
+def test_the_journey_grammars_take_the_ids_the_site_uses():
+    import re
+    take = {
+        S.JOURNEY_ID: (["J1", "J7", "J12", "S2", "U1", "FI1", "FA3", "FP1", "FC2", "FAU1"], ["J0", "J", "FX1", "FAU", "F1", "j1", "J1a"]),
+        S.EDGE_ID: (["J1.9", "J2.20", "FI1.1", "FAU1.3"], ["J2.0", "J2", "J2.a", "FX1.1", "S1.1"]),
+        S.SUB_ID: (["J2.a", "J2.h"], ["J2.1", "J2.A", "J2a"]),
+        S.LANE_ID: (["you", "engines", "the_one"], ["You", "1lane", "", "a" * 17]),
+        S.SYMBOL: (["identity_file", "j2_runtime.note", "$deliverable", "WS"], ["a b", "a.b.c", "1x", ""]),
+        S.STEP_REF: (["J2:6", "J3:4a", "J1:10"], ["J2", "J2:0", "J2:6f", "2:6"]),
+        S.RULING_ID: (["S-08", "Q7", "MK-1", "D5", "A1-14", "A3-D10"], ["S", "X-1", "S-08888", "s-08"]),
+        S.SAME_AS: (["J1/step/3", "J2/step/4a", "J1/edge/J1.5"], ["J1/step", "J1/edge/J1", "step/3", "J1/step/0"]),
+    }
+    for pattern, (yes, no) in take.items():
+        for x in yes:
+            assert re.search(pattern, x), "%s should take %r" % (pattern, x)
+        for x in no:
+            assert not re.search(pattern, x), "%s should refuse %r" % (pattern, x)
+
+
+def _enum_words(schema):
+    """Every value any enum or const of a definition names."""
+    out = set()
+    if isinstance(schema, dict):
+        for key, value in schema.items():
+            if key == "enum":
+                out.update(v for v in value if isinstance(v, str))
+            elif key == "const" and isinstance(value, str):
+                out.add(value)
+            else:
+                out |= _enum_words(value)
+    elif isinstance(schema, list):
+        for value in schema:
+            out |= _enum_words(value)
+    return out
+
+
+def test_the_journey_enums_are_the_site_s_words_and_a_state_is_never_a_definition_word():
+    assert S.ROW_STATES == ("proven", "partly", "failing", "unproven", "wanted", "dropped", "fault")
+    assert S.READ_STATES == S.ROW_STATES + ("unknown",) and S.JOURNEY_STATES == S.ROW_STATES + ("declared",)
+    assert S.JOURNEY_KINDS == ("person", "system", "function") and S.DISPOSITIONS == ("keep", "change", "drop")
+    # the states are computed (A3.6), so a definition's own enums never name one that is not also the site's word: wanted and
+    # partly are the site's words too, and a journey's declared flag is a field, not a state it holds
+    only_a_state = {"proven", "failing", "unproven", "fault", "dropped", "unknown"}
+    for name in (n for n in S.DEFS if n.startswith("journey") and n not in ("journey.status", "journey.row_status")):
+        held = _enum_words(S.DEFS[name]) & only_a_state
+        assert not held, "%s names %s in an enum: a state is never in a definition" % (name, sorted(held))
+    assert not set(S.SITE_STATUS) & only_a_state
+    assert only_a_state <= _enum_words(S.DEFS["journey.row_status"]) | _enum_words(S.DEFS["journey.status"]), "the status document names them"
+
+
+def test_journey_status_document_fits():
+    sample = {"schema_version": 1, "id": "J9", "definitions_sha": "ab" * 32, "state": "partly",
+              "counts": {"proven": 2, "partly": 1, "wanted": 0},
+              "tests": {"test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp": "passed",
+                        "test_layer_journey_j9.py::test_walk": "missing"},
+              "rows": {"step:1": {"state": "proven", "proven_by": ["test_j1.py::test_a"], "failing": [], "site": "built", "drift": False},
+                       "edge:J9.1": {"state": "wanted", "site": "wanted", "drift": False}},
+              "drift": [{"row": "edge:J9.1", "site": "built", "state": "wanted"}]}
+    assert S.validate("journey.status", sample) == []
+    # one document for each journey, with its own id and its own hash
+    for key in ("id", "definitions_sha", "state", "counts", "tests", "rows", "schema_version"):
+        assert S.validate("journey.status", {k: v for k, v in sample.items() if k != key}) == ["$.%s: is missing" % key], key
+    # an unknown state fails, in the journey, in a row and in the drift list
+    assert S.validate("journey.status", dict(sample, state="great")) != []
+    assert S.validate("journey.status", dict(sample, rows={"step:1": {"state": "great"}})) != []
+    assert S.validate("journey.status", dict(sample, drift=[{"row": "step:1", "site": "built", "state": "great"}])) != []
+    assert S.validate("journey.status", dict(sample, tests={"t.py::a": "skipped"})) != []
+    assert S.validate("journey.status", dict(sample, colour="red")) == ["$.colour: is not a field here"]
+    for state in S.JOURNEY_STATES + ("unknown",):
+        assert S.validate("journey.status", dict(sample, state=state)) == [], state
+    for state in S.READ_STATES + ("declared",):
+        assert S.validate("journey.row_status", {"state": state}) == [], state
+
+
+def _ledger_literals(source):
+    """The dotted words a module writes on its ledger rows, by reading how it calls note(ref, step, actor, recipient, action,
+    ...): that fifth argument, what its activity feed returns for a board act (_board_action), and the reason codes a note
+    carries. Returns (actions, reason_codes, every_dotted_string_outside_a_docstring)."""
+    import re
+    tree = ast.parse(source)
+    dotted = re.compile(r"^[a-z]+\.[a-z_]+$")
+    docs = {id(n.body[0].value) for n in ast.walk(tree) if isinstance(n, (ast.Module, ast.FunctionDef, ast.ClassDef)) and n.body
+            and isinstance(n.body[0], ast.Expr) and isinstance(getattr(n.body[0], "value", None), ast.Constant)}
+
+    def strings(node):
+        return [n.value for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str) and dotted.match(n.value)]
+
+    actions, reasons = set(), set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "note" and len(node.args) >= 5:
+            if isinstance(node.args[4], ast.Constant) and isinstance(node.args[4].value, str):
+                actions.add(node.args[4].value)
+            for kw in node.keywords:
+                if kw.arg == "reason_codes":
+                    reasons.update(strings(kw.value))
+        if isinstance(node, ast.FunctionDef) and node.name == "_board_action":
+            for ret in (n for n in ast.walk(node) if isinstance(n, ast.Return) and n.value is not None):
+                actions.update(strings(ret.value))
+    every = {n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)
+             and dotted.match(n.value) and id(n) not in docs}
+    return actions, reasons, every
+
+
+def _ledger_gap(actions, reasons, every, listed):
+    """The differences between what a module writes and what the interface names, as sentences that name the action and say
+    which side to edit."""
+    written = set(actions) | set(reasons)
+    out = ["j2_runtime.py writes the ledger action %s and S.LEDGER_ACTIONS does not name it: add it to LEDGER_ACTIONS in layer_schema.py, "
+           "in the same commit" % a for a in sorted(written - set(listed))]
+    out += ["S.LEDGER_ACTIONS names %s and j2_runtime.py never writes it: drop it from LEDGER_ACTIONS in layer_schema.py, or restore the "
+            "write in j2_runtime.py" % a for a in sorted(set(listed) - set(every))]
+    out += ["j2_runtime.py holds the word %s, which is neither an action nor a reason code this test reads: pass it to note() or to its "
+            "reason_codes, or take it out of the dotted words" % a for a in sorted(set(every) - written)]
+    return out
+
+
+def test_ledger_actions_equal_the_ledger_literals():
+    actions, reasons, every = _ledger_literals((HERE / "j2_runtime.py").read_text(encoding="utf-8"))
+    assert actions and "run.failed" in actions and "check.failed" in reasons, "the scan read note(...) and its reason codes"
+    gap = _ledger_gap(actions, reasons, every, S.LEDGER_ACTIONS)
+    assert not gap, "\n".join(gap)
+    assert len(set(S.LEDGER_ACTIONS)) == len(S.LEDGER_ACTIONS) and all("." in a for a in S.LEDGER_ACTIONS)
+    assert set(S.LEDGER_ACTIONS) == set(every), "the interface's list is j2_runtime's dotted words, no more and no less"
+
+
+def test_the_ledger_scan_reports_both_sides_and_names_the_action():
+    source = ('def note(ref, step, actor, recipient, action, state, summary, key, payload=None, **more):\n    pass\n'
+              'def _board_action(row):\n    return "proposal.created" if row else "ask.created"\n'
+              'def go(ref):\n    "the docstring says a.b and nothing else"\n'
+              '    note(ref, 1, "A", "B", "run.started", "x", "s", "k")\n'
+              '    note(ref, 1, "A", "B", "run.failed", "x", "s", "k", reason_codes=["check.failed"])\n'
+              '    note(ref, 1, "A", "B", "run.vanished", "x", "s", "k")\n')
+    actions, reasons, every = _ledger_literals(source)
+    assert actions == {"run.started", "run.failed", "run.vanished", "proposal.created", "ask.created"} and reasons == {"check.failed"}
+    gap = _ledger_gap(actions, reasons, every, ["run.started", "run.failed", "proposal.created", "ask.created", "check.failed", "run.gone"])
+    assert any("run.vanished" in g and "add it to LEDGER_ACTIONS" in g for g in gap), gap
+    assert any("run.gone" in g and "drop it from LEDGER_ACTIONS" in g for g in gap), gap
+    assert len(gap) == 2, gap
+    assert "a.b" not in every, "a docstring is not a ledger word"
+
+
+def test_recognitions_are_identitys_five():
+    import engine_runtime as R
+    assert S.RECOGNITIONS == ("task", "query", "directive", "feedback", "new-idea") == S.VERDICTS["identity"]["journey"]
+    assert tuple(_read(HERE / "engine_defs" / "website.json")["journeys"]) == S.RECOGNITIONS, "the key `journeys` is not renamed"
+    assert set(R.JOURNEYS) == set(S.RECOGNITIONS)
+    for word in S.RECOGNITIONS:
+        assert R.c_journey_is_known(None, None, None, {"journey": word})["ok"] is True, word
+    assert R.c_journey_is_known(None, None, None, {"journey": "J1"})["ok"] is False, "a user journey is not a recognition"
+    assert not set(S.RECOGNITIONS) & set(S.JOURNEY_KINDS)
