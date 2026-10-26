@@ -5,6 +5,12 @@ Every code, prompt, draft and check name the recipe uses is provided here (A1 st
 engine_runtime still holds, until this layer moves one in to change it (move on touch, A1.19). The layer's words are
 WORDS and LAYOUT below (A1.16), from the extractor and proved byte for byte against the .md bundle, which is now only the
 fallback for a part no layer holds. view() returns the pane's read model.
+
+W2-ADAPT (M5.2, M5.4, M9.1, M9.4, M9.6) adds to the same version, as additions and not a new version: adapt.fit fits the Library's
+line to the goal (a note per engine, an engine left out only when the kind does not require it), the two handlers that hear
+Priority's no and its ask for less copy the ways out Priority priced into the conflict, and the next round (adapt_hearnext,
+adapt.next, adapt_round, and the two handlers for Priority's answer to it) proposes a correction on the registered line, never
+the one that already failed, and keeps rounds.jsonl, which view() folds by round.
 """
 import os
 import re
