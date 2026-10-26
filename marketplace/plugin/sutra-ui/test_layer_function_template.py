@@ -795,3 +795,52 @@ def test_function_templates_read_the_interface_banned_words():
     assert "S.TEMPLATE_NEVER_SAY[\"priority\"]" in source and "S.TEMPLATE_BANNED" in source
     assert '"what runs next"' not in source and "charters?" not in source, "no copy of either list in that file"
     assert TFT.FORBIDDEN_ID.search("DS-3") and TFT.FORBIDDEN_ID.search("dref-abc"), "the founder-only-id pattern is not a word list, and stays"
+
+
+# ---- F8: the comparison script ------------------------------------------------------------------------------------------------
+def test_the_comparison_script_runs_and_the_block_is_the_only_difference(home, capsys):
+    """qa/role_block_ab.py runs the same scenarios with S.ROLE_IN_CARD on and off in one process, on the offline model; the two
+    arms then differ in prompt size only (the steps, the checks and the answers are the same), the arm with the block sends more
+    characters in the calls of the functions and no more calls, and a report ends well (exit 0) whatever it finds."""
+    import io
+    import json
+    import os
+    import subprocess
+    import sys
+    sys.path.insert(0, str(HERE / "qa"))
+    try:
+        import role_block_ab as B
+    finally:
+        sys.path.remove(str(HERE / "qa"))
+    env_before = {k: os.environ.get(k) for k in B.ENV}
+    results = B.run_arms()
+    assert list(results) == ["happy", "counter", "refused"]
+    for name, arms in results.items():
+        on, off = arms["on"], arms["off"]
+        assert (on["arm"], off["arm"]) == ("on", "off") and on["scenario"] == off["scenario"] == name
+        assert on["prompt_chars"] > off["prompt_chars"], "the arm with the block sends more characters"
+        extra = on["prompt_chars"] - off["prompt_chars"]
+        assert on["function_calls"] > 0 and on["function_calls"] * 2000 < extra < on["function_calls"] * (S.ROLE_BLOCK_MAX + 1), (name, extra)
+        assert on["function_prompt_chars"] - off["function_prompt_chars"] == extra, "and only in the calls of the functions"
+        for key in ("steps", "checks", "passed", "pass_rate", "soft_calls", "function_calls", "calls", "usd"):
+            assert on[key] == off[key], "%s %s: offline, the arms differ in prompt size only" % (name, key)
+        assert on["outside_the_contract"] == off["outside_the_contract"] == []
+        assert on["steps"] > 0 and on["checks"] > 0 and on["pass_rate"] == 1.0
+    assert results["counter"]["on"]["steps"] != results["refused"]["on"]["steps"], "the scenarios are not the same run"
+    assert S.ROLE_IN_CARD is True, "the constant is put back"
+    assert {k: os.environ.get(k) for k in B.ENV} == env_before, "and so is the environment"
+    out = io.StringIO()
+    assert B.main(["refused"], out) == 0
+    text = out.getvalue()
+    assert "role block in the card" in text and "the block adds" in text and "the arms differ in prompt size only" in text
+    assert "The live numbers are pending" in text and "refused" in text and "happy" not in text.split("\n", 2)[2]
+    out = io.StringIO()
+    assert B.main(["--json", "refused"], out) == 0 and json.loads(out.getvalue())["refused"]["on"]["prompt_chars"] > 0
+    out = io.StringIO()
+    assert B.main(["nonsense"], out) == 0 and "no scenario named nonsense" in out.getvalue()
+    # run as a script it ends with exit 0, and no environment variable decides the constant
+    done = subprocess.run([sys.executable, str(HERE / "qa" / "role_block_ab.py"), "refused"], capture_output=True, text=True, timeout=300,
+                          env=dict(os.environ, SUTRA_NATIVE_DEPT_HOME=str(home / "elsewhere")))
+    assert done.returncode == 0 and "the block adds" in done.stdout, done.stderr
+    assert not [k for k in B.ENV if "ROLE" in k], "the environment the script sets holds nothing about the block"
+    assert re.findall(r"environ[^\n]*ROLE|ROLE[^\n]*environ", (HERE / "qa" / "role_block_ab.py").read_text(encoding="utf-8").replace("never an environment", "")) == []
