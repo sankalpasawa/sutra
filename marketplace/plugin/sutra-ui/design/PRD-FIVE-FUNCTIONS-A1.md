@@ -676,7 +676,7 @@ An owner value passes only if `S.validate_field` passes: the field's type, no '{
 | root | setup | converse | task (default: CONVERSE, or setup.json's converse_instruction), items (the examples) | examples, library, existing, conversation | verbatim from p_setup_converse | setup.converse |
 | root | setup | shape | task, guidance as split | as p_setup_shape fills them | verbatim from p_setup_shape | setup.shape |
 
-'As split' means the field set is what the split rule finds for that part; W0-SCHEMA records the result literally in `S.PROMPTS`.
+'As split' means the field set is what the split rule finds for that part; W0-SCHEMA records the result literally in `S.PROMPTS`. The interface is written into the code as literals, never read from the .md files at runtime. Every soft step's `out` keys must appear in its part's `returns` (a test).
 
 **Parts added by later steps.** Each is added to `S.PROMPTS` by the package that builds the step, with its contract verbatim:
 
@@ -694,7 +694,7 @@ The bargain line part gains the inputs estimate and remaining (W1-PRIORITY, M5.3
 - **A1-ITEMS**: `Return ONLY a JSON object: {"items": [{"id": "D1", "verdict": "met" | "not_met" | "to_confirm", "claim": "what is or is not true, one line", "evidence": "what in the work shows it, one line"}], "findings": [{"where": str, "claim": str, "severity": "high" | "medium" | "low", "item": "D1" or null}]}.`
 - **A1-FIT**: `Return ONLY a JSON object: {"engines": ["the Library engines to run, in their order"], "fit": {"<engine>": "one line: what this engine does differently for this goal"}, "why": "one line"}.`
 - **A1-NEXT**: `Return ONLY a JSON object: {"correction": "one line: what to correct", "fixes": ["F1"], "covers": ["D2"], "why": "one line"}.`
-- **A1-ROUND**: `Return ONLY a JSON object: {"answer": "accept" | "reject", "why": "one line, in money and room only"}.` The interface is written into the code as literals, never read from the .md files at runtime. Every soft step's `out` keys must appear in its part's `returns` (a test).
+- **A1-ROUND**: `Return ONLY a JSON object: {"answer": "accept" | "reject", "why": "one line, in money and room only"}.`
 
 **The owner's values.** They are stored in `{ref}/instructions.json` as `DEFS['instructions'] = obj({'schema_version': const(1), 'values': map_of(map_of(map_of(map_of(obj({'value': any, 'at': text(40), 'ask': text(40)})))))})`: layer, group, part, field. They are written atomically on a stamp, through the sink. A value equal to the implementation's default is removed, so a later default reaches the department.
 
