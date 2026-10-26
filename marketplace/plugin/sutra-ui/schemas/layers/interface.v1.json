@@ -2691,6 +2691,61 @@
       "minItems": 0,
       "type": "array"
     },
+    "engine.start": {
+      "additionalProperties": false,
+      "properties": {
+        "on": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "checked": {
+                "type": "boolean"
+              },
+              "every_s": {
+                "minimum": 1,
+                "type": "number"
+              },
+              "kind": {
+                "enum": [
+                  "version",
+                  "post",
+                  "timer"
+                ]
+              },
+              "of": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/name"
+                  },
+                  {
+                    "const": "$deliverable"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "unless": {
+          "items": {
+            "maxLength": 60,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        }
+      },
+      "required": [
+        "on"
+      ],
+      "type": "object"
+    },
     "engine.template": {
       "additionalProperties": true,
       "properties": {
@@ -3699,6 +3754,280 @@
         "minimum": 0,
         "type": "integer"
       },
+      "type": "object"
+    },
+    "step": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string",
+          "x-law": "fixed"
+        },
+        "below": {
+          "enum": [
+            "P",
+            "C0",
+            "C1"
+          ],
+          "x-law": "free"
+        },
+        "born": {
+          "enum": [
+            "P",
+            "C0",
+            "C1",
+            "C2"
+          ],
+          "x-law": "free"
+        },
+        "by_hand": {
+          "maxLength": 600,
+          "minLength": 1,
+          "type": "string",
+          "x-law": "fixed"
+        },
+        "ceiling": {
+          "enum": [
+            "C0",
+            "C1",
+            "C2"
+          ],
+          "x-law": "free"
+        },
+        "check": {
+          "maxLength": 60,
+          "minLength": 1,
+          "type": "string",
+          "x-law": "fixed"
+        },
+        "code": {
+          "maxLength": 60,
+          "minLength": 1,
+          "type": "string",
+          "x-law": "free"
+        },
+        "draft": {
+          "maxLength": 60,
+          "minLength": 1,
+          "type": "string",
+          "x-law": "free"
+        },
+        "each": {
+          "maxLength": 60,
+          "minLength": 1,
+          "type": "string",
+          "x-law": "fixed"
+        },
+        "facts": {
+          "items": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 0,
+          "type": "array",
+          "x-law": "free"
+        },
+        "files": {
+          "type": "boolean",
+          "x-law": "fixed"
+        },
+        "id": {
+          "maxLength": 60,
+          "pattern": "^[a-z][a-z0-9]*\\.[a-z0-9_.]+$",
+          "type": "string",
+          "x-law": "fixed"
+        },
+        "may_end": {
+          "type": "boolean",
+          "x-law": "fixed"
+        },
+        "name": {
+          "maxLength": 160,
+          "minLength": 1,
+          "type": "string",
+          "x-law": "free",
+          "x-say": true
+        },
+        "nature": {
+          "enum": [
+            "transform",
+            "check",
+            "decide",
+            "make"
+          ],
+          "x-law": "fixed"
+        },
+        "only_if": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string",
+          "x-law": "fixed"
+        },
+        "or": {
+          "x-law": "fixed"
+        },
+        "out": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "minLength": 0,
+                "type": "string"
+              },
+              {
+                "items": {
+                  "maxLength": 40,
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "maxItems": 12,
+                "minItems": 1,
+                "type": "array"
+              }
+            ]
+          },
+          "type": "object",
+          "x-law": "fixed"
+        },
+        "prompt": {
+          "maxLength": 60,
+          "minLength": 1,
+          "type": "string",
+          "x-law": "free"
+        },
+        "side_by_side": {
+          "maximum": 16,
+          "minimum": 1,
+          "type": "integer",
+          "x-law": "free"
+        },
+        "stringency": {
+          "enum": [
+            "high",
+            "low"
+          ],
+          "x-law": "fixed"
+        },
+        "timeout_s": {
+          "minimum": 0,
+          "type": "number",
+          "x-law": "free"
+        },
+        "tools": {
+          "items": {
+            "enum": [
+              "WebSearch",
+              "WebFetch"
+            ]
+          },
+          "minItems": 0,
+          "type": "array",
+          "x-law": "free"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "nature",
+        "born",
+        "check"
+      ],
+      "type": "object"
+    },
+    "step.row": {
+      "additionalProperties": true,
+      "properties": {
+        "calls": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "check": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/check.verdict"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ended": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "engine": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "impl": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/impl"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mode": {
+          "enum": [
+            "slot",
+            "gate",
+            "mark"
+          ]
+        },
+        "rung": {
+          "anyOf": [
+            {
+              "enum": [
+                "P",
+                "C0",
+                "C1",
+                "C2"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "started": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "status": {
+          "maxLength": 20,
+          "minLength": 1,
+          "type": "string"
+        },
+        "step": {
+          "maxLength": 60,
+          "minLength": 1,
+          "type": "string"
+        },
+        "usd": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "engine",
+        "step",
+        "status"
+      ],
       "type": "object"
     },
     "view.adaptation": {

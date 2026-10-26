@@ -411,6 +411,8 @@ DEPARTMENT_BAD = {
     "ladder": {"Write": "2"}, "bounds": {"hops": -1}, "envelopes": {"Write": {"calls": 40}}, "ceiling": {"rounds": 6},
 }
 SAMPLES["department"] = (DEPARTMENT, _but(DEPARTMENT, colour="red"))
+# the A3 definitions' samples (PRD amendment A3: the templates at every level) live beside their fixtures, a (good, bad) pair each
+SAMPLES.update({k: tuple(v) for k, v in json.loads((S.HERE / "test_fixtures" / "templates" / "samples.json").read_text(encoding="utf-8")).items()})
 
 
 def test_s2_the_samples_name_every_definition():

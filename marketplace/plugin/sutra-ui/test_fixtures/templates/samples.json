@@ -1,0 +1,16 @@
+{
+  "step": [
+    {"id": "plan.read", "name": "Read the brief", "nature": "transform", "born": "C2", "check": "said_what_it_did", "code": "plan_read"},
+    {"id": "plan.read", "name": "Read the brief", "nature": "transform", "born": "C2", "check": "said_what_it_did", "code": "plan_read", "colour": "red"}
+  ],
+  "step.row": [
+    {"id": "s-0a1b2c3d4e", "run": "r-1", "engine": "Plan", "step": "plan.read", "item": null, "mode": "slot", "slot": "Plan@Brief.1",
+     "impl": null, "asked_rung": "C2", "rung": "C2", "miss": false, "by": "code", "usd": 0.0, "calls": 0, "status": "ok",
+     "check": {"ok": true, "notes": ["the step says what it did"]}, "started": "2026-10-26T09:00:00", "ended": "2026-10-26T09:00:01"},
+    {"id": "s-0a1b2c3d4e", "step": "plan.read", "mode": "rule", "status": "ok"}
+  ],
+  "engine.start": [
+    {"on": [{"kind": "version", "of": "Brief"}], "unless": ["identity.gate"]},
+    {"on": [{"kind": "cron", "every_s": 60}]}
+  ]
+}

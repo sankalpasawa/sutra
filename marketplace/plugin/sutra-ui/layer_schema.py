@@ -1361,6 +1361,95 @@ LAYERS = {
 }
 
 
+# ---- A3: the templates at every level (PRD amendment A3) --------------------------------------------------------------
+# A template is an interface is a base class, at every level: fixed, never run by itself, written only in code. What fills
+# it is a child: a module or a data file that conforms. This section types the levels A1 and A2 left as prose. Every name
+# here is additive ('A3 interface:' commits): nothing above is renamed, and nothing in the runtime reads a definition
+# below, so the definitions describe what the runtime already enforces and a test keeps the two equal. A bound is written
+# against the shipped files and never narrower than one of them.
+
+# the step (L4, A3.3): the shape law. engine_runtime.validate stays the definition law (names that ship, ids used once,
+# a unit that starts and ends with code); this one says what a step may hold, and has no registry in it
+NATURES = ('transform', 'check', 'decide', 'make')                     # == engine_runtime.NATURES
+GATE_ANSWERS = ('admit', 'wait', 'refuse')                             # == VERDICTS['identity']['gate'], and what a gate's check accepts
+MODEL_TOOLS = ('WebSearch', 'WebFetch')                                # == website_dept.MODEL_TOOLS
+STEP_KINDS = ('code', 'ai', 'person', 'gate', 'rule')
+#: every key a step's body is handed in its context, as a recorded run saw them: peek is on Coordination's rule context and
+#: on every gate's; table, rs and done are Coordination's; ready is the tie's; run and spend are an engine run's. item is the
+#: fan-out item (the body's third argument on main; reserved here as A3.3 names it)
+STEP_CTX = ('ref', 'dept', 'engine', 'def', 'slot', 'inp', 'post', 'run', 'bag', 'how', 'spend', 'table', 'rs', 'done', 'ready',
+            'item', 'peek')
+#: every key of a line of steps.jsonl, from the three writers (run_step, a gate's decision, the owner's mark): ask is on the
+#: row of a step that waits for the owner
+STEP_ROW = ('id', 'run', 'engine', 'step', 'item', 'mode', 'slot', 'impl', 'asked_rung', 'rung', 'miss', 'by', 'agent', 'applied',
+            'read', 'facts', 'in_sig', 'usd', 'calls', 'def_version', 'started', 'status', 'why', 'ask', 'answer', 'out_hash',
+            'out_shape', 'check', 'trial', 'ended', 'ms')
+
+
+def _law(law, schema):
+    """A step field's place in the law of inheritance (A2): fixed, a child version keeps the parent's value; free, a child
+    may change it. The classification is read from DEFS['step'] by template_checks.step_law, so the law has one source."""
+    return dict(schema, **{'x-law': law})
+
+
+def step_kind(step, group='steps'):
+    """The one kind a step has (ST-3): 'gate' or 'rule' by the list the recipe holds it in ('gates', 'rules'); else 'person'
+    when it is born on the person's rung, 'ai' when it has a prompt, and 'code' when it has neither. `group` is 'steps' for
+    a handler's steps too."""
+    if group == 'gates':
+        return 'gate'
+    if group == 'rules':
+        return 'rule'
+    if group != 'steps':
+        raise ValueError("a recipe holds a step in gates, rules or steps, not in %s" % group)
+    step = step if isinstance(step, dict) else {}
+    return 'person' if step.get('born') == 'P' else 'ai' if step.get('prompt') else 'code'
+
+
+DEFS['step'] = obj({
+    'id': _law('fixed', word(r'^[a-z][a-z0-9]*\.[a-z0-9_.]+$', 60)),            # '<engine prefix>.<name>', unique across all engines
+    'name': _law('free', say(160, 1)),
+    'nature': _law('fixed', enum(*NATURES)),
+    'born': _law('free', enum(*RUNGS)),
+    'ceiling': _law('free', enum('C0', 'C1', 'C2')),
+    'below': _law('free', enum('P', 'C0', 'C1')),
+    'check': _law('fixed', text(60, 1)),                                        # a name in CHECKS[layer], SHARED_CHECKS, or the legacy CHECK
+    'code': _law('free', text(60, 1)),
+    'prompt': _law('free', text(60, 1)),
+    'draft': _law('free', text(60, 1)),                                         # the answer when no model is there
+    'out': _law('fixed', map_of(any_of(text(20), items(text(40), 12, 1)))),     # {key: 'str'|'list'|'bool'|'dict'} or {key: [enum values]}
+    'answer': _law('fixed', text(40, 1)),                                       # the key whose value a table can answer (rung C2 as a table)
+    'facts': _law('free', items(text(40), 12)),
+    'stringency': _law('fixed', enum('high', 'low')),
+    'only_if': _law('fixed', text(120, 1)),                                     # '<step id>.<key>' or '<step id>.<key>=<value>'
+    'each': _law('fixed', text(60, 1)),                                         # fan out over the items another step listed
+    'side_by_side': _law('free', integer(1, 16)),
+    'files': _law('fixed', boolean()),
+    'may_end': _law('fixed', boolean()),                                        # 'not needed' ends the run ok
+    'by_hand': _law('fixed', text(600, 1)),                                     # the ask's text when the step falls to the person
+    'tools': _law('free', items(enum(*MODEL_TOOLS))),
+    'timeout_s': _law('free', number(0)),
+    'or': _law('fixed', ANYTHING),                                              # the alternative answers a step may give (cannot)
+}, required=('id', 'name', 'nature', 'born', 'check'), open=False)
+
+# the row a run writes (R.step_rows): mode is slot for an ordinary step, gate for a gate's decision (Coordination's rules are
+# written that way too, never as a mode of their own) and mark for the owner's mark. Open: every other key of STEP_ROW passes,
+# and a mark row has run None
+DEFS['step.row'] = obj({'id': text(40, 1), 'engine': text(80, 1), 'step': text(60, 1), 'mode': enum('slot', 'gate', 'mark'),
+                        'rung': nullable(enum(*RUNGS)), 'status': text(20, 1), 'check': nullable(ref('check.verdict')),
+                        'impl': nullable(ref('impl')), 'usd': number(0), 'calls': integer(0), 'started': text(40), 'ended': text(40)},
+                       required=('id', 'engine', 'step', 'status'))
+
+# an engine's start: what makes it run. $deliverable is the department's last artifact, whatever its kind (Adaptation's and
+# Audit's start); engine_runtime.start_faults stays the law (a version trigger names what it is a version of, a post trigger
+# needs a handler, a timer names its period, a blocker is a gate)
+DEFS['engine.start'] = obj({
+    'on': items(obj({'kind': enum('version', 'post', 'timer'), 'of': any_of(ref('name'), const('$deliverable')), 'checked': boolean(),
+                     'every_s': number(1)}, required=('kind',)), min_items=1),
+    'unless': items(text(60)),                                                  # gate ids
+}, required=('on',), open=False)
+
+
 # ---- reading the tables ----------------------------------------------------------------------------------------------
 def _layer(name):
     """A layer's name from its name or its title ('identity', 'Identity', 'Setup' -> 'root'); None for any other."""
