@@ -5702,6 +5702,8 @@ INPUT_SAYS = {"dept": "the department", "goal": "the goal", "done": "what done m
               "kinds": "the kinds of department", "use_cases": "the use cases", "practices": "the practices in place",
               "deliverable": "what was made", "measured": "what code measured", "estimate": "what it is likely to cost",
               "remaining": "what remains of today's room"}
+
+
 #: the inputs of the role block (goal.role_block, A3.4.3), in the owner's words: the app fills them from the function's role
 #: words and from the interface's boundaries, so the owner sees what the block is made of
 INPUT_SAYS.update({"agreement": "the working agreement", "is": "what it is", "is_not": "what it is not", "may": "what it may do",

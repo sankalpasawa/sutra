@@ -225,6 +225,14 @@ def case_8(module, ctx=None):
     return out
 
 
+def cases():
+    """A1.21's cases, in order: [(number, what it holds, the function)]."""
+    return [(n, fn.__doc__.strip().split('\n')[0], fn) for n, fn in (
+        (1, case_1), (2, case_2), (3, case_3), (4, case_4), (5, case_5), (6, case_6), (7, case_7), (8, case_8),
+        (14, case_14_function_template),
+    )]
+
+
 # ---- case 14: the function template (A3.4.8) ---------------------------------------------------------------------------------
 #: the words a function's goal group carries in a version (A3.4.2): text parts are one clause of at most 400 characters, item
 #: parts one to twelve lines of at most 160. does and skills are older prompt text, the pane's through _plain
@@ -380,11 +388,3 @@ def case_14_function_template(module, ctx=None):
     except Exception as exc:  # noqa: BLE001 -- a case never raises on a stub: it says what it could not read
         out.append('%s: the function template could not be read (%s)' % (impl_id(module) if module is not None and not isinstance(module, str) else module, exc))
     return out
-
-
-def cases():
-    """A1.21's cases, in order: [(number, what it holds, the function)]."""
-    return [(n, fn.__doc__.strip().split('\n')[0], fn) for n, fn in (
-        (1, case_1), (2, case_2), (3, case_3), (4, case_4), (5, case_5), (6, case_6), (7, case_7), (8, case_8),
-        (14, case_14_function_template),
-    )]
