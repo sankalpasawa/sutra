@@ -747,6 +747,97 @@ class TestTheGates(Base):
         self.assertEqual(W.versions(REF, "Live site"), [], "refused by the owner: never published")
         self.assertEqual(self.written_by_the_reads(), [], "and the reads after the line rests write nothing")
 
+    def test_28d_a_panel_read_does_not_tell_the_owner_that_the_line_waits_for_an_engine_the_tick_tells_once(self):
+        """identity.wait_engine, the first blocker of every work engine: while an ask to add an engine is pending the line waits for the
+        stamp, and the owner is told once. The telling (the mark on the ask, the post to the owner) is the tick's; a read that meets the
+        wait first writes nothing."""
+        W, R = self.W, self.R
+        W.give_goal(REF, GOAL)
+        while not W.versions(REF, "Brief"):
+            self.assertEqual(W.run_until_idle(REF, limit=1), 1, "the goal is taken and the Brief filed")
+        W._put_ask(REF, {"id": "a-engine1", "kind": "engine", "engine": "Talks List", "text": "Add an engine for your talks?",
+                         "status": "pending", "created": W.now()})
+        told = lambda: [p for p in R.board(REF) if (p.get("payload") or {}).get("word") == "waits"]  # noqa: E731
+        for _ in range(3):
+            self.assertEqual(self.written_by_the_reads(), [], "a read of the line while an engine waits for its stamp wrote")
+        self.assertEqual((told(), W.asks(REF)[-1].get("told")), ([], None), "the window: nobody has told the owner")
+        W.run_until_idle(REF, limit=1)
+        self.assertEqual(len(told()), 1, "the tick tells the owner")
+        self.assertTrue(W.asks(REF)[-1].get("told"))
+        self.assertEqual(self.written_by_the_reads(), [], "and the reads after it write nothing")
+        W.run_until_idle(REF, limit=1)
+        self.assertEqual(len(told()), 1, "once")
+
+    def test_28e_a_panel_read_does_not_ask_the_owner_about_a_model_that_is_away_the_tick_asks_once(self):
+        """_held_back: after the model has been away for every wait it is given, the tick files the ask 'The model is away: ... Try
+        again?'. A read that meets the third wait before the tick asks files nothing, nor does a read of a slot the owner let rest."""
+        W = self.W
+        self.M.answer = lambda sid, prompt: (None, 0.0, "away")
+        W.give_goal(REF, GOAL)
+        asked = lambda: [a for a in W.asks(REF) if a["kind"] == "model"]  # noqa: E731
+        slots = 0
+        while True:
+            self.assertEqual(self.written_by_the_reads(), [], "a read after slot %d wrote" % slots)
+            if not W.run_until_idle(REF, limit=1):
+                break
+            slots += 1
+            self.assertLess(slots, 40)
+        self.assertEqual(len(asked()), 1, "the tick asked, once")
+        self.assertEqual(self.written_by_the_reads(), [], "and the reads while the owner is asked write nothing")
+        W.decide_ask(REF, asked()[0]["id"], False)
+        skipped = lambda: [r for r in W.runs(REF) if r.get("status") == "skipped" and "let it rest" in str(r.get("what"))]  # noqa: E731
+        self.assertEqual(skipped(), [], "the window: the owner let it rest and no tick has run yet")
+        for _ in range(2):
+            self.assertEqual(self.written_by_the_reads(), [], "a read after the owner let it rest wrote")
+        self.assertEqual(skipped(), [])
+        while W.run_until_idle(REF, limit=1):
+            self.assertEqual(self.written_by_the_reads(), [], "a read after a slot wrote")
+        self.assertEqual(len(skipped()), 1, "the tick filed the one row")
+
+    def test_28f_a_panel_read_does_not_file_the_skipped_row_for_a_post_no_step_reads(self):
+        """_on_post: a post that names an engine whose steps read no post of that kind is skipped by the tick, with a row; a read that
+        meets it first files nothing. (The interface refuses such a post on the board, so the post is appended by hand.)"""
+        W, R = self.W, self.R
+        W.give_goal(REF, GOAL)
+        self.idle()
+        R._append(REF, "board.jsonl", {"n": len(R.board(REF)) + 1, "src": "Identity", "dst": ["Priority"], "msg_type": "inform",
+                                       "thread": "x-stray", "hop": 1, "about": None, "payload": {"word": "stray"}, "ack_id": None,
+                                       "by": None, "at": W.now()})
+        skipped = lambda: [r for r in W.runs(REF) if r.get("status") == "skipped" and "reads a post of that kind" in str(r.get("what"))]  # noqa: E731
+        before = skipped()
+        for _ in range(3):
+            self.assertEqual(self.written_by_the_reads(), [], "a read that meets the stray post wrote")
+        self.assertEqual(skipped(), before)
+        W.run_until_idle(REF, limit=1)
+        self.assertEqual(len(skipped()), len(before) + 1, "the tick filed the row, once")
+        self.assertEqual(self.written_by_the_reads(), [], "and the reads after it write nothing")
+        W.run_until_idle(REF, limit=1)
+        self.assertEqual(len(skipped()), len(before) + 1)
+
+    def test_28g_a_panel_read_does_not_ask_a_gates_function_for_its_verdict_the_tick_asks_once(self):
+        """A gate that is not on the code rung answers wait while its function judges (test_27). The request for the verdict (a post on
+        the board and the mark in verdicts.json) is the tick's: a read that meets the gate first says 'is judging' and writes nothing,
+        and asks nothing of the model."""
+        R, W = self.R, self.W
+        _, g = R.step_def("priority.envelope")
+        R.move(REF, g, "C1", "a test, to see the wait")
+        W.give_goal(REF, GOAL)
+        while not W.versions(REF, "Brief"):
+            self.assertEqual(W.run_until_idle(REF, limit=1), 1, "the goal is taken and the Brief filed")
+        asked = lambda: [p for p in R.board(REF) if (p.get("payload") or {}).get("word") == "verdict"]  # noqa: E731
+        calls = len(self.M.calls)
+        for _ in range(3):
+            self.assertEqual(self.written_by_the_reads(), [], "a read that meets the soft gate wrote")
+        self.assertEqual((asked(), len(self.M.calls)), ([], calls), "the window: nobody has asked the function")
+        slots = 0
+        while W.run_until_idle(REF, limit=1):
+            slots += 1
+            self.assertEqual(self.written_by_the_reads(), [], "a read after slot %d wrote" % slots)
+            self.assertLess(slots, 80)
+        self.assertEqual(len(asked()), len({p["payload"]["slot"] for p in asked()}), "one request for each slot")
+        self.assertTrue(asked(), "the tick asked the gate's function")
+        self.assertEqual(self.written_by_the_reads(), [], "and the reads at rest write nothing")
+
 
 class TestAuditAndAlarm(Base):
     def test_29_audit_finds_what_nobody_gave_and_the_owner_sends_it_back_to_the_line(self):

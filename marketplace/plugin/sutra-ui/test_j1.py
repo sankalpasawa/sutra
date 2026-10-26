@@ -565,3 +565,27 @@ def test_j1_7_the_birth_is_told_once_when_setup_the_sweep_and_the_next_due_read_
     [t.start() for t in threads]
     [t.join() for t in threads]
     assert len([p for p in R.board(root) if (p.get("payload") or {}).get("word") == "department"]) == 1
+
+
+def test_j1_7a_a_panel_read_of_a_root_does_not_tell_the_birth_the_next_tick_does(j1):
+    """Hard rule 4(g): the birth summary is projected to Root's board by the tick (Setup's run, the sweep, the next-due tick). A read of
+    the Root, which peeks, writes nothing: no post, no change to the department's record."""
+    W, R, founding = j1
+    _, root = _root(j1)
+    made = founding.spawn(root, "Acme Learning Website", "website", "Teach algebra", template_ref={"id": "department/website", "version": 1})
+    child = W.dept(made["ref"])
+    child["pending_final_tell"] = {"word": "department", "done": "Acme Learning Website is set up.", "dept": made["ref"],
+                                   "from": "Acme Learning Website", "operation": made["operation_id"]}
+    W.save_dept(made["ref"], child)
+    told = lambda: [p for p in R.board(root) if (p.get("payload") or {}).get("word") == "department"]  # noqa: E731
+    before = (_home_hashes(W.ddir(root)), _home_hashes(W.ddir(made["ref"])))
+    for _ in range(3):
+        R.next_due(root, peek=True)
+        W.status(root)
+        W.map_view(root)
+    assert (_home_hashes(W.ddir(root)), _home_hashes(W.ddir(made["ref"]))) == before and told() == [], "the reads told the birth"
+    assert isinstance(W.dept(made["ref"]).get("pending_final_tell"), dict)
+    R.next_due(root)
+    assert len(told()) == 1 and "pending_final_tell" not in W.dept(made["ref"]), "the tick tells it"
+    R.next_due(root)
+    assert len(told()) == 1, "once"
