@@ -1,0 +1,470 @@
+{
+ "schema_version": 1,
+ "id": "J4",
+ "title": "A rule",
+ "kind": "system",
+ "inside": "J3",
+ "bound_to": null,
+ "serves": [],
+ "declared": false,
+ "goal": "A directive you say becomes one rule with a tag and a scope, kept only on your stamp, shown to every agent, read against every page, and enforced: a build that breaks it goes back to be rewritten and never goes live.",
+ "lead": "A rule. You say a directive; Identity restates it as one rule with a tag (always, ask, refuse, goal) and a scope and asks; on your stamp the rule is on the record and every agent's card shows it; Check reads every page against it; a build that breaks it is sent back, twice at most, and then you are told.",
+ "ends_when": "The rule is on the record and enforced by the line, or you refused it and nothing was kept.",
+ "flag": null,
+ "site": {
+  "page": "native/system/department.html#j4",
+  "data_version": "2.4",
+  "as_of": "2026-10-01"
+ },
+ "helper": {
+  "site": "Sutra",
+  "screen": "Root",
+  "code": "Root"
+ },
+ "lanes": [
+  {
+   "id": "you",
+   "label": "You",
+   "kind": "person"
+  },
+  {
+   "id": "identity",
+   "label": "Identity",
+   "kind": "function",
+   "function": "identity"
+  },
+  {
+   "id": "coordination",
+   "label": "Coordination",
+   "kind": "function",
+   "function": "coordination"
+  },
+  {
+   "id": "engines",
+   "label": "Engines",
+   "kind": "engine"
+  }
+ ],
+ "steps": [
+  {
+   "n": "1",
+   "lane": "you",
+   "short": "You say a directive",
+   "text": "You say a directive (\"never say X\", \"always show the phone number\").",
+   "site_function": "you",
+   "site_status": "none",
+   "act": "say",
+   "binds": [
+    {
+     "kind": "act",
+     "src": "Owner",
+     "act": "request",
+     "word": "request",
+     "dst": "Identity"
+    }
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp",
+    "test_layer_journey_j4.py::TestJ4Walks::test_walk_a_rule_is_born_kept_read_and_enforced"
+   ],
+   "site_says": "none",
+   "site_code": "—"
+  },
+  {
+   "n": "2",
+   "lane": "identity",
+   "short": "Identity restates it",
+   "text": "Identity restates it as one rule with a tag (always / ask / refuse / goal) and a scope, and asks: \"A rule, as understood: …\".",
+   "site_function": "Identity",
+   "site_status": "none",
+   "act": "ask",
+   "binds": [
+    {
+     "kind": "step",
+     "id": "identity.rule"
+    },
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "request",
+     "word": "rule",
+     "dst": "Owner"
+    }
+   ],
+   "code": [
+    "p_identity_rule",
+    "d_identity_rule",
+    "c_rule_is_tagged",
+    "_rule_ask",
+    "identity_file"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp",
+    "test_j2_identity.py::test_m3_4_a_rule_given_as_an_answer_keeps_its_tag_through_the_rule_ask",
+    "test_layer_journey_j4.py::TestJ4Walks::test_walk_a_rule_is_born_kept_read_and_enforced"
+   ],
+   "site_says": "none",
+   "site_code": "identity.rule, _rule_ask"
+  },
+  {
+   "n": "3",
+   "lane": "identity",
+   "short": "You stamp; it is on the record",
+   "text": "You stamp. The rule is written on the record with its id, tag, line and your words; the Brief gets \"A rule, from now on: …\".",
+   "site_function": "Identity",
+   "site_status": "none",
+   "act": "stamp",
+   "binds": [
+    {
+     "kind": "act",
+     "src": "Owner",
+     "act": "accept-proposal",
+     "word": "rule",
+     "dst": "Identity"
+    },
+    {
+     "kind": "step",
+     "id": "identity.apply"
+    }
+   ],
+   "code": [
+    "identity_apply",
+    "website_dept.rule_row",
+    "website_dept.bump_identity"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp",
+    "test_layer_journey_j4.py::TestJ4Walks::test_walk_a_rule_is_born_kept_read_and_enforced"
+   ],
+   "site_says": "none",
+   "site_code": "identity_apply kind rule, d[\"rules\"]"
+  },
+  {
+   "n": "4",
+   "lane": "identity",
+   "short": "Every card shows the rules",
+   "text": "Every agent step's card shows the rules; Identity's take reads them as THE RULES.",
+   "site_function": "all functions",
+   "site_status": "none",
+   "act": "read",
+   "binds": [
+    {
+     "kind": "step",
+     "id": "write.page"
+    },
+    {
+     "kind": "step",
+     "id": "identity.take",
+     "optional": true
+    }
+   ],
+   "code": [
+    "card",
+    "p_identity_take"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp",
+    "test_layer_journey_j4.py::TestJ4Walks::test_walk_a_rule_is_born_kept_read_and_enforced"
+   ],
+   "site_says": "none",
+   "site_code": "card, p_identity_take"
+  },
+  {
+   "n": "5",
+   "lane": "engines",
+   "short": "Check reads the pages",
+   "text": "Check lists the rules that apply to the pages and reads each page against them; a broken rule files the Build failed with the finding.",
+   "site_function": "Check",
+   "site_status": "none",
+   "act": "check",
+   "binds": [
+    {
+     "kind": "step",
+     "id": "check.rules_of"
+    },
+    {
+     "kind": "step",
+     "id": "check.rules"
+    },
+    {
+     "kind": "step",
+     "id": "check.build"
+    }
+   ],
+   "code": [
+    "check_rules_of",
+    "p_check_rules",
+    "d_check_rules",
+    "check_build"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFrontDoor::test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live",
+    "test_layer_journey_j4.py::TestJ4Walks::test_walk_a_rule_is_born_kept_read_and_enforced"
+   ],
+   "site_says": "none",
+   "site_code": "check.rules_of, check.rules, check_build"
+  },
+  {
+   "n": "6",
+   "lane": "coordination",
+   "short": "Sent back, twice at most",
+   "text": "The line sends the build back to Write with the finding, twice at most; then you are told.",
+   "site_function": "Coordination",
+   "site_status": "none",
+   "act": "post",
+   "binds": [
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "inform",
+     "word": "broken",
+     "dst": "Owner"
+    }
+   ],
+   "code": [
+    "_send_back"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFrontDoor::test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live",
+    "test_layer_journey_j4.py::TestJ4Walks::test_walk_a_rule_is_born_kept_read_and_enforced"
+   ],
+   "backlog": "BL-4",
+   "site_says": "none",
+   "site_code": "_send_back"
+  }
+ ],
+ "edges": [
+  {
+   "id": "J4.1",
+   "at": "2",
+   "short": "The rule is already there",
+   "trigger": "The rule is already on the record.",
+   "site": {
+    "status": "built",
+    "text": "Said back, not added twice."
+   },
+   "code_does": "identity_file (a directive, or a rule the take read out of a task) says the department already has the rule and files nothing; _rule_answered does the same for an answered rule ask.",
+   "outcome": {
+    "kind": "tell",
+    "voice": "Identity",
+    "golden": "the department already has this rule"
+   },
+   "binds": [
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "inform",
+     "word": "request",
+     "dst": "Owner"
+    }
+   ],
+   "code": [
+    "_rule_answered",
+    "identity_file"
+   ],
+   "tests": [
+    "test_layer_journey_j4.py::TestJ4Edges::test_j4_1_a_rule_the_department_already_has_is_said_back_and_not_added"
+   ]
+  },
+  {
+   "id": "J4.2",
+   "at": "4",
+   "short": "The rule is tagged goal",
+   "trigger": "The rule is tagged goal.",
+   "site": {
+    "status": "built",
+    "text": "It replaces the goal and the next publish asks again (publish_asks_from)."
+   },
+   "code_does": "identity_apply replaces the goal, keeps goals[], bumps identity_revision and re-arms the first-publish ask. The cycle is not reopened (J2.8).",
+   "outcome": {
+    "kind": "ask",
+    "voice": "Identity",
+    "golden": "A new goal, as understood"
+   },
+   "code": [
+    "identity_apply",
+    "website_dept.bump_identity"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFiveJourneys::test_39_a_directive_on_the_goal_changes_the_goal_and_the_first_publish_asks_again"
+   ],
+   "rulings": [
+    "Q7"
+   ]
+  },
+  {
+   "id": "J4.3",
+   "at": "3",
+   "short": "You refuse the rule ask",
+   "trigger": "You refuse the rule ask.",
+   "site": {
+    "status": "built",
+    "text": "Nothing kept."
+   },
+   "code_does": "identity_drop keeps nothing; a refused rule that answered Identity's own question asks the question again.",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   },
+   "code": [
+    "identity_drop",
+    "identity_next"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFiveJourneys::test_41_feedback_carried_forward_is_a_rule_only_if_the_owner_says_it_sticks",
+    "test_j2_identity.py::test_m3_4_a_refused_rule_answer_asks_the_question_again"
+   ]
+  },
+  {
+   "id": "J4.4",
+   "at": "4",
+   "short": "A child's rule is looser than Root's",
+   "trigger": "A child's rule is looser than Root's.",
+   "site": {
+    "status": "built",
+    "text": "Identity's own check at birth keeps the child's rules within the parent's (a born Root rule)."
+   },
+   "code_does": "Not built. Root's kind carries the born rule \"A child's rules can only tighten this one's\", which the model reads on its card; identity_apply's rule branch compares nothing with an ancestor's rules (_effective_rules serves the birth gate only).",
+   "outcome": {
+    "kind": "refuse",
+    "voice": "Identity",
+    "golden": null
+   },
+   "backlog": "BL-2",
+   "rulings": [
+    "S-08"
+   ],
+   "reword": "A department's rules can only tighten Root's: words only until the check below is built."
+  },
+  {
+   "id": "J4.5",
+   "at": "2",
+   "short": "A rule the take reads out of a task",
+   "trigger": "A rule the take reads out of a task.",
+   "site": {
+    "status": "built",
+    "text": "Asked as a rule before the task is filed (J3.3)."
+   },
+   "code_does": "The same as J3.3: identity_file asks for the rule first (_rule_ask), then files the task.",
+   "outcome": {
+    "kind": "ask",
+    "voice": "Identity",
+    "golden": "A rule, as understood"
+   },
+   "code": [
+    "_rule_ask",
+    "identity_file"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestRunThree::test_102_words_identitys_take_calls_a_rule_are_filed_as_a_rule_not_as_a_request"
+   ]
+  },
+  {
+   "id": "J4.6",
+   "at": "6",
+   "short": "Still breaks after two returns",
+   "trigger": "The build still breaks the rule after two returns.",
+   "site": {
+    "status": "built",
+    "text": "You are told; the build stays failed; nothing publishes (_send_back)."
+   },
+   "code_does": "_send_back stops at two returns, tells the owner (\"two rewrites did not mend it. Say the rule another way, or drop it.\"), the build stays failed and nothing goes live. The end is a tell; M9.5 makes it an options ask.",
+   "outcome": {
+    "kind": "block",
+    "voice": "Identity",
+    "golden": "two rewrites did not mend it"
+   },
+   "binds": [
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "inform",
+     "word": "broken",
+     "dst": "Owner"
+    }
+   ],
+   "code": [
+    "_send_back"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFrontDoor::test_72_a_rule_the_person_stamped_is_a_check_the_line_runs_and_a_build_that_breaks_it_never_goes_live"
+   ],
+   "backlog": "BL-4"
+  }
+ ],
+ "sub": [],
+ "children": [],
+ "directions": [],
+ "build_rows": [],
+ "rulings": [
+  {
+   "id": "S-08",
+   "status": "RULED",
+   "date": "2026-09-30",
+   "text": "Approval settings live per department, inherited from Root; a department may only tighten."
+  },
+  {
+   "id": "S-18",
+   "status": "RULED",
+   "date": "2026-09-30",
+   "text": "Authority: the AI has the whole authority to make things happen unless a person says something; no ask stops a run by default; a person narrows with a rule, a Stop, a refusal."
+  }
+ ],
+ "decisions": [
+  "Q7",
+  "Q12"
+ ],
+ "quotes": [],
+ "scenarios": [
+  {
+   "id": "J4.walk",
+   "lane": "the department's life",
+   "test": "test_layer_journey_j4.py::TestJ4Walks::test_walk_a_rule_is_born_kept_read_and_enforced",
+   "walks": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6"
+   ],
+   "says": "A directive becomes a rule on the owner's stamp, reaches every card, is read against every page, and a build that breaks it is sent back twice and never goes live, with a stubbed model."
+  }
+ ],
+ "invariants": [
+  "only_identity_speaks_to_the_owner",
+  "approvals_only_tighten",
+  "every_ask_names_its_answers"
+ ],
+ "backlog": [
+  {
+   "id": "BL-2",
+   "row": "edge:J4.4",
+   "smallest": "A rule asked for, or stamped, whose normalised line equals the line of an inherited rule that forbids it (tagged refuse, or a prohibition tagged always) or asks first (tagged ask), and whose own tag is lower (go below ask below refuse), is not asked for and not written: Identity says \"Root's rule stands: a department's rules can only tighten it\" and a system_run row is written. Checked in _rule_ask (so the owner is never asked to stamp a rule that would be refused) and again in identity_apply (an ancestor's rule may change between the ask and the stamp).",
+   "decision": "S-08",
+   "package": "A3-J34 P5 (a pure helper in layers/identity/tighten.py and two call sites)"
+  },
+  {
+   "id": "BL-2b",
+   "row": "edge:J4.4",
+   "smallest": "Rules that differ in wording but not in meaning, and a positive always rule against a go rule, are not compared: matching is by normalised line, and Root's own born rules are always and go, so today the check reaches a rule an ancestor stamped. A stricter law (a model reading of looseness) is a later amendment.",
+   "decision": "S-08",
+   "package": "a later amendment"
+  }
+ ],
+ "site_ids": [
+  "step:1",
+  "step:2",
+  "step:3",
+  "step:4",
+  "step:5",
+  "step:6",
+  "edge:J4.1",
+  "edge:J4.2",
+  "edge:J4.3",
+  "edge:J4.4",
+  "edge:J4.5",
+  "edge:J4.6"
+ ]
+}
