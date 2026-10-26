@@ -3858,6 +3858,12 @@ def setup_make(ctx, step, item):
     if named:
         # the owner named the department on the Org sheet: the covering keeps that name, whatever the agent shaped
         shape = dict(shape, name=named)
+    bad = W.birth_faults(shape["kind"])
+    if bad:
+        # the kind's line breaks a standard Root holds every line to (PRD A1.14): founding makes nothing, and the covering
+        # fails naming it, so no registry entry is left without a record behind it
+        return {"ref": None, "name": shape["name"], "kind": shape["kind"], "goal": shape["goal"], "created": False,
+                "refused": "this kind's line breaks Root's standards: " + "; ".join(bad)}
     import founding
     conversation = (ctx["bag"].get("setup.read") or {}).get("conversation") or {}
     live = _j1_record(ctx["ref"]) if conversation else None
@@ -3938,6 +3944,8 @@ def c_department_is_shaped(ctx, step, item, out):
 def c_department_is_made(ctx, step, item, out):
     """The child exists under Root, on the runtime, and its goal reached it: the child's own Identity files the goal when
     the child runs, which is its business, not Root's."""
+    if isinstance(out, dict) and out.get("refused"):
+        return {"ok": False, "notes": [str(out["refused"])]}
     d = W.dept(out.get("ref")) if isinstance(out, dict) and out.get("ref") else None
     ok = bool(d) and d.get("runtime") == 2 and d.get("parent") == ctx["ref"] and bool(W.requests(out["ref"]))
     return _verdict(ok, "the department exists under Root, on the runtime, and has its goal", "the department was not made under Root")

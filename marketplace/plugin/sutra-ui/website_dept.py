@@ -574,6 +574,19 @@ def _runtime(ref):
 
 
 # ---- the department's birth ----------------------------------------------------------------------------------------
+def birth_faults(kind):
+    """The kind's line held to Root's standards at birth (PRD A1.14, M7.1): the standards that apply to a Library line the
+    moment a department of the kind is born, none for a kind whose line is empty (Adaptation shapes it). [] when the line
+    meets them; else one sentence for each that does not, naming the standard, its words and what is wrong. Nothing is
+    written, so Setup asks it before founding makes anything (engine_runtime.setup_make)."""
+    k = KINDS.get(kind) or {}
+    line = list(k.get("line") or [])
+    d = {"kind": kind, "engines": line}
+    says = {sid: text for sid, text, _, _ in S.WORKFLOW_STANDARDS}
+    return ["%s (%s): %s" % (r["check"], says[r["check"]], r["why"]) if r["check"] in says else str(r["why"])
+            for r in S.validate_workflow(S.as_workflow(line, "library", d), "birth", d) if not r["passed"]]
+
+
 def create(ref, name, brief, owner="the owner", parent=None, kind="website", goal=None):
     """A new department of its kind: Identity's rules, Priority's envelopes, Coordination's table, and its first
     artifact from the owner's words. Every department is born on the engine runtime (founder, 2026-09-28: "I don't
@@ -611,8 +624,16 @@ def create(ref, name, brief, owner="the owner", parent=None, kind="website", goa
         by_plan = kind != "root" and j2_runtime.enabled()
         d["envelopes"] = {} if by_plan else {e[0]: engine_runtime.engine_limit(e[0]) for e in engines_of(d)}
         d["envelopes"].update({s: engine_runtime.engine_limit(s) for s in SYSTEMS})
+        # the kind's line is held to Root's standards before anything is written (PRD A1.14): a kind whose line breaks one
+        # makes no department, and the failure names the standard, as an unknown kind is refused above
+        bad = birth_faults(kind)
+        if bad:
+            raise ValueError("a %s department is not made: its line breaks Root's standards: %s" % (kind, "; ".join(bad)))
+    # the implementation of each layer this department runs (A1.18), and the version of the interface its record is in
+    d["layers"] = dict(S.DEFAULT_PINS)
+    d["schema_version"] = S.SCHEMA_VERSION
     ddir(ref).mkdir(parents=True, exist_ok=True)
-    save_dept(ref, d)
+    save_dept(ref, d)       # no `by`: birth hands each layer its first values (A1.6 lists this as their writer), not one layer writing another's key
     system_run(ref, "Identity", "set its rules within the parent's")
     system_run(ref, "Priority", "granted an envelope to each function" if by_plan else "granted an envelope to each engine")
     system_run(ref, "Coordination", "timetabled each engine after its input's new version")

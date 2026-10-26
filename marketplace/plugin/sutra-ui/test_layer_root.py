@@ -369,3 +369,77 @@ def test_r4_the_covers_and_the_fit_a_plan_names_are_kept_with_the_record(home):
     assert reg["version"] == 2 and S.validate("workflow.registration", reg) == []
     assert reg["covers"] == {"D1": ["Plan", "Write", "Publish"], "D2": ["Check", "Publish"]}
     assert reg["fit"] == {"Plan": "plans the pages for a school's algebra course"}
+
+
+# ---- R3: birth ---------------------------------------------------------------------------------------------------------------
+@pytest.mark.parametrize("kind", KINDS)
+def test_r3_a_new_department_of_each_kind_carries_six_pins_and_validates(home, kind):
+    W = home[0]
+    d, _ = W.create("r3-" + kind, "Acme " + kind, None, kind=kind)
+    stored = W.dept(d["ref"])
+    assert stored["layers"] == S.DEFAULT_PINS and len(stored["layers"]) == 6 and stored["schema_version"] == S.SCHEMA_VERSION
+    assert d["layers"] == S.DEFAULT_PINS and S.validate("department", stored) == [] and S.validate("root.pins", stored["layers"]) == []
+    wf = S.as_workflow(stored["engines"], "library", stored)
+    rows = S.validate_workflow(wf, "birth", stored)
+    assert rows and failed(rows) == [], rows
+    if kind == "organic":
+        assert stored["engines"] == [] and rows[-1]["why"] == WS.NO_LINE_AT_BIRTH, "no line: no standard, and the birth row says so"
+
+
+def test_r3_each_pin_names_an_implementation_the_registry_can_find(home):
+    W = home[0]
+    d, _ = W.create("r3-pins", "Acme", None)
+    assert {layer: impl.split("/")[0] for layer, impl in W.dept("r3-pins")["layers"].items()} == {layer: layer for layer in S.LAYER_NAMES}
+
+
+def _stub_kind(W, monkeypatch, line=("Plan", "Publish")):
+    """A kind whose line reads an artifact nothing writes: Publish reads the Build that only Check files."""
+    monkeypatch.setitem(W.KINDS, "stub", dict(W.KINDS["default"], line=list(line), artifacts=["Brief", "Site plan", "Live site"]))
+
+
+def test_r3_a_stub_kind_whose_line_reads_what_nothing_writes_is_not_made_and_the_failure_names_the_standard(home, monkeypatch):
+    W = home[0]
+    _stub_kind(W, monkeypatch)
+    with pytest.raises(ValueError) as e:
+        W.create("r3-stub", "Stub Co", None, kind="stub")
+    assert "reads_known" in str(e.value) and "Publish reads Build, which nothing before it writes" in str(e.value)
+    assert WS.SAYS["reads_known"] in str(e.value)
+    assert W.dept("r3-stub") is None and not (W.ddir("r3-stub") / "dept.json").exists(), "nothing was written"
+    assert W.birth_faults("website") == [] and W.birth_faults("organic") == []
+    with pytest.raises(ValueError, match="no department kind named nowhere"):
+        W.create("r3-nowhere", "Nowhere", None, kind="nowhere")
+
+
+def test_r3_setup_checks_the_line_before_founding_and_department_is_made_fails_naming_the_standard(home, monkeypatch):
+    W, R, J, founding = home
+    _stub_kind(W, monkeypatch)
+    root = founding.found_structure("Acme", owner="Sankalp")["root"]
+    ctx = {"ref": root, "dept": W.dept(root), "bag": {"setup.shape": {"name": "Stub Co", "kind": "stub", "goal": "A stub of a department", "second": ""},
+                                                     "setup.read": {"words": "a stub", "conversation": None, "named": None}}}
+    seen, real = [], founding.spawn
+    monkeypatch.setattr(founding, "spawn", lambda *a, **k: seen.append(a) or {})
+    made = R.setup_make(ctx, None, None)
+    assert seen == [], "founding was not asked to make anything"
+    verdict = R.c_department_is_made(ctx, None, None, made)
+    assert verdict["ok"] is False and "reads_known" in verdict["notes"][0] and "Publish reads Build" in verdict["notes"][0]
+    assert not [d for d in W.list_depts() if d.get("parent") == root]
+    # a kind that meets the standards is made as before
+    monkeypatch.setattr(founding, "spawn", real)
+    ctx["bag"]["setup.shape"] = {"name": "Acme Website", "kind": "website", "goal": "A site for Acme", "second": ""}
+    made = R.setup_make(ctx, None, None)
+    assert made["ref"] and R.c_department_is_made(ctx, None, None, made)["ok"]
+    assert W.dept(made["ref"])["layers"] == S.DEFAULT_PINS
+
+
+def test_r3_a_stub_kind_asked_of_root_makes_no_department_and_the_failed_run_names_the_standard(home, monkeypatch):
+    W, R, J, founding = home
+    _stub_kind(W, monkeypatch)
+    _model(monkeypatch, R, {"setup.converse": {"verdict": "clear", "question": ""},
+                            "setup.shape": {"name": "Stub Co", "kind": "stub", "goal": "A stub of a department", "purpose": "a stub",
+                                            "second": "", "done_items": []}})
+    root = founding.found_structure("Acme", owner="Sankalp")["root"]
+    W.owner_ask(root, "Set up a stub department for us")
+    W.run_until_idle(root, limit=300)
+    assert not [d for d in W.list_depts() if d.get("parent") == root], "no department was made"
+    text = json.dumps(R.step_rows(root)) + json.dumps(W.runs(root))
+    assert "reads_known" in text and "Publish reads Build, which nothing before it writes" in text, text[-1500:]
