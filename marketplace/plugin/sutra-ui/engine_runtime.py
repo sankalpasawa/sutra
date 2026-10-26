@@ -417,6 +417,13 @@ def _impl(ctx, engine=None):
     return layers.pins(ctx.get("ref"), ctx.get("dept"))[layer] if layer else None
 
 
+def _floor_lines(t):
+    """The floor of the Library template a function runs, as its card carries it: every line, at most eight (A3.4.6, FT-8). The
+    narrowing law puts the Default's lines first and a use case's own after them, so reading only the first three never
+    reached what a use case adds, nor the tail of the Default's own floor."""
+    return [str(x) for x in t["floor"]][:8]
+
+
 def card(ctx):
     """Each engine has its own agent. This is who it is: the engine's card, and for a function the brief of the
     Library template the department picked for it."""
@@ -436,7 +443,7 @@ def card(ctx):
         try:
             t = function_templates.get(tid) or {}
             if t.get("floor"):
-                lines.append("It always: " + " ".join(str(x) for x in t["floor"][:3]))
+                lines.append("It always: " + " ".join(_floor_lines(t)))
             if t.get("choices"):
                 lines.append("It decides: " + " ".join(str(x) for x in t["choices"][:3]))
         except Exception:  # noqa: BLE001 -- a missing template never stops a step

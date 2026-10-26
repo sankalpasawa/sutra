@@ -321,3 +321,49 @@ def test_an_owner_line_that_says_what_a_never_line_forbids_is_refused(rt):
     bad = stub_of("coordination", lambda w, l: w["goal"]["role_procedure"]["items"].append("start a run: the engine starts itself in its slot"))
     assert any("goal.role_procedure.items" in f and "Coordination never does this" in f for f in C.case_5(bad, {}))
     assert fault_of(C.case_14_function_template(bad), "goal.role_procedure line 8 says what Coordination never does")
+
+
+# ---- F5: the floor ------------------------------------------------------------------------------------------------------
+def card_of(rt, engine):
+    """The card of one engine of the fixture department, as a step is sent it."""
+    W, R, J, FV, ref = rt
+    return R.card({"ref": ref, "dept": W.dept(ref), "engine": engine, "def": R.engine_def(engine)})
+
+
+@pytest.fixture
+def registry(rt, monkeypatch):
+    """The registry the function templates' picks live in, on a home of its own (as test_85 does): the placement engine is
+    reloaded on it, and again on the real environment when the test is over."""
+    import placement_engine as E
+    importlib.reload(E)
+    yield E
+    monkeypatch.undo()
+    importlib.reload(E)
+
+
+def test_the_picked_templates_whole_floor_reaches_the_card(rt, registry):
+    """FT-8: a department on the Default reads the Default's whole floor, its last line included; a use case's own lines come
+    after the Default's, and the card holds both (at most eight lines); the choices stay the first three."""
+    import json
+    import function_templates as FT
+    default = FT.get("priority/default")
+    assert len(default["floor"]) == 4 and default["floor"][3].startswith("Never reads a check to set pay, budget or rank")
+    card = card_of(rt, "Priority")
+    always = next(ln for ln in card.split("\n") if ln.startswith("It always: "))
+    assert always == "It always: " + " ".join(default["floor"]), "the Default's four lines, the last one too"
+    FT.write_pick(rt[4], "priority", "priority/money-movement")
+    card = card_of(rt, "Priority")
+    always = next(ln for ln in card.split("\n") if ln.startswith("It always: "))
+    money = FT.get("priority/money-movement")
+    assert always == "It always: " + " ".join(money["floor"])
+    assert "Keeps room in today's budget for anything due to a customer or a bank" in always, "what the use case adds"
+    assert all(line in always for line in default["floor"]), "and the Default's lines"
+    assert always.index(default["floor"][3]) < always.index("Keeps room in today's budget"), "the Default's first"
+    decides = next(ln for ln in card.split("\n") if ln.startswith("It decides: "))
+    assert decides == "It decides: " + " ".join(money["choices"][:3])
+    # at most eight lines, and the helper takes strings
+    R = rt[1]
+    assert R._floor_lines({"floor": ["line %d" % i for i in range(12)]}) == ["line %d" % i for i in range(8)]
+    assert R._floor_lines({"floor": ["a", 2]}) == ["a", "2"]
+    # no template of the library has more than eight lines, so none loses one
+    assert max(len(t["floor"]) for fn in FT.FUNCTIONS for t in FT.templates(fn)) <= 8
