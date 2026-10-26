@@ -451,6 +451,8 @@ class TestTheSnapshotRendersWhatRuns(TFP.Fixture):
         module = layers.load("identity/v1")
         words, layout, bad = P.extract("identity")
         assert bad == []
+        for table, mine in ((words, module.WORDS), (layout, module.LAYOUT)):          # the parts later steps added have no .md part
+            table["goal"].update({part: mine["goal"][part] for (fn, group, part) in S.ADDED_PARTS if fn == "identity" and group == "goal"})
         stub_take = lambda ctx, step, item: "THE STUB'S TAKE"
         for patch in (mock.patch.object(module, "WORDS", words), mock.patch.object(module, "LAYOUT", layout),
                       mock.patch.dict(module.PROMPT, {"identity_take": stub_take})):
@@ -458,7 +460,7 @@ class TestTheSnapshotRendersWhatRuns(TFP.Fixture):
             self.addCleanup(patch.stop)
         ref = C.fixture_department(os.environ["SUTRA_NATIVE_DEPT_HOME"], TFP.REF)
         got = {n: fn(module, {"ref": ref}) for n, _, fn in C.cases()}
-        assert got == {n: [] for n in range(1, 9)}, got
+        assert got == {n: [] for n, _, _ in C.cases()} and set(got) >= set(range(1, 9)), got
         assert C.on_the_md_fallback(module) == [], "every part of Identity is typed in the stub"
         # and the snapshot, rendered through the registry from the typed words, is the snapshot still
         del module.PROMPT["identity_take"]

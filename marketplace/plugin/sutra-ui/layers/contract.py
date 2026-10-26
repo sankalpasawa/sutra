@@ -15,6 +15,8 @@ test_layer_contracts.py runs on every implementation it discovers (layers/<layer
     6  view() on the contract fixture department validates as VIEWS[layer]
     7  no ref_to points at an engine_runtime attribute that is itself a delegate
     8  every OUTPUTS step the recipe provides declares or returns those keys
+    14 a function version keeps the function template (A3.4.8): its words, its role block and its boundaries (FT-1 to FT-6,
+       FT-9, FT-10)
 
 A case returns its faults as a list of strings, each naming the row or the name at fault; [] when the module passes.
 """
@@ -221,7 +223,166 @@ def case_8(module, ctx=None):
     return out
 
 
+# ---- case 14: the function template (A3.4.8) ---------------------------------------------------------------------------------
+#: the words a function's goal group carries in a version (A3.4.2): text parts are one clause of at most 400 characters, item
+#: parts one to twelve lines of at most 160. does and skills are older prompt text, the pane's through _plain
+_TEXT_PARTS = ('does', 'done', 'role_is')
+_ITEM_PARTS = ('skills', 'role_may', 'role_procedure', 'role_patterns')
+#: the words that sit beside Priority's answer shape on the agent's side: the screen's words for the same answers, which a model
+#: that copies them would answer in outside the contract (accept, counter, reject)
+_SCREEN_ANSWERS = re.compile(r'said yes|asked for less|said no', re.I)
+
+
+def _constant_lines(layer):
+    """The interface's own words for a function, as (where, text): its role, what it is not, each never line, who it hands on to
+    and each line of the working agreement. What the agent is sent beside a version's words."""
+    t = S.FUNCTION_TEMPLATE.get(layer) or {}
+    out = [('the function template, role', t.get('role')), ('the function template, is_not', t.get('is_not')),
+           ('the function template, hands_on', t.get('hands_on'))]
+    out += [('the function template, never line %d' % i, x) for i, x in enumerate(t.get('never') or (), 1)]
+    return [(w, x) for w, x in out + [('the working agreement, line %d' % i, x) for i, x in enumerate(S.DEPARTMENT_AGREEMENT, 1)]
+            if isinstance(x, str)]
+
+
+def _role_lines(words):
+    """The version's role words, as (where, line): goal.role_is, and each line of role_may, role_procedure and role_patterns."""
+    out = []
+    for part in ('role_is', 'role_may', 'role_procedure', 'role_patterns'):
+        got = (words.get(part) or {})
+        if part == 'role_is':
+            out += [('goal.role_is', got['text'])] if isinstance(got.get('text'), str) else []
+        else:
+            out += [('goal.%s line %d' % (part, i), x) for i, x in enumerate(got.get('items') if isinstance(got.get('items'), list) else (), 1)
+                    if isinstance(x, str)]
+    return out
+
+
+def _word_faults(who, words):
+    """FT-2 and FT-6: every word part there, with its layout, within its limit, and one line where one line is required."""
+    out = []
+    for part in _TEXT_PARTS + _ITEM_PARTS + ('role_block',):
+        if part not in words:
+            out.append('%s: goal.%s has no words' % (who, part))
+    for part in _TEXT_PARTS:
+        text = (words.get(part) or {}).get('text') if part in words else None
+        if part in words and not isinstance(text, str):
+            out.append('%s: goal.%s has no text' % (who, part))
+        elif isinstance(text, str):
+            if not text.strip():
+                out.append('%s: goal.%s is empty' % (who, part))
+            if len(text) > 400:
+                out.append('%s: goal.%s is %d characters, and at most 400 are allowed' % (who, part, len(text)))
+            if '\n' in text:
+                out.append('%s: goal.%s is one clause, and this has a line break' % (who, part))
+    for part in _ITEM_PARTS:
+        lines = (words.get(part) or {}).get('items') if part in words else None
+        if part in words and not isinstance(lines, list):
+            out.append('%s: goal.%s has no list of lines' % (who, part))
+        elif isinstance(lines, list):
+            if not lines:
+                out.append('%s: goal.%s has no line' % (who, part))
+            if len(lines) > 12:
+                out.append('%s: goal.%s has %d lines, and at most 12 are allowed' % (who, part, len(lines)))
+            for i, x in enumerate(lines, 1):
+                if not isinstance(x, str) or not x.strip():
+                    out.append('%s: goal.%s line %d is empty' % (who, part, i))
+                elif len(x) > 160:
+                    out.append('%s: goal.%s line %d is %d characters, and at most 160 are allowed' % (who, part, i, len(x)))
+                elif '\n' in x:
+                    out.append('%s: goal.%s line %d is one line, and this has a line break' % (who, part, i))
+    return out
+
+
+def _block_faults(who, layer, words, layout):
+    """FT-3 and FT-5: the layout places all eight inputs, and the block compiled from this version's own words and the
+    interface's constants is at most S.ROLE_BLOCK_MAX characters."""
+    text = layout.get('role_block')
+    if not isinstance(text, str):
+        return ['%s: goal.role_block has no layout' % who]
+    out = []
+    for name in S.ROLE_INPUTS:
+        if '{{%s}}' % name not in text:
+            out.append('%s: goal.role_block leaves out {{%s}}, so the agent would not be told %s' % (who, name, R.INPUT_SAYS.get(name, name)))
+    try:
+        got = [(words.get(p) or {}) for p in ('role_is', 'role_may', 'role_procedure', 'role_patterns')]
+        if out or not isinstance(got[0].get('text'), str) or not all(isinstance(g.get('items'), list) for g in got[1:]):
+            return out                                                       # the missing or mistyped part is already named
+        block = P.compile_layout(text, {}, None, S.role_inputs(layer, got[0]['text'], got[1]['items'], got[2]['items'], got[3]['items']),
+                                 'goal.role_block')
+    except (ValueError, KeyError, TypeError) as exc:
+        return out + ['%s: goal.role_block cannot be compiled (%s)' % (who, exc)]
+    if len(block) > S.ROLE_BLOCK_MAX:
+        out.append('%s: goal.role_block compiles to %d characters, and at most %d are allowed' % (who, len(block), S.ROLE_BLOCK_MAX))
+    return out
+
+
+def _banned_faults(who, layer, words):
+    """FT-4: the screen's banned words in goal.done (the owner reads it); the agent's in every role word and every constant (not
+    in goal.does or goal.skills, older prompt text); for Priority, nothing that says it orders, and none of the screen's words
+    for its answers beside the answer shape."""
+    out = []
+    done = (words.get('done') or {}).get('text')
+    m = re.search(S.TEMPLATE_BANNED, done, re.I) if isinstance(done, str) else None
+    if m:
+        out.append('%s: goal.done says "%s", a word the owner\'s screen does not use' % (who, m.group(0)))
+    agent = _role_lines(words) + _constant_lines(layer)
+    for where, text in agent:
+        m = re.search(S.TEMPLATE_BANNED_AGENT, text, re.I)
+        if m:
+            out.append('%s: %s says "%s", a word this department does not use' % (who, where, m.group(0)))
+    never_say = S.TEMPLATE_NEVER_SAY.get(layer)
+    if never_say:
+        for where, text in agent + ([('goal.done', done)] if isinstance(done, str) else []):
+            m = re.search(never_say, text, re.I)
+            if m:
+                out.append('%s: %s says "%s", and %s never says which work runs next' % (who, where, m.group(0), S.TITLE[layer]))
+    if layer == 'priority':
+        for where, text in _role_lines(words):
+            m = _SCREEN_ANSWERS.search(text)
+            if m:
+                out.append('%s: %s says "%s", the screen\'s word; beside the answer shape it says accept, counter or reject' % (who, where, m.group(0)))
+    return out
+
+
+def case_14_function_template(module, ctx=None):
+    """A function version keeps the function template: its words, its role block and its boundaries (FT-1 to FT-6, FT-9, FT-10)."""
+    out = []
+    try:
+        if isinstance(module, str):                                          # an implementation id, as W3-PINS reads a pin
+            module = importlib.import_module('layers').load(module)
+        layer = getattr(module, 'LAYER', None)
+        if module is None or layer not in S.FUNCTION_LAYERS:
+            return []                                                         # Root, and an id that loads nothing
+        words, layout = getattr(module, 'WORDS', None) or {}, getattr(module, 'LAYOUT', None) or {}
+        if not words:
+            return []                                                         # a stub with no words of its own: nothing to compare
+        who, title = impl_id(module), S.TITLE[layer]
+        from template_checks import agreement_faults, function_template_faults, hands_on_faults
+        entry = S.FUNCTION_TEMPLATE.get(layer)
+        # FT-1 and FT-10: the interface's entry for this function is sound, and its hands_on names only whom it sends to
+        out += ['%s: the function template of %s: %s' % (who, title, f[len(title) + 2:] if f.startswith(title + ': ') else f)
+                for f in function_template_faults(layer, entry)]
+        out += ['%s: %s' % (who, f) for f in agreement_faults(S.DEPARTMENT_AGREEMENT)]
+        if isinstance(entry, dict):
+            out += ['%s: hands_on of %s: %s' % (who, title, f) for f in hands_on_faults(layer, entry.get('hands_on'))]
+        goal, form = words.get('goal') or {}, layout.get('goal') or {}
+        out += _word_faults(who, goal)                                        # FT-2, FT-6
+        out += _block_faults(who, layer, goal, form)                          # FT-3, FT-5
+        out += _banned_faults(who, layer, goal)                               # FT-4
+        for part in ('role_may', 'role_procedure'):                           # FT-9
+            lines = (goal.get(part) or {}).get('items')
+            for i, line in enumerate(lines if isinstance(lines, list) else (), 1):
+                never = S.says_a_never(layer, line) if isinstance(line, str) else None
+                if never:
+                    out.append('%s: goal.%s line %d says what %s never does: %s' % (who, part, i, title, never))
+    except Exception as exc:  # noqa: BLE001 -- a case never raises on a stub: it says what it could not read
+        out.append('%s: the function template could not be read (%s)' % (impl_id(module) if module is not None and not isinstance(module, str) else module, exc))
+    return out
+
+
 def cases():
     """A1.21's cases, in order: [(number, what it holds, the function)]."""
-    return [(n, fn.__doc__.strip().split('\n')[0], fn) for n, fn in
-            ((1, case_1), (2, case_2), (3, case_3), (4, case_4), (5, case_5), (6, case_6), (7, case_7), (8, case_8))]
+    return [(n, fn.__doc__.strip().split('\n')[0], fn) for n, fn in (
+        (1, case_1), (2, case_2), (3, case_3), (4, case_4), (5, case_5), (6, case_6), (7, case_7), (8, case_8),
+        (14, case_14_function_template),
+    )]

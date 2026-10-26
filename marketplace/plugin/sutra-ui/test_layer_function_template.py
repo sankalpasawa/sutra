@@ -179,3 +179,145 @@ def test_an_owner_who_stamped_the_goal_keeps_the_stamp(rt):
     assert layers.prompts.owner_entry(ref, "adaptation", "goal", "does", "text")["value"] == mine
     # and a default that changed under the stamp does not touch it: the shipped words are what the field falls back to
     assert layers.prompts.defaults(ref, "adaptation", "goal", "does")["text"] == SITE_GOAL
+
+
+# ---- F3: contract case 14, and the field rule of FT-9 -------------------------------------------------------------------
+def stub_of(fn, change=None):
+    """A stub version of a function: v1's words and layout copied, and `change(words, layout)` applied to the copies."""
+    import copy
+    m = module_of(fn)
+    words, layout = copy.deepcopy(m.WORDS), copy.deepcopy(m.LAYOUT)
+    if change:
+        change(words, layout)
+    return types_module(fn, WORDS=words, LAYOUT=layout)
+
+
+def test_the_contract_lists_case_14_and_names_it():
+    got = {n: what for n, what, _ in C.cases()}
+    assert 14 in got and got[14].startswith("A function version keeps the function template")
+
+
+def test_every_function_version_passes_case_14():
+    """FT-1 to FT-6, FT-9, FT-10 for all five v1, as a module and as the implementation id W3-PINS reads a pin by; Root and a stub
+    with no words of its own have nothing to compare."""
+    assert [C.impl_id(m) for m in C.discover() if m.LAYER in FUNCTIONS] == [S.DEFAULT_PINS[fn] for fn in FUNCTIONS]
+    for fn in FUNCTIONS:
+        assert C.case_14_function_template(module_of(fn)) == [], fn
+        assert C.case_14_function_template(S.DEFAULT_PINS[fn]) == [], fn
+        assert C.case_14_function_template(module_of(fn), {}) == []
+    assert C.case_14_function_template(module_of("root")) == [] and C.case_14_function_template("root/v1") == []
+    assert C.case_14_function_template(types_module("identity")) == [], "a stub with no words of its own"
+    assert C.case_14_function_template("identity/v9") == [] and C.case_14_function_template(None) == []
+
+
+def test_case_14_never_raises_on_a_stub():
+    for words in ({"goal": "nonsense"}, {"goal": {"role_may": 3, "done": None, "role_is": {"text": 4}}}, {"goal": {"role_block": []}},
+                  {"goal": {"role_may": {"items": "raise a limit"}}}, {"tie": {}}):
+        got = C.case_14_function_template(types_module("identity", WORDS=words, LAYOUT={"goal": {"role_block": 7}}))
+        assert got and all(f.startswith("identity/v1: ") for f in got), words
+
+
+def fault_of(got, *pieces):
+    """The faults that hold every piece, so a test says which fault it found."""
+    return [f for f in got if all(p in f for p in pieces)]
+
+
+def test_a_failing_example_for_each_fault_of_case_14(monkeypatch):
+    """One stub version for each fault of FT-1 to FT-6, FT-9 and FT-10; each is told in one sentence that names the version and
+    the part, and the version that is not at fault says nothing."""
+    def thirteen(w, l):
+        w["goal"]["role_may"]["items"] = ["rule on thing number %d" % i for i in range(13)]
+
+    def dropped(w, l):
+        del w["goal"]["role_patterns"]
+
+    def two_lines(w, l):
+        w["goal"]["done"]["text"] = "every request has a verdict.\nEvery effect has a gate answer."
+
+    def no_never(w, l):
+        l["goal"]["role_block"] = l["goal"]["role_block"].replace("{{never}}", "")
+
+    def no_agreement(w, l):
+        l["goal"]["role_block"] = l["goal"]["role_block"].replace("All five functions keep: {{agreement}}", "")
+
+    def too_long(w, l):
+        w["goal"]["role_procedure"]["items"] = ["Step %d: %s" % (i, "x" * 140) for i in range(12)]
+        w["goal"]["role_may"]["items"] = ["May %d: %s" % (i, "y" * 140) for i in range(12)]
+
+    def charter(w, l):
+        w["goal"]["role_is"]["text"] = "the keeper of the charter of the department"
+
+    def too_long_text(w, l):
+        w["goal"]["role_is"]["text"] = "z" * 401
+
+    def too_long_line(w, l):
+        w["goal"]["role_patterns"]["items"][0] = "w" * 161
+
+    def screen_word(w, l):
+        w["goal"]["done"]["text"] = "every plan was granted its limit"
+
+    def orders(w, l):
+        w["goal"]["role_procedure"]["items"][0] = "Order the accepted proposals by price."
+
+    def said_yes(w, l):
+        w["goal"]["role_procedure"]["items"][3] = "Give exactly one answer: said yes, asked for less or said no."
+
+    def raise_a_limit(w, l):
+        w["goal"]["role_may"]["items"][0] = "Raise a limit when the owner is in a hurry!"
+
+    def no_layout(w, l):
+        del l["goal"]["role_block"]
+
+    for fn, change, pieces in (
+            ("identity", dropped, ("goal.role_patterns has no words",)),
+            ("identity", thirteen, ("goal.role_may has 13 lines", "at most 12")),
+            ("audit", two_lines, ("goal.done is one clause", "line break")),
+            ("coordination", no_never, ("goal.role_block leaves out {{never}}", "what it never does")),
+            ("priority", no_agreement, ("goal.role_block leaves out {{agreement}}", "working agreement")),
+            ("adaptation", too_long, ("goal.role_block compiles to", "at most 3600")),
+            ("identity", charter, ("goal.role_is says", "charter")),
+            ("identity", too_long_text, ("goal.role_is is 401 characters", "at most 400")),
+            ("audit", too_long_line, ("goal.role_patterns line 1 is 161 characters", "at most 160")),
+            ("audit", screen_word, ("goal.done says", "granted")),
+            ("priority", orders, ("goal.role_procedure line 1 says", "Order", "never says which work runs next")),
+            ("priority", said_yes, ("goal.role_procedure line 4 says", "said yes", "accept, counter or reject")),
+            ("identity", raise_a_limit, ("goal.role_may line 1 says what Identity never does", "raise a limit")),
+            ("identity", no_layout, ("goal.role_block has no layout",))):
+        got = C.case_14_function_template(stub_of(fn, change))
+        found = fault_of(got, *pieces)
+        assert len(found) == 1 and found[0].startswith("%s/v1: " % fn), (fn, change.__name__, got)
+        assert C.case_14_function_template(module_of(fn)) == [], "the version that is not at fault says nothing"
+    # the interface's own entry: an entry with two never lines (FT-1), and a hands_on that names a receiver the layer has no row to
+    # (FT-10), told in every version of that function
+    monkeypatch.setitem(S.FUNCTION_TEMPLATE["identity"], "never", ("invent a new goal or a new rule", "raise a limit"))
+    got = C.case_14_function_template(module_of("identity"))
+    assert len(got) == 1 and got[0].startswith("identity/v1: the function template of Identity: never holds three to ten lines"), got
+    monkeypatch.setitem(S.FUNCTION_TEMPLATE["audit"], "hands_on", "Identity only: readings and findings. Priority: a price.")
+    got = C.case_14_function_template(module_of("audit"))
+    assert len(got) == 1 and got[0].startswith("audit/v1: hands_on of Audit: Audit hands on to Priority, and the interface gives Audit no row"), got
+    monkeypatch.setattr(S, "DEPARTMENT_AGREEMENT", S.DEPARTMENT_AGREEMENT[:3])
+    assert C.case_14_function_template(module_of("coordination"))[0] == \
+        "coordination/v1: the working agreement holds four to eight lines, and this holds 3"
+
+
+def test_an_owner_line_that_says_what_a_never_line_forbids_is_refused(rt):
+    """FT-9 at the ask: a role_may or role_procedure line that says what a 'never' line of the layer forbids is refused in plain
+    words, compared by normalised words (case and punctuation do not hide it); a line that does not is filed as an ask. The
+    interface is the one rule, so the stamp refuses it again."""
+    W, R, J, FV, ref = rt
+    fine = list(module_of("identity").WORDS["goal"]["role_may"]["items"])
+    with pytest.raises(ValueError) as e:
+        R.instructions_ask(ref, "identity", "goal", "role_may", "items", fine + ["Raise a limit, when the owner asks!"])
+    assert "these words cannot serve Identity: items (item 8) Identity never does this: raise a limit" == str(e.value)
+    with pytest.raises(ValueError) as e:
+        R.instructions_ask(ref, "priority", "goal", "role_procedure", "items", ["Check the cost.", "Then START A RUN."])
+    assert "items (item 2) Priority never does this: start a run" in str(e.value)
+    ask = R.instructions_ask(ref, "identity", "goal", "role_may", "items", fine + ["warn the owner when a limit is near"])
+    assert ask["kind"] == "instructions" and ask["status"] == "pending" and ask["text"] == "Change what Identity may do to your words"
+    # the same words are no fault in a layer whose never lines do not say them: the rule is per layer
+    assert S.validate_field("priority", "goal", "role_may", "items", ["raise a limit"]) == []
+    assert S.validate_field("identity", "goal", "role_may", "items", ["raise a limit"]) == ["$[0]: Identity never does this: raise a limit"]
+    # and a default that says one is a fault of the version, in contract case 5 and in case 14
+    bad = stub_of("coordination", lambda w, l: w["goal"]["role_procedure"]["items"].append("start a run: the engine starts itself in its slot"))
+    assert any("goal.role_procedure.items" in f and "Coordination never does this" in f for f in C.case_5(bad, {}))
+    assert fault_of(C.case_14_function_template(bad), "goal.role_procedure line 8 says what Coordination never does")

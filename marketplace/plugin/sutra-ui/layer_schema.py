@@ -1847,6 +1847,34 @@ ADDED_PARTS = ADDED_PARTS + tuple((_fn, 'goal', part) for _fn in FUNCTION_LAYERS
 del _fn
 
 
+def _joined(lines):
+    """Lines as one sentence of a role block: 'a; b; c.'"""
+    return '; '.join(str(x).rstrip('.') for x in lines) + '.'
+
+
+def role_inputs(layer, is_, may, procedure, patterns):
+    """The eight inputs of goal.role_block (A3.4.3) for a function: its words (what it is, may do, how it decides, avoids) and
+    the interface's constants (what it is not, never does, hands on to, and the agreement every function keeps), joined the way
+    the block reads: the lines of may, never and patterns as one sentence, the procedure numbered. The engine's card and the
+    contract's size check build the block from this one function, so what is measured is what is sent."""
+    t = FUNCTION_TEMPLATE[layer]
+    return {'agreement': ' '.join(DEPARTMENT_AGREEMENT), 'is': str(is_).rstrip('.'), 'is_not': t['is_not'], 'may': _joined(may),
+            'never': _joined(t['never']), 'procedure': ' '.join('%d) %s' % (i, x) for i, x in enumerate(procedure, 1)),
+            'patterns': _joined(patterns), 'hands_on': t['hands_on']}
+
+
+def _normal_words(text):
+    """Words compared as words: case folded, punctuation dropped, spaces closed up."""
+    return ' '.join(re.sub(r'[^a-z0-9 ]', '', str(text).casefold()).split())
+
+
+def says_a_never(layer, line):
+    """The 'never' line of a function's template that `line` says again (FT-9), compared by normalised words; None when it
+    says none. A line that says what the function never does cannot be among what it may do or how it decides."""
+    said = _normal_words(line)
+    return next((n for n in (FUNCTION_TEMPLATE.get(layer) or {}).get('never', ()) if _normal_words(n) and _normal_words(n) in said), None)
+
+
 # ---- reading the tables ----------------------------------------------------------------------------------------------
 def _layer(name):
     """A layer's name from its name or its title ('identity', 'Identity', 'Setup' -> 'root'); None for any other."""
@@ -2127,7 +2155,12 @@ def validate_field(layer, group, part, field, value):  # noqa: F811 -- A1.4 name
     name = p['fields'].get(field)
     if name is None:
         return ['$: %s.%s has no field %s the owner may change' % (group, part, field)]
-    return validate(name, value)
+    out = validate(name, value)
+    if not out and group == 'goal' and part in ('role_may', 'role_procedure') and isinstance(value, list):
+        # FT-9: a line of what the function may do, or how it decides, cannot say what its template says it never does
+        out = ['$[%d]: %s never does this: %s' % (i, TITLE.get(layer, layer), n) for i, line in enumerate(value)
+               for n in [says_a_never(layer, line)] if n]
+    return out
 
 
 def validate_instructions(doc):
