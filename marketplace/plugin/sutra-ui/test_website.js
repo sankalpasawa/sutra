@@ -87,6 +87,9 @@
          skills (add, remove, move, at most the field's most); past the most the count says so and Send is disabled
      X3  Send posts {fn, group, part, field, value} to the one route; the sheet closes and the card is read again; a
          refusal shows the server's plain reason under the field, never the route
+     X4  Root settings carries a read-only card Standards every plan meets: the standards in their order from GET /layers,
+         the line that says they are the app's, no button; read once for the pane and kept (test_fixtures/views/layers.json)
+     X5  each function's Settings head says Runs version N, N the number after /v in its layer's pin
      S7  Coordination's pane on the engine runtime opens on its timetable: one row per engine with what starts it, its
          window, and its last run or the exact reason it waits; who makes and who reads each thing; the chain, alarms
          and ties side by side; the function's page folded under it; every state the screen names; no count at rest
@@ -321,6 +324,9 @@ function fresh(opts){
                     written_by: ["Publish"], counts_after: "stamp", put_back: true, operations: ["Adaptation", "Audit"] }, versions: [
         { v: 2, at: "2026-09-27T11:20:00+05:30", made_from: [{ art: "Build", v: 6 }], run: "r-2", check: { ok: true, notes: ["live"] }, note: "" },
         { v: 1, at: "2026-09-27T11:10:00+05:30", made_from: [{ art: "Build", v: 5 }], run: "r-1", check: { ok: true, notes: ["live"] }, note: "" }] });
+      /* the interface the department runs under (GET /layers): what a test gives, or nothing that answers; layersFail refuses it */
+      if (/\/api\/native\/r\d\/layers$/.test(p) && opts.layersFail) return Promise.reject(new Error("layers"));
+      if (/\/api\/native\/r\d\/layers$/.test(p) && opts.layers) return Promise.resolve(JSON.parse(JSON.stringify(opts.layers)));
       if (/^\/api\/dept\//.test(p)) return Promise.resolve({});   /* 20-dept.js's own reads: an empty record */
       return new Promise(() => {});
     },
@@ -2050,6 +2056,7 @@ test("S16: a function's Settings lists its files by name with their first line a
    it: groups with a lead, parts with what the app fills and what each answers with, fields with their bounds and words. */
 const VIEWS_DIR = path.join(__dirname, "test_fixtures", "views");
 const viewFile = f => JSON.parse(fs.readFileSync(path.join(VIEWS_DIR, f), "utf8"));
+const settle = async () => { for (let i = 0; i < 6; i++) await sleep(); };
 const TYPED = () => viewFile("instructions.identity.json");
 async function typedCard(o, instr){
   const c = await opened(Object.assign({ map: rtMap(), steps: { instructions: instr || TYPED() } }, o || {}));
@@ -2272,6 +2279,49 @@ test("X3: a refusal shows the server's plain reason under the field, never the r
   assert.strictEqual(c.wbInsSheetHtml(), "", "the third try goes through and the sheet closes");
   assert.strictEqual(c.calls.apiPost.length, 3);
 });
+
+/* ── S18 and the version line (PRD A1.23; UI-port package j2ui-shell X4, X5), from GET /layers ──────────────────────
+   test_fixtures/views/layers.json is the answer of /api/native/{ref}/layers: the schema version, the implementation each
+   layer runs, every implementation on disk and Root's standards in their words. The screen reads pins and standards. */
+const LAYERS = () => viewFile("layers.json");
+const layersReads = c => readsOf(c, /\/api\/native\/r\d\/layers$/);
+
+test("X4: Root settings has a read-only card Standards every plan meets: the standards in their order, the line that says they are the app's, no button", async () => {
+  const c = await orgOpened({ layers: LAYERS() });
+  click(c, { wbtab: "root" });
+  for (let k = 0; k < 3; k++){ c.o2ScreenHtml(); await settle(); }
+  const html = c.o2ScreenHtml();
+  const from = html.indexOf("<h3>Standards every plan meets</h3>"), to = html.lastIndexOf("<div><button", html.indexOf("Back to the chat"));
+  assert.ok(from > 0 && to > from, "the card is in Root's pane, before the way back");
+  const card = html.slice(from, to);
+  const says = LAYERS().standards.map(s => s.says);
+  let at = -1;
+  says.forEach(t => { const i = card.indexOf('<div class="dpfline">' + c.wbEsc(t) + "</div>"); assert.ok(i > at, t); at = i; });
+  assert.strictEqual((card.match(/<div class="dpfline">/g) || []).length, says.length, "the standards and no other line");
+  assert.ok(card.indexOf("These are part of how the app is built; they change only with a new version of the app.") > at, "the line, after them");
+  assert.ok(!/<button|<textarea|<input/.test(card), "no Change and nothing to type in");
+  assert.ok(!/<h3>Standards every plan meets<\/h3>/.test(html.slice(0, from)), "once");
+  assert.ok(/<h3>Root<\/h3>/.test(html) && /Back to the chat/.test(html), "the rest of Root's pane is as it was");
+  assert.ok(!/charter|internal\s+system|GRANT|COUNTER|REFUSE/.test(words(card)), "the screen's words");
+});
+
+test("X4: the layers are read once for the pane, kept, and a failed read says Not read yet and is not asked again", async () => {
+  const c = await orgOpened({ layers: LAYERS() });
+  click(c, { wbtab: "root" });
+  for (let k = 0; k < 6; k++){ c.o2ScreenHtml(); await settle(); }
+  assert.deepStrictEqual(layersReads(c), ["/api/native/r2/layers"], "one read, for Root");
+  const down = await orgOpened({});                          /* nothing answers the route */
+  click(down, { wbtab: "root" });
+  for (let k = 0; k < 4; k++){ down.o2ScreenHtml(); await settle(); }
+  assert.ok(/<h3>Standards every plan meets<\/h3><div class="o2quiet dpq">Not read yet<\/div>/.test(down.o2ScreenHtml()), "while it is on its way, or if it never comes");
+  assert.strictEqual(layersReads(down).length, 1);
+  const failing = await orgOpened({ layersFail: true });
+  click(failing, { wbtab: "root" });
+  for (let k = 0; k < 6; k++){ failing.o2ScreenHtml(); await settle(); }
+  assert.ok(/Standards every plan meets<\/h3><div class="o2quiet dpq">Not read yet</.test(failing.o2ScreenHtml()));
+  assert.strictEqual(layersReads(failing).length, 1, "not asked again");
+});
+
 
 /* ── W47: Identity's question as a card in Chat (PRD-FIVE-FUNCTIONS M0.6, screen S6) ── */
 const QAT = "2026-10-23T10:20:00+05:30";

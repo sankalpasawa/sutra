@@ -1629,6 +1629,31 @@ async function wbInsSend(){
     s.busy = false; s.error = (e && e.message) || String(e); wbInsPaint();
   }
 }
+/* ── what the interface says it runs: GET /layers (PRD A1.18, A1.23) ─────────────────────────────────────────
+   The schema version, the implementation each layer runs and Root's standards in their words, read once for the pane that
+   asks (a function's Settings, Root's settings) and kept; a read that failed is kept as failed and is not asked again, so
+   the pane says Not read yet instead of reading on every paint. */
+async function wbLoadLayers(ref){
+  const L = wbS().layers || (wbS().layers = {});
+  if (L[ref] !== undefined) return;                    /* undefined: not asked; null: on its way; { failed }: it could not be read */
+  L[ref] = null;
+  try { L[ref] = await apiGet(wbUrl(ref, "layers")); } catch (e) { L[ref] = { failed: true }; }
+  dpRender();
+}
+function wbLayers(ref){
+  const L = wbS().layers || (wbS().layers = {});
+  if (L[ref] === undefined) wbLoadLayers(ref);
+  return L[ref] && !L[ref].failed ? L[ref] : null;
+}
+/* Root's settings (S18): the standards every plan meets, read only, in the order the app keeps them, with the line that
+   says they are part of how the app is built. There is no Change: they move only with a new version of the app. */
+const WB_STANDARDS_LINE = "These are part of how the app is built; they change only with a new version of the app.";
+function wbStandardsHtml(ref){
+  const L = wbLayers(ref), std = (L && Array.isArray(L.standards)) ? L.standards : [];
+  return dpCard("Standards every plan meets", std.length
+    ? std.map(x => `<div class="dpfline">${wbEsc(x.says)}</div>`).join("") + dpQuiet(WB_STANDARDS_LINE) : dpQuiet("Not read yet"));
+}
+
 function wbSettingsHtml(ref, fn){
   const st = wbS(), m = st.map[ref], name = wbCap(fn), v = st.steps[ref + ":" + name];
   if (!v){ wbLoadSteps(ref, name); return dpSkel(); }
@@ -1747,6 +1772,7 @@ function wbRootPaneHtml(n, m){
     row(m.stopped ? "Off" : "On", (m.stopped ? "makes no department until started " : "makes departments when asked ") + sw, m.stopped ? "off" : "ok") +
     row("Rules", rules.length ? rules.join("; ") : "none yet", rules.length ? "ok" : "") +
     row("Departments it has made", made || "none yet", made ? "ok" : "")) +
+    wbStandardsHtml(n.ref) +
     `<div>${wbBtn("Back to the chat", `data-wbtab="chat"`)}</div>`;
 }
 
