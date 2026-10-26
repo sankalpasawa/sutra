@@ -637,3 +637,161 @@ def test_a_stamped_done_replaces_the_proposal(j2):
     stamp(j2, ref, "audit", "done", "text", module_of("audit").WORDS["goal"]["done"]["text"])
     again = field_of(FV.function(ref, "audit"), "done")
     assert again["value"] is None and again["placeholder"] is True
+
+
+# ---- F7: every rule of the five official role files has a home --------------------------------------------------------------
+RULES_FILE = HERE / "test_fixtures" / "templates" / "role-rules.json"
+HOMES = ("word", "constant", "derived", "left")
+
+
+def _all_test_names():
+    names = set()
+    for path in HERE.glob("test_*.py"):
+        names |= set(re.findall(r"^\s*def (test_\w+)", path.read_text(encoding="utf-8"), re.M))
+    return names
+
+
+def _holds(token):
+    """Whether one name in a rule's held_by is there: an S. name, a test, a step id of the definitions, a DEFS name, a check, or a
+    function of the runtime, the records or a layer's version."""
+    import engine_runtime as R
+    import j2_runtime as J
+    import website_dept as W
+    if token.startswith("S."):
+        return hasattr(S, token[2:])
+    if token.startswith("test_"):
+        return token in _all_test_names()
+    if token in {s["id"] for name in R.defs()["engines"] for s in R.all_steps(name)} or token in S.DEFS:
+        return True
+    if token in S.SHARED_CHECKS or any(token in checks for checks in S.CHECKS.values()):
+        return True
+    return any(hasattr(m, token) for m in (R, W, J, *[module_of(fn) for fn in FUNCTIONS]))
+
+
+def _line_of(rule, template, words, line=None):
+    """The line of words a rule names, '(part) (index)': goal.role_may 3, never 2, is_not, agreement 1, goal.role_is."""
+    layer, line = rule["layer"], line or rule["line"]
+    part, _, n = line.partition(" ")
+    n = int(n) if n else None
+    if part.startswith("goal."):
+        got = words[layer].get(part[5:]) or {}
+        items = got.get("items")
+        return got.get("text") if items is None else (items[n - 1] if n and 0 < n <= len(items) else None)
+    if part == "agreement":
+        return S.DEPARTMENT_AGREEMENT[n - 1] if n and 0 < n <= len(S.DEPARTMENT_AGREEMENT) else None
+    value = (template.get(layer) or {}).get(part)
+    if isinstance(value, (list, tuple)):
+        return value[n - 1] if n and 0 < n <= len(value) else None
+    return value
+
+
+def role_rule_faults(rules, template=None, words=None):
+    """What is wrong with the record of the official rules against the interface and the versions: a rule whose line is gone, or
+    whose line no longer holds its key phrase (weakened), a rule with no home or no reason, a name it says holds it that is not
+    there, a keeps phrase the page does not say. One sentence for each, naming the rule."""
+    template = template if template is not None else S.FUNCTION_TEMPLATE
+    words = words if words is not None else {fn: module_of(fn).WORDS["goal"] for fn in FUNCTIONS}
+    out, seen = [], set()
+    for r in rules:
+        rid = r.get("id", "?")
+        if rid in seen:
+            out.append("%s: the id is used twice" % rid)
+        seen.add(rid)
+        if r.get("home") not in HOMES or r.get("layer") not in FUNCTIONS:
+            out.append("%s: it has no home (%s) in a function (%s)" % (rid, r.get("home"), r.get("layer")))
+            continue
+        if r["home"] == "left" and not str(r.get("reason") or "").strip():
+            out.append("%s: it is left, and says no reason" % rid)
+        if r["home"] == "derived" and r.get("line") not in S.DEFS:
+            out.append("%s: it is derived, and %s is no definition of the interface" % (rid, r.get("line")))
+        if r["home"] in ("word", "constant"):
+            for where in [{"line": r["line"], "phrase": r["phrase"]}] + list(r.get("also") or []):
+                text = _line_of(r, template, words, where["line"])
+                if not isinstance(text, str):
+                    out.append("%s: %s of %s has no such line" % (rid, where["line"], r["layer"]))
+                elif where["phrase"] not in text:
+                    out.append("%s: %s of %s no longer holds \"%s\"" % (rid, where["line"], r["layer"], where["phrase"]))
+        out += ["%s: %s is named as holding it and is not there" % (rid, t) for t in r.get("held_by") or [] if not _holds(t)]
+        if r.get("keeps_phrase") and r["keeps_phrase"] not in S.LAYERS[r["layer"]]["keeps"]:
+            out.append("%s: the page of %s no longer says \"%s\"" % (rid, r["layer"], r["keeps_phrase"]))
+    return out
+
+
+def load_rules():
+    import json
+    return json.loads(RULES_FILE.read_text(encoding="utf-8"))["rules"]
+
+
+def test_every_rule_of_the_five_official_role_files_has_a_home():
+    """The guard for 'preserve every rule of the five official role files' (A3.4.8): the data holds every rule of A3.4.5 with its
+    home, the line it names and a key phrase that must be in that line; the interface and the versions are checked against it. A
+    weakened word, a dropped never line or a rule with no home is named by its id."""
+    import copy
+    rules = load_rules()
+    assert role_rule_faults(rules) == []
+    ids = [r["id"] for r in rules]
+    # the ids of A3.4.5, in the order of the tables, from ID-S1 to AU-F5
+    assert ids[0] == "ID-S1" and ids[-1] == "AU-F5" and len(ids) == len(set(ids)) == 115
+    expect = {"identity": ("ID", ["S1", "S2", "S3", *["M%d" % i for i in range(1, 8)], *["N%d" % i for i in range(1, 9)],
+                                  *["P%d" % i for i in range(1, 6)], *["F%d" % i for i in range(1, 6)], "O1", "X1"]),
+              "adaptation": ("AD", ["S1", "S2", "O1", *["P%d" % i for i in range(1, 9)], *["N%d" % i for i in range(1, 9)], *["F%d" % i for i in range(1, 6)]]),
+              "priority": ("PR", ["S1", "S2", "E1", *["P%d" % i for i in range(1, 7)], *["N%d" % i for i in range(1, 8)], *["F%d" % i for i in range(1, 6)]]),
+              "coordination": ("CO", ["S1", "S2", *["P%d" % i for i in range(1, 8)], "X1", *["N%d" % i for i in range(1, 8)], *["F%d" % i for i in range(1, 6)]]),
+              "audit": ("AU", ["S1", "S2", "O1", *["P%d" % i for i in range(1, 8)], "X1", "N6", "N8", *["F%d" % i for i in range(1, 6)]])}
+    for layer, (prefix, tail) in expect.items():
+        assert [r["id"] for r in rules if r["layer"] == layer] == ["%s-%s" % (prefix, t) for t in tail], layer
+    homes = {h: sum(1 for r in rules if r["home"] == h) for h in HOMES}
+    assert homes["left"] == 2 and homes["derived"] == 4 and homes["word"] + homes["constant"] == 109, homes
+    assert {r["id"] for r in rules if r["home"] == "left"} == {"AD-P7", "CO-X1"}, "two rules are left, each with its reason"
+    # the failing examples: delete a never line from a copy of the interface, and the rules that rest on it are named
+    template = copy.deepcopy(S.FUNCTION_TEMPLATE)
+    template["identity"]["never"] = tuple(x for i, x in enumerate(template["identity"]["never"], 1) if i != 3)
+    got = role_rule_faults(rules, template=template)
+    assert got[0] == "ID-N3: never 3 of identity no longer holds \"raise a limit\"", got
+    assert {f.split(":")[0] for f in got} >= {"ID-N3", "ID-N4", "ID-N8"} and not [f for f in got if not f.startswith("ID-N")]
+    # weaken a word so its phrase is gone, and the rule is named
+    words = {fn: copy.deepcopy(module_of(fn).WORDS["goal"]) for fn in FUNCTIONS}
+    words["priority"]["role_procedure"]["items"][4] = "Bargain with Adaptation for as long as it takes."
+    words["audit"]["role_is"]["text"] = "the department's second pair of eyes"
+    got = role_rule_faults(rules, words=words)
+    assert got == ["PR-P5: goal.role_procedure 5 of priority no longer holds \"at most four exchanges\"",
+                   "AU-S1: goal.role_is of audit no longer holds \"what was actually made\""], got
+    # a rule with no home, a rule left with no reason, a name that is not there, a keeps phrase the page no longer says
+    broken = [dict(rules[0], home="nowhere"), dict(rules[1], id="X-1", held_by=["S.NO_SUCH_THING", "no_such_step.here"]),
+              dict(rules[2], id="X-2", keeps_phrase="never says this"), dict(rules[3], id="X-3", home="left", line=None, phrase=None, reason="")]
+    got = role_rule_faults(broken)
+    assert [f.split(":")[0] for f in got] == ["ID-S1", "X-1", "X-1", "X-2", "X-3"], got
+
+
+def test_the_keeps_and_the_journey_ids_of_the_pages_equal_the_interface(capsys):
+    """Two records the interface and the pages keep apart are held equal (A3.4.6): every 'never' line the data marks as one of
+    Sutra's keeps names the words of the page it comes from; and the journeys a function's page lists are those of its journey
+    file (skipped while journeys/functions/<fn>.json does not exist: A3-J34 creates it)."""
+    import functions_view as FV
+    marked = [r for r in load_rules() if r.get("keeps_phrase")]
+    assert {r["id"] for r in marked} == {"ID-N7", "ID-N8", "AD-N8", "PR-N7", "CO-N7", "AU-N6", "AU-N8"}
+    for r in marked:
+        assert r["home"] == "constant" and r["line"].startswith("never "), r["id"]
+        assert r["keeps_phrase"] in S.LAYERS[r["layer"]]["keeps"], "%s: the page of %s does not say \"%s\"" % (r["id"], r["layer"], r["keeps_phrase"])
+        assert r["keeps_phrase"] in FV.S.LAYERS[r["layer"]]["keeps"], "the function pages read the same words"
+    folder = HERE / "journeys" / "functions"
+    missing = [fn for fn in FUNCTIONS if not (folder / (fn + ".json")).is_file()]
+    if missing:
+        print("skipped: the function journeys of %s are not there yet (journeys/functions/<fn>.json, A3-J34)" % ", ".join(missing))
+        return
+    import json
+    for fn in FUNCTIONS:
+        filed = json.loads((folder / (fn + ".json")).read_text(encoding="utf-8"))
+        ids = [j["id"] for j in (filed.get("journeys") if isinstance(filed, dict) and "journeys" in filed else [filed])]
+        assert [j[0] for j in FV.PAGES[fn]["journeys"]] == ids, fn
+
+
+def test_function_templates_read_the_interface_banned_words():
+    """The single copy (A3.4.6): test_function_templates holds no list of its own; the screen's words and Priority's pattern are
+    the interface's."""
+    import test_function_templates as TFT
+    assert TFT.SCREEN_WORDS.pattern == S.TEMPLATE_BANNED and not hasattr(TFT, "FORBIDDEN_WORD")
+    source = (HERE / "test_function_templates.py").read_text(encoding="utf-8")
+    assert "S.TEMPLATE_NEVER_SAY[\"priority\"]" in source and "S.TEMPLATE_BANNED" in source
+    assert '"what runs next"' not in source and "charters?" not in source, "no copy of either list in that file"
+    assert TFT.FORBIDDEN_ID.search("DS-3") and TFT.FORBIDDEN_ID.search("dref-abc"), "the founder-only-id pattern is not a word list, and stays"

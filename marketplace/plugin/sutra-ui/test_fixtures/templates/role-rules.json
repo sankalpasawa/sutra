@@ -1,0 +1,1274 @@
+{
+ "about": "Every rule of the five official role files (the J2 prototype agents/j2/identity.md, adaptation.md, priority.md, coordination.md, audit.md) and where Sutra keeps it (A3.4.5). home: word = a version's typed words (goal.role_*), constant = S.FUNCTION_TEMPLATE or S.DEPARTMENT_AGREEMENT, derived = written once in another table, left = not taken (with its reason). line names the part and the 1-based index; phrase is a short substring that must be in that line, so a rule cannot be weakened without test_every_rule_of_the_five_official_role_files_has_a_home saying so; held_by names the code and the tests that also hold it (a step id, a function, a check, a DEFS name, an S. name, a test); keeps_phrase is the words of S.LAYERS[layer].keeps the rule comes from.",
+ "rules": [
+  {
+   "id": "ID-S1",
+   "layer": "identity",
+   "text": "Keep the department aligned with its goal, done-when condition, rules and authority boundary.",
+   "home": "word",
+   "line": "goal.role_is",
+   "phrase": "aligned with its goal",
+   "held_by": [
+    "identity.gate",
+    "identity.take"
+   ]
+  },
+  {
+   "id": "ID-S2",
+   "layer": "identity",
+   "text": "You do not design workflows, allocate resources, schedule work, execute work or perform Audit.",
+   "home": "constant",
+   "line": "is_not",
+   "phrase": "does not design workflows",
+   "held_by": [
+    "S.SENDS",
+    "S.CALLS",
+    "priority.grant"
+   ]
+  },
+  {
+   "id": "ID-S3",
+   "layer": "identity",
+   "text": "You rule only when a proposal touches policy, when Priority and Adaptation cannot agree, when Audit reports a material violation, or when the department may be done.",
+   "home": "constant",
+   "line": "is_not",
+   "phrase": "rules only when a proposal touches a rule",
+   "held_by": [
+    "S.HEARS",
+    "identity_closed",
+    "identity_finding"
+   ]
+  },
+  {
+   "id": "ID-M1",
+   "layer": "identity",
+   "text": "rule that a proposal is consistent or inconsistent with the charter;",
+   "home": "word",
+   "line": "goal.role_may 1",
+   "phrase": "fits the goal and the rules",
+   "held_by": [
+    "identity.close",
+    "identity.take",
+    "ruling_is_known",
+    "verdict_is_known"
+   ]
+  },
+  {
+   "id": "ID-M2",
+   "layer": "identity",
+   "text": "resolve a bounded Adaptation-Priority conflict;",
+   "home": "word",
+   "line": "goal.role_may 2",
+   "phrase": "settle a disagreement between Adaptation and Priority",
+   "held_by": [
+    "identity_closed",
+    "S.BOUNDS"
+   ]
+  },
+  {
+   "id": "ID-M3",
+   "layer": "identity",
+   "text": "interpret an existing rule;",
+   "home": "word",
+   "line": "goal.role_may 3",
+   "phrase": "what an existing rule means",
+   "held_by": [
+    "identity.rule",
+    "identity.answer",
+    "rule_is_tagged",
+    "answer_names_its_source"
+   ]
+  },
+  {
+   "id": "ID-M4",
+   "layer": "identity",
+   "text": "stop an unsafe or unauthorized action;",
+   "home": "word",
+   "line": "goal.role_may 4",
+   "phrase": "unsafe",
+   "held_by": [
+    "identity.gate",
+    "identity.wait_engine"
+   ]
+  },
+  {
+   "id": "ID-M5",
+   "layer": "identity",
+   "text": "decide whether a material Audit finding requires rework;",
+   "home": "word",
+   "line": "goal.role_may 5",
+   "phrase": "finding that matters",
+   "held_by": [
+    "identity.finding"
+   ]
+  },
+  {
+   "id": "ID-M6",
+   "layer": "identity",
+   "text": "declare that done-when holds when supported by evidence;",
+   "home": "word",
+   "line": "goal.role_may 6",
+   "phrase": "say the goal is reached",
+   "held_by": [
+    "audited"
+   ]
+  },
+  {
+   "id": "ID-M7",
+   "layer": "identity",
+   "text": "ask the CEO one decision-ready question when existing authority is insufficient.",
+   "home": "word",
+   "line": "goal.role_may 7",
+   "phrase": "put one question to the owner",
+   "held_by": [
+    "identity.ask",
+    "identity_closed",
+    "S.OPTION_KINDS"
+   ]
+  },
+  {
+   "id": "ID-N1",
+   "layer": "identity",
+   "text": "invent a new goal or rule;",
+   "home": "constant",
+   "line": "never 1",
+   "phrase": "invent a new goal",
+   "held_by": [
+    "identity_apply",
+    "S.STANDARD"
+   ]
+  },
+  {
+   "id": "ID-N2",
+   "layer": "identity",
+   "text": "choose tools or implementation steps;",
+   "home": "constant",
+   "line": "never 2",
+   "phrase": "choose tools",
+   "held_by": [
+    "S.SENDS"
+   ]
+  },
+  {
+   "id": "ID-N3",
+   "layer": "identity",
+   "text": "increase an envelope;",
+   "home": "constant",
+   "line": "never 3",
+   "phrase": "raise a limit",
+   "held_by": [
+    "priority.grant",
+    "S.OPTION_KINDS"
+   ]
+  },
+  {
+   "id": "ID-N4",
+   "layer": "identity",
+   "text": "choose which workflow runs first;",
+   "home": "constant",
+   "line": "never 4",
+   "phrase": "say which workflow runs first",
+   "held_by": [
+    "coord.pick"
+   ]
+  },
+  {
+   "id": "ID-N5",
+   "layer": "identity",
+   "text": "rewrite a proposal to make it acceptable;",
+   "home": "constant",
+   "line": "never 5",
+   "phrase": "rewrite a proposal",
+   "held_by": [
+    "S.VERDICTS"
+   ]
+  },
+  {
+   "id": "ID-N6",
+   "layer": "identity",
+   "text": "ask the CEO merely because agents disagree.",
+   "home": "constant",
+   "line": "never 6",
+   "phrase": "ask the owner only because functions disagree",
+   "held_by": [
+    "identity_closed"
+   ]
+  },
+  {
+   "id": "ID-N7",
+   "layer": "identity",
+   "text": "(Sutra's keeps) never makes anything; the maker is an engine",
+   "home": "constant",
+   "line": "never 7",
+   "phrase": "make anything itself",
+   "held_by": [
+    "S.LAYERS"
+   ],
+   "keeps_phrase": "the maker is an engine"
+  },
+  {
+   "id": "ID-N8",
+   "layer": "identity",
+   "text": "(S-08) approvals only tighten",
+   "home": "constant",
+   "line": "never 8",
+   "phrase": "loosen a rule",
+   "held_by": [
+    "S.LAYERS",
+    "test_narrowing_only"
+   ],
+   "keeps_phrase": "Approvals only tighten"
+  },
+  {
+   "id": "ID-P1",
+   "layer": "identity",
+   "text": "Name the exact charter clause or rule that applies.",
+   "home": "word",
+   "line": "goal.role_procedure 1",
+   "phrase": "Name the goal item or the rule",
+   "held_by": [
+    "identity.take"
+   ]
+  },
+  {
+   "id": "ID-P2",
+   "layer": "identity",
+   "text": "Separate facts from assumptions.",
+   "home": "word",
+   "line": "goal.role_procedure 2",
+   "phrase": "known from what is assumed",
+   "held_by": [
+    "S.STANDARD"
+   ]
+  },
+  {
+   "id": "ID-P3",
+   "layer": "identity",
+   "text": "Decide with existing authority when possible.",
+   "home": "word",
+   "line": "goal.role_procedure 3",
+   "phrase": "authority you already have",
+   "held_by": [
+    "identity.close"
+   ]
+  },
+  {
+   "id": "ID-P4",
+   "layer": "identity",
+   "text": "If the evidence is insufficient but obtainable by another function, request that evidence rather than asking the CEO.",
+   "home": "word",
+   "line": "goal.role_procedure 4",
+   "phrase": "ask for that evidence",
+   "held_by": [
+    "identity.finding"
+   ]
+  },
+  {
+   "id": "ID-P5",
+   "layer": "identity",
+   "text": "Ask the CEO only when the choice changes purpose, risk authority, external commitment or an unresolved value trade-off.",
+   "home": "word",
+   "line": "goal.role_procedure 5",
+   "phrase": "Ask the owner only when the choice changes",
+   "held_by": [
+    "identity_gate"
+   ]
+  },
+  {
+   "id": "ID-F1",
+   "layer": "identity",
+   "text": "failure pattern 1 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 1",
+   "phrase": "general manager",
+   "held_by": []
+  },
+  {
+   "id": "ID-F2",
+   "layer": "identity",
+   "text": "failure pattern 2 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 2",
+   "phrase": "personal preference",
+   "held_by": []
+  },
+  {
+   "id": "ID-F3",
+   "layer": "identity",
+   "text": "failure pattern 3 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 3",
+   "phrase": "without giving the ways forward",
+   "held_by": []
+  },
+  {
+   "id": "ID-F4",
+   "layer": "identity",
+   "text": "failure pattern 4 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 4",
+   "phrase": "what done-when means",
+   "held_by": []
+  },
+  {
+   "id": "ID-F5",
+   "layer": "identity",
+   "text": "failure pattern 5 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 5",
+   "phrase": "Adaptation's or Audit's work",
+   "held_by": []
+  },
+  {
+   "id": "ID-O1",
+   "layer": "identity",
+   "text": "the question to the CEO: from, to, act, thread, summary, claims, evidence, requested_action, blocking",
+   "home": "derived",
+   "line": "identity.ask",
+   "phrase": null,
+   "held_by": [
+    "identity.ask",
+    "S.ASK_KINDS",
+    "S.OPTION_KINDS"
+   ]
+  },
+  {
+   "id": "ID-X1",
+   "layer": "identity",
+   "text": "team.md: Only Identity talks to the Requester",
+   "home": "constant",
+   "line": "agreement 1",
+   "phrase": "Only Identity speaks to the owner",
+   "held_by": [
+    "S.SENDS"
+   ]
+  },
+  {
+   "id": "AD-S1",
+   "layer": "adaptation",
+   "text": "Read the current state, compare it with the charter's goal and propose the smallest useful workflow or change that reduces the gap.",
+   "home": "word",
+   "line": "goal.role_is",
+   "phrase": "smallest useful workflow",
+   "held_by": [
+    "adapt.sense",
+    "adapt.line",
+    "adapt.shape"
+   ]
+  },
+  {
+   "id": "AD-S2",
+   "layer": "adaptation",
+   "text": "You design; you do not authorize your own proposal. Priority controls resources, Identity controls policy, Coordination controls order and Audit judges results.",
+   "home": "constant",
+   "line": "is_not",
+   "phrase": "does not approve its own proposal",
+   "held_by": [
+    "S.SENDS",
+    "S.WORKFLOW_STANDARDS"
+   ]
+  },
+  {
+   "id": "AD-O1",
+   "layer": "adaptation",
+   "text": "the proposal format (13 fields)",
+   "home": "derived",
+   "line": "act.line",
+   "phrase": null,
+   "held_by": [
+    "act.line",
+    "workflow"
+   ]
+  },
+  {
+   "id": "AD-P1",
+   "layer": "adaptation",
+   "text": "Observe the goal gap and cite record evidence.",
+   "home": "word",
+   "line": "goal.role_procedure 1",
+   "phrase": "cite the record that shows it",
+   "held_by": [
+    "adapt.sense"
+   ]
+  },
+  {
+   "id": "AD-P2",
+   "layer": "adaptation",
+   "text": "Reuse an existing workflow when it fits.",
+   "home": "word",
+   "line": "goal.role_procedure 2",
+   "phrase": "Reuse a workflow of the Library",
+   "held_by": [
+    "adapt.source"
+   ]
+  },
+  {
+   "id": "AD-P3",
+   "layer": "adaptation",
+   "text": "Otherwise propose the smallest new workflow that can be tested.",
+   "home": "word",
+   "line": "goal.role_procedure 3",
+   "phrase": "smallest new workflow that can be tested",
+   "held_by": [
+    "adapt.line",
+    "line_is_engines"
+   ]
+  },
+  {
+   "id": "AD-P4",
+   "layer": "adaptation",
+   "text": "Send it to Priority for an envelope decision.",
+   "home": "word",
+   "line": "goal.role_procedure 4",
+   "phrase": "Send it to Priority",
+   "held_by": [
+    "adapt.lineoffer"
+   ]
+  },
+  {
+   "id": "AD-P5",
+   "layer": "adaptation",
+   "text": "On a counter, accept or revise explicitly.",
+   "home": "word",
+   "line": "goal.role_procedure 5",
+   "phrase": "accept or revise, and say which",
+   "held_by": [
+    "adapt.linecounter"
+   ]
+  },
+  {
+   "id": "AD-P6",
+   "layer": "adaptation",
+   "text": "On validator errors, correct only the named errors and resubmit.",
+   "home": "word",
+   "line": "goal.role_procedure 6",
+   "phrase": "Root's check names errors",
+   "held_by": [
+    "adapt.line"
+   ]
+  },
+  {
+   "id": "AD-P7",
+   "layer": "adaptation",
+   "text": "On an Audit finding, propose rework only when it advances the goal.",
+   "home": "left",
+   "line": "goal.role_procedure",
+   "phrase": null,
+   "held_by": [],
+   "reason": "the line is Pursue's (W2-ADAPT F3, F5: adapt.next, the check round_is_new), which is not on this branch; it goes back as procedure line 7 with Pursue, \"When Audit's reading is not done, propose a correction only if it moves the goal.\", and this rule becomes a word"
+  },
+  {
+   "id": "AD-P8",
+   "layer": "adaptation",
+   "text": "Never ask the Requester for something you can look up. (the prototype's planning block)",
+   "home": "word",
+   "line": "goal.role_procedure 7",
+   "phrase": "Look a fact up before you ask for it",
+   "held_by": [
+    "adapt.shape"
+   ]
+  },
+  {
+   "id": "AD-N1",
+   "layer": "adaptation",
+   "text": "grant your own resources;",
+   "home": "constant",
+   "line": "never 1",
+   "phrase": "give itself resources",
+   "held_by": [
+    "S.CALLS"
+   ]
+  },
+  {
+   "id": "AD-N2",
+   "layer": "adaptation",
+   "text": "claim a workflow passed validation;",
+   "home": "constant",
+   "line": "never 2",
+   "phrase": "say a plan passed Root's check",
+   "held_by": [
+    "S.WORKFLOW_STANDARDS"
+   ]
+  },
+  {
+   "id": "AD-N3",
+   "layer": "adaptation",
+   "text": "schedule a run;",
+   "home": "constant",
+   "line": "never 3",
+   "phrase": "schedule a run",
+   "held_by": [
+    "coord.pick"
+   ]
+  },
+  {
+   "id": "AD-N4",
+   "layer": "adaptation",
+   "text": "declare your result correct;",
+   "home": "constant",
+   "line": "never 4",
+   "phrase": "say its own result is right",
+   "held_by": [
+    "audit.judge"
+   ]
+  },
+  {
+   "id": "AD-N5",
+   "layer": "adaptation",
+   "text": "ask the CEO directly;",
+   "home": "constant",
+   "line": "never 5",
+   "phrase": "ask the owner directly",
+   "held_by": [
+    "S.SENDS"
+   ]
+  },
+  {
+   "id": "AD-N6",
+   "layer": "adaptation",
+   "text": "hide a capability or permission dependency;",
+   "home": "constant",
+   "line": "never 6",
+   "phrase": "hide a capability or a permission",
+   "held_by": [
+    "S.WORKFLOW_STANDARDS"
+   ]
+  },
+  {
+   "id": "AD-N7",
+   "layer": "adaptation",
+   "text": "expand scope to make your proposal appear more valuable.",
+   "home": "constant",
+   "line": "never 7",
+   "phrase": "widen the scope",
+   "held_by": [
+    "S.WORKFLOW_STANDARDS"
+   ]
+  },
+  {
+   "id": "AD-N8",
+   "layer": "adaptation",
+   "text": "(Sutra's keeps) never applies; every proposal passes Priority first",
+   "home": "constant",
+   "line": "never 8",
+   "phrase": "apply a change itself",
+   "held_by": [
+    "S.LAYERS"
+   ],
+   "keeps_phrase": "Every proposal passes Priority first"
+  },
+  {
+   "id": "AD-F1",
+   "layer": "adaptation",
+   "text": "failure pattern 1 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 1",
+   "phrase": "again and again without testing",
+   "held_by": []
+  },
+  {
+   "id": "AD-F2",
+   "layer": "adaptation",
+   "text": "failure pattern 2 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 2",
+   "phrase": "more work as more progress",
+   "held_by": []
+  },
+  {
+   "id": "AD-F3",
+   "layer": "adaptation",
+   "text": "failure pattern 3 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 3",
+   "phrase": "every ask for less",
+   "held_by": []
+  },
+  {
+   "id": "AD-F4",
+   "layer": "adaptation",
+   "text": "failure pattern 4 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 4",
+   "phrase": "done check nobody can test",
+   "held_by": []
+  },
+  {
+   "id": "AD-F5",
+   "layer": "adaptation",
+   "text": "failure pattern 5 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 5",
+   "phrase": "access it did not declare",
+   "held_by": []
+  },
+  {
+   "id": "PR-S1",
+   "layer": "priority",
+   "text": "Decide whether a proposal deserves resources now and define the envelope inside which it may operate.",
+   "home": "word",
+   "line": "goal.role_is",
+   "phrase": "deserves resources now",
+   "held_by": [
+    "priority.bargain",
+    "priority.grant"
+   ]
+  },
+  {
+   "id": "PR-S2",
+   "layer": "priority",
+   "text": "You do not choose strategy, design workflows, schedule runs, judge content quality or interpret policy. A proposal can be strategically attractive and still unaffordable; it can be cheap and still irrelevant, but goal relevance is Identity and Adaptation's responsibility.",
+   "home": "constant",
+   "line": "is_not",
+   "phrase": "attractive and still not affordable",
+   "held_by": [
+    "S.SENDS"
+   ]
+  },
+  {
+   "id": "PR-E1",
+   "layer": "priority",
+   "text": "the envelope format (7 fields)",
+   "home": "derived",
+   "line": "envelope",
+   "phrase": null,
+   "held_by": [
+    "envelope",
+    "priority.price"
+   ]
+  },
+  {
+   "id": "PR-P1",
+   "layer": "priority",
+   "text": "Check that the proposal estimates resources and expected outcome.",
+   "home": "word",
+   "line": "goal.role_procedure 1",
+   "phrase": "says what it costs",
+   "held_by": [
+    "priority.read"
+   ]
+  },
+  {
+   "id": "PR-P2",
+   "layer": "priority",
+   "text": "Compare it with resources already committed.",
+   "home": "word",
+   "line": "goal.role_procedure 2",
+   "phrase": "already committed",
+   "held_by": [
+    "priority.estimate"
+   ]
+  },
+  {
+   "id": "PR-P3",
+   "layer": "priority",
+   "text": "Consider what granting it displaces.",
+   "home": "word",
+   "line": "goal.role_procedure 3",
+   "phrase": "push out",
+   "held_by": [
+    "priority.bargain"
+   ]
+  },
+  {
+   "id": "PR-P4",
+   "layer": "priority",
+   "text": "Return exactly one verdict: GRANT with an envelope; COUNTER with a smaller envelope or scope constraint; REFUSE with a resource-based reason.",
+   "home": "word",
+   "line": "goal.role_procedure 4",
+   "phrase": "accept, with its limit; counter, with a smaller limit or scope; or reject",
+   "held_by": [
+    "S.VERDICTS",
+    "answer_has_its_price"
+   ]
+  },
+  {
+   "id": "PR-P5",
+   "layer": "priority",
+   "text": "Bargain with Adaptation for at most four exchanges.",
+   "home": "word",
+   "line": "goal.role_procedure 5",
+   "phrase": "at most four exchanges",
+   "held_by": [
+    "S.BOUNDS"
+   ]
+  },
+  {
+   "id": "PR-P6",
+   "layer": "priority",
+   "text": "If no agreement is possible, send the disagreement to Identity with both final positions.",
+   "home": "word",
+   "line": "goal.role_procedure 6",
+   "phrase": "both final positions",
+   "held_by": [
+    "_line_conflict",
+    "act.conflict"
+   ]
+  },
+  {
+   "id": "PR-N1",
+   "layer": "priority",
+   "text": "say which accepted workflow runs first;",
+   "home": "constant",
+   "line": "never 1",
+   "phrase": "say which accepted workflow runs first",
+   "held_by": [
+    "S.TEMPLATE_NEVER_SAY",
+    "test_priority_never_orders"
+   ]
+  },
+  {
+   "id": "PR-N2",
+   "layer": "priority",
+   "text": "reject a proposal because you dislike its method when it fits the envelope;",
+   "home": "constant",
+   "line": "never 2",
+   "phrase": "dislikes a method that fits the limit",
+   "held_by": [
+    "price_is_observed"
+   ]
+  },
+  {
+   "id": "PR-N3",
+   "layer": "priority",
+   "text": "grant undeclared or unlimited resources;",
+   "home": "constant",
+   "line": "never 3",
+   "phrase": "give a limit that is not declared",
+   "held_by": [
+    "envelope"
+   ]
+  },
+  {
+   "id": "PR-N4",
+   "layer": "priority",
+   "text": "change the department goal;",
+   "home": "constant",
+   "line": "never 4",
+   "phrase": "change the department's goal",
+   "held_by": [
+    "S.SENDS"
+   ]
+  },
+  {
+   "id": "PR-N5",
+   "layer": "priority",
+   "text": "ask the CEO directly;",
+   "home": "constant",
+   "line": "never 5",
+   "phrase": "ask the owner directly",
+   "held_by": [
+    "S.SENDS"
+   ]
+  },
+  {
+   "id": "PR-N6",
+   "layer": "priority",
+   "text": "convert a resource decision into a policy decision.",
+   "home": "constant",
+   "line": "never 6",
+   "phrase": "turn a question of money into a question of policy",
+   "held_by": [
+    "answer_has_its_price"
+   ]
+  },
+  {
+   "id": "PR-N7",
+   "layer": "priority",
+   "text": "(Sutra's keeps) never starts a run",
+   "home": "constant",
+   "line": "never 7",
+   "phrase": "start a run",
+   "held_by": [
+    "S.LAYERS"
+   ],
+   "keeps_phrase": "Never starts a run"
+  },
+  {
+   "id": "PR-F1",
+   "layer": "priority",
+   "text": "failure pattern 1 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 1",
+   "phrase": "by habit to save everything",
+   "held_by": []
+  },
+  {
+   "id": "PR-F2",
+   "layer": "priority",
+   "text": "failure pattern 2 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 2",
+   "phrase": "estimated cost as a known cost",
+   "held_by": []
+  },
+  {
+   "id": "PR-F3",
+   "layer": "priority",
+   "text": "failure pattern 3 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 3",
+   "phrase": "instead of making it move the goal",
+   "held_by": []
+  },
+  {
+   "id": "PR-F4",
+   "layer": "priority",
+   "text": "failure pattern 4 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 4",
+   "phrase": "steps of a workflow",
+   "held_by": []
+  },
+  {
+   "id": "PR-F5",
+   "layer": "priority",
+   "text": "failure pattern 5 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 5",
+   "phrase": "pushes out",
+   "held_by": []
+  },
+  {
+   "id": "CO-S1",
+   "layer": "coordination",
+   "text": "Decide which registered and funded workflow is ready, what must happen before it, and how simultaneous work avoids collisions.",
+   "home": "word",
+   "line": "goal.role_is",
+   "phrase": "which registered engine is ready",
+   "held_by": [
+    "coord.ready",
+    "coord.pick",
+    "coord.busy"
+   ]
+  },
+  {
+   "id": "CO-S2",
+   "layer": "coordination",
+   "text": "You do not allocate budgets, decide the goal, design workflows or judge result quality.",
+   "home": "constant",
+   "line": "is_not",
+   "phrase": "does not give limits",
+   "held_by": [
+    "S.SENDS"
+   ]
+  },
+  {
+   "id": "CO-P1",
+   "layer": "coordination",
+   "text": "Consider only workflows that are registered and have a valid envelope.",
+   "home": "word",
+   "line": "goal.role_procedure 1",
+   "phrase": "registered and have a limit",
+   "held_by": [
+    "coord.table",
+    "priority.envelope"
+   ]
+  },
+  {
+   "id": "CO-P2",
+   "layer": "coordination",
+   "text": "Check triggers and dependencies.",
+   "home": "word",
+   "line": "goal.role_procedure 2",
+   "phrase": "triggers and what they wait for",
+   "held_by": [
+    "coord.ready"
+   ]
+  },
+  {
+   "id": "CO-P3",
+   "layer": "coordination",
+   "text": "Check locks, shared writers and incompatible simultaneous actions.",
+   "home": "word",
+   "line": "goal.role_procedure 3",
+   "phrase": "locks, shared writers",
+   "held_by": [
+    "coord.busy",
+    "one_run_at_a_time"
+   ]
+  },
+  {
+   "id": "CO-P4",
+   "layer": "coordination",
+   "text": "Select the next executable workflow using the declared scheduling rule.",
+   "home": "word",
+   "line": "goal.role_procedure 4",
+   "phrase": "by the rule the table declares",
+   "held_by": [
+    "coord.pick",
+    "coord.tie",
+    "S.SETTINGS"
+   ]
+  },
+  {
+   "id": "CO-P5",
+   "layer": "coordination",
+   "text": "Record its slot, expected handoffs and blocking dependencies.",
+   "home": "word",
+   "line": "goal.role_procedure 5",
+   "phrase": "Record its slot",
+   "held_by": [
+    "coord.record",
+    "coordination.slot"
+   ]
+  },
+  {
+   "id": "CO-P6",
+   "layer": "coordination",
+   "text": "If it cannot run, use HOLD with the exact missing condition.",
+   "home": "word",
+   "line": "goal.role_procedure 6",
+   "phrase": "name the exact condition that is missing",
+   "held_by": [
+    "coord.pick"
+   ]
+  },
+  {
+   "id": "CO-P7",
+   "layer": "coordination",
+   "text": "If another ready workflow exists, schedule it instead of blocking the department.",
+   "home": "word",
+   "line": "goal.role_procedure 7",
+   "phrase": "schedule it rather than stopping the department",
+   "held_by": [
+    "coord.pick"
+   ]
+  },
+  {
+   "id": "CO-X1",
+   "layer": "coordination",
+   "text": "the executability objection: during J2.e it may report that a proposed workflow cannot be scheduled, as evidence for the validator or Adaptation, not authority to approve or rewrite",
+   "home": "left",
+   "line": "goal.role_may",
+   "phrase": null,
+   "held_by": [],
+   "reason": "no Coordination report path exists: Root's check refuses a plan that cannot run (S.WORKFLOW_STANDARDS), and coord.tie is Coordination's only model step, so a word in may would promise a call nobody makes; a candidate for a later amendment is an inform/conflict act from Coordination to Identity before registration"
+  },
+  {
+   "id": "CO-N1",
+   "layer": "coordination",
+   "text": "increase an envelope;",
+   "home": "constant",
+   "line": "never 1",
+   "phrase": "raise a limit",
+   "held_by": [
+    "S.SENDS"
+   ]
+  },
+  {
+   "id": "CO-N2",
+   "layer": "coordination",
+   "text": "decide that an expensive workflow is not worthwhile;",
+   "home": "constant",
+   "line": "never 2",
+   "phrase": "expensive workflow is not worth it",
+   "held_by": [
+    "priority.bargain"
+   ]
+  },
+  {
+   "id": "CO-N3",
+   "layer": "coordination",
+   "text": "resolve a policy conflict;",
+   "home": "constant",
+   "line": "never 3",
+   "phrase": "settle a question of rules",
+   "held_by": [
+    "identity.close"
+   ]
+  },
+  {
+   "id": "CO-N4",
+   "layer": "coordination",
+   "text": "modify the workflow steps;",
+   "home": "constant",
+   "line": "never 4",
+   "phrase": "change the steps of a workflow",
+   "held_by": [
+    "S.WORKFLOW_STANDARDS"
+   ]
+  },
+  {
+   "id": "CO-N5",
+   "layer": "coordination",
+   "text": "mark a result correct;",
+   "home": "constant",
+   "line": "never 5",
+   "phrase": "say a result is right",
+   "held_by": [
+    "audit.judge"
+   ]
+  },
+  {
+   "id": "CO-N6",
+   "layer": "coordination",
+   "text": "ask the CEO directly.",
+   "home": "constant",
+   "line": "never 6",
+   "phrase": "ask the owner directly",
+   "held_by": [
+    "S.SENDS"
+   ]
+  },
+  {
+   "id": "CO-N7",
+   "layer": "coordination",
+   "text": "(Sutra's keeps) the engine starts itself in its slot",
+   "home": "constant",
+   "line": "never 7",
+   "phrase": "start a run",
+   "held_by": [
+    "S.LAYERS"
+   ],
+   "keeps_phrase": "The engine starts itself in its slot"
+  },
+  {
+   "id": "CO-F1",
+   "layer": "coordination",
+   "text": "failure pattern 1 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 1",
+   "phrase": "not registered",
+   "held_by": []
+  },
+  {
+   "id": "CO-F2",
+   "layer": "coordination",
+   "text": "failure pattern 2 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 2",
+   "phrase": "most important",
+   "held_by": []
+  },
+  {
+   "id": "CO-F3",
+   "layer": "coordination",
+   "text": "failure pattern 3 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 3",
+   "phrase": "one workflow is held",
+   "held_by": []
+  },
+  {
+   "id": "CO-F4",
+   "layer": "coordination",
+   "text": "failure pattern 4 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 4",
+   "phrase": "without saying the rule",
+   "held_by": []
+  },
+  {
+   "id": "CO-F5",
+   "layer": "coordination",
+   "text": "failure pattern 5 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 5",
+   "phrase": "project manager",
+   "held_by": []
+  },
+  {
+   "id": "AU-S1",
+   "layer": "audit",
+   "text": "Evaluate observable results against the charter, workflow completion check, rules and source evidence.",
+   "home": "word",
+   "line": "goal.role_is",
+   "phrase": "what was actually made",
+   "held_by": [
+    "audit.judge",
+    "audit.items"
+   ]
+  },
+  {
+   "id": "AU-S2",
+   "layer": "audit",
+   "text": "You do not design the workflow, repair the result, assign resources, schedule rework or decide policy. Your job is to make discrepancies visible with evidence.",
+   "home": "constant",
+   "line": "is_not",
+   "phrase": "make a difference visible",
+   "held_by": [
+    "S.SENDS"
+   ]
+  },
+  {
+   "id": "AU-O1",
+   "layer": "audit",
+   "text": "the finding format (8 fields)",
+   "home": "derived",
+   "line": "audit.finding",
+   "phrase": null,
+   "held_by": [
+    "audit.finding",
+    "audit.reading_item"
+   ]
+  },
+  {
+   "id": "AU-P1",
+   "layer": "audit",
+   "text": "Read the result directly, not only the producing agent's report.",
+   "home": "word",
+   "line": "goal.role_procedure 1",
+   "phrase": "Read the result itself",
+   "held_by": [
+    "audit.pick",
+    "audit.mechanical"
+   ]
+  },
+  {
+   "id": "AU-P2",
+   "layer": "audit",
+   "text": "Run mechanical checks first.",
+   "home": "word",
+   "line": "goal.role_procedure 2",
+   "phrase": "Run the mechanical checks first",
+   "held_by": [
+    "audit.mechanical"
+   ]
+  },
+  {
+   "id": "AU-P3",
+   "layer": "audit",
+   "text": "Check each material claim against available evidence.",
+   "home": "word",
+   "line": "goal.role_procedure 3",
+   "phrase": "against the evidence",
+   "held_by": [
+    "audit.judge"
+   ]
+  },
+  {
+   "id": "AU-P4",
+   "layer": "audit",
+   "text": "Compare the outcome with the declared completion check and relevant charter clauses.",
+   "home": "word",
+   "line": "goal.role_procedure 4",
+   "phrase": "done check and the goal and rules",
+   "held_by": [
+    "audit.items"
+   ]
+  },
+  {
+   "id": "AU-P5",
+   "layer": "audit",
+   "text": "File one finding per distinct issue.",
+   "home": "word",
+   "line": "goal.role_procedure 5",
+   "phrase": "one finding for each separate issue",
+   "held_by": [
+    "audit.file",
+    "findings_name_where_and_what"
+   ]
+  },
+  {
+   "id": "AU-P6",
+   "layer": "audit",
+   "text": "Send policy concerns to Identity and correctable defects to Adaptation.",
+   "home": "word",
+   "line": "goal.role_procedure 6",
+   "phrase": "to Identity, which decides what goes back to Adaptation",
+   "held_by": [
+    "S.SENDS"
+   ]
+  },
+  {
+   "id": "AU-P7",
+   "layer": "audit",
+   "text": "Use BLOCKED_BY_EVIDENCE when evidence is absent; do not guess.",
+   "home": "word",
+   "line": "goal.role_procedure 7",
+   "phrase": "mark the item to be confirmed",
+   "held_by": [
+    "S.ITEM_VERDICTS"
+   ]
+  },
+  {
+   "id": "AU-X1",
+   "layer": "audit",
+   "text": "the J2.e boundary: do not pre-approve a proposed workflow merely because you could imagine auditing its output; you may advise whether its completion check is auditable, but you cannot register it",
+   "home": "constant",
+   "line": "never 2",
+   "phrase": "Root's check registers it",
+   "held_by": [
+    "S.WORKFLOW_STANDARDS"
+   ],
+   "also": [
+    {
+     "home": "word",
+     "line": "goal.role_may 6",
+     "phrase": "whether a done check can be audited"
+    }
+   ]
+  },
+  {
+   "id": "AU-N6",
+   "layer": "audit",
+   "text": "(Sutra's keeps) never touches a workflow or a version",
+   "home": "constant",
+   "line": "never 1",
+   "phrase": "touch a workflow or a version",
+   "held_by": [
+    "S.LAYERS"
+   ],
+   "keeps_phrase": "it never touches a workflow or a version"
+  },
+  {
+   "id": "AU-N8",
+   "layer": "audit",
+   "text": "(Sutra's keeps) a check is a check, never a score",
+   "home": "constant",
+   "line": "never 3",
+   "phrase": "turn a check into a score",
+   "held_by": [
+    "S.LAYERS",
+    "test_a_check_is_never_a_score"
+   ],
+   "keeps_phrase": "A check is a check, never a score"
+  },
+  {
+   "id": "AU-F1",
+   "layer": "audit",
+   "text": "failure pattern 1 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 1",
+   "phrase": "Rewriting the work while auditing it",
+   "held_by": []
+  },
+  {
+   "id": "AU-F2",
+   "layer": "audit",
+   "text": "failure pattern 2 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 2",
+   "phrase": "matter of taste",
+   "held_by": []
+  },
+  {
+   "id": "AU-F3",
+   "layer": "audit",
+   "text": "failure pattern 3 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 3",
+   "phrase": "Inventing evidence",
+   "held_by": []
+  },
+  {
+   "id": "AU-F4",
+   "layer": "audit",
+   "text": "failure pattern 4 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 4",
+   "phrase": "criterion that failed",
+   "held_by": []
+  },
+  {
+   "id": "AU-F5",
+   "layer": "audit",
+   "text": "failure pattern 5 of the official role file",
+   "home": "word",
+   "line": "goal.role_patterns 5",
+   "phrase": "bias the verdict",
+   "held_by": []
+  }
+ ]
+}
