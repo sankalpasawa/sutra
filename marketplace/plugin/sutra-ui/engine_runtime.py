@@ -2104,6 +2104,8 @@ def identity_gate(ctx, step, item):
     with W._lock(ref):
         a = next((x for x in W.asks(ref) if x.get("slot") == slot and x.get("kind") == kind), None)
         if a is None:
+            if ctx.get("peek"):
+                return "wait", "waits for the stamp"       # a panel read asking: it says what the tick will, and the tick files the ask
             p = post(ref, "Identity", OWNER, "request",
                      {"word": kind, "objective": objective, "output": "a stamp or a refusal", "may_read": may_read,
                       "boundaries": "this one %s" % kind}, about=about)
@@ -2168,7 +2170,7 @@ def priority_envelope(ctx, step, item):
     calls, usd = W._today_spend(ref, name)
     env = W.limit_of(ctx["dept"], name)
     if calls >= env.get("calls", 0) or usd >= env.get("usd", 0):
-        if not any(x.get("kind") == "envelope" and x.get("engine") == name and x["status"] == "pending" for x in W.asks(ref)):
+        if not ctx.get("peek") and not any(x.get("kind") == "envelope" and x.get("engine") == name and x["status"] == "pending" for x in W.asks(ref)):
             W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "envelope", "engine": name, "slot": slot,
                              "text": "%s is out of today's envelope" % name, "status": "pending", "created": W.now(), "escalated": True})
         if not ctx.get("peek"):

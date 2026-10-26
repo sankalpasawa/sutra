@@ -19,7 +19,8 @@ Named claims:
   T3-4  the P1 cases: after the owner's follow-up through Root there is one more user message and none is the Validator's; two
         publish asks pending at once are two ask messages, paused names one and there is no third; `Option 1` on an options ask
         chooses it; `Option 2` is the second option the owner was shown even after Stop came back into the list; a stamp is `Option 1`
-  T3-5  the honesty cases: a clean reading is one line, with no per-item PASS, no `Workable (checked by code)` and workable None
+  T3-5  the honesty cases: a clean reading is one line, with no per-item PASS, no `Workable (checked by code)` and workable None; every
+        condition names who recorded it; and, as a strict expected failure (E1, open), none is Root's check of the plan
   T3-6  scope: a department of kind default, a Root, a department of the first build and an unknown ref are 404 on every route
   T3-7  the guard stands: a write with an Origin and without the panel token is 403; with the token it passes; api/artifact refuses
         a path that leaves its folder; a built site, a file and a screenshot carry the SAFE headers
@@ -38,6 +39,7 @@ from test_fixtures.j2ui import seed as SEED
 from test_fixtures.j2ui.core_fixtures import *  # noqa: F401,F403  (blocked, card_post and the other record helpers)
 from test_j2ui_state import STATE_TABLE
 
+import engine_runtime as R
 import j2_runtime as J
 import j2ui_atoms as A
 import j2ui_common as C
@@ -50,10 +52,17 @@ GET_ROUTES = ("api/state?since=0", "api/runs", "api/map", "api/board", "api/arti
               "api/preview?atom=W-1.a1", "api/call?id=1", "api/artifact?name=brief/v1/brief.md", "site/latest", "site/latest/index.html",
               "file/prd.md", "shot/1")
 POST_ROUTES = ("api/say", "api/reset", "api/output", "api/playbooks/clear", "api/lessons/clear")
-BANNED = re.compile(r"GRANT|COUNTER|REFUSE|accept-proposal|reject-proposal|cancel-proposal", re.I)
+#: the words the owner never reads (SCREEN WORD RULES): the bargain's old names GRANT, COUNTER and REFUSE, "order" and "orders" (the old
+#: noun for what a function says to another, so the word is not used in any sense), and every act id that
+#: has a hyphen in it (accept-proposal, reject-proposal, not-understood), from the runtime's own list of acts, not a copy of it
+BANNED = re.compile(r"GRANT|COUNTER|REFUSE|\borders?\b|" + "|".join(re.escape(a) for a in R.ACTS if "-" in a), re.I)
+#: an act id printed as an id: a string that is nothing else, in the form `act: cancel`, or in capitals anywhere (FAILURE). The one-word ids
+#: are English as well (the prototype's own step is called "J2.b Propose"), so a word in a sentence is not one
+RAW_ACT = re.compile(r"^\s*(?:%s)\s*$|\b(?:act|word|msg_type)\s*[:=]\s*(?:%s)\b|\b(?:%s)\b" % (
+    "|".join(R.ACTS), "|".join(R.ACTS), "|".join(a.upper().replace("-", "[-_]") for a in R.ACTS)))
 WHO = {"user", "validator", "identity", "adaptation", "priority", "coordination", "audit"}
 JSON_ROUTES = ("api/state?since=0", "api/runs", "api/map", "api/board", "api/artifacts", "api/docs", "api/audits", "api/refs", "api/preview?atom=W-1.a1")
-EXTRA_STATES = ("two_publish_asks", "running_line", "with_board", "pursuing_line", "filed", "question", "ready", "root_follow_up", "start")
+EXTRA_STATES = ("two_publish_asks", "running_line", "with_board", "pursuing_line", "filed", "question", "ready", "root_follow_up", "start", "build_filed")
 TABLE = [pytest.param(row, id=row[0]) for row in STATE_TABLE]
 
 
@@ -112,6 +121,31 @@ def read_all(client, ref):
     r = client.get(url(ref, "api/call?id=1"))
     assert r.status_code == 404 and r.json() == {"error": "no such call"}
     return out
+
+
+def files_of(home):
+    """Every file under the records home: {path relative to it: the hash of its bytes}."""
+    import hashlib
+    import os
+    out = {}
+    for root, dirs, files in os.walk(home):
+        dirs.sort()
+        for f in sorted(files):
+            p = os.path.join(root, f)
+            with open(p, "rb") as fh:
+                out[os.path.relpath(p, home)] = hashlib.sha256(fh.read()).hexdigest()
+    return out
+
+
+def snapshot(home):
+    """The records home as one value, to compare before and after: what 'a read writes nothing' says."""
+    return sorted(files_of(home).items())
+
+
+def changed(before, home):
+    """The files of the records home that differ from a files_of() taken earlier (the message of a failed claim)."""
+    after = files_of(home)
+    return sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
 
 
 # ---- the shapes of the prototype -------------------------------------------------------------------------------------
@@ -197,6 +231,8 @@ def check_state(s, row=None):
     for i, m in enumerate(s["chat"], 1):
         assert m["id"] == i and m["who"] in WHO and isinstance(m["text"], str), m
         assert ("to_user" not in m) or (m["to_user"] is True and m["who"] == "identity"), "only Identity speaks to the owner: " + m["who"]
+        if m["who"] != "identity":                          # rule 1: nobody else is addressed to the owner, whatever the key that says it
+            assert "user" not in (m.get("next"), m.get("audience")), "only Identity speaks to the owner (next or audience): %s %r" % (m["who"], m)
     wf = s["workflows"]
     views, warns = A.schema().run_views(wf)
     assert s["atoms_v1"] == {v["id"]: v for v in views}, "atoms_v1 is the prototype's own run_views"
@@ -209,6 +245,7 @@ def check_words(bodies):
     for name, body in bodies.items():
         for text in strings(body):
             assert not BANNED.search(text), (name, text[:120])
+            assert not RAW_ACT.search(text), (name, "an act id as it is on the board: " + text[:120])
             assert not C.ABS_PATH.search(text), (name, text[:120])
         assert not {str(k).lower() for k in all_keys(body)} & J.PRIVATE_KEYS, name
     assert not [m for m in bodies["state"]["chat"] if re.search(r"\b(?:accept|reject|propose|inform|request)\b-?\w*:", m["text"])]
@@ -224,7 +261,12 @@ def check_page(ref, bodies, client):
 
 
 def everything(client, ref, m, row=None):
+    before = files_of(m.home)                                 # hard rule 4(g): the records are hashed BEFORE the first read of the department
     bodies = read_all(client, ref)
+    assert changed(before, m.home) == [], "the first read wrote"
+    m.C.touch(ref)
+    read_all(client, ref)                                     # and a second that rebuilds the read at once
+    assert changed(before, m.home) == [], "the second read wrote"
     check_state(bodies["state"], row)
     check_map(bodies["map"], bodies["state"], [e[0] for e in m.W.engines_of(m.W.dept(ref))])
     assert not m.C.get_ctx(ref).reasons, "the read of the department failed in no part: " + str(m.C.get_ctx(ref).reasons)
@@ -277,25 +319,74 @@ def test_t31_the_departments_the_contract_adds_answer_every_route(client, plant,
         assert s["status"] == "idle" and s["chat"] == [] and s["total"] == 0
 
 
-def test_t31_the_map_is_the_same_twice_and_a_read_writes_nothing(client, plant):
-    import hashlib
-    import os
-    ref, m = plant("filed")
-    first = read_all(client, ref)
+#: every state of the cycle table and every extra department is read, and hashed before the first read, by everything() above; these are the
+#: ones it does not read (with the routes it does not either: the built site, a file, a screenshot, one artifact)
+READ_STATES = ("filed", "build_filed", "two_publish_asks", "hostile", "building")
+READS = GET_ROUTES
 
-    def snapshot():
-        h = hashlib.sha256()
-        for root, dirs, files in os.walk(m.home):
-            dirs.sort()
-            for f in sorted(files):
-                p = os.path.join(root, f)
-                h.update(p.encode())
-                h.update(open(p, "rb").read())
-        return h.hexdigest()
-    before = snapshot()
+
+def read_everything(client, ref):
+    """Every GET of the page's routes, answered or not: how many answered 200 or 302."""
+    got = 0
+    for path in READS:
+        got += client.get(url(ref, path), follow_redirects=False).status_code in (200, 302)
+    return got
+
+
+def test_t31_the_map_is_the_same_twice_and_a_read_writes_nothing(client, plant):
+    ref, m = plant("filed")
+    before = snapshot(m.home)                                 # before the FIRST read: a read that writes is caught on the first one
+    first = read_all(client, ref)
+    assert snapshot(m.home) == before, "the first read wrote"
     again = read_all(client, ref)
-    assert snapshot() == before, "reading writes nothing"
+    assert snapshot(m.home) == before, "reading writes nothing"
     assert again["map"] == first["map"] and again["artifacts"] == first["artifacts"] and again["state"]["chat"] == first["state"]["chat"]
+
+
+@pytest.mark.parametrize("name", READ_STATES)
+def test_t31_every_get_of_the_page_writes_nothing_on_the_first_read_and_the_next(client, plant, name):
+    """Hard rule 4(g): reads write nothing. The records home is hashed BEFORE the first GET (the first is the one that builds the read of
+    the department: the Map, the status, what is due next), then after every route the page calls, and again after a second pass made to
+    rebuild at once. build_filed is the line stepped to the instant after Build is filed and before anything has asked the owner to
+    publish: the window in which a read once filed the ask."""
+    ref, m = plant(name)
+    before = files_of(m.home)
+    assert read_everything(client, ref) > 5
+    assert changed(before, m.home) == [], "the first read of %s wrote" % name
+    m.C.touch(ref)
+    read_everything(client, ref)
+    assert changed(before, m.home) == [], "the second read of %s wrote" % name
+
+
+def test_t31_a_read_writes_nothing_at_any_slot_of_a_run_nor_after_the_stamp(client, tmp_path, monkeypatch):
+    """The motor leaves a window after every slot (Build filed and Publish not yet asked, an engine due and not yet started...). The
+    line is run one slot at a time from the words to the owner's stamp and on to the end, and after every slot the department is read
+    from a fresh read (touch) and compared with the records before it."""
+    m = SEED.boot(tmp_path / "homes", monkeypatch)
+    seen = {"slots": 0, "reads": 0}
+
+    def read_between():
+        ref = next((d["ref"] for d in m.W.list_depts() if d.get("parent") == m.root), None)
+        if ref is None:
+            return
+        m.C.touch(ref)
+        before = files_of(m.home)
+        seen["reads"] += read_everything(client, ref) > 0
+        assert changed(before, m.home) == [], "a read after slot %d (%s) wrote" % (seen["slots"], ref)
+
+    for who, ref in SEED.stepped(m, org="Walk Learning"):
+        seen["slots"] += 1
+        read_between()
+    ref = m.ref
+    pending = [a for a in m.W.asks(ref) if a.get("status") == "pending" and a.get("kind") == "publish"]
+    assert pending, "the line ran to its first question"
+    for a in pending:
+        m.W.decide_ask(ref, a["id"], True)
+    read_between()
+    while m.W.run_until_idle(ref, limit=1):
+        seen["slots"] += 1
+        read_between()
+    assert seen["slots"] >= 10 and seen["reads"] >= seen["slots"] - 2, seen
 
 
 def test_t32_every_act_between_functions_is_worded_for_the_owner_and_no_id_is_printed(client, plant):
@@ -339,6 +430,49 @@ def test_t32_a_state_that_lost_a_key_is_caught_by_the_checks_themselves(client, 
         everything(client, ref, m)
 
 
+@pytest.mark.parametrize("name", ["pursuing_line", "ready"])
+def test_t32_the_guards_of_rule_1_and_the_words_catch_what_they_guard(client, plant, name):
+    """A guard that cannot fail guards nothing: real bodies of every JSON route are mutated one way at a time, and the checks must refuse."""
+    import copy
+    ref, m = plant(name)
+    bodies = read_all(client, ref)
+    check_state(bodies["state"])
+    check_words(bodies)                                       # the real answers pass
+    n_chat = len(bodies["state"]["chat"])
+    others = [i for i, x in enumerate(bodies["state"]["chat"]) if x["who"] != "identity"]
+    assert others and n_chat, "a department with messages from the functions to mutate"
+
+    def mutated(fn):
+        out = copy.deepcopy(bodies)
+        fn(out)
+        return out
+
+    def set_key(key, value):
+        return lambda b: b["state"]["chat"][others[0]].__setitem__(key, value)
+    for label, fn in (("to_user on a function that is not Identity", set_key("to_user", True)),
+                      ("next 'user' on one", set_key("next", "user")),
+                      ("audience 'user' on one", set_key("audience", "user"))):
+        with pytest.raises(AssertionError):
+            check_state(mutated(fn)["state"])
+        print("caught:", label)
+    texts = list(R.ACTS) + ["FAILURE", "CANCEL", "act: cancel", "Said orders to Priority", "an order", "GRANT", "COUNTER", "REFUSE",
+                            "/Users/someone/work/site/index.html", "C:\\Users\\someone\\site"]
+    for text in texts:
+        for route, where in (("state", lambda b, t: b["state"]["chat"][0].__setitem__("text", t)),
+                             ("map", lambda b, t: b["map"]["not_recorded"].append(t)),
+                             ("artifacts", lambda b, t: b["artifacts"]["deliverables"][0].__setitem__("form", t))):
+            if route == "artifacts" and not bodies["artifacts"]["deliverables"]:
+                continue
+            with pytest.raises(AssertionError):
+                check_words(mutated(lambda b: where(b, text)))
+    for key in sorted(J.PRIVATE_KEYS)[:3]:
+        with pytest.raises(AssertionError):
+            check_words(mutated(lambda b: b["state"].__setitem__(key, "x")))
+    for fine in ("Said no to the plan: the plan", "Asked Adaptation for less: the plan", "J2.b Propose", "an orderly line", "a reorder", "the request they made",
+                 "the line's steps in sequence"):
+        check_words(mutated(lambda b: b["state"]["chat"][0].__setitem__("text", fine)))
+
+
 # ---- T3-4: the P1 cases ---------------------------------------------------------------------------------------------------
 def test_t34_after_the_owner_follows_up_through_root_there_is_one_more_user_message_and_none_is_the_validators(client, plant):
     ref, m = plant("root_follow_up")
@@ -361,13 +495,19 @@ def test_t34_after_the_owner_follows_up_through_root_there_is_one_more_user_mess
 
 def test_t34_two_publish_asks_at_once_are_two_messages_and_paused_names_one(client, plant):
     ref, m = plant("two_publish_asks")
-    s = client.get(url(ref, "api/state?since=0")).json()
-    asks = [x for x in s["chat"] if x.get("act") == "ASK_REQUESTER"]
-    assert len(asks) == 2 and len(s["chat"]) == 2 + len([x for x in s["chat"] if x.get("act") != "ASK_REQUESTER"]), "no virtual third message"
-    assert asks[0]["id"] != asks[1]["id"] and s["paused"]["msg"] in (asks[0]["id"], asks[1]["id"])
-    assert [x["text"].split("\n")[0] for x in asks] == ["@Requester Publish: go live, version 1", "@Requester Publish: go live, version 2"]
-    assert s["paused"]["label"].endswith("(1 more waiting)"), s["paused"]["label"]
-    assert [q["options"] for q in s["paused"]["questions"]] == [["Stamp", "Say no"]]
+    assert [a["slot"] for a in m.W.asks(ref)] == ["Publish@build.v1", "Publish@build.v2"], "the asks are the ones the runtime files, one for each slot"
+    for poll in (1, 2, 3):                                     # a poll, then two more that each rebuild the read at once (past C.MIN_REBUILD_S):
+        if poll > 1:                                           # a write made by the first read would show as a third ask in the second
+            m.C.touch(ref)
+        s = client.get(url(ref, "api/state?since=0")).json()
+        asks = [x for x in s["chat"] if x.get("act") == "ASK_REQUESTER"]
+        assert len(asks) == 2 and len(s["chat"]) == 2 + len([x for x in s["chat"] if x.get("act") != "ASK_REQUESTER"]), \
+            "no virtual third message (poll %d)" % poll
+        assert asks[0]["id"] != asks[1]["id"] and s["paused"]["msg"] in (asks[0]["id"], asks[1]["id"])
+        assert [x["text"].split("\n")[0] for x in asks] == ["@Requester Publish: go live, version 1", "@Requester Publish: go live, version 2"]
+        assert s["paused"]["label"].endswith("(1 more waiting)"), s["paused"]["label"]
+        assert [q["options"] for q in s["paused"]["questions"]] == [["Stamp", "Say no"]]
+    assert len([a for a in m.W.asks(ref) if a["kind"] == "publish"]) == 2, "the reads filed no ask of their own"
 
 
 def options_ask(m, first="leave:D2", ref=REF):
@@ -438,24 +578,12 @@ def test_t34_option_3_on_a_two_option_ask_is_400_and_blank_words_are_400(client,
 
 
 def test_t34_the_three_posts_that_mean_nothing_leave_the_department_as_it_was(client, plant):
-    import hashlib
-    import os
     ref, m = plant("filed")
-
-    def snapshot():
-        h = hashlib.sha256()
-        for root, dirs, files in os.walk(m.home):
-            dirs.sort()
-            for f in sorted(files):
-                p = os.path.join(root, f)
-                h.update(p.encode())
-                h.update(open(p, "rb").read())
-        return h.hexdigest()
-    before = snapshot()
+    before = snapshot(m.home)
     assert client.post(url(ref, "api/reset")).status_code == 409
     assert client.post(url(ref, "api/output"), json={"type": "prd"}).status_code == 409
     assert client.post(url(ref, "api/playbooks/clear")).status_code == 409 and client.post(url(ref, "api/lessons/clear")).status_code == 409
-    assert snapshot() == before
+    assert snapshot(m.home) == before
 
 
 # ---- T3-5: honesty --------------------------------------------------------------------------------------------------------
@@ -479,6 +607,24 @@ def test_t35_a_clean_reading_is_one_line_with_no_per_item_pass_and_no_workable_c
     assert "Audit read" in seen and "found nothing to put right" in seen
     assert s["conditions"] and all(c["evidence"].startswith(("Check engine", "Root's check")) for c in s["conditions"]), \
         "every condition says who recorded the check: the Check engine, or Root's check of the plan"
+
+
+E1 = ("E1 of design/PRD-FIVE-FUNCTIONS-J2UI.md section 7, open: j2ui_audit._standards lists the standards Root's check ran on the PLAN (R-1 on) "
+      "among the conditions the Audit tab heads 'Necessary conditions (checked by code, site v1)', so a check of the plan reads as a result "
+      "for the site (D-HONEST: no invented result; a check is never a score). Ends when j2ui-work drops them from the conditions, or the "
+      "owner rules that they belong there and the design record says so as a decision; then this marker is removed")
+
+
+@pytest.mark.parametrize("name", ["filed", pytest.param("ready", marks=pytest.mark.xfail(strict=True, reason=E1)),
+                                  pytest.param("question", marks=pytest.mark.xfail(strict=True, reason=E1))])
+def test_t35_every_condition_is_the_check_engines_recorded_check_and_none_is_roots_check_of_the_plan(client, plant, name):
+    """Mapping rule 14 of the plan: conditions are the Check engine's notes named as such. The claim above names a recorder for each
+    (the Check engine, or Root's check); this is the plan's own, strict: a department whose plan Root checked (the real flow) lists its
+    standards R-1 on as well, under the heading of the site's version. Strict expected failure until E1 is settled."""
+    ref, m = plant(name)
+    s = client.get(url(ref, "api/state?since=0")).json()
+    assert s["conditions"], "the Check engine recorded a check"
+    assert all(c["evidence"].startswith("Check engine") for c in s["conditions"]), [(c["id"], c["evidence"][:40]) for c in s["conditions"]][:4]
 
 
 # ---- T3-6: scope ----------------------------------------------------------------------------------------------------------

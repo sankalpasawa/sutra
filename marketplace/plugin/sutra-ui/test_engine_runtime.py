@@ -657,6 +657,59 @@ class TestTheGates(Base):
         self.assertEqual(W.versions(REF, "Live site"), [], "refused by the owner: never published")
         self.assertEqual([r["what"] for r in W.runs(REF) if r["status"] == "skipped"], ["refused by the owner"])
 
+    def records(self):
+        """Every file of the records home and the hash of its bytes."""
+        import hashlib
+        out = {}
+        for root, _dirs, files in os.walk(self.home):
+            for f in files:
+                p = os.path.join(root, f)
+                with open(p, "rb") as fh:
+                    out[os.path.relpath(p, self.home)] = hashlib.sha256(fh.read()).hexdigest()
+        return out
+
+    def test_28a_a_panel_read_between_the_slot_that_files_build_and_the_next_tick_does_not_ask_for_the_publish_stamp(self):
+        """A read writes nothing. After the slot that files Build and before the motor's next tick nothing has asked the owner
+        to publish yet, and the panel (status, the map, what is due next) reads the department in that window as a peek. It
+        said the same words as the tick does ('waits for the stamp') but filed the ask, the post to the owner, the ledger
+        event and the step row as well. The tick files them, once, and the reads after it still write nothing."""
+        R, W = self.R, self.W
+        W.give_goal(REF, GOAL)
+        while not W.versions(REF, "Build"):
+            self.assertEqual(W.run_until_idle(REF, limit=1), 1, "the line files Build")
+        self.assertEqual([a for a in W.asks(REF) if a["kind"] == "publish"], [], "the window: Build is filed and nobody has asked yet")
+        before = self.records()
+        self.assertEqual(R.next_due(REF, peek=True), (None, None, "waits for the stamp"), "a peek says what the tick will")
+        W.status(REF)
+        W.map_view(REF)
+        self.assertEqual({k for k in set(before) | set(self.records()) if before.get(k) != self.records().get(k)}, set(), "the reads wrote")
+        self.assertEqual([a for a in W.asks(REF) if a["kind"] == "publish"], [])
+        self.assertEqual(W.due(REF), (None, None, "waits for the stamp"), "the motor's own tick asks")
+        asks = [a for a in W.asks(REF) if a["kind"] == "publish"]
+        self.assertEqual([(a["status"], a["slot"]) for a in asks], [("pending", "Publish@build.v1")], "once")
+        after = self.records()
+        W.status(REF)
+        W.map_view(REF)
+        self.assertEqual(self.records(), after, "and the reads after it write nothing")
+        self.assertEqual(len([a for a in W.asks(REF) if a["kind"] == "publish"]), 1)
+
+    def test_28b_a_panel_read_of_a_line_out_of_its_envelope_does_not_file_the_ask_for_more(self):
+        """The same rule for Priority's envelope: the ask that says an engine is out of today's envelope is the tick's to file,
+        and a panel read, which peeks, files none (a hold on the ledger was already the tick's alone)."""
+        R, W = self.R, self.W
+        W.set_envelope(REF, "Plan", calls=0)
+        W.give_goal(REF, GOAL)
+        while not W.versions(REF, "Brief"):
+            self.assertEqual(W.run_until_idle(REF, limit=1), 1, "the goal is taken and the Brief filed")
+        self.assertEqual([a for a in W.asks(REF) if a["kind"] == "envelope"], [], "the window: Plan is due and no tick has asked yet")
+        before = self.records()
+        for _ in range(3):
+            R.next_due(REF, peek=True)
+            W.status(REF)
+        self.assertEqual({k for k in set(before) | set(self.records()) if before.get(k) != self.records().get(k)}, set(), "the reads wrote")
+        W.run_until_idle(REF, limit=1)
+        self.assertEqual([(a["status"], a["escalated"]) for a in W.asks(REF) if a["kind"] == "envelope"], [("pending", True)], "the tick asks, once")
+
 
 class TestAuditAndAlarm(Base):
     def test_29_audit_finds_what_nobody_gave_and_the_owner_sends_it_back_to_the_line(self):
