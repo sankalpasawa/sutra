@@ -730,7 +730,7 @@ The bargain line part gains the inputs estimate and remaining (W1-PRIORITY, M5.3
 
 **view.engine_card** (S17; `functions_view.engine_card`, M4.7): exactly ENGINE_CARD_FIELDS: `engine`, `head` {state, word, why, at, round}, `motor` {slot, starts, once, says, window_min, today}, `five` [ENGINE_FIVE_ROW: fn, state, says, at, share].
 
-**view.audit** (S12): `{readings: [{summary, at}], findings: [{text, at}], spot_checks: []}`. W1-AUDIT adds `latest: null or {artifact, v, at, items: [{id, verdict, method, evidence, claim}]}` and each reading's `{artifact, v, read, why_not_read, verdicts}` (M8.3); W3-BOARD fills `spot_checks` (M8.7).
+**view.audit** (S12): `{readings: [{summary, at}], findings: [{text, at}], spot_checks: []}`. W1-AUDIT adds `latest: null or {artifact, v, at, items: [{id, verdict, method, evidence, claim}], findings: [audit.finding]}` (the findings the newest reading filed, a low or medium one included, which ask the owner nothing and so reach the owner only here and in Identity's line) and each reading's `{artifact, v, read, why_not_read, verdicts}` (M8.3); W3-BOARD fills `spot_checks` (M8.7).
 
 **view.coordination** gains `questions: [coordination.question]` from W3-BOARD (M4.9); it is `[]` until then.
 
