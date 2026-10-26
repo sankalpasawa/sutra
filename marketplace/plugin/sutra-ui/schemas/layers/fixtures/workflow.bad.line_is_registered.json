@@ -1,0 +1,108 @@
+{
+ "about": "A line that holds an engine no registered plan names and the owner did not add.",
+ "standard": "line_is_registered",
+ "stage": "write",
+ "kind": "website",
+ "dept": {
+  "kind": "website",
+  "done_items": [
+   {
+    "id": "D1",
+    "text": "The work is done",
+    "how": "model",
+    "level": "outcome"
+   },
+   {
+    "id": "D2",
+    "text": "Every part is checked",
+    "how": "code",
+    "level": "target"
+   }
+  ],
+  "workflows": [
+   {
+    "version": 1,
+    "engines": [
+     "Plan",
+     "Write",
+     "Check",
+     "Publish"
+    ],
+    "source": "library",
+    "registered": "2026-10-27T10:00:00Z",
+    "by": "Root"
+   }
+  ]
+ },
+ "workflow": {
+  "schema_version": 1,
+  "kind": "website",
+  "source": "library",
+  "engines": [
+   {
+    "name": "Plan",
+    "does": "plans the pages from the brief",
+    "reads": "Brief",
+    "writes": "Site plan",
+    "covers": [
+     "D1"
+    ],
+    "made_by": "library"
+   },
+   {
+    "name": "Write",
+    "does": "writes each page",
+    "reads": "Site plan",
+    "writes": "Pages",
+    "covers": [
+     "D1"
+    ],
+    "made_by": "library"
+   },
+   {
+    "name": "Check",
+    "does": "checks the pages against the rules",
+    "reads": "Pages",
+    "writes": "Build",
+    "covers": [
+     "D2"
+    ],
+    "made_by": "library"
+   },
+   {
+    "name": "Publish",
+    "does": "puts the checked build live",
+    "reads": "Build",
+    "writes": "Live site",
+    "covers": [
+     "D1",
+     "D2"
+    ],
+    "made_by": "library"
+   }
+  ],
+  "deliverable": "Live site",
+  "covers": {
+   "D1": [
+    "Plan",
+    "Write",
+    "Publish"
+   ],
+   "D2": [
+    "Check",
+    "Publish"
+   ]
+  },
+  "covers_by": "adaptation"
+ },
+ "ctx": {
+  "line": [
+   "Plan",
+   "Write",
+   "Check",
+   "Publish",
+   "Rogue"
+  ],
+  "grown": []
+ }
+}

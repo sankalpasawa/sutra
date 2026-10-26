@@ -301,8 +301,27 @@ def engine_templates():
                 raise ValueError("the engine template %s is refused: a template names an id, a name and a use case" % p.name)
             if t["name"] in out:
                 raise ValueError("the engine template %s is refused: %s is already a template" % (p.name, t["name"]))
+            if d != TEMPLATES_DIR:
+                _born_fits(p, t)
             out[t["name"]] = t
     return out
+
+
+_BORN_SEEN = set()                                  # the born templates (file, time) whose fit to the interface was read this run
+
+
+def _born_fits(p, t):
+    """A template born into the record home, read back: if it does not fit the interface's engine.template, that is a row
+    (once for the file as it stands), and today's refusals stand as they were (A1.20). Never raises."""
+    try:
+        key = (str(p), p.stat().st_mtime_ns)
+        if key in _BORN_SEEN:
+            return
+        _BORN_SEEN.add(key)
+        import layer_schema as S
+        S.report("engine.template", S.validate("engine.template", t), owner="root", never_refuse=True)   # a row; loading never fails on it
+    except OSError:
+        return
 
 
 def missing_engines(d):
@@ -3738,18 +3757,32 @@ def _converse_examples():
     return [str(q) for q in (engine_def("Setup") or {}).get("clarification_questions") or [] if str(q).strip()]
 
 
+def _setup_prompt(ctx, part, task=None, **inputs):
+    """One part of Root's setup instructions, compiled (A1.16): root/v1's words and layout for root.setup.<part>, the
+    interface's answer contract verbatim, and the inputs this code fills. `task` stands in for the default task when the
+    Library's Setup template says its own."""
+    import layer_schema as S
+    ref = ctx.get("ref")
+    if task is None:
+        return layers.prompt(ref, "root", "setup", part, **inputs)
+    P = layers.prompts
+    words = P.words(ref, "root", "setup", part)
+    words["task"] = str(task)
+    return P.compile_layout(layers.impl(ref, "root", ctx.get("dept")).LAYOUT["setup"][part], words,
+                            S.PROMPTS["root"]["setup"][part]["returns"], inputs, P.who("root", "setup", part))
+
+
 def p_setup_converse(ctx, step, item):
-    """The converse step's inside (S-24): an instruction, the examples, and the conversation so far. No question lives in code."""
+    """The converse step's inside (S-24): an instruction, the examples, and the conversation so far. No question lives in
+    code. The words are root/v1's (A1.16); the Library's Setup template says its own instruction in their place when it
+    sets one."""
     got = ctx["bag"]["setup.read"]
     conversation = got.get("conversation") or {}
     lines = "\n".join("%s: %s" % ("OWNER" if m.get("actor") == "user" else "SUTRA", m.get("text") or "")
                       for m in conversation.get("messages") or [] if isinstance(m, dict))
-    instruction = str((engine_def("Setup") or {}).get("converse_instruction") or CONVERSE)
-    return ("%s\n\nQUESTIONS OF THE KIND YOU MAY ASK (examples, not a list to walk): %s\n"
-            "WHAT THE LIBRARY CAN BUILD: %s\nDEPARTMENTS THIS ORGANISATION ALREADY HAS: %s\n\nTHE CONVERSATION SO FAR:\n%s\n\n"
-            "Return ONLY a JSON object: {\"verdict\": \"ask\" | \"clear\", \"question\": \"your one question, or an empty string when clear\"}."
-            % (instruction, " | ".join(_converse_examples()) or "none", got["facts"].get("use_cases") or "", got["facts"].get("existing") or "none",
-               lines or "OWNER: " + str(got.get("words") or "")))
+    return _setup_prompt(ctx, "converse", (engine_def("Setup") or {}).get("converse_instruction") or None,
+                         examples=" | ".join(_converse_examples()) or "none", library=got["facts"].get("use_cases") or "",
+                         existing=got["facts"].get("existing") or "none", conversation=lines or "OWNER: " + str(got.get("words") or ""))
 
 
 def d_setup_converse(ctx, step, item):
@@ -3819,26 +3852,12 @@ def setup_say(ctx, step, item):
 
 
 def p_setup_shape(ctx, step, item):
+    """The shape step's inside: the owner's words, the Library's kinds and the departments this Root has, asked for a name,
+    a kind, a goal and done-when items. The words are root/v1's (A1.16)."""
     got = ctx["bag"]["setup.read"]
     org = (ctx["dept"].get("org") or {}).get("name") or ctx["dept"].get("name")
-    return ("The owner of %s asks Root for a department. Shape it: a short name (the organisation's name and what it is, like "
-            "\"%s Website\"; a NEW department takes a name none of the existing ones has, say \"%s Website 2\" or what sets it apart; "
-            "when the owner gave the department a name, that name is its name, exactly as given), "
-            "its kind from the Library (the kind whose use case fits the words; default when none does), and its goal in one or two "
-            "sentences in the owner's own words.\n"
-            "THE OWNER'S WORDS: %s\nTHE NAME THE OWNER GAVE: %s\nKINDS IN THE LIBRARY: %s\nEACH KIND'S USE CASE: %s\n"
-            "DEPARTMENTS THIS ROOT ALREADY HAS: %s\n\n"
-            "If the words describe MORE THAN ONE department, shape only the first: its goal covers only that one, and `second` "
-            "holds, in the owner's words, what the other department is for. Otherwise `second` is an empty string.\n"
-            "Draft its done-when as items: each one line that must be true when the department is done, from the owner's words "
-            "and nothing else, with how it is checked (code: a program can check it on what was made; model: an AI reads what "
-            "was made; person: only the owner can say) and its level (target: something the work must have; outcome: something "
-            "it must achieve). An item that rests on a fact the owner did not give says why in confirm; else confirm is \"\".\n"
-            "Return ONLY a JSON object: {\"name\": \"...\", \"kind\": \"one of the kinds above\", \"goal\": \"...\", "
-            "\"purpose\": \"one line\", \"second\": \"...\", \"done_items\": [{\"text\": \"...\", \"how\": \"code\" | \"model\" | "
-            "\"person\", \"level\": \"target\" | \"outcome\", \"confirm\": \"...\"}]}."
-            % (org, org, org, got["words"], got.get("named") or "none", got["facts"]["kinds"], got["facts"].get("use_cases") or "",
-               got["facts"].get("existing") or "none"))
+    return _setup_prompt(ctx, "shape", org=org, words=got["words"], named=got.get("named") or "none", kinds=got["facts"]["kinds"],
+                         use_cases=got["facts"].get("use_cases") or "", existing=got["facts"].get("existing") or "none")
 
 
 def d_setup_shape(ctx, step, item):
@@ -3906,7 +3925,7 @@ def _reconcile_j1_tells(root_ref):
             founding_state["checkpoints"] = checkpoints
             fresh["founding"] = founding_state
             fresh.pop("pending_final_tell", None)
-            W.save_dept(child["ref"], fresh)
+            W.save_dept(child["ref"], fresh, by="root")
 
 
 def setup_make(ctx, step, item):
@@ -3916,6 +3935,12 @@ def setup_make(ctx, step, item):
     if named:
         # the owner named the department on the Org sheet: the covering keeps that name, whatever the agent shaped
         shape = dict(shape, name=named)
+    bad = W.birth_faults(shape["kind"])
+    if bad:
+        # the kind's line breaks a standard Root holds every line to (PRD A1.14): founding makes nothing, and the covering
+        # fails naming it, so no registry entry is left without a record behind it
+        return {"ref": None, "name": shape["name"], "kind": shape["kind"], "goal": shape["goal"], "created": False,
+                "refused": "this kind's line breaks Root's standards: " + "; ".join(bad)}
     import founding
     conversation = (ctx["bag"].get("setup.read") or {}).get("conversation") or {}
     live = _j1_record(ctx["ref"]) if conversation else None
@@ -3964,7 +3989,7 @@ def setup_make(ctx, step, item):
             tell["done"] = line + " You also asked for a second department (%s): say so and I will set it up." % offer["label"]
             tell["offer"] = offer
         child["pending_final_tell"] = tell
-        W.save_dept(made["ref"], child)
+        W.save_dept(made["ref"], child, by="root")
         _reconcile_j1_tells(ctx["ref"])
     state = dict(conversation, status="completed", outstanding_question=None, department=made["ref"])
     state.pop("selected_revision", None)
@@ -3996,6 +4021,8 @@ def c_department_is_shaped(ctx, step, item, out):
 def c_department_is_made(ctx, step, item, out):
     """The child exists under Root, on the runtime, and its goal reached it: the child's own Identity files the goal when
     the child runs, which is its business, not Root's."""
+    if isinstance(out, dict) and out.get("refused"):
+        return {"ok": False, "notes": [str(out["refused"])]}
     d = W.dept(out.get("ref")) if isinstance(out, dict) and out.get("ref") else None
     ok = bool(d) and d.get("runtime") == 2 and d.get("parent") == ctx["ref"] and bool(W.requests(out["ref"]))
     return _verdict(ok, "the department exists under Root, on the runtime, and has its goal", "the department was not made under Root")
@@ -4078,6 +4105,8 @@ def born_template(name, shape, ref):
             if s.get("prompt"):
                 s["tools"] = tools
                 s["timeout_s"] = 600
+    import layer_schema as S
+    S.check("engine.template", t, ref=ref, owner="root")          # the template as the interface types it, before the file is written (A1.20)
     if not t["use_case"]:
         raise ValueError("an engine names its use case")
     p.write_text(json.dumps(t, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -4760,47 +4789,96 @@ def required_engines(d):
     return [str(n) for n in k.get("required") or [] if n]
 
 
-def _root_run(engines, source, required=()):
-    """Root's standards on one workflow: the checks that ran, in order, and each fault with the check it breaks. With
-    the engines the kind requires, 'no required engine left out' runs last (PRD M4.4)."""
-    if not engines:
-        return ["names an engine"], [("names an engine", "the workflow names no engine")]
-    if source == "library":
-        known = defs()["engines"]
-        ran, notes = ["names an engine", "engines known"], [("engines known", "the Library has no engine named %s" % e.get("name"))
-                                                            for e in engines if (known.get(e.get("name")) or {}).get("kind") != "work"]
-    else:
-        notes = _line_notes(engines) + ([("one to six engines", "more than six engines")] if len(engines) > 6 else [])
-        ran = ["names an engine", "one to six engines"] + [c for c, _ in LINE_CHECKS]
-    if required:
-        names = [e.get("name") for e in engines]
-        out = [n for n in required if n not in names]
-        ran.append("no required engine left out")
-        if out:
-            notes.append(("no required engine left out", "the plan leaves out %s, which this kind of department requires" % _names(out)))
-    return ran, notes
+def _plan_workflow(d, engines, source, why=None):
+    """A plan's engines (names, or the dicts a proposal carries) as the workflow schema reads them (A1.14): what the line
+    leaves unsaid is what it always meant, an engine the Library lacks reading the kind's first artifact and writing its
+    own name, then layer_schema.as_workflow, which looks the Library's own up and inverts each engine's covers. The
+    level, the confidence and the doubt of a made engine ride along, which as_workflow does not carry."""
+    import layer_schema as S
+    first = S.first_input((d or {}).get("kind")) or "Brief"
+    lib = defs()["engines"]
+    rows = []
+    for e in engines or []:
+        e = dict(e) if isinstance(e, dict) else {"name": e}
+        e["name"] = " ".join(str(e.get("name") or "").split())[:40]
+        if e["name"] not in lib:
+            e["reads"] = " ".join(str(e.get("reads") or first).split())
+            e["writes"] = " ".join(str(e.get("writes") or e["name"]).split())[:40]
+        rows.append(e)
+    wf = S.as_workflow(rows, source, d)
+    for row, e in zip(wf["engines"], rows):
+        row.update({k: e[k] for k in ("level", "confidence", "doubt") if e.get(k) is not None})
+    if why:
+        wf["why"] = str(why)[:600]
+    return wf
 
 
-#: what Root's own checks say when they hold; a shaped line's checks say it in LINE_CHECKS
-ROOT_HOLDS = {"names an engine": "the workflow names its engines", "engines known": "each engine is one the Library has",
-              "one to six engines": "the workflow is one to six engines long",
-              "no required engine left out": "the plan keeps every engine its kind requires"}
+def _priced(ref, names):
+    """Priority's latest price row for this plan (prices.jsonl, once Priority writes them), or None: none written, or the
+    plan was settled above Priority (Identity ruled on a conflict over it, or the owner stamped it), which is the one
+    way a plan Priority did not say yes to comes to Root."""
+    try:
+        rows = [r for r in W.rows(ref, "prices.jsonl") if isinstance(r, dict) and set(r.get("engines") or []) == set(names)]
+    except (ValueError, OSError):
+        return None
+    if not rows:
+        return None
+    if rows[-1].get("answer") != "accept" and any(
+            set(n.get("name") if isinstance(n, dict) else n for n in (x.get("payload") or {}).get("engines") or []) == set(names)
+            for x in board(ref) if (x.get("payload") or {}).get("word") == "conflict"):
+        return None
+    return rows[-1]
+
+
+def _root_ctx(ref, engines):
+    """What Root's check reads beside the workflow: Coordination's table (the engines the owner added; the line it holds)
+    and Priority's price for this plan, when there is one."""
+    t = coordination(ref) if ref else {}
+    ctx = {"line": list(t.get("line") or []), "grown": list(t.get("grown") or []),
+           "left_out": [r.get("engine") for r in t.get("left_out") or [] if isinstance(r, dict)]}
+    price = _priced(ref, [e.get("name") if isinstance(e, dict) else e for e in engines or []]) if ref else None
+    if price:
+        ctx["price"] = price
+    return ctx
+
+
+def _plan_why(ref, engines):
+    """The why the line's proposal gave, when it was long (size_in_range asks one past six engines)."""
+    names = [e.get("name") if isinstance(e, dict) else e for e in engines or []]
+    for x in reversed(board(ref)):
+        pl = x.get("payload") or {}
+        if x.get("msg_type") == "propose" and pl.get("word") == "line" and \
+                [e.get("name") for e in pl.get("engines") or [] if isinstance(e, dict)] == names:
+            return str(pl.get("why") or "")
+    return ""
 
 
 def _root_checks(ref, d, engines, source):
-    """Root's standards, as code reads them (J2.e), one row for each check that ran: [{check, passed, why}]. A Library line
-    is checked for engines the Library has; a shaped line for one to six engines, each named once and new to the Library,
-    the first reading the Brief, each reading what one before it wrote and writing something new (M0.7: the event lists
-    these rows, not a fixed set of names), and, when the kind requires engines, that none is left out (PRD M4.4)."""
-    ran, notes = _root_run(engines, source, required_engines(d))
-    holds = dict(LINE_CHECKS, **ROOT_HOLDS)
-    return [{"check": c, "passed": not [n for k, n in notes if k == c],
-             "why": "; ".join(n for k, n in notes if k == c) or holds[c]} for c in ran]
+    """Root's standards, as the workflow schema holds them (J2.e, A1.14), one row for each that applied at registration:
+    [{check, passed, why}], the schema's own shape row first and then the standards in their order, each a standard's id
+    (workflow.check). A Library line is checked for engines the Library has; a shaped line for each engine named once and
+    new to the Library, the first reading the kind's first artifact, each reading what one before it wrote and writing
+    something new; every line for every done-when item covered, the engines the kind requires kept, a size, a check on
+    what each writes, and Priority's price fitting the room. M0.7: the event lists these rows, not a fixed set of names."""
+    import layer_schema as S
+    wf = _plan_workflow(d, engines, source, why=_plan_why(ref, engines) if ref and len(engines or []) > 6 else None)
+    return S.validate_workflow(wf, "registration", d, _root_ctx(ref, engines))
 
 
 def _root_check(ref, d, engines, source):
-    """Root's standards as the fault list its callers use: empty when the workflow meets them."""
-    return [n for _, n in _root_run(engines, source, required_engines(d))[1]]
+    """Root's standards as the fault list its callers use: empty when the workflow meets them, else what each failed row
+    says."""
+    return [r["why"] for r in _root_checks(ref, d, engines, source) if not r["passed"]]
+
+
+def _broke(checks):
+    """The standards a plan broke, in their own words (WORKFLOW_STANDARDS' says) with what is wrong, for the options ask
+    the third refusal leaves: 'each engine writes something not yet written (Site writes Facts, which is already
+    written)'. A row that is no standard (the schema's shape, a check put in Root's place) says only what is wrong."""
+    import layer_schema as S
+    says = {sid: text for sid, text, _, _ in S.WORKFLOW_STANDARDS}
+    return "; ".join('"%s" (%s)' % (says[c["check"]], c["why"]) if c.get("check") in says else str(c.get("why"))
+                     for c in checks if not c.get("passed"))
 
 
 #: who said yes to a plan that passes Root's check, as Identity tells the owner it is set: the `by` of _j2_settle, in the
@@ -4816,19 +4894,20 @@ def _j2_settle(ref, d, engines, source, words, by):
     names = [e.get("name") for e in engines]
     faults = _root_check(ref, d, engines, source)
     checks = _root_checks(ref, d, engines, source)
-    named = {n for _, n in _root_run(engines, source, required_engines(d))[1]}
+    named = {c["why"] for c in checks if not c["passed"]}
     other = [f for f in faults if f not in named]
     if other:
-        # a fault no itemised standard names (a check put in Root's place): the event lists it as the check that ran
-        checks.append({"check": "Root's check", "passed": False, "why": "; ".join(other)})
+        # a fault no standard names (a check put in Root's place): the event lists it as the check that ran
+        checks.append({"check": "workflow_meets_standards", "passed": False, "why": "; ".join(other)})
     if faults:
         n = J.refused(ref, engines, faults, checks=checks) if J else 1
         if n <= (J.REPAIRS if J else 2):
             _line_request(ref, d, words, faults=faults)
             _tell(ref, d, who, "inform", {"word": "line", "done": "Root's check sent the plan back (%s). Adaptation is reshaping it." % "; ".join(faults)})
             return {"said": "Root's check sent the workflow back to Adaptation: %s" % "; ".join(faults)}
-        _blocked(ref, d, who, "Root's check sent the plan back %d times: %s. Say what to change and I will have it shaped afresh."
-                 % (n, "; ".join(faults)), "The plan could not be approved.", "Root, at its review", "; ".join(faults))
+        broke = _broke(checks) or "; ".join(faults)
+        _blocked(ref, d, who, "Root's check sent the plan back %d times, and it still does not meet %s. Say what to change and I will have it shaped afresh."
+                 % (n, broke), "The plan could not be approved.", "Root, at its review", broke)
         return {"said": "Root's check sent the workflow back %d times; the owner is told" % n}
     added, lost = [], []
     if source == "library":
@@ -4861,7 +4940,8 @@ def _j2_settle(ref, d, engines, source, words, by):
                  "The plan could not be set up.", "Root, setting up the engines", "; ".join(lost or ["no engine could be added"]))
         return {"said": "no engine of the workflow could be added"}
     if J:
-        J.registered(ref, added, source, checks=checks)
+        granted = [e for e in engines if isinstance(e, dict) and e.get("name") in added]
+        J.registered(ref, added, source, checks=checks, plan=granted, fit={e["name"]: e["fit"] for e in granted if e.get("fit")})
     _registered(ref, added)
     # Q13: an engine the plan left out needs no stamp, and the message names it (PRD M4.2)
     left = [r.get("engine") for r in coordination(ref).get("left_out") or [] if isinstance(r, dict)]
@@ -6093,38 +6173,18 @@ def c_feedback_says_what_changes(ctx, step, item, out):
     return {"ok": not notes, "notes": notes or ["what changes now, and what kind of change it is"]}
 
 
-#: the checks a shaped line is held to, in the order they are read, each with what it says when it holds (M0.7)
-LINE_CHECKS = (("each engine named", "every engine has a name"),
-               ("names unique", "no name is used twice"),
-               ("names new to the Library", "no name is one the Library already has"),
-               ("first reads the Brief", "the first engine reads the Brief"),
-               ("each reads what one before it wrote", "each engine reads the Brief or what one before it wrote"),
-               ("each writes something new", "each engine writes something not yet written"))
+#: the standards a shaped line is held to as Adaptation shapes it, before the department is known (PRD M0.7, A1.14): the
+#: line's own shape. The rest (items covered, the required engines, the room) are the department's, at Root's check.
+LINE_STANDARDS = ("each_engine_named", "names_unique", "names_new", "first_reads_input", "reads_known", "one_output")
 
 
 def _line_notes(engs):
-    """_line_faults, each fault with the check it breaks: [(check, note)], in the order the line is read."""
-    notes, names, written, lib = [], [], {"Brief"}, defs()["engines"]
-    for i, e in enumerate(engs):
-        n = " ".join(str(e.get("name") or "").split())[:40] if isinstance(e, dict) else ""
-        if not n:
-            notes.append(("each engine named", "engine %d has no name" % (i + 1)))
-            continue
-        if n in names:
-            notes.append(("names unique", "%s is named twice" % n))
-        slug = re.sub(r"[^a-z0-9]+", "-", n.lower()).strip("-")
-        if n in lib or not slug or (TEMPLATES_DIR / (slug + ".json")).exists() or (user_templates_dir() / (slug + ".json")).exists():
-            notes.append(("names new to the Library", "the Library already has an engine named %s" % n))
-        r, w = " ".join(str(e.get("reads") or "Brief").split()), " ".join(str(e.get("writes") or n).split())[:40]
-        if i == 0 and r != "Brief":
-            notes.append(("first reads the Brief", "the first engine reads the Brief"))
-        if r not in written:
-            notes.append(("each reads what one before it wrote", "%s reads %s, which nothing before it writes" % (n, r)))
-        if w in written:
-            notes.append(("each writes something new", "%s writes %s, which is already written" % (n, w)))
-        names.append(n)
-        written.add(w)
-    return notes
+    """_line_faults, each fault with the standard it breaks: [(standard id, note)], in the order the line is read. The
+    line is read as a shaped one by the workflow schema's own standards (workflow_schema), with no department behind it,
+    so its first artifact is the Brief."""
+    import workflow_schema
+    wf = _plan_workflow(None, [e if isinstance(e, dict) else {} for e in engs], "shaped")
+    return [(r["check"], r["why"]) for r in workflow_schema.run(wf, "proposal", None, {}) if r["check"] in LINE_STANDARDS and not r["passed"]]
 
 
 def _line_faults(engs):

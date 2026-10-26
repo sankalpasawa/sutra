@@ -1,0 +1,34 @@
+{
+ "about": "A workflow with no engine.",
+ "standard": "names_an_engine",
+ "stage": "registration",
+ "kind": "website",
+ "dept": {
+  "kind": "website",
+  "done_items": [
+   {
+    "id": "D1",
+    "text": "The work is done",
+    "how": "model",
+    "level": "outcome"
+   },
+   {
+    "id": "D2",
+    "text": "Every part is checked",
+    "how": "code",
+    "level": "target"
+   }
+  ],
+  "workflows": []
+ },
+ "workflow": {
+  "schema_version": 1,
+  "kind": "website",
+  "source": "library",
+  "engines": [],
+  "deliverable": null,
+  "covers": {},
+  "covers_by": "default"
+ },
+ "ctx": {}
+}
