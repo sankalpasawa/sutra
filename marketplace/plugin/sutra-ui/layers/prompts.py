@@ -240,6 +240,7 @@ def instruction_faults(fn, file, text):
     want = (R.INSTRUCTIONS.get(fn) or {}).get(file)
     if want is None:
         return ["%s has no instructions named %s" % (str(fn).title(), file)]
+    want = {part: slots for part, slots in want.items() if (fn, file, part) not in S.ADDED_PARTS}      # an added part has no .md part
     try:
         lead, parts = parts_of(text)
     except ValueError as exc:
@@ -348,8 +349,9 @@ def extract(layer):
         if lead.split("\n\n")[0] != S.GROUPS[layer][group]:
             bad.append("%s: the lead of %s is not the interface's" % (S.TITLE[layer], group))
         found = file_parts(layer, group)
-        if list(found) != list(parts):
-            bad.append("%s: %s holds the parts %s, and the interface %s" % (S.TITLE[layer], group, list(found), list(parts)))
+        bundled = [part for part in parts if (layer, group, part) not in S.ADDED_PARTS]      # an added part has no .md file
+        if list(found) != bundled:
+            bad.append("%s: %s holds the parts %s, and the interface %s" % (S.TITLE[layer], group, list(found), bundled))
         for part, spec in parts.items():
             if part not in found:
                 continue

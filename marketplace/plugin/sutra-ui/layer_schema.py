@@ -708,9 +708,14 @@ DEFS.update({
         'conflicts': items(obj({'at': _AT, 'who': text(200), 'split': nullable(text(4000)), 'plan': nullable(text(2000)),
                                 'ruling': text(20), 'ruled': text(40), 'why': nullable(text(4000)), 'asked_you': boolean()}), 6)},
         required=('standard', 'goal', 'done', 'done_items', 'rules', 'open_question', 'conflicts')),
+    # W1-ADAPT adds coverage (M5.1) and, on each Root review, the checks that ran (M7.3); W2-ADAPT adds round and rounds
     'view.adaptation': obj({
         'proposal': nullable(obj({'workflow': items(text(80)), 'source': nullable(text(40)), 'at': _AT})),
-        'root_checks': items(obj({'summary': nullable(text(4000)), 'at': _AT, 'passed': boolean()})),
+        'root_checks': items(obj({'summary': nullable(text(4000)), 'at': _AT, 'passed': boolean(),
+                                  'checks': items(obj({'check': text(60), 'says': text(300), 'passed': boolean(), 'why': text(600)},
+                                                      required=('check', 'says', 'passed', 'why')))})),
+        'coverage': nullable(obj({'items': items(ref('id.item')), 'uncovered': items(ref('id.item')), 'by': enum('adaptation', 'default')},
+                                 required=('items', 'uncovered', 'by'))),
         'rounds': items(obj({}))},
         required=('proposal', 'root_checks', 'rounds')),
     'view.priority': obj({
@@ -948,6 +953,7 @@ SENDS = {
         {'act': 'propose', 'words': ('engine', 'rung'), 'to': ('Identity',), 'payload': 'act.any'},
         {'act': 'inform', 'words': ('idea',), 'to': ('Identity',), 'payload': 'act.any'},
         {'act': 'inform', 'words': ('conflict',), 'to': ('Identity',), 'payload': 'act.conflict'},
+        {'act': 'inform', 'words': ('doubt',), 'to': ('Identity',), 'payload': 'act.doubt'},      # W1-ADAPT, M6.4
     ],
     'Priority': [
         # Priority answers with the word of the proposal it answers (priority_post), and asks for less on any of them
@@ -1172,11 +1178,19 @@ PROMPTS = {
             'note': {'fields': {'text': 'field.note'}, 'inputs': (), 'returns': None, 'read_by': None},   # NOT_READ: no run reads it
         },
         'make': {
-            'line': {'fields': {}, 'inputs': ('dept', 'words', 'taken', 'out', 'rules', 'refused'),
+            'line': {'fields': {}, 'inputs': ('dept', 'words', 'items', 'taken', 'out', 'rules', 'refused'),   # items: W1-ADAPT, M5.1
                      'returns': 'Return ONLY a JSON object: {"engines": [{"name": str, "does": str, "reads": str, "writes": str, '
                                 '"internet": bool}]}.',
                      'read_by': 'adapt.line'},
             'refused': {'fields': {}, 'inputs': ('faults',), 'returns': None, 'read_by': None},   # feeds make.line's refused input
+            # A1-SHAPE (W1-ADAPT, M6.4): adapt.line reads this part, not make.line, when the make setting is on and no template fits
+            'shape': {'fields': {'task': 'field.task', 'guidance': 'field.guidance'},
+                      'inputs': ('dept', 'words', 'items', 'practices', 'rules', 'taken', 'out', 'refused'),
+                      'returns': 'Return ONLY a JSON object: {"engines": [{"name": str, "does": str, "reads": str, "writes": str, '
+                                 '"covers": ["D1"], "level": 1 | 2, "confidence": number, "doubt": str, "internet": bool}]}, or '
+                                 '{"cannot": {"engine": str, "items": ["D1"], "why": str}} when an engine the kind requires cannot '
+                                 'serve an item.',
+                      'read_by': 'adapt.line'},
         },
     },
     'priority': {
@@ -1227,6 +1241,10 @@ PROMPTS = {
         },
     },
 }
+
+#: the prompt parts later steps added to PROMPTS (A1.16, 'Parts added by later steps'): a layer's WORDS and LAYOUT hold
+#: them, and no .md file of the bundle does, so the extractor and the bundle's tests leave them out. A package adds its own.
+ADDED_PARTS = (('adaptation', 'make', 'shape'),)
 
 #: each layer's pane view (A1.17), plus the engine card
 VIEWS = {'identity': 'view.identity', 'adaptation': 'view.adaptation', 'priority': 'view.priority',

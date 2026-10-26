@@ -37,7 +37,7 @@ from unittest import mock
 REF = "dref-prompts0001"
 SNAP = Path(__file__).parent / "test_fixtures" / "function-prompts.snapshot.json"
 KEYS = ("SUTRA_NATIVE_DEPT_HOME", "SUTRA_NATIVE_HOME", "SUTRA_WEBSITE_OFFLINE", "SUTRA_ENGINE_RUNTIME", "SUTRA_MOTOR",
-        "SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS", "J2_FLOW_V1")
+        "SUTRA_ALLOW_DEFAULT_HOME_IN_TESTS", "J2_FLOW_V1", "J2_ADAPT_MAKE")
 PLAN = {"site_name": "City Care Hospital", "tagline": "Care, every day", "palette": {"primary": "#0f5e7a", "accent": "#c4956a"},
         "pages": [{"slug": "index", "title": "Home", "purpose": "the front door", "sections": ["welcome"]},
                   {"slug": "doctors", "title": "Doctors", "purpose": "who treats you", "sections": ["list"]}]}
@@ -171,6 +171,13 @@ class Fixture(unittest.TestCase):
         out["adapt.line:refused"] = self.render("adapt.line", self.ctx("Adaptation", {"word": "line", "words": "A guide to the night clinic",
                                                                                       "faults": ["Facts is already an engine", "Site reads nothing"]}))
         out["adapt.line:goal"] = self.render("adapt.line", self.ctx("Adaptation", {"word": "line"}))
+        # the make setting on (M6.4): a website's line Root sent back is made, with the practices in place read by adapt.source
+        os.environ["J2_ADAPT_MAKE"] = "1"
+        try:
+            out["adapt.line:shape"] = self.render("adapt.line", self.ctx("Adaptation", {"word": "line", "words": "A guide to the night clinic",
+                                                                                        "faults": ["the plan leaves out D1"]}), ("adapt.source",))
+        finally:
+            os.environ.pop("J2_ADAPT_MAKE", None)
         for name, pl in (("line:shaped", {"word": "line", "source": "shaped", "engines": LINE}),
                          ("line:library", {"word": "line", "source": "library", "engines": LINE}),
                          ("line:over", {"word": "line", "source": "shaped", "engines": [dict(LINE[0], name="E%d" % i) for i in range(8)]}),

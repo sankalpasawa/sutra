@@ -13,6 +13,44 @@
     "view.adaptation": {
       "additionalProperties": true,
       "properties": {
+        "coverage": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "properties": {
+                "by": {
+                  "enum": [
+                    "adaptation",
+                    "default"
+                  ]
+                },
+                "items": {
+                  "items": {
+                    "$ref": "#/$defs/id.item"
+                  },
+                  "minItems": 0,
+                  "type": "array"
+                },
+                "uncovered": {
+                  "items": {
+                    "$ref": "#/$defs/id.item"
+                  },
+                  "minItems": 0,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "items",
+                "uncovered",
+                "by"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "proposal": {
           "anyOf": [
             {
@@ -75,6 +113,40 @@
                     "type": "null"
                   }
                 ]
+              },
+              "checks": {
+                "items": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "check": {
+                      "maxLength": 60,
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "passed": {
+                      "type": "boolean"
+                    },
+                    "says": {
+                      "maxLength": 300,
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "why": {
+                      "maxLength": 600,
+                      "minLength": 0,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "check",
+                    "says",
+                    "passed",
+                    "why"
+                  ],
+                  "type": "object"
+                },
+                "minItems": 0,
+                "type": "array"
               },
               "passed": {
                 "type": "boolean"

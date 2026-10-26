@@ -792,7 +792,7 @@
     },
     {
      "kind": "version",
-     "of": "Live site",
+     "of": "$deliverable",
      "checked": true
     }
    ],
@@ -991,6 +991,9 @@
       "draft": "adapt_line_draft",
       "out": {
        "engines": "list"
+      },
+      "or": {
+       "cannot": "dict"
       },
       "check": "line_is_engines",
       "only_if": "adapt.source.shape"

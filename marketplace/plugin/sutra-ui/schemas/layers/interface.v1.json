@@ -3440,6 +3440,44 @@
     "view.adaptation": {
       "additionalProperties": true,
       "properties": {
+        "coverage": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "properties": {
+                "by": {
+                  "enum": [
+                    "adaptation",
+                    "default"
+                  ]
+                },
+                "items": {
+                  "items": {
+                    "$ref": "#/$defs/id.item"
+                  },
+                  "minItems": 0,
+                  "type": "array"
+                },
+                "uncovered": {
+                  "items": {
+                    "$ref": "#/$defs/id.item"
+                  },
+                  "minItems": 0,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "items",
+                "uncovered",
+                "by"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "proposal": {
           "anyOf": [
             {
@@ -3502,6 +3540,40 @@
                     "type": "null"
                   }
                 ]
+              },
+              "checks": {
+                "items": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "check": {
+                      "maxLength": 60,
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "passed": {
+                      "type": "boolean"
+                    },
+                    "says": {
+                      "maxLength": 300,
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "why": {
+                      "maxLength": 600,
+                      "minLength": 0,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "check",
+                    "says",
+                    "passed",
+                    "why"
+                  ],
+                  "type": "object"
+                },
+                "minItems": 0,
+                "type": "array"
               },
               "passed": {
                 "type": "boolean"
@@ -6133,6 +6205,7 @@
           "inputs": [
             "dept",
             "words",
+            "items",
             "taken",
             "out",
             "rules",
@@ -6148,6 +6221,24 @@
           ],
           "read_by": null,
           "returns": null
+        },
+        "shape": {
+          "fields": {
+            "guidance": "field.guidance",
+            "task": "field.task"
+          },
+          "inputs": [
+            "dept",
+            "words",
+            "items",
+            "practices",
+            "rules",
+            "taken",
+            "out",
+            "refused"
+          ],
+          "read_by": "adapt.line",
+          "returns": "Return ONLY a JSON object: {\"engines\": [{\"name\": str, \"does\": str, \"reads\": str, \"writes\": str, \"covers\": [\"D1\"], \"level\": 1 | 2, \"confidence\": number, \"doubt\": str, \"internet\": bool}]}, or {\"cannot\": {\"engine\": str, \"items\": [\"D1\"], \"why\": str}} when an engine the kind requires cannot serve an item."
         }
       },
       "sense": {
@@ -6652,6 +6743,16 @@
         ],
         "words": [
           "conflict"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.doubt",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "doubt"
         ]
       }
     ],

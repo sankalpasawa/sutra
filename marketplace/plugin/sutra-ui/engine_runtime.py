@@ -1713,6 +1713,9 @@ def _fits(out, step):
     if not isinstance(out, dict):
         return "the answer is not an object"
     kinds = {"str": str, "list": list, "dict": dict, "bool": bool}
+    for k, t in (step.get("or") or {}).items():
+        if k in out:                  # an answer that is one of the alternatives the step names needs none of its `out` (cannot)
+            return None if t not in kinds or isinstance(out[k], kinds[t]) else "%s is not a %s" % (k, t)
     for k, t in (step.get("out") or {}).items():
         if k not in out:
             return "the answer has no %s" % k
@@ -5240,8 +5243,13 @@ def _j2_settle(ref, d, engines, source, words, by):
                 added.remove(n)
                 lost.append("%s (%s)" % (n, exc))
     else:
+        mine = list((W.dept(ref) or {}).get("engines") or [])
         for e in engines:
             try:
+                if e.get("level") == 1 and e["name"] in mine:
+                    # the Library's own engine (level 1, J2B-3), already on the record: the plan names it, and Root adds nothing
+                    added.append(e["name"])
+                    continue
                 does = str(e.get("does") or "").strip()
                 W.add_engine(ref, e["name"], shape={"name": e["name"], "use_case": does or e["name"], "does": does,
                                                      "instruction": ("%s\n\nThe goal, in the owner's words: %s" % (does, words or "")).strip(),
