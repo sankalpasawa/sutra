@@ -276,7 +276,12 @@ def priority_post(ctx, step, item):
             answer = 'reject' if not keep else 'accept'
         ok = answer == 'accept'
         why = why or ('the envelope has room' if ok else 'the envelope has no room')
-        row = R.post(ref, 'Priority', 'Adaptation', 'accept-proposal' if ok else 'reject-proposal', {'word': 'line', 'why': why}, thread=thread)
+        body = {'word': 'line', 'why': why}
+        if not ok:
+            # a no carries the ways forward, built by code and priced: raise, leave, stop (M5.4); Adaptation hands them on
+            body['options'] = line_options(ref, ctx['dept'], names, _covers_of(ctx['dept'], pl), read['estimate'],
+                                           read['room'], read.get('fits'), int(read.get('limit') or 6))
+        row = R.post(ref, 'Priority', 'Adaptation', 'accept-proposal' if ok else 'reject-proposal', body, thread=thread)
         if row:
             _price_row(ctx, read, 'accept' if ok else 'reject', names if ok else [], why)
         return {'said': ('said yes to' if ok else 'said no to') + ' the line ' + ' -> '.join(names) if row else 'the bargain reached its bound'}
@@ -340,8 +345,296 @@ def price_is_observed(ctx, step, item, out):
     return {'ok': not notes, 'notes': notes or ['%s, with its price: %s' % (SAID.get(out.get('answer'), out.get('answer')), str(out['why']).strip())]}
 
 
+# ---- the ways forward at a limit, priced by code (M5.4) ----------------------------------------------------------------------
+# A limit reaches the owner as one question with up to three ways forward: raise (add budget, up to RAISE_CAP times where it
+# started), leave (give up the done-when item the work was for) and stop. Every word of them is built here by code from the
+# prices Priority holds; no model writes an option. Identity puts them to the owner, on the card it files.
+#: the least a limit rises by to hold one more run when the run itself is priced at nothing: a call, and a cent
+STEP_CALLS, STEP_USD = 1, 0.01
+
+
+def _slug(name):
+    """An engine's name as an option id carries it: the id's tail takes letters, digits, '_', '.' and '-' (S.DEFS['option'])."""
+    slug = re.sub(r'[^A-Za-z0-9_.-]+', '-', str(name or '')).strip('-')[:40] or 'engine'
+    return slug + '-engine' if slug.lower() == 'ceiling' else slug
+
+
+def _more(calls, usd):
+    """What a raise adds, as the cost line says it: '7 calls and 0.30 USD'."""
+    parts = ([_calls(calls)] if calls > 0 else []) + (['%.2f USD' % usd] if usd > 0 else [])
+    return ' and '.join(parts) or 'nothing'
+
+
+def _on_record(d):
+    """The engines whose limit is on the department's record: a limit can be raised only for one of them."""
+    return {e[0] for e in W.engines_of(d)} | set(W.SYSTEMS)
+
+
+def _covers_of(d, pl=None):
+    """Which engines cover each done-when item, {item: [engine]}: the proposal's own (act.line covers) when it names them,
+    else the last registered plan's, else the interface's reading of the engines it names."""
+    got = (pl or {}).get('covers')
+    if isinstance(got, dict) and got:
+        return {str(k): [str(e) for e in v or []] for k, v in got.items()}
+    if not (pl or {}).get('engines'):
+        wf = [w for w in (d or {}).get('workflows') or [] if isinstance(w, dict)]
+        if wf and isinstance(wf[-1].get('covers'), dict):
+            return {str(k): [str(e) for e in v or []] for k, v in wf[-1]['covers'].items()}
+        return {}
+    try:
+        return {k: list(v) for k, v in (S.as_workflow(pl['engines'], pl.get('source') or 'library', d).get('covers') or {}).items()}
+    except Exception:  # noqa: BLE001 -- a proposal the interface cannot read covers nothing, and no item is offered to leave out
+        return {}
+
+
+def _left_out(d, covered):
+    """The done-when item an option may leave out: the last of `covered`, a list of item ids, that done-when holds; none when
+    it would be left empty (done-when keeps at least one item)."""
+    items = [i for i in W.items_of(d) if i.get('id')]
+    pool = [i for i in items if i['id'] in covered]
+    return pool[-1] if len(items) > 1 and pool else None
+
+
+def _only_by(covers, names):
+    """The items covered by `names` and by nothing else: what stops being built when they are cut."""
+    return [i for i, es in (covers or {}).items() if es and all(e in names for e in es)]
+
+
+def _leave_option(item):
+    return W.option('leave:' + item['id'], 'Leave %s out' % item['id'],
+                    '%s is dropped from done-when (%s); nothing more is spent' % (item['id'], str(item.get('text') or '').rstrip('.')[:250]))
+
+
+def _stop_option():
+    return W.option(W.STOP_OPTION, 'Stop here', 'the department stops where it is; you can start it again later')
+
+
+def _raised(d, name, calls, usd):
+    """The limit one engine may be raised to when it needs `calls` and `usd` a day: those, and never less than it has, held to
+    RAISE_CAP times where it started. None when that is past the cap, or no raise at all."""
+    cur = _limit_of(d, name)
+    calls, usd = max(int(calls), int(cur.get('calls') or 0)), round(max(float(usd), float(cur.get('usd') or 0.0)), 4)
+    if W.envelope_over(d, name, calls, usd) or (calls, usd) == (int(cur.get('calls') or 0), round(float(cur.get('usd') or 0.0), 4)):
+        return None
+    return calls, usd
+
+
+def envelope_option(d, name, calls, usd):
+    """The option to raise one engine's limit to `calls` and `usd` a day (option.raise, what 'envelope'): the params carry the
+    limits it becomes, so choosing it twice is choosing it once; the cost line says how much more, and what the limit becomes."""
+    cur = _limit_of(d, name)
+    more_calls, more_usd = int(calls) - int(cur.get('calls') or 0), round(float(usd) - float(cur.get('usd') or 0.0), 4)
+    return W.option('raise:' + _slug(name), 'Add budget for %s' % name,
+                    "about %s more a day; %s's limit becomes %s a day" % (_more(more_calls, more_usd), name, _say_cost(calls, usd)),
+                    {'what': 'envelope', 'engine': name, 'calls': int(calls), 'usd': float(usd)})
+
+
+def hold_options(ref, d, name, calls, usd, env):
+    """The ways forward for an engine held at its limit (J2.5): raise the limit enough to run once more (never past
+    RAISE_CAP times where it started), leave out the item only this engine is for, stop. `calls` and `usd` are what it has
+    spent today, `env` its limit."""
+    price = price_of(ref, name)
+    want_calls = int(env.get('calls') or 0) if calls < int(env.get('calls') or 0) else calls + max(int(price['calls']), STEP_CALLS)
+    want_usd = float(env.get('usd') or 0.0) if usd < float(env.get('usd') or 0.0) else round(usd + max(float(price['usd']), STEP_USD), 4)
+    opts, got = [], _raised(d, name, want_calls, want_usd)
+    if got:
+        opts.append(envelope_option(d, name, *got))
+    item = _left_out(d, _only_by(_covers_of(d), [name]))
+    if item:
+        opts.append(_leave_option(item))
+    return opts + [_stop_option()]
+
+
+def _hold_ask(ref, d, name, slot, calls, usd, env):
+    """The ask an engine held at its limit files (J2.5): the limit, what it has used, what happens next, and the ways forward."""
+    text = ("%s is out of today's envelope: it has used %d of its %d calls and %.2f of its %.2f USD. It waits until tomorrow, "
+            "unless you choose a way forward." % (name, calls, int(env.get('calls') or 0), usd, float(env.get('usd') or 0.0)))
+    return W.options_ask('envelope', text, hold_options(ref, d, name, calls, usd, env), engine=name, slot=slot, escalated=True)
+
+
+def priority_envelope(ctx, step, item):
+    """Priority's gate: an engine past its envelope for the day waits (J2.5), and the owner is asked once, on one card that
+    names the limit and what the engine has used and carries the ways forward as options built by code (M5.4). The hold is on
+    the ledger once for its slot, however often the motor asks again (M0.4). Moved from engine_runtime.priority_envelope; the
+    gate's answers are the same."""
+    ref, name, slot = ctx['ref'], ctx['engine'], ctx['slot']
+    calls, usd = W._today_spend(ref, name)
+    env = W.limit_of(ctx['dept'], name)
+    if calls >= env.get('calls', 0) or usd >= env.get('usd', 0):
+        if not any(x.get('kind') == 'envelope' and x.get('engine') == name and x['status'] == 'pending' for x in W.asks(ref)):
+            W._put_ask(ref, _hold_ask(ref, ctx['dept'], name, slot, calls, usd, env))
+        if not ctx.get('peek'):
+            # a panel read asking the same question writes nothing; Coordination's other waits stay in the status's 'next'
+            try:
+                J.on_held(ref, name, slot, "%s is out of today's envelope" % name)
+            except ImportError:
+                pass                              # a department runs without its lifecycle record rather than not at all
+        return 'wait', '%s is out of its envelope' % name
+    return 'admit', None
+
+
+def line_options(ref, d, names, covers, est, room, fits, limit):
+    """The ways forward for a line Priority said no to (M5.4), at most three. Raise: the first engine of the line the room
+    does not reach is given what the line is short of, when that stays inside RAISE_CAP times where it started and money is what
+    the line is short of (a line of more workflows than the limit is mended by no raise). Leave: the last done-when item that
+    only the cut engines were building. Stop."""
+    names, opts = list(names or []), []
+    short_calls, short_usd = max(0, int(est['calls']) - int(room['calls'])), max(0.0, round(float(est['usd']) - float(room['usd']), 4))
+    if names and len(names) <= limit and (short_calls or short_usd):
+        record = _on_record(d)
+        for n in [n for n in names if n not in (fits or [])] or names:
+            if n not in record:
+                continue                          # an engine not born yet has no limit of its own to raise
+            spent_calls, spent_usd = W._today_spend(ref, n)
+            cur = _limit_of(d, n)
+            got = _raised(d, n, max(int(cur['calls']), spent_calls) + short_calls, max(float(cur['usd']), spent_usd) + short_usd)
+            if got:
+                opts.append(envelope_option(d, n, *got))
+                break
+    item = _left_out(d, _only_by(covers, [n for n in names if n not in (fits or [])] or names))
+    if item:
+        opts.append(_leave_option(item))
+    return (opts + [_stop_option()])[:S.OPTIONS_MAX]
+
+
+def limit_options(ref, thread=None):
+    """The ways forward for a bargain that reached its limit (hops, time or spend): the options a no would have carried, for
+    the line Adaptation last proposed in `thread`, priced from what its engines have cost and the room left today. Built
+    by code. [] when no line was proposed there. Called by whoever puts the limit to the owner (the conflict's ask)."""
+    offer = (R._line_proposal(ref, thread) if thread else None) or {}
+    d = W.dept(ref) or {}
+    names = list(dict.fromkeys(str(e.get('name')) for e in offer.get('engines') or [] if isinstance(e, dict) and e.get('name')))
+    if not names:
+        return []
+    est, room = estimate_of(ref, names, 'line'), room_of(ref, d, names)
+    limit = int(_template().get('line') or 6)
+    return line_options(ref, d, names, _covers_of(d, offer), est, room, fits_of(names, est['per_engine'], room, limit), limit)
+
+
+def check_raise(ref, option):
+    """A raise the owner chose, held to the cap before it is recorded: AskError OVER_CAP when it would take a limit past
+    RAISE_CAP times where it started. Nothing is written."""
+    p = (option or {}).get('params')
+    p = p if isinstance(p, dict) else {}
+    d = W.dept(ref)
+    if not d:
+        raise ValueError('no department at %s' % ref)
+    if p.get('what') == 'envelope':
+        name = str(p.get('engine') or '')
+        if name not in _on_record(d):
+            raise ValueError('no engine named %s' % name)
+        over = W.envelope_over(d, name, p.get('calls'), p.get('usd'))
+    elif p.get('what') == 'ceiling':
+        over = _ceiling_over(d, p)
+    else:
+        raise ValueError('this raise names nothing to raise')
+    if over:
+        raise W.AskError('OVER_CAP', over)
+
+
+def ceiling_of(d):
+    """The goal's ceiling on the record (priority.ceiling), or None."""
+    c = (d or {}).get('ceiling')
+    return c if isinstance(c, dict) and c.get('start') else None
+
+
+def _ceiling_over(d, p):
+    """None, or in words how far the ceiling may be raised, when `p` (what 'ceiling': rounds, calls, usd) takes it past
+    RAISE_CAP times where it started."""
+    c = ceiling_of(d)
+    if not c:
+        return None
+    start = c['start']
+    over = []
+    for key, say in (('rounds', 'rounds'), ('calls', 'calls'), ('usd', 'USD')):
+        want, now_ = p.get(key), c.get(key)
+        cap = S.RAISE_CAP * float(start.get(key) or 0)
+        if want is not None and float(want) > float(now_ or 0) and round(float(want), 4) > round(cap, 4):
+            over.append(('%d %s' if key != 'usd' else '%.2f %s') % (cap, say))
+    return ("the goal's ceiling may be raised to %s, twice where it started, and no further" % ', '.join(over)) if over else None
+
+
+def _raise_envelope(ref, p):
+    d = W.dept(ref) or {}
+    name = str(p.get('engine') or '')
+    cur = W.limit_of(d, name)
+    calls = max(int(p.get('calls') if p.get('calls') is not None else cur.get('calls') or 0), int(cur.get('calls') or 0))
+    usd = round(max(float(p.get('usd') if p.get('usd') is not None else cur.get('usd') or 0.0), float(cur.get('usd') or 0.0)), 4)
+    if (calls, usd) == (int(cur.get('calls') or 0), round(float(cur.get('usd') or 0.0), 4)):
+        return {'what': 'envelope', 'engine': name, 'envelope': dict(cur), 'raised': False}     # already as high: the same choice twice
+    env = W.set_envelope(ref, name, calls=calls, usd=usd, by='option')
+    return {'what': 'envelope', 'engine': name, 'envelope': env, 'raised': True}
+
+
+def _raise_ceiling(ref, p):
+    with W._lock(ref):
+        d = W.dept(ref) or {}
+        c = ceiling_of(d)
+        if not c:
+            raise ValueError('the goal has no ceiling to raise yet')
+        over = _ceiling_over(d, p)
+        if over:
+            raise W.AskError('OVER_CAP', over)
+        to = {'rounds': max(int(p.get('rounds') or 0), int(c['rounds'])), 'calls': max(int(p.get('calls') or 0), int(c['calls'])),
+              'usd': round(max(float(p.get('usd') or 0.0), float(c['usd'])), 4)}
+        if to == {'rounds': c['rounds'], 'calls': c['calls'], 'usd': round(float(c['usd']), 4)}:
+            return {'what': 'ceiling', 'ceiling': dict(c), 'raised': False}
+        c = dict(c, **to)
+        c['raised'] = list(c.get('raised') or []) + [{'at': W.now(), 'by': 'the owner', 'to': dict(to)}]
+        d['ceiling'] = c
+        W.save_dept(ref, d, by='priority')
+    W.system_run(ref, 'Priority', "the owner's choice raised the goal's ceiling: %d rounds, %s" % (to['rounds'], _say_cost(to['calls'], to['usd'])))
+    return {'what': 'ceiling', 'ceiling': c, 'raised': True}
+
+
+def apply_option(ref, ask, option):
+    """The owner chose to add budget (raise, option.raise): the limit the option names becomes the engine's envelope, or the
+    goal's ceiling, through W.set_envelope with by='option' (past RAISE_CAP times where it started, AskError OVER_CAP). Never
+    lowers a limit, and a raise already made is not made again, so Identity's step may apply what the card already did.
+    Returns {what, raised, ...}."""
+    p = (option or {}).get('params')
+    p = p if isinstance(p, dict) else {}
+    if p.get('what') == 'envelope':
+        return _raise_envelope(ref, p)
+    if p.get('what') == 'ceiling':
+        return _raise_ceiling(ref, p)
+    raise ValueError('this raise names nothing to raise')
+
+
+def apply_choice(ref, ask, option):
+    """What the owner chose on a card Priority filed (the limit card of an engine held at its envelope, which has no thread
+    for Identity's step to apply it): a raise is Priority's; leave and stop are the owner's own act, put in place here so
+    the card never says 'You chose' over nothing applied. On a card with a thread, only a raise is applied here; Identity
+    applies the rest."""
+    kind = str((option or {}).get('kind') or str((option or {}).get('id') or '').split(':', 1)[0])
+    if kind == 'raise':
+        return apply_option(ref, ask, option)
+    if (ask or {}).get('kind') != 'envelope' or (ask or {}).get('thread'):
+        return {}
+    if kind == 'stop':
+        if J._state(ref):
+            J.stop(ref)
+        else:
+            W.set_stopped(ref, True)
+        return {'stopped': True}
+    if kind == 'leave':
+        iid = str((option or {}).get('id') or '').split(':', 1)[1] if ':' in str((option or {}).get('id') or '') else ''
+        items = W.items_of(W.dept(ref) or {})
+        gone = next((i for i in items if i['id'] == iid), None)
+        if not gone:
+            return {'left_out': None}
+        done = W.done_items_ask('Leave %s out of done-when: %s. The goal stays as it is' % (iid, str(gone['text']).rstrip('.')),
+                                [i for i in items if i['id'] != iid], 'the engine was held at its limit, and you chose to leave it out',
+                                words=(ask.get('chosen') or {}).get('label'))
+        done.update({'status': 'stamped', 'decided': W.now(), 'by': 'the owner'})    # the owner's one click is its stamp
+        W._put_ask(ref, done)
+        W.apply_done_items(ref, done)
+        return {'left_out': iid}
+    return {}
+
+
 CODE = {
-    'priority_envelope': ref_to('priority_envelope'),
+    'priority_envelope': priority_envelope,
     'priority_read': priority_read,
     'priority_post': priority_post,
     'priority_grant': ref_to('priority_grant'),

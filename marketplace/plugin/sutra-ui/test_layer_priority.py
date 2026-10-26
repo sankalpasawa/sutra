@@ -179,7 +179,7 @@ def test_p1_a_name_still_by_reference_is_a_late_bound_delegate_to_engine_runtime
             assert module == "engine_runtime" and getattr(R, attr) is legacy[kind][name], "%s %s" % (kind, name)
     assert counts["by_reference"] >= 1
     importlib.reload(R)
-    assert V1.CODE["priority_envelope"].legacy == ("engine_runtime", "priority_envelope")
+    assert V1.CODE["priority_grant"].legacy == ("engine_runtime", "priority_grant")      # priority_envelope moved in M5.4
     assert layers.recipes()["Priority"] == C.recipe_of(V1)
 
 
@@ -707,8 +707,8 @@ def test_p6_the_contract_passes_for_priority_v1_with_no_part_on_the_fallback(ctx
     for number, what, case in C.cases():
         assert case(V1, ctx) == [], "case %d: %s" % (number, what)
     assert C.on_the_md_fallback(V1) == []
-    assert C.by_reference(V1) == {"by_reference": 5, "own": 6}, \
-        "priority_envelope and priority_grant, and the three shared checks, still delegate; the rest are this module's"
+    assert C.by_reference(V1) == {"by_reference": 4, "own": 7}, \
+        "priority_grant and the three shared checks still delegate; the rest are this module's (priority_envelope moved in M5.4)"
 
 
 def test_p6_the_module_holds_no_state_besides_its_dicts_of_names():
@@ -716,3 +716,295 @@ def test_p6_the_module_holds_no_state_besides_its_dicts_of_names():
     own = {"CODE", "PROMPT", "DRAFT", "CHECK", "WORDS", "LAYOUT"}
     held = {k: type(v).__name__ for k, v in vars(V1).items() if isinstance(v, (dict, list, set)) and not k.startswith("__")}
     assert set(held) == own, held
+
+
+# ---- Q1: priced options on budget and bargain limits (M5.4) ------------------------------------------------------------------
+# A limit reaches the owner as one question with up to three ways forward, built by code from the prices Priority holds: raise
+# (add budget, up to RAISE_CAP times where it started), leave (give up the item the work was for) and stop. The envelope-held
+# card carries them; a no carries them to Adaptation, which hands them on; a bargain at its limit has them asked for by thread.
+ITEMS2 = [{"id": "D1", "text": "Every page checked and live", "how": "code", "level": "outcome"},
+          {"id": "D2", "text": "The lessons for each topic are there", "how": "model", "level": "target"}]
+
+
+def _client():
+    import dept_api
+    import j2_api
+    import website_api
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    for m in (dept_api, j2_api, website_api):
+        importlib.reload(m)
+    app = FastAPI()
+    for m in (dept_api, j2_api, website_api):
+        app.include_router(m.router)
+    return TestClient(app)
+
+
+def _held(live, plan_covers=True, items=True):
+    """A department whose Plan is held at its limit (test_m0_4's way): Plan's limit is nought calls, two done-when items, and the
+    registered plan says Plan alone is for D2 (the default gives every item to the last engine). The ask is filed again once
+    the covers are as said, so the card is the one a department like that files."""
+    W, R, J, _ = live
+    ref = _born(live, settle=False)
+    if items:
+        W.put_done_items(ref, ITEMS2)
+    W.set_envelope(ref, "Plan", calls=0)
+    W.run_until_idle(ref, limit=300)
+    if plan_covers:
+        d = W.dept(ref)
+        d["workflows"][-1]["covers"] = {"D1": ["Write", "Publish"], "D2": ["Plan"]}
+        W.save_dept(ref, d)
+        for a in [a for a in W.asks(ref) if a["kind"] == "envelope" and a["status"] == "pending"]:
+            W._put_ask(ref, dict(a, status="replaced"))
+        W.run_until_idle(ref, limit=5)
+    return ref
+
+
+def _envelope_ask(W, ref):
+    [ask] = [a for a in W.asks(ref) if a["kind"] == "envelope" and a["status"] == "pending"]
+    return ask
+
+
+def test_j2_5_the_envelope_ask_names_the_limit_the_use_and_the_options(live):
+    """A hold that files a card naming nothing, or one with no way forward, must fail (J2.5, BL-6): the card says the limit and
+    what the engine has used, what happens next, and carries raise (up to twice the start), leave out and stop, each priced."""
+    W, R, J, _ = live
+    ref = _held(live)
+    ask = _envelope_ask(W, ref)
+    assert (ask["engine"], ask["escalated"], ask["chosen"]) == ("Plan", True, None)
+    assert ask["text"] == ("Plan is out of today's envelope: it has used 0 of its 0 calls and 0.00 of its 6.00 USD. It waits until "
+                           "tomorrow, unless you choose a way forward.")
+    assert [o["id"] for o in ask["options"]] == ["raise:Plan", "leave:D2", "stop"]
+    assert [o["kind"] for o in ask["options"]] == ["raise", "leave", "stop"]
+    raise_, leave, stop = ask["options"]
+    assert raise_["label"] == "Add budget for Plan"
+    assert raise_["cost"] == "about 1 call more a day; Plan's limit becomes 1 call and 6.00 USD a day"
+    assert raise_["params"] == {"what": "envelope", "engine": "Plan", "calls": 1, "usd": 6.0}
+    assert (leave["label"], leave["cost"]) == ("Leave D2 out", "D2 is dropped from done-when (The lessons for each topic are there); nothing more is spent")
+    assert (stop["label"], stop["cost"]) == ("Stop here", "the department stops where it is; you can start it again later")
+    assert S.validate("identity.ask", ask) == [] and all(S.validate("option", o) == [] for o in ask["options"])
+    held = [e for e in J.events(ref) if e["action"] == "envelope.held"]
+    assert len(held) == 1 and held[0]["summary"] == "Plan is out of today's envelope", "the ledger says what it said"
+    assert len([a for a in W.asks(ref) if a["kind"] == "envelope" and a["status"] == "pending"]) == 1, "one card, however often it is asked"
+    for _ in range(5):
+        W.run_until_idle(ref, limit=1)
+    assert len([a for a in W.asks(ref) if a["kind"] == "envelope" and a["status"] == "pending"]) == 1
+
+
+def test_q1_raise_adds_the_budget_the_owner_chose_and_the_engine_runs_again(live):
+    """A raise that is not applied, or one that lowers a limit, or one applied twice, must fail: the card's raise option sets
+    Plan's limit to the one it names, by the owner's choice, and the held engine goes on."""
+    W, R, J, _ = live
+    ref = _held(live)
+    ask = _envelope_ask(W, ref)
+    assert W.limit_of(W.dept(ref), "Plan") == {"calls": 0, "usd": 6.0}
+    got = W.choose_option(ref, ask["id"], "raise:Plan")
+    assert got["status"] == "chosen" and got["chosen"]["id"] == "raise:Plan" and got["by"] == "the owner"
+    assert W.dept(ref)["envelopes"]["Plan"] == {"calls": 1, "usd": 6.0}
+    assert any(r["engine"] == "Priority" and "the owner's choice set Plan's envelope: 1 calls, 6.00 USD a day" in r["what"] for r in W.runs(ref))
+    assert W.choose_option(ref, ask["id"], "raise:Plan")["status"] == "chosen", "the same choice again is the same answer"
+    assert V1.apply_option(ref, got, got["options"][0])["raised"] is False, "a raise already made is not made again"
+    assert V1.apply_option(ref, got, dict(got["options"][0], params={"what": "envelope", "engine": "Plan", "calls": 1, "usd": 1.0}))["raised"] is False, \
+        "and a raise never lowers a limit"
+    assert W.dept(ref)["envelopes"]["Plan"] == {"calls": 1, "usd": 6.0}
+    W.run_until_idle(ref, limit=300)
+    assert "Plan" in [r["engine"] for r in W.runs(ref) if not r.get("system")], "the engine the card held goes on"
+
+
+def test_q1_leave_gives_up_the_item_the_held_engine_was_for(live):
+    """A leave that changes nothing, or drops more than the item it names, must fail: the card has no thread for Identity's step,
+    so the choice is put in place with the card: done-when keeps D1 and loses D2, and the goal is as it was."""
+    W, R, J, _ = live
+    ref = _held(live)
+    ask, goal = _envelope_ask(W, ref), W.dept(ref)["goal"]
+    W.choose_option(ref, ask["id"], "leave:D2")
+    d = W.dept(ref)
+    assert [i["id"] for i in d["done_items"]] == ["D1"] and d["goal"] == goal
+    assert next(a for a in W.asks(ref) if a["id"] == ask["id"])["chosen"]["id"] == "leave:D2"
+    assert W.dept(ref)["envelopes"]["Plan"]["calls"] == 0, "nothing is spent or raised by leaving something out"
+
+
+def test_q1_stop_stops_the_department_where_it_is(live):
+    """A stop that leaves the department running must fail: it is the owner's Stop, so the cycle says stopped and no engine
+    starts."""
+    W, R, J, _ = live
+    ref = _held(live)
+    ask = _envelope_ask(W, ref)
+    W.choose_option(ref, ask["id"], "stop")
+    assert W.dept(ref)["stopped"] is True and J.status(ref)["state"] == "stopped"
+    before = len([r for r in W.runs(ref) if not r.get("system")])
+    W.run_until_idle(ref, limit=20)
+    assert len([r for r in W.runs(ref) if not r.get("system")]) == before
+
+
+def test_q1_a_raise_past_twice_where_it_started_is_409_over_cap_through_the_asks_route(live):
+    """A raise the cap does not hold must fail: past RAISE_CAP times where Plan's limit started the choice is 409 OVER_CAP,
+    the card is as it was and the limit is untouched; at the cap it is applied. set_envelope holds it too when called for an
+    option, and the box on the card (by the owner) sets any limit the owner types."""
+    W, R, J, _ = live
+    ref = _held(live)
+    ask = _envelope_ask(W, ref)
+    start = R.engine_limit("Plan")
+    assert start == {"calls": 240, "usd": 6.0} and S.RAISE_CAP == 2.0
+    stale = dict(ask["options"][0], params={"what": "envelope", "engine": "Plan", "calls": 481, "usd": 6.0})
+    W._put_ask(ref, dict(ask, options=[stale] + ask["options"][1:]))
+    api = _client()
+    url = "/api/native/%s/asks/%s" % (ref, ask["id"])
+    over = api.post(url, json={"option": "raise:Plan"})
+    assert (over.status_code, over.json()["detail"]) == (409, {"code": "OVER_CAP"})
+    assert next(a for a in W.asks(ref) if a["id"] == ask["id"])["status"] == "pending", "the card waits as it was"
+    assert W.dept(ref)["envelopes"]["Plan"] == {"calls": 0, "usd": 6.0}
+    money = dict(stale, params={"what": "envelope", "engine": "Plan", "calls": 480, "usd": 12.01})
+    W._put_ask(ref, dict(ask, options=[money] + ask["options"][1:]))
+    assert api.post(url, json={"option": "raise:Plan"}).status_code == 409
+    at_cap = dict(stale, params={"what": "envelope", "engine": "Plan", "calls": 480, "usd": 12.0})
+    W._put_ask(ref, dict(ask, options=[at_cap] + ask["options"][1:]))
+    ok = api.post(url, json={"option": "raise:Plan"})
+    assert ok.status_code == 200 and W.dept(ref)["envelopes"]["Plan"] == {"calls": 480, "usd": 12.0}
+    with pytest.raises(W.AskError) as exc:
+        W.set_envelope(ref, "Plan", calls=481, by="option")
+    assert exc.value.code == "OVER_CAP"
+    assert W.set_envelope(ref, "Plan", calls=481, by="the owner")["calls"] == 481, "the owner's own box is not held to the cap"
+
+
+def test_q1_no_raise_is_offered_past_the_cap(live):
+    """A card that offers a raise it would refuse must fail: at twice where it started there is no raise, only leave and stop."""
+    W, R, J, _ = live
+    ref = _held(live)
+    W.set_envelope(ref, "Plan", calls=480, usd=12.0)
+    today = datetime.now().astimezone().isoformat(timespec="seconds")
+    W._write(W.ddir(ref) / "runs.json", W.runs(ref) + [_run_row("Plan", "ok", 480, 0.5, today)])
+    for a in [a for a in W.asks(ref) if a["kind"] == "envelope" and a["status"] == "pending"]:
+        W._put_ask(ref, dict(a, status="replaced"))
+    W.run_until_idle(ref, limit=5)
+    assert [o["id"] for o in _envelope_ask(W, ref)["options"]] == ["leave:D2", "stop"]
+
+
+def _rejected(live, limits=None, items=True):
+    """A department whose plan Priority says no to by the arithmetic alone (no room in any limit), with two done-when items."""
+    W, R, J, _ = live
+    ref = _born(live, settle=False)
+    if items:
+        W.put_done_items(ref, ITEMS2)
+    _envelopes(W, ref, **(limits or {n: (0, 0.0) for n in LINE}))
+    _history(W, ref)
+    W.run_until_idle(ref, limit=300)
+    return ref
+
+
+def _priority_posts(R, ref, act):
+    return [p for p in R.board(ref) if p["src"] == "Priority" and p["msg_type"] == act]
+
+
+def test_q1_a_no_carries_raise_leave_and_stop_priced_from_what_the_line_costs(live):
+    """A no that carries no way forward, or one priced from a constant, must fail: with no room the line costs 11 calls and
+    0.40 USD (the medians of the fixture), so the first engine the room does not reach is offered that much more."""
+    W, R, J, _ = live
+    ref = _rejected(live)
+    [no] = _priority_posts(R, ref, "reject-proposal")
+    assert no["payload"]["word"] == "line" and no["payload"]["why"].startswith("no room today: even Plan costs about 3 calls and 0.08 USD")
+    opts = no["payload"]["options"]
+    assert [o["id"] for o in opts] == ["raise:Plan", "leave:D2", "stop"] and [o["kind"] for o in opts] == ["raise", "leave", "stop"]
+    assert opts[0]["params"] == {"what": "envelope", "engine": "Plan", "calls": 11, "usd": 0.395}
+    assert opts[0]["cost"] == "about 11 calls and 0.40 USD more a day; Plan's limit becomes 11 calls and 0.40 USD a day"
+    assert opts[1]["label"] == "Leave D2 out" and opts[2]["id"] == "stop"
+    assert all(S.validate("option", o) == [] for o in opts) and len(opts) <= S.OPTIONS_MAX
+    assert S.validate("act.any", no["payload"]) == [], "the payload is the interface's"
+    [row] = _prices(W, ref)
+    assert row["answer"] == "reject" and "options" not in row, "the price row is the price, not the card"
+
+
+def test_q1_a_counter_and_a_yes_carry_no_options(live, monkeypatch):
+    """Options on an answer that is not a no must fail: they are the ways out of a limit, and a yes or an ask for less
+    is no limit."""
+    W, R, J, _ = live
+    _model(monkeypatch, R, {"adapt.line": THREE})
+    ref = _priced(live, {"Facts": (3, 0.07), "Notes": (2, 0.04), "Summary": (0, 0.0)}, SHAPED_HISTORY, ORGANIC, "Lab Co", shaped=True)
+    answers = _priority_posts(R, ref, "propose") + _priority_posts(R, ref, "accept-proposal")
+    assert len(answers) == 2 and all("options" not in p["payload"] for p in answers)
+
+
+def test_q1_a_raise_is_the_shortfall_from_where_the_engine_stands_today(live):
+    """A raise bigger than the shortfall, one that forgets what the engine spent today, or one that leaves the line short, must
+    fail: with Plan's limit 2 calls and 0.04 USD, one call and a cent spent today, and the other limits at nought, the line
+    (11 calls, 0.395 USD) is short of 10 calls and 0.365 USD, so Plan is raised from where it stands, and then the room holds
+    the line."""
+    W, R, J, _ = live
+    ref = _born(live, settle=False)
+    _envelopes(W, ref, Plan=(2, 0.04), Write=(0, 0.0), Check=(0, 0.0), Publish=(0, 0.0))
+    _history(W, ref)
+    today = datetime.now().astimezone().isoformat(timespec="seconds")
+    W._write(W.ddir(ref) / "runs.json", W.runs(ref) + [_run_row("Plan", "asked", 1, 0.01, today)])
+    W.run_until_idle(ref, limit=300)
+    [no] = _priority_posts(R, ref, "reject-proposal")
+    assert no["payload"]["why"] == "no room today: even Plan costs about 3 calls and 0.08 USD against the 1 call and 0.03 USD left"
+    raise_ = no["payload"]["options"][0]
+    assert raise_["params"] == {"what": "envelope", "engine": "Plan", "calls": 12, "usd": 0.405}
+    assert raise_["cost"] == "about 10 calls and 0.36 USD more a day; Plan's limit becomes 12 calls and 0.41 USD a day"
+    assert V1.apply_option(ref, {}, raise_)["raised"] is True
+    room = V1.room_of(ref, W.dept(ref), LINE)
+    assert room == {"calls": 11, "usd": 0.395}, "the line costs 11 calls and 0.395 USD, and the room holds exactly that"
+
+
+def test_q1_a_line_of_more_workflows_than_the_limit_is_offered_no_raise(live):
+    """A raise offered for what no money mends must fail: eight workflows against a limit of six are not a matter of budget."""
+    W, R, J, _ = live
+    ref = _born(live, settle=False)
+    names = ["E%d" % i for i in range(8)]
+    d = W.dept(ref)
+    est = {"calls": 99, "usd": 5.0}
+    got = V1.line_options(ref, d, names, {}, est, {"calls": 0, "usd": 0.0}, [], 6)
+    assert [o["id"] for o in got] == ["stop"], "no raise, and no item to leave out of a line that covers none"
+    one = V1.line_options(ref, d, ["Plan"], {}, est, {"calls": 0, "usd": 0.0}, [], 6)
+    assert [o["id"] for o in one] == ["raise:Plan", "stop"]
+
+
+def test_q1_a_bargain_at_its_limit_has_its_options_asked_for_by_thread(live, monkeypatch):
+    """A limit with no way forward must fail: when the bargain reaches its hops the conflict goes to Identity, and the ways
+    forward for the line it was about are Priority's to give, by thread, priced and built by code."""
+    W, R, J, _ = live
+    monkeypatch.setattr(R, "BOUNDS", {"hops": 1, "seconds": 900, "usd": 0.5})
+    ref = _born(live, settle=False)
+    W.put_done_items(ref, ITEMS2)
+    W.run_until_idle(ref, limit=300)
+    raised = next(e for e in J.events(ref) if e["action"] == "conflict.raised")
+    assert raised["payload"]["bound"] == "hops"
+    thread = next(p["thread"] for p in R.board(ref) if p["msg_type"] == "propose" and (p["payload"] or {}).get("word") == "line")
+    opts = layers.call(ref, "priority", "limit_options", ref, thread)
+    assert [o["id"] for o in opts] == ["leave:D2", "stop"], "the room is ample, so money is not what the line is short of"
+    assert all(S.validate("option", o) == [] for o in opts)
+    assert layers.call(ref, "priority", "limit_options", ref, None) == [] and layers.call(ref, "priority", "limit_options", ref, "x-none") == []
+
+
+def test_q1_no_option_is_worded_by_a_model(live, monkeypatch):
+    """An option whose words a model wrote must fail: building them calls no model, and what a model says as its reason
+    reaches no label and no cost."""
+    W, R, J, _ = live
+    calls = []
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "MODELWORDS-zz"}})
+    inner = R.MODEL
+    monkeypatch.setattr(R, "MODEL", lambda prompt, step: calls.append(step["id"]) or inner(prompt, step))
+    ref = _rejected(live)
+    [no] = _priority_posts(R, ref, "reject-proposal")
+    assert no["payload"]["why"] == "MODELWORDS-zz" and "priority.bargain" in calls
+    assert all("MODELWORDS" not in o["label"] + o["cost"] for o in no["payload"]["options"])
+    calls.clear()
+    d = W.dept(ref)
+    V1.line_options(ref, d, LINE, {"D2": ["Publish"]}, {"calls": 11, "usd": 0.4}, {"calls": 0, "usd": 0.0}, [], 6)
+    V1.hold_options(ref, d, "Plan", 0, 0.0, {"calls": 0, "usd": 6.0})
+    V1.limit_options(ref, None)
+    assert calls == [], "the options are built by code"
+
+
+def test_q1_priority_applies_only_the_raise_and_a_raise_names_what_it_raises(live):
+    """An option that names nothing to raise must be refused before it is recorded, and the module hands a card with a thread
+    only the raise to apply."""
+    W, R, J, _ = live
+    ref = _held(live)
+    with pytest.raises(ValueError):
+        V1.check_raise(ref, {"id": "raise:x", "params": {"what": "weather"}})
+    with pytest.raises(ValueError):
+        V1.check_raise(ref, {"id": "raise:x", "params": {"what": "envelope", "engine": "Nobody", "calls": 1, "usd": 1.0}})
+    threaded = dict(_envelope_ask(W, ref), thread="x-1")
+    assert V1.apply_choice(ref, threaded, W.option("stop", "Stop here", "x")) == {}
+    assert W.dept(ref).get("stopped") is not True
