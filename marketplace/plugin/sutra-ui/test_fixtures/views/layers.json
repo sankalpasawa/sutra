@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "pins": {
+    "root": "root/v1",
+    "identity": "identity/v1",
+    "adaptation": "adaptation/v1",
+    "priority": "priority/v1",
+    "coordination": "coordination/v1",
+    "audit": "audit/v1"
+  },
+  "available": {
+    "root": [
+      "root/v1"
+    ],
+    "identity": [
+      "identity/v1"
+    ],
+    "adaptation": [
+      "adaptation/v1"
+    ],
+    "priority": [
+      "priority/v1"
+    ],
+    "coordination": [
+      "coordination/v1"
+    ],
+    "audit": [
+      "audit/v1"
+    ]
+  },
+  "standards": [
+    {
+      "id": "names_an_engine",
+      "says": "the workflow names its engines"
+    },
+    {
+      "id": "engines_known",
+      "says": "each engine is one the Library has"
+    },
+    {
+      "id": "each_engine_named",
+      "says": "every engine has a name"
+    },
+    {
+      "id": "names_unique",
+      "says": "no name is used twice, and none is a function's, Root's or Owner's"
+    },
+    {
+      "id": "names_new",
+      "says": "no name is one the Library already has"
+    },
+    {
+      "id": "first_reads_input",
+      "says": "the first engine reads the kind's first artifact"
+    },
+    {
+      "id": "reads_known",
+      "says": "each engine reads the kind's first artifact or what one before it wrote"
+    },
+    {
+      "id": "one_output",
+      "says": "each engine writes something not yet written"
+    },
+    {
+      "id": "items_covered",
+      "says": "every done-when item is covered by an engine"
+    },
+    {
+      "id": "required_kept",
+      "says": "no engine the kind requires is left out"
+    },
+    {
+      "id": "size_in_range",
+      "says": "one engine or more; more than six says why"
+    },
+    {
+      "id": "check_exists",
+      "says": "each engine's output has a check"
+    },
+    {
+      "id": "fits_room",
+      "says": "Priority priced it and it fits today's room"
+    },
+    {
+      "id": "line_is_registered",
+      "says": "Coordination's line is a registered plan plus the engines the owner added"
+    }
+  ],
+  "describe": {}
+}

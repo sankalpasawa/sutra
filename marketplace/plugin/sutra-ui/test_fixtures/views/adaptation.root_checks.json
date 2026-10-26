@@ -1,0 +1,846 @@
+{
+  "_note": "view.adaptation as layers/adaptation/v1.py view() builds it (A1.17, W1-ADAPT): root_checks rows carry checks [{check, says, passed, why}], oldest first, the last four reviews. Four states for the Root's-check row.",
+  "none": {
+    "proposal": null,
+    "root_checks": [],
+    "coverage": null,
+    "rounds": []
+  },
+  "approved": {
+    "proposal": {
+      "workflow": [
+        "Plan",
+        "Write",
+        "Check",
+        "Publish"
+      ],
+      "source": "library",
+      "at": "2026-10-26T10:07:00+05:30"
+    },
+    "root_checks": [
+      {
+        "summary": "Root's check: the plan meets every standard",
+        "at": "2026-10-26T10:09:00+05:30",
+        "passed": true,
+        "checks": [
+          {
+            "check": "workflow_meets_standards",
+            "says": "workflow_meets_standards",
+            "passed": true,
+            "why": "the workflow fits the workflow schema"
+          },
+          {
+            "check": "names_an_engine",
+            "says": "the workflow names its engines",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "engines_known",
+            "says": "each engine is one the Library has",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "names_unique",
+            "says": "no name is used twice, and none is a function's, Root's or Owner's",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "first_reads_input",
+            "says": "the first engine reads the kind's first artifact",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "reads_known",
+            "says": "each engine reads the kind's first artifact or what one before it wrote",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "one_output",
+            "says": "each engine writes something not yet written",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "items_covered",
+            "says": "every done-when item is covered by an engine",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "required_kept",
+            "says": "no engine the kind requires is left out",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "size_in_range",
+            "says": "one engine or more; more than six says why",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "check_exists",
+            "says": "each engine's output has a check",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "fits_room",
+            "says": "Priority priced it and it fits today's room",
+            "passed": true,
+            "why": "holds"
+          }
+        ]
+      }
+    ],
+    "coverage": {
+      "items": [
+        "D1",
+        "D2",
+        "D3"
+      ],
+      "uncovered": [],
+      "by": "adaptation"
+    },
+    "rounds": []
+  },
+  "sent_back": {
+    "proposal": {
+      "workflow": [
+        "Plan",
+        "Write",
+        "Check",
+        "Publish"
+      ],
+      "source": "library",
+      "at": "2026-10-26T10:07:00+05:30"
+    },
+    "root_checks": [
+      {
+        "summary": "Root's check sent the plan back: every done-when item is covered by an engine",
+        "at": "2026-10-26T10:09:00+05:30",
+        "passed": false,
+        "checks": [
+          {
+            "check": "workflow_meets_standards",
+            "says": "workflow_meets_standards",
+            "passed": true,
+            "why": "the workflow fits the workflow schema"
+          },
+          {
+            "check": "names_an_engine",
+            "says": "the workflow names its engines",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "engines_known",
+            "says": "each engine is one the Library has",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "names_unique",
+            "says": "no name is used twice, and none is a function's, Root's or Owner's",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "first_reads_input",
+            "says": "the first engine reads the kind's first artifact",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "reads_known",
+            "says": "each engine reads the kind's first artifact or what one before it wrote",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "one_output",
+            "says": "each engine writes something not yet written",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "items_covered",
+            "says": "every done-when item is covered by an engine",
+            "passed": false,
+            "why": "D3 (new arrivals, lookbook, reviews) is covered by no engine"
+          },
+          {
+            "check": "required_kept",
+            "says": "no engine the kind requires is left out",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "size_in_range",
+            "says": "one engine or more; more than six says why",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "check_exists",
+            "says": "each engine's output has a check",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "fits_room",
+            "says": "Priority priced it and it fits today's room",
+            "passed": true,
+            "why": "holds"
+          }
+        ]
+      }
+    ],
+    "coverage": {
+      "items": [
+        "D1",
+        "D2",
+        "D3"
+      ],
+      "uncovered": [
+        "D3"
+      ],
+      "by": "adaptation"
+    },
+    "rounds": []
+  },
+  "sent_back_twice": {
+    "proposal": {
+      "workflow": [
+        "Plan",
+        "Write",
+        "Check",
+        "Publish"
+      ],
+      "source": "library",
+      "at": "2026-10-26T10:07:00+05:30"
+    },
+    "root_checks": [
+      {
+        "summary": "Root's check sent the plan back: every done-when item is covered by an engine",
+        "at": "2026-10-26T10:09:00+05:30",
+        "passed": false,
+        "checks": [
+          {
+            "check": "workflow_meets_standards",
+            "says": "workflow_meets_standards",
+            "passed": true,
+            "why": "the workflow fits the workflow schema"
+          },
+          {
+            "check": "names_an_engine",
+            "says": "the workflow names its engines",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "engines_known",
+            "says": "each engine is one the Library has",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "names_unique",
+            "says": "no name is used twice, and none is a function's, Root's or Owner's",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "first_reads_input",
+            "says": "the first engine reads the kind's first artifact",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "reads_known",
+            "says": "each engine reads the kind's first artifact or what one before it wrote",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "one_output",
+            "says": "each engine writes something not yet written",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "items_covered",
+            "says": "every done-when item is covered by an engine",
+            "passed": false,
+            "why": "D3 (new arrivals, lookbook, reviews) is covered by no engine"
+          },
+          {
+            "check": "required_kept",
+            "says": "no engine the kind requires is left out",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "size_in_range",
+            "says": "one engine or more; more than six says why",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "check_exists",
+            "says": "each engine's output has a check",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "fits_room",
+            "says": "Priority priced it and it fits today's room",
+            "passed": true,
+            "why": "holds"
+          }
+        ]
+      },
+      {
+        "summary": "Root's check sent the plan back: every done-when item is covered by an engine",
+        "at": "2026-10-26T10:12:00+05:30",
+        "passed": false,
+        "checks": [
+          {
+            "check": "workflow_meets_standards",
+            "says": "workflow_meets_standards",
+            "passed": true,
+            "why": "the workflow fits the workflow schema"
+          },
+          {
+            "check": "names_an_engine",
+            "says": "the workflow names its engines",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "engines_known",
+            "says": "each engine is one the Library has",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "names_unique",
+            "says": "no name is used twice, and none is a function's, Root's or Owner's",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "first_reads_input",
+            "says": "the first engine reads the kind's first artifact",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "reads_known",
+            "says": "each engine reads the kind's first artifact or what one before it wrote",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "one_output",
+            "says": "each engine writes something not yet written",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "items_covered",
+            "says": "every done-when item is covered by an engine",
+            "passed": false,
+            "why": "D3 (new arrivals, lookbook, reviews) is covered by no engine"
+          },
+          {
+            "check": "required_kept",
+            "says": "no engine the kind requires is left out",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "size_in_range",
+            "says": "one engine or more; more than six says why",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "check_exists",
+            "says": "each engine's output has a check",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "fits_room",
+            "says": "Priority priced it and it fits today's room",
+            "passed": true,
+            "why": "holds"
+          }
+        ]
+      }
+    ],
+    "coverage": {
+      "items": [
+        "D1",
+        "D2",
+        "D3"
+      ],
+      "uncovered": [
+        "D3"
+      ],
+      "by": "adaptation"
+    },
+    "rounds": []
+  },
+  "blocked": {
+    "proposal": {
+      "workflow": [
+        "Plan",
+        "Write",
+        "Check",
+        "Publish"
+      ],
+      "source": "library",
+      "at": "2026-10-26T10:07:00+05:30"
+    },
+    "root_checks": [
+      {
+        "summary": "Root's check sent the plan back: every done-when item is covered by an engine",
+        "at": "2026-10-26T10:09:00+05:30",
+        "passed": false,
+        "checks": [
+          {
+            "check": "workflow_meets_standards",
+            "says": "workflow_meets_standards",
+            "passed": true,
+            "why": "the workflow fits the workflow schema"
+          },
+          {
+            "check": "names_an_engine",
+            "says": "the workflow names its engines",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "engines_known",
+            "says": "each engine is one the Library has",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "names_unique",
+            "says": "no name is used twice, and none is a function's, Root's or Owner's",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "first_reads_input",
+            "says": "the first engine reads the kind's first artifact",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "reads_known",
+            "says": "each engine reads the kind's first artifact or what one before it wrote",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "one_output",
+            "says": "each engine writes something not yet written",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "items_covered",
+            "says": "every done-when item is covered by an engine",
+            "passed": false,
+            "why": "D3 (new arrivals, lookbook, reviews) is covered by no engine"
+          },
+          {
+            "check": "required_kept",
+            "says": "no engine the kind requires is left out",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "size_in_range",
+            "says": "one engine or more; more than six says why",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "check_exists",
+            "says": "each engine's output has a check",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "fits_room",
+            "says": "Priority priced it and it fits today's room",
+            "passed": true,
+            "why": "holds"
+          }
+        ]
+      },
+      {
+        "summary": "Root's check sent the plan back: every done-when item is covered by an engine",
+        "at": "2026-10-26T10:12:00+05:30",
+        "passed": false,
+        "checks": [
+          {
+            "check": "workflow_meets_standards",
+            "says": "workflow_meets_standards",
+            "passed": true,
+            "why": "the workflow fits the workflow schema"
+          },
+          {
+            "check": "names_an_engine",
+            "says": "the workflow names its engines",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "engines_known",
+            "says": "each engine is one the Library has",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "names_unique",
+            "says": "no name is used twice, and none is a function's, Root's or Owner's",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "first_reads_input",
+            "says": "the first engine reads the kind's first artifact",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "reads_known",
+            "says": "each engine reads the kind's first artifact or what one before it wrote",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "one_output",
+            "says": "each engine writes something not yet written",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "items_covered",
+            "says": "every done-when item is covered by an engine",
+            "passed": false,
+            "why": "D3 (new arrivals, lookbook, reviews) is covered by no engine"
+          },
+          {
+            "check": "required_kept",
+            "says": "no engine the kind requires is left out",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "size_in_range",
+            "says": "one engine or more; more than six says why",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "check_exists",
+            "says": "each engine's output has a check",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "fits_room",
+            "says": "Priority priced it and it fits today's room",
+            "passed": true,
+            "why": "holds"
+          }
+        ]
+      },
+      {
+        "summary": "Root's check sent the plan back again: every done-when item is covered by an engine",
+        "at": "2026-10-26T10:15:00+05:30",
+        "passed": false,
+        "checks": [
+          {
+            "check": "workflow_meets_standards",
+            "says": "workflow_meets_standards",
+            "passed": true,
+            "why": "the workflow fits the workflow schema"
+          },
+          {
+            "check": "names_an_engine",
+            "says": "the workflow names its engines",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "engines_known",
+            "says": "each engine is one the Library has",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "names_unique",
+            "says": "no name is used twice, and none is a function's, Root's or Owner's",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "first_reads_input",
+            "says": "the first engine reads the kind's first artifact",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "reads_known",
+            "says": "each engine reads the kind's first artifact or what one before it wrote",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "one_output",
+            "says": "each engine writes something not yet written",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "items_covered",
+            "says": "every done-when item is covered by an engine",
+            "passed": false,
+            "why": "D3 (new arrivals, lookbook, reviews) is covered by no engine"
+          },
+          {
+            "check": "required_kept",
+            "says": "no engine the kind requires is left out",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "size_in_range",
+            "says": "one engine or more; more than six says why",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "check_exists",
+            "says": "each engine's output has a check",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "fits_room",
+            "says": "Priority priced it and it fits today's room",
+            "passed": true,
+            "why": "holds"
+          }
+        ]
+      }
+    ],
+    "coverage": {
+      "items": [
+        "D1",
+        "D2",
+        "D3"
+      ],
+      "uncovered": [
+        "D3"
+      ],
+      "by": "adaptation"
+    },
+    "rounds": []
+  },
+  "approved_after_a_send_back": {
+    "proposal": {
+      "workflow": [
+        "Plan",
+        "Write",
+        "Check",
+        "Publish"
+      ],
+      "source": "library",
+      "at": "2026-10-26T10:07:00+05:30"
+    },
+    "root_checks": [
+      {
+        "summary": "Root's check sent the plan back: every done-when item is covered by an engine",
+        "at": "2026-10-26T10:09:00+05:30",
+        "passed": false,
+        "checks": [
+          {
+            "check": "workflow_meets_standards",
+            "says": "workflow_meets_standards",
+            "passed": true,
+            "why": "the workflow fits the workflow schema"
+          },
+          {
+            "check": "names_an_engine",
+            "says": "the workflow names its engines",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "engines_known",
+            "says": "each engine is one the Library has",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "names_unique",
+            "says": "no name is used twice, and none is a function's, Root's or Owner's",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "first_reads_input",
+            "says": "the first engine reads the kind's first artifact",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "reads_known",
+            "says": "each engine reads the kind's first artifact or what one before it wrote",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "one_output",
+            "says": "each engine writes something not yet written",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "items_covered",
+            "says": "every done-when item is covered by an engine",
+            "passed": false,
+            "why": "D3 (new arrivals, lookbook, reviews) is covered by no engine"
+          },
+          {
+            "check": "required_kept",
+            "says": "no engine the kind requires is left out",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "size_in_range",
+            "says": "one engine or more; more than six says why",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "check_exists",
+            "says": "each engine's output has a check",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "fits_room",
+            "says": "Priority priced it and it fits today's room",
+            "passed": true,
+            "why": "holds"
+          }
+        ]
+      },
+      {
+        "summary": "Root's check: the plan meets every standard",
+        "at": "2026-10-26T10:12:00+05:30",
+        "passed": true,
+        "checks": [
+          {
+            "check": "workflow_meets_standards",
+            "says": "workflow_meets_standards",
+            "passed": true,
+            "why": "the workflow fits the workflow schema"
+          },
+          {
+            "check": "names_an_engine",
+            "says": "the workflow names its engines",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "engines_known",
+            "says": "each engine is one the Library has",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "names_unique",
+            "says": "no name is used twice, and none is a function's, Root's or Owner's",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "first_reads_input",
+            "says": "the first engine reads the kind's first artifact",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "reads_known",
+            "says": "each engine reads the kind's first artifact or what one before it wrote",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "one_output",
+            "says": "each engine writes something not yet written",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "items_covered",
+            "says": "every done-when item is covered by an engine",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "required_kept",
+            "says": "no engine the kind requires is left out",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "size_in_range",
+            "says": "one engine or more; more than six says why",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "check_exists",
+            "says": "each engine's output has a check",
+            "passed": true,
+            "why": "holds"
+          },
+          {
+            "check": "fits_room",
+            "says": "Priority priced it and it fits today's room",
+            "passed": true,
+            "why": "holds"
+          }
+        ]
+      }
+    ],
+    "coverage": {
+      "items": [
+        "D1",
+        "D2",
+        "D3"
+      ],
+      "uncovered": [],
+      "by": "adaptation"
+    },
+    "rounds": []
+  }
+}

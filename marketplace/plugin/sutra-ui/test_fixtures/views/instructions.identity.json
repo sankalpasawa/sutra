@@ -1,0 +1,348 @@
+[
+  {
+    "group": "goal",
+    "lead": "What Identity is for, and the rules it keeps.",
+    "kept": null,
+    "parts": [
+      {
+        "part": "does",
+        "read": true,
+        "read_by": [],
+        "inputs": [],
+        "answers": [],
+        "fields": [
+          {
+            "field": "text",
+            "type": "text",
+            "max": 400,
+            "min": 1,
+            "max_items": null,
+            "multiline": false,
+            "value": "holds the goal and the rules, judges every effect, and is the one the owner speaks with",
+            "as_shipped": true,
+            "waits": null
+          }
+        ]
+      },
+      {
+        "part": "skills",
+        "read": true,
+        "read_by": [],
+        "inputs": [],
+        "answers": [],
+        "fields": [
+          {
+            "field": "items",
+            "type": "list",
+            "max": 160,
+            "min": 1,
+            "max_items": 12,
+            "multiline": false,
+            "value": [
+              "recognise a task, a query, a directive, feedback or a new idea",
+              "judge a request against the goal",
+              "gate an effect by rule",
+              "put a question to the owner"
+            ],
+            "as_shipped": true,
+            "waits": null
+          }
+        ]
+      },
+      {
+        "part": "close",
+        "read": true,
+        "read_by": [
+          "identity.close"
+        ],
+        "inputs": [
+          "the department",
+          "the goal",
+          "what done means",
+          "the rules",
+          "the plan",
+          "what was said against it"
+        ],
+        "answers": [
+          "ruling",
+          "why"
+        ],
+        "fields": []
+      }
+    ]
+  },
+  {
+    "group": "completeness",
+    "lead": "When the department has enough to work; what to ask if not.",
+    "kept": null,
+    "parts": [
+      {
+        "part": "thin",
+        "read": true,
+        "read_by": [],
+        "inputs": [],
+        "answers": [],
+        "fields": [
+          {
+            "field": "task",
+            "type": "text",
+            "max": 1200,
+            "min": 1,
+            "max_items": null,
+            "multiline": true,
+            "value": "thin: true when the request names nothing to build from (no subject, no purpose).",
+            "as_shipped": true,
+            "waits": null
+          }
+        ]
+      },
+      {
+        "part": "enough",
+        "read": true,
+        "read_by": [
+          "identity.enough"
+        ],
+        "inputs": [
+          "the request",
+          "what was asked",
+          "the goal",
+          "the done-when items",
+          "the rules",
+          "the owner",
+          "the budget",
+          "what is still to confirm"
+        ],
+        "answers": [
+          "enough",
+          "missing",
+          "question",
+          "why"
+        ],
+        "fields": [
+          {
+            "field": "task",
+            "type": "text",
+            "max": 1200,
+            "min": 1,
+            "max_items": null,
+            "multiline": true,
+            "value": "Read who the department is against Identity's standard, and say whether it is enough to start work on. The standard has five points, and only five:\ngoal: the goal names what the department makes and for whom.\nitems: done-when is a list of items, and each item says how it is checked.\nrules: every rule is tagged go, ask, refuse or always.\nowner, budget: the department has an owner and a budget.\ninvented: nothing is invented; a fact the owner did not give is marked to confirm, never stated.",
+            "as_shipped": true,
+            "waits": null
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "group": "take",
+    "lead": "How to judge a request: go, ask or refuse.",
+    "kept": null,
+    "parts": [
+      {
+        "part": "recognise",
+        "read": true,
+        "read_by": [
+          "identity.recognise"
+        ],
+        "inputs": [
+          "the goal",
+          "the request",
+          "what code read"
+        ],
+        "answers": [
+          "journey",
+          "why"
+        ],
+        "fields": [
+          {
+            "field": "task",
+            "type": "text",
+            "max": 1200,
+            "min": 1,
+            "max_items": null,
+            "multiline": true,
+            "value": "Recognise what kind of words the owner has given. There are five kinds, and only five:\ntask: \"do X for me\". query: \"tell me Y\". directive: \"from now on, do Z\", a standing change to how the department works or to its goal. feedback: \"that was wrong\", about work already made. new-idea: \"I want a new capability\", something the department cannot do today.",
+            "as_shipped": true,
+            "waits": null
+          }
+        ]
+      },
+      {
+        "part": "take",
+        "read": true,
+        "read_by": [
+          "identity.take"
+        ],
+        "inputs": [
+          "the goal",
+          "the rules",
+          "the request",
+          "what code read",
+          "how complete the request is"
+        ],
+        "answers": [
+          "verdict",
+          "why",
+          "unsure",
+          "rule",
+          "thin"
+        ],
+        "fields": [
+          {
+            "field": "task",
+            "type": "text",
+            "max": 1200,
+            "min": 1,
+            "max_items": null,
+            "multiline": true,
+            "value": "Judge one request from the owner.",
+            "as_shipped": true,
+            "waits": null
+          },
+          {
+            "field": "guidance",
+            "type": "text",
+            "max": 2000,
+            "min": 0,
+            "max_items": null,
+            "multiline": true,
+            "value": "go: do it. ask: it reaches outside what the department makes (money, a message to someone, a change to the goal), so the owner stamps first. refuse: it breaks a rule. Reading the web is not outside: the department can read any page.\nunsure: facts the request says the owner is not sure of, in a few words each; [] when none.\nrule: a standing rule the request states (always or never, from now on) with its tag; null when it is one piece of work.",
+            "as_shipped": true,
+            "waits": null
+          }
+        ]
+      },
+      {
+        "part": "answer",
+        "read": true,
+        "read_by": [
+          "identity.answer"
+        ],
+        "inputs": [
+          "the question",
+          "the record"
+        ],
+        "answers": [
+          "answer",
+          "source",
+          "confidence"
+        ],
+        "fields": [
+          {
+            "field": "task",
+            "type": "text",
+            "max": 1200,
+            "min": 1,
+            "max_items": null,
+            "multiline": true,
+            "value": "Answer the owner's question from the record below, and from nothing else. If the record does not hold the answer, say so.",
+            "as_shipped": true,
+            "waits": null
+          }
+        ]
+      },
+      {
+        "part": "rule",
+        "read": true,
+        "read_by": [
+          "identity.rule"
+        ],
+        "inputs": [
+          "the goal",
+          "the rules",
+          "the request"
+        ],
+        "answers": [
+          "tag",
+          "line",
+          "scope"
+        ],
+        "fields": [
+          {
+            "field": "task",
+            "type": "text",
+            "max": 1200,
+            "min": 1,
+            "max_items": null,
+            "multiline": true,
+            "value": "The owner has given a directive. Restate it as one rule, in one line, in plain words.",
+            "as_shipped": true,
+            "waits": null
+          },
+          {
+            "field": "guidance",
+            "type": "text",
+            "max": 2000,
+            "min": 0,
+            "max_items": null,
+            "multiline": true,
+            "value": "tag goal: the directive changes what the department is for. scope one-time: the owner means this once.",
+            "as_shipped": true,
+            "waits": null
+          }
+        ]
+      },
+      {
+        "part": "weigh",
+        "read": true,
+        "read_by": [
+          "identity.weigh"
+        ],
+        "inputs": [
+          "the pages",
+          "the request"
+        ],
+        "answers": [
+          "about",
+          "what",
+          "now",
+          "future"
+        ],
+        "fields": [
+          {
+            "field": "task",
+            "type": "text",
+            "max": 1200,
+            "min": 1,
+            "max_items": null,
+            "multiline": true,
+            "value": "The owner has given feedback on work the department made. Read what it changes.",
+            "as_shipped": true,
+            "waits": null
+          }
+        ]
+      },
+      {
+        "part": "gate",
+        "read": true,
+        "read_by": [
+          "identity.gate",
+          "identity.wait_engine",
+          "identity.judge"
+        ],
+        "inputs": [
+          "the rules",
+          "the engine"
+        ],
+        "answers": [
+          "verdict",
+          "why"
+        ],
+        "fields": [
+          {
+            "field": "task",
+            "type": "text",
+            "max": 1200,
+            "min": 1,
+            "max_items": null,
+            "multiline": true,
+            "value": "An engine asks whether it may start.",
+            "as_shipped": true,
+            "waits": null
+          }
+        ]
+      }
+    ]
+  }
+]
