@@ -22,11 +22,16 @@ A step's check is named in the owner's words: the step's name, then what its lat
 brief has words'). The check's own id (brief_is_text) is an inside word and appears only as the atom's `target`, which the page
 does not print.
 
-An attempt is a run of the engine that ran the step: a step that works on each page in turn (Write a page) has one row for each
-page in one run, and that is one attempt with several results, not several attempts. The results are the step's rows, the latest
-run first (the page sets the first result against the check it shows, and that is the one a person wants), each run's rows in
-the order they were made, and no more than RESULTS_MAX of them: a department that has run for months does not send every row it
-ever wrote on every poll. `attempts` is still the number of runs.
+A result says which run of the engine its row is of: `attempt` is the run's place among the runs that did the step and `of` how
+many there are. The results are the step's rows, the latest run first (the page sets the first result against the check it shows,
+and that is the one a person wants), each run's rows in the order they were made, and no more than RESULTS_MAX of them: a department
+that has run for months does not send every row it ever wrote on every poll.
+
+The atom's own `attempts` is another count: the page prints it as 'attempt N of 3', the tries the step has had to pass its check.
+That is the tries in the latest run, the most rows the step has for one item (a step that works on each page in turn, Write a
+page, has one row for each page, and that is one try, not six), and no more than the engine's retry bound (len(R.WAITS), the 3 the
+page prints). A follow-up request runs the engine again; it does not make the first try of a step the second, and a department that
+has run a hundred times does not read 'attempt 100 of 3'.
 
 The small readers (plain, cut, sentence, answer_said, answer_line, epoch, hhmmss, memoised) are shared by j2ui_work.py and j2ui_audit.py,
 the three modules of this package, so that no string they emit says an inside word: a check's id (brief_is_text) is never a sentence,
@@ -227,6 +232,15 @@ def _by_run(rows):
     return runs
 
 
+def _tries(latest):
+    """How many times the step was tried in the latest run: the most rows it has for one item, no more than the engine's retry
+    bound (the 'of 3' the page prints). 0 for a step with no row in it."""
+    per = {}
+    for r in latest:
+        per[str(r.get("item"))] = per.get(str(r.get("item")), 0) + 1
+    return min(max(per.values(), default=0), len(R.WAITS))
+
+
 def _atom(ctx, e, step, j, rows, files):
     aid = "%s.a%d" % (e["wid"], j)
     name = plain(step.get("name"))
@@ -234,6 +248,7 @@ def _atom(ctx, e, step, j, rows, files):
     ordinal = {k: i for i, k in enumerate(runs, 1)}
     last = rows[-1] if rows else None
     latest = runs[next(reversed(runs))] if runs else []
+    tries = _tries(latest)
     oks = [(r.get("check") or {}).get("ok") for r in latest]
     met = False if False in oks else True if oks and all(o is True for o in oks) else None
     check = sentence(name, (last.get("check") or {}).get("notes") if last else None)
@@ -251,15 +266,15 @@ def _atom(ctx, e, step, j, rows, files):
             "how": {"kind": "AI" if step.get("soft") else "code", "agent": e.get("name"), "steps": name},
             "expected_output": [{"text": check, "kind": "check", "met": met}],
             "verification": [{"text": check, "type": "step-check", "target": step.get("id"), "expect": True}],
-            "results": results, "attempts": len(runs)}
+            "results": results, "attempts": tries}
     if met is True:
         atom["status"] = "passed"
     elif met is False and e.get("state") != "Running":
         atom["status"] = "failed"
     if last:
         notes = [plain(n) for n in (last.get("check") or {}).get("notes") or [] if plain(n)]
-        atom["human_output"] = {"atom": aid, "attempt": len(runs), "text": cut(answer_line(last.get("answer"), notes) or name, ANSWER_MAX)}
-        atom["agent_output"] = {"atom": aid, "attempt": len(runs), "files": list(files), "section": ""}
+        atom["human_output"] = {"atom": aid, "attempt": tries, "text": cut(answer_line(last.get("answer"), notes) or name, ANSWER_MAX)}
+        atom["agent_output"] = {"atom": aid, "attempt": tries, "files": list(files), "section": ""}
     return atom
 
 
