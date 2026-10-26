@@ -9,10 +9,13 @@ C7   the API: POST /{ref}/instructions takes {fn, group, part, field, value}, GE
 C8   function() reads the page fields from S.LAYERS and its hears and checks rows from S.HEARS and S.CHECKS
 C9   _j2_part returns the pinned implementation's view() when it validates, else today's body with j2_faults
 C10  W.option carries its kind (the id's prefix) and its params; the line request validates as act.line_request
+C11  K2 end to end: a department made and run the way a person makes one reads, on every pane, as the interface types it
+     (the checks of C1 to C5 are test_layer_registry.py's and test_layer_prompts.py's)
 
 A test that meets a fault of the interface fails (conftest.py); a deliberate one is wrapped in S.expect_refused().
 """
 import copy
+import importlib
 import json
 import re
 from pathlib import Path
@@ -736,3 +739,42 @@ def test_c10_a_line_request_that_does_not_fit_is_a_fault_of_the_interface(home):
     _, R = modules()
     with S.expect_refused():
         R.post(ref, "Identity", "Adaptation", "request", {"word": "line", "words": 7, "objective": "x", "faults": "none"})
+
+
+# ---- C11 · K2 end to end ----------------------------------------------------------------------------------------------
+def test_c11_a_department_made_and_run_the_way_a_person_makes_one_reads_as_the_interface_types_it(home, monkeypatch):
+    """Root and the department it made, run to idle offline (test_j2's way): every pane of each reads as VIEWS[layer], with
+    no fault kept to show, every work engine's card as VIEWS['engine_card'], and every ask on the record passes the
+    interface, its options typed (C10). The instructions of every function read through the same record (C6, C7)."""
+    monkeypatch.setenv("J1_FLOW_V1", "1")
+    monkeypatch.setenv("J2_FLOW_V1", "1")
+    import website_dept as W
+    import founding
+    import placement_engine as E
+    import org2_apply
+    import engine_runtime as R
+    import j2_runtime as J
+    import functions_view as F
+    for module in (E, W, org2_apply, founding, R, J, F):
+        importlib.reload(module)
+    if not E.active_roots(E.load_domains()):
+        E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
+    root = founding.found_structure("Sutra Org", owner="Sankalp")["root"]
+    W.owner_ask(root, "A phone-first website for Bakery Co, a bakery in Pune, where customers see every cake")
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    assert len(R.board(ref)) > 4, "the department ran, and left its record"
+    for r in (root, ref):
+        for layer in S.FUNCTION_LAYERS:
+            j2 = F.function(r, layer)["j2"]
+            assert "j2_faults" not in j2 and S.validate_view(layer, j2) == [], (r, layer)
+            assert set(F.function(r, layer)) >= {"vsm", "line", "holds", "hands_to", "keeps", "fields"}, "the page fields (C8)"
+    work = [n for n, e in R.defs()["engines"].items() if e.get("kind") == "work"]
+    assert work and all(S.validate_view("engine_card", F.engine_card(ref, n)) == [] for n in work)
+    for a in W.asks(ref):
+        assert S.validate("identity.ask", a) == [] and all(o.get("kind") in S.OPTION_KINDS for o in a.get("options") or []), a["id"]
+    for layer in S.FUNCTION_LAYERS:
+        view = R.instructions_view(ref, layer)
+        assert [g["group"] for g in view] == list(S.PROMPTS[layer]), layer
+        assert any(f["value"] for g in view for p in g["parts"] for f in p["fields"]), "a field the owner may change reads its words"
