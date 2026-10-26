@@ -475,11 +475,15 @@ def test_m3_3_an_answer_to_a_gap_only_code_reads_reaches_the_record(j2, point, v
     assert R._standard_gaps(d) == [] and d["identity_revision"] == rev + 1          # on the record, one revision
     if point == "owner":
         t = R.priority_template()
-        assert d["owner"] == "Sankalp" and {s: d["envelopes"][s] for s in W.SYSTEMS} == {s: {"calls": int(t["calls"]), "usd": float(t["usd"])} for s in W.SYSTEMS}
+        # the 5 dollars a day the owner said is the most the limits come to: the five and the department's engines share
+        # it, each no more than the template's (found by a verifier 2026-10-26: the template's 30 USD a day was written)
+        share = {"calls": int(t["calls"]), "usd": round(int(500 / (len(W.SYSTEMS) + len(d["engines"]))) / 100.0, 2)}
+        assert d["owner"] == "Sankalp" and {s: d["envelopes"][s] for s in W.SYSTEMS} == {s: share for s in W.SYSTEMS}
+        assert sum(e["usd"] for e in d["envelopes"].values()) <= 5.0
         # Priority gave the limits, by its own step: Identity reads the budget and never writes money (A1-6)
         granted = [e for e in J.events(ref) if e["action"] == "envelope.granted" and e["payload"]["engine"] in W.SYSTEMS]
         assert sorted(e["payload"]["engine"] for e in granted) == sorted(W.SYSTEMS) and {e["actor"] for e in granted} == {"Priority"}
-        taken = "Sankalp, as the owner; Priority's limits from its template"
+        taken = "Sankalp, as the owner; Priority's limits within the 5 USD a day you said"
     elif point == "items":
         assert d["done_items"] == [{"id": "D1", "text": GAP_ANSWERS["items"], "how": "model", "level": "outcome"}]
         assert d["done"] == GAP_ANSWERS["items"]
@@ -493,6 +497,36 @@ def test_m3_3_an_answer_to_a_gap_only_code_reads_reaches_the_record(j2, point, v
     assert J.status(ref)["open_question"] is None
     assert "Thank you. Taken: %s. The identity is clear now; the department starts." % taken in _said(R, ref)
     assert GAP_ANSWERS[point] in W.read_files(ref, "Brief", W.latest(ref, "Brief")["v"])["brief.md"]   # and in the Brief
+
+
+@pytest.mark.parametrize("said, within", [("I am Sankalp, I own it, and it may spend 1 dollar a day in all", 1.0),
+                                           ("Sankalp owns it; it may spend $30 a month", 1.0),
+                                           ("I am Sankalp and it may spend 500 rupees a day", None),
+                                           ("I am Sankalp and it may spend what Priority says", None)])
+def test_m3_3_what_the_owner_says_it_may_spend_is_the_most_its_limits_come_to(j2, said, within):
+    """Approvals only tighten: an answer that names what the department may spend a day, after which Priority's limits
+    (the five's, and every engine's once the plan is registered) come to more than that, must fail. With no amount in US
+    dollars, Priority's template, and the tell says which was used."""
+    W, R, J, _, _ = j2
+    ref, q = _standard_gap(j2, "owner")
+    W.owner_ask(ref, said)
+    W.run_until_idle(ref, limit=300)
+    d, t = W.dept(ref), R.priority_template()
+    assert d["owner"] == "Sankalp" and R._standard_gaps(d) == []
+    assert "workflow.registered" in _actions(J, ref)                                  # the plan's engines hold limits too
+    envs = d["envelopes"]
+    assert set(W.SYSTEMS) | set(d["engines"]) <= set(envs)
+    assert all(e["usd"] <= float(t["usd"]) for e in envs.values())                   # never more than the template's
+    tell = next(s for s in _said(R, ref) if s.startswith("Thank you. Taken: "))
+    if within is not None:
+        assert sum(e["usd"] for e in envs.values()) <= within, envs
+        assert "Priority's limits within the 1 USD a day you said" in tell
+        given = [e for e in J.events(ref) if e["action"] == "envelope.granted" and not e["payload"]["kept"]]
+        assert {e["actor"] for e in given} == {"Priority"}                             # Priority's write, never Identity's
+    else:
+        assert {s: envs[s]["usd"] for s in W.SYSTEMS} == {s: float(t["usd"]) for s in W.SYSTEMS}
+        assert ("500 rupees a day is not in US dollars" in tell) == ("rupees" in said)
+        assert "Priority's limits from its template" in tell
 
 
 def test_m3_3_with_a_model_the_answer_is_on_the_record_before_identity_reads_it(j2, monkeypatch):
