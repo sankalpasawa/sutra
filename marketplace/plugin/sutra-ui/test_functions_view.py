@@ -405,7 +405,9 @@ def test_f7_every_node_carries_its_last_act_and_spend(mods):
     W, R, J, F = mods
     got = F.functions(REF)
     nodes = {n["name"]: n for n in got["functions"]}
-    assert nodes["Priority"]["last"]["what"] == "gave each engine its limit", "the record's words, in the owner's"
+    # a department that lives J2 is born with its functions' limits; each engine is given its own when the plan that
+    # names it is registered (PRD M4.1), so the birth run says so
+    assert nodes["Priority"]["last"]["what"] == "gave each function its limit", "the record's words, in the owner's"
     assert 0 <= nodes["Priority"]["spend"]["share"] <= 1 and nodes["Priority"]["spend"]["calls_limit"] > 0
     assert "what Adaptation did" in got["not_recorded"]
 

@@ -966,6 +966,33 @@ def test_m4_1_root_records_the_plan_coordination_writes_its_table_and_priority_g
     assert lab["envelopes"][lab["engines"][0]]["calls"] == 8 * 30, "a work engine's limit, from Priority's template"
 
 
+def test_m4_1_on_every_kind_each_engines_first_limit_is_priority_s_grant_at_registration(j2, monkeypatch):
+    """A website or default department born with its engines' limits already written (so Priority's handler only finds
+    limits that exist, and every envelope.granted says the engine keeps the limit it holds) must fail: a department
+    that lives J2 is born with its functions' limits only, and Priority gives each engine its own when the plan that
+    names it is registered."""
+    W, R, J, _ = j2
+    web = _born(j2, settle=False)
+    assert set(W.dept(web)["envelopes"]) == set(R.FUNCTIONS), "born with the functions' limits only"
+    assert W.limit_of(W.dept(web), "Write") == R.engine_limit("Write") == {"calls": 240, "usd": 6.0}, "read as Priority gives it"
+    W.run_until_idle(web, limit=300)
+    d, _ = W.create("dref-answers", "Answers", None, kind="default")   # the default kind: one Do engine
+    d["events"] = [{"kind": "j2_ready", "route": "template"}]
+    W.save_dept(d["ref"], d)
+    J.start(d["ref"])
+    W.give_goal(d["ref"], "Answer what the science team asks about the lab rota")
+    W.run_until_idle(d["ref"], limit=300)
+    for ref, names in ((web, LINE), (d["ref"], ["Do"])):
+        granted = [e for e in J.events(ref) if e["action"] == "envelope.granted"]
+        assert [(e["recipient"], e["actor"], e["payload"]["kept"]) for e in granted] == [(n, "Priority", False) for n in names], granted
+        assert all(e["summary"] == "Priority gave %s its limit." % e["recipient"] for e in granted)
+        assert all(W.dept(ref)["envelopes"][n] == R.engine_limit(n) for n in names)
+    # a department off J2 runs the way it did before it: its engines are born with their limits
+    monkeypatch.setenv("J2_FLOW_V1", "0")
+    off = W.create("dref-off", "Off", None, kind="website")[0]
+    assert all(W.dept(off["ref"])["envelopes"][n] == R.engine_limit(n) for n in LINE)
+
+
 def test_m4_1_an_engine_that_holds_a_limit_keeps_it_and_the_ledger_says_so(j2):
     """Priority's handler overwriting the owner's own limit must fail."""
     W, R, J, _ = j2

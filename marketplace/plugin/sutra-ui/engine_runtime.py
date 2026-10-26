@@ -308,6 +308,17 @@ def priority_template():
     return dict(((engine_def("Priority") or {}).get("template") or {}).get("envelope") or {})
 
 
+def engine_limit(name):
+    """The limit Priority gives an engine, a day, from its template, and the one place its shape is named (PRD M4.1; the
+    layer schema binds it): {calls, usd}; a work engine is given work_calls times the calls, since its steps are a call
+    each; a function the calls; the money is the same."""
+    t = priority_template()
+    base = {"calls": int(t.get("calls", W.ENVELOPE["calls"])), "usd": float(t.get("usd", W.ENVELOPE["usd"]))}
+    if (engine_def(name) or {}).get("kind") == "work":
+        return {"calls": int(t.get("work_calls", 8)) * base["calls"], "usd": base["usd"]}
+    return base
+
+
 def all_steps(name):
     e = engine_def(name) or {}
     out, seen = [], set()
@@ -1962,7 +1973,7 @@ def _rule_applies_to_birth(rule):
 def priority_envelope(ctx, step, item):
     ref, name, slot = ctx["ref"], ctx["engine"], ctx["slot"]
     calls, usd = W._today_spend(ref, name)
-    env = (ctx["dept"].get("envelopes") or {}).get(name) or W.ENVELOPE
+    env = W.limit_of(ctx["dept"], name)
     if calls >= env.get("calls", 0) or usd >= env.get("usd", 0):
         if not any(x.get("kind") == "envelope" and x.get("engine") == name and x["status"] == "pending" for x in W.asks(ref)):
             W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "envelope", "engine": name, "slot": slot,
@@ -3203,7 +3214,7 @@ def priority_read(ctx, step, item):
                 "facts": {"word": "line", "room": 1 <= len(names) <= limit}}
     eng = pl.get("engine") or "Write"
     calls, _ = W._today_spend(ctx["ref"], eng)
-    env = (ctx["dept"].get("envelopes") or {}).get(eng) or W.ENVELOPE
+    env = W.limit_of(ctx["dept"], eng)
     return {"word": pl.get("word"), "engine": eng, "facts": {"word": pl.get("word"), "room": calls * 2 < int(env.get("calls") or 0)}}
 
 
@@ -4024,23 +4035,20 @@ def coord_table(ctx, step, item):
 
 def priority_grant(ctx, step, item):
     """Priority's handler for an engine born: each new engine is given its limit, from Priority's template (a
-    work engine work_calls times the calls, as at birth); one that already holds a limit (the one it was born with, or
-    the owner's own) keeps it. Each is on the ledger, by Priority. `item` is {engines, version}, run in place or from the
+    work engine work_calls times the calls: engine_limit); one that already holds a limit (the owner's own, or one a
+    department off J2 was born with) keeps it. Each is on the ledger, by Priority. `item` is {engines, version}, run in place or from the
     board (born_item); a born word that names no engine gives nothing."""
     ref, item = ctx["ref"], born_item(ctx, item)
     names = list(item.get("engines") or [])
     if not names:
         return {"said": "no new engine to give a limit"}
-    t = priority_template()
-    base = {"calls": int(t.get("calls", W.ENVELOPE["calls"])), "usd": float(t.get("usd", W.ENVELOPE["usd"]))}
     given = []
     with W._lock(ref):
         d = W.dept(ref) or {}
         envs = d.setdefault("envelopes", {})
         for n in names:
             if not isinstance(envs.get(n), dict):
-                work = (engine_def(n) or {}).get("kind") == "work"
-                envs[n] = {"calls": int(t.get("work_calls", 8)) * base["calls"] if work else base["calls"], "usd": base["usd"]}
+                envs[n] = engine_limit(n)
                 given.append(n)
         if given:
             W.save_dept(ref, d)
@@ -5844,10 +5852,9 @@ def steps_view(ref, name):
     if name == "Priority":
         # the limits, engine by engine: born from Priority's template, set by the owner on this card
         d = W.dept(ref) or {}
-        envs = d.get("envelopes") or {}
         view["limits"] = []
         for n in [x[0] for x in W.engines_of(d)] + list(W.SYSTEMS):
-            env = envs.get(n) or W.ENVELOPE
+            env = W.limit_of(d, n)
             calls, usd = W._today_spend(ref, n)
             view["limits"].append({"engine": n, "calls": int(env.get("calls", 0)), "usd": float(env.get("usd", 0.0)),
                                    "used_calls": calls, "used_usd": round(usd, 3)})

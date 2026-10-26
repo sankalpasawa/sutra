@@ -185,7 +185,7 @@ def _rows(ref):
 def _spend(ref, d, name):
     """Today's spend against the limit, as shares for a bar; the numbers stay in the read for a title, never at rest."""
     calls, usd = W._today_spend(ref, name)
-    env = (d.get("envelopes") or {}).get(name) or W.ENVELOPE
+    env = W.limit_of(d, name)
     cap_c, cap_u = int(env.get("calls") or 0), float(env.get("usd") or 0.0)
     share = max(calls / cap_c if cap_c else 0.0, usd / cap_u if cap_u else 0.0)
     return {"calls": calls, "usd": round(usd, 3), "calls_limit": cap_c, "usd_limit": cap_u, "share": round(min(1.0, share), 3)}

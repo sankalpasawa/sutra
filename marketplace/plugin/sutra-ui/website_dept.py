@@ -470,19 +470,22 @@ def create(ref, name, brief, owner="the owner", parent=None, kind="website", goa
          "engines": list(k["line"]), "artifacts": list(k["artifacts"])}
     if d["runtime"] == 1 and kind != "website":
         raise ValueError("only a website department is born the old way")
+    by_plan = False
     if d["runtime"] == 2:
         # The limits come from Priority's template (founder, 2026-09-28: "some default limits which are in the priority
         # templates"); the owner changes a department's own on Priority's card. A step is a call, so a work engine is
         # given work_calls times the calls, Write costing a call a page where it cost one a run. The money is the same.
+        # A department that lives J2 is born with its functions' limits only: each engine is given its own by Priority
+        # when the plan that names it is registered (PRD M4.1), so every engine's grant is Priority's, on the ledger.
         import engine_runtime
-        t = engine_runtime.priority_template()
-        base = {"calls": int(t.get("calls", ENVELOPE["calls"])), "usd": float(t.get("usd", ENVELOPE["usd"]))}
-        d["envelopes"] = {e[0]: {"calls": int(t.get("work_calls", 8)) * base["calls"], "usd": base["usd"]} for e in engines_of(d)}
-        d["envelopes"].update({s: dict(base) for s in SYSTEMS})
+        import j2_runtime
+        by_plan = kind != "root" and j2_runtime.enabled()
+        d["envelopes"] = {} if by_plan else {e[0]: engine_runtime.engine_limit(e[0]) for e in engines_of(d)}
+        d["envelopes"].update({s: engine_runtime.engine_limit(s) for s in SYSTEMS})
     ddir(ref).mkdir(parents=True, exist_ok=True)
     save_dept(ref, d)
     system_run(ref, "Identity", "set its rules within the parent's")
-    system_run(ref, "Priority", "granted an envelope to each engine")
+    system_run(ref, "Priority", "granted an envelope to each function" if by_plan else "granted an envelope to each engine")
     system_run(ref, "Coordination", "timetabled each engine after its input's new version")
     if d["runtime"] == 2:
         _runtime(ref).born(ref)                        # Coordination writes its table: who goes first, who may post
@@ -656,6 +659,19 @@ def add_engine(ref, name, shape=None, by="the owner", before=None, registered=Fa
     return {"ref": ref, "engine": name, "engines": line, "born": str(born) if born else None}
 
 
+def limit_of(d, name):
+    """An engine's limit, a day ({calls, usd}): the one on its record; for an engine on the engine runtime that Priority
+    has not given one yet (a plan not registered yet), the one Priority gives (engine_runtime.engine_limit); the first
+    build's constant for a department born the old way."""
+    env = ((d or {}).get("envelopes") or {}).get(name)
+    if isinstance(env, dict) and env:
+        return env
+    if (d or {}).get("runtime") == 2:
+        import engine_runtime
+        return engine_runtime.engine_limit(name)
+    return ENVELOPE
+
+
 def set_envelope(ref, name, calls=None, usd=None, by="the owner"):
     """The owner's own limits for one engine, set on Priority's card. The defaults came from Priority's template
     at birth (founder, 2026-09-28: "These limits can be configured in the relevant priority")."""
@@ -664,7 +680,7 @@ def set_envelope(ref, name, calls=None, usd=None, by="the owner"):
         raise ValueError("no website department here")
     if name not in {e[0] for e in engines_of(d)} | set(SYSTEMS):
         raise ValueError("no engine named %s" % name)
-    env = dict((d.get("envelopes") or {}).get(name) or ENVELOPE)
+    env = dict(limit_of(d, name))
     if calls is not None:
         env["calls"] = max(0, int(calls))
     if usd is not None:
@@ -1033,7 +1049,7 @@ def due(ref, peek=False):
                                "wrote": None, "chain": _chain_of(ref, reads, inp["v"]), "spend": {"calls": 0, "usd": 0.0}, "retries": 0})
                 continue
         calls, usd = _today_spend(ref, name)
-        env = (d.get("envelopes") or {}).get(name) or ENVELOPE
+        env = limit_of(d, name)
         if calls >= env.get("calls", 0) or usd >= env.get("usd", 0):
             if not any(x.get("kind") == "envelope" and x.get("engine") == name and x["status"] == "pending" for x in asks(ref)):
                 _put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "envelope", "engine": name, "slot": slot,
@@ -1268,9 +1284,11 @@ def health(ref):
                    else "Identity, Priority and Coordination run; Adaptation and Audit are paused"))
     envs = (dept(ref) or {}).get("envelopes", {})
     over = []
-    for e in envs:                      # an envelope is two limits, and either one stops the engine (Priority's gate)
+    # an envelope is two limits, and either one stops the engine (Priority's gate); an engine Priority has not given its
+    # own yet (its plan not registered, PRD M4.1) is read against the one it would be given (limit_of)
+    for e in list(envs) + [n for n in (x[0] for x in engines_of(d)) if n not in envs]:
         calls, usd = _today_spend(ref, e)
-        env = envs[e] or {}
+        env = (envs[e] if e in envs else limit_of(d, e)) or {}
         if calls >= int(env.get("calls", ENVELOPE["calls"])) or usd >= float(env.get("usd", ENVELOPE["usd"])):
             over.append(e)
     checks.append(("Budget", "warn" if over else "ok", "Inside every envelope" if not over else "Over: " + ", ".join(over)))
@@ -1302,7 +1320,7 @@ def engine_view(ref, name):
     reads, writes, how = next(((e[1], e[2], e[3]) for e in engines_of(d) if e[0] == name), (None, None, None))
     rs = [r for r in runs(ref) if r["engine"] == name]
     calls, usd = _today_spend(ref, name)
-    env = (d.get("envelopes") or {}).get(name) or ENVELOPE
+    env = limit_of(d, name)
     if not reads:
         if name not in (d.get("engines") or []):
             return None
