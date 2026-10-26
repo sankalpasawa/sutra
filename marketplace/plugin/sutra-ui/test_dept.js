@@ -440,7 +440,8 @@ test("S18/A4: an ask shows the sentence, the default, the window as a bar and tw
   assert.ok(html.indexOf("If nothing is done: Nothing happens") !== -1, "the default");
   assert.ok(/class="dpbar"><i style="width:9[0-9.]+%"/.test(html), "the window is a bar, not a number");
   assert.ok(html.indexOf('data-dpdecide="p-aa11" data-dpok="1">Stamp<') !== -1, "Stamp");
-  assert.ok(html.indexOf('data-dpdecide="p-aa11" data-dpok="0">Refuse<') !== -1, "Refuse");
+  assert.ok(html.indexOf('data-dpdecide="p-aa11" data-dpok="0">Say no<') !== -1, "Say no, in the owner's words");
+  assert.ok(html.indexOf(">Refuse<") === -1, "never Refuse (the owner's ruling on the screen's words)");
 });
 
 test("S18/A5: Stamp and Refuse go through decideProposal, and nothing else is posted", async () => {
@@ -3040,6 +3041,50 @@ test("M1.9: the open function's page is read on the clock and painted only when 
   tick(c); for (let i = 0; i < 6; i++) await sleep();
   assert.strictEqual(c.calls.render, paints + 1, "the word moved: one paint");
   assert.ok(/<span>Stopped<\/span>/.test(c.dpViewerHtml(EXP, c.o2Data(), DEPT_EXP, null)), "the pane says stopped");
+});
+test("M1.9 (round 3, gap 5): a moved Limit bar, a template switch, a field's value and a step's name each paint once on the tick", async () => {
+  let page = { ref: "r4", fn: "priority", name: "Priority", line: "Prices every proposal.", holds: "h", hands_to: "a", keeps: "k", v1: "v",
+    template: { name: "Default" }, node: { state: "quiet", word: "quiet", line: "" }, journeys: [],
+    fields: [{ key: "goal", label: "Goal", value: "Prices the work", placeholder: false },
+             { key: "envelope", label: "Limit", value: { share: 0.1 }, placeholder: false }],
+    recipe: [{ id: "priority.bargain", name: "Say yes, ask for less, or say no", by: "AI", rung: "C0", rung_name: "Improvised call", under: "Answer a proposal" }] };
+  const c = siteOf(p => {
+    if (p === "/api/native/depts") return { depts: [{ ref: "r4", name: "Experience", stopped: false, kind: "website" }] };
+    if (p === "/api/native/r4/map") return RT_MAP;
+    if (p === "/api/native/r4/functions/priority") return page;
+    if (/^\/api\/dept\//.test(p)) return {};
+    return undefined;
+  });
+  open(c);
+  c.dpS().sel = "r4"; c.dpS().tab.r4 = "priority";
+  const node = { ref: "r4", name: "Experience" };
+  c.wbList(node); for (let i = 0; i < 4; i++) await sleep();
+  vm.runInContext("S.wb.tab.r4 = '';", c);
+  for (let k = 0; k < 3; k++){ c.dpViewerHtml(EXP, c.o2Data(), DEPT_EXP, null); for (let i = 0; i < 6; i++) await sleep(); }
+  const html = () => c.dpViewerHtml(EXP, c.o2Data(), DEPT_EXP, null);
+  assert.ok(/<h3>The Default template<\/h3>/.test(html()) && /class="dpbar"><i style="width:10%"/.test(html()), "the page as read");
+  const step = async (change, why) => {
+    for (let i = 0; i < 6; i++) await sleep();
+    const paints = c.calls.render;
+    page = JSON.parse(JSON.stringify(page)); change(page);
+    tick(c); for (let i = 0; i < 6; i++) await sleep();
+    assert.strictEqual(c.calls.render, paints + 1, why + ": one paint, on the tick that read it");
+    tick(c); for (let i = 0; i < 6; i++) await sleep();
+    assert.strictEqual(c.calls.render, paints + 1, why + ": and nothing more while it holds");
+  };
+  await step(v => { v.fields[1].value.share = 0.9; }, "the Limit bar moved");
+  assert.ok(/class="dpbar"><i style="width:90%"/.test(html()), "the bar shows today's spend share");
+  await step(v => { v.template = { name: "Product build" }; v.fields[0].value = "Prices the next shippable slice"; }, "a template switch");
+  assert.ok(/<h3>The Product build template<\/h3>/.test(html()) && html().indexOf("Prices the next shippable slice") >= 0, "the new template and its goal");
+  await step(v => { v.fields[0].value = "Prices every slice"; }, "a field's value");
+  await step(v => { v.recipe[0].name = "Price the proposal"; }, "a step's name");
+  assert.ok(html().indexOf("Price the proposal") >= 0);
+  /* a share that does not move the bar as drawn paints nothing */
+  for (let i = 0; i < 6; i++) await sleep();
+  const paints = c.calls.render;
+  page = JSON.parse(JSON.stringify(page)); page.fields[1].value.share = 0.9001;
+  tick(c); for (let i = 0; i < 6; i++) await sleep();
+  assert.strictEqual(c.calls.render, paints, "the bar did not move: no paint");
 });
 
 Promise.all(pending).then(() => {

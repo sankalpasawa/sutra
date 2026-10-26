@@ -539,14 +539,14 @@
      ]
     },
     {
-     "name": "Take a refusal",
+     "name": "Take a no",
      "when": {
       "msg_type": "reject-proposal"
      },
      "steps": [
       {
        "id": "identity.drop",
-       "name": "Drop what was refused",
+       "name": "Drop what was turned down",
        "nature": "transform",
        "born": "C2",
        "code": "identity_drop",
@@ -751,7 +751,7 @@
       },
       {
        "id": "priority.bargain",
-       "name": "Grant, refuse or counter",
+       "name": "Say yes, ask for less, or say no",
        "nature": "decide",
        "born": "C0",
        "ceiling": "C2",
@@ -883,7 +883,7 @@
      ]
     },
     {
-     "name": "Hear a refusal",
+     "name": "Hear a no",
      "when": {
       "msg_type": "refuse",
       "word": "verdict"
@@ -891,7 +891,7 @@
      "steps": [
       {
        "id": "coord.refused",
-       "name": "Note the refusal",
+       "name": "Note the no",
        "nature": "transform",
        "born": "C2",
        "code": "coord_heard",
@@ -1165,7 +1165,7 @@
      ]
     },
     {
-     "name": "Priority granted the line",
+     "name": "Priority said yes to the line",
      "when": {
       "msg_type": "accept-proposal",
       "word": "line"
@@ -1173,7 +1173,7 @@
      "steps": [
       {
        "id": "adapt.linegranted",
-       "name": "Send the granted line to Root's check",
+       "name": "Send the line Priority said yes to, to Root's check",
        "nature": "transform",
        "born": "C2",
        "code": "adapt_line_granted",
@@ -1182,7 +1182,7 @@
      ]
     },
     {
-     "name": "Priority refused the line",
+     "name": "Priority said no to the line",
      "when": {
       "msg_type": "reject-proposal",
       "word": "line"
@@ -1190,7 +1190,7 @@
      "steps": [
       {
        "id": "adapt.linerefused",
-       "name": "Take the refusal to Identity",
+       "name": "Take Priority's no to Identity",
        "nature": "transform",
        "born": "C2",
        "code": "adapt_line_refused",
@@ -1199,7 +1199,7 @@
      ]
     },
     {
-     "name": "Priority countered the line",
+     "name": "Priority asked for less on the line",
      "when": {
       "msg_type": "propose",
       "word": "line"
@@ -1207,7 +1207,7 @@
      "steps": [
       {
        "id": "adapt.linecounter",
-       "name": "Take the counter, or take it to Identity",
+       "name": "Take Priority's ask for less, or take it to Identity",
        "nature": "transform",
        "born": "C2",
        "code": "adapt_line_counter",

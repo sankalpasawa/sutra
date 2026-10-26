@@ -770,7 +770,7 @@ class TestWhatTheOwnerSees(Base):
         self.idle()
         self.assertEqual(len(W.versions(REF, "Brief")), n, "refused: the Brief did not change")
         self.assertEqual(a["text"], "Your words reach outside the site: an email address, so people will write, call or come. "
-                                    "Put them on the site as said? Stamp to go ahead, Refuse to leave them out. Email the new site to every patient",
+                                    "Put them on the site as said? Stamp to go ahead, or say no to leave them out. Email the new site to every patient",
                          "in the person's words: what reaches outside, and what a stamp does (finding 13)")
 
     def test_82_a_functions_chat_exists_from_birth_and_is_its_turns_and_thinking(self):
@@ -984,7 +984,10 @@ class TestWhatTheOwnerSees(Base):
         for a, b in zip(turns, turns[1:]):
             self.assertFalse(a["think"] and b["think"] and a["line"] == b["line"], "twice in a row: " + a["line"])
         raw = [r for r in R.step_rows(REF) if r["engine"] == "Identity" and r.get("mode") == "gate" and r.get("answer") == "admit"]
-        self.assertGreater(len(raw), len([x for x in thinks if x == "Gate the effect by rule: admit"]), "the record keeps every row; the chat folds")
+        # the verdict in the owner's words, as the gate's journey row says it (PRD M1.7): let through, never admit
+        self.assertTrue([x for x in thinks if x == "Gate the effect by rule: let through"], "the gate rows say let through")
+        self.assertFalse([x for x in thinks if x.endswith(": admit") or x.endswith(": refuse")], thinks)
+        self.assertGreater(len(raw), len([x for x in thinks if x == "Gate the effect by rule: let through"]), "the record keeps every row; the chat folds")
 
     def test_93_an_ask_never_says_the_words_need_the_internet_and_the_stamp_files_them(self):
         """Run 2 finding 29 and the founder's word of 2026-09-29 ('Internet is given ... I don't want to lose all the basic
@@ -1030,7 +1033,7 @@ class TestWhatTheOwnerSees(Base):
         prompt = [p for s, p in self.M.prompts if s == "priority.bargain"][-1]
         self.assertIn("WHAT IT NEEDS: internet", prompt)
         lines = [t["line"] for t in R.chat_view(REF)["turns"]]
-        self.assertTrue(any(line.startswith("Priority refused the engine Web Facts: no room for another engine today. The idea stays parked") for line in lines), lines[-3:])
+        self.assertTrue(any(line.startswith("Priority said no to the engine Web Facts: no room for another engine today. The idea stays parked") for line in lines), lines[-3:])
         self.assertFalse([x for x in W.asks(REF) if x["kind"] == "engine" and x["engine"] == "Web Facts"], "nothing put to the owner")
         self.assertEqual(R.ideas(REF)[-1].get("priced"), "refused")
 
