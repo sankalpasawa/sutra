@@ -30,7 +30,8 @@ and the four the Chrome walk uses (qa/walks/j2ui-e2e.sh; HOMED):
     hostile     a department whose every string is an attacker's (see hostile())
 
 As a script:  python test_fixtures/j2ui/seed.py <home-dir> <state> [<state> ...]
-writes the departments of the HOMED states under <home-dir> (one set of homes) and prints one line per state: `<state> <ref> <root or ->`.
+writes the departments of the HOMED states under <home-dir>, laid out as qa/walks/devserver.sh reads them (one set of homes), and prints
+one line per state: `<state> <ref> <root or ->`.
 """
 import importlib
 import os
@@ -72,13 +73,15 @@ def states():
     return tuple(table()) + EXTRAS + HOMED
 
 
-def boot(tmp, env=None):
-    """Fresh records homes under tmp, the modules reloaded on them, every j2ui cache empty: the namespace of the `mods` fixture."""
+def boot(tmp, env=None, layout="test"):
+    """Fresh records homes under tmp, the modules reloaded on them, every j2ui cache empty: the namespace of the `mods` fixture.
+    layout "walk" puts the department records where qa/walks/devserver.sh looks (native/, registry/, proposals/, chats/), so a
+    server started on the same record directory serves what was seeded."""
     env = env or _Env()
     tmp = Path(tmp)
-    env.setenv("SUTRA_NATIVE_DEPT_HOME", str(tmp / "departments"))
+    env.setenv("SUTRA_NATIVE_DEPT_HOME", str(tmp / ("native" if layout == "walk" else "departments")))
     env.setenv("SUTRA_NATIVE_HOME", str(tmp / "registry"))
-    for var, sub in (("SUTRA_UI_PROPOSALS", "proposals"), ("SUTRA_UI_ROUTINES", "routines"), ("SUTRA_UI_RUNS", "runs")):
+    for var, sub in (("SUTRA_UI_PROPOSALS", "proposals"), ("SUTRA_UI_ROUTINES", "routines"), ("SUTRA_UI_RUNS", "runs"), ("SUTRA_UI_CHATS", "chats")):
         (tmp / sub).mkdir(parents=True, exist_ok=True)
         env.setenv(var, str(tmp / sub))
     env.setenv("SUTRA_WEBSITE_OFFLINE", "1")
@@ -255,14 +258,14 @@ def start(m, ref="dref-start1"):
     return ref
 
 
-def seed(tmp, state, env=None, ref=None, m=None):
+def seed(tmp, state, env=None, ref=None, m=None, layout="test"):
     """A department in `state`: (ref, m). On fresh homes under tmp, or on those of `m` for a state in HOMED. KeyError for an unknown state."""
     name = ALIASES.get(state, state)
     if name not in states():
         raise KeyError(state)
     if m is not None and name not in HOMED:
         raise ValueError("%s is written at %s: it needs homes of its own" % (name, REF))
-    m = m or boot(tmp, env)
+    m = m or boot(tmp, env, layout)
     if name == "start":
         return start(m, ref or "dref-start1"), m
     if name == "question":
@@ -273,7 +276,7 @@ def seed(tmp, state, env=None, ref=None, m=None):
         read_clean(m, r)
         return r, m
     if name == "hostile":
-        return hostile(m, ref or "dref-hostile1"), m
+        return hostile(m, ref), m
     if name == "root_follow_up":
         return _root_follow_up(m), m
     if name == "default_kind":
@@ -304,8 +307,9 @@ EXTRAS_OF_ATTACK = ("<svg/onload=window.__xss=1>", "javascript:window.__xss=1", 
 TAG = " f%02d"
 
 
-def hostile(m, ref="dref-hostile1"):
-    """A department whose every string is an attacker's: its name, goal, rules and done-when items, the owner's words, Identity's question
+def hostile(m, ref=None):
+    """A department made the way a person makes one (born: an organisation, its Root, the department, the line run to its first
+    question) and then given strings that are all an attacker's: its name, goal, rules and done-when items, the owner's words, Identity's question
     and why, an options ask (title, text, why, labels, costs), stamp asks, a bargain between Adaptation and Priority, a finding Audit
     filed (claims, pages), the Validator's messages, a run's words, a step's answer and notes, a version's check notes and the names of
     its files, and the questions on the board. Each string is the attack (PAYLOADS in a row, then one of EXTRAS_OF_ATTACK) and a tag ` fNN`; m.payloads maps the tag to
@@ -332,21 +336,19 @@ def hostile(m, ref="dref-hostile1"):
         m.R._append(ref, "board.jsonl", {"n": len(rows) + 1, "src": src, "dst": [dst], "msg_type": act, "thread": thread, "hop": hop, "about": about,
                                          "payload": payload, "ack_id": None, "by": None, "at": m.W.now()})
 
-    m.W.create(ref, pl("department name"), None, kind="website")
+    ref = ref or born(m, org="Gamma Learning")
     d = m.W.dept(ref)
+    d["name"] = pl("department name")
     d["goal"] = pl("goal")
     d["rules"] = [{"id": "u-1", "tag": "never", "line": pl("rule")}, {"id": "u-2", "tag": "always", "line": pl("second rule")}]
     d["done_items"] = [{"id": "D1", "text": pl("done-when item"), "how": "code", "level": "target"},
                        {"id": "D2", "text": pl("second done-when item"), "how": "model", "level": "outcome"}]
     d["to_be_confirmed"] = [{"item": "D2", "why": pl("fact to confirm")}]
     m.W.save_dept(ref, d)
-    K.cycle(m, "running", 6, ref=ref)
-    register_line(m, ref)
-    # the owner's words, and Identity's question (given an engine, so the Map is not lost to the defect the contract test pins)
+    # the owner's words, and Identity's question
     put("Owner", "Identity", "request", {"word": "request", "words": pl("owner words"), "objective": "x", "output": "x"}, "x-own")
     put("Identity", "Owner", "inform", {"word": "planned", "done": pl("Identity message")}, "x-info")
     q = m.W.j2_identity_ask(pl("Identity question"), "cycle-test", "words", pl("Identity why"))
-    q["engine"] = "Identity"
     m.W._put_ask(ref, q)
     put("Identity", "Owner", "inform", {"word": "question", "done": q["text"], "card": q["id"]}, "x-q")
     # an options ask: title, text, why, labels and costs
@@ -381,9 +383,9 @@ def hostile(m, ref="dref-hostile1"):
                                    ("Pages", ".html", [{"art": "Site plan", "v": 1}], "r-write-ok"), ("Build", ".html", [{"art": "Pages", "v": 1}], "r-check-run")):
         files = {fname("%s file name" % art, ext): "x", ("brief.md" if art == "Brief" else "site-plan.json" if art == "Site plan" else "index.html"): "x"}
         VERS.add(m.W._abase(ref, art), files, read, run_id, notes("%s check note" % art), m.W.now())
-    K.run(m, "Plan", status="ok", id="r-plan-ok", slot="Plan@brief.v1", what=pl("run what"), words=pl("run words"))
-    K.run(m, "Write", status="failed", id="r-write-ok", slot="Write@site-plan.v1", what=pl("second run what"), words=pl("failed run words"))
-    K.run(m, "Check", status="running", id="r-check-run", slot="Check@pages.v1", what=pl("third run what"))
+    K.run(m, "Plan", status="ok", id="r-plan-ok", slot="Plan@brief.v1", what=pl("run what"), words=pl("run words"), ref=ref)
+    K.run(m, "Write", status="failed", id="r-write-ok", slot="Write@site-plan.v1", what=pl("second run what"), words=pl("failed run words"), ref=ref)
+    K.run(m, "Check", status="running", id="r-check-run", slot="Check@pages.v1", what=pl("third run what"), ref=ref)
     for engine in ("Plan", "Write", "Check"):
         for step in m.R.all_steps(engine):
             m.R._append(ref, "steps.jsonl", {"engine": engine, "step": step["id"], "mode": "slot", "rung": "C2", "check": {"ok": False, "notes": [pl("step note")]},
@@ -408,6 +410,6 @@ if __name__ == "__main__":
         sys.exit(2)
     shared = None
     for st in sys.argv[2:]:
-        ref_, shared = seed(sys.argv[1], st, m=shared)
+        ref_, shared = seed(sys.argv[1], st, m=shared, layout="walk")
         print(st, ref_, shared.root or "-")
         shared.root = None
