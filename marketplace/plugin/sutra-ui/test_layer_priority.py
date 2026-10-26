@@ -52,15 +52,15 @@ def j2(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def live(j2, monkeypatch):
-    """priority/v1's own bodies, the ones the runtime runs for Priority. Where the registry's seam (W1-CORE) serves a
-    module's bodies, that is the whole fixture; before it, the bodies are put in the runtime's registries for the test."""
+def live(j2):
+    """The department world with the registry's seam serving priority/v1's own bodies to the runtime (W1-CORE, K1): the
+    bodies the runtime runs for Priority are the module's, not engine_runtime's old ones."""
     W, R, J, founding = j2
-    if not hasattr(layers, "resolve"):
-        for registry, mine in ((R.CODE, V1.CODE), (R.PROMPT, V1.PROMPT), (R.DRAFT, V1.DRAFT), (R.CHECK, V1.CHECK)):
-            for name, fn in mine.items():
-                if not hasattr(fn, "legacy"):
-                    monkeypatch.setitem(registry, name, fn)
+    for kind, mine in (("code", V1.CODE), ("prompt", V1.PROMPT), ("draft", V1.DRAFT), ("check", V1.CHECK)):
+        legacy = {"code": R.CODE, "prompt": R.PROMPT, "draft": R.DRAFT, "check": R.CHECK}[kind]
+        for name, fn in mine.items():
+            if not hasattr(fn, "legacy"):
+                assert layers.resolve(None, "Priority", kind, name, legacy) is fn, "%s %s is served from priority/v1" % (kind, name)
     return j2
 
 
@@ -237,6 +237,68 @@ def test_a_yes_or_an_ask_for_less_is_held_to_the_room_and_a_no_always_stands():
     assert check(_read(names, PER, roomy), None, None, {"answer": "reject", "why": "no room"})["ok"], "a no stands over ample room"
     assert not check(_read(names, PER, roomy, limit=2), None, None, {"answer": "accept", "why": "fits"})["ok"], "past the limit of workflows"
     assert check(_read(names, PER, roomy), None, None, {"answer": "accept", "why": "fits today"})["notes"] == ["said yes, with its price: fits today"]
+
+
+# ---- P2: Priority's words (M2.5) --------------------------------------------------------------------------------------------
+import json  # noqa: E402
+import shutil  # noqa: E402
+import tempfile  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+import layers.prompts as P  # noqa: E402
+import test_function_prompts as TFP  # noqa: E402 -- the fixture department the M2.1a snapshot is rendered for
+
+
+def test_p2_priority_holds_every_part_as_words_and_none_is_on_the_md_fallback(ctx):
+    """A part of Priority still read from the .md bundle, or words that do not pass their field's type or compile, must fail
+    (contract case 5): goal (does, skills) and bargain (line, engine, cost)."""
+    parts = [(g, p) for g, ps in S.PROMPTS["priority"].items() for p in ps]
+    assert parts == [("goal", "does"), ("goal", "skills"), ("bargain", "line"), ("bargain", "engine"), ("bargain", "cost")]
+    assert C.on_the_md_fallback(V1) == [] and C.case_5(V1, ctx) == []
+    assert all(P._module(None, "priority", g, p) is V1 for g, p in parts), "the registry takes the WORDS path for every part"
+    assert V1.WORDS["bargain"]["line"] == {} and set(V1.WORDS["bargain"]["engine"]) == {"task"}, "the line part has no field the owner may change"
+    assert P.faults() == [], "and the definitions load holds the typed words to their interface"
+
+
+def test_p2_each_part_compiled_from_its_words_is_the_md_part_byte_for_byte(ctx):
+    """The migration changes no word: the words and the layout, with the sample inputs, are the bundle's part. (The estimate
+    and remaining lines are the bundle's too since the snapshot commit before it.)"""
+    for layer_group, ps in S.PROMPTS["priority"].items():
+        for part in ps:
+            sample = P.sample_inputs("priority", layer_group, part)
+            fallback = P.SLOT.sub(lambda m: sample[m.group(1)], P.md_part("priority", layer_group, part))
+            assert P.prompt(None, "priority", layer_group, part, **sample) == fallback, "%s.%s" % (layer_group, part)
+
+
+def test_p2_the_words_are_the_ones_the_prompt_is_built_from_not_the_bundle(ctx, monkeypatch):
+    """A prompt still read from the bundle, or a change of a word that does not reach the agent, must fail."""
+    import engine_runtime as R
+    monkeypatch.setitem(V1.WORDS["bargain"]["engine"], "task", "Adaptation offers an engine; say what it costs against what is left.")
+    got = R._prompt("priority", "bargain", "engine", ctx["ref"], engine="Booking", does="d", needs="n", calls="240", usd="6.00", room="yes")
+    assert got.startswith("Adaptation offers an engine; say what it costs against what is left.\nTHE ENGINE: Booking\n")
+    assert R._goal_of(ctx["ref"], "Priority")[0] == V1.WORDS["goal"]["does"]["text"]
+
+
+class TestPriorityIsServedFromItsWords(TFP.Fixture):
+    def test_p2_the_snapshot_of_the_bargain_renders_unchanged_with_the_bundles_priority_files_gone(self):
+        """The M2.1a snapshot, for Priority's prompts, from the registry's words alone: with the bundle's priority files
+        emptied of every part, the same text is sent, and the definitions still load (a file whose every part a layer holds
+        needs none)."""
+        want = {k: v for k, v in json.loads(TFP.SNAP.read_text(encoding="utf-8")).items() if k.startswith("priority.")}
+        assert sorted(want) == ["priority.bargain:engine:picked", "priority.bargain:engine:shaped", "priority.bargain:line:library",
+                                "priority.bargain:line:over", "priority.bargain:line:shaped", "priority.bargain:rung"]
+        tmp = Path(tempfile.mkdtemp(prefix="priority-bundle-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        shutil.copytree(self.bundled, tmp / "b")
+        for name in ("goal", "bargain"):
+            (tmp / "b" / "priority" / (name + ".md")).write_text("Gone.\n", encoding="utf-8")
+        self.R.PROMPTS_DIR = tmp / "b"
+        self.R._DEFS.clear()
+        self.assertEqual(self.R.bundle_faults(), [])
+        got = {k: v for k, v in self.prompts().items() if k.startswith("priority.")}
+        self.assertEqual(got, want)
+        for text in got.values():
+            self.assertIn("What Priority does: it grants each engine its envelope", text, "the card's goal is Priority's words too")
 
 
 # ---- P3: observed spend and price rows (M5.3) --------------------------------------------------------------------------

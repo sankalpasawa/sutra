@@ -9,7 +9,8 @@ What moved (M5.3: Priority prices from observed spend). priority_read estimates 
 of what each engine's finished runs spent, with a prior for an engine with no runs, and reads the room actually left
 today; p_priority_bargain tells the agent both; d_priority_bargain, the offline answer, is the same arithmetic;
 priority_post answers and keeps one price row per answer; price_is_observed holds the answer to the facts. WORDS and
-LAYOUT are empty, so its prompts are still read from the .md bundle. view() is functions_view's pane plus the prices.
+LAYOUT hold its words (goal, bargain), so no part of it is read from the .md bundle. view() is functions_view's pane plus
+the prices.
 """
 import math
 import re
@@ -356,7 +357,69 @@ CHECK = {
     'price_is_observed': price_is_observed,
     'said_what_it_did': ref_to('c_said_what_it_did'),
 }
-WORDS, LAYOUT = {}, {}
+# Priority's words (A1.16): what `python -m layers.prompts --extract priority` makes of the .md bundle by the split rule,
+# byte for byte (test_layer_prompts and the M2.1a snapshot prove it). The bargain line part has no field the owner may change,
+# so its words stay in the layout; engine and cost have a task each.
+WORDS = {
+    'goal': {
+        'does': {
+            'text': 'grants each engine its envelope and answers proposals that cost something',
+        },
+        'skills': {
+            'items': [
+                'hold an engine to its envelope',
+                'answer a proposal that costs something',
+            ],
+        },
+    },
+    'bargain': {
+        'line': {},
+        'engine': {
+            'task': 'Adaptation proposes an engine for this department, from an idea the owner floated.',
+        },
+        'cost': {
+            'task': 'Adaptation proposes something that costs.',
+        },
+    },
+}
+LAYOUT = {
+    'goal': {
+        'does': '{text}',
+        'skills': '{items}',
+    },
+    'bargain': {
+        'line': (
+            'Adaptation proposes the workflows this department runs to reach its goal, {{source}}:\n'
+            '{{engines}}\n'
+            'WHAT EACH COSTS: up to {{calls}} calls and {{usd}} USD a day.\n'
+            'ROOM FOR THIS MANY WORKFLOWS: {{room}} (the limit is {{limit}})\n'
+            'WHAT THE LINE IS LIKELY TO COST, from what each has cost before: {{estimate}}\n'
+            "WHAT REMAINS OF TODAY'S ROOM AFTER IT: {{remaining}}\n"
+            '\n'
+            'accept: grant them all. counter: grant only some, and name which to keep, in order. reject: grant '
+            'none. Give your reason in money and room, from the figures above.\n'
+            '{returns}'
+        ),
+        'engine': (
+            '{task}\n'
+            'THE ENGINE: {{engine}}\n'
+            'WHAT IT DOES: {{does}}\n'
+            'WHAT IT NEEDS: {{needs}}\n'
+            'WHAT IT COSTS: {{calls}} calls and {{usd}} USD a day, the envelope of one more work engine\n'
+            'ROOM IN THE ENVELOPE TODAY: {{room}}\n'
+            '\n'
+            '{returns}'
+        ),
+        'cost': (
+            '{task}\n'
+            'THE PROPOSAL: {{word}}, for the step {{step}}\n'
+            'WHAT IT COSTS: {{cost}}\n'
+            'ROOM IN THE ENVELOPE TODAY: {{room}}\n'
+            '\n'
+            '{returns}'
+        ),
+    },
+}
 
 
 #: the most prices the pane carries: the newest, as the bargains it sits beside are the newest few

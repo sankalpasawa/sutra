@@ -229,6 +229,17 @@ class TestTheFiles(Fixture):
 
     def test_m2_1c_a_file_gone_from_the_bundle_refuses_the_definitions_load(self):
         R = self.R
+        # the bundle is what runs for a layer that holds no words of its own; a layer that has moved them needs no bundle (the
+        # definitions load checks the files of the parts a layer still reads from it), so the files are held to that here
+        import layer_schema
+        import layers
+        from unittest import mock
+        for layer in layer_schema.FUNCTION_LAYERS:
+            module = layers.load(layer_schema.DEFAULT_PINS[layer])
+            for attr in ("WORDS", "LAYOUT"):
+                patch = mock.patch.object(module, attr, {})
+                patch.start()
+                self.addCleanup(patch.stop)
         self.bundle(drop="identity/take")
         with self.assertRaises(ValueError) as cm:
             R.defs()
