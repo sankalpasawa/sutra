@@ -1623,6 +1623,118 @@
       ],
       "type": "object"
     },
+    "artifact.template": {
+      "additionalProperties": true,
+      "properties": {
+        "checks": {
+          "items": {
+            "maxLength": 60,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "counts_after": {
+          "enum": [
+            "filing",
+            "stamp"
+          ]
+        },
+        "files": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 0,
+            "type": "string"
+          },
+          "maxItems": 16,
+          "minItems": 0,
+          "type": "array"
+        },
+        "form": {
+          "maxLength": 60,
+          "minLength": 0,
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 60,
+          "pattern": "^artifact/[a-z0-9-]+$",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "text",
+            "plan",
+            "pages",
+            "build",
+            "site",
+            "record",
+            "app"
+          ]
+        },
+        "made_from": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "operations": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "put_back": {
+          "type": "boolean"
+        },
+        "reads": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "screen": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "use_case": {
+          "maxLength": 400,
+          "minLength": 1,
+          "type": "string"
+        },
+        "version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "written_by": {
+          "items": {
+            "maxLength": 60,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "use_case",
+        "files",
+        "counts_after"
+      ],
+      "type": "object"
+    },
     "audit.finding": {
       "additionalProperties": true,
       "properties": {
@@ -2691,6 +2803,90 @@
       "minItems": 0,
       "type": "array"
     },
+    "engine.library": {
+      "additionalProperties": true,
+      "properties": {
+        "description": {
+          "maxLength": 400,
+          "minLength": 0,
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 80,
+          "pattern": "^engine/[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "instruction": {
+          "maxLength": 4000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "kind": {
+          "const": "work"
+        },
+        "name": {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "needs": {
+          "items": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "reads": {
+          "$ref": "#/$defs/name"
+        },
+        "skills": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "start": {
+          "$ref": "#/$defs/engine.start"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/step"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "use_case": {
+          "maxLength": 400,
+          "minLength": 1,
+          "type": "string"
+        },
+        "version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "writes": {
+          "$ref": "#/$defs/name"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "version",
+        "use_case",
+        "kind",
+        "description",
+        "reads",
+        "writes",
+        "start",
+        "steps"
+      ],
+      "type": "object"
+    },
     "engine.start": {
       "additionalProperties": false,
       "properties": {
@@ -3303,6 +3499,104 @@
       "required": [
         "schema_version",
         "values"
+      ],
+      "type": "object"
+    },
+    "kind": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array"
+        },
+        "done": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "done_words": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 0,
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "functions_template": {
+          "maxLength": 40,
+          "pattern": "^[a-z][a-z-]*$",
+          "type": "string"
+        },
+        "goal": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "line": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "required": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "rules": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "line": {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              "tag": {
+                "enum": [
+                  "go",
+                  "ask",
+                  "refuse",
+                  "always"
+                ]
+              }
+            },
+            "required": [
+              "tag",
+              "line"
+            ],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "say": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "use_case": {
+          "maxLength": 400,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "line",
+        "artifacts",
+        "goal",
+        "rules",
+        "use_case",
+        "functions_template"
       ],
       "type": "object"
     },

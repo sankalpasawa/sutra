@@ -72,3 +72,32 @@ def step_faults(step, group='steps'):
     if step.get('by_hand') and not prompt:
         out.append('%s: by_hand is for a step with a prompt, the only kind that can fall to the person' % name)
     return out
+
+
+def kind_faults(name, kind):
+    """What is wrong with a department kind against the kind template (A3.5, rule K-1): the shape law, S.validate('kind', kind),
+    and the one rule a type cannot say, that the engines a kind marks required are inside its own line (no engine is mandatory
+    unless its template says so, S-06). engine_runtime.validate says the same of the same kind in the same words
+    ('kinds, <name>: required names engines of its own line'), and a test holds the two to each other (K-2). It does not ask
+    whether a name in line is a work engine, or whether functions_template names a Library template every function has: those
+    look names up in the Library, which is the definition law's."""
+    out = ['kinds, %s: %s' % (name, f) for f in S.validate('kind', kind)]
+    if isinstance(kind, dict) and isinstance(kind.get('required'), list) and isinstance(kind.get('line'), list):
+        outside = [n for n in kind['required'] if n not in kind['line']]
+        if outside:
+            out.append('kinds, %s: required names engines of its own line, and %s %s not in it'
+                       % (name, ', '.join(str(n) for n in outside), 'is' if len(outside) == 1 else 'are'))
+    return out
+
+
+def artifact_faults(template):
+    """What is wrong with an artifact template against DEFS['artifact.template'] (A3.5, rule AR-1): the shape law, and the one
+    rule a type cannot say, that a template of kind app also names the screen it opens and what it reads. A check the template
+    names must ship (artifacts.CHECKS, AR-2) and an operation must be an engine: those look names up, and a test holds them."""
+    out = S.validate('artifact.template', template)
+    if isinstance(template, dict) and template.get('kind') == 'app':
+        label = str(template.get('name') or template.get('id') or 'an app template')
+        for key in ('screen', 'reads'):
+            if not template.get(key):
+                out.append('%s: an app template names its %s, and this one names none' % (label, key))
+    return out

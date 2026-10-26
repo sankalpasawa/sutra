@@ -1449,6 +1449,35 @@ DEFS['engine.start'] = obj({
     'unless': items(text(60)),                                                  # gate ids
 }, required=('on',), open=False)
 
+# the department kind (L1, A3.5): a department made of a kind is an instance of it, not a child. required is inside line, which
+# a type cannot say: template_checks.kind_faults reads the two fields together, as engine_runtime.validate does
+DEFS['kind'] = obj({
+    'line': items(ref('name')), 'required': items(ref('name')), 'artifacts': items(ref('name'), 32, 1),
+    'goal': text(2000, 1), 'done': text(200), 'done_words': items(text(80), 2, 2),
+    'rules': items(obj({'tag': enum(*RULE_TAGS), 'line': text(2000, 1)}, required=('tag', 'line'))),
+    'say': text(200), 'use_case': text(400, 1), 'functions_template': word(r'^[a-z][a-z-]*$', 40),
+}, required=('line', 'artifacts', 'goal', 'rules', 'use_case', 'functions_template'), open=False)
+
+# the engine and workflow (L3, A3.5): a shipped Library template. engine.template (A1.7) is its born child, the same with a
+# required made_by (the engine Adaptation made on the owner's stamp), and is not changed. Open: Setup's converse_instruction
+# and clarification_questions pass
+DEFS['engine.library'] = obj({
+    'id': word(r'^engine/[a-z0-9][a-z0-9-]*$', 80), 'name': text(40, 1), 'version': integer(1), 'use_case': text(400, 1),
+    'description': text(400), 'skills': items(text(200)), 'reads': ref('name'), 'writes': ref('name'),
+    'start': ref('engine.start'), 'steps': items(ref('step')), 'kind': const('work'),
+    'instruction': text(4000), 'needs': items(text(40)),
+}, required=('id', 'name', 'version', 'use_case', 'kind', 'description', 'reads', 'writes', 'start', 'steps'))
+
+# the artifact (L5, A3.5): the Default template and the ten shipped ones are the base and its children; a template an app
+# brings is a child of kind app (which also names its screen and what it reads). Open: a key a later template adds passes
+DEFS['artifact.template'] = obj({
+    'id': word(r'^artifact/[a-z0-9-]+$', 60), 'name': ref('name'),
+    'kind': enum('text', 'plan', 'pages', 'build', 'site', 'record', 'app'), 'use_case': text(400, 1), 'files': items(text(80), 16),
+    'checks': items(text(60)), 'written_by': items(text(60)), 'counts_after': enum('filing', 'stamp'), 'put_back': boolean(),
+    'operations': items(ref('name')), 'made_from': items(text(80)), 'version': integer(1),
+    'screen': text(200), 'reads': items(ref('name')), 'form': text(60),         # an app template brings screen and reads; W2-CHECKS adds form
+}, required=('id', 'name', 'kind', 'use_case', 'files', 'counts_after'))
+
 
 # ---- reading the tables ----------------------------------------------------------------------------------------------
 def _layer(name):

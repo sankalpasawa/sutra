@@ -307,3 +307,161 @@ def test_engine_start_fits():
     assert R.start_faults("X", {"start": wrong[0]}, {}) != [] and R.start_faults("X", {"start": wrong[1]}, {}) != []
     ok = {"on": [{"kind": "version", "of": "$deliverable"}]}
     assert S.validate("engine.start", ok) == [] and R.start_faults("X", {"start": ok}, {}) == []
+
+
+# ---- C2: the kind, the engine and the artifact (L1, L3, L5) ------------------------------------------------------------
+def _kinds():
+    return _read(HERE / "engine_defs" / "website.json")["kinds"]
+
+
+def _kind_faults_of_the_runtime(R, name, mutate):
+    """What engine_runtime.validate says of the department kind `name` once `mutate` has changed a copy of it."""
+    d = copy.deepcopy(R.defs())
+    mutate(d["kinds"][name])
+    return [f for f in R.validate(d) if f.startswith("kinds, %s:" % name)]
+
+
+def test_k1_every_kind_fits_and_agrees_with_validate():
+    import engine_runtime as R
+    kinds = _kinds()
+    assert sorted(kinds) == ["default", "organic", "root", "website"], "the four kinds of engine_defs/website.json"
+    for name, kind in kinds.items():
+        assert T.kind_faults(name, kind) == [], name
+        assert _kind_faults_of_the_runtime(R, name, lambda k: None) == [], "validate says nothing against %s as it ships" % name
+    # a kind with required outside its line: the definition's rule and the runtime's law refuse the same copy of a kind
+    website = copy.deepcopy(kinds["website"])
+    website["line"].remove("Check")
+    mine = T.kind_faults("website", website)
+    assert mine and "required names engines of its own line" in mine[0] and "Check is not in it" in mine[0], mine
+    theirs = _kind_faults_of_the_runtime(R, "website", lambda k: k["line"].remove("Check"))
+    assert any("required names engines of its own line" in f for f in theirs), theirs
+    # and the same bad copy of a kind through both, field by field: what the shape law refuses, the definition law refuses too
+    for what, mutate in (("no goal", lambda k: k.pop("goal")), ("no rules", lambda k: k.pop("rules")), ("no use case", lambda k: k.pop("use_case")),
+                         ("no artifacts", lambda k: k.pop("artifacts")), ("no functions template", lambda k: k.pop("functions_template"))):
+        bad = copy.deepcopy(kinds["website"])
+        mutate(bad)
+        assert T.kind_faults("website", bad) != [], what
+        assert _kind_faults_of_the_runtime(R, "website", mutate) != [], what
+    # a rule's tag is one of the four, and a kind names no field the template does not
+    bad = copy.deepcopy(kinds["website"])
+    bad["rules"][0]["tag"] = "maybe"
+    assert any("$.rules[0].tag: is not one of go, ask, refuse, always" in f for f in T.kind_faults("website", bad))
+    assert any("$.colour: is not a field here" in f for f in T.kind_faults("website", dict(kinds["website"], colour="red")))
+    # the definition is the shape; whether the Library has the template a kind names is the runtime's to look up
+    assert T.kind_faults("website", dict(kinds["website"], functions_template="nothing-like-it")) == []
+    assert _kind_faults_of_the_runtime(R, "website", lambda k: k.update(functions_template="nothing-like-it")) != []
+    assert T.kind_faults("website", "not a kind") == ["kinds, website: $: is not an object"]
+
+
+def _engine_templates():
+    return [(p.relative_to(HERE).as_posix(), _read(p)) for p in sorted(HERE.glob("engine-templates/*.json"))]
+
+
+def test_e1_every_shipped_engine_template_fits():
+    import engine_runtime as R
+    shipped = _engine_templates()
+    assert len(shipped) >= 6, "plan, write, check, publish, do and setup"
+    for path, t in shipped:
+        assert S.validate("engine.library", t) == [], path
+        assert [S.validate("step", s) for s in t["steps"]] == [[]] * len(t["steps"]), path
+    assert {t["name"] for _, t in shipped} <= set(R.engine_templates()), "the runtime loads every file the definition fits"
+    # the definition refuses what a template must name
+    name, t = shipped[0]
+    for key in ("use_case", "start", "steps", "reads", "writes", "description", "id"):
+        assert S.validate("engine.library", {k: v for k, v in t.items() if k != key}) == ["$.%s: is missing" % key], key
+    assert S.validate("engine.library", dict(t, kind="function")) == ["$.kind: is not work"]
+    assert S.validate("engine.library", dict(t, id="Engine/Plan")) != []
+    assert S.validate("engine.library", dict(t, steps=[dict(t["steps"][0], colour="red")])) == ["$.steps[0].colour: is not a field here"]
+    # open on purpose: Setup carries its own converse_instruction and clarification_questions
+    setup = dict(next(t for _, t in shipped if t["name"] == "Setup"))
+    assert "converse_instruction" in setup and S.validate("engine.library", setup) == []
+
+
+def test_e1_engine_template_is_the_born_child(j2):
+    """engine.template (A1.7) is the Library template with a required made_by: the engine Adaptation shaped on the owner's stamp."""
+    import engine_runtime as R
+    made_by = {"by": "Adaptation", "dept": "dref-acme0001", "at": "2026-10-26T09:00:00", "idea": None}
+    for path, t in _engine_templates():
+        born = dict(t, made_by=made_by)
+        assert S.validate("engine.template", born) == [], "%s with a made_by fits engine.template" % path
+        assert S.validate("engine.library", born) == [], "and still fits engine.library, which is open"
+        assert S.validate("engine.template", t) == ["$.made_by: is missing"], "%s without a made_by does not fit engine.template" % path
+        assert S.validate("engine.library", t) == [], "but fits engine.library"
+    # a template Adaptation really births is both: the child of the base
+    W, _, _, _ = j2
+    R.born_template("Translate", {"does": "translates the pages", "use_case": "Translate the pages into Hindi", "reads": "Brief"}, "dref-acme0001")
+    born = _read(R.user_templates_dir() / "translate.json")
+    assert born["made_by"]["by"] == "Adaptation"
+    assert S.validate("engine.template", born) == [] and S.validate("engine.library", born) == []
+    assert all(T.step_faults(s) == [] for s in born["steps"]), "a born template's steps are steps of the step template"
+    assert S.validate("engine.library", {k: v for k, v in born.items() if k != "made_by"}) == []
+
+
+def test_e2_a_start_with_a_cron_trigger_is_refused():
+    import engine_runtime as R
+    _, t = _engine_templates()[0]
+    cron = dict(t, start={"on": [{"kind": "cron", "every_s": 3600}]})
+    assert S.validate("engine.library", cron) == ["$.start.on[0].kind: is not one of version, post, timer"]
+    assert R.start_faults("Plan", cron, {}) == ["Plan, start: 'cron' is not a kind of trigger"], "the runtime refuses the same start"
+    assert S.validate("engine.library", dict(t, start={"on": [], "unless": []})) == ["$.start.on: fewer than 1 items"]
+    assert S.validate("engine.library", dict(t, start={"unless": []})) == ["$.start.on: is missing"]
+    # a blocker is a gate: the shape names a gate's id, and start_faults looks the gate up
+    engines = R.defs()["engines"]
+    gates = {g["id"] for e in engines.values() for g in e.get("gates") or []}
+    assert gates == {"identity.gate", "identity.wait_engine", "coord.chain", "priority.envelope"}
+    for path, shipped in _engine_templates():
+        assert set(shipped["start"].get("unless") or []) <= gates, path
+    nowhere = dict(t["start"], unless=["identity.no_such_gate"])
+    assert S.validate("engine.start", nowhere) == [] and R.start_faults("Plan", {"start": nowhere}, engines) != []
+
+
+def _artifact_templates():
+    return [(p.relative_to(HERE).as_posix(), _read(p)) for p in sorted(HERE.glob("artifact-templates/*.json"))]
+
+
+def test_ar1_every_artifact_template_fits():
+    import artifacts
+    shipped = _artifact_templates()
+    assert len(shipped) >= 10, "the Default, the website kind's five, Request, Department, Result and the app Human Sutra"
+    for path, t in shipped:
+        assert T.artifact_faults(t) == [], path
+    assert any(t["kind"] == "app" for _, t in shipped), "the app template is one of them"
+    assert S.DEFS["artifact.template"]["properties"]["kind"]["enum"] == list(artifacts.KINDS)
+    assert {t["name"] for _, t in shipped} == set(artifacts.templates()), "the loader reads the files the definition fits"
+    _, brief = next((p, t) for p, t in shipped if t["name"] == "Brief")
+    assert S.validate("artifact.template", dict(brief, counts_after="later")) == ["$.counts_after: is not one of filing, stamp"]
+    assert S.validate("artifact.template", dict(brief, id="brief")) != []
+    assert S.validate("artifact.template", {k: v for k, v in brief.items() if k != "use_case"}) == ["$.use_case: is missing"]
+    assert S.validate("artifact.template", dict(brief, kind="pdf")) != []
+    _, app = next((p, t) for p, t in shipped if t["kind"] == "app")
+    assert T.artifact_faults({k: v for k, v in app.items() if k != "screen"}) == ["Human Sutra: an app template names its screen, and this one names none"]
+    assert T.artifact_faults(dict(app, reads=[])) == ["Human Sutra: an app template names its reads, and this one names none"]
+    assert S.validate("artifact.template", dict(brief, form="a" * 61)) != [], "form is the key W2-CHECKS adds, bounded"
+    assert S.validate("artifact.template", dict(brief, form="pages")) == []
+
+
+def test_ar2_every_check_a_template_names_ships(monkeypatch):
+    import artifacts
+    import engine_runtime as R
+    engines = set(R.defs()["engines"])
+    for path, t in _artifact_templates():
+        missing = [c for c in t.get("checks") or [] if c not in artifacts.CHECKS]
+        assert not missing, "%s names %s, which artifacts.CHECKS does not ship" % (path, missing)
+        assert set(t.get("operations") or []) <= engines, "%s: an operation is an engine" % path
+    assert artifacts.faults(R.defs()) == []
+    # a template that names a check that ships nowhere, and an operation that is no engine
+    broken = copy.deepcopy(artifacts.templates())
+    broken["Brief"]["checks"] = ["is_text", "reads_well"]
+    broken["Brief"]["operations"] = ["Plan", "Daydream"]
+    monkeypatch.setitem(artifacts._CACHE, "t", broken)
+    got = artifacts.faults({})
+    assert got == ["artifact Brief: no check named reads_well ships with the app"], got
+    assert "Daydream" not in engines and not set(broken["Brief"]["operations"]) <= engines
+
+
+def test_the_definitions_of_c2_take_their_samples():
+    """The (good, bad) pair of each lives in test_fixtures/templates/samples.json, and test_layer_schema runs it."""
+    samples = _read(HERE / "test_fixtures" / "templates" / "samples.json")
+    for name in ("kind", "engine.library", "artifact.template"):
+        good, bad = samples[name]
+        assert S.validate(name, good) == [] and S.validate(name, bad) != [], name
