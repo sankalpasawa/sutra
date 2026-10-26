@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **status** | v1, 2026-10-23; the decision log for building [PRD-FIVE-FUNCTIONS.md](PRD-FIVE-FUNCTIONS.md) |
+| **status** | v1, 2026-10-23; the decision log for building [PRD-FIVE-FUNCTIONS.md](PRD-FIVE-FUNCTIONS.md). v2, 2026-10-26: the A1 rows below, for amendment A1 ([PRD-FIVE-FUNCTIONS-A1.md](PRD-FIVE-FUNCTIONS-A1.md)) |
 | Rule | the owner asked for the build to run without stopping for marks (2026-10-23: "the adaptation here is the logic where you don't need my input"). Each mark (MK) and question (Q) below takes the PRD's own proposal or default. The owner can change any row; a change reopens only the steps that row names |
 | Shared page | https://claude.ai/artifact/3qnU9D85uAKd3uHVQDwxSV |
 
@@ -24,7 +24,7 @@
 | MK-4 | Root's version 1 standards list (J2.4 is a placeholder). | the eight standards in M7.2. | M7.2 |
 | MK-5 | Screens for Adaptation, Priority, Coordination and Audit. The site says 'needs to be filled; no screen of its own yet'. | their panes S7, S8, S9 and S12. | S7, S8, S9 and S12 in stable (M4.7, M5.6, M8.8) |
 | MK-6 | Internal messages: which function owns it, and is it its own row (screen 3) or a switch in Chat (the cleanup design)? | its own row, read only. | M10.1 |
-| MK-7 | Each function's goal, done, settings and .md content (placeholders 'the founder's to fill'). | today's prompts, byte for byte. | Owner-written instruction content beyond the defaults (M2.2) |
+| MK-7 | Each function's goal, done, settings and .md content (placeholders 'the founder's to fill'). | today's prompts, byte for byte. Overridden by A1-1 (2026-10-26): the same words, byte for byte, as typed field defaults in each layer's module; no .md files. | Owner-written instruction values beyond the defaults (M2.6) |
 | MK-8 | New structure that reopens the 2026-09-29 rulings: the All five overview (S2), state dots on function rows (S3), the progress line in the strip (S4), renaming the first tab 'About', and the prototype's richer Map boxes (this reopens the closed Map). | Build as the PRD specifies. | M1.6, M1.8, the Map extras in M1.5, and the five-function rows of S17 |
 | MK-9 | Directions D-b, D-d and D-e ('not on the to-build list until you mark them'), in particular D-e: Adaptation fits the template's engines before the first run. | Build as the PRD specifies. | M5.2 |
 | MK-10 | Pursue: its name and how the gap is measured (FA2, R1 placeholders). | 'next round' on screen, and the gap is the done-when items not met. | M9 in stable |
@@ -45,4 +45,40 @@
 | Q15 | Targets for owner effort (SM-8) and cost (SM-9). | set from the M0 baseline. | M10.4 pass or fail |
 | Q16 | Step pill names (Enough to work, Propose, Price, Settle, Root's review, Run, Read, Next or done), and whether names such as 'Round 2', 'D2' and 'v3' are allowed at rest under A28. | yes; they are names, not counts. | S4 |
 
+## Amendment A1: the interface schema layer (owner direction, 2026-10-26)
+
+The owner's two messages of 2026-10-26 are quoted in A1.0 of [PRD-FIVE-FUNCTIONS-A1.md](PRD-FIVE-FUNCTIONS-A1.md). A1-1 and A1-2 are the owner's direction; every other row is a default taken without the owner, as the rule above allows, and the owner can change any of them.
+
+| Id | Decision | Why | Steps it opens |
+|---|---|---|---|
+| A1-1 | Root and the five layers (Identity, Adaptation, Priority, Coordination, Audit) are one hard-coded interface schema in code, `layer_schema.py`: what each holds, hears, sends and to whom, its verdicts, covering checks, settings, prompt slots and pane view, plus one workflow schema that every department workflow (Library, fitted, shaped or made) conforms to, checked in code at birth, proposal, registration, grow and on every write. No layer's structure is managed through .md files. This overrides S-28's '.md files' wording, goal G3 and MK-7, rewrites M2, and folds M7 into the workflow schema. | the owner, 2026-10-26: "It should be hard-coded within the interface schema layer. Update the PRD for that." | M2, M7; binds M0 to M4 |
+| A1-2 | Each layer's behaviour, its recipe and its step bodies, is a module behind the fixed interface (`layers/<layer>/v<N>.py` and `v<N>.json`). A version may change freely; the interface changes only with a new schema version and a migration. | the owner, 2026-10-26: "the functionality of identity or adaptation can change, so we need that modularization into the layer. But the schema part ... remain the same." | M2.2, M2.8, M2.11, M3.8, M4.8, M5.7, M5.8, M7.4, M8.9 |
+| A1-3 | The rule that keeps old pins working: a pin names a whole version (recipe and bodies); a department runs only what its pin names; a released version is frozen; every version keeps the interface of the schema version it implements; a pin that cannot run falls back to the default with a row. Every department runs DEFAULT_PINS until W3-PINS (wave 3) assembles the recipes per pin set; Root's version is read from the organisation's Root, never the child's, and ladders are kept per version. | The review: a per-department body over a global recipe would crash an older pin on a newer step | M2.11 |
+| A1-4 | The interface reports before it refuses: warn mode for the app, with a test fixture that fails any test meeting a fault, then the integrator's 'A1 interface: refuse' commit at the end of wave 1, once the full gate shows none. The mode is a code constant, never an environment variable. | The review's P0: the types must match the code's writers before they refuse | M2.3, M2.9 |
+| A1-5 | Only the department keys a save changes are checked; Stop and control always land; the store's enums are loose where Identity's standard must see a bad value (a rule with no tag, an item with no 'how', an empty goal). | One legacy fault must never block a later save, least of all the owner's Stop | M2.3 |
+| A1-6 | There is no dept.budget: Identity's budget point reads Priority's envelopes, read only. | One writer for money; a stored copy would go stale after the first change | M3.3 |
+| A1-7 | A whole-file override made under M2.2 is kept as the owner's note, with one tell; it is not decompiled into fields. | The records home holds no department today; the cost is not worth it | M2.6 |
+| A1-8 | The goal's ceiling is dept.ceiling, Priority's, written from wave 2; envelopes._goal is not built. | envelopes holds engines and functions only | M9.2 |
+| A1-9 | Root's standards are code (WORKFLOW_STANDARDS and workflow_schema.py), shown read-only in Root settings (S18); standards/workflow-v1.json is not built. | A1-1: a standard is part of how the app is built | M7.1, M7.3 |
+| A1-10 | The pane views are the read models already merged (M3.7, M4.5, M4.7), typed as they are; later steps add fields and never rename them. The ask and option contract is M3.5's (choose_option, status 'chosen', 409 {code}), with kind and params added as optional option fields. | No rebuild of merged work | M1.10, M3.5 |
+| A1-11 | JSON Schema files are generated from layer_schema.py from wave 0 and regenerated in every commit that changes it; the jsonschema cross-check and the frozen interface hash come last (W3-PROOF). | The screens' fixtures and the tests read the same shapes from day one; freezing must follow the last change | M2.1, M2.10 |
+| A1-12 | The build runs in four waves: wave 0, one package, the schema core (about 75 min); wave 1, eight packages (about 110 min); wave 2, six (about 80 min: M9, M10 and what wave 1 could not hold); wave 3, four (about 50 min). Waves 0 and 1 end at about 3 h 05 min and all four at about 5 h 15 min; nothing is left to a later session. | The owner asked for all of it in 3 to 4 hours; the review's schedule; an honest estimate | A1.26 |
+| A1-13 | While A1 is built, the interface grows only additively: a package adds its own layer's rows ('A1 interface: <layer>:' commits), the integrator makes shared changes, nobody renames or removes a name, and a conflict in the generated files is resolved by regenerating. | Parallel packages must not wait on the integrator for their own rows | every wave |
+| A1-14 | A cross-layer act whose handler a later package builds is posted only when the receiver's recipe has that handler. At a wave's cut-off the integrator merges whole steps, and a step not merged opens the same layer's package in the next wave. | No merge order can leave an act unheard, and an overrun slides forward, never drops | every wave |
+
+## A1: what the J2 prototype at 3d8d2e8 brings
+
+| Id | Feature | Taken | Steps it opens |
+|---|---|---|---|
+| A1-P1 | board/1 message board (j2_board.py: a blocked agent asks the one that knows, the answer is reused) | Adopted in wave 3 as the shape of questions between engines (coordination.question), behind SUTRA_BOARD_QUESTIONS. Not its uncredited, synchronous answer: in Sutra the answer is a run of the target engine in its own slot, charged to its envelope and gated like any other run. Sutra's board stays the one message log; asks to the owner stay Identity's. | M4.9 |
+| A1-P2 | The Map as a metro line | Adopted in part, in wave 3: the trunk in the registered line's order, the left-out branch, status-only colour in WORK, and the NOW line naming open items. Not personas, team rings, 'given to' arcs or send branches. | M1.11 |
+| A1-P3 | Status-only colours | Adopted as a rule; it is the existing token rule, applied to the WORK row in wave 3. | M1.11 |
+| A1-P4 | Rail navigation (Chat opens the Simple view) | Not adopted: Sutra's shell rail is ruled, and it has no Simple and Detailed split. | none |
+| A1-P5 | Milestone emails as dry-run deeds | Not adopted: Sutra has no send engine, and anything that reaches outside goes through Identity's gate (Q14). | none |
+| A1-P6 | Phone-width check (360 px) | Not adopted as a test; one Human Simulation item in M10.4. | M10.4 |
+| A1-P7 | J2_FORCE_QUESTION | A test-only stub in W3-BOARD's tests, never an app setting. | M4.9 |
+| A1-P8 | atom/1 module style (j2_schema.py) | Adopted as the pattern of layer_schema.py; after the refuse commit Sutra refuses where the prototype warns. | M2.1 |
+| A1-P9 | The needs-you outcome line; the reference run's cost (500 credits, 114 calls) | The outcome line is adopted in the NOW words with M1.11; the cost is evidence for SM-9 and the ceiling default. | M1.11, M10.4 |
+
 provenance: {author: claude, date: 2026-10-23, inputs: [PRD-FIVE-FUNCTIONS.md open questions], review: none by the owner yet, confidence: high that each row matches the PRD's stated default}
+provenance (A1 rows): {author: claude, date: 2026-10-26, inputs: [the owner's two messages of 2026-10-26, the A1 review], review: none by the owner yet, confidence: high that A1-1 and A1-2 state the owner's direction; the rest are defaults}

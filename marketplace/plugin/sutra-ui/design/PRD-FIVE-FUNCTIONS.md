@@ -1,13 +1,16 @@
 # PRD: The department and its five functions, in the Sutra app
 
-_Status: Final for team review · Version 1.0 · 2026-10-22 · Written by: solution architect · Rulings and marks by: the owner (founder)_  
-_Based on: the Native site (department page, journeys.json v2.4; the five function pages, functions.json 1.5); Sutra `6bb38ec6` (2.306.25); the J2 prototype `564e3a7`._
+_Status: Final for team review · Version 1.1 (1.0 of 2026-10-22, amended by A1 on 2026-10-26) · Written by: solution architect · Rulings and marks by: the owner (founder)_  
+_Based on: the Native site (department page, journeys.json v2.4; the five function pages, functions.json 1.5); Sutra `6bb38ec6` (2.306.25); the J2 prototype `564e3a7`._  
+_Amended: A1, 2026-10-26 (the interface schema layer), on Sutra main `d24a467d` and the J2 prototype `3d8d2e8`. See [PRD-FIVE-FUNCTIONS-A1.md](PRD-FIVE-FUNCTIONS-A1.md)._
+
+> **Amendment A1 (2026-10-26).** The owner directed that Root and the five layers (Identity, Adaptation, Priority, Coordination, Audit) be one hard-coded interface schema in code, that every department workflow conform to it from a coding perspective, that nothing about a layer's structure be managed through .md files, and that each layer's behaviour be a module that can change version by version behind the fixed interface. A1 does this: `layer_schema.py` holds the interface, from which JSON Schema files are generated; `layers/<layer>/v<N>.py` and `v<N>.json` hold each layer's recipe and bodies, pinned per department by a rule that keeps old pins working; `workflow_schema.py` holds Root's standards; typed instruction fields replace the .md files. It overrides the '.md files' wording of S-28 and G3 and the decision MK-7, rewrites M2, and folds M7 into the workflow schema. Section 10 below is revised for A1 and for what is built on main (M0, M1, M2.1 to M2.4, M3.1 to M3.7, M4.1 to M4.7, M6.1); every step says which wave builds it. Wave 0 is one package (the schema core), waves 1 to 3 run packages in parallel, and nothing is left to a later session (A1.26). Screens S11 and S16 change and S18 is new. Everything else in this page stands.
 
 > Build the department's five functions (Identity, Adaptation, Priority, Coordination, Audit) into the Sutra desktop app. Each one does its J2 job honestly for every kind of department, the owner sees the five working as one system, and the owner hears one voice: Identity's.
 
 > **How to read this page**
 > - **Milestones** are `M0` to `M10`, in dependency order. Every step has an id such as `M3.2`, with What, How, Where and a testable Done check.
-> - **Screens** are `S1` to `S17`. Each has sample data from one department (Thread & Loom Website, 10:24, round 2) and a wireframe.
+> - **Screens** are `S1` to `S18`. Each has sample data from one department (Thread & Loom Website, 10:24, round 2) and a wireframe.
 > - **Marks (`MK-n`)** are proposals for things the owner marked 'needs to be filled', 'marks owed' or 'placeholder'. A step that depends on a mark ships to stable only after the owner marks it. **Questions (`Qn`)** have defaults; the build may go ahead on a default behind the milestone's flag, in Beta only.
 > - **Code short names:** R = `engine_runtime.py`, W = `website_dept.py`, J = `j2_runtime.py`, P = `J2_Prototype/j2.py`; all Sutra paths are under `sutra/marketplace/plugin/sutra-ui/`. `Lnnn` is a line of the department page text.
 > - **Sizes:** S = up to 1 day · M = 2 to 4 days · L = 5 days or more. VSM labels are written 'VSM S5' so they are not confused with screen ids.
@@ -26,7 +29,7 @@ The five functions exist in code, but they do not tell the truth and they are no
 
 - G1 Each function does its J2 job for every kind (website, default, organic). 'Goal reached' is never claimed without Audit's reading of every done-when item.
 - G2 The owner sees the five functions in the app as one system: what each is doing, who it waits on and what it spends. The owner hears only Identity, in plain words.
-- G3 Each function reaches the version 1 the founder defined: one agent with .md files inside a code covering (S-28). The owner can read its instructions in the app and change them through an ask.
+- G3 Each function reaches the version 1 the founder defined: one agent inside a code covering (S-28), its structure a hard-coded interface (`layer_schema.py`) and its instructions typed fields that code compiles into prompts (A1; no .md files). The owner can read its instructions in the app and change a field through an ask.
 - G4 Every claim can be proved: the test lanes run what they say, the ledger records every step, and every reading carries evidence.
 - G5 Reuse Sutra's runtime. Port only the prototype's tested parts: the map read model, priced questions, measurable checks, and the done verdict as a covering check.
 
@@ -37,7 +40,7 @@ The five functions exist in code, but they do not tell the truth and they are no
 - Spinning out child departments (D-f). Parked with growth.
 - Priority's figures (actuality, capability, potentiality). They need run history; M5.3 keeps per-run spend and the check verdict as Priority's first indices.
 - A content model for locks and shared standards. It is designed but has no content model yet. Coordination's timetable is in scope (M4.3).
-- Per-department engine definitions. That would refactor the global definitions model. The default for Q5 keeps born engines in the records-home Library, tagged made_by.
+- Per-department engine definitions. That would refactor the global definitions model. The default for Q5 keeps born engines in the records-home Library, tagged made_by. (A1 adds per-department versions of each function layer in wave 3, W3-PINS, by the rule in A1.18; the Library's work engine definitions stay global.)
 - The six-tab department screen. Set aside by the founder on 2026-09-29.
 - Porting the prototype's AI scheduler or its one-loop relay. Coordination alone cost 25 to 32 percent of input tokens there.
 - Migrating to the .ds-* design tokens (T15 is dead). U1 (the site's visitor) and U2 (several things in one place), which are not filled on the site.
@@ -192,7 +195,9 @@ The screenshot shows the site's menu: _A department > The five functions > Ident
 | Approvals are set per department and may only tighten. | S-08 |
 | No engine is mandatory unless its template says so. | S-06; S-21 |
 | Every engine and function is a code covering around an AI inside. Code verdicts live only in the covering. | S-22; S-23 |
-| Version 1 of each function is one agent with .md files inside its covering. | S-28; each function page |
+| Version 1 of each function is one agent with typed instruction fields inside its covering. Its structure is the interface in `layer_schema.py`; its behaviour is a module behind it. No layer's structure is managed through .md files. | S-28, as amended by A1 (owner, 2026-10-26); each function page |
+| Every workflow a department runs conforms to the workflow schema, checked in code at birth, at proposal, at registration, when the line grows, and on every write. | A1 (owner, 2026-10-26) |
+| A layer's version may change freely behind its interface; the interface changes only with a new schema version and a migration. | A1 (owner, 2026-10-26) |
 | Adaptation and Priority bargain, Identity closes their conflicts, and what Identity cannot settle goes to you. | S-29 |
 | A verification names subject, claim, evidence, method, verdict and severity. | S-30 (ruled; marks owed) |
 | Adaptation senses and proposes and never applies; every proposal passes Priority first. | Internal-system invariant; S3-S4 wire (2026-09-27) |
@@ -208,6 +213,8 @@ The screenshot shows the site's menu: _A department > The five functions > Ident
 | Born engine templates stay local, and workflows register on the department's record. | S-12; S-25 (Q5) |
 
 ## 8. Where things stand today
+
+_As of 2026-10-26, Sutra main `d24a467d` holds M0, M1 and its fix, M2.1 to M2.4, M3.1 to M3.7, M4.1 to M4.7 and M6.1; section 10 marks each step built or to build. The lists below are the state this PRD started from (2.306.25)._
 
 **Built in Sutra (2.306.25)**
 
@@ -246,7 +253,7 @@ The screenshot shows the site's menu: _A department > The five functions > Ident
 
 ## 9. Architecture in the Sutra app
 
-Sutra's runtime stays the control flow. Each function is an engine, with a code covering around an AI inside, that talks only on the department's board, and engines start themselves in Coordination's timetable. This PRD adds one read-only projection, functions_view.py, that every screen reads. It moves each function's prompts into .md files (S-28), with the owner's changes kept in the records home. New verdicts go where the rulings put them: 'done' in Identity's covering, the ceiling in Priority's covering, and the table and timetable written by Coordination. j2_runtime stays a ledger and a projection of the cycle, never a supervisor above the five.
+Sutra's runtime stays the control flow. Each function is an engine, with a code covering around an AI inside, that talks only on the department's board, and engines start themselves in Coordination's timetable. This PRD adds one read-only projection, functions_view.py, that every screen reads. Amendment A1 puts Root and the five layers behind one hard-coded interface (`layer_schema.py`) and each layer's recipe and bodies in a module of its own (`layers/<layer>/v<N>.*`); each function's prompts are compiled from typed fields, with the owner's values kept in the records home (`{ref}/instructions.json`). New verdicts go where the rulings put them: 'done' in Identity's covering, the ceiling in Priority's covering, and the table and timetable written by Coordination. j2_runtime stays a ledger and a projection of the cycle, never a supervisor above the five.
 
 ```mermaid
 flowchart LR
@@ -258,8 +265,10 @@ flowchart LR
   JA --> J["j2_runtime.py<br/>ledger + cycle projection only"]
   W --> R["engine_runtime.py<br/>five functions as engines on one board"]
   R --> J
-  R --> FP["function-prompts/*.md NEW (S-28)<br/>+ owner overrides in records home"]
-  R --> STD["standards/workflow-v1.json NEW"]
+  R --> LS["layer_schema.py NEW (A1)<br/>the interface: records, acts, checks, slots, views"]
+  R --> LM["layers/&lt;layer&gt;/v1.py + v1.json NEW (A1)<br/>recipe, bodies, typed words"]
+  R --> WS["workflow_schema.py NEW (A1)<br/>Root's standards"]
+  LM --> IV[("{ref}/instructions.json<br/>owner values")]
   F["founding.py (Root / Setup)"] --> W
   FV --> REC[("Records home ~/.sutra-ui/native/{ref}/")]
   W --> REC
@@ -276,8 +285,11 @@ flowchart LR
 | Department record and motor | Existing, changed | sutra-ui/website_dept.py | dept.json becomes the one record of who the department is. Writes the registry charter as a mirror; adds last_deliverable and options on asks. |
 | Runtime API | Existing, extended | sutra-ui/website_api.py | Adds /functions, /functions/{fn}, /messages and /instructions; asks accept {option}. |
 | Functions read model | New | sutra-ui/functions_view.py | One read of the five functions, from the record only: state, what each waits on, its line, spend against envelope, speaks-to, made-by and 'not recorded'. Writes nothing. |
-| Function instructions | New data | sutra-ui/function-prompts/<fn>/<file>.md; owner overrides in {records}/{ref}/prompts/ | Each function's version 1 files, as its site page lists them. Starts byte-identical to today's inline prompts. |
-| Root's standards | New data | sutra-ui/standards/workflow-v1.json | The standards Root checks a granted line against. Holds today's checks until the owner marks MK-4. |
+| Interface schema layer (A1) | New | sutra-ui/layer_schema.py | Root's and the five layers' interface in code: records and department keys, acts and edges, in-process calls, verdicts, covering checks, settings, prompt slots, views, the workflow schema and its standards, option kinds; the validator and the migrations. |
+| Layer modules (A1) | New | sutra-ui/layers/<layer>/v<N>.py and v<N>.json; layers/__init__.py (registry), prompts.py, contract.py | Each layer's recipe and bodies, its typed words and layout, and its view, pinned by version. |
+| Workflow schema (A1) | New | sutra-ui/workflow_schema.py | The code of Root's standards, run at birth, proposal, registration, grow and write. |
+| Function instructions | Built, reworked by A1 | function-prompts/<fn>/<file>.md (the fallback until each layer holds its words in wave 1; deleted in wave 3); owner values in {records}/{ref}/instructions.json | Typed fields that code compiles into prompts, byte for byte as the .md parts were. |
+| JSON Schema files (A1) | New, generated | sutra-ui/schemas/layers/*.schema.json, interface.v1.json | Generated from layer_schema.py by `python layer_schema.py --write`; never edited by hand. |
 | Function templates | Existing, wording changed | sutra-ui/function-templates/priority/*.json | Priority's floor, choices and chat_brief stop saying it orders. The 13 keys are unchanged. |
 | Engine definitions | Existing, changed | sutra-ui/engine_defs/website.json | Audit and Adaptation start on the department's deliverable. Adds Audit's timer trigger, required flags, the new steps, and a call_usd prior in Priority's template. |
 | Founding | Existing, changed | sutra-ui/founding.py | Writes the shaped goal and Root's drafted done-when items into dept.json. |
@@ -291,14 +303,15 @@ flowchart LR
 
 | Data | Location | Shape |
 |---|---|---|
-| dept.json (the one record of identity) | ~/.sutra-ui/native/{ref}/dept.json (Beta: ~/.sutra-ui-beta) | Adds done_items [{id, text, how: code\|model\|person, level: target\|outcome}], to_be_confirmed [{item, why}], standard {met, missing, checked_at}, workflows[n].fit {engine: note}, and envelopes._goal {rounds, calls, usd}. done stays as joined text for older readers. All additions are additive. |
+| dept.json (the one record of identity) | ~/.sutra-ui/native/{ref}/dept.json (Beta: ~/.sutra-ui-beta) | Adds done_items [{id, text, how, level}] (how and level kept as said, judged by Identity's covering), to_be_confirmed [{item, why}], workflows[n] {version, engines, source, registered, by, checks, covers, deliverable, left_out, fit}, schema_version and layers (A1), and ceiling {rounds, calls, usd, start} for the goal (Priority's, from wave 2; it replaces envelopes._goal). Typed as DEFS department in layer_schema (A1.6). done stays as joined text for older readers. All additions are additive. |
 | Ledger | {ref}/j2-events.jsonl + {ref}/j2-index.json | One j2.event.v1 row per line (fields as J:78-116). The index holds {keys, last_event_by_cycle, count}. The old j2-events.json is converted once and kept as .bak. |
 | Cycle state | {ref}/j2-state.json | Adds round, event_count, and an open_ask that is now also set for thin words (missing: words). |
 | Readings | {ref}/readings.jsonl (new) | {v, artifact, cycle_id, round, read: true\|false, why_not_read, items: [{id, subject, claim, evidence, method: code\|model, verdict: met\|not_met\|to_confirm, severity}], at} |
 | Coordination's table | {ref}/coordination.json | line is the registered engines. Adds timetable [{engine, on: 'after <artifact> vN' \| 'every <period>', window_min, since}]. by is 'Coordination'. Engines left out stay in dept.engines with in_line: false. |
-| Asks | {ref}/asks.json | Adds options [{id, label, cost}] and chosen. New kinds: done_items, instructions; j2_identity gains missing: words. |
-| Instructions | bundle function-prompts/<fn>/<file>.md; overrides {ref}/prompts/<fn>/<file>.md | Markdown with named slots. A department's file wins over the bundle's. Written only on a stamped instructions ask. |
-| Root's standards | bundle standards/workflow-v1.json; overrides in the records home | [{id, says, check}]: the plain sentence and the code check behind it. |
+| Asks | {ref}/asks.json | Adds options [{id, label, cost, kind, params}] (kind and params optional, A1) and chosen {id, label, at, by, words}. New kinds: done_items, instructions, blocked; j2_identity gains missing: words. Typed as identity.ask (A1.8). |
+| Instructions | defaults in each layer's v1 (WORDS, LAYOUT); owner values in {ref}/instructions.json | Typed values {layer: {group: {part: {field: {value, at, ask}}}}}, written only on a stamped instructions ask (A1.16). An M2.2 override file {ref}/prompts/<fn>/<file>.md is kept as the owner's note. |
+| Root's standards | in code: layer_schema.WORKFLOW_STANDARDS and workflow_schema.py | (id, says, sources, stages) and the code check behind each; read-only for the owner (S18). |
+| Layer recipes | layers/<layer>/v<N>.json | Each function engine's handlers, steps, gates and rules, moved out of engine_defs/website.json (A1.18). |
 | Registry charter | ~/.sutra-native/user-kit/charters/C-<sha>.json | A one-way mirror of dept.json, written directly (no org.charter proposal) on every identity_revision bump. The Org screen still reads it. |
 
 ### 9.3 APIs
@@ -312,8 +325,9 @@ flowchart LR
 | GET /api/native/{ref}/functions | The five nodes plus cycle {state, step, says, steps, needs_you, ceiling} and not_recorded (M1.1). 404 for a ref that is not a runtime department. | New |
 | GET /api/native/{ref}/functions/{fn} | One function: its page fields, recipe and journeys (M1.7), plus its J2 part. Identity: standard, done_items, rules, conflicts. Adaptation: proposal, coverage, root_checks, rounds. Priority: bargains, envelopes, rounds. Coordination: timetable, holds, handoffs, chain, alarms, ties. Audit: readings, findings, spot_checks. | New |
 | GET /api/native/{ref}/messages?fn=&after= | Internal messages over board_view: {from, to, act_words, summary, at}, read only, with private keys stripped (M10.1). | New |
-| POST /api/native/{ref}/asks/{aid} {approve} \| {option} | Stamp or refuse, or choose a code-applied option (M3.5). Errors: 409 UNKNOWN_OPTION, 409 OVER_CAP. | Changed |
-| POST /api/native/{ref}/instructions {fn, file, text} | Files an instructions ask; nothing changes until the stamp (M2.2). | New |
+| POST /api/native/{ref}/asks/{aid} {approve} \| {option, text} | Stamp or refuse, or choose a code-applied option (M3.5). Errors: 409 {code: UNKNOWN_OPTION \| ALREADY_HANDLED}, 400 {code: EMPTY_ANSWER}; OVER_CAP from wave 2. | Changed (built) |
+| POST /api/native/{ref}/instructions {fn, group, part, field, value} | Files an instructions ask for one typed field; nothing changes until the stamp (M2.6, A1). The old {fn, file, text} body is 400. | Changed (A1) |
+| GET /api/native/{ref}/layers | {schema_version, pins, available, standards: [{id, says}], describe}: the interface as the screens need it (M2.7, A1). 404 for a ref that is not a runtime department. | New (A1) |
 | POST /api/native/{ref}/ask {text} | The owner's words. The Org sheet's 'New sub-department' also uses it under an organisation with a Root (M1.4). | Existing |
 | GET /api/native/{ref}/map \| status \| board \| chat?fn= | Existing reads. The Map's NOW line also reads /functions. | Existing |
 | POST /api/native/{ref}/envelope {engine, calls, usd} | The owner's limits; 'raise' options apply through it. | Existing |
@@ -386,107 +400,120 @@ sequenceDiagram
 
 ## 10. Milestones
 
-| Id | Name | Centres on | Depends on | Size |
-|---|---|---|---|---|
-| M0 | Safe ground | All five · bug fixes inside every version 1 · S-31: department × LIFE | none | L · about 9 dev-days (7 backend, 2 frontend) |
-| M1 | The five functions in the app | All five, as the owner sees them · screens only; no change to any function's version 1 · S-31: department × PARTS | M0.1 (M1.1 to M1.4 can start alongside M0), MK-8 for M1.6, M1.8 and the Map extras | L · about 18 dev-days (8 backend, 10 frontend) |
-| M2 | Each function's version 1: one agent and its .md files | All five · this is each function's version 1 (S-28) · S-31: function × PARTS | M0.1, MK-7 for any content beyond today's prompts | M · about 9 dev-days (7 backend, 2 frontend) |
-| M3 | Identity: one record, its standard, a way out | Identity (VSM S5) · FI1, FI4 · beyond version 1 (R1, the completeness loop) · S-31: function × LIFE | M0, M2.1, MK-1 (M3.3), MK-2 (M3.2), Q1 | L · about 15 dev-days (12 backend, 3 frontend) |
-| M4 | Coordination: the timetable, and the line is what was granted | Coordination (VSM S2), with Priority's envelopes · FC1, FC2, moves 4 and 5 of the nine · beyond version 1 (the timetable as a record) · S-31: function × PARTS | M0, M1.1, Q12, MK-5 for S7 in stable | L · about 12 dev-days (9 backend, 3 frontend) |
-| M5 | Adaptation and Priority: a bargain that means something | Adaptation (VSM S4) and Priority (VSM S3) · FA1, FP1, FP2, J2.c · beyond Priority's version 1 ('the envelope gate, as built. Nothing else'), see Q2 · S-31: function × MEETINGS | M3.2, M4.2, Q2, MK-9 (M5.2), MK-5 (S8 and S9 in stable) | L · about 16 dev-days (13 backend, 3 frontend) |
-| M6 | Adaptation: workflows when no template fits (J2.b, the owner's focus) | Adaptation (VSM S4) · J2.b, FA1.3 · 'needs to be filled', so the build waits for MK-3 · S-31: function × LIFE | M3.2, M5.1, MK-3 (M6.3, M6.4) | L · about 10 dev-days (spike 3, build 7) |
-| M7 | Root's check against written standards | Root · J2.e · the standards list is a placeholder, so the build waits for MK-4 · S-31: organisation × LIFE | M2.1, M4.4, M5.1, M5.3, MK-4, Q5 | M · about 6 dev-days (4 backend, 2 frontend) |
-| M8 | Audit reads every result against done-when | Audit (VSM S3*) · FAU1, J2.g · beyond version 1 ('as built'), see Q2; S-30 marks owed (MK-2) · S-31: function × LIFE | M0.3, M2.4, M3.2, M4.2, MK-2, Q3, Q4 | L · about 19 dev-days (16 backend, 3 frontend) |
-| M9 | Pursue: keep going until done | Adaptation, with Priority and Identity · FA2, J2.h · beyond Adaptation's version 1 ('no loop'), see Q2; the name waits for MK-10 · S-31: department × LIFE | M5, M8, MK-10, Q2, Q6, Q7, Q8 | L · about 14 dev-days (11 backend, 3 frontend) |
-| M10 | Internal messages, one API, the proof run | All five · ruled screens 3.1 to 3.4 · S-31: department × MEETINGS | M1, M9, MK-6 | M · about 10 dev-days (6 backend, 4 frontend) |
+_Revised for amendment A1 (2026-10-26) and for what is on main `d24a467d`. Each step says whether it is built, and in which wave of A1.26 the rest is built._
 
-Total about 138 dev-days. Critical path M0 > M3 > M8 > M9 > M10, about 67 dev-days, with M5 run alongside M8 and M1, M2 and M4 alongside M0 and M3. With two backend developers and one frontend developer, that is about 14 to 16 weeks elapsed. The M6.1 spike can start on day 1.
+| Id | Name | Status | Centres on | Depends on | Size |
+|---|---|---|---|---|---|
+| M0 | Safe ground | built, rework | All five · bug fixes inside every version 1 · S-31: department × LIFE | none | L · built. A1 rework S: W0-SCHEMA (wave 0), W1-ROOT and W1-AUDIT (wave 1) |
+| M1 | The five functions in the app | built, rework | All five, as the owner sees them · screens only · S-31: department × PARTS | M0.1, M2.2 (for M1.10) | L · built. A1 rework S (W1-CORE, wave 1); M1.11 S in wave 3 (W3-MAP) |
+| M2 | The interface schema layer and the layer modules | to build | Root and all five · the hard-coded interface (A1) · S-31: function × PARTS | M0, M1 | L · wave 0: one package, about 75 min; wave 1: W1-CORE (first merge at about 40 min) and every layer package; wave 3: W3-PINS and W3-PROOF |
+| M3 | Identity: one record, its standard, a way out | built, rework | Identity (VSM S5) · FI1, FI4 · beyond version 1 (R1) · S-31: function × LIFE | M0, M2.1, M2.2, M2.3 | L · M3.1 to M3.7 built; M3.8 and M3.9 inside W1-IDENTITY (about 75 min, wave 1) |
+| M4 | Coordination: the timetable, and the line is what was granted | built, rework | Coordination (VSM S2), with Priority's envelopes · FC1, FC2 · S-31: function × PARTS | M0, M1.1, M2.1, M2.2, M2.3 | L · M4.1 to M4.7 built; M4.8 inside W1-COORD (about 50 min, wave 1); M4.9 in wave 3 (W3-BOARD) |
+| M5 | Adaptation and Priority: a bargain that means something | to build | Adaptation (VSM S4) and Priority (VSM S3) · FA1, FP1, FP2, J2.c · S-31: function × MEETINGS | M2, M3.2, M3.5, M4.2 | L · wave 1: M5.1, M5.3, M5.7, M5.8 (W1-ADAPT, W1-PRIORITY); wave 2: M5.2, M5.4, M5.5, M5.6 |
+| M6 | Adaptation: workflows when no template fits (J2.b, the owner's focus) | to build | Adaptation (VSM S4) · J2.b, FA1.3 · MK-3 taken from the desk spike · S-31: function × LIFE | M3.2, M3.9, M5.1, M7.1 | L · M6.1 and M6.2 done; M6.3 to M6.5 inside W1-ADAPT (wave 1, its last three steps) |
+| M7 | Root's check is the workflow schema | to build | Root · J2.e · MK-4 taken · folded into the workflow schema (A1) · S-31: organisation × LIFE | M2.1, M2.3, M4.4 | M · M7.1 to M7.4 in wave 1 (W1-ROOT about 90 min; W1-UI); M7.5 in wave 2 (W2-CHECKS) |
+| M8 | Audit reads every result against done-when | to build | Audit (VSM S3*) · FAU1, J2.g · S-30 (MK-2 taken) · S-31: function × LIFE | M0.3, M2, M3.2, M4.2 | L · M8.1 to M8.3 and M8.9 inside W1-AUDIT (about 80 min, wave 1); M8.4 to M8.6 and M8.8 in wave 2; M8.7 in wave 3 |
+| M9 | Pursue: keep going until done | to build | Adaptation, with Priority and Identity · FA2, J2.h · S-31: department × LIFE | M5, M8 | L · wave 2: W2-IDENTITY, W2-ADAPT, W2-PRIORITY and W2-SCREENS (about 80 min) |
+| M10 | Internal messages, one API, the proof run | to build | All five · ruled screens 3.1 to 3.4 · S-31: department × MEETINGS | M1, M2, M9 | M · wave 2: W2-SCREENS and W2-PROOF; wave 3: W3-PROOF reruns the proof |
+
+**How it is built (A1.26).** Parallel developer agents, each in its own git worktree with its own files, merged into main one at a time by an integrator on a green gate, then verified.
+- **Wave 0** (about 75 min): W0-SCHEMA alone, the schema core: layer_schema.py bound to the writers on main, warn mode at every write point and on every post, the generated JSON Schema files, the recipes in `layers/<layer>/v1.json`, the contract helpers, and a conftest fixture that fails any test meeting a fault.
+- **Wave 1** (about 110 min): W1-CORE (the registry, the seam and the typed prompt compiler first, then typed owner instructions and the interface API), W1-ROOT, W1-IDENTITY, W1-ADAPT, W1-PRIORITY, W1-COORD, W1-AUDIT and W1-UI. Every built milestone is bound to the interface, and M7.1 to M7.4, M3.9, M5.1, M5.3, M6.3 to M6.5 and M8.1 to M8.3 are built. It ends with the integrator's 'A1 interface: refuse' commit.
+- **Wave 2** (about 80 min): W2-PRIORITY, W2-IDENTITY, W2-CHECKS, W2-ADAPT, W2-SCREENS and W2-PROOF build M9 and M10, and M5.2, M5.4 to M5.6, M7.5, M8.4 to M8.6 and M8.8.
+- **Wave 3** (about 50 min): W3-PINS, W3-BOARD, W3-MAP and W3-PROOF build per-department versions (M2.11), board/1 (M4.9), spot checks (M8.7), the metro WORK row (M1.11), and the freeze (M2.10).
+
+Waves 0 and 1 end at about 3 h 05 min, wave 2 at about 4 h 25 min, wave 3 at about 5 h 15 min; the owner's 3-to-4-hour window closes inside wave 2, and waves 2 and 3 run straight after in the same build.
 
 ```mermaid
 flowchart LR
-  M0["M0 Safe ground"] --> M1["M1 Five functions in the app"]
-  M0 --> M2["M2 Version 1: agent + .md files"]
-  M0 --> M3["M3 Identity"]
-  M2 --> M3
-  M0 --> M4["M4 Coordination: timetable, granted line"]
-  M3 --> M5["M5 Bargain"]
+  M0["M0 Safe ground (built)"] --> M1["M1 Five functions in the app (built)"]
+  M0 --> M2["M2 Interface schema layer (A1, waves 0-1; pins wave 3)"]
+  M1 --> M2
+  M2 --> M3["M3 Identity (built; bound in wave 1)"]
+  M2 --> M4["M4 Coordination (built; bound in wave 1)"]
+  M2 --> M7["M7 Root's check = workflow schema (wave 1; M7.5 wave 2)"]
+  M3 --> M5["M5 Bargain (waves 1-2)"]
   M4 --> M5
-  M3 --> M6["M6 J2.b no template"]
-  M5 --> M6
-  M5 --> M7["M7 Root's check"]
-  M2 --> M7
-  M3 --> M8["M8 Audit"]
-  M4 --> M8
-  M5 --> M9["M9 Pursue"]
+  M5 --> M6["M6 J2.b no template (wave 1)"]
+  M7 --> M6
+  M2 --> M8["M8 Audit (waves 1-3)"]
+  M5 --> M9["M9 Pursue (wave 2)"]
   M8 --> M9
-  M1 --> M10["M10 Messages, one API, proof"]
-  M9 --> M10
+  M9 --> M10["M10 Messages, one API, proof (wave 2; frozen wave 3)"]
 ```
 
-**Working agreement:** one branch per milestone (`feat/dept-m<N>-<slug>` off `main`), one commit per step, build green after each. Every milestone ships behind its own flag under `J2_FLOW_V1` to Beta (:8331) first, then a Human Simulation walk, then the owner's review (including any marks), then stable. Re-check the site's status labels against the code at the start of each milestone.
+**Working agreement:** one branch per package (`a1/<package>`, `a2/<package>`, `a3/<package>`), one commit per step named after it ('A1 <step id>: <title>'), the gate green before each merge, and never a push. Each package owns the files and engine_runtime regions its spec lists; nobody edits the four registry literals or def_version (the integrator bumps it); a package adds its own layer's interface rows in 'A1 interface:' commits, and the integrator makes the shared ones. At a wave's cut-off the integrator merges whole steps, and a step not merged opens the same layer's package in the next wave. Every milestone still ships to Beta (:8331) first, then a Human Simulation walk, then the owner's review, then stable.
 
 ### M0 · Safe ground
 
 | | |
 |---|---|
 | **Centres on** | All five · bug fixes inside every version 1 · S-31: department × LIFE |
-| **Goal** | Remove the ways the system misreports today, and ship the owner's one missing control, so that every later claim can be proved. |
+| **Goal** | Remove the ways the system misreported, and ship the owner's one missing control, so that every later claim can be proved. A1: every record M0 writes now fits the interface. |
 | **At the end, the owner sees** | Identity's question as a card in Chat that can be answered; no 'goal reached' on a version Audit did not read; budget holds shown in Agent activity. |
+| **Status** | built, rework |
 | **Ships screens** | S6, S15 |
 | **Depends on** | none |
-| **Size** | L · about 9 dev-days (7 backend, 2 frontend) |
+| **Size** | L · built. A1 rework S: W0-SCHEMA (wave 0), W1-ROOT and W1-AUDIT (wave 1) |
 
-**M0.1 · Test lanes run what they report**
+**M0.1 · Test lanes run what they report (built)**
 - **What:** Every developer lane runs its tests, and the department suite runs the J1 and J2 tests.
-- **How:** In run-tests.sh, a lane whose file has no __main__ block runs `$PY -m pytest -q $HERE/$lane`. Exit code 5 (no tests collected) counts as FAIL, and the PASS line prints pytest's 'N passed'. Add `$PY -m pytest -q test_j2.py test_j2_api.py test_j1.py` to qa/walks/suites.sh. The publish gate (PUBLISH-CHECK.md step 4) is unchanged.
-- **Where:** `run-tests.sh:58-66; qa/walks/suites.sh:15-22`
-- **Done check:** `./run-tests.sh test_j2.py` prints '27 passed'. A deliberately broken assert in test_j2.py makes both scripts exit 1. All 11 files with no __main__ block report a non-zero count.
+- **How:** Built (f29768f2). A1, wave 0 (W0-SCHEMA): qa/walks/suites.sh runs each test_layer_*.py file in a lane of its own, since those fixtures reload modules, and one more lane runs test_runtime_characterization.py, test_function_templates.py and test_prd_docs.py.
+- **Where:** `run-tests.sh; qa/walks/suites.sh`
+- **Done check:** ./run-tests.sh test_j2.py prints its passed count, and a broken assert makes both scripts exit 1. Each test_layer_*.py file prints its own line in the suites, and so does the new lane.
 
-**M0.2 · The ledger appends without reading the file**
-- **What:** The ledger becomes append-only JSONL with a sidecar index, and reads page by two separate cursors.
-- **How:** J.note appends one line under W._lock(ref) and updates j2-index.json {keys, last_event_by_cycle, count}. Idempotency and causation_id come from the index, not from parsing the file. j2-events.json is converted once and kept as .bak. event_count moves into j2-state.json. /j2/events takes after_seq and after_board.
-- **Where:** `j2_runtime.py:78-116, 253-260, 479-500; j2_api.py:34-39`
-- **Done check:** 10,000 appends grow the file by exactly one line each. A merged cursor test never repeats or skips a row. An old ledger reads the same after conversion. A benchmark records p95 (SM-10) but does not gate.
+**M0.2 · The ledger appends without reading the file (built)**
+- **What:** An append-only JSONL ledger with a sidecar index and two cursors.
+- **How:** Built (42567e32). A1: the ledger keeps its own schema, j2.event.v1. The interface names its event names and never owns them.
+- **Where:** `j2_runtime.py; j2_api.py`
+- **Done check:** test_j2_ledger.py passes unchanged.
 
-**M0.3 · An unread version is never 'clean'**
-- **What:** 'Found nothing' counts only when Audit's judge actually read the version with the model.
-- **How:** When audit.judge is skipped (only_if not sampled) or answered by its offline draft, audit_file records read:false and the run_engine hook skips _j2_audit_read. The ledger notes audit.not_read, and the cycle stays at step 7. While a cycle is active, audit_pick samples every version of the deliverable (interim, until M8). No change is needed for the other cases: an away model already waits and then asks, and an invalid answer already drops to a person.
-- **Where:** `engine_runtime.py:1325-1326, 1296-1306, 2882-2885, 2933-2948, 3956; j2_runtime.py:445-461`
-- **Done check:** An offline website department never writes goal.reached; nor does an unsampled v4. A stubbed model reading with no findings does reach goal.reached. test_j2.py:162-180 moves to the stubbed form.
+**M0.3 · An unread version is never 'clean' (built; reworked in wave 1)**
+- **What:** 'Found nothing' counts only when Audit's judge actually read the version.
+- **How:** Built (5a6e2f44). A1, wave 1 (W1-AUDIT, with M8.3): a version not read is also an audit.reading row with read false and why_not_read, appended to readings.jsonl through W.append_row and checked there.
+- **Where:** `engine_runtime.py (audit_file, _j2_audit_read, the run_engine Audit hook); j2_runtime.not_read`
+- **Done check:** An offline website department never writes goal.reached. From wave 1 it also writes one readings.jsonl row with read false that passes S.validate_record('audit', 'reading', row).
 
-**M0.4 · Envelope holds reach the ledger**
+**M0.4 · Envelope holds reach the ledger (built)**
 - **What:** Each envelope hold is one ledger event.
-- **How:** priority_envelope calls J.on_held(ref, name, slot, why) only when it returns 'wait' and the call is not a peek, keyed by slot. Coordination's other waits are already reported in W.status()['next'] and stay out of the ledger.
-- **Where:** `engine_runtime.py:1823-1834; j2_runtime.py:380-387; website_dept.py:1072-1081`
-- **Done check:** With an envelope of 0 calls, after 20 motor ticks and 20 panel reads there is exactly one envelope.held event and one escalated envelope ask.
+- **How:** Built (01d12cec). A1: the escalated envelope ask passes the asks.json sink as identity.ask. Priced options on it come in wave 2 (M5.4).
+- **Where:** `engine_runtime.priority_envelope; j2_runtime.on_held`
+- **Done check:** With a 0-call envelope, 20 ticks and 20 reads give one envelope.held and one escalated ask, and the gate meets no fault.
 
-**M0.5 · Thin words become an answerable question**
-- **What:** When the first words name nothing to build from, Identity's question becomes a real ask that can be answered anywhere.
-- **How:** J.questioned files a j2_identity ask {missing: 'words'} and sets open_ask. J.answer with missing 'words' marks the ask answered and posts the text to Identity as the owner's request, so identity_file reads it as the first words and starts step 2.
-- **Where:** `j2_runtime.py:212-245, 440-442; engine_runtime.py:2196-2207`
-- **Done check:** A department born from 'a website' shows open_question in /j2. Answering 'a site for my bakery in Pune' through /j2/answer, or in Chat, writes proposal.requested at step 2.
+**M0.5 · Thin words become an answerable question (built)**
+- **What:** Identity's question on thin words is a real ask.
+- **How:** Built (0f7b6af8). A1: the j2_identity ask validates as identity.ask with missing 'words'.
+- **Where:** `j2_runtime.questioned and answer`
+- **Done check:** A department born from 'a website' shows open_question, and its ask passes S.validate_record('identity', 'ask', a) (test_layer_writers.py).
 
-**M0.6 · Identity's question as a card in Chat**
-- **What:** The open question shows as a card in the department's Chat (site Chat row 1.3), with an answer box. Agent activity links to it.
-- **How:** J.status adds open_question. wbChatHtml renders a .dpask card with the question, a .wbbox and Send, which posts to /j2/answer; the answer stays under the card. Agent activity shows 'Identity asks you in Chat >'. Start again needs no change: begin already resumes a stopped cycle (J:185-191).
-- **Where:** `j2_runtime.py:253-261; static/js/22-website.js:728-800; 20-dept.js:396-460`
-- **Done check:** In test_website.js, a waiting fixture renders the card in Chat; Send posts {text}; EMPTY_ANSWER shows its snack; an answered card keeps 'You: ...'.
+**M0.6 · Identity's question as a card in Chat (built)**
+- **What:** The open question renders as a card in Chat with an answer box.
+- **How:** Built (3d2941ee). No A1 change.
+- **Where:** `static/js/22-website.js (wbChatHtml)`
+- **Done check:** test_website.js passes unchanged.
 
-**M0.7 · An honest Root-check event, and the missing token**
-- **What:** workflow.validated lists the checks that actually ran, and --soft is defined.
-- **How:** A new _root_checks() returns [{check, passed, why}]. _root_check stays as the wrapper that returns the fault list its callers use. J.registered and J.refused write the checks that ran. Define --soft in both theme blocks, and add a CSS test that every var(--x) is defined.
-- **Where:** `engine_runtime.py:3785-3812; j2_runtime.py:390-417; static/panel.css:4-44, 5509`
-- **Done check:** The event's checks equal the checks that ran, for both a Library line and a shaped line. The CSS test fails on an undefined variable and passes after the fix.
+**M0.7 · An honest Root-check event (built; reworked in wave 1)**
+- **What:** workflow.validated lists the checks that actually ran.
+- **How:** Built (c002fe18). A1, wave 1 (W1-ROOT): each row is a workflow.check {check: standard id, passed, why} in WORKFLOW_STANDARDS order. The old names become ids, and 'one to six engines' becomes size_in_range (Q11).
+- **Where:** `engine_runtime._root_checks; j2_runtime.registered and refused; test_j2.py test_m0_7_*`
+- **Done check:** test_m0_7_* assert standard ids for a Library line and a shaped line, and every row validates as workflow.check.
+
+**M0.8 · Safe-ground records fit the interface (A1, wave 0)**
+- **What:** Every ask, table and check row M0 writes validates against layer_schema.
+- **How:** The sink in website_dept._write checks asks.json and coordination.json, and test_layer_writers.py has one test per writer (W0-SCHEMA).
+- **Where:** `website_dept._write; test_layer_writers.py`
+- **Done check:** Across the gate the conftest fixture meets no fault (SM-13 is 0 for M0's records).
 
 **Acceptance:**
-- The 11 files with no __main__ block run in the developer lanes, and the J1 and J2 tests run in the department suite.
+- The J1 and J2 tests and every test_layer_*.py file run in the department suite.
 - No offline or unsampled version ever produces goal.reached.
 - A thin-words department can be answered from Chat and from /j2/answer.
 - A budget hold shows once in Agent activity.
+- Every record M0 writes validates (SM-13 is 0 on the gate).
 
 **Ported from the prototype:** Honest records: say 'not read' rather than guess (j2_map.py 'not recorded'); Every pause carries an answerable question (P:3018 _ask_user)
 
-**Risks:** Turning the lanes on surfaces red tests those lanes never ran. Fix each one, or mark it xfail with a linked issue; never delete it.
+**Risks:** Validating writes may surface shape bugs in M0 paths. Mitigation: wave 0 runs warn mode with strict tests, and DEFS follow the writers where the writer is right.
 
 ---
 
@@ -494,121 +521,180 @@ flowchart LR
 
 | | |
 |---|---|
-| **Centres on** | All five, as the owner sees them · screens only; no change to any function's version 1 · S-31: department × PARTS |
-| **Goal** | One read of the five functions, taken only from the record, feeds the Map, the list column and each function's pane. The app then shows each function as its site page describes it, with live state. |
-| **At the end, the owner sees** | On the Map, each function's box says whether it is working or waiting, and whether it waits on the owner. Each function's pane shows its job, what it holds, its recipe and its journeys with live status. With the owner's mark, an 'All five' overview. |
+| **Centres on** | All five, as the owner sees them · screens only · S-31: department × PARTS |
+| **Goal** | One read of the five functions, taken only from the record, feeds the Map, the list column and each function's pane. A1: each pane's data is its layer's view, typed by the interface. |
+| **At the end, the owner sees** | On the Map, each function's box says whether it is working or waiting, and whether it waits on the owner; each pane shows its job, holdings, recipe and journeys with live status; the All five overview. |
+| **Status** | built, rework |
 | **Ships screens** | S1, S2, S3, S4 |
-| **Depends on** | M0.1 (M1.1 to M1.4 can start alongside M0), MK-8 for M1.6, M1.8 and the Map extras |
-| **Size** | L · about 18 dev-days (8 backend, 10 frontend) |
+| **Depends on** | M0.1, M2.2 (for M1.10) |
+| **Size** | L · built. A1 rework S (W1-CORE, wave 1); M1.11 S in wave 3 (W3-MAP) |
 
-**M1.1 · The functions read model**
-- **What:** functions_view.functions(ref) and GET /api/native/{ref}/functions. Per function: state, waits_on, line, last act, spend today against envelope, speaks-to and made. Plus the cycle (state, step, says, steps, needs_you) and not_recorded.
-- **How:** Port the state rules of j2_map._functions onto Sutra's records. Who holds the turn: assessing, waiting and closing go to Identity; adapting and reshaping to Adaptation; bargaining to Priority; running to Coordination and the running engine. Waiting: the src of an open thread that wrote its latest post waits on the dst (the decider is dst[0], R:641-643). Before M9, pursuing maps to Identity waiting_on_you while a finding ask is pending. A failed step check is a fault. 'Should have fired' is also a fault: Audit with no run after a filed deliverable, or Coordination idle while two engines are ready. No model calls and no writes.
-- **Where:** `new functions_view.py; website_api.py (beside /{ref}/map)`
-- **Done check:** test_functions_view.py has one fixture per cycle state (assessing, waiting, adapting, bargaining, closing, checking, running, pursuing, blocked, stopped, done) and gives the expected state for all five. A thread fixture puts the wait on the src. A stopped or done department never shows working. No private keys and no paths.
+**M1.1 · The functions read model (built)**
+- **What:** functions_view.functions(ref) and GET /functions.
+- **How:** Built. A1, wave 2 (W2-PRIORITY, with M9.2): cycle.ceiling and _budget read dept.ceiling.
+- **Where:** `functions_view.py; website_api.py`
+- **Done check:** test_functions_view.py passes.
 
-**M1.2 · Speaks-to and made-by from the record**
-- **What:** Per pair: who spoke to whom. Per artifact: who made it and who reads it.
-- **How:** Pairs come from board.jsonl src > dst, including Owner and Identity. Made comes from runs.json wrote{art, v}; readers come from each engine's reads in the definitions and born templates. Anything missing goes to not_recorded. Delete the hard-coded wbMakerOf and wbReaderOf.
-- **Where:** `functions_view.py; static/js/22-website.js:884-913`
-- **Done check:** Website: Plan made Site plan, and Write reads it. An organic department with shaped engines gives the right answer with no map. test_website.js passes with the maps removed.
+**M1.2 · Speaks-to and made-by from the record (built)**
+- **What:** Pairs from board.jsonl; makers from runs; readers from definitions.
+- **How:** Built.
+- **Where:** `functions_view.py`
+- **Done check:** test_functions_view.py passes.
 
-**M1.3 · Function colours and the waiting ring**
-- **What:** Five function colours in both themes, and a dot for 'waits on another function' that is not amber.
-- **How:** Add --fn-identity, --fn-adaptation, --fn-priority, --fn-coordination and --fn-audit, each with -bg and -line, to both theme blocks (values in Design tokens). Add .dpdot.wait, a hollow --muted ring, so that amber keeps meaning 'waits on you'. Add a contrast test using the accent picker's rule.
-- **Where:** `static/panel.css:4-44; test_website.js`
-- **Done check:** All 10 colours pass 4.5:1 on --card, --surface, --acc-bg and their own -bg. The tokens-only check (V12) passes.
+**M1.3 · Function colours and the waiting ring (built)**
+- **What:** --fn-* tokens and the hollow waiting ring.
+- **How:** Built. A1 keeps the token rule: a function colour says who, a state colour says how.
+- **Where:** `static/panel.css`
+- **Done check:** The contrast and tokens-only tests pass.
 
-**M1.4 · Every new department is a runtime department**
-- **What:** 'New sub-department...' on the Org screen, under an organisation that has a Root, goes to Root, so the department is born with its five functions.
-- **How:** In 19-org2.js, when the organisation has a Root, the sheet posts the name and words to /api/native/{root}/ask (the J6 path: Root's Setup, then founding.spawn) and does not file org.create. Organisations without a Root keep org.create.
-- **Where:** `static/js/19-org2.js:530-545; org2_apply.py:87`
-- **Done check:** test_org2.js: under a Root organisation the sheet posts to Root's ask and files no org.create; without a Root it files org.create as today.
+**M1.4 · Every new department is a runtime department (built)**
+- **What:** A new sub-department goes to Root.
+- **How:** Built. A1, wave 1 (W1-ROOT): a department born this way carries layers = DEFAULT_PINS and schema_version 1.
+- **Where:** `static/js/19-org2.js; website_dept.create`
+- **Done check:** test_org2.js passes, and a new department's dept.json carries six pins.
 
-**M1.5 · Map: the NOW line and honest function boxes (ruled design)**
-- **What:** Site Map rows 2.1 to 2.4: the topology is kept, a NOW line sits above (counts only when not zero, plus checks), the legend is cut, and Budget joins Knows. System status folds into the NOW line. The existing five boxes take their state from the read model.
-- **How:** wb2MapHtml reads /functions and replaces wb2FnCls. The NOW pills come from cycle.says, needs_you and health. Remove the legend and the System status row; add a Budget bar to Knows. The prototype's extra box detail (line text, ? and ! badges, the speaks-to dropdown, function-to-work lines) waits for MK-8.
-- **Where:** `static/js/23-screens.js:27-160; 22-website.js:202`
-- **Done check:** test_website.js: state classes match each fixture; no legend; NOW pills appear only when not zero; no digits at rest outside the NOW line; no System status row.
+**M1.5 · Map: the NOW line and honest function boxes (built)**
+- **What:** Ruled Map rows 2.1 to 2.4.
+- **How:** Built.
+- **Where:** `static/js/23-screens.js`
+- **Done check:** test_website.js passes.
 
-**M1.6 · Function rows carry a state (proposal, MK-8)**
-- **What:** Each function row in the list column gets its mark and a state dot.
-- **How:** dpListHtml reads the cached /functions answer. Dots: a breathing accent dot for working, a hollow ring for waiting, amber with '?' for waits on you, block with '!' for a fault, off for quiet. Hidden for departments that are not runtime departments.
-- **Where:** `static/js/20-dept.js:21, 236-260`
-- **Done check:** test_dept.js: the dot class follows the state; each row's accessible name includes the state word.
+**M1.6 · Function rows carry a state (built)**
+- **What:** State dots in the list column.
+- **How:** Built.
+- **Where:** `static/js/20-dept.js`
+- **Done check:** test_dept.js passes.
 
-**M1.7 · Each function's pane mirrors its function page**
-- **What:** The pane each function already has opens on what its site page holds: one line, the template fields (goal, done, hears, writes, checks, envelope, settings), its recipe as steps with code or AI and the rung, its journeys with live status, and its version 1 scope.
-- **How:** functions_view.function(ref, fn) returns the template fields from the picked function template and the definitions, the recipe from the function's steps and rungs, and each journey's last ledger event. A 'placeholder' shows as one quiet line, 'not set yet'. The first tab keeps today's name until MK-8 decides on 'About'.
-- **Where:** `functions_view.py; static/js/20-dept.js:572-640; 22-website.js:888-927`
-- **Done check:** Render tests pass for all five from fixtures. Journey rows FI1-FI4, FA1-FA5, FP1-FP2, FC1-FC2 and FAU1 show their status and last event. No 'charter', no 'internal system', no paths.
+**M1.7 · Each function's pane mirrors its function page (built; reworked in wave 1)**
+- **What:** Page fields, recipe and journeys per function.
+- **How:** Built. A1, wave 1 (W1-CORE): the page fields (vsm, line, holds, hands_to, keeps, v1) are read from S.LAYERS (functions_view.PAGES moves there), the hears rows from S.hears(), and the checks rows from S.CHECKS.
+- **Where:** `functions_view.function`
+- **Done check:** Each pane's hears rows equal S.hears(layer) in words, and functions_view holds no PAGES table.
 
-**M1.8 · The 'All five' overview (proposal, MK-8)**
-- **What:** S2: five cards in canonical order, plus 'Between them'.
-- **How:** A new static/js/24-functions.js, loaded before 09-tail.js, renders from /functions. The viewer body is a size container, laid out in 3, 2 or 1 columns.
-- **Where:** `static/js/24-functions.js; static/panel.html:205-249; panel.css`
-- **Done check:** A render test shows five cards in order, each with its mark, a state word and a bar. No digits at rest outside titles. test_panel.js 21b passes.
+**M1.8 · The 'All five' overview (built)**
+- **What:** S2.
+- **How:** Built.
+- **Where:** `static/js/24-functions.js`
+- **Done check:** test_panel.js 21b passes.
 
-**M1.9 · Refresh without flicker**
-- **What:** The Map, the dots and the panes refresh on the 2.5 s tick, and repaint only when the answer changes.
-- **How:** Hook wbTick. Build a signature per function from (state, waits_on, line, spend), following the dpActivitySig pattern. Add a timer stub to the vm test harness.
-- **Where:** `static/js/22-website.js:161-178; test_dept.js harness`
-- **Done check:** With the timer stub, an unchanged answer causes no render, and a change renders within one tick (SM-5).
+**M1.9 · Refresh without flicker (built)**
+- **What:** Repaint only on change.
+- **How:** Built.
+- **Where:** `static/js/22-website.js`
+- **Done check:** With the timer stub, an unchanged answer causes no render.
+
+**M1.10 · Each pane reads its layer's view (A1, wave 1)**
+- **What:** function(ref, fn)['j2'] is the pinned implementation's view(), validated against S.VIEWS.
+- **How:** _j2_part delegates to layers.view(ref, layer, d, events, asks). Each layer's v1.view returns today's read model by reference (FV._identity_part, FV.coordination, and the Adaptation, Priority and Audit parts). An invalid view gives today's part plus j2_faults, and the read never raises (W1-CORE; each layer package for its view).
+- **Where:** `functions_view.py (_j2_part); layers/<layer>/v1.py (view)`
+- **Done check:** test_functions_view.py passes. A stub view is returned; an invalid one gives j2_faults and today's part; every v1 view validates on the contract fixture.
+
+**M1.11 · The Map's WORK row as a metro line (wave 3; prototype 3d8d2e8)**
+- **What:** A trunk in registered-line order with the deliverable last, left-out engines on a hollow branch, status-only colours in WORK, and the NOW line naming open items.
+- **How:** W3-MAP: wb2MapHtml lays the stops along a trunk from map_view's line order and draws engines with in_line false as hollow branch nodes labelled 'left out'. WORK colours come from state only. NOW adds '1 item left open: D6 to confirm' from Audit's latest reading. No personas, rings or send branches.
+- **Where:** `static/js/23-screens.js (wb2MapHtml)`
+- **Done check:** test_website.js: trunk order equals the registered line; a left-out fixture draws one hollow branch node; no --fn-* colour in WORK; the NOW pill names an open item.
 
 **Acceptance:**
 - For every runtime department, the Map, the list and each pane agree with each other and with the record in every J2 state.
-- Each function's pane shows its page's fields, its recipe and its journeys with live status.
+- Each pane's J2 data is its layer's view, and every v1 view validates (test_layer_contracts).
 - SM-5 is met on a Beta walk.
 
-**Ported from the prototype:** map/1 function node and its state rules (j2_map.py); Speaks-to lines: three at most, the rest in a closed dropdown (8b24f54); Made-by from recorded runs, a 'not recorded' list, and a phone card list
+**Ported from the prototype:** map/1 function node and its state rules (j2_map.py); Speaks-to lines: three at most; Metro trunk, status-only colours and the open-items line (3d8d2e8), in part, in wave 3 (M1.11)
 
-**Risks:** The wake order is not ruled (Q9). Mitigation: show only states the record has, with no 'asleep' state. Registry-only departments have no runtime record. Mitigation: M1.4 stops new ones from being made, and older ones keep today's cards.
+**Risks:** The metro WORK row reopens the ruled Map. Mitigation: only the trunk, the left-out branch and status colours are adopted (MK-8), and the owner can drop M1.11 alone.
 
 ---
 
-### M2 · Each function's version 1: one agent and its .md files
+### M2 · The interface schema layer and the layer modules
 
 | | |
 |---|---|
-| **Centres on** | All five · this is each function's version 1 (S-28) · S-31: function × PARTS |
-| **Goal** | Each function runs as one agent whose instructions are .md files inside its code covering, as its function page lists them. The owner reads those files in the app and changes them through an ask, and covering checks fail loudly. |
-| **At the end, the owner sees** | Under each function's Settings, its instruction files (Identity's goal, completeness and take, for example), each with a Change button that asks before anything changes. |
-| **Ships screens** | S16 |
-| **Depends on** | M0.1, MK-7 for any content beyond today's prompts |
-| **Size** | M · about 9 dev-days (7 backend, 2 frontend) |
+| **Centres on** | Root and all five · the hard-coded interface (A1) · S-31: function × PARTS |
+| **Goal** | Root and each of the five layers become one fixed interface in code (layer_schema.py), and every record, post and workflow is checked against it at birth, at proposal, at registration, when the line grows, and on every write. Each layer's recipe and behaviour sit in its own module, changeable version by version without touching the interface. Typed fields that code compiles into prompts replace the .md instruction files. The M2.1 to M2.3 built before A1 (.md files, file overrides, whole-file editing) are reworked by M2.5 to M2.7. |
+| **At the end, the owner sees** | Under each function's Settings: its instructions as named fields (the task, the guidance, what it does, its skills), each changed through an ask, with nothing a person changes able to break what a function answers, and a line saying which version it runs. In Root's settings: the standards every plan meets, read only. |
+| **Status** | to build |
+| **Ships screens** | S16, S18 |
+| **Depends on** | M0, M1 |
+| **Size** | L · wave 0: one package, about 75 min; wave 1: W1-CORE (first merge at about 40 min) and every layer package; wave 3: W3-PINS and W3-PROOF |
 
-**M2.1 · Prompts load from .md files, byte for byte**
-- **What:** Every function prompt loads from function-prompts/<fn>/<file>.md, using the file names on its site page.
-- **How:** Files: Identity goal, completeness and take; Adaptation goal, sense, decide and make; Priority goal and bargain; Coordination goal and tie; Audit goal and judge. R._prompt(fn, file, **slots) loads a file and fills its slots. The first commit holds today's inline text byte for byte. The second commit makes defs() refuse a missing file.
-- **Where:** `engine_runtime.py p_identity_*, p_adapt_*, p_priority_bargain, p_coord_tie, p_audit_judge (R:4100-4305); new function-prompts/`
-- **Done check:** A snapshot test renders every prompt for the fixtures identically before and after the move. Removing a file fails the definitions load.
+**M2.1 · The interface in code, bound to the writers, with its JSON Schema files (A1, wave 0)**
+- **What:** layer_schema.py: the constants, types, validator, modes, DEFS and tables of A1.3 to A1.17, with the public functions, the migration, and the JSON Schema files generated from it.
+- **How:** W0-SCHEMA transcribes A1. Every DEFS entry is taken from the writer on main (W.create, done_items, rule_row, option, options_ask, choose_option, apply_done_items, founding.spawn, born, _put_table, timetable_row, left_out_row, priority_grant, j2_runtime.registered and questioned, _blocked, instructions_ask, identity_wait_engine's direct asks write). The records that waves 1 to 3 write first (prices, readings, rounds, the ceiling, questions, spot checks) are declared as A1.13b types them. SENDS comes from a scan of every post() call site, HEARS from every handler, CALLS from every cross-layer _ask_rule site, and PROMPTS literally from the .md parts by the split rule. `python layer_schema.py --write` generates schemas/layers/*.schema.json and interface.v1.json.
+- **Where:** `new layer_schema.py, test_layer_schema.py, test_layer_writers.py, schemas/layers/ (generated files, README.md, fixtures)`
+- **Done check:** test_layer_schema.py passes: every DEFS name has a passing example and, where the type allows, a failing one; edges() == defs()['edges']; every function handler is in S.hears(); every post site is in SENDS; every cross-layer _ask_rule is in CALLS; every soft step's out keys are in its part's returns; the A1.25 rulings hold; BOUNDS, CHAIN_LIMIT, REPAIRS, TABLE_FIELDS, SLOT_FIELDS and LEFT_OUT_FIELDS equal engine_runtime's and website_dept's; the v0 fixture migrates to the v1 fixture; the files under schemas/layers/ equal json_schemas(). test_layer_writers.py has one passing test per writer.
 
-**M2.2 · The owner's changes, kept in the records home and applied by an ask**
-- **What:** A changed instruction is used only after the owner stamps it, and it survives updates.
-- **How:** An 'instructions' ask carries {fn, file, text}. On the stamp, identity_apply writes {ref}/prompts/<fn>/<file>.md, and R._prompt prefers the department's file. An update replaces the bundle and keeps the records home (J7 step 3).
-- **Where:** `engine_runtime.py (identity_apply, _prompt); website_api.py (POST /{ref}/instructions)`
-- **Done check:** A stamped change is used by the next run. A refused change leaves nothing. Replacing the bundle keeps the change.
+**M2.2 · The recipes in the layer modules, the registry and the seam (A1, waves 0 and 1)**
+- **What:** The five function engine objects live in layers/<layer>/v1.json, defs() assembles them from the pins, and engine_runtime resolves each step's code, prompt, draft and check through the pinned module, falling back to its own registries.
+- **How:** Wave 0 (W0-SCHEMA): the objects move byte for byte; defs() assembles them for DEFAULT_PINS; layers/__init__.py starts with the lazy proxies, ref_to and recipes(), beside six stub modules. Wave 1 (W1-CORE, its first merge K1): the registry of A1.18, the seam points of A1.19, impl on every step and gate row, and validate() against the interface.
+- **Where:** `layers/; engine_defs/website.json; engine_runtime.py (defs in wave 0; _resolve, the seam functions and validate in wave 1)`
+- **Done check:** After wave 0 the assembled defs()['engines'] equal test_fixtures/function-engines.base.json and the gate is green. After K1 a stub identity/v1 overriding identity_read is called for Identity's step, an empty module leaves the legacy function running, and every step row carries impl.
 
-**M2.3 · Settings > Instructions**
-- **What:** Each function's Settings lists its files and offers Change.
-- **How:** List each file by name with its first lines. Change opens a .wbsheet whose Send files the ask, and the row then reads 'waits for your stamp'.
-- **Where:** `static/js/22-website.js (wbSettingsHtml :952); 20-dept.js`
-- **Done check:** A render test lists all five functions' files, Send posts the ask, and no paths appear.
+**M2.3 · Every write validates, at the sink (A1, wave 0)**
+- **What:** dept.json, asks.json and coordination.json are checked where they are written; dept.json is migrated on read.
+- **How:** W0-SCHEMA: website_dept._write looks the file up in S.SINK; save_dept(ref, d, by=None) checks the changed keys against the stored record; the never-refuse keys always land; W.dept migrates on read; W.append_row(ref, name, row) checks journal rows (readings, prices, rounds, spot checks) against S.SINK_JOURNALS; post() runs S.check_act before the append. Warn mode for the app; the conftest fixture fails any test that meets a fault.
+- **Where:** `website_dept.py (_write, dept, save_dept, append_row, rows); engine_runtime.post (one call); conftest.py; layer_schema.py`
+- **Done check:** The gate is green with no fault. A rule tagged 'maybe' saves (a standard gap, not a store fault), while an unknown key 'colour' on dept.json is one fault and one row. A direct asks.json write with an unknown status is caught. A v0 dept.json reads as v1 and is written back v1 on the next save, and nothing else is rewritten. Set_stopped always lands.
 
-**M2.4 · Covering checks fail loudly**
-- **What:** Each function's covering check (the 'checks (covering)' row on its page) is code. A failed check fails the step and never falls back to a draft.
-- **How:** Add the missing CHECK entries for the function steps. Identity: a journey is named, and the verdict is go, ask or refuse. Priority: accept or reject, with a price. Audit: a finding names where and what. Coordination: one run at a time, chain under twelve. Adaptation: a proposal names its rows. A failure marks the step failed; for Audit, the reading is marked not_read. The function templates keep their 13 keys.
-- **Where:** `engine_runtime.py:4527 (CHECK), 1370-1386; engine_defs/website.json`
-- **Done check:** A stubbed Audit finding with no 'where' fails the step, the Audit node shows a fault, and no goal.reached is written.
+**M2.4 · Covering checks fail loudly (built)**
+- **What:** Each function's covering check is code, and a failed check fails the step.
+- **How:** Built (2fc61427). A1: every check name is listed in S.CHECKS[layer] or S.SHARED_CHECKS, with CONTRACT_SAMPLES for the ones that need no department in the context.
+- **Where:** `engine_runtime.py (CHECK); layer_schema.py`
+- **Done check:** test_layer_contracts: every listed check accepts its good samples and refuses its bad ones; test_covering_checks.py passes unchanged.
+
+**M2.5 · Typed instructions replace the .md files (A1, wave 1)**
+- **What:** Every function prompt is compiled by code from typed fields (WORDS and LAYOUT in the layer's v1), the inputs code fills, and the answer contract in the interface.
+- **How:** W1-CORE (K1): layers/prompts.py (compile, prompt, words, the .md fallback, the extractor), and R._prompt, _goal_of and bundle_faults delegating to it; the snapshot test renders through the registry. Then each wave-1 layer package moves its own parts byte for byte, and W1-ROOT moves the inline setup prompts.
+- **Where:** `layers/prompts.py; layers/<layer>/v1.py (WORDS, LAYOUT)`
+- **Done check:** test_layer_prompts.py: compile(WORDS, LAYOUT, returns) equals every .md part byte for byte. The M2.1a snapshot passes unchanged, rendered through R._resolve. By the end of wave 1 no default pin uses the fallback.
+
+**M2.6 · The owner's changes are typed values (A1, wave 1)**
+- **What:** An owner change is a typed value for one field, checked at the ask and at the stamp, and kept in {ref}/instructions.json.
+- **How:** W1-CORE: instructions_ask(ref, fn, group, part, field, value) and _apply_instructions; layers.prompts.words overlays owner values; an M2.2 override file is kept as the owner's note, with one Identity tell per department.
+- **Where:** `engine_runtime.py (the instructions block); layers/prompts.py; website_api.py (POST /instructions)`
+- **Done check:** The reworked M2.2a to M2.2e tests pass in typed form: a stamped value is used by the next run; a refused one leaves nothing; a value with '{{' or 'Return ONLY' is refused at the ask and at the stamp; an old override file is kept with one tell.
+
+**M2.7 · Settings > Instructions as typed fields (S16), Root's standards (S18), GET /layers (A1, wave 1)**
+- **What:** S16 lists groups, parts and fields with Change per field; S18 lists the standards read-only; each function says which version it runs.
+- **How:** W1-CORE serves GET /api/native/{ref}/layers {schema_version, pins, available, standards, describe} and the typed instructions view. W1-UI renders S16, S18 and 'Runs version 1'.
+- **Where:** `website_api.py; static/js/22-website.js (S16 block, wbRootPaneHtml settings); test_website.js`
+- **Done check:** A render test lists every part and field of Identity; Change opens the right editor; Send posts {fn, group, part, field, value}; no paths and no 'Return ONLY' on screen; S18 lists the standards in order with no Change button; /layers is 404 for a ref that is not a runtime department.
+
+**M2.8 · One module per layer, and the contract (A1, waves 0 and 1)**
+- **What:** layers/root/v1.py and one module per function exist, with their recipes, and all pass the contract.
+- **How:** W0-SCHEMA writes the contract helpers and the six stub modules; W1-CORE adds the compile case; each wave-1 layer package fills its module: steps by reference first, its words, its view, and by= at its save_dept calls.
+- **Where:** `layers/<layer>/v1.py, v1.json; layers/contract.py; test_layer_contracts.py`
+- **Done check:** test_layer_contracts passes for all six with no part on the fallback. The report lists the by-reference count per layer.
+
+**M2.9 · The interface refuses (A1, end of wave 1)**
+- **What:** MODE becomes 'refuse': a write that does not fit is refused, not only reported.
+- **How:** The integrator's 'A1 interface: refuse' commit, after the full gate on main shows no fault and no refused row.
+- **Where:** `layer_schema.MODE`
+- **Done check:** The gate is green in refuse mode, and a hand-made bad table is refused with SchemaFault and one row.
+
+**M2.10 · Retire function-prompts/ and the dead copies; freeze the interface (wave 3)**
+- **What:** The .md folder, the legacy reader and the dead engine_runtime copies of moved bodies are deleted; the validator is cross-checked against jsonschema; the interface hash is frozen; a key written by a layer that does not own it is refused.
+- **How:** W3-PROOF, after every other package of wave 3 has merged.
+- **Where:** `function-prompts/; engine_runtime.py; layer_schema.py (INTERFACE_SHA, OWNERSHIP_MODE); layers/prompts.py; test_layer_schema.py`
+- **Done check:** grep finds no 'function-prompts' in code; the snapshot passes; interface_sha() equals INTERFACE_SHA[1]; the validator agrees with jsonschema on 40 cases; a save that changes a key another layer owns is refused with one row.
+
+**M2.11 · Per-department versions, by the rule that keeps old pins working (A1, wave 3)**
+- **What:** A department runs the recipe and the bodies of the versions its record pins; Root's version is the organisation's; ladders are kept per version; the owner can change a pin through an ask.
+- **How:** W3-PINS: defs() assembles the function engines per pin set, cached per pin tuple and chosen by a context variable that each entry point (the motor's slot, a board delivery, an API handler) sets from the department's pins. pins(ref) reads d['layers'], with 'root' always taken from the organisation's Root department. A pin the registry cannot load, or whose IMPLEMENTS is not SCHEMA_VERSION, runs the layer's default with one row. Ladder entries are keyed per (step, impl). root/v1 applies the pin option. PER_DEPARTMENT becomes True.
+- **Where:** `layers/__init__.py; engine_runtime.py (defs, step_def, all_steps, _handler, ladder); layers/root/v1.py; layer_schema.PER_DEPARTMENT`
+- **Done check:** With a stub identity/v2 whose recipe adds a step, a department pinned to v2 runs it and one on v1 does not, and both pass the contract; a child pinned to root/v9 runs the organisation's root version with one row; a pin change returns the step to its born rung.
 
 **Acceptance:**
-- Every function prompt is a file named as on its site page.
-- An owner change takes effect only after a stamp, and survives an update.
-- A failed covering check is a visible fault, never a silent draft.
+- Root and the five layers are typed in layer_schema.py, bound to the writers on main.
+- Every write of dept.json, asks.json, coordination.json, instructions.json, every board post and every engine template is checked; SM-13 is 0 on the gate, then in refuse mode.
+- Every function prompt is compiled from typed fields, byte for byte as before.
+- An owner change is a typed value that takes effect only after a stamp, and survives an update.
+- Each layer runs from its module, recipe included, and all six pass the contract.
+- A department pinned to an older version keeps running that version's own recipe and bodies (wave 3).
 
-**Ported from the prototype:** Official function contracts as files (agents/j2/*.md). Their may and may-not lists become proposed text for the owner, never copied without a mark.
+**Ported from the prototype:** atom/1 and board/1 module style: a schema constant, status tuples, pure validators (j2_schema.py, j2_board.py)
 
-**Risks:** Model behaviour may drift when prompts move. Mitigation: a byte-identical first commit, then owner changes one at a time, each with a proof run.
+**Risks:** Wave 0 is one package on the critical path. Mitigation: it is a transcription of A1, which names every type and table; it runs in warn mode with the conftest fixture, so a mismatch is a named failing test, never a refused birth; wave-1 packages read A1 and plan while it runs. Interface gaps found mid-wave. Mitigation: a package adds its own layer's rows additively ('A1 interface: <layer>:' commits); shared definitions change only through the integrator; generated files are regenerated, never merged by hand. Tests reload engine_runtime, which would leave modules holding stale functions. Mitigation: lazy proxies and ref_to; the contract catches delegate loops.
 
 ---
 
@@ -616,64 +702,78 @@ flowchart LR
 
 | | |
 |---|---|
-| **Centres on** | Identity (VSM S5) · FI1, FI4 · beyond version 1 (R1, the completeness loop) · S-31: function × LIFE |
-| **Goal** | Identity holds one record of who the department is. Root drafts done-when items at birth, Identity reads them against its own standard and asks only for what is missing, every blocked state has a way forward, and the owner hears one voice. |
-| **At the end, the owner sees** | Their own words as the goal; done-when as numbered items Root drafted at birth; a question only when Identity's standard is not met; a way forward from any blocked plan; Identity's pane. |
+| **Centres on** | Identity (VSM S5) · FI1, FI4 · beyond version 1 (R1) · S-31: function × LIFE |
+| **Goal** | Identity holds one record of who the department is, reads it against its own standard, asks only for what is missing, gives every blocked state a way forward, and speaks as the one voice. A1: all of this runs from identity/v1 behind Identity's interface. |
+| **At the end, the owner sees** | Their own words as the goal; done-when items Root drafted at birth; a question only when Identity's standard is not met; a way forward from any blocked plan; Identity's pane. |
+| **Status** | built, rework |
 | **Ships screens** | S5, S6, S10, S15 |
-| **Depends on** | M0, M2.1, MK-1 (M3.3), MK-2 (M3.2), Q1 |
-| **Size** | L · about 15 dev-days (12 backend, 3 frontend) |
+| **Depends on** | M0, M2.1, M2.2, M2.3 |
+| **Size** | L · M3.1 to M3.7 built; M3.8 and M3.9 inside W1-IDENTITY (about 75 min, wave 1) |
 
-**M3.1 · One record of who the department is**
-- **What:** dept.json holds the goal, done-when, rules, owner, budget and windows. The registry charter becomes a mirror.
-- **How:** founding.spawn passes setup.shape's goal into W.create. On every identity_revision bump, W writes the registry charter directly, with no org.charter proposal. dept_api.identity reads W.dept(ref) for runtime departments. The Org screen keeps reading /api/org/charters, which is now the mirror.
-- **Where:** `founding.py:88-153; website_dept.py:301-324; dept_api.py:696-716; lib/placement_engine.py`
-- **Done check:** Founding 'a site for my bakery in Pune' makes dept.json's goal the shaped goal. After a J2 answer, /api/dept/{ref}/identity and the mirror both equal dept.json. The mirror files no proposal.
+**M3.1 · One record of who the department is (built)**
+- **What:** dept.json holds the goal, done-when, rules, owner and windows; the registry charter is a mirror.
+- **How:** Built (284874f8, merged d24a467d). A1: dept.json is checked as DEFS department on every save (changed keys); the mirror goes through the proposals path as built (C1).
+- **Where:** `founding.py; website_dept.py; dept_api.py`
+- **Done check:** Founding 'a site for my bakery in Pune' gives the shaped goal, the mirror equals dept.json, and no fault is met in any J2 scenario.
 
-**M3.2 · Root drafts done-when items at birth (needs MK-2)**
-- **What:** J1 ends with the identity stamped by Root, done-when items included (L557).
-- **How:** setup.shape also returns done_items in the proposed format: id, text, how (code, model or person) and level (target or outcome). Setup writes them into dept.json as part of what Root stamps, and the birth tell lists them. done stays as joined text. Offline, the kind's done line becomes D1.
-- **Where:** `engine_runtime.py:3125 (p_setup_shape), 3200 (setup_make); founding.py; website_dept.py`
-- **Done check:** A founding test gives items, each with an id, a how and a level. The birth tell names them. Offline there is exactly one item, D1.
+**M3.2 · Root drafts done-when items at birth (built)**
+- **What:** J1 ends with done_items in what Root stamps.
+- **How:** Built (0c72fbe0). A1: items validate as identity.done_item, with how and level stored as said; the setup shape prompt moves into root/v1 WORDS byte for byte (W1-ROOT).
+- **Where:** `engine_runtime p_setup_shape; website_dept.done_items`
+- **Done check:** A founding test gives items, each with an id; offline there is exactly D1; the root prompt snapshot is unchanged.
 
-**M3.3 · Identity reads the identity against its standard (needs MK-1)**
-- **What:** Identity reads what Root stamped against the standard in its own completeness.md, and asks until the standard is met.
-- **How:** A new C0 step, identity.enough, reads completeness.md (M2.1) and returns {enough, missing, question}. Its covering checks the shape: goal, items, tagged rules, owner, budget. Its offline draft is today's presence check. It asks one question at a time through the M0.5 ask, with no cap; 'just do it' fills from the kind's defaults, and the tell names which. FI1.1: still too little, so ask again. FI1.2: J1 already answered it, so no question.
-- **Where:** `j2_runtime.py:146-200; engine_runtime.py (new p_identity_enough); engine_defs/website.json (Identity steps)`
-- **Done check:** Thin words get a question, and an answer is read again. A question J1 already answered is not asked. 'Just do it' starts step 2, and the tell names the defaults it used.
+**M3.3 · Identity reads the identity against its standard (built)**
+- **What:** identity.enough reads the five points and asks one question at a time.
+- **How:** Built (3f50fdbb). A1: completeness.enough becomes a typed part of identity/v1 (W1-IDENTITY); STANDARD is S.STANDARD; the budget point reads Priority's envelopes (no dept.budget).
+- **Where:** `layers/identity/v1.py; engine_runtime (identity_enough)`
+- **Done check:** Thin words get a question; 'just do it' starts step 2 and names its defaults; test_j2_identity.py passes unchanged.
 
-**M3.4 · Rules and done-when items change through the right asks**
-- **What:** A rule given as an answer keeps its tag, and a change to done-when items never overwrites the goal.
-- **How:** An answer to the rules question goes through _rule_ask: Identity restates the tag and scope, and the owner stamps it. Changing done-when items is a new done_items ask that bumps identity_revision. It does not reuse the goal tag, because that tag overwrites d['goal'].
-- **Where:** `j2_runtime.py:231-237; engine_runtime.py:2028, 2582-2596`
-- **Done check:** 'Never publish without asking me' becomes a pending rule ask tagged ask, and after the stamp dept.rules holds it. A stamped change to the items leaves the goal as it was.
+**M3.4 · Rules and done-when items change through the right asks (built)**
+- **What:** A rule given as an answer keeps its tag; a done-when change never overwrites the goal.
+- **How:** Built (baa16619). A1: rule and done_items asks pass the asks.json sink as identity.ask.
+- **Where:** `website_dept (rule_row, done_items_ask, apply_done_items)`
+- **Done check:** 'Never publish without asking me' becomes a pending rule ask tagged ask, and both asks validate (test_layer_writers.py).
 
-**M3.5 · A way out of blocked, with options**
-- **What:** From blocked, new words reopen step 2, and the blocked message becomes an ask with options.
-- **How:** When J is blocked and the verdict is go, identity_file calls _line_request and sets step 2 with repairs at 0. asks.json gains options [{id, label, cost}], and POST /asks/{aid} accepts {option}. The blocked ask offers: change the plan in my words; leave an item out (a done_items ask); stop.
-- **Where:** `engine_runtime.py:2232-2239, 2610-2618, 3818-3819; website_dept.py:420; website_api.py:136`
-- **Done check:** Root refuses three times, so the plan is blocked; new words then write proposal.requested at step 2. Each option is applied by code, and an unknown option returns 409 UNKNOWN_OPTION.
+**M3.5 · A way out of blocked, with options (built)**
+- **What:** From blocked, new words reopen step 2, and the blocked message is an ask with options.
+- **How:** Built (51b2842f). A1: its options validate as DEFS option; W1-CORE adds kind (from the id's prefix) and params as optional fields; OPTION_KINDS names Identity as the layer that applies words, leave and stop.
+- **Where:** `engine_runtime (_blocked, _blocked_chosen); website_dept (option, options_ask, choose_option)`
+- **Done check:** Root refuses three times and the plan is blocked; each option is applied by code; an unknown option gives 409 UNKNOWN_OPTION; every blocked ask validates.
 
-**M3.6 · One voice, in plain words**
-- **What:** In a department, only Identity speaks, signed with the department's name and Identity's mark.
-- **How:** Label each function's chat box 'Say it to Identity about <Function>'; it already posts to Identity about that function (22-website.js:796). _tell gains a plain-words check: no function addressing another, no J2 codes, no GRANT or COUNTER. A failing message is regenerated once, then replaced by a template. Root keeps 'Root'.
-- **Where:** `engine_runtime.py:2048; static/js/22-website.js:660-700, 783-800`
-- **Done check:** The plain-words test passes on every _tell in the J2 scenarios. A board scan finds 0 posts to the owner from anyone but Identity (SM-4).
+**M3.6 · One voice, in plain words (built)**
+- **What:** In a department only Identity speaks, in plain words.
+- **How:** Built (93b70d05). A1: the rule 'only Identity sends to Owner' is also an interface test on SENDS and a runtime check in validate_act.
+- **Where:** `engine_runtime (_plainly, _tell); layer_schema SENDS`
+- **Done check:** SM-4 is 0, and test_layer_schema's ruling test passes.
 
-**M3.7 · Identity's pane**
-- **What:** S5: Enough to work?, goal, done when, rules and conflicts closed, on top of the M1.7 pane.
-- **How:** /functions/Identity returns {standard, done_items, rules, open_question, conflicts}, rendered as cards.
-- **Where:** `functions_view.py; static/js/20-dept.js:572-614; 22-website.js:888`
-- **Done check:** Render tests pass from fixtures, and 'charter' never appears.
+**M3.7 · Identity's pane (built)**
+- **What:** S5 shows Enough to work?, the goal, done-when, rules and conflicts closed.
+- **How:** Built (35ac6b16). A1: _identity_part is typed as view.identity, and identity/v1.view returns it by reference.
+- **Where:** `functions_view._identity_part; layers/identity/v1.py`
+- **Done check:** The view validates in assessing, waiting, blocked and done fixtures; the S5 render tests pass unchanged.
+
+**M3.8 · Identity behind its interface (A1, wave 1)**
+- **What:** identity/v1 holds Identity's recipe and registers every name it uses, holds its words, provides its view, and its writers say by='identity'.
+- **How:** W1-IDENTITY: steps by reference; WORDS and LAYOUT for goal, completeness and take, from the extractor, proved byte for byte; by='identity' at Identity's save_dept calls.
+- **Where:** `layers/identity/v1.py, v1.json; engine_runtime (Identity region, by= only)`
+- **Done check:** test_layer_contracts passes for identity/v1 with no part on the fallback, and the M2.1a snapshot is unchanged.
+
+**M3.9 · Identity asks Adaptation's one doubt (A1, wave 1; FA1.3, serves M6.4)**
+- **What:** Below 0.6 confidence, Identity asks one question and nothing is registered.
+- **How:** W1-IDENTITY: a handler 'Hear a doubt' (inform/doubt from Adaptation; W1-IDENTITY adds the HEARS row) files a j2_identity ask with missing 'plan' and the J2B-8 question built by code; its answer becomes a line request to Adaptation; 'just do it' takes the fallback; at most one per line request and two per cycle.
+- **Where:** `layers/identity/v1.json and v1.py`
+- **Done check:** A stub doubt gives one ask with no number in its text; answering posts request/line carrying the answer; a third doubt in the cycle files no ask.
 
 **Acceptance:**
 - A new department's goal is the owner's words, and its done-when items come from Root at birth.
-- Identity asks only when its marked standard is not met.
-- Blocked always offers options.
+- Identity asks only when its standard is not met.
+- Blocked always offers options, and they validate.
 - SM-4 holds.
+- identity/v1 passes the contract.
 
 **Ported from the prototype:** Intake with to_be_confirmed (P:3512); The two-audience guard: regenerate once, then use a template (P:2885); Options built and applied by code (P:4141)
 
-**Risks:** The standard may ask too much. Mitigation: 'just do it' always ends the questions, and SM-8 is tracked from the first Beta walk.
+**Risks:** The standard may ask too much. Mitigation: 'just do it' always ends the questions.
 
 ---
 
@@ -681,63 +781,77 @@ flowchart LR
 
 | | |
 |---|---|
-| **Centres on** | Coordination (VSM S2), with Priority's envelopes · FC1, FC2, moves 4 and 5 of the nine · beyond version 1 (the timetable as a record) · S-31: function × PARTS |
-| **Goal** | When a plan is registered, each function does its own part: Root records it, Coordination writes its own table and a slot for each engine, and Priority grants each new engine an envelope. Only granted engines run, and the screen says who goes first and why anything waits. |
-| **At the end, the owner sees** | Coordination's timetable (each engine's slot and what starts it), waiting rows with the exact reason, who makes and who reads each thing, and an engine card with the motor folded in. |
+| **Centres on** | Coordination (VSM S2), with Priority's envelopes · FC1, FC2 · S-31: function × PARTS |
+| **Goal** | When a plan is registered, each function does its own part, only granted engines run, and the screen says who goes first and why anything waits. A1: Coordination's table is a typed record, checked on every write. |
+| **At the end, the owner sees** | Coordination's timetable, waiting rows with the exact reason, who makes and who reads each thing, and an engine card with the motor folded in. |
+| **Status** | built, rework |
 | **Ships screens** | S7, S17 |
-| **Depends on** | M0, M1.1, Q12, MK-5 for S7 in stable |
-| **Size** | L · about 12 dev-days (9 backend, 3 frontend) |
+| **Depends on** | M0, M1.1, M2.1, M2.2, M2.3 |
+| **Size** | L · M4.1 to M4.7 built; M4.8 inside W1-COORD (about 50 min, wave 1); M4.9 in wave 3 (W3-BOARD) |
 
-**M4.1 · Registration by the right functions**
-- **What:** Root records the plan. Coordination and Priority act on that record. Root writes nothing to the table.
-- **How:** J.registered keeps writing workflow.registered (Root). Coordination's handler for that event, its fixed trigger 'an engine born', rewrites coordination.json with by = Coordination. Priority's handler grants an envelope to each new engine, written as an envelope.granted ledger event by Priority. Born engines carry made_by Adaptation.
-- **Where:** `engine_runtime.py:3800-3843, 414-449; engine_defs/website.json (Coordination and Priority handlers); j2_runtime.py:390-408`
-- **Done check:** After registration, coordination.json says by Coordination, the ledger holds an envelope.granted from Priority for each new engine, and no table write is attributed to Root.
+**M4.1 · Registration by the right functions (built)**
+- **What:** Root records the plan; Coordination writes its table; Priority grants envelopes.
+- **How:** Built (1c83126b). A1: the in-process calls from _j2_settle and engine_added are CALLS rows, and the inform/born handlers are HEARS rows (via call).
+- **Where:** `engine_runtime (coord_table, priority_grant, engine_added, _j2_settle)`
+- **Done check:** After registration coordination.json validates and says by Coordination; there is one envelope.granted from Priority per new engine; the CALLS test finds no undeclared site.
 
-**M4.2 · The line is what was granted**
+**M4.2 · The line is what was granted (built)**
 - **What:** Engines Priority cut never run.
-- **How:** Coordination's set_line sets the line to the registered engines on the cycle's first registration, and on any later full-line registration. Engines left out stay on the record with in_line: false. An engine added through J5 (grow_line) is merged in. Pursue rounds never register a line.
-- **Where:** `engine_runtime.py:3364-3378, 414-449`
-- **Done check:** A website-kind counter keeps a subset: coordination.json.line equals the registered list, and runs.json never holds a run of a dropped engine (SM-3).
+- **How:** Built (85be0c7a). A1, wave 1 (W1-COORD): set_line runs the workflow 'write' stage (line_is_registered) before it writes.
+- **Where:** `engine_runtime.set_line; workflow_schema (W1-ROOT)`
+- **Done check:** A counter keeps a subset and runs.json holds no run of a dropped engine (SM-3); a hand-made table with an unregistered engine is refused (refuse mode) or kept with one row (warn mode).
 
-**M4.3 · Coordination's timetable is its own state**
-- **What:** One slot per engine, written by Coordination (department page L1049, L1081).
-- **How:** coordination.json gains timetable [{engine, on: 'after <artifact> vN' | 'every <period>', window_min, since}]. Coordination writes it at registration and in grow_line, from each engine's start.on. next_due keeps reading start.on; the timetable is the readable record.
-- **Where:** `engine_runtime.py:414-449, 3364; website_dept.py (map_view)`
-- **Done check:** Every registered engine has exactly one row, and a grown engine adds one. In the scenario suite, SM-11's 'clash in a slot' reads 0.
+**M4.3 · Coordination's timetable is its own state (built)**
+- **What:** One slot per engine, written by Coordination.
+- **How:** Built (87f6be10). A1: timetable rows validate as coordination.slot (SLOT_FIELDS).
+- **Where:** `engine_runtime (slot_of, _timetable, timetable_row)`
+- **Done check:** Every registered engine has exactly one row, and the sink meets no fault.
 
-**M4.4 · Required engines (Q12)**
+**M4.4 · Required engines (built; Q12)**
 - **What:** A kind can mark an engine required.
-- **How:** Add required: true on kind engines. _root_checks adds 'no required engine left out', and adapt_line_counter raises a conflict when a keep list drops a required engine.
-- **Where:** `engine_defs/website.json kinds; engine_runtime.py:3785, 3884-3903`
-- **Done check:** A plan without Check is refused, and a counter that drops Check goes to Identity as a conflict.
+- **How:** Built (7d087cca, 8cac2e26). A1: the kinds' required list is what the standard required_kept reads (W1-ROOT).
+- **Where:** `engine_defs kinds; engine_runtime (_root_run, adapt_line_counter)`
+- **Done check:** A plan without Check is refused naming required_kept (after W1-ROOT), and a counter dropping Check goes to Identity as a conflict (built).
 
-**M4.5 · Hand-offs, hold reasons and ties from the record**
-- **What:** Coordination shows who makes and who reads each thing, why anything waits, and when it broke a tie.
-- **How:** functions_view.coordination(ref) uses the M1.2 made-by data. Holds come from the reasons W.status()['next'] and due(peek=True) already compute. A tie shows whenever coord.tie ran.
-- **Where:** `functions_view.py; website_dept.py:1072-1081`
-- **Done check:** A waiting engine shows 'Pages v2 is not filed yet'. Organic and website fixtures name the right makers and readers. A tie fixture shows 'Coordination chose Write first'.
+**M4.5 · Hand-offs, hold reasons and ties from the record (built)**
+- **What:** Who makes and who reads each thing, why anything waits, and when Coordination broke a tie.
+- **How:** Built (8f40355f). A1: functions_view.coordination is typed as view.coordination (COORDINATION_FIELDS, TIMETABLE_ROW).
+- **Where:** `functions_view.coordination`
+- **Done check:** The view validates in empty, running, waiting, alarm, stopped and done fixtures.
 
-**M4.6 · The queue belongs to Coordination; Priority never orders**
-- **What:** S-05 holds on screen and in every Priority prompt.
-- **How:** Move 'Next runs' and 'Queue' from Priority's cards to Coordination's. In all three Priority templates, rewrite the ordering floor lines, the choices ('The order of the queue') and the chat_brief ('You decide what runs next') as price-and-hold wording. Change the default first and then its narrowings, so the narrowing law still holds.
-- **Where:** `static/js/22-website.js:901-906; 20-dept.js:1120-1128; function-templates/priority/{default,product-build,money-movement}.json`
-- **Done check:** A test finds no Priority template field containing 'order' or 'what runs next'. test_function_templates passes. Priority's card shows no next runs.
+**M4.6 · The queue belongs to Coordination; Priority never orders (built)**
+- **What:** S-05 on screen and in every Priority prompt.
+- **How:** Built (ee62ed53). A1: the ruling is also an interface test on SENDS['Priority'].
+- **Where:** `function-templates/priority/*.json; static/js`
+- **Done check:** test_function_templates passes, and the A1.25 test passes.
 
-**M4.7 · Coordination's pane and the engine card (S7 needs MK-5)**
-- **What:** S7 shows the timetable, what is waiting and why, who makes and who reads, the chain bar, alarms and ties. S17 is the engine card with the motor folded in (ruled) and 'With the five functions'.
-- **How:** Render from /functions/Coordination and the engine read. The Motor row leaves the list column.
-- **Where:** `static/js/22-website.js (wbFnExtra; engine pane :418-560); 24-functions.js`
-- **Done check:** Render tests pass; there is no Motor row; no counts at rest.
+**M4.7 · Coordination's pane and the engine card (built)**
+- **What:** S7 and S17.
+- **How:** Built (7ad30854). A1: engine_card is typed as view.engine_card (ENGINE_CARD_FIELDS, ENGINE_FIVE_ROW).
+- **Where:** `functions_view.engine_card; static/js`
+- **Done check:** The engine card validates for running, waiting, held, left-out and stopped engines.
+
+**M4.8 · Coordination behind its interface (A1, wave 1)**
+- **What:** coordination/v1 holds Coordination's recipe, registers every name it uses, holds its words (goal, tie), provides its view and engine card, and its table is checked on every write.
+- **How:** W1-COORD: steps, gates and rules by reference; WORDS and LAYOUT from the extractor; set_line's write stage.
+- **Where:** `layers/coordination/v1.py, v1.json; engine_runtime (Coordination region)`
+- **Done check:** test_layer_contracts passes for coordination/v1, and the snapshot's coord.tie case is unchanged.
+
+**M4.9 · Asks between workflows, board/1 (wave 3, behind SUTRA_BOARD_QUESTIONS)**
+- **What:** A work engine's step that lacks a fact may ask one question of an earlier engine that knows; the answer is reused by later engines.
+- **How:** W3-BOARD: a step answer may carry question {to, about, text}; Coordination checks question_is_bounded and files a coordination.question (board/1 fields) in questions.json; the answer is a run of the target engine in its own slot, started by Coordination's post, charged to that engine's envelope and gated like any other run; the asker reruns once with the answer; Engine to Coordination and Coordination to Engine edges are added to the interface.
+- **Where:** `layers/coordination; engine_runtime.run_step (one hook); engine_defs edges`
+- **Done check:** With the flag off nothing changes; with it on, a stubbed asker asks once, the target's run answers and is charged to its envelope, and a second engine reuses the answer.
 
 **Acceptance:**
 - SM-3 is 0 across every scenario, on all three kinds.
-- Every table and timetable write is by Coordination; every envelope grant is by Priority.
+- Every table and timetable write is by Coordination (or born) and validates; every envelope grant is by Priority.
 - Nothing in Priority's templates or on its screen says it orders.
+- coordination/v1 passes the contract.
 
-**Ported from the prototype:** Holds that name exactly what is missing (the prototype's Coordination contract); Only registered work runs (P:5487)
+**Ported from the prototype:** Holds that name exactly what is missing; Only registered work runs (P:5487); board/1: ask, answer, resume and reuse (j2_board.py), in wave 3, with the answer as a charged run
 
-**Risks:** Leaving an engine out without a stamp may conflict with S-06. Mitigation: Q13; the plan message names what was left out, and the owner's words can bring it back.
+**Risks:** board/1 adds model calls. Mitigation: off by default; one question per engine per slot; the answer is a charged, gated run.
 
 ---
 
@@ -745,57 +859,71 @@ flowchart LR
 
 | | |
 |---|---|
-| **Centres on** | Adaptation (VSM S4) and Priority (VSM S3) · FA1, FP1, FP2, J2.c · beyond Priority's version 1 ('the envelope gate, as built. Nothing else'), see Q2 · S-31: function × MEETINGS |
-| **Goal** | Adaptation's proposals name the done-when items each engine covers, and fit the Library line to the use case. Priority prices them from observed spend against the room actually left. Every limit reaches the owner as one priced question. |
-| **At the end, the owner sees** | What was proposed and for which items, what it costs, what Priority said and why (in money and room only), and three priced options when money runs short. |
+| **Centres on** | Adaptation (VSM S4) and Priority (VSM S3) · FA1, FP1, FP2, J2.c · S-31: function × MEETINGS |
+| **Goal** | Adaptation's proposals name the done-when items each engine covers and fit the Library line to the use case; Priority prices from observed spend against the room left; every limit reaches the owner as one priced question. A1: proposals are workflow values, and prices are typed records. |
+| **At the end, the owner sees** | What was proposed and for which items, what it costs, what Priority said and why (money and room only), and priced options when money runs short. |
+| **Status** | to build |
 | **Ships screens** | S8, S9, S10 |
-| **Depends on** | M3.2, M4.2, Q2, MK-9 (M5.2), MK-5 (S8 and S9 in stable) |
-| **Size** | L · about 16 dev-days (13 backend, 3 frontend) |
+| **Depends on** | M2, M3.2, M3.5, M4.2 |
+| **Size** | L · wave 1: M5.1, M5.3, M5.7, M5.8 (W1-ADAPT, W1-PRIORITY); wave 2: M5.2, M5.4, M5.5, M5.6 |
 
-**M5.1 · Proposals cover the done-when items**
+**M5.1 · Proposals cover the done-when items (A1, wave 1)**
 - **What:** Each engine in a proposal names the items it covers.
-- **How:** p_adapt_line receives done_items and returns covers for each engine. Its draft maps every item to the kind's line. adapt_line_offer adds covers to the payload. Until M7, an uncovered item is a ledger warning.
-- **Where:** `engine_runtime.py:3452, 4279-4305`
-- **Done check:** In a test proposal, the union of covers equals the set of done items.
+- **How:** W1-ADAPT: p_adapt_line and d_adapt_line receive done_items and return covers; for a Library source, code maps every item to the last engine; adapt_line_offer adds covers to act.line, and the proposal passes S.validate_workflow at the proposal stage. The adapt.line prompt changes, so the snapshot is regenerated in a 'snapshot: M5.1' commit of its own.
+- **Where:** `layers/adaptation/v1.py (moved: adapt_line_offer, p_adapt_line, d_adapt_line); engine_runtime (Adaptation region)`
+- **Done check:** In a website, a default and an organic proposal the union of covers equals the set of done items, covers_by is 'adaptation', and view.adaptation.coverage names no uncovered item.
 
-**M5.2 · Fit a Library line to the use case (needs MK-9, D-e)**
-- **What:** Adaptation may drop engines that are not required, and give each engine a note for this use case.
-- **How:** A new C0 step, adapt.fit, runs after adapt_source for a Library source and returns {engines, fit: {engine: note}, why}. The notes are stored on dept.workflows[n].fit, and _context_block hands each engine its note. No instruction overlays and no Library writes. The offline draft is the kind's line unchanged.
-- **Where:** `engine_runtime.py:3499-3516, 3752-3766; engine_defs/website.json (Adaptation steps)`
-- **Done check:** The words 'one page only' keep every required engine, and Write's prompt holds the note. Offline, the line equals the kind's line.
+**M5.2 · Fit a Library line to the use case (wave 2; MK-9, D-e)**
+- **What:** Adaptation may drop engines that are not required and give each engine a note.
+- **How:** W2-ADAPT: a C0 step adapt.fit after adapt.source for a Library source (a new part adaptation.make.fit, check line_is_fitted); notes ride in act.line fit; the registration copies them; _context_block, p_plan_pages and p_write_page hand each engine its note.
+- **Where:** `layers/adaptation/v1.json and v1.py; engine_runtime (_context_block, p_plan_pages, p_write_page)`
+- **Done check:** 'One page only' keeps every required engine; Write's prompt holds its note; offline the line equals the kind's line.
 
-**M5.3 · Priority prices from observed spend**
-- **What:** Priority works from a real estimate and the room actually left today, and keeps indices.
-- **How:** priority_read estimates each engine as the median spend of its runs in runs.json. With no history, it uses a prior: model steps × 1 call × call_usd, from Priority's template. Room is the sum over the line of (envelope − today's spend). The facts are {estimate, room, remaining}, and the prompt gets those figures instead of the constant. A counter names a keep list that fits the room. Each answer is filed with the per-run spend and check verdict it read, as Priority's indices.
-- **Where:** `engine_runtime.py:2721-2735, 4107-4135, 294-298; website_dept.py:816-823; engine_defs/website.json (Priority template)`
-- **Done check:** Room for two engines gives a counter keeping two. No room gives a reject, a conflict and step 4. Enough room gives accept. Estimates equal the medians in the fixture.
+**M5.3 · Priority prices from observed spend (A1, wave 1)**
+- **What:** A real estimate and the room actually left today, with indices.
+- **How:** W1-PRIORITY: priority_read (moved into priority/v1) estimates each engine as the median of its finished runs, with the prior of model steps × 1 call × call_usd (call_usd in priority/v1.json's template); room is the sum over the line of envelope minus today's spend; the bargain prompt gains the estimate and what remains (a 'snapshot: M5.3' commit); each answer is a priority.price row in prices.jsonl through W.append_row; the covering is price_is_observed.
+- **Where:** `layers/priority/v1.py; engine_defs Priority template (call_usd)`
+- **Done check:** Room for two engines gives a counter keeping two; no room gives a reject and a conflict; enough room gives accept; every price row validates.
 
-**M5.4 · Priced options on budget and bargain limits**
-- **What:** An envelope that has run out, or a bargain at its limit, reaches the owner as one priced question.
-- **How:** Reuse M3.5's options. 'Raise' calls W.set_envelope, up to twice the starting budget, otherwise 409 OVER_CAP. 'Leave items out' files a done_items ask that bumps identity_revision. 'Stop here' ends the attempt. Code builds and applies the options; no agent writes a budget offer.
-- **Where:** `engine_runtime.py:1823-1834, 3776-3782; website_dept.py:420, 498`
-- **Done check:** One test per option passes. A raise above the cap returns 409 OVER_CAP. No ask text comes from a model.
+**M5.4 · Priced options on budget and bargain limits (wave 2)**
+- **What:** An exhausted envelope or a bargain at its limit reaches the owner as one priced question.
+- **How:** W2-PRIORITY builds [raise, leave, stop] with cost lines by code and applies raise through W.set_envelope up to RAISE_CAP, else AskError OVER_CAP (409); W2-IDENTITY files them on the conflict ask; W2-ADAPT copies them into act.conflict.
+- **Where:** `layers/priority/v1.py; website_dept.set_envelope; layers/adaptation/v1.py; layers/identity/v1.py`
+- **Done check:** One test per option passes; a raise above the cap gives 409 OVER_CAP; no ask text comes from a model.
 
-**M5.5 · Scenario tests for rare branches**
+**M5.5 · Scenario tests for rare branches (wave 2)**
 - **What:** Seven branches on three kinds, in the gate.
-- **How:** Stub R.MODEL per step id for: counter, reject, limit by hops, by time, by spend, Identity drops, Identity asks. Run each on website, default and organic.
-- **Where:** `test_j2.py (fixture :18-52)`
-- **Done check:** 21 scenario tests pass under pytest and in qa/walks/suites.sh.
+- **How:** W2-PRIORITY: stub R.MODEL per step id for counter, reject, limit by hops, by time and by spend, Identity drops, and Identity asks, on website, default and organic.
+- **Where:** `test_layer_priority.py`
+- **Done check:** 21 scenario tests pass under pytest and in the suites.
 
-**M5.6 · Adaptation's and Priority's panes, and the limit card (needs MK-5)**
-- **What:** S8 shows the proposal, a coverage table and reshapes. S9 shows the bargain timeline, limit bars and today's budget. S10 is the limit card.
-- **How:** Render from /functions/Adaptation and /functions/Priority. Owner-facing words are 'said yes', 'asked for less' and 'said no'.
-- **Where:** `functions_view.py; 24-functions.js; 22-website.js`
-- **Done check:** Render and plain-words tests pass, and GRANT, COUNTER and REFUSE never appear on screen.
+**M5.6 · Adaptation's and Priority's panes, and the limit card (wave 2; MK-5)**
+- **What:** S8 with S11 inside, S9 and S10 grow to the new view fields.
+- **How:** W2-SCREENS renders coverage, prices and the priced options from the views; the words are 'said yes', 'asked for less' and 'said no'.
+- **Where:** `static/js/22-website.js, 24-functions.js`
+- **Done check:** Render and plain-words tests pass from view fixtures; GRANT, COUNTER and REFUSE never appear.
+
+**M5.7 · Adaptation behind its interface (A1, wave 1)**
+- **What:** adaptation/v1 holds Adaptation's recipe, registers every name it uses, holds its words (goal, sense, decide, make) and provides its view.
+- **How:** W1-ADAPT: by reference first; words from the extractor; view by reference plus coverage.
+- **Where:** `layers/adaptation/v1.py, v1.json`
+- **Done check:** test_layer_contracts passes for adaptation/v1; the snapshot's adapt.* cases come from WORDS (unchanged except the M5.1 commit).
+
+**M5.8 · Priority behind its interface (A1, wave 1)**
+- **What:** priority/v1 holds Priority's recipe (priority_grant included), registers every name it uses, holds its words (goal, bargain) and provides its view; its writers say by='priority'.
+- **How:** W1-PRIORITY: by reference first; words from the extractor.
+- **Where:** `layers/priority/v1.py, v1.json; website_dept.set_envelope; engine_runtime.priority_grant`
+- **Done check:** test_layer_contracts passes for priority/v1, and the snapshot's priority.bargain cases are unchanged.
 
 **Acceptance:**
 - Every proposal covers every done-when item.
-- Priority's answer changes with the room actually left, and its reasons are only about money and room.
-- Every limit reaches the owner as one priced question (SM-6).
+- Priority's answer changes with the room actually left, and its reasons are only about money and room (wave 1).
+- Every limit reaches the owner as one priced question, SM-6 (wave 2).
+- adaptation/v1 and priority/v1 pass the contract.
 
-**Ported from the prototype:** A code-built priced question with a cap of twice the budget (P:4141); No bundling: price the work, not the label (the idea, not the rate-card units); The scenario switch (J2_SCENARIO, docs/j2-test-plan.md:209-224)
+**Ported from the prototype:** A code-built priced question capped at twice the budget (P:4141); Price the work, not the label; The scenario switch (J2_SCENARIO) as stubbed models
 
-**Risks:** Live bargains are rare (9 counters and 0 refusals in 46 prototype runs). Mitigation: M5.5. Estimates are rough. Mitigation: observed medians are shown beside actual spend (M9.6).
+**Risks:** Live bargains are rare. Mitigation: M5.5. Options cross three layers. Mitigation: one payload type (act.conflict options); in wave 2 the merge order is PRIORITY, IDENTITY, ADAPT.
 
 ---
 
@@ -803,89 +931,104 @@ flowchart LR
 
 | | |
 |---|---|
-| **Centres on** | Adaptation (VSM S4) · J2.b, FA1.3 · 'needs to be filled', so the build waits for MK-3 · S-31: function × LIFE |
-| **Goal** | Answer the owner's own question for J2.b: when no template fits, how Adaptation makes the workflows from the identity, the goal and the practices in place. Prove a first version, and ship what the owner marks. |
-| **At the end, the owner sees** | First, a short proposal with three tried examples to mark. Then, for a department no template fits, a plan of two to five engines, each saying which done-when items it covers and why. |
+| **Centres on** | Adaptation (VSM S4) · J2.b, FA1.3 · MK-3 taken from the desk spike · S-31: function × LIFE |
+| **Goal** | When no template fits, Adaptation makes the workflows from the identity, the goal and the practices in place, and every one of them conforms to the workflow schema. |
+| **At the end, the owner sees** | For a department no template fits, a plan of two to five engines, each saying which done-when items it covers and why, or one question when Adaptation is not sure. |
+| **Status** | to build |
 | **Ships screens** | S8 |
-| **Depends on** | M3.2, M5.1, MK-3 (M6.3, M6.4) |
-| **Size** | L · about 10 dev-days (spike 3, build 7) |
+| **Depends on** | M3.2, M3.9, M5.1, M7.1 |
+| **Size** | L · M6.1 and M6.2 done; M6.3 to M6.5 inside W1-ADAPT (wave 1, its last three steps) |
 
-**M6.1 · A design spike in the prototype (starts on day 1)**
-- **What:** Evidence for the owner, from runs, before any build.
-- **How:** In J2_Prototype, where every workflow is already custom, run three briefs that match no Library kind. Write a two-page proposal covering: which 'practices in place' are read (candidates: the department's rules, the Library's engine use cases, the organisation's earlier registered workflows, the kind's done line); whether the Make module's levels 1 to 3 belong in version 1; and the confidence rule for 'ask the person' (FA1.3). Attach the plans and costs of the three runs.
-- **Where:** `J2_Prototype/agents/j2/adaptation.md (read only), runs/; the proposal goes to the owner`
-- **Done check:** The proposal and the three runs exist and are linked from MK-3.
+**M6.1 · A design spike in the prototype (built)**
+- **What:** The desk spike PRD-FIVE-FUNCTIONS-J2B.md.
+- **How:** Built (563bbd5b). A1: its engine shape (J2B-4) is the workflow.engine definition (level, confidence, doubt, internet, covers); make.md's shaping part becomes the typed part adaptation.make.shape (W1-ADAPT); the Pages form (J2B-3) is W2-CHECKS' form check (M7.5). The proposal document itself is unchanged.
+- **Where:** `design/PRD-FIVE-FUNCTIONS-J2B.md`
+- **Done check:** test_prd_docs passes unchanged.
 
-**M6.2 · The owner marks J2.b**
-- **What:** The owner marks each row of the proposal keep, change or drop.
-- **How:** Walk the proposal with the owner and record the marks on the site's J2.b and FA1 rows (journeys.json, functions.json), following the site's process.
-- **Where:** `Native site data: journeys.json J2.b, functions.json Adaptation`
-- **Done check:** J2.b no longer reads 'needs to be filled', and every proposal row carries a mark.
+**M6.2 · The owner marks J2.b (taken)**
+- **What:** Every J2B row is marked keep (MK-3, 2026-10-23).
+- **How:** Recorded. Writing the marks to the Native site stays pending under C2.
+- **Where:** `PRD-FIVE-FUNCTIONS-DECISIONS.md`
+- **Done check:** MK-3's row names the spike and its three runs.
 
-**M6.3 · Read the practices in place (as marked)**
-- **What:** Adaptation's line request carries the practices the owner marked.
-- **How:** adapt_source gathers the marked practices into the request's input as names and use cases, never whole files.
-- **Where:** `engine_runtime.py:3744-3766`
-- **Done check:** A test shows the request carries exactly the marked practices and nothing else.
+**M6.3 · Read the practices in place (A1, wave 1)**
+- **What:** Adaptation's line request carries the marked practices.
+- **How:** W1-ADAPT: with J2_ADAPT_MAKE on and a shaped source, adapt_source adds practices {rules, engines, artifacts, required, taken} (J2B-2) to act.line_request, as names and use cases, never files.
+- **Where:** `layers/adaptation/v1.py (adapt_source)`
+- **Done check:** The request carries exactly those five keys; a website department's required names Check.
 
-**M6.4 · Shape from the identity, with a confidence (as marked)**
-- **What:** With no template, Adaptation proposes engines that cover the items, or asks one question when it is not confident.
-- **How:** For a no-template source, p_adapt_line returns 2 to 5 engines (or the marked range), each {name, does, reads, writes, covers, confidence}, using function-prompts/adaptation/make.md. If any engine has low confidence, Identity asks one question instead of Adaptation guessing. Offline, today's draft is kept and the plan says so.
-- **Where:** `engine_runtime.py:4279-4305; function-prompts/adaptation/make.md`
-- **Done check:** An organic department and a default department each get a plan that covers their items. A low-confidence stub produces one Identity question and no registration.
+**M6.4 · Shape from the identity, with a confidence (A1, wave 1)**
+- **What:** With no template, Adaptation proposes engines covering the items, or asks one question when it is not confident.
+- **How:** W1-ADAPT: a typed part adaptation.make.shape (A1-SHAPE; W1-ADAPT adds the PROMPTS row); line_is_engines runs validate_workflow at the proposal stage and checks J2B-4; J2B-7 with S.CONFIDENCE: 0.8 or above to Priority, 0.6 to under 0.8 with the doubt shown, under 0.6 inform/doubt to Identity (M3.9), cannot gives a conflict with options [root_setup, leave, stop] (root_setup applied by root/v1, W1-ROOT). Offline keeps today's draft.
+- **Where:** `layers/adaptation/v1.py, v1.json`
+- **Done check:** Organic and default plans cover their items; a stub at 0.45 gives one question and no registration; at 0.7 the doubt shows and nothing is asked; offline keeps the draft.
 
-**M6.5 · No-template scenarios**
-- **What:** End-to-end tests for the no-template path.
-- **How:** Scenario tests on the organic and default kinds: shape, bargain, Root's check, run, read.
-- **Where:** `test_j2.py`
+**M6.5 · No-template scenarios (A1, wave 1)**
+- **What:** End-to-end tests.
+- **How:** W1-ADAPT: organic and default kinds with stubbed models: shape, bargain, Root's check, run, read.
+- **Where:** `test_layer_adaptation.py`
 - **Done check:** Both kinds reach step 7 with a covering plan, in the gate.
 
 **Acceptance:**
-- The owner has marked J2.b.
-- A department no template fits gets a covering plan, or one question, never a guess.
+- A department no template fits gets a covering plan that passes the workflow schema, or one question, never a guess.
+- Behind J2_ADAPT_MAKE in Beta until reviewed.
 
-**Ported from the prototype:** Custom workflows from the charter (_turn_adaptation, P:4684); Plan checks before building (_lld_gaps, _atoms_checked) as ideas for the spike
+**Ported from the prototype:** Custom workflows from the charter (_turn_adaptation, P:4684); Plan checks before building (_lld_gaps, _atoms_checked)
 
-**Risks:** The spike's answer may change M5.2 or M7. Mitigation: the build stays behind J2_ADAPT_MAKE until it is marked.
+**Risks:** The 0.6 and 0.8 thresholds are a starting rule. Mitigation: the J2B reversal trigger; they sit in S.CONFIDENCE.
 
 ---
 
-### M7 · Root's check against written standards
+### M7 · Root's check is the workflow schema
 
 | | |
 |---|---|
-| **Centres on** | Root · J2.e · the standards list is a placeholder, so the build waits for MK-4 · S-31: organisation × LIFE |
-| **Goal** | Root checks every granted line against a standards file, names the broken standard when it refuses, and registers the plan on the department's record. |
-| **At the end, the owner sees** | A 'Root's check' row with one dot per standard and the broken one named in plain words. Root's standards can be read in Root settings. |
-| **Ships screens** | S11 |
-| **Depends on** | M2.1, M4.4, M5.1, M5.3, MK-4, Q5 |
-| **Size** | M · about 6 dev-days (4 backend, 2 frontend) |
+| **Centres on** | Root · J2.e · MK-4 taken · folded into the workflow schema (A1) · S-31: organisation × LIFE |
+| **Goal** | Every department workflow conforms to one schema in code. Root checks every granted line against its standards at registration and names the broken one when it refuses; the same schema is checked at birth, at proposal, when the line grows, and on every write. |
+| **At the end, the owner sees** | A 'Root's check' row with one dot per standard and the broken one named in plain words; Root settings listing the standards every plan meets, read only. |
+| **Status** | to build |
+| **Ships screens** | S11, S18 |
+| **Depends on** | M2.1, M2.3, M4.4 |
+| **Size** | M · M7.1 to M7.4 in wave 1 (W1-ROOT about 90 min; W1-UI); M7.5 in wave 2 (W2-CHECKS) |
 
-**M7.1 · Standards as a file Root reads**
-- **What:** Root's check reads its standards from data, not code.
-- **How:** standards/workflow-v1.json, shipped in the bundle, holds today's checks: engines known, each reads what one before it wrote, unique names, size. _root_checks reads the file. Owner changes live in the records home and are applied by an ask, as in M2.2.
-- **Where:** `engine_runtime.py:3785-3797; new standards/`
-- **Done check:** Removing a standard from the file removes its check, and the event lists exactly the file's checks.
+**M7.1 · The workflow schema at birth, proposal, registration, grow and write (A1, wave 1)**
+- **What:** Root's standards are WORKFLOW_STANDARDS in the interface, and workflow_schema.py holds their code.
+- **How:** W1-ROOT: STANDARD_CHECKS and run(wf, stage, dept, ctx), with the first input taken from the kind and check_exists falling back to the Default template. _root_run, _root_checks and _root_check call it; W.create and setup_make check the kind's line at birth; W.add_engine checks the grown line; save_dept and set_line run the write stage.
+- **Where:** `new workflow_schema.py; engine_runtime (Root's check, Setup); website_dept (create, add_engine)`
+- **Done check:** For each of the four kinds, workflow.<kind>.good.json passes every stage, and each workflow.bad.<standard>.json is refused with exactly that id. The root kind (Setup reads Request) and an organic kind (no line) are born. The event's checks equal the rows run.
 
-**M7.2 · The proposed version 1 standards (after MK-4)**
-- **What:** The proposed list: each engine reads the Brief or what one before it wrote; each names one output; no name is used twice; every done-when item is covered; no required engine is left out; the size is within the ruled range (Q11); each engine's check exists for its artifact type; the estimate fits the room.
-- **How:** Add the marked standards to the file, with their code checks. A refused plan is reshaped at most twice, then reaches the owner as the M3.5 options ask.
-- **Where:** `standards/workflow-v1.json; engine_runtime.py:3800-3843`
-- **Done check:** One test per standard: the plan is refused with that reason and reshaped, and on the third refusal an options ask appears.
+**M7.2 · The standards (MK-4): refused twice, then options (A1, wave 1)**
+- **What:** The eight M7.2 standards plus those that ran before, by id.
+- **How:** W1-ROOT: items_covered, required_kept, size_in_range (no hard cap; more than six says why), check_exists and fits_room join the shape standards. A refusal goes back to Adaptation at most REPAIRS times; the third reaches the owner through Identity's _blocked options ask (built in M3.5), naming the standard.
+- **Where:** `workflow_schema.py; engine_runtime._j2_settle`
+- **Done check:** On the third refusal one options ask appears naming the broken standard in its words, and its options apply.
 
-**M7.3 · Root's check on screen, and Root settings > Standards**
-- **What:** S11 and a Standards list in Root settings.
-- **How:** S11 appears in Adaptation's pane and as the title of the 'Root's review' pill. Root settings gains Standards, where Change files an ask.
-- **Where:** `24-functions.js; static/js/22-website.js:1044 (wbRootPaneHtml)`
-- **Done check:** Render tests pass, with no counts at rest.
+**M7.3 · Root's check on screen (S11) and Root settings > Standards (S18) (A1, wave 1)**
+- **What:** One dot per standard; a read-only list in Root settings.
+- **How:** W1-ROOT writes the standard rows on workflow.validated and workflow.blocked; W1-ADAPT's view carries them in root_checks; W1-UI draws S11's dots and S18 from GET /layers.
+- **Where:** `static/js/22-website.js (wbRootPaneHtml), 24-functions.js`
+- **Done check:** S11 shows one dot per standard that applied, with the refused one named in its words; S18 lists the standards in order with no Change button.
+
+**M7.4 · Root behind its interface (A1, wave 1)**
+- **What:** root/v1 names Setup's recipe, registers Setup's steps, holds the setup prompts as typed words, and pins layers at birth.
+- **How:** W1-ROOT: WORDS for root.setup.converse and root.setup.shape byte for byte, with a snapshot of its own; W.create writes layers = DEFAULT_PINS and schema_version; born_template checks engine.template before writing; root/v1 applies the root_setup option (for M6.4).
+- **Where:** `layers/root/v1.py; website_dept.create; engine_runtime (Setup region, born_template)`
+- **Done check:** test_layer_contracts passes for root/v1; the root prompt snapshot matches; a new department carries six pins; a bad engine template is caught before it is written; a root_setup option posts one request on the Root department.
+
+**M7.5 · Artifact forms on every write (wave 2; J2B-3)**
+- **What:** A shaped writer that a Library engine reads files the reader's form, enforced where it is written.
+- **How:** W2-CHECKS: artifacts.py gains pages_are_checkable, and the Pages template names it as its form; born_template takes form from the shape; do_file applies it. Behind J2_ADAPT_MAKE.
+- **Where:** `artifacts.py; artifact-templates/pages.json; engine_runtime (born_template, do_file, _j2_settle)`
+- **Done check:** A shaped writer's Pages in the form pass Check and reach Publish; whole HTML pages fail at the writer; with the flag off nothing changes.
 
 **Acceptance:**
+- Every workflow of every kind is checked at birth, proposal, registration, grow and write by one schema.
 - A refused plan always names the broken standard.
-- The standards the owner marked are the only ones checked.
+- The standards are code, listed read-only for the owner.
 
 **Ported from the prototype:** The code validator at J2.e (P:5487): its field and refusal rules, not the rate card
 
-**Risks:** Standards that are too strict could loop. Mitigation: two reshapes at most, then an ask.
+**Risks:** items_covered could refuse legacy lines before M5.1. Mitigation: as_workflow fills default covers (every item to the last engine). Standards too strict could loop. Mitigation: two reshapes at most, then an ask.
 
 ---
 
@@ -893,69 +1036,77 @@ flowchart LR
 
 | | |
 |---|---|
-| **Centres on** | Audit (VSM S3*) · FAU1, J2.g · beyond version 1 ('as built'), see Q2; S-30 marks owed (MK-2) · S-31: function × LIFE |
-| **Goal** | Audit reads every kind's deliverable item by item: the mechanical code step first, then the AI judge inside. It also drops in unannounced. Identity's covering declares done from Audit's reading, and the owner always has a next move. |
-| **At the end, the owner sees** | For website, default and organic departments: each done-when item marked met, not met or to confirm, with evidence; every finding and where it went; spot checks Audit made on its own; and a 'goal reached' that can be trusted. |
+| **Centres on** | Audit (VSM S3*) · FAU1, J2.g · S-30 (MK-2 taken) · S-31: function × LIFE |
+| **Goal** | Audit reads every kind's deliverable item by item, code checks first, and files S-30 readings; Identity's covering declares done from them; Audit also drops in unannounced. A1: the deliverable is the interface's, readings are typed records, and done is Identity's covering. |
+| **At the end, the owner sees** | For every kind: each done-when item marked met, not met or to confirm, with evidence; every finding and where it went; spot checks; a 'goal reached' that can be trusted. |
+| **Status** | to build |
 | **Ships screens** | S12 |
-| **Depends on** | M0.3, M2.4, M3.2, M4.2, MK-2, Q3, Q4 |
-| **Size** | L · about 19 dev-days (16 backend, 3 frontend) |
+| **Depends on** | M0.3, M2, M3.2, M4.2 |
+| **Size** | L · M8.1 to M8.3 and M8.9 inside W1-AUDIT (about 80 min, wave 1); M8.4 to M8.6 and M8.8 in wave 2; M8.7 in wave 3 |
 
-**M8.1 · The deliverable is the plan's last output**
+**M8.1 · The deliverable is the plan's last output (A1, wave 1)**
 - **What:** Each department's deliverable is computed from its registered plan.
-- **How:** W.last_deliverable(ref) returns what the last engine in the latest registered workflow writes: Live site for a website, Result for default, the shaped last artifact for organic. No artifact-template flag.
-- **Where:** `website_dept.py; dept.workflows`
-- **Done check:** A test per kind names the right deliverable.
+- **How:** W1-AUDIT: S.deliverable(d) replaces every 'Live site' resolution on Audit's path.
+- **Where:** `layer_schema.deliverable; layers/audit/v1.py; engine_runtime (Audit region)`
+- **Done check:** One test per kind names the right deliverable: Live site, Result, and the shaped last artifact.
 
-**M8.2 · Audit reads any kind's deliverable**
-- **What:** Audit and Adaptation start on the department's deliverable, not only on Live site.
-- **How:** Their start.on gains {kind: 'version', of: '$deliverable', checked: true}, resolved per department in _on_version. Replace every hard-coded 'Live site' in audit_pick, audit_mechanical, p_audit_judge, the about field of audit_file, _j2_audit_read, J.on_post's evidence_refs and J.audited. Add a text-reading path for deliverables that are not HTML.
-- **Where:** `engine_defs/website.json; engine_runtime.py:829-835, 2882-2948, 3956-3968, 4139-4160; j2_runtime.py:332-336, 445-461`
-- **Done check:** A default department (Do, then Result) and an organic shaped department both reach step 7. grep finds no 'Live site' literal left on Audit's path.
+**M8.2 · Audit reads any kind's deliverable (A1, wave 1)**
+- **What:** Audit and Adaptation start on the department's deliverable.
+- **How:** W1-AUDIT changes Audit's start.on to {kind: 'version', of: '$deliverable', checked: true} in audit/v1.json, resolves '$deliverable' in _on_version through S.deliverable, replaces the literals in audit_pick, audit_mechanical, p_audit_judge, audit_file, _j2_audit_read, J.on_post's evidence_refs and J.audited, and reads a deliverable that is not HTML as text. W1-ADAPT changes Adaptation's start key in adaptation/v1.json the same way.
+- **Where:** `layers/audit/v1.json; layers/adaptation/v1.json (start key); engine_runtime (_on_version, the Audit region); j2_runtime (on_post, audited)`
+- **Done check:** A default department (Do, then Result) and an organic shaped one both reach step 7; grep finds no 'Live site' literal on Audit's path; the website scenarios are unchanged.
 
-**M8.3 · A reading per done-when item (format per MK-2)**
-- **What:** Each item is judged met, not met or to confirm, with its evidence.
-- **How:** A new Audit step, audit.items (the AI inside), judges each item, after the mechanical step (code, recipe step 2) has run. readings.jsonl rows use the S-30 fields: subject, claim, evidence, method, verdict, severity. When a mechanical failure and the judge disagree, both rows are recorded (Q4).
-- **Where:** `engine_runtime.py:2882-2960, 4139-4160; engine_defs/website.json`
-- **Done check:** A stub judge says 'met' on an item that failed mechanically: the reading records not_met and keeps both rows. Every row has the six S-30 fields.
+**M8.3 · A reading per done-when item, in the S-30 shape (A1, wave 1)**
+- **What:** Each item is judged met, not met or to confirm, with evidence.
+- **How:** W1-AUDIT: a step audit.items (C0, the typed part audit.judge.items with the A1-ITEMS contract, check reading_is_s30) after audit.mechanical; readings.jsonl rows as audit.reading through W.append_row; a measured failure stands over the judge, both rows kept (Q4); until M8.4, J.audited counts done from the reading (every item met, none to confirm, no high finding open), never from 'no findings'.
+- **Where:** `layers/audit/v1.py, v1.json; j2_runtime.audited`
+- **Done check:** A stub judge says met on an item that failed mechanically and the reading records not_met with both rows; offline there is no goal.reached.
 
-**M8.4 · Identity's covering declares done**
+**M8.4 · Identity's covering declares done (wave 2)**
 - **What:** Done is a code check in Identity's covering, made against Audit's reading.
-- **How:** A new code step, identity.done, reads the latest reading. Done means every item is met, nothing is left to confirm, and no high finding is open. It then writes goal.reached, with evidence_refs pointing at the reading. J.audited is retired; j2_runtime only records.
-- **Where:** `engine_runtime.py:3956-3968; engine_defs/website.json (Identity); j2_runtime.py:445-461`
-- **Done check:** No findings but D2 not met: not done. Every item met: goal.reached, citing the reading. An item still to confirm: not done. SM-1 is 0 across the suite.
+- **How:** W2-IDENTITY: Identity's handler 'Hear a reading' (inform/reading): identity.done (C2, done_is_read) writes goal.reached citing the reading; J.audited only records. Audit posts inform/reading only when Identity's recipe has that handler (W1-AUDIT wrote the guard).
+- **Where:** `layers/identity/v1.json and v1.py; j2_runtime.audited`
+- **Done check:** No findings but D2 not met: not done. Every item met: goal.reached citing the reading id. SM-1 is 0.
 
-**M8.5 · Identity weighs a reading three ways**
-- **What:** A fact only the owner knows becomes a question; a wrong that needs the owner's yes becomes an ask; anything else becomes the next thing to correct.
-- **How:** Until M9 ships, 'anything else' goes to the owner as Identity's finding ask: a stamp files 'Correct this:' as a Brief version (R:2603-2604) and the line runs again, so the owner always has a next move. From M9 it goes to Adaptation as the next round.
-- **Where:** `engine_runtime.py:2642-2700`
-- **Done check:** One test per route. With J2_PURSUE off, a not-met item always leaves a pending ask (SM-6).
+**M8.5 · Identity weighs a reading three ways (wave 2)**
+- **What:** A fact only the owner knows becomes a question; a wrong that needs the owner's yes becomes an ask; anything else is the next thing to correct.
+- **How:** W2-IDENTITY: identity.weigh_reading routes to_confirm items to a question, consent findings to an ask, and the rest to Adaptation as request/next.
+- **Where:** `layers/identity/v1.py`
+- **Done check:** One test per route; a not-met item always leaves a next move (SM-6).
 
-**M8.6 · Measurable checks for websites**
+**M8.6 · Measurable checks for websites (wave 2)**
 - **What:** Browser-free checks in the mechanical step.
-- **How:** In-page links resolve, every form has a submit, images have alt text, there is exactly one h1, and no placeholder text ('to be confirmed', lorem) remains.
-- **Where:** `engine_runtime.py:2888-2932`
-- **Done check:** A fixture per defect gives a finding that names where and what.
+- **How:** W2-CHECKS: in-page links resolve, every form has a submit, images have alt, exactly one h1, no placeholder text; each is a finding naming where and what.
+- **Where:** `layers/audit/v1.py (audit_mechanical, moved)`
+- **Done check:** A fixture per defect gives a finding naming where and what.
 
-**M8.7 · Sporadic, unannounced spot checks (cadence: Q3)**
-- **What:** Audit also drops in at a random moment, as ruled on 2026-09-27.
-- **How:** Audit gains a second trigger: a random minute within its cadence (once a day by default). It reads engine state directly (every version has a run and a check, each traces back, nothing is stuck), files findings to the record, and never touches a workflow or a version.
-- **Where:** `engine_defs/website.json (Audit start: timer with jitter); engine_runtime.py:850-860, 2888`
-- **Done check:** With a fake clock there is one spot check per cadence, at a minute that is not fixed. Findings are filed, and nothing is written outside Audit's own rows.
+**M8.7 · Sporadic, unannounced spot checks (wave 3)**
+- **What:** Audit drops in at a random minute within its cadence.
+- **How:** W3-BOARD: a timer start with jitter (spot_every_s, once a day by default) reading engine state only; audit.spot_check rows through W.append_row; covering spot_check_reads_only.
+- **Where:** `layers/audit/v1.json and v1.py; spot_checks.jsonl`
+- **Done check:** With a fake clock there is one spot check per cadence at a minute that is not fixed, and nothing is written outside Audit's rows.
 
-**M8.8 · Audit's pane (needs MK-5)**
-- **What:** S12 shows done-when as read, readings per version, findings and where each went, and spot checks.
-- **How:** Render from /functions/Audit. Severity shows as a word with a dot, never as a number.
-- **Where:** `functions_view.py; 24-functions.js`
-- **Done check:** Render tests pass from fixtures.
+**M8.8 · Audit's pane (wave 2)**
+- **What:** S12.
+- **How:** W2-SCREENS renders view.audit's new fields; severity as a word with a dot.
+- **Where:** `static/js`
+- **Done check:** Render tests pass from view fixtures.
+
+**M8.9 · Audit behind its interface (A1, wave 1)**
+- **What:** audit/v1 holds Audit's recipe, registers every name it uses, holds its words (goal, judge) and provides its view.
+- **How:** W1-AUDIT: by reference first; words from the extractor.
+- **Where:** `layers/audit/v1.py, v1.json`
+- **Done check:** test_layer_contracts passes for audit/v1, and the snapshot's audit.judge case is unchanged.
 
 **Acceptance:**
-- SM-1 is 0, and SM-7 is 3 of 3 in the scenario suite.
-- Every not-met item leaves the owner a next move.
-- Spot checks run at unannounced times.
+- Audit reads the deliverable of every kind (wave 1).
+- Every reading validates as audit.reading (wave 1).
+- SM-1 is 0, and SM-7 is 3 of 3 in the scenario suite (wave 2).
+- Every not-met item leaves the owner a next move (wave 2).
 
-**Ported from the prototype:** The workable() done verdict as a code check (P:2240), here in Identity's covering; Browser-free checks from j2_check.py; to_be_confirmed blocks done
+**Ported from the prototype:** workable() as a code check (P:2240), here in Identity's covering; Browser-free checks from j2_check.py; to_be_confirmed blocks done
 
-**Risks:** Judging each item costs calls. Mitigation: mechanical checks first, and one model call per reading, not one per item.
+**Risks:** Per-item judging costs calls. Mitigation: mechanical checks first, one model call per reading.
 
 ---
 
@@ -963,68 +1114,70 @@ flowchart LR
 
 | | |
 |---|---|
-| **Centres on** | Adaptation, with Priority and Identity · FA2, J2.h · beyond Adaptation's version 1 ('no loop'), see Q2; the name waits for MK-10 · S-31: department × LIFE |
-| **Goal** | After a reading that is not done, Adaptation proposes a correction round on the registered line. Priority prices it inside the goal's ceiling, Identity files it as a Brief version, the line runs again on its own triggers, and Audit reads again. This repeats until the goal is reached or a limit asks the owner. |
-| **At the end, the owner sees** | Round dots on the progress line, the next round and its price, a priced question at any limit, and a ready card when the goal is reached. |
+| **Centres on** | Adaptation, with Priority and Identity · FA2, J2.h · S-31: department × LIFE |
+| **Goal** | After a reading that is not done, Adaptation proposes a correction round on the registered line; Priority prices it inside the goal's ceiling; Identity files it as a Brief version; the line runs again; Audit reads again; repeat until done or a limit asks the owner. A1: rounds are typed acts and records. |
+| **At the end, the owner sees** | Round dots, the next round and its price, a priced question at any limit, and a ready card when the goal is reached. |
+| **Status** | to build |
 | **Ships screens** | S4, S8, S9, S10, S14 |
-| **Depends on** | M5, M8, MK-10, Q2, Q6, Q7, Q8 |
-| **Size** | L · about 14 dev-days (11 backend, 3 frontend) |
+| **Depends on** | M5, M8 |
+| **Size** | L · wave 2: W2-IDENTITY, W2-ADAPT, W2-PRIORITY and W2-SCREENS (about 80 min) |
 
-**M9.1 · Adaptation proposes the next round**
-- **What:** A correction round, priced, on the existing line.
-- **How:** A new handler on Identity's inform {word: 'next', items} runs adapt.pursue, then p_adapt_next (C0), and sends a round proposal {fixes, covers, correction, estimate} to Priority. The estimate is the observed cost of running the registered line again (M5.3). A round never registers a line.
-- **Where:** `engine_runtime.py (a new handler beside adapt_act, R:2808); engine_defs/website.json; function-prompts/adaptation/decide.md`
-- **Done check:** A reading with D2 not met gives one round proposal that names D2 and carries an estimate equal to the fixture's line cost.
+**M9.1 · Adaptation proposes the next round (wave 2)**
+- **What:** A priced correction on the existing line.
+- **How:** W2-ADAPT: Adaptation's handler 'Propose the next round' (request/next from Identity): adapt.next (C0, the typed part adaptation.decide.next, check round_is_new) and adapt.round (C2), posting propose/round (act.round) to Priority with the line's observed cost; rounds.jsonl status proposed, through W.append_row. A round never registers a line. Identity posts request/next only once Adaptation's recipe has the handler.
+- **Where:** `layers/adaptation/v1.json and v1.py`
+- **Done check:** A reading with D2 not met gives one round proposal naming D2, with an estimate equal to the fixture's line cost.
 
-**M9.2 · Priority prices the round inside the ceiling**
+**M9.2 · Priority prices the round inside the ceiling (wave 2)**
 - **What:** The goal's ceiling is a gate in Priority's covering.
-- **How:** The ceiling {rounds, calls, usd} lives in Priority's envelopes as dept.envelopes._goal. Priority's covering refuses to fund a round past it and raises the limit ask (M5.4 options).
-- **Where:** `engine_runtime.py (priority_read, priority_post); website_dept.py`
-- **Done check:** Round 7 of 6 is not funded and an options ask appears. A raise is applied by code, capped at twice the starting budget.
+- **How:** W2-PRIORITY: dept.ceiling (priority.ceiling), written at the first registration; round_within_ceiling answers word round; past it, reject with [raise ceiling, leave, stop]; cycle.ceiling and _budget read it.
+- **Where:** `layers/priority/v1.py`
+- **Done check:** Round 7 of 6 is not funded and an options ask appears; a raise is applied by code, capped at RAISE_CAP.
 
-**M9.3 · Identity files the correction; the line runs again**
-- **What:** A granted round becomes a Brief version, and the registered engines run on their own triggers.
-- **How:** Identity files 'Correct this: ...' as a Brief version (no stamp unless a rule says ask, S-18), by the same path identity_apply uses for a stamped finding. Plan, Write, Check and Publish run again on their version triggers, and Audit reads the new deliverable.
-- **Where:** `engine_runtime.py:2603-2604 (_file_brief), 829-835`
-- **Done check:** Scenario: not met, then a round, Brief v3, Live site v2, a new reading and goal.reached. Only registered engines run (SM-3).
+**M9.3 · Identity files the correction; the line runs again (wave 2)**
+- **What:** A granted round becomes a Brief version.
+- **How:** W2-IDENTITY: Adaptation informs Identity's handler 'File a granted round', which calls _file_brief('Correct this: ...') with no stamp unless a rule says ask (S-18).
+- **Where:** `layers/identity/v1.json and v1.py; engine_runtime._file_brief`
+- **Done check:** Scenario: not met, then a round, Brief v3, Live site v2, a new reading and goal.reached; only registered engines run (SM-3).
 
-**M9.4 · The same failure twice changes the approach**
+**M9.4 · The same failure twice changes the approach (wave 2)**
 - **What:** No round repeats a correction that already failed.
-- **How:** Adaptation's covering check refuses a round whose correction for an item matches the last round that failed on that item, and p_adapt_next is told 'the last approach failed'. A changed line goes through steps 3 to 5 as a full registration (M4.2).
-- **Where:** `engine_runtime.py (the adapt.pursue covering)`
-- **Done check:** A repeated failure gives a different correction or a limit question, never the same round twice.
+- **How:** W2-ADAPT: round_is_new refuses a correction equal to the last failed one for an item.
+- **Where:** `layers/adaptation/v1.py`
+- **Done check:** A repeated failure gives a different correction or a limit question.
 
-**M9.5 · No silent ends**
+**M9.5 · No silent ends (wave 2)**
 - **What:** Every limit ends in one options ask.
-- **How:** Rounds or money (M9.2), two rounds with no progress, and J2.7 (a result failed its check twice in _send_back, which today only tells) each end in an options ask. 'Done with open items' is offered only after Q6.
-- **Where:** `engine_runtime.py:1607 (_send_back), 2642-2700; j2_runtime.py`
-- **Done check:** In the scenario suite, every end state that is not done has a pending ask (SM-6).
+- **How:** W2-IDENTITY: rounds or money (M9.2), two rounds with no progress, and J2.7 (_send_back twice) each end in an options ask; no 'done with open items' (Q6).
+- **Where:** `engine_runtime._send_back; layers/identity/v1.py`
+- **Done check:** Every end state that is not done has a pending ask with options (SM-6).
 
-**M9.6 · Rounds and spend per function**
-- **What:** Rounds are counted, and spend is shown per function and per round.
-- **How:** A round is counted for each correction Brief version. Spend per round comes from the runs linked to that round through the ledger's run_ref, because steps.jsonl rows carry no round.
-- **Where:** `functions_view.py; j2_runtime.py`
-- **Done check:** In a test, the sums equal runs.json for each round.
+**M9.6 · Rounds and spend per function (wave 2)**
+- **What:** Rounds counted; spend per function and per round.
+- **How:** W2-ADAPT: view.adaptation.rounds from rounds.jsonl; W2-PRIORITY: view.priority.spend_by_round from runs linked by the ledger's run_ref.
+- **Where:** `layers/adaptation/v1.py; layers/priority/v1.py`
+- **Done check:** The sums equal runs.json for each round.
 
-**M9.7 · Pursue on screen**
-- **What:** Round dots, the next round, spend by round, the limit card and the ready card.
-- **How:** Round dots on the progress line; a Next round card in S8; spend by round in S9; the limit card S10; the ready card S14, with its 'one thing open' variant after Q6.
-- **Where:** `24-functions.js; 22-website.js`
+**M9.7 · Pursue on screen (wave 2)**
+- **What:** Round dots, the next round card, spend by round, the limit card and the ready card.
+- **How:** W2-SCREENS renders from the views and the cycle.
+- **Where:** `static/js/24-functions.js, 22-website.js`
 - **Done check:** Render tests pass from fixtures.
 
-**M9.8 · A goal change reopens the cycle (Q7)**
-- **What:** J2.8: a stamped goal change starts a new cycle.
-- **How:** A stamped goal rule, or a stamped change to the done items, calls J.reopen(ref): a new cycle_id at step 1, with the record kept. After done, task words follow J3 4a (Q8).
-- **Where:** `engine_runtime.py:2582-2596; j2_runtime.py:124-200`
+**M9.8 · A goal change reopens the cycle (wave 2; Q7)**
+- **What:** J2.8.
+- **How:** W2-IDENTITY: a stamped goal rule or done_items change calls J.reopen(ref): a new cycle_id at step 1, with the record kept.
+- **Where:** `layers/identity/v1.py; j2_runtime`
 - **Done check:** A done department receives a stamped goal rule and gets a new cycle with a step-1 event.
 
 **Acceptance:**
-- In the scenario suite, a department with a failing item either reaches done in two or more rounds, or ends at a limit with an ask.
-- SM-3 and SM-6 hold in every round, and SM-9 is measured.
+- A department with a failing item either reaches done in two or more rounds or ends at a limit with an ask.
+- SM-3 and SM-6 hold in every round; SM-9 is measured.
+- Every round act and record validates.
 
 **Ported from the prototype:** Limits never stop silently (P:3340-3352); The 'same failure twice' guard; A cycle ceiling (J2_MAX_CYCLES = 6)
 
-**Risks:** Cost can run away (prototype runs reached 57 to 131 calls). Mitigation: the ceiling in Priority's gate, estimates from observed cost, and spend per function on screen.
+**Risks:** Cost can run away. Mitigation: the ceiling gate, observed estimates, round_is_new, and spend on screen.
 
 ---
 
@@ -1033,43 +1186,51 @@ flowchart LR
 | | |
 |---|---|
 | **Centres on** | All five · ruled screens 3.1 to 3.4 · S-31: department × MEETINGS |
-| **Goal** | The owner can read what the functions say to each other, runtime departments read one API family, and the whole loop is proved on three kinds with live models. |
-| **At the end, the owner sees** | Internal messages (read only, from > to, a colour per function, a filter) where the Board was, plus the shared proof report. |
+| **Goal** | The owner can read what the functions say to each other, runtime departments read one API family, the loop is proved on three kinds, and the interface is proved strict. |
+| **At the end, the owner sees** | Internal messages (read only, from > to, a colour per function, a filter) where the Board was, and the proof report. |
+| **Status** | to build |
 | **Ships screens** | S13 |
-| **Depends on** | M1, M9, MK-6 |
-| **Size** | M · about 10 dev-days (6 backend, 4 frontend) |
+| **Depends on** | M1, M2, M9 |
+| **Size** | M · wave 2: W2-SCREENS and W2-PROOF; wave 3: W3-PROOF reruns the proof |
 
-**M10.1 · Internal messages (MK-6)**
-- **What:** S13 replaces the Board (the ruled rename). Agent activity folds in as 'Show every step'.
-- **How:** GET /api/native/{ref}/messages?fn=&after= maps board_view rows to {from, to, act_words, summary, at} and strips private keys.
-- **Where:** `website_api.py; engine_runtime.py:4640 (board_view); static/js/23-screens.js:177-201`
-- **Done check:** A filter returns only rows where the function is the sender or the recipient. There is no composer and no payload keys.
+**M10.1 · Internal messages (wave 2; MK-6)**
+- **What:** S13 replaces the Board.
+- **How:** W2-SCREENS: GET /api/native/{ref}/messages?fn=&after= maps board_view rows to {from, to, act_words, summary, at} with private keys stripped.
+- **Where:** `website_api.py; engine_runtime.board_view; static/js/23-screens.js`
+- **Done check:** A filter returns only rows where the function is sender or recipient; no composer; no payload keys.
 
-**M10.2 · One API family for runtime departments**
-- **What:** Function cards for runtime departments read only /api/native and /j2.
-- **How:** 20-dept.js checks wbIs(ref) before calling dpLoad for the five function routes.
-- **Where:** `static/js/20-dept.js:53, 572-720`
+**M10.2 · One API family for runtime departments (wave 2)**
+- **What:** Function cards read only /api/native and /j2.
+- **How:** W2-SCREENS: 20-dept.js checks wbIs(ref) before dpLoad for the five function routes.
+- **Where:** `static/js/20-dept.js`
 - **Done check:** A runtime fixture makes zero calls to /api/dept/{ref}/(identity|adaptation|priority|coordination|audit).
 
-**M10.3 · Words pass**
+**M10.3 · Words pass (wave 2)**
 - **What:** Every new card follows the word rules.
-- **How:** Extend tests W9 and W19 to every new card, use plain words for the ladder in Settings, and fold steps behind 'Show the steps'.
-- **Where:** `test_website.js; 20-dept.js:1212; 22-website.js:952`
+- **How:** W2-SCREENS: extend W9 and W19 to every new pane and to S16 and S18.
+- **Where:** `test_website.js`
 - **Done check:** The word tests pass.
 
-**M10.4 · The proof run**
-- **What:** Nine live runs on Beta (3 kinds × 3 briefs), measured.
-- **How:** qa/j2_metrics.py reads only the record and reports SM-1 to SM-12. Human Simulation walks each screen. The report goes into the shared page.
-- **Where:** `new qa/j2_metrics.py; qa/sim/runs/`
-- **Done check:** The metrics meet their targets, or the owner accepts the gaps in writing. The flags are switched on in stable.
+**M10.4 · The proof run (wave 2; rerun in wave 3)**
+- **What:** SM-1 to SM-13 from the record.
+- **How:** W2-PROOF: qa/j2_metrics.py reads only the record, over the scenario suite with stubbed models (C2); the nine live Beta runs and the Human Simulation walk (with the narrowest-viewer check) stay pending. W3-PROOF reruns it after the last merge.
+- **Where:** `new qa/j2_metrics.py`
+- **Done check:** On the scenario suite the metrics meet their targets or name the gaps; the live runs are listed as pending.
+
+**M10.5 · Schema conformance measured (wave 2); the interface frozen (wave 3)**
+- **What:** SM-13, the writes refused by the interface, is 0 in refuse mode; the interface is frozen once nothing else changes it.
+- **How:** W2-PROOF counts the refused-write rows and the REFUSED entries across the scenario suite in refuse mode and lists any ownership row. The freeze (INTERFACE_SHA, the jsonschema cross-check, ownership refused) is M2.10, by W3-PROOF in wave 3.
+- **Where:** `qa/j2_metrics.py; layer_schema.py; test_layer_contracts.py`
+- **Done check:** SM-13 is 0 on the suite in refuse mode (wave 2); test_layer_schema's frozen-hash test passes (wave 3).
 
 **Acceptance:**
-- Every metric is measured and the report is shared.
+- Every metric is measured on the suite and the report is shared; live runs pending under C2.
 - No runtime department calls the older function routes.
+- The interface refuses with SM-13 at 0 (wave 2), and is frozen for A1 (wave 3).
 
-**Ported from the prototype:** Message detail without raw payloads; secrets removed before display (redact())
+**Ported from the prototype:** Message detail without raw payloads; secrets removed before display (redact()); board/1 rows as Internal messages rows, when built
 
-**Risks:** Live proof runs are costly. Mitigation: three briefs per kind, inside each goal's ceiling.
+**Risks:** Live proof runs are costly and pending. Mitigation: stubbed metrics now; three briefs per kind inside each ceiling later.
 
 ---
 
@@ -1091,7 +1252,7 @@ The shell stays as it is: **rail** (Now, Focus, Chats, Market, Org) > **tree** (
 
 | Id | Screen | Milestone | Where |
 |---|---|---|---|
-| S1 | Map: the NOW line and the five function boxes | M1 (M1.5); the prototype extras after MK-8 | Org > Thread & Loom > Thread & Loom Website > list: Map |
+| S1 | Map: the NOW line and the five function boxes | M1 (M1.5); the prototype extras after MK-8; the metro WORK row (M1.11, A1, wave 3) | Org > Thread & Loom > Thread & Loom Website > list: Map |
 | S2 | All five (overview, proposal) | M1 (M1.8), after MK-8; each later milestone adds that function's strip | Org > Thread & Loom > Thread & Loom Website > list: FUNCTIONS > All five |
 | S3 | List column: function rows with state (proposal) | M1 (M1.6), after MK-8 | The list column of any runtime department |
 | S4 | Progress words: the NOW pill (ruled) and the strip line (proposal) | M1 (NOW pill in M1.5; strip and full form after MK-8); rounds in M9 (M9.7) | The Map's NOW line; the department strip; the top of All five |
@@ -1101,19 +1262,20 @@ The shell stays as it is: **rail** (Now, Focus, Chats, Market, Org) > **tree** (
 | S8 | Adaptation's pane | M5 (M5.6), M6, M7 (S11 inside), M9 (next round); stable after MK-5 | list: FUNCTIONS > Adaptation |
 | S9 | Priority's pane | M5 (M5.6); M9 adds spend by round; stable after MK-5 | list: FUNCTIONS > Priority; also Map > Knows > Budget |
 | S10 | Limit or blocked card | M3 (M3.5, blocked); M5 (M5.4, budget and bargain); M9 (M9.5, rounds and J2.7) | Top of Chat and All five, and of the pane of the function that caused it |
-| S11 | Root's check row | M7 (M7.3); M0.7 makes the event honest first | Inside Adaptation's pane; the title of the 'Root's review' pill |
+| S11 | Root's check row | M7 (M7.3, wave 1: W1-ROOT's standard rows, W1-UI's dots); M0.7 made the event honest first | Inside Adaptation's pane; the title of the 'Root's review' pill |
 | S12 | Audit's pane | M8 (M8.8); stable after MK-5 | list: FUNCTIONS > Audit |
-| S13 | Internal messages | M10 (M10.1); row or switch per MK-6 | list (top group): Internal messages, where the Board was |
+| S13 | Internal messages | M10 (M10.1, wave 2); its own row (MK-6); rows for questions between engines (M4.9, wave 3) | list (top group): Internal messages, where the Board was |
 | S14 | Ready card | M9 (M9.7) | Top of Chat and All five once the goal is reached |
 | S15 | Chat: the department's one voice | M0 (M0.6 question card); M3 (M3.6 one voice); M9 (S10, S14) | list: Chat (the first row; the department opens on it) |
-| S16 | A function's Settings > Instructions | M2 (M2.3) | Any function > Settings |
-| S17 | Engine card: the motor and the five functions | M4 (M4.7); the five-function rows after MK-8 | list: ENGINES > Write (also from the Map and S7) |
+| S16 | A function's Settings > Instructions | M2 (M2.7, A1: typed fields) | Any function > Settings |
+| S17 | Engine card: the motor and the five functions | M4 (M4.7, built); the five-function rows after MK-8; question rows (M4.9, wave 3) | list: ENGINES > Write (also from the Map and S7) |
+| S18 | Root settings: Standards | M7 (M7.3, A1; read only) | The organisation row (Root) > Settings |
 
 ### S1 · Map: the NOW line and the five function boxes
 
 | | |
 |---|---|
-| **Milestone** | M1 (M1.5); the prototype extras after MK-8 |
+| **Milestone** | M1 (M1.5); the prototype extras after MK-8; A1: the WORK row as a metro line (M1.11, wave 3) |
 | **Where** | Org > Thread & Loom > Thread & Loom Website > list: Map |
 | **Purpose** | The department as one picture. This is the ruled Map (topology kept, a NOW line, the legend cut, Budget added to Knows), with the five boxes showing honest state. |
 | **Layout** | A head (crumb, name, kind, On switch, Live site), then the NOW line as pills, then the SVG rows PEOPLE, FUNCTIONS (five 154×64 boxes, each with a 4px bar in its function's colour), WORK and KNOWS. Below a viewer width of 600px the SVG becomes a card list in the same order. |
@@ -1125,6 +1287,8 @@ The shell stays as it is: **rail** (Now, Focus, Chats, Market, Org) > **tree** (
 | FUNCTIONS | Five boxes: function colour bar, icon, name, state word; outline by state (working: accent and halo; waits on you: amber; fault: block; waiting: dashed). |
 | WORK | Artifacts and engines in line order; the running engine has a halo; the deliverable is filled with the ok tint once it is live. |
 | KNOWS | Template, Rules, Record, Host and a Budget bar (spend of the whole goal against its ceiling). |
+
+**A1 (M1.11, wave 3; from the J2 prototype at 3d8d2e8):** the WORK row becomes a trunk in the registered line's order with the deliverable last; an engine the plan left out hangs on a hollow branch labelled 'left out' below the stop it would have followed; colour in WORK says status only, never which function; the NOW line names what is left open ('1 item left open: D6 to confirm'). No personas, team rings, 'given to' arcs or send branches.
 
 **States:** Loading: skeleton bars above the frame · Empty: Brief v1 and the quiet line 'No plan yet' · Working: as in the sample · Needs you: Identity's box amber, with the NOW pill · Error: 'Could not read · Try again'; the boxes fall back to today's classes · Done: NOW reads 'Goal reached', and the deliverable takes the ok tint · Stopped: the switch is off, NOW reads 'Off', no halos
 
@@ -1495,15 +1659,15 @@ Full, top of All five (proposal, MK-8):
 
 | | |
 |---|---|
-| **Milestone** | M7 (M7.3); M0.7 makes the event honest first |
+| **Milestone** | M7 (M7.3, A1, wave 1: W1-ROOT's standard rows, W1-UI's dots); M0.7 made the event honest first |
 | **Where** | Inside Adaptation's pane; the title of the 'Root's review' pill |
-| **Purpose** | One dot per standard a plan must meet. A refused plan names the broken standard in plain words. |
+| **Purpose** | One dot per standard of the workflow schema that applied to the plan (A1: WORKFLOW_STANDARDS, in code). A refused plan names the broken standard in plain words. |
 | **Layout** | One row: the label 'Root's check' (muted; Root has no function colour), a dot per standard (its name in the title), the verdict and the time. When refused, a second line gives the reason and the reshape dots (of 2). |
-| **Sample data** | Approved: all eight ticked, 'approved · 10:09'. Refused: dot 4 crossed, 'sent back · 10:09', reason 'D6 (new arrivals, lookbook, reviews) is covered by no engine', reshapes (*)( ). |
+| **Sample data** | Approved: every standard that applied ticked, 'approved · 10:09'. Refused: the dot 'every done-when item is covered by an engine' crossed, 'sent back · 10:09', reason 'D6 (new arrivals, lookbook, reviews) is covered by no engine', reshapes (*)( ). |
 
 | Region | Content |
 |---|---|
-| Dots | In the standards file's order (MK-4). |
+| Dots | In WORKFLOW_STANDARDS order (A1.14), one per standard that applied to the plan's source. |
 | Reason | The broken standard, in plain words. |
 
 **States:** Not yet: 'Root has not checked a plan yet' · Checking: dots breathe in turn · Approved · Refused: the crossed dot and the reason · Blocked after two reshapes: S10, form B
@@ -1567,7 +1731,7 @@ Full, top of All five (proposal, MK-8):
 
 | | |
 |---|---|
-| **Milestone** | M10 (M10.1); row or switch per MK-6 |
+| **Milestone** | M10 (M10.1, wave 2); its own row, read only (MK-6); rows for questions between engines from wave 3 (M4.9, board/1) |
 | **Where** | list (top group): Internal messages, where the Board was |
 | **Purpose** | What the functions say to each other, read only, so the owner can look inside without any of it reaching Chat. Site screen 3: from > to, a colour per function. |
 | **Layout** | A filter row (All, the five functions, Engines) with a 'Show every step' switch, then a list of rows divided by hairlines. Each row has a 3px bar in the sender's colour, the sender's icon and name, 'to' and the recipient's chip, the act word, the summary and the time. The footer reads 'The functions speak here; you speak in Chat.' There is no composer. |
@@ -1576,7 +1740,7 @@ Full, top of All five (proposal, MK-8):
 | Region | Content |
 |---|---|
 | Filter | A function chip keeps rows where that function is the sender or the recipient. |
-| Rows | Engines get no colour bar; the owner's own words are not repeated (Chat holds them). |
+| Rows | Engines get no colour bar; the owner's own words are not repeated (Chat holds them). With SUTRA_BOARD_QUESTIONS on (wave 3), a question between engines shows as 'Write asks Plan about the size guide' and its answer as 'Plan answers Write', each a row like any other. |
 
 **States:** Loading: skeleton rows · Empty: 'The functions have not spoken yet' · Filtered with no rows: 'Nothing from Priority yet' · Working: new rows slide in at the bottom · Error · Stopped: a last quiet row, 'Stopped by you'
 
@@ -1675,32 +1839,41 @@ Full, top of All five (proposal, MK-8):
 
 | | |
 |---|---|
-| **Milestone** | M2 (M2.3) |
+| **Milestone** | M2 (M2.7, A1, wave 1) |
 | **Where** | Any function > Settings |
-| **Purpose** | Each function's version 1 files (S-28), readable by the owner and changed only through an ask. Template and limits stay as they are. |
-| **Layout** | The pane frame, then cards: Instructions (one row per file: name, first line, Change), a note for any change waiting on a stamp, then Template and Today's limit side by side. |
-| **Sample data** | Identity: goal ('What Identity is for, and the rules it keeps...'), completeness ('When the department has enough to work; what to ask if not...'), take ('How to judge a request: go, ask or refuse...'). A note: 'completeness: your change waits for your stamp · 11:02'. Template: Product build. Today's limit: 30 calls, 6.00 USD a day. |
+| **Purpose** | Each function's instructions as typed fields (A1: no .md files), readable by the owner and changed only through an ask, one field at a time, so that nothing the owner writes can break what the function answers. Template and limits stay as they are. |
+| **Layout** | The pane frame, a quiet line 'Runs version 1', then one card per group (its lead line as the title), each listing its parts. A part shows its owner fields (the task, the guidance, what it does, its skills), each with Change, then two quiet notes: 'filled by the app: ...' (its inputs, in words) and 'answers with: ...' (the step's answer keys). A waiting change shows as an amber note on its field. Then Template and Today's limit side by side. |
+| **Sample data** | Identity, group 'How to judge a request: go, ask or refuse': part take (the task 'Judge one request from the owner.'; the guidance 'go: do it. ask: it reaches outside...'; filled by the app: the goal, the rules, the request, what code read; answers with: verdict, why, unsure, rule, thin). A note: 'the guidance: your change waits for your stamp · 11:02'. Template: Product build. Today's limit: 30 calls, 6.00 USD a day. |
 
 | Region | Content |
 |---|---|
-| Instructions | The files as listed on the function's page; Change opens a sheet that files an ask. |
+| Group card | The group's lead line; its parts in the order the interface lists them. |
+| Field row | The field's name in words, its value (first line at rest), Change. A text field opens a sheet with a textarea and a length counter; skills open a list editor. |
+| Notes | 'filled by the app' and 'answers with': never editable; the answer's shape itself is never shown. A part no run reads says so. |
 | Template / Limit | Today's controls, in plain words. |
 
-**States:** Loading · Waiting for a stamp: an amber note on that file · Error on Set: the error under the field · Default: 'as shipped' beside each file nobody has changed
+**States:** Loading · Waiting for a stamp: an amber note on that field · Refused at the ask: the plain reason under the field (for example 'say it without {{ or }}') · Default: 'as shipped' beside each field nobody has changed · An earlier whole-file change: one quiet line 'kept as your note' · Error on Set: the error under the field
 
-**Interactions:** Change opens the sheet; Send files the ask. Set limits posts to /envelope as today.
+**Interactions:** Change opens the sheet; Send files the ask {fn, group, part, field, value}. Set limits posts to /envelope as today. There is no whole-file editing.
 
 ```
 +-------------------------------------------------------------------------------------------+
 | ([Id] Identity)  (?) waits on you                               [Identity][Chat][Settings]|
-| +- INSTRUCTIONS -------------------------------------------------------------------------+|
-| | goal          What Identity is for, and the rules it keeps...             [Change]     ||
-| | completeness  When the department has enough to work; what to ask...      [Change]     ||
-| | take          How to judge a request: go, ask or refuse...                [Change]     ||
-| | (~) completeness: your change waits for your stamp · 11:02                             ||
-| +- TEMPLATE -----------------+ +- TODAY'S LIMIT ------------------------------------------+|
-| | Product build   [Change]   | | [30] calls  [6.00] USD a day   [Set]                     ||
-| +----------------------------+ +----------------------------------------------------------+|
+| Runs version 1                                                                            |
+| +- HOW TO JUDGE A REQUEST: GO, ASK OR REFUSE ------------------------------------------+ |
+| | take       the task      Judge one request from the owner.                  [Change] | |
+| |            the guidance  go: do it. ask: it reaches outside what the ...     [Change] | |
+| |            filled by the app: the goal, the rules, the request, what code read       | |
+| |            answers with: verdict, why, unsure, rule, thin                            | |
+| |  (~) the guidance: your change waits for your stamp · 11:02                          | |
+| | recognise  the task      Recognise what kind of words the owner has given.  [Change] | |
+| +- WHEN THE DEPARTMENT HAS ENOUGH TO WORK; WHAT TO ASK IF NOT ------------------------+ |
+| +- WHAT IDENTITY IS FOR, AND THE RULES IT KEEPS ---------------------------------------+ |
+| | does       holds the goal and the rules, judges every effect...         [Change]     | |
+| | skills     recognise a task...; judge a request...; gate an effect...   [Change]     | |
+| +- TEMPLATE -----------------+ +- TODAY'S LIMIT ----------------------------------------+ |
+| | Product build   [Change]   | | [30] calls  [6.00] USD a day   [Set]                   | |
+| +----------------------------+ +--------------------------------------------------------+ |
 +-------------------------------------------------------------------------------------------+
 ```
 
@@ -1708,7 +1881,7 @@ Full, top of All five (proposal, MK-8):
 
 | | |
 |---|---|
-| **Milestone** | M4 (M4.7); the five-function rows after MK-8 |
+| **Milestone** | M4 (M4.7, built); the five-function rows after MK-8; A1: the data is view.engine_card, and a question this engine asked shows in its Coordination row from wave 3 (M4.9) |
 | **Where** | list: ENGINES > Write (also from the Map and S7) |
 | **Purpose** | On every engine: its slot and the motor's facts (ruled: Motor into the engine card), and what each of the five is doing to it right now. The five then read as one system from the work's side too. |
 | **Layout** | The engine header (name, state, round, since), a Motor block (slot, ran once per slot, window, today's bar), then 'With the five functions': five rows, each with a function chip, a dot and a sentence. Existing tabs: Steps, Engine, Runs. |
@@ -1734,6 +1907,32 @@ Full, top of All five (proposal, MK-8):
 | ([Pr] Priority)      (v) admitted the run inside today's budget     [=---------]           |
 | ([Co] Coordination)  (*) gave it the turn at 10:23                  [===-------]           |
 | ([Au] Audit)         ( ) will read the Live site it leads to                              |
++-------------------------------------------------------------------------------------------+
+```
+
+### S18 · Root settings: Standards (A1)
+
+| | |
+|---|---|
+| **Milestone** | M7 (M7.3, A1, wave 1) |
+| **Where** | The organisation row (Root) > Settings |
+| **Purpose** | The standards every plan meets, read only: they are part of how the app is built (A1), so they change only with a new version of the app, never through an ask. |
+| **Layout** | One card, 'Standards every plan meets': the 'says' text of each standard in WORKFLOW_STANDARDS order, then the quiet line 'These are part of how the app is built; they change only with a new version of the app.' No Change button. |
+| **Sample data** | the workflow names its engines · each engine is one the Library has · every engine has a name · no name is used twice, and none is a function's · ... · Coordination's line is a registered plan plus the engines you added. |
+
+**States:** Loading · Error: the quiet line 'Could not read · Try again'
+
+**Interactions:** none; hovering a standard shows which kinds of plan it applies to.
+
+```
++-------------------------------------------------------------------------------------------+
+| Root · Settings                                                                           |
+| +- STANDARDS EVERY PLAN MEETS --------------------------------------------------------+  |
+| | the workflow names its engines                                                       |  |
+| | each engine reads the kind's first artifact or what one before it wrote              |  |
+| | every done-when item is covered by an engine      ... (in order)                     |  |
+| | These are part of how the app is built; they change only with a new version of the app. |
+| +--------------------------------------------------------------------------------------+  |
 +-------------------------------------------------------------------------------------------+
 ```
 
@@ -1790,7 +1989,8 @@ Use panel.css as it ships, in both themes: the app follows the system until the 
 | Rare bargain branches never exercised live | Medium | 21 scenario tests (M5.5). |
 | Agent text leaks to the owner | Medium | The edges table plus a plain-words guard at _tell: regenerate once, then a template (M3.6). |
 | Placeholders hide what is missing | High | Anything to confirm blocks done (M8.4). |
-| Model behaviour drifts when prompts move to files | Medium | A byte-identical first commit, then owner changes one at a time, each with a proof run (M2.1). |
+| Model behaviour drifts when prompts move to typed fields (A1) | Medium | The split rule's byte-for-byte test and the snapshot, rendered through the registry; a deliberate prompt change only in its own 'snapshot:' commit (M2.5). |
+| Typed writes refuse shapes the code writes (A1) | High: births and Stop could fail | DEFS bound to the writers, one test per writer, only changed keys checked, Stop always lands, warn mode with strict tests before refuse (M2.3, M2.9). |
 
 ## 14. Marks and questions for the owner
 
@@ -1804,7 +2004,7 @@ Marks (`MK`) cover what the owner marked 'needs to be filled', 'marks owed' or '
 | MK-4 Root's version 1 standards list (J2.4 is a placeholder). Proposal: the eight standards in M7.2. | Owner (mark) | M7.2 |
 | MK-5 Screens for Adaptation, Priority, Coordination and Audit. The site says 'needs to be filled; no screen of its own yet'. Proposal: their panes S7, S8, S9 and S12. | Owner (mark), designer | S7, S8, S9 and S12 in stable (M4.7, M5.6, M8.8) |
 | MK-6 Internal messages: which function owns it, and is it its own row (screen 3) or a switch in Chat (the cleanup design)? Default: its own row, read only. | Owner (mark) | M10.1 |
-| MK-7 Each function's goal, done, settings and .md content (placeholders 'the founder's to fill'). Default: today's prompts, byte for byte. | Owner (mark) | Owner-written instruction content beyond the defaults (M2.2) |
+| MK-7 Each function's goal, done, settings and .md content (placeholders 'the founder's to fill'). Default: today's prompts, byte for byte. Overridden by A1 (owner, 2026-10-26): the same words, byte for byte, as typed field defaults; no .md files. | Owner (mark) | Owner-written instruction values beyond the defaults (M2.6) |
 | MK-8 New structure that reopens the 2026-09-29 rulings: the All five overview (S2), state dots on function rows (S3), the progress line in the strip (S4), renaming the first tab 'About', and the prototype's richer Map boxes (this reopens the closed Map). | Owner (mark) | M1.6, M1.8, the Map extras in M1.5, and the five-function rows of S17 |
 | MK-9 Directions D-b, D-d and D-e ('not on the to-build list until you mark them'), in particular D-e: Adaptation fits the template's engines before the first run. | Owner (mark) | M5.2 |
 | MK-10 Pursue: its name and how the gap is measured (FA2, R1 placeholders). Default: 'next round' on screen, and the gap is the done-when items not met. | Owner (mark) | M9 in stable |
@@ -1826,6 +2026,8 @@ Marks (`MK`) cover what the owner marked 'needs to be filled', 'marks owed' or '
 | Q16 Step pill names (Enough to work, Propose, Price, Settle, Root's review, Run, Read, Next or done), and whether names such as 'Round 2', 'D2' and 'v3' are allowed at rest under A28. Default: yes; they are names, not counts. | Owner, designer | S4 |
 
 ## 15. How the reviews were resolved
+
+_The review of amendment A1 (2026-10-26) is resolved in [PRD-FIVE-FUNCTIONS-A1.md](PRD-FIVE-FUNCTIONS-A1.md), section A1.27. The rows below are the reviews of version 1.0._
 
 | Finding | Resolution |
 |---|---|
@@ -1892,7 +2094,10 @@ Marks (`MK`) cover what the owner marked 'needs to be filled', 'marks owed' or '
 | Round (idea card) | THIS IS one priced correction on the registered line after a reading that is not done. ONE OF Adaptation's moves. WORK ON M9. BECAUSE J2 step 8 loops until the goal holds, inside a ceiling. |
 | Timetable (idea card) | THIS IS Coordination's record of one slot per engine. ONE OF Coordination's state. WORK ON coordination.json. BECAUSE 'anything that runs on a clock or a new version is an engine with a slot in Coordination's timetable' (L1049). |
 | All five (idea card) | THIS IS one view of the five functions' state. ONE OF the department's screens (a proposal). WORK ON S2. BECAUSE the owner asked to see the five as one system. |
-| Instructions (idea card) | THIS IS a function's version 1 .md files, readable and changeable through an ask. ONE OF a function's parts (S-28). WORK ON S16, M2. BECAUSE version 1 of each function is one agent and its files. |
+| Instructions (idea card) | THIS IS a function's typed instruction fields (the task, the guidance, what it does, its skills), compiled by code into its prompts, readable and changeable one field at a time through an ask. ONE OF a function's parts (S-28, as amended by A1). WORK ON S16, M2.5 to M2.7. BECAUSE the owner ruled that no layer's structure is managed through .md files. |
+| Interface schema layer (idea card) | THIS IS layer_schema.py: Root's and the five layers' records, acts, checks, slots and views, and the workflow schema, hard-coded. ONE OF the app's code. WORK ON M2, A1. BECAUSE the owner ruled that how the app is built is a fixed interface, while each layer's behaviour may change. |
+| Layer module, version, pin | A layer's implementation (`layers/<layer>/v<N>.py` with its recipe `v<N>.json`); its version (identity/v1); the version a department runs (DEFAULT_PINS until wave 3, then per department by the rule in A1.18). |
+| Workflow schema, standard | The one shape every department workflow has, and Root's standards checked in code at birth, proposal, registration, grow and write (A1.14). |
 | Mark (MK) | The owner's keep, change or drop on a proposal for something the site marks 'needs to be filled'. A step that depends on it ships to stable only after the mark. |
 | Covering, inside | The code around a step (typed input, the check, the row, the trigger, the gates) and the AI inside it (S-22, S-23). |
 | Rung, ladder | How far a step has climbed from AI to code. |
@@ -1905,5 +2110,6 @@ Marks (`MK`) cover what the owner marked 'needs to be filled', 'marks owed' or '
 
 - **Site:** `native/system/department.html` (#j1, #j2, #rulings, #directed, the motor, how a unit starts); `functions/{identity,adaptation,priority,coordination,audit}.html`; `screens.html` and screens 1 to 3; the department-screen page; `internal-system.html`; `design-system.html`; `current-state.html`.
 - **Sutra** at `6bb38ec6`. Re-read for this version: J:120-262, 375-465; R:229-300, 410-450, 636-650, 795-860, 898-930, 1296-1362, 1820-1836, 2118-2245, 2590-2700, 2718-2740, 3295-3320, 3364-3392, 3499-3516, 3785-3845, 3956-3972, 4105-4120; W:296-345, 816-823; `engine_defs/website.json` (kinds, edges, Audit and Adaptation start); `engine-templates/{plan,write,setup}.json`; `function-templates/priority/*.json`; `test_function_templates.py`; `PUBLISH-CHECK.md`; `run-tests.sh`; `qa/walks/suites.sh`; `static/js/19-org2.js:539`; `22-website.js:660, 790-800, 908`.
-- **J2 prototype** at `564e3a7`: `j2.py`, `j2_map.py`, `docs/map-schema.md`, `agents/j2/*.md`, `docs/j2-test-plan.md`, `README.md`.
+- **J2 prototype** at `564e3a7`: `j2.py`, `j2_map.py`, `docs/map-schema.md`, `agents/j2/*.md`, `docs/j2-test-plan.md`, `README.md`; and at `3d8d2e8` for A1: `j2_board.py`, `j2_map.py`, `j2_schema.py`, `README.md`, `SETUP.md`.
+- **Amendment A1:** [PRD-FIVE-FUNCTIONS-A1.md](PRD-FIVE-FUNCTIONS-A1.md), on Sutra main `d24a467d`.
 - **Working notes in this folder:** `gap-matrix.md`, `prd-draft.md` (superseded by this page), `screens.md` (folded into section 11).
