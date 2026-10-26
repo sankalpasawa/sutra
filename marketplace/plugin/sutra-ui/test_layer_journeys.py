@@ -1501,3 +1501,25 @@ def test_no_screen_word_in_the_read_model(api, folder):
     assert not (keys_gone & {k for _, k in _strings(one)}), "none of the places the code and the tests live"
     # the states a screen reads are the words of the interface
     assert {r["state"] for r in one["status"]["rows"].values()} <= set(S.READ_STATES)
+
+
+# ---- Q7: the README ----------------------------------------------------------------------------------------------------
+def test_readme_names_the_modes_and_the_cases():
+    text = (HERE / "journeys" / "README.md").read_text(encoding="utf-8")
+    for word in ("--static", "--check", "--no-run", "--write"):
+        assert word in text, word
+    for n in range(1, 13):
+        assert re.search(r"\bJC-%d\b" % n, text), "JC-%d" % n
+    assert "\"J2 view\" is the prototype's department page in the app, and it is not a journey" in text, "the J2 view warning"
+    for word in ("site-journeys-2.4.json", "journeys/status/", "resolved by regenerating it, never by hand", "version 2.5"):
+        assert word in text, word
+    # the one example row is a row the interface takes, and the names it uses are the ones the machinery has
+    block = re.search(r"```json\n(.*?)```", text, re.S).group(1)
+    assert S.validate("journey.edge", json.loads(block)) == []
+    for name in ("load", "rows", "row_key", "definitions_sha", "view"):
+        assert callable(getattr(journeys, name)), name
+    for name in ("resolve_code", "resolve_test", "row_state", "journey_state", "compute"):
+        assert callable(getattr(ST, name)), name
+    assert callable(WK.trace) and callable(WK.follows) and set(C.cases([])) == set(STATIC_CASES)
+    # the README is not a journey: the loader reads only the .json files
+    assert (HERE / "journeys" / "README.md").exists() and "README" not in " ".join(journeys.load())
