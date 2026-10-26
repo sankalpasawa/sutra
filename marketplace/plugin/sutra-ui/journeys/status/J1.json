@@ -1,0 +1,267 @@
+{
+ "counts": {
+  "dropped": 0,
+  "failing": 0,
+  "fault": 0,
+  "partly": 0,
+  "proven": 16,
+  "unproven": 0,
+  "wanted": 0
+ },
+ "definitions_sha": "05407bf04b0d9efaba07e651359d872a8f302d72512a1fca90b2ab0db8e442a5",
+ "drift": [
+  {
+   "row": "step:3",
+   "site": "to_build",
+   "state": "proven"
+  },
+  {
+   "row": "step:4",
+   "site": "to_build",
+   "state": "proven"
+  },
+  {
+   "row": "edge:J1.1",
+   "site": "wanted",
+   "state": "proven"
+  },
+  {
+   "row": "edge:J1.2",
+   "site": "wanted",
+   "state": "proven"
+  },
+  {
+   "row": "edge:J1.5",
+   "site": "wanted",
+   "state": "proven"
+  },
+  {
+   "row": "edge:J1.9",
+   "site": "wanted",
+   "state": "proven"
+  }
+ ],
+ "id": "J1",
+ "rows": {
+  "edge:J1.1": {
+   "drift": true,
+   "failing": [],
+   "proven_by": [
+    "test_j1.py::test_j1_s3_s4_vague_words_ask_one_question_and_survive_reload",
+    "test_j1.py::test_j1_s3_the_questions_are_the_models_not_a_list_in_code"
+   ],
+   "site": "wanted",
+   "state": "proven"
+  },
+  "edge:J1.2": {
+   "drift": true,
+   "failing": [],
+   "proven_by": [
+    "test_j1.py::test_j1_1_and_j1_2_answer_then_just_do_it_are_one_conversation",
+    "test_j1.py::test_j1_2_just_do_it_overrules_a_model_that_keeps_asking",
+    "test_j1.py::test_j1_2_just_do_it_without_any_intent_still_asks_for_the_goal"
+   ],
+   "site": "wanted",
+   "state": "proven"
+  },
+  "edge:J1.3": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "test_j1.py::test_j1_3_retry_message_and_compatible_repeat_do_not_duplicate",
+    "test_engine_runtime.py::TestTheFrontDoor::test_95_a_second_department_takes_a_new_name_and_an_existing_name_is_said_back_with_the_words_handed_on"
+   ],
+   "site": "built",
+   "state": "proven"
+  },
+  "edge:J1.4": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "test_j1.py::test_j1_4_no_fitting_template_uses_explicit_organic_route",
+    "test_engine_runtime.py::TestTheFrontDoor::test_84_root_uses_the_explicit_organic_route_when_no_template_fits",
+    "test_engine_runtime.py::TestRunFive::test_110_a_department_born_with_no_line_gets_one_from_adaptation_on_the_owners_stamp_and_the_site_goes_live"
+   ],
+   "site": "built",
+   "state": "proven"
+  },
+  "edge:J1.5": {
+   "drift": true,
+   "failing": [],
+   "proven_by": [
+    "test_j1.py::test_j1_5_two_departments_create_only_first_and_leave_suggestion",
+    "js:test_website.js#W46"
+   ],
+   "site": "wanted",
+   "state": "proven"
+  },
+  "edge:J1.6": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "test_j1.py::test_j1_6_matching_ask_rule_waits_before_creating",
+    "test_j1.py::test_j1_6_inherited_ask_rule_with_plain_wording_is_effective",
+    "test_j1.py::test_j1_6_unrelated_ask_rule_does_not_gate_department_birth",
+    "test_j1.py::test_j1_6_a_refused_preview_closes_the_request"
+   ],
+   "site": "built",
+   "state": "proven"
+  },
+  "edge:J1.7": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "test_engine_runtime.py::TestTheFrontDoor::test_65_words_never_lost_a_front_post_nobody_answers_in_time_is_said_back_and_shows_as_waiting",
+    "test_j1.py::test_j1_7_unanswered_question_stays_waiting_without_a_child"
+   ],
+   "site": "built",
+   "state": "proven"
+  },
+  "edge:J1.8": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "test_j1.py::test_j1_8_model_away_retries_three_times_then_retains_request",
+    "test_layer_journey_j1.py::test_j1_8_the_waits_are_30_120_and_600_seconds"
+   ],
+   "site": "built",
+   "state": "proven"
+  },
+  "edge:J1.9": {
+   "drift": true,
+   "failing": [],
+   "proven_by": [
+    "test_j1.py::test_j1_s3_s4_vague_words_ask_one_question_and_survive_reload",
+    "test_j1.py::test_j1_9_completed_request_state_survives_reload_without_rebirth",
+    "test_j1.py::test_j1_9_interrupted_founding_reconciles_the_same_child",
+    "test_j1.py::test_j1_9_crash_before_final_tell_replays_that_tell_once"
+   ],
+   "site": "wanted",
+   "state": "proven"
+  },
+  "step:1": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "js:test_website.js#W10b",
+    "js:test_website.js#W41",
+    "js:test_website.js#W44",
+    "test_website_dept.py::test_found_gives_an_org_its_one_root_and_root_sets_up_the_website_department_the_owner_asks_for",
+    "test_engine_runtime.py::TestOrganicRootAndShape::test_61_root_spawns_a_department_from_clear_owner_words_without_a_default_stamp",
+    "test_layer_journey_j1.py::test_j1_walk_found_ask_decide_build_tell"
+   ],
+   "site": "built",
+   "state": "proven"
+  },
+  "step:2": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "js:test_website.js#W42",
+    "js:test_website.js#W45",
+    "test_layer_journey_j1.py::test_j1_walk_found_ask_decide_build_tell"
+   ],
+   "site": "built",
+   "state": "proven"
+  },
+  "step:3": {
+   "drift": true,
+   "failing": [],
+   "proven_by": [
+    "test_j1.py::test_j1_s3_the_questions_are_the_models_not_a_list_in_code",
+    "test_j1.py::test_j1_s3_s4_vague_words_ask_one_question_and_survive_reload",
+    "test_layer_journey_j1.py::test_j1_walk_found_ask_decide_build_tell"
+   ],
+   "site": "to_build",
+   "state": "proven"
+  },
+  "step:4": {
+   "drift": true,
+   "failing": [],
+   "proven_by": [
+    "test_j1.py::test_j1_s3_s4_vague_words_ask_one_question_and_survive_reload",
+    "test_j1.py::test_j1_1_and_j1_2_answer_then_just_do_it_are_one_conversation",
+    "test_j1.py::test_j1_s4_an_answer_reaches_the_open_question_when_a_department_already_exists",
+    "test_layer_journey_j1.py::test_j1_walk_found_ask_decide_build_tell"
+   ],
+   "site": "to_build",
+   "state": "proven"
+  },
+  "step:5": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "test_j1.py::test_j1_s1_to_s7_clear_request_builds_once_without_default_stamp",
+    "test_j1.py::test_j1_s5_the_shape_a_live_model_gave_makes_the_department",
+    "test_j1.py::test_j1_s5_a_shape_the_library_cannot_build_tells_the_owner_and_closes_the_request",
+    "test_layer_journey_j1.py::test_j1_walk_found_ask_decide_build_tell"
+   ],
+   "site": "built",
+   "state": "proven"
+  },
+  "step:6": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "test_j1.py::test_j1_s1_to_s7_clear_request_builds_once_without_default_stamp",
+    "test_j1.py::test_j1_9_interrupted_founding_reconciles_the_same_child",
+    "test_layer_journey_j1.py::test_j1_walk_found_ask_decide_build_tell"
+   ],
+   "site": "built",
+   "state": "proven"
+  },
+  "step:7": {
+   "drift": false,
+   "failing": [],
+   "proven_by": [
+    "test_j1.py::test_j1_9_crash_before_final_tell_replays_that_tell_once",
+    "test_j1.py::test_j1_7_the_birth_is_told_once_when_setup_the_sweep_and_the_next_due_read_race",
+    "js:test_website.js#W45",
+    "js:test_website.js#W46",
+    "test_layer_journey_j1.py::test_j1_walk_found_ask_decide_build_tell"
+   ],
+   "site": "built",
+   "state": "proven"
+  }
+ },
+ "schema_version": 1,
+ "state": "proven",
+ "tests": {
+  "js:test_website.js#W10b": "passed",
+  "js:test_website.js#W41": "passed",
+  "js:test_website.js#W42": "passed",
+  "js:test_website.js#W44": "passed",
+  "js:test_website.js#W45": "passed",
+  "js:test_website.js#W46": "passed",
+  "test_engine_runtime.py::TestOrganicRootAndShape::test_61_root_spawns_a_department_from_clear_owner_words_without_a_default_stamp": "passed",
+  "test_engine_runtime.py::TestRunFive::test_110_a_department_born_with_no_line_gets_one_from_adaptation_on_the_owners_stamp_and_the_site_goes_live": "passed",
+  "test_engine_runtime.py::TestTheFrontDoor::test_65_words_never_lost_a_front_post_nobody_answers_in_time_is_said_back_and_shows_as_waiting": "passed",
+  "test_engine_runtime.py::TestTheFrontDoor::test_84_root_uses_the_explicit_organic_route_when_no_template_fits": "passed",
+  "test_engine_runtime.py::TestTheFrontDoor::test_95_a_second_department_takes_a_new_name_and_an_existing_name_is_said_back_with_the_words_handed_on": "passed",
+  "test_j1.py::test_j1_1_and_j1_2_answer_then_just_do_it_are_one_conversation": "passed",
+  "test_j1.py::test_j1_2_just_do_it_overrules_a_model_that_keeps_asking": "passed",
+  "test_j1.py::test_j1_2_just_do_it_without_any_intent_still_asks_for_the_goal": "passed",
+  "test_j1.py::test_j1_3_retry_message_and_compatible_repeat_do_not_duplicate": "passed",
+  "test_j1.py::test_j1_4_no_fitting_template_uses_explicit_organic_route": "passed",
+  "test_j1.py::test_j1_5_two_departments_create_only_first_and_leave_suggestion": "passed",
+  "test_j1.py::test_j1_6_a_refused_preview_closes_the_request": "passed",
+  "test_j1.py::test_j1_6_inherited_ask_rule_with_plain_wording_is_effective": "passed",
+  "test_j1.py::test_j1_6_matching_ask_rule_waits_before_creating": "passed",
+  "test_j1.py::test_j1_6_unrelated_ask_rule_does_not_gate_department_birth": "passed",
+  "test_j1.py::test_j1_7_the_birth_is_told_once_when_setup_the_sweep_and_the_next_due_read_race": "passed",
+  "test_j1.py::test_j1_7_unanswered_question_stays_waiting_without_a_child": "passed",
+  "test_j1.py::test_j1_8_model_away_retries_three_times_then_retains_request": "passed",
+  "test_j1.py::test_j1_9_completed_request_state_survives_reload_without_rebirth": "passed",
+  "test_j1.py::test_j1_9_crash_before_final_tell_replays_that_tell_once": "passed",
+  "test_j1.py::test_j1_9_interrupted_founding_reconciles_the_same_child": "passed",
+  "test_j1.py::test_j1_s1_to_s7_clear_request_builds_once_without_default_stamp": "passed",
+  "test_j1.py::test_j1_s3_s4_vague_words_ask_one_question_and_survive_reload": "passed",
+  "test_j1.py::test_j1_s3_the_questions_are_the_models_not_a_list_in_code": "passed",
+  "test_j1.py::test_j1_s4_an_answer_reaches_the_open_question_when_a_department_already_exists": "passed",
+  "test_j1.py::test_j1_s5_a_shape_the_library_cannot_build_tells_the_owner_and_closes_the_request": "passed",
+  "test_j1.py::test_j1_s5_the_shape_a_live_model_gave_makes_the_department": "passed",
+  "test_layer_journey_j1.py::test_j1_8_the_waits_are_30_120_and_600_seconds": "passed",
+  "test_layer_journey_j1.py::test_j1_walk_found_ask_decide_build_tell": "passed",
+  "test_website_dept.py::test_found_gives_an_org_its_one_root_and_root_sets_up_the_website_department_the_owner_asks_for": "passed"
+ }
+}

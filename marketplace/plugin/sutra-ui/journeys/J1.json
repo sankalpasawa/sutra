@@ -1,0 +1,787 @@
+{
+ "schema_version": 1,
+ "id": "J1",
+ "title": "Found the organisation; {helper} asks, then makes the first department",
+ "kind": "person",
+ "inside": null,
+ "bound_to": null,
+ "serves": [],
+ "declared": false,
+ "goal": "You type the organisation's name; {helper} asks what you want to create until it is clear, decides the department itself, builds it with its five functions from the template that fits, hands your words over and tells you. No stamp at birth.",
+ "lead": "You type the organisation's name. {helper}, the organisation's helper (the code calls it Root), asks you what you want to create until it is clear, decides the department itself, builds it with its five functions from the template that fits, hands your words over and tells you. No stamp at birth. J1 ends there: what the department does with your words is its own life, J2.",
+ "ends_when": "The department is made under the organisation with its five functions from the template, your words are its goal, and you have been told what it made and what happens first.",
+ "flag": "J1_FLOW_V1",
+ "site": {
+  "page": "native/system/department.html#j1",
+  "data_version": "2.4",
+  "as_of": "2026-10-01"
+ },
+ "helper": {
+  "site": "Sutra",
+  "screen": "Root",
+  "code": "Root"
+ },
+ "lanes": [
+  {
+   "id": "you",
+   "label": "You",
+   "kind": "person"
+  },
+  {
+   "id": "root",
+   "label": "Root",
+   "kind": "root"
+  }
+ ],
+ "steps": [
+  {
+   "n": "1",
+   "lane": "you",
+   "short": "Type the name; Found",
+   "text": "You type the organisation's name and press Found. One line about what you want is welcome but not needed.",
+   "site_function": "you",
+   "site_status": "built",
+   "act": "say",
+   "binds": [
+    {
+     "kind": "ui",
+     "symbol": "wbFoundGo"
+    },
+    {
+     "kind": "api",
+     "method": "POST",
+     "path": "/api/native/found"
+    },
+    {
+     "kind": "act",
+     "src": "Owner",
+     "act": "request",
+     "word": "front",
+     "dst": "Identity"
+    }
+   ],
+   "code": [
+    "wbFoundGo",
+    "founding.found_structure",
+    "website_dept.owner_ask"
+   ],
+   "tests": [
+    "js:test_website.js#W10b",
+    "js:test_website.js#W41",
+    "js:test_website.js#W44",
+    "test_website_dept.py::test_found_gives_an_org_its_one_root_and_root_sets_up_the_website_department_the_owner_asks_for",
+    "test_engine_runtime.py::TestOrganicRootAndShape::test_61_root_spawns_a_department_from_clear_owner_words_without_a_default_stamp",
+    "test_layer_journey_j1.py::test_j1_walk_found_ask_decide_build_tell"
+   ],
+   "site_says": "built",
+   "site_code": "wbFoundGo, POST /api/native/found"
+  },
+  {
+   "n": "2",
+   "lane": "root",
+   "short": "{helper} appears",
+   "text": "{helper} appears: the organisation's helper, on the organisation's row. The code calls it Root and shows the organisation's name; the screen will say {helper}.",
+   "site_function": "Root (shown as {helper})",
+   "site_status": "built",
+   "act": "tell",
+   "binds": [
+    {
+     "kind": "ui",
+     "symbol": "wbOrgHtml"
+    }
+   ],
+   "code": [
+    "founding.found_structure",
+    "wbOrgHtml",
+    "WB_HELPER"
+   ],
+   "tests": [
+    "js:test_website.js#W42",
+    "js:test_website.js#W45",
+    "test_layer_journey_j1.py::test_j1_walk_found_ask_decide_build_tell"
+   ],
+   "site_says": "built, name to change",
+   "site_code": "founding.found_structure; the organisation row is Root's chat (v2.306.20)"
+  },
+  {
+   "n": "3",
+   "lane": "root",
+   "short": "{helper} asks until clear",
+   "text": "{helper} asks you what it needs to know, one question at a time, until it can confidently create the department: what it is for, for whom, what first. No fixed list: the questions are an instruction inside the Setup workflow's converse step (the recipe); the five on the Root page are its examples. \"Just do it\" ends the questions.",
+   "site_function": "Root's Setup, a model step",
+   "site_status": "to_build",
+   "act": "ask",
+   "binds": [
+    {
+     "kind": "step",
+     "id": "setup.converse"
+    },
+    {
+     "kind": "step",
+     "id": "setup.say"
+    },
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "inform",
+     "word": "question",
+     "dst": "Owner"
+    }
+   ],
+   "code": [
+    "p_setup_converse",
+    "d_setup_converse",
+    "setup_say"
+   ],
+   "tests": [
+    "test_j1.py::test_j1_s3_the_questions_are_the_models_not_a_list_in_code",
+    "test_j1.py::test_j1_s3_s4_vague_words_ask_one_question_and_survive_reload",
+    "test_layer_journey_j1.py::test_j1_walk_found_ask_decide_build_tell"
+   ],
+   "site_says": "to build",
+   "site_code": "Setup step 2, converse (an AI inside with the default instruction); the covering posts the question or hands \"clear\" to shape"
+  },
+  {
+   "n": "4",
+   "lane": "you",
+   "short": "You answer",
+   "text": "You answer in the chat, or say \"just do it\".",
+   "site_function": "you",
+   "site_status": "to_build",
+   "act": "say",
+   "binds": [
+    {
+     "kind": "act",
+     "src": "Owner",
+     "act": "request",
+     "word": "front",
+     "dst": "Identity"
+    },
+    {
+     "kind": "step",
+     "id": "identity.hand"
+    }
+   ],
+   "code": [
+    "identity_hand",
+    "_j1_file_words",
+    "identity_route"
+   ],
+   "tests": [
+    "test_j1.py::test_j1_s3_s4_vague_words_ask_one_question_and_survive_reload",
+    "test_j1.py::test_j1_1_and_j1_2_answer_then_just_do_it_are_one_conversation",
+    "test_j1.py::test_j1_s4_an_answer_reaches_the_open_question_when_a_department_already_exists",
+    "test_layer_journey_j1.py::test_j1_walk_found_ask_decide_build_tell"
+   ],
+   "site_says": "to build",
+   "site_code": "the answers ride as the Request's next versions"
+  },
+  {
+   "n": "5",
+   "lane": "root",
+   "short": "{helper} decides",
+   "text": "{helper} decides the department: a name, the template that fits your answers (website, organic, or another), and its purpose. No stamp: the AI acts unless you have said otherwise (S-18).",
+   "site_function": "Root's Setup, a model step",
+   "site_status": "built",
+   "act": "decide",
+   "binds": [
+    {
+     "kind": "step",
+     "id": "setup.shape"
+    },
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "inform",
+     "word": "request",
+     "dst": "Owner"
+    }
+   ],
+   "code": [
+    "p_setup_shape",
+    "d_setup_shape",
+    "_shape_norm",
+    "identity_gate"
+   ],
+   "tests": [
+    "test_j1.py::test_j1_s1_to_s7_clear_request_builds_once_without_default_stamp",
+    "test_j1.py::test_j1_s5_the_shape_a_live_model_gave_makes_the_department",
+    "test_j1.py::test_j1_s5_a_shape_the_library_cannot_build_tells_the_owner_and_closes_the_request",
+    "test_layer_journey_j1.py::test_j1_walk_found_ask_decide_build_tell"
+   ],
+   "site_says": "built, stamp to remove",
+   "site_code": "setup.shape, p_setup_shape; the setup ask in identity_gate goes, kept only when a rule tagged ask exists"
+  },
+  {
+   "n": "6",
+   "lane": "root",
+   "short": "{helper} builds it",
+   "text": "{helper} builds the department: its five functions from the template, its born rules and limits, and hands your answers to it as its goal.",
+   "site_function": "Root's Setup, code",
+   "site_status": "built",
+   "act": "run",
+   "binds": [
+    {
+     "kind": "step",
+     "id": "setup.make"
+    }
+   ],
+   "code": [
+    "setup_make",
+    "founding.spawn",
+    "website_dept.create"
+   ],
+   "tests": [
+    "test_j1.py::test_j1_s1_to_s7_clear_request_builds_once_without_default_stamp",
+    "test_j1.py::test_j1_9_interrupted_founding_reconciles_the_same_child",
+    "test_layer_journey_j1.py::test_j1_walk_found_ask_decide_build_tell"
+   ],
+   "site_says": "built",
+   "site_code": "setup.make, founding, website_dept.create"
+  },
+  {
+   "n": "7",
+   "lane": "root",
+   "short": "{helper} tells you",
+   "text": "{helper} tells you: the department it made, its engines, and what happens first. The department appears under the organisation on the left.",
+   "site_function": "Root (shown as {helper})",
+   "site_status": "built",
+   "act": "tell",
+   "binds": [
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "inform",
+     "word": "department",
+     "dst": "Owner"
+    },
+    {
+     "kind": "step",
+     "id": "setup.file"
+    }
+   ],
+   "code": [
+    "setup_make",
+    "_reconcile_j1_tells",
+    "wbChatTurn",
+    "wbBorn"
+   ],
+   "tests": [
+    "test_j1.py::test_j1_9_crash_before_final_tell_replays_that_tell_once",
+    "test_j1.py::test_j1_7_the_birth_is_told_once_when_setup_the_sweep_and_the_next_due_read_race",
+    "js:test_website.js#W45",
+    "js:test_website.js#W46",
+    "test_layer_journey_j1.py::test_j1_walk_found_ask_decide_build_tell"
+   ],
+   "site_says": "built, wording to change",
+   "site_code": "_tell after setup.file; wbBorn slides the row in"
+  }
+ ],
+ "edges": [
+  {
+   "id": "J1.1",
+   "at": "4",
+   "short": "Answers still say nothing",
+   "trigger": "Your answers still say nothing to build from.",
+   "site": {
+    "status": "wanted",
+    "text": "Wanted: {helper} keeps asking, one question a turn, until it is clear or you say \"just do it\"; then it decides with defaults and says which it took. Today: Identity asks one question and files nothing."
+   },
+   "code_does": "Setup's converse step answers ask or clear; the covering (setup_say) posts one question a turn, keeps it in j1-state.json, and the next words are the answer.",
+   "outcome": {
+    "kind": "ask",
+    "voice": "Identity",
+    "golden": null
+   },
+   "binds": [
+    {
+     "kind": "step",
+     "id": "setup.converse"
+    },
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "inform",
+     "word": "question",
+     "dst": "Owner"
+    }
+   ],
+   "code": [
+    "setup_say",
+    "p_setup_converse",
+    "_j1_record"
+   ],
+   "tests": [
+    "test_j1.py::test_j1_s3_s4_vague_words_ask_one_question_and_survive_reload",
+    "test_j1.py::test_j1_s3_the_questions_are_the_models_not_a_list_in_code"
+   ],
+   "rulings": [
+    "S-20",
+    "S-24"
+   ]
+  },
+  {
+   "id": "J1.2",
+   "at": "4",
+   "short": "Just do it",
+   "trigger": "You say \"just do it\" or answer nothing.",
+   "site": {
+    "status": "wanted",
+    "text": "Wanted: {helper} skips the questions and decides from your first line; the department is born with the template's defaults."
+   },
+   "code_does": "JUST_DO_IT ends the questions; the hurry branch decides with J1_DEFAULTS and the tell names the defaults it took. With nothing said at all it still asks for the goal.",
+   "outcome": {
+    "kind": "tell",
+    "voice": "Identity",
+    "golden": "Defaults used:"
+   },
+   "binds": [
+    {
+     "kind": "act",
+     "src": "Identity",
+     "act": "inform",
+     "word": "request",
+     "dst": "Owner"
+    }
+   ],
+   "code": [
+    "JUST_DO_IT",
+    "J1_DEFAULTS",
+    "setup_say"
+   ],
+   "tests": [
+    "test_j1.py::test_j1_1_and_j1_2_answer_then_just_do_it_are_one_conversation",
+    "test_j1.py::test_j1_2_just_do_it_overrules_a_model_that_keeps_asking",
+    "test_j1.py::test_j1_2_just_do_it_without_any_intent_still_asks_for_the_goal"
+   ],
+   "rulings": [
+    "S-20"
+   ]
+  },
+  {
+   "id": "J1.3",
+   "at": "5",
+   "short": "The name exists",
+   "trigger": "The name {helper} picks already exists under this organisation.",
+   "site": {
+    "status": "built",
+    "text": "Built: not made again; your answers are handed to the existing department and you are told (setup_make)."
+   },
+   "code_does": "The same-name branch: a distinct name when the collision is incompatible; a compatible repeat is handed to the existing department; founding does not make the same operation twice.",
+   "outcome": {
+    "kind": "tell",
+    "voice": "Identity",
+    "golden": null
+   },
+   "code": [
+    "setup_make",
+    "founding.spawn"
+   ],
+   "tests": [
+    "test_j1.py::test_j1_3_retry_message_and_compatible_repeat_do_not_duplicate",
+    "test_engine_runtime.py::TestTheFrontDoor::test_95_a_second_department_takes_a_new_name_and_an_existing_name_is_said_back_with_the_words_handed_on"
+   ]
+  },
+  {
+   "id": "J1.4",
+   "at": "5",
+   "short": "No template fits",
+   "trigger": "No template's use case fits your answers.",
+   "site": {
+    "status": "built",
+    "text": "Built: the organic template: no engines at birth, Adaptation shapes the whole line from your answers (v2.306.21)."
+   },
+   "code_does": "_shape_norm routes to the kind organic with no template reference; the kind has an empty line; Adaptation shapes the line and the owner stamps it once.",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   },
+   "code": [
+    "_shape_norm",
+    "setup_make"
+   ],
+   "tests": [
+    "test_j1.py::test_j1_4_no_fitting_template_uses_explicit_organic_route",
+    "test_engine_runtime.py::TestTheFrontDoor::test_84_root_uses_the_explicit_organic_route_when_no_template_fits",
+    "test_engine_runtime.py::TestRunFive::test_110_a_department_born_with_no_line_gets_one_from_adaptation_on_the_owners_stamp_and_the_site_goes_live"
+   ]
+  },
+  {
+   "id": "J1.5",
+   "at": "5",
+   "short": "Two departments",
+   "trigger": "Your answers describe two departments.",
+   "site": {
+    "status": "wanted",
+    "text": "Wanted: {helper} makes the first and offers the second as a chip you can click; today only one is made."
+   },
+   "code_does": "d_setup_shape names a second department (SECOND); only the first is made; the tell offers the second as a chip that carries its own words.",
+   "outcome": {
+    "kind": "tell",
+    "voice": "Identity",
+    "golden": null
+   },
+   "code": [
+    "SECOND",
+    "d_setup_shape",
+    "setup_make",
+    "wbChatTurn"
+   ],
+   "tests": [
+    "test_j1.py::test_j1_5_two_departments_create_only_first_and_leave_suggestion",
+    "js:test_website.js#W46"
+   ]
+  },
+  {
+   "id": "J1.6",
+   "at": "5",
+   "short": "Ask me first",
+   "trigger": "You said earlier \"ask me before you make anything\".",
+   "site": {
+    "status": "built",
+    "text": "Built as a rule tagged ask: {helper} asks once and waits for your stamp; that is the only case the birth stops for you (S-18)."
+   },
+   "code_does": "identity_gate holds Setup only when a rule tagged ask applies to a birth (the department's or an ancestor's); a refusal closes the request.",
+   "outcome": {
+    "kind": "ask",
+    "voice": "Identity",
+    "golden": null
+   },
+   "code": [
+    "identity_gate",
+    "_rule_applies_to_birth",
+    "_effective_rules",
+    "_j1_close"
+   ],
+   "tests": [
+    "test_j1.py::test_j1_6_matching_ask_rule_waits_before_creating",
+    "test_j1.py::test_j1_6_inherited_ask_rule_with_plain_wording_is_effective",
+    "test_j1.py::test_j1_6_unrelated_ask_rule_does_not_gate_department_birth",
+    "test_j1.py::test_j1_6_a_refused_preview_closes_the_request"
+   ],
+   "rulings": [
+    "S-18"
+   ]
+  },
+  {
+   "id": "J1.7",
+   "at": "2",
+   "short": "No answer in 60 s",
+   "trigger": "Nobody answers your line inside 60 s.",
+   "site": {
+    "status": "built",
+    "text": "Built: said back and shown as waiting (front_state)."
+   },
+   "code_does": "front_state shows an unanswered line as waiting after FRONT_WAIT_S; an unanswered question stays waiting with no child.",
+   "outcome": {
+    "kind": "tell",
+    "voice": "Identity",
+    "golden": null
+   },
+   "code": [
+    "front_state",
+    "identity_lost"
+   ],
+   "tests": [
+    "test_engine_runtime.py::TestTheFrontDoor::test_65_words_never_lost_a_front_post_nobody_answers_in_time_is_said_back_and_shows_as_waiting",
+    "test_j1.py::test_j1_7_unanswered_question_stays_waiting_without_a_child"
+   ]
+  },
+  {
+   "id": "J1.8",
+   "at": "5",
+   "short": "Model away",
+   "trigger": "The model is away while {helper} asks or decides.",
+   "site": {
+    "status": "built",
+    "text": "Built: retried after 30, 120 and 600 s, then you are told (WAITS)."
+   },
+   "code_does": "A soft step waits for the model in turn (WAITS), then files an ask of kind model; the Request is kept.",
+   "outcome": {
+    "kind": "retry",
+    "voice": "Identity",
+    "golden": null
+   },
+   "code": [
+    "WAITS"
+   ],
+   "tests": [
+    "test_j1.py::test_j1_8_model_away_retries_three_times_then_retains_request",
+    "test_layer_journey_j1.py::test_j1_8_the_waits_are_30_120_and_600_seconds"
+   ]
+  },
+  {
+   "id": "J1.9",
+   "at": "3",
+   "short": "You leave mid-questions",
+   "trigger": "You close the app in the middle of {helper}'s questions.",
+   "site": {
+    "status": "wanted",
+    "text": "Wanted: {helper} keeps what you said on the Request and continues where you left off when you return; today the Request holds only the first line."
+   },
+   "code_does": "j1-state.json keeps every message and the open question; the Request's versions carry the answers; founding keeps an operation id and checkpoints, so a reload continues the same child.",
+   "outcome": {
+    "kind": "none",
+    "voice": "none",
+    "golden": null
+   },
+   "code": [
+    "_j1_record",
+    "founding.found_structure"
+   ],
+   "tests": [
+    "test_j1.py::test_j1_s3_s4_vague_words_ask_one_question_and_survive_reload",
+    "test_j1.py::test_j1_9_completed_request_state_survives_reload_without_rebirth",
+    "test_j1.py::test_j1_9_interrupted_founding_reconciles_the_same_child",
+    "test_j1.py::test_j1_9_crash_before_final_tell_replays_that_tell_once"
+   ]
+  }
+ ],
+ "sub": [],
+ "children": [],
+ "directions": [
+  {
+   "id": "D-a",
+   "direction": "Root creates the files: the department and the five functions.",
+   "built": "MATCHES: Root's Setup spawns the department of the kind with its goal; the five functions are born from the kind's functions_template (setup_make, founding).",
+   "gap": "none",
+   "mark": null
+  },
+  {
+   "id": "D-b",
+   "direction": "Root starts these engines.",
+   "built": "DIFFERS: nobody starts an engine. Each engine wakes on its own trigger (a new version of what it reads, a post, a timer: ready); the motor asks Coordination who goes first every 3 s (motor_tick, coord_pick). Root's part ends when the child is born and its first words are handed over.",
+   "gap": "a Root step that starts engines does not exist; Brief v1 is the start",
+   "mark": null
+  },
+  {
+   "id": "D-c",
+   "direction": "Root never creates engines.",
+   "built": "MATCHES: engines come from the Library's templates at birth and from an idea after it (engine-templates/*.json, add_engine); Root's line is one engine, Setup.",
+   "gap": "none",
+   "mark": null
+  },
+  {
+   "id": "D-d",
+   "direction": "Engines are created by Adaptation from the user's input and the onboarding of the department.",
+   "built": "PARTLY: Adaptation creates an engine from an idea the owner floats (Identity's new-idea journey, adapt.shape, Priority, the engine ask). It does not read the onboarding answers or the first words for engines; from what repeated it proposes a rung move, not an engine (adapt.ladder).",
+   "gap": "Adaptation reading the birth words and the first turns for missing engines",
+   "mark": null
+  },
+  {
+   "id": "D-e",
+   "direction": "Where the template's engines are mandatory, Adaptation modifies them for the use case before starting and running.",
+   "built": "NOT BUILT: the kind's line runs as shipped from the first Brief; Adaptation wakes only on a checked Live site or an idea. The only fitting before a run is Setup's pick of the kind whose use case fits (p_setup_shape) and Do's need step (do.need), which is a born engine's, not the line's.",
+   "gap": "an Adaptation step between birth and the first run",
+   "mark": null
+  },
+  {
+   "id": "D-f",
+   "direction": "Anyone proposes a department; Root creates it (ruling of this morning).",
+   "built": "PARTLY: the owner's words through Root's Identity make a department; a department's Adaptation may file a department ask from its own chat tools (sutra_department_ask in its template brief), which still ends at the owner's stamp and Root's Setup.",
+   "gap": "no engine step of Adaptation proposes a department on its own",
+   "mark": null
+  }
+ ],
+ "build_rows": [
+  {
+   "id": "B1",
+   "when": "v1",
+   "change": "Sutra asks before deciding: the converse step (an AI inside with an instruction, no question in code) on Root's Setup, between read and shape; the covering posts the question and waits, or hands \"clear\" on; the answers are Request versions",
+   "where": "engine-templates/setup.json (the step and its default instruction), engine_runtime.py (p_setup_converse, the covering's check)",
+   "owner": "session 0c (the app)",
+   "size": "M",
+   "tests": [
+    "test_j1.py::test_j1_s3_the_questions_are_the_models_not_a_list_in_code"
+   ]
+  },
+  {
+   "id": "B2",
+   "when": "v1",
+   "change": "No stamp at birth: identity.gate stops holding Setup; it holds only when a rule tagged ask matches (J1.7)",
+   "where": "engine_runtime.py identity_gate",
+   "owner": "session 0c",
+   "size": "S",
+   "tests": [
+    "test_j1.py::test_j1_s1_to_s7_clear_request_builds_once_without_default_stamp"
+   ]
+  },
+  {
+   "id": "B3",
+   "when": "later",
+   "change": "The template's offer carries a required flag per engine; the kinds table gains it (website: none required by default, your call)",
+   "where": "engine_defs/website.json kinds, engine-templates/*.json",
+   "owner": "session 0c",
+   "size": "S",
+   "tests": [
+    "test_j2.py::test_m4_4_a_plan_without_check_is_refused_by_roots_check"
+   ]
+  },
+  {
+   "id": "B4",
+   "when": "later",
+   "change": "Adaptation's overlay at every birth: the organic kind's Shape the line step runs for every kind with the template's engines as candidates; the code check keeps required ones; one path replaces two",
+   "where": "engine_runtime.py adapt.line, website_dept.create",
+   "owner": "session 0c",
+   "size": "M",
+   "backlog": "BL-9"
+  },
+  {
+   "id": "B5",
+   "when": "v1",
+   "change": "The screen says Sutra for Root's chat and its tells; Sutra's tell after birth names the department, its engines and what happens first",
+   "where": "19-org2.js, 22-website.js, _tell wording",
+   "owner": "session 0c",
+   "size": "S",
+   "tests": [
+    "js:test_website.js#W45"
+   ]
+  },
+  {
+   "id": "B6",
+   "when": "later",
+   "change": "Resume mid-questions: the Request keeps every answer; Setup's converse step reads them back on return",
+   "where": "setup_read, the Request artifact",
+   "owner": "session 0c",
+   "size": "S",
+   "tests": [
+    "test_j1.py::test_j1_9_completed_request_state_survives_reload_without_rebirth"
+   ]
+  },
+  {
+   "id": "B7",
+   "when": "v1",
+   "change": "The page: J1 re-marked from to build to built as each row lands; J8 (the organic birth) folded into this J1 since it is now the same flow",
+   "where": "system/journeys.json",
+   "owner": "this session (the page)",
+   "size": "S"
+  }
+ ],
+ "rulings": [
+  {
+   "id": "S-06",
+   "status": "RULED",
+   "date": "2026-09-30",
+   "text": "No mandatory engine: Adaptation may drop any engine with a stamp. Refined by S-21: a template may mark an engine as must-have."
+  },
+  {
+   "id": "S-08",
+   "status": "RULED",
+   "date": "2026-09-30",
+   "text": "Approval settings live per department, inherited from Root; a department may only tighten."
+  },
+  {
+   "id": "S-10",
+   "status": "RULED",
+   "date": "2026-09-29",
+   "text": "Root creates the department and the five functions and hands over; Root never creates engines; engines come from Adaptation."
+  },
+  {
+   "id": "S-18",
+   "status": "RULED",
+   "date": "2026-09-30",
+   "text": "Authority: the AI has the whole authority to make things happen unless a person says something; no ask stops a run by default; a person narrows with a rule, a Stop, a refusal."
+  },
+  {
+   "id": "S-19",
+   "status": "RULED",
+   "date": "2026-09-30",
+   "text": "A kind may offer engines; at birth Adaptation shapes the line from the offer, the Library, or on the fly; one stamp births the line (S-18 makes it none); more kinds later."
+  },
+  {
+   "id": "S-20",
+   "status": "RULED",
+   "date": "2026-09-30",
+   "text": "Birth as a conversation: after the name, Sutra (Root, shown as Sutra) asks what I want to create, and creates the first department itself; no 'set up a department?' ask."
+  },
+  {
+   "id": "S-21",
+   "status": "RULED",
+   "date": "2026-09-30",
+   "text": "A template may bring default engines; the department's Adaptation overlays what it needs, unless the template says explicitly that an engine has to be there."
+  },
+  {
+   "id": "S-24",
+   "status": "RULED",
+   "date": "2026-09-30",
+   "text": "The birth questions are not code: the Setup workflow's converse step carries an instruction, ask until you can confidently create; the five on the Root page are examples inside it; a template may bring its own wording."
+  }
+ ],
+ "decisions": [
+  "Q12",
+  "Q13",
+  "Q14",
+  "MK-4"
+ ],
+ "quotes": [],
+ "scenarios": [
+  {
+   "id": "J1.walk",
+   "lane": "the department's life",
+   "test": "test_layer_journey_j1.py::test_j1_walk_found_ask_decide_build_tell",
+   "walks": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7"
+   ],
+   "says": "Found an organisation, say vague words, answer the one question, and watch Root decide, build and tell, with a stubbed model."
+  }
+ ],
+ "invariants": [
+  "only_identity_speaks_to_the_owner",
+  "no_stamp_unless_a_rule_says_ask",
+  "approvals_only_tighten",
+  "every_ask_names_its_answers"
+ ],
+ "backlog": [
+  {
+   "id": "BL-9",
+   "row": "build:B4",
+   "smallest": "Between birth and the first run, an Adaptation step may only narrow the template's engines to fit the use case; the engines the kind marks required stay (Check). One path for every kind.",
+   "decision": "MK-9",
+   "package": "W2-ADAPT F1 (M5.2)"
+  }
+ ],
+ "site_ids": [
+  "step:1",
+  "step:2",
+  "step:3",
+  "step:4",
+  "step:5",
+  "step:6",
+  "step:7",
+  "edge:J1.1",
+  "edge:J1.2",
+  "edge:J1.3",
+  "edge:J1.4",
+  "edge:J1.5",
+  "edge:J1.6",
+  "edge:J1.7",
+  "edge:J1.8",
+  "edge:J1.9",
+  "build:B1",
+  "build:B2",
+  "build:B3",
+  "build:B4",
+  "build:B5",
+  "build:B6",
+  "build:B7",
+  "direction:D-a",
+  "direction:D-b",
+  "direction:D-c",
+  "direction:D-d",
+  "direction:D-e",
+  "direction:D-f",
+  "today"
+ ],
+ "tag": "THE FLOW YOU WANT (S-20, S-21) · each step says built or to build",
+ "today": {
+  "text": "You type the name and one line; Root reads it; Root asks \"Set up a department for: ...?\"; you stamp; Setup reads, shapes (name, kind, goal by one model call) and makes the department with the template's engines written on the record as shipped (website: Plan, Write, Check, Publish; organic: none, then Adaptation shapes them); the department's Identity takes your line as the Brief; the line starts.",
+  "sources": "birth.md, sutra 50599599 and ef0e8c39."
+ }
+}
