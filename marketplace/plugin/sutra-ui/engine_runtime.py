@@ -424,6 +424,21 @@ def _floor_lines(t):
     return [str(x) for x in t["floor"]][:8]
 
 
+def _role_block(ref, name, e):
+    """What a function's agent is told of its role (A3.4.3): eight lines, from the words of its goal group as the department
+    reads them now (what it is, may do, how it decides, avoids; the owner's stamped fields over the version's), the interface's
+    boundaries (what it is not, never does, hands on to) and the working agreement every function keeps. Compiled by the layer's
+    own layout. '' for a work engine, for Root, and when the role block is not sent (S.ROLE_IN_CARD, or the function's in_card)."""
+    fn = str(name or "").lower()
+    if not layer_schema.ROLE_IN_CARD or (e or {}).get("kind") != "function" or fn not in INSTRUCTIONS:
+        return ""
+    if not (layer_schema.FUNCTION_TEMPLATE.get(fn) or {}).get("in_card"):
+        return ""
+    goal = {part: layers.words(ref, fn, "goal", part) for part in ("role_is", "role_may", "role_procedure", "role_patterns")}
+    return layers.prompt(ref, fn, "goal", "role_block", **layer_schema.role_inputs(
+        fn, goal["role_is"]["text"], goal["role_may"]["items"], goal["role_procedure"]["items"], goal["role_patterns"]["items"]))
+
+
 def card(ctx):
     """Each engine has its own agent. This is who it is: the engine's card, and for a function the brief of the
     Library template the department picked for it."""
@@ -432,6 +447,14 @@ def card(ctx):
     lines = ["You are the agent of %s, one engine of the department \"%s\"." % (name, d.get("name")),
              "What %s does: it %s." % (name, does),
              "Its skills: %s." % "; ".join(skills)]
+    # the role of a function: what it is, may do, never does, how it decides (A3.4.3). Whether the department has picked a
+    # template does not matter to it, and a block that cannot be built never stops a step
+    try:
+        block = _role_block(ctx.get("ref"), name, e)
+        if block:
+            lines.append(block)
+    except Exception:  # noqa: BLE001 -- a missing block never stops a step
+        pass
     # the template this function runs is the pick on the registry, as the Settings tab left it (found 2026-09-29: a
     # later pick reached the screen and never the agent, which read the birth copy on the record)
     try:

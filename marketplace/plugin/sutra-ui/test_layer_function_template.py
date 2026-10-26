@@ -367,3 +367,211 @@ def test_the_picked_templates_whole_floor_reaches_the_card(rt, registry):
     assert R._floor_lines({"floor": ["a", 2]}) == ["a", "2"]
     # no template of the library has more than eight lines, so none loses one
     assert max(len(t["floor"]) for fn in FT.FUNCTIONS for t in FT.templates(fn)) <= 8
+
+
+# ---- F4: the role block in the card -------------------------------------------------------------------------------------
+BLOCK = re.compile(r"\nIt is: .*?\nAll five functions keep: [^\n]*(?=\n)", re.S)
+#: the strings the scripted test models of test_engine_runtime, test_j2, test_j2_identity and test_layer_root read their
+#: prompts by (the first occurrence of each), and the words they key on: no word of the role block may hold one
+SCRIPTED = ("THE WORDS: ", "THE DIRECTIVE: ", "THE FEEDBACK: ", "THE IDEA: ", "THE REQUEST: ", "THE ENGINE: ", "THE OWNER'S WORDS: ",
+            "DEPARTMENTS THIS ROOT ALREADY HAS: ", "THIS PAGE: ", "index.html", "- Summary:", "- Publish:", "THE OWNER: none")
+SCRIPTED_WORDS = ("new website", "algebra", "bakery")
+
+
+def test_the_card_carries_the_role_block_for_a_function_and_not_for_a_work_engine(rt, monkeypatch):
+    W, R, J, FV, ref = rt
+    for fn in FUNCTIONS:
+        title = S.TITLE[fn]
+        card = card_of(rt, title)
+        lines = card.split("\n")
+        assert lines[0].startswith("You are the agent of %s, one engine of the department" % title)
+        assert lines[1].startswith("What %s does: it " % title) and lines[2].startswith("Its skills: ")
+        assert lines[3].startswith("It is: ") and lines[10].startswith("All five functions keep: ")
+        assert [ln.split(":")[0] for ln in lines[3:11]] == ["It is", "It is not", "It may", "It never", "How it decides", "It avoids",
+                                                              "It hands on to", "All five functions keep"]
+        assert lines[11].startswith("It always: ") and lines[12].startswith("It decides: "), "the template lines follow the block"
+        assert "It is not: " + S.FUNCTION_TEMPLATE[fn]["is_not"] in card and "It hands on to: " + S.FUNCTION_TEMPLATE[fn]["hands_on"] in card
+        assert "It never: " + "; ".join(x.rstrip(".") for x in S.FUNCTION_TEMPLATE[fn]["never"]) + "." in card
+        assert S.DEPARTMENT_AGREEMENT[0] in card and S.DEPARTMENT_AGREEMENT[-1] in card
+        assert card.endswith("you state nothing you were not given.\n\n"), "a blank line before the step's prompt"
+        assert len(BLOCK.search(card).group(0)) - 1 <= S.ROLE_BLOCK_MAX
+    assert "It is: " in card_of(rt, "Identity") and "It never:" in card_of(rt, "Identity") and "All five functions keep:" in card_of(rt, "Identity")
+    for engine in ("Plan", "Write", "Check", "Publish", "Do"):
+        card = card_of(rt, engine)
+        assert not any(m in card for m in ("It is:", "It is not:", "It never:", "All five functions keep:")), engine
+        assert card.startswith("You are the agent of %s" % engine)
+    # Root's Setup prompts use no card and no block: its template is interface-only
+    assert S.FUNCTION_TEMPLATE["root"]["in_card"] is False
+    assert R._role_block(ref, "Setup", R.engine_def("Setup")) == "" and R._role_block(ref, "Write", R.engine_def("Write")) == ""
+    root_snap = (HERE / "test_fixtures/root-prompts.snapshot.json").read_text(encoding="utf-8")
+    assert "All five functions keep" not in root_snap and "It never:" not in root_snap
+    # a department with no template pick still has the block, and so has one whose registry cannot be read
+    import function_templates
+    with monkeypatch.context() as m:
+        m.setattr(function_templates, "picked", lambda r: {})
+        card = card_of(rt, "Priority")
+        assert "It never: " in card and "It always:" not in card and "It decides:" not in card
+    with monkeypatch.context() as m:
+        m.setattr(function_templates, "picked", lambda r: 1 / 0)
+        d = W.dept(ref)
+        d["templates"] = {}
+        card = R.card({"ref": ref, "dept": d, "engine": "Audit", "def": R.engine_def("Audit")})
+        assert "It never: " in card and "It always:" not in card, "the block does not wait on a template"
+    # with the constant off the card is as it was, and a function whose template says in_card false is sent no block
+    with_block = card_of(rt, "Coordination")
+    with monkeypatch.context() as m:
+        m.setattr(S, "ROLE_IN_CARD", False)
+        without = card_of(rt, "Coordination")
+    assert BLOCK.sub("", with_block) == without and "It never:" not in without
+    with monkeypatch.context() as m:
+        m.setitem(S.FUNCTION_TEMPLATE["coordination"], "in_card", False)
+        assert card_of(rt, "Coordination") == without
+    # a block that cannot be built never stops a step: the card is what it was
+    with monkeypatch.context() as m:
+        m.setattr(S, "role_inputs", lambda *a: 1 / 0)
+        assert card_of(rt, "Coordination") == without
+    assert card_of(rt, "Coordination") == with_block
+
+
+def test_no_word_of_the_role_block_holds_a_label_the_scripted_models_read():
+    for fn in FUNCTIONS:
+        words = module_of(fn).WORDS["goal"]
+        text = " ".join([words["done"]["text"], words["role_is"]["text"], *words["role_may"]["items"], *words["role_procedure"]["items"],
+                         *words["role_patterns"]["items"], *[S.FUNCTION_TEMPLATE[fn][k] for k in ("role", "is_not", "hands_on")],
+                         *S.FUNCTION_TEMPLATE[fn]["never"], *S.DEPARTMENT_AGREEMENT, S.ROLE_BLOCK_LAYOUT])
+        assert not [m for m in SCRIPTED if m in text], fn
+        assert not [m for m in SCRIPTED_WORDS if m in text.lower()], fn
+
+
+def test_a_stamped_role_field_reaches_the_next_card(rt):
+    """The owner's path is the one every field has: an ask, a stamp, and the next card holds the words; the boundaries stay."""
+    W, R, J, FV, ref = rt
+    before = card_of(rt, "Coordination")
+    mine = list(module_of("coordination").WORDS["goal"]["role_may"]["items"]) + ["name the order of two ready engines of equal weight"]
+    ask = R.instructions_ask(ref, "coordination", "goal", "role_may", "items", mine)
+    assert card_of(rt, "Coordination") == before, "nothing changes until the stamp"
+    W.decide_ask(ref, ask["id"], True)
+    W.run_until_idle(ref, limit=200)
+    after = card_of(rt, "Coordination")
+    assert after != before and "; name the order of two ready engines of equal weight." in after
+    assert BLOCK.sub("", after) == BLOCK.sub("", before), "only the block changed"
+    never = "It never: " + "; ".join(x.rstrip(".") for x in S.FUNCTION_TEMPLATE["coordination"]["never"]) + "."
+    assert never in after and S.DEPARTMENT_AGREEMENT[0] in after and S.FUNCTION_TEMPLATE["coordination"]["is_not"] in after
+    # the sentence it is in: what the owner stamped for what it is
+    ask = R.instructions_ask(ref, "coordination", "goal", "role_is", "text", "the timetable of this department, kept by code first")
+    W.decide_ask(ref, ask["id"], True)
+    W.run_until_idle(ref, limit=200)
+    assert "\nIt is: the timetable of this department, kept by code first.\n" in card_of(rt, "Coordination")
+
+
+def test_a_child_version_overlay_changes_one_field_and_keeps_the_boundaries(rt, monkeypatch):
+    """A child version (A2) writes only what differs: one line of how Identity decides. The card of a department that runs it
+    holds the child's line and the interface's boundaries as they are, and the child passes case 14."""
+    import copy
+    import types
+    W, R, J, FV, ref = rt
+    parent = module_of("identity")
+    words = copy.deepcopy(parent.WORDS)
+    words["goal"]["role_procedure"]["items"][0] = "Name the goal item or the rule that applies, and say which."
+    layout = copy.deepcopy(parent.LAYOUT)
+    if hasattr(layers, "inherit"):                                             # A2-INHERIT's registry helper, when it is on main
+        child = types.SimpleNamespace(**dict(layers.inherit("identity/v1", words={"goal": {"role_procedure": {"items": words["goal"]["role_procedure"]["items"]}}}),
+                                             LAYER="identity", VERSION=2, IMPLEMENTS=1, PARENT="identity/v1", RECIPE="v1.json",
+                                             __file__=parent.__file__.replace("v1.py", "v2.py")))
+    else:
+        child = types.SimpleNamespace(**{**vars(parent), "WORDS": words, "LAYOUT": layout, "VERSION": 2, "PARENT": "identity/v1"})
+    child.__file__ = parent.__file__.replace("v1.py", "v2.py")
+    assert C.case_14_function_template(child) == []
+    base = card_of(rt, "Identity")
+    monkeypatch.setitem(layers._LOADED, "identity/v2", child)
+    monkeypatch.setitem(S.DEFAULT_PINS, "identity", "identity/v2")
+    got = card_of(rt, "Identity")
+    assert got != base and "1) Name the goal item or the rule that applies, and say which. 2) Separate what is known" in got
+    changed = [(a, b) for a, b in zip(base.split("\n"), got.split("\n")) if a != b]
+    assert len(changed) == 1 and changed[0][0].startswith("How it decides: "), "one field of one line"
+    for kept in ("It is not: ", "It never: ", "It hands on to: ", "All five functions keep: "):
+        assert next(x for x in got.split("\n") if x.startswith(kept)) == next(x for x in base.split("\n") if x.startswith(kept))
+    # a child that drops the boundaries from its layout is told by case 14, and its words are not what the card is made of
+    bad = copy.deepcopy(layout)
+    bad["goal"]["role_block"] = bad["goal"]["role_block"].replace("It never: {{never}}\n", "")
+    nobody = types.SimpleNamespace(**{**vars(child), "LAYOUT": bad})
+    assert C.case_14_function_template(nobody) == ["identity/v2: goal.role_block leaves out {{never}}, so the agent would not be told what it never does"]
+
+
+@pytest.fixture
+def j2(home):
+    import website_dept as W
+    import founding
+    import placement_engine as E
+    import org2_apply
+    import engine_runtime as R
+    import j2_runtime as J
+    for module in (E, W, org2_apply, founding, R, J):
+        importlib.reload(module)
+    if not E.active_roots(E.load_domains()):
+        E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
+    return W, R, J, founding
+
+
+def _run_offline(j2, monkeypatch, words, org):
+    """A department born the way a person makes it and run offline to the end of what it can do alone; every soft call's prompt
+    recorded with the step that made it. Returns [(engine, step id, prompt)]."""
+    W, R, J, founding = j2
+    seen = []
+
+    def model(prompt, step):
+        seen.append((step["id"], prompt))
+        return None, 0.0, "offline"
+    monkeypatch.setattr(R, "MODEL", model)
+    root = founding.found_structure(org, owner="Sankalp")["root"]
+    W.owner_ask(root, words)
+    W.run_until_idle(root, limit=300)
+    child = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(child, limit=300)
+    for _ in range(4):                                                         # the owner stamps what waits, so the reading is made
+        asks = [a for a in W.asks(child) if a["status"] == "pending"]
+        if not asks:
+            break
+        for a in asks:
+            W.decide_ask(child, a["id"], True)
+        W.run_until_idle(child, limit=300)
+    return [(R.step_def(sid)[0], sid, prompt) for sid, prompt in seen]
+
+
+def test_the_block_is_sent_to_every_soft_step_of_a_function(j2, monkeypatch):
+    """Over offline runs of a website and of an organic department, each soft call of Identity, Adaptation, Priority,
+    Coordination and Audit is sent a prompt that starts 'You are the agent of' and holds the block once; a work engine's does
+    not, and Root's Setup prompts have none."""
+    calls = _run_offline(j2, monkeypatch, "Build a website that teaches algebra to Class 8 students", "Acme Learning")
+    calls += _run_offline(j2, monkeypatch, "Set up a laboratory system to track chemical inventory for our school science team", "Lab Org")
+    seen = {}
+    for engine, sid, prompt in calls:
+        assert prompt.startswith("You are the agent of %s, one engine of the department" % engine), (sid, prompt[:60])
+        if engine in [S.TITLE[fn] for fn in FUNCTIONS]:
+            seen.setdefault(engine, set()).add(sid)
+            assert "\nIt is: " in prompt and prompt.count("All five functions keep: ") == 1, sid
+            assert prompt.index("Its skills: ") < prompt.index("It is: ") < prompt.index("It never: ") < prompt.index("All five functions keep: "), sid
+        else:
+            assert "It is:" not in prompt and "All five functions keep" not in prompt, (engine, sid)
+    assert set(seen) == {S.TITLE[fn] for fn in FUNCTIONS}, "all five functions made a soft call: %s" % {k: sorted(v) for k, v in seen.items()}
+    assert {"identity.take", "priority.bargain", "audit.judge", "coord.tie"} <= set().union(*seen.values())
+
+
+class TestTheBlockIsTheOnlyDifference(__import__("test_function_prompts").Fixture):
+    """The prompt snapshot (test_fixtures/function-prompts.snapshot.json, 'snapshot: A3 role block') differs from the cards as
+    they were only by the block (A3.4.8): every prompt of a function carries it once, and without it each is what the same
+    fixture renders with S.ROLE_IN_CARD false, which is the snapshot of the commit before."""
+
+    def test_snapshot_differs_from_the_commit_before_only_by_the_block(self):
+        import json
+        from unittest import mock
+        snap = json.loads((HERE / "test_fixtures/function-prompts.snapshot.json").read_text(encoding="utf-8"))
+        got = self.prompts()
+        with mock.patch.object(S, "ROLE_IN_CARD", False):
+            before = self.prompts()
+        self.assertEqual(sorted(snap), sorted(before))
+        self.assertGreaterEqual(len(snap), 29)
+        for k in sorted(snap):
+            self.assertEqual(len(BLOCK.findall(snap[k])), 1, "%s carries the block once" % k)
+            self.assertEqual(BLOCK.sub("", snap[k]), before[k], "%s without the block is what it was" % k)
+            self.assertEqual(snap[k], got[k], "%s renders as the snapshot holds it" % k)
