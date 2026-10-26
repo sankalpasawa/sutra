@@ -4870,6 +4870,13 @@ STANDARD = ("goal", "items", "rules", "owner", "budget", "invented")
 #: what each point's gap is called, in the owner's words, when code reads it on the record
 STANDARD_SAYS = {"goal": "no goal", "items": "no done-when item that says how it is checked", "rules": "a rule with no tag",
                  "owner": "no owner", "budget": "no budget"}
+#: the standard as the owner reads it on Identity's pane (PRD M3.7, S5): the five points of MK-1, each by the line its
+#: row says and the reading's points it covers
+STANDARD_POINTS = (("goal", "The goal names what and for whom", ("goal",)),
+                   ("items", "Done-when items, each with how it is checked", ("items",)),
+                   ("rules", "Every rule is tagged", ("rules",)),
+                   ("owner_budget", "Owner and budget are set", ("owner", "budget")),
+                   ("invented", "Nothing invented", ("invented",)))
 _RULE_TAGS = W.RULE_TAGS
 
 

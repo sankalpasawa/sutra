@@ -5790,6 +5790,16 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
 .wbq.gone .dpaskd{margin-bottom:0;color:var(--ink)}
 .wbq .wbbox{margin-top:0}
 .wbq .btn[disabled]{opacity:.6;cursor:default}
+/* Identity's pane (S5, PRD M3.7): the standard's rows, the goal, done-when items, the rules, the conflicts closed */
+.wbstd b{font-weight:500}
+.wbidgoal{font-family:var(--serif);font-weight:400;font-size:15px}
+.wbiditem,.wbidrule{display:flex;align-items:baseline;gap:8px;padding:4px 0;border-bottom:1px solid var(--line-soft);font:400 12.5px/1.45 var(--sans);color:var(--ink)}
+.wbiditem:last-child,.wbidrule:last-child{border-bottom:0}
+.wbiditem>span:nth-of-type(1),.wbidrule>span:nth-of-type(1){flex:1 1 auto}
+.wbiditem .wbjid{background:none;border:0;padding:0;cursor:pointer;color:var(--faint);font:400 11px var(--mono)}
+.wbidconf{display:flex;gap:8px;width:100%;text-align:left;background:none;border:0;padding:4px 0;cursor:pointer;font:400 12.5px/1.45 var(--sans);color:var(--ink)}
+.wbhow{margin-top:10px}
+.wbhow>summary{cursor:pointer;font:600 10.5px var(--sans);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:6px 0}
 /* a blocked plan's card (S10, PRD M3.5): who, why and if nothing is done, then the ways out, each with its cost */
 .wbopt .wboptkv{display:flex;gap:8px;font:400 12.5px/1.45 var(--sans);color:var(--ink);margin:2px 0}
 .wbopt .wboptkv .dpk{flex:0 0 120px;margin:0}

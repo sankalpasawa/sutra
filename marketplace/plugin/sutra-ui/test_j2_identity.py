@@ -684,3 +684,54 @@ def test_m3_6_a_functions_chat_box_says_the_words_go_to_identity(j2):
     import pathlib
     src = (pathlib.Path(__file__).parent / "static" / "js" / "22-website.js").read_text(encoding="utf-8")
     assert '"Say it to Identity about " + name' in src and '"Say it to Identity"' in src
+
+
+# ---- M3.7 ------------------------------------------------------------------------------------------------------------
+def test_m3_7_identitys_pane_reads_its_one_record(j2, monkeypatch):
+    """A pane that reads the standard from somewhere other than the record, drops the items' how and level, or shows a
+    rule without where it came from, must fail."""
+    import json
+    W, R, J, _, F = j2
+    _model(monkeypatch, R, {"setup.shape": dict(SHAPED, goal="A website for Bakery Co where customers see every cake",
+                                                done_items=[dict(i) for i in ITEMS]),
+                            "priority.bargain": {"answer": "reject", "why": "no room"},
+                            "identity.close": {"ruling": "run", "why": "the goal cannot be met without a site"}})
+    ref = _born(j2)
+    j = F.function(ref, "identity")["j2"]
+    assert [r["id"] for r in j["standard"]["rows"]] == ["goal", "items", "rules", "owner_budget", "invented"]
+    assert [r["says"] for r in j["standard"]["rows"]] == [s for _, s, _ in R.STANDARD_POINTS]
+    assert [r["state"] for r in j["standard"]["rows"]] == ["met", "met", "met", "met", "to_confirm"]
+    assert j["standard"]["rows"][4]["note"] == "to confirm with you: D3, nobody gave the reviews"
+    assert j["goal"] == W.dept(ref)["goal"]
+    assert j["done_items"] == [{"id": "D1", "text": ITEMS[0]["text"], "how": "code", "level": "target", "confirm": None},
+                               {"id": "D2", "text": ITEMS[1]["text"], "how": "model", "level": "outcome", "confirm": None},
+                               {"id": "D3", "text": ITEMS[2]["text"], "how": "person", "level": "outcome", "confirm": "nobody gave the reviews"}]
+    assert [(r["tag"], r["by"]) for r in j["rules"]] == [(r["tag"], "the template") for r in W.KINDS["website"]["rules"]]
+    assert j["open_question"] is None
+    assert len(j["conflicts"]) == 1
+    c = j["conflicts"][0]
+    assert (c["who"], c["ruling"], c["ruled"], c["asked_you"]) == ("Adaptation and Priority did not agree", "run", "it runs", False)
+    assert c["plan"] and "the goal cannot be met without a site" in c["why"]
+    assert "charter" not in json.dumps(j).lower()
+    # a rule the owner gave says it is theirs, and when
+    d = W.dept(ref)
+    d["rules"].append(W.rule_row("refuse", "Never show a price that is not in my list", "never show a price that is not in my list"))
+    W.save_dept(ref, d)
+    mine = F.function(ref, "identity")["j2"]["rules"][-1]
+    assert (mine["tag"], mine["by"]) == ("refuse", "yours") and mine["since"]
+
+
+def test_m3_7_an_open_question_on_the_standard_is_on_the_pane(j2, monkeypatch):
+    W, R, J, _, F = j2
+    _model(monkeypatch, R, {"identity.enough": {"enough": False, "missing": ["goal"], "question": WHO, "why": "the goal names no one"}})
+    ref = _born(j2)
+    j = F.function(ref, "identity")["j2"]
+    assert (j["open_question"]["text"], j["open_question"]["standard"], j["open_question"]["points"]) == (WHO, True, ["goal"])
+    assert j["standard"]["rows"][0] == {"id": "goal", "says": "The goal names what and for whom", "state": "not_met", "note": "Identity asks you"}
+    assert j["standard"]["met"] is False
+    # the record's own gap is read by code, in the owner's words
+    d = W.dept(ref)
+    d["owner"] = ""
+    W.save_dept(ref, d)
+    row = F.function(ref, "identity")["j2"]["standard"]["rows"][3]
+    assert (row["state"], row["note"]) == ("not_met", "the record has no owner")

@@ -1079,7 +1079,42 @@ function wbFnPageSig(v){
   const n = v.node || {};
   return JSON.stringify([n.state, n.word, n.waits_on, n.line, n.why,
     (v.journeys || []).map(j => [j.id, j.status, j.last && j.last.summary, j.last && String(j.last.at || "").slice(0, 16)]),
-    (v.recipe || []).map(r => [r.id, r.rung]), (v.fields || []).map(f => [f.key, f.placeholder])]);
+    (v.recipe || []).map(r => [r.id, r.rung]), (v.fields || []).map(f => [f.key, f.placeholder]), wbIdSig(v.j2)]);
+}
+/* Identity's pane paints again when its record moves: a point of the standard, an item, a rule, its question, a ruling */
+function wbIdSig(j){
+  if (!j || !j.standard || !j.standard.rows) return null;
+  return [j.standard.rows.map(r => [r.id, r.state, r.note]), j.goal, (j.done_items || []).map(i => [i.id, i.text, i.confirm]),
+    (j.rules || []).map(r => [r.tag, r.line, r.by]), j.open_question && j.open_question.id, (j.conflicts || []).map(c => [c.at, c.ruling])];
+}
+/* Identity's pane (S5, PRD M3.7), on top of its page: the open question (the same S6 card as in Chat, so answering in
+   one place clears them all), Enough to work? (one row per point of the marked standard: a dot, a word and a note),
+   the goal in the owner's words with a way to change it, done-when as items with level and how, the rules with where
+   each came from, and the conflicts Identity closed; how Identity works folds under them. It renders the read and
+   writes nothing: Change the goal opens the Chat with the box begun. */
+const WB_STD = { met: ["ok", "met"], not_met: ["warn", "not yet"], to_confirm: ["warn", "to confirm"], reading: ["breath", "reading"] };
+/* a rule's tag as the pane says it: the record keeps refuse; the screen never says refuse, so a refuse rule reads never */
+const WB_TAG_SAYS = { refuse: "never" };
+function wbIdentityHtml(ref, j){
+  const q = j.open_question ? wbQuestionHtml(Object.assign({ ref: ref }, j.open_question), ref, false) : "";
+  const rows = (j.standard.rows || []).map(r => {
+    const [dot, word] = WB_STD[r.state] || ["off", r.state];
+    return `<div class="dprow wbstd"><span class="dpdot ${dot}"></span><span><b>${wbEsc(r.says)}</b> ${wbChip(word, r.state === "met" ? "on" : "")}` +
+      (r.note ? `<div class="dpchk">${wbEsc(r.note)}</div>` : "") + `</span></div>`;
+  }).join("");
+  const goal = j.goal ? `<div class="dpbig wbidgoal">${wbEsc(j.goal)}</div>` : dpQuiet("Identity has not read the words yet");
+  const items = (j.done_items || []).map(i => `<div class="wbiditem"><button type="button" class="wbjid wb" data-wbfn="audit" title="Audit's reading">${wbEsc(i.id)}</button>` +
+    `<span>${wbEsc(i.text)}</span>${i.confirm ? wbChip("to confirm") : ""}<span class="dpchk">${wbEsc([i.level, i.how].filter(Boolean).join(" · "))}</span></div>`).join("");
+  const rules = (j.rules || []).map(r => `<div class="wbidrule">${wbChip(WB_TAG_SAYS[r.tag] || r.tag, r.tag === "go" ? "on" : (r.tag === "always" ? "" : "ask"))}<span>${wbEsc(r.line)}</span>` +
+    `<span class="dpchk">${wbEsc(r.by === "yours" ? "yours" + (r.since ? " · " + wbWhen(r.since) : "") : "the template")}</span></div>`).join("");
+  const closed = (j.conflicts || []).map(c => `<button type="button" class="wbidconf wb" data-wbtab="board"><span class="dpchk">${wbEsc(wbWhen(c.at))}</span>` +
+    `<span>${wbEsc(wbCap(c.who))}${c.plan ? " on " + wbEsc(c.plan) : ""}. Ruled: ${wbEsc(c.ruled)}${c.why ? "; " + wbEsc(c.why) : ""}.` +
+    `${c.asked_you ? "" : " No ask to you."}</span></button>`).join("");
+  return q + dpCard("Enough to work?", rows) +
+    dpCard("Goal", goal + (j.goal ? `<div class="dpoffer">${wbBtn("Change the goal", `data-wbtab="chat" data-wbfill="Change the goal to: "`)}</div>` : "")) +
+    dpCard("Done when", items ? `<div class="dpchk">Drafted by Root at birth</div>` + items : dpQuiet("No done-when items yet")) +
+    dpCard("Rules", rules || dpQuiet("No rules yet")) +
+    dpCard("Conflicts closed", closed || dpQuiet("No conflict yet"));
 }
 async function wbLoadFnPage(ref, fn, again){
   const st = wbS(), k = ref + ":" + fn;
@@ -1134,11 +1169,16 @@ function wbFnPageHtml(ref, fn){
   const node = p.node || {};
   const now = node.state ? dpRunRow(wbCap(node.word || node.state), node.why || node.line || "",
                                     ({ working: "", waiting: "wait", waiting_on_you: "warn", fault: "block", quiet: "off" })[node.state]) : "";
-  return dpCard("The function", `<div class="dpbig">${wbEsc(p.line)}</div>` + now +
+  const page = dpCard("The function", `<div class="dpbig">${wbEsc(p.line)}</div>` + now +
       `<div class="dpengines">` + dpKV("Holds", p.holds, "Not named") + dpKV("Hands to", p.hands_to, "Nobody") + dpKV("Keeps", p.keeps, "Not named") + `</div>`) +
     dpCard("The " + ((p.template && p.template.name) || "Default") + " template", `<div class="dpengines">` + (p.fields || []).map(wbFieldHtml).join("") + `</div>`) +
     wbRecipeHtml(p.recipe) + wbJourneysHtml(p.journeys) +
     dpCard("Version 1", `<div class="dpfline">${wbEsc(p.v1)}</div>`);
+  /* Identity's own record on top (S5); its page folds under it */
+  const j = p.j2 || {};
+  if (fn === "identity" && j.standard && j.standard.rows)
+    return wbIdentityHtml(ref, j) + `<details class="wbhow wb"><summary>How Identity works</summary>${page}</details>`;
+  return page;
 }
 
 /* ── the five systems' own state, under the function cards ────────────────── */
@@ -1506,7 +1546,11 @@ if (typeof document !== "undefined" && document.addEventListener){
        keep the person there (found live 2026-09-29: Send in Priority's chat landed on the department's Chat) */
     const inFn = ds.wbask !== undefined && String(ds.wbask).indexOf("fn:") === 0;
     if (ds.wbfn === undefined && !inFn && dpS().tab[ref] !== "now") dpS().tab[ref] = "now";
-    if (ds.wbtab !== undefined){ st.tab[ref] = ds.wbtab; if (ds.wbthread !== undefined) st.thread[ref] = ds.wbthread; dpRender(); return; }
+    if (ds.wbtab !== undefined){
+      /* a way into the Chat with the box begun (Identity's pane: Change the goal, M3.7); the owner finishes and sends it */
+      if (ds.wbfill !== undefined && !st.draft[ref + ":ask"]) st.draft[ref + ":ask"] = ds.wbfill;
+      st.tab[ref] = ds.wbtab; if (ds.wbthread !== undefined) st.thread[ref] = ds.wbthread; dpRender(); return;
+    }
     if (ds.wbfn !== undefined){ st.tab[ref] = ""; dpS().tab[ref] = ds.wbfn; dpRender(); return; }
     if (ds.wbpane !== undefined && ds.wbpanekey !== undefined){ st.pane[ds.wbpanekey] = ds.wbpane; dpRender(); return; }
     if (ds.wbengine !== undefined){ st.tab[ref] = "engine"; st.sel[ref] = ds.wbengine; dpRender(); return; }

@@ -86,6 +86,11 @@
          none (PRD M3.3, S6)
      W50 one voice: a function's chat box says the words go to Identity about
          that function, and they go to the department about it (PRD M3.6)
+     S5  Identity's pane: the open question card, Enough to work? row by row
+         with a word beside each dot, the goal with Change the goal (the Chat,
+         its box begun), done-when items with level, how and to confirm, the
+         rules with where each came from, the conflicts closed; how Identity
+         works folds under them; never 'charter' (PRD M3.7)
      W49 a blocked plan is a card with its ways out: who, why and if nothing
          is done, each option with its cost; one click posts {option}, the box
          posts {option: words, text}; an unknown option is a snack; chosen,
@@ -1996,6 +2001,56 @@ test("W48: a question on Identity's standard offers Just do it, which sends 'jus
   assert.ok(click(s, { wbjust: "a-j2-1", wbref: "r3" })); await sleep(); await sleep();
   assert.deepStrictEqual(JSON.parse(JSON.stringify(s.calls.apiPost)), [{ p: "/api/dept/r3/j2/answer", body: { text: "just do it" } }],
                          "one answer, 'just do it', where the question lives");
+});
+
+/* ── S5: Identity's pane (PRD M3.7), from the screen's own sample ── */
+const ID_J2 = { goal: "A phone-first website for Thread & Loom, a handloom boutique in Pune, where shoppers browse kurtas, sarees, shirts and dupattas and order on WhatsApp.",
+  standard: { met: false, missing: [], rows: [
+    { id: "goal", says: "The goal names what and for whom", state: "met", note: "as you said it" },
+    { id: "items", says: "Done-when items, each with how it is checked", state: "met", note: "each says how it is checked" },
+    { id: "rules", says: "Every rule is tagged", state: "met", note: "each is go, ask, refuse or always" },
+    { id: "owner_budget", says: "Owner and budget are set", state: "met", note: "you, and Priority's limits" },
+    { id: "invented", says: "Nothing invented", state: "to_confirm", note: "to confirm with you: D6, the reviews' names" }] },
+  done_items: [{ id: "D1", text: "Browse all ten products by category", how: "code", level: "target", confirm: null },
+               { id: "D2", text: "Filter by size (XS to XXL) and by price", how: "code", level: "target", confirm: null },
+               { id: "D6", text: "New arrivals, a lookbook of three outfits, three reviews", how: "model", level: "outcome", confirm: "the reviews' names" }],
+  rules: [{ tag: "go", line: "Plan, write and check inside the record", by: "the template", since: null },
+          { tag: "ask", line: "Ask the owner before the first publish", by: "the template", since: null },
+          { tag: "refuse", line: "Never show a price that is not in my list", by: "yours", since: "2026-10-23T10:14:00+05:30" }],
+  open_question: { id: "a-j2-1", text: "May the three reviews show your customers' first names?", why: "Nothing on record says the customers agreed (D6).",
+                   missing: "invented", asked: QAT, standard: true, points: ["invented"] },
+  conflicts: [{ at: "2026-10-23T10:08:00+05:30", who: "Adaptation and Priority did not agree", split: "Priority said no to the plan: no room", plan: "Photo Picker",
+                ruling: "drop", ruled: "dropped", why: "D6 stays covered by Write", asked_you: false }] };
+test("S5: Identity's pane holds its one record: the question, the standard, the goal, done-when, the rules, the conflicts closed", async () => {
+  const page = fn => Object.assign(fnPageOf(fn), fn === "identity" ? { j2: JSON.parse(JSON.stringify(ID_J2)) } : {});
+  const c = await opened({ map: rtMap(), fnpage: page });
+  const html = await fnCard(c, "identity");
+  const i = k => html.indexOf(k);
+  assert.ok(i('<div class="dpk">Identity asks</div><div class="dpasks">May the three reviews show your customers&#39;') >= 0 ||
+            i('<div class="dpk">Identity asks</div><div class="dpasks">May the three reviews show your customers\'') >= 0, "the open question, the S6 card");
+  assert.ok(/data-wbanswer="a-j2-1" data-wbref="r3"/.test(html) && /data-wbjust="a-j2-1"/.test(html), "answered where it lives");
+  assert.ok(i("<h3>Enough to work?</h3>") > i("Identity asks") && i("<h3>Goal</h3>") > i("<h3>Enough to work?</h3>") && i("<h3>Done when</h3>") > i("<h3>Goal</h3>") &&
+            i("<h3>Rules</h3>") > i("<h3>Done when</h3>") && i("<h3>Conflicts closed</h3>") > i("<h3>Rules</h3>"), "the cards in the screen's order");
+  assert.ok(/<div class="dprow wbstd"><span class="dpdot ok"><\/span><span><b>The goal names what and for whom<\/b> <span class="wbchip on">met<\/span><div class="dpchk">as you said it<\/div>/.test(html), "a dot, a word and a note");
+  assert.ok(/<span class="dpdot warn"><\/span><span><b>Nothing invented<\/b> <span class="wbchip">to confirm<\/span><div class="dpchk">to confirm with you: D6, the reviews/.test(html), "to confirm, in words");
+  assert.ok(/<div class="dpbig wbidgoal">A phone-first website for Thread &amp; Loom/.test(html) && /data-wbtab="chat" data-wbfill="Change the goal to: ">Change the goal</.test(html), "the goal, and a way to change it");
+  assert.ok(/data-wbfn="audit" title="Audit&#39;s reading">D1<\/button><span>Browse all ten products by category<\/span><span class="dpchk">target · code<\/span>/.test(html) ||
+            /data-wbfn="audit" title="Audit's reading">D1<\/button><span>Browse all ten products by category<\/span><span class="dpchk">target · code<\/span>/.test(html), "an item, its level and how");
+  assert.ok(/>D6<\/button><span>New arrivals, a lookbook of three outfits, three reviews<\/span><span class="wbchip">to confirm<\/span><span class="dpchk">outcome · model<\/span>/.test(html), "a to confirm chip");
+  assert.ok(/<span class="wbchip on">go<\/span><span>Plan, write and check inside the record<\/span><span class="dpchk">the template<\/span>/.test(html), "a rule of the template");
+  assert.ok(/<span class="wbchip ask">never<\/span><span>Never show a price that is not in my list<\/span><span class="dpchk">yours · \d\d:\d\d<\/span>/.test(html), "a rule of yours, and when");
+  assert.ok(/data-wbtab="board"><span class="dpchk">\d\d:\d\d<\/span><span>Adaptation and Priority did not agree on Photo Picker\. Ruled: dropped; D6 stays covered by Write\. No ask to you\.<\/span>/.test(html), "a conflict closed: who split, the ruling and why");
+  assert.ok(/<details class="wbhow wb"><summary>How Identity works<\/summary><div class="dpcard"><h3>The function<\/h3>/.test(html), "how Identity works, folded under");
+  const t = words(html);
+  assert.ok(!/charter|internal system/i.test(t), "never charter");
+  assert.ok(!/\/api\/|\.json|\.md\b/.test(t), "no path");
+  /* Change the goal opens the Chat with the box begun */
+  click(c, { wbtab: "chat", wbfill: "Change the goal to: " });
+  assert.strictEqual(vm.runInContext("wbS().draft['r3:ask']", c), "Change the goal to: ");
+  assert.strictEqual(vm.runInContext("wbS().tab['r3']", c), "chat");
+  /* a pane with no record of Identity's own keeps its page as it was */
+  const other = await fnCard(await opened({ map: rtMap(), fnpage: fnPageOf }), "identity");
+  assert.ok(other.indexOf("<h3>Enough to work?</h3>") < 0 && other.indexOf("wbhow") < 0, "a page with no record of its own keeps its page");
 });
 
 /* ── W50: one voice (PRD M3.6, Q1): a function's chat box sends the owner's words to Identity about that function ── */
