@@ -14,8 +14,9 @@ from types import SimpleNamespace
 import pytest
 
 REF = "dref-j2c0001"
+ROOT = "dref-j2root1"
 WEBSITE = "Build a website that teaches algebra to Class 8 students"
-__all__ = ["REF", "WEBSITE", "mods", "born", "tick", "cycle", "ask", "thread", "run", "post", "event", "rewind"]
+__all__ = ["REF", "ROOT", "WEBSITE", "mods", "born", "tick", "cycle", "ask", "thread", "run", "post", "event", "rewind", "with_root", "stamp_ask", "card_post", "blocked"]
 
 
 @pytest.fixture
@@ -139,3 +140,38 @@ def rewind(path, seconds):
     import os
     os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns - int(seconds * 1e9)))
     return time.time()
+
+
+def with_root(m, ref=REF, root=ROOT):
+    """The department under a Root of its own: the record says so, as founding writes it, so chat_view reads Root's board too."""
+    m.W.create(root, "Acme Root", None, kind="root")
+    d = m.W.dept(ref)
+    d["root"], d["parent"] = root, root
+    m.W.save_dept(ref, d)
+    return root
+
+
+def stamp_ask(m, kind, text=None, tid=None, ref=REF, **more):
+    """An ask the owner stamps, and the Identity > Owner request that says it in its own thread (a thread-linked ask)."""
+    tid = tid or "x-" + kind
+    text = text or "%s: put it to the owner" % kind.title()
+    a = ask(m, kind, ref=ref, id="a-" + kind, engine="Identity", text=text, thread=tid, **more)
+    thread(m, "Identity", "Owner", "request", kind, tid=tid, ref=ref, objective=text, output="a stamp or a refusal")
+    return a
+
+
+def card_post(m, a, ref=REF, tid=None, **payload):
+    """The post that names an ask's card (payload.card): the chat leaves it to the card."""
+    return thread(m, "Identity", "Owner", "request" if a.get("options") else "inform", "blocked" if a.get("options") else "question",
+                  tid=tid or a.get("thread") or "x-card-" + a["id"], ref=ref, card=a["id"], **payload)
+
+
+def blocked(m, ref=REF):
+    """A blocked plan's card: an ask with three ways out (change it in my words, leave D2 out, stop), as _blocked files it."""
+    opts = [m.W.option("words", "Change the plan in my words", "Adaptation shapes it afresh"),
+            m.W.option("leave:D2", "Leave D2 out", "D2 is dropped from done-when"),
+            m.W.option("stop", "Stop here", "the department stops where it is")]
+    a = m.W.options_ask("blocked", "The plan could not be set up: Check has no reader.", opts, title="The plan could not be set up.",
+                        who="Root, setting up the engines", why="Check has no reader", thread="x-blocked", cycle_id="cycle-test")
+    m.W._put_ask(ref, a)
+    return a
