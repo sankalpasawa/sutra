@@ -1114,6 +1114,57 @@ def test_a3_a_model_that_names_some_covers_with_the_setting_off_still_has_its_li
     assert next(c for c in registered["checks"] if c["check"] == "items_covered")["passed"] is True
 
 
+def _cannot_game(j2, monkeypatch, items=GAME):
+    """A website game whose first line Root's check sends back, and a stub Make that answers cannot for D3 each time it is asked."""
+    W, R, J, _, FV = j2
+    real, calls = R._root_check, {"n": 0}
+
+    def check(ref, d, engines, source):
+        calls["n"] += 1
+        return ["the plan does not cover D3"] if calls["n"] == 1 else real(ref, d, engines, source)
+    monkeypatch.setattr(R, "_root_check", check)
+    cannot = {"cannot": {"engine": "Check", "items": ["D3"], "why": "the game needs a script and Check refuses any page with one"}}
+    return _run_scenario(j2, monkeypatch, "website", GAME_WORDS, "Game Co", items, cannot)[0]
+
+
+def test_a9_a_cannot_reaches_the_owner_as_one_card_that_says_it_in_plain_words_with_ways_out_and_no_plan_to_stamp(j2, monkeypatch):
+    """What the owner sees: not 'Adaptation proposes the plan . ... Stamp to run it as proposed' over a plan that is empty, whose
+    stamp sent Root a plan that names no engine and brought the same card back."""
+    W, R, J, _, FV = j2
+    ref = _cannot_game(j2, monkeypatch)
+    assert [a for a in W.asks(ref) if a["kind"] == "conflict"] == [], "no card offers a plan to stamp when there is none"
+    cards = [a for a in W.asks(ref) if a["kind"] == "blocked" and a["status"] == "pending"]
+    assert len(cards) == 1
+    card = cards[0]
+    assert card["text"].startswith("Check cannot serve D3: the game needs a script and Check refuses any page with one.")
+    assert "Say what the department should do" in card["text"] and "the plan ." not in card["text"]
+    assert not re.search(r"run it as proposed|Stamp|stamp|drop it", card["text"]), card["text"]
+    assert not STANDARD_IDS.search(card["text"] + card["title"] + card["why"])
+    assert [o["id"] for o in card["options"]] == ["words", "leave:D3", "stop"], "the ways out a blocked plan always has"
+    assert J.status(ref)["state"] == "blocked"
+    told = [str(p["payload"].get("done") or "") for p in R.board(ref) if p["src"] == "Identity" and "Owner" in p["dst"]]
+    assert not [t for t in told if "the plan ." in t or "run it as proposed" in t], told
+    events = J.events(ref)
+    assert "workflow.registered" not in [e["action"] for e in events]
+    assert not [e for e in events if "names no engine" in str(e.get("summary"))], "no empty plan ever reached Root's check"
+    assert [e["action"] for e in events if e["action"] == "identity.ruled"], "the ledger says Identity put it to the owner"
+
+
+def test_a9_choosing_a_way_out_of_a_cannot_applies_it_and_does_not_bring_the_same_card_back(j2, monkeypatch):
+    W, R, J, _, FV = j2
+    ref = _cannot_game(j2, monkeypatch)
+    card = next(a for a in W.asks(ref) if a["kind"] == "blocked" and a["status"] == "pending")
+    before = len([q for q in R.board(ref) if q["src"] == "Identity" and q["dst"] == ["Adaptation"] and q["msg_type"] == "request"])
+    W.choose_option(ref, card["id"], "leave:D3")
+    W.run_until_idle(ref, limit=300)
+    assert [i["id"] for i in W.dept(ref)["done_items"]] == ["D1", "D2"], "D3 is left out of done-when on the owner's choice"
+    asked = [q for q in R.board(ref) if q["src"] == "Identity" and q["dst"] == ["Adaptation"] and q["msg_type"] == "request"]
+    assert len(asked) > before, "Adaptation is asked afresh"
+    assert not [a for a in W.asks(ref) if a["kind"] == "conflict"]
+    assert not [e for e in J.events(ref) if "names no engine" in str(e.get("summary"))]
+    assert next(a for a in W.asks(ref) if a["id"] == card["id"])["status"] == "chosen"
+
+
 def test_a9_a_stub_at_0_7_shows_the_doubt_and_asks_nothing_and_the_department_goes_on(j2, monkeypatch):
     W, R, J, _, FV = j2
     plan = {"engines": [_made("Catalogue", "Brief", "Catalogue", ["D1", "D2"], confidence=0.9),

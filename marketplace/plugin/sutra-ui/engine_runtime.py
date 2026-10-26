@@ -5517,6 +5517,17 @@ def identity_closed(ctx, step, item):
     engines, J = [e for e in pl.get("engines") or [] if isinstance(e, dict) and e.get("name")], _j2()
     names = " -> ".join(e["name"] for e in engines)
     who = {"src": "Root" if d.get("root") else OWNER}
+    if not engines:
+        # no plan at all: Adaptation answered that an engine the kind requires cannot serve an item (J2B-4, M6.4), so there
+        # is nothing to run, nothing to drop and no plan to stamp (a stamp would send Root a plan that names no engine, and
+        # the same card would come back). The owner is put the reason in plain words, on the card every blocked plan has,
+        # with its ways out. The conflict's own options (root_setup among them) are filed by the options ask of W2-IDENTITY J1
+        reason = str(pl.get("why") or "no plan can be made").strip().rstrip(".")
+        if J:
+            J.ruled(ref, "ask", reason, engines)
+        _blocked(ref, d, who, "%s. Say what the department should do, or choose a way forward on this card." % reason,
+                 "No plan can be made as it stands.", "Adaptation, shaping the plan", reason)
+        return {"said": "no plan can be made (%s); put to the owner, with the ways out" % reason}
     if J:
         J.ruled(ref, ruling, why, engines)
     if ruling == "run":
