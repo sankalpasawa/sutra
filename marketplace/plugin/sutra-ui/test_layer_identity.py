@@ -207,7 +207,9 @@ def _in_state(j2, monkeypatch, state, org="Acme Learning"):
         ref = _born(j2, org=org)
     else:
         ref = _born(j2, org=org)
-        assert J.audited(ref, 1, []) is True              # Audit read what went out and found nothing: done-when holds
+        # Audit read what went out, item by item, and found every done-when item met (S-30): done-when holds; "found
+        # nothing" without a reading clears nothing (PRD M8.3)
+        assert J.audited(ref, 1, [], reading={"read": True, "met": ["D1"], "not_met": [], "to_confirm": [], "high": False}) is True
     assert J.status(ref)["state"] == state, J.status(ref)
     return ref
 
