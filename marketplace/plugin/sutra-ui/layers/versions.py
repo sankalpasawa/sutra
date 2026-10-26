@@ -157,8 +157,9 @@ def definition_faults(impl, provided=None):
     return R.validate(d, provided or {k: set(getattr(module, k.upper(), None) or {}) for k in layers.KINDS})
 
 
-def _same(a, b):
-    """The same registry entry: one object, or two ref_to delegates to the same target (or no entry on either side)."""
+def same_entry(a, b):
+    """The same registry entry: one object, or two ref_to delegates to the same target (or no entry on either side). What a child's
+    table holds is compared with its parent's by this: unchanged_steps and contract case 12."""
     return a is b or (getattr(a, 'legacy', None) is not None and getattr(a, 'legacy', None) == getattr(b, 'legacy', None))
 
 
@@ -178,5 +179,5 @@ def unchanged_steps(impl_id):
     except L.ModelFault:
         return set()
     return {s['id'] for s in steps if s.get('id') and theirs.get(s['id']) == s and all(
-        _same((getattr(module, attr, None) or {}).get(s[key]), (getattr(parent, attr, None) or {}).get(s[key]))
+        same_entry((getattr(module, attr, None) or {}).get(s[key]), (getattr(parent, attr, None) or {}).get(s[key]))
         for attr, key in TABLES if s.get(key))}

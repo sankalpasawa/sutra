@@ -16,6 +16,16 @@ test_layer_contracts.py runs on every implementation it discovers (layers/<layer
     7  no ref_to points at an engine_runtime attribute that is itself a delegate
     8  every OUTPUTS step the recipe provides declares or returns those keys
 
+and, from amendment A2 (design/PRD-FIVE-FUNCTIONS-A2.md A2.7), the cases of a version that extends a version. A version with no
+PARENT has nothing to compare, and passes them as it is; a stub with none of the new attributes passes them too:
+
+    9  the lineage is sound: a version above 1 names its PARENT, the same layer's, lower, loading, repeating nowhere, and the version
+       holds every name of its parent's four tables and every part of its parent's words and layout
+    10 the version publishes every surface function its PARENT does (versions.SURFACE)
+    11 the resolved recipe keeps what the parent fixes (lineage.recipe_faults over the recipe the version brings)
+    12 every gate or rule whose code or check the version replaces is declared in TIGHTENS, with a test that exists
+    13 the assembled definitions validate with this version's resolved recipe in its layer's place (layers.definition_faults)
+
 A case returns its faults as a list of strings, each naming the row or the name at fault; [] when the module passes.
 """
 import importlib
@@ -24,8 +34,11 @@ import os
 import re
 from pathlib import Path
 
+import layers
 from layers import R, W, S, FV  # noqa: F401 -- lazy proxies: tests reload the runtime
+from layers import lineage as L
 from layers import prompts as P
+from layers import versions as V
 
 HERE = Path(__file__).resolve().parent
 MODULE_RE = r'^v[1-9][0-9]*$'
@@ -55,11 +68,17 @@ def impl_id(module):
 
 
 def recipe_of(module):
-    """The engine object the module's version brings: its v<N>.json beside it, or for Root the Library template it
-    names (RECIPE_TEMPLATE); None when it is not there."""
+    """The engine object the module's version brings, resolved: its v<N>.json beside it, a patch beside it laid over the recipe of the
+    version it extends, or that parent's recipe when it names a PARENT and no file (A2.5); for Root the Library template it names
+    (RECIPE_TEMPLATE). None when it is not there, or a patch does not merge."""
     if getattr(module, 'RECIPE_TEMPLATE', None):
         return R.engine_templates().get(module.RECIPE_TEMPLATE)
-    p = Path(module.__file__).parent / str(getattr(module, 'RECIPE', ''))
+    if getattr(module, 'RECIPE_PATCH', None) or (getattr(module, 'PARENT', None) and not getattr(module, 'RECIPE', None)):
+        try:
+            return V.recipe_of_module(module)
+        except L.ModelFault:
+            return None
+    p = Path(getattr(module, '__file__', '')).parent / str(getattr(module, 'RECIPE', ''))
     try:
         return json.loads(p.read_text(encoding='utf-8'))
     except (OSError, ValueError):
@@ -222,7 +241,148 @@ def case_8(module, ctx=None):
     return out
 
 
+def _version_of(module):
+    v = getattr(module, 'VERSION', None)
+    return v if isinstance(v, int) and not isinstance(v, bool) else 0
+
+
+def _parent_of(module):
+    """The loaded module the PARENT names; None when it names none, names no implementation id, or does not load."""
+    parent_id = getattr(module, 'PARENT', None)
+    return layers.load(parent_id) if isinstance(parent_id, str) else None
+
+
+def _gates_and_rules(recipe):
+    return {s['id']: s for key in ('gates', 'rules') for s in ((recipe or {}).get(key) or []) if isinstance(s, dict) and s.get('id')}
+
+
+def case_9(module, ctx=None):
+    """The lineage is sound.
+
+    A version above 1 names its PARENT: the same layer's, a lower version, one that loads, with no repeat in its lineage and no more
+    than versions.DEPTH versions. The version holds every name of its parent's four tables and every (group, part) of its words and
+    layout (A2-R1, A2-R2). A lineage that is not sound is reported alone: comparing tables with it would only add noise."""
+    me, parent_id = impl_id(module), getattr(module, 'PARENT', None)
+    if parent_id is None:
+        return ['%s: a version above 1 names the version it extends (PARENT)' % me] if _version_of(module) > 1 else []
+    if not isinstance(parent_id, str) or not re.fullmatch(S.IMPL_RE, parent_id):
+        return ['%s: PARENT %r is no implementation id' % (me, parent_id)]
+    layer, v = parent_id.split('/')
+    out = []
+    if layer != getattr(module, 'LAYER', None):
+        out.append("%s: its PARENT %s is another layer's" % (me, parent_id))
+    if int(v[1:]) >= _version_of(module):
+        out.append('%s: its PARENT %s is not a lower version' % (me, parent_id))
+    if out:
+        return out
+    parent = layers.load(parent_id)
+    if parent is None:
+        return ['%s: its PARENT %s does not load' % (me, parent_id)]
+    try:
+        ids = V.chain(parent_id)
+    except L.ModelFault as exc:
+        return ['%s: the lineage of its PARENT is not sound: %s' % (me, exc)]
+    if me in ids:
+        return ['%s: it repeats in its own lineage: %s' % (me, ', '.join(ids))]
+    for attr, key in V.TABLES:
+        out += ['%s: it drops the %s %s of its parent' % (me, key, name)
+                for name in sorted(set(getattr(parent, attr, None) or {}) - set(getattr(module, attr, None) or {}))]
+    for attr in ('WORDS', 'LAYOUT'):
+        for group, parts in (getattr(parent, attr, None) or {}).items():
+            out += ['%s: it drops the %s %s.%s of its parent' % (me, attr.lower(), group, part)
+                    for part in parts if part not in ((getattr(module, attr, None) or {}).get(group) or {})]
+    return out
+
+
+def case_10(module, ctx=None):
+    """The version publishes every surface function its PARENT does."""
+    parent = _parent_of(module)
+    if parent is None:
+        return []
+    return ['%s: it does not publish %s, which its parent does' % (impl_id(module), name) for name in V.SURFACE
+            if callable(getattr(parent, name, None)) and not callable(getattr(module, name, None))]
+
+
+def case_11(module, ctx=None):
+    """The resolved recipe keeps what the parent fixes.
+
+    The handlers, every step id, the fixed fields of each step, every gate and rule, unique ids and only_if targets that exist:
+    lineage.recipe_faults over the recipe the version brings against its parent's (alone, for a version with no parent). A recipe
+    that cannot be read is case 1's to report."""
+    mine = recipe_of(module)
+    if mine is None:
+        return []
+    parent = _parent_of(module)
+    theirs = recipe_of(parent) if parent is not None else None
+    return ['%s: %s' % (impl_id(module), f) for f in L.recipe_faults(theirs, mine, getattr(module, 'LAYER', None))]
+
+
+def _test_exists(where):
+    """'file.py::test_name': the file is in the sutra-ui folder and holds a def of that name."""
+    file, sep, name = str(where).partition('::')
+    base = Path(layers.HERE).parent
+    path = base / file
+    try:
+        return bool(sep and file and re.fullmatch(r'\w+', name) and path.is_file() and base.resolve() in path.resolve().parents
+                    and re.search(r'def %s\b' % name, path.read_text(encoding='utf-8')))
+    except OSError:
+        return False
+
+
+def case_12(module, ctx=None):
+    """Every gate or rule the version replaces is declared in TIGHTENS.
+
+    A gate or rule whose code or check the version holds as something other than its parent's (the same object, or a ref_to to the
+    same target) is a key of TIGHTENS, {step id: 'test_file.py::test_name'}, and the test is there, in the sutra-ui folder: it is
+    the author's proof that the replacement lets through nothing the parent held back (lineage.tightens, A2-R6). Every key names a
+    gate or a rule of the recipe, and a version with no parent tightens nothing."""
+    me, tight = impl_id(module), getattr(module, 'TIGHTENS', None) or {}
+    if not isinstance(tight, dict):
+        return ['%s: TIGHTENS is a dict of a step id and the test that proves it' % me]
+    parent = _parent_of(module)
+    if parent is None:
+        return ['%s: TIGHTENS names %s, and there is no parent to tighten' % (me, ', '.join(sorted(str(k) for k in tight)))] if tight else []
+    mine = recipe_of(module)
+    if mine is None:
+        return []
+    ruled, pruled, out = _gates_and_rules(mine), _gates_and_rules(recipe_of(parent)), []
+    for sid, step in ruled.items():
+        before = pruled.get(sid) or step
+        for attr, key in (('CODE', 'code'), ('CHECK', 'check')):
+            now = (getattr(module, attr, None) or {}).get(step.get(key))
+            was = (getattr(parent, attr, None) or {}).get(before.get(key))
+            if not V.same_entry(now, was) and sid not in tight:
+                out.append('%s: it replaces the %s of %s and does not list it in TIGHTENS' % (me, key, sid))
+    for sid, where in tight.items():
+        if sid not in ruled:
+            out.append('%s: TIGHTENS names %s, which is no gate or rule of its recipe' % (me, sid))
+        if not _test_exists(where):
+            out.append('%s: TIGHTENS %s names a test that is not there: %s' % (me, sid, where))
+    return out
+
+
+def case_13(module, ctx=None):
+    """The assembled definitions validate with this version's resolved recipe in its layer's place."""
+    try:
+        return ['%s: %s' % (impl_id(module), f) for f in V.definition_faults(module)]
+    except (AttributeError, KeyError, TypeError) as exc:
+        return ['%s: the definitions cannot be read with its recipe (%s: %s)' % (impl_id(module), type(exc).__name__, exc)]
+
+
 def cases():
-    """A1.21's cases, in order: [(number, what it holds, the function)]."""
-    return [(n, fn.__doc__.strip().split('\n')[0], fn) for n, fn in
-            ((1, case_1), (2, case_2), (3, case_3), (4, case_4), (5, case_5), (6, case_6), (7, case_7), (8, case_8))]
+    """A1.21's cases and A2.7's, in order: [(number, what it holds, the function)]."""
+    return [(n, fn.__doc__.strip().split('\n')[0], fn) for n, fn in (
+        (1, case_1),
+        (2, case_2),
+        (3, case_3),
+        (4, case_4),
+        (5, case_5),
+        (6, case_6),
+        (7, case_7),
+        (8, case_8),
+        (9, case_9),
+        (10, case_10),
+        (11, case_11),
+        (12, case_12),
+        (13, case_13),
+    )]

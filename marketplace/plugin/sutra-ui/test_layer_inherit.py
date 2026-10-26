@@ -22,7 +22,9 @@ from pathlib import Path
 import pytest
 
 import layers
+import layers.contract as C
 import layer_schema as S
+import website_dept
 from layers import R
 from layers import lineage as L
 from layers import versions as V
@@ -59,15 +61,16 @@ def child(monkeypatch):
     return load_fixture(monkeypatch)
 
 
-def stub(tmp_path, recipe=None, patch=None, **more):
-    """A child of coordination/v1 as a SimpleNamespace: the tables copied from the parent, its folder in tmp_path, and the recipe
+def stub(tmp_path, recipe=None, patch=None, layer="coordination", **more):
+    """A child of layers/<layer>/v1 as a SimpleNamespace: the tables copied from the parent, its folder in tmp_path, and the recipe
     (a whole file) or the patch it is given written beside it. `more` overrides any attribute."""
-    v1 = layers.load("coordination/v1")
-    folder = tmp_path / "coordination"
+    parent = layers.load("%s/v1" % layer)
+    folder = tmp_path / layer
     folder.mkdir(parents=True, exist_ok=True)
-    base = dict(__file__=str(folder / "v2.py"), LAYER="coordination", VERSION=2, IMPLEMENTS=1, PARENT="coordination/v1",
-                CODE=dict(v1.CODE), PROMPT=dict(v1.PROMPT), DRAFT=dict(v1.DRAFT), CHECK=dict(v1.CHECK),
-                WORDS=copy.deepcopy(v1.WORDS), LAYOUT=copy.deepcopy(v1.LAYOUT), view=v1.view, engine_card=v1.engine_card)
+    base = dict(__file__=str(folder / "v2.py"), LAYER=layer, VERSION=2, IMPLEMENTS=1, PARENT="%s/v1" % layer,
+                CODE=dict(parent.CODE), PROMPT=dict(parent.PROMPT), DRAFT=dict(parent.DRAFT), CHECK=dict(parent.CHECK),
+                WORDS=copy.deepcopy(parent.WORDS), LAYOUT=copy.deepcopy(parent.LAYOUT))
+    base.update({name: getattr(parent, name) for name in V.SURFACE if callable(getattr(parent, name, None))})
     if recipe is not None:
         (folder / "v2.json").write_text(json.dumps(recipe), encoding="utf-8")
         base["RECIPE"] = "v2.json"
@@ -485,3 +488,263 @@ def test_i2_a_replaced_prompt_draft_or_check_makes_the_step_that_names_it_change
         mine = dict(getattr(v1, table), **{name: new_check})
         monkeypatch.setitem(layers._LOADED, "coordination/v2", stub(tmp_path / str(i), **{table: mine}))
         assert layers.unchanged_steps("coordination/v2") == everything - steps, (table, name)
+
+
+# ---- I3 . the contract: recipe_of through the patch, cases 9 to 13 ----------------------------------------------------------
+NEW_CASES = (C.case_9, C.case_10, C.case_11, C.case_12, C.case_13)
+
+
+def test_i3_the_contract_lists_thirteen_cases_in_order_and_the_docstring_names_the_new_five():
+    numbers = [n for n, _, _ in C.cases()]
+    assert numbers[:13] == list(range(1, 14)) and numbers == list(range(1, len(numbers) + 1)), "numbered in order, thirteen at least"
+    assert [fn for _, _, fn in C.cases()][8:13] == list(NEW_CASES)
+    what = [w for _, w, _ in C.cases()][8:13]
+    assert what == ["The lineage is sound.", "The version publishes every surface function its PARENT does.",
+                    "The resolved recipe keeps what the parent fixes.", "Every gate or rule the version replaces is declared in TIGHTENS.",
+                    "The assembled definitions validate with this version's resolved recipe in its layer's place."]
+    for n in range(9, 14):
+        assert "\n    %d " % n in C.__doc__, "the module docstring lists case %d" % n
+
+
+def test_i3_the_new_cases_pass_for_all_six_v1_modules():
+    modules = C.discover()
+    assert len(modules) == 6
+    for module in modules:
+        for fn in NEW_CASES:
+            assert fn(module, {}) == [], (C.impl_id(module), fn.__name__)
+
+
+def test_i3_recipe_of_resolves_a_patch_or_an_inherited_recipe_and_leaves_the_rest_as_it_was(tmp_path, child):
+    assert C.recipe_of(child) == layers.recipe("coordination/v2") != layers.recipe("coordination/v1")
+    assert C.recipe_of(stub(tmp_path / "p", patch=patch_of(code_step("coord.probe", after="coord.table")))) is not None
+    assert C.recipe_of(stub(tmp_path / "n")) == layers.recipe("coordination/v1"), "a PARENT and no file: the parent's"
+    whole = copy.deepcopy(layers.recipe("coordination/v1"))
+    whole["description"] = "a whole file"
+    assert C.recipe_of(stub(tmp_path / "w", recipe=whole)) == whole
+    assert C.recipe_of(stub(tmp_path / "b", patch=patch_of({"id": "coord.table", "check": "facts_are_closed"}))) is None, "a patch that does not merge"
+    for module in C.discover():
+        assert C.recipe_of(module) is not None
+    assert C.recipe_of(types.SimpleNamespace(LAYER="coordination", VERSION=1)) is None, "no folder, no file"
+
+
+def test_i3_the_new_cases_tolerate_a_module_with_none_of_the_new_attributes(tmp_path):
+    (tmp_path / "coordination").mkdir()
+    (tmp_path / "coordination" / "v1.json").write_text(json.dumps(layers.recipe("coordination/v1")), encoding="utf-8")
+    plain = types.SimpleNamespace(__file__=str(tmp_path / "coordination" / "v1.py"), LAYER="coordination", VERSION=1, IMPLEMENTS=1,
+                                  RECIPE="v1.json", CODE={}, PROMPT={}, DRAFT={}, CHECK={}, WORDS={}, LAYOUT={})
+    bare = types.SimpleNamespace(LAYER="coordination", VERSION=1)
+    for module in (plain, bare, types.SimpleNamespace()):
+        for fn in NEW_CASES:
+            assert isinstance(fn(module, {}), list), (fn.__name__, module)
+    for fn in NEW_CASES[:4]:
+        assert fn(plain, {}) == []
+
+
+def test_i3_case_9_a_version_above_1_names_the_version_it_extends(tmp_path):
+    assert C.case_9(stub(tmp_path, PARENT=None)) == ["coordination/v2: a version above 1 names the version it extends (PARENT)"]
+    assert C.case_9(stub(tmp_path / "v1", PARENT=None, VERSION=1)) == []
+    assert C.case_9(stub(tmp_path / "x", PARENT="nonsense")) == ["coordination/v2: PARENT 'nonsense' is no implementation id"]
+    assert C.case_9(stub(tmp_path / "y", PARENT=["coordination/v1"])) == ["coordination/v2: PARENT ['coordination/v1'] is no implementation id"]
+    assert C.case_9(stub(tmp_path / "z")) == []
+
+
+def test_i3_case_9_a_parent_of_another_layer_one_that_is_not_lower_and_one_that_does_not_load(tmp_path):
+    assert C.case_9(stub(tmp_path / "a", PARENT="identity/v1")) == ["coordination/v2: its PARENT identity/v1 is another layer's"]
+    assert C.case_9(stub(tmp_path / "b", VERSION=1)) == ["coordination/v1: its PARENT coordination/v1 is not a lower version"]
+    assert C.case_9(stub(tmp_path / "c", VERSION=2, PARENT="coordination/v2")) == ["coordination/v2: its PARENT coordination/v2 is not a lower version"]
+    assert C.case_9(stub(tmp_path / "d", VERSION=8, PARENT="coordination/v7")) == ["coordination/v8: its PARENT coordination/v7 does not load"]
+    both = C.case_9(stub(tmp_path / "e", VERSION=1, PARENT="identity/v1"))
+    assert both == ["coordination/v1: its PARENT identity/v1 is another layer's", "coordination/v1: its PARENT identity/v1 is not a lower version"]
+
+
+def test_i3_case_9_a_lineage_that_repeats_or_runs_too_deep_is_reported_alone(tmp_path, monkeypatch):
+    lineage_of(monkeypatch, {"coordination/v2": "coordination/v3", "coordination/v3": "coordination/v2"})
+    got = C.case_9(stub(tmp_path / "a", VERSION=4, PARENT="coordination/v3"))
+    assert got == ["coordination/v4: the lineage of its PARENT is not sound: coordination/v3 repeats in its own lineage"]
+    # the module under test is itself in its parent's lineage (the registry holds another module under its id)
+    lineage_of(monkeypatch, {"coordination/v5": "coordination/v6", "coordination/v6": None})
+    got = C.case_9(stub(tmp_path / "b", VERSION=6, PARENT="coordination/v5"))
+    assert got == ["coordination/v6: it repeats in its own lineage: coordination/v5, coordination/v6"]
+    deep = stub(tmp_path / "c", layer="audit", VERSION=10, PARENT="audit/v9")
+    lineage_of(monkeypatch, {"audit/v%d" % n: ("audit/v%d" % (n - 1) if n > 1 else None) for n in range(1, 10)})
+    got = C.case_9(deep)
+    assert got == ["audit/v10: the lineage of its PARENT is not sound: audit/v9: the lineage is deeper than 8 versions"]
+
+
+@pytest.mark.parametrize("table,key,name", (("CODE", "code", "coord_busy"), ("PROMPT", "prompt", "coord_tie"),
+                                            ("DRAFT", "draft", "coord_tie_draft"), ("CHECK", "check", "one_run_at_a_time")))
+def test_i3_case_9_a_table_that_drops_a_name_of_its_parent(tmp_path, table, key, name):
+    mine = {n: fn for n, fn in getattr(layers.load("coordination/v1"), table).items() if n != name}
+    assert C.case_9(stub(tmp_path, **{table: mine})) == ["coordination/v2: it drops the %s %s of its parent" % (key, name)]
+
+
+def test_i3_case_9_a_words_part_or_a_layout_part_dropped(tmp_path):
+    v1 = layers.load("coordination/v1")
+    words = {g: dict(parts) for g, parts in v1.WORDS.items()}
+    del words["tie"]["tie"]
+    assert C.case_9(stub(tmp_path / "w", WORDS=words)) == ["coordination/v2: it drops the words tie.tie of its parent"]
+    layout = {g: dict(parts) for g, parts in v1.LAYOUT.items()}
+    del layout["goal"]["skills"]
+    assert C.case_9(stub(tmp_path / "l", LAYOUT=layout)) == ["coordination/v2: it drops the layout goal.skills of its parent"]
+    assert C.case_9(stub(tmp_path / "g", WORDS={})) == ["coordination/v2: it drops the words goal.does of its parent",
+                                                        "coordination/v2: it drops the words goal.skills of its parent",
+                                                        "coordination/v2: it drops the words tie.tie of its parent"]
+    extra = dict(copy.deepcopy(v1.WORDS), more={"part": {"x": "an added part"}})
+    assert C.case_9(stub(tmp_path / "e", WORDS=extra)) == [], "a child may add what its parent has not"
+
+
+def test_i3_case_10_a_version_publishes_every_surface_function_its_parent_does(tmp_path):
+    assert C.case_10(stub(tmp_path / "ok")) == []
+    assert C.case_10(stub(tmp_path / "a", view=None)) == ["coordination/v2: it does not publish view, which its parent does"]
+    assert C.case_10(stub(tmp_path / "b", view="a pane", engine_card=None)) == [
+        "coordination/v2: it does not publish view, which its parent does",
+        "coordination/v2: it does not publish engine_card, which its parent does"]
+    top = stub(tmp_path / "r", layer="root", apply_option=None, standards=None)
+    assert C.case_10(top) == ["root/v2: it does not publish apply_option, which its parent does",
+                              "root/v2: it does not publish standards, which its parent does"]
+    assert C.case_10(stub(tmp_path / "n", PARENT=None, VERSION=1, view=None)) == [], "no parent: nothing to publish"
+    assert C.case_10(stub(tmp_path / "m", PARENT="coordination/v9", view=None)) == [], "a parent that does not load is case 9's"
+
+
+def whole(tmp_path, sub, edit, layer="coordination"):
+    """A whole-file child of layers/<layer>/v1 whose recipe is the parent's after `edit(recipe)`."""
+    rec = copy.deepcopy(layers.recipe("%s/v1" % layer))
+    edit(rec)
+    return stub(tmp_path / sub, recipe=rec, layer=layer)
+
+
+def test_i3_case_11_a_whole_file_child_that_keeps_what_the_parent_fixes_passes(tmp_path, child):
+    assert C.case_11(child) == []
+    assert C.case_11(whole(tmp_path, "same", lambda rec: None)) == []
+    assert C.case_11(whole(tmp_path, "free", lambda rec: born_steps(rec)[0].update(name="Another name", born="C2"))) == []
+    assert C.case_11(whole(tmp_path, "added", lambda rec: born_steps(rec).append(code_step("coord.added")))) == []
+
+
+def test_i3_case_11_a_dropped_handler(tmp_path):
+    got = C.case_11(whole(tmp_path, "h", lambda rec: rec.update(on=rec["on"][:-1])))
+    assert got == ["coordination/v2: the handler for inform/born is gone: a version hears what its parent hears",
+                   "coordination/v2: coord.table: a version keeps every step of its parent, and this one is gone"]
+
+
+def test_i3_case_11_a_changed_check_on_a_rule_a_dropped_gate_and_a_dropped_rule(tmp_path):
+    got = C.case_11(whole(tmp_path, "c", lambda rec: rec["rules"][0].update(check="said_what_it_did")))
+    assert got == ["coordination/v2: coord.busy: check is the parent's and a version leaves it as it is"]
+    got = C.case_11(whole(tmp_path, "g", lambda rec: rec.update(gates=[])))
+    assert got == ["coordination/v2: coord.chain: a version keeps every gate and rule of its parent, and this one is gone"]
+    got = C.case_11(whole(tmp_path, "r", lambda rec: rec.update(rules=rec["rules"][1:])))
+    assert got == ["coordination/v2: coord.busy: a version keeps every gate and rule of its parent, and this one is gone"]
+    got = C.case_11(whole(tmp_path, "m", lambda rec: rec["steps"][0].update(nature="decide")))
+    assert got == ["coordination/v2: coord.ready: nature is the parent's and a version leaves it as it is"]
+
+
+def test_i3_case_11_a_changed_enum(tmp_path):
+    def drop_a_member(rec):
+        next(s for s in L.all_steps(rec) if s["id"] == "priority.bargain")["out"]["answer"] = ["accept", "reject"]
+
+    steps = L.step_ids(layers.recipe("priority/v1"))
+    assert "priority.bargain" in steps
+    got = C.case_11(whole(tmp_path, "e", drop_a_member, layer="priority"))
+    assert got == ["priority/v2: priority.bargain: out.answer has other values than the parent's: an enum keeps the same members"]
+
+
+def test_i3_case_11_a_dangling_only_if_and_an_id_used_twice(tmp_path):
+    got = C.case_11(whole(tmp_path, "o", lambda rec: rec["steps"].append(code_step("coord.late", only_if="coord.nothing.answer=yes"))))
+    assert got == ["coordination/v2: coord.late: only_if points at coord.nothing, which is no step of this recipe"]
+    got = C.case_11(whole(tmp_path, "d", lambda rec: rec["steps"].append(code_step("coord.ready"))))
+    assert got == ["coordination/v2: coord.ready: this id is used by more than one step"]
+
+
+def test_i3_case_11_a_version_with_no_parent_is_judged_alone_and_a_recipe_that_cannot_be_read_is_case_1s(tmp_path):
+    alone = stub(tmp_path / "a", recipe=dict(layers.recipe("coordination/v1"), steps=[code_step("coord.x"), code_step("coord.x")]),
+                 PARENT=None, VERSION=1)
+    assert C.case_11(alone) == ["coordination/v1: coord.x: this id is used by more than one step"]
+    unreadable = stub(tmp_path / "b", RECIPE="nothing.json")
+    assert C.case_11(unreadable) == [] and C.case_1(unreadable)[-1] == "coordination/v2: its recipe nothing.json is not there"
+
+
+def test_i3_case_12_a_replaced_gate_or_rule_is_declared_in_tightens(tmp_path):
+    v1 = layers.load("coordination/v1")
+    stricter = dict(v1.CODE, coord_chain=coord_chain_one_sooner)
+    assert C.case_12(stub(tmp_path / "a", CODE=stricter)) == ["coordination/v2: it replaces the code of coord.chain and does not list it in TIGHTENS"]
+    other_check = dict(v1.CHECK, one_run_at_a_time=lambda ctx, step, item, out: {"ok": True, "notes": []})
+    assert C.case_12(stub(tmp_path / "b", CHECK=other_check)) == [
+        "coordination/v2: it replaces the check of coord.busy and does not list it in TIGHTENS"]
+    elsewhere = dict(v1.CODE, coord_ready=lambda ctx, step, item: {})
+    assert C.case_12(stub(tmp_path / "c", CODE=elsewhere)) == [], "a step that is no gate or rule is not tightened"
+    again = dict(v1.CODE, coord_chain=layers.ref_to("coord_chain"))
+    assert C.case_12(stub(tmp_path / "d", CODE=again)) == [], "a ref_to to the same target is the parent's body"
+    assert C.case_12(stub(tmp_path / "e")) == []
+
+
+def test_i3_case_12_a_replacement_declared_with_a_test_that_exists_passes(tmp_path):
+    where = "test_layer_inherit.py::test_a_child_that_stops_a_chain_one_run_sooner_lets_through_nothing_its_parent_held_back"
+    v1 = layers.load("coordination/v1")
+    child = stub(tmp_path, CODE=dict(v1.CODE, coord_chain=coord_chain_one_sooner), TIGHTENS={"coord.chain": where})
+    assert C.case_12(child) == []
+    assert C.case_12(stub(tmp_path / "also", CODE=dict(v1.CODE, coord_chain=coord_chain_one_sooner),
+                          TIGHTENS={"coord.chain": where, "coord.busy": where})) == [], "a declared step need not be replaced"
+
+
+def test_i3_case_12_a_tightens_that_names_a_test_that_is_not_there(tmp_path):
+    v1 = layers.load("coordination/v1")
+    mine = dict(v1.CODE, coord_chain=coord_chain_one_sooner)
+    outside = tmp_path / "outside.py"
+    outside.write_text("def test_outside():\n    pass\n", encoding="utf-8")
+    for where in ("test_nothing.py::test_nope", "test_layer_inherit.py::test_nope", "test_layer_inherit.py", "no colons at all",
+                  "test_layer_inherit.py::", "::test_nope", "test_layer_inherit.py::test_i3_case_12_a_tightens", None,
+                  "%s::test_outside" % outside, "../outside.py::test_outside"):
+        got = C.case_12(stub(tmp_path, CODE=mine, TIGHTENS={"coord.chain": where}))
+        assert got == ["coordination/v2: TIGHTENS coord.chain names a test that is not there: %s" % where], where
+
+
+def test_i3_case_12_a_tightens_that_names_a_step_that_is_no_gate_or_rule(tmp_path):
+    where = "test_layer_inherit.py::test_i3_case_12_a_replaced_gate_or_rule_is_declared_in_tightens"
+    got = C.case_12(stub(tmp_path / "a", TIGHTENS={"coord.ready": where}))
+    assert got == ["coordination/v2: TIGHTENS names coord.ready, which is no gate or rule of its recipe"]
+    got = C.case_12(stub(tmp_path / "b", TIGHTENS={"coord.nothing": "test_nothing.py::test_nope"}))
+    assert got == ["coordination/v2: TIGHTENS names coord.nothing, which is no gate or rule of its recipe",
+                   "coordination/v2: TIGHTENS coord.nothing names a test that is not there: test_nothing.py::test_nope"]
+
+
+def test_i3_case_12_a_tightens_on_a_version_with_no_parent_or_not_a_dict(tmp_path):
+    where = "test_layer_inherit.py::test_i3_case_12_a_replaced_gate_or_rule_is_declared_in_tightens"
+    one = stub(tmp_path / "a", PARENT=None, VERSION=1, TIGHTENS={"coord.chain": where, "coord.busy": where})
+    assert C.case_12(one) == ["coordination/v1: TIGHTENS names coord.busy, coord.chain, and there is no parent to tighten"]
+    assert C.case_12(stub(tmp_path / "b", PARENT=None, VERSION=1, TIGHTENS={})) == []
+    assert C.case_12(stub(tmp_path / "c", TIGHTENS=[where])) == ["coordination/v2: TIGHTENS is a dict of a step id and the test that proves it"]
+
+
+def test_i3_case_13_the_definitions_must_validate_with_the_versions_recipe(tmp_path, child):
+    assert C.case_13(child) == []
+    first = stub(tmp_path / "f", patch=patch_of(soft_step("coord.pre", before="coord.table")))
+    got = C.case_13(first)
+    assert len(got) == 1 and got[0].startswith("coordination/v2: Coordination, An engine is born: a unit starts with a step by code"), got
+    unreadable = stub(tmp_path / "u", RECIPE="nothing.json")
+    assert C.case_13(unreadable) == ["coordination/v2: the recipe is missing: nothing.json"]
+
+
+def coord_chain_one_sooner(ctx, step, item):
+    """A replacement of Coordination's gate for the tests of case 12: it stops a chain one run before the limit, where version 1
+    stops it at the limit. It reads what version 1's body reads, through the same two functions of the department."""
+    chain = website_dept._chain_of(ctx["ref"], ctx["def"]["reads"], ctx["inp"]["v"])
+    if chain and sum(1 for r in website_dept.runs(ctx["ref"]) if r.get("chain") == chain) >= website_dept.CHAIN_LIMIT - 1:
+        return "wait", "the chain from %s is one run from its limit" % chain
+    return "admit", None
+
+
+def test_a_child_that_stops_a_chain_one_run_sooner_lets_through_nothing_its_parent_held_back(monkeypatch):
+    """The proof case 12 asks of a replaced gate (A2-R6): on every count of runs in a chain, from none to past the limit, the child
+    answers at least as strictly as version 1; and the check is not vacuous, for the parent against the child fails where the child
+    holds back the one run the parent lets through."""
+    counts = {}
+    monkeypatch.setattr(website_dept, "_chain_of", lambda ref, reads, v: "chain-a")
+    monkeypatch.setattr(website_dept, "runs", lambda ref: [{"chain": "chain-a"}] * counts[ref])
+    contexts = []
+    for n in range(website_dept.CHAIN_LIMIT + 3):
+        counts["ref-%d" % n] = n
+        contexts.append(({"ref": "ref-%d" % n, "def": {"reads": "x"}, "inp": {"v": 1}}, None, None))
+    parent = layers.load("coordination/v1").CODE["coord_chain"]
+    assert {parent(*c)[0] for c in contexts} == {"admit", "wait"}, "the contexts reach both answers"
+    assert L.tightens(parent, coord_chain_one_sooner, contexts) == []
+    assert L.tightens(coord_chain_one_sooner, parent, contexts) == [
+        "context %d: the child answers admit where its parent answers wait" % (website_dept.CHAIN_LIMIT - 1)]

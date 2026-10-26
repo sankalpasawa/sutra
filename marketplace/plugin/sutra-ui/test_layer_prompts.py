@@ -458,7 +458,7 @@ class TestTheSnapshotRendersWhatRuns(TFP.Fixture):
             self.addCleanup(patch.stop)
         ref = C.fixture_department(os.environ["SUTRA_NATIVE_DEPT_HOME"], TFP.REF)
         got = {n: fn(module, {"ref": ref}) for n, _, fn in C.cases()}
-        assert got == {n: [] for n in range(1, 9)}, got
+        assert got == {n: [] for n, _, _ in C.cases()}, got      # every case the contract has: 13 from A2
         assert C.on_the_md_fallback(module) == [], "every part of Identity is typed in the stub"
         # and the snapshot, rendered through the registry from the typed words, is the snapshot still
         del module.PROMPT["identity_take"]
