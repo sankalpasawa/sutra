@@ -819,6 +819,104 @@ def coordination(ref, d=None, rs=None, ak=None, rows=None):
     return {k: out[k] for k in COORDINATION_FIELDS}
 
 
+# ---- M4.7: the engine card, the motor folded in and the five beside it (screen S17) -----------------------------------
+#: the engine card's read, its shape named once: where the engine stands (head, from Coordination's timetable), the
+#: motor's facts (its slot, whether each slot ran once, its window, today's spend) and one row for each of the five
+#: functions (ENGINE_FIVE_ROW: the function, a state that is a dot class, its sentence, since when, and a share for a bar)
+ENGINE_CARD_FIELDS = ("engine", "head", "motor", "five")
+ENGINE_FIVE_ROW = ("fn", "state", "says", "at", "share")
+#: an ask that holds an engine, by the function that holds it: Identity's stamp, Priority's limit, Coordination's alarm
+ASK_HOLDER = {"publish": "Identity", "setup": "Identity", "engine": "Identity", "envelope": "Priority", "alarm": "Coordination"}
+#: what Identity holding an engine says, by the ask that holds it
+ASK_HOLDS = {"publish": "holds it until you stamp the first publish", "setup": "holds it until you stamp the department",
+             "engine": "holds it until you stamp the engine your words need"}
+
+
+def _five_row(fn, state, says, at=None, share=None):
+    return {"fn": fn, "state": state, "says": says, "at": at, "share": share}
+
+
+def engine_card(ref, name):
+    """One engine as its card shows it (PRD M4.7, S17): its place in Coordination's timetable, the motor's facts, and
+    what each of the five is doing to it now, each a sentence from the record. None for a department not on the engine
+    runtime. Reads only."""
+    d = W.dept(ref)
+    if not d or d.get("runtime") != 2:
+        return None
+    rs, ak = W.runs(ref), W.asks(ref)
+    c = coordination(ref, d, rs, ak)
+    row = next((r for r in c["timetable"] if r["engine"] == name), None)
+    left = next((r for r in c["left_out"] if r["engine"] == name), None)
+    cur, t = _cycle_state(ref), R.coordination(ref)
+    stopped = bool(d.get("stopped")) or cur.get("state") == "stopped"
+    spend, trig = _spend(ref, d, name), _trigger(name)
+    clashes = [x for x in slot_clashes(rs) if str(x.get("slot") or "").startswith(name + "@")]
+    if row:
+        head = {"state": row["state"], "word": row["word"], "why": row["why"], "at": row["at"], "round": cur.get("round")}
+    else:
+        head = {"state": "left_out" if left else "quiet", "word": "left out of the plan" if left else "not in the line", "why": None,
+                "at": (left or {}).get("since"), "round": cur.get("round")}
+    motor = {"slot": (row or {}).get("on") or R.slot_of(ref, name, rs)["on"], "starts": _starts(trig), "once": not clashes,
+             "says": "ran once per slot" if not clashes else "a slot ran twice",
+             "window_min": int((row or {}).get("window_min") or (d.get("windows") or {}).get(name) or 30), "today": spend["share"]}
+    # who holds it, if anyone: an ask that names it, else the reason its row waits
+    why = str((row or {}).get("why") or "")
+    ask = next((a for a in ak if a.get("status") == "pending" and a.get("engine") == name), None)
+    holder = ASK_HOLDER.get((ask or {}).get("kind")) if ask else None
+    if not holder and row and row["state"] == "waits":
+        holder = "Priority" if "envelope" in why or "limit" in why else ("Identity" if "stamp" in why or "owner" in why else None)
+    five = []
+    # Identity: the rules and the owner's stamp
+    if stopped:
+        five.append(_five_row("Identity", "off", "the department is stopped"))
+    elif holder == "Identity":
+        five.append(_five_row("Identity", "warn", ASK_HOLDS.get((ask or {}).get("kind")) or "holds it until you answer"))
+    else:
+        five.append(_five_row("Identity", "ok", "lets it start: no rule holds it"))
+    # Adaptation: how it came into the department's plan
+    plans = [w for w in d.get("workflows") or [] if name in (w.get("engines") or [])]
+    if left:
+        five.append(_five_row("Adaptation", "off", "its plan left it out"))
+    elif name in (t.get("grown") or []):
+        five.append(_five_row("Adaptation", "ok", "offered it for your idea, and you stamped it"))
+    elif plans:
+        five.append(_five_row("Adaptation", "ok", "proposed it in the plan Root registered", plans[-1].get("at")))
+    else:
+        five.append(_five_row("Adaptation", "off", "it is in no plan yet"))
+    # Priority: its limit
+    over = spend["share"] >= 1 or holder == "Priority"
+    ran_today = any(r.get("engine") == name and str(r.get("started") or "")[:10] == W.now()[:10] for r in rs)
+    five.append(_five_row("Priority", "block" if over else "ok",
+                          "holds it: today's limit is spent" if over else
+                          ("let the run start inside today's limit" if ran_today else "keeps its limit, with room today"), share=spend["share"]))
+    # Coordination: its slot and its turn
+    st = (row or {}).get("state")
+    if left:
+        co = _five_row("Coordination", "off", "keeps it out of the line", (left or {}).get("since"))
+    elif st == "stopped":
+        co = _five_row("Coordination", "off", "stopped it where it was")
+    elif st == "running":
+        co = _five_row("Coordination", "breath", "gave it the turn", row["at"])
+    elif st == "turn":
+        co = _five_row("Coordination", "breath", "gives it the turn now")
+    elif st == "waits":
+        co = _five_row("Coordination", "wait", ("keeps its slot while %s holds it" % holder) if holder else "keeps its slot: " + why)
+    elif st == "ran":
+        co = _five_row("Coordination", "ok", "gave it its slot; it ran", row["at"])
+    else:
+        co = _five_row("Coordination", "off", "has no slot for it")
+    co["share"] = c["chain"]["share"]
+    five.append(co)
+    # Audit: the thing the line leads to, read or not yet
+    final = (W.artifacts_of(d) or [None])[-1]
+    v = W.latest(ref, final) if final else None
+    read = v and any(r.get("engine") == "Audit" and r.get("slot") == W._slot_id("Audit", final, v["v"]) and r.get("status") == "ok" for r in rs)
+    five.append(_five_row("Audit", "ok", "read %s v%d" % (final, v["v"])) if read else
+                _five_row("Audit", "off", "will read the %s it leads to" % final if final else "has nothing to read yet"))
+    out = {"engine": name, "head": head, "motor": motor, "five": [{k: r[k] for k in ENGINE_FIVE_ROW} for r in five]}
+    return _clean({k: out[k] for k in ENGINE_CARD_FIELDS})
+
+
 def _j2_part(ref, d, fn, events, ak):
     """What J2 adds to this function's pane, from the record as it stands (later milestones fill more of it)."""
     if fn == "Identity":

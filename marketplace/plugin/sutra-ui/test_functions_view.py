@@ -33,6 +33,8 @@ Named claims:
       and where it stands; a waiting engine names what it waits for ('Pages v2 is not filed yet'); who makes and who
       reads each thing, on a website and an organic line; a tie Coordination's AI broke ('Coordination chose Write
       first'); the engines the plan left out; every row stopped where it was on a stopped department; and nothing written
+  F13 the engine card's read (PRD M4.7, S17): its place in the timetable, the motor's facts and one row for each of
+      the five, the function that holds it saying so; served with the engine route
 
 Each department is born the way the app makes one (website_dept.create), then its record is set to the state under
 test, so what is read is the record a real department keeps.
@@ -1225,3 +1227,45 @@ def test_f12_the_coordination_read_writes_nothing_and_never_calls_the_model(mods
     F.coordination(ref)
     F.function(ref, "coordination")
     assert {p: os.path.getmtime(os.path.join(home, p)) for p in os.listdir(home)} == snap and called == []
+
+
+# ---- F13 (PRD M4.7): the engine card, the motor folded in and the five beside it --------------------------------------
+def test_f13_the_engine_card_names_its_slot_and_what_each_of_the_five_is_doing(mods, born, monkeypatch):
+    """A card whose holder is not the function that holds it (Identity's stamp, Priority's limit), a motor that says each
+    slot ran once when one ran twice, or a card for a department not on the runtime must fail."""
+    W, R, J, F = mods
+    ref = born(WEBSITE, "Acme Learning")
+    card = F.engine_card(ref, "Publish")
+    assert set(card) == set(F.ENGINE_CARD_FIELDS) and [r["fn"] for r in card["five"]] == FUNCS
+    assert all(list(r) == list(F.ENGINE_FIVE_ROW) for r in card["five"])
+    assert (card["head"]["state"], card["head"]["why"]) == ("waits", "waits for the stamp")
+    assert card["motor"] == {"slot": "after Build v1", "starts": "after a Build that passed", "once": True, "says": "ran once per slot",
+                             "window_min": 10, "today": 0.0}
+    five = {r["fn"]: r for r in card["five"]}
+    assert (five["Identity"]["state"], five["Identity"]["says"]) == ("warn", "holds it until you stamp the first publish")
+    assert (five["Coordination"]["state"], five["Coordination"]["says"]) == ("wait", "keeps its slot while Identity holds it")
+    assert five["Adaptation"]["says"] == "proposed it in the plan Root registered" and five["Priority"]["state"] == "ok"
+    assert five["Audit"]["says"] == "will read the Live site it leads to"
+    write = {r["fn"]: r for r in F.engine_card(ref, "Write")["five"]}
+    assert (write["Coordination"]["says"], write["Identity"]["says"]) == ("gave it its slot; it ran", "lets it start: no rule holds it")
+    # held by budget: Priority's row is block
+    W._put_run(ref, R._run_row("Write", False, None, "ok", "wrote a page", spend={"calls": 3, "usd": 0.1}))
+    W.set_envelope(ref, "Write", calls=2)
+    assert {r["fn"]: r for r in F.engine_card(ref, "Write")["five"]}["Priority"]["state"] == "block"
+    # a slot that ran twice: the motor says so
+    run = next(r for r in W.runs(ref) if r["engine"] == "Plan" and r.get("slot"))
+    W._put_run(ref, dict(run, id="r-twice"))
+    assert F.engine_card(ref, "Plan")["motor"]["says"] == "a slot ran twice"
+    # the route the card reads: the engine read carries it on the runtime
+    import website_api
+    importlib.reload(website_api)
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    app = FastAPI()
+    app.include_router(website_api.router)
+    got = TestClient(app).get("/api/native/%s/engine/Write" % ref).json()
+    assert got["card"]["engine"] == "Write" and got["card"]["motor"]["slot"]
+    assert F.engine_card(REF, "Write") is None or W.dept(REF).get("runtime") == 2
+    old, _ = W.create("dref-old01", "Old", None, kind="website")
+    if W.dept(old["ref"]).get("runtime") != 2:
+        assert F.engine_card(old["ref"], "Write") is None

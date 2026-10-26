@@ -255,7 +255,12 @@ def engine(ref: str, name: str):
     e = W.engine_view(ref, name)
     if not e:
         raise HTTPException(404, detail="no such engine")
-    return owner_words.engine(e)
+    out = owner_words.engine(e)
+    # on the engine runtime the card carries the motor and the five functions beside it (PRD M4.7, S17)
+    card = functions_view.engine_card(ref, name)
+    if card:
+        out["card"] = card
+    return out
 
 
 def _rt(ref):
