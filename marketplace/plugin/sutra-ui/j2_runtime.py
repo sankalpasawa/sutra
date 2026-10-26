@@ -475,6 +475,9 @@ def asked(ref, question, missing, why, key=None, standard=True):
     do it'. `standard` is True when Identity's reading in a step asked it (that reading reads the answer again), False
     when Identity's code asked it on the record (R.identity_asks). One open question at a time, with no cap on how many
     are asked in turn."""
+    # the question and its why reach the card in plain words, as every card's do (R.plain_card, PRD M3.6)
+    said = R.plain_card(ref, {"text": str(question), "why": str(why or "")}, "question")
+    question, why = said["text"], said["why"]
     with W._lock(ref):
         cur = _state(ref)
         if not cur or not cur.get("cycle_id"):

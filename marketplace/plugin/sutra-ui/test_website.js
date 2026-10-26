@@ -92,6 +92,10 @@
          none (PRD M3.3, S6)
      W50 one voice: a function's chat box says the words go to Identity about
          that function, and they go to the department about it (PRD M3.6)
+     W51 one voice: in a department's chat every turn of the department's is
+         Identity's, signed with Identity's mark and the department's name,
+         with or without a Root; Root's own chat keeps Root, the department a
+         chip on its turns (PRD M3.6, S15)
      S5  Identity's pane: the open question card, Enough to work? row by row
          with a word beside each dot, the goal with Change the goal (the Chat,
          its box begun), done-when items with level, how and to confirm, the
@@ -533,6 +537,8 @@ test("W11: the stylesheet block is tokens only and covers what the script emits"
 
 /* ── the engine runtime ─────────────────────────────────────────────────── */
 const words = h => h.replace(/<[^>]+>/g, " ").replace(/\b\d\d:\d\d\b/g, " ");
+/* a department's turn in its chat is Identity's, signed with Identity's mark and the department's name (PRD M3.6, S15) */
+const SIGNED = '<div class="who who-ai"><svg class="dpfnmk fn-identity" viewBox="0 0 24 24"[^>]*>(?:(?!</div>)[\\s\\S])*?</svg>City Care Hospital Website</div>';
 const rtMap = o => mapOf(Object.assign({ runtime: 2, live: true }, o || {}));
 const readsOf = (c, re) => c.calls.apiGet.filter(p => re.test(p));
 async function fnCard(c, tab){
@@ -865,7 +871,8 @@ test("W25: the chat is the one point of entry: it opens first; inside a departme
   assert.ok(/<div class="o2vh"><b>Chat<\/b>/.test(html));
   assert.deepStrictEqual(readsOf(c, /\/chat/), ["/api/native/r3/chat"], "one read, of the chat");
   assert.ok(/<div class="turn wbturn"><div class="who who-you">You<\/div><div class="u md">Which page lists the doctors\?<\/div><\/div>/.test(html), "the owner's turn, the chat's own markup");
-  assert.ok(/<div class="who who-ai">Root<\/div><div class="a">The Doctors page lists them<span class="dpchk">tells · /.test(html), "the left name is Root");
+  assert.ok(new RegExp(SIGNED + '<div class="a">The Doctors page lists them<span class="dpchk">tells · ').test(html),
+            "the department speaks with one voice: Identity's mark and the department's name (PRD M3.6; Root keeps Root on its own chat)");
   assert.ok(!/<span class="wbchip">City Care Hospital Website<\/span>/.test(html), "inside the department, no chip on the turns");
   assert.ok(!/Set up a department/.test(html), "Root's own turns are not here");
   assert.ok(/<button type="button" class="wbchip on wbto wb" data-wbchip="off">to City Care Hospital Website &times;<\/button><textarea id="wbd-ask"/.test(html), "the box carries where you stand as a chip");
@@ -909,7 +916,8 @@ test("W27: the department's own asks and answers are turns of the same chat: ins
   const c = await opened({ map: m });
   view(c); await sleep(); await sleep();
   let html = view(c);
-  assert.ok(/<div class="who who-ai">Root<\/div><div class="a">say whether the site may go live for the first time<span class="dpchk">asks · /.test(html), "the department's own ask is a turn, no chip");
+  assert.ok(new RegExp(SIGNED + '<div class="a">say whether the site may go live for the first time<span class="dpchk">asks · ').test(html),
+            "the department's own ask is a turn, no chip, signed by its Identity");
   assert.ok(/<div class="who who-you">You<\/div><div class="u md">Stamped<\/div>/.test(html), "and the owner's own stamp");
   const i1 = html.indexOf("say whether the site may go live"), i2 = html.indexOf("The Doctors page lists them");
   assert.ok(i1 > 0 && i2 > 0, "both boards' turns in one chat");
@@ -1138,7 +1146,7 @@ test("W35: a turn that lands slides in once; the working mark breathes; nothing 
   vm.runInContext("wbS().turns.r3 = wbS().chat.r3.turns.length - 1;", c);
   html = view(c);
   assert.strictEqual((html.match(/class="turn wbturn wbnew"/g) || []).length, 1, "the one turn that landed slides in");
-  assert.ok(/wbnew"><div class="who who-ai">Root<\/div><div class="a">Planned 5 pages\./.test(html), "and it is the last one");
+  assert.ok(new RegExp('wbnew">' + SIGNED + '<div class="a">Planned 5 pages\\.').test(html), "and it is the last one");
   html = view(c);
   assert.ok(!/wbnew/.test(html), "the next paint moves nothing: it slides in once");
   const m = rtMap(); m.status.running = [{ engine: "Write", since: AT, what: "page 2 of 5" }];
@@ -2091,6 +2099,34 @@ test("W50: a function's chat box says the words go to Identity about that functi
   for (let i = 0; i < 4; i++) await sleep();
   assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost.filter(x => /\/ask$/.test(x.p))[0])),
                          { p: "/api/native/r3/ask", body: { text: "Spend less on the careers page", about: "fn:priority" } }, "to the department, about Priority");
+});
+
+/* ── W51: one voice (PRD M3.6, S15): a department's chat is signed by its Identity; Root's own chat by Root ── */
+test("W51: in a department's chat each of its turns is Identity's, signed with Identity's mark and the department's name; Root keeps Root", async () => {
+  const signedBy = html => (html.match(/<div class="who who-ai">(?:(?!<\/div>)[\s\S])*?<\/div>/g) || []);
+  const m = rtMap(); m.root = "r2";
+  const c = await opened({ map: m });
+  view(c); await sleep(); await sleep();
+  let ai = signedBy(view(c));
+  assert.ok(ai.length >= 3, "the department's turns: " + ai.length);
+  ai.forEach(w => assert.ok(new RegExp("^" + SIGNED + "$").test(w), "signed by Identity for the department: " + w));
+  assert.ok(/<svg class="dpfnmk fn-identity"[^>]*aria-hidden="true"><path d="M4 5h16v10H11l-4 4v-4H4z"\/><path d="M14 19l2 2 4-4"\/><\/svg>/.test(ai[0]),
+            "Identity's mark, the speech bubble with a tick");
+  assert.ok(/<div class="who who-you">You<\/div>/.test(view(c)), "the owner's turns stay the owner's");
+  /* a department with no Root: its own chat, its own voice */
+  const lone = await opened({ map: rtMap(), chat: Object.assign({}, CHAT, { root: null, about: null }) });
+  view(lone); await sleep(); await sleep();
+  ai = signedBy(view(lone));
+  assert.ok(ai.length >= 2 && ai.every(w => new RegExp("^" + SIGNED + "$").test(w)), "no Root, still Identity for the department: " + ai.join(" | "));
+  assert.ok(!/<span class="wbchip">City Care Hospital Website<\/span>/.test(view(lone)), "and no chip of its own name beside it");
+  /* Root's own chat: Root, with the department a chip on the turns about it */
+  const rm = rtMap(); rm.kind = "root"; rm.root = "r3"; rm.say = "Ask Root for a department: what it is for"; rm.live = false;
+  const r = await opened({ map: rm, chat: ROOT_CHAT });
+  view(r); await sleep(); await sleep();
+  ai = signedBy(view(r));
+  assert.ok(ai.length >= 3 && ai.every(w => /^<div class="who who-ai">Root(?:<button type="button" class="wbchip wbto wb" data-wbopen="r5">City Care Hospital Website<\/button>)?<\/div>$/.test(w)),
+            "Root's chat is signed Root: " + ai.join(" | "));
+  assert.ok(!/fn-identity/.test(ai.join("")), "and never with Identity's mark");
 });
 
 /* ── W49: a blocked plan's card and its ways out (PRD M3.5, screen S10) ── */

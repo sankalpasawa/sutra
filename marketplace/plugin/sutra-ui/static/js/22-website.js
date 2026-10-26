@@ -732,9 +732,13 @@ function wbConversationHtml(n, m){
    then it translates into that department appropriately." One record: Root's
    board, every turn about a department. Two views: on Root the whole chat;
    inside a department the same chat scoped to it, and the box carries where
-   you stand as a chip the person can take off. The left name is always Root;
-   the department is a chip on the turn. The markup is the Sutra chat's own
-   (05-chat.js: turn, who, u, a), so it reads as a chat. */
+   you stand as a chip the person can take off. On Root's own chat the left
+   name is Root and the department is a chip on the turn; in a department's
+   chat only Identity speaks, so each of its turns is signed with Identity's
+   mark and the department's name (PRD M3.6, screen S15; found by a verifier
+   2026-10-23: a department's turns were signed Root, as if Root spoke for it).
+   The markup is the Sutra chat's own (05-chat.js: turn, who, u, a), so it
+   reads as a chat. */
 /* The department a turn is about is a chip that opens it (found live 2026-09-28: the person clicked the chip first). */
 function wbDeptChip(ref, name){
   return `<button type="button" class="wbchip wbto wb" data-wbopen="${wbEsc(ref)}">${wbEsc(name)}</button>`;
@@ -742,8 +746,10 @@ function wbDeptChip(ref, name){
 /* The name the organisation's helper wears on the screen, in one place. The department page (S-20) says the screen
    will say Sutra; the J1 contract of 2026-10-05 keeps Root, and test W45 pins it. Changing this word is the whole change. */
 const WB_HELPER = "Root";
-function wbChatTurn(t, scoped){
-  const dept = !scoped && t.name ? (t.dept ? wbDeptChip(t.dept, t.name) : wbChip(t.name)) : "";
+function wbChatTurn(t, scoped, signer){
+  /* `signer` is the department whose chat this is: its turns are Identity's, signed with its mark and that name */
+  const dept = !scoped && !signer && t.name ? (t.dept ? wbDeptChip(t.dept, t.name) : wbChip(t.name)) : "";
+  const who = signer ? (typeof wb2Mark === "function" ? wb2Mark("identity") : "") + wbEsc(signer) : WB_HELPER + dept;
   /* a stamp or a no carries no words of its own: the act is the line, in the owner's words (said no, never refused) */
   const line = t.line || (t.msg_type === "accept-proposal" ? "Stamped" : t.msg_type === "reject-proposal" ? "Said no" : wbCap(t.word || ""));
   if (t.src === "Owner") return `<div class="turn wbturn"><div class="who who-you">${dept}You</div><div class="u md">${wbEsc(line)}</div></div>`;
@@ -757,7 +763,7 @@ function wbChatTurn(t, scoped){
   /* J1.5: the second department the owner's words named is offered, never made unasked: one chip sends the words for it */
   const offer = t.offer && t.offer.words
     ? ` <button type="button" class="wbchip wbto wb" data-wbsay="${wbEsc(t.offer.words)}">Set up: ${wbEsc(t.offer.label || t.offer.words)}</button>` : "";
-  return `<div class="turn wbturn"><div class="who who-ai">${WB_HELPER}${dept}</div><div class="a">${wbEsc(line)}${link}${offer}` +
+  return `<div class="turn wbturn"><div class="who who-ai">${who}</div><div class="a">${wbEsc(line)}${link}${offer}` +
     `<span class="dpchk">${wbEsc(WB_ACTS[t.msg_type] || t.msg_type)} · ${wbEsc(wbWhen(t.at))}</span></div></div>`;
 }
 /* Identity's question (S6, M0.6): a card in the chat that takes words, never a stamp. Its Send answers where the
@@ -909,6 +915,8 @@ function wbChatHtml(n, m){
   if (!c){ wbLoadChat(n.ref); return dpSkel(); }
   if (c.failed) return dpQuiet("Could not read");
   const scoped = !!c.about, depts = c.departments || [];
+  /* a department's chat is signed by its Identity; Root's own chat keeps Root */
+  const signer = m.kind === "root" ? "" : (m.name || "");
   const all = c.turns || [];
   /* fewer words (SIM-3 f): Root's hand-over line folds to one quiet line once that department has answered */
   const folded = t => !scoped && t.src !== "Owner" && /^handed to /.test(t.line || "") && t.dept &&
@@ -919,7 +927,7 @@ function wbChatHtml(n, m){
   const qs = wbQuestions(c);
   const card = t => { let out = ""; while (qs.length && (!t || String(qs[0].created || "") < String(t.at || ""))){ const q = qs.shift(); out += (wbOptionAsk(q) ? wbOptionsHtml : wbQuestionHtml)(q, n.ref, !scoped); } return out; };
   const turns = all.map((t, i) => card(t) + (folded(t) ? `<div class="o2quiet dpq wbfold">${wbEsc(t.line)}</div>`
-    : wbChatTurn(t, scoped).replace('class="turn wbturn"', (landed && i === all.length - 1) ? 'class="turn wbturn wbnew"' : 'class="turn wbturn"'))).join("") + card(null);
+    : wbChatTurn(t, scoped, signer).replace('class="turn wbturn"', (landed && i === all.length - 1) ? 'class="turn wbturn wbnew"' : 'class="turn wbturn"'))).join("") + card(null);
   const empty = m.kind === "root" && !depts.length ? "No department yet. Say what the first one is for." : "Nothing has been said yet";
   const names = !scoped && depts.length ? `<div class="wbstep"><span class="dpk">Departments</span>${depts.map(d => wbDeptChip(d.ref, d.name)).join("")}</div>` : "";
   /* while an engine runs, the chat says so under the last turn, and the mark breathes (founder, 2026-09-28: "I give a

@@ -741,7 +741,14 @@ PLAIN_FAULTS = (("a function addressing another",
                 ("grant or counter", re.compile(r"\bgrant(?:s|ed|ing)?\b|\bcounter(?:s|ed|ing)?\b|\bcounter-?offers?\b", re.I)))
 PLAIN_KEYS = ("done", "objective", "answer", "why")
 PLAIN_TEMPLATE = {"answer": "I could not put that in plain words. Ask me again, in other words.",
+                  "question": "What should I know before the department starts?",
+                  "title": "The plan cannot go on as it is.",
+                  "blocked": "The plan cannot go on as it is. Say what to change, or choose a way forward on this card.",
+                  "why": "the reason is on the department's record",
                   "": "The department moved on; what changed is on its record."}
+#: the words of an ask its card shows the owner (PRD M3.6, screens S6 and S10), each by the template its kind of line
+#: falls back to; the card's own line (text) falls back as the card is: a question, a blocked plan, or a line
+CARD_KEYS = {"text": "", "title": "title", "why": "why"}
 
 
 def _owners_words(ref, payload):
@@ -767,6 +774,18 @@ def plain_faults(text, owners=""):
     return out
 
 
+def _plain_one(text, owners, key):
+    """One line, checked: (the line, its faults, how it was put right): as it was; said again once in the owner's words;
+    or the template for its kind of line."""
+    faults = plain_faults(text, owners)
+    if not faults:
+        return text, [], None
+    again = owner_words.plain(text)
+    if plain_faults(again, owners):
+        return PLAIN_TEMPLATE.get(key, PLAIN_TEMPLATE[""]), faults, "template"
+    return again, faults, "said again"
+
+
 def _plainly(ref, payload):
     """Identity's words to the owner, checked: said again once in the owner's words, then a template (M3.6)."""
     owners, out, fixed = None, dict(payload), []
@@ -775,16 +794,27 @@ def _plainly(ref, payload):
         if not isinstance(v, str) or not v.strip():
             continue
         owners = _owners_words(ref, payload) if owners is None else owners
-        faults = plain_faults(v, owners)
-        if not faults:
-            continue
-        again, by = owner_words.plain(v), "said again"
-        if plain_faults(again, owners):
-            again, by = PLAIN_TEMPLATE.get(k, PLAIN_TEMPLATE[""]), "template"
-        out[k] = again
-        fixed.append({"key": k, "faults": faults, "by": by})
+        out[k], faults, by = _plain_one(v, owners, k)
+        if faults:
+            fixed.append({"key": k, "faults": faults, "by": by})
     if fixed:
         out["plain"] = fixed
+    return out
+
+
+def plain_card(ref, fields, text_is=""):
+    """The words an ask's card shows the owner pass the check Identity's posts pass on their way to the board (M3.6), on
+    their way to the ask, so a card never says what the line it stands for may not (found by a verifier 2026-10-23: a
+    blocked plan's card said grant and counter while the chat line it stood for was a template). `fields` is the card's
+    words by CARD_KEYS ({text, title, why}); `text_is` names what its text is, a 'question' or a 'blocked' plan, for its
+    template. The one check for every card: the options ask (_blocked) and Identity's question (J.asked). Returns the
+    fields, checked."""
+    owners, out = None, dict(fields)
+    for k, v in fields.items():
+        if not isinstance(v, str) or not v.strip():
+            continue
+        owners = _owners_words(ref, fields) if owners is None else owners
+        out[k] = _plain_one(v, owners, (text_is or "") if k == "text" else CARD_KEYS.get(k, ""))[0]
     return out
 
 
@@ -2373,6 +2403,8 @@ def _standard_question(ctx, out):
     J = _j2()
     why = str(out.get("why") or "").strip() or "Identity's standard is not met yet: %s" % ", ".join(out.get("missing") or [])
     card = (J.asked(ctx["ref"], question, list(out.get("missing") or []), why, ctx["post"].get("n")) or {}).get("open_ask")
+    # the question as its card keeps it, checked in plain words (M3.6): the line names the card and says the same
+    question = next((str(a.get("text") or question) for a in W.asks(ctx["ref"]) if a["id"] == card), question)
     # a thread of its own: the request's thread may have closed on "filed in the Brief", and a post into it would be dropped;
     # the line names its card, and the chat leaves it to the card, which says the question once (M0.6)
     _tell(ctx["ref"], ctx["dept"], ctx["post"], "inform", dict({"word": "question", "done": question}, **({"card": card} if card else {})))
@@ -4592,6 +4624,9 @@ def _blocked(ref, d, who, said, title, by, why):
     J = _j2()
     if J:
         J._set(ref, state="blocked")
+    # what the card says, in plain words before it is made (M3.6): the line that names it says the same
+    w = plain_card(ref, {"text": said, "title": title, "why": str(why or "")}, "blocked")
+    said, title, why = w["text"], w["title"], w["why"]
     opts = [W.option(W.WORDS_OPTION, "Change the plan in my words", "Adaptation shapes it afresh from what you say; nothing runs before Root's review")]
     item = _left_out(d, why)
     if item:

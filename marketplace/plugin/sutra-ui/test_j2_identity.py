@@ -941,10 +941,15 @@ def test_m3_6_the_plain_words_check(j2):
     assert R._plainly("dref-plain", {"word": "request", "done": "Filed in the Brief."}) == {"word": "request", "done": "Filed in the Brief."}
 
 
+DROP_WHY = "Priority would not grant it and the counter was too small"
+GRANT_Q = "Will Priority grant a budget, or counter it first?"
+
+
 def _scenarios(j2, monkeypatch):
     """The J2 scenarios, each a department: born and run offline; Priority says no and Identity rules it runs; Priority
     says no and Identity puts the plan to the owner; Root's check refuses the plan until it is blocked; Identity's
-    standard asks; a rule given as an answer."""
+    standard asks; a rule given as an answer; and a model whose words carry the bargain's inside words: Identity's ruling
+    to drop the plan quotes a why that says grant and counter, and its reading of the standard asks in those words."""
     W, R, J, _, _ = j2
     refs = [_born(j2)]
     _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room"},
@@ -964,6 +969,10 @@ def _scenarios(j2, monkeypatch):
     W.owner_ask(ref, NEVER)
     W.run_until_idle(ref, limit=300)
     refs.append(ref)
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room"}, "identity.close": {"ruling": "drop", "why": DROP_WHY}})
+    refs.append(_born(j2, org="Dropped Co"))
+    _model(monkeypatch, R, {"identity.enough": {"enough": False, "missing": ["budget"], "question": GRANT_Q, "why": "no grant yet"}})
+    refs.append(_born(j2, org="Budget Co"))
     return refs
 
 
@@ -990,7 +999,37 @@ def test_m3_6_one_voice_in_plain_words_on_every_board(j2, monkeypatch):
     said = [s for r in refs for s in _said(R, r)]
     assert any("Priority said yes to it and it passed Root's check" in s for s in said)        # said again, plainly
     assert any("did not say yes to the plan" in s for s in said)
-    assert not [a for r in refs for a in W.asks(r) if R.plain_faults(a.get("text"), R._owners_words(r, a))]  # the asks' words too
+    # the asks' words too, all of them a card shows: its line, title and why, and each option's label and cost
+    cards = 0
+    for r in refs:
+        for a in W.asks(r):
+            owners = R._owners_words(r, a)
+            for v in [a.get(k) for k in ("text", "title", "why")] + [x for o in a.get("options") or [] for x in (o.get("label"), o.get("cost"))]:
+                if isinstance(v, str):
+                    assert R.plain_faults(v, owners) == [], "%s on %s: %s" % (a["kind"], r, v)
+                    cards += 1
+    assert cards > 20 and J.status(refs[-2])["state"] == "blocked" and J.status(refs[-1])["open_question"]
+
+
+def test_m3_6_a_cards_words_are_plain_as_the_line_it_stands_for(j2, monkeypatch):
+    """A blocked plan's card that quotes a model's 'grant' and 'counter' while the chat line it stands for is a template,
+    or a model's question on the standard that reaches its card in the bargain's words, must fail."""
+    W, R, J, _, _ = j2
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room"}, "identity.close": {"ruling": "drop", "why": DROP_WHY}})
+    ref = _born(j2, org="Dropped Co")
+    card = _card(W, ref)
+    assert (card["text"], card["title"], card["why"]) == (R.PLAIN_TEMPLATE["blocked"], "The plan is dropped.", R.PLAIN_TEMPLATE["why"])
+    line = next(p for p in R.board(ref) if (p["payload"] or {}).get("card") == card["id"])
+    assert line["payload"]["done"] == line["payload"]["objective"] == card["text"]          # the card and its line agree
+    _model(monkeypatch, R, {"identity.enough": {"enough": False, "missing": ["budget"], "question": GRANT_Q, "why": "no grant yet"}})
+    ref = _born(j2, org="Budget Co")
+    q = J.status(ref)["open_question"]
+    assert (q["text"], q["why"]) == (R.PLAIN_TEMPLATE["question"], R.PLAIN_TEMPLATE["why"])
+    assert next(p for p in R.board(ref) if (p["payload"] or {}).get("card") == q["id"])["payload"]["done"] == q["text"]
+    # words the owner's table can say plainly are said again, not replaced; and the templates are plain themselves
+    assert R.plain_card(ref, {"text": "Priority granted the line", "title": "Priority's grant", "why": "Priority countered (no room)"}, "blocked") == \
+        {"text": "Priority said yes to the line", "title": "Priority's yes", "why": "Priority asked for less (no room)"}
+    assert not [t for t in R.PLAIN_TEMPLATE.values() if R.plain_faults(t)]
 
 
 def test_m3_6_a_functions_chat_box_says_the_words_go_to_identity(j2):
