@@ -117,6 +117,12 @@ def _founded(m, words, org):
     return root
 
 
+def founded(m, words=WEBSITE, org="Acme Learning"):
+    """An organisation founded and the words said to its Root, nothing run yet: the Root's ref (what a walk that steps the line itself starts
+    from, as stepped() and born() do)."""
+    return _founded(m, words, org)
+
+
 def born(m, words=WEBSITE, org="Acme Learning"):
     """The department as a person makes one: found an organisation, say the words to its Root, Root sets the department up and the
     line runs to its first question (the recipe of the UI port's reference probe). Sets m.root and m.ref; returns the ref."""

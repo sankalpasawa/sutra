@@ -468,6 +468,74 @@ def test_t31_a_record_that_names_a_pin_the_registry_cannot_find_is_read_without_
     assert told() == ["Audit"], "once"
 
 
+#: what the owner does in the fuzz below, and how often (the line is stepped far more than it is spoken to)
+FUZZ_ACTIONS = ["step"] * 14 + ["say", "option", "option", "stamp", "refuse", "budget", "stop", "start", "root_words"]
+FUZZ_WORDS = ("Add a page about pricing plans", "Make the logo bigger", "Remove the contact page", "Hello?", "Yes please",
+              "It is for Class 8 students in Pune")
+#: seeds whose walks, before the fixes of 2026-10-27, met a read of the page in the window after the owner's no
+FUZZ_SEEDS = (1, 2)
+FUZZ_STEPS = 60
+
+
+@pytest.mark.parametrize("seed", FUZZ_SEEDS)
+def test_t31_a_read_writes_nothing_whatever_the_owner_does_and_whichever_slot_is_next(client, tmp_path, monkeypatch, seed):
+    """Hard rule 4(g) over a walk nobody planned. A department as a person makes one is driven for FUZZ_STEPS steps by a seeded owner: a slot of
+    the line (Root's or the department's), words said on the page, an option or a stamp or a no on the page's one box (POST api/say), a
+    stamp or a no by the writer, a budget taken away from an engine, Stop and Start. Before the step and after it, the whole page is read
+    from a fresh read, with the classic reads of the department and its Root (the status, the map, what is due next) beside it, and
+    the records home is compared with what it was before the reads."""
+    import random
+    rnd = random.Random(seed)
+    m = SEED.boot(tmp_path / "homes", monkeypatch)
+    root = SEED.founded(m, SEED.WEBSITE, "Fuzz%d Learning" % seed)
+    m.root = root
+    walk, reads = [], [0]
+
+    def child():
+        return next((d["ref"] for d in m.W.list_depts() if d.get("parent") == root), None)
+
+    def read():
+        ref = child()
+        if ref is None:
+            return
+        m.C.touch(ref)
+        before = files_of(m.home)
+        read_everything(client, ref)
+        for r in (ref, root):
+            m.R.next_due(r, peek=True)
+            m.W.status(r)
+            m.W.map_view(r)
+        reads[0] += 1
+        assert changed(before, m.home) == [], "a read wrote; the walk so far: %s" % walk[-8:]
+
+    for i in range(FUZZ_STEPS):
+        read()
+        ref = child()
+        act = rnd.choice(FUZZ_ACTIONS)
+        walk.append((i, act))
+        if act == "step":
+            m.W.run_until_idle(rnd.choice([root] + [ref] * 3) if ref else root, limit=1)
+        elif act == "root_words":
+            m.W.owner_ask(root, rnd.choice(FUZZ_WORDS), about=ref)
+        elif not ref:
+            continue
+        elif act == "say":
+            client.post(url(ref, "api/say"), json={"text": rnd.choice(FUZZ_WORDS)})
+        elif act == "option":
+            client.post(url(ref, "api/say"), json={"text": "Option %d" % rnd.choice([1, 1, 2, 3])})
+        elif act in ("stamp", "refuse"):
+            where = rnd.choice([root, ref])
+            pending = [a for a in m.W.asks(where) if a.get("status") == "pending" and not a.get("options")]
+            if pending:
+                m.W.decide_ask(where, rnd.choice(pending)["id"], act == "stamp")
+        elif act == "budget":
+            m.W.set_envelope(ref, rnd.choice(("Plan", "Write", "Check", "Publish")), calls=0)
+        elif act in ("stop", "start"):
+            m.W.set_stopped(ref, act == "stop")
+        read()
+    assert reads[0] >= 100 and len({a for _, a in walk}) >= 6, (reads, walk[:20])
+
+
 def test_t32_every_act_between_functions_is_worded_for_the_owner_and_no_id_is_printed(client, plant):
     ref, m = plant("running")
     for i, act in enumerate(m.R.ACTS):
