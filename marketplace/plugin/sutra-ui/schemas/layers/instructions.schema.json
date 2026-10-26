@@ -1,0 +1,223 @@
+{
+  "$defs": {
+    "field.guidance": {
+      "maxLength": 2000,
+      "minLength": 0,
+      "type": "string",
+      "x-field": {
+        "multiline": true
+      }
+    },
+    "field.items": {
+      "items": {
+        "maxLength": 160,
+        "minLength": 1,
+        "type": "string",
+        "x-field": {
+          "multiline": false
+        }
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "type": "array"
+    },
+    "field.note": {
+      "maxLength": 4000,
+      "minLength": 0,
+      "type": "string",
+      "x-field": {
+        "multiline": true
+      }
+    },
+    "field.task": {
+      "maxLength": 1200,
+      "minLength": 1,
+      "type": "string",
+      "x-field": {
+        "multiline": true
+      }
+    },
+    "field.text": {
+      "maxLength": 400,
+      "minLength": 1,
+      "type": "string",
+      "x-field": {
+        "multiline": false
+      }
+    },
+    "instructions": {
+      "additionalProperties": true,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "values": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "additionalProperties": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "ask": {
+                      "maxLength": 40,
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "at": {
+                      "maxLength": 40,
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "value": {}
+                  },
+                  "required": [
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                "type": "object"
+              },
+              "type": "object"
+            },
+            "type": "object"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_version",
+        "values"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://sutra.asawa.co/schemas/layers/instructions.schema.json",
+  "$ref": "#/$defs/instructions",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The owner's typed values for the prompt fields, by layer, group, part and field (x-fields: each part's fields and their types) (PRD A1.16). Generated from layer_schema.py (schema version 1); never edited by hand: run `python layer_schema.py --write`.",
+  "title": "The owner's instructions (instructions.json)",
+  "x-fields": {
+    "adaptation": {
+      "decide": {
+        "note": {
+          "text": "field.note"
+        }
+      },
+      "goal": {
+        "does": {
+          "text": "field.text"
+        },
+        "skills": {
+          "items": "field.items"
+        }
+      },
+      "make": {
+        "line": {},
+        "refused": {}
+      },
+      "sense": {
+        "shape": {}
+      }
+    },
+    "audit": {
+      "goal": {
+        "does": {
+          "text": "field.text"
+        },
+        "skills": {
+          "items": "field.items"
+        }
+      },
+      "judge": {
+        "judge": {
+          "guidance": "field.guidance",
+          "task": "field.task"
+        }
+      }
+    },
+    "coordination": {
+      "goal": {
+        "does": {
+          "text": "field.text"
+        },
+        "skills": {
+          "items": "field.items"
+        }
+      },
+      "tie": {
+        "tie": {
+          "task": "field.task"
+        }
+      }
+    },
+    "identity": {
+      "completeness": {
+        "enough": {
+          "task": "field.task"
+        },
+        "thin": {
+          "task": "field.task"
+        }
+      },
+      "goal": {
+        "close": {},
+        "does": {
+          "text": "field.text"
+        },
+        "skills": {
+          "items": "field.items"
+        }
+      },
+      "take": {
+        "answer": {
+          "task": "field.task"
+        },
+        "gate": {
+          "task": "field.task"
+        },
+        "recognise": {
+          "task": "field.task"
+        },
+        "rule": {
+          "guidance": "field.guidance",
+          "task": "field.task"
+        },
+        "take": {
+          "guidance": "field.guidance",
+          "task": "field.task"
+        },
+        "weigh": {
+          "task": "field.task"
+        }
+      }
+    },
+    "priority": {
+      "bargain": {
+        "cost": {
+          "task": "field.task"
+        },
+        "engine": {
+          "task": "field.task"
+        },
+        "line": {}
+      },
+      "goal": {
+        "does": {
+          "text": "field.text"
+        },
+        "skills": {
+          "items": "field.items"
+        }
+      }
+    },
+    "root": {
+      "setup": {
+        "converse": {
+          "items": "field.items",
+          "task": "field.task"
+        },
+        "shape": {}
+      }
+    }
+  }
+}

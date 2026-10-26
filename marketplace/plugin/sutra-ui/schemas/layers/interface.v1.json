@@ -1,0 +1,7011 @@
+{
+  "actors": [
+    "Owner",
+    "Root",
+    "Identity",
+    "Adaptation",
+    "Priority",
+    "Coordination",
+    "Audit",
+    "Engine"
+  ],
+  "acts": [
+    "request",
+    "agree",
+    "refuse",
+    "propose",
+    "accept-proposal",
+    "reject-proposal",
+    "inform",
+    "failure",
+    "not-understood",
+    "cancel"
+  ],
+  "calls": [
+    {
+      "from": "Root",
+      "site": "_registered",
+      "to": "Coordination",
+      "what": "coord.table"
+    },
+    {
+      "from": "Root",
+      "site": "_registered",
+      "to": "Priority",
+      "what": "priority.grant"
+    },
+    {
+      "from": "Identity",
+      "site": "engine_added",
+      "to": "Coordination",
+      "what": "coord.table"
+    },
+    {
+      "from": "Identity",
+      "site": "engine_added",
+      "to": "Priority",
+      "what": "priority.grant"
+    },
+    {
+      "from": "Root",
+      "site": "_j2_settle",
+      "to": "Identity",
+      "what": "_blocked"
+    },
+    {
+      "from": "Identity",
+      "site": "_priority_limits",
+      "to": "Priority",
+      "what": "priority.grant"
+    }
+  ],
+  "checks": {
+    "adaptation": {
+      "counted_the_rows": "every step is counted from its own rows",
+      "idea_has_shapes": "an idea is reflected back with the shapes it could take",
+      "line_is_engines": "a shaped line is one to six engines that code finds nothing wrong with",
+      "moves_name_their_rows": "each move is of a known kind and names the rows it rests on"
+    },
+    "audit": {
+      "findings_name_where_and_what": "each finding names where it is and what it claims",
+      "has_a_verdict": "a mechanical check gives a verdict with its notes",
+      "picked_a_sample": "it says whether it sampled, and which pages"
+    },
+    "coordination": {
+      "chain_under_its_limit": "a start is let through only while the chain is under its limit",
+      "names_who_goes_first": "it names an engine of the department",
+      "one_run_at_a_time": "a start is let through only while no other run runs"
+    },
+    "identity": {
+      "answer_names_its_source": "an answer, its source, and how sure it is",
+      "enough_is_shaped": "enough is a yes or a no; what is missing is named by the standard's points; a no asks one question",
+      "feedback_says_what_changes": "feedback says what kind of change it is and what to correct now",
+      "gate_verdict_is_known": "a gate's verdict is admit, wait or refuse",
+      "journey_is_known": "the words are one of canon's five journeys",
+      "rule_is_tagged": "a rule is one line, tagged, with its scope",
+      "ruling_is_known": "a ruling is run, drop or ask",
+      "verdict_is_known": "a verdict is go, ask or refuse, and an ask or a no says why"
+    },
+    "priority": {
+      "answer_has_its_price": "said yes, asked for less or said no, each with its price; an ask for less names what it keeps"
+    },
+    "root": {
+      "department_is_made": "the department exists under Root, on the runtime, and has its goal",
+      "department_is_shaped": "a name, a kind the Library has, a goal, and done-when items each with how and level",
+      "filed_has_files": "what was filed holds its files and their verdict",
+      "setup_converse_is_valid": "one question to the owner, or clear"
+    }
+  },
+  "constants": {
+    "ask_kinds": [
+      "publish",
+      "setup",
+      "engine",
+      "envelope",
+      "alarm",
+      "finding",
+      "hole",
+      "rule",
+      "goal",
+      "rung",
+      "trial",
+      "conflict",
+      "line",
+      "j2_identity",
+      "done_items",
+      "instructions",
+      "blocked",
+      "model",
+      "step",
+      "request"
+    ],
+    "ask_statuses": [
+      "pending",
+      "stamped",
+      "refused",
+      "answered",
+      "chosen",
+      "replaced"
+    ],
+    "born_fields": [
+      "engines",
+      "version",
+      "full",
+      "grow",
+      "before"
+    ],
+    "bounds": {
+      "hops": 4,
+      "seconds": 900,
+      "usd": 0.5
+    },
+    "chain_limit": 12,
+    "confidence": {
+      "ask_below": 0.6,
+      "show_below": 0.8
+    },
+    "coordination_fields": [
+      "line",
+      "registered",
+      "timetable",
+      "left_out",
+      "holds",
+      "handoffs",
+      "chain",
+      "alarms",
+      "ties"
+    ],
+    "done_how": [
+      "code",
+      "model",
+      "person"
+    ],
+    "done_items_max": 12,
+    "done_levels": [
+      "target",
+      "outcome"
+    ],
+    "engine_card_fields": [
+      "engine",
+      "head",
+      "motor",
+      "five"
+    ],
+    "engine_five_row": [
+      "fn",
+      "state",
+      "says",
+      "at",
+      "share"
+    ],
+    "finding_re": "^F[1-9][0-9]{0,2}$",
+    "impl_re": "^(root|identity|adaptation|priority|coordination|audit)/v[1-9][0-9]*$",
+    "item_re": "^D[1-9][0-9]?$",
+    "item_verdicts": [
+      "met",
+      "not_met",
+      "to_confirm"
+    ],
+    "left_out_fields": [
+      "engine",
+      "in_line",
+      "since"
+    ],
+    "name_re": "^[A-Za-z0-9][A-Za-z0-9 &'.-]{0,39}$",
+    "never_refuse": [
+      "stopped",
+      "control"
+    ],
+    "options_max": 3,
+    "question_statuses": [
+      "open",
+      "answered",
+      "unanswered",
+      "refused"
+    ],
+    "raise_cap": 2.0,
+    "repairs": 2,
+    "rounds_default": 6,
+    "rule_tags": [
+      "go",
+      "ask",
+      "refuse",
+      "always"
+    ],
+    "severities": [
+      "high",
+      "medium",
+      "low"
+    ],
+    "slot_fields": [
+      "engine",
+      "on",
+      "of",
+      "checked",
+      "every_s",
+      "window_min",
+      "since"
+    ],
+    "sources": [
+      "library",
+      "shaped",
+      "fitted",
+      "made"
+    ],
+    "stages": [
+      "birth",
+      "proposal",
+      "registration",
+      "grow",
+      "write"
+    ],
+    "standard": [
+      "goal",
+      "items",
+      "rules",
+      "owner",
+      "budget",
+      "invented"
+    ],
+    "table_fields": [
+      "order",
+      "functions",
+      "line",
+      "edges",
+      "left_out",
+      "grown",
+      "registered",
+      "timetable",
+      "by",
+      "since",
+      "why"
+    ],
+    "timetable_row": [
+      "engine",
+      "on",
+      "starts",
+      "window_min",
+      "since",
+      "state",
+      "word",
+      "why",
+      "at",
+      "last"
+    ]
+  },
+  "contract_samples": {
+    "answer_has_its_price": {
+      "bad": [
+        {
+          "answer": "accept",
+          "why": ""
+        },
+        {
+          "answer": "grant",
+          "why": "x"
+        }
+      ],
+      "good": [
+        {
+          "answer": "accept",
+          "why": "fits today: 9 calls of 30"
+        }
+      ]
+    },
+    "enough_is_shaped": {
+      "bad": [
+        {
+          "enough": "yes",
+          "missing": []
+        },
+        {
+          "enough": false,
+          "missing": [
+            "colour"
+          ],
+          "question": "x?"
+        }
+      ],
+      "good": []
+    },
+    "findings_name_where_and_what": {
+      "bad": [
+        {
+          "findings": [
+            {
+              "claim": "x"
+            }
+          ],
+          "ok": false
+        },
+        {
+          "findings": "none",
+          "ok": false
+        }
+      ],
+      "good": [
+        {
+          "findings": [],
+          "ok": true
+        }
+      ]
+    },
+    "ruling_is_known": {
+      "bad": [
+        {
+          "ruling": "perhaps",
+          "why": "x"
+        }
+      ],
+      "good": [
+        {
+          "ruling": "drop",
+          "why": "the goal does not need it"
+        }
+      ]
+    },
+    "verdict_is_known": {
+      "bad": [
+        {
+          "verdict": "maybe",
+          "why": "x"
+        }
+      ],
+      "good": [
+        {
+          "verdict": "go",
+          "why": "inside the goal"
+        },
+        {
+          "verdict": "ask",
+          "why": "it reaches outside"
+        }
+      ]
+    }
+  },
+  "default_pins": {
+    "adaptation": "adaptation/v1",
+    "audit": "audit/v1",
+    "coordination": "coordination/v1",
+    "identity": "identity/v1",
+    "priority": "priority/v1",
+    "root": "root/v1"
+  },
+  "defs": {
+    "act.answer": {
+      "additionalProperties": true,
+      "properties": {
+        "entry": {
+          "$ref": "#/$defs/coordination.question"
+        },
+        "word": {
+          "const": "answer"
+        }
+      },
+      "required": [
+        "word",
+        "entry"
+      ],
+      "type": "object"
+    },
+    "act.any": {
+      "additionalProperties": true,
+      "properties": {
+        "word": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "act.ask": {
+      "additionalProperties": true,
+      "properties": {
+        "boundaries": {
+          "maxLength": 8000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "may_read": {
+          "items": {
+            "maxLength": 60,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "objective": {
+          "maxLength": 4000,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "output": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "word": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "act.born": {
+      "additionalProperties": true,
+      "properties": {
+        "before": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "engines": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "full": {
+          "type": "boolean"
+        },
+        "grow": {
+          "maxLength": 80,
+          "minLength": 0,
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "word": {
+          "const": "born"
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "act.conflict": {
+      "additionalProperties": true,
+      "properties": {
+        "bound": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "engines": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/name"
+              },
+              {
+                "$ref": "#/$defs/workflow.engine"
+              }
+            ]
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "for": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "options": {
+          "items": {
+            "$ref": "#/$defs/option"
+          },
+          "maxItems": 3,
+          "minItems": 0,
+          "type": "array"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "library",
+                "shaped",
+                "fitted",
+                "made"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "why": {
+          "maxLength": 2000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "word": {
+          "const": "conflict"
+        },
+        "words": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "act.doubt": {
+      "additionalProperties": true,
+      "properties": {
+        "cannot": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "properties": {
+                "engine": {
+                  "$ref": "#/$defs/name"
+                },
+                "items": {
+                  "items": {
+                    "$ref": "#/$defs/id.item"
+                  },
+                  "minItems": 0,
+                  "type": "array"
+                },
+                "why": {
+                  "maxLength": 600,
+                  "minLength": 0,
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "doubt": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "engine": {
+          "$ref": "#/$defs/name"
+        },
+        "fallback": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "word": {
+          "const": "doubt"
+        }
+      },
+      "required": [
+        "word",
+        "engine",
+        "doubt"
+      ],
+      "type": "object"
+    },
+    "act.finding": {
+      "additionalProperties": true,
+      "properties": {
+        "claim": {
+          "maxLength": 2000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "findings": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {},
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "item": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id.item"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "page": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "severity": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "v": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "where": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "word": {
+          "const": "finding"
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "act.line": {
+      "additionalProperties": true,
+      "properties": {
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "covers": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/name"
+            },
+            "minItems": 0,
+            "type": "array"
+          },
+          "propertyNames": {
+            "pattern": "^D[1-9][0-9]?$"
+          },
+          "type": "object"
+        },
+        "doubt": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "engines": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/name"
+              },
+              {
+                "$ref": "#/$defs/workflow.engine"
+              }
+            ]
+          },
+          "maxItems": 24,
+          "minItems": 0,
+          "type": "array"
+        },
+        "fit": {
+          "additionalProperties": {
+            "maxLength": 300,
+            "minLength": 0,
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "for": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "keep": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "library",
+                "shaped",
+                "fitted",
+                "made"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "why": {
+          "maxLength": 2000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "word": {
+          "const": "line"
+        },
+        "words": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "act.line_request": {
+      "additionalProperties": true,
+      "properties": {
+        "faults": {
+          "items": {
+            "maxLength": 600,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "objective": {
+          "maxLength": 2000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "practices": {
+          "additionalProperties": true,
+          "properties": {
+            "artifacts": {},
+            "engines": {},
+            "required": {},
+            "rules": {},
+            "taken": {}
+          },
+          "required": [],
+          "type": "object"
+        },
+        "word": {
+          "const": "line"
+        },
+        "words": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "act.next": {
+      "additionalProperties": true,
+      "properties": {
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/id.finding"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/id.item"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "reading": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "round": {
+          "maximum": 99,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "word": {
+          "const": "next"
+        }
+      },
+      "required": [
+        "word",
+        "items",
+        "reading"
+      ],
+      "type": "object"
+    },
+    "act.question": {
+      "additionalProperties": true,
+      "properties": {
+        "entry": {
+          "$ref": "#/$defs/coordination.question"
+        },
+        "word": {
+          "const": "question"
+        }
+      },
+      "required": [
+        "word",
+        "entry"
+      ],
+      "type": "object"
+    },
+    "act.reading": {
+      "additionalProperties": true,
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/name"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/id.finding"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "high": {
+          "type": "boolean"
+        },
+        "met": {
+          "items": {
+            "$ref": "#/$defs/id.item"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "not_met": {
+          "items": {
+            "$ref": "#/$defs/id.item"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "reading": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "to_confirm": {
+          "items": {
+            "$ref": "#/$defs/id.item"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "v": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "word": {
+          "const": "reading"
+        }
+      },
+      "required": [
+        "word",
+        "reading",
+        "artifact",
+        "v",
+        "read",
+        "met",
+        "not_met",
+        "to_confirm"
+      ],
+      "type": "object"
+    },
+    "act.round": {
+      "additionalProperties": true,
+      "properties": {
+        "ceiling": {
+          "$ref": "#/$defs/priority.ceiling"
+        },
+        "correction": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "covers": {
+          "items": {
+            "$ref": "#/$defs/id.item"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "estimate": {
+          "$ref": "#/$defs/priority.estimate"
+        },
+        "fixes": {
+          "items": {
+            "$ref": "#/$defs/id.finding"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "round": {
+          "maximum": 99,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "why": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "word": {
+          "const": "round"
+        }
+      },
+      "required": [
+        "word",
+        "round"
+      ],
+      "type": "object"
+    },
+    "act.stamp": {
+      "additionalProperties": true,
+      "properties": {
+        "ask": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "word": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "act.tell": {
+      "additionalProperties": true,
+      "properties": {
+        "card": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "done": {
+          "maxLength": 8000,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "word": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "act.verdict": {
+      "additionalProperties": true,
+      "properties": {
+        "answer": {
+          "enum": [
+            "admit",
+            "wait",
+            "refuse"
+          ]
+        },
+        "why": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "word": {
+          "const": "verdict"
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "act.words": {
+      "additionalProperties": true,
+      "properties": {
+        "about": {},
+        "answers": {},
+        "boundaries": {
+          "maxLength": 8000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "may_read": {
+          "items": {
+            "maxLength": 60,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "objective": {
+          "maxLength": 8000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "output": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "request": {},
+        "word": {
+          "enum": [
+            "front",
+            "request"
+          ]
+        },
+        "words": {
+          "maxLength": 8000,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "adaptation.idea": {
+      "additionalProperties": true,
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "adaptation.ladder": {
+      "additionalProperties": true,
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "adaptation.round": {
+      "additionalProperties": true,
+      "properties": {
+        "at": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "brief_v": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "correction": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "covers": {
+          "items": {
+            "$ref": "#/$defs/id.item"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "cycle_id": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "estimate": {
+          "$ref": "#/$defs/priority.estimate"
+        },
+        "fixes": {
+          "items": {
+            "$ref": "#/$defs/id.finding"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "reading": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "round": {
+          "maximum": 99,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "schema_version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "proposed",
+            "granted",
+            "refused",
+            "filed",
+            "read"
+          ]
+        }
+      },
+      "required": [
+        "round",
+        "correction",
+        "covers",
+        "status"
+      ],
+      "type": "object"
+    },
+    "audit.finding": {
+      "additionalProperties": true,
+      "properties": {
+        "ask": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "at": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "claim": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/id.finding"
+        },
+        "item": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id.item"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "severity": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "went_to": {
+          "anyOf": [
+            {
+              "enum": [
+                "Identity",
+                "Adaptation",
+                "you"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "where": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "severity",
+        "claim",
+        "where"
+      ],
+      "type": "object"
+    },
+    "audit.reading": {
+      "additionalProperties": true,
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/name"
+        },
+        "at": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "cycle_id": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/audit.finding"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 10,
+          "pattern": "^r-[0-9a-f]{8}$",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/audit.reading_item"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "round": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schema_version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "v": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "why_not_read": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "v",
+        "artifact",
+        "read",
+        "items",
+        "at"
+      ],
+      "type": "object"
+    },
+    "audit.reading_item": {
+      "additionalProperties": true,
+      "properties": {
+        "claim": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "evidence": {
+          "maxLength": 1000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/id.item"
+        },
+        "method": {
+          "enum": [
+            "code",
+            "model"
+          ]
+        },
+        "severity": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "subject": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "verdict": {
+          "enum": [
+            "met",
+            "not_met",
+            "to_confirm"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "subject",
+        "claim",
+        "evidence",
+        "method",
+        "verdict",
+        "severity"
+      ],
+      "type": "object"
+    },
+    "audit.spot_check": {
+      "additionalProperties": true,
+      "properties": {
+        "at": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "checks": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "check": {
+                "maxLength": 80,
+                "minLength": 0,
+                "type": "string"
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "why": {
+                "maxLength": 300,
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "required": [
+              "check",
+              "ok",
+              "why"
+            ],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/audit.finding"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "minute": {
+          "maximum": 1439,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "schema_version": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "checks",
+        "findings"
+      ],
+      "type": "object"
+    },
+    "check.verdict": {
+      "additionalProperties": true,
+      "properties": {
+        "notes": {
+          "items": {
+            "maxLength": 2000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok",
+        "notes"
+      ],
+      "type": "object"
+    },
+    "coordination.left_out": {
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "$ref": "#/$defs/name"
+        },
+        "in_line": {
+          "const": false
+        },
+        "since": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "engine"
+      ],
+      "type": "object"
+    },
+    "coordination.question": {
+      "additionalProperties": true,
+      "properties": {
+        "about": {
+          "maxLength": 120,
+          "minLength": 0,
+          "type": "string"
+        },
+        "answer": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answered_by": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "artifact_update": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "properties": {},
+              "required": [],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "asked_by": {
+          "$ref": "#/$defs/name"
+        },
+        "attempt": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "cycle": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "maxLength": 8,
+          "pattern": "^Q-[1-9][0-9]*$",
+          "type": "string"
+        },
+        "question": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schema": {
+          "const": "board/1"
+        },
+        "slot": {
+          "maxLength": 160,
+          "minLength": 0,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "unanswered",
+            "refused"
+          ]
+        },
+        "to": {
+          "$ref": "#/$defs/name"
+        },
+        "used_by": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        }
+      },
+      "required": [
+        "schema",
+        "id",
+        "asked_by",
+        "to",
+        "about",
+        "question",
+        "status",
+        "used_by"
+      ],
+      "type": "object"
+    },
+    "coordination.slot": {
+      "additionalProperties": false,
+      "properties": {
+        "checked": {
+          "type": "boolean"
+        },
+        "engine": {
+          "$ref": "#/$defs/name"
+        },
+        "every_s": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "of": {
+          "$ref": "#/$defs/name"
+        },
+        "on": {
+          "maxLength": 80,
+          "minLength": 0,
+          "type": "string"
+        },
+        "since": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "window_min": {
+          "maximum": 1440,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "engine",
+        "on"
+      ],
+      "type": "object"
+    },
+    "coordination.table": {
+      "additionalProperties": false,
+      "properties": {
+        "by": {
+          "enum": [
+            "born",
+            "Coordination"
+          ]
+        },
+        "edges": {
+          "additionalProperties": true,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
+        "functions": {
+          "items": {
+            "enum": [
+              "Root",
+              "Identity",
+              "Adaptation",
+              "Priority",
+              "Coordination",
+              "Audit"
+            ]
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "grown": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "left_out": {
+          "items": {
+            "$ref": "#/$defs/coordination.left_out"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "line": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "maxItems": 24,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "order": {
+          "items": {
+            "enum": [
+              "posts",
+              "line",
+              "functions"
+            ]
+          },
+          "maxItems": 3,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "registered": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schema_version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "since": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "timetable": {
+          "items": {
+            "$ref": "#/$defs/coordination.slot"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "why": {
+          "maxLength": 300,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "order",
+        "line"
+      ],
+      "type": "object"
+    },
+    "department": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "$ref": "#/$defs/department.artifacts",
+          "x-owner": "root"
+        },
+        "bounds": {
+          "$ref": "#/$defs/department.bounds",
+          "x-owner": "identity"
+        },
+        "ceiling": {
+          "$ref": "#/$defs/department.ceiling",
+          "x-owner": "priority"
+        },
+        "control": {
+          "$ref": "#/$defs/department.control",
+          "x-owner": "root"
+        },
+        "created": {
+          "$ref": "#/$defs/department.created",
+          "x-owner": "root"
+        },
+        "done": {
+          "$ref": "#/$defs/department.done",
+          "x-owner": "identity"
+        },
+        "done_items": {
+          "$ref": "#/$defs/department.done_items",
+          "x-owner": "identity"
+        },
+        "engines": {
+          "$ref": "#/$defs/department.engines",
+          "x-owner": "root"
+        },
+        "envelopes": {
+          "$ref": "#/$defs/department.envelopes",
+          "x-owner": "priority"
+        },
+        "events": {
+          "$ref": "#/$defs/department.events",
+          "x-owner": "root"
+        },
+        "founding": {
+          "$ref": "#/$defs/department.founding",
+          "x-owner": "root"
+        },
+        "goal": {
+          "$ref": "#/$defs/department.goal",
+          "x-owner": "identity"
+        },
+        "goals": {
+          "$ref": "#/$defs/department.goals",
+          "x-owner": "identity"
+        },
+        "host": {
+          "$ref": "#/$defs/department.host",
+          "x-owner": "identity"
+        },
+        "identity_revision": {
+          "$ref": "#/$defs/department.identity_revision",
+          "x-owner": "identity"
+        },
+        "initial_goal_context": {
+          "$ref": "#/$defs/department.initial_goal_context",
+          "x-owner": "identity"
+        },
+        "kind": {
+          "$ref": "#/$defs/department.kind",
+          "x-owner": "root"
+        },
+        "ladder": {
+          "$ref": "#/$defs/department.ladder",
+          "x-owner": "identity"
+        },
+        "ladders": {
+          "$ref": "#/$defs/department.ladders",
+          "x-owner": "identity"
+        },
+        "layers": {
+          "$ref": "#/$defs/department.layers",
+          "x-owner": "root"
+        },
+        "looked_up": {
+          "$ref": "#/$defs/department.looked_up",
+          "x-owner": "identity"
+        },
+        "name": {
+          "$ref": "#/$defs/department.name",
+          "x-owner": "root"
+        },
+        "org": {
+          "$ref": "#/$defs/department.org",
+          "x-owner": "root"
+        },
+        "owner": {
+          "$ref": "#/$defs/department.owner",
+          "x-owner": "identity"
+        },
+        "parent": {
+          "$ref": "#/$defs/department.parent",
+          "x-owner": "root"
+        },
+        "pending_final_tell": {
+          "$ref": "#/$defs/department.pending_final_tell",
+          "x-owner": "root"
+        },
+        "publish_asks_from": {
+          "$ref": "#/$defs/department.publish_asks_from",
+          "x-owner": "identity"
+        },
+        "ref": {
+          "$ref": "#/$defs/department.ref",
+          "x-owner": "root"
+        },
+        "root": {
+          "$ref": "#/$defs/department.root",
+          "x-owner": "root"
+        },
+        "rules": {
+          "$ref": "#/$defs/department.rules",
+          "x-owner": "identity"
+        },
+        "runtime": {
+          "$ref": "#/$defs/department.runtime",
+          "x-owner": "root"
+        },
+        "schema_version": {
+          "$ref": "#/$defs/department.schema_version",
+          "x-owner": "root"
+        },
+        "stopped": {
+          "$ref": "#/$defs/department.stopped",
+          "x-owner": "root"
+        },
+        "template_ref": {
+          "$ref": "#/$defs/department.template_ref",
+          "x-owner": "root"
+        },
+        "templates": {
+          "$ref": "#/$defs/department.templates",
+          "x-owner": "root"
+        },
+        "to_be_confirmed": {
+          "$ref": "#/$defs/department.to_be_confirmed",
+          "x-owner": "identity"
+        },
+        "windows": {
+          "$ref": "#/$defs/department.windows",
+          "x-owner": "identity"
+        },
+        "workflows": {
+          "$ref": "#/$defs/department.workflows",
+          "x-owner": "root"
+        }
+      },
+      "required": [
+        "kind",
+        "ref",
+        "name"
+      ],
+      "type": "object"
+    },
+    "department.artifacts": {
+      "items": {
+        "$ref": "#/$defs/name"
+      },
+      "maxItems": 32,
+      "minItems": 0,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "department.bounds": {
+      "additionalProperties": true,
+      "properties": {
+        "hops": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seconds": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "usd": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "department.ceiling": {
+      "$ref": "#/$defs/priority.ceiling"
+    },
+    "department.control": {
+      "maxLength": 40,
+      "minLength": 0,
+      "type": "string"
+    },
+    "department.created": {
+      "maxLength": 40,
+      "pattern": "^\\d{4}-\\d\\d-\\d\\d",
+      "type": "string"
+    },
+    "department.done": {
+      "maxLength": 4000,
+      "minLength": 0,
+      "type": "string"
+    },
+    "department.done_items": {
+      "items": {
+        "$ref": "#/$defs/identity.done_item"
+      },
+      "maxItems": 12,
+      "minItems": 0,
+      "type": "array"
+    },
+    "department.engines": {
+      "items": {
+        "$ref": "#/$defs/name"
+      },
+      "maxItems": 24,
+      "minItems": 0,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "department.envelopes": {
+      "additionalProperties": {
+        "$ref": "#/$defs/envelope"
+      },
+      "type": "object"
+    },
+    "department.events": {
+      "items": {
+        "additionalProperties": true,
+        "properties": {
+          "kind": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "minItems": 0,
+      "type": "array"
+    },
+    "department.founding": {
+      "additionalProperties": true,
+      "properties": {
+        "checkpoints": {
+          "items": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "operation_id": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "department.goal": {
+      "maxLength": 2000,
+      "minLength": 0,
+      "type": "string"
+    },
+    "department.goals": {
+      "items": {
+        "additionalProperties": true,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "minItems": 0,
+      "type": "array"
+    },
+    "department.host": {
+      "maxLength": 200,
+      "minLength": 0,
+      "type": "string"
+    },
+    "department.identity_revision": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "department.initial_goal_context": {
+      "additionalProperties": true,
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "department.kind": {
+      "maxLength": 40,
+      "minLength": 0,
+      "type": "string"
+    },
+    "department.ladder": {
+      "additionalProperties": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "type": "object"
+    },
+    "department.ladders": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "type": "object"
+    },
+    "department.layers": {
+      "$ref": "#/$defs/root.pins"
+    },
+    "department.looked_up": {
+      "items": {
+        "maxLength": 2000,
+        "minLength": 0,
+        "type": "string"
+      },
+      "minItems": 0,
+      "type": "array"
+    },
+    "department.name": {
+      "maxLength": 200,
+      "minLength": 1,
+      "type": "string"
+    },
+    "department.org": {
+      "additionalProperties": true,
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "department.owner": {
+      "maxLength": 200,
+      "minLength": 0,
+      "type": "string"
+    },
+    "department.parent": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "department.pending_final_tell": {
+      "additionalProperties": true,
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "department.publish_asks_from": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "department.ref": {
+      "maxLength": 200,
+      "minLength": 1,
+      "type": "string"
+    },
+    "department.root": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "department.rules": {
+      "items": {
+        "$ref": "#/$defs/identity.rule"
+      },
+      "maxItems": 64,
+      "minItems": 0,
+      "type": "array"
+    },
+    "department.runtime": {
+      "enum": [
+        1,
+        2
+      ]
+    },
+    "department.schema_version": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "department.stopped": {
+      "type": "boolean"
+    },
+    "department.template_ref": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "additionalProperties": true,
+              "properties": {},
+              "required": [],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "department.templates": {
+      "additionalProperties": {
+        "maxLength": 80,
+        "minLength": 0,
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "department.to_be_confirmed": {
+      "items": {
+        "additionalProperties": true,
+        "properties": {
+          "item": {
+            "$ref": "#/$defs/id.item"
+          },
+          "why": {
+            "maxLength": 300,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "item"
+        ],
+        "type": "object"
+      },
+      "minItems": 0,
+      "type": "array"
+    },
+    "department.windows": {
+      "$ref": "#/$defs/setting.windows"
+    },
+    "department.workflows": {
+      "items": {
+        "$ref": "#/$defs/workflow.registration"
+      },
+      "minItems": 0,
+      "type": "array"
+    },
+    "engine.template": {
+      "additionalProperties": true,
+      "properties": {
+        "description": {
+          "maxLength": 300,
+          "minLength": 0,
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 80,
+          "pattern": "^engine/[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "instruction": {
+          "maxLength": 4000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "kind": {
+          "const": "work"
+        },
+        "made_by": {
+          "additionalProperties": true,
+          "properties": {
+            "at": {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string"
+            },
+            "by": {
+              "const": "Adaptation"
+            },
+            "dept": {
+              "maxLength": 200,
+              "minLength": 0,
+              "type": "string"
+            },
+            "idea": {
+              "anyOf": [
+                {
+                  "maxLength": 300,
+                  "minLength": 0,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "by"
+          ],
+          "type": "object"
+        },
+        "name": {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "needs": {
+          "items": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "reads": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "start": {
+          "additionalProperties": true,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
+        "steps": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {},
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "use_case": {
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        },
+        "version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "writes": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "use_case",
+        "made_by"
+      ],
+      "type": "object"
+    },
+    "envelope": {
+      "additionalProperties": true,
+      "properties": {
+        "calls": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "usd": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "calls",
+        "usd"
+      ],
+      "type": "object"
+    },
+    "field.guidance": {
+      "maxLength": 2000,
+      "minLength": 0,
+      "type": "string",
+      "x-field": {
+        "multiline": true
+      }
+    },
+    "field.items": {
+      "items": {
+        "maxLength": 160,
+        "minLength": 1,
+        "type": "string",
+        "x-field": {
+          "multiline": false
+        }
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "type": "array"
+    },
+    "field.note": {
+      "maxLength": 4000,
+      "minLength": 0,
+      "type": "string",
+      "x-field": {
+        "multiline": true
+      }
+    },
+    "field.task": {
+      "maxLength": 1200,
+      "minLength": 1,
+      "type": "string",
+      "x-field": {
+        "multiline": true
+      }
+    },
+    "field.text": {
+      "maxLength": 400,
+      "minLength": 1,
+      "type": "string",
+      "x-field": {
+        "multiline": false
+      }
+    },
+    "id.finding": {
+      "maxLength": 4,
+      "pattern": "^F[1-9][0-9]{0,2}$",
+      "type": "string"
+    },
+    "id.item": {
+      "maxLength": 3,
+      "pattern": "^D[1-9][0-9]?$",
+      "type": "string"
+    },
+    "identity.ask": {
+      "additionalProperties": true,
+      "properties": {
+        "by": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chosen": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "properties": {
+                "at": {
+                  "maxLength": 40,
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "by": {
+                  "maxLength": 80,
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "id": {
+                  "maxLength": 64,
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "label": {
+                  "maxLength": 120,
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "words": {
+                  "anyOf": [
+                    {
+                      "maxLength": 2000,
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "cycle_id": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decided": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "engine": {
+          "anyOf": [
+            {
+              "maxLength": 60,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/identity.done_item"
+          },
+          "maxItems": 12,
+          "minItems": 0,
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "publish",
+            "setup",
+            "engine",
+            "envelope",
+            "alarm",
+            "finding",
+            "hole",
+            "rule",
+            "goal",
+            "rung",
+            "trial",
+            "conflict",
+            "line",
+            "j2_identity",
+            "done_items",
+            "instructions",
+            "blocked",
+            "model",
+            "step",
+            "request"
+          ]
+        },
+        "options": {
+          "items": {
+            "$ref": "#/$defs/option"
+          },
+          "maxItems": 3,
+          "minItems": 0,
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "stamped",
+            "refused",
+            "answered",
+            "chosen",
+            "replaced"
+          ]
+        },
+        "text": {
+          "maxLength": 4000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "thread": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "status"
+      ],
+      "type": "object"
+    },
+    "identity.done_item": {
+      "additionalProperties": false,
+      "properties": {
+        "confirm": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "how": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/id.item"
+        },
+        "level": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "type": "object"
+    },
+    "identity.rule": {
+      "additionalProperties": true,
+      "properties": {
+        "from": {
+          "anyOf": [
+            {
+              "maxLength": 8000,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "maxLength": 80,
+          "minLength": 0,
+          "type": "string"
+        },
+        "line": {
+          "maxLength": 2000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "scope": {
+          "maxLength": 20,
+          "minLength": 0,
+          "type": "string"
+        },
+        "since": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tag": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "line"
+      ],
+      "type": "object"
+    },
+    "impl": {
+      "maxLength": 24,
+      "pattern": "^(root|identity|adaptation|priority|coordination|audit)/v[1-9][0-9]*$",
+      "type": "string"
+    },
+    "instructions": {
+      "additionalProperties": true,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "values": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "additionalProperties": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "ask": {
+                      "maxLength": 40,
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "at": {
+                      "maxLength": 40,
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    "value": {}
+                  },
+                  "required": [
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                "type": "object"
+              },
+              "type": "object"
+            },
+            "type": "object"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_version",
+        "values"
+      ],
+      "type": "object"
+    },
+    "name": {
+      "maxLength": 40,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 &'.-]{0,39}$",
+      "type": "string"
+    },
+    "option": {
+      "additionalProperties": true,
+      "properties": {
+        "cost": {
+          "maxLength": 400,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "id": {
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*(:[A-Za-z0-9_.-]{1,40})?$",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "words",
+            "leave",
+            "stop",
+            "raise",
+            "root_setup",
+            "pin"
+          ]
+        },
+        "label": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string",
+          "x-say": true
+        },
+        "params": {
+          "additionalProperties": true,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "cost"
+      ],
+      "type": "object"
+    },
+    "option.pin": {
+      "additionalProperties": true,
+      "properties": {
+        "impl": {
+          "$ref": "#/$defs/impl"
+        },
+        "layer": {
+          "enum": [
+            "root",
+            "identity",
+            "adaptation",
+            "priority",
+            "coordination",
+            "audit"
+          ]
+        }
+      },
+      "required": [
+        "layer",
+        "impl"
+      ],
+      "type": "object"
+    },
+    "option.raise": {
+      "additionalProperties": true,
+      "properties": {
+        "calls": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "engine": {
+          "$ref": "#/$defs/name"
+        },
+        "rounds": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "usd": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "what": {
+          "enum": [
+            "envelope",
+            "ceiling"
+          ]
+        }
+      },
+      "required": [
+        "what"
+      ],
+      "type": "object"
+    },
+    "option.words": {
+      "additionalProperties": true,
+      "properties": {
+        "words": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "words"
+      ],
+      "type": "object"
+    },
+    "priority.ceiling": {
+      "additionalProperties": true,
+      "properties": {
+        "at": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "calls": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "raised": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "at": {
+                "maxLength": 40,
+                "minLength": 0,
+                "type": "string"
+              },
+              "by": {
+                "maxLength": 80,
+                "minLength": 0,
+                "type": "string"
+              },
+              "to": {
+                "additionalProperties": true,
+                "properties": {},
+                "required": [],
+                "type": "object"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "rounds": {
+          "maximum": 99,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "start": {
+          "additionalProperties": true,
+          "properties": {
+            "calls": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "rounds": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "usd": {
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "rounds",
+            "calls",
+            "usd"
+          ],
+          "type": "object"
+        },
+        "usd": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "rounds",
+        "calls",
+        "usd",
+        "start"
+      ],
+      "type": "object"
+    },
+    "priority.estimate": {
+      "additionalProperties": true,
+      "properties": {
+        "basis": {
+          "enum": [
+            "median",
+            "prior",
+            "line"
+          ]
+        },
+        "calls": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "per_engine": {
+          "additionalProperties": {
+            "additionalProperties": true,
+            "properties": {
+              "basis": {
+                "enum": [
+                  "median",
+                  "prior"
+                ]
+              },
+              "calls": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "runs": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "usd": {
+                "minimum": 0,
+                "type": "number"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "type": "object"
+        },
+        "runs": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "usd": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "calls",
+        "usd"
+      ],
+      "type": "object"
+    },
+    "priority.price": {
+      "additionalProperties": true,
+      "properties": {
+        "answer": {
+          "enum": [
+            "accept",
+            "counter",
+            "reject"
+          ]
+        },
+        "at": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "cycle_id": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "engines": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "estimate": {
+          "$ref": "#/$defs/priority.estimate"
+        },
+        "id": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "indices": {
+          "additionalProperties": true,
+          "properties": {
+            "checks": {
+              "additionalProperties": {
+                "enum": [
+                  "ok",
+                  "failed",
+                  "none"
+                ]
+              },
+              "type": "object"
+            },
+            "spend_per_run": {
+              "additionalProperties": {
+                "minimum": 0,
+                "type": "number"
+              },
+              "type": "object"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "keep": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "proposal": {
+          "enum": [
+            "line",
+            "round",
+            "engine",
+            "cost"
+          ]
+        },
+        "remaining": {
+          "additionalProperties": true,
+          "properties": {
+            "calls": {
+              "type": "integer"
+            },
+            "usd": {
+              "type": "number"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "room": {
+          "additionalProperties": true,
+          "properties": {
+            "calls": {
+              "type": "integer"
+            },
+            "usd": {
+              "type": "number"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "round": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schema_version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "thread": {
+          "maxLength": 80,
+          "minLength": 0,
+          "type": "string"
+        },
+        "why": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "proposal",
+        "estimate",
+        "room",
+        "answer",
+        "why"
+      ],
+      "type": "object"
+    },
+    "root.pins": {
+      "additionalProperties": false,
+      "properties": {
+        "adaptation": {
+          "$ref": "#/$defs/impl"
+        },
+        "audit": {
+          "$ref": "#/$defs/impl"
+        },
+        "coordination": {
+          "$ref": "#/$defs/impl"
+        },
+        "identity": {
+          "$ref": "#/$defs/impl"
+        },
+        "priority": {
+          "$ref": "#/$defs/impl"
+        },
+        "root": {
+          "$ref": "#/$defs/impl"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "setting.make": {
+      "type": "boolean"
+    },
+    "setting.order": {
+      "items": {
+        "enum": [
+          "posts",
+          "line",
+          "functions"
+        ]
+      },
+      "maxItems": 3,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "setting.spot_every_s": {
+      "maximum": 604800,
+      "minimum": 3600,
+      "type": "integer"
+    },
+    "setting.windows": {
+      "additionalProperties": {
+        "maximum": 1440,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "type": "object"
+    },
+    "view.adaptation": {
+      "additionalProperties": true,
+      "properties": {
+        "proposal": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "properties": {
+                "at": {
+                  "anyOf": [
+                    {
+                      "maxLength": 40,
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "source": {
+                  "anyOf": [
+                    {
+                      "maxLength": 40,
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "workflow": {
+                  "items": {
+                    "maxLength": 80,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  "minItems": 0,
+                  "type": "array"
+                }
+              },
+              "required": [],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "root_checks": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "at": {
+                "anyOf": [
+                  {
+                    "maxLength": 40,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "passed": {
+                "type": "boolean"
+              },
+              "summary": {
+                "anyOf": [
+                  {
+                    "maxLength": 4000,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "rounds": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {},
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        }
+      },
+      "required": [
+        "proposal",
+        "root_checks",
+        "rounds"
+      ],
+      "type": "object"
+    },
+    "view.audit": {
+      "additionalProperties": true,
+      "properties": {
+        "findings": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "at": {
+                "anyOf": [
+                  {
+                    "maxLength": 40,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "text": {
+                "anyOf": [
+                  {
+                    "maxLength": 4000,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "readings": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "at": {
+                "anyOf": [
+                  {
+                    "maxLength": 40,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "summary": {
+                "anyOf": [
+                  {
+                    "maxLength": 4000,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "spot_checks": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {},
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        }
+      },
+      "required": [
+        "readings",
+        "findings",
+        "spot_checks"
+      ],
+      "type": "object"
+    },
+    "view.coordination": {
+      "additionalProperties": false,
+      "properties": {
+        "alarms": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "at": {
+                "anyOf": [
+                  {
+                    "maxLength": 40,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "engine": {
+                "anyOf": [
+                  {
+                    "maxLength": 80,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "text": {
+                "anyOf": [
+                  {
+                    "maxLength": 600,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "chain": {
+          "additionalProperties": true,
+          "properties": {
+            "limit": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "of": {
+              "anyOf": [
+                {
+                  "maxLength": 80,
+                  "minLength": 0,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "share": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            "used": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "handoffs": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "art": {
+                "maxLength": 80,
+                "minLength": 0,
+                "type": "string"
+              },
+              "by": {
+                "anyOf": [
+                  {
+                    "maxLength": 80,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "readers": {
+                "items": {
+                  "maxLength": 80,
+                  "minLength": 0,
+                  "type": "string"
+                },
+                "minItems": 0,
+                "type": "array"
+              },
+              "says": {
+                "anyOf": [
+                  {
+                    "maxLength": 200,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "v": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "holds": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "engine": {
+                "maxLength": 80,
+                "minLength": 0,
+                "type": "string"
+              },
+              "why": {
+                "maxLength": 600,
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "left_out": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "engine": {
+                "anyOf": [
+                  {
+                    "maxLength": 80,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "since": {
+                "anyOf": [
+                  {
+                    "maxLength": 40,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "line": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "registered": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ties": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "at": {
+                "anyOf": [
+                  {
+                    "maxLength": 40,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pick": {
+                "maxLength": 80,
+                "minLength": 0,
+                "type": "string"
+              },
+              "said": {
+                "maxLength": 200,
+                "minLength": 0,
+                "type": "string"
+              },
+              "today": {
+                "type": "boolean"
+              },
+              "why": {
+                "anyOf": [
+                  {
+                    "maxLength": 600,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "timetable": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "anyOf": [
+                  {
+                    "maxLength": 40,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "engine": {
+                "maxLength": 80,
+                "minLength": 0,
+                "type": "string"
+              },
+              "last": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "at": {
+                        "anyOf": [
+                          {
+                            "maxLength": 40,
+                            "minLength": 0,
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "status": {
+                        "anyOf": [
+                          {
+                            "maxLength": 20,
+                            "minLength": 0,
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "wrote": {
+                        "anyOf": [
+                          {
+                            "maxLength": 120,
+                            "minLength": 0,
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "on": {
+                "anyOf": [
+                  {
+                    "maxLength": 80,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "since": {
+                "anyOf": [
+                  {
+                    "maxLength": 40,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "starts": {
+                "maxLength": 200,
+                "minLength": 0,
+                "type": "string"
+              },
+              "state": {
+                "enum": [
+                  "running",
+                  "turn",
+                  "waits",
+                  "ran",
+                  "stopped"
+                ]
+              },
+              "why": {
+                "anyOf": [
+                  {
+                    "maxLength": 600,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "window_min": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "word": {
+                "maxLength": 40,
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "required": [
+              "engine",
+              "on",
+              "starts",
+              "window_min",
+              "since",
+              "state",
+              "word",
+              "why",
+              "at",
+              "last"
+            ],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        }
+      },
+      "required": [
+        "line",
+        "registered",
+        "timetable",
+        "left_out",
+        "holds",
+        "handoffs",
+        "chain",
+        "alarms",
+        "ties"
+      ],
+      "type": "object"
+    },
+    "view.engine_card": {
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "maxLength": 80,
+          "minLength": 0,
+          "type": "string"
+        },
+        "five": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "anyOf": [
+                  {
+                    "maxLength": 40,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "fn": {
+                "enum": [
+                  "Identity",
+                  "Adaptation",
+                  "Priority",
+                  "Coordination",
+                  "Audit"
+                ]
+              },
+              "says": {
+                "maxLength": 300,
+                "minLength": 0,
+                "type": "string"
+              },
+              "share": {
+                "anyOf": [
+                  {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "state": {
+                "enum": [
+                  "ok",
+                  "warn",
+                  "block",
+                  "wait",
+                  "breath",
+                  "off"
+                ]
+              }
+            },
+            "required": [
+              "fn",
+              "state",
+              "says",
+              "at",
+              "share"
+            ],
+            "type": "object"
+          },
+          "maxItems": 5,
+          "minItems": 5,
+          "type": "array"
+        },
+        "head": {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "anyOf": [
+                {
+                  "maxLength": 40,
+                  "minLength": 0,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "round": {},
+            "state": {
+              "enum": [
+                "running",
+                "turn",
+                "waits",
+                "ran",
+                "stopped",
+                "left_out",
+                "quiet"
+              ]
+            },
+            "why": {
+              "anyOf": [
+                {
+                  "maxLength": 600,
+                  "minLength": 0,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "word": {
+              "anyOf": [
+                {
+                  "maxLength": 80,
+                  "minLength": 0,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "state",
+            "word",
+            "why",
+            "at",
+            "round"
+          ],
+          "type": "object"
+        },
+        "motor": {
+          "additionalProperties": false,
+          "properties": {
+            "once": {
+              "type": "boolean"
+            },
+            "says": {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            "slot": {
+              "anyOf": [
+                {
+                  "maxLength": 80,
+                  "minLength": 0,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "starts": {
+              "maxLength": 200,
+              "minLength": 0,
+              "type": "string"
+            },
+            "today": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            "window_min": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "slot",
+            "starts",
+            "once",
+            "says",
+            "window_min",
+            "today"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "engine",
+        "head",
+        "motor",
+        "five"
+      ],
+      "type": "object"
+    },
+    "view.identity": {
+      "additionalProperties": true,
+      "properties": {
+        "conflicts": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "asked_you": {
+                "type": "boolean"
+              },
+              "at": {
+                "anyOf": [
+                  {
+                    "maxLength": 40,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "plan": {
+                "anyOf": [
+                  {
+                    "maxLength": 2000,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "ruled": {
+                "maxLength": 40,
+                "minLength": 0,
+                "type": "string"
+              },
+              "ruling": {
+                "maxLength": 20,
+                "minLength": 0,
+                "type": "string"
+              },
+              "split": {
+                "anyOf": [
+                  {
+                    "maxLength": 4000,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "who": {
+                "maxLength": 200,
+                "minLength": 0,
+                "type": "string"
+              },
+              "why": {
+                "anyOf": [
+                  {
+                    "maxLength": 4000,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "maxItems": 6,
+          "minItems": 0,
+          "type": "array"
+        },
+        "done": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "done_items": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "confirm": {
+                "anyOf": [
+                  {
+                    "maxLength": 300,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "how": {
+                "anyOf": [
+                  {
+                    "maxLength": 200,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "maxLength": 8,
+                "minLength": 0,
+                "type": "string"
+              },
+              "level": {
+                "anyOf": [
+                  {
+                    "maxLength": 200,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "text": {
+                "anyOf": [
+                  {
+                    "maxLength": 300,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "goal": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "open_question": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "properties": {
+                "asked": {},
+                "id": {},
+                "missing": {},
+                "points": {},
+                "standard": {},
+                "text": {},
+                "why": {}
+              },
+              "required": [],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rules": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "by": {
+                "enum": [
+                  "yours",
+                  "the template"
+                ]
+              },
+              "line": {
+                "maxLength": 2000,
+                "minLength": 0,
+                "type": "string"
+              },
+              "since": {
+                "anyOf": [
+                  {
+                    "maxLength": 40,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tag": {
+                "anyOf": [
+                  {
+                    "maxLength": 20,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "standard": {
+          "additionalProperties": true,
+          "properties": {
+            "met": {
+              "type": "boolean"
+            },
+            "missing": {
+              "items": {
+                "enum": [
+                  "goal",
+                  "items",
+                  "rules",
+                  "owner",
+                  "budget",
+                  "invented"
+                ]
+              },
+              "minItems": 0,
+              "type": "array"
+            },
+            "rows": {
+              "items": {
+                "additionalProperties": true,
+                "properties": {
+                  "id": {
+                    "enum": [
+                      "goal",
+                      "items",
+                      "rules",
+                      "owner_budget",
+                      "invented"
+                    ]
+                  },
+                  "note": {
+                    "maxLength": 4000,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  "says": {
+                    "maxLength": 200,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  "state": {
+                    "enum": [
+                      "met",
+                      "not_met",
+                      "to_confirm",
+                      "reading"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "says",
+                  "state",
+                  "note"
+                ],
+                "type": "object"
+              },
+              "minItems": 0,
+              "type": "array"
+            }
+          },
+          "required": [
+            "met",
+            "missing",
+            "rows"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "standard",
+        "goal",
+        "done",
+        "done_items",
+        "rules",
+        "open_question",
+        "conflicts"
+      ],
+      "type": "object"
+    },
+    "view.priority": {
+      "additionalProperties": true,
+      "properties": {
+        "bargains": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "at": {
+                "anyOf": [
+                  {
+                    "maxLength": 40,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "said": {
+                "enum": [
+                  "said yes",
+                  "asked for less",
+                  "said no"
+                ]
+              },
+              "summary": {
+                "anyOf": [
+                  {
+                    "maxLength": 4000,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "envelopes": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "calls": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "calls_limit": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "engine": {
+                "maxLength": 80,
+                "minLength": 0,
+                "type": "string"
+              },
+              "share": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "usd": {
+                "minimum": 0,
+                "type": "number"
+              },
+              "usd_limit": {
+                "minimum": 0,
+                "type": "number"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        }
+      },
+      "required": [
+        "bargains",
+        "envelopes"
+      ],
+      "type": "object"
+    },
+    "workflow": {
+      "additionalProperties": true,
+      "properties": {
+        "at": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "by": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/workflow.check"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "covers": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/name"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "propertyNames": {
+            "pattern": "^D[1-9][0-9]?$"
+          },
+          "type": "object"
+        },
+        "covers_by": {
+          "enum": [
+            "adaptation",
+            "default"
+          ]
+        },
+        "deliverable": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "engines": {
+          "items": {
+            "$ref": "#/$defs/workflow.engine"
+          },
+          "maxItems": 24,
+          "minItems": 0,
+          "type": "array"
+        },
+        "kind": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "left_out": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "schema_version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "source": {
+          "enum": [
+            "library",
+            "shaped",
+            "fitted",
+            "made"
+          ]
+        },
+        "version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "why": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "engines",
+        "source"
+      ],
+      "type": "object"
+    },
+    "workflow.check": {
+      "additionalProperties": true,
+      "properties": {
+        "check": {
+          "enum": [
+            "names_an_engine",
+            "engines_known",
+            "each_engine_named",
+            "names_unique",
+            "names_new",
+            "first_reads_input",
+            "reads_known",
+            "one_output",
+            "items_covered",
+            "required_kept",
+            "size_in_range",
+            "check_exists",
+            "fits_room",
+            "line_is_registered",
+            "workflow_meets_standards"
+          ]
+        },
+        "passed": {
+          "type": "boolean"
+        },
+        "why": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "check",
+        "passed",
+        "why"
+      ],
+      "type": "object"
+    },
+    "workflow.engine": {
+      "additionalProperties": true,
+      "properties": {
+        "check": {
+          "maxLength": 60,
+          "minLength": 0,
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "covers": {
+          "items": {
+            "$ref": "#/$defs/id.item"
+          },
+          "maxItems": 12,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "does": {
+          "maxLength": 300,
+          "minLength": 0,
+          "type": "string"
+        },
+        "doubt": {
+          "maxLength": 300,
+          "minLength": 0,
+          "type": "string"
+        },
+        "envelope": {
+          "$ref": "#/$defs/envelope"
+        },
+        "fit": {
+          "maxLength": 300,
+          "minLength": 0,
+          "type": "string"
+        },
+        "internet": {
+          "type": "boolean"
+        },
+        "level": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "made_by": {
+          "enum": [
+            "library",
+            "fitted",
+            "shaped",
+            "made"
+          ]
+        },
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "reads": {
+          "$ref": "#/$defs/name"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "start": {
+          "additionalProperties": true,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
+        "writes": {
+          "$ref": "#/$defs/name"
+        }
+      },
+      "required": [
+        "name",
+        "reads",
+        "writes"
+      ],
+      "type": "object"
+    },
+    "workflow.registration": {
+      "additionalProperties": true,
+      "properties": {
+        "by": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/workflow.check"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "covers": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/name"
+            },
+            "minItems": 0,
+            "type": "array"
+          },
+          "propertyNames": {
+            "pattern": "^D[1-9][0-9]?$"
+          },
+          "type": "object"
+        },
+        "deliverable": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "engines": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "maxItems": 24,
+          "minItems": 0,
+          "type": "array"
+        },
+        "fit": {
+          "additionalProperties": {
+            "maxLength": 300,
+            "minLength": 0,
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "left_out": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "registered": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "library",
+            "shaped",
+            "fitted",
+            "made"
+          ]
+        },
+        "version": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "engines",
+        "source",
+        "registered"
+      ],
+      "type": "object"
+    }
+  },
+  "department_keys": {
+    "artifacts": [
+      "root",
+      "department.artifacts"
+    ],
+    "bounds": [
+      "identity",
+      "department.bounds"
+    ],
+    "ceiling": [
+      "priority",
+      "department.ceiling"
+    ],
+    "control": [
+      "root",
+      "department.control"
+    ],
+    "created": [
+      "root",
+      "department.created"
+    ],
+    "done": [
+      "identity",
+      "department.done"
+    ],
+    "done_items": [
+      "identity",
+      "department.done_items"
+    ],
+    "engines": [
+      "root",
+      "department.engines"
+    ],
+    "envelopes": [
+      "priority",
+      "department.envelopes"
+    ],
+    "events": [
+      "root",
+      "department.events"
+    ],
+    "founding": [
+      "root",
+      "department.founding"
+    ],
+    "goal": [
+      "identity",
+      "department.goal"
+    ],
+    "goals": [
+      "identity",
+      "department.goals"
+    ],
+    "host": [
+      "identity",
+      "department.host"
+    ],
+    "identity_revision": [
+      "identity",
+      "department.identity_revision"
+    ],
+    "initial_goal_context": [
+      "identity",
+      "department.initial_goal_context"
+    ],
+    "kind": [
+      "root",
+      "department.kind"
+    ],
+    "ladder": [
+      "identity",
+      "department.ladder"
+    ],
+    "ladders": [
+      "identity",
+      "department.ladders"
+    ],
+    "layers": [
+      "root",
+      "department.layers"
+    ],
+    "looked_up": [
+      "identity",
+      "department.looked_up"
+    ],
+    "name": [
+      "root",
+      "department.name"
+    ],
+    "org": [
+      "root",
+      "department.org"
+    ],
+    "owner": [
+      "identity",
+      "department.owner"
+    ],
+    "parent": [
+      "root",
+      "department.parent"
+    ],
+    "pending_final_tell": [
+      "root",
+      "department.pending_final_tell"
+    ],
+    "publish_asks_from": [
+      "identity",
+      "department.publish_asks_from"
+    ],
+    "ref": [
+      "root",
+      "department.ref"
+    ],
+    "root": [
+      "root",
+      "department.root"
+    ],
+    "rules": [
+      "identity",
+      "department.rules"
+    ],
+    "runtime": [
+      "root",
+      "department.runtime"
+    ],
+    "schema_version": [
+      "root",
+      "department.schema_version"
+    ],
+    "stopped": [
+      "root",
+      "department.stopped"
+    ],
+    "template_ref": [
+      "root",
+      "department.template_ref"
+    ],
+    "templates": [
+      "root",
+      "department.templates"
+    ],
+    "to_be_confirmed": [
+      "identity",
+      "department.to_be_confirmed"
+    ],
+    "windows": [
+      "identity",
+      "department.windows"
+    ],
+    "workflows": [
+      "root",
+      "department.workflows"
+    ]
+  },
+  "edges": {
+    "Adaptation": {
+      "inform": [
+        "Identity"
+      ],
+      "propose": [
+        "Priority",
+        "Identity"
+      ]
+    },
+    "Audit": {
+      "inform": [
+        "Identity"
+      ]
+    },
+    "Coordination": {
+      "inform": [
+        "Identity"
+      ],
+      "request": [
+        "Identity",
+        "Priority"
+      ]
+    },
+    "Identity": {
+      "agree": [
+        "Owner",
+        "Adaptation",
+        "Coordination"
+      ],
+      "failure": [
+        "Owner"
+      ],
+      "inform": [
+        "Owner",
+        "Adaptation",
+        "Priority",
+        "Audit",
+        "Coordination"
+      ],
+      "refuse": [
+        "Owner",
+        "Adaptation",
+        "Coordination"
+      ],
+      "request": [
+        "Owner",
+        "Adaptation"
+      ]
+    },
+    "Owner": {
+      "accept-proposal": [
+        "Identity"
+      ],
+      "cancel": [
+        "Identity"
+      ],
+      "reject-proposal": [
+        "Identity"
+      ],
+      "request": [
+        "Identity"
+      ]
+    },
+    "Priority": {
+      "accept-proposal": [
+        "Adaptation"
+      ],
+      "propose": [
+        "Adaptation"
+      ],
+      "reject-proposal": [
+        "Adaptation"
+      ]
+    },
+    "Root": {
+      "accept-proposal": [
+        "Identity"
+      ],
+      "cancel": [
+        "Identity"
+      ],
+      "reject-proposal": [
+        "Identity"
+      ],
+      "request": [
+        "Identity"
+      ]
+    }
+  },
+  "engine_layer": {
+    "Adaptation": "adaptation",
+    "Audit": "audit",
+    "Coordination": "coordination",
+    "Identity": "identity",
+    "Priority": "priority",
+    "Setup": "root"
+  },
+  "groups": {
+    "adaptation": {
+      "decide": "How Adaptation chooses its next move from what the department's own rows say.",
+      "goal": "What Adaptation is for, and the rules it keeps.",
+      "make": "How Adaptation shapes the workflows a goal needs when none is in place.",
+      "sense": "How Adaptation reads an idea the owner floats: what it asks, and the shapes it could take."
+    },
+    "audit": {
+      "goal": "What Audit is for, and the rules it keeps.",
+      "judge": "How Audit reads what went live against what was asked."
+    },
+    "coordination": {
+      "goal": "What Coordination is for, and the rules it keeps.",
+      "tie": "How Coordination says who goes first when several functions are ready at once."
+    },
+    "identity": {
+      "completeness": "When the department has enough to work; what to ask if not.",
+      "goal": "What Identity is for, and the rules it keeps.",
+      "take": "How to judge a request: go, ask or refuse."
+    },
+    "priority": {
+      "bargain": "How Priority answers a proposal: said yes, asked for less, or said no.",
+      "goal": "What Priority is for, and the rules it keeps."
+    },
+    "root": {
+      "setup": "How Root sets up a department the owner asks for: what it asks, and the department it shapes."
+    }
+  },
+  "hears": {
+    "adaptation": [
+      {
+        "act": "accept-proposal",
+        "from": [
+          "Priority"
+        ],
+        "handler": "Start a trial",
+        "payload": "act.any",
+        "via": "board",
+        "word": "trial"
+      },
+      {
+        "act": "reject-proposal",
+        "from": [
+          "Priority"
+        ],
+        "handler": "Drop a trial",
+        "payload": "act.any",
+        "via": "board",
+        "word": "trial"
+      },
+      {
+        "act": "inform",
+        "from": [
+          "Identity"
+        ],
+        "handler": "Hear the ruling",
+        "payload": "act.any",
+        "via": "board",
+        "word": "rung"
+      },
+      {
+        "act": "request",
+        "from": [
+          "Identity"
+        ],
+        "handler": "Hear an idea",
+        "payload": "act.any",
+        "via": "board",
+        "word": "idea"
+      },
+      {
+        "act": "accept-proposal",
+        "from": [
+          "Priority"
+        ],
+        "handler": "Priority priced an engine: room",
+        "payload": "act.any",
+        "via": "board",
+        "word": "engine"
+      },
+      {
+        "act": "reject-proposal",
+        "from": [
+          "Priority"
+        ],
+        "handler": "Priority priced an engine: no room",
+        "payload": "act.any",
+        "via": "board",
+        "word": "engine"
+      },
+      {
+        "act": "request",
+        "from": [
+          "Identity"
+        ],
+        "handler": "Shape the line",
+        "payload": "act.line_request",
+        "via": "board",
+        "word": "line"
+      },
+      {
+        "act": "accept-proposal",
+        "from": [
+          "Priority"
+        ],
+        "handler": "Priority said yes to the line",
+        "payload": "act.any",
+        "via": "board",
+        "word": "line"
+      },
+      {
+        "act": "reject-proposal",
+        "from": [
+          "Priority"
+        ],
+        "handler": "Priority said no to the line",
+        "payload": "act.any",
+        "via": "board",
+        "word": "line"
+      },
+      {
+        "act": "propose",
+        "from": [
+          "Priority"
+        ],
+        "handler": "Priority asked for less on the line",
+        "payload": "act.line",
+        "via": "board",
+        "word": "line"
+      }
+    ],
+    "audit": [],
+    "coordination": [
+      {
+        "act": "agree",
+        "from": [
+          "Identity"
+        ],
+        "handler": "Hear a verdict",
+        "payload": "act.verdict",
+        "via": "board",
+        "word": "verdict"
+      },
+      {
+        "act": "refuse",
+        "from": [
+          "Identity"
+        ],
+        "handler": "Hear a no",
+        "payload": "act.verdict",
+        "via": "board",
+        "word": "verdict"
+      },
+      {
+        "act": "inform",
+        "from": [
+          "Root",
+          "Identity"
+        ],
+        "handler": "An engine is born",
+        "payload": "act.born",
+        "via": "call",
+        "word": "born"
+      }
+    ],
+    "identity": [
+      {
+        "act": "request",
+        "from": [
+          "Owner",
+          "Root"
+        ],
+        "handler": "Hear the owner at the front door",
+        "payload": "act.words",
+        "via": "board",
+        "word": "front"
+      },
+      {
+        "act": "request",
+        "from": [
+          "Owner",
+          "Root"
+        ],
+        "handler": "Take a request",
+        "payload": "act.words",
+        "via": "board",
+        "word": "request"
+      },
+      {
+        "act": "request",
+        "from": [
+          "Coordination"
+        ],
+        "handler": "Give a verdict",
+        "payload": "act.verdict",
+        "via": "board",
+        "word": "verdict"
+      },
+      {
+        "act": "propose",
+        "from": [
+          "Adaptation"
+        ],
+        "handler": "Rule on a rung",
+        "payload": "act.any",
+        "via": "board",
+        "word": "rung"
+      },
+      {
+        "act": "accept-proposal",
+        "from": [
+          "Owner",
+          "Root"
+        ],
+        "handler": "Take a stamp",
+        "payload": "act.stamp",
+        "via": "board",
+        "word": "(any)"
+      },
+      {
+        "act": "reject-proposal",
+        "from": [
+          "Owner",
+          "Root"
+        ],
+        "handler": "Take a no",
+        "payload": "act.stamp",
+        "via": "board",
+        "word": "(any)"
+      },
+      {
+        "act": "inform",
+        "from": [
+          "Audit"
+        ],
+        "handler": "Hear a finding",
+        "payload": "act.finding",
+        "via": "board",
+        "word": "finding"
+      },
+      {
+        "act": "inform",
+        "from": [
+          "Coordination"
+        ],
+        "handler": "Hear an alarm",
+        "payload": "act.any",
+        "via": "board",
+        "word": "alarm"
+      },
+      {
+        "act": "inform",
+        "from": [
+          "Adaptation"
+        ],
+        "handler": "Hear where an idea went",
+        "payload": "act.any",
+        "via": "board",
+        "word": "idea"
+      },
+      {
+        "act": "inform",
+        "from": [
+          "Coordination"
+        ],
+        "handler": "Hear a lost request",
+        "payload": "act.any",
+        "via": "board",
+        "word": "lost"
+      },
+      {
+        "act": "propose",
+        "from": [
+          "Adaptation"
+        ],
+        "handler": "an engine proposed",
+        "payload": "act.any",
+        "via": "board",
+        "word": "engine"
+      },
+      {
+        "act": "propose",
+        "from": [
+          "Adaptation"
+        ],
+        "handler": "a line proposed",
+        "payload": "act.line",
+        "via": "board",
+        "word": "line"
+      },
+      {
+        "act": "inform",
+        "from": [
+          "Adaptation",
+          "Coordination"
+        ],
+        "handler": "Close a conflict",
+        "payload": "act.conflict",
+        "via": "board",
+        "word": "conflict"
+      }
+    ],
+    "priority": [
+      {
+        "act": "propose",
+        "from": [
+          "Adaptation"
+        ],
+        "handler": "Answer a proposal",
+        "payload": "act.any",
+        "via": "board",
+        "word": "(any)"
+      },
+      {
+        "act": "inform",
+        "from": [
+          "Root",
+          "Identity"
+        ],
+        "handler": "An engine is born",
+        "payload": "act.born",
+        "via": "call",
+        "word": "born"
+      }
+    ],
+    "root": []
+  },
+  "layer_names": [
+    "root",
+    "identity",
+    "adaptation",
+    "priority",
+    "coordination",
+    "audit"
+  ],
+  "layers": {
+    "adaptation": {
+      "checks": [
+        "counted_the_rows",
+        "idea_has_shapes",
+        "line_is_engines",
+        "moves_name_their_rows"
+      ],
+      "hands_to": "Priority: every proposal and every round. Identity: conflicts, and a round Priority said yes to, to file. Root: the line Priority said yes to, for its check.",
+      "holds": "Its proposals on the board, the ideas it parked, the ladder of every step, and its rounds.",
+      "keeps": "Senses and proposes; never applies. Every proposal passes Priority first. May leave out an engine its template does not mark required. Engines come from Adaptation, never from Root.",
+      "keys": [],
+      "line": "Decides how the department gets there. It proposes the workflows the goal needs, from the Library, fitted, or made fresh, and after each reading it proposes the next round, until the goal holds.",
+      "options": [],
+      "prompts": [
+        "goal",
+        "sense",
+        "decide",
+        "make"
+      ],
+      "recipe": "v1.json",
+      "records": [
+        "proposal",
+        "idea",
+        "ladder",
+        "round"
+      ],
+      "settings": [
+        "make"
+      ],
+      "title": "Adaptation",
+      "v1": "Two to five workflows from the Library or shaped for the goal; no loop and no Make module yet.",
+      "verdicts": [
+        "source",
+        "move"
+      ],
+      "view": "view.adaptation",
+      "vsm": "VSM S4: outside and future"
+    },
+    "audit": {
+      "checks": [
+        "findings_name_where_and_what",
+        "has_a_verdict",
+        "picked_a_sample"
+      ],
+      "hands_to": "Identity only: readings and findings.",
+      "holds": "Its readings and its findings.",
+      "keeps": "The checker is never the writer; it never touches a workflow or a version. A check is a check, never a score. It reads what the department did, never only its goal.",
+      "keys": [],
+      "line": "The second pair of eyes. It reads what the department actually filed, item by item against done-when, with code checks first, and it also drops in unannounced. Its findings go to Identity.",
+      "options": [],
+      "prompts": [
+        "goal",
+        "judge"
+      ],
+      "recipe": "v1.json",
+      "records": [
+        "finding",
+        "reading",
+        "spot_check"
+      ],
+      "settings": [
+        "spot_every_s"
+      ],
+      "title": "Audit",
+      "v1": "As built: read the live site against the words.",
+      "verdicts": [
+        "ok",
+        "severity",
+        "item"
+      ],
+      "view": "view.audit",
+      "vsm": "VSM S3*: sporadic direct inspection"
+    },
+    "coordination": {
+      "checks": [
+        "chain_under_its_limit",
+        "names_who_goes_first",
+        "one_run_at_a_time"
+      ],
+      "hands_to": "Identity: alarms, lost requests and verdict asks. Priority: verdict asks.",
+      "holds": "Its table: the order, the line and who may post to whom; the run rows and each thread's bounds.",
+      "keeps": "No model call inside a tick; a missed slot runs once, and each slot runs once. The engine starts itself in its slot. Never changes limits, scope or quality calls.",
+      "keys": [],
+      "line": "Keeps the timetable: a slot for each engine, who goes first, one run at a time, hand-offs, a chain that stops at its limit, and an alarm past a window. It judges nothing about content.",
+      "options": [],
+      "prompts": [
+        "goal",
+        "tie"
+      ],
+      "recipe": "v1.json",
+      "records": [
+        "table",
+        "slot",
+        "question"
+      ],
+      "settings": [
+        "order"
+      ],
+      "title": "Coordination",
+      "v1": "As built.",
+      "verdicts": [
+        "gate",
+        "slot"
+      ],
+      "view": "view.coordination",
+      "vsm": "VSM S2: timetables and standards"
+    },
+    "identity": {
+      "checks": [
+        "answer_names_its_source",
+        "enough_is_shaped",
+        "feedback_says_what_changes",
+        "gate_verdict_is_known",
+        "journey_is_known",
+        "rule_is_tagged",
+        "ruling_is_known",
+        "verdict_is_known"
+      ],
+      "hands_to": "Adaptation: a request for a line, and the next thing to correct. Coordination: verdicts on gates. You: it is the only function that speaks to you.",
+      "holds": "Goal, done-when, rules (go, ask, refuse, always), budget, owner and parent, and each engine's window.",
+      "keeps": "Never makes anything; the maker is an engine. Asks only when a rule says ask. Approvals only tighten. Never invents a goal or a rule, and asks one question at a time.",
+      "keys": [
+        "goal",
+        "done",
+        "done_items",
+        "to_be_confirmed",
+        "rules",
+        "owner",
+        "windows",
+        "identity_revision",
+        "initial_goal_context",
+        "publish_asks_from",
+        "goals",
+        "looked_up",
+        "host",
+        "ladders",
+        "ladder",
+        "bounds"
+      ],
+      "line": "The department's voice and conscience. It hears you, checks that the identity is good enough, gates every effect by rule, closes conflicts, and says when the goal is reached.",
+      "options": [
+        "words",
+        "leave",
+        "stop"
+      ],
+      "prompts": [
+        "goal",
+        "completeness",
+        "take"
+      ],
+      "recipe": "v1.json",
+      "records": [
+        "done_item",
+        "rule",
+        "ask"
+      ],
+      "settings": [
+        "windows"
+      ],
+      "title": "Identity",
+      "v1": "Your words become the Brief, one question when the words are thin, the ask before the first publish, and a tell.",
+      "verdicts": [
+        "take",
+        "gate",
+        "ruling",
+        "journey",
+        "rule",
+        "scope",
+        "weigh",
+        "confidence",
+        "enough",
+        "missing"
+      ],
+      "view": "view.identity",
+      "vsm": "VSM S5: identity and policy"
+    },
+    "priority": {
+      "checks": [
+        "answer_has_its_price"
+      ],
+      "hands_to": "Adaptation: said yes, asked for less, or said no. Identity: through Adaptation's conflict, when a limit is hit.",
+      "holds": "One limit per engine (calls and money a day) and the bargain threads.",
+      "keeps": "Prices and holds the budget; who goes first is Coordination's call. Never starts a run and never says no over method. Never changes the goal or speaks to you.",
+      "keys": [
+        "envelopes",
+        "ceiling"
+      ],
+      "line": "Prices every proposal against the room actually left and holds the budget. It says yes, asks for less, or says no. Who goes first is never its call.",
+      "options": [
+        "raise"
+      ],
+      "prompts": [
+        "goal",
+        "bargain"
+      ],
+      "recipe": "v1.json",
+      "records": [
+        "envelope",
+        "price",
+        "ceiling"
+      ],
+      "settings": [
+        "envelope"
+      ],
+      "title": "Priority",
+      "v1": "The limit on every start, as built. Nothing else.",
+      "verdicts": [
+        "answer",
+        "envelope"
+      ],
+      "view": "view.priority",
+      "vsm": "VSM S3: inside and now"
+    },
+    "root": {
+      "checks": [
+        "setup_converse_is_valid",
+        "department_is_shaped",
+        "department_is_made",
+        "filed_has_files"
+      ],
+      "hands_to": "Identity: the owner's words for a department, and a plan it could not register. Coordination and Priority: a registered plan.",
+      "holds": "The department's record: its kind, its line and artifacts, its registered workflows and the version each function runs.",
+      "keeps": "Makes the department and its five functions, never an engine; engines come from Adaptation. Every plan meets the standards before it runs.",
+      "keys": [
+        "schema_version",
+        "kind",
+        "ref",
+        "name",
+        "parent",
+        "created",
+        "runtime",
+        "control",
+        "stopped",
+        "engines",
+        "artifacts",
+        "workflows",
+        "layers",
+        "org",
+        "root",
+        "template_ref",
+        "templates",
+        "founding",
+        "events",
+        "pending_final_tell"
+      ],
+      "line": "Makes each department and its five functions from the Library, writes the record its workflow is held to, and checks every plan against the workflow standards before it runs. It never creates or starts an engine.",
+      "options": [
+        "root_setup",
+        "pin"
+      ],
+      "prompts": [
+        "setup"
+      ],
+      "recipe": "Setup",
+      "records": [
+        "department",
+        "registration",
+        "pins",
+        "engine"
+      ],
+      "settings": [],
+      "title": "Root",
+      "v1": "Setup sets up a department from the Library's templates; the owner stamps it.",
+      "verdicts": [
+        "converse",
+        "route",
+        "check"
+      ],
+      "view": null,
+      "vsm": "Root: the organisation's own department"
+    }
+  },
+  "legacy_keys": [],
+  "option_kinds": {
+    "leave": {
+      "from_wave": 0,
+      "layer": "identity",
+      "params": null,
+      "says": "leave an item out of done-when"
+    },
+    "pin": {
+      "from_wave": 3,
+      "layer": "root",
+      "params": "option.pin",
+      "says": "run another version of one function"
+    },
+    "raise": {
+      "from_wave": 2,
+      "layer": "priority",
+      "params": "option.raise",
+      "says": "add budget, up to twice where it started"
+    },
+    "root_setup": {
+      "from_wave": 1,
+      "layer": "root",
+      "params": "option.words",
+      "says": "set the department up again, done its own way"
+    },
+    "stop": {
+      "from_wave": 0,
+      "layer": "identity",
+      "params": null,
+      "says": "stop here"
+    },
+    "words": {
+      "from_wave": 0,
+      "layer": "identity",
+      "params": null,
+      "says": "change the plan in my words"
+    }
+  },
+  "outputs": {
+    "coord.pick": [
+      "answer"
+    ],
+    "coord.tie": [
+      "answer",
+      "why"
+    ]
+  },
+  "per_department": false,
+  "prompts": {
+    "adaptation": {
+      "decide": {
+        "note": {
+          "fields": {
+            "text": "field.note"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        }
+      },
+      "goal": {
+        "does": {
+          "fields": {
+            "text": "field.text"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "skills": {
+          "fields": {
+            "items": "field.items"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        }
+      },
+      "make": {
+        "line": {
+          "fields": {},
+          "inputs": [
+            "dept",
+            "words",
+            "taken",
+            "out",
+            "rules",
+            "refused"
+          ],
+          "read_by": "adapt.line",
+          "returns": "Return ONLY a JSON object: {\"engines\": [{\"name\": str, \"does\": str, \"reads\": str, \"writes\": str, \"internet\": bool}]}."
+        },
+        "refused": {
+          "fields": {},
+          "inputs": [
+            "faults"
+          ],
+          "read_by": null,
+          "returns": null
+        }
+      },
+      "sense": {
+        "shape": {
+          "fields": {},
+          "inputs": [
+            "needs",
+            "goal",
+            "idea",
+            "library"
+          ],
+          "read_by": "adapt.shape",
+          "returns": "Return ONLY a JSON object: {\"reflected\": str, \"question\": str, \"shapes\": [str, str, str], \"pick\": str or null, \"engine\": {\"name\": str, \"does\": str, \"needs\": [str]} or null}."
+        }
+      }
+    },
+    "audit": {
+      "goal": {
+        "does": {
+          "fields": {
+            "text": "field.text"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "skills": {
+          "fields": {
+            "items": "field.items"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        }
+      },
+      "judge": {
+        "judge": {
+          "fields": {
+            "guidance": "field.guidance",
+            "task": "field.task"
+          },
+          "inputs": [
+            "brief",
+            "filed",
+            "pages"
+          ],
+          "read_by": "audit.judge",
+          "returns": "Return ONLY a JSON object: {\"ok\": bool, \"findings\": [{\"page\": str, \"claim\": str, \"severity\": \"high\" | \"low\"}]}."
+        }
+      }
+    },
+    "coordination": {
+      "goal": {
+        "does": {
+          "fields": {
+            "text": "field.text"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "skills": {
+          "fields": {
+            "items": "field.items"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        }
+      },
+      "tie": {
+        "tie": {
+          "fields": {
+            "task": "field.task"
+          },
+          "inputs": [
+            "ready",
+            "what",
+            "order",
+            "waiting"
+          ],
+          "read_by": "coord.tie",
+          "returns": "Return ONLY a JSON object: {\"answer\": \"one of the ready names\", \"why\": \"one line\"}."
+        }
+      }
+    },
+    "identity": {
+      "completeness": {
+        "enough": {
+          "fields": {
+            "task": "field.task"
+          },
+          "inputs": [
+            "words",
+            "asked",
+            "goal",
+            "items",
+            "rules",
+            "owner",
+            "budget",
+            "confirm"
+          ],
+          "read_by": "identity.enough",
+          "returns": "Return ONLY a JSON object: {\"enough\": bool, \"missing\": [\"goal\" | \"items\" | \"rules\" | \"owner\" | \"budget\" | \"invented\"], \"question\": \"one question, or an empty string when enough\", \"why\": \"one line\"}."
+        },
+        "thin": {
+          "fields": {
+            "task": "field.task"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        }
+      },
+      "goal": {
+        "close": {
+          "fields": {},
+          "inputs": [
+            "dept",
+            "goal",
+            "done",
+            "rules",
+            "plan",
+            "against"
+          ],
+          "read_by": "identity.close",
+          "returns": "Return ONLY a JSON object: {\"ruling\": \"run\" | \"drop\" | \"ask\", \"why\": \"one line, naming the rule or the goal\"}."
+        },
+        "does": {
+          "fields": {
+            "text": "field.text"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "skills": {
+          "fields": {
+            "items": "field.items"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        }
+      },
+      "take": {
+        "answer": {
+          "fields": {
+            "task": "field.task"
+          },
+          "inputs": [
+            "question",
+            "record"
+          ],
+          "read_by": "identity.answer",
+          "returns": "Return ONLY a JSON object: {\"answer\": str, \"source\": \"which line of the record\", \"confidence\": \"high\" | \"moderate\" | \"low\" | \"unknown\"}."
+        },
+        "gate": {
+          "fields": {
+            "task": "field.task"
+          },
+          "inputs": [
+            "rules",
+            "engine"
+          ],
+          "read_by": [
+            "identity.gate",
+            "identity.wait_engine",
+            "identity.judge"
+          ],
+          "returns": "Return ONLY a JSON object: {\"verdict\": \"admit\" | \"wait\" | \"refuse\", \"why\": \"one line\"}."
+        },
+        "recognise": {
+          "fields": {
+            "task": "field.task"
+          },
+          "inputs": [
+            "goal",
+            "words",
+            "facts"
+          ],
+          "read_by": "identity.recognise",
+          "returns": "Return ONLY a JSON object: {\"journey\": \"task\" | \"query\" | \"directive\" | \"feedback\" | \"new-idea\", \"why\": \"one line\"}."
+        },
+        "rule": {
+          "fields": {
+            "guidance": "field.guidance",
+            "task": "field.task"
+          },
+          "inputs": [
+            "goal",
+            "rules",
+            "words"
+          ],
+          "read_by": "identity.rule",
+          "returns": "Return ONLY a JSON object: {\"tag\": \"always\" | \"ask\" | \"refuse\" | \"goal\", \"line\": str, \"scope\": \"standing\" | \"one-time\"}."
+        },
+        "take": {
+          "fields": {
+            "guidance": "field.guidance",
+            "task": "field.task"
+          },
+          "inputs": [
+            "goal",
+            "rules",
+            "words",
+            "facts",
+            "completeness"
+          ],
+          "read_by": "identity.take",
+          "returns": "Return ONLY a JSON object: {\"verdict\": \"go\" | \"ask\" | \"refuse\", \"why\": \"one line\", \"unsure\": [str], \"rule\": {\"line\": str, \"tag\": \"always\" | \"refuse\" | \"ask\"} | null, \"thin\": bool}."
+        },
+        "weigh": {
+          "fields": {
+            "task": "field.task"
+          },
+          "inputs": [
+            "pages",
+            "words"
+          ],
+          "read_by": "identity.weigh",
+          "returns": "Return ONLY a JSON object: {\"about\": \"the page's slug, or null\", \"what\": \"format\" | \"content\" | \"tone\" | \"scope\" | \"accuracy\", \"now\": \"the correction to make now, one line\", \"future\": \"a rule to carry forward to work like this, one line, or null\"}."
+        }
+      }
+    },
+    "priority": {
+      "bargain": {
+        "cost": {
+          "fields": {
+            "task": "field.task"
+          },
+          "inputs": [
+            "word",
+            "step",
+            "cost",
+            "room"
+          ],
+          "read_by": "priority.bargain",
+          "returns": "Return ONLY a JSON object: {\"answer\": \"accept\" | \"reject\", \"why\": \"one line\"}."
+        },
+        "engine": {
+          "fields": {
+            "task": "field.task"
+          },
+          "inputs": [
+            "engine",
+            "does",
+            "needs",
+            "calls",
+            "usd",
+            "room"
+          ],
+          "read_by": "priority.bargain",
+          "returns": "Return ONLY a JSON object: {\"answer\": \"accept\" | \"reject\", \"why\": \"one line\"}."
+        },
+        "line": {
+          "fields": {},
+          "inputs": [
+            "source",
+            "engines",
+            "calls",
+            "usd",
+            "room",
+            "limit"
+          ],
+          "read_by": "priority.bargain",
+          "returns": "Return ONLY a JSON object: {\"answer\": \"accept\" | \"counter\" | \"reject\", \"why\": \"one line\", \"keep\": [names]}."
+        }
+      },
+      "goal": {
+        "does": {
+          "fields": {
+            "text": "field.text"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        },
+        "skills": {
+          "fields": {
+            "items": "field.items"
+          },
+          "inputs": [],
+          "read_by": null,
+          "returns": null
+        }
+      }
+    },
+    "root": {
+      "setup": {
+        "converse": {
+          "fields": {
+            "items": "field.items",
+            "task": "field.task"
+          },
+          "inputs": [
+            "examples",
+            "library",
+            "existing",
+            "conversation"
+          ],
+          "read_by": "setup.converse",
+          "returns": "Return ONLY a JSON object: {\"verdict\": \"ask\" | \"clear\", \"question\": \"your one question, or an empty string when clear\"}."
+        },
+        "shape": {
+          "fields": {},
+          "inputs": [
+            "org",
+            "words",
+            "named",
+            "kinds",
+            "use_cases",
+            "existing"
+          ],
+          "read_by": "setup.shape",
+          "returns": "Return ONLY a JSON object: {\"name\": \"...\", \"kind\": \"one of the kinds above\", \"goal\": \"...\", \"purpose\": \"one line\", \"second\": \"...\", \"done_items\": [{\"text\": \"...\", \"how\": \"code\" | \"model\" | \"person\", \"level\": \"target\" | \"outcome\", \"confirm\": \"...\"}]}."
+        }
+      }
+    }
+  },
+  "records": {
+    "adaptation": {
+      "idea": {
+        "def": "adaptation.idea",
+        "store": "ideas.json",
+        "writer": "R.adapt_park"
+      },
+      "ladder": {
+        "def": "adaptation.ladder",
+        "store": "ladder.json",
+        "writer": "R._save_entry"
+      },
+      "proposal": {
+        "def": "act.line",
+        "store": "board.jsonl propose/line",
+        "writer": "R.adapt_line_offer, R.adapt_line_counter"
+      },
+      "round": {
+        "def": "adaptation.round",
+        "store": "rounds.jsonl",
+        "writer": "W.append_row (W2-ADAPT, M9.1)"
+      }
+    },
+    "audit": {
+      "finding": {
+        "def": "act.finding",
+        "store": "board.jsonl inform/finding, and the finding ask",
+        "writer": "R.audit_file"
+      },
+      "reading": {
+        "def": "audit.reading",
+        "store": "readings.jsonl",
+        "writer": "W.append_row (W1-AUDIT, M8.3)"
+      },
+      "spot_check": {
+        "def": "audit.spot_check",
+        "store": "spot_checks.jsonl",
+        "writer": "W.append_row (W3-BOARD, M8.7)"
+      }
+    },
+    "coordination": {
+      "question": {
+        "def": "coordination.question",
+        "store": "questions.json",
+        "writer": "W3-BOARD (M4.9)"
+      },
+      "slot": {
+        "def": "coordination.slot",
+        "store": "coordination.json timetable[n]",
+        "writer": "R.timetable_row"
+      },
+      "table": {
+        "def": "coordination.table",
+        "store": "coordination.json",
+        "writer": "R.born, R._put_table (from R.set_line and R.grow_line)"
+      }
+    },
+    "identity": {
+      "ask": {
+        "def": "identity.ask",
+        "store": "asks.json",
+        "writer": "W._put_ask (whoever files it: only Identity puts a decision to the owner)"
+      },
+      "done_item": {
+        "def": "identity.done_item",
+        "store": "dept.json done_items[n]",
+        "writer": "W.done_items, W.apply_done_items"
+      },
+      "rule": {
+        "def": "identity.rule",
+        "store": "dept.json rules[n]",
+        "writer": "W.rule_row, through identity_apply"
+      }
+    },
+    "priority": {
+      "ceiling": {
+        "def": "priority.ceiling",
+        "store": "dept.json ceiling",
+        "writer": "priority/v1 (W2-PRIORITY, M9.2)"
+      },
+      "envelope": {
+        "def": "envelope",
+        "store": "dept.json envelopes[name]",
+        "writer": "W.create, W.set_envelope, W.add_engine, R.priority_grant"
+      },
+      "price": {
+        "def": "priority.price",
+        "store": "prices.jsonl",
+        "writer": "W.append_row (W1-PRIORITY, M5.3)"
+      }
+    },
+    "root": {
+      "department": {
+        "def": "department",
+        "store": "dept.json",
+        "writer": "W.create, W.save_dept"
+      },
+      "engine": {
+        "def": "engine.template",
+        "store": "the records home's _library/<slug>.json",
+        "writer": "R.born_template"
+      },
+      "pins": {
+        "def": "root.pins",
+        "store": "dept.json layers",
+        "writer": "W.create (W1-ROOT), the migration"
+      },
+      "registration": {
+        "def": "workflow.registration",
+        "store": "dept.json workflows[n]",
+        "writer": "j2_runtime.registered"
+      }
+    }
+  },
+  "schema_version": 1,
+  "sends": {
+    "Adaptation": [
+      {
+        "act": "propose",
+        "payload": "act.line",
+        "to": [
+          "Priority",
+          "Identity"
+        ],
+        "words": [
+          "line"
+        ]
+      },
+      {
+        "act": "propose",
+        "payload": "act.any",
+        "to": [
+          "Priority"
+        ],
+        "words": [
+          "engine",
+          "trial"
+        ]
+      },
+      {
+        "act": "propose",
+        "payload": "act.any",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "engine",
+          "rung"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.any",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "idea"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.conflict",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "conflict"
+        ]
+      }
+    ],
+    "Audit": [
+      {
+        "act": "inform",
+        "payload": "act.finding",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "finding"
+        ]
+      }
+    ],
+    "Coordination": [
+      {
+        "act": "request",
+        "payload": "act.verdict",
+        "to": [
+          "Identity",
+          "Priority"
+        ],
+        "words": [
+          "verdict"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.any",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "alarm",
+          "lost"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.conflict",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "conflict"
+        ]
+      }
+    ],
+    "Engine": [],
+    "Identity": [
+      {
+        "act": "agree",
+        "payload": "act.any",
+        "to": [
+          "Owner",
+          "Adaptation"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "agree",
+        "payload": "act.verdict",
+        "to": [
+          "Coordination"
+        ],
+        "words": [
+          "verdict"
+        ]
+      },
+      {
+        "act": "refuse",
+        "payload": "act.tell",
+        "to": [
+          "Owner"
+        ],
+        "words": [
+          "request"
+        ]
+      },
+      {
+        "act": "refuse",
+        "payload": "act.any",
+        "to": [
+          "Adaptation"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "refuse",
+        "payload": "act.verdict",
+        "to": [
+          "Coordination"
+        ],
+        "words": [
+          "verdict"
+        ]
+      },
+      {
+        "act": "request",
+        "payload": "act.ask",
+        "to": [
+          "Owner"
+        ],
+        "words": [
+          "blocked",
+          "conflict",
+          "done_items",
+          "engine",
+          "finding",
+          "instructions",
+          "line",
+          "publish",
+          "request",
+          "rule",
+          "rung",
+          "setup",
+          "step"
+        ]
+      },
+      {
+        "act": "request",
+        "payload": "act.line_request",
+        "to": [
+          "Adaptation"
+        ],
+        "words": [
+          "line"
+        ]
+      },
+      {
+        "act": "request",
+        "payload": "act.any",
+        "to": [
+          "Adaptation"
+        ],
+        "words": [
+          "idea"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.tell",
+        "to": [
+          "Owner"
+        ],
+        "words": [
+          "answer",
+          "broken",
+          "department",
+          "done_items",
+          "facts",
+          "filed",
+          "goal",
+          "idea",
+          "instructions",
+          "line",
+          "live",
+          "lost",
+          "plan",
+          "question",
+          "request",
+          "started",
+          "stopped",
+          "waits"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.tell",
+        "to": [
+          "Owner"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "inform",
+        "payload": "act.any",
+        "to": [
+          "Adaptation"
+        ],
+        "words": [
+          "rung"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.any",
+        "to": [
+          "Priority"
+        ],
+        "words": [
+          "born"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.any",
+        "to": [
+          "Audit"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "inform",
+        "payload": "act.any",
+        "to": [
+          "Coordination"
+        ],
+        "words": [
+          "born"
+        ]
+      },
+      {
+        "act": "failure",
+        "payload": "act.tell",
+        "to": [
+          "Owner"
+        ],
+        "words": "(any)"
+      }
+    ],
+    "Owner": [
+      {
+        "act": "request",
+        "payload": "act.words",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "front",
+          "request"
+        ]
+      },
+      {
+        "act": "accept-proposal",
+        "payload": "act.stamp",
+        "to": [
+          "Identity"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "reject-proposal",
+        "payload": "act.stamp",
+        "to": [
+          "Identity"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "cancel",
+        "payload": "act.any",
+        "to": [
+          "Identity"
+        ],
+        "words": "(any)"
+      }
+    ],
+    "Priority": [
+      {
+        "act": "accept-proposal",
+        "payload": "act.any",
+        "to": [
+          "Adaptation"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "reject-proposal",
+        "payload": "act.any",
+        "to": [
+          "Adaptation"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "propose",
+        "payload": "act.line",
+        "to": [
+          "Adaptation"
+        ],
+        "words": [
+          "line"
+        ]
+      },
+      {
+        "act": "propose",
+        "payload": "act.any",
+        "to": [
+          "Adaptation"
+        ],
+        "words": "(any)"
+      }
+    ],
+    "Root": [
+      {
+        "act": "request",
+        "payload": "act.words",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "request"
+        ]
+      },
+      {
+        "act": "accept-proposal",
+        "payload": "act.stamp",
+        "to": [
+          "Identity"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "reject-proposal",
+        "payload": "act.stamp",
+        "to": [
+          "Identity"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "cancel",
+        "payload": "act.any",
+        "to": [
+          "Identity"
+        ],
+        "words": "(any)"
+      }
+    ]
+  },
+  "settings": {
+    "adaptation": {
+      "make": {
+        "changed_by": "the build flag J2_ADAPT_MAKE, in Beta only; not a switch of the interface",
+        "def": "setting.make",
+        "default": false,
+        "says": "Adaptation makes a line when no template fits"
+      }
+    },
+    "audit": {
+      "spot_every_s": {
+        "changed_by": "not changed in A1; used from wave 3 (M8.7)",
+        "def": "setting.spot_every_s",
+        "default": 86400,
+        "says": "how often Audit drops in unannounced: once a day, at a random minute"
+      }
+    },
+    "coordination": {
+      "order": {
+        "changed_by": "shown, not changed in A1",
+        "def": "setting.order",
+        "default": [
+          "posts",
+          "line",
+          "functions"
+        ],
+        "says": "who goes first when several are ready"
+      }
+    },
+    "identity": {
+      "windows": {
+        "changed_by": "set at birth and when an engine is added; no way for the owner to change it in A1",
+        "def": "setting.windows",
+        "default": {
+          "Check": 5,
+          "Plan": 15,
+          "Publish": 10,
+          "Write": 30
+        },
+        "says": "each engine's window, in minutes, before Coordination raises an alarm"
+      }
+    },
+    "priority": {
+      "envelope": {
+        "changed_by": "POST /envelope (W.set_envelope), from Priority's card",
+        "def": "envelope",
+        "default": {
+          "calls": 30,
+          "usd": 6.0,
+          "work_calls": 8
+        },
+        "says": "each engine's limit a day: calls and money; a work engine is given work_calls times the calls"
+      }
+    },
+    "root": {}
+  },
+  "shared_checks": {
+    "facts_are_closed": "every fact a step read by code is one of a closed set",
+    "gate_answer_is_known": "a gate's answer is admit, wait or refuse",
+    "said_what_it_did": "the step says what it did"
+  },
+  "sink": {
+    "asks.json": "identity.ask",
+    "coordination.json": "coordination.table",
+    "dept.json": "department",
+    "instructions.json": "instructions"
+  },
+  "sink_journals": {
+    "prices.jsonl": "priority.price",
+    "readings.jsonl": "audit.reading",
+    "rounds.jsonl": "adaptation.round",
+    "spot_checks.jsonl": "audit.spot_check"
+  },
+  "title": {
+    "adaptation": "Adaptation",
+    "audit": "Audit",
+    "coordination": "Coordination",
+    "identity": "Identity",
+    "priority": "Priority",
+    "root": "Root"
+  },
+  "verdicts": {
+    "adaptation": {
+      "move": [
+        "down",
+        "trial",
+        "propose",
+        "end-trial"
+      ],
+      "source": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ]
+    },
+    "audit": {
+      "item": [
+        "met",
+        "not_met",
+        "to_confirm"
+      ],
+      "ok": [
+        true,
+        false
+      ],
+      "severity": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "coordination": {
+      "gate": [
+        "admit",
+        "wait",
+        "refuse"
+      ],
+      "slot": [
+        "running",
+        "turn",
+        "waits",
+        "ran",
+        "stopped"
+      ]
+    },
+    "identity": {
+      "confidence": [
+        "high",
+        "moderate",
+        "low",
+        "unknown"
+      ],
+      "enough": [
+        true,
+        false
+      ],
+      "gate": [
+        "admit",
+        "wait",
+        "refuse"
+      ],
+      "journey": [
+        "task",
+        "query",
+        "directive",
+        "feedback",
+        "new-idea"
+      ],
+      "missing": [
+        "goal",
+        "items",
+        "rules",
+        "owner",
+        "budget",
+        "invented"
+      ],
+      "rule": [
+        "always",
+        "ask",
+        "refuse",
+        "goal"
+      ],
+      "ruling": [
+        "run",
+        "drop",
+        "ask"
+      ],
+      "scope": [
+        "standing",
+        "one-time"
+      ],
+      "take": [
+        "go",
+        "ask",
+        "refuse"
+      ],
+      "weigh": [
+        "format",
+        "content",
+        "tone",
+        "scope",
+        "accuracy"
+      ]
+    },
+    "priority": {
+      "answer": [
+        "accept",
+        "counter",
+        "reject"
+      ],
+      "envelope": [
+        "admit",
+        "wait"
+      ]
+    },
+    "root": {
+      "check": [
+        "approved",
+        "sent back",
+        "blocked"
+      ],
+      "converse": [
+        "ask",
+        "clear"
+      ],
+      "route": [
+        "organic",
+        "template"
+      ]
+    }
+  },
+  "views": {
+    "adaptation": "view.adaptation",
+    "audit": "view.audit",
+    "coordination": "view.coordination",
+    "engine_card": "view.engine_card",
+    "identity": "view.identity",
+    "priority": "view.priority"
+  },
+  "workflow_standards": [
+    {
+      "id": "names_an_engine",
+      "says": "the workflow names its engines",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "proposal",
+        "registration",
+        "write",
+        "grow",
+        "birth"
+      ]
+    },
+    {
+      "id": "engines_known",
+      "says": "each engine is one the Library has",
+      "sources": [
+        "library",
+        "fitted"
+      ],
+      "stages": [
+        "birth",
+        "registration",
+        "write",
+        "grow"
+      ]
+    },
+    {
+      "id": "each_engine_named",
+      "says": "every engine has a name",
+      "sources": [
+        "shaped",
+        "made"
+      ],
+      "stages": [
+        "proposal",
+        "registration",
+        "grow"
+      ]
+    },
+    {
+      "id": "names_unique",
+      "says": "no name is used twice, and none is a function's, Root's or Owner's",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "proposal",
+        "registration",
+        "grow"
+      ]
+    },
+    {
+      "id": "names_new",
+      "says": "no name is one the Library already has",
+      "sources": [
+        "shaped",
+        "made"
+      ],
+      "stages": [
+        "proposal",
+        "registration"
+      ]
+    },
+    {
+      "id": "first_reads_input",
+      "says": "the first engine reads the kind's first artifact",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "proposal",
+        "birth",
+        "registration"
+      ]
+    },
+    {
+      "id": "reads_known",
+      "says": "each engine reads the kind's first artifact or what one before it wrote",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "proposal",
+        "birth",
+        "registration",
+        "grow"
+      ]
+    },
+    {
+      "id": "one_output",
+      "says": "each engine writes something not yet written",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "proposal",
+        "birth",
+        "registration",
+        "grow"
+      ]
+    },
+    {
+      "id": "items_covered",
+      "says": "every done-when item is covered by an engine",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "registration",
+        "proposal"
+      ]
+    },
+    {
+      "id": "required_kept",
+      "says": "no engine the kind requires is left out",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "proposal",
+        "birth",
+        "registration"
+      ]
+    },
+    {
+      "id": "size_in_range",
+      "says": "one engine or more; more than six says why",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "proposal",
+        "registration"
+      ]
+    },
+    {
+      "id": "check_exists",
+      "says": "each engine's output has a check",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "registration",
+        "grow"
+      ]
+    },
+    {
+      "id": "fits_room",
+      "says": "Priority priced it and it fits today's room",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "registration"
+      ]
+    },
+    {
+      "id": "line_is_registered",
+      "says": "Coordination's line is a registered plan plus the engines the owner added",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "write"
+      ]
+    }
+  ]
+}

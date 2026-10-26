@@ -278,8 +278,9 @@ def missing_engines(d):
 
 
 def defs():
-    """The definitions: the file (the functions, the kinds, the edges, Coordination's table) with the Library's engine
-    templates assembled in as engines, validated as one."""
+    """The definitions: the file (the kinds, the edges, Coordination's table), the five functions' engines from their
+    layers' recipes (layers/<layer>/v1.json, PRD A1.18), and the Library's engine templates assembled in as engines,
+    validated as one."""
     try:
         key = str(user_templates_dir())
     except Exception:  # noqa: BLE001 -- no record home set
@@ -289,7 +290,8 @@ def defs():
     if "d" not in _DEFS:
         _DEFS[key] = True
         d = json.loads((Path(__file__).parent / "engine_defs" / "website.json").read_text(encoding="utf-8"))
-        d["engines"] = dict(d.get("engines") or {})
+        import layers                                          # each function's recipe lives with its layer's bodies (A1)
+        d["engines"] = dict(layers.recipes(), **(d.get("engines") or {}))
         for name, t in engine_templates().items():
             if name in d["engines"]:
                 raise ValueError("the engine template %s is refused: the definitions already hold an engine of that name" % name)
@@ -716,6 +718,8 @@ def post(ref, src, dst, msg_type, payload=None, thread=None, about=None, by=None
         raise ValueError(why)
     if src == "Identity" and OWNER in dst:
         payload = _plainly(ref, payload or {})        # one voice, in plain words (PRD M3.6)
+    import layer_schema as S
+    S.check_act(src, dst, msg_type, payload or {}, ref)   # the act against the interface (PRD A1.13): a row in warn mode
     with W._lock(ref):
         ths = threads(ref)
         th = next((t for t in ths if t["id"] == thread), None) if thread else None

@@ -1,0 +1,842 @@
+{
+  "$defs": {
+    "department": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "$ref": "#/$defs/department.artifacts",
+          "x-owner": "root"
+        },
+        "bounds": {
+          "$ref": "#/$defs/department.bounds",
+          "x-owner": "identity"
+        },
+        "ceiling": {
+          "$ref": "#/$defs/department.ceiling",
+          "x-owner": "priority"
+        },
+        "control": {
+          "$ref": "#/$defs/department.control",
+          "x-owner": "root"
+        },
+        "created": {
+          "$ref": "#/$defs/department.created",
+          "x-owner": "root"
+        },
+        "done": {
+          "$ref": "#/$defs/department.done",
+          "x-owner": "identity"
+        },
+        "done_items": {
+          "$ref": "#/$defs/department.done_items",
+          "x-owner": "identity"
+        },
+        "engines": {
+          "$ref": "#/$defs/department.engines",
+          "x-owner": "root"
+        },
+        "envelopes": {
+          "$ref": "#/$defs/department.envelopes",
+          "x-owner": "priority"
+        },
+        "events": {
+          "$ref": "#/$defs/department.events",
+          "x-owner": "root"
+        },
+        "founding": {
+          "$ref": "#/$defs/department.founding",
+          "x-owner": "root"
+        },
+        "goal": {
+          "$ref": "#/$defs/department.goal",
+          "x-owner": "identity"
+        },
+        "goals": {
+          "$ref": "#/$defs/department.goals",
+          "x-owner": "identity"
+        },
+        "host": {
+          "$ref": "#/$defs/department.host",
+          "x-owner": "identity"
+        },
+        "identity_revision": {
+          "$ref": "#/$defs/department.identity_revision",
+          "x-owner": "identity"
+        },
+        "initial_goal_context": {
+          "$ref": "#/$defs/department.initial_goal_context",
+          "x-owner": "identity"
+        },
+        "kind": {
+          "$ref": "#/$defs/department.kind",
+          "x-owner": "root"
+        },
+        "ladder": {
+          "$ref": "#/$defs/department.ladder",
+          "x-owner": "identity"
+        },
+        "ladders": {
+          "$ref": "#/$defs/department.ladders",
+          "x-owner": "identity"
+        },
+        "layers": {
+          "$ref": "#/$defs/department.layers",
+          "x-owner": "root"
+        },
+        "looked_up": {
+          "$ref": "#/$defs/department.looked_up",
+          "x-owner": "identity"
+        },
+        "name": {
+          "$ref": "#/$defs/department.name",
+          "x-owner": "root"
+        },
+        "org": {
+          "$ref": "#/$defs/department.org",
+          "x-owner": "root"
+        },
+        "owner": {
+          "$ref": "#/$defs/department.owner",
+          "x-owner": "identity"
+        },
+        "parent": {
+          "$ref": "#/$defs/department.parent",
+          "x-owner": "root"
+        },
+        "pending_final_tell": {
+          "$ref": "#/$defs/department.pending_final_tell",
+          "x-owner": "root"
+        },
+        "publish_asks_from": {
+          "$ref": "#/$defs/department.publish_asks_from",
+          "x-owner": "identity"
+        },
+        "ref": {
+          "$ref": "#/$defs/department.ref",
+          "x-owner": "root"
+        },
+        "root": {
+          "$ref": "#/$defs/department.root",
+          "x-owner": "root"
+        },
+        "rules": {
+          "$ref": "#/$defs/department.rules",
+          "x-owner": "identity"
+        },
+        "runtime": {
+          "$ref": "#/$defs/department.runtime",
+          "x-owner": "root"
+        },
+        "schema_version": {
+          "$ref": "#/$defs/department.schema_version",
+          "x-owner": "root"
+        },
+        "stopped": {
+          "$ref": "#/$defs/department.stopped",
+          "x-owner": "root"
+        },
+        "template_ref": {
+          "$ref": "#/$defs/department.template_ref",
+          "x-owner": "root"
+        },
+        "templates": {
+          "$ref": "#/$defs/department.templates",
+          "x-owner": "root"
+        },
+        "to_be_confirmed": {
+          "$ref": "#/$defs/department.to_be_confirmed",
+          "x-owner": "identity"
+        },
+        "windows": {
+          "$ref": "#/$defs/department.windows",
+          "x-owner": "identity"
+        },
+        "workflows": {
+          "$ref": "#/$defs/department.workflows",
+          "x-owner": "root"
+        }
+      },
+      "required": [
+        "kind",
+        "ref",
+        "name"
+      ],
+      "type": "object"
+    },
+    "department.artifacts": {
+      "items": {
+        "$ref": "#/$defs/name"
+      },
+      "maxItems": 32,
+      "minItems": 0,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "department.bounds": {
+      "additionalProperties": true,
+      "properties": {
+        "hops": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "seconds": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "usd": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "department.ceiling": {
+      "$ref": "#/$defs/priority.ceiling"
+    },
+    "department.control": {
+      "maxLength": 40,
+      "minLength": 0,
+      "type": "string"
+    },
+    "department.created": {
+      "maxLength": 40,
+      "pattern": "^\\d{4}-\\d\\d-\\d\\d",
+      "type": "string"
+    },
+    "department.done": {
+      "maxLength": 4000,
+      "minLength": 0,
+      "type": "string"
+    },
+    "department.done_items": {
+      "items": {
+        "$ref": "#/$defs/identity.done_item"
+      },
+      "maxItems": 12,
+      "minItems": 0,
+      "type": "array"
+    },
+    "department.engines": {
+      "items": {
+        "$ref": "#/$defs/name"
+      },
+      "maxItems": 24,
+      "minItems": 0,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "department.envelopes": {
+      "additionalProperties": {
+        "$ref": "#/$defs/envelope"
+      },
+      "type": "object"
+    },
+    "department.events": {
+      "items": {
+        "additionalProperties": true,
+        "properties": {
+          "kind": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "minItems": 0,
+      "type": "array"
+    },
+    "department.founding": {
+      "additionalProperties": true,
+      "properties": {
+        "checkpoints": {
+          "items": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "operation_id": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "department.goal": {
+      "maxLength": 2000,
+      "minLength": 0,
+      "type": "string"
+    },
+    "department.goals": {
+      "items": {
+        "additionalProperties": true,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "minItems": 0,
+      "type": "array"
+    },
+    "department.host": {
+      "maxLength": 200,
+      "minLength": 0,
+      "type": "string"
+    },
+    "department.identity_revision": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "department.initial_goal_context": {
+      "additionalProperties": true,
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "department.kind": {
+      "maxLength": 40,
+      "minLength": 0,
+      "type": "string"
+    },
+    "department.ladder": {
+      "additionalProperties": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "type": "object"
+    },
+    "department.ladders": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "type": "object"
+    },
+    "department.layers": {
+      "$ref": "#/$defs/root.pins"
+    },
+    "department.looked_up": {
+      "items": {
+        "maxLength": 2000,
+        "minLength": 0,
+        "type": "string"
+      },
+      "minItems": 0,
+      "type": "array"
+    },
+    "department.name": {
+      "maxLength": 200,
+      "minLength": 1,
+      "type": "string"
+    },
+    "department.org": {
+      "additionalProperties": true,
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "department.owner": {
+      "maxLength": 200,
+      "minLength": 0,
+      "type": "string"
+    },
+    "department.parent": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "department.pending_final_tell": {
+      "additionalProperties": true,
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "department.publish_asks_from": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "department.ref": {
+      "maxLength": 200,
+      "minLength": 1,
+      "type": "string"
+    },
+    "department.root": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "department.rules": {
+      "items": {
+        "$ref": "#/$defs/identity.rule"
+      },
+      "maxItems": 64,
+      "minItems": 0,
+      "type": "array"
+    },
+    "department.runtime": {
+      "enum": [
+        1,
+        2
+      ]
+    },
+    "department.schema_version": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "department.stopped": {
+      "type": "boolean"
+    },
+    "department.template_ref": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "additionalProperties": true,
+              "properties": {},
+              "required": [],
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "department.templates": {
+      "additionalProperties": {
+        "maxLength": 80,
+        "minLength": 0,
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "department.to_be_confirmed": {
+      "items": {
+        "additionalProperties": true,
+        "properties": {
+          "item": {
+            "$ref": "#/$defs/id.item"
+          },
+          "why": {
+            "maxLength": 300,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "item"
+        ],
+        "type": "object"
+      },
+      "minItems": 0,
+      "type": "array"
+    },
+    "department.windows": {
+      "$ref": "#/$defs/setting.windows"
+    },
+    "department.workflows": {
+      "items": {
+        "$ref": "#/$defs/workflow.registration"
+      },
+      "minItems": 0,
+      "type": "array"
+    },
+    "envelope": {
+      "additionalProperties": true,
+      "properties": {
+        "calls": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "usd": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "calls",
+        "usd"
+      ],
+      "type": "object"
+    },
+    "id.item": {
+      "maxLength": 3,
+      "pattern": "^D[1-9][0-9]?$",
+      "type": "string"
+    },
+    "identity.done_item": {
+      "additionalProperties": false,
+      "properties": {
+        "confirm": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "how": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/id.item"
+        },
+        "level": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "type": "object"
+    },
+    "identity.rule": {
+      "additionalProperties": true,
+      "properties": {
+        "from": {
+          "anyOf": [
+            {
+              "maxLength": 8000,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "maxLength": 80,
+          "minLength": 0,
+          "type": "string"
+        },
+        "line": {
+          "maxLength": 2000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "scope": {
+          "maxLength": 20,
+          "minLength": 0,
+          "type": "string"
+        },
+        "since": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tag": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "line"
+      ],
+      "type": "object"
+    },
+    "impl": {
+      "maxLength": 24,
+      "pattern": "^(root|identity|adaptation|priority|coordination|audit)/v[1-9][0-9]*$",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 40,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 &'.-]{0,39}$",
+      "type": "string"
+    },
+    "priority.ceiling": {
+      "additionalProperties": true,
+      "properties": {
+        "at": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "calls": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "raised": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "at": {
+                "maxLength": 40,
+                "minLength": 0,
+                "type": "string"
+              },
+              "by": {
+                "maxLength": 80,
+                "minLength": 0,
+                "type": "string"
+              },
+              "to": {
+                "additionalProperties": true,
+                "properties": {},
+                "required": [],
+                "type": "object"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "rounds": {
+          "maximum": 99,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "start": {
+          "additionalProperties": true,
+          "properties": {
+            "calls": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "rounds": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "usd": {
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "rounds",
+            "calls",
+            "usd"
+          ],
+          "type": "object"
+        },
+        "usd": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "rounds",
+        "calls",
+        "usd",
+        "start"
+      ],
+      "type": "object"
+    },
+    "root.pins": {
+      "additionalProperties": false,
+      "properties": {
+        "adaptation": {
+          "$ref": "#/$defs/impl"
+        },
+        "audit": {
+          "$ref": "#/$defs/impl"
+        },
+        "coordination": {
+          "$ref": "#/$defs/impl"
+        },
+        "identity": {
+          "$ref": "#/$defs/impl"
+        },
+        "priority": {
+          "$ref": "#/$defs/impl"
+        },
+        "root": {
+          "$ref": "#/$defs/impl"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "setting.windows": {
+      "additionalProperties": {
+        "maximum": 1440,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "type": "object"
+    },
+    "workflow.check": {
+      "additionalProperties": true,
+      "properties": {
+        "check": {
+          "enum": [
+            "names_an_engine",
+            "engines_known",
+            "each_engine_named",
+            "names_unique",
+            "names_new",
+            "first_reads_input",
+            "reads_known",
+            "one_output",
+            "items_covered",
+            "required_kept",
+            "size_in_range",
+            "check_exists",
+            "fits_room",
+            "line_is_registered",
+            "workflow_meets_standards"
+          ]
+        },
+        "passed": {
+          "type": "boolean"
+        },
+        "why": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "check",
+        "passed",
+        "why"
+      ],
+      "type": "object"
+    },
+    "workflow.registration": {
+      "additionalProperties": true,
+      "properties": {
+        "by": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/workflow.check"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "covers": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/name"
+            },
+            "minItems": 0,
+            "type": "array"
+          },
+          "propertyNames": {
+            "pattern": "^D[1-9][0-9]?$"
+          },
+          "type": "object"
+        },
+        "deliverable": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "engines": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "maxItems": 24,
+          "minItems": 0,
+          "type": "array"
+        },
+        "fit": {
+          "additionalProperties": {
+            "maxLength": 300,
+            "minLength": 0,
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "left_out": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "registered": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "library",
+            "shaped",
+            "fitted",
+            "made"
+          ]
+        },
+        "version": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "engines",
+        "source",
+        "registered"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://sutra.asawa.co/schemas/layers/department.schema.json",
+  "$ref": "#/$defs/department",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The department's one record, as the interface types it: each key's owning layer is in x-owner, and only the keys a save changes are checked (PRD A1.6, A1.20). Generated from layer_schema.py (schema version 1); never edited by hand: run `python layer_schema.py --write`.",
+  "title": "A department record (dept.json)"
+}

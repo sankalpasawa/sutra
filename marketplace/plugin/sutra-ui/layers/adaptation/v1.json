@@ -1,0 +1,283 @@
+{
+ "kind": "function",
+ "description": "reads the department's own rows and proposes one rung up, or steps one down",
+ "skills": [
+  "count from the rows",
+  "keep the ladder",
+  "propose a change",
+  "shape a new idea and park it"
+ ],
+ "reads": "Live site",
+ "start": {
+  "on": [
+   {
+    "kind": "post"
+   },
+   {
+    "kind": "version",
+    "of": "Live site",
+    "checked": true
+   }
+  ],
+  "unless": []
+ },
+ "gates": [],
+ "steps": [
+  {
+   "id": "adapt.sense",
+   "name": "Count from the rows",
+   "nature": "transform",
+   "born": "C2",
+   "code": "adapt_sense",
+   "check": "counted_the_rows"
+  },
+  {
+   "id": "adapt.ladder",
+   "name": "Keep the ladder",
+   "nature": "decide",
+   "born": "C2",
+   "code": "adapt_ladder",
+   "check": "moves_name_their_rows"
+  },
+  {
+   "id": "adapt.act",
+   "name": "Post what it proposes",
+   "nature": "transform",
+   "born": "C2",
+   "code": "adapt_act",
+   "check": "said_what_it_did"
+  }
+ ],
+ "on": [
+  {
+   "name": "Start a trial",
+   "when": {
+    "msg_type": "accept-proposal",
+    "word": "trial"
+   },
+   "steps": [
+    {
+     "id": "adapt.trial",
+     "name": "Start the trial",
+     "nature": "transform",
+     "born": "C2",
+     "code": "adapt_trial",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Drop a trial",
+   "when": {
+    "msg_type": "reject-proposal",
+    "word": "trial"
+   },
+   "steps": [
+    {
+     "id": "adapt.notrial",
+     "name": "Drop the trial",
+     "nature": "transform",
+     "born": "C2",
+     "code": "adapt_notrial",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Hear the ruling",
+   "when": {
+    "msg_type": "inform",
+    "word": "rung"
+   },
+   "steps": [
+    {
+     "id": "adapt.heard",
+     "name": "Note the ruling",
+     "nature": "transform",
+     "born": "C2",
+     "code": "adapt_heard",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Hear an idea",
+   "when": {
+    "msg_type": "request",
+    "word": "idea"
+   },
+   "steps": [
+    {
+     "id": "adapt.hear",
+     "name": "Read the idea",
+     "nature": "transform",
+     "born": "C2",
+     "code": "hear",
+     "check": "facts_are_closed"
+    },
+    {
+     "id": "adapt.shape",
+     "name": "Reflect the idea back, in shapes",
+     "nature": "make",
+     "born": "C0",
+     "ceiling": "C1",
+     "prompt": "adapt_shape",
+     "draft": "adapt_shape_draft",
+     "out": {
+      "reflected": "str",
+      "shapes": "list"
+     },
+     "check": "idea_has_shapes"
+    },
+    {
+     "id": "adapt.park",
+     "name": "Park the idea",
+     "nature": "transform",
+     "born": "C2",
+     "code": "adapt_park",
+     "check": "said_what_it_did"
+    },
+    {
+     "id": "adapt.offer",
+     "name": "Offer the engine the idea asks for",
+     "nature": "transform",
+     "born": "C2",
+     "code": "adapt_offer",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Priority priced an engine: room",
+   "when": {
+    "msg_type": "accept-proposal",
+    "word": "engine"
+   },
+   "steps": [
+    {
+     "id": "adapt.priced",
+     "name": "Put the priced engine to Identity",
+     "nature": "transform",
+     "born": "C2",
+     "code": "adapt_priced",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Priority priced an engine: no room",
+   "when": {
+    "msg_type": "reject-proposal",
+    "word": "engine"
+   },
+   "steps": [
+    {
+     "id": "adapt.unpriced",
+     "name": "Leave the idea parked, priced",
+     "nature": "transform",
+     "born": "C2",
+     "code": "adapt_priced",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Shape the line",
+   "when": {
+    "msg_type": "request",
+    "word": "line"
+   },
+   "steps": [
+    {
+     "id": "adapt.hearline",
+     "name": "Hear the words",
+     "nature": "transform",
+     "born": "C2",
+     "code": "hear",
+     "check": "facts_are_closed"
+    },
+    {
+     "id": "adapt.source",
+     "name": "Take the Library's line, or shape one",
+     "nature": "transform",
+     "born": "C2",
+     "code": "adapt_source",
+     "check": "said_what_it_did"
+    },
+    {
+     "id": "adapt.line",
+     "name": "Shape the line the words need",
+     "nature": "make",
+     "born": "C0",
+     "ceiling": "C1",
+     "prompt": "adapt_line",
+     "draft": "adapt_line_draft",
+     "out": {
+      "engines": "list"
+     },
+     "check": "line_is_engines",
+     "only_if": "adapt.source.shape"
+    },
+    {
+     "id": "adapt.lineoffer",
+     "name": "Put the line to Identity",
+     "nature": "transform",
+     "born": "C2",
+     "code": "adapt_line_offer",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Priority said yes to the line",
+   "when": {
+    "msg_type": "accept-proposal",
+    "word": "line"
+   },
+   "steps": [
+    {
+     "id": "adapt.linegranted",
+     "name": "Send the line Priority said yes to, to Root's check",
+     "nature": "transform",
+     "born": "C2",
+     "code": "adapt_line_granted",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Priority said no to the line",
+   "when": {
+    "msg_type": "reject-proposal",
+    "word": "line"
+   },
+   "steps": [
+    {
+     "id": "adapt.linerefused",
+     "name": "Take Priority's no to Identity",
+     "nature": "transform",
+     "born": "C2",
+     "code": "adapt_line_refused",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Priority asked for less on the line",
+   "when": {
+    "msg_type": "propose",
+    "word": "line"
+   },
+   "steps": [
+    {
+     "id": "adapt.linecounter",
+     "name": "Take Priority's ask for less, or take it to Identity",
+     "nature": "transform",
+     "born": "C2",
+     "code": "adapt_line_counter",
+     "check": "said_what_it_did"
+    }
+   ]
+  }
+ ]
+}
