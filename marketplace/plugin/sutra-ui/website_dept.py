@@ -1140,7 +1140,7 @@ def health(ref):
              ("An uncounted retry", True), ("A hidden exchange", True),
              ("A silent skip", all(r.get("what") for r in rs if r.get("status") == "skipped"))]
     timeline = [{"engine": r["engine"], "system": bool(r.get("system")), "status": r["status"], "started": r["started"],
-                 "ended": r.get("ended"), "slot": r.get("slot"), "what": r.get("what")} for r in rs[-60:]]
+                 "ended": r.get("ended"), "slot": r.get("slot"), "what": r.get("what"), "words": r.get("words")} for r in rs[-60:]]
     return {"motor": {"last_tick": m.get("last_tick"), "age_s": round(age) if age < 1e8 else None},
             "checks": [{"name": n, "state": s, "line": l} for n, s, l in checks],
             "never": [{"name": n, "ok": bool(ok)} for n, ok in never], "timeline": timeline}
@@ -1196,7 +1196,9 @@ def map_view(ref):
     for s in SYSTEMS:
         paused = s in PAUSED_SYSTEMS and d.get("runtime") != 2
         last = next((r for r in reversed(rs) if r["engine"] == s), None)
-        systems.append({"name": s, "state": "paused" if paused else "running", "last": last and last.get("what")})
+        # a line that ends with the owner's own words carries them (words), so the screen shows them as said (PRD M1.7)
+        systems.append({"name": s, "state": "paused" if paused else "running", "last": last and last.get("what"),
+                        "words": last and last.get("words")})
     engines = [x for x in (engine_view(ref, e[0]) for e in engines_of(d)) if x]
     rt = _runtime(ref)
     table = rt.coordination(ref) if rt else {}
@@ -1206,7 +1208,7 @@ def map_view(ref):
     for e in engines:
         e.pop("runs", None)
         last = next((r for r in reversed(rs) if r["engine"] == e["name"]), None)
-        e["last"] = last and {"status": last["status"], "at": last["started"], "what": last.get("what")}
+        e["last"] = last and {"status": last["status"], "at": last["started"], "what": last.get("what"), "words": last.get("words")}
         if any(a["engine"] == e["name"] and a["status"] == "pending" for a in asks(ref)):
             e["state"] = "Waits"
         # an engine the registered plan left out stays on the record and never runs (PRD M4.2): it says so
@@ -1219,8 +1221,8 @@ def map_view(ref):
     for a in names:
         vs = versions(ref, a)
         arts.append({"name": a, "slug": slug(a), "versions": len(vs), "latest": vs[-1] if vs else None})
-    recent = [{"engine": r["engine"], "system": bool(r.get("system")), "status": r["status"], "at": r["started"], "what": r.get("what")}
-              for r in reversed(rs[-10:])]
+    recent = [{"engine": r["engine"], "system": bool(r.get("system")), "status": r["status"], "at": r["started"], "what": r.get("what"),
+               "words": r.get("words")} for r in reversed(rs[-10:])]
     kind = d.get("kind") or "website"
     return {"ref": ref, "name": d["name"], "goal": d["goal"], "done": d["done"], "rules": d["rules"], "owner": d["owner"],
             "control": d["control"], "stopped": d.get("stopped"), "systems": systems, "engines": engines, "artifacts": arts,

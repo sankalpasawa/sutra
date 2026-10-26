@@ -825,6 +825,9 @@ def on_stamp(ref, ask, approve):
 
 # ---- what may start now --------------------------------------------------------------------------------------------
 def _run_row(engine, system, slot, status, what, **more):
+    """A run as the record keeps it. A run whose line ends with the owner's own words, carried by the post it handled
+    ('took the owner's words: ...'), keeps them as `words` too, so a screen shows them as the owner said them and says
+    only the rest in its own words (owner_words.kept; PRD M1.7)."""
     row = {"id": "r-" + uuid.uuid4().hex[:10], "engine": engine, "system": system, "slot": slot, "status": status,
            "started": W.now(), "ended": W.now() if status != "running" else None, "what": what, "wrote": None, "chain": None,
            "spend": {"calls": 0, "usd": 0.0}, "retries": 0, "runtime": 2}
@@ -1340,6 +1343,9 @@ def run_engine(ref, name, inp, slot):
             said = next((ctx["bag"][s["id"]].get("said") for s in reversed(steps)
                          if isinstance(ctx["bag"].get(s["id"]), dict) and ctx["bag"][s["id"]].get("said")), None)
             row.update({"status": "ok", "what": said or what})
+            words = str(((p or {}).get("payload") or {}).get("words") or "")
+            if words and str(row["what"]).endswith(words):
+                row["words"] = words                     # the owner's words the line ends with, as they said them
         if p:
             th = _thread(ref, p["thread"])
             if th and th["protocol"] == "inform" and th["state"] not in CLOSED:
@@ -2554,6 +2560,28 @@ def _cards(rows):
     return {"ids": ids, "words": words}
 
 
+#: a post as a chat prints it, its shape named once (fn_chat_view, chat_view and a department's own turns each add what
+#: they need): who said it to whom and when, in which thread, its topic word, what it said (_line), and whether that line
+#: is the owner's own words carried on by a function (quoted: Identity handing the owner's request to Adaptation,
+#: Adaptation proposing it to Priority), which a screen shows as the owner said them, never in its own words (PRD M1.7)
+TURN = ("n", "src", "dst", "msg_type", "at", "thread", "word", "line", "quoted")
+
+
+def _quoted(p):
+    """True when what a post says (_line) is the owner's own words, which the post carries whole (payload `words`)."""
+    pl = p.get("payload") or {}
+    return bool(pl.get("words")) and _line(p) == str(pl["words"])
+
+
+def _post_turn(p, **more):
+    """One post as a turn of a chat (TURN), with what the chat adds."""
+    pl = p.get("payload") or {}
+    turn = {"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
+            "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""), "quoted": _quoted(p)}
+    turn.update(more)
+    return turn
+
+
 def _own_turns(dref, name, cards=None):
     """A department's own owner-facing turns (ER-10): what its Identity asked or told its owner in threads Root did not
     start, and the owner's own words and stamps there. A post that went to Root's board as well (via Root) is left to
@@ -2571,10 +2599,8 @@ def _own_turns(dref, name, cards=None):
             continue
         if cards and _on_card(dref, p, cards):
             continue
-        out.append({"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
-                    "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""),
-                    "dept": dref, "name": name, "own": True, "link": pl.get("link"),
-                    "birth": p["n"] == 1 and p["src"] == OWNER and born_of_root})   # the words Root handed at the birth
+        out.append(_post_turn(p, dept=dref, name=name, own=True, link=pl.get("link"),
+                              birth=p["n"] == 1 and p["src"] == OWNER and born_of_root))   # the words Root handed at the birth
     return out
 
 
@@ -2611,9 +2637,7 @@ def fn_chat_view(ref, fn):
         if not own and not in_thread and not of_chain:
             continue
         # Priority's counter is a proposal on the board; the chat says it as what it is, an ask for less (PRD M1.7)
-        turns.append({"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
-                      "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""), "think": False,
-                      "counter": bool(pl.get("counter")), "_k": (str(p["at"]), p["n"], 0)})
+        turns.append(_post_turn(p, think=False, counter=bool(pl.get("counter")), _k=(str(p["at"]), p["n"], 0)))
     for r in step_rows(ref):
         if r.get("engine") != name:
             continue
@@ -2674,10 +2698,8 @@ def chat_view(ref, about=None):
                 continue
             if _on_card(root, p, cards):                 # the question card says it, once
                 continue
-            turns.append({"n": p["n"], "src": p["src"], "dst": p["dst"], "msg_type": p["msg_type"], "at": p["at"], "thread": p["thread"],
-                          "word": pl.get("word"), "line": _line(p) or str(pl.get("done") or pl.get("words") or ""),
-                          "dept": dref, "name": ab.get("name") or pl.get("from"), "link": pl.get("link"),
-                          "offer": pl.get("offer") if isinstance(pl.get("offer"), dict) else None})
+            turns.append(_post_turn(p, dept=dref, name=ab.get("name") or pl.get("from"), link=pl.get("link"),
+                                    offer=pl.get("offer") if isinstance(pl.get("offer"), dict) else None))
         # the person's words at the front door carry the department they reached, as Root's own hand-over says
         # (found live 2026-09-28: a turn that named the department in its words showed no chip)
         for t in turns:

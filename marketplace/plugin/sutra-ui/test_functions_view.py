@@ -1177,6 +1177,36 @@ def test_m17_a_record_written_before_reads_in_the_owners_words_on_every_chat(mod
             assert not _banned_shown(t["line"]), t
 
 
+def test_m17_the_owners_words_a_function_carries_on_stay_as_they_said_them(mods, born, tmp_path):
+    """Round 4, gap 3: Identity hands the owner's words to Adaptation and Adaptation proposes them to Priority; those
+    turns are the owner's words, quoted. Words that carry ', Refuse to' and 'Priority granted' reach every Chat tab, the
+    owner's chat, Identity's page (its journeys and Stamped by rule) and All five's hover exactly as the owner said
+    them: the record marks the turn quoted and the run's words, and owner_words leaves them alone, while every line a
+    function composed itself is still said in the owner's words."""
+    W, R, J, F = mods
+    if shutil.which("node") is None:
+        pytest.skip("node is not on PATH")
+    said = WEBSITE + ", Refuse to show fees. Priority granted nothing"
+    ref = born(said, "Fee Co")
+    c = _client()
+    for fn, src in (("identity", "Identity"), ("adaptation", "Adaptation"), ("priority", "Adaptation")):
+        turns = c.get("/api/native/%s/chat?fn=%s" % (ref, fn)).json()["turns"]
+        carried = [t for t in turns if t["src"] == src and t.get("quoted")]
+        assert carried and all(t["line"] == said for t in carried), (fn, [(t["src"], t["line"]) for t in turns if not t["think"]])
+    assert any(r.get("words") == said and r["what"].endswith(said) for r in W.runs(ref)), "a run's line that ends with the words keeps them"
+    text = json.dumps([F.functions(ref)] + [F.function(ref, fn) for fn in JOURNEYS])
+    assert said in text and "or say no to show fees" not in text and "said yes to nothing" not in text
+    panes = _panes(tmp_path, _reads(W, ref))
+    for k, v in panes.items():
+        shown = v["rest"] + " " + v["hover"]
+        assert "or say no to show fees" not in shown and "said yes to nothing" not in shown, (k, "the owner's words rewritten")
+    for k in ("identity:chat", "adaptation:chat", "priority:chat", "chat", "identity"):
+        assert said in panes[k]["rest"], (k, "the owner's words, as said")
+    assert said in panes["five"]["hover"], "All five's last act carries the words on its hover"
+    # what a function composed itself is still said in the owner's words beside them
+    assert "Priority said yes to it and it passed Root's check" in panes["chat"]["rest"]
+
+
 def test_m17_each_act_says_the_same_words_on_the_board_and_on_coordinations_check(mods):
     """Round 4, gaps 1 and 4: an act is said in words, one table on the server (R.ACT_SAYS) and the same words on the
     board (22-website.js WB_ACTS). Coordination's who-may-post check writes its note in them ('The owner may say no to
