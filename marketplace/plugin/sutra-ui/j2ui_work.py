@@ -224,10 +224,10 @@ def _step_name(ctx, row):
 
 def _call_row(ctx, i, row):
     """One call of the log, from the step row that made it. What the model was given and said is not stored, so the prompt is
-    nothing, the tokens and the model are not recorded, and the reply is the line the step's own record has."""
+    nothing, the tokens and the model are not recorded, and the reply is what the step's own record has, in the owner's words."""
     answer = row.get("answer")
     notes = [A.plain(n) for n in (row.get("check") or {}).get("notes") or [] if A.plain(n)]
-    said = A.cut(A.plain(answer) if isinstance(answer, str) else "", A.ANSWER_MAX) or (notes[0] if notes else "")
+    said = A.answer_line(answer, notes)
     stamp = row.get("ended") or row.get("started")
     return {"id": i, "fn": _fn(ctx, row.get("engine")), "step": ctx.step_at(stamp) if callable(getattr(ctx, "step_at", None)) else None,
             "cycle": (ctx.cur or {}).get("round") or 1, "t": A.hhmmss(stamp), "seconds": round(int(row.get("ms") or 0) / 1000, 2),

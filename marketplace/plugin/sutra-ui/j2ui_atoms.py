@@ -27,8 +27,9 @@ run first (the page sets the first result against the check it shows, and that i
 the order they were made, and no more than RESULTS_MAX of them: a department that has run for months does not send every row it
 ever wrote on every poll. `attempts` is still the number of runs.
 
-The small readers (plain, cut, sentence, epoch, hhmmss, memoised) are shared by j2ui_work.py and j2ui_audit.py, the three modules
-of this package, so that no string they emit says an inside word: a check's id (brief_is_text) is never a sentence.
+The small readers (plain, cut, sentence, answer_line, epoch, hhmmss, memoised) are shared by j2ui_work.py and j2ui_audit.py, the three
+modules of this package, so that no string they emit says an inside word: a check's id (brief_is_text) is never a sentence, and a
+decision's answer (accept, counter, admit, refuse) is never the bare word.
 """
 import importlib.util
 import os
@@ -72,6 +73,24 @@ def sentence(name, notes):
     name = plain(name)
     note = next((plain(n) for n in notes or [] if plain(n)), "")
     return "%s: %s" % (name, note) if name and note else name or note
+
+
+PRIORITY_SAID = {"accept": "said yes", "counter": "asked for less", "reject": "said no"}      # Priority's answers (layers/priority SAID)
+CODE_WORD = re.compile(r"^[a-z]+(?:-[a-z]+)*$")              # one lowercase word: a code a step answers with, not a sentence
+
+
+def answer_line(answer, notes=()):
+    """What a step answered, in the owner's words, cut to a line. A step that decides answers with one word of its own: Priority's
+    accept, counter or reject, a gate's admit, wait or refuse. The owner hears the act (said yes, asked for less, said no; let
+    through, waiting, stopped), never the word. Any other code (go, ask, an act's id) is no answer a person can read, so the step's
+    first check note, which is a sentence, stands in its place (and so does it for a step that answered nothing)."""
+    text = plain(answer) if isinstance(answer, str) else ""
+    acts = dict(PRIORITY_SAID, **R.GATE_SAYS)
+    if text.lower() in acts:
+        text = acts[text.lower()]
+    elif CODE_WORD.match(text):
+        text = ""
+    return cut(text, ANSWER_MAX) or next((n for n in notes or [] if n), "")
 
 
 def epoch(iso):
@@ -221,10 +240,8 @@ def _atom(ctx, e, step, j, rows, files):
     elif met is False and e.get("state") != "Running":
         atom["status"] = "failed"
     if last:
-        answer = last.get("answer")
-        note = next((plain(n) for n in (last.get("check") or {}).get("notes") or [] if plain(n)), "")
-        atom["human_output"] = {"atom": aid, "attempt": len(runs),
-                                "text": cut((plain(answer) if isinstance(answer, str) else "") or note or name, ANSWER_MAX)}
+        notes = [plain(n) for n in (last.get("check") or {}).get("notes") or [] if plain(n)]
+        atom["human_output"] = {"atom": aid, "attempt": len(runs), "text": cut(answer_line(last.get("answer"), notes) or name, ANSWER_MAX)}
         atom["agent_output"] = {"atom": aid, "attempt": len(runs), "files": list(files), "section": ""}
     return atom
 

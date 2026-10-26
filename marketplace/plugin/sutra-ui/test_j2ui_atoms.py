@@ -1,6 +1,7 @@
 """test_j2ui_atoms.py -- a work atom for each slot step, and atoms_v1 (j2ui_atoms.py; UI port, package j2ui-work).
 
 Named claims:
+  W3b an atom's words are the same words as the call log's: a decision's bare answer is the act in the owner's words
   W3  one atom for each slot step of an engine (a gate or a rule is a decision, not an atom), in order, W-1.a1 on, with every
       key the page's atom card reads; its check is a sentence in the owner's words, the check's id only in `target`; an
       attempt is a run of the engine, so a step that works on each page in turn has one attempt and several results; a step
@@ -180,6 +181,19 @@ def test_w3_the_notes_are_the_answer_line_when_the_row_has_one_cut_to_a_line(mod
     atoms, ctx = atoms_of(mods, "Plan")
     text = atoms[0]["human_output"]["text"]
     assert text.startswith("Priority said yes to the line") and len(text) <= 305 and not BANNED.search(text)
+
+
+def test_w3_a_decisions_bare_answer_is_never_the_words_of_an_atom(mods):
+    """The same words as the call log: a step's answer of accept, counter, reject, admit, wait or refuse is the act in the owner's
+    words, and a code that is no act gives way to the check's note, so the card never prints a bare word."""
+    W, R, J, F = mods
+    step_row(R, "Plan", "plan.read", notes=["the brief has words"], run_id="r-1", answer="counter")
+    step_row(R, "Plan", "plan.pages", notes=["6 pages proposed"], run_id="r-1", answer="refuse")
+    step_row(R, "Plan", "plan.fit", notes=["every page is on the list"], run_id="r-1", answer="accept-proposal")
+    step_row(R, "Plan", "plan.file", notes=[], run_id="r-1", answer="go")
+    atoms, ctx = atoms_of(mods, "Plan")
+    assert [a["human_output"]["text"] for a in atoms] == ["asked for less", "stopped", "every page is on the list", "File the plan"]
+    assert not re.search(r"\b(accept|counter|reject|admit|wait|refuse)\b|accept-proposal", json.dumps(K.build(ctx)), re.I)
 
 
 def test_w3_agent_output_names_the_files_of_the_version_the_engine_made(mods):

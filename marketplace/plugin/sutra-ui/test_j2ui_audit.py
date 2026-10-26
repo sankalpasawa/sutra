@@ -1,6 +1,8 @@
 """test_j2ui_audit.py -- what Audit read, the recorded conditions, and the disagreements (j2ui_audit.py; UI port, package j2ui-work).
 
 Named claims:
+  W7  a real Priority model step (run offline with an answer of ask for less or say no) reaches the page in the owner's words: the
+      state's call log, read through the router, has no bare accept, counter, reject, admit, wait or refuse anywhere
   W8  built on fixtures of the panes' new keys (the record's readings item by item, Root's standards, Priority's prices): with them
       the latest reading has a row for each item and workable becomes a list, the standards are conditions R-1 on, and Priority's
       own words refine what it said; with none of the keys every output is what W5 and W6 gave, byte for byte
@@ -62,6 +64,34 @@ def build_version(W, check, art="Build", files=None):
 def audit_of(mods, **kw):
     ctx = standin(mods, **kw)
     return K.build(ctx), ctx
+
+
+# ---- W7: a real Priority model step, read as the page reads it ----------------------------------------------------------------
+BARE_ACT = re.compile(r"\b(accept|counter|reject|admit|wait|refuse)\b|accept-proposal|reject-proposal", re.I)
+
+
+@pytest.mark.parametrize("answers, said", [(LESS, "asked for less"), (NO, "said no"), (RUN, "said no")])
+def test_w7_a_real_priority_model_step_reaches_the_page_in_the_owners_words(mods, born, monkeypatch, answers, said):
+    """Priority's model step records its answer as the one word the check asks for (counter, reject): the call log, which the state
+    sends to every client, must say the act. Read through the router, as the page reads it."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    import j2ui_api
+    import j2ui_common
+    W, R, J, F = mods
+    offline(monkeypatch, R, answers)
+    ref = born()
+    rows = [r for r in R.step_rows(ref) if r.get("step") == "priority.bargain" and r.get("by") == "model"]
+    assert rows and {r["answer"] for r in rows} <= {"counter", "reject"}, "the record holds the bare word"
+    j2ui_common.reset_caches()
+    app = FastAPI()
+    app.include_router(j2ui_api.router)
+    state = TestClient(app).get("/j2ui/%s/api/state" % ref).json()
+    mine = [c for c in state["call_log"] if c["fn"] == "priority"]
+    assert len(mine) == len(rows) and {c["reply"]["say"] for c in mine} == {said}
+    text = json.dumps(state)
+    assert not BARE_ACT.search(text) and not BANNED.search(text), BARE_ACT.search(text)
+    j2ui_common.reset_caches()
 
 
 # ---- W5: audits ---------------------------------------------------------------------------------------------------------

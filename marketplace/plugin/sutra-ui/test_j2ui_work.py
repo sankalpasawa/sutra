@@ -9,6 +9,9 @@ Named claims (each step of the package adds its own):
   W7  docs, preview and call answer with the prototype's empty shapes (Sutra stores no prompt and no reply); the call log has a row
       for each step that made a model call, none for a department with no model step, and no figure nobody recorded (no tokens,
       no model); a message is linked to its call only when exactly one call of its author brackets its time
+  W7b a decision's answer is one bare word in the record (Priority's accept, counter or reject, a gate's admit, wait or refuse); the
+      call log says the act in the owner's words (said yes, asked for less, said no; let through, waiting, stopped), whoever made the
+      call, never the word, and a code with no act of that kind is replaced by the step's first check note
   W4  a lane for each of the five functions, the validator and each workflow, in that order, with a status in idle, working,
       waiting or blocked; a function waits on you only while the owner holds the turn; the numbers are the record's (Priority's
       calls limit, the runs' retries), never the prototype's constants
@@ -39,6 +42,8 @@ REF = "dref-jw0001"
 FUNCS = ["Identity", "Adaptation", "Priority", "Coordination", "Audit"]
 LINE = ["Plan", "Write", "Check", "Publish"]
 BANNED = re.compile(r"GRANT|COUNTER|REFUSE|accept-proposal|reject-proposal", re.I)
+ACTS_SAID = {"accept": "said yes", "counter": "asked for less", "reject": "said no", "admit": "let through", "wait": "waiting", "refuse": "stopped"}
+BARE = re.compile(r"\b(%s)\b" % "|".join(ACTS_SAID), re.I)          # a decision's own word, bare: Priority's or a gate's answer
 CHECK_ID = re.compile(r"^[a-z]+(_[a-z]+)+$")
 
 
@@ -737,6 +742,53 @@ def test_w7_a_call_with_no_answer_says_what_the_steps_check_noted_or_nothing(mod
     got = K.build(standin(mods))["call_log"]
     assert got[0]["reply"] == {"say": "the answer is say yes, ask for less or say no"} and got[0]["chars"]["reply"] == 0
     assert got[1]["reply"] is None, "the page then says 'No usable reply.'"
+
+
+def test_w7_a_decisions_bare_answer_is_said_as_the_act_in_the_owners_words_whoever_made_the_call(mods):
+    """The record keeps a decision's answer as one word: priority.bargain's accept, counter or reject (a model step, mode slot) and a
+    gate's admit, wait or refuse. The page prints a call's reply as it is, so the word would reach the owner as 'counter'."""
+    W, R, J, F = mods
+    cycle(W, "bargaining", 3)
+    for engine, step, mode in (("Priority", "priority.bargain", "slot"), ("Coordination", "coord.edge", "gate"), ("Plan", "plan.pages", "slot")):
+        for answer in ACTS_SAID:
+            model_step(R, engine=engine, step=step, answer=answer, mode=mode, notes=["it was decided"])
+    out = K.build(standin(mods))
+    said = [c["reply"]["say"] for c in out["call_log"]]
+    assert said == list(ACTS_SAID.values()) * 3
+    assert not BARE.search(json.dumps(out)) and not BANNED.search(json.dumps(out)), "no act's own word anywhere in what the page is sent"
+    assert not [s for s in walk(out) if s.strip().lower() in ACTS_SAID]
+    assert [c["chars"]["reply"] for c in out["call_log"][:6]] == [len(a) for a in ACTS_SAID], "the length is the record's"
+
+
+def test_w7_the_acts_words_are_the_layers_and_the_runtimes_own(mods):
+    """The table is one place: Priority's three are layers/priority's SAID and a gate's three are engine_runtime's GATE_SAYS. A word
+    either of them says differently must be said differently here too."""
+    import j2ui_atoms
+    from layers.priority import v1 as priority
+    W, R, J, F = mods
+    assert j2ui_atoms.PRIORITY_SAID == dict(priority.SAID)
+    assert {a: ACTS_SAID[a] for a in R.GATE_SAYS} == R.GATE_SAYS
+    assert dict(j2ui_atoms.PRIORITY_SAID, **R.GATE_SAYS) == ACTS_SAID
+
+
+def test_w7_a_bare_word_in_any_case_is_still_the_act(mods):
+    W, R, J, F = mods
+    model_step(R, answer="Counter")
+    model_step(R, answer=" REJECT ", started=T1, ended=T2)
+    assert [c["reply"]["say"] for c in K.build(standin(mods))["call_log"]] == ["asked for less", "said no"]
+
+
+def test_w7_a_code_that_is_no_act_gives_way_to_the_steps_first_check_note(mods):
+    W, R, J, F = mods
+    model_step(R, engine="Identity", step="identity.take", answer="go", notes=["the verdict is go, ask or stop"])
+    model_step(R, engine="Identity", step="identity.take", answer="ask", notes=[], started=T1, ended=T2)
+    model_step(R, engine="Identity", step="identity.take", answer="accept-proposal", notes=["it was decided"], started=T2, ended=T3)
+    model_step(R, engine="Priority", step="priority.bargain", answer="brief_is_text", notes=["it was decided"], started=T0, ended=T1)
+    model_step(R, engine="Coordination", step="coord.tie", answer="Plan", notes=["names who goes first"], started=T1, ended=T2)
+    out = K.build(standin(mods))["call_log"]
+    assert [c["reply"] for c in out] == [{"say": "the verdict is go, ask or stop"}, None, {"say": "it was decided"},
+                                         {"say": "it was decided"}, {"say": "Plan"}]
+    assert not BARE.search(json.dumps(out)) and not BANNED.search(json.dumps(out))
 
 
 def test_w7_the_step_a_call_was_made_in_is_the_cycles_step_at_that_time(mods):
