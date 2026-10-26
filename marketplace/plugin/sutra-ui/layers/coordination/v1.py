@@ -1,9 +1,12 @@
 """layers/coordination/v1.py -- Coordination, version 1: the implementation behind the interface's coordination entries (PRD A1.18).
 
 Its recipe is v1.json beside it: the Coordination engine object, moved byte for byte from engine_defs/website.json in wave 0.
-Wave 0 holds the stub: the four dicts are empty, so every code, prompt, draft and check name the recipe uses is
-engine_runtime's own (the legacy registries) until this layer's package moves a body here, and WORDS and LAYOUT are
-empty, so its prompts are still read from the .md bundle. view() returns the pane's read model by reference.
+Every code, prompt, draft and check name the recipe uses is provided here by reference (A1 K1): a late-bound delegate to
+the body in engine_runtime's Coordination region (ref_to), so the module names what its recipe needs and no behaviour
+changes. A body moves into this module when this layer changes it (move on touch); engine_runtime's copy stays until W3-PROOF.
+WORDS and LAYOUT hold Coordination's two prompt files, goal (does, skills) and tie (tie), so layers.prompt serves them from here
+and the .md bundle is read for none of its parts (K2). view() and engine_card() return the pane's and the card's read
+models by reference (K4).
 """
 from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests reload engine_runtime, so never a module object
 
@@ -11,10 +14,77 @@ LAYER = 'coordination'
 VERSION = 1
 IMPLEMENTS = 1
 RECIPE = 'v1.json'
-CODE, PROMPT, DRAFT, CHECK = {}, {}, {}, {}
-WORDS, LAYOUT = {}, {}
+CODE = {name: ref_to(name) for name in (
+    'coord_busy', 'coord_pick', 'coord_edge', 'coord_verdict', 'coord_bounds', 'coord_alarm',   # the rules
+    'coord_chain',                                                                              # the gate
+    'coord_heard', 'coord_table',                                                               # the handlers: a verdict, an engine born
+    'coord_ready', 'coord_record',                                                              # the steps
+)}
+PROMPT = {'coord_tie': ref_to('p_coord_tie')}
+DRAFT = {'coord_tie_draft': ref_to('d_coord_tie')}
+CHECK = {name: ref_to(body) for name, body in (
+    ('one_run_at_a_time', 'c_one_run_at_a_time'),
+    ('names_who_goes_first', 'c_names_who_goes_first'),
+    ('chain_under_its_limit', 'c_chain_under_its_limit'),
+    ('gate_answer_is_known', 'c_gate_answer_is_known'),        # shared (S.SHARED_CHECKS)
+    ('said_what_it_did', 'c_said_what_it_did'),
+    ('facts_are_closed', 'c_facts_are_closed'),
+)}
+#: A1.16: the default words of each prompt part and the layout that arranges them, by the split rule (`python -m layers.prompts
+#: --extract coordination`); an owner's change is a typed value over these (instructions.json), never an edit here
+WORDS = {
+    'goal': {
+        'does': {
+            'text': (
+                'keeps what engines share: one run at a time, who goes first when several are ready, who may post '
+                "to whom, the chain's limit, a thread's bounds, and the alarm. Its own agent says who goes first "
+                'when several functions are ready at once'
+            ),
+        },
+        'skills': {
+            'items': [
+                'keep one run at a time',
+                'say who goes first',
+                'check who may post what to whom',
+                'stop a chain at its limit',
+                'close a thread at its bound',
+                'raise an alarm',
+                'say who goes first among equals',
+            ],
+        },
+    },
+    'tie': {
+        'tie': {
+            'task': 'Several functions of the department are ready at once, and one runs at a time. Say who goes first.',
+        },
+    },
+}
+LAYOUT = {
+    'goal': {
+        'does': '{text}',
+        'skills': '{items}',
+    },
+    'tie': {
+        'tie': (
+            '{task}\n'
+            'READY NOW: {{ready}}\n'
+            'WHAT EACH DOES: {{what}}\n'
+            "COORDINATION'S TABLE, THE USUAL ORDER: {{order}}\n"
+            'WAITING FOR THE OWNER: {{waiting}}\n'
+            '\n'
+            '{returns}'
+        ),
+    },
+}
 
 
 def view(ref, d, events, asks):
-    """Coordination's pane (S.VIEWS['coordination']): functions_view's read model, by reference until this layer holds its own."""
-    return FV._j2_part(ref, d, 'Coordination', events, asks)
+    """Coordination's pane (S.VIEWS['coordination'], screen S7): functions_view's read model of its own state, by reference
+    (A1.11, A1.17). It reads the record and the table, never the events, and writes nothing."""
+    return FV.coordination(ref, d, ak=asks)
+
+
+def engine_card(ref, name):
+    """One engine's card (S.VIEWS['engine_card'], screen S17): its place in the timetable, the motor's facts and one row for
+    each of the five, by reference (A1.17). None for a department not on the engine runtime."""
+    return FV.engine_card(ref, name)

@@ -117,6 +117,18 @@ class Fixture(unittest.TestCase):
         fn, step = R.step_def(step_id)
         return R.card(c) + R._resolve(c, "prompt", step["prompt"], engine=fn)(c, step, None)
 
+    def on_the_bundle(self, *fns):
+        """The named functions' words read from the .md bundle again, as they were before a layer held them: their layers'
+        WORDS and LAYOUT set aside until the test ends. The bundle stays the fallback until W3-PROOF deletes it, and what
+        a test of it is about (a file edited or gone, a whole-file copy of the owner's) holds whichever layers hold their
+        words by now."""
+        import layers
+        for fn in fns:
+            module = layers.load("%s/v1" % fn)
+            for name in ("WORDS", "LAYOUT"):
+                self.addCleanup(setattr, module, name, getattr(module, name))
+                setattr(module, name, {})
+
     def prompts(self):
         """Every function prompt, for the fixtures: each journey of Identity, each word Priority bargains on, a line with
         and without Root's refusal, a tie and a reading."""
@@ -226,6 +238,7 @@ class TestTheFiles(Fixture):
         for name in BUILDERS:
             self.assertNotIn("Return ONLY", inspect.getsource(getattr(R, name)), name + " still holds its words inline")
         # the words on disk are the words sent: change one file, and the next prompt carries the change
+        self.on_the_bundle("identity")
         self.bundle(edit=("identity/take", "Judge one request from the owner.", "Judge one request from the owner, kindly."))
         c = self.ctx("Identity", {"word": "request", "words": "Add a page about parking."})
         self.assertIn("Judge one request from the owner, kindly.\nTHE GOAL: ", self.render("identity.take", c, ("identity.read",)))
@@ -236,6 +249,10 @@ class TestTheFiles(Fixture):
 
     def test_m2_1c_a_file_gone_from_the_bundle_refuses_the_definitions_load(self):
         R = self.R
+        # the bundle is what runs for a layer that holds no words of its own; a layer that has moved them needs no bundle (the
+        # definitions load checks the files of the parts a layer still reads from it), so the files are held to that here
+        import layer_schema
+        self.on_the_bundle(*layer_schema.FUNCTION_LAYERS)
         self.bundle(drop="identity/take")
         with self.assertRaises(ValueError) as cm:
             R.defs()
@@ -289,6 +306,7 @@ class TestTheOwnersChange(Fixture):
 
     def test_m2_2a_a_stamped_change_is_used_by_the_next_run(self):
         R, W = self.R, self.W
+        self.on_the_bundle("identity")
         take = R._instruction("identity", "take")
         mine = take.replace("Recognise what kind of words the owner has given.", "Recognise, in plain words, what kind of words the owner has given.")
         r = self.change("identity", "take", mine)

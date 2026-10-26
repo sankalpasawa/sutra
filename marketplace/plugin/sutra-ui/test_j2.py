@@ -857,7 +857,10 @@ def test_m0_7_the_validated_event_lists_the_checks_that_ran_for_a_library_and_a_
     assert checks == ran[-1] and [c["check"] for c in checks] == LIBRARY_CHECKS and all(c["passed"] for c in checks)
     # the website kind requires Check (PRD M4.4), so the standard that none is left out ran, and held
     assert next(c for c in checks if c["check"] == "required_kept")["why"] == says["required_kept"]
-    assert next(c for c in checks if c["check"] == "fits_room")["why"] == "not priced here", "Priority writes no price rows yet"
+    # Priority prices the line while the department is born (M5.3) and keeps the price, so Root's check reads a real one
+    priced = [r for r in W.rows(lib, "prices.jsonl") if r["proposal"] == "line"]
+    assert priced and priced[-1]["answer"] == "accept", "Priority said yes to the line, and kept its price"
+    assert next(c for c in checks if c["check"] == "fits_room")["why"] == says["fits_room"]
     assert W.dept(lib)["workflows"][-1]["checks"] == checks, "the registration keeps the rows the event listed"
     shaped = _born(j2, ORGANIC, "Lab Co")
     checks = next(e for e in J.events(shaped) if e["action"] == "workflow.validated")["payload"]["checks"]

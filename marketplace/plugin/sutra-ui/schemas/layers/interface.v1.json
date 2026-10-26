@@ -87,7 +87,8 @@
       "verdict_is_known": "a verdict is go, ask or refuse, and an ask or a no says why"
     },
     "priority": {
-      "answer_has_its_price": "said yes, asked for less or said no, each with its price; an ask for less names what it keeps"
+      "answer_has_its_price": "said yes, asked for less or said no, each with its price; an ask for less names what it keeps",
+      "price_is_observed": "a yes, or an ask for less, is held to the facts Priority read: what it keeps costs no more than the room left; a no, or a smaller yes, always stands"
     },
     "root": {
       "department_is_made": "the department exists under Root, on the runtime, and has its goal",
@@ -327,6 +328,37 @@
         {
           "findings": [],
           "ok": true
+        }
+      ]
+    },
+    "price_is_observed": {
+      "bad": [
+        {
+          "answer": "counter",
+          "keep": [],
+          "why": "room for two today"
+        },
+        {
+          "answer": "accept",
+          "why": ""
+        },
+        {
+          "answer": "grant",
+          "why": "x"
+        }
+      ],
+      "good": [
+        {
+          "answer": "counter",
+          "keep": [
+            "Plan",
+            "Write"
+          ],
+          "why": "room for two today: 0.08 USD for these of the 0.30 USD left"
+        },
+        {
+          "answer": "reject",
+          "why": "no room today: the first costs 0.08 USD against 0.00 USD left"
         }
       ]
     },
@@ -4563,6 +4595,98 @@
           },
           "minItems": 0,
           "type": "array"
+        },
+        "prices": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "answer": {
+                "enum": [
+                  "accept",
+                  "counter",
+                  "reject"
+                ]
+              },
+              "at": {
+                "anyOf": [
+                  {
+                    "maxLength": 40,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "estimate": {
+                "additionalProperties": true,
+                "properties": {
+                  "calls": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "usd": {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "calls",
+                  "usd"
+                ],
+                "type": "object"
+              },
+              "proposal": {
+                "enum": [
+                  "line",
+                  "round",
+                  "engine",
+                  "cost"
+                ]
+              },
+              "room": {
+                "additionalProperties": true,
+                "properties": {
+                  "calls": {
+                    "type": "integer"
+                  },
+                  "usd": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "calls",
+                  "usd"
+                ],
+                "type": "object"
+              },
+              "said": {
+                "enum": [
+                  "said yes",
+                  "asked for less",
+                  "said no"
+                ]
+              },
+              "why": {
+                "maxLength": 600,
+                "minLength": 0,
+                "type": "string"
+              }
+            },
+            "required": [
+              "at",
+              "proposal",
+              "answer",
+              "said",
+              "estimate",
+              "room",
+              "why"
+            ],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
         }
       },
       "required": [
@@ -5429,6 +5553,16 @@
         "payload": "act.conflict",
         "via": "board",
         "word": "conflict"
+      },
+      {
+        "act": "inform",
+        "from": [
+          "Adaptation"
+        ],
+        "handler": "Hear a doubt",
+        "payload": "act.doubt",
+        "via": "board",
+        "word": "doubt"
       }
     ],
     "priority": [
@@ -5643,7 +5777,8 @@
     },
     "priority": {
       "checks": [
-        "answer_has_its_price"
+        "answer_has_its_price",
+        "price_is_observed"
       ],
       "hands_to": "Adaptation: said yes, asked for less, or said no. Identity: through Adaptation's conflict, when a limit is hit.",
       "holds": "One limit per engine (calls and money a day) and the bargain threads.",
@@ -6119,7 +6254,9 @@
             "calls",
             "usd",
             "room",
-            "limit"
+            "limit",
+            "estimate",
+            "remaining"
           ],
           "read_by": "priority.bargain",
           "returns": "Return ONLY a JSON object: {\"answer\": \"accept\" | \"counter\" | \"reject\", \"why\": \"one line\", \"keep\": [names]}."

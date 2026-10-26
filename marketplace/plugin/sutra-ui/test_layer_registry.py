@@ -3,9 +3,10 @@
 C1  layers/__init__.py: available, load, pins, impl, layer_of, resolve, names, call and view. With every module holding
     empty dicts the registry returns the legacy function; a module that provides a name is the one that runs it; a
     ref_to delegate reaches the reloaded engine_runtime; and nothing imports engine_runtime when `layers` is imported.
-C2  engine_runtime's seam: every code, prompt, draft and check lookup goes through R._resolve, a gate resolves with
-    its own function as the engine, step and gate rows carry `impl`, and validate() holds the definitions to the
-    interface (edges, handlers, checks).
+C2  engine_runtime's seam: every code, prompt, draft and check lookup goes through R._resolve, a gate resolves its code
+    and its check with its own function as the engine (a start asks them in blocked(), a rule in _ask_rule and
+    _gate_row), step and gate rows carry `impl`, and validate() holds the definitions to the interface (edges,
+    handlers, checks).
 
 A test that meets a fault of the interface fails (conftest.py); a deliberate one is wrapped in S.expect_refused().
 """
@@ -44,13 +45,12 @@ def modules():
 
 
 @pytest.fixture
-def empty(monkeypatch):
-    """Every layer's version 1 as wave 0 held it, with four empty dicts: the registry tests below are about the registry,
-    not about what a layer provides now that its package has filled its module (A1.18)."""
-    stubs = {impl: types.SimpleNamespace(LAYER=impl.split("/")[0], VERSION=1, IMPLEMENTS=S.SCHEMA_VERSION, CODE={}, PROMPT={}, DRAFT={}, CHECK={},
-                                         WORDS={}, LAYOUT={}) for impl in S.DEFAULT_PINS.values()}
-    monkeypatch.setattr(layers, "_LOADED", stubs)
-    return stubs
+def empty_modules(monkeypatch):
+    """Wave 0's state, which these tests describe: every layer's module holds empty dicts. From wave 1 a layer's package fills
+    its own, so the registry serves empty stubs in their place and the real modules are not consulted."""
+    for layer, impl_id in S.DEFAULT_PINS.items():
+        monkeypatch.setitem(layers._LOADED, impl_id, types.SimpleNamespace(
+            LAYER=layer, VERSION=1, IMPLEMENTS=S.SCHEMA_VERSION, CODE={}, PROMPT={}, DRAFT={}, CHECK={}, WORDS={}, LAYOUT={}))
 
 
 # ---- C1 · the registry -----------------------------------------------------------------------------------------------
@@ -124,7 +124,7 @@ def test_c1_layer_of_names_the_layer_of_a_function_and_of_setup_and_nothing_else
     assert layers.layer_of("Plan") is None and layers.layer_of("Write") is None and layers.layer_of(None) is None
 
 
-def test_c1_with_empty_modules_resolve_returns_the_legacy_function(home, empty):
+def test_c1_with_empty_modules_resolve_returns_the_legacy_function(home, empty_modules):
     W, R = modules()
     for kind, legacy in (("code", R.CODE), ("prompt", R.PROMPT), ("draft", R.DRAFT), ("check", R.CHECK)):
         for engine in ("Identity", "Adaptation", "Priority", "Coordination", "Audit", "Setup", "Plan", None):
@@ -142,7 +142,7 @@ def test_c1_a_stub_holding_a_name_is_what_resolve_returns_for_that_layers_engine
     assert layers.resolve("dref-x", "Identity", "code", "identity_read", R.CODE) is f
     assert layers.resolve("dref-x", "Priority", "code", "identity_read", R.CODE) is R.CODE["identity_read"], "another layer's engine"
     assert layers.resolve("dref-x", "Plan", "code", "identity_read", R.CODE) is R.CODE["identity_read"], "a work engine has no layer"
-    assert layers.resolve("dref-x", "Identity", "code", "identity_route", R.CODE) is R.CODE["identity_route"], "a name it does not hold"
+    assert layers.resolve("dref-x", "Identity", "code", "plan_read", R.CODE) is R.CODE["plan_read"], "a name it does not hold"
     other = lambda *a: 1
     assert layers.resolve("dref-x", "Identity", "check", "identity_read", {"identity_read": other}) is other, "another kind"
     # each kind is its own dict
@@ -151,18 +151,20 @@ def test_c1_a_stub_holding_a_name_is_what_resolve_returns_for_that_layers_engine
         assert layers.resolve("dref-x", "Identity", kind, "a_name", {"a_name": None}) is f
 
 
-def test_c1_resolve_serves_a_stub_the_test_puts_in_the_registry(monkeypatch, empty):
+def test_c1_resolve_serves_a_stub_the_test_puts_in_the_registry(monkeypatch, empty_modules):
     W, R = modules()
     f = lambda ctx, step, item: {}
     stub = types.SimpleNamespace(LAYER="identity", VERSION=1, IMPLEMENTS=1, CODE={"identity_read": f}, PROMPT={}, DRAFT={}, CHECK={})
+    # the names the other layers' own packages hold already: a layer fills its dicts in its own package
+    others = {n for layer, ids in layers.available().items() if layer != "identity" for i in ids for n in layers.load(i).CODE}
     monkeypatch.setitem(layers._LOADED, "identity/v1", stub)
     assert layers.resolve(None, "Identity", "code", "identity_read", R.CODE) is f
-    assert layers.names("code") == {"identity_read"} | set(layers.load("root/v1").CODE)
+    assert layers.names("code") == others | {"identity_read"}
 
 
 def test_c1_names_are_what_any_implementation_provides(monkeypatch):
-    held = {kind: layers.names(kind) for kind in layers.KINDS}          # whatever the layers hold of their own so far
-    assert held["code"] >= {"setup_read"} and all(isinstance(names, set) for names in held.values())
+    held = {kind: {n for ids in layers.available().values() for i in ids for n in getattr(layers.load(i), kind.upper())} for kind in layers.KINDS}
+    assert all(layers.names(kind) == held[kind] for kind in layers.KINDS), "what the layers' own packages hold, and nothing else"
     monkeypatch.setitem(layers.load("priority/v1").CHECK, "answer_has_its_price", lambda *a: {})
     monkeypatch.setitem(layers.load("audit/v1").CHECK, "has_a_verdict", lambda *a: {})
     assert layers.names("check") == held["check"] | {"answer_has_its_price", "has_a_verdict"} and layers.names("code") == held["code"]
@@ -288,6 +290,58 @@ def test_c2_a_gate_is_resolved_with_its_function_as_the_engine_and_its_row_names
         "Write's start asks Identity's gate, and Identity's module answers it"
     row = next(r for r in R.step_rows(ref) if r["step"] == "identity.wait_engine")
     assert (row["mode"], row["engine"], row["impl"], row["answer"]) == ("gate", "Identity", "identity/v1", "wait")
+
+
+def test_c2_a_gates_check_is_resolved_with_its_function_as_the_engine_when_a_start_is_asked(dept, monkeypatch):
+    """The gate's covering (M2.4) is its function's too: Write's start asks Identity's gates, and the check that reads their
+    answers is the one Identity's pinned module provides, not the legacy body that a lookup for the work engine would find."""
+    W, R, ref = dept
+    asked = []
+    own = {"ok": True, "notes": ["Identity's own check ran"]}
+
+    def check(ctx, step, item, out):
+        asked.append((ctx["engine"], step["id"], out["answer"]))
+        return own
+    monkeypatch.setitem(layers.load("identity/v1").CHECK, "gate_answer_is_known", check)
+    assert R.admit(ref, W.dept(ref), "Write", {"v": 1}, "Write@seamcheck") == ("admit", None)
+    assert asked == [("Write", "identity.wait_engine", "admit"), ("Write", "identity.gate", "admit")], \
+        "each of Identity's two gates in Write's start reads its answer through Identity's module, and no other gate does"
+    rows = {r["step"]: r for r in R.step_rows(ref) if r["mode"] == "gate"}
+    assert rows["identity.wait_engine"]["check"] == own and rows["identity.gate"]["check"] == own
+    assert rows["priority.envelope"]["check"] != own and rows["coord.chain"]["check"] != own, "Priority's and Coordination's gates keep their own"
+
+
+def test_c2_a_check_of_the_gates_layer_can_hold_the_start_it_does_not_cover(dept, monkeypatch):
+    W, R, ref = dept
+    held = {"ok": False, "notes": ["Identity's own check refused it"]}
+    monkeypatch.setitem(layers.load("identity/v1").CHECK, "gate_answer_is_known", lambda ctx, step, item, out: held)
+    got = R.admit(ref, W.dept(ref), "Write", {"v": 1}, "Write@seamhold")
+    assert got == ("wait", "Identity's own check refused it"), "the covering is code: a gate whose check fails never lets a start through"
+    row = next(r for r in R.step_rows(ref) if r["step"] == "identity.wait_engine")
+    assert (row["answer"], row["check"], row["status"]) == ("wait", held, "failed")
+
+
+def test_c2_a_rules_check_is_resolved_with_its_function_as_the_engine_when_it_is_asked(dept, monkeypatch):
+    """_ask_rule writes the row of a rule of Coordination from a work engine's context; the row's covering is Coordination's
+    pinned module's check, found with no context but the ref and the function."""
+    W, R, ref = dept
+    asked = []
+    own = {"ok": True, "notes": ["Coordination's own check ran"]}
+
+    def check(ctx, step, item, out):
+        asked.append((step["id"], out["answer"]))
+        return own
+    monkeypatch.setitem(layers.load("coordination/v1").CHECK, "one_run_at_a_time", check)
+    ctx = dict(R._coord_ctx(ref), engine="Write")
+    assert R._ask_rule(ref, "coord.busy", key="Write@seamcheck|coord.busy", ctx=ctx) == ("admit", None)
+    assert asked == [("coord.busy", "admit")]
+    row = next(r for r in R.step_rows(ref) if r["step"] == "coord.busy")
+    assert (row["engine"], row["impl"], row["check"]) == ("Coordination", "coordination/v1", own)
+    # and the gate row alone, written with no context, finds the same
+    _, busy = R.step_def("coord.busy")
+    R._gate_row(ref, "Write@seamrow", "Coordination", busy, "C2", "wait", "a run runs")
+    assert asked[-1] == ("coord.busy", "wait")
+    assert [r["check"] for r in R.step_rows(ref) if r["slot"] == "Write@seamrow"] == [own]
 
 
 def test_c2_a_rule_is_resolved_with_its_function_as_the_engine_in_a_run_and_in_an_ask(dept, monkeypatch):

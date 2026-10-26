@@ -506,7 +506,7 @@ def set_numbers(ref, engine, nums, by="the owner"):
             raise ValueError("%s is too small" % k)
         own[k] = v
     d.setdefault("ladders", {})[engine] = own
-    W.save_dept(ref, d)
+    W.save_dept(ref, d, by="identity")
     W.system_run(ref, "Identity", "%s set %s's ladder: %s" % (by, engine, ", ".join("%s %d" % kv for kv in sorted(own.items()))))
     return numbers(ref, engine)
 
@@ -3377,7 +3377,7 @@ def identity_finding(ctx, step, item):
             with W._lock(ref):
                 d = W.dept(ref)
                 d["looked_up"] = sorted(looked | {str(f.get("claim")) for f in fresh})
-                W.save_dept(ref, d)
+                W.save_dept(ref, d, by="identity")
             _file_words(ref, d, "Look up: " + "; ".join(_finding_lines(ref, fresh, None)), "the holes Audit found, for " + engine)
         else:
             text = ("The site says it does not know %s: %s. Tell me here and I will put them in."
@@ -4199,6 +4199,25 @@ def grow_line(ref, name, before=None):
     return _put_table(ref, t, "the owner's stamp")
 
 
+def _check_line(ref, d, t):
+    """Coordination's line, about to be written, against Root's standards for a write (PRD A1.14, A1.20): the workflow is the
+    plan Root registered last (its engines and its source), and the line and the engines the owner added (grown) are what
+    it is held against, so a line that names an engine no registered plan holds, which the owner did not add, is not
+    written without a word. (The line itself is not the workflow: a standard that counted the workflow's own engines as
+    registered would pass every line.) A department with no registered plan is read as the line it is given. Warn mode
+    leaves one row, the failed standards together, and the write goes through; refuse mode raises layer_schema.SchemaFault
+    after the row, and nothing is written."""
+    import layer_schema as S
+    plans = [w for w in d.get("workflows") or [] if isinstance(w, dict) and w.get("engines")]
+    ctx = {"line": list(t.get("line") or []), "grown": list(t.get("grown") or [])}
+    source = plans[-1].get("source") if plans else None
+    registered = [str(n) for n in plans[-1]["engines"]] if plans else ctx["line"]
+    rows = S.validate_workflow(S.as_workflow(registered, source if source in S.SOURCES else "library", d), "write", d, ctx)
+    failed = [r for r in rows if not r["passed"]]
+    failed.sort(key=lambda r: r["check"] == "workflow_meets_standards")      # a standard says it in words; the shape row follows
+    S.report("coordination.table", ["%s: %s" % (r["check"], r["why"]) for r in failed], ref=ref, owner="coordination")
+
+
 def set_line(ref, engines, version=None, full=True):
     """Coordination's line, on the record, after Root registered a plan (PRD M4.2: the line is what was granted). On the
     cycle's first registration, and on any later one that names the whole line (full), the line is the plan in its
@@ -4206,7 +4225,7 @@ def set_line(ref, engines, version=None, full=True):
     record that the plan left out stays on the record, in_line false, and never runs. A registration that is not full
     adds its engines to the line (none is today: a round of Pursue never registers a line). Written by Coordination,
     with the plan's version, so the table says which registration it follows, and with its timetable: one slot for
-    each engine of the line (PRD M4.3)."""
+    each engine of the line (PRD M4.3). The line is checked as a write before it is put (_check_line)."""
     t = coordination(ref)
     d = W.dept(ref) or {}
     old, plan = list(t.get("line") or []), [str(n) for n in engines or [] if n]
@@ -4225,6 +4244,7 @@ def set_line(ref, engines, version=None, full=True):
     # the plan's version; a registration that names none keeps the one the table follows, never None (PRD M4.1)
     t.update({"line": line, "left_out": left, "registered": version if version is not None else t.get("registered")})
     t["timetable"] = _timetable(ref, t)                    # one slot for each engine of the line (PRD M4.3)
+    _check_line(ref, d, t)
     return _put_table(ref, t, "the plan Root registered")
 
 
@@ -4296,12 +4316,16 @@ def coord_table(ctx, step, item):
     t = coordination(ctx["ref"])
     if board_ and (item["grow"] in (t.get("line") or []) if item.get("grow") else t.get("registered") == item["version"]):
         return {"said": "nothing to do: the line already holds it: " + " -> ".join(t.get("line") or [])}
-    if item.get("grow"):
-        t = grow_line(ctx["ref"], item["grow"], item.get("before"))
-        said = "added %s to the line: %s" % (item["grow"], " -> ".join(t["line"]))
-    else:
-        t = set_line(ctx["ref"], item.get("engines") or [], item.get("version"), full=item.get("full", True) is not False)
-        said = "set the line to the plan: " + " -> ".join(t["line"])
+    import layer_schema as S
+    try:
+        if item.get("grow"):
+            t = grow_line(ctx["ref"], item["grow"], item.get("before"))
+            said = "added %s to the line: %s" % (item["grow"], " -> ".join(t["line"]))
+        else:
+            t = set_line(ctx["ref"], item.get("engines") or [], item.get("version"), full=item.get("full", True) is not False)
+            said = "set the line to the plan: " + " -> ".join(t["line"])
+    except S.SchemaFault as exc:        # refuse mode: the table the interface refused is not written, and the line stands as it was
+        return {"said": "kept the line it had: " + "; ".join(exc.faults[:3]), "line": list(t.get("line") or [])}
     if J:
         J.on_table(ctx["ref"], t, item.get("grow"))
     return {"said": said, "line": list(t["line"])}
@@ -4341,7 +4365,7 @@ def priority_grant(ctx, step, item):
                 envs[n]["usd"] = min(float(envs[n]["usd"]), share)
             given.append(n)
         if given:
-            W.save_dept(ref, d)
+            W.save_dept(ref, d, by="priority")
     J = _j2()
     if J:
         for n in names:
@@ -5499,8 +5523,10 @@ def d_identity_take(ctx, step, item):
             "needs": [], "unsure": []}
 
 
-#: Identity's standard (PRD M3.3, MK-1): the five points of its completeness file, each by the word a reading names it
-STANDARD = ("goal", "items", "rules", "owner", "budget", "invented")
+#: Identity's standard (PRD M3.3, MK-1): the five points of its completeness file, each by the word a reading names it;
+#: the interface's own tuple (PRD A1.3), so the covering and the schema read one standard
+import layer_schema as S  # noqa: E402 -- beside the one name that reads it
+STANDARD = S.STANDARD
 #: what each point's gap is called, in the owner's words, when code reads it on the record
 STANDARD_SAYS = {"goal": "no goal", "items": "no done-when item that says how it is checked", "rules": "a rule with no tag",
                  "owner": "no owner", "budget": "no budget"}
