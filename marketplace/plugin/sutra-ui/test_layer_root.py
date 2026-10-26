@@ -633,3 +633,112 @@ def test_r7_no_ownership_row_is_met_through_a_birth_a_registration_and_a_grown_l
     rows = S.REFUSED["rows"][seen:]
     assert not [r for r in rows if any("Root wrote" in f or "is Root's" in f for f in r.get("faults") or [])], rows
     assert not rows, "nothing at all was refused"
+
+
+def test_r6_root_v1_holds_the_setup_words_typed_and_provides_every_setup_step_by_reference(home):
+    import layers
+    import layers.contract as C
+    W, R, J, _ = home
+    module = layers.load("root/v1")
+    assert module is not None and layers.impl(None, "root") is module
+    assert module.WORDS == {"setup": {"converse": {"task": R.CONVERSE}, "shape": {}}}, "the inline builder's instruction, byte for byte"
+    assert set(module.LAYOUT["setup"]) == set(S.PROMPTS["root"]["setup"]) == {"converse", "shape"}
+    steps = [s for s in R.engine_def("Setup")["steps"]]
+    for s in steps:
+        for kind in ("code", "prompt", "draft", "check"):
+            if s.get(kind):
+                assert s[kind] in getattr(module, kind.upper()), "%s: %s %s is provided by root/v1" % (s["id"], kind, s[kind])
+                assert hasattr(getattr(module, kind.upper())[s[kind]], "legacy"), "by reference: the body has not moved"
+    assert C.on_the_md_fallback(module) == [] and C.by_reference(module) == {"by_reference": 14, "own": 0}
+    # the registry serves root/v1's name for a Setup step, and it runs the body engine_runtime holds
+    served = layers.resolve(None, "Setup", "code", "setup_read", R.CODE)
+    assert served is module.CODE["setup_read"] and served.legacy == ("engine_runtime", "setup_read")
+
+
+def test_r6_the_contract_cases_1_to_5_pass_for_root_v1(home, tmp_path):
+    import layers
+    import layers.contract as C
+    module = layers.load("root/v1")
+    ctx = {"ref": C.fixture_department(tmp_path / "departments")}
+    assert [(n, fn(module, ctx)) for n, _, fn in C.cases() if n <= 5] == [(n, []) for n in range(1, 6)]
+    assert C.case_6(module, ctx) == [] and C.case_7(module, ctx) == [] and C.case_8(module, ctx) == [], "Root has no pane and no OUTPUTS step"
+    # the answer contracts are the interface's, compiled in verbatim, and the owner's field cannot carry one
+    import layers.prompts as P
+    for part, spec in S.PROMPTS["root"]["setup"].items():
+        assert P.part_faults("root", "setup", part, module.WORDS["setup"][part], module.LAYOUT["setup"][part]) == []
+        assert spec["returns"] in module.LAYOUT["setup"][part] or "{returns}" in module.LAYOUT["setup"][part]
+    assert S.validate_field("root", "setup", "converse", "task", "Return ONLY a JSON object: {}") != [], "the owner cannot change the answer's shape"
+    assert S.validate_field("root", "setup", "converse", "task", CONVERSE_OWN) == []
+    assert S.validate_field("root", "setup", "converse", "items", ["x"]) != [], "the examples are the Library's, not a field of the owner's"
+
+
+CONVERSE_OWN = "Ask one short question at a time until you can create the department; then say clear."
+
+
+def test_r6_the_library_template_may_say_its_own_converse_instruction_and_the_default_is_the_words(home, monkeypatch):
+    W, R, J, _ = home
+    import layers
+    ctx = _setup_context(R, WEBSITE, _conversation(("user", WEBSITE)), None, "")
+    assert layers.load("root/v1").CONVERSE == R.CONVERSE and R.p_setup_converse(ctx, None, None).startswith(R.CONVERSE + "\n\nQUESTIONS")
+    template = dict(R.engine_def("Setup"), converse_instruction=CONVERSE_OWN)
+    monkeypatch.setattr(R, "engine_def", lambda name, _real=R.engine_def: template if name == "Setup" else _real(name))
+    got = R.p_setup_converse(ctx, None, None)
+    assert got.startswith(CONVERSE_OWN + "\n\nQUESTIONS") and R.CONVERSE not in got
+    assert got.endswith(S.PROMPTS["root"]["setup"]["converse"]["returns"])
+    # the examples are the template's questions, joined on one line
+    template = dict(template, clarification_questions=["Who is it for?", "What first?"])
+    assert "(examples, not a list to walk): Who is it for? | What first?\n" in R.p_setup_converse(ctx, None, None)
+
+
+def test_r6_a_marker_the_code_gives_no_value_is_an_error_never_a_blank(home):
+    import layers
+    with pytest.raises(ValueError, match="no \\{\\{existing\\}\\}|fills no|existing"):
+        layers.prompt(None, "root", "setup", "shape", org="Acme", words="w", named="none", kinds="website", use_cases="u")
+
+
+def test_r6_standards_are_the_interfaces_ids_and_words_for_the_screen_to_list(home):
+    import layers
+    got = layers.call(None, "root", "standards")
+    assert [r["id"] for r in got] == [s[0] for s in S.WORKFLOW_STANDARDS] and [r["says"] for r in got] == [s[1] for s in S.WORKFLOW_STANDARDS]
+    assert all(set(r) == {"id", "says", "sources", "stages"} and set(r["stages"]) <= set(S.STAGES) for r in got)
+    assert json.loads(json.dumps(got)) == got, "it goes out as JSON"
+
+
+def _snapshot(W, *refs):
+    """Everything a department keeps in its folder, as bytes by file name: what 'changes nothing else' is measured on."""
+    out = {}
+    for ref in refs:
+        for p in sorted(W.ddir(ref).rglob("*")):
+            if p.is_file():
+                out[(ref, str(p.relative_to(W.ddir(ref))))] = p.read_bytes()
+    return out
+
+
+def test_r6_a_root_setup_option_posts_one_request_on_the_root_department_and_changes_nothing_else(home):
+    import layers
+    W, R, J, _ = home
+    ref = _born(home)
+    root = W.dept(ref)["root"]
+    ask = W.options_ask("blocked", "An engine the kind requires cannot serve D2.", [
+        W.option("root_setup", "Set the department up again, done its own way", "Root sets it up again from your words"),
+        W.option("stop", "Stop here", "the department stops where it is")], title="The plan could not be shaped.", who="Adaptation", why="D2")
+    option = dict(ask["options"][0], params={"words": "A site that teaches algebra to Class 8 students."})
+    assert S.validate("option.words", option["params"]) == [] and S.OPTION_KINDS["root_setup"]["layer"] == "root"
+    before, requests = _snapshot(W, ref), [p for p in R.board(root) if p["src"] == "Owner" and p["msg_type"] == "request"]
+    out = layers.call(ref, "root", "apply_option", ref, ask, option)
+    after = _snapshot(W, ref)
+    assert after == before, "nothing of the department changes: its record, its asks, its board, its runs"
+    posted = [p for p in R.board(root) if p["src"] == "Owner" and p["msg_type"] == "request"]
+    assert len(posted) == len(requests) + 1 and posted[-1]["dst"] == ["Identity"]
+    assert posted[-1]["payload"]["words"] == out["text"] == "A site that teaches algebra to Class 8 students, done its own way"
+    assert posted[-1]["payload"]["about"] == {"dept": ref, "name": W.dept(ref)["name"]} and posted[-1]["payload"]["word"] == "front"
+    assert [r["text"] for r in W.requests(root)][-1] == out["text"] and out["root"] == root
+    # the words may come from the card the owner answered; without any, nothing is posted
+    kept = len(R.board(root))
+    out = layers.call(ref, "root", "apply_option", ref, dict(ask, chosen={"id": "root_setup", "words": "Another way"}), {"id": "root_setup"})
+    assert out["text"] == "Another way, done its own way"
+    with pytest.raises(ValueError, match="say what the department is for"):
+        layers.call(ref, "root", "apply_option", ref, ask, {"id": "root_setup"})
+    assert len(R.board(root)) == kept + 1
+    with pytest.raises(ValueError, match="no department"):
+        layers.call("dref-nowhere", "root", "apply_option", "dref-nowhere", ask, option)

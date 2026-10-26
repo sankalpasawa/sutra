@@ -3754,18 +3754,32 @@ def _converse_examples():
     return [str(q) for q in (engine_def("Setup") or {}).get("clarification_questions") or [] if str(q).strip()]
 
 
+def _setup_prompt(ctx, part, task=None, **inputs):
+    """One part of Root's setup instructions, compiled (A1.16): root/v1's words and layout for root.setup.<part>, the
+    interface's answer contract verbatim, and the inputs this code fills. `task` stands in for the default task when the
+    Library's Setup template says its own."""
+    import layer_schema as S
+    ref = ctx.get("ref")
+    if task is None:
+        return layers.prompt(ref, "root", "setup", part, **inputs)
+    P = layers.prompts
+    words = P.words(ref, "root", "setup", part)
+    words["task"] = str(task)
+    return P.compile_layout(layers.impl(ref, "root", ctx.get("dept")).LAYOUT["setup"][part], words,
+                            S.PROMPTS["root"]["setup"][part]["returns"], inputs, P.who("root", "setup", part))
+
+
 def p_setup_converse(ctx, step, item):
-    """The converse step's inside (S-24): an instruction, the examples, and the conversation so far. No question lives in code."""
+    """The converse step's inside (S-24): an instruction, the examples, and the conversation so far. No question lives in
+    code. The words are root/v1's (A1.16); the Library's Setup template says its own instruction in their place when it
+    sets one."""
     got = ctx["bag"]["setup.read"]
     conversation = got.get("conversation") or {}
     lines = "\n".join("%s: %s" % ("OWNER" if m.get("actor") == "user" else "SUTRA", m.get("text") or "")
                       for m in conversation.get("messages") or [] if isinstance(m, dict))
-    instruction = str((engine_def("Setup") or {}).get("converse_instruction") or CONVERSE)
-    return ("%s\n\nQUESTIONS OF THE KIND YOU MAY ASK (examples, not a list to walk): %s\n"
-            "WHAT THE LIBRARY CAN BUILD: %s\nDEPARTMENTS THIS ORGANISATION ALREADY HAS: %s\n\nTHE CONVERSATION SO FAR:\n%s\n\n"
-            "Return ONLY a JSON object: {\"verdict\": \"ask\" | \"clear\", \"question\": \"your one question, or an empty string when clear\"}."
-            % (instruction, " | ".join(_converse_examples()) or "none", got["facts"].get("use_cases") or "", got["facts"].get("existing") or "none",
-               lines or "OWNER: " + str(got.get("words") or "")))
+    return _setup_prompt(ctx, "converse", (engine_def("Setup") or {}).get("converse_instruction") or None,
+                         examples=" | ".join(_converse_examples()) or "none", library=got["facts"].get("use_cases") or "",
+                         existing=got["facts"].get("existing") or "none", conversation=lines or "OWNER: " + str(got.get("words") or ""))
 
 
 def d_setup_converse(ctx, step, item):
@@ -3835,26 +3849,12 @@ def setup_say(ctx, step, item):
 
 
 def p_setup_shape(ctx, step, item):
+    """The shape step's inside: the owner's words, the Library's kinds and the departments this Root has, asked for a name,
+    a kind, a goal and done-when items. The words are root/v1's (A1.16)."""
     got = ctx["bag"]["setup.read"]
     org = (ctx["dept"].get("org") or {}).get("name") or ctx["dept"].get("name")
-    return ("The owner of %s asks Root for a department. Shape it: a short name (the organisation's name and what it is, like "
-            "\"%s Website\"; a NEW department takes a name none of the existing ones has, say \"%s Website 2\" or what sets it apart; "
-            "when the owner gave the department a name, that name is its name, exactly as given), "
-            "its kind from the Library (the kind whose use case fits the words; default when none does), and its goal in one or two "
-            "sentences in the owner's own words.\n"
-            "THE OWNER'S WORDS: %s\nTHE NAME THE OWNER GAVE: %s\nKINDS IN THE LIBRARY: %s\nEACH KIND'S USE CASE: %s\n"
-            "DEPARTMENTS THIS ROOT ALREADY HAS: %s\n\n"
-            "If the words describe MORE THAN ONE department, shape only the first: its goal covers only that one, and `second` "
-            "holds, in the owner's words, what the other department is for. Otherwise `second` is an empty string.\n"
-            "Draft its done-when as items: each one line that must be true when the department is done, from the owner's words "
-            "and nothing else, with how it is checked (code: a program can check it on what was made; model: an AI reads what "
-            "was made; person: only the owner can say) and its level (target: something the work must have; outcome: something "
-            "it must achieve). An item that rests on a fact the owner did not give says why in confirm; else confirm is \"\".\n"
-            "Return ONLY a JSON object: {\"name\": \"...\", \"kind\": \"one of the kinds above\", \"goal\": \"...\", "
-            "\"purpose\": \"one line\", \"second\": \"...\", \"done_items\": [{\"text\": \"...\", \"how\": \"code\" | \"model\" | "
-            "\"person\", \"level\": \"target\" | \"outcome\", \"confirm\": \"...\"}]}."
-            % (org, org, org, got["words"], got.get("named") or "none", got["facts"]["kinds"], got["facts"].get("use_cases") or "",
-               got["facts"].get("existing") or "none"))
+    return _setup_prompt(ctx, "shape", org=org, words=got["words"], named=got.get("named") or "none", kinds=got["facts"]["kinds"],
+                         use_cases=got["facts"].get("use_cases") or "", existing=got["facts"].get("existing") or "none")
 
 
 def d_setup_shape(ctx, step, item):
