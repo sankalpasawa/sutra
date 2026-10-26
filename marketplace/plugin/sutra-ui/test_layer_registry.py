@@ -203,3 +203,192 @@ def test_c1_importing_layers_imports_no_engine_runtime():
 
 def test_c1_the_forwarders_reach_the_prompt_compiler():
     assert layers.prompt.__module__ == "layers" and layers.words.__module__ == "layers"
+
+
+# ---- C2 · the seam ---------------------------------------------------------------------------------------------------
+REF = "dref-seam0001"
+
+
+@pytest.fixture
+def dept(home):
+    """A website department on the runtime with a brief, and the model that is never there: each soft step runs its draft."""
+    W, R = modules()
+    importlib.reload(W)
+    importlib.reload(R)
+    W.create(REF, "City Care Hospital Website", None)
+    W.add_version(REF, "Brief", {"brief.md": "# City Care Hospital Website\n\nA website for City Care Hospital.\n"},
+                  [{"ask": "a website", "at": "2026-10-23T10:00:00+05:30"}], "owner", {"ok": True, "notes": ["the owner's goal"]})
+    yield W, R, REF
+    R._DEFS.clear()
+
+
+def test_c2_resolve_is_the_registry_and_the_engine_argument_names_whose_step_it_is(dept, monkeypatch):
+    W, R, ref = dept
+    ctx = {"ref": ref, "dept": W.dept(ref), "engine": "Identity"}
+    for kind, legacy in (("code", R.CODE), ("prompt", R.PROMPT), ("draft", R.DRAFT), ("check", R.CHECK)):
+        name = sorted(legacy)[0]
+        assert R._resolve(ctx, kind, name) is legacy[name]
+    f = lambda c, s, i: "stub"
+    monkeypatch.setitem(layers.load("coordination/v1").CODE, "coord_busy", f)
+    assert R._resolve(ctx, "code", "coord_busy") is R.CODE["coord_busy"], "Identity's engine: not Coordination's body"
+    assert R._resolve(ctx, "code", "coord_busy", engine="Coordination") is f
+    assert R._resolve(dict(ctx, engine="Write"), "code", "coord_busy", engine="Coordination") is f
+    assert R._resolve(dict(ctx, engine="Coordination"), "code", "coord_busy") is f
+    assert R._resolve({"ref": ref}, "code", "coord_busy") is R.CODE["coord_busy"], "no engine, no layer"
+
+
+def test_c2_every_lookup_in_the_runtime_goes_through_the_seam():
+    """The four registry literals are the fallback _resolve reads; no step, gate or rule is looked up in them directly.
+    coord_pick is Coordination's own region, which W1-COORD moves to the seam."""
+    import ast
+    tree = ast.parse((HERE / "engine_runtime.py").read_text(encoding="utf-8"))
+    sites = set()
+    for fn in [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]:
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Subscript) and getattr(node.value, "id", None) in ("CODE", "PROMPT", "DRAFT", "CHECK"):
+                sites.add(fn.name)
+    assert sites <= {"coord_pick"}, sites
+
+
+def test_c2_a_stub_identity_body_is_called_by_a_real_identity_run(dept, monkeypatch):
+    W, R, ref = dept
+    called = []
+
+    def identity_read(ctx, step, item):
+        called.append((ctx["engine"], step["id"]))
+        return R.CODE["identity_read"](ctx, step, item)
+    monkeypatch.setitem(layers.load("identity/v1").CODE, "identity_read", identity_read)
+    W.owner_ask(ref, "Which page lists the doctors?")
+    W.run_until_idle(ref, limit=200)
+    assert ("Identity", "identity.read") in called
+    assert [r["step"] for r in R.step_rows(ref) if r["step"] == "identity.read"], "and the run went on to its row"
+
+
+def test_c2_a_gate_is_resolved_with_its_function_as_the_engine_and_its_row_names_the_version(dept, monkeypatch):
+    W, R, ref = dept
+    asked = []
+
+    def wait_engine(ctx, step, item):
+        asked.append((ctx["engine"], step["id"]))
+        return "wait", "the stub says wait"
+    monkeypatch.setitem(layers.load("identity/v1").CODE, "identity_wait_engine", wait_engine)
+    got = R.admit(ref, W.dept(ref), "Write", {"v": 1}, "Write@seam")
+    assert got == ("wait", "the stub says wait") and asked == [("Write", "identity.wait_engine")], \
+        "Write's start asks Identity's gate, and Identity's module answers it"
+    row = next(r for r in R.step_rows(ref) if r["step"] == "identity.wait_engine")
+    assert (row["mode"], row["engine"], row["impl"], row["answer"]) == ("gate", "Identity", "identity/v1", "wait")
+
+
+def test_c2_a_rule_is_resolved_with_its_function_as_the_engine_in_a_run_and_in_an_ask(dept, monkeypatch):
+    W, R, ref = dept
+    seen = []
+
+    def busy(ctx, step, item):
+        seen.append(ctx["engine"])
+        return "wait", "the stub says wait"
+    monkeypatch.setitem(layers.load("coordination/v1").CODE, "coord_busy", busy)
+    ctx = dict(R._coord_ctx(ref), engine="Write")
+    assert R._run_rule(ctx, "coord.busy") == ("wait", "the stub says wait")
+    assert R._ask_rule(ref, "coord.busy", key="Write@seam|coord.busy", ctx=ctx) == ("wait", "the stub says wait")
+    assert seen == ["Write", "Write"]
+    row = next(r for r in R.step_rows(ref) if r["step"] == "coord.busy")
+    assert (row["engine"], row["impl"], row["mode"]) == ("Coordination", "coordination/v1", "gate")
+
+
+def test_c2_every_step_and_gate_row_carries_the_implementation_that_made_it(dept, monkeypatch):
+    W, R, ref = dept
+    W.owner_ask(ref, "Which page lists the doctors?")
+    W.owner_ask(ref, "From now on, every page names the phone line.")
+    W.run_until_idle(ref, limit=300)
+    rows = R.step_rows(ref)
+    assert rows and all("impl" in r for r in rows)
+    seen = {r["engine"]: r["impl"] for r in rows if r["engine"] in S.ENGINE_LAYER}
+    assert seen and all(impl == S.DEFAULT_PINS[S.ENGINE_LAYER[engine]] for engine, impl in seen.items()), seen
+    assert {r["impl"] for r in rows if r["engine"] == "Identity"} == {"identity/v1"}
+    assert {r["mode"] for r in rows} >= {"slot"}
+    # a work engine is no layer's: its rows say so with None
+    assert R._impl({"ref": ref, "engine": "Write"}) is None and R._impl({"ref": ref, "engine": "Audit"}) == "audit/v1"
+    assert R._impl({"ref": ref}, "Priority") == "priority/v1"
+
+
+def test_c2_validate_accepts_a_name_a_layer_module_provides(monkeypatch):
+    W, R = modules()
+    d = copy.deepcopy(R.defs())
+    assert R.validate(d) == []
+    steps = {x["id"]: x for x in d["engines"]["Identity"]["on"][1]["steps"]}
+    m = layers.load("identity/v1")
+    # (kind, the step, its field, the fault while no one provides the name)
+    for kind, sid, field, fault in (
+            ("code", "identity.file", "code", "Identity, identity.file: no function named a_name_only_a_layer_holds ships with the app"),
+            ("prompt", "identity.take", "prompt", "Identity, identity.take: no prompt named a_name_only_a_layer_holds ships with the app"),
+            ("draft", "identity.take", "draft", "Identity, identity.take: a soft step names a plain draft")):
+        was = steps[sid][field]
+        steps[sid][field] = "a_name_only_a_layer_holds"
+        assert R.validate(d) == [fault], kind
+        monkeypatch.setitem(getattr(m, kind.upper()), "a_name_only_a_layer_holds", lambda *a: {})
+        assert R.validate(d) == [], kind
+        monkeypatch.delitem(getattr(m, kind.upper()), "a_name_only_a_layer_holds")
+        steps[sid][field] = was
+    # a check's name is the interface's: a layer may provide the body, but the name must be one the layer or all may use
+    was = steps["identity.take"]["check"]
+    steps["identity.take"]["check"] = "a_name_only_a_layer_holds"
+    assert R.validate(d) == ["Identity, identity.take: no check named a_name_only_a_layer_holds ships with the app"]
+    monkeypatch.setitem(m.CHECK, "a_name_only_a_layer_holds", lambda *a: {})
+    assert R.validate(d) == ["Identity, identity.take: the check a_name_only_a_layer_holds is neither Identity's nor shared, in the interface"]
+    steps["identity.take"]["check"] = was
+    assert R.validate(d) == []
+
+
+def test_c2_validate_holds_the_definitions_edges_to_the_interfaces():
+    W, R = modules()
+    d = copy.deepcopy(R.defs())
+    assert d["edges"] == S.edges() and R.validate(d) == []
+    d["edges"]["Priority"]["propose"] = ["Owner"]
+    assert R.validate(d) == ["edges, Priority: the definitions let it propose to ['Owner'], and the interface says ['Adaptation']"]
+    d["edges"]["Priority"]["propose"] = ["Adaptation"]
+    d["edges"]["Audit"]["cancel"] = ["Identity"]
+    assert R.validate(d) == ["edges, Audit: the definitions let it cancel to ['Identity'], and the interface says None"]
+    del d["edges"]["Audit"]["cancel"]
+    d["edges"]["Weather"] = {"inform": ["Owner"]}
+    assert R.validate(d) == ["edges, Weather: the interface knows no such actor"]
+    del d["edges"]["Weather"]
+    d["edges"]["Owner"] = {"request": ["Identity"]}
+    assert len(R.validate(d)) == 3 and all(f.startswith("edges, Owner: ") for f in R.validate(d)), "an act the definitions dropped is a fault too"
+
+
+def test_c2_a_definitions_copy_with_a_handler_outside_hears_is_refused_with_a_named_fault():
+    W, R = modules()
+    d = copy.deepcopy(R.defs())
+    handler = copy.deepcopy(d["engines"]["Priority"]["on"][0])
+    handler.update(name="Hear the weather", when={"msg_type": "inform", "word": "weather"})
+    d["engines"]["Priority"]["on"].append(handler)
+    assert R.validate(d) == ["Priority, Hear the weather: the handler hears inform/weather, which is no row of what Priority hears"]
+    handler["when"] = {"msg_type": "request"}                    # a word the engine takes any of is its own row only where HEARS says so
+    assert R.validate(d) == ["Priority, Hear the weather: the handler hears request/(any), which is no row of what Priority hears"]
+    d["engines"]["Priority"]["on"].pop()
+    # the same handler on a work engine is the definitions' own business, not the interface's
+    d["engines"]["Write"]["on"] = [dict(handler, name="Hear the weather", steps=[])]
+    assert not [f for f in R.validate(d) if "which is no row" in f]
+
+
+def test_c2_a_function_step_whose_check_is_neither_its_layers_nor_shared_is_refused():
+    W, R = modules()
+    d = copy.deepcopy(R.defs())
+    step = d["engines"]["Priority"]["on"][0]["steps"][0]
+    was = step["check"]
+    assert was in S.CHECKS["priority"] or was in S.SHARED_CHECKS
+    step["check"] = "verdict_is_known"                          # Identity's check: it exists, but not for Priority
+    assert R.validate(d) == ["Priority, %s: the check verdict_is_known is neither Priority's nor shared, in the interface" % step["id"]]
+    step["check"] = "no_such_check"
+    assert R.validate(d) == ["Priority, %s: no check named no_such_check ships with the app" % step["id"]]
+    step["check"] = was
+    assert R.validate(d) == []
+    # a gate of a function is held to its layer's checks as a step is
+    gate = d["engines"]["Identity"]["gates"][0]
+    gate["check"] = "answer_has_its_price"
+    assert R.validate(d) == ["Identity, identity.gate: the check answer_has_its_price is neither Identity's nor shared, in the interface"]
+
+
+def test_c2_the_shipped_definitions_are_clean_and_load():
+    W, R = modules()
+    assert R.validate(R.defs()) == []
