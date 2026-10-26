@@ -905,3 +905,16 @@ def test_w8_real_priority_pane_prices_leave_the_bargain_in_the_owners_words(mods
     without = K.build(standin(mods, ref=ref))["conflicts"]
     assert with_prices and with_prices == without, "Priority's own words are the post's own: the same sentence, said once"
     assert not BANNED.search(json.dumps(with_prices))
+
+
+def test_w6_the_helpers_the_chat_and_the_tab_share_are_still_functions_views(mods):
+    """The act in the owner's words is functions_view's own (_did, _said, _short) and the rulings' words are RULING_SAYS: the chat
+    (j2ui_chat) and this tab say the same thing for the same post only while both read them there. A package that renames one
+    must change both."""
+    import functions_view
+    for name in ("_did", "_said", "_short"):
+        assert callable(getattr(functions_view, name)), name
+    assert set(functions_view.RULING_SAYS) >= {"run", "drop", "ask"}
+    post_ = {"n": 1, "src": "Priority", "dst": ["Adaptation"], "msg_type": "reject-proposal", "payload": {"word": "line", "why": "no room"}}
+    assert functions_view._did(post_) == "said no to the plan" and functions_view._said(post_) == "no room"
+    assert functions_view._short("x" * 300).endswith("…") and len(functions_view._short("x" * 300)) == 140
