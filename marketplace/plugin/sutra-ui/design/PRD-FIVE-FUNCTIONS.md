@@ -1068,9 +1068,9 @@ flowchart LR
 
 **M8.3 · A reading per done-when item, in the S-30 shape (A1, wave 1)**
 - **What:** Each item is judged met, not met or to confirm, with evidence.
-- **How:** W1-AUDIT: a step audit.items (C0, the typed part audit.judge.items with the A1-ITEMS contract, check reading_is_s30) after audit.mechanical; readings.jsonl rows as audit.reading through W.append_row; a measured failure stands over the judge, both rows kept (Q4); until M8.4, J.audited counts done from the reading (every item met, none to confirm, no high finding open), never from 'no findings'.
+- **How:** W1-AUDIT: a step audit.items (C0, the typed part audit.judge.items with the A1-ITEMS contract, check reading_is_s30) after audit.mechanical; readings.jsonl rows as audit.reading through W.append_row; when code and the reader disagree both rows are kept and the worse verdict stands: a measured failure stands over the judge's yes (Q4), and a judge's no or doubt stands over a measure that only found the record whole (A1-16); until M8.4, J.audited counts done from the reading (every item met, none to confirm, no high finding open), never from 'no findings'.
 - **Where:** `layers/audit/v1.py, v1.json; j2_runtime.audited`
-- **Done check:** A stub judge says met on an item that failed mechanically and the reading records not_met with both rows; offline there is no goal.reached.
+- **Done check:** A stub judge says met on an item that failed mechanically and the reading records not_met with both rows; a measure that found the record whole and a judge who says not met, or to confirm, leave the item not met, or to confirm, with both rows; offline there is no goal.reached.
 
 **M8.4 · Identity's covering declares done (wave 2)**
 - **What:** Done is a code check in Identity's covering, made against Audit's reading.
@@ -2021,7 +2021,7 @@ Marks (`MK`) cover what the owner marked 'needs to be filled', 'marks owed' or '
 | Q1 Voice: does only Identity speak to you (J2, S-29), or do you chat with all five (AMEND-2026-09-21-01)? Default: Identity only; a function's chat box sends your words to Identity about that function. | Owner | M3.6 |
 | Q2 Function-page version 1 (2026-09-30) against the J2 flow (2026-10-01): which governs each function's first release? Default: J2 governs, as the later and ruled word (S-29); steps beyond a page's version 1 stay in Beta until you review them. | Owner | M5, M8, M9 in stable |
 | Q3 Audit is ruled sporadic and unannounced (2026-09-27). Is J2's done-reading of every deliverable an accepted exception, and what is the spot-check cadence? Default: yes; once a day at a random minute. | Owner | M8.2, M8.7 |
-| Q4 Done is a code check in Identity's covering (S-23), and Audit's mechanical step is code. When a measured failure and the AI judge disagree, does the measured failure win (set against S-09 and S-22)? Default: yes, and both rows are kept. | Owner | M8.3, M8.4 |
+| Q4 Done is a code check in Identity's covering (S-23), and Audit's mechanical step is code. When a measured failure and the AI judge disagree, does the measured failure win (set against S-09 and S-22)? Default: yes, and both rows are kept; A1-16 says which verdict stands when the measure only found the record whole. | Owner | M8.3, M8.4 |
 | Q5 S-25: is registering the plan on dept.workflows enough, while born engine templates stay in the app's records-home Library, tagged made_by (S-12)? Default: yes; per-department definitions are a later refactor. | Owner | M7 |
 | Q6 Pursue limits: the round ceiling (default 6), what happens at the limit (three priced options, capped at twice the budget), and whether 'done with open items' is an allowed end. Default: no 'done with open items'. | Owner | M9.2, M9.5 |
 | Q7 Goal change (J2.8): through Root again, or Identity takes your words? Default: Identity, as a goal rule you stamp (J4), which reopens a cycle. | Owner | M9.8 |

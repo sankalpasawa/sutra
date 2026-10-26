@@ -542,7 +542,7 @@ W0-SCHEMA declares these with the rest, as typed here; the package that first wr
 'option.pin':   obj({'layer': enum(*LAYER_NAMES), 'impl': ref('impl')}, required=('layer', 'impl'))
 ```
 
-A reading may hold two rows for one item, one by code and one by model, when they disagree (Q4); the item's verdict is the code row's.
+A reading may hold two rows for one item, one by code and one by model, when they disagree (Q4); both rows are kept and the item's verdict is the worse of the two (not met over to confirm over met): a measured failure stands over the reader's yes, and a reader's no or doubt stands over a measure that only found the record whole (A1-16).
 
 | DEFS name | Fields (required in parentheses) | From, to | Built by |
 |---|---|---|---|

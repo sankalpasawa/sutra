@@ -3701,8 +3701,8 @@ def placeholders(files):
 READ_BY = ("model", "checklist", "stamped by the owner")
 
 #: a reading's verdicts, the worse the higher: when code and the reader disagree about an item both rows are kept (Q4)
-#: and the worse stands. Q4 rules that a measured failure stands over the reader's yes; a reader's no, or its doubt,
-#: stands over a measure that only found the record whole, since the measure is not of that item.
+#: and the worse stands (decision A1-16). Q4 rules that a measured failure stands over the reader's yes; a reader's no,
+#: or its doubt, stands over a measure that only found the record whole, since the measure is not of that item.
 VERDICT_RANK = {"met": 0, "to_confirm": 1, "not_met": 2}
 #: how serious an item's verdict is, the S-30 reading's severity
 ITEM_SEVERITY = {"met": "low", "to_confirm": "medium", "not_met": "high"}
@@ -3781,7 +3781,8 @@ def c_reading_is_s30(ctx, step, item, out):
 
 def audit_verdicts(rows):
     """The verdict of each done-when item in a reading's rows, {id: verdict}: with one row it is that row's; with two (code
-    and the reader disagreed) the worse stands (VERDICT_RANK)."""
+    and the reader disagreed) the worse stands (VERDICT_RANK, decision A1-16): a measured failure over the reader's yes, a
+    reader's no or doubt over a measure that found the record whole."""
     out = {}
     for r in rows or []:
         if r.get("id") and r.get("verdict") in VERDICT_RANK and VERDICT_RANK[r["verdict"]] >= VERDICT_RANK.get(out.get(r["id"]), -1):
@@ -3792,7 +3793,7 @@ def audit_verdicts(rows):
 def audit_rows(dept_items, mech, said, sampled):
     """One reading row per done-when item, in the S-30 shape (subject, claim, evidence, method, verdict, severity). An item
     whose how is code gets a row from the mechanical step's result when it measured anything; every item gets the reader's
-    row, from audit.items. When the two disagree both are kept, and the worse verdict stands (VERDICT_RANK). A reader's
+    row, from audit.items. When the two disagree both are kept, and the worse verdict stands (VERDICT_RANK, A1-16). A reader's
     yes with no evidence, or about an item that rests on a fact nobody gave, is a doubt, never a yes; an item the reader
     did not read is a doubt too."""
     by_id = {}

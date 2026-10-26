@@ -409,6 +409,58 @@ def test_u5_a_stub_judge_says_met_on_an_item_that_failed_mechanically_and_the_re
     assert [f["id"] for f in row["findings"]] == ["F%d" % n for n in range(1, len(row["findings"]) + 1)]
 
 
+# when code and the reader disagree about an item, both rows are kept and the worse verdict stands (decision A1-16)
+CODE_ITEM = [{"id": "D1", "text": "The site is true to the brief", "how": "code", "level": "outcome"}]
+
+
+@pytest.mark.parametrize("code_ok, reader, rows, stands", [
+    (True, "met", [("code", "met")], "met"),
+    (True, "not_met", [("code", "met"), ("model", "not_met")], "not_met"),           # the record is whole; the reader read the work
+    (True, "to_confirm", [("code", "met"), ("model", "to_confirm")], "to_confirm"),
+    (False, "met", [("code", "not_met"), ("model", "met")], "not_met"),              # Q4: a measured failure over the reader's yes
+    (False, "to_confirm", [("code", "not_met"), ("model", "to_confirm")], "not_met"),
+    (False, "not_met", [("code", "not_met")], "not_met"),
+])
+def test_u5_when_code_and_the_reader_disagree_both_rows_are_kept_and_the_worse_verdict_stands(j2, code_ok, reader, rows, stands):
+    W, R, J, _, _ = j2
+    mech = {"ok": code_ok, "notes": ["the record holds"] if code_ok else ["the site says it does not know 1 thing"]}
+    said = _says(reader)("THE DONE-WHEN ITEMS:\n%s\n\nWHAT CODE MEASURED:" % json.dumps(CODE_ITEM))
+    got = R.audit_rows(CODE_ITEM, mech, said, True)
+    assert [(r["method"], r["verdict"]) for r in got] == rows and all(SIX <= set(r) for r in got)
+    assert R.audit_verdicts(got) == {"D1": stands}
+    assert R.audit_verdicts(list(reversed(got))) == {"D1": stands}, "the order of the rows decides nothing"
+    assert all(S.validate("audit.reading_item", r) == [] for r in got)
+
+
+def test_u5_a_measure_that_found_the_record_whole_does_not_overrule_a_reader_who_says_not_met(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    _model(monkeypatch, R, {"audit.items": _says("not_met"), "audit.judge": JUDGE_OK})
+    ref = _born(j2)
+    _stamp_all(W, ref, kind="publish")                              # a website's D1 is by code, and its record holds
+    (row,) = _readings(W, ref)
+    assert [(r["id"], r["method"], r["verdict"]) for r in row["items"]] == [("D1", "code", "met"), ("D1", "model", "not_met")], \
+        "both rows are kept"
+    assert R.audit_verdicts(row["items"]) == {"D1": "not_met"}, "a reader's no stands over a measure that only found the record whole"
+    assert [(f["severity"], f["item"]) for f in row["findings"]] == [("high", "D1")] and "does not hold" in row["findings"][0]["claim"]
+    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["state"] == "pursuing" and J.status(ref)["goal_reached"] is not True
+    latest = _view(j2, ref)["latest"]
+    assert [(i["id"], i["verdict"], i["method"]) for i in latest["items"]] == [("D1", "not_met", "model")], "the pane shows the row that stands"
+
+
+def test_u5_a_measure_that_found_the_record_whole_does_not_overrule_a_reader_in_doubt(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    _model(monkeypatch, R, {"audit.items": _says("to_confirm"), "audit.judge": JUDGE_OK})
+    ref = _born(j2)
+    _stamp_all(W, ref, kind="publish")
+    (row,) = _readings(W, ref)
+    assert [(r["id"], r["method"], r["verdict"]) for r in row["items"]] == [("D1", "code", "met"), ("D1", "model", "to_confirm")]
+    assert R.audit_verdicts(row["items"]) == {"D1": "to_confirm"}
+    assert [(f["severity"], f["item"]) for f in row["findings"]] == [("medium", "D1")]
+    assert not [a for a in W.asks(ref) if a["kind"] == "finding"], "a doubt is noted, never a stamp to ask"
+    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["state"] == "pursuing"
+    assert [(i["verdict"], i["method"]) for i in _view(j2, ref)["latest"]["items"]] == [("to_confirm", "model")]
+
+
 def test_u5_when_code_and_the_reader_agree_one_row_is_kept_and_every_item_met_reaches_the_goal(j2, monkeypatch):
     W, R, J, _, _ = j2
     _model(monkeypatch, R, {"audit.items": _says("met"), "audit.judge": JUDGE_OK})
