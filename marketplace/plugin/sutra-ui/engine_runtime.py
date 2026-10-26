@@ -3255,7 +3255,7 @@ def identity_apply(ctx, step, item):
                           "a finding the owner stamped")
         return {"said": "sent a finding back to the line", "filed": row["v"]}
     if a.get("kind") == "instructions":
-        # PRD M2.2: the owner's own words for one of a function's instruction files, used from the next run on
+        # PRD A1.16: the owner's typed value for one field of a function's instructions, used from the next run on
         return _apply_instructions(ref, ctx["dept"], a)
     return {"said": "took the owner's stamp: " + a["text"]}
 
@@ -5209,99 +5209,173 @@ def _goal_of(ref, name, e=None):
     return layers.words(ref, fn, "goal", "does")["text"], list(layers.words(ref, fn, "goal", "skills")["items"])
 
 
-INSTRUCTIONS_MAX = 20000                               # the most one file may hold, in characters
-#: What the owner is told of a file no step reads (Adaptation's decide): its words are kept, and no run is sent them.
+#: What the owner is told of a part no step reads (Adaptation's decide note): its words are kept, and no run is sent them.
 NOT_READ = "in this version the code makes this choice, so no run reads it yet"
+#: What a part's inputs are called on the owner's screen (S16, 'filled by the app: the goal, the rules, the request'): the
+#: names code fills, in words. A name not here is said as it is, with its underscores gone.
+INPUT_SAYS = {"dept": "the department", "goal": "the goal", "done": "what done means", "rules": "the rules", "plan": "the plan",
+              "against": "what was said against it", "words": "the request", "asked": "what was asked", "items": "the done-when items",
+              "owner": "the owner", "budget": "the budget", "confirm": "what is still to confirm", "facts": "what code read",
+              "completeness": "how complete the request is", "question": "the question", "record": "the record", "pages": "the pages",
+              "needs": "what it needs", "idea": "the idea", "library": "the Library's engines", "taken": "what is already taken",
+              "out": "what is left out", "refused": "why the last line was sent back", "faults": "what was found wrong",
+              "source": "where the plan came from", "engines": "the engines", "calls": "the calls", "usd": "the money",
+              "room": "the room left", "limit": "the limit", "engine": "the engine", "does": "what it does", "word": "the kind of proposal",
+              "step": "the step", "cost": "what it costs", "ready": "who is ready", "what": "what each does", "order": "the usual order",
+              "waiting": "what waits for the owner", "brief": "the brief", "filed": "what was filed", "examples": "the examples",
+              "existing": "what exists", "conversation": "the conversation so far", "org": "the organisation", "named": "what was named",
+              "kinds": "the kinds of department", "use_cases": "the use cases"}
 
 
-def _read_by_a_run(fn, file):
-    """Whether a run is sent any of one instruction file's words: a file that holds no part a step reads (Adaptation's
-    decide, whose choice the code makes in this version) is kept as the owner's note, and the owner is told so, never
-    that the next run uses it."""
-    return bool((INSTRUCTIONS.get(fn) or {}).get(file))
+def _what(fn, group, part, field):
+    """One field as the owner and the record call it: 'Identity's gate task', 'what Identity does', 'Identity's skills'."""
+    title = fn.title()
+    if part == "does":
+        return "what %s does" % title
+    if part == "skills":
+        return "%s's skills" % title
+    if part == "note":
+        return "%s's %s note" % (title, group)
+    return "%s's %s %s" % (title, part, field)
 
 
-def _waiting_change(ref, fn, file):
+def _read_by(fn, group, part):
+    """The steps that read a part, by id; [] for a part no step reads."""
+    rb = layer_schema.PROMPTS[fn][group][part]["read_by"]
+    return [rb] if isinstance(rb, str) else list(rb or [])
+
+
+def _read_by_a_run(fn, group, part):
+    """Whether a run is sent a part's words: every part but a note no code reads (Adaptation's decide, whose choice the code
+    makes in this version) is. A note is kept as the owner's, and the owner is told so, never that the next run uses it. A
+    part no step names may still be read: what a function does and its skills go in every agent's card."""
+    return part in ((INSTRUCTIONS.get(fn) or {}).get(group) or {})
+
+
+def _waiting_change(ref, fn, group, part, field):
     return next((a for a in W.asks(ref) if a.get("kind") == "instructions" and a["status"] == "pending"
-                 and a.get("fn") == fn and a.get("file") == file), None)
+                 and (a.get("fn"), a.get("group"), a.get("part"), a.get("field")) == (fn, group, part, field)), None)
+
+
+def _tell_kept_notes(ref, d, fn):
+    """The department's whole-file changes made before fields were typed (PRD M2.2) are the owner's notes: no run reads
+    them. The first read of a department's instructions records each (layers.prompts.kept_as_notes), and Identity says so
+    once. A note that cannot be told never fails the read."""
+    try:
+        for file in layers.prompts.kept_as_notes(ref, fn):
+            _tell(ref, d, {"src": "Root" if d.get("root") else OWNER}, "inform",
+                  {"word": "instructions", "done": "Your earlier change to %s's %s is kept as a note; change the field again in "
+                                                    "Settings to use it." % (fn.title(), file)})
+    except Exception:  # noqa: BLE001 -- the owner's read of Settings does not depend on a tell
+        pass
 
 
 def instructions_view(ref, fn):
-    """A function's instruction files as its Settings shows them: each by name, the line that says what it is for, its
-    words as the department reads them now, whether they are the owner's or as shipped, whether a run reads them, and
-    a change that waits for the stamp. Names only, never where a file lives."""
+    """A function's instructions as its Settings shows them (S16): each group by name with the line that says what it is
+    for, in it each part with whether a run reads it, the steps that do, what the app fills and what it answers with, and
+    each field the owner may change with its type and bounds, the words the department reads now, whether they are as
+    shipped, and a change that waits for the stamp. An earlier whole-file change shows once as the group's `kept` note.
+    Names only, never where anything lives."""
+    d = W.dept(ref)
+    if d:
+        _tell_kept_notes(ref, d, fn)
     out = []
-    for file in INSTRUCTIONS.get(fn) or {}:
-        text = _instruction(fn, file, ref)
-        shipped = _instruction(fn, file)
-        a = _waiting_change(ref, fn, file)
-        out.append({"file": file, "lead": _parts(text)[0].split("\n", 1)[0], "text": text, "as_shipped": text == shipped,
-                    "read": _read_by_a_run(fn, file), "waits": {"ask": a["id"], "at": a.get("created")} if a else None})
+    for group, parts in layer_schema.PROMPTS[fn].items():
+        rows = []
+        for part, spec in parts.items():
+            shipped = layers.prompts.defaults(ref, fn, group, part)
+            now = layers.prompts.words(ref, fn, group, part)
+            fields = []
+            for field, name in spec["fields"].items():
+                shape = layer_schema.DEFS[name]
+                listed = shape.get("type") == "array"
+                one = shape["items"] if listed else shape
+                a = _waiting_change(ref, fn, group, part, field)
+                fields.append({"field": field, "type": "list" if listed else "text", "max": one["maxLength"], "min": one["minLength"],
+                               "max_items": shape.get("maxItems") if listed else None,
+                               "multiline": bool((one.get("x-field") or {}).get("multiline")),
+                               "value": now.get(field), "as_shipped": now.get(field) == shipped.get(field),
+                               "waits": {"ask": a["id"], "at": a.get("created")} if a else None})
+            rows.append({"part": part, "read": _read_by_a_run(fn, group, part), "read_by": _read_by(fn, group, part),
+                         "inputs": [INPUT_SAYS.get(n, n.replace("_", " ")) for n in spec["inputs"]],
+                         "answers": layers.prompts.answer_keys(spec["returns"]), "fields": fields})
+        out.append({"group": group, "lead": layer_schema.GROUPS[fn][group], "kept": layers.prompts.kept_note(ref, fn, group),
+                    "parts": rows})
     return out
 
 
-def instructions_ask(ref, fn, file, text):
-    """The owner's change to one of a function's instruction files, filed as an ask (PRD M2.2): Identity puts it to
-    the owner and nothing changes until the stamp; on the stamp identity_apply writes the department's own copy. The
-    file's covering check runs here, and again at the stamp; one change waits per file."""
-    fn, file = str(fn or "").strip().lower(), str(file or "").strip().lower()
+def _clean_value(name, value):
+    """An owner's value as it is kept: line ends as \n and the edges trimmed; a list without its blank items. A value of the
+    wrong type is left as it came, for the interface to name."""
+    if name == "field.items":
+        if isinstance(value, (list, tuple)):
+            return [x.strip() if isinstance(x, str) else x for x in value if not (isinstance(x, str) and not x.strip())]
+        return value
+    return value.replace("\r\n", "\n").strip() if isinstance(value, str) else value
+
+
+def instructions_ask(ref, fn, group, part, field, value):
+    """The owner's change to one field of one of a function's instruction parts, filed as an ask (PRD A1.16): Identity puts
+    it to the owner and nothing changes until the stamp; on the stamp _apply_instructions writes the typed value. The
+    interface checks it here (layer_schema.validate_field: the field's type, no {{ or }}, no 'Return ONLY'), and again at
+    the stamp; one change waits per field. A ValueError says what is wrong in plain words."""
+    fn, group, part, field = (str(x or "").strip().lower() for x in (fn, group, part, field))
     if fn.title() not in FUNCTIONS or fn not in INSTRUCTIONS:
         raise ValueError("no function named %s" % (fn or "nothing"))
-    if file not in INSTRUCTIONS[fn]:
-        raise ValueError("%s has no instructions named %s" % (fn.title(), file or "nothing"))
-    text = str(text if text is not None else "").replace("\r\n", "\n").strip("\n")
-    if not text.strip():
-        raise ValueError("say what the instructions should be")
-    if len(text) > INSTRUCTIONS_MAX:
-        raise ValueError("the instructions are too long to keep")
-    text += "\n"
-    faults = instruction_faults(fn, file, text)
-    if faults:
-        raise ValueError("these words cannot serve %s: %s" % (fn.title(), "; ".join(faults)))
+    if group not in layer_schema.PROMPTS[fn]:
+        raise ValueError("%s has no instructions named %s" % (fn.title(), group or "nothing"))
+    if part not in layer_schema.PROMPTS[fn][group]:
+        raise ValueError("%s's %s instructions have no part %s" % (fn.title(), group, part or "nothing"))
+    fields = layer_schema.PROMPTS[fn][group][part]["fields"]
+    if field not in fields:
+        raise ValueError("%s's %s, %s, has no %s you may change" % (fn.title(), group, part, field or "nothing"))
+    value = _clean_value(fields[field], value)
+    bad = layer_schema.validate_field(fn, group, part, field, value)
+    if bad:
+        raise ValueError("these words cannot serve %s: %s" % (fn.title(), "; ".join(layers.prompts.plain_faults(field, bad))))
     d = W.dept(ref)
     if not d:
         raise ValueError("no department at %s" % ref)
+    what = _what(fn, group, part, field)
     with W._lock(ref):
-        if _waiting_change(ref, fn, file):
-            raise ValueError("a change to %s's %s already waits for your stamp" % (fn.title(), file))
-        if text == _instruction(fn, file, ref):
-            raise ValueError("these are the words %s's %s holds now" % (fn.title(), file))
-        line = "Change %s's %s instructions to your words" % (fn.title(), file)
-        use = (_answers("use them from the next run", "to keep them as they are") if _read_by_a_run(fn, file) else
+        if _waiting_change(ref, fn, group, part, field):
+            raise ValueError("a change to %s already waits for your stamp" % what)
+        if value == layers.prompts.words(ref, fn, group, part).get(field):
+            raise ValueError("these are the words %s holds now" % what)
+        line = "Change %s to your words" % what
+        use = (_answers("use them from the next run", "to keep them as they are") if _read_by_a_run(fn, group, part) else
                _answers("keep them as your note", "to keep them as they are",
                         lead="In this version the code makes this choice, so no run reads these words yet: "))
         p = post(ref, "Identity", OWNER, "request", {"word": "instructions", "objective": line + "? " + use, "output": "a stamp or a refusal",
-                                                     "may_read": [], "boundaries": "this one file"})
-        return W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "instructions", "engine": fn.title(), "fn": fn, "file": file,
-                                "words": text, "text": line, "status": "pending", "created": W.now(), "thread": p["thread"] if p else None})
+                                                     "may_read": [], "boundaries": "this one field"})
+        return W._put_ask(ref, {"id": "a-" + uuid.uuid4().hex[:8], "kind": "instructions", "engine": fn.title(), "fn": fn, "group": group,
+                                "part": part, "field": field, "value": value, "text": line, "status": "pending", "created": W.now(),
+                                "thread": p["thread"] if p else None})
 
 
 def _apply_instructions(ref, d, a):
-    """The owner's stamp on a change to one instruction file: the department's own copy, written whole, and read by the
-    next run. Words that no longer serve the function (the bundle changed under them) are not written, and the owner
-    hears why. Words the same as the bundle's take the department's copy away, so a later bundle's words reach it. A
-    file no run reads is kept as the owner's note, and the owner is told that, never that the next run uses it."""
-    fn, file, text = a.get("fn"), a.get("file"), str(a.get("words") or "")
+    """The owner's stamp on a change to one field: the typed value, checked again against the interface and written
+    whole and atomically (layers.prompts.store), read by the next run. A value that no longer serves (the interface
+    changed under it) is not written, and the owner hears why. A value the same as the shipped one takes the owner's
+    value away, so a later default reaches the department. A part no run reads is kept as the owner's note, and the owner
+    is told that, never that the next run uses it."""
+    fn, group, part, field = (a.get(k) for k in ("fn", "group", "part", "field"))
     who = {"src": "Root" if d.get("root") else OWNER}
-    faults = instruction_faults(fn, file, text) if fn in INSTRUCTIONS else ["no function named %s" % fn]
-    if faults:
-        _tell(ref, d, who, "inform", {"word": "instructions", "done": "Your change to %s's %s was not put in place: %s. Change it again."
-                                      % (str(fn).title(), file, "; ".join(faults))})
-        return {"said": "could not put the owner's change to %s's %s in place: %s" % (str(fn).title(), file, "; ".join(faults))}
-    own = _own(ref, fn, file)
-    with W._lock(ref):
-        if text == _instruction(fn, file):
-            if own.is_file():
-                own.unlink()
-        else:
-            own.parent.mkdir(parents=True, exist_ok=True)
-            tmp = own.with_name(own.name + ".tmp")
-            tmp.write_text(text, encoding="utf-8")
-            os.replace(tmp, own)
-    _tell(ref, d, who, "inform", {"word": "instructions", "done": "%s's %s now reads as you changed it%s."
-                                  % (str(fn).title(), file, "; the next run uses it" if _read_by_a_run(fn, file)
-                                     else ", kept as your note; " + NOT_READ)})
-    return {"said": "put the owner's change to %s's %s in place" % (str(fn).title(), file)}
+    known = fn in INSTRUCTIONS and field in ((layer_schema.PROMPTS[fn].get(group) or {}).get(part) or {}).get("fields", {})
+    what = _what(fn, group, part, field) if known else "%s's %s" % (str(fn).title(), field)
+    try:
+        if not known:
+            raise ValueError("there is no such field")
+        done = layers.prompts.store(ref, fn, group, part, field, a.get("value"), ask=a.get("id"))
+    except ValueError as exc:
+        _tell(ref, d, who, "inform", {"word": "instructions", "done": "Your change to %s was not put in place: %s. Change it again." % (what, exc)})
+        return {"said": "could not put the owner's change to %s in place: %s" % (what, exc)}
+    read = _read_by_a_run(fn, group, part)
+    tail = "; the next run uses it" if read else ", kept as your note; " + NOT_READ
+    _tell(ref, d, who, "inform", {"word": "instructions", "done": "%s now reads as %s%s."
+                                  % (what, "shipped" if done == "removed" else "you changed it", tail if done != "removed" else
+                                     ("; the next run uses it" if read else "; " + NOT_READ))})
+    return {"said": "put the owner's change to %s in place" % what}
 
 
 # ---- the registry: prompts and drafts ------------------------------------------------------------------------------
@@ -6221,7 +6295,7 @@ def steps_view(ref, name):
             view["limits"].append({"engine": n, "calls": int(env.get("calls", 0)), "usd": float(env.get("usd", 0.0)),
                                    "used_calls": calls, "used_usd": round(usd, 3)})
     if e["kind"] == "function" and name.lower() in INSTRUCTIONS:
-        view["instructions"] = instructions_view(ref, name.lower())      # its version 1 files, for its Settings (S16)
+        view["instructions"] = instructions_view(ref, name.lower())      # its typed instruction fields, for its Settings (S16)
     return view
 
 

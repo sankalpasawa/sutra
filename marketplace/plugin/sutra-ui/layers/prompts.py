@@ -16,6 +16,11 @@ is sent. While a pinned implementation holds no WORDS for a part, prompt() and w
 below applies, so the two ways give one text. faults() is the covering check of both. The bundle is read-only history
 from here on: W3-PROOF deletes it.
 
+THE OWNER'S VALUES (A1.16, W1-CORE K2): a field the owner changed is a typed value in {ref}/instructions.json, written on a
+stamp. words() and prompt() overlay those values on the implementation's defaults, so a stamped value is the next run's
+words and a value equal to the default is not kept (a later default reaches the department). A whole-file copy made under
+M2.2 ({ref}/prompts/<fn>/<file>.md) is kept as the owner's note: no run reads it.
+
 THE SPLIT RULE (A1.16), which turns a .md part into WORDS and LAYOUT; `python -m layers.prompts --extract <layer>` prints
 the result for a layer:
   1. A file's first paragraph is its group's lead line, S.GROUPS[layer][group] (interface text).
@@ -78,29 +83,40 @@ def _module(ref, layer, group, part):
     return None
 
 
-def words(ref, layer, group, part):
-    """A part's fields as the department reads them now: {field: value}. The pinned implementation's WORDS when it holds
-    the part; else the .md part, split by the rule above."""
+def defaults(ref, layer, group, part):
+    """A part's fields as the pinned implementation ships them: {field: value}. Its WORDS when it holds the part; else the
+    bundle's .md part, split by the rule above. The owner's values are not in it (see words())."""
     module = _module(ref, layer, group, part)
     if module is not None:
         return copy.deepcopy(module.WORDS[group][part])
-    return split(group, part, md_part(layer, group, part, ref))[0]
+    return split(group, part, md_part(layer, group, part))[0]
+
+
+def words(ref, layer, group, part):
+    """A part's fields as the department reads them now: the defaults with the owner's stamped values laid over them."""
+    out = defaults(ref, layer, group, part)
+    for field, value in owner_values(ref, layer, group, part).items():
+        if field in out:
+            out[field] = copy.deepcopy(value)
+    return out
 
 
 def prompt(ref, layer, group, part, **inputs):
     """One part of a layer's instructions, compiled: the words its agent is sent. The pinned implementation's WORDS and
-    LAYOUT when it holds the part, else the .md part (the department's own copy wins; a part it does not hold is the
-    bundle's). A marker the code gives no value is an error, never a blank."""
+    LAYOUT when it holds the part, else the bundle's .md part through the same split; the owner's stamped values are laid
+    over the defaults either way. A marker the code gives no value is an error, never a blank."""
     module = _module(ref, layer, group, part)
+    name = who(layer, group, part)
     if module is not None:
-        spec = S.PROMPTS[layer][group][part]
-        return compile_layout(module.LAYOUT[group][part], words(ref, layer, group, part), spec["returns"], inputs, who(layer, group, part))
-
-    def fill(m):
-        if m.group(1) not in inputs:
-            raise ValueError("%s: the app fills no {{%s}}" % (who(layer, group, part), m.group(1)))
-        return str(inputs[m.group(1)])
-    return SLOT.sub(fill, md_part(layer, group, part, ref))
+        return compile_layout(module.LAYOUT[group][part], words(ref, layer, group, part), S.PROMPTS[layer][group][part]["returns"],
+                              inputs, name)
+    text = md_part(layer, group, part)
+    span = returns_span(text)
+    fields, layout = split(group, part, text)
+    for field, value in owner_values(ref, layer, group, part).items():
+        if field in fields:
+            fields[field] = value
+    return compile_layout(layout, fields, text[span[0]:span[1]] if span else None, inputs, name)
 
 
 def sample_inputs(layer, group, part):
@@ -169,6 +185,160 @@ def faults():
                 out += ["%s: %s" % (who(layer, group, part), f) for f in
                         part_faults(layer, group, part, values, ((getattr(module, "LAYOUT", None) or {}).get(group) or {}).get(part))]
     return out + bundle_faults()
+
+
+# ---- the owner's typed values (PRD A1.16, M2.6) ------------------------------------------------------------------------
+#: where a department keeps them: {ref}/instructions.json, DEFS 'instructions', checked at the sink (website_dept._write)
+VALUES_FILE = "instructions.json"
+
+
+def values_path(ref):
+    return W.ddir(ref) / VALUES_FILE
+
+
+def owner_doc(ref):
+    """{ref}/instructions.json as it is stored: {schema_version, values, ...}. An empty document when the department has
+    none, or none that can be read."""
+    try:
+        doc = W._read(values_path(ref), None) if ref else None
+    except ValueError:                                       # not a department ref: it holds nothing of the owner's
+        doc = None
+    if not isinstance(doc, dict) or not isinstance(doc.get("values"), dict):
+        return {"schema_version": S.SCHEMA_VERSION, "values": {}}
+    return doc
+
+
+def owner_values(ref, layer, group, part):
+    """The owner's stamped values for one part, {field: value}: those that still pass the interface (a value the
+    interface no longer takes is not used, and the default stands)."""
+    entries = ((((owner_doc(ref).get("values") or {}).get(layer) or {}).get(group) or {}).get(part)) or {}
+    return {field: e["value"] for field, e in entries.items()
+            if isinstance(e, dict) and "value" in e and not S.validate_field(layer, group, part, field, e["value"])}
+
+
+def owner_entry(ref, layer, group, part, field):
+    """One stamped value as stored, {value, at, ask}; None when the owner has not changed that field."""
+    e = (((((owner_doc(ref).get("values") or {}).get(layer) or {}).get(group) or {}).get(part)) or {}).get(field)
+    return e if isinstance(e, dict) and "value" in e else None
+
+
+#: the interface's faults for a field, in words the owner reads (the path is '$' for the value, '$[2]' for the third item)
+_FAULT_SAYS = (
+    (re.compile(r"^shorter than 1$"), "is empty"),
+    (re.compile(r"^shorter than (\d+)$"), r"is shorter than \1 characters"),
+    (re.compile(r"^longer than (\d+)$"), r"is longer than \1 characters"),
+    (re.compile(r"^holds '\{\{' or '\}\}'"), "cannot hold '{{' or '}}', which only the app writes"),
+    (re.compile(r"^holds 'Return ONLY'"), "cannot hold 'Return ONLY': the shape of the answer belongs to the app"),
+    (re.compile(r"^holds a control character$"), "holds a character that cannot be shown"),
+    (re.compile(r"^holds a line break$"), "must be one line"),
+    (re.compile(r"^fewer than (\d+) items?$"), r"needs at least \1 of them"),
+    (re.compile(r"^more than (\d+) items$"), r"can hold at most \1 of them"),
+    (re.compile(r"^is not a string$"), "has to be words"),
+    (re.compile(r"^is not a list$"), "has to be a list"),
+)
+
+
+def plain_faults(label, faults):
+    """The interface's faults for one field, in plain words: 'the task is longer than 1200 characters'. `label` is how the
+    owner calls the field ('the task'). A fault this does not know is said as the interface says it."""
+    out = []
+    for f in faults:
+        where, _, what = f.partition(": ")
+        n = re.search(r"\[(\d+)\]", where)
+        said = next((rx.sub(then, what) for rx, then in _FAULT_SAYS if rx.search(what)), what)
+        out.append("%s%s %s" % (label, " (item %d)" % (int(n.group(1)) + 1) if n else "", said))
+    return out
+
+
+def store(ref, layer, group, part, field, value, ask=None):
+    """The owner's value for one field, stamped: {ref}/instructions.json written whole and atomically, through the sink.
+    A value equal to the implementation's default is removed, so a later default reaches the department; a document left
+    with nothing in it goes. Checked again here, whatever checked it when it was asked: ValueError, in plain words, and
+    nothing written, when the field or the whole document does not fit the interface. Returns 'set', 'removed' or 'same'."""
+    faults = S.validate_field(layer, group, part, field, value)
+    if faults:
+        raise ValueError("; ".join(plain_faults(field, faults)))
+    with W._lock(ref):
+        doc = copy.deepcopy(owner_doc(ref))
+        fields = defaults(ref, layer, group, part)
+        part_values = doc["values"].setdefault(layer, {}).setdefault(group, {}).setdefault(part, {})
+        before = part_values.get(field)
+        if field in fields and value == fields[field]:
+            part_values.pop(field, None)
+            result = "removed" if before else "same"
+        elif before and before.get("value") == value:
+            result = "same"
+        else:
+            part_values[field] = dict({"value": value, "at": W.now()}, **({"ask": str(ask)[:40]} if ask else {}))
+            result = "set"
+        for tier in (doc["values"][layer][group], doc["values"][layer], doc["values"]):   # no empty shell is kept
+            for k in [k for k, v in tier.items() if not v]:
+                del tier[k]
+        doc["schema_version"] = S.SCHEMA_VERSION
+        bad = S.validate_instructions(doc)
+        if bad:
+            raise ValueError("; ".join(plain_faults(field, bad)))
+        if result != "same":
+            if doc["values"] or doc.get("kept"):
+                W._write(values_path(ref), doc)
+            elif values_path(ref).exists():
+                values_path(ref).unlink()
+        return result
+
+
+def own_files(ref, layer):
+    """The whole-file copies a department made under M2.2 for a layer: {ref}/prompts/<layer>/<file>.md, by file name."""
+    try:
+        return sorted(p.stem for p in own(ref, layer, "x").parent.glob("*.md"))
+    except (OSError, ValueError):
+        return []
+
+
+def kept_as_notes(ref, layer):
+    """The M2.2 copies of a layer that this read is the first to find: recorded as the owner's notes in instructions.json
+    ('kept', by layer/file), and returned for Identity to tell the owner once. Nothing reads a copy any more (A1-7: it is
+    not decompiled into fields); the owner changes the field again to use the words. [] when each is recorded already."""
+    files = own_files(ref, layer)
+    if not files:
+        return []
+    with W._lock(ref):
+        doc = copy.deepcopy(owner_doc(ref))
+        kept = doc.setdefault("kept", {})
+        new = [f for f in files if "%s/%s" % (layer, f) not in kept]
+        if new:
+            for f in new:
+                kept["%s/%s" % (layer, f)] = {"at": W.now()}
+            doc["schema_version"] = S.SCHEMA_VERSION
+            W._write(values_path(ref), doc)
+        return new
+
+
+def kept_note(ref, layer, group):
+    """When a group's earlier whole-file change was kept as a note ({at}), else None."""
+    return ((owner_doc(ref).get("kept") or {}).get("%s/%s" % (layer, group))) or None
+
+
+def answer_keys(returns):
+    """The keys of the JSON object a part's contract asks for, in order: 'Return ONLY a JSON object: {"verdict": ..., "why":
+    ...}.' -> ['verdict', 'why']. Only the object's own keys, never those of an object inside it. [] for no contract."""
+    if not returns or "{" not in returns:
+        return []
+    out, depth, i, text = [], 0, returns.index("{"), returns
+    while i < len(text):
+        c = text[i]
+        if c in "{[":
+            depth += 1
+        elif c in "}]":
+            depth -= 1
+            if depth == 0:
+                break
+        elif c == '"':
+            j = text.index('"', i + 1) if '"' in text[i + 1:] else len(text) - 1
+            if depth == 1 and text[j + 1:j + 2] == ":":
+                out.append(text[i + 1:j])
+            i = j
+        i += 1
+    return out
 
 
 # ---- the .md fallback: the bundle, and a department's own whole-file copy (PRD M2) ----------------------------------------

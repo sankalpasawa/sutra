@@ -230,16 +230,22 @@ async def ladder(ref: str, request: Request):
 
 @router.post("/{ref}/instructions")
 async def instructions(ref: str, request: Request):
-    """The owner's change to one of a function's instruction files, {fn, file, text}: filed as an ask Identity puts
-    to the owner; nothing changes until the stamp (PRD M2.2). The words are kept as written, lines and all."""
+    """The owner's change to one field of one of a function's instructions, {fn, group, part, field, value}: filed as an
+    ask Identity puts to the owner; nothing changes until the stamp (PRD A1.16). The old body, {fn, file, text}, names no
+    part and no field: 400, 'say which part and which field'."""
     rt = _rt(ref)
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001
         body = {}
     body = body if isinstance(body, dict) else {}
+    group, part, field = (str(body.get(k) or "").strip() for k in ("group", "part", "field"))
+    if not (group and part and field):
+        raise HTTPException(400, detail="say which part and which field")
+    if "value" not in body:
+        raise HTTPException(400, detail="say what the words should be")
     try:
-        return {"ok": True, "ask": rt.instructions_ask(ref, str(body.get("fn") or ""), str(body.get("file") or ""), body.get("text"))}
+        return {"ok": True, "ask": rt.instructions_ask(ref, str(body.get("fn") or ""), group, part, field, body["value"])}
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
 

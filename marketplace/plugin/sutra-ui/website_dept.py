@@ -387,6 +387,9 @@ def _check_sink(p, name, ref, obj):
             if not isinstance(row, dict) or stored.get(row.get("id")) != row:
                 S.check("identity.ask", row, ref=ref, owner="identity")
         return
+    if name == "instructions.json":
+        S.report("instructions", S.validate_instructions(obj), ref=ref, owner="identity")    # every value as its field types it
+        return
     S.check(S.SINK[name], obj, ref=ref, owner={"coordination.json": "coordination"}.get(name, "identity"))
 
 
