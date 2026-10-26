@@ -699,9 +699,14 @@ DEFS.update({
         'conflicts': items(obj({'at': _AT, 'who': text(200), 'split': nullable(text(4000)), 'plan': nullable(text(2000)),
                                 'ruling': text(20), 'ruled': text(40), 'why': nullable(text(4000)), 'asked_you': boolean()}), 6)},
         required=('standard', 'goal', 'done', 'done_items', 'rules', 'open_question', 'conflicts')),
+    # W1-ADAPT adds coverage (M5.1) and, on each Root review, the checks that ran (M7.3); W2-ADAPT adds round and rounds
     'view.adaptation': obj({
         'proposal': nullable(obj({'workflow': items(text(80)), 'source': nullable(text(40)), 'at': _AT})),
-        'root_checks': items(obj({'summary': nullable(text(4000)), 'at': _AT, 'passed': boolean()})),
+        'root_checks': items(obj({'summary': nullable(text(4000)), 'at': _AT, 'passed': boolean(),
+                                  'checks': items(obj({'check': text(60), 'says': text(300), 'passed': boolean(), 'why': text(600)},
+                                                      required=('check', 'says', 'passed', 'why')))})),
+        'coverage': nullable(obj({'items': items(ref('id.item')), 'uncovered': items(ref('id.item')), 'by': enum('adaptation', 'default')},
+                                 required=('items', 'uncovered', 'by'))),
         'rounds': items(obj({}))},
         required=('proposal', 'root_checks', 'rounds')),
     'view.priority': obj({
