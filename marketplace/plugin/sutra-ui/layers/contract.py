@@ -168,10 +168,11 @@ def case_5(module, ctx=None):
 
 def on_the_md_fallback(module):
     """The parts of the layer's PROMPTS this version holds no WORDS for: still read from the .md bundle (reported; from
-    the integrator's refuse commit at the end of wave 1, a fault)."""
+    the integrator's refuse commit at the end of wave 1, a fault). An added part (S.ADDED_PARTS) has no .md part to fall
+    back to, so it is never on the list: case 5 and case 14 name a version that lacks one."""
     words = getattr(module, 'WORDS', {}) or {}
     return ['%s.%s' % (group, part) for group, parts in (S.PROMPTS.get(module.LAYER) or {}).items() for part in parts
-            if part not in (words.get(group) or {})]
+            if part not in (words.get(group) or {}) and (module.LAYER, group, part) not in S.ADDED_PARTS]
 
 
 def case_6(module, ctx=None):

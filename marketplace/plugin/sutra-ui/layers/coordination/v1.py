@@ -77,6 +77,45 @@ LAYOUT = {
     },
 }
 
+# ---- the function template's words (A3.4.5, A3-FUNCTIONS F1) ---------------------------------------------------------
+# Parts of the goal group that S.ADDED_PARTS lists (they have no .md part), and the layout of the role block the card
+# carries (A3.4.3). What the function is not, what it never does and who it hands on to are S.FUNCTION_TEMPLATE's, not
+# words: no version drops one.
+WORDS['goal']['done'] = {'text': (
+    'every ready engine had its turn by the rule the table declares, one run at a time, and no chain, '
+    'window or lost request went unanswered'
+)}
+WORDS['goal']['role_is'] = {'text': (
+    "the department's operating timetable; it decides which registered engine is ready, what must "
+    'happen before it, and how work that happens at the same time stays apart'
+)}
+WORDS['goal']['role_may'] = {'items': [
+    'name which ready engine goes first, and the rule it used',
+    'hold a run and say exactly what is missing',
+    'schedule another ready engine instead of stopping the department when one is held',
+    'give each engine a slot, and record who makes and who reads each thing',
+    'raise an alarm to Identity when a run is past its window, and say a request nobody answered back',
+]}
+WORDS['goal']['role_procedure'] = {'items': [
+    'Consider only workflows that are registered and have a limit.',
+    'Check their triggers and what they wait for.',
+    'Check locks, shared writers and actions that cannot happen together.',
+    'Pick the next one by the rule the table declares.',
+    'Record its slot, its hand-offs and what blocks it.',
+    'If it cannot run, hold it and name the exact condition that is missing.',
+    'If another ready workflow exists, schedule it rather than stopping the department.',
+]}
+WORDS['goal']['role_patterns'] = {'items': [
+    'Scheduling something that is not registered.',
+    "Taking 'most important' as permission to break a dependency.",
+    'Stopping all work because one workflow is held.',
+    'Choosing who goes first without saying the rule.',
+    'Becoming a project manager who changes scope.',
+]}
+WORDS['goal']['role_block'] = {}
+LAYOUT['goal'].update({'done': '{text}', 'role_is': '{text}', 'role_may': '{items}', 'role_procedure': '{items}',
+                      'role_patterns': '{items}', 'role_block': S.ROLE_BLOCK_LAYOUT})
+
 
 def view(ref, d, events, asks):
     """Coordination's pane (S.VIEWS['coordination'], screen S7): functions_view's read model of its own state, by reference

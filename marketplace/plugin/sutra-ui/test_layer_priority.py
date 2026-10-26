@@ -253,7 +253,8 @@ def test_p2_priority_holds_every_part_as_words_and_none_is_on_the_md_fallback(ct
     """A part of Priority still read from the .md bundle, or words that do not pass their field's type or compile, must fail
     (contract case 5): goal (does, skills) and bargain (line, engine, cost)."""
     parts = [(g, p) for g, ps in S.PROMPTS["priority"].items() for p in ps]
-    assert parts == [("goal", "does"), ("goal", "skills"), ("bargain", "line"), ("bargain", "engine"), ("bargain", "cost")]
+    assert [part for part in parts if ("priority",) + part not in S.ADDED_PARTS] == \
+        [("goal", "does"), ("goal", "skills"), ("bargain", "line"), ("bargain", "engine"), ("bargain", "cost")]
     assert C.on_the_md_fallback(V1) == [] and C.case_5(V1, ctx) == []
     assert all(P._module(None, "priority", g, p) is V1 for g, p in parts), "the registry takes the WORDS path for every part"
     assert V1.WORDS["bargain"]["line"] == {} and set(V1.WORDS["bargain"]["engine"]) == {"task"}, "the line part has no field the owner may change"
@@ -265,6 +266,8 @@ def test_p2_each_part_compiled_from_its_words_is_the_md_part_byte_for_byte(ctx):
     and remaining lines are the bundle's too since the snapshot commit before it.)"""
     for layer_group, ps in S.PROMPTS["priority"].items():
         for part in ps:
+            if ("priority", layer_group, part) in S.ADDED_PARTS:        # an added part has no .md part (A3-FUNCTIONS)
+                continue
             sample = P.sample_inputs("priority", layer_group, part)
             fallback = P.SLOT.sub(lambda m: sample[m.group(1)], P.md_part("priority", layer_group, part))
             assert P.prompt(None, "priority", layer_group, part, **sample) == fallback, "%s.%s" % (layer_group, part)

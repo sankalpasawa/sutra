@@ -107,6 +107,22 @@
         "does": {
           "text": "field.text"
         },
+        "done": {
+          "text": "field.text"
+        },
+        "role_block": {},
+        "role_is": {
+          "text": "field.text"
+        },
+        "role_may": {
+          "items": "field.items"
+        },
+        "role_patterns": {
+          "items": "field.items"
+        },
+        "role_procedure": {
+          "items": "field.items"
+        },
         "skills": {
           "items": "field.items"
         }
@@ -128,6 +144,22 @@
         "does": {
           "text": "field.text"
         },
+        "done": {
+          "text": "field.text"
+        },
+        "role_block": {},
+        "role_is": {
+          "text": "field.text"
+        },
+        "role_may": {
+          "items": "field.items"
+        },
+        "role_patterns": {
+          "items": "field.items"
+        },
+        "role_procedure": {
+          "items": "field.items"
+        },
         "skills": {
           "items": "field.items"
         }
@@ -147,6 +179,22 @@
       "goal": {
         "does": {
           "text": "field.text"
+        },
+        "done": {
+          "text": "field.text"
+        },
+        "role_block": {},
+        "role_is": {
+          "text": "field.text"
+        },
+        "role_may": {
+          "items": "field.items"
+        },
+        "role_patterns": {
+          "items": "field.items"
+        },
+        "role_procedure": {
+          "items": "field.items"
         },
         "skills": {
           "items": "field.items"
@@ -171,6 +219,22 @@
         "close": {},
         "does": {
           "text": "field.text"
+        },
+        "done": {
+          "text": "field.text"
+        },
+        "role_block": {},
+        "role_is": {
+          "text": "field.text"
+        },
+        "role_may": {
+          "items": "field.items"
+        },
+        "role_patterns": {
+          "items": "field.items"
+        },
+        "role_procedure": {
+          "items": "field.items"
         },
         "skills": {
           "items": "field.items"
@@ -212,6 +276,22 @@
       "goal": {
         "does": {
           "text": "field.text"
+        },
+        "done": {
+          "text": "field.text"
+        },
+        "role_block": {},
+        "role_is": {
+          "text": "field.text"
+        },
+        "role_may": {
+          "items": "field.items"
+        },
+        "role_patterns": {
+          "items": "field.items"
+        },
+        "role_procedure": {
+          "items": "field.items"
         },
         "skills": {
           "items": "field.items"

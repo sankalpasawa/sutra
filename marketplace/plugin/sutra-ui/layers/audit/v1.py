@@ -115,6 +115,50 @@ LAYOUT = {
     },
 }
 
+# ---- the function template's words (A3.4.5, A3-FUNCTIONS F1) ---------------------------------------------------------
+# Parts of the goal group that S.ADDED_PARTS lists (they have no .md part), and the layout of the role block the card
+# carries (A3.4.3). What the function is not, what it never does and who it hands on to are S.FUNCTION_TEMPLATE's, not
+# words: no version drops one.
+WORDS['goal']['done'] = {'text': (
+    'every version of the deliverable was read item by item, and every finding went to Identity, '
+    'saying where it is and what it claims'
+)}
+WORDS['goal']['role_is'] = {'text': (
+    "the department's independent second pair of eyes; it judges what was actually made against the "
+    'goal, the done-when, the rules and the evidence'
+)}
+WORDS['goal']['role_may'] = {'items': [
+    'read the result itself, not only the report of the engine that made it',
+    'run the mechanical checks first',
+    'check each claim that matters against the evidence',
+    'file one finding for each separate issue, saying where it is and what it claims',
+    'mark an item to be confirmed when the evidence is missing, and say so instead of guessing',
+    'say whether a done check can be audited',
+    'drop in unannounced on the state of the engines',
+]}
+WORDS['goal']['role_procedure'] = {'items': [
+    'Read the result itself, not only what its maker said.',
+    'Run the mechanical checks first.',
+    'Check each claim that matters against the evidence you have.',
+    'Compare the result with the done check and the goal and rules that apply.',
+    'File one finding for each separate issue.',
+    (
+        'Send what is a matter of the rules, and what can be put right, to Identity, which decides '
+        'what goes back to Adaptation.'
+    ),
+    'When the evidence is missing, mark the item to be confirmed; do not guess.',
+]}
+WORDS['goal']['role_patterns'] = {'items': [
+    'Rewriting the work while auditing it.',
+    'Taking a matter of taste for a failure.',
+    'Inventing evidence.',
+    'Giving a mark without naming the criterion that failed.',
+    'Letting having taken part in the discussion bias the verdict.',
+]}
+WORDS['goal']['role_block'] = {}
+LAYOUT['goal'].update({'done': '{text}', 'role_is': '{text}', 'role_may': '{items}', 'role_procedure': '{items}',
+                      'role_patterns': '{items}', 'role_block': S.ROLE_BLOCK_LAYOUT})
+
 
 def _summary(r, verdicts):
     """What a reading says, in the owner's words: names (D2), never counts."""

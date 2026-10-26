@@ -1656,6 +1656,13 @@ ROLE_BLOCK_MAX = 3600                              # characters of the compiled 
 TEMPLATE_BANNED = r"\b(charters?|ceo|requesters?|grant(?:s|ed)?|counter(?:s|ed)?|refus\w*|internal systems?)\b"     # re.I; the screen's words
 TEMPLATE_BANNED_AGENT = r"\b(charters?|ceo|requesters?|internal systems?)\b"                                       # re.I; the words only the agent reads
 TEMPLATE_NEVER_SAY = {'priority': r"order|what runs next"}       # re.I; a substring, as test_priority_never_orders has it (S-05)
+#: whether a function's card carries the role block (A3.4.3); a code constant, never an environment variable (A1-4's rule for
+#: MODE): flipping it and regenerating the prompt snapshot is the veto of the block (A3-D10)
+ROLE_IN_CARD = True
+#: the layout of goal.role_block (FT-3): the eight inputs, in the order the agent reads them. It is one layout for all five
+#: functions, so the "is not", the "never" lines and the working agreement are always sent whatever a version's words say
+ROLE_BLOCK_LAYOUT = ('It is: {{is}}.\nIt is not: {{is_not}}\nIt may: {{may}}\nIt never: {{never}}\nHow it decides: {{procedure}}\n'
+                     'It avoids: {{patterns}}\nIt hands on to: {{hands_on}}\nAll five functions keep: {{agreement}}')
 
 #: what team.md's working rules say that the interface cannot: the base text every function keeps. Its first line is true of
 #: Identity too, which is the one function that speaks to the owner
@@ -1820,6 +1827,24 @@ TEMPLATE_PARTS = (
     ('recipe', None, 'version', ('LAYERS', 'recipe')),
     ('journeys', None, 'derived', ('journeys', 'functions')),
 )
+
+#: the parts A3-FUNCTIONS adds to the goal group of every function (A3.4.2): the function's own done, the words of its role
+#: (what it is, what it may do, how it decides, what it avoids), and the block that arranges them with the constants. They are
+#: parts of the group that has a file in every layer, so the prompt machinery needs no new group; ADDED_PARTS says they have
+#: no .md part (the way Adaptation's make.shape has none). role_block has no owner field, as bargain.line has none: its words
+#: are its layout
+_ROLE_PARTS = {
+    'done': {'fields': {'text': 'field.text'}, 'inputs': (), 'returns': None, 'read_by': None},
+    'role_is': {'fields': {'text': 'field.text'}, 'inputs': (), 'returns': None, 'read_by': None},
+    'role_may': {'fields': {'items': 'field.items'}, 'inputs': (), 'returns': None, 'read_by': None},
+    'role_procedure': {'fields': {'items': 'field.items'}, 'inputs': (), 'returns': None, 'read_by': None},
+    'role_patterns': {'fields': {'items': 'field.items'}, 'inputs': (), 'returns': None, 'read_by': None},
+    'role_block': {'fields': {}, 'inputs': ROLE_INPUTS, 'returns': None, 'read_by': None},
+}
+for _fn in FUNCTION_LAYERS:
+    PROMPTS[_fn]['goal'].update({part: dict(spec, fields=dict(spec['fields'])) for part, spec in _ROLE_PARTS.items()})
+ADDED_PARTS = ADDED_PARTS + tuple((_fn, 'goal', part) for _fn in FUNCTION_LAYERS for part in _ROLE_PARTS)
+del _fn
 
 
 # ---- reading the tables ----------------------------------------------------------------------------------------------

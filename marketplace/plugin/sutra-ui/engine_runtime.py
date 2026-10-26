@@ -5672,11 +5672,21 @@ INPUT_SAYS = {"dept": "the department", "goal": "the goal", "done": "what done m
               "kinds": "the kinds of department", "use_cases": "the use cases", "practices": "the practices in place",
               "deliverable": "what was made", "measured": "what code measured", "estimate": "what it is likely to cost",
               "remaining": "what remains of today's room"}
+#: the inputs of the role block (goal.role_block, A3.4.3), in the owner's words: the app fills them from the function's role
+#: words and from the interface's boundaries, so the owner sees what the block is made of
+INPUT_SAYS.update({"agreement": "the working agreement", "is": "what it is", "is_not": "what it is not", "may": "what it may do",
+                   "never": "what it never does", "procedure": "how it decides", "patterns": "what it avoids",
+                   "hands_on": "who it hands on to"})
+#: the parts A3 adds to the goal group, as the owner's asks call them ("Change what Priority may do to your words?")
+ROLE_SAYS = {"done": "when %s is done", "role_is": "what %s is", "role_may": "what %s may do", "role_procedure": "how %s decides",
+             "role_patterns": "what %s avoids"}
 
 
 def _what(fn, group, part, field):
     """One field as the owner and the record call it: 'Identity's gate task', 'what Identity does', 'Identity's skills'."""
     title = fn.title()
+    if part in ROLE_SAYS:
+        return ROLE_SAYS[part] % title
     if part == "does":
         return "what %s does" % title
     if part == "skills":

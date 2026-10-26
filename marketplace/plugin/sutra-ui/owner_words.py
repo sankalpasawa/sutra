@@ -73,7 +73,13 @@ BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priori
                  ("a request: go, ask or refuse", "a request: go, ask or stop"),
                  # the words in use as a field of Identity's take shows them (K2: a typed value is on its Settings at rest)
                  ("refuse: it breaks a rule", "stop: it breaks a rule"),
-                 ("Countered.", "Asked for less."), ("Refused.", "Said no."))
+                 ("Countered.", "Asked for less."), ("Refused.", "Said no."),
+                 # Priority's role words, as its Settings shows them (A3.4.5): the agent is told the contract's words, accept,
+                 # counter and reject, beside the shape of its answer; the owner reads the same lines in the screen's
+                 ("accept a proposal, counter it with a smaller limit or scope, or reject it, always",
+                  "say yes to a proposal, ask for less with a smaller limit or scope, or say no to it, always"),
+                 ("one answer: accept, with its limit; counter, with a smaller limit or scope; or reject, with a reason",
+                  "one answer: say yes, with its limit; ask for less, with a smaller limit or scope; or say no, with a reason"))
 
 
 # Coordination's who-may-post check as a record written before it said the act in the owner's words kept it, the act's
@@ -146,8 +152,10 @@ def _shown(value):
 
 
 #: A part whose name is an inside word, as its Settings row calls it: Adaptation's 'refused' is the line it is sent when Root's
-#: check sent the plan back. The part keeps its name (the row's `part` is what a change names); the row prints the label.
-PART_SAYS = {"refused": "sent back"}
+#: check sent the plan back; the parts of a function's role (A3.4.2) are code names (role_may), said as what they are. The part
+#: keeps its name (the row's `part` is what a change names); the row prints the label.
+PART_SAYS = {"refused": "sent back", "done": "when it is done", "role_is": "what it is", "role_may": "what it may do",
+             "role_procedure": "how it decides", "role_patterns": "what it avoids", "role_block": "its role, as the agent is sent it"}
 
 
 def _instruction_part(p):

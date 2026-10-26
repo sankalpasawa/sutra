@@ -1009,11 +1009,6 @@ def test_reserved_is_the_sites_list():
     assert not set(reserved) & set(S.CHECKS["adaptation"]) and not set(reserved) & set(S.VERDICTS["adaptation"].get("move", ()))
 
 
-#: the parts of the goal group that A3-FUNCTIONS adds (rule FT-2). A3-FUNCTIONS deletes this list in the commit that adds them:
-#: until then a part named here is pending, and the test below fails the day one exists and is still listed
-PENDING = (("goal", "done"), ("goal", "role_is"), ("goal", "role_may"), ("goal", "role_procedure"), ("goal", "role_patterns"))
-
-
 def test_template_parts_homes_exist():
     parts = S.TEMPLATE_PARTS
     assert len({p[0] for p in parts}) == len(parts) == 20, "the twenty parts of A3.4.2, once each"
@@ -1025,12 +1020,7 @@ def test_template_parts_homes_exist():
         if kind == "word":
             group, name = home
             for layer in S.FUNCTION_LAYERS:
-                exists = name in S.PROMPTS[layer].get(group, {})
-                if home in PENDING:
-                    assert not exists, ("%s.%s exists in %s now: delete it from PENDING in test_layer_templates.py (A3-FUNCTIONS' to delete)"
-                                        % (group, name, layer))
-                else:
-                    assert exists, "%s: the word %s.%s is no part of S.PROMPTS['%s']" % (part, group, name, layer)
+                assert name in S.PROMPTS[layer].get(group, {}), "%s: the word %s.%s is no part of S.PROMPTS['%s']" % (part, group, name, layer)
         elif kind == "constant":
             table, key = home
             assert hasattr(S, table), part
