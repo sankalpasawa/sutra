@@ -5512,7 +5512,7 @@
         "verdict_is_known"
       ],
       "hands_to": "Adaptation: a request for a line, and the next thing to correct. Coordination: verdicts on gates. You: it is the only function that speaks to you.",
-      "holds": "Goal, done-when, rules (go, ask, refuse, always), budget, owner and parent, and each engine's window.",
+      "holds": "Goal, done-when, rules (go, ask, never, always), budget, owner and parent, and each engine's window.",
       "keeps": "Never makes anything; the maker is an engine. Asks only when a rule says ask. Approvals only tighten. Never invents a goal or a rule, and asks one question at a time.",
       "keys": [
         "goal",
