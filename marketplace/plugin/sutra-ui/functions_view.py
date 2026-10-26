@@ -19,6 +19,7 @@ model. The state rules are the J2 prototype's map/1 function node (j2_map._funct
 There is no 'asleep' state: the order the five wake in is not ruled (PRD Q9), so only states the record has are shown.
 What the record does not hold is named in not_recorded and never guessed (the prototype's "not recorded" list).
 """
+import contextvars
 import re
 import time
 from datetime import datetime
@@ -972,8 +973,38 @@ def engine_card(ref, name):
     return _clean({k: out[k] for k in ENGINE_CARD_FIELDS})
 
 
+#: set while a layer's view() is being read: a view that returns today's body by reference (every layer's wave 0 stub calls
+#: _j2_part) finds the body, not the dispatch again
+_VIEWING = contextvars.ContextVar("functions_view_viewing", default=False)
+
+
 def _j2_part(ref, d, fn, events, ak):
-    """What J2 adds to this function's pane, from the record as it stands (later milestones fill more of it)."""
+    """What J2 adds to this function's pane (PRD A1.17): the pinned implementation's view(), when it has one and what it
+    returns fits the interface (layer_schema.VIEWS); else today's body (_j2_body). A view that does not fit, or raises, is
+    replaced by today's body with `j2_faults` added, its first three faults; the read never raises, and the owner's
+    screens do not draw the faults."""
+    if _VIEWING.get():
+        return _j2_body(ref, d, fn, events, ak)
+    layer = layers.layer_of(fn)
+    faults = []
+    token = _VIEWING.set(True)
+    try:
+        got = layers.view(ref, layer, d, events, ak) if layer else None
+    except Exception as exc:  # noqa: BLE001 -- a layer's view that breaks costs its pane nothing but its own version
+        got, faults = None, ["the view could not be read: %s" % exc]
+    finally:
+        _VIEWING.reset(token)
+    if got is not None:
+        faults = S.validate_view(layer, got)
+        if not faults:
+            return got
+    body = _j2_body(ref, d, fn, events, ak)
+    return dict(body, j2_faults=faults[:3]) if faults else body
+
+
+def _j2_body(ref, d, fn, events, ak):
+    """What J2 adds to this function's pane, from the record as it stands (later milestones fill more of it): today's
+    read of each function, which a layer's view() takes over from and which the part falls back on."""
     if fn == "Identity":
         return _identity_part(ref, d, events)
     if fn == "Adaptation":

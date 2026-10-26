@@ -526,3 +526,112 @@ def test_c8_the_rows_follow_the_interface_when_a_handler_or_a_check_is_added(hom
     monkeypatch.setitem(S.CHECKS, "audit", dict(S.CHECKS["audit"], looked_twice="it looked at each page twice"))
     got = {f["key"]: f["value"] for f in F.function(ref, "audit")["fields"]}
     assert got["hears"] == ["Drop in unannounced"] and got["checks"][-1] == "it looked at each page twice"
+
+
+# ---- C9 · views through the layers ------------------------------------------------------------------------------------
+AUDIT_VIEW = {"readings": [{"summary": "Audit read Live site v1.", "at": None}], "findings": [], "spot_checks": []}
+
+
+def with_view(monkeypatch, layer, fn):
+    """The layer's implementation, made to hold a view() for the duration of the test."""
+    module = layers.load(S.DEFAULT_PINS[layer])
+    monkeypatch.setattr(module, "view", fn, raising=False)
+    return module
+
+
+def without_view(monkeypatch, layer):
+    monkeypatch.delattr(layers.load(S.DEFAULT_PINS[layer]), "view", raising=False)
+
+
+def test_c9_with_no_view_the_part_is_todays_body(home, monkeypatch):
+    import functions_view as F
+    ref = born(home)
+    d = modules()[0].dept(ref)
+    for layer in S.FUNCTION_LAYERS:
+        title = S.TITLE[layer]
+        today = F._j2_body(ref, d, title, [], [])
+        without_view(monkeypatch, layer)
+        assert not hasattr(layers.load(S.DEFAULT_PINS[layer]), "view")
+        assert F._j2_part(ref, d, title, [], []) == today and "j2_faults" not in today and S.validate_view(layer, today) == [], layer
+    assert set(F.function(ref, "audit")["j2"]) == {"readings", "findings", "spot_checks"}
+    assert set(F.function(ref, "coordination")["j2"]) == set(S.COORDINATION_FIELDS)
+
+
+def test_c9_the_stub_views_of_wave_0_read_todays_body_by_reference_and_the_dispatch_does_not_loop(home):
+    import functions_view as F
+    ref = born(home)
+    d = modules()[0].dept(ref)
+    for layer in S.FUNCTION_LAYERS:
+        title = S.TITLE[layer]
+        stub = layers.load(S.DEFAULT_PINS[layer]).view
+        assert stub(ref, d, [], []) == F._j2_body(ref, d, title, [], []) == F._j2_part(ref, d, title, [], []), layer
+        j2 = F.function(ref, layer)["j2"]
+        assert "j2_faults" not in j2 and S.validate_view(layer, j2) == [], layer
+
+
+def test_c9_a_stub_view_is_what_the_pane_returns_and_it_is_handed_the_record(home, monkeypatch):
+    import functions_view as F
+    ref = born(home)
+    seen = []
+    with_view(monkeypatch, "audit", lambda ref_, d, events, asks: seen.append((ref_, d, events, asks)) or AUDIT_VIEW)
+    got = F.function(ref, "audit")
+    assert got["j2"] == AUDIT_VIEW
+    assert len(seen) == 1 and seen[0][0] == ref and seen[0][1]["ref"] == ref and isinstance(seen[0][2], list) and isinstance(seen[0][3], list)
+    assert F.function(ref, "priority")["j2"] != AUDIT_VIEW, "another layer's pane is its own"
+
+
+def test_c9_every_layers_own_view_can_be_todays_body_and_it_validates(home, monkeypatch):
+    import functions_view as F
+    ref = born(home)
+    d = modules()[0].dept(ref)
+    for layer in S.FUNCTION_LAYERS:
+        title = S.TITLE[layer]
+        today = F._j2_body(ref, d, title, [], [])
+        with_view(monkeypatch, layer, lambda ref_, d_, events, asks, title=title: F._j2_body(ref_, d_, title, events, asks))
+        assert F._j2_part(ref, d, title, [], []) == today and S.validate_view(layer, today) == [], layer
+        without_view(monkeypatch, layer)
+
+
+def test_c9_an_invalid_view_is_todays_part_with_the_first_three_faults(home, monkeypatch):
+    import functions_view as F
+    ref = born(home)
+    d = modules()[0].dept(ref)
+    today = F._j2_body(ref, d, "Audit", [], [])
+    with_view(monkeypatch, "audit", lambda *a: {"readings": "none"})
+    got = F.function(ref, "audit")["j2"]
+    want = S.validate_view("audit", {"readings": "none"})
+    assert want == ["$.findings: is missing", "$.spot_checks: is missing", "$.readings: is not a list"] or len(want) == 3
+    assert got == dict(today, j2_faults=want[:3]), "today's part, and why the view was not used"
+    without_view(monkeypatch, "audit")
+    with_view(monkeypatch, "coordination", lambda *a: {"a": 1, "b": 2, "c": 3, "d": 4})
+    got = F.function(ref, "coordination")["j2"]
+    assert len(got["j2_faults"]) == 3 and set(got) - {"j2_faults"} == set(S.COORDINATION_FIELDS), "today's part, and three faults at most"
+    without_view(monkeypatch, "coordination")
+    for bad in ([], "a view", 7):
+        with_view(monkeypatch, "priority", lambda *a, bad=bad: bad)
+        got = F.function(ref, "priority")["j2"]
+        assert got["j2_faults"] and set(got) - {"j2_faults"} == {"bargains", "envelopes"}, bad
+        without_view(monkeypatch, "priority")
+
+
+def test_c9_a_view_that_raises_is_todays_part_and_the_read_never_raises(home, monkeypatch):
+    import functions_view as F
+    ref = born(home)
+
+    def boom(*a):
+        raise RuntimeError("the view broke")
+    with_view(monkeypatch, "audit", boom)
+    got = F.function(ref, "audit")
+    assert got["j2"]["j2_faults"] == ["the view could not be read: the view broke"]
+    assert set(got["j2"]) == {"readings", "findings", "spot_checks", "j2_faults"} and got["name"] == "Audit"
+    assert F.functions(ref)["functions"], "the other reads go on"
+
+
+def test_c9_a_fault_is_kept_to_the_part_and_is_a_few_plain_lines(home, monkeypatch):
+    import functions_view as F
+    ref = born(home)
+    with_view(monkeypatch, "audit", lambda *a: {"readings": 3})
+    f = F.function(ref, "audit")
+    assert "j2_faults" in f["j2"] and not [k for k in f if "fault" in k], "only the part carries it"
+    assert 1 <= len(f["j2"]["j2_faults"]) <= 3 and all(isinstance(x, str) and "Traceback" not in x for x in f["j2"]["j2_faults"])
+    assert not F.PATHLIKE.search(json.dumps(f["j2"]["j2_faults"])), "names, never paths"
