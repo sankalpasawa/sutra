@@ -476,6 +476,10 @@ def _stub(layer, words, layout, tmp_path):
 
 def test_c5_case_5_compiles_each_part_with_sample_inputs(tmp_path):
     words, layout, _ = P.extract("priority")
+    real = layers.load(S.DEFAULT_PINS["priority"])
+    for _layer, group, part in (a for a in S.ADDED_PARTS if a[0] == "priority"):
+        # an added part has no .md part to extract: the version's own words, which no part of Priority may be without
+        words.setdefault(group, {})[part], layout.setdefault(group, {})[part] = real.WORDS[group][part], real.LAYOUT[group][part]
     assert C.case_5(_stub("priority", words, layout, tmp_path)) == [], "the extracted words serve"
 
     def broken(edit):

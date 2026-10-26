@@ -488,8 +488,9 @@ def priority_envelope(ctx, step, item):
     calls, usd = W._today_spend(ref, name)
     env = W.limit_of(ctx['dept'], name)
     if calls >= env.get('calls', 0) or usd >= env.get('usd', 0):
-        if not any(x.get('kind') == 'envelope' and x.get('engine') == name and x['status'] == 'pending' for x in W.asks(ref)):
-            W._put_ask(ref, _hold_ask(ref, ctx['dept'], name, slot, calls, usd, env))
+        if not ctx.get('peek') and not any(x.get('kind') == 'envelope' and x.get('engine') == name and x['status'] == 'pending'
+                                           for x in W.asks(ref)):
+            W._put_ask(ref, _hold_ask(ref, ctx['dept'], name, slot, calls, usd, env))      # the tick's to file, never a read's
         if not ctx.get('peek'):
             # a panel read asking the same question writes nothing; Coordination's other waits stay in the status's 'next'
             try:
