@@ -131,7 +131,9 @@ def test_steps_1_to_5_a_library_kind_is_proposed_granted_checked_and_registered(
     board = [(p["src"], p["dst"][0], p["msg_type"]) for p in R.board(ref) if (p["payload"] or {}).get("word") == "line"]
     assert board[:3] == [("Identity", "Adaptation", "request"), ("Adaptation", "Priority", "propose"), ("Priority", "Adaptation", "accept-proposal")]
     # registered on the department's record, as a version of its own
-    assert W.dept(ref)["workflows"] == [{"version": 1, "engines": LINE, "source": "library", "registered": W.dept(ref)["workflows"][0]["registered"], "by": "Root"}]
+    [reg] = W.dept(ref)["workflows"]
+    assert {k: reg[k] for k in ("version", "engines", "source", "by")} == {"version": 1, "engines": LINE, "source": "library", "by": "Root"}
+    assert reg["registered"] and reg["deliverable"] == "Live site" and reg["left_out"] == [] and reg["checks"], "A1.14: the record keeps what it was held to"
     assert J.status(ref)["workflow"] == LINE
     assert any("The plan is set: Plan -> Write -> Check -> Publish" in s for s in _said(R, ref))
     # the tell says who said yes in the owner's words (PRD M1.7): Priority said yes to it, never that it granted it
@@ -463,6 +465,69 @@ def test_j2_4_after_two_repairs_the_owner_is_told_and_nothing_runs(j2, monkeypat
     assert any("sent the plan back 3 times" in s for s in _said(R, ref))
 
 
+def _six_items(W, ref):
+    """The department's done-when grows to D1 to D6, each with how it is checked: what the plan below is held to cover."""
+    d = W.dept(ref)
+    d["done_items"] = [{"id": "D%d" % n, "text": "Item %d is done" % n, "how": "model", "level": "outcome"} for n in range(1, 7)]
+    W.save_dept(ref, d)
+    return W.dept(ref)
+
+
+def _line_covering(*covers):
+    """The website's Library line, each engine naming the done-when items it covers."""
+    return [{"name": n, "covers": list(c)} for n, c in zip(LINE, covers)]
+
+
+def test_j2_4_a_plan_without_an_engine_covering_d6_is_refused_naming_items_covered(j2):
+    """A plan that leaves a done-when item with no engine registered, or refused without the standard that broke, must fail."""
+    import layer_schema as S
+    W, R, J, _ = j2
+    ref = _born(j2)
+    d = _six_items(W, ref)
+    before = len(d["workflows"])
+    plan = _line_covering(["D1", "D2"], ["D3"], ["D4"], ["D5"])
+    out = R._j2_settle(ref, d, plan, "library", d.get("goal"), "a test")
+    assert "sent the workflow back" in out["said"] and "D6 is covered by no engine of the plan" in out["said"]
+    assert len(W.dept(ref)["workflows"]) == before, "nothing registered"
+    blocked = [e for e in J.events(ref) if e["action"] == "workflow.blocked"][-1]
+    assert blocked["payload"]["faults"] == ["D6 is covered by no engine of the plan"]
+    rows = blocked["payload"]["checks"]
+    assert [c["check"] for c in rows if not c["passed"]] == ["items_covered"] and all(S.validate("workflow.check", c) == [] for c in rows)
+    assert R._root_check(ref, d, plan, "library") == ["D6 is covered by no engine of the plan"]
+    # the last engine takes D6 too, and the plan registers, with the cover it named
+    plan[3]["covers"] = ["D5", "D6"]
+    assert R._root_check(ref, d, plan, "library") == []
+    R._j2_settle(ref, d, plan, "library", d.get("goal"), "a test")
+    reg = W.dept(ref)["workflows"][-1]
+    assert len(W.dept(ref)["workflows"]) == before + 1 and reg["covers"]["D6"] == ["Publish"] and reg["covers"]["D1"] == ["Plan"]
+
+
+def test_j2_4_the_third_refusal_leaves_one_options_ask_naming_the_standard_and_its_options_apply(j2):
+    """A third refusal that is said in a line with nothing to press, or one that does not name the broken standard in its
+    words, or an option that applies nothing, must fail."""
+    import layer_schema as S
+    W, R, J, _ = j2
+    ref = _born(j2)
+    d = _six_items(W, ref)
+    plan = _line_covering(["D1", "D2"], ["D3"], ["D4"], ["D5"])
+    for n in range(J.REPAIRS):
+        R._j2_settle(ref, d, plan, "library", d.get("goal"), "a test")
+        assert J.status(ref)["state"] != "blocked", "refused %d: sent back to Adaptation, not yet to the owner" % (n + 1)
+    R._j2_settle(ref, d, plan, "library", d.get("goal"), "a test")
+    assert J.status(ref)["state"] == "blocked"
+    cards = [a for a in W.asks(ref) if a["kind"] == "blocked" and a["status"] == "pending"]
+    assert len(cards) == 1
+    says = next(text for sid, text, _, _ in S.WORKFLOW_STANDARDS if sid == "items_covered")
+    assert says in cards[0]["text"] and "D6 is covered by no engine of the plan" in cards[0]["text"]
+    assert says in cards[0]["why"] and cards[0]["who"] == "Root, at its review"
+    assert [o["id"] for o in cards[0]["options"]] == ["words", "leave:D6", "stop"]
+    assert not [w for w in ("items_covered", "reads_known", "workflow_meets_standards") if w in cards[0]["text"]], "the owner is told in words, not ids"
+    # leaving D6 out applies: done-when is D1 to D5, and the plan is shaped afresh
+    W.choose_option(ref, cards[0]["id"], "leave:D6")
+    W.run_until_idle(ref, limit=300)
+    assert [i["id"] for i in W.dept(ref)["done_items"]] == ["D1", "D2", "D3", "D4", "D5"]
+
+
 def test_j2_b_a_second_shaped_department_takes_names_the_library_does_not_have(j2):
     """Shaping Facts and Site twice must fail: the second line's check refused it and the cycle sat at step 2, unsaid."""
     W, _, J, _ = j2
@@ -766,13 +831,18 @@ def test_m0_6_a_yes_to_root_stamps_another_departments_ask_while_identitys_quest
     assert _failed(W, root) == []
 
 
-SHAPED_CHECKS = ["names an engine", "one to six engines", "each engine named", "names unique", "names new to the Library",
-                 "first reads the Brief", "each reads what one before it wrote", "each writes something new"]
+# Root's standards by id (A1.14): the schema's own shape row first, then each standard that applied at registration
+LIBRARY_CHECKS = ["workflow_meets_standards", "names_an_engine", "engines_known", "names_unique", "first_reads_input", "reads_known",
+                  "one_output", "items_covered", "required_kept", "size_in_range", "check_exists", "fits_room"]
+SHAPED_CHECKS = ["workflow_meets_standards", "names_an_engine", "each_engine_named", "names_unique", "names_new", "first_reads_input",
+                 "reads_known", "one_output", "items_covered", "required_kept", "size_in_range", "check_exists", "fits_room"]
 
 
 def test_m0_7_the_validated_event_lists_the_checks_that_ran_for_a_library_and_a_shaped_line(j2, monkeypatch):
     """A fixed list of check names, written whatever ran (a Library line was said to pass checks only a shaped line
-    runs), must fail."""
+    runs), must fail: each row is a standard's id, only the standards that apply to the source are listed, and every
+    row is a workflow.check."""
+    import layer_schema as S
     W, R, J, _ = j2
     ran, real = [], R._root_checks
 
@@ -781,37 +851,46 @@ def test_m0_7_the_validated_event_lists_the_checks_that_ran_for_a_library_and_a_
         ran.append(out)
         return out
     monkeypatch.setattr(R, "_root_checks", spy)
+    says = {sid: text for sid, text, _, _ in S.WORKFLOW_STANDARDS}
     lib = _born(j2)
     checks = next(e for e in J.events(lib) if e["action"] == "workflow.validated")["payload"]["checks"]
-    assert checks == ran[-1]
-    # the website kind requires Check (PRD M4.4), so Root's check that none is left out runs too
-    assert [(c["check"], c["passed"]) for c in checks] == [("names an engine", True), ("engines known", True),
-                                                           ("no required engine left out", True)]
+    assert checks == ran[-1] and [c["check"] for c in checks] == LIBRARY_CHECKS and all(c["passed"] for c in checks)
+    # the website kind requires Check (PRD M4.4), so the standard that none is left out ran, and held
+    assert next(c for c in checks if c["check"] == "required_kept")["why"] == says["required_kept"]
+    assert next(c for c in checks if c["check"] == "fits_room")["why"] == "not priced here", "Priority writes no price rows yet"
+    assert W.dept(lib)["workflows"][-1]["checks"] == checks, "the registration keeps the rows the event listed"
     shaped = _born(j2, ORGANIC, "Lab Co")
     checks = next(e for e in J.events(shaped) if e["action"] == "workflow.validated")["payload"]["checks"]
-    assert checks == ran[-1]
-    assert [c["check"] for c in checks] == SHAPED_CHECKS and all(c["passed"] and c["why"] for c in checks)
+    assert checks == ran[-1] and [c["check"] for c in checks] == SHAPED_CHECKS and all(c["passed"] and c["why"] for c in checks)
+    assert all(S.validate("workflow.check", c) == [] for c in checks)
+    # a standard that does not apply to the source is not listed
+    assert "engines_known" not in [c["check"] for c in checks] and "names_new" not in LIBRARY_CHECKS
 
 
 def test_m0_7_a_refusal_lists_the_checks_that_ran_and_the_one_that_failed(j2, monkeypatch):
+    import layer_schema as S
     W, R, J, _ = j2
     ref = _born(j2)
     d = W.dept(ref)
     R._j2_settle(ref, d, [{"name": "Plan"}, {"name": "Nobody Knows"}], "library", d.get("goal"), "a test")
     blocked = [e for e in J.events(ref) if e["action"] == "workflow.blocked"][-1]
-    # the plan also leaves out Check, which the website kind requires (PRD M4.4): every check runs, and each fault is listed
+    # the plan also leaves out Check, which the website kind requires (PRD M4.4): every standard runs, and each fault is listed
     assert blocked["payload"]["faults"] == ["the Library has no engine named Nobody Knows",
                                             "the plan leaves out Check, which this kind of department requires"]
-    assert blocked["payload"]["checks"] == [{"check": "names an engine", "passed": True, "why": "the workflow names its engines"},
-                                            {"check": "engines known", "passed": False, "why": "the Library has no engine named Nobody Knows"},
-                                            {"check": "no required engine left out", "passed": False,
-                                             "why": "the plan leaves out Check, which this kind of department requires"}]
+    rows = blocked["payload"]["checks"]
+    assert all(S.validate("workflow.check", c) == [] for c in rows)
+    assert [(c["check"], c["why"]) for c in rows if not c["passed"]] == [
+        ("engines_known", "the Library has no engine named Nobody Knows"),
+        ("required_kept", "the plan leaves out Check, which this kind of department requires")]
+    assert [c["check"] for c in rows if c["passed"]] == ["workflow_meets_standards", "names_an_engine", "names_unique", "first_reads_input",
+                                                         "reads_known", "one_output", "items_covered", "size_in_range", "check_exists", "fits_room"]
     # a check put in Root's place is listed as it ran, beside the standards
     monkeypatch.setattr(R, "_root_check", lambda ref, d, engines, source: ["the line reaches outside without a rule"])
     lab = _born(j2, ORGANIC, "Lab Co")
     first = next(e for e in J.events(lab) if e["action"] == "workflow.blocked")
-    assert [c["check"] for c in first["payload"]["checks"]] == SHAPED_CHECKS + ["Root's check"]
-    assert first["payload"]["checks"][-1] == {"check": "Root's check", "passed": False, "why": "the line reaches outside without a rule"}
+    assert [c["check"] for c in first["payload"]["checks"]] == SHAPED_CHECKS + ["workflow_meets_standards"]
+    assert first["payload"]["checks"][-1] == {"check": "workflow_meets_standards", "passed": False, "why": "the line reaches outside without a rule"}
+    assert all(S.validate("workflow.check", c) == [] for c in first["payload"]["checks"])
 
 
 def test_m0_7_a_line_that_failed_adaptations_own_check_ran_none_of_roots(j2, monkeypatch):
@@ -1268,9 +1347,11 @@ def test_m4_4_a_plan_without_check_is_refused_by_roots_check(j2):
     assert "sent the workflow back" in out["said"]
     assert len(W.dept(ref)["workflows"]) == before, "nothing registered"
     blocked = [e for e in J.events(ref) if e["action"] == "workflow.blocked"][-1]
-    assert blocked["payload"]["faults"] == ["the plan leaves out Check, which this kind of department requires"]
-    assert blocked["payload"]["checks"][-1] == {"check": "no required engine left out", "passed": False,
-                                                "why": "the plan leaves out Check, which this kind of department requires"}
+    # Publish reads the Build that Check files, so the plan also breaks reads_known (every standard reads a Library line too)
+    assert blocked["payload"]["faults"] == ["Publish reads Build, which nothing before it writes",
+                                            "the plan leaves out Check, which this kind of department requires"]
+    assert [c["check"] for c in blocked["payload"]["checks"] if not c["passed"]] == ["reads_known", "required_kept"]
+    assert {"check": "required_kept", "passed": False, "why": "the plan leaves out Check, which this kind of department requires"} in blocked["payload"]["checks"]
     assert R._root_check(ref, d, [{"name": n} for n in LINE], "library") == []
     assert R.coordination(ref)["line"] == LINE, "the line stays what was registered"
     # the kind's mark is data, checked when the definitions load: a required engine is one of the kind's own line

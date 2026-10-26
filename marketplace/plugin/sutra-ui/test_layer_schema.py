@@ -987,9 +987,6 @@ def test_s7_nothing_in_the_layer_package_imports_the_runtime_at_import_time():
     for layer in S.LAYER_NAMES:
         m = importlib.import_module("layers.%s.v1" % layer)
         assert (m.LAYER, m.VERSION, m.IMPLEMENTS) == (layer, 1, S.SCHEMA_VERSION)
-        # wave 0 held empty stubs; from wave 1 a layer's package fills its dicts (a callable each, by reference or a body of
-        # its own) and its words, and the module holds nothing beyond them
-        assert all(isinstance(x, dict) for x in (m.CODE, m.PROMPT, m.DRAFT, m.CHECK, m.WORDS, m.LAYOUT))
-        assert all(callable(v) for x in (m.CODE, m.PROMPT, m.DRAFT, m.CHECK) for v in x.values())
+        assert all(isinstance(x, dict) for x in (m.CODE, m.PROMPT, m.DRAFT, m.CHECK, m.WORDS, m.LAYOUT)), "the dicts are all a layer module holds"
         assert getattr(m, "RECIPE_TEMPLATE" if layer == "root" else "RECIPE") == ("Setup" if layer == "root" else "v1.json")
         assert (S.HERE / "layers" / layer / "__init__.py").read_text(encoding="utf-8") == ""

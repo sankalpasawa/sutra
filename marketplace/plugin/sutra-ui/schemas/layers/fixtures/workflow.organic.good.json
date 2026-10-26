@@ -1,0 +1,78 @@
+{
+ "about": "An organic department has no line at birth; the line Adaptation shapes for it (Facts, then Site) passes every stage.",
+ "kind": "organic",
+ "dept": {
+  "kind": "organic",
+  "done_items": [
+   {
+    "id": "D1",
+    "text": "The work is done",
+    "how": "model",
+    "level": "outcome"
+   },
+   {
+    "id": "D2",
+    "text": "Every part is checked",
+    "how": "code",
+    "level": "target"
+   }
+  ],
+  "workflows": [
+   {
+    "version": 1,
+    "engines": [
+     "Facts",
+     "Site"
+    ],
+    "source": "shaped",
+    "registered": "2026-10-27T10:00:00Z",
+    "by": "Root"
+   }
+  ]
+ },
+ "workflow": {
+  "schema_version": 1,
+  "kind": "organic",
+  "source": "shaped",
+  "engines": [
+   {
+    "name": "Facts",
+    "does": "finds on the internet what the goal names",
+    "reads": "Brief",
+    "writes": "Facts",
+    "covers": [
+     "D1"
+    ],
+    "internet": true,
+    "made_by": "shaped"
+   },
+   {
+    "name": "Site",
+    "does": "writes the site's pages from the facts",
+    "reads": "Facts",
+    "writes": "Live site",
+    "covers": [
+     "D2"
+    ],
+    "made_by": "shaped"
+   }
+  ],
+  "deliverable": "Live site",
+  "covers": {
+   "D1": [
+    "Facts"
+   ],
+   "D2": [
+    "Site"
+   ]
+  },
+  "covers_by": "adaptation"
+ },
+ "ctx": {
+  "line": [
+   "Facts",
+   "Site"
+  ],
+  "grown": []
+ }
+}
