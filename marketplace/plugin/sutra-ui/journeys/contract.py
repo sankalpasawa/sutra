@@ -425,8 +425,11 @@ def _test_files(j):
 
 
 def case_jc10(js=None):
+    """A declared journey is a design, not built: what it will say is not yet in the code, so it is not searched."""
     faults, said = [], None
     for j in _list(js)[0]:
+        if not _live(j):
+            continue
         for kind, rid, row in _rows(j):
             out = row.get('outcome') if isinstance(row.get('outcome'), dict) else {}
             golden = (out.get('golden') or '').strip()

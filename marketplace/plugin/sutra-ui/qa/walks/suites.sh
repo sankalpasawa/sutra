@@ -38,6 +38,12 @@ tail -1 /tmp/sutra-suite-ledger.txt | sed "s/^/ledger and lanes: /"
 # the interface schema layer (PRD amendment A1): each test_layer_*.py file in a lane of its own, since their fixtures
 # reload modules; any test that meets a fault of the interface fails through conftest.py
 for t in test_layer_*.py; do lane $PY -m pytest -q -p no:cacheprovider "$t" > /tmp/sutra-suite-$t.txt 2>&1 || RC=1; tail -1 /tmp/sutra-suite-$t.txt | sed "s/^/$t: /"; done
+# the user journeys (PRD amendment A3.6): the static cases, the tests the journeys list run once (one process per file), and each
+# journey's status file compared with what they give; its last line is `journeys: <n> rows, <p> proven, <w> wanted, <f> faults`.
+# Over the gate's time budget the line is `--check --no-run` (the static cases and the staleness of each file by hash), and the
+# full `--check` is run before each merge that touches journeys/ (journeys/README.md)
+lane $PY qa/journey_status.py --check > /tmp/sutra-suite-journeys.txt 2>&1 || RC=1
+tail -1 /tmp/sutra-suite-journeys.txt | sed "s/^journeys: //; s/^/journeys: /"
 # the chat runtime's characterization, the functions' Library templates and the PRD's own documents, in one more lane;
 # its stop case (S14) fails on main as this lane joins the gate (2026-10-26, outside the department) and is left out here
 # until the chat runtime's owner mends it: the lane is the gate's from now on, so a new red in it is a red run

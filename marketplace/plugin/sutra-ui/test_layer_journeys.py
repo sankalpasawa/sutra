@@ -842,6 +842,10 @@ def test_jc10_the_words_an_edge_says_are_in_the_code_and_in_a_test_it_lists():
     j = proven()
     j["edges"][0]["outcome"] = {"kind": "ask", "voice": "Identity", "golden": None}
     assert C.case_jc10([j]) == []
+    # a declared journey is a design: what it will say is not in the code yet
+    j = proven(declared=True)
+    j["edges"][0]["outcome"]["golden"] = "this sentence is in no code at all"
+    assert C.case_jc10([j]) == []
     # a step has no outcome; a test file the journey lists that is not there is JC-6's to say
     j = proven()
     for row in j["steps"] + j["edges"]:
@@ -1113,3 +1117,253 @@ def test_follows_ignores_ui_api_and_person_binds_and_optional_ones():
     assert WK.follows(j, sample) == [] and len(WK.follows(j, sample, walks=["1", "2"])) == 1
     j["scenarios"] = []
     assert WK.follows(j, sample) == ["J9 step 2: the step setup.no_such_step did not happen"]
+
+
+# ---- Q5: the status runner and the gate line ------------------------------------------------------------------------------
+import importlib.util                                                          # noqa: E402
+import subprocess                                                              # noqa: E402
+import sys                                                                     # noqa: E402
+
+_spec = importlib.util.spec_from_file_location("journey_status", HERE / "qa" / "journey_status.py")
+JS = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(JS)
+
+
+def test_parse_junit_folds_parametrised_cases_and_marks_missing():
+    sample = FIXTURES / "junit-sample.xml"
+    refs = ["test_j1.py::test_j1_a_passes", "test_j1.py::test_j1_b_is_parametrised_and_passes",
+            "test_j1.py::test_j1_c_runs_for_each",              # two cases, both passed: passed
+            "test_j1.py::test_j1_d_has_one_bad_case",           # three cases, one failed: failed
+            "test_j1.py::test_j1_e_fails", "test_j1.py::test_j1_f_is_skipped",           # skipped: it did not run
+            "test_j1.py::test_j1_g_errors_in_its_fixture",      # an error is a failure
+            "test_j1.py::test_j1_not_in_the_file",              # no case: missing
+            "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated",   # classname test_engine_runtime.TestTheFiveJourneys
+            "test_engine_runtime.py::TestTheFiveJourneys::test_38_another", "test_j1.py::TestPlain::test_p_one"]
+    got = JS.parse_junit(sample, refs)
+    assert got == {"test_j1.py::test_j1_a_passes": "passed", "test_j1.py::test_j1_b_is_parametrised_and_passes": "passed",
+                   "test_j1.py::test_j1_c_runs_for_each": "passed", "test_j1.py::test_j1_d_has_one_bad_case": "failed",
+                   "test_j1.py::test_j1_e_fails": "failed", "test_j1.py::test_j1_f_is_skipped": "missing",
+                   "test_j1.py::test_j1_g_errors_in_its_fixture": "failed", "test_j1.py::test_j1_not_in_the_file": "missing",
+                   "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated": "passed",
+                   "test_engine_runtime.py::TestTheFiveJourneys::test_38_another": "failed",
+                   "test_j1.py::TestPlain::test_p_one": "passed"}, got        # classname test_j1.TestPlain is a class of test_j1
+    # the text of the file reads the same as the file; a ref is answered once however many cases it had
+    assert JS.parse_junit(sample.read_text(encoding="utf-8"), refs) == got
+    assert JS.parse_junit(sample, []) == {}
+    assert JS.parse_junit("<testsuites><testsuite></testsuite></testsuites>", ["test_j1.py::a"]) == {"test_j1.py::a": "missing"}
+
+
+def test_parse_node_lines():
+    text = (FIXTURES / "node-sample.txt").read_text(encoding="utf-8")
+    ref = lambda i: "js:test_website.js#" + i                                                     # noqa: E731
+    got = JS.parse_node(text, [ref(i) for i in ("W1", "W10", "W10b", "W41", "W45", "W46", "W47", "W48", "W4", "W49", "W490", "W99", "M1")])
+    assert {k.partition("#")[2]: v for k, v in got.items()} == {
+        "W1": "passed", "W10": "passed", "W10b": "passed", "W41": "passed", "W45": "passed",
+        "W46": "failed",                                    # a FAIL line
+        "W47": "failed",                                    # four tests begin W47: three passed and one did not
+        "W48": "passed",
+        "W4": "passed",                                     # `W4 ` begins a name; W41 and W45 do not answer for it
+        "W49": "missing",                                   # W490 is another id: it begins W49 but is not followed by : or a space
+        "W490": "passed", "W99": "missing", "M1": "passed"}
+    assert JS.parse_node("", [ref("W1")]) == {ref("W1"): "missing"}, "a file that printed nothing proves nothing"
+    assert JS.parse_node("ok   W1\nFAIL W1\n", [ref("W1")]) == {ref("W1"): "failed"}, "a name that is the id alone counts"
+    assert JS.split_refs([ref("W1"), "test_j1.py::a", "test_j1.py::TestK::b", ref("W2"), "test_x.py::c", ref("W1")]) == (
+        {"test_j1.py": ["test_j1.py::TestK::b", "test_j1.py::a"], "test_x.py": ["test_x.py::c"]},
+        {"test_website.js": [ref("W1"), ref("W2")]}), "one list per file, each ref once"
+
+
+def _folder_with(folder, *journeys_):
+    for j in journeys_:
+        put(folder, ("functions/" if j["kind"] == "function" else "") + j["id"] + ".json", j)
+    return journeys.load()
+
+
+def test_check_fails_on_a_failing_row_an_unproven_row_and_a_stale_file(folder):
+    from journeys import status
+    j = proven()
+    j["steps"][0]["tests"] = [REAL_TEST]
+    j["steps"][1]["tests"] = ["test_layer_journeys.py::test_row_state_table"]
+    js = _folder_with(folder, j)
+    results = {t: "passed" for t in status.tests_listed(js)}
+    docs = JS.documents(js, results)
+    assert sorted(docs) == ["J9"] and docs["J9"]["state"] == "proven"
+    # no status file yet: that is a problem, and it names the command
+    assert JS.problems(js, docs, JS.disk_docs()) == ["J9 has no status file: run qa/journey_status.py --write J9"]
+    JS.write(docs["J9"], journeys)
+    text = (folder / "status" / "J9.json").read_text(encoding="utf-8")
+    assert text.endswith("}\n") and text == json.dumps(docs["J9"], sort_keys=True, indent=1, ensure_ascii=False) + "\n" and "\n \"definitions_sha\"" in text
+    assert JS.problems(js, docs, JS.disk_docs()) == [] and JS.summary(js, docs, 0) == "journeys: 3 rows, 3 proven, 0 wanted, 0 faults"
+    # a listed test turned red: the row is failing, and the file no longer says what the tests give
+    red = JS.documents(js, dict(results, **{REAL_TEST: "failed"}))
+    got = JS.problems(js, red, JS.disk_docs())
+    assert got == ["J9 step 1 is failing: " + REAL_TEST,
+                   "the status file of J9 differs from what the tests give now: run qa/journey_status.py --write J9"]
+    assert JS.summary(js, red, len(got)) == "journeys: 3 rows, 2 proven, 0 wanted, 2 faults"
+    assert JS.problems(js, red, JS.disk_docs(), ran=False) == ["J9 step 1 is failing: " + REAL_TEST], "with no run, a file is compared by its hash only"
+    # a test the run did not find is failing too
+    gone = JS.documents(js, {t: "passed" for t in results if t != REAL_TEST})
+    assert gone["J9"]["tests"][REAL_TEST] == "missing" and gone["J9"]["rows"]["step:1"]["state"] == "failing"
+    # an unproven row (code and no test) and a fault row (no code, no backlog) in a journey that is not declared
+    bare = copy.deepcopy(j)
+    bare["steps"][1]["tests"] = []
+    bare["edges"][0].update(code=[], binds=[], tests=[])
+    bare["edges"][0].pop("backlog", None)
+    js2 = _folder_with(folder, bare)
+    got = JS.problems(js2, JS.documents(js2, results), JS.disk_docs())
+    assert got[:2] == ["J9 step 2 is unproven: it has code and lists no test",
+                       "J9 edge J9.1 is a fault: it has no code and no backlog entry, or a wanted row lists a test"]
+    assert got[2] == "the status file of J9 is stale (the journey changed after it was written): run qa/journey_status.py --write J9"
+    # a stale file: the journey changed by a word, the file is the old one
+    changed = copy.deepcopy(j)
+    changed["steps"][0]["short"] = "You say it"
+    js3 = _folder_with(folder, changed)
+    assert JS.problems(js3, JS.documents(js3, results), JS.disk_docs()) == \
+        ["the status file of J9 is stale (the journey changed after it was written): run qa/journey_status.py --write J9"]
+    assert JS.problems(js3, JS.documents(js3, results), JS.disk_docs(), ran=False)[0].startswith("the status file of J9 is stale")
+    # a status file that belongs to no journey; a file that is not JSON is a document of nothing
+    put(folder, "status/J7.json", docs["J9"])
+    (folder / "status" / "J6.json").write_text("{", encoding="utf-8")
+    got = JS.problems(js, docs, JS.disk_docs())
+    assert got == ["the status file J6.json belongs to no journey: run qa/journey_status.py --write",
+                   "the status file J7.json belongs to no journey: run qa/journey_status.py --write"]
+    # a declared journey is not held to any of it
+    put(folder, "functions/FI1.json", {"journeys": [good(id="FI1", kind="function", bound_to="identity", declared=True)]})
+    js4 = journeys.load()
+    live = {i: x for i, x in js4.items() if not x.get("declared")}
+    assert sorted(live) == ["J9"] and JS.problems(live, docs, {"J9": docs["J9"]}) == []
+
+
+def test_without_a_run_the_files_are_read_by_hash_and_the_rest_by_definition(folder):
+    j = proven()
+    js = _folder_with(folder, j)
+    from journeys import status
+    docs = JS.documents(js, {t: "passed" for t in status.tests_listed(js)})
+    # no file: every row is read from the definition; rows that list tests are unknown
+    got = JS.without_run(js, {})
+    assert {k: r["state"] for k, r in got["J9"]["rows"].items()} == {"step:1": "unknown", "step:2": "unknown", "edge:J9.1": "unknown"}
+    assert got["J9"]["definitions_sha"] == journeys.sha_of(j)
+    bare = proven()
+    bare["edges"][0]["tests"] = []
+    assert JS.without_run({"J9": bare}, {})["J9"]["rows"]["edge:J9.1"]["state"] == "unproven", "a row that lists none is read as the definition says"
+    # a file with the journey's hash is the document
+    assert JS.without_run(js, {"J9": docs["J9"]}) == {"J9": docs["J9"]}
+    # a file with another hash is not
+    assert JS.without_run(js, {"J9": dict(docs["J9"], definitions_sha="0" * 64)})["J9"]["rows"]["step:1"]["state"] == "unknown"
+    assert JS.states_of(docs) == {"J9:step:1": "proven", "J9:step:2": "proven", "J9:edge:J9.1": "proven"}
+
+
+def test_static_mode_runs_without_a_test_run(folder, monkeypatch, capsys):
+    def never(refs):
+        raise AssertionError("a test was run: %r" % (refs,))
+    monkeypatch.setattr(JS, "run_tests", never)
+    assert JS.main(["--static"]) == 0
+    assert capsys.readouterr().out == "journeys: 0 journeys, 0 static faults\n"
+    _folder_with(folder, proven())
+    assert JS.main(["--static"]) == 0
+    assert capsys.readouterr().out == "journeys: 1 journeys, 0 static faults\n"
+    bad = proven()
+    bad["steps"][0]["code"] = ["setup_sayy"]
+    _folder_with(folder, bad)
+    assert JS.main(["--static"]) == 1
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["JC-5: J9 step 1 names setup_sayy in its code, and no code defines it", "journeys: 1 journeys, 1 static faults"]
+    (folder / "J9.json").write_text("{", encoding="utf-8")                 # a file that cannot be loaded is told, not raised
+    assert JS.main(["--static"]) == 1
+    out = capsys.readouterr().out.splitlines()
+    assert out[0].startswith("the journey file J9.json is refused: it is not JSON") and out[-1] == "journeys: 0 rows, 0 proven, 0 wanted, 1 faults"
+    with pytest.raises(SystemExit):
+        JS.main([])
+
+
+def test_check_and_write_the_whole_lane_with_injected_results(folder, monkeypatch, capsys):
+    j = proven()
+    j["steps"][0]["tests"] = [REAL_TEST]
+    j["steps"][1]["tests"] = ["test_layer_journeys.py::test_row_state_table"]
+    decl = good(id="FI1", kind="function", bound_to="identity", declared=True)
+    _folder_with(folder, j, decl)
+    asked = []
+    result = {"all": "passed"}
+    monkeypatch.setattr(JS, "run_tests", lambda refs: asked.append(sorted(refs)) or {t: result["all"] for t in refs})
+    # no file yet: the check fails, and says what to run
+    assert JS.main(["--check"]) == 1
+    out = capsys.readouterr().out.splitlines()
+    assert out == ["J9 has no status file: run qa/journey_status.py --write J9", "journeys: 3 rows, 3 proven, 0 wanted, 1 faults"]
+    assert asked == [sorted(["test_layer_journeys.py::test_the_good_journey_passes_every_case", REAL_TEST, "test_layer_journeys.py::test_row_state_table"])], \
+        "the tests of the journeys that are not declared, each once"
+    # --write writes the file, and what it writes is what the check then finds
+    assert JS.main(["--write"]) == 0
+    assert capsys.readouterr().out == "journeys: 3 rows, 3 proven, 0 wanted, 0 faults\n"
+    first = (folder / "status" / "J9.json").read_bytes()
+    assert not (folder / "status" / "FI1.json").exists(), "a declared journey has no status file"
+    assert JS.main(["--check"]) == 0
+    assert capsys.readouterr().out == "journeys: 3 rows, 3 proven, 0 wanted, 0 faults\n"
+    assert JS.main(["--write", "J9"]) == 0 and (folder / "status" / "J9.json").read_bytes() == first, "the same results are the same bytes"
+    capsys.readouterr()
+    # --no-run: nothing is run; a fresh file passes, and a journey changed after its file was written does not
+    asked.clear()
+    assert JS.main(["--check", "--no-run"]) == 0 and asked == []
+    assert capsys.readouterr().out == "journeys: 3 rows, 3 proven, 0 wanted, 0 faults\n"
+    changed = copy.deepcopy(j)
+    changed["steps"][0]["short"] = "You say it"
+    put(folder, "J9.json", changed)
+    assert JS.main(["--check", "--no-run"]) == 1 and asked == []
+    out = capsys.readouterr().out.splitlines()
+    assert out[0].startswith("the status file of J9 is stale") and out[-1] == "journeys: 3 rows, 0 proven, 0 wanted, 1 faults", out
+    assert JS.main(["--check"]) == 1
+    assert capsys.readouterr().out.splitlines()[0].startswith("the status file of J9 is stale")
+    # a test turns red: the row is failing, the lane fails, and --write records it
+    put(folder, "J9.json", j)
+    assert JS.main(["--check"]) == 0
+    capsys.readouterr()
+    result["all"] = "failed"
+    assert JS.main(["--check"]) == 1
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "J9 step 1 is failing: " + REAL_TEST and out[-1] == "journeys: 3 rows, 0 proven, 0 wanted, 4 faults", out
+    assert JS.main(["--write", "J9"]) == 1, "it records what is, and says what is wrong"
+    assert json.loads((folder / "status" / "J9.json").read_text(encoding="utf-8"))["state"] == "failing"
+    capsys.readouterr()
+    result["all"] = "passed"
+    # --write of one journey runs only its tests; of a declared journey, none; of one that is not there, an error
+    asked.clear()
+    assert JS.main(["--write", "J9"]) == 0 and len(asked) == 1
+    assert JS.main(["--write", "FI1"]) == 0 and "FI1 is declared: it has no status to write" in capsys.readouterr().out
+    assert JS.main(["--write", "J7"]) == 2 and capsys.readouterr().out == "no journey J7\n"
+    # --write of all removes the file of a journey that is no more
+    put(folder, "status/J7.json", json.loads((folder / "status" / "J9.json").read_text(encoding="utf-8")))
+    assert JS.main(["--write"]) == 0
+    assert "removed the status file of J7: it is no journey" in capsys.readouterr().out and not (folder / "status" / "J7.json").exists()
+
+
+def test_run_tests_runs_each_file_once_and_reads_what_it_printed(folder, monkeypatch):
+    """The real run: one process for the Python file, one for the node file, and the results as the files gave them."""
+    real, calls = subprocess.run, []
+    monkeypatch.setattr(JS.subprocess, "run", lambda cmd, **kw: calls.append(cmd) or real(cmd, **kw))
+    refs = ["test_layer_journeys.py::test_row_state_table", "test_layer_journeys.py::test_journey_state_rules",
+            "test_layer_journeys.py::test_no_such_test", "js:test_j2view.js#J1", "js:test_j2view.js#J999"]
+    got = JS.run_tests(refs)
+    assert got == {"test_layer_journeys.py::test_row_state_table": "passed", "test_layer_journeys.py::test_journey_state_rules": "passed",
+                   "test_layer_journeys.py::test_no_such_test": "missing", "js:test_j2view.js#J1": "passed", "js:test_j2view.js#J999": "missing"}
+    assert len(calls) == 2, "one process for the Python file and one for the node file"
+    py = next(c for c in calls if "pytest" in c)
+    assert py[1:4] == ["-m", "pytest", "-q"] and "--junitxml" in py and "no:cacheprovider" in py
+    assert py[-2:] == ["test_layer_journeys.py::test_journey_state_rules", "test_layer_journeys.py::test_row_state_table"], \
+        "the ids as they are, and the one pytest cannot find is not asked for (it would stop the run)"
+    assert next(c for c in calls if "pytest" not in c)[1:] == ["test_j2view.js"]
+    assert JS.run_tests([]) == {}
+
+
+def test_the_command_line_on_the_journeys_of_the_repository():
+    """python qa/journey_status.py exits 0 on the folder the repository holds: with no journey it is the empty folder, and with
+    journeys their status files are fresh (--no-run) and their static cases pass (--static)."""
+    def cli(*args):
+        done = subprocess.run([sys.executable, str(HERE / "qa" / "journey_status.py")] + list(args), cwd=str(HERE), capture_output=True, text=True, timeout=600)
+        return done.returncode, done.stdout.strip().splitlines()
+    code, out = cli("--static")
+    assert (code, out[-1].startswith("journeys: ")) == (0, True), out
+    code, out = cli("--check", "--no-run")
+    assert code == 0 and out[-1].endswith(" 0 faults"), out
+    if not journeys.load():
+        code, out = cli("--check")
+        assert (code, out) == (0, ["journeys: 0 rows, 0 proven, 0 wanted, 0 faults"])
+    code, out = cli("--no-such-mode")
+    assert code == 2
