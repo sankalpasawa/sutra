@@ -1444,27 +1444,110 @@ function wbHostHtml(ref, m){
   return dpCard("Served from", `<div class="wbstep wbset"><input type="text" data-wbdraft="${wbEsc(key)}" value="${wbEsc(st.draft[key] !== undefined ? st.draft[key] : (m.host || ""))}"` +
     ` aria-label="where the site is served from" placeholder="Where the site is served from">` + wbBtn("Set", `data-wbhost="1"`) + `</div>`);
 }
-/* Settings > Instructions (PRD M2.3, S16): each function's version 1 is one
-   agent and its files (S-28), listed by the names its page gives them, each
-   with the line that says what it is for. Change opens a sheet whose Send
-   files an ask; nothing changes until the owner stamps it, and until then the
-   row says so in words beside the amber mark. A file no run reads (Adaptation's
-   decide: in this version the code makes that choice) says so too, so a change
-   to it is kept as the owner's note and never read as one the next run uses.
-   Names only, never where a file lives. */
+/* Settings > Instructions (PRD A1.16, S16): each function's version 1 is one agent whose instructions are typed fields of
+   the interface, kept in groups as its page names them. A card for each group, its lead line as the title; in it each part
+   with the fields the owner may change: the words in use, a mark for as shipped or the owner's own, and Change. Under a
+   part two quiet notes say, in words, what the app fills in and what the part answers with; the shape of an answer is the
+   app's and is never shown or editable here. Change opens a sheet (a textarea with a count of its length, or a list
+   editor for skills); Send files the one ask Identity puts to the owner, and nothing changes until the stamp: until then
+   the field says it waits, beside the amber mark. A part no run reads says so, so a change to it is read as the owner's
+   note; an earlier whole-file change shows once as kept as a note. Names only, never where anything lives.
+
+   Before the interface's typed fields arrive (a read whose instructions are the first design's files) the files are listed
+   as they were: wbInsFilesHtml, with the sheet and the Send of that design (an ask {fn, file, text}). */
 const WB_INS_NOT_READ = "In this version the code makes this choice, so no run reads these words yet";
+const WB_INS_FIELDS = { task: "the task", guidance: "the guidance", text: "the words", items: "the list" };
+const WB_INS_OWN = { "does.text": "what it does", "skills.items": "the skills", "note.text": "the note" };
+const WB_INS_WAIT = "your change waits for your stamp";
+function wbInsLabel(part, field){ return WB_INS_OWN[part + "." + field] || WB_INS_FIELDS[field] || String(field); }
+/* the typed fields, or the first design's files */
 function wbInsHtml(fn, v){
   const rows = v.instructions || [];
   if (!rows.length) return "";
+  return rows[0] && rows[0].parts ? rows.map(g => wbInsGroupHtml(fn, g)).join("") : wbInsFilesHtml(fn, rows);
+}
+function wbInsFilesHtml(fn, rows){
   return dpCard("Instructions", rows.map(r => `<div class="wbins"><b>${wbEsc(r.file)}</b><span class="wbinslead">${wbEsc(r.lead)}</span>` +
     (r.read === false ? `<span class="wbchip" title="${wbEsc(WB_INS_NOT_READ)}">a note: no run reads it yet</span>` : "") +
-    (r.waits ? `<span class="wbinsnote"><i class="wbinsq">?</i>your change waits for your stamp${r.waits.at ? " · " + wbEsc(wbWhen(r.waits.at)) : ""}</span>`
+    (r.waits ? `<span class="wbinsnote"><i class="wbinsq">?</i>${WB_INS_WAIT}${r.waits.at ? " · " + wbEsc(wbWhen(r.waits.at)) : ""}</span>`
              : wbChip(r.as_shipped ? "as shipped" : "your words") + wbBtn("Change", `data-wbins="${wbEsc(r.file)}" data-wbinsfn="${wbEsc(fn)}"`)) +
     `</div>`).join(""));
+}
+/* the words in use as one line of a row: a list read as its items, a text with its lines run together */
+function wbInsShown(f){
+  return (Array.isArray(f.value) ? f.value.join("; ") : String(f.value == null ? "" : f.value)).replace(/\s+/g, " ").trim();
+}
+function wbInsFieldHtml(fn, g, p, f){
+  const open = `data-wbins="change" data-wbinsfn="${wbEsc(fn)}" data-wbinsgroup="${wbEsc(g.group)}" data-wbinspart="${wbEsc(p.part)}" data-wbinsfield="${wbEsc(f.field)}"`;
+  return `<div class="wbins"><span class="wbinsf">${wbEsc(wbInsLabel(p.part, f.field))}</span><span class="wbinslead">${wbEsc(wbInsShown(f))}</span>` +
+    (f.waits ? `<span class="wbinsnote"><i class="wbinsq">?</i>${WB_INS_WAIT}${f.waits.at ? " · " + wbEsc(wbWhen(f.waits.at)) : ""}</span>`
+             : wbChip(f.as_shipped ? "as shipped" : "your words") + wbBtn("Change", open)) + `</div>`;
+}
+function wbInsPartHtml(fn, g, p){
+  const said = (words, list) => (list && list.length) ? `<div class="dpchk">${words}: ${list.map(wbEsc).join(", ")}</div>` : "";
+  return `<div class="wbinsp"><div class="wbinsh"><b>${wbEsc(p.part)}</b>` +
+    (p.read === false ? `<span class="wbchip" title="${wbEsc(WB_INS_NOT_READ)}">a note: no run reads it yet</span>` : "") + `</div>` +
+    (p.fields || []).map(f => wbInsFieldHtml(fn, g, p, f)).join("") + said("filled by the app", p.inputs) + said("answers with", p.answers) + `</div>`;
+}
+function wbInsGroupHtml(fn, g){
+  const kept = g.kept ? `<div class="wbinsk">${wbChip("kept as your note")}<span class="dpchk">${g.kept.at ? wbEsc(wbWhen(g.kept.at)) : ""}</span></div>` : "";
+  return dpCard(g.lead || g.group, kept + (g.parts || []).map(p => wbInsPartHtml(fn, g, p)).join(""));
+}
+/* a field of the read, with its group and part, or null */
+function wbInsFind(ref, fn, group, part, field){
+  const v = wbS().steps[ref + ":" + wbCap(fn)], gs = (v && v.instructions) || [];
+  for (const g of gs){
+    if (g.group !== group) continue;
+    for (const p of g.parts || []){
+      if (p.part !== part) continue;
+      for (const f of p.fields || []) if (f.field === field) return { g, p, f };
+    }
+  }
+  return null;
+}
+/* The words against the field's bounds, as one answer: whether they may be sent, the count to show, and why not. A text
+   is at most `max` long and has some words; a list is at most `max_items` long, each at most `max`, with at least one. */
+function wbInsCheck(s){
+  if (s.type === "list"){
+    const items = (s.items || []).map(x => String(x == null ? "" : x)), kept = items.filter(x => x.trim());
+    const long = items.some(x => x.length > s.max), full = items.length > (s.max_items || Infinity);
+    return { ok: !long && !full && kept.length > 0, over: long || full, line: items.length + " of " + (s.max_items || "no limit"),
+             why: long ? "an item is longer than " + s.max + " characters" : (full ? "too many items" : (kept.length ? "" : "add at least one item")) };
+  }
+  const n = String(s.text == null ? "" : s.text).length, empty = !String(s.text == null ? "" : s.text).trim();
+  return { ok: !empty && n <= s.max, over: n > s.max, line: n + " of " + s.max + (n > s.max ? ": too long" : ""),
+           why: empty ? "Say what the words should be" : (n > s.max ? "These words are longer than " + s.max + " characters" : "") };
+}
+/* an error as the owner reads it: the server's plain sentence, without the route apiPost appends to it */
+function wbInsPlain(e){
+  const m = String((e && e.message) || e || "").replace(/\s*\((?:\/[^)\s]*)\s*->\s*\d+\)\s*$/, "").trim();
+  return m && !/^\/\S+ -> \d+$/.test(m) ? m : "Sutra could not take that; try again";
+}
+function wbInsItemRow(s, i, x){
+  const over = String(x).length > s.max;
+  const b = (word, what, off) => wbBtn(word, `data-wbins="${what}" data-wbinsi="${i}" aria-label="${wbEsc(word + " item")}"${off ? " disabled" : ""}`);
+  return `<li class="wbinsit"><input type="text" data-wbinsitem="${i}" value="${wbEsc(x)}" aria-label="${wbEsc("item " + (i + 1))}" spellcheck="false">` +
+    `<span id="wbins-n${i}" class="wbinscount${over ? " over" : ""}">${String(x).length} of ${s.max}</span>` +
+    b("Up", "up", i === 0) + b("Down", "down", i === s.items.length - 1) + b("Remove", "rm", false) + `</li>`;
+}
+function wbInsTypedSheetHtml(s){
+  const c = wbInsCheck(s), title = wbCap(s.fn) + " · " + s.part + " · " + s.label;
+  const body = s.type === "list"
+    ? `<label>${wbEsc(wbCap(s.label))}</label><ol class="wbinslist">${s.items.map((x, i) => wbInsItemRow(s, i, x)).join("")}</ol>` +
+      `<div class="wbinsadd">${wbBtn("Add", `data-wbins="add"${s.items.length >= (s.max_items || Infinity) ? " disabled" : ""}`)}</div>`
+    : `<label for="wbins-text">${wbEsc(wbCap(s.label))}</label>` +
+      `<textarea id="wbins-text" data-wbinstext="1" rows="${s.multiline ? 12 : 3}" spellcheck="false">${wbEsc(s.text)}</textarea>`;
+  return `<div class="wbscrim wb" data-wbins="close"></div><div class="o2sheet wbsheet wbinssheet wb" role="dialog" aria-label="${wbEsc("Change " + title)}">` +
+    `<h4>${wbEsc(title)}</h4>${s.lead ? `<div class="o2quiet dpq">${wbEsc(s.lead)}</div>` : ""}${body}` +
+    `<div id="wbins-count" class="wbinscount${c.over ? " over" : ""}">${wbEsc(c.line)}</div>` +
+    (s.error ? `<div class="o2err wbinserr" role="alert">${wbEsc(s.error)}</div>` : "") +
+    `<div class="o2acts2">${wbBtn(s.busy ? "Sending" : "Send", `id="wbins-send" data-wbins="send"${s.busy || !c.ok ? " disabled" : ""}`, "dpstamp")}` +
+    wbBtn("Cancel", `data-wbins="close"`) + `</div></div>`;
 }
 function wbInsSheetHtml(){
   const s = wbS().ins;
   if (!s) return "";
+  if (s.group !== undefined) return wbInsTypedSheetHtml(s);
   const title = wbCap(s.fn) + " · " + s.file;
   return `<div class="wbscrim wb" data-wbins="close"></div><div class="o2sheet wbsheet wbinssheet wb" role="dialog" aria-label="${wbEsc("Change " + title)}">` +
     `<h4>${wbEsc(title)}</h4>` +
@@ -1477,6 +1560,19 @@ function wbInsPaint(){
   if (!host){ host = document.createElement("div"); host.id = "wbins-sheet"; document.body.appendChild(host); }
   host.innerHTML = wbInsSheetHtml();
 }
+/* While the owner types, the count and Send follow the words without the sheet being painted again (a paint would take
+   the caret out from under them) */
+function wbInsSync(){
+  const s = wbS().ins;
+  if (!s || s.group === undefined || typeof document === "undefined" || !document.getElementById) return;
+  const c = wbInsCheck(s), line = document.getElementById("wbins-count"), send = document.getElementById("wbins-send");
+  if (line){ line.textContent = c.line; line.className = "wbinscount" + (c.over ? " over" : ""); }
+  if (send) send.disabled = !!s.busy || !c.ok;
+  if (s.type === "list") (s.items || []).forEach((x, i) => {
+    const n = document.getElementById("wbins-n" + i);
+    if (n){ n.textContent = String(x).length + " of " + s.max; n.className = "wbinscount" + (String(x).length > s.max ? " over" : ""); }
+  });
+}
 function wbInsOpen(ref, fn, file){
   const v = wbS().steps[ref + ":" + wbCap(fn)];
   const r = ((v && v.instructions) || []).filter(x => x.file === file)[0];
@@ -1484,9 +1580,45 @@ function wbInsOpen(ref, fn, file){
   wbS().ins = { ref, fn, file, text: r.text || "", busy: false, error: null };
   wbInsPaint();
 }
+function wbInsOpenField(ref, fn, group, part, field){
+  const hit = wbInsFind(ref, fn, group, part, field);
+  if (!hit || hit.f.waits) return;
+  const f = hit.f, list = f.type === "list";
+  wbS().ins = { ref, fn, group, part, field, type: f.type, max: f.max, max_items: f.max_items, multiline: !!f.multiline, lead: hit.g.lead,
+                label: wbInsLabel(part, field), text: list ? "" : String(f.value == null ? "" : f.value),
+                items: list ? (f.value || []).map(String) : null, busy: false, error: null };
+  wbInsPaint();
+}
+/* the list editor's own buttons: add an item, remove one, move one up or down */
+function wbInsEdit(what, i){
+  const s = wbS().ins;
+  if (!s || s.type !== "list") return;
+  const items = s.items;
+  if (what === "add" && items.length < (s.max_items || Infinity)) items.push("");
+  else if (what === "rm" && i >= 0 && i < items.length) items.splice(i, 1);
+  else if ((what === "up" && i > 0) || (what === "down" && i < items.length - 1)){
+    const j = what === "up" ? i - 1 : i + 1, t = items[i]; items[i] = items[j]; items[j] = t;
+  }
+  s.error = null;
+  wbInsPaint();
+}
 async function wbInsSend(){
   const st = wbS(), s = st.ins;
   if (!s || s.busy) return;
+  if (s.group !== undefined){
+    const c = wbInsCheck(s);
+    if (!c.ok){ s.error = c.why; wbInsPaint(); return; }
+    s.busy = true; s.error = null; wbInsPaint();
+    try {
+      await apiPost(wbUrl(s.ref, "instructions"), { fn: s.fn, group: s.group, part: s.part, field: s.field,
+                                                    value: s.type === "list" ? s.items.map(x => String(x).trim()).filter(Boolean) : s.text });
+      st.ins = null; wbInsPaint();
+      wbLoadSteps(s.ref, wbCap(s.fn), true);            /* the field reads that the change waits for the stamp */
+    } catch (e) {
+      s.busy = false; s.error = wbInsPlain(e); wbInsPaint();
+    }
+    return;
+  }
   if (!String(s.text || "").trim()){ s.error = "Say what the instructions should be"; wbInsPaint(); return; }
   s.busy = true; s.error = null; wbInsPaint();
   try {
@@ -1726,6 +1858,8 @@ if (typeof document !== "undefined" && document.addEventListener){
       ev.preventDefault(); ev.stopPropagation();
       if (ds.wbins === "close"){ st.ins = null; wbInsPaint(); }
       else if (ds.wbins === "send") wbInsSend();
+      else if (ds.wbins === "change"){ if (ref && wbIs(ref)) wbInsOpenField(ref, ds.wbinsfn, ds.wbinsgroup, ds.wbinspart, ds.wbinsfield); }
+      else if (/^(add|rm|up|down)$/.test(ds.wbins)) wbInsEdit(ds.wbins, ds.wbinsi === undefined ? -1 : Number(ds.wbinsi));
       else if (ref && wbIs(ref)) wbInsOpen(ref, ds.wbinsfn, ds.wbins);
       return;
     }
@@ -1813,7 +1947,8 @@ if (typeof document !== "undefined" && document.addEventListener){
     const t = ev.target, ds = (t && t.dataset) || {};
     if (ds.wbdraft !== undefined) wbS().draft[ds.wbdraft] = t.value;
     if (ds.wbfield !== undefined && wbS().found) wbS().found[ds.wbfield] = t.value;
-    if (ds.wbinstext !== undefined && wbS().ins) wbS().ins.text = t.value;
+    if (ds.wbinstext !== undefined && wbS().ins){ wbS().ins.text = t.value; wbInsSync(); }
+    if (ds.wbinsitem !== undefined && wbS().ins && wbS().ins.items){ wbS().ins.items[Number(ds.wbinsitem)] = t.value; wbInsSync(); }
   });
   /* Cmd+Enter (Ctrl+Enter) in the box of Identity's question sends the answer */
   document.addEventListener("keydown", (ev) => {
