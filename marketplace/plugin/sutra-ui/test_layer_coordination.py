@@ -341,17 +341,18 @@ def _coordination_rows(W, ref):
     return [r for r in W.runs(ref) if r.get("system") and r.get("engine") == "Coordination" and "interface" in str(r.get("what"))]
 
 
-def test_k3_a_hand_made_table_naming_an_unregistered_engine_is_caught_with_one_row(j2):
-    """A line with an engine nobody registered or added, written with no word, must fail: one row, by Coordination, and in
-    warn mode the write goes through."""
+@pytest.mark.parametrize("engine", ["Ghost", "Do"], ids=["unknown to the Library", "in the Library, in no registered plan"])
+def test_k3_a_hand_made_table_naming_an_unregistered_engine_is_caught_with_one_row(engine, j2):
+    """A line with an engine nobody registered or added, written with no word, must fail: one row, by Coordination, naming
+    the engine, and in warn mode the write goes through."""
     W, R, _, _, _ = j2
     ref = _born(j2)
     with S.expect_refused() as met:
-        t = R.set_line(ref, LINE + ["Ghost"], 2)
+        t = R.set_line(ref, LINE + [engine], 2)
     assert len(met.rows) == 1 and met.rows[0]["name"] == "coordination.table" and met.rows[0]["owner"] == "coordination"
     assert met.rows[0]["ref"] == ref and met.rows[0]["kept"] is True, "warn mode: a row, and the write goes through"
-    assert any("Ghost" in f or "engines[4]" in f for f in met), met      # a standard names it; the shape row says where
-    assert t["line"] == LINE + ["Ghost"] and _table(W, ref)["line"] == LINE + ["Ghost"]
+    assert met[0].startswith("line_is_registered: the line holds %s, which no registered plan names" % engine), met
+    assert t["line"] == LINE + [engine] and _table(W, ref)["line"] == LINE + [engine]
     rows = _coordination_rows(W, ref)
     assert len(rows) == 1 and "kept a record that does not fit the interface: coordination.table" in rows[0]["what"]
 
@@ -372,7 +373,7 @@ def test_k3_in_refuse_mode_the_unregistered_line_is_not_written_and_the_handler_
     # the handler an engine born is heard by: it keeps the line it had, says why, and does not raise
     with S.expect_refused() as met:
         got = R.coord_table(R._coord_ctx(ref), {}, {"engines": LINE + ["Ghost"], "version": 2, "full": True})
-    assert got["line"] == LINE and got["said"].startswith("kept the line it had: ") and ("Ghost" in got["said"] or "engines[4]" in got["said"])
+    assert got["line"] == LINE and got["said"].startswith("kept the line it had: line_is_registered: the line holds Ghost")
     assert len(met.rows) == 1 and (W.ddir(ref) / "coordination.json").read_bytes() == before
 
 

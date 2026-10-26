@@ -4176,16 +4176,19 @@ def grow_line(ref, name, before=None):
 
 
 def _check_line(ref, d, t):
-    """Coordination's line, about to be written, against Root's standards for a write (PRD A1.14, A1.20): the line as a
-    workflow of the registered plan's source, read with the engines the owner added (grown), so a line that names an
-    engine no registered plan holds, which the owner did not add, is not written without a word. Warn mode leaves one
-    row (the failed standards, together) and the write goes through; refuse mode raises layer_schema.SchemaFault after the
-    row, and nothing is written."""
+    """Coordination's line, about to be written, against Root's standards for a write (PRD A1.14, A1.20): the workflow is the
+    plan Root registered last (its engines and its source), and the line and the engines the owner added (grown) are what
+    it is held against, so a line that names an engine no registered plan holds, which the owner did not add, is not
+    written without a word. (The line itself is not the workflow: a standard that counted the workflow's own engines as
+    registered would pass every line.) A department with no registered plan is read as the line it is given. Warn mode
+    leaves one row, the failed standards together, and the write goes through; refuse mode raises layer_schema.SchemaFault
+    after the row, and nothing is written."""
     import layer_schema as S
-    plans = [w for w in d.get("workflows") or [] if isinstance(w, dict)]
-    source = (plans[-1].get("source") if plans else None)
+    plans = [w for w in d.get("workflows") or [] if isinstance(w, dict) and w.get("engines")]
     ctx = {"line": list(t.get("line") or []), "grown": list(t.get("grown") or [])}
-    rows = S.validate_workflow(S.as_workflow(ctx["line"], source if source in S.SOURCES else "library", d), "write", d, ctx)
+    source = plans[-1].get("source") if plans else None
+    registered = [str(n) for n in plans[-1]["engines"]] if plans else ctx["line"]
+    rows = S.validate_workflow(S.as_workflow(registered, source if source in S.SOURCES else "library", d), "write", d, ctx)
     failed = [r for r in rows if not r["passed"]]
     failed.sort(key=lambda r: r["check"] == "workflow_meets_standards")      # a standard says it in words; the shape row follows
     S.report("coordination.table", ["%s: %s" % (r["check"], r["why"]) for r in failed], ref=ref, owner="coordination")
