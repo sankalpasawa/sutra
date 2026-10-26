@@ -196,6 +196,16 @@ def test_w3_a_decisions_bare_answer_is_never_the_words_of_an_atom(mods):
     assert not re.search(r"\b(accept|counter|reject|admit|wait|refuse)\b|accept-proposal", json.dumps(K.build(ctx)), re.I)
 
 
+def test_w3_identitys_bare_answers_are_the_act_in_the_owners_words_on_the_atom_too(mods):
+    """The same table as the call log (j2ui_atoms.acts): Identity's run, drop and ask are 'it runs', 'dropped' and 'asked you'."""
+    W, R, J, F = mods
+    step_row(R, "Plan", "plan.read", notes=["the brief has words"], run_id="r-1", answer="run")
+    step_row(R, "Plan", "plan.pages", notes=["6 pages proposed"], run_id="r-1", answer="drop")
+    step_row(R, "Plan", "plan.fit", notes=["every page is on the list"], run_id="r-1", answer="ask")
+    atoms, ctx = atoms_of(mods, "Plan")
+    assert [a["human_output"]["text"] for a in atoms[:3]] == ["it runs", "dropped", "asked you"]
+
+
 def test_w3_agent_output_names_the_files_of_the_version_the_engine_made(mods):
     W, R, J, F = mods
     r1 = run(W, "Plan", status="ok", id="r-plan-a")

@@ -28,9 +28,10 @@ run first (the page sets the first result against the check it shows, and that i
 the order they were made, and no more than RESULTS_MAX of them: a department that has run for months does not send every row it
 ever wrote on every poll. `attempts` is still the number of runs.
 
-The small readers (plain, cut, sentence, answer_line, epoch, hhmmss, memoised) are shared by j2ui_work.py and j2ui_audit.py, the three
-modules of this package, so that no string they emit says an inside word: a check's id (brief_is_text) is never a sentence, and a
-decision's answer (accept, counter, admit, refuse) is never the bare word.
+The small readers (plain, cut, sentence, answer_said, answer_line, epoch, hhmmss, memoised) are shared by j2ui_work.py and j2ui_audit.py,
+the three modules of this package, so that no string they emit says an inside word: a check's id (brief_is_text) is never a sentence,
+and a decision's answer (accept, counter, admit, refuse) is never the bare word. What a step answered (answer_said) is the record's
+and no one else's: a check's note says what code found, and is never given as what the step answered.
 """
 import importlib.util
 import os
@@ -39,6 +40,7 @@ from datetime import datetime
 from pathlib import Path
 
 import engine_runtime as R
+import functions_view as F
 import owner_words
 import website_dept as W
 
@@ -78,20 +80,34 @@ def sentence(name, notes):
 
 PRIORITY_SAID = {"accept": "said yes", "counter": "asked for less", "reject": "said no"}      # Priority's answers (layers/priority SAID)
 CODE_WORD = re.compile(r"^[a-z]+(?:-[a-z]+)*$")              # one lowercase word: a code a step answers with, not a sentence
+NOT_RECORDED = "not recorded"                                # the prototype's own words where Sutra holds no value
+
+
+def acts():
+    """The codes a step answers with that have an act in the owner's words: Priority's accept, counter or reject, a gate's admit, wait
+    or refuse, and Identity's run, drop or ask. Looked up when asked, so a table that changes in its own module changes here."""
+    return {**PRIORITY_SAID, **R.GATE_SAYS, **F.RULING_SAYS}
+
+
+def answer_said(answer):
+    """What a step answered, in the owner's words, cut to a line; '' when the record holds no answer a person can read. A step that
+    decides answers with one word of its own, and the owner hears the act (said yes, asked for less, said no; let through, waiting,
+    stopped; it runs, dropped, asked you), never the word. Any other code (go, an act's id) has no act to say and reads as nothing,
+    and so does a step the record kept no answer for: what the step's check noted is what code found, never what the step answered."""
+    text = plain(answer) if isinstance(answer, str) else ""
+    table = acts()
+    if text.lower() in table:
+        text = table[text.lower()]
+    elif CODE_WORD.match(text):
+        text = ""
+    return cut(text, ANSWER_MAX)
 
 
 def answer_line(answer, notes=()):
-    """What a step answered, in the owner's words, cut to a line. A step that decides answers with one word of its own: Priority's
-    accept, counter or reject, a gate's admit, wait or refuse. The owner hears the act (said yes, asked for less, said no; let
-    through, waiting, stopped), never the word. Any other code (go, ask, an act's id) is no answer a person can read, so the step's
-    first check note, which is a sentence, stands in its place (and so does it for a step that answered nothing)."""
-    text = plain(answer) if isinstance(answer, str) else ""
-    acts = dict(PRIORITY_SAID, **R.GATE_SAYS)
-    if text.lower() in acts:
-        text = acts[text.lower()]
-    elif CODE_WORD.match(text):
-        text = ""
-    return cut(text, ANSWER_MAX) or next((n for n in notes or [] if n), "")
+    """What a step did, in a line: what it answered (answer_said), else the step's first check note, which is a sentence (and so is
+    it for a step that answered nothing). For the atom's own notes, where the check's finding is what the step did; a call's reply is
+    answer_said alone, for a check's note is not what the model said."""
+    return answer_said(answer) or next((n for n in notes or [] if n), "")
 
 
 def epoch(iso):

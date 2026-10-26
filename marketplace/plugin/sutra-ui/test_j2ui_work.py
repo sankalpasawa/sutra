@@ -12,9 +12,11 @@ Named claims (each step of the package adds its own):
   W7c a call made by a slot step of an engine of the line names its atom ('W-1.a2', the id the workflow's atom card has), and the
       page's atom card finds it: it shows the reply and the cost, and does not say 'No AI call yet'; a function's step and an engine
       outside the line have none
-  W7b a decision's answer is one bare word in the record (Priority's accept, counter or reject, a gate's admit, wait or refuse); the
-      call log says the act in the owner's words (said yes, asked for less, said no; let through, waiting, stopped), whoever made the
-      call, never the word, and a code with no act of that kind is replaced by the step's first check note
+  W7b a decision's answer is one bare word in the record (Priority's accept, counter or reject, a gate's admit, wait or refuse,
+      Identity's run, drop or ask); the call log says the act in the owner's words (said yes, asked for less, said no; let through,
+      waiting, stopped; it runs, dropped, asked you), whoever made the call, never the word; a code with no act of that kind, and a
+      step the record kept no answer for (an engine's AI step keeps only a hash), are 'not recorded', for what a step's check noted
+      is what code found and is never given as what the step replied
   W4  a lane for each of the five functions, the validator and each workflow, in that order, with a status in idle, working,
       waiting or blocked; a function waits on you only while the owner holds the turn; the numbers are the record's (Priority's
       calls limit, the runs' retries), never the prototype's constants
@@ -740,13 +742,23 @@ def test_w7_a_step_that_made_a_call_is_a_row_with_nothing_nobody_recorded(mods):
     assert json.loads(json.dumps(got)) == got and not BANNED.search(json.dumps(got))
 
 
-def test_w7_a_call_with_no_answer_says_what_the_steps_check_noted_or_nothing(mods):
+def test_w7_a_call_with_no_answer_says_not_recorded_whatever_the_steps_check_noted(mods):
+    """The record keeps no reply for an engine's AI step (the row's answer is null, only a hash of what it wrote). What its check
+    noted is what code found about it; it is never given as what the step replied, and no length is made up for it."""
     W, R, J, F = mods
+    cycle(W, "running", 6)
     model_step(R, notes=["the answer is say yes, ask for less or say no"])
     model_step(R, notes=[], started=T1, ended=T2)
-    got = K.build(standin(mods))["call_log"]
-    assert got[0]["reply"] == {"say": "the answer is say yes, ask for less or say no"} and got[0]["chars"]["reply"] == 0
-    assert got[1]["reply"] is None, "the page then says 'No usable reply.'"
+    step_row(R, "Plan", "plan.pages", notes=["almost no text"], calls=1, started=T2, ended=T3, answer=None)
+    out = K.build(standin(mods))
+    got = out["call_log"]
+    assert [c["reply"] for c in got] == [{"say": "not recorded"}] * 3, "the same form whether the check noted something or nothing"
+    assert [c["chars"] for c in got] == [{"prompt": 0, "reply": 0}] * 3, "the page's shape: a number, which is the answer's length and 0 for none"
+    assert "almost no text" not in json.dumps(got) and "the answer is say yes" not in json.dumps(got)
+    assert got[2]["atom"] == "W-1.a2"
+    plan = shown(render(page_state(out, calls=3), "atomCards(s, Object.assign({}, s.workflows[0], {atoms: [s.workflows[0].atoms[1]]}))"))
+    assert "Reply received call 3 not recorded" in plan, plan
+    assert "Reply received call 3 almost no text" not in plan and "Reply received call 3 No usable reply" not in plan, plan
 
 
 def test_w7_a_decisions_bare_answer_is_said_as_the_act_in_the_owners_words_whoever_made_the_call(mods):
@@ -774,6 +786,7 @@ def test_w7_the_acts_words_are_the_layers_and_the_runtimes_own(mods):
     assert j2ui_atoms.PRIORITY_SAID == dict(priority.SAID)
     assert {a: ACTS_SAID[a] for a in R.GATE_SAYS} == R.GATE_SAYS
     assert dict(j2ui_atoms.PRIORITY_SAID, **R.GATE_SAYS) == ACTS_SAID
+    assert j2ui_atoms.acts() == dict(ACTS_SAID, **F.RULING_SAYS), "and Identity's three are functions_view's RULING_SAYS"
 
 
 def test_w7_a_bare_word_in_any_case_is_still_the_act(mods):
@@ -783,7 +796,7 @@ def test_w7_a_bare_word_in_any_case_is_still_the_act(mods):
     assert [c["reply"]["say"] for c in K.build(standin(mods))["call_log"]] == ["asked for less", "said no"]
 
 
-def test_w7_a_code_that_is_no_act_gives_way_to_the_steps_first_check_note(mods):
+def test_w7_a_code_that_is_no_act_is_not_recorded_and_never_the_steps_check_note(mods):
     W, R, J, F = mods
     model_step(R, engine="Identity", step="identity.take", answer="go", notes=["the verdict is go, ask or stop"])
     model_step(R, engine="Identity", step="identity.take", answer="ask", notes=[], started=T1, ended=T2)
@@ -791,9 +804,20 @@ def test_w7_a_code_that_is_no_act_gives_way_to_the_steps_first_check_note(mods):
     model_step(R, engine="Priority", step="priority.bargain", answer="brief_is_text", notes=["it was decided"], started=T0, ended=T1)
     model_step(R, engine="Coordination", step="coord.tie", answer="Plan", notes=["names who goes first"], started=T1, ended=T2)
     out = K.build(standin(mods))["call_log"]
-    assert [c["reply"] for c in out] == [{"say": "the verdict is go, ask or stop"}, None, {"say": "it was decided"},
-                                         {"say": "it was decided"}, {"say": "Plan"}]
+    assert [c["reply"] for c in out] == [{"say": "not recorded"}, {"say": "asked you"}, {"say": "not recorded"},
+                                         {"say": "not recorded"}, {"say": "Plan"}]
     assert not BARE.search(json.dumps(out)) and not BANNED.search(json.dumps(out))
+
+
+def test_w7_identitys_words_are_said_as_the_act_in_the_owners_words(mods):
+    """Identity's rulings are run, drop and ask in the record; the owner hears 'it runs', 'dropped', 'asked you' (functions_view's
+    own words for them), and the call log says the same."""
+    W, R, J, F = mods
+    for n, word in enumerate(("run", "drop", "ask", "Drop")):
+        model_step(R, engine="Identity", step="identity.close", answer=word, notes=["the ruling is known"], started=T0, ended=T1)
+    out = K.build(standin(mods))["call_log"]
+    assert [c["reply"]["say"] for c in out] == ["it runs", "dropped", "asked you", "dropped"]
+    assert [c["chars"]["reply"] for c in out] == [3, 4, 3, 4]
 
 
 def one_call_each_slot_step(R, mods):

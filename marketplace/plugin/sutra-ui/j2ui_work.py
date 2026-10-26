@@ -229,17 +229,19 @@ def _step_name(ctx, row):
 
 def _call_row(ctx, i, row, atoms=None):
     """One call of the log, from the step row that made it. What the model was given and said is not stored, so the prompt is
-    nothing, the tokens and the model are not recorded, and the reply is what the step's own record has, in the owner's words.
-    `atom` names the work atom the call made when the step is a slot step of an engine of the line (the page's atom card finds
-    its calls by it, as the prototype's calls carry it); a function's step is no atom's and the key is left off."""
+    nothing, the tokens and the model are not recorded, and the reply is what the step's own record has of its answer, in the
+    owner's words: a decision's code as its act (said yes, asked for less, said no), a sentence as it is, and 'not recorded' for a
+    step the record kept no readable answer of (an engine's AI step keeps only the hash of what it wrote). What the step's check
+    noted is what code found, never the reply. `atom` names the work atom the call made when the step is a slot step of an engine of
+    the line (the page's atom card finds its calls by it, as the prototype's calls carry it); a function's step is no atom's and the
+    key is left off."""
     answer = row.get("answer")
-    notes = [A.plain(n) for n in (row.get("check") or {}).get("notes") or [] if A.plain(n)]
-    said = A.answer_line(answer, notes)
+    said = A.answer_said(answer)
     stamp = row.get("ended") or row.get("started")
     out = {"id": i, "fn": _fn(ctx, row.get("engine")), "step": ctx.step_at(stamp) if callable(getattr(ctx, "step_at", None)) else None,
            "cycle": (ctx.cur or {}).get("round") or 1, "t": A.hhmmss(stamp), "seconds": round(int(row.get("ms") or 0) / 1000, 2),
            "model": None, "tokens": None, "chars": {"prompt": 0, "reply": len(answer) if isinstance(answer, str) else 0},
-           "inputs": [["step", _step_name(ctx, row)]], "reply": {"say": said} if said else None, "reason": ""}
+           "inputs": [["step", _step_name(ctx, row)]], "reply": {"say": said or A.NOT_RECORDED}, "reason": ""}
     atom = (atoms or {}).get((row.get("engine"), row.get("step")))
     if atom:
         out["atom"] = atom
