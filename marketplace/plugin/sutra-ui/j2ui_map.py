@@ -20,6 +20,7 @@ call and never raises: a wrong shape blanks the page, so a failure returns the e
 from datetime import datetime
 
 import j2ui_artifacts as A
+import j2ui_board as B
 import j2ui_mapedges as E
 import website_dept as W
 from j2ui_mapedges import checks_of, plural as _plural
@@ -187,7 +188,7 @@ def boxes(ctx):
             out, ver, eng = branch, None, writers[0]
         row = rows.get(a["name"])
         slug = a.get("slug") or W.slug(a["name"])
-        ok, run = checks_of(eng) if eng else (0, 0)
+        run = checks_of(eng)[1] if eng else 0
         # the listing's own tag when the artifact has a file; before that the Preview's artifact and the Live site are pages
         tag, color = (row["tag"], row["color"]) if row else A.tag_of(a["name"], "index.html", prev)
         if out is branch:
@@ -239,7 +240,7 @@ def _build(ctx):
     trunk, branch = boxes(ctx)
     goal = has_goal(ctx)
     if not goal:
-        nr.append("the Charter: no goal is recorded yet")
+        nr.append("the goal (none is recorded yet, so no plan is drawn)")
     chain = ([{"slug": "charter", "eng": None, "node": charter(), "status": "filed"}] if goal else []) + trunk
     steps = E.step_nodes(chain)
     work = []
@@ -265,11 +266,7 @@ def _build(ctx):
         else:
             nr.append("which function worked on %s: not recorded" % n["label"])
     owner = {w: b["node"]["id"] for b in trunk + branch for w in b["node"]["workflows"]}
-    try:
-        import j2ui_board as B
-        entries = B.build(ctx).get("entries") or []
-    except Exception:  # noqa: BLE001 -- no board yet (W3-BOARD): no asks or uses lines
-        entries = []
+    entries = B.build(ctx).get("entries") or []                      # none until W3-BOARD files questions.json: no asks or uses lines
     edges = (E.step_edges(chain, steps) + E.handoffs(chain) + E.speaks(chat) + E.lines(ctx, goal, target) + E.board_edges(entries, owner))
     nr += ["tokens per function (Sutra records calls and cost, not tokens)", "messages to and from workflow agents (W-n) are not drawn",
            "what the work draws on (Knows row, later version)"]

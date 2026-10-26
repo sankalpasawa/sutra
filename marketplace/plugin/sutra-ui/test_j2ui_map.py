@@ -30,7 +30,7 @@ import re
 import pytest
 
 from test_j2ui_artifacts import (REF, FUNCS, add_ver, ago, make_ctx, mods, msg, page_render, plain_text, proto_consts,  # noqa: F401 -- mods is a fixture
-                                 proto_show, put_ask, put_post, put_run, put_step, seed_line, set_cycle)
+                                 put_ask, put_post, put_run, put_step, seed_line, set_cycle)
 from test_j2ui_board import put_questions, q
 
 WORK = ["work:brief", "work:site-plan", "work:pages", "work:build", "work:live-site"]
@@ -363,7 +363,7 @@ def test_m3d_a_department_with_no_goal_has_no_charter_and_says_why(mods):
     m = M.build(make_ctx(mods))
     assert "work:charter" not in ids(m) and ids(m, "work") == WORK
     assert "version of Charter" in m["not_recorded"]
-    assert any("Charter" in s and "no goal" in s for s in m["not_recorded"])
+    assert any("goal" in s and "none is recorded" in s for s in m["not_recorded"])
 
 
 def test_m3d_a_request_gives_the_department_a_goal(mods):
