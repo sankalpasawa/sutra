@@ -117,6 +117,18 @@ class Fixture(unittest.TestCase):
         fn, step = R.step_def(step_id)
         return R.card(c) + R._resolve(c, "prompt", step["prompt"], engine=fn)(c, step, None)
 
+    def on_the_bundle(self, *fns):
+        """The named functions' words read from the .md bundle again, as they were before a layer held them: their layers'
+        WORDS and LAYOUT set aside until the test ends. The bundle stays the fallback until W3-PROOF deletes it, and what
+        a test of it is about (a file edited or gone, a whole-file copy of the owner's) holds whichever layers hold their
+        words by now."""
+        import layers
+        for fn in fns:
+            module = layers.load("%s/v1" % fn)
+            for name in ("WORDS", "LAYOUT"):
+                self.addCleanup(setattr, module, name, getattr(module, name))
+                setattr(module, name, {})
+
     def prompts(self):
         """Every function prompt, for the fixtures: each journey of Identity, each word Priority bargains on, a line with
         and without Root's refusal, a tie and a reading."""
@@ -238,12 +250,11 @@ class TestTheFiles(Fixture):
             R.defs()
         self.assertIn("bargain has no part cost", str(cm.exception))
         self.assertIn("bargain, costs: no step reads this part", str(cm.exception))
-        # a file whose words the layer holds as typed fields needs none (Audit's, A1.16), so a slot the app does not fill is
-        # refused where Audit's words are: a bundle file is read for the layers that have not moved theirs
-        self.bundle(edit=("coordination/tie", "{{waiting}}", "{{waiting}} {{findings}}"))
+        self.on_the_bundle("audit")
+        self.bundle(edit=("audit/judge", "{{pages}}", "{{pages}} {{findings}}"))
         with self.assertRaises(ValueError) as cm:
             R.defs()
-        self.assertIn("tie, tie: the app fills no {{findings}}", str(cm.exception))
+        self.assertIn("judge, judge: the app fills no {{findings}}", str(cm.exception))
         self.bundle()
         self.assertEqual(R.validate(R.defs()), [], "the bundle as shipped loads")
 
@@ -346,44 +357,37 @@ class TestTheOwnersChange(Fixture):
         self.assertIsNone(row["waits"])
         self.assertNotIn("At most three findings.", self.render("audit.judge", self.ctx("Audit", inp={"v": 1}), ("audit.pick",)))
 
-    def tie_ctx(self):
-        c = self.R._coord_ctx(REF)
-        c.update({"slot": "Coordination@tie.fixture", "run": None, "inp": {"v": 0}, "post": None, "bag": {}, "how": {},
-                  "spend": {"calls": 0, "usd": 0.0}, "ready": ["Audit", "Identity", "Adaptation"]})
-        return c
-
     def test_m2_2c_replacing_the_bundle_keeps_the_change(self):
-        """Run on Coordination's tie: Audit holds its words as typed fields (A1.16), which a department's whole-file copy
-        does not reach, so the file-for-file change this test is about is the one a layer that has not moved its words keeps."""
         R, W = self.R, self.W
-        tie = R._instruction("coordination", "tie")
-        mine = tie.replace("Say who goes first.", "Say who goes first, in few words.")
-        a = self.change("coordination", "tie", mine).json()["ask"]
+        self.on_the_bundle("audit")
+        judge = R._instruction("audit", "judge")
+        mine = judge.replace("At most eight findings.", "At most three findings.")
+        a = self.change("audit", "judge", mine).json()["ask"]
         W.decide_ask(REF, a["id"], True)
         W.run_until_idle(REF, limit=200)
-        # an update: a new bundle in the old one's place, its own words for tie and a part the old one did not have
+        # an update: a new bundle in the old one's place, its own words for judge and a part the old one did not have
         tmp = Path(tempfile.mkdtemp(prefix="function-prompts-update-"))
         self.addCleanup(shutil.rmtree, tmp, True)
         shutil.copytree(self.bundled, tmp / "b")
-        p = tmp / "b" / "coordination" / "tie.md"
-        p.write_text(p.read_text(encoding="utf-8").replace("Say who goes first.", "Say who goes first, and why.")
+        p = tmp / "b" / "audit" / "judge.md"
+        p.write_text(p.read_text(encoding="utf-8").replace("At most eight findings.", "At most ten findings.")
                      + "\n## again\n\nRead it again, slowly.\n", encoding="utf-8")
         R.PROMPTS_DIR = tmp / "b"
-        R.INSTRUCTIONS["coordination"]["tie"]["again"] = ()
-        self.addCleanup(R.INSTRUCTIONS["coordination"]["tie"].pop, "again", None)
+        R.INSTRUCTIONS["audit"]["judge"]["again"] = ()
+        self.addCleanup(R.INSTRUCTIONS["audit"]["judge"].pop, "again", None)
         R._DEFS.clear()
         self.assertEqual(R.validate(R.defs()), [], "the new bundle loads")
-        self.assertEqual(R._own(REF, "coordination", "tie").read_text(encoding="utf-8"), mine, "the records home is untouched")
-        sent = self.render("coord.tie", self.tie_ctx(), ("coord.ready",))
-        self.assertIn("Say who goes first, in few words.", sent, "the owner's words, not the update's")
-        self.assertNotIn("Say who goes first, and why.", sent)
-        self.assertEqual(R._prompt("coordination", "tie", "again", REF), "Read it again, slowly.", "a part only the new bundle has is the bundle's")
+        self.assertEqual(R._own(REF, "audit", "judge").read_text(encoding="utf-8"), mine, "the records home is untouched")
+        sent = self.render("audit.judge", self.ctx("Audit", inp={"v": 1}), ("audit.pick",))
+        self.assertIn("At most three findings.", sent, "the owner's words, not the update's")
+        self.assertNotIn("At most ten findings.", sent)
+        self.assertEqual(R._prompt("audit", "judge", "again", REF), "Read it again, slowly.", "a part only the new bundle has is the bundle's")
         # the shipped words again take the department's copy away, so the next bundle's words reach it
-        a = self.change("coordination", "tie", R._instruction("coordination", "tie")).json()["ask"]
+        a = self.change("audit", "judge", R._instruction("audit", "judge")).json()["ask"]
         W.decide_ask(REF, a["id"], True)
         W.run_until_idle(REF, limit=200)
-        self.assertFalse(R._own(REF, "coordination", "tie").exists())
-        self.assertTrue(self.row("coordination", "tie")["as_shipped"])
+        self.assertFalse(R._own(REF, "audit", "judge").exists())
+        self.assertTrue(self.row("audit", "judge")["as_shipped"])
 
     def test_m2_2d_words_that_cannot_serve_the_function_are_refused_at_the_ask_and_at_the_stamp(self):
         R, W = self.R, self.W
