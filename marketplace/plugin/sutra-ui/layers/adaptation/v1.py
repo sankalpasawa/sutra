@@ -405,9 +405,11 @@ def adapt_line_offer(ctx, step, item):
         if shown and body['confidence'] < S.CONFIDENCE['ask_below'] and hears_doubt():
             # not sure enough to go on: one question, and nothing is registered (the answer opens a new line request)
             doubt, fallback = split_doubt(shown[1])
-            R.post(ref, 'Adaptation', 'Identity', 'inform', {'word': 'doubt', 'engine': shown[0], 'doubt': doubt or 'the plan rests on a fact or a decision nobody has given',
-                                                            'fallback': fallback, 'confidence': body['confidence'], 'cannot': None,
-                                                            'words': pl.get('words'), 'for': pl.get('for')})
+            says = {'word': 'doubt', 'engine': shown[0], 'doubt': doubt or 'the plan rests on a fact or a decision nobody has given',
+                    'confidence': body['confidence'], 'cannot': None, 'words': pl.get('words'), 'for': pl.get('for')}
+            if fallback:
+                says['fallback'] = fallback           # a doubt that names none leaves the key out: Identity goes on with its default
+            R.post(ref, 'Adaptation', 'Identity', 'inform', says)
             return {'said': 'was not sure of the line (%s -> doubt: %s) and asked Identity; nothing is registered' % (names, shown[0]),
                     'engines': engines, 'doubt': shown[0]}
         if shown:

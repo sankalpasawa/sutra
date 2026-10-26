@@ -646,6 +646,35 @@ def test_a8_a_line_under_0_6_is_a_doubt_to_identity_and_nothing_goes_to_priority
     assert "doubt" in out and not [p for p in j2[1].board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Priority"]]
 
 
+def test_a8_a_doubt_that_names_no_fallback_is_a_whole_act_with_the_key_left_out(j2, monkeypatch):
+    """The second sentence of a doubt is optional ('Unless you say, ...'): a plain question is the common case, and act.doubt
+    holds a fallback as text, not as null, so the key is left out and Identity goes on with its default."""
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    monkeypatch.setattr(v1(), "hears_doubt", lambda: True)
+    ref = _dept(j2, "organic")
+    plain = [_made("Play rules", "Brief", "Play rules", ["D1"]),
+             _made("Game", "Play rules", "Live site", ["D2", "D3"], confidence=0.45, doubt="Where should the weekly list go?")]
+    _, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, {"engines": plain}, how="model")
+    assert [p[:2] for p in posts] == [("Identity", "inform")]
+    sent = posts[0][2]
+    assert sent["word"] == "doubt" and sent["doubt"] == "Where should the weekly list go?" and "fallback" not in sent
+    assert S.validate_act("Adaptation", ["Identity"], "inform", sent) == []
+
+
+def test_a8_a_plain_doubt_reaches_the_owner_as_one_question_with_the_departments_own_fallback(j2, monkeypatch):
+    import layers.identity.v1 as identity
+    W, R, J, _, FV = j2
+    plan = {"engines": [_made("Catalogue", "Brief", "Catalogue", ["D1", "D2"], confidence=0.9),
+                        _made("Stock page", "Catalogue", "Live site", ["D3"], confidence=0.45, doubt="Where should the weekly list go?")]}
+    ref, _ = _run_scenario(j2, monkeypatch, "organic", LAB_WORDS, "Lab Co", LAB, plan)
+    doubts = _board_word(R, ref, "doubt", "Adaptation")
+    assert len(doubts) == 1 and "fallback" not in doubts[0]["payload"]
+    asked = [a for a in W.asks(ref) if a["kind"] == "j2_identity" and a.get("missing") == "plan" and a["status"] == "pending"]
+    assert len(asked) == 1 and "Where should the weekly list go?" in asked[0]["text"], "the question reached the owner"
+    assert identity.fallback_default(W.dept(ref)) in asked[0]["text"] + ".", "Unless you say, the default"
+    assert W.dept(ref).get("workflows") in (None, []), "nothing is registered while the question is open"
+
+
 def test_a8_until_identity_hears_a_doubt_a_line_under_0_6_is_shown_not_dropped(j2, monkeypatch):
     monkeypatch.setenv("J2_ADAPT_MAKE", "1")
     monkeypatch.setattr(v1(), "hears_doubt", lambda: False)
