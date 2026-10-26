@@ -142,3 +142,188 @@ def merge_layout(parent, own):
         for part, template in (parts or {}).items():
             out.setdefault(group, {})[part] = copy.deepcopy(template)
     return out
+
+
+# ---- the recipe patch (L2) ----------------------------------------------------------------------------------------------
+def merge_recipe(parent, patch, layer):
+    """The parent's recipe with the patch laid over it (A2.5): `set` first, then gates, rules and steps, then each handler's
+    steps. The arguments are not changed. ModelFault, in plain words that name the step, on a patch that is not an object, holds
+    a key outside PATCH_KEYS, sets more than TOP_SET, or breaks the keyed-list law (see _merge_keyed). `layer` is the layer's
+    name, for the faults that name no step."""
+    who = 'the %s recipe patch' % layer if layer else 'the recipe patch'
+    if not isinstance(patch, dict):
+        raise ModelFault('%s is an object that holds %s; this one is not an object' % (who, ', '.join(PATCH_KEYS)))
+    if not isinstance(parent, dict):
+        raise ModelFault('%s has no recipe to lay over: the parent recipe is not an object' % who)
+    bad = sorted(str(k) for k in patch if k not in PATCH_KEYS)
+    if bad:
+        raise ModelFault('%s holds %s only; it has %s' % (who, ', '.join(PATCH_KEYS), ', '.join(bad)))
+    if 'parent' in patch and not (isinstance(patch['parent'], str) and patch['parent']):
+        raise ModelFault('%s names its parent as a string such as identity/v1' % who)
+    out = copy.deepcopy(parent)
+    _set_top(out, patch.get('set'), who)
+    for key in ('gates', 'rules', 'steps'):
+        items = _patch_list(patch.get(key), '%s, %s' % (who, key))
+        if items:
+            _merge_keyed(out, out.setdefault(key, []), items, 'the %s' % key)
+    handlers = _patch_list(patch.get('on'), '%s, on' % who)
+    seen = set()
+    for ph in handlers:
+        extra = sorted(str(k) for k in ph if k not in _HANDLER_KEYS)
+        when = ph.get('when')
+        if not isinstance(when, dict) or not when.get('msg_type'):
+            raise ModelFault('%s: a handler of the patch names the message it hears, as when with a msg_type and a word' % who)
+        key = handler_key(ph)
+        if extra:
+            raise ModelFault('the handler for %s: a patch carries when and steps for a handler, nothing else (it has %s)'
+                             % (_say(key), ', '.join(extra)))
+        h = next((x for x in _items(out.get('on')) if handler_key(x) == key), None)
+        if h is None:
+            raise ModelFault('no handler hears %s: a version hears what its parent hears, and a patch cannot add a handler'
+                             % _say(key))
+        if key in seen:
+            raise ModelFault('the handler for %s is named twice in the patch' % _say(key))
+        seen.add(key)
+        steps = _patch_list(ph.get('steps'), 'the handler for %s' % _say(key))
+        if steps:
+            _merge_keyed(out, h.setdefault('steps', []), steps, 'the steps of the handler for %s' % _say(key))
+    return out
+
+
+def _patch_list(items, label):
+    if items is None:
+        return []
+    if not isinstance(items, list) or any(not isinstance(i, dict) for i in items):
+        raise ModelFault('%s is a list of objects' % label)
+    return items
+
+
+def _set_top(out, change, who):
+    """`set`: description and skills only; a null deletes the key."""
+    if change is None:
+        return
+    if not isinstance(change, dict):
+        raise ModelFault('%s: set is an object' % who)
+    for k, v in change.items():
+        if k not in TOP_SET:
+            raise ModelFault('%s: set may change %s and nothing else; the start, the template and what an engine reads are '
+                             'fixed (it has %s)' % (who, ' and '.join(TOP_SET), k))
+        if v is None:
+            out.pop(k, None)
+        elif k == 'description' and not isinstance(v, str):
+            raise ModelFault('%s: the description is words' % who)
+        elif k == 'skills' and not (isinstance(v, list) and all(isinstance(x, str) for x in v)):
+            raise ModelFault('%s: the skills are a list of words' % who)
+        else:
+            out[k] = copy.deepcopy(v)
+
+
+def _merge_keyed(recipe, items, patch_items, label):
+    """One keyed list (gates, rules, steps, or a handler's steps) of `recipe`, changed in place: an item whose id is in `items`
+    overlays that step where it stands; an item whose id is new is inserted after or before a step of `items`, or appended.
+    The ids of the recipe's other lists are not new: an inherited step is overlaid in its own list, and an id is used once."""
+    elsewhere = {s['id'] for s in all_steps(recipe) if s.get('id') and all(s is not x for x in items)}
+    named = set()
+    for raw in patch_items:
+        sid = raw.get('id')
+        if not (isinstance(sid, str) and sid):
+            raise ModelFault('%s: an item of the patch has no id' % label)
+        if sid in named:
+            raise ModelFault('%s: the patch names this step twice' % sid)
+        named.add(sid)
+        unknown = sorted(str(k) for k in raw if k not in STEP_FIELDS and k not in POSITION)
+        if unknown:
+            raise ModelFault('%s: %s is no field of a step; a step has %s' % (sid, ', '.join(unknown), ', '.join(STEP_FIELDS)))
+        p = copy.deepcopy(raw)
+        after, before = (_anchor(p.pop(k, None), sid, k) for k in POSITION)
+        cur = next((s for s in items if s.get('id') == sid), None)
+        if cur is not None:
+            if after or before:
+                raise ModelFault('%s: this step is inherited, so it is overlaid where it stands; after and before are for '
+                                 'new steps' % sid)
+            _overlay(cur, p, sid)
+            continue
+        if sid in elsewhere:
+            raise ModelFault('%s: this id is a step of another list of the recipe; an inherited step is overlaid in its own '
+                             'list, and a new step takes an id nothing uses' % sid)
+        if after and before:
+            raise ModelFault('%s: after and before together; a new step goes after one step or before one' % sid)
+        new = {k: v for k, v in p.items() if v is not None}
+        _new_step_faults(new, sid)
+        anchor = after or before
+        if not anchor:
+            items.append(new)
+            continue
+        at = next((i for i, s in enumerate(items) if s.get('id') == anchor), None)
+        if at is None:
+            raise ModelFault('%s: the step it goes %s, %s, is not in %s' % (sid, 'after' if after else 'before', anchor, label))
+        items.insert(at + 1 if after else at, new)
+
+
+def _anchor(value, sid, which):
+    if value is None:
+        return None
+    if not (isinstance(value, str) and value):
+        raise ModelFault('%s: %s names the id of a step' % (sid, which))
+    return value
+
+
+def _overlay(cur, p, sid):
+    """The patch's fields laid on an inherited step: a free field replaces (null deletes), a fixed field must be the parent's,
+    `out` may gain keys."""
+    for k, v in p.items():
+        if k == 'id':
+            continue
+        if k == 'out':
+            if v is not None and not isinstance(v, dict):
+                raise ModelFault('%s: out is an object of keys and what each holds' % sid)
+            why = enums_kept(cur.get('out'), v)
+            if why:
+                raise ModelFault('%s: %s' % (sid, why))
+            if v:
+                cur['out'] = v
+        elif k in STEP_FIXED:
+            if cur.get(k) != v:
+                raise ModelFault("%s: %s is the parent's and a version leaves it as it is; changing what a step is for, how it "
+                                 "is judged or when it runs makes a new step" % (sid, k))
+        elif v is None:
+            cur.pop(k, None)
+        else:
+            _kind_faults(sid, k, v)
+            cur[k] = v
+
+
+def _kind_faults(sid, k, v):
+    if k in _TEXT and not (isinstance(v, str) and v):
+        raise ModelFault('%s: %s is a word' % (sid, k))
+    if k in _LISTS and not isinstance(v, list):
+        raise ModelFault('%s: %s is a list' % (sid, k))
+    if k == 'timeout_s' and not (isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0):
+        raise ModelFault('%s: timeout_s is a number of seconds' % sid)
+
+
+def _new_step_faults(step, sid):
+    """What the definitions require of a step that is new: an id, a name, a nature, a rung it is born at, a check, and either
+    code or a prompt with its draft and the shape of its answer. Raises ModelFault; the nature and the rung are read from
+    engine_runtime when asked (a reloaded runtime is the one that answers)."""
+    need = [k for k in ('name', 'nature', 'born', 'check') if not step.get(k)]
+    if need:
+        raise ModelFault('%s: a new step needs %s' % (sid, ', '.join(need)))
+    for k, v in step.items():
+        if k == 'out':
+            if not isinstance(v, dict):
+                raise ModelFault('%s: out is an object of keys and what each holds' % sid)
+        elif k != 'id':
+            _kind_faults(sid, k, v)
+    if step['nature'] not in R.NATURES:
+        raise ModelFault('%s: nature is none of %s' % (sid, ', '.join(R.NATURES)))
+    if step['born'] not in R.RUNGS:
+        raise ModelFault('%s: born is not a rung (%s)' % (sid, ', '.join(R.RUNGS)))
+    if step.get('code'):
+        return
+    if not step.get('prompt'):
+        raise ModelFault('%s: a new step names code, or a prompt with its draft and the shape of its answer' % sid)
+    miss = [k for k in ('draft', 'out') if not step.get(k)]
+    if miss:
+        raise ModelFault('%s: a step with a prompt also names its %s' % (sid, ' and '.join(
+            'draft' if k == 'draft' else 'out (the shape of its answer)' for k in miss)))
