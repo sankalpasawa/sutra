@@ -15,7 +15,10 @@ States (states()): every row of test_j2ui_state.STATE_TABLE, which is the one ta
     not_started assessing waiting adapting bargaining closing checking reshaping running running_with_a_publish_ask blocked
     pursuing unread done done_with_an_item_to_confirm done_with_a_finding_asked stopped
 and the departments the contract needs besides (EXTRAS):
-    two_publish_asks  two publish asks pending while the line re-ran (Build v1 and v2): each ask has its thread, none its card
+    two_publish_asks  two publish asks pending while the line re-ran (Build v1 and v2): each ask is the one the runtime files for its
+                      slot (Publish@build.vN), with its thread, none its card
+    build_filed       the line stepped one slot at a time to the instant after Build v1 filed: nothing has yet asked the owner to publish
+                      (the window in which a read of the department must not be the one to ask)
     root_follow_up    a Root and its department, the owner's follow-up said to the Root (the words reach the department by Root)
     running_line      Root's check has registered the plan; Plan and Write have filed (Site plan, Pages) and Check is running
     with_board        the same, and two questions on the board between the engines (questions.json: one answered, one open)
@@ -48,7 +51,7 @@ if str(UI) not in sys.path:
 REF = "dref-j2c0001"
 ROOT = "dref-j2root1"
 WEBSITE = "Build a website that teaches algebra to Class 8 students"
-EXTRAS = ("two_publish_asks", "root_follow_up", "running_line", "with_board", "pursuing_line", "filed", "default_kind")
+EXTRAS = ("two_publish_asks", "root_follow_up", "running_line", "with_board", "pursuing_line", "filed", "build_filed", "default_kind")
 HOMED = ("start", "question", "ready", "hostile", "building")
 ALIASES = {"not_yet": "not_started"}
 READING = {"read": 1, "met": ["D1"], "not_met": [], "to_confirm": [], "high": []}
@@ -99,9 +102,8 @@ def boot(tmp, env=None, layout="test"):
     return SimpleNamespace(W=W, R=R, J=J, F=F, C=C, ref=REF, home=tmp, root=None, env=env)
 
 
-def born(m, words=WEBSITE, org="Acme Learning"):
-    """The department as a person makes one: found an organisation, say the words to its Root, Root sets the department up and the
-    line runs to its first question (the recipe of the UI port's reference probe). Sets m.root and m.ref; returns the ref."""
+def _founded(m, words, org):
+    """An organisation founded and the words said to its Root, nothing run yet: the Root's ref."""
     m.env.setenv("J1_FLOW_V1", "1")
     import founding
     import org2_apply
@@ -112,11 +114,40 @@ def born(m, words=WEBSITE, org="Acme Learning"):
         E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
     root = founding.found_structure(org, owner="Sankalp")["root"]
     m.W.owner_ask(root, words)
+    return root
+
+
+def born(m, words=WEBSITE, org="Acme Learning"):
+    """The department as a person makes one: found an organisation, say the words to its Root, Root sets the department up and the
+    line runs to its first question (the recipe of the UI port's reference probe). Sets m.root and m.ref; returns the ref."""
+    root = _founded(m, words, org)
     m.W.run_until_idle(root, limit=300)
     child = next(d for d in m.W.list_depts() if d.get("parent") == root)["ref"]
     m.W.run_until_idle(child, limit=300)
     m.root, m.ref = root, child
     return child
+
+
+def stepped(m, words=WEBSITE, org="Acme Learning"):
+    """born(), one slot at a time: yields ("root", root ref) after each slot Root runs and ("dept", the department's ref) after each
+    slot of the department's line, until nothing is due (the department then waits on its first question, as born() leaves it).
+    The department's ref is m.ref from its first yield. A test that reads between the slots sees every window the motor leaves open."""
+    root = _founded(m, words, org)
+    m.root = root
+    while m.W.run_until_idle(root, limit=1):
+        yield "root", root
+    child = next(d for d in m.W.list_depts() if d.get("parent") == root)["ref"]
+    m.ref = child
+    while m.W.run_until_idle(child, limit=1):
+        yield "dept", child
+
+
+def build_filed(m):
+    """The line stepped to the first instant after Build is filed with no ask to publish yet: the motor has not ticked Publish's gate."""
+    for who, ref in stepped(m, org="Delta Learning"):
+        if who == "dept" and m.W.versions(ref, "Build") and not any(a.get("kind") == "publish" for a in m.W.asks(ref)):
+            return ref
+    raise AssertionError("the line never filed Build without a Publish ask in front of it")
 
 
 def stamp_all(m, ref):
@@ -143,7 +174,8 @@ def _two_publish_asks(m):
     for i in (1, 2):
         m.W.add_version(REF, "Build", {"index.html": "<!doctype html><title>Home %d</title><p>version %d</p>" % (i, i)}, [], "r-b%d" % i,
                         {"ok": True, "notes": []})
-        K.ask(m, "publish", id="a-pub%d" % i, thread="x-pub%d" % i, engine="Publish", text="Publish: go live, version %d" % i)
+        K.ask(m, "publish", id="a-pub%d" % i, thread="x-pub%d" % i, engine="Publish", slot="Publish@build.v%d" % i,
+              text="Publish: go live, version %d" % i)
         K.thread(m, "Identity", "Owner", "request", "publish", tid="x-pub%d" % i, objective="say whether the site may go live",
                  about={"art": "Build", "v": i})
 
@@ -293,6 +325,8 @@ def seed(tmp, state, env=None, ref=None, m=None, layout="test"):
         return ref, m
     if name == "root_follow_up":
         return _root_follow_up(m), m
+    if name == "build_filed":
+        return build_filed(m), m
     if name == "default_kind":
         _default_kind(m)
         return "dref-default1", m
@@ -326,7 +360,7 @@ def hostile(m, ref=None):
     question) and then given strings that are all an attacker's: its name, goal, rules and done-when items, the owner's words, Identity's question
     and why, an options ask (title, text, why, labels, costs), stamp asks, a bargain between Adaptation and Priority, a finding Audit
     filed (claims, pages), the Validator's messages, a run's words, a step's answer and notes, a version's check notes and the names of
-    its files, and the questions on the board. Each string is the attack (PAYLOADS in a row, then one of EXTRAS_OF_ATTACK) and a tag ` fNN`; m.payloads maps the tag to
+    its files, the questions on the board, and two engines of the line with the names of what they write (attacker_engines). Each string is the attack (PAYLOADS in a row, then one of EXTRAS_OF_ATTACK) and a tag ` fNN`; m.payloads maps the tag to
     (the field, the payload), so a test can tell which fields reached the page. Returns the ref."""
     from test_fixtures.j2ui import core_fixtures as K
     import versions as VERS
@@ -413,9 +447,36 @@ def hostile(m, ref=None):
              "answer": None, "answered_by": None, "status": "open", "artifact_update": None, "used_by": [], "cycle": "cycle-test",
              "slot": "Check@pages.v1", "attempt": 1, "run": None}]
     m.W._write(m.W.ddir(ref) / "questions.json", {"schema": "board/1", "entries": rows})
+    attacker_engines(m, ref, tags)
     m.payloads, m.ref = tags, ref
     m.C.touch(ref)
     return ref
+
+
+def attacker_engines(m, ref, tags):
+    """Two engines of the line whose names, and the names of what they write, are the attacker's: the quote-breaking payload in an
+    engine's name and the single-quote one in its artifact's, and the other way round for the second (a name is at most 40 characters:
+    one payload and the tag). add_engine and born_template take the name of an engine and of its artifact from the idea, and the
+    interface holds a name to ^[A-Za-z0-9][A-Za-z0-9 &'.-]{0,39}$ only on the writes it guards (the app warns where the tests are
+    strict), so a record from before it, one written by hand, or one the app let through is read all the same: the page must show
+    the name as text. The engines are put in Coordination's line, where the Map, the Workflows pane and the lanes print them; the
+    refused names are expected here (layer_schema.expect_refused), nowhere else."""
+    import layer_schema as S
+
+    def short(field, payload):
+        n = len(tags) + 1
+        tags[(TAG % n).strip()] = (field, payload)
+        return payload + (TAG % n)
+    with S.expect_refused():
+        line = []
+        for which, (en, an) in zip(("", "second "), ((PAYLOADS[0], PAYLOADS[1]), (PAYLOADS[1], PAYLOADS[0]))):
+            name, art = short(which + "engine name", en), short(which + "artifact name", an)
+            m.W.add_engine(ref, name, shape={"name": name, "use_case": "makes " + art, "does": "makes " + art, "instruction": "make " + art,
+                                             "reads": "Pages", "writes": art}, registered=True)
+            line.append(name)
+        t = dict(m.R.coordination(ref))
+        t["line"] = list(t["line"]) + line
+        m.W._write(m.W.ddir(ref) / "coordination.json", t)
 
 
 if __name__ == "__main__":

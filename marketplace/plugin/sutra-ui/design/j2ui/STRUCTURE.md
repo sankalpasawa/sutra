@@ -139,3 +139,8 @@ div#dview
       button#dclose.ghost
     div#dbody.dbody
 ```
+
+## The start screen, as drawn (1280x900, the Simple view)
+
+- the placeholder the preview frame shows while nothing is built (font size, family, weight, colour, padding, margin, line height, quirks mode, where the text ends): **identical** (15px, rgb(102, 102, 119), padding 24px, text ends at 332.2 px in the app and 332.2 px in the prototype)
+- the layout box (x, y, width, height) of each of the 42 elements of the Simple view: **identical**
