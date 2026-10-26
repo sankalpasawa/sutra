@@ -739,9 +739,13 @@ function wbConversationHtml(n, m){
    then it translates into that department appropriately." One record: Root's
    board, every turn about a department. Two views: on Root the whole chat;
    inside a department the same chat scoped to it, and the box carries where
-   you stand as a chip the person can take off. The left name is always Root;
-   the department is a chip on the turn. The markup is the Sutra chat's own
-   (05-chat.js: turn, who, u, a), so it reads as a chat. */
+   you stand as a chip the person can take off. On Root's own chat the left
+   name is Root and the department is a chip on the turn; in a department's
+   chat only Identity speaks, so each of its turns is signed with Identity's
+   mark and the department's name (PRD M3.6, screen S15; found by a verifier
+   2026-10-23: a department's turns were signed Root, as if Root spoke for it).
+   The markup is the Sutra chat's own (05-chat.js: turn, who, u, a), so it
+   reads as a chat. */
 /* The department a turn is about is a chip that opens it (found live 2026-09-28: the person clicked the chip first). */
 function wbDeptChip(ref, name){
   return `<button type="button" class="wbchip wbto wb" data-wbopen="${wbEsc(ref)}">${wbEsc(name)}</button>`;
@@ -749,8 +753,10 @@ function wbDeptChip(ref, name){
 /* The name the organisation's helper wears on the screen, in one place. The department page (S-20) says the screen
    will say Sutra; the J1 contract of 2026-10-05 keeps Root, and test W45 pins it. Changing this word is the whole change. */
 const WB_HELPER = "Root";
-function wbChatTurn(t, scoped){
-  const dept = !scoped && t.name ? (t.dept ? wbDeptChip(t.dept, t.name) : wbChip(t.name)) : "";
+function wbChatTurn(t, scoped, signer){
+  /* `signer` is the department whose chat this is: its turns are Identity's, signed with its mark and that name */
+  const dept = !scoped && !signer && t.name ? (t.dept ? wbDeptChip(t.dept, t.name) : wbChip(t.name)) : "";
+  const who = signer ? (typeof wb2Mark === "function" ? wb2Mark("identity") : "") + wbEsc(signer) : WB_HELPER + dept;
   /* a stamp or a no carries no words of its own: the act is the line, in the owner's words (said no, never refused) */
   const line = t.line || (t.msg_type === "accept-proposal" ? "Stamped" : t.msg_type === "reject-proposal" ? "Said no" : wbCap(t.word || ""));
   if (t.src === "Owner") return `<div class="turn wbturn"><div class="who who-you">${dept}You</div><div class="u md">${wbEsc(line)}</div></div>`;
@@ -764,7 +770,7 @@ function wbChatTurn(t, scoped){
   /* J1.5: the second department the owner's words named is offered, never made unasked: one chip sends the words for it */
   const offer = t.offer && t.offer.words
     ? ` <button type="button" class="wbchip wbto wb" data-wbsay="${wbEsc(t.offer.words)}">Set up: ${wbEsc(t.offer.label || t.offer.words)}</button>` : "";
-  return `<div class="turn wbturn"><div class="who who-ai">${WB_HELPER}${dept}</div><div class="a">${wbEsc(line)}${link}${offer}` +
+  return `<div class="turn wbturn"><div class="who who-ai">${who}</div><div class="a">${wbEsc(line)}${link}${offer}` +
     `<span class="dpchk">${wbEsc(WB_ACTS[t.msg_type] || t.msg_type)} · ${wbEsc(wbWhen(t.at))}</span></div></div>`;
 }
 /* Identity's question (S6, M0.6): a card in the chat that takes words, never a stamp. Its Send answers where the
@@ -822,6 +828,25 @@ function wbOptionsHtml(a, ref, named){
   const said = a.title && a.text && a.text !== a.title ? `<div class="dpaskd">${wbEsc(a.text)}</div>` : "";
   return `<div class="dpask hard wbq wbopt wb"><div class="dpk">Identity asks${whose}</div><div class="dpasks">${head}</div>` + said +
     kv("Who", a.who) + kv("Why", a.why) + kv("If nothing is done", a.if_nothing) + box + rows + `</div>`;
+}
+/* The cards that wait on the owner (S6, S10) stand wherever the department needs them: Chat first, then All five and
+   the pane of the function that caused a block, Identity's question also on Identity's pane (wbIdentityHtml). Each is
+   the same card with the same state, read from the chat read and drawn by the same code, so answering in one place
+   clears them all (PRD M3.7; found by a verifier 2026-10-23: All five and the causing function's pane showed a 'needs
+   you' chip and no card). A blocked card's `who` names the function that caused it: 'Root, at its review' is Root's
+   check of Adaptation's plan, so that card stands on Adaptation's pane; the owner's own no is Identity's to carry. */
+function wbCauseFn(a){
+  const w = String((a && a.who) || "").split(/[^A-Za-z]+/)[0].toLowerCase();
+  return WB_FUNCS.indexOf(w) >= 0 ? w : (w === "root" ? "adaptation" : "identity");
+}
+/* the open cards of a department: on a function's pane (`fn`) the blocked cards that function caused; on All five every
+   open question and blocked card; nothing while the chat read is on its way */
+function wbOpenCards(ref, fn){
+  const c = wbS().chat[ref];
+  if (!c){ wbLoadChat(ref); return ""; }
+  if (c.failed) return "";
+  return (c.asks || []).filter(a => fn ? (wbOptionAsk(a) && wbCauseFn(a) === fn) : (a.kind === "j2_identity" || wbOptionAsk(a)))
+    .map(a => (wbOptionAsk(a) ? wbOptionsHtml : wbQuestionHtml)(a, ref, false)).join("");
 }
 async function wbChoose(ref, id, at, oid){
   const st = wbS(), k = at + ":o:" + id, body = { option: oid };
@@ -916,6 +941,8 @@ function wbChatHtml(n, m){
   if (!c){ wbLoadChat(n.ref); return dpSkel(); }
   if (c.failed) return dpQuiet("Could not read");
   const scoped = !!c.about, depts = c.departments || [];
+  /* a department's chat is signed by its Identity; Root's own chat keeps Root */
+  const signer = m.kind === "root" ? "" : (m.name || "");
   const all = c.turns || [];
   /* fewer words (SIM-3 f): Root's hand-over line folds to one quiet line once that department has answered */
   const folded = t => !scoped && t.src !== "Owner" && /^handed to /.test(t.line || "") && t.dept &&
@@ -923,10 +950,14 @@ function wbChatHtml(n, m){
   const count = all.length, seen = st.turns[n.ref];
   const landed = seen !== undefined && count > seen;
   /* motion marks what just happened and nothing else: the turn that landed slides in once */
-  const qs = wbQuestions(c);
+  /* an open blocked card (S10) stands at the top of the Chat while it waits, pinned as the chat scrolls (S10: 'Where:
+     top of Chat'); a question (S6) and every answered card stand at their time in the flow */
+  const pinned = wbQuestions(c).filter(q => wbOptionAsk(q) && !q.chosen);
+  const qs = wbQuestions(c).filter(q => pinned.indexOf(q) < 0);
+  const pin = pinned.length ? `<div class="wbpin wb">${pinned.map(q => wbOptionsHtml(q, n.ref, !scoped)).join("")}</div>` : "";
   const card = t => { let out = ""; while (qs.length && (!t || String(qs[0].created || "") < String(t.at || ""))){ const q = qs.shift(); out += (wbOptionAsk(q) ? wbOptionsHtml : wbQuestionHtml)(q, n.ref, !scoped); } return out; };
   const turns = all.map((t, i) => card(t) + (folded(t) ? `<div class="o2quiet dpq wbfold">${wbEsc(t.line)}</div>`
-    : wbChatTurn(t, scoped).replace('class="turn wbturn"', (landed && i === all.length - 1) ? 'class="turn wbturn wbnew"' : 'class="turn wbturn"'))).join("") + card(null);
+    : wbChatTurn(t, scoped, signer).replace('class="turn wbturn"', (landed && i === all.length - 1) ? 'class="turn wbturn wbnew"' : 'class="turn wbturn"'))).join("") + card(null);
   const empty = m.kind === "root" && !depts.length ? "No department yet. Say what the first one is for." : "Nothing has been said yet";
   const names = !scoped && depts.length ? `<div class="wbstep"><span class="dpk">Departments</span>${depts.map(d => wbDeptChip(d.ref, d.name)).join("")}</div>` : "";
   /* while an engine runs, the chat says so under the last turn, and the mark breathes (founder, 2026-09-28: "I give a
@@ -935,7 +966,7 @@ function wbChatHtml(n, m){
   const working = running.map(r => `<div class="o2quiet dpq wbworking"><i class="wbbreath"></i>${wbEsc(`${r.engine} is working${r.what ? ": " + r.what : ""}`)}</div>`).join("");
   st.turns[n.ref] = count;
   wbKeepPlace(n.ref, landed);
-  return `<div class="wbchat wb">${turns || (running.length ? "" : dpQuiet(empty))}${working}</div>` + wbChatAsksHtml(c) + wbChatBoxHtml(n, m) + names;
+  return `<div class="wbchat wb">${pin}${turns || (running.length ? "" : dpQuiet(empty))}${working}</div>` + wbChatAsksHtml(c) + wbChatBoxHtml(n, m) + names;
 }
 
 /* ── a function's chat ────────────────────────────────────────────────────
@@ -1370,10 +1401,12 @@ function wbFnOwn(ref, tab){
   if (!wbIs(ref)) return "";
   const m = wbS().map[ref];
   if (!m){ wbLoadMap(ref); return ""; }
+  /* a blocked card stands at the top of the pane of the function that caused it (S10, PRD M3.7) */
+  const cards = wbRt(m) && WB_FUNCS.indexOf(tab) >= 0 ? wbOpenCards(ref, tab) : "";
   /* Coordination's pane opens on its timetable (PRD M4.7, S7); its page folds under it */
-  if (wbRt(m) && tab === "coordination") return wbCoordHtml(ref);
+  if (wbRt(m) && tab === "coordination") return cards + wbCoordHtml(ref);
   /* on the engine runtime the card opens on the function's page (PRD M1.7), its own state under it */
-  return (wbRt(m) && WB_FUNCS.indexOf(tab) >= 0 ? wbFnPageHtml(ref, tab) : "") + wbFnExtra(tab, m);
+  return cards + (wbRt(m) && WB_FUNCS.indexOf(tab) >= 0 ? wbFnPageHtml(ref, tab) : "") + wbFnExtra(tab, m);
 }
 
 /* ── Settings: a function's own ────────────────────────────────────────────

@@ -7,7 +7,10 @@
    opens it (S4, compact form).
 
    It reads the five functions' read (functions_view.py, through 22-website.js wbFv), the messages between them
-   included, and writes nothing: every card is a way into a pane, never a write. Arrow keys move between the cards; Enter opens one.
+   included, and writes nothing of its own: every function card is a way into a pane, never a write. The cards that wait
+   on the owner (Identity's question, S6; a blocked plan's ways out, S10) stand at its top, the same cards as in Chat,
+   drawn by 22-website.js wbOpenCards, so answering here is answering there (PRD M3.7). Arrow keys move between the
+   cards; Enter opens one.
 
    Copy discipline is the department screen's: names, never paths; no counts at rest (a bar, never a number); status
    never by colour alone (a word or a badge goes with it); every class prefixed `fv` has a rule in panel.css, tokens
@@ -97,8 +100,11 @@ function fvBetweenHtml(fv){
 /* the overview itself: the Map's head, the progress block, then the six cells */
 function fvAllHtml(n, m){
   const fv = wbFv(n.ref), head = typeof wb2Head === "function" ? wb2Head(n, m) : "";
-  if (fv === null) return head + `<div class="fvgrid">${FV_ORDER.map(() => `<div class="fvcard fvskel">${dpSkel()}</div>`).join("")}</div>`;
-  if (!fv || fv.failed) return head + `<div class="fvgrid fverr">${dpQuiet("Could not read")}<button type="button" class="o2more wb" data-wbfvretry="1">Try again</button></div>`;
+  /* what waits on the owner stands first, whatever the five's read says: the open question and any blocked plan's card,
+     the same cards as in Chat (S6, S10) */
+  const asks = typeof wbOpenCards === "function" ? wbOpenCards(n.ref) : "";
+  if (fv === null) return head + asks + `<div class="fvgrid">${FV_ORDER.map(() => `<div class="fvcard fvskel">${dpSkel()}</div>`).join("")}</div>`;
+  if (!fv || fv.failed) return head + asks + `<div class="fvgrid fverr">${dpQuiet("Could not read")}<button type="button" class="o2more wb" data-wbfvretry="1">Try again</button></div>`;
   const cyc = fv.cycle || {}, stopped = !!(fv.stopped || cyc.state === "stopped");
   let top = fvProgressHtml(cyc);
   if (cyc.state === "not_started")
@@ -108,7 +114,7 @@ function fvAllHtml(n, m){
     top = `<div class="fvprog wb"><div class="fvsays">${wbDot("off")}<b>Stopped by you</b></div>` +
       `<div class="dpoffer">${wbBtn("Start", `data-wbresume="1"`, "dpstamp")}</div></div>`;
   const nodes = FV_ORDER.map(fn => (fv.functions || []).filter(x => x.fn === fn)[0] || { fn, name: fvName(fn), state: "quiet", word: "quiet" });
-  return head + top + `<div class="fvgrid" role="list">${nodes.map(x => fvCardHtml(x, m, stopped)).join("")}${fvBetweenHtml(fv)}</div>`;
+  return head + asks + top + `<div class="fvgrid" role="list">${nodes.map(x => fvCardHtml(x, m, stopped)).join("")}${fvBetweenHtml(fv)}</div>`;
 }
 /* S4, compact: the progress line in the department's strip, after the parent's name; it opens All five. It hides
    when there is no read, or the read failed. */

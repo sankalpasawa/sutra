@@ -675,7 +675,9 @@ def _standard_rows(ref, d, cur, q):
         elif reading:
             state, note = "reading", "being read"
         else:
-            state, note = "met", {"goal": "as you said it", "items": "each says how it is checked", "rules": "each is go, ask, refuse or always",
+            # the screen never says refuse: a refuse rule reads never on the pane (22-website.js WB_TAG_SAYS), so the note
+            # names the tags the owner reads (found by a verifier 2026-10-23: the met note said refuse)
+            state, note = "met", {"goal": "as you said it", "items": "each says how it is checked", "rules": "each says go, ask, never or always",
                                   "owner_budget": "you, and Priority's limits", "invented": "nothing stated that nobody gave"}[pid]
         rows.append({"id": pid, "says": says, "state": state, "note": note})
     return rows

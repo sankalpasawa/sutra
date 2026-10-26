@@ -107,6 +107,41 @@ def items_of(d):
             if isinstance(i, dict)]
 
 
+#: one done-when item as dept.json keeps it; its confirm note lives in to_be_confirmed, beside it
+DONE_ITEM_FIELDS = ("id", "text", "how", "level")
+
+
+def stored_done_items(items):
+    """Done-when items (numbered by done_items) as dept.json keeps them: {id, text, how, level}, defined here once."""
+    return [{x: i[x] for x in DONE_ITEM_FIELDS} for i in items]
+
+
+def to_confirm(items):
+    """The items that rest on a fact nobody gave, as dept.json's to_be_confirmed keeps them: [{item, why}]."""
+    return [{"item": i["id"], "why": i["confirm"]} for i in items if i.get("confirm")]
+
+
+def answered_items(d, text):
+    """The done-when items an answer to Identity's done-when question makes (PRD M3.1): the owner's words become the next
+    item, read by an AI (an outcome), after the record's items that say how they are checked. A record whose done line
+    is empty has no done-when to keep, so the answer stands alone."""
+    keep = [i for i in items_of(d) if i.get("how") in DONE_HOW] if str(d.get("done") or "").strip() else []
+    return keep + [{"text": " ".join(str(text or "").split()), "how": "model", "level": "outcome"}]
+
+
+def put_done_items(ref, items):
+    """Done-when becomes `items` (numbered again): done is their joined text, and to_be_confirmed holds the notes of the
+    items that carry one; the goal is never touched. A revision of the identity (bump_identity), so the Org screen's
+    copy follows. The one writer of done-when: a stamped done_items ask, and an answer to Identity's question."""
+    with _lock(ref):
+        d = dept(ref)
+        items = done_items(items, d.get("kind"))
+        d["done_items"] = stored_done_items(items)
+        d["done"] = done_line(items)
+        d["to_be_confirmed"] = to_confirm(items)
+        return bump_identity(ref, d)
+
+
 # Rules (PRD M3.4): every rule the record keeps is tagged (go: it may; ask: it asks the owner first; refuse: it never
 # does; always: it always does) and says when and from whose words it came. Built here only, so the record holds one shape.
 RULE_TAGS = ("go", "ask", "refuse", "always")
@@ -127,6 +162,17 @@ def done_items_ask(text, items, why, words=None, thread=None, slot=None, **more)
     return dict({"id": "a-" + uuid.uuid4().hex[:8], "kind": "done_items", "engine": "Identity", "slot": slot, "text": text,
                  "items": done_items(items), "why": why, "words": words, "status": "pending", "created": now(), "thread": thread},
                 **more)
+
+
+def j2_identity_ask(text, cycle_id, missing, why="", points=None, standard=False):
+    """Identity's question to the owner (PRD M0.5, M3.3): an ask that takes words, never a stamp, one open at a time.
+    `missing` is the point it asks about (or 'words', when the first words named nothing to build from), `points` every
+    point of Identity's standard found unmet, and `standard` says Identity's reading of its standard in a step asked it
+    (that reading reads the answer again, and the card takes 'just do it'). Built here only, so every question Identity
+    puts has one shape: {id, kind, text, why, status, created, cycle_id, missing, points, standard, answer}."""
+    return {"id": "a-j2-" + uuid.uuid4().hex[:8], "kind": "j2_identity", "text": str(text), "why": str(why or ""),
+            "status": "pending", "created": now(), "cycle_id": cycle_id, "missing": missing, "points": list(points or []),
+            "standard": bool(standard), "answer": "words"}
 
 
 # Asks with options (PRD M3.5, screen S10): a card that offers up to three ways forward, each a label and what it costs,
@@ -156,6 +202,11 @@ def options_ask(kind, text, options, **more):
                  "status": "pending", "created": now()}, **more)
 
 
+def chosen(option, words=None, by="the owner", at=None):
+    """The option the owner chose on an ask, as the ask keeps it: {id, label, at, by, words}. Built here only."""
+    return {"id": option["id"], "label": option["label"], "at": at or now(), "by": by, "words": words or None}
+
+
 def choose_option(ref, aid, oid, text=None, by="the owner"):
     """The owner chose one of an ask's options: the ask is answered once, with the choice and when, and the runtime
     applies it as a step of Identity's (on_stamp, in the ask's own thread). An option the ask does not offer is
@@ -176,8 +227,7 @@ def choose_option(ref, aid, oid, text=None, by="the owner"):
         if oid == WORDS_OPTION and not text:
             raise AskError("EMPTY_ANSWER")
         at = now()
-        a.update({"status": "chosen", "decided": at, "by": by,
-                  "chosen": {"id": oid, "label": offered[oid]["label"], "at": at, "by": by, "words": text or None}})
+        a.update({"status": "chosen", "decided": at, "by": by, "chosen": chosen(offered[oid], text, by, at)})
         _put_ask(ref, a)
     rt = _runtime(ref)
     if rt and a.get("thread"):
@@ -186,15 +236,8 @@ def choose_option(ref, aid, oid, text=None, by="the owner"):
 
 
 def apply_done_items(ref, ask):
-    """A stamped done_items ask: done-when becomes its items, done their joined text, and to_be_confirmed holds the
-    notes of the items that carry one; the goal is never touched. A revision of the identity (bump_identity)."""
-    with _lock(ref):
-        d = dept(ref)
-        items = done_items(ask.get("items"), d.get("kind"))
-        d["done_items"] = [{x: i[x] for x in ("id", "text", "how", "level")} for i in items]
-        d["done"] = done_line(items)
-        d["to_be_confirmed"] = [{"item": i["id"], "why": i["confirm"]} for i in items if i.get("confirm")]
-        return bump_identity(ref, d)
+    """A stamped done_items ask: done-when becomes its items (put_done_items); the goal is never touched."""
+    return put_done_items(ref, ask.get("items"))
 
 
 def engines_of(d):

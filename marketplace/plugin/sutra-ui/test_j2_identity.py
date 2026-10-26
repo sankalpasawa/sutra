@@ -20,6 +20,7 @@ The departments are born the way a person makes them (founded, asked for, set up
 own; no test reaches a model or the network: the model is a function, and every step it does not answer runs offline.
 """
 import importlib
+import re
 
 import pytest
 
@@ -163,6 +164,51 @@ def test_m3_1_after_a_j2_answer_the_identity_read_and_the_copy_equal_the_record(
     # the same identity again files nothing
     founding.mirror(ref)
     assert len(proposals.listing()) == filed + 1
+
+
+DONE_Q = "What evidence will prove this department is done?"
+
+
+def test_m3_1_a_done_when_answer_is_an_item_and_every_reader_agrees(j2, monkeypatch):
+    """The answer written over done while the items, the identity read, the Org screen's copy and the pane keep the old
+    item (the record disagreeing with itself) must fail."""
+    W, R, J, founding, F = j2
+    _model(monkeypatch, R, {"setup.shape": dict(SHAPED)})
+    ref = _born(j2, settle=False)
+    d = W.dept(ref)
+    d["done"] = ""                                                    # the identity has no done-when: Identity asks for it
+    W.save_dept(ref, d)
+    J._ask_gap(ref, W.dept(ref), J._state(ref))
+    assert J.status(ref)["open_question"]["text"] == DONE_Q
+    before = int(W.dept(ref).get("identity_revision") or 1)
+    answer = "Customers can order a cake on WhatsApp"
+    J.answer(ref, answer)
+
+    d = W.dept(ref)
+    item = {"id": "D1", "text": answer, "how": "model", "level": "outcome"}
+    assert d["done_items"] == [item] and d["done"] == W.done_line(d["done_items"]) == answer and d["to_be_confirmed"] == []
+    assert d["identity_revision"] == before + 1 and d["goal"] == SHAPED["goal"]          # one revision; the goal as it was
+    got = _client().get("/api/dept/%s/identity" % ref).json()
+    assert (got["done_items"], got["done"]) == ([item], answer)
+    assert founding._standing(ref)["done_when"] == [answer]
+    assert [(i["id"], i["text"], i["how"], i["level"]) for i in F.function(ref, "identity")["j2"]["done_items"]] == \
+        [("D1", answer, "model", "outcome")]
+    # with a done line on record, the items that say how they are checked are kept and the answer is the next item
+    kept = {"done": "A; B", "done_items": [{"id": "D1", "text": "A", "how": "code", "level": "target"},
+                                           {"id": "D2", "text": "B", "how": "vibes", "level": "outcome"}]}
+    assert W.done_items(W.answered_items(kept, " C  now ")) == [{"id": "D1", "text": "A", "how": "code", "level": "target"},
+                                                               {"id": "D2", "text": "C now", "how": "model", "level": "outcome"}]
+
+
+def test_m3_1_done_when_items_are_stored_in_one_shape(j2):
+    """A stored item that keeps its confirm note inline, or a to-confirm row built another way, must fail."""
+    W = j2[0]
+    items = W.done_items([{"text": "A", "how": "code", "level": "target"}, {"text": "B", "how": "person", "level": "outcome", "confirm": "nobody said"}])
+    assert W.stored_done_items(items) == [{"id": "D1", "text": "A", "how": "code", "level": "target"},
+                                          {"id": "D2", "text": "B", "how": "person", "level": "outcome"}]
+    assert W.to_confirm(items) == [{"item": "D2", "why": "nobody said"}]
+    shaped = j2[1]._shape_norm({"kind": "website", "name": "X", "goal": "g", "done_items": [dict(i) for i in items]})
+    assert shaped["done_items"] == W.stored_done_items(items) and shaped["to_be_confirmed"] == W.to_confirm(items)
 
 
 def test_m3_1_a_department_not_in_the_registry_has_no_copy_and_nothing_is_filed(j2):
@@ -388,6 +434,130 @@ def test_m3_3_the_standard_is_read_only_inside_the_cycle(j2, monkeypatch):
     assert rows and all(r["by"] == R.SKIPPED for r in rows)
 
 
+OWNER_SAYS = "I am Sankalp, I own it, and it may spend 5 dollars a day"
+GAP_ANSWERS = {"owner": OWNER_SAYS, "items": "Customers can order a cake on WhatsApp",
+               "goal": "A website for the bakery where families in Pune order cakes"}
+
+
+def _standard_gap(j2, point):
+    """A department whose cycle started with nothing missing, and whose record then lacks a point only code can read:
+    its first words are read against the standard in Identity's step, and Identity asks about that point."""
+    W, R, J, _, _ = j2
+    d, _ = W.create("dref-gap", "Gap Website", None)
+    d["events"] = [{"kind": "j2_ready", "route": "template"}]
+    W.save_dept("dref-gap", d)
+    assert J.start("dref-gap")["state"] == "assessing" and J.status("dref-gap")["open_question"] is None
+    d = W.dept("dref-gap")
+    d.update({"owner": {"owner": "", "envelopes": {}}, "items": {"done": ""}, "goal": {"goal": ""}}[point])
+    W.save_dept("dref-gap", d)
+    W.give_goal("dref-gap", BAKERY)
+    W.run_until_idle("dref-gap", limit=300)
+    q = J.status("dref-gap")["open_question"]
+    assert q and q["standard"] and q["missing"] == point and q["text"] == R.STANDARD_ASKS[point]
+    return "dref-gap", q
+
+
+@pytest.mark.parametrize("via", ["chat", "answer box"])
+@pytest.mark.parametrize("point", ["owner", "items", "goal"])
+def test_m3_3_an_answer_to_a_gap_only_code_reads_reaches_the_record(j2, point, via):
+    """FI1.1 'answer, read again, met': the owner's answer filed in the Brief alone, so the record keeps its gap and the
+    same question comes back after every answer, must fail."""
+    W, R, J, founding, _ = j2
+    ref, q = _standard_gap(j2, point)
+    rev = int(W.dept(ref).get("identity_revision") or 1)
+    if via == "chat":
+        W.owner_ask(ref, GAP_ANSWERS[point])
+    else:
+        assert _client().post("/api/dept/%s/j2/answer" % ref, json={"text": GAP_ANSWERS[point]}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    d = W.dept(ref)
+    assert R._standard_gaps(d) == [] and d["identity_revision"] == rev + 1          # on the record, one revision
+    if point == "owner":
+        t = R.priority_template()
+        assert d["owner"] == "Sankalp" and {s: d["envelopes"][s] for s in W.SYSTEMS} == {s: {"calls": int(t["calls"]), "usd": float(t["usd"])} for s in W.SYSTEMS}
+        # Priority gave the limits, by its own step: Identity reads the budget and never writes money (A1-6)
+        granted = [e for e in J.events(ref) if e["action"] == "envelope.granted" and e["payload"]["engine"] in W.SYSTEMS]
+        assert sorted(e["payload"]["engine"] for e in granted) == sorted(W.SYSTEMS) and {e["actor"] for e in granted} == {"Priority"}
+        taken = "Sankalp, as the owner; Priority's limits from its template"
+    elif point == "items":
+        assert d["done_items"] == [{"id": "D1", "text": GAP_ANSWERS["items"], "how": "model", "level": "outcome"}]
+        assert d["done"] == GAP_ANSWERS["items"]
+        taken = "done when: D1 " + GAP_ANSWERS["items"]
+    else:
+        assert d["goal"] == GAP_ANSWERS["goal"]
+        taken = "the goal, in your words"
+    acts = [a for a in _actions(J, ref) if a != "envelope.granted"]
+    assert acts.count("identity.questioned") == 1                                    # not asked again
+    assert acts[acts.index("identity.questioned"):][:4] == ["identity.questioned", "ask.answered", "identity.assessed", "proposal.requested"]
+    assert J.status(ref)["open_question"] is None
+    assert "Thank you. Taken: %s. The identity is clear now; the department starts." % taken in _said(R, ref)
+    assert GAP_ANSWERS[point] in W.read_files(ref, "Brief", W.latest(ref, "Brief")["v"])["brief.md"]   # and in the Brief
+
+
+def test_m3_3_with_a_model_the_answer_is_on_the_record_before_identity_reads_it(j2, monkeypatch):
+    """The AI reading 'enough' from the owner's answer while its covering still finds no owner on the record (the step
+    fails, and only 'just do it' gets out) must fail."""
+    W, R, J, _, _ = j2
+    reads = []
+
+    def enough(prompt):
+        reads.append(prompt)
+        if "THE OWNER: none" in prompt or "THE BUDGET: none" in prompt:
+            return {"enough": False, "missing": ["owner", "budget"], "question": R.STANDARD_ASKS["owner"], "why": "no owner on record"}
+        return {"enough": True, "missing": [], "question": "", "why": "the owner and the budget are set"}
+    _model(monkeypatch, R, {"identity.enough": enough})
+    ref, q = _standard_gap(j2, "owner")
+    W.owner_ask(ref, OWNER_SAYS)
+    W.run_until_idle(ref, limit=300)
+    assert len(reads) == 2 and "THE OWNER: Sankalp" in reads[1]                        # read again, on the record
+    rows = [r for r in R.step_rows(ref) if r["step"] == "identity.enough"]
+    assert [r["status"] for r in rows] == ["ok", "ok"]                              # the covering held both readings
+    assert J.status(ref)["open_question"] is None and "proposal.requested" in _actions(J, ref)
+
+
+def test_m3_3_identity_has_one_standard_and_the_cycle_only_records_its_questions(j2):
+    """A question the marked standard does not hold ('Where should this department file its work?'), a question asked
+    at the start from another reading than Identity's, or j2_runtime saying a question to the owner itself, must fail."""
+    import inspect
+    W, R, J, _, F = j2
+    d, _ = W.create("dref-one", "One Website", None)
+    d.update({"events": [{"kind": "j2_ready", "route": "template"}], "owner": "", "envelopes": {}})
+    W.save_dept("dref-one", d)
+    J.start("dref-one")
+    q = J.status("dref-one")["open_question"]
+    reading = R.standard_reading(W.dept("dref-one"))
+    assert reading["missing"] == R._standard_gaps(W.dept("dref-one")) == ["owner", "budget"]
+    assert (q["text"], q["missing"], q["points"], q["standard"]) == (R.STANDARD_ASKS["owner"], "owner", ["owner", "budget"], False)
+    assert q["why"] == reading["why"]
+    line = next(p for p in R.board("dref-one") if (p["payload"] or {}).get("card") == q["id"])
+    assert (line["src"], line["dst"], line["payload"]["done"]) == ("Identity", ["Owner"], q["text"])     # Identity says it
+    row = next(r for r in F.function("dref-one", "identity")["j2"]["standard"]["rows"] if r["id"] == "owner_budget")
+    assert row["state"] == "not_met"                                                  # the pane reads the same standard
+    src = inspect.getsource(J)
+    assert "_identity_gaps" not in src and "R.post(" not in src and "file its work" not in src
+    assert set(J.QUESTION) == {"words"}
+    # one shape for every question Identity puts, the thin words' too
+    shape = {"id", "kind", "text", "why", "status", "created", "cycle_id", "missing", "points", "standard", "answer"}
+    assert set(next(a for a in W.asks("dref-one") if a["id"] == q["id"])) == shape
+    assert set(W.j2_identity_ask("What is it for?", "c-1", "words", J.THIN)) == shape
+    # answered, Identity's code reads again on the record, and the next point is asked or the standard is met
+    J.answer("dref-one", "My name is Asha Rao and it may spend what Priority says")
+    assert W.dept("dref-one")["owner"] == "Asha Rao" and J.status("dref-one")["open_question"] is None
+    assert J.status("dref-one")["state"] == "assessing"
+
+
+def test_m3_3_a_done_line_that_is_not_there_is_a_gap_and_just_do_it_writes_it(j2):
+    W, R, _, _, _ = j2
+    W.create("dref-line", "Line Website", None)
+    d = W.dept("dref-line")
+    d["done"] = ""
+    W.save_dept("dref-line", d)
+    assert R._standard_gaps(W.dept("dref-line")) == ["items"]
+    assert R._standard_defaults("dref-line", ["done-when"]) == ["the done-when items Root drafted"]
+    d = W.dept("dref-line")
+    assert d["done"] == W.done_line(d["done_items"]) and R._standard_gaps(d) == []
+
+
 # ---- M3.4 ------------------------------------------------------------------------------------------------------------
 NEVER = "Never publish without asking me"
 
@@ -452,6 +622,53 @@ def test_m3_4_a_refused_rule_answer_asks_the_question_again(j2):
     again = J.status(ref)["open_question"]
     assert again and again["missing"] == "rules" and again["id"] != q["id"]
     assert W.dept(ref)["rules"] == [{"id": "r1", "line": "Work inside the record"}]
+
+
+def test_m3_4_after_a_stamp_identity_reads_its_standard_and_asks_the_next_point(j2):
+    """The cycle choosing the next question after a stamp (a presence check of j2_runtime's own), or a point of the
+    standard left unasked once the rule is stamped, must fail."""
+    import dept_api
+    W, R, J, _, _ = j2
+    d, _ = W.create("dref-next", "Next Website", None)
+    d.update({"events": [{"kind": "j2_ready", "route": "template"}], "rules": [{"id": "r1", "line": "Work inside the record"}], "owner": ""})
+    W.save_dept("dref-next", d)
+    J.start("dref-next")
+    q = J.status("dref-next")["open_question"]
+    assert (q["missing"], q["points"]) == ("rules", ["rules", "owner"])               # one question, for the first point
+    J.answer("dref-next", NEVER)
+    W.run_until_idle("dref-next", limit=300)
+    W.decide_ask("dref-next", _rule_asks(W, "dref-next")[0]["id"], True)
+    W.run_until_idle("dref-next", limit=300)
+    nxt = J.status("dref-next")["open_question"]
+    assert nxt and (nxt["text"], nxt["missing"], nxt["points"]) == (R.STANDARD_ASKS["owner"], "owner", ["owner"])
+    assert [(r["tag"], r["line"]) for r in W.dept("dref-next")["rules"]] == [("ask", NEVER)]
+    assert not hasattr(J, "next_gap") and not hasattr(J, "RULE_TAGS") and not hasattr(R, "_RULE_TAGS")
+    import inspect
+    assert dept_api.RULE_TAGS == W.RULE_TAGS and "RULE_TAGS = W.RULE_TAGS" in inspect.getsource(dept_api)   # the record's tags, once
+
+
+def test_m3_4_a_rule_given_to_identitys_reading_keeps_its_tag_too(j2):
+    """A rule answered to the question Identity's reading asked in its step (not at the cycle's start) filed in the Brief
+    as words, so its tag is lost and the question comes back, must fail."""
+    W, R, J, _, _ = j2
+    d, _ = W.create("dref-rule2", "Rule Website", None)
+    d["events"] = [{"kind": "j2_ready", "route": "template"}]
+    W.save_dept("dref-rule2", d)
+    J.start("dref-rule2")
+    d = W.dept("dref-rule2")
+    d["rules"] = [{"id": "r1", "line": "Work inside the record"}]
+    W.save_dept("dref-rule2", d)
+    W.give_goal("dref-rule2", BAKERY)
+    W.run_until_idle("dref-rule2", limit=300)
+    q = J.status("dref-rule2")["open_question"]
+    assert q["standard"] and q["missing"] == "rules"
+    W.owner_ask("dref-rule2", NEVER)
+    W.run_until_idle("dref-rule2", limit=300)
+    asks = _rule_asks(W, "dref-rule2")
+    assert len(asks) == 1 and (asks[0]["tag"], asks[0]["answers"]) == ("ask", q["id"])
+    W.decide_ask("dref-rule2", asks[0]["id"], True)
+    W.run_until_idle("dref-rule2", limit=300)
+    assert R._standard_gaps(W.dept("dref-rule2")) == [] and "proposal.requested" in _actions(J, "dref-rule2")
 
 
 DONE_WORDS = "From now on, the site is done when shoppers can order a cake on WhatsApp"
@@ -599,6 +816,103 @@ def test_m3_5_each_option_is_applied_by_code_and_an_unknown_one_is_409(j2, monke
     assert W.dept(ref)["stopped"] is True and J.status(ref)["state"] == "stopped"
 
 
+def test_m3_5_after_a_reopen_roots_refusals_reach_the_ledger_again(j2, monkeypatch):
+    """Root keeps refusing after the plan is reopened, by new words and by leaving an item out: a refusal that never
+    reaches the ledger (its key an earlier refusal's in the same cycle), or a reopen that leaves Root's repairs used up
+    (one request, then blocked), must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)                                 # Root refuses before the reopen and after it
+    for how in ("words", "leave"):
+        seen = len(J.events(ref))
+        if how == "words":
+            W.owner_ask(ref, "Make it a simple one-page site that shows the cakes")
+        else:
+            card = _card(W, ref)
+            W.choose_option(ref, card["id"], next(o["id"] for o in card["options"] if o["id"].startswith("leave:")))
+        W.run_until_idle(ref, limit=300)
+        after = [e["action"] for e in J.events(ref)[seen:]]
+        tail = after[after.index("cycle.reopened"):]
+        assert tail.count("proposal.requested") == J.REPAIRS + 1 and tail.count("workflow.blocked") == J.REPAIRS + 1, (how, tail)
+        assert J.status(ref)["state"] == "blocked" and _card(W, ref)                  # blocked again, with its way out
+    assert len({e["idempotency_key"] for e in J.events(ref) if e["action"] == "workflow.blocked"}) == 3 * (J.REPAIRS + 1)
+
+
+def test_m3_5_a_bare_yes_with_a_blocked_card_open_is_answered_in_words_never_a_fault(j2, monkeypatch):
+    """A yes or a no in the department's Chat (which goes to Root about the department) picking the blocked card and
+    failing Root's run on 'this ask takes one of its options' must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    root, card = W.dept(ref)["root"], _card(W, ref)
+    failed = len([r for r in W.runs(root) if r.get("status") == "failed"])
+    client = _client()
+    for said in ("yes", "no"):
+        assert client.post("/api/native/%s/ask" % root, json={"text": said, "about": ref}).status_code == 200
+        W.run_until_idle(root, limit=300)
+    assert len([r for r in W.runs(root) if r.get("status") == "failed"]) == failed
+    told = [str((p["payload"] or {}).get("done") or "") for p in R.board(root) if p["src"] == "Identity" and "Owner" in p["dst"]]
+    assert len([t for t in told if "asks you to choose: The plan could not be approved. Choose one of the ways forward on its card" in t]) == 2
+    assert not [t for t in told if "could not act on this" in t]
+    assert _card(W, ref)["id"] == card["id"] and R._stampable(card) is False         # the card waits, untouched
+
+
+def test_m3_5_stop_then_start_leaves_exactly_one_card_to_answer(j2, monkeypatch):
+    """Stop chosen on the card, then Start: a department back at blocked with nothing to answer must fail."""
+    W, R, J, _, F = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    card, client = _card(W, ref), _client()
+    assert client.post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "stop"}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    assert J.status(ref)["state"] == "stopped" and W.dept(ref)["stopped"] is True
+    assert "The owner chose: Stop here." in [e["summary"] for e in J.events(ref)]
+    blocked = lambda: [a["id"] for a in W.asks(ref) if a["kind"] == "blocked" and a["status"] == "pending"]
+    assert blocked() == [card["id"]]                                                  # answerable while stopped (S10)
+    assert client.post("/api/dept/%s/j2/start" % ref).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    assert J.status(ref)["state"] == "blocked" and blocked() == [card["id"]]
+    assert [a["id"] for a in R.chat_view(ref)["asks"] if a.get("options")] == [card["id"]]
+    assert next(n for n in F.functions(ref)["functions"] if n["fn"] == "identity")["state"] == "waiting_on_you"
+    # and the way out still works after Start
+    assert client.post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "leave:D3"}).status_code == 200
+
+
+OUTSIDE = "Email every customer a newsletter each morning and post it on Instagram"
+
+
+@pytest.mark.parametrize("via", ["card", "chat"])
+def test_m3_5_words_for_a_blocked_plan_get_identitys_take_either_way(j2, monkeypatch, via):
+    """Words from the card's box that reopen the plan with no take, so words that reach outside skip the rules check
+    the same words said in the Chat get, must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    card = _card(W, ref)
+    seen = len(J.events(ref))
+    if via == "card":
+        assert _client().post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "words", "text": OUTSIDE}).status_code == 200
+    else:
+        W.owner_ask(ref, OUTSIDE)
+    W.run_until_idle(ref, limit=300)
+    assert "cycle.reopened" not in [e["action"] for e in J.events(ref)[seen:]]
+    assert J.status(ref)["state"] == "blocked" and _card(W, ref)["id"] == card["id"]    # the card stays open
+    asked = [a for a in W.asks(ref) if a["kind"] == "request" and a["status"] == "pending"]
+    assert len(asked) == 1 and asked[0]["words"] == OUTSIDE and "reach outside the site" in asked[0]["text"]
+
+
+def test_m3_5_a_choice_is_one_shape(j2, monkeypatch):
+    """The choice a card keeps built two ways (the option's, and the one new words make) must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    shape = {"id", "label", "at", "by", "words"}
+    card = _card(W, ref)
+    W.owner_ask(ref, "Make it a simple one-page site that shows the cakes")             # new words: the card goes quiet
+    W.run_until_idle(ref, limit=300)
+    by_words = next(a for a in W.asks(ref) if a["id"] == card["id"])["chosen"]
+    assert set(by_words) == shape and by_words["id"] == W.WORDS_OPTION and by_words["label"] == "Change the plan in my words"
+    card = _card(W, ref)
+    by_click = W.choose_option(ref, card["id"], "leave:D3")["chosen"]
+    assert set(by_click) == shape and (by_click["id"], by_click["label"], by_click["words"]) == ("leave:D3", "Leave D3 out", None)
+    assert W.chosen(W.option("x", "X", "c"), "", at="t") == {"id": "x", "label": "X", "at": "t", "by": "the owner", "words": None}
+
+
 def test_m3_5_an_options_ask_is_one_shape(j2):
     W = j2[0]
     a = W.options_ask("blocked", "Stuck", [W.option("a", "A", "costs a"), W.option("b", "B", "costs b"), W.option("c", "C", "c"),
@@ -628,10 +942,15 @@ def test_m3_6_the_plain_words_check(j2):
     assert R._plainly("dref-plain", {"word": "request", "done": "Filed in the Brief."}) == {"word": "request", "done": "Filed in the Brief."}
 
 
+DROP_WHY = "Priority would not grant it and the counter was too small"
+GRANT_Q = "Will Priority grant a budget, or counter it first?"
+
+
 def _scenarios(j2, monkeypatch):
     """The J2 scenarios, each a department: born and run offline; Priority says no and Identity rules it runs; Priority
     says no and Identity puts the plan to the owner; Root's check refuses the plan until it is blocked; Identity's
-    standard asks; a rule given as an answer."""
+    standard asks; a rule given as an answer; and a model whose words carry the bargain's inside words: Identity's ruling
+    to drop the plan quotes a why that says grant and counter, and its reading of the standard asks in those words."""
     W, R, J, _, _ = j2
     refs = [_born(j2)]
     _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room"},
@@ -651,6 +970,10 @@ def _scenarios(j2, monkeypatch):
     W.owner_ask(ref, NEVER)
     W.run_until_idle(ref, limit=300)
     refs.append(ref)
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room"}, "identity.close": {"ruling": "drop", "why": DROP_WHY}})
+    refs.append(_born(j2, org="Dropped Co"))
+    _model(monkeypatch, R, {"identity.enough": {"enough": False, "missing": ["budget"], "question": GRANT_Q, "why": "no grant yet"}})
+    refs.append(_born(j2, org="Budget Co"))
     return refs
 
 
@@ -677,7 +1000,37 @@ def test_m3_6_one_voice_in_plain_words_on_every_board(j2, monkeypatch):
     said = [s for r in refs for s in _said(R, r)]
     assert any("Priority said yes to it and it passed Root's check" in s for s in said)        # said again, plainly
     assert any("did not say yes to the plan" in s for s in said)
-    assert not [a for r in refs for a in W.asks(r) if R.plain_faults(a.get("text"), R._owners_words(r, a))]  # the asks' words too
+    # the asks' words too, all of them a card shows: its line, title and why, and each option's label and cost
+    cards = 0
+    for r in refs:
+        for a in W.asks(r):
+            owners = R._owners_words(r, a)
+            for v in [a.get(k) for k in ("text", "title", "why")] + [x for o in a.get("options") or [] for x in (o.get("label"), o.get("cost"))]:
+                if isinstance(v, str):
+                    assert R.plain_faults(v, owners) == [], "%s on %s: %s" % (a["kind"], r, v)
+                    cards += 1
+    assert cards > 20 and J.status(refs[-2])["state"] == "blocked" and J.status(refs[-1])["open_question"]
+
+
+def test_m3_6_a_cards_words_are_plain_as_the_line_it_stands_for(j2, monkeypatch):
+    """A blocked plan's card that quotes a model's 'grant' and 'counter' while the chat line it stands for is a template,
+    or a model's question on the standard that reaches its card in the bargain's words, must fail."""
+    W, R, J, _, _ = j2
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room"}, "identity.close": {"ruling": "drop", "why": DROP_WHY}})
+    ref = _born(j2, org="Dropped Co")
+    card = _card(W, ref)
+    assert (card["text"], card["title"], card["why"]) == (R.PLAIN_TEMPLATE["blocked"], "The plan is dropped.", R.PLAIN_TEMPLATE["why"])
+    line = next(p for p in R.board(ref) if (p["payload"] or {}).get("card") == card["id"])
+    assert line["payload"]["done"] == line["payload"]["objective"] == card["text"]          # the card and its line agree
+    _model(monkeypatch, R, {"identity.enough": {"enough": False, "missing": ["budget"], "question": GRANT_Q, "why": "no grant yet"}})
+    ref = _born(j2, org="Budget Co")
+    q = J.status(ref)["open_question"]
+    assert (q["text"], q["why"]) == (R.PLAIN_TEMPLATE["question"], R.PLAIN_TEMPLATE["why"])
+    assert next(p for p in R.board(ref) if (p["payload"] or {}).get("card") == q["id"])["payload"]["done"] == q["text"]
+    # words the owner's table can say plainly are said again, not replaced; and the templates are plain themselves
+    assert R.plain_card(ref, {"text": "Priority granted the line", "title": "Priority's grant", "why": "Priority countered (no room)"}, "blocked") == \
+        {"text": "Priority said yes to the line", "title": "Priority's yes", "why": "Priority asked for less (no room)"}
+    assert not [t for t in R.PLAIN_TEMPLATE.values() if R.plain_faults(t)]
 
 
 def test_m3_6_a_functions_chat_box_says_the_words_go_to_identity(j2):
@@ -713,6 +1066,9 @@ def test_m3_7_identitys_pane_reads_its_one_record(j2, monkeypatch):
     assert (c["who"], c["ruling"], c["ruled"], c["asked_you"]) == ("Adaptation and Priority did not agree", "run", "it runs", False)
     assert c["plan"] and "the goal cannot be met without a site" in c["why"]
     assert "charter" not in json.dumps(j).lower()
+    # the pane never says refuse, grant, counter or orders: a met rules row names the tags the owner reads
+    assert j["standard"]["rows"][2]["note"] == "each says go, ask, never or always"
+    assert not re.search(r"\b(?:grant|counter|refuse|orders)\b", json.dumps(j["standard"]).lower())
     # a rule the owner gave says it is theirs, and when
     d = W.dept(ref)
     d["rules"].append(W.rule_row("refuse", "Never show a price that is not in my list", "never show a price that is not in my list"))
