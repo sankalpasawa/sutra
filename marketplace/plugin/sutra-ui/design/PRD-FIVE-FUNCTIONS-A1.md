@@ -544,7 +544,7 @@ W0-SCHEMA declares these with the rest, as typed here; the package that first wr
 'option.pin':   obj({'layer': enum(*LAYER_NAMES), 'impl': ref('impl')}, required=('layer', 'impl'))
 ```
 
-A reading may hold two rows for one item, one by code and one by model, when they disagree (Q4); the item's verdict is the code row's.
+A reading may hold two rows for one item, one by code and one by model, when they disagree (Q4); both rows are kept and the item's verdict is the worse of the two (not met over to confirm over met): a measured failure stands over the reader's yes, and a reader's no or doubt stands over a measure that only found the record whole (A1-16).
 
 | DEFS name | Fields (required in parentheses) | From, to | Built by |
 |---|---|---|---|
@@ -732,7 +732,7 @@ The bargain line part gains the inputs estimate and remaining (W1-PRIORITY, M5.3
 
 **view.engine_card** (S17; `functions_view.engine_card`, M4.7): exactly ENGINE_CARD_FIELDS: `engine`, `head` {state, word, why, at, round}, `motor` {slot, starts, once, says, window_min, today}, `five` [ENGINE_FIVE_ROW: fn, state, says, at, share].
 
-**view.audit** (S12): `{readings: [{summary, at}], findings: [{text, at}], spot_checks: []}`. W1-AUDIT adds `latest: null or {artifact, v, at, items: [{id, verdict, method, evidence, claim}]}` and each reading's `{artifact, v, read, why_not_read, verdicts}` (M8.3); W3-BOARD fills `spot_checks` (M8.7).
+**view.audit** (S12): `{readings: [{summary, at}], findings: [{text, at}], spot_checks: []}`. W1-AUDIT adds `latest: null or {artifact, v, at, items: [{id, verdict, method, evidence, claim}], findings: [audit.finding]}` (the findings the newest reading filed, a low or medium one included, which ask the owner nothing and so reach the owner only here and in Identity's line) and each reading's `{artifact, v, read, why_not_read, verdicts}` (M8.3); W3-BOARD fills `spot_checks` (M8.7).
 
 **view.coordination** gains `questions: [coordination.question]` from W3-BOARD (M4.9); it is `[]` until then.
 

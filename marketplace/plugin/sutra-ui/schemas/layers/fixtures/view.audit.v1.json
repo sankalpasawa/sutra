@@ -1,5 +1,5 @@
 {
- "comment": "view.audit (S12) as Audit's pane returns it, in the four states its screen draws: nothing read yet, a reading with an item not met and one to confirm, a version not read, and a reading where every item holds. Written by hand; test_layer_audit.py validates each as S.validate('view.audit', ...) and as the live pane's keys.",
+ "comment": "view.audit (S12) as Audit's pane returns it, in the four states its screen draws: nothing read yet, a reading with an item not met and one to confirm, a version not read, and a reading where every item holds. Each latest carries the findings its reading filed, a low or medium one included, since those ask the owner nothing and are shown nowhere else. Written by hand; test_layer_audit.py validates each as S.validate('view.audit', ...) and as the live pane's keys.",
  "view.audit": {
   "empty": {
    "readings": [],
@@ -56,6 +56,24 @@
       "claim": "it waits on a fact nobody has given: the clinic's opening hours",
       "evidence": "no hours are given in the brief or in anything filed"
      }
+    ],
+    "findings": [
+     {
+      "id": "F1",
+      "severity": "high",
+      "claim": "“The fees page gives a fee” does not hold: the fees page names no fee",
+      "where": "fees.html",
+      "item": "D2",
+      "went_to": "Identity"
+     },
+     {
+      "id": "F2",
+      "severity": "low",
+      "claim": "the tone of the welcome page is stiff",
+      "where": "index.html",
+      "item": null,
+      "went_to": "Identity"
+     }
     ]
    }
   },
@@ -103,7 +121,8 @@
       "claim": "every ask is answered in the Result",
       "evidence": "result.md answers the one ask in full"
      }
-    ]
+    ],
+    "findings": []
    }
   }
  }

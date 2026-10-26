@@ -252,7 +252,7 @@ def made(ref, d, nr):
     line = [e[0] for e in W.engines_of(d)]
     readers_of = {}
     for name in line + list(FUNCS):
-        reads = (defs.get(name) or {}).get("reads")
+        reads = R.reads_art(d, defs.get(name))             # an engine that names none reads what it starts on (PRD M8.2)
         if reads:
             readers_of.setdefault(reads, []).append(name)
     by_run = {}

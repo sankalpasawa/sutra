@@ -317,6 +317,56 @@ def test_u4_audit_should_have_fired_names_the_artifact_the_plan_delivers(j2):
     assert (audit()["state"], audit()["why"]) == ("fault", "Audit has not read Result v1")
 
 
+def test_u4_audit_reads_what_it_starts_on_so_the_made_list_and_the_hand_offs_name_audit_as_the_reader_of_the_deliverable(j2, monkeypatch):
+    W, R, J, _, FV = j2
+    audit = R.engine_def("Audit")
+    assert "reads" not in audit and "reads" not in json.loads((S.HERE / "layers" / "audit" / "v1.json").read_text(encoding="utf-8")), \
+        "no kind's artifact is named in Audit's recipe: it reads what it starts on, the department's deliverable"
+    assert audit["start"]["on"][0]["of"] == R.DELIVERABLE and R.validate(R.defs()) == [], "and the definitions are clean without it"
+    web, default, organic = _born(j2), _default(j2), _organic(j2, monkeypatch)
+    for ref, art, readers in ((web, "Live site", ["Adaptation", "Audit"]), (default, "Result", ["Audit"]), (organic, "Report", ["Audit"])):
+        d = W.dept(ref)
+        assert R.reads_art(d, audit) == art and R.steps_view(ref, "Audit")["reads"] == art
+        made = {m["art"]: m for m in FV.made(ref, d, [])}
+        assert sorted(made[art]["readers"]) == readers, "%s is read by Audit, and the Made list says so" % art
+        hand = {h["art"]: h for h in FV._handoffs(ref, d)}
+        assert "Audit" in hand[art]["readers"], "and so does the hand-off card"
+        assert "read by nobody" not in json.dumps(made), art
+    # a work engine's reads are as they were, a function that starts on a post reads nothing, and a department with no
+    # deliverable yet, or Root, has Audit read nothing
+    assert R.reads_art(W.dept(web), R.engine_def("Write")) == R.engine_def("Write")["reads"]
+    assert R.reads_art(W.dept(web), R.engine_def("Identity")) is None and R.reads_art(None, None) is None
+    assert R.reads_art({"kind": "root"}, audit) is None and R.reads_art({"kind": "organic", "workflows": []}, audit) is None
+    unplanned = _born(j2, ORGANIC, "Second Lab Co", settle=False)
+    assert unplanned != organic and S.deliverable(W.dept(unplanned)) is None
+    assert R.steps_view(unplanned, "Audit")["reads"] is None
+    assert not [a for m in FV.made(unplanned, W.dept(unplanned), []) for a in m["readers"] if a == "Audit"]
+
+
+def test_u4_no_live_site_literal_is_left_in_audits_recipe_or_in_the_fallbacks_of_its_run_rows(j2):
+    import inspect
+    W, R, J, _, FV = j2
+    assert "Live site" not in (S.HERE / "layers" / "audit" / "v1.json").read_text(encoding="utf-8")
+    base = json.loads((S.HERE / "test_fixtures" / "function-engines.base.json").read_text(encoding="utf-8"))
+    assert "Live site" not in json.dumps(base["Audit"]) and "reads" not in base["Audit"]
+    assert "Live site" not in json.dumps(R.engine_def("Audit"))
+    on_path = [R.run_engine, R.run_step, R.steps_view, R.reads_art, R.trigger_art, R._on_version, R.slot_of, R.start_view, R.audit_text,
+               R.p_audit_items, FV.made, FV._handoffs]
+    for fn in on_path:
+        assert "Live site" not in inspect.getsource(fn), fn.__name__
+
+
+def test_u4_a_run_that_was_not_told_its_artifact_reads_the_departments_deliverable_in_its_rows(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _default(j2)
+    seen, real = [], W._put_run
+    monkeypatch.setattr(W, "_put_run", lambda r, row: (seen.append(dict(row)), real(r, row))[1])
+    R.run_engine(ref, "Audit", {"v": 1}, "Audit@result.v8")                  # a start with no art in its input
+    assert seen[0]["what"] == "reading Result", "the run row names the department's deliverable, never the Live site"
+    mine = [r for r in _audit_rows(R, ref) if r["slot"] == "Audit@result.v8"]
+    assert mine and all(r["read"] == [{"art": "Result", "v": 1}] for r in mine)
+
+
 # ---- U5 · a reading per done-when item, in the S-30 shape (M8.3, M0.3) ----------------------------------------------
 SIX = {"subject", "claim", "evidence", "method", "verdict", "severity"}      # the S-30 fields of a reading's row
 JUDGE_OK = {"ok": True, "findings": []}
@@ -407,6 +457,58 @@ def test_u5_a_stub_judge_says_met_on_an_item_that_failed_mechanically_and_the_re
     assert "goal.reached" not in _actions(J, ref) and J.status(ref)["state"] == "pursuing"
     assert row["cycle_id"] == J.status(ref)["cycle_id"] and row["findings"] and all(f["went_to"] == "Identity" for f in row["findings"])
     assert [f["id"] for f in row["findings"]] == ["F%d" % n for n in range(1, len(row["findings"]) + 1)]
+
+
+# when code and the reader disagree about an item, both rows are kept and the worse verdict stands (decision A1-16)
+CODE_ITEM = [{"id": "D1", "text": "The site is true to the brief", "how": "code", "level": "outcome"}]
+
+
+@pytest.mark.parametrize("code_ok, reader, rows, stands", [
+    (True, "met", [("code", "met")], "met"),
+    (True, "not_met", [("code", "met"), ("model", "not_met")], "not_met"),           # the record is whole; the reader read the work
+    (True, "to_confirm", [("code", "met"), ("model", "to_confirm")], "to_confirm"),
+    (False, "met", [("code", "not_met"), ("model", "met")], "not_met"),              # Q4: a measured failure over the reader's yes
+    (False, "to_confirm", [("code", "not_met"), ("model", "to_confirm")], "not_met"),
+    (False, "not_met", [("code", "not_met")], "not_met"),
+])
+def test_u5_when_code_and_the_reader_disagree_both_rows_are_kept_and_the_worse_verdict_stands(j2, code_ok, reader, rows, stands):
+    W, R, J, _, _ = j2
+    mech = {"ok": code_ok, "notes": ["the record holds"] if code_ok else ["the site says it does not know 1 thing"]}
+    said = _says(reader)("THE DONE-WHEN ITEMS:\n%s\n\nWHAT CODE MEASURED:" % json.dumps(CODE_ITEM))
+    got = R.audit_rows(CODE_ITEM, mech, said, True)
+    assert [(r["method"], r["verdict"]) for r in got] == rows and all(SIX <= set(r) for r in got)
+    assert R.audit_verdicts(got) == {"D1": stands}
+    assert R.audit_verdicts(list(reversed(got))) == {"D1": stands}, "the order of the rows decides nothing"
+    assert all(S.validate("audit.reading_item", r) == [] for r in got)
+
+
+def test_u5_a_measure_that_found_the_record_whole_does_not_overrule_a_reader_who_says_not_met(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    _model(monkeypatch, R, {"audit.items": _says("not_met"), "audit.judge": JUDGE_OK})
+    ref = _born(j2)
+    _stamp_all(W, ref, kind="publish")                              # a website's D1 is by code, and its record holds
+    (row,) = _readings(W, ref)
+    assert [(r["id"], r["method"], r["verdict"]) for r in row["items"]] == [("D1", "code", "met"), ("D1", "model", "not_met")], \
+        "both rows are kept"
+    assert R.audit_verdicts(row["items"]) == {"D1": "not_met"}, "a reader's no stands over a measure that only found the record whole"
+    assert [(f["severity"], f["item"]) for f in row["findings"]] == [("high", "D1")] and "does not hold" in row["findings"][0]["claim"]
+    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["state"] == "pursuing" and J.status(ref)["goal_reached"] is not True
+    latest = _view(j2, ref)["latest"]
+    assert [(i["id"], i["verdict"], i["method"]) for i in latest["items"]] == [("D1", "not_met", "model")], "the pane shows the row that stands"
+
+
+def test_u5_a_measure_that_found_the_record_whole_does_not_overrule_a_reader_in_doubt(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    _model(monkeypatch, R, {"audit.items": _says("to_confirm"), "audit.judge": JUDGE_OK})
+    ref = _born(j2)
+    _stamp_all(W, ref, kind="publish")
+    (row,) = _readings(W, ref)
+    assert [(r["id"], r["method"], r["verdict"]) for r in row["items"]] == [("D1", "code", "met"), ("D1", "model", "to_confirm")]
+    assert R.audit_verdicts(row["items"]) == {"D1": "to_confirm"}
+    assert [(f["severity"], f["item"]) for f in row["findings"]] == [("medium", "D1")]
+    assert not [a for a in W.asks(ref) if a["kind"] == "finding"], "a doubt is noted, never a stamp to ask"
+    assert "goal.reached" not in _actions(J, ref) and J.status(ref)["state"] == "pursuing"
+    assert [(i["verdict"], i["method"]) for i in _view(j2, ref)["latest"]["items"]] == [("to_confirm", "model")]
 
 
 def test_u5_when_code_and_the_reader_agree_one_row_is_kept_and_every_item_met_reaches_the_goal(j2, monkeypatch):
@@ -540,6 +642,39 @@ def test_u5_low_findings_do_not_block_done_but_a_high_one_does(j2, monkeypatch):
     _model(monkeypatch, R, {"audit.items": _says("met", findings=[high]), "audit.judge": JUDGE_OK})
     ref2 = _default(j2, "dref-answers2")
     assert "goal.reached" not in _actions(J, ref2) and J.status(ref2)["state"] == "pursuing"
+
+
+def _goal_says(R, ref):
+    """What Identity told the owner when the goal was reached: the one post of the word goal."""
+    (post,) = [p for p in R.board(ref) if p["src"] == "Identity" and R.OWNER in p["dst"] and (p["payload"] or {}).get("word") == "goal"]
+    return post["payload"]["done"]
+
+
+def test_u5_identity_says_audit_found_nothing_only_when_it_filed_nothing(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    _model(monkeypatch, R, {"audit.items": _says("met"), "audit.judge": JUDGE_OK})
+    ref = _default(j2)
+    said = _goal_says(R, ref)
+    assert said.startswith("The goal is reached: ") and said.endswith("Audit read Result v1 and found nothing to put right.")
+    assert _view(j2, ref)["latest"]["findings"] == [] and _view(j2, ref)["readings"][-1]["summary"] == "read Result v1: every done-when item holds"
+
+
+@pytest.mark.parametrize("severity", ["low", "medium"])
+def test_u5_a_reading_that_noted_something_that_does_not_block_is_not_told_as_found_nothing(j2, monkeypatch, severity):
+    W, R, J, _, _ = j2
+    noted = {"where": "result.md", "claim": "the tone is stiff", "severity": severity, "item": None}
+    _model(monkeypatch, R, {"audit.items": _says("met", findings=[noted]), "audit.judge": JUDGE_OK})
+    ref = _default(j2)
+    assert _actions(J, ref)[-1] == "goal.reached" and not [a for a in W.asks(ref) if a["status"] == "pending"], "it does not block, and asks nothing"
+    said = _goal_says(R, ref)
+    assert said.endswith("Audit read Result v1 and noted something that does not block."), said
+    assert "nothing to put right" not in said and not any(ch.isdigit() for ch in said.replace("v1", "")), "and no count is given"
+    # the owner can see it: the pane lists the findings of the reading it shows
+    got = _view(j2, ref)
+    (f,) = got["latest"]["findings"]
+    assert (f["severity"], f["claim"], f["where"], f["item"], f["went_to"]) == (severity, "the tone is stiff", "result.md", None, "Identity")
+    assert got["readings"][-1]["summary"] == "read Result v1: every done-when item holds, and something is noted"
+    assert got["findings"] == [], "and the asks the owner stamps are as they were: this one needs no stamp"
 
 
 def test_u5_a_department_with_no_done_when_items_is_not_read_against_anything(j2, monkeypatch):

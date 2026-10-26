@@ -1069,7 +1069,6 @@
    "check the record mechanically",
    "judge a page against the brief"
   ],
-  "reads": "Live site",
   "start": {
    "on": [
     {

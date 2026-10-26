@@ -1108,6 +1108,17 @@ def trigger_art(d, trig):
     return S.deliverable(d)
 
 
+def reads_art(d, e):
+    """The artifact an engine reads: the one its definition names; an engine that names none reads what it starts on, so
+    Audit, whose start is on the department's deliverable, reads the department's own whatever its kind (trigger_art).
+    None when it reads nothing, or has no deliverable yet."""
+    e = e or {}
+    if e.get("reads"):
+        return e["reads"]
+    trig = next((t for t in (e.get("start") or {}).get("on") or [] if t.get("kind") == "version"), None)
+    return trigger_art(d, trig) if trig else None
+
+
 def _on_version(ctx, name, e, trig):
     """Outside trigger: a version of what it reads that it has not run on yet. A trigger on the deliverable names the
     artifact in the input it yields (`art`), so the run reads the one that started it; with no deliverable, nothing starts."""
@@ -1454,7 +1465,8 @@ def run_engine(ref, name, inp, slot):
     steps = handler["steps"] if handler else list(e.get("steps") or [])
     prior = [r for r in W.runs(ref) if r.get("slot") == slot and r.get("status") in ("interrupted", "waiting", "asked")]
     system = e["kind"] == "function"
-    what = handler["name"] if handler else "reading %s" % ((inp.get("art") if isinstance(inp, dict) else None) or e.get("reads"))
+    what = handler["name"] if handler else "reading %s" % (
+        (inp.get("art") if isinstance(inp, dict) else None) or reads_art(d, e) or "the deliverable")
     row = W._put_run(ref, _run_row(name, system, slot, "running", what,
                                    chain=None if system else W._chain_of(ref, e["reads"], inp["v"]),
                                    retries=len([r for r in prior if r["status"] == "interrupted"])))
@@ -1663,7 +1675,8 @@ def run_step(ctx, step, item):
            "mode": "slot", "slot": ctx["slot"], "impl": _impl(ctx), "asked_rung": asked, "rung": rung, "miss": rung != asked, "by": how,
            "agent": ctx["engine"] if how in ("model", "checklist") else None,
            "applied": [r["id"] for r in ctx["dept"].get("rules") or [] if r.get("id")] if how in ("model", "checklist") else [],
-           "read": [{"post": ctx["post"]["n"]}] if ctx.get("post") else [{"art": ctx["inp"].get("art") or ctx["def"].get("reads"), "v": ctx["inp"]["v"]}],
+           "read": [{"post": ctx["post"]["n"]}] if ctx.get("post") else
+           [{"art": ctx["inp"].get("art") or reads_art(ctx.get("dept"), ctx["def"]), "v": ctx["inp"]["v"]}],
            "facts": facts, "in_sig": _sha(facts if facts is not None else {"step": step["id"], "item": item, "in": ctx["inp"].get("v")}),
            "usd": round(usd, 4), "calls": calls, "def_version": defs()["def_version"], "started": started}
 
@@ -3704,8 +3717,8 @@ def placeholders(files):
 READ_BY = ("model", "checklist", "stamped by the owner")
 
 #: a reading's verdicts, the worse the higher: when code and the reader disagree about an item both rows are kept (Q4)
-#: and the worse stands. Q4 rules that a measured failure stands over the reader's yes; a reader's no, or its doubt,
-#: stands over a measure that only found the record whole, since the measure is not of that item.
+#: and the worse stands (decision A1-16). Q4 rules that a measured failure stands over the reader's yes; a reader's no,
+#: or its doubt, stands over a measure that only found the record whole, since the measure is not of that item.
 VERDICT_RANK = {"met": 0, "to_confirm": 1, "not_met": 2}
 #: how serious an item's verdict is, the S-30 reading's severity
 ITEM_SEVERITY = {"met": "low", "to_confirm": "medium", "not_met": "high"}
@@ -3784,7 +3797,8 @@ def c_reading_is_s30(ctx, step, item, out):
 
 def audit_verdicts(rows):
     """The verdict of each done-when item in a reading's rows, {id: verdict}: with one row it is that row's; with two (code
-    and the reader disagreed) the worse stands (VERDICT_RANK)."""
+    and the reader disagreed) the worse stands (VERDICT_RANK, decision A1-16): a measured failure over the reader's yes, a
+    reader's no or doubt over a measure that found the record whole."""
     out = {}
     for r in rows or []:
         if r.get("id") and r.get("verdict") in VERDICT_RANK and VERDICT_RANK[r["verdict"]] >= VERDICT_RANK.get(out.get(r["id"]), -1):
@@ -3795,7 +3809,7 @@ def audit_verdicts(rows):
 def audit_rows(dept_items, mech, said, sampled):
     """One reading row per done-when item, in the S-30 shape (subject, claim, evidence, method, verdict, severity). An item
     whose how is code gets a row from the mechanical step's result when it measured anything; every item gets the reader's
-    row, from audit.items. When the two disagree both are kept, and the worse verdict stands (VERDICT_RANK). A reader's
+    row, from audit.items. When the two disagree both are kept, and the worse verdict stands (VERDICT_RANK, A1-16). A reader's
     yes with no evidence, or about an item that rests on a fact nobody gave, is a doubt, never a yes; an item the reader
     did not read is a doubt too."""
     by_id = {}
@@ -5527,16 +5541,19 @@ def identity_closed(ctx, step, item):
 
 
 def _j2_audit_read(ref, d, version, filed, art=None, reading=None):
-    """Audit's reading closes the loop (step 8): when it holds done-when, the goal is reached, and Identity says so once."""
+    """Audit's reading closes the loop (step 8): when it holds done-when, the goal is reached, and Identity says so once.
+    What Identity says of the reading is what the reading filed: 'found nothing to put right' only when it filed nothing,
+    else that it noted something that does not block (a low or a medium finding; a high one holds the goal back)."""
     J = _j2()
     if not J or not J.audited(ref, version, filed, artifact=art, reading=reading):
         return
     import layer_schema as S
     art = art or S.deliverable(d)
+    found = "noted something that does not block" if filed else "found nothing to put right"
     try:
         _tell(ref, d, {"src": "Root" if d.get("root") else OWNER}, "inform",
-              {"word": "goal", "done": "The goal is reached: %s. Audit read %s v%s and found nothing to put right."
-               % (str(d.get("done") or "done").rstrip("."), art, version), "link": art, "v": version})
+              {"word": "goal", "done": "The goal is reached: %s. Audit read %s v%s and %s."
+               % (str(d.get("done") or "done").rstrip("."), art, version, found), "link": art, "v": version})
     except Exception:  # noqa: BLE001 -- the goal is reached on the record whether or not the word reached the chat
         pass
 
@@ -6602,7 +6619,7 @@ def steps_view(ref, name):
                     "history": en.get("history") or []})
     does, skills = _goal_of(ref, name, e)                     # a function's own words, as its agent is told them
     view = {"name": name, "kind": e["kind"], "description": does or e.get("description"), "skills": skills,
-            "reads": e.get("reads"), "writes": e.get("writes"), "steps": out,
+            "reads": reads_art(W.dept(ref), e), "writes": e.get("writes"), "steps": out,
             "hears": ([SHARED] if rules else []) + [h["name"] for h in e.get("on") or []],
             "start": start_view(e, W.dept(ref)), "numbers": numbers(ref, name)}
     if name == "Coordination":
