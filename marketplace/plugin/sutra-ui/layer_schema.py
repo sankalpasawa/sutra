@@ -707,7 +707,14 @@ DEFS.update({
     'view.priority': obj({
         'bargains': items(obj({'said': enum('said yes', 'asked for less', 'said no'), 'summary': nullable(text(4000)), 'at': _AT})),
         'envelopes': items(obj({'engine': text(80), 'calls': integer(0), 'usd': number(0), 'calls_limit': integer(0),
-                                'usd_limit': number(0), 'share': number(0, 1)}))},
+                                'usd_limit': number(0), 'share': number(0, 1)})),
+        # from W1-PRIORITY (M5.3): what Priority priced and answered, newest first, from prices.jsonl; not required, so a
+        # view written before it still validates
+        'prices': items(obj({'at': _AT, 'proposal': enum('line', 'round', 'engine', 'cost'),
+                             'answer': enum('accept', 'counter', 'reject'), 'said': enum('said yes', 'asked for less', 'said no'),
+                             'estimate': obj({'calls': integer(0), 'usd': number(0)}, required=('calls', 'usd')),
+                             'room': obj({'calls': integer(), 'usd': number()}, required=('calls', 'usd')), 'why': text(600)},
+                            required=('at', 'proposal', 'answer', 'said', 'estimate', 'room', 'why')))},
         required=('bargains', 'envelopes')),
     'view.coordination': obj({
         'line': items(text(80)), 'registered': nullable(integer(0)),
@@ -990,7 +997,9 @@ CHECKS = {
                    'idea_has_shapes': 'an idea is reflected back with the shapes it could take',
                    'line_is_engines': 'a shaped line is one to six engines that code finds nothing wrong with',
                    'moves_name_their_rows': 'each move is of a known kind and names the rows it rests on'},
-    'priority': {'answer_has_its_price': 'said yes, asked for less or said no, each with its price; an ask for less names what it keeps'},
+    'priority': {'answer_has_its_price': 'said yes, asked for less or said no, each with its price; an ask for less names what it keeps',
+                 'price_is_observed': 'a yes, or an ask for less, is held to the facts Priority read: what it keeps costs no more than '
+                                      'the room left; a no, or a smaller yes, always stands'},
     'coordination': {'chain_under_its_limit': 'a start is let through only while the chain is under its limit',
                      'names_who_goes_first': 'it names an engine of the department',
                      'one_run_at_a_time': 'a start is let through only while no other run runs'},
@@ -1007,6 +1016,11 @@ CONTRACT_SAMPLES = {
     'ruling_is_known': {'good': [{'ruling': 'drop', 'why': 'the goal does not need it'}], 'bad': [{'ruling': 'perhaps', 'why': 'x'}]},
     'answer_has_its_price': {'good': [{'answer': 'accept', 'why': 'fits today: 9 calls of 30'}],
                              'bad': [{'answer': 'accept', 'why': ''}, {'answer': 'grant', 'why': 'x'}]},
+    'price_is_observed': {'good': [{'answer': 'counter', 'why': 'room for two today: 0.08 USD for these of the 0.30 USD left',
+                                    'keep': ['Plan', 'Write']},
+                                   {'answer': 'reject', 'why': 'no room today: the first costs 0.08 USD against 0.00 USD left'}],
+                          'bad': [{'answer': 'counter', 'why': 'room for two today', 'keep': []}, {'answer': 'accept', 'why': ''},
+                                  {'answer': 'grant', 'why': 'x'}]},
     'findings_name_where_and_what': {'good': [{'ok': True, 'findings': []}],
                                      'bad': [{'ok': False, 'findings': [{'claim': 'x'}]}, {'ok': False, 'findings': 'none'}]},
     'enough_is_shaped': {'good': [],
@@ -1142,7 +1156,7 @@ PROMPTS = {
             'skills': {'fields': {'items': 'field.items'}, 'inputs': (), 'returns': None, 'read_by': None},
         },
         'bargain': {
-            'line': {'fields': {}, 'inputs': ('source', 'engines', 'calls', 'usd', 'room', 'limit'),
+            'line': {'fields': {}, 'inputs': ('source', 'engines', 'calls', 'usd', 'room', 'limit', 'estimate', 'remaining'),
                      'returns': 'Return ONLY a JSON object: {"answer": "accept" | "counter" | "reject", "why": "one line", "keep": [names]}.',
                      'read_by': 'priority.bargain'},
             'engine': {'fields': {'task': 'field.task'}, 'inputs': ('engine', 'does', 'needs', 'calls', 'usd', 'room'),

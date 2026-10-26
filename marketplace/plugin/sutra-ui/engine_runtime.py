@@ -5114,7 +5114,7 @@ INSTRUCTIONS = {
     "adaptation": {"goal": {"does": (), "skills": ()}, "sense": {"shape": ("needs", "goal", "idea", "library")}, "decide": {},
                    "make": {"line": ("dept", "words", "taken", "out", "rules", "refused"), "refused": ("faults",)}},
     "priority": {"goal": {"does": (), "skills": ()},
-                 "bargain": {"line": ("source", "engines", "calls", "usd", "room", "limit"),
+                 "bargain": {"line": ("source", "engines", "calls", "usd", "room", "limit", "estimate", "remaining"),
                              "engine": ("engine", "does", "needs", "calls", "usd", "room"), "cost": ("word", "step", "cost", "room")}},
     "coordination": {"goal": {"does": (), "skills": ()}, "tie": {"tie": ("ready", "what", "order", "waiting")}},
     "audit": {"goal": {"does": (), "skills": ()}, "judge": {"judge": ("brief", "filed", "pages")}},
