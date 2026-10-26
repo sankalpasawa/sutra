@@ -164,6 +164,18 @@ app.include_router(library_api.router)
 # still due when it returns, and runs once.
 import website_api
 app.include_router(website_api.router)
+# The department screen is the J2 prototype's page (j2ui_assets/, UI-port package j2ui-shell): j2ui_page serves it at
+# /j2ui/{ref}/, and j2ui_api answers the calls it makes under the same base. The adapter is its own package; until it is
+# in the tree the page stands alone (an absent j2ui_api is skipped, a broken one is not).
+import j2ui_page
+app.include_router(j2ui_page.router)
+try:
+    import j2ui_api
+except ModuleNotFoundError as _j2ui_missing:
+    if _j2ui_missing.name != "j2ui_api":
+        raise
+else:
+    app.include_router(j2ui_api.router)
 
 
 @app.on_event("startup")
