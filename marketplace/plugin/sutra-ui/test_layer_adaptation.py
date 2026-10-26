@@ -856,3 +856,25 @@ def test_a9_offline_with_the_setting_on_keeps_the_draft_and_asks_nothing(j2, mon
     sent = _board_word(R, ref, "line", "Adaptation")[0]["payload"]
     assert "confidence" not in sent and "doubt" not in sent and sent["covers"] == {"D1": ["Site"]}
     assert not _board_word(R, ref, "doubt")
+
+
+def test_a9_a_made_website_reshape_keeps_the_librarys_own_check_and_publish_and_registers_them_with_the_plan(j2, monkeypatch):
+    """Level 1 takes the Library's engine as it is (J2B-3). A website department has them on its record from birth, and
+    Root, which records the plan and never makes an engine (S-10), takes them as the plan names them: it adds nothing
+    for them, and does not lose them."""
+    W, R, J, _, FV = j2
+    real, calls = R._root_check, {"n": 0}
+
+    def check(ref, d, engines, source):
+        calls["n"] += 1
+        return ["the plan does not cover D3"] if calls["n"] == 1 else real(ref, d, engines, source)
+    monkeypatch.setattr(R, "_root_check", check)
+    plan = {"engines": [_made("Play rules", "Brief", "Play rules", ["D1"]), _made("Game page", "Play rules", "Pages", ["D2"]),
+                        _made("Check", "Pages", "Build", [], level=1), _made("Publish", "Build", "Live site", ["D3"], level=1)]}
+    ref, _ = _run_scenario(j2, monkeypatch, "website", GAME_WORDS, "Game Co", GAME, plan)
+    registered = W.dept(ref)["workflows"][-1]
+    assert registered["engines"] == ["Play rules", "Game page", "Check", "Publish"], registered
+    assert registered["source"] == "shaped" and registered["covers"] == {"D1": ["Play rules"], "D2": ["Game page"], "D3": ["Publish"]}
+    assert all(c["passed"] for c in registered["checks"]) and any(c["check"] == "required_kept" for c in registered["checks"])
+    assert not [x for x in R.board(ref) if "Not added" in str((x["payload"] or {}).get("done") or "")]
+    assert R.coordination(ref)["line"] == registered["engines"]
