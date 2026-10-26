@@ -152,6 +152,7 @@ def test_c31_each_state_says_what_the_page_needs(mods, row):
     assert list(s) == list(C.STATE_KEYS), name
     got = (s["status"], s["thinking"], s["step"], (s["paused"] or {}).get("kind"), s["outcome"], s["done"], s["stamped"])
     assert got == (status, thinking, step, pause, outcome, done, stamped), (name, got, c.reasons)
+    assert c.reasons == [] and len(c.engines) == 4, (name, c.reasons, "every state reads whole: the engines are there, no sub-read failed")
     assert s["turn"] == s["thinking"]
     assert s["outcome"] in (None, "Done", "Done with open items"), "never Stopped, Crashed or Paused"
     if s["paused"]:

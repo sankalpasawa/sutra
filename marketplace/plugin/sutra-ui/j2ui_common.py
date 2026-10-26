@@ -395,6 +395,35 @@ def _engines(c, mv_engines):
     return out
 
 
+def _engines_by_hand(c):
+    """What website_dept.map_view makes of the engines ({'engines', 'planned'}), made from the same public readers, for when
+    map_view itself raises: its status() reads ask['engine'] of every pending ask, and Identity's open question has no such
+    key, so in the page's most common first state the Map's reader fails and the engines would be empty, unnumbered and
+    unplanned. The rows are map_view's own: engine_view, the last run, 'Waits' for a pending ask, in_line, 'Left out', the slot."""
+    ref, d = c.ref, c.d
+    table = R.coordination(ref) or {}
+    line = set(table.get("line") or [])
+    left = {r.get("engine") for r in table.get("left_out") or [] if isinstance(r, dict)}
+    slots = {r.get("engine"): r for r in table.get("timetable") or [] if isinstance(r, dict)}
+    waiting = {a.get("engine") for a in c.asks if a.get("status") == "pending"}
+    engines = []
+    for name in (e[0] for e in W.engines_of(d)):
+        e = W.engine_view(ref, name)
+        if not e:
+            continue
+        e.pop("runs", None)
+        last = next((r for r in reversed(c.runs) if r.get("engine") == name), None)
+        e["last"] = last and {"status": last.get("status"), "at": last.get("started"), "what": last.get("what"), "words": last.get("words")}
+        if name in waiting:
+            e["state"] = "Waits"
+        e["in_line"] = name in line
+        if name in left and e["state"] not in ("Running", "Missing"):
+            e["state"] = "Left out"
+        e["timetable"] = slots.get(name)
+        engines.append(owner_words.engine(e))
+    return {"engines": engines, "planned": not F.no_plan(ref, d, table)}
+
+
 def _build(ref, key):
     c = Ctx(ref)
 
@@ -434,7 +463,14 @@ def _build(ref, key):
         c._ev_t.append(peak)
     state = str(((c.fv or {}).get("cycle") or {}).get("state") or c.cur.get("state") or "not_started")
     c.state = "not_started" if state == "not_ready" else state
-    mv = read("map", lambda: owner_words.map_view(W.map_view(ref)), None)
+    try:
+        mv = owner_words.map_view(W.map_view(ref))
+    except Exception as exc:  # noqa: BLE001 -- map_view fails on a pending ask with no engine; the engines are made again by hand
+        mv = None
+        try:
+            mv = _engines_by_hand(c)
+        except Exception:  # noqa: BLE001
+            c.reasons.append("map: %s" % type(exc).__name__)
     c.planned = bool((mv or {}).get("planned"))
     c.engines = _engines(c, (mv or {}).get("engines") or [])
     for name in read("artifacts", lambda: W.artifacts_of(c.d), ()):
