@@ -65,6 +65,9 @@ BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priori
                  ("the answer is accept, reject or counter", "the answer is say yes, ask for less or say no"),
                  ("the verdict is one of admit, wait, refuse", "the verdict is let through, wait or stop"),
                  ("the verdict is one of go, ask, refuse", "the verdict is go, ask or stop"),
+                 # the same checks as the interface lists them (layer_schema.CHECKS), on a function's page (A1 C8)
+                 ("a gate's verdict is admit, wait or refuse", "a gate's verdict is let through, wait or stop"),
+                 ("a verdict is go, ask or refuse", "a verdict is go, ask or stop"),
                  # what an instruction file is for, as its Settings row says it (identity's take: the verdict on a request)
                  ("a request: go, ask or refuse", "a request: go, ask or stop"),
                  ("Countered.", "Asked for less."), ("Refused.", "Said no."))

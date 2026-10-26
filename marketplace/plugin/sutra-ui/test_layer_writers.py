@@ -185,8 +185,7 @@ def test_r_identity_wait_engine_writes_asks_json_directly(j2):
 def test_r_instructions_ask(j2):
     W, R, _, _, _ = j2
     W.create("w-instr", "Acme", None)
-    text = R._instruction("identity", "take").replace("Judge one request from the owner.", "Judge one request from the owner, briefly.")
-    a = R.instructions_ask("w-instr", "identity", "take", text)
+    a = R.instructions_ask("w-instr", "identity", "take", "take", "task", "Judge one request from the owner, briefly.")
     _ok("identity.ask", a)
 
 

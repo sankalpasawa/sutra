@@ -1,0 +1,42 @@
+{
+ "Adaptation": {
+  "hands_to": "Priority: every proposal and every round. Identity: conflicts, and a round Priority said yes to, to file. Root: the line Priority said yes to, for its check.",
+  "holds": "Its proposals on the board, the ideas it parked, the ladder of every step, and its rounds.",
+  "keeps": "Senses and proposes; never applies. Every proposal passes Priority first. May leave out an engine its template does not mark required. Engines come from Adaptation, never from Root.",
+  "line": "Decides how the department gets there. It proposes the workflows the goal needs, from the Library, fitted, or made fresh, and after each reading it proposes the next round, until the goal holds.",
+  "v1": "Two to five workflows from the Library or shaped for the goal; no loop and no Make module yet.",
+  "vsm": "VSM S4: outside and future"
+ },
+ "Audit": {
+  "hands_to": "Identity only: readings and findings.",
+  "holds": "Its readings and its findings.",
+  "keeps": "The checker is never the writer; it never touches a workflow or a version. A check is a check, never a score. It reads what the department did, never only its goal.",
+  "line": "The second pair of eyes. It reads what the department actually filed, item by item against done-when, with code checks first, and it also drops in unannounced. Its findings go to Identity.",
+  "v1": "As built: read the live site against the words.",
+  "vsm": "VSM S3*: sporadic direct inspection"
+ },
+ "Coordination": {
+  "hands_to": "Identity: alarms, lost requests and verdict asks. Priority: verdict asks.",
+  "holds": "Its table: the order, the line and who may post to whom; the run rows and each thread's bounds.",
+  "keeps": "No model call inside a tick; a missed slot runs once, and each slot runs once. The engine starts itself in its slot. Never changes limits, scope or quality calls.",
+  "line": "Keeps the timetable: a slot for each engine, who goes first, one run at a time, hand-offs, a chain that stops at its limit, and an alarm past a window. It judges nothing about content.",
+  "v1": "As built.",
+  "vsm": "VSM S2: timetables and standards"
+ },
+ "Identity": {
+  "hands_to": "Adaptation: a request for a line, and the next thing to correct. Coordination: verdicts on gates. You: it is the only function that speaks to you.",
+  "holds": "Goal, done-when, rules (go, ask, never, always), budget, owner and parent, and each engine's window.",
+  "keeps": "Never makes anything; the maker is an engine. Asks only when a rule says ask. Approvals only tighten. Never invents a goal or a rule, and asks one question at a time.",
+  "line": "The department's voice and conscience. It hears you, checks that the identity is good enough, gates every effect by rule, closes conflicts, and says when the goal is reached.",
+  "v1": "Your words become the Brief, one question when the words are thin, the ask before the first publish, and a tell.",
+  "vsm": "VSM S5: identity and policy"
+ },
+ "Priority": {
+  "hands_to": "Adaptation: said yes, asked for less, or said no. Identity: through Adaptation's conflict, when a limit is hit.",
+  "holds": "One limit per engine (calls and money a day) and the bargain threads.",
+  "keeps": "Prices and holds the budget; who goes first is Coordination's call. Never starts a run and never says no over method. Never changes the goal or speaks to you.",
+  "line": "Prices every proposal against the room actually left and holds the budget. It says yes, asks for less, or says no. Who goes first is never its call.",
+  "v1": "The limit on every start, as built. Nothing else.",
+  "vsm": "VSM S3: inside and now"
+ }
+}

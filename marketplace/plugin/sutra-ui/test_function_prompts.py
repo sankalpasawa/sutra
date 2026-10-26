@@ -1,4 +1,4 @@
-"""test_function_prompts.py -- each function's version 1: one agent, its instructions as .md files (PRD M2, S-28).
+"""test_function_prompts.py -- each function's version 1: one agent, its instructions as typed fields (PRD M2, S-28, A1.16).
 
 Named claims:
   M2.1a  every function prompt renders, for the fixtures, byte for byte what the inline builders rendered before the
@@ -6,14 +6,16 @@ Named claims:
   M2.1b  each function's files are the ones its page names, each in the bundle with its plain first line and the parts
          its steps read; a prompt is read from the file, so the words on disk are the words sent
   M2.1c  a file gone from the bundle, or one missing a part a step reads, refuses the definitions load
-  M2.2a  the owner's change is filed as an ask Identity puts to the owner, and nothing changes until the stamp; a
-         stamped change is the department's own copy, in its records home, and the next run is sent its words
+  M2.2a  the owner's change is one typed field, filed as an ask Identity puts to the owner, and nothing changes until the
+         stamp; a stamped value is the department's own, in its records home, and the next run is sent its words
   M2.2b  a refused change leaves nothing
-  M2.2c  replacing the bundle keeps the change: the department's copy wins, a part only the new bundle has is the
-         bundle's, and the shipped words again take the department's copy away
-  M2.2d  the ask's covering check: words that cannot serve the function are refused at the ask, and again at the stamp
-  M2.2e  a file no run reads (Adaptation's decide: the code makes that choice in this version) is kept as the owner's
-         note on the stamp, and the ask, the tell and the row all say so, never that the next run uses it
+  M2.2c  an update of the app that changes the shipped words keeps the owner's value; a field the owner never changed reads
+         the update; the shipped words again take the owner's value away
+  M2.2d  the field's type and the interface's rules: words that cannot serve the function are refused at the ask, and again
+         at the stamp ('{{' and 'Return ONLY' among them)
+  M2.2e  a part no run reads (Adaptation's decide note: the code makes that choice in this version) is kept as the owner's
+         note on the stamp, and the ask, the tell and the field all say so, never that the next run uses it
+  M2.2f  a whole-file change made before fields were typed is kept as the owner's note, with one tell; no run reads it
 
 No test reaches a model, the live records home or the network: the prompts are rendered, or sent to a model that is a
 function and answers offline, so every step runs its draft.
@@ -323,122 +325,165 @@ class TestTheOwnersChange(Fixture):
         self.R.MODEL = None
         super().tearDown()
 
-    def change(self, fn, file, text):
-        return self.c.post("/api/native/%s/instructions" % REF, json={"fn": fn, "file": file, "text": text})
+    def change(self, fn, group, part, field, value):
+        return self.c.post("/api/native/%s/instructions" % REF, json={"fn": fn, "group": group, "part": part, "field": field, "value": value})
 
-    def row(self, fn, file):
-        rows = self.c.get("/api/native/%s/steps/%s" % (REF, fn.title())).json()["instructions"]
-        return next(x for x in rows if x["file"] == file)
+    def groups(self, fn, ref=REF):
+        return self.c.get("/api/native/%s/steps/%s" % (ref, fn.title())).json()["instructions"]
 
-    def test_m2_2a_a_stamped_change_is_used_by_the_next_run(self):
+    def row(self, fn, group, part):
+        return next(p for g in self.groups(fn) if g["group"] == group for p in g["parts"] if p["part"] == part)
+
+    def field(self, fn, group, part, name):
+        return next(f for f in self.row(fn, group, part)["fields"] if f["field"] == name)
+
+    def stored(self, ref=None):
+        p = self.W.ddir(ref or REF) / "instructions.json"
+        return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else None
+
+    def shipped(self, fn, group, part, name):
+        return self.R.layers.prompts.defaults(REF, fn, group, part)[name]
+
+    def update_shipped(self, fn, group, part, name, old, new):
+        """An update of the app that changes the words a part ships with, wherever they live: in the layer's WORDS when its
+        implementation holds the part, else in the bundle's file."""
+        R = self.R
+        module = R.layers.prompts._module(REF, fn, group, part)
+        if module is not None:
+            import copy
+            from unittest import mock
+            words = copy.deepcopy(module.WORDS)
+            self.assertIn(old, words[group][part][name])
+            words[group][part][name] = words[group][part][name].replace(old, new)
+            patch = mock.patch.object(module, "WORDS", words)
+            patch.start()
+            self.addCleanup(patch.stop)
+            return
+        tmp = Path(tempfile.mkdtemp(prefix="function-prompts-update-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        shutil.copytree(R.PROMPTS_DIR, tmp / "b")             # on the bundle as it stands, so updates add up
+        p = tmp / "b" / fn / (group + ".md")
+        text = p.read_text(encoding="utf-8")
+        self.assertIn(old, text)
+        p.write_text(text.replace(old, new), encoding="utf-8")
+        R.PROMPTS_DIR = tmp / "b"
+        R._DEFS.clear()
+        self.assertEqual(R.validate(R.defs()), [], "the update loads")
+
+    def stamp(self, ask):
+        self.W.decide_ask(REF, ask["id"], True)
+        self.W.run_until_idle(REF, limit=200)
+
+    def tells(self):
+        return [str(p["payload"]["done"]) for p in self.R.board(REF) if p["payload"].get("word") == "instructions" and p["payload"].get("done")]
+
+    def test_m2_2a_a_stamped_value_is_used_by_the_next_run(self):
         R, W = self.R, self.W
-        take = R._instruction("identity", "take")
-        mine = take.replace("Recognise what kind of words the owner has given.", "Recognise, in plain words, what kind of words the owner has given.")
-        r = self.change("identity", "take", mine)
+        shipped = self.shipped("identity", "take", "recognise", "task")
+        mine = shipped.replace("Recognise what kind of words the owner has given.", "Recognise, in plain words, what kind of words the owner has given.")
+        r = self.change("identity", "take", "recognise", "task", mine)
         self.assertEqual(r.status_code, 200, r.text)
         a = r.json()["ask"]
-        self.assertEqual((a["kind"], a["fn"], a["file"], a["status"]), ("instructions", "identity", "take", "pending"))
-        self.assertEqual(a["text"], "Change Identity's take instructions to your words")
-        # nothing changes until the stamp: no copy of its own, the shipped words read, the row says it waits
-        self.assertFalse(R._own(REF, "identity", "take").exists())
-        self.assertEqual(R._instruction("identity", "take", REF), take)
-        row = self.row("identity", "take")
-        self.assertTrue(row["as_shipped"])
-        self.assertEqual(row["waits"]["ask"], a["id"])
-        # the row's line in the owner's words (PRD M1.7: go, ask or stop); the file's own text, which the owner changes, as it is
-        self.assertEqual(row["lead"], "How to judge a request: go, ask or stop.")
-        self.assertTrue(row["text"].startswith("How to judge a request: go, ask or refuse."), row["text"][:60])
-        self.assertIsNone(self.row("identity", "goal")["waits"], "only the file changed waits")
+        self.assertEqual((a["kind"], a["fn"], a["group"], a["part"], a["field"], a["status"]),
+                         ("instructions", "identity", "take", "recognise", "task", "pending"))
+        self.assertEqual(a["text"], "Change Identity's recognise task to your words")
+        # nothing changes until the stamp: no value of its own, the shipped words read, the field says it waits
+        self.assertIsNone(self.stored())
+        f = self.field("identity", "take", "recognise", "task")
+        self.assertEqual((f["value"], f["as_shipped"], f["waits"]["ask"]), (shipped, True, a["id"]))
+        # the group's line in the owner's words (PRD M1.7: go, ask or stop); the field's own words, which the owner changes, as they are
+        self.assertEqual(next(g for g in self.groups("identity") if g["group"] == "take")["lead"], "How to judge a request: go, ask or stop.")
+        self.assertIsNone(self.field("identity", "take", "take", "task")["waits"], "only the field changed waits")
         # Identity put it to the owner, on the board, in its own thread
         asked = [p for p in R.board(REF) if p["thread"] == a["thread"]]
         self.assertEqual([(p["src"], p["dst"], p["msg_type"], p["payload"]["word"]) for p in asked], [("Identity", ["Owner"], "request", "instructions")])
-        # one change waits per file
-        r = self.change("identity", "take", mine.replace("plain words", "few words"))
+        # one change waits per field; another field of the same part is its own change
+        r = self.change("identity", "take", "recognise", "task", mine.replace("plain words", "few words"))
         self.assertEqual(r.status_code, 400)
         self.assertIn("already waits for your stamp", r.json()["detail"])
-        # the stamp: the department's own copy, read by the next run
-        W.decide_ask(REF, a["id"], True)
-        W.run_until_idle(REF, limit=200)
-        self.assertEqual(R._own(REF, "identity", "take").read_text(encoding="utf-8"), mine)
-        self.assertTrue(str(R._own(REF, "identity", "take")).startswith(str(W.ddir(REF))), "kept in the records home")
-        row = self.row("identity", "take")
-        self.assertFalse(row["as_shipped"])
-        self.assertIsNone(row["waits"])
-        self.assertEqual(row["text"], mine)
-        self.assertTrue(any("Identity's take now reads as you changed it; the next run uses it." == str(p["payload"].get("done")) for p in R.board(REF)),
-                        "Identity says it is in place")
-        self.assertTrue(row["read"], "a run reads take")
+        other = self.change("identity", "take", "take", "guidance", "go: do it. ask: it reaches outside. refuse: it breaks a rule.")
+        self.assertEqual(other.status_code, 200, other.text)
+        W.decide_ask(REF, other.json()["ask"]["id"], False)
+        # the stamp: the typed value, in the department's records home, read by the next run
+        self.stamp(a)
+        doc = self.stored()
+        self.assertEqual(doc["values"]["identity"]["take"]["recognise"]["task"]["value"], mine)
+        self.assertEqual(doc["values"]["identity"]["take"]["recognise"]["task"]["ask"], a["id"])
+        self.assertTrue(str(R.layers.prompts.values_path(REF)).startswith(str(W.ddir(REF))), "kept in the records home")
+        f = self.field("identity", "take", "recognise", "task")
+        self.assertEqual((f["value"], f["as_shipped"], f["waits"]), (mine, False, None))
+        self.assertIn("Identity's recognise task now reads as you changed it; the next run uses it.", self.tells(), "Identity says it is in place")
+        self.assertTrue(self.row("identity", "take", "recognise")["read"], "a run reads recognise")
         self.M.prompts.clear()
         W.owner_ask(REF, "Which page lists the doctors?")
         W.run_until_idle(REF, limit=200)
         sent = [p for sid, p in self.M.prompts if sid == "identity.recognise"]
         self.assertTrue(sent, "the next run recognised the words")
-        self.assertIn("\n\nRecognise, in plain words, what kind of words the owner has given. There are five kinds", sent[-1])
+        self.assertIn("\n" + mine + "\nTHE GOAL: ", sent[-1])
         # another department keeps the shipped words
         W.create("dref-prompts0002", "Second Website", None)
-        self.assertEqual(R._instruction("identity", "take", "dref-prompts0002"), take)
+        self.assertEqual(R.layers.words("dref-prompts0002", "identity", "take", "recognise")["task"], shipped)
 
     def test_m2_2b_a_refused_change_leaves_nothing(self):
         R, W = self.R, self.W
-        judge = R._instruction("audit", "judge")
-        r = self.change("audit", "judge", judge.replace("At most eight findings.", "At most three findings."))
+        shipped = self.shipped("audit", "judge", "judge", "guidance")
+        r = self.change("audit", "judge", "judge", "guidance", shipped.replace("At most eight findings.", "At most three findings."))
         self.assertEqual(r.status_code, 200, r.text)
         a = r.json()["ask"]
         W.decide_ask(REF, a["id"], False)
         W.run_until_idle(REF, limit=200)
         self.assertEqual(next(x for x in W.asks(REF) if x["id"] == a["id"])["status"], "refused")
-        self.assertFalse((W.ddir(REF) / "prompts").exists(), "nothing is written")
-        self.assertEqual(R._instruction("audit", "judge", REF), judge)
-        row = self.row("audit", "judge")
-        self.assertTrue(row["as_shipped"])
-        self.assertIsNone(row["waits"])
+        self.assertIsNone(self.stored(), "nothing is written")
+        self.assertFalse((W.ddir(REF) / "prompts").exists())
+        self.assertEqual(self.shipped("audit", "judge", "judge", "guidance"), shipped)
+        f = self.field("audit", "judge", "judge", "guidance")
+        self.assertEqual((f["value"], f["as_shipped"], f["waits"]), (shipped, True, None))
         self.assertNotIn("At most three findings.", self.render("audit.judge", self.ctx("Audit", inp={"v": 1}), ("audit.pick",)))
 
-    def test_m2_2c_replacing_the_bundle_keeps_the_change(self):
+    def test_m2_2c_an_update_keeps_the_value_and_the_shipped_words_again_take_it_away(self):
         R, W = self.R, self.W
-        self.on_the_bundle("audit")
-        judge = R._instruction("audit", "judge")
-        mine = judge.replace("At most eight findings.", "At most three findings.")
-        a = self.change("audit", "judge", mine).json()["ask"]
-        W.decide_ask(REF, a["id"], True)
-        W.run_until_idle(REF, limit=200)
-        # an update: a new bundle in the old one's place, its own words for judge and a part the old one did not have
-        tmp = Path(tempfile.mkdtemp(prefix="function-prompts-update-"))
-        self.addCleanup(shutil.rmtree, tmp, True)
-        shutil.copytree(self.bundled, tmp / "b")
-        p = tmp / "b" / "audit" / "judge.md"
-        p.write_text(p.read_text(encoding="utf-8").replace("At most eight findings.", "At most ten findings.")
-                     + "\n## again\n\nRead it again, slowly.\n", encoding="utf-8")
-        R.PROMPTS_DIR = tmp / "b"
-        R.INSTRUCTIONS["audit"]["judge"]["again"] = ()
-        self.addCleanup(R.INSTRUCTIONS["audit"]["judge"].pop, "again", None)
-        R._DEFS.clear()
-        self.assertEqual(R.validate(R.defs()), [], "the new bundle loads")
-        self.assertEqual(R._own(REF, "audit", "judge").read_text(encoding="utf-8"), mine, "the records home is untouched")
+        shipped = self.shipped("audit", "judge", "judge", "guidance")
+        mine = shipped.replace("At most eight findings.", "At most three findings.")
+        self.stamp(self.change("audit", "judge", "judge", "guidance", mine).json()["ask"])
+        before = self.stored()
+        # an update: the app ships other words for the part (its guidance, and its task, which the owner never changed)
+        self.update_shipped("audit", "judge", "judge", "guidance", "At most eight findings.", "At most ten findings.")
+        self.update_shipped("audit", "judge", "judge", "task", "Check what the department made", "Look at what the department made")
+        self.assertEqual(self.stored(), before, "the records home is untouched")
         sent = self.render("audit.judge", self.ctx("Audit", inp={"v": 1}), ("audit.pick",))
-        self.assertIn("At most three findings.", sent, "the owner's words, not the update's")
+        self.assertIn("At most three findings.", sent, "the owner's value, not the update's")
         self.assertNotIn("At most ten findings.", sent)
-        self.assertEqual(R._prompt("audit", "judge", "again", REF), "Read it again, slowly.", "a part only the new bundle has is the bundle's")
-        # the shipped words again take the department's copy away, so the next bundle's words reach it
-        a = self.change("audit", "judge", R._instruction("audit", "judge")).json()["ask"]
-        W.decide_ask(REF, a["id"], True)
-        W.run_until_idle(REF, limit=200)
-        self.assertFalse(R._own(REF, "audit", "judge").exists())
-        self.assertTrue(self.row("audit", "judge")["as_shipped"])
+        self.assertIn("Look at what the department made", sent, "a field the owner never changed reads the update")
+        # the shipped words again take the owner's value away, so the next update reaches the department
+        new = self.shipped("audit", "judge", "judge", "guidance")
+        self.assertIn("At most ten findings.", new)
+        self.stamp(self.change("audit", "judge", "judge", "guidance", new).json()["ask"])
+        self.assertIsNone(self.stored(), "the value is gone, and the file with it")
+        self.assertTrue(self.field("audit", "judge", "judge", "guidance")["as_shipped"])
+        self.assertIn("Audit's judge guidance now reads as shipped; the next run uses it.", self.tells())
 
     def test_m2_2d_words_that_cannot_serve_the_function_are_refused_at_the_ask_and_at_the_stamp(self):
         R, W = self.R, self.W
-        take = R._instruction("identity", "take")
-        for fn, file, text, why in (("marketing", "goal", take, "no function named marketing"),
-                                    ("identity", "voice", take, "Identity has no instructions named voice"),
-                                    ("identity", "take", "   ", "say what the instructions should be"),
-                                    ("identity", "take", take, "the words Identity's take holds now"),
-                                    ("identity", "take", take.replace("## gate", "## gates"), "take has no part gate"),
-                                    ("identity", "take", take.replace("{{engine}}", "{{engine}} {{budget}}"), "the app fills no {{budget}}"),
-                                    ("identity", "take", "## take\n\nJudge it.\n", "take does not say first, in a line, what it is for"),
-                                    ("identity", "take", "x" * (R.INSTRUCTIONS_MAX + 1), "too long")):
-            r = self.change(fn, file, text)
-            self.assertEqual(r.status_code, 400, (fn, file, why))
+        take = self.shipped("identity", "take", "take", "task")
+        for fn, group, part, field, value, why in (
+                ("marketing", "goal", "does", "text", "x", "no function named marketing"),
+                ("identity", "voice", "take", "task", "x", "Identity has no instructions named voice"),
+                ("identity", "take", "nowhere", "task", "x", "Identity's take instructions have no part nowhere"),
+                ("identity", "take", "take", "colour", "x", "has no colour you may change"),
+                ("identity", "take", "take", "task", "   ", "task is empty"),
+                ("identity", "take", "take", "task", take, "these are the words Identity's take task holds now"),
+                ("identity", "take", "take", "task", "Judge {{words}} kindly", "task cannot hold '{{' or '}}'"),
+                ("identity", "take", "take", "task", "Judge it.}}", "task cannot hold '{{' or '}}'"),
+                ("identity", "take", "take", "task", "Judge it. Return ONLY yes", "task cannot hold 'Return ONLY'"),
+                ("identity", "take", "take", "task", "x" * 1201, "task is longer than 1200 characters"),
+                ("identity", "take", "take", "task", 5, "task has to be words"),
+                ("identity", "goal", "does", "text", "line one\nline two", "text must be one line"),
+                ("identity", "goal", "skills", "items", [], "items needs at least 1 of them"),
+                ("identity", "goal", "skills", "items", ["ok"] * 13, "items can hold at most 12 of them"),
+                ("identity", "goal", "skills", "items", ["ok", "x" * 161], "items (item 2) is longer than 160 characters"),
+                ("identity", "goal", "skills", "items", "not a list", "items has to be a list")):
+            r = self.change(fn, group, part, field, value)
+            self.assertEqual(r.status_code, 400, (fn, group, part, field, why))
             self.assertIn(why, r.json()["detail"])
         self.assertEqual([a for a in W.asks(REF) if a["kind"] == "instructions"], [], "none of them was filed")
         os.environ["SUTRA_ENGINE_RUNTIME"] = "1"
@@ -446,42 +491,80 @@ class TestTheOwnersChange(Fixture):
             W.create("dref-prompts0003", "Old Website", None)
         finally:
             os.environ.pop("SUTRA_ENGINE_RUNTIME", None)
-        self.assertEqual(self.c.post("/api/native/dref-prompts0003/instructions", json={"fn": "identity", "file": "take", "text": take}).status_code, 404)
-        # filed when they served, stamped after the bundle asks for more: not written, and the owner hears why
-        a = self.change("identity", "take", take.replace("Judge one request from the owner.", "Judge one request.")).json()["ask"]
-        R.INSTRUCTIONS["identity"]["take"]["enough"] = ()
-        self.addCleanup(R.INSTRUCTIONS["identity"]["take"].pop, "enough", None)
-        W.decide_ask(REF, a["id"], True)
-        W.run_until_idle(REF, limit=200)
-        self.assertFalse(R._own(REF, "identity", "take").exists())
-        self.assertTrue(any("was not put in place: take has no part enough" in str(p["payload"].get("done")) for p in R.board(REF)))
+        body = {"fn": "identity", "group": "take", "part": "take", "field": "task", "value": take + " Kindly."}
+        self.assertEqual(self.c.post("/api/native/dref-prompts0003/instructions", json=body).status_code, 404)
+        # the old body names no part and no field
+        r = self.c.post("/api/native/%s/instructions" % REF, json={"fn": "identity", "file": "take", "text": "Judge it."})
+        self.assertEqual((r.status_code, r.json()["detail"]), (400, "say which part and which field"))
+        # filed when it served, stamped after the interface asks for less: not written, and the owner hears why
+        a = self.change("identity", "take", "take", "task", take + " Kindly.").json()["ask"]
+        S = self.R.layer_schema
+        was = S.DEFS["field.task"]
+        S.DEFS["field.task"] = S.field(10, multiline=True)
+        self.addCleanup(S.DEFS.__setitem__, "field.task", was)
+        self.stamp(a)
+        self.assertIsNone(self.stored())
+        self.assertTrue(any("Identity's take task was not put in place: task is longer than 10 characters" in t for t in self.tells()))
+        # filed by a hand that skipped the ask, '{{' and 'Return ONLY' are refused at the stamp too
+        S.DEFS["field.task"] = was
+        for n, bad in enumerate(("Judge {{words}}", "Judge it. Return ONLY yes")):
+            row = {"id": "a-bad0000%d" % n, "kind": "instructions", "engine": "Identity", "fn": "identity", "group": "take", "part": "take",
+                   "field": "task", "value": bad, "text": "x", "status": "pending", "created": W.now(), "thread": None}
+            out = R._apply_instructions(REF, W.dept(REF), row)
+            self.assertIn("could not put the owner's change", out["said"])
+        self.assertIsNone(self.stored(), "neither was written")
 
-    def test_m2_2e_a_file_no_run_reads_is_kept_as_the_owners_note_and_the_owner_is_told_so(self):
+    def test_m2_2e_a_part_no_run_reads_is_kept_as_the_owners_note_and_the_owner_is_told_so(self):
         R, W = self.R, self.W
-        import inspect
-        # which files a run reads: every one but Adaptation's decide, which holds no part and which no call reads
-        for fn, files in PAGES.items():
-            for f in files:
-                self.assertEqual(self.row(fn, f)["read"], (fn, f) != ("adaptation", "decide"), (fn, f))
-        self.assertEqual(R.INSTRUCTIONS["adaptation"]["decide"], {})
-        self.assertNotIn('_prompt("adaptation", "decide"', inspect.getsource(R))
-        decide = R._instruction("adaptation", "decide")
-        mine = decide + "\nPrefer a checklist to code when both would serve.\n"
-        r = self.change("adaptation", "decide", mine)
+        # which parts a run reads: every one but Adaptation's decide note, which no step reads
+        for fn, groups in R.INSTRUCTIONS.items():
+            for group, parts in groups.items():
+                for part in parts:
+                    self.assertEqual(self.row(fn, group, part)["read"], (fn, group, part) != ("adaptation", "decide", "note"), (fn, group, part))
+        row = self.row("adaptation", "decide", "note")
+        self.assertEqual((row["read"], row["read_by"], row["inputs"], row["answers"]), (False, [], [], []))
+        mine = self.shipped("adaptation", "decide", "note", "text") + " Prefer a checklist to code when both would serve."
+        r = self.change("adaptation", "decide", "note", "text", mine)
         self.assertEqual(r.status_code, 200, r.text)
         a = r.json()["ask"]
         asked = [p for p in R.board(REF) if p["thread"] == a["thread"]]
         self.assertEqual(len(asked), 1)
-        self.assertEqual(asked[0]["payload"]["objective"], "Change Adaptation's decide instructions to your words? In this version the code "
-                         "makes this choice, so no run reads these words yet: stamp to keep them as your note, or say no to keep them as they are.")
-        W.decide_ask(REF, a["id"], True)
-        W.run_until_idle(REF, limit=200)
-        self.assertEqual(R._own(REF, "adaptation", "decide").read_text(encoding="utf-8"), mine.rstrip("\n") + "\n", "kept as the owner wrote it")
-        told = [str(p["payload"]["done"]) for p in R.board(REF) if p["payload"].get("word") == "instructions" and p["payload"].get("done")]
-        self.assertEqual(told, ["Adaptation's decide now reads as you changed it, kept as your note; in this version the code makes this "
-                                "choice, so no run reads it yet."], "the owner is told the truth")
-        row = self.row("adaptation", "decide")
-        self.assertEqual((row["as_shipped"], row["read"], row["waits"]), (False, False, None))
+        self.assertEqual(asked[0]["payload"]["objective"], "Change Adaptation's decide note to your words? In this version the code makes this "
+                         "choice, so no run reads these words yet: stamp to keep them as your note, or say no to keep them as they are.")
+        self.stamp(a)
+        self.assertEqual(self.stored()["values"]["adaptation"]["decide"]["note"]["text"]["value"], mine, "kept as the owner wrote it")
+        self.assertEqual([t for t in self.tells() if t.startswith("Adaptation")],
+                         ["Adaptation's decide note now reads as you changed it, kept as your note; in this version the code makes this "
+                          "choice, so no run reads it yet."], "the owner is told the truth")
+        f = self.field("adaptation", "decide", "note", "text")
+        self.assertEqual((f["value"], f["as_shipped"], f["waits"], self.row("adaptation", "decide", "note")["read"]), (mine, False, None, False))
+
+    def test_m2_2f_an_earlier_whole_file_change_is_kept_as_the_owners_note_with_one_tell(self):
+        R, W = self.R, self.W
+        before = R._prompt("identity", "take", "recognise", REF, goal="G", words="W", facts="F")
+        old = W.ddir(REF) / "prompts" / "identity" / "take.md"
+        old.parent.mkdir(parents=True)
+        old.write_text(R._instruction("identity", "take") + "\nPrefer short answers.\n", encoding="utf-8")
+        said = "Your earlier change to Identity's take is kept as a note; change the field again in Settings to use it."
+        self.assertEqual(self.tells(), [], "a read of nothing says nothing")
+        groups = self.groups("identity")
+        self.assertEqual(self.tells(), [said], "the first read of the department's instructions says it")
+        self.groups("identity")
+        self.groups("adaptation")
+        self.assertEqual(self.tells(), [said], "and says it once")
+        self.assertEqual([g["group"] for g in groups if g["kept"]], ["take"])
+        self.assertTrue(groups[2]["kept"]["at"])
+        self.assertIn("at", self.stored()["kept"]["identity/take"])
+        self.assertEqual(self.stored()["values"], {}, "it is not made into fields")
+        # no run reads it: the words sent are the shipped words, and the file is as the owner left it
+        self.assertEqual(R._prompt("identity", "take", "recognise", REF, goal="G", words="W", facts="F"), before)
+        self.assertTrue(old.read_text(encoding="utf-8").endswith("Prefer short answers.\n"))
+        # the owner changes the field again, and that is read
+        mine = self.shipped("identity", "take", "recognise", "task") + " Be brief."
+        self.stamp(self.change("identity", "take", "recognise", "task", mine).json()["ask"])
+        self.assertIn(mine + "\nTHE GOAL: G", R._prompt("identity", "take", "recognise", REF, goal="G", words="W", facts="F"))
+        self.assertIn("identity/take", self.stored()["kept"], "the note stays recorded beside the value")
+        self.assertEqual(self.tells().count(said), 1)
 
 
 if __name__ == "__main__":

@@ -699,10 +699,14 @@ def test_s3_outputs_are_the_step_outputs_read_outside_the_layer():
 
 
 def test_s3_layers_carry_the_function_pages_verbatim():
+    """The pages are the interface's (A1 C8: functions_view.PAGES moved here and was deleted), word for word as the pane
+    printed them (test_fixtures/function-pages.snapshot.json, taken from functions_view.PAGES before it went); each
+    function's journeys, which the interface does not hold, stay with the view that reads them from the record."""
+    snap = json.loads((S.HERE / "test_fixtures" / "function-pages.snapshot.json").read_text(encoding="utf-8"))
+    assert not hasattr(FV, "PAGES") and set(FV.JOURNEYS) == set(snap) == {S.TITLE[layer] for layer in S.FUNCTION_LAYERS}
     for layer in S.FUNCTION_LAYERS:
-        page = FV.PAGES[S.TITLE[layer]]
         for k in ("vsm", "line", "holds", "hands_to", "keeps", "v1"):
-            assert S.LAYERS[layer][k] == page[k], (layer, k)
+            assert S.LAYERS[layer][k] == snap[S.TITLE[layer]][k], (layer, k)
     assert set(S.LAYERS) == set(S.LAYER_NAMES) and S.LAYERS["identity"]["view"] == "view.identity"
 
 
