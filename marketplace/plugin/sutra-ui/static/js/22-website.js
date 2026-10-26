@@ -1473,7 +1473,8 @@ function wbViewer(n){
   if (tab === "chat" && wbRt(m)) return dpViewerShell("Chat", wbChatHtml(n, m), "wb");
   if (tab === "map") return dpViewerShell("Map", wbMapHtml(n, m), "wb");
   if (tab === "status") return dpViewerShell("System status", wbStatusHtml(n, m), "wb");
-  if (tab === "motor") return dpViewerShell("Motor", wbMotorHtml(n, m), "wb");
+  /* the first build's Motor screen; on the engine runtime the motor folds into each engine's card (PRD M4.7, S17) */
+  if (tab === "motor" && !wbRt(m)) return dpViewerShell("Motor", wbMotorHtml(n, m), "wb");
   if (tab === "board" && wbRt(m)) return dpViewerShell("Board", wbBoardHtml(n), "wb");
   if (tab === "activity" && wbRt(m)){
     dpLoadJ2(n.ref);

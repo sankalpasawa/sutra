@@ -2309,6 +2309,35 @@ test("S17: the engine card carries its head on every tab, the motor folded in, a
   assert.ok(/<h3>In its slot<\/h3>/.test(view(old)) && !/wbenghead|With the five functions/.test(view(old)));
 });
 
+/* PRD M4.7 (round 1, gap 8): only the list's Motor row had gone; the Map's Record box and every box of a thing not made
+   yet still opened the Motor screen, and the viewer still served it on the runtime. Now no Map target is the Motor: the
+   Record opens the last thing filed (the Chat while nothing is), a thing not made yet the card of the engine that makes
+   it (the Brief, which the owner's words make, the Chat), and the runtime's viewer never draws a Motor screen. */
+test("S17: on the runtime the Map emits no Motor target, and the viewer serves no Motor screen", async () => {
+  let [c, html] = await mapWith({ map: rtMap({ live: false, versions: { "Brief": 1, "Site plan": 1, "Pages": 0, "Build": 0, "Live site": 0 } }), fv: fvOf({}) });
+  assert.ok(!/data-wbtab="motor"/.test(html), "no Motor target on the picture or the narrow list");
+  assert.ok(/<g class="n" data-wbart="site-plan" transform="[^"]*"><rect class="bx"[^>]*\/><text x="10" y="20">Record<\/text>/.test(html), "the Record opens the last thing filed");
+  assert.ok(/<g class="n work" data-wbengine="Write" transform="[^"]*"><rect class="bx"[^>]*\/><text x="8" y="17">Pages<\/text>[\s\S]*?<title>Pages · not made yet · Write makes it<\/title>/.test(html), "not made yet: the engine that makes it");
+  assert.ok(/<g class="n work" data-wbengine="Publish" transform="[^"]*"><rect class="bx"[^>]*\/><text x="8" y="17">Live site<\/text>/.test(html));
+  const cards = /<div class="wb2cards wb">([\s\S]*)$/.exec(html)[1];
+  assert.ok(/<button type="button" class="wb2card wb" data-wbengine="Write"><span class="dpdot off"><\/span><b>Pages<\/b><span class="dpchk">not made yet<\/span><\/button>/.test(cards), "the narrow list goes the same way");
+  click(c, { wbengine: "Write" });
+  assert.strictEqual(vm.runInContext("S.wb.tab['r3']", c) + ":" + vm.runInContext("S.wb.sel['r3']", c), "engine:Write", "a click opens the engine's card");
+  /* nothing filed: the Record and the Brief open the Chat, where the owner's words make it */
+  [, html] = await mapWith({ map: rtMap({ live: false, versions: { "Brief": 0, "Site plan": 0, "Pages": 0, "Build": 0, "Live site": 0 } }), fv: fvOf({}) });
+  assert.ok(!/data-wbtab="motor"/.test(html));
+  assert.ok(/<g class="n" data-wbtab="chat" transform="[^"]*"><rect class="bx"[^>]*\/><text x="10" y="20">Record<\/text>/.test(html), "the Record, with nothing filed");
+  assert.ok(/<g class="n work" data-wbtab="chat" transform="[^"]*"><rect class="bx"[^>]*\/><text x="8" y="17">Brief<\/text>[\s\S]*?<title>Brief · not made yet · your words make it<\/title>/.test(html), "the Brief");
+  /* a Motor tab left from the first build, or set by hand, is not served on the runtime */
+  vm.runInContext("S.wb.tab['r3'] = 'motor'; dpS().tab['r3'] = 'now';", c);
+  const v = view(c);
+  assert.ok(!/<h3>It only reads<\/h3>|<h3>What it does each tick<\/h3>/.test(v) && vm.runInContext("S.wb.tab['r3']", c) !== "motor", "no Motor screen on the runtime");
+  /* the first build keeps its Motor screen (W7) */
+  const old = await opened();
+  click(old, { wbtab: "motor" });
+  assert.ok(/<h3>What it does each tick<\/h3>/.test(view(old)), "the first build's Motor stays");
+});
+
 Promise.all(pending).then(() => {
   console.log("-".repeat(60));
   console.log(failed ? " " + failed + " failed (" + ran + " tests)" : " all passed (" + ran + " tests)");

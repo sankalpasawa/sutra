@@ -117,6 +117,14 @@ function wb2Mark(fn){
    600px the picture becomes a list of cards in the same order (a size container, panel.css). */
 const WB2_FN_W = 154, WB2_FN_H = 64;
 function wb2Title(t){ return `<title>${wbEsc(t)}</title>`; }
+/* Where a box of the line of work goes, and what its hover adds: a filed thing opens itself; one not made yet opens the
+   card of the engine that makes it, and the first thing (the Brief, which your words make) the Chat. No box opens a
+   Motor screen: on the engine runtime the motor folds into each engine's card (PRD M4.7, S17). */
+function wb2WorkAt(line, i, a){
+  if (a && a.versions) return [`data-wbart="${wbEsc(a.slug)}"`, ""];
+  const prev = i > 0 ? line[i - 1] : null;
+  return prev && prev.kind === "eng" ? [`data-wbengine="${wbEsc(prev.e.name)}"`, " · " + prev.e.name + " makes it"] : [`data-wbtab="chat"`, " · your words make it"];
+}
 function wb2MapHtml(n, m){
   if (m.kind === "root") return wb2RootHtml(n, m);
   const fv = wbFv(n.ref);
@@ -147,12 +155,14 @@ function wb2MapHtml(n, m){
   const picked = fr && fr.picked && (fr.picked.identity || fr.picked.adaptation);
   const filed = (m.artifacts || []).filter(a => a.versions);
   const versions = filed.reduce((s, a) => s + (a.versions || 0), 0);
+  /* the Record opens the last thing the department filed (Filed work), or the Chat while nothing is filed (PRD M4.7) */
+  const rec = filed.length ? `data-wbart="${wbEsc(filed[filed.length - 1].slug)}"` : `data-wbtab="chat"`;
   const bud = (fv && !fv.failed && fv.budget) || null;
   /* [label, value, where a click goes, its hover name]: the hover says where the click goes, the box says the value */
   const knows = [
     ["Template", picked ? picked.name : (fr ? "Default" : ""), `data-wbfn="adaptation"`, "Template · kept by Adaptation"],
     ["Rules", (m.rules || []).length ? String(m.rules.length) : "none yet", `data-wbfn="identity"`, "Rules · kept by Identity"],
-    ["Record", filed.length ? `${filed.length} thing${filed.length > 1 ? "s" : ""}, ${versions} version${versions > 1 ? "s" : ""}` : "nothing filed", `data-wbtab="motor"`, "Record · what the department filed"],
+    ["Record", filed.length ? `${filed.length} thing${filed.length > 1 ? "s" : ""}, ${versions} version${versions > 1 ? "s" : ""}` : "nothing filed", rec, "Record · what the department filed"],
     ["Host", m.host || "this app's server", `data-wbfn="identity"`, "Host · where the work is served from"],
     ["Budget", null, `data-wbfn="priority"`, ""]];
   const kw = k => k[1] === null ? 150 : Math.max(150, Math.ceil(k[0].length * 8 + 16 + String(k[1]).length * 6.2 + 12));
@@ -224,9 +234,10 @@ function wb2MapHtml(n, m){
       const a = arts[node.name] || { versions: 0, slug: "" };
       const v = a.versions ? "v" + a.versions : "";
       const live = node.name === last && delivered ? " live" : "";
-      svg += `<g class="n work${a.versions ? " done" : ""}${live}" ${a.versions ? `data-wbart="${esc(a.slug)}"` : `data-wbtab="motor"`} transform="translate(${(lx(i) - 34).toFixed(0)},232)">` +
+      const [to, by] = wb2WorkAt(line, i, a);
+      svg += `<g class="n work${a.versions ? " done" : ""}${live}" ${to} transform="translate(${(lx(i) - 34).toFixed(0)},232)">` +
         `<rect class="bx" width="68" height="36" rx="4"/><text x="8" y="17">${esc(node.name)}</text><text class="v" x="8" y="30">${esc(v)}</text>` +
-        wb2Title(node.name + (a.versions ? " · filed, " + v : " · not made yet") + (live ? (m.live ? " · live" : " · delivered") : "")) + `</g>`;
+        wb2Title(node.name + (a.versions ? " · filed, " + v : " · not made yet" + by) + (live ? (m.live ? " · live" : " · delivered") : "")) + `</g>`;
     }
   });
   /* what the plan left out: under the line, muted, each with its word; a click opens its card, which says so too */
@@ -295,14 +306,14 @@ function wb2CardsHtml(m, fv, line, arts, knows, bud, out){
     return row(`data-wbfn="${wbEsc(s.name.toLowerCase())}"`, `<i class="wb2mk fn-${wbEsc(s.name.toLowerCase())}"></i>` + wbDot(fnDot[cls] === undefined ? "ok" : fnDot[cls]),
       s.name, wb2FnWord(m, s.name, fv));
   }).join("");
-  const work = line.map(node => {
+  const work = line.map((node, i) => {
     if (node.kind === "eng"){
       const cls = wb2EngCls(m, node.e);
       return row(`data-wbengine="${wbEsc(node.e.name)}"`, wbDot(cls === "run" ? "" : (cls === "ask" ? "warn" : cls)), node.e.name,
         cls === "run" ? "running" : (cls === "ask" ? "waits on you" : (cls === "block" ? "failed" : "engine")));
     }
     const a = arts[node.name] || { versions: 0, slug: "" };
-    return row(a.versions ? `data-wbart="${wbEsc(a.slug)}"` : `data-wbtab="motor"`, wbDot(a.versions ? "ok" : "off"), node.name, a.versions ? "v" + a.versions : "not made yet");
+    return row(wb2WorkAt(line, i, a)[0], wbDot(a.versions ? "ok" : "off"), node.name, a.versions ? "v" + a.versions : "not made yet");
   }).join("") + (out || []).map(e => row(`data-wbengine="${wbEsc(e.name)}"`, wbDot("off"), e.name, "left out")).join("");   /* after the line, as on the picture */
   const know = knows.map(k => k[1] === null
     ? `<button type="button" class="wb2card wb" ${k[2]}><b>${wbEsc(k[0])}</b>${dpBar(bud ? Math.max(0, Math.min(1, Number(bud.share) || 0)) : 0)}</button>`
