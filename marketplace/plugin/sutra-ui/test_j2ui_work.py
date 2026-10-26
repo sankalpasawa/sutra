@@ -9,6 +9,12 @@ Named claims (each step of the package adds its own):
   W7  docs, preview and call answer with the prototype's empty shapes (Sutra stores no prompt and no reply); the call log has a row
       for each step that made a model call, none for a department with no model step, and no figure nobody recorded (no tokens,
       no model); a message is linked to its call only when exactly one call of its author brackets its time
+  W7c a call made by a slot step of an engine of the line names its atom ('W-1.a2', the id the workflow's atom card has), and the
+      page's atom card finds it: it shows the reply and the cost, and does not say 'No AI call yet'; a function's step and an engine
+      outside the line have none
+  W7b a decision's answer is one bare word in the record (Priority's accept, counter or reject, a gate's admit, wait or refuse); the
+      call log says the act in the owner's words (said yes, asked for less, said no; let through, waiting, stopped), whoever made the
+      call, never the word, and a code with no act of that kind is replaced by the step's first check note
   W4  a lane for each of the five functions, the validator and each workflow, in that order, with a status in idle, working,
       waiting or blocked; a function waits on you only while the owner holds the turn; the numbers are the record's (Priority's
       calls limit, the runs' retries), never the prototype's constants
@@ -39,6 +45,8 @@ REF = "dref-jw0001"
 FUNCS = ["Identity", "Adaptation", "Priority", "Coordination", "Audit"]
 LINE = ["Plan", "Write", "Check", "Publish"]
 BANNED = re.compile(r"GRANT|COUNTER|REFUSE|accept-proposal|reject-proposal", re.I)
+ACTS_SAID = {"accept": "said yes", "counter": "asked for less", "reject": "said no", "admit": "let through", "wait": "waiting", "refuse": "stopped"}
+BARE = re.compile(r"\b(%s)\b" % "|".join(ACTS_SAID), re.I)          # a decision's own word, bare: Priority's or a gate's answer
 CHECK_ID = re.compile(r"^[a-z]+(_[a-z]+)+$")
 
 
@@ -720,11 +728,13 @@ def test_w7_a_step_that_made_a_call_is_a_row_with_nothing_nobody_recorded(mods):
     got = K.build(ctx)["call_log"]
     assert [c["id"] for c in got] == [1, 2] and [c["fn"] for c in got] == ["W-1", "priority"]
     one = got[0]
-    assert list(one) == ["id", "fn", "step", "cycle", "t", "seconds", "model", "tokens", "chars", "inputs", "reply", "reason"]
+    assert list(one) == ["id", "fn", "step", "cycle", "t", "seconds", "model", "tokens", "chars", "inputs", "reply", "reason", "atom"]
+    assert one["atom"] == "W-1.a2", "Plan's second slot step: the prototype's calls carry the atom they made"
     assert (one["t"], one["seconds"], one["model"], one["tokens"], one["reason"], one["cycle"]) == ("10:00:03", 3.4, None, None, "", 1)
     assert one["chars"] == {"prompt": 0, "reply": len("Six pages: Home, About")}
     assert one["inputs"] == [["step", "Propose the pages"]] and one["reply"] == {"say": "Six pages: Home, About"}
     two = got[1]
+    assert "atom" not in two, "a function's step is no atom's"
     assert two["inputs"] == [["step", "Say yes, ask for less, or say no"]] and two["reply"] == {"say": "Priority said yes to the line"}
     assert all(c["tokens"] is None and c["model"] is None for c in got)
     assert json.loads(json.dumps(got)) == got and not BANNED.search(json.dumps(got))
@@ -737,6 +747,108 @@ def test_w7_a_call_with_no_answer_says_what_the_steps_check_noted_or_nothing(mod
     got = K.build(standin(mods))["call_log"]
     assert got[0]["reply"] == {"say": "the answer is say yes, ask for less or say no"} and got[0]["chars"]["reply"] == 0
     assert got[1]["reply"] is None, "the page then says 'No usable reply.'"
+
+
+def test_w7_a_decisions_bare_answer_is_said_as_the_act_in_the_owners_words_whoever_made_the_call(mods):
+    """The record keeps a decision's answer as one word: priority.bargain's accept, counter or reject (a model step, mode slot) and a
+    gate's admit, wait or refuse. The page prints a call's reply as it is, so the word would reach the owner as 'counter'."""
+    W, R, J, F = mods
+    cycle(W, "bargaining", 3)
+    for engine, step, mode in (("Priority", "priority.bargain", "slot"), ("Coordination", "coord.edge", "gate"), ("Plan", "plan.pages", "slot")):
+        for answer in ACTS_SAID:
+            model_step(R, engine=engine, step=step, answer=answer, mode=mode, notes=["it was decided"])
+    out = K.build(standin(mods))
+    said = [c["reply"]["say"] for c in out["call_log"]]
+    assert said == list(ACTS_SAID.values()) * 3
+    assert not BARE.search(json.dumps(out)) and not BANNED.search(json.dumps(out)), "no act's own word anywhere in what the page is sent"
+    assert not [s for s in walk(out) if s.strip().lower() in ACTS_SAID]
+    assert [c["chars"]["reply"] for c in out["call_log"][:6]] == [len(a) for a in ACTS_SAID], "the length is the record's"
+
+
+def test_w7_the_acts_words_are_the_layers_and_the_runtimes_own(mods):
+    """The table is one place: Priority's three are layers/priority's SAID and a gate's three are engine_runtime's GATE_SAYS. A word
+    either of them says differently must be said differently here too."""
+    import j2ui_atoms
+    from layers.priority import v1 as priority
+    W, R, J, F = mods
+    assert j2ui_atoms.PRIORITY_SAID == dict(priority.SAID)
+    assert {a: ACTS_SAID[a] for a in R.GATE_SAYS} == R.GATE_SAYS
+    assert dict(j2ui_atoms.PRIORITY_SAID, **R.GATE_SAYS) == ACTS_SAID
+
+
+def test_w7_a_bare_word_in_any_case_is_still_the_act(mods):
+    W, R, J, F = mods
+    model_step(R, answer="Counter")
+    model_step(R, answer=" REJECT ", started=T1, ended=T2)
+    assert [c["reply"]["say"] for c in K.build(standin(mods))["call_log"]] == ["asked for less", "said no"]
+
+
+def test_w7_a_code_that_is_no_act_gives_way_to_the_steps_first_check_note(mods):
+    W, R, J, F = mods
+    model_step(R, engine="Identity", step="identity.take", answer="go", notes=["the verdict is go, ask or stop"])
+    model_step(R, engine="Identity", step="identity.take", answer="ask", notes=[], started=T1, ended=T2)
+    model_step(R, engine="Identity", step="identity.take", answer="accept-proposal", notes=["it was decided"], started=T2, ended=T3)
+    model_step(R, engine="Priority", step="priority.bargain", answer="brief_is_text", notes=["it was decided"], started=T0, ended=T1)
+    model_step(R, engine="Coordination", step="coord.tie", answer="Plan", notes=["names who goes first"], started=T1, ended=T2)
+    out = K.build(standin(mods))["call_log"]
+    assert [c["reply"] for c in out] == [{"say": "the verdict is go, ask or stop"}, None, {"say": "it was decided"},
+                                         {"say": "it was decided"}, {"say": "Plan"}]
+    assert not BARE.search(json.dumps(out)) and not BANNED.search(json.dumps(out))
+
+
+def one_call_each_slot_step(R, mods):
+    """A model call for every slot step of every engine of the line, oldest first; returns {(engine, step id): row}."""
+    rows = {}
+    for e in standin(mods, chat=False).engines:
+        for s in [s for s in (e["steps_view"] or {}).get("steps") or [] if s.get("mode") == "slot"]:
+            rows[(e["name"], s["id"])] = step_row(R, e["name"], s["id"], notes=["fine"], calls=1, started=T0, ended=T1, answer="Said it")
+    return rows
+
+
+def test_w7_a_call_names_the_atom_its_step_made_the_same_id_the_workflows_atom_has(mods):
+    W, R, J, F = mods
+    cycle(W, "running", 6)
+    rows = one_call_each_slot_step(R, mods)
+    got = K.build(standin(mods))
+    by_step = {(w["name"], a["how"]["steps"]): a["id"] for w in got["workflows"] for a in w["atoms"]}
+    assert len(rows) == len(by_step) > 4, "every slot step is an atom, and each made a call"
+    said = {c["id"]: c for c in got["call_log"]}
+    assert len(said) == len(rows) and all(c.get("atom") for c in said.values())
+    asked = {(c["fn"], c["inputs"][0][1]): c["atom"] for c in said.values()}
+    assert {a for a in asked.values()} == set(by_step.values()), "each atom has its call, and the id is the one the atom has"
+    assert all(a.startswith(w) for (w, _), a in asked.items()), "and the atom is of the workflow that made it"
+    ids = [c["atom"] for c in got["call_log"]]
+    assert len(ids) == len(set(ids)) and all(re.fullmatch(r"W-\d+\.a\d+", i) for i in ids)
+
+
+def test_w7_a_step_that_is_no_atom_or_an_engine_outside_the_line_names_none(mods):
+    W, R, J, F = mods
+    cycle(W, "running", 6)
+    plan = next(e for e in standin(mods).engines if e["name"] == "Plan")
+    decisions = [s for s in plan["steps_view"]["steps"] if s.get("mode") != "slot"]
+    step_row(R, "Plan", "plan.pages", notes=["fine"], calls=1)
+    if decisions:
+        step_row(R, "Plan", decisions[0]["id"], notes=["fine"], calls=1, mode=decisions[0]["mode"], started=T1, ended=T2)
+    model_step(R, engine="Priority", step="priority.bargain", started=T2, ended=T3)
+    step_row(R, "Plan", "not.a.step.of.plan", notes=["fine"], calls=1, started=T2, ended=T3)
+    got = K.build(standin(mods))["call_log"]
+    assert [c.get("atom") for c in got] == ["W-1.a2"] + [None] * (len(got) - 1), got
+    assert K.build(standin(mods, planned=False))["call_log"] and not [c for c in K.build(standin(mods, planned=False))["call_log"] if "atom" in c], \
+        "before Root's check registers a plan there is no workflow, so no atom"
+
+
+def test_w7_the_pages_atom_card_shows_the_call_it_made_and_is_not_told_there_was_none(mods):
+    W, R, J, F = mods
+    cycle(W, "running", 6)
+    step_row(R, "Plan", "plan.pages", notes=["6 pages proposed"], calls=2, started=T0, ended=T3, ms=3400, answer="Six pages: Home, About")
+    got = K.build(standin(mods))
+    state = page_state(got, calls=2)
+    card = lambda j: shown(render(state, "atomCards(s, Object.assign({}, s.workflows[0], {atoms: [s.workflows[0].atoms[%d]]}))" % j))
+    made, other = card(1), card(0)
+    assert "Work atom 1 W-1.a2" in made and "No AI call yet" not in made, made
+    assert "step: Propose the pages" in made and "Reply received call 1 Six pages: Home, About" in made, made
+    assert re.search(r"Cost 1 AI call\(s\) · \d+ characters in and out · 3\.4 s", made), made
+    assert "Work atom 1 W-1.a1" in other and other.count("No AI call yet") == 4, "an atom whose step made no call still says so"
 
 
 def test_w7_the_step_a_call_was_made_in_is_the_cycles_step_at_that_time(mods):
@@ -828,10 +940,15 @@ def test_w7_a_ctx_with_no_step_rows_at_all_still_gives_every_key(mods):
     assert ctx.reasons, "and says why"
 
 
-def test_w7_a_department_with_thousands_of_rows_builds_in_bounded_time_and_links_the_same(mods):
+def test_w7_a_department_with_thousands_of_rows_builds_in_bounded_time_and_links_the_same(mods, monkeypatch):
     """The page polls every 700 ms and the adapter rebuilds on a change: linking a message to its call must not look at every
-    call for every message (5,000 posts, 20,000 step rows and 20,000 ledger events)."""
+    call for every message (5,000 posts, 20,000 step rows and 20,000 ledger events), and a registered plan with nothing on file
+    for a function's pane to refine does not read the pane (functions_view.function reads all of those rows whole, for each)."""
     import time
+    import functions_view
+    panes_read = []
+    real = functions_view.function
+    monkeypatch.setattr(functions_view, "function", lambda ref, fn: (panes_read.append(fn), real(ref, fn))[1])
     ctx = standin(mods)
     base = datetime(2026, 10, 26, 10, 0, 0, tzinfo=timezone(timedelta(hours=5, minutes=30)))
     at = lambda s: (base + timedelta(seconds=s)).isoformat(timespec="seconds")
@@ -856,3 +973,4 @@ def test_w7_a_department_with_thousands_of_rows_builds_in_bounded_time_and_links
     # is no call 2500, so the last post of the 2,500 calls' span is linked to none
     assert len(linked) == 2499 and all(m["calls"] == [m["id"] + 1] for m in linked), (len(linked), [m["calls"] for m in linked[:5]])
     assert ctx.reasons == [], ctx.reasons
+    assert ctx.planned and panes_read == [], "no pane is read when the record holds nothing to refine: %s" % panes_read

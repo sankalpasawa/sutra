@@ -28,11 +28,20 @@ which standards held, and Priority records its prices, the tab can say more, and
 each item and `workable` becomes a list (empty when every item is met), the standards Root's check ran become conditions R-1
 on, and Priority's own words refine what it said in a conflict. All of it is read with dict.get from each function's pane
 (functions_view.function(ref, fn)['j2']); a pane that has none of those keys leaves everything above as it was, byte for byte.
+
+A pane is dear to read: functions_view.function reads the board, the steps, the runs, the asks and the ledger whole, and the page
+polls. So a pane is read only when the record its key is made from holds something (a stat of readings.jsonl or prices.jsonl, a
+look at the ledger rows the ctx already has for a check of Root's that carries its checks), and then once for each state of that
+record, not once for each rebuild of the read: a rebuild that changed nothing the pane is made from takes the pane it took
+before. Nothing in the record to refine, nothing read.
 """
+import threading
+
 import engine_runtime as R
 import functions_view as F
 import j2ui_atoms as A
 import owner_words
+import website_dept as W
 
 NOTHING = "found nothing to put right"                        # the words of a clean reading, if the record's own are missing
 
@@ -70,13 +79,64 @@ def _entry(n, version, all_pass, extra, read):
 
 
 # ---- what a function's pane adds once the record holds it (read with dict.get; absent, nothing changes) --------------------
+REVIEWS = ("workflow.validated", "workflow.blocked")           # Root's check on a plan, as the ledger has it
+_PANES = {}                                                    # (home, ref, function) -> (token, its `j2`): a pane as it was read
+_GUARD = threading.Lock()
+
+
+def forget():
+    """Forget every pane taken (for tests, with j2ui_common.reset_caches). A pane is kept by the home it was read in, the department
+    and the function, and used only for the same token of the record, so a process that runs for months holds one for each."""
+    with _GUARD:
+        _PANES.clear()
+
+
+def _journal(name):
+    """What a layer's journal is now, from its file's stat alone: (mtime_ns, size); None when there is no such file or it is empty.
+    A key of a pane made from that journal can hold something only when this is not None."""
+    def token(ctx):
+        try:
+            st = (W.ddir(ctx.ref) / name).stat()
+        except (OSError, ValueError, AttributeError):
+            return None
+        return (st.st_mtime_ns, st.st_size) if st.st_size else None
+    return token
+
+
+def _review(ctx):
+    """(cycle, seq) of Root's latest check on the plan when it carries the checks that ran (a plan checked before they were kept
+    carries none), else None: what Adaptation's pane lists as the checks of its latest review is made of this one row, which the
+    ctx already holds."""
+    last = next((e for e in reversed(getattr(ctx, "events", None) or []) if e.get("action") in REVIEWS), None)
+    checks = ((last or {}).get("payload") or {}).get("checks")
+    if isinstance(checks, list) and any(isinstance(c, dict) and c.get("check") for c in checks):
+        return last.get("cycle_id"), last.get("seq")
+    return None
+
+
+# the state of the record each pane's new key is made of, from a stat of its journal or the ledger rows the ctx holds; None while it holds nothing
+TOKEN = {"audit": _journal("readings.jsonl"), "priority": _journal("prices.jsonl"), "adaptation": _review}
+
+
 def _view(ctx, fn):
-    """The `j2` part of a function's pane (functions_view.function), or {} when it has none. One read for each function and each
-    read of the department, and made only by a builder that has something to refine."""
+    """The `j2` part of a function's pane (functions_view.function), or {} when it has none. Read only when the record the pane's
+    key is made of holds something (TOKEN), and then once for each state of that record: the same token takes the pane taken
+    before, whichever rebuild of the read of the department asks. Asked for only by a builder that has something to refine."""
     def read(c):
+        token = TOKEN[fn](c)
+        if token is None:
+            return {}
+        key = (str(W.home()), c.ref, fn)
+        with _GUARD:
+            held = _PANES.get(key)
+        if held and held[0] == token:
+            return held[1]
         got = F.function(c.ref, fn)
         j2 = (got or {}).get("j2") if isinstance(got, dict) else None
-        return j2 if isinstance(j2, dict) else {}
+        j2 = j2 if isinstance(j2, dict) else {}
+        with _GUARD:
+            _PANES[key] = (token, j2)
+        return j2
     return A.memoised(ctx, "j2ui_audit.view." + fn, read, dict, "%s pane" % fn)
 
 

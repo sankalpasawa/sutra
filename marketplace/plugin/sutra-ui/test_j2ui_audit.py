@@ -1,9 +1,14 @@
 """test_j2ui_audit.py -- what Audit read, the recorded conditions, and the disagreements (j2ui_audit.py; UI port, package j2ui-work).
 
 Named claims:
+  W7  a real Priority model step (run offline with an answer of ask for less or say no) reaches the page in the owner's words: the
+      state's call log, read through the router, has no bare accept, counter, reject, admit, wait or refuse anywhere
   W8  built on fixtures of the panes' new keys (the record's readings item by item, Root's standards, Priority's prices): with them
       the latest reading has a row for each item and workable becomes a list, the standards are conditions R-1 on, and Priority's
       own words refine what it said; with none of the keys every output is what W5 and W6 gave, byte for byte
+  W8b the panes are dear (they read the board, the steps and the ledger whole) and the page polls: a pane is read only when the record
+      its key is made of holds something (readings.jsonl, prices.jsonl, a check of Root's that carries its checks), and then once for
+      each state of that record, not once for each rebuild; with a registered plan and thousands of rows and nothing to refine, none
   W6  one conflict for each bargain in which Priority asked for less or said no, and for each the two took to Identity; a
       straight yes is none. Each attempt says the act in the owner's words, as the chat does, and carries the chat's id of its
       post. It is settled by the two, by Identity's ruling, or by Identity after the owner's answer, and open until then.
@@ -16,6 +21,8 @@ The helpers (the stand-in Ctx, the record's writers, the prototype's page render
 """
 import json
 import re
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -24,6 +31,14 @@ import j2ui_audit as X
 import j2ui_work as K
 from test_j2ui_work import (BANNED, CHECK_ID, LINE, REF, ago, born, cycle, event, mods, page_state, post, render, run, shown,  # noqa: F401
                             standin, step_row, walk)
+
+
+@pytest.fixture(autouse=True)
+def fresh_panes():
+    """The panes taken for a token of the record are kept across rebuilds (j2ui_audit._view): none carried from one test to the next."""
+    X.forget()
+    yield
+    X.forget()
 
 
 def finding(W, R, claims, about_version=2, at=None, **more):
@@ -62,6 +77,34 @@ def build_version(W, check, art="Build", files=None):
 def audit_of(mods, **kw):
     ctx = standin(mods, **kw)
     return K.build(ctx), ctx
+
+
+# ---- W7: a real Priority model step, read as the page reads it ----------------------------------------------------------------
+BARE_ACT = re.compile(r"\b(accept|counter|reject|admit|wait|refuse)\b|accept-proposal|reject-proposal", re.I)
+
+
+@pytest.mark.parametrize("answers, said", [(LESS, "asked for less"), (NO, "said no"), (RUN, "said no")])
+def test_w7_a_real_priority_model_step_reaches_the_page_in_the_owners_words(mods, born, monkeypatch, answers, said):
+    """Priority's model step records its answer as the one word the check asks for (counter, reject): the call log, which the state
+    sends to every client, must say the act. Read through the router, as the page reads it."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    import j2ui_api
+    import j2ui_common
+    W, R, J, F = mods
+    offline(monkeypatch, R, answers)
+    ref = born()
+    rows = [r for r in R.step_rows(ref) if r.get("step") == "priority.bargain" and r.get("by") == "model"]
+    assert rows and {r["answer"] for r in rows} <= {"counter", "reject"}, "the record holds the bare word"
+    j2ui_common.reset_caches()
+    app = FastAPI()
+    app.include_router(j2ui_api.router)
+    state = TestClient(app).get("/j2ui/%s/api/state" % ref).json()
+    mine = [c for c in state["call_log"] if c["fn"] == "priority"]
+    assert len(mine) == len(rows) and {c["reply"]["say"] for c in mine} == {said}
+    text = json.dumps(state)
+    assert not BARE_ACT.search(text) and not BANNED.search(text), BARE_ACT.search(text)
+    j2ui_common.reset_caches()
 
 
 # ---- W5: audits ---------------------------------------------------------------------------------------------------------
@@ -578,9 +621,48 @@ ROOT_CHECKS = [{"summary": "The workflow meets Sutra's standards.", "at": "2026-
     {"check": "fits_room", "says": "Priority's room holds the plan", "passed": False, "why": "the plan costs more than today's room"}]}]
 
 
-def panes(monkeypatch, **by_fn):
+def record_reading(W):
+    """One reading on file (readings.jsonl), typed as the interface types it: the record Audit's pane `latest` is made of."""
+    return W.append_row(REF, "readings.jsonl", {"schema_version": 1, "id": "r-%08x" % len(W.rows(REF, "readings.jsonl")), "v": 1, "artifact": "Live site",
+                                              "cycle_id": None, "round": None, "read": True, "why_not_read": None, "items": [], "findings": [],
+                                              "at": W.now()})
+
+
+def record_price(W, answer="accept"):
+    """One price on file (prices.jsonl): the record Priority's pane `prices` is made of."""
+    return W.append_row(REF, "prices.jsonl", {"schema_version": 1, "at": W.now(), "proposal": "line", "estimate": {"calls": 3, "usd": 0.12},
+                                            "room": {"calls": 9, "usd": 1.0}, "remaining": {"calls": 6, "usd": 0.88}, "answer": answer, "why": "fits"})
+
+
+RAN = [{"check": "names_an_engine", "passed": True, "why": "the workflow names its engines"}]
+
+
+def record_review(W, J, checks=RAN):
+    """Root's check on the plan in the ledger, with the checks that ran: the record Adaptation's pane `root_checks[].checks` is made
+    of. `checks=None` is a check written before the checks that ran were kept: its payload has none."""
+    if not (J._state(REF) or {}).get("cycle_id"):
+        cycle(W, "running", 6)
+    payload = {"workflow": LINE}
+    if checks is not None:
+        payload["checks"] = checks
+    return event(J, "workflow.validated", "Root", "Adaptation", "complete", "The workflow meets Sutra's standards.", step=5, payload=payload)
+
+
+def panes(monkeypatch, record=True, **by_fn):
     """functions_view.function as the merged panes will answer it: {fn: its j2 part}; a function not named has none. Returns the
-    list of the functions asked for, in order."""
+    list of the functions asked for, in order. A pane is a view of the record, so with `record` (the default) the record each
+    stubbed pane is made of is on file too (a reading, a price, a check of Root's with its checks); `record=False` leaves the
+    record empty, to see that no pane is asked for."""
+    import j2_runtime
+    import website_dept
+    X.forget()
+    if record:
+        if "audit" in by_fn:
+            record_reading(website_dept)
+        if "priority" in by_fn:
+            record_price(website_dept)
+        if "adaptation" in by_fn:
+            record_review(website_dept, j2_runtime)
     asked = []
 
     def function(ref, fn):
@@ -805,8 +887,12 @@ def test_w8_with_none_of_the_keys_every_output_is_what_w5_and_w6_gave(mods, monk
 
 
 def test_w8_a_pane_that_fails_or_answers_nothing_leaves_the_output_as_it_was(mods, monkeypatch):
+    W, R, J, F = mods
     scenario(mods)
-    expected = K.build(standin(mods))
+    expected = K.build(standin(mods))                                          # the record holds nothing for a pane to refine yet
+    record_reading(W)
+    record_price(W)
+    record_review(W, J)                                                        # now it does: each pane is asked for
 
     def boom(ref, fn):
         raise ValueError("no function named %s" % fn)
@@ -814,8 +900,11 @@ def test_w8_a_pane_that_fails_or_answers_nothing_leaves_the_output_as_it_was(mod
     ctx = standin(mods)
     got = K.build(ctx)
     assert got == expected and any(r.startswith("audit pane: ValueError") for r in ctx.reasons), ctx.reasons
+    assert {r.split(" pane")[0] for r in ctx.reasons if " pane: ValueError" in r} == {"audit", "adaptation", "priority"}, ctx.reasons
+    X.forget()                                                                 # a pane that failed is not kept; one that answered is
     monkeypatch.setattr(FV, "function", lambda ref, fn: None)
     assert K.build(standin(mods)) == expected
+    X.forget()
     monkeypatch.setattr(FV, "function", lambda ref, fn: {"j2": "not a dict"})
     assert K.build(standin(mods)) == expected
 
@@ -849,6 +938,119 @@ def test_w8_the_audit_layers_own_fixture_reads_as_these_stubs_do(mods, monkeypat
         panes(monkeypatch, audit=states[name])
         got, ctx = audit_of(mods)
         assert got["audits"][-1]["results"] == [] and got["workable"] is None, name
+
+
+# ---- W8b: the panes are dear, and the page polls ------------------------------------------------------------------------------
+def asked_in(monkeypatch, **by_fn):
+    """The panes stubbed, the record behind them left empty: nothing has been put on file for any of them to refine."""
+    return panes(monkeypatch, record=False, **by_fn)
+
+
+def with_everything_to_tempt(mods):
+    """A registered plan, a reading by Audit, and a bargain in which Priority asked for less: every builder that can read a pane has
+    a reason to look, and the record holds nothing for a pane to add."""
+    W, R, J, F = mods
+    clean_and_finding(mods)
+    seed_bargain(mods)
+
+
+ALL_PANES = dict(audit={"latest": LATEST_READING}, priority={"prices": []}, adaptation={"root_checks": ROOT_CHECKS})
+
+
+def test_w8b_a_pane_is_not_read_while_the_record_it_is_made_of_holds_nothing(mods, monkeypatch):
+    with_everything_to_tempt(mods)
+    asked = asked_in(monkeypatch, **ALL_PANES)
+    ctx = standin(mods)
+    got = K.build(ctx)
+    assert ctx.planned and got["audits"] and got["conflicts"], "the builders were all tempted to look"
+    assert asked == [] and X._PANES == {} and ctx.reasons == [], (asked, ctx.reasons)
+
+
+def test_w8b_an_empty_journal_or_a_check_that_kept_no_checks_is_nothing_to_refine(mods, monkeypatch):
+    W, R, J, F = mods
+    with_everything_to_tempt(mods)
+    asked = asked_in(monkeypatch, **ALL_PANES)
+    for name in ("readings.jsonl", "prices.jsonl"):
+        (W.ddir(REF) / name).write_text("")
+    for checks in ([], [{"passed": True, "why": "no id"}], ["x", None], "x", None):
+        record_review(W, J, checks=checks)
+        K.build(standin(mods))
+    assert asked == [], "an empty file, and a latest check with no check that ran, hold nothing a pane could add"
+    record_review(W, J)
+    record_review(W, J, checks=[])                                              # the latest check decides, as the pane's latest review does
+    K.build(standin(mods))
+    assert asked == []
+
+
+def test_w8b_each_pane_is_read_once_for_each_state_of_its_record_not_once_for_each_rebuild(mods, monkeypatch):
+    W, R, J, F = mods
+    with_everything_to_tempt(mods)
+    asked = asked_in(monkeypatch, **ALL_PANES)
+    record_reading(W)
+    record_price(W)
+    record_review(W, J)
+    refined = lambda got: {k: got[k] for k in ("audits", "conditions", "workable", "conflicts")}
+    first = refined(K.build(standin(mods)))
+    assert sorted(asked) == ["adaptation", "audit", "priority"], asked
+    for _ in range(3):                                                          # rebuilds of the read: steps, runs and asks change, the record does not
+        step_row(R, "Plan", "plan.read", notes=["the brief has words"])
+        assert refined(K.build(standin(mods))) == first
+    assert sorted(asked) == ["adaptation", "audit", "priority"], "the same record takes the same panes"
+    record_reading(W)
+    K.build(standin(mods))
+    assert (asked.count("audit"), asked.count("priority"), asked.count("adaptation")) == (2, 1, 1), "a new reading: Audit's pane only"
+    record_price(W, answer="counter")
+    K.build(standin(mods))
+    assert (asked.count("audit"), asked.count("priority"), asked.count("adaptation")) == (2, 2, 1), "a new price: Priority's pane only"
+    record_review(W, J)
+    K.build(standin(mods))
+    assert (asked.count("audit"), asked.count("priority"), asked.count("adaptation")) == (2, 2, 2), "a new check of Root's: Adaptation's pane only"
+    assert sorted(X._PANES) == [(str(W.home()), REF, fn) for fn in ("adaptation", "audit", "priority")], "kept by home, department and function"
+
+
+def test_w8b_a_pane_taken_for_one_state_of_the_record_stands_until_the_record_changes(mods, monkeypatch):
+    W, R, J, F = mods
+    with_everything_to_tempt(mods)
+    record_reading(W)
+    panes(monkeypatch, record=False, audit={"latest": LATEST_READING})
+    assert len(K.build(standin(mods))["audits"][-1]["results"]) == 3
+    monkeypatch.setattr(FV, "function", lambda ref, fn: {"fn": fn, "j2": {"latest": LATEST_DONE}})      # another pane, the same record: the kept one stands
+    assert len(K.build(standin(mods))["audits"][-1]["results"]) == 3
+    record_reading(W)                                                            # the record changed: the pane is taken again
+    assert len(K.build(standin(mods))["audits"][-1]["results"]) == 1
+
+
+def test_w8b_at_the_size_the_page_is_built_for_a_registered_plan_with_nothing_to_refine_reads_no_pane(mods, monkeypatch):
+    """5,000 posts, 20,000 steps and 20,000 ledger rows with a registered plan: functions_view.function reads all of them whole,
+    about a second for each of the three panes, on every rebuild of a page that polls. With nothing on file for a pane to refine,
+    none is asked for."""
+    W, R, J, F = mods
+    cycle(W, "running", 6)
+    ctx = standin(mods)
+    base = datetime(2026, 10, 26, 10, 0, 0, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+    at = lambda sec: (base + timedelta(seconds=sec)).isoformat(timespec="seconds")
+    ctx.steps = [{"id": "s-%d" % i, "run": "r-%d" % (i // 5), "engine": "Plan", "step": "plan.read", "mode": "slot", "check": {"ok": True, "notes": ["fine"]},
+                  "calls": 0, "started": at(i), "ended": at(i), "ms": 10} for i in range(20000)]
+    ctx.posts = [{"n": n, "src": "Coordination", "dst": ["Identity"], "msg_type": "inform", "thread": "x-%d" % n, "hop": 1,
+                  "payload": {"word": "table", "line": "Plan, Write"}, "at": at(n)} for n in range(1, 4998)]
+    for k in range(3):                                                           # and three bargains in which Priority asked for less
+        n = 4998 + 2 * k
+        ctx.posts.append({"n": n, "src": "Adaptation", "dst": ["Priority"], "msg_type": "propose", "thread": "b-%d" % k, "hop": 1,
+                          "payload": {"word": "line", "engines": [{"name": "Plan"}]}, "at": at(n)})
+        ctx.posts.append({"n": n + 1, "src": "Priority", "dst": ["Adaptation"], "msg_type": "propose", "thread": "b-%d" % k, "hop": 2,
+                          "payload": {"word": "line", "keep": ["Plan"], "why": "room for one"}, "at": at(n + 1)})
+    ctx.events = [{"seq": i, "step": 6, "action": "run.completed", "occurred_at": at(i), "payload": {}, "cycle_id": "cycle-test"} for i in range(1, 20000)]
+    ctx.events.append({"seq": 20000, "step": 7, "action": "audit.finding_filed", "occurred_at": at(20000), "actor": "Audit", "recipient": "Identity",
+                       "summary": "Audit read Live site v2 and found nothing to put right.", "payload": {"severity": "none"},
+                       "evidence_refs": [{"artifact": "Live site", "version": 2}], "cycle_id": "cycle-test"})
+    asked = asked_in(monkeypatch, **ALL_PANES)
+    t = time.time()
+    got = K.build(ctx)
+    took = time.time() - t
+    assert ctx.planned and len(got["audits"]) == 1 and len(got["conflicts"]) == 3, "each builder was tempted to read its pane"
+    assert asked == [], asked
+    assert took < 10, "built in %.1f s" % took
+    assert ctx.reasons == [], ctx.reasons
 
 
 # ---- W8 against the real panes: they run when the layers that add the keys are on this branch, and skip until then -------------
@@ -901,6 +1103,7 @@ def test_w8_real_priority_pane_prices_leave_the_bargain_in_the_owners_words(mods
     ref = born()
     real_pane("priority", "prices", ref)
     with_prices = K.build(standin(mods, ref=ref))["conflicts"]
+    X.forget()                                                                 # the pane taken above is kept for the same record; take none
     monkeypatch.setattr(FV, "function", lambda r, fn: {"j2": {}})
     without = K.build(standin(mods, ref=ref))["conflicts"]
     assert with_prices and with_prices == without, "Priority's own words are the post's own: the same sentence, said once"
