@@ -335,3 +335,133 @@ def test_c6_an_earlier_whole_file_change_is_kept_as_a_note_with_one_tell_and_no_
     assert set(stored(ref)) >= {"kept", "values"}
     P.store(ref, "audit", "judge", "judge", "guidance", P.defaults(ref, "audit", "judge", "judge")["guidance"])
     assert stored(ref)["values"] == {} and "audit/judge" in stored(ref)["kept"]
+
+
+# ---- C7 · the API ---------------------------------------------------------------------------------------------------
+@pytest.fixture
+def api(home):
+    import website_api
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    app = FastAPI()
+    app.include_router(website_api.router)
+    return TestClient(app)
+
+
+def post_field(api, ref, **body):
+    return api.post("/api/native/%s/instructions" % ref, json=dict({"fn": "identity", "group": "take", "part": "take", "field": "task",
+                                                                     "value": "Judge one request, kindly."}, **body))
+
+
+def test_c7_post_instructions_takes_a_field_and_files_the_ask(api, home):
+    ref = born(home)
+    r = post_field(api, ref)
+    assert r.status_code == 200 and r.json()["ok"] is True, r.text
+    a = r.json()["ask"]
+    assert S.validate("identity.ask", a) == [] and (a["kind"], a["fn"], a["group"], a["part"], a["field"]) == ("instructions", "identity", "take", "take", "task")
+    assert a["value"] == "Judge one request, kindly." and stored(ref) is None, "nothing changes until the stamp"
+    lst = post_field(api, ref, fn="identity", group="goal", part="skills", field="items", value=["judge a request", "gate an effect"])
+    assert lst.status_code == 200 and lst.json()["ask"]["value"] == ["judge a request", "gate an effect"]
+
+
+def test_c7_the_old_body_says_which_part_and_which_field(api, home):
+    ref = born(home)
+    r = api.post("/api/native/%s/instructions" % ref, json={"fn": "identity", "file": "take", "text": "Judge it."})
+    assert (r.status_code, r.json()["detail"]) == (400, "say which part and which field")
+    for body in ({"fn": "identity", "group": "take", "part": "take"}, {"fn": "identity", "group": "take", "field": "task"},
+                 {"fn": "identity", "part": "take", "field": "task"}, {}, {"group": "", "part": " ", "field": ""}):
+        r = api.post("/api/native/%s/instructions" % ref, json=body)
+        assert (r.status_code, r.json()["detail"]) == (400, "say which part and which field"), body
+    r = api.post("/api/native/%s/instructions" % ref, content="not json", headers={"content-type": "application/json"})
+    assert (r.status_code, r.json()["detail"]) == (400, "say which part and which field")
+    r = api.post("/api/native/%s/instructions" % ref, json=["a list"])
+    assert r.status_code == 400
+    r = api.post("/api/native/%s/instructions" % ref, json={"fn": "identity", "group": "take", "part": "take", "field": "task"})
+    assert (r.status_code, r.json()["detail"]) == (400, "say what the words should be")
+    assert stored(ref) is None and not [a for a in modules()[0].asks(ref) if a["kind"] == "instructions"]
+
+
+def test_c7_the_errors_are_400_in_plain_words(api, home):
+    ref = born(home)
+    for body, why in (({"fn": "marketing"}, "no function named marketing"), ({"fn": ""}, "no function named nothing"),
+                      ({"group": "voice"}, "Identity has no instructions named voice"),
+                      ({"part": "nowhere"}, "Identity's take instructions have no part nowhere"),
+                      ({"field": "colour"}, "has no colour you may change"),
+                      ({"value": "Judge {{words}}"}, "task cannot hold '{{' or '}}'"),
+                      ({"value": "Judge it. Return ONLY yes"}, "task cannot hold 'Return ONLY'"),
+                      ({"value": "x" * 1201}, "task is longer than 1200 characters"), ({"value": 5}, "task has to be words"),
+                      ({"value": "   "}, "task is empty"), ({"value": P.defaults(ref, *TAKE)["task"]}, "these are the words Identity's take task holds now")):
+        r = post_field(api, ref, **body)
+        assert r.status_code == 400 and why in r.json()["detail"], (body, r.text)
+    assert post_field(api, ref).status_code == 200
+    r = post_field(api, ref, value="Judge it, twice.")
+    assert r.status_code == 400 and "already waits for your stamp" in r.json()["detail"]
+
+
+def test_c7_a_ref_that_is_not_a_runtime_department_is_404(api, home, monkeypatch):
+    W, _ = modules()
+    assert post_field(api, "dref-nobody").status_code == 404 and api.get("/api/native/dref-nobody/layers").status_code == 404
+    monkeypatch.setenv("SUTRA_ENGINE_RUNTIME", "1")
+    W.create("dref-old", "Old Website", None)
+    monkeypatch.delenv("SUTRA_ENGINE_RUNTIME")
+    assert W.dept("dref-old").get("runtime") != 2
+    assert post_field(api, "dref-old").status_code == 404
+    r = api.get("/api/native/dref-old/layers")
+    assert r.status_code == 404 and r.json()["detail"] == "this department does not run on the engine runtime"
+
+
+def test_c7_get_layers_describes_the_interface_the_department_runs_under(api, home):
+    ref = born(home)
+    r = api.get("/api/native/%s/layers" % ref)
+    assert r.status_code == 200
+    got = r.json()
+    assert set(got) == {"schema_version", "pins", "available", "standards", "describe"}
+    assert got["schema_version"] == S.SCHEMA_VERSION == 1
+    assert got["pins"] == S.DEFAULT_PINS and got["available"] == layers.available()
+    assert got["standards"] == [{"id": i, "says": s} for i, s, _, _ in S.WORKFLOW_STANDARDS]
+    assert [x["id"] for x in got["standards"]][0] == "names_an_engine" and all(set(x) == {"id", "says"} for x in got["standards"])
+    assert got["describe"] == S.describe() and got["describe"]["layers"]["identity"]["v1"] == S.LAYERS["identity"]["v1"]
+    assert got["describe"]["default_pins"] == S.DEFAULT_PINS and got["describe"]["workflow_standards"][0]["id"] == "names_an_engine"
+
+
+def test_c7_get_layers_names_a_pin_it_cannot_honour_once(api, home):
+    ref = born(home)
+    W, _ = modules()
+    d = W.dept(ref)
+    d["layers"] = dict(S.DEFAULT_PINS, audit="audit/v2")
+    with S.expect_refused("department") as met:                  # the interface says so when a record is saved with it
+        W.save_dept(ref, d)
+    assert met and "audit/v2 is no implementation the registry can find" in met[0]
+    for _ in range(2):
+        assert api.get("/api/native/%s/layers" % ref).json()["pins"] == S.DEFAULT_PINS, "it runs the default"
+    assert [r["engine"] for r in W.runs(ref) if "per-department" in str(r.get("what"))] == ["Audit"]
+
+
+def test_c7_a_schema_fault_is_422_not_in_schema_with_its_first_three_faults(api, home, monkeypatch):
+    ref = born(home)
+    W, _ = modules()
+    boom = S.SchemaFault("department", ["$.a: is wrong", "$.b: is wrong", "$.c: is wrong", "$.d: is wrong"])
+    monkeypatch.setattr(W, "set_stopped", lambda *a, **k: (_ for _ in ()).throw(boom))
+    r = api.post("/api/native/%s/stop" % ref)
+    assert r.status_code == 422
+    assert r.json() == {"detail": {"code": "NOT_IN_SCHEMA", "faults": ["$.a: is wrong", "$.b: is wrong", "$.c: is wrong"]}}
+    # a read route (sync) and a write route (async) alike
+    monkeypatch.setattr(W, "map_view", lambda *a, **k: (_ for _ in ()).throw(boom))
+    assert api.get("/api/native/%s/map" % ref).status_code == 422
+    monkeypatch.setattr(W, "give_goal", lambda *a, **k: (_ for _ in ()).throw(boom))
+    r = api.post("/api/native/%s/goal" % ref, json={"text": "Add a page"})
+    assert (r.status_code, r.json()["detail"]["code"]) == (422, "NOT_IN_SCHEMA")
+    # a fault that is not the interface's stays what it was
+    monkeypatch.setattr(W, "set_stopped", lambda *a, **k: (_ for _ in ()).throw(ValueError("not ours")))
+    with pytest.raises(ValueError):
+        api.post("/api/native/%s/stop" % ref)
+
+
+def test_c7_in_refuse_mode_a_write_the_interface_refuses_comes_back_422(api, home, monkeypatch):
+    ref = born(home)
+    monkeypatch.setattr(S, "MODE", "refuse")
+    monkeypatch.setitem(S.DEFS, "identity.ask", S.obj({"id": S.text(3)}, required=("id",), open=False))
+    with S.expect_refused("identity.ask") as met:
+        r = post_field(api, ref)
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "NOT_IN_SCHEMA"
+    assert 1 <= len(r.json()["detail"]["faults"]) <= 3 and r.json()["detail"]["faults"] == met[:3]

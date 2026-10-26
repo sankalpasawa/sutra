@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.routing import APIRoute
 
 _LIB_DIR = str(Path(__file__).resolve().parents[1] / "lib")
 if _LIB_DIR not in sys.path:
@@ -24,10 +25,29 @@ if _LIB_DIR not in sys.path:
 import placement_engine as E  # noqa: E402
 import founding  # noqa: E402
 import functions_view  # noqa: E402
+import layers  # noqa: E402
+import layer_schema as S  # noqa: E402
 import owner_words  # noqa: E402
 import website_dept as W  # noqa: E402
 
-router = APIRouter(prefix="/api/native", tags=["native"])
+
+class _InterfaceRoute(APIRoute):
+    """A write the interface refuses (layer_schema.SchemaFault, in refuse mode) is 422 NOT_IN_SCHEMA with its first three
+    faults, whichever of these routes met it (PRD A1.4, A1.20). One handler for the router: an APIRouter has no exception
+    handlers of its own, and a test that builds an app of its own around the router gets it too."""
+
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+
+        async def guarded(request: Request):
+            try:
+                return await handler(request)
+            except S.SchemaFault as exc:
+                return JSONResponse(status_code=422, content={"detail": {"code": "NOT_IN_SCHEMA", "faults": exc.faults[:3]}})
+        return guarded
+
+
+router = APIRouter(prefix="/api/native", tags=["native"], route_class=_InterfaceRoute)
 
 
 @router.get("/ping")
@@ -248,6 +268,16 @@ async def instructions(ref: str, request: Request):
         return {"ok": True, "ask": rt.instructions_ask(ref, str(body.get("fn") or ""), group, part, field, body["value"])}
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
+
+
+@router.get("/{ref}/layers")
+def layers_(ref: str):
+    """The interface the department runs under (PRD A1.18), for the version line on each function's Settings and the
+    standards on Root's: the schema version, the implementation each layer runs, every implementation on disk, Root's
+    standards in their words, and the whole interface as JSON. Read only. 404 for a department off the engine runtime."""
+    _rt(ref)
+    return {"schema_version": S.SCHEMA_VERSION, "pins": layers.pins(ref), "available": layers.available(),
+            "standards": [{"id": i, "says": says} for i, says, _, _ in S.WORKFLOW_STANDARDS], "describe": S.describe()}
 
 
 @router.post("/{ref}/host")
