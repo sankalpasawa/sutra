@@ -84,6 +84,8 @@
      W48 a question on Identity's standard offers Just do it, which sends
          'just do it' to the same answer box; a question on thin words offers
          none (PRD M3.3, S6)
+     W50 one voice: a function's chat box says the words go to Identity about
+         that function, and they go to the department about it (PRD M3.6)
      W49 a blocked plan is a card with its ways out: who, why and if nothing
          is done, each option with its cost; one click posts {option}, the box
          posts {option: words, text}; an unknown option is a snack; chosen,
@@ -1994,6 +1996,21 @@ test("W48: a question on Identity's standard offers Just do it, which sends 'jus
   assert.ok(click(s, { wbjust: "a-j2-1", wbref: "r3" })); await sleep(); await sleep();
   assert.deepStrictEqual(JSON.parse(JSON.stringify(s.calls.apiPost)), [{ p: "/api/dept/r3/j2/answer", body: { text: "just do it" } }],
                          "one answer, 'just do it', where the question lives");
+});
+
+/* ── W50: one voice (PRD M3.6, Q1): a function's chat box sends the owner's words to Identity about that function ── */
+test("W50: a function's chat box says the words go to Identity about that function", async () => {
+  const c = await opened({ map: rtMap(), fnchat: Object.assign({}, FNCHAT, { fn: "Priority" }) });
+  await fnCard(c, "priority");
+  vm.runInContext("dpS().pane['r3:priority'] = 'chat';", c);
+  for (let k = 0; k < 3; k++){ c.dpViewerHtml(WEB, {}, null, null); for (let i = 0; i < 6; i++) await sleep(); }
+  const html = c.dpViewerHtml(WEB, {}, null, null);
+  assert.ok(/placeholder="Say it to Identity about Priority"/.test(html) && /data-wbask="fn:priority"/.test(html), "said to Identity, about Priority");
+  vm.runInContext("wbS().draft['r3:fn:priority'] = 'Spend less on the careers page';", c);
+  assert.ok(click(c, { wbask: "fn:priority" }));
+  for (let i = 0; i < 4; i++) await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost.filter(x => /\/ask$/.test(x.p))[0])),
+                         { p: "/api/native/r3/ask", body: { text: "Spend less on the careers page", about: "fn:priority" } }, "to the department, about Priority");
 });
 
 /* ── W49: a blocked plan's card and its ways out (PRD M3.5, screen S10) ── */

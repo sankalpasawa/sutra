@@ -51,6 +51,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import owner_words                 # the bargain in the owner's words (PRD M1.7), for Identity's plain-words check (M3.6)
 import record                      # the platform product: rows, deployed into the department's own folder
 import website_dept as W
 
@@ -637,6 +638,8 @@ def post(ref, src, dst, msg_type, payload=None, thread=None, about=None, by=None
     answer, why = _ask_rule(ref, "coord.edge", (src, dst, msg_type), key="%s>%s:%s" % (src, ",".join(dst), msg_type))
     if answer != "admit":
         raise ValueError(why)
+    if src == "Identity" and OWNER in dst:
+        payload = _plainly(ref, payload or {})        # one voice, in plain words (PRD M3.6)
     with W._lock(ref):
         ths = threads(ref)
         th = next((t for t in ths if t["id"] == thread), None) if thread else None
@@ -677,6 +680,66 @@ def post(ref, src, dst, msg_type, payload=None, thread=None, about=None, by=None
         J.on_post(ref, row)
     W.signal()                                         # a post is a trigger: its reader looks now
     return row
+
+
+# ---- one voice, in plain words (PRD M3.6) --------------------------------------------------------------------------
+# Only Identity speaks to the owner, and what it says passes this check on its way to the board, from _tell and from
+# every other post Identity makes to the owner: no function addressing another, no J2 code, and none of the bargain's
+# inside words (grant, counter). The owner's own words are never judged: a word the owner said (in the post, the goal,
+# done-when, the rules or the Brief) is theirs to keep. A line that fails is said once more in the owner's words
+# (owner_words.plain); one that still fails is replaced by a template, and the post says which.
+PLAIN_FAULTS = (("a function addressing another",
+                 re.compile(r"^\s*(?:Adaptation|Priority|Coordination|Audit)\s*[,:]|\b(?:dear|hey|hi|hello)\s+(?:Adaptation|Priority|Coordination|Audit)\b|"
+                            r"@(?:Adaptation|Priority|Coordination|Audit)\b", re.I)),
+                ("a J2 code", re.compile(r"\bJ[12](?:\.[a-h1-9])?\b|\b(?:FI|FA|FP|FC|FAU)\d+(?:\.\d+)?\b|\b(?:S|SM|MK|Q)-\d+\b")),
+                ("grant or counter", re.compile(r"\bgrant(?:s|ed|ing)?\b|\bcounter(?:s|ed|ing)?\b|\bcounter-?offers?\b", re.I)))
+PLAIN_KEYS = ("done", "objective", "answer", "why")
+PLAIN_TEMPLATE = {"answer": "I could not put that in plain words. Ask me again, in other words.",
+                  "": "The department moved on; what changed is on its record."}
+
+
+def _owners_words(ref, payload):
+    """Everything the owner said that Identity may say back: the post's words, the goal, done-when, the rules, the Brief."""
+    d = W.dept(ref) or {}
+    said = [str(payload.get(k) or "") for k in ("words", "boundaries")]
+    said += [str(d.get("goal") or ""), str(d.get("done") or "")] + [str(i.get("text") or "") for i in d.get("done_items") or [] if isinstance(i, dict)]
+    said += [str(r.get(k) or "") for r in d.get("rules") or [] if isinstance(r, dict) for k in ("line", "from")]
+    try:
+        said.append(_brief_text(ref) if "Brief" in W.artifacts_of(d) else "")
+    except Exception:  # noqa: BLE001 -- the check never fails the post for a record it cannot read
+        pass
+    return " ".join(said).lower()
+
+
+def plain_faults(text, owners=""):
+    """What a line Identity says to the owner breaks of the plain-words rule (M3.6): [] when it is plain. A word the
+    owner said (`owners`, lowercased) is theirs and never a fault."""
+    out = []
+    for name, rx in PLAIN_FAULTS:
+        if any(m.group(0).strip().lower() not in owners for m in rx.finditer(str(text or ""))):
+            out.append(name)
+    return out
+
+
+def _plainly(ref, payload):
+    """Identity's words to the owner, checked: said again once in the owner's words, then a template (M3.6)."""
+    owners, out, fixed = None, dict(payload), []
+    for k in PLAIN_KEYS:
+        v = out.get(k)
+        if not isinstance(v, str) or not v.strip():
+            continue
+        owners = _owners_words(ref, payload) if owners is None else owners
+        faults = plain_faults(v, owners)
+        if not faults:
+            continue
+        again, by = owner_words.plain(v), "said again"
+        if plain_faults(again, owners):
+            again, by = PLAIN_TEMPLATE.get(k, PLAIN_TEMPLATE[""]), "template"
+        out[k] = again
+        fixed.append({"key": k, "faults": faults, "by": by})
+    if fixed:
+        out["plain"] = fixed
+    return out
 
 
 def _thread(ref, tid):

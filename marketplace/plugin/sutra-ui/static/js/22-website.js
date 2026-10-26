@@ -956,8 +956,11 @@ function wbFnChatHtml(ref, fn, label){
   const name = c.fn || label || wbCap(fn), dk = ref + ":fn:" + fn;
   const turns = (c.turns || []).map(t => wbFnTurn(t)).join("");
   const err = st.err[dk] ? `<div class="o2quiet dpq">${wbEsc(st.err[dk])}</div>` : "";
+  /* one voice (PRD M3.6, Q1): only Identity speaks with the owner, so a function's box says the words go to Identity,
+     about that function; they always did (data-wbask="fn:...", the about chip) */
+  const say = String(fn).toLowerCase() === "identity" ? "Say it to Identity" : "Say it to Identity about " + name;
   return `<div class="wbchat wbfn wb">${turns || dpQuiet("Nothing yet between you and " + name)}</div>` +
-    `<div class="wbbox wb"><textarea data-wbdraft="${wbEsc(dk)}" rows="2" placeholder="${wbEsc("Say it to " + name)}">${wbEsc(st.draft[dk] || "")}</textarea>` +
+    `<div class="wbbox wb"><textarea data-wbdraft="${wbEsc(dk)}" rows="2" placeholder="${wbEsc(say)}">${wbEsc(st.draft[dk] || "")}</textarea>` +
     wbBtn("Send", `data-wbask="fn:${wbEsc(fn)}"`, "dpstamp") + err + `</div>`;
 }
 

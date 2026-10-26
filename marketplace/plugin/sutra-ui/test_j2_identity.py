@@ -605,3 +605,82 @@ def test_m3_5_an_options_ask_is_one_shape(j2):
                                            W.option("d", "D", "d")], why="because")
     assert [o["id"] for o in a["options"]] == ["a", "b", "c"] and a["chosen"] is None and a["status"] == "pending"
     assert a["why"] == "because" and a["kind"] == "blocked"
+
+
+# ---- M3.6 ------------------------------------------------------------------------------------------------------------
+def test_m3_6_the_plain_words_check(j2):
+    _, R, _, _, _ = j2
+    assert R.plain_faults("The plan is set: Plan -> Write. Priority said yes to it.") == []
+    assert R.plain_faults("Priority granted it and it passed Root's check") == ["grant or counter"]
+    assert R.plain_faults("Priority countered the plan") == ["grant or counter"]
+    assert R.plain_faults("Step J2.b is open; see FI1") == ["a J2 code"]
+    assert R.plain_faults("Priority: say yes to the plan") == ["a function addressing another"]
+    assert R.plain_faults("Your cakes are ready at the counter", owners="pick them up at the counter") == []   # the owner's own word
+    assert R.plain_faults("D2 and Live site v3 in Round 2") == []                                          # names, never codes
+    W = j2[0]
+    W.create("dref-plain", "Plain Website", None)
+    out = R._plainly("dref-plain", {"word": "line", "done": "The plan is set: Plan. Priority granted it and it passed Root's check."})
+    assert out["done"] == "The plan is set: Plan. Priority said yes to it and it passed Root's check."
+    assert out["plain"] == [{"key": "done", "faults": ["grant or counter"], "by": "said again"}]
+    out = R._plainly("dref-plain", {"word": "answer", "answer": "Adaptation: J2.b says so", "done": "Adaptation: J2.b says so"})
+    assert out["answer"] == R.PLAIN_TEMPLATE["answer"] and out["done"] == R.PLAIN_TEMPLATE[""]
+    assert [f["by"] for f in out["plain"]] == ["template", "template"]
+    assert R._plainly("dref-plain", {"word": "request", "done": "Filed in the Brief."}) == {"word": "request", "done": "Filed in the Brief."}
+
+
+def _scenarios(j2, monkeypatch):
+    """The J2 scenarios, each a department: born and run offline; Priority says no and Identity rules it runs; Priority
+    says no and Identity puts the plan to the owner; Root's check refuses the plan until it is blocked; Identity's
+    standard asks; a rule given as an answer."""
+    W, R, J, _, _ = j2
+    refs = [_born(j2)]
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room"},
+                            "identity.close": {"ruling": "run", "why": "the goal cannot be met without a site"}})
+    refs.append(_born(j2, org="Ruled Co"))
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room in the envelope today"}})
+    refs.append(_born(j2, org="Asked Co"))
+    real = R._root_check
+    monkeypatch.setattr(R, "_root_check", lambda ref, d, engines, source: [FAULT])
+    _model(monkeypatch, R, {"setup.shape": dict(SHAPED, goal="A website for Blocked Co where customers see every cake",
+                                                done_items=[dict(i) for i in ITEMS])})
+    refs.append(_born(j2, org="Blocked Co"))
+    monkeypatch.setattr(R, "_root_check", real)
+    _model(monkeypatch, R, {"identity.enough": {"enough": False, "missing": ["goal"], "question": WHO, "why": "the goal names no one"}})
+    refs.append(_born(j2, org="Standard Co"))
+    ref, _ = _rules_gap(j2, words=BAKERY)
+    W.owner_ask(ref, NEVER)
+    W.run_until_idle(ref, limit=300)
+    refs.append(ref)
+    return refs
+
+
+def test_m3_6_one_voice_in_plain_words_on_every_board(j2, monkeypatch):
+    """A post to the owner from any function but Identity (SM-4), or a tell that carries grant, counter, a J2 code or
+    one function addressing another, must fail."""
+    W, R, J, _, _ = j2
+    refs = _scenarios(j2, monkeypatch)
+    assert any(a["kind"] == "conflict" for a in W.asks(refs[2])) and J.status(refs[3])["state"] == "blocked"
+    boards = set(refs) | {W.dept(r).get("root") for r in refs if W.dept(r).get("root")}
+    told = 0
+    for b in boards:
+        for p in R.board(b):
+            if "Owner" not in p["dst"]:
+                continue
+            assert p["src"] == "Identity", "%s spoke to the owner on %s: %s" % (p["src"], b, p["payload"])
+            pl = p["payload"] or {}
+            owners = R._owners_words(b, pl)
+            for k in R.PLAIN_KEYS:
+                if isinstance(pl.get(k), str):
+                    assert R.plain_faults(pl[k], owners) == [], "%s on %s: %s" % (k, b, pl[k])
+                    told += 1
+    assert told > 20
+    said = [s for r in refs for s in _said(R, r)]
+    assert any("Priority said yes to it and it passed Root's check" in s for s in said)        # said again, plainly
+    assert any("did not say yes to the plan" in s for s in said)
+    assert not [a for r in refs for a in W.asks(r) if R.plain_faults(a.get("text"), R._owners_words(r, a))]  # the asks' words too
+
+
+def test_m3_6_a_functions_chat_box_says_the_words_go_to_identity(j2):
+    import pathlib
+    src = (pathlib.Path(__file__).parent / "static" / "js" / "22-website.js").read_text(encoding="utf-8")
+    assert '"Say it to Identity about " + name' in src and '"Say it to Identity"' in src
