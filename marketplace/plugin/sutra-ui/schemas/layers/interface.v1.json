@@ -5822,6 +5822,7 @@
           "inputs": [
             "dept",
             "words",
+            "items",
             "taken",
             "out",
             "rules",

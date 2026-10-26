@@ -1135,7 +1135,7 @@ PROMPTS = {
             'note': {'fields': {'text': 'field.note'}, 'inputs': (), 'returns': None, 'read_by': None},   # NOT_READ: no run reads it
         },
         'make': {
-            'line': {'fields': {}, 'inputs': ('dept', 'words', 'taken', 'out', 'rules', 'refused'),
+            'line': {'fields': {}, 'inputs': ('dept', 'words', 'items', 'taken', 'out', 'rules', 'refused'),   # items: W1-ADAPT, M5.1
                      'returns': 'Return ONLY a JSON object: {"engines": [{"name": str, "does": str, "reads": str, "writes": str, '
                                 '"internet": bool}]}.',
                      'read_by': 'adapt.line'},
