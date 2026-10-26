@@ -788,3 +788,525 @@ _DEPARTMENT = (
 DEFS.update({'department.' + key: t for key, _, t in _DEPARTMENT})
 DEFS['department'] = obj({key: dict(ref('department.' + key), **{'x-owner': owner}) for key, owner, _ in _DEPARTMENT},
                          required=('kind', 'ref', 'name'), open=False)
+
+
+# ---- the tables (A1.4; contents A1.5 to A1.17) -----------------------------------------------------------------------
+#: every department key, its owning layer and its definition (A1.6). LEGACY_KEYS: keys no layer claims that older
+#: records may still carry; none today.
+DEPARTMENT_KEYS = {key: (owner, 'department.' + key) for key, owner, _ in _DEPARTMENT}
+LEGACY_KEYS = ()
+
+#: the records each layer owns: {layer: {kind: {def, store, writer}}}
+RECORDS = {
+    'root': {
+        'department': {'def': 'department', 'store': 'dept.json', 'writer': 'W.create, W.save_dept'},
+        'registration': {'def': 'workflow.registration', 'store': 'dept.json workflows[n]', 'writer': 'j2_runtime.registered'},
+        'pins': {'def': 'root.pins', 'store': 'dept.json layers', 'writer': 'W.create (W1-ROOT), the migration'},
+        'engine': {'def': 'engine.template', 'store': "the records home's _library/<slug>.json", 'writer': 'R.born_template'},
+    },
+    'identity': {
+        'done_item': {'def': 'identity.done_item', 'store': 'dept.json done_items[n]', 'writer': 'W.done_items, W.apply_done_items'},
+        'rule': {'def': 'identity.rule', 'store': 'dept.json rules[n]', 'writer': 'W.rule_row, through identity_apply'},
+        'ask': {'def': 'identity.ask', 'store': 'asks.json', 'writer': 'W._put_ask (whoever files it: only Identity puts a decision to the owner)'},
+    },
+    'adaptation': {
+        'proposal': {'def': 'act.line', 'store': 'board.jsonl propose/line', 'writer': 'R.adapt_line_offer, R.adapt_line_counter'},
+        'idea': {'def': 'adaptation.idea', 'store': 'ideas.json', 'writer': 'R.adapt_park'},
+        'ladder': {'def': 'adaptation.ladder', 'store': 'ladder.json', 'writer': 'R._save_entry'},
+        'round': {'def': 'adaptation.round', 'store': 'rounds.jsonl', 'writer': 'W.append_row (W2-ADAPT, M9.1)'},
+    },
+    'priority': {
+        'envelope': {'def': 'envelope', 'store': 'dept.json envelopes[name]', 'writer': 'W.create, W.set_envelope, W.add_engine, R.priority_grant'},
+        'price': {'def': 'priority.price', 'store': 'prices.jsonl', 'writer': 'W.append_row (W1-PRIORITY, M5.3)'},
+        'ceiling': {'def': 'priority.ceiling', 'store': 'dept.json ceiling', 'writer': 'priority/v1 (W2-PRIORITY, M9.2)'},
+    },
+    'coordination': {
+        'table': {'def': 'coordination.table', 'store': 'coordination.json', 'writer': 'R.born, R._put_table (from R.set_line and R.grow_line)'},
+        'slot': {'def': 'coordination.slot', 'store': 'coordination.json timetable[n]', 'writer': 'R.timetable_row'},
+        'question': {'def': 'coordination.question', 'store': 'questions.json', 'writer': 'W3-BOARD (M4.9)'},
+    },
+    'audit': {
+        'finding': {'def': 'act.finding', 'store': 'board.jsonl inform/finding, and the finding ask', 'writer': 'R.audit_file'},
+        'reading': {'def': 'audit.reading', 'store': 'readings.jsonl', 'writer': 'W.append_row (W1-AUDIT, M8.3)'},
+        'spot_check': {'def': 'audit.spot_check', 'store': 'spot_checks.jsonl', 'writer': 'W.append_row (W3-BOARD, M8.7)'},
+    },
+}
+
+#: what each layer hears (A1.8 to A1.12): every handler of its recipe on main, and the in-process born rows (via call).
+#: Every version must handle every row; a package adds its own rows when it builds a handler ('A1 interface:').
+HEARS = {
+    'root': [],
+    'identity': [
+        {'act': 'request', 'word': 'front', 'from': ('Owner', 'Root'), 'via': 'board', 'payload': 'act.words', 'handler': 'Hear the owner at the front door'},
+        {'act': 'request', 'word': 'request', 'from': ('Owner', 'Root'), 'via': 'board', 'payload': 'act.words', 'handler': 'Take a request'},
+        {'act': 'request', 'word': 'verdict', 'from': ('Coordination',), 'via': 'board', 'payload': 'act.verdict', 'handler': 'Give a verdict'},
+        {'act': 'propose', 'word': 'rung', 'from': ('Adaptation',), 'via': 'board', 'payload': 'act.any', 'handler': 'Rule on a rung'},
+        {'act': 'accept-proposal', 'word': ANY, 'from': ('Owner', 'Root'), 'via': 'board', 'payload': 'act.stamp', 'handler': 'Take a stamp'},
+        {'act': 'reject-proposal', 'word': ANY, 'from': ('Owner', 'Root'), 'via': 'board', 'payload': 'act.stamp', 'handler': 'Take a no'},
+        {'act': 'inform', 'word': 'finding', 'from': ('Audit',), 'via': 'board', 'payload': 'act.finding', 'handler': 'Hear a finding'},
+        {'act': 'inform', 'word': 'alarm', 'from': ('Coordination',), 'via': 'board', 'payload': 'act.any', 'handler': 'Hear an alarm'},
+        {'act': 'inform', 'word': 'idea', 'from': ('Adaptation',), 'via': 'board', 'payload': 'act.any', 'handler': 'Hear where an idea went'},
+        {'act': 'inform', 'word': 'lost', 'from': ('Coordination',), 'via': 'board', 'payload': 'act.any', 'handler': 'Hear a lost request'},
+        {'act': 'propose', 'word': 'engine', 'from': ('Adaptation',), 'via': 'board', 'payload': 'act.any', 'handler': 'an engine proposed'},
+        {'act': 'propose', 'word': 'line', 'from': ('Adaptation',), 'via': 'board', 'payload': 'act.line', 'handler': 'a line proposed'},
+        {'act': 'inform', 'word': 'conflict', 'from': ('Adaptation', 'Coordination'), 'via': 'board', 'payload': 'act.conflict', 'handler': 'Close a conflict'},
+    ],
+    'adaptation': [
+        {'act': 'accept-proposal', 'word': 'trial', 'from': ('Priority',), 'via': 'board', 'payload': 'act.any', 'handler': 'Start a trial'},
+        {'act': 'reject-proposal', 'word': 'trial', 'from': ('Priority',), 'via': 'board', 'payload': 'act.any', 'handler': 'Drop a trial'},
+        {'act': 'inform', 'word': 'rung', 'from': ('Identity',), 'via': 'board', 'payload': 'act.any', 'handler': 'Hear the ruling'},
+        {'act': 'request', 'word': 'idea', 'from': ('Identity',), 'via': 'board', 'payload': 'act.any', 'handler': 'Hear an idea'},
+        {'act': 'accept-proposal', 'word': 'engine', 'from': ('Priority',), 'via': 'board', 'payload': 'act.any', 'handler': 'Priority priced an engine: room'},
+        {'act': 'reject-proposal', 'word': 'engine', 'from': ('Priority',), 'via': 'board', 'payload': 'act.any', 'handler': 'Priority priced an engine: no room'},
+        {'act': 'request', 'word': 'line', 'from': ('Identity',), 'via': 'board', 'payload': 'act.line_request', 'handler': 'Shape the line'},
+        {'act': 'accept-proposal', 'word': 'line', 'from': ('Priority',), 'via': 'board', 'payload': 'act.any', 'handler': 'Priority said yes to the line'},
+        {'act': 'reject-proposal', 'word': 'line', 'from': ('Priority',), 'via': 'board', 'payload': 'act.any', 'handler': 'Priority said no to the line'},
+        {'act': 'propose', 'word': 'line', 'from': ('Priority',), 'via': 'board', 'payload': 'act.line', 'handler': 'Priority asked for less on the line'},
+    ],
+    'priority': [
+        {'act': 'propose', 'word': ANY, 'from': ('Adaptation',), 'via': 'board', 'payload': 'act.any', 'handler': 'Answer a proposal'},
+        {'act': 'inform', 'word': 'born', 'from': ('Root', 'Identity'), 'via': 'call', 'payload': 'act.born', 'handler': 'An engine is born'},
+    ],
+    'coordination': [
+        {'act': 'agree', 'word': 'verdict', 'from': ('Identity',), 'via': 'board', 'payload': 'act.verdict', 'handler': 'Hear a verdict'},
+        {'act': 'refuse', 'word': 'verdict', 'from': ('Identity',), 'via': 'board', 'payload': 'act.verdict', 'handler': 'Hear a no'},
+        {'act': 'inform', 'word': 'born', 'from': ('Root', 'Identity'), 'via': 'call', 'payload': 'act.born', 'handler': 'An engine is born'},
+    ],
+    'audit': [],          # it starts on a version of the deliverable, never on a post
+}
+
+#: what each actor sends, to whom, with which words (A1.13): derived from every post() call site of engine_runtime and
+#: j2_runtime (test_layer_schema scans them with ast), keyed by the engine_defs actor names plus Engine. A site whose word
+#: is not a literal has an (any) row, and so does an edge the definitions allow that no site posts on today; the union of
+#: the rows' destinations is engine_defs' edges, in their order. Only Identity has Owner among its destinations.
+_IDENTITY_TELLS = ('answer', 'broken', 'department', 'done_items', 'facts', 'filed', 'goal', 'idea', 'instructions', 'line',
+                   'live', 'lost', 'plan', 'question', 'request', 'started', 'stopped', 'waits')
+_IDENTITY_ASKS = ('blocked', 'conflict', 'done_items', 'engine', 'finding', 'instructions', 'line', 'publish', 'request', 'rule',
+                  'rung', 'setup', 'step')
+SENDS = {
+    'Owner': [
+        {'act': 'request', 'words': ('front', 'request'), 'to': ('Identity',), 'payload': 'act.words'},
+        {'act': 'accept-proposal', 'words': ANY, 'to': ('Identity',), 'payload': 'act.stamp'},     # the word is the ask's kind
+        {'act': 'reject-proposal', 'words': ANY, 'to': ('Identity',), 'payload': 'act.stamp'},
+        {'act': 'cancel', 'words': ANY, 'to': ('Identity',), 'payload': 'act.any'},
+    ],
+    'Root': [
+        {'act': 'request', 'words': ('request',), 'to': ('Identity',), 'payload': 'act.words'},
+        {'act': 'accept-proposal', 'words': ANY, 'to': ('Identity',), 'payload': 'act.stamp'},
+        {'act': 'reject-proposal', 'words': ANY, 'to': ('Identity',), 'payload': 'act.stamp'},
+        {'act': 'cancel', 'words': ANY, 'to': ('Identity',), 'payload': 'act.any'},
+    ],
+    'Identity': [
+        {'act': 'agree', 'words': ANY, 'to': ('Owner', 'Adaptation'), 'payload': 'act.any'},
+        {'act': 'agree', 'words': ('verdict',), 'to': ('Coordination',), 'payload': 'act.verdict'},
+        {'act': 'refuse', 'words': ('request',), 'to': ('Owner',), 'payload': 'act.tell'},
+        {'act': 'refuse', 'words': ANY, 'to': ('Adaptation',), 'payload': 'act.any'},
+        {'act': 'refuse', 'words': ('verdict',), 'to': ('Coordination',), 'payload': 'act.verdict'},
+        {'act': 'request', 'words': _IDENTITY_ASKS, 'to': ('Owner',), 'payload': 'act.ask'},
+        {'act': 'request', 'words': ('line',), 'to': ('Adaptation',), 'payload': 'act.line_request'},
+        {'act': 'request', 'words': ('idea',), 'to': ('Adaptation',), 'payload': 'act.any'},
+        {'act': 'inform', 'words': _IDENTITY_TELLS, 'to': ('Owner',), 'payload': 'act.tell'},
+        {'act': 'inform', 'words': ANY, 'to': ('Owner',), 'payload': 'act.tell'},    # _reconcile_j1_tells posts the tell Setup stored
+        {'act': 'inform', 'words': ('rung',), 'to': ('Adaptation',), 'payload': 'act.any'},
+        # born on the board names only which record it means, and its handler refuses what that record does not hold
+        # (_born_on_board, M4.1's fix): the payload is the handler's to judge, so only its word is typed here; the item
+        # the word carries in place, by call, is act.born
+        {'act': 'inform', 'words': ('born',), 'to': ('Priority',), 'payload': 'act.any'},
+        {'act': 'inform', 'words': ANY, 'to': ('Audit',), 'payload': 'act.any'},
+        {'act': 'inform', 'words': ('born',), 'to': ('Coordination',), 'payload': 'act.any'},
+        {'act': 'failure', 'words': ANY, 'to': ('Owner',), 'payload': 'act.tell'},
+    ],
+    'Adaptation': [
+        {'act': 'propose', 'words': ('line',), 'to': ('Priority', 'Identity'), 'payload': 'act.line'},
+        {'act': 'propose', 'words': ('engine', 'trial'), 'to': ('Priority',), 'payload': 'act.any'},
+        {'act': 'propose', 'words': ('engine', 'rung'), 'to': ('Identity',), 'payload': 'act.any'},
+        {'act': 'inform', 'words': ('idea',), 'to': ('Identity',), 'payload': 'act.any'},
+        {'act': 'inform', 'words': ('conflict',), 'to': ('Identity',), 'payload': 'act.conflict'},
+    ],
+    'Priority': [
+        # Priority answers with the word of the proposal it answers (priority_post), and asks for less on any of them
+        {'act': 'accept-proposal', 'words': ANY, 'to': ('Adaptation',), 'payload': 'act.any'},
+        {'act': 'reject-proposal', 'words': ANY, 'to': ('Adaptation',), 'payload': 'act.any'},
+        {'act': 'propose', 'words': ('line',), 'to': ('Adaptation',), 'payload': 'act.line'},
+        {'act': 'propose', 'words': ANY, 'to': ('Adaptation',), 'payload': 'act.any'},
+    ],
+    'Audit': [
+        {'act': 'inform', 'words': ('finding',), 'to': ('Identity',), 'payload': 'act.finding'},
+    ],
+    'Coordination': [
+        {'act': 'request', 'words': ('verdict',), 'to': ('Identity', 'Priority'), 'payload': 'act.verdict'},
+        {'act': 'inform', 'words': ('alarm', 'lost'), 'to': ('Identity',), 'payload': 'act.any'},
+        {'act': 'inform', 'words': ('conflict',), 'to': ('Identity',), 'payload': 'act.conflict'},
+    ],
+    'Engine': [],           # W3-BOARD adds request/question (M4.9)
+}
+
+#: the in-process calls between layers (A1.13): a decision that runs another layer's handler in place, not as a post.
+#: test_layer_schema scans engine_runtime for every _ask_rule site whose step is another layer's and finds it here.
+CALLS = (
+    {'from': 'Root', 'to': 'Coordination', 'what': 'coord.table', 'site': '_registered'},
+    {'from': 'Root', 'to': 'Priority', 'what': 'priority.grant', 'site': '_registered'},
+    {'from': 'Identity', 'to': 'Coordination', 'what': 'coord.table', 'site': 'engine_added'},
+    {'from': 'Identity', 'to': 'Priority', 'what': 'priority.grant', 'site': 'engine_added'},
+    {'from': 'Root', 'to': 'Identity', 'what': '_blocked', 'site': '_j2_settle'},
+    # beyond A1.13's table, from the M3 fix wave: Identity's budget point asks Priority to give the five their limits
+    {'from': 'Identity', 'to': 'Priority', 'what': 'priority.grant', 'site': '_priority_limits'},
+)
+
+#: each layer's verdict enums (A1.7 to A1.12)
+VERDICTS = {
+    'root': {'converse': ('ask', 'clear'), 'route': ('organic', 'template'), 'check': ('approved', 'sent back', 'blocked')},
+    'identity': {'take': ('go', 'ask', 'refuse'), 'gate': ('admit', 'wait', 'refuse'), 'ruling': ('run', 'drop', 'ask'),
+                 'journey': ('task', 'query', 'directive', 'feedback', 'new-idea'), 'rule': ('always', 'ask', 'refuse', 'goal'),
+                 'scope': ('standing', 'one-time'), 'weigh': ('format', 'content', 'tone', 'scope', 'accuracy'),
+                 'confidence': ('high', 'moderate', 'low', 'unknown'), 'enough': (True, False), 'missing': STANDARD},
+    'adaptation': {'source': SOURCES, 'move': ('down', 'trial', 'propose', 'end-trial')},
+    'priority': {'answer': ('accept', 'counter', 'reject'), 'envelope': ('admit', 'wait')},
+    'coordination': {'gate': ('admit', 'wait', 'refuse'), 'slot': SLOT_STATES},
+    'audit': {'ok': (True, False), 'severity': SEVERITIES, 'item': ITEM_VERDICTS},
+}
+
+#: each layer's covering checks, by name, with what each holds (A1.7 to A1.12); a check two or more layers name is shared.
+#: The bodies are engine_runtime's CHECK registry until a layer moves one into its own CHECK dict.
+SHARED_CHECKS = {
+    'facts_are_closed': 'every fact a step read by code is one of a closed set',
+    'said_what_it_did': 'the step says what it did',
+    'gate_answer_is_known': "a gate's answer is admit, wait or refuse",
+}
+CHECKS = {
+    'root': {'setup_converse_is_valid': 'one question to the owner, or clear',
+             'department_is_shaped': 'a name, a kind the Library has, a goal, and done-when items each with how and level',
+             'department_is_made': 'the department exists under Root, on the runtime, and has its goal',
+             'filed_has_files': 'what was filed holds its files and their verdict'},
+    'identity': {'answer_names_its_source': 'an answer, its source, and how sure it is',
+                 'enough_is_shaped': "enough is a yes or a no; what is missing is named by the standard's points; a no asks one question",
+                 'feedback_says_what_changes': 'feedback says what kind of change it is and what to correct now',
+                 'gate_verdict_is_known': "a gate's verdict is admit, wait or refuse",
+                 'journey_is_known': "the words are one of canon's five journeys",
+                 'rule_is_tagged': 'a rule is one line, tagged, with its scope',
+                 'ruling_is_known': 'a ruling is run, drop or ask',
+                 'verdict_is_known': 'a verdict is go, ask or refuse, and an ask or a no says why'},
+    'adaptation': {'counted_the_rows': 'every step is counted from its own rows',
+                   'idea_has_shapes': 'an idea is reflected back with the shapes it could take',
+                   'line_is_engines': 'a shaped line is one to six engines that code finds nothing wrong with',
+                   'moves_name_their_rows': 'each move is of a known kind and names the rows it rests on'},
+    'priority': {'answer_has_its_price': 'said yes, asked for less or said no, each with its price; an ask for less names what it keeps'},
+    'coordination': {'chain_under_its_limit': 'a start is let through only while the chain is under its limit',
+                     'names_who_goes_first': 'it names an engine of the department',
+                     'one_run_at_a_time': 'a start is let through only while no other run runs'},
+    'audit': {'findings_name_where_and_what': 'each finding names where it is and what it claims',
+              'has_a_verdict': 'a mechanical check gives a verdict with its notes',
+              'picked_a_sample': 'it says whether it sampled, and which pages'},
+}
+
+#: samples every implementation's check must judge as main's bodies do (A1.21), each checked against the body on main;
+#: only samples whose verdict needs no department in the context are kept (enough_is_shaped's yes reads the record's gaps)
+CONTRACT_SAMPLES = {
+    'verdict_is_known': {'good': [{'verdict': 'go', 'why': 'inside the goal'}, {'verdict': 'ask', 'why': 'it reaches outside'}],
+                         'bad': [{'verdict': 'maybe', 'why': 'x'}]},
+    'ruling_is_known': {'good': [{'ruling': 'drop', 'why': 'the goal does not need it'}], 'bad': [{'ruling': 'perhaps', 'why': 'x'}]},
+    'answer_has_its_price': {'good': [{'answer': 'accept', 'why': 'fits today: 9 calls of 30'}],
+                             'bad': [{'answer': 'accept', 'why': ''}, {'answer': 'grant', 'why': 'x'}]},
+    'findings_name_where_and_what': {'good': [{'ok': True, 'findings': []}],
+                                     'bad': [{'ok': False, 'findings': [{'claim': 'x'}]}, {'ok': False, 'findings': 'none'}]},
+    'enough_is_shaped': {'good': [],
+                         'bad': [{'enough': 'yes', 'missing': []}, {'enough': False, 'missing': ['colour'], 'question': 'x?'}]},
+}
+
+#: the step outputs code outside the layer reads (functions_view's ties and turns): every version returns these keys
+OUTPUTS = {'coord.pick': ('answer',), 'coord.tie': ('answer', 'why')}
+
+#: each layer's settings: {name: {def, default, changed_by, says}}
+SETTINGS = {
+    'root': {},
+    'identity': {'windows': {'def': 'setting.windows', 'default': {'Plan': 15, 'Write': 30, 'Check': 5, 'Publish': 10},
+                             'changed_by': 'set at birth and when an engine is added; no way for the owner to change it in A1',
+                             'says': "each engine's window, in minutes, before Coordination raises an alarm"}},
+    'adaptation': {'make': {'def': 'setting.make', 'default': False,
+                            'changed_by': 'the build flag J2_ADAPT_MAKE, in Beta only; not a switch of the interface',
+                            'says': 'Adaptation makes a line when no template fits'}},
+    'priority': {'envelope': {'def': 'envelope', 'default': {'calls': 30, 'usd': 6.0, 'work_calls': 8},
+                              'changed_by': "POST /envelope (W.set_envelope), from Priority's card",
+                              'says': "each engine's limit a day: calls and money; a work engine is given work_calls times the calls"}},
+    'coordination': {'order': {'def': 'setting.order', 'default': ['posts', 'line', 'functions'],
+                               'changed_by': 'shown, not changed in A1', 'says': 'who goes first when several are ready'}},
+    'audit': {'spot_every_s': {'def': 'setting.spot_every_s', 'default': 86400, 'changed_by': 'not changed in A1; used from wave 3 (M8.7)',
+                               'says': 'how often Audit drops in unannounced: once a day, at a random minute'}},
+}
+
+#: each prompt group's lead line (A1.16 rule 1), the first paragraph of its file; Root's has no file
+GROUPS = {
+    'root': {'setup': 'How Root sets up a department the owner asks for: what it asks, and the department it shapes.'},
+    'identity': {'goal': 'What Identity is for, and the rules it keeps.',
+                 'completeness': 'When the department has enough to work; what to ask if not.',
+                 'take': 'How to judge a request: go, ask or refuse.'},
+    'adaptation': {'goal': 'What Adaptation is for, and the rules it keeps.',
+                   'sense': 'How Adaptation reads an idea the owner floats: what it asks, and the shapes it could take.',
+                   'decide': "How Adaptation chooses its next move from what the department's own rows say.",
+                   'make': 'How Adaptation shapes the workflows a goal needs when none is in place.'},
+    'priority': {'goal': 'What Priority is for, and the rules it keeps.',
+                 'bargain': 'How Priority answers a proposal: said yes, asked for less, or said no.'},
+    'coordination': {'goal': 'What Coordination is for, and the rules it keeps.',
+                     'tie': 'How Coordination says who goes first when several functions are ready at once.'},
+    'audit': {'goal': 'What Audit is for, and the rules it keeps.',
+              'judge': 'How Audit reads what went live against what was asked.'},
+}
+
+#: each layer's prompt slots (A1.16): {layer: {group: {part: {fields, inputs, returns, read_by}}}}. The split rule was run
+#: once over function-prompts/*.md and over p_setup_converse and p_setup_shape, and its result is written here as
+#: literals; no .md file is read at runtime. fields: the owner's fields and their DEFS; inputs: the names code fills;
+#: returns: the answer contract, byte for byte, or None; read_by: the step id that reads the part (a tuple when several
+#: do), or None. A part whose first line holds an input, and whose words before its contract hold inputs too, has no
+#: owner field by the split rule (close, shape, make.line, bargain.line, refused, setup.shape): its words stay in LAYOUT.
+PROMPTS = {
+    'root': {
+        'setup': {
+            'converse': {'fields': {'task': 'field.task', 'items': 'field.items'},
+                         'inputs': ('examples', 'library', 'existing', 'conversation'),
+                         'returns': 'Return ONLY a JSON object: {"verdict": "ask" | "clear", "question": "your one question, or an empty string when clear"}.',
+                         'read_by': 'setup.converse'},
+            'shape': {'fields': {}, 'inputs': ('org', 'words', 'named', 'kinds', 'use_cases', 'existing'),
+                      'returns': 'Return ONLY a JSON object: {"name": "...", "kind": "one of the kinds above", "goal": "...", '
+                                 '"purpose": "one line", "second": "...", "done_items": [{"text": "...", "how": "code" | "model" | '
+                                 '"person", "level": "target" | "outcome", "confirm": "..."}]}.',
+                      'read_by': 'setup.shape'},
+        },
+    },
+    'identity': {
+        'goal': {
+            'does': {'fields': {'text': 'field.text'}, 'inputs': (), 'returns': None, 'read_by': None},
+            'skills': {'fields': {'items': 'field.items'}, 'inputs': (), 'returns': None, 'read_by': None},
+            'close': {'fields': {}, 'inputs': ('dept', 'goal', 'done', 'rules', 'plan', 'against'),
+                      'returns': 'Return ONLY a JSON object: {"ruling": "run" | "drop" | "ask", "why": "one line, naming the rule or the goal"}.',
+                      'read_by': 'identity.close'},
+        },
+        'completeness': {
+            'thin': {'fields': {'task': 'field.task'}, 'inputs': (), 'returns': None, 'read_by': None},
+            'enough': {'fields': {'task': 'field.task'}, 'inputs': ('words', 'asked', 'goal', 'items', 'rules', 'owner', 'budget', 'confirm'),
+                       'returns': 'Return ONLY a JSON object: {"enough": bool, "missing": ["goal" | "items" | "rules" | "owner" | "budget" | '
+                                  '"invented"], "question": "one question, or an empty string when enough", "why": "one line"}.',
+                       'read_by': 'identity.enough'},
+        },
+        'take': {
+            'recognise': {'fields': {'task': 'field.task'}, 'inputs': ('goal', 'words', 'facts'),
+                          'returns': 'Return ONLY a JSON object: {"journey": "task" | "query" | "directive" | "feedback" | "new-idea", '
+                                     '"why": "one line"}.',
+                          'read_by': 'identity.recognise'},
+            'take': {'fields': {'task': 'field.task', 'guidance': 'field.guidance'}, 'inputs': ('goal', 'rules', 'words', 'facts', 'completeness'),
+                     'returns': 'Return ONLY a JSON object: {"verdict": "go" | "ask" | "refuse", "why": "one line", "unsure": [str], '
+                                '"rule": {"line": str, "tag": "always" | "refuse" | "ask"} | null, "thin": bool}.',
+                     'read_by': 'identity.take'},
+            'answer': {'fields': {'task': 'field.task'}, 'inputs': ('question', 'record'),
+                       'returns': 'Return ONLY a JSON object: {"answer": str, "source": "which line of the record", "confidence": "high" | '
+                                  '"moderate" | "low" | "unknown"}.',
+                       'read_by': 'identity.answer'},
+            'rule': {'fields': {'task': 'field.task', 'guidance': 'field.guidance'}, 'inputs': ('goal', 'rules', 'words'),
+                     'returns': 'Return ONLY a JSON object: {"tag": "always" | "ask" | "refuse" | "goal", "line": str, "scope": "standing" | '
+                                '"one-time"}.',
+                     'read_by': 'identity.rule'},
+            'weigh': {'fields': {'task': 'field.task'}, 'inputs': ('pages', 'words'),
+                      'returns': 'Return ONLY a JSON object: {"about": "the page\'s slug, or null", "what": "format" | "content" | "tone" | '
+                                 '"scope" | "accuracy", "now": "the correction to make now, one line", "future": "a rule to carry forward '
+                                 'to work like this, one line, or null"}.',
+                      'read_by': 'identity.weigh'},
+            'gate': {'fields': {'task': 'field.task'}, 'inputs': ('rules', 'engine'),
+                     'returns': 'Return ONLY a JSON object: {"verdict": "admit" | "wait" | "refuse", "why": "one line"}.',
+                     'read_by': ('identity.gate', 'identity.wait_engine', 'identity.judge')},
+        },
+    },
+    'adaptation': {
+        'goal': {
+            'does': {'fields': {'text': 'field.text'}, 'inputs': (), 'returns': None, 'read_by': None},
+            'skills': {'fields': {'items': 'field.items'}, 'inputs': (), 'returns': None, 'read_by': None},
+        },
+        'sense': {
+            'shape': {'fields': {}, 'inputs': ('needs', 'goal', 'idea', 'library'),
+                      'returns': 'Return ONLY a JSON object: {"reflected": str, "question": str, "shapes": [str, str, str], "pick": str or '
+                                 'null, "engine": {"name": str, "does": str, "needs": [str]} or null}.',
+                      'read_by': 'adapt.shape'},
+        },
+        'decide': {
+            'note': {'fields': {'text': 'field.note'}, 'inputs': (), 'returns': None, 'read_by': None},   # NOT_READ: no run reads it
+        },
+        'make': {
+            'line': {'fields': {}, 'inputs': ('dept', 'words', 'taken', 'out', 'rules', 'refused'),
+                     'returns': 'Return ONLY a JSON object: {"engines": [{"name": str, "does": str, "reads": str, "writes": str, '
+                                '"internet": bool}]}.',
+                     'read_by': 'adapt.line'},
+            'refused': {'fields': {}, 'inputs': ('faults',), 'returns': None, 'read_by': None},   # feeds make.line's refused input
+        },
+    },
+    'priority': {
+        'goal': {
+            'does': {'fields': {'text': 'field.text'}, 'inputs': (), 'returns': None, 'read_by': None},
+            'skills': {'fields': {'items': 'field.items'}, 'inputs': (), 'returns': None, 'read_by': None},
+        },
+        'bargain': {
+            'line': {'fields': {}, 'inputs': ('source', 'engines', 'calls', 'usd', 'room', 'limit'),
+                     'returns': 'Return ONLY a JSON object: {"answer": "accept" | "counter" | "reject", "why": "one line", "keep": [names]}.',
+                     'read_by': 'priority.bargain'},
+            'engine': {'fields': {'task': 'field.task'}, 'inputs': ('engine', 'does', 'needs', 'calls', 'usd', 'room'),
+                       'returns': 'Return ONLY a JSON object: {"answer": "accept" | "reject", "why": "one line"}.',
+                       'read_by': 'priority.bargain'},
+            'cost': {'fields': {'task': 'field.task'}, 'inputs': ('word', 'step', 'cost', 'room'),
+                     'returns': 'Return ONLY a JSON object: {"answer": "accept" | "reject", "why": "one line"}.',
+                     'read_by': 'priority.bargain'},
+        },
+    },
+    'coordination': {
+        'goal': {
+            'does': {'fields': {'text': 'field.text'}, 'inputs': (), 'returns': None, 'read_by': None},
+            'skills': {'fields': {'items': 'field.items'}, 'inputs': (), 'returns': None, 'read_by': None},
+        },
+        'tie': {
+            'tie': {'fields': {'task': 'field.task'}, 'inputs': ('ready', 'what', 'order', 'waiting'),
+                    'returns': 'Return ONLY a JSON object: {"answer": "one of the ready names", "why": "one line"}.',
+                    'read_by': 'coord.tie'},
+        },
+    },
+    'audit': {
+        'goal': {
+            'does': {'fields': {'text': 'field.text'}, 'inputs': (), 'returns': None, 'read_by': None},
+            'skills': {'fields': {'items': 'field.items'}, 'inputs': (), 'returns': None, 'read_by': None},
+        },
+        'judge': {
+            'judge': {'fields': {'task': 'field.task', 'guidance': 'field.guidance'}, 'inputs': ('brief', 'filed', 'pages'),
+                      'returns': 'Return ONLY a JSON object: {"ok": bool, "findings": [{"page": str, "claim": str, "severity": "high" | '
+                                 '"low"}]}.',
+                      'read_by': 'audit.judge'},
+        },
+    },
+}
+
+#: each layer's pane view (A1.17), plus the engine card
+VIEWS = {'identity': 'view.identity', 'adaptation': 'view.adaptation', 'priority': 'view.priority',
+         'coordination': 'view.coordination', 'audit': 'view.audit', 'engine_card': 'view.engine_card'}
+
+#: the department files checked where they are written (A1.20: website_dept._write is the sink), and the journals checked
+#: row by row (W.append_row)
+SINK = {'dept.json': 'department', 'asks.json': 'identity.ask', 'coordination.json': 'coordination.table',
+        'instructions.json': 'instructions'}
+SINK_JOURNALS = {'readings.jsonl': 'audit.reading', 'prices.jsonl': 'priority.price', 'rounds.jsonl': 'adaptation.round',
+                 'spot_checks.jsonl': 'audit.spot_check'}
+
+#: what each layer is, as its page says it (functions_view.PAGES' vsm, line, holds, hands_to, keeps and v1, copied here
+#: verbatim; W1-CORE makes functions_view read them from here), with the names this module holds for it
+_PAGES = {
+    'root': {
+        'vsm': "Root: the organisation's own department",
+        'line': 'Makes each department and its five functions from the Library, writes the record its workflow is held to, '
+                'and checks every plan against the workflow standards before it runs. It never creates or starts an engine.',
+        'holds': "The department's record: its kind, its line and artifacts, its registered workflows and the version each "
+                 'function runs.',
+        'hands_to': "Identity: the owner's words for a department, and a plan it could not register. Coordination and "
+                    'Priority: a registered plan.',
+        'keeps': 'Makes the department and its five functions, never an engine; engines come from Adaptation. Every plan '
+                 'meets the standards before it runs.',
+        'v1': "Setup sets up a department from the Library's templates; the owner stamps it.",
+    },
+    'identity': {
+        'vsm': 'VSM S5: identity and policy',
+        'line': "The department's voice and conscience. It hears you, checks that the identity is good enough, gates every "
+                'effect by rule, closes conflicts, and says when the goal is reached.',
+        'holds': "Goal, done-when, rules (go, ask, refuse, always), budget, owner and parent, and each engine's window.",
+        'hands_to': 'Adaptation: a request for a line, and the next thing to correct. Coordination: verdicts on gates. '
+                    'You: it is the only function that speaks to you.',
+        'keeps': 'Never makes anything; the maker is an engine. Asks only when a rule says ask. Approvals only tighten. '
+                 'Never invents a goal or a rule, and asks one question at a time.',
+        'v1': 'Your words become the Brief, one question when the words are thin, the ask before the first publish, and a tell.',
+    },
+    'adaptation': {
+        'vsm': 'VSM S4: outside and future',
+        'line': 'Decides how the department gets there. It proposes the workflows the goal needs, from the Library, fitted, '
+                'or made fresh, and after each reading it proposes the next round, until the goal holds.',
+        'holds': 'Its proposals on the board, the ideas it parked, the ladder of every step, and its rounds.',
+        'hands_to': 'Priority: every proposal and every round. Identity: conflicts, and a round Priority said yes to, to file. '
+                    'Root: the line Priority said yes to, for its check.',
+        'keeps': 'Senses and proposes; never applies. Every proposal passes Priority first. May leave out an engine its '
+                 'template does not mark required. Engines come from Adaptation, never from Root.',
+        'v1': 'Two to five workflows from the Library or shaped for the goal; no loop and no Make module yet.',
+    },
+    'priority': {
+        'vsm': 'VSM S3: inside and now',
+        'line': 'Prices every proposal against the room actually left and holds the budget. It says yes, asks for less, or '
+                'says no. Who goes first is never its call.',
+        'holds': 'One limit per engine (calls and money a day) and the bargain threads.',
+        'hands_to': 'Adaptation: said yes, asked for less, or said no. Identity: through Adaptation\'s conflict, when a limit is hit.',
+        'keeps': "Prices and holds the budget; who goes first is Coordination's call. Never starts a run and never says no "
+                 'over method. Never changes the goal or speaks to you.',
+        'v1': 'The limit on every start, as built. Nothing else.',
+    },
+    'coordination': {
+        'vsm': 'VSM S2: timetables and standards',
+        'line': 'Keeps the timetable: a slot for each engine, who goes first, one run at a time, hand-offs, a chain that '
+                'stops at its limit, and an alarm past a window. It judges nothing about content.',
+        'holds': "Its table: the order, the line and who may post to whom; the run rows and each thread's bounds.",
+        'hands_to': 'Identity: alarms, lost requests and verdict asks. Priority: verdict asks.',
+        'keeps': 'No model call inside a tick; a missed slot runs once, and each slot runs once. The engine starts itself in '
+                 'its slot. Never changes limits, scope or quality calls.',
+        'v1': 'As built.',
+    },
+    'audit': {
+        'vsm': 'VSM S3*: sporadic direct inspection',
+        'line': 'The second pair of eyes. It reads what the department actually filed, item by item against done-when, '
+                'with code checks first, and it also drops in unannounced. Its findings go to Identity.',
+        'holds': 'Its readings and its findings.',
+        'hands_to': 'Identity only: readings and findings.',
+        'keeps': 'The checker is never the writer; it never touches a workflow or a version. A check is a check, never a '
+                 'score. It reads what the department did, never only its goal.',
+        'v1': 'As built: read the live site against the words.',
+    },
+}
+LAYERS = {
+    layer: dict(_PAGES[layer], **{
+        'title': TITLE[layer],
+        'keys': tuple(k for k, (owner, _) in DEPARTMENT_KEYS.items() if owner == layer),
+        'records': tuple(RECORDS[layer]),
+        'verdicts': tuple(VERDICTS[layer]),
+        'checks': tuple(CHECKS[layer]),
+        'settings': tuple(SETTINGS[layer]),
+        'prompts': tuple(PROMPTS[layer]),
+        'view': VIEWS.get(layer),
+        'options': tuple(k for k, o in OPTION_KINDS.items() if o['layer'] == layer),
+        'recipe': 'Setup' if layer == 'root' else 'v1.json',
+    })
+    for layer in LAYER_NAMES
+}
+
+
+# ---- reading the tables ----------------------------------------------------------------------------------------------
+def _layer(name):
+    """A layer's name from its name or its title ('identity', 'Identity', 'Setup' -> 'root'); None for any other."""
+    if name in LAYER_NAMES:
+        return name
+    return ENGINE_LAYER.get(name) or {v: k for k, v in TITLE.items()}.get(name)
+
+
+def edges():
+    """Who may post what to whom, {src: {act: [dst, ...]}}, from SENDS: equal to engine_defs' edges for the actors it
+    names, in their order."""
+    out = {}
+    for actor in ACTORS:
+        for row in SENDS.get(actor) or []:
+            dsts = out.setdefault(actor, {}).setdefault(row['act'], [])
+            for dst in row['to']:
+                if dst not in dsts:
+                    dsts.append(dst)
+    return out
+
+
+def hears(layer):
+    return [dict(r) for r in HEARS.get(_layer(layer) or layer, [])]
+
+
+def sends(layer):
+    actor = TITLE.get(_layer(layer) or '', layer)
+    return [dict(r) for r in SENDS.get(actor, [])]
+
+
+def calls():
+    return CALLS
+
+
+def owner_of_key(key):
+    return (DEPARTMENT_KEYS.get(key) or (None,))[0]

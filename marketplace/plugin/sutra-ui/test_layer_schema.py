@@ -186,3 +186,310 @@ def test_s1_mode_is_a_code_constant_never_an_environment_variable():
     src = (S.HERE / "layer_schema.py").read_text(encoding="utf-8")
     assert S.MODE == "warn" and S.OWNERSHIP_MODE == "warn"
     assert "os.environ" not in src and "getenv" not in src
+
+
+# ---- S3: the tables, against the code they are bound to -------------------------------------------------------------
+import ast  # noqa: E402
+
+import engine_runtime as R  # noqa: E402
+import functions_view as FV  # noqa: E402
+import j2_runtime as J  # noqa: E402
+import website_dept as W  # noqa: E402
+
+
+def _steps(e):
+    return list(e.get("gates") or []) + list(e.get("rules") or []) + list(e.get("steps") or []) + \
+        [s for h in e.get("on") or [] for s in h.get("steps") or []]
+
+
+def _function_engines():
+    return {name: R.defs()["engines"][name] for name in S.ENGINE_LAYER if name in R.defs()["engines"]}
+
+
+def test_s3_edges_are_engine_defs_edges_in_their_order():
+    assert S.edges() == R.defs()["edges"]
+
+
+def test_s3_every_handler_of_the_five_is_a_hears_row_and_every_row_has_its_handler():
+    for name, e in _function_engines().items():
+        if name == "Setup":
+            continue
+        layer = S.ENGINE_LAYER[name]
+        rows = {(r["act"], r["word"]): r for r in S.hears(layer)}
+        handlers = {(h["when"]["msg_type"], h["when"].get("word", S.ANY)): h["name"] for h in e.get("on") or []}
+        assert set(handlers) == set(rows), "%s: %s" % (name, set(handlers) ^ set(rows))
+        for pair, handler in handlers.items():
+            assert rows[pair]["handler"] == handler
+            assert rows[pair]["payload"] in S.DEFS and rows[pair]["via"] in ("board", "call")
+            assert set(rows[pair]["from"]) <= set(S.ACTORS)
+
+
+# the sites: every post() and _tell() call of engine_runtime and j2_runtime, with what it sends
+def _consts(node, fn):
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return {node.value}
+    if isinstance(node, ast.IfExp):
+        a, b = _consts(node.body, fn), _consts(node.orelse, fn)
+        return a | b if a is not None and b is not None else None
+    if (isinstance(node, ast.Name) and node.id == "OWNER") or (isinstance(node, ast.Attribute) and node.attr == "OWNER"):
+        return {"Owner"}
+    if isinstance(node, ast.Name) and fn is not None:
+        vals = [n.value for n in ast.walk(fn) if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == node.id for t in n.targets)]
+        got = set()
+        for v in vals:
+            c = _consts(v, None)
+            if c is None:
+                return None
+            got |= c
+        return got or None
+    return None
+
+
+def _payload(node, fn):
+    if isinstance(node, ast.Dict):
+        return node
+    if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "dict" and node.args and isinstance(node.args[0], ast.Dict):
+        return node.args[0]
+    if isinstance(node, ast.Name) and fn is not None:
+        vals = [n.value for n in ast.walk(fn) if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == node.id for t in n.targets)]
+        if len(vals) == 1:
+            return _payload(vals[0], None)
+    return None
+
+
+def _word(node, fn):
+    d = _payload(node, fn) if node is not None else None
+    if d is None:
+        return S.ANY
+    for k, v in zip(d.keys, d.values):
+        if isinstance(k, ast.Constant) and k.value == "word":
+            got = _consts(v, fn)
+            return got if got is not None else S.ANY
+    return S.ANY
+
+
+def _post_sites(module):
+    tree = ast.parse((S.HERE / (module + ".py")).read_text(encoding="utf-8"))
+    out = []
+    for fn in [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]:
+        for node in ast.walk(fn):
+            if not isinstance(node, ast.Call):
+                continue
+            f = node.func
+            name = f.id if isinstance(f, ast.Name) else (f.attr if isinstance(f, ast.Attribute) and getattr(f.value, "id", None) == "R" else None)
+            if name not in ("post", "_tell") or (name == "post" and fn.name == "_tell") or len(node.args) < 4:
+                continue                      # _tell's own post is the wrapper: its callers are the sites
+            a = node.args
+            if name == "post":
+                src, act, pl = _consts(a[1], fn), _consts(a[3], fn), a[4] if len(a) > 4 else None
+            else:
+                src, act, pl = {"Identity"}, _consts(a[3], fn), a[4] if len(a) > 4 else None
+            out.append({"where": "%s:%d %s" % (module, node.lineno, fn.name), "src": src, "act": act, "word": _word(pl, fn)})
+    return out
+
+
+def test_s3_every_post_site_is_a_sends_row():
+    sites = _post_sites("engine_runtime") + _post_sites("j2_runtime")
+    assert len(sites) > 60, "the scan finds the sites"
+    for site in sites:
+        assert site["act"], "%s: its act is a literal" % site["where"]
+        for src in site["src"] or ():         # a sender named by a variable is read below
+            for act in site["act"]:
+                rows = [r for r in S.SENDS[src] if r["act"] == act]
+                assert rows, "%s: %s sends no %s" % (site["where"], src, act)
+                if site["word"] == S.ANY:
+                    assert any(r["words"] == S.ANY for r in rows), "%s: a word that is not a literal needs an (any) row" % site["where"]
+                else:
+                    for w in site["word"]:
+                        assert any(r["words"] == S.ANY or w in r["words"] for r in rows), \
+                            "%s: %s %s %r is not in SENDS" % (site["where"], src, act, w)
+    named = [s for s in sites if s["src"] is None]
+    assert named, "the scan reads the sites whose sender is a variable (_line_conflict's)"
+    for site in named:                        # each act word a variable sender posts is some actor's row
+        for act in site["act"]:
+            for w in ([] if site["word"] == S.ANY else site["word"]):
+                assert any(r["act"] == act and (r["words"] == S.ANY or w in r["words"]) for a in S.SENDS for r in S.SENDS[a]), site
+
+
+def test_s3_every_sends_row_names_known_acts_actors_and_payloads():
+    assert set(S.SENDS) == set(S.ACTORS)
+    for actor, rows in S.SENDS.items():
+        for r in rows:
+            assert r["act"] in S.ACTS and set(r["to"]) <= set(S.ACTORS) and r["payload"] in S.DEFS
+            assert r["words"] == S.ANY or (isinstance(r["words"], tuple) and r["words"])
+
+
+_COORDINATIONS_OWN = ("coord.edge", "coord.bounds", "coord.alarm", "coord.verdict")
+
+
+def test_s3_every_cross_layer_ask_rule_is_a_calls_row():
+    tree = ast.parse((S.HERE / "engine_runtime.py").read_text(encoding="utf-8"))
+    found = []
+    for fn in [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]:
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "_ask_rule" and len(node.args) >= 2 \
+                    and isinstance(node.args[1], ast.Constant):
+                found.append((fn.name, node.args[1].value))
+    assert found
+    calls = {(c["site"], c["what"]): c for c in S.calls()}
+    for site, sid in found:
+        owner = R.step_def(sid)[0]
+        if sid in _COORDINATIONS_OWN:
+            assert owner == "Coordination", "Coordination's own rule calls stay inside its layer"
+            continue
+        assert (site, sid) in calls, "%s asks %s's %s in place, and CALLS does not say so" % (site, owner, sid)
+        assert calls[(site, sid)]["to"] == owner
+    assert all(c["from"] in S.TITLE.values() and c["to"] in S.TITLE.values() for c in S.calls())
+
+
+def test_s3_every_soft_steps_out_keys_are_named_in_its_parts_returns():
+    readers = {}
+    for layer, groups in S.PROMPTS.items():
+        for group, parts in groups.items():
+            for part, p in parts.items():
+                rb = p["read_by"]
+                for sid in (rb if isinstance(rb, tuple) else (rb,) if rb else ()):
+                    readers.setdefault(sid, []).append(p)
+    soft = [s for e in _function_engines().values() for s in _steps(e) if s.get("prompt")]
+    assert len(soft) >= 14
+    for s in soft:
+        assert s["id"] in readers, "%s reads no part" % s["id"]
+        for p in readers[s["id"]]:
+            for key in s.get("out") or {}:
+                assert '"%s"' % key in p["returns"], "%s: %s is not in its part's returns" % (s["id"], key)
+
+
+def test_s3_prompts_are_the_bundles_parts_and_the_returns_byte_for_byte():
+    for fn, files in R.INSTRUCTIONS.items():
+        assert list(S.PROMPTS[fn]) == list(files) and list(S.GROUPS[fn]) == list(files)
+        for file, parts in files.items():
+            text = (R.PROMPTS_DIR / fn / (file + ".md")).read_text(encoding="utf-8")
+            lead, got = R._parts(text)
+            assert S.GROUPS[fn][file] == lead.split("\n\n")[0]
+            if not parts:
+                assert list(S.PROMPTS[fn][file]) == ["note"], "a file no step reads is its note (A1.16 rule 7)"
+                continue
+            assert list(S.PROMPTS[fn][file]) == list(parts)
+            for part, slots in parts.items():
+                p = S.PROMPTS[fn][file][part]
+                assert p["inputs"] == tuple(slots)
+                assert p["returns"] is None or p["returns"] in got[part], "%s.%s.%s: returns byte for byte" % (fn, file, part)
+                assert p["returns"] is not None or "Return ONLY" not in got[part]
+                assert all(d in S.DEFS and d.startswith("field.") for d in p["fields"].values())
+
+
+def test_s3_roots_returns_are_its_inline_builders_byte_for_byte():
+    got = {"setup.read": {"words": "w", "conversation": {"messages": []}, "named": None,
+                          "facts": {"kinds": "website", "use_cases": "website: a site", "existing": "none"}}}
+    ctx = {"bag": got, "dept": {"name": "Acme Root", "org": {"name": "Acme"}}, "ref": None}
+    assert S.PROMPTS["root"]["setup"]["converse"]["returns"] in R.p_setup_converse(ctx, None, None)
+    assert S.PROMPTS["root"]["setup"]["shape"]["returns"] in R.p_setup_shape(ctx, None, None)
+
+
+def test_s3_checks_are_every_check_a_function_step_names():
+    for name, e in _function_engines().items():
+        layer = S.ENGINE_LAYER[name]
+        named = {s["check"] for s in _steps(e)}
+        if name == "Setup":
+            named |= {s["check"] for s in _steps(R.engine_def("Setup"))}
+        assert named <= set(S.CHECKS[layer]) | set(S.SHARED_CHECKS), "%s: %s" % (name, named - set(S.CHECKS[layer]) - set(S.SHARED_CHECKS))
+        assert set(S.CHECKS[layer]) <= named
+    assert all(c in R.CHECK for layer in S.CHECKS for c in S.CHECKS[layer]) and all(c in R.CHECK for c in S.SHARED_CHECKS)
+
+
+def test_s3_contract_samples_hold_against_the_bodies_on_main():
+    for check, samples in S.CONTRACT_SAMPLES.items():
+        for out in samples["good"]:
+            assert R.CHECK[check](None, None, None, out)["ok"] is True, (check, out)
+        for out in samples["bad"]:
+            assert R.CHECK[check](None, None, None, out)["ok"] is False, (check, out)
+
+
+def test_s3_outputs_are_the_step_outputs_read_outside_the_layer():
+    src = (S.HERE / "functions_view.py").read_text(encoding="utf-8") + (S.HERE / "j2_runtime.py").read_text(encoding="utf-8")
+    ids = {s["id"] for e in R.defs()["engines"].values() for s in _steps(e)}
+    read = {i for i in ids if '"%s"' % i in src or "'%s'" % i in src}
+    assert read == set(S.OUTPUTS)
+
+
+def test_s3_layers_carry_the_function_pages_verbatim():
+    for layer in S.FUNCTION_LAYERS:
+        page = FV.PAGES[S.TITLE[layer]]
+        for k in ("vsm", "line", "holds", "hands_to", "keeps", "v1"):
+            assert S.LAYERS[layer][k] == page[k], (layer, k)
+    assert set(S.LAYERS) == set(S.LAYER_NAMES) and S.LAYERS["identity"]["view"] == "view.identity"
+
+
+def test_s3_settings_defaults_are_the_codes():
+    assert S.SETTINGS["priority"]["envelope"]["default"] == R.engine_def("Priority")["template"]["envelope"]
+    assert S.SETTINGS["coordination"]["order"]["default"] == R.defs()["coordination"]["order"]
+    assert all(s["def"] in S.DEFS for layer in S.SETTINGS for s in S.SETTINGS[layer].values())
+
+
+def test_s3_the_constants_and_field_tuples_equal_the_codes():
+    assert S.BOUNDS == R.BOUNDS and S.CHAIN_LIMIT == W.CHAIN_LIMIT and S.REPAIRS == J.REPAIRS
+    assert S.OPTIONS_MAX == W.OPTIONS_MAX and S.DONE_ITEMS_MAX == W.DONE_ITEMS_MAX and S.STANDARD == R.STANDARD
+    assert S.ACTS == R.ACTS and S.RULE_TAGS == W.RULE_TAGS and (S.DONE_HOW, S.DONE_LEVELS) == (W.DONE_HOW, W.DONE_LEVELS)
+    assert S.TABLE_FIELDS == R.TABLE_FIELDS and S.SLOT_FIELDS == R.SLOT_FIELDS and S.LEFT_OUT_FIELDS == R.LEFT_OUT_FIELDS
+    assert S.COORDINATION_FIELDS == FV.COORDINATION_FIELDS and S.TIMETABLE_ROW == FV.TIMETABLE_ROW
+    assert S.ENGINE_CARD_FIELDS == FV.ENGINE_CARD_FIELDS and S.ENGINE_FIVE_ROW == FV.ENGINE_FIVE_ROW
+    assert S.BORN_FIELDS == R.BORN_FIELDS and S.SLOT_STATES == tuple(FV.TT_WORDS)
+    assert set(S.DEFS["coordination.table"]["properties"]) == set(S.TABLE_FIELDS) | {"schema_version"}
+    assert tuple(S.DEFS["coordination.slot"]["properties"]) == S.SLOT_FIELDS
+    assert tuple(S.DEFS["coordination.left_out"]["properties"]) == S.LEFT_OUT_FIELDS
+    assert tuple(S.DEFS["view.coordination"]["properties"]) == S.COORDINATION_FIELDS
+    assert tuple(S.DEFS["view.coordination"]["properties"]["timetable"]["items"]["properties"]) == S.TIMETABLE_ROW
+    assert tuple(S.DEFS["view.engine_card"]["properties"]) == S.ENGINE_CARD_FIELDS
+    assert tuple(S.DEFS["view.engine_card"]["properties"]["five"]["items"]["properties"]) == S.ENGINE_FIVE_ROW
+    assert tuple(S.DEFS["act.born"]["properties"])[1:] == S.BORN_FIELDS
+    assert S.VERDICTS["identity"]["journey"] == R.JOURNEYS
+    assert set(S.ASK_KINDS) >= {"blocked", "j2_identity", "done_items", "instructions", "engine", "line"}
+
+
+# ---- S3: the rulings, kept as interface tests (A1.25) ----------------------------------------------------------------
+def test_s3_ruling_only_identity_speaks_to_the_owner():
+    for actor, rows in S.SENDS.items():
+        if any("Owner" in r["to"] for r in rows):
+            assert actor == "Identity", actor
+
+
+def test_s3_ruling_priority_prices_and_holds_and_never_orders():
+    assert {d for r in S.SENDS["Priority"] for d in r["to"]} == {"Adaptation"}
+    assert not any("order" in w for r in S.SENDS["Priority"] if r["words"] != S.ANY for w in r["words"])
+    for p in (S.HERE / "function-templates" / "priority").glob("*.json"):
+        low = p.read_text(encoding="utf-8").lower()
+        assert "what runs next" not in low and " order" not in low.replace("in order", ""), p.name
+
+
+def test_s3_ruling_root_makes_the_department_and_never_an_engine():
+    assert not any(r["act"] == "propose" for r in S.SENDS["Root"])
+    assert S.DEFS["engine.template"]["properties"]["made_by"]["properties"]["by"] == {"const": "Adaptation"}
+
+
+def test_s3_ruling_adaptation_proposes_and_never_applies():
+    assert not [k for k, (owner, _) in S.DEPARTMENT_KEYS.items() if owner == "adaptation"]
+    assert {r["act"] for r in S.SENDS["Adaptation"]} == {"propose", "inform"}
+
+
+def test_s3_ruling_the_checker_is_never_the_writer():
+    assert not [k for k, (owner, _) in S.DEPARTMENT_KEYS.items() if owner == "audit"]
+    assert not R.engine_def("Audit").get("writes"), "Audit owns no artifact"
+    assert "function's" in dict((s[0], s[1]) for s in S.WORKFLOW_STANDARDS)["names_unique"]
+
+
+def test_s3_ruling_threads_are_bounded_and_no_engine_is_mandatory_unless_its_kind_says_so():
+    assert S.BOUNDS == R.BOUNDS and S.CHAIN_LIMIT == W.CHAIN_LIMIT and S.REPAIRS == J.REPAIRS
+    assert "required_kept" in [s[0] for s in S.WORKFLOW_STANDARDS]
+    for kind, k in R.defs()["kinds"].items():
+        assert R.required_engines({"kind": kind}) == list(k.get("required") or [])
+
+
+def test_s3_the_tables_name_only_known_definitions_and_layers():
+    for layer, kinds in S.RECORDS.items():
+        assert layer in S.LAYER_NAMES and all(k["def"] in S.DEFS for k in kinds.values())
+    assert all(name in S.DEFS for name in S.VIEWS.values()) and all(name in S.DEFS for name in S.SINK.values())
+    assert all(name in S.DEFS for name in S.SINK_JOURNALS.values())
+    assert all(o["params"] is None or o["params"] in S.DEFS for o in S.OPTION_KINDS.values())
+    assert all(o["layer"] in S.LAYER_NAMES for o in S.OPTION_KINDS.values())
+    assert all(set(st) <= set(S.STAGES) and set(src) <= set(S.SOURCES) for _, _, src, st in S.WORKFLOW_STANDARDS)
+    assert S.owner_of_key("goal") == "identity" and S.owner_of_key("envelopes") == "priority" and S.owner_of_key("colour") is None
