@@ -64,7 +64,8 @@ PAGES = {
         "vsm": "VSM S5: identity and policy",
         "line": "The department's voice and conscience. It hears you, checks that the identity is good enough, gates every "
                 "effect by rule, closes conflicts, and says when the goal is reached.",
-        "holds": "Goal, done-when, rules (go, ask, refuse, always), budget, owner and parent, and each engine's window.",
+        # a rule's tags as the pane says them (22-website.js WB_TAG_SAYS): the screen never says refuse
+        "holds": "Goal, done-when, rules (go, ask, never, always), budget, owner and parent, and each engine's window.",
         "hands_to": "Adaptation: a request for a line, and the next thing to correct. Coordination: verdicts on gates. "
                     "You: it is the only function that speaks to you.",
         "keeps": "Never makes anything; the maker is an engine. Asks only when a rule says ask. Approvals only tighten. "

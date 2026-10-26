@@ -1273,3 +1273,18 @@ def test_m3_7_a_conflict_closed_is_said_in_plain_words(j2, monkeypatch):
     ref = _born(j2, org="Plain Co")
     c = F.function(ref, "identity")["j2"]["conflicts"][0]
     assert "Priority's ask for less leaves out the site" in c["why"] and "Priority asked for less (no room)" in c["split"]
+
+
+def test_m3_7_every_functions_page_reads_in_the_owners_words(j2):
+    """A function's page (the 'How it works' card of its pane, S5 for Identity) that says refuse, grant, counter, orders,
+    charter or internal system in the words the screen prints must fail; the render test's fixture uses placeholder
+    pages, so this reads the real ones (found by a verifier 2026-10-26: Identity's Holds said 'go, ask, refuse, always')."""
+    W, R, J, _, F = j2
+    W.create("dref-pages", "Pages Website", None)
+    banned = re.compile(r"\b(?:grant|counter|refus|orders\b|charter|internal system)", re.I)
+    for name, page in F.PAGES.items():
+        shown = [page[k] for k in ("vsm", "line", "holds", "hands_to", "keeps", "v1")] + [j[1] for j in page["journeys"]]
+        assert not [t for t in shown if banned.search(t)], (name, [t for t in shown if banned.search(t)])
+        served = F.function("dref-pages", name.lower())
+        assert served["holds"] == page["holds"] and not banned.search(served["holds"])
+    assert "rules (go, ask, never, always)" in F.PAGES["Identity"]["holds"]
