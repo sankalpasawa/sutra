@@ -1,10 +1,12 @@
 """layers/identity/v1.py -- Identity, version 1: the implementation behind the interface's identity entries (PRD A1.18).
 
 Its recipe is v1.json beside it: the Identity engine object, moved byte for byte from engine_defs/website.json in wave 0.
-Every code, prompt, draft and check name the recipe uses is provided here by reference (ref_to): each is a late-bound
-delegate to the body engine_runtime holds today, so the behaviour is exactly what ran before, and a body moves into this
-file on touch (A1.19: a name a layer changes is copied here and changed here). WORDS and LAYOUT are empty until I2, so
-the prompts are still read from the .md bundle. view() returns the pane's read model by reference (I3).
+Every code, prompt, draft and check name the recipe uses is provided here: by reference (ref_to), a late-bound delegate
+to the body engine_runtime holds today, so the behaviour is exactly what ran before, or as a body of its own where this
+version adds to it (A1.19: a name a layer changes is copied here and changed here): the handler Hear a doubt (identity_doubt,
+PRD M3.9) and the two steps that tell it the owner's answer (identity_read and identity_file, which hand every other
+word on to the body engine_runtime holds). WORDS and LAYOUT are empty until I2, so the prompts are still read from the
+.md bundle. view() returns the pane's read model by reference (I3).
 """
 from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests reload engine_runtime, so never a module object
 
@@ -20,8 +22,6 @@ CODE = {
     'hear': ref_to('hear'),
     'identity_route': ref_to('identity_route'),
     'identity_hand': ref_to('identity_hand'),
-    'identity_read': ref_to('identity_read'),
-    'identity_file': ref_to('identity_file'),
     'identity_verdict': ref_to('identity_verdict'),
     'identity_rung': ref_to('identity_rung'),
     'identity_apply': ref_to('identity_apply'),
@@ -70,6 +70,178 @@ CHECK = {
     'ruling_is_known': ref_to('c_ruling_is_known'),
 }
 WORDS, LAYOUT = {}, {}
+
+# ---- Hear a doubt (PRD M3.9; J2B-7, J2B-8) -----------------------------------------------------------------------------
+# Adaptation shaped a plan it is not sure of and posts inform/doubt, which ends the bargain, nothing registered. Identity
+# decides what happens next, in code. In the department's cycle it puts the doubt to the owner once, as one question built
+# here (J2B-8: it shows no number and names no internal part), and the owner's answer, or 'just do it', which takes the
+# fallback, goes back to Adaptation as a new line request that carries it. One question a line request and S.REPAIRS a
+# cycle; past either, Identity tells Adaptation to go on to Priority with the doubt named (a line request marked go_on),
+# and a doubt that comes back after that is a blocked plan with a way out, never a loop (rule 8: what Identity cannot
+# settle goes to the owner).
+#: what the plan goes on with when a doubt names no fallback, or one that would reach outside the site or that the owner
+#: cannot be told in plain words; and what the question says of a doubt it cannot put in the owner's words
+FALLBACK = "I go ahead with the plan as it stands, and nothing in it reaches outside the site"
+SOMETHING = "one thing in the plan rests on something only you can say."
+QUESTION = 'Before I set up the work for %s: %s Unless you say, %s. Answer in your own words, or say "just do it".'
+
+
+def _said(text, n):
+    return " ".join(str(text or "").split())[:n]
+
+
+def _plain_or(ref, text, otherwise):
+    """`text` as the owner may read it (M3.6): as it is, or said again in the owner's words; `otherwise` when it still breaks
+    the plain-words rule (a doubt a model wrote may say 'grant' or 'counter', as a card or a tell may not)."""
+    line, _, how = R._plain_one(text, R._owners_words(ref, {}), "")
+    return otherwise if how == "template" else line
+
+
+def fallback_of(ref, payload):
+    """What the plan does when the owner says nothing more: the doubt's own fallback, unless it says nothing, reaches
+    outside the site (the fallback never does) or cannot be told to the owner in plain words."""
+    f = _said(payload.get("fallback"), 600).rstrip(".")
+    return FALLBACK if not f or R.LEAVES.search(f) else _plain_or(ref, f, FALLBACK)
+
+
+def question(name, doubt, fallback):
+    """J2B-8, built by code from the doubt and its fallback: the owner reads no number and no part of the app."""
+    doubt = _said(doubt, 600)
+    return QUESTION % (name, doubt + ("" if doubt[-1:] in (".", "?", "!") else "."), fallback.rstrip("."))
+
+
+def _line_request_of(ref):
+    """The last line request Identity made of Adaptation, as a board post, or None."""
+    return next((q for q in reversed(R.board(ref)) if q["src"] == "Identity" and q["dst"] == ["Adaptation"] and q["msg_type"] == "request"
+                 and (q.get("payload") or {}).get("word") == "line"), None)
+
+
+def _line(ref, words, **more):
+    """A line request, as engine_runtime._line_request makes it, with what a doubt adds."""
+    return dict({"word": "line", "words": words, "objective": "propose the workflows the goal needs",
+                 "output": "the engines, each with what it does, reads and writes", "may_read": ["Brief"],
+                 "boundaries": "nothing runs before Priority grants it and Root registers it", "for": None, "faults": []}, **more)
+
+
+def identity_doubt(ctx, step, item):
+    """Adaptation's doubt (inform/doubt): asked of the owner once, or Adaptation told to go on with it named."""
+    ref, d, p = ctx["ref"], ctx["dept"], ctx["post"]
+    pl = p.get("payload") or {}
+    doubt, engine, fallback = _said(pl.get("doubt"), 600), _said(pl.get("engine"), 40), fallback_of(ref, pl)
+    if not doubt:
+        return {"said": "heard a doubt with nothing in it; nothing to ask"}
+    cj = R._j2()
+    cycle = ((cj._state(ref) or {}).get("cycle_id") if cj and cj.active(ref) else None)
+    line = _line_request_of(ref)
+    asked = [a for a in W.asks(ref) if cycle and a.get("kind") == "j2_identity" and a.get("missing") == "plan" and a.get("cycle_id") == cycle]
+    here = [a for a in asked if line and (a.get("doubt") or {}).get("line") == line["n"]]
+    if any(a["status"] == "pending" for a in here):
+        return {"said": "heard a doubt the owner is asked about already; waiting for the answer"}
+    if cj and cj.waiting_on_owner(ref):
+        # one open question at a time: the plan is shaped again when that is answered, and the doubt comes with it if it stands
+        return {"said": "the owner has another question open; the doubt waits for the plan to be shaped again"}
+    if cycle and not here and len(asked) < S.REPAIRS:
+        return _ask_the_owner(ctx, cycle, doubt, engine, fallback, line)
+    return _go_on(ctx, doubt, fallback, line)
+
+
+def _ask_the_owner(ctx, cycle, doubt, engine, fallback, line):
+    """The doubt as one question of Identity's, an ask that takes words and holds the cycle at step 2 until it is answered."""
+    ref, d = ctx["ref"], ctx["dept"]
+    cj = R._j2()
+    said = R.plain_card(ref, {"text": question(d.get("name"), _plain_or(ref, doubt, SOMETHING), fallback),
+                              "why": "the plan rests on something only you can say"}, "question")
+    with W._lock(ref):
+        ask = dict(W.j2_identity_ask(said["text"], cycle, "plan", said["why"], ["plan"], False),
+                   doubt={"engine": engine, "doubt": doubt, "fallback": fallback, "line": line["n"] if line else None})
+        W._put_ask(ref, ask)
+        cj.note(ref, 2, "Identity", "User", "identity.questioned", "waiting", said["text"], "identity-doubt-" + ask["id"],
+                {"missing": ["plan"], "why": said["why"], "standard": False})
+        cj._move(ref, "waiting", step=2, open_ask=ask["id"])
+    # the line names its card, and the chat leaves the question to the card, which says it once (M0.6)
+    R._tell(ref, d, {"src": "Root" if d.get("root") else R.OWNER}, "inform", {"word": "question", "done": said["text"], "card": ask["id"]})
+    return {"said": "asked the owner what Adaptation doubts%s: %s" % (" of " + engine if engine else "", doubt[:160]), "asked": ask["id"]}
+
+
+def _go_on(ctx, doubt, fallback, line):
+    """Past the bound: Adaptation goes on to Priority with the doubt named. A doubt that comes back after Adaptation was
+    told so is the owner's, as a blocked plan with its ways out."""
+    ref, d = ctx["ref"], ctx["dept"]
+    who = {"src": "Root" if d.get("root") else R.OWNER}
+    if line and (line.get("payload") or {}).get("go_on"):
+        shown = _plain_or(ref, doubt, SOMETHING)
+        R._blocked(ref, d, who, "The plan cannot go on as it is: it rests on something nobody has settled. %s Say what to do, or choose a way "
+                   "forward on this card." % shown, "The plan has a doubt left.", "Adaptation, still unsure of the plan", shown)
+        return {"said": "the doubt came back after Adaptation was told to go on; put to the owner as a blocked plan: " + doubt[:160]}
+    words = R._brief_text(ref).strip() or str((line or {}).get("payload", {}).get("words") or d.get("goal") or "")
+    R.post(ref, "Identity", "Adaptation", "request", _line(ref, words, go_on=True, doubt=doubt, fallback=fallback))
+    shown = _plain_or(ref, doubt, SOMETHING)
+    R._tell(ref, d, who, "inform", {"word": "line", "done": "I have asked what I can, so the plan goes on as it stands, with one doubt left open: %s "
+                                    "Unless you say otherwise, %s. Priority and Root check it before anything runs." % (
+                                        shown if shown[-1:] in (".", "?", "!") else shown + ".", fallback.rstrip("."))})
+    return {"said": "told Adaptation to go on to Priority with the doubt named: " + doubt[:160], "went_on": True}
+
+
+def _doubt_asked(ctx):
+    """The doubt of Adaptation's that the words in this post answer, as the ask holds it: the one a box answer names, else the
+    one the cycle waits on when they were said in the chat. None for any other words."""
+    ref, aid = ctx["ref"], (ctx["post"].get("payload") or {}).get("answers")
+    cj = R._j2()
+    if not cj or not cj.enabled():
+        return None
+    if not aid:
+        q = cj.open_question(ref) or {}
+        aid = q.get("id") if q.get("missing") == "plan" else None
+    return next((a for a in W.asks(ref) if aid and a["id"] == aid and a.get("kind") == "j2_identity" and a.get("missing") == "plan"), None)
+
+
+def identity_read(ctx, step, item):
+    """Read what was said (the body engine_runtime holds), and mark the words that answer Adaptation's doubt: they are no
+    new request to recognise and no word on the identity's standard, which was met before the plan was shaped."""
+    got = R.identity_read(ctx, step, item)
+    ask = _doubt_asked(ctx)
+    if ask:
+        got.update({"doubt": ask["id"], "answers": None, "assess": False, "later": False, "filled": []})
+    return got
+
+
+def identity_file(ctx, step, item):
+    """File what was decided: the answer to a doubt goes back to Adaptation (doubt_answered); any other word, to the body
+    engine_runtime holds."""
+    got = ctx["bag"]["identity.read"]
+    if got.get("doubt"):
+        return doubt_answered(ctx, got)
+    return R.identity_file(ctx, step, item)
+
+
+def doubt_answered(ctx, got):
+    """The owner's answer to Adaptation's doubt, or 'just do it', which takes the fallback: it joins the Brief with the
+    question it answers and goes to Adaptation as a new line request that carries it (the cycle goes back to step 2)."""
+    ref, d, p = ctx["ref"], ctx["dept"], ctx["post"]
+    words, hurry = got["words"], bool(got.get("hurry"))
+    ask = R._j2().took(ref, got["doubt"], words, at=R._words_at(ref, p)) or {}
+    meta = ask.get("doubt") or {}
+    if meta.get("answered"):
+        return {"said": "took words for a doubt that was answered already"}
+    doubt, fallback = meta.get("doubt") or "", meta.get("fallback") or FALLBACK
+    answer = ("going with this: " + fallback.rstrip(".")) if hurry else words
+    row = R._file_words(ref, d, "To Identity's question (%s): %s" % (doubt.rstrip("?."), answer), "the owner's answer")
+    sent = R.post(ref, "Identity", "Adaptation", "request",
+                  _line(ref, R._brief_text(ref).strip() or d.get("goal") or words, doubt=doubt, answer=answer))
+    with W._lock(ref):
+        ask = next((a for a in W.asks(ref) if a["id"] == got["doubt"]), ask)
+        ask["doubt"] = dict(meta, answered=(sent or {}).get("n") or True)
+        W._put_ask(ref, ask)
+    R._tell(ref, d, p, "inform", {"word": "line", "done": ("Just doing it: %s. Adaptation shapes the plan from that; Priority and Root check it "
+                                                           "before anything runs." % fallback.rstrip(".")) if hurry else
+                                  "Thank you. Adaptation shapes the plan afresh with your answer; Priority and Root check it before anything runs."},
+            thread=p["thread"])
+    return {"said": "took the owner's %s to Adaptation's doubt and asked Adaptation to shape the plan again: %s" % (
+        "'just do it'" if hurry else "answer", answer[:160]), "filed": row["v"]}
+
+
+#: the bodies of this version's own, in the table beside the references
+CODE.update({'identity_read': identity_read, 'identity_file': identity_file, 'identity_doubt': identity_doubt})
 
 
 def view(ref, d, events, asks):
