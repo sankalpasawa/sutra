@@ -173,6 +173,8 @@ class Fixture(unittest.TestCase):
         out["adapt.line:refused"] = self.render("adapt.line", self.ctx("Adaptation", {"word": "line", "words": "A guide to the night clinic",
                                                                                       "faults": ["Facts is already an engine", "Site reads nothing"]}))
         out["adapt.line:goal"] = self.render("adapt.line", self.ctx("Adaptation", {"word": "line"}))
+        # the Library's own line, fitted to the goal (M5.2): the line as the Library has it, the required engine marked
+        out["adapt.fit"] = self.render("adapt.fit", self.ctx("Adaptation", {"word": "line", "words": "A guide to the night clinic"}), ("adapt.source",))
         # the make setting on (M6.4): a website's line Root sent back is made, with the practices in place read by adapt.source
         os.environ["J2_ADAPT_MAKE"] = "1"
         try:
