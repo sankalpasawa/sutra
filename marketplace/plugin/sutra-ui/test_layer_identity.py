@@ -211,6 +211,14 @@ def _pane(j2, ref):
     return V1.view(ref, W.dept(ref), J.events(ref), W.asks(ref))
 
 
+def _reading(W, ref, J):
+    """What Audit files of a version it read item by item and found every done-when item met in (M8.3), for J.audited to clear
+    done-when from, once that takes a reading; the keyword arguments to pass it ({} for a J.audited that clears it unread)."""
+    if "reading" not in inspect.signature(J.audited).parameters:
+        return {}
+    return {"reading": {"read": True, "met": [i["id"] for i in W.items_of(W.dept(ref))], "not_met": [], "to_confirm": [], "high": False}}
+
+
 def _in_state(j2, monkeypatch, state, org="Acme Learning"):
     """A department in one state of its cycle, reached the way a person reaches it (an organisation of its own: the
     same name finds the department already made)."""
@@ -226,7 +234,7 @@ def _in_state(j2, monkeypatch, state, org="Acme Learning"):
         ref = _born(j2, org=org)
     else:
         ref = _born(j2, org=org)
-        assert J.audited(ref, 1, []) is True              # Audit read what went out and found nothing: done-when holds
+        assert J.audited(ref, 1, [], **_reading(W, ref, J)) is True        # Audit read what went out, item by item, and found nothing: done-when holds
     assert J.status(ref)["state"] == state, J.status(ref)
     return ref
 
