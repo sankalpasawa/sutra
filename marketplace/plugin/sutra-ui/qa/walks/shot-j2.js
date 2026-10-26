@@ -192,10 +192,14 @@ const check = (name, ok, detail) => { results.push({ name, ok: !!ok }); console.
     }
     check(label + ": all 16 tabs were walked or are hidden by the page", walk.filter(w => w[1] !== "skipped").length >= 14);
     if (KIND === "ready" && !vp.mobile) {                  // the tabs the owner's sign-off list points at (design/PRD-FIVE-FUNCTIONS-J2UI.md)
-      for (const t of ["runsettings", "rundetails", "report", "style", "lessons", "playbooks", "charter", "preview", "audit"]) {
+      for (const t of ["runsettings", "rundetails", "report", "style", "lessons", "playbooks", "charter", "preview", "audit", "docs", "artifacts", "conflicts"]) {
         await run(`document.querySelector('.rail [data-tab="${t}"]').click()`);
         await shot(`detail-${t}-${vp.tag}.png`);
       }
+      // a work atom's card, opened: its prompt, reply and tokens are what the page prints for an atom that has them
+      await run(`(() => { document.querySelector('.rail [data-tab="workflows"]').click(); const d = document.querySelector('#pane-workflows details'); if (!d) return 0;
+        d.open = true; d.scrollIntoView(); [...d.querySelectorAll('details')].slice(0, 1).forEach(x => { x.open = true; }); return 1; })()`);
+      await shot(`detail-atoms-${vp.tag}.png`);
     }
     if (KIND === "ready" && !vp.mobile) {
       await run(`document.querySelector('.rail [data-tab="workflows"]').click()`);
