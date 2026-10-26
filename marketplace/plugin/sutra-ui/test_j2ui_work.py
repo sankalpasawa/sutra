@@ -6,6 +6,9 @@ Named claims (each step of the package adds its own):
   W2  a workflow for each engine of the registered line, in the line's order, W-1 on; none before Root's check registers a plan;
       an engine the plan left out is no workflow; the status is one of the page's six words, read from the engine's state, its
       asks and its latest run; and no string of a workflow is a check's id
+  W7  docs, preview and call answer with the prototype's empty shapes (Sutra stores no prompt and no reply); the call log has a row
+      for each step that made a model call, none for a department with no model step, and no figure nobody recorded (no tokens,
+      no model); a message is linked to its call only when exactly one call of its author brackets its time
   W4  a lane for each of the five functions, the validator and each workflow, in that order, with a status in idle, working,
       waiting or blocked; a function waits on you only while the owner holds the turn; the numbers are the record's (Priority's
       calls limit, the runs' retries), never the prototype's constants
@@ -672,3 +675,154 @@ def test_w4_the_prototypes_page_draws_the_lanes(mods):
     assert re.search(r"section\s*· attempts 0/240 · retries 0/3", text), text
     assert "last check: not run yet" in text
     assert not re.search(r"undefined|NaN|\bnull\b|\[object", text)
+
+
+# ---- W7: docs, preview, call and the call log ------------------------------------------------------------------------------
+T0, T1, T2, T3 = ("2026-10-26T10:00:0%d+05:30" % n for n in range(4))
+
+
+def model_step(R, engine="Priority", step="priority.bargain", started=T0, ended=T2, **more):
+    return step_row(R, engine, step, notes=more.pop("notes", ["the answer is say yes, ask for less or say no"]), calls=more.pop("calls", 1),
+                    started=started, ended=ended, ms=more.pop("ms", 2000), **more)
+
+
+def test_w7_docs_preview_and_call_answer_with_the_prototypes_empty_shapes(mods):
+    ctx = standin(mods)
+    empty_doc = {"asked": False, "text": None, "workflows": []}
+    assert K.docs(ctx) == {"prd": empty_doc, "hld": empty_doc, "lld": empty_doc}
+    d = K.docs(ctx)
+    d["prd"]["workflows"].append("x")
+    assert K.docs(ctx)["prd"]["workflows"] == [], "a shape of its own each time"
+    assert K.preview(ctx, "W-1.a1") == {"anchor": None, "html": None} == K.preview(ctx, "nothing")
+    assert K.call(ctx, 1) is None and K.call(ctx, "x") is None
+
+
+def test_w7_the_prototypes_page_says_no_document_was_asked_for(mods):
+    ctx = standin(mods)
+    text = shown(render(page_state(K.build(ctx)), "(Object.assign(DOCS, %s), renderDocs())" % json.dumps(K.docs(ctx))))
+    assert text.count("Not asked for in this run.") == 3 and "Not written yet" not in text
+
+
+def test_w7_a_department_with_no_model_step_has_an_empty_call_log(mods, born):
+    ref = born()
+    ctx = standin(mods, ref=ref)
+    assert K.build(ctx)["call_log"] == []
+    assert K.build(standin(mods))["call_log"] == []
+
+
+def test_w7_a_step_that_made_a_call_is_a_row_with_nothing_nobody_recorded(mods):
+    W, R, J, F = mods
+    cycle(W, "bargaining", 3)
+    step_row(R, "Plan", "plan.pages", notes=["6 pages proposed"], calls=2, started=T0, ended=T3, ms=3400, answer="Six pages: Home, About")
+    step_row(R, "Plan", "plan.read", notes=["the brief has words"], calls=0, started=T0, ended=T1)          # code: no call
+    model_step(R, answer="Priority granted the line")
+    ctx = standin(mods)
+    got = K.build(ctx)["call_log"]
+    assert [c["id"] for c in got] == [1, 2] and [c["fn"] for c in got] == ["W-1", "priority"]
+    one = got[0]
+    assert list(one) == ["id", "fn", "step", "cycle", "t", "seconds", "model", "tokens", "chars", "inputs", "reply", "reason"]
+    assert (one["t"], one["seconds"], one["model"], one["tokens"], one["reason"], one["cycle"]) == ("10:00:03", 3.4, None, None, "", 1)
+    assert one["chars"] == {"prompt": 0, "reply": len("Six pages: Home, About")}
+    assert one["inputs"] == [["step", "Propose the pages"]] and one["reply"] == {"say": "Six pages: Home, About"}
+    two = got[1]
+    assert two["inputs"] == [["step", "Say yes, ask for less, or say no"]] and two["reply"] == {"say": "Priority said yes to the line"}
+    assert all(c["tokens"] is None and c["model"] is None for c in got)
+    assert json.loads(json.dumps(got)) == got and not BANNED.search(json.dumps(got))
+
+
+def test_w7_a_call_with_no_answer_says_what_the_steps_check_noted_or_nothing(mods):
+    W, R, J, F = mods
+    model_step(R, notes=["the answer is say yes, ask for less or say no"])
+    model_step(R, notes=[], started=T1, ended=T2)
+    got = K.build(standin(mods))["call_log"]
+    assert got[0]["reply"] == {"say": "the answer is say yes, ask for less or say no"} and got[0]["chars"]["reply"] == 0
+    assert got[1]["reply"] is None, "the page then says 'No usable reply.'"
+
+
+def test_w7_the_step_a_call_was_made_in_is_the_cycles_step_at_that_time(mods):
+    W, R, J, F = mods
+    cycle(W, "bargaining", 3)
+    event(J, "proposal.created", "Adaptation", "Priority", "pending", "Proposed", step=2)
+    ev_at = J.events(REF)[0]["occurred_at"]
+    model_step(R, started=ev_at, ended=ev_at)
+    model_step(R, started="2000-01-01T00:00:00+05:30", ended="2000-01-01T00:00:01+05:30")
+    got = K.build(standin(mods))["call_log"]
+    assert [c["step"] for c in got] == [2, None]
+
+
+def test_w7_a_message_is_linked_to_the_one_call_of_its_author_that_brackets_its_time(mods):
+    W, R, J, F = mods
+    model_step(R, started=T0, ended=T2)                                   # Priority's call, 10:00:00 to 10:00:02
+    post(W, R, "Priority", "Adaptation", "accept-proposal", {"word": "line", "why": "fits"}, thread="x-1", at=T1)       # inside it
+    post(W, R, "Priority", "Adaptation", "accept-proposal", {"word": "line", "why": "fits"}, thread="x-2", at="2026-10-26T10:00:03+05:30")  # a second after
+    post(W, R, "Priority", "Adaptation", "accept-proposal", {"word": "line", "why": "fits"}, thread="x-3", at="2026-10-26T10:00:04+05:30")  # too late
+    post(W, R, "Adaptation", "Priority", "propose", {"word": "line"}, thread="x-4", at=T1)                              # another author
+    post(W, R, "Owner", "Identity", "request", {"word": "request", "words": "Build a site"}, thread="x-5", at=T1)       # the owner's
+    ctx = standin(mods)
+    K.build(ctx)
+    by_post = {ctx.chat[i - 1]["id"]: ctx.chat[i - 1] for i in ctx.msg_of.values()}
+    linked = {m["id"]: m.get("calls") for m in ctx.chat}
+    assert linked == {1: [1], 2: [1], 3: None, 4: None, 5: None}, linked
+    assert "calls" not in by_post[3] and "calls" not in by_post[4] and "calls" not in by_post[5]
+
+
+def test_w7_two_calls_that_overlap_a_message_link_neither(mods):
+    W, R, J, F = mods
+    model_step(R, started=T0, ended=T2)
+    model_step(R, started=T1, ended=T3)
+    post(W, R, "Priority", "Adaptation", "accept-proposal", {"word": "line", "why": "fits"}, thread="x-1", at=T1)
+    post(W, R, "Priority", "Adaptation", "accept-proposal", {"word": "line", "why": "fits"}, thread="x-2", at=T0)
+    ctx = standin(mods)
+    K.build(ctx)
+    assert [m.get("calls") for m in ctx.chat] == [None, [1]], "the first matches both calls and is left alone; the second only the first"
+
+
+def test_w7_a_message_that_has_calls_keeps_them_and_the_link_is_made_once(mods):
+    W, R, J, F = mods
+    model_step(R)
+    post(W, R, "Priority", "Adaptation", "accept-proposal", {"word": "line", "why": "fits"}, thread="x-1", at=T1)
+    ctx = standin(mods)
+    ctx.chat[0]["calls"] = [99]
+    K.build(ctx)
+    assert ctx.chat[0]["calls"] == [99]
+    ctx2 = standin(mods)
+    K.build(ctx2)
+    first = list(ctx2.chat[0]["calls"])
+    ctx2.memo.clear()
+    K.build(ctx2)
+    assert ctx2.chat[0]["calls"] == first == [1]
+
+
+def test_w7_the_dialog_shows_a_linked_messages_cost_and_an_unlinked_one_says_it_was_code(mods):
+    W, R, J, F = mods
+    model_step(R, started=T0, ended=T2, ms=2000)
+    post(W, R, "Priority", "Adaptation", "accept-proposal", {"word": "line", "why": "fits today"}, thread="x-1", at=T1)
+    post(W, R, "Adaptation", "Priority", "propose", {"word": "line"}, thread="x-2", at=T1)
+    ctx = standin(mods)
+    got = K.build(ctx)
+    state = page_state(got, chat=ctx.chat, total=len(ctx.chat))
+    linked = shown(render(state, "(state = s, openDetail(1), $('dbody').innerHTML)"))
+    assert "What it read" in linked and "step Say yes, ask for less, or say no" in linked
+    assert re.search(r"AI calls\s+1\s", linked) and re.search(r"time\s+2\.0 s", linked), linked
+    assert "not reported by this provider" in linked and "Written by code" not in linked
+    unlinked = shown(render(state, "(state = s, openDetail(2), $('dbody').innerHTML)"))
+    assert "Written by code, no AI call" in unlinked and re.search(r"AI calls\s+0\s", unlinked) and "instant (code)" in unlinked
+
+
+def test_w7_a_failure_in_the_log_leaves_every_other_key_filled(mods, monkeypatch):
+    W, R, J, F = mods
+    model_step(R)
+    ctx = standin(mods)
+    monkeypatch.setattr(K, "_call_row", lambda *a: 1 / 0)
+    got = K.build(ctx)
+    assert got["call_log"] == [] and [w["id"] for w in got["workflows"]] == ["W-1", "W-2", "W-3", "W-4"]
+    assert [r for r in ctx.reasons if r.startswith("call log: ZeroDivisionError")], ctx.reasons
+    assert sorted(got) == sorted(K.KEYS) and json.loads(json.dumps(got)) == got
+
+
+def test_w7_a_ctx_with_no_step_rows_at_all_still_gives_every_key(mods):
+    ctx = standin(mods)
+    ctx.steps = None
+    got = K.build(ctx)
+    assert got["call_log"] == [] and sorted(got) == sorted(K.KEYS) and json.loads(json.dumps(got)) == got
+    assert ctx.reasons, "and says why"

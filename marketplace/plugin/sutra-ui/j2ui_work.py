@@ -200,8 +200,93 @@ def _conflicts(ctx):
     return X.build_conflicts(ctx)
 
 
+# ---- W7: the call log, and the answers for documents, previews and calls ------------------------------------------------
+LINK_GRACE_S = 1                                             # a post is stamped to the second, so it may land a second after its step
+
+
+def _fn(ctx, engine):
+    """Who made a call: the function, lower case, or its W-k when it is a workflow's engine."""
+    return (ctx.wid(engine) if callable(getattr(ctx, "wid", None)) else None) or str(engine or "").lower()
+
+
+def _step_name(ctx, row):
+    """The name of the step a row is of: from its engine's template when the engine is in the line, else the Library's."""
+    for e in getattr(ctx, "engines", None) or []:
+        for s in (e.get("steps_view") or {}).get("steps") or []:
+            if s.get("id") == row.get("step"):
+                return A.plain(s.get("name"))
+    try:
+        return A.plain((R.step_def(row.get("step"))[1] or {}).get("name"))
+    except Exception:  # noqa: BLE001 -- a step the Library no longer has is named by its id
+        return A.plain(row.get("step"))
+
+
+def _call_row(ctx, i, row):
+    """One call of the log, from the step row that made it. What the model was given and said is not stored, so the prompt is
+    nothing, the tokens and the model are not recorded, and the reply is the line the step's own record has."""
+    answer = row.get("answer")
+    notes = [A.plain(n) for n in (row.get("check") or {}).get("notes") or [] if A.plain(n)]
+    said = A.cut(A.plain(answer) if isinstance(answer, str) else "", A.ANSWER_MAX) or (notes[0] if notes else "")
+    stamp = row.get("ended") or row.get("started")
+    return {"id": i, "fn": _fn(ctx, row.get("engine")), "step": ctx.step_at(stamp) if callable(getattr(ctx, "step_at", None)) else None,
+            "cycle": (ctx.cur or {}).get("round") or 1, "t": A.hhmmss(stamp), "seconds": round(int(row.get("ms") or 0) / 1000, 2),
+            "model": None, "tokens": None, "chars": {"prompt": 0, "reply": len(answer) if isinstance(answer, str) else 0},
+            "inputs": [["step", _step_name(ctx, row)]], "reply": {"say": said} if said else None, "reason": ""}
+
+
+def _times(ctx):
+    """When each thing a chat message is made from was recorded, by the registry's key: ('b', n) a post of the department's
+    board, ('r', n) one of Root's, ('a', id) an ask, ('x', id) the answer to an ask, ('e', seq) an event of the ledger."""
+    return {"b": {p.get("n"): p.get("at") for p in ctx.posts}, "r": {p.get("n"): p.get("at") for p in getattr(ctx, "root_posts", None) or []},
+            "a": {a.get("id"): a.get("created") for a in ctx.asks},
+            "x": {a.get("id"): (a.get("chosen") or {}).get("at") or a.get("decided") for a in ctx.asks},
+            "e": {e.get("seq"): e.get("occurred_at") for e in ctx.events}}
+
+
+def _link(ctx, rows):
+    """Set `calls: [id]` on a function's message when exactly one call of that function brackets the message's time: the call
+    began no later and ended no more than a second before. A message that matches two calls or none is left alone, and so is
+    one that already has them: a link is never a guess."""
+    spans = [(r, A.epoch(s.get("started")), A.epoch(s.get("ended"))) for r, s in rows]
+    spans = [(r, a, b) for r, a, b in spans if a is not None and b is not None]
+    if not spans:
+        return
+    times = _times(ctx)
+    when = {i: times.get(key[0], {}).get(key[1]) for key, i in (getattr(ctx, "msg_of", None) or {}).items()}
+    for m in getattr(ctx, "chat", None) or []:
+        at = A.epoch(when.get(m.get("id")))
+        if at is None or m.get("who") in (None, "user", "validator") or "calls" in m:
+            continue
+        hit = [r["id"] for r, a, b in spans if r["fn"] == m.get("who") and a <= at <= b + LINK_GRACE_S]
+        if len(hit) == 1:
+            m["calls"] = hit
+
+
 def _calls(ctx):
-    return []
+    """The AI calls of the department, one for each step row that made any, oldest first, and the messages they belong to."""
+    made = [r for r in ctx.steps if int(r.get("calls") or 0) > 0]
+    rows = [(_call_row(ctx, i, r), r) for i, r in enumerate(made, 1)]
+    _link(ctx, rows)
+    return [r for r, _ in rows]
+
+
+def _doc():
+    return {"asked": False, "text": None, "workflows": []}
+
+
+def docs(ctx):
+    """api/docs: a website team writes no PRD, HLD or LLD, so none was asked for ('Not asked for in this run.')."""
+    return {"prd": _doc(), "hld": _doc(), "lld": _doc()}
+
+
+def preview(ctx, atom_id):
+    """api/preview: what an atom built, as a page. Sutra keeps no section anchor, so there is none to show."""
+    return {"anchor": None, "html": None}
+
+
+def call(ctx, call_id):
+    """api/call: the full prompt and reply of a call. Sutra stores neither, so there is nothing to give (the router answers 404)."""
+    return None
 
 
 def _build(ctx):
