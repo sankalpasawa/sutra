@@ -12,9 +12,11 @@
 The fixture child lives under test_fixtures/, never under layers/ (test_every_layer_has_its_version_1_on_disk); a test loads it under
 the name layers.coordination.v2 and puts it in layers._LOADED, and the monkeypatch takes it out again.
 """
+import ast
 import copy
 import importlib.util
 import json
+import subprocess
 import sys
 import types
 from pathlib import Path
@@ -748,3 +750,161 @@ def test_a_child_that_stops_a_chain_one_run_sooner_lets_through_nothing_its_pare
     assert L.tightens(parent, coord_chain_one_sooner, contexts) == []
     assert L.tightens(coord_chain_one_sooner, parent, contexts) == [
         "context %d: the child answers admit where its parent answers wait" % (website_dept.CHAIN_LIMIT - 1)]
+
+
+# ---- I4 . the fixture child, end to end ---------------------------------------------------------------------------------------
+@pytest.fixture
+def ctx(tmp_path, monkeypatch):
+    """The contract fixture department, as test_layer_contracts.py makes it."""
+    monkeypatch.setenv("SUTRA_NATIVE_DEPT_HOME", str(tmp_path / "departments"))
+    monkeypatch.setenv("SUTRA_NATIVE_HOME", str(tmp_path / "registry"))
+    monkeypatch.setenv("SUTRA_WEBSITE_OFFLINE", "1")
+    monkeypatch.delenv("SUTRA_ENGINE_RUNTIME", raising=False)
+    return {"ref": C.fixture_department(tmp_path / "departments")}
+
+
+PROBE = {"id": "coord.probe", "name": "Probe", "nature": "transform", "born": "C2", "code": "coord_probe", "check": "said_what_it_did"}
+TIE_TASK = "Several functions are ready, and one runs at a time. Say who goes first (version 2)."
+
+
+def test_i4_the_fixture_child_is_a_version_of_coordination_that_lives_outside_layers(child):
+    assert (child.LAYER, child.VERSION, child.IMPLEMENTS, child.PARENT) == ("coordination", 2, S.SCHEMA_VERSION, "coordination/v1")
+    assert child.RECIPE_PATCH == "v2.patch.json" and not hasattr(child, "RECIPE")
+    assert layers.load("coordination/v2") is child and C.impl_id(child) == "coordination/v2"
+    assert Path(child.__file__) == FIXTURE / "coordination" / "v2.py" and not (LAYERS / "coordination" / "v2.py").exists()
+    assert child.coord_probe({}, {}, None) == {"said": "probe"}
+
+
+def test_i4_the_fixture_child_passes_the_contract_cases_1_to_13(child, ctx):
+    assert len(C.cases()) >= 13
+    for number, what, fn in C.cases():
+        assert fn(child, ctx) == [], "case %d: %s" % (number, what)
+
+
+def test_i4_a_pinned_child_serves_its_own_body_and_its_parents_for_the_rest(child, monkeypatch):
+    v1 = layers.load("coordination/v1")
+    monkeypatch.setitem(S.DEFAULT_PINS, "coordination", "coordination/v2")
+    assert layers.impl(None, "coordination") is child and layers.pins(None)["coordination"] == "coordination/v2"
+    probe = layers.resolve(None, "Coordination", "code", "coord_probe", R.CODE)
+    assert probe is child.CODE["coord_probe"] and probe is child.coord_probe
+    busy = layers.resolve(None, "Coordination", "code", "coord_busy", R.CODE)
+    assert busy is v1.CODE["coord_busy"] and busy is child.CODE["coord_busy"], "the very callable coordination/v1 holds"
+    assert layers.resolve(None, "Coordination", "check", "said_what_it_did", R.CHECK) is v1.CHECK["said_what_it_did"]
+    assert layers.impl(None, "identity") is layers.load("identity/v1"), "the other layers run their own"
+
+
+def test_i4_the_childs_published_tables_are_what_the_registry_reads(child, monkeypatch):
+    monkeypatch.setitem(S.DEFAULT_PINS, "coordination", "coordination/v2")
+    other = lambda ctx, step, item: {"said": "another probe"}  # noqa: E731
+    monkeypatch.setitem(child.CODE, "coord_probe", other)
+    assert layers.resolve(None, "Coordination", "code", "coord_probe", R.CODE) is other
+    monkeypatch.setitem(child.CODE, "coord_busy", other)
+    assert layers.resolve(None, "Coordination", "code", "coord_busy", R.CODE) is other
+    assert layers.load("coordination/v1").CODE["coord_busy"] is not other, "the parent's table is the parent's"
+
+
+def test_i4_a_pinned_child_is_viewed_through_its_parents_view(child, ctx, monkeypatch):
+    v1 = layers.load("coordination/v1")
+    ref = ctx["ref"]
+    d, asks = layers.W.dept(ref), layers.W.asks(ref)
+    monkeypatch.setitem(S.DEFAULT_PINS, "coordination", "coordination/v2")
+    assert child.view is v1.view and child.engine_card is v1.engine_card
+    assert layers.view(ref, "coordination", d, [], asks) == v1.view(ref, d, [], asks)
+
+
+def test_i4_the_childs_recipe_is_its_parents_with_the_probe_added_and_the_table_step_renamed(child):
+    expected = copy.deepcopy(layers.recipe("coordination/v1"))
+    expected["description"] = "Coordination, version 2 (a fixture): version 1 and one probe step."
+    born_steps(expected)[0]["name"] = "Write the table, version 2"
+    born_steps(expected).append(copy.deepcopy(PROBE))
+    got = layers.recipe("coordination/v2")
+    assert got == expected
+    parent_ids = L.step_ids(layers.recipe("coordination/v1"))
+    assert L.step_ids(got) == parent_ids + ["coord.probe"], "every step of version 1, and the probe after coord.table"
+    assert [s["id"] for s in born_steps(got)] == ["coord.table", "coord.probe"]
+    assert layers.chain("coordination/v2") == ["coordination/v2", "coordination/v1"]
+    assert L.recipe_faults(layers.recipe("coordination/v1"), got, "coordination") == []
+
+
+def test_i4_the_words_overlay_reaches_one_field_and_every_other_part_is_the_parents(child, monkeypatch):
+    v1 = layers.load("coordination/v1")
+    assert v1.WORDS["tie"]["tie"]["task"] != TIE_TASK
+    monkeypatch.setitem(S.DEFAULT_PINS, "coordination", "coordination/v2")
+    assert layers.words(None, "coordination", "tie", "tie")["task"] == TIE_TASK
+    for group, parts in v1.WORDS.items():
+        for part, fields in parts.items():
+            got = layers.words(None, "coordination", group, part)
+            if (group, part) == ("tie", "tie"):
+                assert {k: v for k, v in got.items() if k != "task"} == {k: v for k, v in fields.items() if k != "task"}
+            else:
+                assert got == fields, (group, part)
+    assert child.LAYOUT == v1.LAYOUT, "no layout was given, so the parent's arranges the new words"
+    text = layers.prompt(None, "coordination", "tie", "tie", **layers.prompts.sample_inputs("coordination", "tie", "tie"))
+    assert TIE_TASK in text and v1.WORDS["tie"]["tie"]["task"] not in text
+
+
+def test_i4_the_definitions_assembled_with_the_child_in_coordinations_place_validate(child):
+    assert layers.definition_faults(child) == [] and layers.definition_faults("coordination/v2") == []
+    d = copy.deepcopy(R.defs())
+    d["engines"]["Coordination"] = layers.recipe("coordination/v2")
+    assert R.validate(d) == ["Coordination, coord.probe: no function named coord_probe ships with the app"], \
+        "the child is not on disk under layers/, so its names are not the registry's until a caller says it brings them"
+    assert R.validate(d, {"code": set(child.CODE)}) == []
+    assert R.validate(R.defs()) == [], "and the definitions the department runs are untouched"
+
+
+def test_i4_the_fixture_changes_nothing_the_registry_lists(monkeypatch):
+    before = (layers.available(), {k: layers.names(k) for k in layers.KINDS})
+    load_fixture(monkeypatch)
+    after = (layers.available(), {k: layers.names(k) for k in layers.KINDS})
+    assert before == after and "coord_probe" not in after[1]["code"]
+    assert [C.impl_id(m) for m in C.discover()] == [S.DEFAULT_PINS[layer] for layer in S.LAYER_NAMES]
+
+
+FORBIDDEN_AT_IMPORT = ("engine_runtime", "website_dept", "j2_runtime", "functions_view", "layer_schema")
+
+
+def imports_at_import_time(tree):
+    """The imports that run when a module is imported: its own, and those under an if, a try or a class; not those in a function."""
+    found = []
+
+    def walk(node):
+        for child_node in ast.iter_child_nodes(node):
+            if isinstance(child_node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                continue
+            if isinstance(child_node, (ast.Import, ast.ImportFrom)):
+                found.append(child_node)
+            else:
+                walk(child_node)
+
+    walk(tree)
+    return found
+
+
+def runtime_names(node):
+    if isinstance(node, ast.Import):
+        return [a.name for a in node.names if a.name.split(".")[0] in FORBIDDEN_AT_IMPORT]
+    named = [node.module] if node.module and node.module.split(".")[0] in FORBIDDEN_AT_IMPORT else []
+    return named + [a.name for a in node.names if a.name in FORBIDDEN_AT_IMPORT]
+
+
+def test_i4_versions_and_the_contract_import_nothing_from_the_runtime_at_import_time():
+    for name in ("versions.py", "contract.py"):
+        top = imports_at_import_time(ast.parse((LAYERS / name).read_text(encoding="utf-8")))
+        assert top, "the scan found no import in layers/%s" % name
+        assert not [n for n in top if runtime_names(n)], "layers/%s imports the runtime when it is imported" % name
+    versions = imports_at_import_time(ast.parse((LAYERS / "versions.py").read_text(encoding="utf-8")))
+    assert {a.name for n in versions if isinstance(n, ast.ImportFrom) and n.module == "layers" for a in n.names} == {"R", "S", "lineage"}
+    # the five wrappers import layers.versions when called, so the package itself holds none of it at import time
+    package = imports_at_import_time(ast.parse((LAYERS / "__init__.py").read_text(encoding="utf-8")))
+    assert not [n for n in package if runtime_names(n) or "versions" in [a.name for a in n.names] or getattr(n, "module", "") == "layers.versions"]
+
+
+def test_i4_versions_and_the_contract_import_without_the_runtime_present():
+    code = ("import sys; sys.path.insert(0, %r)\n"
+            "for m in %r: sys.modules[m] = None\n"
+            "import layers.versions, layers.contract\n"
+            "assert layers.versions.DEPTH == 8 and layers.contract.cases()[12][0] == 13\n"
+            "print('ok')\n" % (str(HERE), list(FORBIDDEN_AT_IMPORT)))
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=str(HERE), timeout=60)
+    assert done.returncode == 0 and done.stdout.strip() == "ok", done.stderr[-2000:]
