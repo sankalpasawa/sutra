@@ -72,7 +72,10 @@ BARGAIN_WORDS = (("Send the granted line to Root's check", "Send the line Priori
 # Coordination's who-may-post check as a record written before it said the act in the owner's words kept it, the act's
 # own id on its card: 'Identity may refuse to Owner', 'Owner may reject-proposal to Identity', 'Audit may not post inform
 # to Identity' (engine_runtime.coord_edge). Read again, the note says the act the way coord_edge says it now (ACT_SAYS).
-MAY_NOTE = re.compile(r"^(?P<src>\w+) may (?P<not>not post )?(?P<act>[a-z-]+) to (?P<dst>.+)$")
+# Only a note that names who posts and to whom, as Coordination's table names them (the owner, Root and the five), is
+# read whole: a line of any other kind ('You may request to see the page') is never taken for one.
+POSTERS = r"(?:Owner|Root|Identity|Adaptation|Priority|Coordination|Audit)"
+MAY_NOTE = re.compile(r"^(?P<src>%s) may (?P<not>not post )?(?P<act>[a-z-]+) to (?P<dst>%s(?:, %s)*|nobody)$" % (POSTERS, POSTERS, POSTERS))
 
 
 def _may_note(line):

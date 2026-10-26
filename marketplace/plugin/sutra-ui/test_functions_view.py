@@ -1242,6 +1242,12 @@ def test_m17_each_act_says_the_same_words_on_the_board_and_on_coordinations_chec
                       ("Identity may agree to Owner, Adaptation, Coordination", "Identity may agree with the owner, Adaptation and Coordination")):
         assert owner_words.plain(old) == said, old
         assert owner_words.plain(said) == said, "a note in words is left as it is"
+    assert owner_words.plain("Identity may not post refuse to nobody") == "Identity may not post to nobody"
+    # only a note that names who posts and to whom is read whole: another line that happens to read 'X may <act> to Y'
+    # keeps its own words (it is not Coordination's, and plain() reads every line a function composed)
+    for line in ("You may request to see the page", "Priority may cancel to save room", "Identity may inform to keep it short",
+                 "Adaptation may propose to Priority a smaller plan", "Owner may refuse to Identityless pages"):
+        assert owner_words.plain(line) == line, line
     R._append(REF, "steps.jsonl", {"id": "s-old", "engine": "Coordination", "step": "coord.edge", "mode": "gate", "answer": "admit",
                                    "slot": "Owner>Identity:reject-proposal", "status": "ok", "started": W.now(), "ended": W.now(),
                                    "check": {"ok": True, "notes": ["Owner may reject-proposal to Identity"]}})
