@@ -9,6 +9,7 @@
 | Build | two developer packages, about 105 minutes of work in all (A2.12): A2-LAW, new files only, merges any time; A2-INHERIT, merges between wave 2 and wave 3. No wave waits for A2, and A2 touches no file a wave-1 package owns |
 | Decision log | the A2 rows of [PRD-FIVE-FUNCTIONS-DECISIONS.md](PRD-FIVE-FUNCTIONS-DECISIONS.md) |
 | Pointer for code | `layers/lineage.py` (the law, A2-LAW), `layers/versions.py` (inherit and resolve, A2-INHERIT), `layers/contract.py` cases 9 to 13 |
+| Amended by | [PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-FUNCTIONS-A3.md), 2026-10-26: the levels beyond the layers (the step, the function template, the engine and artifact templates, the kind, the ask) and the user journey are built and numbered there (L0 to L6). A3 changes no rule of A2; the lines marked 'Amended by A3' are under A2.2, A2.9 and A2.15 |
 
 ## A2.0 The direction, and how this reads it
 
@@ -69,6 +70,8 @@ Each row is a template (a base class) and what implements it (a child class). A3
 | User journey | A journey template | J1 to J4 (and the declared J5 to J7), each a child; a run of one is a child of that | A3 | A3 | A3 |
 
 **The pattern that adds a level.** A level is added the same way each time, and this is what A3 builds on: (1) the base is a typed definition in the interface (a DEFS name and its tables, or a data schema); (2) its children are modules or data files that conform; (3) one sentence states what a child may do (add or tighten) and may not (drop or loosen); (4) one contract case or test enforces that sentence; (5) the child declares what it extends (`PARENT`, `derives_from`, `WORKFLOW_FAMILY`) so the sentence can be measured.
+
+*Amended by A3 ([PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-FUNCTIONS-A3.md), A3.1): the levels of the table are built and numbered there: the user journey L0, the department kind L1, the function L2, the engine and workflow L3, the step L4, the artifact L5, the ask L6. At L2 the base is the layer interface extended by `S.FUNCTION_TEMPLATE` and the typed `goal` parts, and its children are the versions (`PARENT`); the Default and use-case pair of this table is a separate data line, called by those names and never 'function template'. The user journey is held by `journeys/contract.py` cases JC-1 to JC-12.*
 
 ## A2.3 The class diagram
 
@@ -306,7 +309,7 @@ The family is written once in the interface, as `S.WORKFLOW_FAMILY` (child sourc
 - **A template is the interface at its level** (the owner's definition). So each row of A2.2 is a template, and what implements it is a child. The layer's interface is one; the step shape is another (its rules are `engine_runtime.validate`'s: A2 names them and case 13 reuses them, and A3 may type them as `DEFS['step']`); a function's Default template is another.
 - **Built today, unchanged by A2.** A function's use-case templates (`function-templates/<fn>/*.json`, thirteen keys each) are children of the function's Default, held by the narrowing law in `test_narrowing_only`. A1.22 keeps them as the owner-pickable use cases of a function's card; they never define a verdict, a check or a slot. The engine templates (the Library's, and the ones Adaptation births, tagged `made_by`) and the Default artifact template are children of their bases in the same way. A kind in `engine_defs/website.json` is a department template (TPL-1).
 - **Goals.** A template holds things like goals. Today a function's own goal sits in several places that A3 folds into the function's template: the recipe's `description` and `skills`, the typed words `goal.does` and `goal.skills`, the interface's one-line description of the layer, and the floor lines of its use-case templates. A department's goal is a different thing (`dept.goal`, and `kinds[k].goal` as its template). A2 only fixes that the function's template is a base at its level.
-- **What A3 builds on, from A2:** the pair and its pattern (A2.2), the names in A2.15, the rule that a level states one sentence and has one case, and `PARENT` as the declared link. A3 owns the details of the function, engine, artifact, kind and ask levels and the journey level J1 to J4.
+- **What A3 builds on, from A2:** the pair and its pattern (A2.2), the names in A2.15, the rule that a level states one sentence and has one case, and `PARENT` as the declared link. A3 owns the details of the function, engine, artifact, kind and ask levels and the journey level J1 to J4. *Amended by A3: A3 built them, A3.1 to A3.8.*
 
 ## A2.10 Migration and the strangler
 
@@ -408,7 +411,7 @@ Nothing is converted. The six dict-form v1 modules that wave 1 merges are the fi
 | A2-INHERIT edits `layers/__init__.py`, `layers/contract.py`, `layer_schema.py` (one constant), and in `engine_runtime.py` `_line_notes` and the signature of `validate`, all shared with wave 3. | It merges between the waves; W3-PINS and W3-PROOF are written against it. |
 | The shared page (the artifact) is owned elsewhere and must take the glossary from the PRD. | The glossary text is final in A2.1 and in the PRD's section 16. |
 
-**Not built:** `LayerBase` and the six layer bases, `adopt`, `publish`, a CLI (`--list`, `--show`, `--freeze`); a frozen manifest; variant classes and per-version KINDS; a kind that defaults a pin set; `workflow_model.py` and Python workflow classes; template classes and the template rule language (A3); tombstones (a `drop` list); late binding across versions; any real `v2`.
+**Not built:** `LayerBase` and the six layer bases, `adopt`, `publish`, a CLI (`--list`, `--show`, `--freeze`); a frozen manifest; variant classes and per-version KINDS; a kind that defaults a pin set; `workflow_model.py` and Python workflow classes; template classes and the template rule language (A3); *(Amended by A3: built by A3, A3.1 to A3.8.)* tombstones (a `drop` list); late binding across versions; any real `v2`.
 
 ## A2.16 Files
 

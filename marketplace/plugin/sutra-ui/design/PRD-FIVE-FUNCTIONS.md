@@ -1,12 +1,14 @@
 # PRD: The department and its five functions, in the Sutra app
 
-_Status: Final for team review · Version 1.1 (1.0 of 2026-10-22, amended by A1 and A2 on 2026-10-26) · Written by: solution architect · Rulings and marks by: the owner (founder)_  
+_Status: Final for team review · Version 1.2 (1.0 of 2026-10-22, amended by A1, A2 and A3 on 2026-10-26) · Written by: solution architect · Rulings and marks by: the owner (founder)_  
 _Based on: the Native site (department page, journeys.json v2.4; the five function pages, functions.json 1.5); Sutra `6bb38ec6` (2.306.25); the J2 prototype `564e3a7`._  
-_Amended: A1, 2026-10-26 (the interface schema layer), on Sutra main `d24a467d` and the J2 prototype `3d8d2e8`; A2, 2026-10-26 (the class model of the interface layer), on Sutra main `827fe38f`. See [PRD-FIVE-FUNCTIONS-A1.md](PRD-FIVE-FUNCTIONS-A1.md) and [PRD-FIVE-FUNCTIONS-A2.md](PRD-FIVE-FUNCTIONS-A2.md)._
+_Amended: A1, 2026-10-26 (the interface schema layer), on Sutra main `d24a467d` and the J2 prototype `3d8d2e8`; A2, 2026-10-26 (the class model of the interface layer), on Sutra main `827fe38f`; A3, 2026-10-26 (a template at every level, and the user-journey template), on Sutra main `a660b5a2` and the J2 prototype `f9ceba1`. See [PRD-FIVE-FUNCTIONS-A1.md](PRD-FIVE-FUNCTIONS-A1.md), [PRD-FIVE-FUNCTIONS-A2.md](PRD-FIVE-FUNCTIONS-A2.md) and [PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-FUNCTIONS-A3.md)._
 
 > **Amendment A1 (2026-10-26).** The owner directed that Root and the five layers (Identity, Adaptation, Priority, Coordination, Audit) be one hard-coded interface schema in code, that every department workflow conform to it from a coding perspective, that nothing about a layer's structure be managed through .md files, and that each layer's behaviour be a module that can change version by version behind the fixed interface. A1 does this: `layer_schema.py` holds the interface, from which JSON Schema files are generated; `layers/<layer>/v<N>.py` and `v<N>.json` hold each layer's recipe and bodies, pinned per department by a rule that keeps old pins working; `workflow_schema.py` holds Root's standards; typed instruction fields replace the .md files. It overrides the '.md files' wording of S-28 and G3 and the decision MK-7, rewrites M2, and folds M7 into the workflow schema. Section 10 below is revised for A1 and for what is built on main (M0, M1, M2.1 to M2.4, M3.1 to M3.7, M4.1 to M4.7, M6.1); every step says which wave builds it. Wave 0 is one package (the schema core), waves 1 to 3 run packages in parallel, and nothing is left to a later session (A1.26). Screens S11 and S16 change and S18 is new. Everything else in this page stands.
 
 > **Amendment A2 (2026-10-26).** The owner asked where the base class and child class ideation is in this PRD, and said that as this is mostly interface and class ideation, it should be there. A2 writes it down. The interface (`layer_schema.py`) is the base class (also parent class, superclass, abstract base) and each layer version (`layers/<layer>/v<N>.py` with its `v<N>.json`) is a child class (also subclass, derived class, implementation). A later version can extend an earlier one: it names it in `PARENT`, writes only what differs (`layers.inherit` for the tables, words and layout; a patch for the recipe), and passes the same contract with five more cases, one of which runs the runtime's own definition check. The workflow sources are a family (fitted extends library, made extends shaped). The same base and child pair repeats at every level of template, down to the step; the other templates and the user journeys J1 to J4 as a template are amendment A3's. A2 changes no interface table, builds no runtime Python class, and amends A1 only by a header row and one line under A1.18 and under A1.19. See M2.12, the class model row in section 9.1, and the glossary (section 16).
+
+> **Amendment A3 (2026-10-26).** The owner said that a template is the structured way of working anything, that is, the interface, the base class and its implementations; that every step has one; that each of the five functions has a template of its own in the J2 prototype, with a goal in it, which this PRD lacked; and that J1, J2, J3 and J4 are part of another template, the user journey, to be written into the PRD first and built after. A3 does it. A template is an interface is a base class at every level: the user journey (L0), the department kind (L1), the function (L2), the engine and workflow (L3), the step (L4), the artifact (L5) and the ask (L6), each with its children, the one sentence a child keeps, and a case that fails when it does not (A3.1). The step and the journey are typed in `layer_schema.py`. A function's template carries its own goal and done, its role words and the boundaries of the five official role files, sent in every function's card (A3.4). The journeys J1 to J4 are written out in full, every step and every IF IT GOES WRONG edge of the site and the earlier rows it keeps, each bound to the code and the tests that prove it, and their status is computed from passing tests and never typed: of 62 rows, 49 are proven today, 11 are built with a named gap or unproven, and 2 are wanted (J2.8 is wave 2's; J4.4 is built by A3 and stays partly built). J5 to J7 and the functions' own journeys are declared, not built. The journeys reach the UI port as data only. A3 changes no rule of A1 or A2 and amends them by one line each. See [PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-FUNCTIONS-A3.md), M2.13, M11, section 9.5 and the glossary (section 16).
 
 > Build the department's five functions (Identity, Adaptation, Priority, Coordination, Audit) into the Sutra desktop app. Each one does its J2 job honestly for every kind of department, the owner sees the five working as one system, and the owner hears one voice: Identity's.
 
@@ -31,9 +33,10 @@ The five functions exist in code, but they do not tell the truth and they are no
 
 - G1 Each function does its J2 job for every kind (website, default, organic). 'Goal reached' is never claimed without Audit's reading of every done-when item.
 - G2 The owner sees the five functions in the app as one system: what each is doing, who it waits on and what it spends. The owner hears only Identity, in plain words.
-- G3 Each function reaches the version 1 the founder defined: one agent inside a code covering (S-28), its structure a hard-coded interface (`layer_schema.py`) and its instructions typed fields that code compiles into prompts (A1; no .md files). The owner can read its instructions in the app and change a field through an ask.
+- G3 Each function reaches the version 1 the founder defined: one agent inside a code covering (S-28), its structure a hard-coded interface (`layer_schema.py`) and its instructions typed fields that code compiles into prompts (A1; no .md files). The owner can read its instructions in the app and change a field through an ask. Every level of the department has a template that is its interface (A3).
 - G4 Every claim can be proved: the test lanes run what they say, the ledger records every step, and every reading carries evidence.
 - G5 Reuse Sutra's runtime. Port only the prototype's tested parts: the map read model, priced questions, measurable checks, and the done verdict as a covering check.
+- G6 Each journey the owner named (J1 to J4) is a typed template whose status comes from passing tests, never from prose (A3).
 
 **Non-goals**
 
@@ -47,6 +50,7 @@ The five functions exist in code, but they do not tell the truth and they are no
 - Porting the prototype's AI scheduler or its one-loop relay. Coordination alone cost 25 to 32 percent of input tokens there.
 - Migrating to the .ds-* design tokens (T15 is dead). U1 (the site's visitor) and U2 (several things in one place), which are not filled on the site.
 - Browser-driven Audit checks (overflow at 360 and 1280 px, script errors). Parked; only browser-free checks ship (M8.6).
+- The prototype's Adaptation planner (realization and certainty), its confidence judge, its 33-stage table, its rate card and its per-workflow agents: judged in A3.4.9 and left, with the planner recorded as a candidate child version of `adaptation/v1`. Typing J5 to J7 and the functions' own journeys beyond a declaration, and typing the work engines' prompts (A3.15).
 
 ## 4. Who it is for
 
@@ -88,19 +92,23 @@ The screenshot shows the site's menu: _A department > The five functions > Ident
 | Coordination | VSM S2: anti-oscillation; timetables and standards | Keeps the timetable: a slot for each engine, who goes first, one run at a time, hand-offs, a chain that stops at twelve, and an alarm past a window. It judges nothing about content. |
 | Audit | VSM S3*: sporadic direct inspection | The second pair of eyes. It reads what the department actually filed, item by item against done-when, with code checks first, and it also drops in unannounced. Its findings go to Identity. |
 
+**Each function is a template (A3.4).** The site's seven fields (goal, done, hears, writes, checks, envelope, settings) are the parts of one template that all five share, each with its own values. Goal and done are typed words (`goal.does`, `goal.done`); the other five are read from the interface. What a function is not and never does are constants of the interface; how it decides, what it may do and what it avoids are its version's words; and every rule of the prototype's five official role files has a recorded home (A3.4.5). The function's own journeys (FI1.., FA1.., FP1.., FC1.., FAU1..) below are children of the journey template, bound to the function (A3.8).
+
 ### Identity
 
 | | |
 |---|---|
 | **VSM** | VSM S5: identity and policy; closes the system |
 | **One line** | The department's voice and conscience. It hears you, checks that the identity is good enough, gates every effect by rule, closes conflicts, and says when the goal is reached. |
+| **Its own goal** | It holds the goal and the rules, judges every effect, and is the one the owner speaks with. (Typed as `goal.does`; A3.4.) |
+| **Done when** | Every request has a verdict and every effect a gate answer, and the goal is said to be reached only from Audit's reading of every done-when item. (A proposal, typed as `goal.done`: the site says placeholder until you mark it; A3.4.) |
 | **Holds** | Goal, done-when items, rules (go, ask, refuse, always), budget, owner and parent, each engine's window, and 'done, read against filed work'. After M3.1 these live in one record, dept.json. |
 | **Hands to** | Adaptation: a request for a line; the next thing to correct; Coordination: verdicts on gates; You: the only function that speaks to you (edges table; _tell, R:2048) |
 | **Rules it keeps** | Never makes anything; the maker is an engine. Asks only when a rule says ask (S-18); approvals only tighten (S-08). Never invents a goal or a rule; asks one decision-ready question at a time. Never writes the word 'charter' on screen. |
 | **Status today** | Take, answer, rule and weigh are built, and so is closing a conflict (the code is ahead of the site). The standard checks presence only and never fires. Thin words ask a question but file no answerable ask. A rule given as an answer is tagged go. Blocked has no way out. Version 1 on its page: the words become the Brief, one question on thin words, the first-publish ask, a tell. The completeness loop is R1, marked 'later'. |
 | **In the app** | First box on the Map. Its pane (S5) shows Enough to work?, the goal, done-when items, rules and conflicts closed. Chat speaks as the department with Identity's mark (S15). Settings > Instructions shows goal, completeness and take (S16). |
 
-**Its journeys, traced** (page journey and edges > PRD steps > screens):
+**Its journeys, traced** (page journey and edges > PRD steps > screens). These are declared children of the journey template (A3.8); a row that is a user journey's row says which:
 
 - FI1 Enough to work? (J2 step 1; edges FI1.1 'still too little: ask again' and FI1.2 'J1 already answered it: no question') > M0.5, M3.2, M3.3 > screens S5, S6
 - FI2 Words after go-live (J3; FI2.1 reaches outside: an ask; FI2.2 refuse: told why) > built; one voice in M3.6 > screen S15
@@ -114,13 +122,15 @@ The screenshot shows the site's menu: _A department > The five functions > Ident
 |---|---|
 | **VSM** | VSM S4: outside and future; intelligence |
 | **One line** | Decides how the department gets there. It proposes the workflows the goal needs, from the Library, fitted, or made fresh. After each reading it proposes the next round, until the goal holds. |
+| **Its own goal** | It decides how the department reaches its goal and keeps changing how as it learns: it proposes the workflows the goal needs, from the Library or shaped fresh, and a step's move up or down the ladder. (Typed as `goal.does`; A3.4.) |
+| **Done when** | Identity's done-when holds on Audit's reading, and Adaptation has nothing more to propose. (A proposal, typed as `goal.done`: the site says placeholder until you mark it; A3.4.) |
 | **Holds** | Its proposals on the board, ideas.json, ladder.json and its rounds. From M5.1, every proposal names the done-when items each engine covers. |
 | **Hands to** | Priority: every proposal and every round (a required wire); Identity: conflicts, and a granted round to file; Root: a granted line, for its check |
 | **Rules it keeps** | Senses and proposes; never applies. Every proposal passes Priority first. May drop an engine unless the template marks it required (S-06, S-21); may reword inside model steps without an ask (S-07). Engines come from Adaptation, never from Root (S-10). |
 | **Status today** | Proposing a line is partly built: a Library line is taken word for word, and offline the shaped line is a fixed draft. Taking a counter and reshaping twice are built. The next move is missing. Version 1 on its page (2026-09-30) is 'two to five workflows... no loop, no Make module'. J2 step 8 (2026-10-01) asks for the loop; Q2 settles which governs. |
 | **In the app** | A box on the Map. Its pane (S8) shows the latest proposal or round, a table of which engine covers which item, Root's check, reshapes and the next round. Settings > Instructions shows goal, sense, decide and make. |
 
-**Its journeys, traced** (page journey and edges > PRD steps > screens):
+**Its journeys, traced** (page journey and edges > PRD steps > screens). These are declared children of the journey template (A3.8); a row that is a user journey's row says which:
 
 - FA1 The first workflows (J2 steps 2 to 5; FA1.1 refused: reshape; FA1.2 no agreement: to Identity; FA1.3 not confident: ask) > M5.1, M5.2 > screen S8
 - J2.b No template fits: make the workflows from the identity, the goal and the practices in place. The owner's focus; 'needs to be filled' > M6 (spike, marks, build) > screen S8
@@ -134,13 +144,15 @@ The screenshot shows the site's menu: _A department > The five functions > Ident
 |---|---|
 | **VSM** | VSM S3: inside and now; the resource bargain |
 | **One line** | Prices every proposal against the room actually left and holds the budget. It answers yes, asks for less, or says no. It never orders. |
+| **Its own goal** | It grants each engine its envelope and answers proposals that cost something. (Typed as `goal.does`; A3.4.) |
+| **Done when** | Every proposal has an answer with its price, and no run went past its limit without a hold and an ask. (A proposal, typed as `goal.done`: the site says placeholder until you mark it; A3.4.) |
 | **Holds** | One envelope per engine (calls and USD a day) and the bargain threads. From M5.3 it also holds per-run spend and the check verdict as its indices; from M9.2, the ceiling for the goal. |
 | **Hands to** | Adaptation: said yes, asked for less, or said no; Identity: through Adaptation's conflict post when a limit is hit |
 | **Rules it keeps** | Prices and holds the budget; never orders (S-05). Never starts a run; never rejects over method. Never changes the goal or speaks to you. |
 | **Status today** | The bargain is a stub: 'room' means 1 to 6 engines and the cost is a constant. The envelope gate is built, but its holds never reach the ledger. A counter on a Library kind has a bug. All three templates say it orders the queue. Version 1 on its page: 'the envelope gate, as built. Nothing else.' |
 | **In the app** | Its pane (S9) shows the bargain as a timeline with three limit bars, today's budget as bars, and spend by round. Settings shows limits and Instructions (goal, bargain). |
 
-**Its journeys, traced** (page journey and edges > PRD steps > screens):
+**Its journeys, traced** (page journey and edges > PRD steps > screens). These are declared children of the journey template (A3.8); a row that is a user journey's row says which:
 
 - FP1 The envelope on every start (FP1.1 over: held, asks; FP1.2 you set a new limit) > built; holds reach the ledger in M0.4 > screens S9, S10
 - FP2 The bargain with Adaptation (J2 step 3; FP2.1 at the limit: to Identity; FP2.2 refused: idea parked) > M5.3, M5.4 > screen S9
@@ -153,13 +165,15 @@ The screenshot shows the site's menu: _A department > The five functions > Ident
 |---|---|
 | **VSM** | VSM S2: anti-oscillation; timetables and standards |
 | **One line** | Keeps the timetable: a slot for each engine, who goes first, one run at a time, hand-offs, a chain that stops at twelve, and an alarm past a window. It judges nothing about content. |
+| **Its own goal** | It keeps what engines share: one run at a time, who goes first when several are ready, who may post to whom, the chain's limit, a thread's bounds, and the alarm. Its own agent says who goes first when several functions are ready at once. (Typed as `goal.does`; A3.4.) |
+| **Done when** | Every ready engine had its turn by the rule the table declares, one run at a time, and no chain, window or lost request went unanswered. (A proposal, typed as `goal.done`: the site says placeholder until you mark it; A3.4.) |
 | **Holds** | coordination.json: the order, the line, the timetable (from M4.3) and who may post to whom. Also the run rows and thread bounds. |
 | **Hands to** | Identity: alarms, lost requests, verdict asks; Priority: verdict asks |
 | **Rules it keeps** | No model call inside a tick; a missed slot runs once; one run per slot. The engine starts itself in its slot (2026-09-27). Never changes envelopes, scope or quality calls. |
 | **Status today** | Ordering, the chain limit, bounds, the alarm and the in-app motor are built. The line is not rebuilt from the registered workflow. Hand-offs are hard-coded for the website kind. There is no timetable record. Version 1 on its page: 'as built'. |
 | **In the app** | Its pane (S7) shows the timetable, what is waiting and why, who makes and who reads each thing, the chain bar, alarms and ties. The engine card (S17) carries the motor. Settings shows who goes first, who may message whom, and Instructions (goal, tie). |
 
-**Its journeys, traced** (page journey and edges > PRD steps > screens):
+**Its journeys, traced** (page journey and edges > PRD steps > screens). These are declared children of the journey template (A3.8); a row that is a user journey's row says which:
 
 - FC1 Who goes first (FC1.1 a tie: one AI call; FC1.2 a held one holds the ones after it; FC1.3 past its window: an alarm) > built; reasons and ties shown in M4.5 > screen S7
 - FC2 A lost request (J1 edge) > built > screen S15
@@ -172,13 +186,15 @@ The screenshot shows the site's menu: _A department > The five functions > Ident
 |---|---|
 | **VSM** | VSM S3*: sporadic direct inspection |
 | **One line** | The second pair of eyes. It reads what the department actually filed, item by item against done-when, with code checks first, and it also drops in unannounced. Its findings go to Identity. |
+| **Its own goal** | It drops in on what went live and checks claims against the record. (Typed as `goal.does`; A3.4.) |
+| **Done when** | Every version of the deliverable was read item by item, and every finding went to Identity, saying where it is and what it claims. (A proposal, typed as `goal.done`: the site says placeholder until you mark it; A3.4.) |
 | **Holds** | Its readings (readings.jsonl, from M8.3) and its findings. |
 | **Hands to** | Identity only: readings and findings |
 | **Rules it keeps** | The checker is never the writer (R8); it never touches a workflow or a version. A check is a check, never a score. Reads what the department did, never only its goal (POSIWID). |
 | **Status today** | Works for websites only, and starts only on a checked Live site. It samples v1 to v3 and then every third version, and a skipped version counts as clean. The judge checks facts only, and there is no reading per item. Version 1 on its page: 'as built: read the live site against the words'. |
 | **In the app** | A box on the Map. Its pane (S12) shows done-when as read, readings per version, findings and where each went, and spot checks. Settings > Instructions shows goal and judge. |
 
-**Its journeys, traced** (page journey and edges > PRD steps > screens):
+**Its journeys, traced** (page journey and edges > PRD steps > screens). These are declared children of the journey template (A3.8); a row that is a user journey's row says which:
 
 - FAU1 Read the result (J2 step 7; FAU1.1 a hole: asks you; FAU1.2 a workflow with web tools looks it up) > M0.3, M8.1 to M8.3, M8.6 > screen S12
 - Sporadic, unannounced spot checks of engine state (ruled 2026-09-27) > M8.7 > screen S12
@@ -213,6 +229,9 @@ The screenshot shows the site's menu: _A department > The five functions > Ident
 | Show 'Root' for now. | Founder 2026-10-07 (PRD-1007 section 6); WB_HELPER |
 | Components only render; every write is an ask the owner stamps; CSS uses tokens only. | ADR-023; test_website V12 |
 | Born engine templates stay local, and workflows register on the department's record. | S-12; S-25 (Q5) |
+| A template is an interface is a base class, at every level; a child keeps one stated sentence, and a case fails when it does not. | A3 (owner, 2026-10-26); A2.2 |
+| A journey's status is computed from passing tests; a row either binds to code and tests or says it is wanted. | A3 (owner, 2026-10-26) |
+| A function's boundaries are the interface's; its behaviour is its version's words. | A3.4 |
 
 ## 8. Where things stand today
 
@@ -255,7 +274,7 @@ _As of 2026-10-26, Sutra main `d24a467d` holds M0, M1 and its fix, M2.1 to M2.4,
 
 ## 9. Architecture in the Sutra app
 
-Sutra's runtime stays the control flow. Each function is an engine, with a code covering around an AI inside, that talks only on the department's board, and engines start themselves in Coordination's timetable. This PRD adds one read-only projection, functions_view.py, that every screen reads. Amendment A1 puts Root and the five layers behind one hard-coded interface (`layer_schema.py`) and each layer's recipe and bodies in a module of its own (`layers/<layer>/v<N>.*`); each function's prompts are compiled from typed fields, with the owner's values kept in the records home (`{ref}/instructions.json`). New verdicts go where the rulings put them: 'done' in Identity's covering, the ceiling in Priority's covering, and the table and timetable written by Coordination. j2_runtime stays a ledger and a projection of the cycle, never a supervisor above the five.
+Sutra's runtime stays the control flow. Each function is an engine, with a code covering around an AI inside, that talks only on the department's board, and engines start themselves in Coordination's timetable. This PRD adds one read-only projection, functions_view.py, that every screen reads. Amendment A1 puts Root and the five layers behind one hard-coded interface (`layer_schema.py`) and each layer's recipe and bodies in a module of its own (`layers/<layer>/v<N>.*`); each function's prompts are compiled from typed fields, with the owner's values kept in the records home (`{ref}/instructions.json`). New verdicts go where the rulings put them: 'done' in Identity's covering, the ceiling in Priority's covering, and the table and timetable written by Coordination. j2_runtime stays a ledger and a projection of the cycle, never a supervisor above the five. Amendment A3 adds the templates of every level beyond the layers (the step, the kind, the engine and artifact templates, the ask), the function template, and the user-journey template with its computed status; see A3.1 and section 9.5.
 
 ```mermaid
 flowchart LR
@@ -291,9 +310,12 @@ flowchart LR
 | Layer modules (A1) | New | sutra-ui/layers/<layer>/v<N>.py and v<N>.json; layers/__init__.py (registry), prompts.py, contract.py | Each layer's recipe and bodies, its typed words and layout, and its view, pinned by version. |
 | Workflow schema (A1) | New | sutra-ui/workflow_schema.py | The code of Root's standards, run at birth, proposal, registration, grow and write. |
 | Class model of the interface layer (A2) | New | sutra-ui/layers/lineage.py, layers/versions.py; layers/contract.py (cases 9 to 13); layer_schema.WORKFLOW_FAMILY | The base class is the interface and a layer version is its child class. A version names the version it extends (`PARENT`), inherits its tables, words, layout and surface (`layers.inherit`) and patches its recipe (`layers.recipe`); the contract keeps it substitutable, and the runtime's own definition check (`layers.definition_faults`) keeps it loadable. The workflow sources form a family (fitted extends library, made extends shaped). No runtime Python class is built. |
+| Template interface (A3) | New | sutra-ui/layer_schema.py (its A3 section), template_checks.py, test_layer_templates.py | `DEFS` for the step, its row, the engine start, the Library engine template, the kind and the artifact template; `S.TEMPLATE_LEVELS`, `S.ASK_FORMS`. The shape law beside `engine_runtime.validate`'s definition law. |
+| Function template (A3) | New | layer_schema.py (`FUNCTION_TEMPLATE`, `DEPARTMENT_AGREEMENT`, the parts of the `goal` group), layers/<fn>/v1.py, layers/contract.py (case 14), engine_runtime.card | A function's own goal and done, its role words and the boundaries of the official role files, sent in the card of every function step. |
+| Journey template (A3) | New | layer_schema.py (`journey` and its parts), journeys/ (the loader, the cases, the state, the walk helper, the data), qa/journey_status.py | J1 to J4 as typed children, J5 to J7 and the function journeys declared; the status computed from tests. |
 | Function instructions | Built, reworked by A1 | function-prompts/<fn>/<file>.md (the fallback until each layer holds its words in wave 1; deleted in wave 3); owner values in {records}/{ref}/instructions.json | Typed fields that code compiles into prompts, byte for byte as the .md parts were. |
 | JSON Schema files (A1) | New, generated | sutra-ui/schemas/layers/*.schema.json, interface.v1.json | Generated from layer_schema.py by `python layer_schema.py --write`; never edited by hand. |
-| Function templates | Existing, wording changed | sutra-ui/function-templates/priority/*.json | Priority's floor, choices and chat_brief stop saying it orders. The 13 keys are unchanged. |
+| Function templates | Existing, wording changed | sutra-ui/function-templates/priority/*.json | Priority's floor, choices and chat_brief stop saying it orders. The 13 keys are unchanged. The card reads a picked template's whole floor (A3.4.6). |
 | Engine definitions | Existing, changed | sutra-ui/engine_defs/website.json | Audit and Adaptation start on the department's deliverable. Adds Audit's timer trigger, required flags, the new steps, and a call_usd prior in Priority's template. |
 | Founding | Existing, changed | sutra-ui/founding.py | Writes the shaped goal and Root's drafted done-when items into dept.json. |
 | Older department API | Existing, narrowed | sutra-ui/dept_api.py | Kept for registry-only departments. Runtime departments stop calling it for function cards (M10.2). |
@@ -316,6 +338,8 @@ flowchart LR
 | Root's standards | in code: layer_schema.WORKFLOW_STANDARDS and workflow_schema.py | (id, says, sources, stages) and the code check behind each; read-only for the owner (S18). |
 | Layer recipes | layers/<layer>/v<N>.json | Each function engine's handlers, steps, gates and rules, moved out of engine_defs/website.json (A1.18). |
 | Registry charter | ~/.sutra-native/user-kit/charters/C-<sha>.json | A one-way mirror of dept.json, written directly (no org.charter proposal) on every identity_revision bump. The Org screen still reads it. |
+| Journeys (A3) | journeys/*.json, journeys/functions/*.json | `DEFS['journey']`: one file a journey; shipped in the bundle. |
+| Journey status (A3) | journeys/status/<id>.json (generated by `qa/journey_status.py --write`) | `DEFS['journey.status']`: a state for every row, from the last run of the tests the journey lists. |
 
 ### 9.3 APIs
 
@@ -334,6 +358,8 @@ flowchart LR
 | POST /api/native/{ref}/ask {text} | The owner's words. The Org sheet's 'New sub-department' also uses it under an organisation with a Root (M1.4). | Existing |
 | GET /api/native/{ref}/map \| status \| board \| chat?fn= | Existing reads. The Map's NOW line also reads /functions. | Existing |
 | POST /api/native/{ref}/envelope {engine, calls, usd} | The owner's limits; 'raise' options apply through it. | Existing |
+| GET /api/native/journeys | The journeys, their states and counts, read only (A3.6). | New (A3) |
+| GET /api/native/journeys/{id} | One journey with the state of every row. 404 {code: UNKNOWN_JOURNEY}. | New (A3) |
 
 ### 9.4 The J2 loop and its edges
 
@@ -355,6 +381,8 @@ flowchart LR
 | Edge J2.6 Wants to send something outside | Identity | Asks the first time (the born rule). Whether that conflicts with S-18 is open. | identity_gate (R:1725); Q14 |
 | Edge J2.7 A result fails its check | Check, Coordination, Identity | Sent back twice at most, then an options ask. Today the owner is only told. | _send_back (R:1607); M9.5 |
 | Edge J2.8 You change the goal | Identity | A goal rule you stamp reopens a cycle at step 1. | R:2582-2596; M9.8, Q7 |
+
+The eight steps are the sub-journeys J2.a to J2.h of `journeys/J2.json`, and the edges are its rows J2.1 to J2.8 with the tests that prove them; where this table says 'After: M...' the journey row says `partly` or `wanted` until the named step merges (A3.7, A3.9).
 
 ```mermaid
 sequenceDiagram
@@ -401,6 +429,37 @@ sequenceDiagram
   end
 ```
 
+### 9.5 Templates: the interface at every level (A3)
+
+A template is an interface is a base class, at every level (A3.1). The same pair repeats: a typed base in `layer_schema.py`, children that conform, one sentence a child keeps, one case that fails when it does not.
+
+| Level | Base class (the interface) | Children | The sentence a child keeps |
+|---|---|---|---|
+| L0 User journey | `DEFS['journey']` | J1 to J4 (built here); J5 to J7 and the functions' journeys (declared) | May add rows, tests, rulings and quotes; may not drop, move or re-word a row the site lists; carries no typed status; each row binds to code and passing tests or is wanted |
+| L1 Department kind | `DEFS['kind']` | website, root, default, organic | Names its line, the required engines inside it, rules, a use case and a functions template |
+| L2 Function | the layer interface extended by `S.FUNCTION_TEMPLATE` and the `goal` parts | the layer's versions; separately, a Default template and its use-case templates | Keeps the role, the "is not", the "never" lines and the agreement, supplies the words within limits; a use case adds floor lines and keeps the checks |
+| L3 Engine and workflow | `DEFS['engine.library']`, `DEFS['workflow']` | engine templates (born ones add `made_by`); the four workflow sources | Names its start and steps that conform; a child source keeps its parent's standards |
+| L4 Step | `DEFS['step']` | code, AI, person, gate, rule | Identity, nature, born rung, a registered check and a body of its kind; a unit starts and ends by code; only the free fields change between versions |
+| L5 Artifact | `DEFS['artifact.template']` | the ten templates; an app's | Names its files, checks that exist, when it counts and operations that are engines |
+| L6 Ask | `DEFS['identity.ask']`, `S.ASK_FORMS` | one form per ask kind | A known kind, at most three known options, filed only by Identity |
+
+```mermaid
+flowchart TD
+  L0["L0 User journey: J1 to J4 built, J5 to J7 and function journeys declared"]
+  L1["L1 Kind: website, root, default, organic"]
+  L2["L2 Function: layer interface + S.FUNCTION_TEMPLATE, versions as children"]
+  L3["L3 Engine and workflow: engine templates, four sources"]
+  L4["L4 Step: code, AI, person, gate, rule"]
+  L5["L5 Artifact: templates"]
+  L6["L6 Ask: one form per kind"]
+  L1 --> L2 --> L3 --> L4
+  L3 --> L5
+  L4 --> L6
+  L0 -. walks through .-> L2
+```
+
+The journey template, with its children J1 to J4 and the computed status, is in A3.6 and A3.7; the step template in A3.3; the function template, with each function's own goal and done, in A3.4. The journeys reach the UI port as data only (two read-only routes, no screen).
+
 ## 10. Milestones
 
 _Revised for amendment A1 (2026-10-26) and for what is on main `d24a467d`. Each step says whether it is built, and in which wave of A1.26 the rest is built._
@@ -418,12 +477,14 @@ _Revised for amendment A1 (2026-10-26) and for what is on main `d24a467d`. Each 
 | M8 | Audit reads every result against done-when | to build | Audit (VSM S3*) · FAU1, J2.g · S-30 (MK-2 taken) · S-31: function × LIFE | M0.3, M2, M3.2, M4.2 | L · M8.1 to M8.3 and M8.9 inside W1-AUDIT (about 80 min, wave 1); M8.4 to M8.6 and M8.8 in wave 2; M8.7 in wave 3 |
 | M9 | Pursue: keep going until done | to build | Adaptation, with Priority and Identity · FA2, J2.h · S-31: department × LIFE | M5, M8 | L · wave 2: W2-IDENTITY, W2-ADAPT, W2-PRIORITY and W2-SCREENS (about 80 min) |
 | M10 | Internal messages, one API, the proof run | to build | All five · ruled screens 3.1 to 3.4 · S-31: department × MEETINGS | M1, M2, M9 | M · wave 2: W2-SCREENS and W2-PROOF; wave 3: W3-PROOF reruns the proof |
+| M11 | Templates at every level, and the journeys as a template (A3) | to build | Every level of the department; the user journeys J1 to J4 · S-31: department × MEETINGS and function × PARTS | M2.12, M4 to M9 for the rows it binds | L · five packages (A3.12); A3-CORE first, the rest alongside and after wave 2 |
 
 **How it is built (A1.26).** Parallel developer agents, each in its own git worktree with its own files, merged into main one at a time by an integrator on a green gate, then verified.
 - **Wave 0** (about 75 min): W0-SCHEMA alone, the schema core: layer_schema.py bound to the writers on main, warn mode at every write point and on every post, the generated JSON Schema files, the recipes in `layers/<layer>/v1.json`, the contract helpers, and a conftest fixture that fails any test meeting a fault.
 - **Wave 1** (about 110 min): W1-CORE (the registry, the seam and the typed prompt compiler first, then typed owner instructions and the interface API), W1-ROOT, W1-IDENTITY, W1-ADAPT, W1-PRIORITY, W1-COORD, W1-AUDIT and W1-UI. Every built milestone is bound to the interface, and M7.1 to M7.4, M3.9, M5.1, M5.3, M6.3 to M6.5 and M8.1 to M8.3 are built. It ends with the integrator's 'A1 interface: refuse' commit.
 - **Wave 2** (about 80 min): W2-PRIORITY, W2-IDENTITY, W2-CHECKS, W2-ADAPT, W2-SCREENS and W2-PROOF build M9 and M10, and M5.2, M5.4 to M5.6, M7.5, M8.4 to M8.6 and M8.8.
 - **Wave 3** (about 50 min): W3-PINS, W3-BOARD, W3-MAP and W3-PROOF build per-department versions (M2.11), board/1 (M4.9), spot checks (M8.7), the metro WORK row (M1.11), and the freeze (M2.10).
+- **A3** (about 8 hours of developer time over five packages, beside waves 2 and 3): A3-CORE (types, about 75 minutes) merges first, before wave 2's first merge; A3-JOURNEYS (the machinery, about 100 minutes) after it; A3-FUNCTIONS (about 130 minutes) after the last wave-2 layer package and A2-INHERIT and before W3-PINS; A3-J12 and A3-J34 (about 90 and 100 minutes) after wave 2, J34 after J12. No wave-2 package waits for A3; W3-PINS and the freeze in W3-PROOF wait for A3-FUNCTIONS (A3.12).
 
 Waves 0 and 1 end at about 3 h 05 min, wave 2 at about 4 h 25 min, wave 3 at about 5 h 15 min; the owner's 3-to-4-hour window closes inside wave 2, and waves 2 and 3 run straight after in the same build.
 
@@ -443,6 +504,8 @@ flowchart LR
   M5 --> M9["M9 Pursue (wave 2)"]
   M8 --> M9
   M9 --> M10["M10 Messages, one API, proof (wave 2; frozen wave 3)"]
+  M2 --> M11["M11 Templates and the journeys as a template (A3)"]
+  M9 --> M11
 ```
 
 **Working agreement:** one branch per package (`a1/<package>`, `a2/<package>`, `a3/<package>`), one commit per step named after it ('A1 <step id>: <title>'), the gate green before each merge, and never a push. Each package owns the files and engine_runtime regions its spec lists; nobody edits the four registry literals or def_version (the integrator bumps it); a package adds its own layer's interface rows in 'A1 interface:' commits, and the integrator makes the shared ones. At a wave's cut-off the integrator merges whole steps, and a step not merged opens the same layer's package in the next wave. Every milestone still ships to Beta (:8331) first, then a Human Simulation walk, then the owner's review, then stable.
@@ -693,6 +756,12 @@ flowchart LR
 - **Where:** `layers/lineage.py; layers/versions.py; layers/__init__.py (wrappers, recipes); layers/contract.py (cases 9 to 13); layer_schema.py (WORKFLOW_FAMILY); engine_runtime.py (_line_notes; validate's optional provided argument); test_layer_lineage.py; test_layer_inherit.py; test_fixtures/layers_lineage/`
 - **Done check:** test_layer_contracts passes cases 1 to 13 for every version. A fixture child of coordination/v1 (a patch that adds one step and a words overlay) passes them, resolves when pinned, and its definitions validate. A soft step first or last in a unit passes the recipe law and fails case 13. A child source keeps every standard of its parent source, and nothing but `S.validate_workflow` calls `workflow_schema.run`.
 
+**M2.13 · The function template (A3, between wave 2 and wave 3)**
+- **What:** A function's own goal and done and its role are typed template parts; the boundaries of the five official role files are interface constants; the card sends them to every function step. Adaptation's goal is corrected to the site's, the card reads a picked template's whole floor, and the pane reads the typed goal.
+- **How:** A3-FUNCTIONS (A3.4): `S.FUNCTION_TEMPLATE` and `S.DEPARTMENT_AGREEMENT` (A3-CORE C5), the parts `goal.done` and `goal.role_is`, `role_may`, `role_procedure`, `role_patterns`, `role_block` in the group `goal` (`S.ADDED_PARTS`), the words in each v1, contract case 14, `engine_runtime._role_block`, the floor fix, Adaptation's goal as a step of its own, the pane, and a comparison script for the block.
+- **Where:** `layer_schema.py; layers/<fn>/v1.py; layers/contract.py; engine_runtime.py (card, _role_block, _floor_lines); functions_view.py (goal, done); test_layer_function_template.py; test_fixtures/templates/role-rules.json; qa/role_block_ab.py`
+- **Done check:** Case 14 passes for all five versions, with a failing example per fault. The card of a function carries the block and a work engine's does not. The prompt snapshot differs only by the goal, the floor and the block, each in its own commit. Every rule of the five official role files has a home (`role-rules.json`, with a key phrase per rule). The whole gate is green.
+
 **Acceptance:**
 - Root and the five layers are typed in layer_schema.py, bound to the writers on main.
 - Every write of dept.json, asks.json, coordination.json, instructions.json, every board post and every engine template is checked; SM-13 is 0 on the gate, then in refuse mode.
@@ -701,6 +770,7 @@ flowchart LR
 - Each layer runs from its module, recipe included, and all six pass the contract.
 - A department pinned to an older version keeps running that version's own recipe and bodies (wave 3).
 - A version can extend another, write only what differs, and pass the same contract; the base class is the interface and a layer version is its child class (A2).
+- A function's own goal and done are typed, and the boundaries of the five official role files are interface constants that every function's card sends (A3, M2.13).
 
 **Ported from the prototype:** atom/1 and board/1 module style: a schema constant, status tuples, pure validators (j2_schema.py, j2_board.py)
 
@@ -1241,6 +1311,78 @@ flowchart LR
 **Ported from the prototype:** Message detail without raw payloads; secrets removed before display (redact()); board/1 rows as Internal messages rows, when built
 
 **Risks:** Live proof runs are costly and pending. Mitigation: stubbed metrics now; three briefs per kind inside each ceiling later.
+
+---
+
+### M11 · Templates at every level, and the journeys as a template
+
+| | |
+|---|---|
+| **Centres on** | Every level of the department; the user journeys J1 to J4 · S-31: department × MEETINGS and function × PARTS |
+| **Goal** | Every level of the department has a template that is its interface (the user journey, kind, function, engine and workflow, step, artifact and ask), typed in `layer_schema.py` with children that conform. J1 to J4 are written in full and each row is bound to the code and tests that prove it or marked wanted; the status is computed from passing tests. |
+| **At the end, the owner sees** | Nothing new on screen. The journeys and their states are served as data (two read-only routes); a function's pane shows its own goal and, as a proposal, its done. |
+| **Status** | to build |
+| **Ships screens** | none |
+| **Depends on** | M2.12, and M4 to M9 for the rows it binds |
+| **Size** | L · five packages (A3.12); A3-CORE first, the rest alongside and after wave 2 |
+
+**M11.1 · The step template (A3-CORE C1)**
+- **What:** `DEFS['step']` (closed; each field fixed or free), its row, the engine start, the kinds and the ctx keys.
+- **How:** A3.3, written on the module's own constructors and run against the 93 steps on main.
+- **Where:** `layer_schema.py; template_checks.py; test_layer_templates.py; layers/lineage.py (two words)`
+- **Done check:** Every step of every recipe and engine template fits; a failing example per kind; the classification equals A2-LAW's lists; a run's rows fit `DEFS['step.row']`; no body is given a ctx key outside `S.STEP_CTX`.
+
+**M11.2 · Kind, engine and artifact templates (A3-CORE C2)**
+- **What:** `DEFS['kind']`, `DEFS['engine.library']`, `DEFS['artifact.template']`.
+- **How:** A3.5, written against the shipped files and never narrower than one of them.
+- **Where:** `layer_schema.py; template_checks.py; test_layer_templates.py`
+- **Done check:** The four kinds, six engine templates and ten artifact templates validate, and `engine_runtime.validate` agrees on a bad kind.
+
+**M11.3 · The journey template: the types (A3-CORE C3) and the machinery (A3-JOURNEYS)**
+- **What:** `DEFS['journey']` and its parts; the loader, the twelve cases, the computed state, the walk helper, the two read-only routes.
+- **How:** A3.6. The saved copy of the site's own data file is the reference of JC-9.
+- **Where:** `layer_schema.py; journeys/*.py; website_api.py (two routes); test_layer_journeys.py; test_fixtures/journeys/`
+- **Done check:** Every case has a failing example; the good journey passes every case; both routes answer, an unknown id is 404 `UNKNOWN_JOURNEY`, and a department ref named `journeys` is not shadowed.
+
+**M11.4 · The levels table and the ask forms (A3-CORE C4)**
+- **What:** `S.TEMPLATE_LEVELS`, `S.ASK_FORMS`, the generated `templates.schema.json` and `journeys.schema.json`.
+- **How:** A3.1 and A3.5 as data.
+- **Where:** `layer_schema.py; schemas/layers/; test_layer_templates.py; test_layer_schema.py`
+- **Done check:** Every level names a base that exists; every ask kind has a form and its options are known; the generated files equal `json_schemas()`.
+
+**M11.5 · The function template's constants (A3-CORE C5), built in M2.13**
+- **What:** `S.FUNCTION_TEMPLATE`, `S.DEPARTMENT_AGREEMENT`, the banned lists, the role inputs.
+- **How:** A3.4.2 and A3.4.5.
+- **Where:** `layer_schema.py; test_layer_templates.py`
+- **Done check:** Every function and Root has a sound entry; no constant says a banned word; Priority's says nothing about ordering.
+
+**M11.6 · J1 and J2 as children (A3-J12)**
+- **What:** `journeys/J1.json` and `J2.json` with their scenarios and the missing tests.
+- **How:** A3.7. The data is filled from the saved site file; the walk proves the steps, the existing and new tests the edges.
+- **Where:** `journeys/J1.json, J2.json; test_layer_journey_j1.py, test_layer_journey_j2.py`
+- **Done check:** J1 is all proven; J2 is 11 proven, 4 partly and J2.8 wanted until wave 2 binds its rows.
+
+**M11.7 · J3 and J4 as children, J4.4 and the declared children (A3-J34)**
+- **What:** `journeys/J3.json`, `J4.json`, J5 to J7 and the function journeys; the six J3 walks, the J4 walk, the three missing edge tests; J4.4 as a separate revertible commit.
+- **How:** A3.7 and A3.8; `layers/identity/tighten.py` with two call sites.
+- **Where:** `journeys/; test_layer_journey_j3.py, test_layer_journey_j4.py; layers/identity/tighten.py`
+- **Done check:** J3 is all proven; J4 is 9 proven and 3 partly (step 6, J4.6 and J4.4); the declared journeys have no state and every `same_as` and `serves` resolves.
+
+**M11.8 · The computed status and the gate lane**
+- **What:** `qa/journey_status.py` and `journeys/status/<id>.json`; the gate line.
+- **How:** A3.6; the listed tests run once; the time is measured and the budget is three minutes.
+- **Where:** `qa/journey_status.py; qa/walks/suites.sh (one line); journeys/status/`
+- **Done check:** `--check` exits 0 on main; a listed test turned red fails the lane; every status file is current.
+
+**Acceptance:**
+- Every shipped step, kind, engine template and artifact template fits its definition.
+- Every row of J1 to J4 is proven, partly (with its backlog entry) or wanted (with its backlog entry); none is unproven or failing.
+- The function templates keep every rule of the five official role files.
+- Nothing in wave 2 waited for A3.
+
+**Ported from the prototype:** the shape of `docs/j2-test-plan.md` T1 to T15 as scenarios; the five role files' content as the function templates (A3.4); `atom/1` style (a schema constant, pure validators).
+
+**Risks:** The role block adds 600 to 750 tokens to every function step and changes all 29 snapshot keys. Mitigation: a code constant turns it off, the snapshot is regenerated in separate commits, a comparison script measures it. A3-FUNCTIONS conflicts with wave-2 packages. Mitigation: it merges after them. The gate gains a lane. Mitigation: the time is measured, with a fallback mode.
 
 ---
 
@@ -2035,9 +2177,11 @@ Marks (`MK`) cover what the owner marked 'needs to be filled', 'marks owed' or '
 | Q15 Targets for owner effort (SM-8) and cost (SM-9). Default: set from the M0 baseline. | Owner | M10.4 pass or fail |
 | Q16 Step pill names (Enough to work, Propose, Price, Settle, Root's review, Run, Read, Next or done), and whether names such as 'Round 2', 'D2' and 'v3' are allowed at rest under A28. Default: yes; they are names, not counts. | Owner, designer | S4 |
 
+Amendment A3 takes defaults and asks nothing (A3.14). The likeliest to change: adopting the prototype's planner, which is on by default there (A3-D11); the role block in the card (A3-D10); a function's done as a proposal (A3-D9); and J3.4 re-worded and not changed (A3-D13).
+
 ## 15. How the reviews were resolved
 
-_The review of amendment A1 (2026-10-26) is resolved in [PRD-FIVE-FUNCTIONS-A1.md](PRD-FIVE-FUNCTIONS-A1.md), section A1.27. The rows below are the reviews of version 1.0._
+_The review of amendment A1 (2026-10-26) is resolved in [PRD-FIVE-FUNCTIONS-A1.md](PRD-FIVE-FUNCTIONS-A1.md), section A1.27. The review of amendment A3 is resolved in [PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-FUNCTIONS-A3.md), section A3.13. The rows below are the reviews of version 1.0._
 
 | Finding | Resolution |
 |---|---|
@@ -2123,6 +2267,20 @@ _The review of amendment A1 (2026-10-26) is resolved in [PRD-FIVE-FUNCTIONS-A1.m
 | Motor | The in-app loop that starts due runs every 3 seconds. |
 | J1, J2, J2.a to J2.h | J1 founds the organisation and its first department. J2 is the five functions working toward the goal, with eight sub-journeys. |
 | VSM S2 to S5, S3* | The functions' places in Beer's Viable System Model: Coordination S2, Priority S3, Audit S3*, Adaptation S4, Identity S5. Not to be confused with screen ids S1 to S17. |
+| Templates at every level (idea card) | THIS IS the reading that a template is an interface is a base class, at seven levels from the user journey to the ask, each typed in `layer_schema.py` with children that conform. ONE OF the app's code. WORK ON M11 and M2.13, A3. BECAUSE the owner said a template is the structured way of working anything, that every step has one, that each function has one with a goal in it, and that J1 to J4 are part of another template. |
+| Template (A3 sense) | The interface at its level, in the owner's words: the structured way of working anything; the base class that implementations fill in. One at every level: user journey, department kind, function, engine and workflow, step, artifact, ask (A3.1). The repository's older uses of the word (function-template files, engine templates, artifact templates, a department kind, the rule origin 'the template') are named in A3.1 and not renamed. |
+| User journey, journey template | The flow a person (or the system) goes through, as the site draws it: lanes, numbered steps, and IF IT GOES WRONG edges Jn.m. The journey template is its base class (`DEFS['journey']`); J1 to J4 are its children, J5 to J7 declared. Not the same as a recognition. |
+| Recognition | One of Identity's five readings of a request: task, query, directive, feedback, new idea (the branches 4a to 4e of J3). The code's key `journeys` in `engine_defs/website.json`. |
+| Sub-journey | A named part of a journey inside it: J2.a to J2.h inside J2. |
+| Edge (of a journey) | A row of IF IT GOES WRONG: a trigger, what the code does, the owner's mark (keep, change, drop), and the code and the test that prove it, or a backlog entry if it is wanted. |
+| Row state | Proven (code and passing tests), partly (proven, and a named part still wanted), failing, unproven (code, no tests: a fault in J1 to J4), wanted (no code, a named smallest behaviour), dropped (the owner's mark), declared. Computed from the last run of the tests, never typed. |
+| Walk | A scenario that drives a journey end to end with a stubbed model and then checks, from the record, that the journey's bound acts and steps happened in order. |
+| Declared journey | A journey typed from the site's rows with no code and no tests yet: J5 to J7 and the functions' own journeys. It has no state. |
+| Function template | The layer interface extended by a function's own goal and done, what it is, may do, never does, how it decides and what it avoids, and the working agreement. The boundaries are interface constants; the behaviour is the version's words. Not the Default or use-case templates, which are data. |
+| Own goal, done (of a function) | The function's goal (`goal.does`, typed) and when its own work is done (`goal.done`, a proposal shown as 'not set yet' until the owner marks it); not the department's goal. |
+| Role block | The text a function's agent is sent after its skills: what it is and is not, may and never does, how it decides, what it avoids, who it hands on to, and the working agreement. |
+| Working agreement | The six lines every function keeps (only Identity speaks to the owner; the goal and done-when are the reference; disagree with a reason; four exchanges then Identity; a fact only the owner knows is Identity's question; finished only on Audit's reading). The part of the prototype's `team.md` that the interface cannot say. |
+| Step kind | Code, AI, person, gate or rule: what a step's body is. A person step is the person's rung. |
 
 ## 17. Sources
 
@@ -2131,4 +2289,5 @@ _The review of amendment A1 (2026-10-26) is resolved in [PRD-FIVE-FUNCTIONS-A1.m
 - **J2 prototype** at `564e3a7`: `j2.py`, `j2_map.py`, `docs/map-schema.md`, `agents/j2/*.md`, `docs/j2-test-plan.md`, `README.md`; and at `3d8d2e8` for A1: `j2_board.py`, `j2_map.py`, `j2_schema.py`, `README.md`, `SETUP.md`.
 - **Amendment A1:** [PRD-FIVE-FUNCTIONS-A1.md](PRD-FIVE-FUNCTIONS-A1.md), on Sutra main `d24a467d`.
 - **Amendment A2:** [PRD-FIVE-FUNCTIONS-A2.md](PRD-FIVE-FUNCTIONS-A2.md), on Sutra main `827fe38f`.
+- **Amendment A3:** [PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-FUNCTIONS-A3.md), on Sutra main `a660b5a2`. **Site (A3):** `system/journeys.json` version 2.4, saved in full as the reference of contract case JC-9, and the five function pages (`functions.json` 1.5). **J2 prototype at `f9ceba1` (A3):** `agents/j2/*.md`, `stages.json`, `rates.json`, `j2.py` (`system_prompt`, `realization_on`), `docs/j2-test-plan.md`.
 - **Working notes in this folder:** `gap-matrix.md`, `prd-draft.md` (superseded by this page), `screens.md` (folded into section 11).

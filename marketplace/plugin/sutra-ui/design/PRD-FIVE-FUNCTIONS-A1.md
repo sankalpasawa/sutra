@@ -9,7 +9,7 @@
 | Build | four waves of parallel developer packages, merged one at a time on a green gate (A1.26): wave 0, one package, the schema core (about 75 min); wave 1, eight packages (about 110 min); wave 2, six (about 80 min, M9 and M10); wave 3, four (about 50 min). Waves 0 and 1 end at about 3 h 05 min, wave 2 at about 4 h 25 min, wave 3 at about 5 h 15 min. Nothing is left to a later session |
 | Decision log | the A1 rows of [PRD-FIVE-FUNCTIONS-DECISIONS.md](PRD-FIVE-FUNCTIONS-DECISIONS.md) |
 | Pointer for code | `schemas/layers/README.md` (written in wave 0) lists, per layer, the `layer_schema` names that hold it |
-| Amended by | [PRD-FIVE-FUNCTIONS-A2.md](PRD-FIVE-FUNCTIONS-A2.md), 2026-10-26: the class model of the interface layer (the interface is the base class, a layer version is a child class that may extend an earlier version, the workflow sources are a family). A2 changes no interface table; A1 stands as written except the lines marked 'Amended by A2' under A1.18 and A1.19 |
+| Amended by | [PRD-FIVE-FUNCTIONS-A2.md](PRD-FIVE-FUNCTIONS-A2.md), 2026-10-26: the class model of the interface layer (the interface is the base class, a layer version is a child class that may extend an earlier version, the workflow sources are a family). A2 changes no interface table; A1 stands as written except the lines marked 'Amended by A2' under A1.18 and A1.19. Also [PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-FUNCTIONS-A3.md), 2026-10-26: a template at every level and the user-journey template. A3 adds interface rows only and changes no existing row; the lines marked 'Amended by A3' under A1.16 and A1.22 |
 
 ## A1.0 The direction, and how this reads it
 
@@ -709,6 +709,8 @@ The bargain line part gains the inputs estimate and remaining (W1-PRIORITY, M5.3
 
 **The snapshot discipline** (review P2). `test_function_prompts.py` renders through `R._resolve` with the fixture department's pins, so it tests what really runs. A words-migration commit must pass the unchanged snapshot. A prompt changed on purpose (M5.1 adds done-when items to adapt.line) regenerates the snapshot only in a commit of its own, named 'snapshot: <reason>', whose diff the integrator reviews.
 
+*Amended by A3 ([PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-FUNCTIONS-A3.md), A3.4.2): each function layer gains the part `goal.done` and the role parts `role_is`, `role_may`, `role_procedure`, `role_patterns` (owner fields) and `role_block` (a layout over eight inputs) in its `goal` group, all in `S.ADDED_PARTS`; the interface also holds, as constants, what a function is not and never does and the working agreement (`S.FUNCTION_TEMPLATE`, `S.DEPARTMENT_AGREEMENT`), and a version's layout must place them (contract case 14).*
+
 ## A1.17 Views (bound to the read models on main)
 
 `functions_view.function(ref, fn)['j2'] = layers.view(ref, layer, d, events, asks)`, validated against `VIEWS[layer]`. A view that fails is replaced by today's part with `j2_faults` added, and the read never raises. Each view below is today's read model, typed as it is. Later milestones add fields, never rename them.
@@ -889,6 +891,8 @@ W0-SCHEMA checks each sample against the check body on main, and keeps only the 
 | `j2_runtime.py` ledger (j2.event.v1) | Stays j2_runtime's own schema. j2_runtime records and projects and is not a layer; the interface names its event names and never owns them. |
 | `artifacts.py` | The artifact side of the workflow schema: `check_exists` reads it, with the Default template as the fallback. |
 | The prototype's `j2_schema.py` (atom/1) and `j2_board.py` (board/1) | Their pattern is adopted: one schema constant per record, statuses as tuples, pure validators. After the refuse commit, Sutra's validators refuse where the prototype's only warn. |
+
+*Amended by A3 ([PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-FUNCTIONS-A3.md), A3.4.6): function templates stay the owner-pickable use-case templates and never define a boundary; the banned screen words are stated once, in the interface; the card reads the picked template's whole floor, at most eight lines, not its first three.*
 
 ## A1.23 Screens A1 changes
 
