@@ -125,3 +125,71 @@ def test_i1_the_count_by_reference_is_reported(capsys):
 def test_i1_the_contract_cases_that_read_no_words_pass(number, ctx):
     fn = dict((n, f) for n, _, f in C.cases())[number]
     assert fn(V1, ctx) == []
+
+
+# ---- I3: Identity's view ---------------------------------------------------------------------------------------------
+#: test_j2_identity's three done-when items, one of them to confirm, and the reason Root's check sends a plan back
+SHAPED = {"name": "Bakery Co Website", "kind": "website", "purpose": "the bakery's site", "second": "",
+          "goal": "A phone-first website for Bakery Co, a bakery in Pune, where customers see every cake"}
+ITEMS = [{"text": "Shoppers browse every cake by category", "how": "code", "level": "target", "confirm": ""},
+         {"text": "An order reaches the bakery on WhatsApp", "how": "model", "level": "outcome", "confirm": ""},
+         {"text": "Three reviews from customers", "how": "person", "level": "outcome", "confirm": "nobody gave the reviews"}]
+FAULT = "the line reaches outside without a rule"
+WHO = "Who are the site's visitors?"
+
+
+def _pane(j2, ref):
+    """What the layer's view gives for the department as it stands, with the events of its cycle and its asks."""
+    W, _, J, _, _ = j2
+    return V1.view(ref, W.dept(ref), J.events(ref), W.asks(ref))
+
+
+def _in_state(j2, monkeypatch, state):
+    """A department in one state of its cycle, reached the way a person reaches it."""
+    W, R, J, _, FV = j2
+    if state == "assessing":
+        ref = _born(j2, settle=False)
+    elif state == "waiting":
+        _model(monkeypatch, R, {"identity.enough": {"enough": False, "missing": ["goal"], "question": WHO, "why": "the goal names no one"}})
+        ref = _born(j2)
+    elif state == "blocked":
+        monkeypatch.setattr(R, "_root_check", lambda ref, d, engines, source: [FAULT])
+        _model(monkeypatch, R, {"setup.shape": dict(SHAPED, done_items=[dict(i) for i in ITEMS])})
+        ref = _born(j2)
+    else:
+        ref = _born(j2)
+        assert J.audited(ref, 1, []) is True              # Audit read what went out and found nothing: done-when holds
+    assert J.status(ref)["state"] == state, J.status(ref)
+    return ref
+
+
+@pytest.mark.parametrize("state", ["assessing", "waiting", "blocked", "done"])
+def test_i3_the_view_validates_as_view_identity_in_each_state_of_a_cycle(j2, monkeypatch, state):
+    W, R, J, _, FV = j2
+    ref = _in_state(j2, monkeypatch, state)
+    pane = _pane(j2, ref)
+    assert S.validate_view("identity", pane) == []
+    assert pane == FV._identity_part(ref, W.dept(ref), J.events(ref))        # by reference: the pane S5 renders, unchanged
+    assert set(pane) == {"standard", "goal", "done", "done_items", "rules", "open_question", "conflicts"}
+    assert (pane["open_question"] is not None) == (state == "waiting")
+    assert pane["standard"]["met"] is (state != "waiting")
+
+
+def test_i3_a_conflict_closed_is_typed_too(j2, monkeypatch):
+    W, R, J, _, FV = j2
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room"},
+                            "identity.close": {"ruling": "run", "why": "the goal cannot be met without a site"}})
+    ref = _born(j2)
+    pane = _pane(j2, ref)
+    assert [c["ruling"] for c in pane["conflicts"]] == ["run"] and S.validate_view("identity", pane) == []
+
+
+def test_i3_the_contract_reads_the_view_of_the_fixture_department(ctx):
+    assert C.case_6(V1, ctx) == []
+    assert C.case_6(V1, {}) == ["identity/v1: the contract has no fixture department to read the view of"]
+
+
+def test_i3_a_view_that_does_not_fit_is_found_by_the_interface(ctx, monkeypatch):
+    monkeypatch.setattr(V1, "view", lambda ref, d, events, asks: {"goal": 7})
+    got = C.case_6(V1, ctx)
+    assert got and all(f.startswith("identity/v1: view ") for f in got)

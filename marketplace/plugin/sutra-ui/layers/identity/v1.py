@@ -4,7 +4,7 @@ Its recipe is v1.json beside it: the Identity engine object, moved byte for byte
 Every code, prompt, draft and check name the recipe uses is provided here by reference (ref_to): each is a late-bound
 delegate to the body engine_runtime holds today, so the behaviour is exactly what ran before, and a body moves into this
 file on touch (A1.19: a name a layer changes is copied here and changed here). WORDS and LAYOUT are empty until I2, so
-the prompts are still read from the .md bundle. view() returns the pane's read model by reference.
+the prompts are still read from the .md bundle. view() returns the pane's read model by reference (I3).
 """
 from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests reload engine_runtime, so never a module object
 
@@ -73,5 +73,6 @@ WORDS, LAYOUT = {}, {}
 
 
 def view(ref, d, events, asks):
-    """Identity's pane (S.VIEWS['identity']): functions_view's read model, by reference until this layer holds its own."""
-    return FV._j2_part(ref, d, 'Identity', events, asks)
+    """Identity's pane (S.VIEWS['identity'], A1.17; M3.7): functions_view's read model of the record, by reference. It
+    reads _identity_part and not _j2_part, which reads the layers' views and would come back here."""
+    return FV._identity_part(ref, d, events)
