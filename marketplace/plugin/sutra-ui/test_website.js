@@ -1501,10 +1501,26 @@ test("M4.2: the Map leaves an engine the plan left out off the line, says it is 
   assert.ok(/\.wb2map \.n\.out \.bx\{[^}]*var\(--line-soft\)/.test(css) && /\.wb2map \.n\.out text\{fill:var\(--faint\)\}/.test(css), "muted, by tokens");
   click(c, { wbengine: "Publish" });
   assert.strictEqual(vm.runInContext("S.wb.tab['r3']", c) + ":" + vm.runInContext("S.wb.sel['r3']", c), "engine:Publish", "a click opens its card");
-  /* with no plan registered (or the first build) map_view says nothing of in_line, and every engine is on the line */
+  /* a plan that keeps every engine (or the first build, where map_view says nothing of in_line) has every engine on the line */
   const [, all] = await mapWith({ fv: fvOf({}) });
   assert.deepStrictEqual((all.match(/<g class="n eng [^"]*" data-wbengine="(\w+)"/g) || []).map(x => /"(\w+)"$/.exec(x)[1]), ["Plan", "Write", "Check", "Publish"]);
-  assert.ok(!/class="n eng out"|left out/.test(all));
+  assert.ok(!/class="n eng out"|left out|No plan yet/.test(all));
+  /* before Root's check there is no plan (map_view's planned false, every in_line true): the Brief alone and 'No plan
+     yet', on the picture and the narrow list, and nothing reads 'left out' (S1, Empty; round 2, gap 3) */
+  const none = rtMap({ versions: { "Brief": 1 } }); none.live = false; none.planned = false;
+  none.engines.forEach(e => { e.in_line = true; e.timetable = null; });
+  const [, bare] = await mapWith({ map: none, fv: fvOf({ cycle: { state: "adapting", step: 2, says: "Proposing the work" } }) });
+  const bsvg = bare.slice(bare.indexOf("<svg"), bare.indexOf("</svg>"));
+  assert.ok(!/class="n eng/.test(bsvg) && (bsvg.match(/<g class="n work[^"]*"/g) || []).length === 1, "no engine on the line, the Brief alone");
+  assert.ok(/<g class="n work done" data-wbart="brief"/.test(bsvg) && /<div class="o2quiet dpq">No plan yet<\/div>/.test(bare), "the Brief, filed, and the quiet line");
+  const bcards = /<div class="wb2cards wb">([\s\S]*)$/.exec(bare)[1];
+  const bwork = bcards.slice(bcards.indexOf('<div class="dpk">Work</div>'), bcards.indexOf('<div class="dpk">Knows</div>'));
+  assert.ok(/data-wbart="brief"/.test(bwork) && !/data-wbengine=/.test(bwork), "the narrow list: the Brief alone");
+  assert.ok(!/left out/.test(bare), "an engine of no plan is not 'left out'");
+  const bold = await opened({ map: none });
+  click(bold, { wbtab: "map" });
+  const bflow = view(bold);
+  assert.ok(!/class="wbeng wb"/.test(bflow) && /No plan yet/.test(bflow) && !/Left out of the plan/.test(bflow), "the first design's flow too");
   /* the first design's flow takes the same line */
   const old = await opened({ map: m });
   click(old, { wbtab: "map" });

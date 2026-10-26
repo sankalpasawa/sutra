@@ -1021,8 +1021,7 @@ def test_m4_1_an_engine_the_owner_stamped_joins_the_line_by_coordination_and_its
 
 def test_m4_1_a_born_word_on_the_board_that_names_no_engine_changes_nothing(j2):
     """The fixed trigger 'an engine is born', posted on the board with nothing in it (Identity may inform Coordination
-    and Priority), emptying the line, leaving every engine out or touching a limit must fail. A born post that names
-    engines is read from its payload, and only the department's own engines count (born_item)."""
+    and Priority), emptying the line, leaving every engine out or touching a limit must fail."""
     W, R, J, _ = j2
     ref = _born(j2)
     path = W.ddir(ref) / "coordination.json"
@@ -1035,11 +1034,74 @@ def test_m4_1_a_born_word_on_the_board_that_names_no_engine_changes_nothing(j2):
     assert sorted(r["engine"] for r in heard) == ["Coordination", "Priority"], "both handlers ran from the board"
     assert W._read(path, None) == before, "the table is not written"
     assert W.dept(ref)["envelopes"] == envs and R.coordination(ref)["line"] == LINE
-    # a born post that names engines is read from its payload; a name that is not the department's is not taken
-    R.post(ref, "Identity", ["Coordination"], "inform", {"word": "born", "engines": ["Plan", "Write", "Check", "Nobody"], "version": 1})
+
+
+def test_m4_1_a_born_word_on_the_board_never_rewrites_the_plan_root_registered(j2):
+    """A born post on the board that sets Coordination's line to what it names (a line without the required Check, one
+    that is not the plan on dept.workflows, one with no version or an older one, an engine nobody stamped), takes the
+    table's 'registered' from it, or gives a limit, must fail: from the board the handlers act only on what the record
+    already holds, so Root's check and Priority's price stay in front of the line (PRD M4.1, M4.4; A1 hears the word
+    by call)."""
+    W, R, J, _ = j2
+    ref = _born(j2)
+    path = W.ddir(ref) / "coordination.json"
+    before, envs = W._read(path, None), dict(W.dept(ref)["envelopes"])
+    assert (before["line"], before["registered"], W.dept(ref)["workflows"][-1]["engines"]) == (LINE, 1, LINE)
+    tables = len([e for e in J.events(ref) if e["action"] == "timetable.written"])
+    stray = ({"engines": ["Plan", "Write", "Publish"]},                         # no version, and no Check
+             {"engines": ["Plan", "Write", "Publish"], "version": 1},           # not the plan, and no Check
+             {"engines": ["Plan", "Write", "Check", "Nobody"], "version": 1},   # not the plan
+             {"engines": ["Plan"], "full": False},                              # no version: 'registered' is kept
+             {"engines": "Plan", "version": 1},
+             {"version": 2}, {"version": 0}, {"version": True}, {"version": "1"},
+             {"grow": "Publish"},                                               # on the record, but nobody stamped it
+             {"grow": "Do"})                                                    # not on the record
+    for pl in stray:
+        for to in ("Coordination", "Priority"):
+            R.post(ref, "Identity", [to], "inform", dict(pl, word="born"))
+        W.run_until_idle(ref, limit=50)
+        t = W._read(path, None)
+        assert (t["line"], t["registered"], [r["engine"] for r in t["left_out"]]) == (LINE, 1, []), pl
+        assert t == before and W.dept(ref)["envelopes"] == envs, pl
+    assert len([e for e in J.events(ref) if e["action"] == "timetable.written"]) == tables, "nothing on the ledger"
+    heard = [r for r in R.step_rows(ref) if r["step"] in ("coord.table", "priority.grant") and r.get("mode") == "slot"]
+    assert len(heard) == 2 * len(stray) and all(r["status"] == "ok" for r in heard), "each handler heard each post"
+    # and each says why it did nothing
+    def said(code, pl):
+        return code({"ref": ref, "dept": W.dept(ref), "post": {"payload": dict(pl, word="born")}}, None, None)["said"]
+    assert said(R.coord_table, stray[0]) == "nothing to do: the word born names no plan Root registered"
+    assert said(R.coord_table, stray[1]) == "nothing to do: the line it names is not the plan Root registered (v1)"
+    assert said(R.coord_table, {"version": 2}) == "nothing to do: the word born names v2, and the plan Root registered last is v1"
+    assert said(R.coord_table, {"grow": "Publish"}) == "nothing to do: nobody stamped Publish onto the department's record"
+    assert said(R.priority_grant, stray[1]) == "nothing to do: the line it names is not the plan Root registered (v1)"
+    assert said(R.priority_grant, {"version": 1}) == "nothing to do: each engine it names holds its limit"
+    # the plan Root registered, named by its version, is what the record already holds: the table follows it, and is
+    # left as it is
+    R.post(ref, "Identity", ["Coordination"], "inform", {"word": "born", "version": 1, "engines": LINE})
+    W.run_until_idle(ref, limit=50)
+    assert W._read(path, None) == before
+    # a table that lost its registration is set again from the record, never from the post: the registered plan whole
+    W._write(path, dict(before, line=["Plan", "Write", "Publish"], registered=None, left_out=[R.left_out_row("Check")]))
+    R.post(ref, "Identity", ["Coordination"], "inform", {"word": "born", "version": 1})
     W.run_until_idle(ref, limit=50)
     t = W._read(path, None)
-    assert (t["by"], t["line"], [r["engine"] for r in t["left_out"]]) == ("Coordination", ["Plan", "Write", "Check"], ["Publish"])
+    assert (t["by"], t["line"], t["registered"], t["left_out"]) == ("Coordination", LINE, 1, [])
+    # a plan on the record that leaves out what the kind requires (one registered before Root checked for it) is not
+    # set from the board either
+    d = W.dept(ref)
+    d["workflows"].append(dict(d["workflows"][-1], version=2, engines=["Plan", "Write", "Publish"]))
+    W.save_dept(ref, d)
+    assert said(R.coord_table, {"version": 2}) == "nothing to do: the plan leaves out Check, which this kind requires"
+    assert W._read(path, None) == t
+
+
+def test_m4_1_a_line_set_with_no_version_keeps_the_registration_it_follows(j2):
+    """set_line writing registered None (a registration that names no version) must fail: the table keeps the plan it
+    follows."""
+    W, R, J, _ = j2
+    ref = _born(j2)
+    t = R.set_line(ref, LINE, None, full=False)
+    assert (t["line"], t["registered"]) == (LINE, 1)
 
 
 def _sm3(W, R, ref, j5=()):

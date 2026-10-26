@@ -863,10 +863,14 @@ def _ties(ref, rows, today):
     return out
 
 
-def _no_plan(d, t, cur):
-    """Before Root's check (S7, Empty: 'No plan yet'): the department lives a J2 cycle and no plan is registered yet, so
-    the line it was born with is not a plan, and Coordination keeps no slot for it. A department with no cycle (born
-    before J2, or J2 off) runs the line it was born with, which is its plan."""
+def no_plan(ref, d=None, t=None, cur=None):
+    """Before Root's check (S1 and S7, Empty: 'No plan yet'): the department lives a J2 cycle and no plan is registered
+    yet, so the line it was born with is not a plan, and Coordination keeps no slot for it. A department with no cycle
+    (born before J2, or J2 off) runs the line it was born with, which is its plan. The one test the Map
+    (website_dept.map_view's planned) and Coordination's pane share; each part is read when not given."""
+    d = (W.dept(ref) or {}) if d is None else d
+    t = R.coordination(ref) if t is None else t
+    cur = _cycle_state(ref) if cur is None else cur
     return bool((cur or {}).get("cycle_id")) and not t.get("registered") and not (d.get("workflows") or [])
 
 
@@ -874,14 +878,14 @@ def coordination(ref, d=None, rs=None, ak=None, rows=None):
     """Coordination's own state, read off the record (PRD M4.5): its table's line and timetable, each engine's place in
     it and the exact reason anything waits, the engines the plan left out, who makes and who reads each thing, the
     chain against its limit, alarms past a window, and the ties its AI broke. Before Root registers a plan there is no
-    timetable, nothing waits in it and nothing is left out of it (_no_plan). Reads only."""
+    timetable, nothing waits in it and nothing is left out of it (no_plan). Reads only."""
     d = d or W.dept(ref) or {}
     rs = W.runs(ref) if rs is None else rs
     ak = W.asks(ref) if ak is None else ak
     rows = _rows(ref) if rows is None else rows
     t, cur = R.coordination(ref), _cycle_state(ref)
     stopped = bool(d.get("stopped")) or cur.get("state") == "stopped"
-    planned = not _no_plan(d, t, cur)
+    planned = not no_plan(ref, d, t, cur)
     tt = _timetable_rows(ref, d, t, rs, stopped, time.time()) if planned else []
     today = datetime.now().astimezone().date().isoformat()
     out = {"line": list(t.get("line") or []), "registered": t.get("registered"), "timetable": tt,
@@ -930,7 +934,7 @@ def engine_card(ref, name):
     if row:
         head = {"state": row["state"], "word": row["word"], "why": row["why"], "at": row["at"], "round": cur.get("round")}
     else:
-        word = "left out of the plan" if left else ("no plan yet" if _no_plan(d, t, cur) else "not in the line")
+        word = "left out of the plan" if left else ("no plan yet" if no_plan(ref, d, t, cur) else "not in the line")
         head = {"state": "left_out" if left else "quiet", "word": word, "why": None, "at": (left or {}).get("since"), "round": cur.get("round")}
     motor = {"slot": (row or {}).get("on") or R.slot_of(ref, name, rs)["on"], "starts": _starts(trig), "once": not clashes,
              "says": "ran once per slot" if not clashes else "a slot ran twice",

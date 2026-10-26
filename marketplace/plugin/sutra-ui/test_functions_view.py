@@ -1371,6 +1371,33 @@ def test_f12_before_roots_check_there_is_no_timetable_and_the_pane_says_no_plan_
     assert W.dept(ref)["workflows"] and [r["engine"] for r in F.coordination(ref)["timetable"]] == ["Plan", "Write", "Check", "Publish"]
 
 
+def test_f12_before_roots_check_the_map_says_no_plan_yet_as_coordinations_pane_does(mods, born, tmp_path):
+    """S1, Empty (Brief v1 and the quiet line 'No plan yet'): the Map, the runtime's default screen, drawing the line the
+    department was born with as its line of work before Root's check, while S7 on the same department says 'No plan
+    yet', must fail. map_view says planned false on the same test as Coordination's pane (no_plan), and never in_line
+    false, which would read 'left out'."""
+    W, R, J, F = mods
+    ref = born(WEBSITE, "Acme Learning", settle=False)
+    m = W.map_view(ref)
+    assert (m["planned"], F.no_plan(ref)) == (False, True)
+    assert all(e["in_line"] is True and e["state"] != "Left out" for e in m["engines"]), "nothing is left out of a plan nobody made"
+    if shutil.which("node") is not None:
+        panes = _panes(tmp_path, _reads(W, ref))
+        shown, coord = panes["map"]["rest"], panes["coordination"]["rest"]
+        assert "No plan yet" in shown and "No plan yet" in coord, shown
+        work = shown[shown.index("Work Brief"):]
+        assert not [w for w in ("Site plan", "Pages", "Build", "Live site", "left out") if w in work], work
+        for e in ("Plan", "Write", "Check", "Publish"):
+            assert not re.search(r"\b%s\b" % e, work), (e, work)
+    # Root registers the plan: the Map draws its line
+    W.run_until_idle(ref, limit=300)
+    m = W.map_view(ref)
+    assert (m["planned"], F.no_plan(ref)) == (True, False) and [e["name"] for e in m["engines"] if e["in_line"]] == ["Plan", "Write", "Check", "Publish"]
+    if shutil.which("node") is not None:
+        shown = _panes(tmp_path, _reads(W, ref))["map"]["rest"]
+        assert "No plan yet" not in shown and "Brief v1 Plan Site plan v1 Write" in shown, shown
+
+
 def test_f12_the_coordination_read_writes_nothing_and_never_calls_the_model(mods, born, monkeypatch):
     W, R, J, F = mods
     ref = born(WEBSITE, "Acme Learning")

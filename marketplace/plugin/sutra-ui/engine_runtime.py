@@ -4023,7 +4023,8 @@ def set_line(ref, engines, version=None, full=True):
         line = old + [n for n in plan if n not in old]
     was = {r.get("engine"): r for r in t.get("left_out") or [] if isinstance(r, dict)}
     left = [left_out_row(n, (was.get(n) or {}).get("since")) for n in d.get("engines") or [] if n not in line]
-    t.update({"line": line, "left_out": left, "registered": version})
+    # the plan's version; a registration that names none keeps the one the table follows, never None (PRD M4.1)
+    t.update({"line": line, "left_out": left, "registered": version if version is not None else t.get("registered")})
     t["timetable"] = _timetable(ref, t)                    # one slot for each engine of the line (PRD M4.3)
     return _put_table(ref, t, "the plan Root registered")
 
@@ -4035,34 +4036,67 @@ BORN_FIELDS = ("engines", "version", "full", "grow", "before")
 
 
 def born_item(ctx, item=None):
-    """What an engine born says to the handler that keeps it, in BORN_FIELDS: the item it was run in place with (Root's
-    registration, the owner's stamp), else the payload of the post that woke it on the board. From the board it names
-    only engines on the department's record. Empty when it names no engine, so a stray born word writes nothing."""
-    post_ = (ctx.get("post") or {}) if item is None else {}
-    src = item if item is not None else (post_.get("payload") or {})
-    if not isinstance(src, dict):
-        return {}
-    out = {k: src[k] for k in BORN_FIELDS if k in src and src[k] is not None}
-    names = [str(n) for n in out.get("engines") or [] if n] if isinstance(out.get("engines"), list) else []
-    grow = str(out.get("grow") or "").strip()
-    if item is None:                                   # a post on the board: the department's own engines, never another's
-        mine = set((ctx.get("dept") or W.dept(ctx["ref"]) or {}).get("engines") or [])
-        names, grow = [n for n in names if n in mine], (grow if grow in mine else "")
-    out.update({"engines": names})
+    """What an engine born says to the handler that keeps it, in BORN_FIELDS, with why it says nothing when it does not:
+    (item, why). Run in place (Root's registration, the owner's stamp: the word is heard by call), it is the item it was
+    run with. From the board (_born_on_board) the post only names which record it means, and the handler acts on what
+    the record already holds. Empty when it names no engine, so a stray born word writes nothing."""
+    if item is None:
+        return _born_on_board(ctx)
+    if not isinstance(item, dict):
+        return {}, "the word born names no engine"
+    out = {k: item[k] for k in BORN_FIELDS if k in item and item[k] is not None}
+    out["engines"] = [str(n) for n in out.get("engines") or [] if n] if isinstance(out.get("engines"), list) else []
+    grow = str(out.pop("grow", None) or "").strip()
     if grow:
         out["grow"] = grow
-    else:
-        out.pop("grow", None)
-    return out if names or grow else {}
+    return (out, None) if out["engines"] or grow else ({}, "the word born names no engine")
+
+
+def _born_on_board(ctx):
+    """A born word posted on the board (Identity may inform Coordination and Priority) is never a plan of its own: Root's
+    check and Priority's price stand in front of the line (PRD M4.1, M4.4). It names the plan Root registered last, by
+    its version, and the line is that plan's engines from dept.workflows, the whole line; or an engine stamped onto the
+    record (an engine ask the owner stamped, or one the table keeps as grown). A post that names no registered version,
+    an older one, a line that is not that plan, a plan without a required engine, or an engine nobody stamped is
+    refused, and nothing is written: (item, why)."""
+    pl = (ctx.get("post") or {}).get("payload")
+    pl = pl if isinstance(pl, dict) else {}
+    ref = ctx["ref"]
+    d = ctx.get("dept") or W.dept(ref) or {}
+    mine = list(d.get("engines") or [])
+    grow = str(pl.get("grow") or "").strip()
+    if grow:
+        stamped = {a.get("engine") for a in W.asks(ref) if a.get("kind") == "engine" and a.get("status") == "stamped"}
+        if grow not in mine or (grow not in stamped and grow not in (coordination(ref).get("grown") or [])):
+            return {}, "nobody stamped %s onto the department's record" % grow
+        return {"engines": [], "grow": grow, "before": pl.get("before") if pl.get("before") in mine else None}, None
+    wf = [w for w in d.get("workflows") or [] if isinstance(w, dict)]
+    version = pl.get("version")
+    if not wf or isinstance(version, bool) or not isinstance(version, int):
+        return {}, "the word born names no plan Root registered"
+    last = int(wf[-1].get("version") or 0)
+    if version != last:
+        return {}, "the word born names v%d, and the plan Root registered last is v%d" % (version, last)
+    plan = [str(n) for n in wf[-1].get("engines") or [] if n]
+    if "engines" in pl and (not isinstance(pl["engines"], list) or [str(n) for n in pl["engines"] if n] != plan):
+        return {}, "the line it names is not the plan Root registered (v%d)" % last
+    missing = [n for n in required_engines(d) if n not in plan]
+    if not plan or missing:
+        return {}, ("the plan leaves out %s, which this kind requires" % _names(missing)) if missing else "the plan names no engine"
+    return {"engines": plan, "version": last, "full": True}, None
 
 
 def coord_table(ctx, step, item):
     """Coordination's handler for an engine born: a registered plan sets the line (`item` {engines, version}); an engine
-    the owner stamped grows it (`item` {grow, before}). Run in place or from the board (born_item); a born word that
-    names no engine writes nothing. Its table is written by Coordination and by nobody else."""
-    item, J = born_item(ctx, item), _j2()
+    the owner stamped grows it (`item` {grow, before}). Run in place, or from the board on what the record already
+    holds (born_item); a born word that names nothing on the record writes nothing, and neither does one the table
+    already follows. Its table is written by Coordination and by nobody else."""
+    board_, (item, why), J = item is None, born_item(ctx, item), _j2()
     if not item:
-        return {"said": "nothing to do: the word born names no engine"}
+        return {"said": "nothing to do: " + why}
+    t = coordination(ctx["ref"])
+    if board_ and (item["grow"] in (t.get("line") or []) if item.get("grow") else t.get("registered") == item["version"]):
+        return {"said": "nothing to do: the line already holds it: " + " -> ".join(t.get("line") or [])}
     if item.get("grow"):
         t = grow_line(ctx["ref"], item["grow"], item.get("before"))
         said = "added %s to the line: %s" % (item["grow"], " -> ".join(t["line"]))
@@ -4077,12 +4111,18 @@ def coord_table(ctx, step, item):
 def priority_grant(ctx, step, item):
     """Priority's handler for an engine born: each new engine is given its limit, from Priority's template (a
     work engine work_calls times the calls: engine_limit); one that already holds a limit (the owner's own, or one a
-    department off J2 was born with) keeps it. Each is on the ledger, by Priority. `item` is {engines, version}, run in place or from the
-    board (born_item); a born word that names no engine gives nothing."""
-    ref, item = ctx["ref"], born_item(ctx, item)
-    names = list(item.get("engines") or [])
+    department off J2 was born with) keeps it. Each is on the ledger, by Priority. `item` is {engines, version}, run in
+    place, or from the board on what the record already holds (born_item), where only an engine that holds no limit is
+    given one; a born word that names nothing on the record gives nothing."""
+    ref, board_ = ctx["ref"], item is None
+    item, why = born_item(ctx, item)
+    names = list(item.get("engines") or ([item["grow"]] if item.get("grow") else []))
+    if board_ and names:
+        envs0 = (W.dept(ref) or {}).get("envelopes") or {}
+        names = [n for n in names if not isinstance(envs0.get(n), dict)]
+        why = why or "each engine it names holds its limit"
     if not names:
-        return {"said": "no new engine to give a limit"}
+        return {"said": "nothing to do: " + why if board_ else "no new engine to give a limit"}
     given = []
     with W._lock(ref):
         d = W.dept(ref) or {}
