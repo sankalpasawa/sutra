@@ -39,8 +39,11 @@ def test_what_the_contract_reports_and_does_not_gate(module, capsys):
     counts = C.by_reference(module)
     fallback = C.on_the_md_fallback(module)
     assert set(counts) == {"by_reference", "own"}
-    assert fallback == ["%s.%s" % (g, p) for g, parts in S.PROMPTS[module.LAYER].items() for p in parts], \
-        "wave 0: every part is still on the .md fallback (W1-CORE and each layer move their words)"
+    # wave 0 held no words, so every part was on the fallback; as each layer's package moves its words (wave 1), a part is
+    # either worded by the module or still on the .md fallback, never both and never neither
+    parts = ["%s.%s" % (g, p) for g, ps in S.PROMPTS[module.LAYER].items() for p in ps]
+    worded = ["%s.%s" % (g, p) for g, ps in (module.WORDS or {}).items() for p in ps]
+    assert sorted(fallback + worded) == sorted(parts) and not set(fallback) & set(worded)
     print("%s: %d by reference, %d own; no WORDS yet (read from the .md bundle, or for Root built inline): %s"
           % (C.impl_id(module), counts["by_reference"], counts["own"], ", ".join(fallback) or "none"))
 

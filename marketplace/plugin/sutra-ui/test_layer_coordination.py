@@ -2,6 +2,8 @@
 
   K1  every code, prompt, draft and check name Coordination's recipe uses is provided by the module itself, by reference
       (nineteen, none of them left to the legacy registries), and contract cases 1 to 4 and 7 pass for coordination/v1
+  K2  Coordination's words: WORDS and LAYOUT for goal (does, skills) and tie (tie) are the split of its two .md files, layers.prompt
+      takes the WORDS path for every part of S.PROMPTS['coordination'], and contract case 5 finds no part on the fallback
   K3  set_line checks the line as a write before it puts the table: an engine no registered plan names and the owner did not add
       is one row in warn mode and a refusal in refuse mode (the line then stands as it was); a grown engine passes; every
       table written while a department of each kind settles validates
@@ -17,6 +19,7 @@ import pytest
 import layer_schema as S
 import layers
 import layers.contract as C
+from layers import prompts as P
 from layers.coordination import v1 as V1
 
 WEBSITE = "Build a website that teaches algebra to Class 8 students"
@@ -280,6 +283,51 @@ def test_k4_the_reads_write_nothing_and_never_call_the_model(j2, monkeypatch):
     _view(j2, ref)
     V1.engine_card(ref, "Plan")
     assert {p: os.path.getmtime(os.path.join(home, p)) for p in os.listdir(home)} == snap and called == []
+
+
+# ---- K2: Coordination's words ---------------------------------------------------------------------------------------------
+TIE_INPUTS = {"ready": "Write, Check", "what": "Write: writes the pages; Check: checks them", "order": "Identity, Coordination",
+              "waiting": "nothing"}
+
+
+def test_k2_the_words_and_layout_are_the_split_of_its_md_files_and_hold_every_part_of_the_interface(j2):
+    """WORDS that drift from the .md files they came from (the extractor's own output), or a part of the interface with no
+    words or no layout, must fail."""
+    words, layout, bad = P.extract("coordination")
+    assert bad == [] and V1.WORDS == words and V1.LAYOUT == layout
+    parts = {(g, p) for g, ps in S.PROMPTS["coordination"].items() for p in ps}
+    assert parts == {("goal", "does"), ("goal", "skills"), ("tie", "tie")}
+    assert {(g, p) for g, ps in V1.WORDS.items() for p in ps} == parts == {(g, p) for g, ps in V1.LAYOUT.items() for p in ps}
+
+
+def test_k2_layers_prompt_takes_the_words_path_for_every_part_and_the_contract_finds_none_on_the_fallback(j2):
+    ref = _born(j2)
+    for group, parts in S.PROMPTS["coordination"].items():
+        for part in parts:
+            assert P._module(ref, "coordination", group, part) is V1, "%s.%s is read from the .md bundle" % (group, part)
+    assert C.on_the_md_fallback(V1) == []
+    assert C.case_5(V1, {}) == [] and C.case_6(V1, {"ref": ref}) == []
+
+
+def test_k2_the_tie_prompt_is_the_md_part_byte_for_byte_and_is_served_from_the_words(j2, monkeypatch):
+    """A prompt that differs by a byte from the one the .md file made (the M2.1a snapshot's own claim), or one the words
+    do not reach, must fail."""
+    ref = _born(j2)
+    md = P.md_part("coordination", "tie", "tie")
+    got = P.prompt(ref, "coordination", "tie", "tie", **TIE_INPUTS)
+    assert got == P.SLOT.sub(lambda m: TIE_INPUTS[m.group(1)], md) and got.endswith(S.PROMPTS["coordination"]["tie"]["tie"]["returns"])
+    monkeypatch.setitem(V1.WORDS["tie"]["tie"], "task", "Pick one of the ready names.")
+    assert P.prompt(ref, "coordination", "tie", "tie", **TIE_INPUTS).startswith("Pick one of the ready names.\nREADY NOW: Write, Check\n")
+
+
+def test_k2_the_step_that_asks_for_a_tie_reads_the_words_and_so_does_a_functions_card(j2, monkeypatch):
+    W, R, _, _, _ = j2
+    ref = _born(j2)
+    monkeypatch.setitem(V1.WORDS["tie"]["tie"], "task", "Pick one of the ready names.")
+    ctx = {"ref": ref, "bag": {"coord.ready": {"ready": ["Write", "Check"]}}, "table": {"functions": ["Identity", "Coordination"]}}
+    assert R.p_coord_tie(ctx, None, None).startswith("Pick one of the ready names.\nREADY NOW: Write, Check\nWHAT EACH DOES: Write: ")
+    does, skills = R._goal_of(ref, "Coordination")
+    assert does == V1.WORDS["goal"]["does"]["text"] and skills == V1.WORDS["goal"]["skills"]["items"] and len(skills) == 7
 
 
 # ---- K3: the line is checked on write ---------------------------------------------------------------------------------------

@@ -4,8 +4,9 @@ Its recipe is v1.json beside it: the Coordination engine object, moved byte for 
 Every code, prompt, draft and check name the recipe uses is provided here by reference (A1 K1): a late-bound delegate to
 the body in engine_runtime's Coordination region (ref_to), so the module names what its recipe needs and no behaviour
 changes. A body moves into this module when this layer changes it (move on touch); engine_runtime's copy stays until W3-PROOF.
-WORDS and LAYOUT are empty until K2, so its prompts are still read from the .md bundle. view() and engine_card() return the
-pane's and the card's read models by reference (K4).
+WORDS and LAYOUT hold Coordination's two prompt files, goal (does, skills) and tie (tie), so layers.prompt serves them from here
+and the .md bundle is read for none of its parts (K2). view() and engine_card() return the pane's and the card's read
+models by reference (K4).
 """
 from layers import R, W, J, S, FV, ref_to  # noqa: F401 -- lazy proxies: tests reload engine_runtime, so never a module object
 
@@ -29,7 +30,52 @@ CHECK = {name: ref_to(body) for name, body in (
     ('said_what_it_did', 'c_said_what_it_did'),
     ('facts_are_closed', 'c_facts_are_closed'),
 )}
-WORDS, LAYOUT = {}, {}
+#: A1.16: the default words of each prompt part and the layout that arranges them, by the split rule (`python -m layers.prompts
+#: --extract coordination`); an owner's change is a typed value over these (instructions.json), never an edit here
+WORDS = {
+    'goal': {
+        'does': {
+            'text': (
+                'keeps what engines share: one run at a time, who goes first when several are ready, who may post '
+                "to whom, the chain's limit, a thread's bounds, and the alarm. Its own agent says who goes first "
+                'when several functions are ready at once'
+            ),
+        },
+        'skills': {
+            'items': [
+                'keep one run at a time',
+                'say who goes first',
+                'check who may post what to whom',
+                'stop a chain at its limit',
+                'close a thread at its bound',
+                'raise an alarm',
+                'say who goes first among equals',
+            ],
+        },
+    },
+    'tie': {
+        'tie': {
+            'task': 'Several functions of the department are ready at once, and one runs at a time. Say who goes first.',
+        },
+    },
+}
+LAYOUT = {
+    'goal': {
+        'does': '{text}',
+        'skills': '{items}',
+    },
+    'tie': {
+        'tie': (
+            '{task}\n'
+            'READY NOW: {{ready}}\n'
+            'WHAT EACH DOES: {{what}}\n'
+            "COORDINATION'S TABLE, THE USUAL ORDER: {{order}}\n"
+            'WAITING FOR THE OWNER: {{waiting}}\n'
+            '\n'
+            '{returns}'
+        ),
+    },
+}
 
 
 def view(ref, d, events, asks):
