@@ -10,7 +10,8 @@ grows. Four sources feed it, merged by (time, board, number); none of them is in
                          words ('Said yes to the plan: ...'), a W-k engine's likewise
     the asks             every ask is one message from Identity that carries the question and its numbered options (the
                          page builds its buttons from that text alone), linked to the post that said it
-    the validator        only the ledger's workflow.validated / registered / blocked: Root's check is an event, not a post
+    the validator        only the ledger's workflow.validated / registered / blocked written by Root: Root's check is an event,
+                         not a post (the same action by an engine that waits, or by Adaptation's own pre-check, is not Root's)
 
 The adapter speaks as no function: it never posts, and the only voice that reaches the owner is Identity's (`to_user`).
 Post numbers restart at 1 on every board, so a key carries its board: ('r', n) Root's, ('b', n) the department's,
@@ -33,6 +34,8 @@ APPROVAL = "approval"
 STAMP_OPTS = ("approve", "refuse")         # a stamp ask offers two answers, in this order
 STAMP_LABELS = ("Stamp", "Say no")
 VALIDATOR = {"workflow.validated": None, "workflow.registered": True, "workflow.blocked": False}
+CHECKER = "Root"                           # who writes the validator's events: j2_runtime also writes workflow.blocked for an engine that
+                                           # waits (actor the engine) and for Adaptation's own check of the shaped line (actor Adaptation)
 RANK = {"r": 0, "b": 1, "e": 2}            # Root's board, then the department's, then the ledger, within one recorded second
 LATE = 10 ** 9
 
@@ -307,10 +310,11 @@ def _post_entries(c, rd):
 
 
 def _event_entries(c):
-    """Root's check, from the ledger only: it validated the plan, registered it, or sent it back."""
+    """Root's check, from the ledger only: it validated the plan, registered it, or sent it back. Only Root's own events: the
+    page prints a red 'rejected' tag on a refusal, so an engine that waits for the model is not the validator refusing the plan."""
     out = []
     for e in c.events:
-        if e.get("action") not in VALIDATOR:
+        if e.get("action") not in VALIDATOR or e.get("actor") != CHECKER:
             continue
         rcp = str(e.get("recipient") or "").lower()
         nxt = rcp if rcp in [f.lower() for f in C.FUNCS] else "adaptation"
