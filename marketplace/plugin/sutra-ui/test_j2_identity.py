@@ -581,6 +581,54 @@ def test_m3_3_identity_has_one_standard_and_the_cycle_only_records_its_questions
     assert J.status("dref-one")["state"] == "assessing"
 
 
+def _code_asked(j2, ref="dref-coded"):
+    """A department whose first words are filed and whose record has no owner and no budget: where the cycle starts,
+    Identity's code reads the gap on the record and asks its question (standard False)."""
+    W, R, J, _, _ = j2
+    d, _ = W.create(ref, "Coded Website", BAKERY)
+    d.update({"events": [{"kind": "j2_ready", "route": "template"}], "owner": "", "envelopes": {}})
+    W.save_dept(ref, d)
+    J.start(ref)
+    W.run_until_idle(ref, limit=300)
+    q = J.status(ref)["open_question"]
+    assert (q["text"], q["standard"], q["points"]) == (R.STANDARD_ASKS["owner"], False, ["owner", "budget"])
+    assert W.versions(ref, "Brief") and "proposal.requested" not in _actions(J, ref)
+    return ref, q
+
+
+@pytest.mark.parametrize("via", ["chat", "answer box"])
+def test_m3_3_just_do_it_to_a_question_identitys_code_asked_names_the_defaults(j2, via):
+    """'Just do it' to the question Identity's code asked on the record (no owner, no budget) that fills the defaults and
+    names none of them (the chat said only that the department starts; the answer box said nothing) must fail."""
+    W, R, J, _, _ = j2
+    ref, q = _code_asked(j2)
+    if via == "chat":
+        W.owner_ask(ref, "just do it")
+    else:
+        assert _client().post("/api/dept/%s/j2/answer" % ref, json={"text": "Just do it."}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    d = W.dept(ref)
+    assert d["owner"] == "the owner" and R._standard_gaps(d) == []
+    assert next(e for e in J.events(ref) if e["action"] == "proposal.requested")["step"] == 2
+    tell = [s for s in _said(R, ref) if s.startswith("Just doing it.")]
+    assert tell == ["Just doing it. Defaults used: you, as the owner; Priority's limits from its template. The department starts."]
+    assert J.status(ref)["open_question"] is None and _actions(J, ref).count("identity.assessed") == 1
+
+
+def test_m3_3_an_answer_box_answer_to_a_question_identitys_code_asked_starts_the_department(j2):
+    """An answer through the answer box to the question Identity's code asked that meets the standard and leaves the cycle
+    at 'Reading your words', with nothing said and nothing started, must fail."""
+    W, R, J, _, _ = j2
+    ref, q = _code_asked(j2)
+    got = _client().post("/api/dept/%s/j2/answer" % ref, json={"text": "I am Asha and it may spend 2 dollars a day"})
+    assert got.status_code == 200 and W.dept(ref)["owner"] == "Asha"                 # on the record at once, by code
+    W.run_until_idle(ref, limit=300)
+    assert next(e for e in J.events(ref) if e["action"] == "proposal.requested")["step"] == 2
+    assert _actions(J, ref).count("identity.assessed") == 1 and _actions(J, ref).count("ask.answered") == 1
+    assert "Thank you. The identity is clear now; the department starts." in _said(R, ref)
+    assert sum(e["usd"] for e in W.dept(ref)["envelopes"].values()) <= 2.0
+
+
 def test_m3_3_a_done_line_that_is_not_there_is_a_gap_and_just_do_it_writes_it(j2):
     W, R, _, _, _ = j2
     W.create("dref-line", "Line Website", None)

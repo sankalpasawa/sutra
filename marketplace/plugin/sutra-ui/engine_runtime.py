@@ -2161,7 +2161,9 @@ def identity_read(ctx, step, item):
             # the words answer Identity's question on the rules (PRD M3.4): they are read as a directive, so the rule
             # keeps the tag Identity reads in them and the owner stamps it; recognising them again is not needed
             rule, cue = aid, "directive"
-        elif q and q.get("standard"):
+        elif q and (q.get("standard") or (pl.get("answers") == aid and q.get("missing") != "words")):
+            # a question Identity's code asked reaches this step from the answer box, the answer on the record already, for
+            # Identity to read its standard again and go on, or to fill the defaults 'just do it' asks for (J.answer)
             answers = aid
             # the answer reaches the record before Identity reads its standard again (PRD M3.3): a gap only code can see
             # (no owner, no budget, no done-when) is closed by the owner's words, so neither the reading nor its covering
@@ -2571,7 +2573,7 @@ def identity_file(ctx, step, item):
     if J and not first and J.waiting_on_owner(ref):
         # Identity's own question is open (J2.1): these words answer it. They are written to the identity, the standard
         # is read again, and the department starts once it is met
-        cur = J.answer(ref, words, at=_words_at(ref, p))
+        cur = J.answer(ref, words, at=_words_at(ref, p), go_on=False)
         d = W.dept(ref)
         if cur.get("state") == "waiting":
             return {"said": "took the owner's answer; Identity's next question is asked"}
@@ -2579,7 +2581,14 @@ def identity_file(ctx, step, item):
         brief = W.latest(ref, W.artifacts_of(d)[0])
         text = W.read_files(ref, W.artifacts_of(d)[0], brief["v"]) if brief else {}
         _line_request(ref, d, " ".join(str(v) for v in text.values()).strip() or d.get("goal"), thread=None)
-        _tell(ref, d, p, "inform", {"word": "request", "done": "Thank you. The identity is clear now; the department starts."}, thread=p["thread"])
+        # what the answer put on the record, or the defaults 'just do it' used, is named, as for Identity's own reading
+        # (_standard_answered; found by a verifier 2026-10-26: 'just do it' here said only that the department starts)
+        if cur.get("defaults"):
+            done = "Just doing it. Defaults used: %s. The department starts." % "; ".join(cur["defaults"])
+        else:
+            done = " ".join(["Thank you."] + (["Taken: %s." % "; ".join(cur["taken"])] if cur.get("taken") else [])
+                            + ["The identity is clear now; the department starts."])
+        _tell(ref, d, p, "inform", {"word": "request", "done": done}, thread=p["thread"])
         return {"said": "took the owner's answer on the identity; the department starts"}
     journey = "task" if first else ctx["bag"]["identity.recognise"].get("journey")
     if not first and journey == "directive" and _answers_facts(ref, words):

@@ -88,8 +88,8 @@
          while it goes, a refused answer is a snack and the words stay, and
          the answered card keeps 'You: ...' (PRD-FIVE-FUNCTIONS M0.6, S6)
      W48 a question on Identity's standard offers Just do it, which sends
-         'just do it' to the same answer box; a question on thin words offers
-         none (PRD M3.3, S6)
+         'just do it' to the same answer box, whether Identity's reading or its
+         code asked it; a question on thin words offers none (PRD M3.3, S6)
      W50 one voice: a function's chat box says the words go to Identity about
          that function, and they go to the department about it (PRD M3.6)
      W51 one voice: in a department's chat every turn of the department's is
@@ -2144,6 +2144,12 @@ test("W48: a question on Identity's standard offers Just do it, which sends 'jus
   assert.ok(click(s, { wbjust: "a-j2-1", wbref: "r3" })); await sleep(); await sleep();
   assert.deepStrictEqual(JSON.parse(JSON.stringify(s.calls.apiPost)), [{ p: "/api/dept/r3/j2/answer", body: { text: "just do it" } }],
                          "one answer, 'just do it', where the question lives");
+  /* a question Identity's code read off the record (standard false) is a step-1 question on the same standard: it takes
+     'just do it' too (found by a verifier 2026-10-26: the owner question had no way to end the questions) */
+  const coded = Object.assign({}, QUESTION, { text: "Who owns this department, and what may it spend?", why: "the record has no owner, no budget",
+                                             missing: "owner", points: ["owner", "budget"], standard: false });
+  assert.ok(/data-wbanswer="a-j2-1" data-wbref="r3">Send<\/button><button type="button" class="btn wb" data-wbjust="a-j2-1" data-wbref="r3">Just do it<\/button>/.test(c.wbQuestionHtml(coded, "r3", false)),
+            "a question Identity's code asked offers Just do it");
 });
 
 /* ── S5: Identity's pane (PRD M3.7), from the screen's own sample ── */
