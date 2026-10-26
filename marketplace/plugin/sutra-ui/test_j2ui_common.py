@@ -10,7 +10,9 @@ Named claims:
   C1-4  JournalTail reads 5,000 rows once and then only the row appended later, survives a torn last line, and re-reads after
         a truncation; the ledger is read from its last seq
   C1-5  caches are keyed by (home, ref): two homes in one process that reuse a ref never see each other
-  C1-6  clean() leaves build/v1/index.html and 5/6/2026 alone, shortens an absolute path to its file name and drops a private key
+  C1-6  clean() leaves build/v1/index.html and 5/6/2026 alone, shortens an absolute path to its file name and drops a private key;
+        a root with nothing under it ('/home', '/private', '/opt-in', '/root') is a page of the owner's site, not a path of this
+        machine; the owner's own words (a user message's text, the goal) are never rewritten
   C1-7  a department with no cycle is 'not_started'; a broken sub-read leaves its attribute empty, says why, and still gives a ctx
   C1-8  the W-k numbering, who/dest/fn_id and step_at, on a department Root set up
 """
@@ -256,6 +258,37 @@ def test_c16_clean_keeps_relative_paths_and_dates_and_shortens_machine_paths():
     assert got["tmp"] == "ef.json" and got["url"] == "https://example.test/var/log/x"
     assert "token" not in got and got["nested"] == [{"keep": "ok"}] and got["n"] == 3
     assert C.clean("/Users/x/y/z.txt") == "z.txt" and C.clean(("a", "/etc/hosts")) == ["a", "hosts"]
+
+
+OWNER_ROUTES = ("Make /home the landing page", "keep /private hidden", "see /var and /tmp and /etc", "the /opt-in page", "send /root to /login",
+                "/home", "/private", "/var", "/tmp", "/etc", "/opt", "/root", "/Users", "/Volumes", "/opt-in", "/home/ and /root/ are pages",
+                "Q&A:/faq and ratio 1:/2", "about~/home and a~/b", "see /homepage and /rooted and /variable")
+
+
+@pytest.mark.parametrize("words", OWNER_ROUTES)
+def test_c16_a_route_in_the_owners_words_is_not_a_machine_path(words):
+    """A path of this machine has a root AND something under it; '/home', '/private' or '/opt-in' alone are a website's pages."""
+    assert C.clean(words) == words
+    assert C.clean({"text": words, "who": "identity"})["text"] == words
+
+
+def test_c16_a_machine_path_is_still_shortened_wherever_it_stands():
+    for text, want in (("wrote /Users/me/.sutra-ui/departments/x/dept.json now", "wrote dept.json now"), ("(/home/me/a.md)", "(a.md)"),
+                       ("in /tmp/pytest-of-me/t1/x.txt.", "in x.txt."), ("at /private/var/folders/ab/T/x/", "at x"), ("\"/etc/hosts\"", "\"hosts\""),
+                       ("C:/Users/me/f.txt and D:\\x\\y.md", "f.txt and y.md"), ("saved to ~/notes/a.md", "saved to a.md"),
+                       ("/Volumes/Disk/site/index.html", "index.html"), ("/opt/homebrew/bin/x;", "x;")):
+        assert C.clean(text) == want, text
+
+
+def test_c16_the_owners_own_words_are_never_rewritten_even_when_they_name_a_path_shaped_page():
+    mine = "keep /home/about, /private/area and /var/news; /Users/login is the sign-in"
+    got = C.clean({"chat": [{"id": 1, "who": "user", "text": mine, "token": "t"}, {"id": 2, "who": "identity", "text": "@Requester wrote /Users/me/x/a.txt"}],
+                   "goal": {"statement": mine, "rules": ["never: " + mine], "done_when": [mine], "to_be_confirmed": [{"criterion": mine, "fact": mine}],
+                            "secret": "s"}, "other": mine})
+    assert got["chat"][0] == {"id": 1, "who": "user", "text": mine}, "the owner's message, only its private keys are dropped"
+    assert got["chat"][1]["text"] == "@Requester wrote a.txt", "what a function says of a file is machine-written"
+    assert got["goal"] == {"statement": mine, "rules": ["never: " + mine], "done_when": [mine], "to_be_confirmed": [{"criterion": mine, "fact": mine}]}
+    assert got["other"] == "keep about, area and news; login is the sign-in", "any other field is not the owner's words and is cleaned"
 
 
 def test_c16_times():

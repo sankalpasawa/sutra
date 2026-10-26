@@ -113,11 +113,16 @@ EMPTY_PREVIEW = _Shape({"anchor": None, "html": None})
 
 
 # ---- nothing private, no path of this machine --------------------------------------------------------------------------
-#: an absolute path of this machine: ~/..., a drive letter path, or /Users|home|private|var|tmp|opt|etc|root|Volumes/...
-#: A relative path (build/v1/index.html) and a date (5/6/2026) are not, and are never touched.
-ABS_PATH = re.compile(r"(?:(?<![\w.~])~(?=/)|(?<![\w.])[A-Za-z]:(?=[\\/])|(?<![\w./~-])/(?=(?:Users|home|private|var|tmp|opt|etc|root|Volumes)\b))"
-                      r"(?:[\\/]?[\w.@%+=~-]+)*[\\/]?")
+#: an absolute path of this machine: ~/..., a drive letter path, or /Users|home|private|var|tmp|opt|etc|root|Volumes/... with
+#: at least one more segment under the root. A root alone is a page of the owner's site (/home, /private, /opt-in, /root) and a
+#: relative path (build/v1/index.html) or a date (5/6/2026) is not a path of this machine: none of these is ever touched.
+#: `~` and a drive letter count only where a path would start: at the start of the text or after a space, a quote or a bracket.
+_SEG = r"[\\/][\w.@%+=~-]+"
+ABS_PATH = re.compile(r"(?:(?<![^\s\"'(\[{<=])(?:~|[A-Za-z]:)|(?<![\w./~-])/(?:Users|home|private|var|tmp|opt|etc|root|Volumes))"
+                      r"(?:" + _SEG + r")+[\\/]?")
 _TAIL_PUNCT = ".,;:!?"
+#: the key of the owner's goal, rules and done-when: the owner's words, which are never rewritten (rule 4e)
+OWNER_KEYS = ("goal",)
 
 
 def _short_path(m):
@@ -129,12 +134,25 @@ def _short_path(m):
     return (name or path) + tail
 
 
+def _private_only(value):
+    """The value with the ledger's private keys dropped at any depth and every string left exactly as it is."""
+    if isinstance(value, dict):
+        return {k: _private_only(v) for k, v in value.items() if str(k).lower() not in J.PRIVATE_KEYS}
+    if isinstance(value, (list, tuple)):
+        return [_private_only(v) for v in value]
+    return value
+
+
 def clean(value):
     """The value as the adapter sends it: no key of the ledger's private set at any depth (j2_runtime.PRIVATE_KEYS), and
-    an absolute path of this machine shortened to its file name. NOT functions_view._clean: its path rule rewrites any
-    /a/b (build/v1/index.html would become buildindex.html, and the owner's 5/6/2026 would become 52026)."""
+    an absolute path of this machine shortened to its file name. The owner's own words are never rewritten: the text of a
+    chat message of the owner's (who 'user') and the goal (its statement, rules and done-when) lose their private keys and
+    nothing else. NOT functions_view._clean: its path rule rewrites any /a/b (build/v1/index.html would become
+    buildindex.html, and the owner's 5/6/2026 would become 52026)."""
     if isinstance(value, dict):
-        return {k: clean(v) for k, v in value.items() if str(k).lower() not in J.PRIVATE_KEYS}
+        own_text = value.get("who") == "user"
+        return {k: _private_only(v) if k in OWNER_KEYS or (own_text and k == "text") else clean(v)
+                for k, v in value.items() if str(k).lower() not in J.PRIVATE_KEYS}
     if isinstance(value, (list, tuple)):
         return [clean(v) for v in value]
     if isinstance(value, str):

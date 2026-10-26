@@ -12,9 +12,10 @@ on every route. This module owns the state, runs and say routes; the rest are an
 (j2ui_work, j2ui_audit, j2ui_map, j2ui_board, j2ui_artifacts, j2ui_site), imported when a request needs them: a module that is
 not there, or fails, answers the page's own empty shape, because a wrong shape blanks the page.
 
-Every JSON body passes j2ui_common.clean (no private key, no path of this machine) and is sent no-store. Everything a model or an
-engine wrote (a built site, an artifact, a preview) is sent with website_api.SAFE, here, so that does not depend on a delegate
-remembering: the page's preview frames carry no sandbox of their own, and a built site that ran same-origin could read the panel's token.
+Every JSON body passes j2ui_common.clean (no private key, no path of this machine; the owner's own words stay as said) and is sent
+no-store. Everything a model or an engine wrote (a built site, an artifact, a preview) is sent with website_api.SAFE, here, so that
+does not depend on a delegate remembering: the page's preview frames carry no sandbox of their own, and a built site that ran
+same-origin could read the panel's token.
 """
 import importlib
 

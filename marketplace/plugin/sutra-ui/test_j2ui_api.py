@@ -231,6 +231,23 @@ def test_c55_json_is_cleaned_on_the_way_out(client, monkeypatch):
     assert "token" not in e and e["question"] == "see z.txt, due 5/6/2026" and e["file"] == "build/v1/index.html"
 
 
+def test_c55_the_owners_words_reach_the_page_as_they_were_said(mods, client, born, tick):
+    """'/home', '/private', '/var' and '/opt-in' in the owner's words are pages of the owner's site, not paths of this machine."""
+    ref = born()
+    words = "Make /home the landing page and keep /private hidden; /opt-in and /root too, see /var and /tmp and /etc"
+    assert client.post(url("api/say", ref), json={"text": words}).json() == {"ok": True}
+    d = mods.W.dept(ref)
+    d["goal"] = "A site whose /home is the landing page"
+    d["rules"] = [{"id": "u-1", "tag": "refuse", "line": "never link /private from /home"}]
+    d["done_items"] = [{"id": "D1", "text": "/opt-in works and /root redirects", "how": "code", "level": "target"}]
+    mods.W.save_dept(ref, d)
+    C.touch(ref)
+    s = client.get(url("api/state", ref)).json()
+    assert [m["text"] for m in s["chat"] if m["who"] == "user"][-1] == words
+    assert s["goal"]["statement"] == "A site whose /home is the landing page" and s["goal"]["rules"] == ["never: never link /private from /home"]
+    assert s["goal"]["done_when"] == ["/opt-in works and /root redirects"]
+
+
 def test_c55_since_slices_the_chat(mods, client, absent):
     for i in range(4):
         thread(mods, "Identity", "Adaptation", "request", "line", tid="x-%d" % i, words="w%d" % i)
