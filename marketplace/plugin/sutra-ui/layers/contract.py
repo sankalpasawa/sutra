@@ -9,8 +9,9 @@ test_layer_contracts.py runs on every implementation it discovers (layers/<layer
        (how many it provides by reference is reported, not gated)
     4  every check the recipe names is in CHECKS[layer] or SHARED_CHECKS, and each check with CONTRACT_SAMPLES accepts
        every good sample and refuses every bad one
-    5  every WORDS value passes S.validate_field, and every part with WORDS has a LAYOUT; a part with no WORDS is
-       reported as on the .md fallback (W1-CORE adds the compiling half: sample inputs, returns verbatim, no marker left)
+    5  every WORDS value passes S.validate_field, every part with WORDS has a LAYOUT, and each such part compiles with
+       sample inputs: its returns verbatim, no marker left, no field unread (layers.prompts.layout_faults); a part with
+       no WORDS is reported as on the .md fallback
     6  view() on the contract fixture department validates as VIEWS[layer]
     7  no ref_to points at an engine_runtime attribute that is itself a delegate
     8  every OUTPUTS step the recipe provides declares or returns those keys
@@ -24,6 +25,7 @@ import re
 from pathlib import Path
 
 from layers import R, W, S, FV  # noqa: F401 -- lazy proxies: tests reload the runtime
+from layers import prompts as P
 
 HERE = Path(__file__).resolve().parent
 MODULE_RE = r'^v[1-9][0-9]*$'
@@ -146,7 +148,7 @@ def case_4(module, ctx=None):
 
 
 def case_5(module, ctx=None):
-    """Every WORDS value passes validate_field and every part with WORDS has a LAYOUT (W1-CORE compiles them)."""
+    """Every WORDS value passes validate_field, every part with WORDS has a LAYOUT, and each compiles with sample inputs."""
     out, words, layout = [], getattr(module, 'WORDS', {}) or {}, getattr(module, 'LAYOUT', {}) or {}
     for group, parts in words.items():
         for part, fields in (parts or {}).items():
@@ -155,6 +157,12 @@ def case_5(module, ctx=None):
             for name, value in (fields or {}).items():
                 out += ['%s: %s.%s.%s: %s' % (impl_id(module), group, part, name, f[3:] if f.startswith('$: ') else f)
                         for f in S.validate_field(module.LAYER, group, part, name, value)]
+            if part in ((layout.get(group) or {})):
+                out += ['%s: %s.%s: %s' % (impl_id(module), group, part, f)
+                        for f in P.layout_faults(module.LAYER, group, part, fields or {}, layout[group][part])]
+    for group, parts in layout.items():
+        out += ['%s: %s.%s has a LAYOUT and no WORDS' % (impl_id(module), group, part) for part in parts
+                if part not in ((words.get(group) or {}))]
     return out
 
 
@@ -213,6 +221,6 @@ def case_8(module, ctx=None):
 
 
 def cases():
-    """A1.21's cases, in order: [(number, what it holds, the function)]; case 5 without compiling (W1-CORE adds it)."""
+    """A1.21's cases, in order: [(number, what it holds, the function)]."""
     return [(n, fn.__doc__.strip().split('\n')[0], fn) for n, fn in
             ((1, case_1), (2, case_2), (3, case_3), (4, case_4), (5, case_5), (6, case_6), (7, case_7), (8, case_8))]
