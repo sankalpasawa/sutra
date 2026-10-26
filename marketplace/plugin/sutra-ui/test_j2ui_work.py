@@ -940,10 +940,15 @@ def test_w7_a_ctx_with_no_step_rows_at_all_still_gives_every_key(mods):
     assert ctx.reasons, "and says why"
 
 
-def test_w7_a_department_with_thousands_of_rows_builds_in_bounded_time_and_links_the_same(mods):
+def test_w7_a_department_with_thousands_of_rows_builds_in_bounded_time_and_links_the_same(mods, monkeypatch):
     """The page polls every 700 ms and the adapter rebuilds on a change: linking a message to its call must not look at every
-    call for every message (5,000 posts, 20,000 step rows and 20,000 ledger events)."""
+    call for every message (5,000 posts, 20,000 step rows and 20,000 ledger events), and a registered plan with nothing on file
+    for a function's pane to refine does not read the pane (functions_view.function reads all of those rows whole, for each)."""
     import time
+    import functions_view
+    panes_read = []
+    real = functions_view.function
+    monkeypatch.setattr(functions_view, "function", lambda ref, fn: (panes_read.append(fn), real(ref, fn))[1])
     ctx = standin(mods)
     base = datetime(2026, 10, 26, 10, 0, 0, tzinfo=timezone(timedelta(hours=5, minutes=30)))
     at = lambda s: (base + timedelta(seconds=s)).isoformat(timespec="seconds")
@@ -968,3 +973,4 @@ def test_w7_a_department_with_thousands_of_rows_builds_in_bounded_time_and_links
     # is no call 2500, so the last post of the 2,500 calls' span is linked to none
     assert len(linked) == 2499 and all(m["calls"] == [m["id"] + 1] for m in linked), (len(linked), [m["calls"] for m in linked[:5]])
     assert ctx.reasons == [], ctx.reasons
+    assert ctx.planned and panes_read == [], "no pane is read when the record holds nothing to refine: %s" % panes_read
