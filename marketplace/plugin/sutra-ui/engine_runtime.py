@@ -6630,11 +6630,11 @@ LINE_STANDARDS = ("each_engine_named", "names_unique", "names_new", "first_reads
 
 def _line_notes(engs):
     """_line_faults, each fault with the standard it breaks: [(standard id, note)], in the order the line is read. The
-    line is read as a shaped one by the workflow schema's own standards (workflow_schema), with no department behind it,
-    so its first artifact is the Brief."""
-    import workflow_schema
+    line is read as a shaped one by the workflow schema's own standards, through the interface's one entry
+    (layer_schema.validate_workflow, A2-D10), with no department behind it, so its first artifact is the Brief."""
     wf = _plan_workflow(None, [e if isinstance(e, dict) else {} for e in engs], "shaped")
-    return [(r["check"], r["why"]) for r in workflow_schema.run(wf, "proposal", None, {}) if r["check"] in LINE_STANDARDS and not r["passed"]]
+    return [(r["check"], r["why"]) for r in layer_schema.validate_workflow(wf, "proposal", None, {})
+            if r["check"] in LINE_STANDARDS and not r["passed"]]
 
 
 def _line_faults(engs):

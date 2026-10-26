@@ -16,6 +16,7 @@ import ast
 import copy
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import types
@@ -908,3 +909,115 @@ def test_i4_versions_and_the_contract_import_without_the_runtime_present():
             "print('ok')\n" % (str(HERE), list(FORBIDDEN_AT_IMPORT)))
     done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=str(HERE), timeout=60)
     assert done.returncode == 0 and done.stdout.strip() == "ok", done.stderr[-2000:]
+
+
+# ---- I5 . the workflow family, and the one entry ------------------------------------------------------------------------------
+def test_i5_the_family_has_exactly_the_sources_each_extends_a_source_or_the_interface_and_none_runs_in_a_circle():
+    assert set(S.WORKFLOW_FAMILY) == set(S.SOURCES) and len(S.WORKFLOW_FAMILY) == len(S.SOURCES)
+    assert all(parent is None or parent in S.SOURCES for parent in S.WORKFLOW_FAMILY.values())
+    for source in S.SOURCES:
+        seen, at = [], source
+        while at is not None:
+            assert at not in seen, "%s runs in a circle: %s" % (source, seen)
+            seen.append(at)
+            at = S.WORKFLOW_FAMILY[at]
+    assert S.WORKFLOW_FAMILY == {"library": None, "fitted": "library", "shaped": None, "made": "shaped"}
+    assert S.describe()["constants"]["workflow_family"] == S.WORKFLOW_FAMILY
+    on_disk = json.loads((S.SCHEMA_FOLDER / "interface.v1.json").read_text(encoding="utf-8"))
+    assert on_disk["constants"]["workflow_family"] == S.WORKFLOW_FAMILY, "the generated file carries it"
+
+
+def test_i5_a_child_source_is_held_to_every_standard_its_parent_source_is():
+    pairs = [(child, parent) for child, parent in S.WORKFLOW_FAMILY.items() if parent]
+    assert pairs == [("fitted", "library"), ("made", "shaped")]
+    for child, parent in pairs:
+        for sid, says, sources, stages in S.WORKFLOW_STANDARDS:
+            assert parent not in sources or child in sources, "%s lists %s and not %s" % (sid, parent, child)
+
+
+LINES = (
+    [{"name": "Facts", "reads": "Brief", "writes": "Facts"}, {"name": "Site", "reads": "Facts", "writes": "Live site"}],
+    [{"name": "Facts", "reads": "Notes", "writes": "Notes"}],
+    [{"name": "Write", "reads": "Brief", "writes": "Pages"}],
+    [{"name": "Facts", "reads": "Pages", "writes": "Facts"}],
+    [{"name": "A", "reads": "Brief", "writes": "X"}, {"name": "B", "reads": "X", "writes": "X"}],
+    [{"name": "A", "reads": "Brief", "writes": "A"}, {"name": "A", "reads": "A", "writes": "B"}],
+    [{"name": "Plan"}, {"name": "Nobody Knows"}],
+    [],
+)
+
+
+def test_i5_line_notes_reads_a_line_through_the_one_entry_at_the_proposal_stage(monkeypatch):
+    import workflow_schema
+    seen, real = [], S.validate_workflow
+
+    def spy(wf, stage="shape", dept=None, ctx=None):
+        seen.append((stage, dept, ctx))
+        return real(wf, stage, dept, ctx)
+
+    monkeypatch.setattr(S, "validate_workflow", spy)
+    for line in LINES:
+        seen.clear()
+        got = R._line_notes(line)
+        assert seen == [("proposal", None, {})], line
+        wf = R._plan_workflow(None, [e if isinstance(e, dict) else {} for e in line], "shaped")
+        before = [(r["check"], r["why"]) for r in workflow_schema.run(wf, "proposal", None, {})
+                  if r["check"] in R.LINE_STANDARDS and not r["passed"]]
+        assert got == before, line
+    assert R._line_notes(LINES[0]) == [] and [c for c, _ in R._line_notes(LINES[1])] == ["first_reads_input"]
+    assert R._line_notes(LINES[6]) and R._line_faults(LINES[6]) == [n for _, n in R._line_notes(LINES[6])]
+
+
+SKIP_DIRS = ("test_fixtures", "qa", "node_modules", "payload", "dist")       # fixtures, walks and build output
+SKIP_FILES = ("workflow_schema.py", "layer_schema.py")                        # the schema and the interface that calls it
+
+
+def sources_to_scan():
+    """Every module under the sutra-ui folder that is not a test, one of the two schema files, a fixture, a walk, build output or
+    inside a folder that starts with a dot (the virtual environment); the folders are not walked into."""
+    out = []
+    for folder, dirs, files in os.walk(HERE):
+        dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d not in SKIP_DIRS)
+        out += [Path(folder) / f for f in sorted(files) if f.endswith(".py") and not f.startswith("test_") and f not in SKIP_FILES]
+    return out
+
+
+def old_entries(tree):
+    """What the one-entry law forbids in a module: a call of workflow_schema.run (through the module's name or an `as` name), an
+    import from workflow_schema, and any mention of STANDARD_CHECKS."""
+    names, found = {"workflow_schema"}, []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names |= {a.asname for a in node.names if a.name == "workflow_schema" and a.asname}
+        elif isinstance(node, ast.ImportFrom) and node.module == "workflow_schema":
+            found.append("from workflow_schema import")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "run" \
+                and isinstance(node.func.value, ast.Name) and node.func.value.id in names:
+            found.append("%s.run()" % node.func.value.id)
+        if (isinstance(node, ast.Name) and node.id == "STANDARD_CHECKS") or (isinstance(node, ast.Attribute) and node.attr == "STANDARD_CHECKS") \
+                or (isinstance(node, ast.alias) and node.name == "STANDARD_CHECKS"):
+            found.append("STANDARD_CHECKS")
+    return found
+
+
+def test_i5_the_scan_sees_what_it_is_meant_to_see():
+    seen = old_entries(ast.parse("import workflow_schema\nworkflow_schema.run(wf, 'proposal', None, {})\n"))
+    assert seen == ["workflow_schema.run()"]
+    seen = old_entries(ast.parse("import workflow_schema as WS\nx = WS.STANDARD_CHECKS\nWS.run(1)\nfrom workflow_schema import run, STANDARD_CHECKS\n"))
+    assert sorted(seen) == ["STANDARD_CHECKS", "STANDARD_CHECKS", "WS.run()", "from workflow_schema import"]
+    assert old_entries(ast.parse("import layer_schema as S\nS.validate_workflow(wf, 'proposal', None, {})\nthing.run()\n")) == []
+    scanned = [p.name for p in sources_to_scan()]
+    assert "engine_runtime.py" in scanned and "website_dept.py" in scanned and "versions.py" in scanned
+    assert not {"layer_schema.py", "workflow_schema.py", "test_layer_inherit.py"} & set(scanned)
+
+
+def test_i5_nothing_but_the_interface_and_the_schema_itself_calls_workflow_schema_run():
+    problems = []
+    for path in sources_to_scan():
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+        problems += ["%s: %s" % (path.relative_to(HERE), what) for what in old_entries(tree)]
+    assert not problems, "every workflow is checked through S.validate_workflow:\n" + "\n".join(problems)
