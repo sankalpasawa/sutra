@@ -1135,14 +1135,16 @@ def test_m17_a_runtime_departments_panes_agree_with_its_record(mods, born, tmp_p
     assert "Timetable" in panes["coordination"]["rest"] and "Publish after a Build that passed" in panes["coordination"]["rest"]
     assert "waits for the stamp" in panes["coordination"]["rest"] and "waits: waits" not in panes["coordination"]["rest"]
     assert "Plan" in panes["adaptation"]["rest"] and "Control" in panes["identity"]["rest"]
-    # round 4, gap 5: what Identity holds is on its pane, from the record, once: the goal, the done-when and each rule
-    # with its tag as a badge beside it, as dept.json has them
+    # round 4, gap 5: what Identity holds is on its pane, from the record, once: the goal, the done-when (its items, as
+    # Root drafted them) and each rule with its tag as a chip beside it in the pane's word (S5: a refuse rule reads
+    # never), as dept.json has them; Identity's page draws them from its own record (M3.7), and nothing draws them twice
     d, idn = W.dept(ref), panes["identity"]["rest"]
     assert d["goal"] and d["goal"] in idn, "the goal"
-    assert d["done"] and idn.count(d["done"]) == 1, ("the done-when, once", idn.count(d["done"]))
-    assert d["rules"]
+    done = [i["text"] for i in d.get("done_items") or []] or [d["done"]]
+    assert d["done"] and all(t and idn.count(t) == 1 for t in done), ("the done-when, once", [(t, idn.count(t)) for t in done])
+    assert d["rules"] and "The department Goal" not in idn, "one set of cards, not a second under the page"
     for r in d["rules"]:
-        assert idn.count(r["line"]) == 1 and "[tag:%s] %s" % (r["tag"], r["line"]) in idn, (r, "each rule once, its tag beside it")
+        assert idn.count(r["line"]) == 1 and "%s %s" % ({"refuse": "never"}.get(r["tag"], r["tag"]), r["line"]) in idn, (r, "each rule once, its tag beside it")
 
 
 def test_m17_a_record_written_before_reads_in_the_owners_words_on_every_chat(mods):

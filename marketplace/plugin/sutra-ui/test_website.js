@@ -1551,17 +1551,20 @@ test("M1.7: each function's pane opens on its page: line, fields, recipe, journe
   assert.ok(!/<h3>The function<\/h3>|wbjrn/.test(oh) && readsOf(old, /\/functions\//).length === 0);
 });
 /* PRD M1.7 (round 4, gap 5): on the engine runtime the registry's department card is gone, and what Identity holds is
-   drawn from the map read instead: the goal, the done-when and each rule with its tag as a badge with its word. */
-test("M1.7: Identity's pane shows the goal, done-when and each rule with its tag from the record, and repaints when they move", async () => {
+   drawn from the record instead, once: by Identity's page from its own record (S5, M3.7) when the read carries it, and
+   otherwise from the map read: the goal, the done-when and each rule with its tag as a chip in the pane's word. */
+test("M1.7: Identity's pane shows the goal, done-when and each rule with its tag from the record, once, and repaints when they move", async () => {
   const map = rtMap();
   map.rules = [{ tag: "go", line: "Plan, write and check inside the record" }, { tag: "refuse", line: "Never publish a build whose check failed" }];
+  /* a page read with no record of Identity's own: the map read draws them under the page */
   const c = await opened({ map, fnpage: fnPageOf });
   const html = await fnCard(c, "identity");
   assert.ok(/<h3>The department<\/h3><div class="dpid"><div class="dpcell"><div class="dpk">Goal<\/div><div class="dpbig">A live website for City Care Hospital<\/div>/.test(html), "the goal");
   assert.ok(/<div class="dpk">Done when<\/div><div class="dpbig">Every page checked and live<\/div>/.test(html), "the done-when");
-  assert.ok(html.indexOf('<div class="dprule"><span class="dptag go">go</span><span>Plan, write and check inside the record</span></div>') >= 0 &&
-            html.indexOf('<div class="dprule"><span class="dptag refuse">refuse</span><span>Never publish a build whose check failed</span></div>') >= 0,
-            "each rule with its tag, a badge that says its word");
+  assert.ok(html.indexOf('<div class="wbidrule"><span class="wbchip on">go</span><span>Plan, write and check inside the record</span></div>') >= 0 &&
+            html.indexOf('<div class="wbidrule"><span class="wbchip ask">never</span><span>Never publish a build whose check failed</span></div>') >= 0,
+            "each rule with its tag, a chip in the pane's word: a refuse rule reads never, as on S5");
+  assert.ok(!/class="dptag/.test(html), "never the registry's badge, which says refuse");
   assert.strictEqual((html.match(/Never publish a build whose check failed/g) || []).length, 1, "a rule once");
   assert.ok(!/No owner yet/.test(html) && (html.match(/Sankalp/g) || []).length === 1, "the owner once, on Control");
   /* the pane repaints when what Identity holds moves, and not when the read says the same */
@@ -1570,6 +1573,24 @@ test("M1.7: Identity's pane shows the goal, done-when and each rule with its tag
   assert.notStrictEqual(a, c.wbSig(Object.assign({}, map, { rules: map.rules.concat([{ tag: "ask", line: "Ask before a new page goes live" }]) })), "a new rule paints");
   assert.notStrictEqual(a, c.wbSig(Object.assign({}, map, { done: "Every page checked, live and read" })), "a new done-when paints");
   assert.notStrictEqual(a, c.wbSig(Object.assign({}, map, { goal: "A live website for City Care Clinic" })), "a new goal paints");
+  /* Identity's page carries its own record (S5): the goal, the done-when items and the rules are on top, once, and the
+     map read's department card is not drawn under them */
+  const j2 = { standard: { met: true, missing: [], rows: [{ id: "goal", says: "The goal names what and for whom", state: "met", note: "as you said it" }] },
+    goal: "A live website for City Care Hospital", done_items: [{ id: "D1", text: "Every page checked and live", how: "code", level: "outcome", confirm: null }],
+    rules: map.rules.map(r => Object.assign({ by: "the template", since: null }, r)), open_question: null, conflicts: [] };
+  const own = await fnCard(await opened({ map, fnpage: fn => Object.assign(fnPageOf(fn), fn === "identity" ? { j2: JSON.parse(JSON.stringify(j2)) } : {}) }), "identity");
+  assert.ok(own.indexOf("<h3>Enough to work?</h3>") >= 0 && own.indexOf("<h3>The department</h3>") < 0, "S5 on top, no second card");
+  for (const t of ["Every page checked and live", "Plan, write and check inside the record", "Never publish a build whose check failed"])
+    assert.strictEqual((own.match(new RegExp(t, "g")) || []).length, 1, t + ", once");
+  assert.ok(own.indexOf('<span class="wbchip ask">never</span><span>Never publish a build whose check failed</span><span class="dpchk">the template</span>') >= 0, "S5's rule row");
+  /* while the page is read, nothing is drawn twice; a department off the runtime keeps the registry's card (20-dept.js),
+     so this one draws none */
+  const wait = await opened({ map });
+  vm.runInContext("wbS().map['r3'] = " + JSON.stringify(map) + "; wbS().fnpage = {};", wait);
+  assert.ok(wait.wbFnExtra("identity", map).indexOf("<h3>The department</h3>") < 0, "the page not read yet: nothing to draw twice");
+  const old = await opened();
+  vm.runInContext("wbS().fnpage['r3:identity'] = " + JSON.stringify(fnPageOf("identity")) + ";", old);
+  assert.ok(old.wbFnExtra("identity", Object.assign({}, map, { runtime: 1 })).indexOf("<h3>The department</h3>") < 0, "off the runtime the registry card draws it");
 });
 /* PRD M1.8 (S2, proposal built on MK-8): All five. Five cards in canonical order, each with its mark, a state word and
    a Today bar, then Between them; no digits at rest outside titles; the states the screen names; the arrow keys. */

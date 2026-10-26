@@ -1124,6 +1124,17 @@ function wbIdSig(j){
 const WB_STD = { met: ["ok", "met"], not_met: ["warn", "not yet"], to_confirm: ["warn", "to confirm"], reading: ["breath", "reading"] };
 /* a rule's tag as the pane says it: the record keeps refuse; the screen never says refuse, so a refuse rule reads never */
 const WB_TAG_SAYS = { refuse: "never" };
+/* a rule as Identity's pane draws it: its tag as a chip in the pane's word, its line, and where it came from when the
+   read says (S5 does; the department card under a page with no record of its own does not) */
+function wbIdRuleHtml(r, from){
+  return `<div class="wbidrule">${wbChip(WB_TAG_SAYS[r.tag] || r.tag, r.tag === "go" ? "on" : (r.tag === "always" ? "" : "ask"))}<span>${wbEsc(r.line)}</span>` +
+    (from === undefined ? "" : `<span class="dpchk">${wbEsc(from)}</span>`) + `</div>`;
+}
+/* Identity's own record on its page read (S5), or null when the read carries none (an older read, or one that failed) */
+function wbIdRecord(p){
+  const j = (p && p.j2) || {};
+  return j.standard && j.standard.rows ? j : null;
+}
 function wbIdentityHtml(ref, j){
   const q = j.open_question ? wbQuestionHtml(Object.assign({ ref: ref }, j.open_question), ref, false) : "";
   const rows = (j.standard.rows || []).map(r => {
@@ -1134,8 +1145,7 @@ function wbIdentityHtml(ref, j){
   const goal = j.goal ? `<div class="dpbig wbidgoal">${wbEsc(j.goal)}</div>` : dpQuiet("Identity has not read the words yet");
   const items = (j.done_items || []).map(i => `<div class="wbiditem"><button type="button" class="wbjid wb" data-wbfn="audit" title="Audit's reading">${wbEsc(i.id)}</button>` +
     `<span>${wbEsc(i.text)}</span>${i.confirm ? wbChip("to confirm") : ""}<span class="dpchk">${wbEsc([i.level, i.how].filter(Boolean).join(" · "))}</span></div>`).join("");
-  const rules = (j.rules || []).map(r => `<div class="wbidrule">${wbChip(WB_TAG_SAYS[r.tag] || r.tag, r.tag === "go" ? "on" : (r.tag === "always" ? "" : "ask"))}<span>${wbEsc(r.line)}</span>` +
-    `<span class="dpchk">${wbEsc(r.by === "yours" ? "yours" + (r.since ? " · " + wbWhen(r.since) : "") : "the template")}</span></div>`).join("");
+  const rules = (j.rules || []).map(r => wbIdRuleHtml(r, r.by === "yours" ? "yours" + (r.since ? " · " + wbWhen(r.since) : "") : "the template")).join("");
   const closed = (j.conflicts || []).map(c => `<button type="button" class="wbidconf wb" data-wbtab="board"><span class="dpchk">${wbEsc(wbWhen(c.at))}</span>` +
     `<span>${wbEsc(wbCap(c.who))}${c.plan ? " on " + wbEsc(c.plan) : ""}. Ruled: ${wbEsc(c.ruled)}${c.why ? "; " + wbEsc(c.why) : ""}.` +
     `${c.asked_you ? "" : " No ask to you."}</span></button>`).join("");
@@ -1204,8 +1214,8 @@ function wbFnPageHtml(ref, fn){
     wbRecipeHtml(p.recipe) + wbJourneysHtml(p.journeys) +
     dpCard("Version 1", `<div class="dpfline">${wbEsc(p.v1)}</div>`);
   /* Identity's own record on top (S5); its page folds under it */
-  const j = p.j2 || {};
-  if (fn === "identity" && j.standard && j.standard.rows)
+  const j = wbIdRecord(p);
+  if (fn === "identity" && j)
     return wbIdentityHtml(ref, j) + `<details class="wbhow wb"><summary>How Identity works</summary>${page}</details>`;
   return page;
 }
@@ -1297,15 +1307,19 @@ function wbEngFiveHtml(card){
 }
 
 /* ── the five systems' own state, under the function cards ────────────────── */
-/* What Identity holds, from the record (the map read; PRD M1.7, acceptance line 1): the department's goal and its
-   done-when, as the registry's department card drew them (20-dept.js), and its rules, each with its tag as a badge that
-   says its word (go, ask, refuse or always, the owner's own words for a rule), as the record has them and never
-   rewritten. The owner is on Control, once. M3.7's S5 draws these as items on top of this. */
+/* What Identity holds, from the record (the map read; PRD M1.7, acceptance line 1), on a department on the engine
+   runtime whose registry department card is left out (20-dept.js dpRuntimeFnHtml): the goal and the done-when, and the
+   rules, each with its tag as a chip in the pane's word, as S5 says them (a refuse rule reads never), the lines as the
+   record has them and never rewritten. Identity's page draws these from its own record on top (S5, M3.7), so they are
+   drawn here only once that page is read and carries no record of its own, never twice and never on a department the
+   registry card still draws. The owner is on Control, once. */
 function wbIdHoldsHtml(m){
+  const p = wbS().fnpage[m.ref + ":identity"];
+  if (!wbRt(m) || !p || wbIdRecord(p)) return "";
   const rules = (m.rules || []).filter(r => r && (r.line || r.text));
   return dpCard("The department", `<div class="dpid">` + dpCell("Goal", m.goal ? dpBig(m.goal) : dpQuiet("No goal yet")) +
       dpCell("Done when", m.done ? dpBig(m.done) : dpQuiet("No done line yet")) + `</div>`) +
-    dpCard("Rules", rules.length ? rules.map(r => dpRuleHtml({ tag: r.tag, text: r.line || r.text })).join("") : dpQuiet("No rules yet"));
+    dpCard("Rules", rules.length ? rules.map(r => wbIdRuleHtml({ tag: r.tag, line: r.line || r.text })).join("") : dpQuiet("No rules yet"));
 }
 function wbFnExtra(tab, m){
   if (!m) return "";
