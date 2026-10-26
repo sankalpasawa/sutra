@@ -224,6 +224,22 @@ def _source_of(j2, ref):
     return v1().CODE["adapt_source"](ctx, step, None), ctx
 
 
+def _stub(monkeypatch, R, answers):
+    """A model that is a function (test_j2's): a step id maps to what the model says, a dict or a callable taking the prompt;
+    every other step falls to its draft, as it does offline."""
+    monkeypatch.delenv("SUTRA_WEBSITE_OFFLINE", raising=False)
+    seen = []
+
+    def model(prompt, step):
+        if step["id"] not in answers:
+            return None, 0.0, "offline"
+        seen.append((step["id"], prompt))
+        got = answers[step["id"]]
+        return (got(prompt) if callable(got) else got), 0.01, "model"
+    monkeypatch.setattr(R, "MODEL", model)
+    return seen
+
+
 # ---- A4 · the proposal stage ------------------------------------------------------------------------------------------
 GOOD = [{"name": "Facts 2", "does": "finds what the goal names, each fact with its source", "reads": "Brief", "writes": "Facts 2", "internet": True},
         {"name": "Site 2", "does": "writes the pages from the facts", "reads": "Facts 2", "writes": "Live site", "internet": False}]
@@ -288,6 +304,33 @@ def test_a4_a_name_or_a_text_that_does_not_fit_the_schema_is_cut_to_fit_before_i
     assert len(row["name"]) == 40 and len(row["does"]) == 200
     got = v1().CHECK["line_is_engines"](ctx, None, None, {"engines": [long, dict(GOOD[1], reads=row["writes"])]})
     assert got["ok"] is True, got
+
+
+def test_a4_a_shaped_line_whose_second_engine_reads_nothing_filed_fails_naming_reads_known_and_is_shaped_again(j2, monkeypatch):
+    """The step fails through the covering, and the existing reshape path runs: the reasons go back to Adaptation, which
+    shapes the line again, and the second line registers."""
+    W, R, J, founding, FV = j2
+    monkeypatch.setattr(S, "_workflow_schema", lambda: _Standards)
+    asked = []
+    bad = {"engines": [GOOD[0], dict(GOOD[1], reads="Interviews")]}
+    lines = iter([bad, {"engines": GOOD}])
+
+    def line(prompt):
+        asked.append(prompt)
+        return next(lines)
+    _stub(monkeypatch, R, {"adapt.line": line, "priority.bargain": {"answer": "accept", "why": "the envelope has room"}})
+    root = founding.found_structure("Lab Co", owner="Sankalp")["root"]
+    W.owner_ask(root, ORGANIC)
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    events = J.events(ref)
+    blocked = next(e for e in events if e["action"] == "workflow.blocked")
+    assert "reads_known: Site 2 reads Interviews, which nothing before it wrote" in " ".join(blocked["payload"]["faults"])
+    acts = [e["action"] for e in events]
+    assert acts.index("proposal.requested", acts.index("workflow.blocked")) > acts.index("workflow.blocked"), "the reasons go back"
+    assert "YOUR LAST LINE WAS REFUSED BY ROOT'S CHECK" in asked[1] and "reads_known" in asked[1]
+    assert "workflow.registered" in acts and W.dept(ref)["workflows"][-1]["engines"] == ["Facts 2", "Site 2"]
 
 
 # ---- A3 · proposals cover the done-when items (M5.1) ------------------------------------------------------------------
@@ -670,3 +713,150 @@ def test_a5_the_view_of_a_born_department_validates_and_reads_through_the_functi
     assert got["proposal"]["workflow"] == LINE and got["root_checks"][-1]["passed"] is True
     assert got["root_checks"][-1]["checks"], "the checks that ran are listed on the review"
     assert got["coverage"] is not None and got["coverage"]["uncovered"] == []
+
+
+# ---- A9 · no-template scenarios (M6.5) --------------------------------------------------------------------------------
+LAB = [{"text": "Chemicals can be added, found and counted", "how": "model", "level": "outcome"},
+       {"text": "Every chemical shows who changed it last", "how": "model", "level": "outcome"},
+       {"text": "A stock list for the week is filed", "how": "person", "level": "target"}]
+LAB_WORDS = "Set up a laboratory system to track chemical inventory for our school science team"
+LAB_PLAN = {"engines": [_made("Catalogue", "Brief", "Catalogue", ["D1", "D2"], confidence=0.9),
+                        _made("Stock page", "Catalogue", "Live site", ["D3"], confidence=0.85)]}
+DOC_WORDS = "Write the safety handbook for the school science lab, one clear document"
+DOC = [{"text": "The handbook covers every room of the lab", "how": "model", "level": "outcome"},
+       {"text": "Each rule names who it is for", "how": "model", "level": "outcome"}]
+DOC_PLAN = {"engines": [_made("Outline", "Brief", "Outline", ["D1"], confidence=0.9),
+                        _made("Handbook", "Outline", "Result", ["D2"], confidence=0.85)]}
+
+
+def _run_scenario(j2, monkeypatch, kind, words, org, items, plan, answers=None):
+    """A department as a person makes one, with J2_ADAPT_MAKE on and a stub in place of every model Adaptation, Priority,
+    Root and Audit would call; the motor runs until idle, and the owner's one stamp on what goes out is given."""
+    W, R, J, founding, FV = j2
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    seen = _stub(monkeypatch, R, dict({"setup.converse": {"verdict": "clear", "question": ""},
+                                       "setup.shape": {"name": org + " Department", "kind": kind, "goal": words, "done_items": items},
+                                       "adapt.line": plan, "priority.bargain": {"answer": "accept", "why": "the envelope has room"},
+                                       "audit.judge": {"ok": True, "findings": []}}, **(answers or {})))
+    root = founding.found_structure(org, owner="Sankalp")["root"]
+    W.owner_ask(root, words)
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    for a in [a for a in W.asks(ref) if a["status"] == "pending" and a["kind"] == "publish"]:
+        W.decide_ask(ref, a["id"], True)
+    W.run_until_idle(ref, limit=300)
+    return ref, seen
+
+
+def _deliverable_is_the_departments_own():
+    """Whether Audit starts on the department's deliverable (W1-AUDIT, M8.2) and not on the Live site alone."""
+    return "$deliverable" in json.dumps(layers.recipes()["Audit"]["start"])
+
+
+@pytest.mark.parametrize("kind, words, org, items, plan, last", [
+    ("organic", LAB_WORDS, "Lab Co", LAB, LAB_PLAN, "Live site"),
+    ("default", DOC_WORDS, "Safety Co", DOC, DOC_PLAN, "Result")])
+def test_a9_a_department_no_template_fits_shapes_bargains_is_checked_runs_and_is_read(j2, monkeypatch, kind, words, org, items, plan, last):
+    W, R, J, _, FV = j2
+    ref, seen = _run_scenario(j2, monkeypatch, kind, words, org, items, plan)
+    d = W.dept(ref)
+    assert d["kind"] == kind and [i["id"] for i in d["done_items"]] == ["D1", "D2", "D3"][:len(items)]
+    # shape: the typed part make.shape was sent, with the practices in place and the items
+    prompt = next(p for sid, p in seen if sid == "adapt.line")
+    assert "THE LIBRARY'S ENGINES" in prompt and "D1: " + items[0]["text"] in prompt and '"cannot": {"engine"' in prompt
+    assert "Chemicals" not in prompt or kind == "organic"
+    # bargain, Root's check, registration: the cycle's own events, in order, with nothing asked of the owner on the way
+    acts = [e["action"] for e in J.events(ref)]
+    assert acts[:6] == ["identity.assessed", "proposal.requested", "proposal.created", "proposal.granted", "workflow.validated", "workflow.registered"]
+    assert not [a for a in W.asks(ref) if a["kind"] in ("line", "j2_identity", "conflict")]
+    names = [e["name"] for e in plan["engines"]]
+    assert set(names) <= set(d["engines"]) and d["workflows"][-1]["engines"] == names and d["workflows"][-1]["source"] == "shaped"
+    # a covering plan: every item is covered by the engines it names, and the workflow passes the schema
+    sent = next(p["payload"] for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Priority"] and p["payload"].get("word") == "line")
+    assert set(sent["covers"]) == {i["id"] for i in d["done_items"]} and sent["confidence"] == 0.85
+    assert S.validate_act("Adaptation", ["Priority"], "propose", sent) == []
+    assert S.workflow_faults(S.as_workflow(sent["engines"], sent["source"], d), "registration", d) == []
+    pane = v1().view(ref, d, FV._events(ref, FV._cycle_state(ref).get("cycle_id")), W.asks(ref))
+    assert pane["coverage"] == {"items": [i["id"] for i in d["done_items"]], "uncovered": [], "by": "adaptation"}
+    assert S.validate_view("adaptation", pane) == []
+    # run and read: the plan's engines ran, and the department reached Audit's reading
+    ran = [r["engine"] for r in W.runs(ref) if not r.get("system")]
+    assert names[0] in ran
+    st = J.status(ref)
+    if last == "Live site" or _deliverable_is_the_departments_own():
+        assert st["step"] >= 7, (st, acts[-6:])
+    else:
+        assert st["step"] >= 6
+
+
+GAME = [{"text": "The game has a name", "how": "model", "level": "outcome"},
+        {"text": "A round lasts thirty seconds", "how": "code", "level": "target"},
+        {"text": "No script errors on any page", "how": "code", "level": "outcome"}]
+GAME_WORDS = "Build a browser game where you tap circles for thirty seconds"
+
+
+def _board_word(R, ref, word, src=None):
+    return [p for p in R.board(ref) if (p["payload"] or {}).get("word") == word and (src is None or p["src"] == src)]
+
+
+def test_a9_a_stub_cannot_on_a_website_game_gives_one_conflict_with_three_typed_options_and_registers_nothing(j2, monkeypatch):
+    """Root's check sends a website line back; with the make setting on it is made, not taken again, and Check, which the kind
+    requires, cannot pass a game's script: one conflict goes to Identity with the ways out, and nothing is registered."""
+    W, R, J, _, FV = j2
+    real, calls = R._root_check, {"n": 0}
+
+    def check(ref, d, engines, source):
+        calls["n"] += 1
+        return ["the plan does not cover D3"] if calls["n"] == 1 else real(ref, d, engines, source)
+    monkeypatch.setattr(R, "_root_check", check)
+    cannot = {"cannot": {"engine": "Check", "items": ["D3"], "why": "the game needs a script and Check refuses any page with one"}}
+    ref, seen = _run_scenario(j2, monkeypatch, "website", GAME_WORDS, "Game Co", GAME, cannot)
+    prompt = next(p for sid, p in seen if sid == "adapt.line")
+    assert "THIS KIND OF DEPARTMENT REQUIRES THESE ENGINES" in prompt and "- Check:" in prompt and "a page with a script" in prompt
+    conflicts = _board_word(R, ref, "conflict", "Adaptation")
+    assert len(conflicts) == 1, "one conflict, not one for each try"
+    sent = conflicts[0]["payload"]
+    assert [(o["id"], o["kind"]) for o in sent["options"]] == [("root_setup", "root_setup"), ("leave:D3", "leave"), ("stop", "stop")]
+    assert S.validate_act("Adaptation", ["Identity"], "inform", sent) == []
+    assert "workflow.registered" not in [e["action"] for e in J.events(ref)] and W.dept(ref).get("workflows") in (None, [])
+
+
+def test_a9_a_stub_at_0_7_shows_the_doubt_and_asks_nothing_and_the_department_goes_on(j2, monkeypatch):
+    W, R, J, _, FV = j2
+    plan = {"engines": [_made("Catalogue", "Brief", "Catalogue", ["D1", "D2"], confidence=0.9),
+                        _made("Stock page", "Catalogue", "Live site", ["D3"], confidence=0.7, doubt="Should the list show names or only counts?")]}
+    ref, _ = _run_scenario(j2, monkeypatch, "organic", LAB_WORDS, "Lab Co", LAB, plan)
+    sent = _board_word(R, ref, "line", "Adaptation")[0]["payload"]
+    assert sent["confidence"] == 0.7 and sent["doubt"] == "Should the list show names or only counts?"
+    assert not _board_word(R, ref, "doubt") and not [a for a in W.asks(ref) if a["kind"] in ("j2_identity", "conflict")]
+    assert [e["action"] for e in J.events(ref)][:6][-1] == "workflow.registered"
+
+
+def test_a9_a_stub_at_0_45_is_one_doubt_to_identity_and_nothing_is_registered(j2, monkeypatch):
+    if not v1().hears_doubt():
+        pytest.skip("Identity's recipe has no handler for a doubt yet (W1-IDENTITY, M3.9): until it has, a doubt is shown, not asked")
+    W, R, J, _, FV = j2
+    plan = {"engines": [_made("Catalogue", "Brief", "Catalogue", ["D1", "D2"], confidence=0.9),
+                        _made("Stock page", "Catalogue", "Live site", ["D3"], confidence=0.45,
+                              doubt="Where should the weekly list go? Unless you say, it is filed and sent nowhere.")]}
+    ref, _ = _run_scenario(j2, monkeypatch, "organic", LAB_WORDS, "Lab Co", LAB, plan)
+    doubts = _board_word(R, ref, "doubt", "Adaptation")
+    assert len(doubts) == 1 and doubts[0]["dst"] == ["Identity"] and doubts[0]["payload"]["confidence"] == 0.45
+    assert not [p for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Priority"]], "nothing is proposed"
+    assert W.dept(ref).get("workflows") in (None, []) and "workflow.registered" not in [e["action"] for e in J.events(ref)]
+
+
+def test_a9_offline_with_the_setting_on_keeps_the_draft_and_asks_nothing(j2, monkeypatch):
+    W, R, J, founding, FV = j2
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    root = founding.found_structure("Lab Co", owner="Sankalp")["root"]
+    W.owner_ask(root, LAB_WORDS)
+    W.run_until_idle(root, limit=300)
+    ref = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(ref, limit=300)
+    created = next(e for e in J.events(ref) if e["action"] == "proposal.created")
+    assert created["payload"]["workflow"] == ["Facts", "Site"]
+    sent = _board_word(R, ref, "line", "Adaptation")[0]["payload"]
+    assert "confidence" not in sent and "doubt" not in sent and sent["covers"] == {"D1": ["Site"]}
+    assert not _board_word(R, ref, "doubt")
