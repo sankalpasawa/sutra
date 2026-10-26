@@ -12,9 +12,15 @@ started by the artifact's version like every other engine. A department grows in
 
 The checks here take files, nothing else: a template's check runs when a version is filed (website_dept.add_version),
 beside the engine's, and a version that fails is filed and never read as passed.
+
+A template may also name a form (J2B-3, M7.5): the shape its files are filed in, which the engine that reads them depends
+on. The checks above ask whether a version holds; the form asks whether it is in the shape its reader takes. A writer
+that is not the Library's own and that a Library engine reads is born with the reader's form, and holds to it where it
+writes (engine_runtime.do_file), never at the reader.
 """
 import fnmatch
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent / "artifact-templates"
@@ -100,6 +106,48 @@ CHECKS = {"is_text": c_is_text, "plan_has_pages": c_plan_has_pages, "pages_have_
           "has_index_html": c_has_index_html, "names_a_ref": c_names_a_ref}
 
 
+# ---- forms: the shape a reader takes its input in (J2B-3, M7.5); each takes the files of one version -----------------
+WHOLE_PAGE = re.compile(r"<\s*(?:!doctype|html|head|body)\b", re.I)
+
+
+def pages_are_checkable(files):
+    """The form Check reads Pages in: `_plan.json` parses and lists the pages, the home page (index) among them, and
+    every planned page is a JSON object with a title and a body_html, the inside of <main> and not a whole page. Whether
+    a page carries a script, enough text, or a link to a page the plan lacks stays Check's verdict; this asks only
+    whether Check can read what was filed. Pure: files in, a verdict out."""
+    files = files or {}
+    try:
+        plan = json.loads(files.get("_plan.json") or "")
+    except (TypeError, ValueError):
+        plan = None
+    pages = plan.get("pages") if isinstance(plan, dict) else None
+    if not isinstance(pages, list) or not pages or not all(isinstance(p, dict) and isinstance(p.get("slug"), str) and p["slug"].strip() for p in pages):
+        return _ok(False, "", "the pages have no plan Check can read: a list of pages, each with a slug")
+    slugs = [p["slug"].strip() for p in pages]
+    notes = []
+    if "index" not in slugs:
+        notes.append("the plan does not name the home page (index)")
+    if len(set(slugs)) != len(slugs):
+        notes.append("the plan names a page twice")
+    for slug in dict.fromkeys(slugs):
+        raw = files.get(slug + ".html")
+        if raw is None:
+            notes.append("%s is planned and was not written" % slug)
+            continue
+        try:
+            page = json.loads(raw)
+        except (TypeError, ValueError):
+            page = None
+        if not isinstance(page, dict) or not isinstance(page.get("title"), str) or not isinstance(page.get("body_html"), str):
+            notes.append("%s is %s, not a title and a body" % (slug, "a whole HTML page" if str(raw).lstrip().startswith("<") else "not a page Check can read"))
+        elif WHOLE_PAGE.search(page["body_html"]):
+            notes.append("%s holds a whole page, not the inside of main" % slug)
+    return {"ok": not notes, "notes": notes or ["the plan names the home page, and every page is a title and a body"]}
+
+
+FORMS = {"pages_are_checkable": pages_are_checkable}
+
+
 def check(name, files, default=False):
     """The artifact's own verdict on one version's files; with `default`, the Default's when the Library has no template
     of its own for the name (an artifact the department names); None when there is no template to check by."""
@@ -118,6 +166,21 @@ def check(name, files, default=False):
     return {"ok": ok, "notes": notes}
 
 
+def form_of(name):
+    """The form an artifact's template names (Pages: pages_are_checkable), or None when it names none."""
+    return (get(name) or {}).get("form") or None
+
+
+def form_check(name, files):
+    """Whether one version's files are in the artifact's form, the form's own verdict {ok, notes}; None when the artifact's
+    template names no form. A form no function ships with the app as is a version that does not hold."""
+    form = form_of(name)
+    if not form:
+        return None
+    fn = FORMS.get(form)
+    return fn(files or {}) if fn else {"ok": False, "notes": ["no form named %s ships with the app" % form]}
+
+
 def faults(defs):
     """What the definitions get wrong against the Library: an artifact with no template, a check that does not exist,
     an engine that runs on a version its artifact's template does not name as an operation."""
@@ -127,6 +190,8 @@ def faults(defs):
         for c in t.get("checks") or []:
             if c not in CHECKS:
                 out.append("artifact %s: no check named %s ships with the app" % (t["name"], c))
+        if t.get("form") and t["form"] not in FORMS:
+            out.append("artifact %s: no form named %s ships with the app" % (t["name"], t["form"]))
     default = "Default" in names                          # with a Default on the shelf an unnamed artifact is text, not a fault
     for kind, k in (defs.get("kinds") or {}).items():
         for a in k.get("artifacts") or []:
@@ -153,4 +218,4 @@ def view(name):
         return None
     return {"id": t["id"], "name": t["name"], "kind": t["kind"], "use_case": t.get("use_case") or "", "files": t.get("files") or [],
             "checks": t.get("checks") or [], "written_by": t.get("written_by") or [], "counts_after": t.get("counts_after") or "filing",
-            "put_back": bool(t.get("put_back")), "operations": t.get("operations") or []}
+            "put_back": bool(t.get("put_back")), "operations": t.get("operations") or [], "form": t.get("form") or ""}
