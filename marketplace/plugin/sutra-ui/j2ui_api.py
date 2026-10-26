@@ -24,11 +24,12 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 
 import website_api
+from interface_http import InterfaceRoute
 import j2ui_common as C
 import j2ui_say as SAY
 import j2ui_state as S
 
-router = APIRouter(prefix="/j2ui", tags=["j2ui"])
+router = APIRouter(prefix="/j2ui", tags=["j2ui"], route_class=InterfaceRoute)
 NOSTORE = {"Cache-Control": "no-store"}
 NO_DEPARTMENT = {"error": "no such department"}
 NOT_FOUND = "not found"

@@ -28,8 +28,9 @@ if _LIB_DIR not in sys.path:
     sys.path.insert(0, _LIB_DIR)
 
 import placement_engine as E  # noqa: E402  (path insert must precede this import)
+from interface_http import InterfaceRoute  # noqa: E402
 
-router = APIRouter(prefix="/api/org2", tags=["org2"])
+router = APIRouter(prefix="/api/org2", tags=["org2"], route_class=InterfaceRoute)
 
 FILED_MAX = 200          # placements returned per department (newest first)
 DOCS_MAX = 200

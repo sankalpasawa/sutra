@@ -34,8 +34,9 @@ if _LIB_DIR not in sys.path:
 
 import placement_engine as E  # noqa: E402  (path insert must precede this import)
 import website_dept as W  # noqa: E402
+from interface_http import InterfaceRoute  # noqa: E402
 
-router = APIRouter(prefix="/api/dept", tags=["dept"])
+router = APIRouter(prefix="/api/dept", tags=["dept"], route_class=InterfaceRoute)
 
 ASKS_MAX = 40            # asks returned per department, newest first
 RUNNING_MAX = 24         # open atom rows returned per department

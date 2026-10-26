@@ -4,9 +4,10 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
 
 import j2_runtime as J
+from interface_http import InterfaceRoute
 
 
-router = APIRouter(tags=["j2"])
+router = APIRouter(tags=["j2"], route_class=InterfaceRoute)
 #: The screen reads /api/dept/{ref}/j2; the J2 PRD names /api/departments/{ref}/j2. Both are the same routes.
 PREFIXES = ("/api/dept", "/api/departments")
 

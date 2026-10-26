@@ -67,6 +67,10 @@ if providers.ensure_login_path():
           "(GUI launch). claude=%s" % (shutil.which("claude") or "still not found"))
 
 app = FastAPI(title="Sutra UI", docs_url=None, redoc_url=None)
+# A write the interface refuses (layer_schema.SchemaFault, in refuse mode) is 422 NOT_IN_SCHEMA from any route below (PRD A1.4,
+# A1.20): one handler for the app, so a router that writes through the sink and is added later is covered before it asks.
+import interface_http
+interface_http.install(app)
 
 
 # ── Origin/Host guard (dual consult 2026-08-25) ─────────────────────────────
