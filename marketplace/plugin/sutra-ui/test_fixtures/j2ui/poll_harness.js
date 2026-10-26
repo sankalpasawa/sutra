@@ -9,7 +9,8 @@ fetch that answers by URL path from the bundle, then polls and prints one JSON o
      {ok, errors, panes, polls, posts, sstatus}
 
 The bundle is the answers of one department or run: {state, map, board, artifacts, docs, audits, refs, runs, preview?, files?,
-search?, expect_keys?}. `state` is the whole api/state answer (the chat is cut by `since`, as the server does); `search` is the page's
+search?, expect_keys?, open_details?}. With open_details the message dialog is opened for each message the page lets you open (an agent's) and
+its title and body are reported as panes `detail:<id>`. `state` is the whole api/state answer (the chat is cut by `since`, as the server does); `search` is the page's
 location.search (a saved run is opened with ?run=ID). A missing key answers 404, which the page treats as "not there".
 The path is read after stripping a leading slash and everything before api/, site/, file/, shot/, so the prototype's
 "/api/state" and the copy's "api/state" both work.
@@ -185,11 +186,13 @@ const visible = html => String(html)
   .replace(/&(?:amp|lt|gt|quot|#39);/g, " ");
 const BAD = /\b(undefined|NaN|null)\b/;
 
+const escapeText = t => String(t == null ? "" : t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
 function paneText(id) {
   const e = els[id];
   if (!e) return "";
   if (id === "msgs") {
-    return e.children.map(c => `<div class="${c.className}"${c.dataset && c.dataset.id ? ` data-id="${c.dataset.id}"` : ""}>${c.innerHTML || ""}${c.textContent || ""}</div>`).join("");
+    return e.children.map(c => `<div class="${c.className}"${c.dataset && c.dataset.id ? ` data-id="${c.dataset.id}"` : ""}>${c.innerHTML || ""}${escapeText(c.textContent)}</div>`).join("");
   }
   return String(e.innerHTML || "");
 }
@@ -216,6 +219,16 @@ function paneText(id) {
   for (const id of PANES) panes[id] = paneText(id);
   for (const [name, expr] of RENDERS) {
     try { panes[name] = String(vm.runInContext(expr, ctx)); } catch (e) { calls.errors.push(name + ": " + (e && e.message)); panes[name] = ""; }
+  }
+  if (B.open_details && B.state) {                                  // the message dialog, for every message that opens it
+    for (const m of (B.state.chat || []).slice(0, 150)) {
+      if (!m || m.who === "system" || m.who === "user") continue;
+      try {
+        await vm.runInContext(`openDetail(${JSON.stringify(String(m.id))})`, ctx);
+        await flush(2);
+        panes["detail:" + m.id] = String((els.dtitle && els.dtitle.innerHTML) || "") + String((els.dbody && els.dbody.innerHTML) || "");
+      } catch (e) { calls.errors.push("openDetail(" + m.id + "): " + (e && e.message)); }
+    }
   }
   const sstatus = els.sstatus ? String(els.sstatus.textContent || "") : "";
   const errors = calls.errors.slice();
