@@ -195,20 +195,29 @@ class Fixture(unittest.TestCase):
                   "spend": {"calls": 0, "usd": 0.0}, "ready": ["Audit", "Identity", "Adaptation"]})
         out["coord.tie"] = self.render("coord.tie", c, ("coord.ready",))
         out["audit.judge"] = self.render("audit.judge", self.ctx("Audit", inp={"v": 1}), ("audit.pick",))
-        # the next round (M9.1), last, since it writes a reading and a round of its own to the fixture's records: a reading that found D1
-        # not met, then the same ask once a round for it has run and the reading still finds it not met
-        W.append_row(REF, "readings.jsonl", {
-            "schema_version": 1, "id": "r-0a1b2c3d", "v": 1, "artifact": "Live site", "cycle_id": None, "round": None, "read": True, "why_not_read": None,
-            "items": [{"id": "D1", "subject": "Live site", "claim": "the doctors page does not carry the phone line", "evidence": "doctors.html has no number",
-                       "method": "model", "verdict": "not_met", "severity": "high"}],
-            "findings": [{"id": "F1", "severity": "high", "claim": "the doctors page does not carry the phone line", "where": "doctors", "item": "D1",
-                          "went_to": "Identity"}], "at": "2026-10-23T10:10:00+05:30"})
-        ask = {"word": "next", "items": ["D1"], "reading": "r-0a1b2c3d", "findings": ["F1"]}
-        out["adapt.next"] = self.render("adapt.next", self.ctx("Adaptation", ask), ("adapt.hearnext",))
-        W.append_row(REF, "rounds.jsonl", {
-            "schema_version": 1, "round": 1, "at": "2026-10-23T10:12:00+05:30", "cycle_id": None, "correction": "Put the phone line on every page",
-            "fixes": ["F1"], "covers": ["D1"], "estimate": {"calls": 8, "usd": 0.36}, "status": "granted", "reading": "r-0a1b2c3d"})
-        out["adapt.next:repeat"] = self.render("adapt.next", self.ctx("Adaptation", ask), ("adapt.hearnext",))
+        # the next round (M9.1), last: a reading that found D1 not met, then the same ask once a round for it has run and the reading
+        # still finds it not met. Both are written to the fixture's records for the renders and taken away after them, so the
+        # records are as they were and a second call of this method renders what the first did
+        journals = [W.ddir(REF) / "readings.jsonl", W.ddir(REF) / "rounds.jsonl"]
+        for journal in journals:
+            journal.unlink(missing_ok=True)
+        try:
+            W.append_row(REF, "readings.jsonl", {
+                "schema_version": 1, "id": "r-0a1b2c3d", "v": 1, "artifact": "Live site", "cycle_id": None, "round": None, "read": True,
+                "why_not_read": None,
+                "items": [{"id": "D1", "subject": "Live site", "claim": "the doctors page does not carry the phone line",
+                           "evidence": "doctors.html has no number", "method": "model", "verdict": "not_met", "severity": "high"}],
+                "findings": [{"id": "F1", "severity": "high", "claim": "the doctors page does not carry the phone line", "where": "doctors",
+                              "item": "D1", "went_to": "Identity"}], "at": "2026-10-23T10:10:00+05:30"})
+            ask = {"word": "next", "items": ["D1"], "reading": "r-0a1b2c3d", "findings": ["F1"]}
+            out["adapt.next"] = self.render("adapt.next", self.ctx("Adaptation", ask), ("adapt.hearnext",))
+            W.append_row(REF, "rounds.jsonl", {
+                "schema_version": 1, "round": 1, "at": "2026-10-23T10:12:00+05:30", "cycle_id": None, "correction": "Put the phone line on every page",
+                "fixes": ["F1"], "covers": ["D1"], "estimate": {"calls": 8, "usd": 0.36}, "status": "granted", "reading": "r-0a1b2c3d"})
+            out["adapt.next:repeat"] = self.render("adapt.next", self.ctx("Adaptation", ask), ("adapt.hearnext",))
+        finally:
+            for journal in journals:
+                journal.unlink(missing_ok=True)
         return out
 
 
