@@ -669,3 +669,89 @@ def test_l3_a_handler_whose_when_has_no_word_hears_any():
     assert L.recipe_faults(parent, child, "identity") == []
     child["on"] = [h for h in child["on"] if L.handler_key(h) != ("accept-proposal", S.ANY)]
     assert L.recipe_faults(parent, child, "identity")[0].startswith("the handler for accept-proposal/%s is gone" % S.ANY)
+
+
+# ---- L4 . gate ranking -------------------------------------------------------------------------------------------------
+def says(answer):
+    """A gate body that always answers `answer` as (answer, why), the shape engine_runtime's gate bodies return."""
+    return lambda ctx, step, item: (answer, None if answer == "admit" else "because")
+
+
+def says_as_dict(answer):
+    return lambda ctx, step, item: {"answer": answer, "why": "because"}
+
+
+CONTEXT = ({"ref": "r"}, {"id": "s"}, None)
+
+
+def test_l4_rank_is_admit_then_wait_then_refuse():
+    assert [L.rank(a) for a in ("admit", "wait", "refuse")] == [0, 1, 2]
+    assert L.rank("admit") < L.rank("wait") < L.rank("refuse")
+    assert [L.GATE_ORDER[L.rank(a)] for a in L.GATE_ORDER] == list(L.GATE_ORDER)
+
+
+@pytest.mark.parametrize("answer", ["allow", "", "ADMIT", None, 0, 1, True, ["admit"], {"answer": "admit"}, ("admit",), b"admit"])
+def test_l4_rank_raises_value_error_for_anything_else(answer):
+    with pytest.raises(ValueError):
+        L.rank(answer)
+
+
+@pytest.mark.parametrize("make", [says, says_as_dict], ids=["tuple", "dict"])
+def test_l4_tightens_is_empty_for_a_child_that_answers_the_same_or_stricter(make):
+    contexts = [CONTEXT, CONTEXT, CONTEXT]
+    for parent in ("admit", "wait", "refuse"):
+        for child in L.GATE_ORDER[L.rank(parent):]:
+            assert L.tightens(make(parent), make(child), contexts) == [], (parent, child)
+    assert L.tightens(says("admit"), says("admit"), []) == []
+
+
+@pytest.mark.parametrize("parent_make", [says, says_as_dict], ids=["parent tuple", "parent dict"])
+@pytest.mark.parametrize("child_make", [says, says_as_dict], ids=["child tuple", "child dict"])
+def test_l4_tightens_names_the_context_where_the_child_lets_through_what_the_parent_held_back(parent_make, child_make):
+    got = L.tightens(parent_make("wait"), child_make("admit"), [CONTEXT])
+    assert len(got) == 1 and "context 0" in got[0] and "admit" in got[0] and "wait" in got[0]
+    got = L.tightens(parent_make("refuse"), child_make("wait"), [CONTEXT])
+    assert len(got) == 1 and "context 0" in got[0] and "wait" in got[0] and "refuse" in got[0]
+    got = L.tightens(parent_make("refuse"), child_make("admit"), [CONTEXT])
+    assert len(got) == 1 and "context 0" in got[0]
+
+
+def test_l4_tightens_calls_both_bodies_with_each_context_and_names_only_the_contexts_that_fail():
+    seen = []
+
+    def parent(ctx, step, item):
+        seen.append(("parent", ctx, step, item))
+        return ("wait", "x") if ctx["n"] % 2 else ("admit", None)
+
+    def child(ctx, step, item):
+        seen.append(("child", ctx, step, item))
+        return ("admit", None)
+
+    contexts = [({"n": n}, "step", "item%d" % n) for n in range(4)]
+    got = L.tightens(parent, child, contexts)
+    assert len(got) == 2 and "context 1" in got[0] and "context 3" in got[1]
+    assert [s[0] for s in seen] == ["parent", "child"] * 4
+    assert [s[1:] for s in seen if s[0] == "child"] == [c for c in contexts]
+
+
+def test_l4_tightens_lets_a_bad_answer_or_shape_raise_for_the_author_to_see():
+    with pytest.raises(ValueError):
+        L.tightens(says("admit"), lambda *a: ("maybe", "x"), [CONTEXT])
+    with pytest.raises(ValueError):
+        L.tightens(lambda *a: None, says("admit"), [CONTEXT])
+    with pytest.raises(ValueError):
+        L.tightens(says("admit"), lambda *a: "admit", [CONTEXT])
+    with pytest.raises(KeyError):
+        L.tightens(says("admit"), lambda *a: {}["nothing"], [CONTEXT])
+
+
+def test_l4_the_real_identity_gate_answers_in_the_shape_tightens_reads():
+    """engine_runtime.identity_gate on a context that is cheap to build (an engine whose artifact stays in the record): it admits,
+    as (answer, why)."""
+    ctx = {"ref": "r", "engine": "Plan", "slot": "s", "inp": {"v": 1}, "def": {}, "dept": {}}
+    assert R.identity_gate(ctx, {"id": "identity.gate"}, None) == ("admit", None)
+    contexts = [(ctx, {"id": "identity.gate"}, None)]
+    assert L.tightens(R.identity_gate, says("wait"), contexts) == []                     # a stricter replacement
+    assert L.tightens(R.identity_gate, R.identity_gate, contexts) == []
+    got = L.tightens(says("wait"), R.identity_gate, contexts)                              # a laxer one
+    assert len(got) == 1 and "context 0" in got[0]

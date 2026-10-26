@@ -390,3 +390,32 @@ def recipe_faults(parent, child, layer):
             if target not in cmap:
                 out.append('%s: only_if points at %s, which is no step of this recipe' % (s.get('id') or 'a step', target))
     return out
+
+
+# ---- gate ranking (L4) --------------------------------------------------------------------------------------------------
+def rank(answer):
+    """admit 0, wait 1, refuse 2 (A2-R6, A2-D5); ValueError for anything else."""
+    if not isinstance(answer, str) or answer not in GATE_ORDER:
+        raise ValueError('%r is no answer of a gate; a gate answers %s' % (answer, ', '.join(GATE_ORDER)))
+    return GATE_ORDER.index(answer)
+
+
+def _answer_of(got):
+    """The answer of what a gate body returned: (answer, why) or {'answer': ...}."""
+    if isinstance(got, (tuple, list)) and got:
+        return got[0]
+    if isinstance(got, dict):
+        return got.get('answer')
+    raise ValueError("a gate body returns (answer, why) or {'answer': ...}, not %r" % (got,))
+
+
+def tightens(parent_fn, child_fn, contexts):
+    """[] when the child's body answers at least as strictly as the parent's on every context, else one sentence for each context
+    where it answers a laxer one (A2-R6). `contexts` are argument tuples for the body, (ctx, step, item); both bodies are called
+    with each. A body that raises, or answers outside GATE_ORDER, raises here: the author's test shows it."""
+    out = []
+    for i, args in enumerate(contexts):
+        p, c = rank(_answer_of(parent_fn(*args))), rank(_answer_of(child_fn(*args)))
+        if c < p:
+            out.append('context %d: the child answers %s where its parent answers %s' % (i, GATE_ORDER[c], GATE_ORDER[p]))
+    return out
