@@ -404,7 +404,8 @@ def test_t32_every_act_between_functions_is_worded_for_the_owner_and_no_id_is_pr
     check_page(ref, bodies, client)
 
 
-def test_t32_a_path_of_this_machine_is_shortened_a_relative_path_and_a_date_are_not(client, plant):
+def test_t32_a_path_of_this_machine_is_shortened_a_relative_path_and_a_date_are_not(client, plant, machine):
+    machine("/Users/me")
     ref, m = plant("running")
     ask(m, "step", id="a-step", engine="Write", text="Write the page at /Users/me/work/site/index.html by hand; see build/v1/index.html on 5/6/2026",
         created=m.W.now())
@@ -431,9 +432,10 @@ def test_t32_a_state_that_lost_a_key_is_caught_by_the_checks_themselves(client, 
 
 
 @pytest.mark.parametrize("name", ["pursuing_line", "ready"])
-def test_t32_the_guards_of_rule_1_and_the_words_catch_what_they_guard(client, plant, name):
+def test_t32_the_guards_of_rule_1_and_the_words_catch_what_they_guard(client, plant, name, machine):
     """A guard that cannot fail guards nothing: real bodies of every JSON route are mutated one way at a time, and the checks must refuse."""
     import copy
+    machine("/Users/someone")                                 # the path the guard is shown is this machine's
     ref, m = plant(name)
     bodies = read_all(client, ref)
     check_state(bodies["state"])

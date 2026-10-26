@@ -10,9 +10,11 @@ Named claims:
   C1-4  JournalTail reads 5,000 rows once and then only the row appended later, survives a torn last line, and re-reads after
         a truncation; the ledger is read from its last seq
   C1-5  caches are keyed by (home, ref): two homes in one process that reuse a ref never see each other
-  C1-6  clean() leaves build/v1/index.html and 5/6/2026 alone, shortens an absolute path to its file name and drops a private key;
-        a root with nothing under it ('/home', '/private', '/opt-in', '/root') is a page of the owner's site, not a path of this
-        machine; the owner's own words (a user message's text, the goal) are never rewritten
+  C1-6  clean() leaves build/v1/index.html and 5/6/2026 alone, shortens a path of THIS machine (under its home, the records' home,
+        the temp folder or the app's folder, ~/..., a Windows drive path) to its file name and drops a private key; a root with
+        nothing under it ('/home', '/private', '/opt-in', '/root') and a route that is not under one of this machine's folders
+        ('/home/about', '/private/members', 'Plan B:/pricing') are pages of the owner's site and reach the page as they were said;
+        the owner's own words (a user message's text, the goal, a Said line) are never rewritten
   C1-7  a department with no cycle is 'not_started'; a broken sub-read leaves its attribute empty, says why, and still gives a ctx
   C1-8  the W-k numbering, who/dest/fn_id and step_at, on a department Root set up
 """
@@ -249,7 +251,8 @@ def test_c15_two_homes_reusing_a_ref_never_see_each_other(mods, tmp_path, monkey
 
 
 # ---- C1-6: nothing private, no path of this machine -------------------------------------------------------------------
-def test_c16_clean_keeps_relative_paths_and_dates_and_shortens_machine_paths():
+def test_c16_clean_keeps_relative_paths_and_dates_and_shortens_machine_paths(machine):
+    machine("/Users/x")
     got = C.clean({"file": "build/v1/index.html", "when": "due 5/6/2026 and 24/7/365", "words": "see /Users/x/y/z.txt.",
                    "win": "C:\\Users\\x\\f.txt now", "home": "in ~/notes/a.md, ok", "tmp": "/private/var/folders/ab/cd/ef.json",
                    "url": "https://example.test/var/log/x", "token": "t", "nested": [{"Password": "p", "keep": "ok"}], "n": 3})
@@ -257,7 +260,7 @@ def test_c16_clean_keeps_relative_paths_and_dates_and_shortens_machine_paths():
     assert got["words"] == "see z.txt." and got["win"] == "f.txt now" and got["home"] == "in a.md, ok"
     assert got["tmp"] == "ef.json" and got["url"] == "https://example.test/var/log/x"
     assert "token" not in got and got["nested"] == [{"keep": "ok"}] and got["n"] == 3
-    assert C.clean("/Users/x/y/z.txt") == "z.txt" and C.clean(("a", "/etc/hosts")) == ["a", "hosts"]
+    assert C.clean("/Users/x/y/z.txt") == "z.txt" and C.clean(("a", "/Users/x/hosts")) == ["a", "hosts"]
 
 
 OWNER_ROUTES = ("Make /home the landing page", "keep /private hidden", "see /var and /tmp and /etc", "the /opt-in page", "send /root to /login",
@@ -272,15 +275,59 @@ def test_c16_a_route_in_the_owners_words_is_not_a_machine_path(words):
     assert C.clean({"text": words, "who": "identity"})["text"] == words
 
 
-def test_c16_a_machine_path_is_still_shortened_wherever_it_stands():
-    for text, want in (("wrote /Users/me/.sutra-ui/departments/x/dept.json now", "wrote dept.json now"), ("(/home/me/a.md)", "(a.md)"),
-                       ("in /tmp/pytest-of-me/t1/x.txt.", "in x.txt."), ("at /private/var/folders/ab/T/x/", "at x"), ("\"/etc/hosts\"", "\"hosts\""),
+@pytest.mark.parametrize("home", ["/Users/me", "/home/me"])
+def test_c16_a_machine_path_is_still_shortened_wherever_it_stands(machine, home):
+    machine(home, temp="/tmp/pytest-of-me")
+    for text, want in (("wrote %s/.sutra-ui/departments/x/dept.json now" % home, "wrote dept.json now"), ("(%s/a.md)" % home, "(a.md)"),
+                       ("in /tmp/pytest-of-me/t1/x.txt.", "in x.txt."), ("at /private/var/folders/ab/T/x/", "at x"), ("\"%s/hosts\"" % home, "\"hosts\""),
                        ("C:/Users/me/f.txt and D:\\x\\y.md", "f.txt and y.md"), ("saved to ~/notes/a.md", "saved to a.md"),
-                       ("/Volumes/Disk/site/index.html", "index.html"), ("/opt/homebrew/bin/x;", "x;")):
+                       ("/Volumes/Disk/site/index.html", "index.html"), ("%s/bin/x;" % home, "x;"), ("%s." % home, "me."),
+                       ("see %s/a and %s/b" % (home, home), "see a and b")):
         assert C.clean(text) == want, text
 
 
-def test_c16_the_owners_own_words_are_never_rewritten_even_when_they_name_a_path_shaped_page():
+def test_c16_the_folders_of_this_machine_are_what_the_rule_is_built_from(mods, machine, tmp_path):
+    """Path.home(), the records' home, the temp folder and the app's own folder, as named and as the disk resolves them."""
+    machine("/Users/me", temp=str(tmp_path / "tmp"))
+    roots = C._machine_roots()
+    for want in ("/Users/me", str(mods.home / "departments"), os.path.realpath(mods.home / "departments"), str(tmp_path / "tmp"),
+                 os.path.realpath(tmp_path / "tmp"), str(UI), "/private/var/folders", "/Volumes"):
+        assert want in roots, want
+    assert "/" not in roots and all(r.startswith("/") and not r.endswith("/") for r in roots)
+    assert C.clean(str(mods.home / "departments" / "d1" / "dept.json")) == "dept.json"
+    assert C.clean(str(UI / "j2ui_common.py")) == "j2ui_common.py"
+    assert C.ABS_PATH.search("/Users/me/a") and not C.ABS_PATH.search("/Users/you/a"), "the rule of the moment is the machine of the moment"
+
+
+#: pages of the owner's site that look like the path of a machine: none is under a folder of this one (HOME is /Users/me)
+SITE_ROUTES = ("go to /home/about", "Never link /private/area and always keep /home/about first", "/private/members", "/etc/terms and /var/news",
+               "/opt/shop/cart", "/tmp/stage/a", "/root/x/y", "/Users/login/settings", "see /home/about/team.", "(/home/about)", '"/private/members/"',
+               "Plan B:/pricing", "Plan B:/pricing/page", "a:/b/c", "C:/pricing/page", "Q&A:/faq/page", "keep /home/about, /private/area and /var/news")
+
+
+@pytest.mark.parametrize("words", SITE_ROUTES)
+def test_c16_a_route_quoted_in_an_ask_is_unchanged(machine, words):
+    """The verifier's finding N1: the path rule rewrote the owner's quoted routes ('go to /home/about' became 'go to about',
+    'Plan B:/pricing' became 'Plan pricing'). A path is this machine's only under its own folders, so a route is left alone
+    wherever it stands: a bare string, a message, an ask, a condition, a rubric row, a nested list."""
+    machine("/Users/me")
+    assert C.clean(words) == words
+    body = {"chat": [{"id": 1, "who": "identity", "text": "@Requester A rule, as understood: " + words, "to_user": True, "act": "ASK_REQUESTER"},
+                     {"id": 2, "who": "adaptation", "text": "Proposed the plan to Priority: " + words}],
+            "paused": {"kind": "approval", "questions": [{"question": "A rule, as understood: " + words, "options": ["Stamp", "Say no"]}], "msg": 1,
+                       "label": words, "choices": None},
+            "conditions": {"D1": {"text": words, "items": [words]}}, "rubric": [{"id": "D1", "criterion": words, "how": "an AI reads it"}]}
+    assert C.clean(body) == body
+
+
+def test_c16_a_drive_letter_is_a_drive_only_where_a_windows_path_follows(machine):
+    machine("/Users/me")
+    assert C.clean("Plan B:/pricing and C:/Users/me/f.txt and D:\\x\\y.md and E:/Program/z") == "Plan B:/pricing and f.txt and y.md and E:/Program/z"
+    assert C.clean("C:/ProgramData/x/y.cfg and C:/Windows/System32/a.dll") == "y.cfg and a.dll"
+
+
+def test_c16_the_owners_own_words_are_never_rewritten_even_when_they_name_a_path_shaped_page(machine):
+    machine("/Users/me")
     mine = "keep /home/about, /private/area and /var/news; /Users/login is the sign-in"
     got = C.clean({"chat": [{"id": 1, "who": "user", "text": mine, "token": "t"}, {"id": 2, "who": "identity", "text": "@Requester wrote /Users/me/x/a.txt"}],
                    "goal": {"statement": mine, "rules": ["never: " + mine], "done_when": [mine], "to_be_confirmed": [{"criterion": mine, "fact": mine}],
@@ -288,7 +335,22 @@ def test_c16_the_owners_own_words_are_never_rewritten_even_when_they_name_a_path
     assert got["chat"][0] == {"id": 1, "who": "user", "text": mine}, "the owner's message, only its private keys are dropped"
     assert got["chat"][1]["text"] == "@Requester wrote a.txt", "what a function says of a file is machine-written"
     assert got["goal"] == {"statement": mine, "rules": ["never: " + mine], "done_when": [mine], "to_be_confirmed": [{"criterion": mine, "fact": mine}]}
-    assert got["other"] == "keep about, area and news; login is the sign-in", "any other field is not the owner's words and is cleaned"
+    assert got["other"] == mine, "a route quoted in an ask is unchanged: it is not under a folder of this machine"
+
+
+def test_c16_a_line_that_carries_the_owners_words_is_sent_as_it_is_and_only_its_lead_passes_the_path_rule(machine):
+    """owner_words.kept leaves the owner's words (an ask's `words`) alone; the path rule must too, even for a path under this
+    machine's home, while the lead the machine wrote is shortened as everywhere else."""
+    machine("/Users/me")
+    words = "keep /Users/me/site/index.html as it is, and /home/about too"
+    line = C.said("Write the page at /Users/me/work/out.txt: " + words, words)
+    assert isinstance(line, C.Said) and line == "Write the page at out.txt: " + words
+    assert C.clean({"text": line, "more": [line], "token": "t"}) == {"text": line, "more": [line]}
+    assert json.loads(json.dumps({"q": line})) == {"q": line}, "it is a string to everything that reads it"
+    assert C.clean("Write the page at /Users/me/work/out.txt: " + words) == "Write the page at out.txt: keep index.html as it is, and /home/about too"
+    plain = C.said("Write the page at /Users/me/work/out.txt", None)
+    assert plain == "Write the page at /Users/me/work/out.txt" and not isinstance(plain, C.Said), "no words: all the machine's, and clean() has it"
+    assert C.said("a granted line", "b") == "a granted line" and C.said(None, "b") is None
 
 
 def test_c16_times():

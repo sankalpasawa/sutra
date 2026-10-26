@@ -21,6 +21,7 @@ import re
 
 import pytest
 
+from test_fixtures.j2ui.core_fixtures import machine  # noqa: F401 -- a fixture: the machine whose paths the router shortens
 from test_j2ui_artifacts import (REF, make_ctx, mods, page_render, plain_text, proto_board, proto_consts, seed_line)  # noqa: F401 -- mods is a fixture
 
 #: the keys of j2_board.new_entry at the pin, copied (proto_board compares them when the prototype is here)
@@ -224,10 +225,11 @@ def test_m5c_every_act_id_of_the_runtime_that_is_not_an_english_word_is_a_token(
     assert B.protocol_words("Should the site refuse cookies, or counter with a notice?") == "Should the site refuse cookies, or counter with a notice?"
 
 
-def test_m5c_a_path_and_a_private_key_leave_through_the_router_and_the_words_are_the_owners(line):
+def test_m5c_a_path_and_a_private_key_leave_through_the_router_and_the_words_are_the_owners(line, machine):
     """What the page is sent for a hostile row: the router shortens the machine paths to their file name and drops the private
     keys (j2ui_common.clean), and the board has already said the protocol's tokens in the owner's words."""
     from test_j2ui_artifacts import router_client
+    machine("/Users/someone")                                  # the paths of HOSTILE are this machine's
     put_questions(line[0], [hostile()])
     r = router_client().get("/j2ui/%s/api/board" % REF)
     assert r.status_code == 200

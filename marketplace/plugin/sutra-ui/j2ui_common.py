@@ -17,7 +17,9 @@ and the Beta channel has a home of its own.
 import bisect
 import copy
 import json
+import os
 import re
+import tempfile
 import threading
 import time
 from datetime import datetime
@@ -113,16 +115,83 @@ EMPTY_PREVIEW = _Shape({"anchor": None, "html": None})
 
 
 # ---- nothing private, no path of this machine --------------------------------------------------------------------------
-#: an absolute path of this machine: ~/..., a drive letter path, or /Users|home|private|var|tmp|opt|etc|root|Volumes/... with
-#: at least one more segment under the root. A root alone is a page of the owner's site (/home, /private, /opt-in, /root) and a
-#: relative path (build/v1/index.html) or a date (5/6/2026) is not a path of this machine: none of these is ever touched.
-#: `~` and a drive letter count only where a path would start: at the start of the text or after a space, a quote or a bracket.
+#: A path of THIS machine is one under a folder this machine has: the user's home, the records' home, the temp folder and
+#: the app's own folder (each as the program names it and as the disk resolves it: /var is /private/var on a Mac), the
+#: Mac's /private/var/folders and /Volumes, `~/...`, and a Windows drive path. A folder name alone says nothing: '/home/about',
+#: '/private/members', '/etc/terms' and '/var/news' are the pages of a site unless they sit under one of those folders, and
+#: the owner quotes pages in rules, in done-when and in answers, so a path is shortened only when it is this machine's.
+#: A root alone is a page too (/home, /tmp, /Volumes, /opt-in); a relative path (build/v1/index.html), a date (5/6/2026) and
+#: a URL are not paths of this machine, and none of these is ever touched. `~` and a drive letter count only where a path
+#: would start (the start of the text or after a space, a quote or a bracket), and a drive letter followed by a slash only
+#: with a folder of Windows after it ('Plan B:/pricing' is a plan and a page, not a drive).
 _SEG = r"[\\/][\w.@%+=~-]+"
-ABS_PATH = re.compile(r"(?:(?<![^\s\"'(\[{<=])(?:~|[A-Za-z]:)|(?<![\w./~-])/(?:Users|home|private|var|tmp|opt|etc|root|Volumes))"
-                      r"(?:" + _SEG + r")+[\\/]?")
+_START = r"(?<![^\s\"'(\[{<=])"
+_FIXED_ROOTS = ("/private/var/folders", "/var/folders", "/Volumes")
+_WINDOWS = r"(?:Users|Windows|ProgramData|Documents)"
+_HOME_PATH = (_START + r"(?:~|[A-Za-z]:(?=\\|[\\/]" + _WINDOWS + r"\b))(?:" + _SEG + r")+[\\/]?")
 _TAIL_PUNCT = ".,;:!?"
 #: the key of the owner's goal, rules and done-when: the owner's words, which are never rewritten (rule 4e)
 OWNER_KEYS = ("goal",)
+
+
+def _machine_roots():
+    """The folders of this machine, longest first, as absolute paths with no trailing slash."""
+    found = set(_FIXED_ROOTS)
+    here = Path(__file__).resolve().parent
+    for get in (Path.home, W.home, tempfile.gettempdir, lambda: here):
+        try:
+            path = str(get())
+            found.update((path, os.path.realpath(path)))
+        except Exception:  # noqa: BLE001 -- a home that cannot be found is one folder fewer, never a failed response
+            continue
+    return tuple(sorted({r.rstrip("/") for r in found if r.startswith("/") and len(r.rstrip("/")) > 1}, key=lambda r: (-len(r), r)))
+
+
+def _compile(roots):
+    """The path rule over these folders: a path under one (at least one name below it), the folder itself only when it is
+    this machine's own and deeper than one name (/Users/me, not /tmp, /Volumes or /var/folders), and a home path (~/..., a
+    drive path)."""
+    alt = "|".join(re.escape(r) for r in roots)
+    deep = "|".join(re.escape(r) for r in roots if r.count("/") > 1 and r not in _FIXED_ROOTS)
+    under = r"(?<![\w./~-])(?:" + alt + r")(?:" + _SEG + r")+[\\/]?" if alt else None
+    alone = r"(?<![\w./~-])(?:" + deep + r")[\\/]?(?![\w@%+=~-]|\.\w)" if deep else None
+    return re.compile("|".join(x for x in (under, alone, _HOME_PATH) if x))
+
+
+_RULE = {"key": None, "re": None}
+_RULE_LOCK = threading.Lock()
+
+
+def _rule():
+    """The compiled path rule for this machine as it stands: made again whenever the home, the records' home or the temp
+    folder changes (a test binds them to a folder of its own, and the Beta channel has a records home of its own)."""
+    key = (os.environ.get("HOME"), os.environ.get("USERPROFILE"), os.environ.get("SUTRA_NATIVE_DEPT_HOME"), os.environ.get("TMPDIR"),
+           tempfile.tempdir)
+    with _RULE_LOCK:
+        if _RULE["key"] != key:
+            _RULE["key"], _RULE["re"] = key, _compile(_machine_roots())
+        return _RULE["re"]
+
+
+class _PathRule:
+    """ABS_PATH: the path rule of this machine, as a compiled pattern's search/sub/finditer (the pattern itself is made from
+    the folders of the moment, see _rule)."""
+
+    def search(self, text, *a):
+        return _rule().search(text, *a)
+
+    def sub(self, repl, text, *a, **k):
+        return _rule().sub(repl, text, *a, **k)
+
+    def finditer(self, text, *a):
+        return _rule().finditer(text, *a)
+
+    @property
+    def pattern(self):
+        return _rule().pattern
+
+
+ABS_PATH = _PathRule()
 
 
 def _short_path(m):
@@ -134,6 +203,27 @@ def _short_path(m):
     return (name or path) + tail
 
 
+def shorten(text):
+    """One string with each path of this machine in it shortened to its file name; anything else as it is."""
+    return _rule().sub(_short_path, text) if isinstance(text, str) else text
+
+
+class Said(str):
+    """A line that carries the owner's own words (an ask's or a run's `words`, said as the owner said them) and whose lead,
+    the machine's, has passed the path rule already (see said): clean() sends it exactly as it is."""
+
+
+def said(line, words=None):
+    """owner_words.kept(line, words) for a line that goes to the page: the lead the machine wrote is said plainly and passes
+    the path rule, the owner's words after it are never rewritten, and the result is a Said that clean() leaves alone. A
+    line that does not end with the owner's words is all the machine's: said plainly, and left to clean()."""
+    if not isinstance(line, str):
+        return line
+    if isinstance(words, str) and words and line.endswith(words):
+        return Said(shorten(owner_words.plain(line[:-len(words)])) + words)
+    return owner_words.plain(line)
+
+
 def _private_only(value):
     """The value with the ledger's private keys dropped at any depth and every string left exactly as it is."""
     if isinstance(value, dict):
@@ -143,21 +233,28 @@ def _private_only(value):
     return value
 
 
-def clean(value):
-    """The value as the adapter sends it: no key of the ledger's private set at any depth (j2_runtime.PRIVATE_KEYS), and
-    an absolute path of this machine shortened to its file name. The owner's own words are never rewritten: the text of a
-    chat message of the owner's (who 'user') and the goal (its statement, rules and done-when) lose their private keys and
-    nothing else. NOT functions_view._clean: its path rule rewrites any /a/b (build/v1/index.html would become
-    buildindex.html, and the owner's 5/6/2026 would become 52026)."""
+def _clean(value, rule):
+    if isinstance(value, Said):
+        return value
     if isinstance(value, dict):
         own_text = value.get("who") == "user"
-        return {k: _private_only(v) if k in OWNER_KEYS or (own_text and k == "text") else clean(v)
+        return {k: _private_only(v) if k in OWNER_KEYS or (own_text and k == "text") else _clean(v, rule)
                 for k, v in value.items() if str(k).lower() not in J.PRIVATE_KEYS}
     if isinstance(value, (list, tuple)):
-        return [clean(v) for v in value]
+        return [_clean(v, rule) for v in value]
     if isinstance(value, str):
-        return ABS_PATH.sub(_short_path, value)
+        return rule.sub(_short_path, value)
     return value
+
+
+def clean(value):
+    """The value as the adapter sends it: no key of the ledger's private set at any depth (j2_runtime.PRIVATE_KEYS), and
+    a path of this machine shortened to its file name. The owner's own words are never rewritten: the text of a chat
+    message of the owner's (who 'user'), the goal (its statement, rules and done-when) and a Said line lose their private
+    keys and nothing else; a page of the owner's site that looks like a path ('/home/about') is not this machine's and is
+    left alone wherever it stands. NOT functions_view._clean: its path rule rewrites any /a/b (build/v1/index.html would
+    become buildindex.html, and the owner's 5/6/2026 would become 52026)."""
+    return _clean(value, _rule())
 
 
 def _dt(iso):

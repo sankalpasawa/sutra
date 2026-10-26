@@ -81,8 +81,9 @@ def _flat(s):
 
 def _line(s):
     """One line of an ask: one line whatever the words hold, and never a numbered question (the page reads a line that
-    starts '1. ' as one), so words quoted in an ask cannot forge an option."""
-    return re.sub(r"^(\d+)\.", r"\1)", _flat(s))
+    starts '1. ' as one), so words quoted in an ask cannot forge an option. A Said line stays a Said."""
+    line = re.sub(r"^(\d+)\.", r"\1)", _flat(s))
+    return C.Said(line) if isinstance(s, C.Said) else line
 
 
 def _label(o):
@@ -90,24 +91,34 @@ def _label(o):
     return _flat(owner_words.plain(o.get("label"))) + (" (%s)" % cost if cost else "")
 
 
+def carries_words(a):
+    """The ask's text ends with the owner's own words (an outside-the-site ask: the lead, then the words)."""
+    w, t = a.get("words"), a.get("text")
+    return isinstance(w, str) and bool(w) and isinstance(t, str) and t.endswith(w)
+
+
 def ask_text(a, shown):
     """The ask as the page parses it: '@Requester <lead>', the question, and one '   Option k: <label>' line for each option
     offered (`shown`: option dicts, in the order the owner saw them). Identity's question has none; a stamp ask has Stamp
-    and Say no."""
-    question = _line(owner_words.kept(a.get("text") or "", a.get("words")))
+    and Say no. When the question ends with the owner's own words they reach the page as they were said (a Said line:
+    the lead and the rest of the ask, the machine's, have passed the path rule here, the words never do)."""
+    question = _line(C.said(a.get("text") or "", a.get("words")))
     form = form_of(a)
     if form == "words":
-        why = _line(owner_words.plain(a.get("why")))
-        return "@Requester " + (why + "\n" if why else "") + question
-    lead = _line(owner_words.plain(a.get("title"))) if form == "options" else ""
-    labels = [_label(o) for o in shown] if form == "options" else list(STAMP_LABELS)
-    return "@Requester " + (lead + "\n" if lead else "") + question + "".join("\n   Option %d: %s" % (i + 1, s) for i, s in enumerate(labels))
+        why = _line(C.shorten(owner_words.plain(a.get("why"))))
+        text = "@Requester " + (why + "\n" if why else "") + question
+    else:
+        lead = _line(C.shorten(owner_words.plain(a.get("title")))) if form == "options" else ""
+        labels = [C.shorten(_label(o)) for o in shown] if form == "options" else list(STAMP_LABELS)
+        text = "@Requester " + (lead + "\n" if lead else "") + question + "".join("\n   Option %d: %s" % (i + 1, s) for i, s in enumerate(labels))
+    return C.Said(text) if carries_words(a) else text
 
 
 def message(at, who, text, step, **more):
     """A message without its id: {t, who, text, step} and only the optional fields the record supports, in the prototype's
     order (to_user, act, pause, next, audience, register)."""
-    m = {"t": C.hhmmss(at), "who": who, "text": str(text if text is not None else ""), "step": step if isinstance(step, int) else None}
+    m = {"t": C.hhmmss(at), "who": who, "text": text if isinstance(text, C.Said) else str(text if text is not None else ""),
+         "step": step if isinstance(step, int) else None}
     for k in ("to_user", "act", "pause", "next", "audience", "register"):
         if more.get(k) is not None:
             m[k] = more[k]
