@@ -1656,3 +1656,108 @@ def migrate(name, doc):
         out = MIGRATIONS[v](name, out)
         v += 1
     return out
+
+
+# ---- the JSON Schema files (A1.30): generated from here, never edited by hand ------------------------------------------
+SCHEMA_FOLDER = HERE / 'schemas' / 'layers'
+_ID = 'https://sutra.asawa.co/schemas/layers/'
+
+
+def _refs(schema, out):
+    """Every DEFS name a schema reaches through $ref, transitively."""
+    if isinstance(schema, dict):
+        r = schema.get('$ref')
+        if isinstance(r, str):
+            name = r.rsplit('/', 1)[-1]
+            if name in DEFS and name not in out:
+                out.add(name)
+                _refs(DEFS[name], out)
+        for v in schema.values():
+            _refs(v, out)
+    elif isinstance(schema, list):
+        for v in schema:
+            _refs(v, out)
+    return out
+
+
+def _closure(names):
+    got = set(names)
+    for n in list(names):
+        _refs(DEFS[n], got)
+    return {n: DEFS[n] for n in sorted(got)}
+
+
+def _file(name, title, description, defs, main=None, **more):
+    out = {'$schema': 'https://json-schema.org/draft/2020-12/schema', '$id': _ID + name, 'title': title,
+           'description': description + ' Generated from layer_schema.py (schema version %d); never edited by hand: run '
+                                        '`python layer_schema.py --write`.' % SCHEMA_VERSION,
+           '$defs': _closure(defs)}
+    if main:
+        out['$ref'] = '#/$defs/' + main
+    out.update(more)
+    return json.loads(json.dumps(out, ensure_ascii=False))
+
+
+def json_schemas():
+    """{file name: JSON Schema} for schemas/layers/: the interface's definitions as draft 2020-12 documents, each holding
+    the definitions it reaches under $defs (the department's keys with x-owner), and interface.v1.json, describe()."""
+    record_defs = sorted({r['def'] for kinds in RECORDS.values() for r in kinds.values()} |
+                         {'priority.estimate', 'priority.price', 'priority.ceiling', 'audit.reading', 'audit.reading_item',
+                          'audit.finding', 'adaptation.round', 'coordination.question', 'audit.spot_check', 'engine.template'})
+    return {
+        'department.schema.json': _file(
+            'department.schema.json', 'A department record (dept.json)',
+            "The department's one record, as the interface types it: each key's owning layer is in x-owner, and only the "
+            'keys a save changes are checked (PRD A1.6, A1.20).', ['department'], 'department'),
+        'workflow.schema.json': _file(
+            'workflow.schema.json', 'A department workflow',
+            'The one workflow schema every department workflow conforms to (a Library line, a fitted one, one Adaptation '
+            'shapes or makes), its engines, its checks against the standards and its registration (PRD A1.14).',
+            ['workflow', 'workflow.engine', 'workflow.check', 'workflow.registration'], 'workflow',
+            **{'x-standards': [{'id': i, 'says': s, 'sources': list(src), 'stages': list(st)} for i, s, src, st in WORKFLOW_STANDARDS]}),
+        'records.schema.json': _file(
+            'records.schema.json', "The layers' records",
+            "Every record a layer owns: asks, done-when items, rules, Coordination's table and slots, prices, the ceiling, "
+            'readings, findings, rounds, questions between engines, spot checks and born engine templates (PRD A1.6 to A1.13b).',
+            record_defs, **{'x-records': RECORDS}),
+        'acts.schema.json': _file(
+            'acts.schema.json', "The board's acts",
+            "Every board act's payload, and who may post what to whom (x-edges) with the words each sends (x-sends) "
+            '(PRD A1.13).', sorted(n for n in DEFS if n.startswith('act.')), **{'x-edges': edges(), 'x-sends': SENDS}),
+        'instructions.schema.json': _file(
+            'instructions.schema.json', "The owner's instructions (instructions.json)",
+            "The owner's typed values for the prompt fields, by layer, group, part and field (x-fields: each part's fields "
+            'and their types) (PRD A1.16).', ['instructions'] + sorted(n for n in DEFS if n.startswith('field.')), 'instructions',
+            **{'x-fields': {layer: {group: {part: p['fields'] for part, p in parts.items()} for group, parts in groups.items()}
+                            for layer, groups in PROMPTS.items()}}),
+        'views.schema.json': _file(
+            'views.schema.json', "The panes' read models",
+            'What each pane renders, as the screens read it: Identity, Adaptation, Priority, Coordination and Audit, and the '
+            'engine card (PRD A1.17).', sorted(VIEWS.values()), **{'x-views': VIEWS}),
+        'interface.v1.json': describe(),
+    }
+
+
+def _dump(doc):
+    return json.dumps(doc, indent=2, sort_keys=True, ensure_ascii=False) + '\n'
+
+
+def write_json_schemas(folder=None):
+    """Write json_schemas() under schemas/layers/ (or `folder`); returns the paths written."""
+    folder = Path(folder) if folder else SCHEMA_FOLDER
+    folder.mkdir(parents=True, exist_ok=True)
+    out = []
+    for name, doc in json_schemas().items():
+        p = folder / name
+        p.write_text(_dump(doc), encoding='utf-8')
+        out.append(str(p))
+    return out
+
+
+if __name__ == '__main__':
+    if sys.argv[1:] == ['--write']:
+        for path in write_json_schemas():
+            print(path)
+    else:
+        print('usage: python layer_schema.py --write    (regenerates schemas/layers/*.json from this file)')
+        sys.exit(2)

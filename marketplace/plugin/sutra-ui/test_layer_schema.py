@@ -635,3 +635,45 @@ def test_s4_describe_is_the_whole_interface_as_json():
               "sink", "sink_journals", "defs"):
         assert got[k], k
     assert got["edges"] == R.defs()["edges"] and got["schema_version"] == S.SCHEMA_VERSION
+
+
+# ---- S6: the generated JSON Schema files ------------------------------------------------------------------------------
+FILES = ("department.schema.json", "workflow.schema.json", "records.schema.json", "acts.schema.json",
+         "instructions.schema.json", "views.schema.json", "interface.v1.json")
+
+
+def test_s6_the_files_on_disk_are_what_the_definitions_generate():
+    got = S.json_schemas()
+    assert tuple(got) == FILES
+    for name, doc in got.items():
+        on_disk = (S.SCHEMA_FOLDER / name).read_text(encoding="utf-8")
+        assert on_disk == S._dump(doc), "%s differs from layer_schema.py: run `python layer_schema.py --write`" % name
+
+
+def test_s6_a_changed_definition_without_write_fails_the_check(monkeypatch):
+    monkeypatch.setitem(S.DEFS, "envelope", S.obj({"calls": S.integer(0), "usd": S.number(0), "day": S.text(10)}))
+    got = S.json_schemas()["department.schema.json"]
+    assert S._dump(got) != (S.SCHEMA_FOLDER / "department.schema.json").read_text(encoding="utf-8")
+
+
+def test_s6_each_file_is_draft_2020_12_with_its_id_and_holds_every_definition_it_reaches():
+    for name, doc in S.json_schemas().items():
+        if name == "interface.v1.json":
+            assert doc == S.describe()
+            continue
+        assert doc["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+        assert doc["$id"] == "https://sutra.asawa.co/schemas/layers/" + name
+        text = json.dumps(doc)
+        for ref in set(__import__("re").findall(r'"\$ref": "#/\$defs/([^"]+)"', text)):
+            assert ref in doc["$defs"], "%s: %s is reached and not held" % (name, ref)
+    dept = S.json_schemas()["department.schema.json"]["$defs"]["department"]["properties"]
+    assert {k: v["x-owner"] for k, v in dept.items()} == {k: owner for k, (owner, _) in S.DEPARTMENT_KEYS.items()}
+
+
+def test_s6_the_readme_points_at_every_layer_and_says_the_files_are_generated():
+    readme = (S.SCHEMA_FOLDER / "README.md").read_text(encoding="utf-8")
+    assert "never edited by hand" in readme and "python layer_schema.py --write" in readme
+    for layer in S.LAYER_NAMES:
+        assert "| %s |" % S.TITLE[layer] in readme and "LAYERS['%s']" % layer in readme
+    for name in FILES:
+        assert "`%s`" % name in readme

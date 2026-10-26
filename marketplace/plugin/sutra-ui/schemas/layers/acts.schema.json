@@ -1,0 +1,1698 @@
+{
+  "$defs": {
+    "act.answer": {
+      "additionalProperties": true,
+      "properties": {
+        "entry": {
+          "$ref": "#/$defs/coordination.question"
+        },
+        "word": {
+          "const": "answer"
+        }
+      },
+      "required": [
+        "word",
+        "entry"
+      ],
+      "type": "object"
+    },
+    "act.any": {
+      "additionalProperties": true,
+      "properties": {
+        "word": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "act.ask": {
+      "additionalProperties": true,
+      "properties": {
+        "boundaries": {
+          "maxLength": 8000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "may_read": {
+          "items": {
+            "maxLength": 60,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "objective": {
+          "maxLength": 4000,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "output": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "word": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "act.born": {
+      "additionalProperties": true,
+      "properties": {
+        "before": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "engines": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "full": {
+          "type": "boolean"
+        },
+        "grow": {
+          "maxLength": 80,
+          "minLength": 0,
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "word": {
+          "const": "born"
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "act.conflict": {
+      "additionalProperties": true,
+      "properties": {
+        "bound": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "engines": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/name"
+              },
+              {
+                "$ref": "#/$defs/workflow.engine"
+              }
+            ]
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "for": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "options": {
+          "items": {
+            "$ref": "#/$defs/option"
+          },
+          "maxItems": 3,
+          "minItems": 0,
+          "type": "array"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "library",
+                "shaped",
+                "fitted",
+                "made"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "why": {
+          "maxLength": 2000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "word": {
+          "const": "conflict"
+        },
+        "words": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "act.doubt": {
+      "additionalProperties": true,
+      "properties": {
+        "cannot": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "properties": {
+                "engine": {
+                  "$ref": "#/$defs/name"
+                },
+                "items": {
+                  "items": {
+                    "$ref": "#/$defs/id.item"
+                  },
+                  "minItems": 0,
+                  "type": "array"
+                },
+                "why": {
+                  "maxLength": 600,
+                  "minLength": 0,
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "doubt": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "engine": {
+          "$ref": "#/$defs/name"
+        },
+        "fallback": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "word": {
+          "const": "doubt"
+        }
+      },
+      "required": [
+        "word",
+        "engine",
+        "doubt"
+      ],
+      "type": "object"
+    },
+    "act.finding": {
+      "additionalProperties": true,
+      "properties": {
+        "claim": {
+          "maxLength": 2000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "findings": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {},
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "item": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id.item"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "page": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "severity": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "v": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "where": {
+          "maxLength": 200,
+          "minLength": 0,
+          "type": "string"
+        },
+        "word": {
+          "const": "finding"
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "act.line": {
+      "additionalProperties": true,
+      "properties": {
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "covers": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/name"
+            },
+            "minItems": 0,
+            "type": "array"
+          },
+          "propertyNames": {
+            "pattern": "^D[1-9][0-9]?$"
+          },
+          "type": "object"
+        },
+        "doubt": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "engines": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/name"
+              },
+              {
+                "$ref": "#/$defs/workflow.engine"
+              }
+            ]
+          },
+          "maxItems": 24,
+          "minItems": 0,
+          "type": "array"
+        },
+        "fit": {
+          "additionalProperties": {
+            "maxLength": 300,
+            "minLength": 0,
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "for": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "keep": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "library",
+                "shaped",
+                "fitted",
+                "made"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "why": {
+          "maxLength": 2000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "word": {
+          "const": "line"
+        },
+        "words": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "act.line_request": {
+      "additionalProperties": true,
+      "properties": {
+        "faults": {
+          "items": {
+            "maxLength": 600,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "objective": {
+          "maxLength": 2000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "practices": {
+          "additionalProperties": true,
+          "properties": {
+            "artifacts": {},
+            "engines": {},
+            "required": {},
+            "rules": {},
+            "taken": {}
+          },
+          "required": [],
+          "type": "object"
+        },
+        "word": {
+          "const": "line"
+        },
+        "words": {
+          "anyOf": [
+            {
+              "maxLength": 100000,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "act.next": {
+      "additionalProperties": true,
+      "properties": {
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/id.finding"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/id.item"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "reading": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "round": {
+          "maximum": 99,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "word": {
+          "const": "next"
+        }
+      },
+      "required": [
+        "word",
+        "items",
+        "reading"
+      ],
+      "type": "object"
+    },
+    "act.question": {
+      "additionalProperties": true,
+      "properties": {
+        "entry": {
+          "$ref": "#/$defs/coordination.question"
+        },
+        "word": {
+          "const": "question"
+        }
+      },
+      "required": [
+        "word",
+        "entry"
+      ],
+      "type": "object"
+    },
+    "act.reading": {
+      "additionalProperties": true,
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/name"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/id.finding"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "high": {
+          "type": "boolean"
+        },
+        "met": {
+          "items": {
+            "$ref": "#/$defs/id.item"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "not_met": {
+          "items": {
+            "$ref": "#/$defs/id.item"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "reading": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "to_confirm": {
+          "items": {
+            "$ref": "#/$defs/id.item"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "v": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "word": {
+          "const": "reading"
+        }
+      },
+      "required": [
+        "word",
+        "reading",
+        "artifact",
+        "v",
+        "read",
+        "met",
+        "not_met",
+        "to_confirm"
+      ],
+      "type": "object"
+    },
+    "act.round": {
+      "additionalProperties": true,
+      "properties": {
+        "ceiling": {
+          "$ref": "#/$defs/priority.ceiling"
+        },
+        "correction": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "covers": {
+          "items": {
+            "$ref": "#/$defs/id.item"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "estimate": {
+          "$ref": "#/$defs/priority.estimate"
+        },
+        "fixes": {
+          "items": {
+            "$ref": "#/$defs/id.finding"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "round": {
+          "maximum": 99,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "why": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "word": {
+          "const": "round"
+        }
+      },
+      "required": [
+        "word",
+        "round"
+      ],
+      "type": "object"
+    },
+    "act.stamp": {
+      "additionalProperties": true,
+      "properties": {
+        "ask": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "word": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "act.tell": {
+      "additionalProperties": true,
+      "properties": {
+        "card": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "done": {
+          "maxLength": 8000,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "word": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "act.verdict": {
+      "additionalProperties": true,
+      "properties": {
+        "answer": {
+          "enum": [
+            "admit",
+            "wait",
+            "refuse"
+          ]
+        },
+        "why": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "word": {
+          "const": "verdict"
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "act.words": {
+      "additionalProperties": true,
+      "properties": {
+        "about": {},
+        "answers": {},
+        "boundaries": {
+          "maxLength": 8000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "may_read": {
+          "items": {
+            "maxLength": 60,
+            "minLength": 0,
+            "type": "string"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "objective": {
+          "maxLength": 8000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "output": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "request": {},
+        "word": {
+          "enum": [
+            "front",
+            "request"
+          ]
+        },
+        "words": {
+          "maxLength": 8000,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "word"
+      ],
+      "type": "object"
+    },
+    "coordination.question": {
+      "additionalProperties": true,
+      "properties": {
+        "about": {
+          "maxLength": 120,
+          "minLength": 0,
+          "type": "string"
+        },
+        "answer": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answered_by": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "artifact_update": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "properties": {},
+              "required": [],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "asked_by": {
+          "$ref": "#/$defs/name"
+        },
+        "attempt": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "cycle": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "maxLength": 8,
+          "pattern": "^Q-[1-9][0-9]*$",
+          "type": "string"
+        },
+        "question": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 0,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schema": {
+          "const": "board/1"
+        },
+        "slot": {
+          "maxLength": 160,
+          "minLength": 0,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "unanswered",
+            "refused"
+          ]
+        },
+        "to": {
+          "$ref": "#/$defs/name"
+        },
+        "used_by": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        }
+      },
+      "required": [
+        "schema",
+        "id",
+        "asked_by",
+        "to",
+        "about",
+        "question",
+        "status",
+        "used_by"
+      ],
+      "type": "object"
+    },
+    "envelope": {
+      "additionalProperties": true,
+      "properties": {
+        "calls": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "usd": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "calls",
+        "usd"
+      ],
+      "type": "object"
+    },
+    "id.finding": {
+      "maxLength": 4,
+      "pattern": "^F[1-9][0-9]{0,2}$",
+      "type": "string"
+    },
+    "id.item": {
+      "maxLength": 3,
+      "pattern": "^D[1-9][0-9]?$",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 40,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 &'.-]{0,39}$",
+      "type": "string"
+    },
+    "option": {
+      "additionalProperties": true,
+      "properties": {
+        "cost": {
+          "maxLength": 400,
+          "minLength": 0,
+          "type": "string",
+          "x-say": true
+        },
+        "id": {
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*(:[A-Za-z0-9_.-]{1,40})?$",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "words",
+            "leave",
+            "stop",
+            "raise",
+            "root_setup",
+            "pin"
+          ]
+        },
+        "label": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string",
+          "x-say": true
+        },
+        "params": {
+          "additionalProperties": true,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "cost"
+      ],
+      "type": "object"
+    },
+    "priority.ceiling": {
+      "additionalProperties": true,
+      "properties": {
+        "at": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "calls": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "raised": {
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "at": {
+                "maxLength": 40,
+                "minLength": 0,
+                "type": "string"
+              },
+              "by": {
+                "maxLength": 80,
+                "minLength": 0,
+                "type": "string"
+              },
+              "to": {
+                "additionalProperties": true,
+                "properties": {},
+                "required": [],
+                "type": "object"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "rounds": {
+          "maximum": 99,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "start": {
+          "additionalProperties": true,
+          "properties": {
+            "calls": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "rounds": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "usd": {
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "rounds",
+            "calls",
+            "usd"
+          ],
+          "type": "object"
+        },
+        "usd": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "rounds",
+        "calls",
+        "usd",
+        "start"
+      ],
+      "type": "object"
+    },
+    "priority.estimate": {
+      "additionalProperties": true,
+      "properties": {
+        "basis": {
+          "enum": [
+            "median",
+            "prior",
+            "line"
+          ]
+        },
+        "calls": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "per_engine": {
+          "additionalProperties": {
+            "additionalProperties": true,
+            "properties": {
+              "basis": {
+                "enum": [
+                  "median",
+                  "prior"
+                ]
+              },
+              "calls": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "runs": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "usd": {
+                "minimum": 0,
+                "type": "number"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "type": "object"
+        },
+        "runs": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "usd": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "calls",
+        "usd"
+      ],
+      "type": "object"
+    },
+    "workflow.engine": {
+      "additionalProperties": true,
+      "properties": {
+        "check": {
+          "maxLength": 60,
+          "minLength": 0,
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "covers": {
+          "items": {
+            "$ref": "#/$defs/id.item"
+          },
+          "maxItems": 12,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "does": {
+          "maxLength": 300,
+          "minLength": 0,
+          "type": "string"
+        },
+        "doubt": {
+          "maxLength": 300,
+          "minLength": 0,
+          "type": "string"
+        },
+        "envelope": {
+          "$ref": "#/$defs/envelope"
+        },
+        "fit": {
+          "maxLength": 300,
+          "minLength": 0,
+          "type": "string"
+        },
+        "internet": {
+          "type": "boolean"
+        },
+        "level": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "made_by": {
+          "enum": [
+            "library",
+            "fitted",
+            "shaped",
+            "made"
+          ]
+        },
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "reads": {
+          "$ref": "#/$defs/name"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "start": {
+          "additionalProperties": true,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
+        "writes": {
+          "$ref": "#/$defs/name"
+        }
+      },
+      "required": [
+        "name",
+        "reads",
+        "writes"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://sutra.asawa.co/schemas/layers/acts.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Every board act's payload, and who may post what to whom (x-edges) with the words each sends (x-sends) (PRD A1.13). Generated from layer_schema.py (schema version 1); never edited by hand: run `python layer_schema.py --write`.",
+  "title": "The board's acts",
+  "x-edges": {
+    "Adaptation": {
+      "inform": [
+        "Identity"
+      ],
+      "propose": [
+        "Priority",
+        "Identity"
+      ]
+    },
+    "Audit": {
+      "inform": [
+        "Identity"
+      ]
+    },
+    "Coordination": {
+      "inform": [
+        "Identity"
+      ],
+      "request": [
+        "Identity",
+        "Priority"
+      ]
+    },
+    "Identity": {
+      "agree": [
+        "Owner",
+        "Adaptation",
+        "Coordination"
+      ],
+      "failure": [
+        "Owner"
+      ],
+      "inform": [
+        "Owner",
+        "Adaptation",
+        "Priority",
+        "Audit",
+        "Coordination"
+      ],
+      "refuse": [
+        "Owner",
+        "Adaptation",
+        "Coordination"
+      ],
+      "request": [
+        "Owner",
+        "Adaptation"
+      ]
+    },
+    "Owner": {
+      "accept-proposal": [
+        "Identity"
+      ],
+      "cancel": [
+        "Identity"
+      ],
+      "reject-proposal": [
+        "Identity"
+      ],
+      "request": [
+        "Identity"
+      ]
+    },
+    "Priority": {
+      "accept-proposal": [
+        "Adaptation"
+      ],
+      "propose": [
+        "Adaptation"
+      ],
+      "reject-proposal": [
+        "Adaptation"
+      ]
+    },
+    "Root": {
+      "accept-proposal": [
+        "Identity"
+      ],
+      "cancel": [
+        "Identity"
+      ],
+      "reject-proposal": [
+        "Identity"
+      ],
+      "request": [
+        "Identity"
+      ]
+    }
+  },
+  "x-sends": {
+    "Adaptation": [
+      {
+        "act": "propose",
+        "payload": "act.line",
+        "to": [
+          "Priority",
+          "Identity"
+        ],
+        "words": [
+          "line"
+        ]
+      },
+      {
+        "act": "propose",
+        "payload": "act.any",
+        "to": [
+          "Priority"
+        ],
+        "words": [
+          "engine",
+          "trial"
+        ]
+      },
+      {
+        "act": "propose",
+        "payload": "act.any",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "engine",
+          "rung"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.any",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "idea"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.conflict",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "conflict"
+        ]
+      }
+    ],
+    "Audit": [
+      {
+        "act": "inform",
+        "payload": "act.finding",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "finding"
+        ]
+      }
+    ],
+    "Coordination": [
+      {
+        "act": "request",
+        "payload": "act.verdict",
+        "to": [
+          "Identity",
+          "Priority"
+        ],
+        "words": [
+          "verdict"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.any",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "alarm",
+          "lost"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.conflict",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "conflict"
+        ]
+      }
+    ],
+    "Engine": [],
+    "Identity": [
+      {
+        "act": "agree",
+        "payload": "act.any",
+        "to": [
+          "Owner",
+          "Adaptation"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "agree",
+        "payload": "act.verdict",
+        "to": [
+          "Coordination"
+        ],
+        "words": [
+          "verdict"
+        ]
+      },
+      {
+        "act": "refuse",
+        "payload": "act.tell",
+        "to": [
+          "Owner"
+        ],
+        "words": [
+          "request"
+        ]
+      },
+      {
+        "act": "refuse",
+        "payload": "act.any",
+        "to": [
+          "Adaptation"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "refuse",
+        "payload": "act.verdict",
+        "to": [
+          "Coordination"
+        ],
+        "words": [
+          "verdict"
+        ]
+      },
+      {
+        "act": "request",
+        "payload": "act.ask",
+        "to": [
+          "Owner"
+        ],
+        "words": [
+          "blocked",
+          "conflict",
+          "done_items",
+          "engine",
+          "finding",
+          "instructions",
+          "line",
+          "publish",
+          "request",
+          "rule",
+          "rung",
+          "setup",
+          "step"
+        ]
+      },
+      {
+        "act": "request",
+        "payload": "act.line_request",
+        "to": [
+          "Adaptation"
+        ],
+        "words": [
+          "line"
+        ]
+      },
+      {
+        "act": "request",
+        "payload": "act.any",
+        "to": [
+          "Adaptation"
+        ],
+        "words": [
+          "idea"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.tell",
+        "to": [
+          "Owner"
+        ],
+        "words": [
+          "answer",
+          "broken",
+          "department",
+          "done_items",
+          "facts",
+          "filed",
+          "goal",
+          "idea",
+          "instructions",
+          "line",
+          "live",
+          "lost",
+          "plan",
+          "question",
+          "request",
+          "started",
+          "stopped",
+          "waits"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.tell",
+        "to": [
+          "Owner"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "inform",
+        "payload": "act.any",
+        "to": [
+          "Adaptation"
+        ],
+        "words": [
+          "rung"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.any",
+        "to": [
+          "Priority"
+        ],
+        "words": [
+          "born"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.any",
+        "to": [
+          "Audit"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "inform",
+        "payload": "act.any",
+        "to": [
+          "Coordination"
+        ],
+        "words": [
+          "born"
+        ]
+      },
+      {
+        "act": "failure",
+        "payload": "act.tell",
+        "to": [
+          "Owner"
+        ],
+        "words": "(any)"
+      }
+    ],
+    "Owner": [
+      {
+        "act": "request",
+        "payload": "act.words",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "front",
+          "request"
+        ]
+      },
+      {
+        "act": "accept-proposal",
+        "payload": "act.stamp",
+        "to": [
+          "Identity"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "reject-proposal",
+        "payload": "act.stamp",
+        "to": [
+          "Identity"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "cancel",
+        "payload": "act.any",
+        "to": [
+          "Identity"
+        ],
+        "words": "(any)"
+      }
+    ],
+    "Priority": [
+      {
+        "act": "accept-proposal",
+        "payload": "act.any",
+        "to": [
+          "Adaptation"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "reject-proposal",
+        "payload": "act.any",
+        "to": [
+          "Adaptation"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "propose",
+        "payload": "act.line",
+        "to": [
+          "Adaptation"
+        ],
+        "words": [
+          "line"
+        ]
+      },
+      {
+        "act": "propose",
+        "payload": "act.any",
+        "to": [
+          "Adaptation"
+        ],
+        "words": "(any)"
+      }
+    ],
+    "Root": [
+      {
+        "act": "request",
+        "payload": "act.words",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "request"
+        ]
+      },
+      {
+        "act": "accept-proposal",
+        "payload": "act.stamp",
+        "to": [
+          "Identity"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "reject-proposal",
+        "payload": "act.stamp",
+        "to": [
+          "Identity"
+        ],
+        "words": "(any)"
+      },
+      {
+        "act": "cancel",
+        "payload": "act.any",
+        "to": [
+          "Identity"
+        ],
+        "words": "(any)"
+      }
+    ]
+  }
+}

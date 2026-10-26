@@ -1,0 +1,545 @@
+{
+  "$defs": {
+    "envelope": {
+      "additionalProperties": true,
+      "properties": {
+        "calls": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "usd": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "calls",
+        "usd"
+      ],
+      "type": "object"
+    },
+    "id.item": {
+      "maxLength": 3,
+      "pattern": "^D[1-9][0-9]?$",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 40,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 &'.-]{0,39}$",
+      "type": "string"
+    },
+    "workflow": {
+      "additionalProperties": true,
+      "properties": {
+        "at": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "by": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/workflow.check"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "covers": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/name"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "propertyNames": {
+            "pattern": "^D[1-9][0-9]?$"
+          },
+          "type": "object"
+        },
+        "covers_by": {
+          "enum": [
+            "adaptation",
+            "default"
+          ]
+        },
+        "deliverable": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "engines": {
+          "items": {
+            "$ref": "#/$defs/workflow.engine"
+          },
+          "maxItems": 24,
+          "minItems": 0,
+          "type": "array"
+        },
+        "kind": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "left_out": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "schema_version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "source": {
+          "enum": [
+            "library",
+            "shaped",
+            "fitted",
+            "made"
+          ]
+        },
+        "version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "why": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "engines",
+        "source"
+      ],
+      "type": "object"
+    },
+    "workflow.check": {
+      "additionalProperties": true,
+      "properties": {
+        "check": {
+          "enum": [
+            "names_an_engine",
+            "engines_known",
+            "each_engine_named",
+            "names_unique",
+            "names_new",
+            "first_reads_input",
+            "reads_known",
+            "one_output",
+            "items_covered",
+            "required_kept",
+            "size_in_range",
+            "check_exists",
+            "fits_room",
+            "line_is_registered",
+            "workflow_meets_standards"
+          ]
+        },
+        "passed": {
+          "type": "boolean"
+        },
+        "why": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        }
+      },
+      "required": [
+        "check",
+        "passed",
+        "why"
+      ],
+      "type": "object"
+    },
+    "workflow.engine": {
+      "additionalProperties": true,
+      "properties": {
+        "check": {
+          "maxLength": 60,
+          "minLength": 0,
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "covers": {
+          "items": {
+            "$ref": "#/$defs/id.item"
+          },
+          "maxItems": 12,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "does": {
+          "maxLength": 300,
+          "minLength": 0,
+          "type": "string"
+        },
+        "doubt": {
+          "maxLength": 300,
+          "minLength": 0,
+          "type": "string"
+        },
+        "envelope": {
+          "$ref": "#/$defs/envelope"
+        },
+        "fit": {
+          "maxLength": 300,
+          "minLength": 0,
+          "type": "string"
+        },
+        "internet": {
+          "type": "boolean"
+        },
+        "level": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "made_by": {
+          "enum": [
+            "library",
+            "fitted",
+            "shaped",
+            "made"
+          ]
+        },
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "reads": {
+          "$ref": "#/$defs/name"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "start": {
+          "additionalProperties": true,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
+        "writes": {
+          "$ref": "#/$defs/name"
+        }
+      },
+      "required": [
+        "name",
+        "reads",
+        "writes"
+      ],
+      "type": "object"
+    },
+    "workflow.registration": {
+      "additionalProperties": true,
+      "properties": {
+        "by": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/workflow.check"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "covers": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/name"
+            },
+            "minItems": 0,
+            "type": "array"
+          },
+          "propertyNames": {
+            "pattern": "^D[1-9][0-9]?$"
+          },
+          "type": "object"
+        },
+        "deliverable": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "engines": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "maxItems": 24,
+          "minItems": 0,
+          "type": "array"
+        },
+        "fit": {
+          "additionalProperties": {
+            "maxLength": 300,
+            "minLength": 0,
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "left_out": {
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "minItems": 0,
+          "type": "array"
+        },
+        "registered": {
+          "maxLength": 40,
+          "minLength": 0,
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "library",
+            "shaped",
+            "fitted",
+            "made"
+          ]
+        },
+        "version": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "engines",
+        "source",
+        "registered"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://sutra.asawa.co/schemas/layers/workflow.schema.json",
+  "$ref": "#/$defs/workflow",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The one workflow schema every department workflow conforms to (a Library line, a fitted one, one Adaptation shapes or makes), its engines, its checks against the standards and its registration (PRD A1.14). Generated from layer_schema.py (schema version 1); never edited by hand: run `python layer_schema.py --write`.",
+  "title": "A department workflow",
+  "x-standards": [
+    {
+      "id": "names_an_engine",
+      "says": "the workflow names its engines",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "proposal",
+        "registration",
+        "write",
+        "grow",
+        "birth"
+      ]
+    },
+    {
+      "id": "engines_known",
+      "says": "each engine is one the Library has",
+      "sources": [
+        "library",
+        "fitted"
+      ],
+      "stages": [
+        "birth",
+        "registration",
+        "write",
+        "grow"
+      ]
+    },
+    {
+      "id": "each_engine_named",
+      "says": "every engine has a name",
+      "sources": [
+        "shaped",
+        "made"
+      ],
+      "stages": [
+        "proposal",
+        "registration",
+        "grow"
+      ]
+    },
+    {
+      "id": "names_unique",
+      "says": "no name is used twice, and none is a function's, Root's or Owner's",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "proposal",
+        "registration",
+        "grow"
+      ]
+    },
+    {
+      "id": "names_new",
+      "says": "no name is one the Library already has",
+      "sources": [
+        "shaped",
+        "made"
+      ],
+      "stages": [
+        "proposal",
+        "registration"
+      ]
+    },
+    {
+      "id": "first_reads_input",
+      "says": "the first engine reads the kind's first artifact",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "proposal",
+        "birth",
+        "registration"
+      ]
+    },
+    {
+      "id": "reads_known",
+      "says": "each engine reads the kind's first artifact or what one before it wrote",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "proposal",
+        "birth",
+        "registration",
+        "grow"
+      ]
+    },
+    {
+      "id": "one_output",
+      "says": "each engine writes something not yet written",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "proposal",
+        "birth",
+        "registration",
+        "grow"
+      ]
+    },
+    {
+      "id": "items_covered",
+      "says": "every done-when item is covered by an engine",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "registration",
+        "proposal"
+      ]
+    },
+    {
+      "id": "required_kept",
+      "says": "no engine the kind requires is left out",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "proposal",
+        "birth",
+        "registration"
+      ]
+    },
+    {
+      "id": "size_in_range",
+      "says": "one engine or more; more than six says why",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "proposal",
+        "registration"
+      ]
+    },
+    {
+      "id": "check_exists",
+      "says": "each engine's output has a check",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "registration",
+        "grow"
+      ]
+    },
+    {
+      "id": "fits_room",
+      "says": "Priority priced it and it fits today's room",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "registration"
+      ]
+    },
+    {
+      "id": "line_is_registered",
+      "says": "Coordination's line is a registered plan plus the engines the owner added",
+      "sources": [
+        "library",
+        "shaped",
+        "fitted",
+        "made"
+      ],
+      "stages": [
+        "write"
+      ]
+    }
+  ]
+}
