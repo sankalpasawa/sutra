@@ -484,7 +484,11 @@ CHECK['line_is_engines'] = c_line_is_engines
 WORDS = {
     'goal': {
         'does': {
-            'text': "reads the department's own rows and proposes one rung up, or steps one down",
+            'text': (
+                'decides how the department reaches its goal and keeps changing how as it learns: it proposes the '
+                "workflows the goal needs, from the Library or shaped fresh, and a step's move up or down the "
+                'ladder'
+            ),
         },
         'skills': {
             'items': [

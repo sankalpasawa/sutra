@@ -122,7 +122,7 @@ def test_a2_each_part_compiles_to_the_md_part_it_came_from_byte_for_byte(home):
 def test_a2_the_goal_card_is_read_from_the_typed_words(home):
     R = importlib.import_module("engine_runtime")
     does, skills = R._goal_of(home["ref"], "Adaptation")
-    assert does == v1().WORDS["goal"]["does"]["text"] == "reads the department's own rows and proposes one rung up, or steps one down"
+    assert does == v1().WORDS["goal"]["does"]["text"] == "decides how the department reaches its goal and keeps changing how as it learns: it proposes the workflows the goal needs, from the Library or shaped fresh, and a step's move up or down the ladder"
     assert skills == v1().WORDS["goal"]["skills"]["items"] and len(skills) == 4
 
 

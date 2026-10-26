@@ -2,7 +2,7 @@ What Adaptation is for, and the rules it keeps.
 
 ## does
 
-reads the department's own rows and proposes one rung up, or steps one down
+decides how the department reaches its goal and keeps changing how as it learns: it proposes the workflows the goal needs, from the Library or shaped fresh, and a step's move up or down the ladder
 
 ## skills
 

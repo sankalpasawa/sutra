@@ -122,3 +122,60 @@ def test_the_instructions_view_lists_the_six_new_parts_in_the_goal_group(rt):
         assert [f["field"] for f in done["fields"]] == ["text"] and done["fields"][0]["value"] == module_of(fn).WORDS["goal"]["done"]["text"]
         block = next(p for p in group["parts"] if p["part"] == "role_block")
         assert block["fields"] == [] and len(block["inputs"]) == 8
+
+
+# ---- F2: Adaptation's goal ---------------------------------------------------------------------------------------------
+HERE = __import__("pathlib").Path(__file__).parent
+SITE_GOAL = ("decides how the department reaches its goal and keeps changing how as it learns: it proposes the workflows the goal "
+             "needs, from the Library or shaped fresh, and a step's move up or down the ladder")
+
+
+def test_adaptations_goal_is_the_sites_and_the_six_places_agree(rt):
+    """The goal is the site's ('decide how the department reaches its goal, and keep changing how as it learns'), at most 400
+    characters, promising nothing unbuilt; the recipe's description, the typed words, the .md file, the fixture of the
+    definitions, the test that held the old text and the prompt snapshot hold the same text (A1 requires the first two equal)."""
+    import json
+    W, R, J, FV, ref = rt
+    typed = module_of("adaptation").WORDS["goal"]["does"]["text"]
+    assert typed.startswith("decides how the department reaches its goal") and len(typed) <= 400 and "\n" not in typed
+    assert typed == SITE_GOAL
+    assert not re.search(S.TEMPLATE_BANNED, typed, re.I), "the goal is read on the pane: the screen's words"
+    places = {
+        "the recipe's description": json.loads((HERE / "layers/adaptation/v1.json").read_text(encoding="utf-8"))["description"],
+        "the typed words": typed,
+        "the .md file": layers.prompts.parts_of((HERE / "function-prompts/adaptation/goal.md").read_text(encoding="utf-8"))[1]["does"],
+        "the fixture of the definitions": _base_description("Adaptation"),
+        "the engine the runtime reads": R.engine_def("Adaptation")["description"],
+        "what the card tells the agent": R._goal_of(ref, "Adaptation")[0],
+    }
+    assert {name: text for name, text in places.items() if text != typed} == {}, "six places, one text"
+    assert SITE_GOAL in (HERE / "test_layer_adaptation.py").read_text(encoding="utf-8"), "the assertion that held the old text holds the new"
+    snap = json.loads((HERE / "test_fixtures/function-prompts.snapshot.json").read_text(encoding="utf-8"))
+    keys = [k for k in snap if k.startswith("adapt.")]
+    assert keys and all("What Adaptation does: it %s." % typed in snap[k] for k in keys), "the snapshot's Adaptation prompts"
+    assert not any("steps one down" in v for v in snap.values()), "no prompt keeps the old text"
+
+
+def _base_description(name):
+    """The description of one engine in the fixture of the definitions as they were before the move into the layers."""
+    import json
+    doc = json.loads((HERE / "test_fixtures/function-engines.base.json").read_text(encoding="utf-8"))
+    engines = doc.get("engines", doc)
+    e = engines[name] if isinstance(engines, dict) else next(x for x in engines if x.get("name") == name)
+    return e["description"]
+
+
+def test_an_owner_who_stamped_the_goal_keeps_the_stamp(rt):
+    """A department whose owner stamped goal.does keeps their words: the corrected default reaches only a field the owner
+    never changed (the stored value is the owner's, and a later default does not replace it)."""
+    W, R, J, FV, ref = rt
+    mine = "reads the rows and proposes one rung up, or steps one down, and nothing else"
+    ask = R.instructions_ask(ref, "adaptation", "goal", "does", "text", mine)
+    assert layers.words(ref, "adaptation", "goal", "does")["text"] == SITE_GOAL, "nothing changes until the stamp"
+    W.decide_ask(ref, ask["id"], True)
+    W.run_until_idle(ref, limit=200)
+    assert layers.words(ref, "adaptation", "goal", "does")["text"] == mine
+    assert R._goal_of(ref, "Adaptation")[0] == mine, "the card carries the owner's words"
+    assert layers.prompts.owner_entry(ref, "adaptation", "goal", "does", "text")["value"] == mine
+    # and a default that changed under the stamp does not touch it: the shipped words are what the field falls back to
+    assert layers.prompts.defaults(ref, "adaptation", "goal", "does")["text"] == SITE_GOAL
