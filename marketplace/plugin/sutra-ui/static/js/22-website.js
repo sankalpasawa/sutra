@@ -1156,7 +1156,7 @@ function wbFnPageSig(v){
     (v.fields || []).map(f => [f.key, f.label, f.placeholder, value(f)]),
     (co.timetable || []).map(r => [r.engine, r.on, r.state, r.why, minute(r.at), r.window_min, r.last && r.last.wrote]),
     (co.left_out || []).map(r => r.engine), (co.handoffs || []).map(h => [h.art, h.v, h.says, (h.readers || []).join(",")]),
-    share((co.chain || {}).share), (co.alarms || []).map(a => a.text), (co.ties || []).map(t => [t.said, minute(t.at)]), wbIdSig(v.j2)]);
+    share((co.chain || {}).share), (co.alarms || []).map(a => a.text), (co.ties || []).map(t => [t.said, minute(t.at)]), wbIdSig(v.j2), wbRcSig(v.j2)]);
 }
 /* Identity's pane paints again when its record moves: a point of the standard, the done line or an item, a rule, its
    question, a ruling */
@@ -1221,6 +1221,46 @@ async function wbLoadFnPage(ref, fn, again){
     if (!again) dpRender();
   }
 }
+/* ── Root's check, on Adaptation's pane (PRD M7.3, S11) ────────────────────────────────────────────────────────
+   One row for the last review of the plan: a dot for each standard of the workflow schema that applied, in the order the
+   app keeps them (its words as the title; ticked when it held and crossed when it did not, so a mark says it as well as a
+   colour), the verdict and the time. A plan Root sent back names the standard that broke, in its words, and why, and shows
+   the reshapes so far as dots. Root sends a plan back twice at most; the third refusal is the block (engine_runtime
+   _j2_settle), and the owner is asked what to change in Chat. No count is printed. Reads root_checks[].checks of the
+   Adaptation view ([{check, says, passed, why}]); a review from before the standards were listed has no checks and shows
+   its own sentence. */
+const WB_RESHAPES = 2;
+const WB_RC_SAYS = { approved: "approved", back: "sent back", blocked: "blocked" };
+/* a check's words: the standard's, or for the schema's own row (which is no standard) what it found */
+function wbRcSays(c){ return c.says && c.says !== c.check ? c.says : (c.why || ""); }
+function wbRcDot(c){
+  const said = wbRcSays(c);
+  return `<span class="wbrcdot${c.passed ? "" : " no"}" role="img" title="${wbEsc(said)}" aria-label="${wbEsc(said + (c.passed ? ", held" : ", did not hold"))}"></span>`;
+}
+/* the reviews at the end of the list that sent the plan back, one after another */
+function wbRcFails(rows){
+  let n = 0;
+  for (let i = rows.length - 1; i >= 0 && !rows[i].passed; i--) n++;
+  return n;
+}
+function wbRcSig(j){
+  return j && Array.isArray(j.root_checks) ? j.root_checks.map(r => [r.at, r.passed, (r.checks || []).map(c => c.passed)]) : null;
+}
+function wbRootChecksHtml(rows){
+  if (!rows.length) return dpCard("Root's check", dpQuiet("Root has not checked a plan yet"));
+  const last = rows[rows.length - 1], fails = wbRcFails(rows), checks = last.checks || [];
+  const state = last.passed ? "approved" : (fails > WB_RESHAPES ? "blocked" : "back");
+  const row = `<div class="wbrcrow"><span class="wbrcdots">${checks.map(wbRcDot).join("")}</span>` +
+    `<span class="wbrcv ${state}">${WB_RC_SAYS[state]}${last.at ? " · " + wbEsc(wbWhen(last.at)) : ""}</span></div>`;
+  if (last.passed) return dpCard("Root's check", row);
+  const broke = checks.filter(c => !c.passed).map(c => c.says && c.says !== c.check
+    ? `<div class="wbrcwhy"><b>${wbEsc(c.says)}</b>${c.why ? wbEsc(": " + c.why) : ""}</div>` : `<div class="wbrcwhy"><b>${wbEsc(wbRcSays(c))}</b></div>`);
+  const why = broke.length ? broke.join("") : (last.summary ? `<div class="wbrcwhy">${wbEsc(last.summary)}</div>` : "");
+  const sent = Math.min(fails, WB_RESHAPES);
+  return dpCard("Root's check", row + why + `<div class="wbrcrs ${state}"><span>reshapes</span>` +
+    [0, 1].map(i => `<i class="${i < sent ? "on" : ""}"></i>`).join("") + `</div>`);
+}
+
 const WB_JOURNEY_DOT = { "done": "ok", "said yes": "ok", "heard": "ok", "let through": "ok", "told Identity": "ok", "moved": "ok",
                          "waiting": "wait", "held": "wait", "running": "", "failed": "block" };
 const WB_BY = { code: "Code", AI: "AI", person: "Person" };
@@ -1267,6 +1307,8 @@ function wbFnPageHtml(ref, fn){
   const j = wbIdRecord(p);
   if (fn === "identity" && j)
     return wbIdentityHtml(ref, j) + `<details class="wbhow wb"><summary>How Identity works</summary>${page}</details>`;
+  /* Adaptation's pane opens on Root's check of its plan (S11), when the read carries the reviews */
+  if (fn === "adaptation" && p.j2 && Array.isArray(p.j2.root_checks)) return wbRootChecksHtml(p.j2.root_checks) + page;
   return page;
 }
 

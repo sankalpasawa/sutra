@@ -90,6 +90,10 @@
      X4  Root settings carries a read-only card Standards every plan meets: the standards in their order from GET /layers,
          the line that says they are the app's, no button; read once for the pane and kept (test_fixtures/views/layers.json)
      X5  each function's Settings head says Runs version N, N the number after /v in its layer's pin
+     X6  Root's check on Adaptation's pane (S11), from test_fixtures/views/adaptation.root_checks.json: one row, a ticked or
+         crossed ring for each standard that applied titled with its words, the verdict and the time; a plan sent
+         back names the broken standard in its words with why, and shows the reshapes as two dots; blocked after two;
+         not yet says Root has not checked a plan; no count at rest
      S7  Coordination's pane on the engine runtime opens on its timetable: one row per engine with what starts it, its
          window, and its last run or the exact reason it waits; who makes and who reads each thing; the chain, alarms
          and ties side by side; the function's page folded under it; every state the screen names; no count at rest
@@ -2342,6 +2346,86 @@ test("X5: each function's Settings head says Runs version N, N being the number 
   const none = await opened({ map: rtMap() });
   vm.runInContext("dpS().pane['r3:identity'] = 'settings';", none);
   assert.ok((await fnCard(none, "identity")).indexOf("Runs version") < 0, "no line while the read has not come");
+});
+
+/* ── S11: Root's check on Adaptation's pane (PRD M7.3; UI-port package j2ui-shell X6), from the Adaptation view ────────
+   test_fixtures/views/adaptation.root_checks.json: view.adaptation as layers/adaptation/v1.py builds it, in the states
+   the row has: none yet, approved, sent back once and twice, blocked, and approved after a send back. */
+const RC = () => viewFile("adaptation.root_checks.json");
+async function adaptationPane(state){
+  const j2 = RC()[state];
+  const c = await opened({ map: rtMap(), fnpage: fn => Object.assign(fnPageOf(fn), fn === "adaptation" ? { j2 } : {}) });
+  for (let k = 0; k < 3; k++){ c.wbFnOwn("r3", "adaptation"); await settle(); }
+  return [c, c.wbFnOwn("r3", "adaptation"), j2];
+}
+const rcRow = html => html.slice(html.indexOf("<h3>Root's check</h3>"), html.indexOf("<h3>The function</h3>"));
+const rcDots = row => [...row.matchAll(/<span class="wbrcdot( no)?" role="img" title="([^"]*)" aria-label="([^"]*)"><\/span>/g)].map(m => ({ no: !!m[1], title: m[2], label: m[3] }));
+
+test("X6: an approved plan is one row: a ticked dot for each standard that applied, each titled with its words, and approved with the time", async () => {
+  const [c, html, j2] = await adaptationPane("approved");
+  const row = rcRow(html), checks = j2.root_checks[0].checks;
+  assert.ok(row.length > 20, "the row is above the function's page: " + html.slice(0, 200));
+  const dots = rcDots(row);
+  assert.strictEqual(dots.length, checks.length, "a dot for each row of the review, the schema's own row first");
+  assert.ok(dots.every(d => !d.no), "every standard held");
+  checks.forEach((ch, i) => {
+    const said = ch.says !== ch.check ? ch.says : ch.why;
+    assert.strictEqual(dots[i].title, c.wbEsc(said), "the dot is titled with its words, in order");
+    assert.strictEqual(dots[i].label, c.wbEsc(said + ", held"), "and said in words to a screen reader");
+  });
+  assert.ok(!dots.some(d => /workflow_meets_standards|_/.test(d.title)), "no check id on the screen");
+  assert.ok(/<span class="wbrcv approved">approved · \d\d:\d\d<\/span>/.test(row), "the verdict and the time");
+  assert.ok(!/wbrcwhy|wbrcrs/.test(row), "nothing to explain and no reshapes");
+  assert.ok(html.indexOf("<h3>Root's check</h3>") < html.indexOf("<h3>The function</h3>"), "above the function's page");
+});
+
+test("X6: a plan sent back names the standard that broke in its words, with why, and shows the reshapes so far as dots", async () => {
+  const [c, html, j2] = await adaptationPane("sent_back");
+  const row = rcRow(html), dots = rcDots(row);
+  assert.deepStrictEqual(dots.map(d => d.no), j2.root_checks[0].checks.map(ch => !ch.passed), "the crossed dot is the one that broke");
+  const broke = dots.filter(d => d.no);
+  assert.strictEqual(broke.length, 1);
+  assert.strictEqual(broke[0].title, "every done-when item is covered by an engine");
+  assert.ok(/<span class="wbrcv back">sent back · \d\d:\d\d<\/span>/.test(row));
+  assert.ok(/<div class="wbrcwhy"><b>every done-when item is covered by an engine<\/b>: D3 \(new arrivals, lookbook, reviews\) is covered by no engine<\/div>/.test(row), "the standard in its words, then why");
+  assert.ok(/<div class="wbrcrs back"><span>reshapes<\/span><i class="on"><\/i><i class=""><\/i><\/div>/.test(row), "one reshape of the two");
+  assert.ok(!/\d/.test(words(row).replace(/D3 \(new arrivals, lookbook, reviews\)/, "")), "no count at rest: " + words(row));
+  const twice = (await adaptationPane("sent_back_twice"))[1];
+  assert.ok(/<div class="wbrcrs back"><span>reshapes<\/span><i class="on"><\/i><i class="on"><\/i><\/div>/.test(rcRow(twice)) && /wbrcv back">sent back/.test(rcRow(twice)), "sent back twice: both dots, still sent back");
+});
+
+test("X6: after two reshapes the plan is blocked: both dots, the broken standard named, and the word blocked", async () => {
+  const [, html] = await adaptationPane("blocked");
+  const row = rcRow(html);
+  assert.ok(/<span class="wbrcv blocked">blocked · \d\d:\d\d<\/span>/.test(row), row);
+  assert.ok(/<div class="wbrcrs blocked"><span>reshapes<\/span><i class="on"><\/i><i class="on"><\/i><\/div>/.test(row));
+  assert.ok(/<b>every done-when item is covered by an engine<\/b>/.test(row));
+});
+
+test("X6: approved after a send back is approved; no review yet says Root has not checked a plan", async () => {
+  const [, html] = await adaptationPane("approved_after_a_send_back");
+  assert.ok(/wbrcv approved">approved/.test(rcRow(html)) && !/wbrcrs/.test(rcRow(html)));
+  const none = (await adaptationPane("none"))[1];
+  assert.ok(/<h3>Root's check<\/h3><div class="o2quiet dpq">Root has not checked a plan yet<\/div>/.test(none));
+  /* a read from before the standards were listed (no checks): the review's own sentence, and no dots */
+  const c = await opened({ map: rtMap(), fnpage: fn => Object.assign(fnPageOf(fn), fn === "adaptation" ? { j2: { proposal: null, root_checks: [{ summary: "Root's check sent the plan back: the line reaches outside without a rule", at: AT, passed: false }], rounds: [] } } : {}) });
+  for (let k = 0; k < 3; k++){ c.wbFnOwn("r3", "adaptation"); await settle(); }
+  const row = rcRow(c.wbFnOwn("r3", "adaptation"));
+  assert.ok(/wbrcv back">sent back/.test(row) && /<div class="wbrcwhy">Root's check sent the plan back: the line reaches outside without a rule<\/div>/.test(row) && rcDots(row).length === 0);
+  const plain = await opened({ map: rtMap(), fnpage: fn => fnPageOf(fn) });          /* a page whose view holds no root_checks: nothing added */
+  for (let k = 0; k < 3; k++){ plain.wbFnOwn("r3", "adaptation"); await settle(); }
+  assert.ok(plain.wbFnOwn("r3", "adaptation").indexOf("Root's check") < 0, "an older read is drawn as it was");
+});
+
+test("X6: the row repaints when a review moves, and the words are escaped", async () => {
+  const j = RC().sent_back;
+  const c = fresh({ map: rtMap() });
+  const before = c.wbFnPageSig({ fn: "adaptation", j2: j });
+  const moved = JSON.parse(JSON.stringify(j)); moved.root_checks[0].checks[7].passed = true; moved.root_checks[0].passed = true;
+  assert.notStrictEqual(c.wbFnPageSig({ fn: "adaptation", j2: moved }), before, "a check that held now changes the signature");
+  const hostile = JSON.parse(JSON.stringify(j)); hostile.root_checks[0].checks[7].why = "<script>x</script>";
+  const html = c.wbRootChecksHtml(hostile.root_checks);
+  assert.ok(html.indexOf("<script") < 0 && html.indexOf("&lt;script") >= 0, "escaped");
 });
 
 /* ── W47: Identity's question as a card in Chat (PRD-FIVE-FUNCTIONS M0.6, screen S6) ── */
