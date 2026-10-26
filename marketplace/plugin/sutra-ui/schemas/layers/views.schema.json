@@ -1,5 +1,15 @@
 {
   "$defs": {
+    "id.item": {
+      "maxLength": 3,
+      "pattern": "^D[1-9][0-9]?$",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 40,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 &'.-]{0,39}$",
+      "type": "string"
+    },
     "view.adaptation": {
       "additionalProperties": true,
       "properties": {
@@ -144,10 +154,94 @@
           "minItems": 0,
           "type": "array"
         },
+        "latest": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "properties": {
+                "artifact": {
+                  "$ref": "#/$defs/name"
+                },
+                "at": {
+                  "anyOf": [
+                    {
+                      "maxLength": 40,
+                      "minLength": 0,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "items": {
+                  "items": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "claim": {
+                        "maxLength": 600,
+                        "minLength": 0,
+                        "type": "string"
+                      },
+                      "evidence": {
+                        "maxLength": 1000,
+                        "minLength": 0,
+                        "type": "string"
+                      },
+                      "id": {
+                        "$ref": "#/$defs/id.item"
+                      },
+                      "method": {
+                        "enum": [
+                          "code",
+                          "model"
+                        ]
+                      },
+                      "verdict": {
+                        "enum": [
+                          "met",
+                          "not_met",
+                          "to_confirm"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "verdict",
+                      "method",
+                      "evidence",
+                      "claim"
+                    ],
+                    "type": "object"
+                  },
+                  "minItems": 0,
+                  "type": "array"
+                },
+                "v": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "artifact",
+                "v",
+                "at",
+                "items"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "readings": {
           "items": {
             "additionalProperties": true,
             "properties": {
+              "artifact": {
+                "$ref": "#/$defs/name"
+              },
               "at": {
                 "anyOf": [
                   {
@@ -160,10 +254,42 @@
                   }
                 ]
               },
+              "read": {
+                "type": "boolean"
+              },
               "summary": {
                 "anyOf": [
                   {
                     "maxLength": 4000,
+                    "minLength": 0,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "v": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "verdicts": {
+                "additionalProperties": {
+                  "enum": [
+                    "met",
+                    "not_met",
+                    "to_confirm"
+                  ]
+                },
+                "propertyNames": {
+                  "pattern": "^D[1-9][0-9]?$"
+                },
+                "type": "object"
+              },
+              "why_not_read": {
+                "anyOf": [
+                  {
+                    "maxLength": 300,
                     "minLength": 0,
                     "type": "string"
                   },

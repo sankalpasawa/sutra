@@ -733,10 +733,19 @@ DEFS.update({
                            'state': enum('ok', 'warn', 'block', 'wait', 'breath', 'off'), 'says': text(300), 'at': _AT,
                            'share': nullable(number(0, 1))}, required=ENGINE_FIVE_ROW, open=False), 5, 5)},
         required=ENGINE_CARD_FIELDS, open=False),
+    # W1-AUDIT adds latest and each reading's artifact, v, read, why_not_read and verdicts (M8.3, A1.17): optional, since a
+    # reading from before the journal is only its summary and its time
     'view.audit': obj({
-        'readings': items(obj({'summary': nullable(text(4000)), 'at': _AT})),
+        'readings': items(obj({'summary': nullable(text(4000)), 'at': _AT, 'artifact': ref('name'), 'v': integer(1),
+                               'read': boolean(), 'why_not_read': nullable(text(300)),
+                               'verdicts': map_of(enum(*ITEM_VERDICTS), keys=ITEM_RE)})),
         'findings': items(obj({'text': nullable(text(4000)), 'at': _AT})),
-        'spot_checks': items(obj({}))},
+        'spot_checks': items(obj({})),
+        'latest': nullable(obj({'artifact': ref('name'), 'v': integer(1), 'at': _AT,
+                                'items': items(obj({'id': ref('id.item'), 'verdict': enum(*ITEM_VERDICTS), 'method': enum('code', 'model'),
+                                                    'evidence': text(1000), 'claim': text(600)},
+                                                   required=('id', 'verdict', 'method', 'evidence', 'claim')))},
+                               required=('artifact', 'v', 'at', 'items')))},
         required=('readings', 'findings', 'spot_checks')),
 })
 
