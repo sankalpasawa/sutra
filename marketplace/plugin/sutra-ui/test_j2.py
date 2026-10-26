@@ -131,7 +131,9 @@ def test_steps_1_to_5_a_library_kind_is_proposed_granted_checked_and_registered(
     board = [(p["src"], p["dst"][0], p["msg_type"]) for p in R.board(ref) if (p["payload"] or {}).get("word") == "line"]
     assert board[:3] == [("Identity", "Adaptation", "request"), ("Adaptation", "Priority", "propose"), ("Priority", "Adaptation", "accept-proposal")]
     # registered on the department's record, as a version of its own
-    assert W.dept(ref)["workflows"] == [{"version": 1, "engines": LINE, "source": "library", "registered": W.dept(ref)["workflows"][0]["registered"], "by": "Root"}]
+    [reg] = W.dept(ref)["workflows"]
+    assert {k: reg[k] for k in ("version", "engines", "source", "by")} == {"version": 1, "engines": LINE, "source": "library", "by": "Root"}
+    assert reg["registered"] and reg["deliverable"] == "Live site" and reg["left_out"] == [] and reg["checks"], "A1.14: the record keeps what it was held to"
     assert J.status(ref)["workflow"] == LINE
     assert any("The plan is set: Plan -> Write -> Check -> Publish" in s for s in _said(R, ref))
     # the tell says who said yes in the owner's words (PRD M1.7): Priority said yes to it, never that it granted it
@@ -496,7 +498,8 @@ def test_j2_4_a_plan_without_an_engine_covering_d6_is_refused_naming_items_cover
     plan[3]["covers"] = ["D5", "D6"]
     assert R._root_check(ref, d, plan, "library") == []
     R._j2_settle(ref, d, plan, "library", d.get("goal"), "a test")
-    assert len(W.dept(ref)["workflows"]) == before + 1
+    reg = W.dept(ref)["workflows"][-1]
+    assert len(W.dept(ref)["workflows"]) == before + 1 and reg["covers"]["D6"] == ["Publish"] and reg["covers"]["D1"] == ["Plan"]
 
 
 def test_j2_4_the_third_refusal_leaves_one_options_ask_naming_the_standard_and_its_options_apply(j2):
@@ -855,6 +858,7 @@ def test_m0_7_the_validated_event_lists_the_checks_that_ran_for_a_library_and_a_
     # the website kind requires Check (PRD M4.4), so the standard that none is left out ran, and held
     assert next(c for c in checks if c["check"] == "required_kept")["why"] == says["required_kept"]
     assert next(c for c in checks if c["check"] == "fits_room")["why"] == "not priced here", "Priority writes no price rows yet"
+    assert W.dept(lib)["workflows"][-1]["checks"] == checks, "the registration keeps the rows the event listed"
     shaped = _born(j2, ORGANIC, "Lab Co")
     checks = next(e for e in J.events(shaped) if e["action"] == "workflow.validated")["payload"]["checks"]
     assert checks == ran[-1] and [c["check"] for c in checks] == SHAPED_CHECKS and all(c["passed"] and c["why"] for c in checks)

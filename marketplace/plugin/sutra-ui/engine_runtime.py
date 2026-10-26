@@ -4853,7 +4853,8 @@ def _j2_settle(ref, d, engines, source, words, by):
                  "The plan could not be set up.", "Root, setting up the engines", "; ".join(lost or ["no engine could be added"]))
         return {"said": "no engine of the workflow could be added"}
     if J:
-        J.registered(ref, added, source, checks=checks)
+        granted = [e for e in engines if isinstance(e, dict) and e.get("name") in added]
+        J.registered(ref, added, source, checks=checks, plan=granted, fit={e["name"]: e["fit"] for e in granted if e.get("fit")})
     _registered(ref, added)
     # Q13: an engine the plan left out needs no stamp, and the message names it (PRD M4.2)
     left = [r.get("engine") for r in coordination(ref).get("left_out") or [] if isinstance(r, dict)]

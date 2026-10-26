@@ -305,3 +305,67 @@ def test_r2_the_third_refusal_goes_to_the_options_ask_naming_the_standard_in_its
     blocked = [e for e in J.events(ref) if e["action"] == "workflow.blocked"]
     assert len(blocked) == J.REPAIRS + 1 and all(r["check"] in {s[0] for s in S.WORKFLOW_STANDARDS} | {"workflow_meets_standards"}
                                                  for e in blocked for r in e["payload"]["checks"])
+
+
+# ---- R4: the registration record ---------------------------------------------------------------------------------------------
+def _model(monkeypatch, R, answers):
+    """A model that is a function: a step id maps to what the model says. Every other step falls to its draft."""
+    monkeypatch.delenv("SUTRA_WEBSITE_OFFLINE", raising=False)
+
+    def model(prompt, step):
+        if step["id"] not in answers:
+            return None, 0.0, "offline"
+        got = answers[step["id"]]
+        return (got(prompt) if callable(got) else got), 0.01, "model"
+    monkeypatch.setattr(R, "MODEL", model)
+
+
+def test_r4_a_website_registration_validates_names_its_deliverable_and_keeps_the_rows(home):
+    W, R, J, _ = home
+    ref = _born(home)
+    d = W.dept(ref)
+    reg = d["workflows"][-1]
+    assert S.validate("workflow.registration", reg) == [] and S.validate("department", d) == []
+    assert S.deliverable(d) == "Live site" and reg["deliverable"] == "Live site"
+    event = next(e for e in J.events(ref) if e["action"] == "workflow.validated")["payload"]["checks"]
+    assert reg["checks"] == event and all(S.validate("workflow.check", c) == [] for c in reg["checks"])
+    assert reg["engines"] == LINE and reg["left_out"] == [] and "fit" not in reg
+    assert reg["covers"] == {i["id"]: ["Publish"] for i in d["done_items"]}, "no engine named its covers: the last one holds them all"
+
+
+def test_r4_a_shaped_registration_names_the_last_output_as_its_deliverable(home):
+    W, R, J, _ = home
+    ref = _born(home, ORGANIC, "Lab Co")
+    d = W.dept(ref)
+    reg = d["workflows"][-1]
+    assert S.validate("workflow.registration", reg) == [] and reg["source"] == "shaped"
+    assert S.deliverable(d) == "Live site" == reg["deliverable"] and reg["engines"] == ["Facts", "Site"]
+
+
+def test_r4_what_the_plan_left_out_is_what_coordination_then_holds(home, monkeypatch):
+    W, R, J, _ = home
+    keep = ["Plan", "Write", "Check"]
+    _model(monkeypatch, R, {"priority.bargain": lambda prompt: ({"answer": "counter", "why": "room for three today", "keep": keep}
+                                                                if "- Publish:" in prompt else {"answer": "accept", "why": "the envelope has room"})})
+    ref = _born(home)
+    reg = W.dept(ref)["workflows"][-1]
+    assert reg["engines"] == keep and reg["left_out"] == ["Publish"] and S.validate("workflow.registration", reg) == []
+    assert [r["engine"] for r in R.coordination(ref)["left_out"]] == reg["left_out"]
+    assert S.deliverable(W.dept(ref)) == "Build" == reg["deliverable"], "the last engine kept writes the Build"
+
+
+def test_r4_the_covers_and_the_fit_a_plan_names_are_kept_with_the_record(home):
+    W, R, J, _ = home
+    ref = _born(home)
+    d = W.dept(ref)
+    d["done_items"] = [{"id": "D1", "text": "The pages are written", "how": "model", "level": "outcome"},
+                       {"id": "D2", "text": "Every page is checked", "how": "code", "level": "target"}]
+    W.save_dept(ref, d)
+    d = W.dept(ref)
+    plan = [{"name": "Plan", "covers": ["D1"], "fit": "plans the pages for a school's algebra course"},
+            {"name": "Write", "covers": ["D1"]}, {"name": "Check", "covers": ["D2"]}, {"name": "Publish", "covers": ["D1", "D2"]}]
+    R._j2_settle(ref, d, plan, "library", d.get("goal"), "a test")
+    reg = W.dept(ref)["workflows"][-1]
+    assert reg["version"] == 2 and S.validate("workflow.registration", reg) == []
+    assert reg["covers"] == {"D1": ["Plan", "Write", "Publish"], "D2": ["Check", "Publish"]}
+    assert reg["fit"] == {"Plan": "plans the pages for a school's algebra course"}
