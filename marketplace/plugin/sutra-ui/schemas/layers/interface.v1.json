@@ -6067,7 +6067,6 @@
       "setup": {
         "converse": {
           "fields": {
-            "items": "field.items",
             "task": "field.task"
           },
           "inputs": [

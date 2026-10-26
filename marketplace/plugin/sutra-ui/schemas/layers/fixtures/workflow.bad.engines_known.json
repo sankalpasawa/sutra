@@ -1,0 +1,52 @@
+{
+ "about": "A Library line that names an engine the Library does not have.",
+ "standard": "engines_known",
+ "stage": "registration",
+ "kind": "default",
+ "dept": {
+  "kind": "default",
+  "done_items": [
+   {
+    "id": "D1",
+    "text": "The work is done",
+    "how": "model",
+    "level": "outcome"
+   }
+  ],
+  "workflows": []
+ },
+ "workflow": {
+  "schema_version": 1,
+  "kind": "default",
+  "source": "library",
+  "engines": [
+   {
+    "name": "Do",
+    "does": "answers each ask",
+    "reads": "Brief",
+    "writes": "Result",
+    "covers": [
+     "D1"
+    ]
+   },
+   {
+    "name": "Nobody Knows",
+    "does": "does what no template says",
+    "reads": "Result",
+    "writes": "Extra",
+    "covers": [
+     "D1"
+    ]
+   }
+  ],
+  "deliverable": "Extra",
+  "covers": {
+   "D1": [
+    "Do",
+    "Nobody Knows"
+   ]
+  },
+  "covers_by": "adaptation"
+ },
+ "ctx": {}
+}

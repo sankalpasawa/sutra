@@ -1062,7 +1062,7 @@ GROUPS = {
 PROMPTS = {
     'root': {
         'setup': {
-            'converse': {'fields': {'task': 'field.task', 'items': 'field.items'},
+            'converse': {'fields': {'task': 'field.task'},
                          'inputs': ('examples', 'library', 'existing', 'conversation'),
                          'returns': 'Return ONLY a JSON object: {"verdict": "ask" | "clear", "question": "your one question, or an empty string when clear"}.',
                          'read_by': 'setup.converse'},
