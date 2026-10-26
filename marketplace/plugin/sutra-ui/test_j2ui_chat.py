@@ -17,11 +17,14 @@ Named claims:
   C2-7  ids never move: a later post with an older time takes the next id; two builds with no change are equal; eight threads
         building at once make no duplicate or reordered id; a replaced ask's message stays
   C2-8  words quoted in an ask cannot forge an option or a numbered question; to_user is true only for Identity
+  C2-9  within one recorded second the ledger's seq is the order: Priority's yes, Root's check passing and registering the plan,
+        Identity's 'The plan is set', the publish question; then the stamp, then 'is live' (the real clock, and all in one second)
 """
 import json
 import re
 import subprocess
 import threading
+from datetime import datetime
 
 import pytest
 
@@ -119,6 +122,97 @@ def test_c21_what_identity_says_of_a_stamp_comes_after_the_stamp_even_within_one
     assert len(stamp) == 1 and stamp[0]["id"] < live["id"], [(x["id"], x["who"], x["text"][:30]) for x in c.chat[-4:]]
     ask_msg = c.ask_msg[a["id"]]
     assert ask_msg < stamp[0]["id"], "and the question comes before its answer"
+
+
+@pytest.fixture
+def one_second(mods, monkeypatch):
+    """Every record of the test is stamped with the same second: the worst case of the clock, which ticks in seconds while the
+    runtime writes a dozen records in one."""
+    at = datetime.now().astimezone().replace(microsecond=0).isoformat(timespec="seconds")
+    monkeypatch.setattr(mods.W, "now", lambda: at)
+    return at
+
+
+def order_of(c):
+    """The ids of the messages the ledger's order is told by: Priority's yes, Root's check passing and registering the plan,
+    Identity's 'The plan is set', and the publish question."""
+    first = lambda pred: next(x["id"] for x in c.chat if pred(x))
+    return {"yes": first(lambda x: x["who"] == "priority" and x["text"].startswith("Said yes to the plan")),
+            "validated": first(lambda x: x["who"] == "validator" and "register" not in x),
+            "registered": first(lambda x: x["who"] == "validator" and x.get("register") is True),
+            "set": first(lambda x: x["who"] == "identity" and "The plan is set" in x["text"]),
+            "publish": first(lambda x: x.get("act") == "ASK_REQUESTER" and "Publish" in x["text"])}
+
+
+def check_ledger_order(c):
+    o = order_of(c)
+    assert o["yes"] < o["validated"] < o["registered"] < o["set"] < o["publish"], (o, [(x["id"], x["who"], x["text"][:28]) for x in c.chat])
+
+
+def test_c21_the_ledgers_order_holds_when_every_record_has_the_same_second(mods, born, one_second):
+    """Records are stamped to the second and the runtime writes a dozen in one. The ledger's seq says Root's check came
+    right after Priority said yes and before Identity told the owner the plan was set; the sort (second, board, number) put
+    every ledger event after every post, so the validator spoke after the first publish question, and an id never moves."""
+    ref = born()
+    c = chat(mods, ref)
+    assert {x["t"] for x in c.chat} == {C.hhmmss(one_second)}, "one second for all of it"
+    check_ledger_order(c)
+
+
+def test_c21_the_ledgers_order_holds_with_the_real_clock(mods, born):
+    """The same department with no fixed clock (no tick fixture spaces the records a second apart): whichever second each record
+    falls in, Priority's yes comes before the validator, who comes before 'The plan is set' and the publish question."""
+    ref = born()
+    check_ledger_order(chat(mods, ref))
+
+
+@pytest.mark.parametrize("clock", ["one_second", "real"])
+def test_c21_the_stamp_follows_its_question_and_comes_before_what_identity_says_of_it(mods, born, request, clock):
+    """ask < Option 1 < 'is live', even when the question, the stamp and the site going live share a second."""
+    if clock == "one_second":
+        request.getfixturevalue("one_second")
+    ref = born()
+    W = mods.W
+    a = next(x for x in W.asks(ref) if x["kind"] == "publish" and x["status"] == "pending")
+    W.decide_ask(ref, a["id"], True)
+    W.run_until_idle(ref, limit=300)
+    c = chat(mods, ref)
+    ask_id = c.ask_msg[a["id"]]
+    stamp = [x["id"] for x in users(c) if x["text"] == "Option 1"]
+    live = next(x["id"] for x in c.chat if "is live" in x["text"])
+    assert len(stamp) == 1 and ask_id < stamp[0] < live, (ask_id, stamp, live, [(x["id"], x["who"], x["text"][:28]) for x in c.chat[-5:]])
+    check_ledger_order(c)
+
+
+def test_c29_a_post_no_event_records_sits_after_the_events_that_fall_between_its_neighbours(mods, one_second):
+    """The anchor of a post that has an event is the event's seq; one that has none is what was said of what had just happened:
+    it comes after the ledger events between its neighbours, before the next post that has an event, and at the end when none
+    follows. All in one second, so only the ledger's order tells."""
+    cycle(mods, "running", 5)
+    thread(mods, "Priority", "Adaptation", "accept-proposal", "line", tid="x-a", why="fits today")                    # post 1
+    event(mods, "proposal.granted", actor="Priority", recipient="Adaptation", step=3, key="post-1")                    # seq 1
+    event(mods, "workflow.validated", summary="The workflow meets Sutra's standards.")                                 # seq 2
+    event(mods, "workflow.registered", recipient="Coordination", summary="Registered Plan -> Write, version 1.")      # seq 3
+    thread(mods, "Coordination", "Audit", "inform", "table", tid="x-t", why="the table is written")                    # post 2: no event
+    thread(mods, "Adaptation", "Priority", "propose", "line", tid="x-p", words="a second plan")                        # post 3
+    event(mods, "proposal.created", actor="Adaptation", recipient="Priority", step=2, key="post-3")                    # seq 4
+    event(mods, "workflow.blocked", summary="Root's check refused the workflow: Plan has no reader.", key="b1")        # seq 5
+    thread(mods, "Audit", "Coordination", "inform", "finding", tid="x-f", why="a page is missing")                     # post 4: no event, last
+    c = chat(mods)
+    at = lambda k: c.msg_of[k]
+    assert [e["seq"] for e in c.events] == [1, 2, 3, 4, 5]
+    assert at(("b", 1)) < at(("e", 2)) < at(("e", 3)) < at(("b", 2)) < at(("b", 3)) < at(("e", 5)) < at(("b", 4)), c.msg_of
+    assert [x["t"] for x in c.chat] == [C.hhmmss(one_second)] * len(c.chat)
+
+
+def test_c29_a_clock_that_ticks_still_decides_before_the_ledger_does(mods, tick):
+    """The second is the first key: a record stamped later is placed later, whatever its anchor says."""
+    cycle(mods, "running", 5)
+    event(mods, "workflow.validated", summary="The workflow meets Sutra's standards.")                                 # seq 1, first second
+    thread(mods, "Coordination", "Audit", "inform", "table", tid="x-t", why="the table is written")                    # post 1, later second
+    event(mods, "workflow.registered", recipient="Coordination", summary="Registered Plan -> Write, version 1.")      # seq 2, later still
+    c = chat(mods)
+    assert c.msg_of[("e", 1)] < c.msg_of[("b", 1)] < c.msg_of[("e", 2)]
 
 
 def test_c21_ids_are_places_in_the_list_and_never_change(mods, born, tick):
