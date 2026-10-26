@@ -33,6 +33,7 @@ if _LIB_DIR not in sys.path:
     sys.path.insert(0, _LIB_DIR)
 
 import placement_engine as E  # noqa: E402  (path insert must precede this import)
+import website_dept as W  # noqa: E402
 
 router = APIRouter(prefix="/api/dept", tags=["dept"])
 
@@ -42,7 +43,7 @@ WAITS_MAX = 40           # queued or blocked tasks returned per department
 RULES_MAX = 24           # rule lines on the Identity card
 #: The four words a rule may wear (A10). The charter's own `rules` carry one of
 #: these; invariants and constraints can only ever be `always` (DS-1).
-RULE_TAGS = ("go", "ask", "refuse", "always")
+RULE_TAGS = W.RULE_TAGS  # the record's rule tags, defined once (website_dept.py, PRD M3.4)
 CHAT_MAX = 60            # turns returned per chat, oldest first (a chat reads down)
 GATE_MAX = 20            # of those, at most this many are gate rows
 DONE_MAX = 400           # characters of the done line

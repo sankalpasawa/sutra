@@ -2236,8 +2236,7 @@ def _rule_answered(ctx, got):
     scope = r.get("scope") if r.get("scope") in SCOPE_SAYS else "standing"
     if any(str(x.get("line") or "").lower() == line.lower() and x.get("tag") in W.RULE_TAGS for x in d.get("rules") or []):
         _tell(ref, d, p, "inform", {"word": "request", "done": "the department already has this rule"}, thread=p["thread"])
-        if J:
-            J.next_gap(ref)
+        identity_next(ref)
         return {"said": "the department already has this rule: " + line}
     text = _rule_ask(ref, ctx["slot"], line, tag, words, p["thread"], "A rule, as understood (%s, %s)" % (RULE_SAYS[tag], SCOPE_SAYS[scope]),
                      scope=scope, answers=aid)
@@ -2389,6 +2388,9 @@ def _standard_defaults(ref, points):
         k = W.KINDS.get(d.get("kind") or "website") or {}
         used, changed = [], False
         points = [STANDARD_ALIAS.get(p, p) for p in points or []]
+        if "budget" in points:
+            _priority_limits(ref)                          # Priority's own write, before the identity is read here
+            d = W.dept(ref)
         for pt in [p for p in STANDARD if p in points]:
             if pt == "goal":
                 if not str(d.get("goal") or "").strip():
@@ -2407,7 +2409,7 @@ def _standard_defaults(ref, points):
                         d["done"], changed = W.done_line(good), True      # done stays the items' joined text
                     used.append("the done-when items Root drafted")
             elif pt == "rules":
-                tagged = [r for r in d.get("rules") or [] if str(r.get("line") or "").strip() and r.get("tag") in _RULE_TAGS]
+                tagged = [r for r in d.get("rules") or [] if str(r.get("line") or "").strip() and r.get("tag") in W.RULE_TAGS]
                 lines = {str(r["line"]).lower() for r in tagged}
                 d["rules"] = tagged + [dict(r) for r in k.get("rules") or [] if str(r["line"]).lower() not in lines]
                 changed = True
@@ -2417,8 +2419,6 @@ def _standard_defaults(ref, points):
                     d["owner"], changed = "the owner", True
                 used.append("you, as the owner")
             elif pt == "budget":
-                if not d.get("envelopes"):
-                    d["envelopes"], changed = _limits_from_template(), True
                 used.append("Priority's limits from its template")
             elif pt == "invented":
                 used.append("what nobody gave stays out, to be confirmed")
@@ -3081,7 +3081,7 @@ def _j2_went_on(ref, aid):
     is asked, and with nothing missing the department starts (step 2) once its first words are filed. Started already,
     nothing more happens."""
     J = _j2()
-    if not J or not J.active(ref) or int((J._state(ref) or {}).get("step") or 1) != 1 or J.next_gap(ref):
+    if not J or not J.active(ref) or int((J._state(ref) or {}).get("step") or 1) != 1 or identity_next(ref):
         return
     d = W.dept(ref)
     brief = _brief_text(ref).strip()
@@ -3103,10 +3103,9 @@ def identity_drop(ctx, step, item):
                  "The plan is dropped.", "You, on the plan Identity put to you", "you said no to the plan")
         return {"said": "dropped the plan because the owner said no"}
     if a and a.get("kind") in ("rule", "done_items") and a.get("answers"):
-        # the owner refused the rule that answered Identity's question (M3.4): the question is asked again, never dropped
-        J = _j2()
-        if J:
-            J.next_gap(ref)
+        # the owner said no to the rule that answered Identity's question (M3.4): Identity reads its standard again and
+        # asks its question again, never dropped
+        identity_next(ref)
     if a and a.get("kind") == "rung":
         _, s = step_def(a["step"])
         e = entry(ref, s)
@@ -5124,7 +5123,6 @@ STANDARD_POINTS = (("goal", "The goal names what and for whom", ("goal",)),
                    ("rules", "Every rule is tagged", ("rules",)),
                    ("owner_budget", "Owner and budget are set", ("owner", "budget")),
                    ("invented", "Nothing invented", ("invented",)))
-_RULE_TAGS = W.RULE_TAGS
 #: Identity's question for each point of its standard that code reads on the record (PRD M3.3), in the owner's words:
 #: one question, for the first point unmet; who owns the department and what it may spend are one question
 STANDARD_ASKS = {"goal": "What goal must this department achieve?",
@@ -5151,7 +5149,7 @@ def _standard_gaps(d):
     if not str(d.get("done") or "").strip() or any(i.get("how") not in W.DONE_HOW for i in items):
         gaps.append("items")
     rules = d.get("rules") or []
-    if not rules or any(not str(r.get("line") or "").strip() or r.get("tag") not in _RULE_TAGS for r in rules):
+    if not rules or any(not str(r.get("line") or "").strip() or r.get("tag") not in W.RULE_TAGS for r in rules):
         gaps.append("rules")
     if not str(d.get("owner") or "").strip():
         gaps.append("owner")
@@ -5234,34 +5232,55 @@ def identity_asks(ref):
     return cur
 
 
+def identity_next(ref):
+    """An ask that answered Identity's question was stamped or said no to elsewhere (a rule, done-when items; PRD M3.4):
+    Identity reads its standard again by code and asks the next point unmet, one at a time (identity_asks). Returns the
+    cycle when a question is open now, None when the standard is met, or a question is open already, or there is no
+    cycle to ask in (stopped, or done)."""
+    J = _j2()
+    if not J:
+        return None
+    with W._lock(ref):
+        cur = J._state(ref)
+        if not cur or not cur.get("cycle_id") or cur.get("state") in ("stopped", "done"):
+            return None
+        if cur.get("open_ask") and any(a["id"] == cur["open_ask"] and a["status"] == "pending" for a in W.asks(ref)):
+            return cur
+        return identity_asks(ref)
+
+
 #: the owner's name in an answer to the owner question: 'I am Asha', 'my name is Asha Rao', 'owned by Asha', 'Asha owns it'
 OWNER_NAMED = re.compile(r"(?i:\bi am|\bi'm|\bmy name is|\bowned by)\s+([A-Z][\w'.-]*(?:\s+[A-Z][\w'.-]*)?)|\b([A-Z][\w'.-]*)\s+owns\b")
 
 
-def _limits_from_template():
-    """Priority's limits from its template, one for each of the five: what a department with no budget is given."""
-    t = priority_template()
-    base = {"calls": int(t.get("calls", W.ENVELOPE["calls"])), "usd": float(t.get("usd", W.ENVELOPE["usd"]))}
-    return {s: dict(base) for s in W.SYSTEMS}
+def _priority_limits(ref):
+    """A department with no budget: Identity asks Priority, and Priority gives each of the five its limit from its
+    template, by its own step (priority.grant), on the ledger as Priority's. Identity reads the budget and never writes
+    money (rule 2; decision A1-6: one writer for money). True when Priority gave limits."""
+    if (W.dept(ref) or {}).get("envelopes"):
+        return False
+    got = _ask_rule(ref, "priority.grant", {"engines": list(W.SYSTEMS)}, key="grant@budget@%s" % W.now())
+    return bool((got or {}).get("given"))
 
 
 def _standard_fill(ref, point, words):
     """The owner's answer to Identity's question on a point code reads on the record reaches the record (PRD M3.3), through
     the record's own writers, so a gap only code can see is closed by the answer and the same question never comes back:
     no goal, and the words are the goal; no done-when, and they are its next item (W.put_done_items); no owner, and the
-    owner is the one who answers, by the name they give; no budget, and Priority's limits are set from its template
-    (Priority prices: what the words say of money stays in the Brief for it, and a limit is the owner's to change on
-    Priority's card). Only the point the question asked about, with its pair (who owns it and what it may spend are one
-    question), and only where the record lacks it; a rule goes through the rule ask (M3.4), and 'just do it' through the
-    defaults. Returns what was taken, in the owner's words: [] when nothing was."""
+    owner is the one who answers, by the name they give; no budget, and Priority gives its limits from its template, by
+    its own step (_priority_limits: Priority prices, and what the words say of money stays in the Brief for it; a limit
+    is the owner's to change on Priority's card). Only the point the question asked about, with its pair (who owns it and
+    what it may spend are one question), and only where the record lacks it; a rule goes through the rule ask (M3.4),
+    and 'just do it' through the defaults. Returns what was taken, in the owner's words: [] when nothing was."""
     point = STANDARD_ALIAS.get(point, point)
     words = " ".join(str(words or "").split())
     taken = []
     if not words or JUST_DO_IT.fullmatch(words):
         return taken
     with W._lock(ref):
+        gaps = [g for g in _standard_gaps(W.dept(ref)) if g in STANDARD_PAIRS.get(point, (point,))]
+        limits = "budget" in gaps and _priority_limits(ref)        # Priority's own write, before the identity is read here
         d = W.dept(ref)
-        gaps = [g for g in _standard_gaps(d) if g in STANDARD_PAIRS.get(point, (point,))]
         if "items" in gaps:
             d = W.put_done_items(ref, W.answered_items(d, words))
             taken.append("done when: " + "; ".join("%s %s" % (i["id"], i["text"]) for i in d["done_items"]))
@@ -5273,8 +5292,7 @@ def _standard_fill(ref, point, words):
             m = OWNER_NAMED.search(words)
             d["owner"], changed = ((m.group(1) or m.group(2)) if m else "") or "the owner", True
             taken.append("you, as the owner" if d["owner"] == "the owner" else "%s, as the owner" % d["owner"])
-        if "budget" in gaps:
-            d["envelopes"], changed = _limits_from_template(), True
+        if limits:
             taken.append("Priority's limits from its template")
         if changed:
             W.bump_identity(ref, d)                        # the one record, and the Org screen's copy of it (M3.1)

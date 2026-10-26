@@ -336,19 +336,6 @@ def _ask_gap(ref, dept, cur):
     return R.identity_asks(ref)
 
 
-def next_gap(ref):
-    """The identity is read again after an ask that answered Identity's question was stamped or refused elsewhere (a
-    rule, M3.4): the next thing missing is asked, one at a time. Returns the cycle when a question is open now, None when
-    the identity has no gap (or a question is open already, or there is no cycle)."""
-    with W._lock(ref):
-        cur = _state(ref)
-        if not cur or not cur.get("cycle_id") or cur.get("state") in ("stopped", "done"):
-            return None
-        if cur.get("open_ask") and any(a["id"] == cur["open_ask"] and a["status"] == "pending" for a in W.asks(ref)):
-            return cur
-        return _ask_gap(ref, W.dept(ref), cur)
-
-
 def reopened(ref):
     """From blocked, the plan is shaped afresh (M3.5): the cycle goes back to step 2 with Root's repairs at nought. A
     stopped cycle stays stopped and goes on from there on Start."""

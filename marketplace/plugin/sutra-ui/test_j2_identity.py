@@ -472,7 +472,11 @@ def test_m3_3_an_answer_to_a_gap_only_code_reads_reaches_the_record(j2, point, v
     d = W.dept(ref)
     assert R._standard_gaps(d) == [] and d["identity_revision"] == rev + 1          # on the record, one revision
     if point == "owner":
-        assert d["owner"] == "Sankalp" and {s: d["envelopes"][s] for s in W.SYSTEMS} == R._limits_from_template()
+        t = R.priority_template()
+        assert d["owner"] == "Sankalp" and {s: d["envelopes"][s] for s in W.SYSTEMS} == {s: {"calls": int(t["calls"]), "usd": float(t["usd"])} for s in W.SYSTEMS}
+        # Priority gave the limits, by its own step: Identity reads the budget and never writes money (A1-6)
+        granted = [e for e in J.events(ref) if e["action"] == "envelope.granted" and e["payload"]["engine"] in W.SYSTEMS]
+        assert sorted(e["payload"]["engine"] for e in granted) == sorted(W.SYSTEMS) and {e["actor"] for e in granted} == {"Priority"}
         taken = "Sankalp, as the owner; Priority's limits from its template"
     elif point == "items":
         assert d["done_items"] == [{"id": "D1", "text": GAP_ANSWERS["items"], "how": "model", "level": "outcome"}]
@@ -481,7 +485,7 @@ def test_m3_3_an_answer_to_a_gap_only_code_reads_reaches_the_record(j2, point, v
     else:
         assert d["goal"] == GAP_ANSWERS["goal"]
         taken = "the goal, in your words"
-    acts = _actions(J, ref)
+    acts = [a for a in _actions(J, ref) if a != "envelope.granted"]
     assert acts.count("identity.questioned") == 1                                    # not asked again
     assert acts[acts.index("identity.questioned"):][:4] == ["identity.questioned", "ask.answered", "identity.assessed", "proposal.requested"]
     assert J.status(ref)["open_question"] is None
@@ -617,6 +621,53 @@ def test_m3_4_a_refused_rule_answer_asks_the_question_again(j2):
     again = J.status(ref)["open_question"]
     assert again and again["missing"] == "rules" and again["id"] != q["id"]
     assert W.dept(ref)["rules"] == [{"id": "r1", "line": "Work inside the record"}]
+
+
+def test_m3_4_after_a_stamp_identity_reads_its_standard_and_asks_the_next_point(j2):
+    """The cycle choosing the next question after a stamp (a presence check of j2_runtime's own), or a point of the
+    standard left unasked once the rule is stamped, must fail."""
+    import dept_api
+    W, R, J, _, _ = j2
+    d, _ = W.create("dref-next", "Next Website", None)
+    d.update({"events": [{"kind": "j2_ready", "route": "template"}], "rules": [{"id": "r1", "line": "Work inside the record"}], "owner": ""})
+    W.save_dept("dref-next", d)
+    J.start("dref-next")
+    q = J.status("dref-next")["open_question"]
+    assert (q["missing"], q["points"]) == ("rules", ["rules", "owner"])               # one question, for the first point
+    J.answer("dref-next", NEVER)
+    W.run_until_idle("dref-next", limit=300)
+    W.decide_ask("dref-next", _rule_asks(W, "dref-next")[0]["id"], True)
+    W.run_until_idle("dref-next", limit=300)
+    nxt = J.status("dref-next")["open_question"]
+    assert nxt and (nxt["text"], nxt["missing"], nxt["points"]) == (R.STANDARD_ASKS["owner"], "owner", ["owner"])
+    assert [(r["tag"], r["line"]) for r in W.dept("dref-next")["rules"]] == [("ask", NEVER)]
+    assert not hasattr(J, "next_gap") and not hasattr(J, "RULE_TAGS") and not hasattr(R, "_RULE_TAGS")
+    import inspect
+    assert dept_api.RULE_TAGS == W.RULE_TAGS and "RULE_TAGS = W.RULE_TAGS" in inspect.getsource(dept_api)   # the record's tags, once
+
+
+def test_m3_4_a_rule_given_to_identitys_reading_keeps_its_tag_too(j2):
+    """A rule answered to the question Identity's reading asked in its step (not at the cycle's start) filed in the Brief
+    as words, so its tag is lost and the question comes back, must fail."""
+    W, R, J, _, _ = j2
+    d, _ = W.create("dref-rule2", "Rule Website", None)
+    d["events"] = [{"kind": "j2_ready", "route": "template"}]
+    W.save_dept("dref-rule2", d)
+    J.start("dref-rule2")
+    d = W.dept("dref-rule2")
+    d["rules"] = [{"id": "r1", "line": "Work inside the record"}]
+    W.save_dept("dref-rule2", d)
+    W.give_goal("dref-rule2", BAKERY)
+    W.run_until_idle("dref-rule2", limit=300)
+    q = J.status("dref-rule2")["open_question"]
+    assert q["standard"] and q["missing"] == "rules"
+    W.owner_ask("dref-rule2", NEVER)
+    W.run_until_idle("dref-rule2", limit=300)
+    asks = _rule_asks(W, "dref-rule2")
+    assert len(asks) == 1 and (asks[0]["tag"], asks[0]["answers"]) == ("ask", q["id"])
+    W.decide_ask("dref-rule2", asks[0]["id"], True)
+    W.run_until_idle("dref-rule2", limit=300)
+    assert R._standard_gaps(W.dept("dref-rule2")) == [] and "proposal.requested" in _actions(J, "dref-rule2")
 
 
 DONE_WORDS = "From now on, the site is done when shoppers can order a cake on WhatsApp"
