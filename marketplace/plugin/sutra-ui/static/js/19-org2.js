@@ -421,6 +421,8 @@ function wireOrg2(scBody){
   /* slice I: the department screen's chat frame is laid over its placeholder
      after every paint (20-dept.js dpAfterPaint); it hides itself elsewhere. */
   if (typeof dpAfterPaint === "function") dpAfterPaint(scBody);
+  /* 25-j2view.js: the J2 page's frame, laid over its placeholder the same way */
+  if (typeof j2vAfterPaint === "function") j2vAfterPaint(scBody);
   const st = S.o2;
   if (!st) return;
   if (S.screen !== "org2"){ o2UnmountEditor(); return; }
@@ -1068,10 +1070,13 @@ function o2ScreenHtml(){
        organization level, only a chat is shown, and root is not shown"): no list column; the strip, its chart, its
        pencil and its sheets are the organisation's as before. Null hands the organisation back to the lines below. */
     const org = dp && o2Kind(n, d) === "org" && typeof wbOrgHtml === "function" ? wbOrgHtml(n, d) : null;
-    const body = org ? org : dp
+    /* 25-j2view.js: a website department on the engine runtime is the J2 prototype's page under a slim bar, full width and
+       with no list column; false for every other department and while its Settings and records are open */
+    const j2 = dp && o2Kind(n, d) === "dept" && typeof j2vOn === "function" && typeof j2vHtml === "function" && j2vOn(n.ref);
+    const body = org ? org : j2 ? j2vHtml(n) : dp
       ? dpListHtml(n, d, dept, err) + dpViewerHtml(n, d, dept, err)
       : (wide ? "" : o2ListHtml(n, d, dept, err)) + o2ViewerHtml(n, d, dept, err);
-    content = `${o2StripHtml(n, d, dept)}<div class="o2body${wide || org ? " wide" : ""}">${body}${st.panel ? o2PanelHtml(n, d) : ""}</div>`;
+    content = `${o2StripHtml(n, d, dept)}<div class="o2body${wide || org || j2 ? " wide" : ""}">${body}${st.panel ? o2PanelHtml(n, d) : ""}</div>`;
   }
   return `<div class="o2${st.error ? " off" : ""}">${left}<div class="o2main">${banner}${content}</div></div>`;
 }

@@ -129,6 +129,9 @@ function wbBorn(ref){
 /* A department on the engine runtime opens on its chat: the one point of entry
    (founder, 2026-09-28). One of the first build opens on its Map, as before. */
 function wbTab(ref){
+  /* 25-j2view.js: a website department on the engine runtime is the J2 page, which folds Chat, Map, All five, Board,
+     Agent activity and System status into itself, and Settings and records is the `records` tab; null for the rest */
+  if (typeof j2vTab === "function"){ const t = j2vTab(ref); if (t) return t; }
   const st = wbS();
   return st.tab[ref] === undefined ? (wbRt(st.map[ref]) ? "chat" : "map") : st.tab[ref];
 }
@@ -274,7 +277,7 @@ function wbList(n){
   if (!wbIs(n.ref)) return null;
   const st = wbS(), m = st.map[n.ref], tab = wbTab(n.ref);
   if (!m) wbLoadMap(n.ref);
-  const top = `<div class="o2g dpg wb">` +
+  let top = `<div class="o2g dpg wb">` +
     (wbRt(m) ? dpRow("Chat", `data-wbtab="chat"`, tab === "chat") : "") +
     dpRow("Map", `data-wbtab="map"`, tab === "map") +
     /* the ruled Map (PRD M1.5): System status folds into the Map's NOW line for a department on the runtime */
@@ -283,6 +286,8 @@ function wbList(n){
     (wbRt(m) ? "" : dpRow("Motor", `data-wbtab="motor"`, tab === "motor")) +
     (wbRt(m) ? dpRow("Board", `data-wbtab="board"`, tab === "board") +
       dpRow("Agent activity", `data-wbtab="activity"`, tab === "activity") : "") + `</div>`;
+  /* 25-j2view.js: in Settings and records the first group is one row back to the J2 page */
+  if (typeof j2vTop === "function"){ const t = j2vTop(n.ref, m); if (t) top = t; }
   const engines = dpGroup("Engines", ((m && m.engines) || []).map(e => {
     const on = tab === "engine" && st.sel[n.ref] === e.name;
     const word = e.state === "Running" ? "running" : (e.state === "Waits" ? "paused" : (e.state === "Missing" ? "fault" : "idle"));
@@ -1537,6 +1542,8 @@ function wbViewer(n){
   const st = wbS(), m = st.map[n.ref], tab = wbTab(n.ref);
   wbTick();
   if (!m){ wbLoadMap(n.ref); return dpViewerShell(n.name, st.err[n.ref] ? dpQuiet("Could not read") : dpSkel(), "wb"); }
+  /* 25-j2view.js: Settings and records, the classic list with a way back to the J2 page */
+  if (tab === "records" && typeof j2vRecordsHtml === "function") return dpViewerShell("Settings and records", j2vRecordsHtml(n), "wb");
   /* the Map and the Board of the second design, when the switch is on; null hands the rest back to this file */
   if (wbV2() && wbRt(m) && typeof wb2Viewer === "function"){ const own = wb2Viewer(n); if (own) return own; }
   /* All five (PRD M1.8, S2): 24-functions.js draws the five as one system */

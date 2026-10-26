@@ -6182,3 +6182,13 @@ html.embed-chat .panes>.pane{flex:1 1 100%;max-width:none}
   .wbfive>.wbfivefn,.wbfive>.dpk{grid-column:1/-1}
   .wbfive>span:last-child{grid-column:2}
 }
+/* ── the J2 view (25-j2view.js) ──────────────────────────────────────────────
+   The J2 prototype's page, in one iframe, under a slim bar of this app's own: the department's On/Off switch and
+   Settings and records. The frame lives on a host of <body>, laid over .j2frame after every paint, hidden (never
+   emptied) when the placeholder is gone: the chat frame's rule (.dpframehost). Tokens only. */
+.o2viewer.j2v{border:0;background:transparent;overflow:visible;gap:8px}
+.j2vbar{flex:none;display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.j2frame{flex:1;min-height:420px;border:1px solid var(--line-soft);border-radius:var(--r);background:var(--surface)}
+.j2vhost{position:fixed;z-index:4;border-radius:var(--r);overflow:hidden}
+.j2vhost[hidden]{display:none}
+.j2v-if{width:100%;height:100%;border:0;display:block;background:var(--surface)}
