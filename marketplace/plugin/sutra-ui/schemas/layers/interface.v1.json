@@ -3534,6 +3534,13 @@
                     }
                   ]
                 },
+                "findings": {
+                  "items": {
+                    "$ref": "#/$defs/audit.finding"
+                  },
+                  "minItems": 0,
+                  "type": "array"
+                },
                 "items": {
                   "items": {
                     "additionalProperties": true,
