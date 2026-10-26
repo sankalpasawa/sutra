@@ -375,10 +375,13 @@ def start(ref):
     return begin(ref)
 
 
-def answer(ref, text, ask_id=None, at=None):
+def answer(ref, text, ask_id=None, at=None, go_on=True):
     """The owner's words for Identity's open question: written to the identity, and the standard is read again (J2.1:
     one question at a time, until it is met). `at` is where the owner said them in the chat ({board, n}), when they came
-    that way; the card keeps them under it, and the chat does not say them again. Returns the cycle's state."""
+    that way; the card keeps them under it, and the chat does not say them again. `go_on` hands the words to Identity's
+    step once the standard is met and the department's first words are filed, so Identity says so and starts step 2;
+    Identity's own step, which goes on itself, passes False. Returns the cycle's state, and for a question Identity's
+    code asked, what the answer put on the record (`taken`) or the defaults 'just do it' used (`defaults`)."""
     text = " ".join(str(text or "").split())[:2000]
     if not text:
         raise J2Error("EMPTY_ANSWER")
@@ -406,10 +409,13 @@ def answer(ref, text, ask_id=None, at=None):
                 W._put_ask(ref, ask)
             return _state(ref)
         hurry = bool(R.JUST_DO_IT.fullmatch(text))
-        if ask.get("standard") or (missing == "rules" and not hurry):
+        filed = bool(W.versions(ref, W.artifacts_of(dept)[0]))
+        if ask.get("standard") or (missing == "rules" and not hurry) or (hurry and filed and go_on):
             # Identity's standard was not met (M3.3): the answer is the owner's words to Identity, which reads them against
             # the standard again and asks again or starts. A rule given as an answer keeps its tag (M3.4): Identity reads
-            # it, restates its tag and scope, and the owner stamps it. Nothing is written to the identity here
+            # it, restates its tag and scope, and the owner stamps it. 'Just do it' to a question Identity's code asked
+            # goes the same way once the first words are filed: Identity's step fills the defaults, names them and starts
+            # (found by a verifier 2026-10-26: the answer box filled them and said nothing). Nothing is written here
             _took(ref, ask, text)
             _, row = R.request(ref, text, answers=ask["id"])
             if row:
@@ -420,10 +426,8 @@ def answer(ref, text, ask_id=None, at=None):
         # the record: Identity's code takes the answer onto the record, through the record's own writers (done-when is
         # its items, M3.1; the owner and the budget too, so the same question never comes back, M3.3), or fills the
         # point from the kind's defaults on 'just do it'; the revision moves the Org screen's copy
-        if hurry:
-            R._standard_defaults(ref, list(ask.get("points") or []) or [missing])
-        else:
-            R._standard_fill(ref, missing, text)
+        said = {"defaults": R._standard_defaults(ref, list(ask.get("points") or []) or [missing])} if hurry else \
+            {"taken": R._standard_fill(ref, missing, text)}
         ask.update({"status": "stamped", "decided": W.now(), "by": "the owner", "answered": text})
         if at:
             ask["words_at"] = at
@@ -431,7 +435,15 @@ def answer(ref, text, ask_id=None, at=None):
         note(ref, 1, "User", "Identity", "ask.answered", "complete", "The owner answered: %s" % text[:200], "answer-" + aid,
              {"missing": missing})
         cur = _move(ref, "assessing", open_ask=None)
-        return _ask_gap(ref, W.dept(ref), cur) or cur
+        nxt = _ask_gap(ref, W.dept(ref), cur)
+        if nxt:
+            return nxt
+        if go_on and filed:
+            # the standard is met and the first words are filed: Identity's step goes on from here, as for an answer said
+            # in the chat (it reads the standard again, says so and starts step 2); the cycle never stands at 'Reading your
+            # words' with nothing to read (found 2026-10-26 through the answer box)
+            R.request(ref, text, answers=aid)
+        return dict(cur, **said)
 
 
 def _took(ref, ask, text, by="the owner", at=None):
@@ -582,11 +594,14 @@ def resume(ref):
 
 # ---- the hooks: the ledger is written where the thing happens ------------------------------------------------------
 def on_post(ref, row):
-    """A post on the department's board that is a move of the lifecycle becomes its event. Never raises."""
+    """A post on the department's board that is a move of the lifecycle becomes its event. A stopped cycle records only
+    the owner's own answer to an ask, given while it is stopped and used on Start (S10: the card can still be answered).
+    Never raises."""
     try:
-        if not active(ref):
-            return
         src, dst, act = row.get("src"), list(row.get("dst") or []), row.get("msg_type")
+        if not active(ref) and not (src == R.OWNER and act in ("accept-proposal", "reject-proposal") and enabled()
+                                    and (_state(ref) or {}).get("state") == "stopped"):
+            return
         pl = row.get("payload") or {}
         word, key = pl.get("word"), "post-%s" % row.get("n")
         names = [e.get("name") for e in pl.get("engines") or [] if isinstance(e, dict)]

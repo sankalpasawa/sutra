@@ -64,7 +64,8 @@ PAGES = {
         "vsm": "VSM S5: identity and policy",
         "line": "The department's voice and conscience. It hears you, checks that the identity is good enough, gates every "
                 "effect by rule, closes conflicts, and says when the goal is reached.",
-        "holds": "Goal, done-when, rules (go, ask, refuse, always), budget, owner and parent, and each engine's window.",
+        # a rule's tags as the pane says them (22-website.js WB_TAG_SAYS): the screen never says refuse
+        "holds": "Goal, done-when, rules (go, ask, never, always), budget, owner and parent, and each engine's window.",
         "hands_to": "Adaptation: a request for a line, and the next thing to correct. Coordination: verdicts on gates. "
                     "You: it is the only function that speaks to you.",
         "keeps": "Never makes anything; the maker is an engine. Asks only when a rule says ask. Approvals only tighten. "
@@ -691,7 +692,19 @@ def _identity_part(ref, d, events):
              for i in d.get("done_items") or [] if isinstance(i, dict) and i.get("id")]
     rules = [{"tag": r.get("tag"), "line": r.get("line"), "by": "yours" if (r.get("from") or str(r.get("id") or "").startswith("u-")) else "the template",
               "since": r.get("since")} for r in d.get("rules") or [] if isinstance(r, dict) and str(r.get("line") or "").strip()]
-    conflicts, raised = [], None
+    conflicts, raised, owners = [], None, None
+
+    def checked(line):
+        # what a model wrote of a split or a ruling reaches the pane through the check a card's words pass (M3.6): said
+        # again in the owner's words, else the template (found by a verifier 2026-10-26: a ruling's why said grant and
+        # counter in S5's Conflicts closed)
+        nonlocal owners
+        line = _plain(line)
+        if not line:
+            return None
+        owners = R._owners_words(ref, {}) if owners is None else owners
+        return R._plain_one(line, owners, "why")[0]
+
     for e in events:
         if e.get("action") == "conflict.raised":
             raised = e
@@ -699,8 +712,8 @@ def _identity_part(ref, d, events):
             ruling = str(e.get("state") or (e.get("payload") or {}).get("ruling") or "")
             names = (e.get("payload") or {}).get("workflow") or []
             conflicts.append({"at": e.get("occurred_at"), "who": SPLIT_BY.get((raised or {}).get("actor"), "the plan was not settled"),
-                              "split": _plain((raised or {}).get("summary")) or None, "plan": " -> ".join(names) or None,
-                              "ruling": ruling, "ruled": RULING_SAYS.get(ruling, ruling), "why": _plain(e.get("summary")) or None,
+                              "split": checked((raised or {}).get("summary")), "plan": " -> ".join(names) or None,
+                              "ruling": ruling, "ruled": RULING_SAYS.get(ruling, ruling), "why": checked(e.get("summary")),
                               "asked_you": ruling == "ask"})
             raised = None
     gaps = R._standard_gaps(d)

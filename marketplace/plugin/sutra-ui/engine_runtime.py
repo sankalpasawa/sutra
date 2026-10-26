@@ -43,6 +43,7 @@ THE BOARD
 """
 import hashlib
 import json
+import math
 import os
 import re
 import threading
@@ -778,6 +779,8 @@ PLAIN_TEMPLATE = {"answer": "I could not put that in plain words. Ask me again, 
                   "question": "What should I know before the department starts?",
                   "title": "The plan cannot go on as it is.",
                   "blocked": "The plan cannot go on as it is. Say what to change, or choose a way forward on this card.",
+                  "conflict": "Adaptation proposes a plan Priority did not say yes to, and the goal and the rules do not settle it. "
+                              "Stamp to run it as proposed, or say no to drop it.",
                   "why": "the reason is on the department's record",
                   "": "The department moved on; what changed is on its record."}
 #: the words of an ask its card shows the owner (PRD M3.6, screens S6 and S10), each by the template its kind of line
@@ -840,9 +843,9 @@ def plain_card(ref, fields, text_is=""):
     """The words an ask's card shows the owner pass the check Identity's posts pass on their way to the board (M3.6), on
     their way to the ask, so a card never says what the line it stands for may not (found by a verifier 2026-10-23: a
     blocked plan's card said grant and counter while the chat line it stood for was a template). `fields` is the card's
-    words by CARD_KEYS ({text, title, why}); `text_is` names what its text is, a 'question' or a 'blocked' plan, for its
-    template. The one check for every card: the options ask (_blocked) and Identity's question (J.asked). Returns the
-    fields, checked."""
+    words by CARD_KEYS ({text, title, why}); `text_is` names what its text is, a 'question', a 'blocked' plan or a
+    'conflict' Identity puts to the owner, for its template. The one check for every card: the options ask (_blocked),
+    Identity's question (J.asked) and the conflict card (identity_closed). Returns the fields, checked."""
     owners, out = None, dict(fields)
     for k, v in fields.items():
         if not isinstance(v, str) or not v.strip():
@@ -927,13 +930,22 @@ def request(ref, text, about=None, message_id=None, answers=None):
 
 def on_stamp(ref, ask, approve):
     """The owner's stamp or refusal, posted in the ask's own thread, so Identity applies it as a step; for an ask with
-    options, the option the owner chose (M3.5)."""
+    options, the option the owner chose (M3.5). An answer to an ask still pending is never dropped: when its thread
+    closed before the answer came (a card kept from before the card that waits again had a thread of its own), the
+    answer is posted in a thread of its own, which it closes as it would have closed the ask's. None when the ask has no
+    thread, or the post did not reach the board."""
     if not ask.get("thread"):
         return None
     chosen = ask.get("chosen") if isinstance(ask.get("chosen"), dict) else None
-    return post(ref, OWNER, "Identity", "accept-proposal" if approve else "reject-proposal",
-                dict({"word": ask.get("kind"), "ask": ask["id"]}, **({"option": chosen["id"], "chose": chosen["label"]} if chosen else {})),
-                thread=ask["thread"])
+    act = "accept-proposal" if approve else "reject-proposal"
+    pl = dict({"word": ask.get("kind"), "ask": ask["id"]}, **({"option": chosen["id"], "chose": chosen["label"]} if chosen else {}))
+    th = _thread(ref, ask["thread"])
+    if not th or th["state"] not in CLOSED:
+        return post(ref, OWNER, "Identity", act, pl, thread=ask["thread"])
+    row = post(ref, OWNER, "Identity", act, pl)
+    if row:
+        _thread_set(ref, row["thread"], state=_state_after(th, ["Identity"], act), outcome={"by": act, "n": row["n"]})
+    return row
 
 
 # ---- what may start now --------------------------------------------------------------------------------------------
@@ -2153,7 +2165,9 @@ def identity_read(ctx, step, item):
             # the words answer Identity's question on the rules (PRD M3.4): they are read as a directive, so the rule
             # keeps the tag Identity reads in them and the owner stamps it; recognising them again is not needed
             rule, cue = aid, "directive"
-        elif q and q.get("standard"):
+        elif q and (q.get("standard") or (pl.get("answers") == aid and q.get("missing") != "words")):
+            # a question Identity's code asked reaches this step from the answer box, the answer on the record already, for
+            # Identity to read its standard again and go on, or to fill the defaults 'just do it' asks for (J.answer)
             answers = aid
             # the answer reaches the record before Identity reads its standard again (PRD M3.3): a gap only code can see
             # (no owner, no budget, no done-when) is closed by the owner's words, so neither the reading nor its covering
@@ -2563,7 +2577,7 @@ def identity_file(ctx, step, item):
     if J and not first and J.waiting_on_owner(ref):
         # Identity's own question is open (J2.1): these words answer it. They are written to the identity, the standard
         # is read again, and the department starts once it is met
-        cur = J.answer(ref, words, at=_words_at(ref, p))
+        cur = J.answer(ref, words, at=_words_at(ref, p), go_on=False)
         d = W.dept(ref)
         if cur.get("state") == "waiting":
             return {"said": "took the owner's answer; Identity's next question is asked"}
@@ -2571,7 +2585,14 @@ def identity_file(ctx, step, item):
         brief = W.latest(ref, W.artifacts_of(d)[0])
         text = W.read_files(ref, W.artifacts_of(d)[0], brief["v"]) if brief else {}
         _line_request(ref, d, " ".join(str(v) for v in text.values()).strip() or d.get("goal"), thread=None)
-        _tell(ref, d, p, "inform", {"word": "request", "done": "Thank you. The identity is clear now; the department starts."}, thread=p["thread"])
+        # what the answer put on the record, or the defaults 'just do it' used, is named, as for Identity's own reading
+        # (_standard_answered; found by a verifier 2026-10-26: 'just do it' here said only that the department starts)
+        if cur.get("defaults"):
+            done = "Just doing it. Defaults used: %s. The department starts." % "; ".join(cur["defaults"])
+        else:
+            done = " ".join(["Thank you."] + (["Taken: %s." % "; ".join(cur["taken"])] if cur.get("taken") else [])
+                            + ["The identity is clear now; the department starts."])
+        _tell(ref, d, p, "inform", {"word": "request", "done": done}, thread=p["thread"])
         return {"said": "took the owner's answer on the identity; the department starts"}
     journey = "task" if first else ctx["bag"]["identity.recognise"].get("journey")
     if not first and journey == "directive" and _answers_facts(ref, words):
@@ -3011,10 +3032,13 @@ def chat_view(ref, about=None):
     refs = [about] if about else ([root] + [c["ref"] for c in kids] if root else [ref])
     asks, answered, chosen, rows = [], [], [], []
     for r in refs:
-        dn = (W.dept(r) or {}).get("name")
+        dr = W.dept(r) or {}
+        dn = dr.get("name")
         mine = W.asks(r)
         rows += mine
-        asks += [dict(a, ref=r, dept=dn) for a in mine if a["status"] == "pending"]
+        # an ask with options shows the ones it offers now: no Stop on a department that is stopped (W.offered)
+        asks += [dict(a, ref=r, dept=dn, **({"options": W.offered(dr, a)} if a.get("options") else {}))
+                 for a in mine if a["status"] == "pending"]
         # Identity's questions the owner answered in words: the card stays in the chat with the answer under it (M0.6)
         answered += [dict(a, ref=r, dept=dn) for a in mine if a.get("kind") == "j2_identity" and a["status"] == "stamped" and a.get("answered")]
         # and an ask with options the owner chose one of: the card goes quiet, with the choice under it (M3.5)
@@ -3134,6 +3158,13 @@ def identity_apply(ctx, step, item):
         return {"said": "moved a step, on the owner's stamp: " + a["text"]}
     if a.get("kind") == "request":
         row = _file_brief(ref, ctx["dept"], a.get("words") or "", "the owner's ask, stamped")
+        J = _j2()
+        if J and J.active(ref) and (J._state(ref) or {}).get("state") == "blocked":
+            # the plan is blocked and the owner stamped the words Identity put back: their go, as a go in the chat is, so
+            # step 2 again with Root's repairs at nought, and the plan's card goes quiet with them (M3.5; found by a
+            # verifier 2026-10-26: the stamp filed the words and left the plan blocked)
+            _reopen(ref, W.dept(ref), a.get("words") or "")
+            return {"said": "took the owner's words, stamped; the plan is shaped afresh", "filed": row["v"]}
         return {"said": "took the owner's words, stamped", "filed": row["v"]}
     if a.get("kind") == "rule":
         with W._lock(ref):
@@ -4173,8 +4204,12 @@ def priority_grant(ctx, step, item):
     work engine work_calls times the calls: engine_limit); one that already holds a limit (the owner's own, or one a
     department off J2 was born with) keeps it. Each is on the ledger, by Priority. `item` is {engines, version}, run in
     place, or from the board on what the record already holds (born_item), where only an engine that holds no limit is
-    given one; a born word that names nothing on the record gives nothing."""
+    given one; a born word that names nothing on the record gives nothing. Run in place for the budget Identity's
+    question asked about, `item` may carry `within_usd`, the most the owner said the department may spend a day: the
+    limits given share what the limits held leave of it, each no more than the template's, so together they never
+    exceed it (approvals only tighten; PRD M3.3)."""
     ref, board_ = ctx["ref"], item is None
+    within = item.get("within_usd") if isinstance(item, dict) else None
     item, why = born_item(ctx, item)
     names = list(item.get("engines") or ([item["grow"]] if item.get("grow") else []))
     if board_ and names:
@@ -4187,10 +4222,16 @@ def priority_grant(ctx, step, item):
     with W._lock(ref):
         d = W.dept(ref) or {}
         envs = d.setdefault("envelopes", {})
-        for n in names:
-            if not isinstance(envs.get(n), dict):
-                envs[n] = engine_limit(n)
-                given.append(n)
+        new = [n for n in names if not isinstance(envs.get(n), dict)]
+        share = None
+        if within is not None and new:
+            held = sum(float((v or {}).get("usd") or 0) for k, v in envs.items() if isinstance(v, dict) and k not in new)
+            share = math.floor(max(0.0, float(within) - held) * 100 / len(new)) / 100.0
+        for n in new:
+            envs[n] = engine_limit(n)
+            if share is not None:
+                envs[n]["usd"] = min(float(envs[n]["usd"]), share)
+            given.append(n)
         if given:
             W.save_dept(ref, d)
     J = _j2()
@@ -4198,7 +4239,8 @@ def priority_grant(ctx, step, item):
         for n in names:
             J.on_granted(ref, n, envs.get(n), n not in given, item.get("version"))
     kept = [n for n in names if n not in given]
-    said = (["gave a limit to " + _names(given)] if given else []) + (
+    said = (["gave a limit to " + _names(given) + (" within the %s USD a day the owner said" % _usd(within) if share is not None else "")]
+            if given else []) + (
         ["%s %s" % (_names(kept), "keeps the limit it holds" if len(kept) == 1 else "keep the limits they hold")] if kept else [])
     return {"said": "; ".join(said), "given": given, "kept": kept}
 
@@ -4206,6 +4248,11 @@ def priority_grant(ctx, step, item):
 def _names(xs):
     xs = list(xs)
     return xs[0] if len(xs) == 1 else ", ".join(xs[:-1]) + " and " + xs[-1]
+
+
+def _usd(x):
+    """An amount of US dollars as a person says it: 1, 0.5, 2.75."""
+    return ("%.2f" % float(x)).rstrip("0").rstrip(".")
 
 
 def engine_added(ref, name, before=None):
@@ -4795,18 +4842,36 @@ def _blocked(ref, d, who, said, title, by, why):
     if item:
         opts.append(W.option("leave:" + item["id"], "Leave %s out" % item["id"],
                              "%s is dropped from done-when (%s); nothing more is spent" % (item["id"], str(item["text"]).rstrip("."))))
-    opts.append(W.option("stop", "Stop here", "the department stops where it is; you can start it again later"))
+    opts.append(W.option(W.STOP_OPTION, "Stop here", "the department stops where it is; you can start it again later"))
     for old in W.asks(ref):
         if old.get("kind") == "blocked" and old["status"] == "pending":
             W._put_ask(ref, dict(old, status="replaced", decided=W.now()))
     ask = W.options_ask("blocked", said, opts, title=title, who=by, why=str(why or "").strip(),
                         if_nothing="Nothing runs; the department waits for your words.",
                         cycle_id=((J._state(ref) or {}).get("cycle_id") if J else None))
-    row = _tell(ref, d, who, "request", {"word": "blocked", "objective": said, "done": said, "card": ask["id"],
-                                         "output": "one of the options, or your words", "may_read": ["Brief"], "boundaries": "this plan"})
-    ask["thread"] = row["thread"] if row else None
+    ask["thread"] = _card_line(ref, d, who, ask)
     W._put_ask(ref, ask)
     return ask
+
+
+def _card_line(ref, d, who, ask):
+    """What Identity says of a blocked plan's card, on a thread of its own that waits on the owner: the line names the
+    card, so the chat says it once, on the card, and the owner's choice is posted in that thread (on_stamp). Returns the
+    thread, or None when the line did not reach the board."""
+    row = _tell(ref, d, who, "request", {"word": "blocked", "objective": ask["text"], "done": ask["text"], "card": ask["id"],
+                                         "output": "one of the options, or your words", "may_read": ["Brief"], "boundaries": "this plan"})
+    return row["thread"] if row else None
+
+
+def _card_waits(ref, d, a):
+    """A blocked plan's card the owner answered that must wait open again (M3.5): the words Identity did not take as a
+    go, or Stop, leave the plan blocked. The same card, pending again with nothing chosen, on a thread of its own: the
+    thread it had closed on the owner's choice, and a choice posted into a closed thread is dropped (found by a verifier
+    2026-10-26: after Stop and Start the next choice said 'You chose' and applied nothing, a dead end)."""
+    a = dict(a, status="pending", decided=None, by=None, chosen=None)
+    a["thread"] = _card_line(ref, d, {"src": "Root" if d.get("root") else OWNER}, a)
+    W._put_ask(ref, a)
+    return a
 
 
 def _reopen(ref, d, words, by="your words"):
@@ -4839,7 +4904,7 @@ def _blocked_chosen(ctx, a, pl):
         # Identity's take reads them against the goal and the rules, as in the chat: a go reopens the plan and the card goes
         # quiet with them (identity_file, _reopen); words that reach outside are an ask, and the plan stays blocked with
         # its card open (found by a verifier 2026-10-23: the box filed the words and reopened step 2 with no take)
-        W._put_ask(ref, dict(a, status="pending", decided=None, by=None, chosen=None))
+        _card_waits(ref, d, a)
         request(ref, words, answers=a["id"])
         return {"said": "took the owner's words for the plan to Identity, to read as said in the chat: " + words}
     if oid.startswith("leave:"):
@@ -4856,7 +4921,7 @@ def _blocked_chosen(ctx, a, pl):
         d = W.apply_done_items(ref, ask)
         _reopen(ref, d, d.get("done") or "", by="the done-when you kept")
         return {"said": "left %s out of done-when on the owner's choice; Adaptation is asked afresh" % iid}
-    if oid == "stop":
+    if oid == W.STOP_OPTION:
         J = _j2()
         if J and J._state(ref):
             J.stop(ref)
@@ -4864,8 +4929,9 @@ def _blocked_chosen(ctx, a, pl):
             W.set_stopped(ref, True)
         # the plan is still blocked, so its way out stays open: the card waits again, answerable while the department is
         # stopped and after Start (S10: 'Stopped: the card can still be answered'); the stop is the owner's act, on the
-        # ledger and the board (found by a verifier 2026-10-23: Start went back to blocked with no card to answer)
-        W._put_ask(ref, dict(a, status="pending", decided=None, by=None, chosen=None))
+        # ledger and the board (found by a verifier 2026-10-23: Start went back to blocked with no card to answer). While
+        # the department is stopped the card does not offer Stop (W.offered)
+        _card_waits(ref, W.dept(ref) or d, a)
         return {"said": "stopped the department on the owner's choice; the plan's card stays open"}
     return {"said": "took the owner's choice: %s" % oid}
 
@@ -4984,6 +5050,10 @@ def identity_closed(ctx, step, item):
         return {"said": "dropped the plan: " + (why or "Priority's no stands")}
     text = ("Adaptation proposes the plan %s. %s. The goal and the rules do not settle it. %s"
             % (names, str(pl.get("why") or "Priority did not say yes to it").rstrip("."), _answers("run it as proposed", "to drop it")))
+    # the card quotes Priority's why, which a model may say in the bargain's inside words: it passes the check every card
+    # passes (plain_card, M3.6), so the card says what the line it stands for may (found by a verifier 2026-10-26: the
+    # Chat's 'Waiting for you' card said grant and counter while its line was plain)
+    text = plain_card(ref, {"text": text}, "conflict")["text"]
     if not any(a.get("kind") == "conflict" and a.get("for") == pl.get("for") for a in W.asks(ref)):
         p = post(ref, "Identity", OWNER, "request", {"word": "conflict", "objective": text, "output": "a stamp or a refusal", "may_read": ["Brief"],
                                                      "boundaries": "this one plan"})
@@ -5471,25 +5541,61 @@ def identity_next(ref):
 OWNER_NAMED = re.compile(r"(?i:\bi am|\bi'm|\bmy name is|\bowned by)\s+([A-Z][\w'.-]*(?:\s+[A-Z][\w'.-]*)?)|\b([A-Z][\w'.-]*)\s+owns\b")
 
 
-def _priority_limits(ref):
+def _priority_limits(ref, within=None):
     """A department with no budget: Identity asks Priority, and Priority gives each of the five its limit from its
     template, by its own step (priority.grant), on the ledger as Priority's. Identity reads the budget and never writes
-    money (rule 2; decision A1-6: one writer for money). True when Priority gave limits."""
-    if (W.dept(ref) or {}).get("envelopes"):
+    money (rule 2; decision A1-6: one writer for money). `within` is the most the owner said the department may spend a
+    day, in US dollars: Priority then gives every engine of the department its limit too (the five and the engines on its
+    record, which keep them when the plan that names them is registered), all of them within it. True when Priority
+    gave limits."""
+    d = W.dept(ref) or {}
+    if d.get("envelopes"):
         return False
-    got = _ask_rule(ref, "priority.grant", {"engines": list(W.SYSTEMS)}, key="grant@budget@%s" % W.now())
+    names = list(W.SYSTEMS)
+    item = {"engines": names}
+    if within is not None:
+        names += [n for n in d.get("engines") or [] if n not in names]
+        item["within_usd"] = float(within)
+    got = _ask_rule(ref, "priority.grant", item, key="grant@budget@%s" % W.now())
     return bool((got or {}).get("given"))
+
+
+#: what an answer says the department may spend: an amount (in figures, or 'a' or 'one' dollar), its money, and how
+#: often ('a day', 'a month'); none named is a day, the tightest reading of a limit kept a day
+MONEY_SAID = re.compile(r"(?P<pre>\$|\busd\s*|\bus\$\s*|₹|\brs\.?\s*|\binr\s*|€|£)?(?P<n>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:[.,]\d+)?|\ba\b|\bone\b)\s*"
+                        r"(?P<unit>dollars?\b|usd\b|bucks?\b|rupees?\b|rs\b|inr\b|euros?\b|pounds?\b)?"
+                        r"(?:\s*(?:a|per|each|every|in a|in all a)\s+(?P<per>day|week|month|year)\b|\s*(?P<ly>daily|weekly|monthly|yearly)\b)?", re.I)
+PER_DAYS = {"day": 1, "daily": 1, "week": 7, "weekly": 7, "month": 30, "monthly": 30, "year": 365, "yearly": 365}
+
+
+def _stated_budget(words):
+    """What the owner's answer says the department may spend, read by code: {usd: a day, in US dollars, or None for an
+    amount in other money, which Priority does not convert; said: the words}, or None when no amount is named."""
+    for m in MONEY_SAID.finditer(str(words or "")):
+        pre, unit = (m.group("pre") or "").strip().lower(), (m.group("unit") or "").lower()
+        if not pre and not unit:
+            continue                                   # a bare number is not money
+        n = m.group("n").lower()
+        if n in ("a", "one") and not unit:
+            continue
+        amount = 1.0 if n in ("a", "one") else float(n.replace(",", "") if re.fullmatch(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?", n)
+                                                      else n.replace(",", "."))
+        per = PER_DAYS.get((m.group("per") or m.group("ly") or "day").lower(), 1)
+        dollars = pre in ("$", "usd", "us$") or unit.startswith(("dollar", "usd", "buck"))
+        return {"usd": round(amount / per, 4) if dollars else None, "said": " ".join(m.group(0).split())}
+    return None
 
 
 def _standard_fill(ref, point, words):
     """The owner's answer to Identity's question on a point code reads on the record reaches the record (PRD M3.3), through
     the record's own writers, so a gap only code can see is closed by the answer and the same question never comes back:
     no goal, and the words are the goal; no done-when, and they are its next item (W.put_done_items); no owner, and the
-    owner is the one who answers, by the name they give; no budget, and Priority gives its limits from its template, by
-    its own step (_priority_limits: Priority prices, and what the words say of money stays in the Brief for it; a limit
-    is the owner's to change on Priority's card). Only the point the question asked about, with its pair (who owns it and
-    what it may spend are one question), and only where the record lacks it; a rule goes through the rule ask (M3.4),
-    and 'just do it' through the defaults. Returns what was taken, in the owner's words: [] when nothing was."""
+    owner is the one who answers, by the name they give; no budget, and Priority gives its limits, by its own step
+    (_priority_limits: Priority writes money), within what the words say the department may spend a day, else from its
+    template; a limit is the owner's to change on Priority's card. Only the point the question asked about, with its
+    pair (who owns it and what it may spend are one question), and only where the record lacks it; a rule goes through
+    the rule ask (M3.4), and 'just do it' through the defaults. Returns what was taken, in the owner's words: [] when
+    nothing was."""
     point = STANDARD_ALIAS.get(point, point)
     words = " ".join(str(words or "").split())
     taken = []
@@ -5497,7 +5603,11 @@ def _standard_fill(ref, point, words):
         return taken
     with W._lock(ref):
         gaps = [g for g in _standard_gaps(W.dept(ref)) if g in STANDARD_PAIRS.get(point, (point,))]
-        limits = "budget" in gaps and _priority_limits(ref)        # Priority's own write, before the identity is read here
+        # what the words say the department may spend reaches Priority as the most its limits may come to (approvals only
+        # tighten; found by a verifier 2026-10-26: '1 dollar a day in all' gave 30 USD a day from the template)
+        stated = _stated_budget(words) if "budget" in gaps else None
+        within = (stated or {}).get("usd")
+        limits = "budget" in gaps and _priority_limits(ref, within)    # Priority's own write, before the identity is read here
         d = W.dept(ref)
         if "items" in gaps:
             d = W.put_done_items(ref, W.answered_items(d, words))
@@ -5511,7 +5621,9 @@ def _standard_fill(ref, point, words):
             d["owner"], changed = ((m.group(1) or m.group(2)) if m else "") or "the owner", True
             taken.append("you, as the owner" if d["owner"] == "the owner" else "%s, as the owner" % d["owner"])
         if limits:
-            taken.append("Priority's limits from its template")
+            taken.append("Priority's limits within the %s USD a day you said" % _usd(within) if within is not None else
+                         "Priority's limits from its template (%s is not in US dollars: change them on Priority's card)"
+                         % stated["said"] if stated else "Priority's limits from its template")
         if changed:
             W.bump_identity(ref, d)                        # the one record, and the Org screen's copy of it (M3.1)
     return taken

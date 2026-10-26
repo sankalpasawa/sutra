@@ -12,7 +12,8 @@ Named claims, each a done check of the PRD:
   M3.4  a rule given as an answer keeps its tag through the rule ask, and a change to the done-when items never touches
         the goal
   M3.5  blocked always has a way out: new words reopen step 2, and the blocked message is an ask with options, each
-        applied by code; an unknown option is 409 UNKNOWN_OPTION
+        applied by code; an unknown option is 409 UNKNOWN_OPTION; a card that waits again (after Stop, or words Identity
+        put back) waits on a thread of its own, so the next choice is applied, before Start and after it
   M3.6  one voice, in plain words: every tell passes the plain-words check, and only Identity speaks to the owner
   M3.7  Identity's pane: the read holds the standard, the done-when items, the rules, the open question and the conflicts
 
@@ -474,11 +475,15 @@ def test_m3_3_an_answer_to_a_gap_only_code_reads_reaches_the_record(j2, point, v
     assert R._standard_gaps(d) == [] and d["identity_revision"] == rev + 1          # on the record, one revision
     if point == "owner":
         t = R.priority_template()
-        assert d["owner"] == "Sankalp" and {s: d["envelopes"][s] for s in W.SYSTEMS} == {s: {"calls": int(t["calls"]), "usd": float(t["usd"])} for s in W.SYSTEMS}
+        # the 5 dollars a day the owner said is the most the limits come to: the five and the department's engines share
+        # it, each no more than the template's (found by a verifier 2026-10-26: the template's 30 USD a day was written)
+        share = {"calls": int(t["calls"]), "usd": round(int(500 / (len(W.SYSTEMS) + len(d["engines"]))) / 100.0, 2)}
+        assert d["owner"] == "Sankalp" and {s: d["envelopes"][s] for s in W.SYSTEMS} == {s: share for s in W.SYSTEMS}
+        assert sum(e["usd"] for e in d["envelopes"].values()) <= 5.0
         # Priority gave the limits, by its own step: Identity reads the budget and never writes money (A1-6)
         granted = [e for e in J.events(ref) if e["action"] == "envelope.granted" and e["payload"]["engine"] in W.SYSTEMS]
         assert sorted(e["payload"]["engine"] for e in granted) == sorted(W.SYSTEMS) and {e["actor"] for e in granted} == {"Priority"}
-        taken = "Sankalp, as the owner; Priority's limits from its template"
+        taken = "Sankalp, as the owner; Priority's limits within the 5 USD a day you said"
     elif point == "items":
         assert d["done_items"] == [{"id": "D1", "text": GAP_ANSWERS["items"], "how": "model", "level": "outcome"}]
         assert d["done"] == GAP_ANSWERS["items"]
@@ -492,6 +497,36 @@ def test_m3_3_an_answer_to_a_gap_only_code_reads_reaches_the_record(j2, point, v
     assert J.status(ref)["open_question"] is None
     assert "Thank you. Taken: %s. The identity is clear now; the department starts." % taken in _said(R, ref)
     assert GAP_ANSWERS[point] in W.read_files(ref, "Brief", W.latest(ref, "Brief")["v"])["brief.md"]   # and in the Brief
+
+
+@pytest.mark.parametrize("said, within", [("I am Sankalp, I own it, and it may spend 1 dollar a day in all", 1.0),
+                                           ("Sankalp owns it; it may spend $30 a month", 1.0),
+                                           ("I am Sankalp and it may spend 500 rupees a day", None),
+                                           ("I am Sankalp and it may spend what Priority says", None)])
+def test_m3_3_what_the_owner_says_it_may_spend_is_the_most_its_limits_come_to(j2, said, within):
+    """Approvals only tighten: an answer that names what the department may spend a day, after which Priority's limits
+    (the five's, and every engine's once the plan is registered) come to more than that, must fail. With no amount in US
+    dollars, Priority's template, and the tell says which was used."""
+    W, R, J, _, _ = j2
+    ref, q = _standard_gap(j2, "owner")
+    W.owner_ask(ref, said)
+    W.run_until_idle(ref, limit=300)
+    d, t = W.dept(ref), R.priority_template()
+    assert d["owner"] == "Sankalp" and R._standard_gaps(d) == []
+    assert "workflow.registered" in _actions(J, ref)                                  # the plan's engines hold limits too
+    envs = d["envelopes"]
+    assert set(W.SYSTEMS) | set(d["engines"]) <= set(envs)
+    assert all(e["usd"] <= float(t["usd"]) for e in envs.values())                   # never more than the template's
+    tell = next(s for s in _said(R, ref) if s.startswith("Thank you. Taken: "))
+    if within is not None:
+        assert sum(e["usd"] for e in envs.values()) <= within, envs
+        assert "Priority's limits within the 1 USD a day you said" in tell
+        given = [e for e in J.events(ref) if e["action"] == "envelope.granted" and not e["payload"]["kept"]]
+        assert {e["actor"] for e in given} == {"Priority"}                             # Priority's write, never Identity's
+    else:
+        assert {s: envs[s]["usd"] for s in W.SYSTEMS} == {s: float(t["usd"]) for s in W.SYSTEMS}
+        assert ("500 rupees a day is not in US dollars" in tell) == ("rupees" in said)
+        assert "Priority's limits from its template" in tell
 
 
 def test_m3_3_with_a_model_the_answer_is_on_the_record_before_identity_reads_it(j2, monkeypatch):
@@ -544,6 +579,54 @@ def test_m3_3_identity_has_one_standard_and_the_cycle_only_records_its_questions
     J.answer("dref-one", "My name is Asha Rao and it may spend what Priority says")
     assert W.dept("dref-one")["owner"] == "Asha Rao" and J.status("dref-one")["open_question"] is None
     assert J.status("dref-one")["state"] == "assessing"
+
+
+def _code_asked(j2, ref="dref-coded"):
+    """A department whose first words are filed and whose record has no owner and no budget: where the cycle starts,
+    Identity's code reads the gap on the record and asks its question (standard False)."""
+    W, R, J, _, _ = j2
+    d, _ = W.create(ref, "Coded Website", BAKERY)
+    d.update({"events": [{"kind": "j2_ready", "route": "template"}], "owner": "", "envelopes": {}})
+    W.save_dept(ref, d)
+    J.start(ref)
+    W.run_until_idle(ref, limit=300)
+    q = J.status(ref)["open_question"]
+    assert (q["text"], q["standard"], q["points"]) == (R.STANDARD_ASKS["owner"], False, ["owner", "budget"])
+    assert W.versions(ref, "Brief") and "proposal.requested" not in _actions(J, ref)
+    return ref, q
+
+
+@pytest.mark.parametrize("via", ["chat", "answer box"])
+def test_m3_3_just_do_it_to_a_question_identitys_code_asked_names_the_defaults(j2, via):
+    """'Just do it' to the question Identity's code asked on the record (no owner, no budget) that fills the defaults and
+    names none of them (the chat said only that the department starts; the answer box said nothing) must fail."""
+    W, R, J, _, _ = j2
+    ref, q = _code_asked(j2)
+    if via == "chat":
+        W.owner_ask(ref, "just do it")
+    else:
+        assert _client().post("/api/dept/%s/j2/answer" % ref, json={"text": "Just do it."}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    d = W.dept(ref)
+    assert d["owner"] == "the owner" and R._standard_gaps(d) == []
+    assert next(e for e in J.events(ref) if e["action"] == "proposal.requested")["step"] == 2
+    tell = [s for s in _said(R, ref) if s.startswith("Just doing it.")]
+    assert tell == ["Just doing it. Defaults used: you, as the owner; Priority's limits from its template. The department starts."]
+    assert J.status(ref)["open_question"] is None and _actions(J, ref).count("identity.assessed") == 1
+
+
+def test_m3_3_an_answer_box_answer_to_a_question_identitys_code_asked_starts_the_department(j2):
+    """An answer through the answer box to the question Identity's code asked that meets the standard and leaves the cycle
+    at 'Reading your words', with nothing said and nothing started, must fail."""
+    W, R, J, _, _ = j2
+    ref, q = _code_asked(j2)
+    got = _client().post("/api/dept/%s/j2/answer" % ref, json={"text": "I am Asha and it may spend 2 dollars a day"})
+    assert got.status_code == 200 and W.dept(ref)["owner"] == "Asha"                 # on the record at once, by code
+    W.run_until_idle(ref, limit=300)
+    assert next(e for e in J.events(ref) if e["action"] == "proposal.requested")["step"] == 2
+    assert _actions(J, ref).count("identity.assessed") == 1 and _actions(J, ref).count("ask.answered") == 1
+    assert "Thank you. The identity is clear now; the department starts." in _said(R, ref)
+    assert sum(e["usd"] for e in W.dept(ref)["envelopes"].values()) <= 2.0
 
 
 def test_m3_3_a_done_line_that_is_not_there_is_a_gap_and_just_do_it_writes_it(j2):
@@ -871,8 +954,123 @@ def test_m3_5_stop_then_start_leaves_exactly_one_card_to_answer(j2, monkeypatch)
     assert J.status(ref)["state"] == "blocked" and blocked() == [card["id"]]
     assert [a["id"] for a in R.chat_view(ref)["asks"] if a.get("options")] == [card["id"]]
     assert next(n for n in F.functions(ref)["functions"] if n["fn"] == "identity")["state"] == "waiting_on_you"
-    # and the way out still works after Start
+    # and the way out still works after Start: the choice is applied, never said over nothing (a card whose thread
+    # closed on the first choice took the next one with 200 and dropped it: found by a verifier 2026-10-26)
+    seen = len(J.events(ref))
     assert client.post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "leave:D3"}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    _applied_leave(W, J, ref, seen)
+
+
+def _applied_leave(W, J, ref, seen, item="D3"):
+    """The choice to leave an item out was applied: the item is gone from done-when, and the plan is shaped afresh at
+    step 2 (cycle.reopened, then proposal.requested)."""
+    after = J.events(ref)[seen:]
+    acts = [e["action"] for e in after]
+    assert "The owner chose: Leave %s out." % item in [e["summary"] for e in after], acts
+    assert item not in [i["id"] for i in W.dept(ref)["done_items"]]
+    assert "cycle.reopened" in acts and next(e for e in after[acts.index("cycle.reopened"):] if e["action"] == "proposal.requested")["step"] == 2
+
+
+def _open_card(W, R, ref, aid):
+    """The card waits open: pending, nothing chosen, on a thread that waits on the owner."""
+    a = next(x for x in W.asks(ref) if x["id"] == aid)
+    assert (a["status"], a["chosen"]) == ("pending", None) and R._thread(ref, a["thread"])["state"] == "input-required"
+    return a
+
+
+def test_m3_5_while_stopped_the_card_waits_on_a_live_thread_and_offers_no_stop(j2, monkeypatch):
+    """A card that waits again on the thread its first choice closed (so the next choice is dropped), or a stopped
+    department's card that still offers Stop (chosen again, it stops the department again on Start), must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    card, client = _card(W, ref), _client()
+    url = "/api/native/%s/asks/%s" % (ref, card["id"])
+    assert client.post(url, json={"option": "stop"}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    assert R._thread(ref, card["thread"])["state"] == "completed"                     # the first choice closed its thread
+    again = _open_card(W, R, ref, card["id"])
+    assert again["thread"] != card["thread"] and [o["id"] for o in again["options"]] == ["words", "leave:D3", "stop"]
+    shown = next(a for a in R.chat_view(ref)["asks"] if a["id"] == card["id"])
+    assert [o["id"] for o in shown["options"]] == ["words", "leave:D3"]               # no Stop while stopped
+    got = client.post(url, json={"option": "stop"})
+    assert got.status_code == 409 and got.json()["detail"]["code"] == "UNKNOWN_OPTION"
+    W.run_until_idle(ref, limit=300)
+    _open_card(W, R, ref, card["id"])
+    assert client.post("/api/dept/%s/j2/start" % ref).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    assert J.status(ref)["state"] == "blocked" and W.dept(ref)["stopped"] is False   # Start is not undone by a second Stop
+    shown = next(a for a in R.chat_view(ref)["asks"] if a["id"] == card["id"])
+    assert [o["id"] for o in shown["options"]] == ["words", "leave:D3", "stop"]       # started, Stop is a way out again
+    seen = len(J.events(ref))
+    assert client.post(url, json={"option": "leave:D3"}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    _applied_leave(W, J, ref, seen)
+
+
+@pytest.mark.parametrize("how", ["leave", "words"])
+def test_m3_5_a_choice_made_while_stopped_is_applied_on_start(j2, monkeypatch, how):
+    """S10 'Stopped: the card can still be answered', S6 'the answer is used on Start': a choice made while the
+    department is stopped that is said as chosen and never applied must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    card, client = _card(W, ref), _client()
+    url = "/api/native/%s/asks/%s" % (ref, card["id"])
+    assert client.post(url, json={"option": "stop"}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    seen = len(J.events(ref))
+    body = {"option": "leave:D3"} if how == "leave" else {"option": "words", "text": "Make it a simple one-page site that shows the cakes"}
+    assert client.post(url, json=body).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    assert W.dept(ref)["stopped"] is True and "cycle.reopened" not in [e["action"] for e in J.events(ref)[seen:]]   # stopped: nothing runs
+    assert client.post("/api/dept/%s/j2/start" % ref).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    if how == "leave":
+        _applied_leave(W, J, ref, seen)
+    else:
+        after = J.events(ref)[seen:]
+        acts = [e["action"] for e in after]
+        assert "cycle.reopened" in acts and next(e for e in after[acts.index("cycle.reopened"):] if e["action"] == "proposal.requested")["step"] == 2
+        shut = next(a for a in W.asks(ref) if a["id"] == card["id"])
+        assert shut["status"] == "chosen" and shut["chosen"]["id"] == "words"
+
+
+def test_m3_5_box_words_identity_puts_back_leave_the_card_answerable(j2, monkeypatch):
+    """Words from the card's box that Identity's take turns into an ask leave the card open: another option chosen after
+    them that is said as chosen and never applied (its thread closed on the words) must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    card, client = _card(W, ref), _client()
+    url = "/api/native/%s/asks/%s" % (ref, card["id"])
+    assert client.post(url, json={"option": "words", "text": OUTSIDE}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    assert [a["kind"] for a in W.asks(ref) if a["status"] == "pending"].count("request") == 1
+    _open_card(W, R, ref, card["id"])
+    seen = len(J.events(ref))
+    assert client.post(url, json={"option": "leave:D3"}).status_code == 200
+    W.run_until_idle(ref, limit=300)
+    _applied_leave(W, J, ref, seen)
+
+
+def test_m3_5_a_choice_is_never_dropped_even_on_a_closed_thread(j2, monkeypatch):
+    """A card kept from before (pending, its thread closed) whose choice is dropped, or a choice the runtime could not
+    post that the card still says was chosen, must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    card = _card(W, ref)
+    R._thread_set(ref, card["thread"], state="completed", outcome={"by": "accept-proposal"})      # as the old fixes left it
+    real = R.on_stamp
+    monkeypatch.setattr(R, "on_stamp", lambda ref, ask, approve: None)
+    with pytest.raises(ValueError):
+        W.choose_option(ref, card["id"], "leave:D3")
+    assert _card(W, ref)["id"] == card["id"] and _card(W, ref)["chosen"] is None    # nothing heard: the card waits as it was
+    monkeypatch.setattr(R, "on_stamp", real)
+    seen = len(J.events(ref))
+    W.choose_option(ref, card["id"], "leave:D3")
+    W.run_until_idle(ref, limit=300)
+    _applied_leave(W, J, ref, seen)
+    heard = [p for p in R.board(ref) if p["src"] == "Owner" and (p["payload"] or {}).get("ask") == card["id"]]
+    assert len(heard) == 1 and heard[0]["thread"] != card["thread"] and R._thread(ref, heard[0]["thread"])["state"] == "completed"
 
 
 OUTSIDE = "Email every customer a newsletter each morning and post it on Instagram"
@@ -895,6 +1093,32 @@ def test_m3_5_words_for_a_blocked_plan_get_identitys_take_either_way(j2, monkeyp
     assert J.status(ref)["state"] == "blocked" and _card(W, ref)["id"] == card["id"]    # the card stays open
     asked = [a for a in W.asks(ref) if a["kind"] == "request" and a["status"] == "pending"]
     assert len(asked) == 1 and asked[0]["words"] == OUTSIDE and "reach outside the site" in asked[0]["text"]
+
+
+@pytest.mark.parametrize("via", ["card", "chat"])
+def test_m3_5_stamped_words_that_reach_outside_reopen_the_blocked_plan(j2, monkeypatch, via):
+    """The owner's stamp on the words Identity put back (they reach outside) is their go: a stamp that only files them in
+    the Brief and leaves the plan blocked must fail."""
+    W, R, J, _, _ = j2
+    ref = _blocked_dept(j2, monkeypatch)
+    card = _card(W, ref)
+    if via == "card":
+        assert _client().post("/api/native/%s/asks/%s" % (ref, card["id"]), json={"option": "words", "text": OUTSIDE}).status_code == 200
+    else:
+        W.owner_ask(ref, OUTSIDE)
+    W.run_until_idle(ref, limit=300)
+    asked = next(a for a in W.asks(ref) if a["kind"] == "request" and a["status"] == "pending")
+    seen = len(J.events(ref))
+    W.decide_ask(ref, asked["id"], True)
+    W.run_until_idle(ref, limit=300)
+    after = J.events(ref)[seen:]
+    acts = [e["action"] for e in after]
+    assert acts[:2] == ["ask.answered", "cycle.reopened"], acts
+    requested = [e for e in after if e["action"] == "proposal.requested"]
+    assert requested[0]["step"] == 2 and len(requested) == J.REPAIRS + 1                # Root's repairs at nought again
+    shut = next(a for a in W.asks(ref) if a["id"] == card["id"])
+    assert shut["status"] == "chosen" and (shut["chosen"]["id"], shut["chosen"]["words"]) == ("words", OUTSIDE)
+    assert OUTSIDE in W.read_files(ref, "Brief", W.latest(ref, "Brief")["v"])["brief.md"]
 
 
 def test_m3_5_a_choice_is_one_shape(j2, monkeypatch):
@@ -944,13 +1168,15 @@ def test_m3_6_the_plain_words_check(j2):
 
 DROP_WHY = "Priority would not grant it and the counter was too small"
 GRANT_Q = "Will Priority grant a budget, or counter it first?"
+BARGAIN_WHY = "I will not grant this; I would counter with half"
 
 
 def _scenarios(j2, monkeypatch):
     """The J2 scenarios, each a department: born and run offline; Priority says no and Identity rules it runs; Priority
     says no and Identity puts the plan to the owner; Root's check refuses the plan until it is blocked; Identity's
-    standard asks; a rule given as an answer; and a model whose words carry the bargain's inside words: Identity's ruling
-    to drop the plan quotes a why that says grant and counter, and its reading of the standard asks in those words."""
+    standard asks; a rule given as an answer; and a model whose words carry the bargain's inside words: Priority's no in
+    those words, which the conflict card Identity puts to the owner quotes; Identity's ruling to drop the plan quotes a
+    why that says grant and counter; and its reading of the standard asks in those words."""
     W, R, J, _, _ = j2
     refs = [_born(j2)]
     _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room"},
@@ -970,6 +1196,8 @@ def _scenarios(j2, monkeypatch):
     W.owner_ask(ref, NEVER)
     W.run_until_idle(ref, limit=300)
     refs.append(ref)
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": BARGAIN_WHY}})
+    refs.append(_born(j2, org="Asked Grant Co"))
     _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "no room"}, "identity.close": {"ruling": "drop", "why": DROP_WHY}})
     refs.append(_born(j2, org="Dropped Co"))
     _model(monkeypatch, R, {"identity.enough": {"enough": False, "missing": ["budget"], "question": GRANT_Q, "why": "no grant yet"}})
@@ -1030,6 +1258,21 @@ def test_m3_6_a_cards_words_are_plain_as_the_line_it_stands_for(j2, monkeypatch)
     # words the owner's table can say plainly are said again, not replaced; and the templates are plain themselves
     assert R.plain_card(ref, {"text": "Priority granted the line", "title": "Priority's grant", "why": "Priority countered (no room)"}, "blocked") == \
         {"text": "Priority said yes to the line", "title": "Priority's yes", "why": "Priority asked for less (no room)"}
+    # the conflict card Identity puts to the owner quotes Priority's no: in the bargain's words, the card is the template,
+    # its line says the same, and the Chat's 'Waiting for you' never shows grant or counter (found by a verifier 2026-10-26)
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": BARGAIN_WHY}})
+    ref = _born(j2, org="Asked Grant Co")
+    conflict = next(a for a in W.asks(ref) if a["kind"] == "conflict" and a["status"] == "pending")
+    assert conflict["text"] == R.PLAIN_TEMPLATE["conflict"] and R.plain_faults(conflict["text"]) == []
+    line = next(p for p in R.board(ref) if (p["payload"] or {}).get("word") == "conflict" and "Owner" in p["dst"])
+    assert line["payload"]["objective"] == conflict["text"]
+    waiting = [a for a in R.chat_view(ref)["asks"] if a["kind"] == "conflict"]
+    assert waiting and not [a for a in waiting if R.plain_faults(a["text"])]
+    # a why the owner's table can say plainly is said again, the plan's name kept
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "Priority countered (no room)"}})
+    ref = _born(j2, org="Asked Less Co")
+    conflict = next(a for a in W.asks(ref) if a["kind"] == "conflict" and a["status"] == "pending")
+    assert "Priority asked for less (no room)" in conflict["text"] and conflict["text"].startswith("Adaptation proposes the plan ")
     assert not [t for t in R.PLAIN_TEMPLATE.values() if R.plain_faults(t)]
 
 
@@ -1091,3 +1334,39 @@ def test_m3_7_an_open_question_on_the_standard_is_on_the_pane(j2, monkeypatch):
     W.save_dept(ref, d)
     row = F.function(ref, "identity")["j2"]["standard"]["rows"][3]
     assert (row["state"], row["note"]) == ("not_met", "the record has no owner")
+
+
+def test_m3_7_a_conflict_closed_is_said_in_plain_words(j2, monkeypatch):
+    """S5's Conflicts closed showing a ruling's why, or the split it closed, as the model wrote it (grant, counter), while
+    every card and line the owner reads is plain, must fail."""
+    W, R, J, _, F = j2
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": BARGAIN_WHY},
+                            "identity.close": {"ruling": "run", "why": DROP_WHY}})
+    ref = _born(j2)
+    ruled = next(e for e in J.events(ref) if e["action"] == "identity.ruled")
+    assert R.plain_faults(ruled["summary"]) == ["grant or counter"]                     # the ledger keeps what was said
+    c = F.function(ref, "identity")["j2"]["conflicts"][0]
+    assert (c["ruling"], c["ruled"]) == ("run", "it runs")
+    assert c["why"] == R.PLAIN_TEMPLATE["why"] and c["split"] == R.PLAIN_TEMPLATE["why"]
+    assert not [v for v in c.values() if isinstance(v, str) and re.search(r"\b(?:grant|counter|refus|orders)", v.lower())]
+    # a why the owner's table can say plainly is said again, never replaced
+    _model(monkeypatch, R, {"priority.bargain": {"answer": "reject", "why": "Priority countered (no room)"},
+                            "identity.close": {"ruling": "run", "why": "Priority's counter leaves out the site"}})
+    ref = _born(j2, org="Plain Co")
+    c = F.function(ref, "identity")["j2"]["conflicts"][0]
+    assert "Priority's ask for less leaves out the site" in c["why"] and "Priority asked for less (no room)" in c["split"]
+
+
+def test_m3_7_every_functions_page_reads_in_the_owners_words(j2):
+    """A function's page (the 'How it works' card of its pane, S5 for Identity) that says refuse, grant, counter, orders,
+    charter or internal system in the words the screen prints must fail; the render test's fixture uses placeholder
+    pages, so this reads the real ones (found by a verifier 2026-10-26: Identity's Holds said 'go, ask, refuse, always')."""
+    W, R, J, _, F = j2
+    W.create("dref-pages", "Pages Website", None)
+    banned = re.compile(r"\b(?:grant|counter|refus|orders\b|charter|internal system)", re.I)
+    for name, page in F.PAGES.items():
+        shown = [page[k] for k in ("vsm", "line", "holds", "hands_to", "keeps", "v1")] + [j[1] for j in page["journeys"]]
+        assert not [t for t in shown if banned.search(t)], (name, [t for t in shown if banned.search(t)])
+        served = F.function("dref-pages", name.lower())
+        assert served["holds"] == page["holds"] and not banned.search(served["holds"])
+    assert "rules (go, ask, never, always)" in F.PAGES["Identity"]["holds"]

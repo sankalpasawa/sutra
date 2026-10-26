@@ -234,10 +234,14 @@ function wbTick(){
     /* the five functions' read is read on the same clock: the Map's boxes, the list's dots, All five and the open
        function's page repaint only when what they show moved (PRD M1.9) */
     if (st.fv[S.dp.sel]) wbLoadFv(S.dp.sel, true);
-    /* a department's answer lands on Root's board without a run of Root's own, so the open chat is read on its own clock */
-    if (wbTab(S.dp.sel) === "chat" && st.chat[S.dp.sel]) wbLoadChat(S.dp.sel, true);
-    /* a function's open chat is read on the same clock */
+    /* a department's answer lands on Root's board without a run of Root's own, so the open chat is read on its own clock;
+       so is the chat read All five and a function's pane draw the cards that wait on the owner from (S6, S10, PRD M3.7),
+       so a card raised, or answered elsewhere, shows there as it does in Chat (found by a verifier 2026-10-26: All five
+       showed 'needs you' and no card) */
     const ftab = (typeof dpS === "function" && dpS().tab[S.dp.sel]) || "", fk = S.dp.sel + ":" + ftab;
+    const cards = wbTab(S.dp.sel) === "chat" || wbTab(S.dp.sel) === "five" || WB_FUNCS.indexOf(ftab) >= 0;
+    if (cards && st.chat[S.dp.sel]) wbLoadChat(S.dp.sel, true);
+    /* a function's open chat is read on the same clock */
     if (ftab && st.fnchat[fk] && dpS().pane[fk] === "chat") wbLoadFnChat(S.dp.sel, ftab, true);
     if (WB_FUNCS.indexOf(ftab) >= 0 && st.fnpage[fk] && (!dpS().pane[fk] || dpS().pane[fk] === ftab)) wbLoadFnPage(S.dp.sel, ftab, true);
     /* and so is the open Agent activity: the lifecycle's events land while the person watches */
@@ -774,9 +778,12 @@ function wbChatTurn(t, scoped, signer){
     `<span class="dpchk">${wbEsc(WB_ACTS[t.msg_type] || t.msg_type)} · ${wbEsc(wbWhen(t.at))}</span></div></div>`;
 }
 /* Identity's question (S6, M0.6): a card in the chat that takes words, never a stamp. Its Send answers where the
-   question lives (/api/dept/{ref}/j2/answer); answered, the card goes quiet and keeps the answer under it. A question
-   on Identity's standard (M3.3) also offers 'Just do it', which ends the questions on the kind's defaults; a question
-   on thin words has no such way, since nothing was said to build from. */
+   question lives (/api/dept/{ref}/j2/answer); answered, the card goes quiet and keeps the answer under it. Every
+   question on Identity's standard (M3.3), whether its reading asked it or its code read the gap on the record, also
+   offers 'Just do it', which ends the questions on the kind's defaults (found by a verifier 2026-10-26: the owner
+   question Identity's code asked had none); a question on thin words has no such way, since nothing was said to
+   build from. */
+function wbTakesJust(q){ return !!(q && (q.standard || (q.missing && q.missing !== "words"))); }
 const WB_ANSWER_SAYS = { EMPTY_ANSWER: "Write your answer first, then Send.", NO_OPEN_QUESTION: "That question is no longer open.",
                          ALREADY_HANDLED: "That question is already answered." };
 function wbQuestionHtml(q, ref, named){
@@ -791,7 +798,7 @@ function wbQuestionHtml(q, ref, named){
     `<div class="wbbox wb"><textarea id="wbd-q-${wbEsc(q.id)}" data-wbdraft="${wbEsc(k)}" data-wbqid="${wbEsc(q.id)}" data-wbqref="${wbEsc(at)}" rows="2" ` +
     `placeholder="Type your answer...">${wbEsc(st.draft[k] || "")}</textarea>` +
     wbBtn(busy ? "Sending..." : "Send", `data-wbanswer="${wbEsc(q.id)}" data-wbref="${wbEsc(at)}"${busy ? " disabled" : ""}`, "dpstamp") +
-    (q.standard ? wbBtn("Just do it", `data-wbjust="${wbEsc(q.id)}" data-wbref="${wbEsc(at)}"${busy ? " disabled" : ""}`) : "") + `</div></div>`;
+    (wbTakesJust(q) ? wbBtn("Just do it", `data-wbjust="${wbEsc(q.id)}" data-wbref="${wbEsc(at)}"${busy ? " disabled" : ""}`) : "") + `</div></div>`;
 }
 /* The open questions and the answered ones, each at its time among the turns: a card goes before the first turn said
    after it was asked. The card is the one place the question and its answer are said: the chat read leaves out
