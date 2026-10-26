@@ -68,7 +68,7 @@
     },
     "audit": {
       "findings_name_where_and_what": "each finding names where it is and what it claims",
-      "has_a_verdict": "a mechanical check gives a verdict with its notes",
+      "has_a_verdict": "a mechanical check gives a verdict with its notes, and each page defect it names says where it is, what is wrong and how serious",
       "picked_a_sample": "it says whether it sampled, and which pages",
       "reading_is_s30": "each done-when item has its reading: a verdict, the claim and the evidence behind it; each finding says where and what"
     },
