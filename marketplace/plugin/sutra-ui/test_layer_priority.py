@@ -579,3 +579,61 @@ def test_p4_the_words_are_the_ones_the_pane_already_says_and_the_owners_not_the_
     assert [b["said"] for b in pane["bargains"]] == list(V1.SAID.values()), "the pane's own bargains say the three words"
     W.append_row(ref, "prices.jsonl", _price_row(why="Priority countered (no room) and kept /Users/someone/secret/plan.md out"))
     assert V1.view(ref, W.dept(ref), [], [])["prices"][0]["why"] == "Priority asked for less (no room) and kept plan.md out", "names, never paths"
+
+
+# ---- P5: Priority's writers say who they are --------------------------------------------------------------------------------
+def _saves(monkeypatch, W):
+    """Every save_dept call, with the function that made it and the `by` it passed; the real save still runs."""
+    import sys
+    calls, real = [], W.save_dept
+
+    def spy(ref, d, by=None):
+        calls.append((sys._getframe(1).f_code.co_name, by))
+        return real(ref, d, by=by)
+    monkeypatch.setattr(W, "save_dept", spy)
+    return calls
+
+
+def test_p5_set_envelope_says_it_is_priority_who_writes_and_leaves_no_ownership_row(live, monkeypatch):
+    """A set_envelope that saves as nobody, or whose envelopes key reads as another layer's, must fail."""
+    W, R, J, _ = live
+    ref = _born(live, settle=False)
+    saves, before = _saves(monkeypatch, W), S.REFUSED["count"]
+    env = W.set_envelope(ref, "Plan", calls=7, usd=1.5, by="the owner")
+    assert saves == [("set_envelope", "priority")] and env == {"calls": 7, "usd": 1.5}
+    assert S.REFUSED["count"] == before, "no ownership row for a key that is Priority's"
+    assert S.validate("envelope", W.dept(ref)["envelopes"]["Plan"]) == []
+    assert any("set Plan's envelope" in r["what"] for r in W.runs(ref) if r.get("engine") == "Priority"), "the row still says who asked, in words"
+
+
+def test_p5_priority_grant_says_it_is_priority_who_writes_and_every_envelope_it_gives_validates(live, monkeypatch):
+    """A grant that saves as nobody must fail: the limits a registered plan is given are written by Priority, and are
+    envelopes the interface accepts."""
+    W, R, J, _ = live
+    _model(monkeypatch, R, {"adapt.line": THREE})
+    saves, before = _saves(monkeypatch, W), S.REFUSED["count"]
+    ref = _born(live, ORGANIC, "Lab Co")
+    given = [c for c in saves if c[0] == "priority_grant"]
+    assert given == [("priority_grant", "priority")], saves
+    envs = W.dept(ref)["envelopes"]
+    assert {"Facts", "Notes", "Summary"} <= set(envs), "each engine the plan registered was given its limit"
+    assert envs["Facts"] == {"calls": 240, "usd": 6.0}, "a work engine is given work_calls times the calls, from Priority's template"
+    assert all(S.validate("envelope", env) == [] for env in envs.values())
+    assert S.REFUSED["count"] == before, "no ownership row for envelopes across a whole department's birth"
+
+
+def test_p5_a_save_that_names_its_layer_is_held_to_the_keys_that_layer_owns(live, ctx):
+    """The point of saying who writes: with `by`, a key another layer owns is reported (a row), so a silent pass over the
+    envelopes is a pass on the key's owner, not a check that was never made."""
+    W, R, J, _ = live
+    ref = ctx["ref"]
+    d = W.dept(ref)
+    d["envelopes"]["Plan"] = {"calls": 3, "usd": 0.5}
+    with S.expect_refused() as met:
+        W.save_dept(ref, dict(d, goal="a goal Priority has no business writing"), by="priority")
+    assert met == ["$.goal: is Identity's, and Priority wrote it"]
+    d2 = W.dept(ref)
+    d2["envelopes"]["Plan"] = {"calls": 4, "usd": 0.5}
+    before = S.REFUSED["count"]
+    W.save_dept(ref, d2, by="priority")
+    assert S.REFUSED["count"] == before
