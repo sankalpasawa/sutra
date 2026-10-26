@@ -1246,12 +1246,21 @@ def test_m4_2_a_later_full_registration_sets_the_line_again_and_merges_what_the_
     assert _sm3(W, R, ref, j5=["Do"]) == []
 
 
+def _register(W, ref, version, engines):
+    """A registration on the department's record, made by hand: the plan the line is checked against when it is written."""
+    d = W.dept(ref)
+    d["workflows"].append(dict(d["workflows"][-1], version=version, engines=list(engines)))
+    W.save_dept(ref, d)
+
+
 def test_m4_2_a_set_line_that_is_not_full_adds_to_the_line_and_a_faulty_table_keeps_what_was_left_out(j2, monkeypatch):
     W, R, J, _ = j2
     _counter_keeps(monkeypatch, R)
     ref = _born(j2)
+    _register(W, ref, 9, ["Plan", "Publish"])     # a registration that adds Publish: the record holding the engine is not one
     t = R.set_line(ref, ["Plan", "Publish"], 9, full=False)
     assert t["line"] == KEEP + ["Publish"] and t["left_out"] == []
+    _register(W, ref, 10, KEEP)
     R.set_line(ref, KEEP, 10)
     t = W._read(W.ddir(ref) / "coordination.json", None)
     t["line"] = KEEP + ["Nobody"]                                   # a name the Library does not define: the table is not read

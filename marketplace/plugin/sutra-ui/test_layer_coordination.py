@@ -4,9 +4,10 @@
       (nineteen, none of them left to the legacy registries), and contract cases 1 to 4 and 7 pass for coordination/v1
   K2  Coordination's words: WORDS and LAYOUT for goal (does, skills) and tie (tie) are the split of its two .md files, layers.prompt
       takes the WORDS path for every part of S.PROMPTS['coordination'], and contract case 5 finds no part on the fallback
-  K3  set_line checks the line as a write before it puts the table: an engine no registered plan names and the owner did not add
-      is one row in warn mode and a refusal in refuse mode (the line then stands as it was); a grown engine passes; every
-      table written while a department of each kind settles validates
+  K3  set_line checks the line as a write before it puts the table: an engine the plan registered last does not name and the
+      owner did not add is one row in warn mode and a refusal in refuse mode (the line then stands as it was), whether the
+      department's record holds it or not (the engine Priority cut is still on the record, and is not registered); a grown
+      engine passes; every table written while a department of each kind settles validates
   K4  view() and engine_card() are functions_view's S7 and S17 read models by reference, and validate as view.coordination
       and view.engine_card in every state a department passes through (empty, running, waiting, alarm, stopped, done; an
       engine running, waiting, held, left out and stopped)
@@ -412,6 +413,87 @@ def test_k3_a_line_of_shaped_engines_is_read_with_its_registrations_source(j2):
     with S.expect_refused() as met:
         t = R.set_line(ref, d["workflows"][-1]["engines"], 2)
     assert met == [] and S.validate("coordination.table", t) == []
+
+
+KEEP = LINE[:3]
+
+
+def test_k3_an_engine_the_plan_cut_is_not_put_back_on_the_line_by_a_hand_made_table(j2, monkeypatch):
+    """The M4.2 hazard itself: Priority asked for less, the plan Root registered left Publish out, and Publish is still on
+    the department's record. A table that puts it back on the line, written with no word, must fail: one row, naming
+    Publish; the record holding the engine does not make it a registered one."""
+    W, R, _, _, _ = j2
+    ref = _left_out(j2, monkeypatch)
+    assert W.dept(ref)["workflows"][-1]["engines"] == KEEP and "Publish" in W.dept(ref)["engines"]
+    assert _table(W, ref)["line"] == KEEP and [r["engine"] for r in _table(W, ref)["left_out"]] == ["Publish"]
+    with S.expect_refused() as met:
+        t = R.set_line(ref, KEEP + ["Publish"], 2)
+    assert len(met.rows) == 1 and met.rows[0]["name"] == "coordination.table" and met.rows[0]["kept"] is True, "warn mode: a row"
+    assert met[0].startswith("line_is_registered: the line holds Publish, which no registered plan names and the owner did not add"), met
+    assert t["line"] == KEEP + ["Publish"], "warn mode: the write goes through"
+
+
+def test_k3_in_refuse_mode_the_engine_the_plan_cut_stays_off_the_line(j2, monkeypatch):
+    """Refuse mode on the cut engine must raise after the row and leave the table as it was, and the handler says the line
+    stands (the same as for an engine the Library has not heard of)."""
+    W, R, _, _, _ = j2
+    ref = _left_out(j2, monkeypatch)
+    before = (W.ddir(ref) / "coordination.json").read_bytes()
+    monkeypatch.setattr(S, "MODE", "refuse")
+    with S.expect_refused() as met:
+        with pytest.raises(S.SchemaFault):
+            R.set_line(ref, KEEP + ["Publish"], 2)
+        got = R.coord_table(R._coord_ctx(ref), {}, {"engines": KEEP + ["Publish"], "version": 2, "full": True})
+    assert len(met.rows) == 2 and not any(r["kept"] for r in met.rows)
+    assert got["line"] == KEEP and got["said"].startswith("kept the line it had: line_is_registered: the line holds Publish")
+    assert (W.ddir(ref) / "coordination.json").read_bytes() == before and R.coordination(ref)["line"] == KEEP
+
+
+def test_k3_only_the_plan_registered_last_counts_so_an_engine_an_earlier_plan_named_and_a_later_one_cut_is_caught(j2):
+    """A line that puts back an engine the latest plan cut, because an earlier plan named it, must fail: the line is what
+    was granted last (PRD M4.2)."""
+    W, R, _, _, _ = j2
+    ref = _born(j2)
+    d = W.dept(ref)
+    assert d["workflows"][-1]["engines"] == LINE
+    R._j2_settle(ref, d, [{"name": n} for n in KEEP], "library", d.get("goal"), "a test")      # a later plan keeps three
+    assert [w["engines"] for w in W.dept(ref)["workflows"]] == [LINE, KEEP] and _table(W, ref)["line"] == KEEP
+    with S.expect_refused() as met:
+        R.set_line(ref, LINE, 3)
+    assert len(met.rows) == 1 and met[0].startswith("line_is_registered: the line holds Publish"), met
+
+
+def test_k3_the_engine_the_owner_added_passes_beside_the_one_the_plan_cut(j2, monkeypatch):
+    """An engine the owner added (grown) that the check calls unregistered, or the cut engine let through because a grown
+    one stands beside it, must fail: the row names Publish and only Publish."""
+    W, R, _, _, _ = j2
+    ref = _left_out(j2, monkeypatch)
+    W.add_engine(ref, "Do")
+    assert _table(W, ref)["grown"] == ["Do"] and R.coordination(ref)["line"] == ["Do"] + KEEP
+    with S.expect_refused() as met:
+        R.set_line(ref, KEEP + ["Publish"], 2)
+    assert len(met.rows) == 1 and "Publish" in met[0] and "Do" not in met[0], met
+    with S.expect_refused() as met:
+        t = R.set_line(ref, KEEP, 3)
+    assert met == [] and t["line"] == ["Do"] + KEEP and [r["engine"] for r in t["left_out"]] == ["Publish"]
+
+
+def test_k3_a_registration_that_is_not_full_adds_an_engine_only_when_a_registered_plan_names_it(j2, monkeypatch):
+    """What stood on the line stays (it was checked when it was written); what a registration that is not full adds must be
+    named by the plan Root registered last. An added engine no plan names, or one a plan named only before it was cut, must
+    fail; one the plan names must pass."""
+    W, R, _, _, _ = j2
+    ref = _left_out(j2, monkeypatch)
+    with S.expect_refused() as met:
+        R.set_line(ref, ["Publish"], 3, full=False)                  # no registered plan names Publish
+    assert len(met.rows) == 1 and met[0].startswith("line_is_registered: the line holds Publish"), met
+    R.set_line(ref, KEEP, 4)                                         # the plan whole again: Publish is off the line
+    d = W.dept(ref)
+    d["workflows"].append(dict(d["workflows"][-1], version=5, engines=["Publish"]))   # a registration of the one engine it adds
+    W.save_dept(ref, d)
+    with S.expect_refused() as met:
+        t = R.set_line(ref, ["Publish"], 5, full=False)
+    assert met == [] and t["line"] == KEEP + ["Publish"] and t["left_out"] == [] and t["registered"] == 5
 
 
 @pytest.mark.parametrize("words,org", [(WEBSITE, "Acme Learning"), (ORGANIC, "Lab Co")])
