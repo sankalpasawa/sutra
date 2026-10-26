@@ -1047,8 +1047,13 @@ def function(ref, fn):
     e = R.engine_def(name) or {}
     layer = S.LAYERS[name.lower()]                       # what the function is, as its page says it: the interface's
     spend = _spend(ref, d, name)
-    fields = [{"key": "goal", "label": "Goal", "value": _cap(_plain(e.get("description")))},
-              {"key": "done", "label": "Done when", "value": None},
+    # the goal is the typed one (the owner's stamped words, else the version's); the function's own done is a proposal until the
+    # owner marks it, then the owner's words (A3.4.6)
+    fn = name.lower()
+    mine = layers.prompts.owner_entry(ref, fn, "goal", "done", "text")
+    fields = [{"key": "goal", "label": "Goal", "value": _cap(_plain(layers.words(ref, fn, "goal", "does")["text"]))},
+              {"key": "done", "label": "Done when", "value": mine["value"] if mine else None,
+               "proposal": _cap(_plain(layers.prompts.defaults(ref, fn, "goal", "done")["text"]))},
               {"key": "hears", "label": "Hears", "value": _hears(name.lower()) or None},
               {"key": "writes", "label": "Writes", "value": _writes(ref, name) or None},
               {"key": "checks", "label": "Checks", "value": _checks(name.lower()) or None},

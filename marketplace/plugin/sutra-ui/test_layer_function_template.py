@@ -22,6 +22,7 @@ import pytest
 import layer_schema as S
 import layers
 import layers.contract as C
+import owner_words
 
 FUNCTIONS = S.FUNCTION_LAYERS
 #: the parts this package adds to the goal group of each function, with what each holds
@@ -506,17 +507,18 @@ def j2(home):
     import org2_apply
     import engine_runtime as R
     import j2_runtime as J
-    for module in (E, W, org2_apply, founding, R, J):
+    import functions_view as FV
+    for module in (E, W, org2_apply, founding, R, J, FV):
         importlib.reload(module)
     if not E.active_roots(E.load_domains()):
         E.mint_domain(None, "Sutra", ["Sutra"], "T-local", origin="operator-request")
-    return W, R, J, founding
+    return W, R, J, founding, FV
 
 
 def _run_offline(j2, monkeypatch, words, org):
     """A department born the way a person makes it and run offline to the end of what it can do alone; every soft call's prompt
     recorded with the step that made it. Returns [(engine, step id, prompt)]."""
-    W, R, J, founding = j2
+    W, R, J, founding, FV = j2
     seen = []
 
     def model(prompt, step):
@@ -575,3 +577,63 @@ class TestTheBlockIsTheOnlyDifference(__import__("test_function_prompts").Fixtur
             self.assertEqual(len(BLOCK.findall(snap[k])), 1, "%s carries the block once" % k)
             self.assertEqual(BLOCK.sub("", snap[k]), before[k], "%s without the block is what it was" % k)
             self.assertEqual(snap[k], got[k], "%s renders as the snapshot holds it" % k)
+
+
+# ---- F6: the pane reads the typed goal, and done is a proposal --------------------------------------------------------------
+def born(j2, words="Build a website that teaches algebra to Class 8 students"):
+    """A department made the way a person makes one (founded, asked for, set up by Root), on the engine runtime."""
+    W, R, J, founding, FV = j2
+    root = founding.found_structure("Acme Learning", owner="Sankalp")["root"]
+    W.owner_ask(root, words)
+    W.run_until_idle(root, limit=300)
+    child = next(d for d in W.list_depts() if d.get("parent") == root)["ref"]
+    W.run_until_idle(child, limit=300)
+    return child
+
+
+def field_of(page, key):
+    return next(f for f in page["fields"] if f["key"] == key)
+
+
+def stamp(j2, ref, fn, part, field, value):
+    W, R, J, founding, FV = j2
+    ask = R.instructions_ask(ref, fn, "goal", part, field, value)
+    W.decide_ask(ref, ask["id"], True)
+    W.run_until_idle(ref, limit=300)
+
+
+def test_the_pane_goal_reads_the_typed_goal_and_done_is_a_proposal(j2):
+    """A3.4.6: the goal field is the typed goal.does (the version's, the owner's over it), capitalised; the done field has no
+    value and is a placeholder until the owner marks it, and carries the version's default as its proposal."""
+    W, R, J, founding, FV = j2
+    ref = born(j2)
+    for fn in FUNCTIONS:
+        page = FV.function(ref, fn)
+        assert [f["key"] for f in page["fields"]][:2] == ["goal", "done"]
+        typed = owner_words.plain(module_of(fn).WORDS["goal"]["does"]["text"])              # the screen's words (Priority gives, never grants)
+        goal, done = field_of(page, "goal"), field_of(page, "done")
+        assert goal["value"] == typed[:1].upper() + typed[1:] and goal["placeholder"] is False, fn
+        proposal = module_of(fn).WORDS["goal"]["done"]["text"]
+        assert done["value"] is None and done["placeholder"] is True, "'not set yet' until the owner marks it"
+        assert done["proposal"] == proposal[:1].upper() + proposal[1:]
+    assert field_of(FV.function(ref, "adaptation"), "goal")["value"].startswith("Decides how the department reaches its goal")
+    assert field_of(FV.function(ref, "priority"), "goal")["value"] == "Gives each engine its limit and answers proposals that cost something"
+    # the owner's stamped goal is the pane's goal, in their words
+    stamp(j2, ref, "adaptation", "does", "text", "decides what the department learns next")
+    assert field_of(FV.function(ref, "adaptation"), "goal")["value"] == "Decides what the department learns next"
+
+
+def test_a_stamped_done_replaces_the_proposal(j2):
+    W, R, J, founding, FV = j2
+    ref = born(j2)
+    before = field_of(FV.function(ref, "audit"), "done")
+    mine = "every page of the live site was read against the brief, and nothing is left to confirm"
+    stamp(j2, ref, "audit", "done", "text", mine)
+    after = field_of(FV.function(ref, "audit"), "done")
+    assert after["value"] == mine and after["placeholder"] is False, "the owner's words, as they gave them"
+    assert after["proposal"] == before["proposal"], "the proposal is the version's, and stays what it was"
+    assert field_of(FV.function(ref, "priority"), "done")["value"] is None, "only that function's"
+    # the owner gives the shipped words back: the stamp goes, and the field is a placeholder again
+    stamp(j2, ref, "audit", "done", "text", module_of("audit").WORDS["goal"]["done"]["text"])
+    again = field_of(FV.function(ref, "audit"), "done")
+    assert again["value"] is None and again["placeholder"] is True
