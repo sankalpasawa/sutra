@@ -130,6 +130,22 @@ The owner's messages are quoted in A3.0 of [PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-F
 | A3-18 | The prototype's test plan T1 to T15 is mapped to the rows it exercises; disputes between pairs other than the bargain (T11) are left (BL-15). (A3-D29) | The prototype's own plan covers J2 edges the site does not | A3.9 |
 | A3-19 | Words: "recognition" for Identity's five (the key `journeys` is not renamed); "working agreement" for `team.md`'s shared rules; "base class" means the interface only. (A3-D18) | Two meanings of "journey" and of "rule" in the code | A3.10 |
 
+## The J2 page inside the app: rows the owner's UI-port instruction settles
+
+On 2026-10-26 the owner said: "Take latest pull from J2 prototype and implement UI in the exact same fashion, no change." The department page is now the prototype's own page (pinned at `f9ceba1`), fed by an adapter built on the department's records; the design of record is [PRD-FIVE-FUNCTIONS-J2UI.md](PRD-FIVE-FUNCTIONS-J2UI.md) (section 6 gives the disposition of every earlier UI step). The rows below are settled by that instruction and are superseded as written above; the classic panes and their tests stay (reachable in `Settings and records`, and for departments of the other kinds) until the owner signs off a deletion. The pinned commit `f9ceba1` in the A1.28 table stays.
+
+| Id | Settled by the UI port | Where |
+|---|---|---|
+| MK-5 | Superseded. Adaptation, Priority, Coordination and Audit have no panes of their own on the page; the page's Workflows, Conflicts, Timeline, Audit and Map tabs carry what S7, S8, S9 and S12 showed. The panes stay in records mode. | J2UI section 6 |
+| MK-6 | Superseded. Internal messages are the Detailed chat, the Timeline and the Map's speaks-to lines, read only; there is no row of their own. | J2UI section 6 (S13) |
+| MK-8 | Superseded. The page's Map, state pill and function chips replace the All five overview, the state dots on function rows and the strip's NOW pill; the rail naming 'About' is unchanged. | J2UI section 6 (S1 to S4) |
+| A1-P2 | Superseded. The Map is the prototype's metro line, as the prototype draws it. | J2UI section 6 (S1, `W3-MAP`) |
+| A1-P3 | Superseded as a screen rule for the page: the page draws status colours as the prototype does, and a word or badge always goes with a status. | J2UI sections 5 and 7 |
+| A1-P4 | Superseded. The page's own rail navigation is adopted inside the page; the app's shell rail is unchanged. | J2UI section 6 (A1.28 rail navigation) |
+| A1-P6 | Superseded. The phone-width check is a real Chrome test at 390 and 1280 px (`design/j2ui`, `qa/walks/j2ui-e2e.sh`). | J2UI section 6 (M10.4) |
+
+No release until the owner has seen the screenshots in `design/j2ui` with the sign-off list in J2UI section 7 (decision D-SIGNOFF).
+
 provenance: {author: claude, date: 2026-10-23, inputs: [PRD-FIVE-FUNCTIONS.md open questions], review: none by the owner yet, confidence: high that each row matches the PRD's stated default}
 provenance (A1 rows): {author: claude, date: 2026-10-26, inputs: [the owner's two messages of 2026-10-26, the A1 review], review: none by the owner yet, confidence: high that A1-1 and A1-2 state the owner's direction; the rest are defaults}
 provenance (A2 rows): {author: claude, date: 2026-10-26, inputs: [the owner's messages of 2026-10-26 on base and child classes and on templates, the A2 draft, the A2 review], review: none by the owner yet, confidence: high that A2-1 to A2-3 state the owner's direction; the rest are defaults}

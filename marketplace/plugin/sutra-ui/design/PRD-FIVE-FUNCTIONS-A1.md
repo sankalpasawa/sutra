@@ -10,6 +10,7 @@
 | Decision log | the A1 rows of [PRD-FIVE-FUNCTIONS-DECISIONS.md](PRD-FIVE-FUNCTIONS-DECISIONS.md) |
 | Pointer for code | `schemas/layers/README.md` (written in wave 0) lists, per layer, the `layer_schema` names that hold it |
 | Amended by | [PRD-FIVE-FUNCTIONS-A2.md](PRD-FIVE-FUNCTIONS-A2.md), 2026-10-26: the class model of the interface layer (the interface is the base class, a layer version is a child class that may extend an earlier version, the workflow sources are a family). A2 changes no interface table; A1 stands as written except the lines marked 'Amended by A2' under A1.18 and A1.19. Also [PRD-FIVE-FUNCTIONS-A3.md](PRD-FIVE-FUNCTIONS-A3.md), 2026-10-26: a template at every level and the user-journey template. A3 adds interface rows only and changes no existing row; the lines marked 'Amended by A3' under A1.16 and A1.22 |
+| UI port | [PRD-FIVE-FUNCTIONS-J2UI.md](PRD-FIVE-FUNCTIONS-J2UI.md), 2026-10-26: the department's UI is the J2 prototype's page, fed by an adapter on the records. Its section 6 gives the disposition of the A1 screen steps (A1.28 and the W1-UI rows); the page's pin stays at the prototype commit `f9ceba1` of the A1.28 table. |
 
 ## A1.0 The direction, and how this reads it
 
