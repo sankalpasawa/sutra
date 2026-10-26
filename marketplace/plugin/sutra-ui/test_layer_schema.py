@@ -608,6 +608,10 @@ def test_s3_every_soft_steps_out_keys_are_named_in_its_parts_returns():
                 assert '"%s"' % key in p["returns"], "%s: %s is not in its part's returns" % (s["id"], key)
 
 
+#: the parts later steps added to S.PROMPTS, with no .md file to hold them (each package adds its own)
+ADDED_PARTS = {("adaptation", "make", "shape")}
+
+
 def test_s3_prompts_are_the_bundles_parts_and_the_returns_byte_for_byte():
     for fn, files in R.INSTRUCTIONS.items():
         assert list(S.PROMPTS[fn]) == list(files) and list(S.GROUPS[fn]) == list(files)
@@ -618,7 +622,8 @@ def test_s3_prompts_are_the_bundles_parts_and_the_returns_byte_for_byte():
             if not parts:
                 assert list(S.PROMPTS[fn][file]) == ["note"], "a file no step reads is its note (A1.16 rule 7)"
                 continue
-            assert list(S.PROMPTS[fn][file]) == list(parts)
+            # a part a later step added to the interface (A1.16, 'Parts added by later steps') is in no file of the bundle
+            assert [p for p in S.PROMPTS[fn][file] if (fn, file, p) not in ADDED_PARTS] == list(parts)
             for part, slots in parts.items():
                 p = S.PROMPTS[fn][file][part]
                 assert p["inputs"] == tuple(slots)
@@ -987,6 +992,7 @@ def test_s7_nothing_in_the_layer_package_imports_the_runtime_at_import_time():
     for layer in S.LAYER_NAMES:
         m = importlib.import_module("layers.%s.v1" % layer)
         assert (m.LAYER, m.VERSION, m.IMPLEMENTS) == (layer, 1, S.SCHEMA_VERSION)
-        assert (m.CODE, m.PROMPT, m.DRAFT, m.CHECK, m.WORDS, m.LAYOUT) == ({}, {}, {}, {}, {}, {})
+        # wave 0 held stubs with empty dicts; from wave 1 a layer fills them (by reference first), and holds nothing else
+        assert all(isinstance(x, dict) for x in (m.CODE, m.PROMPT, m.DRAFT, m.CHECK, m.WORDS, m.LAYOUT))
         assert getattr(m, "RECIPE_TEMPLATE" if layer == "root" else "RECIPE") == ("Setup" if layer == "root" else "v1.json")
         assert (S.HERE / "layers" / layer / "__init__.py").read_text(encoding="utf-8") == ""

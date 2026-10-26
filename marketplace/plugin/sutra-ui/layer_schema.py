@@ -922,6 +922,7 @@ SENDS = {
         {'act': 'propose', 'words': ('engine', 'rung'), 'to': ('Identity',), 'payload': 'act.any'},
         {'act': 'inform', 'words': ('idea',), 'to': ('Identity',), 'payload': 'act.any'},
         {'act': 'inform', 'words': ('conflict',), 'to': ('Identity',), 'payload': 'act.conflict'},
+        {'act': 'inform', 'words': ('doubt',), 'to': ('Identity',), 'payload': 'act.doubt'},      # W1-ADAPT, M6.4
     ],
     'Priority': [
         # Priority answers with the word of the proposal it answers (priority_post), and asks for less on any of them
@@ -1134,6 +1135,14 @@ PROMPTS = {
                                 '"internet": bool}]}.',
                      'read_by': 'adapt.line'},
             'refused': {'fields': {}, 'inputs': ('faults',), 'returns': None, 'read_by': None},   # feeds make.line's refused input
+            # A1-SHAPE (W1-ADAPT, M6.4): adapt.line reads this part, not make.line, when the make setting is on and no template fits
+            'shape': {'fields': {'task': 'field.task', 'guidance': 'field.guidance'},
+                      'inputs': ('dept', 'words', 'items', 'practices', 'rules', 'taken', 'out', 'refused'),
+                      'returns': 'Return ONLY a JSON object: {"engines": [{"name": str, "does": str, "reads": str, "writes": str, '
+                                 '"covers": ["D1"], "level": 1 | 2, "confidence": number, "doubt": str, "internet": bool}]}, or '
+                                 '{"cannot": {"engine": str, "items": ["D1"], "why": str}} when an engine the kind requires cannot '
+                                 'serve an item.',
+                      'read_by': 'adapt.line'},
         },
     },
     'priority': {

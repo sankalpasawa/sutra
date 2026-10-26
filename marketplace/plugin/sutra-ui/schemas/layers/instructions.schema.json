@@ -113,7 +113,11 @@
       },
       "make": {
         "line": {},
-        "refused": {}
+        "refused": {},
+        "shape": {
+          "guidance": "field.guidance",
+          "task": "field.task"
+        }
       },
       "sense": {
         "shape": {}

@@ -5765,6 +5765,24 @@
           ],
           "read_by": null,
           "returns": null
+        },
+        "shape": {
+          "fields": {
+            "guidance": "field.guidance",
+            "task": "field.task"
+          },
+          "inputs": [
+            "dept",
+            "words",
+            "items",
+            "practices",
+            "rules",
+            "taken",
+            "out",
+            "refused"
+          ],
+          "read_by": "adapt.line",
+          "returns": "Return ONLY a JSON object: {\"engines\": [{\"name\": str, \"does\": str, \"reads\": str, \"writes\": str, \"covers\": [\"D1\"], \"level\": 1 | 2, \"confidence\": number, \"doubt\": str, \"internet\": bool}]}, or {\"cannot\": {\"engine\": str, \"items\": [\"D1\"], \"why\": str}} when an engine the kind requires cannot serve an item."
         }
       },
       "sense": {
@@ -6253,6 +6271,16 @@
         ],
         "words": [
           "conflict"
+        ]
+      },
+      {
+        "act": "inform",
+        "payload": "act.doubt",
+        "to": [
+          "Identity"
+        ],
+        "words": [
+          "doubt"
         ]
       }
     ],
