@@ -1,14 +1,15 @@
 #!/bin/bash
 # The J2 page end to end in a real browser (UI port, package j2ui-verify, T5): the app from source on a record of its own, the
-# four departments of test_fixtures/j2ui/seed.py on it (start, question, ready, hostile), and shot-j2.js on each.
+# five departments of test_fixtures/j2ui/seed.py on it (start, question, building, ready, hostile), and shot-j2.js on each.
 #   usage: qa/walks/j2ui-e2e.sh [record-dir] [port] [out-dir]
 #   record-dir  default: a new directory under $TMPDIR (kept, and named at the end)
 #   port        default 8362 (not the walks' 8341, so a founder's own server is left alone)
 #   out-dir     where the screenshots go, default design/j2ui
-# The offline functions answer (SUTRA_WEBSITE_OFFLINE=1): nothing here calls a model. The server is this app's uvicorn and is
-# stopped on the way out, whatever happened. After the four, the structure of the page is compared with the prototype's own
+# The offline functions answer (SUTRA_WEBSITE_OFFLINE=1) and the motor is off (SUTRA_MOTOR_OFF=1, which wins over the SUTRA_MOTOR=1
+# devserver.sh sets): nothing here calls a model, and no departments' records move while the browser looks at them. The server is this app's uvicorn and is
+# stopped on the way out, whatever happened. After the five, the structure of the page is compared with the prototype's own
 # (its pinned commit, extracted with git archive and served in mock mode on a scratch copy of one saved run; nothing in the
-# prototype's folder is written) and written to <out-dir>/STRUCTURE.md. Exit 0 when every claim of shot-j2.js held on all four
+# prototype's folder is written) and written to <out-dir>/STRUCTURE.md. Exit 0 when every claim of shot-j2.js held on all five
 # and the structure matched, 1 otherwise.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -22,11 +23,11 @@ if [ ! -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ] && [ 
   echo "j2ui-e2e: Google Chrome is not here (set CHROME); nothing was run"
   exit 0
 fi
-export SUTRA_WEBSITE_OFFLINE=1 J2_FLOW_V1=1 J1_FLOW_V1=1
+export SUTRA_WEBSITE_OFFLINE=1 SUTRA_MOTOR_OFF=1 J2_FLOW_V1=1 J1_FLOW_V1=1
 mkdir -p "$REC" "$OUT"
 cd "$UI" || exit 1
 bash "$HERE/devserver-stop.sh" "$PORT" 2>&1 | tail -1
-SEEDED="$("$PY" test_fixtures/j2ui/seed.py "$REC" start question ready hostile 2>/dev/null)" || { echo "j2ui-e2e: the seed failed"; exit 1; }
+SEEDED="$("$PY" test_fixtures/j2ui/seed.py "$REC" start question building ready hostile 2>/dev/null)" || { echo "j2ui-e2e: the seed failed"; exit 1; }
 echo "$SEEDED"
 ref_of() { echo "$SEEDED" | awk -v s="$1" '$1 == s { print $2 }'; }
 PPORT="${PROTO_PORT:-8763}"
@@ -40,7 +41,7 @@ trap 'bash "$HERE/devserver-stop.sh" "$PORT" >/dev/null 2>&1; stop_proto' EXIT
 bash "$HERE/devserver-detach.sh" "$REC" "$PORT" | tail -3
 curl -s -m 5 "http://127.0.0.1:$PORT/j2ui/$(ref_of ready)/" -o /dev/null -w "page: %{http_code}\n"
 RC=0
-for st in start question ready hostile; do
+for st in start question building ready hostile; do
   echo "=== $st"
   node "$HERE/shot-j2.js" "$OUT" "http://127.0.0.1:$PORT" "$(ref_of "$st")" "$st" || RC=1
 done

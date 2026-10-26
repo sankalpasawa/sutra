@@ -6,7 +6,7 @@
        out-dir   where the PNGs go (design/j2ui)
        base-url  the app, e.g. http://127.0.0.1:8362
        dept-ref  a department of kind website on the engine runtime (qa/walks/j2ui-e2e.sh seeds them)
-       kind      start | question | ready | hostile (default ready): which screens to take and which claims to make
+       kind      start | question | building | ready | hostile (default ready): which screens to take and which claims to make
      and, to compare the page's structure with the prototype's own (design/j2ui/STRUCTURE.md):
             node qa/walks/shot-j2.js <out-dir> <base-url> <page-path> outline <label>
        writes <out-dir>/outline-<label>.json: the DOM outline (tag, id, classes; no text) of the Simple and the Detailed view of the page
@@ -34,7 +34,7 @@ const BASE = (process.argv[3] || "").replace(/\/$/, "");
 const REF = process.argv[4];
 const KIND = process.argv[5] || "ready";
 const LABEL = process.argv[6] || "page";
-if (!OUT || !BASE || !REF) { console.log("usage: node shot-j2.js <out-dir> <base-url> <dept-ref> [start|question|ready|hostile]"); process.exit(2); }
+if (!OUT || !BASE || !REF) { console.log("usage: node shot-j2.js <out-dir> <base-url> <dept-ref> [start|question|building|ready|hostile]"); process.exit(2); }
 const CHROME = process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const PORT = Number(process.env.SHOT_PORT || 9361);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -155,7 +155,11 @@ const check = (name, ok, detail) => { results.push({ name, ok: !!ok }); console.
     if (KIND === "start") check(label + ": the start screen offers its example briefs", simple.examples >= 3 && simple.msgs > 0, JSON.stringify(simple));
     if (KIND === "question") check(label + ": the question has its option buttons", simple.opts >= 2, JSON.stringify(simple));
     if (KIND === "ready") check(label + ": the ready card is there", simple.ready, JSON.stringify(simple));
-    if (["start", "question", "ready"].includes(KIND)) await shot(`simple-${KIND}-${vp.tag}.png`);
+    if (KIND === "building") {
+      const lock = JSON.parse(await run(`JSON.stringify({ box: document.getElementById('sbox').disabled, send: document.getElementById('ssend').disabled, status: document.getElementById('sstatus').innerText })`));
+      check(label + ": while work runs and nothing waits on the owner the composer is locked and the page says what is being built", lock.box && lock.send && /^Building|^Planning|^Checking/.test(lock.status), JSON.stringify(lock));
+    }
+    if (["start", "question", "building", "ready"].includes(KIND)) await shot(`simple-${KIND}-${vp.tag}.png`);
     quiet(label + " simple");
 
     if (KIND !== "ready" && KIND !== "hostile") continue;
@@ -187,6 +191,12 @@ const check = (name, ok, detail) => { results.push({ name, ok: !!ok }); console.
       check(label + ": tab " + t + " is shown and says no undefined or NaN", shown && !bad, "shown=" + shown + " bad=" + bad);
     }
     check(label + ": all 16 tabs were walked or are hidden by the page", walk.filter(w => w[1] !== "skipped").length >= 14);
+    if (KIND === "ready" && !vp.mobile) {                  // the tabs the owner's sign-off list points at (design/PRD-FIVE-FUNCTIONS-J2UI.md)
+      for (const t of ["runsettings", "rundetails", "report", "style", "lessons", "playbooks", "charter", "preview", "audit"]) {
+        await run(`document.querySelector('.rail [data-tab="${t}"]').click()`);
+        await shot(`detail-${t}-${vp.tag}.png`);
+      }
+    }
     if (KIND === "ready" && !vp.mobile) {
       await run(`document.querySelector('.rail [data-tab="workflows"]').click()`);
       await shot(`detail-workflows-${vp.tag}.png`);

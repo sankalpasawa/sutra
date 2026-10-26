@@ -22,12 +22,13 @@ and the departments the contract needs besides (EXTRAS):
     pursuing_line     the whole line filed, Audit found something and Identity asks the owner to put it right (a finding)
     filed             the whole line filed with real pages (Brief, Site plan, Pages, Build, Live site), a clean reading, nothing waiting
     default_kind      a department of kind default under a Root: the J2 view is not for either (404 on every route)
-and the four the Chrome walk uses (qa/walks/j2ui-e2e.sh; HOMED):
+and the five the Chrome walk uses (qa/walks/j2ui-e2e.sh; HOMED):
     start       a department nothing has been said to: the page's start screen
     question    the department as a person makes it (found an organisation, said the words, Root set it up, the line ran to its first
                 question): Identity asks whether the site may go live, with Stamp and Say no
     ready       the same, stamped and read by Audit with nothing to put right: the page's "Your website is ready" card
     hostile     a department whose every string is an attacker's (see hostile())
+    building    the plan registered, Plan and Write filed and Check running, nothing waiting on the owner: the page's composer is locked
 
 As a script:  python test_fixtures/j2ui/seed.py <home-dir> <state> [<state> ...]
 writes the departments of the HOMED states under <home-dir>, laid out as qa/walks/devserver.sh reads them (one set of homes), and prints
@@ -48,7 +49,7 @@ REF = "dref-j2c0001"
 ROOT = "dref-j2root1"
 WEBSITE = "Build a website that teaches algebra to Class 8 students"
 EXTRAS = ("two_publish_asks", "root_follow_up", "running_line", "with_board", "pursuing_line", "filed", "default_kind")
-HOMED = ("start", "question", "ready", "hostile")
+HOMED = ("start", "question", "ready", "hostile", "building")
 ALIASES = {"not_yet": "not_started"}
 READING = {"read": 1, "met": ["D1"], "not_met": [], "to_confirm": [], "high": []}
 
@@ -195,15 +196,15 @@ def file_line(m, upto, ref=REF):
                                              "started": m.W.now(), "ended": m.W.now()})
 
 
-def _running_line(m):
+def _running_line(m, ref=REF):
     from test_fixtures.j2ui import core_fixtures as K
-    K.cycle(m, "running", 6)
-    register_line(m)
-    file_line(m, 3)
-    K.run(m, "Plan", status="ok", id="r-plan-ok", slot="Plan@brief.v1", spend={"calls": 1, "usd": 0.02})
-    K.run(m, "Write", status="ok", id="r-write-ok", slot="Write@site-plan.v1", spend={"calls": 3, "usd": 0.08})
-    K.run(m, "Check", status="running", id="r-check-run", slot="Check@pages.v1", what="Check the pages")
-    K.event(m, "identity.assessed", actor="Identity", step=1, summary="The identity is good enough to start on.")
+    K.cycle(m, "running", 6, ref=ref)
+    register_line(m, ref)
+    file_line(m, 3, ref)
+    K.run(m, "Plan", status="ok", id="r-plan-ok", slot="Plan@brief.v1", spend={"calls": 1, "usd": 0.02}, ref=ref)
+    K.run(m, "Write", status="ok", id="r-write-ok", slot="Write@site-plan.v1", spend={"calls": 3, "usd": 0.08}, ref=ref)
+    K.run(m, "Check", status="running", id="r-check-run", slot="Check@pages.v1", what="Check the pages", ref=ref)
+    K.event(m, "identity.assessed", actor="Identity", step=1, summary="The identity is good enough to start on.", ref=ref)
 
 
 def _with_board(m):
@@ -277,6 +278,19 @@ def seed(tmp, state, env=None, ref=None, m=None, layout="test"):
         return r, m
     if name == "hostile":
         return hostile(m, ref), m
+    if name == "building":
+        ref = ref or "dref-building1"
+        m.W.create(ref, "City Care Hospital Website", None, kind="website")
+        _running_line(m, ref)
+        from test_fixtures.j2ui import core_fixtures as K              # what was said, so the page shows a conversation under way
+        # threads the runtime has finished with (state completed), so a motor running on these records has nothing of theirs to act on
+        K.thread(m, "Owner", "Identity", "request", "request", tid="x-own", ref=ref, state="completed", words=WEBSITE, objective=WEBSITE,
+                 output="the Brief's next version")
+        K.thread(m, "Identity", "Owner", "inform", "planned", tid="x-plan", ref=ref, state="completed",
+                 done="Planned 2 pages: Home and About. Say which to drop or add.")
+        K.thread(m, "Coordination", "Write", "inform", "start", tid="x-start", ref=ref, state="completed", words="Check starts on the pages")
+        m.ref = ref
+        return ref, m
     if name == "root_follow_up":
         return _root_follow_up(m), m
     if name == "default_kind":
