@@ -520,7 +520,8 @@
     "usd": 6.0,
     "work_calls": 8
    },
-   "line": 6
+   "line": 6,
+   "call_usd": 0.04
   },
   "start": {
    "on": [

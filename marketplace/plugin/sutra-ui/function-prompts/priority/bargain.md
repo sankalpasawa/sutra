@@ -6,8 +6,10 @@ Adaptation proposes the workflows this department runs to reach its goal, {{sour
 {{engines}}
 WHAT EACH COSTS: up to {{calls}} calls and {{usd}} USD a day.
 ROOM FOR THIS MANY WORKFLOWS: {{room}} (the limit is {{limit}})
+WHAT THE LINE IS LIKELY TO COST, from what each has cost before: {{estimate}}
+WHAT REMAINS OF TODAY'S ROOM AFTER IT: {{remaining}}
 
-accept: grant them all. counter: grant only some, and name which to keep, in order. reject: grant none.
+accept: grant them all. counter: grant only some, and name which to keep, in order. reject: grant none. Give your reason in money and room, from the figures above.
 Return ONLY a JSON object: {"answer": "accept" | "counter" | "reject", "why": "one line", "keep": [names]}.
 
 ## engine

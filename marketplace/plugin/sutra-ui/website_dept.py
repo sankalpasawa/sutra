@@ -882,7 +882,7 @@ def set_envelope(ref, name, calls=None, usd=None, by="the owner"):
     if usd is not None:
         env["usd"] = max(0.0, float(usd))
     d.setdefault("envelopes", {})[name] = env
-    save_dept(ref, d)
+    save_dept(ref, d, by="priority")      # the envelope is Priority's key, whoever asked (`by` above is who, in words)
     system_run(ref, "Priority", "%s set %s's envelope: %d calls, %.2f USD a day" % (by, name, env["calls"], env["usd"]))
     return env
 

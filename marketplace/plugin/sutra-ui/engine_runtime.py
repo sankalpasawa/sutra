@@ -4341,7 +4341,7 @@ def priority_grant(ctx, step, item):
                 envs[n]["usd"] = min(float(envs[n]["usd"]), share)
             given.append(n)
         if given:
-            W.save_dept(ref, d)
+            W.save_dept(ref, d, by="priority")
     J = _j2()
     if J:
         for n in names:

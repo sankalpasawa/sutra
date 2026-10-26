@@ -274,6 +274,9 @@ def test_r2_a_plan_is_priced_by_the_latest_row_for_it_and_a_ruling_above_priorit
     d = W.dept(ref)
     plan = [{"name": n} for n in LINE]
     fits = lambda: next(r for r in R._root_checks(ref, d, plan, "library") if r["check"] == "fits_room")
+    # Priority prices the line while the department is born (W1-PRIORITY, M5.3), so the unpriced start is made here: the
+    # journal Priority wrote is taken away, and every assertion below is about the rows this test writes
+    (W.ddir(ref) / "prices.jsonl").unlink(missing_ok=True)
     assert fits() == {"check": "fits_room", "passed": True, "why": "not priced here"}
     price = {"at": W.now(), "proposal": "line", "thread": "t-1", "engines": LINE, "estimate": {"calls": 60, "usd": 3.0},
              "room": {"calls": 30, "usd": 6.0}, "answer": "counter", "keep": LINE[:3], "why": "room for three today"}
