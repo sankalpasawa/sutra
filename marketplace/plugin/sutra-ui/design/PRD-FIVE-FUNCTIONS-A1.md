@@ -345,7 +345,9 @@ There is no rule tying `windows` or `envelopes` keys to the department's engines
                      'created': text(40), 'decided': text(40), 'by': text(80), 'engine': text(60), 'thread': nullable(text(80)),
                      'options': items(ref('option'), OPTIONS_MAX),
                      'chosen': nullable(obj({'id': text(64), 'label': text(120), 'at': text(40), 'by': text(80), 'words': nullable(text(2000))})),
-                     'items': items(ref('identity.done_item'), DONE_ITEMS_MAX), 'cycle_id': nullable(text(80))},
+                     'items': items(ref('identity.done_item'), DONE_ITEMS_MAX), 'cycle_id': nullable(text(80)),
+                     'doubt': obj({'engine': text(40), 'doubt': text(600), 'shown': text(600), 'fallback': text(600),
+                                   'line': nullable(integer(0)), 'answered': any_of(integer(0), boolean())})},   # M3.9: the ask that puts a doubt
                     required=('id', 'kind', 'status'))       # open: title, who, why, if_nothing, missing, standard, points, fn, file, ...
 ASK_STATUSES = ('pending', 'stamped', 'refused', 'answered', 'chosen', 'replaced')
 ASK_KINDS = ('publish', 'setup', 'engine', 'envelope', 'alarm', 'finding', 'hole', 'rule', 'goal', 'rung', 'trial',
@@ -467,7 +469,7 @@ Every payload is open: unknown keys pass, and only the fields named here are typ
 | act.tell | (word: text 40), done: say 4000, card: text 40 |
 | act.ask | (word: text 40), objective: say 4000, output, may_read, boundaries |
 | act.verdict | (word: verdict), answer: admit, wait or refuse; why |
-| act.line_request | (word: line), words, objective, faults: [text 600], practices: {rules, engines, artifacts, required, taken} (M6.3, wave 1) |
+| act.line_request | (word: line), words, objective, faults: [text 600], practices: {rules, engines, artifacts, required, taken} (M6.3, wave 1), answer: text 2000, doubt: text 600, fallback: text 600, go_on: bool (M3.9, W1-IDENTITY: the owner's answer to Adaptation's doubt, the doubt and its fallback; go_on tells Adaptation to go on to Priority with the doubt named, as for a confidence from 0.6 to under 0.8, and not to doubt again) |
 | act.line | (word: line), engines: [name or workflow.engine], 0 to 24; source: SOURCES; words, for, covers: map of D-id to [name] (M5.1, wave 1), doubt and confidence (M6.4, wave 1), fit: map of name to text 300 (M5.2, wave 2), keep: [name], why |
 | act.conflict | (word: conflict), engines, source, why: text 600, bound: text 40 or null, options: [option], at most 3 |
 | act.finding | (word: finding), claim: text 600, severity, where, page, item, v |

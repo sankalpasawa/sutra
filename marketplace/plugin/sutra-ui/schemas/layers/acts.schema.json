@@ -449,6 +449,21 @@
     "act.line_request": {
       "additionalProperties": true,
       "properties": {
+        "answer": {
+          "maxLength": 2000,
+          "minLength": 0,
+          "type": "string"
+        },
+        "doubt": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
+        "fallback": {
+          "maxLength": 600,
+          "minLength": 0,
+          "type": "string"
+        },
         "faults": {
           "items": {
             "maxLength": 600,
@@ -457,6 +472,9 @@
           },
           "minItems": 0,
           "type": "array"
+        },
+        "go_on": {
+          "type": "boolean"
         },
         "objective": {
           "maxLength": 2000,

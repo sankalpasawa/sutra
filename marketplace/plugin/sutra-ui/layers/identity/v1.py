@@ -391,7 +391,7 @@ def doubt_answered(ctx, got):
     answer = ("going with this: " + fallback.rstrip(".")) if hurry else words
     row = R._file_words(ref, d, "To Identity's question (%s): %s" % (doubt.rstrip("?."), answer), "the owner's answer")
     sent = R.post(ref, "Identity", "Adaptation", "request",
-                  _line(ref, R._brief_text(ref).strip() or d.get("goal") or words, doubt=doubt, answer=answer))
+                  _line(ref, R._brief_text(ref).strip() or d.get("goal") or words, doubt=doubt, answer=answer[:2000]))   # the Brief keeps all
     with W._lock(ref):
         ask = next((a for a in W.asks(ref) if a["id"] == got["doubt"]), ask)
         ask["doubt"] = dict(meta, answered=(sent or {}).get("n") or True)

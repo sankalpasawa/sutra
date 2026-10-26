@@ -440,6 +440,39 @@ def test_i5_identitys_recipe_hears_a_doubt_and_the_interface_says_so(home):
     assert S.validate("act.doubt", {"word": "doubt", "engine": "Site", "doubt": DOUBT, "fallback": FALLBACK_SAYS, "confidence": 0.45}) == []
 
 
+def test_i5_the_interface_declares_the_fields_a_doubt_adds_to_the_line_request_and_the_ask():
+    """The line request Identity posts carries answer, doubt, fallback and go_on; the ask that puts a doubt carries the doubt
+    record. The interface types them (A1.13), so a wrong type is a fault, and Adaptation has a name to read go_on by."""
+    props = S.DEFS["act.line_request"]["properties"]
+    assert (props["go_on"], props["answer"]["maxLength"], props["doubt"]["maxLength"], props["fallback"]["maxLength"]) == ({"type": "boolean"}, 2000, 600, 600)
+    assert set(S.DEFS["identity.ask"]["properties"]["doubt"]["properties"]) == {"engine", "doubt", "shown", "fallback", "line", "answered"}
+    ok = {"word": "line", "words": "w", "answer": "Email it", "doubt": DOUBT, "fallback": FALLBACK_SAYS, "go_on": True}
+    assert S.validate("act.line_request", ok) == [] and S.validate("act.line_request", {"word": "line"}) == [], "all of them are optional"
+    for key, bad in (("go_on", "not a bool"), ("go_on", 1), ("answer", 123), ("answer", "x" * 2001), ("doubt", ["x"]), ("doubt", "x" * 601),
+                     ("fallback", None), ("fallback", "x" * 601)):
+        assert any(key in f for f in S.validate("act.line_request", dict(ok, **{key: bad}))), (key, bad)
+    held = {"id": "a-1", "kind": "j2_identity", "status": "pending", "doubt": {"engine": "Site", "doubt": DOUBT, "shown": DOUBT, "fallback": FALLBACK_SAYS,
+                                                                                  "line": 7, "answered": 9}}
+    assert S.validate_record("identity", "ask", held) == []
+    assert S.validate_record("identity", "ask", dict(held, doubt=dict(held["doubt"], line=None, answered=True))) == []
+    for bad in ("not an object", dict(held["doubt"], line="seven"), dict(held["doubt"], answered="yes"), dict(held["doubt"], doubt=["x"]),
+                dict(held["doubt"], fallback="x" * 601), dict(held["doubt"], engine="x" * 41)):
+        assert S.validate_record("identity", "ask", dict(held, doubt=bad)), bad
+
+
+def test_i5_a_line_request_or_an_ask_with_a_wrong_type_in_a_doubts_fields_is_a_fault_on_write(j2):
+    W, R, J, _, _ = j2
+    ref = _doubting(j2)
+    with S.expect_refused() as met:
+        R.post(ref, "Identity", "Adaptation", "request", {"word": "line", "words": "w", "go_on": "not a bool", "answer": 123})
+    assert any("go_on" in f for f in met) and any("answer" in f for f in met), met
+    ask = _plan_asks(W, ref)[0]
+    with S.expect_refused("identity.ask") as met:
+        W._put_ask(ref, dict(ask, doubt="not an object"))
+    assert any("doubt" in f for f in met), met
+    W._put_ask(ref, ask)                                                                         # put back as it was filed
+
+
 def test_i5_a_doubt_is_one_ask_with_no_number_in_it(j2):
     W, R, J, _, FV = j2
     ref = _doubting(j2)

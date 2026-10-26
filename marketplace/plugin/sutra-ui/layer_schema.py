@@ -503,7 +503,12 @@ DEFS.update({
                          'options': items(ref('option'), OPTIONS_MAX),
                          'chosen': nullable(obj({'id': text(64), 'label': text(120), 'at': text(40), 'by': text(80),
                                                  'words': nullable(text(2000))})),
-                         'items': items(ref('identity.done_item'), DONE_ITEMS_MAX), 'cycle_id': nullable(text(80))},
+                         'items': items(ref('identity.done_item'), DONE_ITEMS_MAX), 'cycle_id': nullable(text(80)),
+                         # a j2_identity ask that puts Adaptation's doubt to the owner (M3.9, W1-IDENTITY): doubt is Adaptation's words, shown
+                         # the words the owner was asked (the doubt put in plain words), line the board post of the line request it
+                         # doubted, answered the board post of the request that carried the owner's answer (true when it carried none)
+                         'doubt': obj({'engine': text(40), 'doubt': text(600), 'shown': text(600), 'fallback': text(600),
+                                       'line': nullable(integer(0)), 'answered': any_of(integer(0), boolean())})},
                         required=('id', 'kind', 'status')),
 })
 
@@ -623,8 +628,12 @@ DEFS.update({
                     'boundaries': text(8000)}, required=('word',)),
     'act.verdict': obj({'word': const('verdict'), 'answer': enum('admit', 'wait', 'refuse'), 'why': nullable(text(600))},
                        required=('word',)),
+    # answer, doubt, fallback and go_on are Identity's (M3.9, W1-IDENTITY): the owner's answer to Adaptation's doubt (or the fallback
+    # 'just do it' took), the doubt and the fallback it was put with, and go_on, which tells Adaptation to go on to Priority with
+    # the doubt named, as for a confidence from 0.6 to under 0.8, and not to doubt again
     'act.line_request': obj({'word': const('line'), 'words': nullable(text(100000)), 'objective': text(2000),
-                             'faults': items(text(600)),
+                             'faults': items(text(600)), 'answer': text(2000), 'doubt': text(600), 'fallback': text(600),
+                             'go_on': boolean(),
                              'practices': obj({'rules': ANYTHING, 'engines': ANYTHING, 'artifacts': ANYTHING, 'required': ANYTHING,
                                                'taken': ANYTHING})}, required=('word',)),
     'act.line': obj({'word': const('line'), 'engines': items(any_of(ref('name'), ref('workflow.engine')), 24),
