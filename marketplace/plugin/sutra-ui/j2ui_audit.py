@@ -16,11 +16,17 @@ the site was workable, and neither was done. So:
     build_workable(ctx)    None: nobody has checked it item by item. The page then draws no 'Workable' line and no pass
     refs(ctx)              api/refs: the conditions' texts by id, and no rubric (Sutra has none)
     audits_condensed(ctx)  api/audits: earlier stages' audits; Sutra keeps no stage before the current one, so none
+    build_conflicts(ctx)   the Conflicts tab: a bargain between Adaptation and Priority in which Priority asked for less or said
+                           no, and any the two took to Identity. A straight yes is not a conflict. Each attempt says the act in
+                           the owner's words, the same words the chat prints for the same post (functions_view._did)
 
 Every builder memoises on ctx.memo and never raises: a failure gives the empty form and a reason on ctx.reasons. Nothing here
 writes, speaks or calls a model, and every string the record wrote passes owner_words.
 """
+import engine_runtime as R
+import functions_view as F
 import j2ui_atoms as A
+import owner_words
 
 NOTHING = "found nothing to put right"                        # the words of a clean reading, if the record's own are missing
 
@@ -123,3 +129,151 @@ def refs(ctx):
 def audits_condensed(ctx):
     """api/audits: earlier stages' audits, condensed. Sutra keeps one live cycle and no stage before it."""
     return []
+
+
+# ---- the conflicts: Adaptation and Priority disagreeing -------------------------------------------------------------------
+BARGAIN_ACTS = ("propose", "accept-proposal", "reject-proposal")
+ATTEMPTS = R.BOUNDS["hops"]                                    # the bound a bargain has before it goes to Identity
+
+
+def _bargain(p):
+    """A post of the bargain over the line: Adaptation proposes, Priority says yes, asks for less or says no."""
+    return (p.get("src") in ("Adaptation", "Priority") and p.get("msg_type") in BARGAIN_ACTS
+            and (p.get("payload") or {}).get("word") == "line")
+
+
+def _act(p):
+    """A post as the act its function did, in the owner's words, then what it carried: 'Said yes to the plan: it fits today'.
+    The one line the chat prints for a function's post (functions_view._did and _said), so the tab and the chat agree."""
+    did = F._did(p)
+    said = F._short(F._said(p))
+    return (did[:1].upper() + did[1:]) + (": %s" % said if said else "")
+
+
+def _position(p, first):
+    """(position, agrees) of one attempt. Adaptation's later proposals take Priority's ask for less, so they agree."""
+    act = p.get("msg_type")
+    if p.get("src") == "Adaptation":
+        return ("opening proposal", None) if first else ("said yes", True)
+    return {"accept-proposal": ("said yes", True), "propose": ("asked for less", False)}.get(act, ("said no", False))
+
+
+def _names(p):
+    return [{"name": str(e.get("name")), "cost": None} for e in (p.get("payload") or {}).get("engines") or [] if isinstance(e, dict)
+            and e.get("name")]
+
+
+def _finals(posts):
+    """What each side stood on at the end: Adaptation's last proposal, and what Priority would have run (all of it after a yes,
+    what it kept after asking for less, nothing after a no). No cost is recorded for a proposed workflow, so none is said."""
+    mine = [p for p in posts if p.get("src") == "Adaptation"]
+    theirs = [p for p in posts if p.get("src") == "Priority"]
+    proposed = _names(mine[-1]) if mine else []
+    if not theirs:
+        return proposed, []
+    last = theirs[-1]
+    if last.get("msg_type") == "accept-proposal":
+        return proposed, proposed
+    if last.get("msg_type") == "propose":
+        return proposed, [{"name": str(n), "cost": None} for n in (last.get("payload") or {}).get("keep") or []]
+    return proposed, []
+
+
+def _ledger(ctx, thread):
+    """What the ledger says of this bargain: Identity's ruling (the one after the conflict was raised) and the workflow
+    registered once it was settled. Both None when the cycle's ledger does not hold the thread."""
+    events = sorted(ctx.events, key=lambda e: e.get("seq") or 0)
+    mine = [e for e in events if e.get("proposal_ref") == thread]
+    raised = next((e for e in mine if e.get("action") == "conflict.raised"), None)
+    anchor = raised or (mine[-1] if mine else None)
+    if anchor is None:
+        return None, None
+    after = [e for e in events if (e.get("seq") or 0) > (anchor.get("seq") or 0)]
+    ruled = None
+    registered = None
+    for e in after if raised else []:                            # a ruling answers a conflict that was raised, and nothing else
+        if e.get("action") == "conflict.raised":
+            break
+        if e.get("action") == "identity.ruled":
+            ruled = e
+            break
+    for e in after:
+        if e.get("action") == "proposal.created" and e.get("proposal_ref") not in (None, thread):
+            break
+        if e.get("action") == "workflow.registered":
+            registered = [str(n) for n in (e.get("payload") or {}).get("workflow") or []]
+            break
+    return ruled, registered
+
+
+def _outcome(resolved_by, agreed_after, ruling, ask, last, escalated):
+    if resolved_by == "agents":
+        return "Settled between the two: Priority said yes%s." % (" after asking for less" if agreed_after else "")
+    if resolved_by == "identity":
+        return "Identity ruled it runs." if ruling == "run" else "Identity dropped the plan."
+    if resolved_by == "identity_after_user":
+        return "You stamped the plan as proposed." if (ask or {}).get("status") == "stamped" else "You said no, so the plan is dropped."
+    if ask and ask.get("status") == "pending":
+        return "Waiting for your answer."
+    if escalated:
+        return "Waiting for Identity."
+    if last is not None and last.get("src") == "Priority" and last.get("msg_type") == "propose":
+        return "Waiting for Adaptation to answer Priority's ask for less."
+    return "Waiting for Identity." if last is not None and last.get("msg_type") == "reject-proposal" else ""
+
+
+def _conflict(ctx, n, thread, posts, conflicts):
+    msgs = getattr(ctx, "msg_of", None) or {}
+    attempts = []
+    for i, p in enumerate(posts):
+        position, agree = _position(p, i == 0)
+        text = _act(p)
+        attempts.append({"n": i, "who": p["src"].lower(), "msg": msgs.get(("b", p.get("n"))), "text": text, "position": position, "agree": agree})
+    used = len([a for a in attempts if a["n"] > 0])
+    last = posts[-1] if posts else None
+    ruled, registered = _ledger(ctx, thread)
+    ruling = str((ruled or {}).get("state") or ((ruled or {}).get("payload") or {}).get("ruling") or "")
+    ask = next((a for a in ctx.asks if a.get("kind") == "conflict" and a.get("for") == thread), None)
+    answered = (ask or {}).get("status") in ("stamped", "refused")
+    escalated = bool(conflicts) or bool(ruled) or bool(ask)
+    agreed = last is not None and last.get("src") == "Priority" and last.get("msg_type") == "accept-proposal" and not escalated
+    resolved_by = "agents" if agreed else "identity_after_user" if answered else "identity" if ruling in ("run", "drop") else None
+    identity = []
+    if ruled:
+        identity.append({"after_user": False, "resolved": ruling in ("run", "drop"), "ruling": F.RULING_SAYS.get(ruling, ruling), "clause": "",
+                         "say": A.plain(ruled.get("summary"))})
+    if answered:
+        stamped = ask["status"] == "stamped"
+        identity.append({"after_user": True, "resolved": True, "ruling": F.RULING_SAYS["run" if stamped else "drop"], "clause": "",
+                         "say": "You stamped the plan as proposed." if stamped else "You said no to the plan."})
+    mine, theirs = _finals(posts)
+    first = (posts[0].get("payload") or {}) if posts else {}
+    return {"id": "C-%d" % n, "cycle": (ctx.cur or {}).get("round") or 1, "topic": "proposal", "between": ["adaptation", "priority"],
+            "about": None, "subject": A.plain(first.get("why")) or "what to run", "detail": None, "attempts": attempts,
+            "status": "settled" if resolved_by else "open", "escalated": escalated,
+            "attempts_before_escalation": min(ATTEMPTS, used) if escalated else 0, "resolved_by": resolved_by, "identity": identity,
+            "escalated_to_user": bool(ask) or ruling == "ask",
+            "user_question": {"question": owner_words.kept(ask.get("text"), ask.get("words")), "options": ["Stamp", "Say no"]} if ask else None,
+            "user_answer": ("Stamp" if ask["status"] == "stamped" else "Say no") if answered else None, "winner": None,
+            "outcome": _outcome(resolved_by, any(p.get("msg_type") == "propose" and p.get("src") == "Priority" for p in posts), ruling, ask, last,
+                                escalated),
+            "priority_final": theirs, "adaptation_final": mine, "attempts_used": used, "registered": registered}
+
+
+def _conflicts(ctx):
+    by = {}
+    for p in ctx.posts:
+        if _bargain(p):
+            by.setdefault(p.get("thread"), []).append(p)
+    raised = {}
+    for p in ctx.posts:
+        pl = p.get("payload") or {}
+        if pl.get("word") == "conflict" and "Identity" in (p.get("dst") or []) and pl.get("for"):
+            raised.setdefault(pl["for"], []).append(p)
+    disagreed = [t for t, ps in by.items() if any(p["src"] == "Priority" and p["msg_type"] != "accept-proposal" for p in ps)]
+    threads = sorted(set(disagreed) | set(raised), key=lambda t: min([p.get("n") or 0 for p in by.get(t, []) + raised.get(t, [])]))
+    return [_conflict(ctx, n, t, sorted(by.get(t, []), key=lambda p: p.get("n") or 0), raised.get(t, [])) for n, t in enumerate(threads, 1)]
+
+
+def build_conflicts(ctx):
+    return A.memoised(ctx, "j2ui_audit.conflicts", _conflicts, list, "conflicts")

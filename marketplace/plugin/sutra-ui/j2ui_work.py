@@ -196,7 +196,8 @@ def _audit(ctx):
 
 
 def _conflicts(ctx):
-    return []
+    """The bargains in which Priority asked for less or said no, and any taken to Identity (j2ui_audit)."""
+    return X.build_conflicts(ctx)
 
 
 def _calls(ctx):
