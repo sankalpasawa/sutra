@@ -9,12 +9,19 @@ object the definitions assemble). A version may change freely; the interface cha
 WAVE 0 writes the skeleton: the lazy proxies R, W, J, S and FV (tests reload engine_runtime, so a layer module never
 holds a module object), ref_to (a late-bound delegate to a body that has not moved yet) and recipes() (the five
 function engines, which engine_runtime.defs() assembles before the Library's templates). W1-CORE adds the registry
-(available, load, pins, impl, layer_of, resolve, names, call, view); W3-PINS the pin sets per department.
+(available, load, pins, impl, layer_of, resolve, names, call, view) and layers/prompts.py (the typed prompt compiler);
+W3-PINS the pin sets per department.
+
+THE REGISTRY (A1.18): engine_runtime asks it, for every step and gate, which function runs a name: the one the layer's
+pinned implementation provides in its CODE, PROMPT, DRAFT or CHECK dict, else engine_runtime's own, which is the fallback
+until a body has moved. Until W3-PINS every department runs DEFAULT_PINS. A module that does not load runs nothing: the
+engine_runtime body is used, so a broken layer file never stops a department.
 
 Nothing here imports engine_runtime at import time.
 """
 import importlib
 import json
+import re
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -67,3 +74,130 @@ def recipes():
         except (OSError, ValueError) as exc:
             raise ValueError("the engine definitions are refused: %s's recipe (%s) is not JSON (%s)" % (title, impl, exc))
     return out
+
+
+# ---- the registry (A1.18) ---------------------------------------------------------------------------------------------
+KINDS = ('code', 'prompt', 'draft', 'check')
+#: the implementations loaded and checked, by id: load() caches here, so a layer file is imported and checked once. A test
+#: that needs a stub in a layer's place puts it here (monkeypatch.setitem), and what it puts is what the registry serves.
+_LOADED = {}
+#: the (department, layer, implementation) triples already told in the record, so a pin the registry cannot honour is
+#: one row, never one for every lookup
+_TOLD = set()
+
+
+def available():
+    """Every implementation on disk, {layer: [impl id]}, found as layers/<layer>/v<N>.py, in version order."""
+    out = {}
+    for layer in S.LAYER_NAMES:
+        found = [p.stem for p in (HERE / layer).glob('v*.py') if re.fullmatch(r'v[1-9][0-9]*', p.stem)]
+        if found:
+            out[layer] = ['%s/%s' % (layer, v) for v in sorted(found, key=lambda v: int(v[1:]))]
+    return out
+
+
+def load(impl_id):
+    """The module an implementation id names ('identity/v1'), imported, with LAYER, VERSION and IMPLEMENTS checked and
+    cached; None when there is no such file, it does not import, or it was written for another schema version."""
+    if impl_id in _LOADED:
+        return _LOADED[impl_id]
+    if not isinstance(impl_id, str) or not re.fullmatch(S.IMPL_RE, impl_id):
+        return None
+    layer, v = impl_id.split('/')
+    if not (HERE / layer / (v + '.py')).is_file():
+        return None
+    try:
+        module = importlib.import_module('layers.%s.%s' % (layer, v))
+    except Exception:  # noqa: BLE001 -- a layer that does not import runs nothing; the fallback bodies serve
+        return None
+    if (getattr(module, 'LAYER', None), getattr(module, 'VERSION', None), getattr(module, 'IMPLEMENTS', None)) != \
+            (layer, int(v[1:]), S.SCHEMA_VERSION):
+        return None
+    _LOADED[impl_id] = module
+    return module
+
+
+def pins(ref=None, d=None):
+    """The implementation each layer runs for a department, {layer: impl id}: DEFAULT_PINS while S.PER_DEPARTMENT is
+    False. A record whose `layers` names another implementation runs the default all the same, and the record says so,
+    once (per-department versions come in wave 3)."""
+    out = dict(S.DEFAULT_PINS)
+    if S.PER_DEPARTMENT:
+        return out
+    if d is None and ref:
+        try:
+            d = W.dept(ref)
+        except Exception:  # noqa: BLE001 -- no records home to read it from: every layer runs its default
+            d = None
+    for layer, named in ((d or {}).get('layers') or {}).items():
+        if layer in out and named != out[layer] and (ref, layer, named) not in _TOLD:
+            _TOLD.add((ref, layer, named))
+            try:
+                if ref and (W.ddir(ref) / 'dept.json').exists():
+                    W.system_run(ref, S.TITLE[layer], 'runs the default: per-department versions come in wave 3')
+            except Exception:  # noqa: BLE001 -- the row is a note of the pin, never a second fault
+                pass
+    return out
+
+
+def impl(ref, layer, d=None):
+    """The module a department runs for a layer: the one its pin names, else the layer's default version; None when
+    neither loads."""
+    pinned, default = pins(ref, d).get(layer), S.DEFAULT_PINS.get(layer)
+    return load(pinned) or (load(default) if default != pinned else None)
+
+
+def layer_of(engine):
+    """The layer an engine is (Identity, Setup, ...); None for a work engine."""
+    return S.ENGINE_LAYER.get(engine)
+
+
+def resolve(ref, engine, kind, name, legacy, d=None):
+    """The callable that runs `name` of `kind` ('code', 'prompt', 'draft' or 'check') for an engine of a department: the
+    engine's layer's pinned implementation, when it provides the name in its dict, else `legacy[name]`, engine_runtime's
+    own (the fallback until the body has moved into its layer)."""
+    layer = layer_of(engine)
+    if layer:
+        module = impl(ref, layer, d)
+        got = (getattr(module, kind.upper(), None) or {}).get(name) if module is not None else None
+        if got is not None:
+            return got
+    return legacy[name]
+
+
+def names(kind):
+    """Every name of `kind` that any implementation on disk provides in its dict."""
+    out = set()
+    for ids in available().values():
+        for impl_id in ids:
+            module = load(impl_id)
+            if module is not None:
+                out |= set(getattr(module, kind.upper(), None) or {})
+    return out
+
+
+def call(ref, layer, name, *args, **kwargs):
+    """A function of the layer's pinned implementation, called; engine_runtime's own of that name when the
+    implementation does not hold one."""
+    module = impl(ref, layer)
+    fn = getattr(module, name, None) if module is not None else None
+    return (fn if callable(fn) else getattr(R, name))(*args, **kwargs)
+
+
+def view(ref, layer, d, events, asks):
+    """The layer's pane as its pinned implementation reads it, or None when the implementation has no view()."""
+    module = impl(ref, layer, d)
+    fn = getattr(module, 'view', None) if module is not None else None
+    return fn(ref, d, events, asks) if callable(fn) else None
+
+
+def prompt(ref, layer, group, part, **inputs):
+    """layers.prompts.prompt: one part of a layer's instructions, compiled; the words code sends an agent."""
+    from layers import prompts
+    return prompts.prompt(ref, layer, group, part, **inputs)
+
+
+def words(ref, layer, group, part):
+    """layers.prompts.words: a part's fields as the department reads them now."""
+    from layers import prompts
+    return prompts.words(ref, layer, group, part)

@@ -52,6 +52,9 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import layers                      # each layer's bodies and words, behind the interface (PRD A1): _resolve asks its registry
+import layers.prompts              # the typed prompt compiler, and the .md reader it falls back on (PRD A1.16)
+import layer_schema                # the interface of Root and the five layers (PRD A1)
 import owner_words                 # the bargain in the owner's words (PRD M1.7), for Identity's plain-words check (M3.6)
 import record                      # the platform product: rows, deployed into the department's own folder
 import website_dept as W
@@ -112,15 +115,28 @@ def is_on(ref):
 
 # ---- definitions ---------------------------------------------------------------------------------------------------
 def validate(d):
-    """A definition is data, and data can be wrong. Every fault is named; one fault refuses the whole definition."""
+    """A definition is data, and data can be wrong. Every fault is named; one fault refuses the whole definition. A
+    name is provided by engine_runtime's own registries or by a layer's module (PRD A1.19), and the definitions are held
+    to the interface: their edges are the interface's, every handler of a function is a row of what its layer hears,
+    and every check a function's step names is one of its layer's or a shared one."""
     faults = []
     seen = {}
+    S = layer_schema
+    have = {k: layers.names(k) for k in layers.KINDS}
+    faults += edge_faults(d.get("edges"))
     for name, e in (d.get("engines") or {}).items():
         if e.get("kind") not in ("work", "function"):
             faults.append("%s: kind is neither work nor function" % name)
         if e.get("kind") == "work" and not (e.get("reads") and e.get("writes")):
             faults.append("%s: a work engine names what it reads and what it writes" % name)
         faults += start_faults(name, e, d.get("engines") or {})
+        layer = S.ENGINE_LAYER.get(name) if e.get("kind") == "function" else None
+        heard = {(r["act"], r["word"]) for r in S.hears(layer)} if layer else set()
+        for h in e.get("on") or []:
+            w = h.get("when") or {}
+            if layer and (w.get("msg_type"), w.get("word", S.ANY)) not in heard:
+                faults.append("%s, %s: the handler hears %s/%s, which is no row of what %s hears" %
+                              (name, h.get("name") or "a handler", w.get("msg_type"), w.get("word", S.ANY), name))
         # SHAPE (founder, 2026-09-28): every unit starts with a step by code and ends with a step by code; agents come
         # between. So the input, the output and the least steps of any unit are known before its agent says a word.
         for uname, steps in [("its steps", e.get("steps") or [])] + [(h.get("name") or "a handler", h.get("steps") or []) for h in e.get("on") or []]:
@@ -144,14 +160,16 @@ def validate(d):
                 faults.append("%s: born is not a rung" % where)
             if not s.get("check"):
                 faults.append("%s: the step names no check" % where)
-            elif s["check"] not in CHECK:
+            elif s["check"] not in CHECK and s["check"] not in have["check"]:
                 faults.append("%s: no check named %s ships with the app" % (where, s["check"]))
-            if s.get("code") and s["code"] not in CODE:
+            elif layer and s["check"] not in S.CHECKS.get(layer, {}) and s["check"] not in S.SHARED_CHECKS:
+                faults.append("%s: the check %s is neither %s's nor shared, in the interface" % (where, s["check"], name))
+            if s.get("code") and s["code"] not in CODE and s["code"] not in have["code"]:
                 faults.append("%s: no function named %s ships with the app" % (where, s["code"]))
             if s.get("prompt"):
-                if s["prompt"] not in PROMPT:
+                if s["prompt"] not in PROMPT and s["prompt"] not in have["prompt"]:
                     faults.append("%s: no prompt named %s ships with the app" % (where, s["prompt"]))
-                if s.get("draft") not in DRAFT:
+                if s.get("draft") not in DRAFT and s.get("draft") not in have["draft"]:
                     faults.append("%s: a soft step names a plain draft" % where)
                 if not s.get("out"):
                     faults.append("%s: a soft step names the shape of its answer" % where)
@@ -191,6 +209,21 @@ def validate(d):
     for name, e in (d.get("engines") or {}).items():
         if e.get("from_template") and not e.get("use_case"):
             faults.append("%s: an engine template names its use case" % name)
+    return faults
+
+
+def edge_faults(edges):
+    """The definitions' edges against the interface's (PRD A1.19): for every actor the definitions list, who it may post
+    to with each act is what layer_schema.SENDS says, in its order."""
+    want, faults = layer_schema.edges(), []
+    for actor, acts in (edges or {}).items():
+        if actor not in want:
+            faults.append("edges, %s: the interface knows no such actor" % actor)
+            continue
+        for act in sorted(set(acts) | set(want[actor])):
+            if (acts or {}).get(act) != want[actor].get(act):
+                faults.append("edges, %s: the definitions let it %s to %s, and the interface says %s" %
+                              (actor, act, (acts or {}).get(act), want[actor].get(act)))
     return faults
 
 
@@ -347,6 +380,22 @@ def step_def(step_id):
             if s["id"] == step_id:
                 return name, s
     return None, None
+
+
+def _resolve(ctx, kind, name, engine=None):
+    """The function that runs `name` of `kind` ('code', 'prompt', 'draft' or 'check') for an engine of this department
+    (PRD A1.19, the seam): the one its layer's pinned implementation provides, else the registry literal below, which
+    stays the fallback until a body has moved into its layer. `engine` is the engine the step belongs to when that is
+    not the one the context runs: a gate, or a rule of another function, is the function's, not the engine it blocks."""
+    return layers.resolve(ctx.get("ref"), engine or ctx.get("engine"), kind, name,
+                          {"code": CODE, "prompt": PROMPT, "draft": DRAFT, "check": CHECK}[kind], d=ctx.get("dept"))
+
+
+def _impl(ctx, engine=None):
+    """The implementation that ran a step, as the record names it ('identity/v1'): the pin of the layer the engine is;
+    None for a work engine, which is no layer's."""
+    layer = layers.layer_of(engine or ctx.get("engine"))
+    return layers.pins(ctx.get("ref"), ctx.get("dept"))[layer] if layer else None
 
 
 def card(ctx):
@@ -1101,7 +1150,7 @@ def blocked(ctx, name, e, inp, slot):
     for gid in ((e or {}).get("start") or {}).get("unless") or []:
         fn, g = step_def(gid)
         rung = rung_of(ref, g)
-        answer, why = CODE[g["code"]](gctx, g, None)
+        answer, why = _resolve(gctx, "code", g["code"], engine=fn)(gctx, g, None)
         if rung != "C2" and answer == "admit":
             key = slot + "|" + g["id"]
             v = _verdicts(ref).get(key)
@@ -1115,11 +1164,11 @@ def blocked(ctx, name, e, inp, slot):
                 return "wait", "%s is judging" % fn
             answer, why = v["answer"], v.get("why")
         # the gate's covering is code (M2.4): a start it does not hold for is never let through; the row says it failed
-        check = CHECK[g["check"]](gctx, g, None, {"answer": answer, "why": why})
+        check = _resolve(gctx, "check", g["check"], engine=fn)(gctx, g, None, {"answer": answer, "why": why})
         if answer == "admit" and not check.get("ok"):
             answer, why = "wait", "; ".join(str(n) for n in check.get("notes") or []) or "its check failed"
         if not ctx.get("peek"):
-            _gate_row(ref, slot, fn, g, rung, answer, why, check=check)
+            _gate_row(ref, slot, fn, g, rung, answer, why, check=check, ctx=gctx)
         if answer != "admit":
             return answer, why
     return "admit", None
@@ -1141,8 +1190,8 @@ def _coord_ctx(ref, d=None):
 
 
 def _run_rule(ctx, sid, item=None):
-    _, s = step_def(sid)
-    return CODE[s["code"]](ctx, s, item)
+    fn, s = step_def(sid)
+    return _resolve(ctx, "code", s["code"], engine=fn)(ctx, s, item)
 
 
 def _ask_rule(ref, sid, item=None, key=None, ctx=None):
@@ -1151,7 +1200,7 @@ def _ask_rule(ref, sid, item=None, key=None, ctx=None):
     as a row of the function whose step it is."""
     ctx = ctx or _coord_ctx(ref)
     fn, s = step_def(sid)
-    got = CODE[s["code"]](ctx, s, item)
+    got = _resolve(ctx, "code", s["code"], engine=fn)(ctx, s, item)
     out = got if isinstance(got, dict) else {"answer": got[0], "why": got[1]}
     if out.get("answer") or out.get("said"):
         _gate_row(ref, key or sid, fn or "Coordination", s, rung_of(ref, s), out.get("answer") or out.get("said"), out.get("why"), out=out)
@@ -1304,9 +1353,10 @@ def _gate_row(ref, slot, fn, g, rung, answer, why, out=None, ctx=None, check=Non
     if key in seen:
         return
     seen.add(key)
-    check = check or CHECK[g["check"]](ctx, g, None, out or {"answer": answer, "why": why})
+    where = ctx or {"ref": ref}                           # the department's pins are found from its ref when no context came
+    check = check or _resolve(where, "check", g["check"], engine=fn)(ctx, g, None, out or {"answer": answer, "why": why})
     _append(ref, "steps.jsonl", {"id": "s-" + uuid.uuid4().hex[:10], "run": None, "engine": fn, "step": g["id"], "item": None,
-                                 "mode": "gate", "slot": slot, "asked_rung": rung, "rung": rung, "miss": False, "by": "code",
+                                 "mode": "gate", "slot": slot, "impl": _impl(where, fn), "asked_rung": rung, "rung": rung, "miss": False, "by": "code",
                                  "in_sig": _sha({"slot": slot}), "out_hash": _sha(answer), "out_shape": "str", "answer": answer,
                                  "check": check, "usd": 0.0, "calls": 0, "ms": 0, "status": "ok" if check.get("ok") else "failed",
                                  "trial": None, "def_version": defs()["def_version"], "started": W.now(), "ended": W.now()})
@@ -1547,7 +1597,7 @@ def run_step(ctx, step, item):
     usd, calls, how, out = 0.0, 0, None, None
     stamped = _stamped(ctx, step, item)
     if step.get("only_if") and not _cond(ctx["bag"], step["only_if"]):
-        out, how = DRAFT[step["draft"]](ctx, step, item), SKIPPED
+        out, how = _resolve(ctx, "draft", step["draft"])(ctx, step, item), SKIPPED
     elif stamped is not None:
         out, how, rung = stamped, "stamped by the owner", "P"          # a person answered; the person's answer stands
     else:
@@ -1567,7 +1617,7 @@ def run_step(ctx, step, item):
     _spend(ctx, usd, calls)
     facts = _facts(ctx, step)
     row = {"id": "s-" + uuid.uuid4().hex[:10], "run": ctx["run"], "engine": ctx["engine"], "step": step["id"], "item": item,
-           "mode": "slot", "slot": ctx["slot"], "asked_rung": asked, "rung": rung, "miss": rung != asked, "by": how,
+           "mode": "slot", "slot": ctx["slot"], "impl": _impl(ctx), "asked_rung": asked, "rung": rung, "miss": rung != asked, "by": how,
            "agent": ctx["engine"] if how in ("model", "checklist") else None,
            "applied": [r["id"] for r in ctx["dept"].get("rules") or [] if r.get("id")] if how in ("model", "checklist") else [],
            "read": [{"post": ctx["post"]["n"]}] if ctx.get("post") else [{"art": ctx["def"].get("reads"), "v": ctx["inp"]["v"]}],
@@ -1592,7 +1642,7 @@ def run_step(ctx, step, item):
         # that was skipped, and the whole request failed unseen)
         check, trial, tcost, tcalls = {"ok": True, "notes": [SKIPPED]}, None, 0.0, 0
     else:
-        check = CHECK[step["check"]](ctx, step, item, out)
+        check = _resolve(ctx, "check", step["check"])(ctx, step, item, out)
         trial, tcost, tcalls = _trial(ctx, step, item, out, check, facts)
     _spend(ctx, tcost, tcalls)
     answer = out.get(step["answer"]) if step.get("answer") else None
@@ -1638,7 +1688,7 @@ def _soft(ctx, step, item, checklist=None):
     """The engine's own agent, in one call. One more call if the answer does not fit; then the rung below."""
     if not step.get("prompt"):
         return NO_RULE, 0.0, "no prompt", 0
-    prompt = card(ctx) + PROMPT[step["prompt"]](ctx, step, item)
+    prompt = card(ctx) + _resolve(ctx, "prompt", step["prompt"])(ctx, step, item)
     if checklist:
         prompt += "\n\nFOLLOW THIS CHECKLIST, learned from this step's earlier runs:\n" + checklist
     usd, calls, fault = 0.0, 0, None
@@ -1647,7 +1697,7 @@ def _soft(ctx, step, item, checklist=None):
                                               if fault else ""), step)
         usd += float(cost or 0)
         if how == "offline":
-            return DRAFT[step["draft"]](ctx, step, item), 0.0, "offline draft", 0
+            return _resolve(ctx, "draft", step["draft"])(ctx, step, item), 0.0, "offline draft", 0
         calls += 1
         if obj is None and (how == "away" or "call failed" in str(how) or "no JSON (exit" in str(how)):
             return AWAY, usd, str(how), calls
@@ -1662,7 +1712,7 @@ def _stamped(ctx, step, item):
     key = "%s|%s|%s" % (ctx["slot"], step["id"], item)
     a = next((a for a in W.asks(ctx["ref"]) if a.get("kind") == "step" and a.get("key") == key), None)
     if a and a["status"] == "stamped" and step.get("draft"):
-        return DRAFT[step["draft"]](ctx, step, item)
+        return _resolve(ctx, "draft", step["draft"])(ctx, step, item)
     return None
 
 
@@ -1685,7 +1735,7 @@ def _person(ctx, step, item):
         return ASKED, 0.0, a["id"], 0
     if a["status"] == "refused" or not step.get("draft"):
         return INVALID, 0.0, "refused by the owner", 0
-    return DRAFT[step["draft"]](ctx, step, item), 0.0, "stamped by the owner", 0
+    return _resolve(ctx, "draft", step["draft"])(ctx, step, item), 0.0, "stamped by the owner", 0
 
 
 def _call(ctx, step, item):
@@ -1707,8 +1757,13 @@ def _code(ctx, step, item):
             return NO_RULE, 0.0, "the table is missing, or was changed by hand", 0
         out = interpret_table(t, _facts(ctx, step) or {})
         return (out, 0.0, "table", 0) if out is not NO_RULE else (NO_RULE, 0.0, "no rule", 0)
-    if step.get("code") and step["code"] in CODE:
-        return CODE[step["code"]](ctx, step, item), 0.0, "code", 0
+    if step.get("code"):
+        try:
+            fn = _resolve(ctx, "code", step["code"])
+        except KeyError:                                   # a name no registry holds
+            fn = None
+        if fn is not None:
+            return fn(ctx, step, item), 0.0, "code", 0
     return NO_RULE, 0.0, "the app has no function of that name", 0
 
 
@@ -1729,7 +1784,7 @@ def _trial(ctx, step, item, out, check, facts):
         text = candidate(ref, step, "C1")
         got, usd, _, calls = _soft(ctx, step, item, checklist=text) if text else (NO_RULE, 0.0, "", 0)
         if isinstance(got, dict):
-            c2 = CHECK[step["check"]](ctx, step, item, got)
+            c2 = _resolve(ctx, "check", step["check"])(ctx, step, item, got)
             same = got.get(step["answer"]) == out.get(step["answer"]) if step.get("answer") else True
             agrees = bool(c2.get("ok")) == bool(check.get("ok")) and same
     with W._lock(ref):
@@ -5101,124 +5156,60 @@ CODE = {"plan_read": plan_read, "plan_fit": plan_fit, "plan_file": plan_file, "w
         "audit_mechanical": audit_mechanical, "audit_file": audit_file}
 
 
-# ---- each function's version 1: one agent, its instructions as files (S-28) ----------------------------------------
-#: Version 1 of each function is one agent with .md files inside its covering (PRD M2). The words its agent is sent
-#: are in its files, named as its page names them; the code around them only fills their slots and checks what comes
-#: back. The bundle's copy sits beside the code, and an update of the app replaces it.
+# ---- each function's version 1: one agent, its instructions as typed fields (S-28, A1.16) ------------------------------
+#: Version 1 of each function is one agent with its instructions inside its covering (PRD M2, rewritten by A1). The words
+#: its agent is sent are the layer's WORDS and LAYOUT, compiled by layers/prompts.py from fields the interface types
+#: (layer_schema.PROMPTS); the code around them only fills their inputs and checks what comes back. Until a layer holds
+#: its words, the bundle's .md files (function-prompts/, which an update of the app replaces) are read through the same
+#: split. The bundle sits beside the code and is read-only from here on.
 PROMPTS_DIR = Path(__file__).parent / "function-prompts"
-#: Each function's files, in its page's order, and in each the parts its steps read, with the slots the code fills in
-#: each. A file no step reads yet (Adaptation's decide) is the owner's to read, and holds no part.
-INSTRUCTIONS = {
-    "identity": {"goal": {"does": (), "skills": (), "close": ("dept", "goal", "done", "rules", "plan", "against")},
-                 "completeness": {"thin": (), "enough": ("words", "asked", "goal", "items", "rules", "owner", "budget", "confirm")},
-                 "take": {"recognise": ("goal", "words", "facts"), "take": ("goal", "rules", "words", "facts", "completeness"),
-                          "answer": ("question", "record"), "rule": ("goal", "rules", "words"), "weigh": ("pages", "words"),
-                          "gate": ("rules", "engine")}},
-    "adaptation": {"goal": {"does": (), "skills": ()}, "sense": {"shape": ("needs", "goal", "idea", "library")}, "decide": {},
-                   "make": {"line": ("dept", "words", "taken", "out", "rules", "refused"), "refused": ("faults",)}},
-    "priority": {"goal": {"does": (), "skills": ()},
-                 "bargain": {"line": ("source", "engines", "calls", "usd", "room", "limit"),
-                             "engine": ("engine", "does", "needs", "calls", "usd", "room"), "cost": ("word", "step", "cost", "room")}},
-    "coordination": {"goal": {"does": (), "skills": ()}, "tie": {"tie": ("ready", "what", "order", "waiting")}},
-    "audit": {"goal": {"does": (), "skills": ()}, "judge": {"judge": ("brief", "filed", "pages")}},
-}
-_PART = re.compile(r"^## ([a-z][a-z0-9_-]*)[ \t]*$", re.M)
-_SLOT = re.compile(r"\{\{([a-z_]+)\}\}")
+#: Each function's files, in its page's order, and in each the parts its steps read, with the inputs the code fills in
+#: each, derived from the interface. A file no step reads (Adaptation's decide, whose only part is the note) is the
+#: owner's to read, and holds no part.
+INSTRUCTIONS = {fn: {group: {part: tuple(spec["inputs"]) for part, spec in parts.items() if "field.note" not in spec["fields"].values()}
+                     for group, parts in layer_schema.PROMPTS[fn].items()} for fn in layer_schema.FUNCTION_LAYERS}
 
 
+# the .md reader and the compiler moved into layers/prompts.py (PRD A1.16); these keep their names for their callers
 def _parts(text):
-    """An instruction file, read: its lead, the plain words before the first part that say what the file is for (no
-    agent is sent them), and its parts, each under a heading of its own name, its words exactly as written between
-    the blank lines that set it off."""
-    text = str(text or "").replace("\r\n", "\n")
-    heads = list(_PART.finditer(text))
-    parts = {}
-    for i, m in enumerate(heads):
-        if m.group(1) in parts:
-            raise ValueError("the part %s is written twice" % m.group(1))
-        parts[m.group(1)] = text[m.end():heads[i + 1].start() if i + 1 < len(heads) else len(text)].strip("\n")
-    return (text[:heads[0].start()] if heads else text).strip(), parts
+    return layers.prompts.parts_of(text)
 
 
 def instruction_faults(fn, file, text):
-    """What keeps one instruction file from serving its function: no line that says what it is for, a part a step
-    reads gone, a part no step reads, or a slot the code does not fill. [] when it serves. The covering check of every
-    file an agent's words come from: the bundle's at the definitions load."""
-    want = (INSTRUCTIONS.get(fn) or {}).get(file)
-    if want is None:
-        return ["%s has no instructions named %s" % (str(fn).title(), file)]
-    try:
-        lead, parts = _parts(text)
-    except ValueError as exc:
-        return [str(exc)]
-    faults = [] if lead else ["%s does not say first, in a line, what it is for" % file]
-    for part, slots in want.items():
-        if part not in parts:
-            faults.append("%s has no part %s" % (file, part))
-            continue
-        unknown = sorted(set(_SLOT.findall(parts[part])) - set(slots))
-        if unknown:
-            faults.append("%s, %s: the app fills no %s" % (file, part, ", ".join("{{%s}}" % s for s in unknown)))
-    return faults + ["%s, %s: no step reads this part" % (file, p) for p in parts if p not in want]
+    """What keeps one instruction file from serving its function: layers.prompts.instruction_faults."""
+    return layers.prompts.instruction_faults(fn, file, text)
 
 
 def bundle_faults():
-    """The bundle's files against the list: each one there, each serving. [] when every function has its files."""
-    out = []
-    for fn, files in INSTRUCTIONS.items():
-        for file in files:
-            p = PROMPTS_DIR / fn / (file + ".md")
-            if not p.is_file():
-                out.append("%s's %s instructions are missing from the bundle" % (fn.title(), file))
-                continue
-            out += ["%s's instructions: %s" % (fn.title(), f) for f in instruction_faults(fn, file, p.read_text(encoding="utf-8"))]
-    return out
+    """Every function's words against the list, at the definitions load: layers.prompts.faults. [] when all serve."""
+    return layers.prompts.faults()
 
 
 def _own(ref, fn, file):
-    """Where a department keeps its own copy of one instruction file: in its records home, which an update of the app
-    never replaces (PRD M2.2, J7 step 3). Written only on the owner's stamped ask."""
-    return W.ddir(ref) / "prompts" / fn / (file + ".md")
+    """Where a department keeps its own copy of one instruction file (PRD M2.2): layers.prompts.own."""
+    return layers.prompts.own(ref, fn, file)
 
 
 def _instruction(fn, file, ref=None):
-    """The text of one of a function's instruction files: the department's own copy when the owner stamped one, else
-    the bundle's."""
-    if ref:
-        own = _own(ref, fn, file)
-        if own.is_file():
-            return own.read_text(encoding="utf-8")
-    return (PROMPTS_DIR / fn / (file + ".md")).read_text(encoding="utf-8")
+    """The text of one of a function's instruction files, the department's own copy or the bundle's: layers.prompts.instruction."""
+    return layers.prompts.instruction(fn, file, ref)
 
 
 def _prompt(fn, file, part, ref=None, **slots):
-    """One part of one of a function's instruction files, its slots filled: the words its agent is sent. The
-    department's own copy wins; a part it does not hold (one a later bundle added) is the bundle's. Each slot is
-    filled once, with its value as given, so nothing a value holds is read as a slot; a slot the code does not fill is
-    an error, never a blank."""
-    parts = _parts(_instruction(fn, file, ref))[1]
-    if part not in parts and ref:
-        parts = _parts(_instruction(fn, file))[1]
-    if part not in parts:
-        raise ValueError("%s's %s instructions have no part %s" % (fn.title(), file, part))
-
-    def fill(m):
-        if m.group(1) not in slots:
-            raise ValueError("%s's %s instructions, %s: the app fills no {{%s}}" % (fn.title(), file, part, m.group(1)))
-        return str(slots[m.group(1)])
-    return _SLOT.sub(fill, parts[part])
+    """One part of one of a function's instructions, its inputs filled: the words its agent is sent (layers.prompts.prompt).
+    Each input is filled once, with its value as given, so nothing a value holds is read as a marker; one the code does not
+    fill is an error, never a blank."""
+    return layers.prompts.prompt(ref, fn, file, part, **slots)
 
 
 def _goal_of(ref, name, e=None):
-    """What an engine does and its skills, as its agent is told them: a function's from its goal file (the owner may
-    change it), any other engine's from its definition."""
+    """What an engine does and its skills, as its agent is told them: a function's from its goal words (the owner may
+    change them), any other engine's from its definition."""
     e = e if e is not None else (engine_def(name) or {})
     fn = str(name or "").lower()
     if e.get("kind") != "function" or fn not in INSTRUCTIONS:
         return e.get("description") or "", list(e.get("skills") or [])
-    skills = [ln.strip()[2:].strip() if ln.strip().startswith("- ") else ln.strip()
-              for ln in _prompt(fn, "goal", "skills", ref).split("\n") if ln.strip()]
-    return _prompt(fn, "goal", "does", ref), skills
+    return layers.words(ref, fn, "goal", "does")["text"], list(layers.words(ref, fn, "goal", "skills")["items"])
 
 
 INSTRUCTIONS_MAX = 20000                               # the most one file may hold, in characters
