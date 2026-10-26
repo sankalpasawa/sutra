@@ -1,0 +1,1023 @@
+{
+  "step": [
+    {
+      "id": "plan.read",
+      "name": "Read the brief",
+      "nature": "transform",
+      "born": "C2",
+      "check": "said_what_it_did",
+      "code": "plan_read"
+    },
+    {
+      "id": "plan.read",
+      "name": "Read the brief",
+      "nature": "transform",
+      "born": "C2",
+      "check": "said_what_it_did",
+      "code": "plan_read",
+      "colour": "red"
+    }
+  ],
+  "step.row": [
+    {
+      "id": "s-0a1b2c3d4e",
+      "run": "r-1",
+      "engine": "Plan",
+      "step": "plan.read",
+      "item": null,
+      "mode": "slot",
+      "slot": "Plan@Brief.1",
+      "impl": null,
+      "asked_rung": "C2",
+      "rung": "C2",
+      "miss": false,
+      "by": "code",
+      "usd": 0.0,
+      "calls": 0,
+      "status": "ok",
+      "check": {
+        "ok": true,
+        "notes": [
+          "the step says what it did"
+        ]
+      },
+      "started": "2026-10-26T09:00:00",
+      "ended": "2026-10-26T09:00:01"
+    },
+    {
+      "id": "s-0a1b2c3d4e",
+      "step": "plan.read",
+      "mode": "rule",
+      "status": "ok"
+    }
+  ],
+  "engine.start": [
+    {
+      "on": [
+        {
+          "kind": "version",
+          "of": "Brief"
+        }
+      ],
+      "unless": [
+        "identity.gate"
+      ]
+    },
+    {
+      "on": [
+        {
+          "kind": "cron",
+          "every_s": 60
+        }
+      ]
+    }
+  ],
+  "kind": [
+    {
+      "line": [
+        "Plan",
+        "Write"
+      ],
+      "required": [
+        "Write"
+      ],
+      "artifacts": [
+        "Brief",
+        "Site plan",
+        "Pages"
+      ],
+      "goal": "A site for {name}",
+      "done": "Every page is written",
+      "done_words": [
+        "Written",
+        "Not written yet"
+      ],
+      "rules": [
+        {
+          "tag": "go",
+          "line": "Work inside the record"
+        }
+      ],
+      "say": "A task or a question",
+      "use_case": "a small site: planned and written",
+      "functions_template": "product-build"
+    },
+    {
+      "line": [
+        "Plan"
+      ],
+      "artifacts": [
+        "Brief"
+      ],
+      "goal": "A site",
+      "rules": [
+        {
+          "tag": "maybe",
+          "line": "x"
+        }
+      ],
+      "use_case": "a site",
+      "functions_template": "default"
+    }
+  ],
+  "engine.library": [
+    {
+      "id": "engine/plan",
+      "name": "Plan",
+      "version": 1,
+      "use_case": "a website: the pages a site will have, from the brief",
+      "kind": "work",
+      "description": "reads the brief and plans the pages",
+      "skills": [
+        "plan a site from a brief"
+      ],
+      "reads": "Brief",
+      "writes": "Site plan",
+      "start": {
+        "on": [
+          {
+            "kind": "version",
+            "of": "Brief"
+          }
+        ],
+        "unless": [
+          "identity.gate"
+        ]
+      },
+      "steps": [
+        {
+          "id": "plan.read",
+          "name": "Read the brief",
+          "nature": "transform",
+          "born": "C2",
+          "check": "said_what_it_did",
+          "code": "plan_read"
+        }
+      ]
+    },
+    {
+      "id": "engine/plan",
+      "name": "Plan",
+      "version": 1,
+      "use_case": "a website",
+      "kind": "work",
+      "description": "plans",
+      "reads": "Brief",
+      "writes": "Site plan",
+      "start": {
+        "on": [
+          {
+            "kind": "cron"
+          }
+        ]
+      },
+      "steps": []
+    }
+  ],
+  "artifact.template": [
+    {
+      "id": "artifact/brief",
+      "name": "Brief",
+      "kind": "text",
+      "use_case": "what the owner asked for, in the owner's words",
+      "files": [
+        "brief.md"
+      ],
+      "checks": [
+        "is_text"
+      ],
+      "written_by": [
+        "the owner",
+        "Identity"
+      ],
+      "counts_after": "filing",
+      "put_back": false,
+      "operations": [
+        "Plan"
+      ],
+      "made_from": [],
+      "version": 1
+    },
+    {
+      "id": "artifact/brief",
+      "name": "Brief",
+      "kind": "text",
+      "use_case": "what the owner asked for",
+      "files": [
+        "brief.md"
+      ],
+      "counts_after": "later"
+    }
+  ],
+  "journey.lane": [
+    {
+      "id": "identity",
+      "label": "Identity",
+      "kind": "function",
+      "function": "identity"
+    },
+    {
+      "id": "Identity",
+      "label": "Identity",
+      "kind": "function"
+    }
+  ],
+  "journey.bind": [
+    {
+      "kind": "act",
+      "src": "Owner",
+      "act": "request",
+      "word": "request",
+      "dst": "Identity"
+    },
+    {
+      "kind": "cron",
+      "src": "Owner",
+      "act": "request",
+      "word": "request",
+      "dst": "Identity"
+    }
+  ],
+  "journey.branch": [
+    {
+      "label": "Yes",
+      "to": "3"
+    },
+    {
+      "label": "Yes"
+    }
+  ],
+  "journey.step": [
+    {
+      "n": "1",
+      "lane": "you",
+      "short": "You say a directive",
+      "text": "You say a directive (\"never say X\", \"always show the phone number\").",
+      "site_function": "you",
+      "site_status": "none",
+      "site_says": "none",
+      "site_code": "\u2014",
+      "act": "say",
+      "binds": [
+        {
+          "kind": "act",
+          "src": "Owner",
+          "act": "request",
+          "word": "request",
+          "dst": "Identity"
+        }
+      ],
+      "code": [
+        "identity_file"
+      ],
+      "tests": [
+        "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp"
+      ]
+    },
+    {
+      "n": "x1",
+      "lane": "you",
+      "short": "You say a directive",
+      "text": "You say a directive (\"never say X\", \"always show the phone number\").",
+      "site_function": "you",
+      "site_status": "none",
+      "site_says": "none",
+      "site_code": "\u2014",
+      "act": "say",
+      "binds": [
+        {
+          "kind": "act",
+          "src": "Owner",
+          "act": "request",
+          "word": "request",
+          "dst": "Identity"
+        }
+      ],
+      "code": [
+        "identity_file"
+      ],
+      "tests": [
+        "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp"
+      ]
+    }
+  ],
+  "journey.outcome": [
+    {
+      "kind": "tell",
+      "voice": "Identity",
+      "golden": "the department already has this rule"
+    },
+    {
+      "kind": "cry",
+      "voice": "Identity",
+      "golden": "the department already has this rule"
+    }
+  ],
+  "journey.edge": [
+    {
+      "id": "J9.1",
+      "at": "2",
+      "short": "The rule is already there",
+      "trigger": "The rule is already on the record.",
+      "site": {
+        "status": "built",
+        "text": "Said back, not added twice."
+      },
+      "code_does": "identity_file says the department already has the rule and files nothing.",
+      "outcome": {
+        "kind": "tell",
+        "voice": "Identity",
+        "golden": "the department already has this rule"
+      },
+      "binds": [
+        {
+          "kind": "act",
+          "src": "Identity",
+          "act": "inform",
+          "word": "request",
+          "dst": "Owner"
+        }
+      ],
+      "code": [
+        "_rule_answered",
+        "identity_file"
+      ],
+      "tests": []
+    },
+    {
+      "id": "J9.0",
+      "at": "2",
+      "short": "The rule is already there",
+      "trigger": "The rule is already on the record.",
+      "site": {
+        "status": "built",
+        "text": "Said back, not added twice."
+      },
+      "code_does": "identity_file says the department already has the rule and files nothing.",
+      "outcome": {
+        "kind": "tell",
+        "voice": "Identity",
+        "golden": "the department already has this rule"
+      },
+      "binds": [
+        {
+          "kind": "act",
+          "src": "Identity",
+          "act": "inform",
+          "word": "request",
+          "dst": "Owner"
+        }
+      ],
+      "code": [
+        "_rule_answered",
+        "identity_file"
+      ],
+      "tests": []
+    }
+  ],
+  "journey.sub": [
+    {
+      "id": "J2.a",
+      "title": "Is the identity good enough?",
+      "owner": "Identity",
+      "step": "1",
+      "text": "Identity checks what Root stamped."
+    },
+    {
+      "id": "J2.1",
+      "title": "Is the identity good enough?",
+      "step": "1"
+    }
+  ],
+  "journey.ruling": [
+    {
+      "id": "S-08",
+      "status": "RULED",
+      "date": "2026-09-30",
+      "text": "A department may only tighten."
+    },
+    {
+      "id": "S-08",
+      "status": "DECIDED",
+      "text": "x"
+    }
+  ],
+  "journey.quote": [
+    {
+      "date": "2026-10-01",
+      "on": "J2",
+      "text": "Knowing the identity is good enough."
+    },
+    {
+      "date": null
+    }
+  ],
+  "journey.scenario": [
+    {
+      "id": "J9.walk",
+      "lane": "the department's life",
+      "test": "test_layer_journey_j9.py::test_walk",
+      "walks": [
+        "1",
+        "2"
+      ],
+      "says": "A fixture walk."
+    },
+    {
+      "id": "J9.walk",
+      "lane": "x",
+      "test": "test_walk"
+    }
+  ],
+  "journey.backlog": [
+    {
+      "id": "BL-2b",
+      "row": "edge:J4.4",
+      "smallest": "A looser tag on an inherited line is refused.",
+      "decision": "S-08",
+      "package": "A3-J34 P5"
+    },
+    {
+      "id": "BL-b2",
+      "row": "edge:J4.4",
+      "smallest": "x",
+      "package": "x"
+    }
+  ],
+  "journey.direction": [
+    {
+      "id": "D-a",
+      "direction": "A rule can only tighten.",
+      "mark": "keep"
+    },
+    {
+      "id": "D-a",
+      "direction": "x",
+      "mark": "maybe"
+    }
+  ],
+  "journey.build_row": [
+    {
+      "id": "B1",
+      "when": "v1",
+      "change": "Identity asks the owner first.",
+      "size": "S",
+      "tests": []
+    },
+    {
+      "id": "B1",
+      "when": "soon",
+      "change": "x"
+    }
+  ],
+  "journey.was": [
+    {
+      "title": "The first version of the flow",
+      "lanes": [
+        "you",
+        "identity"
+      ],
+      "steps": [
+        {
+          "n": "0a",
+          "lane": "identity",
+          "short": "Identity reads the directive",
+          "text": "Identity reads the directive before anything is asked.",
+          "site_function": "Identity",
+          "site_status": "built",
+          "site_says": "built",
+          "site_code": "identity.recognise",
+          "act": "read"
+        },
+        {
+          "n": "0b",
+          "lane": "you",
+          "short": "You are told",
+          "text": "You are told what was understood.",
+          "site_function": "you",
+          "site_status": "none",
+          "site_says": "none",
+          "site_code": "\u2014",
+          "act": "tell"
+        }
+      ],
+      "edges": [
+        {
+          "id": "J9.1",
+          "at": "0a",
+          "short": "Not a directive",
+          "trigger": "The words are a question, not a directive.",
+          "site": {
+            "status": "wanted",
+            "text": "Wanted: the words go to the query path."
+          },
+          "code_does": "",
+          "outcome": {
+            "kind": "none",
+            "voice": "none",
+            "golden": null
+          }
+        }
+      ]
+    },
+    {
+      "title": "The first version of the flow",
+      "lanes": [
+        "you",
+        "identity"
+      ],
+      "steps": [
+        {
+          "n": "0z",
+          "lane": "identity",
+          "short": "Identity reads the directive",
+          "text": "Identity reads the directive before anything is asked.",
+          "site_function": "Identity",
+          "site_status": "built",
+          "site_says": "built",
+          "site_code": "identity.recognise",
+          "act": "read"
+        }
+      ],
+      "edges": [
+        {
+          "id": "J9.1",
+          "at": "0a",
+          "short": "Not a directive",
+          "trigger": "The words are a question, not a directive.",
+          "site": {
+            "status": "wanted",
+            "text": "Wanted: the words go to the query path."
+          },
+          "code_does": "",
+          "outcome": {
+            "kind": "none",
+            "voice": "none",
+            "golden": null
+          }
+        }
+      ]
+    }
+  ],
+  "journey": [
+    {
+      "schema_version": 1,
+      "id": "J9",
+      "title": "A fixture journey",
+      "kind": "system",
+      "inside": null,
+      "bound_to": null,
+      "serves": [],
+      "declared": false,
+      "goal": "The smallest journey that fits the definition: two steps and one edge. It is a fixture and proves nothing.",
+      "lead": "A directive the owner says becomes one rule, restated and put back, kept only on a stamp.",
+      "ends_when": "The rule is on the record, or the owner refused it and nothing was kept.",
+      "flag": null,
+      "tag": "A FIXTURE: THE SHAPE A JOURNEY FILE TAKES",
+      "site": {
+        "page": "native/system/department.html#j4",
+        "data_version": "2.4",
+        "as_of": "2026-10-01"
+      },
+      "helper": {
+        "site": "Sutra",
+        "screen": "Root",
+        "code": "Root"
+      },
+      "lanes": [
+        {
+          "id": "you",
+          "label": "You",
+          "kind": "person"
+        },
+        {
+          "id": "identity",
+          "label": "Identity",
+          "kind": "function",
+          "function": "identity"
+        }
+      ],
+      "steps": [
+        {
+          "n": "1",
+          "lane": "you",
+          "short": "You say a directive",
+          "text": "You say a directive (\"never say X\", \"always show the phone number\").",
+          "site_function": "you",
+          "site_status": "none",
+          "site_says": "none",
+          "site_code": "\u2014",
+          "act": "say",
+          "binds": [
+            {
+              "kind": "act",
+              "src": "Owner",
+              "act": "request",
+              "word": "request",
+              "dst": "Identity"
+            }
+          ],
+          "code": [
+            "identity_file"
+          ],
+          "tests": [
+            "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp"
+          ]
+        },
+        {
+          "n": "2",
+          "lane": "identity",
+          "short": "Identity restates it",
+          "text": "Identity restates it as one rule with a tag and a scope, and asks: \"A rule, as understood: \u2026\".",
+          "site_function": "Identity",
+          "site_status": "none",
+          "site_says": "none",
+          "site_code": "identity.rule, _rule_ask",
+          "act": "ask",
+          "binds": [
+            {
+              "kind": "step",
+              "id": "identity.rule"
+            },
+            {
+              "kind": "act",
+              "src": "Identity",
+              "act": "request",
+              "word": "rule",
+              "dst": "Owner"
+            }
+          ],
+          "code": [
+            "p_identity_rule",
+            "_rule_ask",
+            "identity_file"
+          ],
+          "tests": [
+            "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "J9.1",
+          "at": "2",
+          "short": "The rule is already there",
+          "trigger": "The rule is already on the record.",
+          "site": {
+            "status": "built",
+            "text": "Said back, not added twice."
+          },
+          "code_does": "identity_file says the department already has the rule and files nothing.",
+          "outcome": {
+            "kind": "tell",
+            "voice": "Identity",
+            "golden": "the department already has this rule"
+          },
+          "binds": [
+            {
+              "kind": "act",
+              "src": "Identity",
+              "act": "inform",
+              "word": "request",
+              "dst": "Owner"
+            }
+          ],
+          "code": [
+            "_rule_answered",
+            "identity_file"
+          ],
+          "tests": []
+        }
+      ],
+      "site_ids": [
+        "step:1",
+        "step:2",
+        "edge:J9.1"
+      ]
+    },
+    {
+      "schema_version": 1,
+      "id": "J9",
+      "title": "A fixture journey",
+      "kind": "system",
+      "inside": null,
+      "bound_to": null,
+      "serves": [],
+      "declared": false,
+      "goal": "The smallest journey that fits the definition: two steps and one edge. It is a fixture and proves nothing.",
+      "lead": "A directive the owner says becomes one rule, restated and put back, kept only on a stamp.",
+      "ends_when": "The rule is on the record, or the owner refused it and nothing was kept.",
+      "flag": null,
+      "tag": "A FIXTURE: THE SHAPE A JOURNEY FILE TAKES",
+      "site": {
+        "page": "native/system/department.html#j4",
+        "data_version": "2.4",
+        "as_of": "2026-10-01"
+      },
+      "helper": {
+        "site": "Sutra",
+        "screen": "Root",
+        "code": "Root"
+      },
+      "lanes": [
+        {
+          "id": "you",
+          "label": "You",
+          "kind": "person"
+        },
+        {
+          "id": "identity",
+          "label": "Identity",
+          "kind": "function",
+          "function": "identity"
+        }
+      ],
+      "steps": [
+        {
+          "n": "1",
+          "lane": "you",
+          "short": "You say a directive",
+          "text": "You say a directive (\"never say X\", \"always show the phone number\").",
+          "site_function": "you",
+          "site_status": "none",
+          "site_says": "none",
+          "site_code": "\u2014",
+          "act": "say",
+          "binds": [
+            {
+              "kind": "act",
+              "src": "Owner",
+              "act": "request",
+              "word": "request",
+              "dst": "Identity"
+            }
+          ],
+          "code": [
+            "identity_file"
+          ],
+          "tests": [
+            "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp"
+          ]
+        },
+        {
+          "n": "2",
+          "lane": "identity",
+          "short": "Identity restates it",
+          "text": "Identity restates it as one rule with a tag and a scope, and asks: \"A rule, as understood: \u2026\".",
+          "site_function": "Identity",
+          "site_status": "none",
+          "site_says": "none",
+          "site_code": "identity.rule, _rule_ask",
+          "act": "ask",
+          "binds": [
+            {
+              "kind": "step",
+              "id": "identity.rule"
+            },
+            {
+              "kind": "act",
+              "src": "Identity",
+              "act": "request",
+              "word": "rule",
+              "dst": "Owner"
+            }
+          ],
+          "code": [
+            "p_identity_rule",
+            "_rule_ask",
+            "identity_file"
+          ],
+          "tests": [
+            "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "J9.1",
+          "at": "2",
+          "short": "The rule is already there",
+          "trigger": "The rule is already on the record.",
+          "site": {
+            "status": "built",
+            "text": "Said back, not added twice."
+          },
+          "code_does": "identity_file says the department already has the rule and files nothing.",
+          "outcome": {
+            "kind": "tell",
+            "voice": "Identity",
+            "golden": "the department already has this rule"
+          },
+          "binds": [
+            {
+              "kind": "act",
+              "src": "Identity",
+              "act": "inform",
+              "word": "request",
+              "dst": "Owner"
+            }
+          ],
+          "code": [
+            "_rule_answered",
+            "identity_file"
+          ],
+          "tests": []
+        }
+      ],
+      "site_ids": [
+        "step:1",
+        "step:2",
+        "edge:J9.1"
+      ],
+      "status": "proven"
+    }
+  ],
+  "journey.file": [
+    {
+      "journeys": [
+        {
+          "schema_version": 1,
+          "id": "J9",
+          "title": "A fixture journey",
+          "kind": "system",
+          "inside": null,
+          "bound_to": null,
+          "serves": [],
+          "declared": false,
+          "goal": "The smallest journey that fits the definition: two steps and one edge. It is a fixture and proves nothing.",
+          "lead": "A directive the owner says becomes one rule, restated and put back, kept only on a stamp.",
+          "ends_when": "The rule is on the record, or the owner refused it and nothing was kept.",
+          "flag": null,
+          "tag": "A FIXTURE: THE SHAPE A JOURNEY FILE TAKES",
+          "site": {
+            "page": "native/system/department.html#j4",
+            "data_version": "2.4",
+            "as_of": "2026-10-01"
+          },
+          "helper": {
+            "site": "Sutra",
+            "screen": "Root",
+            "code": "Root"
+          },
+          "lanes": [
+            {
+              "id": "you",
+              "label": "You",
+              "kind": "person"
+            },
+            {
+              "id": "identity",
+              "label": "Identity",
+              "kind": "function",
+              "function": "identity"
+            }
+          ],
+          "steps": [
+            {
+              "n": "1",
+              "lane": "you",
+              "short": "You say a directive",
+              "text": "You say a directive (\"never say X\", \"always show the phone number\").",
+              "site_function": "you",
+              "site_status": "none",
+              "site_says": "none",
+              "site_code": "\u2014",
+              "act": "say",
+              "binds": [
+                {
+                  "kind": "act",
+                  "src": "Owner",
+                  "act": "request",
+                  "word": "request",
+                  "dst": "Identity"
+                }
+              ],
+              "code": [
+                "identity_file"
+              ],
+              "tests": [
+                "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp"
+              ]
+            },
+            {
+              "n": "2",
+              "lane": "identity",
+              "short": "Identity restates it",
+              "text": "Identity restates it as one rule with a tag and a scope, and asks: \"A rule, as understood: \u2026\".",
+              "site_function": "Identity",
+              "site_status": "none",
+              "site_says": "none",
+              "site_code": "identity.rule, _rule_ask",
+              "act": "ask",
+              "binds": [
+                {
+                  "kind": "step",
+                  "id": "identity.rule"
+                },
+                {
+                  "kind": "act",
+                  "src": "Identity",
+                  "act": "request",
+                  "word": "rule",
+                  "dst": "Owner"
+                }
+              ],
+              "code": [
+                "p_identity_rule",
+                "_rule_ask",
+                "identity_file"
+              ],
+              "tests": [
+                "test_engine_runtime.py::TestTheFiveJourneys::test_37_a_directive_is_restated_put_back_and_kept_only_on_a_stamp"
+              ]
+            }
+          ],
+          "edges": [
+            {
+              "id": "J9.1",
+              "at": "2",
+              "short": "The rule is already there",
+              "trigger": "The rule is already on the record.",
+              "site": {
+                "status": "built",
+                "text": "Said back, not added twice."
+              },
+              "code_does": "identity_file says the department already has the rule and files nothing.",
+              "outcome": {
+                "kind": "tell",
+                "voice": "Identity",
+                "golden": "the department already has this rule"
+              },
+              "binds": [
+                {
+                  "kind": "act",
+                  "src": "Identity",
+                  "act": "inform",
+                  "word": "request",
+                  "dst": "Owner"
+                }
+              ],
+              "code": [
+                "_rule_answered",
+                "identity_file"
+              ],
+              "tests": []
+            }
+          ],
+          "site_ids": [
+            "step:1",
+            "step:2",
+            "edge:J9.1"
+          ]
+        }
+      ]
+    },
+    {
+      "journeys": []
+    }
+  ],
+  "journey.row_status": [
+    {
+      "state": "proven",
+      "proven_by": [
+        "test_j1.py::test_a"
+      ],
+      "failing": [],
+      "site": "built",
+      "drift": false
+    },
+    {
+      "state": "great"
+    }
+  ],
+  "journey.status": [
+    {
+      "schema_version": 1,
+      "id": "J9",
+      "definitions_sha": "0000000000000000000000000000000000000000000000000000000000000000",
+      "state": "partly",
+      "counts": {
+        "proven": 2,
+        "partly": 1
+      },
+      "tests": {
+        "test_j1.py::test_a": "passed"
+      },
+      "rows": {
+        "step:1": {
+          "state": "proven"
+        }
+      },
+      "drift": []
+    },
+    {
+      "schema_version": 1,
+      "id": "J9",
+      "definitions_sha": "0000000000000000000000000000000000000000000000000000000000000000",
+      "state": "great",
+      "counts": {},
+      "tests": {},
+      "rows": {}
+    }
+  ]
+}

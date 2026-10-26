@@ -39,9 +39,9 @@ TOP_SET = ('description', 'skills')
 POSITION = ('after', 'before')
 #: step fields a child may not change on a step it inherits: equal to the parent's (`out` may gain keys, every enum keeps its
 #: members; see enums_kept)
-STEP_FIXED = ('nature', 'check', 'answer', 'out', 'or', 'only_if', 'stringency', 'each', 'files', 'by_hand')
+STEP_FIXED = ('nature', 'check', 'answer', 'out', 'or', 'only_if', 'stringency', 'each', 'files', 'may_end', 'by_hand')
 #: step fields a child may change (null deletes one)
-STEP_FREE = ('name', 'born', 'code', 'prompt', 'draft', 'ceiling', 'facts', 'tools', 'timeout_s', 'below')
+STEP_FREE = ('name', 'born', 'code', 'prompt', 'draft', 'ceiling', 'facts', 'tools', 'timeout_s', 'side_by_side', 'below')
 STEP_FIELDS = ('id',) + STEP_FIXED + STEP_FREE
 #: a gate's answers, least strict first: a replacement may answer a stricter one than its parent, never a laxer one
 GATE_ORDER = ('admit', 'wait', 'refuse')
