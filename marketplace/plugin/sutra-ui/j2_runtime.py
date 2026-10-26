@@ -724,17 +724,31 @@ def on_granted(ref, engine, envelope, kept, version=None):
         return
 
 
-def registered(ref, engines, source, by="Root", checks=None):
+def registered(ref, engines, source, by="Root", checks=None, plan=None, fit=None):
     """Root's check passed: the workflow is on the department's record, and the work may run (step 5 to step 6). The
-    validated event lists the checks that ran, each with whether it held and why (M0.7)."""
+    validated event lists the checks that ran, each with whether it held and why (M0.7). The registration keeps them too
+    (A1.14): the rows, which done-when items the engines cover, the deliverable (the last engine's output), the engines
+    the plan left out (what Coordination's table will hold once it writes after this record), and what each engine does
+    differently for this goal when the plan says. `plan` is the engines as the granted line carried them (dicts, with
+    their covers); without it the names stand for the plan."""
     names = [e if isinstance(e, str) else e.get("name") for e in engines]
+    import layer_schema as S
     with W._lock(ref):
         dept = W.dept(ref)
         versions = list(dept.get("workflows") or [])
         version = len(versions) + 1
-        versions.append({"version": version, "engines": names, "source": source, "registered": W.now(), "by": by})
+        reg = {"version": version, "engines": names, "source": source, "registered": W.now(), "by": by}
+        if checks is not None:
+            reg["checks"] = [dict(c) for c in checks]
+        reg["covers"] = S.as_workflow([e for e in plan if isinstance(e, dict)] if plan else names, source, dept)["covers"]
+        if fit:
+            reg["fit"] = {str(k): str(v)[:300] for k, v in fit.items() if k in names and v}
+        grown = set((R.coordination(ref).get("grown") or []))
+        reg["left_out"] = [n for n in dept.get("engines") or [] if n not in names and n not in grown]
+        versions.append(reg)
+        reg["deliverable"] = S.deliverable(dict(dept, workflows=versions))
         dept["workflows"] = versions                 # the department's own record: nothing here is written to the Library
-        W.save_dept(ref, dept)
+        W.save_dept(ref, dept, by="root")
     key = "workflow-v%d" % version
     note(ref, 5, "Root", "Adaptation", "workflow.validated", "complete", "The workflow meets Sutra's standards.", key + "-validated",
          {"workflow": names, "checks": list(checks or [])}, workflow_ref="workflow/%d" % version)

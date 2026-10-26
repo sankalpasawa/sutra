@@ -145,18 +145,18 @@ def test_c1_resolve_serves_a_stub_the_test_puts_in_the_registry(monkeypatch):
     W, R = modules()
     f = lambda ctx, step, item: {}
     stub = types.SimpleNamespace(LAYER="identity", VERSION=1, IMPLEMENTS=1, CODE={"identity_read": f}, PROMPT={}, DRAFT={}, CHECK={})
-    provided = layers.names("code") - {"identity_read"}        # what the other layers provide by reference is theirs, not the stub's
+    others = set().union(*(set(layers.load(S.DEFAULT_PINS[layer]).CODE) for layer in S.LAYER_NAMES if layer != "identity"))   # theirs, not the stub's
     monkeypatch.setitem(layers._LOADED, "identity/v1", stub)
     assert layers.resolve(None, "Identity", "code", "identity_read", R.CODE) is f
-    assert layers.names("code") == provided | {"identity_read"}
+    assert layers.names("code") == others | {"identity_read"}
 
 
 def test_c1_names_are_what_any_implementation_provides(monkeypatch):
-    base = {kind: layers.names(kind) for kind in layers.KINDS}          # a layer's package fills its own dicts as it moves
-    monkeypatch.setitem(layers.load("priority/v1").CHECK, "a_check_of_the_registrys_own", lambda *a: {})
-    monkeypatch.setitem(layers.load("audit/v1").CHECK, "another_check_of_the_registrys_own", lambda *a: {})
-    assert layers.names("check") == base["check"] | {"a_check_of_the_registrys_own", "another_check_of_the_registrys_own"}
-    assert layers.names("code") == base["code"] and layers.names("prompt") == base["prompt"]
+    held = {kind: layers.names(kind) for kind in layers.KINDS}          # whatever the layers hold of their own so far
+    assert held["code"] >= {"setup_read"} and all(isinstance(names, set) for names in held.values())
+    monkeypatch.setitem(layers.load("priority/v1").CHECK, "answer_has_its_price", lambda *a: {})
+    monkeypatch.setitem(layers.load("audit/v1").CHECK, "has_a_verdict", lambda *a: {})
+    assert layers.names("check") == held["check"] | {"answer_has_its_price", "has_a_verdict"} and layers.names("code") == held["code"]
 
 
 def test_c1_call_is_the_pinned_implementations_attribute_else_engine_runtimes(monkeypatch):
