@@ -283,7 +283,7 @@ def seed(tmp, state, env=None, ref=None, m=None, layout="test"):
         m.W.create(ref, "City Care Hospital Website", None, kind="website")
         _running_line(m, ref)
         from test_fixtures.j2ui import core_fixtures as K              # what was said, so the page shows a conversation under way
-        # threads the runtime has finished with (state completed), so a motor running on these records has nothing of theirs to act on
+        # threads as a finished conversation leaves them (state completed); the Chrome walk runs with the motor off, so nothing acts on them
         K.thread(m, "Owner", "Identity", "request", "request", tid="x-own", ref=ref, state="completed", words=WEBSITE, objective=WEBSITE,
                  output="the Brief's next version")
         K.thread(m, "Identity", "Owner", "inform", "planned", tid="x-plan", ref=ref, state="completed",

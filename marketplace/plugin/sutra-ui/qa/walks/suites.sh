@@ -45,7 +45,22 @@ lane $PY -m pytest -q -p no:cacheprovider test_runtime_characterization.py test_
   --deselect test_runtime_characterization.py::ChatCharacterization::test_03_stop_kills_turn_keeps_session_resumes_next \
   > /tmp/sutra-suite-a1.txt 2>&1 || RC=1
 tail -1 /tmp/sutra-suite-a1.txt | sed "s/^/characterization, templates and PRD documents: /"
-for t in test_website.js test_dept.js test_org2.js; do
+# the J2 page inside the app (the UI port: the prototype's own page, fed by an adapter built on the department's records), a lane each:
+# the adapter's core (scope, the one read, the chat, the state, the owner's words, the routes), what the work and the audits say,
+# what the Map, the board, the artifacts and a built site say, the copy of the page and the route that serves it, and last the page
+# against the prototype's own captured runs, the whole app in every cycle state and the hostile strings
+lane $PY -m pytest -q -p no:cacheprovider test_j2ui_proto.py test_j2ui_common.py test_j2ui_chat.py test_j2ui_state.py test_j2ui_say.py \
+  test_j2ui_api.py > /tmp/sutra-suite-j2ui-core.txt 2>&1 || RC=1
+tail -1 /tmp/sutra-suite-j2ui-core.txt | sed "s/^/J2 page, adapter core: /"
+lane $PY -m pytest -q -p no:cacheprovider test_j2ui_work.py test_j2ui_atoms.py test_j2ui_audit.py > /tmp/sutra-suite-j2ui-work.txt 2>&1 || RC=1
+tail -1 /tmp/sutra-suite-j2ui-work.txt | sed "s/^/J2 page, work and audits: /"
+lane $PY -m pytest -q -p no:cacheprovider test_j2ui_map.py test_j2ui_board.py test_j2ui_artifacts.py test_j2ui_site.py > /tmp/sutra-suite-j2ui-views.txt 2>&1 || RC=1
+tail -1 /tmp/sutra-suite-j2ui-views.txt | sed "s/^/J2 page, map, board, artifacts and site: /"
+lane $PY -m pytest -q -p no:cacheprovider test_j2ui_verbatim.py test_j2ui_sync.py test_j2ui_page.py > /tmp/sutra-suite-j2ui-shell.txt 2>&1 || RC=1
+tail -1 /tmp/sutra-suite-j2ui-shell.txt | sed "s/^/J2 page, the copy and its route: /"
+lane $PY -m pytest -q -p no:cacheprovider test_j2ui_contract.py test_j2ui_render.py test_j2ui_xss.py > /tmp/sutra-suite-j2ui-verify.txt 2>&1 || RC=1
+tail -1 /tmp/sutra-suite-j2ui-verify.txt | sed "s/^/J2 page, contract, render and hostile strings: /"
+for t in test_website.js test_dept.js test_org2.js test_j2view.js; do
   node "$t" 2>&1 | tail -1 | sed "s/^/$t: /"
   node "$t" >/dev/null 2>&1 || RC=1
 done
