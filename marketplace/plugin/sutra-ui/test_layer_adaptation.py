@@ -176,3 +176,69 @@ def _source_of(j2, ref):
            "post": {"n": 1, "thread": "x", "src": "Identity", "msg_type": "request", "payload": {"word": "line", "words": "more"}}}
     _, step = R.step_def("adapt.source")
     return v1().CODE["adapt_source"](ctx, step, None), ctx
+
+
+# ---- A4 · the proposal stage ------------------------------------------------------------------------------------------
+GOOD = [{"name": "Facts 2", "does": "finds what the goal names, each fact with its source", "reads": "Brief", "writes": "Facts 2", "internet": True},
+        {"name": "Site 2", "does": "writes the pages from the facts", "reads": "Facts 2", "writes": "Live site", "internet": False}]
+
+
+class _Standards:
+    """Root's standards as W1-ROOT's workflow_schema will run them, for the two the A4 cases need: reads_known fails the
+    engine that reads what nothing before it wrote, and items_covered at the proposal stage is only a warning."""
+
+    @staticmethod
+    def run(wf, stage, dept=None, ctx=None):
+        written, rows = {"Brief"}, []
+        for e in wf["engines"]:
+            if e["reads"] not in written:
+                rows.append({"check": "reads_known", "passed": False, "why": "%s reads %s, which nothing before it wrote" % (e["name"], e["reads"])})
+            written.add(e["writes"])
+        rows.append({"check": "items_covered", "passed": True, "why": "warning: D3 is covered by no engine"})
+        return rows
+
+
+def _line_ctx(j2, source="shaped"):
+    W, R, _, _, _ = j2
+    W.create("dref-line", "Line Dept", None, kind="organic")
+    return {"ref": "dref-line", "dept": W.dept("dref-line"), "bag": {"adapt.source": {"shape": True, "source": source}}}
+
+
+def test_a4_a_sound_line_says_what_it_always_said_and_the_legacy_check_agrees(j2):
+    R = j2[1]
+    ctx = _line_ctx(j2)
+    for out in ({"engines": GOOD}, {"engines": [dict(GOOD[0], name="Plan")] + GOOD[1:]}, {"engines": []}, {"engines": "none"},
+                {"engines": [GOOD[0], dict(GOOD[1], reads="Brief", writes="Facts 2")]}):
+        mine, theirs = v1().CHECK["line_is_engines"](ctx, None, None, out), R.c_line_is_engines(ctx, None, None, out)
+        assert mine == theirs, out
+    assert v1().CHECK["line_is_engines"](ctx, None, None, {"engines": GOOD}) == \
+        {"ok": True, "notes": ["2 engines, each reading what one before it wrote"]}
+
+
+def test_a4_a_failed_standard_row_fails_the_line_naming_it_and_a_warning_row_passes(j2, monkeypatch):
+    monkeypatch.setattr(S, "_workflow_schema", lambda: _Standards)
+    ctx = _line_ctx(j2)
+    got = v1().CHECK["line_is_engines"](ctx, None, None, {"engines": [GOOD[0], dict(GOOD[1], reads="Interviews")]})
+    assert got["ok"] is False
+    assert "Site 2 reads Interviews, which nothing before it writes" in got["notes"], "today's wording is kept"
+    assert "reads_known: Site 2 reads Interviews, which nothing before it wrote" in got["notes"]
+    assert not any(n.startswith("items_covered") for n in got["notes"]), "a warning row is no fault"
+    assert v1().CHECK["line_is_engines"](ctx, None, None, {"engines": GOOD})["ok"] is True
+
+
+def test_a4_the_workflow_it_judges_validates_and_carries_what_a_made_engine_adds(j2):
+    ctx = _line_ctx(j2)
+    engines = [dict(GOOD[0], level=2, confidence=0.9, covers=["D1"]), dict(GOOD[1], level=2, confidence=0.7, doubt="how often?", covers=["D1"])]
+    wf = v1().workflow_of(engines, "shaped", ctx["dept"])
+    assert S.validate("workflow", wf) == []
+    assert [(e["level"], e["confidence"]) for e in wf["engines"]] == [(2, 0.9), (2, 0.7)] and wf["engines"][1]["doubt"] == "how often?"
+    assert wf["deliverable"] == "Live site" and set(wf["covers"]) == {"D1"} and wf["covers_by"] == "adaptation"
+
+
+def test_a4_a_name_or_a_text_that_does_not_fit_the_schema_is_cut_to_fit_before_it_is_judged(j2):
+    ctx = _line_ctx(j2)
+    long = dict(GOOD[0], name="Facts about the night clinic and all of its rooms and doors", does="x" * 500)
+    row = v1().norm_engines([long])[0]
+    assert len(row["name"]) == 40 and len(row["does"]) == 200
+    got = v1().CHECK["line_is_engines"](ctx, None, None, {"engines": [long, dict(GOOD[1], reads=row["writes"])]})
+    assert got["ok"] is True, got

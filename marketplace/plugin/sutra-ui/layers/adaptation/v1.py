@@ -82,6 +82,51 @@ def adapt_source(ctx, step, item):
     return out
 
 
+def norm_engines(engs):
+    """A line's engines as a proposal carries them (the form adapt_line_offer has always posted): a name of at most forty
+    characters, what it does in two hundred, what it reads and writes, and whether it goes to the internet. Tolerant of
+    what a model might answer, so the check can say what is wrong with it."""
+    out = []
+    for e in engs or []:
+        e = e if isinstance(e, dict) else {}
+        name = ' '.join(str(e.get('name') or '').split())[:40]
+        out.append({'name': name, 'does': ' '.join(str(e.get('does') or '').split())[:200],
+                    'reads': ' '.join(str(e.get('reads') or 'Brief').split())[:40],
+                    'writes': ' '.join(str(e.get('writes') or name).split())[:40], 'internet': bool(e.get('internet'))})
+    return out
+
+
+def workflow_of(engines, source, d):
+    """The line as a workflow value (DEFS['workflow'], A1.14): S.as_workflow over the engines, which looks up what a name
+    reads and writes and inverts each engine's covers, and then the fields of a made engine it does not carry over
+    (its level, confidence and doubt)."""
+    wf = S.as_workflow(engines, source, d)
+    by = {e.get('name'): e for e in engines if isinstance(e, dict)}
+    for row in wf['engines']:
+        for key in ('level', 'confidence', 'doubt'):
+            if by.get(row['name'], {}).get(key) is not None:
+                row[key] = by[row['name']][key]
+    return wf
+
+
+def c_line_is_engines(ctx, step, item, out):
+    """One to six engines that code finds nothing wrong with: the shape is the agent's, the check is code (today's rules:
+    each named once and new to the Library, the first reading the Brief, each reading what one before it wrote and
+    writing something new). Then Root's standards at the proposal stage (A4): the line is run as a workflow through
+    S.validate_workflow, and a failed row, named by its standard, is a note beside today's wording. A warning row passes."""
+    engs = out.get('engines') if isinstance(out, dict) else None
+    if not isinstance(engs, list) or not 1 <= len(engs) <= 6:
+        return R._verdict(False, '', 'one to six engines')
+    notes = list(R._line_faults(engs))
+    d = (ctx or {}).get('dept')
+    source = (((ctx or {}).get('bag') or {}).get('adapt.source') or {}).get('source') or 'shaped'
+    for row in S.validate_workflow(workflow_of(norm_engines(engs), source, d), 'proposal', d, {}):
+        note = '%s: %s' % (row['check'], row['why'])
+        if not row['passed'] and note not in notes:
+            notes.append(note)
+    return {'ok': not notes, 'notes': notes or ['%d engines, each reading what one before it wrote' % len(engs)]}
+
+
 CODE = {name: ref_to(name) for name in (
     'hear', 'adapt_sense', 'adapt_ladder', 'adapt_act', 'adapt_trial', 'adapt_notrial', 'adapt_heard', 'adapt_park', 'adapt_offer',
     'adapt_priced', 'adapt_line_offer', 'adapt_line_granted', 'adapt_line_refused', 'adapt_line_counter')}
@@ -89,7 +134,8 @@ CODE['adapt_source'] = adapt_source
 PROMPT = {'adapt_shape': ref_to('p_adapt_shape'), 'adapt_line': ref_to('p_adapt_line')}
 DRAFT = {'adapt_shape_draft': ref_to('d_adapt_shape'), 'adapt_line_draft': ref_to('d_adapt_line')}
 CHECK = {name: ref_to('c_' + name) for name in (
-    'counted_the_rows', 'moves_name_their_rows', 'said_what_it_did', 'facts_are_closed', 'idea_has_shapes', 'line_is_engines')}
+    'counted_the_rows', 'moves_name_their_rows', 'said_what_it_did', 'facts_are_closed', 'idea_has_shapes')}
+CHECK['line_is_engines'] = c_line_is_engines
 WORDS, LAYOUT = {}, {}
 
 
