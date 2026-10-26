@@ -10,6 +10,8 @@
   K4  view() and engine_card() are functions_view's S7 and S17 read models by reference, and validate as view.coordination
       and view.engine_card in every state a department passes through (empty, running, waiting, alarm, stopped, done; an
       engine running, waiting, held, left out and stopped)
+  K5  the field tuples engine_runtime names (TABLE_FIELDS, SLOT_FIELDS, LEFT_OUT_FIELDS) are the definitions' keys, what Coordination
+      writes fits them, and the contract passes for coordination/v1 whole: eight cases, no part on the fallback
 """
 import importlib
 import json
@@ -432,3 +434,40 @@ def test_k3_every_table_written_as_a_department_settles_validates(words, org, j2
     assert [S.validate("coordination.table", t) for t in written] == [[]] * len(written)
     assert {t["by"] for t in written} <= {"born", "Coordination"}
     assert S.REFUSED["count"] == start, S.REFUSED["rows"][start:]
+
+
+# ---- K5: the tuples are the definitions, and the contract passes whole -------------------------------------------------------
+def _keys(name):
+    return tuple(S.DEFS[name]["properties"])
+
+
+def test_k5_the_field_tuples_are_the_definitions_keys(j2):
+    """A field engine_runtime names that the definition lacks, or the reverse, must fail: the table is the interface's, and
+    its shape is named once on each side."""
+    _, R, _, _, _ = j2
+    assert tuple(k for k in _keys("coordination.table") if k != "schema_version") == R.TABLE_FIELDS
+    assert "schema_version" in _keys("coordination.table"), "the definition adds the version the record is stamped with"
+    assert _keys("coordination.slot") == R.SLOT_FIELDS
+    assert _keys("coordination.left_out") == R.LEFT_OUT_FIELDS
+
+
+def test_k5_what_coordination_writes_is_made_of_those_fields(j2):
+    """The rows its writers build carry no key the definitions lack, and the table it is born with is the interface's."""
+    W, R, _, _, _ = j2
+    ref = _born(j2)
+    t = _table(W, ref)
+    assert set(t) <= set(R.TABLE_FIELDS) | {"schema_version"} and S.validate("coordination.table", t) == []
+    assert all(set(r) <= set(R.SLOT_FIELDS) for r in t["timetable"]) and all(list(r) == [k for k in R.SLOT_FIELDS if k in r] for r in t["timetable"])
+    assert list(R.left_out_row("Publish")) == list(R.LEFT_OUT_FIELDS)
+    for slot in (R.slot_of(ref, "Plan"), {"on": "every 1 h", "every_s": 3600}):
+        row = R.timetable_row("Plan", slot, 15)
+        assert list(row) == [k for k in R.SLOT_FIELDS if k in row] and S.validate("coordination.slot", row) == [], row
+    born = R.born_table("website")
+    assert set(born) <= set(R.TABLE_FIELDS) and S.validate("coordination.table", dict(born, by="born", since=W.now())) == []
+
+
+def test_k5_the_contract_passes_for_coordination_v1_whole_with_no_part_on_the_fallback(j2):
+    ref = _born(j2)
+    for number, what, case in C.cases():
+        assert case(V1, {"ref": ref}) == [], "case %d: %s" % (number, what)
+    assert C.on_the_md_fallback(V1) == [] and C.by_reference(V1) == {"by_reference": 19, "own": 0}
