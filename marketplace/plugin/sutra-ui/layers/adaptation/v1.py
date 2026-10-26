@@ -514,6 +514,9 @@ LAYOUT = {
             'The department "{{dept}}" was just given its goal, in its owner\'s words:\n'
             '{{words}}\n'
             '\n'
+            'WHAT DONE MEANS, ITEM BY ITEM:\n'
+            '{{items}}\n'
+            '\n'
             'It has no engines yet. Shape the line of engines that gets this done: two to five, in the order '
             "they run, each reading one thing and writing one thing. The first reads the Brief (the owner's "
             'words); each later one reads what an earlier one wrote. An engine can search the web and open '

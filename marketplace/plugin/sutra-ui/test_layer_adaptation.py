@@ -104,10 +104,6 @@ def test_a2_the_whole_contract_passes_for_adaptation_v1_with_no_part_on_the_fall
     assert fn(v1(), home) == [], what
 
 
-# the block the line prompt gained when it began to name the done-when items (A3, snapshot: M5.1); the rest is the .md part
-ITEMS_BLOCK = "WHAT DONE MEANS, ITEM BY ITEM:\n<<items>>\n\n"
-
-
 def test_a2_each_part_compiles_to_the_md_part_it_came_from_byte_for_byte(home):
     import layers.prompts as P
     seen = 0
@@ -116,7 +112,7 @@ def test_a2_each_part_compiles_to_the_md_part_it_came_from_byte_for_byte(home):
             if ("adaptation", group, part) in S.ADDED_PARTS:
                 continue
             sample = {n: "<<%s>>" % n for n in spec["inputs"]}
-            got = P.prompt(home["ref"], "adaptation", group, part, **sample).replace(ITEMS_BLOCK, "")
+            got = P.prompt(home["ref"], "adaptation", group, part, **sample)
             assert got == P.SLOT.sub(lambda m: sample[m.group(1)], P.md_part("adaptation", group, part)), "%s.%s" % (group, part)
             seen += 1
     assert seen == 6
