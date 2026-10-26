@@ -264,9 +264,14 @@ def c_line_is_engines(ctx, step, item, out):
     source = (((ctx or {}).get('bag') or {}).get('adapt.source') or {}).get('source') or 'shaped'
     rows = made_engines(engs) if made else norm_engines(engs)
     for row in S.validate_workflow(workflow_of(rows, source, d), 'proposal', d, {}):
-        note = '%s: %s' % (row['check'], row['why'])
-        if not row['passed'] and note not in notes:
-            notes.append(note)
+        if row['passed']:
+            continue                                      # a warning row passes
+        for fault in str(row['why']).split('; '):
+            named = '%s: %s' % (row['check'], fault)
+            if fault in notes:
+                notes[notes.index(fault)] = named        # today's wording, now naming the standard it breaks
+            elif named not in notes:
+                notes.append(named)
     return {'ok': not notes, 'notes': notes or ['%d engines, each reading what one before it wrote' % len(engs)]}
 
 

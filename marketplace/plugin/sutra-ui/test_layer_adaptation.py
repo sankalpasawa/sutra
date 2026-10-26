@@ -12,6 +12,7 @@ conftest.py, so a deliberate one is wrapped in S.expect_refused().
 """
 import importlib
 import json
+import re
 
 import pytest
 
@@ -245,21 +246,6 @@ GOOD = [{"name": "Facts 2", "does": "finds what the goal names, each fact with i
         {"name": "Site 2", "does": "writes the pages from the facts", "reads": "Facts 2", "writes": "Live site", "internet": False}]
 
 
-class _Standards:
-    """Root's standards as W1-ROOT's workflow_schema will run them, for the two the A4 cases need: reads_known fails the
-    engine that reads what nothing before it wrote, and items_covered at the proposal stage is only a warning."""
-
-    @staticmethod
-    def run(wf, stage, dept=None, ctx=None):
-        written, rows = {"Brief"}, []
-        for e in wf["engines"]:
-            if e["reads"] not in written:
-                rows.append({"check": "reads_known", "passed": False, "why": "%s reads %s, which nothing before it wrote" % (e["name"], e["reads"])})
-            written.add(e["writes"])
-        rows.append({"check": "items_covered", "passed": True, "why": "warning: D3 is covered by no engine"})
-        return rows
-
-
 def _line_ctx(j2, source="shaped"):
     W, R, _, _, _ = j2
     W.create("dref-line", "Line Dept", None, kind="organic")
@@ -272,19 +258,27 @@ def test_a4_a_sound_line_says_what_it_always_said_and_the_legacy_check_agrees(j2
     for out in ({"engines": GOOD}, {"engines": [dict(GOOD[0], name="Plan")] + GOOD[1:]}, {"engines": []}, {"engines": "none"},
                 {"engines": [GOOD[0], dict(GOOD[1], reads="Brief", writes="Facts 2")]}):
         mine, theirs = v1().CHECK["line_is_engines"](ctx, None, None, out), R.c_line_is_engines(ctx, None, None, out)
-        assert mine == theirs, out
+        assert mine["ok"] == theirs["ok"], out
+        # today's wording, each fault now naming the standard it breaks when Root has one for it
+        assert [re.sub(r"^[a-z_]+: ", "", n) for n in mine["notes"]] == theirs["notes"], out
     assert v1().CHECK["line_is_engines"](ctx, None, None, {"engines": GOOD}) == \
         {"ok": True, "notes": ["2 engines, each reading what one before it wrote"]}
 
 
-def test_a4_a_failed_standard_row_fails_the_line_naming_it_and_a_warning_row_passes(j2, monkeypatch):
-    monkeypatch.setattr(S, "_workflow_schema", lambda: _Standards)
+def test_a4_a_failed_standard_row_fails_the_line_naming_it_and_a_warning_row_passes(j2):
     ctx = _line_ctx(j2)
     got = v1().CHECK["line_is_engines"](ctx, None, None, {"engines": [GOOD[0], dict(GOOD[1], reads="Interviews")]})
     assert got["ok"] is False
-    assert "Site 2 reads Interviews, which nothing before it writes" in got["notes"], "today's wording is kept"
-    assert "reads_known: Site 2 reads Interviews, which nothing before it wrote" in got["notes"]
-    assert not any(n.startswith("items_covered") for n in got["notes"]), "a warning row is no fault"
+    assert got["notes"] == ["reads_known: Site 2 reads Interviews, which nothing before it writes"], "today's wording, naming the standard"
+    taken = v1().CHECK["line_is_engines"](ctx, None, None, {"engines": [dict(GOOD[0], name="Plan")] + GOOD[1:]})
+    assert taken["notes"] == ["names_new: the Library already has an engine named Plan"]
+    # items_covered at the proposal stage is a warning: the line passes, and the notes name no such standard
+    d = j2[0].dept(_dept(j2, "organic", ref="dref-three"))
+    wf = v1().workflow_of(v1().norm_engines(GOOD), "shaped", d)
+    wf["covers"], wf["covers_by"] = {"D1": ["Site 2"]}, "adaptation"
+    rows = S.validate_workflow(wf, "proposal", d, {})
+    assert next(r for r in rows if r["check"] == "items_covered") == {"check": "items_covered", "passed": True,
+                                                                       "why": "warning: D2 is covered by no engine of the plan; D3 is covered by no engine of the plan"}
     assert v1().CHECK["line_is_engines"](ctx, None, None, {"engines": GOOD})["ok"] is True
 
 
@@ -310,7 +304,6 @@ def test_a4_a_shaped_line_whose_second_engine_reads_nothing_filed_fails_naming_r
     """The step fails through the covering, and the existing reshape path runs: the reasons go back to Adaptation, which
     shapes the line again, and the second line registers."""
     W, R, J, founding, FV = j2
-    monkeypatch.setattr(S, "_workflow_schema", lambda: _Standards)
     asked = []
     bad = {"engines": [GOOD[0], dict(GOOD[1], reads="Interviews")]}
     lines = iter([bad, {"engines": GOOD}])
@@ -326,7 +319,7 @@ def test_a4_a_shaped_line_whose_second_engine_reads_nothing_filed_fails_naming_r
     W.run_until_idle(ref, limit=300)
     events = J.events(ref)
     blocked = next(e for e in events if e["action"] == "workflow.blocked")
-    assert "reads_known: Site 2 reads Interviews, which nothing before it wrote" in " ".join(blocked["payload"]["faults"])
+    assert "reads_known: Site 2 reads Interviews, which nothing before it writes" in " ".join(blocked["payload"]["faults"])
     acts = [e["action"] for e in events]
     assert acts.index("proposal.requested", acts.index("workflow.blocked")) > acts.index("workflow.blocked"), "the reasons go back"
     assert "YOUR LAST LINE WAS REFUSED BY ROOT'S CHECK" in asked[1] and "reads_known" in asked[1]
@@ -484,13 +477,13 @@ def test_a8_a_shipped_name_is_level_1_on_its_template_and_nowhere_else(j2, monke
     low = _verdict_of(j2, monkeypatch, "organic", {"engines": [dict(write, level=2), pages, rest]})
     assert "Plan is an engine of the Library, so it is level 1" in low["notes"]
     legacy = _verdict_of(j2, monkeypatch, "organic", {"engines": [write, pages, rest]}, how="offline draft")
-    assert legacy["ok"] is False and "the Library already has an engine named Plan" in legacy["notes"], "a draft is not made: the old rule"
+    assert legacy["ok"] is False and "names_new: the Library already has an engine named Plan" in legacy["notes"], "a draft is not made: the old rule"
 
 
 def test_a8_a_reshape_keeps_the_engines_the_kind_requires_at_level_1(j2, monkeypatch):
     lib = [_made("Pages", "Brief", "Pages", ["D1", "D2"], confidence=0.9)]
     dropped = _verdict_of(j2, monkeypatch, "website", {"engines": lib})
-    assert dropped["ok"] is False and "the plan leaves out Check, which this kind of department requires" in dropped["notes"]
+    assert dropped["ok"] is False and "required_kept: the plan leaves out Check, which this kind of department requires" in dropped["notes"]
     kept = _verdict_of(j2, monkeypatch, "website", {"engines": lib + [_made("Check", "Pages", "Build", ["D3"], level=1)]})
     assert kept["ok"] is True, kept
     changed = _verdict_of(j2, monkeypatch, "website", {"engines": lib + [_made("Check", "Pages", "Build", ["D3"], level=2)]})
@@ -776,7 +769,10 @@ def test_a9_a_department_no_template_fits_shapes_bargains_is_checked_runs_and_is
     sent = next(p["payload"] for p in R.board(ref) if p["src"] == "Adaptation" and p["dst"] == ["Priority"] and p["payload"].get("word") == "line")
     assert set(sent["covers"]) == {i["id"] for i in d["done_items"]} and sent["confidence"] == 0.85
     assert S.validate_act("Adaptation", ["Priority"], "propose", sent) == []
-    assert S.workflow_faults(S.as_workflow(sent["engines"], sent["source"], d), "registration", d) == []
+    registered = d["workflows"][-1]
+    assert S.validate("workflow.registration", registered) == [] and S.validate("workflow", S.as_workflow(sent["engines"], sent["source"], d)) == []
+    assert registered["covers"] == sent["covers"] and registered["deliverable"] == last, "Root records what Adaptation said each engine covers"
+    assert next(c for c in registered["checks"] if c["check"] == "items_covered")["passed"] is True
     pane = v1().view(ref, d, FV._events(ref, FV._cycle_state(ref).get("cycle_id")), W.asks(ref))
     assert pane["coverage"] == {"items": [i["id"] for i in d["done_items"]], "uncovered": [], "by": "adaptation"}
     assert S.validate_view("adaptation", pane) == []
