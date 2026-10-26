@@ -109,7 +109,8 @@
          them: Identity's question (S6) and a blocked plan's card (S10) at the
          top of All five; the blocked card at the top of the pane of the
          function that caused it, and pinned at the top of Chat while it is
-         open; the same card and state everywhere, answered in one place
+         open; the same card and state everywhere, answered in one place,
+         and kept so by the poll clock on All five and on a function's pane
          (PRD M3.7)
 
    Harness: test_dept.js's fresh(), with 22-website.js loaded after 20-dept.js
@@ -2328,6 +2329,45 @@ test("W52: a blocked card stands at the top of the pane of the function that cau
   assert.ok(card(await pane("You, on the plan Identity put to you", "identity")) >= 0, "the owner's own no is Identity's to carry");
   assert.ok(card(await pane("Adaptation, shaping the plan", "adaptation")) >= 0, "Adaptation's own");
   assert.strictEqual(vm.runInContext("wbCauseFn({ who: 'Priority, on its limit' })", fresh()), "priority");
+});
+
+/* the poll clock (wbTick), captured: the callback setInterval was given, run as one tick of the clock */
+function clockOf(c){
+  const ticks = [];
+  c.setInterval = fn => { ticks.push(fn); return 2; };
+  vm.runInContext("wbS().timer = null;", c);
+  c.wbViewer(WEB);
+  assert.strictEqual(ticks.length, 1, "one clock");
+  return async () => { ticks[0](); for (let i = 0; i < 6; i++) await sleep(); };
+}
+test("W52: on All five and on the causing function's pane the clock reads the chat again, so a card raised or answered elsewhere shows there as in Chat", async () => {
+  const card = h => h.indexOf('<div class="dpask hard wbq wbopt wb"><div class="dpk">Identity asks</div><div class="dpasks">The plan could not be approved.</div>');
+  const chats = () => readsOf(c, /\/api\/native\/r3\/chat$/).length;
+  const o = { map: rtMap(), board: FV_BOARD, fv: fvOf({}), chat: qChat({}), fnpage: fnPageOf };
+  const c = await v2(o);
+  click(c, { wbtab: "five" }); await sleep();
+  assert.ok(card(await paint(c)) < 0, "nothing waits yet");
+  const tick = clockOf(c);
+  /* a blocked card is raised while the owner sits on All five: the five's read says needs you, and the card stands */
+  o.chat = cardsChat(); o.fv = fvOf({ states: { Identity: "waiting_on_you" }, cycle: { needs_you: true, asks: 1 } });
+  let before = chats();
+  await tick();
+  let html = await paint(c);
+  assert.ok(chats() > before, "the chat read again on the clock, on All five");
+  assert.ok(card(html) >= 0 && card(html) < html.indexOf('class="fvgrid'), "the card on All five, at its top");
+  /* answered elsewhere (Root's chat): the card goes here too */
+  o.chat = qChat({});
+  await tick();
+  assert.ok(card(await paint(c)) < 0, "answered elsewhere, gone from All five");
+  /* the same on the pane of the function that caused it */
+  html = await fnCard(c, "adaptation");
+  assert.ok(card(html) < 0, "nothing on Adaptation's pane yet");
+  o.chat = cardsChat();
+  before = chats();
+  await tick();
+  html = await fnCard(c, "adaptation");
+  assert.ok(chats() > before, "the chat read again on the clock, on a function's pane");
+  assert.ok(card(html) >= 0 && card(html) < html.indexOf("<h3>The function</h3>"), "the card on Adaptation's pane, above its page");
 });
 
 test("W52: in Chat an open blocked card is pinned at the top while it waits; chosen, it stands quiet at its time", async () => {

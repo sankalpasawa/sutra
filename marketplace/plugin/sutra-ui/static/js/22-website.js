@@ -234,10 +234,14 @@ function wbTick(){
     /* the five functions' read is read on the same clock: the Map's boxes, the list's dots, All five and the open
        function's page repaint only when what they show moved (PRD M1.9) */
     if (st.fv[S.dp.sel]) wbLoadFv(S.dp.sel, true);
-    /* a department's answer lands on Root's board without a run of Root's own, so the open chat is read on its own clock */
-    if (wbTab(S.dp.sel) === "chat" && st.chat[S.dp.sel]) wbLoadChat(S.dp.sel, true);
-    /* a function's open chat is read on the same clock */
+    /* a department's answer lands on Root's board without a run of Root's own, so the open chat is read on its own clock;
+       so is the chat read All five and a function's pane draw the cards that wait on the owner from (S6, S10, PRD M3.7),
+       so a card raised, or answered elsewhere, shows there as it does in Chat (found by a verifier 2026-10-26: All five
+       showed 'needs you' and no card) */
     const ftab = (typeof dpS === "function" && dpS().tab[S.dp.sel]) || "", fk = S.dp.sel + ":" + ftab;
+    const cards = wbTab(S.dp.sel) === "chat" || wbTab(S.dp.sel) === "five" || WB_FUNCS.indexOf(ftab) >= 0;
+    if (cards && st.chat[S.dp.sel]) wbLoadChat(S.dp.sel, true);
+    /* a function's open chat is read on the same clock */
     if (ftab && st.fnchat[fk] && dpS().pane[fk] === "chat") wbLoadFnChat(S.dp.sel, ftab, true);
     if (WB_FUNCS.indexOf(ftab) >= 0 && st.fnpage[fk] && (!dpS().pane[fk] || dpS().pane[fk] === ftab)) wbLoadFnPage(S.dp.sel, ftab, true);
     /* and so is the open Agent activity: the lifecycle's events land while the person watches */
