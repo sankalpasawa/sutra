@@ -76,13 +76,20 @@ function dpLoadWaits(ref, force){ return dpLoad("waits", ref, dpUrl(ref, "waits"
    from LLD section 4, which fires every loader from dpSelect): opening a
    department must cost the three reads Now needs and no more, and the
    call-on-render pattern is the one o2LoadApps already uses (19-org2.js:639). */
-function dpLoadIdentity(ref, force){ return dpLoad("identity", ref, dpUrl(ref, "identity"), force); }
+function dpLoadIdentity(ref, force){ return dpLoadFn("identity", ref, force); }
 /* The other four functions read the same way Identity does: when their own
    card opens, never when the department does. */
-function dpLoadAdaptation(ref, force){ return dpLoad("adaptation", ref, dpUrl(ref, "adaptation"), force); }
-function dpLoadPriority(ref, force){ return dpLoad("priority", ref, dpUrl(ref, "priority"), force); }
-function dpLoadCoordination(ref, force){ return dpLoad("coordination", ref, dpUrl(ref, "coordination"), force); }
-function dpLoadAudit(ref, force){ return dpLoad("audit", ref, dpUrl(ref, "audit"), force); }
+function dpLoadAdaptation(ref, force){ return dpLoadFn("adaptation", ref, force); }
+function dpLoadPriority(ref, force){ return dpLoadFn("priority", ref, force); }
+function dpLoadCoordination(ref, force){ return dpLoadFn("coordination", ref, force); }
+function dpLoadAudit(ref, force){ return dpLoadFn("audit", ref, force); }
+/* PRD M10.2, one API family: these five are the registry's routes, and a department on the engine runtime draws its
+   function panes from /api/native and /j2 (dpRuntimeFnHtml), so it never asks them -- not while its map is still being
+   read, not when a stamped ask would read a card again. 22-website.js answers; a build without it asks for every one. */
+function dpLoadFn(key, ref, force){
+  if (typeof wbFnReadsRegistry === "function" && !wbFnReadsRegistry(ref)) return Promise.resolve();
+  return dpLoad(key, ref, dpUrl(ref, key), force);
+}
 function dpLoadJ2(ref, force){ return dpLoad("j2", ref, dpUrl(ref, "j2"), force); }
 function dpLoadActivity(ref, force){ return dpLoad("activity", ref, dpUrl(ref, "j2/events"), force); }
 /* Engines is read when the LIST COLUMN paints, not when a card opens: the

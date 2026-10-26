@@ -129,6 +129,12 @@
          open; the same card and state everywhere, answered in one place,
          and kept so by the poll clock on All five and on a function's pane
          (PRD M3.7)
+     M10.2 one API family: a runtime department's five function panes make no
+         call to GET /api/dept/{ref}/identity, adaptation, priority, coordination
+         or audit -- not before the list and the map have landed, not when a
+         stamped ask would read a card again; a department of the first build
+         and one of the registry alone keep their cards and their reads
+         (PRD M10.2; W2-SCREENS H5)
 
    Harness: test_dept.js's fresh(), with 22-website.js loaded after 20-dept.js
    (panel.html's order). Run: node test_website.js */
@@ -2967,6 +2973,54 @@ test("S17: on the runtime the Map emits no Motor target, and the viewer serves n
   const old = await opened();
   click(old, { wbtab: "motor" });
   assert.ok(/<h3>What it does each tick<\/h3>/.test(view(old)), "the first build's Motor stays");
+});
+
+/* ── M10.2: one API family for runtime departments (PRD-FIVE-FUNCTIONS M10.2; W2-SCREENS H5) ─────────────────────────
+   A function's pane on the engine runtime is drawn from /api/native and /j2 (the map, the functions' read, the chat);
+   the registry's five routes, GET /api/dept/{ref}/identity, adaptation, priority, coordination and audit, answer the
+   registry's cards, which a runtime department does not draw (20-dept.js dpRuntimeFnHtml). The loaders asked them
+   anyway when a pane opened. Now none is asked: not while the list of departments or the map is still being read, not
+   when a stamped ask would read a card again, and not on the clock. A department of the first build and one that is
+   not a website department at all keep their cards, and so keep the reads. */
+const REG_FN = ["identity", "adaptation", "priority", "coordination", "audit"];
+const regReads = c => readsOf(c, /\/api\/dept\/[^/]+\/(identity|adaptation|priority|coordination|audit)\b/);
+test("M10.2: a runtime department's five function panes make no call to the registry's function routes", async () => {
+  const c = await opened({ map: rtMap(), fv: fvOf({}) });
+  for (const f of REG_FN) await fnCard(c, f);
+  /* a pane's Chat and Settings tabs are the same screen: no read of the registry either */
+  for (const f of REG_FN){ vm.runInContext("dpS().tab['r3'] = '" + f + "'; dpS().pane['r3:" + f + "'] = 'chat';", c); c.dpViewerHtml(WEB, {}, null, null); await sleep(); }
+  /* a stamped org ask re-reads the cards that hold an answer; a runtime department holds none, and the read is not asked */
+  vm.runInContext("['identity', 'adaptation', 'priority', 'coordination', 'audit'].forEach(k => { dpS()[k] = { ref: 'r3' }; });", c);
+  await vm.runInContext("dpAfterDecide('r3', 'org.charter')", c);
+  await sleep(); await sleep();
+  assert.deepStrictEqual(regReads(c), [], "the registry's function routes were asked: " + regReads(c).join(", "));
+  REG_FN.forEach(f => assert.ok(readsOf(c, new RegExp("^/api/native/r3/functions/" + f + "$")).length >= 1, "the runtime's own page of " + f + " was read"));
+  assert.ok(readsOf(c, /^\/api\/native\/r3\/map$/).length >= 1, "and its map");
+  const pane = await fnCard(c, "identity");
+  assert.ok(/<div class="o2vh"><b>Identity<\/b>/.test(pane) && />Chat<\/button>/.test(pane), "and the pane still paints from them");
+});
+test("M10.2: nor before the list of departments and the map have landed", async () => {
+  const c = fresh({ map: rtMap(), fv: fvOf({}) });
+  vm.runInContext("dpS().sel = 'r3'; dpS().tab['r3'] = 'now';", c);
+  for (const f of REG_FN){
+    click(c, { dptab: f });
+    c.dpViewerHtml(WEB, {}, null, null);                  /* painted at once, with nothing read yet */
+  }
+  assert.deepStrictEqual(regReads(c), [], "asked before the department was known: " + regReads(c).join(", "));
+  for (let i = 0; i < 12; i++){ await sleep(); REG_FN.forEach(f => { click(c, { dptab: f }); c.dpViewerHtml(WEB, {}, null, null); }); }
+  assert.deepStrictEqual(regReads(c), [], "asked once the department was known: " + regReads(c).join(", "));
+});
+test("M10.2: a department of the first build and one the website knows nothing of keep the registry's cards, and the reads", async () => {
+  const old = await opened();                              /* a website department, first build */
+  for (const f of REG_FN) await fnCard(old, f);
+  REG_FN.forEach(f => assert.ok(readsOf(old, new RegExp("^/api/dept/r3/" + f + "$")).length >= 1, "first build: " + f + " is read"));
+  /* a department of the registry alone: no website record, so the department list does not name it */
+  const plain = fresh({ depts: [] }), billing = { ref: "r9", name: "Billing" };
+  vm.runInContext("dpS().sel = 'r9'; dpS().tab['r9'] = 'now';", plain);
+  /* the paint that starts the list's read, and the two that follow it as the screen repaints when it lands */
+  for (let i = 0; i < 3; i++){ plain.dpViewerHtml(billing, {}, null, null); for (let k = 0; k < 6; k++) await sleep(); }
+  for (const f of REG_FN){ click(plain, { dptab: f }); plain.dpViewerHtml(billing, {}, null, null); for (let i = 0; i < 6; i++) await sleep(); }
+  REG_FN.forEach(f => assert.ok(readsOf(plain, new RegExp("^/api/dept/r9/" + f + "$")).length >= 1, "registry only: " + f + " is read"));
 });
 
 Promise.all(pending).then(() => {

@@ -1729,6 +1729,19 @@ function wbFnRuntime(ref){
   if (!m){ wbLoadMap(ref); return false; }
   return wbRt(m);
 }
+/* 20-dept.js asks this before it reads one of the registry's five function routes (GET /api/dept/{ref}/identity,
+   adaptation, priority, coordination and audit; PRD M10.2: one API family for runtime departments). True for a
+   department the website does not run on the engine runtime and for one it knows nothing of, whose cards are the
+   registry's. False for one that runs on it, whose pane is drawn from /api/native and /j2 and never from those cards;
+   and false while the answer is not in -- the list of departments or the map is still being read -- when the paint
+   that follows asks again. wbIs starts the read of the list, and wbLoadMap the map's, so nothing here waits on its own. */
+function wbFnReadsRegistry(ref){
+  const st = wbS();
+  if (!wbIs(ref)) return st.refs !== null && !st.refsBusy;
+  const m = st.map[ref];
+  if (!m){ wbLoadMap(ref); return false; }
+  return !wbRt(m);
+}
 /* 20-dept.js asks this for every function card: null for a department that is
    not on the engine runtime, so its card keeps the tabs it had. */
 function wbFnSettings(ref, fn){
