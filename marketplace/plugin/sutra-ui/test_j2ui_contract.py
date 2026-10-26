@@ -53,7 +53,7 @@ POST_ROUTES = ("api/say", "api/reset", "api/output", "api/playbooks/clear", "api
 BANNED = re.compile(r"GRANT|COUNTER|REFUSE|accept-proposal|reject-proposal|cancel-proposal", re.I)
 WHO = {"user", "validator", "identity", "adaptation", "priority", "coordination", "audit"}
 JSON_ROUTES = ("api/state?since=0", "api/runs", "api/map", "api/board", "api/artifacts", "api/docs", "api/audits", "api/refs", "api/preview?atom=W-1.a1")
-EXTRA_STATES = ("two_publish_asks", "running_line", "with_board", "pursuing_line", "filed", "question", "ready", "root_follow_up", "start")
+EXTRA_STATES = ("two_publish_asks", "running_line", "with_board", "pursuing_line", "filed", "question", "ready", "root_follow_up", "start", "build_filed")
 TABLE = [pytest.param(row, id=row[0]) for row in STATE_TABLE]
 
 
@@ -112,6 +112,31 @@ def read_all(client, ref):
     r = client.get(url(ref, "api/call?id=1"))
     assert r.status_code == 404 and r.json() == {"error": "no such call"}
     return out
+
+
+def files_of(home):
+    """Every file under the records home: {path relative to it: the hash of its bytes}."""
+    import hashlib
+    import os
+    out = {}
+    for root, dirs, files in os.walk(home):
+        dirs.sort()
+        for f in sorted(files):
+            p = os.path.join(root, f)
+            with open(p, "rb") as fh:
+                out[os.path.relpath(p, home)] = hashlib.sha256(fh.read()).hexdigest()
+    return out
+
+
+def snapshot(home):
+    """The records home as one value, to compare before and after: what 'a read writes nothing' says."""
+    return sorted(files_of(home).items())
+
+
+def changed(before, home):
+    """The files of the records home that differ from a files_of() taken earlier (the message of a failed claim)."""
+    after = files_of(home)
+    return sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
 
 
 # ---- the shapes of the prototype -------------------------------------------------------------------------------------
@@ -277,25 +302,71 @@ def test_t31_the_departments_the_contract_adds_answer_every_route(client, plant,
         assert s["status"] == "idle" and s["chat"] == [] and s["total"] == 0
 
 
-def test_t31_the_map_is_the_same_twice_and_a_read_writes_nothing(client, plant):
-    import hashlib
-    import os
-    ref, m = plant("filed")
-    first = read_all(client, ref)
+READ_STATES = [row[0] for row in STATE_TABLE] + list(EXTRA_STATES) + ["hostile", "building"]
+READS = GET_ROUTES + ("api/artifact?name=brief/v1/brief.md",)
 
-    def snapshot():
-        h = hashlib.sha256()
-        for root, dirs, files in os.walk(m.home):
-            dirs.sort()
-            for f in sorted(files):
-                p = os.path.join(root, f)
-                h.update(p.encode())
-                h.update(open(p, "rb").read())
-        return h.hexdigest()
-    before = snapshot()
+
+def read_everything(client, ref):
+    """Every GET of the page's routes, answered or not: how many answered 200 or 302."""
+    got = 0
+    for path in READS:
+        got += client.get(url(ref, path), follow_redirects=False).status_code in (200, 302)
+    return got
+
+
+def test_t31_the_map_is_the_same_twice_and_a_read_writes_nothing(client, plant):
+    ref, m = plant("filed")
+    before = snapshot(m.home)                                 # before the FIRST read: a read that writes is caught on the first one
+    first = read_all(client, ref)
+    assert snapshot(m.home) == before, "the first read wrote"
     again = read_all(client, ref)
-    assert snapshot() == before, "reading writes nothing"
+    assert snapshot(m.home) == before, "reading writes nothing"
     assert again["map"] == first["map"] and again["artifacts"] == first["artifacts"] and again["state"]["chat"] == first["state"]["chat"]
+
+
+@pytest.mark.parametrize("name", READ_STATES)
+def test_t31_the_first_read_of_every_state_writes_nothing(client, plant, name):
+    """Hard rule 4(g): reads write nothing. The records home is hashed BEFORE the first GET (the first is the one that builds the
+    read of the department: the Map, the status, what is due next), in every state of the cycle table and every extra department,
+    and again after a second read that is made to rebuild at once."""
+    ref, m = plant(name)
+    before = files_of(m.home)
+    read_everything(client, ref)
+    assert changed(before, m.home) == [], "the first read of %s wrote" % name
+    m.C.touch(ref)
+    read_everything(client, ref)
+    assert changed(before, m.home) == [], "the second read of %s wrote" % name
+
+
+def test_t31_a_read_writes_nothing_at_any_slot_of_a_run_nor_after_the_stamp(client, tmp_path, monkeypatch):
+    """The motor leaves a window after every slot (Build filed and Publish not yet asked, an engine due and not yet started...). The
+    line is run one slot at a time from the words to the owner's stamp and on to the end, and after every slot the department is read
+    from a fresh read (touch) and compared with the records before it."""
+    m = SEED.boot(tmp_path / "homes", monkeypatch)
+    seen = {"slots": 0, "reads": 0}
+
+    def read_between():
+        ref = next((d["ref"] for d in m.W.list_depts() if d.get("parent") == m.root), None)
+        if ref is None:
+            return
+        m.C.touch(ref)
+        before = files_of(m.home)
+        seen["reads"] += read_everything(client, ref) > 0
+        assert changed(before, m.home) == [], "a read after slot %d (%s) wrote" % (seen["slots"], ref)
+
+    for who, ref in SEED.stepped(m, org="Walk Learning"):
+        seen["slots"] += 1
+        read_between()
+    ref = m.ref
+    pending = [a for a in m.W.asks(ref) if a.get("status") == "pending" and a.get("kind") == "publish"]
+    assert pending, "the line ran to its first question"
+    for a in pending:
+        m.W.decide_ask(ref, a["id"], True)
+    read_between()
+    while m.W.run_until_idle(ref, limit=1):
+        seen["slots"] += 1
+        read_between()
+    assert seen["slots"] >= 10 and seen["reads"] >= seen["slots"] - 2, seen
 
 
 def test_t32_every_act_between_functions_is_worded_for_the_owner_and_no_id_is_printed(client, plant):
@@ -361,13 +432,19 @@ def test_t34_after_the_owner_follows_up_through_root_there_is_one_more_user_mess
 
 def test_t34_two_publish_asks_at_once_are_two_messages_and_paused_names_one(client, plant):
     ref, m = plant("two_publish_asks")
-    s = client.get(url(ref, "api/state?since=0")).json()
-    asks = [x for x in s["chat"] if x.get("act") == "ASK_REQUESTER"]
-    assert len(asks) == 2 and len(s["chat"]) == 2 + len([x for x in s["chat"] if x.get("act") != "ASK_REQUESTER"]), "no virtual third message"
-    assert asks[0]["id"] != asks[1]["id"] and s["paused"]["msg"] in (asks[0]["id"], asks[1]["id"])
-    assert [x["text"].split("\n")[0] for x in asks] == ["@Requester Publish: go live, version 1", "@Requester Publish: go live, version 2"]
-    assert s["paused"]["label"].endswith("(1 more waiting)"), s["paused"]["label"]
-    assert [q["options"] for q in s["paused"]["questions"]] == [["Stamp", "Say no"]]
+    assert [a["slot"] for a in m.W.asks(ref)] == ["Publish@build.v1", "Publish@build.v2"], "the asks are the ones the runtime files, one for each slot"
+    for poll in (1, 2, 3):                                     # a poll, then two more that each rebuild the read at once (past C.MIN_REBUILD_S):
+        if poll > 1:                                           # a write made by the first read would show as a third ask in the second
+            m.C.touch(ref)
+        s = client.get(url(ref, "api/state?since=0")).json()
+        asks = [x for x in s["chat"] if x.get("act") == "ASK_REQUESTER"]
+        assert len(asks) == 2 and len(s["chat"]) == 2 + len([x for x in s["chat"] if x.get("act") != "ASK_REQUESTER"]), \
+            "no virtual third message (poll %d)" % poll
+        assert asks[0]["id"] != asks[1]["id"] and s["paused"]["msg"] in (asks[0]["id"], asks[1]["id"])
+        assert [x["text"].split("\n")[0] for x in asks] == ["@Requester Publish: go live, version 1", "@Requester Publish: go live, version 2"]
+        assert s["paused"]["label"].endswith("(1 more waiting)"), s["paused"]["label"]
+        assert [q["options"] for q in s["paused"]["questions"]] == [["Stamp", "Say no"]]
+    assert len([a for a in m.W.asks(ref) if a["kind"] == "publish"]) == 2, "the reads filed no ask of their own"
 
 
 def options_ask(m, first="leave:D2", ref=REF):
@@ -438,24 +515,12 @@ def test_t34_option_3_on_a_two_option_ask_is_400_and_blank_words_are_400(client,
 
 
 def test_t34_the_three_posts_that_mean_nothing_leave_the_department_as_it_was(client, plant):
-    import hashlib
-    import os
     ref, m = plant("filed")
-
-    def snapshot():
-        h = hashlib.sha256()
-        for root, dirs, files in os.walk(m.home):
-            dirs.sort()
-            for f in sorted(files):
-                p = os.path.join(root, f)
-                h.update(p.encode())
-                h.update(open(p, "rb").read())
-        return h.hexdigest()
-    before = snapshot()
+    before = snapshot(m.home)
     assert client.post(url(ref, "api/reset")).status_code == 409
     assert client.post(url(ref, "api/output"), json={"type": "prd"}).status_code == 409
     assert client.post(url(ref, "api/playbooks/clear")).status_code == 409 and client.post(url(ref, "api/lessons/clear")).status_code == 409
-    assert snapshot() == before
+    assert snapshot(m.home) == before
 
 
 # ---- T3-5: honesty --------------------------------------------------------------------------------------------------------
