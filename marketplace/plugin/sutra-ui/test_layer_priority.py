@@ -498,3 +498,84 @@ def test_p3_more_workflows_than_the_limit_is_an_ask_for_less_that_says_the_limit
     c["post"]["payload"]["engines"] = []
     c["bag"]["priority.read"] = V1.priority_read(c, None, None)
     assert V1.d_priority_bargain(c, None, None) == {"answer": "reject", "why": "the plan names no workflow"}
+
+
+# ---- P4: Priority's view --------------------------------------------------------------------------------------------------
+def _view(W, J, ref):
+    """Priority's pane as the registry hands it out: the record, its cycle's events and its asks."""
+    return V1.view(ref, W.dept(ref), J.events(ref), W.asks(ref))
+
+
+def _price_row(**more):
+    row = {"at": "2026-10-26T10:00:00+05:30", "proposal": "line", "estimate": {"calls": 3, "usd": 0.12, "basis": "prior", "runs": 0},
+           "room": {"calls": 10, "usd": 1.0}, "answer": "accept", "why": "fits today"}
+    row.update(more)
+    return row
+
+
+def test_p4_the_view_validates_empty_bargaining_limit_and_priced(live, monkeypatch):
+    """A view that fails its interface, or one that shows a price from nowhere, must fail: the same pane in the four states a
+    department is in when Priority is looked at."""
+    W, R, J, _ = live
+    empty = _born(live, org="Empty Co", settle=False)
+    view = _view(W, J, empty)
+    assert S.validate_view("priority", view) == [] and view["bargains"] == [] and view["prices"] == []
+    assert [e["engine"] for e in view["envelopes"]][:4] == LINE and {e["share"] for e in view["envelopes"]} == {0.0}
+
+    _model(monkeypatch, R, {"adapt.line": THREE})
+    priced = _priced(live, {"Facts": (3, 0.07), "Notes": (2, 0.04), "Summary": (0, 0.0)}, SHAPED_HISTORY, ORGANIC, "Lab Co", shaped=True)
+    view = _view(W, J, priced)
+    assert S.validate_view("priority", view) == []
+    assert [b["said"] for b in view["bargains"]] == ["asked for less", "said yes"], "the bargains, oldest first, as they were"
+    assert [p["said"] for p in view["prices"]] == ["said yes", "asked for less"], "the prices, newest first"
+    newest, oldest = view["prices"]
+    assert (newest["answer"], newest["proposal"], newest["estimate"], newest["room"]) == ("accept", "line", {"calls": 5, "usd": 0.11}, {"calls": 5, "usd": 0.11})
+    assert (oldest["answer"], oldest["estimate"], oldest["room"]) == ("counter", {"calls": 7, "usd": 0.19}, {"calls": 5, "usd": 0.11})
+    assert oldest["why"] == "room for 2 of 3 today: about 5 calls and 0.11 USD for these of the 5 calls and 0.11 USD left"
+    assert oldest["at"] and set(oldest) == {"at", "proposal", "answer", "said", "estimate", "room", "why"}
+
+    limit = _born(live, org="Limit Co", settle=False)
+    _envelopes(W, limit, Plan=(1, 0.05))
+    today = datetime.now().astimezone().isoformat(timespec="seconds")
+    W._write(W.ddir(limit) / "runs.json", W.runs(limit) + [_run_row("Plan", "asked", 1, 0.05, today)])
+    view = _view(W, J, limit)
+    assert S.validate_view("priority", view) == []
+    assert next(e for e in view["envelopes"] if e["engine"] == "Plan")["share"] == 1.0 and view["prices"] == []
+
+
+def test_p4_a_view_of_a_department_with_prices_validates_as_a_whole_through_the_contract(live, ctx):
+    """Contract case 6 reads the fixture department's view; with prices on it, it still validates."""
+    W, R, J, _ = live
+    ref = ctx["ref"]
+    W.append_row(ref, "prices.jsonl", _price_row())
+    assert C.case_6(V1, ctx) == [] and _view(W, J, ref)["prices"][0]["said"] == "said yes"
+
+
+def test_p4_the_prices_are_the_newest_few_newest_first_and_a_row_with_no_answer_is_not_shown(live, ctx):
+    W, R, J, _ = live
+    ref = ctx["ref"]
+    for i in range(14):
+        W.append_row(ref, "prices.jsonl", _price_row(at="2026-10-26T10:%02d:00+05:30" % i, why="row %d" % i))
+    with S.expect_refused() as met:
+        W.append_row(ref, "prices.jsonl", {"at": "2026-10-26T11:00:00+05:30", "answer": "grant", "why": "a row that is no answer"})
+    assert met, "the journal checks every row it is given"
+    view = _view(W, J, ref)
+    assert [p["why"] for p in view["prices"]] == ["row %d" % i for i in range(13, 1, -1)], "twelve, newest first; the odd row is not one"
+    assert S.validate_view("priority", view) == []
+
+
+def test_p4_the_words_are_the_ones_the_pane_already_says_and_the_owners_not_the_insides(live, ctx):
+    """said yes, asked for less, said no: the words of the bargains beside the prices, and of owner_words' phrase table; and
+    a why that carries an inside word is said again in the owner's."""
+    import owner_words
+    W, R, J, _ = live
+    assert V1.SAID == {"accept": "said yes", "counter": "asked for less", "reject": "said no"}
+    table = dict(owner_words.BARGAIN_WORDS)
+    assert table["Countered."].rstrip(".").lower() == V1.SAID["counter"] and table["Refused."].rstrip(".").lower() == V1.SAID["reject"]
+    assert owner_words.plain("Granted within the envelope.") == "Said yes within the limit."
+    ref = ctx["ref"]
+    events = [{"action": a, "summary": "x", "occurred_at": "2026-10-26T10:00:00+05:30"} for a in ("proposal.granted", "proposal.countered", "proposal.refused")]
+    pane = V1.view(ref, W.dept(ref), events, [])
+    assert [b["said"] for b in pane["bargains"]] == list(V1.SAID.values()), "the pane's own bargains say the three words"
+    W.append_row(ref, "prices.jsonl", _price_row(why="Priority countered (no room) and kept /Users/someone/secret/plan.md out"))
+    assert V1.view(ref, W.dept(ref), [], [])["prices"][0]["why"] == "Priority asked for less (no room) and kept plan.md out", "names, never paths"

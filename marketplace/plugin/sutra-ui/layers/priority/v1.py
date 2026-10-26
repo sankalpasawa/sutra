@@ -359,6 +359,29 @@ CHECK = {
 WORDS, LAYOUT = {}, {}
 
 
+#: the most prices the pane carries: the newest, as the bargains it sits beside are the newest few
+PRICES_SHOWN = 12
+
+
+def _prices(ref):
+    """What Priority priced and answered, newest first, from prices.jsonl and in the owner's words: the answer as said yes,
+    asked for less or said no, the estimate and the room as two amounts each, and the why as Priority gave it. A row that
+    holds no answer is not shown."""
+    out = []
+    for r in reversed([r for r in W.rows(ref, 'prices.jsonl') if isinstance(r, dict)]):
+        if r.get('answer') not in SAID:
+            continue
+        est, room = r.get('estimate') or {}, r.get('room') or {}
+        out.append({'at': r.get('at'), 'proposal': r.get('proposal'), 'answer': r['answer'], 'said': SAID[r['answer']],
+                    'estimate': {'calls': int(est.get('calls') or 0), 'usd': float(est.get('usd') or 0.0)},
+                    'room': {'calls': int(room.get('calls') or 0), 'usd': float(room.get('usd') or 0.0)},
+                    'why': str(FV._plain(r.get('why')) or '')[:600]})
+    return FV._clean(out[:PRICES_SHOWN])
+
+
 def view(ref, d, events, asks):
-    """Priority's pane (S.VIEWS['priority']): functions_view's read model, by reference until this layer holds its own."""
-    return FV._j2_part(ref, d, 'Priority', events, asks)
+    """Priority's pane (S.VIEWS['priority']): the bargains and the envelopes, as functions_view reads them from the record,
+    and the prices, from prices.jsonl (M5.3). Nothing is written."""
+    part = FV._j2_part(ref, d, 'Priority', events, asks)
+    part['prices'] = _prices(ref)
+    return part
