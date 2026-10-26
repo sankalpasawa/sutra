@@ -675,6 +675,58 @@ def test_a8_a_plain_doubt_reaches_the_owner_as_one_question_with_the_departments
     assert W.dept(ref).get("workflows") in (None, []), "nothing is registered while the question is open"
 
 
+def test_a8_a_request_marked_go_on_sends_a_line_under_0_6_to_priority_with_the_doubt_named_and_asks_nothing(j2, monkeypatch):
+    """Identity has asked what it can (act.line_request go_on): Adaptation goes on, as for a confidence from 0.6 to under 0.8,
+    and never doubts again."""
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    monkeypatch.setattr(v1(), "hears_doubt", lambda: True)
+    ref = _dept(j2, "organic")
+    unsure = [_made("Play rules", "Brief", "Play rules", ["D1"]),
+              _made("Game", "Play rules", "Live site", ["D2", "D3"], confidence=0.45,
+                    doubt="Where should an order go? Unless you say, the form shows the order on the screen and sends nothing.")]
+    on = {"go_on": True, "doubt": "Where should an order go?", "fallback": "the form shows the order on the screen and sends nothing"}
+    out, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, {"engines": unsure}, how="model", payload=on)
+    assert [p[:2] for p in posts] == [("Priority", "propose")], "no doubt to Identity, so no second question and no blocked card"
+    sent = posts[0][2]
+    assert sent["confidence"] == 0.45 and sent["doubt"].startswith("Where should an order go?")
+    assert S.validate_act("Adaptation", ["Priority"], "propose", sent) == []
+    assert "doubt" not in out and out["said"].startswith("proposed the line to Priority")
+    again, more = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, {"engines": unsure}, how="model")
+    assert [p[:2] for p in more] == [("Identity", "inform")], "a request that is not marked go_on still doubts"
+
+
+def test_a9_a_plan_still_under_0_6_after_the_second_answer_goes_to_priority_with_the_doubt_and_is_registered(j2, monkeypatch):
+    """J2B-7 end to end: the stub is unsure every time. Identity asks twice; the third time it tells Adaptation to go on, and
+    the plan goes to Priority, is checked and registered, with no blocked card and no third question."""
+    W, R, J, _, FV = j2
+    plan = {"engines": [_made("Catalogue", "Brief", "Catalogue", ["D1", "D2"], confidence=0.9),
+                        _made("Stock page", "Catalogue", "Live site", ["D3"], confidence=0.45, doubt="Where should the weekly list go?")]}
+    ref, _ = _run_scenario(j2, monkeypatch, "organic", LAB_WORDS, "Lab Co", LAB, plan)
+    for said in ("Send it to the science teacher", "Only the lab technician sees it"):
+        assert [a for a in W.asks(ref) if a["kind"] == "j2_identity" and a["status"] == "pending"], "a question waits for the owner"
+        J.answer(ref, said)
+        W.run_until_idle(ref, limit=300)
+    asks = [a for a in W.asks(ref) if a["kind"] == "j2_identity" and a.get("missing") == "plan"]
+    assert len(asks) == 2 and all(a["status"] != "pending" for a in asks), "two questions, and no third"
+    assert len(_board_word(R, ref, "doubt", "Adaptation")) == 3, "the third doubt is the one Identity answers by telling it to go on"
+    told = [q for q in _board_word(R, ref, "line", "Identity") if q["payload"].get("go_on")]
+    assert len(told) == 1 and told[0]["dst"] == ["Adaptation"], "told once"
+    sent = _board_word(R, ref, "line", "Adaptation")[-1]
+    assert sent["dst"] == ["Priority"] and sent["payload"]["confidence"] == 0.45 and sent["payload"]["doubt"] == "Where should the weekly list go?"
+    acts = [e["action"] for e in J.events(ref)]
+    assert "workflow.registered" in acts and J.status(ref)["state"] != "blocked"
+    assert not [a for a in W.asks(ref) if a["kind"] == "blocked"], "the owner is not blocked on a plan that was told to go on"
+    assert W.dept(ref)["workflows"][-1]["engines"] == ["Catalogue", "Stock page"]
+
+
+def test_a8_a_request_marked_go_on_changes_nothing_for_a_sure_line(j2, monkeypatch):
+    monkeypatch.setenv("J2_ADAPT_MAKE", "1")
+    ref = _dept(j2, "organic")
+    sure = {"engines": [_made("Play rules", "Brief", "Play rules", ["D1"]), _made("Game", "Play rules", "Live site", ["D2", "D3"], confidence=0.85)]}
+    _, posts = _offer(j2, monkeypatch, ref, {"shape": True, "source": "shaped"}, sure, how="model", payload={"go_on": True})
+    assert [p[:2] for p in posts] == [("Priority", "propose")] and "doubt" not in posts[0][2]
+
+
 def test_a8_until_identity_hears_a_doubt_a_line_under_0_6_is_shown_not_dropped(j2, monkeypatch):
     monkeypatch.setenv("J2_ADAPT_MAKE", "1")
     monkeypatch.setattr(v1(), "hears_doubt", lambda: False)

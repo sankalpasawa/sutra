@@ -383,8 +383,10 @@ def cannot_offer(ctx, cannot):
 def adapt_line_offer(ctx, step, item):
     """The line goes on. Each engine names the items it covers, and the proposal carries the map (M5.1). A made line
     (M6.4) is sent by how sure it is (J2B-7, S.CONFIDENCE): at 0.8 or more to Priority; from 0.6 to under 0.8 to Priority
-    with the doubt shown and nobody asked; under 0.6 to Identity as a doubt, and nothing is registered. An answer of
-    cannot is a conflict, with the ways out built by code."""
+    with the doubt shown and nobody asked; under 0.6 to Identity as a doubt, and nothing is registered, unless Identity
+    has asked what it can and sent the request marked go_on (act.line_request): then the line goes to Priority with the
+    doubt named, as for a confidence from 0.6 to under 0.8, and Adaptation does not doubt again. An answer of cannot is
+    a conflict, with the ways out built by code."""
     ref, d, pl = ctx['ref'], ctx['dept'], ctx['post']['payload']
     src = ctx['bag'].get('adapt.source') or {'shape': True, 'source': 'shaped'}
     got = ctx['bag']['adapt.line'] if src.get('shape') else src
@@ -402,7 +404,7 @@ def adapt_line_offer(ctx, step, item):
             body['confidence'] = low['confidence']
             if low['confidence'] < S.CONFIDENCE['show_below']:
                 shown = (low['name'], low.get('doubt') or '')
-        if shown and body['confidence'] < S.CONFIDENCE['ask_below'] and hears_doubt():
+        if shown and body['confidence'] < S.CONFIDENCE['ask_below'] and not pl.get('go_on') and hears_doubt():
             # not sure enough to go on: one question, and nothing is registered (the answer opens a new line request)
             doubt, fallback = split_doubt(shown[1])
             says = {'word': 'doubt', 'engine': shown[0], 'doubt': doubt or 'the plan rests on a fact or a decision nobody has given',
