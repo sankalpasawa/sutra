@@ -546,6 +546,36 @@ def apply_way(ctx, ask, pl):
     return {'said': "applied the owner's choice (%s) through %s" % (oid, S.TITLE[spec['layer']]), 'applied': True, 'result': got}
 
 
+def _standing(d):
+    """Who the department is, as a change to it is read against what it was: the goal, done-when and the identity's revision."""
+    return {'goal': (d or {}).get('goal'), 'done': (d or {}).get('done'), 'revision': int((d or {}).get('identity_revision') or 1)}
+
+
+def reopen_on_change(ctx, ask, before):
+    """A stamped change to the goal (a rule tagged goal) or to done-when (a done_items ask) starts the department's cycle again
+    (M9.8; Q7: Identity takes the owner's words as a goal rule they stamp): j2_runtime.reopen, then Identity says old to new in
+    one line and reads its standard on the new cycle as it does where a cycle starts. Not when the stamp answers Identity's own
+    question (the cycle is still on its first step, asking), when nothing it changed is the goal or done-when, or when the
+    department has no cycle that has started. After done, a task is the Brief's (J3 4a, Q8) and starts no cycle."""
+    ref = ctx['ref']
+    cj = R._j2()
+    cur = (cj._state(ref) or {}) if cj else {}
+    after = W.dept(ref) or {}
+    if (ask.get('answers') or (ask['kind'] == 'rule' and ask.get('tag') != 'goal') or not cur.get('cycle_id')
+            or (int(cur.get('step') or 1) <= 1 and cur.get('state') != 'done')
+            or (after.get('goal'), after.get('done')) == (before['goal'], before['done'])):
+        return None
+    if not cj.reopen(ref, was=before):
+        return None
+    goal = before['goal'] != after.get('goal')
+    old, new = (before['goal'], after.get('goal')) if goal else (before['done'], after.get('done'))
+    R._tell(ref, after, _who(after), 'inform',
+            {'word': 'goal', 'done': '%s changed from \u201c%s\u201d to \u201c%s\u201d. The department starts its work again from the top.'
+             % ('The goal' if goal else 'Done-when', str(old or 'nothing').rstrip('.'), str(new or 'nothing').rstrip('.'))})
+    R._j2_went_on(ref, ask['id'])
+    return cj._state(ref)
+
+
 def leave_rule_out(ctx, rule):
     """The owner chose to leave a rule out (M9.5, J2.7: a build still breaks it after two rewrites): the rule comes off the
     department's rules, the identity moves a revision, the Brief says so, and the line builds again without it. A rule the
@@ -569,6 +599,7 @@ def identity_apply(ctx, step, item):
     by it (apply_way, M5.4); a stamp on the correction a round asked (identity_round) files the round (M9.3)."""
     ref, pl = ctx['ref'], ctx['post']['payload']
     ask = next((x for x in W.asks(ref) if x['id'] == pl.get('ask')), None)
+    before = _standing(W.dept(ref))
     if ask and ask.get('kind') == 'blocked' and pl.get('option'):
         oid = str(pl['option'])
         rule = next((r for r in ctx['dept'].get('rules') or [] if oid.startswith('leave:') and r.get('id') == oid.split(':', 1)[1]), None)
@@ -580,6 +611,8 @@ def identity_apply(ctx, step, item):
     out = R.identity_apply(ctx, step, item)
     if ask and ask.get('kind') == 'finding' and ask.get('round') and out.get('filed'):
         round_filed(ref, ctx['dept'], ask['round'], out['filed'], ask.get('correction') or ask.get('claim'))
+    if ask and ask.get('kind') in ('rule', 'done_items'):
+        reopen_on_change(ctx, ask, before)
     return out
 
 

@@ -1607,7 +1607,7 @@ LEDGER_ACTIONS = ('proposal.requested', 'proposal.created', 'proposal.granted', 
                   'envelope.granted', 'envelope.held', 'slot.assigned', 'run.started', 'run.completed', 'run.failed',
                   'artifact.filed', 'audit.finding_filed', 'audit.not_read', 'identity.assessed', 'identity.questioned',
                   'identity.ruled', 'conflict.raised', 'ask.created', 'ask.answered', 'goal.reached', 'cycle.stopped',
-                  'cycle.resumed', 'cycle.reopened', 'check.failed')
+                  'cycle.resumed', 'cycle.reopened', 'goal.revised', 'check.failed')
 #: Identity's five recognitions of a request (task, query, directive, feedback, new idea): a verdict of its covering, not the
 #: user journeys. The key `journeys` of engine_defs/website.json and the check journey_is_known name them and are not renamed
 RECOGNITIONS = VERDICTS['identity']['journey']

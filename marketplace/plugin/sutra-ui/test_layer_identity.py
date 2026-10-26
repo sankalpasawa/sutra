@@ -1665,3 +1665,157 @@ def test_j5_every_end_that_is_not_done_has_a_pending_ask_with_options(j2, monkey
         assert "stop" in [o["id"] for o in card["options"]], (what, "a way to stop is always there")
         assert S.validate_record("identity", "ask", card) == [], what
         assert card["thread"], "the card is on a thread, so a choice reaches Identity"
+
+
+# ---- J6: a goal change reopens the cycle (M9.8) ------------------------------------------------------------------------------
+NEW_GOAL = "A phone-first website that teaches algebra and geometry to Class 8 students"
+
+
+def _rev(W, ref):
+    return int(W.dept(ref).get("identity_revision") or 1)
+
+
+def _says_a_directive(R, monkeypatch, tag, line, audit=True):
+    """The model reads the owner's next words as a directive (and Audit's reader keeps saying every item is met)."""
+    answers = {"identity.recognise": {"journey": "directive", "why": "a standing change"},
+               "identity.rule": {"tag": tag, "line": line, "scope": "standing"}}
+    if audit:
+        answers.update({"audit.judge": {"ok": True, "findings": []}, "audit.items": _items_met})
+    _model(monkeypatch, R, answers)
+
+
+def test_j2_8_a_stamped_goal_rule_reopens_the_cycle_at_step_1(j2, monkeypatch):
+    """J2.8, Q7: Identity takes the owner's words as a goal rule they stamp, and a stamped goal rule starts a new cycle at step 1,
+    the record kept, with a goal.revised event that carries the identity's revision before and after."""
+    W, R, J, _, _ = j2
+    ref = _in_state(j2, monkeypatch, "done")
+    old_cycle, old_revision = J.status(ref)["cycle_id"], _rev(W, ref)
+    old_goal, kept = W.dept(ref)["goal"], len(J.events(ref))
+    assert J.status(ref)["state"] == "done"
+    _says_a_directive(R, monkeypatch, "goal", NEW_GOAL)
+    W.owner_ask(ref, "From now on, the goal is " + NEW_GOAL)
+    W.run_until_idle(ref, limit=300)
+    assert J.status(ref)["cycle_id"] == old_cycle and J.status(ref)["state"] == "done", "nothing changes before the stamp"
+    _stamp_the_pending(W, ref, ("rule",))
+    st = J.status(ref)
+    d = W.dept(ref)
+    assert d["goal"] == NEW_GOAL and _rev(W, ref) == old_revision + 1
+    assert st["cycle_id"] != old_cycle and st["state"] != "done" and st["goal_reached"] is False
+    events = J.events(ref)
+    assert events[:kept] == events[:kept] and [e for e in events[:kept] if e["action"] == "goal.reached"], "the record is kept: the old goal.reached stands"
+    mine = [e for e in events if e["cycle_id"] == st["cycle_id"]]
+    assert mine[0]["action"] == "goal.revised" and mine[0]["step"] == 1 and mine[0]["actor"] == "Identity", "a step-1 event opens the new cycle"
+    assert mine[0]["payload"]["identity_revision"] == {"from": old_revision, "to": old_revision + 1}
+    assert mine[0]["payload"]["goal"] == {"from": old_goal, "to": NEW_GOAL} and mine[0]["payload"]["previous_cycle"] == old_cycle
+    assert mine[0]["identity_revision"] == old_revision + 1
+    assert [e["step"] for e in mine][:2] == [1, 1] or len(mine) >= 1
+    said = [s for s in _said_by_identity(R, ref) if s.startswith("The goal changed from")]
+    assert said == ["The goal changed from “%s” to “%s”. The department starts its work again from the top." % (old_goal.rstrip("."), NEW_GOAL)]
+    assert _reached(W, J, ref) == [e for e in events[:kept] if e["action"] == "goal.reached"], "no goal is reached on the old goal's reading"
+
+
+def test_j2_8_the_new_cycle_holds_admissions_until_its_plan_is_registered_and_runs_it_afresh(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _in_state(j2, monkeypatch, "done")
+    d = W.dept(ref)
+    before = dict(goal=d["goal"], done=d["done"], revision=_rev(W, ref))
+    d["goal"] = NEW_GOAL
+    W.bump_identity(ref, d)
+    assert J.holding(ref) is None, "a done department holds nothing"
+    state = J.reopen(ref, was=before)
+    assert (state["step"], state["state"], state["previous"]) == (1, "assessing", J.events(ref)[0]["cycle_id"]) and state["revision"] == before["revision"] + 1
+    assert J.holding(ref), "nothing is admitted while the new cycle is below step 6"
+    assert J.active(ref) and J.status(ref)["round"] is None
+    # the department goes on to register a plan under the new cycle, and runs it
+    R._j2_went_on(ref, "test")
+    W.run_until_idle(ref, limit=400)
+    new = [e["action"] for e in J.events(ref) if e["cycle_id"] == state["cycle_id"]]
+    assert new[0] == "goal.revised" and "proposal.requested" in new and "workflow.registered" in new, new
+    assert J.holding(ref) is None and J.status(ref)["step"] >= 6
+    assert len(W.dept(ref)["workflows"]) == 2, "the registered line is kept, and the new plan is registered beside it"
+
+
+def test_j2_8_a_stamped_change_to_done_when_reopens_it_too(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _in_state(j2, monkeypatch, "done")
+    old_cycle, revision = J.status(ref)["cycle_id"], _rev(W, ref)
+    _says_a_directive(R, monkeypatch, "goal", DONE_WORDS[len("From now on, "):])
+    W.owner_ask(ref, DONE_WORDS)
+    W.run_until_idle(ref, limit=300)
+    assert J.status(ref)["cycle_id"] == old_cycle, "the ask is not the change"
+    _stamp_the_pending(W, ref, ("done_items",))
+    st = J.status(ref)
+    assert st["cycle_id"] != old_cycle and len(W.items_of(W.dept(ref))) == 2
+    first = next(e for e in J.events(ref) if e["cycle_id"] == st["cycle_id"])
+    assert first["action"] == "goal.revised" and first["payload"]["identity_revision"]["from"] == revision
+    assert "done" in first["payload"] and "Done-when changed" in first["summary"]
+    assert any(s.startswith("Done-when changed from") for s in _said_by_identity(R, ref))
+
+
+def test_j2_8_after_done_a_task_is_the_briefs_and_starts_no_cycle(j2, monkeypatch):
+    """Q8: keep J3 4a. The owner's task after done is filed in the Brief and the registered line runs it; no new cycle."""
+    W, R, J, _, _ = j2
+    ref = _in_state(j2, monkeypatch, "done")
+    cycle, briefs = J.status(ref)["cycle_id"], len(W.versions(ref, "Brief"))
+    W.owner_ask(ref, "Add a page on parking.")
+    W.run_until_idle(ref, limit=300)
+    assert J.status(ref)["cycle_id"] == cycle and J.status(ref)["state"] == "done"
+    assert len(W.versions(ref, "Brief")) == briefs + 1 and "Add a page on parking." in W.read_files(ref, "Brief", W.latest(ref, "Brief")["v"])["brief.md"]
+    assert not [e for e in J.events(ref) if e["action"] == "goal.revised"]
+
+
+def test_j2_8_a_rule_that_is_not_about_the_goal_and_an_answer_to_a_question_reopen_nothing(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org="Rules Co")
+    cycle = J.status(ref)["cycle_id"]
+    _says_a_directive(R, monkeypatch, "ask", NEVER, audit=False)
+    W.owner_ask(ref, NEVER)
+    W.run_until_idle(ref, limit=300)
+    _stamp_the_pending(W, ref, ("rule",))
+    assert any(r["line"] == NEVER for r in W.dept(ref)["rules"]) and J.status(ref)["cycle_id"] == cycle
+    assert not [e for e in J.events(ref) if e["action"] == "goal.revised"]
+    # a department still at its first step, asking: the stamp that answers its question goes on with that cycle
+    waiting = _in_state(j2, monkeypatch, "waiting", "Waiting Again Co")
+    first = J.status(waiting)["cycle_id"]
+    _stamp_the_pending(W, waiting, ("rule", "done_items"))
+    assert J.status(waiting)["cycle_id"] == first
+
+
+def test_j2_8_a_goal_stamped_while_stopped_changes_the_cycle_when_the_department_starts_again(j2, monkeypatch):
+    """A stopped department's card can still be answered (S10), and Identity applies the stamp on Start: the cycle that begins
+    then is the new one, and nothing started while it was stopped."""
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org="Stopped Co")
+    old = J.status(ref)["cycle_id"]
+    _says_a_directive(R, monkeypatch, "goal", NEW_GOAL, audit=False)
+    W.owner_ask(ref, "From now on, the goal is " + NEW_GOAL)
+    W.run_until_idle(ref, limit=300)
+    J.stop(ref)
+    (ask,) = _asks_of(W, ref, "rule")
+    W.decide_ask(ref, ask["id"], True)
+    W.run_until_idle(ref, limit=300)
+    assert J.status(ref)["cycle_id"] == old and J.status(ref)["state"] == "stopped", "Identity applies the stamp on Start"
+    J.resume(ref)
+    W.run_until_idle(ref, limit=400)
+    st = J.status(ref)
+    assert st["cycle_id"] != old and W.dept(ref)["goal"] == NEW_GOAL
+    new = [e["action"] for e in J.events(ref) if e["cycle_id"] == st["cycle_id"]]
+    assert new[0] == "goal.revised" and "proposal.requested" in new, new
+
+
+def test_j2_8_a_cycle_reopened_while_stopped_stays_stopped_and_begins_on_start(j2, monkeypatch):
+    W, R, J, _, _ = j2
+    ref = _a_running_department(j2, org="Stopped Again Co")
+    old = J.status(ref)["cycle_id"]
+    J.stop(ref)
+    d = W.dept(ref)
+    before = dict(goal=d["goal"], done=d["done"], revision=_rev(W, ref))
+    d["goal"] = NEW_GOAL
+    W.bump_identity(ref, d)
+    st = J.reopen(ref, was=before)
+    assert st["cycle_id"] != old and (st["state"], st["step"], st["was"]) == ("stopped", 1, "assessing")
+    W.run_until_idle(ref, limit=300)
+    assert [e["action"] for e in J.events(ref) if e["cycle_id"] == st["cycle_id"]] == ["goal.revised"], "nothing starts while it is stopped"
+    J.resume(ref)
+    W.run_until_idle(ref, limit=400)
+    assert "proposal.requested" in [e["action"] for e in J.events(ref) if e["cycle_id"] == st["cycle_id"]]

@@ -349,6 +349,35 @@ def reopened(ref):
         return _move(ref, "adapting", step=2, repairs=0)
 
 
+def reopen(ref, was=None):
+    """A change to the goal or to done-when starts the department's cycle again (J2.8, PRD M9.8; Q7: the owner's words reach
+    Identity as a goal rule they stamp). A new cycle at step 1, the record kept: its first event is goal.revised, with the
+    identity's revision before and after and what changed, so the ledger reads old to new in one line. The line already
+    running finishes what is in flight, and nothing new is admitted until the new cycle has a plan registered (holding).
+    `was` is what stood before the change: {goal, done, revision}. A stopped department keeps its stop: the new cycle begins
+    on Start (resume). This records; that the goal changed is Identity's to say (rule 14). Returns the new cycle's state, or
+    None when the department has no cycle to start again."""
+    with W._lock(ref):
+        cur, dept = _state(ref), W.dept(ref)
+        if not enabled() or not cur or not cur.get("cycle_id") or not dept:
+            return None
+        was = dict(was or {})
+        new = int(dept.get("identity_revision") or 1)
+        old = int(was.get("revision") or cur.get("revision") or max(1, new - 1))
+        fresh = {"cycle_id": "cycle-" + uuid.uuid4().hex[:10], "step": 1, "journey": JOURNEY[1], "state": "assessing", "open_ask": None,
+                 "workflow": list(cur.get("workflow") or []), "repairs": 0, "revision": new, "previous": cur["cycle_id"], "updated_at": W.now()}
+        if cur.get("state") == "stopped":
+            fresh.update({"state": "stopped", "was": "assessing"})
+        _save_state(ref, fresh)
+        moved = [k for k in ("goal", "done") if was.get(k) is not None and was.get(k) != dept.get(k)]
+        said = " and ".join({"goal": "The goal changed", "done": "Done-when changed"}[k] for k in moved) or "Who the department is changed"
+        note(ref, 1, "Identity", "User", "goal.revised", "revised", "%s: the cycle starts again from the top." % said,
+             "goal-revised-" + fresh["cycle_id"],
+             {"identity_revision": {"from": old, "to": new}, "previous_cycle": cur["cycle_id"],
+              **{k: {"from": was.get(k), "to": dept.get(k)} for k in moved}})
+        return _state(ref)
+
+
 def begin(ref):
     """Start the department's cycle, once. Called when J1 hands over (D1: J2 is the department's own life, and nobody
     presses a button for it), and by Start for a department born before that. A stopped cycle starts again."""
@@ -360,7 +389,8 @@ def begin(ref):
         if cur:
             return resume(ref)
         cur = _save_state(ref, {"cycle_id": "cycle-" + uuid.uuid4().hex[:10], "step": 1, "journey": "J2.a",
-                                "state": "assessing", "open_ask": None, "workflow": [], "repairs": 0, "updated_at": W.now()})
+                                "state": "assessing", "open_ask": None, "workflow": [], "repairs": 0,
+                                "revision": int(dept.get("identity_revision") or 1), "updated_at": W.now()})
         return _ask_gap(ref, dept, cur) or cur
 
 
@@ -570,7 +600,8 @@ def stop(ref):
             return cur
         if not cur:
             cur = _save_state(ref, {"cycle_id": "cycle-" + uuid.uuid4().hex[:10], "step": 1, "journey": "J2.a",
-                                    "state": "assessing", "open_ask": None, "workflow": [], "repairs": 0, "updated_at": W.now()})
+                                    "state": "assessing", "open_ask": None, "workflow": [], "repairs": 0,
+                                    "revision": int(dept.get("identity_revision") or 1), "updated_at": W.now()})
         note(ref, int(cur.get("step") or 1), "User", "Identity", "cycle.stopped", "stopped", "The owner stopped the department.",
              "cycle-stopped-" + uuid.uuid4().hex[:6])
         cur = _set(ref, state="stopped", was=cur.get("state"))
@@ -590,6 +621,8 @@ def resume(ref):
         cur = _set(ref, state=back, was=None)
     if (W.dept(ref) or {}).get("stopped"):
         W.set_stopped(ref, False)
+    if cur.get("previous") and int(cur.get("step") or 1) == 1:
+        R._j2_went_on(ref, "resumed-" + str(cur.get("cycle_id")))      # a goal change came while it was stopped: its new cycle begins now
     return _state(ref)
 
 

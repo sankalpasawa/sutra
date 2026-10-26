@@ -8970,6 +8970,7 @@
     "cycle.stopped",
     "cycle.resumed",
     "cycle.reopened",
+    "goal.revised",
     "check.failed"
   ],
   "legacy_keys": [],
