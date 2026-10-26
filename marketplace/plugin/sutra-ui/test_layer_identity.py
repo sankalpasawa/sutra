@@ -175,6 +175,25 @@ def test_i2_the_prompt_is_what_the_words_say_and_without_them_the_bundle_is_read
     assert layers.prompt(None, "identity", "take", "take", **inputs) == shipped
 
 
+def test_i2_the_owners_stamped_change_to_identitys_instructions_reaches_the_prompt_it_says_the_next_run_uses(j2):
+    """Identity serves every part of its prompts from its words, and the owner's stamped change wins over them: Identity says
+    'the next run uses it' and it does (a verifier found the words served and the change never sent). The live path, with no
+    part of Identity's words set aside; W1-CORE K2's typed value is the same claim when it lands."""
+    W, R, J, _, _ = j2
+    ref, other = _born(j2), _born(j2, org="Other Co")
+    assert C.on_the_md_fallback(V1) == [], "every part is served from the words"
+    inputs = {n: "<%s>" % n for n in S.PROMPTS["identity"]["completeness"]["enough"]["inputs"]}
+    shipped = layers.prompt(ref, "identity", "completeness", "enough", **inputs)
+    assert "Be brief." not in shipped
+    _an_instructions_ask(R, ref)
+    assert layers.prompt(ref, "identity", "completeness", "enough", **inputs) == shipped, "nothing changes before the stamp"
+    _stamp_the_pending(W, ref, ("instructions",))
+    changed = layers.prompt(ref, "identity", "completeness", "enough", **inputs)
+    assert "Be brief." in changed and S.PROMPTS["identity"]["completeness"]["enough"]["returns"] in changed, "the answer's shape is the app's"
+    assert any("the next run uses it" in s for s in _said_by_identity(R, ref)), "the owner is told so, and it is so"
+    assert layers.prompt(other, "identity", "completeness", "enough", **inputs) == shipped, "another department keeps the words"
+
+
 # ---- I3: Identity's view ---------------------------------------------------------------------------------------------
 #: test_j2_identity's three done-when items, one of them to confirm, and the reason Root's check sends a plan back
 SHAPED = {"name": "Bakery Co Website", "kind": "website", "purpose": "the bakery's site", "second": "",

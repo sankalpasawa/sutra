@@ -24,6 +24,7 @@ passes it unchanged, and a prompt changed on purpose regenerates it in a commit 
 Run: python test_function_prompts.py   (or pytest). To take a new snapshot after a prompt is changed on purpose:
      FUNCTION_PROMPTS_SNAPSHOT=write python test_function_prompts.py
 """
+import copy
 import importlib
 import json
 import os
@@ -31,6 +32,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REF = "dref-prompts0001"
 SNAP = Path(__file__).parent / "test_fixtures" / "function-prompts.snapshot.json"
@@ -128,6 +130,19 @@ class Fixture(unittest.TestCase):
             for name in ("WORDS", "LAYOUT"):
                 self.addCleanup(setattr, module, name, getattr(module, name))
                 setattr(module, name, {})
+
+    def holds(self, fn, group, part, field, old, new):
+        """One word of a layer's own words changed until the test ends: the typed form of editing a file of the bundle, for a
+        layer whose words are its WORDS. `old` is a piece of a text field's value, or an item of a list field's."""
+        import layers
+        module = layers.load("%s/v1" % fn)
+        words = copy.deepcopy(module.WORDS)
+        value = words[group][part][field]
+        words[group][part][field] = [new if x == old else x for x in value] if isinstance(value, list) else value.replace(old, new)
+        self.assertNotEqual(words[group][part][field], value, "%s's %s.%s holds %r" % (fn, group, part, old))
+        patch = mock.patch.object(module, "WORDS", words)
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def prompts(self):
         """Every function prompt, for the fixtures: each journey of Identity, each word Priority bargains on, a line with
@@ -230,26 +245,36 @@ class TestTheFiles(Fixture):
         import inspect
         for name in BUILDERS:
             self.assertNotIn("Return ONLY", inspect.getsource(getattr(R, name)), name + " still holds its words inline")
-        # the words on disk are the words sent: change one file, and the next prompt carries the change
-        self.on_the_bundle("identity")
-        self.bundle(edit=("identity/take", "Judge one request from the owner.", "Judge one request from the owner, kindly."))
+        # the words held are the words sent: Identity holds all of its own (A1.16), so change one of them, and the next prompt
+        # carries the change (the bundle's files are what a layer with no words of its own is sent: test_layer_prompts)
+        self.holds("identity", "take", "take", "task", "Judge one request from the owner.", "Judge one request from the owner, kindly.")
         c = self.ctx("Identity", {"word": "request", "words": "Add a page about parking."})
         self.assertIn("Judge one request from the owner, kindly.\nTHE GOAL: ", self.render("identity.take", c, ("identity.read",)))
-        self.bundle(edit=("identity/goal", "- put a question to the owner", "- put one question at a time to the owner"))
+        self.holds("identity", "goal", "skills", "items", "put a question to the owner", "put one question at a time to the owner")
         c = self.ctx("Identity", {"word": "request", "words": "Add a page about parking."})
         self.assertIn("gate an effect by rule; put one question at a time to the owner.\n", self.render("identity.take", c, ("identity.read",)))
         self.assertEqual(R.steps_view(REF, "Identity")["skills"][-1], "put one question at a time to the owner", "the screen shows the same words")
 
     def test_m2_1c_a_file_gone_from_the_bundle_refuses_the_definitions_load(self):
         R = self.R
-        # the bundle is what runs for a layer that holds no words of its own; a layer that has moved them needs no bundle (the
-        # definitions load checks the files of the parts a layer still reads from it), so the files are held to that here
+        import layers
         import layer_schema
-        self.on_the_bundle(*layer_schema.FUNCTION_LAYERS)
+        # a layer that holds its words needs no bundle (the definitions load checks the files of the parts a layer still reads
+        # from it): Identity holds all of its own, so its file gone changes nothing, and what refuses the load is a part of
+        # its words that cannot serve (the typed form of a file missing a part a step reads)
         self.bundle(drop="identity/take")
-        with self.assertRaises(ValueError) as cm:
-            R.defs()
-        self.assertIn("Identity's take instructions are missing from the bundle", str(cm.exception))
+        self.assertEqual(R.validate(R.defs()), [], "Identity's file gone from the bundle: its words are what is sent")
+        identity = layers.load("identity/v1")
+        layout = copy.deepcopy(identity.LAYOUT)
+        layout["take"]["gate"] = layout["take"]["gate"].replace("{{engine}}", "{{engine}} {{budget}}")
+        with mock.patch.object(identity, "LAYOUT", layout):
+            R._DEFS.clear()
+            with self.assertRaises(ValueError) as cm:
+                R.defs()
+        self.assertIn("Identity's take instructions, gate: the layout holds {{budget}} and the app fills no such input", str(cm.exception))
+        R._DEFS.clear()
+        # the bundle is what runs for a layer that holds no words of its own, so the files of the others are held to that here
+        self.on_the_bundle(*[fn for fn in layer_schema.FUNCTION_LAYERS if fn != "identity"])
         self.bundle(edit=("priority/bargain", "## cost\n", "## costs\n"))
         with self.assertRaises(ValueError) as cm:
             R.defs()
@@ -299,7 +324,6 @@ class TestTheOwnersChange(Fixture):
 
     def test_m2_2a_a_stamped_change_is_used_by_the_next_run(self):
         R, W = self.R, self.W
-        self.on_the_bundle("identity")
         take = R._instruction("identity", "take")
         mine = take.replace("Recognise what kind of words the owner has given.", "Recognise, in plain words, what kind of words the owner has given.")
         r = self.change("identity", "take", mine)
