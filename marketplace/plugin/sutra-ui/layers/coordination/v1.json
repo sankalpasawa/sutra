@@ -1,0 +1,167 @@
+{
+ "kind": "function",
+ "description": "keeps what engines share: one run at a time, who goes first when several are ready, who may post to whom, the chain's limit, a thread's bounds, and the alarm. Its own agent says who goes first when several functions are ready at once",
+ "skills": [
+  "keep one run at a time",
+  "say who goes first",
+  "check who may post what to whom",
+  "stop a chain at its limit",
+  "close a thread at its bound",
+  "raise an alarm",
+  "say who goes first among equals"
+ ],
+ "start": {
+  "on": [
+   {
+    "kind": "post"
+   }
+  ],
+  "unless": []
+ },
+ "rules": [
+  {
+   "id": "coord.busy",
+   "name": "Keep one run at a time",
+   "nature": "decide",
+   "born": "C2",
+   "code": "coord_busy",
+   "check": "one_run_at_a_time"
+  },
+  {
+   "id": "coord.pick",
+   "name": "Say who goes first, when several are ready",
+   "nature": "decide",
+   "born": "C2",
+   "code": "coord_pick",
+   "check": "names_who_goes_first"
+  },
+  {
+   "id": "coord.edge",
+   "name": "Say who may post what to whom",
+   "nature": "check",
+   "born": "C2",
+   "code": "coord_edge",
+   "check": "gate_answer_is_known"
+  },
+  {
+   "id": "coord.verdict",
+   "name": "Ask a function for its verdict",
+   "nature": "transform",
+   "born": "C2",
+   "code": "coord_verdict",
+   "check": "said_what_it_did"
+  },
+  {
+   "id": "coord.bounds",
+   "name": "Close a thread at its bound",
+   "nature": "decide",
+   "born": "C2",
+   "code": "coord_bounds",
+   "check": "said_what_it_did"
+  },
+  {
+   "id": "coord.alarm",
+   "name": "Raise an alarm for a run past its window",
+   "nature": "check",
+   "born": "C2",
+   "code": "coord_alarm",
+   "check": "said_what_it_did"
+  }
+ ],
+ "gates": [
+  {
+   "id": "coord.chain",
+   "name": "Stop a chain at its limit",
+   "nature": "decide",
+   "born": "C2",
+   "code": "coord_chain",
+   "check": "chain_under_its_limit"
+  }
+ ],
+ "on": [
+  {
+   "name": "Hear a verdict",
+   "when": {
+    "msg_type": "agree",
+    "word": "verdict"
+   },
+   "steps": [
+    {
+     "id": "coord.heard",
+     "name": "Note the verdict",
+     "nature": "transform",
+     "born": "C2",
+     "code": "coord_heard",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Hear a no",
+   "when": {
+    "msg_type": "refuse",
+    "word": "verdict"
+   },
+   "steps": [
+    {
+     "id": "coord.refused",
+     "name": "Note the no",
+     "nature": "transform",
+     "born": "C2",
+     "code": "coord_heard",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "An engine is born",
+   "when": {
+    "msg_type": "inform",
+    "word": "born"
+   },
+   "steps": [
+    {
+     "id": "coord.table",
+     "name": "Write the line and a slot for each engine",
+     "nature": "transform",
+     "born": "C2",
+     "code": "coord_table",
+     "check": "said_what_it_did"
+    }
+   ]
+  }
+ ],
+ "steps": [
+  {
+   "id": "coord.ready",
+   "name": "List who is ready",
+   "nature": "transform",
+   "born": "C2",
+   "code": "coord_ready",
+   "check": "facts_are_closed"
+  },
+  {
+   "id": "coord.tie",
+   "name": "Say who goes first among equals",
+   "nature": "decide",
+   "born": "C0",
+   "ceiling": "C2",
+   "prompt": "coord_tie",
+   "draft": "coord_tie_draft",
+   "out": {
+    "answer": "str",
+    "why": "str"
+   },
+   "answer": "answer",
+   "check": "names_who_goes_first"
+  },
+  {
+   "id": "coord.record",
+   "name": "Record the pick",
+   "nature": "transform",
+   "born": "C2",
+   "code": "coord_record",
+   "check": "said_what_it_did"
+  }
+ ]
+}

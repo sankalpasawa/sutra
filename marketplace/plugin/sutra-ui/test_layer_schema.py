@@ -677,3 +677,67 @@ def test_s6_the_readme_points_at_every_layer_and_says_the_files_are_generated():
         assert "| %s |" % S.TITLE[layer] in readme and "LAYERS['%s']" % layer in readme
     for name in FILES:
         assert "`%s`" % name in readme
+
+
+# ---- S7: the layer package and the recipes in it ---------------------------------------------------------------------
+import importlib  # noqa: E402
+
+import layers  # noqa: E402
+
+BASE = S.HERE / "test_fixtures" / "function-engines.base.json"
+
+
+def test_s7_defs_assembles_each_function_from_its_layers_recipe_as_the_file_held_it():
+    base = json.loads(BASE.read_text(encoding="utf-8"))
+    engines = R.defs()["engines"]
+    assert list(engines)[:5] == list(base) == ["Identity", "Priority", "Coordination", "Adaptation", "Audit"]
+    for fn, obj in base.items():
+        assert engines[fn] == obj, fn
+        p = S.HERE / "layers" / S.ENGINE_LAYER[fn] / "v1.json"
+        assert p.read_text(encoding="utf-8") == json.dumps(obj, indent=1, ensure_ascii=False) + "\n", "%s: byte for byte" % fn
+    assert layers.recipes() == base
+
+
+def test_s7_website_json_keeps_the_kinds_the_edges_the_table_and_the_journeys_with_no_engine():
+    raw = json.loads((S.HERE / "engine_defs" / "website.json").read_text(encoding="utf-8"))
+    assert raw["engines"] == {} and raw["kinds"] and raw["edges"] and raw["coordination"] and raw["journeys"]
+    assert "layers/<layer>/v1.json" in raw["comment"]
+    assert R.validate(R.defs()) == [], "the definitions lane prints clean"
+
+
+def test_s7_a_missing_recipe_refuses_the_definitions_load_with_a_named_fault(tmp_path, monkeypatch):
+    for layer in layers.RECIPE_ORDER:
+        (tmp_path / layer).mkdir()
+        if layer != "audit":
+            (tmp_path / layer / "v1.json").write_text((S.HERE / "layers" / layer / "v1.json").read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(layers, "HERE", tmp_path)
+    monkeypatch.setattr(R, "_DEFS", {})
+    with pytest.raises(ValueError) as got:
+        R.defs()
+    assert str(got.value) == "the engine definitions are refused: Audit's recipe (audit/v1) is missing"
+    (tmp_path / "audit" / "v1.json").write_text("{not json", encoding="utf-8")
+    with pytest.raises(ValueError) as got:
+        layers.recipes()
+    assert str(got.value).startswith("the engine definitions are refused: Audit's recipe (audit/v1) is not JSON")
+
+
+def test_s7_a_ref_to_delegate_calls_the_reloaded_modules_function(monkeypatch):
+    names = layers.ref_to("_names")
+    assert names.legacy == ("engine_runtime", "_names") and names(["Plan", "Write"]) == "Plan and Write"
+    importlib.reload(R)
+    monkeypatch.setattr(R, "_names", lambda xs: "the reloaded one")
+    assert names(["Plan"]) == "the reloaded one"
+    assert layers.R.engine_def("Identity")["kind"] == "function", "the lazy proxy reaches the reloaded module"
+
+
+def test_s7_nothing_in_the_layer_package_imports_the_runtime_at_import_time():
+    src = (S.HERE / "layers" / "__init__.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    top = [n for n in tree.body if isinstance(n, (ast.Import, ast.ImportFrom))]
+    assert not [n for n in top for a in n.names if a.name in ("engine_runtime", "website_dept", "j2_runtime", "functions_view")]
+    for layer in S.LAYER_NAMES:
+        m = importlib.import_module("layers.%s.v1" % layer)
+        assert (m.LAYER, m.VERSION, m.IMPLEMENTS) == (layer, 1, S.SCHEMA_VERSION)
+        assert (m.CODE, m.PROMPT, m.DRAFT, m.CHECK, m.WORDS, m.LAYOUT) == ({}, {}, {}, {}, {}, {})
+        assert getattr(m, "RECIPE_TEMPLATE" if layer == "root" else "RECIPE") == ("Setup" if layer == "root" else "v1.json")
+        assert (S.HERE / "layers" / layer / "__init__.py").read_text(encoding="utf-8") == ""

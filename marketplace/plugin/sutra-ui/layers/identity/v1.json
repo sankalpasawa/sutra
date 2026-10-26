@@ -1,0 +1,483 @@
+{
+ "kind": "function",
+ "description": "holds the goal and the rules, judges every effect, and is the one the owner speaks with",
+ "skills": [
+  "recognise a task, a query, a directive, feedback or a new idea",
+  "judge a request against the goal",
+  "gate an effect by rule",
+  "put a question to the owner"
+ ],
+ "start": {
+  "on": [
+   {
+    "kind": "post"
+   }
+  ],
+  "unless": []
+ },
+ "gates": [
+  {
+   "id": "identity.gate",
+   "name": "Gate the effect by rule",
+   "nature": "decide",
+   "born": "C2",
+   "code": "identity_gate",
+   "prompt": "identity_gate_soft",
+   "draft": "identity_gate_draft",
+   "out": {
+    "verdict": [
+     "admit",
+     "wait",
+     "refuse"
+    ]
+   },
+   "check": "gate_answer_is_known"
+  },
+  {
+   "id": "identity.wait_engine",
+   "name": "Wait for the engine the words need",
+   "nature": "decide",
+   "born": "C2",
+   "code": "identity_wait_engine",
+   "prompt": "identity_gate_soft",
+   "draft": "identity_gate_draft",
+   "out": {
+    "verdict": [
+     "admit",
+     "wait",
+     "refuse"
+    ]
+   },
+   "check": "gate_answer_is_known"
+  }
+ ],
+ "on": [
+  {
+   "name": "Hear the owner at the front door",
+   "when": {
+    "msg_type": "request",
+    "word": "front"
+   },
+   "steps": [
+    {
+     "id": "identity.front",
+     "name": "Read what was said",
+     "nature": "transform",
+     "born": "C2",
+     "code": "hear",
+     "check": "facts_are_closed"
+    },
+    {
+     "id": "identity.route",
+     "name": "Find who it is for",
+     "nature": "decide",
+     "born": "C2",
+     "code": "identity_route",
+     "check": "facts_are_closed"
+    },
+    {
+     "id": "identity.hand",
+     "name": "Hand it on, or do it",
+     "nature": "transform",
+     "born": "C2",
+     "code": "identity_hand",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Take a request",
+   "when": {
+    "msg_type": "request",
+    "word": "request"
+   },
+   "steps": [
+    {
+     "id": "identity.read",
+     "name": "Read the request",
+     "nature": "transform",
+     "born": "C2",
+     "code": "identity_read",
+     "check": "facts_are_closed"
+    },
+    {
+     "id": "identity.recognise",
+     "name": "Recognise what kind of words these are",
+     "nature": "decide",
+     "born": "C0",
+     "ceiling": "C2",
+     "stringency": "high",
+     "facts": [
+      "cue",
+      "names_work",
+      "first"
+     ],
+     "answer": "journey",
+     "prompt": "identity_recognise",
+     "draft": "identity_recognise_draft",
+     "out": {
+      "journey": [
+       "task",
+       "query",
+       "directive",
+       "feedback",
+       "new-idea"
+      ]
+     },
+     "check": "journey_is_known",
+     "only_if": "identity.read.later"
+    },
+    {
+     "id": "identity.take",
+     "name": "Judge it against the goal",
+     "nature": "decide",
+     "born": "C0",
+     "ceiling": "C2",
+     "stringency": "high",
+     "facts": [
+      "kind",
+      "leaves_site",
+      "first"
+     ],
+     "answer": "verdict",
+     "prompt": "identity_take",
+     "draft": "identity_take_draft",
+     "out": {
+      "verdict": [
+       "go",
+       "ask",
+       "refuse"
+      ]
+     },
+     "check": "verdict_is_known",
+     "only_if": "identity.recognise.journey=task"
+    },
+    {
+     "id": "identity.enough",
+     "name": "Read the identity against the standard",
+     "nature": "check",
+     "born": "C0",
+     "ceiling": "C1",
+     "only_if": "identity.read.assess",
+     "prompt": "identity_enough",
+     "draft": "identity_enough_draft",
+     "out": {
+      "enough": "bool",
+      "missing": "list"
+     },
+     "check": "enough_is_shaped"
+    },
+    {
+     "id": "identity.answer",
+     "name": "Answer from the record",
+     "nature": "make",
+     "born": "C0",
+     "ceiling": "C1",
+     "only_if": "identity.recognise.journey=query",
+     "prompt": "identity_answer",
+     "draft": "identity_answer_draft",
+     "out": {
+      "answer": "str",
+      "source": "str",
+      "confidence": [
+       "high",
+       "moderate",
+       "low",
+       "unknown"
+      ]
+     },
+     "check": "answer_names_its_source"
+    },
+    {
+     "id": "identity.rule",
+     "name": "Restate it as a rule",
+     "nature": "make",
+     "born": "C0",
+     "ceiling": "C1",
+     "only_if": "identity.recognise.journey=directive",
+     "prompt": "identity_rule",
+     "draft": "identity_rule_draft",
+     "out": {
+      "tag": [
+       "always",
+       "ask",
+       "refuse",
+       "goal"
+      ],
+      "line": "str",
+      "scope": [
+       "standing",
+       "one-time"
+      ]
+     },
+     "check": "rule_is_tagged"
+    },
+    {
+     "id": "identity.weigh",
+     "name": "Read what the feedback changes",
+     "nature": "make",
+     "born": "C0",
+     "ceiling": "C1",
+     "only_if": "identity.recognise.journey=feedback",
+     "prompt": "identity_weigh",
+     "draft": "identity_weigh_draft",
+     "out": {
+      "now": "str",
+      "what": [
+       "format",
+       "content",
+       "tone",
+       "scope",
+       "accuracy"
+      ]
+     },
+     "check": "feedback_says_what_changes"
+    },
+    {
+     "id": "identity.file",
+     "name": "File what was decided",
+     "nature": "transform",
+     "born": "C2",
+     "code": "identity_file",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Give a verdict",
+   "when": {
+    "msg_type": "request",
+    "word": "verdict"
+   },
+   "steps": [
+    {
+     "id": "identity.hear",
+     "name": "Read what was asked",
+     "nature": "transform",
+     "born": "C2",
+     "code": "hear",
+     "check": "facts_are_closed"
+    },
+    {
+     "id": "identity.judge",
+     "name": "Judge whether it may start",
+     "nature": "decide",
+     "born": "C0",
+     "ceiling": "C1",
+     "prompt": "identity_gate_soft",
+     "draft": "identity_gate_draft",
+     "out": {
+      "verdict": [
+       "admit",
+       "wait",
+       "refuse"
+      ]
+     },
+     "check": "gate_verdict_is_known"
+    },
+    {
+     "id": "identity.verdict",
+     "name": "Post the verdict",
+     "nature": "transform",
+     "born": "C2",
+     "code": "identity_verdict",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Rule on a rung",
+   "when": {
+    "msg_type": "propose",
+    "word": "rung"
+   },
+   "steps": [
+    {
+     "id": "identity.rung",
+     "name": "Put the move to the owner",
+     "nature": "decide",
+     "born": "C2",
+     "code": "identity_rung",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Take a stamp",
+   "when": {
+    "msg_type": "accept-proposal"
+   },
+   "steps": [
+    {
+     "id": "identity.apply",
+     "name": "Apply what was stamped",
+     "nature": "transform",
+     "born": "C2",
+     "code": "identity_apply",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Take a no",
+   "when": {
+    "msg_type": "reject-proposal"
+   },
+   "steps": [
+    {
+     "id": "identity.drop",
+     "name": "Drop what was turned down",
+     "nature": "transform",
+     "born": "C2",
+     "code": "identity_drop",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Hear a finding",
+   "when": {
+    "msg_type": "inform",
+    "word": "finding"
+   },
+   "steps": [
+    {
+     "id": "identity.finding",
+     "name": "Weigh the finding",
+     "nature": "decide",
+     "born": "C2",
+     "code": "identity_finding",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Hear an alarm",
+   "when": {
+    "msg_type": "inform",
+    "word": "alarm"
+   },
+   "steps": [
+    {
+     "id": "identity.alarm",
+     "name": "Put the alarm to the owner",
+     "nature": "decide",
+     "born": "C2",
+     "code": "identity_alarm",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Hear where an idea went",
+   "when": {
+    "msg_type": "inform",
+    "word": "idea"
+   },
+   "steps": [
+    {
+     "id": "identity.idea",
+     "name": "Tell the owner where the idea went",
+     "nature": "transform",
+     "born": "C2",
+     "code": "identity_idea",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Hear a lost request",
+   "when": {
+    "msg_type": "inform",
+    "word": "lost"
+   },
+   "steps": [
+    {
+     "id": "identity.lost",
+     "name": "Say it back",
+     "nature": "transform",
+     "born": "C2",
+     "code": "identity_lost",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "an engine proposed",
+   "when": {
+    "msg_type": "propose",
+    "word": "engine"
+   },
+   "steps": [
+    {
+     "id": "identity.engine",
+     "name": "Put the engine to the owner",
+     "nature": "transform",
+     "born": "C2",
+     "code": "identity_engine",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "a line proposed",
+   "when": {
+    "msg_type": "propose",
+    "word": "line"
+   },
+   "steps": [
+    {
+     "id": "identity.line",
+     "name": "Put the line to the owner",
+     "nature": "transform",
+     "born": "C2",
+     "code": "identity_line",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "Close a conflict",
+   "when": {
+    "msg_type": "inform",
+    "word": "conflict"
+   },
+   "steps": [
+    {
+     "id": "identity.conflict",
+     "name": "Hear the conflict",
+     "nature": "transform",
+     "born": "C2",
+     "code": "hear",
+     "check": "facts_are_closed"
+    },
+    {
+     "id": "identity.close",
+     "name": "Close it against the goal and the rules",
+     "nature": "decide",
+     "born": "C0",
+     "ceiling": "C0",
+     "prompt": "identity_close",
+     "draft": "identity_close_draft",
+     "out": {
+      "ruling": [
+       "run",
+       "drop",
+       "ask"
+      ],
+      "why": "str"
+     },
+     "check": "ruling_is_known"
+    },
+    {
+     "id": "identity.closed",
+     "name": "Run it, drop it, or ask the owner",
+     "nature": "transform",
+     "born": "C2",
+     "code": "identity_closed",
+     "check": "said_what_it_did"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,100 @@
+{
+ "kind": "function",
+ "description": "grants each engine its envelope and answers proposals that cost something",
+ "skills": [
+  "hold an engine to its envelope",
+  "answer a proposal that costs something"
+ ],
+ "template": {
+  "envelope": {
+   "calls": 30,
+   "usd": 6.0,
+   "work_calls": 8
+  },
+  "line": 6
+ },
+ "start": {
+  "on": [
+   {
+    "kind": "post"
+   }
+  ],
+  "unless": []
+ },
+ "gates": [
+  {
+   "id": "priority.envelope",
+   "name": "Hold the envelope",
+   "nature": "decide",
+   "born": "C2",
+   "code": "priority_envelope",
+   "check": "gate_answer_is_known"
+  }
+ ],
+ "on": [
+  {
+   "name": "Answer a proposal",
+   "when": {
+    "msg_type": "propose"
+   },
+   "steps": [
+    {
+     "id": "priority.read",
+     "name": "Read what it would cost",
+     "nature": "transform",
+     "born": "C2",
+     "code": "priority_read",
+     "check": "facts_are_closed"
+    },
+    {
+     "id": "priority.bargain",
+     "name": "Say yes, ask for less, or say no",
+     "nature": "decide",
+     "born": "C0",
+     "ceiling": "C2",
+     "stringency": "low",
+     "facts": [
+      "word",
+      "room"
+     ],
+     "answer": "answer",
+     "prompt": "priority_bargain",
+     "draft": "priority_bargain_draft",
+     "out": {
+      "answer": [
+       "accept",
+       "reject",
+       "counter"
+      ]
+     },
+     "check": "answer_has_its_price"
+    },
+    {
+     "id": "priority.post",
+     "name": "Post the answer",
+     "nature": "transform",
+     "born": "C2",
+     "code": "priority_post",
+     "check": "said_what_it_did"
+    }
+   ]
+  },
+  {
+   "name": "An engine is born",
+   "when": {
+    "msg_type": "inform",
+    "word": "born"
+   },
+   "steps": [
+    {
+     "id": "priority.grant",
+     "name": "Give each new engine its limit",
+     "nature": "decide",
+     "born": "C2",
+     "code": "priority_grant",
+     "check": "said_what_it_did"
+    }
+   ]
+  }
+ ]
+}
