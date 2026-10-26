@@ -213,7 +213,6 @@
     "root": {
       "setup": {
         "converse": {
-          "items": "field.items",
           "task": "field.task"
         },
         "shape": {}
