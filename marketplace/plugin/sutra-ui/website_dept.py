@@ -63,6 +63,138 @@ STALE_ASK_S = 30 * 60
 _DEFS = json.loads((Path(__file__).parent / "engine_defs" / "website.json").read_text(encoding="utf-8"))
 KINDS = _DEFS.get("kinds") or {}
 RULES = [dict(r) for r in KINDS.get("website", {}).get("rules") or []]
+# Done-when as items (PRD M3.2, MK-2): each item says how it is checked (by a program, by an AI reading what was made,
+# or only by the owner) and what it is (a target the work must have, or an outcome it must achieve). A kind's own done
+# line stands as D1 when Root drafted none, checked as the kind says.
+DONE_HOW = ("code", "model", "person")
+DONE_LEVELS = ("target", "outcome")
+KIND_DONE_HOW = {"website": "code", "root": "code"}
+DONE_ITEMS_MAX = 12
+
+
+def done_items(raw, kind=None):
+    """Done-when items as the record keeps them: [{id, text, how, level}], numbered D1, D2, ... in the order given; a blank
+    item is dropped, and how and level are kept as said (lowercased) for a covering to judge. An item that rests on a
+    fact nobody gave carries `confirm`, why it is to be confirmed. With none given, the kind's own done line is D1."""
+    out = []
+    for x in raw if isinstance(raw, list) else []:
+        if not isinstance(x, dict):
+            continue
+        text = " ".join(str(x.get("text") or "").split())[:300]
+        if not text:
+            continue
+        item = {"id": "D%d" % (len(out) + 1), "text": text, "how": str(x.get("how") or "").strip().lower(),
+                "level": str(x.get("level") or "").strip().lower()}
+        why = " ".join(str(x.get("confirm") or "").split())[:200]
+        if why:
+            item["confirm"] = why
+        out.append(item)
+    if not out and kind in KINDS:
+        out = [{"id": "D1", "text": KINDS[kind]["done"], "how": KIND_DONE_HOW.get(kind, "model"), "level": "outcome"}]
+    return out[:DONE_ITEMS_MAX]
+
+
+def done_line(items):
+    """The done-when items as one line, for the readers that read `done` (done stays as joined text)."""
+    return "; ".join(str(i.get("text") or "").rstrip(".") for i in items or [] if str(i.get("text") or "").strip())
+
+
+def items_of(d):
+    """The record's done-when items as an ask carries them: each with its confirm note when it is to be confirmed, so a
+    change renumbers them and the notes go with their items."""
+    why = {c.get("item"): c.get("why") for c in d.get("to_be_confirmed") or [] if isinstance(c, dict)}
+    return [dict(i, **({"confirm": why[i.get("id")]} if why.get(i.get("id")) else {})) for i in d.get("done_items") or []
+            if isinstance(i, dict)]
+
+
+# Rules (PRD M3.4): every rule the record keeps is tagged (go: it may; ask: it asks the owner first; refuse: it never
+# does; always: it always does) and says when and from whose words it came. Built here only, so the record holds one shape.
+RULE_TAGS = ("go", "ask", "refuse", "always")
+
+
+def rule_row(tag, line, words=None, scope=None):
+    """One rule as the record keeps it: {id, tag, line, since, from}; a rule for this once only says so in `scope`."""
+    row = {"id": "u-" + uuid.uuid4().hex[:6], "tag": tag, "line": " ".join(str(line or "").split()), "since": now(), "from": words}
+    if scope and scope != "standing":
+        row["scope"] = scope
+    return row
+
+
+def done_items_ask(text, items, why, words=None, thread=None, slot=None, **more):
+    """A change to the done-when items, as an ask the owner stamps (PRD M3.4): `items` as they will stand, numbered
+    again. Its own kind, never the goal's tag: its stamp writes the items and leaves the goal as it was. The one shape
+    every caller files: Identity's reading of the owner's words, and a blocked plan's 'leave an item out' (M3.5)."""
+    return dict({"id": "a-" + uuid.uuid4().hex[:8], "kind": "done_items", "engine": "Identity", "slot": slot, "text": text,
+                 "items": done_items(items), "why": why, "words": words, "status": "pending", "created": now(), "thread": thread},
+                **more)
+
+
+# Asks with options (PRD M3.5, screen S10): a card that offers up to three ways forward, each a label and what it costs,
+# the first the one Identity recommends; the owner's one click is the answer, and code applies it. Built here only, so
+# every such ask has one shape: {id, kind, engine, text, options: [{id, label, cost}], chosen, status, created, ...}.
+OPTIONS_MAX = 3
+WORDS_OPTION = "words"                       # the option that carries the owner's own words, from the card's answer box
+
+
+class AskError(ValueError):
+    """A choice an ask cannot take, by a stable code: UNKNOWN_OPTION, ALREADY_HANDLED, EMPTY_ANSWER."""
+
+    def __init__(self, code, why=""):
+        super().__init__("%s: %s" % (code, why) if why else code)
+        self.code = code
+
+
+def option(oid, label, cost):
+    """One way forward on an ask: what the button says, and what it costs (said beside it, and in its title)."""
+    return {"id": str(oid), "label": str(label), "cost": str(cost)}
+
+
+def options_ask(kind, text, options, **more):
+    """An ask whose answer is one of its options, at most three."""
+    return dict({"id": "a-" + uuid.uuid4().hex[:8], "kind": kind, "engine": "Identity", "text": text,
+                 "options": [option(o["id"], o["label"], o["cost"]) for o in options][:OPTIONS_MAX], "chosen": None,
+                 "status": "pending", "created": now()}, **more)
+
+
+def choose_option(ref, aid, oid, text=None, by="the owner"):
+    """The owner chose one of an ask's options: the ask is answered once, with the choice and when, and the runtime
+    applies it as a step of Identity's (on_stamp, in the ask's own thread). An option the ask does not offer is
+    UNKNOWN_OPTION; the same choice again is the same answer; another one after it is ALREADY_HANDLED. The words
+    option takes the owner's words, and none is EMPTY_ANSWER."""
+    text = " ".join(str(text or "").split())[:2000]
+    with _lock(ref):
+        a = next((x for x in asks(ref) if x["id"] == aid), None)
+        if not a:
+            raise ValueError("no such ask")
+        offered = {o["id"]: o for o in a.get("options") or []}
+        if oid not in offered:
+            raise AskError("UNKNOWN_OPTION", "this ask offers %s" % (", ".join(offered) or "no options"))
+        if a["status"] != "pending":
+            if (a.get("chosen") or {}).get("id") == oid:
+                return a
+            raise AskError("ALREADY_HANDLED")
+        if oid == WORDS_OPTION and not text:
+            raise AskError("EMPTY_ANSWER")
+        at = now()
+        a.update({"status": "chosen", "decided": at, "by": by,
+                  "chosen": {"id": oid, "label": offered[oid]["label"], "at": at, "by": by, "words": text or None}})
+        _put_ask(ref, a)
+    rt = _runtime(ref)
+    if rt and a.get("thread"):
+        rt.on_stamp(ref, a, True)                  # posted in the ask's thread; Identity applies the choice as a step
+    return a
+
+
+def apply_done_items(ref, ask):
+    """A stamped done_items ask: done-when becomes its items, done their joined text, and to_be_confirmed holds the
+    notes of the items that carry one; the goal is never touched. A revision of the identity (bump_identity)."""
+    with _lock(ref):
+        d = dept(ref)
+        items = done_items(ask.get("items"), d.get("kind"))
+        d["done_items"] = [{x: i[x] for x in ("id", "text", "how", "level")} for i in items]
+        d["done"] = done_line(items)
+        d["to_be_confirmed"] = [{"item": i["id"], "why": i["confirm"]} for i in items if i.get("confirm")]
+        return bump_identity(ref, d)
 
 
 def engines_of(d):
@@ -190,6 +322,21 @@ def save_dept(ref, d):
     _write(ddir(ref) / "dept.json", d)
 
 
+def bump_identity(ref, d):
+    """Who the department is changed (its goal, done-when or rules): the revision goes up, the record is saved, and
+    the Org screen's copy follows it as a one-way mirror (PRD M3.1; founding.mirror files and applies it through the
+    proposals path, decision C1). The record is the truth: a copy that cannot be written never fails the change, and a
+    row says so."""
+    d["identity_revision"] = int(d.get("identity_revision") or 1) + 1
+    save_dept(ref, d)
+    try:
+        import founding
+        founding.mirror(ref)
+    except Exception as exc:  # noqa: BLE001 -- the mirror never fails the identity it follows
+        system_run(ref, "Identity", "could not copy the identity to the Org screen: %s" % exc)
+    return d
+
+
 # An artifact deploys the versions product in its own folder; this file names the folder, nothing more.
 def _abase(ref, art):
     return ddir(ref) / "artifacts" / slug(art)
@@ -298,11 +445,14 @@ def _runtime(ref):
 
 
 # ---- the department's birth ----------------------------------------------------------------------------------------
-def create(ref, name, brief, owner="the owner", parent=None, kind="website"):
+def create(ref, name, brief, owner="the owner", parent=None, kind="website", goal=None):
     """A new department of its kind: Identity's rules, Priority's envelopes, Coordination's table, and its first
     artifact from the owner's words. Every department is born on the engine runtime (founder, 2026-09-28: "I don't
     want to create the old way. I want it to be organic only"); SUTRA_ENGINE_RUNTIME=1 keeps the first build's way
-    only for its own suites and for the departments born before that day, which the record says."""
+    only for its own suites and for the departments born before that day, which the record says.
+
+    `goal` is the owner's own words for it, as Root shaped them (PRD M3.1): dept.json is the one record of who the
+    department is, so its goal is those words; with none, the kind's own goal line."""
     if dept(ref):
         raise ValueError("%s already has a department" % ref)
     if kind not in KINDS:
@@ -310,7 +460,8 @@ def create(ref, name, brief, owner="the owner", parent=None, kind="website"):
     brief = " ".join(str(brief or "").split())
     k = KINDS[kind]
     d = {"kind": kind, "ref": ref, "name": name, "owner": owner, "parent": parent, "created": now(),
-         "goal": k["goal"].format(name=name), "done": k["done"],
+         "goal": " ".join(str(goal or "").split()) or k["goal"].format(name=name), "done": k["done"],
+         "done_items": done_items(None, kind),
          "runtime": 1 if os.environ.get("SUTRA_ENGINE_RUNTIME") == "1" else 2,
          "rules": [dict(r) for r in k["rules"]], "control": "granted", "stopped": False,
          "envelopes": {e[0]: dict(ENVELOPE) for e in ENGINES},
@@ -423,6 +574,9 @@ def decide_ask(ref, aid, approve, by="the owner"):
             if a.get("kind") == "j2_identity":
                 # Identity's question takes words (j2_runtime.answer); a stamp would close it with nothing said (M0.6)
                 raise ValueError("Identity's question takes words: answer it in the chat")
+            if a.get("options"):
+                # an ask with options takes one of them (choose_option); a stamp would choose nothing (M3.5)
+                raise ValueError("this ask takes one of its options")
             if a["status"] != "pending":
                 if a["status"] == ("stamped" if approve else "refused"):
                     return a

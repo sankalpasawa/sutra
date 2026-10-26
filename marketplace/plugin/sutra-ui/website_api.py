@@ -164,10 +164,16 @@ def chat(ref: str, about: str = "", fn: str = ""):
 
 @router.post("/{ref}/asks/{aid}")
 async def decide(ref: str, aid: str, request: Request):
+    """Stamp or refuse an ask ({approve}), or choose one of its options ({option}, with {text} for the words option),
+    which code applies (PRD M3.5). An option the ask does not offer is 409 UNKNOWN_OPTION."""
     _need(ref)
     _, body = await _text(request)
     try:
+        if "option" in body:
+            return W.choose_option(ref, aid, str(body.get("option") or ""), body.get("text"))
         return W.decide_ask(ref, aid, bool(body.get("approve")))
+    except W.AskError as exc:
+        raise HTTPException(400 if exc.code == "EMPTY_ANSWER" else 409, detail={"code": exc.code})
     except ValueError as exc:
         raise HTTPException(400, detail=str(exc))
 

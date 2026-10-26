@@ -651,6 +651,63 @@ def _journey_rows(ref, fn, events, rows, rs, posts):
     return out
 
 
+# Identity's pane (PRD M3.7, screen S5): who the department is, from its one record. Enough to work? is one row per
+# point of the marked standard (MK-1), read off the record by code (R._standard_gaps) and off Identity's open question
+# on it; done-when as items with level, how and a to-confirm note; each rule with where it came from; the open question
+# (S6); and the conflicts Identity closed, each with who split, the ruling and why.
+RULING_SAYS = {"run": "it runs", "drop": "dropped", "ask": "asked you"}
+SPLIT_BY = {"Adaptation": "Adaptation and Priority did not agree", "Coordination": "the bargain reached its bound"}
+
+
+def _standard_rows(ref, d, cur, q):
+    gaps, asked = set(R._standard_gaps(d)), set((q or {}).get("points") or []) if (q or {}).get("standard") else set()
+    confirm = [c for c in d.get("to_be_confirmed") or [] if isinstance(c, dict) and c.get("item")]
+    reading = cur.get("state") == "assessing" and int(cur.get("step") or 0) == 1
+    rows = []
+    for pid, says, points in R.STANDARD_POINTS:
+        lacks = [p for p in points if p in gaps]
+        if lacks:
+            state, note = "not_met", "the record has " + ", ".join(R.STANDARD_SAYS[p] for p in lacks)
+        elif asked & set(points):
+            state, note = "not_met", "Identity asks you"
+        elif pid == "invented" and confirm:
+            state, note = "to_confirm", "to confirm with you: " + "; ".join("%s, %s" % (c["item"], c.get("why") or "not given") for c in confirm)
+        elif reading:
+            state, note = "reading", "being read"
+        else:
+            state, note = "met", {"goal": "as you said it", "items": "each says how it is checked", "rules": "each is go, ask, refuse or always",
+                                  "owner_budget": "you, and Priority's limits", "invented": "nothing stated that nobody gave"}[pid]
+        rows.append({"id": pid, "says": says, "state": state, "note": note})
+    return rows
+
+
+def _identity_part(ref, d, events):
+    cur = _cycle_state(ref)
+    q = J.open_question(ref)
+    why = {c.get("item"): c.get("why") for c in d.get("to_be_confirmed") or [] if isinstance(c, dict)}
+    items = [{"id": i.get("id"), "text": i.get("text"), "how": i.get("how"), "level": i.get("level"), "confirm": why.get(i.get("id"))}
+             for i in d.get("done_items") or [] if isinstance(i, dict) and i.get("id")]
+    rules = [{"tag": r.get("tag"), "line": r.get("line"), "by": "yours" if (r.get("from") or str(r.get("id") or "").startswith("u-")) else "the template",
+              "since": r.get("since")} for r in d.get("rules") or [] if isinstance(r, dict) and str(r.get("line") or "").strip()]
+    conflicts, raised = [], None
+    for e in events:
+        if e.get("action") == "conflict.raised":
+            raised = e
+        elif e.get("action") == "identity.ruled":
+            ruling = str(e.get("state") or (e.get("payload") or {}).get("ruling") or "")
+            names = (e.get("payload") or {}).get("workflow") or []
+            conflicts.append({"at": e.get("occurred_at"), "who": SPLIT_BY.get((raised or {}).get("actor"), "the plan was not settled"),
+                              "split": _plain((raised or {}).get("summary")) or None, "plan": " -> ".join(names) or None,
+                              "ruling": ruling, "ruled": RULING_SAYS.get(ruling, ruling), "why": _plain(e.get("summary")) or None,
+                              "asked_you": ruling == "ask"})
+            raised = None
+    gaps = R._standard_gaps(d)
+    return {"standard": {"met": not gaps and not (q or {}).get("standard"), "missing": gaps, "rows": _standard_rows(ref, d, cur, q)},
+            "goal": d.get("goal"), "done": d.get("done"), "done_items": items, "rules": rules,
+            "open_question": q and {k: q.get(k) for k in ("id", "text", "why", "missing", "asked", "standard", "points")},
+            "conflicts": conflicts[-6:]}
+
+
 # ---- M4.5: Coordination, from the record: its timetable, why anything waits, who makes and who reads, its ties ------
 #: what Coordination's pane reads (PRD M4.5, screen S7), its shape named once: the line and the plan it follows; the
 #: timetable, one row per engine of the line (TIMETABLE_ROW); the engines the plan left out; why each waiting engine
@@ -929,11 +986,7 @@ def engine_card(ref, name):
 def _j2_part(ref, d, fn, events, ak):
     """What J2 adds to this function's pane, from the record as it stands (later milestones fill more of it)."""
     if fn == "Identity":
-        return {"standard": {"met": not J._identity_gaps(d), "missing": J._identity_gaps(d)},
-                "goal": d.get("goal"), "done": d.get("done"),
-                "rules": [{"tag": r.get("tag"), "line": r.get("line")} for r in d.get("rules") or [] if r.get("line")],
-                "conflicts": [{"summary": _plain(e.get("summary")), "at": e.get("occurred_at"), "action": e.get("action")}
-                              for e in events if e.get("action") in ("conflict.raised", "identity.ruled")][-6:]}
+        return _identity_part(ref, d, events)
     if fn == "Adaptation":
         prop = next((e for e in reversed(events) if e.get("action") == "proposal.created"), None)
         return {"proposal": prop and {"workflow": (prop.get("payload") or {}).get("workflow") or [],

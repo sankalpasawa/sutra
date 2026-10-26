@@ -87,6 +87,20 @@
          Send posts {text} to the department's /j2/answer, reads Sending...
          while it goes, a refused answer is a snack and the words stay, and
          the answered card keeps 'You: ...' (PRD-FIVE-FUNCTIONS M0.6, S6)
+     W48 a question on Identity's standard offers Just do it, which sends
+         'just do it' to the same answer box; a question on thin words offers
+         none (PRD M3.3, S6)
+     W50 one voice: a function's chat box says the words go to Identity about
+         that function, and they go to the department about it (PRD M3.6)
+     S5  Identity's pane: the open question card, Enough to work? row by row
+         with a word beside each dot, the goal with Change the goal (the Chat,
+         its box begun), done-when items with level, how and to confirm, the
+         rules with where each came from, the conflicts closed; how Identity
+         works folds under them; never 'charter' (PRD M3.7)
+     W49 a blocked plan is a card with its ways out: who, why and if nothing
+         is done, each option with its cost; one click posts {option}, the box
+         posts {option: words, text}; an unknown option is a snack; chosen,
+         the card goes quiet with 'You chose: ...'; never a stamp (PRD M3.5, S10)
 
    Harness: test_dept.js's fresh(), with 22-website.js loaded after 20-dept.js
    (panel.html's order). Run: node test_website.js */
@@ -1935,7 +1949,7 @@ function qChat(o){
       /* the chat read leaves Identity's line about the question to the card (engine_runtime._on_card); the next turn is later */
       { n: 3, src: "Identity", dst: ["Owner"], msg_type: "inform", at: "2026-10-23T10:21:00+05:30", thread: "x-2", word: "request", dept: "r3", name: DEPT,
         line: "Filed in the Brief." }],
-    asks: o.answered ? [] : [Object.assign({}, QUESTION)].concat(o.publish ? [Object.assign({}, CHAT.asks[0])] : []),
+    asks: o.answered ? [] : [Object.assign({}, QUESTION, o.standard ? { standard: true, points: ["goal"] } : {})].concat(o.publish ? [Object.assign({}, CHAT.asks[0])] : []),
     answered: o.answered ? [Object.assign({}, QUESTION, { status: "stamped", answered: o.answered, decided: "2026-10-23T10:26:00+05:30" })] : [] };
 }
 async function chatOpen(o){
@@ -2016,6 +2030,131 @@ test("W47: EMPTY_ANSWER shows its snack and the words stay; Cmd+Enter sends", as
   const plain = Object.assign({}, key, { metaKey: false });
   (c.document.listeners.keydown || []).forEach(fn => fn(plain)); await sleep();
   assert.strictEqual(c.calls.apiPost.length, 3, "Enter alone is a new line, not a send");
+});
+
+/* ── W48: 'Just do it' on a question of Identity's standard (PRD M3.3, screen S6) ── */
+test("W48: a question on Identity's standard offers Just do it, which sends 'just do it'; thin words offer none", async () => {
+  const c = await chatOpen();
+  assert.ok(!/data-wbjust=/.test(view(c)), "a question on thin words has no Just do it: nothing was said to build from");
+  const std = Object.assign({}, QUESTION, { text: "Who are the site's visitors?", why: "The goal names no one the site is for.", missing: "goal",
+                                           points: ["goal"], standard: true });
+  const html = c.wbQuestionHtml(std, "r3", false);
+  assert.ok(/data-wbanswer="a-j2-1" data-wbref="r3">Send<\/button><button type="button" class="btn wb" data-wbjust="a-j2-1" data-wbref="r3">Just do it<\/button>/.test(html),
+            "Just do it stands after Send");
+  const s = await chatOpen({ standard: true });
+  assert.ok(/data-wbjust="a-j2-1"/.test(view(s)), "the card in Chat offers it");
+  typeAnswer(s, "half a thought");
+  assert.ok(click(s, { wbjust: "a-j2-1", wbref: "r3" })); await sleep(); await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(s.calls.apiPost)), [{ p: "/api/dept/r3/j2/answer", body: { text: "just do it" } }],
+                         "one answer, 'just do it', where the question lives");
+});
+
+/* ── S5: Identity's pane (PRD M3.7), from the screen's own sample ── */
+const ID_J2 = { goal: "A phone-first website for Thread & Loom, a handloom boutique in Pune, where shoppers browse kurtas, sarees, shirts and dupattas and order on WhatsApp.",
+  standard: { met: false, missing: [], rows: [
+    { id: "goal", says: "The goal names what and for whom", state: "met", note: "as you said it" },
+    { id: "items", says: "Done-when items, each with how it is checked", state: "met", note: "each says how it is checked" },
+    { id: "rules", says: "Every rule is tagged", state: "met", note: "each is go, ask, refuse or always" },
+    { id: "owner_budget", says: "Owner and budget are set", state: "met", note: "you, and Priority's limits" },
+    { id: "invented", says: "Nothing invented", state: "to_confirm", note: "to confirm with you: D6, the reviews' names" }] },
+  done_items: [{ id: "D1", text: "Browse all ten products by category", how: "code", level: "target", confirm: null },
+               { id: "D2", text: "Filter by size (XS to XXL) and by price", how: "code", level: "target", confirm: null },
+               { id: "D6", text: "New arrivals, a lookbook of three outfits, three reviews", how: "model", level: "outcome", confirm: "the reviews' names" }],
+  rules: [{ tag: "go", line: "Plan, write and check inside the record", by: "the template", since: null },
+          { tag: "ask", line: "Ask the owner before the first publish", by: "the template", since: null },
+          { tag: "refuse", line: "Never show a price that is not in my list", by: "yours", since: "2026-10-23T10:14:00+05:30" }],
+  open_question: { id: "a-j2-1", text: "May the three reviews show your customers' first names?", why: "Nothing on record says the customers agreed (D6).",
+                   missing: "invented", asked: QAT, standard: true, points: ["invented"] },
+  conflicts: [{ at: "2026-10-23T10:08:00+05:30", who: "Adaptation and Priority did not agree", split: "Priority said no to the plan: no room", plan: "Photo Picker",
+                ruling: "drop", ruled: "dropped", why: "D6 stays covered by Write", asked_you: false }] };
+test("S5: Identity's pane holds its one record: the question, the standard, the goal, done-when, the rules, the conflicts closed", async () => {
+  const page = fn => Object.assign(fnPageOf(fn), fn === "identity" ? { j2: JSON.parse(JSON.stringify(ID_J2)) } : {});
+  const c = await opened({ map: rtMap(), fnpage: page });
+  const html = await fnCard(c, "identity");
+  const i = k => html.indexOf(k);
+  assert.ok(i('<div class="dpk">Identity asks</div><div class="dpasks">May the three reviews show your customers&#39;') >= 0 ||
+            i('<div class="dpk">Identity asks</div><div class="dpasks">May the three reviews show your customers\'') >= 0, "the open question, the S6 card");
+  assert.ok(/data-wbanswer="a-j2-1" data-wbref="r3"/.test(html) && /data-wbjust="a-j2-1"/.test(html), "answered where it lives");
+  assert.ok(i("<h3>Enough to work?</h3>") > i("Identity asks") && i("<h3>Goal</h3>") > i("<h3>Enough to work?</h3>") && i("<h3>Done when</h3>") > i("<h3>Goal</h3>") &&
+            i("<h3>Rules</h3>") > i("<h3>Done when</h3>") && i("<h3>Conflicts closed</h3>") > i("<h3>Rules</h3>"), "the cards in the screen's order");
+  assert.ok(/<div class="dprow wbstd"><span class="dpdot ok"><\/span><span><b>The goal names what and for whom<\/b> <span class="wbchip on">met<\/span><div class="dpchk">as you said it<\/div>/.test(html), "a dot, a word and a note");
+  assert.ok(/<span class="dpdot warn"><\/span><span><b>Nothing invented<\/b> <span class="wbchip">to confirm<\/span><div class="dpchk">to confirm with you: D6, the reviews/.test(html), "to confirm, in words");
+  assert.ok(/<div class="dpbig wbidgoal">A phone-first website for Thread &amp; Loom/.test(html) && /data-wbtab="chat" data-wbfill="Change the goal to: ">Change the goal</.test(html), "the goal, and a way to change it");
+  assert.ok(/data-wbfn="audit" title="Audit&#39;s reading">D1<\/button><span>Browse all ten products by category<\/span><span class="dpchk">target · code<\/span>/.test(html) ||
+            /data-wbfn="audit" title="Audit's reading">D1<\/button><span>Browse all ten products by category<\/span><span class="dpchk">target · code<\/span>/.test(html), "an item, its level and how");
+  assert.ok(/>D6<\/button><span>New arrivals, a lookbook of three outfits, three reviews<\/span><span class="wbchip">to confirm<\/span><span class="dpchk">outcome · model<\/span>/.test(html), "a to confirm chip");
+  assert.ok(/<span class="wbchip on">go<\/span><span>Plan, write and check inside the record<\/span><span class="dpchk">the template<\/span>/.test(html), "a rule of the template");
+  assert.ok(/<span class="wbchip ask">never<\/span><span>Never show a price that is not in my list<\/span><span class="dpchk">yours · \d\d:\d\d<\/span>/.test(html), "a rule of yours, and when");
+  assert.ok(/data-wbtab="board"><span class="dpchk">\d\d:\d\d<\/span><span>Adaptation and Priority did not agree on Photo Picker\. Ruled: dropped; D6 stays covered by Write\. No ask to you\.<\/span>/.test(html), "a conflict closed: who split, the ruling and why");
+  assert.ok(/<details class="wbhow wb"><summary>How Identity works<\/summary><div class="dpcard"><h3>The function<\/h3>/.test(html), "how Identity works, folded under");
+  const t = words(html);
+  assert.ok(!/charter|internal system/i.test(t), "never charter");
+  assert.ok(!/\/api\/|\.json|\.md\b/.test(t), "no path");
+  /* Change the goal opens the Chat with the box begun */
+  click(c, { wbtab: "chat", wbfill: "Change the goal to: " });
+  assert.strictEqual(vm.runInContext("wbS().draft['r3:ask']", c), "Change the goal to: ");
+  assert.strictEqual(vm.runInContext("wbS().tab['r3']", c), "chat");
+  /* a pane with no record of Identity's own keeps its page as it was */
+  const other = await fnCard(await opened({ map: rtMap(), fnpage: fnPageOf }), "identity");
+  assert.ok(other.indexOf("<h3>Enough to work?</h3>") < 0 && other.indexOf("wbhow") < 0, "a page with no record of its own keeps its page");
+});
+
+/* ── W50: one voice (PRD M3.6, Q1): a function's chat box sends the owner's words to Identity about that function ── */
+test("W50: a function's chat box says the words go to Identity about that function", async () => {
+  const c = await opened({ map: rtMap(), fnchat: Object.assign({}, FNCHAT, { fn: "Priority" }) });
+  await fnCard(c, "priority");
+  vm.runInContext("dpS().pane['r3:priority'] = 'chat';", c);
+  for (let k = 0; k < 3; k++){ c.dpViewerHtml(WEB, {}, null, null); for (let i = 0; i < 6; i++) await sleep(); }
+  const html = c.dpViewerHtml(WEB, {}, null, null);
+  assert.ok(/placeholder="Say it to Identity about Priority"/.test(html) && /data-wbask="fn:priority"/.test(html), "said to Identity, about Priority");
+  vm.runInContext("wbS().draft['r3:fn:priority'] = 'Spend less on the careers page';", c);
+  assert.ok(click(c, { wbask: "fn:priority" }));
+  for (let i = 0; i < 4; i++) await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost.filter(x => /\/ask$/.test(x.p))[0])),
+                         { p: "/api/native/r3/ask", body: { text: "Spend less on the careers page", about: "fn:priority" } }, "to the department, about Priority");
+});
+
+/* ── W49: a blocked plan's card and its ways out (PRD M3.5, screen S10) ── */
+const BLOCKED = { id: "a-b-1", kind: "blocked", engine: "Identity", ref: "r3", dept: DEPT, status: "pending", created: QAT, thread: "x-9",
+                  text: "Root's check sent the plan back 3 times: the line reaches outside without a rule. Say what to change and I will have it shaped afresh.",
+                  title: "The plan could not be approved.", who: "Root, at its review", why: "the line reaches outside without a rule",
+                  if_nothing: "Nothing runs; the department waits for your words.", chosen: null,
+                  options: [{ id: "words", label: "Change the plan in my words", cost: "Adaptation shapes it afresh from what you say; nothing runs before Root's review" },
+                            { id: "leave:D3", label: "Leave D3 out", cost: "D3 is dropped from done-when (Three reviews from customers); nothing more is spent" },
+                            { id: "stop", label: "Stop here", cost: "the department stops where it is; you can start it again later" }] };
+async function blockedOpen(chosen){
+  const m = rtMap(); m.root = "r2";
+  const card = Object.assign({}, BLOCKED, chosen ? { status: "chosen", chosen } : {});
+  const chat = Object.assign(qChat({ answered: "a site" }), { asks: chosen ? [] : [card], chosen: chosen ? [card] : [] });
+  const c = await opened({ map: m, chat });
+  vm.runInContext("globalThis.__snacks = []; snack = function(m, o){ __snacks.push(m); };", c);
+  view(c); await sleep(); await sleep();
+  return c;
+}
+
+test("W49: a blocked plan is a card with its ways out, each with its cost, and never a stamp", async () => {
+  const c = await blockedOpen();
+  const html = view(c);
+  assert.ok(/<div class="dpask hard wbq wbopt wb"><div class="dpk">Identity asks<\/div><div class="dpasks">The plan could not be approved\.<\/div>/.test(html), "Identity asks, with its title");
+  assert.ok(/<span class="dpk">Who<\/span><span>Root, at its review<\/span>[^]*<span class="dpk">Why<\/span><span>the line reaches outside without a rule<\/span>[^]*<span class="dpk">If nothing is done<\/span><span>Nothing runs; the department waits for your words\.<\/span>/.test(html),
+            "who, why and if nothing is done");
+  const ids = (html.match(/data-wboption="([^"]+)"/g) || []).map(x => x.slice(15, -1));
+  assert.deepStrictEqual(ids, ["words", "leave:D3", "stop"], "the owner's words first, then the others");
+  assert.ok(/title="Leave D3 out: D3 is dropped from done-when \(Three reviews from customers\); nothing more is spent"[^>]*>Leave D3 out<\/button><span class="dpchk">D3 is dropped/.test(html), "the cost beside it and in its title");
+  assert.ok(!/data-wbdecide="a-b-1"/.test(html) && html.indexOf("Waiting for you") < 0, "never a stamp, never in Waiting for you");
+  assert.ok(click(c, { wboption: "leave:D3", wbopt: "a-b-1", wbref: "r3" })); await sleep(); await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost)), [{ p: "/api/native/r3/asks/a-b-1", body: { option: "leave:D3" } }], "one click, the option");
+  (c.document.listeners.input || []).forEach(fn => fn({ target: { dataset: { wbdraft: "r3:o:a-b-1" }, value: "Only the cakes page" } }));
+  click(c, { wboption: "words", wbopt: "a-b-1", wbref: "r3" }); await sleep(); await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(c.calls.apiPost[1])), { p: "/api/native/r3/asks/a-b-1", body: { option: "words", text: "Only the cakes page" } }, "the box sends the words");
+  c.apiPost = (p, body) => { c.calls.apiPost.push({ p, body }); return Promise.reject(new Error('{"detail":{"code":"UNKNOWN_OPTION"}} (/api/native/r3/asks/a-b-1 -> 409)')); };
+  click(c, { wboption: "stop", wbopt: "a-b-1", wbref: "r3" }); await sleep(); await sleep(); await sleep();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(vm.runInContext("__snacks", c))), ["That choice is no longer on the card."], "a snack says why");
+  const quiet = view(await blockedOpen({ id: "leave:D3", label: "Leave D3 out", at: "2026-10-23T10:26:00+05:30", by: "the owner", words: null }));
+  assert.ok(/<div class="dpask gone wbq wbopt wb"><div class="dpk">Identity asked<\/div><div class="dpasks">The plan could not be approved\.<\/div><div class="dpaskd">You chose: Leave D3 out · \d\d:\d\d<\/div><\/div>/.test(quiet), "chosen, it goes quiet");
+  assert.ok(!/data-wboption=/.test(quiet));
+  const t = words(html).replace(/D\d\b/g, " ");
+  assert.ok(!/\bGRANT|\bCOUNTER|\bREFUSE\b|charter|internal system/i.test(t), "owner's words only");
 });
 
 /* ── PRD M4.7: Coordination's pane (S7) and the engine card (S17) ────────────────────────────────────────────── */
