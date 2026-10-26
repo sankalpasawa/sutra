@@ -1042,6 +1042,8 @@ CHECKS = {
     'adaptation': {'counted_the_rows': 'every step is counted from its own rows',
                    'idea_has_shapes': 'an idea is reflected back with the shapes it could take',
                    'line_is_engines': 'a shaped line is one to six engines that code finds nothing wrong with',
+                   'line_is_fitted': "a fitted line is the kind's line in its order, less engines the kind does not require, "
+                                     'and every note is for an engine of it and at most 300 characters',
                    'moves_name_their_rows': 'each move is of a known kind and names the rows it rests on'},
     'priority': {'answer_has_its_price': 'said yes, asked for less or said no, each with its price; an ask for less names what it keeps',
                  'price_is_observed': 'a yes, or an ask for less, is held to the facts Priority read: what it keeps costs no more than '
@@ -1210,6 +1212,12 @@ PROMPTS = {
                                  '{"cannot": {"engine": str, "items": ["D1"], "why": str}} when an engine the kind requires cannot '
                                  'serve an item.',
                       'read_by': 'adapt.line'},
+            # A1-FIT (W2-ADAPT, M5.2): adapt.fit reads this part when the line is the Library's own
+            'fit': {'fields': {'task': 'field.task', 'guidance': 'field.guidance'},
+                    'inputs': ('dept', 'words', 'items', 'engines', 'rules'),
+                    'returns': 'Return ONLY a JSON object: {"engines": ["the Library engines to run, in their order"], "fit": '
+                               '{"<engine>": "one line: what this engine does differently for this goal"}, "why": "one line"}.',
+                    'read_by': 'adapt.fit'},
         },
     },
     'priority': {
@@ -1263,7 +1271,7 @@ PROMPTS = {
 
 #: the prompt parts later steps added to PROMPTS (A1.16, 'Parts added by later steps'): a layer's WORDS and LAYOUT hold
 #: them, and no .md file of the bundle does, so the extractor and the bundle's tests leave them out. A package adds its own.
-ADDED_PARTS = (('adaptation', 'make', 'shape'),)
+ADDED_PARTS = (('adaptation', 'make', 'shape'), ('adaptation', 'make', 'fit'))
 
 #: each layer's pane view (A1.17), plus the engine card
 VIEWS = {'identity': 'view.identity', 'adaptation': 'view.adaptation', 'priority': 'view.priority',

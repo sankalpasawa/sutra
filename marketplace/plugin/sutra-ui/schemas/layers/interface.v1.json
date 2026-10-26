@@ -64,6 +64,7 @@
       "counted_the_rows": "every step is counted from its own rows",
       "idea_has_shapes": "an idea is reflected back with the shapes it could take",
       "line_is_engines": "a shaped line is one to six engines that code finds nothing wrong with",
+      "line_is_fitted": "a fitted line is the kind's line in its order, less engines the kind does not require, and every note is for an engine of it and at most 300 characters",
       "moves_name_their_rows": "each move is of a known kind and names the rows it rests on"
     },
     "audit": {
@@ -6122,6 +6123,7 @@
         "counted_the_rows",
         "idea_has_shapes",
         "line_is_engines",
+        "line_is_fitted",
         "moves_name_their_rows"
       ],
       "hands_to": "Priority: every proposal and every round. Identity: conflicts, and a round Priority said yes to, to file. Root: the line Priority said yes to, for its check.",
@@ -6471,6 +6473,21 @@
         }
       },
       "make": {
+        "fit": {
+          "fields": {
+            "guidance": "field.guidance",
+            "task": "field.task"
+          },
+          "inputs": [
+            "dept",
+            "words",
+            "items",
+            "engines",
+            "rules"
+          ],
+          "read_by": "adapt.fit",
+          "returns": "Return ONLY a JSON object: {\"engines\": [\"the Library engines to run, in their order\"], \"fit\": {\"<engine>\": \"one line: what this engine does differently for this goal\"}, \"why\": \"one line\"}."
+        },
         "line": {
           "fields": {},
           "inputs": [

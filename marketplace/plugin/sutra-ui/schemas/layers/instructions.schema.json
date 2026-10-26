@@ -112,6 +112,10 @@
         }
       },
       "make": {
+        "fit": {
+          "guidance": "field.guidance",
+          "task": "field.task"
+        },
         "line": {},
         "refused": {},
         "shape": {

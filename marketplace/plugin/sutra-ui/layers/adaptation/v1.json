@@ -205,6 +205,22 @@
      "check": "said_what_it_did"
     },
     {
+     "id": "adapt.fit",
+     "name": "Fit the Library's line to the goal",
+     "nature": "decide",
+     "born": "C0",
+     "ceiling": "C1",
+     "prompt": "adapt_fit",
+     "draft": "adapt_fit_draft",
+     "out": {
+      "engines": "list",
+      "fit": "dict",
+      "why": "str"
+     },
+     "check": "line_is_fitted",
+     "only_if": "adapt.source.source=library"
+    },
+    {
      "id": "adapt.line",
      "name": "Shape the line the words need",
      "nature": "make",

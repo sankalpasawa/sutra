@@ -6682,6 +6682,29 @@ CHECK = {"line_is_engines": c_line_is_engines, "pages_are_named": c_pages_are_na
 PROMPT["audit_items"], DRAFT["audit_items_draft"], CHECK["reading_is_s30"] = p_audit_items, d_audit_items, c_reading_is_s30
 
 
+# adaptation/v1's step adapt.fit (W2-ADAPT, M5.2): the copy a department runs when the layer does not load. It fits nothing: the
+# Library's line stays whole, which is also what the layer's own draft answers, and the check takes that answer and no other
+def _fit_line(ctx):
+    return [e["name"] for e in ((ctx.get("bag") or {}).get("adapt.source") or {}).get("engines") or [] if isinstance(e, dict) and e.get("name")]
+
+
+def p_adapt_fit(ctx, step, item):
+    return ("Keep the Library's line whole. Answer with one JSON object only: {\"engines\": [every engine of the line, in its order], "
+            "\"fit\": {}, \"why\": \"one line\"}.\nTHE LINE: " + ", ".join(_fit_line(ctx)))
+
+
+def d_adapt_fit(ctx, step, item):
+    return {"engines": _fit_line(ctx), "fit": {}, "why": "the Library's line stands as it is"}
+
+
+def c_line_is_fitted(ctx, step, item, out):
+    ok = isinstance(out, dict) and out.get("engines") == _fit_line(ctx) and not out.get("fit")
+    return _verdict(ok, "the Library's line, whole", "the Library's line is kept whole")
+
+
+PROMPT["adapt_fit"], DRAFT["adapt_fit_draft"], CHECK["line_is_fitted"] = p_adapt_fit, d_adapt_fit, c_line_is_fitted
+
+
 # ---- what the screens read -----------------------------------------------------------------------------------------
 def steps_view(ref, name):
     """An engine as the owner sees it: its steps in order, each with the rung it runs on, its check and what its rows say."""

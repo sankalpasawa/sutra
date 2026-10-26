@@ -351,6 +351,90 @@ def d_adapt_line(ctx, step, item):
     return {'engines': engines}
 
 
+def kind_line(ctx):
+    """The names of the line the fit starts from (M5.2): the engines adapt.source took, the department's own or its kind's, in
+    the order the Library runs them."""
+    src = ((ctx or {}).get('bag') or {}).get('adapt.source') or {}
+    return [str(e.get('name')) for e in src.get('engines') or [] if isinstance(e, dict) and e.get('name')]
+
+
+def p_adapt_fit(ctx, step, item):
+    """The prompt that fits the Library's line to the goal (adapt.fit): the typed part make.fit (A1-FIT), given the line as the
+    Library has it, each engine with what it reads and writes, and the ones this kind of department requires marked."""
+    d, pl = ctx['dept'], ctx['post']['payload']
+    required = R.required_engines(d)
+    lines = ['- %s%s (reads %s, writes %s): %s' % (e['name'], ' [required: it stays]' if e['name'] in required else '', e.get('reads') or 'Brief',
+                                                   e.get('writes') or e['name'], e.get('does') or 'no description')
+             for e in ((ctx['bag'].get('adapt.source') or {}).get('engines') or []) if isinstance(e, dict) and e.get('name')]
+    rules = '; '.join(str(r.get('line')) for r in d.get('rules') or [] if r.get('line'))
+    return R._prompt('adaptation', 'make', 'fit', ctx['ref'], dept=d.get('name'), words=pl.get('words') or d.get('goal'),
+                     items=item_lines(d), engines='\n'.join(lines) or 'none', rules=rules or 'none')
+
+
+def d_adapt_fit(ctx, step, item):
+    """The draft, when no agent is there to fit the line: the kind's line as it is, every engine and no note."""
+    return {'engines': kind_line(ctx), 'fit': {}, 'why': "no agent was there to fit the line, so the Library's line stands as it is"}
+
+
+def c_line_is_fitted(ctx, step, item, out):
+    """A fitted line is an in-order subsequence of the kind's line that holds every engine the kind requires (M5.2: Adaptation
+    may leave out an engine that is not required, and nothing else). Refused: an engine that is not in the kind's line, one
+    named twice, a changed order, a required engine left out, a note for an engine the fitted line does not have, and a note
+    over 300 characters. Whether the engines left read each other is Root's standards' to say at the proposal and at the
+    registration, not this check's."""
+    base = kind_line(ctx)
+    engs = out.get('engines') if isinstance(out, dict) else None
+    if not base:
+        return R._verdict(False, '', "there is no line of the kind's to fit")
+    if not isinstance(engs, list) or not engs or any(not isinstance(n, str) or not n.strip() for n in engs):
+        return R._verdict(False, '', "the engines to run are named, as a list of names")
+    names, notes = [' '.join(n.split()) for n in engs], []
+    twice = [n for n in dict.fromkeys(names) if names.count(n) > 1]
+    if twice:
+        notes.append('%s named more than once' % R._names(twice))
+    foreign = [n for n in dict.fromkeys(names) if n not in base]
+    if foreign:
+        notes.append("%s %s not in the kind's line (%s)" % (R._names(foreign), 'is' if len(foreign) == 1 else 'are', ' -> '.join(base)))
+    known = [n for n in dict.fromkeys(names) if n in base]
+    if [base.index(n) for n in known] != sorted(base.index(n) for n in known):
+        notes.append("the Library's order is changed: it runs %s" % ' -> '.join(base))
+    gone = [n for n in R.required_engines((ctx or {}).get('dept')) if n in base and n not in names]
+    if gone:
+        notes.append('the line leaves out %s, which this kind of department requires' % R._names(gone))
+    fit = out.get('fit', {})
+    if not isinstance(fit, dict):
+        notes.append('fit is a note for each engine that needs one, as an object')
+    else:
+        stray = [str(k) for k in fit if k not in names]
+        if stray:
+            notes.append('fit has a note for %s, which is no engine of the line' % R._names(stray))
+        for k, v in fit.items():
+            if not isinstance(v, str):
+                notes.append('the note for %s is not words' % k)
+            elif len(v.strip()) > 300:
+                notes.append('the note for %s is %d characters; at most 300' % (k, len(v.strip())))
+    left = [n for n in base if n not in names]
+    return {'ok': not notes, 'notes': notes or ["%d of %d engines, in the Library's order%s" % (len(names), len(base),
+                                                (', leaving out ' + R._names(left)) if left else '')]}
+
+
+def fitted(ctx, src):
+    """The Library's line as adapt.fit left it (M5.2): the engines it kept, in the Library's order, each with its note
+    (`fit`). The line whole when there is nothing to carry: a shaped source, a skipped step, and a line Root's check sent
+    back (`faults` on the request), which is taken again whole, as the repair of a refused line has always been."""
+    fit = ((ctx or {}).get('bag') or {}).get('adapt.fit')
+    pl = (((ctx or {}).get('post') or {}).get('payload')) or {}
+    if src.get('shape') or src.get('source') != 'library' or pl.get('faults') or not isinstance(fit, dict):
+        return src
+    keep = {' '.join(str(n).split()) for n in fit.get('engines') or [] if isinstance(n, str)}
+    rows = [dict(e) for e in src.get('engines') or [] if e.get('name') in keep]
+    if not rows:
+        return src
+    notes = {k: ' '.join(v.split()) for k, v in (fit.get('fit') if isinstance(fit.get('fit'), dict) else {}).items()
+             if isinstance(v, str) and v.strip() and k in {e['name'] for e in rows}}
+    return dict(src, engines=rows, fit=notes, left_out=[e['name'] for e in src.get('engines') or [] if e.get('name') not in keep])
+
+
 def with_covers(engines, d, made=False):
     """Each engine's covers made known and whole (M5.1), and the map of item to engines the proposal carries. Only items
     done-when has stay. Every item no engine names goes to the last engine, as code does for a Library line: a line that
@@ -433,15 +517,25 @@ def adapt_line_offer(ctx, step, item):
     a conflict, with the ways out built by code."""
     ref, d, pl = ctx['ref'], ctx['dept'], ctx['post']['payload']
     src = ctx['bag'].get('adapt.source') or {'shape': True, 'source': 'shaped'}
-    got = ctx['bag']['adapt.line'] if src.get('shape') else src
+    got = ctx['bag']['adapt.line'] if src.get('shape') else fitted(ctx, src)
     if isinstance(got.get('cannot'), dict) and not got.get('engines'):
         return cannot_offer(ctx, got['cannot'])
     made = bool(src.get('shape')) and is_made(ctx)
     engines = (made_engines if made else covered_engines)(got['engines'])
     covers = with_covers(engines, d, made)
+    kept = got if got is not src and not src.get('shape') else {}                      # the Library's line, fitted (M5.2)
+    notes = kept.get('fit') or {}
+    for row in engines:
+        if notes.get(row['name']):
+            row['fit'] = notes[row['name']]
     source = 'library' if from_library(ctx, got) else src.get('source')
     body = {'word': 'line', 'engines': engines, 'source': source, 'words': pl.get('words'), 'for': pl.get('for'), 'covers': covers}
+    if notes:
+        body['fit'] = dict(notes)
     names = ' -> '.join(e['name'] for e in engines)
+    if notes or kept.get('left_out'):
+        names += ' (fitted to the goal%s%s)' % ((', leaving out ' + R._names(kept['left_out'])) if kept.get('left_out') else '',
+                                                (', %d note%s' % (len(notes), '' if len(notes) == 1 else 's')) if notes else '')
     if R._j2_live(ref):
         shown = None
         if made:
@@ -475,11 +569,12 @@ CODE = {name: ref_to(name) for name in (
     'adapt_priced', 'adapt_line_granted', 'adapt_line_refused', 'adapt_line_counter')}
 CODE['adapt_source'] = adapt_source
 CODE['adapt_line_offer'] = adapt_line_offer
-PROMPT = {'adapt_shape': ref_to('p_adapt_shape'), 'adapt_line': p_adapt_line}
-DRAFT = {'adapt_shape_draft': ref_to('d_adapt_shape'), 'adapt_line_draft': d_adapt_line}
+PROMPT = {'adapt_shape': ref_to('p_adapt_shape'), 'adapt_line': p_adapt_line, 'adapt_fit': p_adapt_fit}
+DRAFT = {'adapt_shape_draft': ref_to('d_adapt_shape'), 'adapt_line_draft': d_adapt_line, 'adapt_fit_draft': d_adapt_fit}
 CHECK = {name: ref_to('c_' + name) for name in (
     'counted_the_rows', 'moves_name_their_rows', 'said_what_it_did', 'facts_are_closed', 'idea_has_shapes')}
 CHECK['line_is_engines'] = c_line_is_engines
+CHECK['line_is_fitted'] = c_line_is_fitted
 # Adaptation: WORDS and LAYOUT by the split rule of A1.16, from function-prompts/adaptation/*.md
 WORDS = {
     'goal': {
@@ -511,6 +606,22 @@ WORDS = {
     'make': {
         'line': {},
         'refused': {},
+        # M5.2 (A1-FIT): the words of the part adapt.fit reads when the line is the Library's own
+        'fit': {
+            'task': (
+                "Fit the Library's line to this goal. The line below is what the Library runs for this kind of "
+                'department. Keep every engine the goal needs, in the same order, and say, for an engine that '
+                'should work differently for this goal, what it does differently. Leave an engine out only when '
+                'no done-when item needs what it writes, and never one marked required.'
+            ),
+            'guidance': (
+                'An engine you keep reads what an earlier one wrote, so leave out only an engine that no engine '
+                'you keep reads. A note is one line about this goal, at most 300 characters, and says what the '
+                'engine does differently; give an engine no note when it does what it always does. Name only '
+                'engines of the line above. When nothing needs to change, answer with the whole line and an '
+                'empty fit.'
+            ),
+        },
         # M6.4 (A1-SHAPE): the words of the part adapt.line reads when the make setting is on and no template fits
         'shape': {
             'task': (
@@ -583,6 +694,23 @@ LAYOUT = {
             '{returns}{{refused}}'
         ),
         'refused': "YOUR LAST LINE WAS REFUSED BY ROOT'S CHECK: {{faults}}. Shape it again without these faults.",
+        'fit': (
+            '{task}\n'
+            'THE DEPARTMENT: {{dept}}\n'
+            "THE OWNER'S WORDS:\n"
+            '{{words}}\n'
+            '\n'
+            'WHAT DONE MEANS, ITEM BY ITEM:\n'
+            '{{items}}\n'
+            '\n'
+            "THE LIBRARY'S LINE FOR THIS KIND OF DEPARTMENT, in the order it runs:\n"
+            '{{engines}}\n'
+            "THE DEPARTMENT'S RULES: {{rules}}\n"
+            '\n'
+            '{returns}\n'
+            '\n'
+            '{guidance}'
+        ),
         'shape': (
             '{task}\n'
             'THE DEPARTMENT: {{dept}}\n'
