@@ -32,3 +32,4 @@
 | `interface.v1.json` | `describe()`: the whole interface as JSON, what `GET /api/native/{ref}/layers` serves the parts of |
 | `fixtures/department.v0.json`, `fixtures/department.v1.json` | a department record from before A1, and the same record as the migration reads it (written by hand; `migrate('department', v0) == v1`) |
 | `fixtures/workflow.<kind>.good.json`, `fixtures/workflow.bad.<standard>.json` | one workflow for each of the four kinds that passes every stage, and one for each of Root's standards that fails exactly that one (written by hand; `workflow_schema.py` is the code of the standards, and `test_layer_root.py` runs the fixtures through it) |
+| `fixtures/view.audit.v1.json` | Audit's pane (`view.audit`, S12) in the four states its screen draws: nothing read, a reading with an item not met and one to confirm, a version not read, every item met (written by hand; each validates as `view.audit`) |
