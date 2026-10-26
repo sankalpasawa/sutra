@@ -30,7 +30,8 @@ Named claims:
       conflict, the outside-the-site, the instructions, the engine and the line asks), at rest and on a hover
   F11 on a department on the engine runtime each function's pane agrees with the record: the registry's older cards
       (the department card, the framework, Proposals, Queue, the graph, Recent) are not drawn under the page, so the
-      owner is named once and no pane says there are no engines or nothing in the queue while the record holds them
+      owner is named once and no pane says there are no engines or nothing in the queue while the record holds them;
+      and Identity's pane shows what it holds from the record, once: the goal, the done-when and each rule with its tag
   F12 Coordination's own state from the record (PRD M4.5): one timetable row per engine of the line, each with its slot
       and where it stands; a waiting engine names what it waits for ('Pages v2 is not filed yet'); who makes and who
       reads each thing, on a website and an organic line; a tie Coordination's AI broke ('Coordination chose Write
@@ -649,8 +650,9 @@ def test_m17_each_journey_shows_its_live_status_and_last_move_from_the_record(mo
 
 
 # What the screen prints of a read: ids and ledger actions are names it never prints as words, and a rule's tag (go, ask,
-# refuse, always) is the owner's own word for a rule (PRD S5: "Tags go, ask, refuse and always"), so neither is scanned.
-RULE_TAGS = re.compile(r"\bgo, ask, refuse,? (?:or |and )?always\b|\ba refuse rule\b")
+# refuse, always) is the owner's own word for a rule (PRD S5: "Tags go, ask, refuse and always"), so neither is scanned;
+# on a rendered pane the tag is its badge, which pane_words.js prints as [tag:word].
+RULE_TAGS = re.compile(r"\bgo, ask, refuse,? (?:or |and )?always\b|\ba refuse rule\b|\[tag:(?:go|ask|refuse|always)\]")
 BANNED = ("grant", "counter", "refus", "orders")
 
 
@@ -1133,6 +1135,14 @@ def test_m17_a_runtime_departments_panes_agree_with_its_record(mods, born, tmp_p
     assert "Timetable" in panes["coordination"]["rest"] and "Publish after a Build that passed" in panes["coordination"]["rest"]
     assert "waits for the stamp" in panes["coordination"]["rest"] and "waits: waits" not in panes["coordination"]["rest"]
     assert "Plan" in panes["adaptation"]["rest"] and "Control" in panes["identity"]["rest"]
+    # round 4, gap 5: what Identity holds is on its pane, from the record, once: the goal, the done-when and each rule
+    # with its tag as a badge beside it, as dept.json has them
+    d, idn = W.dept(ref), panes["identity"]["rest"]
+    assert d["goal"] and d["goal"] in idn, "the goal"
+    assert d["done"] and idn.count(d["done"]) == 1, ("the done-when, once", idn.count(d["done"]))
+    assert d["rules"]
+    for r in d["rules"]:
+        assert idn.count(r["line"]) == 1 and "[tag:%s] %s" % (r["tag"], r["line"]) in idn, (r, "each rule once, its tag beside it")
 
 
 def test_m17_a_record_written_before_reads_in_the_owners_words_on_every_chat(mods):

@@ -1536,6 +1536,27 @@ test("M1.7: each function's pane opens on its page: line, fields, recipe, journe
   const oh = await fnCard(old, "priority");
   assert.ok(!/<h3>The function<\/h3>|wbjrn/.test(oh) && readsOf(old, /\/functions\//).length === 0);
 });
+/* PRD M1.7 (round 4, gap 5): on the engine runtime the registry's department card is gone, and what Identity holds is
+   drawn from the map read instead: the goal, the done-when and each rule with its tag as a badge with its word. */
+test("M1.7: Identity's pane shows the goal, done-when and each rule with its tag from the record, and repaints when they move", async () => {
+  const map = rtMap();
+  map.rules = [{ tag: "go", line: "Plan, write and check inside the record" }, { tag: "refuse", line: "Never publish a build whose check failed" }];
+  const c = await opened({ map, fnpage: fnPageOf });
+  const html = await fnCard(c, "identity");
+  assert.ok(/<h3>The department<\/h3><div class="dpid"><div class="dpcell"><div class="dpk">Goal<\/div><div class="dpbig">A live website for City Care Hospital<\/div>/.test(html), "the goal");
+  assert.ok(/<div class="dpk">Done when<\/div><div class="dpbig">Every page checked and live<\/div>/.test(html), "the done-when");
+  assert.ok(html.indexOf('<div class="dprule"><span class="dptag go">go</span><span>Plan, write and check inside the record</span></div>') >= 0 &&
+            html.indexOf('<div class="dprule"><span class="dptag refuse">refuse</span><span>Never publish a build whose check failed</span></div>') >= 0,
+            "each rule with its tag, a badge that says its word");
+  assert.strictEqual((html.match(/Never publish a build whose check failed/g) || []).length, 1, "a rule once");
+  assert.ok(!/No owner yet/.test(html) && (html.match(/Sankalp/g) || []).length === 1, "the owner once, on Control");
+  /* the pane repaints when what Identity holds moves, and not when the read says the same */
+  const a = c.wbSig(map);
+  assert.strictEqual(a, c.wbSig(JSON.parse(JSON.stringify(map))), "the same read paints nothing");
+  assert.notStrictEqual(a, c.wbSig(Object.assign({}, map, { rules: map.rules.concat([{ tag: "ask", line: "Ask before a new page goes live" }]) })), "a new rule paints");
+  assert.notStrictEqual(a, c.wbSig(Object.assign({}, map, { done: "Every page checked, live and read" })), "a new done-when paints");
+  assert.notStrictEqual(a, c.wbSig(Object.assign({}, map, { goal: "A live website for City Care Clinic" })), "a new goal paints");
+});
 /* PRD M1.8 (S2, proposal built on MK-8): All five. Five cards in canonical order, each with its mark, a state word and
    a Today bar, then Between them; no digits at rest outside titles; the states the screen names; the arrow keys. */
 const FV_BOARD = { any: true, ideas: [], threads: [

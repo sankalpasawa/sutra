@@ -136,7 +136,8 @@ function wbTab(ref){
    heartbeat moves every tick and is patched in place, so it is left out: a
    preview frame must not reload because a clock moved. */
 function wbSig(m){
-  return JSON.stringify([m.stopped, m.has_goal, m.status, m.recent, m.live,
+  /* what Identity's pane draws from the record too (its goal, done-when, rules, owner and control), so a change repaints */
+  return JSON.stringify([m.stopped, m.has_goal, m.status, m.recent, m.live, m.goal, m.done, m.rules, m.owner, m.control,
     (m.artifacts || []).map(a => [a.name, a.versions]), (m.engines || []).map(e => [e.name, e.state, e.envelope])]);
 }
 async function wbLoadMap(ref, force){
@@ -1202,6 +1203,16 @@ function wbEngFiveHtml(card){
 }
 
 /* ── the five systems' own state, under the function cards ────────────────── */
+/* What Identity holds, from the record (the map read; PRD M1.7, acceptance line 1): the department's goal and its
+   done-when, as the registry's department card drew them (20-dept.js), and its rules, each with its tag as a badge that
+   says its word (go, ask, refuse or always, the owner's own words for a rule), as the record has them and never
+   rewritten. The owner is on Control, once. M3.7's S5 draws these as items on top of this. */
+function wbIdHoldsHtml(m){
+  const rules = (m.rules || []).filter(r => r && (r.line || r.text));
+  return dpCard("The department", `<div class="dpid">` + dpCell("Goal", m.goal ? dpBig(m.goal) : dpQuiet("No goal yet")) +
+      dpCell("Done when", m.done ? dpBig(m.done) : dpQuiet("No done line yet")) + `</div>`) +
+    dpCard("Rules", rules.length ? rules.map(r => dpRuleHtml({ tag: r.tag, text: r.line || r.text })).join("") : dpQuiet("No rules yet"));
+}
 function wbFnExtra(tab, m){
   if (!m) return "";
   const engs = m.engines || [];
@@ -1209,8 +1220,9 @@ function wbFnExtra(tab, m){
      its rung, under the state the card already shows */
   const steps = wbRt(m) ? wbStepsHtml(m.ref, tab.charAt(0).toUpperCase() + tab.slice(1)) : "";
   if (tab === "identity"){
-    /* the department's control, in the owner's words: it runs itself within the owner's rules, or the owner holds it */
-    return dpCard("Control", `<div class="dpengines">` + dpKV("Control", m.control === "granted" ? "Runs within your rules" : "Held by you", "") +
+    /* what Identity holds, then the department's control, in the owner's words: it runs itself within the owner's
+       rules, or the owner holds it */
+    return wbIdHoldsHtml(m) + dpCard("Control", `<div class="dpengines">` + dpKV("Control", m.control === "granted" ? "Runs within your rules" : "Held by you", "") +
         dpKV("Owner", m.owner, "Not named") + dpKV("Stop", m.stopped ? "Stopped" : "Running", "") + `</div>`) +
       dpCard("Autonomy windows", engs.map(e => dpRunRow(e.name, "", "", dpBar(Math.min(1, (e.window_min || 0) / 30)))).join("")) +
       dpCard("Stamped by rule", (m.recent || []).filter(r => r.engine === "Identity").map(r => wbRunRow(r)).join("") || dpQuiet("Nothing yet")) +

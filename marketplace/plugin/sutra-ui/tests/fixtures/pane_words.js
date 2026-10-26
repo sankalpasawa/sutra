@@ -86,7 +86,10 @@ async function paint(){
   for (let k = 0; k < 4; k++){ ctx.dpViewerHtml(WEB, {}, null, null); for (let i = 0; i < 8; i++) await sleep(); }
   return ctx.dpViewerHtml(WEB, {}, null, null);
 }
+/* a rule's tag is a badge whose word is the owner's own for a rule (go, ask, refuse, always: PRD S5), printed as
+   [tag:word] so the Python side scans every other word and finds the badge beside its rule */
 const rest = h => h.replace(/<title>[\s\S]*?<\/title>/g, " ").replace(/ (?:title|aria-label)="[^"]*"/g, "")
+  .replace(/<span class="dptag (go|ask|refuse|always)">\1<\/span>/g, " [tag:$1] ")
   .replace(/<[^>]+>/g, " ").replace(/&#39;/g, "'").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/\s+/g, " ").trim();
 const hover = h => (h.match(/ (?:title|aria-label)="[^"]*"|<title>[\s\S]*?<\/title>/g) || []).join(" ")
   .replace(/<\/?title>/g, " ").replace(/&#39;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
